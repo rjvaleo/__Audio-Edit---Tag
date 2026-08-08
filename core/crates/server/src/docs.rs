@@ -182,9 +182,32 @@ pub fn edit_json(list: &EditList, can_undo: bool, can_redo: bool) -> Value {
         .collect();
     Value::obj()
         .set("frames", list.frames())
+        .set("baseFrames", list.base_frames())
         .set("sourceFrames", list.source_frames)
         .set("duration", list.duration_secs())
         .set("edited", !list.is_identity())
+        .set(
+            "stretch",
+            Value::obj()
+                .set("ratio", list.stretch.ratio as f64)
+                .set("semitones", list.stretch.semitones as f64)
+                .set("windowMs", list.stretch.window_ms as f64)
+                .set("quality", list.stretch_quality())
+                .set("active", list.is_stretched())
+                .set("granular", list.stretch.is_granular())
+                .set(
+                    "grain",
+                    Value::obj()
+                        .set("densityHz", list.stretch.grain.density_hz as f64)
+                        .set("overlap", list.stretch.grain.overlap as f64)
+                        .set("sizeJitter", list.stretch.grain.size_jitter as f64)
+                        .set("positionJitterMs", list.stretch.grain.position_jitter_ms as f64)
+                        .set("pitchJitterSemis", list.stretch.grain.pitch_jitter_semis as f64)
+                        .set("pitchDriftSemis", list.stretch.grain.pitch_drift_semis as f64)
+                        .set("driftRateHz", list.stretch.grain.drift_rate_hz as f64)
+                        .set("seed", list.stretch.grain.seed as f64),
+                ),
+        )
         .set("clips", Value::Arr(clips))
         .set("canUndo", can_undo)
         .set("canRedo", can_redo)

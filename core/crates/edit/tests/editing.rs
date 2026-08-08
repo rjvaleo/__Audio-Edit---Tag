@@ -684,3 +684,82 @@ fn removing_an_effect_restores_the_original_exactly() {
     let after = edit::render::render_fx(&list, &mut r3, &mut rack, 0, 200).unwrap();
     assert_eq!(before, after);
 }
+
+// =============================================================== stretching
+
+#[test]
+fn a_stretched_document_reports_the_stretched_length() {
+    let mut list = identity(1000);
+    list.stretch = fx::Stretch { ratio: 2.0, ..fx::Stretch::default() };
+    assert_eq!(list.base_frames(), 1000);
+    assert_eq!(list.frames(), 2000);
+    assert!(list.is_stretched());
+}
+
+#[test]
+fn stretching_renders_the_length_it_promised() {
+    let mut r = ramp_reader(4000, 1);
+    let mut list = EditList::identity(4000, 1, 8000);
+    list.stretch = fx::Stretch { ratio: 1.5, ..fx::Stretch::default() };
+    let out = edit::render::render_all_stretched(&list, &mut r, &mut Rack::new()).unwrap();
+    assert_eq!(out.len() as u64, list.frames());
+}
+
+#[test]
+fn a_cut_then_a_stretch_compose() {
+    // Edits happen on the pre-stretch timeline; the stretch scales the result.
+    let mut list = identity(1000);
+    list.cut(Range::new(0, 400));
+    list.stretch = fx::Stretch { ratio: 2.0, ..fx::Stretch::default() };
+    assert_eq!(list.base_frames(), 600);
+    assert_eq!(list.frames(), 1200);
+}
+
+#[test]
+fn edit_operations_still_address_the_unstretched_timeline() {
+    // If cut used the stretched length it would run off the end of the clips.
+    let mut r = ramp_reader(1000, 1);
+    let mut list = identity(1000);
+    list.stretch = fx::Stretch { ratio: 3.0, ..fx::Stretch::default() };
+    list.cut(Range::new(0, 500));
+    assert_eq!(list.base_frames(), 500);
+    let out = edit::render::render(&list, &mut r, 0, 500).unwrap();
+    assert!((out[0] - 0.500).abs() < 1e-6, "cut landed wrong: {}", out[0]);
+}
+
+#[test]
+fn an_unstretched_document_is_unaffected_by_the_stretch_path() {
+    let mut r1 = ramp_reader(500, 1);
+    let mut r2 = ramp_reader(500, 1);
+    let list = identity(500);
+    let plain = render(&list, &mut r1, 0, 500).unwrap();
+    let via_all = edit::render::render_all_stretched(&list, &mut r2, &mut Rack::new()).unwrap();
+    assert_eq!(plain, via_all);
+}
+
+#[test]
+fn a_windowed_render_of_a_stretched_document_is_not_silently_wrong() {
+    // render_fx must notice the stretch rather than returning raw clip audio.
+    let mut r = ramp_reader(4000, 1);
+    let mut list = EditList::identity(4000, 1, 8000);
+    list.stretch = fx::Stretch { ratio: 2.0, ..fx::Stretch::default() };
+    let win = edit::render::render_fx(&list, &mut r, &mut Rack::new(), 5000, 500).unwrap();
+    assert_eq!(win.len(), 500);
+
+    let all = edit::render::render_all_stretched(&list, &mut r, &mut Rack::new()).unwrap();
+    for i in 0..500 {
+        assert_eq!(win[i], all[5000 + i], "window differs at {i}");
+    }
+}
+
+#[test]
+fn stretching_does_not_touch_the_source() {
+    let mut list = identity(1000);
+    list.stretch = fx::Stretch { ratio: 0.5, semitones: 7.0, ..fx::Stretch::default() };
+    // Reverting drops the stretch along with everything else.
+    let mut s = Session::new(list);
+    assert!(!s.list().is_identity());
+    s.revert();
+    assert!(s.list().is_identity());
+    assert!(!s.list().is_stretched());
+}

@@ -46,7 +46,7 @@ impl EditList {
         if range.is_empty() {
             return;
         }
-        let total = self.frames();
+        let total = self.base_frames();
         let end = range.end.min(total);
         if range.start >= total {
             return;
@@ -104,7 +104,7 @@ impl EditList {
             return;
         }
         self.split_at(range.start);
-        let end = (range.start + frames).min(self.frames());
+        let end = (range.start + frames).min(self.base_frames());
         self.split_at(end);
         if let Some((first, _)) = self.clip_span(Range::new(range.start, end)) {
             let span = Range::new(range.start, end);

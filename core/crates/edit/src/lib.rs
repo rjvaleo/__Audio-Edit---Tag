@@ -132,6 +132,9 @@ pub struct EditList {
     pub channels: u16,
     pub sample_rate: u32,
     pub clips: Vec<Clip>,
+    /// Time and pitch. Applied after the clips are assembled, because it
+    /// changes the length of the result and so cannot live on a clip.
+    pub stretch: fx::Stretch,
 }
 
 impl EditList {
@@ -146,12 +149,32 @@ impl EditList {
             } else {
                 vec![Clip::new(0, source_frames)]
             },
+            stretch: fx::Stretch::default(),
         }
     }
 
-    /// Total length of the edited result.
-    pub fn frames(&self) -> u64 {
+    /// Length of the assembled clips, before stretching.
+    pub fn base_frames(&self) -> u64 {
         self.clips.iter().map(|c| c.len).sum()
+    }
+
+    /// Total length of the edited result, stretching included.
+    pub fn frames(&self) -> u64 {
+        self.stretch.output_frames(self.base_frames())
+    }
+
+    /// Is the timeline being resampled in time?
+    pub fn is_stretched(&self) -> bool {
+        !self.stretch.is_identity()
+    }
+
+    /// The stretch quality tier as a stable string, for the API.
+    pub fn stretch_quality(&self) -> &'static str {
+        match self.stretch.quality {
+            fx::stretch::Quality::Draft => "draft",
+            fx::stretch::Quality::Standard => "standard",
+            fx::stretch::Quality::Best => "best",
+        }
     }
 
     pub fn duration_secs(&self) -> f64 {
@@ -167,12 +190,12 @@ impl EditList {
         *self == EditList::identity(self.source_frames, self.channels, self.sample_rate)
     }
 
-    /// Timeline position where clip `i` begins.
+    /// Timeline position where clip `i` begins, on the pre-stretch timeline.
     pub fn clip_start(&self, i: usize) -> u64 {
         self.clips[..i].iter().map(|c| c.len).sum()
     }
 
-    /// Find the clip containing timeline frame `pos`, with the offset into it.
+    /// Find the clip containing frame `pos` on the pre-stretch timeline.
     pub fn locate(&self, pos: u64) -> Option<(usize, u64)> {
         let mut acc = 0u64;
         for (i, c) in self.clips.iter().enumerate() {

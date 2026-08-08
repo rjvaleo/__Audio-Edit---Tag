@@ -1,0 +1,22 @@
+{
+ "Swarm 1": {
+  "name": "Swarm 1",
+  "note": "Dense scattered grains, wide pitch spread. Captured from jazz loop.wav.",
+  "stretch": {
+   "ratio": 1.0,
+   "semitones": 0.0,
+   "windowMs": 40.0,
+   "quality": "standard",
+   "grain": {
+    "densityHz": 50.0,
+    "overlap": 2.0,
+    "sizeJitter": 0.0,
+    "positionJitterMs": 120.0,
+    "pitchJitterSemis": 6.0,
+    "pitchDriftSemis": 0.0,
+    "driftRateHz": 0.5,
+    "seed": 1
+   }
+  }
+ }
+}

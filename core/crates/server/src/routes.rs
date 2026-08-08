@@ -39,6 +39,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/markers") => api_markers_set(app, req),
         ("GET", "/api/rack") => api_rack_get(app, req),
         ("POST", "/api/rack") => api_rack_set(app, req),
+        ("GET", "/api/grains") => api_grains(app, req),
         ("GET", "/api/edit") => api_edit_get(app, req),
         ("POST", "/api/edit") => api_edit_apply(app, req),
         ("POST", "/api/export") => api_export(app, req),
@@ -550,6 +551,102 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     Response::json(spec.to_json().set("curve", Value::Arr(curve)).to_string())
 }
 
+/// The grain schedule for the visualiser.
+///
+/// Computed from the same enumeration the renderer uses, so the picture cannot
+/// show grains the audio does not contain. No audio is read.
+fn api_grains(app: &Arc<App>, req: &Request) -> Response {
+    let Some(rel) = req.param("p") else {
+        return Response::error(400, "no path given");
+    };
+    let Some(list) = app.edits.snapshot(rel) else {
+        return Response::json(Value::obj().set("grains", Value::Arr(vec![])).to_string());
+    };
+    let st = list.stretch;
+    let events = fx::grain::grains(
+        list.base_frames() as usize,
+        list.sample_rate,
+        st.ratio,
+        st.semitones,
+        st.window_ms,
+        &st.grain,
+    );
+
+    // Cap what crosses the wire: a long file at high density is tens of
+    // thousands of grains, and the display cannot resolve them anyway.
+    let stride = (events.len() / 3000).max(1);
+
+    // Measure what each grain actually sounds like, not just where it sits.
+    // The visualiser is meant to be driven by the audio, so amplitude and
+    // brightness come from the source window the grain reads, not from a
+    // stand-in derived from the parameters.
+    let source = app
+        .library_path()
+        .and_then(|lib| resolve_within(&lib, rel))
+        .and_then(|p| audio_core::open(&p).ok())
+        .and_then(|mut r| {
+            let n = r.info().frames();
+            r.read_frames(0, n).ok().map(|f| (f, r.info().channels.max(1) as usize))
+        });
+
+    let measure = |start: f32, len: usize| -> (f32, f32) {
+        let Some((buf, ch)) = &source else { return (0.0, 0.0) };
+        let frames = buf.len() / ch;
+        let a = (start as usize).min(frames.saturating_sub(1));
+        let b = (a + len).min(frames);
+        if b <= a + 1 {
+            return (0.0, 0.0);
+        }
+        // Every eighth frame is plenty for a display value and keeps a dense
+        // grain stream from turning into a full second of arithmetic.
+        let mut sum = 0f64;
+        let mut n = 0u32;
+        let mut crossings = 0u32;
+        let mut prev = 0f32;
+        for f in (a..b).step_by(8) {
+            let v = buf[f * ch];
+            sum += (v as f64) * (v as f64);
+            if prev <= 0.0 && v > 0.0 {
+                crossings += 1;
+            }
+            prev = v;
+            n += 1;
+        }
+        let rms = if n > 0 { (sum / n as f64).sqrt() as f32 } else { 0.0 };
+        // Zero-crossing rate as a cheap brightness proxy: no FFT per grain.
+        let brightness = if n > 1 { crossings as f32 / n as f32 } else { 0.0 };
+        (rms, brightness.min(1.0))
+    };
+
+    let arr: Vec<Value> = events
+        .iter()
+        .step_by(stride)
+        .map(|e| {
+            let (rms, bright) = measure(e.src_frame, e.size as usize);
+            Value::Arr(vec![
+                Value::Num(e.out_frame as f64),
+                Value::Num(e.src_frame as f64),
+                Value::Num(e.size as f64),
+                Value::Num(e.pitch_semis as f64),
+                Value::Num(rms as f64),
+                Value::Num(bright as f64),
+            ])
+        })
+        .collect();
+
+    Response::json(
+        Value::obj()
+            .set("grains", Value::Arr(arr))
+            .set("total", events.len())
+            .set("shown", (events.len() + stride - 1) / stride)
+            .set("outFrames", list.frames())
+            .set("srcFrames", list.base_frames())
+            .set("sampleRate", list.sample_rate)
+            .set("granular", st.is_granular())
+            .to_string(),
+    )
+}
+
 fn api_edit_get(app: &Arc<App>, req: &Request) -> Response {
     let Some(rel) = req.param("p") else {
         return Response::error(400, "no path given");
@@ -618,6 +715,51 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
             "fadeIn" => { let n = num("frames"); s.apply(|l| l.fade_in(range, n, shape)); }
             "fadeOut" => { let n = num("frames"); s.apply(|l| l.fade_out(range, n, shape)); }
             "reverse" => { s.apply(|l| l.reverse(range)); }
+            "stretch" => {
+                let ratio = float("ratio", 1.0).clamp(0.25, 4.0);
+                let semis = float("semitones", 0.0).clamp(-24.0, 24.0);
+                let window = float("windowMs", 40.0).clamp(5.0, 200.0);
+                // Read the current tier from the session already in hand.
+                // Going back through the store would re-lock the mutex this
+                // closure runs inside, and std's Mutex is not reentrant — that
+                // deadlocks the request and every edit after it.
+                let quality = match v.get("quality").and_then(|q| q.as_str()) {
+                    Some("draft") => fx::stretch::Quality::Draft,
+                    Some("best") => fx::stretch::Quality::Best,
+                    Some("standard") => fx::stretch::Quality::Standard,
+                    // Omitted entirely: keep whatever the document already has,
+                    // so a control that does not mention quality cannot reset it.
+                    _ => s.list().stretch.quality,
+                };
+                // Grain settings arrive as a nested object; anything absent
+                // keeps its current value so one slider cannot reset the rest.
+                let cur = s.list().stretch.grain;
+                let gv = v.get("grain");
+                let gf = |k: &str, d: f32| -> f32 {
+                    match gv.and_then(|g| g.get(k)) {
+                        Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                        _ => d,
+                    }
+                };
+                let grain = fx::Grain {
+                    density_hz: gf("densityHz", cur.density_hz).clamp(0.0, 500.0),
+                    overlap: gf("overlap", cur.overlap).clamp(1.0, 8.0),
+                    size_jitter: gf("sizeJitter", cur.size_jitter).clamp(0.0, 1.0),
+                    position_jitter_ms: gf("positionJitterMs", cur.position_jitter_ms)
+                        .clamp(0.0, 2000.0),
+                    pitch_jitter_semis: gf("pitchJitterSemis", cur.pitch_jitter_semis)
+                        .clamp(0.0, 24.0),
+                    pitch_drift_semis: gf("pitchDriftSemis", cur.pitch_drift_semis)
+                        .clamp(0.0, 24.0),
+                    drift_rate_hz: gf("driftRateHz", cur.drift_rate_hz).clamp(0.01, 20.0),
+                    seed: gf("seed", cur.seed as f32).max(0.0) as u32,
+                };
+                s.apply(|l| {
+                    l.stretch = fx::Stretch {
+                        ratio, semitones: semis, window_ms: window, quality, grain,
+                    };
+                });
+            }
             "split" => { let p = num("pos"); s.apply(|l| { l.split_at(p); }); }
             "normalize" => {
                 if let Some(peak) = measured_peak {
@@ -796,7 +938,7 @@ fn api_audio(app: &Arc<App>, req: &Request) -> Response {
 
     let status = if range.is_some() { 206 } else { 200 };
     let mut r = Response::new(status, "audio/wav", out);
-    r = r.with("Accept-Ranges", "bytes");
+    r = r.with("Accept-Ranges", "bytes").with("Cache-Control", "no-store");
     if range.is_some() {
         r = r.with("Content-Range", &format!("bytes {start}-{end}/{total}"));
     }
@@ -829,7 +971,9 @@ fn audio_edited(
     match edit::render::wav_bytes_fx(list, &mut reader, rack, start, end, BITS) {
         Ok(bytes) => {
             let status = if range.is_some() { 206 } else { 200 };
-            let mut r = Response::new(status, "audio/wav", bytes).with("Accept-Ranges", "bytes");
+            let mut r = Response::new(status, "audio/wav", bytes)
+                .with("Accept-Ranges", "bytes")
+                .with("Cache-Control", "no-store");
             if range.is_some() {
                 r = r.with("Content-Range", &format!("bytes {start}-{end}/{total}"));
             }
