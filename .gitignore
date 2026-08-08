@@ -1,0 +1,11 @@
+# python bytecode
+__pycache__/
+*.pyc
+
+# scratch produced by test/validation runs
+_work/_hdrless.bin
+*.tmp
+*.stale-*
+
+# git lock droppings (the device bridge cannot delete these)
+.git/index.lock*

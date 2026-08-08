@@ -1,0 +1,129 @@
+# -*- coding: utf-8 -*-
+"""
+Non-destructive tagging. Writes a _TAGS.txt into each folder and a master
+_TAG-INDEX.tsv. Renames nothing, moves nothing, deletes nothing.
+Usage: python3 write_tags.py [seconds]
+"""
+import os,sys,csv,json,time,re
+from collections import Counter,defaultdict
+import os as _os
+HERE=_os.path.dirname(_os.path.abspath(__file__))
+APP=_os.path.dirname(HERE)                      # the "Audio Edit & Tag" folder
+def _find_ingest(start):
+    d=start
+    for _ in range(5):
+        c=_os.path.join(d,"INGEST")
+        if _os.path.isdir(c): return c
+        p=_os.path.dirname(d)
+        if p==d: break
+        d=p
+    return _os.path.join(_os.path.dirname(APP),"INGEST")
+ING=_find_ingest(APP)
+LIB=_os.path.dirname(ING)                       # the Audio Library root
+BASE=APP                                        # data + html live beside _tools
+WORK=_os.path.join(APP,"_work"); _os.makedirs(WORK,exist_ok=True)
+def W(n): return _os.path.join(WORK,n)
+FILES=W('ingest2_files.tsv')
+ST=W('tags_state.json')
+ROOT=LIB
+
+
+
+
+IGNORE={'CACHE','DOCUMENT','BROKEN','UNKNOWN-FORMAT'}
+
+def levels(folder,rows):
+    aud=[r for r in rows if r['category'] not in IGNORE]
+    low=folder.lower(); n=len(aud)
+    if n==0: return ('Unsorted','Empty',0.0,'')
+    dom,cnt=Counter(r['category'] for r in aud).most_common(1)[0]; share=cnt/n
+    mc=Counter(r['machine'] for r in aud if r['machine'])
+    machine=mc.most_common(1)[0][0] if mc else ''
+    soft = machine in ('NI Absynth','NI Kontakt','NI Battery','Halion')
+    kit = bool(re.search(r'\bkit',low))
+    if dom in ('DRUM-ONESHOT','DRUM-HIT-LONG'):
+        if machine and not soft: return ('Drum','Machine',share,machine)
+        if re.search(r'acoustic|live|real|studio drum',low): return ('Drum','Acoustic',share,machine)
+        if kit or soft: return ('Drum','Kit',share,machine)
+        return ('Drum','Hits',share,machine)
+    M={'CHOP':('Sample','Chops'),'FX':('Sample','FX'),'PAD-BED':('Sample','Pads'),
+       'LOOP':('Sample','Loops'),'SECTION-BED':('Sample','Beds'),
+       'ONE-SHOT':('Sample','Oneshots'),'SAMPLE-SHORT':('Sample','Oneshots'),
+       'SAMPLE':('Sample','General'),'SYNTH-STAB':('Synth','Hits'),
+       'TONAL-HIT':('Synth','Hits'),'VOCAL':('Vocal','Takes'),
+       'STEM':('Session','Stems'),'SESSION-TAKE':('Session','Takes')}
+    if dom in M: return M[dom]+(share,machine)
+    if dom in ('SONG','SONG?'):
+        l2='Masters' if re.search(r'master|final|beatport|release|render|mp3',low) else 'Mixes'
+        return ('Song',l2,share,machine)
+    if dom=='LONG-SESSION':
+        if re.search(r'master|final|beatport|release|render|album|mp3',low): return ('Song','Masters',share,machine)
+        if re.search(r'live|tour|gig|concert|perform',low): return ('Session','Live',share,machine)
+        return ('Session','Long',share,machine)
+    return ('Unsorted','Mixed',share,machine)
+
+def slug(s): return re.sub(r'[^a-z0-9]+','-',s.lower()).strip('-')
+
+def main():
+    budget=int(sys.argv[1]) if len(sys.argv)>1 else 32
+    st=json.load(open(ST)) if os.path.exists(ST) else {}
+    by=defaultdict(list)
+    for r in csv.DictReader(open(FILES,encoding='utf-8'),delimiter='\t'): by[r['root_folder']].append(r)
+    end=time.time()+budget; wrote=0; idx=[]
+    for f in sorted(by):
+        d=os.path.join(ING,f)
+        if not os.path.isdir(d): continue
+        rows=by[f]
+        aud=[r for r in rows if r['category'] not in IGNORE]
+        l1,l2,share,machine=levels(f,rows)
+        cats=Counter(r['category'] for r in aud)
+        insts=Counter(r['instrument'] for r in aud if r['instrument'])
+        machs=Counter(r['machine'] for r in aud if r['machine'])
+        fmts=Counter(r['format'] for r in rows if r['format'] not in ('NON-AUDIO',))
+        nb=sum(int(r['bytes']) for r in rows); dur=sum(float(r['duration_s']) for r in aud)
+        dates=[r['modified'] for r in rows if r['modified']]
+        conf='high' if share>=.7 and len(aud)>=5 else ('medium' if share>=.45 else 'low')
+        tags=[slug(l1),slug(l2)]+[slug(m) for m in machs]+[slug(i) for i in insts]+\
+             [slug(c) for c,_ in cats.most_common(4)]
+        tags=list(dict.fromkeys([t for t in tags if t]))
+        idx.append({"folder":f,"level1":l1,"level2":l2,"machine":machine,
+            "confidence":conf,"dominant_share":"%.2f"%share,"files":len(rows),"audio_files":len(aud),
+            "bytes":nb,"minutes":"%.1f"%(dur/60),"oldest":min(dates) if dates else "",
+            "newest":max(dates) if dates else "",
+            "instruments":", ".join(k for k,_ in insts.most_common(8)),
+            "categories":", ".join("%s:%d"%(k,v) for k,v in cats.most_common(6)),
+            "formats":", ".join("%s:%d"%(k,v) for k,v in fmts.most_common(4)),
+            "tags":" ".join(tags)})
+        if st.get(f)=='done' or time.time()>end: continue
+        body=[]
+        body.append("# Audio Library tags")
+        body.append("# Generated by _tools/write_tags.py - describes this folder only.")
+        body.append("# NOTHING was renamed, moved or deleted. Safe to delete this file.")
+        body.append("")
+        body.append("folder:      %s"%f)
+        body.append("level1:      %s"%l1)
+        body.append("level2:      %s"%l2)
+        body.append("tags:        %s"%" ".join(tags))
+        if machs: body.append("machines:    %s"%", ".join("%s (%d)"%(k,v) for k,v in machs.most_common(5)))
+        if insts: body.append("instruments: %s"%", ".join("%s (%d)"%(k,v) for k,v in insts.most_common(8)))
+        body.append("categories:  %s"%", ".join("%s:%d"%(k,v) for k,v in cats.most_common(6)))
+        body.append("formats:     %s"%", ".join("%s:%d"%(k,v) for k,v in fmts.most_common(5)))
+        body.append("files:       %d (%d audio)"%(len(rows),len(aud)))
+        body.append("size:        %.1f MB"%(nb/1e6))
+        body.append("duration:    %.1f min"%(dur/60))
+        if dates: body.append("dates:       %s .. %s"%(min(dates),max(dates)))
+        body.append("confidence:  %s (dominant category is %.0f%% of audio files)"%(conf,share*100))
+        body.append("")
+        body.append("# confidence 'low' means the classifier could not find a clear signal -")
+        body.append("# treat level1/level2 as a suggestion, not a fact.")
+        try:
+            open(os.path.join(d,"_TAGS.txt"),'w',encoding='utf-8').write("\n".join(body)+"\n")
+            st[f]='done'; wrote+=1
+        except Exception as e:
+            print("  ! %s: %s"%(f,str(e)[:50]))
+    json.dump(st,open(ST,'w'))
+    if idx:
+        with open(W('tag_index.tsv'),'w',encoding='utf-8',newline='') as fh:
+            w=csv.DictWriter(fh,fieldnames=list(idx[0].keys()),delimiter='\t'); w.writeheader(); w.writerows(idx)
+    print("_TAGS.txt written this pass: %d | total %d / %d"%(wrote,len(st),len(by)))
+if __name__=="__main__": main()
