@@ -18,6 +18,10 @@ use crate::render::{BlockRenderer, Source};
 /// clicks without it.
 const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 
+/// Window for the output spectrum. About 21 ms at 48 kHz — enough resolution to
+/// be worth looking at, cheap enough to run in the callback.
+const FFT_SIZE: usize = 1024;
+
 /// Shared between the UI threads and the audio callback.
 pub struct Shared {
     params: Mutex<StreamParams>,
@@ -38,6 +42,24 @@ pub struct Shared {
     gain: AtomicU32,
     /// Grains dropped because the voice pool was full.
     pub overflows: AtomicU64,
+
+    /// A rack waiting to be adopted by the audio thread.
+    ///
+    /// Handed over rather than shared: effects carry filter state that only the
+    /// audio thread may touch. The UI thread builds one and leaves it here; the
+    /// callback takes ownership on its next block. Building it on this side is
+    /// also what keeps the allocation off the audio thread.
+    /// Outer Option is "a change is waiting"; inner is the new value, where
+    /// None means the rack was removed. One Option cannot say both.
+    pending_rack: Mutex<Option<Option<fx::Rack>>>,
+
+    /// Magnitudes of the most recent output block, 0..255 per bin.
+    ///
+    /// Taken from what actually left the engine, so the spectrum shows the
+    /// grains and the rack, not a guess at them. The browser used to do this
+    /// with an AnalyserNode on the media element; there is no media element
+    /// any more, and this is the more truthful measurement anyway.
+    spectrum: Mutex<Vec<u8>>,
 }
 
 impl Shared {
@@ -54,6 +76,8 @@ impl Shared {
             loop_b: AtomicU64::new(0),
             gain: AtomicU32::new(1.0f32.to_bits()),
             overflows: AtomicU64::new(0),
+            pending_rack: Mutex::new(None),
+            spectrum: Mutex::new(Vec::new()),
         }
     }
 
@@ -99,8 +123,20 @@ impl Shared {
         self.loop_on.store(on, Ordering::Release);
     }
 
+    /// Hand a freshly built rack to the audio thread. Replacing an unclaimed
+    /// one is fine: only the newest settings matter.
+    pub fn set_rack(&self, rack: Option<fx::Rack>) {
+        if let Ok(mut g) = self.pending_rack.lock() {
+            *g = Some(rack);
+        }
+    }
+
     pub fn set_gain(&self, g: f32) {
         self.gain.store(g.clamp(0.0, 4.0).to_bits(), Ordering::Release);
+    }
+
+    pub fn spectrum(&self) -> Vec<u8> {
+        self.spectrum.lock().map(|g| g.clone()).unwrap_or_default()
     }
 
     /// Take the grains reported since the last call. The visualiser drains
@@ -112,12 +148,22 @@ impl Shared {
         }
     }
 
-    fn loop_bounds(&self) -> Option<(u64, u64)> {
+    /// `end` is the document's length under the current ratio, used when the
+    /// caller asks to loop the whole thing.
+    ///
+    /// A loop end of zero means "all of it". The alternative is for the UI to
+    /// work out the length itself and keep it in step with every ratio change,
+    /// which it cannot reliably do — it guessed wrong, and playback ran past
+    /// the end of a looping file.
+    fn loop_bounds(&self, end: u64) -> Option<(u64, u64)> {
         if !self.loop_on.load(Ordering::Acquire) {
             return None;
         }
         let a = self.loop_a.load(Ordering::Acquire);
-        let b = self.loop_b.load(Ordering::Acquire);
+        let b = match self.loop_b.load(Ordering::Acquire) {
+            0 => end,
+            n => n.min(end.max(1)),
+        };
         if b > a + LOOP_FADE_FRAMES as u64 * 2 {
             Some((a, b))
         } else {
@@ -130,6 +176,14 @@ impl Shared {
 /// nothing else.
 pub struct Core {
     renderer: BlockRenderer,
+    rack: Option<fx::Rack>,
+    /// Mono sum of recent output, for the spectrum. Fixed size, filled as a
+    /// ring so a block smaller than the window still produces a full frame.
+    fft_in: Vec<f32>,
+    fft_at: usize,
+    fft_re: Vec<f32>,
+    fft_im: Vec<f32>,
+    fft_bins: Vec<u8>,
     params: StreamParams,
     source: Arc<Source>,
     scratch: Vec<GrainEvent>,
@@ -139,6 +193,12 @@ impl Core {
     pub fn new(max_block: usize, params: StreamParams, source: Arc<Source>) -> Self {
         Core {
             renderer: BlockRenderer::new(max_block),
+            rack: None,
+            fft_in: vec![0.0; FFT_SIZE],
+            fft_at: 0,
+            fft_re: vec![0.0; FFT_SIZE],
+            fft_im: vec![0.0; FFT_SIZE],
+            fft_bins: vec![0; FFT_SIZE / 2 + 1],
             params,
             source,
             scratch: vec![
@@ -174,6 +234,12 @@ impl Core {
             }
         }
 
+        if let Ok(mut g) = shared.pending_rack.try_lock() {
+            if let Some(next) = g.take() {
+                self.rack = next;
+            }
+        }
+
         let seek = shared.seek.swap(-1, Ordering::AcqRel);
         if seek >= 0 {
             self.renderer.seek(seek as u64, &self.params);
@@ -188,7 +254,23 @@ impl Core {
         }
 
         let frames = out.len() / channels;
-        let bounds = shared.loop_bounds();
+        let end = self.params.plan().out_frames as u64;
+        let bounds = shared.loop_bounds(end);
+
+        // Not looping and past the end: stop. The engine has no end of its own
+        // — a grain stream is happy to run forever, reading the clamped last
+        // sample — so the end has to come from the schedule, which knows how
+        // long the current ratio makes the document.
+        if bounds.is_none() {
+            if end > 0 && self.renderer.position() >= end {
+                shared.pause();
+                out.fill(0.0);
+                shared
+                    .position
+                    .store(self.renderer.position(), Ordering::Release);
+                return;
+            }
+        }
 
         // Wrap first if we are already at or past the loop end, so a loop set
         // behind the playhead takes effect immediately.
@@ -241,6 +323,12 @@ impl Core {
             }
         }
 
+        // The rack runs on the block, after the grains and before the fader,
+        // exactly as the offline render orders it.
+        if let Some(rack) = self.rack.as_mut() {
+            rack.process(out, channels, self.params.sample_rate);
+        }
+
         let gain = f32::from_bits(shared.gain.load(Ordering::Acquire));
         if (gain - 1.0).abs() > 1e-6 {
             for s in out.iter_mut() {
@@ -248,12 +336,54 @@ impl Core {
             }
         }
 
+        self.measure(out, channels, shared);
+
         shared
             .position
             .store(self.renderer.position(), Ordering::Release);
         shared
             .overflows
             .store(self.renderer.overflows, Ordering::Release);
+    }
+
+    /// Feed the block into the spectrum window and publish a frame each time it
+    /// fills. Allocation-free: every buffer here was sized once, at build.
+    fn measure(&mut self, out: &[f32], channels: usize, shared: &Shared) {
+        let frames = out.len() / channels.max(1);
+        for f in 0..frames {
+            let mut sum = 0.0;
+            for ch in 0..channels {
+                sum += out[f * channels + ch];
+            }
+            self.fft_in[self.fft_at] = sum / channels as f32;
+            self.fft_at += 1;
+            if self.fft_at < FFT_SIZE {
+                continue;
+            }
+            self.fft_at = 0;
+
+            for i in 0..FFT_SIZE {
+                let w = 0.5
+                    - 0.5
+                        * (2.0 * std::f32::consts::PI * i as f32 / (FFT_SIZE - 1) as f32).cos();
+                self.fft_re[i] = self.fft_in[i] * w;
+                self.fft_im[i] = 0.0;
+            }
+            audio_core::fft::fft(&mut self.fft_re, &mut self.fft_im);
+
+            // dB, mapped to the 0..255 the visualiser already speaks.
+            for i in 0..self.fft_bins.len() {
+                let m = (self.fft_re[i] * self.fft_re[i] + self.fft_im[i] * self.fft_im[i]).sqrt()
+                    / (FFT_SIZE as f32 / 4.0);
+                let db = 20.0 * m.max(1e-7).log10();
+                let v = ((db + 90.0) / 90.0 * 255.0).clamp(0.0, 255.0);
+                self.fft_bins[i] = v as u8;
+            }
+            if let Ok(mut g) = shared.spectrum.try_lock() {
+                g.clear();
+                g.extend_from_slice(&self.fft_bins);
+            }
+        }
     }
 }
 

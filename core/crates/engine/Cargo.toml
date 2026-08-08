@@ -7,4 +7,5 @@ description = "Real-time audio engine: owns the output device and renders the gr
 
 [dependencies]
 fx = { path = "../fx" }
+audio-core = { path = "../audio-core" }
 cpal = "0.18"

@@ -9,5 +9,6 @@ description = "Local HTTP server: serves the UI, streams audio, runs scans."
 audio-core = { path = "../audio-core" }
 edit = { path = "../edit" }
 fx = { path = "../fx" }
+engine = { path = "../engine" }
 catalog = { path = "../catalog" }
 indexer = { path = "../indexer" }

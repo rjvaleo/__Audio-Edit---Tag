@@ -315,6 +315,9 @@ pub struct App {
     pub presets: RwLock<std::collections::BTreeMap<String, crate::persist::Preset>>,
     /// Sessions read from disk at startup, waiting for their file to be opened.
     pub saved: RwLock<std::collections::BTreeMap<String, crate::persist::SavedSession>>,
+    /// The output device, opened on first use. A machine with no sound card
+    /// must still be able to browse and tag, so this stays None until asked.
+    pub audio: std::sync::Mutex<Option<engine::Handle>>,
 }
 
 impl App {
@@ -329,6 +332,7 @@ impl App {
             index: RwLock::new(Index::default()),
             scan: Arc::new(ScanProgress::default()),
             markers: RwLock::new(markers),
+            audio: std::sync::Mutex::new(None),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             presets: RwLock::new(presets),

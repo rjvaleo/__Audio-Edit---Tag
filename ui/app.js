@@ -241,7 +241,7 @@ function fileRow(file) {
   const el = document.createElement('div');
   const isCur = state.selectedFile?.path === file.path;
   el.className = 'file-row' + (isCur ? ' selected' : '') +
-    (audio.dataset.path === file.path && !audio.paused ? ' playing' : '');
+    (engine.path === file.path && engine.playing ? ' playing' : '');
   el.dataset.path = file.path;
   el.innerHTML = `
     <button class="pb" title="Play">▶</button>
@@ -381,97 +381,198 @@ $('treeFilter').oninput = (e) => {
 };
 
 // ==================================================================== audio
+//
+// Playback is the Rust engine's, not the browser's. There is no <audio>
+// element: the engine owns the output device, renders the grains itself and
+// reports where it has got to. That removes a whole category of problem the
+// element used to create — a coarse media clock, cache-busted URLs to force a
+// reload after every parameter change, autoplay policy, and a loop wrap driven
+// from an animation frame.
+//
+// What is left is a thin client: post transport commands, poll for position.
 
-const audio = new Audio();
-audio.volume = 0.85;
-$('volume').oninput = (e) => { audio.volume = +e.target.value; };
+const engine = {
+  path: null,
+  playing: false,
+  /// Engine output frames, at the device's rate. Authoritative.
+  position: 0,
+  deviceRate: 48000,
+  /// performance.now() when `position` was last heard from.
+  heard: 0,
+  spectrum: null,
+  gain: 0.85,
+};
 
-const editedSuffix = () => (state.edit?.edited ? '&edited=1' : '');
+$('volume').oninput = (e) => {
+  engine.gain = +e.target.value;
+  enginePost({ gain: engine.gain });
+};
 
-/// Bumped whenever the document or rack changes. It rides along in the audio
-/// URL so the browser treats each render as a new resource; without it a change
-/// that leaves the length alone — a pitch shift, an EQ tweak — replays the
-/// previously cached audio and looks broken.
-state.audioRev = 0;
-const audioURL = (file) =>
-  `/audio?p=${encodeURIComponent(file.path)}${editedSuffix()}&r=${state.audioRev}`;
+async function enginePost(body) {
+  try {
+    return await postJSON('/api/engine/transport', body);
+  } catch (e) {
+    toast(e.message);
+    return null;
+  }
+}
 
-function playFile(file) {
-  const url = audioURL(file);
-  if (audio.dataset.path === file.path && audio.getAttribute('src') === url) {
-    audio.paused ? audio.play() : audio.pause();
+/// Load a file into the engine. Expensive — once per file, never per control.
+async function engineLoad(file) {
+  try {
+    const r = await api(`/api/engine/load?p=${encodeURIComponent(file.path)}`, { method: 'POST', body: '{}' });
+    engine.path = file.path;
+    engine.deviceRate = r.sampleRate || 48000;
+    return true;
+  } catch (e) {
+    toast('Cannot play: ' + e.message);
+    return false;
+  }
+}
+
+// ------------------------------------------------------- frames and time
+//
+// Three frames of reference meet here. The file has its own sample rate; the
+// device has another; and the engine counts *output* frames, which the stretch
+// ratio separates from source frames. Everything below converts between them in
+// one place so no call site has to remember which it is holding.
+
+/// Time ratio between what is playing and the source the overview shows.
+const timeRatio = () => {
+  const r = state.edit?.stretch?.ratio;
+  return r && isFinite(r) && r > 0 ? r : 1;
+};
+
+/// File sample rate over device sample rate.
+const rateScale = () =>
+  (state.view.sampleRate || 48000) / (engine.deviceRate || 48000);
+
+/// Engine output frame to a frame in the source file.
+const srcFromEngine = (p) => (p / timeRatio()) * rateScale();
+
+/// A frame in the source file to an engine output frame.
+const engineFromSrc = (f) => (f / rateScale()) * timeRatio();
+
+/// Where the engine is now.
+///
+/// The engine's own count is sample accurate, but it is polled rather than
+/// shared, so this carries it forward on the wall clock between polls. The
+/// anchor is exact and cannot drift: every poll resets it.
+function enginePosition() {
+  if (!engine.playing || !engine.heard) return engine.position;
+  const dt = (performance.now() - engine.heard) / 1000;
+  return engine.position + dt * engine.deviceRate;
+}
+
+function playbackTime() {
+  return enginePosition() / (engine.deviceRate || 48000);
+}
+
+/// Playback position expressed as a frame in the source file.
+const sourceFrameNow = () => srcFromEngine(enginePosition());
+
+/// Ask the engine to put the playhead on a source frame.
+function seekSource(srcFrame) {
+  const p = Math.max(0, engineFromSrc(srcFrame));
+  engine.position = p;
+  engine.heard = performance.now();
+  enginePost({ seek: p });
+}
+
+// ------------------------------------------------------------- transport
+
+async function playFile(file) {
+  if (engine.path === file.path) {
+    engine.playing ? pausePlayback() : startPlayback();
     return;
   }
   if (state.selectedFile?.path !== file.path) selectFile(file);
-  audio.setAttribute('src', url);
-  audio.dataset.path = file.path;
+  if (!(await engineLoad(file))) return;
   applyLoop();
-  audio.play().catch((e) => toast('Cannot play: ' + e.message));
+  seekSource(state.cue || 0);
+  startPlayback();
+}
+
+function startPlayback() {
+  engine.playing = true;
+  engine.heard = performance.now();
+  reflectTransport();
+  enginePost({ play: true });
+  startTransportLoop();
+  startPolling();
+  startSwarm();
+}
+
+function pausePlayback() {
+  engine.playing = false;
+  reflectTransport();
+  enginePost({ play: false });
+  updatePlayhead();
+  updateOverviewPlayhead();
+  paintTime();
+  stopSwarm();
+}
+
+function reflectTransport() {
+  const b = $('playBtn');
+  b.classList.toggle('on', engine.playing);
+  b.textContent = engine.playing ? '❚❚' : '▶';
+  markPlaying();
 }
 
 function markPlaying() {
   document.querySelectorAll('.file-row').forEach((el) => {
-    const on = el.dataset.path === audio.dataset.path && !audio.paused;
+    const on = el.dataset.path === engine.path && engine.playing;
     el.classList.toggle('playing', on);
     const b = el.querySelector('.pb');
     if (b) { b.classList.toggle('on', on); b.textContent = on ? '❚❚' : '▶'; }
   });
 }
 
-audio.addEventListener('play', () => {
-  $('playBtn').classList.add('on'); $('playBtn').textContent = '❚❚'; markPlaying();
-});
-audio.addEventListener('pause', () => {
-  $('playBtn').classList.remove('on'); $('playBtn').textContent = '▶'; markPlaying();
-});
-audio.addEventListener('ended', () => { $('playhead').style.display = 'none'; markPlaying(); });
-// -------------------------------------------------- the transport clock
+// --------------------------------------------------------------- polling
 //
-// `timeupdate` fires about four times a second, which is far too coarse to
-// position a playhead against a waveform. Reading `currentTime` every animation
-// frame is better but still steps, because the element only advances it when a
-// buffer is handed to the output.
-//
-// So: anchor on the element whenever it genuinely moves, and interpolate from
-// the wall clock in between. The anchor keeps it honest — it can never drift,
-// because every real update resets it.
+// One request serves the playhead, the swarm and the spectrum, because all
+// three describe the same instant and fetching them separately would let them
+// disagree. Deliberately not on an animation frame: a hidden window stops
+// painting, and the audio does not stop with it.
 
-const clock = { media: 0, wall: 0 };
+let pollTimer = null;
 
-function anchorClock() {
-  const t = audio.currentTime;
-  if (t !== clock.media) {
-    clock.media = t;
-    clock.wall = performance.now();
-  }
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => {
+    if (!engine.playing) { stopPolling(); return; }
+    try {
+      const r = await api('/api/engine/grains');
+      engine.position = r.position;
+      engine.heard = performance.now();
+      engine.deviceRate = r.sampleRate || engine.deviceRate;
+      engine.spectrum = r.spectrum && r.spectrum.length ? r.spectrum : engine.spectrum;
+      if (!r.playing && engine.playing) {
+        // The engine stopped itself at the end of the document. Drop back to
+        // the cue so pressing play again auditions the same moment.
+        engine.playing = false;
+        reflectTransport();
+        stopSwarm();
+        returnToCue();
+        paintTime();
+        updatePlayhead();
+        updateOverviewPlayhead();
+      }
+    } catch { /* a dropped poll is a stale playhead, not a failure */ }
+  }, 50);
 }
 
-/// Playback position, interpolated between the element's updates.
-function playbackTime() {
-  if (audio.paused || !clock.wall) return audio.currentTime;
-  const elapsed = (performance.now() - clock.wall) / 1000;
-  const est = clock.media + elapsed * (audio.playbackRate || 1);
-  // Never run past what the element could plausibly have reached, and never
-  // fall behind it either.
-  const dur = audio.duration;
-  return isFinite(dur) ? Math.min(est, dur) : est;
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
-
-audio.addEventListener('timeupdate', anchorClock);
-audio.addEventListener('seeked', () => { clock.media = -1; anchorClock(); });
-audio.addEventListener('play', () => { clock.media = -1; anchorClock(); startTransportLoop(); });
-audio.addEventListener('pause', () => {
-  updatePlayhead(); updateOverviewPlayhead(); paintTime();
-});
 
 let transportRaf = null;
 function startTransportLoop() {
   if (transportRaf) return;
   const tick = () => {
-    if (audio.paused) { transportRaf = null; return; }
+    if (!engine.playing) { transportRaf = null; return; }
     transportRaf = requestAnimationFrame(tick);
-    anchorClock();
-    serviceLoop();
     paintTime();
     updatePlayhead();
     updateOverviewPlayhead();
@@ -483,18 +584,14 @@ function paintTime() {
   $('timeNow').textContent = fmtTime(playbackTime());
 }
 
-$('playBtn').onclick = () => {
-  if (!audio.getAttribute('src')) { if (state.selectedFile) playFile(state.selectedFile); return; }
-  if (audio.paused) {
-    // Starting from a stop returns to the cue; resuming a pause carries on.
-    if (Math.abs(audio.currentTime - outputTimeAt(state.cue || 0)) > 0.001 && audio.ended) {
-      returnToCue();
-    }
-    audio.play();
-  } else {
-    audio.pause();
+$('playBtn').onclick = async () => {
+  if (!engine.path) {
+    if (state.selectedFile) await playFile(state.selectedFile);
+    return;
   }
+  engine.playing ? pausePlayback() : startPlayback();
 };
+
 // The cue: where playback starts from and returns to. Set by clicking the
 // waveform, and kept until it is moved or cleared, so repeated auditions of the
 // same moment do not mean re-finding it every time.
@@ -518,29 +615,39 @@ function drawCue() {
 }
 
 function returnToCue() {
-  const t = outputTimeAt(state.cue || 0);
-  if (isFinite(t)) audio.currentTime = Math.max(0, t);
+  seekSource(state.cue || 0);
 }
 
-$('stopBtn').onclick = () => { audio.pause(); returnToCue(); updatePlayhead(); paintTime(); };
-
-// Reaching the end without looping drops back to the cue, ready to go again.
-audio.addEventListener('ended', () => { if (!audio.loop) returnToCue(); });
+$('stopBtn').onclick = () => {
+  pausePlayback();
+  returnToCue();
+  updatePlayhead();
+  paintTime();
+};
 
 // ------------------------------------------------------------ loop playback
 
 // Loop is simply on or off. What it loops follows from whether anything is
 // selected — a selection loops, otherwise the whole file — so the button never
 // needs a mode and never goes stale when the selection changes.
+//
+// The wrap itself happens in the audio callback, which fades across the seam on
+// an exact frame. The browser cannot do that and never could.
 state.loopOn = false;
 
 function applyLoop() {
   const hasSel = !!state.sel && state.sel.end > state.sel.start;
-  // Always off, even for a whole-file loop: the element's own wrap is
-  // instantaneous and clicks. serviceLoop performs the wrap so it can fade
-  // across the seam.
-  audio.loop = false;
-  if (state.loopOn) ensureAnalyser();
+  // Zero means "the whole document". The engine knows how long that is under
+  // the current ratio; this side would have to recompute it on every stretch
+  // change and would eventually be wrong.
+  enginePost({
+    loop: {
+      on: !!state.loopOn,
+      a: hasSel ? Math.max(0, Math.round(engineFromSrc(state.sel.start))) : 0,
+      b: hasSel ? Math.max(0, Math.round(engineFromSrc(state.sel.end))) : 0,
+    },
+  });
+
   const btn = $('loopBtn');
   btn.classList.toggle('on', state.loopOn);
   const what = hasSel ? 'selection' : 'whole file';
@@ -549,92 +656,15 @@ function applyLoop() {
 }
 
 $('loopBtn').onclick = () => { state.loopOn = !state.loopOn; applyLoop(); };
-applyLoop();
-
-// ------------------------------------------------------ loop crossfade
-//
-// Jumping the playhead mid-waveform lands on a discontinuity, heard as a click.
-// There is one playback source, so this fades across the seam rather than
-// overlapping two copies: level comes down over the last few milliseconds
-// before the wrap and back up after it. Short enough not to read as a dip.
-//
-// The wrap itself also moves here from `timeupdate`, which fires about four
-// times a second — far too coarse to loop tightly.
-state.loopFadeMs = 14;
-
-/// The loop's bounds in playback time, or null if nothing is being looped.
-function loopBounds() {
-  if (!state.loopOn) return null;
-  if (state.sel && state.sel.end > state.sel.start) {
-    const a = outputTimeAt(state.sel.start);
-    const b = outputTimeAt(state.sel.end);
-    return b - a > 0.02 ? { a, b } : null;
-  }
-  const d = audio.duration;
-  return isFinite(d) && d > 0.02 ? { a: 0, b: d } : null;
-}
-
-let fadeScheduled = 0;
-
-function setLoopGain(target, seconds) {
-  if (!loopGain || !audioCtx) return;
-  const now = audioCtx.currentTime;
-  loopGain.gain.cancelScheduledValues(now);
-  loopGain.gain.setValueAtTime(loopGain.gain.value, now);
-  loopGain.gain.linearRampToValueAtTime(target, now + Math.max(0.001, seconds));
-}
-
-/// Run every frame: fade out approaching the loop end, wrap, fade back in.
-function serviceLoop() {
-  const fade = (state.loopFadeMs || 14) / 1000;
-  const bounds = loopBounds();
-  if (!bounds) {
-    if (fadeScheduled) { setLoopGain(1, 0.01); fadeScheduled = 0; }
-    return;
-  }
-  const t = playbackTime();
-
-  if (t >= bounds.b - 0.002 || t < bounds.a - 0.05) {
-    audio.currentTime = bounds.a;
-    clock.media = -1;
-    anchorClock();
-    setLoopGain(1, fade);        // back up on the far side of the seam
-    fadeScheduled = 0;
-    if (audio.paused) audio.play().catch(() => {});
-    return;
-  }
-
-  const toEnd = bounds.b - t;
-  if (toEnd <= fade) {
-    if (!fadeScheduled) { setLoopGain(0, toEnd); fadeScheduled = 1; }
-  } else if (fadeScheduled) {
-    setLoopGain(1, 0.01);
-    fadeScheduled = 0;
-  }
-}
 
 /// Start a selection loop from the beginning of the selection.
-function playSelectionLoop() {
+async function playSelectionLoop() {
   if (!state.selectedFile) return;
   state.loopOn = true;
+  if (state.sel) setCue(state.sel.start);
+  await playFile(state.selectedFile);
   applyLoop();
-  playFile(state.selectedFile);
-  if (state.sel) audio.currentTime = outputTimeAt(state.sel.start);
 }
-
-/// Time ratio between what is playing and the source the overview shows.
-const timeRatio = () => {
-  const r = state.edit?.stretch?.ratio;
-  return r && isFinite(r) && r > 0 ? r : 1;
-};
-
-/// Playback position expressed as a frame in the source file.
-const sourceFrameNow = () =>
-  (playbackTime() * (state.view.sampleRate || 48000)) / timeRatio();
-
-/// The playback time that lands on a given source frame.
-const outputTimeAt = (srcFrame) =>
-  (srcFrame * timeRatio()) / (state.view.sampleRate || 48000);
 
 /// The playback position on the whole-file overview.
 ///
@@ -1262,9 +1292,8 @@ const xToFrames = (frac) => {
   const seekToSource = (frac) => {
     if (!state.selectedFile) return;
     const frame = xToFrames(frac);
-    if (audio.dataset.path !== state.selectedFile.path) playFile(state.selectedFile);
-    const t = outputTimeAt(frame);
-    if (isFinite(t)) audio.currentTime = Math.max(0, Math.min(t, audio.duration || t));
+    if (engine.path !== state.selectedFile.path) { playFile(state.selectedFile); return; }
+    seekSource(frame);
   };
 
   // Click positions the playhead. Dragging from there selects. Holding option
@@ -1306,7 +1335,7 @@ const xToFrames = (frac) => {
     applyLoop();
     // Looping a fresh selection should start from its beginning rather than
     // wherever the drag happened to end.
-    if (state.loopOn && state.sel) audio.currentTime = outputTimeAt(state.sel.start);
+    if (state.loopOn && state.sel) seekSource(state.sel.start);
   });
 })();
 
@@ -1454,7 +1483,6 @@ async function editOp(body, { live = false } = {}) {
   try { state.edit = await postJSON('/api/edit', { p: state.selectedFile.path, ...body }); }
   catch (e) { toast(e.message); return; }
 
-  state.audioRev += 1;
   reflectEditState();
   renderStretch();
   renderGrainParams();
@@ -1511,18 +1539,15 @@ function reflectEditState() {
   $('exportBtn').disabled = !state.selectedFile;
 }
 
-/// Repoint the audio element at the edited or original stream, keeping position.
+/// Nothing to repoint any more.
+///
+/// The engine holds the audio. Performance controls reach it as parameters and
+/// change the sound where it stands; structural edits are folded into its
+/// source by the server. Either way playback is never torn down and rebuilt,
+/// which is what the old element required and what made a pitch change look
+/// like a bug.
 function reloadAudioSource() {
-  const f = state.selectedFile;
-  if (!f || audio.dataset.path !== f.path) return;
-  const at = audio.currentTime;
-  const wasPlaying = !audio.paused;
-  audio.setAttribute('src', audioURL(f));
-  // Repointing the source resets the element, so the loop flag has to be put
-  // back or playback silently stops looping the moment a slider moves.
   applyLoop();
-  audio.currentTime = Math.min(at, state.edit?.duration ?? at);
-  if (wasPlaying) audio.play().catch(() => {});
 }
 
 const NEEDS_SELECTION = ['cut', 'silence', 'fadeIn', 'fadeOut', 'reverse', 'region'];
@@ -1608,7 +1633,6 @@ function pushRack({ immediate = false } = {}) {
         slots: state.rack.slots,
       });
     } catch (e) { toast(e.message); return; }
-    state.audioRev += 1;
     renderRack();
     renderTabs();
     // The waveform must show what will be heard, so it is re-fetched too.
@@ -1888,7 +1912,6 @@ $('presetPick').onchange = async (e) => {
   // The sliders now disagree with the document, so rebuild them from it.
   stretchBuiltFor = null;
   grainBuiltFor = null;
-  state.audioRev += 1;
   reflectEditState();
   renderStretch();
   renderGrainParams();
@@ -2073,8 +2096,7 @@ async function saveAnnotations() {
 }
 
 function addMarker() {
-  const frame = state.sel ? state.sel.start
-    : Math.round(audio.currentTime * (state.view.sampleRate || 1));
+  const frame = state.sel ? state.sel.start : Math.round(sourceFrameNow());
   const label = prompt('Marker name:', `m${state.annotations.markers.length + 1}`);
   if (label === null) return;
   state.annotations.markers.push({ frame, label });
@@ -2158,33 +2180,11 @@ $('specOn').onchange = (e) => {
 // spectrogram of the whole file. Only runs in edit mode and only while
 // something is playing.
 
-let audioCtx = null;
-let analyser = null;
-let loopGain = null;
+// The spectrum is measured by the engine, on the audio it actually put out —
+// grains, rack and all. There is no browser-side signal to analyse any more,
+// and this is the more truthful measurement: it is the output, not a tap on an
+// element that was only ever an approximation of it.
 let visRaf = null;
-
-function ensureAnalyser() {
-  if (analyser) return true;
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return false;
-  try {
-    audioCtx = new Ctx();
-    const src = audioCtx.createMediaElementSource(audio);
-    loopGain = audioCtx.createGain();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.75;
-    // Routing through the graph means we must reconnect to the speakers, or
-    // playback goes silent the moment the analyser is attached.
-    src.connect(loopGain);
-    loopGain.connect(analyser);
-    analyser.connect(audioCtx.destination);
-    return true;
-  } catch {
-    analyser = null;
-    return false;
-  }
-}
 
 function startVisualiser() {
   if (visRaf) return;
@@ -2211,15 +2211,13 @@ function drawVisualiser(canvas) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  if (!analyser || audio.paused) {
+  const bins = engine.spectrum;
+  if (!engine.playing || !bins || !bins.length) {
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
     ctx.font = '10px system-ui, sans-serif';
-    ctx.fillText(audio.paused ? 'press play to see the live spectrum' : 'analyser unavailable', 8, h / 2);
+    ctx.fillText('press play to see the live spectrum', 8, h / 2);
     return;
   }
-
-  const bins = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteFrequencyData(bins);
 
   // Log-spaced bars: linear bins put almost everything in the bottom eighth.
   const bars = 64;
@@ -2237,11 +2235,6 @@ function drawVisualiser(canvas) {
   }
   ctx.globalAlpha = 1;
 }
-
-audio.addEventListener('play', () => {
-  // Browsers start the context suspended until a user gesture.
-  if (ensureAnalyser() && audioCtx.state === 'suspended') audioCtx.resume();
-});
 
 document.querySelectorAll('[data-fft]').forEach((b) => {
   b.onclick = () => {
@@ -2588,7 +2581,7 @@ function visSetup(fade) {
 }
 
 function drawGrains() {
-  const set = visSetup(!audio.paused);
+  const set = visSetup(engine.playing);
   if (!set) return;
   const { ctx, w, h } = set;
   const g = state.grains;
@@ -2684,7 +2677,7 @@ function drawGrainSwarm(ctx, w, h, g) {
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.font = '9px ui-monospace, monospace';
   ctx.fillText(`${visible.length} in flight`, 10, h - 10);
-  if (audio.paused) {
+  if (!engine.playing) {
     ctx.fillStyle = 'rgba(255,255,255,0.40)';
     ctx.font = '11px system-ui, sans-serif';
     ctx.fillText('press play — the swarm follows the playhead', 10, 18);
@@ -2697,14 +2690,24 @@ function grainLoop() {
   grainRaf = requestAnimationFrame(grainLoop);
   if (state.mode === 'edit' && state.grains) drawGrains();
 }
-audio.addEventListener('play', () => { if (!grainRaf) grainLoop(); });
-audio.addEventListener('pause', () => {
+/// The swarm animates only while the engine is playing, so an idle editor
+/// costs nothing.
+///
+/// The grains it draws come from the schedule endpoint, which is the same
+/// enumeration the engine renders from — so the picture still cannot show a
+/// grain the speakers did not play. What the engine supplies here is the
+/// playhead they orbit.
+function startSwarm() {
+  if (!grainRaf) grainLoop();
+}
+
+function stopSwarm() {
   // Let it settle for a moment rather than freezing mid-flight.
   setTimeout(() => {
-    if (audio.paused && grainRaf) { cancelAnimationFrame(grainRaf); grainRaf = null; }
+    if (!engine.playing && grainRaf) { cancelAnimationFrame(grainRaf); grainRaf = null; }
     drawGrains();
   }, 600);
-});
+}
 
 if (window.ResizeObserver) {
   const c = $('grainCanvas');

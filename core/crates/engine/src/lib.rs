@@ -13,6 +13,6 @@ pub mod device;
 pub mod render;
 pub mod transport;
 
-pub use device::{resample, Engine};
+pub use device::{resample, spawn, Engine, Handle};
 pub use render::{BlockRenderer, Source};
 pub use transport::{Core, Shared};
