@@ -1,74 +1,77 @@
 # Audio Edit & Tag
 
-Browse, audition and tag a large audio library without moving or renaming a single
-audio file. Tags are sidecar data; the library itself is never modified.
+Browse, audition, tag and edit a large audio library without moving or renaming a
+single audio file. Tags and edits are sidecar data; **the original audio is never
+written to**. Rendering happens only when you explicitly export.
 
 ## Start here
 
-Double-click **`StartHere.bat`**.
+| | |
+|---|---|
+| **macOS** | double-click **`Start.command`** |
+| **Windows** | double-click **`StartHere.bat`** |
 
-It launches a small local server and opens `http://localhost:8737/`. Python must be
-installed on Windows ("Add python.exe to PATH" ticked at install time).
+Either one starts a small local server and opens your browser at
+`http://127.0.0.1:8737/`. Nothing else needs installing — no Python, no runtime.
+Close the window or press Ctrl-C to stop it.
 
-You can also open `index.html` directly, but then only WAV and MP3 will play —
-about 39% of the library. The server is what makes AIFF and headerless files
-audible, by converting them to WAV on the fly.
+On the first run it opens on the bundled `Audio Library` folder. After that it
+remembers whichever library you pick, and you can change it any time from the
+Library tab.
 
 ## Layout
 
-    index.html        the browser - tag tree, stats, waveforms, player, editor
-    StartHere.bat     launcher
-    README.md         this file
-    app/              everything else, flat - scripts, data, docs
+    Start.command     macOS launcher
+    StartHere.bat     Windows launcher
+    bin/              the prebuilt programs — audiolab (macOS), audiolab.exe (Windows)
+    data/             everything the app remembers. Not in git; see below
+    core/             the Rust source
+    ui/               the interface, embedded into the binary at build time
+    Audio Library/    sample audio to try it on
+    Reference Docs/   papers and the classification taxonomy
 
-## Where is the audio library?
+## Where your work is kept
 
-This repo does not contain the audio. It looks for the library in this order:
+Everything the app remembers lives in **`data/`**, beside the launcher — the
+chosen library path, tag overrides, markers, presets, saved sessions and the
+scan index. It is deliberately *not* under `core/target`, because
+`cargo build --release` output gets cleaned and would take your work with it.
 
-1. `library_path` in `app/config.json`
-2. the `AUDIO_LIBRARY` environment variable
-3. a folder named `Audio Library` sitting beside this repo
+`data/` is not tracked in git; it is per-machine, and the library path differs
+between the Mac and the PC.
 
-To point it somewhere else, create `app/config.json`:
+## Building from source
 
-    {"library_path": "E:\\Audio Library"}
+Rust only — the workspace has **no external crate dependencies**, so there is no
+C toolchain to install and no dependency tree to resolve.
 
-## What's in app/
+    cargo build --release --manifest-path core/Cargo.toml     # this machine
+    cargo test --release --manifest-path core/Cargo.toml      # 322 tests
 
-| | |
-|---|---|
-| `paths.py` | single source of truth for every path; all tools import it |
-| `serve_library.py` | the local server - streams any format as playable WAV, saves tag edits |
-| `ingest_index_v2.py` | scans folders, classifies files, writes the indexes (resumable) |
-| `make_waveforms.py` | decimated peak envelopes, 60 buckets per file (resumable) |
-| `write_tags.py` | writes a `_TAGS.txt` into each library folder |
-| `build_browser.py` | rebuilds `index.html` from the data + `browser_template.html` |
-| `convert_headerless.py` | gives headerless PCM a real AIFF header |
-| `browser_template.html` | the UI source - edit this, then run `build_browser.py` |
-| `AUDIO-INDEX.tsv` | one row per file (75,284) |
-| `FOLDER-INDEX.tsv` | one row per folder (593) |
-| `TAG-INDEX.tsv` | folder tags, levels, confidence |
-| `TAG-OVERRIDES.json` | hand edits made in the editor |
-| `waveforms.tsv` | 54,041 waveform peak strings |
-| `INGEST-TAXONOMY.md` | the classification rules - read before changing them |
-| `ANALYSE-headerless.bat` / `CONVERT-headerless.bat` | headerless repair |
+For the Windows build from a Mac, once per machine:
 
-## Rebuilding from scratch
+    rustup target add x86_64-pc-windows-gnu
+    brew install mingw-w64
 
-    cd app
-    python ingest_index_v2.py 600     # repeat until it reports 0 remaining
-    python make_waveforms.py 600      # repeat until complete
-    python write_tags.py
-    python build_browser.py
+then
+
+    cargo build --release --manifest-path core/Cargo.toml --target x86_64-pc-windows-gnu
+    cp core/target/x86_64-pc-windows-gnu/release/audiolab.exe bin/
+
+**The interface is embedded into the binary** with `include_str!`. After editing
+anything in `ui/`, rebuild — otherwise the browser is served the old file.
 
 ## Worth knowing
 
-- **Nothing here renames or moves audio.** Tags are sidecar data.
-- **29,830 files are classified from duration alone** and marked low confidence.
-  The browser colours them; treat those groupings as suggestions.
-- **Mono vs dual-mono stereo cannot be determined from raw PCM** - both give an
+- **Nothing here renames, moves or overwrites audio.** Edits are an edit list —
+  clips referencing ranges of the source — so cutting an hour costs two
+  integers. Export is the only thing that writes audio, and it writes a new file.
+- **Provenance is shown, not hidden.** Values are marked measured, inferred or
+  guessed, because a lot of this library is headerless PCM where the truth has
+  to be reconstructed.
+- **Mono vs dual-mono stereo cannot be determined from raw PCM** — both give an
   identical 0.5 delta ratio. Headerless channel counts come from neighbouring
-  headered files instead, which self-tests at 89%.
-- **Headerless conversion writes a 54-byte header** and copies the samples
-  verbatim. A wrong guess is corrected by rewriting the header, never by
-  re-converting.
+  headered files instead.
+- **The waveform is sample accurate when zoomed in.** Past the point where there
+  are more pixels than samples, the display stops being a min/max summary and
+  draws the samples themselves; the zoom readout switches to `n smp` to say so.
