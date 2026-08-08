@@ -39,6 +39,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/markers") => api_markers_set(app, req),
         ("GET", "/api/rack") => api_rack_get(app, req),
         ("POST", "/api/rack") => api_rack_set(app, req),
+        ("GET", "/api/presets") => api_presets_list(app),
+        ("POST", "/api/presets") => api_preset_save(app, req),
+        ("POST", "/api/presets/apply") => api_preset_apply(app, req),
+        ("POST", "/api/presets/delete") => api_preset_delete(app, req),
         ("GET", "/api/grains") => api_grains(app, req),
         ("GET", "/api/edit") => api_edit_get(app, req),
         ("POST", "/api/edit") => api_edit_apply(app, req),
@@ -508,11 +512,10 @@ fn identity_for(app: &Arc<App>, rel: &str) -> Option<edit::EditList> {
     let path = resolve_within(&lib, rel)?;
     let reader = audio_core::open(&path).ok()?;
     let info = reader.info();
-    Some(edit::EditList::identity(
-        info.frames(),
-        info.channels,
-        info.sample_rate,
-    ))
+    let fresh = edit::EditList::identity(info.frames(), info.channels, info.sample_rate);
+    // Anything saved for this file is restored here, once, when its session is
+    // first created — and only if the source still matches.
+    Some(app.restore(rel, fresh))
 }
 
 fn api_rack_get(app: &Arc<App>, req: &Request) -> Response {
@@ -538,6 +541,7 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     };
     let spec = crate::rack::RackSpec::from_json(&v);
     app.racks.set(rel, spec.clone());
+    app.save_sessions();
 
     let sr: u32 = match v.get("sr") {
         Some(Value::Num(n)) => *n as u32,
@@ -645,6 +649,93 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
             .set("granular", st.is_granular())
             .to_string(),
     )
+}
+
+fn api_presets_list(app: &Arc<App>) -> Response {
+    let presets = app.presets.read().unwrap();
+    let arr: Vec<Value> = presets.values().map(|p| p.to_json()).collect();
+    Response::json(Value::obj().set("presets", Value::Arr(arr)).to_string())
+}
+
+/// Capture the current settings of a file under a name.
+fn api_preset_save(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let name = v.get("name").and_then(|n| n.as_str()).unwrap_or("").trim().to_string();
+    if name.is_empty() {
+        return Response::error(400, "a preset needs a name");
+    }
+    let Some(rel) = v.get("p").and_then(|p| p.as_str()) else {
+        return Response::error(400, "no path given");
+    };
+    let Some(list) = app.edits.snapshot(rel) else {
+        return Response::error(400, "that file has no settings to save");
+    };
+
+    let preset = crate::persist::Preset {
+        name: name.clone(),
+        note: v.get("note").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+        stretch: list.stretch,
+        rack: app.racks.get(rel),
+    };
+    {
+        let mut presets = app.presets.write().unwrap();
+        presets.insert(name.clone(), preset);
+        if let Err(e) = crate::persist::save_presets(&app.presets_path(), &presets) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    api_presets_list(app)
+}
+
+/// Drop a saved preset onto a file. Only settings move — no audio, no edits.
+fn api_preset_apply(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let (Some(name), Some(rel)) = (
+        v.get("name").and_then(|n| n.as_str()),
+        v.get("p").and_then(|p| p.as_str()),
+    ) else {
+        return Response::error(400, "need a preset name and a path");
+    };
+    let Some(preset) = app.presets.read().unwrap().get(name).cloned() else {
+        return Response::error(404, "no such preset");
+    };
+    let Some(identity) = identity_for(app, rel) else {
+        return Response::error(404, "no such file in the library");
+    };
+
+    if !preset.rack.slots.is_empty() {
+        app.racks.set(rel, preset.rack.clone());
+    }
+    let stretch = preset.stretch;
+    // Applied as an ordinary edit, so it lands on the undo stack like anything
+    // else and can simply be undone.
+    let out = app.edits.with(rel, || identity, |s| {
+        s.apply(|l| l.stretch = stretch);
+        crate::docs::edit_json(s.list(), s.can_undo(), s.can_redo())
+    });
+    app.save_sessions();
+    Response::json(out.to_string())
+}
+
+fn api_preset_delete(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(name) = v.get("name").and_then(|n| n.as_str()) else {
+        return Response::error(400, "no name given");
+    };
+    {
+        let mut presets = app.presets.write().unwrap();
+        presets.remove(name);
+        if let Err(e) = crate::persist::save_presets(&app.presets_path(), &presets) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    api_presets_list(app)
 }
 
 fn api_edit_get(app: &Arc<App>, req: &Request) -> Response {
@@ -778,6 +869,7 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
     if unknown {
         return Response::error(400, &format!("unknown edit operation: {op}"));
     }
+    app.save_sessions();
     Response::json(out.to_string())
 }
 

@@ -311,11 +311,18 @@ pub struct App {
     pub edits: crate::docs::EditStore,
     /// Effect racks, one per file, held for the life of the process.
     pub racks: crate::rack::RackStore,
+    /// Named settings, detached from any file.
+    pub presets: RwLock<std::collections::BTreeMap<String, crate::persist::Preset>>,
+    /// Sessions read from disk at startup, waiting for their file to be opened.
+    pub saved: RwLock<std::collections::BTreeMap<String, crate::persist::SavedSession>>,
 }
 
 impl App {
     pub fn new(data_dir: PathBuf) -> Self {
+        // Read every sidecar before `data_dir` is moved into the struct.
         let markers = crate::docs::MarkerStore::load(&data_dir.join("MARKERS.json"));
+        let presets = crate::persist::load_presets(&data_dir.join("PRESETS.json"));
+        let saved = crate::persist::load_sessions(&data_dir.join("SESSIONS.json"));
         let app = App {
             data_dir,
             library: RwLock::new(None),
@@ -324,6 +331,8 @@ impl App {
             markers: RwLock::new(markers),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
+            presets: RwLock::new(presets),
+            saved: RwLock::new(saved),
         };
         app.load_config();
         let _ = app.load_index();
@@ -348,6 +357,56 @@ impl App {
 
     pub fn order_path(&self) -> PathBuf {
         self.data_dir.join("FOLDER-ORDER.json")
+    }
+
+    pub fn presets_path(&self) -> PathBuf {
+        self.data_dir.join("PRESETS.json")
+    }
+
+    pub fn sessions_path(&self) -> PathBuf {
+        self.data_dir.join("SESSIONS.json")
+    }
+
+    /// Write every open document to disk.
+    ///
+    /// Called after each edit. The whole map is rewritten rather than patched:
+    /// it is a few kilobytes, and a partial update is a way to lose data.
+    pub fn save_sessions(&self) {
+        let mut out = self.saved.read().unwrap().clone();
+        for (path, list) in self.edits.all() {
+            let rack = self.racks.get(&path);
+            // A document back at its original state is worth forgetting, so the
+            // file does not accumulate an entry per sound ever auditioned.
+            if list.is_identity() && !rack.is_active() {
+                out.remove(&path);
+                continue;
+            }
+            out.insert(
+                path,
+                crate::persist::SavedSession {
+                    edit: crate::persist::edit_to_json(&list),
+                    rack: rack.to_json(),
+                },
+            );
+        }
+        if crate::persist::save_sessions(&self.sessions_path(), &out).is_ok() {
+            *self.saved.write().unwrap() = out;
+        }
+    }
+
+    /// Restore a file's saved work the first time it is opened.
+    ///
+    /// Returns the list to start from: the saved one if it still matches the
+    /// file on disk, otherwise the untouched original.
+    pub fn restore(&self, rel: &str, fresh: edit::EditList) -> edit::EditList {
+        let Some(saved) = self.saved.read().unwrap().get(rel).cloned() else {
+            return fresh;
+        };
+        let rack = crate::rack::RackSpec::from_json(&saved.rack);
+        if !rack.slots.is_empty() {
+            self.racks.set(rel, rack);
+        }
+        crate::persist::edit_from_json(&saved.edit, &fresh).unwrap_or(fresh)
     }
 
     fn load_config(&self) {

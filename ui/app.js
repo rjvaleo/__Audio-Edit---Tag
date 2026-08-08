@@ -405,6 +405,7 @@ function playFile(file) {
   if (state.selectedFile?.path !== file.path) selectFile(file);
   audio.setAttribute('src', url);
   audio.dataset.path = file.path;
+  applyLoop();
   audio.play().catch((e) => toast('Cannot play: ' + e.message));
 }
 
@@ -424,77 +425,259 @@ audio.addEventListener('pause', () => {
   $('playBtn').classList.remove('on'); $('playBtn').textContent = '▶'; markPlaying();
 });
 audio.addEventListener('ended', () => { $('playhead').style.display = 'none'; markPlaying(); });
-audio.addEventListener('timeupdate', () => {
-  $('timeNow').textContent = fmtTime(audio.currentTime);
-  updatePlayhead();
+// -------------------------------------------------- the transport clock
+//
+// `timeupdate` fires about four times a second, which is far too coarse to
+// position a playhead against a waveform. Reading `currentTime` every animation
+// frame is better but still steps, because the element only advances it when a
+// buffer is handed to the output.
+//
+// So: anchor on the element whenever it genuinely moves, and interpolate from
+// the wall clock in between. The anchor keeps it honest — it can never drift,
+// because every real update resets it.
+
+const clock = { media: 0, wall: 0 };
+
+function anchorClock() {
+  const t = audio.currentTime;
+  if (t !== clock.media) {
+    clock.media = t;
+    clock.wall = performance.now();
+  }
+}
+
+/// Playback position, interpolated between the element's updates.
+function playbackTime() {
+  if (audio.paused || !clock.wall) return audio.currentTime;
+  const elapsed = (performance.now() - clock.wall) / 1000;
+  const est = clock.media + elapsed * (audio.playbackRate || 1);
+  // Never run past what the element could plausibly have reached, and never
+  // fall behind it either.
+  const dur = audio.duration;
+  return isFinite(dur) ? Math.min(est, dur) : est;
+}
+
+audio.addEventListener('timeupdate', anchorClock);
+audio.addEventListener('seeked', () => { clock.media = -1; anchorClock(); });
+audio.addEventListener('play', () => { clock.media = -1; anchorClock(); startTransportLoop(); });
+audio.addEventListener('pause', () => {
+  updatePlayhead(); updateOverviewPlayhead(); paintTime();
 });
+
+let transportRaf = null;
+function startTransportLoop() {
+  if (transportRaf) return;
+  const tick = () => {
+    if (audio.paused) { transportRaf = null; return; }
+    transportRaf = requestAnimationFrame(tick);
+    anchorClock();
+    serviceLoop();
+    paintTime();
+    updatePlayhead();
+    updateOverviewPlayhead();
+  };
+  tick();
+}
+
+function paintTime() {
+  $('timeNow').textContent = fmtTime(playbackTime());
+}
 
 $('playBtn').onclick = () => {
   if (!audio.getAttribute('src')) { if (state.selectedFile) playFile(state.selectedFile); return; }
-  audio.paused ? audio.play() : audio.pause();
+  if (audio.paused) {
+    // Starting from a stop returns to the cue; resuming a pause carries on.
+    if (Math.abs(audio.currentTime - outputTimeAt(state.cue || 0)) > 0.001 && audio.ended) {
+      returnToCue();
+    }
+    audio.play();
+  } else {
+    audio.pause();
+  }
 };
-$('stopBtn').onclick = () => { audio.pause(); audio.currentTime = 0; };
+// The cue: where playback starts from and returns to. Set by clicking the
+// waveform, and kept until it is moved or cleared, so repeated auditions of the
+// same moment do not mean re-finding it every time.
+state.cue = 0;
+
+function setCue(srcFrame) {
+  state.cue = Math.max(0, srcFrame || 0);
+  drawCue();
+}
+
+function drawCue() {
+  updateOverviewCue();
+  const el = $('cue');
+  if (!el) return;
+  const { from, to } = state.view;
+  if (!state.peaks || to <= from || state.cue == null) { el.style.display = 'none'; return; }
+  if (state.cue < from || state.cue > to) { el.style.display = 'none'; return; }
+  const w = $('lane').clientWidth || 0;
+  el.style.display = 'block';
+  el.style.transform = `translateX(${(((state.cue - from) / (to - from)) * w).toFixed(2)}px)`;
+}
+
+function returnToCue() {
+  const t = outputTimeAt(state.cue || 0);
+  if (isFinite(t)) audio.currentTime = Math.max(0, t);
+}
+
+$('stopBtn').onclick = () => { audio.pause(); returnToCue(); updatePlayhead(); paintTime(); };
+
+// Reaching the end without looping drops back to the cue, ready to go again.
+audio.addEventListener('ended', () => { if (!audio.loop) returnToCue(); });
 
 // ------------------------------------------------------------ loop playback
 
-state.loopMode = 'off';
-const LOOP_MODES = ['off', 'file', 'selection'];
-const LOOP_TEXT = { off: '', file: 'whole file', selection: 'selection' };
+// Loop is simply on or off. What it loops follows from whether anything is
+// selected — a selection loops, otherwise the whole file — so the button never
+// needs a mode and never goes stale when the selection changes.
+state.loopOn = false;
 
-/// One button cycling off → file → selection, so the state is always visible
-/// rather than hidden inside a dropdown that reads "no loop".
-function setLoopMode(mode) {
-  state.loopMode = mode;
-  // The element's own loop only covers the whole file; a selection loop has to
-  // be policed on the timeupdate below.
-  audio.loop = mode === 'file';
+function applyLoop() {
+  const hasSel = !!state.sel && state.sel.end > state.sel.start;
+  // Always off, even for a whole-file loop: the element's own wrap is
+  // instantaneous and clicks. serviceLoop performs the wrap so it can fade
+  // across the seam.
+  audio.loop = false;
+  if (state.loopOn) ensureAnalyser();
   const btn = $('loopBtn');
-  btn.classList.toggle('on', mode !== 'off');
-  btn.title = `Loop: ${mode === 'off' ? 'off' : LOOP_TEXT[mode]}`;
-  $('loopLabel').textContent = LOOP_TEXT[mode];
+  btn.classList.toggle('on', state.loopOn);
+  const what = hasSel ? 'selection' : 'whole file';
+  btn.title = state.loopOn ? `Looping the ${what}` : 'Loop off';
+  $('loopLabel').textContent = state.loopOn ? what : '';
 }
 
-$('loopBtn').onclick = () => {
-  let next = LOOP_MODES[(LOOP_MODES.indexOf(state.loopMode) + 1) % LOOP_MODES.length];
-  if (next === 'selection' && !state.sel) next = 'off'; // nothing to loop round
-  setLoopMode(next);
-};
-setLoopMode('off');
+$('loopBtn').onclick = () => { state.loopOn = !state.loopOn; applyLoop(); };
+applyLoop();
 
-audio.addEventListener('timeupdate', () => {
-  if (state.loopMode !== 'selection' || !state.sel) return;
-  const sr = state.view.sampleRate || 1;
-  const a = state.sel.start / sr;
-  const b = state.sel.end / sr;
-  if (b - a < 0.01) return;
-  // Wrapping slightly before the end avoids the element firing `ended` first,
-  // which would stop playback instead of looping.
-  if (audio.currentTime >= b - 0.005 || audio.currentTime < a - 0.05) {
-    audio.currentTime = a;
-    if (audio.paused) audio.play().catch(() => {});
+// ------------------------------------------------------ loop crossfade
+//
+// Jumping the playhead mid-waveform lands on a discontinuity, heard as a click.
+// There is one playback source, so this fades across the seam rather than
+// overlapping two copies: level comes down over the last few milliseconds
+// before the wrap and back up after it. Short enough not to read as a dip.
+//
+// The wrap itself also moves here from `timeupdate`, which fires about four
+// times a second — far too coarse to loop tightly.
+state.loopFadeMs = 14;
+
+/// The loop's bounds in playback time, or null if nothing is being looped.
+function loopBounds() {
+  if (!state.loopOn) return null;
+  if (state.sel && state.sel.end > state.sel.start) {
+    const a = outputTimeAt(state.sel.start);
+    const b = outputTimeAt(state.sel.end);
+    return b - a > 0.02 ? { a, b } : null;
   }
-});
+  const d = audio.duration;
+  return isFinite(d) && d > 0.02 ? { a: 0, b: d } : null;
+}
+
+let fadeScheduled = 0;
+
+function setLoopGain(target, seconds) {
+  if (!loopGain || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  loopGain.gain.cancelScheduledValues(now);
+  loopGain.gain.setValueAtTime(loopGain.gain.value, now);
+  loopGain.gain.linearRampToValueAtTime(target, now + Math.max(0.001, seconds));
+}
+
+/// Run every frame: fade out approaching the loop end, wrap, fade back in.
+function serviceLoop() {
+  const fade = (state.loopFadeMs || 14) / 1000;
+  const bounds = loopBounds();
+  if (!bounds) {
+    if (fadeScheduled) { setLoopGain(1, 0.01); fadeScheduled = 0; }
+    return;
+  }
+  const t = playbackTime();
+
+  if (t >= bounds.b - 0.002 || t < bounds.a - 0.05) {
+    audio.currentTime = bounds.a;
+    clock.media = -1;
+    anchorClock();
+    setLoopGain(1, fade);        // back up on the far side of the seam
+    fadeScheduled = 0;
+    if (audio.paused) audio.play().catch(() => {});
+    return;
+  }
+
+  const toEnd = bounds.b - t;
+  if (toEnd <= fade) {
+    if (!fadeScheduled) { setLoopGain(0, toEnd); fadeScheduled = 1; }
+  } else if (fadeScheduled) {
+    setLoopGain(1, 0.01);
+    fadeScheduled = 0;
+  }
+}
 
 /// Start a selection loop from the beginning of the selection.
 function playSelectionLoop() {
   if (!state.selectedFile) return;
-  if (state.sel) {
-    state.loopMode = 'selection';
-    $('loopMode').value = 'selection';
-    audio.loop = false;
-  }
+  state.loopOn = true;
+  applyLoop();
   playFile(state.selectedFile);
-  if (state.sel) audio.currentTime = state.sel.start / (state.view.sampleRate || 1);
+  if (state.sel) audio.currentTime = outputTimeAt(state.sel.start);
+}
+
+/// Time ratio between what is playing and the source the overview shows.
+const timeRatio = () => {
+  const r = state.edit?.stretch?.ratio;
+  return r && isFinite(r) && r > 0 ? r : 1;
+};
+
+/// Playback position expressed as a frame in the source file.
+const sourceFrameNow = () =>
+  (playbackTime() * (state.view.sampleRate || 48000)) / timeRatio();
+
+/// The playback time that lands on a given source frame.
+const outputTimeAt = (srcFrame) =>
+  (srcFrame * timeRatio()) / (state.view.sampleRate || 48000);
+
+/// The playback position on the whole-file overview.
+///
+/// Drawn against the file's full length, not the zoomed range, so it still
+/// tells you where you are once playback has run outside the window.
+function updateOverviewPlayhead() {
+  const el = $('ovPlayhead');
+  if (!el) return;
+  const total = state.view.frames || state.overview?.frames || 0;
+  const w = $('overview')?.clientWidth || 0;
+  if (!state.peaks || !total || !w) { el.style.display = 'none'; return; }
+  const frame = sourceFrameNow();
+  if (!isFinite(frame)) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.style.transform =
+    `translateX(${(Math.max(0, Math.min(1, frame / total)) * w).toFixed(2)}px)`;
+}
+
+function updateOverviewCue() {
+  const el = $('ovCue');
+  if (!el) return;
+  const total = state.view.frames || state.overview?.frames || 0;
+  const w = $('overview')?.clientWidth || 0;
+  if (!state.peaks || !total || !w || state.cue == null) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.style.transform =
+    `translateX(${(Math.max(0, Math.min(1, state.cue / total)) * w).toFixed(2)}px)`;
 }
 
 function updatePlayhead() {
   const ph = $('playhead');
   const { from, to, sampleRate } = state.view;
   if (!state.peaks || !sampleRate || to <= from) { ph.style.display = 'none'; return; }
-  const frame = audio.currentTime * sampleRate;
+  // The overview is the source, so the playhead has to be mapped back through
+  // the stretch rather than plotted straight from the clock.
+  const frame = sourceFrameNow();
   if (frame < from || frame > to) { ph.style.display = 'none'; return; }
   ph.style.display = 'block';
-  ph.style.left = ((frame - from) / (to - from) * 100) + '%';
+  // A transform rather than `left`: moving it every frame via a layout property
+  // forces a reflow of the whole lane sixty times a second.
+  const lane = $('lane');
+  const x = ((frame - from) / (to - from)) * (lane.clientWidth || 0);
+  ph.style.transform = `translateX(${x.toFixed(2)}px)`;
 }
 
 // ============================================================ centre column
@@ -692,6 +875,7 @@ function renderTabs() {
 async function selectFile(file, { keepTab = false } = {}) {
   state.selectedFile = file;
   state.sel = null;
+  state.cue = 0;
   state.spec = null;
   state.view = { from: 0, to: 0, frames: 0, sampleRate: file.sampleRate || 44100 };
   if (!keepTab && state.mode === 'edit' && state.activeTab >= 0) {
@@ -720,6 +904,7 @@ async function selectFile(file, { keepTab = false } = {}) {
   loadStats();
   loadAnnotations();
   loadRack();
+  loadOverview();
   renderGrainParams();
   loadGrains();
   if (state.showSpec) loadSpectrogram();
@@ -733,8 +918,17 @@ async function loadPeaks() {
   const f = state.selectedFile;
   if (!f) return;
   const seq = ++peakSeq;
-  const cols = Math.max(200, Math.floor($('lane').clientWidth) || 800);
-  let url = `/api/peaks?p=${encodeURIComponent(f.path)}&cols=${cols}${editedSuffix()}`;
+  // One column per *device* pixel. Asking in CSS pixels draws each column
+  // across two device pixels on a retina display — half the detail the canvas
+  // can actually show, which is why this strip looked coarser than the browser.
+  // One column per *device* pixel; asking in CSS pixels halves the detail on
+  // a retina display.
+  const dpr = window.devicePixelRatio || 1;
+  const cols = Math.max(200, Math.min(8192, Math.round(($('lane').clientWidth || 800) * dpr)));
+  // Deliberately NOT the edited stream. The overview is the original file, so
+  // it stays put while you work; the grain swarm shows what is being pulled
+  // from it, and the playhead shows where in the source you are.
+  let url = `/api/peaks?p=${encodeURIComponent(f.path)}&cols=${cols}`;
   if (state.view.to > state.view.from) {
     url += `&from=${Math.floor(state.view.from)}&to=${Math.ceil(state.view.to)}`;
   }
@@ -755,6 +949,8 @@ async function loadPeaks() {
   drawWave();
   drawMarkers();
   drawSelection();
+  drawCue();
+  drawOverviewWindow();
 }
 
 function updateZoomLabel() {
@@ -844,6 +1040,108 @@ $('zoomFit').onclick = () => {
   if (state.showSpec) loadSpectrogram();
 };
 
+// ------------------------------------------------------------- overview
+//
+// The whole file, drawn once, with the zoomed window marked on top. Zooming
+// into a long sample otherwise leaves no way to tell where you are or to move
+// somewhere else without zooming back out.
+
+state.overview = null;
+
+async function loadOverview() {
+  const f = state.selectedFile;
+  if (!f) { state.overview = null; drawOverview(); return; }
+  try {
+    // Deliberately coarse and deliberately the whole file: this is a map, not
+    // a working view, and it must never change as you zoom.
+    state.overview = await api(
+      `/api/peaks?p=${encodeURIComponent(f.path)}&cols=1400`);
+  } catch { state.overview = null; }
+  drawOverview();
+}
+
+function drawOverview() {
+  const canvas = $('overviewCanvas');
+  if (!canvas) return;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (!w || !h) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const p = state.overview;
+  if (!p || !p.channels.length) return;
+
+  const accent = getComputedStyle(document.documentElement)
+    .getPropertyValue('--accent').trim();
+  const mid = h / 2;
+  const half = mid * 0.9;
+  const colW = w / p.columns;
+  const { min, max } = p.channels[0];
+
+  ctx.fillStyle = accent;
+  ctx.globalAlpha = 0.5;
+  for (let i = 0; i < p.columns; i++) {
+    const y1 = mid - max[i] * half;
+    const y2 = mid - min[i] * half;
+    ctx.fillRect(i * colW, y1, Math.max(colW, 0.7), Math.max(y2 - y1, 1));
+  }
+  ctx.globalAlpha = 1;
+
+  drawOverviewWindow();
+  updateOverviewPlayhead();
+  updateOverviewCue();
+}
+
+function drawOverviewWindow() {
+  const el = $('ovWindow');
+  const p = state.overview;
+  if (!el || !p) return;
+  const total = state.view.frames || p.frames || 0;
+  const { from, to } = state.view;
+  const zoomed = total > 0 && to > from && (to - from) < total * 0.999;
+  el.classList.toggle('full', !zoomed);
+  if (!zoomed) return;
+  const wpx = $('overview').clientWidth || 1;
+  el.style.left = `${(from / total) * wpx}px`;
+  el.style.width = `${Math.max(2, ((to - from) / total) * wpx)}px`;
+}
+
+/// Drag the overview to move the zoomed window.
+(function wireOverview() {
+  const ov = $('overview');
+  if (!ov) return;
+  let panning = false;
+
+  const centreOn = (e) => {
+    const p = state.overview;
+    if (!p) return;
+    const total = state.view.frames || p.frames || 0;
+    const span = state.view.to - state.view.from;
+    if (!total || span <= 0 || span >= total) return;
+    const r = ov.getBoundingClientRect();
+    if (!r.width) return;
+    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    const centre = frac * total;
+    let a = Math.max(0, Math.round(centre - span / 2));
+    const b = Math.min(total, a + span);
+    a = Math.max(0, b - span);
+    state.view.from = a;
+    state.view.to = b;
+    drawOverviewWindow();
+    loadPeaks();
+    if (state.showSpec) loadSpectrogram();
+  };
+
+  ov.addEventListener('mousedown', (e) => { panning = true; centreOn(e); });
+  window.addEventListener('mousemove', (e) => { if (panning) centreOn(e); });
+  window.addEventListener('mouseup', () => { panning = false; });
+})();
+
 let resizeTimer;
 function redrawLane() {
   clearTimeout(resizeTimer);
@@ -852,6 +1150,8 @@ function redrawLane() {
     if (state.showSpec) drawSpectrogram();
     drawSelection();
     drawMarkers();
+    drawCue();
+    drawOverview();
   }, 60);
 }
 window.addEventListener('resize', redrawLane);
@@ -883,32 +1183,56 @@ const xToFrames = (frac) => {
     return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
   };
 
+  // One gesture does both: pressing moves the playhead, dragging from there
+  // selects — and the playhead follows the drag, so you hear where you are.
+  const seekToSource = (frac) => {
+    if (!state.selectedFile) return;
+    const frame = xToFrames(frac);
+    if (audio.dataset.path !== state.selectedFile.path) playFile(state.selectedFile);
+    const t = outputTimeAt(frame);
+    if (isFinite(t)) audio.currentTime = Math.max(0, Math.min(t, audio.duration || t));
+  };
+
+  // Click positions the playhead. Dragging from there selects. Holding option
+  // scrubs instead, so you can run over the file and hear it without
+  // destroying a selection you already made.
+  let scrubbing = false;
+
   lane.addEventListener('mousedown', (e) => {
     if (!state.peaks) return;
     dragging = true;
+    scrubbing = e.altKey;
     anchor = xToFrames(posFrom(e));
+    if (scrubbing) { seekToSource(posFrom(e)); return; }
     state.sel = null;
     drawSelection();
+    applyLoop();
+    setCue(anchor);
+    seekToSource(posFrom(e));
   });
 
   window.addEventListener('mousemove', (e) => {
     if (!dragging) return;
-    const now = xToFrames(posFrom(e));
+    const frac = posFrom(e);
+    if (scrubbing || e.altKey) { seekToSource(frac); return; }
+    const now = xToFrames(frac);
     // A drag of a pixel or two is a click, not a selection.
     if (Math.abs(now - anchor) < (state.view.to - state.view.from) / 500) return;
     state.sel = { start: Math.min(anchor, now), end: Math.max(anchor, now) };
+    setCue(state.sel.start);
     drawSelection();
+    applyLoop();
   });
 
-  window.addEventListener('mouseup', (e) => {
+  window.addEventListener('mouseup', () => {
     if (!dragging) return;
     dragging = false;
-    if (!state.sel && state.selectedFile) {
-      const frame = xToFrames(posFrom(e));
-      if (audio.dataset.path !== state.selectedFile.path) playFile(state.selectedFile);
-      audio.currentTime = frame / state.view.sampleRate;
-    }
+    if (scrubbing) { scrubbing = false; return; }
     updateSelLabel();
+    applyLoop();
+    // Looping a fresh selection should start from its beginning rather than
+    // wherever the drag happened to end.
+    if (state.loopOn && state.sel) audio.currentTime = outputTimeAt(state.sel.start);
   });
 })();
 
@@ -927,7 +1251,7 @@ function updateSelLabel() {
   const sr = state.view.sampleRate || 1;
   $('selLabel').textContent = state.sel
     ? `${fmtTime(state.sel.start / sr)} → ${fmtTime(state.sel.end / sr)} (${((state.sel.end - state.sel.start) / sr).toFixed(3)}s)`
-    : 'no selection';
+    : 'click · drag · ⌥scrub';
 }
 
 // ================================================================ metastrip
@@ -1046,6 +1370,11 @@ function renderMeters(s) {
 /// `live` is for continuous controls: it refreshes the document and the
 /// waveform but does not refit the zoom or restart playback, so dragging a
 /// slider does not stutter the audio or throw away where you were looking.
+/// Operations that change what the source timeline contains, as opposed to
+/// how it is played back. Only these invalidate a selection or the overview.
+const STRUCTURAL = ['cut', 'reverse', 'silence', 'fadeIn', 'fadeOut', 'gain',
+                    'normalize', 'split', 'undo', 'redo', 'revert'];
+
 async function editOp(body, { live = false } = {}) {
   if (!state.selectedFile) return;
   try { state.edit = await postJSON('/api/edit', { p: state.selectedFile.path, ...body }); }
@@ -1065,15 +1394,28 @@ async function editOp(body, { live = false } = {}) {
     return;
   }
 
-  // A cut changes the timeline length, so a stale zoom range would point past
-  // the end. Refit rather than leaving the view somewhere invalid.
-  state.sel = null;
-  state.view.from = 0;
-  state.view.to = 0;
+  // Only operations that remove or reorder material invalidate a selection.
+  // Clearing it on every change also broke selection looping, since the
+  // selection is what defines the loop.
+  if (STRUCTURAL.includes(body.op)) {
+    state.sel = null;
+    applyLoop();
+  } else if (state.sel) {
+    const max = state.edit?.frames ?? 0;
+    state.sel = { start: Math.min(state.sel.start, max), end: Math.min(state.sel.end, max) };
+    if (state.sel.end - state.sel.start < 2) state.sel = null;
+  }
   drawSelection();
 
-  await loadPeaks();
-  if (state.showSpec) loadSpectrogram();
+  // The overview is of the source and does not change when a value does, so
+  // it is left alone — redrawing it was what made the playhead jump about.
+  // Structural edits do change the source mapping, so those still refit.
+  if (STRUCTURAL.includes(body.op)) {
+    state.view.from = 0;
+    state.view.to = 0;
+    await loadPeaks();
+    if (state.showSpec) loadSpectrogram();
+  }
   reloadAudioSource();
   setBusy(false);
 }
@@ -1102,6 +1444,9 @@ function reloadAudioSource() {
   const at = audio.currentTime;
   const wasPlaying = !audio.paused;
   audio.setAttribute('src', audioURL(f));
+  // Repointing the source resets the element, so the loop flag has to be put
+  // back or playback silently stops looping the moment a slider moves.
+  applyLoop();
   audio.currentTime = Math.min(at, state.edit?.duration ?? at);
   if (wasPlaying) audio.play().catch(() => {});
 }
@@ -1315,7 +1660,7 @@ function renderStretch() {
     ratio: st.ratio, semitones: st.semitones,
     windowMs: st.windowMs, quality: st.quality || 'standard',
   };
-  syncQualityButtons();
+
 
   const rows = {};
   rows.ratio = param('Stretch', st.ratio, 0.25, 4, 0.01, (v) => `${v.toFixed(2)}×`,
@@ -1337,15 +1682,17 @@ function renderStretch() {
 /// The granular controls. Separate from the stretch sliders because they only
 /// matter once one of them is engaged, but built the same way.
 function renderGrainParams() {
-  const box = $('grainParams');
-  if (!box) return;
+  if (!$('grainShape')) return;
   const g = state.edit?.stretch?.grain;
   const path = state.selectedFile?.path || null;
-  if (!g) { box.innerHTML = ''; grainBuiltFor = null; return; }
+  if (!g) { grainBuiltFor = null; return; }
   if (grainBuiltFor === path) return;
 
   grainBuiltFor = path;
-  box.innerHTML = '';
+  const shape = $('grainShape');
+  const pitchBox = $('grainPitch');
+  const seedBox = $('grainSeed');
+  shape.innerHTML = ''; pitchBox.innerHTML = ''; seedBox.innerHTML = '';
   state.grainDraft = { ...g };
 
   const send = ({ live }) => {
@@ -1361,23 +1708,31 @@ function renderGrainParams() {
   const preview = () => { clearTimeout(t); t = setTimeout(() => send({ live: true }), 130); };
   const commit = () => { clearTimeout(t); send({ live: false }); };
 
-  const rows = [
-    ['Density', 'densityHz', 0, 200, 1, (v) => (v <= 0 ? 'from overlap' : `${Math.round(v)} /s`)],
-    ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`],
-    ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`],
-    ['Position jitter', 'positionJitterMs', 0, 500, 1, (v) => `${Math.round(v)} ms`],
-    ['Pitch jitter', 'pitchJitterSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
-    ['Pitch drift', 'pitchDriftSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
-    ['Drift rate', 'driftRateHz', 0.01, 10, 0.01, (v) => `${v.toFixed(2)} Hz`],
-    ['Seed', 'seed', 0, 9999, 1, (v) => `${Math.round(v)}`],
+  // Grouped by what they do, so each panel stays short enough to read at once.
+  const groups = [
+    [shape, [
+      ['Density', 'densityHz', 0, 200, 1, (v) => (v <= 0 ? 'from overlap' : `${Math.round(v)}/s`)],
+      ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`],
+      ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`],
+      ['Position jitter', 'positionJitterMs', 0, 500, 1, (v) => `${Math.round(v)} ms`],
+    ]],
+    [pitchBox, [
+      ['Pitch jitter', 'pitchJitterSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
+      ['Pitch drift', 'pitchDriftSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
+      ['Drift rate', 'driftRateHz', 0.01, 10, 0.01, (v) => `${v.toFixed(2)} Hz`],
+    ]],
+    [seedBox, [['Seed', 'seed', 0, 9999, 1, (v) => `${Math.round(v)}`]]],
   ];
+
   state.grainRows = {};
-  for (const [label, key, min, max, step, fmt] of rows) {
-    const el = param(label, g[key], min, max, step, fmt,
-      (v) => { state.grainDraft[key] = v; preview(); },
-      () => commit());
-    state.grainRows[key] = el;
-    box.appendChild(el);
+  for (const [target, rows] of groups) {
+    for (const [label, key, min, max, step, fmt] of rows) {
+      const el = param(label, g[key], min, max, step, fmt,
+        (v) => { state.grainDraft[key] = v; preview(); },
+        () => commit());
+      state.grainRows[key] = el;
+      target.appendChild(el);
+    }
   }
 }
 
@@ -1401,7 +1756,7 @@ function syncStretchSliders() {
   state.stretchRows.semitones.sync(st.semitones);
   state.stretchRows.windowMs.sync(st.windowMs);
   if (st.quality) state.stretchDraft.quality = st.quality;
-  syncQualityButtons();
+
   syncGrainSliders();
   showStretchOut();
 }
@@ -1420,26 +1775,91 @@ function showStretchOut() {
   el.textContent = `${base.toFixed(2)}s → ${out.toFixed(2)}s${pitch}`;
 }
 
-document.querySelectorAll('#stretchQuality .seg-btn').forEach((b) => {
-  b.onclick = () => {
-    state.stretchDraft = { ...state.stretchDraft, quality: b.dataset.quality };
-    syncQualityButtons();
-    commitStretch();
-  };
-});
+// -------------------------------------------------------------- presets
+//
+// A preset is settings only — no audio, no edits. Applying one lands on the
+// undo stack like any other change, so it can simply be undone.
 
-function syncQualityButtons() {
-  const q = state.stretchDraft?.quality || 'standard';
-  document.querySelectorAll('#stretchQuality .seg-btn').forEach((b) =>
-    b.classList.toggle('active', b.dataset.quality === q));
+state.presets = [];
+
+async function loadPresets() {
+  try {
+    const r = await api('/api/presets');
+    state.presets = r.presets || [];
+  } catch { state.presets = []; }
+  renderPresets();
 }
+
+function renderPresets() {
+  const sel = $('presetPick');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— none —</option>';
+  for (const p of state.presets) {
+    const o = document.createElement('option');
+    o.value = p.name;
+    o.textContent = p.name;
+    sel.appendChild(o);
+  }
+  sel.value = current;
+}
+
+$('presetPick').onchange = async (e) => {
+  const name = e.target.value;
+  if (!name || !state.selectedFile) return;
+  try {
+    state.edit = await postJSON('/api/presets/apply', { name, p: state.selectedFile.path });
+  } catch (err) { toast(err.message); return; }
+
+  // The sliders now disagree with the document, so rebuild them from it.
+  stretchBuiltFor = null;
+  grainBuiltFor = null;
+  state.audioRev += 1;
+  reflectEditState();
+  renderStretch();
+  renderGrainParams();
+  loadRack();
+  loadGrains();
+  renderTabs();
+  reloadAudioSource();
+  const note = state.presets.find((p) => p.name === name)?.note;
+  toast(`Applied “${name}”${note ? ' — ' + note : ''}`);
+};
+
+$('presetSave').onclick = async () => {
+  if (!state.selectedFile) { toast('Open a sound first'); return; }
+  const suggested = $('presetPick').value || `Preset ${state.presets.length + 1}`;
+  const name = prompt('Save these settings as:', suggested);
+  if (name === null || !name.trim()) return;
+  const note = prompt('A note about it (optional):', '') || '';
+  try {
+    const r = await postJSON('/api/presets', { name: name.trim(), note, p: state.selectedFile.path });
+    state.presets = r.presets || [];
+    renderPresets();
+    $('presetPick').value = name.trim();
+    toast(`Saved “${name.trim()}”`);
+  } catch (e) { toast('Could not save: ' + e.message); }
+};
+
+$('presetDelete').onclick = async () => {
+  const name = $('presetPick').value;
+  if (!name) { toast('Pick a preset first'); return; }
+  if (!confirm(`Delete the preset “${name}”? The sound itself is untouched.`)) return;
+  try {
+    const r = await postJSON('/api/presets/delete', { name });
+    state.presets = r.presets || [];
+    $('presetPick').value = '';
+    renderPresets();
+    toast(`Deleted “${name}”`);
+  } catch (e) { toast('Could not delete: ' + e.message); }
+};
 
 $('stretchReset').onclick = async () => {
   clearTimeout(stretchTimer);
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' };
   await editOp({ op: 'stretch', ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' });
   syncStretchSliders();
-  syncQualityButtons();
+
 };
 
 function renderRackParams() {
@@ -1666,6 +2086,7 @@ $('specOn').onchange = (e) => {
 
 let audioCtx = null;
 let analyser = null;
+let loopGain = null;
 let visRaf = null;
 
 function ensureAnalyser() {
@@ -1675,12 +2096,14 @@ function ensureAnalyser() {
   try {
     audioCtx = new Ctx();
     const src = audioCtx.createMediaElementSource(audio);
+    loopGain = audioCtx.createGain();
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.75;
     // Routing through the graph means we must reconnect to the speakers, or
     // playback goes silent the moment the analyser is attached.
-    src.connect(analyser);
+    src.connect(loopGain);
+    loopGain.connect(analyser);
     analyser.connect(audioCtx.destination);
     return true;
   } catch {
@@ -1930,8 +2353,8 @@ async function openPicker(startPath) {
   $('pickerModal').classList.remove('hidden');
   await loadPicker(startPath || '');
 }
-$('changeLibrary').onclick = () => openPicker(state.library);
 $('pickLibrary').onclick = () => openPicker(state.library);
+$('rescanLibrary').onclick = () => { showPane('left', 'scan'); $('startScan').click(); };
 $('pickerClose').onclick = () => $('pickerModal').classList.add('hidden');
 
 async function loadPicker(path) {
@@ -2008,6 +2431,7 @@ async function refresh() {
   setMode('overview');
   updateModeAvailability();
   try {
+    loadPresets();
     const s = await refresh();
     if (!s.library) {
       showPane('left', 'import');
@@ -2027,7 +2451,9 @@ document.addEventListener('keydown', (e) => {
   else if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); $('undoBtn').click(); }
   else if (mod && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); $('redoBtn').click(); }
   else if (e.key === 'm' && state.mode === 'edit') addMarker();
-  else if (e.key === 'Escape') { state.sel = null; drawSelection(); }
+  else if (e.key === 'Escape') {
+    state.sel = null; setCue(0); drawSelection(); applyLoop();
+  }
   else if (e.key === 'Enter' && state.selectedFile) setMode(state.mode === 'edit' ? 'overview' : 'edit');
 });
 
@@ -2052,51 +2478,53 @@ async function loadGrains() {
   drawGrains();
 }
 
-/// Semitone offset from the document's base pitch, mapped to a hue.
-/// Warm is sharp, cool is flat; grey is exactly on pitch.
-function grainColour(semis, base, alpha) {
-  const d = Math.max(-12, Math.min(12, semis - base)) / 12;
-  if (Math.abs(d) < 0.02) return `oklch(72% 0.02 250 / ${alpha})`;
-  const hue = d > 0 ? 25 : 250;
-  return `oklch(${68 + Math.abs(d) * 8}% ${0.06 + Math.abs(d) * 0.13} ${hue} / ${alpha})`;
+/// Warm and bright for sharp, brilliant grains; cool and deep for flat, dark.
+function grainColour(pitchOffset, brightness, alpha) {
+  const p = Math.max(-1, Math.min(1, pitchOffset / 9));
+  const br = Math.max(0, Math.min(1, brightness * 4));
+  const t = Math.max(-1, Math.min(1, p * 0.55 + (br - 0.4) * 1.4));
+  const hue = t >= 0 ? 30 - t * 10 : 250 + t * 30;
+  const chroma = 0.10 + Math.abs(t) * 0.16;
+  const light = 66 + Math.abs(t) * 14;
+  return `oklch(${light}% ${chroma} ${hue} / ${alpha})`;
 }
 
-state.visMode = 'swarm';
-document.querySelectorAll('#visMode .seg-btn').forEach((b) => {
-  b.onclick = () => {
-    state.visMode = b.dataset.vis;
-    document.querySelectorAll('#visMode .seg-btn').forEach((x) =>
-      x.classList.toggle('active', x === b));
-    drawGrains();
-  };
-});
-
-function visSetup() {
+function visSetup(fade) {
   const canvas = $('grainCanvas');
   if (!canvas) return null;
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   if (!w || !h) return null;
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
+  if (canvas.width !== Math.round(w * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
+  if (fade) {
+    // A translucent wash instead of a clear leaves trails, which is what makes
+    // a swarm read as moving rather than as a scatter of static dots.
+    ctx.fillStyle = 'rgba(7,9,14,0.40)';
+    ctx.fillRect(0, 0, w, h);
+  } else {
+    ctx.clearRect(0, 0, w, h);
+  }
   return { ctx, w, h };
 }
 
 function drawGrains() {
-  const set = visSetup();
+  const set = visSetup(!audio.paused);
   if (!set) return;
   const { ctx, w, h } = set;
   const g = state.grains;
   const label = $('grainCount');
 
   if (!g || !g.grains.length) {
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.font = '11px system-ui, sans-serif';
-    ctx.fillText('Engage a grain control to see the stream', 12, h / 2);
+    ctx.fillText('Engage a grain control to see the swarm', 12, h / 2);
     if (label) label.textContent = '';
     return;
   }
@@ -2105,141 +2533,85 @@ function drawGrains() {
     label.textContent = `${g.total.toLocaleString()} grains${shown}`;
   }
 
-  if (state.visMode === 'map') drawGrainMap(ctx, w, h, g);
-  else drawGrainSwarm(ctx, w, h, g);
+  // Levels in the stream are small absolute numbers; normalising against the
+  // loudest grain is what makes size vary visibly across the swarm.
+  if (g._peak === undefined) {
+    g._peak = g.grains.reduce((m, r) => Math.max(m, r[4] || 0), 0) || 1;
+  }
+  drawGrainSwarm(ctx, w, h, g);
 }
 
-/// Warm for bright and sharp, cool for dark and flat.
-function grainColour(pitchOffset, brightness, alpha) {
-  const p = Math.max(-1, Math.min(1, pitchOffset / 12));
-  const b = Math.max(0, Math.min(1, brightness * 3));
-  const t = Math.max(-1, Math.min(1, p * 0.6 + (b - 0.35) * 1.2));
-  const hue = t >= 0 ? 25 + (1 - t) * 60 : 250 + t * 20;
-  const chroma = 0.04 + Math.abs(t) * 0.15;
-  const light = 62 + Math.abs(t) * 16;
-  return `oklch(${light}% ${chroma} ${hue} / ${alpha})`;
-}
-
-/// Output time across, source position up. A clean stretch is a diagonal.
-function drawGrainMap(ctx, w, h, g) {
-  const outFrames = Math.max(1, g.outFrames);
-  const srcFrames = Math.max(1, g.srcFrames);
-  const base = state.edit?.stretch?.semitones ?? 0;
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  for (let i = 1; i < 4; i++) {
-    const y = (h * i) / 4;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-  }
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-  ctx.setLineDash([3, 4]);
-  ctx.beginPath(); ctx.moveTo(0, h); ctx.lineTo(w, 0); ctx.stroke();
-  ctx.setLineDash([]);
-
-  for (const [outFrame, srcFrame, size, pitch, rms, bright] of g.grains) {
-    const x = (outFrame / outFrames) * w;
-    const y = h - (srcFrame / srcFrames) * h;
-    const len = Math.max(1.5, (size / outFrames) * w);
-    ctx.strokeStyle = grainColour(pitch - base, bright, 0.35 + Math.min(0.6, rms * 3));
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + len, y);
-    ctx.stroke();
-  }
-
-  if (!audio.paused) {
-    const px = ((audio.currentTime * (g.sampleRate || 48000)) / outFrames) * w;
-    ctx.strokeStyle = '#fff';
-    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
-  }
-}
-
-/// The swarm: grains as a cloud of flies orbiting the playhead.
+/// The swarm: grains as a cloud orbiting the playhead.
 ///
-/// Everything you see comes from the grain stream. Time from the playhead is
-/// depth, so grains approach, cluster while sounding, and recede. Pitch offset
-/// lifts them; brightness and level set colour and size. The orbit gives each
-/// grain a phase of its own so the cloud churns rather than pulsing together.
+/// Depth is time from the playhead, so grains fly in, cluster while sounding,
+/// then recede. Height is pitch offset. Size is level, normalised against the
+/// loudest grain. Colour is brightness and pitch together. Every value comes
+/// from the grain stream the renderer uses.
 function drawGrainSwarm(ctx, w, h, g) {
   const sr = g.sampleRate || 48000;
-  const outFrames = Math.max(1, g.outFrames);
   const base = state.edit?.stretch?.semitones ?? 0;
-  const now = audio.currentTime;
+  const now = playbackTime();
   const playFrame = now * sr;
   const cx = w / 2;
   const cy = h / 2;
 
-  // How far ahead and behind the playhead to show, in seconds.
-  const SPAN = 1.6;
-  const FOCAL = 340;
-
-  // Ground haze so the cloud reads as sitting in space.
-  const grd = ctx.createRadialGradient(cx, cy, 4, cx, cy, Math.max(w, h) * 0.55);
-  grd.addColorStop(0, 'rgba(125,190,255,0.07)');
-  grd.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, w, h);
+  const SPAN = 1.4;                    // seconds either side of the playhead
+  const FOCAL = 300;
+  const R = Math.min(w, h) * 0.46;     // orbit scaled to the box, not fixed px
 
   const visible = [];
   for (const [outFrame, srcFrame, size, pitch, rms, bright] of g.grains) {
-    const dt = (outFrame - playFrame) / sr; // seconds ahead of the playhead
+    const dt = (outFrame - playFrame) / sr;
     if (dt < -SPAN || dt > SPAN) continue;
+    const z = dt * 230 + 120;
+    if (z <= 14) continue;
 
-    // Depth: ahead is far, behind is close and receding past the camera.
-    const z = dt * 260 + 90;
-    if (z <= 12) continue;
+    const sounding = dt <= 0 && dt + size / sr >= 0;
+    const seedish = ((outFrame * 2654435761) % 997) / 997;
+    const phase = seedish * Math.PI * 2 + now * (0.8 + seedish * 1.8);
 
-    const dur = size / sr;
-    const sounding = dt <= 0 && dt + dur >= 0;
-
-    // Each grain keeps its own orbital phase and speed, so the swarm churns.
-    const seedish = (outFrame * 2654435761) % 1000 / 1000;
-    const speed = 0.7 + seedish * 1.6;
-    const phase = seedish * Math.PI * 2 + now * speed;
-
-    // Wider orbit for grains further from the nominal read position.
-    const drift = Math.min(1, Math.abs(pitch - base) / 12);
-    const radius = 26 + drift * 90 + seedish * 34 + (sounding ? 10 * Math.sin(now * 9 + seedish * 6) : 0);
-
-    const px = cx + Math.cos(phase) * radius * (FOCAL / (FOCAL + z));
-    const py = cy
-      - ((pitch - base) / 12) * h * 0.28
-      + Math.sin(phase * 1.3) * radius * 0.35 * (FOCAL / (FOCAL + z));
-
+    const spread = 0.35 + Math.min(1, Math.abs(pitch - base) / 9) * 0.65;
+    const wob = sounding ? 1 + 0.16 * Math.sin(now * 11 + seedish * 7) : 1;
+    const radius = R * spread * (0.45 + seedish * 0.55) * wob;
     const scale = FOCAL / (FOCAL + z);
-    const r = Math.max(0.8, (1.6 + rms * 22) * scale * (sounding ? 1.9 : 1));
-    const alpha = Math.max(0.05, (1 - Math.abs(dt) / SPAN) * (sounding ? 1 : 0.5));
+
+    const px = cx + Math.cos(phase) * radius * scale;
+    const py = cy - ((pitch - base) / 10) * h * 0.30
+                  + Math.sin(phase * 1.27) * radius * 0.42 * scale;
+
+    const level = Math.sqrt(Math.max(0, rms) / g._peak);
+    const r = Math.max(1.0, (1.8 + level * 13) * scale * (sounding ? 1.5 : 1));
+    // Additive blending accumulates: with dozens of overlapping grains a high
+    // per-grain alpha saturates the whole cloud to flat white. Keep each one
+    // faint and let the density do the work.
+    const alpha = Math.max(0.05, (1 - Math.abs(dt) / SPAN) ** 1.6) * (sounding ? 0.42 : 0.16);
     visible.push({ px, py, r, alpha, pitch, bright, sounding, z });
   }
 
-  // Far grains first, so near ones sit in front.
   visible.sort((a, b) => b.z - a.z);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
   for (const v of visible) {
+    const col = grainColour(v.pitch - base, v.bright, v.alpha);
+    ctx.shadowBlur = v.sounding ? 8 : 4;
+    ctx.shadowColor = col;
+    ctx.fillStyle = col;
     ctx.beginPath();
     ctx.arc(v.px, v.py, v.r, 0, Math.PI * 2);
-    ctx.fillStyle = grainColour(v.pitch - base, v.bright, v.alpha);
     ctx.fill();
-    if (v.sounding) {
-      ctx.strokeStyle = grainColour(v.pitch - base, v.bright, Math.min(1, v.alpha + 0.3));
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(v.px, v.py, v.r + 3.5, 0, Math.PI * 2);
-      ctx.stroke();
-    }
   }
+  ctx.restore();
 
-  // The playhead itself, at the centre of it all.
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
   ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(cx, cy - 14); ctx.lineTo(cx, cy + 14); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx - 14, cy); ctx.lineTo(cx + 14, cy); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
 
-  ctx.fillStyle = 'rgba(255,255,255,0.30)';
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.font = '9px ui-monospace, monospace';
   ctx.fillText(`${visible.length} in flight`, 10, h - 10);
   if (audio.paused) {
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fillStyle = 'rgba(255,255,255,0.40)';
     ctx.font = '11px system-ui, sans-serif';
     ctx.fillText('press play — the swarm follows the playhead', 10, 18);
   }

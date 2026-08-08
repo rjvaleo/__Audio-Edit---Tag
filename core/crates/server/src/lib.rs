@@ -4,6 +4,7 @@ pub mod docs;
 pub mod http;
 pub mod json;
 pub mod routes;
+pub mod persist;
 pub mod rack;
 pub mod rendercache;
 pub mod safety;

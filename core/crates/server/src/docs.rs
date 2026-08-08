@@ -163,6 +163,23 @@ impl EditStore {
     pub fn forget(&self, key: &str) {
         self.sessions.lock().unwrap().remove(key);
     }
+
+    /// Every open document, for saving.
+    pub fn all(&self) -> Vec<(String, EditList)> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, s)| (k.clone(), s.list().clone()))
+            .collect()
+    }
+
+    /// Replace a document wholesale, as a preset does.
+    pub fn set(&self, key: &str, make: impl FnOnce() -> EditList, f: impl FnOnce(&mut EditList)) {
+        let mut map = self.sessions.lock().unwrap();
+        let session = map.entry(key.to_string()).or_insert_with(|| Session::new(make()));
+        session.apply(f);
+    }
 }
 
 /// Describe an edit list for the UI.
