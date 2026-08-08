@@ -36,7 +36,9 @@ rem First run only: point it at the bundled library so it opens on something
 rem rather than an empty picker. Once a library has been chosen it is stored in
 rem data\config.json, and passing one on the command line would override it.
 set "ARGS=%*"
-if not defined ARGS if not exist "data\config.json" if exist "Audio Library" set "ARGS="Audio Library""
+rem "\*" rather than the bare name: "if exist" on a plain directory name is
+rem unreliable, the wildcard form is not.
+if not defined ARGS if not exist "data\config.json" if exist "Audio Library\*" set "ARGS="Audio Library""
 
 "%BIN%" %ARGS%
 
