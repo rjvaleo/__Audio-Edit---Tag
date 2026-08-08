@@ -47,6 +47,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/edit") => api_edit_get(app, req),
         ("POST", "/api/edit") => api_edit_apply(app, req),
         ("POST", "/api/export") => api_export(app, req),
+        ("POST", "/api/engine/load") => api_engine_load(app, req),
+        ("GET", "/api/engine/state") => api_engine_state(app),
+        ("POST", "/api/engine/transport") => api_engine_transport(app, req),
+        ("GET", "/api/engine/grains") => api_engine_grains(app),
         ("GET" | "HEAD", "/audio") => api_audio(app, req),
         ("GET", "/api/scan") => api_scan_status(app),
         ("POST", "/api/scan") => api_scan_start(app),
@@ -542,6 +546,9 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     let spec = crate::rack::RackSpec::from_json(&v);
     app.racks.set(rel, spec.clone());
     app.save_sessions();
+    // Effects are live: a freshly built rack replaces the one the audio thread
+    // holds, on its next block.
+    let _ = crate::live::with(app, |h| h.shared.set_rack(crate::live::rack_for(app, rel)));
 
     let sr: u32 = match v.get("sr") {
         Some(Value::Num(n)) => *n as u32,
@@ -870,6 +877,19 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, &format!("unknown edit operation: {op}"));
     }
     app.save_sessions();
+
+    // Performance controls go straight at the audio thread — that is the whole
+    // point of the engine, and it happens while sound is coming out. Structural
+    // edits change the buffer the engine reads from, so they need the file
+    // folding and handing over again; you do not hold a cut while listening.
+    if op == "stretch" {
+        if let Some(list) = app.edits.snapshot(rel) {
+            let _ = crate::live::push_params(app, rel, &list);
+        }
+    } else if let Some(path) = app.library_path().and_then(|l| resolve_within(&l, rel)) {
+        let _ = crate::live::load(app, rel, &path);
+    }
+
     Response::json(out.to_string())
 }
 
@@ -1211,4 +1231,131 @@ fn write_tags_file(lib: &Path, folder: &str, edit: &Value) -> std::io::Result<()
         field("notes"),
     );
     std::fs::write(path, body)
+}
+
+// ======================================================== the live engine
+//
+// Playback is the engine's, not the browser's. These endpoints are the whole
+// interface to it: one expensive call to load a file, and a handful of cheap
+// ones that only ever touch atomics.
+
+fn api_engine_load(app: &Arc<App>, req: &Request) -> Response {
+    let path = match library_file(app, req) {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    let rel = req.param("p").unwrap_or("").to_string();
+    match crate::live::load(app, &rel, &path) {
+        Ok(l) => Response::json(
+            Value::obj()
+                .set("frames", l.frames as f64)
+                .set("sampleRate", l.sample_rate as f64)
+                .to_string(),
+        ),
+        Err(e) => Response::error(500, &e),
+    }
+}
+
+fn api_engine_state(app: &Arc<App>) -> Response {
+    match crate::live::with(app, |h| {
+        Value::obj()
+            .set("playing", h.shared.is_playing())
+            .set("position", h.shared.position() as f64)
+            .set("sampleRate", h.sample_rate as f64)
+            .set("channels", h.channels as f64)
+            .set(
+                "overflows",
+                h.shared
+                    .overflows
+                    .load(std::sync::atomic::Ordering::Acquire) as f64,
+            )
+            .to_string()
+    }) {
+        Ok(s) => Response::json(s),
+        Err(e) => Response::error(503, &e),
+    }
+}
+
+fn api_engine_transport(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let num = |k: &str| match v.get(k) {
+        Some(Value::Num(n)) if n.is_finite() => Some(*n),
+        _ => None,
+    };
+
+    let r = crate::live::with(app, |h| {
+        if let Some(f) = num("seek") {
+            h.shared.request_seek(f.max(0.0) as u64);
+        }
+        if let Some(g) = num("gain") {
+            h.shared.set_gain(g as f32);
+        }
+        match v.get("loop") {
+            Some(l) => {
+                let on = matches!(l.get("on"), Some(Value::Bool(true)));
+                let a = match l.get("a") {
+                    Some(Value::Num(n)) => *n as u64,
+                    _ => 0,
+                };
+                let b = match l.get("b") {
+                    Some(Value::Num(n)) => *n as u64,
+                    _ => 0,
+                };
+                h.shared.set_loop(on, a, b);
+            }
+            None => {}
+        }
+        // Play last, so a seek in the same request lands before sound starts.
+        match v.get("play") {
+            Some(Value::Bool(true)) => h.shared.play(),
+            Some(Value::Bool(false)) => h.shared.pause(),
+            _ => {}
+        }
+        h.shared.position() as f64
+    });
+
+    match r {
+        Ok(pos) => Response::json(Value::obj().set("position", pos).to_string()),
+        Err(e) => Response::error(503, &e),
+    }
+}
+
+/// Grains that have actually sounded since the last ask.
+///
+/// The swarm is fed from here rather than from a second enumeration, so it
+/// cannot show something the speakers did not play.
+fn api_engine_grains(app: &Arc<App>) -> Response {
+    match crate::live::with(app, |h| {
+        let events = h.shared.drain_events();
+        let sr = h.sample_rate.max(1) as f64;
+        let arr: Vec<Value> = events
+            .iter()
+            .map(|e| {
+                Value::obj()
+                    .set("t", e.out_frame as f64 / sr)
+                    .set("src", e.src_frame as f64 / sr)
+                    .set("size", e.size as f64 / sr)
+                    .set("rate", e.rate as f64)
+                    .set("semis", e.pitch_semis as f64)
+            })
+            .collect();
+        let spectrum: Vec<Value> = h
+            .shared
+            .spectrum()
+            .into_iter()
+            .map(|b| Value::Num(b as f64))
+            .collect();
+        Value::obj()
+            .set("position", h.shared.position() as f64)
+            .set("sampleRate", sr)
+            .set("playing", h.shared.is_playing())
+            .set("grains", Value::Arr(arr))
+            .set("spectrum", Value::Arr(spectrum))
+            .to_string()
+    }) {
+        Ok(s) => Response::json(s),
+        Err(e) => Response::error(503, &e),
+    }
 }

@@ -166,6 +166,7 @@ dependencies = [
 name = "engine"
 version = "0.1.0"
 dependencies = [
+ "audio-core",
  "cpal",
  "fx",
 ]
@@ -584,6 +585,7 @@ dependencies = [
  "audio-core",
  "catalog",
  "edit",
+ "engine",
  "fx",
  "indexer",
 ]

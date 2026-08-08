@@ -185,3 +185,110 @@ fn resampling_preserves_length_and_level() {
     // Same rate in and out must be a straight copy, not a rebuild.
     assert_eq!(engine::resample(&input, 1, 48_000, 48_000), input);
 }
+
+/// The rack has to run inside the callback, on the block, or effects only
+/// appear on export.
+#[test]
+fn the_rack_is_applied_to_live_output() {
+    let src = source(48_000, 1);
+    let sp = params(48_000);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, sp, src);
+    shared.play();
+
+    pump(&mut core, &shared, 1, 512, 2);
+    let dry = pump(&mut core, &shared, 1, 512, 2);
+    let dry_peak = dry.iter().fold(0f32, |m, s| m.max(s.abs()));
+
+    // A rack that does nothing but drop the level by 12 dB.
+    let mut rack = fx::Rack::new();
+    rack.push(Box::new(fx::Gain { db: -12.0 }));
+    shared.set_rack(Some(rack));
+
+    let wet = pump(&mut core, &shared, 1, 512, 2);
+    let wet_peak = wet.iter().fold(0f32, |m, s| m.max(s.abs()));
+
+    let ratio = wet_peak / dry_peak.max(1e-9);
+    assert!(
+        (ratio - 0.251).abs() < 0.05,
+        "-12 dB should quarter the level; got {ratio} ({dry_peak} -> {wet_peak})"
+    );
+
+    // And removing it restores the level.
+    shared.set_rack(None);
+    let back = pump(&mut core, &shared, 1, 512, 2);
+    let back_peak = back.iter().fold(0f32, |m, s| m.max(s.abs()));
+    assert!((back_peak / dry_peak.max(1e-9) - 1.0).abs() < 0.1, "rack was not removed");
+}
+
+/// A grain stream will happily run forever, reading the clamped last sample of
+/// the source. Something has to stop it at the end of the document.
+#[test]
+fn playback_stops_at_the_end_when_not_looping() {
+    let src = source(4_800, 1); // 0.1 s
+    let sp = params(4_800);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, sp, src);
+    shared.play();
+
+    for _ in 0..40 {
+        pump(&mut core, &shared, 1, 512, 1);
+    }
+    assert!(!shared.is_playing(), "ran past the end of the document");
+    assert!(
+        shared.position() <= 4_800 + 512,
+        "stopped {} frames past the end",
+        shared.position() as i64 - 4_800
+    );
+}
+
+/// But a loop must not be stopped by that rule.
+#[test]
+fn looping_is_not_cut_short_by_the_end_stop() {
+    let src = source(4_800, 1);
+    let sp = params(4_800);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(256, sp, src);
+    shared.play();
+    shared.set_loop(true, 500, 3_500);
+
+    for _ in 0..200 {
+        pump(&mut core, &shared, 1, 256, 1);
+    }
+    assert!(shared.is_playing(), "the loop was stopped by the end stop");
+}
+
+/// A loop end of zero means "the whole document", so the caller never has to
+/// track a length that the stretch ratio keeps changing underneath it.
+#[test]
+fn a_zero_loop_end_means_the_whole_document() {
+    let src = source(4_800, 1);
+    let sp = params(4_800);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(256, sp, src);
+    shared.play();
+    shared.set_loop(true, 0, 0);
+
+    for _ in 0..300 {
+        pump(&mut core, &shared, 1, 256, 1);
+        assert!(shared.position() <= 4_800, "escaped to {}", shared.position());
+    }
+    assert!(shared.is_playing(), "a whole-document loop must not stop");
+}
+
+/// And a loop end past the document is clamped to it rather than running into
+/// the clamped tail of the source.
+#[test]
+fn a_loop_end_past_the_document_is_clamped() {
+    let src = source(4_800, 1);
+    let sp = params(4_800);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(256, sp, src);
+    shared.play();
+    shared.set_loop(true, 0, 999_999);
+
+    for _ in 0..200 {
+        pump(&mut core, &shared, 1, 256, 1);
+        assert!(shared.position() <= 4_800, "escaped to {}", shared.position());
+    }
+}

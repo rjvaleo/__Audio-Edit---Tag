@@ -2,6 +2,7 @@
 
 pub mod docs;
 pub mod http;
+pub mod live;
 pub mod json;
 pub mod routes;
 pub mod persist;

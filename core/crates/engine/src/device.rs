@@ -84,6 +84,54 @@ impl Engine {
     }
 }
 
+/// What the rest of the program holds onto.
+///
+/// [`Engine`] cannot be it: `cpal::Stream` is not `Send` on macOS, and the HTTP
+/// server hands its state to whichever thread takes the request. So the stream
+/// gets a thread of its own that does nothing but own it, and everyone else
+/// talks to the audio through [`Shared`], which is `Send + Sync` by
+/// construction.
+pub struct Handle {
+    pub shared: Arc<Shared>,
+    pub sample_rate: u32,
+    pub channels: usize,
+}
+
+/// Start the engine on its own thread and wait to hear whether it opened.
+///
+/// Failure here is ordinary — a machine with no output device, or one whose
+/// default device does not do f32 — so it is reported, not panicked on.
+pub fn spawn(params: StreamParams, source: Arc<Source>) -> Result<Handle, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    std::thread::Builder::new()
+        .name("audio-device".into())
+        .spawn(move || match Engine::start(params, source) {
+            Ok(engine) => {
+                let handle = Handle {
+                    shared: Arc::clone(engine.shared()),
+                    sample_rate: engine.sample_rate,
+                    channels: engine.channels,
+                };
+                if tx.send(Ok(handle)).is_err() {
+                    return; // nobody waiting; let the stream close
+                }
+                // Hold the stream open. The audio runs on the device's own
+                // thread; this one exists only to keep `engine` alive.
+                loop {
+                    std::thread::park();
+                }
+            }
+            Err(e) => {
+                let _ = tx.send(Err(e));
+            }
+        })
+        .map_err(|e| format!("could not start the audio thread: {e}"))?;
+
+    rx.recv()
+        .map_err(|_| "the audio thread stopped before it opened a device".to_string())?
+}
+
 /// Resample interleaved audio to `to` Hz, linearly.
 ///
 /// Done once when a file is loaded, not per block. The grain reader already
