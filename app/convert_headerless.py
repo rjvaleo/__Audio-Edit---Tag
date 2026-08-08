@@ -15,24 +15,12 @@ Specs are INFERRED, then checked:
 """
 import os,sys,csv,struct,array,json,time
 from collections import Counter,defaultdict
+from paths import *
 import os as _os
-HERE=_os.path.dirname(_os.path.abspath(__file__))
-APP=_os.path.dirname(HERE)                      # the "Audio Edit & Tag" folder
-def _find_ingest(start):
-    d=start
-    for _ in range(5):
-        c=_os.path.join(d,"INGEST")
-        if _os.path.isdir(c): return c
-        p=_os.path.dirname(d)
-        if p==d: break
-        d=p
-    return _os.path.join(_os.path.dirname(APP),"INGEST")
-ING=_find_ingest(APP)
-LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside tools
-WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
-def W(n): return _os.path.join(WORK,n)
-IDX=_os.path.join(APP,'AUDIO-INDEX.tsv')
+ING=LIBRARY; LIB=LIBRARY
+BASE=HERE; APP=HERE; WORK=HERE
+def W(n): return D(n)
+IDX=FILE_INDEX
 
 
 
@@ -206,7 +194,7 @@ def main():
             with open(tgt,'wb') as fh: fh.write(aiff_header(len(body),ch,bits,sr)); fh.write(body)
             wrote+=1
         done+=1
-    with open(os.path.join(BASE,'HEADERLESS-PLAN.tsv'),'w',encoding='utf-8',newline='') as fh:
+    with open(D('HEADERLESS-PLAN.tsv'),'w',encoding='utf-8',newline='') as fh:
         w=csv.writer(fh,delimiter='\t')
         w.writerow(['folder','rel_path','samplerate','bits','channels','endian','confidence'])
         w.writerows(out)

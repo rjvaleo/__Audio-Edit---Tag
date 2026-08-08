@@ -6,26 +6,13 @@ Usage: python3 write_tags.py [seconds]
 """
 import os,sys,csv,json,time,re
 from collections import Counter,defaultdict
+from paths import *
 import os as _os
-HERE=_os.path.dirname(_os.path.abspath(__file__))
-APP=_os.path.dirname(HERE)                      # the "Audio Edit & Tag" folder
-def _find_ingest(start):
-    d=start
-    for _ in range(5):
-        c=_os.path.join(d,"INGEST")
-        if _os.path.isdir(c): return c
-        p=_os.path.dirname(d)
-        if p==d: break
-        d=p
-    return _os.path.join(_os.path.dirname(APP),"INGEST")
-ING=_find_ingest(APP)
-LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside tools
-WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
-def W(n): return _os.path.join(WORK,n)
-FILES=W('ingest2_files.tsv')
-ST=W('tags_state.json')
-ROOT=LIB
+ING=LIBRARY; LIB=LIBRARY
+BASE=HERE; APP=HERE; WORK=HERE
+def W(n): return D(n)
+FILES=FILE_INDEX
+ST=D('state-tags.json')
 
 
 
@@ -123,7 +110,7 @@ def main():
             print("  ! %s: %s"%(f,str(e)[:50]))
     json.dump(st,open(ST,'w'))
     if idx:
-        with open(W('tag_index.tsv'),'w',encoding='utf-8',newline='') as fh:
+        with open(TAG_INDEX,'w',encoding='utf-8',newline='') as fh:
             w=csv.DictWriter(fh,fieldnames=list(idx[0].keys()),delimiter='\t'); w.writeheader(); w.writerows(idx)
     print("_TAGS.txt written this pass: %d | total %d / %d"%(wrote,len(st),len(by)))
 if __name__=="__main__": main()

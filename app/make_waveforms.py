@@ -2,25 +2,13 @@
 """Decimated waveform peaks, 60 buckets, quantised to one base64 char each.
 Read-only. Resumable. Output: /tmp/waveforms.tsv  (key \t peaks)"""
 import csv,os,struct,array,sys,time,json
+from paths import *
 import os as _os
-HERE=_os.path.dirname(_os.path.abspath(__file__))
-APP=_os.path.dirname(HERE)                      # the "Audio Edit & Tag" folder
-def _find_ingest(start):
-    d=start
-    for _ in range(5):
-        c=_os.path.join(d,"INGEST")
-        if _os.path.isdir(c): return c
-        p=_os.path.dirname(d)
-        if p==d: break
-        d=p
-    return _os.path.join(_os.path.dirname(APP),"INGEST")
-ING=_find_ingest(APP)
-LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside tools
-WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
-def W(n): return _os.path.join(WORK,n)
-OUT=W('waveforms.tsv')
-ST=W('wave_state.json')
+ING=LIBRARY; LIB=LIBRARY
+BASE=HERE; APP=HERE; WORK=HERE
+def W(n): return D(n)
+OUT=WAVEFORMS
+ST=D('state-waves.json')
 
 
 
@@ -56,7 +44,7 @@ def main():
     if os.path.exists(OUT):
         for line in open(OUT,encoding='utf-8'):
             done.add(line.split('\t')[0])
-    rows=[r for r in csv.DictReader(open(W('ingest2_files.tsv'),encoding='utf-8'),delimiter='\t')
+    rows=[r for r in csv.DictReader(open(FILE_INDEX,encoding='utf-8'),delimiter='\t')
           if r['format'] in ('AIFF','AIFC','WAV','WAV-float32','WAV-ext') and float(r['duration_s'] or 0)>0]
     fh=open(OUT,'a',encoding='utf-8')
     end=time.time()+budget; n=0; skip=0

@@ -1,11 +1,15 @@
-# python bytecode
+# python
 __pycache__/
 *.pyc
 
-# scratch produced by test/validation runs
-work/_hdrless.bin
-*.tmp
-*.stale-*
+# quarantined for manual deletion (the device bridge cannot delete)
+_to_delete/
 
-# git lock droppings (the device bridge cannot delete these)
-.git/index.lock*
+# regenerable state and outputs
+app/state-*.json
+app/HEADERLESS-PLAN.tsv
+*.tmp
+
+# git lock droppings left behind when running over the device bridge
+*.lock
+*.junk*
