@@ -522,3 +522,128 @@ fn reported_pitch_includes_base_jitter_and_drift() {
         assert!((e.pitch_semis - 7.0).abs() <= 9.5, "pitch out of range: {}", e.pitch_semis);
     }
 }
+
+// ---------------------------------------------------------- real-time stream
+//
+// GrainStream is the path a native audio callback will drive. Everything here
+// guards the one property that makes that safe: driving it in real time must
+// not change the sound.
+
+/// Bundle the loose arguments the offline call takes.
+fn sp(in_frames: usize, ratio: f32, semitones: f32, window_ms: f32, g: fx::Grain)
+    -> fx::StreamParams {
+    fx::StreamParams {
+        in_frames,
+        sample_rate: SR,
+        ratio,
+        semitones,
+        window_ms,
+        grain: g,
+    }
+}
+
+/// The headline guarantee. If this ever fails, playing a sound live and
+/// exporting it produce different audio, and the swarm stops matching what you
+/// hear.
+#[test]
+fn streaming_with_steady_controls_is_identical_to_the_offline_render() {
+    let mut g = fx::Grain::default();
+    g.size_jitter = 0.4;
+    g.position_jitter_ms = 25.0;
+    g.pitch_jitter_semis = 3.0;
+    g.pitch_drift_semis = 2.0;
+    g.seed = 4242;
+
+    let p = sp(48_000, 1.7, -2.5, 45.0, g);
+    let offline = fx::grain::grains(48_000, SR, 1.7, -2.5, 45.0, &g);
+
+    let end = p.plan().out_frames as u64;
+    let mut stream = fx::GrainStream::new();
+    let mut live = Vec::new();
+    while stream.out_frame() < end {
+        live.push(stream.next(&p));
+    }
+
+    assert_eq!(live.len(), offline.len(), "grain count differs");
+    for (i, (a, b)) in live.iter().zip(offline.iter()).enumerate() {
+        assert_eq!(a, b, "grain {i} differs between live and offline");
+    }
+}
+
+/// Seeking must land you on the grains you would have reached by playing there.
+/// Without this, scrubbing over a sound would change it.
+#[test]
+fn seeking_gives_the_same_grains_as_playing_to_that_point() {
+    let mut g = fx::Grain::default();
+    g.size_jitter = 0.3;
+    g.pitch_jitter_semis = 5.0;
+    g.seed = 7;
+
+    let p = sp(48_000, 1.0, 0.0, 30.0, g);
+    let offline = fx::grain::grains(48_000, SR, 1.0, 0.0, 30.0, &g);
+
+    // Somewhere well into the file, deliberately not on a grain boundary.
+    let target = offline[40].out_frame + 13;
+    let mut stream = fx::GrainStream::new();
+    stream.seek(target, &p);
+
+    // Seek snaps back to the grain covering that moment, which is grain 40.
+    assert_eq!(stream.index(), 40);
+    for k in 0..8 {
+        assert_eq!(stream.next(&p), offline[40 + k], "grain {} after seek", 40 + k);
+    }
+}
+
+/// The point of the whole exercise: a control moved between two grains changes
+/// the next one, and nothing before it.
+#[test]
+fn a_control_changed_mid_stream_takes_effect_on_the_very_next_grain() {
+    let g = fx::Grain::default();
+    let slow = sp(96_000, 1.0, 0.0, 40.0, g);
+
+    let mut dense = g;
+    dense.density_hz = 200.0;
+    let fast = sp(96_000, 1.0, 0.0, 40.0, dense);
+
+    let mut stream = fx::GrainStream::new();
+    let a = stream.next(&slow);
+    let b = stream.next(&slow);
+    let slow_hop = b.out_frame - a.out_frame;
+
+    // Same stream, new settings, no reset.
+    let c = stream.next(&fast);
+    let d = stream.next(&fast);
+    let fast_hop = d.out_frame - c.out_frame;
+
+    assert_eq!(slow_hop, slow.plan().hop as u64);
+    assert_eq!(fast_hop, fast.plan().hop as u64);
+    assert!(fast_hop < slow_hop, "raising density must tighten the spacing");
+    // The index keeps counting, so the randomness does not restart and the
+    // sound does not jump when a slider moves.
+    assert_eq!(c.index, 2);
+}
+
+/// A stream must never stall, whatever the controls say. In an audio callback a
+/// hop of zero would be an infinite loop with the speakers connected.
+#[test]
+fn the_stream_always_advances_however_extreme_the_settings() {
+    for (density, overlap, window) in
+        [(2000.0, 8.0, 5.0), (0.0, 8.0, 5.0), (0.5, 1.0, 500.0), (-10.0, 0.0, 0.0)]
+    {
+        let mut g = fx::Grain::default();
+        g.density_hz = density;
+        g.overlap = overlap;
+        let p = sp(48_000, 0.1, 24.0, window, g);
+
+        let mut stream = fx::GrainStream::new();
+        let mut last = stream.out_frame();
+        for _ in 0..64 {
+            stream.next(&p);
+            assert!(
+                stream.out_frame() > last,
+                "stalled at density {density}, overlap {overlap}, window {window}"
+            );
+            last = stream.out_frame();
+        }
+    }
+}

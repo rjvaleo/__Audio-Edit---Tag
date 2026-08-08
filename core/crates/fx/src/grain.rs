@@ -150,6 +150,72 @@ pub fn plan(
     }
 }
 
+/// Everything the schedule depends on, in one value so it can be swapped
+/// wholesale between grains. The real-time path reads this fresh at every
+/// grain; the offline path holds it constant.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StreamParams {
+    pub in_frames: usize,
+    pub sample_rate: u32,
+    pub ratio: f32,
+    pub semitones: f32,
+    pub window_ms: f32,
+    pub grain: Grain,
+}
+
+impl StreamParams {
+    pub fn plan(&self) -> GrainPlan {
+        plan(
+            self.in_frames,
+            self.sample_rate,
+            self.ratio,
+            self.window_ms,
+            &self.grain,
+        )
+    }
+}
+
+/// One grain, given its index and where it lands.
+///
+/// Both the offline enumeration and the real-time stream call this. Having a
+/// single implementation is not tidiness: two copies would let the picture, the
+/// playback and the exported file drift apart, which is the whole thing this
+/// module exists to prevent.
+fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> GrainEvent {
+    let sr = sp.sample_rate.max(1) as f32;
+    let ratio = sp.ratio.clamp(0.1, 10.0);
+    let g = &sp.grain;
+    let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
+    let base_rate = 2f32.powf(sp.semitones / 12.0);
+
+    let t = write as f32 / sr;
+    let size = if g.size_jitter > 1e-6 {
+        let k = 1.0 + g.size_jitter.clamp(0.0, 1.0) * g.rand_bipolar(index, 3);
+        ((p.base_size as f32) * k.clamp(0.15, 2.0)) as usize
+    } else {
+        p.base_size
+    }
+    .max(16);
+
+    let semis = g.pitch_offset(index, t);
+    let rate = (base_rate * 2f32.powf(semis / 12.0)).clamp(0.05, 20.0);
+
+    let nominal = (write as f32) / ratio;
+    let jitter = if pos_jitter > 0.0 { pos_jitter * g.rand_bipolar(index, 5) } else { 0.0 };
+    let span = (size as f32) * rate;
+    let max_start = (sp.in_frames as f32 - span - 1.0).max(0.0);
+    let read = (nominal + jitter).clamp(0.0, max_start);
+
+    GrainEvent {
+        index,
+        out_frame: write as u64,
+        src_frame: read,
+        size: size as u32,
+        rate,
+        pitch_semis: sp.semitones + semis,
+    }
+}
+
 /// Enumerate every grain in a render.
 pub fn grains(
     in_frames: usize,
@@ -159,48 +225,75 @@ pub fn grains(
     window_ms: f32,
     g: &Grain,
 ) -> Vec<GrainEvent> {
-    let sr = sample_rate.max(1) as f32;
-    let ratio = ratio.clamp(0.1, 10.0);
-    let p = plan(in_frames, sample_rate, ratio, window_ms, g);
-    let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
-    let base_rate = 2f32.powf(semitones / 12.0);
+    let sp = StreamParams {
+        in_frames,
+        sample_rate,
+        ratio,
+        semitones,
+        window_ms,
+        grain: *g,
+    };
+    let p = sp.plan();
 
     let mut out = Vec::new();
-    let mut index: u64 = 0;
-    let mut write = 0usize;
-
-    while write < p.out_frames {
-        let t = write as f32 / sr;
-        let size = if g.size_jitter > 1e-6 {
-            let k = 1.0 + g.size_jitter.clamp(0.0, 1.0) * g.rand_bipolar(index, 3);
-            ((p.base_size as f32) * k.clamp(0.15, 2.0)) as usize
-        } else {
-            p.base_size
-        }
-        .max(16);
-
-        let semis = g.pitch_offset(index, t);
-        let rate = (base_rate * 2f32.powf(semis / 12.0)).clamp(0.05, 20.0);
-
-        let nominal = (write as f32) / ratio;
-        let jitter = if pos_jitter > 0.0 { pos_jitter * g.rand_bipolar(index, 5) } else { 0.0 };
-        let span = (size as f32) * rate;
-        let max_start = (in_frames as f32 - span - 1.0).max(0.0);
-        let read = (nominal + jitter).clamp(0.0, max_start);
-
-        out.push(GrainEvent {
-            index,
-            out_frame: write as u64,
-            src_frame: read,
-            size: size as u32,
-            rate,
-            pitch_semis: semitones + semis,
-        });
-
-        index += 1;
-        write += p.hop;
+    let mut stream = GrainStream::new();
+    while (stream.out_frame() as usize) < p.out_frames {
+        out.push(stream.next(&sp));
     }
     out
+}
+
+/// Grains produced forward from a position, reading the parameters afresh at
+/// every grain.
+///
+/// This is the real-time counterpart to [`grains`]. It never allocates and
+/// holds no audio, so it can be driven from an audio callback: ask for the next
+/// grain, and whatever the sliders say *at that instant* shapes it. Holding the
+/// parameters constant reproduces [`grains`] exactly, frame for frame.
+///
+/// There is deliberately no end. Where playback stops is the transport's
+/// business, not the engine's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GrainStream {
+    index: u64,
+    write: u64,
+}
+
+impl GrainStream {
+    pub fn new() -> Self {
+        GrainStream { index: 0, write: 0 }
+    }
+
+    /// The output frame the next grain will land on.
+    pub fn out_frame(&self) -> u64 {
+        self.write
+    }
+
+    /// The index the next grain will carry. Randomness derives from it.
+    pub fn index(&self) -> u64 {
+        self.index
+    }
+
+    /// Jump so the next grain is the one an offline render would have placed at
+    /// or before `out_frame`.
+    ///
+    /// The index is derived from the position rather than from how many grains
+    /// have been played, so seeking to a moment gives the same grains as
+    /// playing to it. Without that, scrubbing would change the sound.
+    pub fn seek(&mut self, out_frame: u64, sp: &StreamParams) {
+        let hop = sp.plan().hop.max(1) as u64;
+        self.index = out_frame / hop;
+        self.write = self.index * hop;
+    }
+
+    /// The next grain, then advance by the hop the *current* parameters imply.
+    pub fn next(&mut self, sp: &StreamParams) -> GrainEvent {
+        let p = sp.plan();
+        let e = event_at(self.index, self.write as usize, &p, sp);
+        self.index += 1;
+        self.write += p.hop.max(1) as u64;
+        e
+    }
 }
 
 /// Render `input` with independent time and pitch, grain by grain.
