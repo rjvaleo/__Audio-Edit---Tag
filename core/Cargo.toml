@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/audio-core", "crates/catalog", "crates/indexer", "crates/server", "crates/audiolab", "crates/edit", "crates/fx"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"

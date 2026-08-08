@@ -1,0 +1,112 @@
+//! Three-band parametric EQ: low shelf, peaking mid, high shelf.
+
+use crate::biquad::{Coeffs, State};
+use crate::Effect;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Band {
+    pub freq: f32,
+    pub q: f32,
+    pub gain_db: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EqSettings {
+    pub low: Band,
+    pub mid: Band,
+    pub high: Band,
+    /// Optional rumble filter, ahead of everything else.
+    pub high_pass_hz: f32,
+}
+
+impl Default for EqSettings {
+    fn default() -> Self {
+        EqSettings {
+            low: Band { freq: 100.0, q: 0.7, gain_db: 0.0 },
+            mid: Band { freq: 1000.0, q: 1.0, gain_db: 0.0 },
+            high: Band { freq: 8000.0, q: 0.7, gain_db: 0.0 },
+            high_pass_hz: 0.0,
+        }
+    }
+}
+
+pub struct Eq {
+    pub settings: EqSettings,
+    coeffs: [Coeffs; 4],
+    /// Delay lines: one set of four sections per channel.
+    states: Vec<[State; 4]>,
+    built_for: (u32, EqSettings),
+}
+
+impl Eq {
+    pub fn new(settings: EqSettings) -> Self {
+        Eq {
+            settings,
+            coeffs: [Coeffs::identity(); 4],
+            states: Vec::new(),
+            built_for: (0, EqSettings::default()),
+        }
+    }
+
+    /// Recompute coefficients if the settings or sample rate have changed.
+    fn rebuild(&mut self, sample_rate: u32) {
+        if self.built_for == (sample_rate, self.settings) {
+            return;
+        }
+        let s = self.settings;
+        self.coeffs = [
+            if s.high_pass_hz > 20.0 {
+                Coeffs::high_pass(s.high_pass_hz, 0.707, sample_rate)
+            } else {
+                Coeffs::identity()
+            },
+            Coeffs::low_shelf(s.low.freq, s.low.q, s.low.gain_db, sample_rate),
+            Coeffs::peaking(s.mid.freq, s.mid.q, s.mid.gain_db, sample_rate),
+            Coeffs::high_shelf(s.high.freq, s.high.q, s.high.gain_db, sample_rate),
+        ];
+        self.built_for = (sample_rate, s);
+    }
+
+    /// Combined magnitude response, for drawing the curve.
+    pub fn magnitude_at(&mut self, freq: f32, sample_rate: u32) -> f32 {
+        self.rebuild(sample_rate);
+        self.coeffs
+            .iter()
+            .map(|c| c.magnitude_at(freq, sample_rate))
+            .product()
+    }
+}
+
+impl Effect for Eq {
+    fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
+        self.rebuild(sample_rate);
+        let channels = channels.max(1);
+        if self.states.len() < channels {
+            self.states.resize(channels, [State::default(); 4]);
+        }
+
+        let frames = buf.len() / channels;
+        for f in 0..frames {
+            for ch in 0..channels {
+                let i = f * channels + ch;
+                let mut v = buf[i];
+                for (sec, c) in self.coeffs.iter().enumerate() {
+                    v = self.states[ch][sec].step(c, v);
+                }
+                buf[i] = v;
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        for st in &mut self.states {
+            for s in st.iter_mut() {
+                s.reset();
+            }
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "EQ"
+    }
+}

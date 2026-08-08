@@ -1,0 +1,8 @@
+[package]
+name = "audio-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Format probing, decoding and analysis for the audio library. No dependencies, no platform APIs."
+
+[dependencies]
