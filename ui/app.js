@@ -956,7 +956,66 @@ async function loadPeaks() {
 function updateZoomLabel() {
   const { from, to, frames } = state.view;
   const span = to - from;
-  $('zoomLabel').textContent = !frames || span >= frames ? 'fit' : `${(frames / span).toFixed(1)}×`;
+  const el = $('zoomLabel');
+  if (!frames || span >= frames) { el.textContent = 'fit'; return; }
+  // Say so when every column is one sample, because that is the point at which
+  // the picture stops being a summary and starts being the data.
+  const cols = Math.round(($('lane').clientWidth || 800) * (window.devicePixelRatio || 1));
+  el.textContent = span <= cols
+    ? `${span} smp`
+    : `${(frames / span).toFixed(1)}×`;
+}
+
+/// One sample per column: stems from the zero line, a dot on each sample, and
+/// a line joining them.
+///
+/// `x` is `(i / span) * w` — the same mapping the playhead uses — so a sample
+/// and the playhead sitting on that sample land on the same pixel. The dot is
+/// the truth here; the joining line is only there to make the shape readable
+/// and is deliberately faint, because nothing was measured between two samples.
+function drawSamples(ctx, values, span, w, mid, half, accent) {
+  const n = Math.min(values.length, span);
+  const xAt = (i) => (i / span) * w;
+  const yAt = (i) => mid - values[i] * half;
+  const gap = w / span;
+
+  // Stems read as a sample view rather than a line chart, but they turn into a
+  // solid block once the samples are closer together than a few pixels.
+  if (gap >= 4) {
+    ctx.strokeStyle = accent;
+    ctx.globalAlpha = 0.3;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = xAt(i);
+      ctx.moveTo(x, mid);
+      ctx.lineTo(x, yAt(i));
+    }
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = accent;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = xAt(i);
+    const y = yAt(i);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = accent;
+  const r = Math.min(3, Math.max(1, gap / 3));
+  if (gap >= 3) {
+    for (let i = 0; i < n; i++) {
+      ctx.beginPath();
+      ctx.arc(xAt(i), yAt(i), r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 function drawWave() {
@@ -985,6 +1044,14 @@ function drawWave() {
   const laneH = h / nch;
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
 
+  // Zoomed in far enough that the server ran out of frames to summarise: it
+  // clamps the column count to the frame count, so every column now holds
+  // exactly one sample and min === max. An envelope of a single sample is a
+  // zero-height rectangle that says nothing, so switch to drawing the samples
+  // themselves — stem, dot and the line between them.
+  const span = state.view.to - state.view.from;
+  const sampleMode = span > 0 && p.columns >= span;
+
   for (let ch = 0; ch < nch; ch++) {
     const { min, max, rms } = p.channels[ch];
     const top = ch * laneH;
@@ -995,19 +1062,23 @@ function drawWave() {
     ctx.strokeStyle = 'rgba(255,255,255,0.07)';
     ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
 
-    // Min/max envelope, then the RMS body inside it — the reason the server
-    // sends three numbers per column rather than one.
-    ctx.fillStyle = accent;
-    ctx.globalAlpha = 0.34;
-    for (let i = 0; i < p.columns; i++) {
-      const y1 = mid - max[i] * half;
-      const y2 = mid - min[i] * half;
-      ctx.fillRect(i * colW, y1, Math.max(colW - 0.3, 0.6), Math.max(y2 - y1, 1));
-    }
-    ctx.globalAlpha = 1;
-    for (let i = 0; i < p.columns; i++) {
-      const r = rms[i] * half;
-      ctx.fillRect(i * colW, mid - r, Math.max(colW - 0.3, 0.6), Math.max(r * 2, 1));
+    if (sampleMode) {
+      drawSamples(ctx, max, span, w, mid, half, accent);
+    } else {
+      // Min/max envelope, then the RMS body inside it — the reason the server
+      // sends three numbers per column rather than one.
+      ctx.fillStyle = accent;
+      ctx.globalAlpha = 0.34;
+      for (let i = 0; i < p.columns; i++) {
+        const y1 = mid - max[i] * half;
+        const y2 = mid - min[i] * half;
+        ctx.fillRect(i * colW, y1, Math.max(colW - 0.3, 0.6), Math.max(y2 - y1, 1));
+      }
+      ctx.globalAlpha = 1;
+      for (let i = 0; i < p.columns; i++) {
+        const r = rms[i] * half;
+        ctx.fillRect(i * colW, mid - r, Math.max(colW - 0.3, 0.6), Math.max(r * 2, 1));
+      }
     }
 
     if (ch > 0) {
@@ -1024,7 +1095,10 @@ function zoom(factor) {
   if (!frames) return;
   const centre = (from + to) / 2;
   let span = (to - from) / factor;
-  span = Math.max(64, Math.min(span, frames));
+  // Eight samples across the lane is the floor. Below that there is nothing
+  // left to look at, and the peak endpoint would be summarising fewer frames
+  // than it has columns to put them in.
+  span = Math.max(8, Math.min(span, frames));
   const b = Math.min(frames, Math.round(centre + span / 2));
   const a = Math.max(0, b - Math.round(span));
   state.view.from = a;
@@ -1691,8 +1765,9 @@ function renderGrainParams() {
   grainBuiltFor = path;
   const shape = $('grainShape');
   const pitchBox = $('grainPitch');
-  const seedBox = $('grainSeed');
-  shape.innerHTML = ''; pitchBox.innerHTML = ''; seedBox.innerHTML = '';
+  shape.innerHTML = ''; pitchBox.innerHTML = '';
+  // The seed has no control of its own. It stays part of the document and is
+  // carried through untouched by this spread, so the engine keeps using it.
   state.grainDraft = { ...g };
 
   const send = ({ live }) => {
@@ -1721,7 +1796,6 @@ function renderGrainParams() {
       ['Pitch drift', 'pitchDriftSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
       ['Drift rate', 'driftRateHz', 0.01, 10, 0.01, (v) => `${v.toFixed(2)} Hz`],
     ]],
-    [seedBox, [['Seed', 'seed', 0, 9999, 1, (v) => `${Math.round(v)}`]]],
   ];
 
   state.grainRows = {};

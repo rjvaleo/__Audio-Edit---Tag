@@ -120,3 +120,60 @@ fn a_sub_range_covers_only_that_range() {
         assert_eq!(col.max, 0.0);
     }
 }
+
+/// The waveform viewer claims to be sample accurate once it is zoomed in far
+/// enough. That claim rests entirely on this: when more columns are asked for
+/// than there are frames, the tile must collapse to one column per frame, and
+/// each column must carry that frame's actual value rather than a summary of
+/// it. If this ever regresses the display silently starts lying at high zoom.
+#[test]
+fn a_tile_asked_for_more_columns_than_frames_returns_one_column_per_sample() {
+    let s: Vec<f32> = (0..16).map(|i| (i as f32 - 8.0) / 16.0).collect();
+    let tile = tile_of(&s, 1, 4096);
+
+    assert_eq!(tile.columns, 16, "columns must clamp to the frame count");
+    for (i, col) in tile.channel(0).iter().enumerate() {
+        assert_eq!(col.min, s[i], "column {i} min is not the sample");
+        assert_eq!(col.max, s[i], "column {i} max is not the sample");
+        // One sample: rms of a single value is its magnitude.
+        assert_near(col.rms, s[i].abs(), 1e-6);
+    }
+}
+
+/// The same guarantee for a window part-way into the file, since that is what
+/// zooming actually produces — a range, not the whole thing from zero.
+#[test]
+fn a_zoomed_window_maps_each_column_to_the_right_absolute_frame() {
+    let s: Vec<f32> = (0..1000).map(|i| i as f32 / 1000.0).collect();
+    let bytes = riff_wave(&[
+        fmt_chunk(3, 1, 44100, 32),
+        riff_chunk(b"data", &to_f32_le(&s)),
+    ]);
+    let mut src = SliceSource::new(bytes);
+    let info = probe(&mut src).expect("probe");
+    let mut r = Reader::new(src, info);
+
+    let tile = r.peak_tile(600, 20, 4096).expect("peak tile");
+    assert_eq!(tile.columns, 20);
+    for (i, col) in tile.channel(0).iter().enumerate() {
+        assert_eq!(col.max, s[600 + i], "column {i} is not frame {}", 600 + i);
+    }
+}
+
+/// Stereo must stay de-interleaved at sample resolution too — a channel swap
+/// here would be invisible in the envelope view but obvious sample by sample.
+#[test]
+fn sample_resolution_keeps_the_channels_apart() {
+    let mut s = Vec::new();
+    for i in 0..12 {
+        s.push(i as f32 / 100.0);          // left ramps up
+        s.push(-(i as f32) / 100.0);       // right ramps down
+    }
+    let tile = tile_of(&s, 2, 4096);
+
+    assert_eq!(tile.columns, 12);
+    for i in 0..12 {
+        assert_eq!(tile.channel(0)[i].max, i as f32 / 100.0);
+        assert_eq!(tile.channel(1)[i].max, -(i as f32) / 100.0);
+    }
+}
