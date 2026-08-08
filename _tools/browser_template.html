@@ -1,0 +1,270 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Audio Library</title><style>
+:root{--bg:#0f1116;--pnl:#171a22;--pnl2:#1d212b;--ln:#2a2f3c;--tx:#e8eaf0;--dim:#949bb0;
+--ac:#7dd3a0;--wn:#e3b463;--bd:#e08a6b;--wave:#5b8dd6;--play:#7dd3a0}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:13.5px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
+header{padding:10px 16px;border-bottom:1px solid var(--ln);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{margin:0;font-size:15px;font-weight:650;white-space:nowrap}
+.sub{color:var(--dim);font-size:11.5px}
+input,select,button,textarea{background:var(--pnl2);border:1px solid var(--ln);color:var(--tx);
+padding:6px 9px;border-radius:6px;font:inherit;font-size:12.5px}
+#q{flex:1;min-width:180px}
+button{cursor:pointer}button:hover{border-color:var(--ac)}
+button.pri{background:var(--ac);color:#0d1117;border-color:var(--ac);font-weight:600}
+.wrap{flex:1;display:flex;min-height:0}
+#tree{width:290px;min-width:200px;overflow:auto;border-right:1px solid var(--ln);padding:8px 0;resize:horizontal}
+.nd{padding:4px 12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:5px;margin:0 6px}
+.nd:hover{background:var(--pnl2)}
+.nd.l1{font-weight:650;margin-top:6px}.nd.l2{padding-left:26px;color:#c7ccda}
+.nd.l3{padding-left:44px;font-size:12.5px;color:var(--dim);font-family:ui-monospace,Menlo,monospace}
+.nd.sel{background:var(--ac);color:#0d1117;font-weight:600}.nd.sel .ct{color:#0d1117}
+.ct{float:right;color:var(--dim);font-size:11px;margin-left:8px}
+.tw{display:inline-block;width:12px;color:var(--dim);transition:transform .12s}.tw.open{transform:rotate(90deg)}
+#main{flex:1;overflow:auto;padding:14px 18px 90px}
+.card{background:var(--pnl);border:1px solid var(--ln);border-radius:9px;padding:13px 15px;margin-bottom:12px}
+.card h2{margin:0 0 4px;font-size:16px;font-family:ui-monospace,Menlo,monospace;font-weight:600}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin:7px 0}
+.bg{padding:2.5px 8px;border-radius:999px;font-size:11px;background:var(--pnl2);border:1px solid var(--ln);color:var(--dim)}
+.bg.k{background:#20303f;border-color:#2f4a63;color:#a9cdf0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:8px;margin-top:10px}
+.st{background:var(--pnl2);border-radius:7px;padding:7px 9px}
+.st .v{font-size:16px;font-weight:650}.st .l{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+table{width:100%;border-collapse:collapse}
+th{position:sticky;top:0;background:var(--bg);text-align:left;font-size:10.5px;text-transform:uppercase;
+letter-spacing:.06em;color:var(--dim);padding:7px 6px;border-bottom:1px solid var(--ln);cursor:pointer;z-index:2}
+td{padding:4px 6px;border-bottom:1px solid #1c1f29;vertical-align:middle}
+tr:hover td{background:#161a23}
+tr.playing td{background:#1c2b24}
+.fn{font-family:ui-monospace,Menlo,monospace;font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.num{text-align:right;color:var(--dim);white-space:nowrap;font-size:12px;font-variant-numeric:tabular-nums}
+.c-high{color:var(--ac)}.c-med{color:var(--wn)}.c-low{color:var(--bd)}
+.sub2{color:var(--dim);font-size:11.5px}
+.pathrow td{background:#12151d!important;color:var(--dim);font-size:11px;font-family:ui-monospace,Menlo,monospace}
+.note{background:#191c26;border-left:3px solid var(--wn);padding:9px 12px;border-radius:6px;color:var(--dim);font-size:12px;margin-bottom:12px}
+.empty{color:var(--dim);text-align:center;padding:60px 20px}
+.pb{width:26px;height:22px;padding:0;font-size:11px;line-height:1;border-radius:5px}
+.pb.on{background:var(--play);color:#0d1117;border-color:var(--play)}
+.pb:disabled{opacity:.28;cursor:not-allowed}
+svg.wv{cursor:pointer;display:block}
+#transport{position:fixed;left:0;right:0;bottom:0;background:var(--pnl);border-top:1px solid var(--ln);
+padding:8px 14px;display:flex;gap:12px;align-items:center;z-index:20}
+#transport.hide{display:none}
+#seek{flex:1;height:5px;background:var(--pnl2);border-radius:3px;position:relative;cursor:pointer}
+#seekfill{position:absolute;left:0;top:0;bottom:0;background:var(--ac);border-radius:3px;width:0}
+.tinfo{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--dim);white-space:nowrap}
+.edit{display:grid;grid-template-columns:90px 1fr;gap:7px 10px;align-items:center;margin-top:10px}
+.edit label{color:var(--dim);font-size:11.5px}
+.edit input,.edit textarea{width:100%}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.dirty{color:var(--wn);font-size:12px}
+#toast{position:fixed;right:16px;bottom:70px;background:var(--pnl2);border:1px solid var(--ac);
+padding:9px 14px;border-radius:7px;z-index:40;display:none}
+</style></head><body>
+<header><h1>Audio Library</h1>
+<span class="sub">__NF__ folders &middot; __TF__ files &middot; __GB__ GB &middot; __HR__ h</span>
+<span class="sub" id="mode"></span>
+<input id="q" placeholder="Search folders and files&hellip;">
+<select id="cf"><option value="">Any confidence</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select>
+<button id="save" class="pri">Save edits</button><span class="dirty" id="dirty"></span>
+</header>
+<div class="wrap"><div id="tree"></div><div id="main"><div class="empty">Select a group or folder.</div></div></div>
+<div id="transport" class="hide">
+ <button id="pp" class="pri" style="width:38px">&#9654;</button>
+ <span class="tinfo" id="tnow">0:00</span>
+ <div id="seek"><div id="seekfill"></div></div>
+ <span class="tinfo" id="tdur">0:00</span>
+ <span class="tinfo" id="tname" style="max-width:280px;overflow:hidden;text-overflow:ellipsis"></span>
+ <input type="range" id="vol" min="0" max="1" step="0.02" value="0.85" style="width:90px">
+ <button id="stop">&#9632;</button>
+</div>
+<div id="toast"></div>
+<script>
+const P=__DATA__, D=P.D, CATS=P.CATS, CONF=P.CONF, FMTS=P.FMTS;
+const B64="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const SRV=location.protocol==='http:'||location.protocol==='https:';
+document.getElementById('mode').textContent=SRV?'server mode · all formats playable':'file mode · WAV/MP3 only · run "3 - START library browser.bat" for AIFF';
+const mb=b=>b>=1e9?(b/1e9).toFixed(2)+' GB':b>=1e6?(b/1e6).toFixed(1)+' MB':(b/1e3).toFixed(0)+' KB';
+const dr=s=>s>=3600?(s/3600).toFixed(1)+'h':s>=60?(s/60).toFixed(1)+'m':s.toFixed(2)+'s';
+const ts=s=>{s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0')};
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let sel=null,expanded={},sortBy=0,sdir=1,showAll=false,picked=new Set();
+let edits={folders:{},files:{}};
+function wave(p,w,h,id){if(!p)return '<svg class="wv" width="'+w+'" height="'+h+'"></svg>';
+ let d='';const n=p.length,bw=w/n;
+ for(let i=0;i<n;i++){const v=B64.indexOf(p[i])/63,bh=Math.max(1,v*h);
+  d+='<rect x="'+(i*bw).toFixed(2)+'" y="'+((h-bh)/2).toFixed(2)+'" width="'+Math.max(.7,bw-.45).toFixed(2)+'" height="'+bh.toFixed(2)+'"/>';}
+ return '<svg class="wv" data-w="'+id+'" width="'+w+'" height="'+h+'" fill="var(--wave)">'+d+
+   '<rect class="ph" x="0" y="0" width="1.5" height="'+h+'" fill="#fff" opacity="0"/></svg>';}
+const AU=new Audio(); AU.volume=0.85; let curKey=null,curDur=0;
+function audioURL(folder,rel){
+ return SRV? '/audio?p='+encodeURIComponent(folder+'/'+rel)
+           : 'INGEST/'+folder.split('/').map(encodeURIComponent).join('/')+'/'+rel.split('/').map(encodeURIComponent).join('/');}
+function play(folder,rel,name,dur){
+ const k=folder+'/'+rel;
+ if(curKey===k){AU.paused?AU.play():AU.pause();return;}
+ curKey=k;curDur=dur;AU.src=audioURL(folder,rel);AU.play().catch(e=>toast('Cannot play: '+e.message));
+ document.getElementById('transport').classList.remove('hide');
+ document.getElementById('tname').textContent=name;
+ document.getElementById('tdur').textContent=ts(dur);
+ markRows();}
+function markRows(){
+ document.querySelectorAll('tr[data-k]').forEach(tr=>tr.classList.toggle('playing',tr.dataset.k===curKey));
+ document.querySelectorAll('button.pb').forEach(b=>b.classList.toggle('on',b.dataset.k===curKey&&!AU.paused));}
+AU.addEventListener('timeupdate',()=>{
+ const d=AU.duration&&isFinite(AU.duration)?AU.duration:curDur;
+ const f=d?AU.currentTime/d:0;
+ document.getElementById('seekfill').style.width=(f*100)+'%';
+ document.getElementById('tnow').textContent=ts(AU.currentTime);
+ const sv=document.querySelector('svg[data-w="'+curKey+'"]');
+ if(sv){const ph=sv.querySelector('.ph');if(ph){ph.setAttribute('opacity','.85');ph.setAttribute('x',(f*sv.getAttribute('width')).toFixed(1));}}});
+AU.addEventListener('play',()=>{document.getElementById('pp').innerHTML='&#10074;&#10074;';markRows()});
+AU.addEventListener('pause',()=>{document.getElementById('pp').innerHTML='&#9654;';markRows()});
+AU.addEventListener('error',()=>toast('Playback failed — '+(SRV?'server error':'this format needs server mode')));
+document.getElementById('pp').onclick=()=>AU.paused?AU.play():AU.pause();
+document.getElementById('stop').onclick=()=>{AU.pause();AU.currentTime=0;};
+document.getElementById('vol').oninput=e=>AU.volume=+e.target.value;
+document.getElementById('seek').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();
+ const d=AU.duration&&isFinite(AU.duration)?AU.duration:curDur; if(d)AU.currentTime=(e.clientX-r.left)/r.width*d;};
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';
+ clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3800);}
+function dirtyCount(){return Object.keys(edits.folders).length+Object.keys(edits.files).length;}
+function upd(){document.getElementById('dirty').textContent=dirtyCount()?dirtyCount()+' unsaved':'';}
+function matches(f){const q=document.getElementById('q').value.toLowerCase().trim();
+ const cf=document.getElementById('cf').value;
+ if(cf&&f.c!==cf)return false;
+ if(!q)return true;
+ const h=(f.n+' '+f.tg+' '+f.m+' '+f.ins+' '+f.cat).toLowerCase();
+ return q.split(/\s+/).every(t=>h.includes(t))||f.F.some(x=>x[0].toLowerCase().includes(q));}
+function eff(f){const o=edits.folders[f.n]||{};return {a:o.level1||f.a,b:o.level2||f.b,tg:o.tags!=null?o.tags:f.tg};}
+function buildTree(){
+ const vis=D.filter(matches),g={};
+ vis.forEach(f=>{const e=eff(f);(g[e.a]=g[e.a]||{})[e.b]=(g[e.a][e.b]||[]).concat([f]);});
+ let h='';
+ Object.keys(g).sort().forEach(l1=>{
+  const n1=Object.values(g[l1]).reduce((s,a)=>s+a.length,0);
+  h+='<div class="nd l1" data-t="1" data-k="'+esc(l1)+'"><span class="tw '+(expanded[l1]?'open':'')+'">&#9656;</span> '+esc(l1)+'<span class="ct">'+n1+'</span></div>';
+  if(!expanded[l1])return;
+  Object.keys(g[l1]).sort().forEach(l2=>{
+   const k=l1+'/'+l2,arr=g[l1][l2];
+   h+='<div class="nd l2" data-t="2" data-k="'+esc(k)+'"><span class="tw '+(expanded[k]?'open':'')+'">&#9656;</span> '+esc(l2)+'<span class="ct">'+arr.length+'</span></div>';
+   if(!expanded[k])return;
+   arr.forEach(f=>{h+='<div class="nd l3 '+(sel===f.n?'sel':'')+'" data-t="3" data-k="'+esc(f.n)+'">'+esc(f.n)+'<span class="ct">'+f.na+'</span></div>';});
+  });});
+ document.getElementById('tree').innerHTML=h||'<div class="empty">No matches</div>';
+ document.querySelectorAll('.nd').forEach(el=>el.onclick=()=>{
+  const t=el.dataset.t,k=el.dataset.k;
+  if(t==='3'){sel=k;showAll=false;picked.clear();buildTree();showFolder(k);}
+  else{expanded[k]=!expanded[k];buildTree();showGroup(t,k);}});}
+function showGroup(t,k){
+ const arr=D.filter(matches).filter(f=>{const e=eff(f);return t==='1'?e.a===k:(e.a+'/'+e.b)===k;});
+ const nf=arr.reduce((s,f)=>s+f.nf,0),by=arr.reduce((s,f)=>s+f.by,0),mi=arr.reduce((s,f)=>s+f.mi,0);
+ let h='<div class="card"><h2>'+esc(k)+'</h2><div class="sub2">'+arr.length+' folders</div><div class="grid">'
+ +'<div class="st"><div class="v">'+arr.length+'</div><div class="l">folders</div></div>'
+ +'<div class="st"><div class="v">'+nf.toLocaleString()+'</div><div class="l">files</div></div>'
+ +'<div class="st"><div class="v">'+mb(by)+'</div><div class="l">size</div></div>'
+ +'<div class="st"><div class="v">'+(mi/60).toFixed(1)+'h</div><div class="l">audio</div></div></div></div>';
+ h+='<table><thead><tr><th>Folder</th><th>Machine</th><th class="num">Files</th><th class="num">Min</th><th class="num">Size</th><th>Conf</th></tr></thead><tbody>';
+ arr.sort((a,b)=>b.by-a.by).forEach(f=>{h+='<tr style="cursor:pointer" data-f="'+esc(f.n)+'"><td class="fn">'+esc(f.n)+'</td>'
+  +'<td class="sub2">'+esc(f.m)+'</td><td class="num">'+f.nf+'</td><td class="num">'+f.mi.toFixed(0)+'</td>'
+  +'<td class="num">'+mb(f.by)+'</td><td class="c-'+(f.c==='medium'?'med':f.c)+'">'+f.c+'</td></tr>';});
+ document.getElementById('main').innerHTML=h+'</tbody></table>';
+ document.querySelectorAll('tr[data-f]').forEach(tr=>tr.onclick=()=>{
+  const n=tr.dataset.f,f=D.find(x=>x.n===n),e=eff(f);
+  expanded[e.a]=true;expanded[e.a+'/'+e.b]=true;sel=n;picked.clear();buildTree();showFolder(n);});}
+function showFolder(name){
+ const f=D.find(x=>x.n===name); if(!f)return;
+ const ov=edits.folders[name]||{}, e=eff(f);
+ const q=document.getElementById('q').value.toLowerCase().trim();
+ let files=f.F.slice();
+ if(q&&!(f.n+' '+f.tg).toLowerCase().includes(q))files=files.filter(x=>x[0].toLowerCase().includes(q));
+ files.sort((a,b)=>{
+  const p=String(a[10]).localeCompare(String(b[10])); if(p)return p;   // keep subfolders contiguous
+  const x=a[sortBy],y=b[sortBy];
+  return (typeof x==='number'?x-y:String(x).localeCompare(String(y)))*sdir;});
+ const cap=showAll?files.length:Math.min(250,files.length);
+ let h='<div class="card"><h2>'+esc(f.n)+'</h2><div class="badges">'
+ +'<span class="bg k">'+esc(e.a)+' &rsaquo; '+esc(e.b)+'</span>'+(f.m?'<span class="bg k">'+esc(f.m)+'</span>':'')
+ +'<span class="bg c-'+(f.c==='medium'?'med':f.c)+'">'+f.c+' confidence &middot; dominant '+(f.s*100).toFixed(0)+'%</span></div>'
+ +'<div class="grid">'
+ +'<div class="st"><div class="v">'+f.nf+'</div><div class="l">files</div></div>'
+ +'<div class="st"><div class="v">'+f.na+'</div><div class="l">audio</div></div>'
+ +'<div class="st"><div class="v">'+mb(f.by)+'</div><div class="l">size</div></div>'
+ +'<div class="st"><div class="v">'+f.mi.toFixed(1)+'m</div><div class="l">duration</div></div>'
+ +'<div class="st"><div class="v" style="font-size:12px">'+esc(f.o)+'</div><div class="l">oldest</div></div>'
+ +'<div class="st"><div class="v" style="font-size:12px">'+esc(f.w)+'</div><div class="l">newest</div></div></div>'
+ +'<div class="edit">'
+ +'<label>Level 1</label><input id="e1" value="'+esc(e.a)+'">'
+ +'<label>Level 2</label><input id="e2" value="'+esc(e.b)+'">'
+ +'<label>Tags</label><input id="e3" value="'+esc(e.tg)+'">'
+ +'<label>Notes</label><textarea id="e4" rows="2" placeholder="context the classifier cannot infer…">'+esc(ov.notes||'')+'</textarea>'
+ +'</div><div class="sub2" style="margin-top:9px"><b>categories</b> '+esc(f.cat)+'<br><b>formats</b> '+esc(f.fmt)+(f.ins?'<br><b>instruments</b> '+esc(f.ins):'')+'</div></div>';
+ if(f.c==='low')h+='<div class="note">Low confidence: no category dominates. Treat the grouping as a suggestion — edit it above.</div>';
+ h+='<div class="bar"><button id="selall">Select all shown</button><button id="selnone">Clear</button>'
+ +'<span class="sub2" id="pickn"></span><span style="flex:1"></span>'
+ +'<select id="bulkcat"><option value="">Bulk set category…</option>'+CATS.map(c=>'<option>'+esc(c)+'</option>').join('')+'</select>'
+ +'<button id="applybulk">Apply to selected</button></div>';
+ h+='<table><thead><tr><th style="width:26px"></th><th style="width:30px"></th><th data-s="0">File</th><th>Waveform</th>'
+ +'<th data-s="1" class="num">Dur</th><th data-s="2" class="num">Size</th><th data-s="5" class="num">Rate</th>'
+ +'<th class="num">Ch/Bit</th><th data-s="3">Category</th><th data-s="8">Format</th></tr></thead><tbody>';
+ let last=null;
+ files.slice(0,cap).forEach(x=>{
+  if(x[10]!==last){last=x[10];h+='<tr class="pathrow"><td colspan="10">'+esc(last||'(root)')+'</td></tr>';}
+  const key=f.n+'/'+x[11];
+  const fo=edits.files[key],cat=fo&&fo.category?fo.category:CATS[x[3]];
+  const canplay=SRV||x[12]===1;
+  h+='<tr data-k="'+esc(key)+'"><td><input type="checkbox" class="ck" data-k="'+esc(key)+'"'+(picked.has(key)?' checked':'')+'></td>'
+   +'<td><button class="pb" data-k="'+esc(key)+'" data-r="'+esc(x[11])+'" data-n="'+esc(x[0])+'" data-d="'+x[1]+'"'+(canplay?'':' disabled title="needs server mode"')+'>&#9654;</button></td>'
+   +'<td class="fn" title="'+esc(x[0])+'">'+esc(x[0])+'</td><td>'+wave(x[9],150,22,key)+'</td>'
+   +'<td class="num">'+dr(x[1])+'</td><td class="num">'+mb(x[2])+'</td>'
+   +'<td class="num">'+(x[5]?(x[5]/1000).toFixed(1)+'k':'-')+'</td><td class="num">'+(x[7]||'-')+'/'+(x[6]||'-')+'</td>'
+   +'<td class="'+(fo?'c-high':'c-'+(CONF[x[4]]==='med'?'med':CONF[x[4]]))+'">'+esc(cat)+(fo?' *':'')+'</td>'
+   +'<td class="sub2">'+esc(FMTS[x[8]])+'</td></tr>';});
+ h+='</tbody></table>';
+ if(cap<files.length)h+='<div style="padding:12px 0"><button id="more">Show all '+files.length+' files</button></div>';
+ document.getElementById('main').innerHTML=h;
+ const setf=(k,v)=>{edits.folders[name]=Object.assign({},edits.folders[name],{[k]:v});upd();buildTree();};
+ document.getElementById('e1').onchange=ev=>setf('level1',ev.target.value.trim());
+ document.getElementById('e2').onchange=ev=>setf('level2',ev.target.value.trim());
+ document.getElementById('e3').onchange=ev=>setf('tags',ev.target.value.trim());
+ document.getElementById('e4').onchange=ev=>setf('notes',ev.target.value.trim());
+ document.querySelectorAll('button.pb').forEach(b=>b.onclick=ev=>{ev.stopPropagation();
+  play(name,b.dataset.r,b.dataset.n,+b.dataset.d);});
+ document.querySelectorAll('svg.wv').forEach(sv=>sv.onclick=ev=>{
+  const k=sv.dataset.w;if(!k)return;
+  if(curKey!==k){const tr=document.querySelector('tr[data-k="'+CSS.escape(k)+'"] button.pb');if(tr)tr.click();return;}
+  const r=sv.getBoundingClientRect();const d=AU.duration&&isFinite(AU.duration)?AU.duration:curDur;
+  if(d)AU.currentTime=(ev.clientX-r.left)/r.width*d;});
+ document.querySelectorAll('input.ck').forEach(c=>c.onchange=()=>{
+  c.checked?picked.add(c.dataset.k):picked.delete(c.dataset.k);
+  document.getElementById('pickn').textContent=picked.size?picked.size+' selected':'';});
+ const pn=()=>document.getElementById('pickn').textContent=picked.size?picked.size+' selected':'';
+ document.getElementById('selall').onclick=()=>{document.querySelectorAll('input.ck').forEach(c=>{c.checked=true;picked.add(c.dataset.k)});pn();};
+ document.getElementById('selnone').onclick=()=>{document.querySelectorAll('input.ck').forEach(c=>c.checked=false);picked.clear();pn();};
+ document.getElementById('applybulk').onclick=()=>{
+  const v=document.getElementById('bulkcat').value;
+  if(!v){toast('Pick a category first');return;}
+  if(!picked.size){toast('Nothing selected');return;}
+  picked.forEach(k=>edits.files[k]=Object.assign({},edits.files[k],{category:v}));
+  toast(picked.size+' files set to '+v);upd();showFolder(name);};
+ if(document.getElementById('more'))document.getElementById('more').onclick=()=>{showAll=true;showFolder(name);};
+ document.querySelectorAll('th[data-s]').forEach(th=>th.onclick=()=>{
+  const s=+th.dataset.s;sdir=(sortBy===s)?-sdir:1;sortBy=s;showFolder(name);});
+ pn();markRows();}
+document.getElementById('save').onclick=async()=>{
+ if(!dirtyCount()){toast('Nothing to save');return;}
+ if(SRV){
+  try{const r=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(edits)});
+   const j=await r.json();
+   if(j.ok){toast('Saved — '+j.folders_written+' _TAGS.txt updated');edits={folders:{},files:{}};upd();}
+   else toast('Save failed: '+(j.error||'unknown'));}
+  catch(e){toast('Save failed: '+e.message);} }
+ else{const b=new Blob([JSON.stringify(edits,null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='tag-edits.json';a.click();
+  toast('Downloaded tag-edits.json — send it to be applied');}};
+document.getElementById('q').oninput=()=>{buildTree();if(sel)showFolder(sel);};
+document.getElementById('cf').onchange=()=>buildTree();
+document.addEventListener('keydown',e=>{if(e.code==='Space'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){
+ e.preventDefault();if(curKey)AU.paused?AU.play():AU.pause();}});
+buildTree();
+</script></body></html>
