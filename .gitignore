@@ -13,3 +13,14 @@ app/HEADERLESS-PLAN.tsv
 # git lock droppings left behind when running over the device bridge
 *.lock
 *.junk*
+# ...but not Cargo's, which pins the build and belongs in the repo. The rule
+# above was written for git's droppings and caught this by accident.
+!Cargo.lock
+
+# rust build output. Regenerable, and the incremental dep-graph blobs are
+# ~10 MB each and rewritten on every compile, so tracking them buries every
+# real diff and grows the history by tens of megabytes a commit.
+target/
+
+# macOS finder droppings
+.DS_Store
