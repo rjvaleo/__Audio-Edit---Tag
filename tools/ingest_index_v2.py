@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Audio Library ingest indexer v2
-See _INGEST-TAXONOMY.md for the full rule documentation.
+See INGEST-TAXONOMY.md for the full rule documentation.
 Usage:  python3 ingest_index_v2.py [seconds_budget] [--reset]
 Resumable: re-run until it reports 0 remaining.
 """
@@ -20,8 +20,8 @@ def _find_ingest(start):
     return _os.path.join(_os.path.dirname(APP),"INGEST")
 ING=_find_ingest(APP)
 LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside _tools
-WORK=_os.path.join(APP,"_work"); _os.makedirs(WORK,exist_ok=True)
+BASE=APP                                        # data + html live beside tools
+WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
 def W(n): return _os.path.join(WORK,n)
 ST=W('ingest2_state.json')
 FILES=W('ingest2_files.tsv')

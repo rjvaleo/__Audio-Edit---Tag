@@ -22,11 +22,11 @@ def _find_ingest(start):
     return _os.path.join(_os.path.dirname(APP),"INGEST")
 ING=_find_ingest(APP)
 LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside _tools
-WORK=_os.path.join(APP,"_work"); _os.makedirs(WORK,exist_ok=True)
+BASE=APP                                        # data + html live beside tools
+WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
 def W(n): return _os.path.join(WORK,n)
 PORT=int(_os.environ.get('LIBPORT','8737'))
-OVR=_os.path.join(APP,'_TAG-OVERRIDES.json')
+OVR=_os.path.join(APP,'TAG-OVERRIDES.json')
 
 
 
@@ -112,7 +112,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u=urllib.parse.urlparse(self.path); q=urllib.parse.parse_qs(u.query)
         p=urllib.parse.unquote(u.path)
-        if p in ('/','/index.html'): return self.serve_file(os.path.join(BASE,'_LIBRARY-BROWSER.html'),'text/html; charset=utf-8')
+        if p in ('/','/index.html'): return self.serve_file(os.path.join(BASE,'index.html'),'text/html; charset=utf-8')
         if p=='/ping': return self._send(200,json.dumps({"ok":True,"base":BASE,"ingest":ING}).encode())
         if p=='/audio': return self.audio(q)
         f=os.path.normpath(os.path.join(BASE,p.lstrip('/')))

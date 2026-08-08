@@ -29,10 +29,10 @@ def _find_ingest(start):
     return _os.path.join(_os.path.dirname(APP),"INGEST")
 ING=_find_ingest(APP)
 LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside _tools
-WORK=_os.path.join(APP,"_work"); _os.makedirs(WORK,exist_ok=True)
+BASE=APP                                        # data + html live beside tools
+WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
 def W(n): return _os.path.join(WORK,n)
-IDX=_os.path.join(APP,'_AUDIO-INDEX.tsv')
+IDX=_os.path.join(APP,'AUDIO-INDEX.tsv')
 
 
 
@@ -206,12 +206,12 @@ def main():
             with open(tgt,'wb') as fh: fh.write(aiff_header(len(body),ch,bits,sr)); fh.write(body)
             wrote+=1
         done+=1
-    with open(os.path.join(BASE,'_HEADERLESS-PLAN.tsv'),'w',encoding='utf-8',newline='') as fh:
+    with open(os.path.join(BASE,'HEADERLESS-PLAN.tsv'),'w',encoding='utf-8',newline='') as fh:
         w=csv.writer(fh,delimiter='\t')
         w.writerow(['folder','rel_path','samplerate','bits','channels','endian','confidence'])
         w.writerows(out)
     print("analysed %d | skipped %d | written %d | %.1fs"%(done,skipped,wrote,time.time()-t0))
-    print("plan written to _HEADERLESS-PLAN.tsv")
+    print("plan written to HEADERLESS-PLAN.tsv")
     c=Counter(x[6].split()[0] for x in out)
     print("confidence:",dict(c))
 if __name__=='__main__': main()

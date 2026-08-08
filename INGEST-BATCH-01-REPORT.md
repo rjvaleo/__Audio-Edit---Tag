@@ -4,8 +4,8 @@
 
 Index written to the Audio Library root, and it will grow with each batch:
 
-- `_AUDIO-INDEX.tsv` - one row per file: folder, path, size, modified date, format, sample rate, bit depth, channels, duration, notes
-- `_FOLDER-INDEX.tsv` - one row per folder: file count, size, audio count, total minutes, date range, depth, format mix
+- `AUDIO-INDEX.tsv` - one row per file: folder, path, size, modified date, format, sample rate, bit depth, channels, duration, notes
+- `FOLDER-INDEX.tsv` - one row per folder: file count, size, audio count, total minutes, date range, depth, format mix
 
 ## What this batch is
 

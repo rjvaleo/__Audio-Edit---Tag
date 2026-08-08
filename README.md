@@ -5,26 +5,26 @@ folder and it still works, as long as it stays one level above `INGEST`.
 
 ## Start here
 
-    _tools\3 - START library browser.bat
+    tools\3 - START library browser.bat
 
 Opens `http://localhost:8737/` with the player and tag editor. Needs Python on Windows.
 
-Double-clicking `_LIBRARY-BROWSER.html` also works, but only plays WAV/MP3 - the
+Double-clicking `index.html` also works, but only plays WAV/MP3 - the
 launcher is what makes AIFF and headerless files audible.
 
 ## What's in here
 
 | | |
 |---|---|
-| `_LIBRARY-BROWSER.html` | the browser - tree, stats, waveforms, player, editor |
-| `_AUDIO-INDEX.tsv` | one row per file (75,284) |
-| `_FOLDER-INDEX.tsv` | one row per folder (593) |
-| `_TAG-INDEX.tsv` | folder tags, levels, confidence |
-| `_TAG-OVERRIDES.json` | your hand edits, written by the editor |
-| `_INGEST-TAXONOMY.md` | the classification rules - read this before changing them |
-| `_INGEST-BATCH-01-REPORT.md` | first ingest report |
-| `_work/` | regenerable working data (indexes + 54,041 waveform peaks) |
-| `_tools/` | the scripts |
+| `index.html` | the browser - tree, stats, waveforms, player, editor |
+| `AUDIO-INDEX.tsv` | one row per file (75,284) |
+| `FOLDER-INDEX.tsv` | one row per folder (593) |
+| `TAG-INDEX.tsv` | folder tags, levels, confidence |
+| `TAG-OVERRIDES.json` | your hand edits, written by the editor |
+| `INGEST-TAXONOMY.md` | the classification rules - read this before changing them |
+| `INGEST-BATCH-01-REPORT.md` | first ingest report |
+| `work/` | regenerable working data (indexes + 54,041 waveform peaks) |
+| `tools/` | the scripts |
 
 Each of the 593 folders under `INGEST` also has its own `_TAGS.txt`.
 
@@ -36,11 +36,11 @@ Each of the 593 folders under `INGEST` also has its own `_TAGS.txt`.
 | `ingest_index_v2.py` | scans folders, classifies files, writes the indexes |
 | `make_waveforms.py` | decimated waveform peaks, 60 buckets per file |
 | `write_tags.py` | writes `_TAGS.txt` into every folder |
-| `build_browser.py` | rebuilds the HTML from `_work` + `browser_template.html` |
+| `build_browser.py` | rebuilds the HTML from `work` + `browser_template.html` |
 | `convert_headerless.py` | gives headerless PCM a real AIFF header |
 | `rename_folders.py` | folder renaming - **not used**, we chose tagging instead |
 
-Edit the look or behaviour in `_tools\browser_template.html`, then run
+Edit the look or behaviour in `tools\browser_template.html`, then run
 `build_browser.py` to regenerate.
 
 ## Order of operations, if you ever rebuild from scratch
