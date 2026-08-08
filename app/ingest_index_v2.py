@@ -6,26 +6,14 @@ Usage:  python3 ingest_index_v2.py [seconds_budget] [--reset]
 Resumable: re-run until it reports 0 remaining.
 """
 import os,sys,json,struct,time,re,csv
+from paths import *
 import os as _os
-HERE=_os.path.dirname(_os.path.abspath(__file__))
-APP=_os.path.dirname(HERE)                      # the "Audio Edit & Tag" folder
-def _find_ingest(start):
-    d=start
-    for _ in range(5):
-        c=_os.path.join(d,"INGEST")
-        if _os.path.isdir(c): return c
-        p=_os.path.dirname(d)
-        if p==d: break
-        d=p
-    return _os.path.join(_os.path.dirname(APP),"INGEST")
-ING=_find_ingest(APP)
-LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside tools
-WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
-def W(n): return _os.path.join(WORK,n)
-ST=W('ingest2_state.json')
-FILES=W('ingest2_files.tsv')
-FOLD=W('ingest2_folders.tsv')
+ING=LIBRARY; LIB=LIBRARY
+BASE=HERE; APP=HERE; WORK=HERE
+def W(n): return D(n)
+ST=D('state-ingest.json')
+FILES=FILE_INDEX
+FOLD=FOLDER_INDEX
 
 
 
@@ -302,7 +290,7 @@ def run(budget,batch):
     """Directory-level checkpointing: a huge folder is chunked across passes."""
     from collections import Counter
     st=json.load(open(ST)) if os.path.exists(ST) else {}
-    AGG=W('ingest2_agg.json')
+    AGG=D('state-agg.json')
     agg=json.load(open(AGG)) if os.path.exists(AGG) else {}
     tops=sorted(x for x in os.listdir(ING) if os.path.isdir(os.path.join(ING,x)))
     end=time.time()+budget

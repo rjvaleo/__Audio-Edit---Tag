@@ -8,25 +8,14 @@ Run:  python serve_library.py     then open http://localhost:8737/
 """
 import os,sys,json,struct,urllib.parse,posixpath,io,re
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+from paths import *
 import os as _os
-HERE=_os.path.dirname(_os.path.abspath(__file__))
-APP=_os.path.dirname(HERE)                      # the "Audio Edit & Tag" folder
-def _find_ingest(start):
-    d=start
-    for _ in range(5):
-        c=_os.path.join(d,"INGEST")
-        if _os.path.isdir(c): return c
-        p=_os.path.dirname(d)
-        if p==d: break
-        d=p
-    return _os.path.join(_os.path.dirname(APP),"INGEST")
-ING=_find_ingest(APP)
-LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside tools
-WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
-def W(n): return _os.path.join(WORK,n)
+ING=LIBRARY; LIB=LIBRARY
+BASE=HERE; APP=HERE; WORK=HERE
+def W(n): return D(n)
+BASE=ROOT
+OVR=OVERRIDES
 PORT=int(_os.environ.get('LIBPORT','8737'))
-OVR=_os.path.join(APP,'TAG-OVERRIDES.json')
 
 
 
@@ -112,7 +101,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u=urllib.parse.urlparse(self.path); q=urllib.parse.parse_qs(u.query)
         p=urllib.parse.unquote(u.path)
-        if p in ('/','/index.html'): return self.serve_file(os.path.join(BASE,'index.html'),'text/html; charset=utf-8')
+        if p in ('/','/index.html'): return self.serve_file(INDEX_HTML,'text/html; charset=utf-8')
         if p=='/ping': return self._send(200,json.dumps({"ok":True,"base":BASE,"ingest":ING}).encode())
         if p=='/audio': return self.audio(q)
         f=os.path.normpath(os.path.join(BASE,p.lstrip('/')))

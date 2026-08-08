@@ -1,34 +1,22 @@
 # -*- coding: utf-8 -*-
 import csv,json,os
 from collections import defaultdict,Counter
+from paths import *
 import os as _os
-HERE=_os.path.dirname(_os.path.abspath(__file__))
-APP=_os.path.dirname(HERE)                      # the "Audio Edit & Tag" folder
-def _find_ingest(start):
-    d=start
-    for _ in range(5):
-        c=_os.path.join(d,"INGEST")
-        if _os.path.isdir(c): return c
-        p=_os.path.dirname(d)
-        if p==d: break
-        d=p
-    return _os.path.join(_os.path.dirname(APP),"INGEST")
-ING=_find_ingest(APP)
-LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside tools
-WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
-def W(n): return _os.path.join(WORK,n)
-OUTP=_os.path.join(APP,'index.html')
+ING=LIBRARY; LIB=LIBRARY
+BASE=HERE; APP=HERE; WORK=HERE
+def W(n): return D(n)
+OUTP=INDEX_HTML
 
 
 
 wf={}
-for line in open(W('waveforms.tsv'),encoding='utf-8'):
+for line in open(WAVEFORMS,encoding='utf-8'):
     k,_,v=line.rstrip('\n').partition('\t')
     if v: wf[k]=v
-tags={r['folder']:r for r in csv.DictReader(open(W('tag_index.tsv'),encoding='utf-8'),delimiter='\t')}
+tags={r['folder']:r for r in csv.DictReader(open(TAG_INDEX,encoding='utf-8'),delimiter='\t')}
 byf=defaultdict(list)
-for r in csv.DictReader(open(W('ingest2_files.tsv'),encoding='utf-8'),delimiter='\t'):
+for r in csv.DictReader(open(FILE_INDEX,encoding='utf-8'),delimiter='\t'):
     byf[r['root_folder']].append(r)
 CATS=[];FMTS=[];CONF=['high','med','low']
 def ci(c):
@@ -57,7 +45,7 @@ for name in sorted(tags):
         "ins":t['instruments'],"cat":t['categories'],"fmt":t['formats'],"tg":t['tags'],"F":files})
 js=json.dumps({"CATS":CATS,"CONF":CONF,"FMTS":FMTS,"D":folders},separators=(',',':'))
 TF=sum(f['nf'] for f in folders); TB=sum(f['by'] for f in folders); TM=sum(f['mi'] for f in folders)
-H=open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'browser_template.html'),encoding='utf-8').read()
+H=open(TEMPLATE,encoding='utf-8').read()
 H=H.replace('__DATA__',js).replace('__NF__',str(len(folders))).replace('__TF__',format(TF,','))
 H=H.replace('__GB__','%.0f'%(TB/1e9)).replace('__HR__','%.0f'%(TM/60))
 open(OUTP,'w',encoding='utf-8').write(H)
