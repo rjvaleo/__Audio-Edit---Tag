@@ -16,7 +16,7 @@ pub mod stretch;
 pub use biquad::Coeffs;
 pub use comp::Compressor;
 pub use eq::Eq;
-pub use grain::Grain;
+pub use grain::{Grain, GrainStream, StreamParams};
 pub use stretch::Stretch;
 
 /// Anything that can process audio in place.
