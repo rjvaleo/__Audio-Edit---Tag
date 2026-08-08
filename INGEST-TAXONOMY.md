@@ -1,6 +1,6 @@
 # Audio Library - ingest taxonomy, classification rules and nomenclature
 
-Living document. The rules here are implemented in `_tools/ingest_index_v2.py`.
+Living document. The rules here are implemented in `tools/ingest_index_v2.py`.
 If you change one, change the other.
 
 **Nothing in this system renames or moves files.** The indexer only reads headers
@@ -12,8 +12,8 @@ and writes TSVs. Renaming is a separate, explicit step driven off the index.
 
 | File | Grain | Purpose |
 |---|---|---|
-| `_AUDIO-INDEX.tsv` | one row per file | the full fact table |
-| `_FOLDER-INDEX.tsv` | one row per ingested folder | the summary the grouping decisions come from |
+| `AUDIO-INDEX.tsv` | one row per file | the full fact table |
+| `FOLDER-INDEX.tsv` | one row per ingested folder | the summary the grouping decisions come from |
 
 ### Per-file columns
 
@@ -161,7 +161,7 @@ can be reversed.
 
 ## 9. Running it
 
-    cd "E:\Audio Library\_tools"
+    cd "E:\Audio Library\tools"
     python3 ingest_index_v2.py [seconds] [--reset] [--batch=N]
 
 Resumable - checkpoints after every folder, so re-run until it reports 0 remaining.

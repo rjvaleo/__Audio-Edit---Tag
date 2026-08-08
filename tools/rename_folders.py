@@ -21,8 +21,8 @@ def _find_ingest(start):
     return _os.path.join(_os.path.dirname(APP),"INGEST")
 ING=_find_ingest(APP)
 LIB=_os.path.dirname(ING)                       # the Audio Library root
-BASE=APP                                        # data + html live beside _tools
-WORK=_os.path.join(APP,"_work"); _os.makedirs(WORK,exist_ok=True)
+BASE=APP                                        # data + html live beside tools
+WORK=_os.path.join(APP,"work"); _os.makedirs(WORK,exist_ok=True)
 def W(n): return _os.path.join(WORK,n)
 FILES=W('ingest2_files.tsv')
 ROOT=LIB
