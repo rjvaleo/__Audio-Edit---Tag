@@ -387,7 +387,14 @@ audio.volume = 0.85;
 $('volume').oninput = (e) => { audio.volume = +e.target.value; };
 
 const editedSuffix = () => (state.edit?.edited ? '&edited=1' : '');
-const audioURL = (file) => `/audio?p=${encodeURIComponent(file.path)}${editedSuffix()}`;
+
+/// Bumped whenever the document or rack changes. It rides along in the audio
+/// URL so the browser treats each render as a new resource; without it a change
+/// that leaves the length alone — a pitch shift, an EQ tweak — replays the
+/// previously cached audio and looks broken.
+state.audioRev = 0;
+const audioURL = (file) =>
+  `/audio?p=${encodeURIComponent(file.path)}${editedSuffix()}&r=${state.audioRev}`;
 
 function playFile(file) {
   const url = audioURL(file);
@@ -427,6 +434,58 @@ $('playBtn').onclick = () => {
   audio.paused ? audio.play() : audio.pause();
 };
 $('stopBtn').onclick = () => { audio.pause(); audio.currentTime = 0; };
+
+// ------------------------------------------------------------ loop playback
+
+state.loopMode = 'off';
+const LOOP_MODES = ['off', 'file', 'selection'];
+const LOOP_TEXT = { off: '', file: 'whole file', selection: 'selection' };
+
+/// One button cycling off → file → selection, so the state is always visible
+/// rather than hidden inside a dropdown that reads "no loop".
+function setLoopMode(mode) {
+  state.loopMode = mode;
+  // The element's own loop only covers the whole file; a selection loop has to
+  // be policed on the timeupdate below.
+  audio.loop = mode === 'file';
+  const btn = $('loopBtn');
+  btn.classList.toggle('on', mode !== 'off');
+  btn.title = `Loop: ${mode === 'off' ? 'off' : LOOP_TEXT[mode]}`;
+  $('loopLabel').textContent = LOOP_TEXT[mode];
+}
+
+$('loopBtn').onclick = () => {
+  let next = LOOP_MODES[(LOOP_MODES.indexOf(state.loopMode) + 1) % LOOP_MODES.length];
+  if (next === 'selection' && !state.sel) next = 'off'; // nothing to loop round
+  setLoopMode(next);
+};
+setLoopMode('off');
+
+audio.addEventListener('timeupdate', () => {
+  if (state.loopMode !== 'selection' || !state.sel) return;
+  const sr = state.view.sampleRate || 1;
+  const a = state.sel.start / sr;
+  const b = state.sel.end / sr;
+  if (b - a < 0.01) return;
+  // Wrapping slightly before the end avoids the element firing `ended` first,
+  // which would stop playback instead of looping.
+  if (audio.currentTime >= b - 0.005 || audio.currentTime < a - 0.05) {
+    audio.currentTime = a;
+    if (audio.paused) audio.play().catch(() => {});
+  }
+});
+
+/// Start a selection loop from the beginning of the selection.
+function playSelectionLoop() {
+  if (!state.selectedFile) return;
+  if (state.sel) {
+    state.loopMode = 'selection';
+    $('loopMode').value = 'selection';
+    audio.loop = false;
+  }
+  playFile(state.selectedFile);
+  if (state.sel) audio.currentTime = state.sel.start / (state.view.sampleRate || 1);
+}
 
 function updatePlayhead() {
   const ph = $('playhead');
@@ -565,6 +624,10 @@ async function switchTab(i) {
   renderMetaStrip(f);
   reflectEditState();
   renderRack();
+  stretchBuiltFor = null; // different document, different sliders
+  grainBuiltFor = null;
+  renderStretch();
+  renderGrainParams();
   drawSelection();
   drawMarkers();
   updateZoomLabel();
@@ -651,11 +714,14 @@ async function selectFile(file, { keepTab = false } = {}) {
   try { state.edit = await api(`/api/edit?p=${encodeURIComponent(file.path)}`); }
   catch { state.edit = null; }
   reflectEditState();
+  renderStretch();
 
   await loadPeaks();
   loadStats();
   loadAnnotations();
   loadRack();
+  renderGrainParams();
+  loadGrains();
   if (state.showSpec) loadSpectrogram();
 }
 
@@ -975,22 +1041,48 @@ function renderMeters(s) {
 
 // =================================================================== editing
 
-async function editOp(body) {
+/// Apply a document operation.
+///
+/// `live` is for continuous controls: it refreshes the document and the
+/// waveform but does not refit the zoom or restart playback, so dragging a
+/// slider does not stutter the audio or throw away where you were looking.
+async function editOp(body, { live = false } = {}) {
   if (!state.selectedFile) return;
   try { state.edit = await postJSON('/api/edit', { p: state.selectedFile.path, ...body }); }
   catch (e) { toast(e.message); return; }
 
+  state.audioRev += 1;
   reflectEditState();
+  renderStretch();
+  renderGrainParams();
+  loadGrains();
   renderTabs();
+
+  if (live) {
+    // Dragging: the numbers are already right, and the picture catches up when
+    // the pointer is released.
+    setBusy(true);
+    return;
+  }
+
   // A cut changes the timeline length, so a stale zoom range would point past
   // the end. Refit rather than leaving the view somewhere invalid.
   state.sel = null;
   state.view.from = 0;
   state.view.to = 0;
   drawSelection();
+
   await loadPeaks();
   if (state.showSpec) loadSpectrogram();
   reloadAudioSource();
+  setBusy(false);
+}
+
+/// Say plainly that the waveform is behind the controls, rather than letting it
+/// look wrong.
+function setBusy(on) {
+  const el = $('stretchOut');
+  if (el) el.classList.toggle('pending', on);
 }
 
 function reflectEditState() {
@@ -1035,9 +1127,9 @@ document.querySelectorAll('#editTools [data-op]').forEach((b) => {
 $('fadeShape').onchange = (e) => { state.fadeShape = e.target.value; };
 $('exportBits').onchange = (e) => { state.exportBits = +e.target.value; };
 
-$('undoBtn').onclick = () => editOp({ op: 'undo' });
-$('redoBtn').onclick = () => editOp({ op: 'redo' });
-$('revertBtn').onclick = () => editOp({ op: 'revert' });
+$('undoBtn').onclick = async () => { await editOp({ op: 'undo' }); syncStretchSliders(); };
+$('redoBtn').onclick = async () => { await editOp({ op: 'redo' }); syncStretchSliders(); };
+$('revertBtn').onclick = async () => { await editOp({ op: 'revert' }); syncStretchSliders(); };
 
 $('exportBtn').onclick = async () => {
   if (!state.selectedFile) return;
@@ -1052,7 +1144,8 @@ $('exportBtn').onclick = async () => {
 document.querySelectorAll('.dock-tab').forEach((t) => {
   t.onclick = () => {
     document.querySelectorAll('.dock-tab').forEach((x) => x.classList.toggle('active', x === t));
-    const panes = { effects: 'dockEffects', visuals: 'dockVisuals', regions: 'dockRegions' };
+    const panes = { effects: 'dockEffects', stretch: 'dockStretch',
+                    visuals: 'dockVisuals', regions: 'dockRegions' };
     for (const [k, id] of Object.entries(panes)) $(id).classList.toggle('hidden', k !== t.dataset.dock);
   };
 });
@@ -1096,6 +1189,7 @@ function pushRack({ immediate = false } = {}) {
         slots: state.rack.slots,
       });
     } catch (e) { toast(e.message); return; }
+    state.audioRev += 1;
     renderRack();
     renderTabs();
     // The waveform must show what will be heard, so it is re-fetched too.
@@ -1146,7 +1240,7 @@ function renderRack() {
 }
 
 /// One labelled slider bound to a field on the selected slot.
-function param(label, value, min, max, step, format, onChange) {
+function param(label, value, min, max, step, format, onChange, onCommit) {
   const el = document.createElement('div');
   el.className = 'param';
   el.innerHTML = `<div class="row"><span class="k"></span><span class="v"></span></div>
@@ -1156,13 +1250,197 @@ function param(label, value, min, max, step, format, onChange) {
   const input = el.querySelector('input');
   Object.assign(input, { min, max, step, value });
   out.textContent = format(value);
+
+  // The readout is updated from the element itself, so a redraw elsewhere
+  // cannot leave the number disagreeing with the handle.
+  el.sync = (v) => { input.value = v; out.textContent = format(v); };
+
   input.oninput = () => {
     const v = +input.value;
     out.textContent = format(v);
     onChange(v);
   };
+  // Fires on pointer release, which is when the change is worth committing
+  // properly rather than previewing.
+  if (onCommit) input.onchange = () => onCommit(+input.value);
   return el;
 }
+
+/// Time and pitch live on the document, so they are posted as an edit
+/// operation rather than as part of the rack.
+/// Which file the stretch sliders were built for.
+///
+/// The panel is built once and then left alone. Rebuilding it on every server
+/// response destroyed the very slider under the pointer, so the first change
+/// landed and no further drag did anything.
+let stretchBuiltFor = null;
+let stretchTimer = null;
+
+function sendStretch({ live }) {
+  const d = state.stretchDraft;
+  editOp(
+    { op: 'stretch', ratio: d.ratio, semitones: d.semitones,
+      windowMs: d.windowMs, quality: live ? 'draft' : d.quality },
+    { live },
+  );
+}
+
+/// Continuous preview while dragging, at draft quality so it keeps up.
+function previewStretch() {
+  clearTimeout(stretchTimer);
+  stretchTimer = setTimeout(() => sendStretch({ live: true }), 130);
+}
+
+/// Pointer released: commit properly, at the chosen quality, and repoint audio.
+function commitStretch() {
+  clearTimeout(stretchTimer);
+  sendStretch({ live: false });
+}
+
+function renderStretch() {
+  const box = $('stretchParams');
+  if (!box) return;
+  const st = state.edit?.stretch;
+  const path = state.selectedFile?.path || null;
+
+  if (!st) { box.innerHTML = ''; stretchBuiltFor = null; return; }
+
+  // Already built for this document: refresh the derived readout only.
+  if (stretchBuiltFor === path) { showStretchOut(); return; }
+
+  stretchBuiltFor = path;
+  box.innerHTML = '';
+  // Take the tier from the document, not from whatever the last file used.
+  state.stretchDraft = {
+    ratio: st.ratio, semitones: st.semitones,
+    windowMs: st.windowMs, quality: st.quality || 'standard',
+  };
+  syncQualityButtons();
+
+  const rows = {};
+  rows.ratio = param('Stretch', st.ratio, 0.25, 4, 0.01, (v) => `${v.toFixed(2)}×`,
+    (v) => { state.stretchDraft.ratio = v; showStretchOut(); previewStretch(); },
+    () => commitStretch());
+  rows.semitones = param('Pitch', st.semitones, -24, 24, 0.5,
+    (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} st`,
+    (v) => { state.stretchDraft.semitones = v; previewStretch(); },
+    () => commitStretch());
+  rows.windowMs = param('Window', st.windowMs, 5, 200, 1, (v) => `${Math.round(v)} ms`,
+    (v) => { state.stretchDraft.windowMs = v; previewStretch(); },
+    () => commitStretch());
+
+  for (const el of Object.values(rows)) box.appendChild(el);
+  state.stretchRows = rows;
+  showStretchOut();
+}
+
+/// The granular controls. Separate from the stretch sliders because they only
+/// matter once one of them is engaged, but built the same way.
+function renderGrainParams() {
+  const box = $('grainParams');
+  if (!box) return;
+  const g = state.edit?.stretch?.grain;
+  const path = state.selectedFile?.path || null;
+  if (!g) { box.innerHTML = ''; grainBuiltFor = null; return; }
+  if (grainBuiltFor === path) return;
+
+  grainBuiltFor = path;
+  box.innerHTML = '';
+  state.grainDraft = { ...g };
+
+  const send = ({ live }) => {
+    editOp({ op: 'stretch',
+             ratio: state.stretchDraft.ratio,
+             semitones: state.stretchDraft.semitones,
+             windowMs: state.stretchDraft.windowMs,
+             quality: live ? 'draft' : state.stretchDraft.quality,
+             grain: state.grainDraft },
+           { live });
+  };
+  let t;
+  const preview = () => { clearTimeout(t); t = setTimeout(() => send({ live: true }), 130); };
+  const commit = () => { clearTimeout(t); send({ live: false }); };
+
+  const rows = [
+    ['Density', 'densityHz', 0, 200, 1, (v) => (v <= 0 ? 'from overlap' : `${Math.round(v)} /s`)],
+    ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`],
+    ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`],
+    ['Position jitter', 'positionJitterMs', 0, 500, 1, (v) => `${Math.round(v)} ms`],
+    ['Pitch jitter', 'pitchJitterSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
+    ['Pitch drift', 'pitchDriftSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
+    ['Drift rate', 'driftRateHz', 0.01, 10, 0.01, (v) => `${v.toFixed(2)} Hz`],
+    ['Seed', 'seed', 0, 9999, 1, (v) => `${Math.round(v)}`],
+  ];
+  state.grainRows = {};
+  for (const [label, key, min, max, step, fmt] of rows) {
+    const el = param(label, g[key], min, max, step, fmt,
+      (v) => { state.grainDraft[key] = v; preview(); },
+      () => commit());
+    state.grainRows[key] = el;
+    box.appendChild(el);
+  }
+}
+
+let grainBuiltFor = null;
+
+function syncGrainSliders() {
+  const g = state.edit?.stretch?.grain;
+  if (!g || !state.grainRows) return;
+  state.grainDraft = { ...g };
+  for (const [k, el] of Object.entries(state.grainRows)) el.sync(g[k]);
+}
+
+/// Push values into the sliders — used by Reset and Undo, which change the
+/// document without the pointer having touched anything.
+function syncStretchSliders() {
+  const st = state.edit?.stretch;
+  if (!st || !state.stretchRows) return;
+  state.stretchDraft = { ...state.stretchDraft, ratio: st.ratio,
+                         semitones: st.semitones, windowMs: st.windowMs };
+  state.stretchRows.ratio.sync(st.ratio);
+  state.stretchRows.semitones.sync(st.semitones);
+  state.stretchRows.windowMs.sync(st.windowMs);
+  if (st.quality) state.stretchDraft.quality = st.quality;
+  syncQualityButtons();
+  syncGrainSliders();
+  showStretchOut();
+}
+
+function showStretchOut() {
+  const el = $('stretchOut');
+  if (!el || !state.edit) return;
+  const sr = state.view.sampleRate || 48000;
+  const d = state.stretchDraft || {};
+  const base = state.edit.baseFrames / sr;
+  const out = (state.edit.baseFrames * (d.ratio ?? 1)) / sr;
+  const semis = d.semitones ?? 0;
+  const pitch = Math.abs(semis) < 0.05
+    ? ''
+    : ` · pitch ${semis > 0 ? '+' : ''}${semis.toFixed(1)} st`;
+  el.textContent = `${base.toFixed(2)}s → ${out.toFixed(2)}s${pitch}`;
+}
+
+document.querySelectorAll('#stretchQuality .seg-btn').forEach((b) => {
+  b.onclick = () => {
+    state.stretchDraft = { ...state.stretchDraft, quality: b.dataset.quality };
+    syncQualityButtons();
+    commitStretch();
+  };
+});
+
+function syncQualityButtons() {
+  const q = state.stretchDraft?.quality || 'standard';
+  document.querySelectorAll('#stretchQuality .seg-btn').forEach((b) =>
+    b.classList.toggle('active', b.dataset.quality === q));
+}
+
+$('stretchReset').onclick = async () => {
+  clearTimeout(stretchTimer);
+  state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' };
+  await editOp({ op: 'stretch', ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' });
+  syncStretchSliders();
+  syncQualityButtons();
+};
 
 function renderRackParams() {
   const box = $('rackParams');
@@ -1752,3 +2030,237 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { state.sel = null; drawSelection(); }
   else if (e.key === 'Enter' && state.selectedFile) setMode(state.mode === 'edit' ? 'overview' : 'edit');
 });
+
+// ======================================================= grain visualiser
+//
+// The whole grain stream, drawn as it is heard: output time across, source
+// position up. A clean stretch is a straight diagonal — each moment of output
+// reads steadily through the source. Position jitter scatters it vertically,
+// pitch jitter colours it, density changes how thickly it is packed.
+//
+// The events come from the same enumeration the renderer uses, so this is not
+// an impression of the process; it is the process.
+
+state.grains = null;
+
+async function loadGrains() {
+  const f = state.selectedFile;
+  if (!f) { state.grains = null; drawGrains(); return; }
+  try {
+    state.grains = await api(`/api/grains?p=${encodeURIComponent(f.path)}`);
+  } catch { state.grains = null; }
+  drawGrains();
+}
+
+/// Semitone offset from the document's base pitch, mapped to a hue.
+/// Warm is sharp, cool is flat; grey is exactly on pitch.
+function grainColour(semis, base, alpha) {
+  const d = Math.max(-12, Math.min(12, semis - base)) / 12;
+  if (Math.abs(d) < 0.02) return `oklch(72% 0.02 250 / ${alpha})`;
+  const hue = d > 0 ? 25 : 250;
+  return `oklch(${68 + Math.abs(d) * 8}% ${0.06 + Math.abs(d) * 0.13} ${hue} / ${alpha})`;
+}
+
+state.visMode = 'swarm';
+document.querySelectorAll('#visMode .seg-btn').forEach((b) => {
+  b.onclick = () => {
+    state.visMode = b.dataset.vis;
+    document.querySelectorAll('#visMode .seg-btn').forEach((x) =>
+      x.classList.toggle('active', x === b));
+    drawGrains();
+  };
+});
+
+function visSetup() {
+  const canvas = $('grainCanvas');
+  if (!canvas) return null;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (!w || !h) return null;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+
+function drawGrains() {
+  const set = visSetup();
+  if (!set) return;
+  const { ctx, w, h } = set;
+  const g = state.grains;
+  const label = $('grainCount');
+
+  if (!g || !g.grains.length) {
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText('Engage a grain control to see the stream', 12, h / 2);
+    if (label) label.textContent = '';
+    return;
+  }
+  if (label) {
+    const shown = g.shown < g.total ? ` · showing ${g.shown.toLocaleString()}` : '';
+    label.textContent = `${g.total.toLocaleString()} grains${shown}`;
+  }
+
+  if (state.visMode === 'map') drawGrainMap(ctx, w, h, g);
+  else drawGrainSwarm(ctx, w, h, g);
+}
+
+/// Warm for bright and sharp, cool for dark and flat.
+function grainColour(pitchOffset, brightness, alpha) {
+  const p = Math.max(-1, Math.min(1, pitchOffset / 12));
+  const b = Math.max(0, Math.min(1, brightness * 3));
+  const t = Math.max(-1, Math.min(1, p * 0.6 + (b - 0.35) * 1.2));
+  const hue = t >= 0 ? 25 + (1 - t) * 60 : 250 + t * 20;
+  const chroma = 0.04 + Math.abs(t) * 0.15;
+  const light = 62 + Math.abs(t) * 16;
+  return `oklch(${light}% ${chroma} ${hue} / ${alpha})`;
+}
+
+/// Output time across, source position up. A clean stretch is a diagonal.
+function drawGrainMap(ctx, w, h, g) {
+  const outFrames = Math.max(1, g.outFrames);
+  const srcFrames = Math.max(1, g.srcFrames);
+  const base = state.edit?.stretch?.semitones ?? 0;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  for (let i = 1; i < 4; i++) {
+    const y = (h * i) / 4;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(0, h); ctx.lineTo(w, 0); ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (const [outFrame, srcFrame, size, pitch, rms, bright] of g.grains) {
+    const x = (outFrame / outFrames) * w;
+    const y = h - (srcFrame / srcFrames) * h;
+    const len = Math.max(1.5, (size / outFrames) * w);
+    ctx.strokeStyle = grainColour(pitch - base, bright, 0.35 + Math.min(0.6, rms * 3));
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + len, y);
+    ctx.stroke();
+  }
+
+  if (!audio.paused) {
+    const px = ((audio.currentTime * (g.sampleRate || 48000)) / outFrames) * w;
+    ctx.strokeStyle = '#fff';
+    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
+  }
+}
+
+/// The swarm: grains as a cloud of flies orbiting the playhead.
+///
+/// Everything you see comes from the grain stream. Time from the playhead is
+/// depth, so grains approach, cluster while sounding, and recede. Pitch offset
+/// lifts them; brightness and level set colour and size. The orbit gives each
+/// grain a phase of its own so the cloud churns rather than pulsing together.
+function drawGrainSwarm(ctx, w, h, g) {
+  const sr = g.sampleRate || 48000;
+  const outFrames = Math.max(1, g.outFrames);
+  const base = state.edit?.stretch?.semitones ?? 0;
+  const now = audio.currentTime;
+  const playFrame = now * sr;
+  const cx = w / 2;
+  const cy = h / 2;
+
+  // How far ahead and behind the playhead to show, in seconds.
+  const SPAN = 1.6;
+  const FOCAL = 340;
+
+  // Ground haze so the cloud reads as sitting in space.
+  const grd = ctx.createRadialGradient(cx, cy, 4, cx, cy, Math.max(w, h) * 0.55);
+  grd.addColorStop(0, 'rgba(125,190,255,0.07)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, w, h);
+
+  const visible = [];
+  for (const [outFrame, srcFrame, size, pitch, rms, bright] of g.grains) {
+    const dt = (outFrame - playFrame) / sr; // seconds ahead of the playhead
+    if (dt < -SPAN || dt > SPAN) continue;
+
+    // Depth: ahead is far, behind is close and receding past the camera.
+    const z = dt * 260 + 90;
+    if (z <= 12) continue;
+
+    const dur = size / sr;
+    const sounding = dt <= 0 && dt + dur >= 0;
+
+    // Each grain keeps its own orbital phase and speed, so the swarm churns.
+    const seedish = (outFrame * 2654435761) % 1000 / 1000;
+    const speed = 0.7 + seedish * 1.6;
+    const phase = seedish * Math.PI * 2 + now * speed;
+
+    // Wider orbit for grains further from the nominal read position.
+    const drift = Math.min(1, Math.abs(pitch - base) / 12);
+    const radius = 26 + drift * 90 + seedish * 34 + (sounding ? 10 * Math.sin(now * 9 + seedish * 6) : 0);
+
+    const px = cx + Math.cos(phase) * radius * (FOCAL / (FOCAL + z));
+    const py = cy
+      - ((pitch - base) / 12) * h * 0.28
+      + Math.sin(phase * 1.3) * radius * 0.35 * (FOCAL / (FOCAL + z));
+
+    const scale = FOCAL / (FOCAL + z);
+    const r = Math.max(0.8, (1.6 + rms * 22) * scale * (sounding ? 1.9 : 1));
+    const alpha = Math.max(0.05, (1 - Math.abs(dt) / SPAN) * (sounding ? 1 : 0.5));
+    visible.push({ px, py, r, alpha, pitch, bright, sounding, z });
+  }
+
+  // Far grains first, so near ones sit in front.
+  visible.sort((a, b) => b.z - a.z);
+  for (const v of visible) {
+    ctx.beginPath();
+    ctx.arc(v.px, v.py, v.r, 0, Math.PI * 2);
+    ctx.fillStyle = grainColour(v.pitch - base, v.bright, v.alpha);
+    ctx.fill();
+    if (v.sounding) {
+      ctx.strokeStyle = grainColour(v.pitch - base, v.bright, Math.min(1, v.alpha + 0.3));
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(v.px, v.py, v.r + 3.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // The playhead itself, at the centre of it all.
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, cy - 14); ctx.lineTo(cx, cy + 14); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx - 14, cy); ctx.lineTo(cx + 14, cy); ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.30)';
+  ctx.font = '9px ui-monospace, monospace';
+  ctx.fillText(`${visible.length} in flight`, 10, h - 10);
+  if (audio.paused) {
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText('press play — the swarm follows the playhead', 10, 18);
+  }
+}
+
+// Animate only while something is playing, so an idle editor costs nothing.
+let grainRaf = null;
+function grainLoop() {
+  grainRaf = requestAnimationFrame(grainLoop);
+  if (state.mode === 'edit' && state.grains) drawGrains();
+}
+audio.addEventListener('play', () => { if (!grainRaf) grainLoop(); });
+audio.addEventListener('pause', () => {
+  // Let it settle for a moment rather than freezing mid-flight.
+  setTimeout(() => {
+    if (audio.paused && grainRaf) { cancelAnimationFrame(grainRaf); grainRaf = null; }
+    drawGrains();
+  }, 600);
+});
+
+if (window.ResizeObserver) {
+  const c = $('grainCanvas');
+  if (c) new ResizeObserver(() => drawGrains()).observe(c);
+}

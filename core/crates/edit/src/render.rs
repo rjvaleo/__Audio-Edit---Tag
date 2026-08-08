@@ -9,6 +9,28 @@ use audio_core::{wav, Codec, Reader, RandomAccessSource};
 use fx::Rack;
 use std::io::{self, Write};
 
+/// Render the whole edited timeline, stretched and with the rack applied.
+///
+/// Stretching cannot be streamed the way filters can: WSOLA chooses each splice
+/// from the one before it, so output frame N is not addressable without having
+/// produced the frames leading to it. When a stretch is active the whole
+/// timeline is rendered once and the caller slices it — which is why the server
+/// caches the result rather than recomputing per request.
+pub fn render_all_stretched<S: RandomAccessSource>(
+    list: &EditList,
+    reader: &mut Reader<S>,
+    rack: &mut Rack,
+) -> io::Result<Vec<f32>> {
+    let channels = list.channels.max(1) as usize;
+    let base = render(list, reader, 0, list.base_frames())?;
+    let mut out = list.stretch.process(&base, channels, list.sample_rate);
+    if !rack.is_empty() {
+        rack.reset();
+        rack.process(&mut out, channels, list.sample_rate);
+    }
+    Ok(out)
+}
+
 /// Render a window and run it through the effect rack.
 ///
 /// The rack is fed `preroll` frames from before the requested range so its
@@ -22,6 +44,15 @@ pub fn render_fx<S: RandomAccessSource>(
     start: u64,
     count: u64,
 ) -> io::Result<Vec<f32>> {
+    if list.is_stretched() {
+        // Callers that can stretch hold the cached buffer; anything reaching
+        // here would otherwise get unstretched audio at the wrong length.
+        let all = render_all_stretched(list, reader, rack)?;
+        let channels = list.channels.max(1) as usize;
+        let from = (start as usize * channels).min(all.len());
+        let to = ((start + count) as usize * channels).min(all.len());
+        return Ok(all[from..to].to_vec());
+    }
     if rack.is_empty() {
         return render(list, reader, start, count);
     }

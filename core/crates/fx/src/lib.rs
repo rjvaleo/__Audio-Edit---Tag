@@ -10,10 +10,14 @@
 pub mod biquad;
 pub mod comp;
 pub mod eq;
+pub mod grain;
+pub mod stretch;
 
 pub use biquad::Coeffs;
 pub use comp::Compressor;
 pub use eq::Eq;
+pub use grain::Grain;
+pub use stretch::Stretch;
 
 /// Anything that can process audio in place.
 pub trait Effect: Send {

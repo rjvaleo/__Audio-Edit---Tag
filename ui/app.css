@@ -703,3 +703,40 @@ body.editing .shell { position: relative; }
 /* Tagging belongs to Browse: in Edit the whole right side is the editor's. */
 body.editing .panel.right, body.editing #rightRail { display: none; }
 body.editing .panel.left { left: var(--rail); }
+/* The readout leads the waveform while a control is being dragged. */
+#stretchOut.pending { color: var(--warn); }
+#stretchOut.pending::after { content: ' · rendering…'; opacity: .7; }
+
+/* ---------------------------------------------------- granular tray layout
+   A quarter for the controls, three quarters for the visualiser: the picture
+   is the point, and the sliders are narrow enough to stack. */
+
+.grain-split { grid-column: 1 / -1; display: flex; gap: 14px; min-height: 0; }
+.grain-controls {
+  width: 25%; min-width: 240px; flex-shrink: 0;
+  overflow-y: auto; padding-right: 10px;
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.grain-controls .param-grid { grid-template-columns: 1fr; gap: 8px; }
+.grain-vis { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+#grainCanvas {
+  flex: 1; width: 100%; min-height: 150px; display: block;
+  border-radius: 7px; background: oklch(9% 0.01 250); border: 1px solid var(--line);
+}
+.vis-legend {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  font-size: 9.5px; color: var(--text-dimmer);
+}
+.vis-legend span { display: flex; align-items: center; gap: 5px; }
+.vis-legend .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.vis-legend .sw.hot { background: oklch(72% 0.19 25); }
+.vis-legend .sw.cold { background: oklch(72% 0.14 250); }
+
+body.editing .dock { flex: 0 0 300px; }
+
+.tbtn.loop { font-size: 14px; }
+.tbtn.loop.on { background: var(--accent); color: oklch(14% 0.01 250); border-color: var(--accent); }
+.loop-label { font-size: 9.5px; white-space: nowrap; min-width: 52px; }
+.vis-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.vis-head .seg-btn { font-size: 10px; padding: 0 9px; }
