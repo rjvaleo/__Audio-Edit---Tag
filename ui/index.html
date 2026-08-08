@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio Library</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<!-- titlebar -->
+<header class="titlebar">
+  <div class="mark"></div>
+  <span class="app-name">Audio Library</span>
+  <span class="sep">/</span>
+  <span class="mono current-file" id="titleFile">no file selected</span>
+  <span class="mode-label" id="modeLabel">Browse</span>
+  <div class="spacer"></div>
+  <span class="mono dim" id="libraryLabel"></span>
+  <button class="ghost" id="changeLibrary">Change library&hellip;</button>
+</header>
+
+<div class="shell">
+
+  <!-- left rail: the two workspaces, then the tools inside Browse -->
+  <nav class="rail" id="leftRail">
+    <button class="mode-btn active" data-mode="overview" title="Browse the library">
+      <span class="ic">▤</span><span class="lb">Browse</span>
+    </button>
+    <button class="mode-btn" data-mode="edit" title="Edit the open sounds">
+      <span class="ic">✎</span><span class="lb">Edit</span>
+    </button>
+
+    <div class="rail-sep"></div>
+
+    <button class="rail-btn active" data-panel="browse" title="Library">≡</button>
+    <button class="rail-btn" data-panel="search" title="Search">⌕</button>
+    <button class="rail-btn" data-panel="scan" title="Scan">◴</button>
+    <button class="rail-btn" data-panel="import" title="Library folder">⌂</button>
+  </nav>
+
+  <!-- left panel: the whole library, playable -->
+  <aside class="panel left" id="leftPanel">
+    <div class="panel-head">
+      <span id="leftPanelTitle">Browse</span>
+      <input class="filter-box" id="treeFilter" placeholder="filter&hellip;">
+      <button class="x" id="closeLeft">×</button>
+    </div>
+
+    <div class="panel-body" id="paneBrowse">
+      <div class="tree" id="tree"></div>
+    </div>
+
+    <div class="panel-body hidden" id="paneSearch">
+      <input class="field" id="searchInput" placeholder="Search names, tags, machines&hellip;">
+      <div class="results" id="searchResults"></div>
+    </div>
+
+    <div class="panel-body hidden" id="paneScan">
+      <div class="stat-block" id="scanTotals"></div>
+      <div class="divider"></div>
+      <div class="scan-controls">
+        <button class="primary" id="startScan">Scan library</button>
+        <button class="ghost hidden" id="stopScan">Stop</button>
+      </div>
+      <div class="progress-wrap hidden" id="scanProgress">
+        <div class="progress-label"><span id="scanCurrent"></span><span class="mono" id="scanCount"></span></div>
+        <div class="progress"><div class="progress-fill" id="scanFill"></div></div>
+      </div>
+      <p class="note">Scanning reads headers and classifies every file. It never
+      renames, moves or deletes anything.</p>
+    </div>
+
+    <div class="panel-body hidden" id="paneImport">
+      <div class="field-label">Library folder</div>
+      <div class="mono path-display" id="libraryPath">none chosen</div>
+      <button class="primary" id="pickLibrary">Choose folder&hellip;</button>
+      <div class="divider"></div>
+      <div class="stat-block" id="libraryStats"></div>
+    </div>
+  </aside>
+
+  <!-- centre: the selected sound, or the editor -->
+  <main class="centre">
+
+    <div class="transport">
+      <button class="tbtn play" id="playBtn" title="Play/pause">▶</button>
+      <button class="tbtn" id="stopBtn" title="Stop">■</button>
+      <div class="vsep"></div>
+      <span class="mono time" id="timeNow">00:00.000</span>
+      <span class="mono dim" id="rateLabel">&mdash;</span>
+      <div class="vsep"></div>
+      <div class="zoom">
+        <button class="tbtn small" id="zoomOut" title="Zoom out">–</button>
+        <span class="mono dim" id="zoomLabel">fit</span>
+        <button class="tbtn small" id="zoomIn" title="Zoom in">+</button>
+        <button class="tbtn small" id="zoomFit" title="Fit">⤢</button>
+      </div>
+      <div class="spacer"></div>
+      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.85" title="Volume">
+    </div>
+
+    <!-- open documents: edit mode only -->
+    <div class="tabbar hidden" id="tabBar"></div>
+
+    <!-- edit toolbar: only in the edit window -->
+    <div class="edittools hidden" id="editTools">
+      <span class="sel-label mono" id="selLabel">no selection</span>
+      <div class="vsep"></div>
+      <button class="ghost" data-op="cut">Cut</button>
+      <button class="ghost" data-op="silence">Silence</button>
+      <button class="ghost" data-op="fadeIn">Fade in</button>
+      <button class="ghost" data-op="fadeOut">Fade out</button>
+      <button class="ghost" data-op="reverse">Reverse</button>
+      <select class="mini" id="fadeShape" title="Fade curve">
+        <option value="equalPower">equal power</option>
+        <option value="linear">linear</option>
+      </select>
+      <div class="vsep"></div>
+      <button class="ghost" data-op="marker">Marker</button>
+      <button class="ghost" data-op="region">Region</button>
+      <div class="spacer"></div>
+      <span class="edited-flag mono hidden" id="editedFlag">edited</span>
+      <button class="ghost" id="undoBtn" disabled>Undo</button>
+      <button class="ghost" id="redoBtn" disabled>Redo</button>
+      <button class="ghost" id="revertBtn">Revert</button>
+      <select class="mini" id="exportBits" title="Export bit depth">
+        <option value="16">16-bit</option>
+        <option value="24" selected>24-bit</option>
+        <option value="32">32-bit float</option>
+      </select>
+      <button class="primary" id="exportBtn">Export</button>
+    </div>
+
+    <div class="ruler hidden" id="ruler"></div>
+
+    <div class="lane" id="lane">
+      <canvas id="waveCanvas"></canvas>
+      <canvas id="specCanvas"></canvas>
+      <div class="selection hidden" id="selection"></div>
+      <div class="playhead" id="playhead"></div>
+      <div class="lane-empty" id="laneEmpty">Select a sound on the left.</div>
+    </div>
+
+    <div class="regions hidden" id="regions"></div>
+
+    <div class="metastrip" id="metaStrip"></div>
+
+    <!-- overview: stats for the selected sound -->
+    <div class="statsview" id="statsView">
+      <div class="stats-grid" id="statsGrid"></div>
+      <div class="why" id="whyBox"></div>
+    </div>
+
+    <!-- edit window: effects and visuals -->
+    <div class="dock hidden" id="dock">
+      <div class="dock-tabs">
+        <button class="dock-tab active" data-dock="effects">Effects</button>
+        <button class="dock-tab" data-dock="visuals">Visuals</button>
+        <button class="dock-tab" data-dock="regions">Regions</button>
+      </div>
+
+      <div class="dock-body rack-body" id="dockEffects">
+        <div class="rack-chain">
+          <div class="rack-title">Effect chain</div>
+          <div id="rackList"></div>
+          <div class="fx-note" style="margin-top:8px">Order matters: EQ before a
+          compressor changes what the compressor reacts to.</div>
+        </div>
+        <div class="rack-params" id="rackParams"></div>
+      </div>
+
+      <div class="dock-body hidden" id="dockVisuals">
+        <div class="fx">
+          <div class="fx-head">Spectrogram</div>
+          <div class="fx-row">
+            <label class="check"><input type="checkbox" id="specOn"> Show</label>
+            <div class="seg" id="fftSizes">
+              <button class="seg-btn" data-fft="512">512</button>
+              <button class="seg-btn active" data-fft="1024">1024</button>
+              <button class="seg-btn" data-fft="2048">2048</button>
+              <button class="seg-btn" data-fft="4096">4096</button>
+            </div>
+          </div>
+          <div class="fx-note">Larger windows resolve frequency better and time worse.</div>
+        </div>
+        <div class="fx wide-fx">
+          <div class="fx-head">Live spectrum</div>
+          <canvas id="visCanvas" class="viscanvas"></canvas>
+          <div class="fx-note">Real-time analysis of what is playing, as opposed to
+          the spectrogram above, which is the whole file computed up front.</div>
+        </div>
+        <div class="fx">
+          <div class="fx-head">Levels</div>
+          <div id="meters"></div>
+        </div>
+        <div class="fx">
+          <div class="fx-head">Stereo field</div>
+          <div id="stereo"></div>
+        </div>
+      </div>
+
+      <div class="dock-body hidden" id="dockRegions">
+        <div class="region-list" id="regionList"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- right panel: tagging -->
+  <aside class="panel right" id="rightPanel">
+    <div class="panel-head">
+      <span id="rightPanelTitle">Tags</span>
+      <button class="x" id="closeRight">×</button>
+    </div>
+    <div class="panel-body" id="paneInspect">
+      <div class="edit-group">
+        <label>Level 1<input class="field" id="editLevel1"></label>
+        <label>Level 2<input class="field" id="editLevel2"></label>
+        <label>Tags<input class="field" id="editTags"></label>
+        <label>Notes<textarea class="field" id="editNotes" rows="3"
+          placeholder="context the classifier cannot infer&hellip;"></textarea></label>
+      </div>
+      <div class="divider"></div>
+      <div id="inspectFields"></div>
+    </div>
+    <div class="panel-foot">
+      <span class="dirty" id="dirtyLabel"></span>
+      <button class="ghost" id="discardBtn">Discard</button>
+      <button class="primary" id="commitBtn">Commit</button>
+    </div>
+  </aside>
+
+  <nav class="rail" id="rightRail">
+    <button class="rail-btn active" id="tagsToggle" title="Tags panel">✎</button>
+  </nav>
+
+</div>
+
+<div class="scrim hidden" id="scrim"></div>
+
+<!-- folder picker -->
+<div class="modal hidden" id="pickerModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>Choose the audio library folder</span>
+      <button class="x" id="pickerClose">×</button>
+    </div>
+    <div class="picker">
+      <div class="picker-places" id="pickerPlaces"></div>
+      <div class="picker-main">
+        <div class="mono picker-path" id="pickerPath"></div>
+        <div class="picker-list" id="pickerList"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="ghost" id="pickerUp">Up one level</button>
+      <div class="spacer"></div>
+      <button class="primary" id="pickerChoose">Use this folder</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
