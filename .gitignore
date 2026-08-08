@@ -1,13 +1,6 @@
-# python
-__pycache__/
-*.pyc
-
 # quarantined for manual deletion (the device bridge cannot delete)
 _to_delete/
 
-# regenerable state and outputs
-app/state-*.json
-app/HEADERLESS-PLAN.tsv
 *.tmp
 
 # git lock droppings left behind when running over the device bridge
@@ -24,3 +17,8 @@ target/
 
 # macOS finder droppings
 .DS_Store
+
+# the app's own state, kept beside the launcher: chosen library, tag overrides,
+# markers, presets, sessions, scan index. Per-machine — the library path is not
+# the same on the Mac and the PC — so it is deliberately not tracked.
+data/
