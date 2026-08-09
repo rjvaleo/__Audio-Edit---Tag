@@ -1271,6 +1271,7 @@ dependencies = [
  "fx",
  "indexer",
  "search",
+ "yamnet",
 ]
 
 [[package]]

@@ -29,6 +29,10 @@ const state = {
   order: [],
   openFolders: {},
   folderFiles: {},
+  /// What the classifier heard, by file path. Fetched per folder after the
+  /// listing, because the first call has to put the library through the model
+  /// and the file names should not wait on that.
+  heard: {},
   thumbs: {},
   filter: '',
 
@@ -257,10 +261,23 @@ function fileRow(file) {
     <span class="dot ${file.confidence}"></span>`;
 
   el.querySelector('.fname').textContent = file.name;
-  el.querySelector('.cat').textContent = file.category;
+
+  // What the sound *is*, in preference to the filename classifier's guess at a
+  // category. The old value is kept when nothing has been heard yet, so the row
+  // never goes blank while the model is still working through the library.
+  const word = heardWord(file.path);
+  const cat = el.querySelector('.cat');
+  cat.textContent = word || file.category;
+  cat.classList.toggle('heard', !!word);
+
+  const heard = state.heard[file.path] || [];
+  const borrowed = heard.length && heard[0].from;
   el.querySelector('.dot').title =
     `${file.confidence} confidence — ${file.why || 'no reason recorded'}`;
-  el.title = file.why || file.name;
+  el.title = heard.length
+    ? heard.map((w) => `${w.label} ${w.score.toFixed(2)}`).join(', ') +
+      (borrowed ? `\nheard in ${borrowed.split('/').pop()}, not this file` : '')
+    : file.why || file.name;
 
   el.querySelector('.pb').onclick = (e) => { e.stopPropagation(); playFile(file); };
   el.onclick = () => {
@@ -319,7 +336,30 @@ async function toggleFolder(name) {
       state.folderFiles[name] = [];
     }
     buildTree();
+    loadHeard(name);
   }
+}
+
+/// Ask what the classifier makes of a folder's sounds.
+///
+/// Deliberately not awaited by the caller: the first call for a library has to
+/// run every file through the model, and the browser should be usable while
+/// that happens. The rows fill in when it returns.
+async function loadHeard(name) {
+  let r;
+  try {
+    r = await api(`/api/labels?folder=${encodeURIComponent(name)}`);
+  } catch {
+    return;                       // no model, or no library — rows keep the old text
+  }
+  Object.assign(state.heard, r.files || {});
+  buildTree();
+}
+
+/// The one word for a sound, for a list that has room for one word.
+function heardWord(path) {
+  const words = state.heard[path];
+  return words && words.length ? words[0].label : '';
 }
 
 // --------------------------------------------------------------- thumbnails
@@ -2348,6 +2388,39 @@ async function showSonicTags(file) {
   box.innerHTML = tags.length
     ? tags.map((t) => `<span class="sonic-tag">${t}</span>`).join('')
     : '<span class="dim">not measured</span>';
+
+  showHeard(file, r.heard || []);
+}
+
+/// What the classifier named the sound, as opposed to what it is like.
+///
+/// A label the model was unsure of is shown faded rather than hidden: a weak
+/// guess is still information, and pretending to be certain about it would be
+/// worse than showing the number. A borrowed label says whose it is.
+function showHeard(file, words) {
+  const box = $('heardTags');
+  if (!box) return;
+  state.heard[file.path] = words;
+
+  if (!words.length) {
+    box.innerHTML = '<span class="dim">nothing recognised</span>';
+    return;
+  }
+  box.innerHTML = words
+    .map((w) => {
+      const faint = w.score < 0.15 ? ' faint' : '';
+      const title = w.from
+        ? `${(w.score * 100).toFixed(0)}% — heard in ${w.from.split('/').pop()}, not this file`
+        : `${(w.score * 100).toFixed(0)}% sure`;
+      return `<span class="sonic-tag heard-tag${faint}" title="${title}">${w.label}</span>`;
+    })
+    .join('');
+
+  const from = words[0].from;
+  if (from) {
+    box.innerHTML +=
+      `<span class="dim borrowed">like ${from.split('/').pop()}</span>`;
+  }
 }
 
 function fillTagPanel(folder) {

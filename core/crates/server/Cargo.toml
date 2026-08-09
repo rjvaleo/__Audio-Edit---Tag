@@ -11,5 +11,6 @@ edit = { path = "../edit" }
 fx = { path = "../fx" }
 engine = { path = "../engine" }
 search = { path = "../search" }
+yamnet = { path = "../yamnet" }
 catalog = { path = "../catalog" }
 indexer = { path = "../indexer" }
