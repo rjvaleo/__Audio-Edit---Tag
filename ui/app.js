@@ -2974,3 +2974,43 @@ if (window.ResizeObserver) {
   const c = $('grainCanvas');
   if (c) new ResizeObserver(() => drawGrains()).observe(c);
 }
+
+// ------------------------------------------------------- which view of the grains
+//
+// Six ways to look at one schedule: the original 2D swarm, and the five 3D
+// views. The 3D ones live in an iframe rather than being ported in here — they
+// are a p5 sketch with their own render loop, and running that inside the app's
+// loop would mean two animation clocks fighting over one canvas. Being a
+// separate document also means the same file is the standalone viewer, so there
+// is one implementation to keep honest rather than two.
+
+/// 0 is the 2D swarm; 1..5 index the 3D views.
+let grainView = 0;
+
+function setGrainView(v) {
+  grainView = v;
+  for (const b of document.querySelectorAll('.vis-tab')) {
+    b.classList.toggle('active', +b.dataset.vis === v);
+  }
+  const frame = $('grainFrame'), canvas = $('grainCanvas'), legend = document.querySelector('.vis-legend');
+  const is3d = v > 0;
+
+  canvas.classList.toggle('hidden', is3d);
+  legend.classList.toggle('hidden', is3d);
+  frame.classList.toggle('hidden', !is3d);
+
+  if (!is3d) return;
+  if (!frame.src) {
+    frame.src = `/grains3d?embed=1&view=${v - 1}`;
+  } else {
+    // Already loaded — switch views in place so the camera and the engine
+    // connection survive. Reloading the src would restart both.
+    frame.contentWindow?.postMessage({ type: 'grainView', view: v - 1 }, location.origin);
+  }
+}
+
+for (const b of document.querySelectorAll('.vis-tab')) {
+  b.onclick = () => setGrainView(+b.dataset.vis);
+}
+const visOpen = $('visOpen');
+if (visOpen) visOpen.onclick = () => window.open('/grains3d', '_blank', 'noopener');
