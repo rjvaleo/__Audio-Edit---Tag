@@ -598,6 +598,30 @@
                 </div>
 
                 <div class="control-group">
+                    <label>Trail</label>
+                    <span class="hint">How long a grain keeps glowing after it has finished sounding.</span>
+                    <div class="slider-container">
+                        <input type="range" id="trail" min="0" max="1" step="0.01" value="0.45" oninput="updateParam('trail', this.value)">
+                        <span class="value-display" id="trail-value">0.45</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Colour by</label>
+                    <span class="hint">Whichever you pick is stretched across the whole palette, so
+                    even a small amount of variation reads clearly.</span>
+                    <select class="seed-input" id="colourBy" style="margin-bottom:0"
+                            onchange="updateColourBy(this.value)">
+                        <option value="pitch">Pitch offset — how far out of tune</option>
+                        <option value="rate">Read rate</option>
+                        <option value="position">Position drift — off the nominal read</option>
+                        <option value="size">Grain length</option>
+                        <option value="source">Where it reads from</option>
+                        <option value="time">When it sounds</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
                     <label>Orbit</label>
                     <div class="slider-container">
                         <input type="range" id="orbit" min="0" max="1" step="0.01" value="0.25" oninput="updateParam('orbit', this.value)">
@@ -671,14 +695,18 @@
                         <div class="transport" id="transport" onclick="streamSeek(event)">
                             <div class="track"><div class="fill" id="transport-fill"></div></div>
                         </div>
+                        <button id="stream-follow" onclick="toggleFollow()"
+                                title="Ride the playhead, or stand back and see the whole cloud">&#9678;</button>
+                        <input type="range" class="gain zoom" id="stream-zoom" min="0.12" max="3" step="0.01"
+                               value="1" oninput="setZoom(this.value)" title="Zoom in on the playhead">
                         <input type="range" class="gain" id="stream-gain" min="0" max="1" step="0.01"
                                value="0.85" oninput="streamGain(this.value)" title="Level">
                         <span class="clock" id="stream-clock">0:00 / 0:00</span>
                     </div>
                     <div class="hud" id="hud"></div>
                     <div class="hud-keys">
-                        1–5 views &nbsp;·&nbsp; F fullscreen<br>
-                        space pause &nbsp;·&nbsp; drag to orbit
+                        1–5 views &nbsp;·&nbsp; F fullscreen &nbsp;·&nbsp; C close/wide<br>
+                        space play &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; wheel to zoom
                     </div>
                 </div>
             </div>
@@ -710,6 +738,8 @@
         speed: 0.6,
         glow: 1.0,
         orbit: 0.25,
+        trail: 0.45,
+        colourBy: 'pitch',
         colorPalette: ['#6a9bcc', '#788c5d', '#d97757']
     };
 
@@ -732,6 +762,12 @@
     // would render. BigInt because the mixing is 64-bit and approximating it
     // would quietly produce a different, plausible-looking weather.
     // ═══════════════════════════════════════════════════════════════════════
+
+    // Read before p5 starts, so the canvas is created at the size the embedded
+    // layout gives it rather than being built for the standalone page and
+    // corrected afterwards.
+    const QUERY = new URLSearchParams(location.search);
+    if (QUERY.get('embed') === '1') document.body.classList.add('embed');
 
     const SR = 48000;
     const M64 = (1n << 64n) - 1n;
@@ -827,6 +863,11 @@
     // camera just steps back far enough to keep it on screen.
     let fitDist = 900, camZoom = 1.0;
     let camYaw = 0, camPitch = -0.22, camDist = 900;
+    // Where the camera is looking. Not the origin — the point in the cloud the
+    // playhead is currently working through, so the view is always about the
+    // sound being made rather than about the shape as a whole.
+    let focus = { x: 0, y: 0, z: 0 };
+    let follow = true;
     let dragging = false, lastMX = 0, lastMY = 0;
     let palette = [];
 
@@ -870,7 +911,88 @@
                 b: rand01(params.seed, e.index, 22) * 2 - 1
             });
         }
+
+        colourGrains();
         cursor = 0;
+    }
+
+    /// Give every grain a colour position, stretched across whatever variation
+    /// is actually there.
+    ///
+    /// This was wrong at first in a way worth recording: colour was scaled to
+    /// the engine's full ±48 semitone range, so a cloud with three semitones of
+    /// jitter — which is a lot to listen to — spanned a twentieth of the
+    /// palette and came out monochrome. What matters visually is not how big a
+    /// deviation is against the theoretical maximum, but how big it is against
+    /// the rest of this cloud. So the range is measured, not assumed, and a
+    /// cloud with no variation at all falls back to the middle of the palette
+    /// rather than dividing by zero.
+    function colourGrains() {
+        const of = {
+            pitch:    g => g.semis - params.semitones,
+            rate:     g => Math.log2(Math.max(g.rate, 1e-6)),
+            position: g => g.dev,
+            size:     g => g.dur,
+            source:   g => g.v,
+            time:     g => g.u
+        }[params.colourBy] || (g => g.semis);
+
+        let lo = Infinity, hi = -Infinity;
+        for (const g of grains) {
+            const v = of(g);
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+        }
+        const span = hi - lo;
+        for (const g of grains) {
+            g.c = span > 1e-9 ? (of(g) - lo) / span : 0.5;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // THE SOURCE, DRAWN
+    //
+    // The cloud says where grains are. The waveform says what they are reaching
+    // into. Without it a grain hovering at 4.2 seconds means nothing; with it
+    // you can see that 4.2 seconds is the middle of a snare, and that the
+    // reason the cloud thins out over here is that the file is quiet over here.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    let wave = null;          // peak envelope of the source, 0..1 per column
+    let waveFor = '';
+
+    async function loadWave(path) {
+        if (!path || path === waveFor) return;
+        waveFor = path;
+        try {
+            const r = await (await fetch(
+                `/api/peaks?p=${encodeURIComponent(path)}&cols=600&edited=1`,
+                { cache: 'no-store' })).json();
+            const chans = r.channels || [];
+            const n = r.columns | 0;
+            if (!n || !chans.length) { wave = null; return; }
+            // Loudest channel per column: a stereo file whose left is silent is
+            // still not silent, and the point is to see where the sound is.
+            const out = new Float32Array(n);
+            for (let i = 0; i < n; i++) {
+                let m = 0;
+                for (const c of chans) {
+                    m = Math.max(m, Math.abs(c.max[i] || 0), Math.abs(c.min[i] || 0));
+                }
+                out[i] = m;
+            }
+            wave = out;
+        } catch { wave = null; }
+    }
+
+    /// Where in the source the playhead is reading right now.
+    ///
+    /// Sample-locked to the cloud, not approximated: the same `write / ratio`
+    /// the scheduler uses for a grain starting at this instant. So the marker on
+    /// the waveform is exactly the sample the next grain will reach for.
+    function readHeadAt(now) {
+        const r = clamp(params.ratio, 0.01, 100);
+        return clamp((now * SR) / r / SR, 0, srcSeconds);
     }
 
     /// A grain's own amplitude envelope, evaluated at the cursor.
@@ -879,9 +1001,20 @@
     /// to that grain, at that instant. What glows is a readout of the audio,
     /// which is why the image cannot disagree with the sound.
     function energyOf(g, now) {
-        const phase = (now - g.tOut) / Math.max(g.dur, 1e-9);
-        if (phase < 0 || phase > 1) return 0;
-        return 0.5 - 0.5 * Math.cos(Math.PI * 2 * phase);
+        const dur = Math.max(g.dur, 1e-9);
+        const phase = (now - g.tOut) / dur;
+        if (phase < 0) return 0;
+        if (phase <= 1) return 0.5 - 0.5 * Math.cos(Math.PI * 2 * phase);
+
+        // The trail. Physically there is nothing here — the grain has finished
+        // and contributes no sound — so this is the one honest embellishment in
+        // the piece: an afterimage, decaying, that lets the eye see where the
+        // playhead has just been. Squared falloff so it leaves quickly at first
+        // and lingers faintly, which is how a glow actually reads.
+        if (params.trail <= 0) return 0;
+        const tail = Math.max(dur * 5 * params.trail, 0.05);
+        const k = (now - (g.tOut + dur)) / tail;
+        return k >= 1 ? 0 : (1 - k) * (1 - k) * 0.55 * params.trail;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -986,6 +1119,8 @@
         buildSchedule();
         for (let i = 0; i < CBINS * EBINS; i++) buckets.push([]);
         updateViewNote();
+        sketchReady = true;
+        fitCanvas();
     }
 
     function buildPalette() {
@@ -999,19 +1134,51 @@
         }
     }
 
-    function windowResized() {
+    let sketchReady = false;
+
+    /// Keep the canvas the size of its box, whatever changed the box.
+    ///
+    /// A window resize is only one of the ways this thing changes shape. It is
+    /// also dragged bigger by a corner grip, revealed after being created with
+    /// `display:none` — where it would have measured zero and stayed a sliver in
+    /// the top-left forever — and docked into a panel that has its own layout.
+    /// Listening for window resize catches exactly one of those. Watching the
+    /// element catches all of them.
+    function fitCanvas() {
+        if (!sketchReady) return;
         const holder = document.getElementById('canvas-container');
-        resizeCanvas(holder.clientWidth, holder.clientHeight);
+        const w = Math.max(1, holder.clientWidth);
+        const h = Math.max(1, holder.clientHeight);
+        if (w !== width || h !== height) resizeCanvas(w, h);
+    }
+
+    function windowResized() { fitCanvas(); }
+
+    if (window.ResizeObserver) {
+        new ResizeObserver(fitCanvas).observe(document.getElementById('canvas-container'));
     }
 
     function draw() {
+        // Two integer reads a frame, and the canvas can never be the wrong size
+        // again. A ResizeObserver ought to be enough, but it is not delivered
+        // while the document is in a background tab, so a panel resized while
+        // hidden came back still drawing at its old size — the view sitting in
+        // the corner of its own box. Checking here cannot miss.
+        fitCanvas();
         background(20, 20, 19);
 
         // When following the player the cursor is the engine's, not ours: the
         // poll sets it, and between polls it is carried forward at real speed
         // so the motion stays smooth at 60fps on a 120ms update.
         if (live) {
-            if (enginePlaying) cursor += deltaTime / 1000;
+            // Carry the cursor between polls so the motion is smooth at 60fps
+            // on a 120ms update — but only across a plausible frame. Hidden in
+            // a background tab the browser stops calling draw entirely, and the
+            // first frame back reports the whole gap as one delta; extrapolating
+            // that throws the playhead to the end of the piece. Anything longer
+            // than a slow frame is not information, so wait for the poll.
+            if (enginePlaying && deltaTime < 250) cursor += deltaTime / 1000;
+            cursor = clamp(cursor, 0, outSeconds);
         } else if (!paused) {
             cursor += (deltaTime / 1000) * params.speed;
             if (cursor > outSeconds) cursor = 0;
@@ -1021,10 +1188,10 @@
         // Camera. Auto-orbit unless the mouse has taken over.
         if (!dragging) camYaw += (deltaTime / 1000) * params.orbit * 0.30;
         camDist += (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 220);
-        const cx = Math.sin(camYaw) * Math.cos(camPitch) * camDist;
-        const cy = Math.sin(camPitch) * camDist;
-        const cz = Math.cos(camYaw) * Math.cos(camPitch) * camDist;
-        camera(cx, cy, cz, 0, 0, 0, 0, 1, 0);
+        const cx = focus.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
+        const cy = focus.y + Math.sin(camPitch) * camDist;
+        const cz = focus.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist;
+        camera(cx, cy, cz, focus.x, focus.y, focus.z, 0, 1, 0);
         perspective(PI / 3.4, width / height, 5, 40000);
 
         for (const b of buckets) b.length = 0;
@@ -1033,6 +1200,14 @@
         const tmp = { x: 0, y: 0, z: 0, e: 0, n: 0 };
         const hot = [];
         let extent = 1;
+
+        // The stretch of cloud the playhead is currently inside. Wide enough to
+        // show a grain its neighbours — the interesting thing is never one
+        // grain, it is how the ones around it overlap — and narrow enough that
+        // the camera stays in close.
+        const near = Math.max((plan.baseSize / SR) * 3, 0.12);
+        const local = [];
+        let fx = 0, fy = 0, fz = 0, fw = 0;
 
         for (let n = 0; n < grains.length; n++) {
             const g = grains[n];
@@ -1043,7 +1218,15 @@
             const rad = Math.max(Math.abs(tmp.x), Math.abs(tmp.y) * 1.5, Math.abs(tmp.z));
             if (rad > extent) extent = rad;
 
-            const ci = clamp(Math.floor(((g.pn + 1) / 2) * CBINS), 0, CBINS - 1);
+            // Grains sounding now, or about to, or just finished.
+            const dt = Math.abs(g.tOut - now);
+            if (dt < near) {
+                const w = 1 - dt / near;
+                fx += tmp.x * w; fy += tmp.y * w; fz += tmp.z * w; fw += w;
+                local.push(tmp.x, tmp.y, tmp.z);
+            }
+
+            const ci = clamp(Math.floor(g.c * CBINS), 0, CBINS - 1);
             const ei = e > 0.55 ? 2 : (e > 0.08 ? 1 : 0);
             const bucket = buckets[ci * EBINS + ei];
             bucket.push(tmp.x, tmp.y, tmp.z);
@@ -1118,9 +1301,101 @@
         }
 
         drawFrameOfReference(now);
+        drawWaveAtPlayhead(now);
         blendMode(BLEND);
-        fitDist = extent * 2.6;
+
+        // Frame the neighbourhood, not the whole object. The spread of what is
+        // sounding sets the distance, so a dense pile-up pulls the camera in
+        // and a sparse scatter lets it back out.
+        if (follow && fw > 0) {
+            const tx = fx / fw, ty = fy / fw, tz = fz / fw;
+            let spread = 0;
+            for (let i = 0; i < local.length; i += 3) {
+                const dx = local[i] - tx, dy = local[i + 1] - ty, dz = local[i + 2] - tz;
+                const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (d > spread) spread = d;
+            }
+            // A floor, so a lone grain does not drag the camera into its own
+            // surface, and a ceiling so a wild scatter cannot fling it away.
+            fitDist = clamp(spread * 2.4, 120, extent * 2.6);
+
+            // Ease rather than snap: the playhead moves in grain-sized steps
+            // and a camera that tracked them exactly would judder.
+            const k = Math.min(1, deltaTime / 260);
+            focus.x += (tx - focus.x) * k;
+            focus.y += (ty - focus.y) * k;
+            focus.z += (tz - focus.z) * k;
+        } else {
+            fitDist = extent * 2.6;
+            const k = Math.min(1, deltaTime / 400);
+            focus.x += (0 - focus.x) * k;
+            focus.y += (0 - focus.y) * k;
+            focus.z += (0 - focus.z) * k;
+        }
         updateHUD(now);
+    }
+
+    const sampleWave = t => {
+        if (!wave || !wave.length) return 0;
+        const i = clamp(Math.round((t / Math.max(srcSeconds, 1e-6)) * (wave.length - 1)),
+                        0, wave.length - 1);
+        return wave[i];
+    };
+
+    /// The source waveform, at the playhead, in every view.
+    ///
+    /// Drawn as a ribbon standing in the camera's own plane rather than pinned
+    /// to a world axis, because the five views disagree about which direction
+    /// time runs and a waveform edge-on is no waveform at all. Billboarded, it
+    /// reads from wherever you have orbited to.
+    ///
+    /// It is centred on the read head — the sample the next grain will reach
+    /// for, `write / ratio`, straight out of the scheduler — so the marker and
+    /// the cloud cannot disagree about where in the file we are.
+    function drawWaveAtPlayhead(now) {
+        if (!wave || !wave.length) return;
+
+        const head = readHeadAt(now);
+        const span = Math.max(srcSeconds * 0.08, 0.2);   // seconds either side
+        const half = Math.max(camDist * 0.30, 80);       // grows as you pull back
+        const amp = half * 0.38;
+        const N = 160;
+
+        // The camera's right vector, so the ribbon faces the viewer.
+        const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
+
+        push();
+        translate(focus.x, focus.y, focus.z);
+        noFill();
+
+        for (const sign of [-1, 1]) {
+            stroke(250, 249, 245, sign > 0 ? 110 : 55);
+            strokeWeight(sign > 0 ? 1.5 : 1);
+            beginShape();
+            for (let i = 0; i <= N; i++) {
+                const u = i / N - 0.5;
+                const a = sampleWave(head + u * 2 * span);
+                vertex(rx * u * 2 * half, sign * -a * amp, rz * u * 2 * half);
+            }
+            endShape();
+        }
+
+        // The zero line, so a quiet passage still reads as a passage.
+        stroke(250, 249, 245, 28);
+        strokeWeight(1);
+        beginShape(LINES);
+        vertex(-rx * half, 0, -rz * half);
+        vertex(rx * half, 0, rz * half);
+        endShape();
+
+        // The read head itself.
+        stroke(217, 119, 87, 220);
+        strokeWeight(2);
+        beginShape(LINES);
+        vertex(0, -amp * 1.15, 0);
+        vertex(0, amp * 1.15, 0);
+        endShape();
+        pop();
     }
 
     /// The axes each view is measured against. Faint, but without them the
@@ -1276,6 +1551,7 @@
                 }
                 syncControls();
                 buildSchedule();
+                loadWave(s.path);
                 setLiveNote('Following ' + s.path.split('/').pop());
             } catch {
                 setLiveNote('Could not read that sound’s parameters.');
@@ -1365,6 +1641,12 @@
         transport({ gain: parseFloat(v) });
     }
 
+    /// Zoom is inverted deliberately: sliding right means closer, which is what
+    /// the word means to everyone except the person who wrote the camera.
+    function setZoom(v) {
+        camZoom = 1 / clamp(parseFloat(v), 0.12, 3);
+    }
+
     const mmss = s => {
         s = Math.max(0, s);
         return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
@@ -1373,6 +1655,22 @@
     function reflectStream() {
         const on = live ? enginePlaying : !paused;
         document.getElementById('stream-play').innerHTML = on ? '&#10074;&#10074;' : '&#9654;';
+        const f = document.getElementById('stream-follow');
+        f.style.color = follow ? 'var(--anthropic-orange)' : 'rgba(250,249,245,0.55)';
+        f.title = follow
+            ? 'Riding the playhead — click to stand back'
+            : 'Showing the whole cloud — click to ride the playhead';
+    }
+
+    /// Close on the playhead, or back far enough to see the shape entire.
+    ///
+    /// Both are worth having. Shear only states what the stretch ratio *is*
+    /// when you can see the whole sheet at once; everything else is more
+    /// interesting from inside.
+    function toggleFollow() {
+        follow = !follow;
+        camZoom = 1.0;
+        reflectStream();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1393,14 +1691,16 @@
     }
     function mouseWheel(ev) {
         if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) return;
-        camZoom = clamp(camZoom + ev.delta * 0.0016, 0.25, 4.0);
+        camZoom = clamp(camZoom + ev.delta * 0.0016, 1 / 3, 1 / 0.12);
+        document.getElementById('stream-zoom').value = (1 / camZoom).toFixed(2);
         return false;
     }
 
     function keyPressed() {
         if (key >= '1' && key <= '5') setView(parseInt(key) - 1);
         else if (key === 'f' || key === 'F') toggleFullscreen();
-        else if (key === ' ') { togglePause(); return false; }
+        else if (key === 'c' || key === 'C') toggleFollow();
+        else if (key === ' ') { streamPlay(); return false; }
     }
 
     // Switching views from the app that embeds this. Same-origin only — an
@@ -1460,7 +1760,8 @@
         driftRateHz: v => v.toFixed(2) + ' Hz',
         speed: v => v.toFixed(2) + '×',
         glow: v => v.toFixed(2),
-        orbit: v => v.toFixed(2)
+        orbit: v => v.toFixed(2),
+        trail: v => v.toFixed(2)
     };
 
     function updateParam(name, value) {
@@ -1486,6 +1787,11 @@
         params.colorPalette[i] = value;
         document.getElementById('color' + (i + 1) + '-value').textContent = value;
         buildPalette();
+    }
+
+    function updateColourBy(v) {
+        params.colourBy = v;
+        colourGrains();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1528,7 +1834,7 @@
 
         for (const name of ['semitones', 'sourceSeconds', 'densityHz', 'overlap',
                             'sizeJitter', 'positionJitterMs', 'pitchJitterSemis',
-                            'pitchDriftSemis', 'driftRateHz', 'speed', 'glow', 'orbit']) {
+                            'pitchDriftSemis', 'driftRateHz', 'speed', 'glow', 'orbit', 'trail']) {
             document.getElementById(name).value = params[name];
             document.getElementById(name + '-value').textContent = FMT[name](params[name]);
         }
@@ -1551,15 +1857,14 @@
         // Embedded in the app: no sidebar, straight into whichever view was
         // asked for, and following the player from the first frame — nobody
         // opening a panel inside the editor wants to press connect first.
-        const q = new URLSearchParams(location.search);
-        if (q.get('embed') === '1') {
-            document.body.classList.add('embed');
-            const v = parseInt(q.get('view') || '0');
+        const embedded = QUERY.get('embed') === '1';
+        if (embedded) {
+            const v = parseInt(QUERY.get('view') || '0');
             if (v >= 0 && v < VIEWS.length) setView(v);
         }
 
         await probeEngine();
-        if (q.get('embed') === '1' && liveOK && !live) toggleLive();
+        if (embedded && liveOK && !live) toggleLive();
 
         updateSeedDisplay();
         reflectStream();
