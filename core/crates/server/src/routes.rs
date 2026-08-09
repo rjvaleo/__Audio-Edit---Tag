@@ -1521,7 +1521,13 @@ fn api_capture(app: &Arc<App>, req: &Request) -> Response {
     let (path, outside) = crate::capture::target(&lib, &app.data_dir, &rel, &module);
 
     match crate::capture::write_wav(&path, &cap.samples, cap.channels, cap.sample_rate) {
-        Ok(frames) => Response::json(
+        Ok(frames) => {
+            // The file exists now; the browser should be able to see it without
+            // the user going looking for a rescan button.
+            if !outside {
+                reindex_for(app, &rel);
+            }
+            Response::json(
             Value::obj()
                 .set("capturing", false)
                 .set("frames", frames as f64)
@@ -1534,8 +1540,50 @@ fn api_capture(app: &Arc<App>, req: &Request) -> Response {
                 // True when the reservation ran out and the tail was dropped.
                 .set("truncated", cap.full)
                 .to_string(),
-        ),
+            )
+        }
         Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
+/// Re-read one folder and fold it back into the index.
+///
+/// A capture drops a file into the library while the app is running, and until
+/// something notices it the browser is describing a directory that no longer
+/// matches the disk. Re-scanning the whole library for one new file would be
+/// absurd on a large one, so only the folder that changed is re-read and its
+/// rows swapped in.
+fn reindex_folder(app: &Arc<App>, root: &str) {
+    let Some(lib) = app.library_path() else { return };
+    let Ok(fresh) = indexer::scan_folder(&lib, root) else { return };
+
+    {
+        let mut idx = app.index.write().unwrap();
+        idx.files.retain(|f| f.folder != root);
+        idx.files.extend(fresh.iter().map(Into::into));
+        idx.files.sort_by(|a, b| {
+            a.folder.cmp(&b.folder).then(a.rel_path.cmp(&b.rel_path))
+        });
+        idx.rebuild_folders();
+    }
+
+    // Keep the file on disk in step, or the next start would forget it again.
+    let all: Vec<indexer::FileRecord> = match indexer::library_roots(&lib) {
+        Ok(roots) => roots
+            .iter()
+            .filter_map(|r| indexer::scan_folder(&lib, r).ok())
+            .flatten()
+            .collect(),
+        Err(_) => return,
+    };
+    let _ = Index::save(&all, &app.index_path());
+}
+
+/// Re-read the folder a path sits in.
+fn reindex_for(app: &Arc<App>, rel: &str) {
+    let root = rel.split('/').next().unwrap_or("");
+    if !root.is_empty() {
+        reindex_folder(app, root);
     }
 }
 
