@@ -45,15 +45,28 @@ button { font-family: inherit; cursor: pointer; }
 
 /* ---------------------------------------------------------------- titlebar */
 
-.titlebar {
-  height: 46px; flex-shrink: 0;
-  display: flex; align-items: center; gap: 9px; padding: 0 12px;
+/* The strip across the very top is now only the menus. Everything that used to
+   live up here — transport, clock, zoom, metadata, level — moved down under the
+   waveform, where it is next to the thing it acts on. */
+.menubar {
+  height: 34px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px; padding: 0 10px;
   background: oklch(16% 0.014 250); border-bottom: 1px solid var(--line);
+}
+
+/* The transport, sitting under the waveform and spectrogram in the editor.
+   Absent in Browse, where there is nothing open to transport. */
+.transportbar {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 9px; padding: 7px 12px;
+  background: oklch(14% 0.015 255); border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   overflow-x: auto;
 }
-.titlebar .vsep { flex-shrink: 0; }
-.titlebar #volume { width: 76px; margin-left: auto; flex-shrink: 0; }
-.titlebar .ghost { flex-shrink: 0; padding: 0 9px; }
+.transportbar .vsep { flex-shrink: 0; }
+.transportbar #volume { width: 76px; margin-left: auto; flex-shrink: 0; }
+.transportbar .ghost { flex-shrink: 0; padding: 0 9px; }
+.transportbar .mark { flex-shrink: 0; }
 .mark {
   width: 19px; height: 19px; border-radius: 5px;
   background: linear-gradient(135deg, var(--accent), oklch(45% 0.14 250));
@@ -562,7 +575,7 @@ input, textarea, .path-display, .picker-path, .insp-field .v {
 /* The mode switch is the only way to tell Overview from Edit at a glance, so it
    reads as a control rather than a label. */
 .modeswitch { flex-shrink: 0; margin-left: 6px; }
-.titlebar .current-file {
+.transportbar .current-file {
   max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   flex-shrink: 0;
 }
@@ -870,6 +883,17 @@ body.editing .dock { flex: 0 0 300px; }
   gap: 10px; align-content: start; overflow-y: auto;
   padding-right: 10px; border-right: 1px solid var(--line);
 }
+/* A reset that sits in the panel's own header rather than under its controls,
+   where it was competing with them for the eye. */
+.cpanel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tiny {
+  height: 18px; padding: 0 7px; border-radius: 4px;
+  border: 1px solid var(--line-2); background: transparent;
+  color: var(--text-dim); font: inherit; font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0; text-transform: none;
+}
+.tiny:hover { border-color: var(--accent); color: var(--accent); }
+
 .cpanel {
   background: oklch(16% 0.013 250); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px 10px;
