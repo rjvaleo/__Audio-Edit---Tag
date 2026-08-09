@@ -1057,3 +1057,9 @@ body.editing .dock { flex: 0 0 330px; }
   padding: 5px 9px 3px; font-size: 9px; font-weight: 600;
   letter-spacing: .4px; text-transform: uppercase; color: var(--text-dimmer);
 }
+
+/* Which stretch engine. A choice about the material, not a quality ladder, so
+   it reads as two named options rather than a slider. */
+.engine-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+.engine-pick .seg-btn { font-size: 10px; padding: 0 8px; }
+.engine-pick .check { font-size: 10px; transition: opacity .15s ease; }

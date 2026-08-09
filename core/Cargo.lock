@@ -437,6 +437,9 @@ dependencies = [
 [[package]]
 name = "fx"
 version = "0.1.0"
+dependencies = [
+ "audio-core",
+]
 
 [[package]]
 name = "getrandom"

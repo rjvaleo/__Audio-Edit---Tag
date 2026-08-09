@@ -2016,7 +2016,8 @@ function sendStretch({ live }) {
   const d = state.stretchDraft;
   editOp(
     { op: 'stretch', ratio: d.ratio, semitones: d.semitones,
-      windowMs: d.windowMs, quality: live ? 'draft' : d.quality },
+      windowMs: d.windowMs, quality: live ? 'draft' : d.quality,
+      algorithm: d.algorithm, phaseLock: d.phaseLock },
     { live },
   );
 }
@@ -2046,7 +2047,46 @@ function renderStretch() {
   state.stretchDraft = {
     ratio: st.ratio, semitones: st.semitones,
     windowMs: st.windowMs, quality: st.quality || 'standard',
+    algorithm: st.algorithm || 'wsola',
+    phaseLock: st.phaseLock !== false,
   };
+
+  // Which engine does the stretching. Not a quality ladder — the two fail in
+  // opposite directions, so this is a choice about the material rather than
+  // about how hard to work.
+  const eng = document.createElement('div');
+  eng.className = 'engine-pick';
+  eng.innerHTML = `
+    <div class="seg" id="stretchEngine">
+      <button class="seg-btn" data-alg="wsola" title="Time domain. Keeps transients intact - drums, percussion, one-shots.">WSOLA</button>
+      <button class="seg-btn" data-alg="vocoder" title="Frequency domain. Holds chords and sustained tone together - pads, strings.">Vocoder</button>
+    </div>
+    <label class="check" id="lockWrap" title="Holds each partial together instead of letting it dissolve into neighbouring bins">
+      <input type="checkbox" id="phaseLock"> phase lock
+    </label>`;
+  box.appendChild(eng);
+
+  const reflectEngine = () => {
+    for (const b of eng.querySelectorAll('.seg-btn')) {
+      b.classList.toggle('active', b.dataset.alg === state.stretchDraft.algorithm);
+    }
+    $('phaseLock').checked = state.stretchDraft.phaseLock;
+    // Phase locking is a vocoder idea; there is nothing for it to lock in WSOLA.
+    $('lockWrap').style.opacity = state.stretchDraft.algorithm === 'vocoder' ? 1 : 0.35;
+    $('phaseLock').disabled = state.stretchDraft.algorithm !== 'vocoder';
+  };
+  for (const b of eng.querySelectorAll('.seg-btn')) {
+    b.onclick = () => {
+      state.stretchDraft.algorithm = b.dataset.alg;
+      reflectEngine();
+      commitStretch();
+    };
+  }
+  $('phaseLock').onchange = (e) => {
+    state.stretchDraft.phaseLock = e.target.checked;
+    commitStretch();
+  };
+  reflectEngine();
 
 
   const rows = {};
@@ -2092,6 +2132,8 @@ function renderGrainParams() {
              semitones: state.stretchDraft.semitones,
              windowMs: state.stretchDraft.windowMs,
              quality: live ? 'draft' : state.stretchDraft.quality,
+             algorithm: state.stretchDraft.algorithm,
+             phaseLock: state.stretchDraft.phaseLock,
              grain: state.grainDraft },
            { live });
   };
@@ -2251,7 +2293,8 @@ $('presetDelete').onclick = async () => {
 /// among them, because it names a cloud rather than shaping one and throwing it
 /// away would lose the sound you were working on.
 $('stretchReset').onclick = async () => {
-  state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' };
+  state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard',
+                         algorithm: 'wsola', phaseLock: true };
   const grain = {
     densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
     pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5,

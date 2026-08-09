@@ -860,6 +860,17 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     // so a control that does not mention quality cannot reset it.
                     _ => s.list().stretch.quality,
                 };
+                // Same rule as quality: absent means unchanged, so a control
+                // that says nothing about the engine cannot switch it.
+                let algorithm = v
+                    .get("algorithm")
+                    .and_then(|a| a.as_str())
+                    .and_then(fx::stretch::Algorithm::from_str)
+                    .unwrap_or(s.list().stretch.algorithm);
+                let phase_lock = match v.get("phaseLock") {
+                    Some(Value::Bool(b)) => *b,
+                    _ => s.list().stretch.phase_lock,
+                };
                 // Grain settings arrive as a nested object; anything absent
                 // keeps its current value so one slider cannot reset the rest.
                 let cur = s.list().stretch.grain;
@@ -885,7 +896,8 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 };
                 s.apply(|l| {
                     l.stretch = fx::Stretch {
-                        ratio, semitones: semis, window_ms: window, quality, grain,
+                        ratio, semitones: semis, window_ms: window, quality,
+                        algorithm, phase_lock, grain,
                     };
                 });
             }

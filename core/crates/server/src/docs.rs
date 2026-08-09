@@ -210,6 +210,8 @@ pub fn edit_json(list: &EditList, can_undo: bool, can_redo: bool) -> Value {
                 .set("semitones", list.stretch.semitones as f64)
                 .set("windowMs", list.stretch.window_ms as f64)
                 .set("quality", list.stretch_quality())
+                .set("algorithm", list.stretch.algorithm.as_str())
+                .set("phaseLock", list.stretch.phase_lock)
                 .set("active", list.is_stretched())
                 .set("granular", list.stretch.is_granular())
                 .set(
