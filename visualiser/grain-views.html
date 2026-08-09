@@ -946,7 +946,9 @@
     let dragging = false, lastMX = 0, lastMY = 0;
     let palette = [];
 
-    function buildSchedule() {
+    let windowed = false, windowHalfSecs = 0, windowCentre = 0;
+
+    function buildSchedule(keepCursor) {
         inFrames = Math.max(1, Math.floor(params.sourceSeconds * SR));
         plan = makePlan(inFrames, params);
         outSeconds = plan.outFrames / SR;
@@ -954,14 +956,32 @@
         effectiveOverlap = Math.max(1, Math.round(plan.baseSize / plan.hop));
 
         const total = Math.max(1, Math.ceil(plan.outFrames / plan.hop));
-        // Same thinning the app's own grain endpoint uses: a long file at high
-        // density is tens of thousands of grains and the display cannot resolve
-        // them anyway.
-        const stride = Math.max(1, Math.ceil(total / MAX_GRAINS));
-        scheduleStride = stride;
+
+        // Too many to draw at once — but thinning the whole schedule was the
+        // wrong answer. Above the cap the drawn count stopped responding to
+        // density at all: raise it and the stride rose with it, so the same
+        // number of grains came back and the control looked broken. It was not
+        // broken; the engine had gone from three voices to thirty.
+        //
+        // So the window moves instead. Every grain within a few seconds of the
+        // playhead is drawn, none of them skipped, and the camera is looking
+        // there anyway. Density now does on screen what it does to the sound.
+        let from = 0, count = total;
+        scheduleStride = 1;
+        windowed = total > MAX_GRAINS;
+        if (windowed) {
+            const half = Math.floor(MAX_GRAINS / 2);
+            const centre = Math.floor((keepCursor ? cursor : 0) * SR / plan.hop);
+            from = Math.max(0, Math.min(total - MAX_GRAINS, centre - half));
+            count = MAX_GRAINS;
+            windowHalfSecs = (half * plan.hop) / SR;
+            windowCentre = keepCursor ? cursor : 0;
+        }
 
         grains = [];
-        for (let i = 0; i < total; i += stride) {
+        for (let n = 0; n < count; n++) {
+            const i = from + n;
+            if (i >= total) break;
             const write = i * plan.hop;
             if (write >= plan.outFrames) break;
             const e = eventAt(i, write, plan, inFrames, params);
@@ -1002,7 +1022,7 @@
         }
 
         colourGrains();
-        cursor = 0;
+        if (!keepCursor) cursor = 0;
     }
 
     /// Give every grain a colour position, stretched across whatever variation
@@ -1402,6 +1422,10 @@
             cursor += (deltaTime / 1000) * params.speed;
             if (cursor > outSeconds) cursor = 0;
         }
+        // Re-centre before it runs out of drawn grains.
+        if (windowed && Math.abs(cursor - windowCentre) > windowHalfSecs * 0.45) {
+            buildSchedule(true);
+        }
         const now = cursor;
 
         // Camera. Auto-orbit unless the mouse has taken over.
@@ -1769,7 +1793,8 @@
         document.getElementById('hud').innerHTML =
             `<span class="title">${views()[params.view].name}</span>` +
             `<span class="detail">` +
-            `seed ${params.seed} &nbsp;·&nbsp; ${grains.length} grains drawn<br>` +
+            `seed ${params.seed} &nbsp;·&nbsp; ${grains.length} grains drawn` +
+            (windowed ? ` <span class="dim">of ${Math.ceil(plan.outFrames / plan.hop).toLocaleString()} — window follows the playhead</span>` : '') + `<br>` +
             `<span class="dim">ratio</span> ${params.ratio.toFixed(2)}× ` +
             `&nbsp;<span class="dim">window</span> ${Math.round(params.windowMs)} ms ` +
             `&nbsp;<span class="dim">overlap</span> ${effectiveOverlap}×<br>` +
@@ -1850,6 +1875,11 @@
         // second or two in. The parameters come from the audio thread now
         // rather than the document, so the picture cannot describe anything but
         // the sound coming out.
+        // Position first. The schedule window is centred on the playhead, so
+        // building it before knowing where the playhead is puts every drawn
+        // grain at the top of the file.
+        if (s.sampleRate > 0) { liveRate = s.sampleRate; cursor = s.position / s.sampleRate; }
+
         const st = s.stream;
         const sig = st ? [
             s.path, st.ratio, st.semitones, st.windowMs, st.inFrames,
@@ -1879,15 +1909,12 @@
                 // out_frames, which is what the transport is counting through.
                 if (st.inFrames > 0) params.sourceSeconds = st.inFrames / SR;
                 syncControls();
-                buildSchedule();
+                buildSchedule(true);
             }
             if (fresh) loadWave(s.path);
             setLiveNote('Following ' + s.path.split('/').pop());
         }
 
-        // The playhead. Output frames at the device rate — the same clock the
-        // schedule is laid out on.
-        if (s.sampleRate > 0) { liveRate = s.sampleRate; cursor = s.position / s.sampleRate; }
         enginePlaying = !!s.playing;
         reflectStream();
     }

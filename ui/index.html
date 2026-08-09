@@ -9,32 +9,10 @@
 <body>
 
 <!-- titlebar -->
-<header class="titlebar">
+<header class="menubar">
   <div class="mark"></div>
-  <span class="mono current-file" id="titleFile">no file selected</span>
-  <span class="mode-label" id="modeLabel">Browse</span>
-
-  <div class="vsep"></div>
-  <button class="tbtn play" id="playBtn" title="Play/pause">▶</button>
-  <button class="tbtn" id="stopBtn" title="Stop — returns to the cue">■</button>
-  <button class="tbtn loop" id="loopBtn" title="Loop: off">⟲</button>
-  <span class="loop-label mono dim" id="loopLabel"></span>
-
-  <div class="vsep"></div>
-  <span class="mono time" id="timeNow">00:00.000</span>
-
-  <div class="vsep"></div>
-  <div class="zoom">
-    <button class="tbtn small" id="zoomOut" title="Zoom out">–</button>
-    <span class="mono dim" id="zoomLabel">fit</span>
-    <button class="tbtn small" id="zoomIn" title="Zoom in">+</button>
-    <button class="tbtn small" id="zoomFit" title="Fit">⤢</button>
-  </div>
-
-  <div class="vsep"></div>
-  <div class="metastrip" id="metaStrip"></div>
-
-  <input type="range" id="volume" min="0" max="1" step="0.01" value="0.85" title="Volume">
+  <nav class="menus" id="menuBar"></nav>
+  <div class="spacer"></div>
   <!-- Kept so the code that writes them has somewhere to write; both are now
        shown in the Library panel and the metadata strip instead. -->
   <span class="hidden" id="rateLabel"></span>
@@ -164,6 +142,34 @@
       <div class="lane-empty" id="laneEmpty">Select a sound on the left.</div>
     </div>
 
+    <div class="transportbar hidden" id="transportBar">
+  <div class="mark"></div>
+  <span class="mono current-file" id="titleFile">no file selected</span>
+  <span class="mode-label" id="modeLabel">Browse</span>
+
+  <div class="vsep"></div>
+  <button class="tbtn play" id="playBtn" title="Play/pause">▶</button>
+  <button class="tbtn" id="stopBtn" title="Stop — returns to the cue">■</button>
+  <button class="tbtn loop" id="loopBtn" title="Loop: off">⟲</button>
+  <span class="loop-label mono dim" id="loopLabel"></span>
+
+  <div class="vsep"></div>
+  <span class="mono time" id="timeNow">00:00.000</span>
+
+  <div class="vsep"></div>
+  <div class="zoom">
+    <button class="tbtn small" id="zoomOut" title="Zoom out">–</button>
+    <span class="mono dim" id="zoomLabel">fit</span>
+    <button class="tbtn small" id="zoomIn" title="Zoom in">+</button>
+    <button class="tbtn small" id="zoomFit" title="Fit">⤢</button>
+  </div>
+
+  <div class="vsep"></div>
+  <div class="metastrip" id="metaStrip"></div>
+
+  <input type="range" id="volume" min="0" max="1" step="0.01" value="0.85" title="Volume">
+</div>
+
     <div class="regions hidden" id="regions"></div>
 
     <!-- overview: stats for the selected sound -->
@@ -202,9 +208,11 @@
         <div class="grain-split">
           <div class="grain-controls">
             <div class="cpanel">
-              <div class="cpanel-head">Time &amp; pitch</div>
+              <div class="cpanel-head">Time &amp; pitch
+                <button class="tiny" id="stretchReset"
+                        title="Reset time, pitch, grain shape and pitch movement">Reset all</button>
+              </div>
               <div id="stretchParams"></div>
-              <button class="ghost" id="stretchReset">Reset all</button>
               <div class="mono dim" id="stretchOut"></div>
             </div>
             <div class="cpanel">

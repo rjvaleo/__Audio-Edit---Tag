@@ -769,6 +769,9 @@ function setMode(mode) {
     stopVisualiser();
   }
   $('editTools').classList.toggle('hidden', !editing);
+  // The transport belongs to the editor now. Browse has no open document to
+  // transport, and the user asked for it gone there.
+  $('transportBar').classList.toggle('hidden', !editing);
   $('ruler').classList.toggle('hidden', !editing);
   $('regions').classList.toggle('hidden', !editing);
   $('dock').classList.toggle('hidden', !editing);
@@ -1811,52 +1814,73 @@ function paintValueAt(row, clientX) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function enablePainting(container) {
-  if (!container || container.dataset.painting) return;
-  container.dataset.painting = '1';
+function enablePainting(scope) {
+  if (!scope || scope.dataset.painting) return;
+  scope.dataset.painting = '1';
 
-  let from = null;              // the row the stroke began on
+  let painting = false;
   const touched = new Set();
 
-  container.addEventListener('pointerdown', (e) => {
-    from = e.target.closest?.('.param') || null;
-    touched.clear();
-  });
-
-  /// Which bar the stroke is over, by geometry rather than by hit-testing.
+  /// The bar under a point, by geometry rather than by hit-testing.
   ///
   /// `elementFromPoint` would be the obvious tool and is the wrong one: it
-  /// answers about whatever is painted on top, so a tooltip, an overlay or the
-  /// slider's own thumb can shadow the row and the stroke skips it.
-  const rowAt = (y) => {
-    for (const row of container.querySelectorAll('.param')) {
+  /// answers about whatever is painted on top, so a tooltip, an overlay or a
+  /// slider's own thumb can shadow a row and the stroke skips it.
+  ///
+  /// Both axes are tested, not just the vertical one, because the panels sit
+  /// side by side — matching on height alone would set the bar in the next
+  /// column along at the same time.
+  const rowAt = (x, y) => {
+    for (const row of scope.querySelectorAll('.param')) {
       const r = row.getBoundingClientRect();
-      if (r.height > 0 && y >= r.top && y <= r.bottom) return row;
+      if (r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+        return row;
+      }
     }
     return null;
   };
 
+  const mark = (x, y) => {
+    const row = rowAt(x, y);
+    if (!row) return;
+    // Set once, where the stroke crosses. An intersection is a point, so a bar
+    // takes its value at the moment the line enters it and keeps it even if the
+    // hand wanders on the way out.
+    if (touched.has(row)) return;
+    row.classList.add('painting');
+    touched.add(row);
+    paintValueAt(row, x);
+  };
+
+  scope.addEventListener('pointerdown', (e) => {
+    // Pressing on a control is that control's own drag, and stealing it would
+    // fight the gesture already under way. A stroke begins on the background
+    // between them.
+    if (e.target.closest('input, button, select, textarea, a, label')) {
+      painting = false;
+      return;
+    }
+    painting = true;
+    touched.clear();
+    mark(e.clientX, e.clientY);
+  });
+
   // On the window, so the stroke survives the pointer leaving the panel.
   window.addEventListener('pointermove', (e) => {
-    if (!from || !e.buttons) return;
-    const over = rowAt(e.clientY);
-    // Only neighbours. The starting bar is the native control's business, and
-    // stealing it would fight the drag already in progress.
-    if (!over || over === from) return;
-    over.classList.add('painting');
-    touched.add(over);
-    paintValueAt(over, e.clientX);
+    if (!painting || !e.buttons) return;
+    mark(e.clientX, e.clientY);
   });
 
   window.addEventListener('pointerup', () => {
+    if (!painting) return;
+    painting = false;
     for (const row of touched) {
       row.classList.remove('painting');
-      // Release, so the draft becomes a proper commit at full quality.
+      // Release, so each draft becomes a proper commit at full quality.
       row.querySelector('input[type=range]')
          ?.dispatchEvent(new Event('change', { bubbles: true }));
     }
     touched.clear();
-    from = null;
   });
 }
 
@@ -1976,7 +2000,7 @@ function renderGrainParams() {
   // Grouped by what they do, so each panel stays short enough to read at once.
   const groups = [
     [shape, [
-      ['Density', 'densityHz', 0, 200, 1, (v) => (v <= 0 ? 'from overlap' : `${Math.round(v)}/s`)],
+      ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'from overlap' : `${Math.round(v)}/s`)],
       ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`],
       ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`],
       ['Position jitter', 'positionJitterMs', 0, 500, 1, (v) => `${Math.round(v)} ms`],
@@ -2117,11 +2141,25 @@ $('presetDelete').onclick = async () => {
   } catch (e) { toast('Could not delete: ' + e.message); }
 };
 
+/// One reset for all three panels.
+///
+/// Time, grain shape and pitch movement are three faces of one setting — they
+/// are a single `stretch` operation on the document — so resetting one and
+/// leaving the others is a state the engine cannot really be in. These are the
+/// engine's own defaults, from `Grain::default`; the seed is deliberately not
+/// among them, because it names a cloud rather than shaping one and throwing it
+/// away would lose the sound you were working on.
 $('stretchReset').onclick = async () => {
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' };
-  await editOp({ op: 'stretch', ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' });
+  const grain = {
+    densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
+    pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5,
+    seed: state.grainDraft?.seed ?? state.edit?.stretch?.grain?.seed ?? 1,
+  };
+  state.grainDraft = { ...grain };
+  await editOp({ op: 'stretch', ...state.stretchDraft, grain });
   syncStretchSliders();
-
+  syncGrainSliders();
 };
 
 function renderRackParams() {
@@ -3061,9 +3099,7 @@ function stopSwarm() {
   }, 600);
 }
 
-for (const id of ['stretchParams', 'grainShape', 'grainPitch', 'rackParams']) {
-  enablePainting($(id));
-}
+enablePainting($('dock'));
 
 if (window.ResizeObserver) {
   const c = $('grainCanvas');
