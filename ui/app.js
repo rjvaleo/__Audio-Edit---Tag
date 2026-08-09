@@ -925,6 +925,17 @@ async function selectFile(file, { keepTab = false } = {}) {
   drawSelection();
   updateModeAvailability();
 
+  // The tag panel was only ever filled when a folder was clicked, so picking a
+  // different sound left it showing whatever was last selected — and crossing
+  // into another folder left it showing the wrong one entirely.
+  const folderName = file.path.includes('/') ? file.path.split('/')[0] : state.selectedFolder;
+  const folder = state.folders.find((f) => f.name === folderName);
+  if (folder) {
+    state.selectedFolder = folderName;
+    fillTagPanel(folder);
+  }
+  showSonicTags(file);
+
   try { state.edit = await api(`/api/edit?p=${encodeURIComponent(file.path)}`); }
   catch { state.edit = null; }
   reflectEditState();
@@ -2314,6 +2325,30 @@ function specColour(v) {
 }
 
 // ============================================================= tagging panel
+
+/// What the selected sound itself sounds like, as opposed to what its folder
+/// was labelled. Measured from the audio, so it is right even when the name and
+/// the folder are not.
+let sonicSeq = 0;
+async function showSonicTags(file) {
+  const box = $('sonicTags');
+  if (!box) return;
+  const seq = ++sonicSeq;
+  box.textContent = '…';
+  let r;
+  try {
+    r = await api(`/api/similar?p=${encodeURIComponent(file.path)}&limit=1`);
+  } catch {
+    if (seq === sonicSeq) box.textContent = '';
+    return;
+  }
+  // A slower earlier request must not overwrite a newer selection.
+  if (seq !== sonicSeq) return;
+  const tags = r.tags || [];
+  box.innerHTML = tags.length
+    ? tags.map((t) => `<span class="sonic-tag">${t}</span>`).join('')
+    : '<span class="dim">not measured</span>';
+}
 
 function fillTagPanel(folder) {
   const e = state.tagEdits[folder.name] || {};
