@@ -1,0 +1,160 @@
+# Peak 6 User Guide — contents
+
+> Section list with page numbers, for finding a topic in `../peak-6-user-guide.md`
+> (search for the `<!-- p.N -->` marker).
+
+- **Peak 6 User's Guide** · p1
+  - **Install License Agreement** · p2
+  - **Credits** · p4
+  - **Product Support Options** · p5
+  - **Table of Contents** · p7
+  - **Chapter 1:  Introducing Peak** · p21
+    - **Welcome!** · p21
+    - **Peak Features** · p21
+    - **Who is Peak Designed For?** · p22
+    - **What's New in Version 6?** · p22
+    - **Minimum System Requirements** · p24
+    - **Maximizing Peak's Performance** · p24
+    - **About Your User's Guide** · p24
+    - **About Peak LE** · p25
+    - **Getting Help with Peak** · p26
+    - **Conclusion** · p26
+  - **Chapter 2:  Installing, Registering, & Authorizing Peak** · p29
+    - **Installing Peak** · p29
+    - **What Peak Installs** · p29
+    - **Registration & Authorization** · p30
+    - **Deauthorizaing a Computer** · p32
+    - **Conclusion** · p33
+  - **Chapter 3:  Peak Basics** · p37
+    - **Introduction** · p37
+    - **A Brief Explanation of Digital Audio** · p37
+    - **About Disk-based Recording & Editing** · p38
+    - **Creating a New Peak Document** · p39
+    - **Opening Existing Audio Documents** · p39
+    - **Opening Compressed Audio Documents** · p39
+    - **Recently Opened Documents** · p40
+    - **Importing a Track from an Audio CD** · p40
+    - **Opening "Dual Mono" Files** · p41
+    - **Dragging and Dropping Disks, & Audio CD Tracks** · p42
+    - **Recovering Damaged Audio Files** · p42
+    - **Saving & Closing Documents** · p42
+    - **Peak Windows & Palettes** · p46
+    - **Setting Preferences** · p50
+    - **The Toolbar** · p57
+    - **Quitting Peak** · p58
+    - **Conclusion** · p58
+  - **Chapter 4:  Playback & Recording** · p61
+    - **Introduction** · p61
+    - **Configuration of Peak's Playback & Record Settings** · p61
+    - **Basic Audio Hardware Configuration (For Stereo I/O Devices)** · p62
+    - **Advanced Audio Hardware Configuration (For Multi-channel I/O Devices)** · p63
+    - **Setting the Record Disk & Format** · p64
+    - **Recording Format & Settings Options** · p64
+    - **Playing Audio** · p68
+    - **Triggering Playback of Multiple Audio Documents** · p69
+    - **Recording Audio** · p70
+    - **Conclusion** · p73
+  - **Chapter 5:  Editing** · p77
+    - **Introduction** · p77
+    - **Editing Audio with Peak** · p77
+    - **The Audio Document Window** · p77
+    - **Selecting Audio** · p80
+    - **Auditioning Audio** · p82
+    - **Scrubbing** · p82
+    - **Using Unlimited Undo & Redo** · p84
+    - **Essential Editing Functions** · p85
+    - **Show Edits** · p91
+    - **Using Crossfades & Blending to Smooth Edits** · p91
+    - **Creating Fade Ins & Fade Outs** · p92
+    - **Working with Markers** · p94
+    - **Working with Regions** · p98
+    - **Send to iTunes** · p102
+    - **Working with Loops** · p103
+    - **Editing QuickTime Soundtracks** · p110
+    - **Editing Metadata** · p111
+    - **Conclusion** · p113
+  - **Chapter 6:  Playlists & CD Burning** · p117
+    - **Introduction** · p117
+    - **Overview of Playlist Interface** · p118
+    - **Basic Playlist Concepts – Getting Started** · p120
+    - **Advanced Playlist Concepts – Detailed Overview of Controls, Modes, & Tools** · p127
+    - **Conclusion** · p177
+  - **Chapter 7:  Podcasting** · p181
+    - **Introduction** · p181
+    - **What is Podcasting?** · p181
+    - **How Podcasting Works** · p181
+    - **Producing your Podcast** · p183
+    - **The Publish Podcast Dialog** · p185
+    - **Conclusion** · p194
+  - **Chapter 8:  DSP** · p197
+    - **Introduction** · p197
+    - **Processing Audio with Peak's DSP Tools** · p197
+    - **Peak's Audio Processing Tools** · p197
+    - **Conclusion** · p227
+  - **Chapter 9:  Plug-ins** · p231
+    - **Introduction** · p231
+    - **Plug-ins included with Peak** · p231
+    - **Installing Plug-ins** · p233
+    - **Organizing Plug-ins with Folders** · p234
+    - **Using Effects Plug-ins** · p234
+    - **The Vbox Matrix** · p236
+    - **Recording Through Effects Plug-ins** · p241
+    - **Plug-ins Envelope** · p241
+    - **Plug-in Latency Compensation** · p242
+    - **Using Plug-ins with the Batch File Processor** · p242
+    - **Using Virtual Instrument Plug-ins** · p243
+    - **Cross-synthesis** · p245
+    - **Conclusion** · p247
+  - **Chapter 10:  Batch File Processor & Apple Events** · p251
+    - **Introduction** · p251
+    - **Batch File Processor** · p251
+    - **Errors & Cancelling Batch Processes** · p254
+    - **Peak's Audio Librarian Tools** · p255
+    - **Apple Events Support** · p255
+    - **Conclusion** · p257
+  - **Chapter 11:  Samplers** · p261
+    - **Introduction** · p261
+    - **Working with SMDI Samplers** · p261
+    - **A Note about the Yamaha A-3000** · p263
+    - **The Sampler Preferences Dialog** · p264
+    - **Conclusion** · p264
+  - **Chapter 12:  Peak Menus** · p267
+    - **Introduction** · p267
+    - **Peak Pro Menu** · p267
+    - **File Menu** · p271
+    - **Edit Menu** · p276
+    - **Action Menu** · p279
+    - **Audio Menu** · p284
+    - **DSP Menu** · p288
+    - **Sampler Menu** · p298
+    - **Plug-ins Menu** · p299
+    - **Options Menu** · p301
+    - **Window Menu** · p304
+    - **Links Menu** · p305
+    - **Conclusion** · p306
+  - **Appendix 1:  Keyboard Shortcuts** · p307
+    - **For Audio Document** · p307
+    - **For Playlist** · p310
+  - **Appendix 2:  Peak Actions** · p313
+    - **General** · p313
+    - **Audio Document** · p313
+    - **Playback** · p313
+    - **Scrubbing** · p313
+    - **Selections** · p313
+    - **Views** · p314
+    - **Markers, Loops, & Regions** · p314
+    - **Playlist** · p314
+    - **Plug-ins** · p315
+    - **Tools – Audio Document Window** · p315
+    - **Contents Palette** · p315
+    - **Movie Window** · p315
+  - **Appendix 3:  Troubleshooting – Before Calling for Help** · p317
+    - **Please Verify...** · p317
+    - **Fixing Most Common Problems** · p317
+    - **Common Technical Questions** · p318
+  - **Appendix 4:  Sqweez-1 Wideband Dynamics Processor** · p325
+    - **About Sqweez-1** · p325
+    - **Installation Notes** · p325
+    - **Sqweez-1 Controls** · p325
+  - **Glossary** · p331
+  - **Index** · p-1
