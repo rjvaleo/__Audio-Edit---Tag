@@ -33,6 +33,8 @@ const state = {
   /// listing, because the first call has to put the library through the model
   /// and the file names should not wait on that.
   heard: {},
+  /// Hand-applied tags by path, so a chip can be removed without refetching.
+  userTags: {},
   thumbs: {},
   filter: '',
 
@@ -2391,7 +2393,76 @@ async function showSonicTags(file) {
 
   showHeard(file, r.heard || []);
   fillFileTags(file, r.suggest, r.saved || null);
+  showUserTags(file, r.yourTags);
 }
+
+// ---------------------------------------------------------- tags of your own
+
+/// Tags you invented, and the ones the system thinks belong here.
+///
+/// Applied tags are removable chips. Below them are the learned suggestions —
+/// dashed, because they are proposals rather than facts — each naming the sound
+/// it was inferred from. Clicking one accepts it, which makes this sound an
+/// example too, so the next suggestion is better informed.
+function showUserTags(file, data) {
+  const mine = data?.mine || [];
+  const learned = data?.learned || [];
+  state.userTags[file.path] = mine;
+
+  const box = $('yourTags');
+  box.innerHTML = '';
+  if (!mine.length) {
+    box.innerHTML = '<span class="dim">none yet</span>';
+  }
+  for (const tag of mine) {
+    const el = document.createElement('span');
+    el.className = 'sonic-tag user-tag';
+    el.innerHTML = `<span></span><button class="x" title="Remove">×</button>`;
+    el.querySelector('span').textContent = tag;
+    el.querySelector('.x').onclick = () =>
+      setUserTags(file, mine.filter((t) => t !== tag));
+    box.appendChild(el);
+  }
+
+  const sug = $('learnedTags');
+  sug.innerHTML = '';
+  for (const s of learned) {
+    const el = document.createElement('button');
+    el.className = 'sonic-tag user-tag learned';
+    el.textContent = '+ ' + s.tag;
+    const pct = Math.round(s.score * 100);
+    const also = s.support > 1 ? `, and ${s.support - 1} other${s.support > 2 ? 's' : ''}` : '';
+    el.title = `${pct}% like ${s.like.split('/').pop()}${also} — click to apply`;
+    el.onclick = () => setUserTags(file, [...state.userTags[file.path], s.tag]);
+    sug.appendChild(el);
+  }
+
+  // Offer words already in use rather than letting three spellings of one idea
+  // pile up.
+  $('userTagVocab').innerHTML = (data?.vocabulary || [])
+    .map((v) => `<option value="${v.replace(/"/g, '&quot;')}">`)
+    .join('');
+}
+
+async function setUserTags(file, tags) {
+  let r;
+  try {
+    r = await postJSON('/api/usertags', { path: file.path, tags });
+  } catch (e) {
+    toast('Could not save tag: ' + e.message);
+    return;
+  }
+  showUserTags(file, r);
+}
+
+$('addUserTag').onkeydown = (e) => {
+  if (e.key !== 'Enter') return;
+  const file = state.selectedFile;
+  const tag = e.target.value.trim();
+  if (!file || !tag) return;
+  e.target.value = '';
+  setUserTags(file, [...(state.userTags[file.path] || []), tag]);
+};
 
 /// What the classifier named the sound, as opposed to what it is like.
 ///

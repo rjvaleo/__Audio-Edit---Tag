@@ -17,6 +17,7 @@
 //! another — otherwise duration, measured in seconds, would swamp everything
 //! else and "similar" would collapse to "about as long".
 
+pub mod learn;
 pub mod store;
 
 use audio_core::{fft, RandomAccessSource, Reader};
