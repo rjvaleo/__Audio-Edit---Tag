@@ -913,6 +913,15 @@
     // backwards and why the weather ahead of it is already drawn.
     // ═══════════════════════════════════════════════════════════════════════
 
+    /// Grain duration to drawn length. Logarithmic because the window spans
+    /// five milliseconds to two seconds — four hundred to one — and a linear
+    /// map would leave everything under a tenth of a second invisible.
+    function tickScale(seconds) {
+        const lo = Math.log(0.004), hi = Math.log(2.2);
+        const t = (Math.log(clamp(seconds, 0.004, 2.2)) - lo) / (hi - lo);
+        return 0.22 + t * 2.9;
+    }
+
     const MAX_GRAINS = 4200;
 
     let grains = [];
@@ -975,10 +984,17 @@
                 dev: (e.srcFrame - (e.outFrame / clamp(params.ratio, 0.01, 100))) / SR,
                 a: rand01(params.seed, e.index, 21) * Math.PI * 2,
                 b: rand01(params.seed, e.index, 22) * 2 - 1,
-                // How long this grain is against the window it was asked for.
-                // Window size sets the base; size jitter is the spread around
-                // it. Drawn as the length of the grain's tick.
-                len: clamp(dur / Math.max(plan.baseSize / SR, 1e-9), 0.15, 2.0),
+                // How long this grain actually lasts, in seconds, mapped
+                // across the engine's whole window range.
+                //
+                // This was relative at first — each grain measured against the
+                // window it was asked for — which meant it only ever showed the
+                // size *jitter*: a 40 ms window and a 2 s window both drew the
+                // same tick, and moving the window slider did nothing at all.
+                // Absolute and log-scaled, so a 5 ms grain is a speck, a 2 s
+                // grain is a streak, and the jitter still spreads them either
+                // side of wherever the window has put them.
+                len: tickScale(dur),
                 // Read rate as an angle. Base pitch, pitch jitter and drift all
                 // arrive here, so a tick's tilt is the sum of the three.
                 tilt: clamp(Math.log2(Math.max(e.rate, 1e-6)), -2.2, 2.2) * 0.62
