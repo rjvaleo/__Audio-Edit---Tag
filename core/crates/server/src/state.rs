@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 /// One row as the browser needs it. Narrower than [`FileRecord`] — the index
 /// carries classifier working notes the UI never shows.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FileRow {
     pub folder: String,
     pub rel_path: String,
@@ -25,6 +25,19 @@ pub struct FileRow {
     pub instrument: String,
     pub bpm: String,
     pub reasons: String,
+    // Carried so that everything the indexer worked out survives as far as the
+    // API. The columns were always in the TSV; this row used to drop them on
+    // the floor, which meant anything wanting the whole picture had to go and
+    // re-derive it.
+    pub stem: String,
+    pub ext: String,
+    pub modified: String,
+    pub parent_chain: String,
+    pub descriptors: Vec<String>,
+    pub series_root: String,
+    pub series_index: Option<u32>,
+    pub series_size: Option<usize>,
+    pub notes: String,
 }
 
 impl From<&FileRecord> for FileRow {
@@ -50,6 +63,15 @@ impl From<&FileRecord> for FileRow {
             instrument: r.instrument.clone().unwrap_or_default(),
             bpm: r.bpm.map(|b| b.to_string()).unwrap_or_default(),
             reasons: r.reasons.join("; "),
+            stem: r.stem.clone(),
+            ext: r.ext.clone(),
+            modified: r.modified.clone(),
+            parent_chain: r.parent_chain.clone(),
+            descriptors: r.descriptors.clone(),
+            series_root: r.series_root.clone().unwrap_or_default(),
+            series_index: r.series_index,
+            series_size: r.series_size,
+            notes: r.notes.clone(),
         }
     }
 }
@@ -212,6 +234,21 @@ impl Index {
                     instrument: t.get(r, "instrument").to_string(),
                     bpm: t.get(r, "bpm").to_string(),
                     reasons: t.get(r, "reasons").to_string(),
+                    stem: t.get(r, "stem").to_string(),
+                    ext: t.get(r, "ext").to_string(),
+                    modified: t.get(r, "modified").to_string(),
+                    parent_chain: t.get(r, "parent_chain").to_string(),
+                    // One space-separated field on the way out (`to_row` joins
+                    // with " "), so it splits back the same way.
+                    descriptors: t
+                        .get(r, "descriptor")
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect(),
+                    series_root: t.get(r, "series_root").to_string(),
+                    series_index: t.get(r, "series_index").parse().ok(),
+                    series_size: t.get(r, "series_size").parse().ok(),
+                    notes: t.get(r, "notes").to_string(),
                 }
             })
             .collect();
@@ -332,6 +369,11 @@ pub struct App {
     /// is asked for. A machine without the model file must still be able to
     /// browse, tag and play, so this stays None and nothing else notices.
     pub model: Mutex<Option<Arc<yamnet::Model>>>,
+    /// Tag fields a person has edited by hand, for folders and for individual
+    /// files. Held in memory as well as on disk because the panel has to be
+    /// able to show a saved value in preference to a suggested one, and reading
+    /// the file on every selection would be silly.
+    pub overrides: RwLock<crate::json::Value>,
 }
 
 impl App {
@@ -342,6 +384,10 @@ impl App {
         let saved = crate::persist::load_sessions(&data_dir.join("SESSIONS.json"));
         let prints = search::store::Store::load(&data_dir.join("FINGERPRINTS.tsv"));
         let labels = yamnet::store::Store::load(&data_dir.join("LABELS.tsv"));
+        let overrides = std::fs::read_to_string(data_dir.join("TAG-OVERRIDES.json"))
+            .ok()
+            .and_then(|s| crate::json::parse(&s))
+            .unwrap_or_else(crate::json::Value::obj);
         let app = App {
             data_dir,
             library: RwLock::new(None),
@@ -353,6 +399,7 @@ impl App {
             labels: RwLock::new(labels),
             heard: RwLock::new(Default::default()),
             model: Mutex::new(None),
+            overrides: RwLock::new(overrides),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             presets: RwLock::new(presets),
@@ -494,9 +541,7 @@ mod tests {
             category: category.into(),
             confidence: "medium".into(),
             machine: machine.into(),
-            instrument: String::new(),
-            bpm: String::new(),
-            reasons: String::new(),
+            ..Default::default()
         }
     }
 

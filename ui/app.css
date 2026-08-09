@@ -883,3 +883,7 @@ body.editing .dock { flex: 0 0 330px; }
 
 /* A category that came from listening rather than from the filename. */
 .file-row .cat.heard { color: #9db4ff; }
+
+/* Where the values in the tag fields came from — your edit, an earlier save,
+   or the machine's suggestion. Quiet, but never absent. */
+.tag-source { font: 10px var(--mono); color: var(--text-dimmer); margin-bottom: 8px; }
