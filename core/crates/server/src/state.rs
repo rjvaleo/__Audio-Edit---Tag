@@ -318,6 +318,9 @@ pub struct App {
     /// The output device, opened on first use. A machine with no sound card
     /// must still be able to browse and tag, so this stays None until asked.
     pub audio: std::sync::Mutex<Option<engine::Handle>>,
+    /// Acoustic fingerprints, one per audio file. Built on demand and kept
+    /// beside the index.
+    pub prints: RwLock<search::store::Store>,
 }
 
 impl App {
@@ -326,6 +329,7 @@ impl App {
         let markers = crate::docs::MarkerStore::load(&data_dir.join("MARKERS.json"));
         let presets = crate::persist::load_presets(&data_dir.join("PRESETS.json"));
         let saved = crate::persist::load_sessions(&data_dir.join("SESSIONS.json"));
+        let prints = search::store::Store::load(&data_dir.join("FINGERPRINTS.tsv"));
         let app = App {
             data_dir,
             library: RwLock::new(None),
@@ -333,6 +337,7 @@ impl App {
             scan: Arc::new(ScanProgress::default()),
             markers: RwLock::new(markers),
             audio: std::sync::Mutex::new(None),
+            prints: RwLock::new(prints),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             presets: RwLock::new(presets),
@@ -349,6 +354,10 @@ impl App {
 
     pub fn index_path(&self) -> PathBuf {
         self.data_dir.join("AUDIO-INDEX.tsv")
+    }
+
+    pub fn prints_path(&self) -> PathBuf {
+        self.data_dir.join("FINGERPRINTS.tsv")
     }
 
     pub fn overrides_path(&self) -> PathBuf {

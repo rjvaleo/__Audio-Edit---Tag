@@ -2360,6 +2360,46 @@ $('commitBtn').onclick = async () => {
 
 // ==================================================================== search
 
+/// Rank the library by acoustic similarity to whatever is selected.
+///
+/// The first run measures every file, which takes a moment; after that the
+/// fingerprints live beside the index and it is instant.
+$('similarBtn').onclick = async () => {
+  const f = state.selectedFile;
+  const box = $('searchResults');
+  if (!f) { box.innerHTML = '<div class="dim">Select a sound first.</div>'; return; }
+
+  box.innerHTML = '<div class="dim">Listening to the library…</div>';
+  let r;
+  try {
+    r = await api(`/api/similar?p=${encodeURIComponent(f.path)}&limit=40`);
+  } catch (e) {
+    box.innerHTML = `<div class="dim">${e.message}</div>`;
+    return;
+  }
+
+  if (!r.results.length) { box.innerHTML = '<div class="dim">Nothing to compare against.</div>'; return; }
+  box.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'dim';
+  head.textContent = `Like ${f.name} · ${r.indexed} sounds measured`;
+  box.appendChild(head);
+
+  for (const hit of r.results) {
+    const row = document.createElement('div');
+    row.className = 'result';
+    row.innerHTML =
+      `<span class="mono">${(hit.score * 100).toFixed(0)}%</span> ` +
+      `<span>${hit.name}</span> ` +
+      `<span class="dim">${hit.category} · ${hit.seconds.toFixed(2)}s · unlike in ${hit.differs}</span>`;
+    row.onclick = () => {
+      const file = { path: hit.path, name: hit.name };
+      selectFile(file);
+    };
+    box.appendChild(row);
+  }
+};
+
 $('searchInput').oninput = () => {
   const q = $('searchInput').value.toLowerCase().trim();
   const box = $('searchResults');
