@@ -537,6 +537,7 @@ async function playFile(file) {
 
 function startPlayback() {
   engine.playing = true;
+  captureFollow(true);
   engine.heard = performance.now();
   reflectTransport();
   enginePost({ play: true });
@@ -547,6 +548,7 @@ function startPlayback() {
 
 function pausePlayback() {
   engine.playing = false;
+  captureFollow(false);
   reflectTransport();
   enginePost({ play: false });
   updatePlayhead();
@@ -594,6 +596,7 @@ function startPolling() {
         // The engine stopped itself at the end of the document. Drop back to
         // the cue so pressing play again auditions the same moment.
         engine.playing = false;
+        captureFollow(false);
         reflectTransport();
         stopSwarm();
         returnToCue();
@@ -1783,6 +1786,73 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
   return el;
 }
 
+// ------------------------------------------------------------------- capture
+//
+// Keeps what comes out of the speakers, rather than re-rendering the document.
+// Those can differ — the engine is what you were listening to — and when they
+// do, the recording is the honest one.
+//
+// Arming before playback and stopping when playback stops is the whole gesture:
+// press record, press play, and when the sound ends the file is already written
+// beside the original.
+
+const capture = { armed: false, running: false };
+
+async function setCapture(on) {
+  try {
+    const r = await postJSON('/api/capture', { on });
+    if (on) {
+      capture.running = true;
+      return;
+    }
+    capture.running = false;
+    if (!r.frames) { toast('Nothing captured'); return; }
+    const where = r.elsewhere ? ' (library not writable — saved to the app folder)' : '';
+    const cut = r.truncated ? ' — hit the ten minute limit' : '';
+    toast(`Captured ${r.seconds.toFixed(1)}s → ${r.name}${where}${cut}`);
+  } catch (e) {
+    capture.running = false;
+    toast('Capture failed: ' + e.message);
+  }
+}
+
+function reflectCapture() {
+  const b = $('recBtn'), l = $('recLabel');
+  if (!b) return;
+  b.classList.toggle('on', capture.running);
+  b.classList.toggle('armed', capture.armed && !capture.running);
+  b.title = capture.running ? 'Recording — stops and saves when playback stops'
+          : capture.armed ? 'Armed — starts when playback starts'
+          : 'Capture what is playing';
+  if (l) l.textContent = capture.running ? 'REC' : (capture.armed ? 'armed' : '');
+}
+
+const recBtn = $('recBtn');
+if (recBtn) recBtn.onclick = async () => {
+  if (capture.running) {
+    // Stop now, without waiting for the sound to end.
+    await setCapture(false);
+    capture.armed = false;
+  } else if (capture.armed) {
+    capture.armed = false;
+  } else {
+    capture.armed = true;
+    // Pressed while already playing: start keeping it immediately.
+    if (engine.playing) await setCapture(true);
+  }
+  reflectCapture();
+};
+
+/// Called from the engine poll. Starts on play, finishes on stop.
+function captureFollow(playing) {
+  if (!capture.armed) return;
+  if (playing && !capture.running) { setCapture(true).then(reflectCapture); }
+  else if (!playing && capture.running) {
+    capture.armed = false;
+    setCapture(false).then(reflectCapture);
+  }
+}
+
 // ------------------------------------------------------------ painting values
 //
 // A bank of sliders is a row of faders, and the thing you want to do with a row
@@ -2471,28 +2541,72 @@ function drawSpectrogram() {
   const img = ctx.createImageData(s.columns, s.bins);
   const bin = atob(s.data);
 
+  const at = (c, b) => (c < 0 || b < 0 || c >= s.columns || b >= s.bins)
+    ? 0 : bin.charCodeAt(c * s.bins + b) / 255;
+
   for (let c = 0; c < s.columns; c++) {
     for (let b = 0; b < s.bins; b++) {
-      const v = bin.charCodeAt(c * s.bins + b) / 255;
+      const v = at(c, b);
+
+      // Relief. Treating the level as a height field and lighting it from the
+      // upper left turns a flat wash into something with surfaces: a rising
+      // partial catches the light on its leading edge and shades on its
+      // trailing one, so a sweep reads as a ridge rather than a smear. The
+      // gradient is the plain central difference — cheap, and enough.
+      const dx = at(c + 1, b) - at(c - 1, b);
+      const dy = at(c, b + 1) - at(c, b - 1);
+      const shade = 1 + (dx * 1.15 - dy * 1.15) * SPEC_RELIEF;
+
       // Low frequencies at the bottom, which means flipping the row order.
       const y = s.bins - 1 - b;
       const i = (y * s.columns + c) * 4;
       const [r, g, bl] = specColour(v);
-      img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = bl; img.data[i + 3] = 255;
+      img.data[i]     = Math.max(0, Math.min(255, r * shade));
+      img.data[i + 1] = Math.max(0, Math.min(255, g * shade));
+      img.data[i + 2] = Math.max(0, Math.min(255, bl * shade));
+      img.data[i + 3] = 255;
     }
   }
   ctx.putImageData(img, 0, 0);
 }
 
+/// How hard the light rakes across the spectrogram.
+const SPEC_RELIEF = 2.6;
+
+/// Level to colour, across the whole spectrum rather than one hue of it.
+///
+/// A single-hue ramp spends its entire range on brightness, and the eye is poor
+/// at ranking brightness — two partials twelve decibels apart look like the same
+/// blue, slightly dimmer. Running through hue as well as value gives every step
+/// its own name: near-black, indigo, magenta, orange, and white at the top. The
+/// stops are spaced so the perceived change is roughly even, which a plain
+/// rainbow is not — it bunches in the greens and lies about where the energy is.
+const SPEC_STOPS = [
+  [0.00, [4, 5, 14]],
+  [0.16, [28, 16, 68]],
+  [0.34, [88, 24, 118]],
+  [0.52, [156, 38, 106]],
+  [0.68, [214, 76, 66]],
+  [0.83, [244, 148, 38]],
+  [0.94, [252, 210, 96]],
+  [1.00, [255, 250, 226]],
+];
+
 function specColour(v) {
-  const lerp = (a, b, t) => a + (b - a) * t;
-  const c1 = [10, 13, 20], c2 = [50, 120, 190], c3 = [190, 225, 255];
-  if (v < 0.5) {
-    const t = v / 0.5;
-    return [lerp(c1[0], c2[0], t) | 0, lerp(c1[1], c2[1], t) | 0, lerp(c1[2], c2[2], t) | 0];
+  const t = v < 0 ? 0 : v > 1 ? 1 : v;
+  for (let i = 1; i < SPEC_STOPS.length; i++) {
+    const [p1, c1] = SPEC_STOPS[i - 1];
+    const [p2, c2] = SPEC_STOPS[i];
+    if (t <= p2) {
+      const k = p2 === p1 ? 0 : (t - p1) / (p2 - p1);
+      return [
+        (c1[0] + (c2[0] - c1[0]) * k) | 0,
+        (c1[1] + (c2[1] - c1[1]) * k) | 0,
+        (c1[2] + (c2[2] - c1[2]) * k) | 0,
+      ];
+    }
   }
-  const t = (v - 0.5) / 0.5;
-  return [lerp(c2[0], c3[0], t) | 0, lerp(c2[1], c3[1], t) | 0, lerp(c2[2], c3[2], t) | 0];
+  return SPEC_STOPS[SPEC_STOPS.length - 1][1];
 }
 
 // ============================================================= tagging panel

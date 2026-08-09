@@ -867,6 +867,12 @@ body.editing .panel.left { left: var(--rail); }
 body.editing .dock { flex: 0 0 300px; }
 
 .tbtn.loop { font-size: 14px; }
+/* Capture. Red only while it is actually keeping something, so the button is
+   never claiming to be recording when it is not. */
+.tbtn.rec { font-size: 13px; color: var(--text-dim); }
+.tbtn.rec.on { background: var(--bad); border-color: var(--bad); color: white; }
+.tbtn.rec.armed { border-color: var(--bad); color: var(--bad); }
+.rec-label { white-space: nowrap; min-width: 0; }
 .tbtn.loop.on { background: var(--accent); color: oklch(14% 0.01 250); border-color: var(--accent); }
 .loop-label { font-size: 9.5px; white-space: nowrap; min-width: 52px; }
 .vis-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; }

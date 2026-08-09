@@ -1,5 +1,6 @@
 //! The local server behind the browser UI.
 
+pub mod capture;
 pub mod docs;
 pub mod http;
 pub mod live;

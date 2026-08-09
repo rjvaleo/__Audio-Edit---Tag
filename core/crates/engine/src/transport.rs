@@ -22,6 +22,15 @@ const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 /// be worth looking at, cheap enough to run in the callback.
 const FFT_SIZE: usize = 1024;
 
+/// Audio kept off the output, waiting to be written somewhere.
+pub struct Capture {
+    pub samples: Vec<f32>,
+    pub channels: usize,
+    pub sample_rate: u32,
+    /// True if the reserved space ran out and the tail was dropped.
+    pub full: bool,
+}
+
 /// Shared between the UI threads and the audio callback.
 pub struct Shared {
     params: Mutex<StreamParams>,
@@ -29,6 +38,16 @@ pub struct Shared {
     /// Grains that started recently, for the swarm. Bounded: the visualiser
     /// missing a frame's worth matters far less than the audio stalling.
     events: Mutex<Vec<GrainEvent>>,
+
+    /// Somewhere to put what came out, when someone asked for it to be kept.
+    ///
+    /// Fixed capacity, allocated before recording starts, so the callback only
+    /// ever copies into memory that already exists. `try_lock` because the only
+    /// other party is the one call that stops the recording, and a block that
+    /// arrives during that hand-over is worth losing far more than the audio is
+    /// worth stalling.
+    capture: Mutex<Option<Capture>>,
+    capturing: AtomicBool,
 
     playing: AtomicBool,
     /// Published by the callback; read by the UI for the playhead.
@@ -78,7 +97,46 @@ impl Shared {
             overflows: AtomicU64::new(0),
             pending_rack: Mutex::new(None),
             spectrum: Mutex::new(Vec::new()),
+            capture: Mutex::new(None),
+            capturing: AtomicBool::new(false),
         }
+    }
+
+    /// Begin keeping what comes out, up to `seconds` of it.
+    ///
+    /// The whole buffer is reserved now, on this thread, because the callback
+    /// is not allowed to allocate. Running out is not an error — the recording
+    /// simply stops growing, and the flag says so.
+    pub fn start_capture(&self, channels: usize, sample_rate: u32, seconds: f32) {
+        let cap = (sample_rate as f32 * seconds) as usize * channels.max(1);
+        if let Ok(mut g) = self.capture.lock() {
+            *g = Some(Capture {
+                samples: Vec::with_capacity(cap),
+                channels: channels.max(1),
+                sample_rate,
+                full: false,
+            });
+        }
+        self.capturing.store(true, Ordering::Release);
+    }
+
+    /// Stop, and hand back what was kept.
+    pub fn take_capture(&self) -> Option<Capture> {
+        self.capturing.store(false, Ordering::Release);
+        self.capture.lock().ok().and_then(|mut g| g.take())
+    }
+
+    pub fn is_capturing(&self) -> bool {
+        self.capturing.load(Ordering::Acquire)
+    }
+
+    /// How much has been kept so far, in frames.
+    pub fn captured_frames(&self) -> u64 {
+        self.capture
+            .try_lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| (c.samples.len() / c.channels.max(1)) as u64))
+            .unwrap_or(0)
     }
 
     pub fn set_params(&self, p: StreamParams) {
@@ -333,6 +391,25 @@ impl Core {
         if (gain - 1.0).abs() > 1e-6 {
             for s in out.iter_mut() {
                 *s *= gain;
+            }
+        }
+
+        // Keep a copy, if anyone asked. Last, so what lands on disk is what
+        // came out of the speakers rather than some earlier stage of it.
+        if shared.capturing.load(Ordering::Acquire) {
+            if let Ok(mut g) = shared.capture.try_lock() {
+                if let Some(c) = g.as_mut() {
+                    let room = c.samples.capacity() - c.samples.len();
+                    let n = room.min(out.len());
+                    if n > 0 {
+                        // Within the capacity reserved before recording began,
+                        // so this cannot allocate.
+                        c.samples.extend_from_slice(&out[..n]);
+                    }
+                    if n < out.len() {
+                        c.full = true;
+                    }
+                }
             }
         }
 
