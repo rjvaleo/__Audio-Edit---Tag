@@ -22,7 +22,7 @@ pub mod store;
 use audio_core::{fft, RandomAccessSource, Reader};
 
 /// How many numbers describe a sound.
-pub const DIMS: usize = 10;
+pub const DIMS: usize = 12;
 
 /// What each dimension means, in order. Used by the API so the interface can
 /// explain a match rather than only assert it.
@@ -37,6 +37,11 @@ pub const NAMES: [&str; DIMS] = [
     "attack",
     "low",
     "high",
+    // How much the sound repeats itself, and how busy it is. Without these a
+    // steady loop and a scatter of random hits look identical: same spectrum,
+    // same loudness, same length. Rhythm is what tells them apart.
+    "pulse",
+    "density",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,6 +80,7 @@ impl Fingerprint {
         let rms = stats.rms.max(1e-6);
 
         let sp = spectral(&mono, sr);
+        let rhythm = rhythm(&mono, sr);
 
         Ok(Fingerprint {
             v: [
@@ -91,6 +97,8 @@ impl Fingerprint {
                 norm(attack(&mono, sr).max(0.0005).log10(), -3.3, 0.0),
                 norm(sp.low, 0.0, 1.0),
                 norm(sp.high, 0.0, 1.0),
+                rhythm.pulse,
+                norm(rhythm.onsets_per_sec, 0.0, 12.0),
             ],
         })
     }
@@ -248,6 +256,104 @@ fn attack(mono: &[f32], sr: f32) -> f32 {
         }
     }
     at as f32 / sr.max(1.0)
+}
+
+struct Rhythm {
+    /// 0..1. How strongly the loudness repeats at some steady interval.
+    pulse: f32,
+    onsets_per_sec: f32,
+}
+
+/// Whether the sound has a pulse, and how busy it is.
+///
+/// Both come from the loudness envelope rather than the waveform: what makes a
+/// beat is when the sound gets louder, not what it is made of. The envelope is
+/// taken in short hops, then correlated with itself — if it lines up with a
+/// delayed copy of itself, something is repeating.
+fn rhythm(mono: &[f32], sr: f32) -> Rhythm {
+    let hop = (sr * 0.01).max(1.0) as usize; // 10 ms
+    if mono.len() < hop * 8 {
+        return Rhythm { pulse: 0.0, onsets_per_sec: 0.0 };
+    }
+
+    let env: Vec<f32> = mono
+        .chunks(hop)
+        .map(|c| (c.iter().map(|s| s * s).sum::<f32>() / c.len() as f32).sqrt())
+        .collect();
+
+    // Onsets: the envelope rising sharply above where it has been sitting.
+    let mut onsets = 0usize;
+    let mean = env.iter().sum::<f32>() / env.len() as f32;
+    let mut armed = true;
+    for w in env.windows(2) {
+        let rising = w[1] > w[0] * 1.6 && w[1] > mean * 0.8;
+        if rising && armed {
+            onsets += 1;
+            armed = false;
+        } else if w[1] < mean * 0.6 {
+            armed = true;
+        }
+    }
+    let seconds = mono.len() as f32 / sr;
+    let onsets_per_sec = if seconds > 0.0 { onsets as f32 / seconds } else { 0.0 };
+
+    // Autocorrelation of the envelope, over lags from 60 ms to two seconds.
+    // The mean is removed first, or every envelope correlates with itself
+    // simply for being positive.
+    let centred: Vec<f32> = env.iter().map(|v| v - mean).collect();
+    let energy: f32 = centred.iter().map(|v| v * v).sum();
+    if energy <= 1e-9 {
+        return Rhythm { pulse: 0.0, onsets_per_sec };
+    }
+
+    let min_lag = (0.06 / 0.01) as usize;
+    let max_lag = ((2.0 / 0.01) as usize).min(centred.len() / 2);
+    let mut best = 0f32;
+    for lag in min_lag..max_lag {
+        let mut acc = 0f32;
+        for i in 0..centred.len() - lag {
+            acc += centred[i] * centred[i + lag];
+        }
+        // Normalised by the overlap, so a long lag is not penalised for having
+        // fewer samples to add up.
+        let overlap = (centred.len() - lag) as f32 / centred.len() as f32;
+        let score = acc / (energy * overlap.max(0.1));
+        if score > best {
+            best = score;
+        }
+    }
+
+    Rhythm { pulse: best.clamp(0.0, 1.0), onsets_per_sec }
+}
+
+impl Fingerprint {
+    /// Plain words for what this sounds like.
+    ///
+    /// Derived from the measurements, not from the filename — a sound is what
+    /// it is regardless of what it was called. Thresholds are deliberately
+    /// generous: a descriptor that fires rarely is no use for grouping, and one
+    /// that fires always is no use for telling things apart.
+    pub fn descriptors(&self) -> Vec<&'static str> {
+        let [dur, loud, crest, bright, _roll, flat, noisy, attack, low, high, pulse, density] =
+            self.v;
+        let mut out = Vec::new();
+
+        if low > 0.55 && bright < 0.45 { out.push("bassy"); }
+        if high > 0.30 && noisy > 0.35 { out.push("sizzle"); }
+        if bright > 0.62 && low < 0.35 { out.push("bright"); }
+        if flat > 0.35 { out.push("noisy"); } else if flat < 0.10 { out.push("tonal"); }
+        if attack < 0.30 && crest > 0.35 { out.push("percussive"); }
+        if attack > 0.65 { out.push("swelling"); }
+        if pulse > 0.35 && density > 0.15 { out.push("repetitive"); }
+        if pulse < 0.18 && density > 0.30 { out.push("scattered"); }
+        if density < 0.06 && dur > 0.45 { out.push("sustained"); }
+        if dur < 0.30 { out.push("short"); }
+        if crest > 0.55 { out.push("dynamic"); }
+        if loud < 0.35 { out.push("quiet"); }
+
+        if out.is_empty() { out.push("plain"); }
+        out
+    }
 }
 
 /// Rank `library` by how much each entry sounds like `query`.
