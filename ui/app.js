@@ -1780,6 +1780,86 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
   return el;
 }
 
+// ------------------------------------------------------------ painting values
+//
+// A bank of sliders is a row of faders, and the thing you want to do with a row
+// of faders is sweep a hand across it. Drag within one bar and it behaves
+// exactly as it always did — the native control handles it. Carry the stroke
+// off that bar and onto its neighbours and each one takes the value where the
+// stroke crosses it, so a contour can be drawn across a whole panel in one
+// gesture.
+//
+// The painted rows are driven through the same input/change events a pointer
+// would produce, so everything downstream — the draft preview, the throttle,
+// the commit on release — is reached by exactly the path it already trusts.
+
+function paintValueAt(row, clientX) {
+  const input = row.querySelector('input[type=range]');
+  if (!input) return;
+  const r = input.getBoundingClientRect();
+  if (r.width <= 0) return;
+
+  const min = +input.min, max = +input.max;
+  const step = +input.step || 1;
+  const t = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+  const raw = min + t * (max - min);
+  const snapped = Math.round(raw / step) * step;
+
+  const next = String(Math.min(max, Math.max(min, snapped)));
+  if (next === input.value) return;
+  input.value = next;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function enablePainting(container) {
+  if (!container || container.dataset.painting) return;
+  container.dataset.painting = '1';
+
+  let from = null;              // the row the stroke began on
+  const touched = new Set();
+
+  container.addEventListener('pointerdown', (e) => {
+    from = e.target.closest?.('.param') || null;
+    touched.clear();
+  });
+
+  /// Which bar the stroke is over, by geometry rather than by hit-testing.
+  ///
+  /// `elementFromPoint` would be the obvious tool and is the wrong one: it
+  /// answers about whatever is painted on top, so a tooltip, an overlay or the
+  /// slider's own thumb can shadow the row and the stroke skips it.
+  const rowAt = (y) => {
+    for (const row of container.querySelectorAll('.param')) {
+      const r = row.getBoundingClientRect();
+      if (r.height > 0 && y >= r.top && y <= r.bottom) return row;
+    }
+    return null;
+  };
+
+  // On the window, so the stroke survives the pointer leaving the panel.
+  window.addEventListener('pointermove', (e) => {
+    if (!from || !e.buttons) return;
+    const over = rowAt(e.clientY);
+    // Only neighbours. The starting bar is the native control's business, and
+    // stealing it would fight the drag already in progress.
+    if (!over || over === from) return;
+    over.classList.add('painting');
+    touched.add(over);
+    paintValueAt(over, e.clientX);
+  });
+
+  window.addEventListener('pointerup', () => {
+    for (const row of touched) {
+      row.classList.remove('painting');
+      // Release, so the draft becomes a proper commit at full quality.
+      row.querySelector('input[type=range]')
+         ?.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    touched.clear();
+    from = null;
+  });
+}
+
 /// Fire at most every `ms`, but fire *during* the gesture, not after it.
 ///
 /// Both preview paths used a trailing debounce — clearTimeout on every input
@@ -2979,6 +3059,10 @@ function stopSwarm() {
     if (!engine.playing && grainRaf) { cancelAnimationFrame(grainRaf); grainRaf = null; }
     drawGrains();
   }, 600);
+}
+
+for (const id of ['stretchParams', 'grainShape', 'grainPitch', 'rackParams']) {
+  enablePainting($(id));
 }
 
 if (window.ResizeObserver) {

@@ -630,6 +630,9 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .param .k { font-size: 10.5px; color: var(--text-dim); }
 .param .v { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
 .param input[type=range] { width: 100%; accent-color: var(--accent); }
+/* A bar the stroke is currently crossing. */
+.param.painting .k, .param.painting .v { color: var(--accent); }
+.param.painting input[type=range] { filter: brightness(1.35); }
 .param-head {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 10px;
