@@ -974,7 +974,14 @@
                 // the Lattice a perfect crystal at rest.
                 dev: (e.srcFrame - (e.outFrame / clamp(params.ratio, 0.01, 100))) / SR,
                 a: rand01(params.seed, e.index, 21) * Math.PI * 2,
-                b: rand01(params.seed, e.index, 22) * 2 - 1
+                b: rand01(params.seed, e.index, 22) * 2 - 1,
+                // How long this grain is against the window it was asked for.
+                // Window size sets the base; size jitter is the spread around
+                // it. Drawn as the length of the grain's tick.
+                len: clamp(dur / Math.max(plan.baseSize / SR, 1e-9), 0.15, 2.0),
+                // Read rate as an angle. Base pitch, pitch jitter and drift all
+                // arrive here, so a tick's tilt is the sum of the three.
+                tilt: clamp(Math.log2(Math.max(e.rate, 1e-6)), -2.2, 2.2) * 0.62
             });
         }
 
@@ -1390,8 +1397,28 @@
         camera(cx, cy, cz, focus.x, focus.y, focus.z, 0, 1, 0);
         perspective(PI / 3.4, width / height, 5, 40000);
 
+        // Pitch drift, made global. It is the one control that is slow and
+        // correlated rather than per-grain, so it gets a motion rather than a
+        // mark: the whole field sways, at the drift rate, by an amount set by
+        // the drift depth. Turn the depth to zero and the sway stops — which is
+        // exactly what happens to the sound.
+        const sway = (params.pitchDriftSemis / 24) * 0.20;
+        if (sway > 1e-4) {
+            rotateZ(Math.sin(now * params.driftRateHz * Math.PI * 2) * sway);
+        }
+
         for (const b of buckets) b.length = 0;
         lineBucket.length = 0;
+
+        // Screen-space basis, so a tick is legible whatever the orbit.
+        const rgt = [Math.cos(camYaw), 0, -Math.sin(camYaw)];
+        const up = [
+            -Math.sin(camYaw) * Math.sin(camPitch),
+            Math.cos(camPitch),
+            -Math.cos(camYaw) * Math.sin(camPitch)
+        ];
+        // Scaled to the camera so ticks keep their apparent size when zooming.
+        const tickLen = camDist * 0.0055;
 
         const tmp = { x: 0, y: 0, z: 0, e: 0, n: 0 };
         const hot = [];
@@ -1439,8 +1466,21 @@
 
             const ci = clamp(Math.floor(g.c * CBINS), 0, CBINS - 1);
             const ei = e > 0.55 ? 2 : (e > 0.08 ? 1 : 0);
+            // A grain is drawn as a tick, not a dot, so that two more
+            // sliders have somewhere to live: its length is the grain's
+            // duration against the window asked for (grain size × size
+            // jitter) and its tilt is the read rate (pitch + pitch jitter +
+            // drift). Billboarded, so both read from any angle and in any of
+            // the ten views.
+            const L = tickLen * g.len;
+            const ca = Math.cos(g.tilt), sa = Math.sin(g.tilt);
+            const dx = (rgt[0] * ca + up[0] * sa) * L;
+            const dy = (rgt[1] * ca + up[1] * sa) * L;
+            const dz = (rgt[2] * ca + up[2] * sa) * L;
+
             const bucket = buckets[ci * EBINS + ei];
-            bucket.push(tmp.x, tmp.y, tmp.z);
+            bucket.push(tmp.x - dx, tmp.y - dy, tmp.z - dz,
+                        tmp.x + dx, tmp.y + dy, tmp.z + dz);
 
             if (ei === 2) hot.push(tmp.x, tmp.y, tmp.z, e, ci);
 
@@ -1457,19 +1497,11 @@
                     project(grains[m], now, pe);
                     lineBucket.push(tmp.x, tmp.y, tmp.z, pe.x, pe.y, pe.z);
                 }
-            } else if (params.suite === 1 && params.view === 4
-                       && Math.abs(g.tOut - now) < focusWindow * 2) {
-                // Bonds only where you are looking. Drawn across the whole
-                // lattice they are a thousand crossing lines and the cloud
-                // disappears behind its own scaffolding.
-                const k = Math.max(1, Math.ceil(Math.sqrt(grains.length)));
-                if (n % k !== k - 1 && n + 1 < grains.length) {
-                    const nb = grains[n + 1];
-                    const pe = { x: 0, y: 0, z: 0, e: 0, n: n + 1 };
-                    project(nb, now, pe);
-                    lineBucket.push(tmp.x, tmp.y, tmp.z, pe.x, pe.y, pe.z);
-                }
             }
+            // Lattice used to draw bonds between grid neighbours. They are gone:
+            // once every grain is a tick with its own length and tilt, the
+            // structure is in the marks, and the bonds were a thousand crossing
+            // lines drawn on top of the thing they were meant to explain.
         }
 
         blendMode(ADD);
@@ -1502,7 +1534,11 @@
 
         if (params.suite === 1) {
             drawFrameOfReference(now);
-            drawRideLine(rail, now);
+            // The rail is only honest where schedule order is also spatial
+            // order — the diagonal in Shear, the helix in Braid. In Swarm,
+            // Shells and Lattice consecutive grains land nowhere near each
+            // other, and joining them draws a zigzag that means nothing.
+            if (params.view === 0 || params.view === 1) drawRideLine(rail, now);
             drawReadHead(now);
         }
         blendMode(BLEND);
@@ -1527,7 +1563,7 @@
             }
             // A floor, so a lone grain does not drag the camera into its own
             // surface, and a ceiling so a wild scatter cannot fling it away.
-            fitDist = clamp(spread * 2.4, 120, extent * 2.6);
+            fitDist = clamp(spread * 2.4, 340, extent * 2.6);
 
             // Ease, slowly. The playhead moves in grain-sized steps and the
             // neighbourhood it defines changes membership constantly; a camera
@@ -1579,8 +1615,8 @@
                 if (!arr.length) continue;
                 const col = palette[ci];
                 stroke(red(col), green(col), blue(col), Math.min(alpha, 255));
-                strokeWeight(weight);
-                beginShape(POINTS);
+                strokeWeight(weight * 0.55);
+                beginShape(LINES);
                 for (let i = 0; i < arr.length; i += 3) vertex(arr[i], arr[i + 1], arr[i + 2]);
                 endShape();
             }
@@ -1725,7 +1761,9 @@
             `&nbsp;<span class="dim">hop</span> ${hopMs.toFixed(1)} ms ` +
             `&nbsp;<span class="dim">pitch</span> ${params.semitones > 0 ? '+' : ''}${params.semitones} st<br>` +
             `<span class="dim">${now.toFixed(2)} s of ${outSeconds.toFixed(2)} s output ` +
-            `— reading ${srcSeconds.toFixed(2)} s of source</span></span>`;
+            `— reading ${srcSeconds.toFixed(2)} s of source</span><br>` +
+            `<span class="dim">tick length = grain size · tilt = pitch · ` +
+            `height = the sample it reads · sway = drift</span></span>`;
         document.getElementById('transport-fill').style.width =
             `${clamp(now / Math.max(outSeconds, 1e-6), 0, 1) * 100}%`;
         document.getElementById('stream-clock').textContent =
