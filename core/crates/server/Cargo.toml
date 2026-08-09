@@ -10,5 +10,6 @@ audio-core = { path = "../audio-core" }
 edit = { path = "../edit" }
 fx = { path = "../fx" }
 engine = { path = "../engine" }
+search = { path = "../search" }
 catalog = { path = "../catalog" }
 indexer = { path = "../indexer" }

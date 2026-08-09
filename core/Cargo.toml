@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/audio-core", "crates/catalog", "crates/indexer", "crates/server", "crates/audiolab", "crates/edit", "crates/fx", "crates/engine"]
+members = ["crates/audio-core", "crates/catalog", "crates/indexer", "crates/server", "crates/audiolab", "crates/edit", "crates/fx", "crates/engine", "crates/search"]
 resolver = "2"
 
 [workspace.package]

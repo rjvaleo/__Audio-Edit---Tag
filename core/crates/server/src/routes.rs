@@ -47,6 +47,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/edit") => api_edit_get(app, req),
         ("POST", "/api/edit") => api_edit_apply(app, req),
         ("POST", "/api/export") => api_export(app, req),
+        ("GET", "/api/similar") => api_similar(app, req),
         ("POST", "/api/engine/load") => api_engine_load(app, req),
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
@@ -1358,4 +1359,129 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
         Ok(s) => Response::json(s),
         Err(e) => Response::error(503, &e),
     }
+}
+
+// ==================================================== similar sounds
+//
+// Acoustic similarity, not meaning: this finds sounds shaped like the one you
+// picked. Fingerprints are built the first time they are asked for and kept
+// beside the index, so the cost falls once per file rather than once per search.
+
+fn ensure_prints(app: &Arc<App>) -> usize {
+    let Some(lib) = app.library_path() else { return 0 };
+
+    // Which files still need measuring, decided while holding only read locks.
+    let wanted: Vec<String> = {
+        let idx = app.index.read().unwrap();
+        let have = app.prints.read().unwrap();
+        idx.files
+            .iter()
+            .filter(|f| f.duration > 0.0)
+            // rel_path is relative to its folder, not to the library. The
+            // library-relative path — which is what every other endpoint and
+            // the interface use as a file's identity — is the two joined.
+            .map(|f| format!("{}/{}", f.folder, f.rel_path))
+            .filter(|p| have.get(p).is_none())
+            .collect()
+    };
+    if wanted.is_empty() {
+        return 0;
+    }
+
+    let mut built = Vec::new();
+    let (mut no_path, mut no_open, mut no_fp) = (0usize, 0usize, 0usize);
+    for rel in &wanted {
+        let Some(path) = resolve_within(&lib, rel) else { no_path += 1; continue };
+        let mut r = match audio_core::open(&path) {
+            Ok(r) => r,
+            Err(_) => { no_open += 1; continue }
+        };
+        match search::Fingerprint::of(&mut r) {
+            Ok(fp) => built.push((rel.clone(), fp)),
+            Err(_) => no_fp += 1,
+        }
+    }
+    // Worth saying out loud: a library where nothing can be measured should not
+    // look the same as one where everything matched.
+    if !wanted.is_empty() && built.len() < wanted.len() {
+        eprintln!(
+            "fingerprints: {} of {} measured ({} unresolved, {} unopenable, {} unmeasurable)",
+            built.len(), wanted.len(), no_path, no_open, no_fp
+        );
+    }
+
+    let n = built.len();
+    {
+        let mut store = app.prints.write().unwrap();
+        for (rel, fp) in built {
+            store.insert(&rel, fp);
+        }
+        let _ = store.save(&app.prints_path());
+    }
+    n
+}
+
+fn api_similar(app: &Arc<App>, req: &Request) -> Response {
+    let Some(rel) = req.param("p") else {
+        return Response::error(400, "no path given");
+    };
+    let limit = req
+        .param("limit")
+        .and_then(|l| l.parse::<usize>().ok())
+        .unwrap_or(20)
+        .clamp(1, 200);
+
+    let built = ensure_prints(app);
+
+    let store = app.prints.read().unwrap();
+    let Some(query) = store.get(rel) else {
+        return Response::error(404, "that sound could not be measured");
+    };
+
+    let pairs: Vec<(&str, search::Fingerprint)> =
+        store.by_path.iter().map(|(p, f)| (p.as_str(), *f)).collect();
+    let ranked = search::rank(&query, pairs, rel, limit);
+
+    let idx = app.index.read().unwrap();
+    let results: Vec<Value> = ranked
+        .iter()
+        .map(|(path, score)| {
+            let meta = idx
+                .files
+                .iter()
+                .find(|f| format!("{}/{}", f.folder, f.rel_path) == **path);
+            // Say what is *unlike* about a match as well as how close it is —
+            // a number on its own is not a reason.
+            let diff = store
+                .get(path)
+                .map(|fp| {
+                    let d = query.largest_differences(&fp);
+                    d.first().map(|(n, _)| n.to_string()).unwrap_or_default()
+                })
+                .unwrap_or_default();
+            Value::obj()
+                .set("path", path.to_string())
+                .set("score", *score as f64)
+                .set("differs", diff)
+                .set(
+                    "name",
+                    meta.map(|m| m.filename.clone())
+                        .unwrap_or_else(|| path.to_string()),
+                )
+                .set("seconds", meta.map(|m| m.duration).unwrap_or(0.0))
+                .set(
+                    "category",
+                    meta.map(|m| m.category.clone()).unwrap_or_default(),
+                )
+        })
+        .collect();
+
+    Response::json(
+        Value::obj()
+            .set("of", rel.to_string())
+            .set("measured", built as f64)
+            .set("indexed", store.len() as f64)
+            .set("results", Value::Arr(results))
+            .to_string(),
+    )
 }
