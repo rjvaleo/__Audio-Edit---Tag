@@ -48,6 +48,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/edit") => api_edit_apply(app, req),
         ("POST", "/api/export") => api_export(app, req),
         ("GET", "/api/similar") => api_similar(app, req),
+        ("GET", "/api/labels") => api_labels(app, req),
         ("GET", "/api/space") => api_space(app),
         ("POST", "/api/engine/load") => api_engine_load(app, req),
         ("GET", "/api/engine/state") => api_engine_state(app),
@@ -1425,6 +1426,129 @@ fn ensure_prints(app: &Arc<App>) -> usize {
     n
 }
 
+// ==================================================== what a sound *is*
+//
+// The fingerprints above say what a sound is like. This says what it is: the
+// AudioSet classifier gives it a name from the audio, and files it could not
+// name borrow one from a neighbour that it could.
+
+/// Load the classifier, once, on the first request that needs it.
+///
+/// Returns None when the weights are not on disk. That is a normal state — the
+/// rest of the app works without them — so it is reported once and then left
+/// alone rather than retried on every request.
+fn model(app: &Arc<App>) -> Option<Arc<yamnet::Model>> {
+    let mut slot = app.model.lock().unwrap();
+    if let Some(m) = slot.as_ref() {
+        return Some(m.clone());
+    }
+    match yamnet::Model::load_default() {
+        Ok(m) => {
+            let m = Arc::new(m);
+            *slot = Some(m.clone());
+            Some(m)
+        }
+        Err(e) => {
+            eprintln!("sound labels unavailable: {e}");
+            None
+        }
+    }
+}
+
+/// Make sure every file has been through the classifier, then work out who is
+/// borrowing a name from whom.
+fn ensure_labels(app: &Arc<App>) -> usize {
+    let Some(lib) = app.library_path() else { return 0 };
+
+    let wanted: Vec<String> = {
+        let idx = app.index.read().unwrap();
+        let have = app.labels.read().unwrap();
+        idx.files
+            .iter()
+            .filter(|f| f.duration > 0.0)
+            .map(|f| format!("{}/{}", f.folder, f.rel_path))
+            .filter(|p| !have.measured(p))
+            .collect()
+    };
+
+    let mut built = 0usize;
+    if !wanted.is_empty() {
+        let Some(model) = model(app) else { return 0 };
+        let mut measured: Vec<(String, Vec<yamnet::Detection>)> = Vec::new();
+
+        for rel in &wanted {
+            let Some(path) = resolve_within(&lib, rel) else { continue };
+            let Ok(mut r) = audio_core::open(&path) else { continue };
+            let info = *r.info();
+            let Ok(samples) = r.read_frames(0, info.frames()) else { continue };
+            let mono =
+                yamnet::to_mono_16k(&samples, info.channels as usize, info.sample_rate);
+            match model.label(&mono, 4) {
+                // An empty list is a real answer — the model heard nothing it
+                // could name — and storing it stops the file being re-analysed
+                // on every request for the rest of time.
+                Ok(words) => measured.push((rel.clone(), words)),
+                Err(e) => eprintln!("labelling {rel}: {e}"),
+            }
+        }
+
+        built = measured.len();
+        let mut store = app.labels.write().unwrap();
+        for (rel, words) in measured {
+            store.insert(&rel, words);
+        }
+        let _ = store.save(&app.labels_path());
+    }
+
+    // Loans depend on which files are present, so they are worked out afresh
+    // rather than stored. Only redone when something changed or the derived
+    // view is empty, because the ranking behind it is quadratic.
+    let stale = built > 0 || app.heard.read().unwrap().is_empty();
+    if stale {
+        ensure_prints(app);
+        let prints = app.prints.read().unwrap();
+        let store = app.labels.read().unwrap();
+        let known = store.by_path.clone();
+        drop(store);
+
+        let filled = yamnet::propagate(&known, |path| {
+            let Some(query) = prints.get(path) else { return Vec::new() };
+            let pairs: Vec<(&str, search::Fingerprint)> =
+                prints.by_path.iter().map(|(p, f)| (p.as_str(), *f)).collect();
+            search::rank(&query, pairs, path, 8)
+                .into_iter()
+                // Only a genuinely close sound is worth taking a name from. A
+                // library's nearest neighbour is not necessarily a near one:
+                // at 0.90 a jazz loop and a hand drum came out as neighbours.
+                .filter(|(_, score)| *score >= 0.95)
+                .map(|(p, _)| p.to_string())
+                .collect()
+        });
+        *app.heard.write().unwrap() = filled;
+    }
+    built
+}
+
+/// What the classifier makes of one file, ready for JSON.
+fn heard_value(app: &Arc<App>, rel: &str) -> Value {
+    let heard = app.heard.read().unwrap();
+    let Some(l) = heard.get(rel) else { return Value::Arr(Vec::new()) };
+    Value::Arr(
+        l.words
+            .iter()
+            .map(|d| {
+                Value::obj()
+                    .set("label", d.label.clone())
+                    .set("score", d.score as f64)
+                    // Empty when the model heard this file itself. When it did
+                    // not, this names the file the label came from, so the
+                    // interface can show a borrowed name as borrowed.
+                    .set("from", l.from.clone().unwrap_or_default())
+            })
+            .collect(),
+    )
+}
+
 fn api_similar(app: &Arc<App>, req: &Request) -> Response {
     let Some(rel) = req.param("p") else {
         return Response::error(400, "no path given");
@@ -1436,6 +1560,8 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
         .clamp(1, 200);
 
     let built = ensure_prints(app);
+    ensure_labels(app);
+    let heard = heard_value(app, rel);
 
     let store = app.prints.read().unwrap();
     let Some(query) = store.get(rel) else {
@@ -1511,9 +1637,47 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
                         .collect(),
                 ),
             )
+            // What it *is*, next to what it is like. One request, because the
+            // panel showing them is one panel.
+            .set("heard", heard)
             .set("measured", built as f64)
             .set("indexed", store.len() as f64)
             .set("results", Value::Arr(results))
+            .to_string(),
+    )
+}
+
+/// What the classifier heard in every file of a folder.
+///
+/// Separate from `/api/files` because the first call has to put the whole
+/// library through the model, and a folder listing should not wait on that.
+fn api_labels(app: &Arc<App>, req: &Request) -> Response {
+    let Some(folder) = req.param("folder") else {
+        return Response::error(400, "no folder given");
+    };
+    let built = ensure_labels(app);
+
+    let paths: Vec<String> = {
+        let idx = app.index.read().unwrap();
+        idx.files
+            .iter()
+            .filter(|f| f.folder == folder)
+            .map(|f| format!("{}/{}", f.folder, f.rel_path))
+            .collect()
+    };
+
+    let mut files = Value::obj();
+    for p in &paths {
+        files = files.set(p.as_str(), heard_value(app, p));
+    }
+    Response::json(
+        Value::obj()
+            .set("folder", folder.to_string())
+            .set("measured", built as f64)
+            // So the interface can say "no model" rather than "no labels",
+            // which are different problems with different fixes.
+            .set("available", app.model.lock().unwrap().is_some())
+            .set("files", files)
             .to_string(),
     )
 }

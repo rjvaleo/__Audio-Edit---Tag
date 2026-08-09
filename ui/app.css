@@ -867,3 +867,19 @@ body.editing .dock { flex: 0 0 330px; }
   color: var(--accent);
   border: 1px solid rgba(125, 211, 160, 0.25);
 }
+
+/* A name the classifier put to the sound, as opposed to a description of it.
+   Coloured apart from the sonic descriptors because they answer different
+   questions: what it is, against what it is like. */
+.heard-tag {
+  background: rgba(150, 180, 255, 0.12);
+  color: #9db4ff;
+  border-color: rgba(150, 180, 255, 0.25);
+}
+/* Below about 15% the model is guessing. Say so by showing it, faded, rather
+   than hiding it or dressing it up as certainty. */
+.heard-tag.faint { opacity: 0.45; }
+.borrowed { font: 10px ui-monospace, monospace; align-self: center; }
+
+/* A category that came from listening rather than from the filename. */
+.file-row .cat.heard { color: #9db4ff; }

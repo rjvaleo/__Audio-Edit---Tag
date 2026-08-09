@@ -24,11 +24,14 @@
 //! that counts: by checking that files whose names say `snare`, `kick` and `hat`
 //! come back named that way from the audio alone.
 
+pub mod propagate;
 pub mod resample;
+pub mod store;
 
 use std::path::{Path, PathBuf};
 use tract_onnx::prelude::*;
 
+pub use propagate::{propagate, Labels};
 pub use resample::{to_mono_16k, RATE};
 
 /// How much audio goes through the model at once, in seconds.
@@ -96,7 +99,10 @@ const GENERIC: &[&str] = &[
     "Sound effect",
     "Noise",
     "Silence",
-    "Speech",
+    // "Speech" is deliberately *not* here. On a video it says nothing; in a
+    // sample library it means this is a vocal, which is exactly what someone
+    // browsing wants to know. Treating it as vague once cost `technology.wav`
+    // a correct 0.96 and replaced it with a borrowed "Didgeridoo".
     "Inside, small room",
     "Inside, large room or hall",
     "Inside, public space",
@@ -117,6 +123,11 @@ const GENERIC: &[&str] = &[
     "Throbbing",
     "Vibration",
 ];
+
+/// Whether a class name is one of the ones that says nothing.
+pub fn is_generic(label: &str) -> bool {
+    GENERIC.contains(&label)
+}
 
 pub struct Model {
     plan: std::sync::Arc<TypedRunnableModel>,

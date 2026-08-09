@@ -321,6 +321,17 @@ pub struct App {
     /// Acoustic fingerprints, one per audio file. Built on demand and kept
     /// beside the index.
     pub prints: RwLock<search::store::Store>,
+    /// What the classifier heard in each file. Only measured labels are stored;
+    /// see [`App::heard`] for the ones that were borrowed from a neighbour.
+    pub labels: RwLock<yamnet::store::Store>,
+    /// Measured labels plus the borrowed ones, which is what the interface
+    /// shows. Derived from `labels`, so it lives only in memory and is rebuilt
+    /// whenever anything new is measured.
+    pub heard: RwLock<std::collections::BTreeMap<String, yamnet::Labels>>,
+    /// The classifier itself, 16 MB of weights, loaded the first time a label
+    /// is asked for. A machine without the model file must still be able to
+    /// browse, tag and play, so this stays None and nothing else notices.
+    pub model: Mutex<Option<Arc<yamnet::Model>>>,
 }
 
 impl App {
@@ -330,6 +341,7 @@ impl App {
         let presets = crate::persist::load_presets(&data_dir.join("PRESETS.json"));
         let saved = crate::persist::load_sessions(&data_dir.join("SESSIONS.json"));
         let prints = search::store::Store::load(&data_dir.join("FINGERPRINTS.tsv"));
+        let labels = yamnet::store::Store::load(&data_dir.join("LABELS.tsv"));
         let app = App {
             data_dir,
             library: RwLock::new(None),
@@ -338,6 +350,9 @@ impl App {
             markers: RwLock::new(markers),
             audio: std::sync::Mutex::new(None),
             prints: RwLock::new(prints),
+            labels: RwLock::new(labels),
+            heard: RwLock::new(Default::default()),
+            model: Mutex::new(None),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             presets: RwLock::new(presets),
@@ -358,6 +373,10 @@ impl App {
 
     pub fn prints_path(&self) -> PathBuf {
         self.data_dir.join("FINGERPRINTS.tsv")
+    }
+
+    pub fn labels_path(&self) -> PathBuf {
+        self.data_dir.join("LABELS.tsv")
     }
 
     pub fn overrides_path(&self) -> PathBuf {
