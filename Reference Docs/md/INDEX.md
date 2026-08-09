@@ -20,6 +20,12 @@ cut out under `peak/` so the useful 10% is not buried in the other 90%.
 | `peak/peak-dsp.md` | **Chapter 8** — processing, including time and pitch. Useful for naming and for the shape of the dialogs. |
 | `peak/peak-shortcuts-and-actions.md` | **Appendices 1 and 2** — keyboard shortcuts, and Peak Actions, the macro system. This is the "how to customise them" half. |
 
+## The plan
+
+`STRETCH-ROADMAP.md` maps every theory in these papers against this codebase:
+what each method is good and bad at, what it would cost to build, and the order
+worth building them in.
+
 ## Time-scale modification
 
 The theory behind the stretcher. Ordered by how much use they are to this
