@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precomputed Weather — Granular Engine Views</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Lora:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* Anthropic Brand Colors */
+        :root {
+            --anthropic-dark: #141413;
+            --anthropic-light: #faf9f5;
+            --anthropic-mid-gray: #b0aea5;
+            --anthropic-light-gray: #e8e6dc;
+            --anthropic-orange: #d97757;
+            --anthropic-blue: #6a9bcc;
+            --anthropic-green: #788c5d;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, var(--anthropic-light) 0%, #f5f3ee 100%);
+            min-height: 100vh;
+            color: var(--anthropic-dark);
+        }
+
+        .container { display: flex; min-height: 100vh; padding: 20px; gap: 20px; }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(20, 20, 19, 0.1);
+            overflow-y: auto;
+            overflow-x: hidden;
+            max-height: calc(100vh - 40px);
+        }
+
+        .sidebar h1 {
+            font-family: 'Lora', serif;
+            font-size: 24px;
+            font-weight: 500;
+            color: var(--anthropic-dark);
+            margin-bottom: 8px;
+        }
+
+        .sidebar .subtitle {
+            color: var(--anthropic-mid-gray);
+            font-size: 14px;
+            margin-bottom: 32px;
+            line-height: 1.4;
+        }
+
+        /* Control Sections */
+        .control-section { margin-bottom: 32px; }
+
+        .control-section h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--anthropic-dark);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-section h3::before {
+            content: '•';
+            color: var(--anthropic-orange);
+            font-weight: bold;
+        }
+
+        /* Seed Controls */
+        .seed-input {
+            width: 100%;
+            background: var(--anthropic-light);
+            padding: 12px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin-bottom: 12px;
+            border: 1px solid var(--anthropic-light-gray);
+            text-align: center;
+        }
+
+        .seed-input:focus {
+            outline: none;
+            border-color: var(--anthropic-orange);
+            box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.1);
+            background: white;
+        }
+
+        .seed-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .regen-button { margin-bottom: 0; }
+
+        /* Parameter Controls */
+        .control-group { margin-bottom: 20px; }
+
+        .control-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--anthropic-dark);
+            margin-bottom: 8px;
+        }
+
+        .control-group .hint {
+            display: block;
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--anthropic-mid-gray);
+            margin-top: -4px;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+
+        .slider-container { display: flex; align-items: center; gap: 12px; }
+
+        .slider-container input[type="range"] {
+            flex: 1;
+            height: 4px;
+            background: var(--anthropic-light-gray);
+            border-radius: 2px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px; height: 16px;
+            background: var(--anthropic-orange);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .slider-container input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+            background: #c86641;
+        }
+
+        .slider-container input[type="range"]::-moz-range-thumb {
+            width: 16px; height: 16px;
+            background: var(--anthropic-orange);
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .value-display {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: var(--anthropic-mid-gray);
+            min-width: 64px;
+            text-align: right;
+        }
+
+        /* View selector */
+        .view-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+        .view-button {
+            background: var(--anthropic-light);
+            border: 1px solid var(--anthropic-light-gray);
+            color: var(--anthropic-dark);
+            padding: 10px 8px;
+            border-radius: 6px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+
+        .view-button:hover { border-color: var(--anthropic-orange); }
+
+        .view-button.active {
+            background: var(--anthropic-orange);
+            border-color: var(--anthropic-orange);
+            color: white;
+        }
+
+        .view-button .num {
+            font-family: 'Courier New', monospace;
+            opacity: 0.6;
+            margin-right: 6px;
+        }
+
+        .view-note {
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--anthropic-mid-gray);
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: var(--anthropic-light);
+            border-radius: 6px;
+            border-left: 2px solid var(--anthropic-orange);
+        }
+
+        /* Color Pickers */
+        .color-group { margin-bottom: 16px; }
+
+        .color-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--anthropic-mid-gray);
+            margin-bottom: 4px;
+        }
+
+        .color-picker-container { display: flex; align-items: center; gap: 8px; }
+
+        .color-picker-container input[type="color"] {
+            width: 32px; height: 32px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: none;
+            padding: 0;
+        }
+
+        .color-value {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: var(--anthropic-mid-gray);
+        }
+
+        /* Buttons */
+        .button {
+            background: var(--anthropic-orange);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        .button:hover { background: #c86641; transform: translateY(-1px); }
+        .button:active { transform: translateY(0); }
+        .button.secondary { background: var(--anthropic-blue); }
+        .button.secondary:hover { background: #5a8bb8; }
+        .button.tertiary { background: var(--anthropic-green); }
+        .button.tertiary:hover { background: #6b7b52; }
+
+        .button-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .button-row .button { flex: 1; }
+
+        /* Canvas Area */
+        .canvas-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 0;
+        }
+
+        #stage { width: 100%; max-width: 1100px; }
+
+        #canvas-container {
+            width: 100%;
+            height: min(80vh, 860px);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(20, 20, 19, 0.18);
+            background: var(--anthropic-dark);
+            position: relative;
+        }
+
+        #canvas-container canvas { display: block; }
+
+        /* Fullscreen experience — the sculpture, nothing else */
+        #stage:fullscreen { max-width: none; width: 100vw; height: 100vh; background: var(--anthropic-dark); }
+        #stage:fullscreen #canvas-container { height: 100vh; border-radius: 0; box-shadow: none; }
+        #stage:-webkit-full-screen { max-width: none; width: 100vw; height: 100vh; }
+        #stage:-webkit-full-screen #canvas-container { height: 100vh; border-radius: 0; }
+
+        /* Heads-up overlay, legible on the dark canvas */
+        .hud {
+            position: absolute;
+            left: 22px; bottom: 20px;
+            color: rgba(250, 249, 245, 0.82);
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.7;
+            pointer-events: none;
+            text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+        }
+
+        .hud .title {
+            font-family: 'Lora', serif;
+            font-size: 17px;
+            letter-spacing: 0.06em;
+            color: var(--anthropic-orange);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .hud .dim { color: rgba(250, 249, 245, 0.45); }
+
+        .hud-keys {
+            position: absolute;
+            right: 22px; top: 32px;
+            color: rgba(250, 249, 245, 0.35);
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 1.7;
+            text-align: right;
+            pointer-events: none;
+        }
+
+        .transport {
+            position: absolute;
+            left: 22px; top: 18px; right: 22px;
+            height: 3px;
+            background: rgba(250, 249, 245, 0.10);
+            border-radius: 2px;
+            pointer-events: none;
+        }
+
+        .transport .fill {
+            height: 100%;
+            width: 0%;
+            background: var(--anthropic-orange);
+            border-radius: 2px;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .container { flex-direction: column; }
+            .sidebar { width: 100%; max-height: none; }
+            #canvas-container { height: 60vh; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Control Sidebar -->
+        <div class="sidebar">
+            <h1>Precomputed Weather</h1>
+            <div class="subtitle">
+                Five windows onto one granular cloud. Every grain is a pure function of its
+                index — the storm is fully specified before it starts.
+            </div>
+
+            <!-- Seed Section -->
+            <div class="control-section">
+                <h3>Seed</h3>
+                <input type="number" id="seed-input" class="seed-input" value="12345" onchange="updateSeed()">
+                <div class="seed-controls">
+                    <button class="button secondary" onclick="previousSeed()">← Prev</button>
+                    <button class="button secondary" onclick="nextSeed()">Next →</button>
+                </div>
+                <button class="button tertiary regen-button" onclick="randomSeedAndUpdate()">↻ Random</button>
+            </div>
+
+            <!-- View selector -->
+            <div class="control-section">
+                <h3>View</h3>
+                <div class="view-grid">
+                    <button class="view-button active" id="view-0" onclick="setView(0)"><span class="num">1</span>Shear</button>
+                    <button class="view-button" id="view-1" onclick="setView(1)"><span class="num">2</span>Braid</button>
+                    <button class="view-button" id="view-2" onclick="setView(2)"><span class="num">3</span>Swarm</button>
+                    <button class="view-button" id="view-3" onclick="setView(3)"><span class="num">4</span>Shells</button>
+                    <button class="view-button" id="view-4" onclick="setView(4)"><span class="num">5</span>Lattice</button>
+                </div>
+                <div class="view-note" id="view-note"></div>
+            </div>
+
+            <!-- Engine parameters -->
+            <div class="control-section">
+                <h3>Stream — time &amp; pitch</h3>
+                <div class="view-note" style="margin-top:0;margin-bottom:16px">
+                    Eleven controls across the two groups below: every field of the engine's
+                    <code>StreamParams</code> and <code>Grain</code>. Pitch and grain size are
+                    here rather than under the cloud because they apply to the whole stream —
+                    the cloud group holds the per-grain deviations from them.
+                </div>
+
+                <div class="control-group">
+                    <label>Stretch ratio</label>
+                    <span class="hint">Output time against source time. In Shear this is literally the slope.</span>
+                    <div class="slider-container">
+                        <input type="range" id="ratio" min="0" max="1000" step="1" value="741" oninput="updateLog('ratio', this.value, 0.01, 100)">
+                        <span class="value-display" id="ratio-value">8.00×</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Pitch</label>
+                    <div class="slider-container">
+                        <input type="range" id="semitones" min="-48" max="48" step="1" value="0" oninput="updateParam('semitones', this.value)">
+                        <span class="value-display" id="semitones-value">0 st</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Grain size <span style="color:var(--anthropic-mid-gray);font-weight:400">(window)</span></label>
+                    <span class="hint">Long windows are what make an extreme stretch a texture rather than a stutter.</span>
+                    <div class="slider-container">
+                        <input type="range" id="windowMs" min="0" max="1000" step="1" value="531" oninput="updateLog('windowMs', this.value, 5, 2000)">
+                        <span class="value-display" id="windowMs-value">120 ms</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Source length</label>
+                    <div class="slider-container">
+                        <input type="range" id="sourceSeconds" min="0.2" max="12" step="0.1" value="2.0" oninput="updateParam('sourceSeconds', this.value)">
+                        <span class="value-display" id="sourceSeconds-value">2.0 s</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Grain cloud — per-grain</h3>
+
+                <div class="control-group">
+                    <label>Density</label>
+                    <span class="hint">Zero derives it from window and overlap — the classic behaviour.</span>
+                    <div class="slider-container">
+                        <input type="range" id="densityHz" min="0" max="400" step="1" value="0" oninput="updateParam('densityHz', this.value)">
+                        <span class="value-display" id="densityHz-value">auto</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Overlap</label>
+                    <span class="hint">How many grains cover any moment. In Braid, the strand count.</span>
+                    <div class="slider-container">
+                        <input type="range" id="overlap" min="1" max="8" step="0.1" value="3" oninput="updateParam('overlap', this.value)">
+                        <span class="value-display" id="overlap-value">3.0</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Size jitter</label>
+                    <div class="slider-container">
+                        <input type="range" id="sizeJitter" min="0" max="1" step="0.01" value="0.25" oninput="updateParam('sizeJitter', this.value)">
+                        <span class="value-display" id="sizeJitter-value">0.25</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Position jitter</label>
+                    <span class="hint">The thickness of the sheet in Shear; what melts the Lattice.</span>
+                    <div class="slider-container">
+                        <input type="range" id="positionJitterMs" min="0" max="500" step="1" value="40" oninput="updateParam('positionJitterMs', this.value)">
+                        <span class="value-display" id="positionJitterMs-value">40 ms</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Pitch jitter</label>
+                    <span class="hint">Instant and uncorrelated — grain to grain.</span>
+                    <div class="slider-container">
+                        <input type="range" id="pitchJitterSemis" min="0" max="24" step="0.1" value="3" oninput="updateParam('pitchJitterSemis', this.value)">
+                        <span class="value-display" id="pitchJitterSemis-value">3.0 st</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Pitch drift</label>
+                    <span class="hint">Slow and correlated. In Shells it becomes rotation.</span>
+                    <div class="slider-container">
+                        <input type="range" id="pitchDriftSemis" min="0" max="24" step="0.1" value="5" oninput="updateParam('pitchDriftSemis', this.value)">
+                        <span class="value-display" id="pitchDriftSemis-value">5.0 st</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Drift rate</label>
+                    <div class="slider-container">
+                        <input type="range" id="driftRateHz" min="0.01" max="8" step="0.01" value="0.4" oninput="updateParam('driftRateHz', this.value)">
+                        <span class="value-display" id="driftRateHz-value">0.40 Hz</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Traversal</h3>
+
+                <div class="control-group">
+                    <label>Cursor speed</label>
+                    <span class="hint">The cloud does not move. Only the reading head does.</span>
+                    <div class="slider-container">
+                        <input type="range" id="speed" min="0" max="4" step="0.05" value="0.6" oninput="updateParam('speed', this.value)">
+                        <span class="value-display" id="speed-value">0.60×</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Glow</label>
+                    <span class="hint">Additive, so overlapping grains pile into light.</span>
+                    <div class="slider-container">
+                        <input type="range" id="glow" min="0.2" max="2.5" step="0.05" value="1.0" oninput="updateParam('glow', this.value)">
+                        <span class="value-display" id="glow-value">1.00</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Orbit</label>
+                    <div class="slider-container">
+                        <input type="range" id="orbit" min="0" max="1" step="0.01" value="0.25" oninput="updateParam('orbit', this.value)">
+                        <span class="value-display" id="orbit-value">0.25</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Colours</h3>
+
+                <div class="color-group">
+                    <label>Below pitch</label>
+                    <div class="color-picker-container">
+                        <input type="color" id="color1" value="#6a9bcc" onchange="updateColor(0, this.value)">
+                        <span class="color-value" id="color1-value">#6a9bcc</span>
+                    </div>
+                </div>
+
+                <div class="color-group">
+                    <label>At pitch</label>
+                    <div class="color-picker-container">
+                        <input type="color" id="color2" value="#788c5d" onchange="updateColor(1, this.value)">
+                        <span class="color-value" id="color2-value">#788c5d</span>
+                    </div>
+                </div>
+
+                <div class="color-group">
+                    <label>Above pitch</label>
+                    <div class="color-picker-container">
+                        <input type="color" id="color3" value="#d97757" onchange="updateColor(2, this.value)">
+                        <span class="color-value" id="color3-value">#d97757</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live link to the player -->
+            <div class="control-section">
+                <h3>Player</h3>
+                <div class="button-row">
+                    <button class="button secondary" id="live-btn" onclick="toggleLive()">◉ Follow the player</button>
+                </div>
+                <div class="view-note" id="live-note" style="margin-top:0">
+                    Checking for the engine&hellip;
+                </div>
+            </div>
+
+            <!-- Actions Section -->
+            <div class="control-section">
+                <h3>Actions</h3>
+                <div class="button-row">
+                    <button class="button" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+                </div>
+                <div class="button-row">
+                    <button class="button secondary" onclick="togglePause()" id="pause-btn">❚❚ Pause</button>
+                    <button class="button secondary" onclick="downloadPNG()">↓ PNG</button>
+                </div>
+                <div class="button-row" style="margin-bottom:0">
+                    <button class="button tertiary" onclick="resetParameters()">Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Canvas Area -->
+        <div class="canvas-area">
+            <div id="stage">
+                <div id="canvas-container">
+                    <div class="transport"><div class="fill" id="transport-fill"></div></div>
+                    <div class="hud" id="hud"></div>
+                    <div class="hud-keys">
+                        1–5 views &nbsp;·&nbsp; F fullscreen<br>
+                        space pause &nbsp;·&nbsp; drag to orbit
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ═══════════════════════════════════════════════════════════════════════
+    // PARAMETERS — every one of these is a real control on the granular engine
+    // ═══════════════════════════════════════════════════════════════════════
+
+    let params = {
+        seed: 12345,
+        view: 0,
+        // Time and pitch
+        ratio: 4.0,              // 0.01 .. 100
+        semitones: 0,            // -48 .. 48
+        windowMs: 90,            // 5 .. 2000
+        sourceSeconds: 2.0,
+        // Grain cloud
+        densityHz: 0,            // 0 = derive from window and overlap
+        overlap: 3.0,            // 1 .. 8
+        sizeJitter: 0.25,        // 0 .. 1
+        positionJitterMs: 40,
+        pitchJitterSemis: 3.0,
+        pitchDriftSemis: 5.0,
+        driftRateHz: 0.4,
+        // Traversal
+        speed: 0.6,
+        glow: 1.0,
+        orbit: 0.25,
+        colorPalette: ['#6a9bcc', '#788c5d', '#d97757']
+    };
+
+    let defaultParams = JSON.parse(JSON.stringify(params));
+
+    const VIEWS = [
+        { name: 'SHEAR',   note: 'Output time across, source time into the screen, pitch up. The stretch ratio is not a number here — it is the slope. Push it high and the diagonal flattens into a sheet: output races on while the source barely crawls.' },
+        { name: 'BRAID',   note: 'Time wound into a helix so that overlap resolves into countable strands. Raise overlap and new strands appear; raise density and the winding tightens.' },
+        { name: 'SWARM',   note: 'The free cloud — the form most people mean by granular. Radius is where in the source a grain reads, so the shell breathes outward as the cursor works through the file.' },
+        { name: 'SHELLS',  note: 'Grains sorted onto concentric shells by pitch, an octave to a shell. Drift stops being a parameter and becomes a slow physical rotation you can watch.' },
+        { name: 'LATTICE', note: 'The bare hop grid, drawn as a crystal. With every jitter at zero it is perfect. Raise them and it melts — order to chaos as one continuous gesture.' }
+    ];
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // THE ENGINE'S OWN ARITHMETIC
+    //
+    // A faithful port of fx::grain — plan(), event_at(), rand01(), drift_at().
+    // Not an impression of the algorithm: the same splitmix64 hash over the
+    // same salts, so a seed here lands on the same cloud the audio engine
+    // would render. BigInt because the mixing is 64-bit and approximating it
+    // would quietly produce a different, plausible-looking weather.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const SR = 48000;
+    const M64 = (1n << 64n) - 1n;
+    const K1 = 0x9E3779B97F4A7C15n, K2 = 0xD1B54A32D192ED03n;
+    const K3 = 0xBF58476D1CE4E5B9n, K4 = 0x94D049BB133111EBn;
+
+    function rand01(seed, index, salt) {
+        let x = ((BigInt(index) * K1) & M64)
+              ^ ((BigInt(seed) << 1n) & M64)
+              ^ ((BigInt(salt) * K2) & M64);
+        x ^= x >> 30n;  x = (x * K3) & M64;
+        x ^= x >> 27n;  x = (x * K4) & M64;
+        x ^= x >> 31n;
+        return Number(x >> 40n) / 16777216.0;
+    }
+
+    const randBi = (seed, i, salt) => rand01(seed, i, salt) * 2 - 1;
+
+    /// Smooth wander. Value noise, not white — drift has to be heard as slowly
+    /// going out of tune, which needs neighbouring moments to agree.
+    function driftAt(seed, t, rateHz) {
+        const rate = Math.max(rateHz, 0.01);
+        const x = t * rate;
+        const i = Math.max(0, Math.floor(x));
+        const f = x - Math.floor(x);
+        const a = randBi(seed, i, 77), b = randBi(seed, i + 1, 77);
+        const s = f * f * (3 - 2 * f);
+        return a + (b - a) * s;
+    }
+
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+    function makePlan(inFrames, p) {
+        const ratio = clamp(p.ratio, 0.01, 100);
+        const baseSize = Math.max(32, Math.floor((clamp(p.windowMs, 5, 2000) / 1000) * SR));
+        const ov = clamp(p.overlap, 1, 8);
+        const hop = p.densityHz > 0
+            ? Math.max(8, Math.floor(SR / clamp(p.densityHz, 0.5, 2000)))
+            : Math.max(8, Math.floor(baseSize / ov));
+        return { hop, baseSize, outFrames: Math.round(inFrames * ratio) };
+    }
+
+    function eventAt(index, write, plan, inFrames, p) {
+        const posJitter = (p.positionJitterMs / 1000) * SR;
+        const baseRate = Math.pow(2, p.semitones / 12);
+        const t = write / SR;
+
+        let size = plan.baseSize;
+        if (p.sizeJitter > 1e-6) {
+            const k = 1 + clamp(p.sizeJitter, 0, 1) * randBi(p.seed, index, 3);
+            size = Math.floor(plan.baseSize * clamp(k, 0.15, 2.0));
+        }
+        size = Math.max(16, size);
+
+        const semis = p.pitchJitterSemis * randBi(p.seed, index, 11)
+                    + p.pitchDriftSemis * driftAt(p.seed, t, p.driftRateHz);
+        const rate = clamp(baseRate * Math.pow(2, semis / 12), 0.002, 256);
+
+        const nominal = write / clamp(p.ratio, 0.01, 100);
+        const jitter = posJitter > 0 ? posJitter * randBi(p.seed, index, 5) : 0;
+        const span = size * rate;
+        const maxStart = Math.max(inFrames - span - 1, 0);
+        const read = clamp(nominal + jitter, 0, maxStart);
+
+        return {
+            index, outFrame: write, srcFrame: read, size, rate,
+            pitchSemis: p.semitones + semis
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // THE SCHEDULE
+    //
+    // Built once and never stepped. This is the whole conceit: the cloud is a
+    // fixed object, and animation is traversal rather than simulation. Nothing
+    // below accumulates state, which is also why the cursor can be dragged
+    // backwards and why the weather ahead of it is already drawn.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const MAX_GRAINS = 4200;
+
+    let grains = [];
+    let plan = null;
+    let inFrames = 0;
+    let outSeconds = 1, srcSeconds = 1;
+    let effectiveOverlap = 2;
+    let scheduleStride = 1;
+    let cursor = 0;            // output seconds
+    let paused = false;
+    // The cloud's true proportions are the whole point of Shear, so the camera
+    // fits itself to the extent rather than the geometry being rescaled to fill
+    // the frame. Push the ratio to 100 and the sheet really does flatten; the
+    // camera just steps back far enough to keep it on screen.
+    let fitDist = 900, camZoom = 1.0;
+    let camYaw = 0, camPitch = -0.22, camDist = 900;
+    let dragging = false, lastMX = 0, lastMY = 0;
+    let palette = [];
+
+    function buildSchedule() {
+        inFrames = Math.max(1, Math.floor(params.sourceSeconds * SR));
+        plan = makePlan(inFrames, params);
+        outSeconds = plan.outFrames / SR;
+        srcSeconds = inFrames / SR;
+        effectiveOverlap = Math.max(1, Math.round(plan.baseSize / plan.hop));
+
+        const total = Math.max(1, Math.ceil(plan.outFrames / plan.hop));
+        // Same thinning the app's own grain endpoint uses: a long file at high
+        // density is tens of thousands of grains and the display cannot resolve
+        // them anyway.
+        const stride = Math.max(1, Math.ceil(total / MAX_GRAINS));
+        scheduleStride = stride;
+
+        grains = [];
+        for (let i = 0; i < total; i += stride) {
+            const write = i * plan.hop;
+            if (write >= plan.outFrames) break;
+            const e = eventAt(i, write, plan, inFrames, params);
+
+            const tOut = e.outFrame / SR;
+            const tSrc = e.srcFrame / SR;
+            const dur = e.size / SR;
+            grains.push({
+                i: e.index,
+                tOut, tSrc, dur,
+                rate: e.rate,
+                semis: e.pitchSemis,
+                u: tOut / Math.max(outSeconds, 1e-6),
+                v: tSrc / Math.max(srcSeconds, 1e-6),
+                // Pitch folded to -1..1 over the engine's full ±48 semitone range.
+                pn: clamp(e.pitchSemis / 48, -1, 1),
+                // How far this grain's read strayed from where it was nominally
+                // due. Zero when position jitter is off — which is what makes
+                // the Lattice a perfect crystal at rest.
+                dev: (e.srcFrame - (e.outFrame / clamp(params.ratio, 0.01, 100))) / SR,
+                a: rand01(params.seed, e.index, 21) * Math.PI * 2,
+                b: rand01(params.seed, e.index, 22) * 2 - 1
+            });
+        }
+        cursor = 0;
+    }
+
+    /// A grain's own amplitude envelope, evaluated at the cursor.
+    ///
+    /// Not a decorative brightness curve — the Hann window the renderer applies
+    /// to that grain, at that instant. What glows is a readout of the audio,
+    /// which is why the image cannot disagree with the sound.
+    function energyOf(g, now) {
+        const phase = (now - g.tOut) / Math.max(g.dur, 1e-9);
+        if (phase < 0 || phase > 1) return 0;
+        return 0.5 - 0.5 * Math.cos(Math.PI * 2 * phase);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PROJECTIONS — five windows, one object
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const SPAN = 520, HEIGHT = 260, R = 300;
+
+    function project(g, now, out) {
+        switch (params.view) {
+
+        // ── SHEAR: the time–time plane, in seconds on both axes so the ratio
+        //    reads as slope rather than being normalised away.
+        case 0: {
+            const scale = SPAN / Math.max(outSeconds, srcSeconds, 1e-6);
+            out.x = (g.tOut - outSeconds / 2) * scale;
+            out.z = (g.tSrc - srcSeconds / 2) * scale;
+            out.y = -g.pn * HEIGHT;
+            break;
+        }
+
+        // ── BRAID: consecutive grains stepped around a circle by one turn
+        //    divided by the overlap, so grains sounding together separate into
+        //    strands and the count of strands *is* the overlap.
+        case 1: {
+            // Strand offset plus a slow winding along the axis. Without the
+            // winding each strand is a straight vertical line and the overlap
+            // is countable but lifeless; with it they plait, which is what
+            // overlapping grains actually do to each other.
+            const th = (g.i * Math.PI * 2) / effectiveOverlap
+                     + g.u * Math.PI * 2 * 3
+                     + now * 0.15;
+            const rr = R * (0.62 + 0.30 * (Math.log2(Math.max(g.rate, 0.002)) + 4) / 8);
+            out.x = Math.cos(th) * rr;
+            out.z = Math.sin(th) * rr;
+            out.y = (g.u - 0.5) * HEIGHT * 2.6;
+            break;
+        }
+
+        // ── SWARM: radius is the read position in the source, so the shell
+        //    grows as the cursor works through the file; energy pushes a grain
+        //    outward as it sounds.
+        case 2: {
+            const e = out.e;
+            const th = Math.acos(clamp(g.b, -1, 1));
+            const ph = g.a + now * 0.22;
+            const rr = R * (0.34 + 0.62 * g.v) + e * R * 0.26;
+            out.x = rr * Math.sin(th) * Math.cos(ph);
+            out.z = rr * Math.sin(th) * Math.sin(ph);
+            out.y = rr * Math.cos(th) * 0.55 - g.pn * HEIGHT * 0.5;
+            break;
+        }
+
+        // ── SHELLS: an octave to a shell. The whole structure turns at the
+        //    drift rate, so drift is something you watch rather than set.
+        case 3: {
+            const rr = R * (0.22 + 0.78 * (g.pn + 1) / 2);
+            const th = g.u * Math.PI * 2 * 3 + now * params.driftRateHz * 0.9;
+            out.x = Math.cos(th) * rr;
+            out.z = Math.sin(th) * rr;
+            out.y = (g.v - 0.5) * HEIGHT * 1.6;
+            break;
+        }
+
+        // ── LATTICE: the bare hop grid. Displacement comes from the grain's
+        //    actual deviations, so with every jitter at zero it is a perfect
+        //    crystal and the sliders melt it.
+        default: {
+            const k = Math.max(1, Math.ceil(Math.sqrt(grains.length)));
+            const n = out.n;
+            const gx = n % k, gz = Math.floor(n / k);
+            const cell = SPAN * 1.6 / k;
+            const devScale = 260 / Math.max(params.positionJitterMs / 1000, 1e-3);
+            out.x = (gx - k / 2) * cell + clamp(g.dev * devScale, -cell * 3, cell * 3);
+            out.z = (gz - k / 2) * cell;
+            out.y = -g.pn * HEIGHT * 1.1
+                  + (g.dur / Math.max(plan.baseSize / SR, 1e-6) - 1) * 90;
+            break;
+        }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // RENDER
+    //
+    // Grains are bucketed by colour and energy tier so the whole cloud draws in
+    // a few dozen batched calls rather than four thousand. Additive blending,
+    // so where overlap is high the grains genuinely pile into light instead of
+    // being told to look brighter.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const CBINS = 14, EBINS = 3;
+    let buckets = [];
+    let lineBucket = [];
+
+    function setup() {
+        const holder = document.getElementById('canvas-container');
+        const c = createCanvas(holder.clientWidth, holder.clientHeight, WEBGL);
+        c.parent('canvas-container');
+        setAttributes('antialias', true);
+        buildPalette();
+        buildSchedule();
+        for (let i = 0; i < CBINS * EBINS; i++) buckets.push([]);
+        updateViewNote();
+    }
+
+    function buildPalette() {
+        palette = [];
+        const a = color(params.colorPalette[0]);
+        const b = color(params.colorPalette[1]);
+        const d = color(params.colorPalette[2]);
+        for (let i = 0; i < CBINS; i++) {
+            const t = i / (CBINS - 1);
+            palette.push(t < 0.5 ? lerpColor(a, b, t * 2) : lerpColor(b, d, (t - 0.5) * 2));
+        }
+    }
+
+    function windowResized() {
+        const holder = document.getElementById('canvas-container');
+        resizeCanvas(holder.clientWidth, holder.clientHeight);
+    }
+
+    function draw() {
+        background(20, 20, 19);
+
+        // When following the player the cursor is the engine's, not ours: the
+        // poll sets it, and between polls it is carried forward at real speed
+        // so the motion stays smooth at 60fps on a 120ms update.
+        if (live) {
+            if (enginePlaying) cursor += deltaTime / 1000;
+        } else if (!paused) {
+            cursor += (deltaTime / 1000) * params.speed;
+            if (cursor > outSeconds) cursor = 0;
+        }
+        const now = cursor;
+
+        // Camera. Auto-orbit unless the mouse has taken over.
+        if (!dragging) camYaw += (deltaTime / 1000) * params.orbit * 0.30;
+        camDist += (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 220);
+        const cx = Math.sin(camYaw) * Math.cos(camPitch) * camDist;
+        const cy = Math.sin(camPitch) * camDist;
+        const cz = Math.cos(camYaw) * Math.cos(camPitch) * camDist;
+        camera(cx, cy, cz, 0, 0, 0, 0, 1, 0);
+        perspective(PI / 3.4, width / height, 5, 40000);
+
+        for (const b of buckets) b.length = 0;
+        lineBucket.length = 0;
+
+        const tmp = { x: 0, y: 0, z: 0, e: 0, n: 0 };
+        const hot = [];
+        let extent = 1;
+
+        for (let n = 0; n < grains.length; n++) {
+            const g = grains[n];
+            const e = energyOf(g, now);
+            tmp.e = e; tmp.n = n;
+            project(g, now, tmp);
+
+            const rad = Math.max(Math.abs(tmp.x), Math.abs(tmp.y) * 1.5, Math.abs(tmp.z));
+            if (rad > extent) extent = rad;
+
+            const ci = clamp(Math.floor(((g.pn + 1) / 2) * CBINS), 0, CBINS - 1);
+            const ei = e > 0.55 ? 2 : (e > 0.08 ? 1 : 0);
+            const bucket = buckets[ci * EBINS + ei];
+            bucket.push(tmp.x, tmp.y, tmp.z);
+
+            if (ei === 2) hot.push(tmp.x, tmp.y, tmp.z, e, ci);
+
+            // Structural lines: what each view is actually claiming.
+            if (params.view === 1) {
+                // A strand joins grains one whole turn apart — the same angle,
+                // one overlap later. Joining *consecutive* grains instead just
+                // chords across the circle and draws a prism, which says
+                // nothing. Only meaningful when the schedule is not thinned,
+                // since a strided index no longer lands on the same angle.
+                const m = n + effectiveOverlap;
+                if (scheduleStride === 1 && m < grains.length) {
+                    const pe = { x: 0, y: 0, z: 0, e: 0, n: m };
+                    project(grains[m], now, pe);
+                    lineBucket.push(tmp.x, tmp.y, tmp.z, pe.x, pe.y, pe.z);
+                }
+            } else if (params.view === 4) {
+                const k = Math.max(1, Math.ceil(Math.sqrt(grains.length)));
+                if (n % k !== k - 1 && n + 1 < grains.length) {
+                    const nb = grains[n + 1];
+                    const pe = { x: 0, y: 0, z: 0, e: 0, n: n + 1 };
+                    project(nb, now, pe);
+                    lineBucket.push(tmp.x, tmp.y, tmp.z, pe.x, pe.y, pe.z);
+                }
+            }
+        }
+
+        blendMode(ADD);
+        noFill();
+
+        // Lattice bonds and braid strands, drawn under the grains.
+        if (lineBucket.length) {
+            stroke(120, 116, 108, 40 * params.glow);
+            strokeWeight(1);
+            beginShape(LINES);
+            for (let i = 0; i < lineBucket.length; i += 3) {
+                vertex(lineBucket[i], lineBucket[i + 1], lineBucket[i + 2]);
+            }
+            endShape();
+        }
+
+        // The cloud, dimmest tier first so the sounding grains sit on top.
+        for (let ei = 0; ei < EBINS; ei++) {
+            const weight = ei === 0 ? 3.0 : (ei === 1 ? 4.6 : 8.0);
+            const alpha = (ei === 0 ? 40 : (ei === 1 ? 110 : 220)) * params.glow;
+            for (let ci = 0; ci < CBINS; ci++) {
+                const arr = buckets[ci * EBINS + ei];
+                if (!arr.length) continue;
+                const col = palette[ci];
+                stroke(red(col), green(col), blue(col), Math.min(alpha, 255));
+                strokeWeight(weight);
+                beginShape(POINTS);
+                for (let i = 0; i < arr.length; i += 3) vertex(arr[i], arr[i + 1], arr[i + 2]);
+                endShape();
+            }
+        }
+
+        // A second, softer pass over the grains that are actually sounding —
+        // the bloom that makes overlap legible as brightness.
+        if (hot.length) {
+            for (let i = 0; i < hot.length; i += 5) {
+                const col = palette[hot[i + 4]];
+                stroke(red(col), green(col), blue(col), 60 * hot[i + 3] * params.glow);
+                strokeWeight(14 * hot[i + 3] + 4);
+                beginShape(POINTS);
+                vertex(hot[i], hot[i + 1], hot[i + 2]);
+                endShape();
+            }
+        }
+
+        drawFrameOfReference(now);
+        blendMode(BLEND);
+        fitDist = extent * 2.6;
+        updateHUD(now);
+    }
+
+    /// The axes each view is measured against. Faint, but without them the
+    /// geometry is just a pretty cloud rather than a statement about time.
+    function drawFrameOfReference(now) {
+        stroke(176, 174, 165, 34);
+        strokeWeight(1);
+
+        if (params.view === 0) {
+            const scale = SPAN / Math.max(outSeconds, srcSeconds, 1e-6);
+            const x0 = -outSeconds / 2 * scale, x1 = outSeconds / 2 * scale;
+            const z0 = -srcSeconds / 2 * scale, z1 = srcSeconds / 2 * scale;
+            beginShape(LINES);
+            vertex(x0, 0, z0); vertex(x1, 0, z0);
+            vertex(x0, 0, z0); vertex(x0, 0, z1);
+            vertex(x1, 0, z0); vertex(x1, 0, z1);
+            vertex(x0, 0, z1); vertex(x1, 0, z1);
+            endShape();
+            // The nominal read line — where every grain would sit with no
+            // position jitter at all. The cloud's departure from it is the
+            // jitter, made visible.
+            stroke(217, 119, 87, 70);
+            beginShape(LINES);
+            vertex(x0, 0, z0); vertex(x1, 0, z1);
+            endShape();
+            // The cursor, sweeping output time.
+            const cx = (now - outSeconds / 2) * scale;
+            stroke(250, 249, 245, 90);
+            beginShape(LINES);
+            vertex(cx, -HEIGHT, z0); vertex(cx, HEIGHT, z0);
+            vertex(cx, 0, z0); vertex(cx, 0, z1);
+            endShape();
+        } else if (params.view === 1 || params.view === 3) {
+            const y = params.view === 1
+                ? ((now / Math.max(outSeconds, 1e-6)) - 0.5) * HEIGHT * 2.6
+                : 0;
+            stroke(250, 249, 245, 55);
+            beginShape();
+            for (let i = 0; i <= 64; i++) {
+                const t = (i / 64) * Math.PI * 2;
+                vertex(Math.cos(t) * R, y, Math.sin(t) * R);
+            }
+            endShape(CLOSE);
+        } else if (params.view === 4) {
+            const half = SPAN * 0.85;
+            beginShape(LINES);
+            vertex(-half, 0, -half); vertex(half, 0, -half);
+            vertex(-half, 0, half);  vertex(half, 0, half);
+            vertex(-half, 0, -half); vertex(-half, 0, half);
+            vertex(half, 0, -half);  vertex(half, 0, half);
+            endShape();
+        }
+    }
+
+    function updateHUD(now) {
+        const hopMs = (plan.hop / SR) * 1000;
+        const density = SR / plan.hop;
+        document.getElementById('hud').innerHTML =
+            `<span class="title">${VIEWS[params.view].name}</span>` +
+            `seed ${params.seed} &nbsp;·&nbsp; ${grains.length} grains drawn<br>` +
+            `<span class="dim">ratio</span> ${params.ratio.toFixed(2)}× ` +
+            `&nbsp;<span class="dim">window</span> ${Math.round(params.windowMs)} ms ` +
+            `&nbsp;<span class="dim">overlap</span> ${effectiveOverlap}×<br>` +
+            `<span class="dim">density</span> ${density.toFixed(1)} Hz ` +
+            `&nbsp;<span class="dim">hop</span> ${hopMs.toFixed(1)} ms ` +
+            `&nbsp;<span class="dim">pitch</span> ${params.semitones > 0 ? '+' : ''}${params.semitones} st<br>` +
+            `<span class="dim">${now.toFixed(2)} s of ${outSeconds.toFixed(2)} s output ` +
+            `— reading ${srcSeconds.toFixed(2)} s of source</span>`;
+        document.getElementById('transport-fill').style.width =
+            `${(now / Math.max(outSeconds, 1e-6)) * 100}%`;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FOLLOWING THE PLAYER
+    //
+    // Served from the app, this becomes a window onto the sound actually
+    // coming out of the speakers. It does not stream the grains across —
+    // it does not need to. The schedule is a pure function of the parameters
+    // and the seed, so fetching those once reproduces, exactly, the cloud the
+    // audio thread is working through. All that has to arrive continuously is
+    // the playhead.
+    //
+    // Which is the whole philosophy stated as an engineering fact: the future
+    // of the cloud is already drawn, because it was already determined.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    let live = false, liveOK = false, liveTimer = null, livePath = '', liveMiss = 0;
+
+    async function probeEngine() {
+        try {
+            const r = await fetch('/api/engine/state', { cache: 'no-store' });
+            liveOK = r.ok;
+        } catch { liveOK = false; }
+        setLiveNote(liveOK
+            ? 'The engine is here. Follow it and the cloud becomes whatever is playing.'
+            : 'No engine on this origin — running on its own schedule. Open this from the app at /grains3d to follow the player.');
+        document.getElementById('live-btn').disabled = !liveOK;
+        document.getElementById('live-btn').style.opacity = liveOK ? 1 : 0.5;
+    }
+
+    function setLiveNote(t) { document.getElementById('live-note').textContent = t; }
+
+    function toggleLive() {
+        if (!liveOK) return;
+        live = !live;
+        document.getElementById('live-btn').textContent =
+            live ? '◉ Following — click to stop' : '◉ Follow the player';
+        if (live) { livePath = ''; pollEngine(); liveTimer = setInterval(pollEngine, 120); }
+        else { clearInterval(liveTimer); liveTimer = null; setLiveNote('Back on its own schedule.'); }
+    }
+
+    async function pollEngine() {
+        let s;
+        try {
+            s = await (await fetch('/api/engine/state', { cache: 'no-store' })).json();
+        } catch {
+            if (++liveMiss > 8) { setLiveNote('Lost the engine.'); }
+            return;
+        }
+        liveMiss = 0;
+
+        if (!s.path) {
+            setLiveNote('Nothing loaded in the player yet — pick a sound in the app.');
+            return;
+        }
+
+        // A new file, or the first poll: pull the document's parameters and
+        // rebuild the schedule to match it exactly.
+        if (s.path !== livePath) {
+            livePath = s.path;
+            try {
+                const d = await (await fetch('/api/edit?p=' + encodeURIComponent(s.path),
+                                             { cache: 'no-store' })).json();
+                const st = d.stretch || {}, g = st.grain || {};
+                params.ratio = st.ratio ?? params.ratio;
+                params.semitones = st.semitones ?? params.semitones;
+                params.windowMs = st.windowMs ?? params.windowMs;
+                params.densityHz = g.densityHz ?? params.densityHz;
+                params.overlap = g.overlap ?? params.overlap;
+                params.sizeJitter = g.sizeJitter ?? params.sizeJitter;
+                params.positionJitterMs = g.positionJitterMs ?? params.positionJitterMs;
+                params.pitchJitterSemis = g.pitchJitterSemis ?? params.pitchJitterSemis;
+                params.pitchDriftSemis = g.pitchDriftSemis ?? params.pitchDriftSemis;
+                params.driftRateHz = g.driftRateHz ?? params.driftRateHz;
+                if (g.seed) { params.seed = g.seed; updateSeedDisplay(); }
+                // The engine works at the device's rate on already-resampled
+                // audio, so its frame count is the honest source length.
+                if (s.inFrames > 0 && s.sampleRate > 0) {
+                    params.sourceSeconds = s.inFrames / s.sampleRate;
+                }
+                syncControls();
+                buildSchedule();
+                setLiveNote('Following ' + s.path.split('/').pop());
+            } catch {
+                setLiveNote('Could not read that sound’s parameters.');
+            }
+        }
+
+        // The playhead. Output frames at the device rate — the same clock the
+        // schedule is laid out on.
+        if (s.sampleRate > 0) cursor = s.position / s.sampleRate;
+        enginePlaying = !!s.playing;
+    }
+
+    let enginePlaying = false;
+
+    /// Push params back into the sliders after the engine has changed them.
+    function syncControls() {
+        for (const name of ['semitones', 'sourceSeconds', 'densityHz', 'overlap',
+                            'sizeJitter', 'positionJitterMs', 'pitchJitterSemis',
+                            'pitchDriftSemis', 'driftRateHz']) {
+            const el = document.getElementById(name);
+            if (el) { el.value = params[name]; }
+            const out = document.getElementById(name + '-value');
+            if (out) out.textContent = FMT[name](params[name]);
+        }
+        document.getElementById('ratio').value = logPos(params.ratio, 0.01, 100);
+        document.getElementById('ratio-value').textContent = FMT.ratio(params.ratio);
+        document.getElementById('windowMs').value = logPos(params.windowMs, 5, 2000);
+        document.getElementById('windowMs-value').textContent = FMT.windowMs(params.windowMs);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // INTERACTION
+    // ═══════════════════════════════════════════════════════════════════════
+
+    function mousePressed() {
+        if (mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height) {
+            dragging = true; lastMX = mouseX; lastMY = mouseY;
+        }
+    }
+    function mouseReleased() { dragging = false; }
+    function mouseDragged() {
+        if (!dragging) return;
+        camYaw -= (mouseX - lastMX) * 0.008;
+        camPitch = clamp(camPitch + (mouseY - lastMY) * 0.006, -1.4, 1.4);
+        lastMX = mouseX; lastMY = mouseY;
+    }
+    function mouseWheel(ev) {
+        if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) return;
+        camZoom = clamp(camZoom + ev.delta * 0.0016, 0.25, 4.0);
+        return false;
+    }
+
+    function keyPressed() {
+        if (key >= '1' && key <= '5') setView(parseInt(key) - 1);
+        else if (key === 'f' || key === 'F') toggleFullscreen();
+        else if (key === ' ') { togglePause(); return false; }
+    }
+
+    function setView(v) {
+        params.view = v;
+        for (let i = 0; i < VIEWS.length; i++) {
+            document.getElementById('view-' + i).classList.toggle('active', i === v);
+        }
+        updateViewNote();
+    }
+
+    function updateViewNote() {
+        document.getElementById('view-note').textContent = VIEWS[params.view].note;
+    }
+
+    function togglePause() {
+        paused = !paused;
+        document.getElementById('pause-btn').textContent = paused ? '▶ Play' : '❚❚ Pause';
+    }
+
+    function toggleFullscreen() {
+        const el = document.getElementById('stage');
+        if (!document.fullscreenElement) {
+            (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+        } else {
+            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        }
+    }
+    document.addEventListener('fullscreenchange', () => setTimeout(windowResized, 60));
+    document.addEventListener('webkitfullscreenchange', () => setTimeout(windowResized, 60));
+
+    function downloadPNG() {
+        saveCanvas(`precomputed-weather-${VIEWS[params.view].name.toLowerCase()}-${params.seed}`, 'png');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // UI CONTROL HANDLERS
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const FMT = {
+        ratio: v => v.toFixed(2) + '×',
+        semitones: v => (v > 0 ? '+' : '') + v + ' st',
+        windowMs: v => Math.round(v) + ' ms',
+        sourceSeconds: v => v.toFixed(1) + ' s',
+        densityHz: v => (v <= 0 ? 'auto' : v.toFixed(0) + ' Hz'),
+        overlap: v => v.toFixed(1),
+        sizeJitter: v => v.toFixed(2),
+        positionJitterMs: v => Math.round(v) + ' ms',
+        pitchJitterSemis: v => v.toFixed(1) + ' st',
+        pitchDriftSemis: v => v.toFixed(1) + ' st',
+        driftRateHz: v => v.toFixed(2) + ' Hz',
+        speed: v => v.toFixed(2) + '×',
+        glow: v => v.toFixed(2),
+        orbit: v => v.toFixed(2)
+    };
+
+    function updateParam(name, value) {
+        params[name] = parseFloat(value);
+        document.getElementById(name + '-value').textContent = FMT[name](params[name]);
+        buildSchedule();
+    }
+
+    /// Logarithmic sliders, because a ratio of 0.01 and one of 100 both need
+    /// fine control and a linear track gives the low end four pixels.
+    function updateLog(name, pos, lo, hi) {
+        const v = lo * Math.pow(hi / lo, pos / 1000);
+        params[name] = v;
+        document.getElementById(name + '-value').textContent = FMT[name](v);
+        buildSchedule();
+    }
+
+    function logPos(v, lo, hi) {
+        return Math.round(1000 * Math.log(v / lo) / Math.log(hi / lo));
+    }
+
+    function updateColor(i, value) {
+        params.colorPalette[i] = value;
+        document.getElementById('color' + (i + 1) + '-value').textContent = value;
+        buildPalette();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SEED CONTROLS
+    //
+    // Less a randomiser than coordinates into an atlas of clouds that all
+    // exist simultaneously and always did.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    function updateSeedDisplay() {
+        document.getElementById('seed-input').value = params.seed;
+    }
+
+    function updateSeed() {
+        const input = document.getElementById('seed-input');
+        const newSeed = parseInt(input.value);
+        if (newSeed && newSeed > 0) { params.seed = newSeed; buildSchedule(); }
+        else updateSeedDisplay();
+    }
+
+    function previousSeed() {
+        params.seed = Math.max(1, params.seed - 1);
+        updateSeedDisplay(); buildSchedule();
+    }
+
+    function nextSeed() {
+        params.seed = params.seed + 1;
+        updateSeedDisplay(); buildSchedule();
+    }
+
+    function randomSeedAndUpdate() {
+        params.seed = Math.floor(Math.random() * 999999) + 1;
+        updateSeedDisplay(); buildSchedule();
+    }
+
+    function resetParameters() {
+        const view = params.view;
+        params = JSON.parse(JSON.stringify(defaultParams));
+        params.view = view;
+
+        for (const name of ['semitones', 'sourceSeconds', 'densityHz', 'overlap',
+                            'sizeJitter', 'positionJitterMs', 'pitchJitterSemis',
+                            'pitchDriftSemis', 'driftRateHz', 'speed', 'glow', 'orbit']) {
+            document.getElementById(name).value = params[name];
+            document.getElementById(name + '-value').textContent = FMT[name](params[name]);
+        }
+        document.getElementById('ratio').value = logPos(params.ratio, 0.01, 100);
+        document.getElementById('ratio-value').textContent = FMT.ratio(params.ratio);
+        document.getElementById('windowMs').value = logPos(params.windowMs, 5, 2000);
+        document.getElementById('windowMs-value').textContent = FMT.windowMs(params.windowMs);
+
+        for (let i = 0; i < 3; i++) {
+            document.getElementById('color' + (i + 1)).value = params.colorPalette[i];
+            document.getElementById('color' + (i + 1) + '-value').textContent = params.colorPalette[i];
+        }
+
+        updateSeedDisplay();
+        buildPalette();
+        buildSchedule();
+    }
+
+    window.addEventListener('load', function () {
+        probeEngine();
+        updateSeedDisplay();
+        document.getElementById('ratio').value = logPos(params.ratio, 0.01, 100);
+        document.getElementById('ratio-value').textContent = FMT.ratio(params.ratio);
+        document.getElementById('windowMs').value = logPos(params.windowMs, 5, 2000);
+        document.getElementById('windowMs-value').textContent = FMT.windowMs(params.windowMs);
+    });
+    </script>
+</body>
+</html>

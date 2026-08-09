@@ -110,6 +110,10 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
         h.shared.set_rack(rack_for(app, rel));
     })?;
 
+    // Remember what is loaded, so anything drawing the grain cloud can find the
+    // document whose parameters produced it.
+    *app.playing.write().unwrap() = Some((rel.to_string(), out_frames as u64, dev_rate));
+
     Ok(Loaded {
         frames: out_frames as u64,
         sample_rate: dev_rate,

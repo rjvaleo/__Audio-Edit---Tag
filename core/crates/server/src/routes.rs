@@ -9,6 +9,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+/// The 3D grain visualiser.
+///
+/// Served from here rather than opened as a file so it is same-origin with the
+/// API and can therefore watch the engine. Opened directly off disk it still
+/// works — it falls back to its own schedule and simply has no player to follow.
+pub const GRAINS_3D: &str = include_str!("../../../../visualiser/grain-views.html");
+
 pub const UI_HTML: &str = include_str!("../../../../ui/index.html");
 pub const UI_CSS: &str = include_str!("../../../../ui/app.css");
 pub const UI_JS: &str = include_str!("../../../../ui/app.js");
@@ -17,6 +24,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
     match (req.method.as_str(), req.path.as_str()) {
         ("GET" | "HEAD", "/") | ("GET" | "HEAD", "/index.html") => {
             Response::ok("text/html; charset=utf-8", UI_HTML.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/grains3d") => {
+            Response::ok("text/html; charset=utf-8", GRAINS_3D.as_bytes().to_vec())
         }
         ("GET", "/app.css") => Response::ok("text/css; charset=utf-8", UI_CSS.as_bytes().to_vec()),
         ("GET", "/app.js") => Response::ok(
@@ -1314,11 +1324,17 @@ fn api_engine_load(app: &Arc<App>, req: &Request) -> Response {
 }
 
 fn api_engine_state(app: &Arc<App>) -> Response {
+    let loaded = app.playing.read().unwrap().clone();
     match crate::live::with(app, |h| {
         Value::obj()
             .set("playing", h.shared.is_playing())
             .set("position", h.shared.position() as f64)
             .set("sampleRate", h.sample_rate as f64)
+            // Which document the engine is holding, and how much of it there is
+            // at the device's rate — everything a visualiser needs to rebuild
+            // the same grain schedule the audio thread is working through.
+            .set("path", loaded.as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default())
+            .set("inFrames", loaded.as_ref().map(|(_, f, _)| *f as f64).unwrap_or(0.0))
             .set("channels", h.channels as f64)
             .set(
                 "overflows",
