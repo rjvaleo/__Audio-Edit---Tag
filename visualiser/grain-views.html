@@ -835,7 +835,7 @@
     const QUERY = new URLSearchParams(location.search);
     if (QUERY.get('embed') === '1') document.body.classList.add('embed');
 
-    const SR = 48000;
+    let SR = 48000;   // the device's rate; replaced by the engine's when following
     const M64 = (1n << 64n) - 1n;
     const K1 = 0x9E3779B97F4A7C15n, K2 = 0xD1B54A32D192ED03n;
     const K3 = 0xBF58476D1CE4E5B9n, K4 = 0x94D049BB133111EBn;
@@ -1824,37 +1824,49 @@
             return;
         }
 
-        // A new file, or the first poll: pull the document's parameters and
-        // rebuild the schedule to match it exactly.
-        if (s.path !== livePath) {
-            livePath = s.path;
-            try {
-                const d = await (await fetch('/api/edit?p=' + encodeURIComponent(s.path),
-                                             { cache: 'no-store' })).json();
-                const st = d.stretch || {}, g = st.grain || {};
-                params.ratio = st.ratio ?? params.ratio;
-                params.semitones = st.semitones ?? params.semitones;
-                params.windowMs = st.windowMs ?? params.windowMs;
-                params.densityHz = g.densityHz ?? params.densityHz;
-                params.overlap = g.overlap ?? params.overlap;
-                params.sizeJitter = g.sizeJitter ?? params.sizeJitter;
-                params.positionJitterMs = g.positionJitterMs ?? params.positionJitterMs;
-                params.pitchJitterSemis = g.pitchJitterSemis ?? params.pitchJitterSemis;
-                params.pitchDriftSemis = g.pitchDriftSemis ?? params.pitchDriftSemis;
-                params.driftRateHz = g.driftRateHz ?? params.driftRateHz;
-                if (g.seed) { params.seed = g.seed; updateSeedDisplay(); }
-                // The engine works at the device's rate on already-resampled
-                // audio, so its frame count is the honest source length.
-                if (s.inFrames > 0 && s.sampleRate > 0) {
-                    params.sourceSeconds = s.inFrames / s.sampleRate;
-                }
+        // Rebuild whenever what is being *heard* changes — a new file, or any
+        // parameter moving underneath it.
+        //
+        // This used to fire on the file changing alone, which was a bug with an
+        // ugly shape: move the stretch from 1× to 20× and the schedule stayed
+        // at its old length, so the cursor ran off the end of a timeline that
+        // no longer existed, hit the clamp, and the visual simply stopped a
+        // second or two in. The parameters come from the audio thread now
+        // rather than the document, so the picture cannot describe anything but
+        // the sound coming out.
+        const st = s.stream;
+        const sig = st ? [
+            s.path, st.ratio, st.semitones, st.windowMs, st.inFrames,
+            st.densityHz, st.overlap, st.sizeJitter, st.positionJitterMs,
+            st.pitchJitterSemis, st.pitchDriftSemis, st.driftRateHz, st.seed
+        ].join('|') : s.path;
+
+        if (sig !== livePath) {
+            const fresh = !livePath || !livePath.startsWith(s.path + '|');
+            livePath = sig;
+
+            if (st) {
+                if (s.sampleRate > 0) SR = s.sampleRate;
+                params.ratio = st.ratio;
+                params.semitones = st.semitones;
+                params.windowMs = st.windowMs;
+                params.densityHz = st.densityHz;
+                params.overlap = st.overlap;
+                params.sizeJitter = st.sizeJitter;
+                params.positionJitterMs = st.positionJitterMs;
+                params.pitchJitterSemis = st.pitchJitterSemis;
+                params.pitchDriftSemis = st.pitchDriftSemis;
+                params.driftRateHz = st.driftRateHz;
+                if (st.seed) { params.seed = st.seed; updateSeedDisplay(); }
+                // The engine holds already-resampled audio at the device rate,
+                // so its own frame count is the honest source length — and
+                // out_frames, which is what the transport is counting through.
+                if (st.inFrames > 0) params.sourceSeconds = st.inFrames / SR;
                 syncControls();
                 buildSchedule();
-                loadWave(s.path);
-                setLiveNote('Following ' + s.path.split('/').pop());
-            } catch {
-                setLiveNote('Could not read that sound’s parameters.');
             }
+            if (fresh) loadWave(s.path);
+            setLiveNote('Following ' + s.path.split('/').pop());
         }
 
         // The playhead. Output frames at the device rate — the same clock the
