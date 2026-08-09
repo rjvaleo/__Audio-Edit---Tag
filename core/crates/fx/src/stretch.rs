@@ -31,6 +31,37 @@ impl Quality {
     }
 }
 
+/// Which engine does the stretching.
+///
+/// Not a quality ladder — the two fail in opposite directions. WSOLA keeps
+/// transients intact and smears dense polyphony; the vocoder handles polyphony
+/// cleanly and smears transients. Percussion wants the first, a string pad
+/// wants the second, and no amount of tuning turns either into the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Algorithm {
+    /// Waveform similarity overlap-add. Time domain.
+    Wsola,
+    /// Phase vocoder with identity phase locking. Frequency domain.
+    Vocoder,
+}
+
+impl Algorithm {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Algorithm::Wsola => "wsola",
+            Algorithm::Vocoder => "vocoder",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "wsola" => Some(Algorithm::Wsola),
+            "vocoder" => Some(Algorithm::Vocoder),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stretch {
     /// Output length as a multiple of input length. 2.0 is twice as long.
@@ -40,6 +71,10 @@ pub struct Stretch {
     /// Window length. Longer smooths tonal material; shorter keeps transients.
     pub window_ms: f32,
     pub quality: Quality,
+    pub algorithm: Algorithm,
+    /// Lock the bins around each spectral peak to that peak's phase. Vocoder
+    /// only; it is what keeps a partial from dissolving into its own skirts.
+    pub phase_lock: bool,
     /// Per-grain variation. Inert by default.
     pub grain: crate::Grain,
 }
@@ -51,6 +86,8 @@ impl Default for Stretch {
             semitones: 0.0,
             window_ms: 40.0,
             quality: Quality::Standard,
+            algorithm: Algorithm::Wsola,
+            phase_lock: true,
             grain: crate::Grain::default(),
         }
     }
@@ -110,14 +147,36 @@ impl Stretch {
         }
 
         // Stretch far enough that resampling for pitch lands on `want`.
-        let stretched = wsola(
-            input,
-            channels,
-            sample_rate,
-            ratio * pitch,
-            self.window_ms,
-            self.quality,
-        );
+        let stretched = match self.algorithm {
+            Algorithm::Wsola => wsola(
+                input,
+                channels,
+                sample_rate,
+                ratio * pitch,
+                self.window_ms,
+                self.quality,
+            ),
+            Algorithm::Vocoder => crate::vocoder::stretch(
+                input,
+                channels,
+                ratio * pitch,
+                crate::vocoder::Settings {
+                    // The window control means the same thing to both engines,
+                    // so the transform is sized from it rather than from a
+                    // constant the user cannot see.
+                    fft_size: fft_size_for(self.window_ms, sample_rate),
+                    // A wider search buys WSOLA a better splice; for the
+                    // vocoder the equivalent is more overlap, which is what
+                    // smooths the phase estimate.
+                    overlap: match self.quality {
+                        Quality::Draft => 2,
+                        Quality::Standard => 4,
+                        Quality::Best => 8,
+                    },
+                    phase_lock: self.phase_lock,
+                },
+            ),
+        };
         let out = if (pitch - 1.0).abs() < 1e-6 {
             stretched
         } else {
@@ -127,6 +186,17 @@ impl Stretch {
         // Hold the promised length exactly, so timeline arithmetic stays honest.
         fit(out, want, channels)
     }
+}
+
+/// Transform size for a given window length, as a power of two.
+///
+/// Clamped at both ends for reasons that are not cosmetic: below 256 the bins
+/// are too wide to separate partials and the vocoder has nothing to lock onto,
+/// and above 8192 the window is long enough that transients smear audibly no
+/// matter what the phases do.
+fn fft_size_for(window_ms: f32, sample_rate: u32) -> usize {
+    let samples = (window_ms.clamp(5.0, 2000.0) / 1000.0) * sample_rate.max(1) as f32;
+    (samples as usize).clamp(256, 8192).next_power_of_two()
 }
 
 fn fit(mut v: Vec<f32>, want_frames: usize, channels: usize) -> Vec<f32> {
@@ -303,4 +373,117 @@ fn hann(n: usize) -> Vec<f32> {
     (0..n)
         .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos())
         .collect()
+}
+
+#[cfg(test)]
+mod algorithm_tests {
+    use super::*;
+
+    fn sine(freq: f32, secs: f32, rate: f32) -> Vec<f32> {
+        let n = (secs * rate) as usize;
+        (0..n)
+            .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / rate).sin())
+            .collect()
+    }
+
+    fn energy_at(sig: &[f32], freq: f32, rate: f32) -> f32 {
+        let (mut re, mut im) = (0.0f64, 0.0f64);
+        for (i, s) in sig.iter().enumerate() {
+            let p = 2.0 * std::f64::consts::PI * freq as f64 * i as f64 / rate as f64;
+            re += *s as f64 * p.cos();
+            im += *s as f64 * p.sin();
+        }
+        ((re * re + im * im).sqrt() / sig.len() as f64) as f32
+    }
+
+    fn with(alg: Algorithm, ratio: f32) -> Stretch {
+        Stretch { ratio, algorithm: alg, ..Default::default() }
+    }
+
+    #[test]
+    fn both_engines_honour_the_promised_length() {
+        let src = sine(440.0, 0.4, 44100.0);
+        for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+            for r in [0.5f32, 2.0, 5.0] {
+                let out = with(alg, r).process(&src, 1, 44100);
+                let want = (src.len() as f32 * r).round() as usize;
+                assert_eq!(out.len(), want, "{alg:?} at {r}x");
+            }
+        }
+    }
+
+    #[test]
+    fn both_engines_keep_the_pitch_they_were_given() {
+        let rate = 44100.0;
+        let src = sine(440.0, 0.4, rate);
+        for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+            let out = with(alg, 3.0).process(&src, 1, 44100);
+            let mid = &out[out.len() / 4..out.len() * 3 / 4];
+            let sig = energy_at(mid, 440.0, rate);
+            let off = energy_at(mid, 620.0, rate);
+            assert!(sig > off * 6.0, "{alg:?}: 440 {sig} against 620 {off}");
+        }
+    }
+
+    /// The reason both exist. On a chord the vocoder should hold the partials
+    /// together at least as well as WSOLA, which has no single splice point
+    /// that suits three pitches at once.
+    #[test]
+    fn the_vocoder_holds_a_chord_together() {
+        let rate = 44100.0;
+        let n = (0.5 * rate) as usize;
+        let src: Vec<f32> = (0..n)
+            .map(|i| {
+                let t = i as f32 / rate;
+                let tau = 2.0 * std::f32::consts::PI;
+                ((tau * 440.0 * t).sin() + (tau * 554.37 * t).sin() + (tau * 659.25 * t).sin()) / 3.0
+            })
+            .collect();
+
+        let purity = |o: &[f32]| {
+            let mid = &o[o.len() / 4..o.len() * 3 / 4];
+            let sig: f32 = [440.0f32, 554.37, 659.25].iter().map(|f| energy_at(mid, *f, rate)).sum();
+            let junk: f32 = [200.0f32, 330.0, 500.0, 800.0, 1100.0]
+                .iter().map(|f| energy_at(mid, *f, rate)).sum();
+            sig / junk.max(1e-9)
+        };
+
+        let w = purity(&with(Algorithm::Wsola, 4.0).process(&src, 1, 44100));
+        let v = purity(&with(Algorithm::Vocoder, 4.0).process(&src, 1, 44100));
+        assert!(v > w, "vocoder {v} should beat wsola {w} on a chord");
+    }
+
+    #[test]
+    fn the_algorithm_survives_a_round_trip_through_its_name() {
+        for a in [Algorithm::Wsola, Algorithm::Vocoder] {
+            assert_eq!(Algorithm::from_str(a.as_str()), Some(a));
+        }
+        assert_eq!(Algorithm::from_str("nonsense"), None);
+    }
+
+    #[test]
+    fn the_window_control_sizes_the_transform() {
+        assert!(fft_size_for(5.0, 44100) >= 256);
+        assert!(fft_size_for(2000.0, 44100) <= 8192);
+        assert!(fft_size_for(46.0, 44100) > fft_size_for(12.0, 44100));
+        for ms in [5.0f32, 40.0, 200.0, 2000.0] {
+            assert!(fft_size_for(ms, 44100).is_power_of_two());
+        }
+    }
+
+    #[test]
+    fn pitch_shifting_works_on_either_engine() {
+        let rate = 44100.0;
+        let src = sine(440.0, 0.4, rate);
+        for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+            let s = Stretch { semitones: 12.0, algorithm: alg, ..Default::default() };
+            let out = s.process(&src, 1, 44100);
+            assert_eq!(out.len(), src.len(), "{alg:?}");
+            let mid = &out[out.len() / 4..out.len() * 3 / 4];
+            assert!(
+                energy_at(mid, 880.0, rate) > energy_at(mid, 440.0, rate) * 2.0,
+                "{alg:?} did not shift up an octave"
+            );
+        }
+    }
 }

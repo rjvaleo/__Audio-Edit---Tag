@@ -62,6 +62,8 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
         .set("semitones", s.semitones as f64)
         .set("windowMs", s.window_ms as f64)
         .set("quality", quality_name(s.quality))
+        .set("algorithm", s.algorithm.as_str())
+        .set("phaseLock", s.phase_lock)
         .set(
             "grain",
             Value::obj()
@@ -92,6 +94,14 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
         semitones: (num(v.get("semitones"), 0.0) as f32).clamp(-24.0, 24.0),
         window_ms: (num(v.get("windowMs"), 40.0) as f32).clamp(5.0, 200.0),
         quality: quality_from(v.get("quality")),
+        // A preset that predates the engine choice keeps the old behaviour
+        // rather than silently switching to the new one.
+        algorithm: v
+            .get("algorithm")
+            .and_then(|a| a.as_str())
+            .and_then(fx::stretch::Algorithm::from_str)
+            .unwrap_or(d.algorithm),
+        phase_lock: matches!(v.get("phaseLock"), Some(Value::Bool(true))) || v.get("phaseLock").is_none(),
         grain: Grain {
             density_hz: gf("densityHz", d.grain.density_hz).clamp(0.0, 500.0),
             overlap: gf("overlap", d.grain.overlap).clamp(1.0, 8.0),
@@ -304,6 +314,8 @@ mod tests {
             semitones: -3.5,
             window_ms: 65.0,
             quality: Quality::Best,
+            algorithm: fx::stretch::Algorithm::Vocoder,
+            phase_lock: false,
             grain: Grain {
                 density_hz: 42.0,
                 overlap: 3.5,

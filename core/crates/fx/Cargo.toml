@@ -6,3 +6,6 @@ license.workspace = true
 description = "Effect rack: EQ, compression, gain. Non-destructive, applied at render time."
 
 [dependencies]
+# For the FFT and window functions the phase vocoder needs. audio-core is the
+# base layer and depends on nothing, so this cannot cycle.
+audio-core = { path = "../audio-core" }

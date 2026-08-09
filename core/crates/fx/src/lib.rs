@@ -12,12 +12,14 @@ pub mod comp;
 pub mod eq;
 pub mod grain;
 pub mod stretch;
+pub mod vocoder;
 
 pub use biquad::Coeffs;
 pub use comp::Compressor;
 pub use eq::Eq;
 pub use grain::{Grain, GrainStream, StreamParams};
 pub use stretch::Stretch;
+pub use vocoder::Settings as VocoderSettings;
 
 /// Anything that can process audio in place.
 pub trait Effect: Send {

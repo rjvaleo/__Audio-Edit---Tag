@@ -44,7 +44,7 @@ fn rms(buf: &[f32]) -> f32 {
 
 fn stretch(ratio: f32, semitones: f32) -> Stretch {
     Stretch { ratio, semitones, window_ms: 40.0, quality: Quality::Standard,
-              grain: fx::Grain::default() }
+              grain: fx::Grain::default(), ..Default::default() }
 }
 
 // ==================================================================== length
@@ -213,7 +213,7 @@ fn an_empty_buffer_produces_an_empty_result() {
 fn every_quality_tier_produces_the_right_length_and_pitch() {
     for q in [Quality::Draft, Quality::Standard, Quality::Best] {
         let s = Stretch { ratio: 1.8, semitones: 0.0, window_ms: 40.0, quality: q,
-                          grain: fx::Grain::default() };
+                          grain: fx::Grain::default(), ..Default::default() };
         let input = sine(800.0, 48000, 0.5);
         let out = s.process(&input, 1, SR);
         assert_eq!(out.len(), 86400, "{q:?} length");
@@ -227,7 +227,7 @@ fn the_window_length_is_clamped_to_something_usable() {
     // These come from a slider over HTTP; a 0 ms window would divide by zero.
     for window_ms in [0.0f32, 1.0, 5000.0] {
         let s = Stretch { ratio: 1.5, semitones: 0.0, window_ms, quality: Quality::Draft,
-                          grain: fx::Grain::default() };
+                          grain: fx::Grain::default(), ..Default::default() };
         let out = s.process(&sine(440.0, 24000, 0.4), 1, SR);
         assert_eq!(out.len(), 36000, "at window {window_ms} ms");
         assert!(out.iter().all(|v| v.is_finite()));
@@ -266,7 +266,7 @@ use fx::Grain;
 fn grainy(f: impl FnOnce(&mut Grain)) -> Stretch {
     let mut g = Grain::default();
     f(&mut g);
-    Stretch { ratio: 1.0, semitones: 0.0, window_ms: 40.0, quality: Quality::Standard, grain: g }
+    Stretch { ratio: 1.0, semitones: 0.0, window_ms: 40.0, quality: Quality::Standard, grain: g, ..Default::default() }
 }
 
 #[test]
@@ -331,7 +331,7 @@ fn pitch_jitter_smears_a_pure_tone_across_frequencies() {
     // cross zero at a single stable rate.
     let input = sine(1000.0, 48000, 0.5);
     let clean = Stretch { ratio: 1.0, semitones: 0.0, window_ms: 40.0,
-                          quality: Quality::Standard, grain: Grain::default() };
+                          quality: Quality::Standard, grain: Grain::default(), ..Default::default() };
     let jittered = grainy(|g| { g.pitch_jitter_semis = 7.0; g.seed = 9; });
 
     // Spread of zero-crossing rate across successive slices.
