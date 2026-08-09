@@ -624,7 +624,7 @@
                 <div class="control-group">
                     <label>Orbit</label>
                     <div class="slider-container">
-                        <input type="range" id="orbit" min="0" max="1" step="0.01" value="0.25" oninput="updateParam('orbit', this.value)">
+                        <input type="range" id="orbit" min="0" max="1" step="0.01" value="0.06" oninput="updateParam('orbit', this.value)">
                         <span class="value-display" id="orbit-value">0.25</span>
                     </div>
                 </div>
@@ -737,7 +737,7 @@
         // Traversal
         speed: 0.6,
         glow: 1.0,
-        orbit: 0.25,
+        orbit: 0.06,
         trail: 0.45,
         colourBy: 'pitch',
         colorPalette: ['#6a9bcc', '#788c5d', '#d97757']
@@ -1023,7 +1023,20 @@
 
     const SPAN = 520, HEIGHT = 260, R = 300;
 
+    /// How far the source waveform lifts a grain off its bare position.
+    const RIDE = HEIGHT * 0.85;
+
     function project(g, now, out) {
+        // Every grain sits at the height of the sample it is reading.
+        //
+        // This is what makes the waveform the line the grains are riding rather
+        // than a chart drawn next to them: the shape of the file is carried by
+        // the cloud itself, so a grain reaching into a transient is visibly
+        // lifted and one reaching into a quiet passage sits flat. It costs one
+        // lookup and it ties the two halves of the display together — the
+        // vertical position of a grain is now a fact about the audio.
+        const lift = -sampleWave(g.tSrc) * RIDE;
+
         switch (params.view) {
 
         // ── SHEAR: the time–time plane, in seconds on both axes so the ratio
@@ -1032,7 +1045,7 @@
             const scale = SPAN / Math.max(outSeconds, srcSeconds, 1e-6);
             out.x = (g.tOut - outSeconds / 2) * scale;
             out.z = (g.tSrc - srcSeconds / 2) * scale;
-            out.y = -g.pn * HEIGHT;
+            out.y = -g.pn * HEIGHT + lift;
             break;
         }
 
@@ -1050,7 +1063,7 @@
             const rr = R * (0.62 + 0.30 * (Math.log2(Math.max(g.rate, 0.002)) + 4) / 8);
             out.x = Math.cos(th) * rr;
             out.z = Math.sin(th) * rr;
-            out.y = (g.u - 0.5) * HEIGHT * 2.6;
+            out.y = (g.u - 0.5) * HEIGHT * 2.6 + lift;
             break;
         }
 
@@ -1064,7 +1077,7 @@
             const rr = R * (0.34 + 0.62 * g.v) + e * R * 0.26;
             out.x = rr * Math.sin(th) * Math.cos(ph);
             out.z = rr * Math.sin(th) * Math.sin(ph);
-            out.y = rr * Math.cos(th) * 0.55 - g.pn * HEIGHT * 0.5;
+            out.y = rr * Math.cos(th) * 0.55 - g.pn * HEIGHT * 0.5 + lift;
             break;
         }
 
@@ -1075,7 +1088,7 @@
             const th = g.u * Math.PI * 2 * 3 + now * params.driftRateHz * 0.9;
             out.x = Math.cos(th) * rr;
             out.z = Math.sin(th) * rr;
-            out.y = (g.v - 0.5) * HEIGHT * 1.6;
+            out.y = (g.v - 0.5) * HEIGHT * 1.6 + lift;
             break;
         }
 
@@ -1086,12 +1099,21 @@
             const k = Math.max(1, Math.ceil(Math.sqrt(grains.length)));
             const n = out.n;
             const gx = n % k, gz = Math.floor(n / k);
-            const cell = SPAN * 1.6 / k;
+            const cell = SPAN * 1.7 / k;
             const devScale = 260 / Math.max(params.positionJitterMs / 1000, 1e-3);
+
+            // The grid is where a grain *would* be if nothing varied. Every
+            // axis is then pushed by a real deviation, so what you see is a
+            // cloud that still remembers the lattice it came from rather than a
+            // flat sheet with a ripple in it. Depth comes from the read rate —
+            // pitch pushes a grain toward you or away — which is the quantity
+            // with the most life in it once jitter and drift are running.
+            const rateDev = Math.log2(Math.max(g.rate, 1e-6));
             out.x = (gx - k / 2) * cell + clamp(g.dev * devScale, -cell * 3, cell * 3);
-            out.z = (gz - k / 2) * cell;
+            out.z = (gz - k / 2) * cell + clamp(rateDev * HEIGHT * 0.5, -cell * 4, cell * 4);
             out.y = -g.pn * HEIGHT * 1.1
-                  + (g.dur / Math.max(plan.baseSize / SR, 1e-6) - 1) * 90;
+                  + (g.dur / Math.max(plan.baseSize / SR, 1e-6) - 1) * 90
+                  + lift;
             break;
         }
         }
@@ -1187,7 +1209,7 @@
 
         // Camera. Auto-orbit unless the mouse has taken over.
         if (!dragging) camYaw += (deltaTime / 1000) * params.orbit * 0.30;
-        camDist += (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 220);
+        camDist += (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 800);
         const cx = focus.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
         const cy = focus.y + Math.sin(camPitch) * camDist;
         const cz = focus.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist;
@@ -1206,8 +1228,13 @@
         // grain, it is how the ones around it overlap — and narrow enough that
         // the camera stays in close.
         const near = Math.max((plan.baseSize / SR) * 3, 0.12);
+        const focusWindow = Math.max(near * 4, outSeconds * 0.03, 0.5);
         const local = [];
         let fx = 0, fy = 0, fz = 0, fw = 0;
+
+        // The rail: every grain position in schedule order, kept so the line
+        // they ride is drawn from the same numbers they were drawn from.
+        const rail = [];
 
         for (let n = 0; n < grains.length; n++) {
             const g = grains[n];
@@ -1215,13 +1242,20 @@
             tmp.e = e; tmp.n = n;
             project(g, now, tmp);
 
+            // Rail only around the playhead — see drawRideLine.
+            if (Math.abs(g.tOut - now) < near * 4) rail.push(tmp.x, tmp.y, tmp.z);
+
             const rad = Math.max(Math.abs(tmp.x), Math.abs(tmp.y) * 1.5, Math.abs(tmp.z));
             if (rad > extent) extent = rad;
 
             // Grains sounding now, or about to, or just finished.
+            // Framing is computed over a wider window than lighting. The
+            // centroid of the handful of grains actually sounding lurches every
+            // time one of them starts or stops; averaged over a longer stretch
+            // it moves like the music does.
             const dt = Math.abs(g.tOut - now);
-            if (dt < near) {
-                const w = 1 - dt / near;
+            if (dt < focusWindow) {
+                const w = 1 - dt / focusWindow;
                 fx += tmp.x * w; fy += tmp.y * w; fz += tmp.z * w; fw += w;
                 local.push(tmp.x, tmp.y, tmp.z);
             }
@@ -1246,7 +1280,10 @@
                     project(grains[m], now, pe);
                     lineBucket.push(tmp.x, tmp.y, tmp.z, pe.x, pe.y, pe.z);
                 }
-            } else if (params.view === 4) {
+            } else if (params.view === 4 && Math.abs(g.tOut - now) < focusWindow * 2) {
+                // Bonds only where you are looking. Drawn across the whole
+                // lattice they are a thousand crossing lines and the cloud
+                // disappears behind its own scaffolding.
                 const k = Math.max(1, Math.ceil(Math.sqrt(grains.length)));
                 if (n % k !== k - 1 && n + 1 < grains.length) {
                     const nb = grains[n + 1];
@@ -1273,8 +1310,8 @@
 
         // The cloud, dimmest tier first so the sounding grains sit on top.
         for (let ei = 0; ei < EBINS; ei++) {
-            const weight = ei === 0 ? 3.0 : (ei === 1 ? 4.6 : 8.0);
-            const alpha = (ei === 0 ? 40 : (ei === 1 ? 110 : 220)) * params.glow;
+            const weight = ei === 0 ? 3.8 : (ei === 1 ? 5.6 : 9.5);
+            const alpha = (ei === 0 ? 90 : (ei === 1 ? 165 : 235)) * params.glow;
             for (let ci = 0; ci < CBINS; ci++) {
                 const arr = buckets[ci * EBINS + ei];
                 if (!arr.length) continue;
@@ -1301,7 +1338,8 @@
         }
 
         drawFrameOfReference(now);
-        drawWaveAtPlayhead(now);
+        drawRideLine(rail, now);
+        drawReadHead(now);
         blendMode(BLEND);
 
         // Frame the neighbourhood, not the whole object. The spread of what is
@@ -1319,9 +1357,12 @@
             // surface, and a ceiling so a wild scatter cannot fling it away.
             fitDist = clamp(spread * 2.4, 120, extent * 2.6);
 
-            // Ease rather than snap: the playhead moves in grain-sized steps
-            // and a camera that tracked them exactly would judder.
-            const k = Math.min(1, deltaTime / 260);
+            // Ease, slowly. The playhead moves in grain-sized steps and the
+            // neighbourhood it defines changes membership constantly; a camera
+            // that answered every one of those would never be still. Roughly a
+            // second to close most of the gap, which reads as drifting toward
+            // the sound rather than chasing it.
+            const k = Math.min(1, deltaTime / 900);
             focus.x += (tx - focus.x) * k;
             focus.y += (ty - focus.y) * k;
             focus.z += (tz - focus.z) * k;
@@ -1342,60 +1383,65 @@
         return wave[i];
     };
 
-    /// The source waveform, at the playhead, in every view.
+    /// The line the grains are riding.
     ///
-    /// Drawn as a ribbon standing in the camera's own plane rather than pinned
-    /// to a world axis, because the five views disagree about which direction
-    /// time runs and a waveform edge-on is no waveform at all. Billboarded, it
-    /// reads from wherever you have orbited to.
+    /// Not a chart drawn beside the cloud — the actual curve the grains sit on.
+    /// It is traced through consecutive grain positions in schedule order, so
+    /// whatever shape a view gives the schedule, the line follows it: the
+    /// diagonal in Shear, the helix in Braid, the row order in Lattice. Because
+    /// every grain is already lifted by the sample it reads, the line rises and
+    /// falls with the source, and a grain sitting on a crest is a grain reading
+    /// a transient.
     ///
-    /// It is centred on the read head — the sample the next grain will reach
-    /// for, `write / ratio`, straight out of the scheduler — so the marker and
-    /// the cloud cannot disagree about where in the file we are.
-    function drawWaveAtPlayhead(now) {
-        if (!wave || !wave.length) return;
+    /// Drawn from the array the cloud was drawn from, so the two cannot
+    /// disagree by construction.
+    function drawRideLine(rail, now) {
+        if (rail.length < 6) return;
 
-        const head = readHeadAt(now);
-        const span = Math.max(srcSeconds * 0.08, 0.2);   // seconds either side
-        const half = Math.max(camDist * 0.30, 80);       // grows as you pull back
-        const amp = half * 0.38;
-        const N = 160;
-
-        // The camera's right vector, so the ribbon faces the viewer.
-        const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
-
-        push();
-        translate(focus.x, focus.y, focus.z);
-        noFill();
-
-        for (const sign of [-1, 1]) {
-            stroke(250, 249, 245, sign > 0 ? 110 : 55);
-            strokeWeight(sign > 0 ? 1.5 : 1);
-            beginShape();
-            for (let i = 0; i <= N; i++) {
-                const u = i / N - 0.5;
-                const a = sampleWave(head + u * 2 * span);
-                vertex(rx * u * 2 * half, sign * -a * amp, rz * u * 2 * half);
-            }
-            endShape();
-        }
-
-        // The zero line, so a quiet passage still reads as a passage.
-        stroke(250, 249, 245, 28);
-        strokeWeight(1);
-        beginShape(LINES);
-        vertex(-rx * half, 0, -rz * half);
-        vertex(rx * half, 0, rz * half);
+        // Only the stretch around the playhead. Threading the *whole* schedule
+        // was the first attempt and it was a mistake: schedule order is spatial
+        // order only in Braid. In Lattice it wraps across the grid, in Swarm it
+        // jumps across the sphere, and the result was a ball of spaghetti that
+        // buried the cloud it was supposed to be supporting. A short rail says
+        // the same thing and lets you see the grains.
+        stroke(250, 249, 245, 70);
+        strokeWeight(1.2);
+        beginShape();
+        for (let i = 0; i < rail.length; i += 3) vertex(rail[i], rail[i + 1], rail[i + 2]);
         endShape();
+    }
 
-        // The read head itself.
-        stroke(217, 119, 87, 220);
+    /// Where the playhead is, marked on the rail it is travelling along.
+    function drawReadHead(now) {
+        if (!grains.length) return;
+
+        // The grain sounding now — the one the rail is passing through.
+        let best = null, bestDt = Infinity;
+        for (const g of grains) {
+            const dt = Math.abs(g.tOut - now);
+            if (dt < bestDt) { bestDt = dt; best = g; }
+        }
+        if (!best) return;
+
+        const at = { x: 0, y: 0, z: 0, e: 0, n: 0 };
+        project(best, now, at);
+
+        stroke(217, 119, 87, 210);
         strokeWeight(2);
         beginShape(LINES);
-        vertex(0, -amp * 1.15, 0);
-        vertex(0, amp * 1.15, 0);
+        vertex(at.x, at.y - HEIGHT * 0.5, at.z);
+        vertex(at.x, at.y + HEIGHT * 0.5, at.z);
         endShape();
-        pop();
+
+        // A stalk down to where this grain would have sat with a silent source,
+        // so the lift reads as a height rather than as an arbitrary position.
+        const floor = at.y + sampleWave(best.tSrc) * RIDE;
+        stroke(217, 119, 87, 70);
+        strokeWeight(1);
+        beginShape(LINES);
+        vertex(at.x, at.y, at.z);
+        vertex(at.x, floor, at.z);
+        endShape();
     }
 
     /// The axes each view is measured against. Faint, but without them the
