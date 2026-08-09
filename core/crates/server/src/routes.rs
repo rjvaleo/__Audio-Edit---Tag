@@ -78,6 +78,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
         ("GET", "/api/engine/grains") => api_engine_grains(app),
+        ("POST", "/api/capture") => api_capture(app, req),
         ("GET" | "HEAD", "/audio") => api_audio(app, req),
         ("GET", "/api/scan") => api_scan_status(app),
         ("POST", "/api/scan") => api_scan_start(app),
@@ -1344,6 +1345,8 @@ fn api_engine_state(app: &Arc<App>) -> Response {
             // Which document the engine is holding, and how much of it there is
             // at the device's rate — everything a visualiser needs to rebuild
             // the same grain schedule the audio thread is working through.
+            .set("capturing", h.shared.is_capturing())
+            .set("capturedFrames", h.shared.captured_frames() as f64)
             .set("path", loaded.as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default())
             .set("inFrames", loaded.as_ref().map(|(_, f, _)| *f as f64).unwrap_or(0.0))
             // The parameters the audio thread is *actually* using, not the
@@ -1468,6 +1471,71 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
     }) {
         Ok(s) => Response::json(s),
         Err(e) => Response::error(503, &e),
+    }
+}
+
+/// Arm or finish a capture.
+///
+/// `{on:true}` starts keeping the output; `{on:false}` stops and writes it
+/// beside the original. The file is what came out of the speakers rather than a
+/// fresh render of the document — the two can differ, and when they do the
+/// recording is the one that was actually in the room.
+fn api_capture(app: &Arc<App>, req: &Request) -> Response {
+    let v = json::parse(&String::from_utf8_lossy(&req.body)).unwrap_or_else(Value::obj);
+    let on = matches!(v.get("on"), Some(Value::Bool(true)));
+
+    if on {
+        let started = crate::live::with(app, |h| {
+            h.shared.start_capture(h.channels, h.sample_rate, crate::capture::MAX_SECONDS);
+        });
+        return match started {
+            Ok(()) => Response::json(Value::obj().set("capturing", true).to_string()),
+            Err(e) => Response::error(503, &e),
+        };
+    }
+
+    let taken = match crate::live::with(app, |h| h.shared.take_capture()) {
+        Ok(t) => t,
+        Err(e) => return Response::error(503, &e),
+    };
+    let Some(cap) = taken else {
+        return Response::json(Value::obj().set("capturing", false).set("frames", 0.0).to_string());
+    };
+    if cap.samples.is_empty() {
+        return Response::json(
+            Value::obj().set("capturing", false).set("frames", 0.0).to_string(),
+        );
+    }
+
+    // Name it for the sound it came from and what that sound was going through.
+    let rel = app.playing.read().unwrap().as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default();
+    let list = app.edits.snapshot(&rel);
+    let module = match &list {
+        Some(l) => crate::capture::module_name(l, &crate::live::rack_for(app, &rel)),
+        None => "live".to_string(),
+    };
+
+    let Some(lib) = app.library_path() else {
+        return Response::error(400, "no library chosen");
+    };
+    let (path, outside) = crate::capture::target(&lib, &app.data_dir, &rel, &module);
+
+    match crate::capture::write_wav(&path, &cap.samples, cap.channels, cap.sample_rate) {
+        Ok(frames) => Response::json(
+            Value::obj()
+                .set("capturing", false)
+                .set("frames", frames as f64)
+                .set("seconds", frames as f64 / cap.sample_rate.max(1) as f64)
+                .set("path", path.to_string_lossy().to_string())
+                .set("name", path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())
+                // True when it could not be put beside the original — a
+                // read-only pack, say — and went to the app's own folder.
+                .set("elsewhere", outside)
+                // True when the reservation ran out and the tail was dropped.
+                .set("truncated", cap.full)
+                .to_string(),
+        ),
+        Err(e) => Response::error(500, &e.to_string()),
     }
 }
 

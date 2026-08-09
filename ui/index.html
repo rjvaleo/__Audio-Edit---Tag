@@ -8,16 +8,12 @@
 </head>
 <body>
 
-<!-- titlebar -->
-<header class="menubar">
-  <div class="mark"></div>
-  <nav class="menus" id="menuBar"></nav>
-  <div class="spacer"></div>
-  <!-- Kept so the code that writes them has somewhere to write; both are now
-       shown in the Library panel and the metadata strip instead. -->
-  <span class="hidden" id="rateLabel"></span>
-  <span class="hidden" id="libraryLabel"></span>
-</header>
+<!-- The menu bar row is gone: it cost a row of height and held one square.
+     Kept as a detached node so the menu code has somewhere to mount when it
+     lands, without reserving vertical space until then. -->
+<nav class="menus hidden" id="menuBar"></nav>
+<span class="hidden" id="rateLabel"></span>
+<span class="hidden" id="libraryLabel"></span>
 
 <div class="shell">
 
@@ -143,7 +139,6 @@
     </div>
 
     <div class="transportbar hidden" id="transportBar">
-  <div class="mark"></div>
   <span class="mono current-file" id="titleFile">no file selected</span>
   <span class="mode-label" id="modeLabel">Browse</span>
 
@@ -151,6 +146,8 @@
   <button class="tbtn play" id="playBtn" title="Play/pause">▶</button>
   <button class="tbtn" id="stopBtn" title="Stop — returns to the cue">■</button>
   <button class="tbtn loop" id="loopBtn" title="Loop: off">⟲</button>
+  <button class="tbtn rec" id="recBtn" title="Capture what is playing">●</button>
+  <span class="rec-label mono dim" id="recLabel"></span>
   <span class="loop-label mono dim" id="loopLabel"></span>
 
   <div class="vsep"></div>
