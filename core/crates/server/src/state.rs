@@ -377,6 +377,11 @@ pub struct App {
     /// Tags of the user's own invention — "time stretched", "vocal stretch" —
     /// and the examples the system learns them from.
     pub user_tags: RwLock<crate::usertags::Store>,
+    /// What the audio engine currently holds: which file, how many frames of it
+    /// at the device's rate, and that rate. The engine itself does not know —
+    /// it owns samples, not paths — but a visualiser needs to know which
+    /// document's parameters describe the cloud it is drawing.
+    pub playing: RwLock<Option<(String, u64, u32)>>,
 }
 
 impl App {
@@ -405,6 +410,7 @@ impl App {
             model: Mutex::new(None),
             overrides: RwLock::new(overrides),
             user_tags: RwLock::new(user_tags),
+            playing: RwLock::new(None),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             presets: RwLock::new(presets),
