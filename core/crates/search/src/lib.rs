@@ -326,32 +326,92 @@ fn rhythm(mono: &[f32], sr: f32) -> Rhythm {
     Rhythm { pulse: best.clamp(0.0, 1.0), onsets_per_sec }
 }
 
-impl Fingerprint {
-    /// Plain words for what this sounds like.
+/// Where each dimension sits across the whole library.
+///
+/// Descriptors used to be absolute cutoffs I chose by eye, and they were wrong:
+/// "swelling" fired on more than half the library because a 100 ms attack
+/// normalises high enough to trip a guessed threshold. A word that fires on
+/// half of everything cannot group anything.
+///
+/// So a descriptor now means *relative to this library*. "Bassy" is the
+/// bassiest fifth of what you actually own, not a number. That tunes itself to
+/// any collection and cannot drift into meaninglessness.
+pub struct Calibration {
+    /// Every observed value per dimension, sorted.
+    sorted: Vec<Vec<f32>>,
+}
+
+impl Calibration {
+    pub fn build(prints: impl IntoIterator<Item = Fingerprint>) -> Calibration {
+        let mut cols: Vec<Vec<f32>> = vec![Vec::new(); DIMS];
+        for fp in prints {
+            for i in 0..DIMS {
+                cols[i].push(fp.v[i]);
+            }
+        }
+        for c in cols.iter_mut() {
+            c.sort_by(f32::total_cmp);
+        }
+        Calibration { sorted: cols }
+    }
+
+    pub fn len(&self) -> usize {
+        self.sorted.first().map(|c| c.len()).unwrap_or(0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Where `v` sits in dimension `dim`, 0 for the lowest, 1 for the highest.
     ///
-    /// Derived from the measurements, not from the filename — a sound is what
-    /// it is regardless of what it was called. Thresholds are deliberately
-    /// generous: a descriptor that fires rarely is no use for grouping, and one
-    /// that fires always is no use for telling things apart.
-    pub fn descriptors(&self) -> Vec<&'static str> {
-        let [dur, loud, crest, bright, _roll, flat, noisy, attack, low, high, pulse, density] =
-            self.v;
+    /// Falls back to the value itself when there is nothing to compare against,
+    /// so a library of one still produces something rather than dividing by
+    /// zero.
+    pub fn rank(&self, dim: usize, v: f32) -> f32 {
+        let col = match self.sorted.get(dim) {
+            Some(c) if c.len() > 1 => c,
+            _ => return v,
+        };
+        // Divided by the count, not the count minus one: with the latter a
+        // value above everything ranks 1.1, which is not a percentile.
+        let below = col.partition_point(|x| *x < v);
+        below as f32 / col.len() as f32
+    }
+}
+
+impl Fingerprint {
+    /// Plain words for what this sounds like, relative to the library it is in.
+    ///
+    /// Derived from the audio, never the filename — a sound is what it is
+    /// regardless of what it was called.
+    pub fn descriptors(&self, cal: &Calibration) -> Vec<&'static str> {
+        let r = |name: &str| {
+            let i = NAMES.iter().position(|n| *n == name).unwrap();
+            cal.rank(i, self.v[i])
+        };
+        let (dur, loud, crest, bright) =
+            (r("duration"), r("loudness"), r("crest"), r("brightness"));
+        let (flat, noisy, attack) = (r("flatness"), r("noisiness"), r("attack"));
+        let (low, high, pulse, density) = (r("low"), r("high"), r("pulse"), r("density"));
+
         let mut out = Vec::new();
+        // Each cutoff is a share of the library, so every word stays rare
+        // enough to mean something and common enough to be useful.
+        if low > 0.78 && bright < 0.5 { out.push("bassy"); }
+        if high > 0.78 && noisy > 0.55 { out.push("sizzle"); }
+        if bright > 0.80 { out.push("bright"); } else if bright < 0.20 { out.push("dark"); }
+        if flat > 0.82 { out.push("noisy"); } else if flat < 0.18 { out.push("tonal"); }
+        if attack < 0.22 && crest > 0.45 { out.push("percussive"); }
+        if attack > 0.85 { out.push("swelling"); }
+        if pulse > 0.72 && density > 0.40 { out.push("repetitive"); }
+        if pulse < 0.28 && density > 0.72 { out.push("scattered"); }
+        if density < 0.18 && dur > 0.60 { out.push("sustained"); }
+        if dur < 0.15 { out.push("short"); } else if dur > 0.88 { out.push("long"); }
+        if crest > 0.85 { out.push("dynamic"); }
+        if loud < 0.15 { out.push("quiet"); }
 
-        if low > 0.55 && bright < 0.45 { out.push("bassy"); }
-        if high > 0.30 && noisy > 0.35 { out.push("sizzle"); }
-        if bright > 0.62 && low < 0.35 { out.push("bright"); }
-        if flat > 0.35 { out.push("noisy"); } else if flat < 0.10 { out.push("tonal"); }
-        if attack < 0.30 && crest > 0.35 { out.push("percussive"); }
-        if attack > 0.65 { out.push("swelling"); }
-        if pulse > 0.35 && density > 0.15 { out.push("repetitive"); }
-        if pulse < 0.18 && density > 0.30 { out.push("scattered"); }
-        if density < 0.06 && dur > 0.45 { out.push("sustained"); }
-        if dur < 0.30 { out.push("short"); }
-        if crest > 0.55 { out.push("dynamic"); }
-        if loud < 0.35 { out.push("quiet"); }
-
-        if out.is_empty() { out.push("plain"); }
+        if out.is_empty() { out.push("middling"); }
         out
     }
 }
