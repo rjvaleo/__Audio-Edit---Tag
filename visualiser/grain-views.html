@@ -208,6 +208,20 @@
             margin-right: 6px;
         }
 
+        .suite-switch { display: flex; gap: 8px; margin-bottom: 12px; }
+        .suite-btn {
+            flex: 1; background: var(--anthropic-light);
+            border: 1px solid var(--anthropic-light-gray);
+            color: var(--anthropic-dark); font-family: 'Poppins', sans-serif;
+            font-size: 12px; font-weight: 600; padding: 8px 6px;
+            border-radius: 6px; cursor: pointer; transition: all 0.2s ease;
+        }
+        .suite-btn span { display: block; font-weight: 400; font-size: 10px; opacity: 0.65; }
+        .suite-btn:hover { border-color: var(--anthropic-orange); }
+        .suite-btn.active {
+            background: var(--anthropic-dark); border-color: var(--anthropic-dark); color: white;
+        }
+
         .view-note {
             font-size: 12px;
             line-height: 1.5;
@@ -462,12 +476,20 @@
             <!-- View selector -->
             <div class="control-section">
                 <h3>View</h3>
+                <div class="suite-switch">
+                    <button class="suite-btn active" id="suite-1" onclick="setSuite(1)">
+                        V1 <span>the object</span>
+                    </button>
+                    <button class="suite-btn" id="suite-2" onclick="setSuite(2)">
+                        V2 <span>the moment</span>
+                    </button>
+                </div>
                 <div class="view-grid">
-                    <button class="view-button active" id="view-0" onclick="setView(0)"><span class="num">1</span>Shear</button>
-                    <button class="view-button" id="view-1" onclick="setView(1)"><span class="num">2</span>Braid</button>
-                    <button class="view-button" id="view-2" onclick="setView(2)"><span class="num">3</span>Swarm</button>
-                    <button class="view-button" id="view-3" onclick="setView(3)"><span class="num">4</span>Shells</button>
-                    <button class="view-button" id="view-4" onclick="setView(4)"><span class="num">5</span>Lattice</button>
+                    <button class="view-button active" id="view-0" onclick="setView(0)"><span class="num">1</span><b></b></button>
+                    <button class="view-button" id="view-1" onclick="setView(1)"><span class="num">2</span><b></b></button>
+                    <button class="view-button" id="view-2" onclick="setView(2)"><span class="num">3</span><b></b></button>
+                    <button class="view-button" id="view-3" onclick="setView(3)"><span class="num">4</span><b></b></button>
+                    <button class="view-button" id="view-4" onclick="setView(4)"><span class="num">5</span><b></b></button>
                 </div>
                 <div class="view-note" id="view-note"></div>
             </div>
@@ -627,6 +649,15 @@
                     </select>
                 </div>
 
+                <div class="control-group" id="mirror-group">
+                    <label>Mirrors</label>
+                    <span class="hint">How many times the moment is folded. V2 only.</span>
+                    <div class="slider-container">
+                        <input type="range" id="mirror" min="1" max="14" step="1" value="6" oninput="updateParam('mirror', this.value)">
+                        <span class="value-display" id="mirror-value">6</span>
+                    </div>
+                </div>
+
                 <div class="control-group">
                     <label>Orbit</label>
                     <div class="slider-container">
@@ -701,6 +732,8 @@
                         <div class="transport" id="transport" onclick="streamSeek(event)">
                             <div class="track"><div class="fill" id="transport-fill"></div></div>
                         </div>
+                        <button id="stream-suite" onclick="setSuite(params.suite === 1 ? 2 : 1)"
+                                title="V1 the object · V2 the moment">V1</button>
                         <button id="stream-follow" onclick="toggleFollow()"
                                 title="Ride the playhead, or stand back and see the whole cloud">&#9678;</button>
                         <input type="range" class="gain zoom" id="stream-zoom" min="0.12" max="3" step="0.01"
@@ -711,7 +744,7 @@
                     </div>
                     <div class="hud" id="hud"></div>
                     <div class="hud-keys">
-                        1–5 views &nbsp;·&nbsp; F fullscreen &nbsp;·&nbsp; C close/wide<br>
+                        1–5 views &nbsp;·&nbsp; V suite &nbsp;·&nbsp; F fullscreen &nbsp;·&nbsp; C close/wide<br>
                         space play &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; wheel to zoom
                     </div>
                 </div>
@@ -727,6 +760,7 @@
     let params = {
         seed: 12345,
         view: 0,
+        suite: 1,          // 1 = the object, 2 = the moment
         // Time and pitch
         ratio: 4.0,              // 0.01 .. 100
         semitones: 0,            // -48 .. 48
@@ -746,18 +780,44 @@
         orbit: 0.06,
         trail: 0.45,
         colourBy: 'pitch',
+        mirror: 6,
         colorPalette: ['#6a9bcc', '#788c5d', '#d97757']
     };
 
     let defaultParams = JSON.parse(JSON.stringify(params));
 
-    const VIEWS = [
+    // ─────────────────────────────────────────────────────────────────────
+    // TWO SUITES, TWO CLAIMS ABOUT TIME
+    //
+    // V1 says the cloud is an object. It exists in full, you fly around it,
+    // and the playhead is a cursor moving through something already there.
+    //
+    // V2 says you only ever have now. The camera does not move and the cloud
+    // is not toured — it is placed by how far each grain is from this instant,
+    // so the present sits at the origin and everything else is approaching or
+    // receding. You cannot see the shape of the piece because from inside a
+    // moment there is no shape to see, only what is arriving. Mirrored,
+    // because a moment has no preferred direction, and because symmetry is what
+    // the eye does with a thing it cannot get outside of.
+    // ─────────────────────────────────────────────────────────────────────
+
+    const VIEWS_V1 = [
         { name: 'SHEAR',   note: 'Output time across, source time into the screen, pitch up. The stretch ratio is not a number here — it is the slope. Push it high and the diagonal flattens into a sheet: output races on while the source barely crawls.' },
         { name: 'BRAID',   note: 'Time wound into a helix so that overlap resolves into countable strands. Raise overlap and new strands appear; raise density and the winding tightens.' },
         { name: 'SWARM',   note: 'The free cloud — the form most people mean by granular. Radius is where in the source a grain reads, so the shell breathes outward as the cursor works through the file.' },
         { name: 'SHELLS',  note: 'Grains sorted onto concentric shells by pitch, an octave to a shell. Drift stops being a parameter and becomes a slow physical rotation you can watch.' },
         { name: 'LATTICE', note: 'The bare hop grid, drawn as a crystal. With every jitter at zero it is perfect. Raise them and it melts — order to chaos as one continuous gesture.' }
     ];
+
+    const VIEWS_V2 = [
+        { name: 'TUNNEL',   sym: 'rot',    note: 'Grains arrive out of the dark and pass you. Depth is how far off a grain is from now, so the future is the far wall and the past is behind your head. The bore breathes with the source.' },
+        { name: 'MANDALA',  sym: 'rot',    note: 'Now is the centre. A grain\'s distance from the middle is its distance from this instant, so the present blooms outward in both directions at once — what is coming and what has gone, indistinguishable.' },
+        { name: 'RORSCHACH',sym: 'mirror', note: 'Reflected in both axes. Time runs across, and the fold makes it impossible to say which way — which is the point, from inside a moment.' },
+        { name: 'VORTEX',   sym: 'rot',    note: 'Grains spiral in from the future, cross the present, and unwind into the past. Drift and jitter twist the arms.' },
+        { name: 'RIPPLE',   sym: 'mirror', note: 'A standing wave with its own reflection under it. The surface is the source; the grains are what is riding it as it passes.' }
+    ];
+
+    const views = () => (params.suite === 2 ? VIEWS_V2 : VIEWS_V1);
 
     // ═══════════════════════════════════════════════════════════════════════
     // THE ENGINE'S OWN ARITHMETIC
@@ -1032,7 +1092,88 @@
     /// How far the source waveform lifts a grain off its bare position.
     const RIDE = HEIGHT * 0.85;
 
+    /// How far ahead or behind a grain still counts as part of this moment.
+    /// Everything outside it is not drawn — from inside a moment you cannot see
+    /// the whole piece, and pretending otherwise is what V1 is for.
+    const horizon = () => Math.max((plan.baseSize / SR) * 14, 1.6);
+
+    /// The moment, not the object.
+    ///
+    /// Every position here is a function of `g.tOut - now`, so the present is
+    /// the origin by construction: the camera never has to chase anything and
+    /// the cloud is always centred. Time is not somewhere you move to, it is
+    /// something that comes past.
+    function projectV2(g, now, out) {
+        const H = horizon();
+        const dt = g.tOut - now;
+        const w = clamp(dt / H, -1, 1);          // −1 gone, 0 now, +1 coming
+        const a = sampleWave(g.tSrc);            // what it is reading
+        const lift = a * RIDE * 0.55;
+        const spin = now * 0.55;
+        // One wedge of the fold. The kaleidoscope repeats this sector,
+        // so anything wider than it lands on top of its own reflection.
+        const wedge = (Math.PI * 2) / Math.max(1, Math.round(params.mirror));
+
+        switch (params.view) {
+
+        // ── TUNNEL: depth is time. Grains stream out of the far wall, cross
+        //    you, and vanish behind your head.
+        case 0: {
+            const th = g.c * wedge + spin;
+            const r = R * (0.30 + 0.55 * a) + (1 - Math.abs(w)) * R * 0.18;
+            out.x = Math.cos(th) * r;
+            out.y = Math.sin(th) * r;
+            // The past is compressed hard. Symmetric depth puts everything
+            // already sounded behind the eye, where it is not so much gone as
+            // invisible — and a tunnel you cannot see out of is just a wall.
+            out.z = -(w > 0 ? w : w * 0.28) * R * 4.5;
+            break;
+        }
+
+        // ── MANDALA: now at the centre, everything else blooming outward —
+        //    the future and the past made indistinguishable, which from inside
+        //    an instant they are.
+        case 1: {
+            const th = g.c * wedge + spin * 0.35;
+            const rad = R * (0.06 + 0.94 * Math.abs(w));
+            out.x = Math.cos(th) * rad;
+            out.y = Math.sin(th) * rad;
+            out.z = lift - g.pn * HEIGHT * 0.3;
+            break;
+        }
+
+        // ── RORSCHACH: time across, folded in both axes.
+        case 2: {
+            out.x = w * SPAN * 0.62;
+            out.y = -lift - g.pn * HEIGHT * 0.45 - 40;
+            out.z = (g.c - 0.5) * SPAN * 0.5;
+            break;
+        }
+
+        // ── VORTEX: in from the future, out into the past.
+        case 3: {
+            const th = dt * 2.1 + g.c * wedge + spin;
+            const rad = R * (0.10 + 0.90 * Math.abs(w));
+            out.x = Math.cos(th) * rad;
+            out.y = Math.sin(th) * rad;
+            out.z = lift * 1.6 - g.pn * HEIGHT * 0.25;
+            break;
+        }
+
+        // ── RIPPLE: a standing wave and its reflection.
+        default: {
+            out.x = w * SPAN * 0.72;
+            out.z = (g.c - 0.5) * SPAN * 0.55;
+            out.y = -lift * 1.3
+                  + Math.sin(dt * 5.5 + g.c * 7 + now * 1.6) * HEIGHT * 0.22
+                  - 30;
+            break;
+        }
+        }
+    }
+
     function project(g, now, out) {
+        if (params.suite === 2) return projectV2(g, now, out);
         // Every grain sits at the height of the sample it is reading.
         //
         // This is what makes the waveform the line the grains are riding rather
@@ -1269,8 +1410,11 @@
         // they ride is drawn from the same numbers they were drawn from.
         const rail = [];
 
+        const H = horizon();
         for (let n = 0; n < grains.length; n++) {
             const g = grains[n];
+            // From inside a moment you can only see the moment.
+            if (params.suite === 2 && Math.abs(g.tOut - now) > H) continue;
             const e = energyOf(g, now);
             tmp.e = e; tmp.n = n;
             project(g, now, tmp);
@@ -1301,7 +1445,7 @@
             if (ei === 2) hot.push(tmp.x, tmp.y, tmp.z, e, ci);
 
             // Structural lines: what each view is actually claiming.
-            if (params.view === 1) {
+            if (params.suite === 1 && params.view === 1) {
                 // A strand joins grains one whole turn apart — the same angle,
                 // one overlap later. Joining *consecutive* grains instead just
                 // chords across the circle and draws a prism, which says
@@ -1313,7 +1457,8 @@
                     project(grains[m], now, pe);
                     lineBucket.push(tmp.x, tmp.y, tmp.z, pe.x, pe.y, pe.z);
                 }
-            } else if (params.view === 4 && Math.abs(g.tOut - now) < focusWindow * 2) {
+            } else if (params.suite === 1 && params.view === 4
+                       && Math.abs(g.tOut - now) < focusWindow * 2) {
                 // Bonds only where you are looking. Drawn across the whole
                 // lattice they are a thousand crossing lines and the cloud
                 // disappears behind its own scaffolding.
@@ -1330,55 +1475,49 @@
         blendMode(ADD);
         noFill();
 
-        // Lattice bonds and braid strands, drawn under the grains.
-        if (lineBucket.length) {
-            stroke(120, 116, 108, 40 * params.glow);
-            strokeWeight(1);
-            beginShape(LINES);
-            for (let i = 0; i < lineBucket.length; i += 3) {
-                vertex(lineBucket[i], lineBucket[i + 1], lineBucket[i + 2]);
+        // The kaleidoscope. The cloud is built once and drawn several times
+        // under reflections and rotations, rather than every grain being
+        // duplicated into the buckets — a dozen extra draw calls against a
+        // dozen times the vertices. The symmetry is a property of the looking,
+        // not of the sound, which is exactly what it should be.
+        if (params.suite === 2) {
+            const k = Math.max(1, Math.round(params.mirror));
+            const mode = VIEWS_V2[params.view].sym;
+            for (let s = 0; s < k; s++) {
+                push();
+                if (mode === 'rot') {
+                    rotateZ((s * Math.PI * 2) / k + now * 0.12);
+                    if (s % 2) scale(1, -1, 1);
+                } else {
+                    // Fold in x, then in y, then both.
+                    scale(s & 1 ? -1 : 1, s & 2 ? -1 : 1, 1);
+                }
+                drawCloud(hot);
+                pop();
+                if (mode === 'mirror' && s >= 3) break;
             }
-            endShape();
+        } else {
+            drawCloud(hot);
         }
 
-        // The cloud, dimmest tier first so the sounding grains sit on top.
-        for (let ei = 0; ei < EBINS; ei++) {
-            const weight = ei === 0 ? 3.8 : (ei === 1 ? 5.6 : 9.5);
-            const alpha = (ei === 0 ? 90 : (ei === 1 ? 165 : 235)) * params.glow;
-            for (let ci = 0; ci < CBINS; ci++) {
-                const arr = buckets[ci * EBINS + ei];
-                if (!arr.length) continue;
-                const col = palette[ci];
-                stroke(red(col), green(col), blue(col), Math.min(alpha, 255));
-                strokeWeight(weight);
-                beginShape(POINTS);
-                for (let i = 0; i < arr.length; i += 3) vertex(arr[i], arr[i + 1], arr[i + 2]);
-                endShape();
-            }
+        if (params.suite === 1) {
+            drawFrameOfReference(now);
+            drawRideLine(rail, now);
+            drawReadHead(now);
         }
-
-        // A second, softer pass over the grains that are actually sounding —
-        // the bloom that makes overlap legible as brightness.
-        if (hot.length) {
-            for (let i = 0; i < hot.length; i += 5) {
-                const col = palette[hot[i + 4]];
-                stroke(red(col), green(col), blue(col), 60 * hot[i + 3] * params.glow);
-                strokeWeight(14 * hot[i + 3] + 4);
-                beginShape(POINTS);
-                vertex(hot[i], hot[i + 1], hot[i + 2]);
-                endShape();
-            }
-        }
-
-        drawFrameOfReference(now);
-        drawRideLine(rail, now);
-        drawReadHead(now);
         blendMode(BLEND);
 
         // Frame the neighbourhood, not the whole object. The spread of what is
         // sounding sets the distance, so a dense pile-up pulls the camera in
         // and a sparse scatter lets it back out.
-        if (follow && fw > 0) {
+        if (params.suite === 2) {
+            // Tunnel is looked *down*; the rest are looked *at*.
+            fitDist = params.view === 0 ? R * 1.45 : R * 3.4;
+            const k = Math.min(1, deltaTime / 700);
+            focus.x += (0 - focus.x) * k;
+            focus.y += (0 - focus.y) * k;
+            focus.z += (0 - focus.z) * k;
+        } else if (follow && fw > 0) {
             const tx = fx / fw, ty = fy / fw, tz = fz / fw;
             let spread = 0;
             for (let i = 0; i < local.length; i += 3) {
@@ -1415,6 +1554,49 @@
                         0, wave.length - 1);
         return wave[i];
     };
+
+    /// One pass over the cloud: bonds, then the dim tiers, then the bloom.
+    ///
+    /// Split out so it can be drawn repeatedly under different transforms
+    /// without rebuilding a single vertex.
+    function drawCloud(hot) {
+        if (lineBucket.length) {
+            stroke(120, 116, 108, 40 * params.glow);
+            strokeWeight(1);
+            beginShape(LINES);
+            for (let i = 0; i < lineBucket.length; i += 3) {
+                vertex(lineBucket[i], lineBucket[i + 1], lineBucket[i + 2]);
+            }
+            endShape();
+        }
+
+        // Dimmest tier first, so the sounding grains sit on top.
+        for (let ei = 0; ei < EBINS; ei++) {
+            const weight = ei === 0 ? 3.8 : (ei === 1 ? 5.6 : 9.5);
+            const alpha = (ei === 0 ? 90 : (ei === 1 ? 165 : 235)) * params.glow;
+            for (let ci = 0; ci < CBINS; ci++) {
+                const arr = buckets[ci * EBINS + ei];
+                if (!arr.length) continue;
+                const col = palette[ci];
+                stroke(red(col), green(col), blue(col), Math.min(alpha, 255));
+                strokeWeight(weight);
+                beginShape(POINTS);
+                for (let i = 0; i < arr.length; i += 3) vertex(arr[i], arr[i + 1], arr[i + 2]);
+                endShape();
+            }
+        }
+
+        // A softer pass over the grains actually sounding — the bloom that
+        // makes overlap legible as brightness.
+        for (let i = 0; i < hot.length; i += 5) {
+            const col = palette[hot[i + 4]];
+            stroke(red(col), green(col), blue(col), 60 * hot[i + 3] * params.glow);
+            strokeWeight(14 * hot[i + 3] + 4);
+            beginShape(POINTS);
+            vertex(hot[i], hot[i + 1], hot[i + 2]);
+            endShape();
+        }
+    }
 
     /// The line the grains are riding.
     ///
@@ -1533,7 +1715,7 @@
         const hopMs = (plan.hop / SR) * 1000;
         const density = SR / plan.hop;
         document.getElementById('hud').innerHTML =
-            `<span class="title">${VIEWS[params.view].name}</span>` +
+            `<span class="title">${views()[params.view].name}</span>` +
             `<span class="detail">` +
             `seed ${params.seed} &nbsp;·&nbsp; ${grains.length} grains drawn<br>` +
             `<span class="dim">ratio</span> ${params.ratio.toFixed(2)}× ` +
@@ -1779,6 +1961,7 @@
         if (key >= '1' && key <= '5') setView(parseInt(key) - 1);
         else if (key === 'f' || key === 'F') toggleFullscreen();
         else if (key === 'c' || key === 'C') toggleFollow();
+        else if (key === 'v' || key === 'V') setSuite(params.suite === 1 ? 2 : 1);
         else if (key === ' ') { streamPlay(); return false; }
     }
 
@@ -1787,18 +1970,39 @@
     window.addEventListener('message', (e) => {
         if (e.origin !== location.origin) return;
         if (e.data && e.data.type === 'grainView') setView(e.data.view | 0);
+        if (e.data && e.data.type === 'grainSuite') setSuite(e.data.suite | 0);
     });
+
+    /// Switch suites. The view index carries over, so V1's Shear and V2's
+    /// Tunnel sit under the same key and flipping between them compares the
+    /// same moment told two ways.
+    function setSuite(n) {
+        params.suite = n === 2 ? 2 : 1;
+        document.getElementById('suite-1').classList.toggle('active', params.suite === 1);
+        document.getElementById('suite-2').classList.toggle('active', params.suite === 2);
+        document.getElementById('stream-suite').textContent = 'V' + params.suite;
+        document.getElementById('mirror-group').style.opacity = params.suite === 2 ? 1 : 0.4;
+        // V2 is centred on now and does not orbit; V1 wants its camera back.
+        camZoom = 1.0;
+        if (params.suite === 2) { camYaw = 0; camPitch = 0; }
+        setView(Math.min(params.view, views().length - 1));
+    }
 
     function setView(v) {
         params.view = v;
-        for (let i = 0; i < VIEWS.length; i++) {
+        const list = views();
+        for (let i = 0; i < list.length; i++) {
+            const b = document.getElementById('view-' + i).querySelector('b');
+            if (b) b.textContent = list[i].name.charAt(0) + list[i].name.slice(1).toLowerCase();
+        }
+        for (let i = 0; i < views().length; i++) {
             document.getElementById('view-' + i).classList.toggle('active', i === v);
         }
         updateViewNote();
     }
 
     function updateViewNote() {
-        document.getElementById('view-note').textContent = VIEWS[params.view].note;
+        document.getElementById('view-note').textContent = views()[params.view].note;
     }
 
     function togglePause() {
@@ -1818,7 +2022,7 @@
     document.addEventListener('webkitfullscreenchange', () => setTimeout(windowResized, 60));
 
     function downloadPNG() {
-        saveCanvas(`precomputed-weather-${VIEWS[params.view].name.toLowerCase()}-${params.seed}`, 'png');
+        saveCanvas(`precomputed-weather-${views()[params.view].name.toLowerCase()}-${params.seed}`, 'png');
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1840,7 +2044,8 @@
         speed: v => v.toFixed(2) + '×',
         glow: v => v.toFixed(2),
         orbit: v => v.toFixed(2),
-        trail: v => v.toFixed(2)
+        trail: v => v.toFixed(2),
+        mirror: v => v.toFixed(0)
     };
 
     function updateParam(name, value) {
@@ -1938,14 +2143,16 @@
         // opening a panel inside the editor wants to press connect first.
         const embedded = QUERY.get('embed') === '1';
         if (embedded) {
+            if (QUERY.get('suite') === '2') setSuite(2);
             const v = parseInt(QUERY.get('view') || '0');
-            if (v >= 0 && v < VIEWS.length) setView(v);
+            if (v >= 0 && v < views().length) setView(v);
         }
 
         await probeEngine();
         if (embedded && liveOK && !live) toggleLive();
 
         updateSeedDisplay();
+        setSuite(params.suite);
         reflectStream();
         document.getElementById('ratio').value = logPos(params.ratio, 0.01, 100);
         document.getElementById('ratio-value').textContent = FMT.ratio(params.ratio);

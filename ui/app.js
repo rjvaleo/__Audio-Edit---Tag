@@ -3009,9 +3009,40 @@ function setGrainView(v) {
   }
 }
 
+// Which suite the 3D views are showing. V1 tours the cloud as an object; V2
+// sits inside the moment and lets time come past. Same five slots either way,
+// so the tabs only need relabelling.
+let grainSuite = 1;
+const SUITE_NAMES = {
+  1: ['Shear', 'Braid', 'Swarm 3D', 'Shells', 'Lattice'],
+  2: ['Tunnel', 'Mandala', 'Rorschach', 'Vortex', 'Ripple']
+};
+
+function setGrainSuite(n) {
+  grainSuite = n === 2 ? 2 : 1;
+  $('visSuite').textContent = 'V' + grainSuite;
+  $('visSuite').classList.toggle('active', grainSuite === 2);
+
+  const names = SUITE_NAMES[grainSuite];
+  for (const b of document.querySelectorAll('.vis-tab')) {
+    const i = +b.dataset.vis;
+    if (i >= 1) b.textContent = names[i - 1];
+  }
+  for (const b of document.querySelectorAll('.vis-pop-tab')) {
+    b.textContent = names[+b.dataset.view];
+  }
+
+  const post = { type: 'grainSuite', suite: grainSuite };
+  $('grainFrame').contentWindow?.postMessage(post, location.origin);
+  pop.frame?.contentWindow?.postMessage(post, location.origin);
+}
+
 for (const b of document.querySelectorAll('.vis-tab')) {
+  if (b.id === 'visSuite') continue;
   b.onclick = () => setGrainView(+b.dataset.vis);
 }
+const visSuiteBtn = $('visSuite');
+if (visSuiteBtn) visSuiteBtn.onclick = () => setGrainSuite(grainSuite === 1 ? 2 : 1);
 // A floating panel rather than a new tab. The whole point of watching the
 // grains is to watch them *while* moving a slider, and a separate window puts
 // the controls behind the thing you are looking at.

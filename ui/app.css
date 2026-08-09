@@ -779,6 +779,7 @@ body.editing .panel.left { left: var(--rail); }
 }
 .vis-tab:hover { border-color: var(--line-2); color: var(--text-2); }
 .vis-tab.active { background: var(--accent); border-color: var(--accent); color: oklch(14% 0.01 250); }
+.vis-tab.suite { font-weight: 600; letter-spacing: .04em; }
 .vis-open {
   margin-left: auto; background: none; border: 1px solid var(--line);
   color: var(--text-dim); font-size: 11px; line-height: 1;
