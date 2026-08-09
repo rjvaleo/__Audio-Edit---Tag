@@ -22,17 +22,28 @@ pub const UI_JS: &str = include_str!("../../../../ui/app.js");
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
     match (req.method.as_str(), req.path.as_str()) {
+        // The interface is compiled into the binary, so a new build is a new
+        // page — but the browser was never told that. With no Cache-Control and
+        // no validator, it applies its own heuristics and happily serves a
+        // stale app.js through restarts and reloads alike, which means a rebuilt
+        // interface silently does not appear. Nothing here is worth caching:
+        // it is served from local memory over the loopback.
         ("GET" | "HEAD", "/") | ("GET" | "HEAD", "/index.html") => {
             Response::ok("text/html; charset=utf-8", UI_HTML.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/grains3d") => {
             Response::ok("text/html; charset=utf-8", GRAINS_3D.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
-        ("GET", "/app.css") => Response::ok("text/css; charset=utf-8", UI_CSS.as_bytes().to_vec()),
-        ("GET", "/app.js") => Response::ok(
-            "text/javascript; charset=utf-8",
-            UI_JS.as_bytes().to_vec(),
-        ),
+        ("GET" | "HEAD", "/app.css") => {
+            Response::ok("text/css; charset=utf-8", UI_CSS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/app.js") => {
+            Response::ok("text/javascript; charset=utf-8", UI_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
 
         ("GET", "/api/state") => api_state(app),
         ("GET", "/api/browse") => api_browse(req),
