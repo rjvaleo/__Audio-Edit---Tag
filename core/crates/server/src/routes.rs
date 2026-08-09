@@ -1346,6 +1346,33 @@ fn api_engine_state(app: &Arc<App>) -> Response {
             // the same grain schedule the audio thread is working through.
             .set("path", loaded.as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default())
             .set("inFrames", loaded.as_ref().map(|(_, f, _)| *f as f64).unwrap_or(0.0))
+            // The parameters the audio thread is *actually* using, not the
+            // ones on the document. They are usually the same, but a visualiser
+            // that reads the document is showing what was asked for rather than
+            // what is being heard, and the two part company the moment a
+            // slider moves.
+            .set(
+                "stream",
+                h.shared
+                    .params()
+                    .map(|p| {
+                        Value::obj()
+                            .set("ratio", p.ratio as f64)
+                            .set("semitones", p.semitones as f64)
+                            .set("windowMs", p.window_ms as f64)
+                            .set("inFrames", p.in_frames as f64)
+                            .set("outFrames", p.plan().out_frames as f64)
+                            .set("densityHz", p.grain.density_hz as f64)
+                            .set("overlap", p.grain.overlap as f64)
+                            .set("sizeJitter", p.grain.size_jitter as f64)
+                            .set("positionJitterMs", p.grain.position_jitter_ms as f64)
+                            .set("pitchJitterSemis", p.grain.pitch_jitter_semis as f64)
+                            .set("pitchDriftSemis", p.grain.pitch_drift_semis as f64)
+                            .set("driftRateHz", p.grain.drift_rate_hz as f64)
+                            .set("seed", p.grain.seed as f64)
+                    })
+                    .unwrap_or(Value::Null),
+            )
             .set("channels", h.channels as f64)
             .set(
                 "overflows",
