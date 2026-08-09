@@ -50,6 +50,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/similar") => api_similar(app, req),
         ("GET", "/api/labels") => api_labels(app, req),
         ("GET", "/api/space") => api_space(app),
+        ("GET", "/api/sounds") => api_sounds(app),
         ("POST", "/api/engine/load") => api_engine_load(app, req),
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
@@ -1179,23 +1180,23 @@ fn api_save(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, "no library chosen");
     };
 
-    // Merge with what is already stored rather than replacing it.
-    let mut current = std::fs::read_to_string(app.overrides_path())
-        .ok()
-        .and_then(|s| json::parse(&s))
-        .unwrap_or_else(Value::obj);
+    // Merge with what is already stored rather than replacing it, and merge
+    // field by field: the browser only sends the fields that changed, so
+    // replacing an entry wholesale would silently clear the others.
+    let mut current = app.overrides.read().unwrap().clone();
+    let mut folders_touched: Vec<String> = Vec::new();
 
-    let mut written = 0usize;
-    if let Some(folders) = payload.get("folders").and_then(|f| f.as_obj()) {
-        for (name, edit) in folders {
-            if let Value::Obj(m) = &mut current {
-                let entry = m.entry("folders".into()).or_insert_with(Value::obj);
-                if let Value::Obj(fm) = entry {
-                    fm.insert(name.clone(), edit.clone());
-                }
-            }
-            if write_tags_file(&lib, name, edit).is_ok() {
-                written += 1;
+    for (section, key_is_path) in [("folders", false), ("files", true)] {
+        let Some(edits) = payload.get(section).and_then(|f| f.as_obj()) else { continue };
+        for (name, edit) in edits {
+            merge_entry(&mut current, section, name, edit);
+            let folder = if key_is_path {
+                name.split('/').next().unwrap_or(name).to_string()
+            } else {
+                name.clone()
+            };
+            if !folders_touched.contains(&folder) {
+                folders_touched.push(folder);
             }
         }
     }
@@ -1203,6 +1204,17 @@ fn api_save(app: &Arc<App>, req: &Request) -> Response {
     if let Err(e) = std::fs::write(app.overrides_path(), current.to_string()) {
         return Response::error(500, &e.to_string());
     }
+
+    // `_TAGS.txt` is regenerated from the whole stored set rather than appended
+    // to, so there is one writer and no need to parse back a file we wrote.
+    let mut written = 0usize;
+    for folder in &folders_touched {
+        if write_tags_file(&lib, folder, &current).is_ok() {
+            written += 1;
+        }
+    }
+    *app.overrides.write().unwrap() = current;
+
     Response::json(
         Value::obj()
             .set("ok", true)
@@ -1211,7 +1223,20 @@ fn api_save(app: &Arc<App>, req: &Request) -> Response {
     )
 }
 
-fn write_tags_file(lib: &Path, folder: &str, edit: &Value) -> std::io::Result<()> {
+/// Fold one edit into `root[section][name]`, keeping fields it does not mention.
+fn merge_entry(root: &mut Value, section: &str, name: &str, edit: &Value) {
+    let Value::Obj(m) = root else { return };
+    let Value::Obj(sm) = m.entry(section.into()).or_insert_with(Value::obj) else { return };
+    let slot = sm.entry(name.to_string()).or_insert_with(Value::obj);
+    let Some(fields) = edit.as_obj() else { return };
+    if let Value::Obj(existing) = slot {
+        for (k, v) in fields {
+            existing.insert(k.clone(), v.clone());
+        }
+    }
+}
+
+fn write_tags_file(lib: &Path, folder: &str, all: &Value) -> std::io::Result<()> {
     let rel = format!("{folder}/_TAGS.txt");
     let Some(path) = resolve_for_write(lib, &rel) else {
         return Err(std::io::Error::new(
@@ -1219,23 +1244,47 @@ fn write_tags_file(lib: &Path, folder: &str, edit: &Value) -> std::io::Result<()
             "folder is outside the library",
         ));
     };
-    let field = |k: &str| edit.get(k).and_then(|v| v.as_str()).unwrap_or("");
-    let body = format!(
+
+    let field = |v: &Value, k: &str| {
+        v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
+    };
+    let blank = Value::obj();
+    let f = all.get("folders").and_then(|x| x.get(folder)).unwrap_or(&blank);
+
+    let mut body = format!(
         "# Audio Library tags\n\
-         # Written by the library browser. Describes this folder only.\n\
+         # Written by the library browser. Describes this folder and its files.\n\
          # Nothing was renamed, moved or deleted. Safe to delete this file.\n\
          \n\
          folder:      {folder}\n\
          level1:      {}\n\
          level2:      {}\n\
          tags:        {}\n\
-         notes:       {}\n\
-         edited:      by hand in the library browser\n",
-        field("level1"),
-        field("level2"),
-        field("tags"),
-        field("notes"),
+         notes:       {}\n",
+        field(f, "level1"),
+        field(f, "level2"),
+        field(f, "tags"),
+        field(f, "notes"),
     );
+
+    if let Some(files) = all.get("files").and_then(|x| x.as_obj()) {
+        let prefix = format!("{folder}/");
+        for (rel_path, edit) in files.iter().filter(|(p, _)| p.starts_with(&prefix)) {
+            body.push_str(&format!(
+                "\nfile:        {}\n\
+                 level1:      {}\n\
+                 level2:      {}\n\
+                 tags:        {}\n\
+                 notes:       {}\n",
+                &rel_path[prefix.len()..],
+                field(edit, "level1"),
+                field(edit, "level2"),
+                field(edit, "tags"),
+                field(edit, "notes"),
+            ));
+        }
+    }
+    body.push_str("\nedited:      by hand in the library browser\n");
     std::fs::write(path, body)
 }
 
@@ -1483,7 +1532,10 @@ fn ensure_labels(app: &Arc<App>) -> usize {
             let Ok(samples) = r.read_frames(0, info.frames()) else { continue };
             let mono =
                 yamnet::to_mono_16k(&samples, info.channels as usize, info.sample_rate);
-            match model.label(&mono, 4) {
+            // More than the panel shows. Storing the tail costs almost nothing
+            // and means anything built later — a visualiser, an export — has
+            // the model's fuller opinion without a second pass over the audio.
+            match model.label(&mono, 8) {
                 // An empty list is a real answer — the model heard nothing it
                 // could name — and storing it stops the file being re-analysed
                 // on every request for the rest of time.
@@ -1547,6 +1599,73 @@ fn heard_value(app: &Arc<App>, rel: &str) -> Value {
             })
             .collect(),
     )
+}
+
+/// What the tag fields should say about a file, before anyone edits them.
+///
+/// Level 1 is the name the classifier put to the sound; level 2 is what it is
+/// like. The tags are the searchable pile: the words out of the filename, the
+/// two filename fields that are actually reliable — `machine` and `instrument`
+/// only ever fire on a real token match — plus everything both systems heard.
+///
+/// A take number never becomes a tag. `snare 1.wav` offers "snare"; the 1 is
+/// which take it is, not what it is.
+fn suggest_tags(app: &Arc<App>, rel: &str, descriptors: &[&'static str]) -> Value {
+    let heard = app.heard.read().unwrap();
+    let words = heard.get(rel).map(|l| l.words.clone()).unwrap_or_default();
+
+    let level1 = words.first().map(|d| d.label.clone()).unwrap_or_default();
+    let level2 = descriptors.join(", ");
+
+    let mut tags: Vec<String> = yamnet::propagate::name_words(rel);
+
+    if let Some(row) = app
+        .index
+        .read()
+        .unwrap()
+        .files
+        .iter()
+        .find(|f| format!("{}/{}", f.folder, f.rel_path) == rel)
+    {
+        for extra in [&row.machine, &row.instrument, &row.bpm] {
+            if !extra.is_empty() {
+                tags.push(extra.to_lowercase());
+            }
+        }
+    }
+
+    for d in &words {
+        // Class names like "Vehicle horn, car horn, honking" are three names
+        // for one thing; the first is the one worth keeping.
+        let head = d.label.split(',').next().unwrap_or(&d.label);
+        tags.push(head.trim().to_lowercase());
+    }
+    tags.extend(descriptors.iter().map(|d| d.to_string()));
+
+    let mut seen: Vec<String> = Vec::new();
+    for t in tags {
+        if !t.is_empty() && !seen.contains(&t) {
+            seen.push(t);
+        }
+    }
+
+    Value::obj()
+        .set("level1", level1)
+        .set("level2", level2)
+        // Comma-separated, not space-separated: "Snare drum" and "Bass drum"
+        // are single tags made of two words, and splitting on spaces would
+        // shred them into a pile of "drum".
+        .set("tags", seen.join(", "))
+}
+
+/// The tag fields a person has already saved for this file, if any.
+fn saved_tags(app: &Arc<App>, rel: &str) -> Value {
+    let overrides = app.overrides.read().unwrap();
+    overrides
+        .get("files")
+        .and_then(|f| f.get(rel))
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn api_similar(app: &Arc<App>, req: &Request) -> Response {
@@ -1640,6 +1759,12 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
             // What it *is*, next to what it is like. One request, because the
             // panel showing them is one panel.
             .set("heard", heard)
+            // What the tag fields should say, and what they were last saved as.
+            // The interface prefers the saved one; this way it can tell the
+            // difference between "nobody has touched this" and "somebody
+            // deliberately cleared it".
+            .set("suggest", suggest_tags(app, rel, &query.descriptors(&cal)))
+            .set("saved", saved_tags(app, rel))
             .set("measured", built as f64)
             .set("indexed", store.len() as f64)
             .set("results", Value::Arr(results))
@@ -1678,6 +1803,134 @@ fn api_labels(app: &Arc<App>, req: &Request) -> Response {
             // which are different problems with different fixes.
             .set("available", app.model.lock().unwrap().is_some())
             .set("files", files)
+            .to_string(),
+    )
+}
+
+/// Everything known about every sound, in one request.
+///
+/// The other endpoints are each shaped for one panel. This one is shaped for
+/// whatever comes next — a visualiser, an export, an experiment — and the point
+/// of it is that nothing has to be looked up a second time. Identity, format,
+/// what the indexer decided from the name, what the model heard, what the
+/// fingerprint measured (all twelve dimensions, not just the three the space
+/// view projects onto), where it sits in that space, and any tags a person has
+/// saved or the machine would suggest.
+///
+/// It is deliberately verbose. A library of ten thousand files is a few
+/// megabytes of JSON, which is nothing next to fetching it in pieces.
+fn api_sounds(app: &Arc<App>) -> Response {
+    ensure_prints(app);
+    ensure_labels(app);
+
+    let prints = app.prints.read().unwrap();
+    let cal = search::Calibration::build(prints.by_path.values().copied());
+    let idx = app.index.read().unwrap();
+
+    let axis = |n: &str| search::NAMES.iter().position(|x| *x == n).unwrap();
+    let (bright, low, pulse, density, flat, noisy) = (
+        axis("brightness"), axis("low"), axis("pulse"),
+        axis("density"), axis("flatness"), axis("noisiness"),
+    );
+
+    let sounds: Vec<Value> = idx
+        .files
+        .iter()
+        .map(|f| {
+            let path = format!("{}/{}", f.folder, f.rel_path);
+            let fp = prints.get(&path);
+            let words = fp.map(|p| p.descriptors(&cal)).unwrap_or_default();
+
+            // Every dimension by name, so a caller never has to know the order
+            // they happen to be stored in.
+            let mut measured = Value::obj();
+            if let Some(p) = &fp {
+                for (i, name) in search::NAMES.iter().enumerate() {
+                    measured = measured.set(*name, p.v[i] as f64);
+                }
+            }
+
+            let place = fp.map(|p| {
+                Value::obj()
+                    .set("x", (p.v[bright] - p.v[low] * 0.5) as f64)
+                    .set("y", (p.v[pulse] * 0.6 + p.v[density] * 0.4) as f64)
+                    .set("z", (p.v[flat] * 0.5 + p.v[noisy] * 0.5) as f64)
+            });
+
+            Value::obj()
+                .set("path", path.clone())
+                .set("folder", f.folder.clone())
+                .set("subdir", f.subdir.clone())
+                .set("name", f.filename.clone())
+                .set("stem", f.stem.clone())
+                .set("ext", f.ext.clone())
+                .set("parentChain", f.parent_chain.clone())
+                // The file as it sits on disk.
+                .set("bytes", f.bytes as f64)
+                .set("modified", f.modified.clone())
+                .set("format", f.format.clone())
+                .set("sampleRate", f.sample_rate as f64)
+                .set("bits", f.bits as f64)
+                .set("channels", f.channels as f64)
+                .set("seconds", f.duration)
+                // What the filename classifier made of it. Kept because it is
+                // occasionally right and always explains itself, not because it
+                // is trusted over the audio.
+                .set("category", f.category.clone())
+                .set("confidence", f.confidence.clone())
+                .set("machine", f.machine.clone())
+                .set("instrument", f.instrument.clone())
+                .set("bpm", f.bpm.clone())
+                .set("why", f.reasons.clone())
+                .set("notes", f.notes.clone())
+                .set(
+                    "nameWords",
+                    Value::Arr(
+                        yamnet::propagate::name_words(&path)
+                            .into_iter()
+                            .map(Value::Str)
+                            .collect(),
+                    ),
+                )
+                .set(
+                    "filenameDescriptors",
+                    Value::Arr(f.descriptors.iter().cloned().map(Value::Str).collect()),
+                )
+                // Which numbered series it belongs to, if any.
+                .set(
+                    "series",
+                    Value::obj()
+                        .set("root", f.series_root.clone())
+                        .set("index", f.series_index.map(|i| i as f64).unwrap_or(0.0))
+                        .set("size", f.series_size.map(|s| s as f64).unwrap_or(0.0))
+                        .set("family", yamnet::propagate::family(&path)),
+                )
+                // What it is, what it is like, and where that puts it.
+                .set("heard", heard_value(app, &path))
+                .set(
+                    "soundsLike",
+                    Value::Arr(words.iter().map(|w| Value::Str(w.to_string())).collect()),
+                )
+                .set("measured", measured)
+                .set("place", place.unwrap_or(Value::Null))
+                .set("suggested", suggest_tags(app, &path, &words))
+                .set("saved", saved_tags(app, &path))
+        })
+        .collect();
+
+    Response::json(
+        Value::obj()
+            .set("count", sounds.len() as f64)
+            .set(
+                "dimensions",
+                Value::Arr(search::NAMES.iter().map(|n| Value::Str(n.to_string())).collect()),
+            )
+            .set("axes", Value::Arr(vec![
+                Value::Str("dark → bright".into()),
+                Value::Str("sustained → rhythmic".into()),
+                Value::Str("tonal → noisy".into()),
+            ]))
+            .set("sounds", Value::Arr(sounds))
             .to_string(),
     )
 }
@@ -1739,4 +1992,89 @@ fn api_space(app: &Arc<App>) -> Response {
             .set("points", Value::Arr(points))
             .to_string(),
     )
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use super::*;
+
+    fn edit(pairs: &[(&str, &str)]) -> Value {
+        let mut v = Value::obj();
+        for (k, val) in pairs {
+            v = v.set(*k, val.to_string());
+        }
+        v
+    }
+
+    fn field(root: &Value, section: &str, name: &str, key: &str) -> String {
+        root.get(section)
+            .and_then(|s| s.get(name))
+            .and_then(|e| e.get(key))
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string()
+    }
+
+    /// The browser sends only the fields that changed. Replacing the entry
+    /// wholesale would clear the others without saying so.
+    #[test]
+    fn editing_one_field_leaves_the_others_alone() {
+        let mut root = Value::obj();
+        merge_entry(&mut root, "files", "P/a.wav", &edit(&[("level1", "Snare drum"), ("tags", "snare")]));
+        merge_entry(&mut root, "files", "P/a.wav", &edit(&[("notes", "cracks nicely")]));
+
+        assert_eq!(field(&root, "files", "P/a.wav", "level1"), "Snare drum");
+        assert_eq!(field(&root, "files", "P/a.wav", "tags"), "snare");
+        assert_eq!(field(&root, "files", "P/a.wav", "notes"), "cracks nicely");
+    }
+
+    #[test]
+    fn a_field_can_be_deliberately_cleared() {
+        let mut root = Value::obj();
+        merge_entry(&mut root, "files", "P/a.wav", &edit(&[("tags", "snare")]));
+        merge_entry(&mut root, "files", "P/a.wav", &edit(&[("tags", "")]));
+        assert_eq!(field(&root, "files", "P/a.wav", "tags"), "");
+    }
+
+    #[test]
+    fn files_and_folders_are_kept_apart() {
+        let mut root = Value::obj();
+        merge_entry(&mut root, "folders", "Pack", &edit(&[("level1", "Sample")]));
+        merge_entry(&mut root, "files", "Pack/a.wav", &edit(&[("level1", "Snare drum")]));
+
+        assert_eq!(field(&root, "folders", "Pack", "level1"), "Sample");
+        assert_eq!(field(&root, "files", "Pack/a.wav", "level1"), "Snare drum");
+    }
+
+    #[test]
+    fn one_file_edit_does_not_disturb_another() {
+        let mut root = Value::obj();
+        merge_entry(&mut root, "files", "P/a.wav", &edit(&[("tags", "kick")]));
+        merge_entry(&mut root, "files", "P/b.wav", &edit(&[("tags", "snare")]));
+        assert_eq!(field(&root, "files", "P/a.wav", "tags"), "kick");
+        assert_eq!(field(&root, "files", "P/b.wav", "tags"), "snare");
+    }
+
+    /// The tags file is rewritten from the whole stored set every time, so a
+    /// file edited last week must still be in it after one edited today.
+    #[test]
+    fn the_tags_file_carries_every_file_in_the_folder() {
+        let dir = std::env::temp_dir().join(format!("audiolab-tags-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(dir.join("Pack"));
+
+        let mut root = Value::obj();
+        merge_entry(&mut root, "folders", "Pack", &edit(&[("level1", "Sample")]));
+        merge_entry(&mut root, "files", "Pack/old.wav", &edit(&[("tags", "kick")]));
+        merge_entry(&mut root, "files", "Pack/new.wav", &edit(&[("tags", "snare")]));
+        merge_entry(&mut root, "files", "Other/x.wav", &edit(&[("tags", "elsewhere")]));
+
+        write_tags_file(&dir, "Pack", &root).expect("write");
+        let body = std::fs::read_to_string(dir.join("Pack/_TAGS.txt")).unwrap();
+
+        assert!(body.contains("old.wav"), "an earlier edit was dropped:\n{body}");
+        assert!(body.contains("new.wav"));
+        assert!(body.contains("level1:      Sample"));
+        assert!(!body.contains("elsewhere"), "another folder's file leaked in");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

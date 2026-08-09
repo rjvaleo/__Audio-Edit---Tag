@@ -69,21 +69,54 @@ impl Labels {
 /// kept so families cannot reach across two unrelated sample packs that both
 /// happen to contain a `hit 1`.
 pub fn family(path: &str) -> String {
-    let (dir, file) = match path.rfind('/') {
-        Some(i) => (&path[..i], &path[i + 1..]),
-        None => ("", path),
-    };
+    let dir = path.rfind('/').map(|i| &path[..i]).unwrap_or("");
+    format!("{}/{}", dir.to_lowercase(), base_name(path))
+}
+
+/// A filename reduced to the part that names the sound.
+///
+/// The extension goes, trailing punctuation goes, and one trailing number goes
+/// — because that last number is a take, not a name. Only one, though:
+/// `vox warble 32000` is a sample rate and `kick 909` is a drum machine, and
+/// stripping every digit would throw both away along with the take index.
+///
+/// Shared with the tag suggestions, so the words offered for `snare 1.wav` and
+/// the family it is grouped into can never disagree about what it is called.
+pub fn base_name(path: &str) -> String {
+    let file = path.rsplit('/').next().unwrap_or(path);
     let stem = file.rsplit_once('.').map(|(s, _)| s).unwrap_or(file);
     let stem = stem.trim().to_lowercase();
-    let stem = stem.trim_end_matches(|c: char| !c.is_alphanumeric()).to_string();
+    let stem = stem.trim_end_matches(|c: char| !c.is_alphanumeric());
 
-    // Drop a single trailing index, not every number: `vox warble 32000` is a
-    // rate, `snare 1` is a take.
-    let base = match stem.rsplit_once(' ') {
-        Some((head, tail)) if !head.is_empty() && tail.chars().all(|c| c.is_ascii_digit()) => head,
-        _ => &stem,
-    };
-    format!("{}/{}", dir.to_lowercase(), base.trim())
+    match stem.rsplit_once(' ') {
+        Some((head, tail)) if !head.is_empty() && tail.chars().all(|c| c.is_ascii_digit()) => {
+            head.trim().to_string()
+        }
+        _ => stem.trim().to_string(),
+    }
+}
+
+/// The words from a filename that are worth keeping as tags.
+///
+/// The take number is already gone by the time [`base_name`] hands the name
+/// over, so everything left is a word somebody chose — including the digits.
+/// `kick 909 1` gives `kick 909`: the 1 was the take, the 909 is the drum
+/// machine. Dropping every number would lose the half that means something.
+pub fn name_words(path: &str) -> Vec<String> {
+    let base = base_name(path);
+    let mut out: Vec<String> = Vec::new();
+    for w in base.split(|c: char| c.is_whitespace() || c == '_') {
+        let w = w.trim_matches(|c: char| !c.is_alphanumeric());
+        // A single character is a series marker — `b 1`, `b 2` — and names the
+        // sequence rather than the sound.
+        if w.len() < 2 {
+            continue;
+        }
+        if !out.iter().any(|e| e == w) {
+            out.push(w.to_string());
+        }
+    }
+    out
 }
 
 /// Fill in the sounds the model could not name, from the ones it could.
@@ -188,6 +221,35 @@ mod tests {
     #[test]
     fn trailing_punctuation_does_not_split_a_family() {
         assert_eq!(family("Pack/kick 909 1?.wav"), family("Pack/kick 909 2.wav"));
+    }
+
+    #[test]
+    fn a_take_number_is_not_a_tag_but_a_name_containing_one_is() {
+        assert_eq!(name_words("P/snare 1.wav"), ["snare"]);
+        assert_eq!(name_words("P/kick 909 1?.wav"), ["kick", "909"]);
+        // The 32000 here is the trailing number, so it goes the way any take
+        // index would. Only one number is ever dropped, and it is the last.
+        assert_eq!(name_words("P/vox warble 32000.wav"), ["vox", "warble"]);
+        assert_eq!(name_words("P/hat 90 1.wav"), ["hat", "90"]);
+    }
+
+    #[test]
+    fn a_serial_letter_is_not_a_tag() {
+        // `b 1.wav`, `b 2.wav` — the b names a series, not a sound.
+        assert!(name_words("P/b 1.wav").is_empty());
+    }
+
+    #[test]
+    fn punctuation_does_not_become_part_of_a_tag() {
+        assert_eq!(name_words("P/flanged?.wav"), ["flanged"]);
+        assert_eq!(name_words("P/fla pt 10.wav"), ["fla", "pt"]);
+    }
+
+    #[test]
+    fn tag_words_and_the_family_agree_about_the_name() {
+        // Both go through base_name, so they cannot drift apart.
+        assert_eq!(family("P/snare 1.wav"), "p/snare");
+        assert_eq!(name_words("P/snare 1.wav").join(" "), "snare");
     }
 
     #[test]

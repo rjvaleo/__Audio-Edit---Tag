@@ -16,7 +16,7 @@ use std::path::Path;
 /// different presentation, a different cutoff. A stored row from an older build
 /// is not upgradable, it is just wrong, so the whole file is discarded and
 /// rebuilt from the audio.
-const VERSION: &str = "yamnet-2";
+const VERSION: &str = "yamnet-3";
 
 #[derive(Default)]
 pub struct Store {

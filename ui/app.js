@@ -2390,6 +2390,7 @@ async function showSonicTags(file) {
     : '<span class="dim">not measured</span>';
 
   showHeard(file, r.heard || []);
+  fillFileTags(file, r.suggest, r.saved || null);
 }
 
 /// What the classifier named the sound, as opposed to what it is like.
@@ -2406,7 +2407,10 @@ function showHeard(file, words) {
     box.innerHTML = '<span class="dim">nothing recognised</span>';
     return;
   }
+  // The store keeps more than this; four is what a panel can show without
+  // becoming a wall of chips. The rest are in /api/sounds.
   box.innerHTML = words
+    .slice(0, 4)
     .map((w) => {
       const faint = w.score < 0.15 ? ' faint' : '';
       const title = w.from
@@ -2423,44 +2427,51 @@ function showHeard(file, words) {
   }
 }
 
+/// The tag fields describe the selected sound, not the folder it sits in.
+///
+/// A folder's fields are still editable when no sound is selected — that is
+/// what the panel used to be and there is no reason to take it away — but the
+/// moment you click a file the fields follow the file.
 function fillTagPanel(folder) {
+  if (state.selectedFile) return;
   const e = state.tagEdits[folder.name] || {};
   $('editLevel1').value = e.level1 ?? folder.level1;
   $('editLevel2').value = e.level2 ?? folder.level2;
   $('editTags').value = e.tags ?? folder.tags;
   $('editNotes').value = e.notes ?? '';
+}
 
-  const fields = [
-    ['Folder', folder.name],
-    ['Files', `${folder.files} (${folder.audioFiles} audio)`],
-    ['Size', fmtBytes(folder.bytes)],
-    ['Duration', folder.minutes.toFixed(1) + ' min'],
-    ['Confidence', folder.confidence],
-    ['Categories', folder.categories],
-    ['Formats', folder.formats],
-  ];
-  if (folder.instruments) fields.push(['Instruments', folder.instruments]);
-  if (folder.machine) fields.push(['Machine', folder.machine]);
+/// Fill the fields for one sound.
+///
+/// Precedence is edited, then saved, then suggested. The distinction between
+/// the last two matters: a suggestion is what the classifier would say, and
+/// once someone has saved something — even an empty string — that is a
+/// decision, and overwriting it with a fresh guess would undo their work every
+/// time they clicked the file.
+function fillFileTags(file, suggest, saved) {
+  const e = state.tagEdits[file.path] || {};
+  const pick = (k) => e[k] ?? saved?.[k] ?? suggest?.[k] ?? '';
+  $('editLevel1').value = pick('level1');
+  $('editLevel2').value = pick('level2');
+  $('editTags').value = pick('tags');
+  $('editNotes').value = pick('notes');
 
-  const box = $('inspectFields');
-  box.innerHTML = '';
-  for (const [k, v] of fields) {
-    const el = document.createElement('div');
-    el.className = 'insp-field';
-    el.innerHTML = `<span class="k"></span><span class="v"></span>`;
-    el.querySelector('.k').textContent = k;
-    el.querySelector('.v').textContent = v;
-    box.appendChild(el);
-  }
+  // Say where the values came from, so nobody has to guess whether they are
+  // looking at their own work or the machine's.
+  $('tagSource').textContent = Object.keys(e).length
+    ? 'edited, not yet committed'
+    : saved ? 'saved earlier' : 'suggested from the audio and the filename';
 }
 
 for (const [id, key] of [['editLevel1', 'level1'], ['editLevel2', 'level2'],
                          ['editTags', 'tags'], ['editNotes', 'notes']]) {
   $(id).onchange = (e) => {
-    const name = state.selectedFolder;
+    // Whichever the panel is currently describing.
+    const name = state.selectedFile?.path || state.selectedFolder;
     if (!name) return;
     (state.tagEdits[name] ??= {})[key] = e.target.value.trim();
     updateDirty();
+    if (state.selectedFile) $('tagSource').textContent = 'edited, not yet committed';
   };
 }
 
@@ -2472,15 +2483,25 @@ function updateDirty() {
 $('discardBtn').onclick = () => {
   state.tagEdits = {};
   updateDirty();
-  const f = state.folders.find((x) => x.name === state.selectedFolder);
-  if (f) fillTagPanel(f);
+  if (state.selectedFile) selectFile(state.selectedFile);
+  else {
+    const f = state.folders.find((x) => x.name === state.selectedFolder);
+    if (f) fillTagPanel(f);
+  }
   toast('Tag edits discarded');
 };
 
 $('commitBtn').onclick = async () => {
-  if (!Object.keys(state.tagEdits).length) { toast('Nothing to commit'); return; }
+  const edits = state.tagEdits;
+  if (!Object.keys(edits).length) { toast('Nothing to commit'); return; }
+
+  // A key with a slash in it is a file; anything else is a folder name.
+  const folders = {}, files = {};
+  for (const [k, v] of Object.entries(edits)) {
+    (k.includes('/') ? files : folders)[k] = v;
+  }
   try {
-    const r = await postJSON('/api/save', { folders: state.tagEdits });
+    const r = await postJSON('/api/save', { folders, files });
     toast(`Committed — ${r.foldersWritten} _TAGS.txt written`);
     state.tagEdits = {};
     updateDirty();
