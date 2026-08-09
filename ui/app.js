@@ -1786,6 +1786,22 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
   return el;
 }
 
+/// Re-read the folder listing and whatever folder is open.
+///
+/// Called after anything this app does that puts a file in the library, so the
+/// browser is never describing a directory that no longer matches the disk.
+async function refreshLibrary() {
+  try {
+    state.folders = await api('/api/folders');
+    const open = Object.keys(state.openFolders).filter((n) => state.openFolders[n]);
+    for (const name of open) {
+      state.folderFiles[name] = await api(`/api/files?folder=${encodeURIComponent(name)}`);
+    }
+    buildTree();
+    for (const name of open) loadHeard(name);
+  } catch { /* a failed refresh is a stale list, not a broken app */ }
+}
+
 // ------------------------------------------------------------------- capture
 //
 // Keeps what comes out of the speakers, rather than re-rendering the document.
@@ -1807,6 +1823,8 @@ async function setCapture(on) {
     }
     capture.running = false;
     if (!r.frames) { toast('Nothing captured'); return; }
+    // The library has a file in it that was not there a moment ago.
+    await refreshLibrary();
     const where = r.elsewhere ? ' (library not writable — saved to the app folder)' : '';
     const cut = r.truncated ? ' — hit the ten minute limit' : '';
     toast(`Captured ${r.seconds.toFixed(1)}s → ${r.name}${where}${cut}`);
@@ -3402,3 +3420,23 @@ if (visOpen) visOpen.onclick = openVisPop;
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && pop.el && !pop.el.classList.contains('hidden')) closeVisPop();
 });
+
+const rescanBtn = $('rescanBtn');
+if (rescanBtn) rescanBtn.onclick = async () => {
+  rescanBtn.disabled = true;
+  try {
+    await postJSON('/api/scan', {});
+    // The scan runs on its own thread; wait for it to finish before reading.
+    for (let i = 0; i < 600; i++) {
+      const s = await api('/api/scan');
+      if (!s.running) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    await refreshLibrary();
+    toast('Library re-read');
+  } catch (e) {
+    toast('Re-scan failed: ' + e.message);
+  } finally {
+    rescanBtn.disabled = false;
+  }
+};
