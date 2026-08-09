@@ -48,11 +48,7 @@ button { font-family: inherit; cursor: pointer; }
 /* The strip across the very top is now only the menus. Everything that used to
    live up here — transport, clock, zoom, metadata, level — moved down under the
    waveform, where it is next to the thing it acts on. */
-.menubar {
-  height: 34px; flex-shrink: 0;
-  display: flex; align-items: center; gap: 10px; padding: 0 10px;
-  background: oklch(16% 0.014 250); border-bottom: 1px solid var(--line);
-}
+
 
 /* The transport, sitting under the waveform and spectrogram in the editor.
    Absent in Browse, where there is nothing open to transport. */
@@ -282,6 +278,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .edittools .ghost { height: 24px; padding: 0 8px; font-size: 10.5px; }
 .edittools .primary { height: 24px; padding: 0 10px; font-size: 10.5px; }
+.meta-item.sel .v { min-width: 0; white-space: nowrap; }
 .sel-label {
   font-size: 10.5px; color: var(--text-dim);
   min-width: 90px; max-width: 230px; white-space: nowrap;
@@ -692,15 +689,18 @@ body.editing .shell { position: relative; }
 
 /* ----------------------------------------------------------------- tab bar */
 
+/* The open documents share the edit toolbar's row rather than owning one of
+   their own. Two half-empty strips were costing more height than the tabs and
+   the tools put together need. */
 .tabbar {
-  height: 32px; flex-shrink: 0; display: flex; align-items: flex-end; gap: 2px;
-  padding: 0 8px; background: oklch(13% 0.013 250);
-  border-bottom: 1px solid var(--line); overflow-x: auto;
+  height: 26px; flex-shrink: 0; display: flex; align-items: center; gap: 2px;
+  padding: 0; background: none; border: none;
+  overflow-x: auto; max-width: 45%;
 }
 .tab {
   display: flex; align-items: center; gap: 6px; flex-shrink: 0;
-  height: 26px; padding: 0 8px 0 10px; margin-bottom: -1px;
-  border-radius: 6px 6px 0 0; cursor: pointer;
+  height: 22px; padding: 0 7px 0 9px; margin-bottom: 0;
+  border-radius: 5px; cursor: pointer;
   background: transparent; color: var(--text-dim);
   border: 1px solid transparent; border-bottom: none;
   font-size: 11px; max-width: 210px;
@@ -721,7 +721,7 @@ body.editing .shell { position: relative; }
 }
 .tab .close:hover { background: rgba(255,255,255,0.12); color: var(--text); }
 .tabbar .newtab {
-  width: 24px; height: 24px; margin-bottom: 2px; flex-shrink: 0;
+  width: 21px; height: 21px; margin-bottom: 0; flex-shrink: 0;
   border-radius: 5px; border: 1px solid var(--line-2);
   background: transparent; color: var(--text-dim); font-size: 13px;
 }
@@ -1017,3 +1017,43 @@ body.editing .dock { flex: 0 0 330px; }
 .user-tag.learned:hover { opacity: 1; background: rgba(240, 190, 120, 0.10); }
 
 #addUserTag { margin: 2px 0 6px; }
+
+
+/* ------------------------------------------------------------------- menus */
+
+.menubar {
+  height: 25px; flex-shrink: 0; display: flex; align-items: stretch;
+  background: oklch(16% 0.014 250); border-bottom: 1px solid var(--line);
+}
+.menus { display: flex; align-items: stretch; }
+.menu-title {
+  display: flex; align-items: center; padding: 0 11px;
+  border: none; background: none; color: var(--text-2);
+  font: inherit; font-size: 11.5px;
+}
+.menu-title:hover, .menu-title.open { background: var(--surface-3); color: var(--text); }
+
+/* One popup element, reused by the menu bar and by right-click, so the two can
+   never drift apart in appearance or behaviour. */
+.menu-pop {
+  position: fixed; z-index: 500; min-width: 210px;
+  padding: 5px; border-radius: 8px;
+  background: oklch(17% 0.014 250); border: 1px solid var(--line-2);
+  box-shadow: 0 16px 44px rgba(0,0,0,0.55);
+}
+.menu-pop.hidden { display: none; }
+.menu-row {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 5px 9px; border: none; border-radius: 5px; background: none;
+  color: var(--text-2); font: inherit; font-size: 11.5px; text-align: left;
+}
+.menu-row:hover:not(:disabled) { background: var(--accent); color: oklch(14% 0.01 250); }
+.menu-row:disabled { color: var(--text-dimmer); cursor: default; }
+.menu-row .sk {
+  margin-left: auto; font-family: var(--mono); font-size: 10px; opacity: .65;
+}
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--line-2); }
+.menu-head {
+  padding: 5px 9px 3px; font-size: 9px; font-weight: 600;
+  letter-spacing: .4px; text-transform: uppercase; color: var(--text-dimmer);
+}
