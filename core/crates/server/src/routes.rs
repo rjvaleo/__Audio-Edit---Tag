@@ -1442,6 +1442,10 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(404, "that sound could not be measured");
     };
 
+    // Descriptors are relative to the library, so the yardstick is built from
+    // every fingerprint we hold, once, and shared by the query and the results.
+    let cal = search::Calibration::build(store.by_path.values().copied());
+
     let pairs: Vec<(&str, search::Fingerprint)> =
         store.by_path.iter().map(|(p, f)| (p.as_str(), *f)).collect();
     let ranked = search::rank(&query, pairs, rel, limit);
@@ -1472,7 +1476,7 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
                     Value::Arr(
                         store
                             .get(path)
-                            .map(|f| f.descriptors())
+                            .map(|f| f.descriptors(&cal))
                             .unwrap_or_default()
                             .into_iter()
                             .map(|w| Value::Str(w.to_string()))
@@ -1501,7 +1505,7 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
                 "tags",
                 Value::Arr(
                     query
-                        .descriptors()
+                        .descriptors(&cal)
                         .into_iter()
                         .map(|w| Value::Str(w.to_string()))
                         .collect(),
@@ -1532,6 +1536,8 @@ fn api_space(app: &Arc<App>) -> Response {
         idx_of("density"), idx_of("flatness"), idx_of("noisiness"), idx_of("duration"),
     );
 
+    let cal = search::Calibration::build(store.by_path.values().copied());
+
     let points: Vec<Value> = store
         .by_path
         .iter()
@@ -1541,7 +1547,7 @@ fn api_space(app: &Arc<App>) -> Response {
                 .iter()
                 .find(|f| format!("{}/{}", f.folder, f.rel_path) == *path);
             let words: Vec<Value> = fp
-                .descriptors()
+                .descriptors(&cal)
                 .into_iter()
                 .map(|w| Value::Str(w.to_string()))
                 .collect();

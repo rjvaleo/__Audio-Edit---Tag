@@ -168,6 +168,20 @@ fn the_store_survives_a_round_trip_and_a_truncated_row() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// Build a yardstick from a spread of material, the way the server does.
+fn library() -> (search::Calibration, Vec<Fingerprint>) {
+    let mut fps = Vec::new();
+    for hz in [40.0, 90.0, 220.0, 800.0, 3000.0, 9000.0] {
+        fps.push(fp(&tone(hz, 1.5, 0.5)));
+    }
+    fps.push(fp(&noise(2.0, 0.6)));
+    fps.push(fp(&noise(0.3, 0.2)));
+    for secs in [0.05, 0.4, 3.0] {
+        fps.push(fp(&hit(secs)));
+    }
+    (search::Calibration::build(fps.iter().copied()), fps)
+}
+
 /// A repeating pulse and a scatter of the same hits have the same spectrum,
 /// the same loudness and the same length. Rhythm is the only thing that tells
 /// them apart, which is why it is measured.
@@ -177,8 +191,7 @@ fn a_steady_pulse_is_distinguished_from_a_random_scatter() {
     let click = |at: usize, buf: &mut Vec<f32>| {
         for i in 0..600 {
             if at + i < buf.len() {
-                buf[at + i] += (-(i as f32) / 120.0).exp()
-                    * (i as f32 * 0.35).sin();
+                buf[at + i] += (-(i as f32) / 120.0).exp() * (i as f32 * 0.35).sin();
             }
         }
     };
@@ -198,28 +211,56 @@ fn a_steady_pulse_is_distinguished_from_a_random_scatter() {
 
     let a = fp(&steady);
     let b = fp(&scatter);
-
     let pulse = search::NAMES.iter().position(|n| *n == "pulse").unwrap();
     assert!(
         a.v[pulse] > b.v[pulse],
         "a steady pulse ({:.3}) must read as more repetitive than a scatter ({:.3})",
         a.v[pulse], b.v[pulse]
     );
-    assert!(a.descriptors().contains(&"repetitive"), "got {:?}", a.descriptors());
 }
 
+/// The point of calibrating: a descriptor must describe a minority, or it
+/// groups nothing. The old hand-picked thresholds put "swelling" on more than
+/// half the library, which is what this guards against coming back.
 #[test]
-fn descriptors_describe_what_is_actually_there() {
-    let low = fp(&tone(60.0, 2.0, 0.6));
-    assert!(low.descriptors().contains(&"bassy"), "low tone: {:?}", low.descriptors());
-    assert!(low.descriptors().contains(&"tonal"), "low tone: {:?}", low.descriptors());
+fn no_descriptor_applies_to_most_of_the_library() {
+    let (cal, fps) = library();
+    let mut counts: std::collections::BTreeMap<&str, usize> = Default::default();
+    for f in &fps {
+        for d in f.descriptors(&cal) {
+            *counts.entry(d).or_default() += 1;
+        }
+    }
+    for (word, n) in &counts {
+        assert!(
+            *n * 2 <= fps.len(),
+            "'{word}' fires on {n} of {} — too common to mean anything",
+            fps.len()
+        );
+    }
+    assert!(!counts.is_empty(), "nothing was described at all");
+}
+
+/// And it must still pick the right end of each scale.
+#[test]
+fn descriptors_land_on_the_right_extremes() {
+    let (cal, fps) = library();
+
+    // Whichever member of the library is actually brightest must be called
+    // bright. Naming an exemplar up front gets this wrong — broadband noise
+    // has a higher spectral centroid than a nine kilohertz sine does.
+    let b = search::NAMES.iter().position(|n| *n == "brightness").unwrap();
+    let brightest = fps.iter().copied().max_by(|x, y| x.v[b].total_cmp(&y.v[b])).unwrap();
+    let darkest = fps.iter().copied().min_by(|x, y| x.v[b].total_cmp(&y.v[b])).unwrap();
+    assert!(brightest.descriptors(&cal).contains(&"bright"), "brightest: {:?}", brightest.descriptors(&cal));
+    assert!(darkest.descriptors(&cal).contains(&"dark"), "darkest: {:?}", darkest.descriptors(&cal));
 
     let hiss = fp(&noise(2.0, 0.6));
-    assert!(hiss.descriptors().contains(&"noisy"), "noise: {:?}", hiss.descriptors());
+    assert!(hiss.descriptors(&cal).contains(&"noisy"), "noise: {:?}", hiss.descriptors(&cal));
 
-    // Never empty: an unlabelled point is useless for grouping.
+    // Never empty: an unlabelled point cannot be grouped or navigated to.
     for s in [tone(1000.0, 0.05, 0.2), vec![0.0; 4800], hit(0.3)] {
-        assert!(!fp(&s).descriptors().is_empty());
+        assert!(!fp(&s).descriptors(&cal).is_empty());
     }
 }
 
@@ -232,4 +273,16 @@ fn a_fingerprint_file_from_a_different_build_is_rejected() {
     std::fs::write(&path, "path\tduration\tloudness\nold.wav\t0.5\t0.5\n").unwrap();
     assert_eq!(search::store::Store::load(&path).len(), 0);
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The yardstick itself: a value below everything ranks 0, above everything 1.
+#[test]
+fn calibration_ranks_a_value_against_the_library() {
+    let (cal, fps) = library();
+    let d = search::NAMES.iter().position(|n| *n == "brightness").unwrap();
+    let lowest = fps.iter().map(|f| f.v[d]).fold(f32::MAX, f32::min);
+    let highest = fps.iter().map(|f| f.v[d]).fold(f32::MIN, f32::max);
+    assert_eq!(cal.rank(d, lowest - 0.1), 0.0, "below everything must rank 0");
+    assert_eq!(cal.rank(d, highest + 0.1), 1.0, "above everything must rank 1");
+    assert!((0.0..=1.0).contains(&cal.rank(d, (lowest + highest) / 2.0)));
 }
