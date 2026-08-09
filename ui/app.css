@@ -855,3 +855,15 @@ body.editing .dock { flex: 0 0 330px; }
   background: rgba(255,255,255,0.40);
   pointer-events: none; display: none;
 }
+
+/* Sonic descriptors for the selected sound — measured from the audio, so they
+   are deliberately styled apart from the folder's editable tag fields. */
+.sonic-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 10px; min-height: 18px; }
+.sonic-tag {
+  font: 10px ui-monospace, monospace;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(125, 211, 160, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(125, 211, 160, 0.25);
+}

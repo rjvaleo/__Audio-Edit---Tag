@@ -1495,6 +1495,18 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
     Response::json(
         Value::obj()
             .set("of", rel.to_string())
+            // The query's own description, so a caller that only wants to know
+            // what one sound is like need not read the whole ranking.
+            .set(
+                "tags",
+                Value::Arr(
+                    query
+                        .descriptors()
+                        .into_iter()
+                        .map(|w| Value::Str(w.to_string()))
+                        .collect(),
+                ),
+            )
             .set("measured", built as f64)
             .set("indexed", store.len() as f64)
             .set("results", Value::Arr(results))
