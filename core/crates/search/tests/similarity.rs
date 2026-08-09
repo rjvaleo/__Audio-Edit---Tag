@@ -167,3 +167,69 @@ fn the_store_survives_a_round_trip_and_a_truncated_row() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// A repeating pulse and a scatter of the same hits have the same spectrum,
+/// the same loudness and the same length. Rhythm is the only thing that tells
+/// them apart, which is why it is measured.
+#[test]
+fn a_steady_pulse_is_distinguished_from_a_random_scatter() {
+    let n = SR as usize * 3;
+    let click = |at: usize, buf: &mut Vec<f32>| {
+        for i in 0..600 {
+            if at + i < buf.len() {
+                buf[at + i] += (-(i as f32) / 120.0).exp()
+                    * (i as f32 * 0.35).sin();
+            }
+        }
+    };
+
+    let mut steady = vec![0f32; n];
+    let mut beat = 0;
+    while beat < n { click(beat, &mut steady); beat += SR as usize / 4; }
+
+    let mut scatter = vec![0f32; n];
+    let mut x = 7u32;
+    let mut at = 0usize;
+    while at < n {
+        click(at, &mut scatter);
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        at += 2000 + (x >> 20) as usize % 20_000;
+    }
+
+    let a = fp(&steady);
+    let b = fp(&scatter);
+
+    let pulse = search::NAMES.iter().position(|n| *n == "pulse").unwrap();
+    assert!(
+        a.v[pulse] > b.v[pulse],
+        "a steady pulse ({:.3}) must read as more repetitive than a scatter ({:.3})",
+        a.v[pulse], b.v[pulse]
+    );
+    assert!(a.descriptors().contains(&"repetitive"), "got {:?}", a.descriptors());
+}
+
+#[test]
+fn descriptors_describe_what_is_actually_there() {
+    let low = fp(&tone(60.0, 2.0, 0.6));
+    assert!(low.descriptors().contains(&"bassy"), "low tone: {:?}", low.descriptors());
+    assert!(low.descriptors().contains(&"tonal"), "low tone: {:?}", low.descriptors());
+
+    let hiss = fp(&noise(2.0, 0.6));
+    assert!(hiss.descriptors().contains(&"noisy"), "noise: {:?}", hiss.descriptors());
+
+    // Never empty: an unlabelled point is useless for grouping.
+    for s in [tone(1000.0, 0.05, 0.2), vec![0.0; 4800], hit(0.3)] {
+        assert!(!fp(&s).descriptors().is_empty());
+    }
+}
+
+/// A fingerprint file written by an older build must be discarded, not padded.
+#[test]
+fn a_fingerprint_file_from_a_different_build_is_rejected() {
+    let dir = std::env::temp_dir().join("audiolab-search-version");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("FINGERPRINTS.tsv");
+    std::fs::write(&path, "path\tduration\tloudness\nold.wav\t0.5\t0.5\n").unwrap();
+    assert_eq!(search::store::Store::load(&path).len(), 0);
+    std::fs::remove_dir_all(&dir).ok();
+}

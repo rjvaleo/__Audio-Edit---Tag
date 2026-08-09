@@ -18,7 +18,20 @@ impl Store {
         let Ok(text) = std::fs::read_to_string(path) else {
             return store;
         };
-        for line in text.lines().skip(1) {
+        let mut lines = text.lines();
+
+        // The header names the dimensions. If it does not match what this build
+        // measures, the file was written by a different version and every row
+        // in it is meaningless — silently padding short rows with zeros would
+        // put wrong numbers into the ranking rather than obviously wrong ones.
+        // Returning empty makes the next search rebuild from the audio.
+        let expected: Vec<&str> = std::iter::once("path").chain(crate::NAMES).collect();
+        match lines.next() {
+            Some(h) if h.split('\t').collect::<Vec<_>>() == expected => {}
+            _ => return store,
+        }
+
+        for line in lines {
             let mut cols = line.split('\t');
             let Some(p) = cols.next() else { continue };
             let mut v = [0f32; DIMS];

@@ -48,6 +48,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/edit") => api_edit_apply(app, req),
         ("POST", "/api/export") => api_export(app, req),
         ("GET", "/api/similar") => api_similar(app, req),
+        ("GET", "/api/space") => api_space(app),
         ("POST", "/api/engine/load") => api_engine_load(app, req),
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
@@ -1467,6 +1468,18 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
                 .set("score", *score as f64)
                 .set("differs", diff)
                 .set(
+                    "tags",
+                    Value::Arr(
+                        store
+                            .get(path)
+                            .map(|f| f.descriptors())
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|w| Value::Str(w.to_string()))
+                            .collect(),
+                    ),
+                )
+                .set(
                     "name",
                     meta.map(|m| m.filename.clone())
                         .unwrap_or_else(|| path.to_string()),
@@ -1485,6 +1498,63 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
             .set("measured", built as f64)
             .set("indexed", store.len() as f64)
             .set("results", Value::Arr(results))
+            .to_string(),
+    )
+}
+
+/// Every sound as a point in a navigable space.
+///
+/// The three axes are named rather than derived. A principal-component
+/// projection would pack more variance into three numbers, but its axes mean
+/// nothing you can say out loud — and the point of flying through this space is
+/// to know which way is brighter. Duration is carried separately because it
+/// sets how long each shape is drawn, not where it sits.
+fn api_space(app: &Arc<App>) -> Response {
+    let built = ensure_prints(app);
+    let store = app.prints.read().unwrap();
+    let idx = app.index.read().unwrap();
+
+    let idx_of = |n: &str| search::NAMES.iter().position(|x| *x == n).unwrap();
+    let (bright, low, pulse, density, flat, noisy, dur) = (
+        idx_of("brightness"), idx_of("low"), idx_of("pulse"),
+        idx_of("density"), idx_of("flatness"), idx_of("noisiness"), idx_of("duration"),
+    );
+
+    let points: Vec<Value> = store
+        .by_path
+        .iter()
+        .map(|(path, fp)| {
+            let meta = idx
+                .files
+                .iter()
+                .find(|f| format!("{}/{}", f.folder, f.rel_path) == *path);
+            let words: Vec<Value> = fp
+                .descriptors()
+                .into_iter()
+                .map(|w| Value::Str(w.to_string()))
+                .collect();
+            Value::obj()
+                .set("path", path.clone())
+                .set("name", meta.map(|m| m.filename.clone()).unwrap_or_else(|| path.clone()))
+                // dark to bright, sustained to rhythmic, tonal to noisy.
+                .set("x", (fp.v[bright] - fp.v[low] * 0.5) as f64)
+                .set("y", (fp.v[pulse] * 0.6 + fp.v[density] * 0.4) as f64)
+                .set("z", (fp.v[flat] * 0.5 + fp.v[noisy] * 0.5) as f64)
+                .set("length", fp.v[dur] as f64)
+                .set("seconds", meta.map(|m| m.duration).unwrap_or(0.0))
+                .set("tags", Value::Arr(words))
+        })
+        .collect();
+
+    Response::json(
+        Value::obj()
+            .set("measured", built as f64)
+            .set("axes", Value::Arr(vec![
+                Value::Str("dark → bright".into()),
+                Value::Str("sustained → rhythmic".into()),
+                Value::Str("tonal → noisy".into()),
+            ]))
+            .set("points", Value::Arr(points))
             .to_string(),
     )
 }
