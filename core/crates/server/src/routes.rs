@@ -51,6 +51,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/labels") => api_labels(app, req),
         ("GET", "/api/space") => api_space(app),
         ("GET", "/api/sounds") => api_sounds(app),
+        ("POST", "/api/usertags") => api_user_tags_set(app, req),
+        ("GET", "/api/usertag") => api_user_tag_members(app, req),
         ("POST", "/api/engine/load") => api_engine_load(app, req),
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
@@ -1658,6 +1660,147 @@ fn suggest_tags(app: &Arc<App>, rel: &str, descriptors: &[&'static str]) -> Valu
         .set("tags", seen.join(", "))
 }
 
+// ============================================== tags of your own invention
+//
+// The classifier knows AudioSet's nouns. It will never say "time stretched",
+// because that is a category in your work rather than in the world. These are
+// taught by example instead: tag a sound and it becomes an exemplar; anything
+// close enough to an exemplar gets the tag offered, with the exemplar named.
+
+/// Tags applied by hand, and the ones the system thinks belong here.
+fn user_tags_value(app: &Arc<App>, rel: &str) -> Value {
+    let store = app.user_tags.read().unwrap();
+    let mine: Vec<Value> = store.get(rel).into_iter().map(Value::Str).collect();
+
+    // Learning needs a fingerprint for the sound being asked about and for
+    // every exemplar. Without one there is nothing to compare, which is not an
+    // error — it just means no suggestions yet.
+    let prints = app.prints.read().unwrap();
+    let learned: Vec<Value> = match prints.get(rel) {
+        Some(query) => {
+            let pairs: Vec<(&str, &str, search::Fingerprint)> = store
+                .pairs()
+                .filter_map(|(p, t)| prints.get(p).map(|fp| (p, t, fp)))
+                .collect();
+            let already = store.get(rel);
+            search::learn::suggest(&query, pairs, rel, search::learn::LEARN, 6)
+                .into_iter()
+                // Never offer something that is already on the sound.
+                .filter(|s| !already.contains(&s.tag))
+                .map(|s| {
+                    Value::obj()
+                        .set("tag", s.tag)
+                        .set("score", s.score as f64)
+                        .set("like", s.like)
+                        .set("support", s.support as f64)
+                })
+                .collect()
+        }
+        None => Vec::new(),
+    };
+
+    Value::obj()
+        .set("mine", Value::Arr(mine))
+        .set("learned", Value::Arr(learned))
+        .set(
+            "vocabulary",
+            Value::Arr(store.vocabulary().into_iter().map(Value::Str).collect()),
+        )
+}
+
+/// Replace the hand-applied tags on one sound.
+///
+/// Whole-list rather than add/remove: the panel always knows the full set, and
+/// two half-updates racing each other cannot leave a tag half-applied.
+fn api_user_tags_set(app: &Arc<App>, req: &Request) -> Response {
+    let Some(payload) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(path) = payload.get("path").and_then(|p| p.as_str()) else {
+        return Response::error(400, "no path given");
+    };
+    let tags: Vec<String> = match payload.get("tags") {
+        Some(Value::Arr(a)) => {
+            a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+        }
+        _ => Vec::new(),
+    };
+
+    {
+        let mut store = app.user_tags.write().unwrap();
+        store.set(path, tags);
+        if let Err(e) = store.save(&app.user_tags_path()) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    // Fingerprints are what the learning runs on, so a newly tagged sound is
+    // useless as an example until it has one.
+    ensure_prints(app);
+    Response::json(user_tags_value(app, path).to_string())
+}
+
+/// Every sound carrying a given tag, hand-applied or close enough to inherit it.
+///
+/// This is the tag seen from the other side: not "what is this sound" but
+/// "where else does this idea apply", which is what makes a learned tag worth
+/// having at all.
+fn api_user_tag_members(app: &Arc<App>, req: &Request) -> Response {
+    let Some(tag) = req.param("tag") else {
+        return Response::error(400, "no tag given");
+    };
+    let tag = tag.trim().to_lowercase();
+    ensure_prints(app);
+
+    let store = app.user_tags.read().unwrap();
+    let prints = app.prints.read().unwrap();
+
+    let applied: Vec<String> = store
+        .pairs()
+        .filter(|(_, t)| *t == tag)
+        .map(|(p, _)| p.to_string())
+        .collect();
+
+    // The exemplars are the same for every candidate, so gather them once
+    // rather than rebuilding the list inside the loop.
+    let exemplars: Vec<(&str, &str, search::Fingerprint)> = store
+        .pairs()
+        .filter(|(_, t)| *t == tag)
+        .filter_map(|(p, t)| prints.get(p).map(|f| (p, t, f)))
+        .collect();
+
+    let mut found: Vec<(f32, String, String)> = Vec::new();
+    for (path, fp) in &prints.by_path {
+        if applied.contains(path) {
+            continue;
+        }
+        if let Some(s) =
+            search::learn::suggest(fp, exemplars.iter().cloned(), path, search::learn::LEARN, 1)
+                .first()
+        {
+            found.push((s.score, path.clone(), s.like.clone()));
+        }
+    }
+    found.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+
+    let suggested: Vec<Value> = found
+        .into_iter()
+        .map(|(score, path, like)| {
+            Value::obj()
+                .set("path", path)
+                .set("score", score as f64)
+                .set("like", like)
+        })
+        .collect();
+
+    Response::json(
+        Value::obj()
+            .set("tag", tag)
+            .set("applied", Value::Arr(applied.into_iter().map(Value::Str).collect()))
+            .set("suggested", Value::Arr(suggested))
+            .to_string(),
+    )
+}
+
 /// The tag fields a person has already saved for this file, if any.
 fn saved_tags(app: &Arc<App>, rel: &str) -> Value {
     let overrides = app.overrides.read().unwrap();
@@ -1765,6 +1908,7 @@ fn api_similar(app: &Arc<App>, req: &Request) -> Response {
             // deliberately cleared it".
             .set("suggest", suggest_tags(app, rel, &query.descriptors(&cal)))
             .set("saved", saved_tags(app, rel))
+            .set("yourTags", user_tags_value(app, rel))
             .set("measured", built as f64)
             .set("indexed", store.len() as f64)
             .set("results", Value::Arr(results))
@@ -1915,6 +2059,7 @@ fn api_sounds(app: &Arc<App>) -> Response {
                 .set("place", place.unwrap_or(Value::Null))
                 .set("suggested", suggest_tags(app, &path, &words))
                 .set("saved", saved_tags(app, &path))
+                .set("yourTags", user_tags_value(app, &path))
         })
         .collect();
 

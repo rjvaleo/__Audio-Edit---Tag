@@ -887,3 +887,29 @@ body.editing .dock { flex: 0 0 330px; }
 /* Where the values in the tag fields came from — your edit, an earlier save,
    or the machine's suggestion. Quiet, but never absent. */
 .tag-source { font: 10px var(--mono); color: var(--text-dimmer); margin-bottom: 8px; }
+
+/* Tags of your own invention. Warm rather than green or blue, because these are
+   decisions rather than measurements, and nothing the app does overwrites one. */
+.user-tag {
+  background: rgba(240, 190, 120, 0.12);
+  color: #f0be78;
+  border-color: rgba(240, 190, 120, 0.28);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.user-tag .x {
+  background: none; border: 0; padding: 0 0 0 2px; cursor: pointer;
+  color: inherit; opacity: .5; font: inherit; line-height: 1;
+}
+.user-tag .x:hover { opacity: 1; }
+
+/* A tag the system worked out for itself. Dashed because it is a proposal, not
+   a fact, and it does not exist until you click it. */
+.user-tag.learned {
+  background: none;
+  border-style: dashed;
+  opacity: .7;
+  cursor: pointer;
+}
+.user-tag.learned:hover { opacity: 1; background: rgba(240, 190, 120, 0.10); }
+
+#addUserTag { margin: 2px 0 6px; }

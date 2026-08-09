@@ -374,6 +374,9 @@ pub struct App {
     /// able to show a saved value in preference to a suggested one, and reading
     /// the file on every selection would be silly.
     pub overrides: RwLock<crate::json::Value>,
+    /// Tags of the user's own invention — "time stretched", "vocal stretch" —
+    /// and the examples the system learns them from.
+    pub user_tags: RwLock<crate::usertags::Store>,
 }
 
 impl App {
@@ -384,6 +387,7 @@ impl App {
         let saved = crate::persist::load_sessions(&data_dir.join("SESSIONS.json"));
         let prints = search::store::Store::load(&data_dir.join("FINGERPRINTS.tsv"));
         let labels = yamnet::store::Store::load(&data_dir.join("LABELS.tsv"));
+        let user_tags = crate::usertags::Store::load(&data_dir.join("USER-TAGS.tsv"));
         let overrides = std::fs::read_to_string(data_dir.join("TAG-OVERRIDES.json"))
             .ok()
             .and_then(|s| crate::json::parse(&s))
@@ -400,6 +404,7 @@ impl App {
             heard: RwLock::new(Default::default()),
             model: Mutex::new(None),
             overrides: RwLock::new(overrides),
+            user_tags: RwLock::new(user_tags),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             presets: RwLock::new(presets),
@@ -424,6 +429,10 @@ impl App {
 
     pub fn labels_path(&self) -> PathBuf {
         self.data_dir.join("LABELS.tsv")
+    }
+
+    pub fn user_tags_path(&self) -> PathBuf {
+        self.data_dir.join("USER-TAGS.tsv")
     }
 
     pub fn overrides_path(&self) -> PathBuf {
