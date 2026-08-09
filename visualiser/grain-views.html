@@ -18,6 +18,12 @@
             --anthropic-orange: #d97757;
             --anthropic-blue: #6a9bcc;
             --anthropic-green: #788c5d;
+
+            /* The app's own well — the colour behind its waveform and its 2D
+               grain swarm. Docked into the editor this view sits next to those,
+               and a different black reads as a different application. Taken
+               from ui/app.css rather than approximated. */
+            --app-well: oklch(9% 0.01 250);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -281,14 +287,14 @@
             border-radius: 12px;
             overflow: hidden;
             box-shadow: 0 20px 40px rgba(20, 20, 19, 0.18);
-            background: var(--anthropic-dark);
+            background: var(--app-well);
             position: relative;
         }
 
         #canvas-container canvas { display: block; }
 
         /* Fullscreen experience — the sculpture, nothing else */
-        #stage:fullscreen { max-width: none; width: 100vw; height: 100vh; background: var(--anthropic-dark); }
+        #stage:fullscreen { max-width: none; width: 100vw; height: 100vh; background: var(--app-well); }
         #stage:fullscreen #canvas-container { height: 100vh; border-radius: 0; box-shadow: none; }
         #stage:-webkit-full-screen { max-width: none; width: 100vw; height: 100vh; }
         #stage:-webkit-full-screen #canvas-container { height: 100vh; border-radius: 0; }
@@ -405,7 +411,7 @@
         }
 
         /* Embedded in the app: no sidebar, no page chrome, just the view. */
-        body.embed { background: var(--anthropic-dark); }
+        body.embed { background: var(--app-well); }
         body.embed .container { padding: 0; gap: 0; min-height: 0; }
         body.embed .sidebar { display: none; }
         body.embed .canvas-area { padding: 0; }
@@ -1142,6 +1148,7 @@
         for (let i = 0; i < CBINS * EBINS; i++) buckets.push([]);
         updateViewNote();
         sketchReady = true;
+        readBackground();
         fitCanvas();
     }
 
@@ -1157,6 +1164,32 @@
     }
 
     let sketchReady = false;
+
+    /// The colour the canvas clears to, taken from the container's own CSS.
+    ///
+    /// Read rather than hardcoded so there is one definition of the background
+    /// instead of two that quietly diverge.
+    ///
+    /// Resolved by painting it, not by parsing it. `getComputedStyle` hands
+    /// back `oklch(0.09 0.01 250)` verbatim — the browser does not convert to
+    /// rgb for you — and pulling three numbers out of that string yields
+    /// `background(0.09, 0.01, 250)`, which is bright blue. Painting one pixel
+    /// and reading it back gets whatever the stylesheet actually meant, in any
+    /// colour space, including ones that do not exist yet.
+    let bg = [17, 17, 20];
+    function readBackground() {
+        const css = getComputedStyle(document.getElementById('canvas-container')).backgroundColor;
+        try {
+            const c = document.createElement('canvas');
+            c.width = c.height = 1;
+            const x = c.getContext('2d', { willReadFrequently: true });
+            x.fillStyle = '#111114';          // stands if the colour will not parse
+            x.fillStyle = css;
+            x.fillRect(0, 0, 1, 1);
+            const d = x.getImageData(0, 0, 1, 1).data;
+            bg = [d[0], d[1], d[2]];
+        } catch { /* keep the default */ }
+    }
 
     /// Keep the canvas the size of its box, whatever changed the box.
     ///
@@ -1187,7 +1220,7 @@
         // hidden came back still drawing at its old size — the view sitting in
         // the corner of its own box. Checking here cannot miss.
         fitCanvas();
-        background(20, 20, 19);
+        background(bg[0], bg[1], bg[2]);
 
         // When following the player the cursor is the engine's, not ours: the
         // poll sets it, and between polls it is carried forward at real speed
