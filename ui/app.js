@@ -1780,6 +1780,24 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
   return el;
 }
 
+/// Fire at most every `ms`, but fire *during* the gesture, not after it.
+///
+/// Both preview paths used a trailing debounce — clearTimeout on every input
+/// event, then send once the events stop. Which means that while a slider is
+/// actually moving the timer is reset on every pixel and never fires at all,
+/// and the change only lands when the pointer pauses or is released. The whole
+/// point of a preview is that it happens while you are still dragging.
+function throttled(fn, ms) {
+  let last = 0, timer = null;
+  return () => {
+    const now = performance.now();
+    const wait = Math.max(0, ms - (now - last));
+    clearTimeout(timer);
+    if (wait === 0) { last = now; fn(); }
+    else timer = setTimeout(() => { last = performance.now(); fn(); }, wait);
+  };
+}
+
 /// Time and pitch live on the document, so they are posted as an edit
 /// operation rather than as part of the rack.
 /// Which file the stretch sliders were built for.
@@ -1788,7 +1806,6 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
 /// response destroyed the very slider under the pointer, so the first change
 /// landed and no further drag did anything.
 let stretchBuiltFor = null;
-let stretchTimer = null;
 
 function sendStretch({ live }) {
   const d = state.stretchDraft;
@@ -1800,14 +1817,10 @@ function sendStretch({ live }) {
 }
 
 /// Continuous preview while dragging, at draft quality so it keeps up.
-function previewStretch() {
-  clearTimeout(stretchTimer);
-  stretchTimer = setTimeout(() => sendStretch({ live: true }), 130);
-}
+const previewStretch = throttled(() => sendStretch({ live: true }), 90);
 
 /// Pointer released: commit properly, at the chosen quality, and repoint audio.
 function commitStretch() {
-  clearTimeout(stretchTimer);
   sendStretch({ live: false });
 }
 
@@ -1877,9 +1890,8 @@ function renderGrainParams() {
              grain: state.grainDraft },
            { live });
   };
-  let t;
-  const preview = () => { clearTimeout(t); t = setTimeout(() => send({ live: true }), 130); };
-  const commit = () => { clearTimeout(t); send({ live: false }); };
+  const preview = throttled(() => send({ live: true }), 90);
+  const commit = () => send({ live: false });
 
   // Grouped by what they do, so each panel stays short enough to read at once.
   const groups = [
@@ -2026,7 +2038,6 @@ $('presetDelete').onclick = async () => {
 };
 
 $('stretchReset').onclick = async () => {
-  clearTimeout(stretchTimer);
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' };
   await editOp({ op: 'stretch', ratio: 1, semitones: 0, windowMs: 40, quality: 'standard' });
   syncStretchSliders();
