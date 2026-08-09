@@ -327,13 +327,47 @@
             pointer-events: none;
         }
 
-        .transport {
+        /* Stream controls — these drive the engine when it is being followed,
+           and the local cursor when it is not. Same gestures either way. */
+        .stream {
             position: absolute;
-            left: 22px; top: 18px; right: 22px;
+            left: 22px; right: 22px; top: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .stream button {
+            background: rgba(250, 249, 245, 0.08);
+            border: 1px solid rgba(250, 249, 245, 0.14);
+            color: rgba(250, 249, 245, 0.85);
+            width: 30px; height: 26px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 1;
+            transition: all 0.15s ease;
+            flex-shrink: 0;
+        }
+
+        .stream button:hover {
+            background: rgba(217, 119, 87, 0.30);
+            border-color: var(--anthropic-orange);
+        }
+
+        .transport {
+            flex: 1;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .transport .track {
+            width: 100%;
             height: 3px;
             background: rgba(250, 249, 245, 0.10);
             border-radius: 2px;
-            pointer-events: none;
         }
 
         .transport .fill {
@@ -341,6 +375,53 @@
             width: 0%;
             background: var(--anthropic-orange);
             border-radius: 2px;
+        }
+
+        .stream .gain {
+            width: 78px;
+            height: 3px;
+            -webkit-appearance: none;
+            background: rgba(250, 249, 245, 0.14);
+            border-radius: 2px;
+            outline: none;
+            flex-shrink: 0;
+        }
+
+        .stream .gain::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 11px; height: 11px;
+            background: rgba(250, 249, 245, 0.7);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .stream .clock {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: rgba(250, 249, 245, 0.55);
+            flex-shrink: 0;
+            min-width: 88px;
+            text-align: right;
+        }
+
+        /* Embedded in the app: no sidebar, no page chrome, just the view. */
+        body.embed { background: var(--anthropic-dark); }
+        body.embed .container { padding: 0; gap: 0; min-height: 0; }
+        body.embed .sidebar { display: none; }
+        body.embed .canvas-area { padding: 0; }
+        body.embed #stage { max-width: none; }
+        body.embed #canvas-container { height: 100vh; border-radius: 0; box-shadow: none; }
+        body.embed .hud { font-size: 10px; line-height: 1.6; left: 14px; bottom: 12px; }
+        body.embed .hud .title { font-size: 13px; }
+        body.embed .hud-keys { display: none; }
+        body.embed .stream { left: 14px; right: 14px; top: 10px; }
+
+        /* Docked into a short panel there is no room to narrate. The view name
+           and the transport survive; the readout goes. Full height, or opened
+           in its own window, it all comes back. */
+        @media (max-height: 380px) {
+            body.embed .hud .detail { display: none; }
+            body.embed .hud { bottom: 8px; }
         }
 
         /* Responsive */
@@ -584,7 +665,16 @@
         <div class="canvas-area">
             <div id="stage">
                 <div id="canvas-container">
-                    <div class="transport"><div class="fill" id="transport-fill"></div></div>
+                    <div class="stream">
+                        <button id="stream-play" onclick="streamPlay()" title="Play / pause">&#9654;</button>
+                        <button id="stream-stop" onclick="streamStop()" title="Back to the start">&#9632;</button>
+                        <div class="transport" id="transport" onclick="streamSeek(event)">
+                            <div class="track"><div class="fill" id="transport-fill"></div></div>
+                        </div>
+                        <input type="range" class="gain" id="stream-gain" min="0" max="1" step="0.01"
+                               value="0.85" oninput="streamGain(this.value)" title="Level">
+                        <span class="clock" id="stream-clock">0:00 / 0:00</span>
+                    </div>
                     <div class="hud" id="hud"></div>
                     <div class="hud-keys">
                         1–5 views &nbsp;·&nbsp; F fullscreen<br>
@@ -1090,6 +1180,7 @@
         const density = SR / plan.hop;
         document.getElementById('hud').innerHTML =
             `<span class="title">${VIEWS[params.view].name}</span>` +
+            `<span class="detail">` +
             `seed ${params.seed} &nbsp;·&nbsp; ${grains.length} grains drawn<br>` +
             `<span class="dim">ratio</span> ${params.ratio.toFixed(2)}× ` +
             `&nbsp;<span class="dim">window</span> ${Math.round(params.windowMs)} ms ` +
@@ -1098,9 +1189,11 @@
             `&nbsp;<span class="dim">hop</span> ${hopMs.toFixed(1)} ms ` +
             `&nbsp;<span class="dim">pitch</span> ${params.semitones > 0 ? '+' : ''}${params.semitones} st<br>` +
             `<span class="dim">${now.toFixed(2)} s of ${outSeconds.toFixed(2)} s output ` +
-            `— reading ${srcSeconds.toFixed(2)} s of source</span>`;
+            `— reading ${srcSeconds.toFixed(2)} s of source</span></span>`;
         document.getElementById('transport-fill').style.width =
-            `${(now / Math.max(outSeconds, 1e-6)) * 100}%`;
+            `${clamp(now / Math.max(outSeconds, 1e-6), 0, 1) * 100}%`;
+        document.getElementById('stream-clock').textContent =
+            `${mmss(now)} / ${mmss(outSeconds)}`;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1191,8 +1284,9 @@
 
         // The playhead. Output frames at the device rate — the same clock the
         // schedule is laid out on.
-        if (s.sampleRate > 0) cursor = s.position / s.sampleRate;
+        if (s.sampleRate > 0) { liveRate = s.sampleRate; cursor = s.position / s.sampleRate; }
         enginePlaying = !!s.playing;
+        reflectStream();
     }
 
     let enginePlaying = false;
@@ -1211,6 +1305,74 @@
         document.getElementById('ratio-value').textContent = FMT.ratio(params.ratio);
         document.getElementById('windowMs').value = logPos(params.windowMs, 5, 2000);
         document.getElementById('windowMs-value').textContent = FMT.windowMs(params.windowMs);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STREAM CONTROLS
+    //
+    // The same three gestures whether or not the engine is being followed:
+    // start it, send it back to the beginning, put it somewhere. Following the
+    // player they go to the audio thread; on its own schedule they move the
+    // local cursor. Nothing in the view has to know which.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    let liveRate = 48000;
+
+    async function transport(body) {
+        if (!live) return false;
+        try {
+            await fetch('/api/engine/transport', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            return true;
+        } catch { return false; }
+    }
+
+    function streamPlay() {
+        if (live) {
+            // Optimistic, so the button responds now rather than on the next
+            // poll; the engine's own answer overwrites it 120ms later.
+            enginePlaying = !enginePlaying;
+            transport({ play: enginePlaying });
+        } else {
+            togglePause();
+        }
+        reflectStream();
+    }
+
+    function streamStop() {
+        cursor = 0;
+        if (live) {
+            enginePlaying = false;
+            transport({ play: false, seek: 0 });
+        } else if (!paused) {
+            togglePause();
+        }
+        reflectStream();
+    }
+
+    function streamSeek(ev) {
+        const bar = document.getElementById('transport');
+        const r = bar.getBoundingClientRect();
+        const t = clamp((ev.clientX - r.left) / Math.max(r.width, 1), 0, 1);
+        cursor = t * outSeconds;
+        if (live) transport({ seek: Math.round(cursor * liveRate) });
+    }
+
+    function streamGain(v) {
+        transport({ gain: parseFloat(v) });
+    }
+
+    const mmss = s => {
+        s = Math.max(0, s);
+        return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+    };
+
+    function reflectStream() {
+        const on = live ? enginePlaying : !paused;
+        document.getElementById('stream-play').innerHTML = on ? '&#10074;&#10074;' : '&#9654;';
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1240,6 +1402,13 @@
         else if (key === 'f' || key === 'F') toggleFullscreen();
         else if (key === ' ') { togglePause(); return false; }
     }
+
+    // Switching views from the app that embeds this. Same-origin only — an
+    // iframe should not take instructions from whoever happens to message it.
+    window.addEventListener('message', (e) => {
+        if (e.origin !== location.origin) return;
+        if (e.data && e.data.type === 'grainView') setView(e.data.view | 0);
+    });
 
     function setView(v) {
         params.view = v;
@@ -1378,9 +1547,22 @@
         buildSchedule();
     }
 
-    window.addEventListener('load', function () {
-        probeEngine();
+    window.addEventListener('load', async function () {
+        // Embedded in the app: no sidebar, straight into whichever view was
+        // asked for, and following the player from the first frame — nobody
+        // opening a panel inside the editor wants to press connect first.
+        const q = new URLSearchParams(location.search);
+        if (q.get('embed') === '1') {
+            document.body.classList.add('embed');
+            const v = parseInt(q.get('view') || '0');
+            if (v >= 0 && v < VIEWS.length) setView(v);
+        }
+
+        await probeEngine();
+        if (q.get('embed') === '1' && liveOK && !live) toggleLive();
+
         updateSeedDisplay();
+        reflectStream();
         document.getElementById('ratio').value = logPos(params.ratio, 0.01, 100);
         document.getElementById('ratio-value').textContent = FMT.ratio(params.ratio);
         document.getElementById('windowMs').value = logPos(params.windowMs, 5, 2000);

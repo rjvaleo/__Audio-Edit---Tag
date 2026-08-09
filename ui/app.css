@@ -768,10 +768,36 @@ body.editing .panel.left { left: var(--rail); }
   flex: 1; width: 100%; min-height: 150px; display: block;
   border-radius: 7px; background: oklch(9% 0.01 250); border: 1px solid var(--line);
 }
+/* Which way to look at the grains. The 2D swarm and the five 3D views are the
+   same data, so they share one spot rather than competing for room. */
+.vis-pick { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.vis-tab {
+  background: oklch(16% 0.013 250); border: 1px solid var(--line);
+  color: var(--text-dim); font: inherit; font-size: 10px;
+  padding: 3px 9px; border-radius: 5px; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease;
+}
+.vis-tab:hover { border-color: var(--line-2); color: var(--text-2); }
+.vis-tab.active { background: var(--accent); border-color: var(--accent); color: oklch(14% 0.01 250); }
+.vis-open {
+  margin-left: auto; background: none; border: 1px solid var(--line);
+  color: var(--text-dim); font-size: 11px; line-height: 1;
+  padding: 3px 8px; border-radius: 5px; cursor: pointer;
+}
+.vis-open:hover { border-color: var(--accent); color: var(--accent); }
+
+#grainFrame {
+  flex: 1; width: 100%; min-height: 150px; display: block; border: 0;
+  border-radius: 7px; background: oklch(9% 0.01 250);
+  border: 1px solid var(--line);
+}
+#grainFrame.hidden, #grainCanvas.hidden { display: none; }
+
 .vis-legend {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   font-size: 9.5px; color: var(--text-dimmer);
 }
+.vis-legend.hidden { display: none; }
 .vis-legend span { display: flex; align-items: center; gap: 5px; }
 .vis-legend .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .vis-legend .sw.hot { background: oklch(72% 0.19 25); }

@@ -236,7 +236,17 @@
             </div>
           </div>
           <div class="grain-vis">
+            <div class="vis-pick" id="visPick">
+              <button class="vis-tab active" data-vis="0" title="The original swarm">Swarm 2D</button>
+              <button class="vis-tab" data-vis="1" title="Output time against source time — the stretch as a slope">Shear</button>
+              <button class="vis-tab" data-vis="2" title="Time wound into a helix — strands are the overlap">Braid</button>
+              <button class="vis-tab" data-vis="3" title="The free cloud in three dimensions">Swarm 3D</button>
+              <button class="vis-tab" data-vis="4" title="An octave to a shell — drift becomes rotation">Shells</button>
+              <button class="vis-tab" data-vis="5" title="The hop grid as a crystal, melted by the jitters">Lattice</button>
+              <button class="vis-open" id="visOpen" title="Open in its own window, with every control">&#9974;</button>
+            </div>
             <canvas id="grainCanvas"></canvas>
+            <iframe id="grainFrame" class="hidden" title="3D grain views"></iframe>
             <div class="vis-legend">
               <span><i class="sw hot"></i>bright / sharp</span>
               <span><i class="sw cold"></i>dark / flat</span>
