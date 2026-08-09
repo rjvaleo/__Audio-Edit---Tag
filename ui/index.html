@@ -194,20 +194,11 @@
         <div class="rack-chain">
           <div class="rack-title">Effect chain</div>
           <div id="rackList"></div>
-          <div class="fx-note" style="margin-top:8px">Order matters: EQ before a
-          compressor changes what the compressor reacts to.</div>
         </div>
         <div class="rack-params" id="rackParams"></div>
       </div>
 
       <div class="dock-body" id="dockStretch">
-        <div class="fx wide-fx">
-          <div class="fx-head">Time &amp; pitch</div>
-          <div class="fx-note">Stretching changes the length without moving the
-          pitch; shifting moves the pitch without changing the length. Both are
-          part of the document, not the effect chain, because the chain may not
-          alter length.</div>
-        </div>
         <div class="grain-split">
           <div class="grain-controls">
             <div class="cpanel">
@@ -231,8 +222,6 @@
                 <button class="ghost" id="presetSave">Save as&hellip;</button>
                 <button class="ghost" id="presetDelete">Delete</button>
               </div>
-              <div class="fx-note" id="presetNote">Captures time, pitch and grain
-              settings plus the effect chain. Drop it on any sound.</div>
             </div>
           </div>
           <div class="grain-vis">
@@ -272,13 +261,10 @@
               <button class="seg-btn" data-fft="4096">4096</button>
             </div>
           </div>
-          <div class="fx-note">Larger windows resolve frequency better and time worse.</div>
         </div>
         <div class="fx wide-fx">
           <div class="fx-head">Live spectrum</div>
           <canvas id="visCanvas" class="viscanvas"></canvas>
-          <div class="fx-note">Real-time analysis of what is playing, as opposed to
-          the spectrogram above, which is the whole file computed up front.</div>
         </div>
         <div class="fx">
           <div class="fx-head">Levels</div>
