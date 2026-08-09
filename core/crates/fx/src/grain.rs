@@ -135,8 +135,10 @@ pub fn plan(
     g: &Grain,
 ) -> GrainPlan {
     let sr = sample_rate.max(1) as f32;
-    let ratio = ratio.clamp(0.1, 10.0);
-    let base_size = (((window_ms.clamp(5.0, 500.0) / 1000.0) * sr) as usize).max(32);
+    let ratio = ratio.clamp(0.01, 100.0);
+    // Long windows are what make an extreme stretch sound like a texture
+    // rather than a stutter, so two seconds is allowed.
+    let base_size = (((window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(32);
     let overlap = g.overlap.clamp(1.0, 8.0);
     let hop = if g.density_hz > 0.0 {
         ((sr / g.density_hz.clamp(0.5, 2000.0)) as usize).max(8)
@@ -183,7 +185,7 @@ impl StreamParams {
 /// module exists to prevent.
 fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> GrainEvent {
     let sr = sp.sample_rate.max(1) as f32;
-    let ratio = sp.ratio.clamp(0.1, 10.0);
+    let ratio = sp.ratio.clamp(0.01, 100.0);
     let g = &sp.grain;
     let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
     let base_rate = 2f32.powf(sp.semitones / 12.0);
@@ -198,7 +200,9 @@ fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> Grain
     .max(16);
 
     let semis = g.pitch_offset(index, t);
-    let rate = (base_rate * 2f32.powf(semis / 12.0)).clamp(0.05, 20.0);
+    // Four octaves of base shift, plus whatever the jitter and drift add on
+    // top, so the clamp has to be wider than the control range.
+    let rate = (base_rate * 2f32.powf(semis / 12.0)).clamp(0.002, 256.0);
 
     let nominal = (write as f32) / ratio;
     let jitter = if pos_jitter > 0.0 { pos_jitter * g.rand_bipolar(index, 5) } else { 0.0 };

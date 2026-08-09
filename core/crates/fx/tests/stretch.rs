@@ -647,3 +647,82 @@ fn the_stream_always_advances_however_extreme_the_settings() {
         }
     }
 }
+
+// ------------------------------------------------------- extreme stretching
+//
+// The granular path exists so a sound can be pulled far past what WSOLA can do.
+// These guard the far ends, where clamps and overflow live.
+
+#[test]
+fn a_hundred_times_longer_is_actually_a_hundred_times_longer() {
+    let g = fx::Grain::default();
+    let p = sp(4_800, 100.0, 0.0, 500.0, g);
+    let plan = p.plan();
+    assert_eq!(plan.out_frames, 480_000, "a 0.1 s sound must become 10 s");
+
+    // And the schedule really covers it rather than stopping early.
+    let mut stream = fx::GrainStream::new();
+    let mut last = 0;
+    let mut n = 0;
+    while stream.out_frame() < plan.out_frames as u64 {
+        let e = stream.next(&p);
+        assert!(e.out_frame >= last);
+        assert!(e.src_frame.is_finite() && e.src_frame >= 0.0);
+        last = e.out_frame;
+        n += 1;
+        assert!(n < 500_000, "schedule is not advancing");
+    }
+    // Count is not the property that matters — half-second grains at double
+    // overlap give exactly forty of them across ten seconds, and that is
+    // correct. What matters is that they cover the whole output.
+    assert_eq!(n, plan.out_frames / plan.hop, "grain count does not match the hop");
+    assert!(
+        last + plan.base_size as u64 >= plan.out_frames as u64 - plan.hop as u64,
+        "the schedule stops short of the end"
+    );
+}
+
+#[test]
+fn extreme_settings_still_produce_usable_audio() {
+    // A hundredfold stretch with long, heavily jittered grains — the setting
+    // this whole feature exists for.
+    let mut g = fx::Grain::default();
+    g.overlap = 6.0;
+    g.size_jitter = 0.5;
+    g.position_jitter_ms = 300.0;
+    g.pitch_jitter_semis = 2.0;
+
+    let input = sine(220.0, (SR / 4) as usize, 0.6); // 0.25 s
+    let out = fx::grain::granular(&input, 1, SR, 40.0, 0.0, 1500.0, &g);
+
+    assert_eq!(out.len(), (input.len() as f32 * 40.0).round() as usize);
+    assert!(out.iter().all(|s| s.is_finite()), "extreme stretch produced non-finite audio");
+    let peak = out.iter().fold(0f32, |m, s| m.max(s.abs()));
+    assert!(peak > 0.05, "extreme stretch went silent, peak {peak}");
+    assert!(peak < 4.0, "extreme stretch ran away, peak {peak}");
+}
+
+#[test]
+fn four_octaves_of_shift_land_where_they_should() {
+    for (semis, factor) in [(48.0f32, 16.0f32), (-48.0, 1.0 / 16.0)] {
+        let p = sp(48_000, 1.0, semis, 40.0, fx::Grain::default());
+        let mut stream = fx::GrainStream::new();
+        let e = stream.next(&p);
+        assert!(
+            (e.rate - factor).abs() < factor * 0.02,
+            "{semis} st should read at {factor}x, got {}",
+            e.rate
+        );
+    }
+}
+
+#[test]
+fn the_shortest_stretch_does_not_collapse() {
+    let p = sp(480_000, 0.01, 0.0, 40.0, fx::Grain::default());
+    assert_eq!(p.plan().out_frames, 4_800);
+    let mut stream = fx::GrainStream::new();
+    for _ in 0..32 {
+        let e = stream.next(&p);
+        assert!(e.size > 0 && e.rate.is_finite());
+    }
+}

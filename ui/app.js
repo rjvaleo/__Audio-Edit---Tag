@@ -1683,7 +1683,14 @@ function renderRack() {
 }
 
 /// One labelled slider bound to a field on the selected slot.
-function param(label, value, min, max, step, format, onChange, onCommit) {
+/// A labelled slider.
+///
+/// `log` puts the control on a logarithmic curve. That is not decoration: the
+/// stretch runs from a hundredth to a hundred times, and on a linear slider 1×
+/// would sit at one percent of the travel, with everything musically useful
+/// crushed against the left stop. On a log curve 1× sits in the middle and each
+/// doubling takes the same distance.
+function param(label, value, min, max, step, format, onChange, onCommit, log) {
   const el = document.createElement('div');
   el.className = 'param';
   el.innerHTML = `<div class="row"><span class="k"></span><span class="v"></span></div>
@@ -1691,21 +1698,32 @@ function param(label, value, min, max, step, format, onChange, onCommit) {
   el.querySelector('.k').textContent = label;
   const out = el.querySelector('.v');
   const input = el.querySelector('input');
-  Object.assign(input, { min, max, step, value });
+
+  // Position 0..1000 on the element, mapped to the real value.
+  const TICKS = 1000;
+  const toPos = (v) =>
+    log ? (Math.log(Math.max(v, min) / min) / Math.log(max / min)) * TICKS
+        : v;
+  const toVal = (p) =>
+    log ? min * Math.pow(max / min, p / TICKS)
+        : p;
+
+  if (log) Object.assign(input, { min: 0, max: TICKS, step: 1, value: toPos(value) });
+  else Object.assign(input, { min, max, step, value });
   out.textContent = format(value);
 
   // The readout is updated from the element itself, so a redraw elsewhere
   // cannot leave the number disagreeing with the handle.
-  el.sync = (v) => { input.value = v; out.textContent = format(v); };
+  el.sync = (v) => { input.value = toPos(v); out.textContent = format(v); };
 
   input.oninput = () => {
-    const v = +input.value;
+    const v = toVal(+input.value);
     out.textContent = format(v);
     onChange(v);
   };
   // Fires on pointer release, which is when the change is worth committing
   // properly rather than previewing.
-  if (onCommit) input.onchange = () => onCommit(+input.value);
+  if (onCommit) input.onchange = () => onCommit(toVal(+input.value));
   return el;
 }
 
@@ -1761,16 +1779,19 @@ function renderStretch() {
 
 
   const rows = {};
-  rows.ratio = param('Stretch', st.ratio, 0.25, 4, 0.01, (v) => `${v.toFixed(2)}×`,
+  rows.ratio = param('Stretch', st.ratio, 0.01, 100, 0.01,
+    (v) => (v >= 10 ? `${v.toFixed(0)}×` : v >= 1 ? `${v.toFixed(2)}×` : `${v.toFixed(3)}×`),
     (v) => { state.stretchDraft.ratio = v; showStretchOut(); previewStretch(); },
-    () => commitStretch());
-  rows.semitones = param('Pitch', st.semitones, -24, 24, 0.5,
+    () => commitStretch(), true);
+  rows.semitones = param('Pitch', st.semitones, -48, 48, 0.5,
     (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} st`,
     (v) => { state.stretchDraft.semitones = v; previewStretch(); },
     () => commitStretch());
-  rows.windowMs = param('Window', st.windowMs, 5, 200, 1, (v) => `${Math.round(v)} ms`,
+  // Log too: 40 ms is the everyday setting and second-long grains are the
+  // extreme, so a linear control would bunch the useful range at one end.
+  rows.windowMs = param('Window', st.windowMs, 5, 2000, 1, (v) => `${Math.round(v)} ms`,
     (v) => { state.stretchDraft.windowMs = v; previewStretch(); },
-    () => commitStretch());
+    () => commitStretch(), true);
 
   for (const el of Object.values(rows)) box.appendChild(el);
   state.stretchRows = rows;
