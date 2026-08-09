@@ -11,7 +11,10 @@
 <!-- The menu bar row is gone: it cost a row of height and held one square.
      Kept as a detached node so the menu code has somewhere to mount when it
      lands, without reserving vertical space until then. -->
-<nav class="menus hidden" id="menuBar"></nav>
+<!-- A slim menu bar. It holds more than the row it replaced ever did, at
+     three quarters of its height. -->
+<header class="menubar"><nav class="menus" id="menuBar"></nav></header>
+<div class="menu-pop hidden" id="menuPop"></div>
 <span class="hidden" id="rateLabel"></span>
 <span class="hidden" id="libraryLabel"></span>
 
@@ -89,11 +92,10 @@
   <main class="centre">
 
     <!-- open documents: edit mode only -->
-    <div class="tabbar hidden" id="tabBar"></div>
 
     <!-- edit toolbar: only in the edit window -->
     <div class="edittools hidden" id="editTools">
-      <span class="sel-label mono" id="selLabel">no selection</span>
+      <div class="tabbar hidden" id="tabBar"></div>
       <div class="vsep"></div>
       <button class="ghost" data-op="cut">Cut</button>
       <button class="ghost" data-op="silence">Silence</button>

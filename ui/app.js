@@ -1411,7 +1411,9 @@ function drawSelection() {
 
 function updateSelLabel() {
   const sr = state.view.sampleRate || 1;
-  $('selLabel').textContent = state.sel
+  const el = $('selLabel');
+  if (!el) return;
+  el.textContent = state.sel
     ? `${fmtTime(state.sel.start / sr)} → ${fmtTime(state.sel.end / sr)} (${((state.sel.end - state.sel.start) / sr).toFixed(3)}s)`
     : 'click · drag · ⌥scrub';
 }
@@ -1448,6 +1450,17 @@ function renderMetaStrip(f) {
     }[prov];
     strip.appendChild(el);
   }
+
+  // The selection sits with the rest of the file's facts rather than off in the
+  // toolbar: it is a measurement of this sound, and it belongs next to the
+  // others. Appended last, so it reads as "…category sample, and you have this
+  // much of it selected".
+  const sel = document.createElement('div');
+  sel.className = 'meta-item sel';
+  sel.innerHTML = `<div class="prov measured"></div><span class="k">selection</span><span class="v" id="selLabel"></span>`;
+  sel.title = 'the range currently selected';
+  strip.appendChild(sel);
+  updateSelLabel();
 }
 
 // ======================================================= overview: the stats
@@ -3440,3 +3453,179 @@ if (rescanBtn) rescanBtn.onclick = async () => {
     rescanBtn.disabled = false;
   }
 };
+
+// ==================================================================== menus
+//
+// One registry, three ways in: the menu bar, a right-click on the waveform, and
+// the toolbar buttons that were always there. A menu item does not reimplement
+// a command — it presses the same control the toolbar does, so there is one
+// implementation and the two cannot drift.
+//
+// `on` decides whether an item is available. Greyed out with a reason beats
+// hidden: a command that vanishes teaches nothing, one that is dimmed tells you
+// what you are missing.
+
+const click = (id) => () => $(id)?.click();
+const hasSel = () => !!state.sel;
+const hasFile = () => !!state.selectedFile;
+const editing = () => state.mode === 'edit';
+
+const MENUS = [
+  {
+    title: 'File',
+    items: [
+      { label: 'Choose library…', run: click('pickLibrary') },
+      { label: 'Re-scan library', key: '⇧⌘R', run: click('rescanBtn') },
+      { sep: true },
+      { label: 'Open in editor', key: '⏎', on: hasFile,
+        run: () => openInEditor(state.selectedFile) },
+      { label: 'Close document', key: '⌘W', on: () => editing() && state.tabs?.length,
+        run: () => closeTab(state.activeTab) },
+      { sep: true },
+      { label: 'Export…', key: '⌘E', on: () => editing() && hasFile(), run: click('exportBtn') },
+      { label: 'Save tags', key: '⌘S', run: click('commitBtn') },
+    ],
+  },
+  {
+    title: 'Edit',
+    items: [
+      { label: 'Undo', key: '⌘Z', on: () => !$('undoBtn')?.disabled, run: click('undoBtn') },
+      { label: 'Redo', key: '⇧⌘Z', on: () => !$('redoBtn')?.disabled, run: click('redoBtn') },
+      { sep: true },
+      { label: 'Cut', key: '⌘X', on: hasSel, run: op('cut') },
+      { label: 'Silence', on: hasSel, run: op('silence') },
+      { sep: true },
+      { label: 'Fade in', on: hasSel, run: op('fadeIn') },
+      { label: 'Fade out', on: hasSel, run: op('fadeOut') },
+      { label: 'Reverse', on: hasSel, run: op('reverse') },
+      { sep: true },
+      { label: 'Add marker', key: 'M', on: hasFile, run: op('marker') },
+      { label: 'Add region', key: 'R', on: hasSel, run: op('region') },
+      { sep: true },
+      { label: 'Select all', key: '⌘A', on: hasFile, run: () => selectAll() },
+      { label: 'Deselect', key: '⎋', on: hasSel, run: () => { state.sel = null; drawSelection(); } },
+      { sep: true },
+      { label: 'Revert document', on: editing, run: click('revertBtn') },
+    ],
+  },
+  {
+    title: 'Audio',
+    items: [
+      { label: 'Play / pause', key: '␣', on: hasFile, run: click('playBtn') },
+      { label: 'Stop', on: hasFile, run: click('stopBtn') },
+      { label: 'Loop', on: hasFile, run: click('loopBtn') },
+      { sep: true },
+      { label: 'Capture what is playing', on: () => editing() && hasFile(), run: click('recBtn') },
+      { sep: true },
+      { label: 'Reset time, pitch and grains', on: editing, run: click('stretchReset') },
+    ],
+  },
+  {
+    title: 'View',
+    items: [
+      { label: 'Browse', on: () => state.mode !== 'overview', run: () => setMode('overview') },
+      { label: 'Edit', on: () => state.mode !== 'edit', run: () => setMode('edit') },
+      { sep: true },
+      { label: 'Zoom in', key: '+', on: hasFile, run: click('zoomIn') },
+      { label: 'Zoom out', key: '−', on: hasFile, run: click('zoomOut') },
+      { label: 'Fit', on: hasFile, run: click('zoomFit') },
+      { sep: true },
+      { label: 'Grain views in a panel', on: editing, run: () => openVisPop() },
+    ],
+  },
+];
+
+/// Run one of the edit operations, by pressing the button that owns it.
+function op(name) {
+  return () => document.querySelector(`#editTools [data-op="${name}"]`)?.click();
+}
+
+function selectAll() {
+  const frames = state.edit?.frames || state.view.frames || 0;
+  if (!frames) return;
+  state.sel = { start: 0, end: frames };
+  drawSelection();
+}
+
+let openMenu = null;
+
+function closeMenus() {
+  $('menuPop')?.classList.add('hidden');
+  document.querySelectorAll('.menu-title.open').forEach((b) => b.classList.remove('open'));
+  openMenu = null;
+}
+
+/// Draw a list of items into the shared popup at a point on screen.
+function showMenu(items, x, y, heading) {
+  const pop = $('menuPop');
+  pop.innerHTML = '';
+  if (heading) {
+    const h = document.createElement('div');
+    h.className = 'menu-head';
+    h.textContent = heading;
+    pop.appendChild(h);
+  }
+  for (const it of items) {
+    if (it.sep) {
+      const s = document.createElement('div');
+      s.className = 'menu-sep';
+      pop.appendChild(s);
+      continue;
+    }
+    const b = document.createElement('button');
+    b.className = 'menu-row';
+    b.innerHTML = `<span></span>${it.key ? `<span class="sk">${it.key}</span>` : ''}`;
+    b.firstChild.textContent = it.label;
+    b.disabled = it.on ? !it.on() : false;
+    b.onclick = () => { closeMenus(); it.run(); };
+    pop.appendChild(b);
+  }
+  pop.classList.remove('hidden');
+
+  // Keep it on screen: a menu opened near the right edge should turn back on
+  // itself rather than disappear off the side.
+  const r = pop.getBoundingClientRect();
+  pop.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 6)) + 'px';
+  pop.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 6)) + 'px';
+}
+
+function buildMenuBar() {
+  const bar = $('menuBar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  for (const m of MENUS) {
+    const b = document.createElement('button');
+    b.className = 'menu-title';
+    b.textContent = m.title;
+    b.onclick = (e) => {
+      e.stopPropagation();
+      if (openMenu === m.title) { closeMenus(); return; }
+      closeMenus();
+      b.classList.add('open');
+      openMenu = m.title;
+      const r = b.getBoundingClientRect();
+      showMenu(m.items, r.left, r.bottom + 2);
+    };
+    // Sliding along an open menu bar should follow, as menu bars do.
+    b.onmouseenter = () => { if (openMenu && openMenu !== m.title) b.click(); };
+    bar.appendChild(b);
+  }
+}
+
+buildMenuBar();
+
+// Right-click, or ctrl-click, anywhere on the sound.
+for (const id of ['lane', 'overview', 'regions']) {
+  const el = $(id);
+  if (!el) continue;
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const edit = MENUS.find((m) => m.title === 'Edit');
+    showMenu(edit.items, e.clientX, e.clientY, state.sel ? 'Selection' : 'No selection');
+  });
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#menuPop') && !e.target.closest('.menu-title')) closeMenus();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus(); });
