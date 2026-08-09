@@ -815,9 +815,12 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
             "fadeOut" => { let n = num("frames"); s.apply(|l| l.fade_out(range, n, shape)); }
             "reverse" => { s.apply(|l| l.reverse(range)); }
             "stretch" => {
-                let ratio = float("ratio", 1.0).clamp(0.25, 4.0);
-                let semis = float("semitones", 0.0).clamp(-24.0, 24.0);
-                let window = float("windowMs", 40.0).clamp(5.0, 200.0);
+                // Deliberately extreme. A hundred times longer is the point of
+                // a granular stretcher: at those ratios the grain window and
+                // its jitter are doing the work, not the time base.
+                let ratio = float("ratio", 1.0).clamp(0.01, 100.0);
+                let semis = float("semitones", 0.0).clamp(-48.0, 48.0);
+                let window = float("windowMs", 40.0).clamp(5.0, 2000.0);
                 // Read the current tier from the session already in hand.
                 // Going back through the store would re-lock the mutex this
                 // closure runs inside, and std's Mutex is not reentrant — that

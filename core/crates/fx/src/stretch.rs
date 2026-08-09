@@ -77,7 +77,7 @@ impl Stretch {
         if self.is_identity() {
             return input_frames;
         }
-        ((input_frames as f64) * (self.ratio.clamp(0.1, 10.0) as f64)).round() as u64
+        ((input_frames as f64) * (self.ratio.clamp(0.01, 100.0) as f64)).round() as u64
     }
 
     /// Stretch and shift `input` (interleaved).
@@ -94,8 +94,8 @@ impl Stretch {
             return input.to_vec();
         }
 
-        let ratio = self.ratio.clamp(0.1, 10.0);
-        let pitch = self.pitch_factor().clamp(0.25, 4.0);
+        let ratio = self.ratio.clamp(0.01, 100.0);
+        let pitch = self.pitch_factor().clamp(0.05, 20.0);
         let in_frames = input.len() / channels;
         let want = ((in_frames as f64) * ratio as f64).round() as usize;
 
@@ -147,7 +147,7 @@ fn wsola(
     let sr = sample_rate.max(1) as f32;
 
     // Even window, 50% overlap.
-    let win = (((window_ms.clamp(5.0, 200.0) / 1000.0) * sr) as usize).max(64) & !1;
+    let win = (((window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64) & !1;
     let hop_out = win / 2;
     let hop_in = ((hop_out as f32) / ratio).max(1.0) as usize;
     let search = (((quality.search_ms() / 1000.0) * sr) as usize).max(1);
