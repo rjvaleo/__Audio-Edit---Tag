@@ -895,6 +895,19 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                         _ => d,
                     }
                 };
+                let cw = s.list().stretch.wsola;
+                let wv = v.get("wsola");
+                let wsola = fx::stretch::WsolaParams {
+                    preserve_transients: match wv.and_then(|x| x.get("preserveTransients")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => cw.preserve_transients,
+                    },
+                    sensitivity: match wv.and_then(|x| x.get("sensitivity")) {
+                        Some(Value::Num(n)) if n.is_finite() => (*n as f32).clamp(0.0, 1.0),
+                        _ => cw.sensitivity,
+                    },
+                };
+
                 let grain = fx::Grain {
                     density_hz: gf("densityHz", cur.density_hz).clamp(0.0, 500.0),
                     layers: gf("layers", cur.layers as f32).clamp(1.0, 16.0) as u32,
@@ -912,7 +925,7 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 s.apply(|l| {
                     l.stretch = fx::Stretch {
                         ratio, semitones: semis, window_ms: window, quality,
-                        algorithm, vocoder, grain,
+                        algorithm, vocoder, wsola, grain,
                     };
                 });
             }
