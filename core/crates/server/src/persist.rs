@@ -63,7 +63,13 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
         .set("windowMs", s.window_ms as f64)
         .set("quality", quality_name(s.quality))
         .set("algorithm", s.algorithm.as_str())
-        .set("phaseLock", s.phase_lock)
+        .set(
+            "vocoder",
+            Value::obj()
+                .set("windowMs", s.vocoder.window_ms as f64)
+                .set("overlap", s.vocoder.overlap as f64)
+                .set("phaseLock", s.vocoder.phase_lock),
+        )
         .set(
             "grain",
             Value::obj()
@@ -74,6 +80,7 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("pitchJitterSemis", s.grain.pitch_jitter_semis as f64)
                 .set("pitchDriftSemis", s.grain.pitch_drift_semis as f64)
                 .set("driftRateHz", s.grain.drift_rate_hz as f64)
+                .set("layers", s.grain.layers as f64)
                 .set("seed", s.grain.seed as f64),
         )
 }
@@ -101,9 +108,24 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             .and_then(|a| a.as_str())
             .and_then(fx::stretch::Algorithm::from_str)
             .unwrap_or(d.algorithm),
-        phase_lock: matches!(v.get("phaseLock"), Some(Value::Bool(true))) || v.get("phaseLock").is_none(),
+        vocoder: {
+            let d = fx::stretch::VocoderParams::default();
+            let vv = v.get("vocoder");
+            let vf = |k: &str, dv: f32| -> f32 {
+                match vv.and_then(|x| x.get(k)) {
+                    Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                    _ => dv,
+                }
+            };
+            fx::stretch::VocoderParams {
+                window_ms: vf("windowMs", d.window_ms).clamp(5.0, 500.0),
+                overlap: vf("overlap", d.overlap as f32).clamp(2.0, 8.0) as u32,
+                phase_lock: !matches!(vv.and_then(|x| x.get("phaseLock")), Some(Value::Bool(false))),
+            }
+        },
         grain: Grain {
             density_hz: gf("densityHz", d.grain.density_hz).clamp(0.0, 500.0),
+            layers: gf("layers", d.grain.layers as f32).clamp(1.0, 16.0) as u32,
             overlap: gf("overlap", d.grain.overlap).clamp(1.0, 8.0),
             size_jitter: gf("sizeJitter", d.grain.size_jitter).clamp(0.0, 1.0),
             position_jitter_ms: gf("positionJitterMs", d.grain.position_jitter_ms)
@@ -315,12 +337,13 @@ mod tests {
             window_ms: 65.0,
             quality: Quality::Best,
             algorithm: fx::stretch::Algorithm::Vocoder,
-            phase_lock: false,
+            vocoder: fx::stretch::VocoderParams { window_ms: 60.0, overlap: 8, phase_lock: false },
             grain: Grain {
                 density_hz: 42.0,
                 overlap: 3.5,
                 size_jitter: 0.4,
                 position_jitter_ms: 120.0,
+                layers: 5,
                 pitch_jitter_semis: 6.0,
                 pitch_drift_semis: 2.5,
                 drift_rate_hz: 1.25,

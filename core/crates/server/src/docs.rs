@@ -211,7 +211,13 @@ pub fn edit_json(list: &EditList, can_undo: bool, can_redo: bool) -> Value {
                 .set("windowMs", list.stretch.window_ms as f64)
                 .set("quality", list.stretch_quality())
                 .set("algorithm", list.stretch.algorithm.as_str())
-                .set("phaseLock", list.stretch.phase_lock)
+                .set(
+                    "vocoder",
+                    Value::obj()
+                        .set("windowMs", list.stretch.vocoder.window_ms as f64)
+                        .set("overlap", list.stretch.vocoder.overlap as f64)
+                        .set("phaseLock", list.stretch.vocoder.phase_lock),
+                )
                 .set("active", list.is_stretched())
                 .set("granular", list.stretch.is_granular())
                 .set(
@@ -224,6 +230,7 @@ pub fn edit_json(list: &EditList, can_undo: bool, can_redo: bool) -> Value {
                         .set("pitchJitterSemis", list.stretch.grain.pitch_jitter_semis as f64)
                         .set("pitchDriftSemis", list.stretch.grain.pitch_drift_semis as f64)
                         .set("driftRateHz", list.stretch.grain.drift_rate_hz as f64)
+                        .set("layers", list.stretch.grain.layers as f64)
                         .set("seed", list.stretch.grain.seed as f64),
                 ),
         )

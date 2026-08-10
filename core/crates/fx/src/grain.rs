@@ -30,6 +30,18 @@ pub struct Grain {
     pub pitch_drift_semis: f32,
     /// How fast the drift wanders, in Hz.
     pub drift_rate_hz: f32,
+    /// How many independent grain streams run at once.
+    ///
+    /// One stream is a stretcher: grains laid end to end, each covering the
+    /// moment the last one left. Several streams is a *cloud* — the same source
+    /// read simultaneously from several places, each with its own jitter and
+    /// its own drift, so the density on the page is a multiple of what one
+    /// schedule can produce rather than the same grains packed tighter.
+    ///
+    /// Each layer is offset within the hop as well as re-seeded, so two layers
+    /// do not simply land on top of each other and sound like one grain twice
+    /// as loud.
+    pub layers: u32,
     /// Chosen by the user; the same seed always gives the same result.
     pub seed: u32,
 }
@@ -44,6 +56,7 @@ impl Default for Grain {
             pitch_jitter_semis: 0.0,
             pitch_drift_semis: 0.0,
             drift_rate_hz: 0.5,
+            layers: 1,
             seed: 1,
         }
     }
@@ -58,6 +71,7 @@ impl Grain {
             && self.position_jitter_ms.abs() < 1e-4
             && self.pitch_jitter_semis.abs() < 1e-4
             && self.pitch_drift_semis.abs() < 1e-4
+            && self.layers <= 1
     }
 
     /// Uniform random in 0..1 for grain `index`. `salt` separates the streams,
@@ -322,24 +336,37 @@ pub fn granular(
         return Vec::new();
     }
 
-    let events = grains(in_frames, sample_rate, ratio, semitones, window_ms, g);
     let tail = p.base_size * 2;
     let mut out = vec![0f32; (p.out_frames + tail) * channels];
     let mut norm = vec![0f32; p.out_frames + tail];
 
-    for e in &events {
-        let size = e.size as usize;
-        for i in 0..size {
-            let w = hann_at(i, size);
-            let dst = e.out_frame as usize + i;
-            if dst >= p.out_frames + tail {
-                break;
+    // One pass per layer. Each gets its own seed, so its jitter and drift are
+    // genuinely its own rather than the same cloud drawn twice, and its own
+    // offset within the hop, so the layers interleave instead of stacking on
+    // the same instants and merely getting louder.
+    let layers = g.layers.clamp(1, 16);
+    for layer in 0..layers {
+        let mut lg = *g;
+        if layer > 0 {
+            lg.seed = g.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
+        }
+        let offset = ((p.hop as u64 * layer as u64) / layers as u64) as usize;
+
+        for e in &grains(in_frames, sample_rate, ratio, semitones, window_ms, &lg) {
+            let size = e.size as usize;
+            for i in 0..size {
+                let w = hann_at(i, size);
+                let dst = e.out_frame as usize + offset + i;
+                if dst >= p.out_frames + tail {
+                    break;
+                }
+                let src = e.src_frame + (i as f32) * e.rate;
+                for ch in 0..channels {
+                    out[dst * channels + ch] +=
+                        sample_at(input, channels, ch, src, in_frames) * w;
+                }
+                norm[dst] += w;
             }
-            let src = e.src_frame + (i as f32) * e.rate;
-            for ch in 0..channels {
-                out[dst * channels + ch] += sample_at(input, channels, ch, src, in_frames) * w;
-            }
-            norm[dst] += w;
         }
     }
 
@@ -379,4 +406,144 @@ fn sample_at(input: &[f32], channels: usize, ch: usize, pos: f32, in_frames: usi
     let s0 = input[a * channels + ch];
     let s1 = input[b * channels + ch];
     s0 + (s1 - s0) * t
+}
+
+#[cfg(test)]
+mod jitter_symmetry {
+    use super::*;
+
+    /// Pitch jitter must be even-handed: as far sharp as it goes flat, measured
+    /// in semitones, because that is the unit the control is in. A ratio is not
+    /// symmetric — going up an octave doubles the rate while going down halves
+    /// it — so the check has to be on the semitone offset, not on the rate.
+    #[test]
+    fn pitch_jitter_is_as_far_sharp_as_it_is_flat() {
+        let g = Grain { pitch_jitter_semis: 6.0, seed: 7, ..Default::default() };
+        let mut lo = f32::MAX;
+        let mut hi = f32::MIN;
+        let mut sum = 0.0f64;
+        const N: u64 = 20_000;
+        for i in 0..N {
+            // Drift off, so this measures the jitter alone.
+            let v = g.pitch_jitter_semis * g.rand_bipolar(i, 11);
+            lo = lo.min(v);
+            hi = hi.max(v);
+            sum += v as f64;
+        }
+        let mean = (sum / N as f64) as f32;
+        assert!(mean.abs() < 0.1, "mean offset {mean} should sit on zero");
+        assert!(hi > 5.9 && hi <= 6.0, "sharpest was {hi}, wanted +6");
+        assert!(lo < -5.9 && lo >= -6.0, "flattest was {lo}, wanted -6");
+        assert!((hi + lo).abs() < 0.15, "lopsided: +{hi} against {lo}");
+    }
+
+    /// And the same once it has become a playback rate: a semitone up and a
+    /// semitone down should be reciprocal, which is what "same amount of
+    /// semitones" means in the frequency domain.
+    #[test]
+    fn equal_semitones_give_reciprocal_rates() {
+        let up = 2f32.powf(6.0 / 12.0);
+        let down = 2f32.powf(-6.0 / 12.0);
+        assert!((up * down - 1.0).abs() < 1e-5, "{up} and {down} are not reciprocal");
+    }
+
+    /// Drift is centred too — but it has to be measured over enough of the
+    /// underlying noise to mean anything.
+    ///
+    /// The first version of this sampled densely across a hundred noise nodes
+    /// and read a mean of −0.066, which looks like a bias and is not: with a
+    /// hundred values the standard error is already about 0.06, so the test was
+    /// measuring its own sampling noise. Crossing thousands of nodes is what
+    /// makes the number a statement about the generator.
+    #[test]
+    fn drift_is_centred_too() {
+        let g = Grain { pitch_drift_semis: 8.0, drift_rate_hz: 1.0, seed: 3, ..Default::default() };
+        let mut sum = 0.0f64;
+        const N: usize = 200_000;
+        for i in 0..N {
+            // One node per tenth of a step, so this crosses 20,000 of them.
+            sum += g.drift_at(i as f32 / 10.0) as f64;
+        }
+        let mean = (sum / N as f64) as f32;
+        assert!(mean.abs() < 0.02, "drift mean {mean} should sit on zero");
+    }
+}
+
+#[cfg(test)]
+mod layer_tests {
+    use super::*;
+
+    fn tone(secs: f32, rate: u32) -> Vec<f32> {
+        let n = (secs * rate as f32) as usize;
+        (0..n)
+            .map(|i| (2.0 * std::f32::consts::PI * 220.0 * i as f32 / rate as f32).sin())
+            .collect()
+    }
+
+    fn count(g: &Grain, layers: u32) -> usize {
+        let mut g = *g;
+        g.layers = layers;
+        // Every layer schedules its own grains, so the count is what the cloud
+        // is actually made of.
+        let mut total = 0;
+        let l = g.layers.clamp(1, 16);
+        for layer in 0..l {
+            let mut lg = g;
+            if layer > 0 {
+                lg.seed = g.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
+            }
+            total += grains(48_000, 48_000, 4.0, 0.0, 60.0, &lg).len();
+        }
+        total
+    }
+
+    #[test]
+    fn layers_multiply_the_number_of_grains() {
+        let g = Grain { pitch_jitter_semis: 2.0, seed: 5, ..Default::default() };
+        let one = count(&g, 1);
+        assert!(one > 0);
+        assert_eq!(count(&g, 4), one * 4, "four layers should be four schedules");
+        assert_eq!(count(&g, 8), one * 8);
+    }
+
+    #[test]
+    fn one_layer_is_exactly_what_it_always_was() {
+        let g = Grain { size_jitter: 0.3, pitch_jitter_semis: 3.0, seed: 9, ..Default::default() };
+        let a = granular(&tone(0.5, 48_000), 1, 48_000, 3.0, 0.0, 60.0, &g);
+        let mut b = g;
+        b.layers = 1;
+        let c = granular(&tone(0.5, 48_000), 1, 48_000, 3.0, 0.0, 60.0, &b);
+        assert_eq!(a, c, "layers of one must not change the existing sound");
+    }
+
+    /// The point of the control: more layers is a denser cloud, not just a
+    /// louder one. The overlap normalisation keeps the level in check, so what
+    /// should rise is the number of distinct grains sounding at once.
+    #[test]
+    fn more_layers_is_denser_not_louder() {
+        let src = tone(0.5, 48_000);
+        let g = Grain { position_jitter_ms: 40.0, pitch_jitter_semis: 4.0, seed: 11, ..Default::default() };
+
+        let rms = |v: &[f32]| (v.iter().map(|s| s * s).sum::<f32>() / v.len().max(1) as f32).sqrt();
+
+        let mut one = g;
+        one.layers = 1;
+        let mut many = g;
+        many.layers = 6;
+        let a = granular(&src, 1, 48_000, 4.0, 0.0, 60.0, &one);
+        let b = granular(&src, 1, 48_000, 4.0, 0.0, 60.0, &many);
+
+        assert_eq!(a.len(), b.len(), "layer count must not change the duration");
+        let (ra, rb) = (rms(&a), rms(&b));
+        assert!(rb > ra * 0.4 && rb < ra * 2.5, "level ran away: {ra} against {rb}");
+    }
+
+    #[test]
+    fn layers_are_capped_rather_than_trusted() {
+        let src = tone(0.2, 48_000);
+        let g = Grain { layers: 9999, seed: 2, ..Default::default() };
+        let out = granular(&src, 1, 48_000, 2.0, 0.0, 40.0, &g);
+        assert!(out.iter().all(|v| v.is_finite()));
+        assert!(!out.is_empty());
+    }
 }

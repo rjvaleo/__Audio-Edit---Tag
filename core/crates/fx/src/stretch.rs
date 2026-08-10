@@ -43,6 +43,9 @@ pub enum Algorithm {
     Wsola,
     /// Phase vocoder with identity phase locking. Frequency domain.
     Vocoder,
+    /// Deterministic grain cloud. Time domain, and the only one of the three
+    /// that is not trying to be transparent.
+    Granular,
 }
 
 impl Algorithm {
@@ -50,6 +53,7 @@ impl Algorithm {
         match self {
             Algorithm::Wsola => "wsola",
             Algorithm::Vocoder => "vocoder",
+            Algorithm::Granular => "granular",
         }
     }
 
@@ -57,8 +61,40 @@ impl Algorithm {
         match s {
             "wsola" => Some(Algorithm::Wsola),
             "vocoder" => Some(Algorithm::Vocoder),
+            "granular" => Some(Algorithm::Granular),
             _ => None,
         }
+    }
+}
+
+/// The vocoder's own windowing.
+///
+/// Separate from WSOLA's because the two mean different things by a window. For
+/// WSOLA it is a piece of waveform to splice; for the vocoder it is the
+/// analysis frame, and its length is a direct trade between frequency
+/// resolution and time resolution — long enough to separate two close partials
+/// is already long enough to smear a snare.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VocoderParams {
+    /// Analysis window in milliseconds. Sized to a power of two internally.
+    pub window_ms: f32,
+    /// Frames overlapping at any moment. More is smoother and slower.
+    pub overlap: u32,
+    /// Lock the bins around each spectral peak to that peak's phase.
+    pub phase_lock: bool,
+}
+
+impl Default for VocoderParams {
+    fn default() -> Self {
+        // ~46 ms at 44.1 kHz, which is 2048 samples — the usual starting point,
+        // and enough to resolve partials a couple of semitones apart.
+        VocoderParams { window_ms: 46.0, overlap: 4, phase_lock: true }
+    }
+}
+
+impl VocoderParams {
+    pub fn is_clean(&self) -> bool {
+        *self == VocoderParams::default()
     }
 }
 
@@ -72,9 +108,9 @@ pub struct Stretch {
     pub window_ms: f32,
     pub quality: Quality,
     pub algorithm: Algorithm,
-    /// Lock the bins around each spectral peak to that peak's phase. Vocoder
-    /// only; it is what keeps a partial from dissolving into its own skirts.
-    pub phase_lock: bool,
+    /// The vocoder's controls. Kept apart from the window above, which belongs
+    /// to the time-domain engines.
+    pub vocoder: VocoderParams,
     /// Per-grain variation. Inert by default.
     pub grain: crate::Grain,
 }
@@ -87,7 +123,7 @@ impl Default for Stretch {
             window_ms: 40.0,
             quality: Quality::Standard,
             algorithm: Algorithm::Wsola,
-            phase_lock: true,
+            vocoder: VocoderParams::default(),
             grain: crate::Grain::default(),
         }
     }
@@ -98,6 +134,15 @@ impl Stretch {
         (self.ratio - 1.0).abs() < 1e-4
             && self.semitones.abs() < 1e-4
             && self.grain.is_clean()
+    }
+
+    /// Are the granular controls doing anything, whichever engine is selected?
+    ///
+    /// Kept because the interface still wants to know — it dims the grain panel
+    /// when another engine is running — but it no longer decides which engine
+    /// runs. That conflation is what made the picker look broken.
+    pub fn grain_engaged(&self) -> bool {
+        !self.grain.is_clean()
     }
 
     /// Are the granular controls doing anything?
@@ -136,10 +181,15 @@ impl Stretch {
         let in_frames = input.len() / channels;
         let want = ((in_frames as f64) * ratio as f64).round() as usize;
 
-        // Granular whenever any per-grain control is engaged. Otherwise the
-        // WSOLA path, which sounds better on plain material because its
-        // similarity search picks splice points rather than taking them blind.
-        if self.is_granular() {
+        // The engine is whatever was asked for.
+        //
+        // This used to test `is_granular()` first and take the granular path
+        // whenever any grain control was off its default — which meant the
+        // engine picker silently did nothing on any document with grain
+        // settings on it, and the two stretchers sounded identical because
+        // neither was running. An override that cannot be seen is worse than
+        // no choice at all.
+        if self.algorithm == Algorithm::Granular {
             let out = crate::grain::granular(
                 input, channels, sample_rate, ratio, self.semitones, self.window_ms, &self.grain,
             );
@@ -148,6 +198,8 @@ impl Stretch {
 
         // Stretch far enough that resampling for pitch lands on `want`.
         let stretched = match self.algorithm {
+            // Handled above; it returns before reaching here.
+            Algorithm::Granular => unreachable!("granular returns earlier"),
             Algorithm::Wsola => wsola(
                 input,
                 channels,
@@ -161,19 +213,9 @@ impl Stretch {
                 channels,
                 ratio * pitch,
                 crate::vocoder::Settings {
-                    // The window control means the same thing to both engines,
-                    // so the transform is sized from it rather than from a
-                    // constant the user cannot see.
-                    fft_size: fft_size_for(self.window_ms, sample_rate),
-                    // A wider search buys WSOLA a better splice; for the
-                    // vocoder the equivalent is more overlap, which is what
-                    // smooths the phase estimate.
-                    overlap: match self.quality {
-                        Quality::Draft => 2,
-                        Quality::Standard => 4,
-                        Quality::Best => 8,
-                    },
-                    phase_lock: self.phase_lock,
+                    fft_size: fft_size_for(self.vocoder.window_ms, sample_rate),
+                    overlap: self.vocoder.overlap.clamp(2, 8) as usize,
+                    phase_lock: self.vocoder.phase_lock,
                 },
             ),
         };
