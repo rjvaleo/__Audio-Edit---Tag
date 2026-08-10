@@ -49,6 +49,12 @@ const state = {
   fftSize: 1024,
   view: { from: 0, to: 0, frames: 0, sampleRate: 44100 },
 
+  /// Keeping the playhead on screen while it plays. `scroll` slides the file
+  /// past a playhead pinned to the middle; `page` leaves it alone until it runs
+  /// off the edge and then turns the page. An app setting, not a per-document
+  /// one — it is how you like to watch, not something about the sound.
+  follow: { on: true, mode: 'scroll' },
+
   sel: null,                   // {start, end} in timeline frames
   edit: null,
   annotations: { markers: [], regions: [] },
@@ -619,6 +625,7 @@ function startTransportLoop() {
     if (!engine.playing) { transportRaf = null; return; }
     transportRaf = requestAnimationFrame(tick);
     paintTime();
+    followPlayhead();
     updatePlayhead();
     updateOverviewPlayhead();
   };
@@ -819,6 +826,7 @@ function setMode(mode) {
   // The lane changes size between modes, so the canvas has to be re-measured
   // once the layout has settled.
   afterLayout(() => {
+    layoutWaveBuffer();
     drawWave();
     if (state.showSpec) drawSpectrogram();
     drawSelection();
@@ -894,7 +902,9 @@ async function switchTab(i) {
   updateZoomLabel();
 
   // Peaks are kept per tab, so a return to a document is instant. Anything
-  // missing — a tab restored before its first load finished — is fetched.
+  // missing — a tab restored before its first load finished — is fetched. The
+  // canvas carries the last document's geometry until it is re-placed.
+  layoutWaveBuffer();
   if (state.peaks) { drawWave(); } else { await loadPeaks(); }
   if (state.showSpec) { state.spec ? drawSpectrogram() : loadSpectrogram(); }
   if (!state.stats) loadStats();
@@ -1003,23 +1013,193 @@ async function selectFile(file, { keepTab = false } = {}) {
 
 let peakSeq = 0;
 
+// ------------------------------------------------- following the playhead
+//
+// Following moves `state.view` — the range the lane shows — and everything
+// drawn on top of the lane already reads from it, so the playhead, cue,
+// selection and markers come along for free. What does not come for free is
+// the picture: the peaks are a server response, and asking for a new one on
+// every animation frame would be a request every 16ms for a strip that has
+// barely moved. So the fetched range is deliberately wider than the lane, and
+// the canvases holding it are slid sideways underneath. A new request is only
+// needed once the lane walks off the end of what was fetched.
+
+/// How much extra to fetch, in multiples of the visible span. Biased forward:
+/// playback only ever moves one way, so a buffer kept behind the lane is a
+/// buffer mostly wasted. A little is kept anyway, for a seek back or a page.
+const FOLLOW_BEHIND = 0.35;
+const FOLLOW_AHEAD = 1.9;
+
+/// Refetch with this much of the lead still in hand, so the new picture has
+/// time to arrive before the old one runs out.
+const FOLLOW_MARGIN = 0.3;
+
+/// The peaks endpoint will not return more than this many columns.
+const PEAK_COLUMN_CAP = 8192;
+
+/// Columns worth asking for across the lane itself: one per device pixel.
+/// Asking in CSS pixels draws each column across two device pixels on a retina
+/// display — half the detail the canvas can actually show.
+const lanePixels = () => Math.max(200, Math.min(PEAK_COLUMN_CAP,
+  Math.round(($('lane').clientWidth || 800) * (window.devicePixelRatio || 1))));
+
+/// Whether the lane should be chasing the playhead right now. Fitted to the
+/// whole file there is nothing to chase: the playhead cannot leave.
+const following = () =>
+  state.follow.on && engine.playing && state.mode === 'edit'
+  && state.view.frames > 0 && state.view.to - state.view.from < state.view.frames;
+
+/// How far the buffer reaches either side of the lane, in spans.
+///
+/// Trimmed to whatever the column budget allows. The alternative — asking for
+/// the full buffer and letting the endpoint clamp the columns — spends the
+/// extra width out of the detail instead, which is the one thing the buffer
+/// must not cost.
+function followShape() {
+  const room = Math.max(0, PEAK_COLUMN_CAP / lanePixels() - 1);
+  const fit = Math.min(1, room / (FOLLOW_BEHIND + FOLLOW_AHEAD));
+  return { behind: FOLLOW_BEHIND * fit, ahead: FOLLOW_AHEAD * fit };
+}
+
+/// The frame range to ask the server for: the visible window, widened while
+/// following. Null means the whole file, which is what "fit" is.
+function peakWindow() {
+  const { from, to, frames } = state.view;
+  const span = to - from;
+  if (!frames || span <= 0 || span >= frames) return null;
+  if (!following()) return { from, to };
+  const sh = followShape();
+  return {
+    from: Math.max(0, from - Math.round(span * sh.behind)),
+    to: Math.min(frames, to + Math.round(span * sh.ahead)),
+  };
+}
+
+/// Put each canvas where its own data belongs.
+///
+/// The lane shows `state.view`. A canvas holds whatever range its last response
+/// covered, which may be wider and may be a window behind — the peaks and the
+/// spectrogram are separate requests and need not agree. So each is sized and
+/// offset from its own range, and the lane, which already clips, hides the
+/// rest. Nothing else on the lane needs any part of this.
+function layoutWaveBuffer() {
+  const span = state.view.to - state.view.from;
+  const laneW = $('lane').clientWidth || 0;
+  placeCanvas($('waveCanvas'), state.peaks, span, laneW);
+  placeCanvas($('specCanvas'), state.spec, span, laneW);
+}
+
+function placeCanvas(canvas, data, span, laneW) {
+  if (!canvas) return;
+  // Nothing to offset: hand the geometry back to the stylesheet rather than
+  // pinning a pixel width that a resize would then have to catch up with.
+  if (!data || !laneW || span <= 0 || !(data.to > data.from)
+      || (data.from === state.view.from && data.to === state.view.to)) {
+    canvas.style.width = '';
+    canvas.style.transform = '';
+    return;
+  }
+  const px = laneW / span;
+  canvas.style.width = `${((data.to - data.from) * px).toFixed(2)}px`;
+  canvas.style.transform = `translateX(${((data.from - state.view.from) * px).toFixed(2)}px)`;
+}
+
+/// Move the window so the playhead stays on screen. Called every frame while
+/// playing; most of those frames it does nothing.
+function followPlayhead() {
+  if (!following()) return;
+  const { from, to, frames } = state.view;
+  const span = to - from;
+  const f = sourceFrameNow();
+  if (!isFinite(f)) return;
+
+  let a;
+  if (state.follow.mode === 'page') {
+    if (f >= from && f < to) return;
+    // Start the new page a little before the playhead, so the moment it is on
+    // is not pressed against the very edge of the lane.
+    a = f - span * 0.06;
+  } else {
+    a = f - span / 2;
+  }
+  a = Math.max(0, Math.min(frames - span, Math.round(a)));
+
+  if (a !== from) {
+    state.view.from = a;
+    state.view.to = a + span;
+    layoutWaveBuffer();
+    drawSelection();
+    drawCue();
+    drawOverviewWindow();
+    // Rebuilding the ruler and the region strip every frame is only worth it if
+    // there is something in them.
+    if (state.annotations.markers.length || state.annotations.regions.length) drawMarkers();
+  }
+
+  // Checked even when the window did not move, because it may not have been
+  // widened yet: pressing play with the lane already where the playhead is
+  // leaves nothing to scroll and a buffer that is only as wide as the lane.
+  const p = state.peaks;
+  const sh = followShape();
+  const needFrom = Math.max(0, a - span * sh.behind * FOLLOW_MARGIN);
+  const needTo = Math.min(frames, a + span + span * sh.ahead * FOLLOW_MARGIN);
+  if (!p || p.from > needFrom || p.to < needTo) refetchWindow();
+}
+
+let refetchTimer = null;
+function refetchWindow() {
+  if (refetchTimer) return;
+  refetchTimer = setTimeout(() => {
+    refetchTimer = null;
+    loadPeaks();
+    if (state.showSpec) loadSpectrogram();
+  }, 60);
+}
+
+function setFollow(change) {
+  Object.assign(state.follow, change);
+  reflectFollow();
+  if (state.follow.on) {
+    followPlayhead();
+  } else {
+    // Drop the widened buffer, so the strip goes back to being exactly the lane.
+    loadPeaks();
+    if (state.showSpec) loadSpectrogram();
+  }
+}
+
+function reflectFollow() {
+  $('followBtn')?.classList.toggle('on', state.follow.on);
+  const sel = $('followMode');
+  if (sel) { sel.value = state.follow.mode; sel.disabled = !state.follow.on; }
+}
+
+$('followBtn').onclick = () => setFollow({ on: !state.follow.on });
+$('followMode').onchange = (e) => setFollow({ mode: e.target.value });
+reflectFollow();
+
 async function loadPeaks() {
   const f = state.selectedFile;
   if (!f) return;
   const seq = ++peakSeq;
-  // One column per *device* pixel. Asking in CSS pixels draws each column
-  // across two device pixels on a retina display — half the detail the canvas
-  // can actually show, which is why this strip looked coarser than the browser.
-  // One column per *device* pixel; asking in CSS pixels halves the detail on
-  // a retina display.
-  const dpr = window.devicePixelRatio || 1;
-  const cols = Math.max(200, Math.min(8192, Math.round(($('lane').clientWidth || 800) * dpr)));
+  const lanePx = lanePixels();
+  // While following, the window is wider than the lane. Scale the columns with
+  // it so the extra picture comes at the same detail rather than a coarser one.
+  const win = peakWindow();
+  const span = state.view.to - state.view.from;
+  const cols = win && span > 0
+    ? Math.max(200, Math.min(PEAK_COLUMN_CAP, Math.round(lanePx * ((win.to - win.from) / span))))
+    : lanePx;
+  // Whether what we are about to fetch covers more than the lane shows. Read
+  // now, because in scroll mode the visible window moves during the await.
+  const padded = !!win && (win.from !== state.view.from || win.to !== state.view.to);
+
   // Deliberately NOT the edited stream. The overview is the original file, so
   // it stays put while you work; the grain swarm shows what is being pulled
   // from it, and the playhead shows where in the source you are.
   let url = `/api/peaks?p=${encodeURIComponent(f.path)}&cols=${cols}`;
-  if (state.view.to > state.view.from) {
-    url += `&from=${Math.floor(state.view.from)}&to=${Math.ceil(state.view.to)}`;
+  if (win) {
+    url += `&from=${Math.floor(win.from)}&to=${Math.ceil(win.to)}`;
   }
 
   let peaks;
@@ -1033,7 +1213,13 @@ async function loadPeaks() {
   if (seq !== peakSeq) return;
 
   state.peaks = peaks;
-  state.view = { from: peaks.from, to: peaks.to, frames: peaks.frames, sampleRate: peaks.sampleRate };
+  state.view.frames = peaks.frames;
+  state.view.sampleRate = peaks.sampleRate;
+  // An unpadded response *is* the visible window, clamping and all, so take it.
+  // A padded one covers more than the lane shows, and the visible window stays
+  // where following put it.
+  if (!padded) { state.view.from = peaks.from; state.view.to = peaks.to; }
+  layoutWaveBuffer();
   updateZoomLabel();
   drawWave();
   drawMarkers();
@@ -1138,7 +1324,9 @@ function drawWave() {
   // exactly one sample and min === max. An envelope of a single sample is a
   // zero-height rectangle that says nothing, so switch to drawing the samples
   // themselves — stem, dot and the line between them.
-  const span = state.view.to - state.view.from;
+  // The canvas covers the range the *peaks* describe, which while following is
+  // wider than the lane, so the span in play here is theirs and not the view's.
+  const span = p.to - p.from;
   const sampleMode = span > 0 && p.columns >= span;
 
   for (let ch = 0; ch < nch; ch++) {
@@ -1309,6 +1497,9 @@ let resizeTimer;
 function redrawLane() {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
+    // The canvases are sized in pixels off the lane's width while following, so
+    // they have to be re-placed before anything is drawn into them.
+    layoutWaveBuffer();
     drawWave();
     if (state.showSpec) drawSpectrogram();
     drawSelection();
@@ -2643,13 +2834,24 @@ document.querySelectorAll('[data-fft]').forEach((b) => {
 async function loadSpectrogram() {
   const f = state.selectedFile;
   if (!f || !state.showSpec) return;
-  const cols = Math.max(200, Math.min(1200, Math.floor($('lane').clientWidth) || 800));
+  // Scaled up for the wider following window, but not the whole way. Every
+  // column is an FFT on the server and a column of pixels the browser fills one
+  // at a time, and following refetches often enough that the full count lands
+  // as a hitch. A slightly coarser strip while playing is the better trade —
+  // stop, and the next fetch is at full detail again.
+  const lane = Math.max(200, Math.min(1200, Math.floor($('lane').clientWidth) || 800));
+  const win = peakWindow();
+  const span = state.view.to - state.view.from;
+  const cols = win && span > 0
+    ? Math.min(1600, Math.round(lane * Math.sqrt((win.to - win.from) / span)))
+    : lane;
   let url = `/api/spectrogram?p=${encodeURIComponent(f.path)}&cols=${cols}&fft=${state.fftSize}`;
-  if (state.view.to > state.view.from) {
-    url += `&from=${Math.floor(state.view.from)}&to=${Math.ceil(state.view.to)}`;
+  if (win) {
+    url += `&from=${Math.floor(win.from)}&to=${Math.ceil(win.to)}`;
   }
   try { state.spec = await api(url); }
   catch (e) { toast(e.message); return; }
+  layoutWaveBuffer();
   drawSpectrogram();
 }
 
@@ -2658,39 +2860,67 @@ function drawSpectrogram() {
   const canvas = $('specCanvas');
   if (!s || !state.showSpec) return;
 
-  canvas.width = s.columns;
-  canvas.height = s.bins;
+  const cols = s.columns;
+  const bins = s.bins;
+  canvas.width = cols;
+  canvas.height = bins;
   const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(s.columns, s.bins);
-  const bin = atob(s.data);
+  const img = ctx.createImageData(cols, bins);
+  const out = img.data;
 
-  const at = (c, b) => (c < 0 || b < 0 || c >= s.columns || b >= s.bins)
-    ? 0 : bin.charCodeAt(c * s.bins + b) / 255;
+  // A typed array and a lookup table, rather than charCodeAt through a closure
+  // and a freshly allocated triple for every pixel. This is close to a million
+  // pixels and following the playhead redraws it while the sound is playing, so
+  // what happens here is the difference between a scroll and a stutter.
+  const raw = atob(s.data);
+  const lvl = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) lvl[i] = raw.charCodeAt(i);
+  const lut = specRamp();
 
-  for (let c = 0; c < s.columns; c++) {
-    for (let b = 0; b < s.bins; b++) {
-      const v = at(c, b);
-
+  for (let c = 0; c < cols; c++) {
+    const here = c * bins;
+    const left = c > 0 ? here - bins : -1;
+    const right = c < cols - 1 ? here + bins : -1;
+    for (let b = 0; b < bins; b++) {
       // Relief. Treating the level as a height field and lighting it from the
       // upper left turns a flat wash into something with surfaces: a rising
       // partial catches the light on its leading edge and shades on its
       // trailing one, so a sweep reads as a ridge rather than a smear. The
-      // gradient is the plain central difference — cheap, and enough.
-      const dx = at(c + 1, b) - at(c - 1, b);
-      const dy = at(c, b + 1) - at(c, b - 1);
-      const shade = 1 + (dx * 1.15 - dy * 1.15) * SPEC_RELIEF;
+      // gradient is the plain central difference — cheap, and enough. Off the
+      // edge of the picture reads as silence.
+      const dx = ((right < 0 ? 0 : lvl[right + b]) - (left < 0 ? 0 : lvl[left + b])) / 255;
+      const dy = ((b < bins - 1 ? lvl[here + b + 1] : 0)
+                - (b > 0 ? lvl[here + b - 1] : 0)) / 255;
+      const shade = 1 + (dx - dy) * 1.15 * SPEC_RELIEF;
 
       // Low frequencies at the bottom, which means flipping the row order.
-      const y = s.bins - 1 - b;
-      const i = (y * s.columns + c) * 4;
-      const [r, g, bl] = specColour(v);
-      img.data[i]     = Math.max(0, Math.min(255, r * shade));
-      img.data[i + 1] = Math.max(0, Math.min(255, g * shade));
-      img.data[i + 2] = Math.max(0, Math.min(255, bl * shade));
-      img.data[i + 3] = 255;
+      const i = ((bins - 1 - b) * cols + c) * 4;
+      const k = lvl[here + b] * 3;
+      const r = lut[k] * shade;
+      const g = lut[k + 1] * shade;
+      const bl = lut[k + 2] * shade;
+      out[i]     = r < 0 ? 0 : r > 255 ? 255 : r;
+      out[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+      out[i + 2] = bl < 0 ? 0 : bl > 255 ? 255 : bl;
+      out[i + 3] = 255;
     }
   }
   ctx.putImageData(img, 0, 0);
+}
+
+/// The colour ramp as its 256 stops, so a pixel costs three array reads. The
+/// levels arrive as bytes, so this loses nothing.
+let specRampCache = null;
+function specRamp() {
+  if (specRampCache) return specRampCache;
+  specRampCache = new Uint8Array(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const [r, g, b] = specColour(i / 255);
+    specRampCache[i * 3] = r;
+    specRampCache[i * 3 + 1] = g;
+    specRampCache[i * 3 + 2] = b;
+  }
+  return specRampCache;
 }
 
 /// How hard the light rakes across the spectrogram.
@@ -3562,6 +3792,10 @@ const hasSel = () => !!state.sel;
 const hasFile = () => !!state.selectedFile;
 const editing = () => state.mode === 'edit';
 
+/// A menu item that shows its state rather than a shortcut: the key slot on the
+/// right carries a check mark when the setting is on.
+const tick = (is) => () => (is() ? '✓' : '');
+
 const MENUS = [
   {
     title: 'File',
@@ -3622,6 +3856,13 @@ const MENUS = [
       { label: 'Zoom out', key: '−', on: hasFile, run: click('zoomOut') },
       { label: 'Fit', on: hasFile, run: click('zoomFit') },
       { sep: true },
+      { label: 'Follow playhead', key: tick(() => state.follow.on),
+        on: hasFile, run: () => setFollow({ on: !state.follow.on }) },
+      { label: 'Follow by scrolling', key: tick(() => state.follow.mode === 'scroll'),
+        on: () => hasFile() && state.follow.on, run: () => setFollow({ mode: 'scroll' }) },
+      { label: 'Follow by paging', key: tick(() => state.follow.mode === 'page'),
+        on: () => hasFile() && state.follow.on, run: () => setFollow({ mode: 'page' }) },
+      { sep: true },
       { label: 'Grain views in a panel', on: editing, run: () => openVisPop() },
     ],
   },
@@ -3666,7 +3907,10 @@ function showMenu(items, x, y, heading) {
     }
     const b = document.createElement('button');
     b.className = 'menu-row';
-    b.innerHTML = `<span></span>${it.key ? `<span class="sk">${it.key}</span>` : ''}`;
+    // The key slot may be a function, for items that report a setting rather
+    // than a shortcut and so have to be read at the moment the menu opens.
+    const key = typeof it.key === 'function' ? it.key() : it.key;
+    b.innerHTML = `<span></span>${key ? `<span class="sk">${key}</span>` : ''}`;
     b.firstChild.textContent = it.label;
     b.disabled = it.on ? !it.on() : false;
     b.onclick = () => { closeMenus(); it.run(); };
