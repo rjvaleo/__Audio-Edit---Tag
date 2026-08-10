@@ -2017,7 +2017,7 @@ function sendStretch({ live }) {
   editOp(
     { op: 'stretch', ratio: d.ratio, semitones: d.semitones,
       windowMs: d.windowMs, quality: live ? 'draft' : d.quality,
-      algorithm: d.algorithm, phaseLock: d.phaseLock },
+      algorithm: d.algorithm, vocoder: d.vocoder },
     { live },
   );
 }
@@ -2048,7 +2048,7 @@ function renderStretch() {
     ratio: st.ratio, semitones: st.semitones,
     windowMs: st.windowMs, quality: st.quality || 'standard',
     algorithm: st.algorithm || 'wsola',
-    phaseLock: st.phaseLock !== false,
+    vocoder: { ...(st.vocoder || { windowMs: 46, overlap: 4, phaseLock: true }) },
   };
 
   // Which engine does the stretching. Not a quality ladder — the two fail in
@@ -2060,20 +2060,51 @@ function renderStretch() {
     <div class="seg" id="stretchEngine">
       <button class="seg-btn" data-alg="wsola" title="Time domain. Keeps transients intact - drums, percussion, one-shots.">WSOLA</button>
       <button class="seg-btn" data-alg="vocoder" title="Frequency domain. Holds chords and sustained tone together - pads, strings.">Vocoder</button>
-    </div>
-    <label class="check" id="lockWrap" title="Holds each partial together instead of letting it dissolve into neighbouring bins">
-      <input type="checkbox" id="phaseLock"> phase lock
-    </label>`;
+      <button class="seg-btn" data-alg="granular" title="A cloud of grains. Not trying to be transparent - this is the one you hear.">Granular</button>
+    </div>`;
   box.appendChild(eng);
 
+  // Each engine gets its own controls. They mean different things by a
+  // "window" — a splice for WSOLA, an analysis frame for the vocoder, a grain
+  // for the cloud — so one shared slider was three half-explained ones.
+  const own = document.createElement('div');
+  own.className = 'engine-params';
+  eng.after ? eng.after(own) : box.appendChild(own);
+
   const reflectEngine = () => {
+    const alg = state.stretchDraft.algorithm;
     for (const b of eng.querySelectorAll('.seg-btn')) {
-      b.classList.toggle('active', b.dataset.alg === state.stretchDraft.algorithm);
+      b.classList.toggle('active', b.dataset.alg === alg);
     }
-    $('phaseLock').checked = state.stretchDraft.phaseLock;
-    // Phase locking is a vocoder idea; there is nothing for it to lock in WSOLA.
-    $('lockWrap').style.opacity = state.stretchDraft.algorithm === 'vocoder' ? 1 : 0.35;
-    $('phaseLock').disabled = state.stretchDraft.algorithm !== 'vocoder';
+    own.innerHTML = '';
+    if (alg === 'vocoder') {
+      const v = state.stretchDraft.vocoder;
+      own.appendChild(param('Analysis window', v.windowMs, 5, 500, 1,
+        (x) => `${Math.round(x)} ms`,
+        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true));
+      own.appendChild(param('Overlap', v.overlap, 2, 8, 1,
+        (x) => `${Math.round(x)}×`,
+        (x) => { v.overlap = Math.round(x); previewStretch(); }, () => commitStretch()));
+      const lock = document.createElement('label');
+      lock.className = 'check';
+      lock.title = 'Holds each partial together instead of letting it dissolve into neighbouring bins';
+      lock.innerHTML = `<input type="checkbox"${v.phaseLock ? ' checked' : ''}> phase lock`;
+      lock.querySelector('input').onchange = (e) => {
+        v.phaseLock = e.target.checked;
+        commitStretch();
+      };
+      own.appendChild(lock);
+    }
+    // WSOLA's window is the shared one below, and granular's controls are the
+    // Grain shape panel, so neither needs anything extra here.
+    const grainOn = alg === 'granular';
+    for (const id of ['grainShape', 'grainPitch']) {
+      const panel = $(id)?.closest('.cpanel');
+      if (panel) {
+        panel.style.opacity = grainOn ? 1 : 0.4;
+        panel.title = grainOn ? '' : 'Select the Granular engine to use these';
+      }
+    }
   };
   for (const b of eng.querySelectorAll('.seg-btn')) {
     b.onclick = () => {
@@ -2082,10 +2113,6 @@ function renderStretch() {
       commitStretch();
     };
   }
-  $('phaseLock').onchange = (e) => {
-    state.stretchDraft.phaseLock = e.target.checked;
-    commitStretch();
-  };
   reflectEngine();
 
 
@@ -2133,7 +2160,7 @@ function renderGrainParams() {
              windowMs: state.stretchDraft.windowMs,
              quality: live ? 'draft' : state.stretchDraft.quality,
              algorithm: state.stretchDraft.algorithm,
-             phaseLock: state.stretchDraft.phaseLock,
+             vocoder: state.stretchDraft.vocoder,
              grain: state.grainDraft },
            { live });
   };
@@ -2144,6 +2171,7 @@ function renderGrainParams() {
   const groups = [
     [shape, [
       ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'from overlap' : `${Math.round(v)}/s`)],
+      ['Layers', 'layers', 1, 16, 1, (v) => `${Math.round(v)}×`],
       ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`],
       ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`],
       ['Position jitter', 'positionJitterMs', 0, 500, 1, (v) => `${Math.round(v)} ms`],
@@ -2294,7 +2322,8 @@ $('presetDelete').onclick = async () => {
 /// away would lose the sound you were working on.
 $('stretchReset').onclick = async () => {
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard',
-                         algorithm: 'wsola', phaseLock: true };
+                         algorithm: 'wsola',
+                         vocoder: { windowMs: 46, overlap: 4, phaseLock: true } };
   const grain = {
     densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
     pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5,

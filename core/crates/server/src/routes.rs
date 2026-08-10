@@ -867,9 +867,23 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     .and_then(|a| a.as_str())
                     .and_then(fx::stretch::Algorithm::from_str)
                     .unwrap_or(s.list().stretch.algorithm);
-                let phase_lock = match v.get("phaseLock") {
-                    Some(Value::Bool(b)) => *b,
-                    _ => s.list().stretch.phase_lock,
+                // The vocoder's own windowing, kept apart from the window
+                // above because the two engines mean different things by it.
+                let cv = s.list().stretch.vocoder;
+                let vv = v.get("vocoder");
+                let vf = |k: &str, d: f32| -> f32 {
+                    match vv.and_then(|x| x.get(k)) {
+                        Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                        _ => d,
+                    }
+                };
+                let vocoder = fx::stretch::VocoderParams {
+                    window_ms: vf("windowMs", cv.window_ms).clamp(5.0, 500.0),
+                    overlap: vf("overlap", cv.overlap as f32).clamp(2.0, 8.0) as u32,
+                    phase_lock: match vv.and_then(|x| x.get("phaseLock")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => cv.phase_lock,
+                    },
                 };
                 // Grain settings arrive as a nested object; anything absent
                 // keeps its current value so one slider cannot reset the rest.
@@ -883,6 +897,7 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 };
                 let grain = fx::Grain {
                     density_hz: gf("densityHz", cur.density_hz).clamp(0.0, 500.0),
+                    layers: gf("layers", cur.layers as f32).clamp(1.0, 16.0) as u32,
                     overlap: gf("overlap", cur.overlap).clamp(1.0, 8.0),
                     size_jitter: gf("sizeJitter", cur.size_jitter).clamp(0.0, 1.0),
                     position_jitter_ms: gf("positionJitterMs", cur.position_jitter_ms)
@@ -897,7 +912,7 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 s.apply(|l| {
                     l.stretch = fx::Stretch {
                         ratio, semitones: semis, window_ms: window, quality,
-                        algorithm, phase_lock, grain,
+                        algorithm, vocoder, grain,
                     };
                 });
             }

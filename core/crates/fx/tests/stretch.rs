@@ -4,7 +4,7 @@
 //! change the length and *not* the pitch; shifting must change the pitch and
 //! *not* the length. Both are measured on real signals.
 
-use fx::stretch::{Quality, Stretch};
+use fx::stretch::{Algorithm, Quality, Stretch};
 
 const SR: u32 = 48000;
 
@@ -266,7 +266,10 @@ use fx::Grain;
 fn grainy(f: impl FnOnce(&mut Grain)) -> Stretch {
     let mut g = Grain::default();
     f(&mut g);
-    Stretch { ratio: 1.0, semitones: 0.0, window_ms: 40.0, quality: Quality::Standard, grain: g, ..Default::default() }
+    // Granular is a choice now, not something a grain control switches on
+    // behind your back, so the tests have to ask for it like anyone else.
+    Stretch { ratio: 1.0, semitones: 0.0, window_ms: 40.0, quality: Quality::Standard,
+              algorithm: Algorithm::Granular, grain: g, ..Default::default() }
 }
 
 #[test]
