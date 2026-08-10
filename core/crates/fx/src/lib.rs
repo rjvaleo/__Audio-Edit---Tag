@@ -12,6 +12,7 @@ pub mod comp;
 pub mod eq;
 pub mod grain;
 pub mod stretch;
+pub mod transient;
 pub mod vocoder;
 
 pub use biquad::Coeffs;
