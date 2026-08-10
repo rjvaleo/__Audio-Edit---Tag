@@ -172,6 +172,20 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 
 /* -------------------------------------------------- left panel: the library */
 
+/* Sticky, because it is the answer to "where did my files go" and scrolling
+   the list must not take it off screen. The negative offset cancels the
+   panel body's own padding so nothing shows through above it. */
+.tree-opt {
+  position: sticky; top: -8px; z-index: 2;
+  display: flex; align-items: center; gap: 6px;
+  margin: -8px -8px 6px; padding: 8px 10px;
+  background: oklch(15% 0.014 250); border-bottom: 1px solid var(--line);
+  font-size: 11px; color: var(--text-2); cursor: pointer;
+  user-select: none;
+}
+.tree-opt input { accent-color: var(--accent); margin: 0; }
+.tree-opt .hint { margin-left: auto; font-size: 10px; color: var(--text-dimmer); }
+
 .tree { display: flex; flex-direction: column; gap: 1px; }
 
 .folder-row {

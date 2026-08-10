@@ -49,6 +49,11 @@ const state = {
   fftSize: 1024,
   view: { from: 0, to: 0, frames: 0, sampleRate: 44100 },
 
+  /// Whether the library lists files that have no audio header. Off, and the
+  /// browser shows only what is genuinely a sound file; on, and everything the
+  /// scan found is listed and openable, headerless data included.
+  playAll: false,
+
   /// Keeping the playhead on screen while it plays. `scroll` slides the file
   /// past a playhead pinned to the middle; `page` leaves it alone until it runs
   /// off the edge and then turns the page. An app setting, not a per-document
@@ -204,6 +209,28 @@ function matchesFilter(file) {
   return state.filter.split(/\s+/).every((t) => hay.includes(t));
 }
 
+/// Whether the file announced itself as audio.
+///
+/// The probe reads a container or it does not; anything it cannot recognise
+/// falls back to headerless PCM, which is why a peak cache, a text sidecar or a
+/// stray binary all open and play as noise. That fallback is deliberate and
+/// occasionally rewarding — SD2 files and raw dumps are real sounds with no
+/// header — so it stays, and this only governs what the library puts in front
+/// of you. `RAW-PCM`, `NON-AUDIO`, `UNREADABLE` and `EMPTY` all fail it.
+const hasAudioHeader = (file) =>
+  /^(WAV|AIFF|AIFC)/.test(file.format || '');
+
+const listed = (file) => state.playAll || hasAudioHeader(file);
+
+function setPlayAll(on) {
+  state.playAll = on;
+  $('playAll').checked = on;
+  buildTree();
+}
+
+$('playAll').checked = state.playAll;
+$('playAll').onchange = (e) => setPlayAll(e.target.checked);
+
 function buildTree() {
   const tree = $('tree');
   tree.innerHTML = '';
@@ -236,11 +263,23 @@ function buildTree() {
     if (!files) {
       kids.innerHTML = '<div class="loading">loading…</div>';
     } else {
-      const shown = files.filter(matchesFilter);
+      const matching = files.filter(matchesFilter);
+      const shown = matching.filter(listed);
+      const hidden = matching.length - shown.length;
       if (!shown.length) {
-        kids.innerHTML = '<div class="loading">no matches</div>';
+        // Say which switch is doing it, rather than leaving an empty folder to
+        // look like an empty folder.
+        kids.innerHTML = hidden
+          ? `<div class="loading">${hidden} without an audio header — turn on Play all files</div>`
+          : '<div class="loading">no matches</div>';
       } else {
         for (const file of shown) kids.appendChild(fileRow(file));
+        if (hidden) {
+          const note = document.createElement('div');
+          note.className = 'loading';
+          note.textContent = `${hidden} more without an audio header`;
+          kids.appendChild(note);
+        }
       }
     }
     tree.appendChild(kids);
@@ -3851,6 +3890,8 @@ const MENUS = [
     items: [
       { label: 'Browse', on: () => state.mode !== 'overview', run: () => setMode('overview') },
       { label: 'Edit', on: () => state.mode !== 'edit', run: () => setMode('edit') },
+      { sep: true },
+      { label: 'Play all files', key: tick(() => state.playAll), run: click('playAll') },
       { sep: true },
       { label: 'Zoom in', key: '+', on: hasFile, run: click('zoomIn') },
       { label: 'Zoom out', key: '−', on: hasFile, run: click('zoomOut') },
