@@ -729,3 +729,82 @@ fn the_shortest_stretch_does_not_collapse() {
         assert!(e.size > 0 && e.rate.is_finite());
     }
 }
+
+// ---------------------------------------------------------- transients
+
+fn hits_at(rate: u32, secs: f32, at: &[f32]) -> Vec<f32> {
+    let n = (secs * rate as f32) as usize;
+    let mut v: Vec<f32> = (0..n)
+        .map(|i| (std::f32::consts::TAU * 180.0 * i as f32 / rate as f32).sin() * 0.12)
+        .collect();
+    let mut seed = 99u32;
+    for t in at {
+        let start = (*t * rate as f32) as usize;
+        for i in 0..(rate as usize / 120) {
+            if start + i >= n { break; }
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let noise = ((seed >> 16) as f32 / 32768.0) - 1.0;
+            let env = (1.0 - i as f32 / (rate as f32 / 120.0)).max(0.0).powi(2);
+            v[start + i] += noise * env * 0.95;
+        }
+    }
+    v
+}
+
+#[test]
+fn preserving_transients_does_not_change_the_length() {
+    let rate = 44_100;
+    let src = hits_at(rate, 2.0, &[0.4, 0.9, 1.4]);
+    for ratio in [0.5f32, 2.0, 4.0] {
+        let mut s = Stretch { ratio, ..Default::default() };
+        s.wsola.preserve_transients = true;
+        let out = s.process(&src, 1, rate);
+        assert_eq!(out.len(), (src.len() as f32 * ratio).round() as usize, "at {ratio}x");
+    }
+}
+
+/// The point of the feature: a stretched drum hit should stay one hit rather
+/// than being laid down twice. Measured as the count of sharp energy rises in
+/// the output — stuttering shows up as extra ones.
+#[test]
+fn preserving_transients_keeps_hits_from_doubling() {
+    let rate = 44_100;
+    let places = [0.4f32, 0.9, 1.4];
+    let src = hits_at(rate, 2.0, &places);
+
+    let plain = Stretch { ratio: 3.0, ..Default::default() }.process(&src, 1, rate);
+    let mut kept = Stretch { ratio: 3.0, ..Default::default() };
+    kept.wsola.preserve_transients = true;
+    let kept = kept.process(&src, 1, rate);
+
+    let count = |v: &[f32]| fx::transient::onsets(v, 1, rate, 0.5).len();
+    let (a, b) = (count(&plain), count(&kept));
+    // Three went in; preservation should not invent more than plain WSOLA does.
+    assert!(b <= a, "preserved produced {b} onsets against plain WSOLA's {a}");
+    assert!(b >= places.len(), "lost hits entirely: {b}");
+}
+
+#[test]
+fn preservation_off_is_exactly_what_it_always_was() {
+    let rate = 44_100;
+    let src = hits_at(rate, 1.0, &[0.3, 0.7]);
+    let a = Stretch { ratio: 2.5, ..Default::default() }.process(&src, 1, rate);
+    let mut off = Stretch { ratio: 2.5, ..Default::default() };
+    off.wsola.preserve_transients = false;
+    let b = off.process(&src, 1, rate);
+    assert_eq!(a, b);
+}
+
+#[test]
+fn material_with_no_transients_is_unaffected_either_way() {
+    let rate = 44_100;
+    let n = rate as usize;
+    let tone: Vec<f32> = (0..n)
+        .map(|i| (std::f32::consts::TAU * 440.0 * i as f32 / rate as f32).sin())
+        .collect();
+    let plain = Stretch { ratio: 2.0, ..Default::default() }.process(&tone, 1, rate);
+    let mut kept = Stretch { ratio: 2.0, ..Default::default() };
+    kept.wsola.preserve_transients = true;
+    let kept = kept.process(&tone, 1, rate);
+    assert_eq!(plain.len(), kept.len());
+}

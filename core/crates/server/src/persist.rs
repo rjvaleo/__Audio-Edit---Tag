@@ -71,6 +71,12 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("phaseLock", s.vocoder.phase_lock),
         )
         .set(
+            "wsola",
+            Value::obj()
+                .set("preserveTransients", s.wsola.preserve_transients)
+                .set("sensitivity", s.wsola.sensitivity as f64),
+        )
+        .set(
             "grain",
             Value::obj()
                 .set("densityHz", s.grain.density_hz as f64)
@@ -108,6 +114,18 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             .and_then(|a| a.as_str())
             .and_then(fx::stretch::Algorithm::from_str)
             .unwrap_or(d.algorithm),
+        wsola: {
+            let d = fx::stretch::WsolaParams::default();
+            let wv = v.get("wsola");
+            fx::stretch::WsolaParams {
+                preserve_transients: matches!(
+                    wv.and_then(|x| x.get("preserveTransients")), Some(Value::Bool(true))),
+                sensitivity: match wv.and_then(|x| x.get("sensitivity")) {
+                    Some(Value::Num(n)) if n.is_finite() => (*n as f32).clamp(0.0, 1.0),
+                    _ => d.sensitivity,
+                },
+            }
+        },
         vocoder: {
             let d = fx::stretch::VocoderParams::default();
             let vv = v.get("vocoder");
@@ -338,6 +356,7 @@ mod tests {
             quality: Quality::Best,
             algorithm: fx::stretch::Algorithm::Vocoder,
             vocoder: fx::stretch::VocoderParams { window_ms: 60.0, overlap: 8, phase_lock: false },
+            wsola: fx::stretch::WsolaParams { preserve_transients: true, sensitivity: 0.7 },
             grain: Grain {
                 density_hz: 42.0,
                 overlap: 3.5,

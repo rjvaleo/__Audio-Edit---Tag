@@ -218,6 +218,12 @@ pub fn edit_json(list: &EditList, can_undo: bool, can_redo: bool) -> Value {
                         .set("overlap", list.stretch.vocoder.overlap as f64)
                         .set("phaseLock", list.stretch.vocoder.phase_lock),
                 )
+                .set(
+                    "wsola",
+                    Value::obj()
+                        .set("preserveTransients", list.stretch.wsola.preserve_transients)
+                        .set("sensitivity", list.stretch.wsola.sensitivity as f64),
+                )
                 .set("active", list.is_stretched())
                 .set("granular", list.stretch.is_granular())
                 .set(

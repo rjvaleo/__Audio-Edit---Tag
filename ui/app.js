@@ -2017,7 +2017,7 @@ function sendStretch({ live }) {
   editOp(
     { op: 'stretch', ratio: d.ratio, semitones: d.semitones,
       windowMs: d.windowMs, quality: live ? 'draft' : d.quality,
-      algorithm: d.algorithm, vocoder: d.vocoder },
+      algorithm: d.algorithm, vocoder: d.vocoder, wsola: d.wsola },
     { live },
   );
 }
@@ -2049,6 +2049,7 @@ function renderStretch() {
     windowMs: st.windowMs, quality: st.quality || 'standard',
     algorithm: st.algorithm || 'wsola',
     vocoder: { ...(st.vocoder || { windowMs: 46, overlap: 4, phaseLock: true }) },
+    wsola: { ...(st.wsola || { preserveTransients: false, sensitivity: 0.5 }) },
   };
 
   // Which engine does the stretching. Not a quality ladder — the two fail in
@@ -2095,8 +2096,25 @@ function renderStretch() {
       };
       own.appendChild(lock);
     }
-    // WSOLA's window is the shared one below, and granular's controls are the
-    // Grain shape panel, so neither needs anything extra here.
+    if (alg === 'wsola') {
+      const w = state.stretchDraft.wsola;
+      const keep = document.createElement('label');
+      keep.className = 'check';
+      keep.title = 'Hold drum hits at their original rate so they are not laid down twice';
+      keep.innerHTML = `<input type="checkbox"${w.preserveTransients ? ' checked' : ''}> preserve transients`;
+      keep.querySelector('input').onchange = (e) => {
+        w.preserveTransients = e.target.checked;
+        reflectEngine();
+        commitStretch();
+      };
+      own.appendChild(keep);
+      if (w.preserveTransients) {
+        own.appendChild(param('Detector', w.sensitivity, 0, 1, 0.01,
+          (x) => `${Math.round(x * 100)}%`,
+          (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch()));
+      }
+    }
+    // Granular's controls are the Grain shape panel, so it needs nothing here.
     const grainOn = alg === 'granular';
     for (const id of ['grainShape', 'grainPitch']) {
       const panel = $(id)?.closest('.cpanel');
@@ -2161,6 +2179,7 @@ function renderGrainParams() {
              quality: live ? 'draft' : state.stretchDraft.quality,
              algorithm: state.stretchDraft.algorithm,
              vocoder: state.stretchDraft.vocoder,
+             wsola: state.stretchDraft.wsola,
              grain: state.grainDraft },
            { live });
   };
@@ -2323,7 +2342,8 @@ $('presetDelete').onclick = async () => {
 $('stretchReset').onclick = async () => {
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard',
                          algorithm: 'wsola',
-                         vocoder: { windowMs: 46, overlap: 4, phaseLock: true } };
+                         vocoder: { windowMs: 46, overlap: 4, phaseLock: true },
+                         wsola: { preserveTransients: false, sensitivity: 0.5 } };
   const grain = {
     densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
     pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5,
