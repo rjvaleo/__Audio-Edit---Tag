@@ -2540,6 +2540,10 @@ function renderStretch() {
       $(id)?.classList.toggle('hidden', !grainOn);
     }
     $('extGrain')?.classList.toggle('hidden', !grainOn);
+    // Granular has no engine-specific extended groups, so this wrapper is empty
+    // — and an empty flex child still takes the gap either side of it, which
+    // showed as a band of nothing above the first heading.
+    ext.classList.toggle('hidden', !ext.children.length);
     placeExtendedReset();
   };
   for (const b of eng.querySelectorAll('.seg-btn')) {
