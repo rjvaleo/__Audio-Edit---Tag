@@ -1,3 +1,18 @@
+> **This is the original design brief, kept as history.**
+>
+> It was written before the build, and describes what was planned rather than
+> what exists — including several things that were never built (plugins,
+> automation, destructive mode, UCS as the metadata spine) and several that were
+> built differently (one stretcher became three; playback went native rather
+> than through the browser).
+>
+> **The current architecture document is [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).**
+> Where the two disagree, that one is right. See also
+> [`docs/CONTROLS.md`](../../docs/CONTROLS.md) and
+> [`docs/MENUS.md`](../../docs/MENUS.md).
+
+---
+
 # AudioLab — Architecture Specification
 
 **Cross-platform audio editor and sound cataloger. Rust core, browser + native, TDD.**
