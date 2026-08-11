@@ -635,6 +635,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
   width: 190px; flex-shrink: 0; padding: 12px 10px;
   border-right: 1px solid var(--line); overflow-y: auto;
 }
+.master-title { margin-top: 14px; }
 .rack-title {
   font-size: 9px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
   color: var(--text-dimmer); margin-bottom: 8px;
@@ -691,6 +692,10 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 }
 .param input[type=range] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent); }
 /* A bar the stroke is currently crossing. */
+/* A control that is present but cannot do anything yet, because the switch
+   above it is off. Dimmed rather than hidden: it says what is waiting. */
+.inactive { opacity: 0.4; pointer-events: none; }
+
 .param.painting .k, .param.painting .v { color: var(--accent); }
 .param.painting input[type=range] { filter: brightness(1.35); }
 

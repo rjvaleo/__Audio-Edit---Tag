@@ -11,6 +11,7 @@ pub mod biquad;
 pub mod comp;
 pub mod eq;
 pub mod grain;
+pub mod master;
 pub mod stretch;
 pub mod transient;
 pub mod vocoder;
@@ -19,6 +20,7 @@ pub use biquad::Coeffs;
 pub use comp::Compressor;
 pub use eq::Eq;
 pub use grain::{Grain, GrainStream, StreamParams};
+pub use master::{MasterSettings, Maximizer};
 pub use stretch::Stretch;
 pub use vocoder::Settings as VocoderSettings;
 
