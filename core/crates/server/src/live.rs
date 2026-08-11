@@ -82,11 +82,48 @@ pub struct Loaded {
     pub sample_rate: u32,
 }
 
+/// Whether the engine is being given a document or a sound.
+///
+/// Auditioning in the library is the second kind. Clicking a file there is a
+/// question about the file — what is this? — and answering it through whatever
+/// stretch, grain cloud and effect rack that file was last left with answers a
+/// different question entirely. A sound that plays back at thirty-six times its
+/// length because of something done to it last week is not an audition.
+///
+/// The editor is the first kind: there the document is the point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Playing {
+    /// The file itself. No edits, no stretch, no grains, no rack.
+    Raw,
+    /// The document, with everything on it.
+    Document,
+}
+
+/// The list to hand the engine.
+///
+/// Pulled out and made a function of its arguments because it is the whole of
+/// the rule, and the rest of `load` is machinery around it.
+pub fn playback_list(
+    how: Playing,
+    saved: Option<edit::EditList>,
+    identity: edit::EditList,
+) -> edit::EditList {
+    match how {
+        Playing::Raw => identity,
+        Playing::Document => saved.unwrap_or(identity),
+    }
+}
+
 /// Decode a file, fold in the structural edits, resample to the device, and
 /// hand the result to the audio thread.
 ///
 /// This is the expensive call — it is per file opened, not per parameter move.
-pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded, String> {
+pub fn load(
+    app: &Arc<App>,
+    rel: &str,
+    path: &std::path::Path,
+    how: Playing,
+) -> Result<Loaded, String> {
     ensure(app)?;
 
     let mut reader = audio_core::open(path).map_err(|e| format!("could not open: {e}"))?;
@@ -97,10 +134,11 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
     // The document as it stands, structure only. `render` walks the clips; the
     // stretch on the list is deliberately not applied here, because that is the
     // engine's job now and doing it twice would double the effect.
-    let list = app
-        .edits
-        .snapshot(rel)
-        .unwrap_or_else(|| edit::EditList::identity(info.frames(), info.channels, src_rate));
+    let list = playback_list(
+        how,
+        app.edits.snapshot(rel),
+        edit::EditList::identity(info.frames(), info.channels, src_rate),
+    );
     let frames = list.base_frames();
     let samples = edit::render::render(&list, &mut reader, 0, frames)
         .map_err(|e| format!("could not render the edit: {e}"))?;
@@ -131,7 +169,13 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
         // Whatever was separated belongs to the file that just closed.
         h.shared.set_parts(std::sync::Arc::new(fx::hstream::Parts::default()));
         h.shared.request_seek(0);
-        h.shared.set_rack(rack_for(app, rel, h.sample_rate, h.channels));
+        // An audition carries no rack either. `list` is already the bare file
+        // when raw, so the stretch and grain settings are gone with it; the
+        // rack is held separately and has to be dropped on its own.
+        h.shared.set_rack(match how {
+            Playing::Raw => None,
+            Playing::Document => rack_for(app, rel, h.sample_rate, h.channels),
+        });
     })?;
 
     if list.stretch.algorithm == fx::stretch::Algorithm::Hybrid {

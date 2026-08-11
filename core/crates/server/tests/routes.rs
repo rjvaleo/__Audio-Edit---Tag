@@ -1152,3 +1152,75 @@ fn an_unknown_annotation_operation_is_refused() {
     );
     assert_eq!(status(&r), 400);
 }
+
+// ------------------------------------------- a sound opens as itself
+
+#[test]
+fn a_sound_opens_at_its_defaults_however_it_was_left() {
+    // Settings that arrive without being asked for are indistinguishable from
+    // a bug. A file could come up at thirty-six times its length because of
+    // something done to it in a previous run of the program.
+    let s = Scratch::new("defaults");
+    s.sound("kit/a.wav", 4000);
+    let app = s.app();
+
+    // Leave a heavy stretch on it and let it reach disk.
+    server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"stretch","ratio":36.6,"semitones":-11,"algorithm":"granular"}"#),
+    );
+    app.save_sessions();
+    let raw = fs::read_to_string(app.sessions_path()).unwrap();
+    // Written as an f32, so it lands a little under the number that was asked
+    // for. What matters is that the heavy stretch reached the file at all.
+    assert!(raw.contains("\"ratio\":36.59"), "the session should have been written: {raw}");
+
+    // A fresh process, same data directory.
+    let app2 = s.app();
+    let v = json(&server::routes::route(&app2, &get("/api/edit", &[("p", "kit/a.wav")])));
+    assert_eq!(num(&v, &["stretch", "ratio"]), 1.0, "it came up stretched");
+    assert_eq!(num(&v, &["stretch", "semitones"]), 0.0, "it came up pitched");
+    assert!(!flag(&v, &["edited"]), "it came up already edited");
+    assert_eq!(text(&v, &["stretch", "algorithm"]), "wsola");
+}
+
+#[test]
+fn work_done_in_this_run_survives_switching_away_and_back() {
+    // The other half of the rule: only *restoring from disk* stopped. A
+    // document being worked on keeps everything until the program closes.
+    let s = Scratch::new("keepwork");
+    s.sound("kit/a.wav", 4000);
+    s.sound("kit/b.wav", 4000);
+    let app = s.app();
+
+    server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"cut","start":0,"end":1000}"#),
+    );
+    // Go and look at something else, then come back.
+    server::routes::route(&app, &get("/api/edit", &[("p", "kit/b.wav")]));
+    let v = json(&server::routes::route(&app, &get("/api/edit", &[("p", "kit/a.wav")])));
+    assert_eq!(num(&v, &["frames"]), 3000.0, "the cut was lost");
+    assert!(flag(&v, &["canUndo"]), "the history was lost");
+}
+
+#[test]
+fn an_audition_is_the_sound_and_a_document_is_the_document() {
+    // The rule the library depends on, as a function of its arguments — the
+    // rest of `live::load` is a device and cannot be reached from a test.
+    use server::live::{playback_list, Playing};
+    let plain = edit::EditList::identity(4000, 1, 44_100);
+    let mut worked = plain.clone();
+    worked.cut(edit::Range::new(0, 1000));
+    worked.stretch = fx::Stretch { ratio: 36.6, semitones: -11.0, ..fx::Stretch::default() };
+
+    let audition = playback_list(Playing::Raw, Some(worked.clone()), plain.clone());
+    assert!(audition.is_identity(), "an audition carried the document's work");
+    assert_eq!(audition.frames(), 4000);
+
+    let document = playback_list(Playing::Document, Some(worked.clone()), plain.clone());
+    assert_eq!(document, worked, "the editor lost the document");
+
+    // Nothing open yet: both fall back to the file itself.
+    assert!(playback_list(Playing::Document, None, plain.clone()).is_identity());
+}

@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **755 tests
+Written 11 August 2026 as a handoff, and kept up to date since. **758 tests
 passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 755 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 758 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -143,9 +143,14 @@ conversation, not a patch.
    pre-roll; stretch renders whole because WSOLA picks each splice from the
    previous one.
 7. **Edit operations address the PRE-stretch timeline** (`base_frames()`).
-8. **A saved session is refused if the file changed** (frames, channels or
-   sample rate). Stale offsets pointing at the wrong audio is worse than losing
-   the edit.
+8. **A sound opens at its defaults.** Sessions are written and are *not*
+   applied on open — see §7d. The validation that refuses a saved session whose
+   file has changed (frames, channels or sample rate) is still there and still
+   tested, because presets go through the same reader; it is simply no longer
+   on the path a file takes when you open it.
+
+   Work done in the current run is untouched by this: a session is created once
+   per file per process, so switching tabs and coming back keeps everything.
 9. **Every control is inert at its default, exactly.** A document that never
    touches a new control must render byte-for-byte what it did before that
    control existed — asserted field by field, not by spreading defaults, which
@@ -777,6 +782,40 @@ producing a second "Foo 2".
    default 10 ms radius and a 1 ms repair window, both edges were pulled onto
    the *same* crossing, the window closed to nothing and Repair Click silently
    did nothing at all.
+
+---
+
+## 7d. Auditioning versus editing
+
+Two things you can do to a sound, and for a long time they were the same thing.
+
+**The library auditions the sound. The editor plays the document.** Clicking a
+file in the browser is a question about the file — *what is this?* — and
+answering it through whatever stretch, grain cloud and rack that file was last
+left with answers a different question entirely. A one-shot playing back
+thirty-six times longer than it is, eleven semitones down, because of something
+set in a previous run, tells you nothing about the sound.
+
+`live::Playing` is the distinction, `live::playback_list` is the whole of the
+rule, and `/api/engine/load?raw=1` is how the interface asks for an audition.
+**Absent means the document**, so nothing written before this asks for a bare
+file by accident. The rack is held separately from the list and has to be
+dropped on its own; the stretch and grain settings go with the list.
+
+The engine remembers which kind it was given (`engine.raw`), because both go
+through the same load: without it, pressing play in the editor would resume the
+audition. Crossing between the two modes while something is playing stops it,
+the same rule as choosing a different sound.
+
+**And a sound opens at its defaults.** It used to open with whatever was
+restored from `SESSIONS.json`. Settings that arrive without being asked for are
+indistinguishable from a bug, and they were being reported as one.
+
+Sessions are still written. **Nothing reads them now** — worth knowing rather
+than worth worrying about: it means no one's work was thrown away to make this
+change, and the old behaviour is one line in `identity_for`. `App::restore` is
+still there and still correct. **Presets are the deliberate way to put settings
+back on a sound**, which is what they were built for.
 
 ---
 

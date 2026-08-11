@@ -640,15 +640,27 @@ fn api_annot(app: &Arc<App>, req: &Request) -> Response {
 }
 
 /// Build the starting edit document for a file, straight from its header.
+///
+/// **A sound opens at its defaults.** It used to open with whatever was last
+/// left on it, restored from `SESSIONS.json` — so a file could come up at
+/// thirty-six times its length, eleven semitones down, through a rack, because
+/// of something done to it in a previous run of the program. Settings that
+/// arrive without being asked for are indistinguishable from a bug, and they
+/// were being blamed for one.
+///
+/// Work done in *this* run is not affected: the session is created once per
+/// file per process, so switching tabs and coming back keeps everything.
+///
+/// Sessions are still written. Nothing reads them now, which is a thing to be
+/// aware of rather than a thing that costs anything: it means the old
+/// behaviour is one line away, and no one's work was thrown out to make this
+/// change. Presets are the deliberate way to put settings back on a sound.
 fn identity_for(app: &Arc<App>, rel: &str) -> Option<edit::EditList> {
     let lib = app.library_path()?;
     let path = resolve_within(&lib, rel)?;
     let reader = audio_core::open(&path).ok()?;
     let info = reader.info();
-    let fresh = edit::EditList::identity(info.frames(), info.channels, info.sample_rate);
-    // Anything saved for this file is restored here, once, when its session is
-    // first created — and only if the source still matches.
-    Some(app.restore(rel, fresh))
+    Some(edit::EditList::identity(info.frames(), info.channels, info.sample_rate))
 }
 
 /// What shapers exist and what each one has.
@@ -1538,7 +1550,7 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
             let _ = crate::live::push_params(app, rel, &list);
         }
     } else if let Some(path) = app.library_path().and_then(|l| resolve_within(&l, rel)) {
-        let _ = crate::live::load(app, rel, &path);
+        let _ = crate::live::load(app, rel, &path, crate::live::Playing::Document);
     }
 
     Response::json(out.to_string())
@@ -1945,7 +1957,15 @@ fn api_engine_load(app: &Arc<App>, req: &Request) -> Response {
         Err(r) => return r,
     };
     let rel = req.param("p").unwrap_or("").to_string();
-    match crate::live::load(app, &rel, &path) {
+    // The library auditions the sound; the editor plays the document. Absent
+    // means the document, so nothing that predates this asks for a bare file
+    // by accident.
+    let how = if req.param("raw").is_some_and(|v| v == "1" || v == "true") {
+        crate::live::Playing::Raw
+    } else {
+        crate::live::Playing::Document
+    };
+    match crate::live::load(app, &rel, &path, how) {
         Ok(l) => Response::json(
             Value::obj()
                 .set("frames", l.frames as f64)
