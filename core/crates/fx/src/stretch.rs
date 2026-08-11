@@ -541,7 +541,7 @@ pub(crate) fn read_at(input: &[f32], channels: usize, ch: usize, pos: f32, in_fr
 /// right depends on how alike the layers are — identical layers want a
 /// division by the count, independent ones want its square root — so rather
 /// than guess, this measures.
-fn layered<F>(g: &crate::Grain, channels: usize, hop: usize, mut render: F) -> Vec<f32>
+pub(crate) fn layered<F>(g: &crate::Grain, channels: usize, hop: usize, mut render: F) -> Vec<f32>
 where
     F: FnMut(&crate::Grain) -> Vec<f32>,
 {

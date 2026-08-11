@@ -15,6 +15,7 @@ pub mod grain;
 pub mod hybrid;
 pub mod master;
 pub mod noise;
+pub mod pstream;
 pub mod pvsola;
 pub mod stream;
 pub mod stretch;

@@ -546,6 +546,9 @@ fn sp(in_frames: usize, ratio: f32, semitones: f32, window_ms: f32, g: fx::Grain
         wsola: fx::stretch::WsolaParams::default(),
 
         vocoder: fx::stretch::VocoderParams::default(),
+
+
+        pvsola: fx::pvsola::PvsolaParams::default(),
     }
 }
 

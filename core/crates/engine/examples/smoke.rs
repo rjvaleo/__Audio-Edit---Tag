@@ -25,6 +25,9 @@ fn main() {
         wsola: fx::stretch::WsolaParams::default(),
 
         vocoder: fx::stretch::VocoderParams::default(),
+
+
+        pvsola: fx::pvsola::PvsolaParams::default(),
     };
 
     let engine = match Engine::start(params, source) {

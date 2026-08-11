@@ -56,6 +56,11 @@ impl PvsolaParams {
 }
 
 /// Stretch `input` (interleaved) by `ratio`, re-anchoring as we go.
+///
+/// A loop over [`crate::pstream::PvsolaStream`], which is the same code the
+/// audio callback runs. All three streaming engines are arranged this way now:
+/// there is one implementation and two ways of driving it, rather than two
+/// implementations and a promise that they agree.
 pub fn stretch(
     input: &[f32],
     channels: usize,
@@ -72,18 +77,20 @@ pub fn stretch(
         return vec![0.0; want * channels];
     }
 
-    let sr = sample_rate.max(1) as f32;
+    let sp = crate::stream::StretchParams {
+        ratio,
+        window_ms: spec.window_ms,
+        sample_rate,
+        wsola: spec.wsola,
+        vocoder: spec.vocoder,
+        grain: spec.grain,
+    };
+
+    // Too short for even one anchored segment. The plain vocoder is the honest
+    // answer rather than an anchoring scheme that would fire once.
     let n = crate::stretch::fft_size_for(spec.vocoder.window_ms, sample_rate);
-    let anchors = p.anchor_frames.clamp(1, 64) as usize;
-    let hop = (n / 4).max(1);
-
-    // How much output one run of the vocoder produces, and how much input it
-    // consumes to do it. The whole schedule follows from these two.
-    let out_span = anchors * hop;
+    let out_span = (p.anchor_frames.clamp(1, 64) as usize) * (n / 4).max(1);
     let in_span = ((out_span as f32) / ratio).round().max(1.0) as usize;
-
-    // Too short for even one segment plus its search. The plain vocoder is the
-    // honest answer rather than an anchoring scheme that would fire once.
     if in_frames < in_span + n * 2 {
         let mut s = *spec;
         s.algorithm = crate::stretch::Algorithm::Vocoder;
@@ -92,185 +99,35 @@ pub fn stretch(
         return s.process(input, channels, sample_rate);
     }
 
-    let search = (((p.search_ms.clamp(0.0, 200.0)) / 1000.0) * sr) as usize;
-    let blend = ((p.blend.clamp(0.0, 1.0) * n as f32) as usize).min(out_span);
-
-    // Each run reaches back a little before the material it is being asked
-    // for, and throws away what it makes there. Without it the splice would be
-    // cut from the first frames the vocoder produced, and those are its
-    // ramp-up — the overlap-add has not reached full depth yet, so the
-    // waveform there is not what the algorithm actually makes. Anchoring onto
-    // that put more disorder into the output than the drift it was there to
-    // prevent.
-    //
-    // The run-up is measured in *output* frames, which is where the ramp
-    // actually is: it lasts until the overlap-add is a full window deep,
-    // whatever the ratio. Measuring it in input frames instead — the obvious
-    // way, and the way this was first written — makes the discarded run-up
-    // grow with the ratio while the material it protects stays the same size,
-    // so the cost goes up with the square of the stretch. At 16× that was
-    // twenty seconds where this is four.
-    let pre_out = n;
-    let pre_in = ((pre_out as f32) / ratio).ceil() as usize;
-
-    // How much output is wanted from each run: the span, the fade into it, and
-    // room for the search to move. The segment is sized from that rather than
-    // from a guess, which is what stops each run vocoding five times the audio
-    // it will use.
-    let need_out = out_span + blend + search;
-    let need_in = ((need_out as f32) / ratio).ceil() as usize + n;
-
-    let mut out = vec![0f32; (want + out_span + n) * channels];
-    let mut written = 0usize; // frames of `out` that hold finished audio
-    let mut read = 0usize; // input frame the next run is anchored at
-
-    while written < want {
-        // Back up for the run-up, taking whatever is there.
-        let from = read.saturating_sub(pre_in);
-        let lead = read - from; // input frames of run-up actually available
-        let take = (lead + need_in).min(in_frames - from);
-        if take < n {
-            break;
+    // Layered like the other two engines, so the shared grain controls reach
+    // this one as well. Note that the audio callback does *not* layer — see
+    // `crate::stream` — so at more than one layer this path and live playback
+    // are different sounds. There is a test pinning that, deliberately, until
+    // layering is either taught to the streaming engines or dropped from them.
+    let hop = (crate::stretch::fft_size_for(spec.vocoder.window_ms, sample_rate) / 4).max(1);
+    crate::stretch::layered(&spec.grain, channels, hop, |g| {
+        let mut sp = sp;
+        sp.grain = *g;
+        const CHUNK: usize = 1 << 16;
+        let mut ps = crate::pstream::PvsolaStream::new(CHUNK, channels);
+        ps.seek(0, in_frames, &sp, &p);
+        let mut out = vec![0.0; want * channels];
+        let mut at = 0usize;
+        while at < want {
+            let take = CHUNK.min(want - at);
+            ps.render(
+                &mut out[at * channels..(at + take) * channels],
+                channels,
+                input,
+                &sp,
+                &p,
+            );
+            at += take;
         }
-        let seg = &input[from * channels..(from + take) * channels];
-
-        let mut s = *spec;
-        s.algorithm = crate::stretch::Algorithm::Vocoder;
-        s.ratio = ratio;
-        s.semitones = 0.0;
-        // Each run starts with no phase history at all — which is the point.
-        // Nothing carries over from the previous segment, so nothing can drift
-        // across an anchor.
-        let piece = s.process(seg, channels, sample_rate);
-        let piece_frames = piece.len() / channels;
-        if piece_frames == 0 {
-            break;
-        }
-        // Where in this run's output the anchor instant fell.
-        let at = if lead == pre_in { pre_out } else { ((lead as f32) * ratio).round() as usize };
-        if at >= piece_frames {
-            break;
-        }
-
-        if written == 0 {
-            let len = (piece_frames - at).min(out_span);
-            for i in 0..len * channels {
-                out[i] = piece[at * channels + i];
-            }
-            written = len;
-        } else {
-            // Where the new run should join. The search moves it either side of
-            // the anchor to whichever offset best continues what is already
-            // written — the same normalised correlation WSOLA uses, and the
-            // reason the joins are not audible as joins.
-            let join = written.saturating_sub(blend);
-            let off = best_offset(&out, channels, join, blend.max(1), &piece, at, search);
-
-            let avail = piece_frames - off;
-            let len = avail.min(out_span + blend);
-            for i in 0..len {
-                // Linear, not equal power. Equal power is right for two signals
-                // that are unrelated, and the search has just spent its whole
-                // effort making these two agree — fading correlated material
-                // that way sums to more than either side and puts a bump at
-                // every anchor.
-                let w = if blend > 0 && i < blend {
-                    (i as f32 + 0.5) / blend as f32
-                } else {
-                    1.0
-                };
-                for c in 0..channels {
-                    let o = (join + i) * channels + c;
-                    if o >= out.len() {
-                        break;
-                    }
-                    let old = if i < blend { out[o] * (1.0 - w) } else { 0.0 };
-                    out[o] = old + piece[(off + i) * channels + c] * w;
-                }
-            }
-            written = (join + len).min(out.len() / channels);
-        }
-
-        read += in_span;
-        if read + n >= in_frames {
-            break;
-        }
-    }
-
-    out.truncate(want * channels);
-    out.resize(want * channels, 0.0);
-    out
+        out
+    })
 }
 
-/// Which offset into `piece` best continues what is already written.
-///
-/// Normalised correlation against the last `span` frames of the output, mixed
-/// to mono first — the alignment is a property of the moment, not of one
-/// channel, and searching per channel would let a stereo pair land at two
-/// different offsets and smear the image.
-fn best_offset(
-    out: &[f32],
-    channels: usize,
-    join: usize,
-    span: usize,
-    piece: &[f32],
-    at: usize,
-    search: usize,
-) -> usize {
-    let piece_frames = piece.len() / channels;
-    if span == 0 || piece_frames <= span + at {
-        return at.min(piece_frames.saturating_sub(1));
-    }
-    if search == 0 {
-        return at;
-    }
-    let lo = at.saturating_sub(search);
-    let hi = (at + search).min(piece_frames - span - 1);
-    if hi <= lo {
-        return at.min(hi);
-    }
-
-    let mono = |buf: &[f32], f: usize| -> f32 {
-        let mut acc = 0f32;
-        for c in 0..channels {
-            acc += buf[f * channels + c];
-        }
-        acc / channels as f32
-    };
-
-    let mut want = Vec::with_capacity(span);
-    for i in 0..span {
-        let f = join + i;
-        want.push(if (f + 1) * channels <= out.len() { mono(out, f) } else { 0.0 });
-    }
-    let want_energy: f32 = want.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if want_energy < 1e-9 {
-        return at;
-    }
-
-    let mut best = at;
-    let mut best_score = f32::NEG_INFINITY;
-    // Every fourth frame: the correlation surface is smooth at this scale and
-    // a full search costs four times as much for a splice a sample or two
-    // different. The same stride WSOLA settled on.
-    let mut off = lo;
-    while off <= hi {
-        let mut dot = 0f32;
-        let mut energy = 0f32;
-        for i in 0..span {
-            let v = mono(piece, off + i);
-            dot += want[i] * v;
-            energy += v * v;
-        }
-        let score = dot / (want_energy * energy.sqrt() + 1e-9);
-        if score > best_score {
-            best_score = score;
-            best = off;
-        }
-        off += 4;
-    }
-    best
-}
 
 #[cfg(test)]
 mod tests {

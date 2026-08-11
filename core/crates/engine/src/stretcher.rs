@@ -16,6 +16,7 @@
 //! never have run at all.
 
 use fx::grain::{GrainEvent, StreamParams};
+use fx::pstream::PvsolaStream;
 use fx::stream::{Pitched, StretchParams, WsolaStream};
 use fx::stretch::Algorithm;
 use fx::vstream::VocoderStream;
@@ -27,6 +28,7 @@ pub struct Stretcher {
     grain: BlockRenderer,
     wsola: Pitched<WsolaStream>,
     vocoder: Pitched<VocoderStream>,
+    pvsola: PvsolaStream,
     /// What was running last block, so a change can be noticed and acted on.
     current: Algorithm,
     /// Output frame the whole thing is at. Kept here rather than read from
@@ -36,12 +38,12 @@ pub struct Stretcher {
 
 /// Which engines run here at all.
 ///
-/// PVSOLA and the hybrid are not yet streaming, so they fall back to the grain
-/// cloud rather than to silence. That is a lie about what you are hearing, so
-/// the interface has to say so — but silence would be a worse one, and refusing
-/// to play at all worse still.
+/// The hybrid is not streaming yet and falls back to the grain cloud rather
+/// than to silence. That is a lie about what you are hearing, so the interface
+/// has to say so — but silence would be a worse one, and refusing to play at
+/// all worse still.
 pub fn is_live(alg: Algorithm) -> bool {
-    matches!(alg, Algorithm::Granular | Algorithm::Wsola | Algorithm::Vocoder)
+    !matches!(alg, Algorithm::Hybrid)
 }
 
 /// What actually runs for a requested engine.
@@ -74,6 +76,7 @@ impl Stretcher {
                 channels,
             ),
             vocoder: Pitched::new(VocoderStream::new(max_block, channels), max_block, channels),
+            pvsola: PvsolaStream::new(max_block, channels),
             current: Algorithm::Granular,
             position: 0,
         }
@@ -108,6 +111,10 @@ impl Stretcher {
             Algorithm::Vocoder => {
                 self.vocoder
                     .seek(out_frame, sp.in_frames, &stretch_params(sp), sp.semitones)
+            }
+            Algorithm::Pvsola => {
+                self.pvsola
+                    .seek(out_frame, sp.in_frames, &stretch_params(sp), &sp.pvsola)
             }
             _ => self.grain.seek(out_frame, sp),
         }
@@ -154,6 +161,16 @@ impl Stretcher {
                     &src.samples,
                     &stretch_params(sp),
                     sp.semitones,
+                );
+                0
+            }
+            Algorithm::Pvsola => {
+                self.pvsola.render(
+                    out,
+                    channels,
+                    &src.samples,
+                    &stretch_params(sp),
+                    &sp.pvsola,
                 );
                 0
             }

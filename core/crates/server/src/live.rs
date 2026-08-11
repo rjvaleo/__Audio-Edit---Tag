@@ -50,6 +50,9 @@ fn idle_params() -> StreamParams {
         wsola: fx::stretch::WsolaParams::default(),
 
         vocoder: fx::stretch::VocoderParams::default(),
+
+
+        pvsola: fx::pvsola::PvsolaParams::default(),
     }
 }
 
@@ -109,6 +112,7 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
         algorithm: list.stretch.algorithm,
         wsola: list.stretch.wsola,
         vocoder: list.stretch.vocoder,
+        pvsola: list.stretch.pvsola,
     };
 
     with(app, |h| {

@@ -261,6 +261,8 @@ pub struct StreamParams {
     pub wsola: crate::stretch::WsolaParams,
     /// The vocoder's own settings, likewise.
     pub vocoder: crate::stretch::VocoderParams,
+    /// How often PVSOLA stops trusting the propagated phase.
+    pub pvsola: crate::pvsola::PvsolaParams,
 }
 
 impl StreamParams {
@@ -277,6 +279,7 @@ impl StreamParams {
             algorithm: crate::stretch::Algorithm::Granular,
             wsola: crate::stretch::WsolaParams::default(),
             vocoder: crate::stretch::VocoderParams::default(),
+            pvsola: crate::pvsola::PvsolaParams::default(),
         }
     }
 }
@@ -399,6 +402,9 @@ pub fn grains(
         wsola: crate::stretch::WsolaParams::default(),
 
         vocoder: crate::stretch::VocoderParams::default(),
+
+
+        pvsola: crate::pvsola::PvsolaParams::default(),
     };
     let p = sp.plan();
 
