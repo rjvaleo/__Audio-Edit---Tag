@@ -1226,8 +1226,15 @@ fn drift_rate_shapes_the_drift_on_every_engine() {
 fn layers_hold_the_level_on_every_engine() {
     let rate = 44_100;
     let src = busy(rate, 1.0);
-    for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Granular] {
         for jitter in [0.0f32, 0.5] {
+            // Granular with no jitter at all is several copies of the same
+            // audio, which sum coherently — and `layer_gain` lifts them by √N
+            // on top of that, deliberately. See `grain::layer_tests`. Every
+            // other combination has to hold its level.
+            if alg == Algorithm::Granular && jitter == 0.0 {
+                continue;
+            }
             let mut one = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
             one.grain.size_jitter = jitter;
             one.grain.position_jitter_ms = jitter * 80.0;
