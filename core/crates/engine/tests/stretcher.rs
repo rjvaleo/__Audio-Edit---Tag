@@ -452,3 +452,101 @@ fn layers_fall_back_to_one_until_the_bank_is_built() {
     ));
     assert_eq!(s.live_layers(&sp), 8, "the bank did not take");
 }
+
+/// Every engine has to respect the pitch slider, not just the two that were
+/// wrapped for it.
+///
+/// PVSOLA and the hybrid were built out of the other engines and never got the
+/// pitch stage the others have, so the control moved the exported file and did
+/// nothing at all to what came out of the callback. The two tests that should
+/// have caught it did not: the pitch test only ran WSOLA, and the
+/// live-equals-export test ran at zero semitones.
+#[test]
+fn every_live_engine_respects_the_pitch_slider() {
+    let channels = 1;
+    let samples: Vec<f32> = (0..SR as usize)
+        .map(|i| 0.5 * (std::f32::consts::TAU * 440.0 * i as f32 / SR as f32).sin())
+        .collect();
+    let src = Source { samples, channels };
+    let n = src.frames();
+
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+        let up = run(&src, &params(n, alg, 1.0, 12.0), 512, n);
+        let f = dominant(&up[n / 3..n / 3 + 16384]);
+        assert!(
+            (f - 880.0).abs() < 40.0,
+            "{alg:?}: an octave up landed at {f:.0} Hz, not 880"
+        );
+    }
+}
+
+#[test]
+fn the_hybrid_respects_the_pitch_slider() {
+    let channels = 1;
+    let samples: Vec<f32> = (0..SR as usize)
+        .map(|i| 0.5 * (std::f32::consts::TAU * 440.0 * i as f32 / SR as f32).sin())
+        .collect();
+    let src = Source { samples, channels };
+    let n = src.frames();
+    let sp = params(n, Algorithm::Hybrid, 1.0, 12.0);
+
+    let parts = fx::hstream::Parts::separate(&src.samples, channels, sp.hybrid);
+    let mut s = Stretcher::new(512, channels, SR);
+    s.set_map(None);
+    s.set_parts(std::sync::Arc::new(parts));
+    s.seek(0, &sp);
+    let mut out: Vec<f32> = Vec::new();
+    let mut buf = vec![0f32; 512 * channels];
+    let mut evs = no_events();
+    while out.len() / channels < n {
+        s.render(&mut buf, channels, &src, &sp, &mut evs);
+        out.extend_from_slice(&buf);
+    }
+    let f = dominant(&out[n / 3..n / 3 + 16384]);
+    assert!(
+        (f - 880.0).abs() < 40.0,
+        "the hybrid put an octave up at {f:.0} Hz, not 880"
+    );
+}
+
+/// And the same audio either way, with the pitch control off its default.
+///
+/// The existing version of this ran at zero semitones, which is the one
+/// setting that cannot tell a missing pitch stage from a working one.
+#[test]
+fn what_the_callback_plays_is_what_the_file_would_hold_when_pitched() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 2, channels), channels };
+    let n = src.frames();
+    let (ratio, semis) = (2.0f32, 7.0f32);
+    let want = ((n as f32) * ratio) as usize;
+
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+        let live = run(&src, &params(n, alg, ratio, semis), 512, want);
+        let offline = fx::Stretch { ratio, semitones: semis, algorithm: alg, ..Default::default() }
+            .process(&src.samples, channels, SR);
+
+        // Every frame but the last one, exactly.
+        //
+        // The interpolator reaches two frames forward. At the final output
+        // frame the offline render has run out of stretched audio and clamps
+        // to its last sample; the stream has no end to run out of and reads
+        // the real thing. That is a property of a finite buffer meeting an
+        // endless one, not of the two disagreeing — so it is excluded here and
+        // bounded below rather than quietly folded into the tolerance.
+        let last = (want - 1) * channels;
+        let worst = live[..last]
+            .iter()
+            .zip(&offline[..last])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
+        assert!(worst < 1e-6, "{alg:?}: live and export differ by {worst:.2e} when pitched");
+
+        let edge = live[last..]
+            .iter()
+            .zip(&offline[last..])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
+        assert!(edge < 0.01, "{alg:?}: the final frame is not just an edge, it is {edge:.2e}");
+    }
+}

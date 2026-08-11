@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **752 tests
+Written 11 August 2026 as a handoff, and kept up to date since. **755 tests
 passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 752 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 755 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -457,6 +457,39 @@ reading back faster; folding that into the splice instead would have been a
 different sound. `Pitched` drives the inner engine at ratio × pitch and
 resamples the result, sized for the widest shift the control allows.
 
+**Two engines never got that stage** — reported by ear, 11 Aug 2026: *"it
+doesn't sound like the PVSOLA or Hybrid respect the pitch slider."* They did
+not. Both are built *out of* the other engines rather than beside them, so
+neither can be a `Streamer` — PVSOLA takes parameters of its own, and the
+hybrid reads a separated source rather than the input — and `Pitched<S>`
+requires one. So they were wired in bare, and the pitch control moved the
+exported file while doing nothing at all to what came out of the callback.
+
+The resampling half is now `fx::stream::PitchRing`, with no engine attached.
+`Pitched<S>` is that plus a `Streamer`; `PitchedPvsola` and `PitchedHybrid`
+drive it directly. **One resampler**, which is the point — two would be two
+different sounds, and this project has been caught by that shape before.
+
+Two more came out of the same hour, both invisible until something asserted
+samples rather than pitch:
+
+- **The two resamplers were not the same curve.** Offline used four-point
+  Hermite, the streaming stage used two-point linear. A pitched stream and a
+  pitched export were audibly alike and numerically 0.11 apart. `hermite` is
+  shared now.
+- **The offline resampler computed its read position in `f32`.** At a hundred
+  thousand frames the gap between representable `f32` values is about eight
+  thousandths of a sample, so the interpolation fraction was wrong by that
+  much. Both ends compute it in `f64` now, and the streaming side *derives* it
+  from the output frame rather than accumulating, so a long render cannot walk
+  away from `f × pitch`.
+
+They agree exactly now — every frame but the last. At the final output frame
+the offline render has run out of stretched audio and clamps to its last
+sample while the stream reads the real thing, which is a finite buffer meeting
+an endless one rather than a disagreement. The test excludes that frame and
+bounds it separately rather than widening the tolerance to hide it.
+
 **The transient map is handed over like the rack**, because deriving one runs an
 onset detector across the whole file. It is rebuilt only when something it
 depends on moves, and not at all while transients are not being preserved —
@@ -864,17 +897,30 @@ decisions.**
     appeared not to have been added at all, and the server had stored it
     correctly the whole time. Check the browser console before blaming the
     server.
-17. **A windowed render is not a continuous one.** `render_fx` resets the rack
+17. **The one setting that cannot test a control is its default.** The
+    live-equals-export test ran at zero semitones and the pitch test ran only
+    WSOLA, so two engines shipped with no pitch on the audio thread at all and
+    both tests stayed green. Where a control has a wrapper, assert on an engine
+    that does *not* have it.
+18. **Two resamplers is two sounds.** The offline pitch shift interpolated with
+    four-point Hermite and the streaming one with two-point linear. Both were
+    right; neither matched. Anything computed on both paths has to be one
+    function called twice, not two functions that agree in the comments.
+19. **`f32` runs out of resolution long before a file does.** At a hundred
+    thousand frames its steps are eight thousandths of a sample, which is
+    enough to move an interpolation fraction. Positions along a timeline are
+    `f64`, and derived from an index rather than accumulated.
+20. **A windowed render is not a continuous one.** `render_fx` resets the rack
     and gives it a fixed pre-roll for each window, so two blocks rendered
     independently do not join smoothly once anything in the rack has memory.
     Anything looking for discontinuities has to render its own overlap; the
     click detector reported one at every multiple of the block size before it
     did.
-18. **`render_fx` per block on a stretched document is quadratic.** It renders
+21. **`render_fx` per block on a stretched document is quadratic.** It renders
     the whole timeline and slices, so a block loop renders the file once per
     block. Two separate places had this and both looked like a hang rather than
     a bug. Check `is_stretched()` and render once.
-19. **Struct-update syntax cannot see private fields from another crate.** Tests
+22. **Struct-update syntax cannot see private fields from another crate.** Tests
     in `tests/` are a separate crate, so `Thing { field: v, ..Default::default() }`
     fails on any struct with private state. Use the setter — which for anything
     implementing `Params` is the better test anyway, because it exercises the

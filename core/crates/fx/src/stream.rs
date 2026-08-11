@@ -381,18 +381,7 @@ impl Streamer for WsolaStream {
 /// allocated once it exists.
 pub struct Pitched<S: Streamer> {
     inner: S,
-    /// Stretched audio waiting to be read back at a rate.
-    buf: Vec<f32>,
-    ring: usize,
-    channels: usize,
-    /// Stretched frames produced by the inner engine so far.
-    made: u64,
-    /// Fractional read position along the stretched timeline.
-    pos: f64,
-    /// Output frames handed out.
-    emitted: u64,
-    /// How much the inner engine is asked for at a time.
-    chunk: usize,
+    ring: PitchRing,
     scratch: Vec<f32>,
 }
 
@@ -400,26 +389,209 @@ pub struct Pitched<S: Streamer> {
 /// sized from this, not from the current setting.
 const MAX_PITCH: f32 = 20.0;
 
+/// The resampling half of pitch shifting, with no engine attached.
+///
+/// [`Pitched`] is this plus a [`Streamer`]. PVSOLA and the hybrid cannot be
+/// `Streamer`s — one needs parameters of its own and the other reads a
+/// separated source rather than the input — so they drive this directly
+/// instead. **One implementation either way**, which is the whole point: two
+/// resamplers is two different sounds, and it would be the third time this
+/// project had the same thing implemented twice and drifting.
+///
+/// It **pulls**. To hand out N frames it needs about N × pitch frames of
+/// stretched audio, which the owner renders in chunks and pushes in. Sized for
+/// the widest pitch the control allows, so nothing is allocated once it exists.
+pub struct PitchRing {
+    /// Stretched audio waiting to be read back at a rate.
+    buf: Vec<f32>,
+    ring: usize,
+    channels: usize,
+    /// Stretched frames pushed in so far, counted from the start of the file.
+    made: u64,
+    /// Where the read position was when the pitch last changed.
+    base: f64,
+    /// Output frames read since then.
+    ///
+    /// The read position is *derived* from these two rather than accumulated,
+    /// so that at a steady pitch it is exactly `f × pitch` — the same
+    /// expression the offline resampler uses. Accumulating would drift away
+    /// from it over a long render.
+    since: u64,
+    last_pitch: f32,
+    /// Output frames handed out.
+    emitted: u64,
+    /// The earliest stretched frame this run holds.
+    ///
+    /// The interpolator reaches one frame back, and after a seek there is
+    /// nothing there. The offline resampler clamps its index to the start of
+    /// the buffer; this clamps to the start of the run, which is the same
+    /// thing said in streaming terms.
+    origin: u64,
+    /// How much the engine is asked for at a time.
+    chunk: usize,
+}
+
+impl PitchRing {
+    pub fn new(max_block: usize, channels: usize) -> Self {
+        let channels = channels.max(1);
+        let chunk = max_block.max(1);
+        // Room for the fastest read the control allows, plus one chunk so a
+        // pull always has somewhere to land, plus the four frames the
+        // interpolator spans.
+        let ring = ((max_block as f32 * MAX_PITCH) as usize) + chunk + 8;
+        PitchRing {
+            buf: vec![0.0; ring * channels],
+            ring,
+            channels,
+            made: 0,
+            base: 0.0,
+            since: 0,
+            last_pitch: 1.0,
+            emitted: 0,
+            origin: 0,
+            chunk,
+        }
+    }
+
+    /// The fractional read position along the stretched timeline.
+    fn pos(&self) -> f64 {
+        self.base + self.since as f64 * self.last_pitch as f64
+    }
+
+    /// Rebase when the pitch moves, so a change does not jump the read.
+    fn retune(&mut self, pitch: f32) {
+        if (pitch - self.last_pitch).abs() > 1e-9 {
+            self.base = self.pos();
+            self.since = 0;
+            self.last_pitch = pitch;
+        }
+    }
+
+    /// Semitones as a rate multiplier, clamped where the buffers assume.
+    pub fn factor(semitones: f32) -> f32 {
+        2f32.powf(semitones / 12.0).clamp(1.0 / MAX_PITCH, MAX_PITCH)
+    }
+
+    /// The ratio the engine underneath must be driven at.
+    ///
+    /// Pitch shifting is stretching plus reading back faster, so the engine
+    /// runs at ratio × pitch and the extra length is taken back out by the
+    /// read rate. The two cancel and the duration is the ratio's alone.
+    pub fn inner_params(p: &StretchParams, pitch: f32) -> StretchParams {
+        let mut inner = *p;
+        inner.ratio = (p.ratio * pitch).clamp(0.01, 100.0);
+        inner
+    }
+
+    pub fn chunk(&self) -> usize {
+        self.chunk
+    }
+
+    pub fn made(&self) -> u64 {
+        self.made
+    }
+
+    pub fn position(&self) -> u64 {
+        self.emitted
+    }
+
+    /// How many stretched frames must be in hand before `frames` can be read.
+    ///
+    /// Three past the last one the read lands on, because the interpolator
+    /// spans four frames and reaches two forward.
+    pub fn need(&mut self, frames: usize, pitch: f32) -> u64 {
+        self.retune(pitch);
+        if frames == 0 {
+            return self.made;
+        }
+        let last = self.pos() + (frames - 1) as f64 * pitch as f64;
+        last.floor() as u64 + 3
+    }
+
+    /// Take `n` freshly stretched frames from `src`.
+    pub fn push(&mut self, src: &[f32], n: usize, channels: usize) {
+        let channels = channels.max(1).min(self.channels);
+        for i in 0..n {
+            let slot = ((self.made + i as u64) % self.ring as u64) as usize;
+            for ch in 0..channels {
+                self.buf[slot * self.channels + ch] = src[i * channels + ch];
+            }
+        }
+        self.made += n as u64;
+    }
+
+    /// Read `out.len() / channels` frames back at `pitch`.
+    pub fn read(&mut self, out: &mut [f32], channels: usize, pitch: f32) {
+        self.retune(pitch);
+        let channels = channels.max(1).min(self.channels);
+        let frames = out.len() / channels.max(1);
+        let base = self.base;
+        let since = self.since;
+        for f in 0..frames {
+            let at = base + (since + f as u64) as f64 * pitch as f64;
+            let i = at.floor() as i64;
+            let t = (at - i as f64) as f32;
+            let mut tap = |k: i64, ch: usize| -> f32 {
+                let idx = (i + k).max(self.origin as i64) as u64;
+                let slot = (idx % self.ring as u64) as usize;
+                self.buf[slot * self.channels + ch]
+            };
+            for ch in 0..channels {
+                let (m1, p0, p1, p2) = (tap(-1, ch), tap(0, ch), tap(1, ch), tap(2, ch));
+                // The same four-point Hermite the offline renderer uses. It
+                // was linear here once, which is why a pitched stream and a
+                // pitched export were audibly the same and numerically not.
+                out[f * channels + ch] = crate::stretch::hermite(m1, p0, p1, p2, t);
+            }
+        }
+        self.since += frames as u64;
+        self.emitted += frames as u64;
+    }
+
+    /// Keep the counters in step while the ring is being bypassed.
+    ///
+    /// At unity pitch the engine already produces at the right rate, so the
+    /// ring is skipped entirely — but its idea of where it is has to keep up,
+    /// or the first block after the slider leaves unity reads from the wrong
+    /// place. Deliberately not `seek`: that clears the buffer, and clearing
+    /// twenty thousand samples on every block of a callback that is doing no
+    /// resampling at all is work for nothing.
+    pub fn advance_unpitched(&mut self, frames: usize) {
+        self.emitted += frames as u64;
+        self.base = self.emitted as f64;
+        self.since = 0;
+        self.last_pitch = 1.0;
+        self.made = self.emitted;
+        self.origin = self.emitted;
+    }
+
+    /// Move to an output frame. Returns the stretched frame the engine
+    /// underneath must be seeked to.
+    pub fn seek(&mut self, out_frame: u64, pitch: f32) -> u64 {
+        // Derived from the output frame, not from wherever the read had got
+        // to, so a seek to frame zero lands on exactly `f × pitch` — which is
+        // what the offline renderer computes for the same frame.
+        self.base = 0.0;
+        self.since = out_frame;
+        self.last_pitch = pitch;
+        let at = self.pos();
+        self.made = at as u64;
+        self.origin = at as u64;
+        self.emitted = out_frame;
+        self.buf.fill(0.0);
+        at as u64
+    }
+}
+
 impl<S: Streamer> Pitched<S> {
     /// Wrap an engine. The engine is built by the caller because each has its
     /// own idea of what it needs; everything after that is common.
     pub fn new(inner: S, max_block: usize, channels: usize) -> Self {
         let channels = channels.max(1);
-        let chunk = max_block.max(1);
-        // Room for the fastest read the control allows, plus one chunk so a
-        // pull always has somewhere to land, plus a frame for the interpolator
-        // to reach across.
-        let ring = ((max_block as f32 * MAX_PITCH) as usize) + chunk + 2;
         Pitched {
             inner,
-            buf: vec![0.0; ring * channels],
-            ring,
-            channels,
-            made: 0,
-            pos: 0.0,
-            emitted: 0,
-            chunk,
-            scratch: vec![0.0; chunk * channels],
+            ring: PitchRing::new(max_block, channels),
+            scratch: vec![0.0; max_block.max(1) * channels],
         }
     }
 
@@ -433,15 +605,7 @@ impl<S: Streamer> Pitched<S> {
         &self.inner
     }
 
-    /// Semitones as a rate multiplier, clamped where the buffers assume.
-    fn factor(semitones: f32) -> f32 {
-        2f32.powf(semitones / 12.0).clamp(1.0 / MAX_PITCH, MAX_PITCH)
-    }
-
     /// Render `frames` of output at `semitones`, reading from `input`.
-    ///
-    /// `p.ratio` is the *document's* ratio; the inner engine is driven at
-    /// `ratio × pitch` and the extra length is taken back out by the read rate.
     pub fn render_pitched(
         &mut self,
         out: &mut [f32],
@@ -450,72 +614,36 @@ impl<S: Streamer> Pitched<S> {
         p: &StretchParams,
         semitones: f32,
     ) {
-        let channels = channels.max(1).min(self.channels);
-        let frames = out.len() / channels.max(1);
-        out.fill(0.0);
-        if frames == 0 {
-            return;
-        }
-        let pitch = Self::factor(semitones);
+        let pitch = PitchRing::factor(semitones);
         if (pitch - 1.0).abs() < 1e-6 {
-            // Nothing to resample; the inner engine is already producing at the
-            // right rate, so do not pay for a copy through the ring.
+            // Nothing to resample; the engine is already producing at the right
+            // rate, so do not pay for a copy through the ring.
+            let frames = out.len() / channels.max(1);
             self.inner.render(out, channels, input, p);
-            self.emitted += frames as u64;
-            self.pos += frames as f64;
-            self.made = self.pos as u64;
+            self.ring.advance_unpitched(frames);
             return;
         }
-
-        let mut inner = *p;
-        inner.ratio = (p.ratio * pitch).clamp(0.01, 100.0);
-
-        // Everything this block will read, plus one for the interpolator.
-        let need = (self.pos + frames as f64 * pitch as f64).ceil() as u64 + 2;
-        while self.made < need {
-            let n = self.chunk.min((need - self.made) as usize);
+        let inner = PitchRing::inner_params(p, pitch);
+        let frames = out.len() / channels.max(1);
+        let need = self.ring.need(frames, pitch);
+        while self.ring.made() < need {
+            let n = self.ring.chunk().min((need - self.ring.made()) as usize);
             self.inner.render(&mut self.scratch[..n * channels], channels, input, &inner);
-            for i in 0..n {
-                let slot = ((self.made + i as u64) % self.ring as u64) as usize;
-                for ch in 0..channels {
-                    self.buf[slot * self.channels + ch] = self.scratch[i * channels + ch];
-                }
-            }
-            self.made += n as u64;
+            self.ring.push(&self.scratch, n, channels);
         }
-
-        for f in 0..frames {
-            let at = self.pos + f as f64 * pitch as f64;
-            let i = at.floor() as u64;
-            let t = (at - i as f64) as f32;
-            let a = (i % self.ring as u64) as usize;
-            let b = ((i + 1) % self.ring as u64) as usize;
-            for ch in 0..channels {
-                let s0 = self.buf[a * self.channels + ch];
-                let s1 = self.buf[b * self.channels + ch];
-                out[f * channels + ch] = s0 + (s1 - s0) * t;
-            }
-        }
-        self.pos += frames as f64 * pitch as f64;
-        self.emitted += frames as u64;
+        self.ring.read(out, channels, pitch);
     }
 
     pub fn position(&self) -> u64 {
-        self.emitted
+        self.ring.position()
     }
 
-    /// Move to an output frame. The inner engine is seeked to the matching
+    /// Move to an output frame. The engine underneath is seeked to the matching
     /// place on the *stretched* timeline, which runs `pitch` times faster.
     pub fn seek(&mut self, out_frame: u64, input_frames: usize, p: &StretchParams, semitones: f32) {
-        let pitch = Self::factor(semitones);
-        let mut inner = *p;
-        inner.ratio = (p.ratio * pitch).clamp(0.01, 100.0);
-        let at = (out_frame as f64) * pitch as f64;
-        self.pos = at;
-        self.made = at as u64;
-        self.emitted = out_frame;
-        self.buf.fill(0.0);
-        self.inner.seek(at as u64, input_frames, &inner);
+        let pitch = PitchRing::factor(semitones);
+        let at = self.ring.seek(out_frame, pitch);
+        self.inner.seek(at, input_frames, &PitchRing::inner_params(p, pitch));
     }
 }
 

@@ -18,7 +18,7 @@
 //! that will not repeat itself at a long ratio.
 
 use crate::noise::Morph;
-use crate::stream::{StretchParams, Streamer, WsolaStream};
+use crate::stream::{PitchRing, StretchParams, Streamer, WsolaStream};
 use crate::vstream::VocoderStream;
 use crate::{hybrid::HybridParams, nstream::NoiseStream};
 
@@ -363,5 +363,80 @@ mod tests {
     fn silence_streams_to_silence() {
         let out = streamed(&vec![0f32; 40_000], 1, &spec(3.0), 512);
         assert!(out.iter().all(|v| v.abs() < 1e-5));
+    }
+}
+
+/// The hybrid with the pitch stage on the end of it.
+///
+/// Like PVSOLA, it drives three other engines rather than sitting beside them
+/// — and it reads a separated source rather than the input — so it cannot be a
+/// [`Streamer`](crate::stream::Streamer) either, and it had no pitch on the
+/// audio thread for the same reason. Same ring, same resampler, same sound as
+/// the export.
+pub struct PitchedHybrid {
+    inner: HybridStream,
+    ring: PitchRing,
+    scratch: Vec<f32>,
+}
+
+impl PitchedHybrid {
+    pub fn new(max_block: usize, channels: usize, sample_rate: u32) -> Self {
+        let channels = channels.max(1);
+        PitchedHybrid {
+            inner: HybridStream::new(max_block, channels, sample_rate),
+            ring: PitchRing::new(max_block, channels),
+            scratch: vec![0.0; max_block.max(1) * channels],
+        }
+    }
+
+    pub fn position(&self) -> u64 {
+        self.ring.position()
+    }
+
+    /// The percussive part wants a transient map, as it does unpitched.
+    pub fn set_map(&mut self, map: Option<crate::transient::TimeMap>) {
+        self.inner.set_map(map);
+    }
+
+    pub fn render_pitched(
+        &mut self,
+        out: &mut [f32],
+        channels: usize,
+        parts: &Parts,
+        p: &StretchParams,
+        h: HybridParams,
+        semitones: f32,
+    ) {
+        let pitch = PitchRing::factor(semitones);
+        if (pitch - 1.0).abs() < 1e-6 {
+            let frames = out.len() / channels.max(1);
+            self.inner.render(out, channels, parts, p, h);
+            self.ring.advance_unpitched(frames);
+            return;
+        }
+        let inner = PitchRing::inner_params(p, pitch);
+        let frames = out.len() / channels.max(1);
+        let need = self.ring.need(frames, pitch);
+        while self.ring.made() < need {
+            let n = self.ring.chunk().min((need - self.ring.made()) as usize);
+            self.inner
+                .render(&mut self.scratch[..n * channels], channels, parts, &inner, h);
+            self.ring.push(&self.scratch, n, channels);
+        }
+        self.ring.read(out, channels, pitch);
+    }
+
+    pub fn seek(
+        &mut self,
+        out_frame: u64,
+        parts: &Parts,
+        p: &StretchParams,
+        h: HybridParams,
+        semitones: f32,
+    ) {
+        let pitch = PitchRing::factor(semitones);
+        let at = self.ring.seek(out_frame, pitch);
+        self.inner
+            .seek(at, parts, &PitchRing::inner_params(p, pitch), h);
     }
 }

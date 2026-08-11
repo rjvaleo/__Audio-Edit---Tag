@@ -750,9 +750,15 @@ fn resample(input: &[f32], channels: usize, factor: f32, want: usize) -> Vec<f32
     }
     let mut out = vec![0f32; want * channels];
     for f in 0..want {
-        let pos = f as f32 * factor;
+        // Double precision, and it matters. In `f32` the step between
+        // representable values at a hundred thousand frames is about eight
+        // thousandths of a sample, so the interpolation fraction is wrong by
+        // that much — small, but the streaming pitch stage cannot afford `f32`
+        // at all (its position accumulates across blocks), and the two have to
+        // agree exactly or a pitched export is not a pitched playback.
+        let pos = f as f64 * factor as f64;
         let i = pos.floor() as isize;
-        let t = pos - i as f32;
+        let t = (pos - i as f64) as f32;
         for ch in 0..channels {
             let s = |k: isize| -> f32 {
                 let idx = (i + k).clamp(0, in_frames as isize - 1) as usize;
@@ -764,7 +770,12 @@ fn resample(input: &[f32], channels: usize, factor: f32, want: usize) -> Vec<f32
     out
 }
 
-fn hermite(m1: f32, p0: f32, p1: f32, p2: f32, t: f32) -> f32 {
+/// Four-point Hermite interpolation.
+///
+/// Shared with the streaming pitch stage on purpose: the offline resampler and
+/// the live one have to be the same curve or a pitched export and a pitched
+/// stream are different sounds.
+pub fn hermite(m1: f32, p0: f32, p1: f32, p2: f32, t: f32) -> f32 {
     let c = (p1 - m1) * 0.5;
     let v = p0 - p1;
     let w = c + v;
