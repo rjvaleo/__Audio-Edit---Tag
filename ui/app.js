@@ -682,11 +682,37 @@ function paintTime() {
   $('timeNow').textContent = fmtTime(playbackTime());
 }
 
-$('playBtn').onclick = async () => {
-  if (!engine.path) {
-    if (state.selectedFile) await playFile(state.selectedFile);
-    return;
+/// Stop the transport if it is playing something other than `file`.
+///
+/// The transport belongs to the sound on screen. Choosing a different one
+/// while the old was still playing left it playing underneath the new picture,
+/// with the playhead running against a timeline it did not belong to — and the
+/// capture button would then have kept the wrong sound entirely.
+///
+/// The guard is on the *path*, not on whether anything is playing, because
+/// `playFile` selects before it loads: the sound being started is never the one
+/// stopped here.
+function releaseEngineFor(file) {
+  if (engine.playing && engine.path && file && engine.path !== file.path) {
+    pausePlayback();
   }
+}
+
+/// Play means play *what is selected*, not whatever the engine is holding.
+///
+/// Selecting a sound deliberately does not load it — loading folds the whole
+/// document into a buffer and hands it over, which is far too much to do on
+/// every click in the library — so after picking a second sound the engine is
+/// still holding the first. This used to ask only whether the engine had
+/// *anything* loaded, which is false exactly once: the first play after
+/// launch. Every play after that resumed the previous sound while the screen
+/// showed the new one.
+///
+/// `playFile` already knows both cases: same path, toggle; different path,
+/// load it and start from the cue.
+$('playBtn').onclick = async () => {
+  if (state.selectedFile) { await playFile(state.selectedFile); return; }
+  if (!engine.path) return;
   engine.playing ? pausePlayback() : startPlayback();
 };
 
@@ -927,6 +953,9 @@ async function openInEditor(file) {
 
 async function switchTab(i) {
   if (i === state.activeTab || !state.tabs[i]) return;
+  // Same rule as picking one in the library: this one does not go through
+  // `selectFile`, so it needs the transport released here as well.
+  releaseEngineFor(state.tabs[i].file);
   stashActiveTab();
   adoptTab(i);
   renderTabs();
@@ -1008,6 +1037,7 @@ function renderTabs() {
 }
 
 async function selectFile(file, { keepTab = false } = {}) {
+  releaseEngineFor(file);
   state.selectedFile = file;
   state.sel = null;
   state.cue = 0;
