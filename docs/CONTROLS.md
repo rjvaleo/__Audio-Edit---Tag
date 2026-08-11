@@ -1,0 +1,190 @@
+# Every control in the interface
+
+Mouse, keyboard and gesture, in one place. Menu items are in
+[MENUS.md](MENUS.md); this page is everything you can do by pointing at
+something.
+
+Two workspaces: **Browse** (the library) and **Edit** (one open document).
+`Enter` swaps between them. Almost everything below only exists in Edit.
+
+---
+
+## The waveform lane
+
+The big view in the middle of Edit. One gesture does several jobs depending on
+how you use it.
+
+| Gesture | What it does |
+|---|---|
+| **Click** | Puts the cue there and moves the playhead to it. Clears any selection. |
+| **Drag** | Selects a range. The cue follows the start, so the selection is ready to loop. A drag of a pixel or two is treated as a click, not a one-sample selection. |
+| **⌥ Alt-drag** | **Scrubs** — drags the playhead across the file so you hear where you are, without touching the selection you already made. |
+| **⌥ Alt held mid-drag** | Switches an in-progress selection drag to scrubbing. |
+| **Right-click / Ctrl-click** | Opens the **Edit** menu at the pointer, headed *Selection* or *No selection* so you can see which operations will be available. |
+| **Release after a drag** | If Loop is on, playback jumps to the start of the new selection rather than staying where the drag ended. |
+
+The lane is sample accurate when zoomed in far enough. Past the point where
+there are more pixels than samples it stops drawing a min/max envelope and
+draws the samples themselves — stems, dots and a faint joining line — and the
+zoom readout changes to `n smp` to tell you that is what you are looking at.
+
+## The overview strip
+
+The whole file, above the lane, with the zoomed window marked on it.
+
+| Gesture | What it does |
+|---|---|
+| **Click** | Moves the zoomed window so it is centred there. |
+| **Drag** | Pans the zoomed window continuously. |
+| **Right-click** | The Edit menu, same as the lane. |
+
+## The ruler and region strip
+
+| Gesture | What it does |
+|---|---|
+| **Click a region** | Selects that range in the lane. |
+| **Right-click** | The Edit menu. |
+| **Remove** (region list, Regions tab) | Deletes that region. |
+
+The region strip collapses to nothing when there are no regions, rather than
+holding a row of the window open to say so.
+
+---
+
+## The library browser
+
+| Gesture | What it does |
+|---|---|
+| **Click a folder** | Expands or collapses it. |
+| **Drag a folder** | Reorders the library. The order is saved. |
+| **Click a file** | In Browse, selects it. In Edit, opens it as its own tab. |
+| **Double-click a file** | Opens it in the editor. |
+| **Click the ▶ on a row** | Auditions that file without changing what is selected. |
+| **Hover a row** | The tooltip gives what was heard in it and the confidence reason. |
+
+**Play all files** — the checkbox at the top of the browser, mirrored in the
+View menu. Off, only files that announced themselves as audio are listed; on,
+everything the scan found. A folder hiding some says how many at the end of its
+list, and the folder count follows the switch.
+
+---
+
+## Sliders, knobs and switches
+
+Four kinds of control, one contract. Every one of them can be pushed back to a
+value by Reset or Undo without knowing which kind it is.
+
+### Sliders — the stretch tray
+
+| Gesture | What it does |
+|---|---|
+| **Drag** | Changes the value, previewing continuously as you move rather than on release. |
+| **Release** | Commits at full quality and re-points the audio. |
+| **Stroke across several** | Press *outside* any control, drag across a column of them, release. Each bar takes the value at the point the line crossed it. Both axes are tested, so a stroke down one column does not set the panel next to it. |
+
+### Knobs — the effect rack
+
+| Gesture | What it does |
+|---|---|
+| **Drag up / down** | Turns it. A full turn is 160 pixels. |
+| **⇧ Shift-drag** | Fine, at a fifth the rate. |
+| **Wheel** | Nudges it, and commits immediately. |
+
+### Switches — rockers
+
+Click to throw. The name sits to the left, right-aligned against it. One end is
+pressed in and the other proud; the recess it uncovers is dull red at rest and
+green with a glow when thrown.
+
+### Three-way choices
+
+A row of buttons — click the one you want. *Pick* (best / worst / loud) and
+*Window* (hann / tri / rect) in the WSOLA extended group.
+
+---
+
+## The grain visualiser
+
+Ten views in two suites, at `/grains3d` or in an in-page pop-over
+(**View → Grain views in a panel**).
+
+| Gesture | What it does |
+|---|---|
+| **Drag on the canvas** | Orbits the camera. |
+| **Wheel on the canvas** | Zooms toward or away from the playhead. |
+| **Click the transport bar** | Seeks. |
+| **`1`–`5`** | Switches view within the current suite. |
+| **`V`** | Swaps suite — V1 the object, V2 the moment. |
+| **`C`** | Close on the playhead, or stand back and see the whole cloud. |
+| **`F`** | Fullscreen. |
+| **`Space`** | Play / pause. |
+
+Every view keeps its own look and its own camera. At the start of a session
+every one opens zoomed in on the playhead; after that each remembers where you
+left it.
+
+### The preset slots
+
+One ruled rectangle in the bottom-right of the picture, eight across and two
+down. A cell shows `×` if it holds a look; the name is in its tooltip.
+
+| Gesture | What it does |
+|---|---|
+| **Click** | Recalls that look into whichever view is showing. |
+| **Double-click** | Stores the look you are looking at into that slot. |
+| **Press and hold** | Erases it. The cell drains as you hold, so you can see what is about to happen and let go. |
+
+Six start filled — Swarm, Trails, Kaleid, Ink, Ember, Still.
+
+### The pop-over
+
+| Gesture | What it does |
+|---|---|
+| **Drag the title bar** | Moves it. |
+| **Drag the corner** | Resizes it; the picture grows and shrinks with the box. |
+| **`Esc`** | Closes it. |
+
+---
+
+## Keyboard
+
+Shortcuts are ignored while the cursor is in a text field, so typing a tag
+never triggers one.
+
+| Key | What it does |
+|---|---|
+| `Space` | Play / pause |
+| `Enter` | Swap between Browse and Edit |
+| `M` | Add a marker at the playhead (Edit only) |
+| `Esc` | Clear the selection, return the cue to the start — and close any open menu or pop-over |
+| `⌘Z` / `Ctrl+Z` | Undo |
+| `⇧⌘Z` / `Ctrl+Shift+Z` | Redo |
+
+The menu bar lists more shortcuts against their items — `⌘E` export, `⌘S` save
+tags, `⌘W` close document, `⌘A` select all, `⌘X` cut, `R` region, `⇧⌘R`
+re-scan. Those are printed in the menus as the reference; the handlers above are
+the ones bound globally.
+
+---
+
+## The transport row
+
+Under the waveform, in Edit only. Browse has no open document to transport.
+
+| Control | What it does |
+|---|---|
+| ▶ / ❚❚ | Play / pause |
+| ■ | Stop, and return to the cue |
+| ⟲ | Loop — the selection if there is one, otherwise the whole document |
+| ● | **Capture** — records what is playing; on stop it saves a new file beside the original, named for the file, the module and the time |
+| Clock | Position, to the millisecond |
+| − / + / ⤢ | Zoom out, in, fit |
+| ⇥ | **Follow playhead** on/off |
+| scroll / page | How it follows — scroll pins the playhead centre, page turns when it reaches the edge |
+| Volume | Output level |
+
+## The preset row
+
+Directly under the transport: the dock's own tabs (**Time & Pitch**, **FX**,
+**Visuals**, **Regions**), a rule, then the document preset controls —
+a dropdown, **Save as…** and **Delete**.

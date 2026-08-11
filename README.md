@@ -8,6 +8,7 @@
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](#start-here)
 [![Windows](https://img.shields.io/badge/Windows-x86__64%20cross--built-0078D6?logo=windows&logoColor=white)](#building-from-source)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#licence)
+[![Docs](https://img.shields.io/badge/docs-architecture%20%C2%B7%20controls%20%C2%B7%20menus-informational)](docs/)
 
 Browse, audition, tag, edit and mangle a large audio library without moving or
 renaming a single audio file. Tags and edits are sidecar data; **the original
@@ -31,8 +32,12 @@ Library tab.
 ## The stack
 
 Everything below the interface is Rust, in one workspace that builds to one
-binary. The interface is plain HTML, CSS and JavaScript with no build step —
-no bundler, no framework, no CDN — embedded into that binary at compile time.
+binary. The interface is plain HTML, CSS and JavaScript with no build step and
+no bundler, embedded into that binary at compile time.
+
+One exception, and it is worth knowing: **the grain visualiser pulls p5.js from
+a CDN**, so that one page needs the internet. Everything else — browsing,
+editing, stretching, playback, export — works with the machine offline.
 
 <table>
 <tr><th align="left">Layer</th><th align="left">Built with</th></tr>
@@ -63,11 +68,12 @@ no bundler, no framework, no CDN — embedded into that binary at compile time.
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=black)
 ![Canvas](https://img.shields.io/badge/Canvas%202D-333)
 ![No build step](https://img.shields.io/badge/build%20step-none-2ea44f)
+![No bundler](https://img.shields.io/badge/bundler-none-2ea44f)
 
 </td></tr>
 <tr><td>Visualisers</td><td>
 
-![p5.js](https://img.shields.io/badge/p5.js-ED225D?logo=p5dotjs&logoColor=white)
+![p5.js](https://img.shields.io/badge/p5.js-1.7%20via%20CDN-ED225D?logo=p5dotjs&logoColor=white)
 ![WebGL](https://img.shields.io/badge/WebGL-990000?logo=webgl&logoColor=white)
 
 </td></tr>
@@ -123,6 +129,16 @@ Built from the papers in `Reference Docs/`, chiefly Driedger's
 *Time-Scale Modification Algorithms for Music Audio* — the phase propagation
 follows equations 5.10 to 5.12 and the code is laid out to be read against it.
 
+## Documentation
+
+| | |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How it is built, as built — the crates, the edit model, the DSP, the real-time layers, the server, what it stores |
+| [`docs/CONTROLS.md`](docs/CONTROLS.md) | Every control: click, drag, alt-drag, double-click, right-click, press-and-hold, wheel, keyboard |
+| [`docs/MENUS.md`](docs/MENUS.md) | Every menu item, what it needs to be available, and what it does |
+| [`visualiser/PRECOMPUTED-WEATHER.md`](visualiser/PRECOMPUTED-WEATHER.md) | The aesthetic argument behind the ten grain views |
+| [`Reference Docs/md/STRETCH-ROADMAP.md`](Reference%20Docs/md/STRETCH-ROADMAP.md) | The stretching theories, which are implemented, and what is next |
+
 ## Layout
 
     Start.command     macOS launcher
@@ -130,6 +146,7 @@ follows equations 5.10 to 5.12 and the code is laid out to be read against it.
     bin/              the prebuilt programs — audiolab (macOS), audiolab.exe (Windows)
     data/             everything the app remembers. Not in git; see below
     core/             the Rust workspace
+    docs/             architecture, controls, menus
     ui/               the interface, embedded into the binary at build time
     visualiser/       the p5.js grain views, served at /grains3d
     models/           the YAMNet ONNX model
