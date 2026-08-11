@@ -457,7 +457,7 @@ impl Stretch {
 /// are too wide to separate partials and the vocoder has nothing to lock onto,
 /// and above 8192 the window is long enough that transients smear audibly no
 /// matter what the phases do.
-pub(crate) fn fft_size_for(window_ms: f32, sample_rate: u32) -> usize {
+pub fn fft_size_for(window_ms: f32, sample_rate: u32) -> usize {
     let samples = (window_ms.clamp(5.0, 2000.0) / 1000.0) * sample_rate.max(1) as f32;
     (samples as usize).clamp(256, 8192).next_power_of_two()
 }
@@ -478,7 +478,7 @@ fn fit(mut v: Vec<f32>, want_frames: usize, channels: usize) -> Vec<f32> {
 
 /// How often a window is laid down. Density sets it outright; otherwise the
 /// window is divided by how many should cover any moment.
-pub(crate) fn hop_frames(g: &crate::Grain, win: usize, sr: f32) -> usize {
+pub fn hop_frames(g: &crate::Grain, win: usize, sr: f32) -> usize {
     if g.density_hz > 0.0 {
         ((sr / g.density_hz.clamp(0.5, 2000.0)) as usize).max(8)
     } else {
@@ -557,7 +557,6 @@ where
     }
     let spread = g.layer_spread.clamp(0.0, 4.0);
     let mut acc: Vec<f32> = Vec::new();
-    let mut one = 0f32;
 
     for layer in 0..layers {
         let mut lg = *g;
@@ -569,7 +568,6 @@ where
         let v = render(&lg);
         if acc.is_empty() {
             acc = vec![0.0; v.len()];
-            one = rms(&v);
         }
         let off = ((((hop as u64 * layer as u64) / layers as u64) as f32) * spread) as usize;
         let frames = v.len() / channels.max(1);
@@ -584,22 +582,20 @@ where
         }
     }
 
-    let sum = rms(&acc);
-    if sum > 1e-9 && one > 1e-9 {
-        let k = one / sum;
-        for s in acc.iter_mut() {
-            *s *= k;
-        }
+    // The same blind square root the grain cloud uses, and for the same reason.
+    //
+    // This used to measure one layer's RMS and scale the sum back to it, which
+    // is exact — and impossible in an audio callback, which cannot measure
+    // audio it has not produced yet. Keeping the measurement here would mean
+    // the file and the transport were different sounds at every layer count
+    // above one. See `crate::grain::layer_gain`.
+    let lift = crate::grain::layer_gain(layers) / layers as f32;
+    for s in acc.iter_mut() {
+        *s *= lift;
     }
     acc
 }
 
-fn rms(v: &[f32]) -> f32 {
-    if v.is_empty() {
-        return 0.0;
-    }
-    (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt()
-}
 
 /// Waveform-similarity overlap-add.
 /// Waveform-similarity overlap-add.

@@ -31,10 +31,26 @@ fn no_engine_takes_longer_to_make_a_block_than_the_block_takes_to_play() {
     // The real-time budget: a block must be produced in less than it plays for.
     let budget = block as f64 / SR as f64;
 
-    for alg in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola, Algorithm::Hybrid] {
-        let sp = StreamParams { algorithm: alg, ratio: 6.0, ..StreamParams::new(n, SR) };
+    for (alg, layers) in [
+        (Algorithm::Granular, 1u32),
+        (Algorithm::Wsola, 1),
+        (Algorithm::Vocoder, 1),
+        (Algorithm::Pvsola, 1),
+        (Algorithm::Hybrid, 1),
+        // Layers are the expensive case: each is another whole engine. They
+        // are offset within the hop, which is what keeps every one of them
+        // from transforming on the same block — sixteen vocoder layers all
+        // firing together measured at 160% of the budget.
+        (Algorithm::Wsola, 8),
+        (Algorithm::Vocoder, 8),
+        (Algorithm::Vocoder, 16),
+    ] {
+        let mut sp = StreamParams { algorithm: alg, ratio: 6.0, ..StreamParams::new(n, SR) };
+        sp.grain.layers = layers;
+        sp.grain.layer_scatter = 0.6;
         let mut s = Stretcher::new(block, ch, SR);
         s.set_map(None);
+        s.set_bank(engine::stretcher::LayerBank::build(alg, layers, block, ch, SR));
         if alg == Algorithm::Hybrid {
             s.set_parts(std::sync::Arc::new(fx::hstream::Parts::separate(
                 &src.samples, ch, sp.hybrid)));
@@ -57,14 +73,14 @@ fn no_engine_takes_longer_to_make_a_block_than_the_block_takes_to_play() {
         }
         let worst_pc = 100.0 * worst / budget;
         let mean_pc = 100.0 * (total / runs as f64) / budget;
-        println!("{alg:?}: worst {worst_pc:.2}% of budget, mean {mean_pc:.2}%");
+        println!("{alg:?} x{layers}: worst {worst_pc:.2}% of budget, mean {mean_pc:.2}%");
         // A wide bound on purpose: this is wall-clock on a shared machine and
         // the point is to catch an engine that does its work in bursts, not to
         // police a few per cent. Measured at the time of writing: granular
         // 0.2%, WSOLA 7.5%, vocoder 13%, PVSOLA 20%.
         assert!(
             worst_pc < 60.0,
-            "{alg:?} spent {worst_pc:.1}% of the real-time budget on one block"
+            "{alg:?} at {layers} layers spent {worst_pc:.1}% of the real-time budget on one block"
         );
     }
 }

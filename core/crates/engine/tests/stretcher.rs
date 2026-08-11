@@ -359,59 +359,96 @@ fn switching_engines_does_not_click_or_dip() {
     }
 }
 
-/// A known gap, pinned so it cannot go quiet.
+/// Layers reach the callback now, and live matches export at every count.
 ///
-/// The offline renderer wraps every engine but the grain cloud in
-/// `stretch::layered`, which runs the whole engine once per layer with its own
-/// seed and offset and scales the sum back. The audio callback does not: a
-/// streaming engine is one instance, and running sixteen of them would be
-/// sixteen times the work and the memory, decided at the moment the control
-/// moves.
+/// This test replaces one that asserted the opposite. The offline renderer used
+/// to wrap every engine but the grain cloud in `stretch::layered` while the
+/// callback did not layer at all, so at more than one layer the file and the
+/// transport were different sounds — true for three commits and caught by
+/// nothing, because every other test uses the default of one layer.
 ///
-/// So at more than one layer, the file and the transport are different sounds
-/// for WSOLA, the vocoder and PVSOLA. At one layer — the default, and what
-/// every other test here uses — they are identical, which is why nothing
-/// caught this for two commits.
-///
-/// This test asserts the divergence rather than the agreement. When layering is
-/// either taught to the streaming engines or dropped from the offline ones, it
-/// should start failing, and that failure is the point.
+/// Two things had to change together. The offline path measured one layer's RMS
+/// and scaled the sum back to it, which is exact and impossible in a callback;
+/// both now apply the same blind square root. And the callback needs one engine
+/// instance per layer, which it cannot allocate, so they are built off the
+/// audio thread and handed over like the transient map.
 #[test]
-fn layers_are_a_known_difference_between_live_and_export() {
+fn layers_sound_the_same_live_as_they_do_offline() {
     let channels = 2;
     let src = Source { samples: busy(SR as usize / 2, channels), channels };
     let n = src.frames();
     let ratio = 2.0f32;
     let want = ((n as f32) * ratio) as usize;
+    let block = 512;
 
     for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
         let mut sp = params(n, alg, ratio, 0.0);
         sp.grain.layers = 4;
-        sp.grain.position_jitter_ms = 30.0;
+        sp.grain.layer_scatter = 0.6;
 
-        let live = run(&src, &sp, 512, want);
-        let offline = fx::Stretch {
-            ratio,
-            algorithm: alg,
-            grain: sp.grain,
-            ..Default::default()
+        let mut s = Stretcher::new(block, channels, SR);
+        s.set_map(None);
+        s.set_bank(engine::stretcher::LayerBank::build(alg, 4, block, channels, SR));
+        s.seek(0, &sp);
+        assert_eq!(s.live_layers(&sp), 4, "{alg:?}: the bank did not take");
+
+        let mut out: Vec<f32> = Vec::new();
+        let mut buf = vec![0f32; block * channels];
+        let mut evs = no_events();
+        while out.len() / channels < want {
+            s.render(&mut buf, channels, &src, &sp, &mut evs);
+            out.extend_from_slice(&buf);
         }
-        .process(&src.samples, channels, SR);
+        out.truncate(want * channels);
 
-        let worst = live
+        let offline =
+            fx::Stretch { ratio, algorithm: alg, grain: sp.grain, ..Default::default() }
+                .process(&src.samples, channels, SR);
+
+        // Not bit for bit: each layer is offset within the hop, and offline can
+        // start a layer before the file begins where live can only clamp to
+        // zero. Everything past that first offset agrees.
+        let skip = 4096;
+        let worst = out[skip * channels..]
             .iter()
-            .zip(&offline)
+            .zip(&offline[skip * channels..])
             .map(|(a, b)| (a - b).abs())
             .fold(0f32, f32::max);
         assert!(
-            worst > 1e-4,
-            "{alg:?}: live and export now agree at four layers ({worst:.2e}). \
-             If layering reached the streaming engines, delete this test and put \
-             the layer count back into what_the_callback_plays_is_what_the_file_would_hold."
+            worst < 1e-4,
+            "{alg:?}: live and export differ by {worst:.2e} at four layers"
         );
-        // Both must still be real audio; a divergence is not licence for one of
-        // them to be broken.
-        assert!(rms(&live) > 1e-3, "{alg:?}: live produced nothing at four layers");
-        assert!(rms(&offline) > 1e-3, "{alg:?}: export produced nothing at four layers");
     }
+}
+
+/// Until a bank arrives the callback plays what it has, which is thinner than
+/// asked for and never silent.
+#[test]
+fn layers_fall_back_to_one_until_the_bank_is_built() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 4, channels), channels };
+    let n = src.frames();
+    let mut sp = params(n, Algorithm::Vocoder, 2.0, 0.0);
+    sp.grain.layers = 8;
+
+    let mut s = Stretcher::new(512, channels, SR);
+    s.set_map(None);
+    s.seek(0, &sp);
+    assert_eq!(s.live_layers(&sp), 1, "layers sounded before the bank existed");
+
+    let mut buf = vec![0f32; 512 * channels];
+    let mut evs = no_events();
+    for _ in 0..8 {
+        s.render(&mut buf, channels, &src, &sp, &mut evs);
+    }
+    assert!(rms(&buf) > 1e-3, "the engine fell silent waiting for its layers");
+
+    s.set_bank(engine::stretcher::LayerBank::build(
+        Algorithm::Vocoder,
+        8,
+        512,
+        channels,
+        SR,
+    ));
+    assert_eq!(s.live_layers(&sp), 8, "the bank did not take");
 }

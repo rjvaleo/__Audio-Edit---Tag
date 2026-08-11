@@ -37,6 +37,10 @@ pub fn ensure(app: &Arc<App>) -> Result<(), String> {
     Ok(())
 }
 
+/// The largest block the device may ask for, which is what every engine here
+/// sizes its buffers from. Matches what `Engine::start` hands `Core`.
+const MAX_BLOCK: usize = 8192;
+
 fn idle_params() -> StreamParams {
     StreamParams {
         in_frames: 0,
@@ -133,6 +137,15 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
     if list.stretch.algorithm == fx::stretch::Algorithm::Hybrid {
         separate_soon(app, rel, Arc::clone(&source), list.stretch.hybrid);
     }
+    let _ = with(app, |h| {
+        h.shared.set_bank(engine::stretcher::LayerBank::build(
+            list.stretch.algorithm,
+            list.stretch.grain.layers,
+            MAX_BLOCK,
+            h.channels,
+            h.sample_rate,
+        ));
+    });
 
     // Remember what is loaded, so anything drawing the grain cloud can find the
     // document whose parameters produced it.
@@ -163,6 +176,7 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
     with(app, |h| {
         let mut want_map = false;
         let mut want_parts = false;
+        let mut want_bank = false;
         if let Some(mut p) = h.shared.params() {
             // Only the transient map is expensive to derive, and only these
             // decide it. Everything else can move under the pointer for free.
@@ -172,6 +186,12 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
             want_parts = list.stretch.algorithm == fx::stretch::Algorithm::Hybrid
                 && (p.hybrid.split() != list.stretch.hybrid.split()
                     || p.algorithm != fx::stretch::Algorithm::Hybrid);
+
+            // Building a bank allocates one engine per extra layer, so it
+            // happens only when the engine or the layer count actually moves —
+            // not on every slider.
+            want_bank = p.algorithm != list.stretch.algorithm
+                || p.grain.layers != list.stretch.grain.layers;
 
             want_map = p.wsola.preserve_transients != list.stretch.wsola.preserve_transients
                 || p.wsola.sensitivity != list.stretch.wsola.sensitivity
@@ -206,6 +226,15 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
             }
         } else if want_map {
             h.shared.set_map(None);
+        }
+        if want_bank {
+            h.shared.set_bank(engine::stretcher::LayerBank::build(
+                list.stretch.algorithm,
+                list.stretch.grain.layers,
+                MAX_BLOCK,
+                h.channels,
+                h.sample_rate,
+            ));
         }
         h.shared.set_rack(rack_for(app, rel));
     })
