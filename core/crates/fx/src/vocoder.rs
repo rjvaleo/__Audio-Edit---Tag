@@ -26,6 +26,22 @@ use std::f32::consts::PI;
 
 const TWO_PI: f32 = 2.0 * PI;
 
+/// The smallest share of the summed window that is still worth dividing by.
+///
+/// Where frames overlap fully the sum is near its peak and the division
+/// reconstructs. At the very edges of the buffer only one frame is present, so
+/// the sum tails toward nothing — and dividing by nothing turns a sample that
+/// was correctly quiet into an enormous one. Below this share the divisor is
+/// held at the floor instead, which leaves the edges fading in and out, which
+/// is what an incompletely overlapped edge actually is.
+///
+/// It matters more than it looks. The vocoder is normalised by the summed
+/// *square* of the window, so its edges tail off far faster than a linear sum,
+/// and at fifty per cent overlap they are exposed enough to have been producing
+/// peaks twenty times the source.
+const NORM_FLOOR: f32 = 0.05;
+
+
 /// Wrap a phase into [−π, π).
 ///
 /// The heterodyned phase increment is only meaningful modulo a turn: a bin
@@ -162,6 +178,26 @@ fn shape_magnitudes(
     }
 }
 
+/// The analysis and synthesis window, with the envelope control's skew in it.
+///
+/// A frame has one length and it cannot vary, so what the envelope moves here
+/// is where inside the frame the weight sits. The overlap-add is normalised by
+/// the summed square rather than by an assumed constant, which is what makes a
+/// window other than the textbook one reconstruct at all.
+fn skewed_window(n: usize, skew: f32) -> Vec<f32> {
+    let base = fft::hann(n);
+    if (skew - 0.5).abs() < 1e-4 || n <= 1 {
+        return base;
+    }
+    let k = 4f32.powf(skew * 2.0 - 1.0);
+    (0..n)
+        .map(|i| {
+            let t = (i as f32 / (n - 1) as f32).powf(k);
+            0.5 - 0.5 * (TWO_PI * t).cos()
+        })
+        .collect()
+}
+
 /// Settings for one run. See [`crate::stretch::VocoderParams`] for what each of
 /// the deliberately-wrong ones does to the sound.
 #[derive(Debug, Clone, Copy)]
@@ -170,8 +206,6 @@ pub struct Settings {
     pub fft_size: usize,
     /// Lock the bins around each spectral peak to that peak's phase.
     pub phase_lock: bool,
-    /// Multiplies the analysis hop, breaking its link to the ratio.
-    pub hop_skew: f32,
     /// Scales the measured deviation from the bin centre frequency.
     pub freq_trust: f32,
     /// Scales the phase relationship a locked bin keeps with its peak.
@@ -202,7 +236,6 @@ impl Default for Settings {
         Settings {
             fft_size: 2048,
             phase_lock: true,
-            hop_skew: 1.0,
             freq_trust: 1.0,
             phase_spread: 1.0,
             peak_width: 2,
@@ -218,7 +251,13 @@ impl Default for Settings {
 }
 
 /// Stretch one channel of mono audio by `ratio`.
+/// `ch` says which channel this is, which the pan control needs and nothing
+/// else does. A mono run is channel zero and pans nowhere.
 pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
+    stretch_channel(input, ratio, s, 0, 1)
+}
+
+fn stretch_channel(input: &[f32], ratio: f32, s: Settings, ch: usize, channels: usize) -> Vec<f32> {
     let ratio = ratio.clamp(0.01, 100.0);
     let n = s.fft_size.max(64).next_power_of_two();
     // How often a frame is taken and laid back down. Density and overlap are the
@@ -230,7 +269,7 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
     }
 
     let out_len = ((input.len() as f64) * ratio as f64).round() as usize;
-    let win = fft::hann(n);
+    let win = skewed_window(n, s.grain.envelope);
 
     let mut out = vec![0f32; out_len + n];
     let mut norm = vec![0f32; out_len + n];
@@ -251,13 +290,14 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
     // float and rounded per frame, so a fractional hop does not accumulate
     // drift over a long file.
     //
-    // The skew multiplies it, which is what severs the read pointer from the
+    // `scan` multiplies it, which is what severs the read pointer from the
     // ratio. At zero the pointer never moves at all and every output frame is
-    // resynthesised from the same instant.
-    let skew = s.hop_skew.clamp(0.0, 4.0) as f64;
+    // resynthesised from the same instant; negative sweeps back from the end.
+    let skew = s.grain.scan.clamp(-4.0, 4.0) as f64;
     let advance = (hs as f64 / ratio as f64) * skew;
+    let backwards = skew < 0.0;
     let span = input.len().saturating_sub(n).max(1);
-    let mut read = 0f64;
+    let mut read = if backwards { span as f64 } else { 0f64 };
     let mut prev_start: isize = -1;
     let mut write = 0usize;
     let mut first = true;
@@ -283,10 +323,10 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
             // Off it, the read pointer is sweeping at a speed that has nothing
             // to do with the output length, so wrap and keep going rather than
             // trail off into padding.
-            if (skew - 1.0).abs() < 1e-6 {
+            if (skew - 1.0).abs() < 1e-6 && !s.grain.wrap {
                 break;
             }
-            read %= span as f64;
+            read = read.rem_euclid(span as f64);
             start = read.round() as usize;
             if start + n > input.len() {
                 break;
@@ -298,7 +338,11 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
         let start = start.min(input.len().saturating_sub(n));
 
         for i in 0..n {
-            re[i] = input[start + i] * win[i];
+            // Reversed, the frame is read back to front before it is
+            // transformed — which is the only place a frequency-domain engine
+            // can honour "backwards" at all.
+            let j = if g.reverse { n - 1 - i } else { i };
+            re[i] = input[start + j] * win[i];
             im[i] = 0.0;
         }
         if !fft(&mut re, &mut im) {
@@ -386,9 +430,11 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
         }
         ifft(&mut re, &mut im);
 
+        let (gl, gr) = crate::grain::pan_gains(&g, index, channels);
+        let pan = if ch == 0 { gl } else { gr };
         for i in 0..n {
             if write + i < out.len() {
-                out[write + i] += re[i] * win[i];
+                out[write + i] += re[i] * win[i] * pan;
                 // The same window is applied going in and coming out, so the
                 // overlap sums to w² rather than w. Accumulating it rather
                 // than assuming a constant keeps any overlap factor correct.
@@ -401,9 +447,11 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
         index += 1;
     }
 
+    let floor = norm.iter().fold(0f32, |m, &x| m.max(x)) * NORM_FLOOR;
     for i in 0..out.len() {
-        if norm[i] > 1e-6 {
-            out[i] /= norm[i];
+        let g = norm[i].max(floor);
+        if g > 1e-6 {
+            out[i] /= g;
         }
     }
     out.truncate(out_len);
@@ -449,7 +497,7 @@ pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f
         return Vec::new();
     }
     if channels == 1 {
-        return stretch_mono(input, ratio, s);
+        return stretch_channel(input, ratio, s, 0, 1);
     }
     if s.stereo_link {
         return stretch_linked(input, channels, ratio, s);
@@ -462,7 +510,7 @@ pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f
         for f in 0..frames {
             chan[f] = input[f * channels + c];
         }
-        outs.push(stretch_mono(&chan, ratio, s));
+        outs.push(stretch_channel(&chan, ratio, s, c, channels));
     }
 
     let out_frames = outs.iter().map(|o| o.len()).min().unwrap_or(0);
@@ -503,7 +551,7 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
     }
 
     let out_frames = ((frames as f64) * ratio as f64).round() as usize;
-    let win = fft::hann(n);
+    let win = skewed_window(n, s.grain.envelope);
     let bins = n / 2 + 1;
 
     let mut out = vec![0f32; (out_frames + n) * channels];
@@ -525,10 +573,11 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
     let mut corr = vec![0f32; bins];
     let mut peak_idx: Vec<usize> = Vec::with_capacity(bins / 4);
 
-    let skew = s.hop_skew.clamp(0.0, 4.0) as f64;
+    let skew = s.grain.scan.clamp(-4.0, 4.0) as f64;
     let advance = (hs as f64 / ratio as f64) * skew;
+    let backwards = skew < 0.0;
     let span = frames.saturating_sub(n).max(1);
-    let mut read = 0f64;
+    let mut read = if backwards { span as f64 } else { 0f64 };
     let mut prev_start: isize = -1;
     let mut write = 0usize;
     let mut first = true;
@@ -548,10 +597,10 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
         };
         let mut start = (read + jitter).max(0.0).round() as usize;
         if start + n > frames {
-            if (skew - 1.0).abs() < 1e-6 {
+            if (skew - 1.0).abs() < 1e-6 && !s.grain.wrap {
                 break;
             }
-            read %= span as f64;
+            read = read.rem_euclid(span as f64);
             start = read.round() as usize;
             if start + n > frames {
                 break;
@@ -644,7 +693,9 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
         prev_ref.copy_from_slice(&ref_phase);
         prev_start = start as isize;
 
+        let (gl, gr) = crate::grain::pan_gains(&g, index, channels);
         for c in 0..channels {
+            let pan = if c == 0 { gl } else { gr };
             for k in 0..bins {
                 let p = phase[c][k] + corr[k];
                 re[c][k] = mag[c][k] * p.cos();
@@ -663,7 +714,7 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
             for i in 0..n {
                 let f = write + i;
                 if f < out_frames + n {
-                    out[f * channels + c] += re[c][i] * win[i];
+                    out[f * channels + c] += re[c][i] * win[i] * pan;
                 }
             }
         }
@@ -679,8 +730,9 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
         index += 1;
     }
 
+    let floor = norm.iter().fold(0f32, |m, &x| m.max(x)) * NORM_FLOOR;
     for f in 0..out_frames + n {
-        let g = norm[f];
+        let g = norm[f].max(floor);
         if g > 1e-6 {
             for c in 0..channels {
                 out[f * channels + c] /= g;

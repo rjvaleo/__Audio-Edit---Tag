@@ -2421,7 +2421,7 @@ function sendStretch({ live }) {
 // than at undefined — which a slider reads as NaN and posts back as a reset.
 const VOCODER_DEFAULTS = {
   windowMs: 46, phaseLock: true,
-  hopSkew: 1, freqTrust: 1, phaseSpread: 1, peakWidth: 2, lockWidth: 1,
+  freqTrust: 1, phaseSpread: 1, peakWidth: 2, lockWidth: 1,
   magFreeze: 0, magBlur: 0, magGate: 0, stereoLink: false,
 };
 const WSOLA_DEFAULTS = {
@@ -2528,9 +2528,6 @@ function renderStretch() {
 
       ext.appendChild(wild('Phase',
         'How the frequency estimate is believed and how far a peak imposes its phase on its neighbours.').add(
-        param('Read speed', v.hopSkew, 0, 4, 0.01,
-          (x) => (x <= 0.001 ? 'frozen' : `${x.toFixed(2)}×`),
-          (x) => { v.hopSkew = x; previewStretch(); }, () => commitStretch()),
         param('Freq trust', v.freqTrust, 0, 4, 0.01,
           (x) => (x <= 0.001 ? 'to bins' : `${x.toFixed(2)}×`),
           (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch()),
@@ -2596,10 +2593,10 @@ function renderStretch() {
     for (const id of ['grainShape', 'grainPitch']) {
       $(id)?.classList.remove('hidden');
     }
-    // These three still only mean something to the cloud: there is no scan
-    // pointer, no per-grain envelope and no layer offset in a splice.
-    const grainOn = alg === 'granular';
-    $('extGrain')?.classList.toggle('hidden', !grainOn);
+    // Scan, Shape and Randomness reach all three engines: a window is a splice
+    // for WSOLA and a frame for the vocoder, but each has a read pointer, a
+    // direction, an envelope and a place in the field.
+    $('extGrain')?.classList.remove('hidden');
     // Granular has no engine-specific extended groups, so this wrapper is empty
     // — and an empty flex child still takes the gap either side of it, which
     // showed as a band of nothing above the first heading.
@@ -2905,7 +2902,7 @@ $('presetDelete').onclick = async () => {
 // everything on this list used to be a constant inside an algorithm; the
 // standard column is the set of controls the app has always had.
 const EXTENDED_FIELDS = {
-  vocoder: ['hopSkew', 'freqTrust', 'phaseSpread', 'peakWidth', 'lockWidth',
+  vocoder: ['freqTrust', 'phaseSpread', 'peakWidth', 'lockWidth',
             'magFreeze', 'magBlur', 'magGate', 'stereoLink'],
   wsola: ['searchMs', 'splice', 'stride', 'shape', 'guardHops', 'floor'],
   grain: ['scan', 'reverse', 'envelope', 'sizeRange', 'wrap', 'layerSpread',

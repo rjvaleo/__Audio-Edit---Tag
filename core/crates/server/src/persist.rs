@@ -68,7 +68,6 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
             Value::obj()
                 .set("windowMs", s.vocoder.window_ms as f64)
                 .set("phaseLock", s.vocoder.phase_lock)
-                .set("hopSkew", s.vocoder.hop_skew as f64)
                 .set("freqTrust", s.vocoder.freq_trust as f64)
                 .set("phaseSpread", s.vocoder.phase_spread as f64)
                 .set("peakWidth", s.vocoder.peak_width as f64)
@@ -178,7 +177,6 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             fx::stretch::VocoderParams {
                 window_ms: vf("windowMs", d.window_ms).clamp(5.0, 500.0),
                 phase_lock: !matches!(vv.and_then(|x| x.get("phaseLock")), Some(Value::Bool(false))),
-                hop_skew: vf("hopSkew", d.hop_skew).clamp(0.0, 4.0),
                 freq_trust: vf("freqTrust", d.freq_trust).clamp(0.0, 4.0),
                 phase_spread: vf("phaseSpread", d.phase_spread).clamp(0.0, 4.0),
                 peak_width: vf("peakWidth", d.peak_width as f32).clamp(1.0, 32.0) as u32,
@@ -417,7 +415,6 @@ mod tests {
             vocoder: fx::stretch::VocoderParams {
                 window_ms: 60.0,
                 phase_lock: false,
-                hop_skew: 0.375,
                 freq_trust: 0.25,
                 phase_spread: 1.75,
                 peak_width: 5,
