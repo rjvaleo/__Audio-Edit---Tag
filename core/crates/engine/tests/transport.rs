@@ -28,6 +28,9 @@ fn params(in_frames: usize) -> StreamParams {
         wsola: fx::stretch::WsolaParams::default(),
 
         vocoder: fx::stretch::VocoderParams::default(),
+
+
+        pvsola: fx::pvsola::PvsolaParams::default(),
     }
 }
 

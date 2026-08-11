@@ -70,7 +70,7 @@ fn each_live_engine_sounds_like_itself() {
     let channels = 2;
     let src = Source { samples: busy(SR as usize / 2, channels), channels };
     let n = src.frames();
-    let live = [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder];
+    let live = [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola];
     let outs: Vec<Vec<f32>> = live
         .iter()
         .map(|a| run(&src, &params(n, *a, 2.0, 0.0), 512, n))
@@ -113,7 +113,7 @@ fn what_the_callback_plays_is_what_the_file_would_hold() {
     let ratio = 2.0f32;
     let want = ((n as f32) * ratio) as usize;
 
-    for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
         let live = run(&src, &params(n, alg, ratio, 0.0), 512, want);
         let offline = fx::Stretch { ratio, algorithm: alg, ..Default::default() }
             .process(&src.samples, channels, SR);
@@ -190,12 +190,12 @@ fn engines_that_do_not_stream_yet_still_make_sound() {
     let channels = 2;
     let src = Source { samples: busy(SR as usize / 4, channels), channels };
     let n = src.frames();
-    for alg in [Algorithm::Pvsola, Algorithm::Hybrid] {
+    for alg in [Algorithm::Hybrid] {
         assert!(!engine::stretcher::is_live(alg), "{alg:?} claims to stream");
         let out = run(&src, &params(n, alg, 2.0, 0.0), 512, n);
         assert!(rms(&out) > 1e-3, "{alg:?} fell back to silence");
     }
-    for alg in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder] {
+    for alg in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
         assert!(engine::stretcher::is_live(alg), "{alg:?} should stream");
     }
 }
@@ -257,4 +257,61 @@ fn every_device_channel_is_filled_whatever_the_source_was_built_from() {
         rms(&left),
         rms(&right)
     );
+}
+
+/// A known gap, pinned so it cannot go quiet.
+///
+/// The offline renderer wraps every engine but the grain cloud in
+/// `stretch::layered`, which runs the whole engine once per layer with its own
+/// seed and offset and scales the sum back. The audio callback does not: a
+/// streaming engine is one instance, and running sixteen of them would be
+/// sixteen times the work and the memory, decided at the moment the control
+/// moves.
+///
+/// So at more than one layer, the file and the transport are different sounds
+/// for WSOLA, the vocoder and PVSOLA. At one layer — the default, and what
+/// every other test here uses — they are identical, which is why nothing
+/// caught this for two commits.
+///
+/// This test asserts the divergence rather than the agreement. When layering is
+/// either taught to the streaming engines or dropped from the offline ones, it
+/// should start failing, and that failure is the point.
+#[test]
+fn layers_are_a_known_difference_between_live_and_export() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 2, channels), channels };
+    let n = src.frames();
+    let ratio = 2.0f32;
+    let want = ((n as f32) * ratio) as usize;
+
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+        let mut sp = params(n, alg, ratio, 0.0);
+        sp.grain.layers = 4;
+        sp.grain.position_jitter_ms = 30.0;
+
+        let live = run(&src, &sp, 512, want);
+        let offline = fx::Stretch {
+            ratio,
+            algorithm: alg,
+            grain: sp.grain,
+            ..Default::default()
+        }
+        .process(&src.samples, channels, SR);
+
+        let worst = live
+            .iter()
+            .zip(&offline)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
+        assert!(
+            worst > 1e-4,
+            "{alg:?}: live and export now agree at four layers ({worst:.2e}). \
+             If layering reached the streaming engines, delete this test and put \
+             the layer count back into what_the_callback_plays_is_what_the_file_would_hold."
+        );
+        // Both must still be real audio; a divergence is not licence for one of
+        // them to be broken.
+        assert!(rms(&live) > 1e-3, "{alg:?}: live produced nothing at four layers");
+        assert!(rms(&offline) > 1e-3, "{alg:?}: export produced nothing at four layers");
+    }
 }

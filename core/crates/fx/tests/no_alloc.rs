@@ -37,6 +37,7 @@ static A: Counting = Counting;
 
 use fx::stream::{StretchParams, Streamer, WsolaStream};
 use fx::stretch::Stretch;
+use fx::pstream::PvsolaStream;
 use fx::vstream::VocoderStream;
 
 const RATE: u32 = 44_100;
@@ -61,6 +62,51 @@ fn the_streaming_engines_never_allocate_once_they_are_built() {
     steady_state();
     controls_moving();
     the_vocoder();
+    pvsola();
+}
+
+/// PVSOLA holds two whole vocoder runs and a round of output between them, so
+/// it is the one with the most to get wrong.
+fn pvsola() {
+    let channels = 2;
+    let src = source(channels);
+    let in_frames = src.len() / channels;
+    let spec = Stretch { ratio: 3.0, ..Default::default() };
+    let mut p = StretchParams {
+        ratio: spec.ratio,
+        window_ms: spec.window_ms,
+        sample_rate: RATE,
+        wsola: spec.wsola,
+        vocoder: spec.vocoder,
+        grain: spec.grain,
+    };
+    let mut pv = spec.pvsola;
+
+    let block = 512;
+    let mut s = PvsolaStream::new(block, channels);
+    s.seek(0, in_frames, &p, &pv);
+    let mut out = vec![0f32; block * channels];
+
+    for w in [23.0f32, 46.0, 92.0] {
+        p.vocoder.window_ms = w;
+        s.render(&mut out, channels, &src, &p, &pv);
+    }
+
+    let before = ALLOCS.load(Ordering::Relaxed);
+    for i in 0..120 {
+        p.ratio = 1.0 + (i % 6) as f32;
+        p.vocoder.window_ms = [23.0f32, 46.0, 92.0][i % 3];
+        pv.anchor_frames = 1 + (i % 40) as u32;
+        pv.search_ms = (i % 5) as f32 * 40.0;
+        pv.blend = (i % 4) as f32 / 3.0;
+        s.render(&mut out, channels, &src, &p, &pv);
+    }
+    let after = ALLOCS.load(Ordering::Relaxed);
+    assert_eq!(
+        after, before,
+        "the streaming PVSOLA allocated {} times across 120 blocks",
+        after - before
+    );
 }
 
 /// The vocoder holds more state than WSOLA — a phase history per bin per
