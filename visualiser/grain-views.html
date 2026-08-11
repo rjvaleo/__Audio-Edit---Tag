@@ -450,6 +450,39 @@
             .sidebar { width: 100%; max-height: none; }
             #canvas-container { height: 60vh; }
         }
+    /* The preset slots: one rectangle in the bottom-right corner, ruled into
+       eight by two. Not sixteen buttons — sixteen buttons is sixteen borders
+       and sixteen shadows for something that is really one strip. The cells
+       share their edges, so the only lines are the ones between them. */
+    .pads {
+      position: absolute; right: 0; bottom: 0; z-index: 6;
+      display: grid;
+      grid-template-columns: repeat(8, 22px);
+      grid-template-rows: repeat(2, 17px);
+      border-top: 1px solid rgba(250,249,245,0.20);
+      border-left: 1px solid rgba(250,249,245,0.20);
+      background: rgba(16,16,16,0.62);
+      opacity: 0.5; transition: opacity .15s ease;
+    }
+    .pads:hover { opacity: 1; }
+    .pad {
+      border: 0; border-right: 1px solid rgba(250,249,245,0.14);
+      border-bottom: 1px solid rgba(250,249,245,0.14);
+      background: none; padding: 0; cursor: pointer;
+      color: rgba(250,249,245,0.14); font: inherit; font-size: 10px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      user-select: none;
+    }
+    /* The outer edges belong to the rectangle, not to the cells inside it. */
+    .pad:nth-child(8n) { border-right: 0; }
+    .pad:nth-child(n+9) { border-bottom: 0; }
+    .pad:hover { background: rgba(250,249,245,0.07); }
+    /* Holding something is the only thing a slot has to say. */
+    .pad.filled { color: var(--anthropic-orange); font-weight: 700; }
+    /* Held long enough to erase: it fades as it goes, so the gesture says what
+       it is about to do before it does it. */
+    .pad.arming { background: rgba(217,119,87,0.22); color: rgba(250,249,245,0.3); }
+
     </style>
 </head>
 <body>
@@ -743,6 +776,9 @@
                         <span class="clock" id="stream-clock">0:00 / 0:00</span>
                     </div>
                     <div class="hud" id="hud"></div>
+                    <!-- Sixteen looks, over the picture rather than beside it,
+                         because choosing one is something you do while watching. -->
+                    <div class="pads" id="pads" title="Click to recall · double click to set · hold to erase"></div>
                     <div class="hud-keys">
                         1–5 views &nbsp;·&nbsp; V suite &nbsp;·&nbsp; F fullscreen &nbsp;·&nbsp; C close/wide<br>
                         space play &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; wheel to zoom
@@ -1331,6 +1367,10 @@
         buildSchedule();
         for (let i = 0; i < CBINS * EBINS; i++) buckets.push([]);
         updateViewNote();
+        buildPads();
+        // The view's own look and camera, or — at the start of a session — the
+        // close-up on the playhead every view is supposed to open with.
+        loadViewState();
         sketchReady = true;
         readBackground();
         fitCanvas();
@@ -1937,6 +1977,286 @@
         document.getElementById('windowMs-value').textContent = FMT.windowMs(params.windowMs);
     }
 
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PER-VISUALISER STATE
+    //
+    // Ten views is ten different things to look at, not one thing seen ten
+    // ways — Braid wants long trails and Shear wants none, and having them
+    // fight over one set of sliders meant every switch was followed by a
+    // re-dial. So the look belongs to the view.
+    //
+    // The split is between the look and the cloud. Speed, glow, trails, orbit,
+    // mirrors and the palette describe a *picture* and are per view. Ratio,
+    // window, density and the jitters describe the *sound*, and there is only
+    // one sound — following the player overwrites them from the engine anyway.
+    //
+    // Where each half lives says how long it should last. The look and the
+    // presets are in localStorage: they are decisions, and decisions outlive
+    // the window. The camera is in sessionStorage, so every view opens the way
+    // the session should open — close in on the playhead — and then keeps
+    // wherever you left it for as long as the session lasts.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const LOOK_KEYS = ['speed', 'glow', 'orbit', 'trail', 'colourBy', 'mirror', 'colorPalette'];
+    const CAM_KEYS = ['camYaw', 'camPitch', 'camZoom', 'follow'];
+
+    const LOOK_STORE = 'audiolab.grainviews.look.v1';
+    const PAD_STORE = 'audiolab.grainviews.pads.v1';
+    const CAM_STORE = 'audiolab.grainviews.cam.v1';
+
+    /// How close a view sits when the session opens. Under one is nearer —
+    /// `camZoom` is the reciprocal of the slider, which reads the way the word
+    /// does rather than the way the maths does.
+    const OPEN_ZOOM = 0.5;
+
+    const viewKey = () => 'V' + params.suite + ':' + params.view;
+
+    function readStore(key, fallback) {
+        try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+        catch { return fallback; }
+    }
+    function writeStore(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* full or blocked */ }
+    }
+    function readCams() {
+        try { return JSON.parse(sessionStorage.getItem(CAM_STORE)) ?? null; }
+        catch { return null; }
+    }
+
+    /// The camera every view gets at the start of a session: in close, riding
+    /// the playhead. Standing back is a thing you choose, not a thing you find.
+    function openingCamera() {
+        return { camYaw: 0, camPitch: -0.22, camZoom: OPEN_ZOOM, follow: true };
+    }
+
+    let looks = readStore(LOOK_STORE, {});
+    let cams = readCams();
+    /// Nothing in sessionStorage means this is the first look of the session.
+    const freshSession = cams === null;
+    if (freshSession) cams = {};
+
+    function saveViewState() {
+        const k = viewKey();
+        const look = {};
+        for (const f of LOOK_KEYS) look[f] = params[f];
+        look.colorPalette = params.colorPalette.slice();
+        looks[k] = look;
+        writeStore(LOOK_STORE, looks);
+
+        cams[k] = { camYaw, camPitch, camZoom, follow };
+        try { sessionStorage.setItem(CAM_STORE, JSON.stringify(cams)); } catch { /* blocked */ }
+    }
+
+    function loadViewState() {
+        const k = viewKey();
+        const look = looks[k];
+        if (look) {
+            for (const f of LOOK_KEYS) {
+                if (look[f] !== undefined) params[f] = look[f];
+            }
+            if (Array.isArray(look.colorPalette)) params.colorPalette = look.colorPalette.slice();
+        } else {
+            // First visit. Rather than snap to a factory look — which would
+            // make every new view a jolt — it inherits whatever you were
+            // looking at and keeps it from then on.
+            const seeded = {};
+            for (const f of LOOK_KEYS) seeded[f] = params[f];
+            seeded.colorPalette = params.colorPalette.slice();
+            looks[k] = seeded;
+            writeStore(LOOK_STORE, looks);
+        }
+        const cam = cams[k] || openingCamera();
+        camYaw = cam.camYaw;
+        camPitch = cam.camPitch;
+        camZoom = cam.camZoom;
+        follow = cam.follow;
+        syncLookControls();
+        buildPalette();
+        colourGrains();
+        reflectStream();
+    }
+
+    /// Push the look back into its controls, so the panel says what is showing.
+    function syncLookControls() {
+        for (const name of ['speed', 'glow', 'orbit', 'trail', 'mirror']) {
+            const el = document.getElementById(name);
+            if (el) el.value = params[name];
+            const out = document.getElementById(name + '-value');
+            if (out && FMT[name]) out.textContent = FMT[name](params[name]);
+            else if (out) out.textContent = params[name];
+        }
+        const cb = document.getElementById('colourBy');
+        if (cb) cb.value = params.colourBy;
+        for (let i = 0; i < 3; i++) {
+            const el = document.getElementById('color' + (i + 1));
+            if (el) el.value = params.colorPalette[i];
+            const out = document.getElementById('color' + (i + 1) + '-value');
+            if (out) out.textContent = params.colorPalette[i];
+        }
+        const z = document.getElementById('stream-zoom');
+        if (z) z.value = (1 / camZoom).toFixed(2);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PRESETS
+    //
+    // A preset is a look, not a sound — it says how to draw, and drops onto
+    // whichever view is showing. The built-in ones are here rather than in
+    // storage so they cannot be lost, and cannot be overwritten either: saving
+    // under a built-in name makes a copy of your own.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Six looks to start with, in the first six pads. Not locked — a pad is a
+    /// pad — but there so the grid is worth pressing before anything has been
+    /// saved to it.
+    const SEED_PADS = [
+        { name: 'Swarm', speed: 0.9, glow: 1.4, orbit: 0.10, trail: 0.30, colourBy: 'pitch',
+          mirror: 6, colorPalette: ['#6a9bcc', '#788c5d', '#d97757'] },
+        { name: 'Trails', speed: 0.35, glow: 1.1, orbit: 0.03, trail: 0.90, colourBy: 'time',
+          mirror: 4, colorPalette: ['#3d5a80', '#98c1d9', '#ee6c4d'] },
+        { name: 'Kaleid', speed: 0.7, glow: 1.6, orbit: 0.35, trail: 0.72, colourBy: 'rate',
+          mirror: 12, colorPalette: ['#b388eb', '#8093f1', '#f7aef8'] },
+        { name: 'Ink', speed: 0.5, glow: 0.5, orbit: 0.0, trail: 0.55, colourBy: 'size',
+          mirror: 2, colorPalette: ['#2b2b2b', '#8a8a8a', '#f2f2f2'] },
+        { name: 'Ember', speed: 0.45, glow: 1.8, orbit: 0.06, trail: 0.80, colourBy: 'pitch',
+          mirror: 8, colorPalette: ['#4a1c00', '#c1440e', '#ffd166'] },
+        { name: 'Still', speed: 0.0, glow: 0.8, orbit: 0.0, trail: 0.15, colourBy: 'source',
+          mirror: 1, colorPalette: ['#6a9bcc', '#788c5d', '#d97757'] },
+    ];
+
+    const PAD_COUNT = 16;
+    /// How long a press has to last to be an erase rather than a recall.
+    const HOLD_MS = 650;
+    /// How long a first click waits to see whether a second one is coming.
+    const DOUBLE_MS = 240;
+
+    /// The pads are one library rather than one per view: a look is worth
+    /// dropping onto whichever visualiser you are in, which is the whole reason
+    /// to keep it. What it lands on is per view — recalling into Braid changes
+    /// Braid and leaves Shear as you left it.
+    function readPads() {
+        const saved = readStore(PAD_STORE, null);
+        if (Array.isArray(saved) && saved.length === PAD_COUNT) return saved;
+        const pads = new Array(PAD_COUNT).fill(null);
+        SEED_PADS.forEach((p, i) => { pads[i] = p; });
+        writeStore(PAD_STORE, pads);
+        return pads;
+    }
+
+    let pads = readPads();
+
+    function buildPads() {
+        const host = document.getElementById('pads');
+        if (!host) return;
+        host.innerHTML = '';
+        for (let i = 0; i < PAD_COUNT; i++) {
+            const b = document.createElement('button');
+            b.className = 'pad';
+            host.appendChild(b);
+            wirePad(b, i);
+        }
+        paintPads();
+    }
+
+    function paintPads() {
+        const host = document.getElementById('pads');
+        if (!host) return;
+        [...host.children].forEach((b, i) => {
+            const p = pads[i];
+            b.classList.toggle('filled', !!p);
+            b.textContent = p ? '\u00d7' : '';
+            b.title = p
+                ? p.name + ' — click to recall · double click to overwrite · hold to erase'
+                : 'Empty — double click to save the look you are looking at';
+        });
+    }
+
+    /// Three gestures on one target, from pointer events alone.
+    ///
+    /// A `dblclick` listener would still let the first click through, so a
+    /// double click would recall the old look before storing the new one — you
+    /// would see the pad you were overwriting flash past. Counting the clicks
+    /// here means the single-click action waits to find out whether it is one.
+    function wirePad(b, i) {
+        let holdTimer = null;
+        let clickTimer = null;
+        let held = false;
+
+        const cancelHold = () => {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+            b.classList.remove('arming');
+        };
+
+        b.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            held = false;
+            if (!pads[i]) return;          // nothing to erase
+            b.classList.add('arming');
+            holdTimer = setTimeout(() => {
+                held = true;
+                b.classList.remove('arming');
+                erasePad(i);
+            }, HOLD_MS);
+        });
+
+        b.addEventListener('pointerup', () => {
+            cancelHold();
+            if (held) return;              // the hold already did something
+            if (clickTimer) {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+                setPad(i);
+            } else {
+                clickTimer = setTimeout(() => { clickTimer = null; recallPad(i); }, DOUBLE_MS);
+            }
+        });
+
+        b.addEventListener('pointerleave', cancelHold);
+        b.addEventListener('pointercancel', cancelHold);
+        b.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    function recallPad(i) {
+        const look = pads[i];
+        if (!look) return;
+        for (const f of LOOK_KEYS) {
+            if (look[f] !== undefined) params[f] = look[f];
+        }
+        if (Array.isArray(look.colorPalette)) params.colorPalette = look.colorPalette.slice();
+        syncLookControls();
+        buildPalette();
+        colourGrains();
+        saveViewState();
+        flashPad(i);
+    }
+
+    function setPad(i) {
+        const look = { name: pads[i] ? pads[i].name : String(i + 1) };
+        for (const f of LOOK_KEYS) look[f] = params[f];
+        look.colorPalette = params.colorPalette.slice();
+        pads[i] = look;
+        writeStore(PAD_STORE, pads);
+        paintPads();
+        flashPad(i);
+    }
+
+    function erasePad(i) {
+        pads[i] = null;
+        writeStore(PAD_STORE, pads);
+        paintPads();
+    }
+
+    function flashPad(i) {
+        const b = document.getElementById('pads')?.children[i];
+        if (!b) return;
+        b.animate(
+            [{ filter: 'brightness(2.2)' }, { filter: 'brightness(1)' }],
+            { duration: 220, easing: 'ease-out' },
+        );
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // STREAM CONTROLS
     //
@@ -1999,6 +2319,7 @@
     /// the word means to everyone except the person who wrote the camera.
     function setZoom(v) {
         camZoom = 1 / clamp(parseFloat(v), 0.12, 3);
+        saveViewState();
     }
 
     const mmss = s => {
@@ -2023,8 +2344,12 @@
     /// interesting from inside.
     function toggleFollow() {
         follow = !follow;
-        camZoom = 1.0;
+        // Standing back wants the whole shape in frame; coming in close wants
+        // the close-up the session opens with.
+        camZoom = follow ? OPEN_ZOOM : 1.0;
+        document.getElementById('stream-zoom').value = (1 / camZoom).toFixed(2);
         reflectStream();
+        saveViewState();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -2036,7 +2361,10 @@
             dragging = true; lastMX = mouseX; lastMY = mouseY;
         }
     }
-    function mouseReleased() { dragging = false; }
+    function mouseReleased() {
+        if (dragging) saveViewState();
+        dragging = false;
+    }
     function mouseDragged() {
         if (!dragging) return;
         camYaw -= (mouseX - lastMX) * 0.008;
@@ -2047,6 +2375,7 @@
         if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) return;
         camZoom = clamp(camZoom + ev.delta * 0.0016, 1 / 3, 1 / 0.12);
         document.getElementById('stream-zoom').value = (1 / camZoom).toFixed(2);
+        saveViewState();
         return false;
     }
 
@@ -2057,6 +2386,10 @@
         else if (key === 'v' || key === 'V') setSuite(params.suite === 1 ? 2 : 1);
         else if (key === ' ') { streamPlay(); return false; }
     }
+
+    // The camera is written back on every gesture, but a view left mid-orbit
+    // when the window closes would otherwise lose the last move.
+    window.addEventListener('pagehide', saveViewState);
 
     // Switching views from the app that embeds this. Same-origin only — an
     // iframe should not take instructions from whoever happens to message it.
@@ -2070,19 +2403,19 @@
     /// Tunnel sit under the same key and flipping between them compares the
     /// same moment told two ways.
     function setSuite(n) {
+        saveViewState();
         params.suite = n === 2 ? 2 : 1;
         document.getElementById('suite-1').classList.toggle('active', params.suite === 1);
         document.getElementById('suite-2').classList.toggle('active', params.suite === 2);
         document.getElementById('stream-suite').textContent = 'V' + params.suite;
         document.getElementById('mirror-group').style.opacity = params.suite === 2 ? 1 : 0.4;
-        // V2 is centred on now and does not orbit; V1 wants its camera back.
-        camZoom = 1.0;
-        if (params.suite === 2) { camYaw = 0; camPitch = 0; }
         setView(Math.min(params.view, views().length - 1));
     }
 
     function setView(v) {
+        if (v !== params.view) saveViewState();
         params.view = v;
+        loadViewState();
         const list = views();
         for (let i = 0; i < list.length; i++) {
             const b = document.getElementById('view-' + i).querySelector('b');
@@ -2144,6 +2477,7 @@
     function updateParam(name, value) {
         params[name] = parseFloat(value);
         document.getElementById(name + '-value').textContent = FMT[name](params[name]);
+        if (LOOK_KEYS.includes(name)) saveViewState();
         buildSchedule();
     }
 
@@ -2164,11 +2498,13 @@
         params.colorPalette[i] = value;
         document.getElementById('color' + (i + 1) + '-value').textContent = value;
         buildPalette();
+        saveViewState();
     }
 
     function updateColourBy(v) {
         params.colourBy = v;
         colourGrains();
+        saveViewState();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
