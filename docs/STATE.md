@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff. **HEAD `e77d979`, 627 tests passing, working
+Written 11 August 2026 as a handoff. **HEAD `d520e3e`, 633 tests passing, working
 tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 627 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 633 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -214,6 +214,16 @@ Where there was no exact analogue the nearest honest thing was built:
 - Vocoder **reverse** reads the frame back to front *before* the transform.
 - **Layers** wraps the whole engine (`layered()` in `stretch.rs`), not an engine
   change, because nothing about it is engine-specific.
+
+**Layers are a cloud, not a comb.** Every layer used to read the *same* instant
+of the source and be laid down a fixed fraction of a hop later — a delay line,
+and regular delays make regular notches. Sixteen layers took the spectrum's
+ripple from 7.8 dB to 11.9 dB and made the sound thinner, not fuller. Two
+controls fix it: **Scatter** throws each layer's read pointer somewhere else and
+**Range** says how far — small is a chorus, large is a wash. Layer zero never
+moves, or turning scatter up would slide the whole cloud off the beat. After:
+granular 7.9 dB, WSOLA 5.9, vocoder 6.0, PVSOLA 6.0 — at or below one layer.
+The hybrid never combed, because its three parts are already three signals.
 
 **One concept, one control.** `grain.overlap` is the only overlap and
 `grain.scan` is the only read-pointer control; per-engine duplicates were
@@ -434,7 +444,13 @@ moment you press play. What matters is the *worst* block, not the mean: PVSOLA
 makes a whole vocoder run per anchor, and doing it in one callback measured at
 89% of the budget. It is made a slice at a time now, spread across the blocks
 the previous round plays for. Measured worst block: granular 0.2%, WSOLA 7.5%,
-vocoder 19%, PVSOLA 22%, hybrid 22%. `pv_cost.rs` guards it.
+vocoder 12%, PVSOLA 18%, hybrid 17%. With layers, which are the expensive case:
+WSOLA ×8 20%, vocoder ×8 24%, vocoder ×16 44%. `pv_cost.rs` guards all of it.
+
+**The layer offset is what makes layers affordable.** Each layer is delayed by
+its own fraction of a hop, which interleaves the frames — and keeps every layer
+from transforming on the same block. Sixteen vocoder layers firing together
+measured at 160% of the budget; staggered they are 44%.
 
 **Pitch needed its own stage.** Offline WSOLA shifts by over-stretching and
 reading back faster; folding that into the splice instead would have been a
@@ -728,6 +744,8 @@ both paths, and needs no measurement.
 
 ## 13. Recent history
 
+    d520e3e  Layer the streaming engines live, so you can hear them
+    3b65f58  Scatter the layers, so they make a cloud instead of a comb
     e77d979  Stream the hybrid — all five engines run in the callback now
     3fe4cea  Cross-fade between engines, so switching one does not click
     6a52cdf  Stream PVSOLA, and spread its work across the blocks it plays for
