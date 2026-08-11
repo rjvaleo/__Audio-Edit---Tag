@@ -259,6 +259,75 @@ fn every_device_channel_is_filled_whatever_the_source_was_built_from() {
     );
 }
 
+/// Switching engines must not click, and must not dip.
+///
+/// A click is a step: the new engine starts cold at the playhead and its first
+/// sample has nothing to do with the last one the old engine produced. Measured
+/// without the crossfade, the switch put a step of 0.62 into a waveform whose
+/// neighbouring samples differ by 0.0003 — two thousand times the local motion,
+/// which is a loud tick. It also dropped the level to 0.21 from 0.34, because
+/// the incoming engine's overlap-add starts empty and ramps.
+///
+/// Both are measured here against the material's own behaviour either side,
+/// rather than against a number picked out of the air.
+#[test]
+fn switching_engines_does_not_click_or_dip() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 2, channels), channels };
+    let n = src.frames();
+    let block = 256;
+    let switch_at = 20;
+
+    for to in [Algorithm::Vocoder, Algorithm::Granular, Algorithm::Pvsola] {
+        let mut s = Stretcher::new(block, channels, SR);
+        s.set_map(None);
+        let mut sp = params(n, Algorithm::Wsola, 4.0, 0.0);
+        s.seek(0, &sp);
+
+        let mut buf = vec![0f32; block * channels];
+        let mut evs = no_events();
+        let mut out: Vec<f32> = Vec::new();
+        for i in 0..40 {
+            sp.algorithm = if i < switch_at { Algorithm::Wsola } else { to };
+            s.render(&mut buf, channels, &src, &sp, &mut evs);
+            out.extend_from_slice(&buf);
+        }
+
+        let at = switch_at * block;
+        let step = |f: usize| {
+            (0..channels)
+                .map(|c| (out[f * channels + c] - out[(f - 1) * channels + c]).abs())
+                .fold(0f32, f32::max)
+        };
+        let mut nearby: Vec<f32> = (at - 200..at + 200).map(step).collect();
+        nearby.sort_by(f32::total_cmp);
+        let median = nearby[nearby.len() / 2].max(1e-6);
+
+        assert!(
+            step(at) < median * 20.0,
+            "switching to {to:?}: a step of {:.5} where neighbouring samples move {median:.5}",
+            step(at)
+        );
+
+        let rms_of = |a: usize, b: usize| -> f32 {
+            let mut acc = 0f32;
+            for f in a..b {
+                for c in 0..channels {
+                    let v = out[f * channels + c];
+                    acc += v * v;
+                }
+            }
+            (acc / ((b - a) * channels) as f32).sqrt()
+        };
+        let before = rms_of(at - 1000, at);
+        let across = rms_of(at, at + 1024);
+        assert!(
+            across > before * 0.7,
+            "switching to {to:?}: the level dipped to {across:.4} from {before:.4}"
+        );
+    }
+}
+
 /// A known gap, pinned so it cannot go quiet.
 ///
 /// The offline renderer wraps every engine but the grain cloud in
