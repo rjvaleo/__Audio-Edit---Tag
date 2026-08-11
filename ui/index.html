@@ -205,7 +205,33 @@
       <span class="pb-label">Preset</span>
       <select class="mini" id="presetPick"><option value="">— none —</option></select>
       <button class="ghost" id="presetSave">Save as&hellip;</button>
+      <button class="ghost" id="presetManage">Manage&hellip;</button>
       <button class="ghost" id="presetDelete">Delete</button>
+    </div>
+
+    <!-- The preset manager. Every preset, and every value inside the one you
+         pick — the settings are stored whether or not the engine that reads
+         them is the one selected, so this is the only place the whole of a
+         preset can be seen at once. -->
+    <div class="modal hidden" id="presetManager">
+      <div class="modal-card">
+        <header class="modal-head">
+          <h2>Presets</h2>
+          <span class="modal-sub" id="pmCount"></span>
+          <button class="ghost" id="pmClose" title="Close">Close</button>
+        </header>
+        <div class="pm-body">
+          <aside class="pm-list" id="pmList"></aside>
+          <section class="pm-detail" id="pmDetail"></section>
+        </div>
+        <footer class="modal-foot">
+          <span class="pm-status" id="pmStatus"></span>
+          <button class="ghost" id="pmDuplicate">Duplicate</button>
+          <button class="ghost danger" id="pmDelete">Delete</button>
+          <button class="ghost" id="pmRevert">Revert</button>
+          <button class="primary" id="pmSave">Save changes</button>
+        </footer>
+      </div>
     </div>
 
     <div class="regions hidden" id="regions"></div>
