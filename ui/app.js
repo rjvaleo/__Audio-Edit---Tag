@@ -2642,7 +2642,14 @@ function renderStretch() {
     // works, so they belong together and away from the everyday sliders.
     const ext = $('extEngine');
     ext.innerHTML = '';
-    if (alg === 'vocoder') {
+    // The vocoder's standard pair and its two extended groups.
+    //
+    // Written once and called from three engines, because PVSOLA and Hybrid
+    // both *run* the vocoder — a control that reaches the audio but has no
+    // control on the panel is the same bug as one that does nothing, and
+    // harder to notice. `what` names whose vocoder it is, since inside the
+    // hybrid it is only shaping one third of the sound.
+    const vocoderControls = (what) => {
       const v = state.stretchDraft.vocoder;
       own.appendChild(param('Analysis window', v.windowMs, 5, 500, 1,
         (x) => `${Math.round(x)} ms`,
@@ -2652,7 +2659,7 @@ function renderStretch() {
         v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); }));
 
       ext.appendChild(wild('Spectrum',
-        'The vocoder normally copies magnitudes through untouched and rewrites only phase. These do not.').add(
+        `The vocoder normally copies magnitudes through untouched and rewrites only phase. These do not.${what}`).add(
         param('Freeze', v.magFreeze, 0, 1, 0.01,
           (x) => (x >= 0.999 ? 'held' : `${Math.round(x * 100)}%`),
           (x) => { v.magFreeze = x; previewStretch(); }, () => commitStretch()),
@@ -2664,7 +2671,7 @@ function renderStretch() {
       ));
 
       ext.appendChild(wild('Phase',
-        'How the frequency estimate is believed and how far a peak imposes its phase on its neighbours.').add(
+        `How the frequency estimate is believed and how far a peak imposes its phase on its neighbours.${what}`).add(
         param('Freq trust', v.freqTrust, 0, 4, 0.01,
           (x) => (x <= 0.001 ? 'to bins' : `${x.toFixed(2)}×`),
           (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch()),
@@ -2678,22 +2685,31 @@ function renderStretch() {
           'Move both channels by one shared correction, so the image survives the stretch instead of drifting apart',
           v.stereoLink, (on) => { v.stereoLink = on; commitStretch(); }),
       ));
-    }
+    };
 
-    if (alg === 'wsola') {
+    // WSOLA's splice group, and its transient group when the detector is on.
+    //
+    // `forced` is for the hybrid, which turns transient preservation on and
+    // keeps it on — an attack surviving at its original rate is the whole
+    // reason that part was separated out. So there is no switch to show, but
+    // the detector and its two constants are live and need reaching.
+    const wsolaControls = ({ forced = false, what = '' } = {}) => {
       const w = state.stretchDraft.wsola;
-      own.appendChild(check('preserve transients',
-        'Hold drum hits at their original rate so they are not laid down twice',
-        w.preserveTransients,
-        (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); }));
-      if (w.preserveTransients) {
+      const detecting = forced || w.preserveTransients;
+      if (!forced) {
+        own.appendChild(check('preserve transients',
+          'Hold drum hits at their original rate so they are not laid down twice',
+          w.preserveTransients,
+          (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); }));
+      }
+      if (detecting) {
         own.appendChild(param('Detector', w.sensitivity, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
           (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch()));
       }
 
       ext.appendChild(wild('Splice',
-        'How far the similarity search looks, what it goes looking for, and what the result is laid down under.').add(
+        `How far the similarity search looks, what it goes looking for, and what the result is laid down under.${what}`).add(
         param('Search', w.searchMs, 0, 200, 0.5,
           (x) => (x <= 0 ? 'plain OLA' : `${x.toFixed(1)} ms`),
           (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch()),
@@ -2712,7 +2728,7 @@ function renderStretch() {
       ));
 
       // Only reachable once the detector is running, so it appears with it.
-      if (w.preserveTransients) {
+      if (detecting) {
         ext.appendChild(wild('Transients',
           'What the detector counts as a hit, and how much either side of one is held at its original rate.').add(
           param('Floor', w.floor, 0, 2, 0.01,
@@ -2722,7 +2738,10 @@ function renderStretch() {
             (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch()),
         ));
       }
-    }
+    };
+
+    if (alg === 'vocoder') vocoderControls('');
+    if (alg === 'wsola') wsolaControls();
 
     if (alg === 'pvsola') {
       const p = state.stretchDraft.pvsola;
@@ -2745,16 +2764,14 @@ function renderStretch() {
           (x) => { p.blend = x; previewStretch(); }, () => commitStretch()),
       ));
 
-      // The vocoder is what is actually running between anchors, so its
-      // controls are its own — not copies. Shown here so the engine is not a
-      // black box with one knob on it.
-      const v = state.stretchDraft.vocoder;
-      own.appendChild(param('Analysis window', v.windowMs, 5, 500, 1,
-        (x) => `${Math.round(x)} ms`,
-        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true));
-      own.appendChild(check('phase lock',
-        'Holds each partial together instead of letting it dissolve into neighbouring bins',
-        v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); }));
+      // The vocoder is what is actually running between anchors, so all of its
+      // controls are live here and all of them are shown. Not copies — the
+      // same settings, reached from a second place.
+      //
+      // WSOLA's are deliberately absent: this engine finds its splice with its
+      // own search, so the WSOLA panel's search, pick, window and stride do
+      // not reach it. Showing them would be worse than not having them.
+      vocoderControls(' Between anchors, this engine is the vocoder, so these are live here too.');
     }
 
     if (alg === 'hybrid') {
@@ -2787,6 +2804,17 @@ function renderStretch() {
         param('Resolution', h.fftSize, 256, 8192, 256, (x) => `${Math.round(x)}`,
           (x) => { h.fftSize = Math.round(x); previewStretch(); }, () => commitStretch(), true),
       ));
+
+      // This engine runs both of the others, so both of their control sets are
+      // live and both are shown — the vocoder shapes the tone, WSOLA shapes
+      // the hits. The transient detector has no switch here because the hybrid
+      // keeps it on: an attack surviving at its own rate is the whole reason
+      // that part was separated out in the first place.
+      vocoderControls(' Here they shape the tone, which is the part the vocoder is given.');
+      wsolaControls({
+        forced: true,
+        what: ' Here they shape the hits, which is the part WSOLA is given.',
+      });
     }
 
     // Grain shape and Pitch movement drive every engine now — a window is a

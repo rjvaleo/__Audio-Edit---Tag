@@ -107,13 +107,34 @@ Five buttons on the top row of the Time & Pitch panel. Which one is chosen
 decides what the standard column below it and the Extended column beside it
 contain, because the five mean different things by every setting they share.
 
-| Engine | Standard | Extended |
+| Engine | Standard | Extended groups |
 |---|---|---|
-| **WSOLA** | preserve transients, detector | search, pick, window, stride, floor, guard |
-| **Vocoder** | analysis window, phase lock | freeze, blur, gate, freq trust, phase spread, peak width, lock width, link stereo |
-| **PVSOLA** | re-anchor, analysis window, phase lock | search, blend |
-| **Hybrid** | tone, hits, air, remake noise | hold, spread, margin, resolution |
+| **WSOLA** | preserve transients, detector | Splice, Transients |
+| **Vocoder** | analysis window, phase lock | Spectrum, Phase |
+| **PVSOLA** | re-anchor, analysis window, phase lock | Anchor, Spectrum, Phase |
+| **Hybrid** | tone, hits, air, remake noise, analysis window, phase lock, detector | Separation, Spectrum, Phase, Splice, Transients |
 | **Granular** | *(the grain panels below)* | *(the grain extended groups)* |
+
+| Group | Holds |
+|---|---|
+| **Splice** | search, pick, window, stride |
+| **Transients** | floor, guard |
+| **Spectrum** | freeze, blur, gate |
+| **Phase** | freq trust, phase spread, peak width, lock width, link stereo |
+| **Anchor** | search, blend |
+| **Separation** | hold, spread, margin, resolution |
+
+**The last two engines run the first three, so they show the first three's
+controls too.** These are the same settings reached from a second place, not
+copies of them: in the hybrid, *Spectrum* and *Phase* shape the tone, because
+that is the part the vocoder is given, and *Splice* and *Transients* shape the
+hits. The hybrid holds transient preservation on and so has no switch for it —
+an attack surviving at its own rate is the reason that part was separated out.
+
+PVSOLA shows the vocoder's groups and deliberately **not** WSOLA's: it finds
+its splice with its own search, so WSOLA's would be decoration. There is a test
+asserting both halves of that — that everything shown reaches the audio, and
+that what is not shown does not.
 
 Grain shape, pitch movement, scan, shape and randomness reach **all five** —
 every one of them lays something down repeatedly, so every one has a rate, a
