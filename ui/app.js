@@ -2869,7 +2869,10 @@ async function resetExtended() {
 
 async function resetEverything() {
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard',
-                         algorithm: 'wsola',
+                         // Which engine you are working in is not a setting to
+                         // be undone — it is where you are. Reset puts the
+                         // controls back; it does not move you somewhere else.
+                         algorithm: state.stretchDraft?.algorithm || 'wsola',
                          vocoder: { ...VOCODER_DEFAULTS },
                          wsola: { ...WSOLA_DEFAULTS } };
   const grain = {
