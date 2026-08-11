@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.97-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2021-000000?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
-[![Tests](https://img.shields.io/badge/tests-585%20passing-2ea44f)](#building-from-source)
+[![Tests](https://img.shields.io/badge/tests-594%20passing-2ea44f)](#building-from-source)
 [![Crates](https://img.shields.io/badge/workspace-10%20crates-dea584?logo=rust&logoColor=white)](#the-stack)
 [![Dependencies](https://img.shields.io/badge/direct%20deps-2-4c9a2a)](#the-stack)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](#start-here)
@@ -100,12 +100,12 @@ cross-build a single command with nothing but a linker installed.
 | `audio-core` | 2588 | 78 | Container probe and decode (WAV, AIFF, AIFC, headerless PCM), peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 755 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 7843 | 190 | RBJ biquads, parametric EQ, compressor, channel maximiser, the five stretchers, and the sines/transients/noise separation |
+| `fx` | 8124 | 192 | RBJ biquads, parametric EQ, compressor, channel maximiser, the five stretchers, and the sines/transients/noise separation |
 | `edit` | 1663 | 54 | Non-destructive edit list, windowed render, export |
 | `engine` | 1538 | 22 | Real-time block renderer, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1395 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 7017 | 124 | HTTP/1.1 on `std::net`, routes, JSON, persistence, sessions |
+| `server` | 7404 | 131 | HTTP/1.1 on `std::net`, routes, JSON, persistence, sessions |
 | `audiolab` | 58 | — | The binary |
 
 ### Five time stretchers
@@ -206,7 +206,7 @@ between the Mac and the PC.
 ## Building from source
 
     cargo build --release --manifest-path core/Cargo.toml     # this machine
-    cargo test  --release --manifest-path core/Cargo.toml     # 585 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 594 tests
 
 For the Windows build from a Mac, once per machine:
 

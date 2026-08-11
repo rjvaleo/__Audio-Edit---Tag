@@ -1,6 +1,6 @@
 # Architecture — as built
 
-What exists, as of 11 August 2026. 585 tests passing.
+What exists, as of 11 August 2026. 594 tests passing.
 
 The original design brief is
 [`Waveform display interface/uploads/AudioLab-ARCHITECTURE.md`](../Waveform%20display%20interface/uploads/AudioLab-ARCHITECTURE.md) —
@@ -36,12 +36,12 @@ on nothing, `server` depends on everything.
 | `audio-core` | 2588 | 78 | Container probe and decode, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 755 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 7843 | 190 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
+| `fx` | 8124 | 192 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
 | `edit` | 1663 | 54 | Non-destructive edit list, windowed render, export |
 | `engine` | 1538 | 22 | Block renderer, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1395 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 7017 | 124 | HTTP/1.1, routes, JSON, persistence, sessions |
+| `server` | 7404 | 131 | HTTP/1.1, routes, JSON, persistence, sessions |
 | `audiolab` | 58 | — | The binary |
 
 ### Dependencies
@@ -103,6 +103,15 @@ stretch renders whole because WSOLA picks each splice from the previous one.
 A saved session is refused if the file has changed — frames, channels or sample
 rate — because stale offsets pointing at the wrong audio is worse than losing
 the edit.
+
+**A reader must never be stricter than its writer.** `stretch_from_json` clamped
+the ratio at 4×, the pitch at two octaves and the window at 200 ms — the bounds
+from before the granular engine widened them — while the edit route wrote
+100×, four octaves and two seconds. So a preset saved at 20× was written to disk
+at 20× and read back at 4×, with nothing rejected and nothing warned, and the
+file on disk still saying 20×. It looked like the interface losing the value
+rather than the loader. Everything saved went through it. If those bounds ever
+need to differ again, the *writer* is the place to change.
 
 ## DSP
 
@@ -234,6 +243,14 @@ document (`/api/edit`, `/api/rack`, `/api/export`), engine
 Absent means unchanged. A control that posts one field does not reset the
 twenty it did not mention.
 
+Presets have four routes rather than two, because capturing and editing want
+opposite things: `/api/presets` captures whatever a file currently has and
+needs that file, while `/api/presets/update` and `/api/presets/duplicate` write
+values given outright and work with nothing open at all — which is what the
+preset manager needs, since there the preset is the thing being edited and not
+the sound. All of them read through the same `stretch_from_json`, so the
+manager cannot store a value the engines would refuse.
+
 ## What the app remembers
 
 Everything in `data/`, beside the launcher — deliberately not under
@@ -248,7 +265,7 @@ Everything in `data/`, beside the launcher — deliberately not under
 | `USER-TAGS.tsv` | Tags you added by hand |
 | `TAG-OVERRIDES.json` | Corrections to what was inferred |
 | `SESSIONS.json` | Open documents and their edits |
-| `PRESETS.json` | Named stretch and rack settings |
+| `PRESETS.json` | Named stretch and rack settings, every engine's at once |
 | `exports/` | Rendered files |
 
 TSV rather than a database: the format is proven at 75,000 rows, it is

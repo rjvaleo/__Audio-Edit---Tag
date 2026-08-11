@@ -144,9 +144,21 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
         }
     };
     Stretch {
-        ratio: (num(v.get("ratio"), 1.0) as f32).clamp(0.25, 4.0),
-        semitones: (num(v.get("semitones"), 0.0) as f32).clamp(-24.0, 24.0),
-        window_ms: (num(v.get("windowMs"), 40.0) as f32).clamp(5.0, 200.0),
+        // These three must match the bounds the edit route applies, and for a
+        // long time they did not: this reader still had the ranges from before
+        // the granular engine widened them, so it clamped ratio at 4×, pitch at
+        // two octaves and the window at 200 ms.
+        //
+        // Nothing rejected the value or warned about it. A preset saved at 20×
+        // was written to disk at 20× and read back at 4×, so it was only wrong
+        // once you reloaded — and the file still said 20×, so the file looked
+        // fine. Every saved session and every preset went through here.
+        //
+        // A reader that is stricter than the writer is silent data loss. If
+        // these ever need to differ again, the writer is the place to change.
+        ratio: (num(v.get("ratio"), 1.0) as f32).clamp(0.01, 100.0),
+        semitones: (num(v.get("semitones"), 0.0) as f32).clamp(-48.0, 48.0),
+        window_ms: (num(v.get("windowMs"), 40.0) as f32).clamp(5.0, 2000.0),
         quality: quality_from(v.get("quality")),
         // A preset that predates the engine choice keeps the old behaviour
         // rather than silently switching to the new one.
@@ -583,6 +595,29 @@ mod tests {
         assert!(back.stretch.hybrid.morph_noise, "the noise morpher opened off");
     }
 
+    /// The reader must not be stricter than the writer.
+    ///
+    /// A preset saved at twenty times was written to disk correctly and read
+    /// back at four, because this reader still carried the bounds from before
+    /// the granular engine widened them. Nothing warned, and the file on disk
+    /// still held the right number, so it looked like the interface losing the
+    /// value rather than the loader.
+    #[test]
+    fn a_long_stretch_survives_being_saved_and_reloaded() {
+        let mut l = EditList::identity(10_000, 2, 48_000);
+        l.stretch = Stretch {
+            ratio: 20.32,
+            semitones: -40.0,
+            window_ms: 1500.0,
+            ..Stretch::default()
+        };
+        let back = edit_from_json(&edit_to_json(&l), &EditList::identity(10_000, 2, 48_000))
+            .expect("should restore");
+        assert_eq!(back.stretch.ratio, 20.32, "the ratio was clamped on the way back in");
+        assert_eq!(back.stretch.semitones, -40.0, "the pitch was clamped on the way back in");
+        assert_eq!(back.stretch.window_ms, 1500.0, "the window was clamped on the way back in");
+    }
+
     #[test]
     fn fade_shapes_are_not_silently_flattened() {
         let mut l = EditList::identity(1000, 1, 48_000);
@@ -628,8 +663,11 @@ mod tests {
         .unwrap();
         let back = edit_from_json(&v, &EditList::identity(1000, 1, 48000)).unwrap();
         assert!(back.clips[0].gain <= 64.0);
-        assert!(back.stretch.ratio >= 0.25, "a zero ratio would divide by zero");
-        assert!(back.stretch.semitones <= 24.0);
+        // The bounds here are the engines' own, and deliberately the same ones
+        // the edit route applies — this test used to assert the narrower pair
+        // this reader carried by mistake, so it was pinning the bug in place.
+        assert!(back.stretch.ratio >= 0.01, "a zero ratio would divide by zero");
+        assert!(back.stretch.semitones <= 48.0);
         assert!(back.stretch.grain.overlap >= 1.0);
     }
 

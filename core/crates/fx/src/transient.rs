@@ -193,13 +193,43 @@ mod tests {
         assert!(found.iter().filter(|f| **f > rate as usize / 4).count() == 0, "{found:?}");
     }
 
+    /// Bursts whose amplitude climbs from barely-there to obvious.
+    ///
+    /// Uniform bursts cannot test a threshold. They all sit far above it, so
+    /// every setting finds the same ones and a dead control passes. This needs
+    /// hits sitting *near* the bar, which is the only place moving the bar
+    /// shows up.
+    fn graded_bursts(rate: u32, secs: f32, count: usize) -> Vec<f32> {
+        let n = (secs * rate as f32) as usize;
+        let mut v: Vec<f32> = (0..n)
+            .map(|i| (std::f32::consts::TAU * 220.0 * i as f32 / rate as f32).sin() * 0.12)
+            .collect();
+        let mut seed = 7u32;
+        for b in 0..count {
+            let at = (n / (count + 1)) * (b + 1);
+            let amp = 0.02 + 0.9 * (b as f32 / (count - 1).max(1) as f32).powi(2);
+            for i in 0..600 {
+                if at + i >= n {
+                    break;
+                }
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let noise = ((seed >> 16) as f32 / 32768.0) - 1.0;
+                v[at + i] += noise * (1.0 - i as f32 / 600.0).powi(2) * amp;
+            }
+        }
+        v
+    }
+
+    /// This used to assert only that a looser setting found *no fewer* onsets,
+    /// which is true of a control that does nothing at all — and on uniform
+    /// bursts that is exactly what it was measuring.
     #[test]
     fn sensitivity_opens_the_gate() {
         let rate = 44_100;
-        let sig = with_bursts(rate, 3.0, &[0.4, 0.8, 1.2, 1.6, 2.0, 2.4]);
+        let sig = graded_bursts(rate, 2.0, 12);
         let strict = onsets(&sig, 1, rate, 0.0, 1.0).len();
         let loose = onsets(&sig, 1, rate, 1.0, 1.0).len();
-        assert!(loose >= strict, "loose {loose} should not find fewer than strict {strict}");
+        assert!(loose > strict, "loose {loose} found no more than strict {strict}");
     }
 
     #[test]

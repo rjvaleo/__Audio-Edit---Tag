@@ -85,6 +85,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/presets") => api_presets_list(app),
         ("POST", "/api/presets") => api_preset_save(app, req),
         ("POST", "/api/presets/apply") => api_preset_apply(app, req),
+        ("POST", "/api/presets/update") => api_preset_update(app, req),
+        ("POST", "/api/presets/duplicate") => api_preset_duplicate(app, req),
         ("POST", "/api/presets/delete") => api_preset_delete(app, req),
         ("GET", "/api/grains") => api_grains(app, req),
         ("GET", "/api/edit") => api_edit_get(app, req),
@@ -727,14 +729,21 @@ fn api_preset_save(app: &Arc<App>, req: &Request) -> Response {
     let Some(rel) = v.get("p").and_then(|p| p.as_str()) else {
         return Response::error(400, "no path given");
     };
-    let Some(list) = app.edits.snapshot(rel) else {
-        return Response::error(400, "that file has no settings to save");
-    };
+    // The file has to exist; it does not have to have been edited.
+    //
+    // This used to require an edit document and refuse without one, which meant
+    // a file whose settings were all in the rack — the maximiser turned up and
+    // nothing else — reported that it had no settings to save while plainly
+    // having some. A file with no stretch spec has the default one, which is a
+    // perfectly good thing to store alongside a rack.
+    if identity_for(app, rel).is_none() {
+        return Response::error(404, "no such file in the library");
+    }
 
     let preset = crate::persist::Preset {
         name: name.clone(),
         note: v.get("note").and_then(|n| n.as_str()).unwrap_or("").to_string(),
-        stretch: list.stretch,
+        stretch: app.edits.snapshot(rel).map(|l| l.stretch).unwrap_or_default(),
         rack: app.racks.get(rel),
     };
     {
@@ -765,7 +774,15 @@ fn api_preset_apply(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(404, "no such file in the library");
     };
 
-    if !preset.rack.slots.is_empty() {
+    // The rack moves whenever the preset holds anything but a factory rack.
+    //
+    // This used to ask whether the *slots* were empty, which is a different
+    // question: the channel maximiser lives in the rack beside the slots rather
+    // than in a place of its own, so a preset that is nothing but a maximiser
+    // setting has no slots and was silently dropped. The guard is still here —
+    // a preset holding a factory rack should not wipe the one you have — it now
+    // just asks about the whole rack.
+    if preset.rack != crate::rack::RackSpec::empty() {
         app.racks.set(rel, preset.rack.clone());
     }
     let stretch = preset.stretch;
@@ -777,6 +794,99 @@ fn api_preset_apply(app: &Arc<App>, req: &Request) -> Response {
     });
     app.save_sessions();
     Response::json(out.to_string())
+}
+
+/// Edit a stored preset in place: its name, its note, or any of its values.
+///
+/// Separate from saving because the two want opposite things. Saving captures
+/// whatever a file currently has and needs that file; this writes values given
+/// outright and must work with nothing open at all, which is the whole point of
+/// a manager — the preset is the thing being edited, not the sound.
+///
+/// Absent means unchanged here as everywhere else, so the manager can send back
+/// only the part it touched.
+fn api_preset_update(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(name) = v.get("name").and_then(|n| n.as_str()) else {
+        return Response::error(400, "no name given");
+    };
+    let Some(mut preset) = app.presets.read().unwrap().get(name).cloned() else {
+        return Response::error(404, "no such preset");
+    };
+
+    // Renaming to a name already in use would silently swallow the other one.
+    let renamed = match v.get("to").and_then(|t| t.as_str()).map(str::trim) {
+        Some(to) if to.is_empty() => return Response::error(400, "a preset needs a name"),
+        Some(to) if to != name => {
+            if app.presets.read().unwrap().contains_key(to) {
+                return Response::error(409, "a preset with that name already exists");
+            }
+            preset.name = to.to_string();
+            true
+        }
+        _ => false,
+    };
+    if let Some(note) = v.get("note").and_then(|n| n.as_str()) {
+        preset.note = note.to_string();
+    }
+    // The values go through exactly the same readers the document uses, so the
+    // manager cannot store anything the engines would refuse — every clamp is
+    // applied once, in one place, and this is not a second place.
+    if let Some(s) = v.get("stretch") {
+        preset.stretch = crate::persist::stretch_from_json(s);
+    }
+    if let Some(r) = v.get("rack") {
+        preset.rack = crate::rack::RackSpec::from_json(r);
+    }
+
+    {
+        let mut presets = app.presets.write().unwrap();
+        if renamed {
+            presets.remove(name);
+        }
+        presets.insert(preset.name.clone(), preset);
+        if let Err(e) = crate::persist::save_presets(&app.presets_path(), &presets) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    api_presets_list(app)
+}
+
+/// Store a new preset from values given outright, with no file involved.
+///
+/// The manager's Duplicate. It copies the *draft* rather than what is stored,
+/// so a copy can be taken of edits without committing them to the original.
+fn api_preset_duplicate(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let name = v.get("name").and_then(|n| n.as_str()).unwrap_or("").trim().to_string();
+    if name.is_empty() {
+        return Response::error(400, "a preset needs a name");
+    }
+    if app.presets.read().unwrap().contains_key(&name) {
+        return Response::error(409, "a preset with that name already exists");
+    }
+
+    let preset = crate::persist::Preset {
+        name: name.clone(),
+        note: v.get("note").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+        stretch: v.get("stretch").map(crate::persist::stretch_from_json).unwrap_or_default(),
+        rack: v
+            .get("rack")
+            .map(crate::rack::RackSpec::from_json)
+            .unwrap_or_else(crate::rack::RackSpec::empty),
+    };
+    {
+        let mut presets = app.presets.write().unwrap();
+        presets.insert(name, preset);
+        if let Err(e) = crate::persist::save_presets(&app.presets_path(), &presets) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    api_presets_list(app)
 }
 
 fn api_preset_delete(app: &Arc<App>, req: &Request) -> Response {

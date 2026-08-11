@@ -146,6 +146,32 @@ the Extended column puts back only what is in that column.
 
 ---
 
+## The preset manager
+
+**Manage…** on the preset row, or the `×` on the picker beside it. A preset
+holds *every* engine's settings, not only the engine that was selected when it
+was saved, so most of what is in one cannot be seen from the panels at all —
+this is the only place the whole of it shows.
+
+| Gesture | What it does |
+|---|---|
+| **Click a preset** | Selects it. Asks first if the one you are on has unsaved edits. |
+| **Type in any value** | Edits the draft. Changed boxes turn amber and the footer says so; nothing is written until you save. |
+| **Save changes** | Writes it, then shows back what the server actually stored — so a value pulled into range says so instead of waiting until the next reload. |
+| **Revert** | Throws the draft away and reloads the stored values. |
+| **Duplicate** | A copy of the *draft*, so you can branch off edits without committing them to the original. |
+| **Delete** | Removes the preset. No sound is touched. |
+| **Esc**, **Close**, or click outside | Closes, asking first if there are unsaved edits. |
+
+Renaming is just editing the Name box. A rename onto a name already in use is
+refused rather than swallowing the other preset.
+
+An empty box means *no value stored* — which a preset written before that
+control existed will have. It is left empty rather than shown as zero, because
+zero is a real setting and would be a lie about what is in the file.
+
+---
+
 ## The grain visualiser
 
 Ten views in two suites, at `/grains3d` or in an in-page pop-over
