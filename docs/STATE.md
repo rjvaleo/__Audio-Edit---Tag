@@ -597,10 +597,43 @@ gesture), `docs/MENUS.md` (every menu item).
 
 ## 12. What is open
 
-**Waiting on a decision, not on work:**
+**Waiting on a decision, not on work.** One question, three answers, asked and
+not yet picked. The measurement, relative to a single layer:
 
-- **Granular layers lose level and the other engines do not.** Cause understood,
-  fix not free. Three options put to the user; none chosen. See §5.
+| | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|
+| Granular, jitter on, spread 0 | 0.71 | 0.52 | 0.37 | **0.25** |
+| Granular, no jitter, spread 1 | 0.93 | 0.77 | 0.13 | **0.09** |
+| Granular, no jitter, spread 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| WSOLA / Vocoder / PVSOLA / Hybrid | 1.00 | 1.00 | 1.00 | 1.00 |
+
+The grains really are being created — two separate things eat the level.
+**Decorrelation**: the overlap-add divides by grain *count* while grains that do
+not line up sum by its *square root*, so 16 jittered layers land at exactly
+1/√16 and every doubling loses 3 dB. **The layer offset**: averaging
+time-shifted copies of otherwise identical audio is a comb filter, which is why
+the no-jitter case is worse than the jittered one.
+
+The other engines hold level because `layered()` measures one layer's RMS and
+scales the sum back to it. Granular's layering is older, lives inside
+`granular()` and shares one normalisation across all layers.
+
+**The fix is not free**, which is why it was asked rather than done: the
+real-time renderer cannot measure RMS ahead of a block, so routing granular
+through the same wrapper would fix the render and leave live playback quiet
+while the exported file came out level — and live-equals-export is a hard rule
+here. No fixed gain works for both cases: √N is exact when the layers are
+decorrelated and 4× too loud when they are identical.
+
+1. **Match the render, accept a live/export difference** on layers only, and say
+   so in the interface.
+2. **Compensate by √N in both paths.** Exact whenever jitter is on — which is
+   when layers are worth using — identical live and offline, no measurement
+   needed; too loud on the degenerate no-jitter case.
+3. **Leave it** and treat layers as a texture control you re-balance by ear.
+
+**Recommended: 2.** It is right for the case people actually use, the same in
+both paths, and needs no measurement.
 
 **Next, in order — the streaming work the user chose:**
 
