@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 rem Audio Edit & Tag - Windows launcher.
 rem
 rem Double-click this file. It starts the local server, opens your browser at
@@ -12,12 +13,22 @@ setlocal
 cd /d "%~dp0"
 set "AUDIOLAB_DATA=%CD%\data"
 
-rem A shipped binary is preferred; a locally built one is the fallback for
-rem anyone working on the source.
+rem Whichever binary is NEWER, rather than whichever comes first. Preferring
+rem bin/ outright is a quiet trap for anyone working on the source: rebuild,
+rem double-click, and the launcher runs a shipped copy from weeks ago while
+rem every change you just made appears to have done nothing.
 set "BIN="
-if exist "bin\audiolab.exe" set "BIN=bin\audiolab.exe"
-if not defined BIN if exist "core\target\x86_64-pc-windows-gnu\release\audiolab.exe" set "BIN=core\target\x86_64-pc-windows-gnu\release\audiolab.exe"
-if not defined BIN if exist "core\target\release\audiolab.exe" set "BIN=core\target\release\audiolab.exe"
+for %%C in ("bin\audiolab.exe" "core\target\x86_64-pc-windows-gnu\release\audiolab.exe" "core\target\release\audiolab.exe") do (
+  if exist %%C (
+    if not defined BIN (
+      set "BIN=%%~C"
+    ) else (
+      for %%A in (%%C) do for %%B in ("!BIN!") do (
+        if %%~tA GTR %%~tB set "BIN=%%~C"
+      )
+    )
+  )
+)
 
 if not defined BIN (
   echo.

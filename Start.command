@@ -14,13 +14,18 @@ cd "$(dirname "$0")"
 AUDIOLAB_DATA="$PWD/data"
 export AUDIOLAB_DATA
 
-# A shipped binary is preferred; a locally built one is the fallback for anyone
-# working on the source.
+# Whichever binary is NEWER, rather than whichever comes first in the list.
+#
+# This used to prefer bin/ outright, which is a quiet trap for anyone working on
+# the source: rebuild, double-click, and the launcher runs the shipped copy from
+# weeks ago while every change you just made appears to have done nothing. bin/
+# went three days stale that way before anyone noticed.
 BIN=""
 for candidate in "./bin/audiolab" "./core/target/release/audiolab"; do
   if [ -x "$candidate" ]; then
-    BIN="$candidate"
-    break
+    if [ -z "$BIN" ] || [ "$candidate" -nt "$BIN" ]; then
+      BIN="$candidate"
+    fi
   fi
 done
 
