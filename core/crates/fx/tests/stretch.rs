@@ -853,8 +853,9 @@ fn every_wsola_control_left_alone_is_the_sound_it_always_made() {
     // Spelled out rather than `..Default::default()`, because the point is that
     // these particular values are the ones the algorithm used to hard-code.
     let mut same = Stretch { ratio: 2.0, ..Default::default() };
+    same.grain.overlap = 2.0;
     same.wsola.search_ms = 10.0;
-    same.wsola.overlap = 2.0;
+    same.grain.overlap = 2.0;
     same.wsola.splice = fx::stretch::Splice::Similar;
     same.wsola.stride = 4;
     same.wsola.shape = fx::stretch::WinShape::Hann;
@@ -913,7 +914,7 @@ fn each_wsola_control_reaches_the_audio() {
     let cases: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
         ("search 0 — plain overlap-add", Box::new(|s: &mut Stretch| s.wsola.search_ms = 0.0)),
         ("search 120ms", Box::new(|s: &mut Stretch| s.wsola.search_ms = 120.0)),
-        ("overlap 4", Box::new(|s: &mut Stretch| s.wsola.overlap = 4.0)),
+        ("overlap 4", Box::new(|s: &mut Stretch| s.grain.overlap = 4.0)),
         ("worst splice", Box::new(|s: &mut Stretch| s.wsola.splice = fx::stretch::Splice::Different)),
         ("loudest splice", Box::new(|s: &mut Stretch| s.wsola.splice = fx::stretch::Splice::Loudest)),
         ("stride 64", Box::new(|s: &mut Stretch| s.wsola.stride = 64)),
@@ -1132,4 +1133,115 @@ fn stereo_link_left_alone_is_the_sound_it_always_made() {
     let mut same = base;
     same.vocoder.stereo_link = false;
     assert_eq!(base.process(&src, 2, rate), same.process(&src, 2, rate));
+}
+
+// ============================ the grain controls, on all three engines
+//
+// Density, overlap, the jitters and the drift began as the cloud's own, but
+// every one of these engines lays something down repeatedly — so every one has
+// a rate, a length, a place it reads from and a speed it reads at. The controls
+// now drive all three. Which means two things have to hold for each engine:
+// left alone they change nothing, and moved they reach the audio.
+
+/// Every grain control at its default, spelled out rather than spread, because
+/// the claim is that *these particular values* reproduce the old sound.
+fn inert_grain() -> fx::Grain {
+    fx::Grain {
+        density_hz: 0.0,
+        overlap: 2.0,
+        size_jitter: 0.0,
+        position_jitter_ms: 0.0,
+        pitch_jitter_semis: 0.0,
+        pitch_drift_semis: 0.0,
+        drift_rate_hz: 0.5,
+        layers: 1,
+        seed: 1,
+        ..fx::Grain::default()
+    }
+}
+
+#[test]
+fn the_grain_controls_are_inert_on_every_engine() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+        let base = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
+        let plain = base.process(&src, 1, rate);
+        let same = Stretch { grain: inert_grain(), ..base };
+        assert_eq!(plain, same.process(&src, 1, rate), "{alg:?} moved without being asked");
+    }
+}
+
+/// One case per control per engine. A knob that is read and dropped is worse
+/// than no knob, because you cannot hear that it is broken.
+#[test]
+fn each_grain_control_reaches_wsola_and_the_vocoder() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+
+    let cases: Vec<(&str, Box<dyn Fn(&mut fx::Grain)>)> = vec![
+        ("density", Box::new(|g: &mut fx::Grain| g.density_hz = 120.0)),
+        ("overlap", Box::new(|g: &mut fx::Grain| g.overlap = 5.0)),
+        ("layers", Box::new(|g: &mut fx::Grain| g.layers = 4)),
+        ("size jitter", Box::new(|g: &mut fx::Grain| g.size_jitter = 0.5)),
+        ("position jitter", Box::new(|g: &mut fx::Grain| g.position_jitter_ms = 60.0)),
+        ("pitch jitter", Box::new(|g: &mut fx::Grain| g.pitch_jitter_semis = 5.0)),
+        ("pitch drift", Box::new(|g: &mut fx::Grain| g.pitch_drift_semis = 4.0)),
+    ];
+
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+        let base = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
+        let plain = base.process(&src, 1, rate);
+        for (name, set) in &cases {
+            let mut g = fx::Grain::default();
+            set(&mut g);
+            let out = Stretch { grain: g, ..base }.process(&src, 1, rate);
+            assert_eq!(out.len(), plain.len(), "{alg:?}/{name} changed the length");
+            assert!(differs(&plain, &out) > 1e-4, "{alg:?}/{name} did nothing");
+            assert!(out.iter().all(|v| v.is_finite()), "{alg:?}/{name} produced NaN");
+        }
+    }
+}
+
+/// Drift rate only means anything once there is drift to shape, so it needs its
+/// own case rather than a line in the sweep above.
+#[test]
+fn drift_rate_shapes_the_drift_on_every_engine() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Granular] {
+        let mut slow = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
+        slow.grain.pitch_drift_semis = 5.0;
+        slow.grain.drift_rate_hz = 0.2;
+        let mut fast = slow;
+        fast.grain.drift_rate_hz = 8.0;
+        let a = slow.process(&src, 1, rate);
+        let b = fast.process(&src, 1, rate);
+        assert!(differs(&a, &b) > 1e-4, "{alg:?}: drift rate did nothing");
+    }
+}
+
+/// Layers must not quietly change the level. Whether they sum coherently or
+/// not depends on how much jitter is on, so the scaling is measured rather
+/// than assumed — this is the check that it works out either way.
+#[test]
+fn layers_hold_the_level_on_every_engine() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+        for jitter in [0.0f32, 0.5] {
+            let mut one = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
+            one.grain.size_jitter = jitter;
+            one.grain.position_jitter_ms = jitter * 80.0;
+            let mut many = one;
+            many.grain.layers = 6;
+
+            let a = rms(&one.process(&src, 1, rate));
+            let b = rms(&many.process(&src, 1, rate));
+            assert!(
+                (b / a.max(1e-9) - 1.0).abs() < 0.3,
+                "{alg:?} at jitter {jitter}: six layers moved the level from {a} to {b}"
+            );
+        }
+    }
 }

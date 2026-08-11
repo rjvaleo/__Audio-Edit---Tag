@@ -168,8 +168,6 @@ fn shape_magnitudes(
 pub struct Settings {
     /// Transform size. Rounded up to a power of two.
     pub fft_size: usize,
-    /// Synthesis hop as a fraction of the window: 4 means 75% overlap.
-    pub overlap: usize,
     /// Lock the bins around each spectral peak to that peak's phase.
     pub phase_lock: bool,
     /// Multiplies the analysis hop, breaking its link to the ratio.
@@ -190,13 +188,19 @@ pub struct Settings {
     pub mag_gate: f32,
     /// Drive every channel's phase from their sum rather than each on its own.
     pub stereo_link: bool,
+    /// The controls the grain cloud named. Here a window is an analysis frame:
+    /// density and overlap set how often one is taken, size jitter varies the
+    /// spacing they are laid back down at, position jitter moves where each one
+    /// reads from, and the pitch jitter and drift transpose each frame.
+    pub grain: crate::Grain,
+    /// Needed only to read `density_hz` in frames.
+    pub sample_rate: u32,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Settings {
             fft_size: 2048,
-            overlap: 4,
             phase_lock: true,
             hop_skew: 1.0,
             freq_trust: 1.0,
@@ -207,6 +211,8 @@ impl Default for Settings {
             mag_blur: 0.0,
             mag_gate: 0.0,
             stereo_link: false,
+            grain: crate::Grain::default(),
+            sample_rate: 48_000,
         }
     }
 }
@@ -215,8 +221,9 @@ impl Default for Settings {
 pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
     let ratio = ratio.clamp(0.01, 100.0);
     let n = s.fft_size.max(64).next_power_of_two();
-    let overlap = s.overlap.clamp(2, 8);
-    let hs = (n / overlap).max(1); // synthesis hop, fixed
+    // How often a frame is taken and laid back down. Density and overlap are the
+    // grain cloud's controls; a frame is this engine's window.
+    let hs = crate::stretch::hop_frames(&s.grain, n, s.sample_rate.max(1) as f32).max(1);
     if input.len() < n {
         // Too short to transform. Nothing useful to say about its spectrum.
         return input.to_vec();
@@ -254,9 +261,23 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
     let mut prev_start: isize = -1;
     let mut write = 0usize;
     let mut first = true;
+    let mut index = 0u64;
+
+    // Where the grain controls reach a frequency-domain engine. Position
+    // jitter moves where a frame reads from; size jitter varies the spacing
+    // frames are laid back down at, which is the nearest thing a fixed
+    // transform has to a varying window.
+    let g = s.grain;
+    let sr = s.sample_rate.max(1) as f32;
+    let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
 
     while write < out_len {
-        let mut start = read.round() as usize;
+        let jitter = if pos_jitter > 0.0 {
+            (pos_jitter * g.rand_bipolar(index, g.salt(5))) as f64
+        } else {
+            0.0
+        };
+        let mut start = (read + jitter).max(0.0).round() as usize;
         if start + n > input.len() {
             // At the nominal hop, running out of source is the end of the job.
             // Off it, the read pointer is sweeping at a speed that has nothing
@@ -274,6 +295,7 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
             // large negative number and the phase estimate nonsense.
             prev_start = -1;
         }
+        let start = start.min(input.len().saturating_sub(n));
 
         for i in 0..n {
             re[i] = input[start + i] * win[i];
@@ -336,6 +358,15 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
             propagate_all(&phase, &prev_phase, &mut sum_phase, n, ha, hs as f32, &s);
         }
 
+        // Pitch jitter and drift, per frame. Scaling the phase advance
+        // transposes what the frame will resynthesise as.
+        let rate = crate::stretch::grain_rate(&g, index, write as f32 / sr);
+        if (rate - 1.0).abs() > 1e-6 {
+            for k in 0..bins {
+                sum_phase[k] = wrap(sum_phase[k] * rate);
+            }
+        }
+
         prev_phase.copy_from_slice(&phase);
         prev_start = start as isize;
 
@@ -366,7 +397,8 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
         }
 
         read += advance;
-        write += hs;
+        write += crate::stretch::grain_size(&g, index, hs).max(1);
+        index += 1;
     }
 
     for i in 0..out.len() {
@@ -464,8 +496,7 @@ pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f
 fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f32> {
     let ratio = ratio.clamp(0.01, 100.0);
     let n = s.fft_size.max(64).next_power_of_two();
-    let overlap = s.overlap.clamp(2, 8);
-    let hs = (n / overlap).max(1);
+    let hs = crate::stretch::hop_frames(&s.grain, n, s.sample_rate.max(1) as f32).max(1);
     let frames = input.len() / channels;
     if frames < n {
         return input.to_vec();
@@ -501,9 +532,21 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
     let mut prev_start: isize = -1;
     let mut write = 0usize;
     let mut first = true;
+    let mut index = 0u64;
+
+    // The same grain controls the independent path honours, so linking the
+    // channels does not quietly switch half the panel off.
+    let g = s.grain;
+    let sr = s.sample_rate.max(1) as f32;
+    let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
 
     while write < out_frames {
-        let mut start = read.round() as usize;
+        let jitter = if pos_jitter > 0.0 {
+            (pos_jitter * g.rand_bipolar(index, g.salt(5))) as f64
+        } else {
+            0.0
+        };
+        let mut start = (read + jitter).max(0.0).round() as usize;
         if start + n > frames {
             if (skew - 1.0).abs() < 1e-6 {
                 break;
@@ -515,6 +558,7 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
             }
             prev_start = -1;
         }
+        let start = start.min(frames.saturating_sub(n));
 
         let mut ok = true;
         for c in 0..channels {
@@ -587,6 +631,12 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
         // What the stretch did to the reference, and therefore what every
         // channel is moved by. A channel's offset from the reference is left
         // exactly as measured, and that offset is the stereo image.
+        let rate = crate::stretch::grain_rate(&g, index, write as f32 / sr);
+        if (rate - 1.0).abs() > 1e-6 {
+            for k in 0..bins {
+                sum_phase[k] = wrap(sum_phase[k] * rate);
+            }
+        }
         for k in 0..bins {
             corr[k] = wrap(sum_phase[k] - ref_phase[k]);
         }
@@ -625,7 +675,8 @@ fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Ve
         }
 
         read += advance;
-        write += hs;
+        write += crate::stretch::grain_size(&g, index, hs).max(1);
+        index += 1;
     }
 
     for f in 0..out_frames + n {

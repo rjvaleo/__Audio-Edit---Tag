@@ -2357,13 +2357,13 @@ function sendStretch({ live }) {
 // existed still opens with that control at the value the engine assumes, rather
 // than at undefined — which a slider reads as NaN and posts back as a reset.
 const VOCODER_DEFAULTS = {
-  windowMs: 46, overlap: 4, phaseLock: true,
+  windowMs: 46, phaseLock: true,
   hopSkew: 1, freqTrust: 1, phaseSpread: 1, peakWidth: 2, lockWidth: 1,
   magFreeze: 0, magBlur: 0, magGate: 0, stereoLink: false,
 };
 const WSOLA_DEFAULTS = {
   preserveTransients: false, sensitivity: 0.5,
-  searchMs: 10, overlap: 2, splice: 'similar', stride: 4, shape: 'hann',
+  searchMs: 10, splice: 'similar', stride: 4, shape: 'hann',
   guardHops: 3, floor: 1,
 };
 const GRAIN_DEFAULTS = {
@@ -2447,9 +2447,6 @@ function renderStretch() {
       own.appendChild(param('Analysis window', v.windowMs, 5, 500, 1,
         (x) => `${Math.round(x)} ms`,
         (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true));
-      own.appendChild(param('Overlap', v.overlap, 2, 8, 1,
-        (x) => `${Math.round(x)}×`,
-        (x) => { v.overlap = Math.round(x); previewStretch(); }, () => commitStretch()));
       own.appendChild(check('phase lock',
         'Holds each partial together instead of letting it dissolve into neighbouring bins',
         v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); }));
@@ -2503,8 +2500,6 @@ function renderStretch() {
         param('Search', w.searchMs, 0, 200, 0.5,
           (x) => (x <= 0 ? 'plain OLA' : `${x.toFixed(1)} ms`),
           (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch()),
-        param('Overlap', w.overlap, 1, 8, 0.05, (x) => `${x.toFixed(2)}×`,
-          (x) => { w.overlap = x; previewStretch(); }, () => commitStretch()),
         seg('Pick', [
           ['similar', 'best', 'The segment that best continues what came before. What WSOLA is for.'],
           ['different', 'worst', 'The least similar segment the search can find, every time.'],
@@ -2532,13 +2527,15 @@ function renderStretch() {
       }
     }
 
-    // The grain panels belong to one engine. Dimmed, they still took up the
-    // room and still read as controls; gone, the column is the engine you
-    // actually selected.
-    const grainOn = alg === 'granular';
+    // Grain shape and Pitch movement drive every engine now — a window is a
+    // splice for WSOLA and an analysis frame for the vocoder, but all three
+    // have a rate, a length, a place they read from and a speed they read at.
     for (const id of ['grainShape', 'grainPitch']) {
-      $(id)?.classList.toggle('hidden', !grainOn);
+      $(id)?.classList.remove('hidden');
     }
+    // These three still only mean something to the cloud: there is no scan
+    // pointer, no per-grain envelope and no layer offset in a splice.
+    const grainOn = alg === 'granular';
     $('extGrain')?.classList.toggle('hidden', !grainOn);
     // Granular has no engine-specific extended groups, so this wrapper is empty
     // — and an empty flex child still takes the gap either side of it, which
@@ -2847,7 +2844,7 @@ $('presetDelete').onclick = async () => {
 const EXTENDED_FIELDS = {
   vocoder: ['hopSkew', 'freqTrust', 'phaseSpread', 'peakWidth', 'lockWidth',
             'magFreeze', 'magBlur', 'magGate', 'stereoLink'],
-  wsola: ['searchMs', 'overlap', 'splice', 'stride', 'shape', 'guardHops', 'floor'],
+  wsola: ['searchMs', 'splice', 'stride', 'shape', 'guardHops', 'floor'],
   grain: ['scan', 'reverse', 'envelope', 'sizeRange', 'wrap', 'layerSpread',
           'linkJitter', 'driftStep', 'panSpread'],
 };

@@ -67,7 +67,6 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
             "vocoder",
             Value::obj()
                 .set("windowMs", s.vocoder.window_ms as f64)
-                .set("overlap", s.vocoder.overlap as f64)
                 .set("phaseLock", s.vocoder.phase_lock)
                 .set("hopSkew", s.vocoder.hop_skew as f64)
                 .set("freqTrust", s.vocoder.freq_trust as f64)
@@ -85,7 +84,6 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("preserveTransients", s.wsola.preserve_transients)
                 .set("sensitivity", s.wsola.sensitivity as f64)
                 .set("searchMs", s.wsola.search_ms as f64)
-                .set("overlap", s.wsola.overlap as f64)
                 .set("splice", s.wsola.splice.as_str())
                 .set("stride", s.wsola.stride as f64)
                 .set("shape", s.wsola.shape.as_str())
@@ -153,7 +151,6 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
                     wv.and_then(|x| x.get("preserveTransients")), Some(Value::Bool(true))),
                 sensitivity: wf("sensitivity", d.sensitivity).clamp(0.0, 1.0),
                 search_ms: wf("searchMs", d.search_ms).clamp(0.0, 200.0),
-                overlap: wf("overlap", d.overlap).clamp(1.0, 8.0),
                 splice: wv
                     .and_then(|x| x.get("splice"))
                     .and_then(|x| x.as_str())
@@ -180,7 +177,6 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             };
             fx::stretch::VocoderParams {
                 window_ms: vf("windowMs", d.window_ms).clamp(5.0, 500.0),
-                overlap: vf("overlap", d.overlap as f32).clamp(2.0, 8.0) as u32,
                 phase_lock: !matches!(vv.and_then(|x| x.get("phaseLock")), Some(Value::Bool(false))),
                 hop_skew: vf("hopSkew", d.hop_skew).clamp(0.0, 4.0),
                 freq_trust: vf("freqTrust", d.freq_trust).clamp(0.0, 4.0),
@@ -420,7 +416,6 @@ mod tests {
             // actually testing the round trip rather than the defaults.
             vocoder: fx::stretch::VocoderParams {
                 window_ms: 60.0,
-                overlap: 8,
                 phase_lock: false,
                 hop_skew: 0.375,
                 freq_trust: 0.25,
@@ -436,7 +431,6 @@ mod tests {
                 preserve_transients: true,
                 sensitivity: 0.7,
                 search_ms: 42.0,
-                overlap: 3.25,
                 splice: fx::stretch::Splice::Different,
                 stride: 17,
                 shape: fx::stretch::WinShape::Triangle,
