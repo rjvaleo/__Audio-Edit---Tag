@@ -131,7 +131,7 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
         // Whatever was separated belongs to the file that just closed.
         h.shared.set_parts(std::sync::Arc::new(fx::hstream::Parts::default()));
         h.shared.request_seek(0);
-        h.shared.set_rack(rack_for(app, rel));
+        h.shared.set_rack(rack_for(app, rel, h.sample_rate, h.channels));
     })?;
 
     if list.stretch.algorithm == fx::stretch::Algorithm::Hybrid {
@@ -158,9 +158,9 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
 }
 
 /// Build the live rack for a file, or `None` when nothing is switched in.
-pub fn rack_for(app: &Arc<App>, rel: &str) -> Option<fx::Rack> {
+pub fn rack_for(app: &Arc<App>, rel: &str, sample_rate: u32, channels: usize) -> Option<fx::Rack> {
     let spec = app.racks.get(rel);
-    let rack = spec.build();
+    let rack = spec.build(sample_rate, channels);
     if rack.is_empty() {
         None
     } else {
@@ -236,7 +236,7 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
                 h.sample_rate,
             ));
         }
-        h.shared.set_rack(rack_for(app, rel));
+        h.shared.set_rack(rack_for(app, rel, h.sample_rate, h.channels));
     })
 }
 

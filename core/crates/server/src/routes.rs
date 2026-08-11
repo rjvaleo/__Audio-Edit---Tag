@@ -395,7 +395,8 @@ fn api_peaks(app: &Arc<App>, req: &Request) -> Response {
     let columns: usize = req.number::<usize>("cols", 1000).clamp(1, 8192);
 
     let rel = req.param("p").unwrap_or("");
-    let mut rack = app.racks.get(rel).build();
+    let (irate, ichans) = { let i = reader.info(); (i.sample_rate, i.channels as usize) };
+    let mut rack = app.racks.get(rel).build(irate, ichans);
     let tile = match &list {
         Some(l) => edit::render::peak_tile_fx(l, &mut reader, &mut rack, from, count, columns),
         // No edits, but a rack can still be in play: render the source through
@@ -601,7 +602,10 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     app.save_sessions();
     // Effects are live: a freshly built rack replaces the one the audio thread
     // holds, on its next block.
-    let _ = crate::live::with(app, |h| h.shared.set_rack(crate::live::rack_for(app, rel)));
+    let _ = crate::live::with(app, |h| {
+        h.shared
+            .set_rack(crate::live::rack_for(app, rel, h.sample_rate, h.channels))
+    });
 
     let sr: u32 = match v.get("sr") {
         Some(Value::Num(n)) => *n as u32,
@@ -958,7 +962,8 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
         lib.and_then(|l| resolve_within(&l, rel))
             .and_then(|p| audio_core::open(&p).ok())
             .and_then(|mut r| {
-                let mut rack = app.racks.get(rel).build();
+                let (rr, rc) = { let i = r.info(); (i.sample_rate, i.channels as usize) };
+                let mut rack = app.racks.get(rel).build(rr, rc);
                 edit::render::measure_peak_fx(&list, &mut r, &mut rack).ok()
             })
     } else {
@@ -1236,7 +1241,7 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         Err(e) => return Response::error(500, &e.to_string()),
     };
     let mut out = std::io::BufWriter::new(file);
-    let mut rack = app.racks.get(rel).build();
+    let mut rack = app.racks.get(rel).build(list.sample_rate, list.channels as usize);
     match edit::render::render_to_wav_fx(&list, &mut reader, &mut rack, &mut out, bits) {
         Ok(frames) => Response::json(
             Value::obj()
@@ -1305,7 +1310,8 @@ fn api_audio(app: &Arc<App>, req: &Request) -> Response {
             })
         });
         if let Some(list) = list {
-            return audio_edited(&path, &list, &mut app.racks.get(rel).build(), req);
+            let mut rack = app.racks.get(rel).build(list.sample_rate, list.channels as usize);
+            return audio_edited(&path, &list, &mut rack, req);
         }
     }
 
@@ -1782,7 +1788,10 @@ fn api_capture(app: &Arc<App>, req: &Request) -> Response {
     let rel = app.playing.read().unwrap().as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default();
     let list = app.edits.snapshot(&rel);
     let module = match &list {
-        Some(l) => crate::capture::module_name(l, &crate::live::rack_for(app, &rel)),
+        Some(l) => crate::capture::module_name(
+            l,
+            &crate::live::rack_for(app, &rel, l.sample_rate, l.channels as usize),
+        ),
         None => "live".to_string(),
     };
 

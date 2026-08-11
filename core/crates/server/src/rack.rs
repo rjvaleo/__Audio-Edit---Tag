@@ -3,6 +3,7 @@
 use crate::json::Value;
 use fx::comp::CompSettings;
 use fx::eq::{Band, EqSettings};
+use fx::shape::ShapeKind;
 use fx::{Compressor, Eq, Gain, MasterSettings, Maximizer, Rack};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -26,6 +27,18 @@ pub enum SlotSpec {
     Gain { db: f32, bypassed: bool },
     Eq { settings: EqSettings, bypassed: bool },
     Comp { settings: CompSettings, bypassed: bool },
+    /// Everything in `fx::shape`, in one variant.
+    ///
+    /// The older three each have a settings struct and a hand-written JSON
+    /// shape, which is fine for three and would be nine more of the same for
+    /// these. A shaper describes its own parameters instead, so one variant and
+    /// one pair of conversions serve all of them — and the next one added
+    /// needs no work here at all.
+    ///
+    /// The parameters are a plain list rather than a map because that is what
+    /// automation will address, and because the order the interface shows them
+    /// in is the order the effect declares.
+    Shape { kind: ShapeKind, params: Vec<(String, f32)>, bypassed: bool },
 }
 
 impl SlotSpec {
@@ -33,7 +46,8 @@ impl SlotSpec {
         match self {
             SlotSpec::Gain { bypassed, .. }
             | SlotSpec::Eq { bypassed, .. }
-            | SlotSpec::Comp { bypassed, .. } => *bypassed,
+            | SlotSpec::Comp { bypassed, .. }
+            | SlotSpec::Shape { bypassed, .. } => *bypassed,
         }
     }
 
@@ -42,6 +56,7 @@ impl SlotSpec {
             SlotSpec::Gain { .. } => "gain",
             SlotSpec::Eq { .. } => "eq",
             SlotSpec::Comp { .. } => "comp",
+            SlotSpec::Shape { kind, .. } => kind.as_str(),
         }
     }
 }
@@ -156,7 +171,23 @@ impl RackSpec {
                         bypassed,
                     })
                 }
-                _ => {}
+                other => {
+                    // Anything else is a shaper, or nothing. An unknown kind is
+                    // dropped rather than guessed at: a slot whose name we do
+                    // not recognise is one from a newer version, and inventing
+                    // a default for it would silently change the sound.
+                    if let Some(k) = ShapeKind::from_str(other) {
+                        let mut params = Vec::new();
+                        for spec in k.specs() {
+                            let v = num(
+                                it.get("params").and_then(|p| p.get(spec.key)),
+                                spec.default,
+                            );
+                            params.push((spec.key.to_string(), spec.clamp(v)));
+                        }
+                        slots.push(SlotSpec::Shape { kind: k, params, bypassed });
+                    }
+                }
             }
         }
         RackSpec { slots, master }
@@ -184,6 +215,13 @@ impl RackSpec {
                         .set("releaseMs", settings.release_ms as f64)
                         .set("kneeDb", settings.knee_db as f64)
                         .set("makeupDb", settings.makeup_db as f64),
+                    SlotSpec::Shape { params, .. } => {
+                        let mut p = Value::obj();
+                        for (k, v) in params {
+                            p = p.set(k, *v as f64);
+                        }
+                        base.set("params", p)
+                    }
                 }
             })
             .collect();
@@ -208,11 +246,23 @@ impl RackSpec {
                         || settings.high_pass_hz > 20.0)
             }
             SlotSpec::Comp { settings, bypassed } => !bypassed && settings.ratio > 1.0,
+            // A shaper that is switched in is doing something, whatever its
+            // parameters say. The older three can be switched in and still
+            // inert — a gain of zero, an EQ that is flat — but a ring modulator
+            // at any setting is audible, and asking each kind whether its own
+            // values happen to be inert is nine more things to keep true.
+            SlotSpec::Shape { bypassed, .. } => !bypassed,
         })
     }
 
     /// Build a live rack. Cheap enough to do per render.
-    pub fn build(&self) -> Rack {
+    /// Build the live chain.
+    ///
+    /// The rate and width are needed because a delay-based effect sizes its
+    /// buffer from them once and may not resize while running. They are the
+    /// *device's*, not the file's, since that is what the chain will actually
+    /// be handed.
+    pub fn build(&self, sample_rate: u32, channels: usize) -> Rack {
         let mut rack = Rack::new();
         for s in &self.slots {
             if s.bypassed() {
@@ -223,6 +273,9 @@ impl RackSpec {
                 SlotSpec::Eq { settings, .. } => rack.push(Box::new(Eq::new(*settings))),
                 SlotSpec::Comp { settings, .. } => {
                     rack.push(Box::new(Compressor::new(*settings)))
+                }
+                SlotSpec::Shape { kind, params, .. } => {
+                    rack.push(fx::shape::make(*kind, sample_rate, channels, params))
                 }
             }
         }
@@ -301,8 +354,44 @@ mod tests {
         let spec = RackSpec::default_chain();
         assert_eq!(spec.slots.len(), 3);
         assert!(!spec.is_active(), "a fresh rack must not alter the sound");
-        assert!(spec.build().is_empty());
+        assert!(spec.build(48_000, 2).is_empty());
     }
+
+    /// A shaper carries its own parameters, so this is the test that the
+    /// generic slot really is generic — every kind, every parameter, out to
+    /// JSON and back without a line of code per effect.
+    #[test]
+    fn every_shaper_survives_a_round_trip_with_its_parameters() {
+        use fx::shape::ShapeKind;
+        let mut slots = Vec::new();
+        for kind in ShapeKind::ALL {
+            // Somewhere other than the default for each, so a value that is
+            // silently dropped shows up rather than matching by luck.
+            let params = kind
+                .specs()
+                .iter()
+                .map(|sp| (sp.key.to_string(), sp.from_unit(0.3)))
+                .collect();
+            slots.push(SlotSpec::Shape { kind, params, bypassed: false });
+        }
+        let spec = RackSpec { slots, master: MasterSettings::default() };
+        let back = RackSpec::from_json(&spec.to_json());
+        assert_eq!(back, spec, "a shaper lost something on the way through JSON");
+        assert!(!back.build(48_000, 2).is_empty(), "none of them built");
+    }
+
+    /// An unknown kind is dropped rather than guessed at. A slot from a newer
+    /// version is not something to invent a default for.
+    #[test]
+    fn a_slot_this_version_does_not_know_is_left_out() {
+        let v = crate::json::parse(
+            r#"{"slots":[{"kind":"gain","db":3},{"kind":"telepathy","params":{"x":1}}]}"#,
+        )
+        .unwrap();
+        let back = RackSpec::from_json(&v);
+        assert_eq!(back.slots.len(), 1, "an unknown slot was invented instead of dropped");
+    }
+
 
     #[test]
     fn a_spec_round_trips_through_json() {
@@ -331,7 +420,7 @@ mod tests {
             master: MasterSettings::default(),
         };
         assert!(spec.is_active());
-        assert!(!spec.build().is_empty());
+        assert!(!spec.build(48_000, 2).is_empty());
     }
 
     #[test]
@@ -350,7 +439,7 @@ mod tests {
             slots: vec![SlotSpec::Gain { db: 12.0, bypassed: true }],
             master: MasterSettings::default(),
         };
-        assert!(spec.build().is_empty());
+        assert!(spec.build(48_000, 2).is_empty());
         assert!(!spec.is_active());
     }
 
