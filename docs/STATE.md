@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff. **HEAD `f1e8ac3`, 607 tests passing, working
+Written 11 August 2026 as a handoff. **HEAD `e492768`, 614 tests passing, working
 tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 607 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 614 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -388,8 +388,23 @@ may have been sitting somewhere from minutes ago, or never have run.
 | Engine | Live? |
 |---|---|
 | Granular | yes — `BlockRenderer` |
-| WSOLA | yes — `fx::stream::Pitched` wrapping `WsolaStream` |
-| Vocoder, PVSOLA, Hybrid | **no** — fall back to the grain cloud, and the panel says so |
+| WSOLA | yes — `Pitched<WsolaStream>` |
+| Vocoder | yes — `Pitched<VocoderStream>`, both stereo modes |
+| PVSOLA, Hybrid | **no** — fall back to the grain cloud, and the panel says so |
+
+**Both streaming engines are the only implementation there is.** `stretch::wsola`
+and `vocoder::stretch` are loops over their streamers; the old whole-buffer
+versions are deleted. Live-versus-export is asserted at 1e-6, which is the
+difference between two implementations that agree and one implementation. When
+the vocoder had two, they matched to about −80 dB — close enough to hear
+nothing, far enough that the guarantee was a claim rather than a fact.
+
+Two things had to change to stream the vocoder. The overlap-add cannot be
+normalised at the end because there is no end, so it goes into a ring. And the
+normalisation floor cannot be a maximum over the output — it is derived from the
+window and the hop, by laying frames until the overlap is complete and taking
+that peak, which is what the maximum was converging to and is the more honest
+quantity besides.
 
 `is_live()` in `engine/src/stretcher.rs` is the authority; `LIVE_ENGINES` in
 `app.js` mirrors it. The three that fall back are marked with a dot on the
@@ -660,10 +675,9 @@ both paths, and needs no measurement.
 **Next, in order — the streaming work the user chose:**
 
 1. ~~Wire `WsolaStream` into the engine.~~ **Done.** WSOLA plays live.
-2. **Streaming vocoder** — STFT with persistent phase state and input/output
-   rings; one window of lookahead.
-3. **Streaming PVSOLA** — needs the vocoder first; holds two vocoder states and
-   crossfades at each anchor.
+2. ~~Streaming vocoder.~~ **Done.** Both stereo modes.
+3. **Streaming PVSOLA** — the vocoder is in place now, so this is two
+   `VocoderStream`s and a crossfade at each anchor.
 4. **Streaming hybrid** — bounded lookahead (~93 ms at defaults); replace the
    whole-file normalisation floor with a fixed one.
 
@@ -690,6 +704,7 @@ both paths, and needs no measurement.
 
 ## 13. Recent history
 
+    e492768  Stream the phase vocoder, and delete the copy of it
     f1e8ac3  Let the engine picker change what you hear, not just what you export
     3b4d361  Put back the level granular layering takes away
     0756f51  Write down the three options on granular layers
