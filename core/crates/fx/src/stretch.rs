@@ -78,8 +78,6 @@ impl Algorithm {
 pub struct VocoderParams {
     /// Analysis window in milliseconds. Sized to a power of two internally.
     pub window_ms: f32,
-    /// Frames overlapping at any moment. More is smoother and slower.
-    pub overlap: u32,
     /// Lock the bins around each spectral peak to that peak's phase.
     pub phase_lock: bool,
 
@@ -129,7 +127,6 @@ impl Default for VocoderParams {
         // and enough to resolve partials a couple of semitones apart.
         VocoderParams {
             window_ms: 46.0,
-            overlap: 4,
             phase_lock: true,
             hop_skew: 1.0,
             freq_trust: 1.0,
@@ -234,8 +231,6 @@ pub struct WsolaParams {
     /// avoid. Large values let it wander far enough to reassemble the file out
     /// of order.
     pub search_ms: f32,
-    /// Windows covering any moment. Two is the classic 50%.
-    pub overlap: f32,
     pub splice: Splice,
     /// Frames between candidates in the search. Coarse strides quantise the
     /// choice of splice onto a grid, which is audible as a pitch.
@@ -256,7 +251,6 @@ impl Default for WsolaParams {
             // The old `Quality::Standard` search width, so a document that
             // never touches this sounds exactly as it did.
             search_ms: 10.0,
-            overlap: 2.0,
             splice: Splice::Similar,
             stride: 4,
             shape: WinShape::Hann,
@@ -367,37 +361,54 @@ impl Stretch {
         }
 
         // Stretch far enough that resampling for pitch lands on `want`.
+        //
+        // Both engines run under `layered`, which is inert at one layer and
+        // otherwise runs the whole engine again per layer — the grain cloud's
+        // idea, and nothing about it is particular to grains.
+        let sr = sample_rate.max(1) as f32;
         let stretched = match self.algorithm {
             // Handled above; it returns before reaching here.
             Algorithm::Granular => unreachable!("granular returns earlier"),
-            Algorithm::Wsola => wsola(
-                input,
-                channels,
-                sample_rate,
-                ratio * pitch,
-                self.window_ms,
-                self.quality,
-                self.wsola,
-            ),
-            Algorithm::Vocoder => crate::vocoder::stretch(
-                input,
-                channels,
-                ratio * pitch,
-                crate::vocoder::Settings {
-                    fft_size: fft_size_for(self.vocoder.window_ms, sample_rate),
-                    overlap: self.vocoder.overlap.clamp(2, 8) as usize,
-                    phase_lock: self.vocoder.phase_lock,
-                    hop_skew: self.vocoder.hop_skew,
-                    freq_trust: self.vocoder.freq_trust,
-                    phase_spread: self.vocoder.phase_spread,
-                    peak_width: self.vocoder.peak_width.clamp(1, 32) as usize,
-                    lock_width: self.vocoder.lock_width,
-                    mag_freeze: self.vocoder.mag_freeze,
-                    mag_blur: self.vocoder.mag_blur,
-                    mag_gate: self.vocoder.mag_gate,
-                    stereo_link: self.vocoder.stereo_link,
-                },
-            ),
+            Algorithm::Wsola => {
+                let win = (((self.window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64);
+                layered(&self.grain, channels, hop_frames(&self.grain, win, sr), |g| {
+                    wsola(
+                        input,
+                        channels,
+                        sample_rate,
+                        ratio * pitch,
+                        self.window_ms,
+                        self.quality,
+                        self.wsola,
+                        g,
+                    )
+                })
+            }
+            Algorithm::Vocoder => {
+                let n = fft_size_for(self.vocoder.window_ms, sample_rate);
+                layered(&self.grain, channels, hop_frames(&self.grain, n, sr), |g| {
+                    crate::vocoder::stretch(
+                        input,
+                        channels,
+                        ratio * pitch,
+                        crate::vocoder::Settings {
+                            fft_size: n,
+                            phase_lock: self.vocoder.phase_lock,
+                            hop_skew: self.vocoder.hop_skew,
+                            freq_trust: self.vocoder.freq_trust,
+                            phase_spread: self.vocoder.phase_spread,
+                            peak_width: self.vocoder.peak_width.clamp(1, 32) as usize,
+                            lock_width: self.vocoder.lock_width,
+                            mag_freeze: self.vocoder.mag_freeze,
+                            mag_blur: self.vocoder.mag_blur,
+                            mag_gate: self.vocoder.mag_gate,
+                            stereo_link: self.vocoder.stereo_link,
+                            grain: *g,
+                            sample_rate,
+                        },
+                    )
+                })
+            }
         };
         let out = if (pitch - 1.0).abs() < 1e-6 {
             stretched
@@ -426,6 +437,120 @@ fn fit(mut v: Vec<f32>, want_frames: usize, channels: usize) -> Vec<f32> {
     v
 }
 
+// ------------------------------------------------- the grain controls, shared
+//
+// Density, overlap, the jitters and the drift began as the grain cloud's own.
+// They are not really granular ideas though — every one of these engines lays
+// something down repeatedly, and every one of them therefore has a rate, a
+// length, a place it reads from and a speed it reads at. So the same controls
+// drive all three, and each engine answers them in its own terms: for WSOLA a
+// window is a splice, for the vocoder it is an analysis frame.
+
+/// How often a window is laid down. Density sets it outright; otherwise the
+/// window is divided by how many should cover any moment.
+pub(crate) fn hop_frames(g: &crate::Grain, win: usize, sr: f32) -> usize {
+    if g.density_hz > 0.0 {
+        ((sr / g.density_hz.clamp(0.5, 2000.0)) as usize).max(8)
+    } else {
+        ((win as f32) / g.overlap.clamp(1.0, 8.0)) as usize
+    }
+}
+
+/// One window's length, jittered around the base.
+pub(crate) fn grain_size(g: &crate::Grain, index: u64, base: usize) -> usize {
+    if g.size_jitter.abs() < 1e-6 {
+        return base;
+    }
+    let range = g.size_range.clamp(1.0, 8.0);
+    let k = 1.0 + g.size_jitter.clamp(0.0, 1.0) * range * g.rand_bipolar(index, g.salt(3));
+    (((base as f32) * k.clamp(0.15 / range, 2.0 * range)) as usize).max(16)
+}
+
+/// The rate one window reads at, from the pitch jitter and the drift.
+pub(crate) fn grain_rate(g: &crate::Grain, index: u64, t: f32) -> f32 {
+    if g.pitch_jitter_semis.abs() < 1e-6 && g.pitch_drift_semis.abs() < 1e-6 {
+        return 1.0;
+    }
+    2f32.powf(g.pitch_offset(index, t) / 12.0).clamp(0.05, 20.0)
+}
+
+/// Interpolated read, so a window can be laid down at a rate other than one.
+#[inline]
+fn read_at(input: &[f32], channels: usize, ch: usize, pos: f32, in_frames: usize) -> f32 {
+    if in_frames == 0 {
+        return 0.0;
+    }
+    let i = pos.floor().max(0.0) as usize;
+    let f = pos - i as f32;
+    let a = input[i.min(in_frames - 1) * channels + ch];
+    let b = input[(i + 1).min(in_frames - 1) * channels + ch];
+    a + (b - a) * f
+}
+
+/// Run an engine several times over and sum the results.
+///
+/// One layer is a stretcher. Several is the same source read from several
+/// places at once, each with its own seed and its own offset within the hop, so
+/// what comes out is denser rather than merely louder. Every engine gets this
+/// the same way, because none of it depends on how the engine works.
+///
+/// The sum is scaled back to the level one layer produced. Which scaling is
+/// right depends on how alike the layers are — identical layers want a
+/// division by the count, independent ones want its square root — so rather
+/// than guess, this measures.
+fn layered<F>(g: &crate::Grain, channels: usize, hop: usize, mut render: F) -> Vec<f32>
+where
+    F: FnMut(&crate::Grain) -> Vec<f32>,
+{
+    let layers = g.layers.clamp(1, 16);
+    if layers == 1 {
+        return render(g);
+    }
+    let spread = g.layer_spread.clamp(0.0, 4.0);
+    let mut acc: Vec<f32> = Vec::new();
+    let mut one = 0f32;
+
+    for layer in 0..layers {
+        let mut lg = *g;
+        lg.layers = 1;
+        if layer > 0 {
+            lg.seed = g.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
+        }
+        let v = render(&lg);
+        if acc.is_empty() {
+            acc = vec![0.0; v.len()];
+            one = rms(&v);
+        }
+        let off = ((((hop as u64 * layer as u64) / layers as u64) as f32) * spread) as usize;
+        let frames = v.len() / channels.max(1);
+        for f in 0..frames {
+            let d = (f + off) * channels;
+            if d + channels > acc.len() {
+                break;
+            }
+            for ch in 0..channels {
+                acc[d + ch] += v[f * channels + ch];
+            }
+        }
+    }
+
+    let sum = rms(&acc);
+    if sum > 1e-9 && one > 1e-9 {
+        let k = one / sum;
+        for s in acc.iter_mut() {
+            *s *= k;
+        }
+    }
+    acc
+}
+
+fn rms(v: &[f32]) -> f32 {
+    if v.is_empty() {
+        return 0.0;
+    }
+    (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt()
+}
+
 /// Waveform-similarity overlap-add.
 fn wsola(
     input: &[f32],
@@ -435,13 +560,16 @@ fn wsola(
     window_ms: f32,
     quality: Quality,
     params: WsolaParams,
+    g: &crate::Grain,
 ) -> Vec<f32> {
     let in_frames = input.len() / channels;
     let sr = sample_rate.max(1) as f32;
 
     let win = (((window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64) & !1;
-    let hop_out = ((win as f32) / params.overlap.clamp(1.0, 8.0)) as usize;
-    let hop_out = hop_out.max(1);
+    // How often a window is laid down. The same two controls the grain cloud
+    // uses, because they mean the same thing here: density sets the rate
+    // outright, overlap divides the window into it.
+    let hop_out = hop_frames(g, win, sr).max(1);
 
     // The search width is the user's, but a draft still caps it: this runs on
     // every pointer move, and a 200 ms search per window would not keep up.
@@ -481,7 +609,11 @@ fn wsola(
     let out_frames = ((in_frames as f32) * ratio).round() as usize + win;
     let mut out = vec![0f32; out_frames * channels];
     let mut norm = vec![0f32; out_frames];
-    let window = shaped(win, params.shape);
+    // Only precomputed when nothing varies the length. With size jitter every
+    // window is its own length and the envelope has to be evaluated per sample.
+    let steady = g.size_jitter.abs() < 1e-6;
+    let window = if steady { shaped(win, params.shape) } else { Vec::new() };
+    let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
 
     // The segment we expect to follow what was just written; the next window is
     // chosen to resemble it.
@@ -489,6 +621,7 @@ fn wsola(
     let mut read = 0usize;
     let mut write = 0usize;
     let mut first = true;
+    let mut index = 0u64;
 
     while write + win < out_frames && read + win + search < in_frames {
         let pos = if first {
@@ -498,15 +631,31 @@ fn wsola(
             best_offset(input, channels, read, search, &expect, hop_out, params)
         };
 
-        for i in 0..win {
-            let w = window[i];
-            let src = (pos + i) * channels;
+        // Everything the grain controls do to one window: how long it is, how
+        // far it strays from where the search put it, and what rate it reads
+        // at. All three are inert at their defaults, so a document that never
+        // touches them splices exactly as it always did.
+        let len = grain_size(g, index, win);
+        let take = if pos_jitter > 0.0 {
+            let j = pos_jitter * g.rand_bipolar(index, g.salt(5));
+            ((pos as f32 + j).max(0.0) as usize).min(in_frames.saturating_sub(2))
+        } else {
+            pos
+        };
+        let rate = grain_rate(g, index, write as f32 / sr);
+
+        for i in 0..len {
+            let w = if steady { window[i] } else { shape_at(i, len, params.shape) };
             let dst = (write + i) * channels;
-            if src + channels > input.len() || dst + channels > out.len() {
+            if dst + channels > out.len() {
+                break;
+            }
+            let src = take as f32 + (i as f32) * rate;
+            if src >= (in_frames - 1) as f32 {
                 break;
             }
             for ch in 0..channels {
-                out[dst + ch] += input[src + ch] * w;
+                out[dst + ch] += read_at(input, channels, ch, src, in_frames) * w;
             }
             norm[write + i] += w;
         }
@@ -521,6 +670,7 @@ fn wsola(
         }
 
         write += hop_out;
+        index += 1;
         // The map decides where to read next. At a transient its slope is one,
         // so the read advances as fast as the write and nothing is stretched.
         read = map.input_at(write as f64).max(0.0) as usize;
@@ -629,30 +779,28 @@ fn hermite(m1: f32, p0: f32, p1: f32, p2: f32, t: f32) -> f32 {
     ((a * t - b) * t + c) * t + p0
 }
 
-fn hann(n: usize) -> Vec<f32> {
-    if n <= 1 {
-        return vec![1.0; n];
-    }
-    (0..n)
-        .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos())
-        .collect()
-}
-
 /// The window each spliced segment is laid down under.
 ///
 /// The overlap-add is normalised by the summed window afterwards, so a shape
 /// that does not sum flat is not broken by it — it is coloured by it, which is
 /// the reason to offer any shape but Hann.
 fn shaped(n: usize, shape: WinShape) -> Vec<f32> {
+    (0..n).map(|i| shape_at(i, n, shape)).collect()
+}
+
+/// One value of that window, for when the length is not the same twice running
+/// and there is no table to build.
+#[inline]
+fn shape_at(i: usize, n: usize, shape: WinShape) -> f32 {
+    if n <= 1 {
+        return 1.0;
+    }
     match shape {
-        WinShape::Hann => hann(n),
-        WinShape::Rect => vec![1.0; n],
+        WinShape::Hann => 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos(),
+        WinShape::Rect => 1.0,
         WinShape::Triangle => {
-            if n <= 1 {
-                return vec![1.0; n];
-            }
             let half = (n - 1) as f32 / 2.0;
-            (0..n).map(|i| 1.0 - ((i as f32 - half) / half).abs()).collect()
+            1.0 - ((i as f32 - half) / half).abs()
         }
     }
 }

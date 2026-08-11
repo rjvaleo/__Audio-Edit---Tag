@@ -880,7 +880,6 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 };
                 let vocoder = fx::stretch::VocoderParams {
                     window_ms: vf("windowMs", cv.window_ms).clamp(5.0, 500.0),
-                    overlap: vf("overlap", cv.overlap as f32).clamp(2.0, 8.0) as u32,
                     phase_lock: match vv.and_then(|x| x.get("phaseLock")) {
                         Some(Value::Bool(b)) => *b,
                         _ => cv.phase_lock,
@@ -923,7 +922,6 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     },
                     sensitivity: wf("sensitivity", cw.sensitivity).clamp(0.0, 1.0),
                     search_ms: wf("searchMs", cw.search_ms).clamp(0.0, 200.0),
-                    overlap: wf("overlap", cw.overlap).clamp(1.0, 8.0),
                     splice: wv
                         .and_then(|x| x.get("splice"))
                         .and_then(|x| x.as_str())
