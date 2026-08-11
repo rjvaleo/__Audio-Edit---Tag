@@ -2571,6 +2571,7 @@ const GRAIN_DEFAULTS = {
   pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5, layers: 1,
   scan: 1, reverse: false, envelope: 0.5, sizeRange: 1, wrap: false,
   layerSpread: 1, linkJitter: false, driftStep: false, panSpread: 0,
+  layerScatter: 0, layerScatterMs: 120,
 };
 
 /// Continuous preview while dragging, at draft quality so it keeps up.
@@ -2940,9 +2941,9 @@ function renderGrainParams() {
     target.appendChild(group);
   }
 
-  const gp = (label, key, min, max, step, fmt) => {
+  const gp = (label, key, min, max, step, fmt, log) => {
     const el = param(label, state.grainDraft[key], min, max, step, fmt,
-      (v) => { state.grainDraft[key] = v; preview(); }, () => commit());
+      (v) => { state.grainDraft[key] = v; preview(); }, () => commit(), log);
     state.grainRows[key] = el;
     return el;
   };
@@ -2981,6 +2982,21 @@ function renderGrainParams() {
     gp('Layer spread', 'layerSpread', 0, 4, 0.01,
       (v) => (v <= 0.005 ? 'stacked' : `${v.toFixed(2)}×`)),
     gp('Pan spread', 'panSpread', 0, 1, 0.01, (v) => (v <= 0 ? 'centred' : `${Math.round(v * 100)}%`)),
+  ));
+
+  // Layers on their own are a delay line, not a cloud: without this every
+  // layer reads the same instant and is laid down a fixed offset later, and
+  // regular delays make regular notches. These two throw each layer somewhere
+  // else in the source so the layers are different audio rather than copies.
+  extGrain.appendChild(wild('Layer scatter',
+    'How far each layer is thrown from the others. At zero they all read the same instant and comb; turned up they read their own places and sum like a crowd. Reaches every engine.').add(
+    gp('Scatter', 'layerScatter', 0, 1, 0.01,
+      (v) => (v <= 0 ? 'stacked' : `${Math.round(v * 100)}%`)),
+    // Log, because the useful range is tens of milliseconds — a chorus — and
+    // the far end is a second, which is a wash. Linear would bunch everything
+    // worth reaching into the first tenth of the slider.
+    gp('Range', 'layerScatterMs', 1, 2000, 1,
+      (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`), true),
   ));
 
   // The seed used to have no control at all. It is the one value here that
@@ -3230,6 +3246,8 @@ const PM_SCHEMA = [
     ['stretch.grain.envelope', 'Envelope'],
     ['stretch.grain.sizeRange', 'Size range'],
     ['stretch.grain.layerSpread', 'Layer spread'],
+    ['stretch.grain.layerScatter', 'Layer scatter'],
+    ['stretch.grain.layerScatterMs', 'Scatter range'],
     ['stretch.grain.panSpread', 'Pan spread'],
   ]],
   ['Maximiser', [
@@ -3517,6 +3535,7 @@ const EXTENDED_FIELDS = {
   pvsola: ['searchMs', 'blend'],
   hybrid: ['fftSize', 'timeSpan', 'freqSpan', 'margin'],
   grain: ['scan', 'reverse', 'envelope', 'sizeRange', 'wrap', 'layerSpread',
+          'layerScatter', 'layerScatterMs',
           'linkJitter', 'driftStep', 'panSpread'],
 };
 

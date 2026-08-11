@@ -233,7 +233,10 @@ impl Streamer for WsolaStream {
         } else {
             nominal * scan
         };
-        self.read = crate::stretch::place(swept, input_frames, p.grain.wrap);
+        // This layer's own throw, so layers read different audio rather than
+        // the same instant laid down a fixed offset apart — which is a delay
+        // line and combs.
+        self.read = crate::stretch::place(swept + p.grain.layer_read, input_frames, p.grain.wrap);
     }
 
     fn render(&mut self, out: &mut [f32], channels: usize, input: &[f32], p: &StretchParams) {
@@ -341,7 +344,7 @@ impl Streamer for WsolaStream {
             } else {
                 nominal * scan
             };
-            self.read = crate::stretch::place(swept, in_frames, g.wrap);
+            self.read = crate::stretch::place(swept + g.layer_read, in_frames, g.wrap);
         }
 
         // Hand out the finished frames and clear them for reuse. Nothing can

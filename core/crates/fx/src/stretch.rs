@@ -402,7 +402,7 @@ impl Stretch {
             ),
             Algorithm::Wsola => {
                 let win = (((self.window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64);
-                layered(&self.grain, channels, hop_frames(&self.grain, win, sr), |g| {
+                layered(&self.grain, channels, hop_frames(&self.grain, win, sr), sample_rate, |g| {
                     wsola(
                         input,
                         channels,
@@ -417,7 +417,7 @@ impl Stretch {
             }
             Algorithm::Vocoder => {
                 let n = fft_size_for(self.vocoder.window_ms, sample_rate);
-                layered(&self.grain, channels, hop_frames(&self.grain, n, sr), |g| {
+                layered(&self.grain, channels, hop_frames(&self.grain, n, sr), sample_rate, |g| {
                     crate::vocoder::stretch(
                         input,
                         channels,
@@ -541,7 +541,13 @@ pub(crate) fn read_at(input: &[f32], channels: usize, ch: usize, pos: f32, in_fr
 /// right depends on how alike the layers are — identical layers want a
 /// division by the count, independent ones want its square root — so rather
 /// than guess, this measures.
-pub(crate) fn layered<F>(g: &crate::Grain, channels: usize, hop: usize, mut render: F) -> Vec<f32>
+pub(crate) fn layered<F>(
+    g: &crate::Grain,
+    channels: usize,
+    hop: usize,
+    sample_rate: u32,
+    mut render: F,
+) -> Vec<f32>
 where
     F: FnMut(&crate::Grain) -> Vec<f32>,
 {
@@ -559,6 +565,7 @@ where
         if layer > 0 {
             lg.seed = g.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
         }
+        lg.layer_read = g.layer_throw(layer, sample_rate);
         let v = render(&lg);
         if acc.is_empty() {
             acc = vec![0.0; v.len()];

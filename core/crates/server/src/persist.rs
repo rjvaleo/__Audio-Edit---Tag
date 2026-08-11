@@ -126,6 +126,8 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("sizeRange", s.grain.size_range as f64)
                 .set("wrap", s.grain.wrap)
                 .set("layerSpread", s.grain.layer_spread as f64)
+                .set("layerScatter", s.grain.layer_scatter as f64)
+                .set("layerScatterMs", s.grain.layer_scatter_ms as f64)
                 .set("linkJitter", s.grain.link_jitter)
                 .set("driftStep", s.grain.drift_step)
                 .set("panSpread", s.grain.pan_spread as f64),
@@ -277,6 +279,9 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             size_range: gf("sizeRange", d.grain.size_range).clamp(1.0, 8.0),
             wrap: matches!(g.and_then(|x| x.get("wrap")), Some(Value::Bool(true))),
             layer_spread: gf("layerSpread", d.grain.layer_spread).clamp(0.0, 4.0),
+            layer_scatter: gf("layerScatter", d.grain.layer_scatter).clamp(0.0, 1.0),
+            layer_scatter_ms: gf("layerScatterMs", d.grain.layer_scatter_ms).clamp(0.0, 5000.0),
+            layer_read: 0.0,
             link_jitter: matches!(g.and_then(|x| x.get("linkJitter")), Some(Value::Bool(true))),
             drift_step: matches!(g.and_then(|x| x.get("driftStep")), Some(Value::Bool(true))),
             pan_spread: gf("panSpread", d.grain.pan_spread).clamp(0.0, 1.0),
@@ -537,6 +542,9 @@ mod tests {
                 size_range: 3.5,
                 wrap: true,
                 layer_spread: 2.25,
+                layer_scatter: 0.6,
+                layer_scatter_ms: 340.0,
+                layer_read: 0.0,
                 link_jitter: true,
                 drift_step: true,
                 pan_spread: 0.65,

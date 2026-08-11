@@ -105,7 +105,7 @@ pub fn stretch(
     // are different sounds. There is a test pinning that, deliberately, until
     // layering is either taught to the streaming engines or dropped from them.
     let hop = (crate::stretch::fft_size_for(spec.vocoder.window_ms, sample_rate) / 4).max(1);
-    crate::stretch::layered(&spec.grain, channels, hop, |g| {
+    crate::stretch::layered(&spec.grain, channels, hop, sample_rate, |g| {
         let mut sp = sp;
         sp.grain = *g;
         const CHUNK: usize = 1 << 16;
