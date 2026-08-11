@@ -110,6 +110,14 @@ fn num(v: &server::json::Value, path: &[&str]) -> f64 {
     }
 }
 
+fn flag(v: &server::json::Value, path: &[&str]) -> bool {
+    let mut cur = v;
+    for k in path {
+        cur = cur.get(k).unwrap_or_else(|| panic!("no {k}"));
+    }
+    matches!(cur, server::json::Value::Bool(true))
+}
+
 fn text(v: &server::json::Value, path: &[&str]) -> String {
     let mut cur = v;
     for k in path {
@@ -439,4 +447,70 @@ fn a_rack_with_nothing_in_it_is_not_active() {
         matches!(json(&r).get("active"), Some(server::json::Value::Bool(false))),
         "an idle rack should not put the renderer in the effect path"
     );
+}
+
+/// The two new engines' parameters, over the wire. Both panels post nested
+/// objects like the others do, so they inherit the same two rules — absent
+/// means unchanged, and nothing arrives unclamped — and both rules have to be
+/// checked rather than assumed from the code next door.
+#[test]
+fn the_new_engine_controls_survive_the_round_trip() {
+    let s = Scratch::new("new-engines");
+    s.sound("kit/tone.wav", 20_000);
+    let app = s.app();
+
+    let v = apply(
+        &app,
+        r#""algorithm":"pvsola",
+           "pvsola":{"anchorFrames":12,"searchMs":25,"blend":0.25},
+           "hybrid":{"fftSize":1024,"timeSpan":31,"freqSpan":9,"margin":3.5,
+                     "morphNoise":false,"harmonicLevel":0.5,
+                     "percussiveLevel":1.5,"residualLevel":0}"#,
+    );
+    assert_eq!(text(&v, &["stretch", "algorithm"]), "pvsola");
+    let p = |k: &str| num(&v, &["stretch", "pvsola", k]);
+    assert_eq!(p("anchorFrames"), 12.0);
+    assert_eq!(p("searchMs"), 25.0);
+    assert_eq!(p("blend"), 0.25);
+    let h = |k: &str| num(&v, &["stretch", "hybrid", k]);
+    assert_eq!(h("fftSize"), 1024.0);
+    assert_eq!(h("timeSpan"), 31.0);
+    assert_eq!(h("freqSpan"), 9.0);
+    assert_eq!(h("margin"), 3.5);
+    assert_eq!(h("harmonicLevel"), 0.5);
+    assert_eq!(h("percussiveLevel"), 1.5);
+    assert_eq!(h("residualLevel"), 0.0);
+    assert!(!flag(&v, &["stretch", "hybrid", "morphNoise"]), "the noise switch did not survive the round trip");
+
+    // And a post that mentions neither leaves both exactly as they were.
+    let v = apply(&app, r#""ratio":1.5"#);
+    assert_eq!(num(&v, &["stretch", "pvsola", "anchorFrames"]), 12.0);
+    assert_eq!(num(&v, &["stretch", "hybrid", "margin"]), 3.5);
+    assert!(!flag(&v, &["stretch", "hybrid", "morphNoise"]), "a post about the ratio switched the noise morpher back on");
+}
+
+#[test]
+fn the_new_engine_controls_are_bounded_too() {
+    let s = Scratch::new("new-engine-clamp");
+    s.sound("kit/tone.wav", 20_000);
+    let app = s.app();
+
+    let v = apply(
+        &app,
+        r#""pvsola":{"anchorFrames":1e9,"searchMs":1e9,"blend":9},
+           "hybrid":{"fftSize":1e9,"timeSpan":1e9,"freqSpan":1e9,"margin":1e9,
+                     "harmonicLevel":9,"percussiveLevel":9,"residualLevel":9}"#,
+    );
+    let p = |k: &str| num(&v, &["stretch", "pvsola", k]);
+    assert!(p("anchorFrames") <= 64.0 && p("anchorFrames") >= 1.0);
+    assert!(p("searchMs") <= 200.0);
+    assert!(p("blend") <= 1.0);
+    let h = |k: &str| num(&v, &["stretch", "hybrid", k]);
+    assert!(h("fftSize") <= 8192.0 && h("fftSize") >= 256.0);
+    assert!(h("timeSpan") <= 101.0 && h("timeSpan") >= 3.0);
+    assert!(h("freqSpan") <= 101.0 && h("freqSpan") >= 3.0);
+    assert!(h("margin") <= 8.0 && h("margin") >= 1.0);
+    assert!(h("harmonicLevel") <= 4.0);
+    assert!(h("percussiveLevel") <= 4.0);
+    assert!(h("residualLevel") <= 4.0);
 }

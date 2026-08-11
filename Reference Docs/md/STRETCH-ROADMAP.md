@@ -7,16 +7,35 @@ where to read it.
 
 ## Where we are now
 
-Two engines exist, both in `core/crates/fx`:
+**Everything on this roadmap is built.** Five engines exist, all in
+`core/crates/fx`, chosen from one picker in the Time & Pitch panel:
 
-| | File | Family |
-|---|---|---|
-| **WSOLA** | `stretch.rs` | Time domain, overlap-add with a similarity search |
-| **Granular** | `grain.rs` | Time domain, deterministic grain schedule |
+| | File | Family | Candidate |
+|---|---|---|---|
+| **WSOLA** | `stretch.rs` | Time domain, overlap-add with a similarity search | 3 |
+| **Phase vocoder** | `vocoder.rs` | Frequency domain, identity phase locking | 1, 2 |
+| **PVSOLA** | `pvsola.rs` | Both — the vocoder, re-anchored by a splice | 6 |
+| **Hybrid** | `hybrid.rs` | Both — separate, stretch each part its own way | 4, 5 |
+| **Granular** | `grain.rs` | Time domain, deterministic grain schedule | — |
 
-WSOLA already has a `Quality` tier (draft / standard / best) that only changes
-the width of the similarity search. That enum is the natural place to hang a
-choice of *algorithm* rather than a choice of effort — see "How they'd plug in".
+The last two rest on `decompose.rs` (median-filter separation into sines,
+transients and noise) and `noise.rs` (spectral-envelope morphing onto fresh
+noise). Candidates 7 to 10 below remain unbuilt.
+
+What the estimates below got wrong is worth keeping. The costs were roughly
+right, but the *order* of difficulty was not: the hard part of PVSOLA turned out
+to be neither the vocoder nor the splice search but two details neither the
+paper nor the estimate mentions — that the splice must not be cut from the
+vocoder's overlap-add ramp-up, and that the cross-fade has to be linear rather
+than equal-power because the search has just made both sides correlated. Both
+were found by measuring, after a first version that was measurably *worse* than
+the plain vocoder it was meant to improve on.
+
+The other thing the estimates missed: a spectral measure cannot see phasiness at
+all. Phasiness does not move energy to new frequencies, it moves partials out of
+the phase relationship that gave the waveform its shape, and a magnitude
+spectrum is blind to that by construction. The first test written for PVSOLA
+measured spectral purity, reported a regression, and was measuring nothing.
 
 ## The two families
 
@@ -216,3 +235,18 @@ real-time constraint is what makes it hard — offline versions of all of these
 are considerably easier than ones that run in an audio callback without
 allocating. And the granular engine already covers the extreme end well; these
 methods are about the 1×–10× range where it is the wrong tool.
+
+### What actually happened
+
+Both caveats held, and the second decided the design. **Only the granular
+engine runs in the audio callback.** The other four are offline renders folded
+into the engine's source before playback starts, which is what the app was
+already doing for WSOLA and the vocoder — so the two new engines cost nothing
+new architecturally and are simply the slow end of an existing arrangement.
+Measured on five seconds of stereo at 16×: vocoder 1.7 s, PVSOLA 4.6 s, hybrid
+4.4 s, all linear in both length and ratio.
+
+The plug-in list above is accurate except for point 4. One picker was not
+enough: the five engines mean different things by every setting they share, so
+each has its own standard column and its own extended column, and the shared
+grain controls sit underneath reaching all five.

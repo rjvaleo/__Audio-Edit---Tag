@@ -1,6 +1,6 @@
 # Architecture — as built
 
-What exists, as of 10 August 2026. 540 tests passing.
+What exists, as of 11 August 2026. 584 tests passing.
 
 The original design brief is
 [`Waveform display interface/uploads/AudioLab-ARCHITECTURE.md`](../Waveform%20display%20interface/uploads/AudioLab-ARCHITECTURE.md) —
@@ -28,7 +28,7 @@ instant and fetching them separately would let them disagree.
 
 ## The workspace
 
-Ten crates, ~23k lines. Dependencies point one way only — `audio-core` depends
+Ten crates, ~25k lines. Dependencies point one way only — `audio-core` depends
 on nothing, `server` depends on everything.
 
 | Crate | Lines | Tests | Responsibility |
@@ -36,12 +36,12 @@ on nothing, `server` depends on everything.
 | `audio-core` | 2588 | 78 | Container probe and decode, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 755 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 5851 | 148 | Biquads, EQ, compressor, channel maximiser, three stretchers |
+| `fx` | 7727 | 189 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
 | `edit` | 1663 | 54 | Non-destructive edit list, windowed render, export |
 | `engine` | 1538 | 22 | Block renderer, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1395 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 6777 | 121 | HTTP/1.1, routes, JSON, persistence, sessions |
+| `server` | 7017 | 124 | HTTP/1.1, routes, JSON, persistence, sessions |
 | `audiolab` | 58 | — | The binary |
 
 ### Dependencies
@@ -108,7 +108,7 @@ the edit.
 
 `fx` holds RBJ biquads, a three-band parametric EQ with high-pass, a
 feed-forward compressor with a soft knee, a one-knob channel maximiser, and
-three time stretchers.
+five time stretchers.
 
 The stretchers all answer the same controls — density, overlap, layers, the
 jitters, drift, scan, envelope, pan — each in its own terms, because every one
@@ -117,9 +117,54 @@ reads from and a speed it reads at. A window is a splice for WSOLA and an
 analysis frame for the vocoder. Each keeps a small *extended* set that reaches
 the constants it was tuned around; those exist to break it on purpose.
 
+Three are primitives and two are built out of them:
+
+| Engine | What it is |
+|---|---|
+| WSOLA | Splice search in the time domain. `stretch.rs` |
+| Phase vocoder | STFT, identity phase locking. `vocoder.rs` |
+| Granular | Deterministic grain cloud. `grain.rs` |
+| PVSOLA | The vocoder, re-anchored to the waveform by a WSOLA splice every few frames. `pvsola.rs` |
+| Hybrid | Separate, stretch each part its own way, sum. `hybrid.rs`, on `decompose.rs` and `noise.rs` |
+
+**The separation is what makes the hybrid possible.** `decompose.rs` median
+filters the magnitude spectrogram along time and along frequency: a held
+partial is a horizontal ridge and survives the first, an attack is a vertical
+ridge and survives the second. Driedger's HPR-M then assigns a bin to the
+harmonic part only if the horizontal estimate beats the vertical by a clear
+margin, to the percussive part only if the reverse, and to a *residual* if
+neither wins. The margin is the whole point — without it there is no third
+part, and the residual is exactly the material that is neither tone nor hit.
+The three masks partition, so the parts sum back to the input bin for bin.
+
+**`noise.rs` does not stretch the residual at all.** Repeating noise is audible
+as a ring at the hop rate no matter what the window does, so instead the
+residual's spectral envelope is measured, interpolated along the new timeline,
+and imposed on freshly generated noise. Nothing is reused, so nothing can
+repeat. The phases come from the same addressed splitmix the grain cloud uses,
+so three separate renders still agree.
+
+**PVSOLA answers phasiness rather than trading it away.** A vocoder's phase
+error is cumulative; re-anchoring every few frames means it never has time to
+accumulate. Two things about the implementation are load-bearing and were both
+found by measurement rather than by reading: the splice must not be cut from
+the vocoder's overlap-add ramp-up, and the cross-fade must be *linear* rather
+than equal-power, because the search has just spent its whole effort making the
+two sides correlated. The discarded run-up is measured in output frames, not
+input frames — measuring it in input frames makes the cost grow with the square
+of the ratio.
+
 Built from the papers in `Reference Docs/`, chiefly Driedger's *Time-Scale
 Modification Algorithms for Music Audio*. The vocoder's phase propagation is
-equations 5.10–5.12 and the code is laid out to be read against them.
+equations 5.10–5.12 and the code is laid out to be read against them. The
+separation is Fitzgerald and Driedger, PVSOLA is Moinet and Dutoit (DAFx-12),
+the noise morphing is Moliner, Lehtonen and Välimäki (2023).
+
+**Only the grain cloud runs in the audio callback.** The other four are offline
+renders folded into the engine's source before playback starts, and the two new
+ones are further from a callback than any of the others — the hybrid makes two
+full spectrogram passes over the file before it stretches anything. Measured on
+five seconds of stereo at 16×: vocoder 1.7 s, PVSOLA 4.6 s, hybrid 4.4 s.
 
 **Grain randomness is addressed, not streamed.** Every grain's jitter is a pure
 function of its index and a seed. The waveform, the playback and the exported
@@ -214,10 +259,9 @@ widths are declared once. Four kinds — slider, knob, rocker switch, three-way
 choice — sharing one contract, so they are interchangeable at the call site.
 See [CONTROLS.md](CONTROLS.md) and [MENUS.md](MENUS.md).
 
-The visualiser is p5.js in WEBGL — the one place a library is loaded, and the
-one place the app is not self-contained: it is fetched from a CDN at page load,
-so that page needs the internet. Nothing else does. Vendoring it would close
-the last hole in "nothing else needs installing"; it has not been done.
+The visualiser is p5.js in WEBGL — the one place a library is loaded. It is
+served from the binary rather than from a CDN, as are the two fonts, so the app
+reaches the internet at no point at all.
 
 ---
 
@@ -226,7 +270,7 @@ the last hole in "nothing else needs installing"; it has not been done.
 | Planned | Now |
 |---|---|
 | Format I/O, edit engine, DSP, navigator | Built |
-| Time-stretch as the headline feature | Built, three engines rather than one |
+| Time-stretch as the headline feature | Built, five engines rather than one |
 | Real-time contract | Built — native output, not WASM |
 | ML tagging and semantic search | Built — YAMNet, fingerprints, learned tags |
 | Sound Designer II rescue | Partial — SD2 data forks read as headerless PCM |

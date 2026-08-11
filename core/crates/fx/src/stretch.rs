@@ -46,6 +46,13 @@ pub enum Algorithm {
     /// Deterministic grain cloud. Time domain, and the only one of the three
     /// that is not trying to be transparent.
     Granular,
+    /// The vocoder with a WSOLA splice every few frames, so its phase never has
+    /// long enough to drift. Answers the phasiness rather than trading it away.
+    Pvsola,
+    /// Separate into partials, attacks and noise; stretch each with the method
+    /// that suits it; sum. The expensive one, and the only one that is not
+    /// applying a single compromise to material that is not one thing.
+    Hybrid,
 }
 
 impl Algorithm {
@@ -54,6 +61,8 @@ impl Algorithm {
             Algorithm::Wsola => "wsola",
             Algorithm::Vocoder => "vocoder",
             Algorithm::Granular => "granular",
+            Algorithm::Pvsola => "pvsola",
+            Algorithm::Hybrid => "hybrid",
         }
     }
 
@@ -62,6 +71,8 @@ impl Algorithm {
             "wsola" => Some(Algorithm::Wsola),
             "vocoder" => Some(Algorithm::Vocoder),
             "granular" => Some(Algorithm::Granular),
+            "pvsola" => Some(Algorithm::Pvsola),
+            "hybrid" => Some(Algorithm::Hybrid),
             _ => None,
         }
     }
@@ -267,6 +278,11 @@ pub struct Stretch {
     /// to the time-domain engines.
     pub vocoder: VocoderParams,
     pub wsola: WsolaParams,
+    /// How often PVSOLA stops trusting the propagated phase.
+    pub pvsola: crate::pvsola::PvsolaParams,
+    /// How the hybrid engine splits the sound up and what it does with each
+    /// part.
+    pub hybrid: crate::hybrid::HybridParams,
     /// Per-grain variation. Inert by default.
     pub grain: crate::Grain,
 }
@@ -281,6 +297,8 @@ impl Default for Stretch {
             algorithm: Algorithm::Wsola,
             vocoder: VocoderParams::default(),
             wsola: WsolaParams::default(),
+            pvsola: crate::pvsola::PvsolaParams::default(),
+            hybrid: crate::hybrid::HybridParams::default(),
             grain: crate::Grain::default(),
         }
     }
@@ -362,6 +380,26 @@ impl Stretch {
         let stretched = match self.algorithm {
             // Handled above; it returns before reaching here.
             Algorithm::Granular => unreachable!("granular returns earlier"),
+            // Both of these drive the other engines rather than sitting beside
+            // them, so they are not wrapped in `layered` — the layers reach
+            // them through the vocoder and WSOLA runs they make internally,
+            // and wrapping them here would run every layer twice.
+            Algorithm::Pvsola => crate::pvsola::stretch(
+                input,
+                channels,
+                sample_rate,
+                ratio * pitch,
+                self,
+                self.pvsola,
+            ),
+            Algorithm::Hybrid => crate::hybrid::stretch(
+                input,
+                channels,
+                sample_rate,
+                ratio * pitch,
+                self,
+                self.hybrid,
+            ),
             Algorithm::Wsola => {
                 let win = (((self.window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64);
                 layered(&self.grain, channels, hop_frames(&self.grain, win, sr), |g| {
@@ -419,7 +457,7 @@ impl Stretch {
 /// are too wide to separate partials and the vocoder has nothing to lock onto,
 /// and above 8192 the window is long enough that transients smear audibly no
 /// matter what the phases do.
-fn fft_size_for(window_ms: f32, sample_rate: u32) -> usize {
+pub(crate) fn fft_size_for(window_ms: f32, sample_rate: u32) -> usize {
     let samples = (window_ms.clamp(5.0, 2000.0) / 1000.0) * sample_rate.max(1) as f32;
     (samples as usize).clamp(256, 8192).next_power_of_two()
 }

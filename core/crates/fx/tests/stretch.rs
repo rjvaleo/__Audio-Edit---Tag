@@ -1373,3 +1373,201 @@ fn no_engine_amplifies_its_own_edges() {
         }
     }
 }
+
+// ------------------------------------------------------- the two new engines
+//
+// PVSOLA and Hybrid drive the other three rather than sitting beside them, so
+// what has to be checked is different: not that each has its own DSP — the
+// engines they call already have their own tests — but that the routing is
+// intact. Every parameter has to reach the audio, every one has to be inert
+// where it should be, and the promised length has to hold, because the
+// timeline is laid out from the prediction before anything is rendered.
+
+const NEW_ENGINES: [Algorithm; 2] = [Algorithm::Pvsola, Algorithm::Hybrid];
+
+#[test]
+fn the_new_engines_honour_the_promised_length() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    for alg in NEW_ENGINES {
+        for ratio in [0.25f32, 0.5, 1.5, 4.0, 12.0] {
+            let s = Stretch { ratio, algorithm: alg, ..Default::default() };
+            let want = s.output_frames(src.len() as u64) as usize;
+            assert_eq!(
+                s.process(&src, 1, rate).len(),
+                want,
+                "{alg:?} at {ratio}x did not produce what it promised"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_new_engines_keep_the_pitch_they_were_given() {
+    let rate = 44_100;
+    // A steady tone, because pitch is the thing being measured.
+    let src: Vec<f32> = (0..rate as usize)
+        .map(|i| 0.5 * (std::f32::consts::TAU * 440.0 * i as f32 / rate as f32).sin())
+        .collect();
+    for alg in NEW_ENGINES {
+        let s = Stretch { ratio: 3.0, semitones: 12.0, algorithm: alg, ..Default::default() };
+        let out = s.process(&src, 1, rate);
+        assert_eq!(out.len(), src.len() * 3, "{alg:?} changed length while shifting pitch");
+        // Coarse, but enough to catch an octave going the wrong way or the
+        // resampling being skipped entirely.
+        let f = dominant(&out[out.len() / 3..out.len() / 3 + 16384], rate);
+        assert!(
+            (f - 880.0).abs() < 40.0,
+            "{alg:?} shifted to {f:.0} Hz rather than 880"
+        );
+    }
+}
+
+#[test]
+fn the_new_engines_survive_a_round_trip_through_their_names() {
+    for a in NEW_ENGINES {
+        assert_eq!(Algorithm::from_str(a.as_str()), Some(a));
+    }
+}
+
+#[test]
+fn the_new_engines_do_not_amplify_their_own_edges() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    let peak = |v: &[f32]| v.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    let want = peak(&src);
+    for alg in NEW_ENGINES {
+        for ratio in [2.0f32, 8.0] {
+            let s = Stretch { ratio, algorithm: alg, ..Default::default() };
+            let got = peak(&s.process(&src, 1, rate));
+            assert!(
+                got < want * 2.0,
+                "{alg:?} at {ratio}x: peak {got:.3} against a source of {want:.3}"
+            );
+        }
+    }
+}
+
+/// Every control on the two new panels, one at a time. A knob that is read and
+/// dropped is worse than no knob, because you cannot hear that it is broken —
+/// and both of these engines have a long chain between the control and the
+/// audio for a value to go missing in.
+#[test]
+fn each_new_engine_control_reaches_the_audio() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+
+    let pv: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
+        ("anchorFrames", Box::new(|s: &mut Stretch| s.pvsola.anchor_frames = 24)),
+        ("searchMs", Box::new(|s: &mut Stretch| s.pvsola.search_ms = 0.0)),
+        ("blend", Box::new(|s: &mut Stretch| s.pvsola.blend = 0.0)),
+    ];
+    let hy: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
+        ("fftSize", Box::new(|s: &mut Stretch| s.hybrid.fft_size = 1024)),
+        ("timeSpan", Box::new(|s: &mut Stretch| s.hybrid.time_span = 41)),
+        ("freqSpan", Box::new(|s: &mut Stretch| s.hybrid.freq_span = 41)),
+        ("margin", Box::new(|s: &mut Stretch| s.hybrid.margin = 1.0)),
+        ("morphNoise", Box::new(|s: &mut Stretch| s.hybrid.morph_noise = false)),
+        ("harmonicLevel", Box::new(|s: &mut Stretch| s.hybrid.harmonic_level = 0.4)),
+        ("percussiveLevel", Box::new(|s: &mut Stretch| s.hybrid.percussive_level = 0.4)),
+        ("residualLevel", Box::new(|s: &mut Stretch| s.hybrid.residual_level = 0.0)),
+    ];
+
+    for (alg, cases) in [(Algorithm::Pvsola, pv), (Algorithm::Hybrid, hy)] {
+        let base = Stretch { ratio: 3.0, algorithm: alg, ..Default::default() };
+        let plain = base.process(&src, 1, rate);
+        for (name, apply) in cases {
+            let mut s = base;
+            apply(&mut s);
+            let d = differs(&plain, &s.process(&src, 1, rate));
+            assert!(d > 1e-4, "{alg:?}: {name} did not reach the audio (difference {d:.6})");
+        }
+    }
+}
+
+/// Each new engine's parameters belong to it alone. Moving PVSOLA's anchor
+/// rate must not change what the Hybrid does, or the panels are lying about
+/// which engine they are configuring.
+#[test]
+fn the_new_engines_ignore_each_others_controls() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+
+    let hybrid = Stretch { ratio: 3.0, algorithm: Algorithm::Hybrid, ..Default::default() };
+    let mut moved = hybrid;
+    moved.pvsola.anchor_frames = 40;
+    moved.pvsola.blend = 0.0;
+    assert_eq!(
+        hybrid.process(&src, 1, rate),
+        moved.process(&src, 1, rate),
+        "the hybrid engine answered PVSOLA's controls"
+    );
+
+    let pvsola = Stretch { ratio: 3.0, algorithm: Algorithm::Pvsola, ..Default::default() };
+    let mut moved = pvsola;
+    moved.hybrid.residual_level = 0.0;
+    moved.hybrid.margin = 1.0;
+    assert_eq!(
+        pvsola.process(&src, 1, rate),
+        moved.process(&src, 1, rate),
+        "PVSOLA answered the hybrid engine's controls"
+    );
+}
+
+/// Both new engines run the older ones underneath, so the grain controls have
+/// to reach them the same way they reach everything else — that is the whole
+/// premise of one shared control model.
+#[test]
+fn the_grain_controls_reach_the_new_engines_too() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    for alg in NEW_ENGINES {
+        let base = Stretch { ratio: 3.0, algorithm: alg, ..Default::default() };
+        let plain = base.process(&src, 1, rate);
+
+        let mut s = base;
+        s.grain.overlap = 4.0;
+        assert!(
+            differs(&plain, &s.process(&src, 1, rate)) > 1e-4,
+            "{alg:?} ignored the overlap control"
+        );
+
+        let mut s = base;
+        s.grain.envelope = 1.0;
+        assert!(
+            differs(&plain, &s.process(&src, 1, rate)) > 1e-4,
+            "{alg:?} ignored the envelope control"
+        );
+
+        // And inert where it should be, which is the other half of the claim.
+        let same = Stretch { grain: inert_grain(), ..base };
+        assert_eq!(
+            plain,
+            same.process(&src, 1, rate),
+            "{alg:?} moved without being asked"
+        );
+    }
+}
+
+/// Strongest bin, in Hz. Enough to tell an octave from a fifth.
+fn dominant(v: &[f32], rate: u32) -> f32 {
+    let n = 16384usize.min(v.len().next_power_of_two() / 2).max(1024);
+    let mut re: Vec<f32> = v[..n.min(v.len())].to_vec();
+    re.resize(n, 0.0);
+    let w = audio_core::fft::hann(n);
+    for i in 0..n {
+        re[i] *= w[i];
+    }
+    let mut im = vec![0f32; n];
+    audio_core::fft::fft(&mut re, &mut im);
+    let mut best = 1usize;
+    let mut best_e = 0f32;
+    for k in 1..n / 2 {
+        let e = re[k] * re[k] + im[k] * im[k];
+        if e > best_e {
+            best_e = e;
+            best = k;
+        }
+    }
+    best as f32 * rate as f32 / n as f32
+}
