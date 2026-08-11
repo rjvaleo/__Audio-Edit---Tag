@@ -2003,9 +2003,15 @@ function renderRack() {
 function param(label, value, min, max, step, format, onChange, onCommit, log) {
   const el = document.createElement('div');
   el.className = 'param';
-  el.innerHTML = `<div class="row"><span class="k"></span><span class="v"></span></div>
-    <input type="range">`;
-  el.querySelector('.k').textContent = label;
+  // Name, control, reading — one line, three columns, and the columns are the
+  // same width everywhere so a panel reads down as a table rather than as a
+  // stack of separately-sized things.
+  el.innerHTML = `<span class="k"></span><input type="range"><span class="v"></span>`;
+  const name = el.querySelector('.k');
+  name.textContent = label;
+  // The column is narrower than the longest label, so the full name stays
+  // reachable rather than being lost to the ellipsis.
+  name.title = label;
   const out = el.querySelector('.v');
   const input = el.querySelector('input');
 
@@ -2024,11 +2030,18 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
 
   // The readout is updated from the element itself, so a redraw elsewhere
   // cannot leave the number disagreeing with the handle.
-  el.sync = (v) => { input.value = toPos(v); out.textContent = format(v); };
+  const show = (v) => {
+    const t = format(v);
+    out.textContent = t;
+    // Same reason as the label: the reading has a column, and some of these
+    // say a word rather than a number.
+    out.title = t;
+  };
+  el.sync = (v) => { input.value = toPos(v); show(v); };
 
   input.oninput = () => {
     const v = toVal(+input.value);
-    out.textContent = format(v);
+    show(v);
     onChange(v);
   };
   // Fires on pointer release, which is when the change is worth committing
@@ -2042,8 +2055,12 @@ function check(label, title, value, onChange) {
   const el = document.createElement('label');
   el.className = 'check';
   if (title) el.title = title;
-  el.innerHTML = `<input type="checkbox"${value ? ' checked' : ''}> <span></span>`;
-  el.querySelector('span').textContent = label;
+  // Name first, box in the control column, so a checkbox lines up with the
+  // sliders above and below it rather than starting from the margin.
+  el.innerHTML = `<span class="k"></span><input type="checkbox"${value ? ' checked' : ''}>`;
+  const name = el.querySelector('.k');
+  name.textContent = label;
+  name.title = title || label;
   const input = el.querySelector('input');
   input.onchange = (e) => onChange(e.target.checked);
   // Same contract as `param`, so Reset and Undo can push a value into either
@@ -2056,7 +2073,10 @@ function check(label, title, value, onChange) {
 function seg(label, options, value, onChange) {
   const el = document.createElement('div');
   el.className = 'param seg-param';
-  el.innerHTML = `<div class="row"><span class="k"></span></div><div class="seg"></div>`;
+  // One line, and the same first column as a slider, so a choice sits in the
+  // table rather than interrupting it. The bar takes the slider and reading
+  // columns between them.
+  el.innerHTML = `<span class="k"></span><div class="seg"></div>`;
   el.querySelector('.k').textContent = label;
   const bar = el.querySelector('.seg');
   for (const [val, text, hint] of options) {
@@ -2427,11 +2447,11 @@ function renderStretch() {
           (x) => (x <= 0.001 ? 'frozen' : `${x.toFixed(2)}×`),
           (x) => { v.hopSkew = x; previewStretch(); }, () => commitStretch()),
         param('Freq trust', v.freqTrust, 0, 4, 0.01,
-          (x) => (x <= 0.001 ? 'bin centres' : `${x.toFixed(2)}×`),
+          (x) => (x <= 0.001 ? 'to bins' : `${x.toFixed(2)}×`),
           (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch()),
         param('Phase spread', v.phaseSpread, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
           (x) => { v.phaseSpread = x; previewStretch(); }, () => commitStretch()),
-        param('Peak width', v.peakWidth, 1, 16, 1, (x) => `${Math.round(x)} bins`,
+        param('Peak width', v.peakWidth, 1, 16, 1, (x) => `${Math.round(x)} bin`,
           (x) => { v.peakWidth = Math.round(x); previewStretch(); }, () => commitStretch()),
         param('Lock width', v.lockWidth, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
           (x) => { v.lockWidth = x; previewStretch(); }, () => commitStretch()),
@@ -2456,7 +2476,7 @@ function renderStretch() {
       ext.appendChild(wild('Splice',
         'How far the similarity search looks, what it goes looking for, and what the result is laid down under.').add(
         param('Search', w.searchMs, 0, 200, 0.5,
-          (x) => (x <= 0 ? 'none — plain OLA' : `${x.toFixed(1)} ms`),
+          (x) => (x <= 0 ? 'plain OLA' : `${x.toFixed(1)} ms`),
           (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch()),
         param('Overlap', w.overlap, 1, 8, 0.05, (x) => `${x.toFixed(2)}×`,
           (x) => { w.overlap = x; previewStretch(); }, () => commitStretch()),
@@ -2470,7 +2490,7 @@ function renderStretch() {
           ['triangle', 'tri', 'Sums flat too, with a corner on every splice.'],
           ['rect', 'rect', 'No envelope. Every splice is a step, so the seams become a rhythm.'],
         ], w.shape, (x) => { w.shape = x; commitStretch(); }),
-        param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} frames`,
+        param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} fr`,
           (x) => { w.stride = Math.round(x); previewStretch(); }, () => commitStretch()),
       ));
 
@@ -2481,7 +2501,7 @@ function renderStretch() {
           param('Floor', w.floor, 0, 2, 0.01,
             (x) => (x <= 0 ? 'none' : `${x.toFixed(2)}×`),
             (x) => { w.floor = x; previewStretch(); }, () => commitStretch()),
-          param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hops`,
+          param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hop`,
             (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch()),
         ));
       }
@@ -2495,10 +2515,6 @@ function renderStretch() {
       $(id)?.classList.toggle('hidden', !grainOn);
     }
     $('extGrain')?.classList.toggle('hidden', !grainOn);
-    // With the grain panels gone there is one standard panel left, so the grid
-    // drops to two columns and the pair sit together rather than either side of
-    // a gap the width of a panel that is not there.
-    document.querySelector('.grain-controls')?.classList.toggle('solo', !grainOn);
   };
   for (const b of eng.querySelectorAll('.seg-btn')) {
     b.onclick = () => {
@@ -2565,7 +2581,7 @@ function renderGrainParams() {
   // Grouped by what they do, so each panel stays short enough to read at once.
   const groups = [
     [shape, [
-      ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'from overlap' : `${Math.round(v)}/s`)],
+      ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'auto' : `${Math.round(v)}/s`)],
       ['Layers', 'layers', 1, 16, 1, (v) => `${Math.round(v)}×`],
       ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`],
       ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`],
@@ -2613,7 +2629,7 @@ function renderGrainParams() {
   extGrain.appendChild(wild('Scan',
     'Where in the source the cloud reads from, and which way each grain runs.').add(
     gp('Scan', 'scan', -2, 2, 0.01,
-      (v) => (Math.abs(v) < 0.005 ? 'frozen' : v < 0 ? `${v.toFixed(2)}× back` : `${v.toFixed(2)}×`)),
+      (v) => (Math.abs(v) < 0.005 ? 'frozen' : `${v.toFixed(2)}×`)),
     gc('reverse grains', 'reverse', 'Each grain reads its own span backwards. The cloud still moves forward.'),
     gc('wrap positions', 'wrap',
       'A grain pushed past the end of the file reappears at the beginning instead of piling up against it.'),
@@ -2633,8 +2649,9 @@ function renderGrainParams() {
   // changes everything at once without changing any setting.
   const seedRow = document.createElement('div');
   seedRow.className = 'param seed-row';
-  seedRow.innerHTML = `<div class="row"><span class="k">Seed</span><span class="v mono"></span></div>
-    <button class="ghost">Re-roll</button>`;
+  seedRow.innerHTML = `<span class="k">Seed</span>
+    <button class="ghost">Re-roll</button>
+    <span class="v"></span>`;
   const showSeed = () => {
     seedRow.querySelector('.v').textContent = state.grainDraft.seed;
   };
