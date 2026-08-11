@@ -2311,6 +2311,7 @@ function check(label, title, value, onChange) {
   name.title = title || label;
   const b = el.querySelector('.rocker');
   b.title = title || label;
+  el.title = title || label;
 
   let on = !!value;
   const paint = () => {
@@ -2357,6 +2358,32 @@ function seg(label, options, value, onChange) {
 }
 
 /// Two switches on one line, for the pairs that only mean anything together.
+/// Attach an explanation to a control.
+///
+/// Set on the whole row rather than the label, so hovering the name, the
+/// slider or the reading all say the same thing — and it replaces the
+/// label-only title `param` and `knob` put on the name for clipping, which
+/// would otherwise be the one that wins where it matters least.
+///
+/// Every control in the stretch tray has one. They are not decoration: half of
+/// these were constants inside an algorithm until recently, and a slider whose
+/// name is the only thing telling you what it does is a slider you turn at
+/// random.
+function tip(el, text) {
+  el.title = text;
+  // The name and the reading carry it outright: `param` and `knob` put the
+  // bare label on the name so a clipped one stays readable, and that would
+  // otherwise win over this in the one place a hover is most likely to land.
+  for (const k of el.querySelectorAll('.k, .v, input')) k.title = text;
+  // A segment that explains itself keeps its own words. Those are about the
+  // one choice; this is about the row, and the specific of the two is the more
+  // useful thing to be told.
+  for (const k of el.querySelectorAll('.seg-btn, .rocker')) {
+    if (!k.title) k.title = text;
+  }
+  return el;
+}
+
 function pair(a, b) {
   const el = document.createElement('div');
   el.className = 'param-pair';
@@ -2376,7 +2403,13 @@ function wild(heading, title) {
   el.innerHTML = '<div class="wild-head"></div><div class="wild-body"></div>';
   const head = el.querySelector('.wild-head');
   head.textContent = heading;
-  if (title) head.title = title;
+  if (title) {
+    head.title = title;
+    // On the group as well as its heading. A control inside carries its own,
+    // and the innermost title is the one a browser shows, so the two do not
+    // fight — this only fills the space between them.
+    el.title = title;
+  }
   el.body = el.querySelector('.wild-body');
   el.add = (...kids) => { for (const k of kids) el.body.appendChild(k); return el; };
   return el;
@@ -2719,36 +2752,44 @@ function renderStretch() {
     // hybrid it is only shaping one third of the sound.
     const vocoderControls = (what) => {
       const v = state.stretchDraft.vocoder;
-      own.appendChild(param('Analysis window', v.windowMs, 5, 500, 1,
+      own.appendChild(tip(param('Analysis window', v.windowMs, 5, 500, 1,
         (x) => `${Math.round(x)} ms`,
-        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true));
+        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true),
+        "The length of one transform, rounded to a power of two. Long resolves partials that sit close together and smears transients; short does the opposite. This is the vocoder's own window and means something different from the one above."));
       own.appendChild(check('phase lock',
         'Holds each partial together instead of letting it dissolve into neighbouring bins',
         v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); }));
 
       ext.appendChild(wild('Spectrum',
         `The vocoder normally copies magnitudes through untouched and rewrites only phase. These do not.${what}`).add(
-        param('Freeze', v.magFreeze, 0, 1, 0.01,
+        tip(param('Freeze', v.magFreeze, 0, 1, 0.01,
           (x) => (x >= 0.999 ? 'held' : `${Math.round(x * 100)}%`),
           (x) => { v.magFreeze = x; previewStretch(); }, () => commitStretch()),
-        param('Blur', v.magBlur, 0, 1, 0.01, (x) => `${Math.round(x * 100)}%`,
+        'Hold the magnitude spectrum where it is instead of following the source. At 100% the sound stops changing timbre and only its phase keeps moving.'),
+        tip(param('Blur', v.magBlur, 0, 1, 0.01, (x) => `${Math.round(x * 100)}%`,
           (x) => { v.magBlur = x; previewStretch(); }, () => commitStretch()),
-        param('Gate', v.magGate, 0, 1, 0.01,
+        "Smear each frame's magnitudes into neighbouring bins. Softens the edges between partials and turns a pitched sound toward noise."),
+        tip(param('Gate', v.magGate, 0, 1, 0.01,
           (x) => (x <= 0 ? 'off' : `${Math.round(x * 100)}%`),
           (x) => { v.magGate = x; previewStretch(); }, () => commitStretch()),
+        "Drop every bin below this share of the frame's loudest. Thins the sound to its strongest partials, and at high settings leaves a sparse, bell-like residue."),
       ));
 
       ext.appendChild(wild('Phase',
         `How the frequency estimate is believed and how far a peak imposes its phase on its neighbours.${what}`).add(
-        param('Freq trust', v.freqTrust, 0, 4, 0.01,
+        tip(param('Freq trust', v.freqTrust, 0, 4, 0.01,
           (x) => (x <= 0.001 ? 'to bins' : `${x.toFixed(2)}×`),
           (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch()),
-        param('Phase spread', v.phaseSpread, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
+        "How far the frequency measured from the phase difference is believed over the bin's nominal centre. At zero every partial is forced onto its bin, which detunes the sound into a metallic grid."),
+        tip(param('Phase spread', v.phaseSpread, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
           (x) => { v.phaseSpread = x; previewStretch(); }, () => commitStretch()),
-        param('Peak width', v.peakWidth, 1, 16, 1, (x) => `${Math.round(x)} bin`,
+        "How far a peak's phase correction reaches into the bins around it. This is what stops a partial dissolving into its neighbours as the stretch gets long."),
+        tip(param('Peak width', v.peakWidth, 1, 16, 1, (x) => `${Math.round(x)} bin`,
           (x) => { v.peakWidth = Math.round(x); previewStretch(); }, () => commitStretch()),
-        param('Lock width', v.lockWidth, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
+        'How many bins either side of a maximum count as belonging to it. Wider claims more of the spectrum for each peak, which holds thick tone together and blurs closely spaced partials.'),
+        tip(param('Lock width', v.lockWidth, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
           (x) => { v.lockWidth = x; previewStretch(); }, () => commitStretch()),
+        'How strongly a peak imposes its phase on the bins it owns. Zero leaves each bin to itself, which is the classic phase vocoder and the classic phasiness.'),
         check('link stereo',
           'Move both channels by one shared correction, so the image survives the stretch instead of drifting apart',
           v.stereoLink, (on) => { v.stereoLink = on; commitStretch(); }),
@@ -2771,39 +2812,46 @@ function renderStretch() {
           (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); }));
       }
       if (detecting) {
-        own.appendChild(param('Detector', w.sensitivity, 0, 1, 0.01,
+        own.appendChild(tip(param('Detector', w.sensitivity, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
-          (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch()));
+          (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch()),
+        'How eager the onset detector is. Higher finds more hits to protect, including ones that are not really hits; lower protects only the clearest attacks.'));
       }
 
       ext.appendChild(wild('Splice',
         `How far the similarity search looks, what it goes looking for, and what the result is laid down under.${what}`).add(
-        param('Search', w.searchMs, 0, 200, 0.5,
+        tip(param('Search', w.searchMs, 0, 200, 0.5,
           (x) => (x <= 0 ? 'plain OLA' : `${x.toFixed(1)} ms`),
           (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch()),
-        seg('Pick', [
+        'How far either side of the ideal splice point the similarity search may look for a better join. At zero there is no search at all and this becomes plain overlap-add, which is where the flanging comes from.'),
+        tip(seg('Pick', [
           ['similar', 'best', 'The segment that best continues what came before. What WSOLA is for.'],
           ['different', 'worst', 'The least similar segment the search can find, every time.'],
           ['loudest', 'loud', 'Un-normalised, so the search walks toward whatever is loudest nearby.'],
         ], w.splice, (x) => { w.splice = x; commitStretch(); }),
-        seg('Window', [
+        'What the similarity search goes looking for. Only the first is trying to be transparent; the other two are the engine used as an instrument.'),
+        tip(seg('Window', [
           ['hann', 'hann', 'Sums flat at 50% overlap, which is why it is the default.'],
           ['triangle', 'tri', 'Sums flat too, with a corner on every splice.'],
           ['rect', 'rect', 'No envelope. Every splice is a step, so the seams become a rhythm.'],
         ], w.shape, (x) => { w.shape = x; commitStretch(); }),
-        param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} fr`,
+        'The envelope each spliced segment is laid down under. Hann and triangle both sum flat at the usual overlap; rect does not, which is the point of it.'),
+        tip(param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} fr`,
           (x) => { w.stride = Math.round(x); previewStretch(); }, () => commitStretch()),
+        'How many frames the similarity search steps by as it looks. Bigger is cheaper and coarser - the join lands near the best place rather than on it.'),
       ));
 
       // Only reachable once the detector is running, so it appears with it.
       if (detecting) {
         ext.appendChild(wild('Transients',
           'What the detector counts as a hit, and how much either side of one is held at its original rate.').add(
-          param('Floor', w.floor, 0, 2, 0.01,
+          tip(param('Floor', w.floor, 0, 2, 0.01,
             (x) => (x <= 0 ? 'none' : `${x.toFixed(2)}×`),
             (x) => { w.floor = x; previewStretch(); }, () => commitStretch()),
-          param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hop`,
+        'How far above the local average a peak has to rise before it counts as a hit. Low finds hits everywhere, which protects so much of the sound that the stretch stops happening.'),
+          tip(param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hop`,
             (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch()),
+        'How many hops either side of a detected hit are held at the original rate, so the attack is not laid down twice or cut in half.'),
         ));
       }
     };
@@ -2827,19 +2875,22 @@ function renderStretch() {
       // vocoder is allowed to run on its own guesses before being put back on
       // the ground. Everything else about this engine is the vocoder's, and
       // the vocoder's own panel is shown below it for that reason.
-      own.appendChild(param('Re-anchor', p.anchorFrames, 1, 64, 1,
+      own.appendChild(tip(param('Re-anchor', p.anchorFrames, 1, 64, 1,
         (x) => `${Math.round(x)} fr`,
         (x) => { p.anchorFrames = Math.round(x); previewStretch(); },
-        () => commitStretch()));
+        () => commitStretch()),
+        'How many analysis frames the vocoder is allowed to run on its own guesses before being spliced back onto the real waveform. Short kills phasiness and costs splices; long is the plain vocoder again.'));
 
       ext.appendChild(wild('Anchor',
         'How the splice back to the waveform is found and how it is joined. Both off is a hard cut every few frames, which you can hear as a rhythm.').add(
-        param('Search', p.searchMs, 0, 200, 0.5,
+        tip(param('Search', p.searchMs, 0, 200, 0.5,
           (x) => (x <= 0 ? 'no search' : `${x.toFixed(1)} ms`),
           (x) => { p.searchMs = x; previewStretch(); }, () => commitStretch()),
-        param('Blend', p.blend, 0, 1, 0.01,
+        'How far the anchor search looks for the best place to splice back onto the waveform. At zero it joins wherever it lands, which you hear as a click every few frames.'),
+        tip(param('Blend', p.blend, 0, 1, 0.01,
           (x) => (x <= 0 ? 'butt join' : `${Math.round(x * 100)}%`),
           (x) => { p.blend = x; previewStretch(); }, () => commitStretch()),
+        'How much of the anchor is crossfaded rather than butt-joined. The fade is linear here, not equal power, because the search has just spent its whole effort making both sides correlated.'),
       ));
 
       // The vocoder is what is actually running between anchors, so all of its
@@ -2857,30 +2908,37 @@ function renderStretch() {
       // The three levels are the reason to be in this engine rather than the
       // vocoder: nothing else here will turn a sound's air down without
       // touching its tone.
-      own.appendChild(param('Tone', h.harmonicLevel, 0, 2, 0.01,
+      own.appendChild(tip(param('Tone', h.harmonicLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.harmonicLevel = x; previewStretch(); }, () => commitStretch()));
-      own.appendChild(param('Hits', h.percussiveLevel, 0, 2, 0.01,
+        (x) => { h.harmonicLevel = x; previewStretch(); }, () => commitStretch()),
+        "The level of the harmonic part - the ridges that run along time. This is the reason to be in this engine: nothing else here will turn a sound's air down without touching its tone."));
+      own.appendChild(tip(param('Hits', h.percussiveLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.percussiveLevel = x; previewStretch(); }, () => commitStretch()));
-      own.appendChild(param('Air', h.residualLevel, 0, 2, 0.01,
+        (x) => { h.percussiveLevel = x; previewStretch(); }, () => commitStretch()),
+        'The level of the percussive part - the ridges that run across frequency. Attacks, clicks and transients, stretched by WSOLA with preservation held on.'));
+      own.appendChild(tip(param('Air', h.residualLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.residualLevel = x; previewStretch(); }, () => commitStretch()));
+        (x) => { h.residualLevel = x; previewStretch(); }, () => commitStretch()),
+        'The level of the residual - everything that is neither a partial nor a hit. Breath, hiss, room. This is the part Margin decides the existence of.'));
       own.appendChild(check('remake noise',
         'Rebuild the air as fresh noise shaped like the old, instead of stretching it. Off, it repeats at long ratios like every other engine here does',
         h.morphNoise, (on) => { h.morphNoise = on; commitStretch(); }));
 
       ext.appendChild(wild('Separation',
         'How the sound is cut into three. A partial is a ridge along time and a hit is a ridge across frequency; these decide how long and how broad each has to be to count.').add(
-        param('Hold', h.timeSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} fr`,
+        tip(param('Hold', h.timeSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} fr`,
           (x) => { h.timeSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch()),
-        param('Spread', h.freqSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} bin`,
+        'How many frames long a ridge has to hold steady before it counts as a partial. Longer is stricter and sends more of the sound to the other two parts.'),
+        tip(param('Spread', h.freqSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} bin`,
           (x) => { h.freqSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch()),
-        param('Margin', h.margin, 1, 8, 0.05,
+        'How many bins wide a ridge has to be before it counts as a hit. Wider is stricter about what an attack is.'),
+        tip(param('Margin', h.margin, 1, 8, 0.05,
           (x) => (x <= 1.001 ? 'no air' : `${x.toFixed(2)}×`),
           (x) => { h.margin = x; previewStretch(); }, () => commitStretch()),
-        param('Resolution', h.fftSize, 256, 8192, 256, (x) => `${Math.round(x)}`,
+        'How much louder one part has to be than the other before it may claim a bin outright. At 1x nothing is left over and there is no Air at all - which is why the noise remaker then has nothing to work on.'),
+        tip(param('Resolution', h.fftSize, 256, 8192, 256, (x) => `${Math.round(x)}`,
           (x) => { h.fftSize = Math.round(x); previewStretch(); }, () => commitStretch(), true),
+        'The transform size the separation runs at. Bigger tells partials apart more finely and blurs the timing of hits; the separation is a property of the sound, not of the stretch.'),
       ));
 
       // This engine runs both of the others, so both of their control sets are
@@ -2922,19 +2980,22 @@ function renderStretch() {
 
 
   const rows = {};
-  rows.ratio = param('Stretch', st.ratio, 0.01, 100, 0.01,
+  rows.ratio = tip(param('Stretch', st.ratio, 0.01, 100, 0.01,
     (v) => (v >= 10 ? `${v.toFixed(0)}×` : v >= 1 ? `${v.toFixed(2)}×` : `${v.toFixed(3)}×`),
     (v) => { state.stretchDraft.ratio = v; showStretchOut(); previewStretch(); },
-    () => commitStretch(), true);
-  rows.semitones = param('Pitch', st.semitones, -48, 48, 0.5,
+    () => commitStretch(), true),
+        'How much longer the result is than the source. 1x is untouched, 0.5x is half the length, 100x is the point of a granular stretcher. Logarithmic, so the everyday range is not squeezed into the first tenth of the slider.');
+  rows.semitones = tip(param('Pitch', st.semitones, -48, 48, 0.5,
     (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} st`,
     (v) => { state.stretchDraft.semitones = v; previewStretch(); },
-    () => commitStretch());
+    () => commitStretch()),
+        'Shifts the pitch without changing the length. The engine is driven at ratio x pitch and the result read back that much faster, and the two length changes cancel. Twelve semitones is an octave.');
   // Log too: 40 ms is the everyday setting and second-long grains are the
   // extreme, so a linear control would bunch the useful range at one end.
-  rows.windowMs = param('Window', st.windowMs, 5, 2000, 1, (v) => `${Math.round(v)} ms`,
+  rows.windowMs = tip(param('Window', st.windowMs, 5, 2000, 1, (v) => `${Math.round(v)} ms`,
     (v) => { state.stretchDraft.windowMs = v; previewStretch(); },
-    () => commitStretch(), true);
+    () => commitStretch(), true),
+        'The length of one piece the engine works with - a splice for WSOLA, a grain for the cloud. Short follows transients and roughens tone; long holds tone together and smears attacks.');
 
   for (const el of Object.values(rows)) box.appendChild(el);
   state.stretchRows = rows;
@@ -2977,27 +3038,37 @@ function renderGrainParams() {
 
   // Grouped by what they do, so each panel stays short enough to read at once.
   const groups = [
-    [shape, 'Grain shape', [
-      ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'auto' : `${Math.round(v)}/s`)],
-      ['Layers', 'layers', 1, 16, 1, (v) => `${Math.round(v)}×`],
-      ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`],
-      ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`],
-      ['Position jitter', 'positionJitterMs', 0, 500, 1, (v) => `${Math.round(v)} ms`],
+    [shape, 'Grain shape',
+     'How often something is laid down, how long it is, how many of them, and how much any of that varies. Every engine answers these — a window is a splice for WSOLA and an analysis frame for the vocoder.', [
+      ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'auto' : `${Math.round(v)}/s`),
+       'How often a window is laid down, in windows per second. On “auto” the rate comes from the window length divided by Overlap instead, which is what keeps the sound even as the window changes.'],
+      ['Layers', 'layers', 1, 16, 1, (v) => `${Math.round(v)}×`,
+       'How many copies of the whole engine run at once, each reading its own place in the source. Level is compensated by the square root of the count, which is exact once Scatter or the jitters have decorrelated them.'],
+      ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`,
+       'How many windows cover any one moment. Only read while Density is on “auto”. More overlap is smoother and more expensive; at 1x the windows are laid end to end.'],
+      ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`,
+       'How much each window’s length varies around Window. Size range sets how far the variation may reach.'],
+      ['Position jitter', 'positionJitterMs', 0, 500, 1, (v) => `${Math.round(v)} ms`,
+       'How far each window may be thrown from the instant it should have read. This is what turns a line of windows into a cloud.'],
     ]],
-    [pitchBox, 'Pitch movement', [
-      ['Pitch jitter', 'pitchJitterSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
-      ['Pitch drift', 'pitchDriftSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
-      ['Drift rate', 'driftRateHz', 0.01, 10, 0.01, (v) => `${v.toFixed(2)} Hz`],
+    [pitchBox, 'Pitch movement',
+     'Pitch that changes while the sound plays, as against the fixed shift on the Pitch slider. Jitter is per grain; drift is shared by the whole cloud.', [
+      ['Pitch jitter', 'pitchJitterSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`,
+       'A fresh random shift for every grain, up to this far either way. Small amounts thicken; large amounts scatter the sound across the keyboard.'],
+      ['Pitch drift', 'pitchDriftSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`,
+       'A slow wander in pitch shared by the whole cloud, up to this far either way. Vibrato at the small end, seasickness at the large.'],
+      ['Drift rate', 'driftRateHz', 0.01, 10, 0.01, (v) => `${v.toFixed(2)} Hz`,
+       'How fast that wander moves, in cycles per second. “Step the drift” turns the glide into jumps.'],
     ]],
   ];
 
   state.grainRows = {};
-  for (const [target, heading, rows] of groups) {
-    const group = wild(heading);
-    for (const [label, key, min, max, step, fmt] of rows) {
-      const el = param(label, g[key], min, max, step, fmt,
+  for (const [target, heading, blurb, rows] of groups) {
+    const group = wild(heading, blurb);
+    for (const [label, key, min, max, step, fmt, hint] of rows) {
+      const el = tip(param(label, g[key], min, max, step, fmt,
         (v) => { state.grainDraft[key] = v; preview(); },
-        () => commit());
+        () => commit()), hint);
       state.grainRows[key] = el;
       group.add(el);
     }
@@ -3027,8 +3098,9 @@ function renderGrainParams() {
   // granular instrument.
   extGrain.appendChild(wild('Scan',
     'Where in the source the cloud reads from, and which way each grain runs.').add(
-    gp('Scan', 'scan', -2, 2, 0.01,
+    tip(gp('Scan', 'scan', -2, 2, 0.01,
       (v) => (Math.abs(v) < 0.005 ? 'frozen' : `${v.toFixed(2)}×`)),
+        'How fast the read pointer moves through the source relative to the output. 1x is an ordinary stretch, 0 freezes on one instant, and negative runs the source backwards under a forward-moving cloud. Severing this from the ratio is the difference between a stretcher and an instrument.'),
     pair(
       gc('reverse grains', 'reverse',
         'Each grain reads its own span backwards. The cloud still moves forward.'),
@@ -3039,12 +3111,16 @@ function renderGrainParams() {
 
   extGrain.appendChild(wild('Shape',
     'The grain envelope, how far sizes may reach, and where the layers sit.').add(
-    gp('Envelope', 'envelope', 0, 1, 0.01,
+    tip(gp('Envelope', 'envelope', 0, 1, 0.01,
       (v) => (Math.abs(v - 0.5) < 0.005 ? 'symmetric' : v < 0.5 ? 'percussive' : 'swelling')),
-    gp('Size range', 'sizeRange', 1, 8, 0.05, (v) => `${v.toFixed(2)}×`),
-    gp('Layer spread', 'layerSpread', 0, 4, 0.01,
+        'The shape each window is laid down under. Symmetric is a bell; percussive is a sharp attack and a long tail; swelling is the reverse.'),
+    tip(gp('Size range', 'sizeRange', 1, 8, 0.05, (v) => `${v.toFixed(2)}×`),
+        'How far Size jitter is allowed to reach, as a multiple of the window. Inert until there is some jitter to reach with.'),
+    tip(gp('Layer spread', 'layerSpread', 0, 4, 0.01,
       (v) => (v <= 0.005 ? 'stacked' : `${v.toFixed(2)}×`)),
-    gp('Pan spread', 'panSpread', 0, 1, 0.01, (v) => (v <= 0 ? 'centred' : `${Math.round(v * 100)}%`)),
+        'How far each layer is delayed behind the one before, as a share of a hop. It is also what keeps sixteen layers from all transforming on the same block.'),
+    tip(gp('Pan spread', 'panSpread', 0, 1, 0.01, (v) => (v <= 0 ? 'centred' : `${Math.round(v * 100)}%`)),
+        'How far apart the grains are placed across the stereo field. At zero everything is centred.'),
   ));
 
   // Layers on their own are a delay line, not a cloud: without this every
@@ -3053,13 +3129,15 @@ function renderGrainParams() {
   // else in the source so the layers are different audio rather than copies.
   extGrain.appendChild(wild('Layer scatter',
     'How far each layer is thrown from the others. At zero they all read the same instant and comb; turned up they read their own places and sum like a crowd. Reaches every engine.').add(
-    gp('Scatter', 'layerScatter', 0, 1, 0.01,
+    tip(gp('Scatter', 'layerScatter', 0, 1, 0.01,
       (v) => (v <= 0 ? 'stacked' : `${Math.round(v * 100)}%`)),
+        'How far each layer is thrown from the others. At zero every layer reads the same instant and the stack is a delay line, which combs - sixteen layers made the sound thinner, not fuller. Turned up they read their own places and sum like a crowd. Layer zero never moves.'),
     // Log, because the useful range is tens of milliseconds — a chorus — and
     // the far end is a second, which is a wash. Linear would bunch everything
     // worth reaching into the first tenth of the slider.
-    gp('Range', 'layerScatterMs', 1, 2000, 1,
+    tip(gp('Range', 'layerScatterMs', 1, 2000, 1,
       (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`), true),
+        'How far a thrown layer may land from where it would otherwise have read. Tens of milliseconds is a chorus; a second is a wash. Logarithmic, because everything worth reaching is at the bottom of the range.'),
   ));
 
   // The seed used to have no control at all. It is the one value here that
@@ -3069,6 +3147,10 @@ function renderGrainParams() {
   seedRow.innerHTML = `<span class="k">Seed</span>
     <button class="ghost">Re-roll</button>
     <span class="v"></span>`;
+  tip(seedRow,
+    'The number every random choice here is drawn from. Each jitter is a pure function of the grain index and this seed, never a running generator — which is what makes the picture, the playback and the exported file the same sound. Re-roll re-deals the whole cloud without moving a single slider.');
+  seedRow.querySelector('button').title =
+    'Draw a new seed. Every jitter changes at once; no setting does.';
   const showSeed = () => {
     seedRow.querySelector('.v').textContent = state.grainDraft.seed;
   };
@@ -3135,6 +3217,9 @@ function showStretchOut() {
     ? ''
     : ` · pitch ${semis > 0 ? '+' : ''}${semis.toFixed(1)} st`;
   el.textContent = `${base.toFixed(2)}s → ${out.toFixed(2)}s${pitch}`;
+  el.title = 'Source length, then the length this will render to, and the pitch shift if there is one. '
+    + 'The length follows the Stretch slider alone — pitch does not change it. '
+    + 'It dims while the waveform is still catching up with the controls.';
 }
 
 // -------------------------------------------------------------- presets
