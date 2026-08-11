@@ -2073,16 +2073,19 @@ function seg(label, options, value, onChange) {
   return el;
 }
 
-/// A folded-away group, for controls that exist to break the algorithm rather
-/// than to tune it. Open it and everything inside is a way to make the engine
-/// stop doing its job — which is the point, but not what you want under the
-/// pointer while reaching for Stretch.
-function wild(summary, title) {
-  const el = document.createElement('details');
+/// A named group inside the Extended column.
+///
+/// Not a disclosure. These were folded when they lived among the everyday
+/// sliders and the reason to hide them was that they are next to Stretch; in
+/// their own column that reason is gone, and a control you have to go looking
+/// for is a control you forget exists.
+function wild(heading, title) {
+  const el = document.createElement('div');
   el.className = 'wild';
-  el.innerHTML = '<summary></summary><div class="wild-body"></div>';
-  el.querySelector('summary').textContent = summary;
-  if (title) el.querySelector('summary').title = title;
+  el.innerHTML = '<div class="wild-head"></div><div class="wild-body"></div>';
+  const head = el.querySelector('.wild-head');
+  head.textContent = heading;
+  if (title) head.title = title;
   el.body = el.querySelector('.wild-body');
   el.add = (...kids) => { for (const k of kids) el.body.appendChild(k); return el; };
   return el;
@@ -2492,6 +2495,10 @@ function renderStretch() {
       $(id)?.classList.toggle('hidden', !grainOn);
     }
     $('extGrain')?.classList.toggle('hidden', !grainOn);
+    // With the grain panels gone there is one standard panel left, so the grid
+    // drops to two columns and the pair sit together rather than either side of
+    // a gap the width of a panel that is not there.
+    document.querySelector('.grain-controls')?.classList.toggle('solo', !grainOn);
   };
   for (const b of eng.querySelectorAll('.seg-btn')) {
     b.onclick = () => {

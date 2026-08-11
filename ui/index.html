@@ -183,8 +183,25 @@
   <input type="range" id="volume" min="0" max="1" step="0.01" value="0.85" title="Volume">
 </div>
 
-    <!-- Presets, in the strip that used to sit empty under the transport. -->
+    <!-- Presets, in the strip that used to sit empty under the transport, and
+         the dock's own tabs alongside them: as a column down the left they cost
+         the granular controls 58px of every screen. -->
     <div class="presetbar hidden" id="presetBar">
+      <nav class="dock-rail">
+        <button class="dock-tab active" data-dock="stretch" title="Time, pitch and grains">
+          <span class="ic">⧗</span><span class="lb">Time</span>
+        </button>
+        <button class="dock-tab" data-dock="effects" title="Effect chain">
+          <span class="ic">⚙</span><span class="lb">FX</span>
+        </button>
+        <button class="dock-tab" data-dock="visuals" title="Spectrogram and meters">
+          <span class="ic">◍</span><span class="lb">Visuals</span>
+        </button>
+        <button class="dock-tab" data-dock="regions" title="Regions">
+          <span class="ic">⧉</span><span class="lb">Regions</span>
+        </button>
+      </nav>
+      <div class="vsep"></div>
       <span class="pb-label">Preset</span>
       <select class="mini" id="presetPick"><option value="">— none —</option></select>
       <button class="ghost" id="presetSave">Save as&hellip;</button>
@@ -201,20 +218,6 @@
 
     <!-- edit window: effects and visuals -->
     <div class="dock hidden" id="dock">
-      <nav class="dock-rail">
-        <button class="dock-tab active" data-dock="stretch" title="Time, pitch and grains">
-          <span class="ic">⧗</span><span class="lb">Time</span>
-        </button>
-        <button class="dock-tab" data-dock="effects" title="Effect chain">
-          <span class="ic">⚙</span><span class="lb">FX</span>
-        </button>
-        <button class="dock-tab" data-dock="visuals" title="Spectrogram and meters">
-          <span class="ic">◍</span><span class="lb">Visuals</span>
-        </button>
-        <button class="dock-tab" data-dock="regions" title="Regions">
-          <span class="ic">⧉</span><span class="lb">Regions</span>
-        </button>
-      </nav>
       <div class="dock-panes">
 
       <div class="dock-body rack-body hidden" id="dockEffects">
