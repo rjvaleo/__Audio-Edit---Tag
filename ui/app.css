@@ -366,6 +366,28 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .region span { font-family: var(--mono); font-size: 9.5px; color: var(--text-2); white-space: nowrap; }
 .region:hover { background: rgba(125,190,255,0.26); }
 
+/* ------------------------------------------------- the tray's vertical rhythm
+   Every slider sits the same distance from the one above it. It did not before:
+   Time & pitch's three were plain block children with no gap at all, and every
+   other group was in a flex container with seven pixels between rows — so the
+   same control was tight in one panel and loose in the next depending only on
+   which container it had ended up in. The tight one won, plus a pixel above and
+   below, which is the whole of the difference now.
+
+   Scoped to the tray. The effect rack builds its params the same way and is not
+   laid out to the same rhythm. */
+#dockStretch .cpanel,
+#dockStretch .wild,
+#dockStretch .wild-body { gap: 0; }
+#dockStretch .param,
+#dockStretch .param-pair { padding: 1px 0; }
+/* What is not a slider still needs the room the container gap used to give it. */
+#dockStretch .toggle { margin: 3px 0; }
+#dockStretch .param-pair .toggle { margin: 0; }
+#dockStretch .engine-pick { margin-bottom: 6px; }
+#dockStretch .wild-head { margin-bottom: 4px; }
+#dockStretch #stretchOut { margin-top: 6px; }
+
 /* --------------------------------------------------------------------- lane */
 
 .lane {
