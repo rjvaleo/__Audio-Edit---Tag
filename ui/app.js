@@ -1919,7 +1919,45 @@ const SLOT_META = {
   comp: { icon: 'C', name: 'Compressor' },
 };
 
+// What shapers exist and what each one has, straight from the engine.
+//
+// Not written out here as well. Every shaper module is drawn from this, so an
+// effect gains a control by declaring one in `fx::shape` and nothing in the
+// interface needs touching — the same reason the rack has one slot kind for
+// all of them rather than nine.
+state.shapers = {};
+
+async function loadShapers() {
+  if (Object.keys(state.shapers).length) return;
+  try {
+    const r = await api('/api/fx');
+    for (const s of r.shapers || []) state.shapers[s.kind] = s;
+  } catch { /* the chain still works; only the shapers go missing */ }
+  const add = $('rackAdd');
+  if (!add) return;
+  add.innerHTML = '<option value="">add…</option>';
+  for (const k of Object.keys(state.shapers)) {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = state.shapers[k].label;
+    add.appendChild(o);
+  }
+}
+
+$('rackAdd').onchange = (e) => {
+  const kind = e.target.value;
+  e.target.value = '';
+  if (!kind || !state.rack) return;
+  const params = {};
+  for (const p of state.shapers[kind].params) params[p.key] = p.default;
+  state.rack.slots.push({ kind, bypassed: false, params });
+  state.rackSelected = state.rack.slots.length - 1;
+  pushRack({ immediate: true });
+  renderRack();
+};
+
 async function loadRack() {
+  await loadShapers();
   const f = state.selectedFile;
   if (!f) return;
   try {
@@ -1962,7 +2000,26 @@ function slotSummary(slot) {
     const hp = slot.highPassHz > 20 ? ` · HP ${Math.round(slot.highPassHz)}Hz` : '';
     return `${on} band${on === 1 ? '' : 's'}${hp}`;
   }
-  return `${slot.ratio.toFixed(1)}:1 · ${slot.thresholdDb.toFixed(0)} dB`;
+  if (slot.kind === 'comp') {
+    return `${slot.ratio.toFixed(1)}:1 · ${slot.thresholdDb.toFixed(0)} dB`;
+  }
+  // A shaper, summarised from whatever it declares. This used to fall through
+  // to the compressor's fields and throw on the first shaper added, which
+  // aborted the whole chain redraw partway — so the slot appeared to vanish
+  // rather than to be drawn wrongly.
+  const spec = state.shapers[slot.kind];
+  if (!spec || !spec.params.length) return '—';
+  return spec.params
+    .slice(0, 2)
+    .map((p) => {
+      const v = (slot.params || {})[p.key];
+      if (v === undefined) return p.label;
+      // A percentage only where the range really is nought to one. The gate's
+      // threshold tops out at 0 dB, which is not a full scale of anything.
+      const pct = p.min >= 0 && p.max <= 1.001;
+      return `${p.label} ${pct ? Math.round(v * 100) + '%' : Math.round(v)}`;
+    })
+    .join(' · ');
 }
 
 /// Defaults for the channel compressor, mirroring `MasterSettings`. A document
@@ -2042,7 +2099,10 @@ function renderRack() {
   if (!state.rack) return;
 
   state.rack.slots.forEach((slot, i) => {
-    const meta = SLOT_META[slot.kind] || { icon: '?', name: slot.kind };
+    const shaper = state.shapers[slot.kind];
+    const meta = SLOT_META[slot.kind]
+      || (shaper ? { icon: shaper.label.slice(0, 2).toUpperCase(), name: shaper.label } : null)
+      || { icon: '?', name: slot.kind };
     const el = document.createElement('div');
     el.className = 'rack-slot' + (i === state.rackSelected ? ' selected' : '') +
       (slot.bypassed ? ' off' : '');
@@ -3629,22 +3689,61 @@ function renderRackParams() {
   const slot = state.rack?.slots[state.rackSelected];
   if (!slot) return;
 
-  const meta = SLOT_META[slot.kind];
+  const shaper = state.shapers[slot.kind];
+  const meta = SLOT_META[slot.kind] || { name: shaper ? shaper.label : slot.kind };
   const head = document.createElement('div');
   head.className = 'param-head';
   head.innerHTML = `<span class="t"></span>
-    <button class="ghost">${slot.bypassed ? 'Switch in' : 'Switch out'}</button>`;
+    <button class="ghost">${slot.bypassed ? 'Switch in' : 'Switch out'}</button>`
+    + (shaper ? '<button class="ghost danger" id="rackDrop">Remove</button>' : '');
   head.querySelector('.t').textContent = meta.name;
   head.querySelector('button').onclick = () => {
     slot.bypassed = !slot.bypassed;
     pushRack({ immediate: true });
   };
   box.appendChild(head);
+  // Only a shaper can be taken out. The first three are the chain itself —
+  // switching one out is what removing it means.
+  if (shaper) {
+    $('rackDrop').onclick = () => {
+      state.rack.slots.splice(state.rackSelected, 1);
+      state.rackSelected = Math.max(0, state.rackSelected - 1);
+      pushRack({ immediate: true });
+      renderRack();
+    };
+  }
 
   const grid = document.createElement('div');
   grid.className = 'knob-grid';
   const db1 = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB`;
   const hz = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} kHz` : `${Math.round(v)} Hz`);
+
+  // Every shaper, from its own description. Nothing here knows what any of
+  // them do — which is the point: the next one added draws itself.
+  if (shaper) {
+    if (!shaper.params.length) {
+      const none = document.createElement('p');
+      none.className = 'engine-note';
+      none.textContent = 'Nothing to set — switch it in or out.';
+      grid.appendChild(none);
+    }
+    slot.params = slot.params || {};
+    for (const p of shaper.params) {
+      if (slot.params[p.key] === undefined) slot.params[p.key] = p.default;
+      const fmt = (v) => {
+        if (p.unit === 'Hz') return v >= 1000 ? `${(v / 1000).toFixed(2)} kHz` : `${Math.round(v)} Hz`;
+        if (p.unit === 'ms') return v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`;
+        if (p.unit === 'dB') return `${v.toFixed(1)} dB`;
+        if (p.unit) return `${v.toFixed(2)}${p.unit}`;
+        return p.min >= 0 && p.max <= 1.001 ? `${Math.round(v * 100)}%` : v.toFixed(2);
+      };
+      const step = (p.max - p.min) / 400;
+      // The log flag is the ninth argument, after the commit callback these
+      // do not need — pushRack already throttles.
+      grid.appendChild(knob(p.label, slot.params[p.key], p.min, p.max, step, fmt,
+        (v) => { slot.params[p.key] = v; pushRack(); }, undefined, p.log));
+    }
+  }
 
   if (slot.kind === 'gain') {
     grid.appendChild(knob('Level', slot.db, -24, 24, 0.1, db1, (v) => { slot.db = v; pushRack(); }));
