@@ -16,15 +16,17 @@
 //! never have run at all.
 
 use fx::grain::{GrainEvent, StreamParams};
-use fx::stream::{Pitched, StretchParams};
+use fx::stream::{Pitched, StretchParams, WsolaStream};
 use fx::stretch::Algorithm;
+use fx::vstream::VocoderStream;
 
 use crate::render::{BlockRenderer, Source};
 
 /// Every engine the audio thread can run, all resident.
 pub struct Stretcher {
     grain: BlockRenderer,
-    wsola: Pitched,
+    wsola: Pitched<WsolaStream>,
+    vocoder: Pitched<VocoderStream>,
     /// What was running last block, so a change can be noticed and acted on.
     current: Algorithm,
     /// Output frame the whole thing is at. Kept here rather than read from
@@ -34,12 +36,12 @@ pub struct Stretcher {
 
 /// Which engines run here at all.
 ///
-/// The vocoder, PVSOLA and the hybrid are not yet streaming, so they fall back
-/// to the grain cloud rather than to silence. That is a lie about what you are
-/// hearing, so the interface has to say so — but silence would be a worse one,
-/// and refusing to play at all worse still.
+/// PVSOLA and the hybrid are not yet streaming, so they fall back to the grain
+/// cloud rather than to silence. That is a lie about what you are hearing, so
+/// the interface has to say so — but silence would be a worse one, and refusing
+/// to play at all worse still.
 pub fn is_live(alg: Algorithm) -> bool {
-    matches!(alg, Algorithm::Granular | Algorithm::Wsola)
+    matches!(alg, Algorithm::Granular | Algorithm::Wsola | Algorithm::Vocoder)
 }
 
 /// What actually runs for a requested engine.
@@ -57,6 +59,7 @@ fn stretch_params(sp: &StreamParams) -> StretchParams {
         window_ms: sp.window_ms,
         sample_rate: sp.sample_rate,
         wsola: sp.wsola,
+        vocoder: sp.vocoder,
         grain: sp.grain,
     }
 }
@@ -65,7 +68,12 @@ impl Stretcher {
     pub fn new(max_block: usize, channels: usize, sample_rate: u32) -> Self {
         Stretcher {
             grain: BlockRenderer::new(max_block),
-            wsola: Pitched::new(max_block, channels, sample_rate),
+            wsola: Pitched::new(
+                WsolaStream::new(max_block, channels, sample_rate),
+                max_block,
+                channels,
+            ),
+            vocoder: Pitched::new(VocoderStream::new(max_block, channels), max_block, channels),
             current: Algorithm::Granular,
             position: 0,
         }
@@ -78,11 +86,11 @@ impl Stretcher {
     /// Hand WSOLA a freshly built transient map, or `None` for a straight line.
     /// Built off the audio thread; see `fx::stream`.
     pub fn set_map(&mut self, map: Option<fx::transient::TimeMap>) {
-        self.wsola.set_map(map);
+        self.wsola.inner_mut().set_map(map);
     }
 
     pub fn overflows(&self) -> u64 {
-        self.grain.overflows + self.wsola.overflows()
+        self.grain.overflows + self.wsola.inner().overflows
     }
 
     pub fn seek(&mut self, out_frame: u64, sp: &StreamParams) {
@@ -95,6 +103,10 @@ impl Stretcher {
         match self.current {
             Algorithm::Wsola => {
                 self.wsola
+                    .seek(out_frame, sp.in_frames, &stretch_params(sp), sp.semitones)
+            }
+            Algorithm::Vocoder => {
+                self.vocoder
                     .seek(out_frame, sp.in_frames, &stretch_params(sp), sp.semitones)
             }
             _ => self.grain.seek(out_frame, sp),
@@ -127,6 +139,16 @@ impl Stretcher {
         let reported = match self.current {
             Algorithm::Wsola => {
                 self.wsola.render_pitched(
+                    out,
+                    channels,
+                    &src.samples,
+                    &stretch_params(sp),
+                    sp.semitones,
+                );
+                0
+            }
+            Algorithm::Vocoder => {
+                self.vocoder.render_pitched(
                     out,
                     channels,
                     &src.samples,

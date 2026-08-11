@@ -23,6 +23,8 @@ fn main() {
         grain: Grain::default(),
         algorithm: fx::stretch::Algorithm::Granular,
         wsola: fx::stretch::WsolaParams::default(),
+
+        vocoder: fx::stretch::VocoderParams::default(),
     };
 
     let engine = match Engine::start(params, source) {

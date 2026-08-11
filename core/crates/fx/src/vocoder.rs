@@ -21,25 +21,10 @@
 //! propagation is equations 5.10 to 5.12, kept in that order below so the code
 //! can be read against the source.
 
-use audio_core::fft::{self, fft};
 use std::f32::consts::PI;
 
 const TWO_PI: f32 = 2.0 * PI;
 
-/// The smallest share of the summed window that is still worth dividing by.
-///
-/// Where frames overlap fully the sum is near its peak and the division
-/// reconstructs. At the very edges of the buffer only one frame is present, so
-/// the sum tails toward nothing — and dividing by nothing turns a sample that
-/// was correctly quiet into an enormous one. Below this share the divisor is
-/// held at the floor instead, which leaves the edges fading in and out, which
-/// is what an incompletely overlapped edge actually is.
-///
-/// It matters more than it looks. The vocoder is normalised by the summed
-/// *square* of the window, so its edges tail off far faster than a linear sum,
-/// and at fifty per cent overlap they are exposed enough to have been producing
-/// peaks twenty times the source.
-const NORM_FLOOR: f32 = 0.05;
 
 
 /// Wrap a phase into [−π, π).
@@ -59,24 +44,6 @@ fn wrap(mut p: f32) -> f32 {
     p
 }
 
-/// Inverse transform, by conjugation.
-///
-/// `audio_core::fft` is forward-only, and the identity
-/// `ifft(X) = conj(fft(conj(X))) / N` is exact — cheaper to use than to
-/// maintain a second transform that could drift from the first.
-fn ifft(re: &mut [f32], im: &mut [f32]) {
-    for v in im.iter_mut() {
-        *v = -*v;
-    }
-    fft(re, im);
-    let n = re.len() as f32;
-    for v in re.iter_mut() {
-        *v /= n;
-    }
-    for v in im.iter_mut() {
-        *v = -*v / n;
-    }
-}
 
 /// Bins that are local maxima of the magnitude spectrum.
 ///
@@ -89,7 +56,7 @@ fn ifft(re: &mut [f32], im: &mut [f32]) {
 /// and Dolson's test: strict enough to ignore ripple in the noise floor, loose
 /// enough to catch every real partial. Wider finds fewer peaks, so more of the
 /// spectrum ends up locked to whichever peak claims it.
-fn peaks(mag: &[f32], width: usize, out: &mut Vec<usize>) {
+pub(crate) fn peaks(mag: &[f32], width: usize, out: &mut Vec<usize>) {
     out.clear();
     let w = width.clamp(1, 32);
     if mag.len() < w * 2 + 1 {
@@ -116,7 +83,7 @@ fn peaks(mag: &[f32], width: usize, out: &mut Vec<usize>) {
 /// blur sideways, and carry forward. Order matters — freezing last means the
 /// held spectrum is the gated and blurred one, which is what you would expect
 /// having set the other two first.
-fn shape_magnitudes(
+pub(crate) fn shape_magnitudes(
     mag: &mut [f32],
     held: &mut [f32],
     scratch: &mut [f32],
@@ -184,19 +151,26 @@ fn shape_magnitudes(
 /// is where inside the frame the weight sits. The overlap-add is normalised by
 /// the summed square rather than by an assumed constant, which is what makes a
 /// window other than the textbook one reconstruct at all.
-fn skewed_window(n: usize, skew: f32) -> Vec<f32> {
-    let base = fft::hann(n);
-    if (skew - 0.5).abs() < 1e-4 || n <= 1 {
-        return base;
+/// Fill `out` with the window, without allocating.
+///
+/// The allocating version below is the convenience; this is the one the
+/// streaming engine calls, because it runs in the audio callback and a returned
+/// `Vec` there is a dropout.
+pub(crate) fn write_skewed_window(out: &mut Vec<f32>, n: usize, skew: f32) {
+    out.clear();
+    if n <= 1 {
+        out.extend(std::iter::repeat(1.0).take(n));
+        return;
     }
+    // One formula for both cases: at a skew of one half the exponent is
+    // exactly one and this is the plain Hann `fft::hann` returns, bit for bit.
     let k = 4f32.powf(skew * 2.0 - 1.0);
-    (0..n)
-        .map(|i| {
-            let t = (i as f32 / (n - 1) as f32).powf(k);
-            0.5 - 0.5 * (TWO_PI * t).cos()
-        })
-        .collect()
+    for i in 0..n {
+        let t = (i as f32 / (n - 1) as f32).powf(k);
+        out.push(0.5 - 0.5 * (TWO_PI * t).cos());
+    }
 }
+
 
 /// Settings for one run. See [`crate::stretch::VocoderParams`] for what each of
 /// the deliberately-wrong ones does to the sound.
@@ -254,212 +228,90 @@ impl Default for Settings {
 /// `ch` says which channel this is, which the pan control needs and nothing
 /// else does. A mono run is channel zero and pans nowhere.
 pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
-    stretch_channel(input, ratio, s, 0, 1)
+    stretch(input, 1, ratio, s)
 }
 
-fn stretch_channel(input: &[f32], ratio: f32, s: Settings, ch: usize, channels: usize) -> Vec<f32> {
-    let ratio = ratio.clamp(0.01, 100.0);
-    let n = s.fft_size.max(64).next_power_of_two();
-    // How often a frame is taken and laid back down. Density and overlap are the
-    // grain cloud's controls; a frame is this engine's window.
-    let hs = crate::stretch::hop_frames(&s.grain, n, s.sample_rate.max(1) as f32).max(1);
-    if input.len() < n {
-        // Too short to transform. Nothing useful to say about its spectrum.
-        return input.to_vec();
+
+/// The vocoder's settings for a block of streaming parameters.
+///
+/// `Settings` and `VocoderParams` are the same knobs seen from two places — the
+/// engine's own view and the document's. This is the single conversion between
+/// them, so a field added to one and forgotten in the other fails to compile
+/// here rather than going quietly missing at runtime.
+pub fn settings_for(p: &crate::stream::StretchParams) -> Settings {
+    Settings {
+        fft_size: crate::stretch::fft_size_for(p.vocoder.window_ms, p.sample_rate),
+        phase_lock: p.vocoder.phase_lock,
+        freq_trust: p.vocoder.freq_trust,
+        phase_spread: p.vocoder.phase_spread,
+        peak_width: p.vocoder.peak_width.clamp(1, 32) as usize,
+        lock_width: p.vocoder.lock_width,
+        mag_freeze: p.vocoder.mag_freeze,
+        mag_blur: p.vocoder.mag_blur,
+        mag_gate: p.vocoder.mag_gate,
+        stereo_link: p.vocoder.stereo_link,
+        grain: p.grain,
+        sample_rate: p.sample_rate,
     }
+}
 
-    let out_len = ((input.len() as f64) * ratio as f64).round() as usize;
-    let win = skewed_window(n, s.grain.envelope);
-
-    let mut out = vec![0f32; out_len + n];
-    let mut norm = vec![0f32; out_len + n];
-
-    let mut re = vec![0f32; n];
-    let mut im = vec![0f32; n];
-    let bins = n / 2 + 1;
-
-    let mut prev_phase = vec![0f32; bins];
-    let mut sum_phase = vec![0f32; bins];
-    let mut mag = vec![0f32; bins];
-    let mut held = vec![0f32; bins];
-    let mut scratch = vec![0f32; bins];
-    let mut phase = vec![0f32; bins];
-    let mut peak_idx: Vec<usize> = Vec::with_capacity(bins / 4);
-
-    // Analysis reads slower than synthesis writes when stretching. Kept as a
-    // float and rounded per frame, so a fractional hop does not accumulate
-    // drift over a long file.
-    //
-    // `scan` multiplies it, which is what severs the read pointer from the
-    // ratio. At zero the pointer never moves at all and every output frame is
-    // resynthesised from the same instant; negative sweeps back from the end.
-    let skew = s.grain.scan.clamp(-4.0, 4.0) as f64;
-    let advance = (hs as f64 / ratio as f64) * skew;
-    let backwards = skew < 0.0;
-    let span = input.len().saturating_sub(n).max(1);
-    let mut read = if backwards { span as f64 } else { 0f64 };
-    let mut prev_start: isize = -1;
-    let mut write = 0usize;
-    let mut first = true;
-    let mut index = 0u64;
-
-    // Where the grain controls reach a frequency-domain engine. Position
-    // jitter moves where a frame reads from; size jitter varies the spacing
-    // frames are laid back down at, which is the nearest thing a fixed
-    // transform has to a varying window.
-    let g = s.grain;
-    let sr = s.sample_rate.max(1) as f32;
-    let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
-
-    while write < out_len {
-        let jitter = if pos_jitter > 0.0 {
-            (pos_jitter * g.rand_bipolar(index, g.salt(5))) as f64
-        } else {
-            0.0
-        };
-        let mut start = (read + jitter).max(0.0).round() as usize;
-        if start + n > input.len() {
-            // At the nominal hop, running out of source is the end of the job.
-            // Off it, the read pointer is sweeping at a speed that has nothing
-            // to do with the output length, so wrap and keep going rather than
-            // trail off into padding.
-            if (skew - 1.0).abs() < 1e-6 && !s.grain.wrap {
-                break;
-            }
-            read = read.rem_euclid(span as f64);
-            start = read.round() as usize;
-            if start + n > input.len() {
-                break;
-            }
-            // A wrap is a discontinuity; a hop measured across it would be a
-            // large negative number and the phase estimate nonsense.
-            prev_start = -1;
-        }
-        let start = start.min(input.len().saturating_sub(n));
-
-        for i in 0..n {
-            // Reversed, the frame is read back to front before it is
-            // transformed — which is the only place a frequency-domain engine
-            // can honour "backwards" at all.
-            let j = if g.reverse { n - 1 - i } else { i };
-            re[i] = input[start + j] * win[i];
-            im[i] = 0.0;
-        }
-        if !fft(&mut re, &mut im) {
-            break;
-        }
-
-        for k in 0..bins {
-            mag[k] = (re[k] * re[k] + im[k] * im[k]).sqrt();
-            phase[k] = im[k].atan2(re[k]);
-        }
-        shape_magnitudes(&mut mag, &mut held, &mut scratch, &s, first);
-
-        // The true analysis hop for this frame, which is what the heterodyne
-        // is measured against — equation 5.10 uses α(n) − α(n−1), not a
-        // nominal value. A zero hop — which a frozen read pointer produces —
-        // has no deviation to measure and would divide by nothing.
-        let ha = if prev_start < 0 { hs as f32 } else { (start as isize - prev_start) as f32 };
-        let ha = if ha.abs() < 1e-6 { hs as f32 } else { ha };
-
-        if first {
-            sum_phase.copy_from_slice(&phase);
-            first = false;
-        } else if s.phase_lock {
-            peaks(&mag, s.peak_width, &mut peak_idx);
-            if peak_idx.is_empty() {
-                propagate_all(&phase, &prev_phase, &mut sum_phase, n, ha, hs as f32, &s);
-            } else {
-                // Every peak advances on its own instantaneous frequency; the
-                // bins around it keep the phase relationship they had in the
-                // analysis frame. So a partial moves as one object instead of
-                // dissolving into its own skirts.
-                let trust = s.freq_trust.clamp(0.0, 4.0);
-                let spread = s.phase_spread.clamp(0.0, 4.0);
-                let width = s.lock_width.clamp(0.0, 4.0);
-                for (p, &k) in peak_idx.iter().enumerate() {
-                    let omega = TWO_PI * k as f32 / n as f32;
-                    let delta = wrap(phase[k] - prev_phase[k] - ha * omega);
-                    let freq = omega + (delta / ha) * trust;
-                    sum_phase[k] = wrap(sum_phase[k] + hs as f32 * freq);
-
-                    // Halfway to each neighbouring peak, scaled. Past one the
-                    // regions overlap and a peak imposes its phase on ground
-                    // that belongs to the next one along.
-                    let mid_lo = if p == 0 { 0 } else { (peak_idx[p - 1] + k + 1) / 2 };
-                    let mid_hi =
-                        if p + 1 == peak_idx.len() { bins } else { (k + peak_idx[p + 1] + 1) / 2 };
-                    let lo = k.saturating_sub((((k - mid_lo) as f32) * width) as usize);
-                    let hi = (k + (((mid_hi - k) as f32) * width) as usize).min(bins);
-                    for j in lo..hi {
-                        if j != k {
-                            sum_phase[j] = wrap(sum_phase[k] + (phase[j] - phase[k]) * spread);
-                        }
-                    }
-                }
-            }
-        } else {
-            propagate_all(&phase, &prev_phase, &mut sum_phase, n, ha, hs as f32, &s);
-        }
-
-        // Pitch jitter and drift, per frame. Scaling the phase advance
-        // transposes what the frame will resynthesise as.
-        let rate = crate::stretch::grain_rate(&g, index, write as f32 / sr);
-        if (rate - 1.0).abs() > 1e-6 {
-            for k in 0..bins {
-                sum_phase[k] = wrap(sum_phase[k] * rate);
-            }
-        }
-
-        prev_phase.copy_from_slice(&phase);
-        prev_start = start as isize;
-
-        // Rebuild the spectrum: magnitudes as analysed, phases as propagated,
-        // and the upper half mirrored so the inverse transform is real.
-        for k in 0..bins {
-            re[k] = mag[k] * sum_phase[k].cos();
-            im[k] = mag[k] * sum_phase[k].sin();
-        }
-        for k in bins..n {
-            re[k] = re[n - k];
-            im[k] = -im[n - k];
-        }
-        im[0] = 0.0;
-        if n % 2 == 0 {
-            im[n / 2] = 0.0;
-        }
-        ifft(&mut re, &mut im);
-
-        let (gl, gr) = crate::grain::pan_gains(&g, index, channels);
-        let pan = if ch == 0 { gl } else { gr };
-        for i in 0..n {
-            if write + i < out.len() {
-                out[write + i] += re[i] * win[i] * pan;
-                // The same window is applied going in and coming out, so the
-                // overlap sums to w² rather than w. Accumulating it rather
-                // than assuming a constant keeps any overlap factor correct.
-                norm[write + i] += win[i] * win[i];
-            }
-        }
-
-        read += advance;
-        write += crate::stretch::grain_size(&g, index, hs).max(1);
-        index += 1;
+/// Advance the synthesis phase by one hop — locked to the peaks, or bin by bin.
+///
+/// Pulled out of the render loop so the streaming engine runs this and not a
+/// copy of it. A second implementation of phase propagation is a second sound,
+/// and the difference would only show up after a long stretch, which is the one
+/// case nobody checks by ear.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn propagate(
+    phase: &[f32],
+    prev: &[f32],
+    sum: &mut [f32],
+    mag: &[f32],
+    peak_idx: &mut Vec<usize>,
+    n: usize,
+    ha: f32,
+    hs: f32,
+    s: &Settings,
+) {
+    let bins = phase.len();
+    if !s.phase_lock {
+        propagate_all(phase, prev, sum, n, ha, hs, s);
+        return;
     }
+    peaks(mag, s.peak_width.clamp(1, 32), peak_idx);
+    if peak_idx.is_empty() {
+        propagate_all(phase, prev, sum, n, ha, hs, s);
+        return;
+    }
+    // Every peak advances on its own instantaneous frequency; the bins around
+    // it keep the phase relationship they had in the analysis frame. So a
+    // partial moves as one object instead of dissolving into its own skirts.
+    let trust = s.freq_trust.clamp(0.0, 4.0);
+    let spread = s.phase_spread.clamp(0.0, 4.0);
+    let width = s.lock_width.clamp(0.0, 4.0);
+    for (p, &k) in peak_idx.iter().enumerate() {
+        let omega = TWO_PI * k as f32 / n as f32;
+        let delta = wrap(phase[k] - prev[k] - ha * omega);
+        let freq = omega + (delta / ha) * trust;
+        sum[k] = wrap(sum[k] + hs * freq);
 
-    let floor = norm.iter().fold(0f32, |m, &x| m.max(x)) * NORM_FLOOR;
-    for i in 0..out.len() {
-        let g = norm[i].max(floor);
-        if g > 1e-6 {
-            out[i] /= g;
+        // Halfway to each neighbouring peak, scaled. Past one the regions
+        // overlap and a peak imposes its phase on ground that belongs to the
+        // next one along.
+        let mid_lo = if p == 0 { 0 } else { (peak_idx[p - 1] + k + 1) / 2 };
+        let mid_hi = if p + 1 == peak_idx.len() { bins } else { (k + peak_idx[p + 1] + 1) / 2 };
+        let lo = k.saturating_sub((((k - mid_lo) as f32) * width) as usize);
+        let hi = (k + (((mid_hi - k) as f32) * width) as usize).min(bins);
+        for j in lo..hi {
+            if j != k {
+                sum[j] = wrap(sum[k] + (phase[j] - phase[k]) * spread);
+            }
         }
     }
-    out.truncate(out_len);
-    out
 }
 
 /// Equations 5.10 to 5.12, applied to every bin independently.
-fn propagate_all(
+pub(crate) fn propagate_all(
     phase: &[f32],
     prev: &[f32],
     sum: &mut [f32],
@@ -489,263 +341,90 @@ fn propagate_all(
 /// Channels are transformed independently by default. That is the usual choice
 /// and it is worth knowing what it costs: two channels drift in phase against
 /// each other, which widens a stereo image and can hollow a centred source.
-/// `stereo_link` is the other answer — see [`stretch_linked`]. Neither is right
+/// `stereo_link` is the other answer. Neither is right
 /// for every source, so both are here and the trade is stated rather than hidden.
+/// Stretch interleaved audio.
+///
+/// A loop over [`crate::vstream::VocoderStream`], which is the same code the
+/// audio callback runs. There used to be two implementations of this engine —
+/// one that took a buffer and returned a buffer, and one that filled blocks —
+/// and they agreed to about -80 dB, which is close enough to hear nothing and
+/// far enough to mean that "what you hear is what you export" was a claim
+/// rather than a fact. Now there is one.
+///
+/// Channels are transformed independently by default. That is the usual choice
+/// and it is worth knowing what it costs: two channels drift in phase against
+/// each other, which widens a stereo image and can hollow a centred source.
+/// `stereo_link` is the other answer — one correction taken from the channel
+/// sum and applied to all of them. Neither is right for every source, so both
+/// are here and the trade is stated rather than hidden.
 pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f32> {
     let channels = channels.max(1);
     if input.is_empty() {
         return Vec::new();
     }
-    if channels == 1 {
-        return stretch_channel(input, ratio, s, 0, 1);
-    }
-    if s.stereo_link {
-        return stretch_linked(input, channels, ratio, s);
-    }
-
-    let frames = input.len() / channels;
-    let mut outs: Vec<Vec<f32>> = Vec::with_capacity(channels);
-    let mut chan = vec![0f32; frames];
-    for c in 0..channels {
-        for f in 0..frames {
-            chan[f] = input[f * channels + c];
-        }
-        outs.push(stretch_channel(&chan, ratio, s, c, channels));
-    }
-
-    let out_frames = outs.iter().map(|o| o.len()).min().unwrap_or(0);
-    let mut out = vec![0f32; out_frames * channels];
-    for (c, o) in outs.iter().enumerate() {
-        for f in 0..out_frames {
-            out[f * channels + c] = o[f];
-        }
-    }
-    out
-}
-
-/// Stretch every channel against one shared phase estimate.
-///
-/// The independent version is not wrong, it is answering a different question.
-/// Each channel gets the best phase for itself, and nothing is looking after
-/// the relationship *between* them — which is where a stereo image lives. Two
-/// channels of the same centred source drift apart, and the middle of the
-/// picture thins out.
-///
-/// So: the channels are summed to a reference, the propagation runs once on
-/// that, and every channel receives the same *correction* rather than the same
-/// phase. A channel keeps whatever it was doing relative to the reference, so
-/// the difference between left and right survives the stretch untouched. The
-/// sum is free — the transform is linear, so adding the spectra is adding the
-/// signals.
-///
-/// The cost is the mirror of the other one: two genuinely unrelated channels
-/// are now told to agree about a phase neither of them measured. That is why
-/// this is a switch and not the default.
-fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f32> {
+    let in_frames = input.len() / channels;
     let ratio = ratio.clamp(0.01, 100.0);
+    let want = ((in_frames as f64) * ratio as f64).round() as usize;
+    if want == 0 {
+        return Vec::new();
+    }
+
+    // `Settings` names the transform size outright while the streaming
+    // parameters name the window it came from. The map between them is exact
+    // in this direction because the size is always a power of two inside the
+    // range `fft_size_for` clamps to, so it round-trips.
     let n = s.fft_size.max(64).next_power_of_two();
-    let hs = crate::stretch::hop_frames(&s.grain, n, s.sample_rate.max(1) as f32).max(1);
-    let frames = input.len() / channels;
-    if frames < n {
+    if in_frames < n {
+        // Too short to transform — there is nothing useful to say about its
+        // spectrum, so it is handed back as it came. The caller pads or
+        // truncates to the length the ratio promised; this is not the place to
+        // invent audio that was never analysed.
         return input.to_vec();
     }
+    let window_ms = (n as f32) * 1000.0 / s.sample_rate.max(1) as f32;
+    let p = crate::stream::StretchParams {
+        ratio,
+        window_ms,
+        sample_rate: s.sample_rate,
+        wsola: crate::stretch::WsolaParams::default(),
+        vocoder: crate::stretch::VocoderParams {
+            window_ms,
+            phase_lock: s.phase_lock,
+            freq_trust: s.freq_trust,
+            phase_spread: s.phase_spread,
+            peak_width: s.peak_width as u32,
+            lock_width: s.lock_width,
+            mag_freeze: s.mag_freeze,
+            mag_blur: s.mag_blur,
+            mag_gate: s.mag_gate,
+            stereo_link: s.stereo_link,
+        },
+        grain: s.grain,
+    };
 
-    let out_frames = ((frames as f64) * ratio as f64).round() as usize;
-    let win = skewed_window(n, s.grain.envelope);
-    let bins = n / 2 + 1;
-
-    let mut out = vec![0f32; (out_frames + n) * channels];
-    let mut norm = vec![0f32; out_frames + n];
-
-    // Per channel, because each keeps its own magnitudes and its own phase.
-    let mut re = vec![vec![0f32; n]; channels];
-    let mut im = vec![vec![0f32; n]; channels];
-    let mut mag = vec![vec![0f32; bins]; channels];
-    let mut phase = vec![vec![0f32; bins]; channels];
-    let mut held = vec![vec![0f32; bins]; channels];
-    let mut scratch = vec![0f32; bins];
-
-    // The reference: the channels summed. One phase estimate for all of them.
-    let mut ref_mag = vec![0f32; bins];
-    let mut ref_phase = vec![0f32; bins];
-    let mut prev_ref = vec![0f32; bins];
-    let mut sum_phase = vec![0f32; bins];
-    let mut corr = vec![0f32; bins];
-    let mut peak_idx: Vec<usize> = Vec::with_capacity(bins / 4);
-
-    let skew = s.grain.scan.clamp(-4.0, 4.0) as f64;
-    let advance = (hs as f64 / ratio as f64) * skew;
-    let backwards = skew < 0.0;
-    let span = frames.saturating_sub(n).max(1);
-    let mut read = if backwards { span as f64 } else { 0f64 };
-    let mut prev_start: isize = -1;
-    let mut write = 0usize;
-    let mut first = true;
-    let mut index = 0u64;
-
-    // The same grain controls the independent path honours, so linking the
-    // channels does not quietly switch half the panel off.
-    let g = s.grain;
-    let sr = s.sample_rate.max(1) as f32;
-    let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
-
-    while write < out_frames {
-        let jitter = if pos_jitter > 0.0 {
-            (pos_jitter * g.rand_bipolar(index, g.salt(5))) as f64
-        } else {
-            0.0
-        };
-        let mut start = (read + jitter).max(0.0).round() as usize;
-        if start + n > frames {
-            if (skew - 1.0).abs() < 1e-6 && !s.grain.wrap {
-                break;
-            }
-            read = read.rem_euclid(span as f64);
-            start = read.round() as usize;
-            if start + n > frames {
-                break;
-            }
-            prev_start = -1;
-        }
-        let start = start.min(frames.saturating_sub(n));
-
-        let mut ok = true;
-        for c in 0..channels {
-            for i in 0..n {
-                re[c][i] = input[(start + i) * channels + c] * win[i];
-                im[c][i] = 0.0;
-            }
-            if !fft(&mut re[c], &mut im[c]) {
-                ok = false;
-                break;
-            }
-            for k in 0..bins {
-                mag[c][k] = (re[c][k] * re[c][k] + im[c][k] * im[c][k]).sqrt();
-                phase[c][k] = im[c][k].atan2(re[c][k]);
-            }
-            shape_magnitudes(&mut mag[c], &mut held[c], &mut scratch, &s, first);
-        }
-        if !ok {
-            break;
-        }
-
-        // The mid signal's spectrum, without a second transform.
-        for k in 0..bins {
-            let mut sr = 0.0;
-            let mut si = 0.0;
-            for c in 0..channels {
-                sr += re[c][k];
-                si += im[c][k];
-            }
-            ref_mag[k] = (sr * sr + si * si).sqrt();
-            ref_phase[k] = si.atan2(sr);
-        }
-
-        let ha = if prev_start < 0 { hs as f32 } else { (start as isize - prev_start) as f32 };
-        let ha = if ha.abs() < 1e-6 { hs as f32 } else { ha };
-
-        if first {
-            sum_phase.copy_from_slice(&ref_phase);
-            first = false;
-        } else if s.phase_lock {
-            peaks(&ref_mag, s.peak_width, &mut peak_idx);
-            if peak_idx.is_empty() {
-                propagate_all(&ref_phase, &prev_ref, &mut sum_phase, n, ha, hs as f32, &s);
-            } else {
-                let trust = s.freq_trust.clamp(0.0, 4.0);
-                let spread = s.phase_spread.clamp(0.0, 4.0);
-                let width = s.lock_width.clamp(0.0, 4.0);
-                for (p, &k) in peak_idx.iter().enumerate() {
-                    let omega = TWO_PI * k as f32 / n as f32;
-                    let delta = wrap(ref_phase[k] - prev_ref[k] - ha * omega);
-                    let freq = omega + (delta / ha) * trust;
-                    sum_phase[k] = wrap(sum_phase[k] + hs as f32 * freq);
-
-                    let mid_lo = if p == 0 { 0 } else { (peak_idx[p - 1] + k + 1) / 2 };
-                    let mid_hi =
-                        if p + 1 == peak_idx.len() { bins } else { (k + peak_idx[p + 1] + 1) / 2 };
-                    let lo = k.saturating_sub((((k - mid_lo) as f32) * width) as usize);
-                    let hi = (k + (((mid_hi - k) as f32) * width) as usize).min(bins);
-                    for j in lo..hi {
-                        if j != k {
-                            sum_phase[j] = wrap(sum_phase[k] + (ref_phase[j] - ref_phase[k]) * spread);
-                        }
-                    }
-                }
-            }
-        } else {
-            propagate_all(&ref_phase, &prev_ref, &mut sum_phase, n, ha, hs as f32, &s);
-        }
-
-        // What the stretch did to the reference, and therefore what every
-        // channel is moved by. A channel's offset from the reference is left
-        // exactly as measured, and that offset is the stereo image.
-        let rate = crate::stretch::grain_rate(&g, index, write as f32 / sr);
-        if (rate - 1.0).abs() > 1e-6 {
-            for k in 0..bins {
-                sum_phase[k] = wrap(sum_phase[k] * rate);
-            }
-        }
-        for k in 0..bins {
-            corr[k] = wrap(sum_phase[k] - ref_phase[k]);
-        }
-
-        prev_ref.copy_from_slice(&ref_phase);
-        prev_start = start as isize;
-
-        let (gl, gr) = crate::grain::pan_gains(&g, index, channels);
-        for c in 0..channels {
-            let pan = if c == 0 { gl } else { gr };
-            for k in 0..bins {
-                let p = phase[c][k] + corr[k];
-                re[c][k] = mag[c][k] * p.cos();
-                im[c][k] = mag[c][k] * p.sin();
-            }
-            for k in bins..n {
-                re[c][k] = re[c][n - k];
-                im[c][k] = -im[c][n - k];
-            }
-            im[c][0] = 0.0;
-            if n % 2 == 0 {
-                im[c][n / 2] = 0.0;
-            }
-            ifft(&mut re[c], &mut im[c]);
-
-            for i in 0..n {
-                let f = write + i;
-                if f < out_frames + n {
-                    out[f * channels + c] += re[c][i] * win[i] * pan;
-                }
-            }
-        }
-        for i in 0..n {
-            let f = write + i;
-            if f < out_frames + n {
-                norm[f] += win[i] * win[i];
-            }
-        }
-
-        read += advance;
-        write += crate::stretch::grain_size(&g, index, hs).max(1);
-        index += 1;
+    // Driven in chunks rather than one enormous block, so a hundred-times
+    // render does not put a second copy of the output in memory. The block size
+    // does not affect the audio; there is a test for that.
+    const CHUNK: usize = 1 << 16;
+    let mut vs = crate::vstream::VocoderStream::new(CHUNK, channels);
+    vs.seek(0, in_frames, &p);
+    let mut out = vec![0.0; want * channels];
+    let mut at = 0usize;
+    while at < want {
+        let take = CHUNK.min(want - at);
+        vs.render(&mut out[at * channels..(at + take) * channels], channels, input, &p);
+        at += take;
     }
-
-    let floor = norm.iter().fold(0f32, |m, &x| m.max(x)) * NORM_FLOOR;
-    for f in 0..out_frames + n {
-        let g = norm[f].max(floor);
-        if g > 1e-6 {
-            for c in 0..channels {
-                out[f * channels + c] /= g;
-            }
-        }
-    }
-    out.truncate(out_frames * channels);
     out
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vstream::ifft;
+    use audio_core::fft::fft;
 
     fn sine(freq: f32, secs: f32, rate: f32) -> Vec<f32> {
         let n = (secs * rate) as usize;

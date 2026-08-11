@@ -644,6 +644,7 @@ fn wsola(
         window_ms,
         sample_rate,
         wsola: params,
+        vocoder: VocoderParams::default(),
         grain: *g,
     };
 

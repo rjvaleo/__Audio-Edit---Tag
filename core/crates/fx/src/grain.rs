@@ -259,6 +259,8 @@ pub struct StreamParams {
     pub algorithm: crate::stretch::Algorithm,
     /// WSOLA's own settings, for when that is the engine running.
     pub wsola: crate::stretch::WsolaParams,
+    /// The vocoder's own settings, likewise.
+    pub vocoder: crate::stretch::VocoderParams,
 }
 
 impl StreamParams {
@@ -274,6 +276,7 @@ impl StreamParams {
             grain: Grain::default(),
             algorithm: crate::stretch::Algorithm::Granular,
             wsola: crate::stretch::WsolaParams::default(),
+            vocoder: crate::stretch::VocoderParams::default(),
         }
     }
 }
@@ -394,6 +397,8 @@ pub fn grains(
         grain: *g,
         algorithm: crate::stretch::Algorithm::Granular,
         wsola: crate::stretch::WsolaParams::default(),
+
+        vocoder: crate::stretch::VocoderParams::default(),
     };
     let p = sp.plan();
 

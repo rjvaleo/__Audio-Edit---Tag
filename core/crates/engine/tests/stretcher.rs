@@ -63,6 +63,32 @@ fn rms(v: &[f32]) -> f32 {
     (v.iter().map(|x| x * x).sum::<f32>() / v.len().max(1) as f32).sqrt()
 }
 
+/// Every engine that streams has to sound different from the others, or the
+/// picker is choosing between things that are secretly the same.
+#[test]
+fn each_live_engine_sounds_like_itself() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 2, channels), channels };
+    let n = src.frames();
+    let live = [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder];
+    let outs: Vec<Vec<f32>> = live
+        .iter()
+        .map(|a| run(&src, &params(n, *a, 2.0, 0.0), 512, n))
+        .collect();
+    for i in 0..live.len() {
+        assert!(rms(&outs[i]) > 1e-3, "{:?} produced nothing", live[i]);
+        for j in i + 1..live.len() {
+            let d: f32 = outs[i]
+                .iter()
+                .zip(&outs[j])
+                .map(|(a, b)| (a - b).abs())
+                .sum::<f32>()
+                / outs[i].len() as f32;
+            assert!(d > 1e-4, "{:?} and {:?} produced the same audio", live[i], live[j]);
+        }
+    }
+}
+
 #[test]
 fn the_engine_choice_reaches_the_callback() {
     let channels = 2;
@@ -87,17 +113,21 @@ fn what_the_callback_plays_is_what_the_file_would_hold() {
     let ratio = 2.0f32;
     let want = ((n as f32) * ratio) as usize;
 
-    let live = run(&src, &params(n, Algorithm::Wsola, ratio, 0.0), 512, want);
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder] {
+        let live = run(&src, &params(n, alg, ratio, 0.0), 512, want);
+        let offline = fx::Stretch { ratio, algorithm: alg, ..Default::default() }
+            .process(&src.samples, channels, SR);
 
-    let offline = fx::Stretch { ratio, algorithm: Algorithm::Wsola, ..Default::default() }
-        .process(&src.samples, channels, SR);
-
-    let worst = live
-        .iter()
-        .zip(&offline)
-        .map(|(a, b)| (a - b).abs())
-        .fold(0f32, f32::max);
-    assert!(worst < 1e-4, "live and export differ by {worst:.2e}");
+        let worst = live
+            .iter()
+            .zip(&offline)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
+        // Not "close enough to hear nothing" — the same code. Both paths drive
+        // the same streamer, so anything above float noise means one of them
+        // is feeding it differently.
+        assert!(worst < 1e-6, "{alg:?}: live and export differ by {worst:.2e}");
+    }
 }
 
 #[test]
@@ -160,12 +190,12 @@ fn engines_that_do_not_stream_yet_still_make_sound() {
     let channels = 2;
     let src = Source { samples: busy(SR as usize / 4, channels), channels };
     let n = src.frames();
-    for alg in [Algorithm::Vocoder, Algorithm::Pvsola, Algorithm::Hybrid] {
+    for alg in [Algorithm::Pvsola, Algorithm::Hybrid] {
         assert!(!engine::stretcher::is_live(alg), "{alg:?} claims to stream");
         let out = run(&src, &params(n, alg, 2.0, 0.0), 512, n);
         assert!(rms(&out) > 1e-3, "{alg:?} fell back to silence");
     }
-    for alg in [Algorithm::Granular, Algorithm::Wsola] {
+    for alg in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder] {
         assert!(engine::stretcher::is_live(alg), "{alg:?} should stream");
     }
 }
