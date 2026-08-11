@@ -3,6 +3,7 @@
 //! Every one of these rewrites the clip list and nothing else. No audio is read
 //! or written here — that only happens in [`crate::render`].
 
+use crate::analyse::StripMode;
 use crate::{Clip, EditList, Fade, FadeShape, Range};
 
 impl EditList {
@@ -64,8 +65,85 @@ impl EditList {
     }
 
     /// Replace `range` with silence, keeping the overall length.
+    ///
+    /// Peak's Silence command. It overwrites; [`insert_silence`](Self::insert_silence)
+    /// is the one that makes the document longer.
     pub fn silence(&mut self, range: Range) {
-        self.for_each_clip_in(range, |c| c.gain = 0.0);
+        self.for_each_clip_in(range, |c| {
+            c.silent = true;
+            c.gain = 0.0;
+        });
+    }
+
+    /// Keep `range` and discard everything else.
+    ///
+    /// Peak's Crop. The tail goes first: cutting the head would move the end of
+    /// the selection out from under the second cut.
+    pub fn crop(&mut self, range: Range) {
+        if range.is_empty() {
+            return;
+        }
+        let total = self.base_frames();
+        if range.start >= total {
+            return;
+        }
+        let end = range.end.min(total);
+        self.cut(Range::new(end, total));
+        self.cut(Range::new(0, range.start));
+    }
+
+    /// Lay down `count` more copies of `range` immediately after it.
+    ///
+    /// Peak's Duplicate, which it describes as the way to make four bars of
+    /// drums out of one. Peak takes its copies from the clipboard; a selection
+    /// is the same idea without a clipboard to keep in step, and it is what the
+    /// documented use of the command actually wants.
+    ///
+    /// Everything after the selection is pushed later in time.
+    pub fn duplicate(&mut self, range: Range, count: u32) {
+        if range.is_empty() || count == 0 {
+            return;
+        }
+        let total = self.base_frames();
+        if range.start >= total {
+            return;
+        }
+        let end = range.end.min(total);
+        self.split_at(range.start);
+        self.split_at(end);
+        let Some((first, last)) = self.clip_span(Range::new(range.start, end)) else {
+            return;
+        };
+        let copy: Vec<Clip> = self.clips[first..=last].to_vec();
+        let mut at = last + 1;
+        for _ in 0..count {
+            for c in &copy {
+                self.clips.insert(at, *c);
+                at += 1;
+            }
+        }
+    }
+
+    /// Insert `frames` of silence at `pos`, pushing everything after it later.
+    ///
+    /// Peak's Insert Silence. Ours had no equivalent — [`silence`](Self::silence)
+    /// overwrites — so there was no way to lengthen a document at all.
+    pub fn insert_silence(&mut self, pos: u64, frames: u64) {
+        if frames == 0 {
+            return;
+        }
+        let total = self.base_frames();
+        if pos >= total {
+            // Past the end lands at the end rather than being dropped, so a
+            // pause can be added after the last sound.
+            self.clips.push(Clip::silence(frames));
+            return;
+        }
+        let at = match self.split_at(pos) {
+            Some(i) => i,
+            None => self.clips.len(),
+        };
+        self.clips.insert(at, Clip::silence(frames));
     }
 
     /// Multiply the gain of everything in `range` by `db` decibels.
@@ -156,6 +234,89 @@ impl EditList {
         }
         let target = 10f32.powf(target_db / 20.0);
         let factor = target / measured_peak;
+        for c in &mut self.clips {
+            c.gain *= factor;
+        }
+    }
+
+    /// Apply what [`crate::analyse::silent_runs`] found.
+    ///
+    /// Peak's Strip Silence, which can either flatten the quiet parts or take
+    /// them out. The runs are applied **back to front**: removing one shortens
+    /// the timeline, and every run after it would then be pointing a little
+    /// further along than it meant to.
+    pub fn strip_silence(&mut self, runs: &[Range], mode: StripMode) {
+        let mut runs: Vec<Range> = runs.iter().copied().filter(|r| !r.is_empty()).collect();
+        runs.sort_by_key(|r| r.start);
+        for r in runs.into_iter().rev() {
+            match mode {
+                StripMode::Silence => self.silence(r),
+                StripMode::Remove => self.cut(r),
+            }
+        }
+    }
+
+    /// Take out a click and close the join so it cannot step.
+    ///
+    /// Peak repairs a click by redrawing the damaged samples, with the Pencil
+    /// Tool or by interpolating across them. A clip list has no way to write a
+    /// sample, so this removes the damage instead and ramps the two edges into
+    /// the join over `taper` frames. A click is a handful of samples; losing a
+    /// fraction of a millisecond of a recording is inaudible, and the taper is
+    /// what makes the result *provably* free of a step rather than merely
+    /// smaller than it was.
+    ///
+    /// The caller is expected to have snapped `range` to zero crossings first,
+    /// which is what keeps the taper as short as it is.
+    pub fn repair_click(&mut self, range: Range, taper: u64) {
+        if range.is_empty() {
+            return;
+        }
+        let total = self.base_frames();
+        if range.start >= total {
+            return;
+        }
+        self.cut(range);
+        if taper == 0 {
+            return;
+        }
+        let join = range.start;
+        let now = self.base_frames();
+        if join > 0 {
+            let from = join.saturating_sub(taper);
+            self.fade_out(Range::new(from, join), join - from, FadeShape::Linear);
+        }
+        if join < now {
+            let to = (join + taper).min(now);
+            self.fade_in(Range::new(join, to), to - join, FadeShape::Linear);
+        }
+    }
+
+    /// Scale the document so its average level sits at `target_db`, without
+    /// letting any peak pass `ceiling_db`.
+    ///
+    /// Both measurements come from the caller, for the same reason
+    /// [`normalize`](Self::normalize) takes one: this crate does not read audio.
+    ///
+    /// **Where this differs from Peak.** Peak reaches an RMS target it cannot
+    /// otherwise hit by soft-clipping into the ceiling, and says so. Here the
+    /// ceiling wins outright and the result comes out quieter than asked. That
+    /// is the honest half of the same bargain — nothing is distorted to make a
+    /// number — and the channel maximiser is already there for anyone who wants
+    /// the other half.
+    pub fn normalize_rms(&mut self, measured_rms: f32, measured_peak: f32, target_db: f32, ceiling_db: f32) {
+        if measured_rms <= 0.0 || !measured_rms.is_finite() {
+            return; // silence has no average to raise
+        }
+        let target = 10f32.powf(target_db / 20.0);
+        let ceiling = 10f32.powf(ceiling_db / 20.0);
+        let mut factor = target / measured_rms;
+        if measured_peak > 0.0 && measured_peak * factor > ceiling {
+            factor = ceiling / measured_peak;
+        }
+        if !factor.is_finite() {
+            return;
+        }
         for c in &mut self.clips {
             c.gain *= factor;
         }

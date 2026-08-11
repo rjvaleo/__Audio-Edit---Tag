@@ -103,6 +103,7 @@
       <div class="tabbar hidden" id="tabBar"></div>
       <div class="vsep"></div>
       <button class="ghost" data-op="cut">Cut</button>
+      <button class="ghost" data-op="crop">Crop</button>
       <button class="ghost" data-op="silence">Silence</button>
       <button class="ghost" data-op="fadeIn">Fade in</button>
       <button class="ghost" data-op="fadeOut">Fade out</button>
@@ -110,6 +111,17 @@
       <select class="mini" id="fadeShape" title="Fade curve">
         <option value="equalPower">equal power</option>
         <option value="linear">linear</option>
+      </select>
+      <div class="vsep"></div>
+      <!-- Where an edit lands. On by default, as Peak's Auto Snap is: a cut
+           that does not start and end at the centre line is a click. -->
+      <select class="mini" id="snapUnit"
+              title="Snap edits to: nothing, the nearest zero crossing, or a fixed grid">
+        <option value="zero">snap: zero</option>
+        <option value="off">snap: off</option>
+        <option value="cd">snap: CD</option>
+        <option value="ps2">snap: PS2</option>
+        <option value="xbox">snap: Xbox</option>
       </select>
       <div class="vsep"></div>
       <button class="ghost" data-op="marker">Marker</button>
@@ -398,6 +410,22 @@
       <button class="ghost" id="pickerUp">Up one level</button>
       <div class="spacer"></div>
       <button class="primary" id="pickerChoose">Use this folder</button>
+    </div>
+  </div>
+</div>
+
+<!-- One small dialog for every command that needs a number before it can run.
+     Peak has a separate one per command; there is nothing in any of them but a
+     few labelled fields, so this is built from a description instead. -->
+<div class="modal hidden" id="askModal">
+  <div class="modal-box ask-box">
+    <div class="modal-head"><span id="askTitle"></span><button class="x" id="askClose">×</button></div>
+    <div class="ask-body" id="askBody"></div>
+    <div class="modal-foot">
+      <span class="ask-note" id="askNote"></span>
+      <div class="spacer"></div>
+      <button class="ghost" id="askCancel">Cancel</button>
+      <button class="primary" id="askOk">OK</button>
     </div>
   </div>
 </div>

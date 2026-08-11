@@ -80,6 +80,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/stats") => api_stats(app, req),
         ("GET", "/api/markers") => api_markers_get(app, req),
         ("POST", "/api/markers") => api_markers_set(app, req),
+        ("POST", "/api/annot") => api_annot(app, req),
         ("GET", "/api/fx") => api_fx_catalogue(),
         ("GET", "/api/rack") => api_rack_get(app, req),
         ("POST", "/api/rack") => api_rack_set(app, req),
@@ -92,6 +93,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/grains") => api_grains(app, req),
         ("GET", "/api/edit") => api_edit_get(app, req),
         ("POST", "/api/edit") => api_edit_apply(app, req),
+        ("POST", "/api/measure") => api_measure(app, req),
         ("POST", "/api/export") => api_export(app, req),
         ("GET", "/api/similar") => api_similar(app, req),
         ("GET", "/api/labels") => api_labels(app, req),
@@ -565,6 +567,78 @@ fn api_markers_set(app: &Arc<App>, req: &Request) -> Response {
     Response::json(store.get(key).to_json().to_string())
 }
 
+/// Peak's Action-menu commands over markers and regions.
+///
+/// Separate from `/api/edit` because none of these change audio: they change
+/// notes *about* the audio, they have their own store, and putting them on the
+/// edit document's undo stack would mean an undo after renaming a marker could
+/// take back a cut.
+fn api_annot(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(rel) = v.get("p").and_then(|p| p.as_str()) else {
+        return Response::error(400, "no path given");
+    };
+    let op = v.get("op").and_then(|o| o.as_str()).unwrap_or("");
+    let num = |k: &str| -> u64 {
+        match v.get(k) {
+            Some(Value::Num(n)) if *n >= 0.0 => *n as u64,
+            _ => 0,
+        }
+    };
+    let signed = |k: &str| -> i64 {
+        match v.get(k) {
+            Some(Value::Num(n)) if n.is_finite() => *n as i64,
+            _ => 0,
+        }
+    };
+    let text = |k: &str| -> &str { v.get(k).and_then(|s| s.as_str()).unwrap_or("") };
+    let flag = |k: &str| -> bool { matches!(v.get(k), Some(Value::Bool(true))) };
+
+    let span = crate::annot::Span::new(num("start"), num("end"));
+    // The document's own length, so a split with no regions has two ends to
+    // work with. An unedited file has never been through the edit store.
+    let total = app
+        .edits
+        .snapshot(rel)
+        .map(|l| l.frames())
+        .or_else(|| identity_for(app, rel).map(|l| l.frames()))
+        .unwrap_or(0);
+
+    let mut unknown = false;
+    {
+        let mut store = app.markers.write().unwrap();
+        let mut a = store.get(rel);
+        match op {
+            "markersToRegions" => a.markers_to_regions(span, flag("each")),
+            "splitRegion" => a.split_region(num("pos"), total),
+            "nudge" => a.nudge(span, signed("frames")),
+            "deleteMarkers" => a.delete_in(span),
+            "rename" => {
+                let contains = v.get("contains").and_then(|s| s.as_str());
+                // Both off would silently rename nothing, which reads as a
+                // broken button; markers are what the dialog defaults to.
+                let (m, r) = (flag("markers"), flag("regions"));
+                let (m, r) = if m || r { (m, r) } else { (true, false) };
+                a.rename(span, text("to"), text("startAt"), contains, m, r);
+            }
+            _ => unknown = true,
+        }
+        if !unknown {
+            store.set(rel, a);
+            if let Err(e) = store.save(&app.markers_path()) {
+                return Response::error(500, &e.to_string());
+            }
+        }
+    }
+    if unknown {
+        return Response::error(400, &format!("unknown annotation operation: {op}"));
+    }
+    let store = app.markers.read().unwrap();
+    Response::json(store.get(rel).to_json().to_string())
+}
+
 /// Build the starting edit document for a file, straight from its header.
 fn identity_for(app: &Arc<App>, rel: &str) -> Option<edit::EditList> {
     let lib = app.library_path()?;
@@ -959,6 +1033,118 @@ fn api_edit_get(app: &Arc<App>, req: &Request) -> Response {
     Response::json(out.to_string())
 }
 
+/// Open a document, its source and its rack together, for measuring.
+///
+/// Everything that has to look at the audio before it can decide what to do —
+/// snap, normalise, strip silence, find the click — goes through here, and all
+/// of it runs **before** the session lock is taken. `EditStore::with` holds a
+/// mutex, `std`'s is not reentrant, and a measurement reaching back through the
+/// store from inside that closure deadlocks the request and every edit after it.
+fn measuring<T>(
+    app: &Arc<App>,
+    rel: &str,
+    fallback: &edit::EditList,
+    f: impl FnOnce(
+        &edit::EditList,
+        &mut audio_core::Reader<audio_core::FileSource>,
+        &mut fx::Rack,
+    ) -> Option<T>,
+) -> Option<T> {
+    let list = app.edits.snapshot(rel).unwrap_or_else(|| fallback.clone());
+    let path = resolve_within(&app.library_path()?, rel)?;
+    let mut reader = audio_core::open(&path).ok()?;
+    let (rate, chans) = {
+        let i = reader.info();
+        (i.sample_rate, i.channels as usize)
+    };
+    let mut rack = app.racks.get(rel).build(rate, chans);
+    f(&list, &mut reader, &mut rack)
+}
+
+/// Pull one position onto the nearest place the waveform crosses zero.
+///
+/// Only the window that could possibly hold the answer is rendered, so this
+/// costs a few milliseconds of audio however long the file is. A position with
+/// no crossing within reach is returned untouched — snap moves an edit a little
+/// or not at all, never somewhere the user did not ask for.
+fn snap_to_zero(
+    list: &edit::EditList,
+    reader: &mut audio_core::Reader<audio_core::FileSource>,
+    rack: &mut fx::Rack,
+    pos: u64,
+    radius: u64,
+) -> u64 {
+    let total = list.frames();
+    let channels = list.channels.max(1) as usize;
+    let from = pos.saturating_sub(radius);
+    let count = (pos + radius + 1).min(total).saturating_sub(from);
+    if count < 2 {
+        return pos;
+    }
+    match edit::render::render_fx(list, reader, rack, from, count) {
+        Ok(buf) => edit::snap::nearest_zero_crossing(&buf, channels, from, pos, radius)
+            .unwrap_or(pos),
+        Err(_) => pos,
+    }
+}
+
+/// Measure the edited timeline without changing it.
+///
+/// Peak's Find Peak is exactly this: a measurement that moves the insertion
+/// point. It is a separate route rather than an edit operation because it
+/// changes nothing, and an entry in the undo history for something that changed
+/// nothing is worse than no entry at all.
+fn api_measure(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(rel) = v.get("p").and_then(|p| p.as_str()) else {
+        return Response::error(400, "no path given");
+    };
+    let Some(identity) = identity_for(app, rel) else {
+        return Response::error(404, "no such file in the library");
+    };
+    let num = |k: &str| -> u64 {
+        match v.get(k) {
+            Some(Value::Num(n)) if *n >= 0.0 => *n as u64,
+            _ => 0,
+        }
+    };
+    let range = edit::Range::new(num("start"), num("end"));
+
+    let out = measuring(app, rel, &identity, |list, r, rack| {
+        let (peak, rms) = edit::analyse::measure_level(list, r, rack, range).ok()?;
+        let peak_at = edit::analyse::find_peak(list, r, rack, range).ok()?;
+        let click = edit::analyse::find_click(list, r, rack, range).ok()?;
+        let db = |x: f32| -> f64 {
+            if x <= 0.0 {
+                -144.0
+            } else {
+                20.0 * (x as f64).log10()
+            }
+        };
+        let mut o = Value::obj()
+            .set("peak", peak as f64)
+            .set("peakDb", db(peak))
+            .set("rms", rms as f64)
+            .set("rmsDb", db(rms))
+            .set("frames", list.frames())
+            .set("sampleRate", list.sample_rate as f64);
+        if let Some((frame, value)) = peak_at {
+            o = o.set("peakFrame", frame).set("peakValue", value as f64);
+        }
+        if let Some((frame, dev)) = click {
+            o = o.set("clickFrame", frame).set("clickDeviation", dev as f64);
+        }
+        Some(o)
+    });
+
+    match out {
+        Some(o) => Response::json(o.to_string()),
+        None => Response::error(500, "could not read the audio"),
+    }
+}
+
 fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
     let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
         return Response::error(400, "invalid JSON");
@@ -983,25 +1169,96 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
             _ => d,
         }
     };
-    let range = edit::Range::new(num("start"), num("end"));
     let shape = if v.get("shape").and_then(|s| s.as_str()) == Some("linear") {
         edit::FadeShape::Linear
     } else {
         edit::FadeShape::EqualPower
     };
 
-    // Normalise has to measure the rendered result first, which needs the
-    // source; do it before taking the session lock.
+    // Where the edit actually lands.
+    //
+    // Absent means no snap, so every caller that has never heard of it — and
+    // every test written before it existed — gets exactly the position it
+    // asked for. The interface turns it on, as Peak does by default.
+    let unit = edit::snap::SnapUnit::from_str(
+        v.get("snap").and_then(|s| s.as_str()).unwrap_or("off"),
+    );
+    let (asked_start, asked_end) = (num("start"), num("end"));
+    let (start, end) = match unit {
+        edit::snap::SnapUnit::Off => (asked_start, asked_end),
+        edit::snap::SnapUnit::Grid(n) => (
+            edit::snap::snap_grid(asked_start, n),
+            edit::snap::snap_grid(asked_end, n),
+        ),
+        edit::snap::SnapUnit::ZeroCrossing => measuring(app, rel, &identity, |list, r, rack| {
+            let radius = edit::snap::radius_frames(list.sample_rate);
+            Some((
+                snap_to_zero(list, r, rack, asked_start, radius),
+                snap_to_zero(list, r, rack, asked_end, radius),
+            ))
+        })
+        .unwrap_or((asked_start, asked_end)),
+    };
+    let range = edit::Range::new(start, end);
+
+    // Everything that has to look at the audio before it can decide happens
+    // here, above the session lock. See `measuring`.
     let measured_peak = if op == "normalize" {
-        let lib = app.library_path();
-        let list = app.edits.snapshot(rel).unwrap_or_else(|| identity.clone());
-        lib.and_then(|l| resolve_within(&l, rel))
-            .and_then(|p| audio_core::open(&p).ok())
-            .and_then(|mut r| {
-                let (rr, rc) = { let i = r.info(); (i.sample_rate, i.channels as usize) };
-                let mut rack = app.racks.get(rel).build(rr, rc);
-                edit::render::measure_peak_fx(&list, &mut r, &mut rack).ok()
-            })
+        measuring(app, rel, &identity, |list, r, rack| {
+            edit::render::measure_peak_fx(list, r, rack).ok()
+        })
+    } else {
+        None
+    };
+
+    let measured_level = if op == "normalizeRms" {
+        measuring(app, rel, &identity, |list, r, rack| {
+            edit::analyse::measure_level(list, r, rack, range).ok()
+        })
+    } else {
+        None
+    };
+
+    let silent_runs = if op == "stripSilence" {
+        measuring(app, rel, &identity, |list, r, rack| {
+            let rate = list.sample_rate.max(1);
+            let ms = |k: &str, d: f32| -> u64 {
+                (float(k, d).max(0.0) / 1000.0 * rate as f32) as u64
+            };
+            let params = edit::analyse::StripParams {
+                threshold_db: float("thresholdDb", -40.0).clamp(-90.0, 0.0),
+                min_frames: ms("minMs", 100.0),
+                pad_frames: ms("padMs", 10.0),
+                hop: edit::analyse::envelope_frames(rate),
+            };
+            edit::analyse::silent_runs(list, r, rack, range, &params).ok()
+        })
+    } else {
+        None
+    };
+
+    // Repairing a click is a measurement and an excision. The window is centred
+    // on the damage and then each edge is pulled to a zero crossing, which is
+    // what keeps the join — and so the taper that closes it — as short as it is.
+    let click_cut = if op == "repairClick" {
+        measuring(app, rel, &identity, |list, r, rack| {
+            let (at, _) = edit::analyse::find_click(list, r, rack, range).ok()??;
+            let rate = list.sample_rate.max(1);
+            let half = ((float("widthMs", 1.0).clamp(0.05, 50.0) / 2000.0) * rate as f32).max(1.0)
+                as u64;
+            // The snap radius must be smaller than the half-width, or both
+            // edges are pulled onto the *same* crossing, the window closes to
+            // nothing and the repair silently does nothing at all.
+            let radius = (half / 2).max(1);
+            let lo = at.saturating_sub(half);
+            let hi = (at + half).min(list.frames());
+            let a = snap_to_zero(list, r, rack, lo, radius);
+            let b = snap_to_zero(list, r, rack, hi, radius);
+            // If they still met, the damage is narrower than one crossing
+            // apart; take the window as asked rather than nothing.
+            let (a, b) = if b > a { (a, b) } else { (lo, hi) };
+            Some((edit::Range::new(a, b), radius))
+        })
     } else {
         None
     };
@@ -1202,10 +1459,49 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 });
             }
             "split" => { let p = num("pos"); s.apply(|l| { l.split_at(p); }); }
+            "crop" => { s.apply(|l| l.crop(range)); }
+            "duplicate" => {
+                // A hundred copies of a bar is a composition; a hundred
+                // thousand is a mistake with a slider.
+                let n = num("count").clamp(1, 128) as u32;
+                s.apply(|l| l.duplicate(range, n));
+            }
+            "insertSilence" => {
+                let frames = if v.get("frames").is_some() {
+                    num("frames")
+                } else {
+                    // Peak's dialog takes samples, milliseconds or seconds.
+                    // Milliseconds is what the interface has a field for.
+                    let rate = s.list().sample_rate.max(1) as f32;
+                    (float("ms", 0.0).max(0.0) / 1000.0 * rate) as u64
+                };
+                s.apply(|l| l.insert_silence(start, frames));
+            }
             "normalize" => {
                 if let Some(peak) = measured_peak {
                     let target = float("db", -0.3);
                     s.apply(|l| l.normalize(peak, target));
+                }
+            }
+            "normalizeRms" => {
+                if let Some((peak, rms)) = measured_level {
+                    let target = float("db", -12.0).clamp(-60.0, 0.0);
+                    let ceiling = float("ceilingDb", -0.3).clamp(-60.0, 0.0);
+                    s.apply(|l| l.normalize_rms(rms, peak, target, ceiling));
+                }
+            }
+            "stripSilence" => {
+                if let Some(runs) = silent_runs.as_ref() {
+                    let mode = match v.get("mode").and_then(|m| m.as_str()) {
+                        Some("silence") => edit::analyse::StripMode::Silence,
+                        _ => edit::analyse::StripMode::Remove,
+                    };
+                    s.apply(|l| l.strip_silence(runs, mode));
+                }
+            }
+            "repairClick" => {
+                if let Some((cut, taper)) = click_cut {
+                    s.apply(|l| l.repair_click(cut, taper));
                 }
             }
             "undo" => { s.undo(); }
@@ -1215,6 +1511,18 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
         }
         crate::docs::edit_json(s.list(), s.can_undo(), s.can_redo())
     });
+
+    // Where the edit actually went. A snap that silently moved the edit away
+    // from the selection on screen would leave the picture disagreeing with the
+    // document, so the interface is told and redraws the selection there.
+    let out = if unit == edit::snap::SnapUnit::Off {
+        out
+    } else {
+        out.set(
+            "snapped",
+            Value::obj().set("start", start).set("end", end).set("unit", unit.as_str()),
+        )
+    };
 
     if unknown {
         return Response::error(400, &format!("unknown edit operation: {op}"));

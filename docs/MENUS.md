@@ -1,8 +1,11 @@
 # The menus
 
-Four menus across the top — **File**, **Edit**, **Audio**, **View** — plus a
-right-click anywhere on the waveform, the overview or the region strip, which
-opens the Edit menu at the pointer.
+Six menus across the top — **File**, **Edit**, **Action**, **DSP**, **Audio**,
+**View** — plus a right-click anywhere on the waveform, the overview or the
+region strip, which opens the Edit menu at the pointer.
+
+Action and DSP are named after Peak's own, because that is where the commands
+came from and where anyone who has used Peak will look for them.
 
 A menu item never reimplements a command. It presses the same control the
 toolbar does, so there is one implementation of each operation and the two
@@ -35,6 +38,9 @@ the state the items depend on is visible before you read them.
 | Undo | `⌘Z` | something to undo | Steps back one edit. |
 | Redo | `⇧⌘Z` | something to redo | Steps forward again. |
 | Cut | `⌘X` | a selection | Removes the range and closes the gap. |
+| Crop | `` ⌘` `` | a selection | Removes everything *except* the range. |
+| Duplicate… | | a selection | Lays down more copies of the range straight after it, pushing the rest along. One bar of drums into four. |
+| Insert silence… | | a file | Makes the document longer at the insertion point. Not the same as Silence, which overwrites. |
 | Silence | | a selection | Keeps the length, zeroes the range. |
 | Fade in | | a selection | Fades up across the range, in the shape the toolbar's fade selector says. |
 | Fade out | | a selection | Fades down across the range. |
@@ -47,6 +53,54 @@ the state the items depend on is visible before you read them.
 
 Edits address the **pre-stretch** timeline. Cutting a second removes a second
 of source, whatever the stretch ratio is doing to the output length.
+
+Every edit that has an edge — cut, crop, silence, the fades, reverse, duplicate,
+insert silence — is placed by the **snap** setting in the Action menu, and says
+so afterwards if it had to move the edge to get there.
+
+## Action
+
+Selection, zoom, snap, markers and regions. Nothing here changes audio.
+
+| Item | Shortcut | Needs | What it does |
+|---|---|---|---|
+| Set selection… | | a file | Types the selection in, in seconds, milliseconds or samples, instead of dragging it. |
+| Select all | `⌘A` | a file | The whole document. |
+| Fit selection | `⇧⌘]` | a selection | Zooms so the selection fills the lane. |
+| Zoom at sample level | `⇧←` | a file | As far in as the display goes, on the start of the selection or the cue. |
+| Zoom at sample level (end) | `⇧→` | a selection | The same, on the *end* of the selection — for checking the far edge of a loop. |
+| Zoom out all the way | | a file | The whole file. |
+| **Snap to zero crossings** | ✓ when on | | Where edits land. On by default, as Peak's Auto Snap is. |
+| **Snap to CD frames** | ✓ when on | | Multiples of 588 samples, for regions destined for a Red Book CD. |
+| **Snap off** | ✓ when on | | Edits land exactly where the pointer was. |
+| New marker | `M` | a file | Drops a marker at the playhead. |
+| New region | `R` | a selection | Names the range. |
+| New region split | | a file | Splits the region under the cursor in two, or the document if there is no region. |
+| Markers to regions | | a file | Turns the markers in the selection into the regions between them. Three markers make two regions, named after the first two. |
+| Nudge markers… | | a file | Moves every marker and region in the selection by a number of seconds, positive or negative. |
+| Rename… | | a file | Renames a run of them. `#` counts up from a start value; zeros after it set the width, so `Event #000` from 10 gives `Event 010`, `Event 011`. Numbered in timeline order. |
+| Delete markers in selection | | a selection | The audio stays; the notes about it go. |
+| Go to… | `⌘G` | a file | Jumps to a marker, a region, either end of the selection, or a time you type. |
+
+The toolbar carries the snap setting too, as a single picker, because it is
+read by every command and is worth being able to see without opening a menu.
+
+## DSP
+
+| Item | Needs | What it does |
+|---|---|---|
+| Normalize… | a file | Scales the whole document so its loudest sample lands on the level you give. |
+| Normalize (RMS)… | a file | Sets the *average* level instead. Where the ceiling gets in the way the ceiling wins and the result comes out quieter — nothing is distorted to reach a number. |
+| Find peak | a file | Puts the cue on the loudest sample in the selection, or the file, and says how loud it is. Changes nothing, so it makes no undo entry. |
+| Fade in / Fade out / Reverse | a selection | The same commands as the Edit menu and the toolbar. |
+| Strip silence… | a file | Finds runs quieter than a threshold and either removes them or flattens them. Level is judged over a short window, so a loud waveform passing through zero is not mistaken for silence. |
+| Repair click… | a selection | Takes out the worst discontinuity in the selection and ramps the join. Peak redraws the damaged samples; a clip list cannot write one, so this removes them — a fraction of a millisecond, and inaudible. |
+
+The **live shapers** — invert, swap, width, DC offset, ring modulate, rappify,
+reverse boomerang, amplitude fit, gate — are not here. They are rack effects
+that run under your fingers while the sound plays, in the FX tab, rather than
+things you apply and wait for. The menu says so rather than offering a second
+way to run them.
 
 ## Audio
 

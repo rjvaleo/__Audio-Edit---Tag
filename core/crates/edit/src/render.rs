@@ -96,6 +96,14 @@ pub fn render<S: RandomAccessSource>(
         let offset = from - clip_start; // frames into this clip
         let len = to - from;
 
+        // Inserted silence occupies the timeline without naming any source
+        // frames, so there is nothing to read and nothing a gain or fade could
+        // usefully be applied to.
+        if clip.silent {
+            out.resize(out.len() + len as usize * channels, 0.0);
+            continue;
+        }
+
         let src_from = if clip.reversed {
             // Reading backwards: the window at `offset` into the clip maps to
             // the source frames counted from the clip's far end.
@@ -237,18 +245,30 @@ pub fn measure_peak_fx<S: RandomAccessSource>(
     reader: &mut Reader<S>,
     rack: &mut Rack,
 ) -> io::Result<f32> {
-    const BLOCK: u64 = 65536;
-    let total = list.frames();
     let mut peak = 0f32;
-    let mut done = 0u64;
-    while done < total {
-        let n = BLOCK.min(total - done);
-        for v in render_fx(list, reader, rack, done, n)? {
+    let mut take = |buf: &[f32]| {
+        for v in buf {
             let a = v.abs();
             if a > peak {
                 peak = a;
             }
         }
+    };
+
+    // Once, not once per block. `render_fx` renders the whole timeline and
+    // slices when a stretch is active, so a block loop over it is quadratic —
+    // which is what made normalising a stretched document take minutes.
+    if list.is_stretched() {
+        take(&render_all_stretched(list, reader, rack)?);
+        return Ok(peak);
+    }
+
+    const BLOCK: u64 = 65536;
+    let total = list.frames();
+    let mut done = 0u64;
+    while done < total {
+        let n = BLOCK.min(total - done);
+        take(&render_fx(list, reader, rack, done, n)?);
         done += n;
     }
     Ok(peak)
