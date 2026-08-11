@@ -82,13 +82,56 @@ pub struct VocoderParams {
     pub overlap: u32,
     /// Lock the bins around each spectral peak to that peak's phase.
     pub phase_lock: bool,
+
+    // Everything below unpicks an assumption the algorithm normally makes.
+
+    /// Multiplies the analysis hop, breaking its link to the time ratio. At one
+    /// the read pointer covers the source in exactly the output duration, which
+    /// is what makes the stretch a stretch. At zero it never moves and the same
+    /// instant is resynthesised forever — a spectral freeze. Anything else
+    /// sweeps the source at the wrong speed and wraps when it runs out.
+    pub hop_skew: f32,
+    /// How far to believe the measured frequency deviation. Below one every
+    /// partial is dragged toward the nearest bin centre, so the sound is
+    /// quantised to the transform's own grid; above one the detuning is
+    /// exaggerated into a warble.
+    pub freq_trust: f32,
+    /// How much of a peak's internal phase relationship its neighbouring bins
+    /// keep. At zero every bin in a region shares one phase.
+    pub phase_spread: f32,
+    /// Bins a peak must beat on each side to count as one. Wide tests find few
+    /// peaks, so whole bands of spectrum end up locked to one phase.
+    pub peak_width: u32,
+    /// Width of each peak's locked region as a fraction of the distance to its
+    /// neighbours. Above one, regions overlap and a partial's phase is imposed
+    /// on the one next to it.
+    pub lock_width: f32,
+    /// Holds magnitudes from one frame to the next. One freezes the spectrum on
+    /// whatever the first frame held.
+    pub mag_freeze: f32,
+    /// Smears magnitudes sideways across bins.
+    pub mag_blur: f32,
+    /// Silences every bin below this share of the frame's loudest.
+    pub mag_gate: f32,
 }
 
 impl Default for VocoderParams {
     fn default() -> Self {
         // ~46 ms at 44.1 kHz, which is 2048 samples — the usual starting point,
         // and enough to resolve partials a couple of semitones apart.
-        VocoderParams { window_ms: 46.0, overlap: 4, phase_lock: true }
+        VocoderParams {
+            window_ms: 46.0,
+            overlap: 4,
+            phase_lock: true,
+            hop_skew: 1.0,
+            freq_trust: 1.0,
+            phase_spread: 1.0,
+            peak_width: 2,
+            lock_width: 1.0,
+            mag_freeze: 0.0,
+            mag_blur: 0.0,
+            mag_gate: 0.0,
+        }
     }
 }
 
@@ -98,7 +141,77 @@ impl VocoderParams {
     }
 }
 
+/// Which splice the similarity search goes looking for.
+///
+/// The search exists to find the segment that best continues what was already
+/// written. Asking it for anything else is not an improvement — it is the point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Splice {
+    /// Normalised correlation: the best continuation. What WSOLA is for.
+    Similar,
+    /// The *worst* continuation the search can find. Every splice is chosen to
+    /// disagree with what came before, which is as far from waveform similarity
+    /// overlap-add as the same machinery will go.
+    Different,
+    /// Un-normalised correlation, which grows with amplitude, so the search
+    /// walks toward whatever is loudest nearby rather than whatever fits.
+    Loudest,
+}
+
+impl Splice {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Splice::Similar => "similar",
+            Splice::Different => "different",
+            Splice::Loudest => "loudest",
+        }
+    }
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "similar" => Some(Splice::Similar),
+            "different" => Some(Splice::Different),
+            "loudest" => Some(Splice::Loudest),
+            _ => None,
+        }
+    }
+}
+
+/// The envelope each window is laid down under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WinShape {
+    /// Sums to a constant at 50% overlap, which is why it is the default.
+    Hann,
+    /// Straight sides. Sums flat too, but the corner puts a little edge on
+    /// every splice.
+    Triangle,
+    /// No envelope at all. Every splice is a step discontinuity, so the output
+    /// is peppered with clicks at the hop rate — a rhythm made of the seams.
+    Rect,
+}
+
+impl WinShape {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WinShape::Hann => "hann",
+            WinShape::Triangle => "triangle",
+            WinShape::Rect => "rect",
+        }
+    }
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "hann" => Some(WinShape::Hann),
+            "triangle" => Some(WinShape::Triangle),
+            "rect" => Some(WinShape::Rect),
+            _ => None,
+        }
+    }
+}
+
 /// WSOLA's own controls.
+///
+/// Everything past the first two used to be a constant in the algorithm. They
+/// are constants because there are values that make WSOLA work, and the search
+/// radius, the overlap and the window are exactly the three that make it stop.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WsolaParams {
     /// Hold detected transients at their original rate, letting the material
@@ -106,11 +219,41 @@ pub struct WsolaParams {
     pub preserve_transients: bool,
     /// How eager the detector is, 0..1.
     pub sensitivity: f32,
+    /// How far either side of the nominal read position to look, in
+    /// milliseconds. Zero looks nowhere, which reduces WSOLA to plain
+    /// overlap-add and brings back the hollow metallic phasing it exists to
+    /// avoid. Large values let it wander far enough to reassemble the file out
+    /// of order.
+    pub search_ms: f32,
+    /// Windows covering any moment. Two is the classic 50%.
+    pub overlap: f32,
+    pub splice: Splice,
+    /// Frames between candidates in the search. Coarse strides quantise the
+    /// choice of splice onto a grid, which is audible as a pitch.
+    pub stride: u32,
+    pub shape: WinShape,
+    /// How much material either side of a transient is held at its original
+    /// rate, in synthesis hops.
+    pub guard_hops: f32,
+    /// Scales the detector's absolute floor. Zero removes it.
+    pub floor: f32,
 }
 
 impl Default for WsolaParams {
     fn default() -> Self {
-        WsolaParams { preserve_transients: false, sensitivity: 0.5 }
+        WsolaParams {
+            preserve_transients: false,
+            sensitivity: 0.5,
+            // The old `Quality::Standard` search width, so a document that
+            // never touches this sounds exactly as it did.
+            search_ms: 10.0,
+            overlap: 2.0,
+            splice: Splice::Similar,
+            stride: 4,
+            shape: WinShape::Hann,
+            guard_hops: 3.0,
+            floor: 1.0,
+        }
     }
 }
 
@@ -235,6 +378,14 @@ impl Stretch {
                     fft_size: fft_size_for(self.vocoder.window_ms, sample_rate),
                     overlap: self.vocoder.overlap.clamp(2, 8) as usize,
                     phase_lock: self.vocoder.phase_lock,
+                    hop_skew: self.vocoder.hop_skew,
+                    freq_trust: self.vocoder.freq_trust,
+                    phase_spread: self.vocoder.phase_spread,
+                    peak_width: self.vocoder.peak_width.clamp(1, 32) as usize,
+                    lock_width: self.vocoder.lock_width,
+                    mag_freeze: self.vocoder.mag_freeze,
+                    mag_blur: self.vocoder.mag_blur,
+                    mag_gate: self.vocoder.mag_gate,
                 },
             ),
         };
@@ -278,10 +429,19 @@ fn wsola(
     let in_frames = input.len() / channels;
     let sr = sample_rate.max(1) as f32;
 
-    // Even window, 50% overlap.
     let win = (((window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64) & !1;
-    let hop_out = win / 2;
-    let search = (((quality.search_ms() / 1000.0) * sr) as usize).max(1);
+    let hop_out = ((win as f32) / params.overlap.clamp(1.0, 8.0)) as usize;
+    let hop_out = hop_out.max(1);
+
+    // The search width is the user's, but a draft still caps it: this runs on
+    // every pointer move, and a 200 ms search per window would not keep up.
+    // The committed render uses what was actually asked for.
+    let want_ms = params.search_ms.clamp(0.0, 200.0);
+    let ms = match quality {
+        Quality::Draft => want_ms.min(quality.search_ms()),
+        _ => want_ms,
+    };
+    let search = ((ms / 1000.0) * sr) as usize;
 
     // Where each output instant comes from. Without transient preservation
     // this is a straight line and behaves exactly as a constant hop did.
@@ -292,8 +452,11 @@ fn wsola(
     // cannot honour a span shorter than one. Three hops is the smallest that
     // reliably does.
     let map = if params.preserve_transients {
-        let hits = crate::transient::onsets(input, channels, sample_rate, params.sensitivity);
-        crate::transient::TimeMap::with_transients(in_frames, ratio, &hits, hop_out * 3)
+        let hits = crate::transient::onsets(
+            input, channels, sample_rate, params.sensitivity, params.floor,
+        );
+        let guard = ((hop_out as f32) * params.guard_hops.clamp(1.0, 16.0)) as usize;
+        crate::transient::TimeMap::with_transients(in_frames, ratio, &hits, guard.max(1))
     } else {
         crate::transient::TimeMap::linear(in_frames, ratio)
     };
@@ -308,7 +471,7 @@ fn wsola(
     let out_frames = ((in_frames as f32) * ratio).round() as usize + win;
     let mut out = vec![0f32; out_frames * channels];
     let mut norm = vec![0f32; out_frames];
-    let window = hann(win);
+    let window = shaped(win, params.shape);
 
     // The segment we expect to follow what was just written; the next window is
     // chosen to resemble it.
@@ -322,7 +485,7 @@ fn wsola(
             first = false;
             read
         } else {
-            best_offset(input, channels, read, search, &expect, hop_out)
+            best_offset(input, channels, read, search, &expect, hop_out, params)
         };
 
         for i in 0..win {
@@ -377,7 +540,12 @@ fn best_offset(
     search: usize,
     expect: &[f32],
     len: usize,
+    params: WsolaParams,
 ) -> usize {
+    if search == 0 {
+        // Nowhere to look. This is plain overlap-add, hollow phasing and all.
+        return centre;
+    }
     let lo = centre.saturating_sub(search);
     let hi = (centre + search).min(input.len() / channels - len - 1);
     if hi <= lo {
@@ -386,9 +554,10 @@ fn best_offset(
 
     let mut best = centre.min(hi);
     let mut best_score = f32::NEG_INFINITY;
-    // Every fourth frame: the correlation surface is smooth enough that a finer
-    // sweep costs time without changing the choice.
-    let step = 4.max(1);
+    // Four frames by default: the correlation surface is smooth enough that a
+    // finer sweep costs time without changing the choice. Coarser, and the
+    // choice lands on a grid you can hear.
+    let step = params.stride.clamp(1, 256) as usize;
     let mut p = lo;
     while p <= hi {
         let mut dot = 0f32;
@@ -401,8 +570,14 @@ fn best_offset(
                 energy += a * a;
             }
         }
-        // Normalising stops the search simply picking the loudest moment.
-        let score = if energy > 1e-9 { dot / energy.sqrt() } else { 0.0 };
+        // Normalising stops the search simply picking the loudest moment, which
+        // is exactly why not normalising is one of the choices.
+        let score = match params.splice {
+            Splice::Loudest => dot,
+            _ if energy > 1e-9 => dot / energy.sqrt(),
+            _ => 0.0,
+        };
+        let score = if params.splice == Splice::Different { -score } else { score };
         if score > best_score {
             best_score = score;
             best = p;
@@ -451,6 +626,25 @@ fn hann(n: usize) -> Vec<f32> {
     (0..n)
         .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos())
         .collect()
+}
+
+/// The window each spliced segment is laid down under.
+///
+/// The overlap-add is normalised by the summed window afterwards, so a shape
+/// that does not sum flat is not broken by it — it is coloured by it, which is
+/// the reason to offer any shape but Hann.
+fn shaped(n: usize, shape: WinShape) -> Vec<f32> {
+    match shape {
+        WinShape::Hann => hann(n),
+        WinShape::Rect => vec![1.0; n],
+        WinShape::Triangle => {
+            if n <= 1 {
+                return vec![1.0; n];
+            }
+            let half = (n - 1) as f32 / 2.0;
+            (0..n).map(|i| 1.0 - ((i as f32 - half) / half).abs()).collect()
+        }
+    }
 }
 
 #[cfg(test)]

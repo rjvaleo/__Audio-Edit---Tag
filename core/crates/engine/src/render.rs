@@ -160,6 +160,12 @@ impl BlockRenderer {
             let voice = self.voices[v];
             let size = voice.event.size as usize;
             let mut played = voice.played as usize;
+            // Envelope shape, direction and stereo place all come from the same
+            // helpers the offline renderer uses, so live playback and the file
+            // that gets exported are the same sound.
+            let (gl, gr) = fx::grain::pan_gains(&sp.grain, voice.event.index, channels);
+            let skew = sp.grain.envelope;
+            let reverse = sp.grain.reverse;
 
             // Where in this block the grain's next frame lands.
             let start = if voice.event.out_frame > self.position {
@@ -172,15 +178,17 @@ impl BlockRenderer {
                 if played >= size {
                     break;
                 }
-                let win = hann_at(played, size);
-                let pos = voice.event.src_frame + played as f32 * voice.event.rate;
+                let win = fx::grain::env_at(played, size, skew);
+                let step = if reverse { (size - 1 - played) as f32 } else { played as f32 };
+                let pos = voice.event.src_frame + step * voice.event.rate;
                 for ch in 0..channels {
                     // The device's channel count is not the file's. A mono file
                     // on a stereo output feeds both sides; the source must be
                     // indexed with its own stride, or the read runs off the end.
                     let sch = ch.min(src.channels.saturating_sub(1));
+                    let pan = if ch == 0 { gl } else { gr };
                     out[f * channels + ch] +=
-                        sample_at(&src.samples, src.channels, sch, pos, src.frames()) * win;
+                        sample_at(&src.samples, src.channels, sch, pos, src.frames()) * win * pan;
                 }
                 self.norm[f] += win;
                 played += 1;
@@ -212,14 +220,9 @@ impl BlockRenderer {
     }
 }
 
-/// Hann value at position `i` of `n`. Identical to the offline renderer's.
-#[inline]
-fn hann_at(i: usize, n: usize) -> f32 {
-    if n <= 1 {
-        return 1.0;
-    }
-    0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos()
-}
+// The Hann envelope used to be duplicated here, with a comment promising it was
+// identical to the offline one. It now comes from `fx::grain::env_at`, which is
+// the only way that promise can actually be kept once the shape is adjustable.
 
 /// Linearly interpolated read, clamped at the edges. Identical to the offline
 /// renderer's.
