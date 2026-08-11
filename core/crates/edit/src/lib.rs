@@ -8,8 +8,10 @@
 //! The source file is opened read-only and is never written. The only way to
 //! produce audio from an edit is to render it to a new file.
 
+pub mod analyse;
 pub mod ops;
 pub mod render;
+pub mod snap;
 
 use std::fmt;
 
@@ -76,6 +78,14 @@ pub struct Clip {
     pub fade_out: Fade,
     /// Play the source backwards.
     pub reversed: bool,
+    /// Silence rather than audio, occupying time without reading anything.
+    ///
+    /// This is a property of the clip and not a gain of zero, because a gain
+    /// is something later operations are entitled to change: an absolute
+    /// `set_gain` across a selection containing inserted silence would
+    /// otherwise start playing whatever happened to be at the source position.
+    /// It also means a long inserted pause costs no reads at all.
+    pub silent: bool,
 }
 
 impl Clip {
@@ -87,7 +97,13 @@ impl Clip {
             fade_in: Fade::none(),
             fade_out: Fade::none(),
             reversed: false,
+            silent: false,
         }
+    }
+
+    /// A run of silence `len` frames long, reading nothing.
+    pub fn silence(len: u64) -> Self {
+        Clip { silent: true, ..Clip::new(0, len) }
     }
 
     pub fn src_end(&self) -> u64 {

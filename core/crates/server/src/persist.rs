@@ -305,6 +305,7 @@ pub fn edit_to_json(l: &EditList) -> Value {
                 .set("fadeOut", c.fade_out.frames)
                 .set("fadeOutShape", shape_name(c.fade_out.shape))
                 .set("reversed", c.reversed)
+                .set("silent", c.silent)
         })
         .collect();
     Value::obj()
@@ -338,9 +339,12 @@ pub fn edit_from_json(v: &Value, expected: &EditList) -> Option<EditList> {
     for c in items {
         let src_start = num(c.get("srcStart"), 0.0).max(0.0) as u64;
         let len = num(c.get("len"), 0.0).max(0.0) as u64;
+        let silent = flag(c.get("silent"));
         // A clip reaching past the end of the source would read silence or
-        // panic downstream; drop it rather than trusting the file.
-        if len == 0 || src_start + len > expected.source_frames {
+        // panic downstream; drop it rather than trusting the file. Inserted
+        // silence names no source frames at all, so the bound does not apply
+        // to it — checking it anyway threw away every pause on reload.
+        if len == 0 || (!silent && src_start + len > expected.source_frames) {
             continue;
         }
         clips.push(Clip {
@@ -356,6 +360,7 @@ pub fn edit_from_json(v: &Value, expected: &EditList) -> Option<EditList> {
                 shape: shape_from(c.get("fadeOutShape")),
             },
             reversed: flag(c.get("reversed")),
+            silent,
         });
     }
 

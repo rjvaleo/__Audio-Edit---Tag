@@ -228,6 +228,10 @@ never triggers one.
 | `Esc` | Clear the selection, return the cue to the start — and close any open menu or pop-over |
 | `⌘Z` / `Ctrl+Z` | Undo |
 | `⇧⌘Z` / `Ctrl+Shift+Z` | Redo |
+| `` ⌘` `` | Crop to the selection |
+| `⌘G` | Go to — a marker, a region, an end of the selection, or a time you type |
+| `⇧⌘]` | Fit the selection to the lane |
+| `⇧←` / `⇧→` | Zoom to sample level, on the start or the end of the selection |
 
 The menu bar lists more shortcuts against their items — `⌘E` export, `⌘S` save
 tags, `⌘W` close document, `⌘A` select all, `⌘X` cut, `R` region, `⇧⌘R`
@@ -235,6 +239,19 @@ re-scan. Those are printed in the menus as the reference; the handlers above are
 the ones bound globally.
 
 ---
+
+## The edit toolbar
+
+Along the top of Edit, above the overview.
+
+| Control | What it does |
+|---|---|
+| Cut · Crop · Silence · Fade in · Fade out · Reverse | The frequent edits, on the selection. Everything else Peak has is in the Action and DSP menus. |
+| Fade curve | `equal power` or `linear`. Equal power for crossfades, linear for de-clicking a splice. |
+| **snap** | Where an edit lands: `zero` (the nearest zero crossing), `off`, or a fixed grid — `CD` 588 samples, `PS2` 28, `Xbox` 64. **On by default**, because a cut that does not start and end at the centre line is a click. Kept across sessions: it is a way of working, not a property of a sound. When it has to move an edge to get there, it says so and by how much. |
+| Marker · Region | Names the playhead or the selection. |
+| Undo · Redo · Revert | Revert throws away every edit and returns to the file as it is on disk. |
+| Bit depth · **Export** | Renders to a **new** file. The only thing here that writes audio. |
 
 ## The transport row
 

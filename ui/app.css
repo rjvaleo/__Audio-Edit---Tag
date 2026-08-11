@@ -1401,3 +1401,29 @@ body.editing .dock { flex: 0 0 330px; }
   font-size: 10px; line-height: 1.35; color: var(--warn);
   opacity: .85; margin: 2px 0 0;
 }
+
+/* ------------------------------------------------------------- ask dialog */
+/* One dialog for every command that needs a value first. It sizes itself to
+   its fields rather than to a fixed box, because a dialog asking for one
+   number should not be the size of the library picker. */
+.ask-box { width: 380px; height: auto; max-height: 80vh; }
+.ask-body { padding: 14px 16px; overflow-y: auto; }
+.ask-row {
+  display: grid; grid-template-columns: 1fr 130px;
+  align-items: center; gap: 10px; padding: 4px 0;
+}
+.ask-row > label { font-size: 11.5px; color: var(--text-dim); }
+.ask-row input[type="number"], .ask-row input[type="text"], .ask-row select {
+  height: 26px; width: 100%; padding: 0 7px;
+  border-radius: 5px; border: 1px solid var(--line-2);
+  background: var(--well); color: var(--text);
+  font-family: var(--mono); font-size: 11.5px;
+}
+.ask-row select { font-family: var(--sans); }
+.ask-row input:focus, .ask-row select:focus { outline: none; border-color: var(--accent); }
+.ask-row input[type="checkbox"] { justify-self: end; width: 15px; height: 15px; accent-color: var(--accent); }
+.ask-hint {
+  font-size: 11px; color: var(--text-dimmer); line-height: 1.5;
+  margin: 0 0 10px;
+}
+.ask-note { font-size: 11px; color: var(--text-dimmer); font-family: var(--mono); }

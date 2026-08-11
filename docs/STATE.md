@@ -1,7 +1,7 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff. **HEAD `4cda809`, 653 tests passing, working
-tree clean.** Everything an agent picking this up needs to know, in one file,
+Written 11 August 2026 as a handoff, and kept up to date since. **752 tests
+passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
 
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 653 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 752 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -74,11 +74,11 @@ Ten crates in `core/crates/`, ~32k lines.
 | `catalog` | classification taxonomy, ported from `ingest_index_v2.py` |
 | `indexer` | library walk, classify, write the TSV index |
 | `fx` | biquads, EQ, compressor, channel maximiser, **five stretchers**, **nine live shapers** (`shape.rs`) and the parameter layer (`params.rs`) — `stretch.rs` (WSOLA + dispatch), `vocoder.rs`, `grain.rs`, `pvsola.rs`, `hybrid.rs` on `decompose.rs` + `noise.rs`, plus `stream.rs`, `transient.rs`, `master.rs` |
-| `edit` | non-destructive edit list (clips), windowed render, export |
+| `edit` | non-destructive edit list (clips), windowed render, export, **zero-crossing snap** (`snap.rs`) and **measurement** (`analyse.rs`) |
 | `engine` | real-time: `render` (blocks), `transport` (play/seek/loop), `device` (cpal) |
 | `search` | acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | ONNX inference via tract, band-limited resampling, label policy |
-| `server` | hand-rolled HTTP/1.1 on `std::net`, routes, JSON, persistence |
+| `server` | hand-rolled HTTP/1.1 on `std::net`, routes, JSON, persistence, **marker and region commands** (`annot.rs`) |
 | `audiolab` | the binary |
 
 ### Dependencies
@@ -624,17 +624,116 @@ the gate's −40 dB threshold into −4000%.
 - **Phase 2, spectral:** Harmonic rotate (rotate the spectrum around a
   horizontal axis) and Convolve (multiply the spectrum of a captured impulse
   with the target). Both fit an STFT rack effect.
-- **Phase 3, the edits** — the next thing asked for, not started. Zero-crossing
-  snap first: every cut currently lands wherever the pointer was, and snap is
-  what stops edits clicking. Then crop, duplicate, insert silence (ours
-  overwrites), set selection numerically, fit selection, zoom at sample level,
-  markers→regions, new region split, nudge/rename/go-to, normalize and
-  normalize RMS, find peak, strip silence, repair click.
+- ~~**Phase 3, the edits.**~~ **Built** — see §7c.
 - **Automation and modulation.** Asked for explicitly, beyond presets. The
   parameter layer is the foundation; nothing is built on it yet.
 - **Three views** — *edit*, *granulate*, *browse*, each with its own view of the
   sound pool and its own display. Currently two modes. The live shaping belongs
   in *granulate*.
+
+---
+
+## 7c. The Peak edits — Phase 3
+
+Peak's Edit and Action menus, less its own furniture (sampler transfer, CD
+burning, plug-in hosting) and less what a nondestructive clip list cannot
+honestly do. Built 11 Aug 2026, from `Reference Docs/md/peak/peak-editing.md`
+and `peak-menus.md` rather than from the command names.
+
+### Snap is the one that matters
+
+Every cut, fade and loop point used to land wherever the pointer was. Joining
+two places in a waveform that are not at the same amplitude puts a step into
+the signal, and a step is a click — which is why Peak has Auto Snap on by
+default and why this was built first.
+
+`edit::snap` — `SnapUnit` is `Off | ZeroCrossing | Grid(n)`. One `Grid` covers
+every fixed grid Peak has, because CD frames (588), PS2 loop boundaries (28),
+Xbox (64) and "custom units" differ only in the number.
+
+**Snapping moves the request, never the document.** Nothing in `snap.rs` reads
+or rewrites a clip list: the caller asks where a position should be and then
+does what it was going to do at the answer. That is what keeps it out of the
+render path and out of every test written before it existed.
+
+**Absent means no snap** at the API. The interface turns it on. That way
+invariant 9 holds — a caller that has never heard of snap gets exactly the
+position it asked for — while the *program* behaves the way Peak does.
+
+Two decisions worth keeping:
+
+- **Crossings are looked for per channel, not in the mono mix.** Two channels
+  in opposite phase sum to nothing at all, so a mix-based search would call
+  every frame of that file a crossing and every frame a click.
+- **The landing point is scored on the loudest channel.** The click a cut makes
+  is the largest step in any one channel, so that is what has to be small.
+
+Measured, not asserted: a cut with both edges on a peak of the cycle steps by
+1.9; snapped, by under a twentieth of that.
+
+### The rest
+
+| | where | note |
+|---|---|---|
+| Crop | `ops::crop` | tail cut first, or the head cut moves the end out from under it |
+| Duplicate | `ops::duplicate` | Peak takes its copies from the clipboard; a selection is the same idea without a clipboard to keep in step |
+| Insert silence | `ops::insert_silence` | ours only had *Silence*, which overwrites — there was no way to make a document longer |
+| Normalize (RMS) | `ops::normalize_rms` | Peak soft-clips into the ceiling to hit a target; here the ceiling wins and the result comes out quieter, which is the honest half of the same bargain |
+| Find peak | `analyse::find_peak` | a measurement, on its own route — an undo entry for something that changed nothing is worse than none |
+| Strip silence | `analyse::SilenceScan` + `ops::strip_silence` | runs applied back to front |
+| Repair click | `analyse::worst_spike` + `ops::repair_click` | excises rather than redraws — see below |
+| Set selection, Fit selection, Zoom at sample level, Go to | `app.js` | pure view; no server involved |
+| Markers→regions, region split, nudge, rename, delete | `server::annot` | notes about audio, not audio |
+
+**A silent clip says what it *is*, not what its level happens to be.** Inserted
+silence is `Clip { silent: true }`, not a gain of zero, because a gain is
+something later operations are entitled to change — an absolute `set_gain`
+across a selection holding a pause would otherwise start playing whatever was
+at that source position. It also means a long pause costs no reads.
+
+**Repair Click excises, it does not redraw.** Peak's repair interpolates across
+the damaged samples; a clip list has no way to write a sample. So the damage is
+removed and the two edges are ramped into the join over a fraction of a
+millisecond — which is what makes the result *provably* free of a step rather
+than merely smaller. The edges are snapped first, which is what keeps the taper
+as short as it is.
+
+**The click detector measures deviation from the neighbours, not the step
+between them.** A single-sample spike has two steps, in and out, and the larger
+is usually the one *leaving* it — a step detector names the first clean sample
+*after* the anomaly. Measuring each sample against the midpoint of its
+neighbours names the bad sample, and on a square digital click, whose middle is
+flat, it names the leading edge.
+
+**A gate on the instantaneous sample value calls a loud sine silent twice a
+cycle.** Strip Silence judges level over a 5 ms window; the threshold only
+means what it says once it does.
+
+### Peak's own worked examples are the tests
+
+Three markers "Foo 1", "Foo 2", "Foo 3" become **two** regions named after the
+first two. `Event #000` starting at `10` gives `Event 010`, `Event 011`. Both
+are straight out of the manual and both are asserted. Letters count
+spreadsheet-fashion — A…Z, AA, AB — so a run longer than the alphabet never
+repeats a name, and a split picks a name nothing else is using rather than
+producing a second "Foo 2".
+
+### Three bugs the browser found that the tests did not
+
+1. **Measuring a stretched document was quadratic.** `render_fx` renders the
+   whole timeline and slices when a stretch is active, so a block loop over it
+   renders the file once per block. A thirty-second sound at 6× looked exactly
+   like a hang. `measure_peak_fx` had it too, and had had it all along.
+2. **A block boundary is not a click.** A windowed render resets the rack and
+   gives it a fixed pre-roll, so two blocks rendered independently do not join
+   continuously once anything in the rack has memory. The detector reported a
+   click at every multiple of 65536 on audio that had none — 0.19 where the
+   real worst was 0.02. Each block is now rendered with the frames before it
+   included, and only the interior is judged.
+3. **The snap radius has to be smaller than the excision half-width.** With the
+   default 10 ms radius and a 1 ms repair window, both edges were pulled onto
+   the *same* crossing, the window closed to nothing and Repair Click silently
+   did nothing at all.
 
 ---
 
@@ -765,7 +864,17 @@ decisions.**
     appeared not to have been added at all, and the server had stored it
     correctly the whole time. Check the browser console before blaming the
     server.
-17. **Struct-update syntax cannot see private fields from another crate.** Tests
+17. **A windowed render is not a continuous one.** `render_fx` resets the rack
+    and gives it a fixed pre-roll for each window, so two blocks rendered
+    independently do not join smoothly once anything in the rack has memory.
+    Anything looking for discontinuities has to render its own overlap; the
+    click detector reported one at every multiple of the block size before it
+    did.
+18. **`render_fx` per block on a stretched document is quadratic.** It renders
+    the whole timeline and slices, so a block loop renders the file once per
+    block. Two separate places had this and both looked like a hang rather than
+    a bug. Check `is_stretched()` and render once.
+19. **Struct-update syntax cannot see private fields from another crate.** Tests
     in `tests/` are a separate crate, so `Thing { field: v, ..Default::default() }`
     fails on any struct with private state. Use the setter — which for anything
     implementing `Params` is the better test anyway, because it exercises the
@@ -844,11 +953,14 @@ both paths, and needs no measurement.
 **Next, and explicitly asked for — "do phase 3", interrupted to write this
 down:**
 
-1. **Phase 3, the Peak edits.** Zero-crossing snap first — it makes every
-   existing edit better and is small. Then crop, duplicate, insert silence,
-   set selection, fit selection, zoom at sample level, markers→regions, new
-   region split, nudge/rename/go-to, normalize and normalize RMS, find peak,
-   strip silence, repair click. See §7b.
+1. ~~**Phase 3, the Peak edits.**~~ **Done, 11 Aug 2026 — see §7c.** Snap,
+   crop, duplicate, insert silence, set selection, fit selection, zoom at
+   sample level, markers→regions, new region split, nudge, rename, go to,
+   normalize RMS, find peak, strip silence, repair click. Everything on the
+   list. What is *not* there: Peak's clipboard (cut/copy/paste between
+   documents), Bars/Beats snap, Loop Surfer, and the Pencil Tool — the first
+   three need a clipboard, a tempo and a loop model this program does not have
+   yet, and the last needs a way to write a sample, which a clip list is not.
 2. **Pre/post rack split** — shapers before *or* after the stretcher. §7b says
    why the pre side has to be a handover rather than a per-block chain.
 3. **Phase 2 spectral shapers** — harmonic rotate, convolve.
@@ -886,8 +998,8 @@ down:**
 
 ## 13. Recent history
 
-    d520e3e  Layer the streaming engines live, so you can hear them
-    3b65f58  Scatter the layers, so they make a cloud instead of a comb
+    (this one) Do the Peak edits: snap first, then the rest
+    4cb7260  Write down the whole state, including the Peak work
     4cda809  Draw every shaper from its own description
     d260c74  Wire the shapers into the rack, generically
     95e843a  Add parameter API and live shape effects
