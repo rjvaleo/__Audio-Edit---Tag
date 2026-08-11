@@ -388,6 +388,43 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 #dockStretch .wild-head { margin-bottom: 4px; }
 #dockStretch #stretchOut { margin-top: 6px; }
 
+/* ------------------------------------------------------------ the rack knobs
+   An effect is a little module rather than a column of long sliders: eight
+   knobs fit where three sliders did, and a handful of controls reads as one
+   object instead of a list. Packed from the left and wrapping, so a rack with
+   four controls takes four knobs' worth of room and not the whole panel. */
+.knob-grid {
+  display: flex; flex-wrap: wrap; justify-content: flex-start;
+  align-items: flex-start; gap: 10px 12px; margin-top: 10px;
+}
+.knob {
+  width: 52px; flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.knob svg {
+  width: 44px; height: 44px; display: block;
+  cursor: ns-resize; touch-action: none;
+}
+.knob .track { fill: none; stroke: var(--line-2); stroke-width: 4; stroke-linecap: round; }
+.knob .arc   { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
+.knob .ptr   { stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
+.knob .k {
+  font-size: 9.5px; color: var(--text-dim); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.knob .v {
+  font-family: var(--mono); font-size: 9.5px; color: var(--accent);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.knob:hover .track { stroke: rgba(255,255,255,0.18); }
+/* While it is being turned, so the one under the pointer is obvious even when
+   the pointer has been dragged off it. */
+.knob.turning .arc { filter: brightness(1.3); }
+.knob.turning .k, .knob.turning .v { color: var(--accent); }
+/* A band label breaks the row, so the three EQ bands read as three groups
+   rather than one run of nine knobs. */
+.knob-grid .band-head { flex: 0 0 100%; margin-top: 2px; }
+
 /* --------------------------------------------------------------------- lane */
 
 .lane {
@@ -727,33 +764,49 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .seg-param .seg { width: 100%; }
 .seg-param .seg-btn { flex: 1; min-width: 0; }
 
-/* A switch is a button with its own name on it and a lamp on the right. A tick
-   box was a small target labelled from outside itself; this is one object that
-   says what it is and which way it is set. */
-.toggle {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  width: 100%; height: 22px; padding: 0 8px;
-  border-radius: 6px; border: 1px solid var(--line-2);
-  background: linear-gradient(oklch(21% 0.014 250), oklch(17% 0.013 250));
-  color: var(--text-dim); font: inherit; font-size: 10.5px; text-align: left;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.35);
+/* A switch sits in the table like everything else: name in the name column,
+   control in the control column. What is in the control column is a rocker —
+   one end pressed in and the other proud, with the recess it uncovers lit — so
+   which way it is set reads without having to find the label. */
+/* Not the sliders' fixed name column. A switch is a pair of things that belong
+   together, so the name takes what it needs and the two sit at the right-hand
+   edge — the same way the ones that share a line already did. */
+.toggle { grid-template-columns: minmax(0, 1fr) auto; }
+.toggle .k { text-align: right; padding-right: 3px; }
+.rocker {
+  position: relative; width: 38px; height: 17px; padding: 0;
+  border-radius: 3px; border: 1px solid rgba(0,0,0,0.55);
+  /* The housing: a recess, so the plate can sit in it. */
+  background: linear-gradient(oklch(13% 0.01 250), oklch(17% 0.012 250));
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.7);
+  cursor: pointer; overflow: hidden;
 }
-.toggle:hover { border-color: var(--line-2); color: var(--text-2); filter: brightness(1.15); }
-.toggle:active { transform: translateY(1px); box-shadow: none; }
-.toggle .tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Off is a dull red — lit enough to read as a lamp that is there rather than a
-   hole in the button, dull enough that a panel of them is not an alarm. */
-.toggle .led {
-  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+/* The lit half, uncovered by whichever way the plate is tilted. Dull red at
+   rest, green when thrown. */
+.rocker::before {
+  content: ''; position: absolute; top: 2px; bottom: 2px; width: 12px;
+  right: 3px; border-radius: 2px;
   background: oklch(40% 0.10 25);
-  box-shadow: inset 0 1px 1px rgba(0,0,0,0.55);
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.5);
+  transition: background .12s ease, box-shadow .12s ease, left .12s ease, right .12s ease;
 }
-.toggle.on { color: var(--text); border-color: oklch(44% 0.09 155); }
-.toggle.on .led {
+.rocker.on::before {
+  right: auto; left: 3px;
   background: var(--good);
-  box-shadow: 0 0 8px var(--good), 0 0 3px var(--good),
-              inset 0 0 2px rgba(255,255,255,0.6);
+  box-shadow: 0 0 7px var(--good), inset 0 0 2px rgba(255,255,255,0.55);
 }
+/* The plate itself: half the housing, raised, and it moves to cover whichever
+   end is not lit. */
+.rocker .plate {
+  position: absolute; top: 1px; bottom: 1px; left: 1px; width: 22px;
+  border-radius: 2px;
+  background: linear-gradient(oklch(34% 0.008 250), oklch(24% 0.008 250));
+  box-shadow: 0 1px 2px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.14);
+  transition: left .12s ease;
+}
+.rocker.on .plate { left: 15px; }
+.rocker:hover { border-color: rgba(255,255,255,0.25); }
+.rocker:active .plate { filter: brightness(1.15); }
 
 .seed-row .v { color: var(--text-2); }
 .seed-row .ghost { width: 100%; }
@@ -791,7 +844,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
    the room rather than the fixed first column, which at half width would leave
    the box hard against the label. */
 .param-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--param-gap); }
-/* A switch is already one full-width object, so a pair is simply two of them. */
+/* A pair is simply two of them, and they already lay out this way. */
 .param-pair .toggle { min-width: 0; }
 .wild-body { display: flex; flex-direction: column; gap: var(--param-row); }
 .param-head {
