@@ -20,7 +20,7 @@
 //! is still sounding. They swap at each anchor rather than being rebuilt,
 //! because rebuilding one in a callback is an allocation.
 
-use crate::stream::StretchParams;
+use crate::stream::{PitchRing, StretchParams};
 use crate::pvsola::PvsolaParams;
 use crate::vstream::VocoderStream;
 
@@ -533,5 +533,79 @@ mod tests {
         let out = streamed(&src, 2, &spec(4.0), 512);
         let (a, b) = (rms(&src), rms(&out[20_000..out.len() - 20_000]));
         assert!((b / a) > 0.5 && (b / a) < 2.0, "level moved by {:.2}x", b / a);
+    }
+}
+
+/// PVSOLA with the pitch stage on the end of it.
+///
+/// PVSOLA is built *out of* the vocoder and WSOLA rather than beside them, so
+/// it takes parameters of its own and cannot be a [`Streamer`](crate::stream::Streamer)
+/// — which is how it came to be the one engine with no pitch at all on the
+/// audio thread. The control moved the exported file and did nothing to what
+/// came out of the speakers.
+///
+/// It drives the same [`PitchRing`] the others do. Two resamplers would be two
+/// different sounds.
+pub struct PitchedPvsola {
+    inner: PvsolaStream,
+    ring: PitchRing,
+    scratch: Vec<f32>,
+}
+
+impl PitchedPvsola {
+    pub fn new(max_block: usize, channels: usize) -> Self {
+        let channels = channels.max(1);
+        PitchedPvsola {
+            inner: PvsolaStream::new(max_block, channels),
+            ring: PitchRing::new(max_block, channels),
+            scratch: vec![0.0; max_block.max(1) * channels],
+        }
+    }
+
+    pub fn position(&self) -> u64 {
+        self.ring.position()
+    }
+
+    pub fn render_pitched(
+        &mut self,
+        out: &mut [f32],
+        channels: usize,
+        input: &[f32],
+        p: &StretchParams,
+        pv: &PvsolaParams,
+        semitones: f32,
+    ) {
+        let pitch = PitchRing::factor(semitones);
+        if (pitch - 1.0).abs() < 1e-6 {
+            // Already at the right rate; do not pay for a trip through the ring.
+            let frames = out.len() / channels.max(1);
+            self.inner.render(out, channels, input, p, pv);
+            self.ring.advance_unpitched(frames);
+            return;
+        }
+        let inner = PitchRing::inner_params(p, pitch);
+        let frames = out.len() / channels.max(1);
+        let need = self.ring.need(frames, pitch);
+        while self.ring.made() < need {
+            let n = self.ring.chunk().min((need - self.ring.made()) as usize);
+            self.inner
+                .render(&mut self.scratch[..n * channels], channels, input, &inner, pv);
+            self.ring.push(&self.scratch, n, channels);
+        }
+        self.ring.read(out, channels, pitch);
+    }
+
+    pub fn seek(
+        &mut self,
+        out_frame: u64,
+        input_frames: usize,
+        p: &StretchParams,
+        pv: &PvsolaParams,
+        semitones: f32,
+    ) {
+        let pitch = PitchRing::factor(semitones);
+        let at = self.ring.seek(out_frame, pitch);
+        self.inner
+            .seek(at, input_frames, &PitchRing::inner_params(p, pitch), pv);
     }
 }

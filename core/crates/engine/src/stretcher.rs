@@ -16,8 +16,8 @@
 //! never have run at all.
 
 use fx::grain::{GrainEvent, StreamParams};
-use fx::hstream::{HybridStream, Parts};
-use fx::pstream::PvsolaStream;
+use fx::hstream::{Parts, PitchedHybrid};
+use fx::pstream::PitchedPvsola;
 use fx::stream::{Pitched, StretchParams, WsolaStream};
 use fx::stretch::Algorithm;
 use fx::vstream::VocoderStream;
@@ -39,8 +39,8 @@ pub struct LayerBank {
     pub layers: u32,
     wsola: Vec<Pitched<WsolaStream>>,
     vocoder: Vec<Pitched<VocoderStream>>,
-    pvsola: Vec<PvsolaStream>,
-    hybrid: Vec<HybridStream>,
+    pvsola: Vec<PitchedPvsola>,
+    hybrid: Vec<PitchedHybrid>,
 }
 
 impl LayerBank {
@@ -74,10 +74,10 @@ impl LayerBank {
                     max_block,
                     channels,
                 )),
-                Algorithm::Pvsola => bank.pvsola.push(PvsolaStream::new(max_block, channels)),
+                Algorithm::Pvsola => bank.pvsola.push(PitchedPvsola::new(max_block, channels)),
                 Algorithm::Hybrid => {
                     bank.hybrid
-                        .push(HybridStream::new(max_block, channels, sample_rate))
+                        .push(PitchedHybrid::new(max_block, channels, sample_rate))
                 }
                 // The grain cloud layers inside its own renderer: a layer there
                 // is another schedule, not another engine.
@@ -103,8 +103,8 @@ pub struct Stretcher {
     grain: BlockRenderer,
     wsola: Pitched<WsolaStream>,
     vocoder: Pitched<VocoderStream>,
-    pvsola: PvsolaStream,
-    hybrid: HybridStream,
+    pvsola: PitchedPvsola,
+    hybrid: PitchedHybrid,
     /// The source, split three ways. Handed over from off the audio thread; an
     /// empty one simply means the hybrid has nothing to play yet.
     parts: std::sync::Arc<Parts>,
@@ -204,8 +204,8 @@ impl Stretcher {
                 channels,
             ),
             vocoder: Pitched::new(VocoderStream::new(max_block, channels), max_block, channels),
-            pvsola: PvsolaStream::new(max_block, channels),
-            hybrid: HybridStream::new(max_block, channels, sample_rate),
+            pvsola: PitchedPvsola::new(max_block, channels),
+            hybrid: PitchedHybrid::new(max_block, channels, sample_rate),
             parts: std::sync::Arc::new(Parts::default()),
             current: Algorithm::Granular,
             fading: None,
@@ -286,14 +286,17 @@ impl Stretcher {
                 self.vocoder
                     .seek(out_frame, sp.in_frames, &stretch_params(sp), sp.semitones)
             }
-            Algorithm::Pvsola => {
-                self.pvsola
-                    .seek(out_frame, sp.in_frames, &stretch_params(sp), &sp.pvsola)
-            }
+            Algorithm::Pvsola => self.pvsola.seek(
+                out_frame,
+                sp.in_frames,
+                &stretch_params(sp),
+                &sp.pvsola,
+                sp.semitones,
+            ),
             Algorithm::Hybrid => {
                 let parts = std::sync::Arc::clone(&self.parts);
                 self.hybrid
-                    .seek(out_frame, &parts, &stretch_params(sp), sp.hybrid)
+                    .seek(out_frame, &parts, &stretch_params(sp), sp.hybrid, sp.semitones)
             }
             _ => self.grain.seek(out_frame, sp),
         }
@@ -452,13 +455,13 @@ impl Stretcher {
             }
             Algorithm::Pvsola => {
                 if let Some(e) = bank.pvsola.get_mut(i) {
-                    e.seek(at, lp.in_frames, &stretch_params(lp), &lp.pvsola);
+                    e.seek(at, lp.in_frames, &stretch_params(lp), &lp.pvsola, lp.semitones);
                 }
             }
             Algorithm::Hybrid => {
                 let parts = std::sync::Arc::clone(&self.parts);
                 if let Some(e) = bank.hybrid.get_mut(i) {
-                    e.seek(at, &parts, &stretch_params(lp), lp.hybrid);
+                    e.seek(at, &parts, &stretch_params(lp), lp.hybrid, lp.semitones);
                 }
             }
             Algorithm::Granular => {}
@@ -491,12 +494,26 @@ impl Stretcher {
             }
             Algorithm::Pvsola => {
                 if let Some(e) = bank.pvsola.get_mut(i) {
-                    e.render(out, channels, &src.samples, &stretch_params(lp), &lp.pvsola);
+                    e.render_pitched(
+                        out,
+                        channels,
+                        &src.samples,
+                        &stretch_params(lp),
+                        &lp.pvsola,
+                        lp.semitones,
+                    );
                 }
             }
             Algorithm::Hybrid => {
                 if let Some(e) = bank.hybrid.get_mut(i) {
-                    e.render(out, channels, &parts, &stretch_params(lp), lp.hybrid);
+                    e.render_pitched(
+                        out,
+                        channels,
+                        &parts,
+                        &stretch_params(lp),
+                        lp.hybrid,
+                        lp.semitones,
+                    );
                 }
             }
             Algorithm::Granular => out.fill(0.0),
@@ -534,12 +551,13 @@ impl Stretcher {
                 0
             }
             Algorithm::Pvsola => {
-                self.pvsola.render(
+                self.pvsola.render_pitched(
                     out,
                     channels,
                     &src.samples,
                     &stretch_params(sp),
                     &sp.pvsola,
+                    sp.semitones,
                 );
                 0
             }
@@ -550,8 +568,14 @@ impl Stretcher {
                     return self.grain.render(out, channels, src, sp, events);
                 }
                 let parts = std::sync::Arc::clone(&self.parts);
-                self.hybrid
-                    .render(out, channels, &parts, &stretch_params(sp), sp.hybrid);
+                self.hybrid.render_pitched(
+                    out,
+                    channels,
+                    &parts,
+                    &stretch_params(sp),
+                    sp.hybrid,
+                    sp.semitones,
+                );
                 0
             }
             _ => self.grain.render(out, channels, src, sp, events),

@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.97-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2021-000000?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
-[![Tests](https://img.shields.io/badge/tests-752%20passing-2ea44f)](#building-from-source)
+[![Tests](https://img.shields.io/badge/tests-755%20passing-2ea44f)](#building-from-source)
 [![Crates](https://img.shields.io/badge/workspace-10%20crates-dea584?logo=rust&logoColor=white)](#the-stack)
 [![Dependencies](https://img.shields.io/badge/direct%20deps-2-4c9a2a)](#the-stack)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](#start-here)
@@ -207,7 +207,7 @@ between the Mac and the PC.
 ## Building from source
 
     cargo build --release --manifest-path core/Cargo.toml     # this machine
-    cargo test  --release --manifest-path core/Cargo.toml     # 752 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 755 tests
 
 For the Windows build from a Mac, once per machine:
 
