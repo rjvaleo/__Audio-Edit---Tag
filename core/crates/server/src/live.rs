@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use crate::state::App;
-use engine::{resample, Handle, Source};
+use engine::{conform_channels, resample, Handle, Source};
 use fx::grain::StreamParams;
 
 /// Open the device on first use.
@@ -143,9 +143,15 @@ pub fn load(
     let samples = edit::render::render(&list, &mut reader, 0, frames)
         .map_err(|e| format!("could not render the edit: {e}"))?;
 
-    let (dev_rate, _dev_channels) = with(app, |h| (h.sample_rate, h.channels))?;
+    let (dev_rate, dev_channels) = with(app, |h| (h.sample_rate, h.channels))?;
     let samples = resample(&samples, channels, src_rate, dev_rate);
-    let out_frames = if channels > 0 { samples.len() / channels } else { 0 };
+    // And laid out for the device. The engines index their input with the
+    // count they render at, so a mono file on a stereo device was read two
+    // samples at a time — twice too fast, and out of material half way. From
+    // here on `Source.channels` is the device's, always.
+    let samples = conform_channels(&samples, channels, dev_channels);
+    let channels = dev_channels.max(1);
+    let out_frames = samples.len() / channels;
 
     let source = Arc::new(Source { samples, channels });
     let params = StreamParams {
@@ -216,7 +222,59 @@ pub fn rack_for(app: &Arc<App>, rel: &str, sample_rate: u32, channels: usize) ->
 ///
 /// Called on every slider move, so it must stay cheap: no decode, no render,
 /// no allocation beyond the rack itself.
+/// Fold a document's stretch settings into the parameters the audio thread holds.
+///
+/// **Field by field, and deliberately not a replacement.** `in_frames` and
+/// `sample_rate` describe the *source the engine is holding*, not the document
+/// — overwriting them with a document's idea of its own length is how a stale
+/// source and fresh parameters get to disagree, which is heard as a sound that
+/// plays too fast and then stops.
+///
+/// The catch with writing it out by hand is the other way round: `vocoder` was
+/// missing from this list, so every control on the vocoder panel — the analysis
+/// window, phase lock, freeze, blur, gate, all of it — moved the exported file
+/// and nothing you could hear, until the file happened to be reloaded. Same
+/// family of bug as PVSOLA and the hybrid having no pitch. The test below is
+/// what says the list is complete.
+pub fn merge_stretch(p: &mut StreamParams, s: &fx::Stretch) {
+    p.ratio = s.ratio;
+    p.semitones = s.semitones;
+    p.window_ms = s.window_ms;
+    p.grain = s.grain;
+    p.algorithm = s.algorithm;
+    p.wsola = s.wsola;
+    p.vocoder = s.vocoder;
+    p.pvsola = s.pvsola;
+    p.hybrid = s.hybrid;
+}
+
+/// Is the engine holding this document?
+///
+/// The one question that decides whether a parameter may be pushed. What comes
+/// out of the speakers has to be what is on the screen, and the two are only
+/// the same thing while the engine is holding the document being adjusted.
+pub fn holding(app: &Arc<App>, rel: &str) -> bool {
+    app.playing
+        .read()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|(p, _, _)| p == rel)
+}
+
 pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(), String> {
+    // Parameters belong to the audio the engine is holding, and only a load
+    // changes that. Opening a second sound and moving a slider before playing
+    // it used to push the new document's settings onto the old one's buffer:
+    // the parameters then say one length and the samples are another, which is
+    // heard as a sound playing at the wrong speed and stopping early. It is
+    // also, more simply, the wrong sound.
+    //
+    // Nothing is lost by returning here. A load reads the document as it
+    // stands, so the settings being pushed are picked up in full the moment
+    // this sound is actually played.
+    if !holding(app, rel) {
+        return Ok(());
+    }
     with(app, |h| {
         let mut want_map = false;
         let mut want_parts = false;
@@ -246,14 +304,7 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
                 || p.grain.overlap != list.stretch.grain.overlap
                 || p.grain.density_hz != list.stretch.grain.density_hz;
 
-            p.ratio = list.stretch.ratio;
-            p.semitones = list.stretch.semitones;
-            p.window_ms = list.stretch.window_ms;
-            p.grain = list.stretch.grain;
-            p.algorithm = list.stretch.algorithm;
-            p.wsola = list.stretch.wsola;
-            p.pvsola = list.stretch.pvsola;
-            p.hybrid = list.stretch.hybrid;
+            merge_stretch(&mut p, &list.stretch);
             h.shared.set_params(p);
         }
         // Rebuilding runs an onset detector over the whole file, so it happens
@@ -351,3 +402,58 @@ fn map_for(
     )
 }
 
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merge_stretch;
+    use fx::grain::StreamParams;
+
+    /// Every field of the document's stretch has to reach the audio thread.
+    ///
+    /// `vocoder` was missing, so the whole vocoder panel moved the export and
+    /// nothing that could be heard. Written as "change everything, then check
+    /// nothing is still at its default" so the next field added is covered by
+    /// this test without anyone remembering to come back here.
+    #[test]
+    fn every_stretch_setting_reaches_the_parameters() {
+        let mut s = fx::Stretch::default();
+        s.ratio = 3.5;
+        s.semitones = -7.0;
+        s.window_ms = 123.0;
+        s.algorithm = fx::stretch::Algorithm::Pvsola;
+        s.grain.layers = 9;
+        s.wsola.stride = 17;
+        s.vocoder.window_ms = 321.0;
+        s.vocoder.phase_lock = !fx::Stretch::default().vocoder.phase_lock;
+        s.pvsola.anchor_frames = 21;
+        s.hybrid.margin = 4.5;
+
+        let mut p = StreamParams::new(1000, 48_000);
+        merge_stretch(&mut p, &s);
+
+        assert_eq!(p.ratio, 3.5);
+        assert_eq!(p.semitones, -7.0);
+        assert_eq!(p.window_ms, 123.0);
+        assert_eq!(p.algorithm, fx::stretch::Algorithm::Pvsola);
+        assert_eq!(p.grain.layers, 9);
+        assert_eq!(p.wsola.stride, 17);
+        assert_eq!(p.vocoder.window_ms, 321.0, "the vocoder panel is not reaching the audio");
+        assert_eq!(p.vocoder.phase_lock, s.vocoder.phase_lock);
+        assert_eq!(p.pvsola.anchor_frames, 21);
+        assert_eq!(p.hybrid.margin, 4.5);
+    }
+
+    /// And nothing about the *source* may be overwritten by the document.
+    ///
+    /// The engine's length belongs to the buffer it is holding. A document
+    /// saying otherwise is how a stale source and fresh parameters disagree,
+    /// which is heard as a sound that plays too fast and then stops.
+    #[test]
+    fn the_sources_own_facts_survive_a_merge() {
+        let mut p = StreamParams::new(176_228, 48_000);
+        let s = fx::Stretch { ratio: 36.6, ..fx::Stretch::default() };
+        merge_stretch(&mut p, &s);
+        assert_eq!(p.in_frames, 176_228, "the document overwrote the source length");
+        assert_eq!(p.sample_rate, 48_000, "the document overwrote the device rate");
+    }
+}

@@ -1,6 +1,6 @@
 # Architecture — as built
 
-What exists, as of 11 August 2026. 758 tests passing.
+What exists, as of 11 August 2026. 767 tests passing.
 
 The original design brief is
 [`Waveform display interface/uploads/AudioLab-ARCHITECTURE.md`](../Waveform%20display%20interface/uploads/AudioLab-ARCHITECTURE.md) —
@@ -35,7 +35,7 @@ on nothing, `server` depends on everything.
 |---|---:|---:|---|
 | `audio-core` | 2588 | 78 | Container probe and decode, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
-| `indexer` | 758 | 20 | Library walk, classify, write the TSV index |
+| `indexer` | 767 | 20 | Library walk, classify, write the TSV index |
 | `fx` | 12294 | 237 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
 | `edit` | 1663 | 54 | Non-destructive edit list, windowed render, export |
 | `engine` | 2773 | 33 | Block renderer, transport, cpal device |
