@@ -265,6 +265,33 @@ impl StreamParams {
     }
 }
 
+/// How much to lift the output for a given layer count.
+///
+/// Layering loses level, and only on this engine. The overlap-add divides by the
+/// summed window height — effectively by the *number* of grains — but grains
+/// that do not line up with each other sum in amplitude by only the *square
+/// root* of their number. So N layers of jittered grains come out at 1/√N, and
+/// every doubling of the layer count quietly costs 3 dB. Measured: sixteen
+/// layers land at 0.25, which is 1/√16 exactly.
+///
+/// The other engines never had this because their layering goes through
+/// `stretch::layered`, which measures one layer's RMS and scales the sum back to
+/// it. That cannot be done here: the real-time renderer is handed a few hundred
+/// frames at a time and cannot measure the RMS of audio it has not produced yet,
+/// so a measured correction would make live playback and the exported file
+/// disagree — which is the one thing this module exists to prevent.
+///
+/// √N is therefore applied blind, in both paths, from this one function. It is
+/// exact whenever the grains are decorrelated, which is whenever any jitter is
+/// on, which is when layers are worth using at all. On the degenerate case —
+/// several layers with no jitter and no spread, so every layer is the same audio
+/// — the layers sum coherently and this makes them √N too loud. That is the
+/// accepted cost of the two paths agreeing, chosen deliberately over a
+/// measurement only one of them can take.
+pub fn layer_gain(layers: u32) -> f32 {
+    (layers.clamp(1, 16) as f32).sqrt()
+}
+
 /// One grain, given its index and where it lands.
 ///
 /// Both the offline enumeration and the real-time stream call this. Having a
@@ -471,12 +498,15 @@ pub fn granular(
         }
     }
 
-    // Divide out the summed window so overlapping grains do not pile up.
+    // Divide out the summed window so overlapping grains do not pile up, then
+    // put back what layering takes away. Both paths call `layer_gain`; see it
+    // for why the compensation is a square root.
+    let lift = layer_gain(g.layers);
     for f in 0..p.out_frames {
         let n = norm[f];
         if n > 1e-6 {
             for ch in 0..channels {
-                out[f * channels + ch] /= n;
+                out[f * channels + ch] = out[f * channels + ch] / n * lift;
             }
         }
     }
@@ -662,26 +692,65 @@ mod layer_tests {
         assert_eq!(a, c, "layers of one must not change the existing sound");
     }
 
-    /// The point of the control: more layers is a denser cloud, not just a
-    /// louder one. The overlap normalisation keeps the level in check, so what
-    /// should rise is the number of distinct grains sounding at once.
-    #[test]
-    fn more_layers_is_denser_not_louder() {
+    fn rms(v: &[f32]) -> f32 {
+        (v.iter().map(|s| s * s).sum::<f32>() / v.len().max(1) as f32).sqrt()
+    }
+
+    /// Level against layer count, relative to a single layer.
+    fn levels(g: Grain) -> Vec<f32> {
         let src = tone(0.5, 48_000);
-        let g = Grain { position_jitter_ms: 40.0, pitch_jitter_semis: 4.0, seed: 11, ..Default::default() };
+        let render = |layers: u32| {
+            let mut g = g;
+            g.layers = layers;
+            rms(&granular(&src, 1, 48_000, 4.0, 0.0, 60.0, &g))
+        };
+        let one = render(1);
+        [2u32, 4, 8, 16].iter().map(|l| render(*l) / one).collect()
+    }
 
-        let rms = |v: &[f32]| (v.iter().map(|s| s * s).sum::<f32>() / v.len().max(1) as f32).sqrt();
+    /// The point of the control: more layers is a denser cloud, not a quieter
+    /// one — and this engine used to get quieter.
+    ///
+    /// Sixteen jittered layers came out at 0.25, which is 1/√16 exactly: the
+    /// overlap-add divides by the number of grains while decorrelated grains
+    /// sum by its square root, so every doubling cost 3 dB. `layer_gain` puts
+    /// it back. The test that used to stand here allowed anything between 0.4×
+    /// and 2.5× and so passed the whole time the bug was there.
+    #[test]
+    fn layers_hold_their_level_when_the_grains_are_decorrelated() {
+        let g = Grain {
+            position_jitter_ms: 40.0,
+            pitch_jitter_semis: 4.0,
+            seed: 11,
+            ..Default::default()
+        };
+        for (l, got) in [2u32, 4, 8, 16].iter().zip(levels(g)) {
+            assert!(
+                (got - 1.0).abs() < 0.2,
+                "{l} layers came out at {got:.2} of one layer"
+            );
+        }
+    }
 
-        let mut one = g;
-        one.layers = 1;
-        let mut many = g;
-        many.layers = 6;
-        let a = granular(&src, 1, 48_000, 4.0, 0.0, 60.0, &one);
-        let b = granular(&src, 1, 48_000, 4.0, 0.0, 60.0, &many);
-
-        assert_eq!(a.len(), b.len(), "layer count must not change the duration");
-        let (ra, rb) = (rms(&a), rms(&b));
-        assert!(rb > ra * 0.4 && rb < ra * 2.5, "level ran away: {ra} against {rb}");
+    /// The accepted cost of the compensation, written down so it is not mistaken
+    /// for a bug and quietly "fixed" back into the other one.
+    ///
+    /// Several layers with no jitter and no spread are the same audio several
+    /// times over. Those sum coherently, so the overlap normalisation already
+    /// held the level — and √N on top makes them √N too loud. The alternative
+    /// was measuring the RMS to know which case we are in, which the real-time
+    /// renderer cannot do without seeing audio it has not produced yet. Two
+    /// paths agreeing was chosen over a measurement only one of them can take.
+    #[test]
+    fn identical_layers_are_deliberately_louder_and_that_is_the_trade() {
+        let g = Grain { seed: 11, layer_spread: 0.0, ..Default::default() };
+        for (l, got) in [2u32, 4, 8, 16].iter().zip(levels(g)) {
+            let want = (*l as f32).sqrt();
+            assert!(
+                (got - want).abs() < 0.15,
+                "{l} identical layers came out at {got:.2}, expected √{l} = {want:.2}"
+            );
+        }
     }
 
     #[test]

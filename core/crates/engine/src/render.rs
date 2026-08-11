@@ -236,12 +236,16 @@ impl BlockRenderer {
         }
         self.live = w;
 
-        // Divide out the summed window so overlapping grains do not pile up.
+        // Divide out the summed window so overlapping grains do not pile up,
+        // then put back what layering takes away. The same `layer_gain` the
+        // offline renderer uses — a second copy of that square root here is
+        // exactly the kind of thing that lets the two drift apart.
+        let lift = fx::grain::layer_gain(sp.grain.layers);
         for f in 0..frames {
             let n = self.norm[f];
             if n > 1e-6 {
                 for ch in 0..channels {
-                    out[f * channels + ch] /= n;
+                    out[f * channels + ch] = out[f * channels + ch] / n * lift;
                 }
             }
         }
