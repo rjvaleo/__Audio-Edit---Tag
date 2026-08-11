@@ -268,8 +268,9 @@ Under the waveform, in Edit only. Browse has no open document to transport.
 
 | Control | What it does |
 |---|---|
-| ▶ / ❚❚ | Play / pause |
+| ▶ / ❚❚ | Play / pause — **the sound on screen**, loading it first if the engine is still holding the last one |
 | ■ | Stop, and return to the cue |
+| | *Choosing a different sound, in the library or by switching tabs, stops the transport. It belongs to what is on screen.* |
 | ⟲ | Loop — the selection if there is one, otherwise the whole document |
 | ● | **Capture** — records what is playing; on stop it saves a new file beside the original, named for the file, the module and the time |
 | Clock | Position, to the millisecond |

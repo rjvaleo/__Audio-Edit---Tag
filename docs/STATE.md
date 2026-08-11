@@ -926,11 +926,19 @@ decisions.**
     Anything looking for discontinuities has to render its own overlap; the
     click detector reported one at every multiple of the block size before it
     did.
-21. **`render_fx` per block on a stretched document is quadratic.** It renders
+21. **A control that reads the engine's state instead of the document's.** Play
+    asked whether the engine had *anything* loaded — true exactly once, on the
+    first play after launch — and resumed whatever it was holding for every
+    press after that. Pick a second sound and the first one played under the
+    new picture. Selecting deliberately does not load (loading folds the whole
+    document and hands it over), so anything that starts the transport has to
+    ask what is *selected*, not what is loaded. Found by ear, not by a test;
+    the interface still has none.
+22. **`render_fx` per block on a stretched document is quadratic.** It renders
     the whole timeline and slices, so a block loop renders the file once per
     block. Two separate places had this and both looked like a hang rather than
     a bug. Check `is_stretched()` and render once.
-22. **Struct-update syntax cannot see private fields from another crate.** Tests
+23. **Struct-update syntax cannot see private fields from another crate.** Tests
     in `tests/` are a separate crate, so `Thing { field: v, ..Default::default() }`
     fails on any struct with private state. Use the setter — which for anything
     implementing `Params` is the better test anyway, because it exercises the
