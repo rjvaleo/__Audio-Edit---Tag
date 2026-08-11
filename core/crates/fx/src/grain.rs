@@ -251,6 +251,31 @@ pub struct StreamParams {
     pub semitones: f32,
     pub window_ms: f32,
     pub grain: Grain,
+    /// Which engine the callback should run.
+    ///
+    /// The audio thread used to have no idea this existed — it ran the grain
+    /// cloud whatever the document said, which is why choosing an engine
+    /// changed the exported file and never changed what you heard.
+    pub algorithm: crate::stretch::Algorithm,
+    /// WSOLA's own settings, for when that is the engine running.
+    pub wsola: crate::stretch::WsolaParams,
+}
+
+impl StreamParams {
+    /// A starting set for a source of a given length. Everything else is the
+    /// engines' own defaults, so a caller only has to name what it cares about.
+    pub fn new(in_frames: usize, sample_rate: u32) -> Self {
+        StreamParams {
+            in_frames,
+            sample_rate,
+            ratio: 1.0,
+            semitones: 0.0,
+            window_ms: 40.0,
+            grain: Grain::default(),
+            algorithm: crate::stretch::Algorithm::Granular,
+            wsola: crate::stretch::WsolaParams::default(),
+        }
+    }
 }
 
 impl StreamParams {
@@ -367,6 +392,8 @@ pub fn grains(
         semitones,
         window_ms,
         grain: *g,
+        algorithm: crate::stretch::Algorithm::Granular,
+        wsola: crate::stretch::WsolaParams::default(),
     };
     let p = sp.plan();
 

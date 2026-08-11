@@ -24,6 +24,8 @@ fn params(in_frames: usize) -> StreamParams {
         semitones: 0.0,
         window_ms: 40.0,
         grain: Grain::default(),
+        algorithm: fx::stretch::Algorithm::Granular,
+        wsola: fx::stretch::WsolaParams::default(),
     }
 }
 
@@ -43,7 +45,7 @@ fn a_paused_engine_is_silent_and_does_not_move() {
     let src = source(48_000, 1);
     let sp = params(48_000);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(512, sp, src);
+    let mut core = Core::new(512, src.channels, sp, src);
 
     let out = pump(&mut core, &shared, 1, 512, 4);
     assert!(out.iter().all(|s| *s == 0.0), "paused output is not silent");
@@ -55,7 +57,7 @@ fn playing_advances_the_position_by_exactly_one_block_each_callback() {
     let src = source(48_000, 1);
     let sp = params(48_000);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(512, sp, src);
+    let mut core = Core::new(512, src.channels, sp, src);
     shared.play();
 
     for n in 1..=6u64 {
@@ -69,7 +71,7 @@ fn playing_produces_sound() {
     let src = source(48_000, 1);
     let sp = params(48_000);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(512, sp, src);
+    let mut core = Core::new(512, src.channels, sp, src);
     shared.play();
 
     // Skip the first block: the overlap-add has not built up yet.
@@ -85,7 +87,7 @@ fn a_seek_takes_effect_on_the_next_block() {
     let src = source(48_000, 1);
     let sp = params(48_000);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(512, sp, src);
+    let mut core = Core::new(512, src.channels, sp, src);
     shared.play();
 
     pump(&mut core, &shared, 1, 512, 2);
@@ -99,7 +101,7 @@ fn looping_wraps_at_the_end_and_never_runs_past_it() {
     let src = source(48_000, 1);
     let sp = params(48_000);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(512, sp, src);
+    let mut core = Core::new(512, src.channels, sp, src);
     shared.play();
     shared.set_loop(true, 4_000, 12_000);
 
@@ -121,7 +123,7 @@ fn the_loop_seam_has_no_silent_gap() {
     let src = source(48_000, 1);
     let sp = params(48_000);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(256, sp, src);
+    let mut core = Core::new(256, src.channels, sp, src);
     shared.play();
     shared.set_loop(true, 2_000, 10_000);
 
@@ -149,7 +151,7 @@ fn parameters_change_the_sound_without_interrupting_it() {
     let src = source(48_000, 1);
     let sp = params(48_000);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(512, sp, src);
+    let mut core = Core::new(512, src.channels, sp, src);
     shared.play();
 
     pump(&mut core, &shared, 1, 512, 2);
@@ -193,7 +195,7 @@ fn the_rack_is_applied_to_live_output() {
     let src = source(48_000, 1);
     let sp = params(48_000);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(512, sp, src);
+    let mut core = Core::new(512, src.channels, sp, src);
     shared.play();
 
     pump(&mut core, &shared, 1, 512, 2);
@@ -228,7 +230,7 @@ fn playback_stops_at_the_end_when_not_looping() {
     let src = source(4_800, 1); // 0.1 s
     let sp = params(4_800);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(512, sp, src);
+    let mut core = Core::new(512, src.channels, sp, src);
     shared.play();
 
     for _ in 0..40 {
@@ -248,7 +250,7 @@ fn looping_is_not_cut_short_by_the_end_stop() {
     let src = source(4_800, 1);
     let sp = params(4_800);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(256, sp, src);
+    let mut core = Core::new(256, src.channels, sp, src);
     shared.play();
     shared.set_loop(true, 500, 3_500);
 
@@ -265,7 +267,7 @@ fn a_zero_loop_end_means_the_whole_document() {
     let src = source(4_800, 1);
     let sp = params(4_800);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(256, sp, src);
+    let mut core = Core::new(256, src.channels, sp, src);
     shared.play();
     shared.set_loop(true, 0, 0);
 
@@ -283,7 +285,7 @@ fn a_loop_end_past_the_document_is_clamped() {
     let src = source(4_800, 1);
     let sp = params(4_800);
     let shared = Shared::new(sp, Arc::clone(&src));
-    let mut core = Core::new(256, sp, src);
+    let mut core = Core::new(256, src.channels, sp, src);
     shared.play();
     shared.set_loop(true, 0, 999_999);
 

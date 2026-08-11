@@ -23,6 +23,8 @@ fn params(in_frames: usize, g: Grain, ratio: f32, semis: f32) -> StreamParams {
         semitones: semis,
         window_ms: 40.0,
         grain: g,
+        algorithm: fx::stretch::Algorithm::Granular,
+        wsola: fx::stretch::WsolaParams::default(),
     }
 }
 

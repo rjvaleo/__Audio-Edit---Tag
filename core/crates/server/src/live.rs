@@ -45,6 +45,9 @@ fn idle_params() -> StreamParams {
         semitones: 0.0,
         window_ms: 40.0,
         grain: fx::Grain::default(),
+        // Nothing is loaded, so the engine that can start from nothing.
+        algorithm: fx::stretch::Algorithm::Granular,
+        wsola: fx::stretch::WsolaParams::default(),
     }
 }
 
@@ -101,11 +104,14 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
         semitones: list.stretch.semitones,
         window_ms: list.stretch.window_ms,
         grain: list.stretch.grain,
+        algorithm: list.stretch.algorithm,
+        wsola: list.stretch.wsola,
     };
 
     with(app, |h| {
         h.shared.set_source(Arc::clone(&source));
         h.shared.set_params(params);
+        h.shared.set_map(map_for(&source, &list.stretch, dev_rate));
         h.shared.request_seek(0);
         h.shared.set_rack(rack_for(app, rel));
     })?;
@@ -137,13 +143,69 @@ pub fn rack_for(app: &Arc<App>, rel: &str) -> Option<fx::Rack> {
 /// no allocation beyond the rack itself.
 pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(), String> {
     with(app, |h| {
+        let mut want_map = false;
         if let Some(mut p) = h.shared.params() {
+            // Only the transient map is expensive to derive, and only these
+            // decide it. Everything else can move under the pointer for free.
+            want_map = p.wsola.preserve_transients != list.stretch.wsola.preserve_transients
+                || p.wsola.sensitivity != list.stretch.wsola.sensitivity
+                || p.wsola.floor != list.stretch.wsola.floor
+                || p.wsola.guard_hops != list.stretch.wsola.guard_hops
+                || p.ratio != list.stretch.ratio
+                || p.window_ms != list.stretch.window_ms
+                || p.grain.overlap != list.stretch.grain.overlap
+                || p.grain.density_hz != list.stretch.grain.density_hz;
+
             p.ratio = list.stretch.ratio;
             p.semitones = list.stretch.semitones;
             p.window_ms = list.stretch.window_ms;
             p.grain = list.stretch.grain;
+            p.algorithm = list.stretch.algorithm;
+            p.wsola = list.stretch.wsola;
             h.shared.set_params(p);
+        }
+        // Rebuilding runs an onset detector over the whole file, so it happens
+        // on this thread and only when it can have changed — and not at all
+        // while transients are not being preserved, which is the usual case.
+        if want_map && list.stretch.wsola.preserve_transients {
+            if let Some(src) = h.shared.source() {
+                h.shared.set_map(map_for(&src, &list.stretch, h.sample_rate));
+            }
+        } else if want_map {
+            h.shared.set_map(None);
         }
         h.shared.set_rack(rack_for(app, rel));
     })
 }
+
+/// The map WSOLA needs for a document, or `None` for a straight line.
+///
+/// Runs the onset detector, so it belongs on whatever thread called in and
+/// never on the audio thread.
+fn map_for(
+    source: &Source,
+    stretch: &fx::Stretch,
+    sample_rate: u32,
+) -> Option<fx::transient::TimeMap> {
+    if !stretch.wsola.preserve_transients {
+        return None;
+    }
+    let hop = fx::grain::plan(
+        source.frames(),
+        sample_rate,
+        stretch.ratio,
+        stretch.window_ms,
+        &stretch.grain,
+    )
+    .hop
+    .max(1);
+    fx::stream::WsolaStream::build_map(
+        &source.samples,
+        source.channels,
+        sample_rate,
+        stretch.ratio,
+        hop,
+        &stretch.wsola,
+    )
+}
+

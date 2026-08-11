@@ -12,7 +12,8 @@ use fx::grain::{GrainEvent, StreamParams};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::render::{BlockRenderer, Source};
+use crate::render::Source;
+use crate::stretcher::Stretcher;
 
 /// Frames of fade either side of a loop wrap. A jump lands mid-waveform and
 /// clicks without it.
@@ -72,6 +73,14 @@ pub struct Shared {
     /// None means the rack was removed. One Option cannot say both.
     pending_rack: Mutex<Option<Option<fx::Rack>>>,
 
+    /// A transient map waiting to be adopted by the audio thread.
+    ///
+    /// Handed over for the same reason the rack is: deriving one runs an onset
+    /// detector over the whole file, which is an allocation and a long walk,
+    /// and neither belongs in a callback. `None` inside means a straight line,
+    /// which is the ordinary case and needs no map at all.
+    pending_map: Mutex<Option<Option<fx::transient::TimeMap>>>,
+
     /// Magnitudes of the most recent output block, 0..255 per bin.
     ///
     /// Taken from what actually left the engine, so the spectrum shows the
@@ -96,6 +105,7 @@ impl Shared {
             gain: AtomicU32::new(1.0f32.to_bits()),
             overflows: AtomicU64::new(0),
             pending_rack: Mutex::new(None),
+            pending_map: Mutex::new(None),
             spectrum: Mutex::new(Vec::new()),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
@@ -149,6 +159,12 @@ impl Shared {
         self.params.lock().ok().map(|g| *g)
     }
 
+    /// The audio currently loaded, for callers that need to derive something
+    /// from it off the audio thread — the transient map, for instance.
+    pub fn source(&self) -> Option<Arc<Source>> {
+        self.source.lock().ok().map(|g| Arc::clone(&g))
+    }
+
     pub fn set_source(&self, s: Arc<Source>) {
         if let Ok(mut g) = self.source.lock() {
             *g = s;
@@ -183,6 +199,13 @@ impl Shared {
 
     /// Hand a freshly built rack to the audio thread. Replacing an unclaimed
     /// one is fine: only the newest settings matter.
+    /// Leave a transient map for the audio thread to pick up.
+    pub fn set_map(&self, map: Option<fx::transient::TimeMap>) {
+        if let Ok(mut g) = self.pending_map.lock() {
+            *g = Some(map);
+        }
+    }
+
     pub fn set_rack(&self, rack: Option<fx::Rack>) {
         if let Ok(mut g) = self.pending_rack.lock() {
             *g = Some(rack);
@@ -233,7 +256,7 @@ impl Shared {
 /// The audio thread's own state. Lives in the callback closure, touched by
 /// nothing else.
 pub struct Core {
-    renderer: BlockRenderer,
+    renderer: Stretcher,
     rack: Option<fx::Rack>,
     /// Mono sum of recent output, for the spectrum. Fixed size, filled as a
     /// ring so a block smaller than the window still produces a full frame.
@@ -248,9 +271,22 @@ pub struct Core {
 }
 
 impl Core {
-    pub fn new(max_block: usize, params: StreamParams, source: Arc<Source>) -> Self {
+    /// `channels` is the *device's* channel count, not the source's.
+    ///
+    /// The engines size their buffers from it once and never again, so it has
+    /// to be the width they will actually be asked to fill. Taking it from the
+    /// source was wrong twice over: the source at build time is the silent
+    /// placeholder, which is mono, and the source changes every time a file is
+    /// opened while the device's width never does. A stereo file rendered into
+    /// half its buffer and left the rest silent.
+    pub fn new(
+        max_block: usize,
+        channels: usize,
+        params: StreamParams,
+        source: Arc<Source>,
+    ) -> Self {
         Core {
-            renderer: BlockRenderer::new(max_block),
+            renderer: Stretcher::new(max_block, channels.max(1), params.sample_rate),
             rack: None,
             fft_in: vec![0.0; FFT_SIZE],
             fft_at: 0,
@@ -295,6 +331,11 @@ impl Core {
         if let Ok(mut g) = shared.pending_rack.try_lock() {
             if let Some(next) = g.take() {
                 self.rack = next;
+            }
+        }
+        if let Ok(mut g) = shared.pending_map.try_lock() {
+            if let Some(next) = g.take() {
+                self.renderer.set_map(next);
             }
         }
 
@@ -420,7 +461,7 @@ impl Core {
             .store(self.renderer.position(), Ordering::Release);
         shared
             .overflows
-            .store(self.renderer.overflows, Ordering::Release);
+            .store(self.renderer.overflows(), Ordering::Release);
     }
 
     /// Feed the block into the spectrum window and publish a frame each time it

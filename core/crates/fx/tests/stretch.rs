@@ -542,6 +542,8 @@ fn sp(in_frames: usize, ratio: f32, semitones: f32, window_ms: f32, g: fx::Grain
         semitones,
         window_ms,
         grain: g,
+        algorithm: fx::stretch::Algorithm::Granular,
+        wsola: fx::stretch::WsolaParams::default(),
     }
 }
 
