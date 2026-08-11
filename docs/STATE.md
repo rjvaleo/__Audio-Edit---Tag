@@ -998,7 +998,7 @@ down:**
 
 ## 13. Recent history
 
-    (this one) Do the Peak edits: snap first, then the rest
+    5f874c6  Snap edits to zero crossings, and do the rest of Peak's edits
     4cb7260  Write down the whole state, including the Peak work
     4cda809  Draw every shaper from its own description
     d260c74  Wire the shapers into the rack, generically
