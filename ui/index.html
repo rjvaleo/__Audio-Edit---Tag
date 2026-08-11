@@ -183,6 +183,14 @@
   <input type="range" id="volume" min="0" max="1" step="0.01" value="0.85" title="Volume">
 </div>
 
+    <!-- Presets, in the strip that used to sit empty under the transport. -->
+    <div class="presetbar hidden" id="presetBar">
+      <span class="pb-label">Preset</span>
+      <select class="mini" id="presetPick"><option value="">— none —</option></select>
+      <button class="ghost" id="presetSave">Save as&hellip;</button>
+      <button class="ghost" id="presetDelete">Delete</button>
+    </div>
+
     <div class="regions hidden" id="regions"></div>
 
     <!-- overview: stats for the selected sound -->
@@ -220,29 +228,32 @@
       <div class="dock-body" id="dockStretch">
         <div class="grain-split">
           <div class="grain-controls">
-            <div class="cpanel">
-              <div class="cpanel-head">Time &amp; pitch
-                <button class="tiny" id="stretchReset"
-                        title="Reset time, pitch, grain shape and pitch movement">Reset all</button>
+            <div class="grain-standard">
+              <div class="cpanel">
+                <div class="cpanel-head">Time &amp; pitch
+                  <button class="tiny" id="stretchReset"
+                          title="Reset every control on both sides, standard and extended">Reset all</button>
+                </div>
+                <div id="stretchParams"></div>
+                <div class="mono dim" id="stretchOut"></div>
               </div>
-              <div id="stretchParams"></div>
-              <div class="mono dim" id="stretchOut"></div>
-            </div>
-            <div class="cpanel">
-              <div class="cpanel-head">Grain shape</div>
-              <div id="grainShape"></div>
-            </div>
-            <div class="cpanel">
-              <div class="cpanel-head">Pitch movement</div>
-              <div id="grainPitch"></div>
-            </div>
-            <div class="cpanel">
-              <div class="cpanel-head">Presets</div>
-              <select class="mini" id="presetPick"><option value="">— none —</option></select>
-              <div class="fx-row">
-                <button class="ghost" id="presetSave">Save as&hellip;</button>
-                <button class="ghost" id="presetDelete">Delete</button>
+              <div class="cpanel" id="panelGrainShape">
+                <div class="cpanel-head">Grain shape</div>
+                <div id="grainShape"></div>
               </div>
+              <div class="cpanel" id="panelGrainPitch">
+                <div class="cpanel-head">Pitch movement</div>
+                <div id="grainPitch"></div>
+              </div>
+            </div>
+
+            <div class="cpanel grain-extended" id="extPanel">
+              <div class="cpanel-head">Extended
+                <button class="tiny" id="extReset"
+                        title="Reset only the extended controls — the standard ones are left alone">Reset</button>
+              </div>
+              <div id="extEngine"></div>
+              <div id="extGrain"></div>
             </div>
           </div>
           <div class="grain-vis">

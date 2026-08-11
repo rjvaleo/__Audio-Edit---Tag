@@ -823,6 +823,7 @@ function setMode(mode) {
   $('transportBar').classList.toggle('hidden', !editing);
   $('ruler').classList.toggle('hidden', !editing);
   $('regions').classList.toggle('hidden', !editing);
+  $('presetBar').classList.toggle('hidden', !editing);
   $('dock').classList.toggle('hidden', !editing);
   $('statsView').classList.toggle('hidden', editing);
   $('tabBar').classList.toggle('hidden', !editing);
@@ -2380,9 +2381,12 @@ function renderStretch() {
       b.classList.toggle('active', b.dataset.alg === alg);
     }
     own.innerHTML = '';
-    // Every control in the folded sections below used to be a constant in the
-    // algorithm, and each was a constant because that value is where the
-    // algorithm works. Moving them is how you stop it working, on purpose.
+    // The engine's standard controls stay under the picker. Everything that
+    // used to be a constant in the algorithm goes to the Extended column
+    // instead: those values are constants because that is where the algorithm
+    // works, so they belong together and away from the everyday sliders.
+    const ext = $('extEngine');
+    ext.innerHTML = '';
     if (alg === 'vocoder') {
       const v = state.stretchDraft.vocoder;
       own.appendChild(param('Analysis window', v.windowMs, 5, 500, 1,
@@ -2395,7 +2399,7 @@ function renderStretch() {
         'Holds each partial together instead of letting it dissolve into neighbouring bins',
         v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); }));
 
-      own.appendChild(wild('Spectrum',
+      ext.appendChild(wild('Spectrum',
         'The vocoder normally copies magnitudes through untouched and rewrites only phase. These do not.').add(
         param('Freeze', v.magFreeze, 0, 1, 0.01,
           (x) => (x >= 0.999 ? 'held' : `${Math.round(x * 100)}%`),
@@ -2407,7 +2411,7 @@ function renderStretch() {
           (x) => { v.magGate = x; previewStretch(); }, () => commitStretch()),
       ));
 
-      own.appendChild(wild('Phase',
+      ext.appendChild(wild('Phase',
         'How the frequency estimate is believed and how far a peak imposes its phase on its neighbours.').add(
         param('Read speed', v.hopSkew, 0, 4, 0.01,
           (x) => (x <= 0.001 ? 'frozen' : `${x.toFixed(2)}×`),
@@ -2426,11 +2430,6 @@ function renderStretch() {
 
     if (alg === 'wsola') {
       const w = state.stretchDraft.wsola;
-      own.appendChild(param('Search', w.searchMs, 0, 200, 0.5,
-        (x) => (x <= 0 ? 'none — plain OLA' : `${x.toFixed(1)} ms`),
-        (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch()));
-      own.appendChild(param('Overlap', w.overlap, 1, 8, 0.05, (x) => `${x.toFixed(2)}×`,
-        (x) => { w.overlap = x; previewStretch(); }, () => commitStretch()));
       own.appendChild(check('preserve transients',
         'Hold drum hits at their original rate so they are not laid down twice',
         w.preserveTransients,
@@ -2439,15 +2438,15 @@ function renderStretch() {
         own.appendChild(param('Detector', w.sensitivity, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
           (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch()));
-        own.appendChild(param('Floor', w.floor, 0, 2, 0.01,
-          (x) => (x <= 0 ? 'none' : `${x.toFixed(2)}×`),
-          (x) => { w.floor = x; previewStretch(); }, () => commitStretch()));
-        own.appendChild(param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hops`,
-          (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch()));
       }
 
-      own.appendChild(wild('Splice',
-        'Which segment the similarity search goes looking for, and what it is laid down under.').add(
+      ext.appendChild(wild('Splice',
+        'How far the similarity search looks, what it goes looking for, and what the result is laid down under.').add(
+        param('Search', w.searchMs, 0, 200, 0.5,
+          (x) => (x <= 0 ? 'none — plain OLA' : `${x.toFixed(1)} ms`),
+          (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch()),
+        param('Overlap', w.overlap, 1, 8, 0.05, (x) => `${x.toFixed(2)}×`,
+          (x) => { w.overlap = x; previewStretch(); }, () => commitStretch()),
         seg('Pick', [
           ['similar', 'best', 'The segment that best continues what came before. What WSOLA is for.'],
           ['different', 'worst', 'The least similar segment the search can find, every time.'],
@@ -2461,16 +2460,28 @@ function renderStretch() {
         param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} frames`,
           (x) => { w.stride = Math.round(x); previewStretch(); }, () => commitStretch()),
       ));
-    }
-    // Granular's controls are the Grain shape panel, so it needs nothing here.
-    const grainOn = alg === 'granular';
-    for (const id of ['grainShape', 'grainPitch']) {
-      const panel = $(id)?.closest('.cpanel');
-      if (panel) {
-        panel.style.opacity = grainOn ? 1 : 0.4;
-        panel.title = grainOn ? '' : 'Select the Granular engine to use these';
+
+      // Only reachable once the detector is running, so it appears with it.
+      if (w.preserveTransients) {
+        ext.appendChild(wild('Transients',
+          'What the detector counts as a hit, and how much either side of one is held at its original rate.').add(
+          param('Floor', w.floor, 0, 2, 0.01,
+            (x) => (x <= 0 ? 'none' : `${x.toFixed(2)}×`),
+            (x) => { w.floor = x; previewStretch(); }, () => commitStretch()),
+          param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hops`,
+            (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch()),
+        ));
       }
     }
+
+    // The grain panels belong to one engine. Dimmed, they still took up the
+    // room and still read as controls; gone, the column is the engine you
+    // actually selected.
+    const grainOn = alg === 'granular';
+    for (const id of ['panelGrainShape', 'panelGrainPitch']) {
+      $(id)?.classList.toggle('hidden', !grainOn);
+    }
+    $('extGrain')?.classList.toggle('hidden', !grainOn);
   };
   for (const b of eng.querySelectorAll('.seg-btn')) {
     b.onclick = () => {
@@ -2574,10 +2585,15 @@ function renderGrainParams() {
     return el;
   };
 
+  // The extended grain controls join the engines' in the one column, rather
+  // than hiding at the bottom of two different panels.
+  const extGrain = $('extGrain');
+  extGrain.innerHTML = '';
+
   // The read pointer's relationship to the ratio, which is what makes a stretch
   // a stretch. Severing it is the difference between a granular stretcher and a
   // granular instrument.
-  shape.appendChild(wild('Scan',
+  extGrain.appendChild(wild('Scan',
     'Where in the source the cloud reads from, and which way each grain runs.').add(
     gp('Scan', 'scan', -2, 2, 0.01,
       (v) => (Math.abs(v) < 0.005 ? 'frozen' : v < 0 ? `${v.toFixed(2)}× back` : `${v.toFixed(2)}×`)),
@@ -2586,7 +2602,7 @@ function renderGrainParams() {
       'A grain pushed past the end of the file reappears at the beginning instead of piling up against it.'),
   ));
 
-  shape.appendChild(wild('Shape',
+  extGrain.appendChild(wild('Shape',
     'The grain envelope, how far sizes may reach, and where the layers sit.').add(
     gp('Envelope', 'envelope', 0, 1, 0.01,
       (v) => (Math.abs(v - 0.5) < 0.005 ? 'symmetric' : v < 0.5 ? 'percussive' : 'swelling')),
@@ -2616,7 +2632,7 @@ function renderGrainParams() {
   seedRow.sync = showSeed;
   state.grainRows.seed = seedRow;
 
-  pitchBox.appendChild(wild('Randomness',
+  extGrain.appendChild(wild('Randomness',
     'Where the per-grain variation comes from, and whether the streams move together.').add(
     gc('link jitter', 'linkJitter',
       'Size, position and pitch draw from one stream instead of three, so they vary together.'),
@@ -2750,6 +2766,35 @@ $('presetDelete').onclick = async () => {
 /// engine's own defaults, from `Grain::default`; the seed is deliberately not
 /// among them, because it names a cloud rather than shaping one and throwing it
 /// away would lose the sound you were working on.
+// Which fields belong to the Extended column. The line is where it is because
+// everything on this list used to be a constant inside an algorithm; the
+// standard column is the set of controls the app has always had.
+const EXTENDED_FIELDS = {
+  vocoder: ['hopSkew', 'freqTrust', 'phaseSpread', 'peakWidth', 'lockWidth',
+            'magFreeze', 'magBlur', 'magGate'],
+  wsola: ['searchMs', 'overlap', 'splice', 'stride', 'shape', 'guardHops', 'floor'],
+  grain: ['scan', 'reverse', 'envelope', 'sizeRange', 'wrap', 'layerSpread',
+          'linkJitter', 'driftStep', 'panSpread'],
+};
+
+/// Put the extended controls back where the engines assume them, and leave
+/// everything else exactly as it is — including the seed, which has no default
+/// worth restoring: one is not a more correct random draw than any other.
+$('extReset').onclick = async () => {
+  for (const k of EXTENDED_FIELDS.vocoder) state.stretchDraft.vocoder[k] = VOCODER_DEFAULTS[k];
+  for (const k of EXTENDED_FIELDS.wsola) state.stretchDraft.wsola[k] = WSOLA_DEFAULTS[k];
+  const grain = { ...state.grainDraft };
+  for (const k of EXTENDED_FIELDS.grain) grain[k] = GRAIN_DEFAULTS[k];
+  state.grainDraft = grain;
+  await editOp({ op: 'stretch', ...state.stretchDraft, grain });
+  // The extended column is built once and left alone, like the engine panels,
+  // so its controls cannot be pushed back the way a plain slider can.
+  stretchBuiltFor = null;
+  grainBuiltFor = null;
+  renderStretch();
+  renderGrainParams();
+};
+
 $('stretchReset').onclick = async () => {
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard',
                          algorithm: 'wsola',
@@ -2938,6 +2983,9 @@ function drawMarkers() {
 
   const strip = $('regions');
   strip.innerHTML = '';
+  // A strip with nothing in it took a row of the window to say so. It gets its
+  // height back the moment there is a region to put in it.
+  strip.classList.toggle('bare', !state.annotations.regions.length);
   for (const r of state.annotations.regions) {
     const a = framesToX(r.start);
     const b = framesToX(r.end);
