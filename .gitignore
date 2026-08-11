@@ -22,3 +22,9 @@ target/
 # markers, presets, sessions, scan index. Per-machine — the library path is not
 # the same on the Mac and the PC — so it is deliberately not tracked.
 data/
+
+# Built programs. They were tracked until the classifier went in and took them
+# from 4.7 MB to 74 MB — which git keeps forever, and again on every refresh.
+# The launchers build from source when these are absent, so a fresh clone still
+# works; it just takes a minute the first time.
+bin/

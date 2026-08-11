@@ -143,7 +143,7 @@ follows equations 5.10 to 5.12 and the code is laid out to be read against it.
 
     Start.command     macOS launcher
     StartHere.bat     Windows launcher
-    bin/              the prebuilt programs — audiolab (macOS), audiolab.exe (Windows)
+    bin/              built programs, if you have them. Not in git; see below
     data/             everything the app remembers. Not in git; see below
     core/             the Rust workspace
     docs/             architecture, controls, menus
@@ -152,6 +152,21 @@ follows equations 5.10 to 5.12 and the code is laid out to be read against it.
     models/           the YAMNet ONNX model
     Audio Library/    sample audio to try it on
     Reference Docs/   papers, the stretch roadmap, and the classification taxonomy
+
+## The built programs
+
+`bin/` is **not tracked in git**. The classifier took the binaries from 4.7 MB
+to 74 MB, and git keeps every version of that forever.
+
+The launchers build from source when `bin/` is empty, so a fresh clone works —
+it just takes a minute the first time. If you want them there, put them there:
+
+    cargo build --release --manifest-path core/Cargo.toml
+    cp core/target/release/audiolab bin/
+
+Either launcher runs **whichever binary is newer**, the shipped one or your own
+build. It used to prefer `bin/` outright, which meant a rebuild could silently
+have no effect because the launcher was still running a copy from weeks ago.
 
 ## Where your work is kept
 
