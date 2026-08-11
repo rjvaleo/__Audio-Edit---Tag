@@ -700,16 +700,30 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .seg-param .seg { width: 100%; }
 .seg-param .seg-btn { flex: 1; min-width: 0; }
 
-/* The name where a name goes, the box where the control goes. Scoped to the
-   ones the control table builds — a plain `.check` elsewhere in the app is
-   still a label with a box beside it. */
-.check:has(.k) {
-  display: grid; grid-template-columns: var(--param-k) minmax(0, 1fr);
-  align-items: center; gap: var(--param-gap);
-  font-size: 10.5px; color: var(--text-dim);
+/* A switch is a button with its own name on it and a lamp on the right. A tick
+   box was a small target labelled from outside itself; this is one object that
+   says what it is and which way it is set. */
+.toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; height: 22px; padding: 0 8px;
+  border-radius: 6px; border: 1px solid var(--line-2);
+  background: linear-gradient(oklch(21% 0.014 250), oklch(17% 0.013 250));
+  color: var(--text-dim); font: inherit; font-size: 10.5px; text-align: left;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.35);
 }
-.check .k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.check:has(.k) input { justify-self: start; margin: 0; accent-color: var(--accent); }
+.toggle:hover { border-color: var(--line-2); color: var(--text-2); filter: brightness(1.15); }
+.toggle:active { transform: translateY(1px); box-shadow: none; }
+.toggle .tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toggle .led {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: oklch(26% 0.008 250);
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.7);
+}
+.toggle.on { color: var(--text); border-color: var(--accent); }
+.toggle.on .led {
+  background: var(--accent);
+  box-shadow: 0 0 7px var(--accent), inset 0 0 2px rgba(255,255,255,0.55);
+}
 
 .seed-row .v { color: var(--text-2); }
 .seed-row .ghost { width: 100%; }
@@ -722,10 +736,29 @@ body.editing .transport { background: oklch(14% 0.015 255); }
    table is that a slider is the same size wherever it is. */
 .wild { display: flex; flex-direction: column; gap: var(--param-row); }
 .wild-head {
+  display: flex; align-items: center; gap: 8px;
   font-size: 10px; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--warn);
   border-bottom: 1px solid var(--line); padding-bottom: 4px;
 }
+/* The panels have no heading of their own any more, so a reset rides on the
+   first line the panel does have — the engine row, or the first group's rule. */
+.wild-head .tiny { margin-left: auto; text-transform: none; letter-spacing: 0; }
+/* The standard side's groups name what they are without shouting it: these are
+   the everyday controls, not the ones that break the algorithm. */
+.grain-standard .wild-head { color: var(--text-dim); }
+/* Air above each heading, so its rule reads as separating it from what came
+   before rather than as underlining itself. The groups sit inside wrappers, so
+   this cannot key off being the panel's own first child. */
+.wild { margin-top: 9px; }
+.cpanel > .wild:first-child, .cpanel > :first-child .wild:first-child { margin-top: 0; }
+
+/* Two switches that only mean anything together, on one line. Their names take
+   the room rather than the fixed first column, which at half width would leave
+   the box hard against the label. */
+.param-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--param-gap); }
+/* A switch is already one full-width object, so a pair is simply two of them. */
+.param-pair .toggle { min-width: 0; }
 .wild-body { display: flex; flex-direction: column; gap: var(--param-row); }
 .param-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -977,10 +1010,9 @@ body.editing .dock { flex: 0 0 300px; }
 /* Halves rather than thirds. A control is one line now, so the panels are short
    enough to stack down a column, and half the width is a slider you can
    actually aim at. */
-.grain-standard {
-  min-width: 0;
-  display: flex; flex-direction: column; gap: 10px; align-content: start;
-}
+/* One panel with headed groups, the same as Extended: three boxes stacked in a
+   column were three sets of padding and three borders saying nothing. */
+.grain-standard { min-width: 0; }
 .grain-standard .param-grid { grid-template-columns: 1fr; gap: 8px; }
 /* Its own column, because everything in it is a value the algorithm was tuned
    around. Kept beside the standard controls rather than under them, so it is
@@ -988,8 +1020,7 @@ body.editing .dock { flex: 0 0 300px; }
 /* No scroller of its own: the grid's own is enough, and an inner scrollbar
    took four pixels off this column's sliders and not the other's. */
 .grain-extended { align-self: start; min-width: 0; }
-.grain-extended .wild { margin-top: 4px; }
-.grain-extended .wild:first-child { margin-top: 0; }
+
 
 /* A reset that sits in the panel's own header rather than under its controls,
    where it was competing with them for the eye. */
@@ -1014,7 +1045,7 @@ body.editing .dock { flex: 0 0 300px; }
 /* Deliberately not touching `gap` any more: it used to separate a label row
    from the slider under it, and now it is the space between the table's
    columns. Overriding it here made the three columns close up. */
-.cpanel .param .k, .cpanel .param .v, .cpanel .check { font-size: 10px; }
+.cpanel .param .k, .cpanel .param .v { font-size: 10px; }
 .cpanel .param input[type=range] { height: 14px; }
 .cpanel .seg-btn { font-size: 9.5px; padding: 0 6px; }
 .cpanel .ghost { height: 20px; font-size: 10px; }
@@ -1162,7 +1193,8 @@ body.editing .dock { flex: 0 0 330px; }
 
 /* Which stretch engine. A choice about the material, not a quality ladder, so
    it reads as two named options rather than a slider. */
-.engine-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+.engine-pick { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.engine-pick .tiny { margin-left: auto; }
 .engine-pick .seg-btn { font-size: 10px; padding: 0 8px; }
 .engine-pick .check { font-size: 10px; transition: opacity .15s ease; }
 /* The chosen engine's own controls, under the picker. */

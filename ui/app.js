@@ -2050,22 +2050,24 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
   return el;
 }
 
-/// A checkbox built the same way as `param`, so a panel can mix the two.
+/// A switch: one button carrying its own name, with a lamp on the right.
+///
+/// Not a tick box, and not a name in one column with a control in another —
+/// there is only one thing here, so the whole row is the thing you press and
+/// the lamp says which way it is set.
 function check(label, title, value, onChange) {
-  const el = document.createElement('label');
-  el.className = 'check';
-  if (title) el.title = title;
-  // Name first, box in the control column, so a checkbox lines up with the
-  // sliders above and below it rather than starting from the margin.
-  el.innerHTML = `<span class="k"></span><input type="checkbox"${value ? ' checked' : ''}>`;
-  const name = el.querySelector('.k');
-  name.textContent = label;
-  name.title = title || label;
-  const input = el.querySelector('input');
-  input.onchange = (e) => onChange(e.target.checked);
-  // Same contract as `param`, so Reset and Undo can push a value into either
-  // without knowing which it is holding.
-  el.sync = (v) => { input.checked = !!v; };
+  const el = document.createElement('button');
+  el.className = 'toggle';
+  el.innerHTML = `<span class="tname"></span><i class="led"></i>`;
+  el.querySelector('.tname').textContent = label;
+  el.title = title || label;
+
+  let on = !!value;
+  const paint = () => el.classList.toggle('on', on);
+  paint();
+  el.onclick = () => { on = !on; paint(); onChange(on); };
+  // Same contract as `param` and `seg`, so Reset can push a value in.
+  el.sync = (v) => { on = !!v; paint(); };
   return el;
 }
 
@@ -2077,19 +2079,35 @@ function seg(label, options, value, onChange) {
   // table rather than interrupting it. The bar takes the slider and reading
   // columns between them.
   el.innerHTML = `<span class="k"></span><div class="seg"></div>`;
-  el.querySelector('.k').textContent = label;
+  const name = el.querySelector('.k');
+  name.textContent = label;
+  name.title = label;
   const bar = el.querySelector('.seg');
   for (const [val, text, hint] of options) {
     const b = document.createElement('button');
     b.className = 'seg-btn' + (val === value ? ' active' : '');
     b.textContent = text;
     if (hint) b.title = hint;
+    b._val = val;
     b.onclick = () => {
       for (const x of bar.children) x.classList.toggle('active', x === b);
       onChange(val);
     };
     bar.appendChild(b);
   }
+  // Same contract as `param`, so Reset and Undo can push a value in without
+  // knowing which kind of control they are holding.
+  el.sync = (v) => {
+    for (const b of bar.children) b.classList.toggle('active', b._val === v);
+  };
+  return el;
+}
+
+/// Two switches on one line, for the pairs that only mean anything together.
+function pair(a, b) {
+  const el = document.createElement('div');
+  el.className = 'param-pair';
+  el.append(a, b);
   return el;
 }
 
@@ -2396,6 +2414,13 @@ function renderStretch() {
       <button class="seg-btn" data-alg="vocoder" title="Frequency domain. Holds chords and sustained tone together - pads, strings.">Vocoder</button>
       <button class="seg-btn" data-alg="granular" title="A cloud of grains. Not trying to be transparent - this is the one you hear.">Granular</button>
     </div>`;
+  // The panel has no heading any more, so its reset rides on the engine row —
+  // the one line that is always there whichever engine is chosen.
+  eng.appendChild(resetButton(
+    'stretchReset', 'Reset all',
+    'Reset every control on both sides, standard and extended',
+    resetEverything,
+  ));
   box.appendChild(eng);
 
   // Each engine gets its own controls. They mean different things by a
@@ -2511,10 +2536,11 @@ function renderStretch() {
     // room and still read as controls; gone, the column is the engine you
     // actually selected.
     const grainOn = alg === 'granular';
-    for (const id of ['panelGrainShape', 'panelGrainPitch']) {
+    for (const id of ['grainShape', 'grainPitch']) {
       $(id)?.classList.toggle('hidden', !grainOn);
     }
     $('extGrain')?.classList.toggle('hidden', !grainOn);
+    placeExtendedReset();
   };
   for (const b of eng.querySelectorAll('.seg-btn')) {
     b.onclick = () => {
@@ -2580,14 +2606,14 @@ function renderGrainParams() {
 
   // Grouped by what they do, so each panel stays short enough to read at once.
   const groups = [
-    [shape, [
+    [shape, 'Grain shape', [
       ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'auto' : `${Math.round(v)}/s`)],
       ['Layers', 'layers', 1, 16, 1, (v) => `${Math.round(v)}×`],
       ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`],
       ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`],
       ['Position jitter', 'positionJitterMs', 0, 500, 1, (v) => `${Math.round(v)} ms`],
     ]],
-    [pitchBox, [
+    [pitchBox, 'Pitch movement', [
       ['Pitch jitter', 'pitchJitterSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
       ['Pitch drift', 'pitchDriftSemis', 0, 24, 0.1, (v) => `±${v.toFixed(1)} st`],
       ['Drift rate', 'driftRateHz', 0.01, 10, 0.01, (v) => `${v.toFixed(2)} Hz`],
@@ -2595,14 +2621,16 @@ function renderGrainParams() {
   ];
 
   state.grainRows = {};
-  for (const [target, rows] of groups) {
+  for (const [target, heading, rows] of groups) {
+    const group = wild(heading);
     for (const [label, key, min, max, step, fmt] of rows) {
       const el = param(label, g[key], min, max, step, fmt,
         (v) => { state.grainDraft[key] = v; preview(); },
         () => commit());
       state.grainRows[key] = el;
-      target.appendChild(el);
+      group.add(el);
     }
+    target.appendChild(group);
   }
 
   const gp = (label, key, min, max, step, fmt) => {
@@ -2630,9 +2658,12 @@ function renderGrainParams() {
     'Where in the source the cloud reads from, and which way each grain runs.').add(
     gp('Scan', 'scan', -2, 2, 0.01,
       (v) => (Math.abs(v) < 0.005 ? 'frozen' : `${v.toFixed(2)}×`)),
-    gc('reverse grains', 'reverse', 'Each grain reads its own span backwards. The cloud still moves forward.'),
-    gc('wrap positions', 'wrap',
-      'A grain pushed past the end of the file reappears at the beginning instead of piling up against it.'),
+    pair(
+      gc('reverse grains', 'reverse',
+        'Each grain reads its own span backwards. The cloud still moves forward.'),
+      gc('wrap positions', 'wrap',
+        'A grain pushed past the end of the file reappears at the beginning instead of piling up against it.'),
+    ),
   ));
 
   extGrain.appendChild(wild('Shape',
@@ -2668,11 +2699,17 @@ function renderGrainParams() {
 
   extGrain.appendChild(wild('Randomness',
     'Where the per-grain variation comes from, and whether the streams move together.').add(
-    gc('link jitter', 'linkJitter',
-      'Size, position and pitch draw from one stream instead of three, so they vary together.'),
-    gc('step the drift', 'driftStep', 'Drift jumps between values instead of gliding through them.'),
+    pair(
+      gc('link jitter', 'linkJitter',
+        'Size, position and pitch draw from one stream instead of three, so they vary together.'),
+      gc('step the drift', 'driftStep',
+        'Drift jumps between values instead of gliding through them.'),
+    ),
     seedRow,
   ));
+
+  // This rebuild replaced whatever the reset was sitting on.
+  placeExtendedReset();
 }
 
 let grainBuiltFor = null;
@@ -2814,7 +2851,7 @@ const EXTENDED_FIELDS = {
 /// Put the extended controls back where the engines assume them, and leave
 /// everything else exactly as it is — including the seed, which has no default
 /// worth restoring: one is not a more correct random draw than any other.
-$('extReset').onclick = async () => {
+async function resetExtended() {
   for (const k of EXTENDED_FIELDS.vocoder) state.stretchDraft.vocoder[k] = VOCODER_DEFAULTS[k];
   for (const k of EXTENDED_FIELDS.wsola) state.stretchDraft.wsola[k] = WSOLA_DEFAULTS[k];
   const grain = { ...state.grainDraft };
@@ -2827,9 +2864,9 @@ $('extReset').onclick = async () => {
   grainBuiltFor = null;
   renderStretch();
   renderGrainParams();
-};
+}
 
-$('stretchReset').onclick = async () => {
+async function resetEverything() {
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard',
                          algorithm: 'wsola',
                          vocoder: { ...VOCODER_DEFAULTS },
@@ -2848,7 +2885,45 @@ $('stretchReset').onclick = async () => {
   renderGrainParams();
   syncStretchSliders();
   syncGrainSliders();
-};
+}
+
+/// The Extended column's reset, on the first line it has.
+///
+/// The column has no heading of its own, so the button rides on the heading of
+/// whichever group comes first — which changes with the engine, hence moving it
+/// rather than building it in. Held outside the DOM between rebuilds so the
+/// `innerHTML` that clears the column does not take the handler with it.
+let extResetBtn = null;
+function placeExtendedReset() {
+  const panel = $('extPanel');
+  if (!panel) return;
+  if (!extResetBtn) {
+    extResetBtn = resetButton(
+      'extReset', 'Reset',
+      'Reset only the extended controls — the standard ones are left alone',
+      resetExtended,
+    );
+  }
+  // Not `offsetParent`, which needs layout and is unreliable mid-rebuild.
+  const heads = [...panel.querySelectorAll('.wild-head')];
+  const first = heads.find((h) => !h.closest('.hidden')) || heads[0];
+  if (first) first.appendChild(extResetBtn);
+}
+
+/// A reset button, built where it belongs rather than declared in the markup.
+///
+/// The panels these sit in are rebuilt wholesale, so a button placed once in
+/// the HTML would be destroyed by the first rebuild and take its handler with
+/// it. Keeping the id means the menu can still press it.
+function resetButton(id, label, title, run) {
+  const b = document.createElement('button');
+  b.className = 'tiny';
+  b.id = id;
+  b.textContent = label;
+  b.title = title;
+  b.onclick = run;
+  return b;
+}
 
 function renderRackParams() {
   const box = $('rackParams');
