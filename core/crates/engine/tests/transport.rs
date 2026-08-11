@@ -31,6 +31,10 @@ fn params(in_frames: usize) -> StreamParams {
 
 
         pvsola: fx::pvsola::PvsolaParams::default(),
+
+
+
+        hybrid: fx::hybrid::HybridParams::default(),
     }
 }
 

@@ -16,6 +16,7 @@
 //! never have run at all.
 
 use fx::grain::{GrainEvent, StreamParams};
+use fx::hstream::{HybridStream, Parts};
 use fx::pstream::PvsolaStream;
 use fx::stream::{Pitched, StretchParams, WsolaStream};
 use fx::stretch::Algorithm;
@@ -29,6 +30,10 @@ pub struct Stretcher {
     wsola: Pitched<WsolaStream>,
     vocoder: Pitched<VocoderStream>,
     pvsola: PvsolaStream,
+    hybrid: HybridStream,
+    /// The source, split three ways. Handed over from off the audio thread; an
+    /// empty one simply means the hybrid has nothing to play yet.
+    parts: std::sync::Arc<Parts>,
     /// What was running last block, so a change can be noticed and acted on.
     current: Algorithm,
     /// The engine being faded out of, and how many frames of the fade are left.
@@ -55,12 +60,12 @@ const FADE_FRAMES: usize = 1024;
 
 /// Which engines run here at all.
 ///
-/// The hybrid is not streaming yet and falls back to the grain cloud rather
-/// than to silence. That is a lie about what you are hearing, so the interface
-/// has to say so — but silence would be a worse one, and refusing to play at
-/// all worse still.
-pub fn is_live(alg: Algorithm) -> bool {
-    !matches!(alg, Algorithm::Hybrid)
+/// Every engine runs here now.
+///
+/// Kept as a function rather than deleted: it is what the interface mirrors,
+/// and the next engine added will not be streaming on the day it lands.
+pub fn is_live(_alg: Algorithm) -> bool {
+    true
 }
 
 /// What actually runs for a requested engine.
@@ -94,6 +99,8 @@ impl Stretcher {
             ),
             vocoder: Pitched::new(VocoderStream::new(max_block, channels), max_block, channels),
             pvsola: PvsolaStream::new(max_block, channels),
+            hybrid: HybridStream::new(max_block, channels, sample_rate),
+            parts: std::sync::Arc::new(Parts::default()),
             current: Algorithm::Granular,
             fading: None,
             scratch: vec![0.0; max_block.max(1) * channels.max(1)],
@@ -108,7 +115,16 @@ impl Stretcher {
     /// Hand WSOLA a freshly built transient map, or `None` for a straight line.
     /// Built off the audio thread; see `fx::stream`.
     pub fn set_map(&mut self, map: Option<fx::transient::TimeMap>) {
-        self.wsola.inner_mut().set_map(map);
+        self.wsola.inner_mut().set_map(map.clone());
+        // The hybrid stretches its percussive part with preservation held on,
+        // so it wants a map too — of that part rather than of the whole sound,
+        // which is what having separated it is for. The caller decides which.
+        self.hybrid.set_map(map);
+    }
+
+    /// Adopt a freshly separated source. Built off the audio thread.
+    pub fn set_parts(&mut self, parts: std::sync::Arc<Parts>) {
+        self.parts = parts;
     }
 
     pub fn overflows(&self) -> u64 {
@@ -141,6 +157,11 @@ impl Stretcher {
             Algorithm::Pvsola => {
                 self.pvsola
                     .seek(out_frame, sp.in_frames, &stretch_params(sp), &sp.pvsola)
+            }
+            Algorithm::Hybrid => {
+                let parts = std::sync::Arc::clone(&self.parts);
+                self.hybrid
+                    .seek(out_frame, &parts, &stretch_params(sp), sp.hybrid)
             }
             _ => self.grain.seek(out_frame, sp),
         }
@@ -250,6 +271,17 @@ impl Stretcher {
                     &stretch_params(sp),
                     &sp.pvsola,
                 );
+                0
+            }
+            Algorithm::Hybrid => {
+                // Nothing separated yet — the pass is still running on another
+                // thread. The grain cloud covers the gap rather than silence.
+                if self.parts.is_empty() {
+                    return self.grain.render(out, channels, src, sp, events);
+                }
+                let parts = std::sync::Arc::clone(&self.parts);
+                self.hybrid
+                    .render(out, channels, &parts, &stretch_params(sp), sp.hybrid);
                 0
             }
             _ => self.grain.render(out, channels, src, sp, events),

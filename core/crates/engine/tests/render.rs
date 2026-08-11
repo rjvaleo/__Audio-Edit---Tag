@@ -30,6 +30,10 @@ fn params(in_frames: usize, g: Grain, ratio: f32, semis: f32) -> StreamParams {
 
 
         pvsola: fx::pvsola::PvsolaParams::default(),
+
+
+
+        hybrid: fx::hybrid::HybridParams::default(),
     }
 }
 

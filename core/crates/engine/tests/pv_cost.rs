@@ -31,10 +31,14 @@ fn no_engine_takes_longer_to_make_a_block_than_the_block_takes_to_play() {
     // The real-time budget: a block must be produced in less than it plays for.
     let budget = block as f64 / SR as f64;
 
-    for alg in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+    for alg in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola, Algorithm::Hybrid] {
         let sp = StreamParams { algorithm: alg, ratio: 6.0, ..StreamParams::new(n, SR) };
         let mut s = Stretcher::new(block, ch, SR);
         s.set_map(None);
+        if alg == Algorithm::Hybrid {
+            s.set_parts(std::sync::Arc::new(fx::hstream::Parts::separate(
+                &src.samples, ch, sp.hybrid)));
+        }
         s.seek(0, &sp);
         let mut buf = vec![0f32; block * ch];
         let mut evs = vec![GrainEvent { index:0, out_frame:0, src_frame:0.0, size:0, rate:1.0, pitch_semis:0.0 }; 128];

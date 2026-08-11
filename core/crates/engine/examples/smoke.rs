@@ -28,6 +28,10 @@ fn main() {
 
 
         pvsola: fx::pvsola::PvsolaParams::default(),
+
+
+
+        hybrid: fx::hybrid::HybridParams::default(),
     };
 
     let engine = match Engine::start(params, source) {
