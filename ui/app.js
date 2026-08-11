@@ -1941,6 +1941,7 @@ function pushRack({ immediate = false } = {}) {
         p: f.path,
         sr: state.view.sampleRate || 48000,
         slots: state.rack.slots,
+        master: state.rack.master,
       });
     } catch (e) { toast(e.message); return; }
     renderRack();
@@ -1964,10 +1965,72 @@ function slotSummary(slot) {
   return `${slot.ratio.toFixed(1)}:1 · ${slot.thresholdDb.toFixed(0)} dB`;
 }
 
+/// Defaults for the channel compressor, mirroring `MasterSettings`. A document
+/// saved before it existed opens with the controls where the engine assumes
+/// them rather than at undefined.
+const MASTER_DEFAULTS = {
+  on: false, amount: 0.5, autoLevel: true, autoComp: true, ceilingDb: -0.3,
+};
+
+/// Which file the channel strip was built for. Same reason as the stretch
+/// panel: rebuilding it under the pointer kills the drag.
+let masterBuiltFor = null;
+
+/// The channel's compressor: one knob, and two decisions about what the knob
+/// is allowed to work out for itself.
+function renderMaster() {
+  const box = $('masterStrip');
+  if (!box) return;
+  const path = state.selectedFile?.path || null;
+  if (!state.rack) { box.innerHTML = ''; masterBuiltFor = null; return; }
+  state.rack.master = { ...MASTER_DEFAULTS, ...(state.rack.master || {}) };
+  if (masterBuiltFor === path) { reflectMaster(); return; }
+  masterBuiltFor = path;
+  box.innerHTML = '';
+
+  const m = state.rack.master;
+  const send = throttled(() => pushRack(), 120);
+  const commit = () => pushRack({ immediate: true });
+
+  state.masterRows = {};
+  const row = (el, key) => { state.masterRows[key] = el; box.appendChild(el); return el; };
+
+  row(check('maximizer', 'Compress and hold the channel under its ceiling', m.on,
+    (on) => { m.on = on; reflectMaster(); commit(); }), 'on');
+
+  row(param('Amount', m.amount, 0, 1, 0.01,
+    (v) => (v <= 0 ? 'none' : v >= 0.999 ? 'maximize' : `${Math.round(v * 100)}%`),
+    (v) => { m.amount = v; send(); }, () => commit()), 'amount');
+
+  row(check('auto level',
+    'Walk the output up to the ceiling as it plays, rather than leaving the gain where it was',
+    m.autoLevel, (on) => { m.autoLevel = on; commit(); }), 'autoLevel');
+
+  row(check('auto compression',
+    'Take the threshold from the material, so the same setting squeezes a quiet file like a loud one',
+    m.autoComp, (on) => { m.autoComp = on; commit(); }), 'autoComp');
+
+  row(param('Ceiling', m.ceilingDb, -24, 0, 0.1, (v) => `${v.toFixed(1)} dB`,
+    (v) => { m.ceilingDb = v; send(); }, () => commit()), 'ceilingDb');
+
+  reflectMaster();
+}
+
+/// Everything but the switch is only reachable once it is on.
+function reflectMaster() {
+  const m = state.rack?.master;
+  if (!m || !state.masterRows) return;
+  for (const [k, el] of Object.entries(state.masterRows)) {
+    el.sync?.(m[k]);
+    if (k !== 'on') el.classList.toggle('inactive', !m.on);
+  }
+}
+
 function renderRack() {
   const list = $('rackList');
   if (!list) return;
   list.innerHTML = '';
+  renderMaster();
   if (!state.rack) return;
 
   state.rack.slots.forEach((slot, i) => {

@@ -3,7 +3,7 @@
 use crate::json::Value;
 use fx::comp::CompSettings;
 use fx::eq::{Band, EqSettings};
-use fx::{Compressor, Eq, Gain, Rack};
+use fx::{Compressor, Eq, Gain, MasterSettings, Maximizer, Rack};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
@@ -15,6 +15,10 @@ use std::sync::Mutex;
 #[derive(Debug, Clone, PartialEq)]
 pub struct RackSpec {
     pub slots: Vec<SlotSpec>,
+    /// The channel's own compressor, after everything in the chain. Not a slot:
+    /// it is not something you add and cannot be reordered, because the end of
+    /// the chain is the only place it means anything.
+    pub master: MasterSettings,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +43,29 @@ impl SlotSpec {
             SlotSpec::Eq { .. } => "eq",
             SlotSpec::Comp { .. } => "comp",
         }
+    }
+}
+
+fn master_to_json(m: &MasterSettings) -> Value {
+    Value::obj()
+        .set("on", m.on)
+        .set("amount", m.amount as f64)
+        .set("autoLevel", m.auto_level)
+        .set("autoComp", m.auto_comp)
+        .set("ceilingDb", m.ceiling_db as f64)
+}
+
+fn master_from_json(v: Option<&Value>) -> MasterSettings {
+    let d = MasterSettings::default();
+    let Some(v) = v else { return d };
+    MasterSettings {
+        on: flag(v.get("on")),
+        amount: num(v.get("amount"), d.amount).clamp(0.0, 1.0),
+        // Absent means on: these are what makes it a one-knob processor, and a
+        // rack written before it existed should get the useful behaviour.
+        auto_level: !matches!(v.get("autoLevel"), Some(Value::Bool(false))),
+        auto_comp: !matches!(v.get("autoComp"), Some(Value::Bool(false))),
+        ceiling_db: num(v.get("ceilingDb"), d.ceiling_db).clamp(-24.0, 0.0),
     }
 }
 
@@ -72,7 +99,7 @@ fn band_json(b: &Band) -> Value {
 
 impl RackSpec {
     pub fn empty() -> Self {
-        RackSpec { slots: Vec::new() }
+        RackSpec { slots: Vec::new(), master: MasterSettings::default() }
     }
 
     /// A sensible starting rack: everything present but flat and bypassed, so
@@ -84,12 +111,14 @@ impl RackSpec {
                 SlotSpec::Eq { settings: EqSettings::default(), bypassed: true },
                 SlotSpec::Comp { settings: CompSettings::default(), bypassed: true },
             ],
+            master: MasterSettings::default(),
         }
     }
 
     pub fn from_json(v: &Value) -> Self {
+        let master = master_from_json(v.get("master"));
         let Some(Value::Arr(items)) = v.get("slots") else {
-            return RackSpec::empty();
+            return RackSpec { master, ..RackSpec::empty() };
         };
         let mut slots = Vec::new();
         for it in items {
@@ -130,7 +159,7 @@ impl RackSpec {
                 _ => {}
             }
         }
-        RackSpec { slots }
+        RackSpec { slots, master }
     }
 
     pub fn to_json(&self) -> Value {
@@ -160,11 +189,15 @@ impl RackSpec {
             .collect();
         Value::obj()
             .set("slots", Value::Arr(slots))
+            .set("master", master_to_json(&self.master))
             .set("active", self.is_active())
     }
 
     /// Is anything actually going to change the audio?
     pub fn is_active(&self) -> bool {
+        if self.master.is_active() {
+            return true;
+        }
         self.slots.iter().any(|s| match s {
             SlotSpec::Gain { db, bypassed } => !bypassed && db.abs() > 1e-6,
             SlotSpec::Eq { settings, bypassed } => {
@@ -192,6 +225,11 @@ impl RackSpec {
                     rack.push(Box::new(Compressor::new(*settings)))
                 }
             }
+        }
+        // Last, always. The channel compressor exists to hold whatever the
+        // chain produced under the ceiling, which it can only do from the end.
+        if self.master.is_active() {
+            rack.push(Box::new(Maximizer::new(self.master)));
         }
         rack
     }
@@ -290,6 +328,7 @@ mod tests {
                 },
                 bypassed: false,
             }],
+            master: MasterSettings::default(),
         };
         assert!(spec.is_active());
         assert!(!spec.build().is_empty());
@@ -300,6 +339,7 @@ mod tests {
         // Otherwise every file pays for pre-roll and filtering to achieve nothing.
         let spec = RackSpec {
             slots: vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }],
+            master: MasterSettings::default(),
         };
         assert!(!spec.is_active());
     }
@@ -308,6 +348,7 @@ mod tests {
     fn a_bypassed_slot_is_left_out_of_the_built_rack() {
         let spec = RackSpec {
             slots: vec![SlotSpec::Gain { db: 12.0, bypassed: true }],
+            master: MasterSettings::default(),
         };
         assert!(spec.build().is_empty());
         assert!(!spec.is_active());
@@ -352,6 +393,7 @@ mod tests {
     fn the_eq_curve_is_flat_when_nothing_is_boosted() {
         let spec = RackSpec {
             slots: vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }],
+            master: MasterSettings::default(),
         };
         for (f, db) in spec.eq_curve(48000, 64) {
             assert!(db.abs() < 0.1, "flat EQ curved by {db} dB at {f} Hz");
@@ -368,6 +410,7 @@ mod tests {
                 },
                 bypassed: false,
             }],
+            master: MasterSettings::default(),
         };
         let curve = spec.eq_curve(48000, 200);
         let (peak_f, peak_db) = curve
@@ -389,7 +432,7 @@ mod tests {
     #[test]
     fn the_store_remembers_what_was_set() {
         let store = RackStore::default();
-        store.set("a.wav", RackSpec { slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }] });
+        store.set("a.wav", RackSpec { slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default() });
         assert!(store.is_active("a.wav"));
         assert_eq!(store.get("a.wav").slots.len(), 1);
     }
