@@ -777,7 +777,7 @@ fn preserving_transients_keeps_hits_from_doubling() {
     kept.wsola.preserve_transients = true;
     let kept = kept.process(&src, 1, rate);
 
-    let count = |v: &[f32]| fx::transient::onsets(v, 1, rate, 0.5).len();
+    let count = |v: &[f32]| fx::transient::onsets(v, 1, rate, 0.5, 1.0).len();
     let (a, b) = (count(&plain), count(&kept));
     // Three went in; preservation should not invent more than plain WSOLA does.
     assert!(b <= a, "preserved produced {b} onsets against plain WSOLA's {a}");
@@ -807,4 +807,239 @@ fn material_with_no_transients_is_unaffected_either_way() {
     kept.wsola.preserve_transients = true;
     let kept = kept.process(&tone, 1, rate);
     assert_eq!(plain.len(), kept.len());
+}
+
+// ===================================================== the deliberate controls
+//
+// Every knob below used to be a constant, and every one of them was a constant
+// because that value is where the algorithm works. So there are two things to
+// check and they pull in opposite directions: leaving them alone must reproduce
+// the old sound *exactly*, and moving them must actually reach the audio rather
+// than being read and dropped. A control that changes nothing is worse than no
+// control, because you cannot hear that it is broken.
+
+/// A chord over noise: partials for the vocoder to hold together and a floor
+/// for it to smear, which is enough for any of these to show up.
+fn busy(rate: u32, secs: f32) -> Vec<f32> {
+    let n = (secs * rate as f32) as usize;
+    let mut seed = 99u32;
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / rate as f32;
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let noise = ((seed >> 16) as f32 / 32768.0) - 1.0;
+            let tone = (std::f32::consts::TAU * 220.0 * t).sin()
+                + (std::f32::consts::TAU * 277.0 * t).sin() * 0.7
+                + (std::f32::consts::TAU * 330.0 * t).sin() * 0.5;
+            tone * 0.25 + noise * 0.06
+        })
+        .collect()
+}
+
+fn differs(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len().min(b.len());
+    if n == 0 {
+        return f32::INFINITY;
+    }
+    a.iter().zip(b.iter()).take(n).map(|(x, y)| (x - y).abs()).sum::<f32>() / n as f32
+}
+
+#[test]
+fn every_wsola_control_left_alone_is_the_sound_it_always_made() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    let base = Stretch { ratio: 2.0, ..Default::default() }.process(&src, 1, rate);
+
+    // Spelled out rather than `..Default::default()`, because the point is that
+    // these particular values are the ones the algorithm used to hard-code.
+    let mut same = Stretch { ratio: 2.0, ..Default::default() };
+    same.wsola.search_ms = 10.0;
+    same.wsola.overlap = 2.0;
+    same.wsola.splice = fx::stretch::Splice::Similar;
+    same.wsola.stride = 4;
+    same.wsola.shape = fx::stretch::WinShape::Hann;
+    assert_eq!(base, same.process(&src, 1, rate));
+}
+
+#[test]
+fn every_vocoder_control_left_alone_is_the_sound_it_always_made() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    let mut base = Stretch { ratio: 2.0, algorithm: Algorithm::Vocoder, ..Default::default() };
+    let plain = base.process(&src, 1, rate);
+
+    base.vocoder.hop_skew = 1.0;
+    base.vocoder.freq_trust = 1.0;
+    base.vocoder.phase_spread = 1.0;
+    base.vocoder.peak_width = 2;
+    base.vocoder.lock_width = 1.0;
+    base.vocoder.mag_freeze = 0.0;
+    base.vocoder.mag_blur = 0.0;
+    base.vocoder.mag_gate = 0.0;
+    assert_eq!(plain, base.process(&src, 1, rate));
+}
+
+#[test]
+fn every_grain_control_left_alone_is_the_sound_it_always_made() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    let mut base = Stretch { ratio: 2.0, algorithm: Algorithm::Granular, ..Default::default() };
+    base.grain.size_jitter = 0.3;
+    base.grain.pitch_jitter_semis = 2.0;
+    let plain = base.process(&src, 1, rate);
+
+    base.grain.scan = 1.0;
+    base.grain.reverse = false;
+    base.grain.envelope = 0.5;
+    base.grain.size_range = 1.0;
+    base.grain.wrap = false;
+    base.grain.layer_spread = 1.0;
+    base.grain.link_jitter = false;
+    base.grain.drift_step = false;
+    base.grain.pan_spread = 0.0;
+    assert_eq!(plain, base.process(&src, 1, rate));
+}
+
+/// Each control, one at a time, against the same source. Every one of them has
+/// to reach the audio — and the length must survive, because these are meant to
+/// change the character of a stretch, not what the timeline says it is.
+#[test]
+fn each_wsola_control_reaches_the_audio() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    let base = Stretch { ratio: 2.0, quality: Quality::Best, ..Default::default() };
+    let plain = base.process(&src, 1, rate);
+
+    let cases: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
+        ("search 0 — plain overlap-add", Box::new(|s: &mut Stretch| s.wsola.search_ms = 0.0)),
+        ("search 120ms", Box::new(|s: &mut Stretch| s.wsola.search_ms = 120.0)),
+        ("overlap 4", Box::new(|s: &mut Stretch| s.wsola.overlap = 4.0)),
+        ("worst splice", Box::new(|s: &mut Stretch| s.wsola.splice = fx::stretch::Splice::Different)),
+        ("loudest splice", Box::new(|s: &mut Stretch| s.wsola.splice = fx::stretch::Splice::Loudest)),
+        ("stride 64", Box::new(|s: &mut Stretch| s.wsola.stride = 64)),
+        ("rect window", Box::new(|s: &mut Stretch| s.wsola.shape = fx::stretch::WinShape::Rect)),
+        ("triangle window", Box::new(|s: &mut Stretch| s.wsola.shape = fx::stretch::WinShape::Triangle)),
+    ];
+
+    for (name, set) in cases {
+        let mut s = base;
+        set(&mut s);
+        let out = s.process(&src, 1, rate);
+        assert_eq!(out.len(), plain.len(), "{name} changed the length");
+        assert!(differs(&plain, &out) > 1e-4, "{name} did nothing");
+    }
+}
+
+#[test]
+fn each_vocoder_control_reaches_the_audio() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    let base = Stretch { ratio: 2.0, algorithm: Algorithm::Vocoder, ..Default::default() };
+    let plain = base.process(&src, 1, rate);
+
+    let cases: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
+        ("frozen read pointer", Box::new(|s: &mut Stretch| s.vocoder.hop_skew = 0.0)),
+        ("hop skew 2.5", Box::new(|s: &mut Stretch| s.vocoder.hop_skew = 2.5)),
+        ("no frequency trust", Box::new(|s: &mut Stretch| s.vocoder.freq_trust = 0.0)),
+        ("frequency trust 3", Box::new(|s: &mut Stretch| s.vocoder.freq_trust = 3.0)),
+        ("no phase spread", Box::new(|s: &mut Stretch| s.vocoder.phase_spread = 0.0)),
+        ("peak width 8", Box::new(|s: &mut Stretch| s.vocoder.peak_width = 8)),
+        ("lock width 2.5", Box::new(|s: &mut Stretch| s.vocoder.lock_width = 2.5)),
+        ("spectral freeze", Box::new(|s: &mut Stretch| s.vocoder.mag_freeze = 1.0)),
+        ("magnitude blur", Box::new(|s: &mut Stretch| s.vocoder.mag_blur = 0.6)),
+        ("magnitude gate", Box::new(|s: &mut Stretch| s.vocoder.mag_gate = 0.3)),
+    ];
+
+    for (name, set) in cases {
+        let mut s = base;
+        set(&mut s);
+        let out = s.process(&src, 1, rate);
+        assert_eq!(out.len(), plain.len(), "{name} changed the length");
+        assert!(differs(&plain, &out) > 1e-4, "{name} did nothing");
+    }
+}
+
+#[test]
+fn each_grain_control_reaches_the_audio() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    let mut base = Stretch { ratio: 2.0, algorithm: Algorithm::Granular, ..Default::default() };
+    // Jitter on, so the controls that steer the *randomness* have randomness to
+    // steer. With every jitter at zero, linking their streams is a no-op and the
+    // test would be asserting something it cannot see.
+    base.grain.size_jitter = 0.4;
+    base.grain.position_jitter_ms = 40.0;
+    base.grain.pitch_jitter_semis = 3.0;
+    base.grain.pitch_drift_semis = 2.0;
+    base.grain.layers = 3;
+    let plain = base.process(&src, 1, rate);
+
+    let cases: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
+        ("frozen scan", Box::new(|s: &mut Stretch| s.grain.scan = 0.0)),
+        ("reverse scan", Box::new(|s: &mut Stretch| s.grain.scan = -1.0)),
+        ("reversed grains", Box::new(|s: &mut Stretch| s.grain.reverse = true)),
+        ("percussive envelope", Box::new(|s: &mut Stretch| s.grain.envelope = 0.0)),
+        ("swelling envelope", Box::new(|s: &mut Stretch| s.grain.envelope = 1.0)),
+        ("wide size range", Box::new(|s: &mut Stretch| s.grain.size_range = 6.0)),
+        ("wrapping positions", Box::new(|s: &mut Stretch| s.grain.wrap = true)),
+        ("stacked layers", Box::new(|s: &mut Stretch| s.grain.layer_spread = 0.0)),
+        ("linked jitter", Box::new(|s: &mut Stretch| s.grain.link_jitter = true)),
+        ("stepped drift", Box::new(|s: &mut Stretch| s.grain.drift_step = true)),
+    ];
+
+    for (name, set) in cases {
+        let mut s = base;
+        set(&mut s);
+        let out = s.process(&src, 1, rate);
+        assert_eq!(out.len(), plain.len(), "{name} changed the length");
+        assert!(differs(&plain, &out) > 1e-4, "{name} did nothing");
+    }
+}
+
+/// Pan is the one grain control that needs two channels to mean anything, and
+/// it must not quietly change the level while it moves things about.
+#[test]
+fn pan_spread_widens_without_costing_level() {
+    let rate = 44_100;
+    let mono = busy(rate, 1.0);
+    let src: Vec<f32> = mono.iter().flat_map(|v| [*v, *v]).collect();
+
+    let mut base = Stretch { ratio: 2.0, algorithm: Algorithm::Granular, ..Default::default() };
+    base.grain.size_jitter = 0.3;
+    let centred = base.process(&src, 2, rate);
+
+    let mut wide = base;
+    wide.grain.pan_spread = 1.0;
+    let wide = wide.process(&src, 2, rate);
+
+    let side = |v: &[f32]| -> f32 {
+        let n = v.len() / 2;
+        (0..n).map(|f| (v[f * 2] - v[f * 2 + 1]).abs()).sum::<f32>() / n.max(1) as f32
+    };
+    // A mono source panned nowhere has no side content at all.
+    assert!(side(&centred) < 1e-6, "centred grains were not centred");
+    assert!(side(&wide) > 1e-3, "spread grains produced no width");
+
+    let level = |v: &[f32]| (v.iter().map(|x| x * x).sum::<f32>() / v.len().max(1) as f32).sqrt();
+    let (a, b) = (level(&centred), level(&wide));
+    assert!(
+        (b / a.max(1e-9) - 1.0).abs() < 0.25,
+        "spreading changed the level: {a} to {b}"
+    );
+}
+
+/// The detector floor was added to stop it firing on numerical ripple through a
+/// held tone. Removing it deliberately has to bring that back, or the control
+/// is not reaching the thing it claims to.
+#[test]
+fn removing_the_detector_floor_lets_a_steady_tone_trigger() {
+    let rate = 44_100;
+    let n = 2 * rate as usize;
+    let tone: Vec<f32> = (0..n)
+        .map(|i| (std::f32::consts::TAU * 440.0 * i as f32 / rate as f32).sin())
+        .collect();
+    let with = fx::transient::onsets(&tone, 1, rate, 0.5, 1.0).len();
+    let without = fx::transient::onsets(&tone, 1, rate, 0.5, 0.0).len();
+    assert_eq!(with, 0, "the floor stopped working");
+    assert!(without > 5, "removing the floor changed nothing: {without}");
 }

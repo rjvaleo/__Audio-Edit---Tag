@@ -2029,6 +2029,57 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
   return el;
 }
 
+/// A checkbox built the same way as `param`, so a panel can mix the two.
+function check(label, title, value, onChange) {
+  const el = document.createElement('label');
+  el.className = 'check';
+  if (title) el.title = title;
+  el.innerHTML = `<input type="checkbox"${value ? ' checked' : ''}> <span></span>`;
+  el.querySelector('span').textContent = label;
+  const input = el.querySelector('input');
+  input.onchange = (e) => onChange(e.target.checked);
+  // Same contract as `param`, so Reset and Undo can push a value into either
+  // without knowing which it is holding.
+  el.sync = (v) => { input.checked = !!v; };
+  return el;
+}
+
+/// A named choice between a few values.
+function seg(label, options, value, onChange) {
+  const el = document.createElement('div');
+  el.className = 'param seg-param';
+  el.innerHTML = `<div class="row"><span class="k"></span></div><div class="seg"></div>`;
+  el.querySelector('.k').textContent = label;
+  const bar = el.querySelector('.seg');
+  for (const [val, text, hint] of options) {
+    const b = document.createElement('button');
+    b.className = 'seg-btn' + (val === value ? ' active' : '');
+    b.textContent = text;
+    if (hint) b.title = hint;
+    b.onclick = () => {
+      for (const x of bar.children) x.classList.toggle('active', x === b);
+      onChange(val);
+    };
+    bar.appendChild(b);
+  }
+  return el;
+}
+
+/// A folded-away group, for controls that exist to break the algorithm rather
+/// than to tune it. Open it and everything inside is a way to make the engine
+/// stop doing its job — which is the point, but not what you want under the
+/// pointer while reaching for Stretch.
+function wild(summary, title) {
+  const el = document.createElement('details');
+  el.className = 'wild';
+  el.innerHTML = '<summary></summary><div class="wild-body"></div>';
+  el.querySelector('summary').textContent = summary;
+  if (title) el.querySelector('summary').title = title;
+  el.body = el.querySelector('.wild-body');
+  el.add = (...kids) => { for (const k of kids) el.body.appendChild(k); return el; };
+  return el;
+}
+
 /// Re-read the folder listing and whatever folder is open.
 ///
 /// Called after anything this app does that puts a file in the library, so the
@@ -2252,6 +2303,27 @@ function sendStretch({ live }) {
   );
 }
 
+// The engines' own defaults, mirroring `VocoderParams`, `WsolaParams` and
+// `Grain` in the fx crate. Kept here so a document saved before a control
+// existed still opens with that control at the value the engine assumes, rather
+// than at undefined — which a slider reads as NaN and posts back as a reset.
+const VOCODER_DEFAULTS = {
+  windowMs: 46, overlap: 4, phaseLock: true,
+  hopSkew: 1, freqTrust: 1, phaseSpread: 1, peakWidth: 2, lockWidth: 1,
+  magFreeze: 0, magBlur: 0, magGate: 0,
+};
+const WSOLA_DEFAULTS = {
+  preserveTransients: false, sensitivity: 0.5,
+  searchMs: 10, overlap: 2, splice: 'similar', stride: 4, shape: 'hann',
+  guardHops: 3, floor: 1,
+};
+const GRAIN_DEFAULTS = {
+  densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
+  pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5, layers: 1,
+  scan: 1, reverse: false, envelope: 0.5, sizeRange: 1, wrap: false,
+  layerSpread: 1, linkJitter: false, driftStep: false, panSpread: 0,
+};
+
 /// Continuous preview while dragging, at draft quality so it keeps up.
 const previewStretch = throttled(() => sendStretch({ live: true }), 90);
 
@@ -2278,8 +2350,8 @@ function renderStretch() {
     ratio: st.ratio, semitones: st.semitones,
     windowMs: st.windowMs, quality: st.quality || 'standard',
     algorithm: st.algorithm || 'wsola',
-    vocoder: { ...(st.vocoder || { windowMs: 46, overlap: 4, phaseLock: true }) },
-    wsola: { ...(st.wsola || { preserveTransients: false, sensitivity: 0.5 }) },
+    vocoder: { ...VOCODER_DEFAULTS, ...(st.vocoder || {}) },
+    wsola: { ...WSOLA_DEFAULTS, ...(st.wsola || {}) },
   };
 
   // Which engine does the stretching. Not a quality ladder — the two fail in
@@ -2308,6 +2380,9 @@ function renderStretch() {
       b.classList.toggle('active', b.dataset.alg === alg);
     }
     own.innerHTML = '';
+    // Every control in the folded sections below used to be a constant in the
+    // algorithm, and each was a constant because that value is where the
+    // algorithm works. Moving them is how you stop it working, on purpose.
     if (alg === 'vocoder') {
       const v = state.stretchDraft.vocoder;
       own.appendChild(param('Analysis window', v.windowMs, 5, 500, 1,
@@ -2316,33 +2391,76 @@ function renderStretch() {
       own.appendChild(param('Overlap', v.overlap, 2, 8, 1,
         (x) => `${Math.round(x)}×`,
         (x) => { v.overlap = Math.round(x); previewStretch(); }, () => commitStretch()));
-      const lock = document.createElement('label');
-      lock.className = 'check';
-      lock.title = 'Holds each partial together instead of letting it dissolve into neighbouring bins';
-      lock.innerHTML = `<input type="checkbox"${v.phaseLock ? ' checked' : ''}> phase lock`;
-      lock.querySelector('input').onchange = (e) => {
-        v.phaseLock = e.target.checked;
-        commitStretch();
-      };
-      own.appendChild(lock);
+      own.appendChild(check('phase lock',
+        'Holds each partial together instead of letting it dissolve into neighbouring bins',
+        v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); }));
+
+      own.appendChild(wild('Spectrum',
+        'The vocoder normally copies magnitudes through untouched and rewrites only phase. These do not.').add(
+        param('Freeze', v.magFreeze, 0, 1, 0.01,
+          (x) => (x >= 0.999 ? 'held' : `${Math.round(x * 100)}%`),
+          (x) => { v.magFreeze = x; previewStretch(); }, () => commitStretch()),
+        param('Blur', v.magBlur, 0, 1, 0.01, (x) => `${Math.round(x * 100)}%`,
+          (x) => { v.magBlur = x; previewStretch(); }, () => commitStretch()),
+        param('Gate', v.magGate, 0, 1, 0.01,
+          (x) => (x <= 0 ? 'off' : `${Math.round(x * 100)}%`),
+          (x) => { v.magGate = x; previewStretch(); }, () => commitStretch()),
+      ));
+
+      own.appendChild(wild('Phase',
+        'How the frequency estimate is believed and how far a peak imposes its phase on its neighbours.').add(
+        param('Read speed', v.hopSkew, 0, 4, 0.01,
+          (x) => (x <= 0.001 ? 'frozen' : `${x.toFixed(2)}×`),
+          (x) => { v.hopSkew = x; previewStretch(); }, () => commitStretch()),
+        param('Freq trust', v.freqTrust, 0, 4, 0.01,
+          (x) => (x <= 0.001 ? 'bin centres' : `${x.toFixed(2)}×`),
+          (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch()),
+        param('Phase spread', v.phaseSpread, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
+          (x) => { v.phaseSpread = x; previewStretch(); }, () => commitStretch()),
+        param('Peak width', v.peakWidth, 1, 16, 1, (x) => `${Math.round(x)} bins`,
+          (x) => { v.peakWidth = Math.round(x); previewStretch(); }, () => commitStretch()),
+        param('Lock width', v.lockWidth, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
+          (x) => { v.lockWidth = x; previewStretch(); }, () => commitStretch()),
+      ));
     }
+
     if (alg === 'wsola') {
       const w = state.stretchDraft.wsola;
-      const keep = document.createElement('label');
-      keep.className = 'check';
-      keep.title = 'Hold drum hits at their original rate so they are not laid down twice';
-      keep.innerHTML = `<input type="checkbox"${w.preserveTransients ? ' checked' : ''}> preserve transients`;
-      keep.querySelector('input').onchange = (e) => {
-        w.preserveTransients = e.target.checked;
-        reflectEngine();
-        commitStretch();
-      };
-      own.appendChild(keep);
+      own.appendChild(param('Search', w.searchMs, 0, 200, 0.5,
+        (x) => (x <= 0 ? 'none — plain OLA' : `${x.toFixed(1)} ms`),
+        (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch()));
+      own.appendChild(param('Overlap', w.overlap, 1, 8, 0.05, (x) => `${x.toFixed(2)}×`,
+        (x) => { w.overlap = x; previewStretch(); }, () => commitStretch()));
+      own.appendChild(check('preserve transients',
+        'Hold drum hits at their original rate so they are not laid down twice',
+        w.preserveTransients,
+        (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); }));
       if (w.preserveTransients) {
         own.appendChild(param('Detector', w.sensitivity, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
           (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch()));
+        own.appendChild(param('Floor', w.floor, 0, 2, 0.01,
+          (x) => (x <= 0 ? 'none' : `${x.toFixed(2)}×`),
+          (x) => { w.floor = x; previewStretch(); }, () => commitStretch()));
+        own.appendChild(param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hops`,
+          (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch()));
       }
+
+      own.appendChild(wild('Splice',
+        'Which segment the similarity search goes looking for, and what it is laid down under.').add(
+        seg('Pick', [
+          ['similar', 'best', 'The segment that best continues what came before. What WSOLA is for.'],
+          ['different', 'worst', 'The least similar segment the search can find, every time.'],
+          ['loudest', 'loud', 'Un-normalised, so the search walks toward whatever is loudest nearby.'],
+        ], w.splice, (x) => { w.splice = x; commitStretch(); }),
+        seg('Window', [
+          ['hann', 'hann', 'Sums flat at 50% overlap, which is why it is the default.'],
+          ['triangle', 'tri', 'Sums flat too, with a corner on every splice.'],
+          ['rect', 'rect', 'No envelope. Every splice is a step, so the seams become a rhythm.'],
+        ], w.shape, (x) => { w.shape = x; commitStretch(); }),
+        param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} frames`,
+          (x) => { w.stride = Math.round(x); previewStretch(); }, () => commitStretch()),
+      ));
     }
     // Granular's controls are the Grain shape panel, so it needs nothing here.
     const grainOn = alg === 'granular';
@@ -2442,6 +2560,69 @@ function renderGrainParams() {
       target.appendChild(el);
     }
   }
+
+  const gp = (label, key, min, max, step, fmt) => {
+    const el = param(label, state.grainDraft[key], min, max, step, fmt,
+      (v) => { state.grainDraft[key] = v; preview(); }, () => commit());
+    state.grainRows[key] = el;
+    return el;
+  };
+  const gc = (label, key, title) => {
+    const el = check(label, title, state.grainDraft[key],
+      (on) => { state.grainDraft[key] = on; commit(); });
+    state.grainRows[key] = el;
+    return el;
+  };
+
+  // The read pointer's relationship to the ratio, which is what makes a stretch
+  // a stretch. Severing it is the difference between a granular stretcher and a
+  // granular instrument.
+  shape.appendChild(wild('Scan',
+    'Where in the source the cloud reads from, and which way each grain runs.').add(
+    gp('Scan', 'scan', -2, 2, 0.01,
+      (v) => (Math.abs(v) < 0.005 ? 'frozen' : v < 0 ? `${v.toFixed(2)}× back` : `${v.toFixed(2)}×`)),
+    gc('reverse grains', 'reverse', 'Each grain reads its own span backwards. The cloud still moves forward.'),
+    gc('wrap positions', 'wrap',
+      'A grain pushed past the end of the file reappears at the beginning instead of piling up against it.'),
+  ));
+
+  shape.appendChild(wild('Shape',
+    'The grain envelope, how far sizes may reach, and where the layers sit.').add(
+    gp('Envelope', 'envelope', 0, 1, 0.01,
+      (v) => (Math.abs(v - 0.5) < 0.005 ? 'symmetric' : v < 0.5 ? 'percussive' : 'swelling')),
+    gp('Size range', 'sizeRange', 1, 8, 0.05, (v) => `${v.toFixed(2)}×`),
+    gp('Layer spread', 'layerSpread', 0, 4, 0.01,
+      (v) => (v <= 0.005 ? 'stacked' : `${v.toFixed(2)}×`)),
+    gp('Pan spread', 'panSpread', 0, 1, 0.01, (v) => (v <= 0 ? 'centred' : `${Math.round(v * 100)}%`)),
+  ));
+
+  // The seed used to have no control at all. It is the one value here that
+  // changes everything at once without changing any setting.
+  const seedRow = document.createElement('div');
+  seedRow.className = 'param seed-row';
+  seedRow.innerHTML = `<div class="row"><span class="k">Seed</span><span class="v mono"></span></div>
+    <button class="ghost">Re-roll</button>`;
+  const showSeed = () => {
+    seedRow.querySelector('.v').textContent = state.grainDraft.seed;
+  };
+  seedRow.querySelector('button').onclick = () => {
+    // Every jitter is a pure function of the grain index and this number, so
+    // one new number re-deals the whole cloud without moving a single slider.
+    state.grainDraft.seed = (state.grainDraft.seed * 1664525 + 1013904223) % 2147483647;
+    showSeed();
+    commit();
+  };
+  showSeed();
+  seedRow.sync = showSeed;
+  state.grainRows.seed = seedRow;
+
+  pitchBox.appendChild(wild('Randomness',
+    'Where the per-grain variation comes from, and whether the streams move together.').add(
+    gc('link jitter', 'linkJitter',
+      'Size, position and pitch draw from one stream instead of three, so they vary together.'),
+    gc('step the drift', 'driftStep', 'Drift jumps between values instead of gliding through them.'),
+    seedRow,
+  ));
 }
 
 let grainBuiltFor = null;
@@ -2572,15 +2753,20 @@ $('presetDelete').onclick = async () => {
 $('stretchReset').onclick = async () => {
   state.stretchDraft = { ratio: 1, semitones: 0, windowMs: 40, quality: 'standard',
                          algorithm: 'wsola',
-                         vocoder: { windowMs: 46, overlap: 4, phaseLock: true },
-                         wsola: { preserveTransients: false, sensitivity: 0.5 } };
+                         vocoder: { ...VOCODER_DEFAULTS },
+                         wsola: { ...WSOLA_DEFAULTS } };
   const grain = {
-    densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
-    pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5,
+    ...GRAIN_DEFAULTS,
     seed: state.grainDraft?.seed ?? state.edit?.stretch?.grain?.seed ?? 1,
   };
   state.grainDraft = { ...grain };
   await editOp({ op: 'stretch', ...state.stretchDraft, grain });
+  // The per-engine panels are built once and then left alone, so their controls
+  // cannot be pushed back to a default the way a slider can — rebuild them.
+  stretchBuiltFor = null;
+  grainBuiltFor = null;
+  renderStretch();
+  renderGrainParams();
   syncStretchSliders();
   syncGrainSliders();
 };

@@ -68,13 +68,28 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
             Value::obj()
                 .set("windowMs", s.vocoder.window_ms as f64)
                 .set("overlap", s.vocoder.overlap as f64)
-                .set("phaseLock", s.vocoder.phase_lock),
+                .set("phaseLock", s.vocoder.phase_lock)
+                .set("hopSkew", s.vocoder.hop_skew as f64)
+                .set("freqTrust", s.vocoder.freq_trust as f64)
+                .set("phaseSpread", s.vocoder.phase_spread as f64)
+                .set("peakWidth", s.vocoder.peak_width as f64)
+                .set("lockWidth", s.vocoder.lock_width as f64)
+                .set("magFreeze", s.vocoder.mag_freeze as f64)
+                .set("magBlur", s.vocoder.mag_blur as f64)
+                .set("magGate", s.vocoder.mag_gate as f64),
         )
         .set(
             "wsola",
             Value::obj()
                 .set("preserveTransients", s.wsola.preserve_transients)
-                .set("sensitivity", s.wsola.sensitivity as f64),
+                .set("sensitivity", s.wsola.sensitivity as f64)
+                .set("searchMs", s.wsola.search_ms as f64)
+                .set("overlap", s.wsola.overlap as f64)
+                .set("splice", s.wsola.splice.as_str())
+                .set("stride", s.wsola.stride as f64)
+                .set("shape", s.wsola.shape.as_str())
+                .set("guardHops", s.wsola.guard_hops as f64)
+                .set("floor", s.wsola.floor as f64),
         )
         .set(
             "grain",
@@ -87,7 +102,16 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("pitchDriftSemis", s.grain.pitch_drift_semis as f64)
                 .set("driftRateHz", s.grain.drift_rate_hz as f64)
                 .set("layers", s.grain.layers as f64)
-                .set("seed", s.grain.seed as f64),
+                .set("seed", s.grain.seed as f64)
+                .set("scan", s.grain.scan as f64)
+                .set("reverse", s.grain.reverse)
+                .set("envelope", s.grain.envelope as f64)
+                .set("sizeRange", s.grain.size_range as f64)
+                .set("wrap", s.grain.wrap)
+                .set("layerSpread", s.grain.layer_spread as f64)
+                .set("linkJitter", s.grain.link_jitter)
+                .set("driftStep", s.grain.drift_step)
+                .set("panSpread", s.grain.pan_spread as f64),
         )
 }
 
@@ -117,13 +141,31 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
         wsola: {
             let d = fx::stretch::WsolaParams::default();
             let wv = v.get("wsola");
+            let wf = |k: &str, dv: f32| -> f32 {
+                match wv.and_then(|x| x.get(k)) {
+                    Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                    _ => dv,
+                }
+            };
             fx::stretch::WsolaParams {
                 preserve_transients: matches!(
                     wv.and_then(|x| x.get("preserveTransients")), Some(Value::Bool(true))),
-                sensitivity: match wv.and_then(|x| x.get("sensitivity")) {
-                    Some(Value::Num(n)) if n.is_finite() => (*n as f32).clamp(0.0, 1.0),
-                    _ => d.sensitivity,
-                },
+                sensitivity: wf("sensitivity", d.sensitivity).clamp(0.0, 1.0),
+                search_ms: wf("searchMs", d.search_ms).clamp(0.0, 200.0),
+                overlap: wf("overlap", d.overlap).clamp(1.0, 8.0),
+                splice: wv
+                    .and_then(|x| x.get("splice"))
+                    .and_then(|x| x.as_str())
+                    .and_then(fx::stretch::Splice::from_str)
+                    .unwrap_or(d.splice),
+                stride: wf("stride", d.stride as f32).clamp(1.0, 256.0) as u32,
+                shape: wv
+                    .and_then(|x| x.get("shape"))
+                    .and_then(|x| x.as_str())
+                    .and_then(fx::stretch::WinShape::from_str)
+                    .unwrap_or(d.shape),
+                guard_hops: wf("guardHops", d.guard_hops).clamp(1.0, 16.0),
+                floor: wf("floor", d.floor).clamp(0.0, 2.0),
             }
         },
         vocoder: {
@@ -139,6 +181,14 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
                 window_ms: vf("windowMs", d.window_ms).clamp(5.0, 500.0),
                 overlap: vf("overlap", d.overlap as f32).clamp(2.0, 8.0) as u32,
                 phase_lock: !matches!(vv.and_then(|x| x.get("phaseLock")), Some(Value::Bool(false))),
+                hop_skew: vf("hopSkew", d.hop_skew).clamp(0.0, 4.0),
+                freq_trust: vf("freqTrust", d.freq_trust).clamp(0.0, 4.0),
+                phase_spread: vf("phaseSpread", d.phase_spread).clamp(0.0, 4.0),
+                peak_width: vf("peakWidth", d.peak_width as f32).clamp(1.0, 32.0) as u32,
+                lock_width: vf("lockWidth", d.lock_width).clamp(0.0, 4.0),
+                mag_freeze: vf("magFreeze", d.mag_freeze).clamp(0.0, 1.0),
+                mag_blur: vf("magBlur", d.mag_blur).clamp(0.0, 1.0),
+                mag_gate: vf("magGate", d.mag_gate).clamp(0.0, 1.0),
             }
         },
         grain: Grain {
@@ -153,6 +203,15 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             pitch_drift_semis: gf("pitchDriftSemis", d.grain.pitch_drift_semis).clamp(0.0, 24.0),
             drift_rate_hz: gf("driftRateHz", d.grain.drift_rate_hz).clamp(0.01, 20.0),
             seed: gf("seed", d.grain.seed as f32).max(0.0) as u32,
+            scan: gf("scan", d.grain.scan).clamp(-4.0, 4.0),
+            reverse: matches!(g.and_then(|x| x.get("reverse")), Some(Value::Bool(true))),
+            envelope: gf("envelope", d.grain.envelope).clamp(0.0, 1.0),
+            size_range: gf("sizeRange", d.grain.size_range).clamp(1.0, 8.0),
+            wrap: matches!(g.and_then(|x| x.get("wrap")), Some(Value::Bool(true))),
+            layer_spread: gf("layerSpread", d.grain.layer_spread).clamp(0.0, 4.0),
+            link_jitter: matches!(g.and_then(|x| x.get("linkJitter")), Some(Value::Bool(true))),
+            drift_step: matches!(g.and_then(|x| x.get("driftStep")), Some(Value::Bool(true))),
+            pan_spread: gf("panSpread", d.grain.pan_spread).clamp(0.0, 1.0),
         },
     }
 }
@@ -355,8 +414,32 @@ mod tests {
             window_ms: 65.0,
             quality: Quality::Best,
             algorithm: fx::stretch::Algorithm::Vocoder,
-            vocoder: fx::stretch::VocoderParams { window_ms: 60.0, overlap: 8, phase_lock: false },
-            wsola: fx::stretch::WsolaParams { preserve_transients: true, sensitivity: 0.7 },
+            // Every field off its default, so the round-trip test below is
+            // actually testing the round trip rather than the defaults.
+            vocoder: fx::stretch::VocoderParams {
+                window_ms: 60.0,
+                overlap: 8,
+                phase_lock: false,
+                hop_skew: 0.375,
+                freq_trust: 0.25,
+                phase_spread: 1.75,
+                peak_width: 5,
+                lock_width: 2.5,
+                mag_freeze: 0.8,
+                mag_blur: 0.35,
+                mag_gate: 0.15,
+            },
+            wsola: fx::stretch::WsolaParams {
+                preserve_transients: true,
+                sensitivity: 0.7,
+                search_ms: 42.0,
+                overlap: 3.25,
+                splice: fx::stretch::Splice::Different,
+                stride: 17,
+                shape: fx::stretch::WinShape::Triangle,
+                guard_hops: 6.5,
+                floor: 0.25,
+            },
             grain: Grain {
                 density_hz: 42.0,
                 overlap: 3.5,
@@ -367,6 +450,15 @@ mod tests {
                 pitch_drift_semis: 2.5,
                 drift_rate_hz: 1.25,
                 seed: 4242,
+                scan: -0.75,
+                reverse: true,
+                envelope: 0.125,
+                size_range: 3.5,
+                wrap: true,
+                layer_spread: 2.25,
+                link_jitter: true,
+                drift_step: true,
+                pan_spread: 0.65,
             },
         };
         l

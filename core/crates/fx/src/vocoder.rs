@@ -69,23 +69,101 @@ fn ifft(re: &mut [f32], im: &mut [f32]) {
 /// a single partial is pulled apart into neighbours that slowly disagree about
 /// its phase. That disagreement is the "phasiness" the vocoder is known for.
 ///
-/// Requiring a bin to beat both of its two neighbours either side is Laroche
-/// and Dolson's test: strict enough to ignore ripple in the noise floor,
-/// loose enough to catch every real partial.
-fn peaks(mag: &[f32], out: &mut Vec<usize>) {
+/// `width` is how many neighbours each side a bin must beat. Two is Laroche
+/// and Dolson's test: strict enough to ignore ripple in the noise floor, loose
+/// enough to catch every real partial. Wider finds fewer peaks, so more of the
+/// spectrum ends up locked to whichever peak claims it.
+fn peaks(mag: &[f32], width: usize, out: &mut Vec<usize>) {
     out.clear();
-    if mag.len() < 5 {
+    let w = width.clamp(1, 32);
+    if mag.len() < w * 2 + 1 {
         return;
     }
-    for k in 2..mag.len() - 2 {
+    'bins: for k in w..mag.len() - w {
         let m = mag[k];
-        if m > mag[k - 1] && m > mag[k + 1] && m > mag[k - 2] && m > mag[k + 2] && m > 1e-9 {
-            out.push(k);
+        if m <= 1e-9 {
+            continue;
         }
+        for d in 1..=w {
+            if m <= mag[k - d] || m <= mag[k + d] {
+                continue 'bins;
+            }
+        }
+        out.push(k);
     }
 }
 
-/// Settings for one run.
+/// Magnitude processing, before any of it becomes phase.
+///
+/// The vocoder normally copies magnitudes through untouched and rewrites only
+/// phase. These three are the whole of what it does not normally do: gate,
+/// blur sideways, and carry forward. Order matters — freezing last means the
+/// held spectrum is the gated and blurred one, which is what you would expect
+/// having set the other two first.
+fn shape_magnitudes(
+    mag: &mut [f32],
+    held: &mut [f32],
+    scratch: &mut [f32],
+    s: &Settings,
+    first: bool,
+) {
+    let gate = s.mag_gate.clamp(0.0, 1.0);
+    if gate > 0.0 {
+        let peak = mag.iter().copied().fold(0.0f32, f32::max);
+        let bar = peak * gate;
+        for m in mag.iter_mut() {
+            if *m < bar {
+                *m = 0.0;
+            }
+        }
+    }
+
+    let blur = s.mag_blur.clamp(0.0, 1.0);
+    if blur > 0.0 {
+        // A three-tap mean, applied as many times as the amount asks for, so
+        // the control keeps going after one pass has stopped making a
+        // difference. Whole passes plus a mix for the fraction.
+        let passes = (blur * 6.0).floor() as usize;
+        let frac = blur * 6.0 - passes as f32;
+        for pass in 0..=passes {
+            let n = mag.len();
+            for k in 0..n {
+                let a = mag[k.saturating_sub(1)];
+                let b = mag[k];
+                let c = mag[(k + 1).min(n - 1)];
+                scratch[k] = (a + b + c) / 3.0;
+            }
+            // The last pass is only partly applied, so the control is smooth
+            // across the boundary between one pass and two.
+            let amount = if pass == passes { frac } else { 1.0 };
+            if amount <= 0.0 {
+                break;
+            }
+            for k in 0..n {
+                mag[k] += (scratch[k] - mag[k]) * amount;
+            }
+        }
+    }
+
+    let freeze = s.mag_freeze.clamp(0.0, 1.0);
+    if freeze > 0.0 {
+        // Seeded from the first frame, so full freeze holds that frame rather
+        // than holding the silence the buffer started as.
+        if first {
+            held.copy_from_slice(mag);
+        }
+        for k in 0..mag.len() {
+            let v = held[k] + (mag[k] - held[k]) * (1.0 - freeze);
+            held[k] = v;
+            mag[k] = v;
+        }
+    } else {
+        held.copy_from_slice(mag);
+    }
+}
+
+/// Settings for one run. See [`crate::stretch::VocoderParams`] for what each of
+/// the deliberately-wrong ones does to the sound.
 #[derive(Debug, Clone, Copy)]
 pub struct Settings {
     /// Transform size. Rounded up to a power of two.
@@ -94,11 +172,39 @@ pub struct Settings {
     pub overlap: usize,
     /// Lock the bins around each spectral peak to that peak's phase.
     pub phase_lock: bool,
+    /// Multiplies the analysis hop, breaking its link to the ratio.
+    pub hop_skew: f32,
+    /// Scales the measured deviation from the bin centre frequency.
+    pub freq_trust: f32,
+    /// Scales the phase relationship a locked bin keeps with its peak.
+    pub phase_spread: f32,
+    /// Neighbours a bin must beat on each side to be a peak.
+    pub peak_width: usize,
+    /// Scales each peak's locked region.
+    pub lock_width: f32,
+    /// Carries magnitudes forward between frames. One holds the first frame.
+    pub mag_freeze: f32,
+    /// Smears magnitudes across neighbouring bins.
+    pub mag_blur: f32,
+    /// Silences bins below this share of the frame's loudest.
+    pub mag_gate: f32,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { fft_size: 2048, overlap: 4, phase_lock: true }
+        Settings {
+            fft_size: 2048,
+            overlap: 4,
+            phase_lock: true,
+            hop_skew: 1.0,
+            freq_trust: 1.0,
+            phase_spread: 1.0,
+            peak_width: 2,
+            lock_width: 1.0,
+            mag_freeze: 0.0,
+            mag_blur: 0.0,
+            mag_gate: 0.0,
+        }
     }
 }
 
@@ -126,22 +232,44 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
     let mut prev_phase = vec![0f32; bins];
     let mut sum_phase = vec![0f32; bins];
     let mut mag = vec![0f32; bins];
+    let mut held = vec![0f32; bins];
+    let mut scratch = vec![0f32; bins];
     let mut phase = vec![0f32; bins];
     let mut peak_idx: Vec<usize> = Vec::with_capacity(bins / 4);
 
     // Analysis reads slower than synthesis writes when stretching. Kept as a
     // float and rounded per frame, so a fractional hop does not accumulate
     // drift over a long file.
-    let advance = hs as f64 / ratio as f64;
+    //
+    // The skew multiplies it, which is what severs the read pointer from the
+    // ratio. At zero the pointer never moves at all and every output frame is
+    // resynthesised from the same instant.
+    let skew = s.hop_skew.clamp(0.0, 4.0) as f64;
+    let advance = (hs as f64 / ratio as f64) * skew;
+    let span = input.len().saturating_sub(n).max(1);
     let mut read = 0f64;
     let mut prev_start: isize = -1;
     let mut write = 0usize;
     let mut first = true;
 
     while write < out_len {
-        let start = read.round() as usize;
+        let mut start = read.round() as usize;
         if start + n > input.len() {
-            break;
+            // At the nominal hop, running out of source is the end of the job.
+            // Off it, the read pointer is sweeping at a speed that has nothing
+            // to do with the output length, so wrap and keep going rather than
+            // trail off into padding.
+            if (skew - 1.0).abs() < 1e-6 {
+                break;
+            }
+            read %= span as f64;
+            start = read.round() as usize;
+            if start + n > input.len() {
+                break;
+            }
+            // A wrap is a discontinuity; a hop measured across it would be a
+            // large negative number and the phase estimate nonsense.
+            prev_start = -1;
         }
 
         for i in 0..n {
@@ -156,42 +284,53 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
             mag[k] = (re[k] * re[k] + im[k] * im[k]).sqrt();
             phase[k] = im[k].atan2(re[k]);
         }
+        shape_magnitudes(&mut mag, &mut held, &mut scratch, &s, first);
 
         // The true analysis hop for this frame, which is what the heterodyne
         // is measured against — equation 5.10 uses α(n) − α(n−1), not a
-        // nominal value.
+        // nominal value. A zero hop — which a frozen read pointer produces —
+        // has no deviation to measure and would divide by nothing.
         let ha = if prev_start < 0 { hs as f32 } else { (start as isize - prev_start) as f32 };
+        let ha = if ha.abs() < 1e-6 { hs as f32 } else { ha };
 
         if first {
             sum_phase.copy_from_slice(&phase);
             first = false;
         } else if s.phase_lock {
-            peaks(&mag, &mut peak_idx);
+            peaks(&mag, s.peak_width, &mut peak_idx);
             if peak_idx.is_empty() {
-                propagate_all(&phase, &prev_phase, &mut sum_phase, n, ha, hs as f32);
+                propagate_all(&phase, &prev_phase, &mut sum_phase, n, ha, hs as f32, &s);
             } else {
                 // Every peak advances on its own instantaneous frequency; the
                 // bins around it keep the phase relationship they had in the
                 // analysis frame. So a partial moves as one object instead of
                 // dissolving into its own skirts.
+                let trust = s.freq_trust.clamp(0.0, 4.0);
+                let spread = s.phase_spread.clamp(0.0, 4.0);
+                let width = s.lock_width.clamp(0.0, 4.0);
                 for (p, &k) in peak_idx.iter().enumerate() {
                     let omega = TWO_PI * k as f32 / n as f32;
                     let delta = wrap(phase[k] - prev_phase[k] - ha * omega);
-                    let freq = omega + delta / ha;
+                    let freq = omega + (delta / ha) * trust;
                     sum_phase[k] = wrap(sum_phase[k] + hs as f32 * freq);
 
-                    // Halfway to each neighbouring peak.
-                    let lo = if p == 0 { 0 } else { (peak_idx[p - 1] + k + 1) / 2 };
-                    let hi = if p + 1 == peak_idx.len() { bins } else { (k + peak_idx[p + 1] + 1) / 2 };
+                    // Halfway to each neighbouring peak, scaled. Past one the
+                    // regions overlap and a peak imposes its phase on ground
+                    // that belongs to the next one along.
+                    let mid_lo = if p == 0 { 0 } else { (peak_idx[p - 1] + k + 1) / 2 };
+                    let mid_hi =
+                        if p + 1 == peak_idx.len() { bins } else { (k + peak_idx[p + 1] + 1) / 2 };
+                    let lo = k.saturating_sub((((k - mid_lo) as f32) * width) as usize);
+                    let hi = (k + (((mid_hi - k) as f32) * width) as usize).min(bins);
                     for j in lo..hi {
                         if j != k {
-                            sum_phase[j] = wrap(sum_phase[k] + (phase[j] - phase[k]));
+                            sum_phase[j] = wrap(sum_phase[k] + (phase[j] - phase[k]) * spread);
                         }
                     }
                 }
             }
         } else {
-            propagate_all(&phase, &prev_phase, &mut sum_phase, n, ha, hs as f32);
+            propagate_all(&phase, &prev_phase, &mut sum_phase, n, ha, hs as f32, &s);
         }
 
         prev_phase.copy_from_slice(&phase);
@@ -237,14 +376,26 @@ pub fn stretch_mono(input: &[f32], ratio: f32, s: Settings) -> Vec<f32> {
 }
 
 /// Equations 5.10 to 5.12, applied to every bin independently.
-fn propagate_all(phase: &[f32], prev: &[f32], sum: &mut [f32], n: usize, ha: f32, hs: f32) {
+fn propagate_all(
+    phase: &[f32],
+    prev: &[f32],
+    sum: &mut [f32],
+    n: usize,
+    ha: f32,
+    hs: f32,
+    s: &Settings,
+) {
+    // How much of the measured deviation to believe. At one this is 5.11 as
+    // written; at zero every bin is declared to sit exactly on its own centre
+    // frequency, which quantises the whole sound to the transform's grid.
+    let trust = s.freq_trust.clamp(0.0, 4.0);
     for k in 0..phase.len() {
         // 5.10 — the heterodyned phase increment: what actually happened,
         // less what a partial sitting exactly on the bin centre would have done.
         let omega = TWO_PI * k as f32 / n as f32;
         let delta = wrap(phase[k] - prev[k] - ha * omega);
         // 5.11 — the instantaneous frequency that deviation implies.
-        let freq = omega + delta / ha;
+        let freq = omega + (delta / ha) * trust;
         // 5.12 — advance by it over the synthesis hop.
         sum[k] = wrap(sum[k] + hs * freq);
     }
@@ -397,7 +548,7 @@ mod tests {
         m[24] = 0.3;
         m[26] = 0.3;
         let mut out = Vec::new();
-        peaks(&m, &mut out);
+        peaks(&m, 2, &mut out);
         assert_eq!(out, vec![10, 25]);
     }
 

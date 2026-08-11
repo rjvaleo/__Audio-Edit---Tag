@@ -884,6 +884,14 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                         Some(Value::Bool(b)) => *b,
                         _ => cv.phase_lock,
                     },
+                    hop_skew: vf("hopSkew", cv.hop_skew).clamp(0.0, 4.0),
+                    freq_trust: vf("freqTrust", cv.freq_trust).clamp(0.0, 4.0),
+                    phase_spread: vf("phaseSpread", cv.phase_spread).clamp(0.0, 4.0),
+                    peak_width: vf("peakWidth", cv.peak_width as f32).clamp(1.0, 32.0) as u32,
+                    lock_width: vf("lockWidth", cv.lock_width).clamp(0.0, 4.0),
+                    mag_freeze: vf("magFreeze", cv.mag_freeze).clamp(0.0, 1.0),
+                    mag_blur: vf("magBlur", cv.mag_blur).clamp(0.0, 1.0),
+                    mag_gate: vf("magGate", cv.mag_gate).clamp(0.0, 1.0),
                 };
                 // Grain settings arrive as a nested object; anything absent
                 // keeps its current value so one slider cannot reset the rest.
@@ -897,15 +905,33 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 };
                 let cw = s.list().stretch.wsola;
                 let wv = v.get("wsola");
+                let wf = |k: &str, d: f32| -> f32 {
+                    match wv.and_then(|x| x.get(k)) {
+                        Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                        _ => d,
+                    }
+                };
                 let wsola = fx::stretch::WsolaParams {
                     preserve_transients: match wv.and_then(|x| x.get("preserveTransients")) {
                         Some(Value::Bool(b)) => *b,
                         _ => cw.preserve_transients,
                     },
-                    sensitivity: match wv.and_then(|x| x.get("sensitivity")) {
-                        Some(Value::Num(n)) if n.is_finite() => (*n as f32).clamp(0.0, 1.0),
-                        _ => cw.sensitivity,
-                    },
+                    sensitivity: wf("sensitivity", cw.sensitivity).clamp(0.0, 1.0),
+                    search_ms: wf("searchMs", cw.search_ms).clamp(0.0, 200.0),
+                    overlap: wf("overlap", cw.overlap).clamp(1.0, 8.0),
+                    splice: wv
+                        .and_then(|x| x.get("splice"))
+                        .and_then(|x| x.as_str())
+                        .and_then(fx::stretch::Splice::from_str)
+                        .unwrap_or(cw.splice),
+                    stride: wf("stride", cw.stride as f32).clamp(1.0, 256.0) as u32,
+                    shape: wv
+                        .and_then(|x| x.get("shape"))
+                        .and_then(|x| x.as_str())
+                        .and_then(fx::stretch::WinShape::from_str)
+                        .unwrap_or(cw.shape),
+                    guard_hops: wf("guardHops", cw.guard_hops).clamp(1.0, 16.0),
+                    floor: wf("floor", cw.floor).clamp(0.0, 2.0),
                 };
 
                 let grain = fx::Grain {
@@ -921,6 +947,27 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                         .clamp(0.0, 24.0),
                     drift_rate_hz: gf("driftRateHz", cur.drift_rate_hz).clamp(0.01, 20.0),
                     seed: gf("seed", cur.seed as f32).max(0.0) as u32,
+                    scan: gf("scan", cur.scan).clamp(-4.0, 4.0),
+                    reverse: match gv.and_then(|x| x.get("reverse")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => cur.reverse,
+                    },
+                    envelope: gf("envelope", cur.envelope).clamp(0.0, 1.0),
+                    size_range: gf("sizeRange", cur.size_range).clamp(1.0, 8.0),
+                    wrap: match gv.and_then(|x| x.get("wrap")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => cur.wrap,
+                    },
+                    layer_spread: gf("layerSpread", cur.layer_spread).clamp(0.0, 4.0),
+                    link_jitter: match gv.and_then(|x| x.get("linkJitter")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => cur.link_jitter,
+                    },
+                    drift_step: match gv.and_then(|x| x.get("driftStep")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => cur.drift_step,
+                    },
+                    pan_spread: gf("panSpread", cur.pan_spread).clamp(0.0, 1.0),
                 };
                 s.apply(|l| {
                     l.stretch = fx::Stretch {

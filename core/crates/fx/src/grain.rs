@@ -44,6 +44,40 @@ pub struct Grain {
     pub layers: u32,
     /// Chosen by the user; the same seed always gives the same result.
     pub seed: u32,
+
+    // Below here, the assumptions the schedule normally makes.
+
+    /// How fast the read pointer sweeps the source, relative to the sweep the
+    /// time ratio implies. One is a stretch: the pointer covers the file in
+    /// exactly the output duration. Zero holds it at the beginning, so the
+    /// whole output is a cloud made from one instant. Negative sweeps backwards
+    /// from the end.
+    pub scan: f32,
+    /// Each grain reads its own span backwards. The cloud still moves forward.
+    pub reverse: bool,
+    /// Where the grain envelope peaks. A half is the symmetric Hann; toward
+    /// zero the attack sharpens and the tail lengthens, which reads as
+    /// percussive; toward one it is the same shape reversed, so every grain
+    /// swells and stops.
+    pub envelope: f32,
+    /// Multiplies how far size jitter may reach. One keeps the tuned range of
+    /// roughly half to double; higher lets a single cloud hold grains from a
+    /// few samples to several seconds.
+    pub size_range: f32,
+    /// Position jitter wraps around the file instead of being clamped inside
+    /// it, so a grain pushed past the end reappears at the beginning.
+    pub wrap: bool,
+    /// How far apart layers sit within the hop. One spaces them evenly. Zero
+    /// stacks them on the same instants, which is louder rather than denser.
+    pub layer_spread: f32,
+    /// Size, position and pitch jitter draw from one random stream instead of
+    /// three, so they move together: a long grain is also the displaced one and
+    /// the detuned one.
+    pub link_jitter: bool,
+    /// Drift steps between values instead of gliding through them.
+    pub drift_step: bool,
+    /// Spreads grains across the stereo field, each to its own place.
+    pub pan_spread: f32,
 }
 
 impl Default for Grain {
@@ -58,6 +92,15 @@ impl Default for Grain {
             drift_rate_hz: 0.5,
             layers: 1,
             seed: 1,
+            scan: 1.0,
+            reverse: false,
+            envelope: 0.5,
+            size_range: 1.0,
+            wrap: false,
+            layer_spread: 1.0,
+            link_jitter: false,
+            drift_step: false,
+            pan_spread: 0.0,
         }
     }
 }
@@ -72,6 +115,19 @@ impl Grain {
             && self.pitch_jitter_semis.abs() < 1e-4
             && self.pitch_drift_semis.abs() < 1e-4
             && self.layers <= 1
+            // The rest are inert at their defaults, but every one of them
+            // changes the sound off it, so each has to be checked here or a
+            // document carrying it would be mistaken for an untouched one and
+            // skip the stretcher entirely.
+            && (self.scan - 1.0).abs() < 1e-4
+            && !self.reverse
+            && (self.envelope - 0.5).abs() < 1e-4
+            && (self.size_range - 1.0).abs() < 1e-4
+            && !self.wrap
+            && (self.layer_spread - 1.0).abs() < 1e-4
+            && !self.link_jitter
+            && !self.drift_step
+            && self.pan_spread.abs() < 1e-4
     }
 
     /// Uniform random in 0..1 for grain `index`. `salt` separates the streams,
@@ -103,14 +159,32 @@ impl Grain {
         let i = x.floor().max(0.0) as u64;
         let f = x - x.floor();
         let a = self.rand_bipolar(i, 77);
+        if self.drift_step {
+            // Hold each value until the next node. Same nodes, no glide — the
+            // difference between going slowly out of tune and being moved.
+            return a;
+        }
         let b = self.rand_bipolar(i + 1, 77);
         let s = f * f * (3.0 - 2.0 * f); // smoothstep
         a + (b - a) * s
     }
 
+    /// Which random stream a given kind of jitter draws from.
+    ///
+    /// Separate salts are what keep the jitters independent: changing pitch
+    /// jitter must not also reshuffle grain sizes. Linking them collapses all
+    /// three onto one stream, so they vary in step.
+    pub fn salt(&self, kind: u32) -> u32 {
+        if self.link_jitter {
+            3
+        } else {
+            kind
+        }
+    }
+
     /// Pitch offset in semitones for grain `index` starting at `t` seconds.
     pub fn pitch_offset(&self, index: u64, t: f32) -> f32 {
-        self.pitch_jitter_semis * self.rand_bipolar(index, 11)
+        self.pitch_jitter_semis * self.rand_bipolar(index, self.salt(11))
             + self.pitch_drift_semis * self.drift_at(t)
     }
 }
@@ -206,8 +280,12 @@ fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> Grain
 
     let t = write as f32 / sr;
     let size = if g.size_jitter > 1e-6 {
-        let k = 1.0 + g.size_jitter.clamp(0.0, 1.0) * g.rand_bipolar(index, 3);
-        ((p.base_size as f32) * k.clamp(0.15, 2.0)) as usize
+        // `size_range` widens how far the deviation may reach. At one the clamp
+        // is the tuned half-to-double; beyond it, one cloud can hold grains
+        // that are barely a click and grains that are most of a bar.
+        let range = g.size_range.clamp(1.0, 8.0);
+        let k = 1.0 + g.size_jitter.clamp(0.0, 1.0) * range * g.rand_bipolar(index, g.salt(3));
+        ((p.base_size as f32) * k.clamp(0.15 / range, 2.0 * range)) as usize
     } else {
         p.base_size
     }
@@ -218,11 +296,23 @@ fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> Grain
     // top, so the clamp has to be wider than the control range.
     let rate = (base_rate * 2f32.powf(semis / 12.0)).clamp(0.002, 256.0);
 
-    let nominal = (write as f32) / ratio;
-    let jitter = if pos_jitter > 0.0 { pos_jitter * g.rand_bipolar(index, 5) } else { 0.0 };
+    // Where in the source this moment reads from. `scan` breaks the link to the
+    // ratio: at zero the sweep stops and every grain comes from the beginning;
+    // negative sweeps back from the end, so the cloud runs the file in reverse
+    // while still being laid down forwards.
+    let scan = g.scan.clamp(-4.0, 4.0);
+    let sweep = ((write as f32) / ratio) * scan;
+    let nominal = if scan < 0.0 { sp.in_frames as f32 + sweep } else { sweep };
+
+    let jitter = if pos_jitter > 0.0 { pos_jitter * g.rand_bipolar(index, g.salt(5)) } else { 0.0 };
     let span = (size as f32) * rate;
     let max_start = (sp.in_frames as f32 - span - 1.0).max(0.0);
-    let read = (nominal + jitter).clamp(0.0, max_start);
+    let want = nominal + jitter;
+    let read = if g.wrap && max_start > 1.0 {
+        want.rem_euclid(max_start)
+    } else {
+        want.clamp(0.0, max_start)
+    };
 
     GrainEvent {
         index,
@@ -345,25 +435,36 @@ pub fn granular(
     // offset within the hop, so the layers interleave instead of stacking on
     // the same instants and merely getting louder.
     let layers = g.layers.clamp(1, 16);
+    let spread = g.layer_spread.clamp(0.0, 4.0);
+    let skew = g.envelope.clamp(0.0, 1.0);
     for layer in 0..layers {
         let mut lg = *g;
         if layer > 0 {
             lg.seed = g.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
         }
-        let offset = ((p.hop as u64 * layer as u64) / layers as u64) as usize;
+        let even = ((p.hop as u64 * layer as u64) / layers as u64) as f32;
+        let offset = (even * spread) as usize;
 
         for e in &grains(in_frames, sample_rate, ratio, semitones, window_ms, &lg) {
             let size = e.size as usize;
+            // Stereo placement is per grain, so the cloud has width even from a
+            // mono source. Equal power, scaled so the centre is unity and
+            // turning the control up does not also turn the level down.
+            let (gl, gr) = pan_gains(g, e.index, channels);
             for i in 0..size {
-                let w = hann_at(i, size);
+                let w = env_at(i, size, skew);
                 let dst = e.out_frame as usize + offset + i;
                 if dst >= p.out_frames + tail {
                     break;
                 }
-                let src = e.src_frame + (i as f32) * e.rate;
+                // The grain still lands where it landed; only the direction it
+                // reads its own span in is reversed.
+                let step = if g.reverse { (size - 1 - i) as f32 } else { i as f32 };
+                let src = e.src_frame + step * e.rate;
                 for ch in 0..channels {
+                    let pan = if ch == 0 { gl } else { gr };
                     out[dst * channels + ch] +=
-                        sample_at(input, channels, ch, src, in_frames) * w;
+                        sample_at(input, channels, ch, src, in_frames) * w * pan;
                 }
                 norm[dst] += w;
             }
@@ -383,6 +484,24 @@ pub fn granular(
     out
 }
 
+/// Left and right gain for one grain's place in the stereo field.
+///
+/// Equal power, so a grain does not get louder as it crosses the middle, and
+/// scaled by √2 so the centre is unity — turning the spread up must not also
+/// turn the level down. Mono output has no field to spread across.
+///
+/// Public for the same reason as [`env_at`]: the real-time renderer must reach
+/// the identical answer.
+#[inline]
+pub fn pan_gains(g: &Grain, index: u64, channels: usize) -> (f32, f32) {
+    if channels < 2 || g.pan_spread <= 1e-4 {
+        return (1.0, 1.0);
+    }
+    let pan = g.pan_spread.clamp(0.0, 1.0) * g.rand_bipolar(index, 23);
+    let th = (pan * 0.5 + 0.5) * std::f32::consts::FRAC_PI_2;
+    (th.cos() * std::f32::consts::SQRT_2, th.sin() * std::f32::consts::SQRT_2)
+}
+
 /// Hann value at position `i` of `n`, without allocating a table per grain.
 #[inline]
 fn hann_at(i: usize, n: usize) -> f32 {
@@ -390,6 +509,33 @@ fn hann_at(i: usize, n: usize) -> f32 {
         return 1.0;
     }
     0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos()
+}
+
+/// The grain envelope, with its peak moved.
+///
+/// Warping the position before the cosine rather than reaching for a different
+/// window: the shape stays a Hann and stays smooth at both ends — no clicks —
+/// but the moment it peaks slides. A half is exactly [`hann_at`]; below it the
+/// peak moves early, giving a fast attack and a long tail; above it the same
+/// shape runs backwards.
+///
+/// Public because the real-time renderer has its own loop and must use this
+/// exact function: the picture, the playback and the exported file are three
+/// separate calls, and a second implementation is how they start to disagree.
+#[inline]
+pub fn env_at(i: usize, n: usize, skew: f32) -> f32 {
+    if (skew - 0.5).abs() < 1e-4 {
+        return hann_at(i, n);
+    }
+    if n <= 1 {
+        return 1.0;
+    }
+    let t = i as f32 / (n - 1) as f32;
+    // 0 → ¼, ½ → 1, 1 → 4. Warping t by this power moves the peak from
+    // 0.5^4 ≈ 0.06 of the way in, to 0.5^(1/4) ≈ 0.84.
+    let k = 4f32.powf(skew * 2.0 - 1.0);
+    let warped = t.powf(k);
+    0.5 - 0.5 * (2.0 * std::f32::consts::PI * warped).cos()
 }
 
 /// Linearly interpolated read, clamped at the edges.

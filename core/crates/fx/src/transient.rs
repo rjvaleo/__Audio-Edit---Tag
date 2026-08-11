@@ -33,7 +33,18 @@ const MIN_GAP_MS: f32 = 50.0;
 /// `sensitivity` runs 0..1: zero finds only the most violent events, one takes
 /// nearly every rise. The threshold is relative to a running median rather than
 /// absolute, so a quiet recording and a loud one behave the same.
-pub fn onsets(input: &[f32], channels: usize, sample_rate: u32, sensitivity: f32) -> Vec<usize> {
+/// `floor_scale` multiplies the absolute floor. One is the tuned value; zero
+/// removes the floor entirely and leaves only the local median, which is what
+/// the detector did before the floor was added — it fires on numerical ripple
+/// through a held tone, roughly every fifty milliseconds. That was a bug when
+/// it was accidental. Exposed deliberately it is a rhythmic gate.
+pub fn onsets(
+    input: &[f32],
+    channels: usize,
+    sample_rate: u32,
+    sensitivity: f32,
+    floor_scale: f32,
+) -> Vec<usize> {
     let channels = channels.max(1);
     let frames = input.len() / channels;
     let sr = sample_rate.max(1) as f32;
@@ -99,7 +110,7 @@ pub fn onsets(input: &[f32], channels: usize, sample_rate: u32, sensitivity: f32
     // whole signal, is what separates "a rise against its neighbours" from "a
     // rise worth stopping the stretcher for".
     let peak = flux.iter().copied().fold(0.0f32, f32::max);
-    let floor = peak * (0.28 - 0.22 * sens);
+    let floor = peak * (0.28 - 0.22 * sens) * floor_scale.clamp(0.0, 2.0);
 
     let mut hits: Vec<usize> = Vec::new();
     let mut scratch: Vec<f32> = Vec::with_capacity(span * 2 + 1);
@@ -160,7 +171,7 @@ mod tests {
         let rate = 44_100;
         let places = [0.5f32, 1.0, 1.5, 2.0];
         let sig = with_bursts(rate, 2.5, &places);
-        let found = onsets(&sig, 1, rate, 0.5);
+        let found = onsets(&sig, 1, rate, 0.5, 1.0);
 
         assert!(!found.is_empty(), "found nothing");
         for p in places {
@@ -177,7 +188,7 @@ mod tests {
         let sig: Vec<f32> = (0..n)
             .map(|i| (std::f32::consts::TAU * 440.0 * i as f32 / rate as f32).sin())
             .collect();
-        let found = onsets(&sig, 1, rate, 0.5);
+        let found = onsets(&sig, 1, rate, 0.5, 1.0);
         // The tone's own start is fair game; nothing after it should fire.
         assert!(found.iter().filter(|f| **f > rate as usize / 4).count() == 0, "{found:?}");
     }
@@ -186,8 +197,8 @@ mod tests {
     fn sensitivity_opens_the_gate() {
         let rate = 44_100;
         let sig = with_bursts(rate, 3.0, &[0.4, 0.8, 1.2, 1.6, 2.0, 2.4]);
-        let strict = onsets(&sig, 1, rate, 0.0).len();
-        let loose = onsets(&sig, 1, rate, 1.0).len();
+        let strict = onsets(&sig, 1, rate, 0.0, 1.0).len();
+        let loose = onsets(&sig, 1, rate, 1.0, 1.0).len();
         assert!(loose >= strict, "loose {loose} should not find fewer than strict {strict}");
     }
 
@@ -196,7 +207,7 @@ mod tests {
         let rate = 44_100;
         // 10 ms apart — one articulation, not two.
         let sig = with_bursts(rate, 1.0, &[0.5, 0.51]);
-        let found = onsets(&sig, 1, rate, 0.5);
+        let found = onsets(&sig, 1, rate, 0.5, 1.0);
         let near: Vec<_> = found
             .iter()
             .filter(|f| (**f as f32 / rate as f32 - 0.5).abs() < 0.1)
@@ -206,9 +217,9 @@ mod tests {
 
     #[test]
     fn silence_and_scraps_are_handled_without_panicking() {
-        assert!(onsets(&[], 1, 44_100, 0.5).is_empty());
-        assert!(onsets(&vec![0f32; 100], 1, 44_100, 0.5).is_empty());
-        assert!(onsets(&vec![0f32; 44_100], 2, 44_100, 0.5).is_empty());
+        assert!(onsets(&[], 1, 44_100, 0.5, 1.0).is_empty());
+        assert!(onsets(&vec![0f32; 100], 1, 44_100, 0.5, 1.0).is_empty());
+        assert!(onsets(&vec![0f32; 44_100], 2, 44_100, 0.5, 1.0).is_empty());
     }
 }
 

@@ -203,42 +203,15 @@ pub fn edit_json(list: &EditList, can_undo: bool, can_redo: bool) -> Value {
         .set("sourceFrames", list.source_frames)
         .set("duration", list.duration_secs())
         .set("edited", !list.is_identity())
+        // The same shape the presets are written in, plus two things only a
+        // live document has an opinion about. This used to be a second
+        // hand-written copy of every field, which is how the interface came to
+        // be told about half of the engines' controls and not the other half.
         .set(
             "stretch",
-            Value::obj()
-                .set("ratio", list.stretch.ratio as f64)
-                .set("semitones", list.stretch.semitones as f64)
-                .set("windowMs", list.stretch.window_ms as f64)
-                .set("quality", list.stretch_quality())
-                .set("algorithm", list.stretch.algorithm.as_str())
-                .set(
-                    "vocoder",
-                    Value::obj()
-                        .set("windowMs", list.stretch.vocoder.window_ms as f64)
-                        .set("overlap", list.stretch.vocoder.overlap as f64)
-                        .set("phaseLock", list.stretch.vocoder.phase_lock),
-                )
-                .set(
-                    "wsola",
-                    Value::obj()
-                        .set("preserveTransients", list.stretch.wsola.preserve_transients)
-                        .set("sensitivity", list.stretch.wsola.sensitivity as f64),
-                )
+            crate::persist::stretch_to_json(&list.stretch)
                 .set("active", list.is_stretched())
-                .set("granular", list.stretch.is_granular())
-                .set(
-                    "grain",
-                    Value::obj()
-                        .set("densityHz", list.stretch.grain.density_hz as f64)
-                        .set("overlap", list.stretch.grain.overlap as f64)
-                        .set("sizeJitter", list.stretch.grain.size_jitter as f64)
-                        .set("positionJitterMs", list.stretch.grain.position_jitter_ms as f64)
-                        .set("pitchJitterSemis", list.stretch.grain.pitch_jitter_semis as f64)
-                        .set("pitchDriftSemis", list.stretch.grain.pitch_drift_semis as f64)
-                        .set("driftRateHz", list.stretch.grain.drift_rate_hz as f64)
-                        .set("layers", list.stretch.grain.layers as f64)
-                        .set("seed", list.stretch.grain.seed as f64),
-                ),
+                .set("granular", list.stretch.is_granular()),
         )
         .set("clips", Value::Arr(clips))
         .set("canUndo", can_undo)
