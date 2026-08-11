@@ -487,6 +487,12 @@ $('treeFilter').oninput = (e) => {
 
 const engine = {
   path: null,
+  /// Whether what is loaded is the bare file or the document.
+  ///
+  /// The library auditions a sound; the editor plays a document. Both go
+  /// through the same load, so the engine has to remember which it was given
+  /// or pressing play in the editor would resume the audition.
+  raw: false,
   playing: false,
   /// Engine output frames, at the device's rate. Authoritative.
   position: 0,
@@ -512,10 +518,14 @@ async function enginePost(body) {
 }
 
 /// Load a file into the engine. Expensive — once per file, never per control.
-async function engineLoad(file) {
+async function engineLoad(file, { raw = false } = {}) {
   try {
-    const r = await api(`/api/engine/load?p=${encodeURIComponent(file.path)}`, { method: 'POST', body: '{}' });
+    const r = await api(
+      `/api/engine/load?p=${encodeURIComponent(file.path)}${raw ? '&raw=1' : ''}`,
+      { method: 'POST', body: '{}' },
+    );
     engine.path = file.path;
+    engine.raw = raw;
     engine.deviceRate = r.sampleRate || 48000;
     return true;
   } catch (e) {
@@ -575,13 +585,25 @@ function seekSource(srcFrame) {
 
 // ------------------------------------------------------------- transport
 
+/// Audition a sound, or play a document.
+///
+/// In the library it is the sound itself — no edits, no stretch, no grain
+/// cloud, no rack. Clicking a file there is a question about the file, and
+/// answering it through whatever was last done to that file answers a
+/// different question: a one-shot playing back thirty-six times longer than it
+/// is, because of something set last week, tells you nothing about the sound.
+///
+/// In the editor the document is the point, so it plays in full.
 async function playFile(file) {
-  if (engine.path === file.path) {
+  const raw = state.mode !== 'edit';
+  // Same sound *and* the same kind of playback: otherwise it has to be
+  // reloaded, or pressing play in the editor would resume the audition.
+  if (engine.path === file.path && engine.raw === raw) {
     engine.playing ? pausePlayback() : startPlayback();
     return;
   }
   if (state.selectedFile?.path !== file.path) selectFile(file);
-  if (!(await engineLoad(file))) return;
+  if (!(await engineLoad(file, { raw }))) return;
   applyLoop();
   seekSource(state.cue || 0);
   startPlayback();
@@ -837,6 +859,11 @@ function updatePlayhead() {
 // ============================================================ centre column
 
 function setMode(mode) {
+  // Crossing between the library and the editor changes what playback *is* —
+  // the sound over there, the document over here — so anything running belongs
+  // to the side it was started on. Same rule as choosing a different sound.
+  if (engine.playing && engine.raw !== (mode !== 'edit')) pausePlayback();
+
   state.mode = mode;
   const editing = mode === 'edit';
 

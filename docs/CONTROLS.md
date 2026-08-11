@@ -53,6 +53,18 @@ holding a row of the window open to say so.
 
 ## The library browser
 
+**Auditioning plays the sound itself** — no edits, no stretch, no grain cloud,
+no effects, whatever has been done to that file elsewhere. Clicking a file here
+is a question about the file, and a one-shot playing back thirty-six times
+longer than it is because of something set last week does not answer it. The
+editor is where the document plays in full. Crossing between the two while
+something is playing stops it, because what is running belongs to the side it
+was started on.
+
+**A sound opens at its defaults**, every time. Settings are not carried over
+from a previous run; presets are the deliberate way to put them back.
+
+
 | Gesture | What it does |
 |---|---|
 | **Click a folder** | Expands or collapses it. |
@@ -268,7 +280,7 @@ Under the waveform, in Edit only. Browse has no open document to transport.
 
 | Control | What it does |
 |---|---|
-| ▶ / ❚❚ | Play / pause — **the sound on screen**, loading it first if the engine is still holding the last one |
+| ▶ / ❚❚ | Play / pause — **the sound on screen**, loading it first if the engine is still holding the last one. In the editor this is the whole document: edits, stretch, grains and rack. |
 | ■ | Stop, and return to the cue |
 | | *Choosing a different sound, in the library or by switching tabs, stops the transport. It belongs to what is on screen.* |
 | ⟲ | Loop — the selection if there is one, otherwise the whole document |
