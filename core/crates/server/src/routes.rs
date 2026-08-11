@@ -80,6 +80,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/stats") => api_stats(app, req),
         ("GET", "/api/markers") => api_markers_get(app, req),
         ("POST", "/api/markers") => api_markers_set(app, req),
+        ("GET", "/api/fx") => api_fx_catalogue(),
         ("GET", "/api/rack") => api_rack_get(app, req),
         ("POST", "/api/rack") => api_rack_set(app, req),
         ("GET", "/api/presets") => api_presets_list(app),
@@ -574,6 +575,41 @@ fn identity_for(app: &Arc<App>, rel: &str) -> Option<edit::EditList> {
     // Anything saved for this file is restored here, once, when its session is
     // first created — and only if the source still matches.
     Some(app.restore(rel, fresh))
+}
+
+/// What shapers exist and what each one has.
+///
+/// Served rather than written into the interface twice. Every module the rack
+/// draws is built from this, so an effect gains a control by declaring one in
+/// `fx::shape` and nothing else needs touching — which is the same reason the
+/// rack has one slot variant for all of them rather than nine.
+///
+/// It is also what automation will read to know what it may address.
+fn api_fx_catalogue() -> Response {
+    let kinds: Vec<Value> = fx::shape::ShapeKind::ALL
+        .into_iter()
+        .map(|k| {
+            let params: Vec<Value> = k
+                .specs()
+                .iter()
+                .map(|s| {
+                    Value::obj()
+                        .set("key", s.key)
+                        .set("label", s.label)
+                        .set("min", s.min as f64)
+                        .set("max", s.max as f64)
+                        .set("default", s.default as f64)
+                        .set("log", s.log)
+                        .set("unit", s.unit)
+                })
+                .collect();
+            Value::obj()
+                .set("kind", k.as_str())
+                .set("label", k.label())
+                .set("params", Value::Arr(params))
+        })
+        .collect();
+    Response::json(Value::obj().set("shapers", Value::Arr(kinds)).to_string())
 }
 
 fn api_rack_get(app: &Arc<App>, req: &Request) -> Response {
