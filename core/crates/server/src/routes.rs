@@ -846,9 +846,16 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 // Deliberately extreme. A hundred times longer is the point of
                 // a granular stretcher: at those ratios the grain window and
                 // its jitter are doing the work, not the time base.
-                let ratio = float("ratio", 1.0).clamp(0.01, 100.0);
-                let semis = float("semitones", 0.0).clamp(-48.0, 48.0);
-                let window = float("windowMs", 40.0).clamp(5.0, 2000.0);
+                // Absent means unchanged, the same rule the engine settings
+                // below already followed. These three used to fall back to
+                // their factory values instead, so a control that mentioned
+                // only one of them silently reset the other two — invisible
+                // today because the panel always posts all three, and a trap
+                // for the first caller that does not.
+                let cur = s.list().stretch;
+                let ratio = float("ratio", cur.ratio).clamp(0.01, 100.0);
+                let semis = float("semitones", cur.semitones).clamp(-48.0, 48.0);
+                let window = float("windowMs", cur.window_ms).clamp(5.0, 2000.0);
                 // Read the current tier from the session already in hand.
                 // Going back through the store would re-lock the mutex this
                 // closure runs inside, and std's Mutex is not reentrant — that
