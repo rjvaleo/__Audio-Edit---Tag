@@ -1,6 +1,6 @@
 # Architecture — as built
 
-What exists, as of 11 August 2026. 584 tests passing.
+What exists, as of 11 August 2026. 585 tests passing.
 
 The original design brief is
 [`Waveform display interface/uploads/AudioLab-ARCHITECTURE.md`](../Waveform%20display%20interface/uploads/AudioLab-ARCHITECTURE.md) —
@@ -36,7 +36,7 @@ on nothing, `server` depends on everything.
 | `audio-core` | 2588 | 78 | Container probe and decode, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 755 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 7727 | 189 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
+| `fx` | 7843 | 190 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
 | `edit` | 1663 | 54 | Non-destructive edit list, windowed render, export |
 | `engine` | 1538 | 22 | Block renderer, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
@@ -126,6 +126,14 @@ Three are primitives and two are built out of them:
 | Granular | Deterministic grain cloud. `grain.rs` |
 | PVSOLA | The vocoder, re-anchored to the waveform by a WSOLA splice every few frames. `pvsola.rs` |
 | Hybrid | Separate, stretch each part its own way, sum. `hybrid.rs`, on `decompose.rs` and `noise.rs` |
+
+Because the last two *run* the first three, the first three's parameters reach
+them and their panels show them — PVSOLA carries the vocoder's whole extended
+set, the hybrid carries the vocoder's and WSOLA's both. A control that reaches
+the audio with no control on the panel is the same defect as one that does
+nothing, so there is a test asserting the correspondence in both directions:
+everything a panel shows moves the audio, and what PVSOLA does not show (WSOLA's
+splice group, since it finds its splice with its own search) provably does not.
 
 **The separation is what makes the hybrid possible.** `decompose.rs` median
 filters the magnitude spectrogram along time and along frequency: a held

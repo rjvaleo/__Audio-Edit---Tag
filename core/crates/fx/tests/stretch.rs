@@ -1571,3 +1571,119 @@ fn dominant(v: &[f32], rate: u32) -> f32 {
     }
     best as f32 * rate as f32 / n as f32
 }
+
+/// The panels for the two new engines show the vocoder's and WSOLA's own
+/// controls, because both engines *run* those engines underneath. That is a
+/// promise about routing, and this is the test that keeps it: a control on a
+/// panel that does not reach the audio is the same bug as a control that does
+/// nothing, and harder to notice because it looks right.
+///
+/// The transient detector's two settings are absent here on purpose. They are
+/// live in the hybrid — the guard reaches it, so the detector is running — but
+/// whether they change the output depends on the material, and they are inert
+/// on this source for plain WSOLA too. Their coverage is the WSOLA test above.
+#[test]
+fn the_new_engine_panels_show_only_controls_that_reach_the_audio() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+
+    let vocoder: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
+        ("Analysis window", Box::new(|s: &mut Stretch| s.vocoder.window_ms = 92.0)),
+        ("phase lock", Box::new(|s: &mut Stretch| s.vocoder.phase_lock = false)),
+        ("Freeze", Box::new(|s: &mut Stretch| s.vocoder.mag_freeze = 0.9)),
+        ("Blur", Box::new(|s: &mut Stretch| s.vocoder.mag_blur = 0.8)),
+        ("Gate", Box::new(|s: &mut Stretch| s.vocoder.mag_gate = 0.3)),
+        ("Freq trust", Box::new(|s: &mut Stretch| s.vocoder.freq_trust = 0.2)),
+        ("Phase spread", Box::new(|s: &mut Stretch| s.vocoder.phase_spread = 0.0)),
+        ("Peak width", Box::new(|s: &mut Stretch| s.vocoder.peak_width = 12)),
+        ("Lock width", Box::new(|s: &mut Stretch| s.vocoder.lock_width = 3.0)),
+        ("link stereo", Box::new(|s: &mut Stretch| s.vocoder.stereo_link = true)),
+    ];
+    let splice: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
+        ("Search", Box::new(|s: &mut Stretch| s.wsola.search_ms = 0.0)),
+        ("Pick", Box::new(|s: &mut Stretch| s.wsola.splice = fx::stretch::Splice::Different)),
+        ("Window", Box::new(|s: &mut Stretch| s.wsola.shape = fx::stretch::WinShape::Rect)),
+        ("Stride", Box::new(|s: &mut Stretch| s.wsola.stride = 64)),
+    ];
+    // The detector's own settings only bite where there are onsets to find, so
+    // they get a source with unmistakable ones rather than the general-purpose
+    // one above. This is a property of the detector rather than of the hybrid's
+    // routing, and plain WSOLA behaves the same way — which is why *Detector*
+    // itself is not here. Its coverage is at the detector, in
+    // `transient::sensitivity_opens_the_gate`, exactly as it is for WSOLA.
+    let detector: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
+        ("Floor", Box::new(|s: &mut Stretch| s.wsola.floor = 0.0)),
+        ("Guard", Box::new(|s: &mut Stretch| s.wsola.guard_hops = 12.0)),
+    ];
+
+    // Stereo, because `link stereo` has nothing to link otherwise — and the
+    // right channel is *delayed*, not a scaled copy. Two channels that are
+    // scaled copies of each other come out identical linked or not, because
+    // the stretch is deterministic and both channels ask it the same question.
+    // A scaled copy here made this test claim the control was dead.
+    let delay = 977;
+    let stereo: Vec<f32> = (0..src.len())
+        .flat_map(|i| [src[i], if i >= delay { src[i - delay] } else { 0.0 }])
+        .collect();
+
+    for (alg, shown) in [
+        // PVSOLA shows the vocoder's controls and deliberately not WSOLA's.
+        (Algorithm::Pvsola, vec![&vocoder]),
+        // The hybrid runs both, so it shows both.
+        (Algorithm::Hybrid, vec![&vocoder, &splice]),
+    ] {
+        let base = Stretch { ratio: 3.0, algorithm: alg, ..Default::default() };
+        let plain = base.process(&stereo, 2, rate);
+        for group in shown {
+            for (name, apply) in group.iter() {
+                let mut s = base;
+                apply(&mut s);
+                let d = differs(&plain, &s.process(&stereo, 2, rate));
+                assert!(d > 1e-6, "{alg:?}: the panel shows {name}, but it does not reach the audio");
+            }
+        }
+    }
+
+    // The hybrid's Transients group, on material that has transients. That
+    // these move the audio at all is also the proof that the hybrid really does
+    // hold the detector on: nothing on this list is reachable otherwise.
+    let hits: Vec<f32> = {
+        let mut v = vec![0f32; rate as usize];
+        let mut seed = 99u32;
+        for beat in 0..8 {
+            let at = beat * (rate as usize / 8);
+            for i in 0..1200 {
+                if at + i >= v.len() {
+                    break;
+                }
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let noise = ((seed >> 16) as f32 / 32768.0) - 1.0;
+                v[at + i] += noise * (1.0 - i as f32 / 1200.0).powi(3) * 0.9;
+            }
+        }
+        v
+    };
+    let base = Stretch { ratio: 3.0, algorithm: Algorithm::Hybrid, ..Default::default() };
+    let plain = base.process(&hits, 1, rate);
+    for (name, apply) in detector.iter() {
+        let mut s = base;
+        apply(&mut s);
+        let d = differs(&plain, &s.process(&hits, 1, rate));
+        assert!(d > 1e-6, "Hybrid: the panel shows {name}, but it does not reach the audio");
+    }
+
+    // The other half of the claim: PVSOLA finds its splice with its own search,
+    // so WSOLA's splice group would be decoration on that panel — and is not
+    // shown there. If this ever starts failing, the panel should gain them.
+    let base = Stretch { ratio: 3.0, algorithm: Algorithm::Pvsola, ..Default::default() };
+    let plain = base.process(&stereo, 2, rate);
+    for (name, apply) in splice.iter() {
+        let mut s = base;
+        apply(&mut s);
+        assert_eq!(
+            plain,
+            s.process(&stereo, 2, rate),
+            "PVSOLA answered WSOLA's {name}, so its panel should be showing it"
+        );
+    }
+}

@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.97-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2021-000000?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
-[![Tests](https://img.shields.io/badge/tests-584%20passing-2ea44f)](#building-from-source)
+[![Tests](https://img.shields.io/badge/tests-585%20passing-2ea44f)](#building-from-source)
 [![Crates](https://img.shields.io/badge/workspace-10%20crates-dea584?logo=rust&logoColor=white)](#the-stack)
 [![Dependencies](https://img.shields.io/badge/direct%20deps-2-4c9a2a)](#the-stack)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](#start-here)
@@ -100,7 +100,7 @@ cross-build a single command with nothing but a linker installed.
 | `audio-core` | 2588 | 78 | Container probe and decode (WAV, AIFF, AIFC, headerless PCM), peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 755 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 7727 | 189 | RBJ biquads, parametric EQ, compressor, channel maximiser, the five stretchers, and the sines/transients/noise separation |
+| `fx` | 7843 | 190 | RBJ biquads, parametric EQ, compressor, channel maximiser, the five stretchers, and the sines/transients/noise separation |
 | `edit` | 1663 | 54 | Non-destructive edit list, windowed render, export |
 | `engine` | 1538 | 22 | Real-time block renderer, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
@@ -140,7 +140,9 @@ only one with a level for each of the three parts, so a sound's air can be
 turned down without touching its tone.
 
 Each also has an *extended* set that reaches the constants the algorithm was
-tuned around — the similarity search radius, spectral magnitude freeze and blur,
+tuned around — and because the last two run the first three, they carry those
+engines' extended sets as well: PVSOLA the vocoder's, Hybrid the vocoder's and
+WSOLA's both — the similarity search radius, spectral magnitude freeze and blur,
 how far to believe the measured frequency, the window shape. They are there to
 break it on purpose.
 
@@ -204,7 +206,7 @@ between the Mac and the PC.
 ## Building from source
 
     cargo build --release --manifest-path core/Cargo.toml     # this machine
-    cargo test  --release --manifest-path core/Cargo.toml     # 584 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 585 tests
 
 For the Windows build from a Mac, once per machine:
 
