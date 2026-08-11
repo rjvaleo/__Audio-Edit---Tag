@@ -515,8 +515,18 @@ Plain HTML, CSS and JavaScript. No bundler, no framework, no build step.
 
 Controls follow one table — **name, control, reading** — in three columns whose
 widths are declared once. Four kinds sharing one contract so they are
-interchangeable at the call site: `param()` slider, `knob()`, `check()` rocker
+interchangeable at the call site: `param()` slider, `knob()` , `check()` rocker
 switch, `seg()` three-way choice.
+
+**Every control in the stretch tray carries an explanation**, attached with
+`tip()` and set on the whole row so the name, the slider and the reading all
+say the same thing. It deliberately overwrites the label-only title `param`
+puts on the name for clipping, and deliberately does *not* overwrite a
+segment's own words — those are about one choice and are the more useful of the
+two. A hundred controls across the five engines; a test of the interface would
+be the way to keep it that way, and there isn't one, so the check is a loop in
+the browser console over `.param` rows looking for a missing or label-only
+title.
 
 ### The stretch tray
 

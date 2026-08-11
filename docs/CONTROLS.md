@@ -71,6 +71,15 @@ list, and the folder count follows the switch.
 
 ## Sliders, knobs and switches
 
+**Every control in the stretch tray says what it does.** Hover the name, the
+slider or the reading and the same explanation appears; hover the space around
+a group and you get the group's. Half of these were constants inside an
+algorithm until recently, and a slider whose name is the only thing telling you
+what it does is a slider you turn at random. The engine picker, the segmented
+choices and the switches carry their own words per option, which are more
+specific than the row's and win where the two overlap.
+
+
 Four kinds of control, one contract. Every one of them can be pushed back to a
 value by Reset or Undo without knowing which kind it is.
 
