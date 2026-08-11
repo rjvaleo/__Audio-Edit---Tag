@@ -450,38 +450,42 @@
             .sidebar { width: 100%; max-height: none; }
             #canvas-container { height: 60vh; }
         }
-    /* The preset slots: one rectangle in the bottom-right corner, ruled into
+    /* The preset slots: one rectangle near the bottom-right corner, ruled into
        eight by two. Not sixteen buttons — sixteen buttons is sixteen borders
-       and sixteen shadows for something that is really one strip. The cells
-       share their edges, so the only lines are the ones between them. */
+       and sixteen shadows for something that is really one strip. Inset from
+       the corner because the stage is rounded and a flush rectangle loses its
+       own corner to it, and square, because it is not the stage. */
     .pads {
-      position: absolute; right: 0; bottom: 0; z-index: 6;
+      position: absolute; right: 10px; bottom: 10px; z-index: 6;
       display: grid;
-      grid-template-columns: repeat(8, 22px);
-      grid-template-rows: repeat(2, 17px);
-      border-top: 1px solid rgba(250,249,245,0.20);
-      border-left: 1px solid rgba(250,249,245,0.20);
-      background: rgba(16,16,16,0.62);
+      grid-template-columns: repeat(8, 24px);
+      grid-template-rows: repeat(2, 22px);
+      border: 1px solid rgba(250,249,245,0.22);
+      border-radius: 0;
+      background: rgba(16,16,16,0.66);
       opacity: 0.5; transition: opacity .15s ease;
     }
     .pads:hover { opacity: 1; }
     .pad {
       border: 0; border-right: 1px solid rgba(250,249,245,0.14);
       border-bottom: 1px solid rgba(250,249,245,0.14);
-      background: none; padding: 0; cursor: pointer;
-      color: rgba(250,249,245,0.14); font: inherit; font-size: 10px; line-height: 1;
+      border-radius: 0; background: none; padding: 0; cursor: pointer;
+      color: transparent; font: inherit;
+      /* Sized to fill the cell: a slot either holds something or it does not,
+         and at eight point that was a speck rather than an answer. */
+      font-size: 20px; line-height: 1;
       display: flex; align-items: center; justify-content: center;
       user-select: none;
     }
     /* The outer edges belong to the rectangle, not to the cells inside it. */
     .pad:nth-child(8n) { border-right: 0; }
     .pad:nth-child(n+9) { border-bottom: 0; }
-    .pad:hover { background: rgba(250,249,245,0.07); }
+    .pad:hover { background: rgba(250,249,245,0.09); }
     /* Holding something is the only thing a slot has to say. */
-    .pad.filled { color: var(--anthropic-orange); font-weight: 700; }
+    .pad.filled { color: var(--anthropic-orange); }
     /* Held long enough to erase: it fades as it goes, so the gesture says what
        it is about to do before it does it. */
-    .pad.arming { background: rgba(217,119,87,0.22); color: rgba(250,249,245,0.3); }
+    .pad.arming { background: rgba(217,119,87,0.24); color: rgba(250,249,245,0.35); }
 
     </style>
 </head>
@@ -1998,6 +2002,38 @@
     // wherever you left it for as long as the session lasts.
     // ═══════════════════════════════════════════════════════════════════════
 
+    /// What each visualiser looks like before anyone has touched it.
+    ///
+    /// Ten entries because there are ten views and they are ten different
+    /// things: Shear states a ratio and wants a clean sheet to state it on,
+    /// Braid has to resolve into countable strands, Lattice is about watching
+    /// order melt. One set of numbers cannot serve all of that, and starting
+    /// them all the same is the same mistake as sharing the sliders.
+    const VIEW_DEFAULTS = {
+        // V1 — the object.
+        'V1:0': { speed: 0.35, glow: 1.0, orbit: 0.00, trail: 0.15, colourBy: 'pitch',
+                  mirror: 4, colorPalette: ['#4a6fa5', '#8fb339', '#d97757'] },
+        'V1:1': { speed: 0.55, glow: 1.3, orbit: 0.05, trail: 0.70, colourBy: 'rate',
+                  mirror: 4, colorPalette: ['#2f5d8a', '#6fa8a0', '#f0a04b'] },
+        'V1:2': { speed: 0.75, glow: 1.5, orbit: 0.12, trail: 0.45, colourBy: 'pitch',
+                  mirror: 6, colorPalette: ['#6a9bcc', '#788c5d', '#d97757'] },
+        'V1:3': { speed: 0.40, glow: 1.4, orbit: 0.30, trail: 0.55, colourBy: 'pitch',
+                  mirror: 6, colorPalette: ['#7b5ea7', '#4ea1a1', '#ffcb69'] },
+        'V1:4': { speed: 0.50, glow: 0.8, orbit: 0.02, trail: 0.12, colourBy: 'size',
+                  mirror: 4, colorPalette: ['#33475b', '#9db4c0', '#e08e45'] },
+        // V2 — the moment.
+        'V2:0': { speed: 0.90, glow: 1.4, orbit: 0.04, trail: 0.75, colourBy: 'time',
+                  mirror: 1, colorPalette: ['#12263a', '#2a9d8f', '#e9c46a'] },
+        'V2:1': { speed: 0.60, glow: 1.6, orbit: 0.20, trail: 0.65, colourBy: 'pitch',
+                  mirror: 12, colorPalette: ['#b388eb', '#8093f1', '#f7aef8'] },
+        'V2:2': { speed: 0.50, glow: 1.2, orbit: 0.00, trail: 0.50, colourBy: 'position',
+                  mirror: 2, colorPalette: ['#1b1b1e', '#8d99ae', '#ef233c'] },
+        'V2:3': { speed: 0.80, glow: 1.5, orbit: 0.50, trail: 0.80, colourBy: 'rate',
+                  mirror: 6, colorPalette: ['#03071e', '#dc2f02', '#ffba08'] },
+        'V2:4': { speed: 0.45, glow: 1.0, orbit: 0.03, trail: 0.35, colourBy: 'source',
+                  mirror: 2, colorPalette: ['#14213d', '#4cc9f0', '#f72585'] },
+    };
+
     const LOOK_KEYS = ['speed', 'glow', 'orbit', 'trail', 'colourBy', 'mirror', 'colorPalette'];
     const CAM_KEYS = ['camYaw', 'camPitch', 'camZoom', 'follow'];
 
@@ -2057,12 +2093,14 @@
             }
             if (Array.isArray(look.colorPalette)) params.colorPalette = look.colorPalette.slice();
         } else {
-            // First visit. Rather than snap to a factory look — which would
-            // make every new view a jolt — it inherits whatever you were
-            // looking at and keeps it from then on.
-            const seeded = {};
-            for (const f of LOOK_KEYS) seeded[f] = params[f];
-            seeded.colorPalette = params.colorPalette.slice();
+            // First visit. Each view has a look of its own rather than
+            // inheriting the last one — inheriting made a fresh view arrive
+            // looking identical to the one you left, which reads as the
+            // settings not being per view at all.
+            const seeded = Object.assign({}, VIEW_DEFAULTS[k] || VIEW_DEFAULTS['V1:0']);
+            seeded.colorPalette = seeded.colorPalette.slice();
+            for (const f of LOOK_KEYS) params[f] = seeded[f];
+            params.colorPalette = seeded.colorPalette.slice();
             looks[k] = seeded;
             writeStore(LOOK_STORE, looks);
         }
