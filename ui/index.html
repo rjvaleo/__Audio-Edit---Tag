@@ -189,7 +189,7 @@
     <div class="presetbar hidden" id="presetBar">
       <nav class="dock-rail">
         <button class="dock-tab active" data-dock="stretch" title="Time, pitch and grains">
-          <span class="ic">⧗</span><span class="lb">Time</span>
+          <span class="ic">⧗</span><span class="lb">Time &amp; Pitch</span>
         </button>
         <button class="dock-tab" data-dock="effects" title="Effect chain">
           <span class="ic">⚙</span><span class="lb">FX</span>
@@ -231,30 +231,16 @@
       <div class="dock-body" id="dockStretch">
         <div class="grain-split">
           <div class="grain-controls">
-            <div class="grain-standard">
-              <div class="cpanel">
-                <div class="cpanel-head">Time &amp; pitch
-                  <button class="tiny" id="stretchReset"
-                          title="Reset every control on both sides, standard and extended">Reset all</button>
-                </div>
-                <div id="stretchParams"></div>
-                <div class="mono dim" id="stretchOut"></div>
-              </div>
-              <div class="cpanel" id="panelGrainShape">
-                <div class="cpanel-head">Grain shape</div>
-                <div id="grainShape"></div>
-              </div>
-              <div class="cpanel" id="panelGrainPitch">
-                <div class="cpanel-head">Pitch movement</div>
-                <div id="grainPitch"></div>
-              </div>
+            <!-- One panel, like Extended: the groups inside are separated by a
+                 rule rather than each carrying its own box. -->
+            <div class="cpanel grain-standard">
+              <div id="stretchParams"></div>
+              <div class="mono dim" id="stretchOut"></div>
+              <div id="grainShape"></div>
+              <div id="grainPitch"></div>
             </div>
 
             <div class="cpanel grain-extended" id="extPanel">
-              <div class="cpanel-head">Extended
-                <button class="tiny" id="extReset"
-                        title="Reset only the extended controls — the standard ones are left alone">Reset</button>
-              </div>
               <div id="extEngine"></div>
               <div id="extGrain"></div>
             </div>
