@@ -2560,7 +2560,7 @@ const WSOLA_DEFAULTS = {
 // Which engines the audio callback can actually run. Mirrors
 // `engine::stretcher::is_live`; the rest are rendered on export and
 // approximated live, which the panel says out loud.
-const LIVE_ENGINES = ['wsola', 'vocoder', 'pvsola', 'granular'];
+const LIVE_ENGINES = ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular'];
 const PVSOLA_DEFAULTS = { anchorFrames: 6, searchMs: 10, blend: 0.5 };
 const HYBRID_DEFAULTS = {
   fftSize: 2048, timeSpan: 17, freqSpan: 17, margin: 2, morphNoise: true,
@@ -2615,7 +2615,7 @@ function renderStretch() {
       <button class="seg-btn" data-alg="wsola" title="Time domain. Keeps transients intact - drums, percussion, one-shots.">WSOLA</button>
       <button class="seg-btn" data-alg="vocoder" title="Frequency domain. Holds chords and sustained tone together - pads, strings.">Vocoder</button>
       <button class="seg-btn" data-alg="pvsola" title="The vocoder, re-anchored to the waveform every few frames. Holds tone together without the phasiness - the one-knob default for pitched material.">PVSOLA</button>
-      <button class="seg-btn rendered" data-alg="hybrid" title="Splits the sound into tone, hits and air, and stretches each its own way. The slow one, and the only one that will not repeat noise.&#10;&#10;Not yet a live engine: playback approximates it with the grain cloud. Export and render use the real thing.">Hybrid</button>
+      <button class="seg-btn" data-alg="hybrid" title="Splits the sound into tone, hits and air, and stretches each its own way. The slow one, and the only one that will not repeat noise.">Hybrid</button>
       <button class="seg-btn" data-alg="granular" title="A cloud of grains. Not trying to be transparent - this is the one you hear.">Granular</button>
     </div>`;
   // The panel has no heading any more, so its reset rides on the engine row —

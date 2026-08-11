@@ -37,6 +37,7 @@ static A: Counting = Counting;
 
 use fx::stream::{StretchParams, Streamer, WsolaStream};
 use fx::stretch::Stretch;
+use fx::hstream::{HybridStream, Parts};
 use fx::pstream::PvsolaStream;
 use fx::vstream::VocoderStream;
 
@@ -63,6 +64,55 @@ fn the_streaming_engines_never_allocate_once_they_are_built() {
     controls_moving();
     the_vocoder();
     pvsola();
+    hybrid();
+}
+
+/// The hybrid runs three engines at once over three separated sources. The
+/// separation itself allocates and is meant to — it happens off the audio
+/// thread, once, and does not depend on the ratio.
+fn hybrid() {
+    let channels = 2;
+    let src = source(channels);
+    let spec = Stretch { ratio: 3.0, ..Default::default() };
+    let mut p = StretchParams {
+        ratio: spec.ratio,
+        window_ms: spec.window_ms,
+        sample_rate: RATE,
+        wsola: spec.wsola,
+        vocoder: spec.vocoder,
+        grain: spec.grain,
+    };
+    let mut h = spec.hybrid;
+
+    let parts = Parts::separate(&src, channels, h);
+    let block = 512;
+    let mut s = HybridStream::new(block, channels, RATE);
+    s.set_map(None);
+    s.seek(0, &parts, &p, h);
+    let mut out = vec![0f32; block * channels];
+
+    for w in [23.0f32, 46.0, 92.0] {
+        p.vocoder.window_ms = w;
+        p.window_ms = w;
+        s.render(&mut out, channels, &parts, &p, h);
+    }
+
+    let before = ALLOCS.load(Ordering::Relaxed);
+    for i in 0..120 {
+        p.ratio = 1.0 + (i % 6) as f32;
+        p.vocoder.window_ms = [23.0f32, 46.0, 92.0][i % 3];
+        p.window_ms = [23.0f32, 46.0, 92.0][i % 3];
+        h.morph_noise = i % 4 != 0;
+        h.harmonic_level = (i % 5) as f32 / 4.0;
+        h.residual_level = (i % 3) as f32 / 2.0;
+        s.render(&mut out, channels, &parts, &p, h);
+    }
+    let after = ALLOCS.load(Ordering::Relaxed);
+    assert_eq!(
+        after, before,
+        "the streaming hybrid allocated {} times across 120 blocks",
+        after - before
+    );
 }
 
 /// PVSOLA holds two whole vocoder runs and a round of output between them, so

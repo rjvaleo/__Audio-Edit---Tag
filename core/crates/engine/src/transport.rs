@@ -81,6 +81,14 @@ pub struct Shared {
     /// which is the ordinary case and needs no map at all.
     pending_map: Mutex<Option<Option<fx::transient::TimeMap>>>,
 
+    /// The source split into partials, attacks and everything else, waiting to
+    /// be adopted. Handed over for the same reason as the map: separating runs
+    /// two spectrogram passes per channel over the whole file.
+    ///
+    /// It does not depend on the ratio, so it survives every parameter move —
+    /// only opening a file or changing the separation itself rebuilds it.
+    pending_parts: Mutex<Option<Arc<fx::hstream::Parts>>>,
+
     /// Magnitudes of the most recent output block, 0..255 per bin.
     ///
     /// Taken from what actually left the engine, so the spectrum shows the
@@ -106,6 +114,7 @@ impl Shared {
             overflows: AtomicU64::new(0),
             pending_rack: Mutex::new(None),
             pending_map: Mutex::new(None),
+            pending_parts: Mutex::new(None),
             spectrum: Mutex::new(Vec::new()),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
@@ -199,6 +208,13 @@ impl Shared {
 
     /// Hand a freshly built rack to the audio thread. Replacing an unclaimed
     /// one is fine: only the newest settings matter.
+    /// Leave a freshly separated source for the audio thread to pick up.
+    pub fn set_parts(&self, parts: Arc<fx::hstream::Parts>) {
+        if let Ok(mut g) = self.pending_parts.lock() {
+            *g = Some(parts);
+        }
+    }
+
     /// Leave a transient map for the audio thread to pick up.
     pub fn set_map(&self, map: Option<fx::transient::TimeMap>) {
         if let Ok(mut g) = self.pending_map.lock() {
@@ -336,6 +352,11 @@ impl Core {
         if let Ok(mut g) = shared.pending_map.try_lock() {
             if let Some(next) = g.take() {
                 self.renderer.set_map(next);
+            }
+        }
+        if let Ok(mut g) = shared.pending_parts.try_lock() {
+            if let Some(next) = g.take() {
+                self.renderer.set_parts(next);
             }
         }
 

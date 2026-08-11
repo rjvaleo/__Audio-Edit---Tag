@@ -71,6 +71,8 @@ fn each_live_engine_sounds_like_itself() {
     let src = Source { samples: busy(SR as usize / 2, channels), channels };
     let n = src.frames();
     let live = [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola];
+    // The hybrid is left out here only because it needs a separated source,
+    // which the helper above does not have; it has a test of its own.
     let outs: Vec<Vec<f32>> = live
         .iter()
         .map(|a| run(&src, &params(n, *a, 2.0, 0.0), 512, n))
@@ -183,21 +185,50 @@ fn switching_engines_while_playing_does_not_jump_or_go_quiet() {
     }
 }
 
-/// An engine that cannot stream yet must fall back audibly rather than to
-/// silence — and the fallback has to be named, not guessed at.
+/// Every engine streams now — and the hybrid has a state the others do not:
+/// its source has to be separated first, off the audio thread, and until that
+/// arrives it has nothing to play. It covers the gap with the grain cloud
+/// rather than with silence.
 #[test]
-fn engines_that_do_not_stream_yet_still_make_sound() {
+fn the_hybrid_plays_the_grain_cloud_until_its_source_has_been_separated() {
     let channels = 2;
     let src = Source { samples: busy(SR as usize / 4, channels), channels };
     let n = src.frames();
-    for alg in [Algorithm::Hybrid] {
-        assert!(!engine::stretcher::is_live(alg), "{alg:?} claims to stream");
-        let out = run(&src, &params(n, alg, 2.0, 0.0), 512, n);
-        assert!(rms(&out) > 1e-3, "{alg:?} fell back to silence");
-    }
-    for alg in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+    let sp = params(n, Algorithm::Hybrid, 2.0, 0.0);
+
+    for alg in [
+        Algorithm::Granular,
+        Algorithm::Wsola,
+        Algorithm::Vocoder,
+        Algorithm::Pvsola,
+        Algorithm::Hybrid,
+    ] {
         assert!(engine::stretcher::is_live(alg), "{alg:?} should stream");
     }
+
+    // Nothing separated yet.
+    let bare = run(&src, &sp, 512, n);
+    assert!(rms(&bare) > 1e-3, "the hybrid fell silent with no separated source");
+
+    // And with it, which must be a different sound — otherwise the fallback
+    // never stopped.
+    let parts = fx::hstream::Parts::separate(&src.samples, channels, sp.hybrid);
+    let mut s = Stretcher::new(512, channels, SR);
+    s.set_map(None);
+    s.set_parts(std::sync::Arc::new(parts));
+    s.seek(0, &sp);
+    let mut out: Vec<f32> = Vec::new();
+    let mut buf = vec![0f32; 512 * channels];
+    let mut evs = no_events();
+    while out.len() / channels < n {
+        s.render(&mut buf, channels, &src, &sp, &mut evs);
+        out.extend_from_slice(&buf);
+    }
+    out.truncate(n * channels);
+    assert!(rms(&out) > 1e-3, "the hybrid produced nothing once separated");
+    let d: f32 =
+        bare.iter().zip(&out).map(|(a, b)| (a - b).abs()).sum::<f32>() / bare.len() as f32;
+    assert!(d > 1e-4, "the hybrid played the same thing separated as unseparated");
 }
 
 fn dominant(v: &[f32]) -> f32 {

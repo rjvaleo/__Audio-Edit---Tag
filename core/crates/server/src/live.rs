@@ -53,6 +53,10 @@ fn idle_params() -> StreamParams {
 
 
         pvsola: fx::pvsola::PvsolaParams::default(),
+
+
+
+        hybrid: fx::hybrid::HybridParams::default(),
     }
 }
 
@@ -113,15 +117,22 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
         wsola: list.stretch.wsola,
         vocoder: list.stretch.vocoder,
         pvsola: list.stretch.pvsola,
+        hybrid: list.stretch.hybrid,
     };
 
     with(app, |h| {
         h.shared.set_source(Arc::clone(&source));
         h.shared.set_params(params);
         h.shared.set_map(map_for(&source, &list.stretch, dev_rate));
+        // Whatever was separated belongs to the file that just closed.
+        h.shared.set_parts(std::sync::Arc::new(fx::hstream::Parts::default()));
         h.shared.request_seek(0);
         h.shared.set_rack(rack_for(app, rel));
     })?;
+
+    if list.stretch.algorithm == fx::stretch::Algorithm::Hybrid {
+        separate_soon(app, rel, Arc::clone(&source), list.stretch.hybrid);
+    }
 
     // Remember what is loaded, so anything drawing the grain cloud can find the
     // document whose parameters produced it.
@@ -151,9 +162,17 @@ pub fn rack_for(app: &Arc<App>, rel: &str) -> Option<fx::Rack> {
 pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(), String> {
     with(app, |h| {
         let mut want_map = false;
+        let mut want_parts = false;
         if let Some(mut p) = h.shared.params() {
             // Only the transient map is expensive to derive, and only these
             // decide it. Everything else can move under the pointer for free.
+            // Separating runs two spectrogram passes per channel, and it does
+            // not depend on the ratio — only on these four. So dragging the
+            // stretch slider on the hybrid costs what it costs on the vocoder.
+            want_parts = list.stretch.algorithm == fx::stretch::Algorithm::Hybrid
+                && (p.hybrid.split() != list.stretch.hybrid.split()
+                    || p.algorithm != fx::stretch::Algorithm::Hybrid);
+
             want_map = p.wsola.preserve_transients != list.stretch.wsola.preserve_transients
                 || p.wsola.sensitivity != list.stretch.wsola.sensitivity
                 || p.wsola.floor != list.stretch.wsola.floor
@@ -169,11 +188,18 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
             p.grain = list.stretch.grain;
             p.algorithm = list.stretch.algorithm;
             p.wsola = list.stretch.wsola;
+            p.pvsola = list.stretch.pvsola;
+            p.hybrid = list.stretch.hybrid;
             h.shared.set_params(p);
         }
         // Rebuilding runs an onset detector over the whole file, so it happens
         // on this thread and only when it can have changed — and not at all
         // while transients are not being preserved, which is the usual case.
+        if want_parts {
+            if let Some(src) = h.shared.source() {
+                separate_soon(app, rel, src, list.stretch.hybrid);
+            }
+        }
         if want_map && list.stretch.wsola.preserve_transients {
             if let Some(src) = h.shared.source() {
                 h.shared.set_map(map_for(&src, &list.stretch, h.sample_rate));
@@ -183,6 +209,42 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
         }
         h.shared.set_rack(rack_for(app, rel));
     })
+}
+
+/// Split the source into partials, attacks and everything else, on a thread of
+/// its own.
+///
+/// It costs about a tenth of a second per second of stereo — three seconds for
+/// a half-minute file — so it cannot happen on the request thread, and it must
+/// not happen at all for the four engines that do not need it. Until the result
+/// arrives the hybrid plays the grain cloud rather than silence.
+///
+/// The answer is thrown away if the file has changed by the time it is ready.
+/// Switching sounds quickly is exactly when a slow pass is most likely to land
+/// late, and separated audio from the wrong file is worse than none.
+fn separate_soon(
+    app: &Arc<App>,
+    rel: &str,
+    source: Arc<Source>,
+    hybrid: fx::hybrid::HybridParams,
+) {
+    let app = Arc::clone(app);
+    let rel = rel.to_string();
+    let _ = std::thread::Builder::new()
+        .name("separate".into())
+        .spawn(move || {
+            let parts =
+                fx::hstream::Parts::separate(&source.samples, source.channels, hybrid);
+            let still = app
+                .playing
+                .read()
+                .ok()
+                .and_then(|g| g.as_ref().map(|(p, _, _)| p.clone()));
+            if still.as_deref() != Some(rel.as_str()) {
+                return;
+            }
+            let _ = with(&app, |h| h.shared.set_parts(std::sync::Arc::new(parts)));
+        });
 }
 
 /// The map WSOLA needs for a document, or `None` for a straight line.

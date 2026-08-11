@@ -19,14 +19,15 @@
 //! of one the sum is the original — there is a test for it, and it is the check
 //! that the routing has not quietly gained or lost a part.
 //!
-//! This is the most expensive engine here by a wide margin: two full
-//! spectrogram passes for the separation, then a vocoder, a WSOLA and a
-//! morph over the whole file. It is an offline engine and is not offered to
-//! the block renderer.
+//! This is the most expensive engine here by a wide margin: two spectrogram
+//! passes for the separation, then a vocoder, a WSOLA and a morph. But the
+//! separation does not depend on the ratio — splitting a sound up is a property
+//! of the sound, not of what is being done to it — so it happens once, off the
+//! audio thread, and after that this engine runs in the callback like the rest.
+//! See [`crate::hstream`].
 
-use crate::decompose::{self, Split};
-use crate::noise::{self, Morph};
-use crate::stretch::{Algorithm, Stretch};
+use crate::decompose::Split;
+use crate::stretch::Stretch;
 
 /// What the hybrid engine does with each part.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,7 +75,7 @@ impl HybridParams {
         *self == HybridParams::default()
     }
 
-    pub(crate) fn split(&self) -> Split {
+    pub fn split(&self) -> Split {
         Split {
             fft_size: (self.fft_size as usize).clamp(256, 8192),
             time_span: (self.time_span as usize).clamp(3, 101),
@@ -86,10 +87,14 @@ impl HybridParams {
 
 /// Stretch `input` (interleaved) by `ratio`, each part its own way.
 ///
-/// `spec` carries the shared settings — window, grain controls, the vocoder's
-/// and WSOLA's own parameters — because every part is stretched by an engine
-/// that already reads them and there is no reason for the hybrid to invent a
-/// second set.
+/// A loop over [`crate::hstream::HybridStream`], which is the same code the
+/// audio callback runs — the last of the five engines to be arranged that way.
+///
+/// The separation happens first and once. It does not depend on the ratio at
+/// all: splitting a sound into partials, attacks and everything else is a
+/// property of the sound rather than of what is being done to it. That is what
+/// makes this engine streamable, and it is also why dragging the stretch slider
+/// on the hybrid costs what dragging it on the vocoder costs.
 pub fn stretch(
     input: &[f32],
     channels: usize,
@@ -105,110 +110,86 @@ pub fn stretch(
         return vec![0.0; want * channels];
     }
 
-    let split = p.split();
-    let mut out = vec![0f32; want * channels];
-
-    // Separation is per channel: it is a spectrogram operation and there is no
-    // meaningful joint version of it. The stretching that follows is per part
-    // and across all channels at once, so a stereo image survives it.
-    let mut harmonic = vec![0f32; input.len()];
-    let mut percussive = vec![0f32; input.len()];
-    let mut residual = vec![0f32; input.len()];
-
-    let mut chan = vec![0f32; in_frames];
-    for c in 0..channels {
-        for i in 0..in_frames {
-            chan[i] = input[i * channels + c];
-        }
-        let parts = decompose::separate_mono(&chan, split);
-        for i in 0..in_frames {
-            harmonic[i * channels + c] = parts.harmonic[i];
-            percussive[i * channels + c] = parts.percussive[i];
-            residual[i * channels + c] = parts.residual[i];
-        }
-    }
-
-    // Each part through the engine that suits it. Both run through `Stretch`
-    // rather than the raw functions so that the window, the grain controls and
-    // the extended parameters reach them exactly as they would if that engine
-    // had been selected on its own.
-    let h = {
-        let mut s = *spec;
-        s.algorithm = Algorithm::Vocoder;
-        s.ratio = ratio;
-        s.semitones = 0.0;
-        s.process(&harmonic, channels, sample_rate)
-    };
-    let pc = {
-        let mut s = *spec;
-        s.algorithm = Algorithm::Wsola;
-        s.ratio = ratio;
-        s.semitones = 0.0;
-        // An attack that is held at its original rate is the whole reason this
-        // part exists, so the transient guard is on whatever the WSOLA panel
-        // says — this is the one place the engine overrides the user, and it
-        // overrides them toward what they asked for by choosing the hybrid.
-        s.wsola.preserve_transients = true;
-        s.process(&percussive, channels, sample_rate)
-    };
-    let r = if p.morph_noise {
-        morph_all(&residual, channels, in_frames, ratio, spec)
-    } else {
-        let mut s = *spec;
-        s.algorithm = Algorithm::Wsola;
-        s.ratio = ratio;
-        s.semitones = 0.0;
-        s.process(&residual, channels, sample_rate)
+    let parts = crate::hstream::Parts::separate(input, channels, p);
+    let sp = crate::stream::StretchParams {
+        ratio,
+        window_ms: spec.window_ms,
+        sample_rate,
+        wsola: spec.wsola,
+        vocoder: spec.vocoder,
+        grain: spec.grain,
     };
 
-    let (gh, gp, gr) = (
-        p.harmonic_level.clamp(0.0, 4.0),
-        p.percussive_level.clamp(0.0, 4.0),
-        p.residual_level.clamp(0.0, 4.0),
+    // Layered like the other four, so the shared grain controls reach this one
+    // as well. The callback does not layer — see `crate::stream` — so at more
+    // than one layer this path and live playback are different sounds; there is
+    // a test pinning that until layering is either taught to the streaming
+    // engines or dropped from them.
+    let hop_l = crate::stretch::hop_frames(
+        &spec.grain,
+        crate::stretch::fft_size_for(spec.vocoder.window_ms, sample_rate),
+        sample_rate.max(1) as f32,
     );
-    for i in 0..out.len() {
-        let a = h.get(i).copied().unwrap_or(0.0);
-        let b = pc.get(i).copied().unwrap_or(0.0);
-        let c = r.get(i).copied().unwrap_or(0.0);
-        out[i] = a * gh + b * gp + c * gr;
-    }
-    out
+    crate::stretch::layered(&spec.grain, channels, hop_l, |g| {
+        let mut sp = sp;
+        sp.grain = *g;
+        one(&parts, channels, sample_rate, ratio, spec, p, &sp, want)
+    })
 }
 
-/// The residual, one channel at a time, remade as fresh noise.
-///
-/// Each channel gets its own phase seed. Sharing one would put identical noise
-/// in both and collapse the image to the centre, which is the opposite of what
-/// the residual of a stereo recording sounds like.
-fn morph_all(
-    residual: &[f32],
+/// One layer of the hybrid: three engines on three parts, summed.
+#[allow(clippy::too_many_arguments)]
+fn one(
+    parts: &crate::hstream::Parts,
     channels: usize,
-    in_frames: usize,
+    sample_rate: u32,
     ratio: f32,
     spec: &Stretch,
+    p: HybridParams,
+    sp: &crate::stream::StretchParams,
+    want: usize,
 ) -> Vec<f32> {
-    let want = ((in_frames as f64) * ratio as f64).round() as usize;
-    let mut out = vec![0f32; want * channels];
-    let mut chan = vec![0f32; in_frames];
-    for c in 0..channels {
-        for i in 0..in_frames {
-            chan[i] = residual[i * channels + c];
-        }
-        let m = Morph {
-            seed: spec.grain.seed.wrapping_add(c as u32 * 7919).max(1),
-            ..Morph::default()
-        };
-        let done = noise::morph_mono(&chan, ratio, m);
-        for i in 0..want.min(done.len()) {
-            out[i * channels + c] = done[i];
-        }
+    const CHUNK: usize = 1 << 16;
+    let mut hs = crate::hstream::HybridStream::new(CHUNK, channels, sample_rate);
+    // The attacks are stretched with transient preservation on, so they need a
+    // map — derived from the percussive part rather than the whole sound, which
+    // is the point of having separated it.
+    let win = (((spec.window_ms.clamp(5.0, 2000.0) / 1000.0) * sample_rate.max(1) as f32) as usize)
+        .max(64);
+    let hop = crate::stretch::hop_frames(&sp.grain, win, sample_rate.max(1) as f32).max(1);
+    let mut wp = spec.wsola;
+    wp.preserve_transients = true;
+    hs.set_map(crate::stream::WsolaStream::build_map(
+        &parts.percussive,
+        channels,
+        sample_rate,
+        ratio,
+        hop,
+        &wp,
+    ));
+    hs.seek(0, parts, sp, p);
+
+    let mut out = vec![0.0; want * channels];
+    let mut at = 0usize;
+    while at < want {
+        let take = CHUNK.min(want - at);
+        hs.render(
+            &mut out[at * channels..(at + take) * channels],
+            channels,
+            parts,
+            sp,
+            p,
+        );
+        at += take;
     }
     out
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stretch::Algorithm;
 
     const SR: u32 = 44_100;
 

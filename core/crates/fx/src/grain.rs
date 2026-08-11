@@ -263,6 +263,8 @@ pub struct StreamParams {
     pub vocoder: crate::stretch::VocoderParams,
     /// How often PVSOLA stops trusting the propagated phase.
     pub pvsola: crate::pvsola::PvsolaParams,
+    /// How the hybrid splits the sound up and what it does with each part.
+    pub hybrid: crate::hybrid::HybridParams,
 }
 
 impl StreamParams {
@@ -280,6 +282,7 @@ impl StreamParams {
             wsola: crate::stretch::WsolaParams::default(),
             vocoder: crate::stretch::VocoderParams::default(),
             pvsola: crate::pvsola::PvsolaParams::default(),
+            hybrid: crate::hybrid::HybridParams::default(),
         }
     }
 }
@@ -405,6 +408,10 @@ pub fn grains(
 
 
         pvsola: crate::pvsola::PvsolaParams::default(),
+
+
+
+        hybrid: crate::hybrid::HybridParams::default(),
     };
     let p = sp.plan();
 

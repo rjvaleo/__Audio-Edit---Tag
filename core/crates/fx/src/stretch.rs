@@ -687,7 +687,18 @@ pub(crate) fn best_offset(
         return centre;
     }
     let lo = centre.saturating_sub(search);
-    let hi = (centre + search).min(input.len() / channels - len - 1);
+    // The last position a whole window can be read from. Saturating, because
+    // an input shorter than the window makes this negative — and on unsigned
+    // arithmetic that is not a small number but an enormous one, which reads
+    // off the end of the buffer. The offline renderer never reached here with
+    // a source that short because it resampled instead; the streaming engine
+    // has no such guard in front of it, and the hybrid feeds it a separated
+    // part that can be shorter than anything a caller would hand over directly.
+    let room = (input.len() / channels).saturating_sub(len + 1);
+    if room == 0 {
+        return centre.min(room);
+    }
+    let hi = (centre + search).min(room);
     if hi <= lo {
         return centre.min(hi);
     }
