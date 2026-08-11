@@ -508,7 +508,7 @@ pub(crate) fn grain_rate(g: &crate::Grain, index: u64, t: f32) -> f32 {
 ///
 /// Clamped it piles up against the ends of the file; wrapped it comes round
 /// again. Both are worth having and the difference is one control.
-fn place(pos: f32, in_frames: usize, wrap: bool) -> usize {
+pub(crate) fn place(pos: f32, in_frames: usize, wrap: bool) -> usize {
     let top = (in_frames as f32 - 2.0).max(1.0);
     if wrap {
         pos.rem_euclid(top) as usize
@@ -519,7 +519,7 @@ fn place(pos: f32, in_frames: usize, wrap: bool) -> usize {
 
 /// Interpolated read, so a window can be laid down at a rate other than one.
 #[inline]
-fn read_at(input: &[f32], channels: usize, ch: usize, pos: f32, in_frames: usize) -> f32 {
+pub(crate) fn read_at(input: &[f32], channels: usize, ch: usize, pos: f32, in_frames: usize) -> f32 {
     if in_frames == 0 {
         return 0.0;
     }
@@ -595,6 +595,16 @@ fn rms(v: &[f32]) -> f32 {
 }
 
 /// Waveform-similarity overlap-add.
+/// Waveform-similarity overlap-add.
+///
+/// A loop over [`crate::stream::WsolaStream`], which is the same code the audio
+/// callback runs. That is deliberate and it is the point: "what you hear is what
+/// you export" used to be a promise kept by two implementations staying in
+/// step, and is now a property of there being one.
+///
+/// The only thing this adds is the driving: it asks for the whole length in one
+/// go where the callback asks for a few hundred frames at a time, and the
+/// streamer cannot tell the difference.
 fn wsola(
     input: &[f32],
     channels: usize,
@@ -607,154 +617,62 @@ fn wsola(
 ) -> Vec<f32> {
     let in_frames = input.len() / channels;
     let sr = sample_rate.max(1) as f32;
+    let want = ((in_frames as f32) * ratio).round() as usize;
+    if in_frames == 0 || want == 0 {
+        return vec![0.0; want * channels];
+    }
+
+    // The draft tier still caps the search, because this runs on every pointer
+    // move and a 200 ms search per window would not keep up. The committed
+    // render uses what was actually asked for.
+    let mut params = params;
+    if matches!(quality, Quality::Draft) {
+        params.search_ms = params.search_ms.min(quality.search_ms());
+    }
 
     let win = (((window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64) & !1;
-    // How often a window is laid down. The same two controls the grain cloud
-    // uses, because they mean the same thing here: density sets the rate
-    // outright, overlap divides the window into it.
-    let hop_out = hop_frames(g, win, sr).max(1);
-
-    // The search width is the user's, but a draft still caps it: this runs on
-    // every pointer move, and a 200 ms search per window would not keep up.
-    // The committed render uses what was actually asked for.
-    let want_ms = params.search_ms.clamp(0.0, 200.0);
-    let ms = match quality {
-        Quality::Draft => want_ms.min(quality.search_ms()),
-        _ => want_ms,
-    };
-    let search = ((ms / 1000.0) * sr) as usize;
-
-    // Where each output instant comes from. Without transient preservation
-    // this is a straight line and behaves exactly as a constant hop did.
-    //
-    // The guard has to be wide enough that whole windows fit inside it — the
-    // thesis is explicit that two anchors close together do not produce an
-    // unstretched region, because WSOLA lays down windows of fixed length and
-    // cannot honour a span shorter than one. Three hops is the smallest that
-    // reliably does.
-    let map = if params.preserve_transients {
-        let hits = crate::transient::onsets(
-            input, channels, sample_rate, params.sensitivity, params.floor,
-        );
-        let guard = ((hop_out as f32) * params.guard_hops.clamp(1.0, 16.0)) as usize;
-        crate::transient::TimeMap::with_transients(in_frames, ratio, &hits, guard.max(1))
-    } else {
-        crate::transient::TimeMap::linear(in_frames, ratio)
-    };
-
+    let search = ((params.search_ms.clamp(0.0, 200.0) / 1000.0) * sr) as usize;
     if in_frames <= win + search * 2 {
         // Too short to splice meaningfully; resampling alone is the honest
         // answer and avoids reading past the end.
-        let want = ((in_frames as f32) * ratio).round() as usize;
         return resample(input, channels, 1.0 / ratio, want);
     }
 
-    let out_frames = ((in_frames as f32) * ratio).round() as usize + win;
-    let mut out = vec![0f32; out_frames * channels];
-    let mut norm = vec![0f32; out_frames];
-    // Only precomputed when nothing varies the length. With size jitter every
-    // window is its own length and the envelope has to be evaluated per sample.
-    let steady = g.size_jitter.abs() < 1e-6;
-    let window = if steady { shaped(win, params.shape, g.envelope) } else { Vec::new() };
-    let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
+    let hop = hop_frames(g, win, sr).max(1);
+    let p = crate::stream::StretchParams {
+        ratio,
+        window_ms,
+        sample_rate,
+        wsola: params,
+        grain: *g,
+    };
 
-    // The segment we expect to follow what was just written; the next window is
-    // chosen to resemble it.
-    let mut expect: Vec<f32> = vec![0.0; hop_out * channels];
-    let mut read = 0usize;
-    let mut write = 0usize;
-    let mut first = true;
-    let mut index = 0u64;
-    let scan = g.scan.clamp(-4.0, 4.0);
+    // Driven in chunks rather than as one enormous block. The streamer sizes
+    // its ring from the block it is promised, so asking for the whole length at
+    // once would put a second copy of the output in memory — at a hundred times
+    // a long file that is hundreds of megabytes for nothing. The block size does
+    // not affect the audio; there is a test for that.
+    const CHUNK: usize = 1 << 16;
+    let mut s = crate::stream::WsolaStream::new(CHUNK, channels, sample_rate);
+    s.set_map(crate::stream::WsolaStream::build_map(
+        input, channels, sample_rate, ratio, hop, &params,
+    ));
+    use crate::stream::Streamer;
+    s.seek(0, in_frames, &p);
 
-    // Only the write bound. The read used to have to stay a whole window short
-    // of the end, which was fine while it only ever crept forward — but a scan
-    // that starts at the end and runs backwards fails that on its second hop
-    // and the render stopped after one window. Where the read lands is already
-    // `place`'s job, the search clamps its own range, and the inner loop skips
-    // anything off the end.
-    while write + win < out_frames {
-        let pos = if first {
-            first = false;
-            read
-        } else {
-            best_offset(input, channels, read, search, &expect, hop_out, params)
-        };
-
-        // Everything the grain controls do to one window: how long it is, how
-        // far it strays from where the search put it, and what rate it reads
-        // at. All three are inert at their defaults, so a document that never
-        // touches them splices exactly as it always did.
-        let len = grain_size(g, index, win);
-        let take = if pos_jitter > 0.0 {
-            let j = pos_jitter * g.rand_bipolar(index, g.salt(5));
-            place(pos as f32 + j, in_frames, g.wrap)
-        } else {
-            pos
-        };
-        let rate = grain_rate(g, index, write as f32 / sr);
-        let (gl, gr) = crate::grain::pan_gains(g, index, channels);
-        // The window still lands where it landed; only the direction it reads
-        // its own span in is turned around.
-        let span = (len as f32) * rate;
-
-        for i in 0..len {
-            let w = if steady { window[i] } else { shape_at(i, len, params.shape, g.envelope) };
-            let dst = (write + i) * channels;
-            if dst + channels > out.len() {
-                break;
-            }
-            let step = if g.reverse { span - (i as f32) * rate } else { (i as f32) * rate };
-            let src = take as f32 + step;
-            if src >= (in_frames - 1) as f32 || src < 0.0 {
-                continue;
-            }
-            for ch in 0..channels {
-                let pan = if ch == 0 { gl } else { gr };
-                out[dst + ch] += read_at(input, channels, ch, src, in_frames) * w * pan;
-            }
-            norm[write + i] += w;
-        }
-
-        // What naturally follows the window just taken.
-        let tail = pos + hop_out;
-        for i in 0..hop_out {
-            for ch in 0..channels {
-                let s = (tail + i) * channels + ch;
-                expect[i * channels + ch] = if s < input.len() { input[s] } else { 0.0 };
-            }
-        }
-
-        write += hop_out;
-        index += 1;
-        // The map decides where to read next. At a transient its slope is one,
-        // so the read advances as fast as the write and nothing is stretched.
-        // `scan` then says how fast that sweep runs at all: one is the stretch,
-        // zero holds the pointer at the start, negative runs the file backwards
-        // while the windows are still laid down forwards.
-        let nominal = map.input_at(write as f64) as f32;
-        let swept = if scan < 0.0 { in_frames as f32 + nominal * scan } else { nominal * scan };
-        read = place(swept, in_frames, g.wrap);
+    let mut out = vec![0.0; want * channels];
+    let mut at = 0usize;
+    while at < want {
+        let n = CHUNK.min(want - at);
+        s.render(&mut out[at * channels..(at + n) * channels], channels, input, &p);
+        at += n;
     }
-
-    // Undo the window's amplitude envelope where overlap is incomplete.
-    for f in 0..out_frames {
-        let n = norm[f];
-        if n > 1e-6 {
-            for ch in 0..channels {
-                out[f * channels + ch] /= n;
-            }
-        }
-    }
-
-    let want = ((in_frames as f32) * ratio).round() as usize;
-    out.truncate(want.min(out_frames) * channels);
     out
 }
 
 /// Search ±`search` frames around `centre` for the segment best matching
 /// `expect`, by normalised cross-correlation.
-fn best_offset(
+pub(crate) fn best_offset(
     input: &[f32],
     channels: usize,
     centre: usize,
@@ -842,17 +760,11 @@ fn hermite(m1: f32, p0: f32, p1: f32, p2: f32, t: f32) -> f32 {
 
 /// The window each spliced segment is laid down under.
 ///
-/// The overlap-add is normalised by the summed window afterwards, so a shape
-/// that does not sum flat is not broken by it — it is coloured by it, which is
-/// the reason to offer any shape but Hann.
-fn shaped(n: usize, shape: WinShape, skew: f32) -> Vec<f32> {
-    (0..n).map(|i| shape_at(i, n, shape, skew)).collect()
-}
 
 /// One value of that window, for when the length is not the same twice running
 /// and there is no table to build.
 #[inline]
-fn shape_at(i: usize, n: usize, shape: WinShape, skew: f32) -> f32 {
+pub(crate) fn shape_at(i: usize, n: usize, shape: WinShape, skew: f32) -> f32 {
     if n <= 1 {
         return 1.0;
     }
