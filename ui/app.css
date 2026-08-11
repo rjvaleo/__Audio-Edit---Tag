@@ -325,11 +325,29 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   font-family: var(--mono); font-size: 9px; color: var(--text-dim); white-space: nowrap;
 }
 
+/* Presets, in the row under the transport. Horizontal, because a dropdown and
+   two buttons never needed a panel of their own in the tray. */
+.presetbar {
+  height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  background: oklch(13.5% 0.013 250); border-bottom: 1px solid var(--line);
+}
+.presetbar .pb-label {
+  font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.presetbar select { max-width: 240px; }
+.presetbar .ghost { height: 21px; font-size: 10px; }
+
 .regions {
   height: 24px; flex-shrink: 0; position: relative;
   background: oklch(14.5% 0.013 250); border-bottom: 1px solid var(--line);
   overflow: hidden;
 }
+/* Nothing in it, so it does not get to keep a row of the window. Deliberately
+   not called `empty` — that class is already taken by the placeholder message
+   style, which carries 40px of padding and would make this strip taller. */
+.regions.bare { height: 0; border-bottom: 0; }
 .region {
   position: absolute; top: 3px; bottom: 3px;
   background: rgba(125,190,255,0.14); border: 1px solid var(--accent);
@@ -809,22 +827,11 @@ body.editing .panel.left { left: var(--rail); }
 #stretchOut.pending::after { content: ' · rendering…'; opacity: .7; }
 
 /* ---------------------------------------------------- granular tray layout
-   A quarter for the controls, three quarters for the visualiser: the picture
-   is the point, and the sliders are narrow enough to stack. */
+   The layout itself lives further down, with the control panels. There used to
+   be a second copy of it here, from when the tray was one column; the two
+   disagreed about the flex direction and the later one only won where it
+   happened to repeat a property. */
 
-.grain-split { grid-column: 1 / -1; display: flex; gap: 14px; min-height: 0; }
-.grain-controls {
-  width: 25%; min-width: 240px; flex-shrink: 0;
-  overflow-y: auto; padding-right: 10px;
-  border-right: 1px solid var(--line);
-  display: flex; flex-direction: column; gap: 12px;
-}
-.grain-controls .param-grid { grid-template-columns: 1fr; gap: 8px; }
-.grain-vis { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-#grainCanvas {
-  flex: 1; width: 100%; min-height: 150px; display: block;
-  border-radius: 7px; background: oklch(9% 0.01 250); border: 1px solid var(--line);
-}
 /* Which way to look at the grains. The 2D swarm and the five 3D views are the
    same data, so they share one spot rather than competing for room. */
 .vis-pick { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -925,11 +932,29 @@ body.editing .dock { flex: 0 0 300px; }
 
 .grain-split { grid-column: 1 / -1; display: flex; gap: 14px; min-height: 0; }
 .grain-controls {
-  width: 42%; min-width: 340px; max-width: 560px; flex-shrink: 0;
-  display: grid; grid-template-columns: 1fr 1fr;
-  gap: 10px; align-content: start; overflow-y: auto;
+  width: 52%; min-width: 420px; max-width: 720px; flex-shrink: 0;
+  display: flex; gap: 10px; overflow-y: auto;
   padding-right: 10px; border-right: 1px solid var(--line);
 }
+.grain-standard {
+  flex: 1; min-width: 0;
+  /* Auto-fit rather than a fixed pair: with the grain panels hidden there is
+     one panel left, and a second empty column beside it reads as something
+     missing. */
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px; align-content: start;
+}
+.grain-standard .param-grid { grid-template-columns: 1fr; gap: 8px; }
+/* Its own column, because everything in it is a value the algorithm was tuned
+   around. Kept beside the standard controls rather than under them, so it is
+   obvious which side of the line a control is on. */
+.grain-extended {
+  width: 168px; flex: 0 0 168px; align-self: start;
+  max-height: 100%; overflow-y: auto;
+}
+.grain-extended .wild { margin-bottom: 6px; }
+.grain-extended .wild:last-child { margin-bottom: 0; }
+.grain-extended .wild-body { gap: 8px; padding: 8px 7px; }
 /* A reset that sits in the panel's own header rather than under its controls,
    where it was competing with them for the eye. */
 .cpanel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
