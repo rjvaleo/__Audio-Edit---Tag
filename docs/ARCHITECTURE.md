@@ -1,6 +1,6 @@
 # Architecture — as built
 
-What exists, as of 11 August 2026. 633 tests passing.
+What exists, as of 11 August 2026. 653 tests passing.
 
 The original design brief is
 [`Waveform display interface/uploads/AudioLab-ARCHITECTURE.md`](../Waveform%20display%20interface/uploads/AudioLab-ARCHITECTURE.md) —
@@ -36,12 +36,12 @@ on nothing, `server` depends on everything.
 | `audio-core` | 2588 | 78 | Container probe and decode, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 755 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 8124 | 192 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
+| `fx` | 12294 | 237 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
 | `edit` | 1663 | 54 | Non-destructive edit list, windowed render, export |
-| `engine` | 1538 | 22 | Block renderer, transport, cpal device |
+| `engine` | 2773 | 33 | Block renderer, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1395 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 7404 | 131 | HTTP/1.1, routes, JSON, persistence, sessions |
+| `server` | 7737 | 134 | HTTP/1.1, routes, JSON, persistence, sessions |
 | `audiolab` | 58 | — | The binary |
 
 ### Dependencies
