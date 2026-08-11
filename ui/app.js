@@ -2537,7 +2537,8 @@ function sendStretch({ live }) {
   editOp(
     { op: 'stretch', ratio: d.ratio, semitones: d.semitones,
       windowMs: d.windowMs, quality: live ? 'draft' : d.quality,
-      algorithm: d.algorithm, vocoder: d.vocoder, wsola: d.wsola },
+      algorithm: d.algorithm, vocoder: d.vocoder, wsola: d.wsola,
+      pvsola: d.pvsola, hybrid: d.hybrid },
     { live },
   );
 }
@@ -2555,6 +2556,11 @@ const WSOLA_DEFAULTS = {
   preserveTransients: false, sensitivity: 0.5,
   searchMs: 10, splice: 'similar', stride: 4, shape: 'hann',
   guardHops: 3, floor: 1,
+};
+const PVSOLA_DEFAULTS = { anchorFrames: 6, searchMs: 10, blend: 0.5 };
+const HYBRID_DEFAULTS = {
+  fftSize: 2048, timeSpan: 17, freqSpan: 17, margin: 2, morphNoise: true,
+  harmonicLevel: 1, percussiveLevel: 1, residualLevel: 1,
 };
 const GRAIN_DEFAULTS = {
   densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
@@ -2591,10 +2597,12 @@ function renderStretch() {
     algorithm: st.algorithm || 'wsola',
     vocoder: { ...VOCODER_DEFAULTS, ...(st.vocoder || {}) },
     wsola: { ...WSOLA_DEFAULTS, ...(st.wsola || {}) },
+    pvsola: { ...PVSOLA_DEFAULTS, ...(st.pvsola || {}) },
+    hybrid: { ...HYBRID_DEFAULTS, ...(st.hybrid || {}) },
   };
 
-  // Which engine does the stretching. Not a quality ladder — the two fail in
-  // opposite directions, so this is a choice about the material rather than
+  // Which engine does the stretching. Not a quality ladder — they fail in
+  // different directions, so this is a choice about the material rather than
   // about how hard to work.
   const eng = document.createElement('div');
   eng.className = 'engine-pick';
@@ -2602,6 +2610,8 @@ function renderStretch() {
     <div class="seg" id="stretchEngine">
       <button class="seg-btn" data-alg="wsola" title="Time domain. Keeps transients intact - drums, percussion, one-shots.">WSOLA</button>
       <button class="seg-btn" data-alg="vocoder" title="Frequency domain. Holds chords and sustained tone together - pads, strings.">Vocoder</button>
+      <button class="seg-btn" data-alg="pvsola" title="The vocoder, re-anchored to the waveform every few frames. Holds tone together without the phasiness - the one-knob default for pitched material.">PVSOLA</button>
+      <button class="seg-btn" data-alg="hybrid" title="Splits the sound into tone, hits and air, and stretches each its own way. The slow one, and the only one that will not repeat noise.">Hybrid</button>
       <button class="seg-btn" data-alg="granular" title="A cloud of grains. Not trying to be transparent - this is the one you hear.">Granular</button>
     </div>`;
   // The panel has no heading any more, so its reset rides on the engine row —
@@ -2714,6 +2724,71 @@ function renderStretch() {
       }
     }
 
+    if (alg === 'pvsola') {
+      const p = state.stretchDraft.pvsola;
+      // One knob, and it really is the only one that matters: how long the
+      // vocoder is allowed to run on its own guesses before being put back on
+      // the ground. Everything else about this engine is the vocoder's, and
+      // the vocoder's own panel is shown below it for that reason.
+      own.appendChild(param('Re-anchor', p.anchorFrames, 1, 64, 1,
+        (x) => `${Math.round(x)} fr`,
+        (x) => { p.anchorFrames = Math.round(x); previewStretch(); },
+        () => commitStretch()));
+
+      ext.appendChild(wild('Anchor',
+        'How the splice back to the waveform is found and how it is joined. Both off is a hard cut every few frames, which you can hear as a rhythm.').add(
+        param('Search', p.searchMs, 0, 200, 0.5,
+          (x) => (x <= 0 ? 'no search' : `${x.toFixed(1)} ms`),
+          (x) => { p.searchMs = x; previewStretch(); }, () => commitStretch()),
+        param('Blend', p.blend, 0, 1, 0.01,
+          (x) => (x <= 0 ? 'butt join' : `${Math.round(x * 100)}%`),
+          (x) => { p.blend = x; previewStretch(); }, () => commitStretch()),
+      ));
+
+      // The vocoder is what is actually running between anchors, so its
+      // controls are its own — not copies. Shown here so the engine is not a
+      // black box with one knob on it.
+      const v = state.stretchDraft.vocoder;
+      own.appendChild(param('Analysis window', v.windowMs, 5, 500, 1,
+        (x) => `${Math.round(x)} ms`,
+        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true));
+      own.appendChild(check('phase lock',
+        'Holds each partial together instead of letting it dissolve into neighbouring bins',
+        v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); }));
+    }
+
+    if (alg === 'hybrid') {
+      const h = state.stretchDraft.hybrid;
+      // The three levels are the reason to be in this engine rather than the
+      // vocoder: nothing else here will turn a sound's air down without
+      // touching its tone.
+      own.appendChild(param('Tone', h.harmonicLevel, 0, 2, 0.01,
+        (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
+        (x) => { h.harmonicLevel = x; previewStretch(); }, () => commitStretch()));
+      own.appendChild(param('Hits', h.percussiveLevel, 0, 2, 0.01,
+        (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
+        (x) => { h.percussiveLevel = x; previewStretch(); }, () => commitStretch()));
+      own.appendChild(param('Air', h.residualLevel, 0, 2, 0.01,
+        (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
+        (x) => { h.residualLevel = x; previewStretch(); }, () => commitStretch()));
+      own.appendChild(check('remake noise',
+        'Rebuild the air as fresh noise shaped like the old, instead of stretching it. Off, it repeats at long ratios like every other engine here does',
+        h.morphNoise, (on) => { h.morphNoise = on; commitStretch(); }));
+
+      ext.appendChild(wild('Separation',
+        'How the sound is cut into three. A partial is a ridge along time and a hit is a ridge across frequency; these decide how long and how broad each has to be to count.').add(
+        param('Hold', h.timeSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} fr`,
+          (x) => { h.timeSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch()),
+        param('Spread', h.freqSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} bin`,
+          (x) => { h.freqSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch()),
+        param('Margin', h.margin, 1, 8, 0.05,
+          (x) => (x <= 1.001 ? 'no air' : `${x.toFixed(2)}×`),
+          (x) => { h.margin = x; previewStretch(); }, () => commitStretch()),
+        param('Resolution', h.fftSize, 256, 8192, 256, (x) => `${Math.round(x)}`,
+          (x) => { h.fftSize = Math.round(x); previewStretch(); }, () => commitStretch(), true),
+      ));
+    }
+
     // Grain shape and Pitch movement drive every engine now — a window is a
     // splice for WSOLA and an analysis frame for the vocoder, but all three
     // have a rate, a length, a place they read from and a speed they read at.
@@ -2786,6 +2861,8 @@ function renderGrainParams() {
              algorithm: state.stretchDraft.algorithm,
              vocoder: state.stretchDraft.vocoder,
              wsola: state.stretchDraft.wsola,
+             pvsola: state.stretchDraft.pvsola,
+             hybrid: state.stretchDraft.hybrid,
              grain: state.grainDraft },
            { live });
   };
@@ -3032,6 +3109,8 @@ const EXTENDED_FIELDS = {
   vocoder: ['freqTrust', 'phaseSpread', 'peakWidth', 'lockWidth',
             'magFreeze', 'magBlur', 'magGate', 'stereoLink'],
   wsola: ['searchMs', 'splice', 'stride', 'shape', 'guardHops', 'floor'],
+  pvsola: ['searchMs', 'blend'],
+  hybrid: ['fftSize', 'timeSpan', 'freqSpan', 'margin'],
   grain: ['scan', 'reverse', 'envelope', 'sizeRange', 'wrap', 'layerSpread',
           'linkJitter', 'driftStep', 'panSpread'],
 };
@@ -3042,6 +3121,8 @@ const EXTENDED_FIELDS = {
 async function resetExtended() {
   for (const k of EXTENDED_FIELDS.vocoder) state.stretchDraft.vocoder[k] = VOCODER_DEFAULTS[k];
   for (const k of EXTENDED_FIELDS.wsola) state.stretchDraft.wsola[k] = WSOLA_DEFAULTS[k];
+  for (const k of EXTENDED_FIELDS.pvsola) state.stretchDraft.pvsola[k] = PVSOLA_DEFAULTS[k];
+  for (const k of EXTENDED_FIELDS.hybrid) state.stretchDraft.hybrid[k] = HYBRID_DEFAULTS[k];
   const grain = { ...state.grainDraft };
   for (const k of EXTENDED_FIELDS.grain) grain[k] = GRAIN_DEFAULTS[k];
   state.grainDraft = grain;
@@ -3061,7 +3142,9 @@ async function resetEverything() {
                          // controls back; it does not move you somewhere else.
                          algorithm: state.stretchDraft?.algorithm || 'wsola',
                          vocoder: { ...VOCODER_DEFAULTS },
-                         wsola: { ...WSOLA_DEFAULTS } };
+                         wsola: { ...WSOLA_DEFAULTS },
+                         pvsola: { ...PVSOLA_DEFAULTS },
+                         hybrid: { ...HYBRID_DEFAULTS } };
   const grain = {
     ...GRAIN_DEFAULTS,
     seed: state.grainDraft?.seed ?? state.edit?.stretch?.grain?.seed ?? 1,

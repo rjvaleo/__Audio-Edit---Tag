@@ -90,6 +90,25 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("floor", s.wsola.floor as f64),
         )
         .set(
+            "pvsola",
+            Value::obj()
+                .set("anchorFrames", s.pvsola.anchor_frames as f64)
+                .set("searchMs", s.pvsola.search_ms as f64)
+                .set("blend", s.pvsola.blend as f64),
+        )
+        .set(
+            "hybrid",
+            Value::obj()
+                .set("fftSize", s.hybrid.fft_size as f64)
+                .set("timeSpan", s.hybrid.time_span as f64)
+                .set("freqSpan", s.hybrid.freq_span as f64)
+                .set("margin", s.hybrid.margin as f64)
+                .set("morphNoise", s.hybrid.morph_noise)
+                .set("harmonicLevel", s.hybrid.harmonic_level as f64)
+                .set("percussiveLevel", s.hybrid.percussive_level as f64)
+                .set("residualLevel", s.hybrid.residual_level as f64),
+        )
+        .set(
             "grain",
             Value::obj()
                 .set("densityHz", s.grain.density_hz as f64)
@@ -185,6 +204,47 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
                 mag_blur: vf("magBlur", d.mag_blur).clamp(0.0, 1.0),
                 mag_gate: vf("magGate", d.mag_gate).clamp(0.0, 1.0),
                 stereo_link: matches!(vv.and_then(|x| x.get("stereoLink")), Some(Value::Bool(true))),
+            }
+        },
+        pvsola: {
+            let d = fx::pvsola::PvsolaParams::default();
+            let pv = v.get("pvsola");
+            let pf = |k: &str, dv: f32| -> f32 {
+                match pv.and_then(|x| x.get(k)) {
+                    Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                    _ => dv,
+                }
+            };
+            fx::pvsola::PvsolaParams {
+                anchor_frames: pf("anchorFrames", d.anchor_frames as f32).clamp(1.0, 64.0) as u32,
+                search_ms: pf("searchMs", d.search_ms).clamp(0.0, 200.0),
+                blend: pf("blend", d.blend).clamp(0.0, 1.0),
+            }
+        },
+        hybrid: {
+            let d = fx::hybrid::HybridParams::default();
+            let hv = v.get("hybrid");
+            let hf = |k: &str, dv: f32| -> f32 {
+                match hv.and_then(|x| x.get(k)) {
+                    Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                    _ => dv,
+                }
+            };
+            fx::hybrid::HybridParams {
+                fft_size: hf("fftSize", d.fft_size as f32).clamp(256.0, 8192.0) as u32,
+                time_span: hf("timeSpan", d.time_span as f32).clamp(3.0, 101.0) as u32,
+                freq_span: hf("freqSpan", d.freq_span as f32).clamp(3.0, 101.0) as u32,
+                margin: hf("margin", d.margin).clamp(1.0, 8.0),
+                // Absent means on, because it is on by default and a document
+                // written before this engine existed should get the engine as
+                // designed rather than its comparison mode.
+                morph_noise: !matches!(
+                    hv.and_then(|x| x.get("morphNoise")),
+                    Some(Value::Bool(false))
+                ),
+                harmonic_level: hf("harmonicLevel", d.harmonic_level).clamp(0.0, 4.0),
+                percussive_level: hf("percussiveLevel", d.percussive_level).clamp(0.0, 4.0),
+                residual_level: hf("residualLevel", d.residual_level).clamp(0.0, 4.0),
             }
         },
         grain: Grain {
@@ -434,6 +494,21 @@ mod tests {
                 guard_hops: 6.5,
                 floor: 0.25,
             },
+            pvsola: fx::pvsola::PvsolaParams {
+                anchor_frames: 13,
+                search_ms: 33.0,
+                blend: 0.125,
+            },
+            hybrid: fx::hybrid::HybridParams {
+                fft_size: 1024,
+                time_span: 31,
+                freq_span: 9,
+                margin: 3.25,
+                morph_noise: false,
+                harmonic_level: 0.5,
+                percussive_level: 1.5,
+                residual_level: 0.25,
+            },
             grain: Grain {
                 density_hz: 42.0,
                 overlap: 3.5,
@@ -474,6 +549,38 @@ mod tests {
         assert_eq!(back.stretch, l.stretch);
         assert_eq!(back.stretch.grain.seed, 4242);
         assert_eq!(back.stretch.quality, Quality::Best);
+        // Named rather than left to the whole-struct comparison above, so a
+        // field that goes missing says which one it was.
+        assert_eq!(back.stretch.pvsola, l.stretch.pvsola);
+        assert_eq!(back.stretch.hybrid, l.stretch.hybrid);
+    }
+
+    /// A document written before either engine existed has no `pvsola` or
+    /// `hybrid` object at all. It must open with each engine as designed —
+    /// including the noise morpher on, which is the part a plain
+    /// absent-means-false would get backwards.
+    #[test]
+    fn a_document_from_before_the_new_engines_opens_with_them_as_designed() {
+        let mut l = EditList::identity(10_000, 2, 48_000);
+        l.stretch = Stretch { ratio: 2.0, ..Stretch::default() };
+        // Strip both objects, which is exactly what an older file looks like.
+        let saved = match edit_to_json(&l) {
+            Value::Obj(mut root) => {
+                if let Some(Value::Obj(st)) = root.get("stretch").cloned() {
+                    let mut st = st;
+                    st.remove("pvsola");
+                    st.remove("hybrid");
+                    root.insert("stretch".into(), Value::Obj(st));
+                }
+                Value::Obj(root)
+            }
+            other => other,
+        };
+        let back =
+            edit_from_json(&saved, &EditList::identity(10_000, 2, 48_000)).expect("should restore");
+        assert_eq!(back.stretch.pvsola, fx::pvsola::PvsolaParams::default());
+        assert_eq!(back.stretch.hybrid, fx::hybrid::HybridParams::default());
+        assert!(back.stretch.hybrid.morph_noise, "the noise morpher opened off");
     }
 
     #[test]

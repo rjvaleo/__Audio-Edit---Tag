@@ -101,6 +101,28 @@ green with a glow when thrown.
 A row of buttons — click the one you want. *Pick* (best / worst / loud) and
 *Window* (hann / tri / rect) in the WSOLA extended group.
 
+### The engine picker
+
+Five buttons on the top row of the Time & Pitch panel. Which one is chosen
+decides what the standard column below it and the Extended column beside it
+contain, because the five mean different things by every setting they share.
+
+| Engine | Standard | Extended |
+|---|---|---|
+| **WSOLA** | preserve transients, detector | search, pick, window, stride, floor, guard |
+| **Vocoder** | analysis window, phase lock | freeze, blur, gate, freq trust, phase spread, peak width, lock width, link stereo |
+| **PVSOLA** | re-anchor, analysis window, phase lock | search, blend |
+| **Hybrid** | tone, hits, air, remake noise | hold, spread, margin, resolution |
+| **Granular** | *(the grain panels below)* | *(the grain extended groups)* |
+
+Grain shape, pitch movement, scan, shape and randomness reach **all five** —
+every one of them lays something down repeatedly, so every one has a rate, a
+length, a place it reads from and a speed it reads at.
+
+*Reset all*, right-aligned on the engine row, puts every control back, standard
+and extended, and leaves you on the engine you are on. *Reset* at the head of
+the Extended column puts back only what is in that column.
+
 ---
 
 ## The grain visualiser

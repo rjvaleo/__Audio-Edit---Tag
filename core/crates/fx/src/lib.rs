@@ -9,9 +9,13 @@
 
 pub mod biquad;
 pub mod comp;
+pub mod decompose;
 pub mod eq;
 pub mod grain;
+pub mod hybrid;
 pub mod master;
+pub mod noise;
+pub mod pvsola;
 pub mod stretch;
 pub mod transient;
 pub mod vocoder;

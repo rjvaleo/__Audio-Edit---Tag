@@ -965,6 +965,43 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     floor: wf("floor", cw.floor).clamp(0.0, 2.0),
                 };
 
+                let cp = s.list().stretch.pvsola;
+                let pv = v.get("pvsola");
+                let pf = |k: &str, d: f32| -> f32 {
+                    match pv.and_then(|x| x.get(k)) {
+                        Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                        _ => d,
+                    }
+                };
+                let pvsola = fx::pvsola::PvsolaParams {
+                    anchor_frames: pf("anchorFrames", cp.anchor_frames as f32).clamp(1.0, 64.0)
+                        as u32,
+                    search_ms: pf("searchMs", cp.search_ms).clamp(0.0, 200.0),
+                    blend: pf("blend", cp.blend).clamp(0.0, 1.0),
+                };
+
+                let ch = s.list().stretch.hybrid;
+                let hv = v.get("hybrid");
+                let hf = |k: &str, d: f32| -> f32 {
+                    match hv.and_then(|x| x.get(k)) {
+                        Some(Value::Num(n)) if n.is_finite() => *n as f32,
+                        _ => d,
+                    }
+                };
+                let hybrid = fx::hybrid::HybridParams {
+                    fft_size: hf("fftSize", ch.fft_size as f32).clamp(256.0, 8192.0) as u32,
+                    time_span: hf("timeSpan", ch.time_span as f32).clamp(3.0, 101.0) as u32,
+                    freq_span: hf("freqSpan", ch.freq_span as f32).clamp(3.0, 101.0) as u32,
+                    margin: hf("margin", ch.margin).clamp(1.0, 8.0),
+                    morph_noise: match hv.and_then(|x| x.get("morphNoise")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => ch.morph_noise,
+                    },
+                    harmonic_level: hf("harmonicLevel", ch.harmonic_level).clamp(0.0, 4.0),
+                    percussive_level: hf("percussiveLevel", ch.percussive_level).clamp(0.0, 4.0),
+                    residual_level: hf("residualLevel", ch.residual_level).clamp(0.0, 4.0),
+                };
+
                 let grain = fx::Grain {
                     density_hz: gf("densityHz", cur.density_hz).clamp(0.0, 500.0),
                     layers: gf("layers", cur.layers as f32).clamp(1.0, 16.0) as u32,
@@ -1003,7 +1040,7 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 s.apply(|l| {
                     l.stretch = fx::Stretch {
                         ratio, semitones: semis, window_ms: window, quality,
-                        algorithm, vocoder, wsola, grain,
+                        algorithm, vocoder, wsola, pvsola, hybrid, grain,
                     };
                 });
             }

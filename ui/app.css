@@ -1282,7 +1282,10 @@ body.editing .dock { flex: 0 0 330px; }
    it reads as two named options rather than a slider. */
 .engine-pick { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 .engine-pick .tiny { margin-left: auto; }
-.engine-pick .seg-btn { font-size: 10px; padding: 0 8px; }
+/* Five engines rather than three, so the padding comes off the buttons before
+   it comes off the reset — the row has to hold on the narrowest dock width. */
+.engine-pick .seg { flex: 1 1 auto; min-width: 0; }
+.engine-pick .seg-btn { font-size: 10px; padding: 0 5px; flex: 1 1 auto; min-width: 0; }
 .engine-pick .check { font-size: 10px; transition: opacity .15s ease; }
 /* The chosen engine's own controls, under the picker. */
 .engine-params { display: flex; flex-direction: column; gap: 9px; margin: 8px 0 2px; }
