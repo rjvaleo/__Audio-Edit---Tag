@@ -784,3 +784,116 @@ impl Params for Gate {
         true
     }
 }
+
+// ------------------------------------------------------------ making them
+
+/// Which shaper. One name, used by the rack, the JSON and the interface, so
+/// there is no table mapping three spellings of the same thing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeKind {
+    Invert,
+    Swap,
+    Width,
+    Dc,
+    Ring,
+    Rappify,
+    Boomerang,
+    Fit,
+    Gate,
+}
+
+impl ShapeKind {
+    pub const ALL: [ShapeKind; 9] = [
+        ShapeKind::Invert,
+        ShapeKind::Swap,
+        ShapeKind::Width,
+        ShapeKind::Dc,
+        ShapeKind::Ring,
+        ShapeKind::Rappify,
+        ShapeKind::Boomerang,
+        ShapeKind::Fit,
+        ShapeKind::Gate,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ShapeKind::Invert => "invert",
+            ShapeKind::Swap => "swap",
+            ShapeKind::Width => "width",
+            ShapeKind::Dc => "dc",
+            ShapeKind::Ring => "ring",
+            ShapeKind::Rappify => "rappify",
+            ShapeKind::Boomerang => "boomerang",
+            ShapeKind::Fit => "fit",
+            ShapeKind::Gate => "gate",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        ShapeKind::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+
+    /// What a person should see.
+    pub fn label(self) -> &'static str {
+        match self {
+            ShapeKind::Invert => "Invert",
+            ShapeKind::Swap => "Swap",
+            ShapeKind::Width => "Width",
+            ShapeKind::Dc => "DC",
+            ShapeKind::Ring => "Ring mod",
+            ShapeKind::Rappify => "Rappify",
+            ShapeKind::Boomerang => "Boomerang",
+            ShapeKind::Fit => "Amp fit",
+            ShapeKind::Gate => "Gate",
+        }
+    }
+
+    /// The parameters this kind has, without building one.
+    ///
+    /// The interface needs this to lay out a module, and automation needs it to
+    /// know what it may address — neither wants an instance to ask.
+    pub fn specs(self) -> &'static [ParamSpec] {
+        match self {
+            ShapeKind::Invert | ShapeKind::Swap => &[],
+            ShapeKind::Width => WIDTH_SPECS,
+            ShapeKind::Dc => DC_SPECS,
+            ShapeKind::Ring => RING_SPECS,
+            ShapeKind::Rappify => RAP_SPECS,
+            ShapeKind::Boomerang => REV_SPECS,
+            ShapeKind::Fit => FIT_SPECS,
+            ShapeKind::Gate => GATE_SPECS,
+        }
+    }
+}
+
+/// Build one and set it up.
+///
+/// Returns a plain `Effect` rather than something also carrying `Params`,
+/// because once it is in the rack nothing addresses it by key — the spec is
+/// what gets edited, and the rack is rebuilt from it. When automation arrives
+/// it will drive the spec, for the same reason: a rebuilt rack is the only
+/// place filter state may safely be discarded.
+pub fn make(
+    kind: ShapeKind,
+    sample_rate: u32,
+    channels: usize,
+    params: &[(String, f32)],
+) -> Box<dyn Effect> {
+    fn apply<T: Effect + Params + 'static>(mut e: T, params: &[(String, f32)]) -> Box<dyn Effect> {
+        for (k, v) in params {
+            e.set(k, *v);
+        }
+        Box::new(e)
+    }
+    match kind {
+        ShapeKind::Invert => Box::new(Invert),
+        ShapeKind::Swap => Box::new(SwapChannels),
+        ShapeKind::Width => apply(Width::default(), params),
+        ShapeKind::Dc => apply(DcOffset::default(), params),
+        ShapeKind::Ring => apply(RingMod::default(), params),
+        ShapeKind::Rappify => apply(Rappify::default(), params),
+        ShapeKind::Boomerang => apply(ReverseMix::new(sample_rate, channels), params),
+        ShapeKind::Fit => apply(AmplitudeFit::default(), params),
+        ShapeKind::Gate => apply(Gate::default(), params),
+    }
+}
