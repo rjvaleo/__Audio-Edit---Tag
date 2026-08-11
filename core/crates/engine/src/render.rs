@@ -273,6 +273,7 @@ fn layer_params(sp: &StreamParams, layer: u32) -> StreamParams {
     if layer > 0 {
         lp.grain.seed = sp.grain.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
     }
+    lp.grain.layer_read = sp.grain.layer_throw(layer, sp.sample_rate);
     lp
 }
 

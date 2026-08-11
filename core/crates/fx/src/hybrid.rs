@@ -130,7 +130,7 @@ pub fn stretch(
         crate::stretch::fft_size_for(spec.vocoder.window_ms, sample_rate),
         sample_rate.max(1) as f32,
     );
-    crate::stretch::layered(&spec.grain, channels, hop_l, |g| {
+    crate::stretch::layered(&spec.grain, channels, hop_l, sample_rate, |g| {
         let mut sp = sp;
         sp.grain = *g;
         one(&parts, channels, sample_rate, ratio, spec, p, &sp, want)

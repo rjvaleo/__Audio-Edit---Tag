@@ -282,7 +282,10 @@ impl VocoderStream {
             } else {
                 0.0
             };
-            let mut start = (self.read + jitter).max(0.0).round() as usize;
+            // The jitter, plus this layer's own throw — layers that read the
+            // same instant and are laid down a fixed offset apart are a delay
+            // line, not a cloud.
+            let mut start = (self.read + jitter + g.layer_read as f64).max(0.0).round() as usize;
             if start + n > in_frames {
                 // At the nominal hop, running out of source is the end of the
                 // job — a stretch shorter than the source reaches the end of

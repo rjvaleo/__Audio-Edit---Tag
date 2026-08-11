@@ -1137,6 +1137,12 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                         _ => cur.wrap,
                     },
                     layer_spread: gf("layerSpread", cur.layer_spread).clamp(0.0, 4.0),
+                    layer_scatter: gf("layerScatter", cur.layer_scatter).clamp(0.0, 1.0),
+                    layer_scatter_ms: gf("layerScatterMs", cur.layer_scatter_ms)
+                        .clamp(0.0, 5000.0),
+                    // Derived per layer while rendering, never carried on the
+                    // document.
+                    layer_read: 0.0,
                     link_jitter: match gv.and_then(|x| x.get("linkJitter")) {
                         Some(Value::Bool(b)) => *b,
                         _ => cur.link_jitter,

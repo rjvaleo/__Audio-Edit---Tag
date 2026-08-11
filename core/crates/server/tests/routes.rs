@@ -309,6 +309,31 @@ fn every_grain_control_is_bounded() {
     assert!(g("panSpread") >= 0.0);
 }
 
+/// The two layer-scatter controls, over the wire. They are what turns layers
+/// from a delay line into a cloud, so a document that loses them sounds
+/// hollower rather than merely different.
+#[test]
+fn the_layer_scatter_controls_survive_the_round_trip() {
+    let s = Scratch::new("scatter");
+    s.sound("kit/tone.wav", 20_000);
+    let app = s.app();
+
+    let v = apply(&app, r#""grain":{"layers":8,"layerScatter":0.75,"layerScatterMs":340}"#);
+    assert_eq!(num(&v, &["stretch", "grain", "layers"]), 8.0);
+    assert_eq!(num(&v, &["stretch", "grain", "layerScatter"]), 0.75);
+    assert_eq!(num(&v, &["stretch", "grain", "layerScatterMs"]), 340.0);
+
+    // Absent means unchanged, like everything else here.
+    let v = apply(&app, r#""ratio":1.5"#);
+    assert_eq!(num(&v, &["stretch", "grain", "layerScatter"]), 0.75);
+    assert_eq!(num(&v, &["stretch", "grain", "layerScatterMs"]), 340.0);
+
+    // And bounded.
+    let v = apply(&app, r#""grain":{"layerScatter":9,"layerScatterMs":1e9}"#);
+    assert!(num(&v, &["stretch", "grain", "layerScatter"]) <= 1.0);
+    assert!(num(&v, &["stretch", "grain", "layerScatterMs"]) <= 5000.0);
+}
+
 #[test]
 fn the_engine_controls_are_bounded_too() {
     let s = Scratch::new("engine-clamp");

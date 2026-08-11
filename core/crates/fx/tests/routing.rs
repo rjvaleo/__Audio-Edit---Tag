@@ -162,6 +162,15 @@ fn every_parameter_reaches_exactly_the_engines_whose_panel_shows_it() {
             s.grain.layers = 4;
             s.grain.layer_spread = 3.0;
         })),
+        ("grain.layerScatter", ALL, Box::new(|s: &mut Stretch| {
+            s.grain.layers = 4;
+            s.grain.layer_scatter = 1.0;
+        })),
+        ("grain.layerScatterMs", ALL, Box::new(|s: &mut Stretch| {
+            s.grain.layers = 4;
+            s.grain.layer_scatter = 1.0;
+            s.grain.layer_scatter_ms = 900.0;
+        })),
         ("grain.linkJitter", ALL, Box::new(|s: &mut Stretch| {
             s.grain.position_jitter_ms = 40.0;
             s.grain.link_jitter = true;
