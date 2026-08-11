@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff. **HEAD `6a52cdf`, 621 tests passing, working
+Written 11 August 2026 as a handoff. **HEAD `e77d979`, 627 tests passing, working
 tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 621 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 627 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -391,11 +391,18 @@ may have been sitting somewhere from minutes ago, or never have run.
 | WSOLA | yes — `Pitched<WsolaStream>` |
 | Vocoder | yes — `Pitched<VocoderStream>`, both stereo modes |
 | PVSOLA | yes — `PvsolaStream`, two vocoder runs swapped at each anchor |
-| Hybrid | **no** — falls back to the grain cloud, and the panel says so |
+| Hybrid | yes — `HybridStream`, three engines on three separated sources |
 
-**The three streaming engines are the only implementation there is.**
-`stretch::wsola`, `vocoder::stretch` and `pvsola::stretch` are loops over their
-streamers; the old whole-buffer versions are deleted. Live-versus-export is asserted at 1e-6, which is the
+**Every engine streams, and each is the only implementation there is.**
+`stretch::wsola`, `vocoder::stretch`, `pvsola::stretch` and `hybrid::stretch`
+are loops over their streamers; the old whole-buffer versions are deleted.
+
+**The hybrid's separation does not depend on the ratio.** Splitting a sound into
+partials, attacks and everything else is a property of the sound, not of what is
+being done to it — which is what makes the engine streamable at all. It runs on
+a thread of its own, only when the hybrid is selected, and is thrown away if the
+file changed while it ran. It costs about a tenth of a second per second of
+stereo; until it arrives the hybrid plays the grain cloud rather than silence. Live-versus-export is asserted at 1e-6, which is the
 difference between two implementations that agree and one implementation. When
 the vocoder had two, they matched to about −80 dB — close enough to hear
 nothing, far enough that the guarantee was a claim rather than a fact.
@@ -412,6 +419,14 @@ quantity besides.
 picker and a line of text in the panel, because a control that quietly does
 something else is worse than one that admits it.
 
+**Switching engines cross-fades.** Switching outright put a step of 0.63 into a
+waveform whose neighbouring samples were moving by 0.0003, and dropped the level
+to 0.21 from 0.34 while the incoming engine's overlap-add ramped up. The
+outgoing engine now keeps running for about 20 ms and the two are mixed, equal
+power — two engines rendering the same instant agree about what is there and not
+at all about its phase. That is the opposite of PVSOLA's splice, where the
+search correlates the two sides first and linear is then right.
+
 **A block must be made faster than it plays.** That is the one property that
 separates a live engine from a rendered one, and it is invisible in every other
 test — a streamer that is correct and slow passes all of them and drops out the
@@ -419,7 +434,7 @@ moment you press play. What matters is the *worst* block, not the mean: PVSOLA
 makes a whole vocoder run per anchor, and doing it in one callback measured at
 89% of the budget. It is made a slice at a time now, spread across the blocks
 the previous round plays for. Measured worst block: granular 0.2%, WSOLA 7.5%,
-vocoder 13%, PVSOLA 20%. `pv_cost.rs` guards it.
+vocoder 19%, PVSOLA 22%, hybrid 22%. `pv_cost.rs` guards it.
 
 **Pitch needed its own stage.** Offline WSOLA shifts by over-stretching and
 reading back faster; folding that into the splice instead would have been a
@@ -713,6 +728,8 @@ both paths, and needs no measurement.
 
 ## 13. Recent history
 
+    e77d979  Stream the hybrid — all five engines run in the callback now
+    3fe4cea  Cross-fade between engines, so switching one does not click
     6a52cdf  Stream PVSOLA, and spread its work across the blocks it plays for
     e492768  Stream the phase vocoder, and delete the copy of it
     f1e8ac3  Let the engine picker change what you hear, not just what you export
