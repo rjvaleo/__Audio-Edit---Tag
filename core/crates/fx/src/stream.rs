@@ -1,0 +1,511 @@
+//! Stretching a block at a time, for the audio callback.
+//!
+//! The engines in this crate were written as whole-buffer renders: hand them a
+//! file, get a file back. That is the wrong shape for playback. An audio
+//! callback is handed a few hundred frames, must return before the device wants
+//! them, and must not allocate on the way — so an engine that needs the whole
+//! input before it can produce the first sample can only ever be heard by
+//! rendering it first and playing the result.
+//!
+//! A streaming engine keeps its own state between blocks instead. WSOLA's is
+//! small and obvious: where it read from last, where it is writing to, and the
+//! stretch of waveform it expects to follow what it just laid down. Everything
+//! else it needs is either in the source or in the parameters.
+//!
+//! Two rules shape everything here, and both are load-bearing.
+//!
+//! **No allocation once built.** Every buffer is sized at construction from the
+//! widest settings the controls allow, not from the current ones, because the
+//! current ones can change between two blocks and a resize in the callback is a
+//! dropout. Anything that genuinely must allocate — the transient map, which is
+//! computed from the whole file — is built on the caller's thread and handed
+//! over, the same way the rack is.
+//!
+//! **The offline render drives the same streamer.** `stretch::wsola` is now a
+//! loop over this, so "what you hear is what you export" is true by
+//! construction rather than by a test that has to be remembered. If the two
+//! ever disagree it is a bug in one caller, not a difference between two
+//! algorithms.
+
+use crate::stretch::{WinShape, WsolaParams};
+use crate::Grain;
+
+/// The longest window any control allows, in milliseconds. Buffers are sized
+/// from this rather than from the current setting, because the setting can move
+/// between blocks.
+const MAX_WINDOW_MS: f32 = 2000.0;
+
+/// Everything a streaming engine needs that is not the audio itself.
+///
+/// Copied into the callback each block, so it must stay cheap to copy — which
+/// is why the transient map is not in here but held by the streamer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StretchParams {
+    pub ratio: f32,
+    pub window_ms: f32,
+    pub sample_rate: u32,
+    pub wsola: WsolaParams,
+    pub grain: Grain,
+}
+
+/// How a block-at-a-time engine is driven.
+///
+/// Deliberately the same shape as `engine::BlockRenderer`, which is the grain
+/// cloud's version of exactly this — one of these can stand in for it.
+pub trait Streamer: Send {
+    /// Fill `out` (interleaved, `channels` wide) with the next block, reading
+    /// from `input`. Must not allocate.
+    fn render(&mut self, out: &mut [f32], channels: usize, input: &[f32], p: &StretchParams);
+
+    /// Move to an output frame. Anything in flight belongs to where we were.
+    fn seek(&mut self, out_frame: u64, input_frames: usize, p: &StretchParams);
+
+    /// Output frames produced so far.
+    fn position(&self) -> u64;
+}
+
+/// Waveform-similarity overlap-add, a block at a time.
+///
+/// The overlap-add is the only awkward part. A window laid down at the current
+/// write position runs on past the end of this block, so the sum cannot be
+/// divided by its window total until every window that touches a frame has been
+/// laid down. Frames are therefore accumulated into a ring long enough to hold
+/// the widest window, and only handed out once the write pointer has passed
+/// them — at which point nothing further can contribute.
+pub struct WsolaStream {
+    /// Accumulated output, interleaved, not yet normalised.
+    acc: Vec<f32>,
+    /// Summed window height per frame, alongside `acc`.
+    norm: Vec<f32>,
+    /// Frames in the ring.
+    ring: usize,
+    channels: usize,
+
+    /// The segment expected to follow what was just written; the next window is
+    /// chosen to resemble it.
+    expect: Vec<f32>,
+    /// Precomputed window, when nothing varies its length.
+    window: Vec<f32>,
+    /// The shape `window` was built for, so it is rebuilt only when it changes.
+    window_for: Option<(usize, WinShape, u32)>,
+
+    /// Where the next window reads from.
+    read: usize,
+    /// Output frame the next window is laid at.
+    write: u64,
+    /// Output frames already handed out.
+    emitted: u64,
+    /// Grain index, which is what all the randomness is addressed by.
+    index: u64,
+    first: bool,
+
+    /// Where each output instant comes from. Built off the audio thread,
+    /// because deriving it walks the whole file and allocates.
+    map: crate::transient::TimeMap,
+    /// Dropped because the ring could not hold the window. Surfaced rather than
+    /// silently degrading, exactly as the voice pool's overflow is.
+    pub overflows: u64,
+}
+
+impl WsolaStream {
+    /// Build one sized for the widest settings the controls allow.
+    ///
+    /// `max_block` is the largest block the device may ask for. Everything is
+    /// allocated here and nothing after.
+    pub fn new(max_block: usize, channels: usize, sample_rate: u32) -> Self {
+        let channels = channels.max(1);
+        let max_win = (((MAX_WINDOW_MS / 1000.0) * sample_rate.max(1) as f32) as usize).max(64);
+        // A window laid at the far end of a block still has to fit, so the ring
+        // holds a block and a window and one spare frame to keep the write
+        // pointer from ever meeting the read pointer exactly.
+        let ring = max_block.max(1) + max_win + 1;
+        WsolaStream {
+            acc: vec![0.0; ring * channels],
+            norm: vec![0.0; ring],
+            ring,
+            channels,
+            expect: vec![0.0; max_win * channels],
+            window: Vec::with_capacity(max_win),
+            window_for: None,
+            read: 0,
+            write: 0,
+            emitted: 0,
+            index: 0,
+            first: true,
+            map: crate::transient::TimeMap::linear(0, 1.0),
+            overflows: 0,
+        }
+    }
+
+    /// Hand over a freshly built transient map.
+    ///
+    /// Separate from `render` because building one walks the whole file. The
+    /// caller does it on its own thread and leaves the result here, which is
+    /// the same arrangement the rack uses for the same reason.
+    pub fn set_map(&mut self, map: crate::transient::TimeMap) {
+        self.map = map;
+    }
+
+    /// The map the current parameters imply. Allocates — never call from the
+    /// audio thread.
+    pub fn build_map(
+        input: &[f32],
+        channels: usize,
+        sample_rate: u32,
+        ratio: f32,
+        hop_out: usize,
+        p: &WsolaParams,
+    ) -> crate::transient::TimeMap {
+        let in_frames = input.len() / channels.max(1);
+        if !p.preserve_transients {
+            return crate::transient::TimeMap::linear(in_frames, ratio);
+        }
+        let hits =
+            crate::transient::onsets(input, channels, sample_rate, p.sensitivity, p.floor);
+        let guard = ((hop_out as f32) * p.guard_hops.clamp(1.0, 16.0)) as usize;
+        crate::transient::TimeMap::with_transients(in_frames, ratio, &hits, guard.max(1))
+    }
+
+    fn clear_ring(&mut self) {
+        self.acc.fill(0.0);
+        self.norm.fill(0.0);
+    }
+
+    /// Rebuild the precomputed window only when its shape actually changed.
+    fn ensure_window(&mut self, len: usize, shape: WinShape, skew: f32) {
+        let key = (len, shape, skew.to_bits());
+        if self.window_for == Some(key) {
+            return;
+        }
+        self.window.clear();
+        for i in 0..len {
+            self.window.push(crate::stretch::shape_at(i, len, shape, skew));
+        }
+        self.window_for = Some(key);
+    }
+}
+
+impl Streamer for WsolaStream {
+    fn position(&self) -> u64 {
+        self.emitted
+    }
+
+    fn seek(&mut self, out_frame: u64, input_frames: usize, p: &StretchParams) {
+        self.clear_ring();
+        self.emitted = out_frame;
+        self.write = out_frame;
+        self.first = true;
+        let sr = p.sample_rate.max(1) as f32;
+        let win = (((p.window_ms.clamp(5.0, MAX_WINDOW_MS) / 1000.0) * sr) as usize).max(64) & !1;
+        let hop = crate::stretch::hop_frames(&p.grain, win, sr).max(1);
+        // The index is derived from where we are rather than from how many
+        // windows have been laid, so seeking to a moment gives the same splices
+        // as playing to it. The grain cloud does the same, for the same reason.
+        self.index = out_frame / hop as u64;
+        let nominal = self.map.input_at(out_frame as f64) as f32;
+        let scan = p.grain.scan.clamp(-4.0, 4.0);
+        let swept = if scan < 0.0 {
+            input_frames as f32 + nominal * scan
+        } else {
+            nominal * scan
+        };
+        self.read = crate::stretch::place(swept, input_frames, p.grain.wrap);
+    }
+
+    fn render(&mut self, out: &mut [f32], channels: usize, input: &[f32], p: &StretchParams) {
+        let channels = channels.max(1).min(self.channels);
+        let frames = out.len() / channels.max(1);
+        out.fill(0.0);
+        let in_frames = input.len() / channels.max(1);
+        if frames == 0 || in_frames == 0 {
+            return;
+        }
+
+        let sr = p.sample_rate.max(1) as f32;
+        let ratio = p.ratio.clamp(0.01, 100.0);
+        let win = (((p.window_ms.clamp(5.0, MAX_WINDOW_MS) / 1000.0) * sr) as usize).max(64) & !1;
+        let hop_out = crate::stretch::hop_frames(&p.grain, win, sr).max(1);
+        let search = (((p.wsola.search_ms.clamp(0.0, 200.0)) / 1000.0) * sr) as usize;
+        let g = &p.grain;
+        let steady = g.size_jitter.abs() < 1e-6;
+        let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
+        let scan = g.scan.clamp(-4.0, 4.0);
+
+        if steady {
+            self.ensure_window(win, p.wsola.shape, g.envelope);
+        }
+
+        // Lay down every window that starts before the end of what this block
+        // has to hand out. A window reaching past that is fine — the ring holds
+        // it and the next block finishes it.
+        let need = self.emitted + frames as u64;
+        while self.write < need {
+            let pos = if self.first {
+                self.first = false;
+                self.read
+            } else {
+                crate::stretch::best_offset(
+                    input,
+                    channels,
+                    self.read,
+                    search,
+                    &self.expect[..hop_out * channels],
+                    hop_out,
+                    p.wsola,
+                )
+            };
+
+            let len = crate::stretch::grain_size(g, self.index, win);
+            let take = if pos_jitter > 0.0 {
+                let j = pos_jitter * g.rand_bipolar(self.index, g.salt(5));
+                crate::stretch::place(pos as f32 + j, in_frames, g.wrap)
+            } else {
+                pos
+            };
+            let rate = crate::stretch::grain_rate(g, self.index, self.write as f32 / sr);
+            let (gl, gr) = crate::grain::pan_gains(g, self.index, channels);
+            let span = (len as f32) * rate;
+
+            if len >= self.ring {
+                // Wider than the ring can hold. Only reachable if a device asks
+                // for a far larger block than it promised; counted rather than
+                // written past the end of the buffer.
+                self.overflows += 1;
+            } else {
+                for i in 0..len {
+                    let w = if steady {
+                        self.window[i]
+                    } else {
+                        crate::stretch::shape_at(i, len, p.wsola.shape, g.envelope)
+                    };
+                    let frame = self.write + i as u64;
+                    let slot = (frame % self.ring as u64) as usize;
+                    let step = if g.reverse {
+                        span - (i as f32) * rate
+                    } else {
+                        (i as f32) * rate
+                    };
+                    let src = take as f32 + step;
+                    if src >= (in_frames - 1) as f32 || src < 0.0 {
+                        continue;
+                    }
+                    for ch in 0..channels {
+                        let pan = if ch == 0 { gl } else { gr };
+                        self.acc[slot * self.channels + ch] += crate::stretch::read_at(
+                            input, channels, ch, src, in_frames,
+                        ) * w * pan;
+                    }
+                    self.norm[slot] += w;
+                }
+            }
+
+            // What naturally follows the window just taken.
+            let tail = pos + hop_out;
+            for i in 0..hop_out {
+                for ch in 0..channels {
+                    let s = (tail + i) * channels + ch;
+                    self.expect[i * channels + ch] =
+                        if s < input.len() { input[s] } else { 0.0 };
+                }
+            }
+
+            self.write += hop_out as u64;
+            self.index += 1;
+            let nominal = self.map.input_at(self.write as f64) as f32;
+            let swept = if scan < 0.0 {
+                in_frames as f32 + nominal * scan
+            } else {
+                nominal * scan
+            };
+            self.read = crate::stretch::place(swept, in_frames, g.wrap);
+            let _ = ratio;
+        }
+
+        // Hand out the finished frames and clear them for reuse. Nothing can
+        // contribute to a frame the write pointer has already passed.
+        for f in 0..frames {
+            let frame = self.emitted + f as u64;
+            let slot = (frame % self.ring as u64) as usize;
+            let n = self.norm[slot];
+            for ch in 0..channels {
+                let v = self.acc[slot * self.channels + ch];
+                out[f * channels + ch] = if n > 1e-6 { v / n } else { v };
+            }
+            for ch in 0..self.channels {
+                self.acc[slot * self.channels + ch] = 0.0;
+            }
+            self.norm[slot] = 0.0;
+        }
+        self.emitted = need;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stretch::{Algorithm, Stretch};
+
+    const RATE: u32 = 44_100;
+
+    fn busy(secs: f32, channels: usize) -> Vec<f32> {
+        let n = (RATE as f32 * secs) as usize;
+        let mut seed = 12345u32;
+        let mut v = Vec::with_capacity(n * channels);
+        for i in 0..n {
+            let t = i as f32 / RATE as f32;
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let noise = ((seed >> 16) as f32 / 32768.0) - 1.0;
+            let into = i % 5512;
+            let hit = if into < 700 {
+                noise * (1.0 - into as f32 / 700.0).powi(2) * 0.7
+            } else {
+                0.0
+            };
+            let s = 0.3 * (std::f32::consts::TAU * 220.0 * t).sin() + noise * 0.05 + hit;
+            for ch in 0..channels {
+                v.push(if ch == 0 { s } else { s * 0.7 });
+            }
+        }
+        v
+    }
+
+    fn params(spec: &Stretch) -> StretchParams {
+        StretchParams {
+            ratio: spec.ratio,
+            window_ms: spec.window_ms,
+            sample_rate: RATE,
+            wsola: spec.wsola,
+            grain: spec.grain,
+        }
+    }
+
+    /// Drive the streamer to produce the whole thing, in blocks.
+    fn streamed(input: &[f32], channels: usize, spec: &Stretch, block: usize) -> Vec<f32> {
+        let p = params(spec);
+        let in_frames = input.len() / channels;
+        let want = ((in_frames as f64) * spec.ratio as f64).round() as usize;
+
+        let sr = RATE as f32;
+        let win = (((spec.window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64) & !1;
+        let hop = crate::stretch::hop_frames(&spec.grain, win, sr).max(1);
+
+        let mut s = WsolaStream::new(block, channels, RATE);
+        s.set_map(WsolaStream::build_map(input, channels, RATE, spec.ratio, hop, &spec.wsola));
+        s.seek(0, in_frames, &p);
+
+        let mut out = vec![0f32; want * channels];
+        let mut at = 0usize;
+        let mut buf = vec![0f32; block * channels];
+        while at < want {
+            let n = block.min(want - at);
+            s.render(&mut buf[..n * channels], channels, input, &p);
+            out[at * channels..(at + n) * channels].copy_from_slice(&buf[..n * channels]);
+            at += n;
+        }
+        out
+    }
+
+    fn spec(ratio: f32) -> Stretch {
+        Stretch { ratio, algorithm: Algorithm::Wsola, ..Default::default() }
+    }
+
+    /// The claim the whole file rests on: what a callback produces block by
+    /// block is what the offline render produces in one go.
+    #[test]
+    fn streaming_matches_the_offline_render() {
+        let src = busy(0.5, 2);
+        for ratio in [0.5f32, 2.0, 4.0] {
+            let s = spec(ratio);
+            let offline = s.process(&src, 2, RATE);
+            let live = streamed(&src, 2, &s, 512);
+            assert_eq!(offline.len(), live.len(), "lengths differ at {ratio}x");
+            let worst = offline
+                .iter()
+                .zip(&live)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0f32, f32::max);
+            assert!(worst < 1e-5, "at {ratio}x the two paths differ by {worst:.2e}");
+        }
+    }
+
+    /// And it must not depend on the block size, or the sound would change with
+    /// the device's buffer setting.
+    #[test]
+    fn the_block_size_does_not_change_the_sound() {
+        let src = busy(0.4, 2);
+        let s = spec(3.0);
+        let a = streamed(&src, 2, &s, 64);
+        let b = streamed(&src, 2, &s, 1024);
+        let worst = a.iter().zip(&b).map(|(x, y)| (x - y).abs()).fold(0f32, f32::max);
+        assert!(worst < 1e-5, "the block size changed the audio by {worst:.2e}");
+    }
+
+    #[test]
+    fn the_grain_controls_reach_the_streaming_engine_too() {
+        let src = busy(0.4, 2);
+        let mut s = spec(3.0);
+        let plain = streamed(&src, 2, &s, 256);
+        s.grain.overlap = 4.0;
+        let moved = streamed(&src, 2, &s, 256);
+        let d: f32 = plain.iter().zip(&moved).map(|(a, b)| (a - b).abs()).sum();
+        assert!(d > 1e-3, "overlap did not reach the streaming engine");
+    }
+
+    /// Seeking lands on the right material, but cannot reproduce the splice
+    /// chain that led there.
+    ///
+    /// This is a property of the algorithm and not a shortcut. Each window's
+    /// position is chosen to continue the one before it, so where WSOLA is at
+    /// any moment depends on every splice since the last seek — there is no
+    /// closed form for it the way there is for a grain, whose randomness is
+    /// addressed by index. What can be promised is that the audio after a seek
+    /// is the same material at the same instant, at the same level.
+    #[test]
+    fn seeking_lands_on_the_same_material_even_though_the_splices_differ() {
+        let src = busy(0.5, 2);
+        let s = spec(2.0);
+        let whole = streamed(&src, 2, &s, 256);
+
+        let p = params(&s);
+        let in_frames = src.len() / 2;
+        let sr = RATE as f32;
+        let win = (((s.window_ms / 1000.0) * sr) as usize).max(64) & !1;
+        let hop = crate::stretch::hop_frames(&s.grain, win, sr).max(1);
+        let mut st = WsolaStream::new(512, 2, RATE);
+        st.set_map(WsolaStream::build_map(&src, 2, RATE, s.ratio, hop, &s.wsola));
+
+        // Land on a hop boundary: between them the overlap-add is mid-window,
+        // and no engine of this kind can reproduce a partial window it never
+        // laid down.
+        let at = (hop * 20) as u64;
+        st.seek(at, in_frames, &p);
+        // Enough blocks to get a window past the seam, where the overlap-add
+        // has reached full depth again.
+        let want = win + 512;
+        let mut buf = vec![0f32; want * 2];
+        for c in buf.chunks_mut(512 * 2) {
+            let n = c.len() / 2;
+            st.render(&mut c[..n * 2], 2, &src, &p);
+        }
+
+        let from = at as usize + win;
+        let a = &whole[from * 2..(from + 256) * 2];
+        let b = &buf[win * 2..(win + 256) * 2];
+        let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+        let ea: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let eb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let corr = dot / (ea * eb + 1e-12);
+        assert!(corr > 0.8, "seeking landed somewhere else: correlation {corr:.3}");
+        assert!(
+            (ea / eb - 1.0).abs() < 0.25,
+            "seeking changed the level: {ea:.3} against {eb:.3}"
+        );
+    }
+
+    #[test]
+    fn silence_streams_to_silence() {
+        let src = vec![0f32; 20_000];
+        let out = streamed(&src, 1, &spec(3.0), 256);
+        assert!(out.iter().all(|v| v.abs() < 1e-6));
+    }
+}
