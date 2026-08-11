@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff. **HEAD `d520e3e`, 633 tests passing, working
+Written 11 August 2026 as a handoff. **HEAD `4cda809`, 653 tests passing, working
 tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 633 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 653 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -66,14 +66,14 @@ rebuild.
 Rewritten from Python into Rust starting 8 Aug 2026. The old Python app still
 sits in `app/`, untouched and **not deleted**.
 
-Ten crates in `core/crates/`, ~26k lines.
+Ten crates in `core/crates/`, ~32k lines.
 
 | crate | what it is |
 |---|---|
 | `audio-core` | container probe/decode (WAV, AIFF, AIFC, headerless PCM), peak tiles, FFT, spectrogram, stats, WAV writer |
 | `catalog` | classification taxonomy, ported from `ingest_index_v2.py` |
 | `indexer` | library walk, classify, write the TSV index |
-| `fx` | biquads, EQ, compressor, channel maximiser, **five stretchers** — `stretch.rs` (WSOLA + dispatch), `vocoder.rs`, `grain.rs`, `pvsola.rs`, `hybrid.rs` on `decompose.rs` + `noise.rs`, plus `stream.rs`, `transient.rs`, `master.rs` |
+| `fx` | biquads, EQ, compressor, channel maximiser, **five stretchers**, **nine live shapers** (`shape.rs`) and the parameter layer (`params.rs`) — `stretch.rs` (WSOLA + dispatch), `vocoder.rs`, `grain.rs`, `pvsola.rs`, `hybrid.rs` on `decompose.rs` + `noise.rs`, plus `stream.rs`, `transient.rs`, `master.rs` |
 | `edit` | non-destructive edit list (clips), windowed render, export |
 | `engine` | real-time: `render` (blocks), `transport` (play/seek/loop), `device` (cpal) |
 | `search` | acoustic fingerprints, similarity ranking, learned tags |
@@ -533,6 +533,111 @@ twenty it did not mention.
 
 ---
 
+## 7b. Live shaping — the Peak work
+
+Peak's DSP menu is a list of things you apply to a selection and wait for. Most
+of them have no reason to work that way, so they are rack effects here and run
+under the fingers while the sound plays. Built from `Reference Docs/md/peak/`
+rather than from the names, which mattered: **Rappify** turned out to be extreme
+*dynamic filtering*, not distortion, and **Amplitude Fit** is per-grain
+normalisation, not compression.
+
+### `fx::params` — the layer automation needs
+
+Every parameter has a stable **key**, a range, a default, a sweep (log or
+linear) and a unit, and is readable and writable by name through the `Params`
+trait. Automation and modulation then become one small thing that writes keys
+rather than a change to every effect. This went in *first* because it is the
+expensive thing to retrofit.
+
+**The key is the contract.** It will live in saved automation, so renaming one
+silently detaches whatever drives it.
+
+`ParamSpec::from_unit` snaps its endpoints exactly rather than trusting
+`exp(ln(x))`, which returns 19999.992 for a maximum of 20000 — inside the range,
+so a clamp will not catch it, and it fails a comparison much later.
+
+### The nine shapers (`fx::shape`)
+
+Invert · Swap · Width · DC offset · Ring modulate · Rappify · Reverse boomerang ·
+Amplitude fit · Gate. All implement `Params`.
+
+Two are **better live than they ever were offline**. *Reverse boomerang* offline
+needs to know where the selection ends; live it is a rolling buffer read
+backwards, so the reversal chases the playhead and the throw length becomes a
+control it never had. *Amplitude fit* offline normalises a file grain by grain;
+live it is the same idea on the last thirty milliseconds with the waiting
+removed.
+
+**Four bugs the tests caught, all of them subtle:**
+
+1. The boomerang's read pointer **stood still**. The distance behind the write
+   head grew one per sample and the write head moves too, so they cancelled — a
+   held sample, not a reversal. It has to grow at *two*.
+2. The gate's envelope decayed by a fixed factor per sample — a time constant of
+   its own, unrelated to the release control — so the gate never closed inside
+   the release it was asked for.
+3. Amplitude fit followed at the grain rate in *both* directions, which measures
+   something nearer an average than a peak, so it asked for far too much gain. A
+   signal at 0.29 came out at 1.45. Fast up, grain-rate down.
+4. Rappify's band was far too gentle for "extreme dynamic filtering".
+
+**One was the test's fault**, and worth remembering as a pattern: the boomerang
+test compared against a window a throw earlier rather than the source running
+backwards from the moment the pass begins. The code was right; the expectation
+was not. It correlates at 0.97.
+
+### How they are wired
+
+**One `SlotSpec::Shape` variant for all nine**, not nine variants. The older
+three (gain, EQ, comp) each carry a settings struct and hand-written JSON; a
+shaper describes its own parameters instead, so one pair of conversions serves
+all of them and the next one added needs no rack work at all. Parameters are a
+*list* rather than a map because that is what automation will address.
+
+`RackSpec::build` takes the **device's** rate and width, because a delay-based
+effect sizes its buffer once and may not resize while running.
+
+An unknown kind is **dropped rather than guessed at** — a slot this version does
+not recognise is one from a newer version.
+
+**`/api/fx` serves the catalogue** and the interface draws every module from it.
+Nothing in `app.js` knows what any shaper does. An effect gains a control by
+declaring one in `fx::shape` and neither the rack nor the interface is touched.
+It is also what automation will read to know what it may address.
+
+Two interface bugs found by driving it: `slotSummary` fell through to the
+compressor's fields for any unknown kind, so the first shaper **threw** — and
+the exception aborted the chain redraw partway, which looked like the slot
+failing to be added while the server was storing it correctly the whole time.
+And the summary printed anything with a maximum of one as a percentage, turning
+the gate's −40 dB threshold into −4000%.
+
+### What is planned and not built
+
+- **Pre/post rack.** Shapers currently run *after* the stretcher only, because
+  that is where the rack has always been. The user wants them placeable either
+  side. A pre-rack has to be rendered into the source off-thread and handed
+  over, like the hybrid's separation — the engines read the source at arbitrary
+  positions, so a stateful filter cannot be applied per-read. Near-live for
+  time-domain effects, but not per-block live the way post is.
+- **Phase 2, spectral:** Harmonic rotate (rotate the spectrum around a
+  horizontal axis) and Convolve (multiply the spectrum of a captured impulse
+  with the target). Both fit an STFT rack effect.
+- **Phase 3, the edits** — the next thing asked for, not started. Zero-crossing
+  snap first: every cut currently lands wherever the pointer was, and snap is
+  what stops edits clicking. Then crop, duplicate, insert silence (ours
+  overwrites), set selection numerically, fit selection, zoom at sample level,
+  markers→regions, new region split, nudge/rename/go-to, normalize and
+  normalize RMS, find peak, strip silence, repair click.
+- **Automation and modulation.** Asked for explicitly, beyond presets. The
+  parameter layer is the foundation; nothing is built on it yet.
+- **Three views** — *edit*, *granulate*, *browse*, each with its own view of the
+  sound pool and its own display. Currently two modes. The live shaping belongs
+  in *granulate*.
+
+---
+
 ## 8. The visualisers
 
 `visualiser/grain-views.html` — one p5.js WEBGL page served at `/grains3d`,
@@ -648,7 +753,23 @@ decisions.**
     patterns that plainly exist, especially in `Reference Docs/md/`. Count with
     Python before concluding a document lacks something.
 14. **Python patch scripts must assert every replacement.** `str.replace` fails
-    silently.
+    silently. Twice this session an anchor did not exist and the edit vanished —
+    once a whole block of tests that then reported "0 filtered out" rather than
+    failing.
+15. **A wall-clock maximum measures the scheduler, not the code.** The same
+    sixteen-layer case measured 44%, 92% and 237% of the real-time budget across
+    three runs while its mean never moved off 43%. Use a percentile, and assert
+    the *shape* — worst against mean — rather than an absolute.
+16. **An exception in a render loop looks like a data bug.** `slotSummary` threw
+    on the first shaper added, which aborted `renderRack` partway; the slot
+    appeared not to have been added at all, and the server had stored it
+    correctly the whole time. Check the browser console before blaming the
+    server.
+17. **Struct-update syntax cannot see private fields from another crate.** Tests
+    in `tests/` are a separate crate, so `Thing { field: v, ..Default::default() }`
+    fails on any struct with private state. Use the setter — which for anything
+    implementing `Params` is the better test anyway, because it exercises the
+    path automation will use.
 
 ---
 
@@ -662,9 +783,16 @@ Every PDF in `Reference Docs/` is extracted to markdown in `Reference Docs/md/`.
   `stretch.rs` and `grain.rs`. The one that matters.
 - `md/STRETCH-ROADMAP.md` — the theories, which are implemented, what is next.
   **Fully built through candidate 6.**
-- `md/peak/peak-menus.md` — Peak 6 Chapter 12, every menu and command. **The
-  reference for our own menu bar, and still unused.** The user's words:
-  *"we won't use all of it but some of it, 10%."*
+- `md/peak/peak-menus.md` — Peak 6 Chapter 12, every menu and command. **199
+  commands; 182 are not in ours**, but most of those are Peak's own furniture
+  (Quit, Hide Others, sampler transfer, VST hosting, CD burning). Filtering to
+  what fits leaves about twenty, which matches the user's *"we won't use all of
+  it but some of it, 10%."* The DSP ones are built — see §7b. The edit and menu
+  ones are Phase 3 and are next.
+- `md/peak/peak-dsp.md` — **read this before implementing any of them.** Several
+  are not what their names suggest: Rappify is dynamic filtering, Amplitude Fit
+  is per-grain normalisation, Harmonic Rotate rotates the spectrum around a
+  horizontal axis, Convolve multiplies two spectra.
 - `md/peak/peak-editing.md`, `peak-dsp.md`, `peak-shortcuts-and-actions.md`.
 
 Project docs: `docs/ARCHITECTURE.md` (as-built), `docs/CONTROLS.md` (every
@@ -713,7 +841,21 @@ decorrelated and 4× too loud when they are identical.
 **Recommended: 2.** It is right for the case people actually use, the same in
 both paths, and needs no measurement.
 
-**Next, in order — the streaming work the user chose:**
+**Next, and explicitly asked for — "do phase 3", interrupted to write this
+down:**
+
+1. **Phase 3, the Peak edits.** Zero-crossing snap first — it makes every
+   existing edit better and is small. Then crop, duplicate, insert silence,
+   set selection, fit selection, zoom at sample level, markers→regions, new
+   region split, nudge/rename/go-to, normalize and normalize RMS, find peak,
+   strip silence, repair click. See §7b.
+2. **Pre/post rack split** — shapers before *or* after the stretcher. §7b says
+   why the pre side has to be a handover rather than a per-block chain.
+3. **Phase 2 spectral shapers** — harmonic rotate, convolve.
+4. **Automation and modulation** on the parameter layer.
+5. **The third view** — granulate.
+
+**Earlier, and done — the streaming work the user chose:**
 
 1. ~~Wire `WsolaStream` into the engine.~~ **Done.** WSOLA plays live.
 2. ~~Streaming vocoder.~~ **Done.** Both stereo modes.
@@ -744,6 +886,12 @@ both paths, and needs no measurement.
 
 ## 13. Recent history
 
+    d520e3e  Layer the streaming engines live, so you can hear them
+    3b65f58  Scatter the layers, so they make a cloud instead of a comb
+    4cda809  Draw every shaper from its own description
+    d260c74  Wire the shapers into the rack, generically
+    95e843a  Add parameter API and live shape effects
+    05879fb  Bring the docs up to live layering
     d520e3e  Layer the streaming engines live, so you can hear them
     3b65f58  Scatter the layers, so they make a cloud instead of a comb
     e77d979  Stream the hybrid — all five engines run in the callback now
