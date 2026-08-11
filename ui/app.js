@@ -2113,22 +2113,141 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
   return el;
 }
 
-/// A switch: one button carrying its own name, with a lamp on the right.
+
+/// A knob, for the effect rack.
 ///
-/// Not a tick box, and not a name in one column with a control in another —
-/// there is only one thing here, so the whole row is the thing you press and
-/// the lamp says which way it is set.
+/// Same contract as `param` — value in, format, change, commit, and a `sync`
+/// so Reset and Undo can push a value back — so the two are interchangeable at
+/// the call site and nothing else has to know which it got.
+///
+/// A rack is a row of little modules rather than a column of long sliders:
+/// eight of these fit where three sliders did, and an effect with a handful of
+/// controls reads as one object instead of a list. Dragged vertically, which is
+/// how a knob has worked since knobs were physical, with shift for fine.
+function knob(label, value, min, max, step, format, onChange, onCommit, log) {
+  const el = document.createElement('div');
+  el.className = 'knob';
+  el.innerHTML = `
+    <svg viewBox="0 0 44 44" aria-hidden="true">
+      <path class="track" d=""></path>
+      <path class="arc" d=""></path>
+      <line class="ptr" x1="22" y1="22" x2="22" y2="8"></line>
+    </svg>
+    <span class="k"></span><span class="v"></span>`;
+  const name = el.querySelector('.k');
+  name.textContent = label;
+  name.title = label;
+  const out = el.querySelector('.v');
+  const arc = el.querySelector('.arc');
+  const ptr = el.querySelector('.ptr');
+
+  // 270 degrees, starting at seven o'clock — the range a knob has room for
+  // without the ends meeting.
+  const A0 = Math.PI * 0.75;
+  const SWEEP = Math.PI * 1.5;
+  const R = 15;
+  const at = (t) => {
+    const a = A0 + SWEEP * t;
+    return [22 - R * Math.cos(a - Math.PI / 2), 22 - R * Math.sin(a - Math.PI / 2)];
+  };
+  const path = (from, to) => {
+    const [x0, y0] = at(from);
+    const [x1, y1] = at(to);
+    const big = SWEEP * (to - from) > Math.PI ? 1 : 0;
+    return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${R} ${R} 0 ${big} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  };
+  el.querySelector('.track').setAttribute('d', path(0, 1));
+
+  // The same log mapping `param` uses, so a control that needed one as a
+  // slider still gets one as a knob.
+  const toPos = (v) => (log ? Math.log(Math.max(v, min) / min) / Math.log(max / min)
+                            : (v - min) / (max - min));
+  const toVal = (t) => (log ? min * Math.pow(max / min, t) : min + t * (max - min));
+
+  let pos = Math.min(1, Math.max(0, toPos(value)));
+  const paint = () => {
+    const v = toVal(pos);
+    arc.setAttribute('d', pos <= 0.001 ? '' : path(0, pos));
+    const [px, py] = at(pos);
+    ptr.setAttribute('x2', (22 + (px - 22) * 0.72).toFixed(2));
+    ptr.setAttribute('y2', (22 + (py - 22) * 0.72).toFixed(2));
+    const t = format(v);
+    out.textContent = t;
+    out.title = t;
+  };
+  const quantise = (v) => (step > 0 ? Math.round(v / step) * step : v);
+  paint();
+
+  el.sync = (v) => { pos = Math.min(1, Math.max(0, toPos(v))); paint(); };
+
+  // Vertical drag. A full turn is 160 pixels, which is far enough to be
+  // controllable and short enough to cross without letting go.
+  let dragging = false;
+  let lastY = 0;
+  const svg = el.querySelector('svg');
+  svg.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    lastY = e.clientY;
+    svg.setPointerCapture(e.pointerId);
+    el.classList.add('turning');
+    e.preventDefault();
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const fine = e.shiftKey ? 0.2 : 1;
+    pos = Math.min(1, Math.max(0, pos + ((lastY - e.clientY) / 160) * fine));
+    lastY = e.clientY;
+    paint();
+    onChange(quantise(toVal(pos)));
+  });
+  const release = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove('turning');
+    try { svg.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+    if (onCommit) onCommit(quantise(toVal(pos)));
+  };
+  svg.addEventListener('pointerup', release);
+  svg.addEventListener('pointercancel', release);
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const fine = e.shiftKey ? 0.2 : 1;
+    pos = Math.min(1, Math.max(0, pos - Math.sign(e.deltaY) * 0.03 * fine));
+    paint();
+    onChange(quantise(toVal(pos)));
+    if (onCommit) onCommit(quantise(toVal(pos)));
+  }, { passive: false });
+
+  return el;
+}
+
+/// A switch: the name in the name column, a rocker in the control column.
+///
+/// It was a button with its own name written on it, which made it the one
+/// control in the panel that did not line up with the others. The name belongs
+/// where every other name is; the switch belongs where every other control is.
+///
+/// A rocker rather than a tick box because a rocker says which way it is set
+/// from across the room — one end pressed in, the other proud, and the recess
+/// it uncovers lit.
 function check(label, title, value, onChange) {
-  const el = document.createElement('button');
-  el.className = 'toggle';
-  el.innerHTML = `<span class="tname"></span><i class="led"></i>`;
-  el.querySelector('.tname').textContent = label;
-  el.title = title || label;
+  const el = document.createElement('div');
+  el.className = 'param toggle';
+  el.innerHTML = `<span class="k"></span>
+    <button class="rocker" role="switch"><span class="plate"></span></button>`;
+  const name = el.querySelector('.k');
+  name.textContent = label;
+  name.title = title || label;
+  const b = el.querySelector('.rocker');
+  b.title = title || label;
 
   let on = !!value;
-  const paint = () => el.classList.toggle('on', on);
+  const paint = () => {
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', String(on));
+  };
   paint();
-  el.onclick = () => { on = !on; paint(); onChange(on); };
+  b.onclick = () => { on = !on; paint(); onChange(on); };
   // Same contract as `param` and `seg`, so Reset can push a value in.
   el.sync = (v) => { on = !!v; paint(); };
   return el;
@@ -3008,12 +3127,12 @@ function renderRackParams() {
   box.appendChild(head);
 
   const grid = document.createElement('div');
-  grid.className = 'param-grid';
+  grid.className = 'knob-grid';
   const db1 = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB`;
   const hz = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} kHz` : `${Math.round(v)} Hz`);
 
   if (slot.kind === 'gain') {
-    grid.appendChild(param('Level', slot.db, -24, 24, 0.1, db1, (v) => { slot.db = v; pushRack(); }));
+    grid.appendChild(knob('Level', slot.db, -24, 24, 0.1, db1, (v) => { slot.db = v; pushRack(); }));
   }
 
   if (slot.kind === 'eq') {
@@ -3028,30 +3147,30 @@ function renderRackParams() {
       h.textContent = label;
       grid.appendChild(h);
       const b = slot[key];
-      grid.appendChild(param('Gain', b.gainDb, -18, 18, 0.1, db1, (v) => { b.gainDb = v; pushRack(); }));
-      grid.appendChild(param('Freq', b.freq, 20, 18000, 1, hz, (v) => { b.freq = v; pushRack(); }));
-      grid.appendChild(param('Q', b.q, 0.2, 8, 0.05, (v) => v.toFixed(2), (v) => { b.q = v; pushRack(); }));
+      grid.appendChild(knob('Gain', b.gainDb, -18, 18, 0.1, db1, (v) => { b.gainDb = v; pushRack(); }));
+      grid.appendChild(knob('Freq', b.freq, 20, 18000, 1, hz, (v) => { b.freq = v; pushRack(); }));
+      grid.appendChild(knob('Q', b.q, 0.2, 8, 0.05, (v) => v.toFixed(2), (v) => { b.q = v; pushRack(); }));
     }
     const h = document.createElement('div');
     h.className = 'band-head';
     h.textContent = 'High-pass';
     grid.appendChild(h);
-    grid.appendChild(param('Cutoff', slot.highPassHz, 0, 400, 1,
+    grid.appendChild(knob('Cutoff', slot.highPassHz, 0, 400, 1,
       (v) => (v <= 20 ? 'off' : hz(v)), (v) => { slot.highPassHz = v; pushRack(); }));
   }
 
   if (slot.kind === 'comp') {
-    grid.appendChild(param('Threshold', slot.thresholdDb, -60, 0, 0.5,
+    grid.appendChild(knob('Threshold', slot.thresholdDb, -60, 0, 0.5,
       (v) => `${v.toFixed(1)} dB`, (v) => { slot.thresholdDb = v; pushRack(); }));
-    grid.appendChild(param('Ratio', slot.ratio, 1, 20, 0.1,
+    grid.appendChild(knob('Ratio', slot.ratio, 1, 20, 0.1,
       (v) => `${v.toFixed(1)}:1`, (v) => { slot.ratio = v; pushRack(); }));
-    grid.appendChild(param('Attack', slot.attackMs, 0.1, 200, 0.1,
+    grid.appendChild(knob('Attack', slot.attackMs, 0.1, 200, 0.1,
       (v) => `${v.toFixed(1)} ms`, (v) => { slot.attackMs = v; pushRack(); }));
-    grid.appendChild(param('Release', slot.releaseMs, 5, 1000, 1,
+    grid.appendChild(knob('Release', slot.releaseMs, 5, 1000, 1,
       (v) => `${Math.round(v)} ms`, (v) => { slot.releaseMs = v; pushRack(); }));
-    grid.appendChild(param('Knee', slot.kneeDb, 0, 24, 0.5,
+    grid.appendChild(knob('Knee', slot.kneeDb, 0, 24, 0.5,
       (v) => `${v.toFixed(1)} dB`, (v) => { slot.kneeDb = v; pushRack(); }));
-    grid.appendChild(param('Makeup', slot.makeupDb, -12, 24, 0.1, db1,
+    grid.appendChild(knob('Makeup', slot.makeupDb, -12, 24, 0.1, db1,
       (v) => { slot.makeupDb = v; pushRack(); }));
   }
 
