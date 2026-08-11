@@ -455,23 +455,19 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   background: oklch(13.5% 0.013 250); border-top: 1px solid var(--line-2);
   overflow: hidden;
 }
-/* The dock's tabs run down the left as icons, so the panel keeps the full
-   width for its contents instead of losing a strip to a tab bar. */
+/* The dock's tabs used to run down its left edge, which cost every pane 58px
+   of width for four buttons. They live on the preset row now — same line, with
+   a rule between them and the presets so it is clear they are two things. */
 .dock { flex-direction: row; }
-.dock-rail {
-  width: 58px; flex-shrink: 0;
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 8px 5px; border-right: 1px solid var(--line);
-  background: oklch(12.5% 0.012 250);
-}
+.dock-rail { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
 .dock-panes { flex: 1; min-width: 0; display: flex; }
 .dock-tab {
-  width: 48px; padding: 6px 0 5px; border-radius: 8px;
+  height: 24px; padding: 0 9px; border-radius: 6px;
   border: 1px solid transparent; background: transparent; color: var(--text-dim);
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  display: flex; flex-direction: row; align-items: center; gap: 5px;
 }
-.dock-tab .ic { font-size: 15px; line-height: 1; }
-.dock-tab .lb { font-size: 8.5px; font-weight: 600; letter-spacing: .2px; }
+.dock-tab .ic { font-size: 12px; line-height: 1; }
+.dock-tab .lb { font-size: 9.5px; font-weight: 600; letter-spacing: .2px; }
 .dock-tab:hover { background: var(--surface-3); color: var(--text-2); }
 .dock-tab.active {
   background: var(--surface); border-color: var(--line-2); color: var(--accent);
@@ -684,23 +680,18 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .seed-row .row { flex: 1; gap: 8px; }
 .seed-row .v { color: var(--text-2); }
 
-/* Folded away, because everything inside is a way to stop the algorithm
-   working. That is what they are for, but not what you want under the pointer
-   while reaching for Stretch. */
+/* A named group in the Extended column. Everything inside is a way to stop the
+   algorithm working, which is what it is for — so it is all on show, and the
+   heading is the only thing separating one set from the next. */
 .wild {
   border: 1px solid var(--line); border-radius: 6px;
   background: oklch(11% 0.012 250);
 }
-.wild > summary {
-  list-style: none; cursor: pointer; user-select: none;
+.wild-head {
   padding: 5px 8px; font-size: 10px; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--text-dimmer);
+  text-transform: uppercase; color: var(--warn);
+  border-bottom: 1px solid var(--line);
 }
-.wild > summary::-webkit-details-marker { display: none; }
-.wild > summary::before { content: '▸ '; }
-.wild[open] > summary::before { content: '▾ '; }
-.wild > summary:hover { color: var(--text-2); }
-.wild[open] > summary { border-bottom: 1px solid var(--line); color: var(--warn); }
 .wild-body { display: flex; flex-direction: column; gap: 9px; padding: 9px 8px; }
 .param-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -931,27 +922,35 @@ body.editing .dock { flex: 0 0 300px; }
    controls in a quarter-width strip ran off the bottom of the tray. */
 
 .grain-split { grid-column: 1 / -1; display: flex; gap: 14px; min-height: 0; }
+/* One grid across both sides, so every panel is exactly one column wide and
+   Extended matches Time & pitch rather than being a narrower afterthought.
+   The standard panels sit in a nested grid that spans the columns Extended
+   does not use, and it shares the outer gap — which is what makes the inner
+   columns come out the same width as the outer one. */
 .grain-controls {
+  /* Unchanged: the two sides share the room they already had rather than
+     taking more of it from the visualiser. */
   width: 52%; min-width: 420px; max-width: 720px; flex-shrink: 0;
-  display: flex; gap: 10px; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px; align-content: start; overflow-y: auto;
   padding-right: 10px; border-right: 1px solid var(--line);
 }
 .grain-standard {
-  flex: 1; min-width: 0;
-  /* Auto-fit rather than a fixed pair: with the grain panels hidden there is
-     one panel left, and a second empty column beside it reads as something
-     missing. */
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-column: span 2; min-width: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px; align-content: start;
+}
+/* Only Time & pitch is showing, so two columns rather than three — otherwise
+   the pair would sit either side of a gap the width of a missing panel. */
+.grain-controls.solo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grain-controls.solo .grain-standard {
+  grid-column: span 1; grid-template-columns: minmax(0, 1fr);
 }
 .grain-standard .param-grid { grid-template-columns: 1fr; gap: 8px; }
 /* Its own column, because everything in it is a value the algorithm was tuned
    around. Kept beside the standard controls rather than under them, so it is
    obvious which side of the line a control is on. */
-.grain-extended {
-  width: 168px; flex: 0 0 168px; align-self: start;
-  max-height: 100%; overflow-y: auto;
-}
+.grain-extended { align-self: start; min-width: 0; max-height: 100%; overflow-y: auto; }
 .grain-extended .wild { margin-bottom: 6px; }
 .grain-extended .wild:last-child { margin-bottom: 0; }
 .grain-extended .wild-body { gap: 8px; padding: 8px 7px; }
