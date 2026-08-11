@@ -17,7 +17,7 @@ pub mod render;
 pub mod stretcher;
 pub mod transport;
 
-pub use device::{resample, spawn, Engine, Handle};
+pub use device::{conform_channels, resample, spawn, Engine, Handle};
 pub use render::{BlockRenderer, Source};
 pub use stretcher::Stretcher;
 pub use transport::{Core, Shared};

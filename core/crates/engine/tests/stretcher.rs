@@ -550,3 +550,96 @@ fn what_the_callback_plays_is_what_the_file_would_hold_when_pitched() {
         assert!(edge < 0.01, "{alg:?}: the final frame is not just an edge, it is {edge:.2e}");
     }
 }
+
+
+/// A mono file on a stereo device must play at the speed it is, on every engine.
+///
+/// The streaming engines index their input with the count they are *rendering*
+/// at, which is the device's. Handed a mono source and asked for two channels,
+/// they strode through it two samples at a time: twice too fast, and out of
+/// material half way — heard as a fast playback that then stops. The grain
+/// cloud was the only one unaffected, because it maps the device's channel back
+/// to a source channel before it reads, which is exactly why it was the only
+/// engine that sounded right.
+///
+/// The fix is that a source is conformed to the device before the audio thread
+/// ever sees it. This is that, end to end: conform, then play, then check the
+/// markers come out where they went in.
+#[test]
+fn a_mono_file_on_a_stereo_device_plays_at_the_right_speed() {
+    let dev_channels = 2;
+    let seconds = 2;
+    let n = SR as usize * seconds;
+
+    // Mono, with a marker every quarter second so position is readable.
+    let mut mono: Vec<f32> = (0..n)
+        .map(|i| 0.3 * (std::f32::consts::TAU * 220.0 * i as f32 / SR as f32).sin())
+        .collect();
+    for k in 1..8 {
+        mono[k * SR as usize / 4] = 0.95;
+    }
+
+    // What `live::load` now hands over.
+    let samples = engine::conform_channels(&mono, 1, dev_channels);
+    assert_eq!(samples.len(), n * dev_channels, "conforming lost frames");
+    let src = Source { samples, channels: dev_channels };
+    assert_eq!(src.frames(), n, "the source should still be two seconds long");
+
+    for alg in [
+        Algorithm::Granular,
+        Algorithm::Wsola,
+        Algorithm::Vocoder,
+        Algorithm::Pvsola,
+    ] {
+        let out = run(&src, &params(n, alg, 1.0, 0.0), 512, n);
+
+        // Where the markers landed, in quarter seconds.
+        let mut found: Vec<usize> = Vec::new();
+        for f in 0..out.len() / dev_channels {
+            if out[f * dev_channels].abs() > 0.7
+                && found.last().map_or(true, |&p| f - p > SR as usize / 16)
+            {
+                found.push(f);
+            }
+        }
+        assert!(
+            found.len() >= 6,
+            "{alg:?}: only {} of the 7 markers survived — it ran out of material",
+            found.len()
+        );
+
+        // **Speed**, which is what the channel bug broke: the gap between one
+        // marker and the next. Reading a mono source two samples at a time
+        // halves this and runs the file out half way through.
+        let gaps: Vec<i64> = found.windows(2).map(|w| w[1] as i64 - w[0] as i64).collect();
+        let want = SR as i64 / 4;
+        for g in &gaps {
+            assert!(
+                (g - want).abs() < want / 10,
+                "{alg:?}: markers {g} frames apart, not {want} — it is playing at {:.2}x speed",
+                want as f64 / *g as f64
+            );
+        }
+
+        // **Position**, which is a different property: where the whole thing
+        // sits in time. PVSOLA is excluded because it has a known offset of
+        // about fifty milliseconds at unity — it lands on an anchor boundary
+        // at or before the seek — and that is a separate defect from this one.
+        // Excluded and named, rather than folded into the tolerance above.
+        if alg != Algorithm::Pvsola {
+            for (i, f) in found.iter().take(7).enumerate() {
+                let target = ((i + 1) * SR as usize / 4) as i64;
+                let off = (*f as i64 - target).abs();
+                assert!(
+                    off < SR as i64 / 20,
+                    "{alg:?}: marker {} landed at {f} rather than {target} — {off} frames out",
+                    i + 1
+                );
+            }
+        }
+
+        // And it is still playing at the end, rather than having run dry.
+        let tail = &out[out.len() - SR as usize / 4 * dev_channels..];
+        assert!(rms(tail) > 0.05, "{alg:?}: it fell silent before the end");
+    }
+}

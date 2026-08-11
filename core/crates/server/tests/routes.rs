@@ -1224,3 +1224,24 @@ fn an_audition_is_the_sound_and_a_document_is_the_document() {
     // Nothing open yet: both fall back to the file itself.
     assert!(playback_list(Playing::Document, None, plain.clone()).is_identity());
 }
+
+#[test]
+fn settings_for_a_sound_the_engine_is_not_holding_go_nowhere() {
+    // What comes out of the speakers has to be what is on the screen. With no
+    // engine running at all, `holding` is false for every path, and a stretch
+    // change must still land on the *document* — it simply is not pushed at
+    // the audio thread, which is holding something else or nothing.
+    let s = Scratch::new("holding");
+    s.sound("kit/a.wav", 4000);
+    let app = s.app();
+
+    assert!(!server::live::holding(&app, "kit/a.wav"), "nothing is loaded");
+
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"stretch","ratio":4}"#),
+    );
+    assert_eq!(status(&r), 200);
+    // The document took it, which is what export and the next load will read.
+    assert_eq!(num(&json(&r), &["stretch", "ratio"]), 4.0);
+}

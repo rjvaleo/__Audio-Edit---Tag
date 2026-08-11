@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **758 tests
+Written 11 August 2026 as a handoff, and kept up to date since. **767 tests
 passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 758 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 767 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -807,6 +807,44 @@ through the same load: without it, pressing play in the editor would resume the
 audition. Crossing between the two modes while something is playing stops it,
 the same rule as choosing a different sound.
 
+### What is playing is what is on the screen
+
+Three things had to be true for that, and none of them were.
+
+**The source is laid out for the device.** The streaming engines index their
+input with the channel count they are *rendering* at, which is the device's. A
+mono file on a stereo device was therefore read two samples at a time — twice
+too fast, and out of material half way, heard as a fast playback that stops.
+**The grain cloud was the only engine unaffected**, because it maps the
+device's channel back to a source channel before it reads (`render.rs`, `sch`),
+which is exactly why granular was the only engine that sounded right and the
+report arrived as "granular is the only one that plays it back normally".
+
+`engine::conform_channels` now runs in `live::load` beside the resampler, so
+`Source.channels` is the device's from then on. It was hiding behind
+`let (dev_rate, _dev_channels) = …` — the channel count was fetched and thrown
+away. Widening copies a channel outward; narrowing averages, because dropping
+the right half of a stereo file is a worse answer than mixing it.
+
+**Parameters only reach the source they belong to.** `push_params` returns
+early unless `live::holding` says the engine has that document. Opening a
+second sound and moving a slider before playing it used to push the new
+document's settings onto the old one's buffer — parameters saying one length
+over samples of another. Nothing is lost by returning: a load reads the
+document as it stands, so the settings arrive in full the moment the sound is
+played.
+
+**Every setting reaches the audio.** `merge_stretch` is that list, and
+`vocoder` was missing from it — so the whole vocoder panel moved the exported
+file and nothing you could hear until the file happened to be reloaded. The
+same family as PVSOLA and the hybrid having no pitch stage. There is a test
+that changes every field and checks none is still at its default.
+
+The engine is still only loaded when something is played, because a load folds
+the whole document and hands it over. So the engine can hold a different sound
+from the one on screen — but only while nothing is playing, and pressing play
+closes that window before any sound comes out.
+
 **And a sound opens at its defaults.** It used to open with whatever was
 restored from `SESSIONS.json`. Settings that arrive without being asked for are
 indistinguishable from a bug, and they were being reported as one.
@@ -946,26 +984,32 @@ decisions.**
     appeared not to have been added at all, and the server had stored it
     correctly the whole time. Check the browser console before blaming the
     server.
-17. **The one setting that cannot test a control is its default.** The
+17. **A mono file is not a stereo file with half the samples.** Anything that
+    indexes a buffer by a channel count has to be told *whose* count it is. The
+    streaming engines were handed the device's and read mono sources twice as
+    fast; the grain cloud mapped the channel back first and was the only engine
+    that sounded right, which is what the bug report was about. `Source` now
+    always matches the device.
+18. **The one setting that cannot test a control is its default.** The
     live-equals-export test ran at zero semitones and the pitch test ran only
     WSOLA, so two engines shipped with no pitch on the audio thread at all and
     both tests stayed green. Where a control has a wrapper, assert on an engine
     that does *not* have it.
-18. **Two resamplers is two sounds.** The offline pitch shift interpolated with
+19. **Two resamplers is two sounds.** The offline pitch shift interpolated with
     four-point Hermite and the streaming one with two-point linear. Both were
     right; neither matched. Anything computed on both paths has to be one
     function called twice, not two functions that agree in the comments.
-19. **`f32` runs out of resolution long before a file does.** At a hundred
+20. **`f32` runs out of resolution long before a file does.** At a hundred
     thousand frames its steps are eight thousandths of a sample, which is
     enough to move an interpolation fraction. Positions along a timeline are
     `f64`, and derived from an index rather than accumulated.
-20. **A windowed render is not a continuous one.** `render_fx` resets the rack
+21. **A windowed render is not a continuous one.** `render_fx` resets the rack
     and gives it a fixed pre-roll for each window, so two blocks rendered
     independently do not join smoothly once anything in the rack has memory.
     Anything looking for discontinuities has to render its own overlap; the
     click detector reported one at every multiple of the block size before it
     did.
-21. **A control that reads the engine's state instead of the document's.** Play
+22. **A control that reads the engine's state instead of the document's.** Play
     asked whether the engine had *anything* loaded — true exactly once, on the
     first play after launch — and resumed whatever it was holding for every
     press after that. Pick a second sound and the first one played under the
@@ -973,11 +1017,11 @@ decisions.**
     document and hands it over), so anything that starts the transport has to
     ask what is *selected*, not what is loaded. Found by ear, not by a test;
     the interface still has none.
-22. **`render_fx` per block on a stretched document is quadratic.** It renders
+23. **`render_fx` per block on a stretched document is quadratic.** It renders
     the whole timeline and slices, so a block loop renders the file once per
     block. Two separate places had this and both looked like a hang rather than
     a bug. Check `is_stretched()` and render once.
-23. **Struct-update syntax cannot see private fields from another crate.** Tests
+24. **Struct-update syntax cannot see private fields from another crate.** Tests
     in `tests/` are a separate crate, so `Thing { field: v, ..Default::default() }`
     fails on any struct with private state. Use the setter — which for anything
     implementing `Params` is the better test anyway, because it exercises the
