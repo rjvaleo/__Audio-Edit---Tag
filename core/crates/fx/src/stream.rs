@@ -99,9 +99,15 @@ pub struct WsolaStream {
     index: u64,
     first: bool,
 
-    /// Where each output instant comes from. Built off the audio thread,
-    /// because deriving it walks the whole file and allocates.
-    map: crate::transient::TimeMap,
+    /// Where each output instant comes from, when transients are being held at
+    /// their original rate. `None` is the ordinary case and means a straight
+    /// line, which is arithmetic rather than a lookup — worth the branch
+    /// because the alternative is rebuilding a map every time the ratio moves,
+    /// and the ratio moves under the pointer.
+    ///
+    /// Built off the audio thread when it is needed at all, because deriving it
+    /// runs an onset detector over the whole file and allocates.
+    map: Option<crate::transient::TimeMap>,
     /// Dropped because the ring could not hold the window. Surfaced rather than
     /// silently degrading, exactly as the voice pool's overflow is.
     pub overflows: u64,
@@ -132,18 +138,31 @@ impl WsolaStream {
             emitted: 0,
             index: 0,
             first: true,
-            map: crate::transient::TimeMap::linear(0, 1.0),
+            map: None,
             overflows: 0,
         }
     }
 
-    /// Hand over a freshly built transient map.
+    /// Hand over a freshly built transient map, or `None` for a straight line.
     ///
     /// Separate from `render` because building one walks the whole file. The
     /// caller does it on its own thread and leaves the result here, which is
     /// the same arrangement the rack uses for the same reason.
-    pub fn set_map(&mut self, map: crate::transient::TimeMap) {
+    pub fn set_map(&mut self, map: Option<crate::transient::TimeMap>) {
         self.map = map;
+    }
+
+    /// Where the read pointer nominally sits for an output frame.
+    ///
+    /// Without transient preservation this is a straight line and needs no map
+    /// at all, which is what lets the ratio move freely without anything being
+    /// rebuilt off-thread.
+    #[inline]
+    fn nominal(&self, out_frame: f64, ratio: f32, in_frames: usize) -> f32 {
+        match &self.map {
+            Some(m) => m.input_at(out_frame) as f32,
+            None => (out_frame / ratio.max(1e-6) as f64).clamp(0.0, in_frames as f64) as f32,
+        }
     }
 
     /// The map the current parameters imply. Allocates — never call from the
@@ -155,15 +174,19 @@ impl WsolaStream {
         ratio: f32,
         hop_out: usize,
         p: &WsolaParams,
-    ) -> crate::transient::TimeMap {
-        let in_frames = input.len() / channels.max(1);
+    ) -> Option<crate::transient::TimeMap> {
         if !p.preserve_transients {
-            return crate::transient::TimeMap::linear(in_frames, ratio);
+            return None;
         }
-        let hits =
-            crate::transient::onsets(input, channels, sample_rate, p.sensitivity, p.floor);
+        let in_frames = input.len() / channels.max(1);
+        let hits = crate::transient::onsets(input, channels, sample_rate, p.sensitivity, p.floor);
         let guard = ((hop_out as f32) * p.guard_hops.clamp(1.0, 16.0)) as usize;
-        crate::transient::TimeMap::with_transients(in_frames, ratio, &hits, guard.max(1))
+        Some(crate::transient::TimeMap::with_transients(
+            in_frames,
+            ratio,
+            &hits,
+            guard.max(1),
+        ))
     }
 
     fn clear_ring(&mut self) {
@@ -202,7 +225,7 @@ impl Streamer for WsolaStream {
         // windows have been laid, so seeking to a moment gives the same splices
         // as playing to it. The grain cloud does the same, for the same reason.
         self.index = out_frame / hop as u64;
-        let nominal = self.map.input_at(out_frame as f64) as f32;
+        let nominal = self.nominal(out_frame as f64, p.ratio, input_frames);
         let scan = p.grain.scan.clamp(-4.0, 4.0);
         let swept = if scan < 0.0 {
             input_frames as f32 + nominal * scan
@@ -311,14 +334,13 @@ impl Streamer for WsolaStream {
 
             self.write += hop_out as u64;
             self.index += 1;
-            let nominal = self.map.input_at(self.write as f64) as f32;
+            let nominal = self.nominal(self.write as f64, ratio, in_frames);
             let swept = if scan < 0.0 {
                 in_frames as f32 + nominal * scan
             } else {
                 nominal * scan
             };
             self.read = crate::stretch::place(swept, in_frames, g.wrap);
-            let _ = ratio;
         }
 
         // Hand out the finished frames and clear them for reuse. Nothing can
@@ -337,6 +359,155 @@ impl Streamer for WsolaStream {
             self.norm[slot] = 0.0;
         }
         self.emitted = need;
+    }
+}
+
+/// A streaming engine with pitch shifting on the end of it.
+///
+/// Pitch is time stretching plus resampling: stretch by the pitch factor on top
+/// of the ratio, then read the result back that much faster. The two length
+/// changes cancel and the duration is the ratio's alone. The offline renderer
+/// does exactly this, so streaming has to as well or the two stop matching —
+/// pitch is not something that can be folded into the splice and still be the
+/// same sound.
+///
+/// The resampler pulls: to hand out N frames it needs about N × pitch frames of
+/// stretched audio, which it takes from the inner engine in chunks and keeps in
+/// a ring. Sized for the widest pitch the control allows, so nothing is
+/// allocated once it exists.
+pub struct Pitched {
+    inner: WsolaStream,
+    /// Stretched audio waiting to be read back at a rate.
+    buf: Vec<f32>,
+    ring: usize,
+    channels: usize,
+    /// Stretched frames produced by the inner engine so far.
+    made: u64,
+    /// Fractional read position along the stretched timeline.
+    pos: f64,
+    /// Output frames handed out.
+    emitted: u64,
+    /// How much the inner engine is asked for at a time.
+    chunk: usize,
+    scratch: Vec<f32>,
+}
+
+/// The widest pitch shift the control allows, as a rate multiplier. Buffers are
+/// sized from this, not from the current setting.
+const MAX_PITCH: f32 = 20.0;
+
+impl Pitched {
+    pub fn new(max_block: usize, channels: usize, sample_rate: u32) -> Self {
+        let channels = channels.max(1);
+        let chunk = max_block.max(1);
+        // Room for the fastest read the control allows, plus one chunk so a
+        // pull always has somewhere to land, plus a frame for the interpolator
+        // to reach across.
+        let ring = ((max_block as f32 * MAX_PITCH) as usize) + chunk + 2;
+        Pitched {
+            inner: WsolaStream::new(chunk, channels, sample_rate),
+            buf: vec![0.0; ring * channels],
+            ring,
+            channels,
+            made: 0,
+            pos: 0.0,
+            emitted: 0,
+            chunk,
+            scratch: vec![0.0; chunk * channels],
+        }
+    }
+
+    pub fn set_map(&mut self, map: Option<crate::transient::TimeMap>) {
+        self.inner.set_map(map);
+    }
+
+    pub fn overflows(&self) -> u64 {
+        self.inner.overflows
+    }
+
+    /// Semitones as a rate multiplier, clamped where the buffers assume.
+    fn factor(semitones: f32) -> f32 {
+        2f32.powf(semitones / 12.0).clamp(1.0 / MAX_PITCH, MAX_PITCH)
+    }
+
+    /// Render `frames` of output at `semitones`, reading from `input`.
+    ///
+    /// `p.ratio` is the *document's* ratio; the inner engine is driven at
+    /// `ratio × pitch` and the extra length is taken back out by the read rate.
+    pub fn render_pitched(
+        &mut self,
+        out: &mut [f32],
+        channels: usize,
+        input: &[f32],
+        p: &StretchParams,
+        semitones: f32,
+    ) {
+        let channels = channels.max(1).min(self.channels);
+        let frames = out.len() / channels.max(1);
+        out.fill(0.0);
+        if frames == 0 {
+            return;
+        }
+        let pitch = Self::factor(semitones);
+        if (pitch - 1.0).abs() < 1e-6 {
+            // Nothing to resample; the inner engine is already producing at the
+            // right rate, so do not pay for a copy through the ring.
+            self.inner.render(out, channels, input, p);
+            self.emitted += frames as u64;
+            self.pos += frames as f64;
+            self.made = self.pos as u64;
+            return;
+        }
+
+        let mut inner = *p;
+        inner.ratio = (p.ratio * pitch).clamp(0.01, 100.0);
+
+        // Everything this block will read, plus one for the interpolator.
+        let need = (self.pos + frames as f64 * pitch as f64).ceil() as u64 + 2;
+        while self.made < need {
+            let n = self.chunk.min((need - self.made) as usize);
+            self.inner.render(&mut self.scratch[..n * channels], channels, input, &inner);
+            for i in 0..n {
+                let slot = ((self.made + i as u64) % self.ring as u64) as usize;
+                for ch in 0..channels {
+                    self.buf[slot * self.channels + ch] = self.scratch[i * channels + ch];
+                }
+            }
+            self.made += n as u64;
+        }
+
+        for f in 0..frames {
+            let at = self.pos + f as f64 * pitch as f64;
+            let i = at.floor() as u64;
+            let t = (at - i as f64) as f32;
+            let a = (i % self.ring as u64) as usize;
+            let b = ((i + 1) % self.ring as u64) as usize;
+            for ch in 0..channels {
+                let s0 = self.buf[a * self.channels + ch];
+                let s1 = self.buf[b * self.channels + ch];
+                out[f * channels + ch] = s0 + (s1 - s0) * t;
+            }
+        }
+        self.pos += frames as f64 * pitch as f64;
+        self.emitted += frames as u64;
+    }
+
+    pub fn position(&self) -> u64 {
+        self.emitted
+    }
+
+    /// Move to an output frame. The inner engine is seeked to the matching
+    /// place on the *stretched* timeline, which runs `pitch` times faster.
+    pub fn seek(&mut self, out_frame: u64, input_frames: usize, p: &StretchParams, semitones: f32) {
+        let pitch = Self::factor(semitones);
+        let mut inner = *p;
+        inner.ratio = (p.ratio * pitch).clamp(0.01, 100.0);
+        let at = (out_frame as f64) * pitch as f64;
+        self.pos = at;
+        self.made = at as u64;
+        self.emitted = out_frame;
+        self.buf.fill(0.0);
+        self.inner.seek(at as u64, input_frames, &inner);
     }
 }
 

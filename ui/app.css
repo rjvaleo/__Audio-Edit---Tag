@@ -1390,3 +1390,14 @@ body.editing .dock { flex: 0 0 330px; }
 .pm-ident input:focus { outline: none; border-color: var(--accent); }
 .pm-status { font-size: 11px; color: var(--text-dimmer); margin-right: auto; }
 .pm-status.dirty { color: var(--warn); }
+
+/* An engine the audio callback cannot run yet. Marked rather than hidden: it is
+   a real engine and it is what export uses, it just is not what you are
+   hearing. */
+.seg-btn.rendered::after {
+  content: '·'; margin-left: 3px; color: var(--warn); font-weight: 700;
+}
+.engine-note {
+  font-size: 10px; line-height: 1.35; color: var(--warn);
+  opacity: .85; margin: 2px 0 0;
+}

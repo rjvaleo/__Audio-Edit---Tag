@@ -21,6 +21,8 @@ fn main() {
         semitones: 0.0,
         window_ms: 40.0,
         grain: Grain::default(),
+        algorithm: fx::stretch::Algorithm::Granular,
+        wsola: fx::stretch::WsolaParams::default(),
     };
 
     let engine = match Engine::start(params, source) {

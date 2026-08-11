@@ -46,7 +46,7 @@ impl Engine {
 
         // Generous: the device may ask for more than its stated buffer size,
         // and growing inside the callback would allocate.
-        let mut core = Core::new(8192, params, source);
+        let mut core = Core::new(8192, channels, params, source);
 
         let err = |e| eprintln!("audio stream error: {e}");
 
