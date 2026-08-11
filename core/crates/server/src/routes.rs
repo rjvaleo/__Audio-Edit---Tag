@@ -15,6 +15,18 @@ use std::sync::Arc;
 /// API and can therefore watch the engine. Opened directly off disk it still
 /// works — it falls back to its own schedule and simply has no player to follow.
 pub const GRAINS_3D: &str = include_str!("../../../../visualiser/grain-views.html");
+/// p5.js, vendored rather than fetched.
+///
+/// It was the one thing the app went to the internet for, which made the grain
+/// views the only page that did not work offline — against a front page that
+/// promises nothing else needs installing. A megabyte on the binary is a fair
+/// price for the claim being true.
+pub const P5_JS: &str = include_str!("../../../../visualiser/p5.min.js");
+/// Poppins and Lora, latin subsets, inlined as data URIs. Same reason as p5:
+/// the page was reaching for Google Fonts, which is a network round trip and,
+/// on a machine with no network, a different typeface than the one it was
+/// designed in.
+pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 
 pub const UI_HTML: &str = include_str!("../../../../ui/index.html");
 pub const UI_CSS: &str = include_str!("../../../../ui/app.css");
@@ -35,6 +47,16 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET" | "HEAD", "/grains3d") => {
             Response::ok("text/html; charset=utf-8", GRAINS_3D.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
+        }
+        // The one asset worth caching: a megabyte of library that only changes
+        // when the binary does.
+        ("GET" | "HEAD", "/p5.min.js") => {
+            Response::ok("text/javascript; charset=utf-8", P5_JS.as_bytes().to_vec())
+                .with("Cache-Control", "public, max-age=31536000, immutable")
+        }
+        ("GET" | "HEAD", "/fonts.css") => {
+            Response::ok("text/css; charset=utf-8", FONTS_CSS.as_bytes().to_vec())
+                .with("Cache-Control", "public, max-age=31536000, immutable")
         }
         ("GET" | "HEAD", "/app.css") => {
             Response::ok("text/css; charset=utf-8", UI_CSS.as_bytes().to_vec())
