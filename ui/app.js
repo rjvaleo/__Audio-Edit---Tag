@@ -1988,30 +1988,38 @@ function renderMaster() {
   masterBuiltFor = path;
   box.innerHTML = '';
 
-  const m = state.rack.master;
+  // Read through a getter rather than captured once. `pushRack` replaces
+  // `state.rack` wholesale with the server's reply, so a reference taken at
+  // build time is orphaned from the first push onward — the control would go
+  // on writing to an object nothing else could see, and `reflectMaster` would
+  // paint it straight back from the live one. Which is exactly what the
+  // maximizer switch was doing: dead from the second render on.
+  const m = () => state.rack.master;
+  const set = (k, v) => { m()[k] = v; };
+  const shown = m();
   const send = throttled(() => pushRack(), 120);
   const commit = () => pushRack({ immediate: true });
 
   state.masterRows = {};
   const row = (el, key) => { state.masterRows[key] = el; box.appendChild(el); return el; };
 
-  row(check('maximizer', 'Compress and hold the channel under its ceiling', m.on,
-    (on) => { m.on = on; reflectMaster(); commit(); }), 'on');
+  row(check('maximizer', 'Compress and hold the channel under its ceiling', shown.on,
+    (on) => { set('on', on); reflectMaster(); commit(); }), 'on');
 
-  row(param('Amount', m.amount, 0, 1, 0.01,
+  row(param('Amount', shown.amount, 0, 1, 0.01,
     (v) => (v <= 0 ? 'none' : v >= 0.999 ? 'maximize' : `${Math.round(v * 100)}%`),
-    (v) => { m.amount = v; send(); }, () => commit()), 'amount');
+    (v) => { set('amount', v); send(); }, () => commit()), 'amount');
 
   row(check('auto level',
     'Walk the output up to the ceiling as it plays, rather than leaving the gain where it was',
-    m.autoLevel, (on) => { m.autoLevel = on; commit(); }), 'autoLevel');
+    shown.autoLevel, (on) => { set('autoLevel', on); commit(); }), 'autoLevel');
 
   row(check('auto compression',
     'Take the threshold from the material, so the same setting squeezes a quiet file like a loud one',
-    m.autoComp, (on) => { m.autoComp = on; commit(); }), 'autoComp');
+    shown.autoComp, (on) => { set('autoComp', on); commit(); }), 'autoComp');
 
-  row(param('Ceiling', m.ceilingDb, -24, 0, 0.1, (v) => `${v.toFixed(1)} dB`,
-    (v) => { m.ceilingDb = v; send(); }, () => commit()), 'ceilingDb');
+  row(param('Ceiling', shown.ceilingDb, -24, 0, 0.1, (v) => `${v.toFixed(1)} dB`,
+    (v) => { set('ceilingDb', v); send(); }, () => commit()), 'ceilingDb');
 
   reflectMaster();
 }
