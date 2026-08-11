@@ -24,6 +24,15 @@
   --sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   --rail: 44px;
+
+  /* The control table. Every slider, choice and checkbox in the app rules up
+     to these, so a panel reads down its column instead of each row finding its
+     own width. Narrower than the longest label on purpose — the names ellipsis
+     and carry a title — because the slider is the part worth the room. */
+  --param-k: 82px;
+  --param-v: 62px;
+  --param-gap: 7px;
+  --param-row: 7px;
 }
 
 * { box-sizing: border-box; }
@@ -663,36 +672,61 @@ body.editing .transport { background: oklch(14% 0.015 255); }
   display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px 20px;
 }
-.param { display: flex; flex-direction: column; gap: 5px; }
-.param .row { display: flex; justify-content: space-between; align-items: baseline; }
+/* One line per control: name, control, reading. The three widths are fixed
+   here and nowhere else, so every panel — standard, extended, or the effect
+   rack — rules up as the same table. Two columns of that read far better than
+   three of a two-line stack, which is what this buys. */
+.param {
+  display: grid;
+  grid-template-columns: var(--param-k) minmax(0, 1fr) var(--param-v);
+  align-items: center; gap: var(--param-gap);
+}
+.param .k, .param .v {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .param .k { font-size: 10.5px; color: var(--text-dim); }
-.param .v { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
-.param input[type=range] { width: 100%; accent-color: var(--accent); }
+.param .v {
+  font-family: var(--mono); font-size: 10.5px; color: var(--accent);
+  text-align: right;
+}
+.param input[type=range] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent); }
 /* A bar the stroke is currently crossing. */
 .param.painting .k, .param.painting .v { color: var(--accent); }
 .param.painting input[type=range] { filter: brightness(1.35); }
 
-/* A choice, laid out like a slider so the two stack without a seam. */
+/* A choice sits in the same table, its bar taking the control and reading
+   columns between them. */
+.seg-param { grid-template-columns: var(--param-k) minmax(0, 1fr); }
 .seg-param .seg { width: 100%; }
-.seg-param .seg-btn { flex: 1; }
+.seg-param .seg-btn { flex: 1; min-width: 0; }
 
-.seed-row { flex-direction: row; align-items: center; justify-content: space-between; }
-.seed-row .row { flex: 1; gap: 8px; }
+/* The name where a name goes, the box where the control goes. Scoped to the
+   ones the control table builds — a plain `.check` elsewhere in the app is
+   still a label with a box beside it. */
+.check:has(.k) {
+  display: grid; grid-template-columns: var(--param-k) minmax(0, 1fr);
+  align-items: center; gap: var(--param-gap);
+  font-size: 10.5px; color: var(--text-dim);
+}
+.check .k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.check:has(.k) input { justify-self: start; margin: 0; accent-color: var(--accent); }
+
 .seed-row .v { color: var(--text-2); }
+.seed-row .ghost { width: 100%; }
 
 /* A named group in the Extended column. Everything inside is a way to stop the
    algorithm working, which is what it is for — so it is all on show, and the
    heading is the only thing separating one set from the next. */
-.wild {
-  border: 1px solid var(--line); border-radius: 6px;
-  background: oklch(11% 0.012 250);
-}
+/* A rule and a heading, not a box. A box inside the panel would indent its
+   sliders past the ones in the panel opposite, and the whole point of the
+   table is that a slider is the same size wherever it is. */
+.wild { display: flex; flex-direction: column; gap: var(--param-row); }
 .wild-head {
-  padding: 5px 8px; font-size: 10px; letter-spacing: 0.06em;
+  font-size: 10px; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--warn);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line); padding-bottom: 4px;
 }
-.wild-body { display: flex; flex-direction: column; gap: 9px; padding: 9px 8px; }
+.wild-body { display: flex; flex-direction: column; gap: var(--param-row); }
 .param-head {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 10px;
@@ -928,32 +962,35 @@ body.editing .dock { flex: 0 0 300px; }
    does not use, and it shares the outer gap — which is what makes the inner
    columns come out the same width as the outer one. */
 .grain-controls {
-  /* Unchanged: the two sides share the room they already had rather than
-     taking more of it from the visualiser. */
-  width: 52%; min-width: 420px; max-width: 720px; flex-shrink: 0;
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* 52% and 720 max are unchanged — the two sides share the room they already
+     had. The floor went up because two columns of the control table need about
+     240px each before the slider is squeezed to nothing; it only bites on a
+     window too small to work in anyway. */
+  width: 52%; min-width: 500px; max-width: 720px; flex-shrink: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px; align-content: start; overflow-y: auto;
+  /* Reserve the scrollbar whether or not it is there, so the columns do not
+     shift by its width when an engine with more controls is picked. */
+  scrollbar-gutter: stable;
   padding-right: 10px; border-right: 1px solid var(--line);
 }
+/* Halves rather than thirds. A control is one line now, so the panels are short
+   enough to stack down a column, and half the width is a slider you can
+   actually aim at. */
 .grain-standard {
-  grid-column: span 2; min-width: 0;
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px; align-content: start;
-}
-/* Only Time & pitch is showing, so two columns rather than three — otherwise
-   the pair would sit either side of a gap the width of a missing panel. */
-.grain-controls.solo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.grain-controls.solo .grain-standard {
-  grid-column: span 1; grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  display: flex; flex-direction: column; gap: 10px; align-content: start;
 }
 .grain-standard .param-grid { grid-template-columns: 1fr; gap: 8px; }
 /* Its own column, because everything in it is a value the algorithm was tuned
    around. Kept beside the standard controls rather than under them, so it is
    obvious which side of the line a control is on. */
-.grain-extended { align-self: start; min-width: 0; max-height: 100%; overflow-y: auto; }
-.grain-extended .wild { margin-bottom: 6px; }
-.grain-extended .wild:last-child { margin-bottom: 0; }
-.grain-extended .wild-body { gap: 8px; padding: 8px 7px; }
+/* No scroller of its own: the grid's own is enough, and an inner scrollbar
+   took four pixels off this column's sliders and not the other's. */
+.grain-extended { align-self: start; min-width: 0; }
+.grain-extended .wild { margin-top: 4px; }
+.grain-extended .wild:first-child { margin-top: 0; }
+
 /* A reset that sits in the panel's own header rather than under its controls,
    where it was competing with them for the eye. */
 .cpanel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -968,19 +1005,19 @@ body.editing .dock { flex: 0 0 300px; }
 .cpanel {
   background: oklch(16% 0.013 250); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px 10px;
-  display: flex; flex-direction: column; gap: 5px; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--param-row); min-width: 0;
 }
 .cpanel-head {
   font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
   color: var(--text-dim); margin-bottom: 2px;
 }
-.cpanel .param { gap: 2px; }
-.cpanel .param .k { font-size: 10px; }
-.cpanel .param .v { font-size: 10px; }
+/* Deliberately not touching `gap` any more: it used to separate a label row
+   from the slider under it, and now it is the space between the table's
+   columns. Overriding it here made the three columns close up. */
+.cpanel .param .k, .cpanel .param .v, .cpanel .check { font-size: 10px; }
 .cpanel .param input[type=range] { height: 14px; }
-.cpanel .seg { align-self: flex-start; }
-.cpanel .seg-btn { font-size: 9.5px; padding: 0 7px; }
-.cpanel .ghost { height: 22px; font-size: 10px; align-self: flex-start; }
+.cpanel .seg-btn { font-size: 9.5px; padding: 0 6px; }
+.cpanel .ghost { height: 20px; font-size: 10px; }
 #stretchOut { font-size: 9.5px; }
 
 .grain-vis { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
