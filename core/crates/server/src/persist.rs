@@ -76,7 +76,8 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("lockWidth", s.vocoder.lock_width as f64)
                 .set("magFreeze", s.vocoder.mag_freeze as f64)
                 .set("magBlur", s.vocoder.mag_blur as f64)
-                .set("magGate", s.vocoder.mag_gate as f64),
+                .set("magGate", s.vocoder.mag_gate as f64)
+                .set("stereoLink", s.vocoder.stereo_link),
         )
         .set(
             "wsola",
@@ -189,6 +190,7 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
                 mag_freeze: vf("magFreeze", d.mag_freeze).clamp(0.0, 1.0),
                 mag_blur: vf("magBlur", d.mag_blur).clamp(0.0, 1.0),
                 mag_gate: vf("magGate", d.mag_gate).clamp(0.0, 1.0),
+                stereo_link: matches!(vv.and_then(|x| x.get("stereoLink")), Some(Value::Bool(true))),
             }
         },
         grain: Grain {
@@ -428,6 +430,7 @@ mod tests {
                 mag_freeze: 0.8,
                 mag_blur: 0.35,
                 mag_gate: 0.15,
+                stereo_link: true,
             },
             wsola: fx::stretch::WsolaParams {
                 preserve_transients: true,

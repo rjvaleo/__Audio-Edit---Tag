@@ -1043,3 +1043,93 @@ fn removing_the_detector_floor_lets_a_steady_tone_trigger() {
     assert_eq!(with, 0, "the floor stopped working");
     assert!(without > 5, "removing the floor changed nothing: {without}");
 }
+
+/// The vocoder transforms each channel on its own, so nothing is looking after
+/// the relationship *between* them — and that relationship is the stereo image.
+///
+/// Measured directly: the right channel is the left delayed by eight samples,
+/// which is a pure inter-channel phase difference and correlates at exactly 1.0
+/// at that lag. Independent, the stretch degrades it to 0.988; linked, it comes
+/// through at 1.0, because every channel is moved by the same correction and so
+/// keeps whatever it was doing relative to the others.
+#[test]
+fn linking_the_channels_keeps_the_stereo_image_intact() {
+    let rate = 44_100;
+    let left = busy(rate, 1.0);
+    let delay = 8usize;
+    let src: Vec<f32> = (0..left.len())
+        .flat_map(|i| [left[i], if i >= delay { left[i - delay] } else { 0.0 }])
+        .collect();
+
+    // The best correlation between the two channels, and the lag it happens at.
+    let agreement = |v: &[f32]| -> (isize, f32) {
+        let m = v.len() / 2;
+        let (a, b) = (m / 4, m * 3 / 4);
+        let mut best = (0isize, -2.0f32);
+        for lag in -64isize..=64 {
+            let (mut dot, mut ea, mut eb) = (0.0f32, 0.0f32, 0.0f32);
+            for i in a..b {
+                let j = i as isize + lag;
+                if j < 0 || j as usize >= m {
+                    continue;
+                }
+                let (x, y) = (v[i * 2], v[j as usize * 2 + 1]);
+                dot += x * y;
+                ea += x * x;
+                eb += y * y;
+            }
+            let s = if ea > 1e-9 && eb > 1e-9 { dot / (ea.sqrt() * eb.sqrt()) } else { 0.0 };
+            if s > best.1 {
+                best = (lag, s);
+            }
+        }
+        best
+    };
+
+    let (src_lag, src_score) = agreement(&src);
+    assert_eq!(src_lag, delay as isize, "the source was not a clean delay");
+    assert!(src_score > 0.9999, "the source was not a clean delay: {src_score}");
+
+    let base = Stretch { ratio: 2.0, algorithm: Algorithm::Vocoder, ..Default::default() };
+    let mut linked = base;
+    linked.vocoder.stereo_link = true;
+
+    let (free_lag, free_score) = agreement(&base.process(&src, 2, rate));
+    let (held_lag, held_score) = agreement(&linked.process(&src, 2, rate));
+
+    assert_eq!(free_lag, delay as isize);
+    assert_eq!(held_lag, delay as isize);
+    assert!(held_score > 0.999, "linked lost the image: {held_score}");
+    assert!(free_score < 0.995, "independent channels did not drift: {free_score}");
+    assert!(held_score > free_score, "linking made it worse: {held_score} vs {free_score}");
+}
+
+/// Linking must not flatten a genuinely wide source into mono. It shares the
+/// stretch's correction, not the phase itself.
+#[test]
+fn linking_does_not_collapse_a_wide_source() {
+    let rate = 44_100;
+    let left = busy(rate, 1.0);
+    let right: Vec<f32> = left.iter().rev().copied().collect();
+    let src: Vec<f32> = left.iter().zip(right.iter()).flat_map(|(l, r)| [*l, *r]).collect();
+
+    let mut linked = Stretch { ratio: 2.0, algorithm: Algorithm::Vocoder, ..Default::default() };
+    linked.vocoder.stereo_link = true;
+    let out = linked.process(&src, 2, rate);
+
+    let n = out.len() / 2;
+    let side = (0..n).map(|f| (out[f * 2] - out[f * 2 + 1]).abs()).sum::<f32>() / n.max(1) as f32;
+    let level = (out.iter().map(|x| x * x).sum::<f32>() / out.len().max(1) as f32).sqrt();
+    assert!(side > level * 0.5, "two unrelated channels were flattened together: {side} vs {level}");
+}
+
+#[test]
+fn stereo_link_left_alone_is_the_sound_it_always_made() {
+    let rate = 44_100;
+    let mono = busy(rate, 0.5);
+    let src: Vec<f32> = mono.iter().flat_map(|v| [*v, *v * 0.6]).collect();
+    let base = Stretch { ratio: 1.5, algorithm: Algorithm::Vocoder, ..Default::default() };
+    let mut same = base;
+    same.vocoder.stereo_link = false;
+    assert_eq!(base.process(&src, 2, rate), same.process(&src, 2, rate));
+}

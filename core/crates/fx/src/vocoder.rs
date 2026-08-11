@@ -188,6 +188,8 @@ pub struct Settings {
     pub mag_blur: f32,
     /// Silences bins below this share of the frame's loudest.
     pub mag_gate: f32,
+    /// Drive every channel's phase from their sum rather than each on its own.
+    pub stereo_link: bool,
 }
 
 impl Default for Settings {
@@ -204,6 +206,7 @@ impl Default for Settings {
             mag_freeze: 0.0,
             mag_blur: 0.0,
             mag_gate: 0.0,
+            stereo_link: false,
         }
     }
 }
@@ -401,14 +404,13 @@ fn propagate_all(
     }
 }
 
-/// Stretch interleaved audio, one channel at a time.
+/// Stretch interleaved audio.
 ///
-/// Channels are transformed independently. That is the usual choice and it is
-/// worth knowing what it costs: two channels can drift in phase against each
-/// other, which widens a stereo image and can hollow a centred source. Sharing
-/// one phase estimate between them would fix it and would flatten genuinely
-/// different channels, so this stays per-channel and the trade is stated
-/// instead of hidden.
+/// Channels are transformed independently by default. That is the usual choice
+/// and it is worth knowing what it costs: two channels drift in phase against
+/// each other, which widens a stereo image and can hollow a centred source.
+/// `stereo_link` is the other answer — see [`stretch_linked`]. Neither is right
+/// for every source, so both are here and the trade is stated rather than hidden.
 pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f32> {
     let channels = channels.max(1);
     if input.is_empty() {
@@ -416,6 +418,9 @@ pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f
     }
     if channels == 1 {
         return stretch_mono(input, ratio, s);
+    }
+    if s.stereo_link {
+        return stretch_linked(input, channels, ratio, s);
     }
 
     let frames = input.len() / channels;
@@ -435,6 +440,203 @@ pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f
             out[f * channels + c] = o[f];
         }
     }
+    out
+}
+
+/// Stretch every channel against one shared phase estimate.
+///
+/// The independent version is not wrong, it is answering a different question.
+/// Each channel gets the best phase for itself, and nothing is looking after
+/// the relationship *between* them — which is where a stereo image lives. Two
+/// channels of the same centred source drift apart, and the middle of the
+/// picture thins out.
+///
+/// So: the channels are summed to a reference, the propagation runs once on
+/// that, and every channel receives the same *correction* rather than the same
+/// phase. A channel keeps whatever it was doing relative to the reference, so
+/// the difference between left and right survives the stretch untouched. The
+/// sum is free — the transform is linear, so adding the spectra is adding the
+/// signals.
+///
+/// The cost is the mirror of the other one: two genuinely unrelated channels
+/// are now told to agree about a phase neither of them measured. That is why
+/// this is a switch and not the default.
+fn stretch_linked(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f32> {
+    let ratio = ratio.clamp(0.01, 100.0);
+    let n = s.fft_size.max(64).next_power_of_two();
+    let overlap = s.overlap.clamp(2, 8);
+    let hs = (n / overlap).max(1);
+    let frames = input.len() / channels;
+    if frames < n {
+        return input.to_vec();
+    }
+
+    let out_frames = ((frames as f64) * ratio as f64).round() as usize;
+    let win = fft::hann(n);
+    let bins = n / 2 + 1;
+
+    let mut out = vec![0f32; (out_frames + n) * channels];
+    let mut norm = vec![0f32; out_frames + n];
+
+    // Per channel, because each keeps its own magnitudes and its own phase.
+    let mut re = vec![vec![0f32; n]; channels];
+    let mut im = vec![vec![0f32; n]; channels];
+    let mut mag = vec![vec![0f32; bins]; channels];
+    let mut phase = vec![vec![0f32; bins]; channels];
+    let mut held = vec![vec![0f32; bins]; channels];
+    let mut scratch = vec![0f32; bins];
+
+    // The reference: the channels summed. One phase estimate for all of them.
+    let mut ref_mag = vec![0f32; bins];
+    let mut ref_phase = vec![0f32; bins];
+    let mut prev_ref = vec![0f32; bins];
+    let mut sum_phase = vec![0f32; bins];
+    let mut corr = vec![0f32; bins];
+    let mut peak_idx: Vec<usize> = Vec::with_capacity(bins / 4);
+
+    let skew = s.hop_skew.clamp(0.0, 4.0) as f64;
+    let advance = (hs as f64 / ratio as f64) * skew;
+    let span = frames.saturating_sub(n).max(1);
+    let mut read = 0f64;
+    let mut prev_start: isize = -1;
+    let mut write = 0usize;
+    let mut first = true;
+
+    while write < out_frames {
+        let mut start = read.round() as usize;
+        if start + n > frames {
+            if (skew - 1.0).abs() < 1e-6 {
+                break;
+            }
+            read %= span as f64;
+            start = read.round() as usize;
+            if start + n > frames {
+                break;
+            }
+            prev_start = -1;
+        }
+
+        let mut ok = true;
+        for c in 0..channels {
+            for i in 0..n {
+                re[c][i] = input[(start + i) * channels + c] * win[i];
+                im[c][i] = 0.0;
+            }
+            if !fft(&mut re[c], &mut im[c]) {
+                ok = false;
+                break;
+            }
+            for k in 0..bins {
+                mag[c][k] = (re[c][k] * re[c][k] + im[c][k] * im[c][k]).sqrt();
+                phase[c][k] = im[c][k].atan2(re[c][k]);
+            }
+            shape_magnitudes(&mut mag[c], &mut held[c], &mut scratch, &s, first);
+        }
+        if !ok {
+            break;
+        }
+
+        // The mid signal's spectrum, without a second transform.
+        for k in 0..bins {
+            let mut sr = 0.0;
+            let mut si = 0.0;
+            for c in 0..channels {
+                sr += re[c][k];
+                si += im[c][k];
+            }
+            ref_mag[k] = (sr * sr + si * si).sqrt();
+            ref_phase[k] = si.atan2(sr);
+        }
+
+        let ha = if prev_start < 0 { hs as f32 } else { (start as isize - prev_start) as f32 };
+        let ha = if ha.abs() < 1e-6 { hs as f32 } else { ha };
+
+        if first {
+            sum_phase.copy_from_slice(&ref_phase);
+            first = false;
+        } else if s.phase_lock {
+            peaks(&ref_mag, s.peak_width, &mut peak_idx);
+            if peak_idx.is_empty() {
+                propagate_all(&ref_phase, &prev_ref, &mut sum_phase, n, ha, hs as f32, &s);
+            } else {
+                let trust = s.freq_trust.clamp(0.0, 4.0);
+                let spread = s.phase_spread.clamp(0.0, 4.0);
+                let width = s.lock_width.clamp(0.0, 4.0);
+                for (p, &k) in peak_idx.iter().enumerate() {
+                    let omega = TWO_PI * k as f32 / n as f32;
+                    let delta = wrap(ref_phase[k] - prev_ref[k] - ha * omega);
+                    let freq = omega + (delta / ha) * trust;
+                    sum_phase[k] = wrap(sum_phase[k] + hs as f32 * freq);
+
+                    let mid_lo = if p == 0 { 0 } else { (peak_idx[p - 1] + k + 1) / 2 };
+                    let mid_hi =
+                        if p + 1 == peak_idx.len() { bins } else { (k + peak_idx[p + 1] + 1) / 2 };
+                    let lo = k.saturating_sub((((k - mid_lo) as f32) * width) as usize);
+                    let hi = (k + (((mid_hi - k) as f32) * width) as usize).min(bins);
+                    for j in lo..hi {
+                        if j != k {
+                            sum_phase[j] = wrap(sum_phase[k] + (ref_phase[j] - ref_phase[k]) * spread);
+                        }
+                    }
+                }
+            }
+        } else {
+            propagate_all(&ref_phase, &prev_ref, &mut sum_phase, n, ha, hs as f32, &s);
+        }
+
+        // What the stretch did to the reference, and therefore what every
+        // channel is moved by. A channel's offset from the reference is left
+        // exactly as measured, and that offset is the stereo image.
+        for k in 0..bins {
+            corr[k] = wrap(sum_phase[k] - ref_phase[k]);
+        }
+
+        prev_ref.copy_from_slice(&ref_phase);
+        prev_start = start as isize;
+
+        for c in 0..channels {
+            for k in 0..bins {
+                let p = phase[c][k] + corr[k];
+                re[c][k] = mag[c][k] * p.cos();
+                im[c][k] = mag[c][k] * p.sin();
+            }
+            for k in bins..n {
+                re[c][k] = re[c][n - k];
+                im[c][k] = -im[c][n - k];
+            }
+            im[c][0] = 0.0;
+            if n % 2 == 0 {
+                im[c][n / 2] = 0.0;
+            }
+            ifft(&mut re[c], &mut im[c]);
+
+            for i in 0..n {
+                let f = write + i;
+                if f < out_frames + n {
+                    out[f * channels + c] += re[c][i] * win[i];
+                }
+            }
+        }
+        for i in 0..n {
+            let f = write + i;
+            if f < out_frames + n {
+                norm[f] += win[i] * win[i];
+            }
+        }
+
+        read += advance;
+        write += hs;
+    }
+
+    for f in 0..out_frames + n {
+        let g = norm[f];
+        if g > 1e-6 {
+            for c in 0..channels {
+                out[f * channels + c] /= g;
+            }
+        }
+    }
+    out.truncate(out_frames * channels);
     out
 }
 

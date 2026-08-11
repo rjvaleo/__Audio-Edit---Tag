@@ -113,6 +113,14 @@ pub struct VocoderParams {
     pub mag_blur: f32,
     /// Silences every bin below this share of the frame's loudest.
     pub mag_gate: f32,
+    /// Drive every channel's phase from their sum rather than each on its own.
+    ///
+    /// Independent channels is the usual choice and it drifts them apart, which
+    /// widens the image and hollows anything centred. Linked, each channel is
+    /// moved by the same correction, so what it was doing relative to the
+    /// others survives the stretch — at the price of telling two genuinely
+    /// unrelated channels to agree.
+    pub stereo_link: bool,
 }
 
 impl Default for VocoderParams {
@@ -131,6 +139,7 @@ impl Default for VocoderParams {
             mag_freeze: 0.0,
             mag_blur: 0.0,
             mag_gate: 0.0,
+            stereo_link: false,
         }
     }
 }
@@ -386,6 +395,7 @@ impl Stretch {
                     mag_freeze: self.vocoder.mag_freeze,
                     mag_blur: self.vocoder.mag_blur,
                     mag_gate: self.vocoder.mag_gate,
+                    stereo_link: self.vocoder.stereo_link,
                 },
             ),
         };

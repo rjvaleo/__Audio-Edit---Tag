@@ -19,8 +19,14 @@ use fx::grain::{GrainEvent, GrainStream, StreamParams};
 
 /// How many grains may sound at once. At the densest setting the scheduler
 /// allows — 2000 grains a second against a half-second window — real overlap
-/// stays far below this.
-pub const MAX_VOICES: usize = 256;
+/// stays far below this, but sixteen layers is sixteen independent schedules
+/// all sounding at once, so the pool has to hold the sum of them.
+pub const MAX_VOICES: usize = 1024;
+
+/// Independent grain streams. Matches the clamp in `fx::grain::granular`, and
+/// has to: a layer the renderer refuses to run is a layer you hear offline and
+/// not while playing.
+pub const MAX_LAYERS: usize = 16;
 
 #[derive(Clone, Copy)]
 struct Voice {
@@ -50,7 +56,10 @@ impl Source {
 /// Holds no audio of its own and never allocates once built, so it is safe to
 /// drive from the audio thread.
 pub struct BlockRenderer {
-    stream: GrainStream,
+    /// One schedule per layer. A layer is not the same grains packed tighter —
+    /// it is the source read from another place entirely, with its own seed and
+    /// its own offset within the hop, which is why each needs its own stream.
+    streams: [GrainStream; MAX_LAYERS],
     voices: [Voice; MAX_VOICES],
     live: usize,
     /// Output frame the next block starts at.
@@ -76,7 +85,7 @@ impl BlockRenderer {
             played: 0,
         };
         BlockRenderer {
-            stream: GrainStream::new(),
+            streams: [GrainStream::new(); MAX_LAYERS],
             voices: [empty; MAX_VOICES],
             live: 0,
             position: 0,
@@ -94,14 +103,26 @@ impl BlockRenderer {
     pub fn seek(&mut self, out_frame: u64, sp: &StreamParams) {
         self.position = out_frame;
         self.live = 0;
-        self.stream.seek(out_frame, sp);
-        // seek snaps back to the grain covering that moment, which may start
-        // before it. Skip anything already finished by the time we arrive.
-        while self.stream.out_frame() < out_frame {
-            let e = self.stream.next(sp);
-            if e.out_frame + e.size as u64 > out_frame {
-                self.push(e);
+        let layers = layer_count(sp);
+        for l in 0..layers {
+            let lp = layer_params(sp, l);
+            let off = layer_offset(sp, l, layers);
+            // Copied out and back rather than borrowed, because pushing a voice
+            // needs the renderer and the stream lives inside it.
+            let mut s = self.streams[l as usize];
+            // The stream counts in its own timeline; the offset is what puts a
+            // layer's grains between the previous layer's rather than on top.
+            s.seek(out_frame.saturating_sub(off), &lp);
+            // seek snaps back to the grain covering that moment, which may start
+            // before it. Skip anything already finished by the time we arrive.
+            while s.out_frame() + off < out_frame {
+                let mut e = s.next(&lp);
+                e.out_frame += off;
+                if e.out_frame + e.size as u64 > out_frame {
+                    self.push(e);
+                }
             }
+            self.streams[l as usize] = s;
         }
     }
 
@@ -144,14 +165,24 @@ impl BlockRenderer {
         // Spawn everything that begins inside this block. Parameters are read
         // by the stream at each grain, so a slider moved a moment ago shapes
         // the very next one.
+        //
+        // Layer by layer, which is the order the offline renderer sums them in.
         let mut reported = 0;
-        while self.stream.out_frame() < block_end {
-            let e = self.stream.next(sp);
-            if reported < events.len() {
-                events[reported] = e;
-                reported += 1;
+        let layers = layer_count(sp);
+        for l in 0..layers {
+            let lp = layer_params(sp, l);
+            let off = layer_offset(sp, l, layers);
+            let mut s = self.streams[l as usize];
+            while s.out_frame() + off < block_end {
+                let mut e = s.next(&lp);
+                e.out_frame += off;
+                if reported < events.len() {
+                    events[reported] = e;
+                    reported += 1;
+                }
+                self.push(e);
             }
-            self.push(e);
+            self.streams[l as usize] = s;
         }
 
         // Sum the voices. Spawn order, so the arithmetic matches offline.
@@ -223,6 +254,34 @@ impl BlockRenderer {
 // The Hann envelope used to be duplicated here, with a comment promising it was
 // identical to the offline one. It now comes from `fx::grain::env_at`, which is
 // the only way that promise can actually be kept once the shape is adjustable.
+
+/// How many schedules are running. Clamped exactly as the offline renderer
+/// clamps it, so the two never disagree about how many there are.
+fn layer_count(sp: &StreamParams) -> u32 {
+    sp.grain.layers.clamp(1, MAX_LAYERS as u32)
+}
+
+/// A layer's own parameters. Re-seeding is what makes it an independent cloud
+/// rather than the same one drawn twice; layer zero keeps the seed it was given
+/// so a single-layer render is untouched by any of this.
+fn layer_params(sp: &StreamParams, layer: u32) -> StreamParams {
+    let mut lp = *sp;
+    if layer > 0 {
+        lp.grain.seed = sp.grain.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
+    }
+    lp
+}
+
+/// Where a layer sits within the hop. Even spacing scaled by the spread
+/// control, so at zero they stack and are merely louder.
+fn layer_offset(sp: &StreamParams, layer: u32, layers: u32) -> u64 {
+    if layer == 0 || layers <= 1 {
+        return 0;
+    }
+    let hop = sp.plan().hop.max(1) as u64;
+    let even = (hop * layer as u64) / layers as u64;
+    ((even as f32) * sp.grain.layer_spread.clamp(0.0, 4.0)) as u64
+}
 
 /// Linearly interpolated read, clamped at the edges. Identical to the offline
 /// renderer's.
