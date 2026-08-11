@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff. **HEAD `15b86dc`, 600 tests passing, working
+Written 11 August 2026 as a handoff. **HEAD `f1e8ac3`, 607 tests passing, working
 tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 600 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 607 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -282,15 +282,16 @@ Both survived their own tests, and both were caught only by asserting
    while it crept forward; a scan starting at the end and running backwards
    fails on its second hop, so reverse scan rendered one window then silence.
 
-**Granular layers still lose level and the others do not.** Measured: at 16
-layers with jitter, granular lands at 0.25 = 1/√16 — the overlap-add divides by
+**Granular layers used to lose level and the others did not.** Measured: at 16
+layers with jitter, granular landed at 0.25 = 1/√16 — the overlap-add divides by
 grain *count* while decorrelated grains only sum by its square root. With layer
 spread on and no jitter it is worse (0.09), because averaging time-shifted
 copies is a comb filter. WSOLA and the vocoder hold level because `layered()`
 measures one layer's RMS and scales the sum back to it; granular's layering is
 older and never got that. **The fix is not free** — the real-time renderer
-cannot measure RMS ahead of a block, so fixing the render alone would make live
-and export disagree. **Three options were put to the user and none chosen.**
+cannot measure RMS ahead of a block, so fixing the render alone would have made
+live and export disagree. **Fixed 11 Aug 2026 by `grain::layer_gain`**, which
+both paths call — see §12.
 
 ### Three PVSOLA traps, all found by measuring
 
@@ -375,16 +376,36 @@ Two rules learned the hard way, which must not be undone:
   its own length. The UI used to compute that and got it wrong after a stretch
   change.
 
-### The big open item
+### Which engines run live
 
-**Only the granular engine runs in the audio callback.** Confirmed by
-measurement: `crates/engine` never references `Algorithm` at all, and
-`live::push_params` pushes only ratio, semitones, window_ms, grain and the rack.
+**`engine::stretcher::Stretcher` holds every engine the callback can run**, all
+built when the device opens and never allocated again — building one on demand
+would be an allocation in the audio callback, and switching engines is the
+moment you least want a dropout. Only the selected one is asked for audio, so
+the one being switched *to* is re-seeked to the transport's position first: it
+may have been sitting somewhere from minutes ago, or never have run.
 
-So **the engine picker changes export and the offline render, and never changes
-what you hear on the transport** — during playback or after stopping. This
-predates PVSOLA and Hybrid; WSOLA and Vocoder already behaved this way. The user
-asked directly on 11 Aug 2026 and was told.
+| Engine | Live? |
+|---|---|
+| Granular | yes — `BlockRenderer` |
+| WSOLA | yes — `fx::stream::Pitched` wrapping `WsolaStream` |
+| Vocoder, PVSOLA, Hybrid | **no** — fall back to the grain cloud, and the panel says so |
+
+`is_live()` in `engine/src/stretcher.rs` is the authority; `LIVE_ENGINES` in
+`app.js` mirrors it. The three that fall back are marked with a dot on the
+picker and a line of text in the panel, because a control that quietly does
+something else is worse than one that admits it.
+
+**Pitch needed its own stage.** Offline WSOLA shifts by over-stretching and
+reading back faster; folding that into the splice instead would have been a
+different sound. `Pitched` drives the inner engine at ratio × pitch and
+resamples the result, sized for the widest shift the control allows.
+
+**The transient map is handed over like the rack**, because deriving one runs an
+onset detector across the whole file. It is rebuilt only when something it
+depends on moves, and not at all while transients are not being preserved —
+a plain stretch is a straight line, which is arithmetic, so the ratio stays free
+to move under the pointer.
 
 `server/src/live.rs` bridges a document to the engine: structure (cuts, fades,
 reverse) is folded into the source offline at load; stretch, pitch, every grain
@@ -597,8 +618,9 @@ gesture), `docs/MENUS.md` (every menu item).
 
 ## 12. What is open
 
-**Waiting on a decision, not on work.** One question, three answers, asked and
-not yet picked. The measurement, relative to a single layer:
+**Nothing is waiting on a decision.** The granular layers question was answered
+on 11 Aug 2026 — option two, compensate by √N in both paths from
+`grain::layer_gain`. Kept here because the reasoning still governs the code:
 
 | | 2 | 4 | 8 | 16 |
 |---|---|---|---|---|
@@ -637,10 +659,7 @@ both paths, and needs no measurement.
 
 **Next, in order — the streaming work the user chose:**
 
-1. **Wire `WsolaStream` into `engine::Core`** — dispatch on algorithm, and add a
-   resampling stage for pitch, since offline WSOLA does pitch by stretching by
-   ratio × pitch and reading back faster. **This is the step that makes it
-   audible**; everything so far is foundation.
+1. ~~Wire `WsolaStream` into the engine.~~ **Done.** WSOLA plays live.
 2. **Streaming vocoder** — STFT with persistent phase state and input/output
    rings; one window of lookahead.
 3. **Streaming PVSOLA** — needs the vocoder first; holds two vocoder states and
@@ -671,6 +690,10 @@ both paths, and needs no measurement.
 
 ## 13. Recent history
 
+    f1e8ac3  Let the engine picker change what you hear, not just what you export
+    3b4d361  Put back the level granular layering takes away
+    0756f51  Write down the three options on granular layers
+    d08064c  Write the whole project state down in one file
     15b86dc  Make WSOLA a streaming engine, and have the offline render drive it
     eebe611  Pin the whole routing table, and add a preset manager
     90e07bb  Show the underlying engines' controls on the two new panels
