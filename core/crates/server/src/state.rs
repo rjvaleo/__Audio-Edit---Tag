@@ -76,6 +76,16 @@ impl From<&FileRecord> for FileRow {
     }
 }
 
+/// Whether the probe found a container, or fell back to headerless PCM.
+///
+/// The fallback is why a peak cache or a stray binary opens and plays as noise.
+/// It is deliberate and occasionally rewarding, but it means "the scan found a
+/// file here" and "there is a sound here" are different claims, and the folder
+/// counts have to be able to make the second one.
+pub fn has_audio_header(format: &str) -> bool {
+    format.starts_with("WAV") || format.starts_with("AIFF") || format.starts_with("AIFC")
+}
+
 /// Everything known about one library folder.
 #[derive(Debug, Clone, Default)]
 pub struct FolderRow {
@@ -86,6 +96,10 @@ pub struct FolderRow {
     pub confidence: String,
     pub files: usize,
     pub audio_files: usize,
+    /// Files that announced themselves as audio, rather than being read as
+    /// headerless PCM because nothing else fitted. This is what the browser
+    /// lists with "Play all files" off, so it is what the count has to say.
+    pub header_files: usize,
     pub bytes: u64,
     pub minutes: f64,
     pub categories: String,
@@ -194,6 +208,9 @@ impl Index {
                     confidence: confidence.to_string(),
                     files: rows.len(),
                     audio_files: audio.len(),
+                    // Counted over every row, not the `audio` subset: the
+                    // browser's filter is about the header and nothing else.
+                    header_files: rows.iter().filter(|r| has_audio_header(&r.format)).count(),
                     bytes: rows.iter().map(|r| r.bytes).sum(),
                     minutes: audio.iter().map(|r| r.duration).sum::<f64>() / 60.0,
                     categories: join(&cats, 6),

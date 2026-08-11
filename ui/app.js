@@ -222,6 +222,13 @@ const hasAudioHeader = (file) =>
 
 const listed = (file) => state.playAll || hasAudioHeader(file);
 
+/// How many files a folder will actually put on screen.
+///
+/// It has to follow the same switch the list does. A badge reading 17 over a
+/// list of 16 is the kind of small lie that makes you doubt the rest of it.
+const folderCount = (f) =>
+  state.playAll ? (f.files ?? f.audioFiles) : (f.headerFiles ?? f.audioFiles);
+
 function setPlayAll(on) {
   state.playAll = on;
   $('playAll').checked = on;
@@ -246,7 +253,7 @@ function buildTree() {
       <span class="twisty${open ? ' open' : ''}">▸</span>
       <span class="dot ${f.confidence}"></span>
       <span class="label"></span>
-      <span class="count">${f.audioFiles}</span>`;
+      <span class="count">${folderCount(f)}</span>`;
     row.querySelector('.label').textContent = f.name;
     row.querySelector('.dot').title = `${f.confidence} confidence`;
     row.title = `${f.level1} › ${f.level2} — ${f.categories}`;
@@ -2311,7 +2318,7 @@ function sendStretch({ live }) {
 const VOCODER_DEFAULTS = {
   windowMs: 46, overlap: 4, phaseLock: true,
   hopSkew: 1, freqTrust: 1, phaseSpread: 1, peakWidth: 2, lockWidth: 1,
-  magFreeze: 0, magBlur: 0, magGate: 0,
+  magFreeze: 0, magBlur: 0, magGate: 0, stereoLink: false,
 };
 const WSOLA_DEFAULTS = {
   preserveTransients: false, sensitivity: 0.5,
@@ -2425,6 +2432,9 @@ function renderStretch() {
           (x) => { v.peakWidth = Math.round(x); previewStretch(); }, () => commitStretch()),
         param('Lock width', v.lockWidth, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
           (x) => { v.lockWidth = x; previewStretch(); }, () => commitStretch()),
+        check('link stereo',
+          'Move both channels by one shared correction, so the image survives the stretch instead of drifting apart',
+          v.stereoLink, (on) => { v.stereoLink = on; commitStretch(); }),
       ));
     }
 
@@ -2771,7 +2781,7 @@ $('presetDelete').onclick = async () => {
 // standard column is the set of controls the app has always had.
 const EXTENDED_FIELDS = {
   vocoder: ['hopSkew', 'freqTrust', 'phaseSpread', 'peakWidth', 'lockWidth',
-            'magFreeze', 'magBlur', 'magGate'],
+            'magFreeze', 'magBlur', 'magGate', 'stereoLink'],
   wsola: ['searchMs', 'overlap', 'splice', 'stride', 'shape', 'guardHops', 'floor'],
   grain: ['scan', 'reverse', 'envelope', 'sizeRange', 'wrap', 'layerSpread',
           'linkJitter', 'driftStep', 'panSpread'],
@@ -3504,7 +3514,7 @@ $('searchInput').oninput = () => {
   for (const f of hits) {
     const el = document.createElement('div');
     el.className = 'result';
-    el.innerHTML = `<div class="name"></div><div class="sub">${f.audioFiles} files · ${f.level1} › ${f.level2}</div>`;
+    el.innerHTML = `<div class="name"></div><div class="sub">${folderCount(f)} files · ${f.level1} › ${f.level2}</div>`;
     el.querySelector('.name').textContent = f.name;
     el.onclick = () => { showPane('left', 'browse'); toggleFolder(f.name); };
     box.appendChild(el);

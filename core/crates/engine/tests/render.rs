@@ -185,3 +185,73 @@ fn a_stereo_source_on_a_mono_output_stays_in_bounds() {
         assert!(buf.iter().all(|s| s.is_finite()));
     }
 }
+
+/// Layers were the one grain control the block renderer did not have. Offline
+/// it ran the schedule several times over, re-seeded and offset; live it ran it
+/// once. So the cloud you heard while working was a fraction of the cloud that
+/// landed in the file, and turning the control up changed one and not the other.
+#[test]
+fn layers_sound_the_same_live_as_they_do_offline() {
+    let mut g = Grain::default();
+    g.layers = 5;
+    g.size_jitter = 0.35;
+    g.position_jitter_ms = 20.0;
+    g.pitch_jitter_semis = 2.0;
+    g.seed = 99;
+
+    let in_frames = 24_000;
+    let src = Source { samples: tone(in_frames, 1), channels: 1 };
+    let sp = params(in_frames, g, 1.5, 1.0);
+
+    let offline = fx::grain::granular(&src.samples, 1, SR, 1.5, 1.0, 40.0, &g);
+    let live = render_blocks(&src, &sp, 512, offline.len());
+
+    assert_eq!(live.len(), offline.len());
+    for (i, (a, b)) in live.iter().zip(offline.iter()).enumerate() {
+        assert!((a - b).abs() < 1e-5, "frame {i}: live {a} vs offline {b}");
+    }
+}
+
+/// The whole point of the control: more layers is a denser cloud, not the same
+/// cloud louder. If the renderer ignored it, these would be identical.
+#[test]
+fn more_layers_is_audibly_more_grains() {
+    let in_frames = 24_000;
+    let src = Source { samples: tone(in_frames, 1), channels: 1 };
+
+    let mut one = Grain::default();
+    one.size_jitter = 0.3;
+    one.position_jitter_ms = 30.0;
+    one.seed = 7;
+    let mut many = one;
+    many.layers = 8;
+
+    let frames = params(in_frames, one, 2.0, 0.0).plan().out_frames;
+    let a = render_blocks(&src, &params(in_frames, one, 2.0, 0.0), 256, frames);
+    let b = render_blocks(&src, &params(in_frames, many, 2.0, 0.0), 256, frames);
+
+    let diff: f32 = a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum::<f32>()
+        / a.len().max(1) as f32;
+    assert!(diff > 1e-3, "eight layers sounded the same as one: {diff}");
+}
+
+/// A layer spread of zero stacks every layer on the same instants. That is a
+/// real setting and it must not be mistaken for the layers doing nothing.
+#[test]
+fn stacked_layers_still_run_every_schedule() {
+    let in_frames = 12_000;
+    let src = Source { samples: tone(in_frames, 1), channels: 1 };
+
+    let mut g = Grain::default();
+    g.layers = 4;
+    g.layer_spread = 0.0;
+    g.size_jitter = 0.3;
+    g.seed = 3;
+    let sp = params(in_frames, g, 1.5, 0.0);
+
+    let offline = fx::grain::granular(&src.samples, 1, SR, 1.5, 0.0, 40.0, &g);
+    let live = render_blocks(&src, &sp, 128, offline.len());
+    for (i, (a, b)) in live.iter().zip(offline.iter()).enumerate() {
+        assert!((a - b).abs() < 1e-5, "frame {i}: live {a} vs offline {b}");
+    }
+}

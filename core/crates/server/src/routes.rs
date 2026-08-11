@@ -258,6 +258,7 @@ fn api_folders(app: &Arc<App>) -> Response {
                 .set("confidence", f.confidence.clone())
                 .set("files", f.files)
                 .set("audioFiles", f.audio_files)
+                .set("headerFiles", f.header_files)
                 .set("bytes", f.bytes)
                 .set("minutes", f.minutes)
                 .set("categories", f.categories.clone())
@@ -892,6 +893,10 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     mag_freeze: vf("magFreeze", cv.mag_freeze).clamp(0.0, 1.0),
                     mag_blur: vf("magBlur", cv.mag_blur).clamp(0.0, 1.0),
                     mag_gate: vf("magGate", cv.mag_gate).clamp(0.0, 1.0),
+                    stereo_link: match vv.and_then(|x| x.get("stereoLink")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => cv.stereo_link,
+                    },
                 };
                 // Grain settings arrive as a nested object; anything absent
                 // keeps its current value so one slider cannot reset the rest.
