@@ -884,7 +884,6 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                         Some(Value::Bool(b)) => *b,
                         _ => cv.phase_lock,
                     },
-                    hop_skew: vf("hopSkew", cv.hop_skew).clamp(0.0, 4.0),
                     freq_trust: vf("freqTrust", cv.freq_trust).clamp(0.0, 4.0),
                     phase_spread: vf("phaseSpread", cv.phase_spread).clamp(0.0, 4.0),
                     peak_width: vf("peakWidth", cv.peak_width as f32).clamp(1.0, 32.0) as u32,

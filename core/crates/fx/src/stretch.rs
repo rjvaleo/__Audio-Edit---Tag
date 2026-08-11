@@ -83,12 +83,6 @@ pub struct VocoderParams {
 
     // Everything below unpicks an assumption the algorithm normally makes.
 
-    /// Multiplies the analysis hop, breaking its link to the time ratio. At one
-    /// the read pointer covers the source in exactly the output duration, which
-    /// is what makes the stretch a stretch. At zero it never moves and the same
-    /// instant is resynthesised forever — a spectral freeze. Anything else
-    /// sweeps the source at the wrong speed and wraps when it runs out.
-    pub hop_skew: f32,
     /// How far to believe the measured frequency deviation. Below one every
     /// partial is dragged toward the nearest bin centre, so the sound is
     /// quantised to the transform's own grid; above one the detuning is
@@ -128,7 +122,6 @@ impl Default for VocoderParams {
         VocoderParams {
             window_ms: 46.0,
             phase_lock: true,
-            hop_skew: 1.0,
             freq_trust: 1.0,
             phase_spread: 1.0,
             peak_width: 2,
@@ -394,7 +387,6 @@ impl Stretch {
                         crate::vocoder::Settings {
                             fft_size: n,
                             phase_lock: self.vocoder.phase_lock,
-                            hop_skew: self.vocoder.hop_skew,
                             freq_trust: self.vocoder.freq_trust,
                             phase_spread: self.vocoder.phase_spread,
                             peak_width: self.vocoder.peak_width.clamp(1, 32) as usize,
@@ -472,6 +464,19 @@ pub(crate) fn grain_rate(g: &crate::Grain, index: u64, t: f32) -> f32 {
         return 1.0;
     }
     2f32.powf(g.pitch_offset(index, t) / 12.0).clamp(0.05, 20.0)
+}
+
+/// Where a read position lands once it has been moved off its nominal.
+///
+/// Clamped it piles up against the ends of the file; wrapped it comes round
+/// again. Both are worth having and the difference is one control.
+fn place(pos: f32, in_frames: usize, wrap: bool) -> usize {
+    let top = (in_frames as f32 - 2.0).max(1.0);
+    if wrap {
+        pos.rem_euclid(top) as usize
+    } else {
+        pos.clamp(0.0, top) as usize
+    }
 }
 
 /// Interpolated read, so a window can be laid down at a rate other than one.
@@ -612,7 +617,7 @@ fn wsola(
     // Only precomputed when nothing varies the length. With size jitter every
     // window is its own length and the envelope has to be evaluated per sample.
     let steady = g.size_jitter.abs() < 1e-6;
-    let window = if steady { shaped(win, params.shape) } else { Vec::new() };
+    let window = if steady { shaped(win, params.shape, g.envelope) } else { Vec::new() };
     let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
 
     // The segment we expect to follow what was just written; the next window is
@@ -622,8 +627,15 @@ fn wsola(
     let mut write = 0usize;
     let mut first = true;
     let mut index = 0u64;
+    let scan = g.scan.clamp(-4.0, 4.0);
 
-    while write + win < out_frames && read + win + search < in_frames {
+    // Only the write bound. The read used to have to stay a whole window short
+    // of the end, which was fine while it only ever crept forward — but a scan
+    // that starts at the end and runs backwards fails that on its second hop
+    // and the render stopped after one window. Where the read lands is already
+    // `place`'s job, the search clamps its own range, and the inner loop skips
+    // anything off the end.
+    while write + win < out_frames {
         let pos = if first {
             first = false;
             read
@@ -638,24 +650,30 @@ fn wsola(
         let len = grain_size(g, index, win);
         let take = if pos_jitter > 0.0 {
             let j = pos_jitter * g.rand_bipolar(index, g.salt(5));
-            ((pos as f32 + j).max(0.0) as usize).min(in_frames.saturating_sub(2))
+            place(pos as f32 + j, in_frames, g.wrap)
         } else {
             pos
         };
         let rate = grain_rate(g, index, write as f32 / sr);
+        let (gl, gr) = crate::grain::pan_gains(g, index, channels);
+        // The window still lands where it landed; only the direction it reads
+        // its own span in is turned around.
+        let span = (len as f32) * rate;
 
         for i in 0..len {
-            let w = if steady { window[i] } else { shape_at(i, len, params.shape) };
+            let w = if steady { window[i] } else { shape_at(i, len, params.shape, g.envelope) };
             let dst = (write + i) * channels;
             if dst + channels > out.len() {
                 break;
             }
-            let src = take as f32 + (i as f32) * rate;
-            if src >= (in_frames - 1) as f32 {
-                break;
+            let step = if g.reverse { span - (i as f32) * rate } else { (i as f32) * rate };
+            let src = take as f32 + step;
+            if src >= (in_frames - 1) as f32 || src < 0.0 {
+                continue;
             }
             for ch in 0..channels {
-                out[dst + ch] += read_at(input, channels, ch, src, in_frames) * w;
+                let pan = if ch == 0 { gl } else { gr };
+                out[dst + ch] += read_at(input, channels, ch, src, in_frames) * w * pan;
             }
             norm[write + i] += w;
         }
@@ -673,7 +691,12 @@ fn wsola(
         index += 1;
         // The map decides where to read next. At a transient its slope is one,
         // so the read advances as fast as the write and nothing is stretched.
-        read = map.input_at(write as f64).max(0.0) as usize;
+        // `scan` then says how fast that sweep runs at all: one is the stretch,
+        // zero holds the pointer at the start, negative runs the file backwards
+        // while the windows are still laid down forwards.
+        let nominal = map.input_at(write as f64) as f32;
+        let swept = if scan < 0.0 { in_frames as f32 + nominal * scan } else { nominal * scan };
+        read = place(swept, in_frames, g.wrap);
     }
 
     // Undo the window's amplitude envelope where overlap is incomplete.
@@ -784,24 +807,27 @@ fn hermite(m1: f32, p0: f32, p1: f32, p2: f32, t: f32) -> f32 {
 /// The overlap-add is normalised by the summed window afterwards, so a shape
 /// that does not sum flat is not broken by it — it is coloured by it, which is
 /// the reason to offer any shape but Hann.
-fn shaped(n: usize, shape: WinShape) -> Vec<f32> {
-    (0..n).map(|i| shape_at(i, n, shape)).collect()
+fn shaped(n: usize, shape: WinShape, skew: f32) -> Vec<f32> {
+    (0..n).map(|i| shape_at(i, n, shape, skew)).collect()
 }
 
 /// One value of that window, for when the length is not the same twice running
 /// and there is no table to build.
 #[inline]
-fn shape_at(i: usize, n: usize, shape: WinShape) -> f32 {
+fn shape_at(i: usize, n: usize, shape: WinShape, skew: f32) -> f32 {
     if n <= 1 {
         return 1.0;
     }
+    // The envelope control moves where the window peaks, by warping the
+    // position before the shape rather than by swapping in another shape — so
+    // it stays smooth at both ends whatever it is set to, and composes with
+    // the choice of shape instead of competing with it.
+    let t = i as f32 / (n - 1) as f32;
+    let t = if (skew - 0.5).abs() < 1e-4 { t } else { t.powf(4f32.powf(skew * 2.0 - 1.0)) };
     match shape {
-        WinShape::Hann => 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos(),
+        WinShape::Hann => 0.5 - 0.5 * (2.0 * std::f32::consts::PI * t).cos(),
         WinShape::Rect => 1.0,
-        WinShape::Triangle => {
-            let half = (n - 1) as f32 / 2.0;
-            1.0 - ((i as f32 - half) / half).abs()
-        }
+        WinShape::Triangle => 1.0 - (t * 2.0 - 1.0).abs(),
     }
 }
 

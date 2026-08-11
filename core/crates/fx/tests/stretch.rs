@@ -869,7 +869,7 @@ fn every_vocoder_control_left_alone_is_the_sound_it_always_made() {
     let mut base = Stretch { ratio: 2.0, algorithm: Algorithm::Vocoder, ..Default::default() };
     let plain = base.process(&src, 1, rate);
 
-    base.vocoder.hop_skew = 1.0;
+    base.grain.scan = 1.0;
     base.vocoder.freq_trust = 1.0;
     base.vocoder.phase_spread = 1.0;
     base.vocoder.peak_width = 2;
@@ -939,8 +939,6 @@ fn each_vocoder_control_reaches_the_audio() {
     let plain = base.process(&src, 1, rate);
 
     let cases: Vec<(&str, Box<dyn Fn(&mut Stretch)>)> = vec![
-        ("frozen read pointer", Box::new(|s: &mut Stretch| s.vocoder.hop_skew = 0.0)),
-        ("hop skew 2.5", Box::new(|s: &mut Stretch| s.vocoder.hop_skew = 2.5)),
         ("no frequency trust", Box::new(|s: &mut Stretch| s.vocoder.freq_trust = 0.0)),
         ("frequency trust 3", Box::new(|s: &mut Stretch| s.vocoder.freq_trust = 3.0)),
         ("no phase spread", Box::new(|s: &mut Stretch| s.vocoder.phase_spread = 0.0)),
@@ -1241,6 +1239,136 @@ fn layers_hold_the_level_on_every_engine() {
             assert!(
                 (b / a.max(1e-9) - 1.0).abs() < 0.3,
                 "{alg:?} at jitter {jitter}: six layers moved the level from {a} to {b}"
+            );
+        }
+    }
+}
+
+/// The extended grain controls, on all three engines.
+///
+/// Four of these already reached WSOLA and the vocoder — size range, layer
+/// spread, linked jitter and stepped drift all run through shared helpers — and
+/// the other five did not, so half the panel worked and half quietly did
+/// nothing. They all work now, each in the engine's own terms: a window is a
+/// splice for WSOLA and an analysis frame for the vocoder, but both have a read
+/// pointer, a direction, an envelope and a place in the stereo field.
+#[test]
+fn every_extended_grain_control_reaches_every_engine() {
+    let rate = 44_100;
+    let mono = busy(rate, 1.0);
+    let src: Vec<f32> = mono.iter().flat_map(|v| [*v, *v * 0.8]).collect();
+
+    let cases: Vec<(&str, Box<dyn Fn(&mut fx::Grain)>)> = vec![
+        ("scan frozen", Box::new(|g: &mut fx::Grain| g.scan = 0.0)),
+        ("scan reversed", Box::new(|g: &mut fx::Grain| g.scan = -1.0)),
+        ("reverse", Box::new(|g: &mut fx::Grain| g.reverse = true)),
+        ("envelope percussive", Box::new(|g: &mut fx::Grain| g.envelope = 0.05)),
+        ("envelope swelling", Box::new(|g: &mut fx::Grain| g.envelope = 0.95)),
+        ("size range", Box::new(|g: &mut fx::Grain| g.size_range = 6.0)),
+        ("wrap", Box::new(|g: &mut fx::Grain| { g.position_jitter_ms = 300.0; g.wrap = true })),
+        ("layer spread", Box::new(|g: &mut fx::Grain| { g.layers = 4; g.layer_spread = 0.0 })),
+        ("link jitter", Box::new(|g: &mut fx::Grain| g.link_jitter = true)),
+        ("drift step", Box::new(|g: &mut fx::Grain| g.drift_step = true)),
+        ("pan spread", Box::new(|g: &mut fx::Grain| g.pan_spread = 1.0)),
+    ];
+
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Granular] {
+        // A baseline with the jitters already on, so the controls that steer
+        // randomness have randomness to steer.
+        let mut base = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
+        base.grain.size_jitter = 0.4;
+        base.grain.position_jitter_ms = 40.0;
+        base.grain.pitch_jitter_semis = 3.0;
+        base.grain.pitch_drift_semis = 4.0;
+        let plain = base.process(&src, 2, rate);
+
+        for (name, set) in &cases {
+            let mut g = base.grain;
+            set(&mut g);
+            let out = Stretch { grain: g, ..base }.process(&src, 2, rate);
+            assert_eq!(out.len(), plain.len(), "{alg:?}/{name} changed the length");
+            assert!(differs(&plain, &out) > 1e-4, "{alg:?}/{name} did nothing");
+            assert!(out.iter().all(|v| v.is_finite()), "{alg:?}/{name} produced NaN");
+            assert!(out.iter().all(|v| v.abs() < 4.0), "{alg:?}/{name} ran away");
+        }
+    }
+}
+
+/// And left alone they still reproduce the sound the engines always made.
+#[test]
+fn the_extended_grain_controls_are_inert_on_every_engine() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Granular] {
+        let base = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
+        let plain = base.process(&src, 1, rate);
+
+        let mut same = base;
+        same.grain.scan = 1.0;
+        same.grain.reverse = false;
+        same.grain.envelope = 0.5;
+        same.grain.size_range = 1.0;
+        same.grain.wrap = false;
+        same.grain.layer_spread = 1.0;
+        same.grain.link_jitter = false;
+        same.grain.drift_step = false;
+        same.grain.pan_spread = 0.0;
+        assert_eq!(plain, same.process(&src, 1, rate), "{alg:?} moved without being asked");
+    }
+}
+
+/// Pan needs two channels to mean anything, and it must place things without
+/// quietly changing the level — on every engine, not just the cloud.
+#[test]
+fn pan_spread_widens_every_engine_without_costing_level() {
+    let rate = 44_100;
+    let mono = busy(rate, 1.0);
+    let src: Vec<f32> = mono.iter().flat_map(|v| [*v, *v]).collect();
+    let side = |v: &[f32]| -> f32 {
+        let n = v.len() / 2;
+        (0..n).map(|f| (v[f * 2] - v[f * 2 + 1]).abs()).sum::<f32>() / n.max(1) as f32
+    };
+    let level = |v: &[f32]| (v.iter().map(|x| x * x).sum::<f32>() / v.len().max(1) as f32).sqrt();
+
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Granular] {
+        let mut base = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
+        base.grain.size_jitter = 0.3;
+        let centred = base.process(&src, 2, rate);
+        let mut wide = base;
+        wide.grain.pan_spread = 1.0;
+        let wide = wide.process(&src, 2, rate);
+
+        assert!(side(&centred) < 1e-4, "{alg:?}: a mono source was not centred to begin with");
+        assert!(side(&wide) > 1e-3, "{alg:?}: spreading produced no width");
+        let (a, b) = (level(&centred), level(&wide));
+        assert!(
+            (b / a.max(1e-9) - 1.0).abs() < 0.3,
+            "{alg:?}: spreading moved the level from {a} to {b}"
+        );
+    }
+}
+
+/// The reconstruction must not amplify its own edges.
+///
+/// The vocoder divides by the summed *square* of the window, which tails toward
+/// nothing where only one frame is present. With the guard at 1e-6 that
+/// division was turning a correctly quiet edge into a peak twenty times the
+/// source — which is what it had been doing since the overlap control moved.
+#[test]
+fn no_engine_amplifies_its_own_edges() {
+    let rate = 44_100;
+    let src = busy(rate, 1.0);
+    let peak = |v: &[f32]| v.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    let want = peak(&src);
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Granular] {
+        for overlap in [1.5f32, 2.0, 4.0, 8.0] {
+            let mut s = Stretch { ratio: 2.0, algorithm: alg, ..Default::default() };
+            s.grain.overlap = overlap;
+            let out = s.process(&src, 1, rate);
+            let got = peak(&out);
+            assert!(
+                got < want * 2.0,
+                "{alg:?} at overlap {overlap}: peak {got:.3} against a source of {want:.3}"
             );
         }
     }
