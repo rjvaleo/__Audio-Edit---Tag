@@ -25,6 +25,8 @@ fn params(in_frames: usize, g: Grain, ratio: f32, semis: f32) -> StreamParams {
         grain: g,
         algorithm: fx::stretch::Algorithm::Granular,
         wsola: fx::stretch::WsolaParams::default(),
+
+        vocoder: fx::stretch::VocoderParams::default(),
     }
 }
 

@@ -27,7 +27,7 @@
 //! ever disagree it is a bug in one caller, not a difference between two
 //! algorithms.
 
-use crate::stretch::{WinShape, WsolaParams};
+use crate::stretch::{VocoderParams, WinShape, WsolaParams};
 use crate::Grain;
 
 /// The longest window any control allows, in milliseconds. Buffers are sized
@@ -45,6 +45,7 @@ pub struct StretchParams {
     pub window_ms: f32,
     pub sample_rate: u32,
     pub wsola: WsolaParams,
+    pub vocoder: VocoderParams,
     pub grain: Grain,
 }
 
@@ -375,8 +376,8 @@ impl Streamer for WsolaStream {
 /// stretched audio, which it takes from the inner engine in chunks and keeps in
 /// a ring. Sized for the widest pitch the control allows, so nothing is
 /// allocated once it exists.
-pub struct Pitched {
-    inner: WsolaStream,
+pub struct Pitched<S: Streamer> {
+    inner: S,
     /// Stretched audio waiting to be read back at a rate.
     buf: Vec<f32>,
     ring: usize,
@@ -396,8 +397,10 @@ pub struct Pitched {
 /// sized from this, not from the current setting.
 const MAX_PITCH: f32 = 20.0;
 
-impl Pitched {
-    pub fn new(max_block: usize, channels: usize, sample_rate: u32) -> Self {
+impl<S: Streamer> Pitched<S> {
+    /// Wrap an engine. The engine is built by the caller because each has its
+    /// own idea of what it needs; everything after that is common.
+    pub fn new(inner: S, max_block: usize, channels: usize) -> Self {
         let channels = channels.max(1);
         let chunk = max_block.max(1);
         // Room for the fastest read the control allows, plus one chunk so a
@@ -405,7 +408,7 @@ impl Pitched {
         // to reach across.
         let ring = ((max_block as f32 * MAX_PITCH) as usize) + chunk + 2;
         Pitched {
-            inner: WsolaStream::new(chunk, channels, sample_rate),
+            inner,
             buf: vec![0.0; ring * channels],
             ring,
             channels,
@@ -417,12 +420,14 @@ impl Pitched {
         }
     }
 
-    pub fn set_map(&mut self, map: Option<crate::transient::TimeMap>) {
-        self.inner.set_map(map);
+    /// The engine underneath, for whatever it alone understands — WSOLA's
+    /// transient map, for instance.
+    pub fn inner_mut(&mut self) -> &mut S {
+        &mut self.inner
     }
 
-    pub fn overflows(&self) -> u64 {
-        self.inner.overflows
+    pub fn inner(&self) -> &S {
+        &self.inner
     }
 
     /// Semitones as a rate multiplier, clamped where the buffers assume.
@@ -546,6 +551,7 @@ mod tests {
             window_ms: spec.window_ms,
             sample_rate: RATE,
             wsola: spec.wsola,
+            vocoder: spec.vocoder,
             grain: spec.grain,
         }
     }

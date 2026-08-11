@@ -37,6 +37,7 @@ static A: Counting = Counting;
 
 use fx::stream::{StretchParams, Streamer, WsolaStream};
 use fx::stretch::Stretch;
+use fx::vstream::VocoderStream;
 
 const RATE: u32 = 44_100;
 
@@ -56,9 +57,64 @@ fn source(channels: usize) -> Vec<f32> {
 }
 
 #[test]
-fn the_streaming_engine_never_allocates_once_it_is_built() {
+fn the_streaming_engines_never_allocate_once_they_are_built() {
     steady_state();
     controls_moving();
+    the_vocoder();
+}
+
+/// The vocoder holds more state than WSOLA — a phase history per bin per
+/// channel, a window, a normalisation floor — and every one of them is a thing
+/// that could be rebuilt in the callback if it were sized from the current
+/// settings instead of the widest ones.
+fn the_vocoder() {
+    let channels = 2;
+    let src = source(channels);
+    let in_frames = src.len() / channels;
+    let spec = Stretch { ratio: 3.0, ..Default::default() };
+    let mut p = StretchParams {
+        ratio: spec.ratio,
+        window_ms: spec.window_ms,
+        sample_rate: RATE,
+        wsola: spec.wsola,
+        vocoder: spec.vocoder,
+        grain: spec.grain,
+    };
+
+    let block = 512;
+    let mut s = VocoderStream::new(block, channels);
+    s.seek(0, in_frames, &p);
+    let mut out = vec![0f32; block * channels];
+
+    // Warm every transform size and window shape this test will ask for; each
+    // is one deliberate allocation, and they happen before any audio is wanted.
+    for w in [12.0f32, 23.0, 46.0, 92.0] {
+        p.vocoder.window_ms = w;
+        for env in [0.0f32, 0.5, 1.0] {
+            p.grain.envelope = env;
+            for ov in [2.0f32, 4.0] {
+                p.grain.overlap = ov;
+                s.render(&mut out, channels, &src, &p);
+            }
+        }
+    }
+
+    let before = ALLOCS.load(Ordering::Relaxed);
+    for i in 0..150 {
+        p.ratio = 1.0 + (i % 8) as f32;
+        p.vocoder.window_ms = [12.0f32, 23.0, 46.0, 92.0][i % 4];
+        p.grain.envelope = [0.0f32, 0.5, 1.0][i % 3];
+        p.grain.overlap = if i % 2 == 0 { 2.0 } else { 4.0 };
+        p.vocoder.stereo_link = i % 5 == 0;
+        p.vocoder.phase_lock = i % 3 != 0;
+        s.render(&mut out, channels, &src, &p);
+    }
+    let after = ALLOCS.load(Ordering::Relaxed);
+    assert_eq!(
+        after, before,
+        "the streaming vocoder allocated {} times across 150 blocks",
+        after - before
+    );
 }
 
 /// Rendering block after block with nothing changing.
@@ -72,6 +128,7 @@ fn steady_state() {
         window_ms: spec.window_ms,
         sample_rate: RATE,
         wsola: spec.wsola,
+        vocoder: spec.vocoder,
         grain: spec.grain,
     };
 
@@ -110,6 +167,7 @@ fn controls_moving() {
         window_ms: spec.window_ms,
         sample_rate: RATE,
         wsola: spec.wsola,
+        vocoder: spec.vocoder,
         grain: spec.grain,
     };
 

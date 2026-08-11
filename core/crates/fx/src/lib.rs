@@ -18,6 +18,7 @@ pub mod noise;
 pub mod pvsola;
 pub mod stream;
 pub mod stretch;
+pub mod vstream;
 pub mod transient;
 pub mod vocoder;
 

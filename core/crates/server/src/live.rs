@@ -48,6 +48,8 @@ fn idle_params() -> StreamParams {
         // Nothing is loaded, so the engine that can start from nothing.
         algorithm: fx::stretch::Algorithm::Granular,
         wsola: fx::stretch::WsolaParams::default(),
+
+        vocoder: fx::stretch::VocoderParams::default(),
     }
 }
 
@@ -106,6 +108,7 @@ pub fn load(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded,
         grain: list.stretch.grain,
         algorithm: list.stretch.algorithm,
         wsola: list.stretch.wsola,
+        vocoder: list.stretch.vocoder,
     };
 
     with(app, |h| {
