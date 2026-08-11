@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff. **HEAD `e492768`, 614 tests passing, working
+Written 11 August 2026 as a handoff. **HEAD `6a52cdf`, 621 tests passing, working
 tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 614 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 621 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -390,11 +390,12 @@ may have been sitting somewhere from minutes ago, or never have run.
 | Granular | yes — `BlockRenderer` |
 | WSOLA | yes — `Pitched<WsolaStream>` |
 | Vocoder | yes — `Pitched<VocoderStream>`, both stereo modes |
-| PVSOLA, Hybrid | **no** — fall back to the grain cloud, and the panel says so |
+| PVSOLA | yes — `PvsolaStream`, two vocoder runs swapped at each anchor |
+| Hybrid | **no** — falls back to the grain cloud, and the panel says so |
 
-**Both streaming engines are the only implementation there is.** `stretch::wsola`
-and `vocoder::stretch` are loops over their streamers; the old whole-buffer
-versions are deleted. Live-versus-export is asserted at 1e-6, which is the
+**The three streaming engines are the only implementation there is.**
+`stretch::wsola`, `vocoder::stretch` and `pvsola::stretch` are loops over their
+streamers; the old whole-buffer versions are deleted. Live-versus-export is asserted at 1e-6, which is the
 difference between two implementations that agree and one implementation. When
 the vocoder had two, they matched to about −80 dB — close enough to hear
 nothing, far enough that the guarantee was a claim rather than a fact.
@@ -410,6 +411,15 @@ quantity besides.
 `app.js` mirrors it. The three that fall back are marked with a dot on the
 picker and a line of text in the panel, because a control that quietly does
 something else is worse than one that admits it.
+
+**A block must be made faster than it plays.** That is the one property that
+separates a live engine from a rendered one, and it is invisible in every other
+test — a streamer that is correct and slow passes all of them and drops out the
+moment you press play. What matters is the *worst* block, not the mean: PVSOLA
+makes a whole vocoder run per anchor, and doing it in one callback measured at
+89% of the budget. It is made a slice at a time now, spread across the blocks
+the previous round plays for. Measured worst block: granular 0.2%, WSOLA 7.5%,
+vocoder 13%, PVSOLA 20%. `pv_cost.rs` guards it.
 
 **Pitch needed its own stage.** Offline WSOLA shifts by over-stretching and
 reading back faster; folding that into the splice instead would have been a
@@ -676,8 +686,7 @@ both paths, and needs no measurement.
 
 1. ~~Wire `WsolaStream` into the engine.~~ **Done.** WSOLA plays live.
 2. ~~Streaming vocoder.~~ **Done.** Both stereo modes.
-3. **Streaming PVSOLA** — the vocoder is in place now, so this is two
-   `VocoderStream`s and a crossfade at each anchor.
+3. ~~Streaming PVSOLA.~~ **Done.**
 4. **Streaming hybrid** — bounded lookahead (~93 ms at defaults); replace the
    whole-file normalisation floor with a fixed one.
 
@@ -704,6 +713,7 @@ both paths, and needs no measurement.
 
 ## 13. Recent history
 
+    6a52cdf  Stream PVSOLA, and spread its work across the blocks it plays for
     e492768  Stream the phase vocoder, and delete the copy of it
     f1e8ac3  Let the engine picker change what you hear, not just what you export
     3b4d361  Put back the level granular layering takes away
