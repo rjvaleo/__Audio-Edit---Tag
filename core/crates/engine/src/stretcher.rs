@@ -31,10 +31,27 @@ pub struct Stretcher {
     pvsola: PvsolaStream,
     /// What was running last block, so a change can be noticed and acted on.
     current: Algorithm,
+    /// The engine being faded out of, and how many frames of the fade are left.
+    ///
+    /// Switching outright puts a step in the waveform — the new engine starts
+    /// cold at the playhead and its first sample has nothing to do with the
+    /// last one the old engine produced — and a step is a click. So the old
+    /// engine keeps running for a moment and the two are mixed.
+    fading: Option<(Algorithm, usize)>,
+    /// Somewhere to render the outgoing engine while the incoming one fills
+    /// `out`. Sized once, like everything else here.
+    scratch: Vec<f32>,
     /// Output frame the whole thing is at. Kept here rather than read from
     /// whichever engine is live, because a switch must not appear to seek.
     position: u64,
 }
+
+/// How long a switch between engines takes to cross over.
+///
+/// About twenty milliseconds at the usual rates — long enough that the step
+/// which would otherwise be a click is spread below hearing, short enough that
+/// the change still feels immediate under the finger.
+const FADE_FRAMES: usize = 1024;
 
 /// Which engines run here at all.
 ///
@@ -78,6 +95,8 @@ impl Stretcher {
             vocoder: Pitched::new(VocoderStream::new(max_block, channels), max_block, channels),
             pvsola: PvsolaStream::new(max_block, channels),
             current: Algorithm::Granular,
+            fading: None,
+            scratch: vec![0.0; max_block.max(1) * channels.max(1)],
             position: 0,
         }
     }
@@ -99,11 +118,18 @@ impl Stretcher {
     pub fn seek(&mut self, out_frame: u64, sp: &StreamParams) {
         self.position = out_frame;
         self.current = resolve(sp.algorithm);
+        // A seek is a jump anyway; there is nothing to fade from.
+        self.fading = None;
         self.seek_current(out_frame, sp);
     }
 
     fn seek_current(&mut self, out_frame: u64, sp: &StreamParams) {
-        match self.current {
+        let alg = self.current;
+        self.seek_one(alg, out_frame, sp);
+    }
+
+    fn seek_one(&mut self, alg: Algorithm, out_frame: u64, sp: &StreamParams) {
+        match alg {
             Algorithm::Wsola => {
                 self.wsola
                     .seek(out_frame, sp.in_frames, &stretch_params(sp), sp.semitones)
@@ -138,12 +164,64 @@ impl Stretcher {
             // The engine being switched to may be anywhere, or nowhere. Put it
             // where the transport actually is before asking it for audio, or
             // the switch is heard as a jump.
+            //
+            // The old one is deliberately left alone and kept running, so there
+            // is something to fade out of.
+            self.fading = Some((self.current, FADE_FRAMES));
             self.current = want;
-            self.seek_current(self.position, sp);
+            self.seek_one(want, self.position, sp);
         }
 
         let frames = out.len() / channels.max(1);
-        let reported = match self.current {
+        let reported = self.render_one(self.current, out, channels, src, sp, events);
+
+        // Mix in the tail of the engine being left behind.
+        if let Some((from, left)) = self.fading {
+            let n = frames.min(self.scratch.len() / channels.max(1));
+            let mut evs: [GrainEvent; 0] = [];
+            // Lifted out and put straight back. `Vec::default` is empty and
+            // allocates nothing, and the buffer returns to the same place with
+            // the same capacity — this is a borrow dance, not a reallocation.
+            let mut scratch = std::mem::take(&mut self.scratch);
+            self.render_one(from, &mut scratch[..n * channels], channels, src, sp, &mut evs);
+            for f in 0..n {
+                let done = FADE_FRAMES - left + f;
+                let t = (done as f32 / FADE_FRAMES as f32).clamp(0.0, 1.0);
+                // Equal power, because two engines rendering the same instant
+                // agree about what is there and not at all about its phase.
+                // This is the opposite choice from PVSOLA's splice, where the
+                // search spends its whole effort correlating the two sides
+                // first and a linear fade is then the right one.
+                let (a, b) = (
+                    (t * std::f32::consts::FRAC_PI_2).sin(),
+                    (t * std::f32::consts::FRAC_PI_2).cos(),
+                );
+                for ch in 0..channels {
+                    let i = f * channels + ch;
+                    out[i] = out[i] * a + scratch[i] * b;
+                }
+            }
+            self.scratch = scratch;
+            self.fading = match left.checked_sub(n) {
+                Some(0) | None => None,
+                Some(rest) => Some((from, rest)),
+            };
+        }
+
+        self.position += frames as u64;
+        reported
+    }
+
+    fn render_one(
+        &mut self,
+        alg: Algorithm,
+        out: &mut [f32],
+        channels: usize,
+        src: &Source,
+        sp: &StreamParams,
+        events: &mut [GrainEvent],
+    ) -> usize {
+        match alg {
             Algorithm::Wsola => {
                 self.wsola.render_pitched(
                     out,
@@ -175,8 +253,6 @@ impl Stretcher {
                 0
             }
             _ => self.grain.render(out, channels, src, sp, events),
-        };
-        self.position += frames as u64;
-        reported
+        }
     }
 }
