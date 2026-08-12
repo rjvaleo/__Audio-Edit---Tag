@@ -263,20 +263,20 @@
     <div class="dock hidden" id="dock">
       <div class="dock-panes">
 
+      <!-- A horizontal rail of modules with a meter at each end, rather than a
+           list beside a parameter pane: signal flow reads left to right, and
+           the module you are adjusting is the one you are looking at. -->
       <div class="dock-body rack-body hidden" id="dockEffects">
-        <div class="rack-chain">
-          <div class="rack-title">Effect chain
-            <select class="mini" id="rackAdd" title="Add a shaper to the chain">
-              <option value="">add&hellip;</option>
-            </select>
-          </div>
-          <div id="rackList"></div>
-          <!-- After the chain, because holding the output under a ceiling is
-               only meaningful once everything else has had its say. -->
-          <div class="rack-title master-title">Channel</div>
-          <div id="masterStrip"></div>
+        <div class="fx-module-viewport">
+          <div class="fx-end-meter" id="fxInputMeter" aria-label="Effects input meter"></div>
+          <div class="fx-module-rail" id="fxModuleRail"></div>
+          <div class="fx-end-meter" id="fxOutputMeter" aria-label="Effects output meter"></div>
+          <button class="fx-add" id="fxAdd" title="Add an effect module" aria-label="Add an effect module">+</button>
         </div>
-        <div class="rack-params" id="rackParams"></div>
+        <div class="fx-picker hidden" id="fxPicker">
+          <div class="fx-picker-head"><span>Add module</span><button class="ghost" id="fxPickerClose">Close</button></div>
+          <div class="fx-picker-groups" id="fxPickerGroups"></div>
+        </div>
       </div>
 
       <div class="dock-body" id="dockStretch">

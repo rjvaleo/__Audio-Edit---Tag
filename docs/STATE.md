@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **806 tests
+Written 11 August 2026 as a handoff, and kept up to date since. **822 tests
 passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 806 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 822 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -726,10 +726,11 @@ silence. `an_eq_frequency_survives_the_round_trip_through_a_unit` pins it.
 the export writes. The engine counts output frames at the *device's* rate;
 `automation::engine_to_document` is the only place the two clocks meet.
 
-**Slots are addressed by position**, and `RackSpec::build` now builds bypassed
+**Slots are addressed by stable id**, not by position, so dragging a module
+along the rail carries its lanes with it. `RackSpec::build` also builds bypassed
 slots switched off rather than skipping them, so slot *n* in the rack is slot
-*n* in the spec. Skipping shifted every lane after a bypassed slot onto the
-wrong effect — a bug that appeared and vanished with a switch nowhere near it.
+*n* in the spec — skipping shifted every lane after a bypassed slot onto the
+wrong effect, a bug that appeared and vanished with a switch nowhere near it.
 
 **The audio thread never owns the writes.** `Shared::automation` is read without
 being taken; the control thread builds the vector and drops it. Taking it would
