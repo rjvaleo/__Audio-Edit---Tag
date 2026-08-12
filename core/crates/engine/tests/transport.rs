@@ -303,3 +303,56 @@ fn a_loop_end_past_the_document_is_clamped() {
         assert!(shared.position() <= 4_800, "escaped to {}", shared.position());
     }
 }
+
+/// The callback publishes the loop it actually used.
+///
+/// A playhead drawn anywhere else has to wrap in the same place. It cannot
+/// work out where that is: a loop end of zero means "the whole document" and
+/// only the callback knows how long that is under the current ratio — the
+/// interface guessed once and ran the playhead past the end of a looping file.
+#[test]
+fn the_resolved_loop_is_published_for_whoever_draws_the_playhead() {
+    let channels = 1;
+    let src = source(20_000, channels);
+    let sp = params(20_000);
+    let shared = Arc::new(Shared::new(sp, Arc::clone(&src)));
+    let mut core = Core::new(512, channels, sp, Arc::clone(&src));
+
+    // Nothing has run yet, so there is nothing to report.
+    assert_eq!(shared.heard_loop(), None, "a loop was reported before any fill");
+
+    shared.set_loop(true, 4_000, 12_000);
+    shared.play();
+    pump(&mut core, &shared, channels, 512, 4);
+    assert_eq!(
+        shared.heard_loop(),
+        Some((4_000, 12_000)),
+        "the loop the callback used was not reported"
+    );
+
+    // Zero means the whole document, and the resolved end is the document's
+    // length — which is the number the interface cannot compute for itself.
+    shared.set_loop(true, 0, 0);
+    pump(&mut core, &shared, channels, 512, 4);
+    let (a, b) = shared.heard_loop().expect("a whole-document loop reported nothing");
+    assert_eq!(a, 0);
+    assert_eq!(b, 20_000, "the whole-document end was not resolved");
+
+    // And turning it off stops reporting one, rather than leaving the last.
+    shared.set_loop(false, 0, 0);
+    pump(&mut core, &shared, channels, 512, 2);
+    assert_eq!(shared.heard_loop(), None, "a stale loop was left behind");
+}
+
+/// A playhead drawn from the counter leads the sound by the device's buffer.
+///
+/// Nothing here can open a device, so this only pins the arithmetic and the
+/// default: no report means no correction, rather than a guess.
+#[test]
+fn the_output_latency_is_zero_until_a_device_reports_one() {
+    let src = source(1_000, 1);
+    let shared = Shared::new(params(1_000), Arc::clone(&src));
+    assert_eq!(shared.latency_frames(), 0);
+    shared.set_latency_frames(512);
+    assert_eq!(shared.latency_frames(), 512);
+}

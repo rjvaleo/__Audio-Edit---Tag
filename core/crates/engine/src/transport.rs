@@ -58,6 +58,23 @@ pub struct Shared {
     loop_on: AtomicBool,
     loop_a: AtomicU64,
     loop_b: AtomicU64,
+    /// The loop the callback actually used, resolved.
+    ///
+    /// `loop_b` of zero means "the whole document", and only the callback
+    /// knows how long that is under the current ratio. Anything outside that
+    /// wanting to know where the playhead will wrap has to be told, rather
+    /// than work it out again — which is the mistake the comment on
+    /// `loop_bounds` was already written about.
+    heard_a: AtomicU64,
+    heard_b: AtomicU64,
+    /// How far ahead of the speaker the engine is, in frames.
+    ///
+    /// The position counter counts frames *produced*, and the device holds a
+    /// buffer of them before any reach a speaker. Drawing a playhead from the
+    /// counter therefore draws it ahead of the sound. This is what the backend
+    /// reports as the gap between the callback and the moment its first sample
+    /// is heard, so it is measured rather than assumed.
+    latency: AtomicU64,
     /// Output gain, as f32 bits.
     gain: AtomicU32,
     /// Grains dropped because the voice pool was full.
@@ -115,6 +132,9 @@ impl Shared {
             loop_on: AtomicBool::new(false),
             loop_a: AtomicU64::new(0),
             loop_b: AtomicU64::new(0),
+            heard_a: AtomicU64::new(0),
+            heard_b: AtomicU64::new(0),
+            latency: AtomicU64::new(0),
             gain: AtomicU32::new(1.0f32.to_bits()),
             overflows: AtomicU64::new(0),
             pending_rack: Mutex::new(None),
@@ -204,6 +224,24 @@ impl Shared {
 
     pub fn request_seek(&self, frame: u64) {
         self.seek.store(frame as i64, Ordering::Release);
+    }
+
+    /// The loop the callback last used: start, end, and whether there is one.
+    pub fn heard_loop(&self) -> Option<(u64, u64)> {
+        let b = self.heard_b.load(Ordering::Acquire);
+        if b == 0 {
+            None
+        } else {
+            Some((self.heard_a.load(Ordering::Acquire), b))
+        }
+    }
+
+    pub fn latency_frames(&self) -> u64 {
+        self.latency.load(Ordering::Acquire)
+    }
+
+    pub fn set_latency_frames(&self, frames: u64) {
+        self.latency.store(frames, Ordering::Release);
     }
 
     pub fn set_loop(&self, on: bool, a: u64, b: u64) {
@@ -394,6 +432,15 @@ impl Core {
         let frames = out.len() / channels;
         let end = self.params.plan().out_frames as u64;
         let bounds = shared.loop_bounds(end);
+        // Publish what was resolved, so a playhead somewhere else can wrap at
+        // the same place rather than run past it and be dragged back.
+        match bounds {
+            Some((a, b)) => {
+                shared.heard_a.store(a, Ordering::Release);
+                shared.heard_b.store(b, Ordering::Release);
+            }
+            None => shared.heard_b.store(0, Ordering::Release),
+        }
 
         // Not looping and past the end: stop. The engine has no end of its own
         // — a grain stream is happy to run forever, reading the clamped last

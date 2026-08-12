@@ -501,6 +501,19 @@ const engine = {
   heard: 0,
   spectrum: null,
   gain: 0.85,
+  /// Where the engine says it wraps, in engine output frames, or null.
+  ///
+  /// Reported rather than computed here: a loop end of zero means "the whole
+  /// document" and only the callback knows how long that is under the current
+  /// ratio. This side guessed once and playback ran past the end of a looping
+  /// file.
+  loop: null,
+  /// How far ahead of the speaker the frame counter is.
+  ///
+  /// The counter counts frames *produced*; the device holds a buffer of them
+  /// before any are heard. Drawing straight from it puts the playhead ahead of
+  /// the sound. The backend reports this, so it is measured, not assumed.
+  latency: 0,
 };
 
 $('volume').oninput = (e) => {
@@ -562,10 +575,35 @@ const engineFromSrc = (f) => (f / rateScale()) * timeRatio();
 /// The engine's own count is sample accurate, but it is polled rather than
 /// shared, so this carries it forward on the wall clock between polls. The
 /// anchor is exact and cannot drift: every poll resets it.
+/// Where the engine is now, in engine output frames.
+///
+/// The count is polled twenty times a second and carried forward on the wall
+/// clock in between, so the playhead moves at the frame rate rather than in
+/// twenty steps. Two corrections on top of that:
+///
+/// **The loop.** Carrying forward is monotonic, and a loop is not. Between one
+/// poll and the next the playhead ran past the loop end and was dragged back
+/// when the truth arrived — on a short loop that is most of the loop, drawn
+/// outside it, flickering. So the carried-forward part wraps where the engine
+/// says it wraps.
+///
+/// **The output latency.** The counter is frames produced, not frames heard.
+/// Subtracting what the device reports puts the line on the sound rather than
+/// a buffer ahead of it.
 function enginePosition() {
-  if (!engine.playing || !engine.heard) return engine.position;
+  if (!engine.playing || !engine.heard) return Math.max(0, engine.position - engine.latency);
   const dt = (performance.now() - engine.heard) / 1000;
-  return engine.position + dt * engine.deviceRate;
+  let p = engine.position + dt * engine.deviceRate - engine.latency;
+
+  const lp = engine.loop;
+  if (lp && lp.b > lp.a) {
+    const span = lp.b - lp.a;
+    if (p >= lp.b) p = lp.a + ((p - lp.a) % span);
+    // Latency can push the first moments of a loop back before its start,
+    // which belongs at the far end of the previous pass rather than clamped.
+    else if (p < lp.a) p = lp.b - ((lp.a - p) % span);
+  }
+  return Math.max(0, p);
 }
 
 function playbackTime() {
@@ -665,6 +703,8 @@ function startPolling() {
       engine.position = r.position;
       engine.heard = performance.now();
       engine.deviceRate = r.sampleRate || engine.deviceRate;
+      engine.loop = r.loop || null;
+      engine.latency = r.latency || 0;
       engine.spectrum = r.spectrum && r.spectrum.length ? r.spectrum : engine.spectrum;
       if (!r.playing && engine.playing) {
         // The engine stopped itself at the end of the document. Drop back to
