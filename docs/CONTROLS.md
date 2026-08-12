@@ -272,7 +272,7 @@ Along the top of Edit, above the overview.
 | **snap** | Where an edit lands: `zero` (the nearest zero crossing), `off`, or a fixed grid — `CD` 588 samples, `PS2` 28, `Xbox` 64. **On by default**, because a cut that does not start and end at the centre line is a click. Kept across sessions: it is a way of working, not a property of a sound. When it has to move an edge to get there, it says so and by how much. |
 | Marker · Region | Names the playhead or the selection. |
 | Undo · Redo · Revert | Revert throws away every edit and returns to the file as it is on disk. |
-| Bit depth · **Export** | Renders to a **new** file. The only thing here that writes audio. |
+| Bit depth · **Export** | Renders to a new **AIFF beside the original**, named `<sound> <engine> <ratio> <pitch> <window>.aiff`, with every setting written into the file. The only thing here that writes audio, and it never writes over anything. |
 
 ## The transport row
 

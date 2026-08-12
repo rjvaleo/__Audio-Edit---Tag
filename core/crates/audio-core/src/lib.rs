@@ -4,6 +4,7 @@
 //! and every parser is generic over [`RandomAccessSource`]. Nothing loads a whole
 //! file into memory.
 
+pub mod aiff;
 pub mod fft;
 mod probe;
 mod reader;

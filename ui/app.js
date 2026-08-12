@@ -1945,11 +1945,16 @@ $('undoBtn').onclick = async () => { await editOp({ op: 'undo' }); syncStretchSl
 $('redoBtn').onclick = async () => { await editOp({ op: 'redo' }); syncStretchSliders(); };
 $('revertBtn').onclick = async () => { await editOp({ op: 'revert' }); syncStretchSliders(); };
 
+/// Export lands beside the original, as an AIFF named for what was done to it.
+///
+/// The path is long and mostly the library, so the toast says the name — which
+/// is the part that changed and the part you will look for.
 $('exportBtn').onclick = async () => {
   if (!state.selectedFile) return;
   try {
     const r = await postJSON('/api/export', { p: state.selectedFile.path, bits: state.exportBits });
-    toast(`Exported ${state.exportBits}-bit to ${r.path}`);
+    const name = (r.path || '').split('/').pop();
+    toast(`Exported ${state.exportBits}-bit AIFF beside the original — ${name}`);
   } catch (e) { toast('Export failed: ' + e.message); }
 };
 

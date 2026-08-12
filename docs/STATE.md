@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **767 tests
+Written 11 August 2026 as a handoff, and kept up to date since. **783 tests
 passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 767 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 783 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -125,7 +125,9 @@ conversation, not a patch.
 1. **The source file is never written.** Edits, effects and stretch are all
    sidecar. Audio reaches disk only through an explicit Export to a NEW file, or
    a capture, which also writes a new file beside the original and never
-   overwrites. Verified by MD5 after editing.
+   overwrites. Verified by MD5 after editing. Export writes **into the library**,
+   beside the sound it came from — a new name every time, never an existing
+   one; see §7e.
 2. **Grain randomness is a pure function of grain index and seed** — never a
    running generator. The waveform, playback and export are three separate
    renders; a stateful RNG would give each different audio and the picture would
@@ -857,6 +859,54 @@ back on a sound**, which is what they were built for.
 
 ---
 
+## 7e. Export
+
+**AIFF, beside the original, named for what was done to it, with the settings
+inside.**
+
+    aahh pvsola 2.50x -7.0st 60ms.aiff
+
+The engine and the three settings that decide what you hear are in the name, so
+a folder of exports is readable without opening any of it. Always all four,
+even at their defaults: a name that omits what is inert cannot be predicted,
+sorted or grepped. A name already taken gets ` 2`, ` 3` — exporting the same
+settings twice is a normal thing to do and replacing the first would be the one
+thing this program does not do.
+
+**The file is its own preset.** `audio-core/src/aiff.rs` writes an `APPL` chunk
+behind the signature `AuLb` holding the whole document's settings as
+`stretch_to_json` gives them — every engine, every extended control, the grain
+cloud and the rack — plus a `NAME` with the original file's name and an `ANNO`
+line so anything else that opens it sees why it is the length it is. A `FORM`
+is a list of chunks and a reader must skip what it does not know, which is what
+makes this safe: our own probe already walks chunks and ignores the rest, and
+macOS `afinfo` reads the result as a plain 24-bit AIFF.
+
+16- and 24-bit are AIFF; 32-bit float is AIFC, which is the same file with a
+`FVER` chunk and an `fl32` type.
+
+Two things worth knowing about writing AIFF. **The rate is an 80-bit extended
+float** whose leading mantissa bit is explicit, unlike an IEEE double — that is
+the part that catches people out, so `encode_extended80` is pinned against both
+the decoder in `probe.rs` and the literal bit pattern everyone else's 44.1 kHz
+files have. And **byte order is the trap**: a file written little-endian behind
+a big-endian header does not fail to open, it opens and is loud noise. `quantise`
+takes the endianness rather than assuming it, and there is a round-trip test at
+all three depths.
+
+### Reading them back in — the pinned one
+
+Not built, explicitly deferred, and the reason the format is what it is: a good
+accident should be findable months later from the file alone, with no session
+and nothing to keep in step. The pieces are all here — the settings are already
+in every file written from today, `probe.rs` already walks the chunks it would
+be found in, and `persist::stretch_from_json` already parses that exact shape
+with every clamp applied. What is missing is the way in: most likely the file
+browser noticing the chunk and offering it, which is where you would be when
+you found the sound.
+
+---
+
 ## 8. The visualisers
 
 `visualiser/grain-views.html` — one p5.js WEBGL page served at `/grains3d`,
@@ -1108,11 +1158,13 @@ down:**
    documents), Bars/Beats snap, Loop Surfer, and the Pencil Tool — the first
    three need a clipboard, a tempo and a loop model this program does not have
    yet, and the last needs a way to write a sample, which a clip list is not.
-2. **Pre/post rack split** — shapers before *or* after the stretcher. §7b says
+2. **Read an export's settings back in.** Deferred on purpose while the format
+   was built — see §7e. Every file written from today already carries them.
+3. **Pre/post rack split** — shapers before *or* after the stretcher. §7b says
    why the pre side has to be a handover rather than a per-block chain.
-3. **Phase 2 spectral shapers** — harmonic rotate, convolve.
-4. **Automation and modulation** on the parameter layer.
-5. **The third view** — granulate.
+4. **Phase 2 spectral shapers** — harmonic rotate, convolve.
+5. **Automation and modulation** on the parameter layer.
+6. **The third view** — granulate.
 
 **Earlier, and done — the streaming work the user chose:**
 

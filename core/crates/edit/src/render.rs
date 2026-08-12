@@ -344,7 +344,7 @@ pub fn wav_bytes_fx<S: RandomAccessSource>(
         let samples = render_fx(list, reader, rack, first_frame, count)?;
         let mut bytes = Vec::with_capacity(samples.len() * width as usize);
         for v in samples {
-            quantise(v, bits, &mut bytes);
+            quantise(v, bits, false, &mut bytes);
         }
         let skip = (data_start - first_frame * block) as usize;
         let take = (data_end - data_start + 1) as usize;
@@ -365,14 +365,28 @@ fn codec_for(bits: u16) -> Codec {
 
 /// Clamp before quantising: an edit that boosts gain can exceed unity, and
 /// wrapping would turn a loud passage into noise.
-fn quantise(v: f32, bits: u16, out: &mut Vec<u8>) {
+///
+/// `big` picks the byte order. WAV is little-endian and AIFF is big-endian,
+/// and getting it the wrong way round produces a file that is loud noise
+/// rather than one that fails to open — which is the sort of mistake that
+/// reaches a listener.
+fn quantise(v: f32, bits: u16, big: bool, out: &mut Vec<u8>) {
     let c = v.clamp(-1.0, 1.0);
     match bits {
-        16 => out.extend_from_slice(&((c * 32767.0) as i16).to_le_bytes()),
-        32 => out.extend_from_slice(&c.to_le_bytes()),
+        16 => {
+            let q = (c * 32767.0) as i16;
+            out.extend_from_slice(&if big { q.to_be_bytes() } else { q.to_le_bytes() });
+        }
+        32 => out.extend_from_slice(&if big { c.to_be_bytes() } else { c.to_le_bytes() }),
         _ => {
             let q = (c * 8_388_607.0) as i32;
-            out.extend_from_slice(&q.to_le_bytes()[..3]);
+            // The three bytes that carry the value, most significant first for
+            // AIFF and last for WAV.
+            if big {
+                out.extend_from_slice(&q.to_be_bytes()[1..]);
+            } else {
+                out.extend_from_slice(&q.to_le_bytes()[..3]);
+            }
         }
     }
 }
@@ -412,10 +426,64 @@ pub fn render_to_wav_fx<S: RandomAccessSource, W: Write>(
         let block = render_fx(list, reader, rack, done, n)?;
         let mut bytes = Vec::with_capacity(block.len() * bytes_per_sample as usize);
         for v in block {
-            quantise(v, bits, &mut bytes);
+            quantise(v, bits, false, &mut bytes);
         }
         out.write_all(&bytes)?;
         done += n;
+    }
+    out.flush()?;
+    Ok(total)
+}
+
+/// Render the whole edit to a new AIFF file, with the settings written in.
+///
+/// The same walk as [`render_to_wav_fx`], big-endian and behind an AIFF header.
+/// `meta` rides in front of the samples: what the sound is, a line of text for
+/// anything else that opens it, and the settings themselves in an `APPL` chunk
+/// — so an export is its own preset and a good accident can be found again.
+///
+/// Writes only to `out`. The source is never modified.
+pub fn render_to_aiff_fx<S: RandomAccessSource, W: Write>(
+    list: &EditList,
+    reader: &mut Reader<S>,
+    rack: &mut Rack,
+    out: &mut W,
+    bits: u16,
+    meta: &audio_core::aiff::Meta,
+) -> io::Result<u64> {
+    let channels = list.channels.max(1);
+    let total = list.frames();
+    let codec = codec_for(bits);
+    let bytes_per_sample = codec.bytes_per_sample() as u64;
+    let data_len = total * channels as u64 * bytes_per_sample;
+
+    out.write_all(&audio_core::aiff::header(
+        data_len,
+        channels,
+        list.sample_rate,
+        codec,
+        meta,
+    ))?;
+
+    const BLOCK: u64 = 32768;
+    let mut done = 0u64;
+    let mut written = 0u64;
+    while done < total {
+        let n = BLOCK.min(total - done);
+        let block = render_fx(list, reader, rack, done, n)?;
+        let mut bytes = Vec::with_capacity(block.len() * bytes_per_sample as usize);
+        for v in block {
+            quantise(v, bits, true, &mut bytes);
+        }
+        written += bytes.len() as u64;
+        out.write_all(&bytes)?;
+        done += n;
+    }
+    // An odd number of bytes leaves the next chunk misaligned, and the header
+    // has already counted the pad. Nothing follows here, but a file whose
+    // length disagrees with its own arithmetic is a file some readers refuse.
+    if written % 2 == 1 {
+        out.write_all(&[0])?;
     }
     out.flush()?;
     Ok(total)
