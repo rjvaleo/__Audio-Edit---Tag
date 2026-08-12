@@ -43,7 +43,7 @@ pub enum Algorithm {
     Wsola,
     /// Phase vocoder with identity phase locking. Frequency domain.
     Vocoder,
-    /// Deterministic grain cloud. Time domain, and the only one of the three
+    /// Deterministic grain cloud. Time domain, and the only one of the five
     /// that is not trying to be transparent.
     Granular,
     /// The vocoder with a WSOLA splice every few frames, so its phase never has

@@ -109,7 +109,7 @@ Everything in `data/`, beside the launcher, deliberately *not* under
 
 `config.json` · `AUDIO-INDEX.tsv` · `FINGERPRINTS.tsv` · `LABELS.tsv` ·
 `USER-TAGS.tsv` · `TAG-OVERRIDES.json` · `SESSIONS.json` · `PRESETS.json` ·
-`exports/`
+`exports/` *(legacy — exports now go beside the original, in the library)*
 
 TSV rather than a database: proven at 75,000 rows, append-only which is what
 makes a scan resumable, and openable in a spreadsheet. A database would add a C

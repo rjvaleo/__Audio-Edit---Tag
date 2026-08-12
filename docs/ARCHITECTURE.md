@@ -28,20 +28,20 @@ instant and fetching them separately would let them disagree.
 
 ## The workspace
 
-Ten crates, ~25k lines. Dependencies point one way only — `audio-core` depends
+Ten crates, ~36k lines. Dependencies point one way only — `audio-core` depends
 on nothing, `server` depends on everything.
 
 | Crate | Lines | Tests | Responsibility |
 |---|---:|---:|---|
-| `audio-core` | 2588 | 78 | Container probe and decode, peak tiles, FFT, spectrogram, statistics, WAV writer |
+| `audio-core` | 2928 | 86 | Container probe and decode, **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 12294 | 237 | Biquads, EQ, compressor, channel maximiser, five stretchers, sines/transients/noise separation |
-| `edit` | 1663 | 54 | Non-destructive edit list, windowed render, export |
-| `engine` | 2773 | 33 | Block renderer, transport, cpal device |
+| `fx` | 12582 | 237 | Biquads, EQ, compressor, channel maximiser, five stretchers, **nine live shapers**, the parameter layer, sines/transients/noise separation |
+| `edit` | 3429 | 112 | Non-destructive edit list, **zero-crossing snap**, **measurement**, windowed render, WAV and AIFF export |
+| `engine` | 3243 | 44 | Block renderer, **all five streaming engines**, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1395 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 7737 | 134 | HTTP/1.1, routes, JSON, persistence, sessions |
+| `server` | 9395 | 189 | HTTP/1.1, 37 API routes, JSON, persistence, **marker and region commands** |
 | `audiolab` | 58 | — | The binary |
 
 ### Dependencies
@@ -73,6 +73,14 @@ layout, because real files put `LIST`, `bext` and `JUNK` ahead of the ones that
 matter. It handles RIFF/WAVE and FORM/AIFF/AIFC, PCM at 8/16/24/32 bit and
 float at 32/64, little and big endian.
 
+**Writing** is WAV (little-endian) and AIFF/AIFC (big-endian). `aiff.rs` puts
+the sample rate in the 80-bit extended float the format wants — whose leading
+mantissa bit is explicit, unlike an IEEE double — and writes `NAME`, `ANNO` and
+an `APPL` chunk holding the settings that produced the sound. Byte order is the
+trap and does not fail loudly: a file written little-endian behind a big-endian
+header opens fine and is noise, so the quantiser takes the endianness rather
+than assuming it, and the round trip is tested at every depth.
+
 **Anything unrecognised becomes headerless PCM** rather than an error. That is
 deliberate — SD2 data forks and raw dumps are real sounds with no header — and
 it is why a peak cache or a text sidecar will play as noise, and why the
@@ -95,14 +103,32 @@ the app that writes audio.
 Edit operations address the **pre-stretch** timeline, so cutting a second
 removes a second of source whatever the ratio is doing to the output.
 
+**Where an edit lands is a separate question from what it does.** `edit::snap`
+resolves a requested position to the nearest zero crossing or a fixed grid, and
+moves the *request* — nothing in it reads or rewrites a clip list, which is what
+keeps it out of the render path. Absent means no snap, so a caller that has
+never heard of it gets exactly the position it asked for; the interface turns it
+on, as Peak does. Crossings are looked for per channel rather than in the mono
+mix: two channels in opposite phase sum to nothing at all, and a mix-based
+search would call every frame of that file a crossing.
+
+**`edit::analyse` measures the edited timeline** — peak, RMS, runs of silence,
+the worst discontinuity — so the operations in `ops.rs` stay pure arithmetic on
+the clip list and take their numbers as arguments. It measures what will be
+*heard*: stretch, fades, gains and effects included.
+
 `output_frames()` must equal what `process()` actually produces, because the
 timeline is laid out from the prediction before any audio is rendered. A
 windowed render must match the full render: filters get 200 ms of pre-roll, and
 stretch renders whole because WSOLA picks each splice from the previous one.
 
-A saved session is refused if the file has changed — frames, channels or sample
-rate — because stale offsets pointing at the wrong audio is worse than losing
-the edit.
+**A sound opens at its defaults.** Sessions are written and are not applied on
+open: settings arriving without being asked for are indistinguishable from a
+bug, and were reported as one. The validation that refuses a saved session whose
+file has changed — frames, channels or sample rate — is still there and still
+tested, because presets go through the same reader; it is simply no longer on
+the path a file takes when you open it. Work done in the current run is
+unaffected: a session is created once per file per process.
 
 **A reader must never be stricter than its writer.** `stretch_from_json` clamped
 the ratio at 4×, the pitch at two octaves and the window at 200 ms — the bounds
@@ -116,8 +142,8 @@ need to differ again, the *writer* is the place to change.
 ## DSP
 
 `fx` holds RBJ biquads, a three-band parametric EQ with high-pass, a
-feed-forward compressor with a soft knee, a one-knob channel maximiser, and
-five time stretchers.
+feed-forward compressor with a soft knee, a one-knob channel maximiser, five
+time stretchers, and nine live shapers.
 
 The stretchers all answer the same controls — density, overlap, layers, the
 jitters, drift, scan, envelope, pan — each in its own terms, because every one
@@ -177,11 +203,40 @@ equations 5.10–5.12 and the code is laid out to be read against them. The
 separation is Fitzgerald and Driedger, PVSOLA is Moinet and Dutoit (DAFx-12),
 the noise morphing is Moliner, Lehtonen and Välimäki (2023).
 
-**Only the grain cloud runs in the audio callback.** The other four are offline
-renders folded into the engine's source before playback starts, and the two new
-ones are further from a callback than any of the others — the hybrid makes two
-full spectrogram passes over the file before it stretches anything. Measured on
-five seconds of stereo at 16×: vocoder 1.7 s, PVSOLA 4.6 s, hybrid 4.4 s.
+**All five run in the audio callback.** Each is a `Streamer` keeping its state
+between blocks, overlap-adding into a ring long enough for the widest window
+any control allows, and allocating nothing — proved by a counting global
+allocator across two hundred blocks with the controls moving on every one.
+
+**The offline renderers are loops over the same streamers.** Live-equals-export
+is a property of there being one implementation rather than two kept in step,
+and it is asserted at 1e-6. When the vocoder had two they matched to about
+−80 dB: close enough to hear nothing, far enough that the guarantee was a claim.
+
+Anything expensive is built off the audio thread and handed over by ownership —
+the transient map, the hybrid's separated source, the bank of extra layers for
+the layer control. Until the hybrid's separation arrives the callback plays the
+grain cloud rather than silence.
+
+**A block must be made faster than it plays**, and that is invisible in every
+other test: a streamer that is correct and slow passes all of them and drops
+out the moment you press play. What matters is the worst block, not the mean.
+Measured: granular 0.2%, WSOLA 7.5%, vocoder 12%, PVSOLA 18%, hybrid 17% of the
+real-time budget; with sixteen vocoder layers, 44%. PVSOLA makes a whole vocoder
+run per anchor, which in one callback measured at 89%, so it is made a slice at
+a time across the blocks the previous round plays for.
+
+**Pitch is its own stage.** `PitchRing` drives the inner engine at ratio × pitch
+and resamples the result, with the same four-point Hermite the offline renderer
+uses — one curve, because two would be two different sounds. PVSOLA and the
+hybrid cannot be `Streamer`s (one takes parameters of its own, the other reads a
+separated source), so they drive the ring directly rather than going without.
+
+**Switching engines cross-fades.** Switching outright put a step of 0.63 into a
+waveform whose neighbouring samples were moving by 0.0003. The outgoing engine
+keeps running for about twenty milliseconds and the two are mixed equal-power —
+two engines rendering the same instant agree about what is there and not at all
+about its phase.
 
 **Grain randomness is addressed, not streamed.** Every grain's jitter is a pure
 function of its index and a seed. The waveform, the playback and the exported
@@ -189,6 +244,37 @@ file are three separate renders, and a running generator would give each of
 them different audio — the picture would stop matching the sound. The offline
 renderer, the real-time renderer and the visualiser all enumerate grains
 through one function for the same reason.
+
+### The live shapers
+
+Nine effects that run under the fingers rather than being applied and waited
+for: invert, swap channels, width, DC offset, ring modulator, rappify, reverse
+boomerang, amplitude fit and gate. Built from the reference documents rather
+than from the names — **rappify** is extreme dynamic filtering, not distortion,
+and **amplitude fit** is per-grain normalisation, not compression.
+
+Two are better live than they were offline. *Boomerang* offline needs to know
+where the selection ends; live it is a rolling buffer read backwards, so the
+reversal chases the playhead and the throw length becomes a control it never
+had. *Amplitude fit* offline normalises a file grain by grain; live it is the
+same idea on the last thirty milliseconds with the waiting removed.
+
+**One rack slot variant serves all nine.** The older three effects each carry a
+settings struct and hand-written JSON; a shaper describes its own parameters
+instead, so one pair of conversions serves all of them and the next one added
+needs no rack work at all. An unknown kind is dropped rather than guessed at —
+a slot this version does not recognise is one from a newer version.
+
+### The parameter layer
+
+`fx::params` gives every parameter a stable key, a range, a default, a sweep
+and a unit, readable and writable by name. Automation and modulation then become
+one small thing that writes keys rather than a change to every effect. It went
+in first because it is the expensive thing to retrofit; nothing is built on it
+yet.
+
+**The key is the contract.** It will live in saved automation, so renaming one
+silently detaches whatever drives it.
 
 ## Real time
 
@@ -207,9 +293,28 @@ stream is happy to run forever reading the clamped last sample; and **a loop
 end of zero means the whole document**, with the engine substituting its own
 length rather than the interface computing it.
 
+The callback publishes two things anything drawing a playhead needs: **the loop
+it actually resolved**, because only it knows what a zero end means under the
+current ratio, and **the output latency the backend reports**, because the
+position counter counts frames produced and the device holds a buffer of them
+before any are heard.
+
+**The source is conformed to the device before the audio thread sees it.** The
+streaming engines index their input with the count they are rendering at, so a
+mono file on a stereo device was read two samples at a time — twice too fast,
+and out of material half way. The grain cloud maps the device's channel back to
+a source channel first, which is why it was the only engine unaffected.
+
 `server/src/live.rs` bridges a document to the engine. Structure — cuts, fades,
 reverse — is folded into the engine's source offline. Stretch, pitch, every
 grain control and the whole rack are live.
+
+It also decides **what** is played: `Playing::Raw` for an audition from the
+library, which is the file itself with no edits, stretch, grains or rack, and
+`Playing::Document` for the editor. Parameters are only pushed at the audio
+thread while it is holding that document — otherwise one document's settings
+land on another's buffer, which is heard as a sound playing at the wrong speed
+and stopping early.
 
 ## Machine listening
 
@@ -233,12 +338,17 @@ inside the library with `resolve_within`, which rejects absolute paths, parent
 components and Windows prefixes before touching the filesystem, then
 canonicalises both sides so a symlink pointing outside is caught too.
 
-Roughly thirty endpoints, in groups: library (`/api/folders`, `/api/files`,
-`/api/scan`), display (`/api/peaks`, `/api/spectrogram`, `/api/thumbs`),
-document (`/api/edit`, `/api/rack`, `/api/export`), engine
-(`/api/engine/transport`, `/api/engine/grains`), knowledge (`/api/similar`,
-`/api/labels`, `/api/usertags`), plus `/audio` for rendered playback and
-`/grains3d` for the visualiser.
+Thirty-seven API endpoints, in groups: library (`/api/folders`,
+`/api/files`, `/api/scan`), display (`/api/peaks`, `/api/spectrogram`,
+`/api/thumbs`), document (`/api/edit`, `/api/measure`, `/api/rack`, `/api/fx`,
+`/api/export`), annotations (`/api/markers`, `/api/annot`), engine
+(`/api/engine/load`, `/api/engine/transport`, `/api/engine/grains`), knowledge
+(`/api/similar`, `/api/labels`, `/api/usertags`), plus `/audio` for rendered
+playback and `/grains3d` for the visualiser.
+
+`/api/fx` serves the shaper catalogue and the interface draws every module from
+it, so an effect gains a control by declaring one in `fx::shape` and neither the
+rack nor the interface is touched.
 
 Absent means unchanged. A control that posts one field does not reset the
 twenty it did not mention.
@@ -266,7 +376,7 @@ Everything in `data/`, beside the launcher — deliberately not under
 | `TAG-OVERRIDES.json` | Corrections to what was inferred |
 | `SESSIONS.json` | Open documents and their edits |
 | `PRESETS.json` | Named stretch and rack settings, every engine's at once |
-| `exports/` | Rendered files |
+| `exports/` | Legacy. Exports now go **beside the original**, in the library, as AIFF — see the README |
 
 TSV rather than a database: the format is proven at 75,000 rows, it is
 append-only which is what makes a scan resumable, and you can open it in a
@@ -295,12 +405,14 @@ reaches the internet at no point at all.
 | Planned | Now |
 |---|---|
 | Format I/O, edit engine, DSP, navigator | Built |
-| Time-stretch as the headline feature | Built, five engines rather than one |
+| Time-stretch as the headline feature | Built, five engines rather than one, all five live |
 | Real-time contract | Built — native output, not WASM |
+| Peak's DSP menu | Built as nine live rack effects rather than apply-and-wait |
+| Peak's edit and Action menus | Built — snap, crop, duplicate, insert silence, normalize RMS, find peak, strip silence, repair click, markers and regions |
 | ML tagging and semantic search | Built — YAMNet, fingerprints, learned tags |
 | Sound Designer II rescue | Partial — SD2 data forks read as headerless PCM |
 | UCS as the metadata spine | Not adopted; the taxonomy in `catalog` is used instead |
 | Destructive mode | Not built, and no longer wanted |
 | Plugins | Not built |
-| Automation | Not built |
+| Automation | Not built — but `fx::params` is the layer it needs, and every effect implements it |
 | Multi-file / timeline | Not built; the app is single-document by design |
