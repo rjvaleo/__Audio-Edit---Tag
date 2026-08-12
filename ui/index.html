@@ -131,12 +131,14 @@
       <button class="ghost" id="undoBtn" disabled>Undo</button>
       <button class="ghost" id="redoBtn" disabled>Redo</button>
       <button class="ghost" id="revertBtn">Revert</button>
-      <select class="mini" id="exportBits" title="Export bit depth">
+      <select class="mini" id="exportBits"
+              title="Export bit depth. 16 and 24 are AIFF; 32-bit float is AIFC, which is the same file with a float sample type.">
         <option value="16">16-bit</option>
         <option value="24" selected>24-bit</option>
         <option value="32">32-bit float</option>
       </select>
-      <button class="primary" id="exportBtn">Export</button>
+      <button class="primary" id="exportBtn"
+              title="Render to a new AIFF beside the original, named for the engine, ratio, pitch and window — with every setting written into the file">Export</button>
     </div>
 
     <!-- whole-file overview with the zoom window marked -->

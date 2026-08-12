@@ -1574,14 +1574,24 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
     let Some(src) = resolve_within(&lib, rel) else {
         return Response::error(404, "no such file in the library");
     };
-    let Some(list) = app.edits.snapshot(rel) else {
-        return Response::error(400, "this file has no edits");
+    // A file with nothing done to it is still worth exporting — it is how a
+    // sound is converted, and how the settings on screen are written down. The
+    // old guard refused, which was fine while opening a sound restored its
+    // last session and never fine after that.
+    let list = match app.edits.snapshot(rel) {
+        Some(l) => l,
+        None => match identity_for(app, rel) {
+            Some(l) => l,
+            None => return Response::error(404, "no such file in the library"),
+        },
     };
     if list.frames() == 0 {
         return Response::error(400, "the edit is empty — nothing to export");
     }
 
-    let target = crate::docs::export_target(&app.data_dir, rel);
+    // Beside the original, named for the engine and the three settings that
+    // decide what you hear. Everything else goes *inside* the file.
+    let target = crate::docs::export_target(&lib, rel, &list.stretch);
     if let Some(parent) = target.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
             return Response::error(500, &e.to_string());
@@ -1597,8 +1607,10 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         Err(e) => return Response::error(500, &e.to_string()),
     };
     let mut out = std::io::BufWriter::new(file);
-    let mut rack = app.racks.get(rel).build(list.sample_rate, list.channels as usize);
-    match edit::render::render_to_wav_fx(&list, &mut reader, &mut rack, &mut out, bits) {
+    let spec = app.racks.get(rel);
+    let meta = crate::docs::export_meta(rel, &list, &spec);
+    let mut rack = spec.build(list.sample_rate, list.channels as usize);
+    match edit::render::render_to_aiff_fx(&list, &mut reader, &mut rack, &mut out, bits, &meta) {
         Ok(frames) => Response::json(
             Value::obj()
                 .set("ok", true)
