@@ -1650,23 +1650,9 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, "the edit is empty — nothing to export");
     }
 
-    // Refused before anything is created, rather than written as a file that
-    // quietly differs from what was auditioned. What you hear is what you
-    // export; where that cannot be honoured, the export says so.
     let automation = app
         .automation
         .get_for(rel, list.frames(), list.channels, list.sample_rate);
-    let unsupported = automation.offline_unsupported();
-    if !unsupported.is_empty() {
-        return Response::error(
-            400,
-            &format!(
-                "the export cannot follow a time-varying stretch yet — disable or bypass {} \
-                 and export again, or capture the playback instead",
-                unsupported.join(", ")
-            ),
-        );
-    }
 
     // Beside the original, named for the engine and the three settings that
     // decide what you hear. Everything else goes *inside* the file.
@@ -1703,9 +1689,34 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         }
     };
 
-    match edit::render::render_to_aiff_controlled(
-        &list, &mut reader, &mut rack, &mut out, bits, &meta, control,
-    ) {
+    // A lane on the *stretch* cannot go through the one-pass renderer: it
+    // applies the stretch whole, with one set of parameters. That path runs the
+    // same streaming engine the audio thread runs, so the file follows the
+    // curve for the same reason the speakers do.
+    let rendered = if crate::offline::needs_streaming(&automation) {
+        match edit::render::render(&list, &mut reader, 0, list.base_frames()) {
+            Ok(base) => {
+                let audio = crate::offline::stretch_with_automation(
+                    &base,
+                    list.channels as usize,
+                    list.sample_rate,
+                    &list.stretch,
+                    &automation,
+                );
+                edit::render::write_aiff_controlled(
+                    audio, list.channels, list.sample_rate, &mut rack, &mut out, bits, &meta,
+                    control,
+                )
+            }
+            Err(e) => Err(e),
+        }
+    } else {
+        edit::render::render_to_aiff_controlled(
+            &list, &mut reader, &mut rack, &mut out, bits, &meta, control,
+        )
+    };
+
+    match rendered {
         Ok(frames) => Response::json(
             Value::obj()
                 .set("ok", true)
