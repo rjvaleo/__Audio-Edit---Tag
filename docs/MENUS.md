@@ -137,7 +137,7 @@ opens. The two follow-mode items dim when Follow playhead is off.
 
 Some things are only where they act, deliberately:
 
-- **The engine picker** (WSOLA / Vocoder / Granular) and every stretch control
+- **The engine picker** (WSOLA / Vocoder / PVSOLA / Hybrid / Granular) and every stretch control
   — Time & Pitch tab.
 - **The effect chain and the channel maximiser** — FX tab.
 - **Reset** for the extended controls only — on the first heading of the
