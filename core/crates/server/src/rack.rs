@@ -134,16 +134,29 @@ impl RackSpec {
         RackSpec { slots: Vec::new(), slot_ids: Vec::new(), master: MasterSettings::default() }
     }
 
-    /// A sensible starting rack: everything present but flat and bypassed, so
-    /// the sound is untouched until the user actually turns something on.
+    /// The rack a file starts with: an EQ and a compressor, both **on**.
+    ///
+    /// On rather than bypassed, because a module that arrives switched off
+    /// reads as broken — you move a control and nothing happens. They are safe
+    /// to leave running because both start genuinely inert: the EQ is flat, and
+    /// the compressor starts at 1:1, which is a ratio that cannot compress.
+    /// Invariant 9 still holds — a document nobody has touched renders exactly
+    /// what it did before the rack existed — but it holds because of the
+    /// settings rather than because the chain is switched out.
+    ///
+    /// No gain stage. Every module carries its own level, the maximiser is at
+    /// the end of the chain, and a gain slot at the front was one more thing to
+    /// check when something came out quiet.
     pub fn default_chain() -> Self {
         RackSpec {
             slots: vec![
-                SlotSpec::Gain { db: 0.0, bypassed: true },
-                SlotSpec::Eq { settings: EqSettings::default(), bypassed: true },
-                SlotSpec::Comp { settings: CompSettings::default(), bypassed: true },
+                SlotSpec::Eq { settings: EqSettings::default(), bypassed: false },
+                SlotSpec::Comp {
+                    settings: CompSettings { ratio: 1.0, ..CompSettings::default() },
+                    bypassed: false,
+                },
             ],
-            slot_ids: vec!["factory-gain".into(), "factory-eq".into(), "factory-comp".into()],
+            slot_ids: vec!["factory-eq".into(), "factory-comp".into()],
             master: MasterSettings::default(),
         }
     }
@@ -394,12 +407,37 @@ mod tests {
     use super::*;
     use crate::json;
 
+    /// Invariant 9, for a chain that is switched **on**.
+    ///
+    /// The modules a file starts with are live rather than bypassed, so the
+    /// guarantee cannot come from the chain being skipped — it has to come from
+    /// the settings. Measured rather than assumed: audio goes through the real
+    /// built rack and has to come back out the same.
     #[test]
-    fn the_default_chain_is_present_but_changes_nothing() {
+    fn the_default_chain_is_switched_on_and_still_changes_nothing() {
         let spec = RackSpec::default_chain();
-        assert_eq!(spec.slots.len(), 3);
-        assert!(!spec.is_active(), "a fresh rack must not alter the sound");
-        assert!(spec.build(48_000, 2).is_empty());
+        assert_eq!(spec.slots.len(), 2, "an EQ and a compressor, and no gain stage");
+        assert!(
+            spec.slots.iter().all(|s| !s.bypassed()),
+            "a module that arrives switched off reads as broken"
+        );
+
+        let mut rack = spec.build(48_000, 2);
+        let source: Vec<f32> = (0..4096)
+            .map(|i| (i as f32 / 11.0).sin() * 0.6 + (i as f32 / 3.1).sin() * 0.2)
+            .collect();
+        let mut buf = source.clone();
+        rack.process(&mut buf, 2, 48_000);
+
+        let worst = source
+            .iter()
+            .zip(&buf)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
+        assert!(
+            worst < 1e-6,
+            "a fresh rack moved the audio by {worst:.2e} — flat is not the same as inert"
+        );
     }
 
     /// A shaper carries its own parameters, so this is the test that the

@@ -77,8 +77,31 @@ impl Eq {
     }
 }
 
+impl EqSettings {
+    /// Whether this EQ has anything to do.
+    ///
+    /// A bell at 0 dB is unity *algebraically*, but a biquad at unity still
+    /// runs the audio through a difference equation, and the arithmetic leaves
+    /// about 8e-5 behind. That is inaudible and still enough to break the rule
+    /// that a document nobody has touched renders exactly what it did before
+    /// the rack existed — which matters more now that the starting chain is
+    /// switched on rather than bypassed.
+    pub fn is_flat(&self) -> bool {
+        self.high_pass_hz <= 0.0
+            && [&self.low, &self.mid, &self.high]
+                .iter()
+                .all(|b| b.gain_db.abs() < 1e-6)
+    }
+}
+
 impl Effect for Eq {
     fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
+        if self.settings.is_flat() {
+            // Nothing to do, and nothing left ringing to flush: a flat EQ has
+            // never put anything into its own state.
+            self.reset();
+            return;
+        }
         self.rebuild(sample_rate);
         let channels = channels.max(1);
         if self.states.len() < channels {

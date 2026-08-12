@@ -1328,15 +1328,13 @@ fn the_menu_offers_the_document_and_every_slot_in_the_rack() {
             .collect()
     };
 
-    // A file nobody has touched still has the default chain — gain, EQ and
-    // compressor, all switched out. They are offered anyway: a bypassed slot
-    // still holds its position, and a lane drawn now keeps working the moment
-    // the slot is switched in.
+    // A file nobody has touched still has the starting chain — an EQ and a
+    // compressor, both switched on and both inert. No gain stage.
     let before = targets_now(&app);
     assert!(before.iter().any(|t| t == "stretch.semitones"), "the document: {before:?}");
-    assert!(before.iter().any(|t| t == "fx.factory-gain.db"), "the bypassed gain: {before:?}");
-    assert!(before.iter().any(|t| t == "fx.factory-eq.mid.freq"), "the bypassed EQ: {before:?}");
-    assert!(before.iter().any(|t| t == "fx.factory-comp.ratio"), "the bypassed compressor: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.factory-eq.mid.freq"), "the EQ: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.factory-comp.ratio"), "the compressor: {before:?}");
+    assert!(!before.iter().any(|t| t.contains("gain.db")), "no gain stage: {before:?}");
 
     let r = server::routes::route(
         &app,
