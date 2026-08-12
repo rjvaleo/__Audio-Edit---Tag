@@ -2045,28 +2045,78 @@ async function loadShapers() {
     const r = await api('/api/fx');
     for (const s of r.shapers || []) state.shapers[s.kind] = s;
   } catch { /* the chain still works; only the shapers go missing */ }
-  const add = $('rackAdd');
-  if (!add) return;
-  add.innerHTML = '<option value="">add…</option>';
-  for (const k of Object.keys(state.shapers)) {
-    const o = document.createElement('option');
-    o.value = k;
-    o.textContent = state.shapers[k].label;
-    add.appendChild(o);
+  renderFxPicker();
+}
+
+function defaultFxSlot(kind) {
+  const id = `fx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+  if (kind === 'gain') return { id, kind, bypassed: false, db: 0 };
+  if (kind === 'eq') return { id, kind, bypassed: false, bands: defaultEqBands() };
+  if (kind === 'comp') return { id, kind, bypassed: false,
+    thresholdDb: -18, ratio: 4, attackMs: 10, releaseMs: 100, kneeDb: 6, makeupDb: 0 };
+  const spec = state.shapers[kind];
+  if (!spec) return null;
+  const params = {};
+  for (const p of spec.params) params[p.key] = p.default;
+  return { id, kind, bypassed: false, params };
+}
+
+function addFxModule(kind) {
+  if (!kind || !state.rack) return;
+  const slot = defaultFxSlot(kind);
+  if (!slot) return;
+  state.rack.slots.push(slot);
+  state.rackSelected = state.rack.slots.length - 1;
+  $('fxPicker')?.classList.add('hidden');
+  pushRack({ immediate: true });
+  renderRack();
+}
+
+function renderFxPicker() {
+  const box = $('fxPickerGroups');
+  if (!box) return;
+  box.innerHTML = '';
+  const groupFor = (kind) => {
+    if (['gain', 'eq', 'comp', 'gate', 'dattorro_notch', 'dattorro_resonator',
+      'regalia_mitra', 'chamberlin', 'damping_filter', 'dc'].includes(kind)) return 'EQ & Compression';
+    if (['dattorro_plate', 'allpass_diffuser', 'dattorro_echo'].includes(kind)) return 'Reverb & Delay';
+    if (['white_chorus', 'dattorro_flanger', 'dattorro_vibrato', 'leslie'].includes(kind)) return 'Chorus & Phasing';
+    if (['harmonizer', 'detune', 'doubler', 'doppler', 'boomerang'].includes(kind)) return 'Pitch & Motion';
+    if (['pn_noise', 'pn_noise_eq', 'single_bit_pn', 'ring'].includes(kind)) return 'Noise & Generators';
+    return 'Utility & Shaping';
+  };
+  const catalogue = [
+    { kind: 'eq', label: 'Parametric EQ' },
+    { kind: 'comp', label: 'Compressor' },
+    ...Object.values(state.shapers).filter((s) =>
+      !['dc', 'gate', 'invert', 'swap', 'width', 'fit', 'dattorro_notch',
+        'dattorro_resonator', 'regalia_mitra', 'damping_filter'].includes(s.kind)),
+  ];
+  const groups = new Map();
+  for (const module of catalogue) {
+    const category = groupFor(module.kind);
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(module);
+  }
+  for (const [category, shapers] of groups) {
+    const group = document.createElement('section');
+    group.className = 'fx-picker-group';
+    const heading = document.createElement('h3');
+    heading.textContent = category;
+    group.appendChild(heading);
+    for (const shaper of shapers) {
+      const button = document.createElement('button');
+      button.className = 'fx-picker-item';
+      button.textContent = shaper.label;
+      button.onclick = () => addFxModule(shaper.kind);
+      group.appendChild(button);
+    }
+    box.appendChild(group);
   }
 }
 
-$('rackAdd').onchange = (e) => {
-  const kind = e.target.value;
-  e.target.value = '';
-  if (!kind || !state.rack) return;
-  const params = {};
-  for (const p of state.shapers[kind].params) params[p.key] = p.default;
-  state.rack.slots.push({ kind, bypassed: false, params });
-  state.rackSelected = state.rack.slots.length - 1;
-  pushRack({ immediate: true });
-  renderRack();
-};
+$('fxAdd').onclick = () => $('fxPicker')?.classList.toggle('hidden');
+$('fxPickerClose').onclick = () => $('fxPicker')?.classList.add('hidden');
 
 async function loadRack() {
   await loadShapers();
@@ -2081,6 +2131,19 @@ async function loadRack() {
 
 /// Post the spec, then refresh everything that depends on it.
 let rackTimer;
+const pushRackLive = throttled(async () => {
+  const f = state.selectedFile;
+  if (!f || !state.rack) return;
+  try {
+    await postJSON('/api/rack', {
+      p: f.path,
+      sr: state.view.sampleRate || 48000,
+      slots: state.rack.slots,
+      master: state.rack.master,
+    });
+  } catch { /* the release commit reports a persistent failure */ }
+}, 32);
+
 function pushRack({ immediate = false } = {}) {
   clearTimeout(rackTimer);
   const send = async () => {
@@ -2096,11 +2159,10 @@ function pushRack({ immediate = false } = {}) {
     } catch (e) { toast(e.message); return; }
     renderRack();
     renderTabs();
-    // Adding or removing an effect changes what a lane may address, and the
-    // menu is the server's list rather than one assembled here.
-    refreshAutomationTargets();
     // The waveform must show what will be heard, so it is re-fetched too.
     await loadPeaks();
+    await loadAutomationWaveform();
+    repaintAutomationLanes();
     if (state.showSpec) loadSpectrogram();
     reloadAudioSource();
   };
@@ -2180,7 +2242,8 @@ function renderMaster() {
 
   row(param('Amount', shown.amount, 0, 1, 0.01,
     (v) => (v <= 0 ? 'none' : v >= 0.999 ? 'maximize' : `${Math.round(v * 100)}%`),
-    (v) => { set('amount', v); send(); }, () => commit()), 'amount');
+    (v) => { set('amount', v); send();  },
+    () => {commit();}), 'amount');
 
   row(check('auto level',
     'Walk the output up to the ceiling as it plays, rather than leaving the gain where it was',
@@ -2207,10 +2270,11 @@ function reflectMaster() {
 }
 
 function renderRack() {
-  const list = $('rackList');
-  if (!list) return;
-  list.innerHTML = '';
-  renderMaster();
+  const rail = $('fxModuleRail');
+  if (!rail) return;
+  rail.innerHTML = '';
+  renderVuMeter($('fxInputMeter'), 'IN');
+  renderVuMeter($('fxOutputMeter'), 'OUT');
   if (!state.rack) return;
 
   state.rack.slots.forEach((slot, i) => {
@@ -2218,24 +2282,368 @@ function renderRack() {
     const meta = SLOT_META[slot.kind]
       || (shaper ? { icon: shaper.label.slice(0, 2).toUpperCase(), name: shaper.label } : null)
       || { icon: '?', name: slot.kind };
-    const el = document.createElement('div');
-    el.className = 'rack-slot' + (i === state.rackSelected ? ' selected' : '') +
-      (slot.bypassed ? ' off' : '');
-    el.innerHTML = `<div class="icon">${meta.icon}</div>
-      <div class="meta"><div class="nm"></div><div class="sm"></div></div>
-      <button class="power${slot.bypassed ? '' : ' on'}" title="Switch in or out"></button>`;
-    el.querySelector('.nm').textContent = meta.name;
-    el.querySelector('.sm').textContent = slotSummary(slot);
-    el.onclick = () => { state.rackSelected = i; renderRack(); };
-    el.querySelector('.power').onclick = (e) => {
-      e.stopPropagation();
+    const el = document.createElement('section');
+    el.className = 'fx-module' + (slot.bypassed ? ' off' : '');
+    if (slot.kind === 'eq') el.classList.add('eq-visual');
+    if (slot.kind === 'comp') el.classList.add('comp-visual');
+    if (slot.kind === 'dattorro_filter_bank') el.classList.add('filter-bank-visual');
+    if (slot.kind === 'chamberlin') el.classList.add('chamberlin-visual');
+    el.dataset.kind = slot.kind;
+    el.dataset.slot = i;
+    el.innerHTML = `<header class="fx-module-head">
+      <h2></h2>
+      <div class="fx-module-actions"><button class="ghost fx-power"></button>
+      <button class="ghost danger fx-remove">Remove</button></div>
+      </header><div class="fx-module-signal">
+        <div class="fx-vu fx-vu-in" aria-label="${meta.name} input meter"></div>
+        <div class="fx-module-controls"></div>
+        <div class="fx-vu fx-vu-out" aria-label="${meta.name} output meter"></div>
+      </div>`;
+    el.querySelector('h2').textContent = meta.name;
+    const head = el.querySelector('.fx-module-head');
+    head.draggable = true;
+    head.ondragstart = (event) => {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', String(i));
+      el.classList.add('dragging');
+    };
+    head.ondragend = () => el.classList.remove('dragging');
+    el.ondragover = (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; };
+    el.ondrop = (event) => {
+      event.preventDefault();
+      const from = Number(event.dataTransfer.getData('text/plain'));
+      if (Number.isInteger(from)) moveFxModule(from, i);
+    };
+    const power = el.querySelector('.fx-power');
+    power.textContent = slot.bypassed ? 'Off' : 'On';
+    power.onclick = () => {
       slot.bypassed = !slot.bypassed;
       pushRack({ immediate: true });
     };
-    list.appendChild(el);
+    el.querySelector('.fx-remove')?.addEventListener('click', () => {
+      state.rack.slots.splice(i, 1);
+      pushRack({ immediate: true });
+      renderRack();
+    });
+    renderVuMeter(el.querySelector('.fx-vu-in'), 'IN');
+    renderVuMeter(el.querySelector('.fx-vu-out'), 'OUT');
+    renderFxModuleControls(el.querySelector('.fx-module-controls'), slot, shaper, i);
+    rail.appendChild(el);
   });
+}
 
-  renderRackParams();
+function moveFxModule(from, to) {
+  if (!state.rack || from === to || from < 0 || to < 0 || from >= state.rack.slots.length) return;
+  const [slot] = state.rack.slots.splice(from, 1);
+  state.rack.slots.splice(to, 0, slot);
+  const selections=state.rack.slots.map((_,i)=>eqBandSelections.get(i));
+  const [selection]=selections.splice(from,1);selections.splice(to,0,selection);
+  eqBandSelections.clear();selections.forEach((value,i)=>{if(value!==undefined)eqBandSelections.set(i,value);});
+  state.rackSelected = to;
+  pushRack({ immediate: true });
+  renderRack();
+}
+
+function renderVuMeter(box, label) {
+  if (!box) return;
+  box.innerHTML = `<span class="vu-label">${label}</span><span class="vu-well">
+    <i class="vu-bar vu-left"></i><i class="vu-bar vu-right"></i></span>`;
+}
+
+function paintRackMeters(levels) {
+  if (!levels.length) return;
+  const height = (v) => `${Math.max(0, Math.min(100, (20 * Math.log10(Math.max(v, 1e-4)) + 60) / 60 * 100))}%`;
+  const paint = (box, pair) => {
+    if (!box || !pair) return;
+    box.querySelector('.vu-left')?.style.setProperty('--vu', height(pair[0]));
+    box.querySelector('.vu-right')?.style.setProperty('--vu', height(pair[1]));
+  };
+  paint($('fxInputMeter'), levels[0]);
+  const modules = [...document.querySelectorAll('.fx-module')];
+  modules.forEach((module, i) => {
+    paint(module.querySelector('.fx-vu-in'), levels[i]);
+    paint(module.querySelector('.fx-vu-out'), levels[i + 1]);
+    if (module.dataset.kind === 'comp') recordCompressorLevel(+module.dataset.slot, levels[i]);
+  });
+  paint($('fxOutputMeter'), levels[modules.length]);
+}
+
+const compressorLevels = new Map();
+function recordCompressorLevel(slotIndex, input) {
+  const slot=state.rack?.slots[slotIndex]; if(!slot||!input)return;
+  const peak=Math.max(input[0]||0,input[1]||0,1e-5),db=20*Math.log10(peak);
+  const over=Math.max(0,db-slot.thresholdDb),reduction=over*(1-1/Math.max(1,slot.ratio));
+  compressorLevels.set(slotIndex,{db:Math.max(-60,Math.min(0,db)),reduction:Math.min(30,reduction)});
+}
+
+function resetRackMeters() {
+  document.querySelectorAll('.vu-bar').forEach((bar) => bar.style.setProperty('--vu', '0%'));
+}
+
+function fxValueFormat(p, v) {
+  if (p.unit === 'Hz') return v >= 1000 ? `${(v / 1000).toFixed(2)} kHz`
+    : `${v < 10 ? v.toFixed(2) : Math.round(v)} Hz`;
+  if (p.unit === 'ms') return v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`;
+  if (p.unit === 'dB') return `${v.toFixed(1)} dB`;
+  if (p.unit) return `${v.toFixed(2)} ${p.unit}`;
+  return p.min >= 0 && p.max <= 1.001 ? `${Math.round(v * 100)}%` : v.toFixed(2);
+}
+
+function automationUnit(value,min,max,log=false){
+  return Math.max(0,Math.min(1,log&&min>0?Math.log(value/min)/Math.log(max/min):(value-min)/(max-min)));
+}
+
+function renderFxModuleControls(box, slot, shaper, slotIndex) {
+  const add = (label, value, min, max, step, format, set, log = false) => {
+    let lastUnit = 0;
+    box.appendChild(param(label, value, min, max, step, format,
+      (v) => { set(v); pushRackLive(); lastUnit=log&&min>0?Math.log(v/min)/Math.log(max/min):(v-min)/(max-min); },
+      () => { pushRack({ immediate: true });  }, log));
+  };
+  if (shaper) {
+    if (slot.kind === 'dattorro_filter_bank') { renderDattorroFilterBank(box, slot, shaper); return; }
+    if (slot.kind === 'chamberlin') { renderVisualChamberlin(box, slot, shaper); return; }
+    slot.params = slot.params || {};
+    const fitRows = [];
+    if (!shaper.params.length) {
+      const note = document.createElement('p');
+      note.className = 'engine-note';
+      note.textContent = 'No controls';
+      box.appendChild(note);
+    }
+    const wetSpec=shaper.params.find(p=>p.key==='wet'),drySpec=shaper.params.find(p=>p.key==='dry');
+    if(wetSpec&&drySpec){
+      if(slot.params.wet===undefined)slot.params.wet=wetSpec.default;
+      if(slot.params.dry===undefined)slot.params.dry=drySpec.default;
+      const linkedPosition=()=>slot.params.wet>=.999?1-slot.params.dry/2:slot.params.wet/2;
+      add('Dry / Wet',linkedPosition(),0,1,.001,v=>{const wet=Math.min(1,v*2),dry=Math.min(1,(1-v)*2);return `D ${Math.round(dry*100)} · W ${Math.round(wet*100)}`;},v=>{
+        slot.params.wet=Math.min(1,v*2);slot.params.dry=Math.min(1,(1-v)*2);
+        
+        
+      });
+    }
+    for (const p of shaper.params) {
+      if(p.key==='wet'||p.key==='dry')continue;
+      if (slot.params[p.key] === undefined) slot.params[p.key] = p.default;
+      if (slot.kind === 'utility' && ['invert', 'swap', 'ampFit'].includes(p.key)) {
+        const toggle = check(p.label, p.label, slot.params[p.key] >= .5, (on) => {
+          slot.params[p.key] = on ? 1 : 0;
+          fitRows.forEach((row) => row.classList.toggle('inactive', slot.params.ampFit < .5));
+          pushRack({ immediate: true });
+          
+        });
+        box.appendChild(toggle);
+        continue;
+      }
+      add(p.label, slot.params[p.key], p.min, p.max, (p.max - p.min) / 400,
+        (v) => fxValueFormat(p, v), (v) => { slot.params[p.key] = v; }, p.log, p.key);
+      if (slot.kind === 'utility' && ['grainMs', 'amount', 'floorDb'].includes(p.key)) {
+        const row = box.lastElementChild; fitRows.push(row);
+        row.classList.toggle('inactive', slot.params.ampFit < .5);
+      }
+    }
+    return;
+  }
+  if (slot.kind === 'eq') { renderVisualEq(box, slot, slotIndex); return; }
+  if (slot.kind === 'gain') {
+    add('Level', slot.db, -24, 24, 0.1, (v) => `${v.toFixed(1)} dB`, (v) => { slot.db = v; });
+  } else if (slot.kind === 'comp') {
+    renderVisualCompressor(box, slot);
+  }
+}
+
+function renderDattorroFilterBank(box,slot,shaper){
+  slot.params=slot.params||{};for(const p of shaper.params)if(slot.params[p.key]===undefined)slot.params[p.key]=p.default;
+  box.classList.add('visual-filter-bank-controls');const graph=document.createElement('div');graph.className='filter-bank-graph';graph.innerHTML='<canvas class="filter-bank-canvas"></canvas><div class="filter-bank-readout"></div><div class="filter-bank-tabs"></div><div class="filter-bank-selected-controls"></div>';box.appendChild(graph);const canvas=graph.querySelector('canvas'),readout=graph.querySelector('.filter-bank-readout'),tabs=graph.querySelector('.filter-bank-tabs'),controlsBox=graph.querySelector('.filter-bank-selected-controls');
+  const filters=[
+    {name:'Notch',color:'#e35b52',on:'notchOn',hz:'notchHz',q:'notchQ',amp:'notchAmp'},
+    {name:'Resonator',color:'#dc9d46',on:'resonatorOn',hz:'resonatorHz',q:'resonatorQ',amp:'resonatorAmp'},
+    {name:'Regalia–Mitra',color:'#62d374',on:'regaliaOn',hz:'regaliaHz',q:'regaliaQ',amp:'regaliaAmp'},
+    {name:'Damping',color:'#62aeda',on:'dampingOn',hz:'dampingHz',q:'dampingQ',amp:'dampingAmp'}];let selected=0;
+  const curve=(f,hz)=>{const p=slot.params,q=p[f.q],amp=p[f.amp];if(f.name==='Notch')return-24*amp*Math.exp(-Math.pow(Math.log(hz/p[f.hz])*q,2)*5);if(f.name==='Resonator')return 14*amp*Math.exp(-Math.pow(Math.log(hz/p[f.hz])*q,2));if(f.name==='Damping')return 20*amp*Math.log10(1/Math.sqrt(1+Math.pow(hz/p[f.hz],2*Math.max(.2,q))));return 12*amp*Math.exp(-Math.pow(Math.log(hz/p[f.hz])*q,2));};
+  const draw=()=>{const w=canvas.clientWidth,h=canvas.clientHeight;if(!w||!h)return;const d=devicePixelRatio||1;canvas.width=w*d;canvas.height=h*d;const c=canvas.getContext('2d');c.setTransform(d,0,0,d,0,0);const xf=hz=>Math.log(hz/20)/Math.log(1000)*w,yf=db=>h/2-db/48*h;c.fillStyle='#090b0d';c.fillRect(0,0,w,h);c.strokeStyle='rgba(255,255,255,.1)';for(const hz of [20,100,1000,10000,20000]){const x=xf(hz);c.beginPath();c.moveTo(x,0);c.lineTo(x,h);c.stroke();}c.beginPath();c.moveTo(0,yf(0));c.lineTo(w,yf(0));c.stroke();filters.forEach((f,i)=>{if(slot.params[f.on]<.5)return;const pts=[];for(let x=0;x<=w;x+=2){const hz=20*Math.pow(1000,x/w);pts.push([x,yf(curve(f,hz))]);}c.beginPath();c.moveTo(0,yf(0));pts.forEach(([x,y])=>c.lineTo(x,y));c.lineTo(w,yf(0));c.closePath();c.globalAlpha=.22;c.fillStyle=f.color;c.fill();c.globalAlpha=1;c.beginPath();pts.forEach(([x,y],j)=>j?c.lineTo(x,y):c.moveTo(x,y));c.strokeStyle=f.color;c.stroke();const x=xf(slot.params[f.hz]),y=yf(curve(f,slot.params[f.hz]));c.beginPath();c.arc(x,y,i===selected?9:7,0,Math.PI*2);c.fillStyle=i===selected?'#f4f7f9':f.color;c.fill();c.fillStyle='#20252a';c.textAlign='center';c.textBaseline='middle';c.font='bold 9px sans-serif';c.fillText(String(i+1),x,y);});};
+  const controls=()=>{tabs.innerHTML='';filters.forEach((f,i)=>{const b=document.createElement('button');b.className='filter-bank-tab'+(i===selected?' selected':'')+(slot.params[f.on]<.5?' off':'');b.style.setProperty('--filter-color',f.color);b.textContent=f.name;b.onclick=()=>{selected=i;controls();};tabs.appendChild(b);});controlsBox.innerHTML='';const f=filters[selected],toggle=document.createElement('button');toggle.className='ghost';toggle.textContent=slot.params[f.on]>=.5?'On':'Off';toggle.onclick=()=>{slot.params[f.on]=slot.params[f.on]>=.5?0:1;controls();pushRack({immediate:true});};controlsBox.appendChild(toggle);const add=(label,key,min,max,unit='',log=false)=>{let last=slot.params[key];controlsBox.appendChild(param(label,slot.params[key],min,max,(max-min)/400,v=>fxValueFormat({unit,min,max},v),v=>{last=v;slot.params[key]=v;draw();read();pushRackLive();},()=>{pushRack({immediate:true});},log));};add('Frequency',f.hz,20,20000,'Hz',true);add('Q',f.q,.2,18);add('Amplitude',f.amp,0,1);read();draw();function read(){readout.textContent=`${f.name.toUpperCase()} · ${fxValueFormat({unit:'Hz'},slot.params[f.hz])} · Q ${slot.params[f.q].toFixed(2)} · AMP ${Math.round(slot.params[f.amp]*100)}% · ${slot.params[f.on]>=.5?'ON':'OFF'}`;}};
+  const pick=e=>{const r=canvas.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,xf=hz=>Math.log(hz/20)/Math.log(1000)*r.width,yf=db=>r.height/2-db/48*r.height;return filters.map((f,i)=>[i,Math.hypot(px-xf(slot.params[f.hz]),py-yf(curve(f,slot.params[f.hz])))]).sort((a,b)=>a[1]-b[1])[0][0];};let dragging=false;canvas.onpointerdown=e=>{selected=pick(e);dragging=true;canvas.setPointerCapture(e.pointerId);controls();};canvas.onpointermove=e=>{if(!dragging)return;const r=canvas.getBoundingClientRect(),f=filters[selected];slot.params[f.hz]=20*Math.pow(1000,Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)));slot.params[f.q]=Math.max(.2,Math.min(18,(1-(e.clientY-r.top)/r.height)*18));draw();pushRackLive();};canvas.onpointerup=e=>{const f=filters[selected];dragging=false;try{canvas.releasePointerCapture(e.pointerId);}catch{}controls();pushRack({immediate:true});};controls();
+  requestAnimationFrame(draw);new ResizeObserver(draw).observe(canvas);
+}
+
+const CHAMBERLIN_COLORS={low:'#62aeda',band:'#62d374',high:'#dc9d46',notch:'#aa78d0'};
+function drawVisualChamberlin(canvas,p){
+  const w=canvas.clientWidth,h=canvas.clientHeight;if(!w||!h)return;const d=devicePixelRatio||1;canvas.width=w*d;canvas.height=h*d;
+  const c=canvas.getContext('2d');c.setTransform(d,0,0,d,0,0);const xf=hz=>Math.log(hz/20)/Math.log(1000)*w,yf=db=>h/2-db/36*h;
+  c.fillStyle='#090b0d';c.fillRect(0,0,w,h);c.strokeStyle='rgba(255,255,255,.1)';for(const hz of [20,100,1000,10000,20000]){const x=xf(hz);c.beginPath();c.moveTo(x,0);c.lineTo(x,h);c.stroke();}c.beginPath();c.moveTo(0,yf(0));c.lineTo(w,yf(0));c.stroke();
+  if(engine.spectrum?.length){const bins=engine.spectrum,nyquist=(engine.deviceRate||48000)/2;c.beginPath();c.moveTo(0,h);for(let i=1;i<bins.length;i++){const hz=i/(bins.length-1)*nyquist;if(hz>=20&&hz<=20000)c.lineTo(xf(hz),h-bins[i]/255*h*.9);}c.lineTo(w,h);c.closePath();c.fillStyle='rgba(52,137,202,.18)';c.fill();}
+  const filters=['low','band','high','notch'];for(const [index,key] of filters.entries()){const freq=p[key+'Freq'],q=p[key+'Q'],amp=p[key+'Amp'];if(amp<=.001)continue;const response=hz=>key==='low'?-10*Math.log10(1+Math.pow(hz/freq,4)):key==='high'?-10*Math.log10(1+Math.pow(freq/hz,4)):key==='band'?-18*Math.pow(Math.log(hz/freq)*q,2):-18*Math.exp(-Math.pow(Math.log(hz/freq)*q,2)*4);const pts=[];for(let x=0;x<=w;x+=2){const hz=20*Math.pow(1000,x/w);pts.push([x,yf(response(hz)*amp)]);}c.beginPath();c.moveTo(0,yf(0));pts.forEach(([x,y])=>c.lineTo(x,y));c.lineTo(w,yf(0));c.closePath();c.globalAlpha=.2;c.fillStyle=CHAMBERLIN_COLORS[key];c.fill();c.globalAlpha=1;c.beginPath();pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.strokeStyle=CHAMBERLIN_COLORS[key];c.stroke();const nx=xf(freq),ny=h*(.84-Math.min(1,q/10)*.66);c.beginPath();c.arc(nx,ny,8,0,Math.PI*2);c.fillStyle=CHAMBERLIN_COLORS[key];c.fill();c.fillStyle='#20252a';c.textAlign='center';c.textBaseline='middle';c.font='bold 9px sans-serif';c.fillText(String(index+1),nx,ny);}
+  c.textAlign='right';c.textBaseline='alphabetic';c.fillStyle='rgba(93,184,245,.7)';c.font='8px ui-monospace';c.fillText('POST FILTER',w-4,10);
+}
+function repaintVisualChamberlins(){document.querySelectorAll('.fx-module.chamberlin-visual').forEach(module=>{const slot=state.rack?.slots[+module.dataset.slot],canvas=module.querySelector('.chamberlin-graph canvas');if(slot&&canvas)drawVisualChamberlin(canvas,slot.params);});}
+function renderVisualChamberlin(box,slot,shaper){
+  slot.params=slot.params||{};for(const p of shaper.params)if(slot.params[p.key]===undefined)slot.params[p.key]=p.default;box.classList.add('visual-chamberlin-controls');
+  const graph=document.createElement('div');graph.className='chamberlin-graph';graph.innerHTML='<canvas></canvas><div class="chamberlin-readout"></div><div class="chamberlin-sliders"></div>';box.appendChild(graph);const canvas=graph.querySelector('canvas'),readout=graph.querySelector('.chamberlin-readout'),stack=graph.querySelector('.chamberlin-sliders');
+  let selected='low';const redraw=()=>{readout.textContent=`${selected.toUpperCase()} · ${fxValueFormat({unit:'Hz'},slot.params[selected+'Freq'])} · Q ${slot.params[selected+'Q'].toFixed(2)} · AMP ${Math.round(slot.params[selected+'Amp']*100)}%`;drawVisualChamberlin(canvas,slot.params);};
+  let selectedRows=[];const controls=()=>{stack.innerHTML='';const tabs=document.createElement('div');tabs.className='filter-bank-tabs';for(const [key,label] of [['low','Low pass'],['band','Band pass'],['high','High pass'],['notch','Notch']]){const button=document.createElement('button');button.className='filter-bank-tab'+(key===selected?' selected':'')+(slot.params[key+'On']<.5?' off':'');button.style.setProperty('--filter-color',CHAMBERLIN_COLORS[key]);button.textContent=label;button.onclick=()=>{selected=key;controls();};tabs.appendChild(button);}stack.appendChild(tabs);const toggle=document.createElement('button');toggle.className='ghost';toggle.textContent=slot.params[selected+'On']>=.5?'On':'Off';toggle.onclick=()=>{const key=selected+'On';slot.params[key]=slot.params[key]>=.5?0:1;controls();pushRack({immediate:true});};stack.appendChild(toggle);const add=(label,key,min,max,unit='',log=false)=>{let last=slot.params[key];const row=param(label,slot.params[key],min,max,(max-min)/400,v=>fxValueFormat({unit,min,max},v),v=>{last=v;slot.params[key]=v;redraw();pushRackLive();},()=>{pushRack({immediate:true});},log);stack.appendChild(row);return row;};selectedRows=[add('Frequency',selected+'Freq',20,18000,'Hz',true),add('Q',selected+'Q',.2,10),add('Amplitude',selected+'Amp',0,1)];add('Drive','drive',.25,8,'x',true);redraw();};
+  const pick=(e)=>{const r=canvas.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,xf=hz=>Math.log(hz/20)/Math.log(1000)*r.width;return ['low','band','high','notch'].map(key=>[key,Math.hypot(px-xf(slot.params[key+'Freq']),py-r.height*(.84-Math.min(1,slot.params[key+'Q']/10)*.66))]).sort((a,b)=>a[1]-b[1])[0][0];};let dragging=false;canvas.onpointerdown=e=>{selected=pick(e);dragging=true;canvas.setPointerCapture(e.pointerId);controls();};canvas.onpointermove=e=>{if(!dragging)return;const r=canvas.getBoundingClientRect(),freq=selected+'Freq',q=selected+'Q';slot.params[freq]=20*Math.pow(1000,Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)));slot.params[q]=Math.max(.2,Math.min(10,(1-(e.clientY-r.top)/r.height)*10));selectedRows[0].sync(slot.params[freq]);selectedRows[1].sync(slot.params[q]);redraw();pushRackLive();};canvas.onpointerup=e=>{const freq=selected+'Freq',q=selected+'Q';dragging=false;try{canvas.releasePointerCapture(e.pointerId);}catch{}pushRack({immediate:true});};controls();requestAnimationFrame(redraw);new ResizeObserver(redraw).observe(canvas);
+}
+
+function drawVisualCompressor(canvas, slot, slotIndex) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const level=compressorLevels.get(slotIndex)||{db:-60,reduction:0};
+  const samples=engine.waveform||[];
+  const signalTop=h*.28, signalBottom=h*.94;
+  const signalY=(db)=>signalBottom-(Math.max(-60,Math.min(0,db))+60)/60*(signalBottom-signalTop);
+  ctx.fillStyle = '#090b0d'; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(255,255,255,.11)'; ctx.lineWidth = 1;
+  for (const db of [-60, -40, -20, 0]) {
+    const y=signalY(db);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.38)';ctx.font='8px ui-monospace';ctx.textAlign='left';ctx.fillText(`${db}`,3,y-2);
+  }
+  if(samples.length){
+    const mid=(signalTop+signalBottom)/2,amp=(signalBottom-signalTop)*.46;
+    ctx.beginPath();samples.forEach((sample,i)=>{const x=i/(samples.length-1)*w,y=mid-sample/127*amp;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    ctx.lineTo(w,mid);ctx.lineTo(0,mid);ctx.closePath();ctx.fillStyle='rgba(174,181,188,.24)';ctx.fill();
+    ctx.beginPath();samples.forEach((sample,i)=>{const x=i/(samples.length-1)*w,y=mid-sample/127*amp;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle='rgba(190,197,203,.78)';ctx.lineWidth=1.15;ctx.stroke();
+  }
+  const reductionY=6+level.reduction/30*(signalTop-12);ctx.beginPath();ctx.moveTo(0,reductionY);ctx.lineTo(w,reductionY);ctx.strokeStyle='#e6c83f';ctx.lineWidth=2;ctx.stroke();
+  const kneeTop=signalY(slot.thresholdDb+slot.kneeDb/2),kneeBottom=signalY(slot.thresholdDb-slot.kneeDb/2);
+  if(slot.kneeDb>0){ctx.fillStyle='rgba(73,174,232,.13)';ctx.fillRect(0,kneeTop,w,kneeBottom-kneeTop);ctx.setLineDash([3,3]);ctx.strokeStyle='rgba(73,174,232,.42)';ctx.beginPath();ctx.moveTo(0,kneeTop);ctx.lineTo(w,kneeTop);ctx.moveTo(0,kneeBottom);ctx.lineTo(w,kneeBottom);ctx.stroke();ctx.setLineDash([]);}
+  const thresholdY=signalY(slot.thresholdDb);ctx.beginPath();ctx.moveTo(0,thresholdY);ctx.lineTo(w,thresholdY);ctx.strokeStyle='#49aee8';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.font='8px ui-monospace';ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillStyle='#e6c83f';ctx.fillText('GAIN REDUCTION',4,10);
+  ctx.textAlign='right';ctx.fillStyle='#49aee8';ctx.fillText(`THRESH ${slot.thresholdDb.toFixed(1)} dB`,w-4,thresholdY-3);
+  if(slot.kneeDb>0)ctx.fillText(`KNEE ${slot.kneeDb.toFixed(1)} dB`,w-4,kneeTop+10);
+  ctx.fillStyle='rgba(190,197,203,.65)';ctx.fillText('LIVE SIGNAL',w-4,h-4);
+}
+
+function repaintVisualCompressors() {
+  document.querySelectorAll('.fx-module.comp-visual').forEach((module) => {
+    const slot=state.rack?.slots[+module.dataset.slot],canvas=module.querySelector('.comp-graph canvas');
+    if(slot&&canvas)drawVisualCompressor(canvas,slot,+module.dataset.slot);
+  });
+}
+
+function renderVisualCompressor(box, slot) {
+  box.classList.add('visual-comp-controls');
+  const graph=document.createElement('div');graph.className='comp-graph';graph.innerHTML='<canvas></canvas><div class="comp-slider-stack"></div>';
+  box.appendChild(graph);const canvas=graph.querySelector('canvas'),stack=graph.querySelector('.comp-slider-stack');
+  const slotIndex=state.rack.slots.indexOf(slot);
+  const redraw=()=>drawVisualCompressor(canvas,slot,slotIndex);
+  const add=(label,key,value,min,max,step,format,set,log=false)=>{let last=value;const target=`fx.${slot.id}.${key}`;const row=param(label,value,min,max,step,format,
+    v=>{last=v;set(v);redraw();pushRackLive();},()=>{pushRack({immediate:true});},log);stack.appendChild(row);return row;};
+  const thresholdRow=add('Threshold','thresholdDb',slot.thresholdDb,-60,0,.5,v=>`${v.toFixed(1)} dB`,v=>{slot.thresholdDb=v;});
+  add('Ratio','ratio',slot.ratio,1,20,.1,v=>`${v.toFixed(1)}:1`,v=>{slot.ratio=v;});
+  add('Attack','attackMs',slot.attackMs,.05,500,.1,v=>`${v.toFixed(1)} ms`,v=>{slot.attackMs=v;},true);
+  add('Release','releaseMs',slot.releaseMs,5,3000,1,v=>`${Math.round(v)} ms`,v=>{slot.releaseMs=v;},true);
+  const kneeRow=add('Knee','kneeDb',slot.kneeDb,0,24,.5,v=>`${v.toFixed(1)} dB`,v=>{slot.kneeDb=v;});
+  add('Makeup','makeupDb',slot.makeupDb,-24,24,.1,v=>`${v.toFixed(1)} dB`,v=>{slot.makeupDb=v;});
+  let dragging=false;
+  canvas.addEventListener('pointerdown',e=>{dragging=true;canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{if(!dragging)return;const r=canvas.getBoundingClientRect();const top=r.height*.28,bottom=r.height*.94;slot.thresholdDb=Math.max(-60,Math.min(0,-60+(bottom-(e.clientY-r.top))/(bottom-top)*60));slot.kneeDb=Math.max(0,Math.min(24,(e.clientX-r.left)/r.width*24));thresholdRow.sync(slot.thresholdDb);kneeRow.sync(slot.kneeDb);redraw();pushRackLive();});
+  canvas.addEventListener('pointerup',e=>{dragging=false;try{canvas.releasePointerCapture(e.pointerId);}catch{}pushRack({immediate:true});});
+  requestAnimationFrame(redraw);new ResizeObserver(redraw).observe(canvas);
+}
+
+function defaultEqBands() {
+  return [
+    {type:'highpass',enabled:false,freq:30,q:.71,gainDb:0},
+    {type:'lowshelf',enabled:true,freq:100,q:.7,gainDb:0},
+    {type:'bell',enabled:true,freq:250,q:1,gainDb:0},
+    {type:'bell',enabled:false,freq:500,q:1,gainDb:0},
+    {type:'bell',enabled:false,freq:2000,q:1,gainDb:0},
+    {type:'bell',enabled:false,freq:4000,q:1,gainDb:0},
+    {type:'highshelf',enabled:true,freq:10000,q:.7,gainDb:0},
+    {type:'lowpass',enabled:false,freq:18000,q:.71,gainDb:0},
+  ];
+}
+
+const EQ_TYPES = [
+  ['highpass','╱','High-pass'], ['lowshelf','⌞','Low shelf'], ['bell','⌒','Bell'],
+  ['notch','∨','Notch'], ['highshelf','⌝','High shelf'], ['lowpass','╲','Low-pass'],
+];
+const EQ_COLORS=['#e35b52','#dc9d46','#b5d34b','#62d374','#52cbb0','#62aeda','#aa78d0','#7b8188'];
+
+function drawVisualEq(canvas, slot, selected) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const xFor = (hz) => Math.log(hz / 20) / Math.log(1000) * w;
+  const hzFor = (x) => 20 * Math.pow(1000, Math.max(0, Math.min(1, x / w)));
+  const yFor = (db) => h / 2 - db / 36 * h;
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = '#090b0d'; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(255,255,255,.10)'; ctx.lineWidth = 1;
+  for (const hz of [20, 100, 1000, 10000, 20000]) { const x=xFor(hz); ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke(); }
+  for (const db of [-12, 0, 12]) { const y=yFor(db);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke(); }
+  if (engine.spectrum?.length) {
+    const bins = engine.spectrum, nyquist = (engine.deviceRate || 48000) / 2;
+    ctx.beginPath(); ctx.moveTo(0, h);
+    for (let i = 1; i < bins.length; i++) {
+      const hz = i / (bins.length - 1) * nyquist;
+      if (hz < 20 || hz > 20000) continue;
+      ctx.lineTo(xFor(hz), h - bins[i] / 255 * h * .92);
+    }
+    ctx.lineTo(w, h); ctx.closePath();
+    ctx.fillStyle = 'rgba(52,137,202,.26)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(93,184,245,.72)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  const bands=slot.bands||defaultEqBands();
+  const bandResponse = (b,hz) => {if(!b.enabled)return 0;
+    if(b.type==='highpass')return 20*Math.log10(1/Math.sqrt(1+Math.pow(b.freq/hz,4)));
+    if(b.type==='lowpass')return 20*Math.log10(1/Math.sqrt(1+Math.pow(hz/b.freq,4)));
+    if(b.type==='notch')return b.gainDb*Math.exp(-Math.pow(Math.log(hz/b.freq)*b.q,2)*5);
+    if(b.type==='lowshelf')return b.gainDb/(1+Math.pow(hz/b.freq,2*Math.max(.2,b.q)));
+    if(b.type==='highshelf')return b.gainDb/(1+Math.pow(b.freq/hz,2*Math.max(.2,b.q)));
+    return b.gainDb*Math.exp(-Math.pow(Math.log(hz/b.freq)*b.q,2));};
+  const response = (hz) => bands.reduce((sum,b)=>sum+bandResponse(b,hz),0);
+  bands.forEach((band,i)=>{if(!band.enabled)return;const bp=[];for(let x=0;x<=w;x+=2)bp.push([x,yFor(bandResponse(band,hzFor(x)))]);ctx.beginPath();ctx.moveTo(0,yFor(0));bp.forEach(([x,y])=>ctx.lineTo(x,y));ctx.lineTo(w,yFor(0));ctx.closePath();ctx.globalAlpha=.18;ctx.fillStyle=EQ_COLORS[i];ctx.fill();ctx.globalAlpha=1;});
+  const points=[]; for(let x=0;x<=w;x+=2) points.push([x,yFor(response(hzFor(x)))]);
+  ctx.beginPath();ctx.moveTo(0,h);for(const [x,y] of points)ctx.lineTo(x,y);ctx.lineTo(w,h);ctx.closePath();
+  ctx.fillStyle='rgba(94,190,52,.25)';ctx.fill(); ctx.beginPath();
+  points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.strokeStyle='#78dd42';ctx.lineWidth=1.8;ctx.stroke();
+  bands.forEach((b,i)=>{const x=xFor(b.freq),y=yFor(['highpass','lowpass','notch'].includes(b.type)?0:b.gainDb);ctx.beginPath();ctx.arc(x,y,i===selected?9:7,0,Math.PI*2);ctx.fillStyle=!b.enabled?'#454a50':i===selected?'#f4f7f9':EQ_COLORS[i];ctx.fill();ctx.fillStyle='#20252a';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(String(i+1),x,y);});
+  ctx.fillStyle='rgba(255,255,255,.45)';ctx.font='8px ui-monospace';ctx.textAlign='left';ctx.fillText('20',3,h-4);ctx.fillText('100',xFor(100)+2,h-4);ctx.fillText('1k',xFor(1000)+2,h-4);ctx.fillText('10k',xFor(10000)+2,h-4);
+  ctx.textAlign='right';ctx.fillStyle='rgba(93,184,245,.7)';ctx.fillText('POST FILTER',w-4,10);
+}
+
+function repaintVisualEqs() {
+  document.querySelectorAll('.fx-module.eq-visual').forEach((module) => {
+    const slot = state.rack?.slots[+module.dataset.slot];
+    const canvas = module.querySelector('.eq-graph canvas');
+    if (slot && canvas) drawVisualEq(canvas, slot, +(module.querySelector('.eq-graph')?.dataset.selected || 2));
+  });
+}
+
+const eqBandSelections = new Map();
+function renderVisualEq(box, slot, slotIndex) {
+  slot.bands=slot.bands||defaultEqBands();
+  box.classList.add('visual-eq-controls');
+  const graph = document.createElement('div'); graph.className='eq-graph';
+  graph.innerHTML='<canvas></canvas><div class="eq-selected"></div><div class="eq-slider-stack"></div>';
+  box.appendChild(graph); const canvas=graph.querySelector('canvas'); const stack=graph.querySelector('.eq-slider-stack');
+  let selected=eqBandSelections.get(slotIndex) ?? 2;
+  const current=()=>slot.bands[selected];
+  const redraw=()=>{graph.dataset.selected=selected;const b=current();graph.querySelector('.eq-selected').textContent=`BAND ${selected+1} · ${b.type.toUpperCase()} · ${b.enabled?'ON':'OFF'} · ${fxValueFormat({unit:'Hz'},b.freq)} · ${b.gainDb.toFixed(1)} dB · Q ${b.q.toFixed(2)}`;drawVisualEq(canvas,slot,selected);};
+  const controls=()=>{
+    stack.innerHTML=''; const band=current();
+    const toolbar=document.createElement('div');toolbar.className='eq-band-toolbar';
+    const enabled=document.createElement('button');enabled.className='ghost';enabled.textContent=band.enabled?'On':'Off';enabled.onclick=()=>{band.enabled=!band.enabled;controls();pushRack({immediate:true});};
+    const shapes=document.createElement('div');shapes.className='eq-shape-icons';for(const [value,icon,label] of EQ_TYPES){const button=document.createElement('button');button.type='button';button.className='eq-shape-icon'+(band.type===value?' selected':'');button.textContent=icon;button.title=label;button.setAttribute('aria-label',label);button.onclick=()=>{band.type=value;if(value==='notch'&&Math.abs(band.gainDb)<.01)band.gainDb=-12;controls();pushRack({immediate:true});};shapes.appendChild(button);}toolbar.append(enabled,shapes);stack.appendChild(toolbar);
+    const target=k=>`fx.${slot.id}.band.${selected}.${k}`;
+    stack.appendChild(param('Frequency',band.freq,20,20000,1,v=>fxValueFormat({unit:'Hz'},v),v=>{band.freq=v;redraw();pushRackLive();},()=>{pushRack({immediate:true});},true));
+    if(!['highpass','lowpass'].includes(band.type))stack.appendChild(param('Q',band.q,.05,18,.05,v=>v.toFixed(2),v=>{band.q=v;redraw();pushRackLive();},()=>{pushRack({immediate:true});}));
+    if(!['highpass','lowpass'].includes(band.type))stack.appendChild(param('Gain',band.gainDb,-24,24,.1,v=>`${v.toFixed(1)} dB`,v=>{band.gainDb=v;redraw();pushRackLive();},()=>{pushRack({immediate:true});}));
+    redraw();
+  };
+  const pick=(x,y)=>{const rect=canvas.getBoundingClientRect(),px=x-rect.left,py=y-rect.top,xFor=hz=>Math.log(hz/20)/Math.log(1000)*rect.width,yFor=db=>rect.height/2-db/36*rect.height;return slot.bands.map((b,i)=>[i,Math.hypot(px-xFor(b.freq),py-yFor(['highpass','lowpass','notch'].includes(b.type)?0:b.gainDb))]).sort((a,b)=>a[1]-b[1])[0][0];};
+  let dragging=false;
+  canvas.addEventListener('pointerdown',e=>{selected=pick(e.clientX,e.clientY);eqBandSelections.set(slotIndex,selected);dragging=true;canvas.setPointerCapture(e.pointerId);controls();});
+  canvas.addEventListener('pointermove',e=>{if(!dragging)return;const r=canvas.getBoundingClientRect(),band=current(),base=`fx.${slot.id}.band.${selected}`;band.freq=20*Math.pow(1000,Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)));if(!['highpass','lowpass'].includes(band.type))band.gainDb=Math.max(-24,Math.min(24,(r.height/2-(e.clientY-r.top))/r.height*36));redraw();pushRackLive();});
+  canvas.addEventListener('pointerup',e=>{const band=current(),base=`fx.${slot.id}.band.${selected}`;dragging=false;try{canvas.releasePointerCapture(e.pointerId);}catch{}controls();pushRack({immediate:true});});
+  controls(); requestAnimationFrame(redraw);
+  new ResizeObserver(redraw).observe(canvas);
 }
 
 /// One labelled slider bound to a field on the selected slot.
@@ -2312,6 +2720,8 @@ function knob(label, value, min, max, step, format, onChange, onCommit, log) {
   el.className = 'knob';
   el.innerHTML = `
     <svg viewBox="0 0 44 44" aria-hidden="true">
+      <circle class="bezel" cx="22" cy="22" r="13"></circle>
+      <circle class="cap" cx="22" cy="22" r="10.5"></circle>
       <path class="track" d=""></path>
       <path class="arc" d=""></path>
       <line class="ptr" x1="22" y1="22" x2="22" y2="8"></line>
@@ -3094,19 +3504,19 @@ function renderStretch() {
   const rows = {};
   rows.ratio = tip(param('Stretch', st.ratio, 0.01, 100, 0.01,
     (v) => (v >= 10 ? `${v.toFixed(0)}×` : v >= 1 ? `${v.toFixed(2)}×` : `${v.toFixed(3)}×`),
-    (v) => { state.stretchDraft.ratio = v; showStretchOut(); previewStretch(); },
-    () => commitStretch(), true),
+    (v) => { state.stretchDraft.ratio = v; showStretchOut(); previewStretch();  },
+    () => {commitStretch();}, true),
         'How much longer the result is than the source. 1x is untouched, 0.5x is half the length, 100x is the point of a granular stretcher. Logarithmic, so the everyday range is not squeezed into the first tenth of the slider.');
   rows.semitones = tip(param('Pitch', st.semitones, -48, 48, 0.5,
     (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} st`,
-    (v) => { state.stretchDraft.semitones = v; previewStretch(); },
-    () => commitStretch()),
+    (v) => { state.stretchDraft.semitones = v; previewStretch();  },
+    () => {commitStretch();} ),
         'Shifts the pitch without changing the length. The engine is driven at ratio x pitch and the result read back that much faster, and the two length changes cancel. Twelve semitones is an octave.');
   // Log too: 40 ms is the everyday setting and second-long grains are the
   // extreme, so a linear control would bunch the useful range at one end.
   rows.windowMs = tip(param('Window', st.windowMs, 5, 2000, 1, (v) => `${Math.round(v)} ms`,
-    (v) => { state.stretchDraft.windowMs = v; previewStretch(); },
-    () => commitStretch(), true),
+    (v) => { state.stretchDraft.windowMs = v; previewStretch();  },
+    () => {commitStretch();}, true),
         'The length of one piece the engine works with - a splice for WSOLA, a grain for the cloud. Short follows transients and roughens tone; long holds tone together and smears attacks.');
 
   for (const el of Object.values(rows)) box.appendChild(el);
@@ -3179,8 +3589,8 @@ function renderGrainParams() {
     const group = wild(heading, blurb);
     for (const [label, key, min, max, step, fmt, hint] of rows) {
       const el = tip(param(label, g[key], min, max, step, fmt,
-        (v) => { state.grainDraft[key] = v; preview(); },
-        () => commit()), hint);
+        (v) => { state.grainDraft[key] = v; preview();  },
+        () => {commit();}), hint);
       state.grainRows[key] = el;
       group.add(el);
     }

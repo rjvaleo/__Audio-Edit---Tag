@@ -672,7 +672,9 @@ fn identity_for(app: &Arc<App>, rel: &str) -> Option<edit::EditList> {
 /// `fx::shape` and nothing else needs touching — which is the same reason the
 /// rack has one slot variant for all of them rather than nine.
 ///
-/// It is also what automation will read to know what it may address.
+/// Automation has its own list (`/api/automation` serves `targets`), because
+/// what a lane may address depends on what is actually *in* the rack, not on
+/// what could be.
 fn api_fx_catalogue() -> Response {
     let kinds: Vec<Value> = fx::shape::ShapeKind::ALL
         .into_iter()
@@ -2215,7 +2217,30 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
             // straight from `position` leads the sound by this much.
             .set("latency", h.shared.latency_frames() as f64)
             .set("grains", Value::Arr(arr))
-            .set("spectrum", Value::Arr(spectrum));
+            .set("spectrum", Value::Arr(spectrum))
+            // Rides along with the playhead rather than on its own poll: the
+            // meters and the position describe the same instant, and fetching
+            // them separately lets them disagree.
+            .set(
+                "rackLevels",
+                Value::Arr(
+                    h.shared
+                        .rack_levels()
+                        .into_iter()
+                        .map(|(l, r)| Value::Arr(vec![Value::Num(l as f64), Value::Num(r as f64)]))
+                        .collect(),
+                ),
+            )
+            .set(
+                "rackTelemetry",
+                Value::Arr(
+                    h.shared
+                        .rack_telemetry()
+                        .into_iter()
+                        .map(|v| Value::Num(v as f64))
+                        .collect(),
+                ),
+            );
         // Where the callback actually wraps. Only it knows what a loop end of
         // zero resolves to, so anything drawing a playhead is told rather than
         // left to work it out and be wrong.

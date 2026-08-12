@@ -16,6 +16,13 @@ use std::sync::Mutex;
 #[derive(Debug, Clone, PartialEq)]
 pub struct RackSpec {
     pub slots: Vec<SlotSpec>,
+    /// A stable name per slot, parallel to `slots`.
+    ///
+    /// Automation lanes address a slot by this rather than by position, so
+    /// dragging a module along the rail moves the effect and takes its lanes
+    /// with it. Position alone would repoint every lane on a reorder — silently,
+    /// and onto whatever effect happened to land there.
+    pub slot_ids: Vec<String>,
     /// The channel's own compressor, after everything in the chain. Not a slot:
     /// it is not something you add and cannot be reordered, because the end of
     /// the chain is the only place it means anything.
@@ -124,7 +131,7 @@ fn band_json(b: &Band) -> Value {
 
 impl RackSpec {
     pub fn empty() -> Self {
-        RackSpec { slots: Vec::new(), master: MasterSettings::default() }
+        RackSpec { slots: Vec::new(), slot_ids: Vec::new(), master: MasterSettings::default() }
     }
 
     /// A sensible starting rack: everything present but flat and bypassed, so
@@ -136,6 +143,7 @@ impl RackSpec {
                 SlotSpec::Eq { settings: EqSettings::default(), bypassed: true },
                 SlotSpec::Comp { settings: CompSettings::default(), bypassed: true },
             ],
+            slot_ids: vec!["factory-gain".into(), "factory-eq".into(), "factory-comp".into()],
             master: MasterSettings::default(),
         }
     }
@@ -146,9 +154,20 @@ impl RackSpec {
             return RackSpec { master, ..RackSpec::empty() };
         };
         let mut slots = Vec::new();
-        for it in items {
+        let mut slot_ids = Vec::new();
+        for (index, it) in items.iter().enumerate() {
             let kind = it.get("kind").and_then(|k| k.as_str()).unwrap_or("");
             let bypassed = flag(it.get("bypassed"));
+            // A rack saved before slots had names gets one derived from where
+            // it sat, which is stable for as long as nothing is reordered —
+            // the best that can be done for a document that never had one.
+            let id = it
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("legacy-{kind}-{index}"));
+            let before = slots.len();
             match kind {
                 "gain" => slots.push(SlotSpec::Gain {
                     db: num(it.get("db"), 0.0).clamp(-48.0, 48.0),
@@ -199,17 +218,24 @@ impl RackSpec {
                     }
                 }
             }
+            // Only if the slot survived: an unknown kind is dropped, and its
+            // name has to go with it or the two lists come apart.
+            if slots.len() > before {
+                slot_ids.push(id);
+            }
         }
-        RackSpec { slots, master }
+        RackSpec { slots, slot_ids, master }
     }
 
     pub fn to_json(&self) -> Value {
         let slots: Vec<Value> = self
             .slots
             .iter()
-            .map(|s| {
+            .enumerate()
+            .map(|(i, s)| {
                 let base = Value::obj()
                     .set("kind", s.kind())
+                    .set("id", self.slot_ids.get(i).cloned().unwrap_or_default())
                     .set("bypassed", s.bypassed());
                 match s {
                     SlotSpec::Gain { db, .. } => base.set("db", *db as f64),
@@ -359,6 +385,12 @@ impl RackStore {
 
 #[cfg(test)]
 mod tests {
+    /// Stable names for a hand-built rack, so a test spec round-trips like a
+    /// real one. Production names come from the interface.
+    fn named(slots: &[SlotSpec]) -> Vec<String> {
+        (0..slots.len()).map(|i| format!("test-{i}")).collect()
+    }
+
     use super::*;
     use crate::json;
 
@@ -387,7 +419,7 @@ mod tests {
                 .collect();
             slots.push(SlotSpec::Shape { kind, params, bypassed: false });
         }
-        let spec = RackSpec { slots, master: MasterSettings::default() };
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default() };
         let back = RackSpec::from_json(&spec.to_json());
         assert_eq!(back, spec, "a shaper lost something on the way through JSON");
         assert!(!back.build(48_000, 2).is_empty(), "none of them built");
@@ -423,6 +455,7 @@ mod tests {
     #[test]
     fn an_enabled_band_with_gain_makes_the_rack_active() {
         let spec = RackSpec {
+            slot_ids: vec!["eq".into()],
             slots: vec![SlotSpec::Eq {
                 settings: EqSettings {
                     mid: Band { freq: 1000.0, q: 1.0, gain_db: 4.0 },
@@ -440,6 +473,7 @@ mod tests {
     fn a_flat_enabled_eq_is_not_treated_as_active() {
         // Otherwise every file pays for pre-roll and filtering to achieve nothing.
         let spec = RackSpec {
+            slot_ids: named(&vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }]),
             slots: vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }],
             master: MasterSettings::default(),
         };
@@ -449,6 +483,7 @@ mod tests {
     #[test]
     fn a_bypassed_slot_is_left_out_of_the_built_rack() {
         let spec = RackSpec {
+            slot_ids: named(&vec![SlotSpec::Gain { db: 12.0, bypassed: true }]),
             slots: vec![SlotSpec::Gain { db: 12.0, bypassed: true }],
             master: MasterSettings::default(),
         };
@@ -494,6 +529,7 @@ mod tests {
     #[test]
     fn the_eq_curve_is_flat_when_nothing_is_boosted() {
         let spec = RackSpec {
+            slot_ids: named(&vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }]),
             slots: vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }],
             master: MasterSettings::default(),
         };
@@ -505,6 +541,7 @@ mod tests {
     #[test]
     fn the_eq_curve_peaks_near_the_boosted_band() {
         let spec = RackSpec {
+            slot_ids: vec!["eq".into()],
             slots: vec![SlotSpec::Eq {
                 settings: EqSettings {
                     mid: Band { freq: 1000.0, q: 2.0, gain_db: 10.0 },
@@ -534,7 +571,7 @@ mod tests {
     #[test]
     fn the_store_remembers_what_was_set() {
         let store = RackStore::default();
-        store.set("a.wav", RackSpec { slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default() });
+        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default() });
         assert!(store.is_active("a.wav"));
         assert_eq!(store.get("a.wav").slots.len(), 1);
     }

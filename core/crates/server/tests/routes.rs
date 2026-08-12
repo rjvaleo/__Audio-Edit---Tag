@@ -1334,18 +1334,18 @@ fn the_menu_offers_the_document_and_every_slot_in_the_rack() {
     // the slot is switched in.
     let before = targets_now(&app);
     assert!(before.iter().any(|t| t == "stretch.semitones"), "the document: {before:?}");
-    assert!(before.iter().any(|t| t == "fx.0.db"), "the bypassed gain: {before:?}");
-    assert!(before.iter().any(|t| t == "fx.1.mid.freq"), "the bypassed EQ: {before:?}");
-    assert!(before.iter().any(|t| t == "fx.2.ratio"), "the bypassed compressor: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.factory-gain.db"), "the bypassed gain: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.factory-eq.mid.freq"), "the bypassed EQ: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.factory-comp.ratio"), "the bypassed compressor: {before:?}");
 
     let r = server::routes::route(
         &app,
-        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","db":0}],"master":{"on":true,"amount":0.5}}"#),
+        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","id":"my-gain","db":0}],"master":{"on":true,"amount":0.5}}"#),
     );
     assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
 
     let after = targets_now(&app);
-    assert!(after.iter().any(|t| t == "fx.0.db"), "the gain slot: {after:?}");
+    assert!(after.iter().any(|t| t == "fx.my-gain.db"), "the gain slot: {after:?}");
     assert!(after.iter().any(|t| t == "rack.master.amount"), "the maximiser: {after:?}");
     // And the bands of the EQ that is no longer there are gone with it, so a
     // menu never offers something playback would ignore.
@@ -1354,7 +1354,7 @@ fn the_menu_offers_the_document_and_every_slot_in_the_rack() {
     // Switching the maximiser off takes its target away too.
     server::routes::route(
         &app,
-        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","db":0}],"master":{"on":false}}"#),
+        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","id":"my-gain","db":0}],"master":{"on":false}}"#),
     );
     assert!(!targets_now(&app).iter().any(|t| t == "rack.master.amount"));
 }
@@ -1391,13 +1391,13 @@ fn a_rack_lane_reaches_the_exported_file() {
     let app = s.app();
     server::routes::route(
         &app,
-        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","db":0}],"master":{"on":false}}"#),
+        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","id":"my-gain","db":0}],"master":{"on":false}}"#),
     );
     // Silence at the start of the lane, full level at the end. Unit 0 is the
     // gain's own minimum, which is well below audibility over a sine.
     server::routes::route(
         &app,
-        &post("/api/automation", &lane_body("kit/tone.wav", "fx.0.db",
+        &post("/api/automation", &lane_body("kit/tone.wav", "fx.my-gain.db",
               r#"[{"frame":0,"value":0.0,"curve":"linear","tension":0},{"frame":8000,"value":1.0,"curve":"linear","tension":0}]"#)),
     );
 

@@ -126,6 +126,12 @@ impl Effect for Compressor {
         "Compressor"
     }
 
+    /// Current gain reduction, as positive dB. This is the number that says
+    /// whether the compressor is working, and the only one worth a meter.
+    fn telemetry(&self) -> f32 {
+        -self.envelope_db
+    }
+
     /// The same ranges the interface offers — see [`crate::eq::EQ_FREQ_MIN`].
     fn set_param(&mut self, key: &str, value: f32) -> bool {
         match key {

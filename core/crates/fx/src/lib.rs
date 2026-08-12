@@ -9,6 +9,7 @@
 
 pub mod biquad;
 pub mod comp;
+pub mod dattorro;
 pub mod decompose;
 pub mod eq;
 pub mod grain;
@@ -27,6 +28,9 @@ pub mod vstream;
 pub mod transient;
 pub mod vocoder;
 
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+
 pub use biquad::Coeffs;
 pub use comp::Compressor;
 pub use eq::Eq;
@@ -34,6 +38,84 @@ pub use grain::{Grain, GrainStream, StreamParams};
 pub use master::{MasterSettings, Maximizer};
 pub use stretch::Stretch;
 pub use vocoder::Settings as VocoderSettings;
+
+/// The most stages a rack can meter: every slot, plus the input, plus the master.
+pub const MAX_RACK_STAGES: usize = 65;
+
+/// Peak meters either side of every slot, written from the audio thread.
+///
+/// Atomics rather than a channel: the callback may not allocate or block, and a
+/// meter that misses an update is a meter that is one block stale, which nobody
+/// can see. Stage 0 is the rack's input; stage *n+1* is the output of slot *n*.
+pub struct RackMeters {
+    left: [AtomicU32; MAX_RACK_STAGES],
+    right: [AtomicU32; MAX_RACK_STAGES],
+    telemetry: [AtomicU32; MAX_RACK_STAGES],
+}
+
+impl RackMeters {
+    pub fn new() -> Self {
+        Self {
+            left: std::array::from_fn(|_| AtomicU32::new(0)),
+            right: std::array::from_fn(|_| AtomicU32::new(0)),
+            telemetry: std::array::from_fn(|_| AtomicU32::new(0)),
+        }
+    }
+
+    fn write(&self, stage: usize, buf: &[f32], channels: usize) {
+        if stage >= MAX_RACK_STAGES {
+            return;
+        }
+        let channels = channels.max(1);
+        let (mut l, mut r) = (0.0f32, 0.0f32);
+        for frame in buf.chunks(channels) {
+            l = l.max(frame[0].abs());
+            r = r.max(frame.get(1).copied().unwrap_or(frame[0]).abs());
+        }
+        self.left[stage].store(l.to_bits(), Ordering::Release);
+        self.right[stage].store(r.to_bits(), Ordering::Release);
+    }
+
+    fn write_telemetry(&self, stage: usize, value: f32) {
+        if stage < MAX_RACK_STAGES {
+            self.telemetry[stage].store(value.to_bits(), Ordering::Release);
+        }
+    }
+
+    pub fn snapshot(&self) -> Vec<(f32, f32)> {
+        (0..MAX_RACK_STAGES)
+            .map(|i| {
+                (
+                    f32::from_bits(self.left[i].load(Ordering::Acquire)),
+                    f32::from_bits(self.right[i].load(Ordering::Acquire)),
+                )
+            })
+            .collect()
+    }
+
+    pub fn telemetry_snapshot(&self) -> Vec<f32> {
+        self.telemetry
+            .iter()
+            .map(|v| f32::from_bits(v.load(Ordering::Acquire)))
+            .collect()
+    }
+
+    /// Zero everything. Called when playback stops, so the meters fall to
+    /// silence rather than freezing at whatever was last heard.
+    pub fn clear(&self) {
+        for i in 0..MAX_RACK_STAGES {
+            self.left[i].store(0, Ordering::Release);
+            self.right[i].store(0, Ordering::Release);
+            self.telemetry[i].store(0, Ordering::Release);
+        }
+    }
+}
+
+impl Default for RackMeters {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Anything that can process audio in place.
 pub trait Effect: Send {
@@ -55,6 +137,15 @@ pub trait Effect: Send {
     /// the keys come from.
     fn set_param(&mut self, _key: &str, _value: f32) -> bool {
         false
+    }
+
+    /// One scalar the interface can show for this effect, or zero.
+    ///
+    /// A compressor reports its current gain reduction as positive dB, which is
+    /// the number that tells you whether it is doing anything. Effects with no
+    /// such number say nothing rather than inventing one.
+    fn telemetry(&self) -> f32 {
+        0.0
     }
 }
 
@@ -79,6 +170,9 @@ impl<T: Effect + params::Params> Effect for Driven<T> {
     }
     fn set_param(&mut self, key: &str, value: f32) -> bool {
         self.0.set(key, value)
+    }
+    fn telemetry(&self) -> f32 {
+        self.0.telemetry()
     }
 }
 
@@ -134,11 +228,18 @@ pub struct Slot {
 #[derive(Default)]
 pub struct Rack {
     pub slots: Vec<Slot>,
+    meters: Option<Arc<RackMeters>>,
 }
 
 impl Rack {
     pub fn new() -> Self {
-        Rack { slots: Vec::new() }
+        Rack { slots: Vec::new(), meters: None }
+    }
+
+    /// Share a meter block with whoever is drawing it. The rack writes; the
+    /// interface reads a snapshot whenever it likes.
+    pub fn set_meters(&mut self, meters: Arc<RackMeters>) {
+        self.meters = Some(meters);
     }
 
     pub fn push(&mut self, effect: Box<dyn Effect>) {
@@ -164,9 +265,18 @@ impl Rack {
     }
 
     pub fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
-        for s in &mut self.slots {
+        if let Some(m) = &self.meters {
+            m.write(0, buf, channels);
+        }
+        for (i, s) in self.slots.iter_mut().enumerate() {
             if !s.bypassed {
                 s.effect.process(buf, channels, sample_rate);
+            }
+            // Metered even when bypassed, so a switched-out slot reads as
+            // passing its input through rather than as silence.
+            if let Some(m) = &self.meters {
+                m.write(i + 1, buf, channels);
+                m.write_telemetry(i + 1, s.effect.telemetry());
             }
         }
     }

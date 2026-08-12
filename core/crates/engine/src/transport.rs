@@ -111,6 +111,13 @@ pub struct Shared {
     /// megabytes, and a callback may not allocate.
     pending_bank: Mutex<Option<crate::stretcher::LayerBank>>,
 
+    /// Peak levels either side of every rack slot, and each slot's own scalar.
+    ///
+    /// Shared with whatever rack the audio thread currently holds, so a rack
+    /// swap does not lose the meters — they belong to the transport, not to any
+    /// one chain.
+    rack_meters: Arc<fx::RackMeters>,
+
     /// Control-rate writes from automation: `(slot, key, value)`.
     ///
     /// Unlike every other `pending_` here, the callback **reads this without
@@ -154,6 +161,7 @@ impl Shared {
             pending_map: Mutex::new(None),
             pending_parts: Mutex::new(None),
             pending_bank: Mutex::new(None),
+            rack_meters: Arc::new(fx::RackMeters::new()),
             automation: Mutex::new(Vec::new()),
             spectrum: Mutex::new(Vec::new()),
             capture: Mutex::new(None),
@@ -287,10 +295,31 @@ impl Shared {
         }
     }
 
-    pub fn set_rack(&self, rack: Option<fx::Rack>) {
+    pub fn set_rack(&self, mut rack: Option<fx::Rack>) {
+        if let Some(r) = rack.as_mut() {
+            r.set_meters(Arc::clone(&self.rack_meters));
+        }
         if let Ok(mut g) = self.pending_rack.lock() {
             *g = Some(rack);
         }
+    }
+
+    /// Peak level either side of each slot: index 0 is the rack's input, index
+    /// *n+1* the output of slot *n*.
+    pub fn rack_levels(&self) -> Vec<(f32, f32)> {
+        self.rack_meters.snapshot()
+    }
+
+    /// Each slot's own scalar — gain reduction for a compressor, zero for
+    /// anything with nothing worth reporting.
+    pub fn rack_telemetry(&self) -> Vec<f32> {
+        self.rack_meters.telemetry_snapshot()
+    }
+
+    /// Drop the meters to silence. Called when playback stops, so a rail of
+    /// meters falls rather than freezing at the last block that was heard.
+    pub fn clear_rack_meters(&self) {
+        self.rack_meters.clear();
     }
 
     /// Replace the automation writes the callback applies each block.
@@ -473,6 +502,9 @@ impl Core {
 
         if !shared.is_playing() {
             out.fill(0.0);
+            // Nothing is passing through the rack, so the meters must fall
+            // rather than hold the last block that was heard.
+            shared.rack_meters.clear();
             shared
                 .position
                 .store(self.renderer.position(), Ordering::Release);

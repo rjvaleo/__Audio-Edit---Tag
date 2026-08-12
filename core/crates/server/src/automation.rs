@@ -335,10 +335,13 @@ pub fn rack_controls(
         let Some(rest) = lane.target.strip_prefix("fx.") else {
             continue;
         };
-        let Some((index, key)) = rest.split_once('.') else {
+        // `fx.<slot id>.<key>`. By name, not by position: dragging a module
+        // along the rail must take its lanes with it, and a lane that followed
+        // the position instead would silently land on whatever moved into it.
+        let Some((id, key)) = rest.split_once('.') else {
             continue;
         };
-        let Ok(slot) = index.parse::<usize>() else {
+        let Some(slot) = spec.slot_ids.iter().position(|x| x == id) else {
             continue;
         };
         let Some(spec_slot) = spec.slots.get(slot) else {
@@ -450,8 +453,12 @@ pub fn targets(spec: &crate::rack::RackSpec) -> Vec<(String, String)> {
 
     for (i, slot) in spec.slots.iter().enumerate() {
         let name = slot.kind_label();
+        let id = spec.slot_ids.get(i).cloned().unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
         let mut add = |key: &str, label: &str| {
-            out.push((format!("fx.{i}.{key}"), format!("{name} — {label}")));
+            out.push((format!("fx.{id}.{key}"), format!("{name} — {label}")));
         };
         match slot {
             crate::rack::SlotSpec::Gain { .. } => add("db", "Level"),
@@ -845,14 +852,15 @@ mod tests {
     fn a_disabled_lane_and_a_bypassed_document_write_nothing() {
         let mut spec = RackSpec::empty();
         spec.slots.push(SlotSpec::Gain { db: 0.0, bypassed: false });
+        spec.slot_ids.push("g".into());
         let mut out = Vec::new();
 
-        let mut a = automation(vec![lane("fx.0.db", vec![(0, 1.0)])]);
+        let mut a = automation(vec![lane("fx.g.db", vec![(0, 1.0)])]);
         a.lanes[0].enabled = false;
         rack_controls(&a, &spec, 0, 48_000, &mut out);
         assert!(out.is_empty(), "a disabled lane wrote {out:?}");
 
-        let mut a = automation(vec![lane("fx.0.db", vec![(0, 1.0)])]);
+        let mut a = automation(vec![lane("fx.g.db", vec![(0, 1.0)])]);
         a.bypassed = true;
         rack_controls(&a, &spec, 0, 48_000, &mut out);
         assert!(out.is_empty(), "a bypassed document wrote {out:?}");
@@ -862,10 +870,11 @@ mod tests {
     fn a_unit_lane_resolves_through_the_effects_own_range() {
         let mut spec = RackSpec::empty();
         spec.slots.push(SlotSpec::Gain { db: 0.0, bypassed: false });
+        spec.slot_ids.push("g".into());
         let mut out = Vec::new();
 
         for (unit, expect) in [(0.0, fx::GAIN_DB_MIN), (0.5, 0.0), (1.0, fx::GAIN_DB_MAX)] {
-            rack_controls(&automation(vec![lane("fx.0.db", vec![(0, unit)])]), &spec, 0, 48_000, &mut out);
+            rack_controls(&automation(vec![lane("fx.g.db", vec![(0, unit)])]), &spec, 0, 48_000, &mut out);
             assert_eq!(out.len(), 1);
             assert!((out[0].2 - expect).abs() < 1e-4, "unit {unit} gave {}", out[0].2);
         }
@@ -878,30 +887,41 @@ mod tests {
     fn an_eq_frequency_survives_the_round_trip_through_a_unit() {
         let mut spec = RackSpec::empty();
         spec.slots.push(SlotSpec::Eq { settings: Default::default(), bypassed: false });
+        spec.slot_ids.push("g".into());
         let mut out = Vec::new();
         for hz in [50.0f32, 440.0, 1000.0, 8000.0] {
             // what the interface stores when you park a band at `hz`
             let unit = (hz / fx::eq::EQ_FREQ_MIN).ln() / (fx::eq::EQ_FREQ_MAX / fx::eq::EQ_FREQ_MIN).ln();
-            rack_controls(&automation(vec![lane("fx.0.mid.freq", vec![(0, unit)])]), &spec, 0, 48_000, &mut out);
+            rack_controls(&automation(vec![lane("fx.g.mid.freq", vec![(0, unit)])]), &spec, 0, 48_000, &mut out);
             let back = out[0].2;
             assert!((back / hz - 1.0).abs() < 1e-3, "{hz} Hz came back as {back} Hz");
         }
     }
 
+    /// A lane names its module, so dragging the rail carries it along.
     #[test]
-    fn slots_are_addressed_by_position_even_when_an_earlier_one_is_bypassed() {
+    fn a_lane_follows_its_module_when_the_rack_is_reordered() {
         let mut spec = RackSpec::empty();
         spec.slots.push(SlotSpec::Gain { db: 0.0, bypassed: true });
         spec.slots.push(SlotSpec::Gain { db: 0.0, bypassed: false });
+        spec.slot_ids = vec!["first".into(), "second".into()];
         let mut out = Vec::new();
-        rack_controls(&automation(vec![lane("fx.1.db", vec![(0, 1.0)])]), &spec, 0, 48_000, &mut out);
-        assert_eq!(out[0].0, 1, "the lane must still name the second slot");
+        let a = automation(vec![lane("fx.second.db", vec![(0, 1.0)])]);
+
+        rack_controls(&a, &spec, 0, 48_000, &mut out);
+        assert_eq!(out[0].0, 1, "before the reorder");
+
+        spec.slots.swap(0, 1);
+        spec.slot_ids.swap(0, 1);
+        rack_controls(&a, &spec, 0, 48_000, &mut out);
+        assert_eq!(out[0].0, 0, "after the reorder the lane must move with its module");
     }
 
     #[test]
     fn the_master_is_the_slot_after_the_last_one() {
         let mut spec = RackSpec::empty();
         spec.slots.push(SlotSpec::Gain { db: 0.0, bypassed: false });
+        spec.slot_ids.push("g".into());
         spec.master.on = true;
         let mut out = Vec::new();
         rack_controls(&automation(vec![lane("rack.master.amount", vec![(0, 0.75)])]), &spec, 0, 48_000, &mut out);
@@ -917,8 +937,9 @@ mod tests {
     fn a_stale_target_is_ignored_rather_than_moving_something_else() {
         let mut spec = RackSpec::empty();
         spec.slots.push(SlotSpec::Gain { db: 0.0, bypassed: false });
+        spec.slot_ids.push("g".into());
         let mut out = Vec::new();
-        for target in ["fx.9.db", "fx.0.nosuch", "fx.notanumber.db", "wat", "fx.0"] {
+        for target in ["fx.nosuch.db", "fx.g.nosuch", "fx.zz.db", "wat", "fx.g"] {
             rack_controls(&automation(vec![lane(target, vec![(0, 1.0)])]), &spec, 0, 48_000, &mut out);
             assert!(out.is_empty(), "{target} wrote {out:?}");
         }
@@ -985,7 +1006,7 @@ mod tests {
             sample_rate: 44_100,
             lanes: vec![Lane {
                 id: "lane".into(),
-                target: "fx.0.mid.freq".into(),
+                target: "fx.g.mid.freq".into(),
                 label: "Mid".into(),
                 enabled: true,
                 trim: 0.1,
@@ -1013,7 +1034,7 @@ mod tests {
 
     #[test]
     fn a_lane_without_an_id_or_a_target_is_dropped() {
-        let v = json::parse(r#"{"lanes":[{"id":"","target":"fx.0.db"},{"id":"a","target":""},{"id":"b","target":"fx.0.db"}]}"#).unwrap();
+        let v = json::parse(r#"{"lanes":[{"id":"","target":"fx.g.db"},{"id":"a","target":""},{"id":"b","target":"fx.g.db"}]}"#).unwrap();
         let a = Automation::from_json(&v);
         assert_eq!(a.lanes.len(), 1);
         assert_eq!(a.lanes[0].id, "b");
@@ -1023,6 +1044,7 @@ mod tests {
     fn every_offered_target_actually_resolves() {
         let mut spec = RackSpec::empty();
         spec.slots.push(SlotSpec::Gain { db: 0.0, bypassed: false });
+        spec.slot_ids.push("g".into());
         spec.slots.push(SlotSpec::Eq { settings: Default::default(), bypassed: false });
         spec.slots.push(SlotSpec::Comp { settings: Default::default(), bypassed: false });
         spec.slots.push(SlotSpec::Shape {
