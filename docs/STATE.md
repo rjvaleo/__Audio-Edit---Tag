@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **783 tests
+Written 11 August 2026 as a handoff, and kept up to date since. **785 tests
 passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 783 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 785 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -502,6 +502,30 @@ onset detector across the whole file. It is rebuilt only when something it
 depends on moves, and not at all while transients are not being preserved —
 a plain stretch is a straight line, which is arithmetic, so the ratio stays free
 to move under the pointer.
+
+### The playhead is drawn from two numbers the engine publishes
+
+The position is polled twenty times a second and carried forward on the wall
+clock in between, so the line moves at the frame rate rather than in twenty
+steps. Carrying forward needs two corrections, and without them a short loop
+draws ghosts.
+
+**The loop.** Carrying forward is monotonic and a loop is not. Between one poll
+and the next the playhead ran past the loop end and was dragged back when the
+truth arrived — fifty milliseconds of overshoot, which on a short loop is most
+of the loop, drawn outside it and flickering as it was corrected. `Shared` now
+publishes the loop the callback *resolved*, and the carried-forward part wraps
+there. It has to be published rather than computed: a loop end of zero means
+"the whole document" and only the callback knows how long that is under the
+current ratio — which is the same mistake the comment on `loop_bounds` was
+already written about.
+
+**The output latency.** `position` counts frames *produced*; the device holds a
+buffer of them before any reach a speaker, so a line drawn from the counter
+leads the sound. cpal's `OutputCallbackInfo` reports the gap between the
+callback and the moment its first sample is heard — **655 frames, 13.6 ms, on
+this machine** — and it was being discarded as `_`. Measured, not assumed, and
+zero until a device says otherwise.
 
 `server/src/live.rs` bridges a document to the engine: structure (cuts, fades,
 reverse) is folded into the source offline at load; stretch, pitch, every grain
@@ -1034,32 +1058,40 @@ decisions.**
     appeared not to have been added at all, and the server had stored it
     correctly the whole time. Check the browser console before blaming the
     server.
-17. **A mono file is not a stereo file with half the samples.** Anything that
+17. **Anything extrapolated between polls has to know where it wraps.** The
+    playhead carried its position forward on the wall clock, monotonically,
+    while the engine looped. On a short loop it spent most of its time drawn
+    outside the loop and snapping back, which reads as ghosts. Publish the
+    resolved bound; do not recompute it.
+18. **A frame counter is not a playhead.** It counts what has been produced,
+    and the device holds a buffer before anything is heard. The offset is real
+    — 13.6 ms here — and the backend will tell you if you ask.
+19. **A mono file is not a stereo file with half the samples.** Anything that
     indexes a buffer by a channel count has to be told *whose* count it is. The
     streaming engines were handed the device's and read mono sources twice as
     fast; the grain cloud mapped the channel back first and was the only engine
     that sounded right, which is what the bug report was about. `Source` now
     always matches the device.
-18. **The one setting that cannot test a control is its default.** The
+20. **The one setting that cannot test a control is its default.** The
     live-equals-export test ran at zero semitones and the pitch test ran only
     WSOLA, so two engines shipped with no pitch on the audio thread at all and
     both tests stayed green. Where a control has a wrapper, assert on an engine
     that does *not* have it.
-19. **Two resamplers is two sounds.** The offline pitch shift interpolated with
+21. **Two resamplers is two sounds.** The offline pitch shift interpolated with
     four-point Hermite and the streaming one with two-point linear. Both were
     right; neither matched. Anything computed on both paths has to be one
     function called twice, not two functions that agree in the comments.
-20. **`f32` runs out of resolution long before a file does.** At a hundred
+22. **`f32` runs out of resolution long before a file does.** At a hundred
     thousand frames its steps are eight thousandths of a sample, which is
     enough to move an interpolation fraction. Positions along a timeline are
     `f64`, and derived from an index rather than accumulated.
-21. **A windowed render is not a continuous one.** `render_fx` resets the rack
+23. **A windowed render is not a continuous one.** `render_fx` resets the rack
     and gives it a fixed pre-roll for each window, so two blocks rendered
     independently do not join smoothly once anything in the rack has memory.
     Anything looking for discontinuities has to render its own overlap; the
     click detector reported one at every multiple of the block size before it
     did.
-22. **A control that reads the engine's state instead of the document's.** Play
+24. **A control that reads the engine's state instead of the document's.** Play
     asked whether the engine had *anything* loaded — true exactly once, on the
     first play after launch — and resumed whatever it was holding for every
     press after that. Pick a second sound and the first one played under the
@@ -1067,11 +1099,11 @@ decisions.**
     document and hands it over), so anything that starts the transport has to
     ask what is *selected*, not what is loaded. Found by ear, not by a test;
     the interface still has none.
-23. **`render_fx` per block on a stretched document is quadratic.** It renders
+25. **`render_fx` per block on a stretched document is quadratic.** It renders
     the whole timeline and slices, so a block loop renders the file once per
     block. Two separate places had this and both looked like a hang rather than
     a bug. Check `is_stretched()` and render once.
-24. **Struct-update syntax cannot see private fields from another crate.** Tests
+26. **Struct-update syntax cannot see private fields from another crate.** Tests
     in `tests/` are a separate crate, so `Thing { field: v, ..Default::default() }`
     fails on any struct with private state. Use the setter — which for anything
     implementing `Params` is the better test anyway, because it exercises the

@@ -2114,13 +2114,22 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
             .into_iter()
             .map(|b| Value::Num(b as f64))
             .collect();
-        Value::obj()
+        let mut v = Value::obj()
             .set("position", h.shared.position() as f64)
             .set("sampleRate", sr)
             .set("playing", h.shared.is_playing())
+            // How far ahead of the speaker the counter is. A playhead drawn
+            // straight from `position` leads the sound by this much.
+            .set("latency", h.shared.latency_frames() as f64)
             .set("grains", Value::Arr(arr))
-            .set("spectrum", Value::Arr(spectrum))
-            .to_string()
+            .set("spectrum", Value::Arr(spectrum));
+        // Where the callback actually wraps. Only it knows what a loop end of
+        // zero resolves to, so anything drawing a playhead is told rather than
+        // left to work it out and be wrong.
+        if let Some((a, b)) = h.shared.heard_loop() {
+            v = v.set("loop", Value::obj().set("a", a as f64).set("b", b as f64));
+        }
+        v.to_string()
     }) {
         Ok(s) => Response::json(s),
         Err(e) => Response::error(503, &e),

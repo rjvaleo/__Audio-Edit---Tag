@@ -43,6 +43,8 @@ impl Engine {
 
         let shared = Arc::new(Shared::new(params, source.clone()));
         let core_shared = Arc::clone(&shared);
+        // Copied out for the callback, which may not touch `config`.
+        let dev_rate = sample_rate;
 
         // Generous: the device may ask for more than its stated buffer size,
         // and growing inside the callback would allocate.
@@ -53,7 +55,15 @@ impl Engine {
         let stream = match format {
             cpal::SampleFormat::F32 => device.build_output_stream(
                 cfg,
-                move |out: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                move |out: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                    // How long until the first sample of this block is heard.
+                    // The backend knows; everyone else would be guessing, and
+                    // a playhead drawn from the frame counter alone runs ahead
+                    // of the sound by exactly this much.
+                    let ts = info.timestamp();
+                    let ahead = ts.playback.duration_since(ts.callback);
+                    core_shared
+                        .set_latency_frames((ahead.as_secs_f64() * dev_rate as f64) as u64);
                     core.fill(out, channels, &core_shared);
                 },
                 err,
