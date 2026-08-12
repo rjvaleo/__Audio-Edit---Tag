@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **785 tests
+Written 11 August 2026 as a handoff, and kept up to date since. **806 tests
 passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 785 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 806 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -699,11 +699,74 @@ the gate's −40 dB threshold into −4000%.
   horizontal axis) and Convolve (multiply the spectrum of a captured impulse
   with the target). Both fit an STFT rack effect.
 - ~~**Phase 3, the edits.**~~ **Built** — see §7c.
-- **Automation and modulation.** Asked for explicitly, beyond presets. The
-  parameter layer is the foundation; nothing is built on it yet.
+- ~~**Automation and modulation.**~~ **Built** — see §7f. Curve automation is
+  in; the followers (envelope, transient, grain) are not, and neither is a
+  time-varying stretch in the *export*, which refuses rather than writing a
+  file that differs from what was heard.
 - **Three views** — *edit*, *granulate*, *browse*, each with its own view of the
   sound pool and its own display. Currently two modes. The live shaping belongs
   in *granulate*.
+
+---
+
+## 7f. Automation
+
+Ported onto `main` on 12 Aug 2026 from the discarded `codex/breakpoint-automation`
+branch, rewritten rather than copied. `core/crates/server/src/automation.rs`.
+
+**A lane stores unit values, 0..1.** The range belongs to the effect. There is
+one place each range is written down — `fx::GAIN_DB_MIN`, `fx::eq::EQ_FREQ_MIN`
+and so on — and both `automation::resolve` and the interface read it. The
+version this replaced kept the ranges in three places and they drifted: the
+interface recorded EQ frequency against 20 Hz–20 kHz, playback resolved it
+against 10 Hz–24 kHz, and a band recorded at 1 kHz played back at 820 Hz in
+silence. `an_eq_frequency_survives_the_round_trip_through_a_unit` pins it.
+
+**Lanes are indexed in document frames**, the timeline the waveform draws and
+the export writes. The engine counts output frames at the *device's* rate;
+`automation::engine_to_document` is the only place the two clocks meet.
+
+**Slots are addressed by position**, and `RackSpec::build` now builds bypassed
+slots switched off rather than skipping them, so slot *n* in the rack is slot
+*n* in the spec. Skipping shifted every lane after a bypassed slot onto the
+wrong effect — a bug that appeared and vanished with a switch nowhere near it.
+
+**The audio thread never owns the writes.** `Shared::automation` is read without
+being taken; the control thread builds the vector and drops it. Taking it would
+have meant the callback freeing a `Vec<String>` a hundred times a second.
+
+**Modulators are pure functions of time** — LFO, steps, sample-and-hold — for
+the same reason grain randomness is: the drawing, playback and export are three
+separate evaluations and a stateful source would give each a different answer.
+
+**Deliberately not built:** the envelope, transient and grain *followers*. The
+branch shipped all three as `signal * depth` with their attack, release,
+sensitivity and source controls parsed, saved, shown in a dialog and never read.
+They need a real detector, and a control that does nothing is worse than a
+missing one.
+
+**Deliberately refused:** exporting a document with a live `stretch.*` lane. The
+rack can be moved block by block; the stretch cannot — WSOLA picks each splice
+from the one before it, so the whole thing renders in one pass with one set of
+parameters. The branch silently dropped these lanes, so a pitch sweep was
+audible and then absent from the file. The export now names the lane and
+refuses. Capture the playback instead, or bypass the lane.
+
+### The interface bug that made all of this look broken
+
+`saveAutomation()` ended with `state.automation = await postJSON(…)`, replacing
+the whole object with a fresh parse. Every handler `renderAutomation()` had
+wired closes over the lane object it was built with — so once the first save
+landed, those handlers were mutating orphans. **The first edit after a render
+stuck and every edit after it was silently discarded.** Picking "Pitch" in the
+target menu left the menu reading Pitch while the lane, and the engine, stayed
+on Stretch. It is why a whole session of testing produced two `stretch.ratio`
+lanes from someone trying to automate pitch. The save no longer adopts the
+reply.
+
+The other one: the lane canvas ran the simplifier on every pointer-release,
+which reduces a smooth drag to its two end points — so the breakpoints you had
+just drawn vanished the moment you let go. Simplify is a button now.
 
 ---
 

@@ -451,6 +451,31 @@ pub fn render_to_aiff_fx<S: RandomAccessSource, W: Write>(
     bits: u16,
     meta: &audio_core::aiff::Meta,
 ) -> io::Result<u64> {
+    render_to_aiff_controlled(list, reader, rack, out, bits, meta, |_, _| {})
+}
+
+/// The same export, with a chance to move the rack's controls as it goes.
+///
+/// `control` is handed the rack and the document frame each block is about to
+/// start at, before that block is rendered. This is how an automation lane
+/// reaches the file: what you hear has to be what you export, and a lane that
+/// only existed during playback would break that.
+///
+/// The block size is the control rate of the export, so it is deliberately
+/// small — 1024 frames is about 21 ms at 48 kHz, finer than the 8 ms live tick
+/// only in the sense that it never falls behind.
+pub fn render_to_aiff_controlled<S: RandomAccessSource, W: Write, F>(
+    list: &EditList,
+    reader: &mut Reader<S>,
+    rack: &mut Rack,
+    out: &mut W,
+    bits: u16,
+    meta: &audio_core::aiff::Meta,
+    mut control: F,
+) -> io::Result<u64>
+where
+    F: FnMut(&mut Rack, u64),
+{
     let channels = list.channels.max(1);
     let total = list.frames();
     let codec = codec_for(bits);
@@ -465,19 +490,51 @@ pub fn render_to_aiff_fx<S: RandomAccessSource, W: Write>(
         meta,
     ))?;
 
-    const BLOCK: u64 = 32768;
-    let mut done = 0u64;
+    // Small enough that a curve is followed rather than stepped through.
+    const BLOCK: u64 = 1024;
+    let ch = channels as usize;
     let mut written = 0u64;
-    while done < total {
-        let n = BLOCK.min(total - done);
-        let block = render_fx(list, reader, rack, done, n)?;
+
+    // The rack is run block by block over one continuous stream rather than by
+    // asking `render_fx` for each block: that resets the rack per call, and on
+    // a stretched document it re-renders the whole file every time — with a
+    // block this small the export would never finish.
+    let mut emit = |block: &mut [f32], out: &mut W| -> io::Result<()> {
         let mut bytes = Vec::with_capacity(block.len() * bytes_per_sample as usize);
-        for v in block {
-            quantise(v, bits, true, &mut bytes);
+        for v in block.iter() {
+            quantise(*v, bits, true, &mut bytes);
         }
         written += bytes.len() as u64;
-        out.write_all(&bytes)?;
-        done += n;
+        out.write_all(&bytes)
+    };
+
+    rack.reset();
+    if list.is_stretched() {
+        // Stretch is a property of the document and has to be applied whole —
+        // WSOLA picks each splice from the one before it.
+        let base = render(list, reader, 0, list.base_frames())?;
+        let mut audio = list.stretch.process(&base, ch, list.sample_rate);
+        let mut done = 0u64;
+        for block in audio.chunks_mut(BLOCK as usize * ch) {
+            control(rack, done);
+            rack.process(block, ch, list.sample_rate);
+            emit(block, out)?;
+            done += (block.len() / ch) as u64;
+        }
+    } else {
+        // No pre-roll: the rack runs continuously from frame zero to the end,
+        // in order, which is exactly what playback does. Pre-roll exists for
+        // *windowed* renders that start in the middle with cold filters, and
+        // this one never does.
+        let mut done = 0u64;
+        while done < total {
+            let n = BLOCK.min(total - done);
+            control(rack, done);
+            let mut block = render(list, reader, done, n)?;
+            rack.process(&mut block, ch, list.sample_rate);
+            emit(&mut block, out)?;
+            done += n;
+        }
     }
     // An odd number of bytes leaves the next chunk misaligned, and the header
     // has already counted the pad. Nothing follows here, but a file whose

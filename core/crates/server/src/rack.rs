@@ -59,6 +59,16 @@ impl SlotSpec {
             SlotSpec::Shape { kind, .. } => kind.as_str(),
         }
     }
+
+    /// What this slot is called in a menu, as opposed to in JSON.
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            SlotSpec::Gain { .. } => "Gain",
+            SlotSpec::Eq { .. } => "EQ",
+            SlotSpec::Comp { .. } => "Compressor",
+            SlotSpec::Shape { kind, .. } => kind.label(),
+        }
+    }
 }
 
 fn master_to_json(m: &MasterSettings) -> Value {
@@ -265,19 +275,22 @@ impl RackSpec {
     pub fn build(&self, sample_rate: u32, channels: usize) -> Rack {
         let mut rack = Rack::new();
         for s in &self.slots {
-            if s.bypassed() {
-                continue;
-            }
-            match s {
-                SlotSpec::Gain { db, .. } => rack.push(Box::new(Gain { db: *db })),
-                SlotSpec::Eq { settings, .. } => rack.push(Box::new(Eq::new(*settings))),
-                SlotSpec::Comp { settings, .. } => {
-                    rack.push(Box::new(Compressor::new(*settings)))
-                }
+            let effect: Box<dyn fx::Effect> = match s {
+                SlotSpec::Gain { db, .. } => Box::new(Gain { db: *db }),
+                SlotSpec::Eq { settings, .. } => Box::new(Eq::new(*settings)),
+                SlotSpec::Comp { settings, .. } => Box::new(Compressor::new(*settings)),
                 SlotSpec::Shape { kind, params, .. } => {
-                    rack.push(fx::shape::make(*kind, sample_rate, channels, params))
+                    fx::shape::make(*kind, sample_rate, channels, params)
                 }
-            }
+            };
+            // A bypassed slot is built and switched off rather than skipped, so
+            // that slot *n* in the rack is slot *n* in the spec. Automation
+            // addresses slots by position; dropping one would shift every lane
+            // after it onto the wrong effect, and only while something upstream
+            // happened to be bypassed — a bug that appears and disappears with
+            // a switch nowhere near it. `Rack::process` already skips bypassed
+            // slots, so this costs one construction and no audio.
+            rack.push_slot(effect, s.bypassed());
         }
         // Last, always. The channel compressor exists to hold whatever the
         // chain produced under the ceiling, which it can only do from the end.

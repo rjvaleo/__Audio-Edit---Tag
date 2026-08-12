@@ -111,6 +111,19 @@ pub struct Shared {
     /// megabytes, and a callback may not allocate.
     pending_bank: Mutex<Option<crate::stretcher::LayerBank>>,
 
+    /// Control-rate writes from automation: `(slot, key, value)`.
+    ///
+    /// Unlike every other `pending_` here, the callback **reads this without
+    /// taking it**. The others are handed over once and consumed; these arrive
+    /// continuously, and taking the vector would mean the audio thread dropping
+    /// a `Vec` of `String`s several times a second — a free, on the thread that
+    /// may not allocate or free. Leaving it in place also means a block that
+    /// arrives between control ticks re-applies the last values rather than
+    /// letting them lapse, which costs nothing because the writes are absolute.
+    ///
+    /// The control thread overwrites it, so the old vector is dropped there.
+    automation: Mutex<Vec<(usize, String, f32)>>,
+
     /// Magnitudes of the most recent output block, 0..255 per bin.
     ///
     /// Taken from what actually left the engine, so the spectrum shows the
@@ -141,6 +154,7 @@ impl Shared {
             pending_map: Mutex::new(None),
             pending_parts: Mutex::new(None),
             pending_bank: Mutex::new(None),
+            automation: Mutex::new(Vec::new()),
             spectrum: Mutex::new(Vec::new()),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
@@ -279,6 +293,32 @@ impl Shared {
         }
     }
 
+    /// Replace the automation writes the callback applies each block.
+    ///
+    /// Called from a control thread a hundred or so times a second. The vector
+    /// and its strings are built here and dropped here; see
+    /// [`Shared::automation`] for why that matters.
+    pub fn set_automation(&self, values: Vec<(usize, String, f32)>) {
+        if let Ok(mut g) = self.automation.lock() {
+            *g = values;
+        }
+    }
+
+    /// Stop applying automation — on stop, or when the last lane goes away.
+    ///
+    /// Without this the final values would stay written into the rack after
+    /// playback ended, and the next thing to play would start under them.
+    pub fn clear_automation(&self) {
+        if let Ok(mut g) = self.automation.lock() {
+            g.clear();
+        }
+    }
+
+    /// What the callback is currently applying. For tests and diagnostics.
+    pub fn automation_writes(&self) -> Vec<(usize, String, f32)> {
+        self.automation.lock().map(|g| g.clone()).unwrap_or_default()
+    }
+
     pub fn set_gain(&self, g: f32) {
         self.gain.store(g.clamp(0.0, 4.0).to_bits(), Ordering::Release);
     }
@@ -413,6 +453,16 @@ impl Core {
         if let Ok(mut g) = shared.pending_bank.try_lock() {
             if let Some(next) = g.take() {
                 self.renderer.set_bank(next);
+            }
+        }
+        // Borrowed, never taken — see `Shared::automation`. A contended lock
+        // means the control thread is mid-write; the previous values are still
+        // applied, so skipping a block loses nothing.
+        if let Ok(g) = shared.automation.try_lock() {
+            if let Some(rack) = self.rack.as_mut() {
+                for (slot, key, value) in g.iter() {
+                    rack.set_param(*slot, key, *value);
+                }
             }
         }
 

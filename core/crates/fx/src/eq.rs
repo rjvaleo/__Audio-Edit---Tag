@@ -109,4 +109,44 @@ impl Effect for Eq {
     fn name(&self) -> &'static str {
         "EQ"
     }
+
+    /// `low.freq`, `mid.q`, `high.gainDb`, `highPassHz`.
+    ///
+    /// Named for the bands this EQ actually has rather than by index. The
+    /// coefficients are rebuilt at the top of `process`, so a write here is
+    /// heard on the next block without anything else being told.
+    ///
+    /// The ranges are the same ones the interface offers. They have to be:
+    /// automation stores a lane as a unit value, and a reader stricter than the
+    /// writer is silent data loss — see `persist::stretch_from_json`.
+    fn set_param(&mut self, key: &str, value: f32) -> bool {
+        if key == "highPassHz" {
+            self.settings.high_pass_hz = value.clamp(0.0, EQ_FREQ_MAX);
+            return true;
+        }
+        let Some((band, field)) = key.split_once('.') else {
+            return false;
+        };
+        let band = match band {
+            "low" => &mut self.settings.low,
+            "mid" => &mut self.settings.mid,
+            "high" => &mut self.settings.high,
+            _ => return false,
+        };
+        match field {
+            "freq" => band.freq = value.clamp(EQ_FREQ_MIN, EQ_FREQ_MAX),
+            "q" => band.q = value.clamp(EQ_Q_MIN, EQ_Q_MAX),
+            "gainDb" => band.gain_db = value.clamp(EQ_GAIN_MIN, EQ_GAIN_MAX),
+            _ => return false,
+        }
+        true
+    }
 }
+
+/// The EQ's ranges, in one place, for the same reason as [`crate::GAIN_DB_MIN`].
+pub const EQ_FREQ_MIN: f32 = 20.0;
+pub const EQ_FREQ_MAX: f32 = 20_000.0;
+pub const EQ_Q_MIN: f32 = 0.05;
+pub const EQ_Q_MAX: f32 = 18.0;
+pub const EQ_GAIN_MIN: f32 = -24.0;
+pub const EQ_GAIN_MAX: f32 = 24.0;

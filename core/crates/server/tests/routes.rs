@@ -1245,3 +1245,174 @@ fn settings_for_a_sound_the_engine_is_not_holding_go_nowhere() {
     // The document took it, which is what export and the next load will read.
     assert_eq!(num(&json(&r), &["stretch", "ratio"]), 4.0);
 }
+
+// ------------------------------------------------------------- automation
+//
+// The interface has no automated tests of its own, and that is where the two
+// worst automation bugs lived. What can be pinned from here is the contract the
+// interface depends on: what a lane looks like after a round trip, what the
+// menu offers, and what happens to a lane whose file has changed underneath it.
+
+fn lane_body(p: &str, target: &str, points: &str) -> String {
+    format!(
+        r#"{{"p":"{p}","bypassed":false,"lanes":[{{"id":"a","target":"{target}",
+           "label":"L","enabled":true,"trim":0,"loop":null,"modulators":[],
+           "points":{points}}}]}}"#
+    )
+}
+
+#[test]
+fn a_lane_survives_the_round_trip_and_is_stamped_with_the_file_it_was_drawn_against() {
+    let s = Scratch::new("automation-round-trip");
+    s.sound("kit/tone.wav", 4000);
+    let app = s.app();
+
+    let body = lane_body(
+        "kit/tone.wav",
+        "stretch.semitones",
+        r#"[{"frame":0,"value":0.25,"curve":"smooth","tension":0.5},
+            {"frame":3000,"value":0.75,"curve":"linear","tension":0}]"#,
+    );
+    assert_eq!(status(&server::routes::route(&app, &post("/api/automation", &body))), 200);
+
+    let back = json(&server::routes::route(
+        &app,
+        &get("/api/automation", &[("p", "kit/tone.wav")]),
+    ));
+    let lane = &back.get("lanes").unwrap().arr().unwrap()[0];
+    assert_eq!(lane.get("target").and_then(|t| t.as_str()), Some("stretch.semitones"));
+    assert_eq!(lane.get("points").unwrap().arr().unwrap().len(), 2);
+    // Stamped by the server from the file on disk, not taken from the browser.
+    assert_eq!(num(&back, &["frames"]), 4000.0);
+    assert_eq!(num(&back, &["sampleRate"]), 44_100.0);
+    assert_eq!(num(&back, &["channels"]), 1.0);
+
+    // And it is still there after a restart, which is the whole point of a lane
+    // being work rather than a slider position.
+    let app2 = s.app();
+    let again = json(&server::routes::route(
+        &app2,
+        &get("/api/automation", &[("p", "kit/tone.wav")]),
+    ));
+    assert_eq!(again.get("lanes").unwrap().arr().unwrap().len(), 1);
+}
+
+#[test]
+fn lanes_are_dropped_when_the_file_underneath_them_changes_length() {
+    let s = Scratch::new("automation-stale");
+    s.sound("kit/tone.wav", 4000);
+    let app = s.app();
+    let body = lane_body("kit/tone.wav", "stretch.ratio", r#"[{"frame":3900,"value":0.9,"curve":"linear","tension":0}]"#);
+    server::routes::route(&app, &post("/api/automation", &body));
+
+    // The same name, half the audio. Frame 3900 now points past the end of it.
+    s.sound("kit/tone.wav", 2000);
+    let back = json(&server::routes::route(
+        &app,
+        &get("/api/automation", &[("p", "kit/tone.wav")]),
+    ));
+    assert!(back.get("lanes").unwrap().arr().unwrap().is_empty(), "stale lanes must not be served");
+    assert!(matches!(back.get("stale"), Some(server::json::Value::Bool(true))));
+}
+
+#[test]
+fn the_menu_offers_the_document_and_every_slot_in_the_rack() {
+    let s = Scratch::new("automation-targets");
+    s.sound("kit/tone.wav", 2000);
+    let app = s.app();
+
+    let targets_now = |app: &Arc<App>| -> Vec<String> {
+        json(&server::routes::route(app, &get("/api/automation", &[("p", "kit/tone.wav")])))
+            .get("targets").unwrap().arr().unwrap().iter()
+            .map(|t| t.arr().unwrap()[0].as_str().unwrap_or_default().to_string())
+            .collect()
+    };
+
+    // A file nobody has touched still has the default chain — gain, EQ and
+    // compressor, all switched out. They are offered anyway: a bypassed slot
+    // still holds its position, and a lane drawn now keeps working the moment
+    // the slot is switched in.
+    let before = targets_now(&app);
+    assert!(before.iter().any(|t| t == "stretch.semitones"), "the document: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.0.db"), "the bypassed gain: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.1.mid.freq"), "the bypassed EQ: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.2.ratio"), "the bypassed compressor: {before:?}");
+
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","db":0}],"master":{"on":true,"amount":0.5}}"#),
+    );
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+
+    let after = targets_now(&app);
+    assert!(after.iter().any(|t| t == "fx.0.db"), "the gain slot: {after:?}");
+    assert!(after.iter().any(|t| t == "rack.master.amount"), "the maximiser: {after:?}");
+    // And the bands of the EQ that is no longer there are gone with it, so a
+    // menu never offers something playback would ignore.
+    assert!(!after.iter().any(|t| t.contains("mid.freq")), "stale EQ targets: {after:?}");
+
+    // Switching the maximiser off takes its target away too.
+    server::routes::route(
+        &app,
+        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","db":0}],"master":{"on":false}}"#),
+    );
+    assert!(!targets_now(&app).iter().any(|t| t == "rack.master.amount"));
+}
+
+#[test]
+fn an_export_refuses_rather_than_writing_a_file_that_differs_from_what_was_heard() {
+    let s = Scratch::new("automation-export-refusal");
+    s.sound("kit/tone.wav", 2000);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post("/api/automation", &lane_body("kit/tone.wav", "stretch.ratio",
+              r#"[{"frame":0,"value":0.4,"curve":"linear","tension":0},{"frame":2000,"value":0.6,"curve":"linear","tension":0}]"#)),
+    );
+
+    let r = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    assert_eq!(status(&r), 400, "a live stretch lane must refuse, not silently drop");
+    let text = String::from_utf8_lossy(&r.body);
+    assert!(text.contains("stretch"), "the refusal should name the problem: {text}");
+
+    // Nothing was created beside the original.
+    let strays: Vec<_> = fs::read_dir(s.library.join("kit")).unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n != "tone.wav")
+        .collect();
+    assert!(strays.is_empty(), "a refused export left {strays:?} behind");
+}
+
+#[test]
+fn a_rack_lane_reaches_the_exported_file() {
+    let s = Scratch::new("automation-export-rack");
+    s.sound("kit/tone.wav", 8000);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post("/api/rack", r#"{"p":"kit/tone.wav","slots":[{"kind":"gain","db":0}],"master":{"on":false}}"#),
+    );
+    // Silence at the start of the lane, full level at the end. Unit 0 is the
+    // gain's own minimum, which is well below audibility over a sine.
+    server::routes::route(
+        &app,
+        &post("/api/automation", &lane_body("kit/tone.wav", "fx.0.db",
+              r#"[{"frame":0,"value":0.0,"curve":"linear","tension":0},{"frame":8000,"value":1.0,"curve":"linear","tension":0}]"#)),
+    );
+
+    let r = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+    let path = json(&r).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+
+    let mut reader = audio_core::open(std::path::Path::new(&path)).unwrap();
+    let frames = reader.info().frames();
+    let head = reader.read_frames(0, 500).unwrap();
+    let tail = reader.read_frames(frames - 500, 500).unwrap();
+    let peak = |b: &[f32]| b.iter().fold(0f32, |m, v| m.max(v.abs()));
+    assert!(
+        peak(&tail) > peak(&head) * 8.0,
+        "the lane should ramp the export up: head {} tail {}",
+        peak(&head), peak(&tail)
+    );
+}

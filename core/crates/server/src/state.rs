@@ -108,6 +108,26 @@ pub struct FolderRow {
     pub tags: String,
 }
 
+/// What the engine has loaded.
+///
+/// Two clocks meet in here. `frames` and `device_rate` describe the engine's
+/// output; `doc_*` describe the document that produced it, at the file's own
+/// rate. Automation is drawn against the second and played against the first,
+/// so both have to be reachable from one place — deriving the document's rate
+/// by reopening the file on every control tick was the alternative.
+#[derive(Debug, Clone)]
+pub struct NowPlaying {
+    pub rel: String,
+    /// Engine output frames, at `device_rate`.
+    pub frames: u64,
+    pub device_rate: u32,
+    /// Whether the engine was given the document or the bare sound.
+    pub document: bool,
+    pub doc_frames: u64,
+    pub doc_channels: u16,
+    pub doc_rate: u32,
+}
+
 #[derive(Default)]
 pub struct Index {
     pub files: Vec<FileRow>,
@@ -365,6 +385,9 @@ pub struct App {
     pub edits: crate::docs::EditStore,
     /// Effect racks, one per file, held for the life of the process.
     pub racks: crate::rack::RackStore,
+    /// Automation lanes, one set per file. Unlike the racks these outlive the
+    /// process: a curve is work, in the way a slider position is not.
+    pub automation: crate::automation::AutomationStore,
     /// Named settings, detached from any file.
     pub presets: RwLock<std::collections::BTreeMap<String, crate::persist::Preset>>,
     /// Sessions read from disk at startup, waiting for their file to be opened.
@@ -398,7 +421,8 @@ pub struct App {
     /// at the device's rate, and that rate. The engine itself does not know —
     /// it owns samples, not paths — but a visualiser needs to know which
     /// document's parameters describe the cloud it is drawing.
-    pub playing: RwLock<Option<(String, u64, u32)>>,
+    /// What the engine is holding, if anything.
+    pub playing: RwLock<Option<NowPlaying>>,
 }
 
 impl App {
@@ -410,6 +434,7 @@ impl App {
         let prints = search::store::Store::load(&data_dir.join("FINGERPRINTS.tsv"));
         let labels = yamnet::store::Store::load(&data_dir.join("LABELS.tsv"));
         let user_tags = crate::usertags::Store::load(&data_dir.join("USER-TAGS.tsv"));
+        let automation = crate::automation::AutomationStore::load(&data_dir.join("AUTOMATION.json"));
         let overrides = std::fs::read_to_string(data_dir.join("TAG-OVERRIDES.json"))
             .ok()
             .and_then(|s| crate::json::parse(&s))
@@ -430,6 +455,7 @@ impl App {
             playing: RwLock::new(None),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
+            automation,
             presets: RwLock::new(presets),
             saved: RwLock::new(saved),
         };
@@ -476,6 +502,10 @@ impl App {
 
     pub fn sessions_path(&self) -> PathBuf {
         self.data_dir.join("SESSIONS.json")
+    }
+
+    pub fn automation_path(&self) -> PathBuf {
+        self.data_dir.join("AUTOMATION.json")
     }
 
     /// Write every open document to disk.

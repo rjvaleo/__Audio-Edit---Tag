@@ -211,6 +211,9 @@
         <button class="dock-tab" data-dock="visuals" title="Spectrogram and meters">
           <span class="ic">◍</span><span class="lb">Visuals</span>
         </button>
+        <button class="dock-tab" data-dock="automation" title="Breakpoint automation">
+          <span class="ic">⌁</span><span class="lb">Automation</span>
+        </button>
         <button class="dock-tab" data-dock="regions" title="Regions">
           <span class="ic">⧉</span><span class="lb">Regions</span>
         </button>
@@ -343,6 +346,22 @@
           <div class="fx-head">Stereo field</div>
           <div id="stereo"></div>
         </div>
+      </div>
+
+      <div class="dock-body automation-body hidden" id="dockAutomation">
+        <div class="automation-toolbar">
+          <button class="primary" id="automationAdd">Add lane</button>
+          <label class="check" title="Stop every lane without deleting any of them">
+            <input type="checkbox" id="automationBypass"> Bypass all
+          </label>
+          <button class="ghost" id="automationSimplify" title="Drop breakpoints the curve does not need">Simplify</button>
+          <button class="ghost" id="automationLoop" title="Wrap every lane's curve over the selection">Loop selection</button>
+          <button class="ghost" id="automationInvert" title="Turn every lane upside down">Invert</button>
+          <button class="ghost" id="automationUndo">Undo</button>
+          <button class="ghost" id="automationRedo">Redo</button>
+          <span class="automation-note" id="automationNote"></span>
+        </div>
+        <div class="automation-lanes" id="automationLanes"></div>
       </div>
 
       <div class="dock-body hidden" id="dockRegions">

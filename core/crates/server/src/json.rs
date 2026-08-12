@@ -71,6 +71,13 @@ impl Value {
         }
     }
 
+    pub fn arr(&self) -> Option<&[Value]> {
+        match self {
+            Value::Arr(a) => Some(a),
+            _ => None,
+        }
+    }
+
     pub fn to_string(&self) -> String {
         let mut out = String::new();
         self.write(&mut out);

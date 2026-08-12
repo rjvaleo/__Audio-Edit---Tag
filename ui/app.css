@@ -553,6 +553,36 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .fx-note { font-size: 9.5px; line-height: 1.45; color: var(--text-dimmer); }
 .dim-block { opacity: .6; }
 
+/* Automation. One column, not the dock's auto-fit grid: a lane is a timeline
+   and has to span the full width or its frames do not line up with the ruler
+   above it. */
+.automation-body { display: flex; flex-direction: column; gap: 8px; }
+.automation-toolbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.automation-toolbar .check { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.automation-note {
+  margin-left: auto; font-size: 10px; color: var(--text-dimmer);
+  font-variant-numeric: tabular-nums;
+}
+.automation-lanes { display: flex; flex-direction: column; gap: 6px; }
+.automation-lane {
+  display: grid; grid-template-columns: 190px 1fr; gap: 8px;
+  align-items: stretch;
+  background: var(--bg-2, #0d151c);
+  border: 1px solid var(--line, #1d2833);
+  border-radius: 4px; padding: 6px;
+}
+.automation-lane-controls { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.automation-lane-controls .row { display: flex; align-items: center; gap: 5px; }
+.automation-lane-controls select { flex: 1; min-width: 0; font-size: 10.5px; }
+.automation-lane-controls .danger { color: var(--danger, #e0685f); padding: 0 6px; }
+.automation-canvas {
+  width: 100%; height: 110px; display: block;
+  background: #070d13; border-radius: 3px; cursor: crosshair;
+  touch-action: none;
+}
+
 .region-list { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; }
 .region-item {
   display: flex; align-items: center; gap: 10px;

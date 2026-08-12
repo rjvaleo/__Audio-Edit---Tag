@@ -868,22 +868,25 @@ impl ShapeKind {
 
 /// Build one and set it up.
 ///
-/// Returns a plain `Effect` rather than something also carrying `Params`,
-/// because once it is in the rack nothing addresses it by key — the spec is
-/// what gets edited, and the rack is rebuilt from it. When automation arrives
-/// it will drive the spec, for the same reason: a rebuilt rack is the only
-/// place filter state may safely be discarded.
+/// Returns a plain `Effect`, but wrapped in [`crate::Driven`] so automation can
+/// still reach it by key. Editing a control in the interface rebuilds the rack
+/// from the spec, which is where filter state may safely be discarded; a lane
+/// moving the same control during playback cannot rebuild anything, so it needs
+/// a way through the boxing to the live effect.
 pub fn make(
     kind: ShapeKind,
     sample_rate: u32,
     channels: usize,
     params: &[(String, f32)],
 ) -> Box<dyn Effect> {
+    // Wrapped, so the boxed effect keeps a way back to its `Params`. Boxing
+    // erases the concrete type and `Params` is a separate trait, so without
+    // this an automation lane can name a shaper's control and never reach it.
     fn apply<T: Effect + Params + 'static>(mut e: T, params: &[(String, f32)]) -> Box<dyn Effect> {
         for (k, v) in params {
             e.set(k, *v);
         }
-        Box::new(e)
+        Box::new(crate::Driven(e))
     }
     match kind {
         ShapeKind::Invert => Box::new(Invert),

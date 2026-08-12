@@ -25,6 +25,10 @@ pub fn bind(preferred: u16) -> std::io::Result<TcpListener> {
 }
 
 pub fn run(listener: TcpListener, app: Arc<App>) -> std::io::Result<()> {
+    // Automation runs on its own clock, not on requests: a lane has to keep
+    // moving while the browser is idle.
+    crate::automation::start_runner(Arc::clone(&app));
+
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
         let app = Arc::clone(&app);
