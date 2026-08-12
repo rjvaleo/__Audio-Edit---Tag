@@ -46,6 +46,40 @@ pub trait Effect: Send {
 
     /// Short label for the UI.
     fn name(&self) -> &'static str;
+
+    /// Control-rate write, used by automation.
+    ///
+    /// An unknown key is ignored and reported as `false` rather than panicking
+    /// or guessing: a lane saved against a control that has since been renamed
+    /// should go quiet, not move something else. See [`crate::params`] for where
+    /// the keys come from.
+    fn set_param(&mut self, _key: &str, _value: f32) -> bool {
+        false
+    }
+}
+
+/// Keeps an effect's [`params::Params`] reachable after it is boxed into a rack.
+///
+/// `Box<dyn Effect>` erases the concrete type, and `Params` is a second trait —
+/// once erased there is no way back to it. Wrapping preserves the one method
+/// automation needs without widening `Effect` into a supertrait of `Params`,
+/// which would force every effect to describe itself whether or not anything
+/// can drive it.
+pub struct Driven<T: Effect + params::Params>(pub T);
+
+impl<T: Effect + params::Params> Effect for Driven<T> {
+    fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
+        self.0.process(buf, channels, sample_rate)
+    }
+    fn reset(&mut self) {
+        self.0.reset()
+    }
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+    fn set_param(&mut self, key: &str, value: f32) -> bool {
+        self.0.set(key, value)
+    }
 }
 
 /// A simple linear gain.
@@ -68,7 +102,24 @@ impl Effect for Gain {
     fn name(&self) -> &'static str {
         "Gain"
     }
+    fn set_param(&mut self, key: &str, value: f32) -> bool {
+        if key == "db" {
+            self.db = value.clamp(GAIN_DB_MIN, GAIN_DB_MAX);
+            true
+        } else {
+            false
+        }
+    }
 }
+
+/// The gain slot's range, in one place.
+///
+/// Automation stores a lane as a unit value and the range is the effect's, so
+/// this is what a lane at 0 and at 1 mean. It has to be the same number the
+/// interface's slider uses or a recorded gesture plays back somewhere else —
+/// see `automation::rack_controls`.
+pub const GAIN_DB_MIN: f32 = -24.0;
+pub const GAIN_DB_MAX: f32 = 24.0;
 
 /// One slot in the rack: an effect plus whether it is switched in.
 pub struct Slot {
@@ -94,6 +145,14 @@ impl Rack {
         self.slots.push(Slot { effect, bypassed: false });
     }
 
+    /// Push an effect that may already be switched out.
+    ///
+    /// Callers that address slots by position need every slot present, bypassed
+    /// or not — see `RackSpec::build`.
+    pub fn push_slot(&mut self, effect: Box<dyn Effect>, bypassed: bool) {
+        self.slots.push(Slot { effect, bypassed });
+    }
+
     pub fn is_empty(&self) -> bool {
         self.slots.iter().all(|s| s.bypassed) || self.slots.is_empty()
     }
@@ -110,6 +169,14 @@ impl Rack {
                 s.effect.process(buf, channels, sample_rate);
             }
         }
+    }
+
+    /// Write one control on one slot. Out-of-range slots and unknown keys are
+    /// ignored, for the same reason [`Effect::set_param`] ignores them.
+    pub fn set_param(&mut self, slot: usize, key: &str, value: f32) -> bool {
+        self.slots
+            .get_mut(slot)
+            .is_some_and(|s| s.effect.set_param(key, value))
     }
 
     /// How many frames of audio to run through the rack before the range the

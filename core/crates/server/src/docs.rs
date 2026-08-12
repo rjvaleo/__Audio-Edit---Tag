@@ -283,16 +283,28 @@ pub fn unique(path: PathBuf) -> PathBuf {
 /// no session, no notes and nothing else to keep in step with it. Reading them
 /// back is not built yet — see the roadmap — but no file written from today
 /// needs to be exported again for it.
-pub fn export_meta(rel: &str, list: &EditList, rack: &crate::rack::RackSpec) -> audio_core::aiff::Meta {
+pub fn export_meta(
+    rel: &str,
+    list: &EditList,
+    rack: &crate::rack::RackSpec,
+    automation: &crate::automation::Automation,
+) -> audio_core::aiff::Meta {
     let s = &list.stretch;
-    let settings = Value::obj()
+    let mut settings = Value::obj()
         .set("app", "Audio Edit & Tag")
         // The version is the promise to whatever reads this later: a reader
-        // that does not know a number can say so rather than guess.
-        .set("version", 1.0)
+        // that does not know a number can say so rather than guess. It went to
+        // 2 when the automation went in — a reader expecting 1 and finding
+        // lanes it cannot resolve should say so rather than play them wrong.
+        .set("version", 2.0)
         .set("source", rel.to_string())
         .set("stretch", crate::persist::stretch_to_json(s))
         .set("rack", rack.to_json());
+    // Only when there is some, so a file with no lanes reads exactly as it did
+    // before automation existed.
+    if !automation.lanes.is_empty() {
+        settings = settings.set("automation", automation.to_json());
+    }
 
     audio_core::aiff::Meta {
         name: Path::new(rel)
@@ -469,12 +481,20 @@ mod tests {
     fn the_settings_ride_in_the_file_as_a_preset_would_hold_them() {
         let mut list = EditList::identity(1000, 1, 44_100);
         list.stretch = stretch_of("hybrid", 3.0, 5.0, 60.0);
-        let meta = export_meta("kits/kick.wav", &list, &crate::rack::RackSpec::empty());
+        let meta = export_meta(
+            "kits/kick.wav",
+            &list,
+            &crate::rack::RackSpec::empty(),
+            &crate::automation::Automation::default(),
+        );
 
         assert_eq!(meta.name.as_deref(), Some("kick.wav"));
         let s = meta.settings.expect("no settings written");
         let v = json::parse(&s).expect("the settings are not JSON");
-        assert!(matches!(v.get("version"), Some(Value::Num(n)) if *n == 1.0));
+        assert!(matches!(v.get("version"), Some(Value::Num(n)) if *n == 2.0));
+        // A document with no lanes writes no automation key at all, so a file
+        // exported without it reads exactly as it did before this existed.
+        assert!(v.get("automation").is_none());
         assert_eq!(v.get("source").and_then(|x| x.as_str()), Some("kits/kick.wav"));
         let st = v.get("stretch").expect("no stretch");
         assert_eq!(st.get("algorithm").and_then(|x| x.as_str()), Some("hybrid"));

@@ -84,6 +84,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/fx") => api_fx_catalogue(),
         ("GET", "/api/rack") => api_rack_get(app, req),
         ("POST", "/api/rack") => api_rack_set(app, req),
+        ("GET", "/api/automation") => api_automation_get(app, req),
+        ("POST", "/api/automation") => api_automation_set(app, req),
         ("GET", "/api/presets") => api_presets_list(app),
         ("POST", "/api/presets") => api_preset_save(app, req),
         ("POST", "/api/presets/apply") => api_preset_apply(app, req),
@@ -696,6 +698,63 @@ fn api_fx_catalogue() -> Response {
         })
         .collect();
     Response::json(Value::obj().set("shapers", Value::Arr(kinds)).to_string())
+}
+
+/// A document's automation, and the menu of what it may address.
+///
+/// The targets are served with the lanes rather than assembled in the browser,
+/// so the list the menu offers and the list playback can resolve are the same
+/// list. They came apart on the branch this was ported from and a lane could
+/// name a control that silently did nothing.
+fn api_automation_get(app: &Arc<App>, req: &Request) -> Response {
+    let Some(rel) = req.param("p") else {
+        return Response::error(400, "no path given");
+    };
+    let spec = app.racks.get(rel);
+    let targets: Vec<Value> = crate::automation::targets(&spec)
+        .into_iter()
+        .map(|(key, label)| Value::Arr(vec![Value::Str(key), Value::Str(label)]))
+        .collect();
+
+    // Refused rather than returned if the file underneath has changed length:
+    // the points are frame offsets into audio that is no longer there.
+    let stored = app.automation.get(rel);
+    let (automation, stale) = match identity_for(app, rel) {
+        Some(id) if !stored.matches(id.frames(), id.channels, id.sample_rate) => {
+            (crate::automation::Automation::default(), true)
+        }
+        _ => (stored, false),
+    };
+
+    Response::json(
+        automation
+            .to_json()
+            .set("targets", Value::Arr(targets))
+            .set("stale", stale)
+            .to_string(),
+    )
+}
+
+fn api_automation_set(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(rel) = v.get("p").and_then(|p| p.as_str()) else {
+        return Response::error(400, "no path given");
+    };
+    let mut automation = crate::automation::Automation::from_json(&v);
+    // Stamped here, not by the browser: what the lanes were drawn against is a
+    // fact about the file on disk, and the one place that knows it is here.
+    if let Some(id) = identity_for(app, rel) {
+        automation.frames = id.frames();
+        automation.channels = id.channels;
+        automation.sample_rate = id.sample_rate;
+    }
+    app.automation.set(rel, automation.clone());
+    if let Err(e) = app.automation.save(&app.automation_path()) {
+        return Response::error(500, &e.to_string());
+    }
+    Response::json(automation.to_json().to_string())
 }
 
 fn api_rack_get(app: &Arc<App>, req: &Request) -> Response {
@@ -1589,6 +1648,24 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, "the edit is empty — nothing to export");
     }
 
+    // Refused before anything is created, rather than written as a file that
+    // quietly differs from what was auditioned. What you hear is what you
+    // export; where that cannot be honoured, the export says so.
+    let automation = app
+        .automation
+        .get_for(rel, list.frames(), list.channels, list.sample_rate);
+    let unsupported = automation.offline_unsupported();
+    if !unsupported.is_empty() {
+        return Response::error(
+            400,
+            &format!(
+                "the export cannot follow a time-varying stretch yet — disable or bypass {} \
+                 and export again, or capture the playback instead",
+                unsupported.join(", ")
+            ),
+        );
+    }
+
     // Beside the original, named for the engine and the three settings that
     // decide what you hear. Everything else goes *inside* the file.
     let target = crate::docs::export_target(&lib, rel, &list.stretch);
@@ -1608,9 +1685,25 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
     };
     let mut out = std::io::BufWriter::new(file);
     let spec = app.racks.get(rel);
-    let meta = crate::docs::export_meta(rel, &list, &spec);
+    let meta = crate::docs::export_meta(rel, &list, &spec, &automation);
     let mut rack = spec.build(list.sample_rate, list.channels as usize);
-    match edit::render::render_to_aiff_fx(&list, &mut reader, &mut rack, &mut out, bits, &meta) {
+
+    // The lanes are resolved at the same document frames the playhead reports,
+    // so the file is what was auditioned rather than a second interpretation
+    // of it. `writes` is reused across blocks; the export is not real-time but
+    // there is no reason to allocate a vector per kilo-frame either.
+    let mut writes = Vec::new();
+    let sample_rate = list.sample_rate;
+    let control = |rack: &mut fx::Rack, frame: u64| {
+        crate::automation::rack_controls(&automation, &spec, frame, sample_rate, &mut writes);
+        for (slot, key, value) in writes.iter() {
+            rack.set_param(*slot, key, *value);
+        }
+    };
+
+    match edit::render::render_to_aiff_controlled(
+        &list, &mut reader, &mut rack, &mut out, bits, &meta, control,
+    ) {
         Ok(frames) => Response::json(
             Value::obj()
                 .set("ok", true)
@@ -2000,8 +2093,8 @@ fn api_engine_state(app: &Arc<App>) -> Response {
             // the same grain schedule the audio thread is working through.
             .set("capturing", h.shared.is_capturing())
             .set("capturedFrames", h.shared.captured_frames() as f64)
-            .set("path", loaded.as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default())
-            .set("inFrames", loaded.as_ref().map(|(_, f, _)| *f as f64).unwrap_or(0.0))
+            .set("path", loaded.as_ref().map(|n| n.rel.clone()).unwrap_or_default())
+            .set("inFrames", loaded.as_ref().map(|n| n.frames as f64).unwrap_or(0.0))
             // The parameters the audio thread is *actually* using, not the
             // ones on the document. They are usually the same, but a visualiser
             // that reads the document is showing what was asked for rather than
@@ -2170,7 +2263,7 @@ fn api_capture(app: &Arc<App>, req: &Request) -> Response {
     }
 
     // Name it for the sound it came from and what that sound was going through.
-    let rel = app.playing.read().unwrap().as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default();
+    let rel = app.playing.read().unwrap().as_ref().map(|n| n.rel.clone()).unwrap_or_default();
     let list = app.edits.snapshot(&rel);
     let module = match &list {
         Some(l) => crate::capture::module_name(

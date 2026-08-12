@@ -77,13 +77,14 @@ const state = {
 };
 
 /// Everything that belongs to a document rather than to the app.
-const TAB_FIELDS = ['edit', 'rack', 'annotations', 'view', 'sel', 'peaks', 'spec', 'stats'];
+const TAB_FIELDS = ['edit', 'rack', 'automation', 'annotations', 'view', 'sel', 'peaks', 'spec', 'stats'];
 
 function blankTab(file) {
   return {
     file,
     edit: null,
     rack: null,
+    automation: { lanes: [], bypassed: false, targets: [] },
     annotations: { markers: [], regions: [] },
     view: { from: 0, to: 0, frames: 0, sampleRate: file.sampleRate || 44100 },
     sel: null,
@@ -674,6 +675,9 @@ function reflectTransport() {
   b.classList.toggle('on', engine.playing);
   b.textContent = engine.playing ? '❚❚' : '▶';
   markPlaying();
+  // One more pass so the lane playhead is cleared when playback ends; the poll
+  // loop that normally draws it has already stopped by then.
+  repaintAutomationLanes();
 }
 
 function markPlaying() {
@@ -706,6 +710,7 @@ function startPolling() {
       engine.loop = r.loop || null;
       engine.latency = r.latency || 0;
       engine.spectrum = r.spectrum && r.spectrum.length ? r.spectrum : engine.spectrum;
+      repaintAutomationLanes();
       if (!r.playing && engine.playing) {
         // The engine stopped itself at the end of the document. Drop back to
         // the cue so pressing play again auditions the same moment.
@@ -1147,6 +1152,7 @@ async function selectFile(file, { keepTab = false } = {}) {
   loadStats();
   loadAnnotations();
   loadRack();
+  loadAutomation();
   loadOverview();
   renderGrainParams();
   loadGrains();
@@ -2004,7 +2010,8 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
   t.onclick = () => {
     document.querySelectorAll('.dock-tab').forEach((x) => x.classList.toggle('active', x === t));
     const panes = { effects: 'dockEffects', stretch: 'dockStretch',
-                    visuals: 'dockVisuals', regions: 'dockRegions' };
+                    visuals: 'dockVisuals', automation: 'dockAutomation',
+                    regions: 'dockRegions' };
     for (const [k, id] of Object.entries(panes)) $(id).classList.toggle('hidden', k !== t.dataset.dock);
   };
 });
@@ -2089,6 +2096,9 @@ function pushRack({ immediate = false } = {}) {
     } catch (e) { toast(e.message); return; }
     renderRack();
     renderTabs();
+    // Adding or removing an effect changes what a lane may address, and the
+    // menu is the server's list rather than one assembled here.
+    refreshAutomationTargets();
     // The waveform must show what will be heard, so it is re-fetched too.
     await loadPeaks();
     if (state.showSpec) loadSpectrogram();
@@ -3323,6 +3333,448 @@ function showStretchOut() {
     + 'The length follows the Stretch slider alone — pitch does not change it. '
     + 'It dims while the waveform is still catching up with the controls.';
 }
+
+// ----------------------------------------------------------- automation
+//
+// A lane is a curve over the document's timeline, stored as unit values. The
+// range belongs to the effect, so this side never converts to hertz or dB and
+// never needs to know a control's limits — which is the only reason the picture
+// and the sound cannot drift apart.
+//
+// **`saveAutomation` deliberately does not adopt the server's reply.** It used
+// to: `state.automation = await postJSON(…)`. That swapped the whole object,
+// and every handler `renderAutomation` had wired closes over the lane it was
+// built with — so after the first save those handlers were mutating orphans.
+// The first edit after a render stuck and every one after it was silently
+// discarded: the target menu would read "Pitch" while the lane, and the engine,
+// stayed on "Stretch". Nothing in the reply is worth that.
+
+state.automation = { lanes: [], bypassed: false, targets: [] };
+
+let automationTimer = null;
+let automationUndo = [];
+let automationRedo = [];
+
+const newLaneId = () => `lane-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+function automationCheckpoint() {
+  automationUndo.push(JSON.stringify({ lanes: state.automation.lanes, bypassed: state.automation.bypassed }));
+  if (automationUndo.length > 100) automationUndo.shift();
+  automationRedo = [];
+}
+
+async function loadAutomation() {
+  if (!state.selectedFile) return;
+  try {
+    state.automation = await api(`/api/automation?p=${encodeURIComponent(state.selectedFile.path)}`);
+  } catch {
+    state.automation = { lanes: [], bypassed: false, targets: [] };
+  }
+  automationUndo = [];
+  automationRedo = [];
+  renderAutomation();
+}
+
+function saveAutomation() {
+  clearTimeout(automationTimer);
+  automationTimer = setTimeout(async () => {
+    if (!state.selectedFile) return;
+    try {
+      await postJSON('/api/automation', {
+        p: state.selectedFile.path,
+        lanes: state.automation.lanes,
+        bypassed: state.automation.bypassed,
+      });
+    } catch (e) {
+      toast('Automation could not be saved: ' + e.message);
+    }
+  }, 120);
+}
+
+/// What the menu offers, straight from the server.
+///
+/// Not assembled here from `state.rack`: the list the menu shows and the list
+/// playback can resolve have to be the same list, and there is only one of them.
+const automationTargets = () => state.automation.targets || [];
+
+/// Re-read the menu after the rack changes, without disturbing the lanes.
+///
+/// Only `targets` is taken from the reply. Adopting the whole response would
+/// throw away edits made since the last save, and would re-orphan every handler
+/// `renderAutomation` has wired — the bug this file is careful about.
+async function refreshAutomationTargets() {
+  if (!state.selectedFile) return;
+  try {
+    const r = await api(`/api/automation?p=${encodeURIComponent(state.selectedFile.path)}`);
+    state.automation.targets = r.targets || [];
+    renderAutomation();
+  } catch { /* the menu is stale until the next open; the lanes are unharmed */ }
+}
+
+function automationNote() {
+  const el = $('automationNote');
+  if (!el) return;
+  const lanes = state.automation.lanes || [];
+  const live = lanes.filter((l) => l.enabled !== false && (l.points || []).length).length;
+  const stretched = lanes.filter((l) => l.enabled !== false && l.target.startsWith('stretch.')).length;
+  if (state.automation.stale) {
+    el.textContent = 'the file changed — the old lanes were dropped';
+  } else if (state.automation.bypassed && lanes.length) {
+    el.textContent = 'bypassed';
+  } else if (stretched) {
+    // Said here rather than at the moment of export, which is too late to be
+    // useful and is where you find out by being refused.
+    el.textContent = `${live} live · stretch lanes play but cannot be exported`;
+  } else {
+    el.textContent = lanes.length ? `${live} live` : 'no lanes yet';
+  }
+}
+
+function renderAutomation() {
+  const box = $('automationLanes');
+  if (!box) return;
+  $('automationBypass').checked = !!state.automation.bypassed;
+  box.innerHTML = '';
+  const targets = automationTargets();
+
+  for (const lane of state.automation.lanes || []) {
+    const row = document.createElement('article');
+    row.className = 'automation-lane';
+
+    const controls = document.createElement('div');
+    controls.className = 'automation-lane-controls';
+
+    const top = document.createElement('div');
+    top.className = 'row';
+    const on = document.createElement('input');
+    on.type = 'checkbox';
+    on.checked = lane.enabled !== false;
+    on.title = 'Whether this lane is in the signal path';
+    on.onchange = () => { automationCheckpoint(); lane.enabled = on.checked; saveAutomation(); automationNote(); };
+
+    const pick = document.createElement('select');
+    pick.title = 'Which control this lane moves';
+    for (const [value, label] of targets) {
+      const o = document.createElement('option');
+      o.value = value; o.textContent = label;
+      pick.appendChild(o);
+    }
+    // A lane naming something that no longer exists keeps its curve and says
+    // so, rather than being silently repointed at whatever is first in the list.
+    if (!targets.some(([v]) => v === lane.target)) {
+      const o = document.createElement('option');
+      o.value = lane.target; o.textContent = `Missing — ${lane.target}`;
+      pick.appendChild(o);
+    }
+    pick.value = lane.target;
+    pick.onchange = () => {
+      automationCheckpoint();
+      lane.target = pick.value;
+      lane.label = pick.selectedOptions[0]?.textContent || pick.value;
+      saveAutomation();
+      automationNote();
+    };
+
+    const del = document.createElement('button');
+    del.className = 'ghost danger';
+    del.textContent = '×';
+    del.title = 'Delete this lane';
+    del.onclick = () => {
+      automationCheckpoint();
+      state.automation.lanes = state.automation.lanes.filter((x) => x !== lane);
+      saveAutomation();
+      renderAutomation();
+    };
+    top.append(on, pick, del);
+    controls.appendChild(top);
+
+    const tools = document.createElement('div');
+    tools.className = 'row';
+    const curve = document.createElement('select');
+    curve.title = 'How the curve travels between breakpoints';
+    for (const c of ['step', 'linear', 'smooth', 'exponential', 'bezier']) {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      curve.appendChild(o);
+    }
+    curve.value = lane.points?.[0]?.curve || 'linear';
+    curve.onchange = () => {
+      automationCheckpoint();
+      for (const p of lane.points || []) p.curve = curve.value;
+      saveAutomation();
+      drawLane(canvas, lane);
+    };
+    tools.appendChild(curve);
+    controls.appendChild(tools);
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'automation-canvas';
+    canvas.width = 1200;
+    canvas.height = 110;
+    wireLane(canvas, lane);
+
+    row.append(controls, canvas);
+    box.appendChild(row);
+    drawLane(canvas, lane);
+  }
+  automationNote();
+}
+
+/// The document's length, which is what a lane's frames are measured against.
+const laneFrames = () => state.edit?.frames || state.view?.frames || 1;
+
+function snapLaneFrame(frame) {
+  const frames = laneFrames();
+  const candidates = [];
+  if (state.sel) candidates.push(state.sel.start, state.sel.end);
+  for (const m of state.annotations?.markers || []) candidates.push(m.frame);
+  for (const r of state.annotations?.regions || []) candidates.push(r.start, r.end);
+  let best = frame;
+  let near = frames * 0.006;
+  for (const x of candidates) {
+    if (Math.abs(x - frame) < near) { best = x; near = Math.abs(x - frame); }
+  }
+  return Math.round(Math.max(0, Math.min(frames, best)));
+}
+
+function wireLane(canvas, lane) {
+  let drag = null;
+  const nearest = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const frames = laneFrames();
+    let best = null;
+    let d = 12;
+    for (const p of lane.points || []) {
+      const n = Math.hypot(
+        e.clientX - r.left - (p.frame / frames) * r.width,
+        e.clientY - r.top - (1 - p.value) * r.height,
+      );
+      if (n < d) { best = p; d = n; }
+    }
+    return best;
+  };
+
+  canvas.onpointerdown = (e) => {
+    automationCheckpoint();
+    canvas.setPointerCapture(e.pointerId);
+    lane.points ||= [];
+    drag = nearest(e);
+    if (!drag) {
+      drag = { frame: 0, value: 0, curve: 'linear', tension: 0 };
+      lane.points.push(drag);
+    }
+    canvas.onpointermove(e);
+  };
+
+  canvas.onpointermove = (e) => {
+    const r = canvas.getBoundingClientRect();
+    if (!drag) {
+      const p = nearest(e);
+      const sr = state.view?.sampleRate || 44100;
+      canvas.title = p
+        ? `${fmtTime(p.frame / sr)} · ${Math.round(p.value * 100)}% · ${p.curve}`
+        : 'Click to add a breakpoint · drag one to move it · double-click to remove';
+      return;
+    }
+    drag.frame = snapLaneFrame(((e.clientX - r.left) / r.width) * laneFrames());
+    drag.value = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+    lane.points.sort((a, b) => a.frame - b.frame);
+    drawLane(canvas, lane);
+  };
+
+  canvas.onpointerup = () => {
+    if (!drag) return;
+    drag = null;
+    // Deliberately not simplified here. A release used to run the simplifier,
+    // which reduces a smooth drag to its two end points — so the breakpoints
+    // you had just drawn vanished the instant you let go. Simplify is a button.
+    saveAutomation();
+    automationNote();
+  };
+
+  canvas.ondblclick = (e) => {
+    const p = nearest(e);
+    if (!p) return;
+    automationCheckpoint();
+    lane.points = lane.points.filter((x) => x !== p);
+    saveAutomation();
+    drawLane(canvas, lane);
+  };
+}
+
+const curveT = (t, p) => {
+  if (p.curve === 'step') return 0;
+  if (p.curve === 'smooth') return t * t * (3 - 2 * t);
+  if (p.curve === 'exponential') return Math.pow(t, Math.pow(2, Math.max(-2, Math.min(2, p.tension || 0))));
+  if (p.curve === 'bezier') {
+    const k = Math.max(0.05, Math.min(0.95, 0.5 + Math.max(-1, Math.min(1, p.tension || 0)) * 0.45));
+    return t < k ? 0.5 * Math.pow(t / k, 2) : 1 - 0.5 * Math.pow((1 - t) / (1 - k), 2);
+  }
+  return t;
+};
+
+function drawLane(canvas, lane) {
+  const c = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const frames = laneFrames();
+  const sr = state.view?.sampleRate || 44100;
+  c.clearRect(0, 0, w, h);
+
+  c.strokeStyle = '#22303d';
+  c.fillStyle = 'rgba(220,228,235,.45)';
+  c.font = '9px ui-monospace';
+  for (let i = 0; i <= 8; i++) {
+    const x = (i * w) / 8;
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+    if (i < 8) c.fillText(fmtTime((frames * i) / 8 / sr), x + 3, 10);
+  }
+  for (const m of state.annotations?.markers || []) {
+    const x = (m.frame / frames) * w;
+    c.strokeStyle = 'rgba(244,190,73,.45)';
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+  }
+
+  const p = (lane.points || []).slice().sort((a, b) => a.frame - b.frame);
+  const dim = lane.enabled === false || state.automation.bypassed;
+  c.strokeStyle = dim ? '#3d5162' : '#52a8ff';
+  c.fillStyle = c.strokeStyle;
+  c.lineWidth = 2;
+
+  if (p.length) {
+    c.beginPath();
+    // A lane holds its end values, so the line is drawn flat out to both edges
+    // rather than stopping where the drawing stopped. The curve goes on meaning
+    // something past its last breakpoint, and it should look like it.
+    c.moveTo(0, (1 - p[0].value) * h);
+    c.lineTo((p[0].frame / frames) * w, (1 - p[0].value) * h);
+    for (let i = 0; i < p.length - 1; i++) {
+      for (let n = 1; n <= 24; n++) {
+        const t = n / 24;
+        const k = curveT(t, p[i]);
+        c.lineTo(
+          ((p[i].frame + (p[i + 1].frame - p[i].frame) * t) / frames) * w,
+          (1 - (p[i].value + (p[i + 1].value - p[i].value) * k)) * h,
+        );
+      }
+    }
+    const last = p[p.length - 1];
+    c.lineTo((last.frame / frames) * w, (1 - last.value) * h);
+    c.lineTo(w, (1 - last.value) * h);
+    c.stroke();
+
+    for (const [i, v] of p.entries()) {
+      const x = (v.frame / frames) * w;
+      const y = (1 - v.value) * h;
+      c.beginPath(); c.arc(x, y, 5, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#071018';
+      c.font = 'bold 8px ui-monospace';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(String(i + 1), x, y);
+      c.fillStyle = c.strokeStyle;
+      c.textAlign = 'start';
+      c.textBaseline = 'alphabetic';
+    }
+  }
+
+  if (engine.playing) {
+    const x = (sourceFrameNow() / frames) * w;
+    c.strokeStyle = '#ffffff';
+    c.lineWidth = 1;
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+  }
+}
+
+function repaintAutomationLanes() {
+  const rows = document.querySelectorAll('.automation-lane');
+  if (!rows.length) return;
+  rows.forEach((row, i) => {
+    const lane = state.automation.lanes?.[i];
+    const canvas = row.querySelector('.automation-canvas');
+    if (lane && canvas) drawLane(canvas, lane);
+  });
+}
+
+/// Drop breakpoints the curve does not need, within `tol` of full scale.
+function simplifyLane(lane, tol = 0.012) {
+  const p = lane.points || [];
+  if (p.length < 3) return;
+  const keep = [p[0]];
+  for (let i = 1; i < p.length - 1; i++) {
+    const a = keep[keep.length - 1];
+    const b = p[i + 1];
+    const x = (p[i].frame - a.frame) / Math.max(1, b.frame - a.frame);
+    if (Math.abs(p[i].value - (a.value + (b.value - a.value) * x)) > tol) keep.push(p[i]);
+  }
+  keep.push(p[p.length - 1]);
+  lane.points = keep;
+}
+
+$('automationAdd').onclick = () => {
+  if (!state.selectedFile) { toast('Open a sound first'); return; }
+  const targets = automationTargets();
+  if (!targets.length) { toast('Nothing to automate yet'); return; }
+  automationCheckpoint();
+  const [target, label] = targets[0];
+  state.automation.lanes.push({
+    id: newLaneId(), target, label, enabled: true, trim: 0, loop: null,
+    // Two points, not one: a lane with a single breakpoint is a constant, and
+    // looks identical whatever you do to it until you add a second.
+    points: [{ frame: 0, value: 0.5, curve: 'linear', tension: 0 },
+             { frame: laneFrames(), value: 0.5, curve: 'linear', tension: 0 }],
+    modulators: [],
+  });
+  saveAutomation();
+  renderAutomation();
+};
+
+$('automationBypass').onchange = (e) => {
+  automationCheckpoint();
+  state.automation.bypassed = e.target.checked;
+  saveAutomation();
+  renderAutomation();
+};
+
+$('automationSimplify').onclick = () => {
+  automationCheckpoint();
+  for (const l of state.automation.lanes) simplifyLane(l);
+  saveAutomation();
+  renderAutomation();
+};
+
+$('automationInvert').onclick = () => {
+  automationCheckpoint();
+  for (const l of state.automation.lanes) for (const p of l.points || []) p.value = 1 - p.value;
+  saveAutomation();
+  renderAutomation();
+};
+
+$('automationLoop').onclick = () => {
+  if (!state.sel) { toast('Make a selection first'); return; }
+  automationCheckpoint();
+  for (const l of state.automation.lanes) l.loop = [state.sel.start, state.sel.end];
+  saveAutomation();
+  toast('Lanes now loop over the selection');
+};
+
+$('automationUndo').onclick = () => {
+  const s = automationUndo.pop();
+  if (!s) return;
+  automationRedo.push(JSON.stringify({ lanes: state.automation.lanes, bypassed: state.automation.bypassed }));
+  Object.assign(state.automation, JSON.parse(s));
+  saveAutomation();
+  renderAutomation();
+};
+
+$('automationRedo').onclick = () => {
+  const s = automationRedo.pop();
+  if (!s) return;
+  automationUndo.push(JSON.stringify({ lanes: state.automation.lanes, bypassed: state.automation.bypassed }));
+  Object.assign(state.automation, JSON.parse(s));
+  saveAutomation();
+  renderAutomation();
+};
 
 // -------------------------------------------------------------- presets
 //

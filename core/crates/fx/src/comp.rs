@@ -125,4 +125,31 @@ impl Effect for Compressor {
     fn name(&self) -> &'static str {
         "Compressor"
     }
+
+    /// The same ranges the interface offers — see [`crate::eq::EQ_FREQ_MIN`].
+    fn set_param(&mut self, key: &str, value: f32) -> bool {
+        match key {
+            "thresholdDb" => self.settings.threshold_db = value.clamp(COMP_THRESHOLD_MIN, 0.0),
+            "ratio" => self.settings.ratio = value.clamp(COMP_RATIO_MIN, COMP_RATIO_MAX),
+            "attackMs" => self.settings.attack_ms = value.clamp(COMP_ATTACK_MIN, COMP_ATTACK_MAX),
+            "releaseMs" => {
+                self.settings.release_ms = value.clamp(COMP_RELEASE_MIN, COMP_RELEASE_MAX)
+            }
+            "kneeDb" => self.settings.knee_db = value.clamp(0.0, COMP_KNEE_MAX),
+            "makeupDb" => self.settings.makeup_db = value.clamp(COMP_MAKEUP_MIN, COMP_MAKEUP_MAX),
+            _ => return false,
+        }
+        true
+    }
 }
+
+pub const COMP_THRESHOLD_MIN: f32 = -60.0;
+pub const COMP_RATIO_MIN: f32 = 1.0;
+pub const COMP_RATIO_MAX: f32 = 20.0;
+pub const COMP_ATTACK_MIN: f32 = 0.05;
+pub const COMP_ATTACK_MAX: f32 = 500.0;
+pub const COMP_RELEASE_MIN: f32 = 5.0;
+pub const COMP_RELEASE_MAX: f32 = 3000.0;
+pub const COMP_KNEE_MAX: f32 = 24.0;
+pub const COMP_MAKEUP_MIN: f32 = -24.0;
+pub const COMP_MAKEUP_MAX: f32 = 24.0;

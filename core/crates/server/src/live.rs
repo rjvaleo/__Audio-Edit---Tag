@@ -199,7 +199,15 @@ pub fn load(
 
     // Remember what is loaded, so anything drawing the grain cloud can find the
     // document whose parameters produced it.
-    *app.playing.write().unwrap() = Some((rel.to_string(), out_frames as u64, dev_rate));
+    *app.playing.write().unwrap() = Some(crate::state::NowPlaying {
+        rel: rel.to_string(),
+        frames: out_frames as u64,
+        device_rate: dev_rate,
+        document: how == Playing::Document,
+        doc_frames: list.frames(),
+        doc_channels: list.channels,
+        doc_rate: list.sample_rate,
+    });
 
     Ok(Loaded {
         frames: out_frames as u64,
@@ -258,7 +266,7 @@ pub fn holding(app: &Arc<App>, rel: &str) -> bool {
         .read()
         .unwrap()
         .as_ref()
-        .is_some_and(|(p, _, _)| p == rel)
+        .is_some_and(|n| n.rel == rel)
 }
 
 pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(), String> {
@@ -363,7 +371,7 @@ fn separate_soon(
                 .playing
                 .read()
                 .ok()
-                .and_then(|g| g.as_ref().map(|(p, _, _)| p.clone()));
+                .and_then(|g| g.as_ref().map(|n| n.rel.clone()));
             if still.as_deref() != Some(rel.as_str()) {
                 return;
             }

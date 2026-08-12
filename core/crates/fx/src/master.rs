@@ -264,4 +264,17 @@ impl Effect for Maximizer {
     fn name(&self) -> &'static str {
         "Maximizer"
     }
+
+    /// Only `amount`. The ceiling and the two automatic modes are decisions
+    /// about how the maximiser behaves, not things to sweep during a take, and
+    /// automating the ceiling would put the one guarantee this effect makes —
+    /// nothing above it — on a curve.
+    fn set_param(&mut self, key: &str, value: f32) -> bool {
+        if key == "amount" {
+            self.settings.amount = value.clamp(0.0, 1.0);
+            true
+        } else {
+            false
+        }
+    }
 }
