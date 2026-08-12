@@ -6,6 +6,7 @@ pub mod capture;
 pub mod docs;
 pub mod http;
 pub mod live;
+pub mod offline;
 pub mod json;
 pub mod routes;
 pub mod persist;

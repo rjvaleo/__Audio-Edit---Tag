@@ -1,6 +1,6 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **822 tests
+Written 11 August 2026 as a handoff, and kept up to date since. **826 tests
 passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
 because the per-topic notes live in `~/.claude/projects/…` on one machine and
 this repo travels.
@@ -17,7 +17,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 822 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 826 tests
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
 `ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
@@ -700,9 +700,8 @@ the gate's −40 dB threshold into −4000%.
   with the target). Both fit an STFT rack effect.
 - ~~**Phase 3, the edits.**~~ **Built** — see §7c.
 - ~~**Automation and modulation.**~~ **Built** — see §7f. Curve automation is
-  in; the followers (envelope, transient, grain) are not, and neither is a
-  time-varying stretch in the *export*, which refuses rather than writing a
-  file that differs from what was heard.
+  in, in playback and in the export. The followers (envelope, transient,
+  grain) are not: they need a real detector rather than depth times a meter.
 - **Three views** — *edit*, *granulate*, *browse*, each with its own view of the
   sound pool and its own display. Currently two modes. The live shaping belongs
   in *granulate*.
@@ -746,12 +745,15 @@ sensitivity and source controls parsed, saved, shown in a dialog and never read.
 They need a real detector, and a control that does nothing is worse than a
 missing one.
 
-**Deliberately refused:** exporting a document with a live `stretch.*` lane. The
-rack can be moved block by block; the stretch cannot — WSOLA picks each splice
-from the one before it, so the whole thing renders in one pass with one set of
-parameters. The branch silently dropped these lanes, so a pitch sweep was
-audible and then absent from the file. The export now names the lane and
-refuses. Capture the playback instead, or bypass the lane.
+**A stretch lane reaches the file too**, via `server::offline`. The one-pass
+renderer applies the stretch whole and cannot follow a curve, so a document with
+a `stretch.*` lane is rendered by driving `engine::stretcher` — the very engine
+the audio callback drives — block by block with the same automated parameters.
+Two paths, one implementation, which is the only way "what you hear is what you
+export" stays true without two things agreeing by luck. The engine never says
+when it is finished (`render` always fills the block), so the length is
+integrated: a block of output at ratio *r* consumes `BLOCK / r` of source, and
+the render ends when the source does.
 
 ### The interface bug that made all of this look broken
 

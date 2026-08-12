@@ -661,6 +661,9 @@ function startPlayback() {
 
 function pausePlayback() {
   engine.playing = false;
+  // After the poll loop has stopped, not before: a request already in flight
+  // lands with the last levels that were heard and paints them back on.
+  setTimeout(resetRackMeters, 120);
   captureFollow(false);
   reflectTransport();
   enginePost({ play: false });
@@ -710,6 +713,12 @@ function startPolling() {
       engine.loop = r.loop || null;
       engine.latency = r.latency || 0;
       engine.spectrum = r.spectrum && r.spectrum.length ? r.spectrum : engine.spectrum;
+      // The rail's meters and its visual editors are driven from the same poll
+      // as the playhead, so everything on screen describes one instant.
+      paintRackMeters(r.rackLevels || []);
+      repaintVisualEqs();
+      repaintVisualCompressors();
+      repaintVisualChamberlins();
       repaintAutomationLanes();
       if (!r.playing && engine.playing) {
         // The engine stopped itself at the end of the document. Drop back to
@@ -718,6 +727,7 @@ function startPolling() {
         captureFollow(false);
         reflectTransport();
         stopSwarm();
+        resetRackMeters();
         returnToCue();
         paintTime();
         updatePlayhead();
@@ -3826,15 +3836,10 @@ function automationNote() {
   if (!el) return;
   const lanes = state.automation.lanes || [];
   const live = lanes.filter((l) => l.enabled !== false && (l.points || []).length).length;
-  const stretched = lanes.filter((l) => l.enabled !== false && l.target.startsWith('stretch.')).length;
   if (state.automation.stale) {
     el.textContent = 'the file changed — the old lanes were dropped';
   } else if (state.automation.bypassed && lanes.length) {
     el.textContent = 'bypassed';
-  } else if (stretched) {
-    // Said here rather than at the moment of export, which is too late to be
-    // useful and is where you find out by being refused.
-    el.textContent = `${live} live · stretch lanes play but cannot be exported`;
   } else {
     el.textContent = lanes.length ? `${live} live` : 'no lanes yet';
   }

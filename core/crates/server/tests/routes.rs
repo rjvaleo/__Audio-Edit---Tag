@@ -1357,29 +1357,37 @@ fn the_menu_offers_the_document_and_every_slot_in_the_rack() {
     assert!(!targets_now(&app).iter().any(|t| t == "rack.master.amount"));
 }
 
+/// A lane on the stretch used to be refused, because the one-pass renderer
+/// applies the stretch whole. It now goes through the streaming engine.
 #[test]
-fn an_export_refuses_rather_than_writing_a_file_that_differs_from_what_was_heard() {
-    let s = Scratch::new("automation-export-refusal");
-    s.sound("kit/tone.wav", 2000);
+fn a_stretch_lane_reaches_the_exported_file() {
+    let s = Scratch::new("automation-export-stretch");
+    s.sound("kit/tone.wav", 8000);
     let app = s.app();
+
+    let plain = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    assert_eq!(status(&plain), 200, "{}", String::from_utf8_lossy(&plain.body));
+    let plain_frames = num(&json(&plain), &["frames"]);
+
+    // A ratio lane pinned well above unity: the file has to come out longer.
     server::routes::route(
         &app,
         &post("/api/automation", &lane_body("kit/tone.wav", "stretch.ratio",
-              r#"[{"frame":0,"value":0.4,"curve":"linear","tension":0},{"frame":2000,"value":0.6,"curve":"linear","tension":0}]"#)),
+              r#"[{"frame":0,"value":0.7,"curve":"linear","tension":0},{"frame":8000,"value":0.7,"curve":"linear","tension":0}]"#)),
+    );
+    let stretched = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    assert_eq!(status(&stretched), 200, "{}", String::from_utf8_lossy(&stretched.body));
+    let stretched_frames = num(&json(&stretched), &["frames"]);
+
+    assert!(
+        stretched_frames > plain_frames * 3.0,
+        "the lane did not reach the file: {plain_frames} frames became {stretched_frames}"
     );
 
-    let r = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
-    assert_eq!(status(&r), 400, "a live stretch lane must refuse, not silently drop");
-    let text = String::from_utf8_lossy(&r.body);
-    assert!(text.contains("stretch"), "the refusal should name the problem: {text}");
-
-    // Nothing was created beside the original.
-    let strays: Vec<_> = fs::read_dir(s.library.join("kit")).unwrap()
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().to_string())
-        .filter(|n| n != "tone.wav")
-        .collect();
-    assert!(strays.is_empty(), "a refused export left {strays:?} behind");
+    // And the file on disk really is that long, not just the number reported.
+    let path = json(&stretched).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    let reader = audio_core::open(std::path::Path::new(&path)).unwrap();
+    assert_eq!(reader.info().frames(), stretched_frames as u64);
 }
 
 #[test]

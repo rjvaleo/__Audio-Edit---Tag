@@ -464,6 +464,60 @@ pub fn render_to_aiff_fx<S: RandomAccessSource, W: Write>(
 /// The block size is the control rate of the export, so it is deliberately
 /// small — 1024 frames is about 21 ms at 48 kHz, finer than the 8 ms live tick
 /// only in the sense that it never falls behind.
+/// Write audio that has already been rendered, running the rack over it with
+/// the same per-block control hook.
+///
+/// The stretch is done by the time this is called, which is what a document
+/// with a lane on its stretch needs: the streaming engine produced the samples
+/// and only their length is knowable afterwards, so the header cannot be
+/// written until they exist.
+pub fn write_aiff_controlled<W: Write, F>(
+    mut audio: Vec<f32>,
+    channels: u16,
+    sample_rate: u32,
+    rack: &mut Rack,
+    out: &mut W,
+    bits: u16,
+    meta: &audio_core::aiff::Meta,
+    mut control: F,
+) -> io::Result<u64>
+where
+    F: FnMut(&mut Rack, u64),
+{
+    let ch = channels.max(1) as usize;
+    let total = (audio.len() / ch) as u64;
+    let codec = codec_for(bits);
+    let bps = codec.bytes_per_sample() as u64;
+
+    out.write_all(&audio_core::aiff::header(
+        total * ch as u64 * bps,
+        channels.max(1),
+        sample_rate,
+        codec,
+        meta,
+    ))?;
+
+    rack.reset();
+    let mut written = 0u64;
+    let mut frame = 0u64;
+    for block in audio.chunks_mut(1024 * ch) {
+        control(rack, frame);
+        rack.process(block, ch, sample_rate);
+        let mut bytes = Vec::with_capacity(block.len() * bps as usize);
+        for v in block.iter() {
+            quantise(*v, bits, true, &mut bytes);
+        }
+        written += bytes.len() as u64;
+        out.write_all(&bytes)?;
+        frame += (block.len() / ch) as u64;
+    }
+    if written % 2 == 1 {
+        out.write_all(&[0])?;
+    }
+    out.flush()?;
+    Ok(total)
+}
+
 pub fn render_to_aiff_controlled<S: RandomAccessSource, W: Write, F>(
     list: &EditList,
     reader: &mut Reader<S>,
