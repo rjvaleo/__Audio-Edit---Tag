@@ -58,7 +58,6 @@ button { font-family: inherit; cursor: pointer; }
    live up here — transport, clock, zoom, metadata, level — moved down under the
    waveform, where it is next to the thing it acts on. */
 
-
 /* The transport, sitting under the waveform and spectrogram in the editor.
    Absent in Browse, where there is nothing open to transport. */
 .transportbar {
@@ -395,26 +394,39 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
    four controls takes four knobs' worth of room and not the whole panel. */
 .knob-grid {
   display: flex; flex-wrap: wrap; justify-content: flex-start;
-  align-items: flex-start; gap: 10px 12px; margin-top: 10px;
+  align-items: flex-start; gap: 14px 14px; margin-top: 0;
+  padding: 16px 14px 14px;
+  border: 1px solid rgba(255,255,255,.10); border-top: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.025), transparent 22px),
+    oklch(12.5% 0.012 250);
+  box-shadow: inset 0 1px rgba(255,255,255,.025), 0 8px 20px rgba(0,0,0,.18);
 }
 .knob {
-  width: 52px; flex: 0 0 auto;
+  width: 58px; flex: 0 0 auto;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
 .knob svg {
-  width: 44px; height: 44px; display: block;
+  width: 48px; height: 48px; display: block;
   cursor: ns-resize; touch-action: none;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.65));
 }
-.knob .track { fill: none; stroke: var(--line-2); stroke-width: 4; stroke-linecap: round; }
-.knob .arc   { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
-.knob .ptr   { stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
+.knob .bezel { fill: #090b0e; stroke: rgba(255,255,255,.18); stroke-width: 1; }
+.knob .cap { fill: #11151a; stroke: rgba(255,255,255,.06); stroke-width: 1; }
+.knob .track { fill: none; stroke: rgba(255,255,255,.13); stroke-width: 2.5; stroke-linecap: round; }
+.knob .arc   { fill: none; stroke: oklch(70% .18 235); stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 2px rgba(45,157,255,.5)); }
+.knob .ptr   { stroke: #eef7ff; stroke-width: 1.7; stroke-linecap: round; }
 .knob .k {
-  font-size: 9.5px; color: var(--text-dim); max-width: 100%;
+  font-size: 8.5px; font-weight: 650; letter-spacing: .35px; text-transform: uppercase;
+  color: oklch(76% .012 250); max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .knob .v {
-  font-family: var(--mono); font-size: 9.5px; color: var(--accent);
+  min-width: 54px; padding: 2px 4px; border: 1px solid rgba(95,157,214,.28);
+  border-radius: 2px; background: #101c2b; text-align: center;
+  font-family: var(--mono); font-size: 8.5px; color: #a9d7ff;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  box-shadow: inset 0 1px 4px rgba(0,0,0,.7);
 }
 .knob:hover .track { stroke: rgba(255,255,255,0.18); }
 /* While it is being turned, so the one under the pointer is obvious even when
@@ -553,36 +565,6 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .fx-note { font-size: 9.5px; line-height: 1.45; color: var(--text-dimmer); }
 .dim-block { opacity: .6; }
 
-/* Automation. One column, not the dock's auto-fit grid: a lane is a timeline
-   and has to span the full width or its frames do not line up with the ruler
-   above it. */
-.automation-body { display: flex; flex-direction: column; gap: 8px; }
-.automation-toolbar {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-}
-.automation-toolbar .check { display: flex; align-items: center; gap: 5px; font-size: 11px; }
-.automation-note {
-  margin-left: auto; font-size: 10px; color: var(--text-dimmer);
-  font-variant-numeric: tabular-nums;
-}
-.automation-lanes { display: flex; flex-direction: column; gap: 6px; }
-.automation-lane {
-  display: grid; grid-template-columns: 190px 1fr; gap: 8px;
-  align-items: stretch;
-  background: var(--bg-2, #0d151c);
-  border: 1px solid var(--line, #1d2833);
-  border-radius: 4px; padding: 6px;
-}
-.automation-lane-controls { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
-.automation-lane-controls .row { display: flex; align-items: center; gap: 5px; }
-.automation-lane-controls select { flex: 1; min-width: 0; font-size: 10.5px; }
-.automation-lane-controls .danger { color: var(--danger, #e0685f); padding: 0 6px; }
-.automation-canvas {
-  width: 100%; height: 110px; display: block;
-  background: #070d13; border-radius: 3px; cursor: crosshair;
-  touch-action: none;
-}
-
 .region-list { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; }
 .region-item {
   display: flex; align-items: center; gap: 10px;
@@ -719,32 +701,175 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 
 /* ------------------------------------------------------------ effect rack */
 
-.rack-body { display: flex; gap: 0; padding: 0; }
+/* The effects workspace follows the Time & Pitch control language, but the
+   chain itself is a left-to-right instrument rack. The pane never scrolls
+   vertically: modules take its full height and the rail carries overflow on
+   the horizontal axis. */
+#dockEffects.rack-body {
+  position: relative; display: flex; padding: 0; overflow: hidden;
+  background: oklch(13.5% 0.013 250);
+}
+.fx-module-viewport {
+  flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-start;
+  overflow-x: auto; overflow-y: hidden; scrollbar-gutter: stable;
+}
+.fx-module-rail {
+  display: flex; flex-flow: column wrap; align-content: flex-start;
+  justify-content: flex-start; gap: 6px 0; min-width: min-content; height: 100%;
+}
+.fx-module {
+  width: 320px; min-width: 320px; height: auto; max-height: 100%; box-sizing: border-box;
+  padding: 8px 10px 10px; border-right: 1px solid var(--line-2);
+  background: oklch(16% 0.013 250); display: flex; flex-direction: column; overflow-y: auto;
+}
+.fx-module.off .fx-module-controls { opacity: .38; }
+.fx-module-head {
+  min-height: 34px; flex: 0 0 auto; display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; margin-bottom: 4px; cursor: grab;
+}
+.fx-module-head:active { cursor: grabbing; }
+.fx-module.dragging { opacity: .42; }
+.fx-module-head h2 { margin: 1px 0 0; font-size: 11px; font-weight: 650; color: var(--text-2); }
+.fx-module-actions { display: flex; gap: 4px; }
+.fx-module-actions .ghost { height: 20px; padding: 0 6px; font-size: 9px; }
+/* The signal row fills the module so the two meter columns run its whole
+   height. It used to be `flex: 0 0 auto`, which left them as tall as the first
+   control row — on a one-control module that is a stub sitting in the same
+   line as the slider, which reads as overlap rather than as a meter. */
+.fx-module-signal {
+  flex: 1 1 auto; min-height: 96px; display: flex; gap: 10px;
+  align-items: stretch; overflow: visible;
+}
+.fx-module-controls {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  gap: 1px; align-content: start;
+}
+.fx-vu, .fx-end-meter {
+  width: 16px; min-width: 16px; display: flex; flex-direction: column;
+  align-items: center; gap: 3px; padding: 1px 0 3px;
+}
+.fx-end-meter {
+  flex: 0 0 22px; width: 22px; min-width: 22px; height: 100%; box-sizing: border-box;
+  padding: 7px 3px; border-right: 1px solid var(--line-2); background: oklch(14.5% .013 250);
+}
+#fxOutputMeter { border-left: 1px solid var(--line-2); border-right: 0; }
+.vu-label {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 7px; letter-spacing: .2px;
+  color: var(--text-dimmer); writing-mode: vertical-rl; transform: rotate(180deg);
+}
+.vu-well {
+  position: relative; flex: 1; width: 9px; min-height: 24px; overflow: hidden;
+  display: flex; align-items: flex-end; gap: 1px; padding: 1px;
+  border: 1px solid rgba(255,255,255,.10); border-radius: 2px; background: #090b0d;
+  box-shadow: inset 0 1px 4px rgba(0,0,0,.8);
+}
+.vu-bar {
+  width: 3px; height: var(--vu, 0%); display: block;
+  background: linear-gradient(to top, #30c878 0 72%, #e3bf3d 72% 90%, #e64e4e 90%);
+  box-shadow: 0 0 3px rgba(48,200,120,.35); transition: height 70ms linear;
+}
+.fx-module-controls .param { padding: 1px 0; }
+.fx-module-controls .param .k, .fx-module-controls .param .v { font-size: 10px; }
+.fx-module-controls .param input[type=range] { height: 14px; }
+.fx-module.eq-visual { width: 390px; min-width: 390px; height: min(350px, 100%); }
+.fx-module.eq-visual .fx-module-controls.visual-eq-controls { display: block; }
+.eq-graph { height: 242px; display: grid; grid-template-rows: minmax(105px, 1fr) 14px auto; gap: 3px; }
+.eq-graph canvas {
+  width: 100%; height: 100%; min-height: 105px; display: block; cursor: crosshair;
+  border: 1px solid rgba(255,255,255,.14); touch-action: none;
+}
+.eq-selected {
+  font-size: 8px; font-weight: 700; letter-spacing: .5px; color: #78dd42;
+  text-align: center;
+}
+.eq-slider-stack { display: flex; flex-direction: column; gap: 1px; }
+.eq-slider-stack .param { min-height: 18px; }
+.eq-band-toolbar { display:flex; gap:6px; align-items:center; margin-bottom:2px; }
+.eq-band-toolbar .ghost { min-width:42px; height:20px; font-size:9px; }
+.eq-shape-icons { flex:1; display:flex; gap:2px; }
+.eq-shape-icon { flex:1; min-width:0; height:20px; padding:0; border:1px solid var(--line-2); border-radius:3px; background:#11161a; color:var(--text-dim); font:13px/1 var(--mono); cursor:pointer; }
+.eq-shape-icon:hover { color:var(--text); border-color:var(--line-3); }
+.eq-shape-icon.selected { color:#78dd42; border-color:#78dd42; background:rgba(120,221,66,.10); }
+.fx-module.comp-visual { width: 390px; min-width: 390px; height: min(350px, 100%); }
+.fx-module.comp-visual .fx-module-controls.visual-comp-controls { display: block; }
+.comp-graph { height: 282px; display: grid; grid-template-rows: minmax(120px, 1fr) auto; gap: 4px; }
+.comp-graph canvas {
+  width: 100%; height: 100%; min-height: 120px; display: block; cursor: crosshair;
+  border: 1px solid rgba(255,255,255,.14); touch-action: none;
+}
+.comp-slider-stack { display: flex; flex-direction: column; gap: 1px; }
+.comp-slider-stack .param { min-height: 18px; }
+.fx-module.filter-bank-visual { width:390px; min-width:390px; }
+.fx-module.filter-bank-visual .fx-module-controls { display:block; }
+.filter-bank-canvas { width:100%; height:130px; display:block; border:1px solid rgba(255,255,255,.14); margin-bottom:5px; }
+.filter-bank-controls { padding:3px 0 4px; border-top:2px solid var(--filter-color); }
+.filter-bank-title { display:flex; justify-content:space-between; align-items:center; color:var(--filter-color); font-size:9px; font-weight:700; }
+.filter-bank-title .ghost { height:18px; font-size:8px; padding:0 5px; }
+.fx-module.chamberlin-visual { width:390px; min-width:390px; height:min(350px,100%); }
+.fx-module.chamberlin-visual .fx-module-controls { display:block; }
+.chamberlin-graph { height:282px; display:grid; grid-template-rows:minmax(110px,1fr) 14px auto; gap:3px; }
+.chamberlin-graph canvas { width:100%; height:100%; min-height:110px; border:1px solid rgba(255,255,255,.14); touch-action:none; cursor:crosshair; }
+.chamberlin-readout { text-align:center; font-size:8px; color:var(--text-dim); }
+.chamberlin-sliders { display:flex; flex-direction:column; gap:1px; }
+.chamberlin-sliders .param[style] .k { color:var(--mode-color); }
+.chamberlin-band { height:18px; margin-top:2px; border:0; border-left:3px solid var(--mode-color); background:#11161a; color:var(--mode-color); text-align:left; font-size:8px; cursor:pointer; }
+.fx-add {
+  position: sticky; right: 0; flex: 0 0 48px; width: 48px; height: 100%;
+  border: 0; border-left: 1px solid var(--line-2); border-radius: 0;
+  background: oklch(15% 0.014 250); color: var(--text-dim);
+  font: 300 28px/1 var(--sans); cursor: pointer;
+}
+.fx-add:hover { background: var(--surface-3); color: var(--accent); }
+.fx-picker {
+  position: absolute; inset: 8px 58px 8px 8px; z-index: 20; overflow: auto;
+  padding: 10px; border: 1px solid var(--line-2); border-radius: 8px;
+  background: oklch(14% 0.014 250 / .98); box-shadow: 0 16px 44px rgba(0,0,0,.6);
+}
+.fx-picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.fx-picker-head span { font-size: 11px; font-weight: 650; color: var(--text-2); }
+.fx-picker-groups { display: flex; gap: 18px; align-items: flex-start; }
+.fx-picker-group { min-width: 170px; display: flex; flex-direction: column; gap: 3px; }
+.fx-picker-group h3 {
+  margin: 0 0 4px; font-size: 8.5px; letter-spacing: .45px;
+  text-transform: uppercase; color: var(--text-dimmer);
+}
+.fx-picker-item {
+  padding: 5px 7px; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; color: var(--text-2); text-align: left; font: inherit; font-size: 10.5px;
+}
+.fx-picker-item:hover { border-color: var(--line-2); background: var(--surface-3); color: var(--accent); }
+
+.rack-body { display: flex; gap: 0; padding: 0; background: #101215; }
 .rack-chain {
   width: 190px; flex-shrink: 0; padding: 12px 10px;
-  border-right: 1px solid var(--line); overflow-y: auto;
+  border-right: 1px solid rgba(255,255,255,.11); overflow-y: auto;
+  background: linear-gradient(90deg, #15171a, #101215);
 }
 .master-title { margin-top: 14px; }
 .rack-title {
   font-size: 9px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
   color: var(--text-dimmer); margin-bottom: 8px;
 }
-.rack-params { flex: 1; padding: 12px 16px; overflow-y: auto; min-width: 0; }
+.rack-params {
+  flex: 1; padding: 14px 18px 18px; overflow-y: auto; min-width: 0;
+  background: radial-gradient(circle at 50% -40%, #25292e 0, #15181c 56%, #111316 100%);
+}
 
 .rack-slot {
   display: flex; align-items: center; gap: 8px;
-  padding: 7px 8px; border-radius: 7px; cursor: pointer; margin-bottom: 3px;
+  padding: 7px 8px; border-radius: 2px; cursor: pointer; margin-bottom: 4px;
+  border: 1px solid rgba(255,255,255,.07); background: #171a1e;
 }
 .rack-slot:hover { background: var(--surface-3); }
-.rack-slot.selected { background: rgba(125,190,255,0.13); }
+.rack-slot.selected { background: #1a2735; border-color: rgba(73,156,230,.52); box-shadow: inset 2px 0 #3a9df4; }
 .rack-slot.off { opacity: .45; }
 .rack-slot .icon {
-  width: 24px; height: 24px; flex-shrink: 0; border-radius: 6px;
-  background: var(--surface-3); color: var(--text-2);
+  width: 24px; height: 24px; flex-shrink: 0; border-radius: 2px;
+  background: #0d1722; border: 1px solid rgba(87,153,214,.35); color: #a8d7ff;
   display: flex; align-items: center; justify-content: center;
   font-size: 9px; font-weight: 700;
 }
-.rack-slot.selected .icon { background: var(--accent); color: oklch(14% 0.01 250); }
+.rack-slot.selected .icon { background: #17304a; color: #d8efff; }
 .rack-slot .meta { min-width: 0; flex: 1; }
 .rack-slot .nm { font-size: 11px; color: var(--text-2); }
 .rack-slot.selected .nm { color: var(--text); }
@@ -879,9 +1004,21 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .wild-body { display: flex; flex-direction: column; gap: var(--param-row); }
 .param-head {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
+  min-height: 58px; margin-bottom: 0; padding: 9px 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: linear-gradient(180deg, #292c30, #191b1e);
+  box-shadow: inset 0 1px rgba(255,255,255,.05), 0 2px 8px rgba(0,0,0,.35);
 }
-.param-head .t { font-size: 12px; font-weight: 600; color: var(--text); }
+.param-head .head-copy { display: grid; grid-template-columns: auto auto; align-items: end; gap: 2px 9px; }
+.param-head .eyebrow { grid-column: 1 / -1; font-size: 7.5px; font-weight: 750; letter-spacing: 1.25px; color: #6d91b3; }
+.param-head .t { font-size: 13px; font-weight: 650; letter-spacing: .2px; color: #f0f2f3; }
+.param-head .fx-display {
+  min-width: 122px; padding: 4px 7px; border: 1px solid rgba(86,151,211,.34); border-radius: 2px;
+  background: #0e1926; color: #9fcdf4; font: 8px var(--mono); text-transform: uppercase;
+  letter-spacing: .35px; box-shadow: inset 0 1px 5px rgba(0,0,0,.75);
+}
+.param-head .head-actions { display: flex; gap: 6px; }
+.param-head .ghost { border-radius: 2px; text-transform: uppercase; letter-spacing: .4px; font-size: 8.5px; }
 .eqcurve {
   width: 100%; height: 110px; display: block; margin-bottom: 12px;
   border-radius: 6px; background: oklch(9.5% 0.01 250); border: 1px solid var(--line);
@@ -1138,7 +1275,6 @@ body.editing .dock { flex: 0 0 300px; }
    took four pixels off this column's sliders and not the other's. */
 .grain-extended { align-self: start; min-width: 0; }
 
-
 /* A reset that sits in the panel's own header rather than under its controls,
    where it was competing with them for the eye. */
 .cpanel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1174,7 +1310,6 @@ body.editing .dock { flex: 0 0 300px; }
   border-radius: 7px; background: oklch(8% 0.01 250); border: 1px solid var(--line);
 }
 body.editing .dock { flex: 0 0 330px; }
-
 
 /* --------------------------------------------------------------- overview
    The whole file at a glance, with the zoomed window marked, so you can see
@@ -1267,7 +1402,6 @@ body.editing .dock { flex: 0 0 330px; }
 .user-tag.learned:hover { opacity: 1; background: rgba(240, 190, 120, 0.10); }
 
 #addUserTag { margin: 2px 0 6px; }
-
 
 /* ------------------------------------------------------------------- menus */
 
@@ -1420,6 +1554,21 @@ body.editing .dock { flex: 0 0 330px; }
 .pm-ident input:focus { outline: none; border-color: var(--accent); }
 .pm-status { font-size: 11px; color: var(--text-dimmer); margin-right: auto; }
 .pm-status.dirty { color: var(--warn); }
+.pm-fx { margin: 0 0 18px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.pm-fx-head { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.pm-fx-head h3 { font-size: 11px; color: var(--warn); text-transform: uppercase; letter-spacing: .08em; }
+.pm-fx-head span { font-size: 10px; color: var(--text-dimmer); }
+.pm-fx-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 8px; padding: 8px; }
+.pm-fx-card { min-width: 0; border: 1px solid var(--line-2); border-radius: 5px; background: var(--surface-2); }
+.pm-fx-card > header { height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 7px; border-bottom: 1px solid var(--line); }
+.pm-fx-card > header strong { flex: 1; font-size: 11px; font-weight: 600; }
+.pm-fx-card > header .ghost { width: 24px; min-width: 24px; height: 22px; padding: 0; }
+.pm-fx-params { padding: 6px 8px; max-height: 330px; overflow-y: auto; }
+.pm-band { padding: 5px 0; border-bottom: 1px solid var(--line); }
+.pm-band-head { display: grid; grid-template-columns: 18px 1fr 100px; align-items: center; gap: 5px; margin-bottom: 3px; font-size: 10px; color: var(--text-dim); }
+.pm-band-head select, .pm-fx-add select { height: 24px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--well); color: var(--text); }
+.pm-fx-add { padding: 0 8px 8px; }
+.pm-fx-add select { width: 100%; padding: 0 7px; }
 
 /* An engine the audio callback cannot run yet. Marked rather than hidden: it is
    a real engine and it is what export uses, it just is not what you are
@@ -1458,103 +1607,35 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .ask-note { font-size: 11px; color: var(--text-dimmer); font-family: var(--mono); }
 
-/* ---------------------------------------------- the effect module rail
-   Ported with the modules themselves. Signal flow reads left to right,
-   with a meter at each end of the chain. */
-.fx-module-viewport {
-  flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-start;
-  overflow-x: auto; overflow-y: hidden; scrollbar-gutter: stable;
+/* --------------------------------------------------- the automation panel
+   Last, so these win over the rules the branch sheet carries for a panel
+   with modulator chips and record modes that this port does not have. */
+/* Automation. One column, not the dock's auto-fit grid: a lane is a timeline
+   and has to span the full width or its frames do not line up with the ruler
+   above it. */
+.automation-body { display: flex; flex-direction: column; gap: 8px; }
+.automation-toolbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
-.fx-module-rail {
-  display: flex; flex-flow: column wrap; align-content: flex-start;
-  justify-content: flex-start; gap: 6px 0; min-width: min-content; height: 100%;
+.automation-toolbar .check { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.automation-note {
+  margin-left: auto; font-size: 10px; color: var(--text-dimmer);
+  font-variant-numeric: tabular-nums;
 }
-.fx-module {
-  width: 320px; min-width: 320px; height: auto; max-height: 100%; box-sizing: border-box;
-  padding: 8px 10px 10px; border-right: 1px solid var(--line-2);
-  background: oklch(16% 0.013 250); display: flex; flex-direction: column; overflow-y: auto;
+.automation-lanes { display: flex; flex-direction: column; gap: 6px; }
+.automation-lane {
+  display: grid; grid-template-columns: 190px 1fr; gap: 8px;
+  align-items: stretch;
+  background: var(--bg-2, #0d151c);
+  border: 1px solid var(--line, #1d2833);
+  border-radius: 4px; padding: 6px;
 }
-.fx-module.off .fx-module-controls { opacity: .38; }
-.fx-module-head {
-  min-height: 34px; flex: 0 0 auto; display: flex; align-items: center;
-  justify-content: space-between; gap: 8px; margin-bottom: 4px; cursor: grab;
+.automation-lane-controls { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.automation-lane-controls .row { display: flex; align-items: center; gap: 5px; }
+.automation-lane-controls select { flex: 1; min-width: 0; font-size: 10.5px; }
+.automation-lane-controls .danger { color: var(--danger, #e0685f); padding: 0 6px; }
+.automation-canvas {
+  width: 100%; height: 110px; display: block;
+  background: #070d13; border-radius: 3px; cursor: crosshair;
+  touch-action: none;
 }
-.fx-module-head:active { cursor: grabbing; }
-.fx-module.dragging { opacity: .42; }
-.fx-module-head h2 { margin: 1px 0 0; font-size: 11px; font-weight: 650; color: var(--text-2); }
-.fx-module-actions { display: flex; gap: 4px; }
-.fx-module-actions .ghost { height: 20px; padding: 0 6px; font-size: 9px; }
-.fx-module-signal { min-height: 26px; flex: 0 0 auto; display: flex; gap: 10px; align-items: stretch; overflow: visible; }
-.fx-module-controls {
-  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
-  gap: 1px; align-content: start;
-}
-.fx-vu, .fx-end-meter {
-  width: 16px; min-width: 16px; display: flex; flex-direction: column;
-  align-items: center; gap: 3px; padding: 1px 0 3px;
-}
-.fx-end-meter {
-  flex: 0 0 22px; width: 22px; min-width: 22px; height: 100%; box-sizing: border-box;
-  padding: 7px 3px; border-right: 1px solid var(--line-2); background: oklch(14.5% .013 250);
-}
-.fx-module-controls .param { padding: 1px 0; }
-.fx-module-controls .param .k, .fx-module-controls .param .v { font-size: 10px; }
-.fx-module-controls .param input[type=range] { height: 14px; }
-.fx-module.eq-visual { width: 390px; min-width: 390px; height: min(350px, 100%); }
-.fx-module.eq-visual .fx-module-controls.visual-eq-controls { display: block; }
-.eq-graph { height: 242px; display: grid; grid-template-rows: minmax(105px, 1fr) 14px auto; gap: 3px; }
-.eq-graph canvas {
-  width: 100%; height: 100%; min-height: 105px; display: block; cursor: crosshair;
-  border: 1px solid rgba(255,255,255,.14); touch-action: none;
-}
-.fx-module.comp-visual { width: 390px; min-width: 390px; height: min(350px, 100%); }
-.fx-module.comp-visual .fx-module-controls.visual-comp-controls { display: block; }
-.comp-graph { height: 282px; display: grid; grid-template-rows: minmax(120px, 1fr) auto; gap: 4px; }
-.comp-graph canvas {
-  width: 100%; height: 100%; min-height: 120px; display: block; cursor: crosshair;
-  border: 1px solid rgba(255,255,255,.14); touch-action: none;
-}
-.comp-slider-stack { display: flex; flex-direction: column; gap: 1px; }
-.comp-slider-stack .param { min-height: 18px; }
-.fx-module.filter-bank-visual { width:390px; min-width:390px; }
-.fx-module.filter-bank-visual .fx-module-controls { display:block; }
-.filter-bank-canvas { width:100%; height:130px; display:block; border:1px solid rgba(255,255,255,.14); margin-bottom:5px; }
-.filter-bank-controls { padding:3px 0 4px; border-top:2px solid var(--filter-color); }
-.filter-bank-title { display:flex; justify-content:space-between; align-items:center; color:var(--filter-color); font-size:9px; font-weight:700; }
-.filter-bank-title .ghost { height:18px; font-size:8px; padding:0 5px; }
-.fx-module.chamberlin-visual { width:390px; min-width:390px; height:min(350px,100%); }
-.fx-module.chamberlin-visual .fx-module-controls { display:block; }
-.chamberlin-graph { height:282px; display:grid; grid-template-rows:minmax(110px,1fr) 14px auto; gap:3px; }
-.chamberlin-graph canvas { width:100%; height:100%; min-height:110px; border:1px solid rgba(255,255,255,.14); touch-action:none; cursor:crosshair; }
-.chamberlin-readout { text-align:center; font-size:8px; color:var(--text-dim); }
-.chamberlin-sliders { display:flex; flex-direction:column; gap:1px; }
-.chamberlin-sliders .param[style] .k { color:var(--mode-color); }
-.chamberlin-band { height:18px; margin-top:2px; border:0; border-left:3px solid var(--mode-color); background:#11161a; color:var(--mode-color); text-align:left; font-size:8px; cursor:pointer; }
-.fx-add {
-  position: sticky; right: 0; flex: 0 0 48px; width: 48px; height: 100%;
-  border: 0; border-left: 1px solid var(--line-2); border-radius: 0;
-  background: oklch(15% 0.014 250); color: var(--text-dim);
-  font: 300 28px/1 var(--sans); cursor: pointer;
-}
-.fx-add:hover { background: var(--surface-3); color: var(--accent); }
-.fx-picker {
-  position: absolute; inset: 8px 58px 8px 8px; z-index: 20; overflow: auto;
-  padding: 10px; border: 1px solid var(--line-2); border-radius: 8px;
-  background: oklch(14% 0.014 250 / .98); box-shadow: 0 16px 44px rgba(0,0,0,.6);
-}
-.fx-picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.fx-picker-head span { font-size: 11px; font-weight: 650; color: var(--text-2); }
-.fx-picker-groups { display: flex; gap: 18px; align-items: flex-start; }
-.fx-picker-group { min-width: 170px; display: flex; flex-direction: column; gap: 3px; }
-.fx-picker-group h3 {
-  margin: 0 0 4px; font-size: 8.5px; letter-spacing: .45px;
-  text-transform: uppercase; color: var(--text-dimmer);
-}
-.fx-picker-item {
-  padding: 5px 7px; border: 1px solid transparent; border-radius: 4px;
-  background: transparent; color: var(--text-2); text-align: left; font: inherit; font-size: 10.5px;
-}
-.fx-picker-item:hover { border-color: var(--line-2); background: var(--surface-3); color: var(--accent); }
-.pm-band-head select, .pm-fx-add select { height: 24px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--well); color: var(--text); }
-.pm-fx-add { padding: 0 8px 8px; }
-.pm-fx-add select { width: 100%; padding: 0 7px; }
