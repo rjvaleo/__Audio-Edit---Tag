@@ -23,6 +23,10 @@ const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 /// be worth looking at, cheap enough to run in the callback.
 const FFT_SIZE: usize = 1024;
 
+/// Columns in the published waveform. A divisor of [`FFT_SIZE`], so each column
+/// is a whole number of samples and none is wider than its neighbours.
+const WAVE_POINTS: usize = 128;
+
 /// Audio kept off the output, waiting to be written somewhere.
 pub struct Capture {
     pub samples: Vec<f32>,
@@ -150,6 +154,15 @@ pub struct Shared {
     /// with an AnalyserNode on the media element; there is no media element
     /// any more, and this is the more truthful measurement anyway.
     spectrum: Mutex<Vec<u8>>,
+
+    /// The shape of recent output, -127..127, one point per column a display
+    /// wants. Taken from the same window the spectrum is taken from, so the
+    /// two describe the same instant.
+    ///
+    /// This is what a compressor's display draws its signal from: a meter says
+    /// how loud, and only a waveform says what the threshold is actually
+    /// cutting into.
+    waveform: Mutex<Vec<i8>>,
 }
 
 impl Shared {
@@ -177,6 +190,7 @@ impl Shared {
             automation: Mutex::new(Vec::new()),
             manual: Mutex::new(Vec::new()),
             spectrum: Mutex::new(Vec::new()),
+            waveform: Mutex::new(Vec::new()),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
         }
@@ -385,6 +399,10 @@ impl Shared {
 
     pub fn spectrum(&self) -> Vec<u8> {
         self.spectrum.lock().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    pub fn waveform(&self) -> Vec<i8> {
+        self.waveform.lock().map(|g| g.clone()).unwrap_or_default()
     }
 
     /// Take the grains reported since the last call. The visualiser drains
@@ -704,6 +722,23 @@ impl Core {
             if let Ok(mut g) = shared.spectrum.try_lock() {
                 g.clear();
                 g.extend_from_slice(&self.fft_bins);
+            }
+            // The same window, reduced to one peak per column. Peak rather than
+            // an average: a compressor is reacting to the peaks, so an average
+            // would draw a signal that never reaches the threshold the display
+            // is drawing across it.
+            if let Ok(mut g) = shared.waveform.try_lock() {
+                g.clear();
+                let step = FFT_SIZE / WAVE_POINTS;
+                for i in 0..WAVE_POINTS {
+                    let mut peak = 0.0f32;
+                    for s in &self.fft_in[i * step..(i + 1) * step] {
+                        if s.abs() > peak.abs() {
+                            peak = *s;
+                        }
+                    }
+                    g.push((peak.clamp(-1.0, 1.0) * 127.0) as i8);
+                }
             }
         }
     }

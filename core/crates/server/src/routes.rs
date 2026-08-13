@@ -2291,6 +2291,16 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
             .set("latency", h.shared.latency_frames() as f64)
             .set("grains", Value::Arr(arr))
             .set("spectrum", Value::Arr(spectrum))
+            .set(
+                "waveform",
+                Value::Arr(
+                    h.shared
+                        .waveform()
+                        .into_iter()
+                        .map(|v| Value::Num(v as f64))
+                        .collect(),
+                ),
+            )
             // Rides along with the playhead rather than on its own poll: the
             // meters and the position describe the same instant, and fetching
             // them separately lets them disagree.
