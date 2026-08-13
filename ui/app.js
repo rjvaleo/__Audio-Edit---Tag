@@ -501,6 +501,9 @@ const engine = {
   /// performance.now() when `position` was last heard from.
   heard: 0,
   spectrum: null,
+  /// The shape of the last output window, -127..127. What the compressor's
+  /// display draws its signal from.
+  waveform: null,
   gain: 0.85,
   /// Where the engine says it wraps, in engine output frames, or null.
   ///
@@ -713,6 +716,7 @@ function startPolling() {
       engine.loop = r.loop || null;
       engine.latency = r.latency || 0;
       engine.spectrum = r.spectrum && r.spectrum.length ? r.spectrum : engine.spectrum;
+      engine.waveform = r.waveform && r.waveform.length ? r.waveform : engine.waveform;
       // The rail's meters and its visual editors are driven from the same poll
       // as the playhead, so everything on screen describes one instant.
       paintRackMeters(r.rackLevels || []);
@@ -2448,6 +2452,11 @@ function recordCompressorLevel(slotIndex, input) {
 
 function resetRackMeters() {
   document.querySelectorAll('.vu-bar').forEach((bar) => bar.style.setProperty('--vu', '0%'));
+  // The compressor draws the last window it was given; without this it keeps
+  // showing the moment playback stopped.
+  engine.waveform = null;
+  compressorLevels.clear();
+  repaintVisualCompressors();
 }
 
 function fxValueFormat(p, v) {
