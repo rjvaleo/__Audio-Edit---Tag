@@ -29,7 +29,7 @@ pub(crate) const PLATE_SPECS: &[ParamSpec] = &[
     // How much of each output tap crosses to the other side. The tank has two
     // taps and they are only as wide as this lets them be; it was fixed at
     // 0.35, which is a width control nobody could reach.
-    ParamSpec::new("crossfeed", "Width", 0.0, 1.0, 0.35),
+    ParamSpec::new("crossfeed", "Width", 0.0, 1.0, 0.0),
 ];
 
 struct Delay {
@@ -79,8 +79,44 @@ fn ap_mod(d: &mut Delay, x: f32, g: f32, delay: f32) -> f32 {
 
 /// The compact figure-eight plate in Part 1, Fig. 1. Delay lengths are the
 /// published prime lengths, scaled from 29,761 Hz to the running sample rate.
+/// Dattorro's Table 2: the seven output taps per channel, as
+/// `(tank index, tap position at 29.761 kHz)`.
+///
+/// The node names in the paper map onto this tank as: `node24_30` is the left
+/// half's long delay, `node31_33` its second decay diffuser, `node33_39` the
+/// delay after it, and `node48_54`, `node55_59`, `node59_63` the same three on
+/// the right. Every tap position is inside the length of the line it reads,
+/// which is the check that the mapping is the right way round.
+///
+/// Note that the left output reads mostly from the *right* half of the tank and
+/// vice versa. That crossing is what §1.3.6 means by the tap structure
+/// producing "a synthetic stereo image": the input is summed to mono before the
+/// tank, so every difference between the two ears is made here.
+const PLATE_TAPS_L: [(usize, usize, f32); 7] = [
+    (5, 266, 1.0),
+    (5, 2974, 1.0),
+    (6, 1913, -1.0),
+    (7, 1996, 1.0),
+    (1, 1990, -1.0),
+    (2, 187, -1.0),
+    (3, 1066, -1.0),
+];
+const PLATE_TAPS_R: [(usize, usize, f32); 7] = [
+    (1, 353, 1.0),
+    (1, 3627, 1.0),
+    (2, 1228, -1.0),
+    (3, 2673, 1.0),
+    (5, 2111, -1.0),
+    (6, 335, -1.0),
+    (7, 121, -1.0),
+];
+/// The gain every tap is taken at, from the same table.
+const PLATE_TAP_GAIN: f32 = 0.6;
+
 pub struct Plate {
     p: [f32; 13],
+    /// Tap positions in samples at this sample rate, scaled once at build.
+    taps: ([usize; 7], [usize; 7]),
     pred: Delay,
     input: [Delay; 4],
     tank: [Delay; 8],
@@ -95,7 +131,7 @@ impl Plate {
         let n = |x: usize| ((x as f32 * sc).round() as usize).max(2);
         Self {
             p: [
-                0.0, 0.9995, 0.75, 0.625, 0.5, 0.7, 0.5, 0.0005, 0.3, 8.0, 0.35, 1.0, 0.35,
+                0.0, 0.9995, 0.75, 0.625, 0.5, 0.7, 0.5, 0.0005, 0.3, 8.0, 0.35, 1.0, 0.0,
             ],
             pred: Delay::new((sr as usize / 4).max(2)),
             input: [
@@ -117,8 +153,23 @@ impl Plate {
             bw: 0.0,
             damp: [0.0; 2],
             phase: 0.0,
+            taps: (
+                std::array::from_fn(|i| n(PLATE_TAPS_L[i].1)),
+                std::array::from_fn(|i| n(PLATE_TAPS_R[i].1)),
+            ),
             sr,
         }
+    }
+
+    /// Sum one channel's seven taps.
+    fn tap_sum(&self, which: &[(usize, usize, f32); 7], scaled: &[usize; 7]) -> f32 {
+        let mut acc = 0.0;
+        for (i, (line, _, sign)) in which.iter().enumerate() {
+            let d = &self.tank[*line];
+            let at = scaled[i].min(d.b.len().saturating_sub(2)).max(1);
+            acc += sign * PLATE_TAP_GAIN * d.tap(at as f32);
+        }
+        acc
     }
 }
 impl Effect for Plate {
@@ -162,9 +213,20 @@ impl Effect for Plate {
             r = self.tank[7].step(r);
             self.phase = (self.phase + TAU as f64 * self.p[8] as f64 / sample_rate as f64)
                 .rem_euclid(TAU as f64);
-            fr[0] = dry_l * self.p[11] + (l + r * self.p[12]) * self.p[10];
+            // The output is the tap network, not the ends of the tank. Reading
+            // only the ends is why this had no early reflections at all: the
+            // earliest tap in the table is 187 samples in, and waiting for a
+            // whole circuit of the tank instead meant a quarter of a second of
+            // silence before anything arrived.
+            //
+            // `l` and `r` are still needed — they are what was just written
+            // into the lines the taps read from, and what feeds back.
+            let _ = (l, r);
+            let wl = self.tap_sum(&PLATE_TAPS_L, &self.taps.0);
+            let wr = self.tap_sum(&PLATE_TAPS_R, &self.taps.1);
+            fr[0] = dry_l * self.p[11] + (wl + wr * self.p[12]) * self.p[10];
             if fr.len() > 1 {
-                fr[1] = dry_r * self.p[11] + (r + l * self.p[12]) * self.p[10];
+                fr[1] = dry_r * self.p[11] + (wr + wl * self.p[12]) * self.p[10];
             }
         }
     }
@@ -1885,6 +1947,74 @@ mod tests {
         Effect::process(&mut echo, &mut next, 1, sr);
         // One sample in and the pointer is already there.
         assert!((echo.cur[0] - 300.0 * sr as f32 / 1000.0).abs() < 1.0);
+    }
+
+    /// The plate has to answer quickly.
+    ///
+    /// It used to read only the ends of its tank delay lines, so nothing came
+    /// out for about a quarter of a second — no early reflections at all, on a
+    /// reverb whose whole first section is a diffuser. Table 2's earliest tap
+    /// is 187 samples in, and reading the network is what makes the difference.
+    #[test]
+    fn the_plate_answers_within_a_few_milliseconds() {
+        let sr = 48_000u32;
+        let mut p = Plate::new(sr);
+        assert!(Params::set(&mut p, "wet", 1.0));
+        assert!(Params::set(&mut p, "dry", 0.0));
+        assert!(Params::set(&mut p, "predelayMs", 0.0));
+        let mut b = vec![0.0f32; sr as usize * 2];
+        b[0] = 1.0;
+        b[1] = 1.0;
+        Effect::process(&mut p, &mut b, 2, sr);
+        let first = (0..b.len() / 2)
+            .find(|&i| b[i * 2].abs() > 1e-5)
+            .map(|f| f as f32 * 1000.0 / sr as f32)
+            .expect("the plate produced nothing at all");
+        assert!(
+            first < 40.0,
+            "the first reflection arrived after {first:.0} ms; the earliest tap is at about 6"
+        );
+    }
+
+    /// §1.3.6: the tap structure "produces a synthetic stereo image", because
+    /// the input is summed to mono before the tank and every difference between
+    /// the ears is made by the taps. With the extra cross-feed at zero, the two
+    /// channels still have to differ.
+    #[test]
+    fn the_tap_network_makes_the_stereo_image_by_itself() {
+        let sr = 48_000u32;
+        let mut p = Plate::new(sr);
+        Params::set(&mut p, "wet", 1.0);
+        Params::set(&mut p, "dry", 0.0);
+        Params::set(&mut p, "crossfeed", 0.0);
+        let mut b = vec![0.0f32; sr as usize * 2];
+        b[0] = 1.0;
+        b[1] = 1.0;
+        Effect::process(&mut p, &mut b, 2, sr);
+        let worst = (0..b.len() / 2)
+            .map(|f| (b[f * 2] - b[f * 2 + 1]).abs())
+            .fold(0f32, f32::max);
+        assert!(worst > 1e-3, "both ears got the same signal: {worst:.2e}");
+    }
+
+    /// Seven taps a side, summed, must be denser than one end-of-line read.
+    #[test]
+    fn the_tap_network_is_denser_than_a_single_read() {
+        let sr = 48_000u32;
+        let mut p = Plate::new(sr);
+        Params::set(&mut p, "wet", 1.0);
+        Params::set(&mut p, "dry", 0.0);
+        let mut b = vec![0.0f32; sr as usize];
+        b[0] = 1.0;
+        b[1] = 1.0;
+        Effect::process(&mut p, &mut b, 2, sr);
+        // Echo density in the first 100 ms: how many samples carry something.
+        let n = (sr as usize / 10) * 2;
+        let live = b[..n].iter().filter(|v| v.abs() > 1e-6).count();
+        assert!(
+            live > n / 4,
+            "only {live} of {n} samples in the first 100 ms carry anything"
+        );
     }
 
     /// A predelay of zero has to mean no predelay.
