@@ -926,10 +926,13 @@ pub enum ShapeKind {
     Doppler,
     Utility,
     DattorroFilterBank,
+    SchroederReverb,
+    MoorerReverb,
+    Phaser,
 }
 
 impl ShapeKind {
-    pub const ALL: [ShapeKind; 30] = [
+    pub const ALL: [ShapeKind; 33] = [
         ShapeKind::Invert,
         ShapeKind::Swap,
         ShapeKind::Width,
@@ -960,6 +963,9 @@ impl ShapeKind {
         ShapeKind::Doppler,
         ShapeKind::Utility,
         ShapeKind::DattorroFilterBank,
+        ShapeKind::SchroederReverb,
+        ShapeKind::MoorerReverb,
+        ShapeKind::Phaser,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -994,6 +1000,9 @@ impl ShapeKind {
             ShapeKind::Doppler => "doppler",
             ShapeKind::Utility => "utility",
             ShapeKind::DattorroFilterBank => "dattorro_filter_bank",
+            ShapeKind::SchroederReverb => "schroeder_reverb",
+            ShapeKind::MoorerReverb => "moorer_reverb",
+            ShapeKind::Phaser => "phaser",
         }
     }
 
@@ -1034,12 +1043,18 @@ impl ShapeKind {
             ShapeKind::Doppler => "Doppler",
             ShapeKind::Utility => "Utility",
             ShapeKind::DattorroFilterBank => "Dattorro filter bank",
+            ShapeKind::SchroederReverb => "Schroeder reverb",
+            ShapeKind::MoorerReverb => "Moorer reverb",
+            ShapeKind::Phaser => "Phaser",
         }
     }
 
     pub fn category(self) -> &'static str {
         match self {
-            ShapeKind::DattorroPlate | ShapeKind::AllpassDiffuser => "Reverb & diffusion",
+            ShapeKind::DattorroPlate
+            | ShapeKind::AllpassDiffuser
+            | ShapeKind::SchroederReverb
+            | ShapeKind::MoorerReverb => "Reverb & diffusion",
             ShapeKind::DattorroNotch
             | ShapeKind::DattorroResonator
             | ShapeKind::Regalia
@@ -1056,7 +1071,8 @@ impl ShapeKind {
             | ShapeKind::Harmonizer
             | ShapeKind::Detune
             | ShapeKind::Doubler
-            | ShapeKind::Doppler => "Delay & modulation",
+            | ShapeKind::Doppler
+            | ShapeKind::Phaser => "Delay & modulation",
             ShapeKind::PnNoise
             | ShapeKind::PnNoiseEq
             | ShapeKind::SingleBitPn
@@ -1105,6 +1121,9 @@ impl ShapeKind {
             ShapeKind::Doppler => crate::dattorro::DOPPLER_SPECS,
             ShapeKind::Utility => UTILITY_SPECS,
             ShapeKind::DattorroFilterBank => crate::dattorro::FILTER_BANK_SPECS,
+            ShapeKind::SchroederReverb => crate::reverb::SCHROEDER_SPECS,
+            ShapeKind::MoorerReverb => crate::reverb::MOORER_SPECS,
+            ShapeKind::Phaser => crate::phaser::PHASER_SPECS,
         }
     }
 }
@@ -1129,6 +1148,12 @@ pub fn make(
         Box::new(crate::Driven(e))
     }
     match kind {
+        ShapeKind::SchroederReverb => apply(
+            crate::reverb::Schroeder::new(sample_rate, channels),
+            params,
+        ),
+        ShapeKind::MoorerReverb => apply(crate::reverb::Moorer::new(sample_rate, channels), params),
+        ShapeKind::Phaser => apply(crate::phaser::Phaser::new(), params),
         ShapeKind::Invert => apply(Invert, params),
         ShapeKind::Swap => apply(SwapChannels, params),
         ShapeKind::Width => apply(Width::default(), params),
