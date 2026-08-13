@@ -2093,8 +2093,8 @@ function renderFxPicker() {
   const groupFor = (kind) => {
     if (['gain', 'eq', 'comp', 'gate', 'dattorro_notch', 'dattorro_resonator',
       'regalia_mitra', 'chamberlin', 'damping_filter', 'dc'].includes(kind)) return 'EQ & Compression';
-    if (['dattorro_plate', 'allpass_diffuser', 'dattorro_echo'].includes(kind)) return 'Reverb & Delay';
-    if (['white_chorus', 'dattorro_flanger', 'dattorro_vibrato', 'leslie'].includes(kind)) return 'Chorus & Phasing';
+    if (['dattorro_plate', 'allpass_diffuser', 'dattorro_echo', 'schroeder_reverb', 'moorer_reverb'].includes(kind)) return 'Reverb & Delay';
+    if (['white_chorus', 'dattorro_flanger', 'dattorro_vibrato', 'leslie', 'phaser'].includes(kind)) return 'Chorus & Phasing';
     if (['harmonizer', 'detune', 'doubler', 'doppler', 'boomerang'].includes(kind)) return 'Pitch & Motion';
     if (['pn_noise', 'pn_noise_eq', 'single_bit_pn', 'ring'].includes(kind)) return 'Noise & Generators';
     return 'Utility & Shaping';
