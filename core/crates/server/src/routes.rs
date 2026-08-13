@@ -84,6 +84,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/fx") => api_fx_catalogue(),
         ("GET", "/api/rack") => api_rack_get(app, req),
         ("POST", "/api/rack") => api_rack_set(app, req),
+        ("POST", "/api/rack/param") => api_rack_param(app, req),
         ("GET", "/api/automation") => api_automation_get(app, req),
         ("POST", "/api/automation") => api_automation_set(app, req),
         ("GET", "/api/presets") => api_presets_list(app),
@@ -708,6 +709,59 @@ fn api_fx_catalogue() -> Response {
 /// so the list the menu offers and the list playback can resolve are the same
 /// list. They came apart on the branch this was ported from and a lane could
 /// name a control that silently did nothing.
+/// Move one control on one slot, live.
+///
+/// This is what a hand on a slider sends, and it deliberately does **not**
+/// rebuild the rack. Posting the whole spec — which is what the interface used
+/// to do, thirty times a second while dragging — builds every effect in the
+/// chain again from nothing: delay lines cleared, filters restarted, reverb
+/// tails cut off. That is why the effects did not feel connected to the sound.
+///
+/// The stored spec is still updated, so the waveform, the peaks and the export
+/// all agree with what is being heard. Only the *rebuild* is skipped.
+fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(rel) = v.get("p").and_then(Value::as_str) else {
+        return Response::error(400, "no path given");
+    };
+    let Some(id) = v.get("id").and_then(Value::as_str) else {
+        return Response::error(400, "no slot given");
+    };
+    let Some(key) = v.get("key").and_then(Value::as_str) else {
+        return Response::error(400, "no control given");
+    };
+    let value = match v.get("value") {
+        Some(Value::Num(n)) if n.is_finite() => *n as f32,
+        _ => return Response::error(400, "no value given"),
+    };
+
+    let mut spec = app.racks.get(rel);
+    let Some(slot) = spec.slot_ids.iter().position(|x| x == id) else {
+        return Response::error(404, "no such module in the rack");
+    };
+    // Written into the spec as well as sent to the engine, and clamped by the
+    // same code that clamps everything else, so the two cannot drift.
+    if !spec.set_param(slot, key, value) {
+        return Response::error(400, "no such control on that module");
+    }
+    let applied = spec.get_param(slot, key).unwrap_or(value);
+    app.racks.set(rel, spec);
+
+    // Only while this document is the one being heard.
+    if crate::live::holding(app, rel) {
+        let _ = crate::live::with(app, |h| h.shared.set_manual_param(slot, key, applied));
+    }
+    Response::json(
+        Value::obj()
+            .set("id", id.to_string())
+            .set("key", key.to_string())
+            .set("value", applied as f64)
+            .to_string(),
+    )
+}
+
 fn api_automation_get(app: &Arc<App>, req: &Request) -> Response {
     let Some(rel) = req.param("p") else {
         return Response::error(400, "no path given");
@@ -785,10 +839,18 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     app.save_sessions();
     // Effects are live: a freshly built rack replaces the one the audio thread
     // holds, on its next block.
-    let _ = crate::live::with(app, |h| {
-        h.shared
-            .set_rack(crate::live::rack_for(app, rel, h.sample_rate, h.channels))
-    });
+    //
+    // `keepLive` says the engine is already where it needs to be — a control
+    // was moved through `/api/rack/param` and only the document needs catching
+    // up. Rebuilding then would clear every delay line and filter in the chain
+    // for no reason, which is heard as the reverb tail stopping the instant a
+    // slider is released.
+    if !matches!(v.get("keepLive"), Some(Value::Bool(true))) {
+        let _ = crate::live::with(app, |h| {
+            h.shared
+                .set_rack(crate::live::rack_for(app, rel, h.sample_rate, h.channels))
+        });
+    }
 
     let sr: u32 = match v.get("sr") {
         Some(Value::Num(n)) => *n as u32,
