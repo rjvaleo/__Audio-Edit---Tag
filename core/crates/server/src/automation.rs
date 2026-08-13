@@ -365,15 +365,16 @@ fn resolve(slot: &crate::rack::SlotSpec, key: &str, unit: f32) -> Option<f32> {
         SlotSpec::Gain { .. } if key == "db" => lerp(fx::GAIN_DB_MIN, fx::GAIN_DB_MAX),
         SlotSpec::Eq { .. } => {
             use fx::eq::*;
-            if key == "highPassHz" {
-                log(EQ_FREQ_MIN, EQ_FREQ_MAX)
-            } else {
-                match key.split_once('.')?.1 {
-                    "freq" => log(EQ_FREQ_MIN, EQ_FREQ_MAX),
-                    "q" => log(EQ_Q_MIN, EQ_Q_MAX),
-                    "gainDb" => lerp(EQ_GAIN_MIN, EQ_GAIN_MAX),
-                    _ => return None,
-                }
+            // `band.<n>.<field>`; the trailing field is what carries the range.
+            match key.rsplit_once('.')?.1 {
+                "freq" => log(EQ_FREQ_MIN, EQ_FREQ_MAX),
+                "q" => log(EQ_Q_MIN, EQ_Q_MAX),
+                "gainDb" => lerp(EQ_GAIN_MIN, EQ_GAIN_MAX),
+                // A switch and a filter type are steps, not sweeps, but a lane
+                // can still drive them — a band that comes in at a moment.
+                "enabled" => lerp(0.0, 1.0),
+                "mode" => lerp(0.0, 5.0),
+                _ => return None,
             }
         }
         SlotSpec::Comp { .. } => {
@@ -462,13 +463,17 @@ pub fn targets(spec: &crate::rack::RackSpec) -> Vec<(String, String)> {
         };
         match slot {
             crate::rack::SlotSpec::Gain { .. } => add("db", "Level"),
-            crate::rack::SlotSpec::Eq { .. } => {
-                for (band, bl) in [("low", "Low"), ("mid", "Mid"), ("high", "High")] {
-                    add(&format!("{band}.freq"), &format!("{bl} frequency"));
-                    add(&format!("{band}.q"), &format!("{bl} Q"));
-                    add(&format!("{band}.gainDb"), &format!("{bl} gain"));
+            crate::rack::SlotSpec::Eq { settings, .. } => {
+                // Named for what each node is rather than for its index: "Band
+                // 3" means nothing on a menu, and the type can be changed.
+                for (i, on) in settings.enabled.iter().enumerate() {
+                    let what = crate::rack::eq_band_label(settings.modes[i], i);
+                    let off = if *on { "" } else { " (off)" };
+                    add(&format!("band.{i}.freq"), &format!("{what} frequency{off}"));
+                    add(&format!("band.{i}.q"), &format!("{what} Q{off}"));
+                    add(&format!("band.{i}.gainDb"), &format!("{what} gain{off}"));
+                    add(&format!("band.{i}.enabled"), &format!("{what} on/off"));
                 }
-                add("highPassHz", "High-pass");
             }
             crate::rack::SlotSpec::Comp { .. } => {
                 for (k, l) in [

@@ -187,16 +187,42 @@ impl RackSpec {
                     bypassed,
                 }),
                 "eq" => {
-                    let d = EqSettings::default();
-                    slots.push(SlotSpec::Eq {
-                        settings: EqSettings {
-                            low: band_from(it.get("low"), d.low),
-                            mid: band_from(it.get("mid"), d.mid),
-                            high: band_from(it.get("high"), d.high),
-                            high_pass_hz: num(it.get("highPassHz"), 0.0).clamp(0.0, 2000.0),
-                        },
-                        bypassed,
-                    })
+                    let mut d = EqSettings::default();
+                    // Eight nodes, each with its own filter type. A rack saved
+                    // before the EQ had them carries `low`/`mid`/`high` instead
+                    // and is read that way, so nothing written by an older
+                    // build loses its curve.
+                    if let Some(Value::Arr(bands)) = it.get("bands") {
+                        let base = d.bands();
+                        for (i, value) in bands.iter().take(8).enumerate() {
+                            let b = band_from(Some(value), base[i]);
+                            match i {
+                                // Not through `band_from`: a high-pass at zero
+                                // is one that is out of the way, and the band
+                                // range starts at 10 Hz, so clamping it there
+                                // would move a filter nobody asked to move.
+                                0 => {
+                                    d.high_pass_hz =
+                                        num(value.get("freq"), 0.0).clamp(0.0, fx::eq::EQ_FREQ_MAX)
+                                }
+                                1 => d.low = b,
+                                2 => d.mid = b,
+                                3..=5 => d.extra[i - 3] = b,
+                                6 => d.high = b,
+                                _ => d.low_pass_hz = b.freq,
+                            }
+                            d.modes[i] =
+                                eq_mode(value.get("type").and_then(Value::as_str).unwrap_or("bell"));
+                            d.enabled[i] = flag(value.get("enabled"));
+                        }
+                    } else {
+                        d.low = band_from(it.get("low"), d.low);
+                        d.mid = band_from(it.get("mid"), d.mid);
+                        d.high = band_from(it.get("high"), d.high);
+                        d.high_pass_hz = num(it.get("highPassHz"), 0.0).clamp(0.0, 24000.0);
+                        d.enabled[0] = d.high_pass_hz > fx::eq::EQ_HP_OFF;
+                    }
+                    slots.push(SlotSpec::Eq { settings: d, bypassed })
                 }
                 "comp" => {
                     let d = CompSettings::default();
@@ -252,11 +278,30 @@ impl RackSpec {
                     .set("bypassed", s.bypassed());
                 match s {
                     SlotSpec::Gain { db, .. } => base.set("db", *db as f64),
-                    SlotSpec::Eq { settings, .. } => base
-                        .set("low", band_json(&settings.low))
-                        .set("mid", band_json(&settings.mid))
-                        .set("high", band_json(&settings.high))
-                        .set("highPassHz", settings.high_pass_hz as f64),
+                    SlotSpec::Eq { settings, .. } => {
+                        let bands = settings.bands();
+                        base
+                            // The old names as well as the new list: anything
+                            // reading a rack written here — a preset, a saved
+                            // session, an exported file's metadata — keeps
+                            // working, and gains the rest.
+                            .set("low", band_json(&settings.low))
+                            .set("mid", band_json(&settings.mid))
+                            .set("high", band_json(&settings.high))
+                            .set("highPassHz", settings.high_pass_hz as f64)
+                            .set(
+                                "bands",
+                                Value::Arr(
+                                    (0..8)
+                                        .map(|i| {
+                                            band_json(&bands[i])
+                                                .set("type", eq_mode_name(settings.modes[i]))
+                                                .set("enabled", settings.enabled[i])
+                                        })
+                                        .collect(),
+                                ),
+                            )
+                    }
                     SlotSpec::Comp { settings, .. } => base
                         .set("thresholdDb", settings.threshold_db as f64)
                         .set("ratio", settings.ratio as f64)
@@ -663,52 +708,119 @@ mod tests {
 // The EQ and compressor keep their settings in named fields rather than a
 // parameter list, so the mapping from key to field is written once here and
 // used by the live control route, automation and the interface alike.
-fn band_mut<'a>(s: &'a mut EqSettings, name: &str) -> Option<&'a mut Band> {
-    match name {
-        "low" => Some(&mut s.low),
-        "mid" => Some(&mut s.mid),
-        "high" => Some(&mut s.high),
-        _ => None,
-    }
-}
-
+/// `band.<0..7>.<freq|q|gainDb|enabled|mode>`, the same keys the live effect
+/// takes, so a control moved on screen, a lane driving it and the value the
+/// export reads are one name and one range.
 fn set_eq_param(s: &mut EqSettings, key: &str, v: f32) -> bool {
     use fx::eq::*;
-    if key == "highPassHz" {
-        s.high_pass_hz = v.clamp(0.0, EQ_FREQ_MAX);
+    let Some((i, field)) = eq_key(key) else { return false };
+    if field == "enabled" {
+        s.enabled[i] = v >= 0.5;
         return true;
     }
-    let Some((name, field)) = key.split_once('.') else {
-        return false;
-    };
-    let Some(b) = band_mut(s, name) else {
-        return false;
-    };
+    if field == "mode" {
+        s.modes[i] = eq_mode_from_index(v);
+        return true;
+    }
+    let mut bands = s.bands();
     match field {
-        "freq" => b.freq = v.clamp(EQ_FREQ_MIN, EQ_FREQ_MAX),
-        "q" => b.q = v.clamp(EQ_Q_MIN, EQ_Q_MAX),
-        "gainDb" => b.gain_db = v.clamp(EQ_GAIN_MIN, EQ_GAIN_MAX),
+        "freq" => bands[i].freq = v.clamp(EQ_FREQ_MIN, EQ_FREQ_MAX),
+        "q" => bands[i].q = v.clamp(EQ_Q_MIN, EQ_Q_MAX),
+        "gainDb" => bands[i].gain_db = v.clamp(EQ_GAIN_MIN, EQ_GAIN_MAX),
         _ => return false,
+    }
+    match i {
+        0 => s.high_pass_hz = bands[0].freq,
+        1 => s.low = bands[1],
+        2 => s.mid = bands[2],
+        3..=5 => s.extra[i - 3] = bands[i],
+        6 => s.high = bands[6],
+        _ => s.low_pass_hz = bands[7].freq,
     }
     true
 }
 
 fn get_eq_param(s: &EqSettings, key: &str) -> Option<f32> {
-    if key == "highPassHz" {
-        return Some(s.high_pass_hz);
-    }
-    let (name, field) = key.split_once('.')?;
-    let b = match name {
-        "low" => &s.low,
-        "mid" => &s.mid,
-        "high" => &s.high,
+    let (i, field) = eq_key(key)?;
+    let b = s.bands()[i];
+    Some(match field {
+        "freq" => b.freq,
+        "q" => b.q,
+        "gainDb" => b.gain_db,
+        "enabled" => s.enabled[i] as u8 as f32,
+        "mode" => eq_mode_index(s.modes[i]),
         _ => return None,
-    };
-    match field {
-        "freq" => Some(b.freq),
-        "q" => Some(b.q),
-        "gainDb" => Some(b.gain_db),
-        _ => None,
+    })
+}
+
+fn eq_key(key: &str) -> Option<(usize, &str)> {
+    let rest = key.strip_prefix("band.")?;
+    let (i, field) = rest.split_once('.')?;
+    let i = i.parse::<usize>().ok().filter(|i| *i < 8)?;
+    Some((i, field))
+}
+
+/// What a node is called on a menu: its type, and its position when two nodes
+/// share one.
+pub fn eq_band_label(m: fx::eq::EqMode, index: usize) -> String {
+    use fx::eq::EqMode::*;
+    match m {
+        HighPass => "High-pass".into(),
+        LowPass => "Low-pass".into(),
+        LowShelf => "Low shelf".into(),
+        HighShelf => "High shelf".into(),
+        Notch => format!("Notch {index}"),
+        Bell => format!("Bell {index}"),
+    }
+}
+
+fn eq_mode(name: &str) -> fx::eq::EqMode {
+    use fx::eq::EqMode::*;
+    match name {
+        "highpass" => HighPass,
+        "lowshelf" => LowShelf,
+        "notch" => Notch,
+        "highshelf" => HighShelf,
+        "lowpass" => LowPass,
+        _ => Bell,
+    }
+}
+
+fn eq_mode_name(m: fx::eq::EqMode) -> &'static str {
+    use fx::eq::EqMode::*;
+    match m {
+        HighPass => "highpass",
+        LowShelf => "lowshelf",
+        Bell => "bell",
+        Notch => "notch",
+        HighShelf => "highshelf",
+        LowPass => "lowpass",
+    }
+}
+
+/// The modes as numbers, so automation can move one. In the order the
+/// interface lists them.
+fn eq_mode_index(m: fx::eq::EqMode) -> f32 {
+    use fx::eq::EqMode::*;
+    match m {
+        HighPass => 0.0,
+        LowShelf => 1.0,
+        Bell => 2.0,
+        Notch => 3.0,
+        HighShelf => 4.0,
+        LowPass => 5.0,
+    }
+}
+
+fn eq_mode_from_index(v: f32) -> fx::eq::EqMode {
+    use fx::eq::EqMode::*;
+    match v.round() as i32 {
+        0 => HighPass,
+        1 => LowShelf,
+        3 => Notch,
+        4 => HighShelf,
+        5 => LowPass,
+        _ => Bell,
     }
 }
 
