@@ -941,21 +941,39 @@ pub(crate) const ECHO_SPECS: &[ParamSpec] = &[
     ParamSpec::new("damping", "Damping", 0.0, 1.0, 0.2),
     ParamSpec::new("wet", "Wet", 0.0, 1.0, 0.5),
     ParamSpec::new("dry", "Dry", 0.0, 1.0, 1.0),
+    // How long the read pointer takes to travel to a new delay time.
+    //
+    // Moving the pointer *is* the sweep: while it is travelling, output is read
+    // at a rate other than one sample per sample, and that is a pitch shift —
+    // the tape-delay glide. At zero it jumps, which is silent only if the two
+    // delay times happen to line up and is a click otherwise.
+    ParamSpec::new("glideMs", "Glide", 0.0, 4000.0, 220.0).unit("ms"),
 ];
 pub struct Echo {
-    p: [f32; 5],
+    p: [f32; 6],
     d: Vec<Delay>,
     lp: [f32; 8],
+    /// Where each channel's read pointer actually is, in samples.
+    ///
+    /// Kept per sample rather than worked out per block: recomputing it once a
+    /// block and holding it means a delay time that changes lands as a step at
+    /// the block boundary. No sweep, and a click.
+    cur: [f32; 8],
+    /// Whether `cur` has ever been placed. The first block snaps to the target
+    /// instead of gliding up from zero.
+    placed: bool,
     sr: u32,
 }
 impl Echo {
     pub fn new(sr: u32, channels: usize) -> Self {
         Self {
-            p: [350.0, 0.35, 0.2, 0.5, 1.0],
+            p: [350.0, 0.35, 0.2, 0.5, 1.0, 220.0],
             d: (0..channels.max(1).min(8))
                 .map(|_| Delay::new(sr as usize * 4 + 4))
                 .collect(),
             lp: [0.0; 8],
+            cur: [0.0; 8],
+            placed: false,
             sr,
         }
     }
@@ -966,11 +984,25 @@ impl Effect for Echo {
             return;
         }
         let n = channels.max(1).min(self.d.len());
-        let delay = self.p[0] * sample_rate as f32 / 1000.0;
+        let target = self.p[0] * sample_rate as f32 / 1000.0;
+        if !self.placed {
+            self.cur = [target; 8];
+            self.placed = true;
+        }
+        // One-pole glide, per sample. A time constant rather than a fixed rate:
+        // the pointer sets off quickly and eases in, which is how a tape delay
+        // behaves when the knob moves and why the pitch bend decays instead of
+        // stopping dead on arrival.
+        let k = if self.p[5] <= 0.0 {
+            1.0
+        } else {
+            1.0 - (-1.0 / (self.p[5] * 0.001 * sample_rate as f32).max(1.0)).exp()
+        };
         for fr in b.chunks_mut(channels.max(1)) {
             for ch in 0..n.min(fr.len()) {
+                self.cur[ch] += (target - self.cur[ch]) * k;
                 let x = fr[ch];
-                let y = self.d[ch].tap(delay);
+                let y = self.d[ch].tap(self.cur[ch]);
                 self.lp[ch] += (1.0 - self.p[2]) * (y - self.lp[ch]);
                 self.d[ch].push(x + self.lp[ch] * self.p[1]);
                 fr[ch] = x * self.p[4] + y * self.p[3];
@@ -981,7 +1013,10 @@ impl Effect for Echo {
         for d in &mut self.d {
             d.clear()
         }
-        self.lp = [0.0; 8]
+        self.lp = [0.0; 8];
+        // The pointer is placed again on the next block, so a render that
+        // starts somewhere else does not open with a sweep it never asked for.
+        self.placed = false;
     }
     fn name(&self) -> &'static str {
         "Echo"
@@ -1763,5 +1798,70 @@ mod tests {
             cycles < 350,
             "a receding source should be below 440 Hz; got {cycles} cycles"
         );
+    }
+
+    /// The delay has to *travel* to a new time, not jump to it.
+    ///
+    /// Moving the read pointer is what makes the sweep: while it travels the
+    /// output is read at a rate other than one sample per sample, which is a
+    /// pitch shift. This used to work out the tap once per block and hold it,
+    /// so a delay-time change landed as a step at the block boundary — no
+    /// sweep, and a click where the two delay times did not line up.
+    #[test]
+    fn changing_the_delay_time_sweeps_rather_than_jumping() {
+        let sr = 48_000u32;
+        let mut echo = Echo::new(sr, 1);
+        // All wet, no feedback, so what comes out is only the delay line.
+        for (k, v) in [("delayMs", 200.0), ("feedback", 0.0), ("damping", 0.0),
+                       ("wet", 1.0), ("dry", 0.0), ("glideMs", 200.0)] {
+            assert!(Params::set(&mut echo, k, v), "no {k}");
+        }
+
+        // Fill the line with a steady tone, then move the delay time.
+        let tone: Vec<f32> = (0..sr as usize).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
+        let mut warm = tone[..sr as usize / 2].to_vec();
+        Effect::process(&mut echo, &mut warm, 1, sr);
+
+        assert!(Params::set(&mut echo, "delayMs", 400.0));
+        let mut moving = tone[sr as usize / 2..].to_vec();
+        Effect::process(&mut echo, &mut moving, 1, sr);
+
+        // While the pointer travels the output is resampled, so its zero
+        // crossings cannot match the input's over the same span.
+        let crossings = |x: &[f32]| x.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
+        let src = crossings(&tone[sr as usize / 2..sr as usize / 2 + 9600]);
+        let out = crossings(&moving[..9600]);
+        assert!(
+            (src as i32 - out as i32).abs() > 20,
+            "the delay did not sweep: {src} crossings in, {out} out"
+        );
+
+        // And it settles: once the glide is done the pitch is back to the source.
+        let mut settled = tone[..9600].to_vec();
+        Effect::process(&mut echo, &mut settled, 1, sr);
+        let after = crossings(&settled);
+        let steady = crossings(&tone[..9600]);
+        assert!(
+            (steady as i32 - after as i32).abs() <= 8,
+            "the delay never settled: {steady} expected, {after} got"
+        );
+    }
+
+    /// Glide at zero is the old behaviour, kept for anyone who wants the jump.
+    #[test]
+    fn a_zero_glide_arrives_immediately() {
+        let sr = 48_000u32;
+        let mut echo = Echo::new(sr, 1);
+        for (k, v) in [("delayMs", 100.0), ("feedback", 0.0), ("wet", 1.0),
+                       ("dry", 0.0), ("glideMs", 0.0)] {
+            assert!(Params::set(&mut echo, k, v));
+        }
+        let mut buf = vec![0.0f32; 512];
+        Effect::process(&mut echo, &mut buf, 1, sr);
+        assert!(Params::set(&mut echo, "delayMs", 300.0));
+        let mut next = vec![0.0f32; 512];
+        Effect::process(&mut echo, &mut next, 1, sr);
+        // One sample in and the pointer is already there.
+        assert!((echo.cur[0] - 300.0 * sr as f32 / 1000.0).abs() < 1.0);
     }
 }
