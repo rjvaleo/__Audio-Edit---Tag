@@ -131,6 +131,18 @@ pub struct Shared {
     /// The control thread overwrites it, so the old vector is dropped there.
     automation: Mutex<Vec<(usize, String, f32)>>,
 
+    /// Control writes from a hand on a control, applied every block.
+    ///
+    /// Separate from `automation` because the two have different lifetimes: the
+    /// runner replaces its vector wholesale on every tick, and a manual write
+    /// has to survive between ticks. Applied *before* automation, so a lane
+    /// wins over a knob for the same control rather than the two flickering.
+    ///
+    /// Cleared when the rack is rebuilt — the new rack already has these values
+    /// baked into it, and replaying them would be writing yesterday's numbers
+    /// over today's.
+    manual: Mutex<Vec<(usize, String, f32)>>,
+
     /// Magnitudes of the most recent output block, 0..255 per bin.
     ///
     /// Taken from what actually left the engine, so the spectrum shows the
@@ -163,6 +175,7 @@ impl Shared {
             pending_bank: Mutex::new(None),
             rack_meters: Arc::new(fx::RackMeters::new()),
             automation: Mutex::new(Vec::new()),
+            manual: Mutex::new(Vec::new()),
             spectrum: Mutex::new(Vec::new()),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
@@ -299,8 +312,26 @@ impl Shared {
         if let Some(r) = rack.as_mut() {
             r.set_meters(Arc::clone(&self.rack_meters));
         }
+        if let Ok(mut g) = self.manual.lock() {
+            g.clear();
+        }
         if let Ok(mut g) = self.pending_rack.lock() {
             *g = Some(rack);
+        }
+    }
+
+    /// Move one control on one slot, live, without rebuilding anything.
+    ///
+    /// This is what a hand on a slider sends. Rebuilding the rack to change a
+    /// number throws away every delay line, filter and reverb tail in the
+    /// chain — which is audible as a click at best and as the tail vanishing at
+    /// worst, and is why moving a control never felt connected to the sound.
+    pub fn set_manual_param(&self, slot: usize, key: &str, value: f32) {
+        if let Ok(mut g) = self.manual.lock() {
+            match g.iter_mut().find(|(s, k, _)| *s == slot && k == key) {
+                Some(entry) => entry.2 = value,
+                None => g.push((slot, key.to_string(), value)),
+            }
         }
     }
 
@@ -485,10 +516,15 @@ impl Core {
             }
         }
         // Borrowed, never taken — see `Shared::automation`. A contended lock
-        // means the control thread is mid-write; the previous values are still
+        // means the writer is mid-update; the previous values are still
         // applied, so skipping a block loses nothing.
-        if let Ok(g) = shared.automation.try_lock() {
-            if let Some(rack) = self.rack.as_mut() {
+        if let Some(rack) = self.rack.as_mut() {
+            if let Ok(g) = shared.manual.try_lock() {
+                for (slot, key, value) in g.iter() {
+                    rack.set_param(*slot, key, *value);
+                }
+            }
+            if let Ok(g) = shared.automation.try_lock() {
                 for (slot, key, value) in g.iter() {
                     rack.set_param(*slot, key, *value);
                 }

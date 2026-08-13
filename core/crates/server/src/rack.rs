@@ -339,6 +339,50 @@ impl RackSpec {
         rack
     }
 
+    /// Write one control on one slot of the *spec*.
+    ///
+    /// The same keys the live effects take, so a control moved on screen, a
+    /// lane driving it, and the value the export reads are all the same name
+    /// and the same range. `false` for a slot or key that does not exist.
+    pub fn set_param(&mut self, slot: usize, key: &str, value: f32) -> bool {
+        let Some(s) = self.slots.get_mut(slot) else {
+            return false;
+        };
+        match s {
+            SlotSpec::Gain { db, .. } if key == "db" => {
+                *db = value.clamp(fx::GAIN_DB_MIN, fx::GAIN_DB_MAX);
+                true
+            }
+            SlotSpec::Eq { settings, .. } => set_eq_param(settings, key, value),
+            SlotSpec::Comp { settings, .. } => set_comp_param(settings, key, value),
+            SlotSpec::Shape { kind, params, .. } => {
+                let Some(spec) = kind.specs().iter().find(|p| p.key == key) else {
+                    return false;
+                };
+                let v = spec.clamp(value);
+                match params.iter_mut().find(|(k, _)| k == key) {
+                    Some(entry) => entry.1 = v,
+                    None => params.push((key.to_string(), v)),
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Read one control back, after clamping.
+    pub fn get_param(&self, slot: usize, key: &str) -> Option<f32> {
+        match self.slots.get(slot)? {
+            SlotSpec::Gain { db, .. } if key == "db" => Some(*db),
+            SlotSpec::Eq { settings, .. } => get_eq_param(settings, key),
+            SlotSpec::Comp { settings, .. } => get_comp_param(settings, key),
+            SlotSpec::Shape { params, .. } => {
+                params.iter().find(|(k, _)| k == key).map(|(_, v)| *v)
+            }
+            _ => None,
+        }
+    }
+
     /// Combined EQ magnitude response, for drawing the curve in the UI.
     pub fn eq_curve(&self, sample_rate: u32, points: usize) -> Vec<(f32, f32)> {
         let mut eqs: Vec<Eq> = self
@@ -613,4 +657,83 @@ mod tests {
         assert!(store.is_active("a.wav"));
         assert_eq!(store.get("a.wav").slots.len(), 1);
     }
+}
+
+
+// The EQ and compressor keep their settings in named fields rather than a
+// parameter list, so the mapping from key to field is written once here and
+// used by the live control route, automation and the interface alike.
+fn band_mut<'a>(s: &'a mut EqSettings, name: &str) -> Option<&'a mut Band> {
+    match name {
+        "low" => Some(&mut s.low),
+        "mid" => Some(&mut s.mid),
+        "high" => Some(&mut s.high),
+        _ => None,
+    }
+}
+
+fn set_eq_param(s: &mut EqSettings, key: &str, v: f32) -> bool {
+    use fx::eq::*;
+    if key == "highPassHz" {
+        s.high_pass_hz = v.clamp(0.0, EQ_FREQ_MAX);
+        return true;
+    }
+    let Some((name, field)) = key.split_once('.') else {
+        return false;
+    };
+    let Some(b) = band_mut(s, name) else {
+        return false;
+    };
+    match field {
+        "freq" => b.freq = v.clamp(EQ_FREQ_MIN, EQ_FREQ_MAX),
+        "q" => b.q = v.clamp(EQ_Q_MIN, EQ_Q_MAX),
+        "gainDb" => b.gain_db = v.clamp(EQ_GAIN_MIN, EQ_GAIN_MAX),
+        _ => return false,
+    }
+    true
+}
+
+fn get_eq_param(s: &EqSettings, key: &str) -> Option<f32> {
+    if key == "highPassHz" {
+        return Some(s.high_pass_hz);
+    }
+    let (name, field) = key.split_once('.')?;
+    let b = match name {
+        "low" => &s.low,
+        "mid" => &s.mid,
+        "high" => &s.high,
+        _ => return None,
+    };
+    match field {
+        "freq" => Some(b.freq),
+        "q" => Some(b.q),
+        "gainDb" => Some(b.gain_db),
+        _ => None,
+    }
+}
+
+fn set_comp_param(s: &mut CompSettings, key: &str, v: f32) -> bool {
+    use fx::comp::*;
+    match key {
+        "thresholdDb" => s.threshold_db = v.clamp(COMP_THRESHOLD_MIN, 0.0),
+        "ratio" => s.ratio = v.clamp(COMP_RATIO_MIN, COMP_RATIO_MAX),
+        "attackMs" => s.attack_ms = v.clamp(COMP_ATTACK_MIN, COMP_ATTACK_MAX),
+        "releaseMs" => s.release_ms = v.clamp(COMP_RELEASE_MIN, COMP_RELEASE_MAX),
+        "kneeDb" => s.knee_db = v.clamp(0.0, COMP_KNEE_MAX),
+        "makeupDb" => s.makeup_db = v.clamp(COMP_MAKEUP_MIN, COMP_MAKEUP_MAX),
+        _ => return false,
+    }
+    true
+}
+
+fn get_comp_param(s: &CompSettings, key: &str) -> Option<f32> {
+    Some(match key {
+        "thresholdDb" => s.threshold_db,
+        "ratio" => s.ratio,
+        "attackMs" => s.attack_ms,
+        "releaseMs" => s.release_ms,
+        "kneeDb" => s.knee_db,
+        "makeupDb" => s.makeup_db,
+        _ => return None,
+    })
 }
