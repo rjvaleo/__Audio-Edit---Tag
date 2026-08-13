@@ -1332,7 +1332,7 @@ fn the_menu_offers_the_document_and_every_slot_in_the_rack() {
     // compressor, both switched on and both inert. No gain stage.
     let before = targets_now(&app);
     assert!(before.iter().any(|t| t == "stretch.semitones"), "the document: {before:?}");
-    assert!(before.iter().any(|t| t == "fx.factory-eq.mid.freq"), "the EQ: {before:?}");
+    assert!(before.iter().any(|t| t == "fx.factory-eq.band.2.freq"), "the EQ: {before:?}");
     assert!(before.iter().any(|t| t == "fx.factory-comp.ratio"), "the compressor: {before:?}");
     assert!(!before.iter().any(|t| t.contains("gain.db")), "no gain stage: {before:?}");
 
@@ -1347,7 +1347,7 @@ fn the_menu_offers_the_document_and_every_slot_in_the_rack() {
     assert!(after.iter().any(|t| t == "rack.master.amount"), "the maximiser: {after:?}");
     // And the bands of the EQ that is no longer there are gone with it, so a
     // menu never offers something playback would ignore.
-    assert!(!after.iter().any(|t| t.contains("mid.freq")), "stale EQ targets: {after:?}");
+    assert!(!after.iter().any(|t| t.contains("band.2.freq")), "stale EQ targets: {after:?}");
 
     // Switching the maximiser off takes its target away too.
     server::routes::route(

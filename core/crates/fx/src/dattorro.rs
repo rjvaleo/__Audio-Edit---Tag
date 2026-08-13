@@ -26,6 +26,10 @@ pub(crate) const PLATE_SPECS: &[ParamSpec] = &[
     ParamSpec::new("modDepth", "Mod depth", 0.0, 32.0, 8.0).unit("smp"),
     ParamSpec::new("wet", "Wet", 0.0, 1.0, 0.35),
     ParamSpec::new("dry", "Dry", 0.0, 1.0, 1.0),
+    // How much of each output tap crosses to the other side. The tank has two
+    // taps and they are only as wide as this lets them be; it was fixed at
+    // 0.35, which is a width control nobody could reach.
+    ParamSpec::new("crossfeed", "Width", 0.0, 1.0, 0.35),
 ];
 
 struct Delay {
@@ -76,7 +80,7 @@ fn ap_mod(d: &mut Delay, x: f32, g: f32, delay: f32) -> f32 {
 /// The compact figure-eight plate in Part 1, Fig. 1. Delay lengths are the
 /// published prime lengths, scaled from 29,761 Hz to the running sample rate.
 pub struct Plate {
-    p: [f32; 12],
+    p: [f32; 13],
     pred: Delay,
     input: [Delay; 4],
     tank: [Delay; 8],
@@ -91,7 +95,7 @@ impl Plate {
         let n = |x: usize| ((x as f32 * sc).round() as usize).max(2);
         Self {
             p: [
-                0.0, 0.9995, 0.75, 0.625, 0.5, 0.7, 0.5, 0.0005, 0.3, 8.0, 0.35, 1.0,
+                0.0, 0.9995, 0.75, 0.625, 0.5, 0.7, 0.5, 0.0005, 0.3, 8.0, 0.35, 1.0, 0.35,
             ],
             pred: Delay::new((sr as usize / 4).max(2)),
             input: [
@@ -128,7 +132,13 @@ impl Effect for Plate {
             let dry_r = if fr.len() > 1 { fr[1] } else { dry_l };
             let mono = (dry_l + dry_r) * 0.5;
             self.bw += self.p[1] * (mono - self.bw);
-            let pd = (self.p[0] * sample_rate as f32 / 1000.0).min((self.pred.b.len() - 1) as f32);
+            // At least one sample. `tap` reads `w - delay`, and the slot at
+            // `w` is the one about to be overwritten — it still holds the
+            // sample from a whole buffer ago. A predelay of zero therefore read
+            // 250 ms into the past rather than none at all, which is the
+            // opposite of what the control says.
+            let pd = (self.p[0] * sample_rate as f32 / 1000.0)
+                .clamp(1.0, (self.pred.b.len() - 1) as f32);
             let mut x = self.pred.tap(pd);
             self.pred.push(self.bw);
             x = ap(&mut self.input[0], x, self.p[2]);
@@ -152,9 +162,9 @@ impl Effect for Plate {
             r = self.tank[7].step(r);
             self.phase = (self.phase + TAU as f64 * self.p[8] as f64 / sample_rate as f64)
                 .rem_euclid(TAU as f64);
-            fr[0] = dry_l * self.p[11] + (l + r * 0.35) * self.p[10];
+            fr[0] = dry_l * self.p[11] + (l + r * self.p[12]) * self.p[10];
             if fr.len() > 1 {
-                fr[1] = dry_r * self.p[11] + (r + l * 0.35) * self.p[10];
+                fr[1] = dry_r * self.p[11] + (r + l * self.p[12]) * self.p[10];
             }
         }
     }
@@ -204,6 +214,9 @@ pub(crate) const FILTER_SPECS: &[ParamSpec] = &[
         .log()
         .unit("Hz"),
     ParamSpec::new("gainDb", "Gain", -24.0, 24.0, 6.0).unit("dB"),
+    // Already read by `process` and with no key to reach it, which made these
+    // three the only modules in the rack with no dry path at all.
+    ParamSpec::new("mix", "Dry / wet", 0.0, 1.0, 1.0),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -305,6 +318,7 @@ impl Params for MusicalFilter {
     }
     fn get(&self, k: &str) -> Option<f32> {
         match k {
+            "mix" => Some(self.mix),
             "frequency" => Some(self.frequency),
             "bandwidth" => Some(self.bandwidth),
             "gainDb" => Some(self.gain_db),
@@ -316,6 +330,7 @@ impl Params for MusicalFilter {
             "frequency" => self.frequency = FILTER_SPECS[0].clamp(v),
             "bandwidth" => self.bandwidth = FILTER_SPECS[1].clamp(v),
             "gainDb" => self.gain_db = FILTER_SPECS[2].clamp(v),
+            "mix" => self.mix = FILTER_SPECS[3].clamp(v),
             _ => return false,
         };
         true
@@ -1051,9 +1066,12 @@ pub(crate) const LESLIE_SPECS: &[ParamSpec] = &[
     ParamSpec::new("width", "Stereo width", 0.0, 1.0, 1.0),
     ParamSpec::new("wet", "Wet", 0.0, 1.0, 1.0),
     ParamSpec::new("dry", "Dry", 0.0, 1.0, 0.0),
+    // The horn's own distance. It was a fixed 3 ms — the rate and depth of
+    // the rotation were adjustable but the radius it rotated at was not.
+    ParamSpec::new("baseMs", "Distance", 0.5, 40.0, 3.0).unit("ms"),
 ];
 pub struct Leslie {
-    p: [f32; 6],
+    p: [f32; 7],
     d: Delay,
     phase: f64,
     sr: u32,
@@ -1061,7 +1079,7 @@ pub struct Leslie {
 impl Leslie {
     pub fn new(sr: u32, _channels: usize) -> Self {
         Self {
-            p: [1.2, 2.0, 0.35, 1.0, 1.0, 0.0],
+            p: [1.2, 2.0, 0.35, 1.0, 1.0, 0.0, 3.0],
             d: Delay::new((sr as usize / 20).max(8)),
             phase: 0.0,
             sr,
@@ -1081,7 +1099,7 @@ impl Effect for Leslie {
             for ch in 0..fr.len().min(2) {
                 let side = if ch == 0 { -1.0 } else { 1.0 };
                 let osc = (ph + side * self.p[3] * PI * 0.5).sin();
-                let delay = (3.0 + self.p[1] * (1.0 + osc)) * sample_rate as f32 / 1000.0;
+                let delay = (self.p[6] + self.p[1] * (1.0 + osc)) * sample_rate as f32 / 1000.0;
                 let y = self.d.tap(delay) * (1.0 - self.p[2] + self.p[2] * (0.5 + 0.5 * osc));
                 fr[ch] = fr[ch] * self.p[5] + y * self.p[4];
             }
@@ -1478,13 +1496,17 @@ pub(crate) const DOPPLER_SPECS: &[ParamSpec] = &[
     ParamSpec::new("velocityMps", "Velocity", -150.0, 150.0, 0.0).unit("m/s"),
     ParamSpec::new("wet", "Wet", 0.0, 1.0, 1.0),
     ParamSpec::new("dry", "Dry", 0.0, 1.0, 0.0),
+    // Air, at sea level, around 20 °C. A physical constant right up until
+    // you want the sweep to be unnatural, which is most of why anyone
+    // reaches for a Doppler in the first place.
+    ParamSpec::new("speedMps", "Speed of sound", 20.0, 2000.0, 343.0).log().unit("m/s"),
 ];
 
 /// Part 2 sections 4.1/4.4: Doppler is a delay whose length changes at a
 /// constant physical velocity. Positive velocity is recession, so delay grows
 /// by v/c samples per sample (c = 343 m/s) and the observed pitch falls.
 pub struct Doppler {
-    p: [f32; 4],
+    p: [f32; 5],
     delay: Vec<Delay>,
     current_samples: f32,
     sr: u32,
@@ -1493,7 +1515,7 @@ pub struct Doppler {
 impl Doppler {
     pub fn new(sr: u32, channels: usize) -> Self {
         Self {
-            p: [40.0, 0.0, 1.0, 0.0],
+            p: [40.0, 0.0, 1.0, 0.0, 343.0],
             delay: (0..channels.max(1).min(8))
                 .map(|_| Delay::new((sr as usize * 2).max(8)))
                 .collect(),
@@ -1516,7 +1538,7 @@ impl Effect for Doppler {
                 self.delay[ch].push(dry);
                 frame[ch] = dry * self.p[3] + wet * self.p[2];
             }
-            self.current_samples = (self.current_samples + self.p[1] / 343.0)
+            self.current_samples = (self.current_samples + self.p[1] / self.p[4].max(1.0))
                 .clamp(1.0, (self.delay[0].b.len() - 2) as f32);
         }
     }
@@ -1863,5 +1885,115 @@ mod tests {
         Effect::process(&mut echo, &mut next, 1, sr);
         // One sample in and the pointer is already there.
         assert!((echo.cur[0] - 300.0 * sr as f32 / 1000.0).abs() < 1.0);
+    }
+
+    /// A predelay of zero has to mean no predelay.
+    ///
+    /// `Delay::tap` reads `w - delay`, and the slot at `w` holds the sample
+    /// from a whole buffer ago rather than the newest one — so a tap of zero
+    /// asked for the present and got a quarter of a second in the past.
+    #[test]
+    fn a_plate_with_no_predelay_does_not_wait_a_quarter_of_a_second() {
+        let sr = 48_000u32;
+        let first_out = |ms: f32| {
+            let mut p = Plate::new(sr);
+            assert!(Params::set(&mut p, "wet", 1.0));
+            assert!(Params::set(&mut p, "dry", 0.0));
+            assert!(Params::set(&mut p, "predelayMs", ms));
+            let mut b = vec![0.0f32; sr as usize * 2];
+            b[0] = 1.0;
+            b[1] = 1.0;
+            Effect::process(&mut p, &mut b, 2, sr);
+            (0..b.len() / 2)
+                .find(|&i| b[i * 2].abs() > 1e-5)
+                .map(|f| f as f32 * 1000.0 / sr as f32)
+        };
+        let none = first_out(0.0).expect("a plate with no predelay produced nothing");
+        let some = first_out(50.0).expect("a plate with 50 ms produced nothing");
+        // Whatever the tank's own latency is, asking for 50 ms more must cost
+        // about 50 ms more — and asking for none must not cost the longest
+        // predelay the buffer can hold.
+        assert!(
+            (some - none - 50.0).abs() < 5.0,
+            "50 ms of predelay moved the onset by {:.1} ms",
+            some - none
+        );
+    }
+
+    /// Controls that used to be constants, and the audit that found them.
+    ///
+    /// Each of these was a number decided inside the DSP with no key to reach
+    /// it. `mix` was the worst: `MusicalFilter::process` already read it, so
+    /// the notch, the resonator and the Regalia-Mitra were the only modules in
+    /// the rack with no dry path and no way to ask for one.
+    #[test]
+    fn the_controls_that_were_hiding_inside_the_effects_all_do_something() {
+        let sr = 48_000u32;
+        let tone: Vec<f32> = (0..4096)
+            .map(|i| (i as f32 / 9.0).sin() * 0.4 + (i as f32 / 2.3).sin() * 0.2)
+            .collect();
+        let run = |e: &mut dyn Effect, n: usize| {
+            let mut b = tone[..n].to_vec();
+            e.process(&mut b, 2, sr);
+            b
+        };
+        let differs = |a: &[f32], b: &[f32]| {
+            a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0f32, f32::max)
+        };
+
+        // The three musical filters now have a dry path.
+        for mode in [
+            MusicalFilterMode::Notch,
+            MusicalFilterMode::Resonator,
+            MusicalFilterMode::Regalia,
+        ] {
+            let mut wet = MusicalFilter::new(mode);
+            assert!(Params::set(&mut wet, "mix", 1.0), "{mode:?} has no mix");
+            let mut dry = MusicalFilter::new(mode);
+            assert!(Params::set(&mut dry, "mix", 0.0));
+            let (a, b) = (run(&mut wet, 2048), run(&mut dry, 2048));
+            assert!(differs(&a, &b) > 0.01, "{mode:?}: mix changed nothing");
+            // Fully dry is the input, untouched.
+            assert!(differs(&b, &tone[..2048]) < 1e-6, "{mode:?}: dry is not dry");
+        }
+
+        // The plate's stereo cross-feed. Fed from one side only, and run long
+        // enough for the tank to have something in it to cross over — the
+        // first output does not arrive for about a quarter of a second.
+        let mut one_sided = vec![0.0f32; 200_000];
+        for i in 0..100_000 {
+            one_sided[i * 2] = (i as f32 / 7.0).sin() * 0.5;
+        }
+        let plate_run = |cross: f32| {
+            let mut p = Plate::new(sr);
+            assert!(Params::set(&mut p, "crossfeed", cross));
+            assert!(Params::set(&mut p, "wet", 1.0));
+            assert!(Params::set(&mut p, "dry", 0.0));
+            let mut b = one_sided.clone();
+            Effect::process(&mut p, &mut b, 2, sr);
+            b
+        };
+        assert!(differs(&plate_run(0.0), &plate_run(1.0)) > 1e-4, "plate width");
+
+        // The Leslie's horn distance.
+        let leslie_run = |base: f32| {
+            let mut l = Leslie::new(sr, 2);
+            assert!(Params::set(&mut l, "baseMs", base));
+            assert!(Params::set(&mut l, "wet", 1.0));
+            assert!(Params::set(&mut l, "dry", 0.0));
+            let mut b = tone.clone();
+            Effect::process(&mut l, &mut b, 2, sr);
+            b
+        };
+        assert!(differs(&leslie_run(1.0), &leslie_run(30.0)) > 1e-4, "leslie distance");
+
+        // And the speed of sound the Doppler travels through.
+        let mut air = Doppler::new(sr, 2);
+        let mut soup = Doppler::new(sr, 2);
+        for (e, v) in [(&mut air, 343.0f32), (&mut soup, 40.0f32)] {
+            assert!(Params::set(e, "speedMps", v));
+            assert!(Params::set(e, "velocityMps", 20.0));
+        }
+        assert!(differs(&run(&mut air, 4096), &run(&mut soup, 4096)) > 1e-4, "speed of sound");
     }
 }
