@@ -13,12 +13,16 @@ instrument that is part of it.
 
 ## The movement
 
-The five views in the standalone sheet are magnificent and they are lying. They
-run their own scheduler — their own noise, their own seed, their own idea of a
-hop — and produce a cloud that behaves *like* the engine's without being it. As
-a study of granulation that is honest work. Docked into the editor, beside a
-waveform and a transport and a file that is actually sounding, it becomes a
-weather map of a country that does not exist.
+The views in the standalone sheet are not lying, and it is worth being precise
+about what was wrong with them, because the first version of this page got it
+wrong in the other direction. That sheet is a faithful port of `fx::grain` —
+the same splitmix64 over the same salts, so a seed there lands on the cloud the
+engine would render. Its arithmetic is exact.
+
+What it did not have was the *document*. Docked into the editor it answered to
+its own sliders, so beside a waveform and a transport and a file that is
+actually sounding it drew a cloud the engine *could* have made rather than the
+one it was making. A perfect weather model of somewhere else.
 
 **Witness** is the aesthetic position that a picture of a process must be made
 of the same numbers as the process. Not similar numbers. Not numbers from a

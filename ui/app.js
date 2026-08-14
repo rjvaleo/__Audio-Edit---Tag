@@ -6487,7 +6487,7 @@ const CLOUD_BEHIND = 1.6;    // seconds of history, behind
 /// so there is nothing to synchronise across two animation clocks.
 const cloudFeed = {
   grains: null, sr: 48000, srcFrames: 0, baseSemis: 0, now: 0,
-  semiSpan: 4, centre: 0, span: 1, turn: 0, headRate: 0,
+  semiSpan: 4, centre: 0, span: 1, turn: 0, headRate: 0, overlap: 2,
 };
 
 /// The camera, and nothing else.
@@ -6496,6 +6496,171 @@ const cloudFeed = {
 /// hand left it. That is not the same as simulation state, and it is the only
 /// thing here that persists between frames.
 const cloudCam = { yaw: 0.5, pitch: -0.22, drag: null };
+
+/// How long the motion takes to come back to where it started.
+///
+/// Every turning term below is a whole number of turns per this, so there is no
+/// seam: the picture at eight seconds is the picture at zero. Nothing is
+/// integrated to achieve it — the angle is read off the clock.
+const LOOP_SECONDS = 8;
+const TRAIL = 3;
+const TRAIL_STEP = 0.09;      // seconds between one ghost and the next
+const DECAY_PER_SECOND = 1.5; // a fixed fraction lost per second, never zero
+
+/// Colour and radius, shared by every view so they cannot disagree about what
+/// a grain looks like — only about where it goes.
+function grainLook(ev, dt, live, f) {
+  const [, , size, pitch, , bright] = ev;
+  const t = Math.max(-1, Math.min(1,
+    (pitch - f.baseSemis) / 9 * 0.55 + (Math.min(1, bright * 4) - 0.4) * 1.4));
+  const warm = t >= 0;
+  return [
+    [warm ? 235 : 105, warm ? 175 - t * 40 : 150, warm ? 120 : 235],
+    2.0 + Math.min(9, (size / f.sr) * 42) * (live ? 1.4 : 1),
+  ];
+}
+
+/// Where one grain sits, in whichever view is showing.
+///
+/// Ported from the standalone sheet, which is a faithful port of `fx::grain`
+/// in its own right — the same hash over the same salts. What it never had was
+/// the *document*: docked in the panel it answered to its own sliders, so it
+/// drew a cloud the engine could have made rather than the one it was making.
+/// These take the enumeration the server sends, so every control reaches them
+/// because the grains themselves already went through it.
+///
+/// `back` is how far into the past to evaluate, which is what draws the trail.
+/// Nothing is remembered between frames; a ghost is this same function asked
+/// about a moment that has gone.
+///
+/// Every quantity used here is one a grain actually has. The angular sector is
+/// the grain's real stereo placement, and the surface it rides is the level it
+/// is actually reading — no display-only randomness anywhere.
+function placeGrain(view, ev, dt, back, geo, out) {
+  const [outFrame, srcFrame, size, pitch, rms, bright, pan, index] = ev;
+  const { R, HEIGHT, SPAN, f, phase } = geo;
+
+  const age = Math.max(0, -dt) + back;
+  const w = Math.max(-1, Math.min(1, (dt - back) / CLOUD_BEHIND));
+  const v = Math.max(0, Math.min(1, srcFrame / f.srcFrames));
+  const pn = Math.max(-1, Math.min(1, (pitch - f.baseSemis) / f.semiSpan));
+  const rate = Math.pow(2, (pitch - f.baseSemis) / 12);
+  const c = (Math.max(-1, Math.min(1, pan || 0)) + 1) / 2;
+  const amp = Math.min(1, rms * 6);
+  const lift = amp * HEIGHT * 0.55;
+  // Where the head was `back` ago, so a grain's distance from it grows as it
+  // ages — the drift that turns a scatter into weather.
+  const centreThen = f.centre - f.headRate * back;
+  const dev = Math.max(-1.6, Math.min(1.6, (srcFrame - centreThen) / Math.max(1, f.span)));
+  const strands = Math.max(1, Math.round(f.overlap));
+  const u = ((outFrame / f.sr) % LOOP_SECONDS) / LOOP_SECONDS;
+
+  switch (view) {
+    case 'shear':
+      // Output time across, source time into the screen: the ratio is the
+      // slope. Push it high and the diagonal flattens into a sheet.
+      out.x = w * SPAN * 0.7;
+      out.z = (v - 0.5) * SPAN * 0.7;
+      out.y = -pn * HEIGHT - lift * 0.4;
+      break;
+
+    case 'braid': {
+      // A closed torus knot rather than an open helix. The helix had two ends,
+      // and ends are where a loop looks choppy; wound onto a torus with a whole
+      // number of twists it joins itself and there is nowhere for a seam to be.
+      const major = u * Math.PI * 2 + phase;
+      const minor = (index % strands) / strands * Math.PI * 2 + major * BRAID_TWIST;
+      const rMin = R * (0.16 + 0.14 * (Math.log2(Math.max(rate, 0.002)) + 4) / 8);
+      const rMaj = R * 0.62;
+      out.x = (rMaj + rMin * Math.cos(minor)) * Math.cos(major);
+      out.z = (rMaj + rMin * Math.cos(minor)) * Math.sin(major);
+      out.y = rMin * Math.sin(minor) - pn * HEIGHT * 0.25;
+      break;
+    }
+
+    case 'swarm': {
+      const th = Math.acos(Math.max(-1, Math.min(1, pn)));
+      const ph = c * Math.PI * 2 + phase;
+      const rr = R * (0.34 + 0.62 * v) + amp * R * 0.26;
+      out.x = rr * Math.sin(th) * Math.cos(ph);
+      out.z = rr * Math.sin(th) * Math.sin(ph);
+      out.y = rr * Math.cos(th) * 0.55 - pn * HEIGHT * 0.5;
+      break;
+    }
+
+    case 'shells': {
+      const rr = R * (0.22 + 0.78 * (pn + 1) / 2);
+      const th = u * Math.PI * 2 * 3 + phase;
+      out.x = Math.cos(th) * rr;
+      out.z = Math.sin(th) * rr;
+      out.y = (v - 0.5) * HEIGHT * 1.6;
+      break;
+    }
+
+    case 'lattice': {
+      // The grid a cloud would be on if nothing varied, pushed off it by the
+      // deviations a grain actually has. At every jitter zero it is a crystal.
+      const k = 18;
+      const n = index % (k * k);
+      const cell = SPAN * 1.5 / k;
+      out.x = ((n % k) - k / 2) * cell + dev * R * 0.4;
+      out.z = (Math.floor(n / k) - k / 2) * cell + (c - 0.5) * cell * 2;
+      out.y = -pn * HEIGHT * 0.8 - lift * 0.3;
+      break;
+    }
+
+    case 'tunnel': {
+      const th = c * Math.PI * 2 + phase;
+      const r = R * (0.30 + 0.55 * amp) + (1 - Math.abs(w)) * R * 0.18;
+      out.x = Math.cos(th) * r;
+      out.y = Math.sin(th) * r;
+      // The past is compressed hard, so what has sounded sits behind the eye.
+      out.z = -(w > 0 ? w : w * 0.28) * R * 4.5;
+      break;
+    }
+
+    case 'mandala': {
+      // A whole turn, not half of one: `phase * 0.5` left the mandala a
+      // half-turn out at the loop point, which is the seam this is all for.
+      const th = c * Math.PI * 2 + phase;
+      const rad = R * (0.06 + 0.94 * Math.abs(w));
+      out.x = Math.cos(th) * rad;
+      out.y = Math.sin(th) * rad;
+      out.z = lift - pn * HEIGHT * 0.3;
+      break;
+    }
+
+    case 'vortex': {
+      const th = (dt - back) * 2.1 + c * Math.PI * 2 + phase;
+      const rad = R * (0.10 + 0.90 * Math.abs(w));
+      out.x = Math.cos(th) * rad;
+      out.y = Math.sin(th) * rad;
+      out.z = lift * 1.6 - pn * HEIGHT * 0.25;
+      break;
+    }
+
+    case 'ripple':
+      out.x = w * SPAN * 0.72;
+      out.z = (c - 0.5) * SPAN * 0.55;
+      // Whole cycles per loop, so the standing wave stands still at the seam.
+      out.y = -lift * 1.3
+            + Math.sin(u * Math.PI * 2 * RIPPLE_WAVES + phase) * HEIGHT * 0.22;
+      break;
+
+    default:
+      // Cloud: the spread around the head. Across the stereo field, up the
+      // pitch, deep the distance from where the head is reading.
+      out.x = Math.max(-1, Math.min(1, pan || 0)) * R * 0.95;
+      out.y = -pn * R * 0.8;
+      out.z = dev * R * 0.9;
+      break;
+  }
+}
+
+/// Whole numbers, so both close. A fractional twist leaves the braid's two ends
+/// meeting at an angle, which is precisely the seam this is meant not to have.
+const BRAID_TWIST = 3;
+const RIPPLE_WAVES = 4;
 
 /// The p5 instance, once it exists. Built on first draw rather than at load,
 /// because the panel has no size until the editor is open.
@@ -6551,6 +6716,10 @@ function feedCloud() {
   // that have already passed — the head has moved on, so a grain laid down a
   // moment ago is now behind it, and by exactly this much per second.
   cloudFeed.headRate = (sr / ratio) * scan;
+  // How many windows cover any one moment. The braid separates grains sounding
+  // together into strands, and this is how many there are — which is why the
+  // strand count *is* the overlap rather than a number chosen to look right.
+  cloudFeed.overlap = Math.max(1, Math.min(16, gr.overlap || 2));
 
   // The turn is a function of the moment too, so the cloud holds still when the
   // transport does. Traversal of a fixed structure — when nothing is being
@@ -6585,9 +6754,6 @@ function startCloudGl() {
     // the two caps trade against each other. Fewer grains with tails reads as a
     // cloud; more grains without them reads as a scatter.
     const MAX_GRAINS = 260;
-    const TRAIL = 3;
-    const TRAIL_STEP = 0.09;      // seconds between one ghost and the next
-    const DECAY_PER_SECOND = 1.5; // a fixed fraction lost per second, never zero
 
     s.setup = () => {
       const c = s.createCanvas(holder.clientWidth || 300, holder.clientHeight || 200, s.WEBGL);
@@ -6605,24 +6771,24 @@ function startCloudGl() {
       const f = cloudFeed;
       if (!f.grains || !f.srcFrames) return;
 
-      // Enough ambient that a grain facing away is still visible, and one
-      // directional so there is a lit side and a dark one — which is the whole
-      // of what makes a shaded ball read as a ball.
       s.ambientLight(58, 64, 78);
       s.directionalLight(255, 250, 240, -0.4, -0.7, -0.6);
       s.pointLight(90, 130, 210, 0, -260, 320);
-
-      // Where the hand left it, plus where the moment puts it. No integration:
-      // the same instant always draws the same picture.
       s.rotateX(cloudCam.pitch);
       s.rotateY(cloudCam.yaw + f.turn);
 
-      const playFrame = f.now * f.sr;
       const R = Math.min(s.width, s.height) * 0.34;
-      const span = Math.max(1, f.span);
+      const geo = {
+        R,
+        HEIGHT: R * 0.9,
+        SPAN: R * 1.9,
+        f,
+        // Every spin below is a whole number of turns per LOOP_SECONDS, so the
+        // motion closes on itself and there is no seam where it restarts.
+        phase: ((f.now % LOOP_SECONDS) / LOOP_SECONDS) * Math.PI * 2,
+      };
 
-      // Nearest in time first, so the cap keeps what is sounding and drops the
-      // oldest and faintest rather than whatever was enumerated last.
+      const playFrame = f.now * f.sr;
       const near = [];
       for (const ev of f.grains) {
         const dt = (ev[0] - playFrame) / f.sr;
@@ -6633,59 +6799,28 @@ function startCloudGl() {
       near.sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]));
       if (near.length > MAX_GRAINS) near.length = MAX_GRAINS;
 
-      for (const [[, srcFrame, size, pitch, , bright, pan], dt] of near) {
-        // The cloud is the spread *around* the head, not absolute position in
-        // the file. Absolutely, every grain sits within a few milliseconds of
-        // every other and the picture is a line; as deviations it is a volume
-        // whose width, height and depth are the three scatter controls.
-        //
-        //   across — where the grain sits in the stereo field
-        //   up     — how far out of tune it is
-        //   depth  — how far from the head it reads
-        //
-        // Depth is the one that moves. The head travels on, so a grain laid
-        // down a moment ago is behind it now and drifting further, which is
-        // what turns a static scatter into something with weather in it.
-        const age = Math.max(0, -dt);
-        const x = Math.max(-1, Math.min(1, pan ?? 0)) * R * 0.95;
-        const y = -Math.max(-1, Math.min(1, (pitch - f.baseSemis) / f.semiSpan)) * R * 0.8;
-
+      const at = { x: 0, y: 0, z: 0 };
+      for (const [ev, dt] of near) {
+        const size = ev[2];
         const live = dt <= 0 && dt + size / f.sr >= 0;
-        // Decay. A grain is brightest as it sounds and falls away afterwards,
-        // and what is left behind is a trail of dimmer, smaller ghosts at the
-        // places it has already been. Every one of those is that same grain
-        // evaluated at a moment that has passed rather than a copy kept from a
-        // frame that was drawn — the picture holds no history, it recomputes
-        // it, which is the same discipline the engine keeps.
-        const t = Math.max(-1, Math.min(1,
-          (pitch - f.baseSemis) / 9 * 0.55 + (Math.min(1, bright * 4) - 0.4) * 1.4));
-        const warm = t >= 0;
-        const base = [
-          warm ? 235 : 105,
-          warm ? 175 - t * 40 : 150,
-          warm ? 120 : 235,
-        ];
-        const r0 = 2.0 + Math.min(9, (size / f.sr) * 42) * (live ? 1.4 : 1);
+        const age = Math.max(0, -dt);
+        const [col, r0] = grainLook(ev, dt, live, f);
 
         const ghosts = age > 0.02 ? TRAIL : 0;
         for (let k = ghosts; k >= 0; k--) {
-          const back = age + k * TRAIL_STEP;
-          if (back > CLOUD_BEHIND) continue;
-          // Where the head was then, so where this grain sat relative to it.
-          const centreThen = f.centre - f.headRate * back;
-          const z = Math.max(-1.6, Math.min(1.6, (srcFrame - centreThen) / span)) * R * 0.9;
-
-          // Radioactive, in the one sense that matters here: a fixed fraction
-          // lost per unit of time, so it never quite reaches nothing and the
-          // tail thins away instead of stopping.
-          const decay = Math.exp(-back * DECAY_PER_SECOND);
+          const back = k * TRAIL_STEP;
+          if (age + back > CLOUD_BEHIND) continue;
+          // Radioactive in the one sense that matters: a fixed fraction lost
+          // per unit of time, so the tail thins away instead of stopping.
+          const decay = Math.exp(-(age + back) * DECAY_PER_SECOND);
           const fade = dt > 0 ? 0.3 : decay;
           if (fade < 0.02) continue;
           const smoke = k === 0 ? 1 : 0.45 / k;
 
+          placeGrain(grainView, ev, dt, back, geo, at);
           s.push();
-          s.translate(x, y, z);
-          const c = [base[0] * fade * smoke, base[1] * fade * smoke, base[2] * fade * smoke];
+          s.translate(at.x, at.y, at.z);
+          const c = [col[0] * fade * smoke, col[1] * fade * smoke, col[2] * fade * smoke];
           if (live && k === 0) s.emissiveMaterial(c[0], c[1], c[2]);
           else s.ambientMaterial(c[0], c[1], c[2]);
           s.sphere(r0 * (k === 0 ? 1 : 0.55 / Math.sqrt(k)), DETAIL_X, DETAIL_Y);
@@ -6754,186 +6889,26 @@ if (window.ResizeObserver) {
 
 // ------------------------------------------------------- which view of the grains
 //
-// Six ways to look at one schedule: this engine's own cloud, and the five
-// views from the standalone sheet. Those five live in an iframe — they are a
-// p5 sketch with their own render loop, and running that inside the app's
-// loop would mean two animation clocks fighting over one canvas. Being a
-// separate document also means the same file is the standalone viewer, so there
-// is one implementation to keep honest rather than two.
+// Two ways to look at one schedule, both drawn here from the real enumeration.
+// The five views from the standalone sheet used to be embedded in an iframe;
+// they ran their own scheduler, so they answered to their own sliders and not
+// to the document's, and docking them made them a weather map of a country
+// that does not exist. The sheet is still served at `/grains3d` as its own
+// thing — this panel is now about the file that is actually sounding.
 
-/// 0 is the 2D swarm; 1..5 index the 3D views.
-let grainView = 0;
+/// Which way the sketch draws. See `drawCloud` and `drawBraid`.
+let grainView = 'cloud';
 
 function setGrainView(v) {
   grainView = v;
   for (const b of document.querySelectorAll('.vis-tab')) {
-    b.classList.toggle('active', +b.dataset.vis === v);
+    b.classList.toggle('active', b.dataset.vis === v);
   }
-  const frame = $('grainFrame'), gl = $('grainGl'), legend = document.querySelector('.vis-legend');
-  const is3d = v > 0;
-
-  gl.classList.toggle('hidden', is3d);
-  legend.classList.toggle('hidden', is3d);
-  frame.classList.toggle('hidden', !is3d);
-
-  if (!is3d) return;
-  if (!frame.src) {
-    frame.src = `/grains3d?embed=1&view=${v - 1}`;
-  } else {
-    // Already loaded — switch views in place so the camera and the engine
-    // connection survive. Reloading the src would restart both.
-    frame.contentWindow?.postMessage({ type: 'grainView', view: v - 1 }, location.origin);
-  }
-}
-
-// Which suite the 3D views are showing. V1 tours the cloud as an object; V2
-// sits inside the moment and lets time come past. Same five slots either way,
-// so the tabs only need relabelling.
-let grainSuite = 1;
-const SUITE_NAMES = {
-  1: ['Shear', 'Braid', 'Swarm 3D', 'Shells', 'Lattice'],
-  2: ['Tunnel', 'Mandala', 'Rorschach', 'Vortex', 'Ripple']
-};
-
-function setGrainSuite(n) {
-  grainSuite = n === 2 ? 2 : 1;
-  $('visSuite').textContent = 'V' + grainSuite;
-  $('visSuite').classList.toggle('active', grainSuite === 2);
-
-  const names = SUITE_NAMES[grainSuite];
-  for (const b of document.querySelectorAll('.vis-tab')) {
-    const i = +b.dataset.vis;
-    if (i >= 1) b.textContent = names[i - 1];
-  }
-  for (const b of document.querySelectorAll('.vis-pop-tab')) {
-    b.textContent = names[+b.dataset.view];
-  }
-
-  const post = { type: 'grainSuite', suite: grainSuite };
-  $('grainFrame').contentWindow?.postMessage(post, location.origin);
-  pop.frame?.contentWindow?.postMessage(post, location.origin);
 }
 
 for (const b of document.querySelectorAll('.vis-tab')) {
-  if (b.id === 'visSuite') continue;
-  b.onclick = () => setGrainView(+b.dataset.vis);
+  b.onclick = () => setGrainView(b.dataset.vis);
 }
-const visSuiteBtn = $('visSuite');
-if (visSuiteBtn) visSuiteBtn.onclick = () => setGrainSuite(grainSuite === 1 ? 2 : 1);
-// A floating panel rather than a new tab. The whole point of watching the
-// grains is to watch them *while* moving a slider, and a separate window puts
-// the controls behind the thing you are looking at.
-const pop = {
-  el: null, frame: null,
-  x: 0, y: 0, w: 1060, h: 680,
-  mode: null, ox: 0, oy: 0
-};
-
-const fence = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-
-function openVisPop() {
-  if (!pop.el) buildVisPop();
-  // Visible *before* the document loads. An iframe created inside a
-  // display:none panel measures zero, and a canvas sized from that stays a
-  // sliver in the corner no matter how big the panel gets afterwards.
-  pop.el.classList.remove('hidden');
-  // embed=1, not the standalone page. The standalone one carries a 320px
-  // sidebar and caps the canvas, so the visual stays the same size however big
-  // the panel is dragged — which is the opposite of the point of a resizable
-  // panel. Embedded, the view *is* the box.
-  if (!pop.frame.src) pop.frame.src = `/grains3d?embed=1&view=${Math.max(0, grainView - 1)}`;
-}
-
-function closeVisPop() {
-  pop.el?.classList.add('hidden');
-}
-
-function buildVisPop() {
-  const el = document.createElement('div');
-  el.className = 'vis-pop hidden';
-  // The sidebar lives in the app, so the panel only needs the view names.
-  const names = ['Shear', 'Braid', 'Swarm', 'Shells', 'Lattice'];
-  el.innerHTML = `
-    <div class="vis-pop-head">
-      <span class="vis-pop-title">Grains</span>
-      ${names.map((n, i) => `<button class="vis-pop-tab" data-view="${i}">${n}</button>`).join('')}
-      <span class="vis-pop-hint">drag to move · corner to resize</span>
-      <button class="vis-pop-btn" data-act="max" title="Fill the window">&#9723;</button>
-      <button class="vis-pop-btn" data-act="close" title="Close">&times;</button>
-    </div>
-    <iframe title="Grain views"></iframe>
-    <div class="vis-pop-grip" title="Resize"></div>`;
-  document.body.appendChild(el);
-
-  for (const b of el.querySelectorAll('.vis-pop-tab')) {
-    b.onclick = () => {
-      for (const o of el.querySelectorAll('.vis-pop-tab')) o.classList.remove('active');
-      b.classList.add('active');
-      pop.frame.contentWindow?.postMessage(
-        { type: 'grainView', view: +b.dataset.view }, location.origin);
-    };
-  }
-
-  pop.el = el;
-  pop.frame = el.querySelector('iframe');
-  pop.x = Math.max(20, (window.innerWidth - pop.w) / 2);
-  pop.y = Math.max(20, (window.innerHeight - pop.h) / 2);
-  place();
-
-  el.querySelector('[data-act="close"]').onclick = closeVisPop;
-  el.querySelector('[data-act="max"]').onclick = () => {
-    pop.x = 20; pop.y = 20;
-    pop.w = window.innerWidth - 40; pop.h = window.innerHeight - 40;
-    place();
-  };
-
-  // Dragging and resizing both run on the document, not the panel, so the
-  // pointer can outrun the element without the gesture being dropped. The
-  // iframe stops taking events mid-gesture for the same reason: it would
-  // otherwise swallow every move that crossed it.
-  el.querySelector('.vis-pop-head').addEventListener('mousedown', (e) => {
-    if (e.target.closest('.vis-pop-btn')) return;
-    pop.mode = 'move'; pop.ox = e.clientX - pop.x; pop.oy = e.clientY - pop.y;
-    pop.frame.style.pointerEvents = 'none';
-    e.preventDefault();
-  });
-  el.querySelector('.vis-pop-grip').addEventListener('mousedown', (e) => {
-    pop.mode = 'size'; pop.ox = e.clientX - pop.w; pop.oy = e.clientY - pop.h;
-    pop.frame.style.pointerEvents = 'none';
-    e.preventDefault();
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!pop.mode) return;
-    if (pop.mode === 'move') {
-      pop.x = fence(e.clientX - pop.ox, -pop.w + 120, window.innerWidth - 120);
-      pop.y = fence(e.clientY - pop.oy, 0, window.innerHeight - 40);
-    } else {
-      pop.w = fence(e.clientX - pop.ox, 420, window.innerWidth);
-      pop.h = fence(e.clientY - pop.oy, 300, window.innerHeight);
-    }
-    place();
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (!pop.mode) return;
-    pop.mode = null;
-    pop.frame.style.pointerEvents = '';
-  });
-}
-
-function place() {
-  const s = pop.el.style;
-  s.left = pop.x + 'px'; s.top = pop.y + 'px';
-  s.width = pop.w + 'px'; s.height = pop.h + 'px';
-}
-
-const visOpen = $('visOpen');
-if (visOpen) visOpen.onclick = openVisPop;
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && pop.el && !pop.el.classList.contains('hidden')) closeVisPop();
-});
 
 const rescanBtn = $('rescanBtn');
 if (rescanBtn) rescanBtn.onclick = async () => {
