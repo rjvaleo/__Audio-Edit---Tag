@@ -3344,6 +3344,17 @@ function renderStretch() {
       b.classList.toggle('active', b.dataset.alg === alg);
     }
     own.innerHTML = '';
+    // One row at the top of the engine's own controls: whatever switches it
+    // has on the left, the tuning on the right. Built for every engine, so the
+    // scale is in the same place whichever one is picked — pitch applies to
+    // all of them, and only WSOLA has a transient switch to sit beside.
+    const switches = document.createElement('div');
+    switches.className = 'engine-switches';
+    // The tuning goes on first and the engine's own switches are prepended in
+    // front of it, so it sits at the right-hand end of the row whether or not
+    // this engine has anything to put beside it.
+    switches.appendChild(scaleButton());
+    own.appendChild(switches);
     // The engine's standard controls stay under the picker. Everything that
     // used to be a constant in the algorithm goes to the Extended column
     // instead: those values are constants because that is where the algorithm
@@ -3413,7 +3424,7 @@ function renderStretch() {
       const w = state.stretchDraft.wsola;
       const detecting = forced || w.preserveTransients;
       if (!forced) {
-        own.appendChild(check('preserve transients',
+        engineSwitches().prepend(check('preserve transients',
           'Hold drum hits at their original rate so they are not laid down twice',
           w.preserveTransients,
           (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); }));
@@ -3599,8 +3610,7 @@ function renderStretch() {
     (v) => scaleLabel(v),
     (v) => { state.stretchDraft.semitones = v; previewStretch();  },
     () => {commitStretch();} ),
-        'Shifts the pitch without changing the length. The engine is driven at ratio x pitch and the result read back that much faster, and the two length changes cancel. Twelve semitones is an octave. The button beside it snaps the shift to a tuning.');
-  rows.semitones.appendChild(scaleButton());
+        'Shifts the pitch without changing the length. The engine is driven at ratio x pitch and the result read back that much faster, and the two length changes cancel. Twelve semitones is an octave. The tuning it snaps to is chosen on the row above.');
   // Log too: 40 ms is the everyday setting and second-long grains are the
   // extreme, so a linear control would bunch the useful range at one end.
   rows.windowMs = tip(param('Window', st.windowMs, 5, 2000, 1, (v) => `${Math.round(v)} ms`,
@@ -4320,6 +4330,9 @@ function scaleLabel(v) {
   const cents = Math.round(v * 100);
   return `${sign}${v.toFixed(2)} st · ${sign}${cents}¢`;
 }
+
+/// The row the engine's switches and the tuning share.
+const engineSwitches = () => document.querySelector('.engine-switches');
 
 function scaleButton() {
   const b = document.createElement('button');
