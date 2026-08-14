@@ -278,6 +278,16 @@ pub struct Stretch {
     /// document. `None` leaves the control continuous, which is what it has
     /// always been and what a document predating this keeps.
     pub scale: Option<&'static crate::tuning::Scale>,
+    /// The grid the pitch snaps to when no scale is chosen, in semitones.
+    ///
+    /// **Zero is free** — the slider's value is taken as it is. Half a semitone
+    /// is what this control has always done and stays the default, so a
+    /// document that never touches it behaves exactly as it did.
+    ///
+    /// Separate from `scale` because they are different questions: a scale is
+    /// a set of intervals, and this is how fine the control is when you are not
+    /// using one. A scale, when there is one, sets the grid itself.
+    pub pitch_step: f32,
     /// Window length. Longer smooths tonal material; shorter keeps transients.
     pub window_ms: f32,
     pub quality: Quality,
@@ -301,6 +311,7 @@ impl Default for Stretch {
             ratio: 1.0,
             semitones: 0.0,
             scale: None,
+            pitch_step: 0.5,
             window_ms: 40.0,
             quality: Quality::Standard,
             algorithm: Algorithm::Wsola,

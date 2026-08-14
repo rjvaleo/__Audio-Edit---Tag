@@ -4302,6 +4302,11 @@ async function loadScales() {
 }
 
 const currentScale = () => state.edit?.stretch?.scale || '';
+/// The grid when no scale is chosen. Zero is free.
+const currentStep = () => {
+  const v = state.edit?.stretch?.pitchStep;
+  return v === undefined || v === null ? 0.5 : v;
+};
 
 /// The finest step the chosen scale offers, in semitones.
 ///
@@ -4309,7 +4314,9 @@ const currentScale = () => state.edit?.stretch?.scale || '';
 /// being pulled back on release, which feels like the control fighting you.
 function scaleStep() {
   const name = currentScale();
-  if (!name) return 0.5;
+  // No scale: the plain grid, and zero means the slider is continuous. The
+  // finest a range input will take is what limits "free" in practice.
+  if (!name) return currentStep() > 0 ? currentStep() : 0.001;
   for (const g of state.scales || []) {
     for (const s of g.scales) {
       if (s.name !== name) continue;
@@ -4326,7 +4333,11 @@ function scaleStep() {
 function scaleLabel(v) {
   const sign = v >= 0 ? '+' : '';
   const name = currentScale();
-  if (!name) return `${sign}${v.toFixed(1)} st`;
+  // Free shows the extra decimals, because hiding them would make a continuous
+  // control look like it was still snapping.
+  if (!name) return currentStep() > 0
+    ? `${sign}${v.toFixed(1)} st`
+    : `${sign}${v.toFixed(2)} st · ${sign}${Math.round(v * 100)}¢`;
   const cents = Math.round(v * 100);
   return `${sign}${v.toFixed(2)} st · ${sign}${cents}¢`;
 }
@@ -4336,8 +4347,8 @@ const engineSwitches = () => document.querySelector('.engine-switches');
 
 function scaleButton() {
   const b = document.createElement('button');
-  b.className = 'scale-btn' + (currentScale() ? ' on' : '');
-  b.textContent = currentScale() || 'chromatic';
+  b.className = 'scale-btn' + (currentScale() || currentStep() === 0 ? ' on' : '');
+  b.textContent = currentScale() || (currentStep() > 0 ? `${currentStep()} st grid` : 'free');
   b.title = 'Snap the pitch shift to a tuning';
   b.onclick = (e) => { e.stopPropagation(); openScaleMenu(b); };
   return b;
@@ -4373,11 +4384,25 @@ async function openScaleMenu(anchor) {
   list.className = 'scale-cats';
   pop.appendChild(list);
 
-  const none = document.createElement('button');
-  none.className = 'scale-item' + (currentScale() ? '' : ' selected');
-  none.textContent = 'Chromatic — no scale';
-  none.onclick = () => pickScale('');
-  list.appendChild(none);
+  // The two answers that are not a scale. Free is the raw slider value; the
+  // grid is what this control has always done.
+  const plain = [
+    ['Free — no quantising', 'the slider\u2019s own value, unrounded', 0],
+    ['Semitone grid', 'twelve to the octave', 1],
+    ['Half-semitone grid', 'the default \u2014 twenty-four to the octave', 0.5],
+  ];
+  for (const [label, info, step] of plain) {
+    const item = document.createElement('button');
+    const on = !currentScale() && currentStep() === step;
+    item.className = 'scale-item' + (on ? ' selected' : '');
+    const n = document.createElement('span'); n.className = 'sc-name'; n.textContent = label;
+    const i = document.createElement('span'); i.className = 'sc-info'; i.textContent = info;
+    item.append(n, i);
+    item.dataset.name = label.toLowerCase();
+    item.dataset.info = info.toLowerCase();
+    item.onclick = () => pickScale('', step);
+    list.appendChild(item);
+  }
 
   for (const g of groups) {
     const cat = document.createElement('div');
@@ -4422,7 +4447,7 @@ async function openScaleMenu(anchor) {
       if (q) cat.querySelector('.scale-cat-body').classList.remove('hidden');
     }
     count.textContent = q
-      ? `${list.querySelectorAll('.scale-item:not(.hidden)').length - 1} of ${total}`
+      ? `${list.querySelectorAll('.scale-item:not(.hidden)').length} shown`
       : `${total} scales`;
   };
   filter.onkeydown = (e) => e.stopPropagation();
@@ -4459,7 +4484,7 @@ function closeScaleMenu(e) {
   pop.classList.remove('scale-pop');
 }
 
-async function pickScale(name) {
+async function pickScale(name, step) {
   closeScaleMenu();
   if (!state.selectedFile) return;
   // Posted with the current pitch, so choosing a scale snaps what is already
@@ -4476,7 +4501,8 @@ async function pickScale(name) {
                  pvsola: state.stretchDraft.pvsola,
                  hybrid: state.stretchDraft.hybrid,
                  grain: state.grainDraft,
-                 scale: name },
+                 scale: name,
+                 ...(step === undefined ? {} : { pitchStep: step }) },
                { live: false });
   stretchBuiltFor = null;
   renderStretch();
