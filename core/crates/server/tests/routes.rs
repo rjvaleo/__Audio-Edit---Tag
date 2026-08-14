@@ -1422,3 +1422,52 @@ fn a_rack_lane_reaches_the_exported_file() {
         peak(&head), peak(&tail)
     );
 }
+
+// ---------------------------------------------------------------- recording
+//
+// Opening a device needs a machine with one and, on macOS, permission — so
+// what can be pinned from here is the surface around it: what the routes say
+// when nothing is armed, and that a take cannot be written by accident.
+
+#[test]
+fn the_record_route_says_what_it_is_doing_before_anything_is_armed() {
+    let s = Scratch::new("record-idle");
+    let app = s.app();
+    let r = server::routes::route(&app, &get("/api/record", &[]));
+    assert_eq!(status(&r), 200);
+    let v = json(&r);
+    assert!(
+        matches!(v.get("armed"), Some(server::json::Value::Bool(false))),
+        "nothing should be armed on a fresh app"
+    );
+    // The device list is only offered while nothing is open, which is the only
+    // time it can change without the stream noticing.
+    assert!(v.get("devices").and_then(|d| d.arr()).is_some(), "no device list offered");
+}
+
+#[test]
+fn starting_or_stopping_with_nothing_armed_is_refused_rather_than_ignored() {
+    let s = Scratch::new("record-unarmed");
+    let app = s.app();
+    for action in ["start", "stop"] {
+        let body = format!(r#"{{"action":"{action}"}}"#);
+        let r = server::routes::route(&app, &post("/api/record", &body));
+        assert_eq!(status(&r), 409, "{action} with nothing armed should be a conflict");
+    }
+}
+
+#[test]
+fn an_unknown_record_action_is_a_client_error() {
+    let s = Scratch::new("record-nonsense");
+    let app = s.app();
+    let r = server::routes::route(&app, &post("/api/record", r#"{"action":"levitate"}"#));
+    assert_eq!(status(&r), 400);
+}
+
+#[test]
+fn disarming_when_nothing_is_armed_is_harmless() {
+    let s = Scratch::new("record-disarm");
+    let app = s.app();
+    let r = server::routes::route(&app, &post("/api/record", r#"{"action":"disarm"}"#));
+    assert_eq!(status(&r), 200);
+}

@@ -143,10 +143,15 @@ function toast(msg) {
 
 function showPane(side, name) {
   const panes = side === 'left'
-    ? { browse: 'paneBrowse', search: 'paneSearch', scan: 'paneScan', import: 'paneImport' }
+    ? { browse: 'paneBrowse', search: 'paneSearch', scan: 'paneScan',
+        import: 'paneImport', record: 'paneRecord' }
     : { inspect: 'paneInspect' };
   for (const [key, id] of Object.entries(panes)) $(id).classList.toggle('hidden', key !== name);
-  const titles = { browse: 'Browse', search: 'Search', scan: 'Scan', import: 'Library', inspect: 'Tags' };
+  const titles = { browse: 'Browse', search: 'Search', scan: 'Scan',
+                   import: 'Library', record: 'Record', inspect: 'Tags' };
+  // Opening the panel starts polling the input; leaving it stops, so nothing
+  // is asking a device for levels that nobody is looking at.
+  if (side === 'left') recordPanelShown(name === 'record');
   $(side === 'left' ? 'leftPanelTitle' : 'rightPanelTitle').textContent = titles[name];
   $('treeFilter').classList.toggle('hidden', name !== 'browse');
   document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
@@ -4259,6 +4264,118 @@ $('automationRedo').onclick = () => {
   Object.assign(state.automation, JSON.parse(s));
   saveAutomation();
   renderAutomation();
+};
+
+// ------------------------------------------------------------- recording
+//
+// The one place audio enters this program from outside. Everything else reads
+// a file; this makes one, and it is the only feature that can lose something
+// that never existed anywhere else. So the panel is deliberately explicit
+// about state — armed is not recording, and a take that dropped a block says
+// so rather than being quietly shorter than the performance was.
+
+const rec = { armed: false, recording: false, timer: null, seconds: 0 };
+
+async function recordState() {
+  try { return await api('/api/record'); } catch { return null; }
+}
+
+async function recordPost(body) {
+  try { return await postJSON('/api/record', body); }
+  catch (e) { toast(e.message); return null; }
+}
+
+function recordPanelShown(on) {
+  clearInterval(rec.timer);
+  rec.timer = null;
+  if (!on) return;
+  refreshRecord();
+  // Fast enough that a level meter is useful, slow enough to be free.
+  rec.timer = setInterval(refreshRecord, 100);
+}
+
+async function refreshRecord() {
+  const st = await recordState();
+  if (!st) return;
+  rec.armed = !!st.armed;
+  rec.recording = !!st.recording;
+
+  const devices = st.devices || null;
+  if (devices) {
+    const sel = $('recDevice');
+    const current = sel.value;
+    if (sel.options.length !== devices.length
+        || [...sel.options].some((o, i) => o.value !== devices[i])) {
+      sel.innerHTML = '';
+      for (const d of devices) {
+        const o = document.createElement('option');
+        o.value = d; o.textContent = d;
+        sel.appendChild(o);
+      }
+      if (devices.includes(current)) sel.value = current;
+    }
+  }
+  drawRecordPanel(st);
+}
+
+function drawRecordPanel(st) {
+  $('recDevice').disabled = rec.armed;
+  $('recArm').textContent = rec.armed ? 'Disarm' : 'Arm';
+  $('recArm').disabled = rec.recording;
+  $('recStart').classList.toggle('hidden', !rec.armed || rec.recording);
+  $('recStop').classList.toggle('hidden', !rec.recording);
+  $('recNameRow').classList.toggle('hidden', !rec.armed);
+
+  // A peak meter in dB, because a linear one spends most of its travel in the
+  // top 6 dB and tells you nothing about where you actually are.
+  const height = (v) => `${Math.max(0, Math.min(100, (20 * Math.log10(Math.max(v || 0, 1e-4)) + 60) / 60 * 100))}%`;
+  $('recBarL').style.setProperty('--rec', height(st.left));
+  $('recBarR').style.setProperty('--rec', height(st.right));
+  const hot = Math.max(st.left || 0, st.right || 0) >= 0.99;
+  $('recMeter').classList.toggle('hot', hot);
+
+  const out = $('recReadout');
+  if (!rec.armed) { out.textContent = 'not armed'; out.classList.remove('warn'); return; }
+  const secs = st.seconds || 0;
+  const left = Math.max(0, (st.maxSeconds || 0) - secs);
+  const bits = [
+    rec.recording ? `● ${fmtTime(secs)}` : 'armed',
+    `${st.channels || 0} ch · ${Math.round((st.sampleRate || 0) / 100) / 10} kHz`,
+  ];
+  if (rec.recording) bits.push(`${fmtTime(left)} left`);
+  // Never smoothed over: a take with a hole in it cannot be done again, and
+  // finding out afterwards is the worst way to find out.
+  if (st.overruns > 0) bits.push(`${st.overruns} dropped`);
+  out.textContent = bits.join('  ·  ');
+  out.classList.toggle('warn', st.overruns > 0 || hot);
+}
+
+$('recArm').onclick = async () => {
+  if (rec.armed) { await recordPost({ action: 'disarm' }); await refreshRecord(); return; }
+  const device = $('recDevice').value || undefined;
+  const st = await recordPost({ action: 'arm', device });
+  if (st) await refreshRecord();
+};
+
+$('recStart').onclick = async () => {
+  if (await recordPost({ action: 'start' })) await refreshRecord();
+};
+
+$('recStop').onclick = async () => {
+  const name = $('recName').value.trim();
+  const done = await recordPost({ action: 'stop', ...(name ? { name } : {}) });
+  await refreshRecord();
+  if (!done) return;
+  $('recName').value = '';
+  const where = done.outside
+    ? 'outside the library — choose a library folder to keep takes with everything else'
+    : done.rel;
+  toast(`Recorded ${fmtTime(done.seconds)} → ${where}`
+        + (done.overruns > 0 ? ` (${done.overruns} blocks dropped)` : ''));
+  // The take is a real file now, so the browser has to be told it exists.
+  // A full scan, because that is the only thing that reads a folder that was
+  // not there before — `Recordings` will not exist until the first take.
+  if (!done.outside) $('rescanBtn')?.click();
 };
 
 // -------------------------------------------------------------- presets

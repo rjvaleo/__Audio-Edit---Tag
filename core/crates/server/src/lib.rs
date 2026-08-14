@@ -11,6 +11,7 @@ pub mod json;
 pub mod routes;
 pub mod persist;
 pub mod rack;
+pub mod record;
 pub mod rendercache;
 pub mod safety;
 pub mod serve;

@@ -35,6 +35,7 @@
     <button class="rail-btn" data-panel="search" title="Search">⌕</button>
     <button class="rail-btn" data-panel="scan" title="Scan">◴</button>
     <button class="rail-btn" data-panel="import" title="Library folder">⌂</button>
+    <button class="rail-btn" data-panel="record" title="Record">●</button>
   </nav>
 
   <!-- left panel: the whole library, playable -->
@@ -62,6 +63,31 @@
       actually sounds — length, loudness, brightness, noisiness, how sharply it
       starts. It does not read the tags.</div>
       <div class="results" id="searchResults"></div>
+    </div>
+
+    <!-- The one place audio enters this program from outside. -->
+    <div class="panel-body hidden" id="paneRecord">
+      <div class="rec-device">
+        <label class="k">Input</label>
+        <select class="mini" id="recDevice"></select>
+      </div>
+      <div class="rec-meter" id="recMeter" aria-label="Input level">
+        <i class="rec-bar" id="recBarL"></i><i class="rec-bar" id="recBarR"></i>
+      </div>
+      <div class="rec-transport">
+        <button class="primary" id="recArm">Arm</button>
+        <button class="rec-go hidden" id="recStart" title="Start recording">●</button>
+        <button class="ghost hidden" id="recStop">Stop &amp; keep</button>
+      </div>
+      <div class="rec-readout mono" id="recReadout">not armed</div>
+      <div class="rec-name hidden" id="recNameRow">
+        <label class="k">Name</label>
+        <input class="filter-box" id="recName" placeholder="Take&hellip;">
+      </div>
+      <p class="note" id="recNote">Arming opens the input and shows its level
+      without keeping anything, so you can set a gain first. A take is written
+      as a new WAV in <strong>Recordings</strong> inside the library — it never
+      overwrites and never touches anything already there.</p>
     </div>
 
     <div class="panel-body hidden" id="paneScan">
