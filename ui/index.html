@@ -345,7 +345,10 @@
               <button class="vis-tab suite" id="visSuite" title="V1 the object · V2 the moment">V1</button>
               <button class="vis-open" id="visOpen" title="Open a floating panel with every control">&#9974;</button>
             </div>
-            <canvas id="grainCanvas"></canvas>
+            <!-- The cloud is a p5 WEBGL sketch in instance mode, so it owns
+                 its own canvas and its own loop rather than sharing the app's.
+                 p5 is served from the binary; nothing here reaches the net. -->
+            <div id="grainGl"><p class="grain-empty hidden" id="grainEmpty">Engage a grain control to see the cloud</p></div>
             <iframe id="grainFrame" class="hidden" title="3D grain views"></iframe>
             <div class="vis-legend">
               <span><i class="sw hot"></i>bright / sharp</span>
@@ -499,6 +502,7 @@
 
 <div class="toast hidden" id="toast"></div>
 
+  <script src="/p5.min.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
