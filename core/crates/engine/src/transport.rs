@@ -443,6 +443,17 @@ impl Shared {
 pub struct Core {
     renderer: Stretcher,
     rack: Option<fx::Rack>,
+    /// The rack being faded out of, and how many frames of the fade are left.
+    ///
+    /// Swapping outright takes every delay line, filter and reverb tail in the
+    /// chain with it, and starts the new chain from silence. That is heard as
+    /// the tail stopping dead and a step where the two meet — a click, and the
+    /// reason changing a module never felt like changing a module. The old
+    /// chain keeps running for a moment instead, and the two are mixed.
+    leaving: Option<(fx::Rack, usize)>,
+    /// The block as it arrived, so the outgoing rack sees the same input the
+    /// incoming one does. Sized once, like everything else here.
+    rack_dry: Vec<f32>,
     /// Mono sum of recent output, for the spectrum. Fixed size, filled as a
     /// ring so a block smaller than the window still produces a full frame.
     fft_in: Vec<f32>,
@@ -514,6 +525,15 @@ const MAX_SMOOTHED: usize = 96;
 /// as before, so this costs nothing when nobody is touching anything.
 const CONTROL_CHUNK: usize = 8;
 
+/// How long a rack swap takes to cross over.
+///
+/// Twenty milliseconds at the usual rates — long enough to spread the step
+/// below hearing, short enough that changing a module still feels immediate.
+/// In frames rather than seconds for the same reason the pitch glide is: the
+/// figure only has to be about right, and threading a sample rate to it would
+/// buy nothing.
+const RACK_FADE_FRAMES: usize = 960;
+
 /// Controls that must **not** be interpolated.
 ///
 /// A ramp through the values between two settings is meaningless for these: a
@@ -577,21 +597,67 @@ impl Core {
     /// pieces while something is, so a control arrives as a slope rather than
     /// as an edge. See [`CONTROL_CHUNK`].
     fn process_rack(&mut self, out: &mut [f32], channels: usize) {
+        if self.rack.is_none() && self.leaving.is_none() {
+            return;
+        }
+        let ch = channels.max(1);
+        let sr = self.params.sample_rate;
+
+        // The rack being left behind has to see the block as it arrived, and
+        // the one arriving works in place — so keep a copy first.
+        let fading = self.leaving.is_some() && self.rack_dry.len() >= out.len();
+        if fading {
+            self.rack_dry[..out.len()].copy_from_slice(out);
+        }
+
+        self.process_current(out, ch, sr);
+
+        if !fading {
+            return;
+        }
+        let frames = out.len() / ch;
+        let mut dry = std::mem::take(&mut self.rack_dry);
+        let mut done = false;
+        if let Some((old, left)) = self.leaving.as_mut() {
+            old.process(&mut dry[..out.len()], ch, sr);
+            // Equal gain, not equal power. Two racks fed the same block are
+            // two versions of one signal and largely in phase with each other,
+            // so a root-two lift through the middle would be a bump rather
+            // than a correction. This is the opposite call from switching
+            // stretch engines, where the two agree about content and not at
+            // all about phase.
+            for f in 0..frames {
+                let t = ((RACK_FADE_FRAMES - *left + f) as f32 / RACK_FADE_FRAMES as f32)
+                    .clamp(0.0, 1.0);
+                for c in 0..ch {
+                    let i = f * ch + c;
+                    out[i] = out[i] * t + dry[i] * (1.0 - t);
+                }
+            }
+            *left = left.saturating_sub(frames);
+            done = *left == 0;
+        }
+        self.rack_dry = dry;
+        if done {
+            self.leaving = None;
+        }
+    }
+
+    /// The rack that is actually in the chain, smoothing as it goes.
+    fn process_current(&mut self, out: &mut [f32], ch: usize, sr: u32) {
         if self.rack.is_none() {
             return;
         }
-        let sr = self.params.sample_rate;
         let moving = self
             .smoothing
             .iter()
             .any(|s| (s.current - s.target).abs() > 1e-7);
         if !moving {
             if let Some(rack) = self.rack.as_mut() {
-                rack.process(out, channels, sr);
+                rack.process(out, ch, sr);
             }
             return;
         }
-        let ch = channels.max(1);
         for chunk in out.chunks_mut(CONTROL_CHUNK * ch) {
             self.settle(chunk.len() / ch);
             if let Some(rack) = self.rack.as_mut() {
@@ -642,6 +708,8 @@ impl Core {
         Core {
             renderer: Stretcher::new(max_block, channels.max(1), params.sample_rate),
             rack: None,
+            leaving: None,
+            rack_dry: vec![0.0; max_block.max(1) * channels.max(1)],
             fft_in: vec![0.0; FFT_SIZE],
             fft_at: 0,
             fft_re: vec![0.0; FFT_SIZE],
@@ -687,6 +755,14 @@ impl Core {
 
         if let Ok(mut g) = shared.pending_rack.try_lock() {
             if let Some(next) = g.take() {
+                // Keep the old chain alive for the crossfade. It shares the
+                // meter block with the new one, so it is silenced first —
+                // two writers on the same needles is a flicker between two
+                // different chains.
+                if let Some(mut old) = self.rack.take() {
+                    old.mute_meters();
+                    self.leaving = Some((old, RACK_FADE_FRAMES));
+                }
                 self.rack = next;
             }
         }

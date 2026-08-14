@@ -462,3 +462,76 @@ fn a_smoothed_control_does_arrive() {
         "asked for {want:.3} and after 10 blocks it is at {got:.3}"
     );
 }
+
+/// Swapping a module must not step.
+///
+/// A rack handed over outright takes every delay line, filter and reverb tail
+/// in the chain with it and starts the new chain from silence. The two blocks
+/// either side of the swap have nothing to do with each other, and a
+/// discontinuity in a waveform is a click. The old chain now keeps running for
+/// twenty milliseconds and the two are mixed.
+///
+/// Measured against the same block with nothing swapped, which is the only
+/// baseline that means anything — the material has corners of its own.
+/// Neutered, by swapping outright instead of fading, the corner goes from
+/// 0.00020 to 0.35 — seventeen hundred times, and plainly audible.
+#[test]
+fn swapping_a_module_does_not_click() {
+    let src = source(48_000, 1);
+    let sp = params(48_000);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, src.channels, sp, Arc::clone(&src));
+    shared.play();
+
+    // Start with a rack in the chain, and let it settle.
+    let mut first = fx::Rack::new();
+    first.push(Box::new(fx::Gain { db: 0.0 }));
+    shared.set_rack(Some(first));
+    pump(&mut core, &shared, 1, 512, 4);
+
+    let steady = pump(&mut core, &shared, 1, 512, 1);
+    let quiet = worst_corner(&steady);
+
+    // Swap it for a chain that sounds nothing like it.
+    let mut second = fx::Rack::new();
+    second.push(Box::new(fx::Gain { db: -18.0 }));
+    shared.set_rack(Some(second));
+
+    let mut joined = steady[steady.len() - 2..].to_vec();
+    joined.extend(pump(&mut core, &shared, 1, 512, 1));
+    let jolt = worst_corner(&joined);
+
+    assert!(
+        jolt < quiet * 6.0,
+        "the swap put a corner of {jolt:.5} in against a steady {quiet:.5}"
+    );
+}
+
+/// And the fade has to finish, or the old chain plays forever underneath.
+#[test]
+fn a_swapped_out_module_stops_being_heard() {
+    let src = source(48_000, 1);
+    let sp = params(48_000);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, src.channels, sp, Arc::clone(&src));
+    shared.play();
+
+    let mut loud = fx::Rack::new();
+    loud.push(Box::new(fx::Gain { db: 0.0 }));
+    shared.set_rack(Some(loud));
+    pump(&mut core, &shared, 1, 512, 4);
+    let before = pump(&mut core, &shared, 1, 512, 1);
+    let before_peak = before.iter().fold(0f32, |m, s| m.max(s.abs()));
+
+    let mut quiet = fx::Rack::new();
+    quiet.push(Box::new(fx::Gain { db: -40.0 }));
+    shared.set_rack(Some(quiet));
+
+    // Well past the twenty milliseconds the crossover takes.
+    pump(&mut core, &shared, 1, 512, 4);
+    let after = pump(&mut core, &shared, 1, 512, 2);
+    let after_peak = after.iter().fold(0f32, |m, s| m.max(s.abs()));
+
+    let ratio = after_peak / before_peak.max(1e-9);
+    assert!(ratio < 0.02, "the old chain is still audible: {ratio:.4} of it");
+}
