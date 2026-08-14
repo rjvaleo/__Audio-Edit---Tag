@@ -89,6 +89,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/automation") => api_automation_get(app, req),
         ("POST", "/api/automation") => api_automation_set(app, req),
         ("GET" | "POST", "/api/automation/record") => api_automation_record(app, req),
+        ("GET" | "POST", "/api/audio/buffer") => api_audio_buffer(app, req),
         ("GET", "/api/presets") => api_presets_list(app),
         ("POST", "/api/presets") => api_preset_save(app, req),
         ("POST", "/api/presets/apply") => api_preset_apply(app, req),
@@ -879,6 +880,50 @@ fn record_move(
         app.automation.hold(target, unit);
     }
     let _ = app.automation.save(&app.automation_path());
+}
+
+/// Read or set how many frames the device is asked for per callback.
+///
+/// The one cure for a callback that cannot finish in time. Sixteen grain layers
+/// under a hybrid stretch is a great deal of arithmetic for one block, and a
+/// device default of 512 frames at 48 kHz is about ten milliseconds to do it
+/// in; doubling the block doubles the time and doubles the latency, which is
+/// the trade and why it is a control rather than a constant.
+///
+/// Setting it closes the device and opens it again, because a stream's block
+/// length is fixed when it is built. Whatever was loaded is reloaded.
+fn api_audio_buffer(app: &Arc<App>, req: &Request) -> Response {
+    if req.method == "POST" {
+        let v = json::parse(&String::from_utf8_lossy(&req.body)).unwrap_or(Value::Null);
+        let frames = match v.get("frames") {
+            // Null, absent, or zero all mean "whatever the device offers".
+            None | Some(Value::Null) => None,
+            Some(Value::Num(n)) if n.is_finite() && *n >= 32.0 => Some(*n as u32),
+            Some(Value::Num(n)) if *n == 0.0 => None,
+            _ => return Response::error(400, "frames must be a block size, or null for the device's own"),
+        };
+        if let Err(e) = crate::live::restart(app, frames) {
+            return Response::error(500, &e);
+        }
+    }
+    let asked = *app.buffer_frames.read().unwrap();
+    let mut out = Value::obj();
+    out = match asked {
+        Some(n) => out.set("frames", n as f64),
+        None => out.set("frames", Value::Null),
+    };
+    // What the device is actually running at, which is not always what was
+    // asked: a backend may refuse a size and pick its own, and a control that
+    // reported the request rather than the result would be lying.
+    let running = crate::live::with(app, |h| (h.buffer_frames, h.sample_rate)).ok();
+    if let Some((got, rate)) = running {
+        out = out.set("sampleRate", rate as f64);
+        out = match got {
+            Some(n) => out.set("running", n as f64),
+            None => out.set("running", Value::Null),
+        };
+    }
+    Response::json(out.to_string())
 }
 
 /// Arm or disarm recording, and say what it is set to.

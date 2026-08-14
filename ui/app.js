@@ -6497,6 +6497,10 @@ const cloudFeed = {
 /// thing here that persists between frames.
 const cloudCam = { yaw: 0.5, pitch: -0.22, drag: null };
 
+/// The p5 instance, once it exists. Built on first draw rather than at load,
+/// because the panel has no size until the editor is open.
+let cloudSketch = null;
+
 /// How fast the cloud turns, in turns per second of playback.
 const CLOUD_SPIN = 0.035;
 
@@ -6918,6 +6922,40 @@ const editing = () => state.mode === 'edit';
 /// right carries a check mark when the setting is on.
 const tick = (is) => () => (is() ? '✓' : '');
 
+/// What the device can be asked for, in frames per callback.
+///
+/// `null` is whatever the device offers, which is where this has always been.
+/// The rest double: each step is twice the time to render a block and twice
+/// the delay before you hear a control move.
+const BUFFER_SIZES = [null, 128, 256, 512, 1024, 2048, 4096];
+
+/// Ask the device for a new block size.
+///
+/// This closes the device and opens it again — a stream's block length is fixed
+/// when it is built — so it is a visible event rather than a quiet one, and the
+/// document that was loaded is loaded again on the other side.
+async function setBufferFrames(frames) {
+  try {
+    const r = await postJSON('/api/audio/buffer', { frames });
+    state.bufferFrames = r.frames ?? null;
+    // What the device actually gave us, which a backend is free to refuse.
+    const got = r.running ?? null;
+    toast(got == null
+      ? 'Audio buffer: the device\u2019s own size'
+      : `Audio buffer: ${got} frames${r.sampleRate ? ` at ${r.sampleRate} Hz` : ''}`);
+  } catch (e) {
+    toast('Could not change the buffer size: ' + e.message);
+  }
+}
+
+async function loadBufferFrames() {
+  try {
+    const r = await api('/api/audio/buffer');
+    state.bufferFrames = r.frames ?? null;
+  } catch { /* the menu simply shows nothing ticked */ }
+}
+loadBufferFrames();
+
 const MENUS = [
   {
     title: 'File',
@@ -6964,6 +7002,18 @@ const MENUS = [
       { label: 'Loop', on: hasFile, run: click('loopBtn') },
       { sep: true },
       { label: 'Capture what is playing', on: () => editing() && hasFile(), run: click('recBtn') },
+      { sep: true },
+      // The cure for a callback that cannot finish in time. Sixteen grain
+      // layers under a hybrid stretch is a great deal of arithmetic for one
+      // block, and a device default of 512 frames at 48 kHz is about ten
+      // milliseconds to do it in. Doubling the block doubles the time and
+      // doubles the latency, which is the trade — hence a choice rather than a
+      // number somebody picked once.
+      ...BUFFER_SIZES.map((n) => ({
+        label: n == null ? 'Buffer: device default' : `Buffer: ${n} frames`,
+        key: tick(() => (state.bufferFrames ?? null) === n),
+        run: () => setBufferFrames(n),
+      })),
       { sep: true },
       { label: 'Reset time, pitch and grains', on: editing, run: click('stretchReset') },
     ],

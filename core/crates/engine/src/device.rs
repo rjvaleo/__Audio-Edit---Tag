@@ -27,7 +27,20 @@ impl Engine {
     /// loaded, which keeps the grain scheduler working in one rate rather than
     /// two — the alternative is a resampler in the callback with fractional
     /// state to carry, for no gain.
-    pub fn start(params: StreamParams, source: Arc<Source>) -> Result<Engine, String> {
+    /// `buffer_frames` is what to ask the device for, or `None` to take
+    /// whatever it offers.
+    ///
+    /// A bigger block is more time to render one before the device wants it,
+    /// which is the whole of the fix for a callback that cannot keep up — at
+    /// the cost of that much more latency between moving a control and hearing
+    /// it. Sixteen grain layers and a hybrid stretch is a great deal of work
+    /// for one block, and the default is often 512 frames, so this is a real
+    /// control rather than a preference.
+    pub fn start(
+        params: StreamParams,
+        source: Arc<Source>,
+        buffer_frames: Option<u32>,
+    ) -> Result<Engine, String> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -39,7 +52,13 @@ impl Engine {
         let sample_rate = config.sample_rate();
         let channels = config.channels() as usize;
         let format = config.sample_format();
-        let cfg: cpal::StreamConfig = config.into();
+        let mut cfg: cpal::StreamConfig = config.into();
+        if let Some(n) = buffer_frames {
+            // Clamped to what `Core` was built for. Asking for more than its
+            // buffers hold would have the callback growing them, which is an
+            // allocation on the audio thread — the one thing it may not do.
+            cfg.buffer_size = cpal::BufferSize::Fixed(n.clamp(32, MAX_BLOCK as u32));
+        }
 
         let shared = Arc::new(Shared::new(params, source.clone()));
         let core_shared = Arc::clone(&shared);
@@ -48,7 +67,7 @@ impl Engine {
 
         // Generous: the device may ask for more than its stated buffer size,
         // and growing inside the callback would allocate.
-        let mut core = Core::new(8192, channels, params, source);
+        let mut core = Core::new(MAX_BLOCK, channels, params, source);
 
         let err = |e| eprintln!("audio stream error: {e}");
 
@@ -105,30 +124,65 @@ pub struct Handle {
     pub shared: Arc<Shared>,
     pub sample_rate: u32,
     pub channels: usize,
+    /// What was actually asked of the device, so the interface can show what is
+    /// running rather than what was last requested.
+    pub buffer_frames: Option<u32>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    thread: std::thread::Thread,
 }
+
+impl Handle {
+    /// Close the device and let the thread holding it go.
+    ///
+    /// The thread parks forever holding the stream, because the audio runs on
+    /// the device's own thread and something has to keep the stream alive. That
+    /// meant there was no way to reopen it, which is what changing the buffer
+    /// size requires — a stream's block length is fixed when it is built.
+    pub fn stop(&self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Release);
+        self.thread.unpark();
+    }
+}
+
+/// The largest block the callback is built to fill.
+///
+/// Every engine sizes its buffers from this once and never again, so a device
+/// that asked for more would be filled short. Mirrored by `live::MAX_BLOCK`.
+pub const MAX_BLOCK: usize = 8192;
 
 /// Start the engine on its own thread and wait to hear whether it opened.
 ///
 /// Failure here is ordinary — a machine with no output device, or one whose
 /// default device does not do f32 — so it is reported, not panicked on.
-pub fn spawn(params: StreamParams, source: Arc<Source>) -> Result<Handle, String> {
+pub fn spawn(
+    params: StreamParams,
+    source: Arc<Source>,
+    buffer_frames: Option<u32>,
+) -> Result<Handle, String> {
     let (tx, rx) = std::sync::mpsc::channel();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let thread_stop = Arc::clone(&stop);
 
     std::thread::Builder::new()
         .name("audio-device".into())
-        .spawn(move || match Engine::start(params, source) {
+        .spawn(move || match Engine::start(params, source, buffer_frames) {
             Ok(engine) => {
                 let handle = Handle {
                     shared: Arc::clone(engine.shared()),
                     sample_rate: engine.sample_rate,
                     channels: engine.channels,
+                    buffer_frames,
+                    stop: Arc::clone(&thread_stop),
+                    thread: std::thread::current(),
                 };
                 if tx.send(Ok(handle)).is_err() {
                     return; // nobody waiting; let the stream close
                 }
                 // Hold the stream open. The audio runs on the device's own
-                // thread; this one exists only to keep `engine` alive.
-                loop {
+                // thread; this one exists only to keep `engine` alive — until
+                // it is asked to let go, at which point `engine` drops here and
+                // the device is released.
+                while !thread_stop.load(std::sync::atomic::Ordering::Acquire) {
                     std::thread::park();
                 }
             }

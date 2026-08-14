@@ -42,7 +42,7 @@ fn main() {
         cloud_mix: 0.5,
     };
 
-    let engine = match Engine::start(params, source) {
+    let engine = match Engine::start(params, source, None) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("could not start: {e}");
