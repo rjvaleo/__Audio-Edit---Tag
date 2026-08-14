@@ -13,6 +13,7 @@
 //!   because it is the only part a test cannot reach.
 
 pub mod device;
+pub mod input;
 pub mod render;
 pub mod stretcher;
 pub mod transport;

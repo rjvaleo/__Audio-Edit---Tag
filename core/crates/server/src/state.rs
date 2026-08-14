@@ -388,6 +388,12 @@ pub struct App {
     /// Automation lanes, one set per file. Unlike the racks these outlive the
     /// process: a curve is work, in the way a slider position is not.
     pub automation: crate::automation::AutomationStore,
+    /// The open input device, when one is armed.
+    ///
+    /// Held here rather than beside the output engine because the two are
+    /// independent: you can record with nothing playing, and play with nothing
+    /// armed. Dropping this closes the stream and releases the microphone.
+    pub recorder: Mutex<Option<engine::input::Recorder>>,
     /// Named settings, detached from any file.
     pub presets: RwLock<std::collections::BTreeMap<String, crate::persist::Preset>>,
     /// Sessions read from disk at startup, waiting for their file to be opened.
@@ -456,6 +462,7 @@ impl App {
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             automation,
+            recorder: Mutex::new(None),
             presets: RwLock::new(presets),
             saved: RwLock::new(saved),
         };

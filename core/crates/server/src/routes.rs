@@ -109,6 +109,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
         ("GET", "/api/engine/grains") => api_engine_grains(app),
         ("POST", "/api/capture") => api_capture(app, req),
+        ("GET", "/api/record") => api_record_state(app),
+        ("POST", "/api/record") => api_record(app, req),
         ("GET" | "HEAD", "/audio") => api_audio(app, req),
         ("GET", "/api/scan") => api_scan_status(app),
         ("POST", "/api/scan") => api_scan_start(app),
@@ -2335,6 +2337,160 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
         Ok(s) => Response::json(s),
         Err(e) => Response::error(503, &e),
     }
+}
+
+/// What the input is doing: the devices, what is armed, and the level.
+///
+/// Polled while the record panel is open, so it has to be cheap. Listing the
+/// devices is the expensive part and is only done when nothing is armed — once
+/// a device is open, the list cannot change without the stream noticing.
+fn api_record_state(app: &Arc<App>) -> Response {
+    let held = app.recorder.lock().ok();
+    let armed = held.as_ref().and_then(|g| g.as_ref());
+    let mut out = Value::obj().set("armed", armed.is_some());
+
+    match armed {
+        Some(r) => {
+            let l = r.input.level();
+            out = out
+                .set("device", r.device.clone())
+                .set("recording", r.input.is_recording())
+                .set("channels", r.input.channels() as f64)
+                .set("sampleRate", r.input.sample_rate())
+                .set("frames", l.frames as f64)
+                .set("seconds", l.frames as f64 / r.input.sample_rate().max(1) as f64)
+                .set("maxSeconds", engine::input::MAX_SECONDS as f64)
+                .set("left", l.left as f64)
+                .set("right", l.right as f64)
+                // Above zero means the take has a hole in it. Reported rather
+                // than smoothed over: a recording that quietly lost a block is
+                // found out later, when the take cannot be done again.
+                .set("overruns", l.overruns as f64);
+        }
+        None => {
+            out = out.set(
+                "devices",
+                Value::Arr(
+                    engine::input::devices()
+                        .into_iter()
+                        .map(Value::Str)
+                        .collect(),
+                ),
+            );
+        }
+    }
+    Response::json(out.to_string())
+}
+
+/// Arm, start, stop or disarm the input.
+///
+/// Arming opens the device and starts metering but keeps nothing — that is what
+/// lets you set a level before committing. Starting reserves nothing new, so
+/// the first sample of a take is the first sample the device gave us after the
+/// button, not after an allocation.
+fn api_record(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let action = v.get("action").and_then(Value::as_str).unwrap_or("");
+    match action {
+        "arm" => {
+            let want = v.get("device").and_then(Value::as_str);
+            let r = match engine::input::open(want) {
+                Ok(r) => r,
+                Err(e) => return Response::error(503, &e),
+            };
+            r.input.reserve(engine::input::MAX_SECONDS);
+            if let Ok(mut g) = app.recorder.lock() {
+                *g = Some(r);
+            }
+            api_record_state(app)
+        }
+        "disarm" => {
+            // Dropping the recorder closes the stream, which is what releases
+            // the device and puts out the microphone indicator.
+            if let Ok(mut g) = app.recorder.lock() {
+                *g = None;
+            }
+            api_record_state(app)
+        }
+        "start" => {
+            let ok = app
+                .recorder
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(|r| r.input.start()))
+                .is_some();
+            if !ok {
+                return Response::error(409, "nothing is armed");
+            }
+            api_record_state(app)
+        }
+        "stop" => api_record_stop(app, &v),
+        other => Response::error(400, &format!("unknown record action {other:?}")),
+    }
+}
+
+/// End the take and write it.
+///
+/// The samples are taken out of the recorder first and the file written after,
+/// so the device is free again as soon as possible and a slow disk cannot cost
+/// the next take.
+fn api_record_stop(app: &Arc<App>, v: &Value) -> Response {
+    let taken = {
+        let Ok(g) = app.recorder.lock() else {
+            return Response::error(500, "the recorder is wedged");
+        };
+        let Some(r) = g.as_ref() else {
+            return Response::error(409, "nothing is armed");
+        };
+        let level = r.input.level();
+        (
+            r.input.take(),
+            r.input.channels(),
+            r.input.sample_rate(),
+            level.overruns,
+        )
+    };
+    let (samples, channels, sample_rate, overruns) = taken;
+    if samples.is_empty() {
+        return Response::error(400, "the take is empty — nothing was recorded");
+    }
+
+    let name = v
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(crate::record::default_name);
+    let lib = app.library_path();
+    let (path, outside) = crate::record::target(lib.as_deref(), &app.data_dir, &name);
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    let frames = match crate::capture::write_wav(&path, &samples, channels, sample_rate) {
+        Ok(f) => f,
+        Err(e) => return Response::error(500, &e.to_string()),
+    };
+
+    Response::json(
+        Value::obj()
+            .set("ok", true)
+            .set("path", path.to_string_lossy().to_string())
+            .set(
+                "rel",
+                crate::record::relative(lib.as_deref(), &path).unwrap_or_default(),
+            )
+            .set("outside", outside)
+            .set("frames", frames)
+            .set("seconds", frames as f64 / sample_rate.max(1) as f64)
+            .set("channels", channels as f64)
+            .set("sampleRate", sample_rate)
+            .set("overruns", overruns as f64)
+            .to_string(),
+    )
 }
 
 /// Arm or finish a capture.
