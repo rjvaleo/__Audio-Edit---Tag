@@ -3689,6 +3689,8 @@ function renderGrainParams() {
   };
   const preview = throttled(() => send({ live: true }), 90);
   const commit = () => send({ live: false });
+  // Reachable from the cloud pad, which moves these same values by dragging.
+  state.grainSend = { preview, commit };
 
   // Grouped by what they do, so each panel stays short enough to read at once.
   const groups = [
@@ -3834,6 +3836,11 @@ function renderGrainParams() {
 
   // This rebuild replaced whatever the reset was sitting on.
   placeExtendedReset();
+  // The pad draws the source behind the cloud, and that envelope is fetched
+  // once per file by the same call the automation lanes use.
+  loadLaneWave();
+  wireCloudPad();
+  drawCloudPad();
 }
 
 let grainBuiltFor = null;
@@ -3843,6 +3850,7 @@ function syncGrainSliders() {
   if (!g || !state.grainRows) return;
   state.grainDraft = { ...g };
   for (const [k, el] of Object.entries(state.grainRows)) el.sync(g[k]);
+  drawCloudPad();
 }
 
 /// Push values into the sliders — used by Reset and Undo, which change the
@@ -6236,7 +6244,195 @@ function visSetup(fade) {
   return { ctx, w, h };
 }
 
+
+// --------------------------------------------------------------- cloud pad
+
+/// The grain cloud, drawn where it actually is.
+///
+/// The swarm above it is a picture of the *sound* — grains orbiting the
+/// playhead, flying in and receding. It reads well and it is honest about
+/// level, pitch and brightness, but the positions in it are invented: nothing
+/// in that orbit tells you which part of the file a grain came from.
+///
+/// This is the other picture, and the one the controls are actually about.
+/// Across is the source, start to end, with its waveform behind. Up and down
+/// is pitch offset. Every dot is a real grain from the same enumeration the
+/// renderer and the exporter use, sitting at the frame it reads from.
+///
+/// It is also the control. The box is the read head: where it sits, how far
+/// grains are thrown from it, and how far their pitch scatters. Drag the box
+/// to move the head, drag outside it to spread it. Three sliders under one
+/// hand, which is what those three numbers actually are — a place and a size.
+const CLOUD_PITCH_FLOOR = 4;
+
+function cloudPadGeometry(canvas) {
+  const st = state.edit?.stretch;
+  if (!st) return null;
+  const g = state.grainDraft || st.grain;
+  if (!g) return null;
+  const base = state.edit?.baseFrames || state.view?.frames || 0;
+  if (!base) return null;
+
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (!w || !h) return null;
+
+  const scan = g.scan ?? 1;
+  const pos = g.position ?? 0;
+  const ratio = st.ratio || 1;
+  // Where the head is at this instant: its home, plus wherever it has been
+  // moved to, plus however far the sweep has carried it. The same three terms
+  // `event_at` adds up, so the box sits where the grains are coming from.
+  const home = scan < 0 ? base : 0;
+  const sweep = (sourceFrameNow() / ratio) * scan;
+  const head = home + pos * base + sweep;
+
+  const sr = state.grains?.sampleRate || state.view?.sampleRate || 48000;
+  const sprayFrames = ((g.positionJitterMs || 0) / 1000) * sr;
+  // A quarter more than the scatter actually reaches, so the box sits *inside*
+  // the plot with air around it. Scaled exactly to the scatter, the box filled
+  // the full height whenever there was no drift and read as a stripe rather
+  // than as something you could take hold of.
+  const semis = Math.max(CLOUD_PITCH_FLOOR,
+                         ((g.pitchJitterSemis || 0) + (g.pitchDriftSemis || 0)) * 1.25);
+
+  return {
+    w, h, base, sr, g, st, head, home, sweep, semis,
+    x: (frame) => (frame / base) * w,
+    y: (offset) => h / 2 - (offset / semis) * (h / 2 - 8),
+    halfW: (sprayFrames / base) * w,
+    halfH: ((g.pitchJitterSemis || 0) / semis) * (h / 2 - 8),
+  };
+}
+
+function drawCloudPad() {
+  const canvas = $('cloudPad');
+  if (!canvas || canvas.offsetParent === null) return;
+  const geo = cloudPadGeometry(canvas);
+  const dpr = window.devicePixelRatio || 1;
+  if (!geo) return;
+  const { w, h } = geo;
+  if (canvas.width !== Math.round(w * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const c = canvas.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+
+  // The source underneath, so a position means something. Same envelope the
+  // automation lanes use — one fetch, already in hand.
+  drawLaneWave(c, w, h, geo.base);
+
+  // The pitch centre line.
+  c.strokeStyle = 'rgba(255,255,255,.07)';
+  c.lineWidth = 1;
+  c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
+
+  // The head and its spread.
+  const bx = geo.x(geo.head);
+  c.fillStyle = 'rgba(82,168,255,.09)';
+  c.fillRect(bx - geo.halfW, h / 2 - geo.halfH, geo.halfW * 2, geo.halfH * 2);
+  c.strokeStyle = 'rgba(140,200,255,.7)';
+  c.strokeRect(bx - geo.halfW, h / 2 - geo.halfH, geo.halfW * 2, geo.halfH * 2);
+  c.strokeStyle = 'rgba(82,168,255,.9)';
+  c.beginPath(); c.moveTo(bx, 0); c.lineTo(bx, h); c.stroke();
+
+  // The grains themselves, from the renderer's own enumeration.
+  const g = state.grains;
+  const readout = $('cloudPadRead');
+  if (!g || !g.grains?.length) {
+    if (readout) readout.textContent = 'no cloud — raise Density or Layers';
+    return;
+  }
+  const baseSemis = geo.st.semitones ?? 0;
+  const now = playbackTime();
+  const playFrame = now * geo.sr;
+  for (const [outFrame, srcFrame, size, pitch, , bright] of g.grains) {
+    const dt = (outFrame - playFrame) / geo.sr;
+    // Everything is drawn, but what is sounding now is drawn brightest — the
+    // cloud is a shape you are moving through, not only a shape.
+    const near = Math.max(0, 1 - Math.abs(dt) / 2.5);
+    const alpha = 0.05 + near * near * 0.6;
+    const r = 1 + Math.min(4, (size / geo.sr) * 26);
+    c.fillStyle = grainColour(pitch - baseSemis, bright, alpha);
+    c.beginPath();
+    c.arc(geo.x(srcFrame), geo.y(pitch - baseSemis), r, 0, Math.PI * 2);
+    c.fill();
+  }
+  if (readout) {
+    const secs = (geo.head / geo.sr).toFixed(2);
+    readout.textContent = `${g.total.toLocaleString()} grains · head ${secs}s`;
+  }
+}
+
+/// Move the head, or spread it — whichever the gesture is.
+///
+/// Inside the box moves it; outside spreads it. No corner handles and no modes:
+/// a handle a few pixels wide is a thing to miss, and the distinction between
+/// "grab the thing" and "grab the air around it" is one nobody has to be told.
+function wireCloudPad() {
+  const canvas = $('cloudPad');
+  if (!canvas || canvas._wired) return;
+  canvas._wired = true;
+
+  let mode = null;
+  const at = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return { px: e.clientX - r.left, py: e.clientY - r.top };
+  };
+
+  const apply = (e) => {
+    const geo = cloudPadGeometry(canvas);
+    if (!geo) return;
+    const { px, py } = at(e);
+    const d = state.grainDraft;
+    if (!d) return;
+
+    if (mode === 'move') {
+      // Solve `event_at` backwards for the offset: the frame under the pointer
+      // is home + position*base + sweep, and everything but position is known.
+      const frame = (px / geo.w) * geo.base;
+      d.position = Math.max(-1, Math.min(1, (frame - geo.home - geo.sweep) / geo.base));
+      state.grainRows?.position?.sync(d.position);
+    } else {
+      const bx = geo.x(geo.head);
+      const spray = Math.abs(px - bx) / geo.w * geo.base / geo.sr * 1000;
+      d.positionJitterMs = Math.max(0, Math.min(500, spray));
+      const semis = Math.abs(py - geo.h / 2) / (geo.h / 2 - 8) * geo.semis;
+      d.pitchJitterSemis = Math.max(0, Math.min(24, semis));
+      state.grainRows?.positionJitterMs?.sync(d.positionJitterMs);
+      state.grainRows?.pitchJitterSemis?.sync(d.pitchJitterSemis);
+    }
+    drawCloudPad();
+    state.grainSend?.preview();
+  };
+
+  canvas.onpointerdown = (e) => {
+    const geo = cloudPadGeometry(canvas);
+    if (!geo) return;
+    const { px, py } = at(e);
+    const bx = geo.x(geo.head);
+    const inside = Math.abs(px - bx) <= Math.max(geo.halfW, 5)
+                && Math.abs(py - geo.h / 2) <= Math.max(geo.halfH, 5);
+    mode = inside ? 'move' : 'spread';
+    canvas.setPointerCapture(e.pointerId);
+    apply(e);
+  };
+  canvas.onpointermove = (e) => { if (mode) apply(e); };
+  canvas.onpointerup = (e) => {
+    if (!mode) return;
+    mode = null;
+    try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+    // The release is what writes it into the document and reloads the cloud.
+    state.grainSend?.commit();
+  };
+}
+
 function drawGrains() {
+  // Drawn whether or not the swarm is: the pad is a control as well as a
+  // picture, and a control that goes blank when the transport stops is no use.
+  drawCloudPad();
   const set = visSetup(engine.playing);
   if (!set) return;
   const { ctx, w, h } = set;

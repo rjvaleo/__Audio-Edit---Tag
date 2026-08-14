@@ -313,6 +313,14 @@
             <div class="cpanel grain-standard">
               <div id="stretchParams"></div>
               <div class="mono dim" id="stretchOut"></div>
+              <!-- The cloud, drawn where it actually is, and draggable. See
+                   `drawCloudPad`: this is the read head and its spread, over
+                   the real grains and the real waveform. -->
+              <div class="cloud-pad-wrap">
+                <canvas id="cloudPad" class="cloud-pad"
+                  title="The grain cloud over the source. Drag the box to move the read head; drag an edge to widen the spray or the pitch scatter."></canvas>
+                <span class="mono dim cloud-pad-read" id="cloudPadRead"></span>
+              </div>
               <div id="grainShape"></div>
               <div id="grainPitch"></div>
             </div>

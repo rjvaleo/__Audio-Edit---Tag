@@ -1727,3 +1727,26 @@ body.editing .dock { flex: 0 0 330px; }
   min-height: 20px; margin-bottom: 2px;
 }
 .engine-switches .scale-btn { margin-left: auto; }
+
+
+/* The cloud pad: the grain cloud drawn where it actually is, with the read
+   head as a box you can move and resize. One gesture, three controls — see
+   `drawCloudPad` in app.js. */
+.cloud-pad-wrap { position: relative; margin: 6px 0 10px; }
+.cloud-pad {
+  display: block;
+  width: 100%;
+  height: 132px;
+  border: 1px solid var(--line, #1b2a36);
+  border-radius: 4px;
+  background: #0a141c;
+  cursor: crosshair;
+  touch-action: none;
+}
+.cloud-pad-read {
+  position: absolute;
+  right: 6px;
+  top: 5px;
+  font-size: 10px;
+  pointer-events: none;
+}
