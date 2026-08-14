@@ -1767,3 +1767,54 @@ fn a_read_position_of_zero_changes_nothing() {
         }
     }
 }
+
+/// The picture has to enumerate every layer the renderer runs.
+///
+/// `grains` ran one schedule while `BlockRenderer` ran up to sixteen, so
+/// everything drawn from it — the cloud, the pad, the read band — was a
+/// sixteenth of what was being heard, and a stack of layers looked like a
+/// single thin stream however high it was set. Invariant three: one
+/// enumeration, shared.
+#[test]
+fn the_enumeration_counts_every_layer_the_renderer_runs() {
+    let sr = 48_000u32;
+    let frames = sr as usize;
+    let one = fx::Grain { density_hz: 60.0, layers: 1, ..fx::Grain::default() };
+
+    let single = fx::grain::grains_layered(frames, sr, 4.0, 0.0, 40.0, &one).len();
+    assert!(single > 100, "not enough grains to measure with: {single}");
+
+    for n in [2u32, 4, 16] {
+        let many = fx::Grain { layers: n, ..one };
+        let got = fx::grain::grains_layered(frames, sr, 4.0, 0.0, 40.0, &many).len();
+        // Each layer runs the same schedule, so the count is the layer count
+        // over. Exact rather than approximate: a layer half-enumerated is the
+        // same bug in a quieter form.
+        assert_eq!(got, single * n as usize, "{n} layers enumerated as {got}");
+    }
+}
+
+/// And they are not all the same grains in the same places.
+///
+/// A layer is the source read from somewhere else with its own seed. Counting
+/// right while stacking identical copies would look correct and sound like one
+/// layer turned up.
+#[test]
+fn each_layer_reads_its_own_place() {
+    let sr = 48_000u32;
+    let g = fx::Grain {
+        density_hz: 40.0,
+        layers: 4,
+        layer_scatter: 0.8,
+        layer_scatter_ms: 300.0,
+        ..fx::Grain::default()
+    };
+    let evs = fx::grain::grains_layered(sr as usize, sr, 4.0, 0.0, 40.0, &g);
+    // Grains landing on the same output moment must not all read the same
+    // frame of the source.
+    let early: Vec<f32> = evs.iter().filter(|e| e.out_frame < 4_000).map(|e| e.src_frame).collect();
+    assert!(early.len() >= 4, "only {} grains at the start", early.len());
+    let lo = early.iter().cloned().fold(f32::INFINITY, f32::min);
+    let hi = early.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    assert!(hi - lo > 1_000.0, "every layer read within {} frames of the others", hi - lo);
+}

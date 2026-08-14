@@ -1015,7 +1015,9 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
         return Response::json(Value::obj().set("grains", Value::Arr(vec![])).to_string());
     };
     let st = list.stretch;
-    let events = fx::grain::grains(
+    // Layered: this feeds the pictures, and the pictures have to show every
+    // schedule the renderer runs. See `grains_layered`.
+    let events = fx::grain::grains_layered(
         list.base_frames() as usize,
         list.sample_rate,
         st.ratio,
@@ -1024,9 +1026,14 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
         &st.grain,
     );
 
-    // Cap what crosses the wire: a long file at high density is tens of
-    // thousands of grains, and the display cannot resolve them anyway.
-    let stride = (events.len() / 3000).max(1);
+    // Cap what crosses the wire. Three thousand was a cap from when this fed an orbit of a few dozen
+    // visible dots. The cloud draws every grain in its time window, so thinning
+    // five to one made a dense cloud look like a thin one — the same complaint
+    // the single-layer enumeration caused, arriving by a second route. Twenty
+    // thousand grains is about a megabyte of JSON, once per edit, on a loopback
+    // socket; the cap is still here because a long file at sixteen layers and
+    // five hundred a second is millions and nothing can draw those.
+    let stride = (events.len() / 20_000).max(1);
 
     // Measure what each grain actually sounds like, not just where it sits.
     // The visualiser is meant to be driven by the audio, so amplitude and

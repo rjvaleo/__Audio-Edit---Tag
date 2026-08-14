@@ -468,6 +468,41 @@ fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> Grain
     }
 }
 
+/// Independent grain streams. Matches the clamp in [`granular`], and has to: a
+/// layer the renderer refuses to run is a layer you hear offline and not while
+/// playing.
+pub const MAX_LAYERS: usize = 16;
+
+/// How many schedules are running. Clamped exactly as the offline renderer
+/// clamps it, so the two never disagree about how many there are.
+pub fn layer_count(sp: &StreamParams) -> u32 {
+    sp.grain.layers.clamp(1, MAX_LAYERS as u32)
+}
+
+/// A layer's own parameters. Re-seeding is what makes it an independent cloud
+/// rather than the same one drawn twice; layer zero keeps the seed it was given
+/// so a single-layer render is untouched by any of this.
+pub fn layer_params(sp: &StreamParams, layer: u32) -> StreamParams {
+    let mut lp = *sp;
+    if layer > 0 {
+        lp.grain.seed = sp.grain.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
+    }
+    lp.grain.layer_read = sp.grain.layer_throw(layer, sp.sample_rate);
+    lp
+}
+
+/// Where a layer sits within the hop. Even spacing scaled by the spread
+/// control, so at zero they stack and are merely louder.
+pub fn layer_offset(sp: &StreamParams, layer: u32, layers: u32) -> u64 {
+    if layer == 0 || layers <= 1 {
+        return 0;
+    }
+    let hop = sp.plan().hop.max(1) as u64;
+    let even = (hop * layer as u64) / layers as u64;
+    ((even as f32) * sp.grain.layer_spread.clamp(0.0, 4.0)) as u64
+}
+
+
 /// Enumerate every grain in a render.
 pub fn grains(
     in_frames: usize,
@@ -506,6 +541,50 @@ pub fn grains(
     while (stream.out_frame() as usize) < p.out_frames {
         out.push(stream.next(&sp));
     }
+    out
+}
+
+/// Every grain in a render, across every layer.
+///
+/// [`grains`] is one schedule, and it has to stay that way: `granular` calls it
+/// once per layer and builds the stack itself, so expanding layers inside it
+/// would run the offline renderer layers-squared.
+///
+/// This is the one the *pictures* want. It ran as a single schedule for a long
+/// time while the renderer ran up to sixteen, so everything drawn from it — the
+/// cloud, the pad, the read band — was a sixteenth of what was being heard, and
+/// a stack of layers looked like one thin stream however high it was set.
+///
+/// The seed and the offset come from the same helpers the real-time renderer
+/// uses. Two copies of that arithmetic is how the picture and the sound drifted
+/// apart in the first place.
+pub fn grains_layered(
+    in_frames: usize,
+    sample_rate: u32,
+    ratio: f32,
+    semitones: f32,
+    window_ms: f32,
+    g: &Grain,
+) -> Vec<GrainEvent> {
+    let mut sp = StreamParams::new(in_frames, sample_rate);
+    sp.ratio = ratio;
+    sp.semitones = semitones;
+    sp.window_ms = window_ms;
+    sp.grain = *g;
+
+    let layers = layer_count(&sp);
+    let mut out = Vec::new();
+    for l in 0..layers {
+        let lp = layer_params(&sp, l);
+        let off = layer_offset(&sp, l, layers);
+        for mut e in grains(in_frames, sample_rate, ratio, semitones, window_ms, &lp.grain) {
+            e.out_frame += off;
+            out.push(e);
+        }
+    }
+    // In time order, so a caller that thins the list by striding it takes an
+    // even sample across the whole render rather than all of one layer.
+    out.sort_by_key(|e| e.out_frame);
     out
 }
 
