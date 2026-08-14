@@ -6487,7 +6487,7 @@ const CLOUD_BEHIND = 1.6;    // seconds of history, behind
 /// so there is nothing to synchronise across two animation clocks.
 const cloudFeed = {
   grains: null, sr: 48000, srcFrames: 0, baseSemis: 0, now: 0,
-  semiSpan: 4, centre: 0, span: 1, turn: 0,
+  semiSpan: 4, centre: 0, span: 1, turn: 0, headRate: 0,
 };
 
 /// The camera, and nothing else.
@@ -6546,6 +6546,11 @@ function feedCloud() {
   // A floor of a twentieth of a second, so a cloud parked on one instant is a
   // tight knot rather than its own jitter magnified to fill the screen.
   cloudFeed.span = Math.max(spray + scatter + grainLen, sr * 0.05);
+  // How fast the read head travels through the source, in frames per second of
+  // playback. This is what lets a grain's position be evaluated at moments
+  // that have already passed — the head has moved on, so a grain laid down a
+  // moment ago is now behind it, and by exactly this much per second.
+  cloudFeed.headRate = (sr / ratio) * scan;
 
   // The turn is a function of the moment too, so the cloud holds still when the
   // transport does. Traversal of a fixed structure — when nothing is being
@@ -6564,19 +6569,31 @@ function startCloudGl() {
   if (!holder || cloudSketch || typeof p5 === 'undefined') return;
 
   cloudSketch = new p5((s) => {
-    // Points are batched by colour and weight. p5 draws each `point()` as its
-    // own call, which at several hundred grains a frame is several hundred
-    // draws; bucketed into a handful of `POINTS` shapes it is a handful.
-    const HUES = 9;
-    const WEIGHTS = 4;
-    const buckets = [];
+    // Spheres, not points. p5's WEBGL point size is a fixed number of pixels
+    // and is *not* scaled by distance, so a cloud of them draws every grain the
+    // same size however far away it is — the depth cue is simply absent and the
+    // result reads as dots in a row. A sphere is geometry: perspective shrinks
+    // it, the depth buffer lets the near ones cover the far ones, and a light
+    // shades it so it reads as a ball rather than a disc. Three depth cues for
+    // the price of dropping a batching trick.
+    //
+    // The cost is a draw call each, so the number drawn is capped and the
+    // geometry is coarse. At this size on screen nobody can count the facets.
+    const DETAIL_X = 7;
+    const DETAIL_Y = 5;
+    // Each grain costs a draw call, and each ghost behind it costs another, so
+    // the two caps trade against each other. Fewer grains with tails reads as a
+    // cloud; more grains without them reads as a scatter.
+    const MAX_GRAINS = 260;
+    const TRAIL = 3;
+    const TRAIL_STEP = 0.09;      // seconds between one ghost and the next
+    const DECAY_PER_SECOND = 1.5; // a fixed fraction lost per second, never zero
 
     s.setup = () => {
       const c = s.createCanvas(holder.clientWidth || 300, holder.clientHeight || 200, s.WEBGL);
       c.parent(holder);
       s.setAttributes('antialias', true);
-      s.noFill();
-      for (let i = 0; i < HUES * WEIGHTS * 3; i++) buckets.push([]);
+      s.noStroke();
     };
 
     s.windowResized = () => {
@@ -6586,59 +6603,95 @@ function startCloudGl() {
     s.draw = () => {
       s.clear();
       const f = cloudFeed;
+      if (!f.grains || !f.srcFrames) return;
+
+      // Enough ambient that a grain facing away is still visible, and one
+      // directional so there is a lit side and a dark one — which is the whole
+      // of what makes a shaded ball read as a ball.
+      s.ambientLight(58, 64, 78);
+      s.directionalLight(255, 250, 240, -0.4, -0.7, -0.6);
+      s.pointLight(90, 130, 210, 0, -260, 320);
+
       // Where the hand left it, plus where the moment puts it. No integration:
       // the same instant always draws the same picture.
       s.rotateX(cloudCam.pitch);
       s.rotateY(cloudCam.yaw + f.turn);
 
-      if (!f.grains || !f.srcFrames) return;
-
       const playFrame = f.now * f.sr;
       const R = Math.min(s.width, s.height) * 0.34;
       const span = Math.max(1, f.span);
-      for (const b of buckets) b.length = 0;
 
-      for (const [outFrame, srcFrame, size, pitch, , bright] of f.grains) {
-        const dt = (outFrame - playFrame) / f.sr;
+      // Nearest in time first, so the cap keeps what is sounding and drops the
+      // oldest and faintest rather than whatever was enumerated last.
+      const near = [];
+      for (const ev of f.grains) {
+        const dt = (ev[0] - playFrame) / f.sr;
         if (dt > CLOUD_AHEAD || dt < -CLOUD_BEHIND) continue;
+        near.push([ev, dt]);
+      }
+      if (!near.length) return;
+      near.sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]));
+      if (near.length > MAX_GRAINS) near.length = MAX_GRAINS;
 
-        const x = Math.max(-1.2, Math.min(1.2, (srcFrame - f.centre) / span)) * R;
-        const y = -Math.max(-1, Math.min(1, (pitch - f.baseSemis) / f.semiSpan)) * R;
-        const z = (dt >= 0 ? dt / CLOUD_AHEAD * 0.5 : dt / CLOUD_BEHIND) * R;
+      for (const [[, srcFrame, size, pitch, , bright, pan], dt] of near) {
+        // The cloud is the spread *around* the head, not absolute position in
+        // the file. Absolutely, every grain sits within a few milliseconds of
+        // every other and the picture is a line; as deviations it is a volume
+        // whose width, height and depth are the three scatter controls.
+        //
+        //   across — where the grain sits in the stereo field
+        //   up     — how far out of tune it is
+        //   depth  — how far from the head it reads
+        //
+        // Depth is the one that moves. The head travels on, so a grain laid
+        // down a moment ago is behind it now and drifting further, which is
+        // what turns a static scatter into something with weather in it.
+        const age = Math.max(0, -dt);
+        const x = Math.max(-1, Math.min(1, pan ?? 0)) * R * 0.95;
+        const y = -Math.max(-1, Math.min(1, (pitch - f.baseSemis) / f.semiSpan)) * R * 0.8;
 
         const live = dt <= 0 && dt + size / f.sr >= 0;
-        const life = dt > 0 ? 0 : live ? 2 : 1;
-        const hue = Math.max(0, Math.min(HUES - 1,
-          Math.round(((pitch - f.baseSemis) / 9 * 0.5 + 0.5) * (HUES - 1) * 0.6
-                     + Math.min(1, bright * 4) * (HUES - 1) * 0.4)));
-        const wgt = Math.max(0, Math.min(WEIGHTS - 1, Math.floor((size / f.sr) * 26)));
-        buckets[(life * HUES + hue) * WEIGHTS + wgt].push(x, y, z);
-      }
+        // Decay. A grain is brightest as it sounds and falls away afterwards,
+        // and what is left behind is a trail of dimmer, smaller ghosts at the
+        // places it has already been. Every one of those is that same grain
+        // evaluated at a moment that has passed rather than a copy kept from a
+        // frame that was drawn — the picture holds no history, it recomputes
+        // it, which is the same discipline the engine keeps.
+        const t = Math.max(-1, Math.min(1,
+          (pitch - f.baseSemis) / 9 * 0.55 + (Math.min(1, bright * 4) - 0.4) * 1.4));
+        const warm = t >= 0;
+        const base = [
+          warm ? 235 : 105,
+          warm ? 175 - t * 40 : 150,
+          warm ? 120 : 235,
+        ];
+        const r0 = 2.0 + Math.min(9, (size / f.sr) * 42) * (live ? 1.4 : 1);
 
-      // Scheduled, then aged, then sounding — so the live grains land on top.
-      // Painter's order is a third of the depth cue; drawn in schedule order a
-      // grain at the back paints over one at the front and the volume reads
-      // flat.
-      s.blendMode(s.ADD);
-      for (let life = 0; life < 3; life++) {
-        const alpha = life === 2 ? 235 : life === 1 ? 90 : 45;
-        for (let hue = 0; hue < HUES; hue++) {
-          const t = hue / (HUES - 1);
-          // Warm for sharp and high, cool for flat and low — the same reading
-          // `grainColour` gives the two-dimensional views.
-          const col = s.color(60 + t * 175, 110 + t * 105, 255 - t * 95, alpha);
-          for (let wgt = 0; wgt < WEIGHTS; wgt++) {
-            const pts = buckets[(life * HUES + hue) * WEIGHTS + wgt];
-            if (!pts.length) continue;
-            s.stroke(col);
-            s.strokeWeight((1.4 + wgt * 1.5) * (life === 2 ? 1.7 : 1));
-            s.beginShape(s.POINTS);
-            for (let i = 0; i < pts.length; i += 3) s.vertex(pts[i], pts[i + 1], pts[i + 2]);
-            s.endShape();
-          }
+        const ghosts = age > 0.02 ? TRAIL : 0;
+        for (let k = ghosts; k >= 0; k--) {
+          const back = age + k * TRAIL_STEP;
+          if (back > CLOUD_BEHIND) continue;
+          // Where the head was then, so where this grain sat relative to it.
+          const centreThen = f.centre - f.headRate * back;
+          const z = Math.max(-1.6, Math.min(1.6, (srcFrame - centreThen) / span)) * R * 0.9;
+
+          // Radioactive, in the one sense that matters here: a fixed fraction
+          // lost per unit of time, so it never quite reaches nothing and the
+          // tail thins away instead of stopping.
+          const decay = Math.exp(-back * DECAY_PER_SECOND);
+          const fade = dt > 0 ? 0.3 : decay;
+          if (fade < 0.02) continue;
+          const smoke = k === 0 ? 1 : 0.45 / k;
+
+          s.push();
+          s.translate(x, y, z);
+          const c = [base[0] * fade * smoke, base[1] * fade * smoke, base[2] * fade * smoke];
+          if (live && k === 0) s.emissiveMaterial(c[0], c[1], c[2]);
+          else s.ambientMaterial(c[0], c[1], c[2]);
+          s.sphere(r0 * (k === 0 ? 1 : 0.55 / Math.sqrt(k)), DETAIL_X, DETAIL_Y);
+          s.pop();
         }
       }
-      s.blendMode(s.BLEND);
     };
   });
 

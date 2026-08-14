@@ -1048,6 +1048,25 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     Response::json(spec.to_json().set("curve", Value::Arr(curve)).to_string())
 }
 
+/// Where a grain sits across the stereo field, as -1 to 1.
+///
+/// Derived from `pan_gains`, which is what actually places it, rather than
+/// re-deriving the randomness here: the two would drift, and a picture that
+/// disagrees with the sound about which side a grain is on is worse than one
+/// that does not show the side at all.
+fn pan_of(g: &fx::Grain, index: u64) -> f32 {
+    let (l, r) = fx::grain::pan_gains(g, index, 2);
+    // Equal power either side of centre: the pair is (cos, sin) of an angle
+    // running a quarter turn, so their difference over their sum runs the
+    // field. At no spread both are one and this is zero.
+    let sum = l + r;
+    if sum <= 1e-6 {
+        0.0
+    } else {
+        ((r - l) / sum).clamp(-1.0, 1.0)
+    }
+}
+
 /// The grain schedule for the visualiser.
 ///
 /// Computed from the same enumeration the renderer uses, so the picture cannot
@@ -1134,6 +1153,11 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
                 Value::Num(e.pitch_semis as f64),
                 Value::Num(rms as f64),
                 Value::Num(bright as f64),
+                // Where this grain sits across the stereo field, from the same
+                // function that places it in the audio. The cloud needs a
+                // left-and-right that is real rather than decorative, and this
+                // is the only one a grain has.
+                Value::Num(pan_of(&st.grain, e.index) as f64),
             ])
         })
         .collect();
