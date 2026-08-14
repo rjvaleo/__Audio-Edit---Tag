@@ -417,7 +417,21 @@ pub struct PitchRing {
     /// expression the offline resampler uses. Accumulating would drift away
     /// from it over a long render.
     since: u64,
+    /// The pitch being aimed at.
     last_pitch: f32,
+    /// The pitch actually being read at.
+    ///
+    /// A change in read rate is a corner in the waveform, and a big enough one
+    /// is a click. Automation never showed it because it moves the pitch in
+    /// slivers a hundred times a second; a hand on the slider arrives every
+    /// ninety milliseconds in whole steps, and each one clicked.
+    ///
+    /// So the rate glides to its target over a few milliseconds instead of
+    /// stepping. While it is travelling the read position has to be
+    /// accumulated, since the closed form below assumes a constant rate — but
+    /// only while travelling, so a steady pitch keeps the exact `f × pitch`
+    /// the offline resampler uses and cannot drift from it.
+    glide: f32,
     /// Output frames handed out.
     emitted: u64,
     /// The earliest stretched frame this run holds.
@@ -430,6 +444,18 @@ pub struct PitchRing {
     /// How much the engine is asked for at a time.
     chunk: usize,
 }
+
+/// How long the read rate takes to reach a new pitch, in frames.
+///
+/// In frames rather than milliseconds so the ring needs no sample rate — about
+/// 12 ms at 48 kHz, 13 at 44.1 and 6 at 96. Every one of those is well above a
+/// click and below a portamento, which is the whole window that matters, so
+/// threading a rate through four constructors to be exact about it would buy
+/// nothing.
+///
+/// A tape machine glides for the same reason: a read rate that arrives
+/// instantly is a corner in the waveform, and a big enough corner is a click.
+const GLIDE_FRAMES: f32 = 576.0;
 
 impl PitchRing {
     pub fn new(max_block: usize, channels: usize) -> Self {
@@ -447,6 +473,7 @@ impl PitchRing {
             base: 0.0,
             since: 0,
             last_pitch: 1.0,
+            glide: 1.0,
             emitted: 0,
             origin: 0,
             chunk,
@@ -458,13 +485,26 @@ impl PitchRing {
         self.base + self.since as f64 * self.last_pitch as f64
     }
 
-    /// Rebase when the pitch moves, so a change does not jump the read.
+    /// Aim at a new pitch. The rate travels there; the read does not jump.
     fn retune(&mut self, pitch: f32) {
         if (pitch - self.last_pitch).abs() > 1e-9 {
             self.base = self.pos();
             self.since = 0;
             self.last_pitch = pitch;
         }
+    }
+
+    /// Whether the rate is still on its way somewhere.
+    ///
+    /// The threshold is what the ear would notice, not what a float can tell
+    /// apart. A rate within 1e-4 of its target is a tenth of a cent out, which
+    /// is inaudible — and a one-pole in `f32` cannot do better than that
+    /// anyway: the step it takes each sample is the distance times `k`, and
+    /// once that falls under an ulp of the rate itself the addition stops
+    /// moving. At these rates it parks around 7e-5 and stays there forever, so
+    /// a tighter threshold would mean gliding for the rest of the file.
+    fn gliding(&self) -> bool {
+        (self.glide - self.last_pitch).abs() > 1e-4
     }
 
     /// Semitones as a rate multiplier, clamped where the buffers assume.
@@ -504,7 +544,11 @@ impl PitchRing {
         if frames == 0 {
             return self.made;
         }
-        let last = self.pos() + (frames - 1) as f64 * pitch as f64;
+        // The faster of where the rate is and where it is going: while it is
+        // gliding the block is read at something between the two, and asking
+        // for too much costs nothing while asking for too little is a gap.
+        let rate = self.glide.max(self.last_pitch) as f64;
+        let last = self.pos() + (frames - 1) as f64 * rate;
         last.floor() as u64 + 3
     }
 
@@ -527,8 +571,24 @@ impl PitchRing {
         let frames = out.len() / channels.max(1);
         let base = self.base;
         let since = self.since;
+        // One pole per sample toward the target rate. `GLIDE_SECONDS` of it is
+        // below a portamento and well above a click.
+        let k = 1.0 - (-1.0f32 / GLIDE_FRAMES).exp();
+        let mut walking = self.base;
         for f in 0..frames {
-            let at = base + (since + f as u64) as f64 * pitch as f64;
+            let at = if self.gliding() {
+                // Travelling: the position has to be accumulated, because the
+                // rate is different on every frame.
+                self.glide += (self.last_pitch - self.glide) * k;
+                if (self.glide - self.last_pitch).abs() < 1e-4 {
+                    self.glide = self.last_pitch;
+                }
+                let here = walking;
+                walking += self.glide as f64;
+                here
+            } else {
+                base + (since + f as u64) as f64 * pitch as f64
+            };
             let i = at.floor() as i64;
             let t = (at - i as f64) as f32;
             let mut tap = |k: i64, ch: usize| -> f32 {
@@ -544,7 +604,14 @@ impl PitchRing {
                 out[f * channels + ch] = crate::stretch::hermite(m1, p0, p1, p2, t);
             }
         }
-        self.since += frames as u64;
+        // A glide leaves the read somewhere the closed form does not describe,
+        // so hand the accumulated position back as the new base.
+        if walking != self.base {
+            self.base = walking;
+            self.since = 0;
+        } else {
+            self.since += frames as u64;
+        }
         self.emitted += frames as u64;
     }
 
@@ -561,6 +628,7 @@ impl PitchRing {
         self.base = self.emitted as f64;
         self.since = 0;
         self.last_pitch = 1.0;
+        self.glide = 1.0;
         self.made = self.emitted;
         self.origin = self.emitted;
     }
@@ -574,6 +642,11 @@ impl PitchRing {
         self.base = 0.0;
         self.since = out_frame;
         self.last_pitch = pitch;
+        // A seek starts *at* its rate rather than gliding into it. The glide is
+        // for a hand moving the slider mid-flight; a fresh render that eased
+        // into its pitch would not match what the offline renderer writes for
+        // the same frames, which is the one thing that must never differ.
+        self.glide = pitch;
         let at = self.pos();
         self.made = at as u64;
         self.origin = at as u64;
@@ -649,6 +722,56 @@ impl<S: Streamer> Pitched<S> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A hand on the pitch slider used to click while automation did not.
+    ///
+    /// Automation moves the pitch in slivers a hundred times a second, so its
+    /// steps were too small to hear. A drag arrives every ninety milliseconds
+    /// in whole ones, and each was a step in the *read rate* — a corner in the
+    /// waveform, and a big enough corner is a click.
+    #[test]
+    fn a_step_in_pitch_does_not_put_a_corner_in_the_output() {
+        let sr = 48_000u32;
+        let mut ring = PitchRing::new(512, 1);
+        // Fill it with a slow sine, which is smooth enough that any corner in
+        // the output came from the read and not from the material.
+        let src: Vec<f32> = (0..sr as usize).map(|i| (i as f32 / 60.0).sin() * 0.5).collect();
+        ring.push(&src, src.len(), 1);
+
+        let corner = |v: &[f32]| {
+            v.windows(3).map(|w| (w[2] - 2.0 * w[1] + w[0]).abs()).fold(0f32, f32::max)
+        };
+
+        let mut steady = vec![0.0f32; 2048];
+        ring.read(&mut steady, 1, 1.0);
+        let base = corner(&steady);
+
+        // Ask for a fifth up, in one go, the way releasing a slider does.
+        let mut moved = vec![0.0f32; 2048];
+        ring.read(&mut moved, 1, PitchRing::factor(7.0));
+        let mut joined = steady[steady.len() - 2..].to_vec();
+        joined.extend_from_slice(&moved);
+        let got = corner(&joined);
+        assert!(
+            got < base * 6.0,
+            "a seven-semitone step put a corner of {got:.5} in against a steady {base:.5}"
+        );
+    }
+
+    /// And it does arrive: a glide that never reaches its target is a bug of a
+    /// different kind.
+    #[test]
+    fn a_glided_pitch_reaches_the_rate_it_was_asked_for() {
+        let mut ring = PitchRing::new(512, 1);
+        let src: Vec<f32> = (0..48_000).map(|i| (i as f32 / 60.0).sin()).collect();
+        ring.push(&src, src.len(), 1);
+        let want = PitchRing::factor(7.0);
+        let mut out = vec![0.0f32; 512];
+        for _ in 0..16 {
+            ring.read(&mut out, 1, want);
+        }
+        assert!(!ring.gliding(), "the read rate never arrived");
+    }
     use super::*;
     use crate::stretch::{Algorithm, Stretch};
 
