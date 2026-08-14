@@ -632,21 +632,25 @@ pub fn granular(
 /// the identical answer.
 #[inline]
 pub fn pan_gains(g: &Grain, index: u64, channels: usize) -> (f32, f32) {
-    pan_gains_with(g, g.pan_spread, index, channels)
+    pan_gains_with(g.pan_spread, g.seed, index, channels)
 }
 
-/// The same, with the spread supplied rather than read.
+/// The same, with the spread and seed supplied rather than read.
 ///
-/// The real-time renderer keeps each sounding grain's spread from the moment it
-/// started, so a hand on the control moves the grains still to come and leaves
-/// the ones already in the air where they are. It still has to place them the
-/// way this function does, or the picture and the file would disagree with what
-/// is heard — hence one implementation with the one value lifted out.
-pub fn pan_gains_with(g: &Grain, spread: f32, index: u64, channels: usize) -> (f32, f32) {
+/// The real-time renderer keeps both from the moment each grain started, so a
+/// hand on either control moves the grains still to come and leaves the ones
+/// already in the air where they are. The seed matters as much as the spread:
+/// re-seeding is meant to deal a new cloud, and a grain half way through its
+/// window jumping across the stereo field is a step in the middle of a fade.
+///
+/// It still has to place them the way this function does, or the picture and
+/// the file would disagree with what is heard — hence one implementation with
+/// the two values lifted out.
+pub fn pan_gains_with(spread: f32, seed: u32, index: u64, channels: usize) -> (f32, f32) {
     if channels < 2 || spread <= 1e-4 {
         return (1.0, 1.0);
     }
-    let pan = spread.clamp(0.0, 1.0) * g.rand_bipolar(index, 23);
+    let pan = spread.clamp(0.0, 1.0) * Grain { seed, ..Grain::default() }.rand_bipolar(index, 23);
     let th = (pan * 0.5 + 0.5) * std::f32::consts::FRAC_PI_2;
     (th.cos() * std::f32::consts::SQRT_2, th.sin() * std::f32::consts::SQRT_2)
 }

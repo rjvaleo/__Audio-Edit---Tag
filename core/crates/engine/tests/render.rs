@@ -306,12 +306,17 @@ fn a_control_moved_mid_flight_does_not_reach_into_sounding_grains() {
     // them rather than neatly between two.
     let base = Grain { density_hz: 30.0, pan_spread: 0.0, ..Grain::default() };
 
-    for (what, moved) in [
-        ("pan spread", Grain { pan_spread: 1.0, ..base }),
-        ("envelope", Grain { envelope: 0.05, ..base }),
-        ("direction", Grain { reverse: true, ..base }),
+    let panning = Grain { pan_spread: 1.0, ..base };
+    for (what, from, moved) in [
+        ("pan spread", base, Grain { pan_spread: 1.0, ..base }),
+        ("envelope", base, Grain { envelope: 0.05, ..base }),
+        ("direction", base, Grain { reverse: true, ..base }),
+        // Re-seeding deals a new cloud. It must deal the grains still to come,
+        // so this one starts already panning — otherwise it is the spread
+        // being tested a second time rather than the seed.
+        ("seed", panning, Grain { seed: 12_345, ..panning }),
     ] {
-        let steady = params(src.frames(), base, 4.0, 0.0);
+        let steady = params(src.frames(), from, 4.0, 0.0);
         let after = params(src.frames(), moved, 4.0, 0.0);
 
         let mut r = BlockRenderer::new(block);

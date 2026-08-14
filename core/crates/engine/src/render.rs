@@ -53,6 +53,9 @@ struct Shape {
     reverse: bool,
     /// How far across the stereo field grains are thrown.
     pan_spread: f32,
+    /// Which deal of the randomness it was thrown by. Re-seeding deals a new
+    /// cloud; it must deal the grains still to come, not the ones in the air.
+    seed: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -121,7 +124,7 @@ impl BlockRenderer {
                 pitch_semis: 0.0,
             },
             played: 0,
-            shape: Shape { envelope: 0.5, reverse: false, pan_spread: 0.0 },
+            shape: Shape { envelope: 0.5, reverse: false, pan_spread: 0.0, seed: 0 },
         };
         BlockRenderer {
             streams: [GrainStream::new(); MAX_LAYERS],
@@ -239,8 +242,8 @@ impl BlockRenderer {
             // that gets exported are the same sound.
             // The voice's own, not the rack's current. See `Shape`.
             let (gl, gr) = fx::grain::pan_gains_with(
-                &sp.grain,
                 voice.shape.pan_spread,
+                voice.shape.seed,
                 voice.event.index,
                 channels,
             );
@@ -322,6 +325,7 @@ fn shape_of(sp: &StreamParams) -> Shape {
         envelope: sp.grain.envelope,
         reverse: sp.grain.reverse,
         pan_spread: sp.grain.pan_spread,
+        seed: sp.grain.seed,
     }
 }
 
