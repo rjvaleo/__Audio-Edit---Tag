@@ -2435,6 +2435,32 @@
         if (e.origin !== location.origin) return;
         if (e.data && e.data.type === 'grainView') setView(e.data.view | 0);
         if (e.data && e.data.type === 'grainSuite') setSuite(e.data.suite | 0);
+
+        // The document's own settings, when this page is docked in the editor.
+        //
+        // The arithmetic here was always the engine's — the same splitmix64
+        // over the same salts — but the numbers going into it were this page's
+        // sliders. So docked beside a file that was actually sounding it drew a
+        // cloud the engine *could* have made rather than the one it was making.
+        // This is the only thing it was missing.
+        //
+        // Only keys this page already has are taken. An unknown one would sit
+        // in `params` doing nothing, and a control that looks connected and is
+        // not is worse than one that plainly is not.
+        if (e.data && e.data.type === 'grainParams' && e.data.params) {
+            let touched = false;
+            for (const [k, v] of Object.entries(e.data.params)) {
+                if (!(k in params)) continue;
+                if (typeof v !== 'number' || !isFinite(v)) continue;
+                if (params[k] === v) continue;
+                params[k] = v;
+                touched = true;
+            }
+            if (touched) {
+                syncControls();
+                buildSchedule(true);
+            }
+        }
     });
 
     /// Switch suites. The view index carries over, so V1's Shear and V2's
