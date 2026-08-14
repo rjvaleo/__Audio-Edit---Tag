@@ -6477,10 +6477,11 @@ function drawGrains() {
   // Drawn whether or not the cloud is: the pad is a control as well as a
   // picture, and a control that goes blank when the transport stops is no use.
   drawCloudPad();
-  // Cleared outright rather than washed. The old orbit left trails on purpose,
-  // which is what made it read as motion; this one gets its motion from grains
-  // actually falling, and a wash would smear the file behind them.
-  const set = visSetup(false);
+  wireCloudSpin();
+  // A light wash rather than a clear: the cloud turns continuously, and a trail
+  // of a frame or two is what makes the turn read as depth instead of as dots
+  // jumping. Much more than this and it smears into a blur.
+  const set = visSetup(true);
   if (!set) return;
   const { ctx, w, h } = set;
   const g = state.grains;
@@ -6507,26 +6508,34 @@ function drawGrains() {
   drawGrainCloud(ctx, w, h, g);
 }
 
-/// The grain cloud, as a cloud.
+/// The grain cloud, as a cloud in space.
 ///
-/// What was here before was an orbit: grains flying around a centre, their
-/// distance standing for time from the playhead and their angle for nothing at
-/// all. It moved, and at any ordinary density it was a handful of overlapping
-/// circles getting brighter, because the maths piled everything near the
-/// middle. Worse, it could not answer the question the engine is about — which
-/// part of the file a grain came from.
+/// Two things this is not, both of them things it has been. It is not an orbit
+/// — distance standing for time and angle for nothing, which piled every grain
+/// near the middle and could not say which part of the file a grain came from.
+/// And it is not a waterfall: grains marching down a time axis read as traffic
+/// on a timeline rather than as a cloud.
 ///
-/// So: across is the file, start to end, on exactly the axis the waveform above
-/// uses. Down is time. The line near the top is now; above it are grains that
-/// have been scheduled and have not sounded yet, and below it they stream
-/// downward as they age. Every dot is a real grain out of the same enumeration
-/// the renderer and the exporter use.
+/// Grains are dots in a volume. Across is the file, start to end. Up and down
+/// is pitch offset. Depth is time either side of now. The whole thing turns
+/// slowly so the depth is readable, and dragging turns it faster; a static
+/// projection of a point cloud is a flat scatter with the depth thrown away.
 ///
-/// Read it and the controls are legible without labels. Scan is the slope of
-/// the fall. Position is where the column stands. Spray is how wide it is.
-/// Density is how thick. Layers are the separate columns.
-const CLOUD_AHEAD = 0.35;   // seconds of scheduled-but-unheard shown above now
-const CLOUD_BEHIND = 1.8;   // seconds of history below it
+/// Every dot is a real grain out of the same enumeration the renderer and the
+/// exporter use — every layer of it, which it did not used to be.
+const CLOUD_AHEAD = 0.35;    // seconds of scheduled-but-unheard, in front
+const CLOUD_BEHIND = 1.6;    // seconds of history, behind
+const CLOUD_FOCAL = 1.9;     // smaller is a wider lens and a deeper-looking box
+
+const cloudView = {
+  yaw: 0.5, pitch: -0.22, spin: 0.12, drag: null,
+  // Where the cloud is in the file and how wide it is, eased rather than
+  // measured fresh each frame. Across is *distance from the head*, not
+  // absolute position: a cloud is a small cluster on the scale of a whole
+  // file, so an absolute axis pinned it to one edge as a smudge. Absolute
+  // position is what the pad and the read band above are for.
+  centre: null, span: null,
+};
 
 function drawGrainCloud(ctx, w, h, g) {
   const sr = g.sampleRate || 48000;
@@ -6534,40 +6543,89 @@ function drawGrainCloud(ctx, w, h, g) {
   const srcFrames = state.edit?.baseFrames || state.view?.frames || 0;
   if (!srcFrames) return;
 
+  const gr = state.grainDraft || state.edit?.stretch?.grain || {};
+  const semiSpan = Math.max(4, ((gr.pitchJitterSemis || 0) + (gr.pitchDriftSemis || 0)) * 1.25);
+
   const now = playbackTime();
   const playFrame = now * sr;
-  const span = CLOUD_AHEAD + CLOUD_BEHIND;
-  const nowY = (CLOUD_AHEAD / span) * h;
+  if (!cloudView.drag) cloudView.yaw += cloudView.spin * 0.016;
 
-  // A thin envelope along the top, so the horizontal axis is visibly the file
-  // rather than an abstract span.
-  ctx.save();
-  ctx.beginPath(); ctx.rect(0, 0, w, nowY); ctx.clip();
-  drawLaneWave(ctx, w, nowY * 2, srcFrames);
-  ctx.restore();
+  const cy = Math.cos(cloudView.yaw);
+  const sy = Math.sin(cloudView.yaw);
+  const cp = Math.cos(cloudView.pitch);
+  const sp = Math.sin(cloudView.pitch);
+  const cx = w / 2;
+  const cyc = h / 2;
+  // Sized so the widest point of the box stays inside the canvas at every
+  // angle: across reaches 1.2 and depth reaches 1, and turning the cloud
+  // forty-five degrees puts some of both on the horizontal.
+  const R = Math.min(w, h) * 0.34;
 
-  // Now.
-  ctx.strokeStyle = 'rgba(255,255,255,.30)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, nowY + 0.5); ctx.lineTo(w, nowY + 0.5); ctx.stroke();
+  // Collected before drawing so they can be laid down far to near. Painter's
+  // order is the whole of the depth cue here — drawn in schedule order, a grain
+  // at the back lands on top of one at the front and the volume collapses.
+  // Two passes: the first finds where the cloud is and how far it reaches, so
+  // the second can fill the box with it.
+  let lo = Infinity;
+  let hi = -Infinity;
+  const near = [];
+  for (const ev of g.grains) {
+    const dt = (ev[0] - playFrame) / sr;
+    if (dt > CLOUD_AHEAD || dt < -CLOUD_BEHIND) continue;
+    near.push([ev, dt]);
+    if (ev[1] < lo) lo = ev[1];
+    if (ev[1] + ev[2] > hi) hi = ev[1] + ev[2];
+  }
+  if (!near.length) return;
+  // A floor of a twentieth of a second, so a cloud parked on one instant is a
+  // tight ball rather than magnified until its jitter fills the screen.
+  const wantSpan = Math.max((hi - lo) / 2, sr * 0.05);
+  const wantCentre = (lo + hi) / 2;
+  // Eased, because measuring afresh every frame makes the box breathe on every
+  // grain that happens to land at an edge.
+  cloudView.centre = cloudView.centre == null
+    ? wantCentre : cloudView.centre + (wantCentre - cloudView.centre) * 0.08;
+  cloudView.span = cloudView.span == null
+    ? wantSpan : cloudView.span + (wantSpan - cloudView.span) * 0.08;
+
+  const pts = [];
+  for (const [[outFrame, srcFrame, size, pitch, rms, bright], dt] of near) {
+    const ux = Math.max(-1.2, Math.min(1.2,
+      (srcFrame - cloudView.centre) / Math.max(1, cloudView.span)));
+    const uy = -Math.max(-1, Math.min(1, (pitch - baseSemis) / semiSpan));
+    const uz = dt >= 0
+      ? dt / CLOUD_AHEAD * 0.5
+      : dt / CLOUD_BEHIND * 1.0;
+
+    const rx = ux * cy - uz * sy;
+    const rz = ux * sy + uz * cy;
+    const ry = uy * cp - rz * sp;
+    const dz = uy * sp + rz * cp;
+
+    const persp = CLOUD_FOCAL / (CLOUD_FOCAL + dz);
+    const live = dt <= 0 && dt + size / sr >= 0;
+    pts.push({
+      x: cx + rx * R * persp,
+      y: cyc + ry * R * persp,
+      dz,
+      live,
+      r: (0.9 + Math.min(5, (size / sr) * 26)) * persp * (live ? 1.5 : 1),
+      colour: grainColour(
+        pitch - baseSemis,
+        bright,
+        dt > 0 ? 0.3 : live ? 0.95 : Math.max(0.07, 0.55 - Math.abs(dt) * 0.3),
+      ),
+      rms,
+    });
+  }
+  pts.sort((a, b) => b.dz - a.dz);
 
   let sounding = 0;
-  for (const [outFrame, srcFrame, size, pitch, , bright] of g.grains) {
-    const dt = (outFrame - playFrame) / sr;
-    if (dt > CLOUD_AHEAD || dt < -CLOUD_BEHIND) continue;
-    const x = (srcFrame / srcFrames) * w;
-    const y = ((CLOUD_AHEAD - dt) / span) * h;
-
-    const live = dt <= 0 && dt + size / sr >= 0;
-    if (live) sounding++;
-    // Scheduled but unheard is drawn faintly; sounding is drawn brightest;
-    // then it fades as it falls. The eye follows the bright band, which is
-    // the playhead — the thing the old one was supposed to be about.
-    const alpha = dt > 0 ? 0.22 : live ? 0.95 : Math.max(0.06, 0.5 - Math.abs(dt) * 0.25);
-    const r = (1.1 + Math.min(5, (size / sr) * 30)) * (live ? 1.35 : 1);
-    ctx.fillStyle = grainColour(pitch - baseSemis, bright, alpha);
+  for (const p of pts) {
+    if (p.live) sounding++;
+    ctx.fillStyle = p.colour;
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, Math.max(0.4, p.r), 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -6576,6 +6634,31 @@ function drawGrainCloud(ctx, w, h, g) {
     const shown = g.shown < g.total ? ` · showing ${g.shown.toLocaleString()}` : '';
     label.textContent = `${g.total.toLocaleString()} grains${shown} · ${sounding} sounding`;
   }
+}
+
+/// Turn the cloud by hand. A point cloud you cannot turn is a scatter plot.
+function wireCloudSpin() {
+  const canvas = $('grainCanvas');
+  if (!canvas || canvas._spinWired) return;
+  canvas._spinWired = true;
+  canvas.style.cursor = 'grab';
+  canvas.onpointerdown = (e) => {
+    cloudView.drag = { x: e.clientX, y: e.clientY };
+    canvas.style.cursor = 'grabbing';
+    canvas.setPointerCapture(e.pointerId);
+  };
+  canvas.onpointermove = (e) => {
+    if (!cloudView.drag) return;
+    cloudView.yaw += (e.clientX - cloudView.drag.x) * 0.008;
+    cloudView.pitch = Math.max(-1.2, Math.min(1.2,
+      cloudView.pitch + (e.clientY - cloudView.drag.y) * 0.006));
+    cloudView.drag = { x: e.clientX, y: e.clientY };
+  };
+  canvas.onpointerup = (e) => {
+    cloudView.drag = null;
+    canvas.style.cursor = 'grab';
+    try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+  };
 }
 
 let grainRaf = null;
