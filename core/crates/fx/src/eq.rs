@@ -224,6 +224,19 @@ impl Effect for Eq {
     fn name(&self) -> &'static str {
         "EQ"
     }
+    fn get_param(&self, key: &str) -> Option<f32> {
+        let rest = key.strip_prefix("band.")?;
+        let (i, field) = rest.split_once('.')?;
+        let i = i.parse::<usize>().ok().filter(|i| *i < 8)?;
+        let b = self.settings.bands()[i];
+        Some(match field {
+            "freq" => b.freq,
+            "q" => b.q,
+            "gainDb" => b.gain_db,
+            "enabled" => self.settings.enabled[i] as u8 as f32,
+            _ => return None,
+        })
+    }
     fn set_param(&mut self, key: &str, value: f32) -> bool {
         let Some(rest) = key.strip_prefix("band.") else {
             return false;

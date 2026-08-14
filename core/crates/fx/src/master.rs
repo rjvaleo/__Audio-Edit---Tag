@@ -265,6 +265,10 @@ impl Effect for Maximizer {
         "Maximizer"
     }
 
+    fn get_param(&self, key: &str) -> Option<f32> {
+        (key == "amount").then_some(self.settings.amount)
+    }
+
     /// Only `amount`. The ceiling and the two automatic modes are decisions
     /// about how the maximiser behaves, not things to sweep during a take, and
     /// automating the ceiling would put the one guarantee this effect makes —

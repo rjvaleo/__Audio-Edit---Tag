@@ -453,9 +453,178 @@ pub struct Core {
     params: StreamParams,
     source: Arc<Source>,
     scratch: Vec<GrainEvent>,
+    /// Where each driven control currently *is*, as opposed to where it has
+    /// been asked to go. See [`Smoothed`].
+    smoothing: Vec<Smoothed>,
 }
 
+/// One control on its way to a new value.
+///
+/// A control written straight into an effect jumps at a block boundary, and a
+/// discontinuity in a gain, a mix or a filter frequency is a click — the thing
+/// people call zipper noise when it happens repeatedly. Every write from a hand
+/// on a slider or from an automation lane therefore lands here first and is
+/// walked toward its target over a few milliseconds instead.
+///
+/// The control's name is held inline rather than as a `String`, because the
+/// audio thread may not allocate and the effect needs the name back to write it.
+/// Thirty-two bytes covers every key in this codebase; a longer one is not
+/// smoothed rather than truncated into some other control's name.
+#[derive(Clone, Copy)]
+struct Smoothed {
+    slot: usize,
+    key: [u8; 32],
+    key_len: usize,
+    current: f32,
+    target: f32,
+}
+
+impl Smoothed {
+    fn name(&self) -> &str {
+        // Written from a `&str`, so it is still valid UTF-8.
+        std::str::from_utf8(&self.key[..self.key_len]).unwrap_or("")
+    }
+    fn is(&self, slot: usize, key: &str) -> bool {
+        self.slot == slot && self.name() == key
+    }
+}
+
+/// How long a control takes to reach a new value, in seconds.
+///
+/// Long enough that a step cannot click, short enough that a control still
+/// feels attached to the hand moving it. Fifteen milliseconds is about the
+/// shortest that reliably does the first.
+const SMOOTH_SECONDS: f32 = 0.015;
+
+/// The most controls that can be smoothed at once. Past this the newest write
+/// is applied directly, which is worse than smoothing and far better than
+/// allocating in the callback.
+const MAX_SMOOTHED: usize = 96;
+
+/// Frames between control updates while something is moving.
+///
+/// A block is a few hundred frames, and moving a control once per block still
+/// steps it by several dB — which is the click, just at a lower rate. So while
+/// anything is travelling the rack is run in short pieces with the controls
+/// nudged between them. About two thirds of a millisecond at 48 kHz, which is
+/// far below what an ear resolves as an edge.
+///
+/// The chunking only happens while something is actually moving. A rack whose
+/// controls are all where they were asked to be is processed in one go, exactly
+/// as before, so this costs nothing when nobody is touching anything.
+const CONTROL_CHUNK: usize = 8;
+
+/// Controls that must **not** be interpolated.
+///
+/// A ramp through the values between two settings is meaningless for these: a
+/// filter type halfway between a bell and a notch is not a filter, and three
+/// and a half notches is not a number of notches. Everything else — every gain,
+/// mix, frequency, time and depth — is continuous and is smoothed.
+///
+/// Toggles are deliberately absent: a switch read as `>= 0.5` simply flips
+/// halfway through the ramp, which is a switch happening 7 ms late and not a
+/// wrong value.
+fn is_stepped(key: &str) -> bool {
+    matches!(key, "mode" | "notches" | "layers" | "fftSize" | "interpolation")
+}
+
+
+
 impl Core {
+    /// Point a control at a new value, without moving it yet.
+    ///
+    /// A control asked for something it is already at costs nothing; a new one
+    /// starts from where it was asked to go rather than from zero, so the first
+    /// write of a session lands immediately instead of sweeping up from silence.
+    fn aim(&mut self, slot: usize, key: &str, value: f32) {
+        if let Some(s) = self.smoothing.iter_mut().find(|s| s.is(slot, key)) {
+            s.target = value;
+            // A control that cannot meaningfully be halfway between two
+            // settings jumps: see `is_stepped`.
+            if is_stepped(key) {
+                s.current = value;
+            }
+            return;
+        }
+        // First sight of this control. Start it from wherever the effect
+        // actually is and ramp from there — writing it straight through was the
+        // click, because the first move of any control is the one that matters.
+        // An effect that cannot say where it is gets the value directly, which
+        // is the old behaviour and the best that can be done for it.
+        let from = self.rack.as_ref().and_then(|r| r.get_param(slot, key));
+        if from.is_none() {
+            if let Some(rack) = self.rack.as_mut() {
+                rack.set_param(slot, key, value);
+            }
+        }
+        let bytes = key.as_bytes();
+        if self.smoothing.len() < MAX_SMOOTHED && bytes.len() <= 32 {
+            let mut buf = [0u8; 32];
+            buf[..bytes.len()].copy_from_slice(bytes);
+            self.smoothing.push(Smoothed {
+                slot,
+                key: buf,
+                key_len: bytes.len(),
+                current: if is_stepped(key) { value } else { from.unwrap_or(value) },
+                target: value,
+            });
+        }
+    }
+
+    /// Run the rack, nudging any travelling control as it goes.
+    ///
+    /// In one piece when nothing is moving, which is almost always; in short
+    /// pieces while something is, so a control arrives as a slope rather than
+    /// as an edge. See [`CONTROL_CHUNK`].
+    fn process_rack(&mut self, out: &mut [f32], channels: usize) {
+        if self.rack.is_none() {
+            return;
+        }
+        let sr = self.params.sample_rate;
+        let moving = self
+            .smoothing
+            .iter()
+            .any(|s| (s.current - s.target).abs() > 1e-7);
+        if !moving {
+            if let Some(rack) = self.rack.as_mut() {
+                rack.process(out, channels, sr);
+            }
+            return;
+        }
+        let ch = channels.max(1);
+        for chunk in out.chunks_mut(CONTROL_CHUNK * ch) {
+            self.settle(chunk.len() / ch);
+            if let Some(rack) = self.rack.as_mut() {
+                rack.process(chunk, ch, sr);
+            }
+        }
+    }
+
+    /// Move every driven control one step closer to its target and write it.
+    fn settle(&mut self, frames: usize) {
+        if self.smoothing.is_empty() {
+            return;
+        }
+        let sr = self.params.sample_rate.max(1) as f32;
+        // One pole, per block. The block is short next to the time constant, so
+        // treating the whole block as one step is inaudible and costs one
+        // multiply per control rather than one per sample.
+        let k = (1.0 - (-(frames as f32) / (SMOOTH_SECONDS * sr)).exp()).clamp(0.0, 1.0);
+        let Some(rack) = self.rack.as_mut() else { return };
+        for s in &mut self.smoothing {
+            if (s.current - s.target).abs() < 1e-7 {
+                continue;
+            }
+            s.current += (s.target - s.current) * k;
+            // Land exactly rather than approaching forever, so a control that
+            // has arrived stops costing anything.
+            if (s.current - s.target).abs() < 1e-6 {
+                s.current = s.target;
+            }
+            rack.set_param(s.slot, s.name(), s.current);
+        }
+    }
+
     /// `channels` is the *device's* channel count, not the source's.
     ///
     /// The engines size their buffers from it once and never again, so it has
@@ -480,6 +649,9 @@ impl Core {
             fft_bins: vec![0; FFT_SIZE / 2 + 1],
             params,
             source,
+            // Capacity up front: `aim` runs in the callback and must never
+            // grow this.
+            smoothing: Vec::with_capacity(MAX_SMOOTHED),
             scratch: vec![
                 GrainEvent {
                     index: 0,
@@ -536,15 +708,17 @@ impl Core {
         // Borrowed, never taken — see `Shared::automation`. A contended lock
         // means the writer is mid-update; the previous values are still
         // applied, so skipping a block loses nothing.
-        if let Some(rack) = self.rack.as_mut() {
+        // Aim the smoothers at whatever has been asked for. Manual first, then
+        // automation, so a lane wins over a hand on the same control.
+        if self.rack.is_some() {
             if let Ok(g) = shared.manual.try_lock() {
                 for (slot, key, value) in g.iter() {
-                    rack.set_param(*slot, key, *value);
+                    self.aim(*slot, key, *value);
                 }
             }
             if let Ok(g) = shared.automation.try_lock() {
                 for (slot, key, value) in g.iter() {
-                    rack.set_param(*slot, key, *value);
+                    self.aim(*slot, key, *value);
                 }
             }
         }
@@ -646,9 +820,7 @@ impl Core {
 
         // The rack runs on the block, after the grains and before the fader,
         // exactly as the offline render orders it.
-        if let Some(rack) = self.rack.as_mut() {
-            rack.process(out, channels, self.params.sample_rate);
-        }
+        self.process_rack(out, channels);
 
         let gain = f32::from_bits(shared.gain.load(Ordering::Acquire));
         if (gain - 1.0).abs() > 1e-6 {
