@@ -47,6 +47,26 @@ pub struct PvsolaStream {
     /// the *previous* round is playing for, and spliced in when it is ready.
     prep: Option<Prep>,
 
+    /// The plan the round in flight was started under.
+    ///
+    /// A run is defined from its anchor: `written` and `read` accumulate under
+    /// one plan, and the splice reads back into what the previous round left.
+    /// Recomputing the plan mid-round — which is what moving the re-anchor or
+    /// the analysis window used to do — leaves the bookkeeping describing a
+    /// round that was never made, and every splice after it lands in the wrong
+    /// place. So a change waits for the next anchor, which is a boundary this
+    /// engine already has and the only place it can safely take one.
+    held: Option<Plan>,
+
+    /// And the parameters it was started under.
+    ///
+    /// The plan is not the whole story: the two vocoder runs inside this take
+    /// their own window from `StretchParams`, so deferring only the plan left
+    /// the analysis window changing under a round that had already been
+    /// measured for a different one. A run is defined from its anchor, and
+    /// that has to mean all of it.
+    held_p: Option<StretchParams>,
+
     /// Finished output waiting to be handed out.
     acc: Vec<f32>,
     ring: usize,
@@ -74,6 +94,8 @@ impl PvsolaStream {
             piece: vec![0.0; (MAX_SPAN + MAX_LEAD) * channels],
             piece_frames: 0,
             prep: None,
+            held: None,
+            held_p: None,
             acc: vec![0.0; ring * channels],
             ring,
             channels,
@@ -124,6 +146,9 @@ impl PvsolaStream {
         self.ended = false;
         self.piece_frames = 0;
         self.prep = None;
+        // A seek is a fresh start, so it adopts whatever is set now.
+        self.held = None;
+        self.held_p = None;
     }
 
     /// Fill one block. Must not allocate.
@@ -143,7 +168,20 @@ impl PvsolaStream {
             return;
         }
 
-        let pl = Self::plan(p, pv);
+        // The plan the round in flight was started under, or a new one if no
+        // round is in flight. See `held`.
+        let (pl, hp) = match (self.held, self.held_p) {
+            (Some(pl), Some(hp)) if self.prep.is_some() => (pl, hp),
+            _ => {
+                let fresh = Self::plan(p, pv);
+                self.held = Some(fresh);
+                self.held_p = Some(*p);
+                (fresh, *p)
+            }
+        };
+        // Everything below runs under the round's own parameters, not under
+        // whatever the slider is at this instant.
+        let p = &hp;
         let need = self.emitted + frames as u64;
 
         // How much of the next round to make this time round. A round of output
@@ -384,6 +422,7 @@ struct Prep {
     done: usize,
 }
 
+#[derive(Clone, Copy)]
 struct Plan {
     n: usize,
     ratio: f32,
@@ -493,6 +532,82 @@ mod tests {
         let b = streamed(&src, 2, &s, 2048);
         let worst = a.iter().zip(&b).map(|(x, y)| (x - y).abs()).fold(0f32, f32::max);
         assert!(worst < 1e-6, "the block size changed the audio by {worst:.2e}");
+    }
+
+    /// Render while turning a control, the way a hand on a slider does.
+    fn streamed_while_turning(
+        input: &[f32],
+        channels: usize,
+        spec: &Stretch,
+        block: usize,
+        mut turn: impl FnMut(&mut Stretch, usize),
+    ) -> Vec<f32> {
+        let in_frames = input.len() / channels;
+        let want = ((in_frames as f64) * spec.ratio as f64).round() as usize;
+        let mut s = PvsolaStream::new(block, channels);
+        let mut live = *spec;
+        s.seek(0, in_frames, &params(&live), &live.pvsola);
+        let mut out = vec![0f32; want * channels];
+        let mut at = 0usize;
+        let mut buf = vec![0f32; block * channels];
+        let mut n_block = 0usize;
+        while at < want {
+            turn(&mut live, n_block);
+            n_block += 1;
+            let n = block.min(want - at);
+            s.render(&mut buf[..n * channels], channels, input, &params(&live), &live.pvsola);
+            out[at * channels..(at + n) * channels].copy_from_slice(&buf[..n * channels]);
+            at += n;
+        }
+        out
+    }
+
+    /// Sharpest corner — the second difference, which tells a discontinuity
+    /// from an honest slope. See `engine::transport`, where the same measure
+    /// is used on the rack's controls.
+    fn worst_corner(v: &[f32], channels: usize) -> f32 {
+        (0..v.len() / channels)
+            .skip(1)
+            .take(v.len() / channels - 2)
+            .map(|f| {
+                let a = v[(f - 1) * channels];
+                let b = v[f * channels];
+                let c = v[(f + 1) * channels];
+                (c - 2.0 * b + a).abs()
+            })
+            .fold(0f32, f32::max)
+    }
+
+    /// Moving the re-anchor or the analysis window used to glitch, because the
+    /// plan was recomputed on every block while `written` and `read` had been
+    /// accumulated under the old one — so the splice landed somewhere the
+    /// previous round had never written. A change now waits for the next
+    /// anchor, which is the only boundary this engine can take one at.
+    #[test]
+    fn turning_the_anchor_or_the_window_does_not_glitch() {
+        let src = chord(1.5, 2);
+        let base = spec(2.0);
+        let steady = worst_corner(&streamed(&src, 2, &base, 256), 2);
+
+        // The re-anchor, swept across its whole range while playing.
+        let anchored = streamed_while_turning(&src, 2, &base, 256, |s, i| {
+            s.pvsola.anchor_frames = 2 + (i as u32 * 3) % 30;
+        });
+        let got = worst_corner(&anchored, 2);
+        assert!(
+            got < steady * 4.0,
+            "sweeping the re-anchor put a corner of {got:.4} in against a steady {steady:.4}"
+        );
+
+        // And the analysis window, likewise.
+        let windowed = streamed_while_turning(&src, 2, &base, 256, |s, i| {
+            s.vocoder.window_ms = 20.0 + ((i * 7) % 80) as f32;
+        });
+        let got = worst_corner(&windowed, 2);
+        assert!(
+            got < steady * 4.0,
+            "sweeping the window put a corner of {got:.4} in against a steady {steady:.4}"
+        );
     }
 
     #[test]
