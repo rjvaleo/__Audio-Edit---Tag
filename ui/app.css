@@ -1684,10 +1684,24 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .scale-btn:hover { border-color: var(--accent); color: var(--accent); }
 .scale-btn.on { border-color: var(--accent); color: var(--accent); background: var(--surface-3); }
-.menu-pop.scale-pop { width: 330px; max-height: 60vh; overflow: auto; padding: 4px; }
+.menu-pop.scale-pop {
+  width: 340px; max-height: 66vh; overflow: auto; padding: 4px;
+  display: flex; flex-direction: column;
+}
+.scale-head {
+  display: flex; align-items: center; gap: 8px; padding: 3px 5px 6px;
+  position: sticky; top: -4px; z-index: 2; background: inherit;
+  border-bottom: 1px solid var(--line);
+}
+.scale-count {
+  font-size: 9.5px; color: var(--text-dimmer); flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+.scale-head .filter-box { flex: 1; min-width: 0; }
 .scale-cats { display: flex; flex-direction: column; gap: 1px; }
 .scale-cat-head {
-  width: 100%; text-align: left; padding: 5px 7px; cursor: pointer;
+  width: 100%; text-align: left; padding: 6px 7px 3px; cursor: pointer;
+  position: sticky; top: 26px; z-index: 1; background: inherit;
   font-size: 9.5px; font-weight: 650; letter-spacing: .4px;
   border: 0; border-radius: 3px; background: transparent; color: var(--text-2);
 }
