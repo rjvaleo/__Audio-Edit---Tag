@@ -336,20 +336,21 @@
           </div>
           <div class="grain-vis">
             <div class="vis-pick" id="visPick">
-              <button class="vis-tab active" data-vis="0" title="The grains as dots in space: across is the file, up is pitch, depth is time either side of now. Drag to turn it.">Cloud</button>
-              <button class="vis-tab" data-vis="1" title="Output time against source time — the stretch as a slope">Shear</button>
-              <button class="vis-tab" data-vis="2" title="Time wound into a helix — strands are the overlap">Braid</button>
-              <button class="vis-tab" data-vis="3" title="The free cloud in three dimensions">Swarm 3D</button>
-              <button class="vis-tab" data-vis="4" title="An octave to a shell — drift becomes rotation">Shells</button>
-              <button class="vis-tab" data-vis="5" title="The hop grid as a crystal, melted by the jitters">Lattice</button>
-              <button class="vis-tab suite" id="visSuite" title="V1 the object · V2 the moment">V1</button>
-              <button class="vis-open" id="visOpen" title="Open a floating panel with every control">&#9974;</button>
+              <button class="vis-tab active" data-vis="cloud" title="The spread the scatter controls make: across the stereo field, up the pitch, deep the distance from the read head">Cloud</button>
+              <button class="vis-tab" data-vis="shear" title="Output time across, source time into the screen. The stretch ratio is not a number here, it is the slope.">Shear</button>
+              <button class="vis-tab" data-vis="braid" title="Time wound into a closed loop. Grains sounding together separate into strands, and the strand count is the overlap.">Braid</button>
+              <button class="vis-tab" data-vis="swarm" title="Radius is where in the source a grain reads, so the shell breathes outward as the head works through the file">Swarm</button>
+              <button class="vis-tab" data-vis="shells" title="An octave to a shell. Drift stops being a parameter and becomes a rotation you can watch.">Shells</button>
+              <button class="vis-tab" data-vis="lattice" title="The bare hop grid. With every jitter at zero it is a perfect crystal; raise them and it melts.">Lattice</button>
+              <button class="vis-tab" data-vis="tunnel" title="Depth is time. Grains arrive out of the far wall, cross you, and vanish behind your head.">Tunnel</button>
+              <button class="vis-tab" data-vis="mandala" title="Now at the centre, the coming and the gone blooming outward together">Mandala</button>
+              <button class="vis-tab" data-vis="vortex" title="In from the future, across the present, out into the past">Vortex</button>
+              <button class="vis-tab" data-vis="ripple" title="A standing wave and its reflection. The surface is the source; the grains ride it.">Ripple</button>
             </div>
             <!-- The cloud is a p5 WEBGL sketch in instance mode, so it owns
                  its own canvas and its own loop rather than sharing the app's.
                  p5 is served from the binary; nothing here reaches the net. -->
             <div id="grainGl"><p class="grain-empty hidden" id="grainEmpty">Engage a grain control to see the cloud</p></div>
-            <iframe id="grainFrame" class="hidden" title="3D grain views"></iframe>
             <div class="vis-legend">
               <span><i class="sw hot"></i>bright / sharp</span>
               <span><i class="sw cold"></i>dark / flat</span>

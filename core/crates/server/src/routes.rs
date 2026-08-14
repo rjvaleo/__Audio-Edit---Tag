@@ -1158,6 +1158,11 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
                 // left-and-right that is real rather than decorative, and this
                 // is the only one a grain has.
                 Value::Num(pan_of(&st.grain, e.index) as f64),
+                // The grain's own index. Every jitter it carries is a pure
+                // function of this number, and the braid needs it to work out
+                // which strand a grain belongs to — an ordinal in the array
+                // would change meaning the moment the list is thinned.
+                Value::Num(e.index as f64),
             ])
         })
         .collect();
