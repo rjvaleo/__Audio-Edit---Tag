@@ -1702,6 +1702,7 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                         .clamp(0.0, 24.0),
                     drift_rate_hz: gf("driftRateHz", cur.drift_rate_hz).clamp(0.01, 20.0),
                     seed: gf("seed", cur.seed as f32).max(0.0) as u32,
+                    position: gf("position", cur.position).clamp(-1.0, 1.0),
                     scan: gf("scan", cur.scan).clamp(-4.0, 4.0),
                     reverse: match gv.and_then(|x| x.get("reverse")) {
                         Some(Value::Bool(b)) => *b,

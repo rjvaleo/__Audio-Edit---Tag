@@ -47,6 +47,22 @@ pub struct Grain {
 
     // Below here, the assumptions the schedule normally makes.
 
+    /// Where the read head sits in the source, as a fraction of it.
+    ///
+    /// The control the cloud was missing. `scan` could stop the sweep, but only
+    /// ever parked it at frame zero — so a cloud could be made from one instant
+    /// and that instant was always the beginning of the file. There was no way
+    /// to say "make a cloud from eight seconds in", which is most of what a
+    /// granular instrument is for.
+    ///
+    /// Measured from wherever the sweep would begin: the start going forwards,
+    /// the end going backwards. Zero is therefore exactly what every document
+    /// written before this control existed already does, in both directions.
+    ///
+    /// Automatable, which is the other half of it. A lane drawn on this is a
+    /// read head skipping around the source under its own hand, with playback
+    /// of the file no longer tied to where the output has got to.
+    pub position: f32,
     /// How fast the read pointer sweeps the source, relative to the sweep the
     /// time ratio implies. One is a stretch: the pointer covers the file in
     /// exactly the output duration. Zero holds it at the beginning, so the
@@ -112,6 +128,8 @@ impl Default for Grain {
         Grain {
             density_hz: 0.0,
             overlap: 2.0,
+            // Zero is the sweep's own beginning, which is where it always was.
+            position: 0.0,
             size_jitter: 0.0,
             position_jitter_ms: 0.0,
             pitch_jitter_semis: 0.0,
@@ -149,6 +167,7 @@ impl Grain {
             // changes the sound off it, so each has to be checked here or a
             // document carrying it would be mistaken for an untouched one and
             // skip the stretcher entirely.
+            && self.position.abs() < 1e-4
             && (self.scan - 1.0).abs() < 1e-4
             && !self.reverse
             && (self.envelope - 0.5).abs() < 1e-4
@@ -419,7 +438,12 @@ fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> Grain
     // while still being laid down forwards.
     let scan = g.scan.clamp(-4.0, 4.0);
     let sweep = ((write as f32) / ratio) * scan;
-    let nominal = if scan < 0.0 { sp.in_frames as f32 + sweep } else { sweep };
+    // Where the sweep starts from, plus wherever the head has been moved to.
+    // The offset is measured from the natural beginning of the sweep, which is
+    // what keeps zero meaning exactly what it meant before this control
+    // existed — including for a reverse scan, which starts at the end.
+    let home = if scan < 0.0 { sp.in_frames as f32 } else { 0.0 };
+    let nominal = home + g.position.clamp(-1.0, 1.0) * sp.in_frames as f32 + sweep;
 
     let jitter = if pos_jitter > 0.0 { pos_jitter * g.rand_bipolar(index, g.salt(5)) } else { 0.0 };
     // This layer's own throw, so the layers are different audio rather than

@@ -411,6 +411,9 @@ pub fn stretch_value(target: &str, u: f32) -> Option<f32> {
         "stretch.grain.densityHz" => u * DENSITY_MAX,
         "stretch.grain.positionJitterMs" => u * POS_JITTER_MAX,
         "stretch.grain.pitchJitterSemis" => u * PITCH_JITTER_MAX,
+        // Already a fraction of the source at both ends. A lane on this is the
+        // read head being moved around by hand, which is the point of it.
+        "stretch.grain.position" => u,
         "stretch.cloudMix" => u,
         _ => return None,
     })
@@ -432,6 +435,7 @@ pub fn stretch_field(s: &fx::Stretch, target: &str) -> Option<f32> {
         "stretch.grain.densityHz" => s.grain.density_hz,
         "stretch.grain.positionJitterMs" => s.grain.position_jitter_ms,
         "stretch.grain.pitchJitterSemis" => s.grain.pitch_jitter_semis,
+        "stretch.grain.position" => s.grain.position,
         "stretch.cloudMix" => s.cloud_mix,
         _ => return None,
     })
@@ -492,6 +496,7 @@ pub fn apply_stretch(a: &Automation, p: &mut fx::grain::StreamParams, frame: u64
             "stretch.grain.densityHz" => p.grain.density_hz = v,
             "stretch.grain.positionJitterMs" => p.grain.position_jitter_ms = v,
             "stretch.grain.pitchJitterSemis" => p.grain.pitch_jitter_semis = v,
+            "stretch.grain.position" => p.grain.position = v,
             "stretch.cloudMix" => p.cloud_mix = v,
             _ => {}
         }
@@ -522,6 +527,7 @@ pub fn targets(spec: &crate::rack::RackSpec) -> Vec<(String, String)> {
         ("stretch.grain.densityHz", "Grains — Density"),
         ("stretch.grain.positionJitterMs", "Grains — Position jitter"),
         ("stretch.grain.pitchJitterSemis", "Grains — Pitch jitter"),
+        ("stretch.grain.position", "Grains — Read position"),
         ("stretch.cloudMix", "Grains — Cloud over engine"),
     ]
     .iter()

@@ -3694,6 +3694,8 @@ function renderGrainParams() {
   const groups = [
     [shape, 'Grain shape',
      'How often something is laid down, how long it is, how many of them, and how much any of that varies. Every engine answers these — a window is a splice for WSOLA and an analysis frame for the vocoder.', [
+      ['Position', 'position', -1, 1, 0.001, (v) => `${(v * 100).toFixed(1)}%`,
+       'Where in the source the cloud reads from, as a fraction of the file. Measured from where the sweep begins — the start going forwards, the end going backwards — so zero is the ordinary sweep. Turn Scan down to nothing and this is the whole instrument: the read head parks wherever you put it and the cloud is made from that one place. Automate it and the head skips around under its own hand.'],
       ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'auto' : `${Math.round(v)}/s`),
        'How often a window is laid down, in windows per second. On “auto” the rate comes from the window length divided by Overlap instead, which is what keeps the sound even as the window changes.'],
       ['Layers', 'layers', 1, 16, 1, (v) => `${Math.round(v)}×`,

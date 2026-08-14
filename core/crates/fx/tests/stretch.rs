@@ -1713,3 +1713,57 @@ fn the_new_engine_panels_show_only_controls_that_reach_the_audio() {
         );
     }
 }
+
+/// The read head has somewhere to sit.
+///
+/// `scan` could stop the sweep, but only ever parked it at frame zero — so a
+/// cloud could be made from one instant and that instant was always the start
+/// of the file. There was no way to say "make a cloud from eight seconds in",
+/// which is most of what a granular instrument is for.
+#[test]
+fn a_parked_cloud_reads_from_wherever_the_head_was_put() {
+    let sr = 48_000u32;
+    let frames = sr as usize; // one second
+    let g = |position: f32| fx::Grain {
+        // Scan at nothing: the head does not move, so every grain comes from
+        // one place and that place is the thing under test.
+        scan: 0.0,
+        density_hz: 40.0,
+        position,
+        ..fx::Grain::default()
+    };
+
+    for want in [0.0f32, 0.25, 0.5, 0.9] {
+        let evs = fx::grain::grains(frames, sr, 4.0, 0.0, 40.0, &g(want));
+        assert!(!evs.is_empty(), "no grains at all");
+        let at = want * frames as f32;
+        for e in &evs {
+            assert!(
+                (e.src_frame - at).abs() < 2.0,
+                "parked at {want} the cloud read from {} instead of {at}",
+                e.src_frame
+            );
+        }
+    }
+}
+
+/// And zero is exactly where the sweep already began, in both directions.
+///
+/// Invariant nine. A reverse scan starts at the end of the file, and the offset
+/// is measured from wherever the sweep begins — so a document written before
+/// this control existed reads from the same frames it always did.
+#[test]
+fn a_read_position_of_zero_changes_nothing() {
+    let sr = 48_000u32;
+    let frames = sr as usize / 2;
+    for scan in [1.0f32, 0.5, -1.0] {
+        let base = fx::Grain { scan, density_hz: 30.0, ..fx::Grain::default() };
+        let with = fx::Grain { position: 0.0, ..base };
+        let a = fx::grain::grains(frames, sr, 3.0, 0.0, 40.0, &base);
+        let b = fx::grain::grains(frames, sr, 3.0, 0.0, 40.0, &with);
+        assert_eq!(a.len(), b.len(), "scan {scan}");
+        for (x, y) in a.iter().zip(&b) {
+            assert_eq!(x.src_frame, y.src_frame, "scan {scan}");
+        }
+    }
+}

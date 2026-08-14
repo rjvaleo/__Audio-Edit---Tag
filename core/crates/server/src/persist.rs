@@ -124,6 +124,7 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("driftRateHz", s.grain.drift_rate_hz as f64)
                 .set("layers", s.grain.layers as f64)
                 .set("seed", s.grain.seed as f64)
+                .set("position", s.grain.position as f64)
                 .set("scan", s.grain.scan as f64)
                 .set("reverse", s.grain.reverse)
                 .set("envelope", s.grain.envelope as f64)
@@ -293,6 +294,7 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             pitch_drift_semis: gf("pitchDriftSemis", d.grain.pitch_drift_semis).clamp(0.0, 24.0),
             drift_rate_hz: gf("driftRateHz", d.grain.drift_rate_hz).clamp(0.01, 20.0),
             seed: gf("seed", d.grain.seed as f32).max(0.0) as u32,
+            position: gf("position", d.grain.position).clamp(-1.0, 1.0),
             scan: gf("scan", d.grain.scan).clamp(-4.0, 4.0),
             reverse: matches!(g.and_then(|x| x.get("reverse")), Some(Value::Bool(true))),
             envelope: gf("envelope", d.grain.envelope).clamp(0.0, 1.0),
@@ -554,6 +556,7 @@ mod tests {
                 residual_level: 0.25,
             },
             grain: Grain {
+                position: 0.42,
                 density_hz: 42.0,
                 overlap: 3.5,
                 size_jitter: 0.4,
@@ -576,7 +579,7 @@ mod tests {
                 drift_step: true,
                 pan_spread: 0.65,
             },
-                    cloud: false,
+            cloud: false,
             cloud_mix: 0.5,
         };
         l
