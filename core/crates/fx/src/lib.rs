@@ -261,6 +261,15 @@ impl Rack {
         self.meters = Some(meters);
     }
 
+    /// Stop writing meters.
+    ///
+    /// A rack being faded out of shares its meter block with the one coming
+    /// in. Two writers on the same needles is a flicker between two different
+    /// chains, and the one you want to watch is the one arriving.
+    pub fn mute_meters(&mut self) {
+        self.meters = None;
+    }
+
     pub fn push(&mut self, effect: Box<dyn Effect>) {
         self.slots.push(Slot { effect, bypassed: false });
     }
