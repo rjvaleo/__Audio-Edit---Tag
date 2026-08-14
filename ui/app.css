@@ -1672,3 +1672,33 @@ body.editing .dock { flex: 0 0 330px; }
 .rec-name { display: flex; align-items: center; gap: 8px; }
 .rec-name .k { font-size: 10.5px; color: var(--text-2); flex: 0 0 auto; }
 .rec-name input { flex: 1; min-width: 0; }
+
+/* ------------------------------------------------------------------ tuning
+   Eighty-one scales is a list you cannot read; the categories are the first
+   level and one opens at a time. */
+.scale-btn {
+  margin-left: 6px; height: 18px; padding: 0 7px; flex: 0 0 auto;
+  font-size: 9.5px; border-radius: 3px; cursor: pointer;
+  border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text-2);
+  max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.scale-btn:hover { border-color: var(--accent); color: var(--accent); }
+.scale-btn.on { border-color: var(--accent); color: var(--accent); background: var(--surface-3); }
+.menu-pop.scale-pop { width: 330px; max-height: 60vh; overflow: auto; padding: 4px; }
+.scale-cats { display: flex; flex-direction: column; gap: 1px; }
+.scale-cat-head {
+  width: 100%; text-align: left; padding: 5px 7px; cursor: pointer;
+  font-size: 9.5px; font-weight: 650; letter-spacing: .4px;
+  border: 0; border-radius: 3px; background: transparent; color: var(--text-2);
+}
+.scale-cat-head:hover { background: var(--surface-2); color: var(--accent); }
+.scale-cat-body { display: flex; flex-direction: column; gap: 1px; padding: 1px 0 4px 8px; }
+.scale-item {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left;
+  padding: 4px 7px; border: 0; border-radius: 3px; cursor: pointer;
+  background: transparent; color: var(--text);
+}
+.scale-item:hover { background: var(--surface-2); }
+.scale-item.selected { background: var(--surface-3); color: var(--accent); }
+.scale-item .sc-name { font-size: 11px; }
+.scale-item .sc-info { font-size: 9px; color: var(--text-dimmer); }
