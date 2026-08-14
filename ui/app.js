@@ -43,6 +43,12 @@ const state = {
   mode: 'overview',            // 'overview' | 'edit'
 
   peaks: null,
+  /// A whole-file envelope for the automation lanes, at a fixed width.
+  ///
+  /// Deliberately not `peaks`: that one is the zoom window and moves under the
+  /// pointer, while a lane always spans the entire document. Sharing it would
+  /// make the breakpoints line up with a picture of somewhere else.
+  laneWave: null,
   spec: null,
   stats: null,
   showSpec: false,
@@ -3937,6 +3943,7 @@ function automationNote() {
 function renderAutomation() {
   const box = $('automationLanes');
   if (!box) return;
+  loadLaneWave();
   $('automationBypass').checked = !!state.automation.bypassed;
   box.innerHTML = '';
   const targets = automationTargets();
@@ -4117,6 +4124,69 @@ const curveT = (t, p) => {
   return t;
 };
 
+/// Fetch the whole-file envelope the lanes are drawn over.
+///
+/// Once per file, at a fixed column count — the lanes never zoom, so there is
+/// nothing to refetch for. Failure is silent: a lane with no picture behind it
+/// is the lane as it was, and a toast for a decoration would be noise.
+const LANE_WAVE_COLUMNS = 900;
+let laneWaveFor = null;
+async function loadLaneWave() {
+  const f = state.selectedFile;
+  if (!f) { state.laneWave = null; laneWaveFor = null; return; }
+  if (laneWaveFor === f.path) return;
+  laneWaveFor = f.path;
+  try {
+    const w = await api(`/api/peaks?p=${encodeURIComponent(f.path)}&cols=${LANE_WAVE_COLUMNS}`);
+    // The file may have been changed out during the await.
+    if (laneWaveFor !== f.path) return;
+    state.laneWave = w;
+  } catch { state.laneWave = null; }
+  repaintAutomationLanes();
+}
+
+/// The sound itself, behind the curve.
+///
+/// Breakpoints are placed against what is being heard, and doing that from a
+/// clock reading alone means counting seconds against a waveform in another
+/// part of the window. Drawn dim and mono — it is a reference, and it must not
+/// compete with the line the lane is actually for.
+function drawLaneWave(c, w, h, frames) {
+  const p = state.laneWave;
+  if (!p || !p.channels?.length) return;
+  const cols = p.channels[0].max?.length || 0;
+  if (!cols) return;
+
+  // Drawn across the whole lane rather than at the source's own scale. The lane
+  // counts output frames, and the output *is* the source spread over them — at
+  // eight times, a source-scaled envelope would huddle into the first eighth of
+  // a lane whose audio runs the full width.
+  //
+  // The alternative was to ask the server for the edited timeline, which is
+  // exact. It also renders the whole stretched document through the rack — four
+  // minutes of audio for a thirty-second file at eight times — and would go
+  // stale on every move of the ratio. This is cheap, never stale, and right for
+  // everything except a document with material cut out of it.
+  const mid = h / 2;
+  const half = h / 2 * 0.86;
+
+  c.fillStyle = 'rgba(82,168,255,.13)';
+  c.beginPath();
+  c.moveTo(0, mid);
+  for (let i = 0; i < cols; i++) {
+    let hi = 0;
+    for (const ch of p.channels) hi = Math.max(hi, Math.abs(ch.max[i]), Math.abs(ch.min[i]));
+    c.lineTo((i / (cols - 1)) * w, mid - hi * half);
+  }
+  for (let i = cols - 1; i >= 0; i--) {
+    let hi = 0;
+    for (const ch of p.channels) hi = Math.max(hi, Math.abs(ch.max[i]), Math.abs(ch.min[i]));
+    c.lineTo((i / (cols - 1)) * w, mid + hi * half);
+  }
+  c.closePath();
+  c.fill();
+}
+
 function drawLane(canvas, lane) {
   const c = canvas.getContext('2d');
   const w = canvas.width;
@@ -4124,6 +4194,8 @@ function drawLane(canvas, lane) {
   const frames = laneFrames();
   const sr = state.view?.sampleRate || 44100;
   c.clearRect(0, 0, w, h);
+
+  drawLaneWave(c, w, h, frames);
 
   c.strokeStyle = '#22303d';
   c.fillStyle = 'rgba(220,228,235,.45)';
