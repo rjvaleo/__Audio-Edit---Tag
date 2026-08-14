@@ -1213,8 +1213,15 @@
         // Only when it is actually looping. Following the engine there is no
         // wrap to hide, and dimming the real beginning and end of playback
         // would be inventing a fade nobody asked for.
+        // Only while the cursor is actually travelling. Paused, or parked at
+        // the start, there is no join to hide — and the first version of this
+        // did not check, so at rest the cursor sat on zero, the fade evaluated
+        // to nothing, and every view went black. A fade that can blank a
+        // stationary picture is not a fade, it is a bug with a nice name.
         const SEAM_SECONDS = 0.35;
-        const seam = (LOCK_CENTRE && !live)
+        const looping = LOCK_CENTRE && !live && !paused
+                     && outSeconds > SEAM_SECONDS * 4;
+        const seam = looping
             ? Math.min(1, Math.min(now, Math.max(0, outSeconds - now)) / SEAM_SECONDS)
             : 1;
 
@@ -1694,7 +1701,11 @@
             // rather than the neighbourhood the playhead is in, so what is on
             // screen does not depend on where the playhead has got to — which
             // is what lets a pass end looking exactly like it started.
-            fitDist = extent * 2.6;
+            // Floored. The near plane is at 5, and snapping the distance
+            // straight to the extent — with no easing left to carry it — can
+            // put the camera inside its own subject, where nothing draws and
+            // nothing recovers.
+            fitDist = Math.max(extent * 2.6, 240);
             focus.x = 0; focus.y = 0; focus.z = 0;
         } else if (follow && fw > 0) {
             const tx = fx / fw, ty = fy / fw, tz = fz / fw;
@@ -2511,6 +2522,10 @@
             for (const [k, v] of Object.entries(e.data.params)) {
                 if (!(k in params)) continue;
                 if (typeof v !== 'number' || !isFinite(v)) continue;
+                // A zero length is not a document, it is a document that has
+                // not arrived yet. Taken at face value it rebuilds the whole
+                // schedule over a single frame and empties the view.
+                if (k === 'sourceSeconds' && v <= 0.001) continue;
                 if (params[k] === v) continue;
                 params[k] = v;
                 touched = true;
