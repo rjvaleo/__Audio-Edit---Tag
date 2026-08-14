@@ -910,51 +910,7 @@ function updateOverviewCue() {
     `translateX(${(Math.max(0, Math.min(1, state.cue / total)) * w).toFixed(2)}px)`;
 }
 
-/// How much of the file the cloud is reading, drawn on the file.
-///
-/// A playhead is a line because ordinary playback reads one sample at a time.
-/// A grain cloud reads a whole region at once — a spray of two hundred
-/// milliseconds is two hundred milliseconds wide, and layer scatter can put
-/// parts of it seconds away — so a line was saying something untrue about it.
-///
-/// Measured from the grains that are actually sounding rather than worked out
-/// from the controls. Spray, scatter, layer count and the grain length all end
-/// up in the answer without any of them having to be named here, and it cannot
-/// disagree with what is being heard because it *is* what is being heard.
-function updateReadBand() {
-  const el = $('readBand');
-  if (!el) return;
-  const g = state.grains;
-  const { from, to, sampleRate } = state.view;
-  const lane = $('lane');
-  if (!g?.grains?.length || !state.peaks || !sampleRate || to <= from || !lane) {
-    el.style.display = 'none';
-    return;
-  }
-  const sr = g.sampleRate || sampleRate;
-  const playFrame = playbackTime() * sr;
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const [outFrame, srcFrame, size] of g.grains) {
-    if (outFrame > playFrame || outFrame + size < playFrame) continue;
-    // The whole span the grain reads, not just where it starts.
-    if (srcFrame < lo) lo = srcFrame;
-    if (srcFrame + size > hi) hi = srcFrame + size;
-  }
-  if (!isFinite(lo) || hi <= lo) { el.style.display = 'none'; return; }
-
-  const w = lane.clientWidth || 0;
-  const px = (f) => ((f - from) / (to - from)) * w;
-  const a = px(lo);
-  const b = px(hi);
-  if (b < 0 || a > w) { el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  el.style.transform = `translateX(${Math.max(0, a).toFixed(2)}px)`;
-  el.style.width = `${Math.max(1, Math.min(w, b) - Math.max(0, a)).toFixed(2)}px`;
-}
-
 function updatePlayhead() {
-  updateReadBand();
   const ph = $('playhead');
   const { from, to, sampleRate } = state.view;
   if (!state.peaks || !sampleRate || to <= from) { ph.style.display = 'none'; return; }
@@ -1970,6 +1926,7 @@ async function editOp(body, { live = false } = {}) {
   renderStretch();
   renderGrainParams();
   loadGrains();
+  pushGrainParams();
   renderTabs();
 
   if (live) {
@@ -6264,6 +6221,31 @@ function grainColour(pitchOffset, brightness, alpha) {
   return `oklch(${light}% ${chroma} ${hue} / ${alpha})`;
 }
 
+function visSetup(fade) {
+  const canvas = $('grainCanvas');
+  if (!canvas) return null;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (!w || !h) return null;
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(w * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (fade) {
+    // A translucent wash instead of a clear leaves trails, which is what makes
+    // a swarm read as moving rather than as a scatter of static dots.
+    ctx.fillStyle = 'rgba(7,9,14,0.40)';
+    ctx.fillRect(0, 0, w, h);
+  } else {
+    ctx.clearRect(0, 0, w, h);
+  }
+  return { ctx, w, h };
+}
+
+
 // --------------------------------------------------------------- cloud pad
 
 /// The grain cloud, drawn where it actually is.
@@ -6449,413 +6431,113 @@ function wireCloudPad() {
 }
 
 function drawGrains() {
-  // The pad is a control as well as a picture, so it is drawn whether or not
-  // anything is playing; a control that goes blank when the transport stops is
-  // no use.
+  // Drawn whether or not the swarm is: the pad is a control as well as a
+  // picture, and a control that goes blank when the transport stops is no use.
   drawCloudPad();
-  // The cloud draws itself, on its own loop. All this does is hand it the
-  // instant — one owner for the data, so there is nothing to synchronise
-  // between two animation clocks.
-  startCloudGl();
-  feedCloud();
-
-  const empty = $('grainEmpty');
-  if (empty) empty.classList.toggle('hidden', !!state.grains?.grains?.length);
-}
-
-/// The grain cloud, in three dimensions, on the GPU.
-///
-/// See `visualiser/WITNESS.md`. The short of it: every dot is a grain the
-/// speakers played, are playing, or are about to play, out of the one
-/// enumeration the renderer and the exporter also read. The five views in the
-/// standalone sheet run their own scheduler and produce a cloud that behaves
-/// *like* this engine without being it — fine as a study, wrong docked beside a
-/// file that is actually sounding.
-///
-/// Across is the source, up is pitch, depth is time either side of now: the
-/// same triple the engine computes per grain, in the same order, so this is a
-/// projection of the parameter space rather than a decoration derived from it.
-///
-/// p5 in instance mode, on its own canvas and its own loop. The app's 2D
-/// visuals share one requestAnimationFrame and a WEBGL sketch will not join
-/// that politely. p5 itself is served from the binary — nothing here reaches
-/// the net, which is the rule the whole program is built to keep.
-const CLOUD_AHEAD = 0.35;    // seconds of scheduled-but-unheard, in front
-const CLOUD_BEHIND = 1.6;    // seconds of history, behind
-
-/// What the sketch reads. Written by the app, never by the sketch: one owner,
-/// so there is nothing to synchronise across two animation clocks.
-const cloudFeed = {
-  grains: null, sr: 48000, srcFrames: 0, baseSemis: 0, now: 0,
-  semiSpan: 4, centre: 0, span: 1, turn: 0, headRate: 0, overlap: 2,
-};
-
-/// The camera, and nothing else.
-///
-/// A viewing angle is a control value, like a slider position — it is where the
-/// hand left it. That is not the same as simulation state, and it is the only
-/// thing here that persists between frames.
-const cloudCam = { yaw: 0.5, pitch: -0.22, drag: null };
-
-/// How long the motion takes to come back to where it started.
-///
-/// Every turning term below is a whole number of turns per this, so there is no
-/// seam: the picture at eight seconds is the picture at zero. Nothing is
-/// integrated to achieve it — the angle is read off the clock.
-const LOOP_SECONDS = 8;
-const TRAIL = 3;
-const TRAIL_STEP = 0.09;      // seconds between one ghost and the next
-const DECAY_PER_SECOND = 1.5; // a fixed fraction lost per second, never zero
-
-/// Colour and radius, shared by every view so they cannot disagree about what
-/// a grain looks like — only about where it goes.
-function grainLook(ev, dt, live, f) {
-  const [, , size, pitch, , bright] = ev;
-  const t = Math.max(-1, Math.min(1,
-    (pitch - f.baseSemis) / 9 * 0.55 + (Math.min(1, bright * 4) - 0.4) * 1.4));
-  const warm = t >= 0;
-  return [
-    [warm ? 235 : 105, warm ? 175 - t * 40 : 150, warm ? 120 : 235],
-    2.0 + Math.min(9, (size / f.sr) * 42) * (live ? 1.4 : 1),
-  ];
-}
-
-/// Where one grain sits, in whichever view is showing.
-///
-/// Ported from the standalone sheet, which is a faithful port of `fx::grain`
-/// in its own right — the same hash over the same salts. What it never had was
-/// the *document*: docked in the panel it answered to its own sliders, so it
-/// drew a cloud the engine could have made rather than the one it was making.
-/// These take the enumeration the server sends, so every control reaches them
-/// because the grains themselves already went through it.
-///
-/// `back` is how far into the past to evaluate, which is what draws the trail.
-/// Nothing is remembered between frames; a ghost is this same function asked
-/// about a moment that has gone.
-///
-/// Every quantity used here is one a grain actually has. The angular sector is
-/// the grain's real stereo placement, and the surface it rides is the level it
-/// is actually reading — no display-only randomness anywhere.
-function placeGrain(view, ev, dt, back, geo, out) {
-  const [outFrame, srcFrame, size, pitch, rms, bright, pan, index] = ev;
-  const { R, HEIGHT, SPAN, f, phase } = geo;
-
-  const age = Math.max(0, -dt) + back;
-  const w = Math.max(-1, Math.min(1, (dt - back) / CLOUD_BEHIND));
-  const v = Math.max(0, Math.min(1, srcFrame / f.srcFrames));
-  const pn = Math.max(-1, Math.min(1, (pitch - f.baseSemis) / f.semiSpan));
-  const rate = Math.pow(2, (pitch - f.baseSemis) / 12);
-  const c = (Math.max(-1, Math.min(1, pan || 0)) + 1) / 2;
-  const amp = Math.min(1, rms * 6);
-  const lift = amp * HEIGHT * 0.55;
-  // Where the head was `back` ago, so a grain's distance from it grows as it
-  // ages — the drift that turns a scatter into weather.
-  const centreThen = f.centre - f.headRate * back;
-  const dev = Math.max(-1.6, Math.min(1.6, (srcFrame - centreThen) / Math.max(1, f.span)));
-  const strands = Math.max(1, Math.round(f.overlap));
-  const u = ((outFrame / f.sr) % LOOP_SECONDS) / LOOP_SECONDS;
-
-  switch (view) {
-    case 'shear':
-      // Output time across, source time into the screen: the ratio is the
-      // slope. Push it high and the diagonal flattens into a sheet.
-      out.x = w * SPAN * 0.7;
-      out.z = (v - 0.5) * SPAN * 0.7;
-      out.y = -pn * HEIGHT - lift * 0.4;
-      break;
-
-    case 'braid': {
-      // A closed torus knot rather than an open helix. The helix had two ends,
-      // and ends are where a loop looks choppy; wound onto a torus with a whole
-      // number of twists it joins itself and there is nowhere for a seam to be.
-      const major = u * Math.PI * 2 + phase;
-      const minor = (index % strands) / strands * Math.PI * 2 + major * BRAID_TWIST;
-      const rMin = R * (0.16 + 0.14 * (Math.log2(Math.max(rate, 0.002)) + 4) / 8);
-      const rMaj = R * 0.62;
-      out.x = (rMaj + rMin * Math.cos(minor)) * Math.cos(major);
-      out.z = (rMaj + rMin * Math.cos(minor)) * Math.sin(major);
-      out.y = rMin * Math.sin(minor) - pn * HEIGHT * 0.25;
-      break;
-    }
-
-    case 'swarm': {
-      const th = Math.acos(Math.max(-1, Math.min(1, pn)));
-      const ph = c * Math.PI * 2 + phase;
-      const rr = R * (0.34 + 0.62 * v) + amp * R * 0.26;
-      out.x = rr * Math.sin(th) * Math.cos(ph);
-      out.z = rr * Math.sin(th) * Math.sin(ph);
-      out.y = rr * Math.cos(th) * 0.55 - pn * HEIGHT * 0.5;
-      break;
-    }
-
-    case 'shells': {
-      const rr = R * (0.22 + 0.78 * (pn + 1) / 2);
-      const th = u * Math.PI * 2 * 3 + phase;
-      out.x = Math.cos(th) * rr;
-      out.z = Math.sin(th) * rr;
-      out.y = (v - 0.5) * HEIGHT * 1.6;
-      break;
-    }
-
-    case 'lattice': {
-      // The grid a cloud would be on if nothing varied, pushed off it by the
-      // deviations a grain actually has. At every jitter zero it is a crystal.
-      const k = 18;
-      const n = index % (k * k);
-      const cell = SPAN * 1.5 / k;
-      out.x = ((n % k) - k / 2) * cell + dev * R * 0.4;
-      out.z = (Math.floor(n / k) - k / 2) * cell + (c - 0.5) * cell * 2;
-      out.y = -pn * HEIGHT * 0.8 - lift * 0.3;
-      break;
-    }
-
-    case 'tunnel': {
-      const th = c * Math.PI * 2 + phase;
-      const r = R * (0.30 + 0.55 * amp) + (1 - Math.abs(w)) * R * 0.18;
-      out.x = Math.cos(th) * r;
-      out.y = Math.sin(th) * r;
-      // The past is compressed hard, so what has sounded sits behind the eye.
-      out.z = -(w > 0 ? w : w * 0.28) * R * 4.5;
-      break;
-    }
-
-    case 'mandala': {
-      // A whole turn, not half of one: `phase * 0.5` left the mandala a
-      // half-turn out at the loop point, which is the seam this is all for.
-      const th = c * Math.PI * 2 + phase;
-      const rad = R * (0.06 + 0.94 * Math.abs(w));
-      out.x = Math.cos(th) * rad;
-      out.y = Math.sin(th) * rad;
-      out.z = lift - pn * HEIGHT * 0.3;
-      break;
-    }
-
-    case 'vortex': {
-      const th = (dt - back) * 2.1 + c * Math.PI * 2 + phase;
-      const rad = R * (0.10 + 0.90 * Math.abs(w));
-      out.x = Math.cos(th) * rad;
-      out.y = Math.sin(th) * rad;
-      out.z = lift * 1.6 - pn * HEIGHT * 0.25;
-      break;
-    }
-
-    case 'ripple':
-      out.x = w * SPAN * 0.72;
-      out.z = (c - 0.5) * SPAN * 0.55;
-      // Whole cycles per loop, so the standing wave stands still at the seam.
-      out.y = -lift * 1.3
-            + Math.sin(u * Math.PI * 2 * RIPPLE_WAVES + phase) * HEIGHT * 0.22;
-      break;
-
-    default:
-      // Cloud: the spread around the head. Across the stereo field, up the
-      // pitch, deep the distance from where the head is reading.
-      out.x = Math.max(-1, Math.min(1, pan || 0)) * R * 0.95;
-      out.y = -pn * R * 0.8;
-      out.z = dev * R * 0.9;
-      break;
-  }
-}
-
-/// Whole numbers, so both close. A fractional twist leaves the braid's two ends
-/// meeting at an angle, which is precisely the seam this is meant not to have.
-const BRAID_TWIST = 3;
-const RIPPLE_WAVES = 4;
-
-/// The p5 instance, once it exists. Built on first draw rather than at load,
-/// because the panel has no size until the editor is open.
-let cloudSketch = null;
-
-/// How fast the cloud turns, in turns per second of playback.
-const CLOUD_SPIN = 0.035;
-
-/// Hand the sketch this instant, worked out from the parameters.
-///
-/// Nothing here is stepped forward. Every quantity is a function of the moment
-/// asked for, in the same way every quantity in a grain is a function of its
-/// index — ask for the same instant twice and you get the same answer, whether
-/// or not anything was drawn in between. That is the rule the engine lives by
-/// and there is no reason for its picture to live by a different one.
-///
-/// The framing in particular used to be measured off the grains in view and
-/// eased toward, which is a low-pass filter with memory: it needed the easing
-/// precisely because it was sampling. Derived instead from the controls — the
-/// same three terms `event_at` adds up, plus the reach of the spray, the layer
-/// scatter and the grain itself — it is exact, it needs no smoothing, and it
-/// cannot jitter on a grain that happens to land at an edge.
-function feedCloud() {
+  const set = visSetup(engine.playing);
+  if (!set) return;
+  const { ctx, w, h } = set;
   const g = state.grains;
-  const st = state.edit?.stretch;
-  const gr = state.grainDraft || st?.grain || {};
-  const sr = g?.sampleRate || state.view?.sampleRate || 48000;
-  const base = state.edit?.baseFrames || state.view?.frames || 0;
-  const now = playbackTime();
-
-  cloudFeed.grains = g?.grains?.length ? g.grains : null;
-  cloudFeed.sr = sr;
-  cloudFeed.srcFrames = base;
-  cloudFeed.baseSemis = st?.semitones ?? 0;
-  cloudFeed.now = now;
-  cloudFeed.semiSpan = Math.max(4,
-    ((gr.pitchJitterSemis || 0) + (gr.pitchDriftSemis || 0)) * 1.25);
-
-  // Where the read head is at this instant, and how far the cloud reaches
-  // around it. Both closed form; see above.
-  const scan = gr.scan ?? 1;
-  const ratio = st?.ratio || 1;
-  const home = scan < 0 ? base : 0;
-  cloudFeed.centre = home + (gr.position ?? 0) * base + (sourceFrameNow() / ratio) * scan;
-  const spray = ((gr.positionJitterMs || 0) / 1000) * sr;
-  const scatter = ((gr.layerScatter || 0) * (gr.layerScatterMs || 0) / 1000) * sr;
-  const grainLen = ((st?.windowMs || 40) / 1000) * sr;
-  // A floor of a twentieth of a second, so a cloud parked on one instant is a
-  // tight knot rather than its own jitter magnified to fill the screen.
-  cloudFeed.span = Math.max(spray + scatter + grainLen, sr * 0.05);
-  // How fast the read head travels through the source, in frames per second of
-  // playback. This is what lets a grain's position be evaluated at moments
-  // that have already passed — the head has moved on, so a grain laid down a
-  // moment ago is now behind it, and by exactly this much per second.
-  cloudFeed.headRate = (sr / ratio) * scan;
-  // How many windows cover any one moment. The braid separates grains sounding
-  // together into strands, and this is how many there are — which is why the
-  // strand count *is* the overlap rather than a number chosen to look right.
-  cloudFeed.overlap = Math.max(1, Math.min(16, gr.overlap || 2));
-
-  // The turn is a function of the moment too, so the cloud holds still when the
-  // transport does. Traversal of a fixed structure — when nothing is being
-  // traversed, nothing moves, and the hand can still look around it.
-  cloudFeed.turn = now * CLOUD_SPIN * Math.PI * 2;
-
   const label = $('grainCount');
-  if (label && g) {
+
+  if (!g || !g.grains.length) {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText('Engage a grain control to see the swarm', 12, h / 2);
+    if (label) label.textContent = '';
+    return;
+  }
+  if (label) {
     const shown = g.shown < g.total ? ` · showing ${g.shown.toLocaleString()}` : '';
     label.textContent = `${g.total.toLocaleString()} grains${shown}`;
   }
+
+  // Levels in the stream are small absolute numbers; normalising against the
+  // loudest grain is what makes size vary visibly across the swarm.
+  if (g._peak === undefined) {
+    g._peak = g.grains.reduce((m, r) => Math.max(m, r[4] || 0), 0) || 1;
+  }
+  drawGrainSwarm(ctx, w, h, g);
 }
 
-function startCloudGl() {
-  const holder = $('grainGl');
-  if (!holder || cloudSketch || typeof p5 === 'undefined') return;
+/// The swarm: grains as a cloud orbiting the playhead.
+///
+/// Depth is time from the playhead, so grains fly in, cluster while sounding,
+/// then recede. Height is pitch offset. Size is level, normalised against the
+/// loudest grain. Colour is brightness and pitch together. Every value comes
+/// from the grain stream the renderer uses.
+function drawGrainSwarm(ctx, w, h, g) {
+  const sr = g.sampleRate || 48000;
+  const base = state.edit?.stretch?.semitones ?? 0;
+  const now = playbackTime();
+  const playFrame = now * sr;
+  const cx = w / 2;
+  const cy = h / 2;
 
-  cloudSketch = new p5((s) => {
-    // Spheres, not points. p5's WEBGL point size is a fixed number of pixels
-    // and is *not* scaled by distance, so a cloud of them draws every grain the
-    // same size however far away it is — the depth cue is simply absent and the
-    // result reads as dots in a row. A sphere is geometry: perspective shrinks
-    // it, the depth buffer lets the near ones cover the far ones, and a light
-    // shades it so it reads as a ball rather than a disc. Three depth cues for
-    // the price of dropping a batching trick.
-    //
-    // The cost is a draw call each, so the number drawn is capped and the
-    // geometry is coarse. At this size on screen nobody can count the facets.
-    const DETAIL_X = 7;
-    const DETAIL_Y = 5;
-    // Each grain costs a draw call, and each ghost behind it costs another, so
-    // the two caps trade against each other. Fewer grains with tails reads as a
-    // cloud; more grains without them reads as a scatter.
-    const MAX_GRAINS = 260;
+  const SPAN = 1.4;                    // seconds either side of the playhead
+  const FOCAL = 300;
+  const R = Math.min(w, h) * 0.46;     // orbit scaled to the box, not fixed px
 
-    s.setup = () => {
-      const c = s.createCanvas(holder.clientWidth || 300, holder.clientHeight || 200, s.WEBGL);
-      c.parent(holder);
-      s.setAttributes('antialias', true);
-      s.noStroke();
-    };
+  const visible = [];
+  for (const [outFrame, srcFrame, size, pitch, rms, bright] of g.grains) {
+    const dt = (outFrame - playFrame) / sr;
+    if (dt < -SPAN || dt > SPAN) continue;
+    const z = dt * 230 + 120;
+    if (z <= 14) continue;
 
-    s.windowResized = () => {
-      s.resizeCanvas(holder.clientWidth || 300, holder.clientHeight || 200);
-    };
+    const sounding = dt <= 0 && dt + size / sr >= 0;
+    const seedish = ((outFrame * 2654435761) % 997) / 997;
+    const phase = seedish * Math.PI * 2 + now * (0.8 + seedish * 1.8);
 
-    s.draw = () => {
-      s.clear();
-      const f = cloudFeed;
-      if (!f.grains || !f.srcFrames) return;
+    const spread = 0.35 + Math.min(1, Math.abs(pitch - base) / 9) * 0.65;
+    const wob = sounding ? 1 + 0.16 * Math.sin(now * 11 + seedish * 7) : 1;
+    const radius = R * spread * (0.45 + seedish * 0.55) * wob;
+    const scale = FOCAL / (FOCAL + z);
 
-      s.ambientLight(58, 64, 78);
-      s.directionalLight(255, 250, 240, -0.4, -0.7, -0.6);
-      s.pointLight(90, 130, 210, 0, -260, 320);
-      s.rotateX(cloudCam.pitch);
-      s.rotateY(cloudCam.yaw + f.turn);
+    const px = cx + Math.cos(phase) * radius * scale;
+    const py = cy - ((pitch - base) / 10) * h * 0.30
+                  + Math.sin(phase * 1.27) * radius * 0.42 * scale;
 
-      const R = Math.min(s.width, s.height) * 0.34;
-      const geo = {
-        R,
-        HEIGHT: R * 0.9,
-        SPAN: R * 1.9,
-        f,
-        // Every spin below is a whole number of turns per LOOP_SECONDS, so the
-        // motion closes on itself and there is no seam where it restarts.
-        phase: ((f.now % LOOP_SECONDS) / LOOP_SECONDS) * Math.PI * 2,
-      };
+    const level = Math.sqrt(Math.max(0, rms) / g._peak);
+    const r = Math.max(1.0, (1.8 + level * 13) * scale * (sounding ? 1.5 : 1));
+    // Additive blending accumulates: with dozens of overlapping grains a high
+    // per-grain alpha saturates the whole cloud to flat white. Keep each one
+    // faint and let the density do the work.
+    const alpha = Math.max(0.05, (1 - Math.abs(dt) / SPAN) ** 1.6) * (sounding ? 0.42 : 0.16);
+    visible.push({ px, py, r, alpha, pitch, bright, sounding, z });
+  }
 
-      const playFrame = f.now * f.sr;
-      const near = [];
-      for (const ev of f.grains) {
-        const dt = (ev[0] - playFrame) / f.sr;
-        if (dt > CLOUD_AHEAD || dt < -CLOUD_BEHIND) continue;
-        near.push([ev, dt]);
-      }
-      if (!near.length) return;
-      near.sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]));
-      if (near.length > MAX_GRAINS) near.length = MAX_GRAINS;
+  visible.sort((a, b) => b.z - a.z);
 
-      const at = { x: 0, y: 0, z: 0 };
-      for (const [ev, dt] of near) {
-        const size = ev[2];
-        const live = dt <= 0 && dt + size / f.sr >= 0;
-        const age = Math.max(0, -dt);
-        const [col, r0] = grainLook(ev, dt, live, f);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const v of visible) {
+    const col = grainColour(v.pitch - base, v.bright, v.alpha);
+    ctx.shadowBlur = v.sounding ? 8 : 4;
+    ctx.shadowColor = col;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(v.px, v.py, v.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 
-        const ghosts = age > 0.02 ? TRAIL : 0;
-        for (let k = ghosts; k >= 0; k--) {
-          const back = k * TRAIL_STEP;
-          if (age + back > CLOUD_BEHIND) continue;
-          // Radioactive in the one sense that matters: a fixed fraction lost
-          // per unit of time, so the tail thins away instead of stopping.
-          const decay = Math.exp(-(age + back) * DECAY_PER_SECOND);
-          const fade = dt > 0 ? 0.3 : decay;
-          if (fade < 0.02) continue;
-          const smoke = k === 0 ? 1 : 0.45 / k;
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
 
-          placeGrain(grainView, ev, dt, back, geo, at);
-          s.push();
-          s.translate(at.x, at.y, at.z);
-          const c = [col[0] * fade * smoke, col[1] * fade * smoke, col[2] * fade * smoke];
-          if (live && k === 0) s.emissiveMaterial(c[0], c[1], c[2]);
-          else s.ambientMaterial(c[0], c[1], c[2]);
-          s.sphere(r0 * (k === 0 ? 1 : 0.55 / Math.sqrt(k)), DETAIL_X, DETAIL_Y);
-          s.pop();
-        }
-      }
-    };
-  });
-
-  // Turned by hand. Deliberately not p5's `orbitControl`, which carries
-  // momentum: a cloud that keeps drifting after the hand comes off is a toy,
-  // and this is meant to answer questions.
-  holder.onpointerdown = (e) => {
-    cloudCam.drag = { x: e.clientX, y: e.clientY };
-    holder.classList.add('dragging');
-    holder.setPointerCapture(e.pointerId);
-  };
-  holder.onpointermove = (e) => {
-    if (!cloudCam.drag) return;
-    cloudCam.yaw += (e.clientX - cloudCam.drag.x) * 0.008;
-    cloudCam.pitch = Math.max(-1.2, Math.min(1.2,
-      cloudCam.pitch + (e.clientY - cloudCam.drag.y) * 0.006));
-    cloudCam.drag = { x: e.clientX, y: e.clientY };
-  };
-  holder.onpointerup = (e) => {
-    cloudCam.drag = null;
-    holder.classList.remove('dragging');
-    try { holder.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
-  };
-
-  if (window.ResizeObserver) {
-    new ResizeObserver(() => cloudSketch?.windowResized?.()).observe(holder);
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = '9px ui-monospace, monospace';
+  ctx.fillText(`${visible.length} in flight`, 10, h - 10);
+  if (!engine.playing) {
+    ctx.fillStyle = 'rgba(255,255,255,0.40)';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText('press play — the swarm follows the playhead', 10, 18);
   }
 }
 
+// Animate only while something is playing, so an idle editor costs nothing.
 let grainRaf = null;
 function grainLoop() {
   grainRaf = requestAnimationFrame(grainLoop);
@@ -6883,32 +6565,230 @@ function stopSwarm() {
 enablePainting($('dock'));
 
 if (window.ResizeObserver) {
-  const c = $('grainGl');
+  const c = $('grainCanvas');
   if (c) new ResizeObserver(() => drawGrains()).observe(c);
 }
 
 // ------------------------------------------------------- which view of the grains
 //
-// Two ways to look at one schedule, both drawn here from the real enumeration.
-// The five views from the standalone sheet used to be embedded in an iframe;
-// they ran their own scheduler, so they answered to their own sliders and not
-// to the document's, and docking them made them a weather map of a country
-// that does not exist. The sheet is still served at `/grains3d` as its own
-// thing — this panel is now about the file that is actually sounding.
+// Six ways to look at one schedule: the original 2D swarm, and the five 3D
+// views. The 3D ones live in an iframe rather than being ported in here — they
+// are a p5 sketch with their own render loop, and running that inside the app's
+// loop would mean two animation clocks fighting over one canvas. Being a
+// separate document also means the same file is the standalone viewer, so there
+// is one implementation to keep honest rather than two.
 
-/// Which way the sketch draws. See `drawCloud` and `drawBraid`.
-let grainView = 'cloud';
+/// 0 is the 2D swarm; 1..5 index the 3D views.
+let grainView = 0;
+
+/// Send the document's time, pitch and grain settings to the views.
+///
+/// They were already drawing the engine's arithmetic faithfully; what they had
+/// no way of knowing was which document. Everything else about them is left
+/// exactly as it was.
+function pushGrainParams() {
+  const st = state.edit?.stretch;
+  if (!st) return;
+  const g = st.grain || {};
+  const sr = state.view?.sampleRate || 48000;
+  const msg = {
+    type: 'grainParams',
+    params: {
+      ratio: st.ratio,
+      semitones: st.semitones,
+      windowMs: st.windowMs,
+      densityHz: g.densityHz,
+      overlap: g.overlap,
+      sizeJitter: g.sizeJitter,
+      positionJitterMs: g.positionJitterMs,
+      pitchJitterSemis: g.pitchJitterSemis,
+      pitchDriftSemis: g.pitchDriftSemis,
+      driftRateHz: g.driftRateHz,
+      seed: g.seed,
+      // So the geometry is laid out over the real file's length rather than
+      // the two seconds the page assumes when it is standing on its own.
+      sourceSeconds: (state.edit?.baseFrames || 0) / sr,
+    },
+  };
+  $('grainFrame')?.contentWindow?.postMessage(msg, location.origin);
+  pop.frame?.contentWindow?.postMessage(msg, location.origin);
+}
 
 function setGrainView(v) {
   grainView = v;
   for (const b of document.querySelectorAll('.vis-tab')) {
-    b.classList.toggle('active', b.dataset.vis === v);
+    b.classList.toggle('active', +b.dataset.vis === v);
+  }
+  const frame = $('grainFrame'), canvas = $('grainCanvas'), legend = document.querySelector('.vis-legend');
+  const is3d = v > 0;
+
+  canvas.classList.toggle('hidden', is3d);
+  legend.classList.toggle('hidden', is3d);
+  frame.classList.toggle('hidden', !is3d);
+
+  if (!is3d) return;
+  if (!frame.src) {
+    frame.src = `/grains3d?embed=1&view=${v - 1}`;
+    // A document's settings cannot be posted at a frame that has not loaded.
+    frame.onload = () => pushGrainParams();
+  } else {
+    // Already loaded — switch views in place so the camera and the engine
+    // connection survive. Reloading the src would restart both.
+    frame.contentWindow?.postMessage({ type: 'grainView', view: v - 1 }, location.origin);
   }
 }
 
-for (const b of document.querySelectorAll('.vis-tab')) {
-  b.onclick = () => setGrainView(b.dataset.vis);
+// Which suite the 3D views are showing. V1 tours the cloud as an object; V2
+// sits inside the moment and lets time come past. Same five slots either way,
+// so the tabs only need relabelling.
+let grainSuite = 1;
+const SUITE_NAMES = {
+  1: ['Shear', 'Braid', 'Swarm 3D', 'Shells', 'Lattice'],
+  2: ['Tunnel', 'Mandala', 'Rorschach', 'Vortex', 'Ripple']
+};
+
+function setGrainSuite(n) {
+  grainSuite = n === 2 ? 2 : 1;
+  $('visSuite').textContent = 'V' + grainSuite;
+  $('visSuite').classList.toggle('active', grainSuite === 2);
+
+  const names = SUITE_NAMES[grainSuite];
+  for (const b of document.querySelectorAll('.vis-tab')) {
+    const i = +b.dataset.vis;
+    if (i >= 1) b.textContent = names[i - 1];
+  }
+  for (const b of document.querySelectorAll('.vis-pop-tab')) {
+    b.textContent = names[+b.dataset.view];
+  }
+
+  const post = { type: 'grainSuite', suite: grainSuite };
+  $('grainFrame').contentWindow?.postMessage(post, location.origin);
+  pop.frame?.contentWindow?.postMessage(post, location.origin);
 }
+
+for (const b of document.querySelectorAll('.vis-tab')) {
+  if (b.id === 'visSuite') continue;
+  b.onclick = () => setGrainView(+b.dataset.vis);
+}
+const visSuiteBtn = $('visSuite');
+if (visSuiteBtn) visSuiteBtn.onclick = () => setGrainSuite(grainSuite === 1 ? 2 : 1);
+// A floating panel rather than a new tab. The whole point of watching the
+// grains is to watch them *while* moving a slider, and a separate window puts
+// the controls behind the thing you are looking at.
+const pop = {
+  el: null, frame: null,
+  x: 0, y: 0, w: 1060, h: 680,
+  mode: null, ox: 0, oy: 0
+};
+
+const fence = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function openVisPop() {
+  if (!pop.el) buildVisPop();
+  // Visible *before* the document loads. An iframe created inside a
+  // display:none panel measures zero, and a canvas sized from that stays a
+  // sliver in the corner no matter how big the panel gets afterwards.
+  pop.el.classList.remove('hidden');
+  // embed=1, not the standalone page. The standalone one carries a 320px
+  // sidebar and caps the canvas, so the visual stays the same size however big
+  // the panel is dragged — which is the opposite of the point of a resizable
+  // panel. Embedded, the view *is* the box.
+  if (!pop.frame.src) {
+    pop.frame.src = `/grains3d?embed=1&view=${Math.max(0, grainView - 1)}`;
+    pop.frame.onload = () => pushGrainParams();
+  }
+}
+
+function closeVisPop() {
+  pop.el?.classList.add('hidden');
+}
+
+function buildVisPop() {
+  const el = document.createElement('div');
+  el.className = 'vis-pop hidden';
+  // The sidebar lives in the app, so the panel only needs the view names.
+  const names = ['Shear', 'Braid', 'Swarm', 'Shells', 'Lattice'];
+  el.innerHTML = `
+    <div class="vis-pop-head">
+      <span class="vis-pop-title">Grains</span>
+      ${names.map((n, i) => `<button class="vis-pop-tab" data-view="${i}">${n}</button>`).join('')}
+      <span class="vis-pop-hint">drag to move · corner to resize</span>
+      <button class="vis-pop-btn" data-act="max" title="Fill the window">&#9723;</button>
+      <button class="vis-pop-btn" data-act="close" title="Close">&times;</button>
+    </div>
+    <iframe title="Grain views"></iframe>
+    <div class="vis-pop-grip" title="Resize"></div>`;
+  document.body.appendChild(el);
+
+  for (const b of el.querySelectorAll('.vis-pop-tab')) {
+    b.onclick = () => {
+      for (const o of el.querySelectorAll('.vis-pop-tab')) o.classList.remove('active');
+      b.classList.add('active');
+      pop.frame.contentWindow?.postMessage(
+        { type: 'grainView', view: +b.dataset.view }, location.origin);
+    };
+  }
+
+  pop.el = el;
+  pop.frame = el.querySelector('iframe');
+  pop.x = Math.max(20, (window.innerWidth - pop.w) / 2);
+  pop.y = Math.max(20, (window.innerHeight - pop.h) / 2);
+  place();
+
+  el.querySelector('[data-act="close"]').onclick = closeVisPop;
+  el.querySelector('[data-act="max"]').onclick = () => {
+    pop.x = 20; pop.y = 20;
+    pop.w = window.innerWidth - 40; pop.h = window.innerHeight - 40;
+    place();
+  };
+
+  // Dragging and resizing both run on the document, not the panel, so the
+  // pointer can outrun the element without the gesture being dropped. The
+  // iframe stops taking events mid-gesture for the same reason: it would
+  // otherwise swallow every move that crossed it.
+  el.querySelector('.vis-pop-head').addEventListener('mousedown', (e) => {
+    if (e.target.closest('.vis-pop-btn')) return;
+    pop.mode = 'move'; pop.ox = e.clientX - pop.x; pop.oy = e.clientY - pop.y;
+    pop.frame.style.pointerEvents = 'none';
+    e.preventDefault();
+  });
+  el.querySelector('.vis-pop-grip').addEventListener('mousedown', (e) => {
+    pop.mode = 'size'; pop.ox = e.clientX - pop.w; pop.oy = e.clientY - pop.h;
+    pop.frame.style.pointerEvents = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!pop.mode) return;
+    if (pop.mode === 'move') {
+      pop.x = fence(e.clientX - pop.ox, -pop.w + 120, window.innerWidth - 120);
+      pop.y = fence(e.clientY - pop.oy, 0, window.innerHeight - 40);
+    } else {
+      pop.w = fence(e.clientX - pop.ox, 420, window.innerWidth);
+      pop.h = fence(e.clientY - pop.oy, 300, window.innerHeight);
+    }
+    place();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!pop.mode) return;
+    pop.mode = null;
+    pop.frame.style.pointerEvents = '';
+  });
+}
+
+function place() {
+  const s = pop.el.style;
+  s.left = pop.x + 'px'; s.top = pop.y + 'px';
+  s.width = pop.w + 'px'; s.height = pop.h + 'px';
+}
+
+const visOpen = $('visOpen');
+if (visOpen) visOpen.onclick = openVisPop;
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pop.el && !pop.el.classList.contains('hidden')) closeVisPop();
+});
 
 const rescanBtn = $('rescanBtn');
 if (rescanBtn) rescanBtn.onclick = async () => {
@@ -6960,13 +6840,12 @@ const BUFFER_SIZES = [null, 128, 256, 512, 1024, 2048, 4096];
 /// Ask the device for a new block size.
 ///
 /// This closes the device and opens it again — a stream's block length is fixed
-/// when it is built — so it is a visible event rather than a quiet one, and the
-/// document that was loaded is loaded again on the other side.
+/// when it is built — so the document that was loaded is loaded again on the
+/// other side.
 async function setBufferFrames(frames) {
   try {
     const r = await postJSON('/api/audio/buffer', { frames });
     state.bufferFrames = r.frames ?? null;
-    // What the device actually gave us, which a backend is free to refuse.
     const got = r.running ?? null;
     toast(got == null
       ? 'Audio buffer: the device\u2019s own size'
@@ -7031,12 +6910,9 @@ const MENUS = [
       { sep: true },
       { label: 'Capture what is playing', on: () => editing() && hasFile(), run: click('recBtn') },
       { sep: true },
-      // The cure for a callback that cannot finish in time. Sixteen grain
-      // layers under a hybrid stretch is a great deal of arithmetic for one
-      // block, and a device default of 512 frames at 48 kHz is about ten
-      // milliseconds to do it in. Doubling the block doubles the time and
-      // doubles the latency, which is the trade — hence a choice rather than a
-      // number somebody picked once.
+      // The cure for a callback that cannot finish in time. Doubling the block
+      // doubles the time it has and doubles the delay before a moved control
+      // is heard, which is the trade — hence a choice, not a constant.
       ...BUFFER_SIZES.map((n) => ({
         label: n == null ? 'Buffer: device default' : `Buffer: ${n} frames`,
         key: tick(() => (state.bufferFrames ?? null) === n),
