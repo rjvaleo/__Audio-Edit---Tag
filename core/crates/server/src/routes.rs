@@ -88,6 +88,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/rack/param") => api_rack_param(app, req),
         ("GET", "/api/automation") => api_automation_get(app, req),
         ("POST", "/api/automation") => api_automation_set(app, req),
+        ("GET" | "POST", "/api/automation/record") => api_automation_record(app, req),
         ("GET", "/api/presets") => api_presets_list(app),
         ("POST", "/api/presets") => api_preset_save(app, req),
         ("POST", "/api/presets/apply") => api_preset_apply(app, req),
@@ -789,17 +790,113 @@ fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, "no such control on that module");
     }
     let applied = spec.get_param(slot, key).unwrap_or(value);
+    // Kept for the range lookup below; `set` takes the spec by value.
+    let spec2 = spec.clone();
     app.racks.set(rel, spec);
 
     // Only while this document is the one being heard.
     if crate::live::holding(app, rel) {
         let _ = crate::live::with(app, |h| h.shared.set_manual_param(slot, key, applied));
+        record_move(app, rel, &format!("fx.{id}.{key}"), &format!("{id} — {key}"), |u| {
+            spec2.slots.get(slot).and_then(|s| crate::automation::resolve(s, key, u))
+        }, applied);
     }
     Response::json(
         Value::obj()
             .set("id", id.to_string())
             .set("key", key.to_string())
             .set("value", applied as f64)
+            .to_string(),
+    )
+}
+
+/// Record whichever of the document's own controls actually moved.
+///
+/// The stretch route posts the whole panel on every drag, so "what moved" has
+/// to be worked out by comparing rather than read off the message. Only the
+/// targets the automation menu offers are considered — the rest of the panel
+/// has no lane to be written into.
+fn record_stretch_moves(app: &Arc<App>, rel: &str, was: &fx::Stretch, now: &fx::Stretch) {
+    if app.automation.record_mode() == crate::automation::Record::Off {
+        return;
+    }
+    let spec = app.racks.get(rel);
+    for (target, label) in crate::automation::targets(&spec) {
+        if !target.starts_with("stretch.") {
+            continue;
+        }
+        let (Some(a), Some(b)) = (
+            crate::automation::stretch_field(was, &target),
+            crate::automation::stretch_field(now, &target),
+        ) else {
+            continue;
+        };
+        if (a - b).abs() < 1e-9 {
+            continue;
+        }
+        let t = target.clone();
+        record_move(app, rel, &target, &label, |u| crate::automation::stretch_value(&t, u), b);
+    }
+}
+
+/// Write one control's move into its lane, if recording is armed and running.
+///
+/// The lane value is found by searching `forward`, never by an inverse written
+/// out here — see `automation::unit_for`. That is what keeps a recorded take
+/// landing on the same number the same lane plays back.
+fn record_move(
+    app: &Arc<App>,
+    rel: &str,
+    target: &str,
+    label: &str,
+    forward: impl Fn(f32) -> Option<f32>,
+    value: f32,
+) {
+    use crate::automation::Record;
+    let mode = app.automation.record_mode();
+    if mode == Record::Off {
+        return;
+    }
+    // Armed but stopped is not recording. A slider moved with the transport
+    // parked would otherwise stamp a point wherever the playhead was left.
+    if !crate::live::with(app, |h| h.shared.is_playing()).unwrap_or(false) {
+        return;
+    }
+    let Some(frame) = crate::automation::playhead(app) else {
+        return;
+    };
+    let Some(unit) = crate::automation::unit_for(forward, value) else {
+        return;
+    };
+    let rate = app
+        .playing
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .map_or(48_000, |n| n.doc_rate);
+    app.automation.record_point(rel, target, label, unit, frame, rate);
+    if mode == Record::Latch {
+        app.automation.hold(target, unit);
+    }
+    let _ = app.automation.save(&app.automation_path());
+}
+
+/// Arm or disarm recording, and say what it is set to.
+fn api_automation_record(app: &Arc<App>, req: &Request) -> Response {
+    if req.method == "POST" {
+        let v = json::parse(&String::from_utf8_lossy(&req.body)).unwrap_or(Value::Null);
+        let Some(mode) = v
+            .get("mode")
+            .and_then(Value::as_str)
+            .and_then(crate::automation::Record::from_str)
+        else {
+            return Response::error(400, "mode must be off, touch or latch");
+        };
+        app.automation.set_record_mode(mode);
+    }
+    Response::json(
+        Value::obj()
+            .set("mode", app.automation.record_mode().as_str())
             .to_string(),
     )
 }
@@ -1334,6 +1431,11 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
     };
     let op = v.get("op").and_then(|o| o.as_str()).unwrap_or("");
 
+    // What the document's controls were before this message, so a recorded
+    // take can tell which of them the hand actually moved. The stretch route
+    // posts the whole panel every time.
+    let before = (op == "stretch").then(|| app.edits.snapshot(rel).map(|l| l.stretch)).flatten();
+
     let num = |k: &str| -> u64 {
         match v.get(k) {
             Some(Value::Num(n)) if *n >= 0.0 => *n as u64,
@@ -1741,6 +1843,9 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
     if op == "stretch" {
         if let Some(list) = app.edits.snapshot(rel) {
             let _ = crate::live::push_params(app, rel, &list);
+            if let Some(was) = before {
+                record_stretch_moves(app, rel, &was, &list.stretch);
+            }
         }
     } else if let Some(path) = app.library_path().and_then(|l| resolve_within(&l, rel)) {
         let _ = crate::live::load(app, rel, &path, crate::live::Playing::Document);
