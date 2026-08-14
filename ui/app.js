@@ -4330,19 +4330,35 @@ function scaleButton() {
   return b;
 }
 
-/// A hierarchical menu: categories, each opening its scales.
+/// The scale menu: every scale, grouped, with a filter across all of them.
 ///
-/// Eighty-one scales in one flat list is a scroll, not a choice, so the
-/// categories are the first level and only one is open at a time.
+/// It used to open with the categories collapsed. That is a tidy list and a
+/// dishonest one — eighty-one scales showed as seven rows, and the library
+/// looked like it held seven things. Grouping is worth having; hiding is not.
+/// So the groups are headings you can fold rather than doors you must open,
+/// everything is showing when it opens, and the count is on the front of it.
 async function openScaleMenu(anchor) {
   const groups = await loadScales();
+  const total = groups.reduce((n, g) => n + g.scales.length, 0);
   const pop = $('menuPop');
   pop.innerHTML = '';
   pop.classList.remove('hidden');
   pop.classList.add('scale-pop');
 
+  const head = document.createElement('div');
+  head.className = 'scale-head';
+  const count = document.createElement('span');
+  count.className = 'scale-count';
+  count.textContent = `${total} scales`;
+  const filter = document.createElement('input');
+  filter.className = 'filter-box';
+  filter.placeholder = 'filter…';
+  head.append(count, filter);
+  pop.appendChild(head);
+
   const list = document.createElement('div');
   list.className = 'scale-cats';
+  pop.appendChild(list);
 
   const none = document.createElement('button');
   none.className = 'scale-item' + (currentScale() ? '' : ' selected');
@@ -4353,36 +4369,50 @@ async function openScaleMenu(anchor) {
   for (const g of groups) {
     const cat = document.createElement('div');
     cat.className = 'scale-cat';
-    const head = document.createElement('button');
-    head.className = 'scale-cat-head';
-    head.textContent = `${g.category}  (${g.scales.length})`;
+    const title = document.createElement('button');
+    title.className = 'scale-cat-head';
     const body = document.createElement('div');
-    body.className = 'scale-cat-body hidden';
+    body.className = 'scale-cat-body';
+    const mark = () => { title.textContent = `${body.classList.contains('hidden') ? '▸' : '▾'} ${g.category}  (${g.scales.length})`; };
+
     for (const sc of g.scales) {
       const item = document.createElement('button');
       item.className = 'scale-item' + (sc.name === currentScale() ? ' selected' : '');
-      item.innerHTML = '';
       const n = document.createElement('span'); n.className = 'sc-name'; n.textContent = sc.name;
       const i = document.createElement('span'); i.className = 'sc-info';
-      i.textContent = `${sc.degrees} · ${sc.info}`;
+      i.textContent = `${sc.degrees} degrees · ${sc.info}`;
       item.append(n, i);
+      item.dataset.name = sc.name.toLowerCase();
+      item.dataset.info = (sc.info || '').toLowerCase();
       item.onclick = () => pickScale(sc.name);
       body.appendChild(item);
     }
-    // One category open at a time: the point of the hierarchy is that the
-    // list is short until you ask for more of it.
-    head.onclick = () => {
-      const wasHidden = body.classList.contains('hidden');
-      list.querySelectorAll('.scale-cat-body').forEach((x) => x.classList.add('hidden'));
-      body.classList.toggle('hidden', !wasHidden);
-      // The category the current scale lives in opens showing it.
-      if (wasHidden) body.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
-    };
-    cat.append(head, body);
+    // Folding is a choice, not the starting state.
+    title.onclick = () => { body.classList.toggle('hidden'); mark(); };
+    mark();
+    cat.append(title, body);
     list.appendChild(cat);
-    if (g.scales.some((sc) => sc.name === currentScale())) head.click();
   }
-  pop.appendChild(list);
+
+  // The filter reaches across every category at once, which is the only way to
+  // find one scale among eighty-one without knowing which family it is in.
+  filter.oninput = () => {
+    const q = filter.value.trim().toLowerCase();
+    for (const cat of list.querySelectorAll('.scale-cat')) {
+      let shown = 0;
+      for (const item of cat.querySelectorAll('.scale-item')) {
+        const hit = !q || item.dataset.name.includes(q) || item.dataset.info.includes(q);
+        item.classList.toggle('hidden', !hit);
+        if (hit) shown++;
+      }
+      cat.classList.toggle('hidden', shown === 0);
+      if (q) cat.querySelector('.scale-cat-body').classList.remove('hidden');
+    }
+    count.textContent = q
+      ? `${list.querySelectorAll('.scale-item:not(.hidden)').length - 1} of ${total}`
+      : `${total} scales`;
+  };
+  filter.onkeydown = (e) => e.stopPropagation();
 
   // Placed after it is in the document, so its real height is known. Below the
   // button when there is room and above it when there is not — the pitch row
@@ -4396,12 +4426,20 @@ async function openScaleMenu(anchor) {
   pop.style.top = h <= below
     ? `${r.bottom + 4}px`
     : `${Math.max(6, Math.min(r.top - h - 4, window.innerHeight - h - 6))}px`;
+  list.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
+
   state.scaleMenuOpen = true;
   setTimeout(() => document.addEventListener('pointerdown', closeScaleMenu, { once: true }), 0);
 }
 
-function closeScaleMenu() {
+function closeScaleMenu(e) {
   if (!state.scaleMenuOpen) return;
+  // A click inside the menu is not a click away from it — typing in the filter
+  // or folding a category has to leave it open.
+  if (e && $('menuPop').contains(e.target)) {
+    document.addEventListener('pointerdown', closeScaleMenu, { once: true });
+    return;
+  }
   state.scaleMenuOpen = false;
   const pop = $('menuPop');
   pop.classList.add('hidden');
