@@ -1184,7 +1184,7 @@ body.editing .panel.left { left: var(--rail); }
   border-radius: 7px; background: oklch(9% 0.01 250);
   border: 1px solid var(--line);
 }
-#grainFrame.hidden, #grainCanvas.hidden { display: none; }
+#grainFrame.hidden, #grainGl.hidden { display: none; }
 
 .vis-legend {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -1321,10 +1321,14 @@ body.editing .dock { flex: 0 0 300px; }
 #stretchOut { font-size: 9.5px; }
 
 .grain-vis { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-#grainCanvas {
+#grainGl {
   flex: 1; width: 100%; min-height: 170px; display: block;
   border-radius: 7px; background: oklch(8% 0.01 250); border: 1px solid var(--line);
 }
+/* The sketch's own canvas fills the holder; p5 sizes it, the holder clips it. */
+#grainGl { position: relative; overflow: hidden; cursor: grab; }
+#grainGl.dragging { cursor: grabbing; }
+#grainGl canvas { display: block; width: 100% !important; height: 100% !important; }
 body.editing .dock { flex: 0 0 330px; }
 
 /* --------------------------------------------------------------- overview
@@ -1763,3 +1767,13 @@ body.editing .dock { flex: 0 0 330px; }
   font-size: 10px;
   pointer-events: none;
 }
+
+
+/* Said in the holder rather than painted into the sketch: the sketch draws
+   grains and nothing else, and a message is not a grain. */
+.grain-empty {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; margin: 0; font-size: 11px; opacity: .45;
+  pointer-events: none;
+}
+.grain-empty.hidden { display: none; }
