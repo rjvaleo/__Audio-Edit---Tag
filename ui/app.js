@@ -6591,6 +6591,12 @@ function pushGrainParams() {
   if (!st) return;
   const g = st.grain || {};
   const sr = state.view?.sampleRate || 48000;
+  // Without a real length there is nothing to send. Posting a zero here made
+  // the page rebuild its whole schedule over a one-frame source, which is a
+  // handful of grains in a corner — every view empty, and nothing about it
+  // looking like a length problem.
+  const seconds = (state.edit?.baseFrames || 0) / sr;
+  if (!(seconds > 0.001)) return;
   const msg = {
     type: 'grainParams',
     params: {
@@ -6607,7 +6613,7 @@ function pushGrainParams() {
       seed: g.seed,
       // So the geometry is laid out over the real file's length rather than
       // the two seconds the page assumes when it is standing on its own.
-      sourceSeconds: (state.edit?.baseFrames || 0) / sr,
+      sourceSeconds: seconds,
     },
   };
   $('grainFrame')?.contentWindow?.postMessage(msg, location.origin);
