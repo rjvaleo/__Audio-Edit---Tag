@@ -1716,3 +1716,11 @@ body.editing .dock { flex: 0 0 330px; }
 .scale-item.selected { background: var(--surface-3); color: var(--accent); }
 .scale-item .sc-name { font-size: 11px; }
 .scale-item .sc-info { font-size: 9px; color: var(--text-dimmer); }
+
+/* The engine's switches and its tuning, on one row: whatever this engine has
+   on the left, the scale at the right-hand end. */
+.engine-switches {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  min-height: 20px; margin-bottom: 2px;
+}
+.engine-switches .scale-btn { margin-left: auto; }
