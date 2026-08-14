@@ -28,11 +28,40 @@ pub const MAX_VOICES: usize = 1024;
 /// not while playing.
 pub const MAX_LAYERS: usize = 16;
 
+/// What a grain was born with.
+///
+/// A grain sounds for up to half a second, and the controls that shape it can
+/// move several times while it is still in the air. These used to be read from
+/// the live parameters on every block, which meant a grain already half played
+/// would change its envelope, flip its direction or jump across the stereo
+/// field part way through — each of which is a step in the middle of a window
+/// whose whole job is to be smooth, and a step is a click.
+///
+/// So a grain takes a copy when it starts and keeps it to the end. A control
+/// now changes the grains that have not been born yet, which is both
+/// click-free and how a granular instrument ought to feel: the cloud drifts to
+/// the new setting over a grain's length instead of snapping to it. That
+/// drift is the latency, and it is wanted.
+///
+/// The offline renderer needs none of this — its parameters cannot move part
+/// way through a render — so the two still agree frame for frame.
+#[derive(Clone, Copy)]
+struct Shape {
+    /// Where the envelope peaks.
+    envelope: f32,
+    /// Whether the grain reads backwards.
+    reverse: bool,
+    /// How far across the stereo field grains are thrown.
+    pan_spread: f32,
+}
+
 #[derive(Clone, Copy)]
 struct Voice {
     event: GrainEvent,
     /// Frames of this grain already emitted.
     played: u32,
+    /// The settings it started under. Never re-read from the live parameters.
+    shape: Shape,
 }
 
 /// The source a render reads from: interleaved, with its channel count.
@@ -66,6 +95,15 @@ pub struct BlockRenderer {
     position: u64,
     /// Summed window per frame, for the overlap normalisation. Sized once.
     norm: Vec<f32>,
+    /// The layering lift actually being applied, which walks to the one the
+    /// parameters ask for rather than stepping to it.
+    ///
+    /// Adding a layer changes the gain of everything at once — grains already
+    /// sounding included, and unlike their shape this one genuinely has to
+    /// apply to them, or the mix would be wrong for as long as the oldest
+    /// grain lasts. So it is ramped instead of captured. Not finite means
+    /// nothing has been rendered yet, and the first block snaps.
+    lift: f32,
     /// Dropped because the pool was full. Surfaced so it can be seen rather
     /// than silently degrading.
     pub overflows: u64,
@@ -83,6 +121,7 @@ impl BlockRenderer {
                 pitch_semis: 0.0,
             },
             played: 0,
+            shape: Shape { envelope: 0.5, reverse: false, pan_spread: 0.0 },
         };
         BlockRenderer {
             streams: [GrainStream::new(); MAX_LAYERS],
@@ -90,6 +129,7 @@ impl BlockRenderer {
             live: 0,
             position: 0,
             norm: vec![0.0; max_block.max(1)],
+            lift: f32::NAN,
             overflows: 0,
         }
     }
@@ -103,6 +143,9 @@ impl BlockRenderer {
     pub fn seek(&mut self, out_frame: u64, sp: &StreamParams) {
         self.position = out_frame;
         self.live = 0;
+        // A seek starts at the right gain rather than sliding into it: an
+        // offline render of the same frames does, and the two must agree.
+        self.lift = fx::grain::layer_gain(sp.grain.layers);
         let layers = layer_count(sp);
         for l in 0..layers {
             let lp = layer_params(sp, l);
@@ -119,19 +162,19 @@ impl BlockRenderer {
                 let mut e = s.next(&lp);
                 e.out_frame += off;
                 if e.out_frame + e.size as u64 > out_frame {
-                    self.push(e);
+                    self.push(e, shape_of(&lp));
                 }
             }
             self.streams[l as usize] = s;
         }
     }
 
-    fn push(&mut self, event: GrainEvent) {
+    fn push(&mut self, event: GrainEvent, shape: Shape) {
         if self.live == MAX_VOICES {
             self.overflows += 1;
             return;
         }
-        self.voices[self.live] = Voice { event, played: 0 };
+        self.voices[self.live] = Voice { event, played: 0, shape };
         self.live += 1;
     }
 
@@ -180,7 +223,7 @@ impl BlockRenderer {
                     events[reported] = e;
                     reported += 1;
                 }
-                self.push(e);
+                self.push(e, shape_of(&lp));
             }
             self.streams[l as usize] = s;
         }
@@ -194,9 +237,15 @@ impl BlockRenderer {
             // Envelope shape, direction and stereo place all come from the same
             // helpers the offline renderer uses, so live playback and the file
             // that gets exported are the same sound.
-            let (gl, gr) = fx::grain::pan_gains(&sp.grain, voice.event.index, channels);
-            let skew = sp.grain.envelope;
-            let reverse = sp.grain.reverse;
+            // The voice's own, not the rack's current. See `Shape`.
+            let (gl, gr) = fx::grain::pan_gains_with(
+                &sp.grain,
+                voice.shape.pan_spread,
+                voice.event.index,
+                channels,
+            );
+            let skew = voice.shape.envelope;
+            let reverse = voice.shape.reverse;
 
             // Where in this block the grain's next frame lands.
             let start = if voice.event.out_frame > self.position {
@@ -230,6 +279,7 @@ impl BlockRenderer {
                 self.voices[w] = Voice {
                     event: voice.event,
                     played: played as u32,
+                    shape: voice.shape,
                 };
                 w += 1;
             }
@@ -240,12 +290,19 @@ impl BlockRenderer {
         // then put back what layering takes away. The same `layer_gain` the
         // offline renderer uses — a second copy of that square root here is
         // exactly the kind of thing that lets the two drift apart.
-        let lift = fx::grain::layer_gain(sp.grain.layers);
+        let want = fx::grain::layer_gain(sp.grain.layers);
+        if !self.lift.is_finite() {
+            self.lift = want;
+        }
+        // About fifteen milliseconds. Slower and adding a layer feels late;
+        // faster and the step is back.
+        let k = 1.0 - (-1.0f32 / (0.015 * sp.sample_rate.max(1) as f32)).exp();
         for f in 0..frames {
+            self.lift += (want - self.lift) * k;
             let n = self.norm[f];
             if n > 1e-6 {
                 for ch in 0..channels {
-                    out[f * channels + ch] = out[f * channels + ch] / n * lift;
+                    out[f * channels + ch] = out[f * channels + ch] / n * self.lift;
                 }
             }
         }
@@ -258,6 +315,15 @@ impl BlockRenderer {
 // The Hann envelope used to be duplicated here, with a comment promising it was
 // identical to the offline one. It now comes from `fx::grain::env_at`, which is
 // the only way that promise can actually be kept once the shape is adjustable.
+
+/// The shaping settings a grain starting now would take.
+fn shape_of(sp: &StreamParams) -> Shape {
+    Shape {
+        envelope: sp.grain.envelope,
+        reverse: sp.grain.reverse,
+        pan_spread: sp.grain.pan_spread,
+    }
+}
 
 /// How many schedules are running. Clamped exactly as the offline renderer
 /// clamps it, so the two never disagree about how many there are.

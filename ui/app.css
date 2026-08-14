@@ -1136,7 +1136,10 @@ body.editing .panel.right, body.editing #rightRail { display: none; }
 body.editing .panel.left { left: var(--rail); }
 /* The readout leads the waveform while a control is being dragged. */
 #stretchOut.pending { color: var(--warn); }
-#stretchOut.pending::after { content: ' · rendering…'; opacity: .7; }
+/* The sound is already live — every engine runs in the callback. It is the
+   picture that lags, and saying "rendering" made the app look like it was
+   rebuilding the audio on every slider move. */
+#stretchOut.pending::after { content: ' · picture catching up…'; opacity: .7; }
 
 /* ---------------------------------------------------- granular tray layout
    The layout itself lives further down, with the control panels. There used to

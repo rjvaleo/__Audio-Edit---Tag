@@ -622,10 +622,21 @@ pub fn granular(
 /// the identical answer.
 #[inline]
 pub fn pan_gains(g: &Grain, index: u64, channels: usize) -> (f32, f32) {
-    if channels < 2 || g.pan_spread <= 1e-4 {
+    pan_gains_with(g, g.pan_spread, index, channels)
+}
+
+/// The same, with the spread supplied rather than read.
+///
+/// The real-time renderer keeps each sounding grain's spread from the moment it
+/// started, so a hand on the control moves the grains still to come and leaves
+/// the ones already in the air where they are. It still has to place them the
+/// way this function does, or the picture and the file would disagree with what
+/// is heard — hence one implementation with the one value lifted out.
+pub fn pan_gains_with(g: &Grain, spread: f32, index: u64, channels: usize) -> (f32, f32) {
+    if channels < 2 || spread <= 1e-4 {
         return (1.0, 1.0);
     }
-    let pan = g.pan_spread.clamp(0.0, 1.0) * g.rand_bipolar(index, 23);
+    let pan = spread.clamp(0.0, 1.0) * g.rand_bipolar(index, 23);
     let th = (pan * 0.5 + 0.5) * std::f32::consts::FRAC_PI_2;
     (th.cos() * std::f32::consts::SQRT_2, th.sin() * std::f32::consts::SQRT_2)
 }
