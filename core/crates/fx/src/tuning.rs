@@ -273,8 +273,8 @@ mod tests {
         }
     }
 
-    /// And the half-semitone grid is still there, because it is the default
-    /// and a document that never touched this must behave as it did.
+    /// The grids are still there for anyone who wants one; free is only the
+    /// default.
     #[test]
     fn a_plain_grid_rounds_to_the_nearest_step() {
         for (asked, want) in [(0.24f32, 0.0f32), (0.26, 0.5), (-0.26, -0.5), (3.7, 3.5)] {

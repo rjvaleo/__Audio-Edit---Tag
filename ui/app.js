@@ -4305,7 +4305,7 @@ const currentScale = () => state.edit?.stretch?.scale || '';
 /// The grid when no scale is chosen. Zero is free.
 const currentStep = () => {
   const v = state.edit?.stretch?.pitchStep;
-  return v === undefined || v === null ? 0.5 : v;
+  return v === undefined || v === null ? 0 : v;
 };
 
 /// The finest step the chosen scale offers, in semitones.
@@ -4347,7 +4347,7 @@ const engineSwitches = () => document.querySelector('.engine-switches');
 
 function scaleButton() {
   const b = document.createElement('button');
-  b.className = 'scale-btn' + (currentScale() || currentStep() === 0 ? ' on' : '');
+  b.className = 'scale-btn' + (currentScale() ? ' on' : '');
   b.textContent = currentScale() || (currentStep() > 0 ? `${currentStep()} st grid` : 'free');
   b.title = 'Snap the pitch shift to a tuning';
   b.onclick = (e) => { e.stopPropagation(); openScaleMenu(b); };
@@ -4387,9 +4387,9 @@ async function openScaleMenu(anchor) {
   // The two answers that are not a scale. Free is the raw slider value; the
   // grid is what this control has always done.
   const plain = [
-    ['Free — no quantising', 'the slider\u2019s own value, unrounded', 0],
+    ['Free — no quantising', 'the default \u2014 the slider\u2019s own value, unrounded', 0],
     ['Semitone grid', 'twelve to the octave', 1],
-    ['Half-semitone grid', 'the default \u2014 twenty-four to the octave', 0.5],
+    ['Half-semitone grid', 'twenty-four to the octave', 0.5],
   ];
   for (const [label, info, step] of plain) {
     const item = document.createElement('button');

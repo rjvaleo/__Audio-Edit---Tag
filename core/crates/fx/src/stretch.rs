@@ -280,9 +280,15 @@ pub struct Stretch {
     pub scale: Option<&'static crate::tuning::Scale>,
     /// The grid the pitch snaps to when no scale is chosen, in semitones.
     ///
-    /// **Zero is free** — the slider's value is taken as it is. Half a semitone
-    /// is what this control has always done and stays the default, so a
-    /// document that never touches it behaves exactly as it did.
+    /// **Zero is free, and is the default** — the slider's value is taken as
+    /// it is. A pitch shift is a continuous quantity; rounding it to a grid was
+    /// a habit inherited from instruments that have keys, and this program
+    /// transposes recordings rather than playing notes.
+    ///
+    /// Nothing already rendered moves: every stored value was written through
+    /// the old grid and is already on it, so a document that never touches this
+    /// sounds exactly as it did. What changes is that the next move is not
+    /// rounded.
     ///
     /// Separate from `scale` because they are different questions: a scale is
     /// a set of intervals, and this is how fine the control is when you are not
@@ -311,7 +317,7 @@ impl Default for Stretch {
             ratio: 1.0,
             semitones: 0.0,
             scale: None,
-            pitch_step: 0.5,
+            pitch_step: 0.0,
             window_ms: 40.0,
             quality: Quality::Standard,
             algorithm: Algorithm::Wsola,

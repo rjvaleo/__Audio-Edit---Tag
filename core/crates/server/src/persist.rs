@@ -169,10 +169,11 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             .get("scale")
             .and_then(Value::as_str)
             .and_then(fx::tuning::by_name),
-        // Absent means half a semitone, which is what this control did before
-        // the field existed — a document written by an older build opens
-        // behaving the way it always has rather than suddenly free.
-        pitch_step: (num(v.get("pitchStep"), 0.5) as f32).clamp(0.0, 12.0),
+        // Absent means free, the same as a new document. A file written before
+        // the field existed already has its pitch on whatever grid was in force
+        // when it was set, so reading it as free changes nothing about how it
+        // sounds — only about how the next move behaves.
+        pitch_step: (num(v.get("pitchStep"), 0.0) as f32).clamp(0.0, 12.0),
         window_ms: (num(v.get("windowMs"), 40.0) as f32).clamp(5.0, 2000.0),
         quality: quality_from(v.get("quality")),
         // A preset that predates the engine choice keeps the old behaviour
