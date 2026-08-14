@@ -82,6 +82,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/markers") => api_markers_set(app, req),
         ("POST", "/api/annot") => api_annot(app, req),
         ("GET", "/api/fx") => api_fx_catalogue(),
+        ("GET", "/api/scales") => api_scales(),
         ("GET", "/api/rack") => api_rack_get(app, req),
         ("POST", "/api/rack") => api_rack_set(app, req),
         ("POST", "/api/rack/param") => api_rack_param(app, req),
@@ -678,6 +679,45 @@ fn identity_for(app: &Arc<App>, rel: &str) -> Option<edit::EditList> {
 /// Automation has its own list (`/api/automation` serves `targets`), because
 /// what a lane may address depends on what is actually *in* the rack, not on
 /// what could be.
+/// The tuning library, grouped for a menu.
+///
+/// Served rather than written into the interface a second time, for the same
+/// reason the shaper catalogue is: one list, one set of cent values, and a
+/// scale added in `fx::tuning` needs no work here or in the browser.
+fn api_scales() -> Response {
+    use std::collections::BTreeMap;
+    // Grouped in the order the table declares them — the categories run from
+    // the familiar to the far away, and sorting them alphabetically would
+    // shuffle that into nonsense.
+    let mut order: Vec<&str> = Vec::new();
+    let mut by: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
+    for s in fx::tuning::SCALES {
+        if !order.contains(&s.cat) {
+            order.push(s.cat);
+        }
+        by.entry(s.cat).or_default().push(
+            Value::obj()
+                .set("name", s.name)
+                .set("info", s.info)
+                .set("degrees", s.cents.len() as f64)
+                .set("span", s.span() as f64)
+                .set(
+                    "cents",
+                    Value::Arr(s.cents.iter().map(|c| Value::Num(*c as f64)).collect()),
+                ),
+        );
+    }
+    let groups: Vec<Value> = order
+        .into_iter()
+        .map(|cat| {
+            Value::obj()
+                .set("category", cat)
+                .set("scales", Value::Arr(by.remove(cat).unwrap_or_default()))
+        })
+        .collect();
+    Response::json(Value::obj().set("groups", Value::Arr(groups)).to_string())
+}
+
 fn api_fx_catalogue() -> Response {
     let kinds: Vec<Value> = fx::shape::ShapeKind::ALL
         .into_iter()
@@ -1588,10 +1628,21 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     },
                     pan_spread: gf("panSpread", cur.pan_spread).clamp(0.0, 1.0),
                 };
+                // Absent leaves the scale alone, so moving the pitch does not
+                // silently clear the tuning it is snapping to.
+                let scale = match v.get("scale") {
+                    Some(Value::Str(name)) => fx::tuning::by_name(name),
+                    _ => s.list().stretch.scale,
+                };
+                // Snapped here rather than in the interface, so a value posted
+                // by anything — a preset, an automation lane, a script — lands
+                // on a degree too. The control is continuous until a scale is
+                // chosen; see `fx::tuning`.
+                let semis = fx::tuning::quantise(semis, scale.map(|x| x.name));
                 s.apply(|l| {
                     l.stretch = fx::Stretch {
                         ratio, semitones: semis, window_ms: window, quality,
-                        algorithm, vocoder, wsola, pvsola, hybrid, grain,
+                        algorithm, vocoder, wsola, pvsola, hybrid, grain, scale,
                     };
                 });
             }

@@ -26,6 +26,7 @@ pub mod reverb;
 pub mod shape;
 pub mod stream;
 pub mod stretch;
+pub mod tuning;
 pub mod vstream;
 pub mod transient;
 pub mod vocoder;

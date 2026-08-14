@@ -3592,11 +3592,15 @@ function renderStretch() {
     (v) => { state.stretchDraft.ratio = v; showStretchOut(); previewStretch();  },
     () => {commitStretch();}, true),
         'How much longer the result is than the source. 1x is untouched, 0.5x is half the length, 100x is the point of a granular stretcher. Logarithmic, so the everyday range is not squeezed into the first tenth of the slider.');
-  rows.semitones = tip(param('Pitch', st.semitones, -48, 48, 0.5,
-    (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} st`,
+  // The step is the finest the *scale* offers, so dragging cannot land
+  // between two degrees and then be snapped back on release. With no scale
+  // chosen it stays where it has always been: half a semitone.
+  rows.semitones = tip(param('Pitch', st.semitones, -48, 48, scaleStep(),
+    (v) => scaleLabel(v),
     (v) => { state.stretchDraft.semitones = v; previewStretch();  },
     () => {commitStretch();} ),
-        'Shifts the pitch without changing the length. The engine is driven at ratio x pitch and the result read back that much faster, and the two length changes cancel. Twelve semitones is an octave.');
+        'Shifts the pitch without changing the length. The engine is driven at ratio x pitch and the result read back that much faster, and the two length changes cancel. Twelve semitones is an octave. The button beside it snaps the shift to a tuning.');
+  rows.semitones.appendChild(scaleButton());
   // Log too: 40 ms is the everyday setting and second-long grains are the
   // extreme, so a linear control would bunch the useful range at one end.
   rows.windowMs = tip(param('Window', st.windowMs, 5, 2000, 1, (v) => `${Math.round(v)} ms`,
@@ -4265,6 +4269,167 @@ $('automationRedo').onclick = () => {
   saveAutomation();
   renderAutomation();
 };
+
+// ---------------------------------------------------------------- tuning
+//
+// The pitch control moves in semitones, and in half-semitone steps when left
+// alone — a grid, not a tuning. A scale replaces that grid with real intervals
+// in true cents, so a maqam's neutral third lands at 355 and not at 300 or 400
+// because that is what a piano has.
+//
+// The scale is quantising the *shift*, not an absolute pitch. This transposes
+// a recording rather than playing notes, so there is no key to be in: what a
+// scale usefully says here is which intervals you may move by.
+
+state.scales = null;          // the library, once fetched
+state.scaleMenuOpen = false;
+
+async function loadScales() {
+  if (state.scales) return state.scales;
+  try { state.scales = (await api('/api/scales')).groups || []; }
+  catch { state.scales = []; }
+  return state.scales;
+}
+
+const currentScale = () => state.edit?.stretch?.scale || '';
+
+/// The finest step the chosen scale offers, in semitones.
+///
+/// So the slider itself moves between degrees rather than sliding freely and
+/// being pulled back on release, which feels like the control fighting you.
+function scaleStep() {
+  const name = currentScale();
+  if (!name) return 0.5;
+  for (const g of state.scales || []) {
+    for (const s of g.scales) {
+      if (s.name !== name) continue;
+      let finest = s.span;
+      for (let i = 1; i < s.cents.length; i++) finest = Math.min(finest, s.cents[i] - s.cents[i - 1]);
+      finest = Math.min(finest, s.span - s.cents[s.cents.length - 1]);
+      return Math.max(0.01, finest / 100);
+    }
+  }
+  return 0.5;
+}
+
+/// Semitones, and the degree it lands on when a scale is chosen.
+function scaleLabel(v) {
+  const sign = v >= 0 ? '+' : '';
+  const name = currentScale();
+  if (!name) return `${sign}${v.toFixed(1)} st`;
+  const cents = Math.round(v * 100);
+  return `${sign}${v.toFixed(2)} st · ${sign}${cents}¢`;
+}
+
+function scaleButton() {
+  const b = document.createElement('button');
+  b.className = 'scale-btn' + (currentScale() ? ' on' : '');
+  b.textContent = currentScale() || 'chromatic';
+  b.title = 'Snap the pitch shift to a tuning';
+  b.onclick = (e) => { e.stopPropagation(); openScaleMenu(b); };
+  return b;
+}
+
+/// A hierarchical menu: categories, each opening its scales.
+///
+/// Eighty-one scales in one flat list is a scroll, not a choice, so the
+/// categories are the first level and only one is open at a time.
+async function openScaleMenu(anchor) {
+  const groups = await loadScales();
+  const pop = $('menuPop');
+  pop.innerHTML = '';
+  pop.classList.remove('hidden');
+  pop.classList.add('scale-pop');
+
+  const list = document.createElement('div');
+  list.className = 'scale-cats';
+
+  const none = document.createElement('button');
+  none.className = 'scale-item' + (currentScale() ? '' : ' selected');
+  none.textContent = 'Chromatic — no scale';
+  none.onclick = () => pickScale('');
+  list.appendChild(none);
+
+  for (const g of groups) {
+    const cat = document.createElement('div');
+    cat.className = 'scale-cat';
+    const head = document.createElement('button');
+    head.className = 'scale-cat-head';
+    head.textContent = `${g.category}  (${g.scales.length})`;
+    const body = document.createElement('div');
+    body.className = 'scale-cat-body hidden';
+    for (const sc of g.scales) {
+      const item = document.createElement('button');
+      item.className = 'scale-item' + (sc.name === currentScale() ? ' selected' : '');
+      item.innerHTML = '';
+      const n = document.createElement('span'); n.className = 'sc-name'; n.textContent = sc.name;
+      const i = document.createElement('span'); i.className = 'sc-info';
+      i.textContent = `${sc.degrees} · ${sc.info}`;
+      item.append(n, i);
+      item.onclick = () => pickScale(sc.name);
+      body.appendChild(item);
+    }
+    // One category open at a time: the point of the hierarchy is that the
+    // list is short until you ask for more of it.
+    head.onclick = () => {
+      const wasHidden = body.classList.contains('hidden');
+      list.querySelectorAll('.scale-cat-body').forEach((x) => x.classList.add('hidden'));
+      body.classList.toggle('hidden', !wasHidden);
+      // The category the current scale lives in opens showing it.
+      if (wasHidden) body.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
+    };
+    cat.append(head, body);
+    list.appendChild(cat);
+    if (g.scales.some((sc) => sc.name === currentScale())) head.click();
+  }
+  pop.appendChild(list);
+
+  // Placed after it is in the document, so its real height is known. Below the
+  // button when there is room and above it when there is not — the pitch row
+  // sits low in the panel, and a menu that runs off the bottom of the window
+  // is a menu you cannot use.
+  const r = anchor.getBoundingClientRect();
+  pop.style.left = `${Math.max(6, Math.min(window.innerWidth - 340, r.left))}px`;
+  pop.style.top = '0px';
+  const h = pop.offsetHeight;
+  const below = window.innerHeight - r.bottom - 8;
+  pop.style.top = h <= below
+    ? `${r.bottom + 4}px`
+    : `${Math.max(6, Math.min(r.top - h - 4, window.innerHeight - h - 6))}px`;
+  state.scaleMenuOpen = true;
+  setTimeout(() => document.addEventListener('pointerdown', closeScaleMenu, { once: true }), 0);
+}
+
+function closeScaleMenu() {
+  if (!state.scaleMenuOpen) return;
+  state.scaleMenuOpen = false;
+  const pop = $('menuPop');
+  pop.classList.add('hidden');
+  pop.classList.remove('scale-pop');
+}
+
+async function pickScale(name) {
+  closeScaleMenu();
+  if (!state.selectedFile) return;
+  // Posted with the current pitch, so choosing a scale snaps what is already
+  // set rather than waiting for the next time the slider is touched.
+  state.stretchDraft.scale = name;
+  await editOp({ op: 'stretch',
+                 ratio: state.stretchDraft.ratio,
+                 semitones: state.stretchDraft.semitones,
+                 windowMs: state.stretchDraft.windowMs,
+                 quality: state.stretchDraft.quality,
+                 algorithm: state.stretchDraft.algorithm,
+                 vocoder: state.stretchDraft.vocoder,
+                 wsola: state.stretchDraft.wsola,
+                 pvsola: state.stretchDraft.pvsola,
+                 hybrid: state.stretchDraft.hybrid,
+                 grain: state.grainDraft,
+                 scale: name },
+               { live: false });
+  stretchBuiltFor = null;
+  renderStretch();
+}
 
 // ------------------------------------------------------------- recording
 //

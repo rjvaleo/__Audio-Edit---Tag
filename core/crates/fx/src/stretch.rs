@@ -270,6 +270,14 @@ pub struct Stretch {
     pub ratio: f32,
     /// Pitch shift in semitones. Does not change the length.
     pub semitones: f32,
+    /// The tuning the pitch snaps to, or `None` for none.
+    ///
+    /// A borrow of the static table, so this stays `Copy`. On disk it is the
+    /// scale's *name* — by name rather than by index, because an index is not
+    /// a promise and inserting a scale would silently retune every saved
+    /// document. `None` leaves the control continuous, which is what it has
+    /// always been and what a document predating this keeps.
+    pub scale: Option<&'static crate::tuning::Scale>,
     /// Window length. Longer smooths tonal material; shorter keeps transients.
     pub window_ms: f32,
     pub quality: Quality,
@@ -292,6 +300,7 @@ impl Default for Stretch {
         Stretch {
             ratio: 1.0,
             semitones: 0.0,
+            scale: None,
             window_ms: 40.0,
             quality: Quality::Standard,
             algorithm: Algorithm::Wsola,

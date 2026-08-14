@@ -60,6 +60,7 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
     Value::obj()
         .set("ratio", s.ratio as f64)
         .set("semitones", s.semitones as f64)
+        .set("scale", s.scale.map(|x| x.name).unwrap_or_default())
         .set("windowMs", s.window_ms as f64)
         .set("quality", quality_name(s.quality))
         .set("algorithm", s.algorithm.as_str())
@@ -160,6 +161,13 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
         // these ever need to differ again, the writer is the place to change.
         ratio: (num(v.get("ratio"), 1.0) as f32).clamp(0.01, 100.0),
         semitones: (num(v.get("semitones"), 0.0) as f32).clamp(-48.0, 48.0),
+        // A name nothing matches reads as no scale rather than as an error: a
+        // document written by a build with a scale this one has not got should
+        // open and play, with the control simply continuous again.
+        scale: v
+            .get("scale")
+            .and_then(Value::as_str)
+            .and_then(fx::tuning::by_name),
         window_ms: (num(v.get("windowMs"), 40.0) as f32).clamp(5.0, 2000.0),
         quality: quality_from(v.get("quality")),
         // A preset that predates the engine choice keeps the old behaviour
@@ -487,6 +495,7 @@ mod tests {
         l.fade_in(Range::new(0, 500), 500, FadeShape::Linear);
         l.gain_db(Range::new(0, 3000), -6.0);
         l.stretch = Stretch {
+            scale: fx::tuning::by_name("Maqam Rast"),
             ratio: 1.75,
             semitones: -3.5,
             window_ms: 65.0,
