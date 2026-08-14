@@ -302,6 +302,26 @@ pub struct Stretch {
     /// to the time-domain engines.
     pub vocoder: VocoderParams,
     pub wsola: WsolaParams,
+    /// Whether the grain cloud runs as a layer over the engine.
+    ///
+    /// The engine picker chooses one of five, and choosing one used to mean
+    /// the other four were silent — including the grain cloud, which is not
+    /// really the same kind of thing as the other four. WSOLA, the vocoder,
+    /// PVSOLA and the hybrid are all trying to move a recording through time
+    /// without anyone noticing. The cloud is an instrument.
+    ///
+    /// So it can now run *beside* whichever of them is chosen, reading the
+    /// same source at the same ratio, and be mixed in. Off by default, so
+    /// every document that predates it renders exactly as it did; and when
+    /// `algorithm` is `Granular` this does nothing, because the cloud is
+    /// already the engine.
+    pub cloud: bool,
+    /// How much cloud against the engine underneath, equal power.
+    ///
+    /// The two are decorrelated — a splice engine and a grain cloud agree
+    /// about what is in the sound and not at all about its phase — so a
+    /// straight crossfade would dip in the middle.
+    pub cloud_mix: f32,
     /// How often PVSOLA stops trusting the propagated phase.
     pub pvsola: crate::pvsola::PvsolaParams,
     /// How the hybrid engine splits the sound up and what it does with each
@@ -323,6 +343,8 @@ impl Default for Stretch {
             algorithm: Algorithm::Wsola,
             vocoder: VocoderParams::default(),
             wsola: WsolaParams::default(),
+            cloud: false,
+            cloud_mix: 0.5,
             pvsola: crate::pvsola::PvsolaParams::default(),
             hybrid: crate::hybrid::HybridParams::default(),
             grain: crate::Grain::default(),
@@ -335,6 +357,9 @@ impl Stretch {
         (self.ratio - 1.0).abs() < 1e-4
             && self.semitones.abs() < 1e-4
             && self.grain.is_clean()
+            // A cloud over a document at unity is still a cloud. Without this
+            // the whole thing would short-circuit to the input untouched.
+            && !self.cloud
     }
 
     /// Are the granular controls doing anything, whichever engine is selected?
@@ -473,8 +498,57 @@ impl Stretch {
         };
 
         // Hold the promised length exactly, so timeline arithmetic stays honest.
-        fit(out, want, channels)
+        let out = fit(out, want, channels);
+        self.with_cloud(out, input, channels, sample_rate, ratio, want)
     }
+
+    /// Mix the grain cloud in over an engine's output.
+    ///
+    /// The cloud reads the same input at the same ratio, so the two land on the
+    /// same length and the same moments. It is fitted to `want` as well, not
+    /// merely assumed to match: the engines and the cloud arrive at their
+    /// length by different arithmetic, and a two-frame disagreement would put
+    /// a step at the end of every render.
+    ///
+    /// Returns `dry` untouched when the cloud is off, which is what keeps a
+    /// document that never turns it on rendering byte for byte as before.
+    fn with_cloud(
+        &self,
+        dry: Vec<f32>,
+        input: &[f32],
+        channels: usize,
+        sample_rate: u32,
+        ratio: f32,
+        want: usize,
+    ) -> Vec<f32> {
+        if !self.cloud || self.algorithm == Algorithm::Granular {
+            return dry;
+        }
+        let wet = fit(
+            crate::grain::granular(
+                input, channels, sample_rate, ratio, self.semitones, self.window_ms, &self.grain,
+            ),
+            want,
+            channels,
+        );
+        let (a, b) = cloud_gains(self.cloud_mix);
+        let mut out = dry;
+        for (o, w) in out.iter_mut().zip(wet.iter()) {
+            *o = *o * a + *w * b;
+        }
+        out
+    }
+}
+
+/// Equal-power gains for the cloud mix, engine first.
+///
+/// Public because the real-time renderer has to use the identical pair — the
+/// same reason `env_at` and `pan_gains` are shared. At zero it is exactly
+/// `(1, 0)`, so a cloud mixed at nothing is the engine untouched rather than
+/// the engine very slightly quieter.
+pub fn cloud_gains(mix: f32) -> (f32, f32) {
+    let t = mix.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
+    (t.cos(), t.sin())
 }
 
 /// Transform size for a given window length, as a power of two.

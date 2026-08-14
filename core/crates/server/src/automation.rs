@@ -418,6 +418,8 @@ pub fn apply_stretch(a: &Automation, p: &mut fx::grain::StreamParams, frame: u64
             "stretch.grain.densityHz" => p.grain.density_hz = u * DENSITY_MAX,
             "stretch.grain.positionJitterMs" => p.grain.position_jitter_ms = u * POS_JITTER_MAX,
             "stretch.grain.pitchJitterSemis" => p.grain.pitch_jitter_semis = u * PITCH_JITTER_MAX,
+            // Already a unit value at both ends, so no range to map through.
+            "stretch.cloudMix" => p.cloud_mix = u,
             _ => {}
         }
     }
@@ -447,6 +449,7 @@ pub fn targets(spec: &crate::rack::RackSpec) -> Vec<(String, String)> {
         ("stretch.grain.densityHz", "Grains — Density"),
         ("stretch.grain.positionJitterMs", "Grains — Position jitter"),
         ("stretch.grain.pitchJitterSemis", "Grains — Pitch jitter"),
+        ("stretch.cloudMix", "Grains — Cloud over engine"),
     ]
     .iter()
     .map(|(a, b)| (a.to_string(), b.to_string()))
@@ -1064,12 +1067,22 @@ mod tests {
         for (target, label) in targets(&spec) {
             assert!(!label.is_empty(), "{target} has no label");
             if target.starts_with("stretch.") {
+                // Counting these was the old check, and a count is not a test:
+                // adding a line to the menu without a match arm in
+                // `apply_stretch` would leave a lane that draws, saves, plays
+                // back and moves nothing. So drive each one and insist the
+                // parameters actually come out different.
                 stretched += 1;
+                let mut lo = fx::grain::StreamParams::new(1000, 48_000);
+                let mut hi = lo;
+                apply_stretch(&automation(vec![lane(&target, vec![(0, 0.1)])]), &mut lo, 0, 48_000);
+                apply_stretch(&automation(vec![lane(&target, vec![(0, 0.9)])]), &mut hi, 0, 48_000);
+                assert_ne!(lo, hi, "the menu offers {target} but it moves nothing");
                 continue;
             }
             rack_controls(&automation(vec![lane(&target, vec![(0, 0.5)])]), &spec, 0, 48_000, &mut out);
             assert_eq!(out.len(), 1, "the menu offers {target} but it resolves to nothing");
         }
-        assert_eq!(stretched, 6, "the document's own targets");
+        assert!(stretched >= 6, "the document's own targets went missing");
     }
 }

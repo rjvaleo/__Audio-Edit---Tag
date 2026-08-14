@@ -32,6 +32,14 @@ fn main() {
 
 
         hybrid: fx::hybrid::HybridParams::default(),
+
+
+
+        cloud: false,
+
+
+
+        cloud_mix: 0.5,
     };
 
     let engine = match Engine::start(params, source) {

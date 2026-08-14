@@ -1644,10 +1644,22 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     _ => s.list().stretch.pitch_step,
                 };
                 let semis = fx::tuning::quantise(semis, scale.map(|x| x.name), pitch_step);
+                // Absent leaves what the document already has, so a client that
+                // does not know about the cloud cannot switch it off by not
+                // mentioning it. Every other field here works the same way.
+                let cloud = match v.get("cloud") {
+                    Some(Value::Bool(b)) => *b,
+                    _ => s.list().stretch.cloud,
+                };
+                let cloud_mix = match v.get("cloudMix") {
+                    Some(Value::Num(n)) if n.is_finite() => (*n as f32).clamp(0.0, 1.0),
+                    _ => s.list().stretch.cloud_mix,
+                };
                 s.apply(|l| {
                     l.stretch = fx::Stretch {
                         ratio, semitones: semis, window_ms: window, quality,
                         algorithm, vocoder, wsola, pvsola, hybrid, grain, scale, pitch_step,
+                        cloud, cloud_mix,
                     };
                 });
             }

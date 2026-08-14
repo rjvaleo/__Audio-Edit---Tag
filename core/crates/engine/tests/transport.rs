@@ -35,6 +35,14 @@ fn params(in_frames: usize) -> StreamParams {
 
 
         hybrid: fx::hybrid::HybridParams::default(),
+
+
+
+        cloud: false,
+
+
+
+        cloud_mix: 0.5,
     }
 }
 
