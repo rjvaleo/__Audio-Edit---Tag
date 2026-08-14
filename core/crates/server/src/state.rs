@@ -377,6 +377,11 @@ pub struct App {
     /// Where the index and config live — beside the executable, not in the library.
     pub data_dir: PathBuf,
     pub library: RwLock<Option<PathBuf>>,
+    /// Frames the audio device is asked for per callback, or `None` for
+    /// whatever it offers. Kept here rather than only on the running engine so
+    /// it survives the device being closed and reopened, which is the only way
+    /// to change it — a stream's block length is fixed when it is built.
+    pub buffer_frames: RwLock<Option<u32>>,
     pub index: RwLock<Index>,
     pub scan: Arc<ScanProgress>,
     /// Markers and regions, sidecar to the app rather than written into the library.
@@ -448,6 +453,7 @@ impl App {
         let app = App {
             data_dir,
             library: RwLock::new(None),
+            buffer_frames: RwLock::new(None),
             index: RwLock::new(Index::default()),
             scan: Arc::new(ScanProgress::default()),
             markers: RwLock::new(markers),
@@ -569,15 +575,40 @@ impl App {
                 *self.library.write().unwrap() = Some(path);
             }
         }
+        if let Some(crate::json::Value::Num(n)) = v.get("bufferFrames") {
+            let n = *n as u32;
+            if n > 0 {
+                *self.buffer_frames.write().unwrap() = Some(n.clamp(32, 8192));
+            }
+        }
+    }
+
+    /// Write the whole of the config.
+    ///
+    /// Every setting at once, because this file is written whole: saving the
+    /// library used to write an object containing only the library, which
+    /// silently dropped anything else that had been put in it.
+    fn save_config(&self) -> std::io::Result<()> {
+        let mut v = crate::json::Value::obj();
+        if let Some(p) = self.library.read().unwrap().as_ref() {
+            v = v.set("library", p.to_string_lossy().to_string());
+        }
+        if let Some(n) = *self.buffer_frames.read().unwrap() {
+            v = v.set("bufferFrames", n as f64);
+        }
+        std::fs::create_dir_all(&self.data_dir)?;
+        std::fs::write(self.config_path(), v.to_string())
     }
 
     pub fn set_library(&self, path: PathBuf) -> std::io::Result<()> {
-        *self.library.write().unwrap() = Some(path.clone());
-        let body = crate::json::Value::obj()
-            .set("library", path.to_string_lossy().to_string())
-            .to_string();
-        std::fs::create_dir_all(&self.data_dir)?;
-        std::fs::write(self.config_path(), body)
+        *self.library.write().unwrap() = Some(path);
+        self.save_config()
+    }
+
+    /// What to ask the device for. `None` is whatever it offers.
+    pub fn set_buffer_frames(&self, frames: Option<u32>) -> std::io::Result<()> {
+        *self.buffer_frames.write().unwrap() = frames.map(|n| n.clamp(32, 8192));
+        self.save_config()
     }
 
     pub fn load_index(&self) -> std::io::Result<()> {

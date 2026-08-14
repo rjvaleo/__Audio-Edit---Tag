@@ -33,7 +33,42 @@ pub fn ensure(app: &Arc<App>) -> Result<(), String> {
         samples: Vec::new(),
         channels: 1,
     });
-    *slot = Some(engine::spawn(idle_params(), silent)?);
+    let frames = *app.buffer_frames.read().unwrap();
+    *slot = Some(engine::spawn(idle_params(), silent, frames)?);
+    Ok(())
+}
+
+/// Close the device and open it again at a new block size.
+///
+/// A stream's block length is fixed when it is built, so this is the only way
+/// to change it. Whatever was loaded is loaded again afterwards — the engine
+/// that held it is gone, and coming back to a silent transport with the file
+/// still named on screen would be worse than a moment's gap.
+pub fn restart(app: &Arc<App>, frames: Option<u32>) -> Result<(), String> {
+    app.set_buffer_frames(frames)
+        .map_err(|e| format!("could not save the buffer size: {e}"))?;
+
+    let held = app.playing.read().ok().and_then(|g| g.clone());
+    {
+        let mut slot = app
+            .audio
+            .lock()
+            .map_err(|_| "the audio engine is wedged".to_string())?;
+        if let Some(h) = slot.take() {
+            h.stop();
+        }
+    }
+    ensure(app)?;
+
+    if let Some(now) = held {
+        let found = app
+            .library_path()
+            .and_then(|l| crate::safety::resolve_within(&l, &now.rel));
+        if let Some(path) = found {
+            let how = if now.document { Playing::Document } else { Playing::Raw };
+            let _ = load(app, &now.rel, &path, how);
+        }
+    }
     Ok(())
 }
 
