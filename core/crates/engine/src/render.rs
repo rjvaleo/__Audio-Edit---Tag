@@ -15,7 +15,7 @@
 //! are summed in the same order the offline renderer would use. That is what
 //! lets the two agree bit for bit rather than merely closely.
 
-use fx::grain::{GrainEvent, GrainStream, StreamParams};
+use fx::grain::{layer_count, layer_offset, layer_params, GrainEvent, GrainStream, StreamParams};
 
 /// How many grains may sound at once. At the densest setting the scheduler
 /// allows — 2000 grains a second against a half-second window — real overlap
@@ -23,10 +23,14 @@ use fx::grain::{GrainEvent, GrainStream, StreamParams};
 /// all sounding at once, so the pool has to hold the sum of them.
 pub const MAX_VOICES: usize = 1024;
 
-/// Independent grain streams. Matches the clamp in `fx::grain::granular`, and
-/// has to: a layer the renderer refuses to run is a layer you hear offline and
-/// not while playing.
-pub const MAX_LAYERS: usize = 16;
+/// Independent grain streams.
+///
+/// Re-exported from `fx::grain` rather than declared here. The layer helpers
+/// used to live in this file, which meant the *renderer* knew how to lay out
+/// sixteen schedules and the enumeration everything else reads — the
+/// visualiser, the cloud pad, the read band — knew about exactly one. The
+/// picture was a sixteenth of the sound.
+pub use fx::grain::MAX_LAYERS;
 
 /// What a grain was born with.
 ///
@@ -327,35 +331,6 @@ fn shape_of(sp: &StreamParams) -> Shape {
         pan_spread: sp.grain.pan_spread,
         seed: sp.grain.seed,
     }
-}
-
-/// How many schedules are running. Clamped exactly as the offline renderer
-/// clamps it, so the two never disagree about how many there are.
-fn layer_count(sp: &StreamParams) -> u32 {
-    sp.grain.layers.clamp(1, MAX_LAYERS as u32)
-}
-
-/// A layer's own parameters. Re-seeding is what makes it an independent cloud
-/// rather than the same one drawn twice; layer zero keeps the seed it was given
-/// so a single-layer render is untouched by any of this.
-fn layer_params(sp: &StreamParams, layer: u32) -> StreamParams {
-    let mut lp = *sp;
-    if layer > 0 {
-        lp.grain.seed = sp.grain.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
-    }
-    lp.grain.layer_read = sp.grain.layer_throw(layer, sp.sample_rate);
-    lp
-}
-
-/// Where a layer sits within the hop. Even spacing scaled by the spread
-/// control, so at zero they stack and are merely louder.
-fn layer_offset(sp: &StreamParams, layer: u32, layers: u32) -> u64 {
-    if layer == 0 || layers <= 1 {
-        return 0;
-    }
-    let hop = sp.plan().hop.max(1) as u64;
-    let even = (hop * layer as u64) / layers as u64;
-    ((even as f32) * sp.grain.layer_spread.clamp(0.0, 4.0)) as u64
 }
 
 /// Linearly interpolated read, clamped at the edges. Identical to the offline

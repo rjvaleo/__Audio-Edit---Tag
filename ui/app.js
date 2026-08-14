@@ -910,7 +910,51 @@ function updateOverviewCue() {
     `translateX(${(Math.max(0, Math.min(1, state.cue / total)) * w).toFixed(2)}px)`;
 }
 
+/// How much of the file the cloud is reading, drawn on the file.
+///
+/// A playhead is a line because ordinary playback reads one sample at a time.
+/// A grain cloud reads a whole region at once — a spray of two hundred
+/// milliseconds is two hundred milliseconds wide, and layer scatter can put
+/// parts of it seconds away — so a line was saying something untrue about it.
+///
+/// Measured from the grains that are actually sounding rather than worked out
+/// from the controls. Spray, scatter, layer count and the grain length all end
+/// up in the answer without any of them having to be named here, and it cannot
+/// disagree with what is being heard because it *is* what is being heard.
+function updateReadBand() {
+  const el = $('readBand');
+  if (!el) return;
+  const g = state.grains;
+  const { from, to, sampleRate } = state.view;
+  const lane = $('lane');
+  if (!g?.grains?.length || !state.peaks || !sampleRate || to <= from || !lane) {
+    el.style.display = 'none';
+    return;
+  }
+  const sr = g.sampleRate || sampleRate;
+  const playFrame = playbackTime() * sr;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const [outFrame, srcFrame, size] of g.grains) {
+    if (outFrame > playFrame || outFrame + size < playFrame) continue;
+    // The whole span the grain reads, not just where it starts.
+    if (srcFrame < lo) lo = srcFrame;
+    if (srcFrame + size > hi) hi = srcFrame + size;
+  }
+  if (!isFinite(lo) || hi <= lo) { el.style.display = 'none'; return; }
+
+  const w = lane.clientWidth || 0;
+  const px = (f) => ((f - from) / (to - from)) * w;
+  const a = px(lo);
+  const b = px(hi);
+  if (b < 0 || a > w) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.style.transform = `translateX(${Math.max(0, a).toFixed(2)}px)`;
+  el.style.width = `${Math.max(1, Math.min(w, b) - Math.max(0, a)).toFixed(2)}px`;
+}
+
 function updatePlayhead() {
+  updateReadBand();
   const ph = $('playhead');
   const { from, to, sampleRate } = state.view;
   if (!state.peaks || !sampleRate || to <= from) { ph.style.display = 'none'; return; }
@@ -6430,10 +6474,13 @@ function wireCloudPad() {
 }
 
 function drawGrains() {
-  // Drawn whether or not the swarm is: the pad is a control as well as a
+  // Drawn whether or not the cloud is: the pad is a control as well as a
   // picture, and a control that goes blank when the transport stops is no use.
   drawCloudPad();
-  const set = visSetup(engine.playing);
+  // Cleared outright rather than washed. The old orbit left trails on purpose,
+  // which is what made it read as motion; this one gets its motion from grains
+  // actually falling, and a wash would smear the file behind them.
+  const set = visSetup(false);
   if (!set) return;
   const { ctx, w, h } = set;
   const g = state.grains;
@@ -6457,86 +6504,80 @@ function drawGrains() {
   if (g._peak === undefined) {
     g._peak = g.grains.reduce((m, r) => Math.max(m, r[4] || 0), 0) || 1;
   }
-  drawGrainSwarm(ctx, w, h, g);
+  drawGrainCloud(ctx, w, h, g);
 }
 
-/// The swarm: grains as a cloud orbiting the playhead.
+/// The grain cloud, as a cloud.
 ///
-/// Depth is time from the playhead, so grains fly in, cluster while sounding,
-/// then recede. Height is pitch offset. Size is level, normalised against the
-/// loudest grain. Colour is brightness and pitch together. Every value comes
-/// from the grain stream the renderer uses.
-function drawGrainSwarm(ctx, w, h, g) {
+/// What was here before was an orbit: grains flying around a centre, their
+/// distance standing for time from the playhead and their angle for nothing at
+/// all. It moved, and at any ordinary density it was a handful of overlapping
+/// circles getting brighter, because the maths piled everything near the
+/// middle. Worse, it could not answer the question the engine is about — which
+/// part of the file a grain came from.
+///
+/// So: across is the file, start to end, on exactly the axis the waveform above
+/// uses. Down is time. The line near the top is now; above it are grains that
+/// have been scheduled and have not sounded yet, and below it they stream
+/// downward as they age. Every dot is a real grain out of the same enumeration
+/// the renderer and the exporter use.
+///
+/// Read it and the controls are legible without labels. Scan is the slope of
+/// the fall. Position is where the column stands. Spray is how wide it is.
+/// Density is how thick. Layers are the separate columns.
+const CLOUD_AHEAD = 0.35;   // seconds of scheduled-but-unheard shown above now
+const CLOUD_BEHIND = 1.8;   // seconds of history below it
+
+function drawGrainCloud(ctx, w, h, g) {
   const sr = g.sampleRate || 48000;
-  const base = state.edit?.stretch?.semitones ?? 0;
+  const baseSemis = state.edit?.stretch?.semitones ?? 0;
+  const srcFrames = state.edit?.baseFrames || state.view?.frames || 0;
+  if (!srcFrames) return;
+
   const now = playbackTime();
   const playFrame = now * sr;
-  const cx = w / 2;
-  const cy = h / 2;
+  const span = CLOUD_AHEAD + CLOUD_BEHIND;
+  const nowY = (CLOUD_AHEAD / span) * h;
 
-  const SPAN = 1.4;                    // seconds either side of the playhead
-  const FOCAL = 300;
-  const R = Math.min(w, h) * 0.46;     // orbit scaled to the box, not fixed px
-
-  const visible = [];
-  for (const [outFrame, srcFrame, size, pitch, rms, bright] of g.grains) {
-    const dt = (outFrame - playFrame) / sr;
-    if (dt < -SPAN || dt > SPAN) continue;
-    const z = dt * 230 + 120;
-    if (z <= 14) continue;
-
-    const sounding = dt <= 0 && dt + size / sr >= 0;
-    const seedish = ((outFrame * 2654435761) % 997) / 997;
-    const phase = seedish * Math.PI * 2 + now * (0.8 + seedish * 1.8);
-
-    const spread = 0.35 + Math.min(1, Math.abs(pitch - base) / 9) * 0.65;
-    const wob = sounding ? 1 + 0.16 * Math.sin(now * 11 + seedish * 7) : 1;
-    const radius = R * spread * (0.45 + seedish * 0.55) * wob;
-    const scale = FOCAL / (FOCAL + z);
-
-    const px = cx + Math.cos(phase) * radius * scale;
-    const py = cy - ((pitch - base) / 10) * h * 0.30
-                  + Math.sin(phase * 1.27) * radius * 0.42 * scale;
-
-    const level = Math.sqrt(Math.max(0, rms) / g._peak);
-    const r = Math.max(1.0, (1.8 + level * 13) * scale * (sounding ? 1.5 : 1));
-    // Additive blending accumulates: with dozens of overlapping grains a high
-    // per-grain alpha saturates the whole cloud to flat white. Keep each one
-    // faint and let the density do the work.
-    const alpha = Math.max(0.05, (1 - Math.abs(dt) / SPAN) ** 1.6) * (sounding ? 0.42 : 0.16);
-    visible.push({ px, py, r, alpha, pitch, bright, sounding, z });
-  }
-
-  visible.sort((a, b) => b.z - a.z);
-
+  // A thin envelope along the top, so the horizontal axis is visibly the file
+  // rather than an abstract span.
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (const v of visible) {
-    const col = grainColour(v.pitch - base, v.bright, v.alpha);
-    ctx.shadowBlur = v.sounding ? 8 : 4;
-    ctx.shadowColor = col;
-    ctx.fillStyle = col;
-    ctx.beginPath();
-    ctx.arc(v.px, v.py, v.r, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.beginPath(); ctx.rect(0, 0, w, nowY); ctx.clip();
+  drawLaneWave(ctx, w, nowY * 2, srcFrames);
   ctx.restore();
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  // Now.
+  ctx.strokeStyle = 'rgba(255,255,255,.30)';
   ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, nowY + 0.5); ctx.lineTo(w, nowY + 0.5); ctx.stroke();
 
-  ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  ctx.font = '9px ui-monospace, monospace';
-  ctx.fillText(`${visible.length} in flight`, 10, h - 10);
-  if (!engine.playing) {
-    ctx.fillStyle = 'rgba(255,255,255,0.40)';
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.fillText('press play — the swarm follows the playhead', 10, 18);
+  let sounding = 0;
+  for (const [outFrame, srcFrame, size, pitch, , bright] of g.grains) {
+    const dt = (outFrame - playFrame) / sr;
+    if (dt > CLOUD_AHEAD || dt < -CLOUD_BEHIND) continue;
+    const x = (srcFrame / srcFrames) * w;
+    const y = ((CLOUD_AHEAD - dt) / span) * h;
+
+    const live = dt <= 0 && dt + size / sr >= 0;
+    if (live) sounding++;
+    // Scheduled but unheard is drawn faintly; sounding is drawn brightest;
+    // then it fades as it falls. The eye follows the bright band, which is
+    // the playhead — the thing the old one was supposed to be about.
+    const alpha = dt > 0 ? 0.22 : live ? 0.95 : Math.max(0.06, 0.5 - Math.abs(dt) * 0.25);
+    const r = (1.1 + Math.min(5, (size / sr) * 30)) * (live ? 1.35 : 1);
+    ctx.fillStyle = grainColour(pitch - baseSemis, bright, alpha);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const label = $('grainCount');
+  if (label) {
+    const shown = g.shown < g.total ? ` · showing ${g.shown.toLocaleString()}` : '';
+    label.textContent = `${g.total.toLocaleString()} grains${shown} · ${sounding} sounding`;
   }
 }
 
-// Animate only while something is playing, so an idle editor costs nothing.
 let grainRaf = null;
 function grainLoop() {
   grainRaf = requestAnimationFrame(grainLoop);

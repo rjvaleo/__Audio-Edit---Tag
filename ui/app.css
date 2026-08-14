@@ -461,6 +461,19 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   border-left: 1px solid var(--accent); border-right: 1px solid var(--accent);
   pointer-events: none;
 }
+/* The read band: the span of the file the grain cloud is drawing from at this
+   instant. A playhead is a line because ordinary playback reads one sample at a
+   time; a cloud reads a whole region, and drawing it as a line said something
+   untrue about it. */
+.read-band {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 0; z-index: 4;
+  background: oklch(63% 0.24 26 / 0.12);
+  border-left: 1px solid oklch(63% 0.24 26 / 0.35);
+  border-right: 1px solid oklch(63% 0.24 26 / 0.35);
+  pointer-events: none; display: none;
+  will-change: transform, width;
+}
+
 .playhead {
   position: absolute; top: 0; bottom: 0; left: 0; width: 1.5px; z-index: 5;
   background: oklch(63% 0.24 26);
