@@ -982,7 +982,16 @@
     // playhead is currently working through, so the view is always about the
     // sound being made rather than about the shape as a whole.
     let focus = { x: 0, y: 0, z: 0 };
-    let follow = true;
+    // Locked framing: the object sits in the middle of the screen and stays
+    // there. Nothing below is removed — the follow camera, the easing and the
+    // moving window are all still here and still work — but with this on they
+    // are not used, because a camera that drifts toward the sound and a window
+    // that re-centres on the playhead are both motion that does not repeat, and
+    // motion that does not repeat cannot loop.
+    const LOCK_CENTRE = true;
+    let follow = !LOCK_CENTRE;
+    /// Whole turns per pass, so the orbit ends where it began.
+    const ORBIT_TURNS = 1;
     let dragging = false, lastMX = 0, lastMY = 0;
     let palette = [];
 
@@ -1008,7 +1017,14 @@
         // there anyway. Density now does on screen what it does to the sound.
         let from = 0, count = total;
         scheduleStride = 1;
-        windowed = total > MAX_GRAINS;
+        windowed = !LOCK_CENTRE && total > MAX_GRAINS;
+        if (LOCK_CENTRE && total > MAX_GRAINS) {
+            // The whole object, thinned, rather than a window that slides. A
+            // sliding window has to be rebuilt as the playhead crosses it, and
+            // every rebuild is a jump; thinning is decided once and holds.
+            scheduleStride = Math.ceil(total / MAX_GRAINS);
+            count = Math.ceil(total / scheduleStride);
+        }
         if (windowed) {
             const half = Math.floor(MAX_GRAINS / 2);
             const centre = Math.floor((keepCursor ? cursor : 0) * SR / plan.hop);
@@ -1020,7 +1036,7 @@
 
         grains = [];
         for (let n = 0; n < count; n++) {
-            const i = from + n;
+            const i = from + n * scheduleStride;
             if (i >= total) break;
             const write = i * plan.hop;
             if (write >= plan.outFrames) break;
@@ -1187,6 +1203,21 @@
     /// the cloud is always centred. Time is not somewhere you move to, it is
     /// something that comes past.
     function projectV2(g, now, out) {
+        // The one seam a locked camera cannot hide. Structure and orbit both
+        // return exactly at the wrap, but the highlight does not: it is on the
+        // last grains of the file one frame and the first grains the next, and
+        // that reads as it leaping across the object. Faded to nothing either
+        // side of the join it dissolves and returns instead, which is what
+        // makes the pass look continuous.
+        //
+        // Only when it is actually looping. Following the engine there is no
+        // wrap to hide, and dimming the real beginning and end of playback
+        // would be inventing a fade nobody asked for.
+        const SEAM_SECONDS = 0.35;
+        const seam = (LOCK_CENTRE && !live)
+            ? Math.min(1, Math.min(now, Math.max(0, outSeconds - now)) / SEAM_SECONDS)
+            : 1;
+
         const H = horizon();
         const dt = g.tOut - now;
         const w = clamp(dt / H, -1, 1);          // −1 gone, 0 now, +1 coming
@@ -1473,11 +1504,26 @@
         const now = cursor;
 
         // Camera. Auto-orbit unless the mouse has taken over.
-        if (!dragging) camYaw += (deltaTime / 1000) * params.orbit * 0.30;
-        camDist += (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 800);
-        const cx = focus.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
+        //
+        // Locked, the orbit is read off the cursor rather than added to each
+        // frame. Accumulating an angle at so many radians a second means the
+        // angle at the end of a pass is whatever it happens to be, so the wrap
+        // back to the start is a jump; a whole number of turns *per pass* ends
+        // exactly where it began. It also makes the spin independent of frame
+        // rate, which the accumulating version never was.
+        const spin = LOCK_CENTRE
+            ? (now / Math.max(outSeconds, 1e-6)) * Math.PI * 2 * ORBIT_TURNS * params.orbit * 16
+            : 0;
+        if (!dragging && !LOCK_CENTRE) camYaw += (deltaTime / 1000) * params.orbit * 0.30;
+        const yaw = camYaw + spin;
+        // Snapped rather than eased when locked: an eased distance is a second
+        // of drift every time the extent changes, and drift does not repeat.
+        camDist = LOCK_CENTRE
+            ? fitDist * camZoom
+            : camDist + (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 800);
+        const cx = focus.x + Math.sin(yaw) * Math.cos(camPitch) * camDist;
         const cy = focus.y + Math.sin(camPitch) * camDist;
-        const cz = focus.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist;
+        const cz = focus.z + Math.cos(yaw) * Math.cos(camPitch) * camDist;
         camera(cx, cy, cz, focus.x, focus.y, focus.z, 0, 1, 0);
         perspective(PI / 3.4, width / height, 5, 40000);
 
@@ -1488,18 +1534,24 @@
         // exactly what happens to the sound.
         const sway = (params.pitchDriftSemis / 24) * 0.20;
         if (sway > 1e-4) {
-            rotateZ(Math.sin(now * params.driftRateHz * Math.PI * 2) * sway);
+            // Rounded to whole cycles per pass when locked. At the drift rate
+            // as given, the sway is mid-swing when the cursor wraps and the
+            // field snaps back upright — the most visible jump of the lot.
+            const cycles = LOCK_CENTRE
+                ? Math.max(1, Math.round(params.driftRateHz * outSeconds))
+                : params.driftRateHz * outSeconds;
+            rotateZ(Math.sin((now / Math.max(outSeconds, 1e-6)) * cycles * Math.PI * 2) * sway);
         }
 
         for (const b of buckets) b.length = 0;
         lineBucket.length = 0;
 
         // Screen-space basis, so a tick is legible whatever the orbit.
-        const rgt = [Math.cos(camYaw), 0, -Math.sin(camYaw)];
+        const rgt = [Math.cos(yaw), 0, -Math.sin(yaw)];
         const up = [
-            -Math.sin(camYaw) * Math.sin(camPitch),
+            -Math.sin(yaw) * Math.sin(camPitch),
             Math.cos(camPitch),
-            -Math.cos(camYaw) * Math.sin(camPitch)
+            -Math.cos(yaw) * Math.sin(camPitch)
         ];
         // Scaled to the camera so ticks keep their apparent size when zooming.
         const tickLen = camDist * 0.0055;
@@ -1526,7 +1578,7 @@
             const g = grains[n];
             // From inside a moment you can only see the moment.
             if (params.suite === 2 && Math.abs(g.tOut - now) > H) continue;
-            const e = energyOf(g, now);
+            const e = energyOf(g, now) * seam;
             tmp.e = e; tmp.n = n;
             project(g, now, tmp);
 
@@ -1637,6 +1689,13 @@
             focus.x += (0 - focus.x) * k;
             focus.y += (0 - focus.y) * k;
             focus.z += (0 - focus.z) * k;
+        } else if (LOCK_CENTRE) {
+            // Dead centre, every frame, no easing. The whole object is framed
+            // rather than the neighbourhood the playhead is in, so what is on
+            // screen does not depend on where the playhead has got to — which
+            // is what lets a pass end looking exactly like it started.
+            fitDist = extent * 2.6;
+            focus.x = 0; focus.y = 0; focus.z = 0;
         } else if (follow && fw > 0) {
             const tx = fx / fw, ty = fy / fw, tz = fz / fw;
             let spread = 0;
