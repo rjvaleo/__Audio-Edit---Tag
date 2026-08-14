@@ -1471,3 +1471,59 @@ fn disarming_when_nothing_is_armed_is_harmless() {
     let r = server::routes::route(&app, &post("/api/record", r#"{"action":"disarm"}"#));
     assert_eq!(status(&r), 200);
 }
+
+/// Arming the recorder, and refusing a mode that is not one.
+///
+/// The mode is deliberately not persisted, so this only checks the surface:
+/// it takes the three it knows, refuses anything else with a client error
+/// rather than defaulting to something, and reports back what it is set to.
+#[test]
+fn the_recorder_arms_and_refuses_a_mode_it_does_not_have() {
+    let s = Scratch::new("record");
+    let app = s.app();
+
+    let r = server::routes::route(&app, &get("/api/automation/record", &[]));
+    assert_eq!(status(&r), 200);
+    assert_eq!(json(&r).get("mode").and_then(|v| v.as_str()), Some("off"));
+
+    for mode in ["touch", "latch", "off"] {
+        let r = server::routes::route(&app, &post("/api/automation/record", &format!("{{\"mode\":\"{mode}\"}}")));
+        assert_eq!(status(&r), 200, "{mode} was refused");
+        assert_eq!(json(&r).get("mode").and_then(|v| v.as_str()), Some(mode));
+    }
+
+    // "write" is the one every DAW has and this does not. It must fail loudly
+    // rather than quietly arm something else.
+    let r = server::routes::route(&app, &post("/api/automation/record", "{\"mode\":\"write\"}"));
+    assert_eq!(status(&r), 400);
+
+    let r = server::routes::route(&app, &post("/api/automation/record", "{}"));
+    assert_eq!(status(&r), 400);
+}
+
+/// Armed but stopped must not stamp a point.
+///
+/// Nothing is playing in this test, which is the case that matters: a slider
+/// moved with the transport parked would otherwise write wherever the playhead
+/// happened to be left, and the first thing anyone does after arming is reach
+/// for a control to see if it works.
+#[test]
+fn a_control_moved_while_stopped_records_nothing() {
+    let s = Scratch::new("record-stopped");
+    s.sound("kit/a.wav", 4096);
+    let app = s.app();
+
+    server::routes::route(&app, &post("/api/automation/record", "{\"mode\":\"latch\"}"));
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", "{\"p\":\"kit/a.wav\",\"op\":\"stretch\",\"ratio\":3.0}"),
+    );
+    assert_eq!(status(&r), 200);
+
+    let r = server::routes::route(&app, &get("/api/automation", &[("p", "kit/a.wav")]));
+    let lanes = match json(&r).get("lanes") {
+        Some(server::json::Value::Arr(a)) => a.len(),
+        _ => 0,
+    };
+    assert_eq!(lanes, 0, "a stopped transport recorded {lanes} lanes");
+}

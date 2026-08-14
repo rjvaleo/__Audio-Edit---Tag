@@ -357,7 +357,7 @@ pub fn rack_controls(
 ///
 /// Every range here is a constant owned by the effect, not a number written out
 /// again. That is the whole point of storing lanes as units.
-fn resolve(slot: &crate::rack::SlotSpec, key: &str, unit: f32) -> Option<f32> {
+pub fn resolve(slot: &crate::rack::SlotSpec, key: &str, unit: f32) -> Option<f32> {
     use crate::rack::SlotSpec;
     let lerp = |a: f32, b: f32| a + (b - a) * unit;
     let log = |a: f32, b: f32| (a.ln() + (b.ln() - a.ln()) * unit.clamp(0.0, 1.0)).exp();
@@ -395,6 +395,75 @@ fn resolve(slot: &crate::rack::SlotSpec, key: &str, unit: f32) -> Option<f32> {
     })
 }
 
+/// A stretch lane's unit value as the number the document's control takes.
+///
+/// Split out of [`apply_stretch`] so that the mapping exists exactly once and
+/// can be run *backwards* — see [`unit_for`]. Recording automation needs to
+/// turn a control's real value into a lane value, and the only safe way to do
+/// that is to search this function rather than to write its inverse out again.
+/// An inverse written by hand is two copies of every range, and they drift.
+pub fn stretch_value(target: &str, u: f32) -> Option<f32> {
+    let log = |lo: f32, hi: f32| (lo.ln() + (hi.ln() - lo.ln()) * u.clamp(0.0, 1.0)).exp();
+    Some(match target {
+        "stretch.ratio" => log(RATIO_MIN, RATIO_MAX),
+        "stretch.semitones" => SEMITONE_MIN + u * (SEMITONE_MAX - SEMITONE_MIN),
+        "stretch.windowMs" => log(WINDOW_MS_MIN, WINDOW_MS_MAX),
+        "stretch.grain.densityHz" => u * DENSITY_MAX,
+        "stretch.grain.positionJitterMs" => u * POS_JITTER_MAX,
+        "stretch.grain.pitchJitterSemis" => u * PITCH_JITTER_MAX,
+        "stretch.cloudMix" => u,
+        _ => return None,
+    })
+}
+
+/// Where a stretch target's value lives on the document.
+///
+/// The mirror of the match in [`apply_stretch`], for reading rather than
+/// writing: recording has to notice that the ratio moved and by how much, and
+/// the only thing that knows which field "stretch.ratio" means is a list of
+/// names. Pinned against the menu by `every_offered_target_actually_resolves`,
+/// so a target added to one list and not the other fails the suite rather than
+/// going quietly unrecordable.
+pub fn stretch_field(s: &fx::Stretch, target: &str) -> Option<f32> {
+    Some(match target {
+        "stretch.ratio" => s.ratio,
+        "stretch.semitones" => s.semitones,
+        "stretch.windowMs" => s.window_ms,
+        "stretch.grain.densityHz" => s.grain.density_hz,
+        "stretch.grain.positionJitterMs" => s.grain.position_jitter_ms,
+        "stretch.grain.pitchJitterSemis" => s.grain.pitch_jitter_semis,
+        "stretch.cloudMix" => s.cloud_mix,
+        _ => return None,
+    })
+}
+
+/// The lane value that would produce `value`, by searching the forward map.
+///
+/// Every mapping here is monotonic in the unit — they are all a straight line
+/// or a logarithmic one — so bisection finds the answer to more precision than
+/// a lane can hold, in a fixed forty steps. That is nothing at control rate,
+/// and it costs no second copy of a single range.
+///
+/// Returns `None` for a target the forward function does not know, which is
+/// the same answer everything else here gives to a name it cannot resolve.
+pub fn unit_for(forward: impl Fn(f32) -> Option<f32>, value: f32) -> Option<f32> {
+    let (mut lo, mut hi) = (0.0f32, 1.0f32);
+    let at_lo = forward(lo)?;
+    let at_hi = forward(hi)?;
+    // Ranges that run downwards are as valid as ones that run up.
+    let rising = at_hi >= at_lo;
+    for _ in 0..40 {
+        let mid = 0.5 * (lo + hi);
+        let here = forward(mid)?;
+        if (here < value) == rising {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Some((0.5 * (lo + hi)).clamp(0.0, 1.0))
+}
+
 /// Apply the stretch and grain lanes to a set of stream parameters.
 ///
 /// Kept apart from [`rack_controls`] because these are properties of the
@@ -406,20 +475,24 @@ pub fn apply_stretch(a: &Automation, p: &mut fx::grain::StreamParams, frame: u64
         return;
     }
     let seconds = frame as f64 / sample_rate.max(1) as f64;
-    let log = |t: f32, lo: f32, hi: f32| (lo.ln() + (hi.ln() - lo.ln()) * t).exp();
     for l in &a.lanes {
         let Some(u) = l.value_at(frame, seconds) else {
             continue;
         };
+        // The ranges live in `stretch_value`; this only decides which field the
+        // answer lands in. Two matches on the same names, but only one of them
+        // knows a number — and it is the one recording can be run backwards.
+        let Some(v) = stretch_value(&l.target, u) else {
+            continue;
+        };
         match l.target.as_str() {
-            "stretch.ratio" => p.ratio = log(u, RATIO_MIN, RATIO_MAX),
-            "stretch.semitones" => p.semitones = SEMITONE_MIN + u * (SEMITONE_MAX - SEMITONE_MIN),
-            "stretch.windowMs" => p.window_ms = log(u, WINDOW_MS_MIN, WINDOW_MS_MAX),
-            "stretch.grain.densityHz" => p.grain.density_hz = u * DENSITY_MAX,
-            "stretch.grain.positionJitterMs" => p.grain.position_jitter_ms = u * POS_JITTER_MAX,
-            "stretch.grain.pitchJitterSemis" => p.grain.pitch_jitter_semis = u * PITCH_JITTER_MAX,
-            // Already a unit value at both ends, so no range to map through.
-            "stretch.cloudMix" => p.cloud_mix = u,
+            "stretch.ratio" => p.ratio = v,
+            "stretch.semitones" => p.semitones = v,
+            "stretch.windowMs" => p.window_ms = v,
+            "stretch.grain.densityHz" => p.grain.density_hz = v,
+            "stretch.grain.positionJitterMs" => p.grain.position_jitter_ms = v,
+            "stretch.grain.pitchJitterSemis" => p.grain.pitch_jitter_semis = v,
+            "stretch.cloudMix" => p.cloud_mix = v,
             _ => {}
         }
     }
@@ -692,6 +765,34 @@ pub fn start_runner(app: std::sync::Arc<crate::state::App>) {
                     continue;
                 };
 
+                // Latch keeps laying the held value down until the transport
+                // stops. Touch does not — it ends when the hand comes off,
+                // which is the message that stopped arriving.
+                let latching = app.automation.record_mode() == Record::Latch;
+                let held = if latching { app.automation.held() } else { Vec::new() };
+                if !held.is_empty() {
+                    let playing =
+                        crate::live::with(&app, |h| h.shared.is_playing()).unwrap_or(false);
+                    if playing {
+                        if let Some(frame) = playhead(&app) {
+                            for (target, unit) in &held {
+                                app.automation.record_point(
+                                    &now.rel,
+                                    target,
+                                    target,
+                                    *unit,
+                                    frame,
+                                    now.doc_rate,
+                                );
+                            }
+                        }
+                    } else {
+                        // Stopped: the pass is over and nothing is held.
+                        app.automation.release_all();
+                        let _ = app.automation.save(&app.automation_path());
+                    }
+                }
+
                 let automation = if now.document {
                     app.automation
                         .get_for(&now.rel, now.doc_frames, now.doc_channels, now.doc_rate)
@@ -731,10 +832,78 @@ pub fn start_runner(app: std::sync::Arc<crate::state::App>) {
         .ok();
 }
 
+/// Where the playhead is, on the document's own timeline.
+///
+/// The engine counts in device frames at the device's rate; a lane counts in
+/// document frames at the file's. `engine_to_document` is the one conversion,
+/// and recording has to use it or a take drawn at 48 kHz would play back
+/// somewhere else on a 44.1 kHz file.
+pub fn playhead(app: &std::sync::Arc<crate::state::App>) -> Option<u64> {
+    let now = app.playing.read().ok().and_then(|g| g.clone())?;
+    crate::live::with(app, |h| {
+        engine_to_document(h.shared.position(), now.device_rate, now.doc_rate)
+    })
+    .ok()
+}
+
+/// How a control moved while playing is written into its lane.
+///
+/// Drawing a curve with a pointer is exact and slow. Recording a move is
+/// neither, and it is how anyone actually arrives at a filter sweep that fits
+/// the sound — you listen, you move it, you keep the take.
+///
+/// `Write` is deliberately absent. It overwrites lanes you have not touched,
+/// from the moment playback starts, which needs per-lane arming and a rule for
+/// what a control reads back while its own lane is driving it. Half of that is
+/// a way to lose work quietly, so it is not here rather than here and
+/// approximate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Record {
+    #[default]
+    Off,
+    /// While the hand is on it, and not a moment longer.
+    Touch,
+    /// From the first move until the transport stops.
+    Latch,
+}
+
+impl Record {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Record::Off => "off",
+            Record::Touch => "touch",
+            Record::Latch => "latch",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Record> {
+        Some(match s {
+            "off" => Record::Off,
+            "touch" => Record::Touch,
+            "latch" => Record::Latch,
+            _ => return None,
+        })
+    }
+}
+
+/// How close two recorded points may be, in milliseconds of the document.
+///
+/// A drag arrives sixty times a second and latch writes on every runner tick,
+/// which would be a hundred and twenty points a second — more than a lane can
+/// usefully hold and more than anyone could edit afterwards. A new point takes
+/// out anything already within this of it, which thins the take and makes a
+/// second pass overwrite the first in the same move.
+const RECORD_THIN_MS: u64 = 50;
+
 /// The lanes for every file, keyed by library-relative path.
-#[derive(Default)]
 pub struct AutomationStore {
     by_path: Mutex<BTreeMap<String, Automation>>,
+    record: Mutex<Record>,
+    /// Targets latched on, with the last unit value each was left at.
+    held: Mutex<BTreeMap<String, f32>>,
+    /// Where each lane was last written, keyed by path and target. What makes
+    /// a take a take rather than sixty unrelated points.
+    last_at: Mutex<BTreeMap<(String, String), u64>>,
 }
 
 impl AutomationStore {
@@ -753,7 +922,125 @@ impl AutomationStore {
                     .map(|(k, v)| (k, Automation::from_json(&v)))
                     .collect(),
             ),
+            // Never restored from disk. Coming back to a session already armed
+            // and then pressing play would overwrite the take you saved.
+            record: Mutex::new(Record::Off),
+            held: Mutex::new(BTreeMap::new()),
+            last_at: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    pub fn record_mode(&self) -> Record {
+        *self.record.lock().unwrap()
+    }
+
+    pub fn set_record_mode(&self, mode: Record) {
+        *self.record.lock().unwrap() = mode;
+        self.last_at.lock().unwrap().clear();
+        if mode == Record::Off {
+            self.held.lock().unwrap().clear();
+        }
+    }
+
+    /// Keep writing this target until the transport stops. Latch only.
+    pub fn hold(&self, target: &str, unit: f32) {
+        self.held.lock().unwrap().insert(target.to_string(), unit);
+    }
+
+    /// What is still latched on, for the runner to keep laying down.
+    pub fn held(&self) -> Vec<(String, f32)> {
+        self.held
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect()
+    }
+
+    pub fn release_all(&self) {
+        self.held.lock().unwrap().clear();
+        // The next pass is a new take, and must not think it is continuing
+        // this one — otherwise a rewind and a second go would leave the span
+        // between them wiped.
+        self.last_at.lock().unwrap().clear();
+    }
+
+    /// Write one control's value into its lane at one moment.
+    ///
+    /// Creates the lane if the target has none, so recording a control that
+    /// was never drawn works without setting anything up first — which is the
+    /// point of recording.
+    ///
+    /// Returns whether anything changed, so a caller can avoid saving the file
+    /// on a tick that did nothing.
+    pub fn record_point(
+        &self,
+        key: &str,
+        target: &str,
+        label: &str,
+        unit: f32,
+        frame: u64,
+        sample_rate: u32,
+    ) -> bool {
+        let thin = (sample_rate.max(1) as u64 * RECORD_THIN_MS) / 1000;
+
+        // Where this lane was last written in this pass, if it is still going.
+        // Deciding thinning and overwriting from *this* rather than from the
+        // points already in the lane is the whole difference between a take
+        // and a single sliding point: a rule that deleted everything within
+        // the window of each new point deleted its own predecessor every time,
+        // and sixty writes came out as one.
+        let mut marks = self.last_at.lock().unwrap();
+        let mark = (key.to_string(), target.to_string());
+        let last = marks.get(&mark).copied();
+        if let Some(prev) = last {
+            // Too soon to be a new point. The take is denser than a lane can
+            // use, and the value that matters is the one at the end of the
+            // window, which the next write past it will carry.
+            if frame >= prev && frame - prev < thin {
+                return false;
+            }
+        }
+        marks.insert(mark, frame);
+        drop(marks);
+
+        let mut map = self.by_path.lock().unwrap();
+        let a = map.entry(key.to_string()).or_default();
+        let lane = match a.lanes.iter_mut().position(|l| l.target == target) {
+            Some(i) => &mut a.lanes[i],
+            None => {
+                a.lanes.push(Lane {
+                    id: format!("rec-{target}"),
+                    target: target.to_string(),
+                    label: label.to_string(),
+                    enabled: true,
+                    trim: 0.0,
+                    loop_range: None,
+                    points: Vec::new(),
+                    modulators: Vec::new(),
+                });
+                a.lanes.last_mut().expect("just pushed")
+            }
+        };
+        // Clear what the pass has just travelled over, so a second run at a
+        // section replaces the first rather than laying a curve on top of it.
+        // With nothing behind us — the first point of a take, or one written
+        // after a rewind — only this moment is cleared.
+        match last.filter(|prev| *prev < frame) {
+            Some(prev) => lane.points.retain(|p| p.frame <= prev || p.frame > frame),
+            None => lane.points.retain(|p| p.frame.abs_diff(frame) > thin),
+        }
+        let at = lane.points.partition_point(|p| p.frame < frame);
+        lane.points.insert(
+            at,
+            Point {
+                frame,
+                value: unit.clamp(0.0, 1.0),
+                curve: Curve::Linear,
+                tension: 0.0,
+            },
+        );
+        true
     }
 
     pub fn get(&self, key: &str) -> Automation {
@@ -823,6 +1110,48 @@ mod tests {
             lanes,
             ..Default::default()
         }
+    }
+
+    /// A take thins itself, and a second pass replaces the first.
+    ///
+    /// A drag arrives sixty times a second and latch writes on every runner
+    /// tick. Kept verbatim that is a hundred and twenty points a second — more
+    /// than the lane can use and more than anyone could edit afterwards. It is
+    /// also what makes a second pass work: the new point takes out whatever
+    /// the last pass left at the same moment, so recording over a section
+    /// replaces it rather than laying a second curve on top.
+    #[test]
+    fn a_recorded_take_thins_itself_and_overwrites_the_last_one() {
+        let store = AutomationStore {
+            by_path: Mutex::new(BTreeMap::new()),
+            record: Mutex::new(Record::Touch),
+            held: Mutex::new(BTreeMap::new()),
+            last_at: Mutex::new(BTreeMap::new()),
+        };
+        let sr = 48_000u32;
+        // Fifty milliseconds is the window, so these are one every eight.
+        for i in 0..60u64 {
+            store.record_point("f", "stretch.ratio", "Stretch", i as f32 / 60.0, i * 384, sr);
+        }
+        let kept = store.get("f").lanes[0].points.len();
+        assert!(kept > 1 && kept < 12, "sixty writes became {kept} points");
+
+        // A lane that did not exist was created rather than dropped.
+        assert_eq!(store.get("f").lanes[0].target, "stretch.ratio");
+
+        // Points stay in order, which everything downstream assumes.
+        let p = store.get("f").lanes[0].points.clone();
+        assert!(p.windows(2).all(|w| w[0].frame < w[1].frame), "out of order");
+
+        // A second pass over the same ground keeps its own values, not both.
+        let n = kept;
+        store.release_all();
+        for i in 0..60u64 {
+            store.record_point("f", "stretch.ratio", "Stretch", 1.0, i * 384, sr);
+        }
+        let after = store.get("f").lanes[0].points.clone();
+        assert_eq!(after.len(), n, "the second pass piled up instead of replacing");
+        assert!(after.iter().all(|p| p.value == 1.0), "the first pass survived");
     }
 
     #[test]
@@ -1078,10 +1407,54 @@ mod tests {
                 apply_stretch(&automation(vec![lane(&target, vec![(0, 0.1)])]), &mut lo, 0, 48_000);
                 apply_stretch(&automation(vec![lane(&target, vec![(0, 0.9)])]), &mut hi, 0, 48_000);
                 assert_ne!(lo, hi, "the menu offers {target} but it moves nothing");
+
+                // Recording reads the value back off the document, so the
+                // target has to be findable there too. A name added to the
+                // menu and to `apply_stretch` but not to `stretch_field`
+                // would play back and refuse to record, silently.
+                assert!(
+                    stretch_field(&fx::Stretch::default(), &target).is_some(),
+                    "{target} plays back but cannot be recorded"
+                );
+
+                // And the search has to land where the forward map came from,
+                // or a recorded take sits somewhere other than where the
+                // control was when it was recorded.
+                for u in [0.0f32, 0.17, 0.5, 0.83, 1.0] {
+                    let v = stretch_value(&target, u).expect("forward");
+                    let back = unit_for(|x| stretch_value(&target, x), v).expect("inverse");
+                    assert!(
+                        (back - u).abs() < 1e-4,
+                        "{target}: {u} became {v} and came back {back}"
+                    );
+                }
                 continue;
             }
             rack_controls(&automation(vec![lane(&target, vec![(0, 0.5)])]), &spec, 0, 48_000, &mut out);
             assert_eq!(out.len(), 1, "the menu offers {target} but it resolves to nothing");
+
+            // Every rack control has to survive the same round trip, for the
+            // same reason: recording finds the lane value by searching this
+            // exact function, so if the search cannot get back to where it
+            // started the take lands somewhere else.
+            if let Some(rest) = target.strip_prefix("fx.") {
+                if let Some((id, key)) = rest.split_once('.') {
+                    let i = spec.slot_ids.iter().position(|x| x == id).expect("slot");
+                    let slot = &spec.slots[i];
+                    for u in [0.0f32, 0.25, 0.75, 1.0] {
+                        let Some(v) = resolve(slot, key, u) else { continue };
+                        let back = unit_for(|x| resolve(slot, key, x), v).expect("inverse");
+                        let round = resolve(slot, key, back).expect("forward again");
+                        // Compared as *values*, not as units: a stepped
+                        // control has whole plateaus of unit that give the
+                        // same number, and any of them is a right answer.
+                        assert!(
+                            (round - v).abs() <= v.abs().max(1.0) * 1e-3,
+                            "{target}: {u} became {v} and came back as {round}"
+                        );
+                    }
+                }
+            }
         }
         assert!(stretched >= 6, "the document's own targets went missing");
     }

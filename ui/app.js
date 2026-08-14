@@ -3899,6 +3899,36 @@ let automationRedo = [];
 
 const newLaneId = () => `lane-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+/// Arm the recorder.
+///
+/// The server does the writing, not this file. It is the only side that knows
+/// how a control's real value becomes a lane value — that mapping is searched
+/// rather than inverted, and having a second copy of it here is exactly how
+/// a recorded take would come to sit somewhere other than where the control
+/// was. See `automation::unit_for`.
+async function setAutomationRecord(mode) {
+  try {
+    await postJSON('/api/automation/record', { mode });
+  } catch (e) {
+    toast('Recording could not be armed: ' + e.message);
+    return;
+  }
+  state.automationRecord = mode;
+  const el = $('automationRecord');
+  if (el) el.value = mode;
+  // A take lands on the server, so the lanes here are behind until refetched.
+  // While armed, keep them fresh so the curve appears as it is drawn.
+  clearInterval(recordPoll);
+  if (mode !== 'off') {
+    recordPoll = setInterval(async () => {
+      if (!engine.playing) return;
+      await loadAutomation();
+      renderAutomation();
+    }, 400);
+  }
+}
+let recordPoll = null;
+
 function automationCheckpoint() {
   automationUndo.push(JSON.stringify({ lanes: state.automation.lanes, bypassed: state.automation.bypassed }));
   if (automationUndo.length > 100) automationUndo.shift();
@@ -4338,6 +4368,8 @@ $('automationBypass').onchange = (e) => {
   saveAutomation();
   renderAutomation();
 };
+
+$('automationRecord').onchange = (e) => setAutomationRecord(e.target.value);
 
 $('automationSimplify').onclick = () => {
   automationCheckpoint();

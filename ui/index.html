@@ -377,6 +377,14 @@
       <div class="dock-body automation-body hidden" id="dockAutomation">
         <div class="automation-toolbar">
           <button class="primary" id="automationAdd">Add lane</button>
+          <label class="check" title="Write a control's moves into its lane while the transport is running. Touch records while the hand is on the control; Latch keeps recording until you stop.">
+            Record
+            <select id="automationRecord">
+              <option value="off">off</option>
+              <option value="touch">touch</option>
+              <option value="latch">latch</option>
+            </select>
+          </label>
           <label class="check" title="Stop every lane without deleting any of them">
             <input type="checkbox" id="automationBypass"> Bypass all
           </label>
