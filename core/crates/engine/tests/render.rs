@@ -266,3 +266,70 @@ fn stacked_layers_still_run_every_schedule() {
         assert!((a - b).abs() < 1e-5, "frame {i}: live {a} vs offline {b}");
     }
 }
+
+/// Moving a shaping control must not reach into grains already sounding.
+///
+/// A grain runs for tens of milliseconds. Envelope skew, direction and stereo
+/// spread used to be read from the live parameters on every block, so a grain
+/// half way through its window would have its shape rewritten under it — a step
+/// in the middle of a fade, which is a click. Each of these three is checked
+/// separately because they break the waveform in different places.
+///
+/// Measured as the worst second difference across the block where the control
+/// moved, against the same measure on a block where nothing moved. Neutered —
+/// reading `sp.grain` again instead of the voice's copy — pan spread alone puts
+/// a corner of 0.361 in against a steady 0.00033, which is a thousandfold and
+/// is exactly the click that was being heard.
+#[test]
+fn a_control_moved_mid_flight_does_not_reach_into_sounding_grains() {
+    let channels = 2;
+    let src = Source { samples: tone(SR as usize, channels), channels };
+    let block = 256;
+
+    let corner = |v: &[f32], channels: usize| -> f32 {
+        let mono: Vec<f32> = v.chunks(channels).map(|f| f[0]).collect();
+        mono.windows(3)
+            .map(|w| (w[2] - 2.0 * w[1] + w[0]).abs())
+            .fold(0f32, f32::max)
+    };
+
+    // Forty-millisecond grains at thirty a second, against a block of five and
+    // a bit: a block boundary is almost certainly in the middle of several of
+    // them rather than neatly between two.
+    let base = Grain { density_hz: 30.0, pan_spread: 0.0, ..Grain::default() };
+
+    for (what, moved) in [
+        ("pan spread", Grain { pan_spread: 1.0, ..base }),
+        ("envelope", Grain { envelope: 0.05, ..base }),
+        ("direction", Grain { reverse: true, ..base }),
+    ] {
+        let steady = params(src.frames(), base, 4.0, 0.0);
+        let after = params(src.frames(), moved, 4.0, 0.0);
+
+        let mut r = BlockRenderer::new(block);
+        let mut buf = vec![0f32; block * channels];
+        let mut evs = [GrainEvent {
+            index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0,
+        }; 64];
+
+        // Settle, so grains are genuinely in the air at the boundary.
+        for _ in 0..8 {
+            r.render(&mut buf, channels, &src, &steady, &mut evs);
+        }
+        let mut held = Vec::new();
+        r.render(&mut buf, channels, &src, &steady, &mut evs);
+        held.extend_from_slice(&buf);
+        let quiet = corner(&held, channels);
+
+        // Two frames of the settled block, then the block where it moved.
+        let mut joined = held[held.len() - 2 * channels..].to_vec();
+        r.render(&mut buf, channels, &src, &after, &mut evs);
+        joined.extend_from_slice(&buf);
+        let jolt = corner(&joined, channels);
+
+        assert!(
+            jolt < quiet * 4.0,
+            "{what} put a corner of {jolt:.5} in against a steady {quiet:.5}"
+        );
+    }
+}
