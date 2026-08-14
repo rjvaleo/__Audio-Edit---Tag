@@ -132,6 +132,18 @@ impl Effect for Compressor {
         -self.envelope_db
     }
 
+    fn get_param(&self, key: &str) -> Option<f32> {
+        Some(match key {
+            "thresholdDb" => self.settings.threshold_db,
+            "ratio" => self.settings.ratio,
+            "attackMs" => self.settings.attack_ms,
+            "releaseMs" => self.settings.release_ms,
+            "kneeDb" => self.settings.knee_db,
+            "makeupDb" => self.settings.makeup_db,
+            _ => return None,
+        })
+    }
+
     /// The same ranges the interface offers — see [`crate::eq::EQ_FREQ_MIN`].
     fn set_param(&mut self, key: &str, value: f32) -> bool {
         match key {

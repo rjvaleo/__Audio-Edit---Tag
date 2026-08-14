@@ -141,6 +141,16 @@ pub trait Effect: Send {
         false
     }
 
+    /// Read one control back.
+    ///
+    /// The mirror of [`Effect::set_param`], and needed for the same reason a
+    /// fader needs to know where it is: a value can only be moved *smoothly*
+    /// from somewhere, and the only thing that knows where a live effect
+    /// currently sits is the effect.
+    fn get_param(&self, _key: &str) -> Option<f32> {
+        None
+    }
+
     /// One scalar the interface can show for this effect, or zero.
     ///
     /// A compressor reports its current gain reduction as positive dB, which is
@@ -172,6 +182,9 @@ impl<T: Effect + params::Params> Effect for Driven<T> {
     }
     fn set_param(&mut self, key: &str, value: f32) -> bool {
         self.0.set(key, value)
+    }
+    fn get_param(&self, key: &str) -> Option<f32> {
+        self.0.get(key)
     }
     fn telemetry(&self) -> f32 {
         self.0.telemetry()
@@ -205,6 +218,9 @@ impl Effect for Gain {
         } else {
             false
         }
+    }
+    fn get_param(&self, key: &str) -> Option<f32> {
+        (key == "db").then_some(self.db)
     }
 }
 
@@ -289,6 +305,12 @@ impl Rack {
         self.slots
             .get_mut(slot)
             .is_some_and(|s| s.effect.set_param(key, value))
+    }
+
+    /// Where a control currently sits, for anything that has to move it from
+    /// there rather than to it.
+    pub fn get_param(&self, slot: usize, key: &str) -> Option<f32> {
+        self.slots.get(slot).and_then(|s| s.effect.get_param(key))
     }
 
     /// How many frames of audio to run through the rack before the range the

@@ -356,3 +356,101 @@ fn the_output_latency_is_zero_until_a_device_reports_one() {
     shared.set_latency_frames(512);
     assert_eq!(shared.latency_frames(), 512);
 }
+
+// -------------------------------------------------- smoothing driven controls
+//
+// A control written straight into an effect jumps at a block boundary, and a
+// discontinuity in a gain or a mix is a click. These pin that every driven
+// control is walked to its new value instead — and that the ones which cannot
+// meaningfully be halfway between two settings still jump.
+
+/// A rack whose one slot is a gain, driven through the transport.
+fn gain_rack() -> fx::Rack {
+    let mut rack = fx::Rack::new();
+    rack.push(Box::new(fx::Gain { db: 0.0 }));
+    rack
+}
+
+/// Sharpest *corner* in a buffer — a click, measured.
+///
+/// The second difference, not the first. A control that ramps to a new value
+/// changes the signal sample to sample by design; what makes a click is the
+/// signal changing direction abruptly, which is what this sees and a
+/// first-difference measure cannot tell apart from an honest slope.
+fn worst_corner(buf: &[f32]) -> f32 {
+    buf.windows(3)
+        .map(|w| (w[2] - 2.0 * w[1] + w[0]).abs())
+        .fold(0f32, f32::max)
+}
+
+#[test]
+fn a_control_moved_in_one_go_does_not_click() {
+    let sr = 48_000u32;
+    let source = std::sync::Arc::new(engine::render::Source {
+        samples: (0..sr as usize).map(|i| (i as f32 / 40.0).sin() * 0.5).collect(),
+        channels: 1,
+    });
+    let params = fx::grain::StreamParams::new(source.frames(), sr);
+    let shared = std::sync::Arc::new(engine::transport::Shared::new(params, source.clone()));
+    let mut core = engine::transport::Core::new(1024, 1, params, source);
+    shared.set_rack(Some(gain_rack()));
+    shared.play();
+
+    let mut out = vec![0.0f32; 512];
+    // Settle, with the gain where it starts.
+    for _ in 0..4 {
+        core.fill(&mut out, 1, &shared);
+    }
+
+    // Now ask for a large change in one step, the way releasing a slider does.
+    shared.set_manual_param(0, "db", -24.0);
+    let mut moved = vec![0.0f32; 512];
+    core.fill(&mut moved, 1, &shared);
+
+    // Across the boundary, not within the block. The jump happens on the first
+    // sample after the change, so measuring inside `moved` alone misses it
+    // entirely — which is exactly what the first version of this test did.
+    let mut joined = out[out.len() - 2..].to_vec();
+    joined.extend_from_slice(&moved);
+    let got = worst_corner(&joined);
+
+    // Measured against the jump this move *would* have made unsmoothed, which
+    // is the only meaningful yardstick: the test signal is a slow sine whose
+    // own worst corner is a ten-thousandth, so comparing against that would
+    // call any change at all a click.
+    let peak = out.iter().fold(0f32, |m, v| m.max(v.abs()));
+    let unsmoothed = peak * (1.0 - 10f32.powf(-24.0 / 20.0));
+    assert!(
+        got < unsmoothed * 0.1,
+        "a 24 dB move put a corner of {got:.4} in; unsmoothed it would have been \
+         about {unsmoothed:.4}, and a tenth of that is the most a ramp should leave"
+    );
+}
+
+#[test]
+fn a_smoothed_control_does_arrive() {
+    let sr = 48_000u32;
+    let source = std::sync::Arc::new(engine::render::Source {
+        samples: vec![1.0; sr as usize],
+        channels: 1,
+    });
+    let params = fx::grain::StreamParams::new(source.frames(), sr);
+    let shared = std::sync::Arc::new(engine::transport::Shared::new(params, source.clone()));
+    let mut core = engine::transport::Core::new(1024, 1, params, source);
+    shared.set_rack(Some(gain_rack()));
+    shared.play();
+
+    let mut out = vec![0.0f32; 256];
+    core.fill(&mut out, 1, &shared);
+    shared.set_manual_param(0, "db", -20.0);
+    // 15 ms at 48 kHz is about three of these blocks; give it ten.
+    for _ in 0..10 {
+        core.fill(&mut out, 1, &shared);
+    }
+    let want = 10f32.powf(-20.0 / 20.0);
+    let got = out.iter().fold(0f32, |m, v| m.max(v.abs()));
+    assert!(
+        (got - want).abs() < want * 0.15,
+        "asked for {want:.3} and after 10 blocks it is at {got:.3}"
+    );
+}
