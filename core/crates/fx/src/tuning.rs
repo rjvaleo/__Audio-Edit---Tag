@@ -174,11 +174,17 @@ pub fn by_name(name: &str) -> Option<&'static Scale> {
 ///
 /// `None`, or a name nothing matches, leaves the value alone — which is what
 /// keeps the control continuous until a scale is actually chosen.
-pub fn quantise(semitones: f32, scale: Option<&str>) -> f32 {
-    let Some(s) = scale.and_then(by_name) else {
-        return semitones;
-    };
-    s.nearest(semitones * 100.0) / 100.0
+pub fn quantise(semitones: f32, scale: Option<&str>, step: f32) -> f32 {
+    if let Some(s) = scale.and_then(by_name) {
+        return s.nearest(semitones * 100.0) / 100.0;
+    }
+    // No scale: a plain grid, or none at all. Zero means the value is taken as
+    // it is — the slider's own number, unrounded.
+    if step > 0.0 {
+        (semitones / step).round() * step
+    } else {
+        semitones
+    }
 }
 
 #[cfg(test)]
@@ -231,7 +237,7 @@ mod tests {
         let ionian = by_name("Ionian (Major)").unwrap();
         // A tone, a major third, a fifth — in semitones.
         for (asked, want) in [(1.9f32, 2.0f32), (3.6, 4.0), (7.2, 7.0), (0.4, 0.0)] {
-            let got = quantise(asked, Some("Ionian (Major)"));
+            let got = quantise(asked, Some("Ionian (Major)"), 0.5);
             assert!(
                 (got - want).abs() < 1e-3,
                 "{asked} semitones snapped to {got}, expected {want}"
@@ -245,7 +251,7 @@ mod tests {
     #[test]
     fn a_scale_reaches_below_the_root_as_well_as_above() {
         for asked in [-1.9f32, -3.6, -7.2, -13.0] {
-            let got = quantise(asked, Some("Ionian (Major)"));
+            let got = quantise(asked, Some("Ionian (Major)"), 0.5);
             assert!(got < 0.0, "{asked} snapped to {got}, which is the wrong way");
             // And it lands on a real degree of the scale, an octave down.
             let cents = got * 100.0;
@@ -258,12 +264,33 @@ mod tests {
         }
     }
 
+    /// Free means free: the number the slider produced, to the last decimal.
     #[test]
-    fn no_scale_chosen_leaves_the_pitch_exactly_alone() {
-        for v in [-7.3f32, 0.0, 0.25, 11.9] {
-            assert_eq!(quantise(v, None), v);
-            assert_eq!(quantise(v, Some("no such scale")), v);
+    fn a_free_pitch_is_the_value_it_was_given() {
+        for v in [-7.317f32, 0.0, 0.2549, 11.983] {
+            assert_eq!(quantise(v, None, 0.0), v);
+            assert_eq!(quantise(v, Some("no such scale"), 0.0), v);
         }
+    }
+
+    /// And the half-semitone grid is still there, because it is the default
+    /// and a document that never touched this must behave as it did.
+    #[test]
+    fn a_plain_grid_rounds_to_the_nearest_step() {
+        for (asked, want) in [(0.24f32, 0.0f32), (0.26, 0.5), (-0.26, -0.5), (3.7, 3.5)] {
+            let got = quantise(asked, None, 0.5);
+            assert!((got - want).abs() < 1e-4, "{asked} on a half-step grid gave {got}");
+        }
+        // A whole-semitone grid, for anyone who wants twelve-tone and nothing
+        // between.
+        assert!((quantise(3.7, None, 1.0) - 4.0).abs() < 1e-4);
+    }
+
+    /// A scale outranks the grid: choosing one is choosing its intervals.
+    #[test]
+    fn a_scale_wins_over_the_grid() {
+        let got = quantise(3.4, Some("Maqam Rast"), 0.5);
+        assert!((got - 3.51).abs() < 0.02, "Rast gave {got}, not its neutral third");
     }
 
     /// Bohlen-Pierce repeats at a tritave, not an octave. Assuming 1200 would

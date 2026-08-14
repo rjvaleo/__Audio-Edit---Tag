@@ -1638,11 +1638,16 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 // by anything — a preset, an automation lane, a script — lands
                 // on a degree too. The control is continuous until a scale is
                 // chosen; see `fx::tuning`.
-                let semis = fx::tuning::quantise(semis, scale.map(|x| x.name));
+                // Absent leaves the grid alone too, for the same reason.
+                let pitch_step = match v.get("pitchStep") {
+                    Some(Value::Num(n)) if n.is_finite() => (*n as f32).clamp(0.0, 12.0),
+                    _ => s.list().stretch.pitch_step,
+                };
+                let semis = fx::tuning::quantise(semis, scale.map(|x| x.name), pitch_step);
                 s.apply(|l| {
                     l.stretch = fx::Stretch {
                         ratio, semitones: semis, window_ms: window, quality,
-                        algorithm, vocoder, wsola, pvsola, hybrid, grain, scale,
+                        algorithm, vocoder, wsola, pvsola, hybrid, grain, scale, pitch_step,
                     };
                 });
             }

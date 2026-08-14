@@ -61,6 +61,7 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
         .set("ratio", s.ratio as f64)
         .set("semitones", s.semitones as f64)
         .set("scale", s.scale.map(|x| x.name).unwrap_or_default())
+        .set("pitchStep", s.pitch_step as f64)
         .set("windowMs", s.window_ms as f64)
         .set("quality", quality_name(s.quality))
         .set("algorithm", s.algorithm.as_str())
@@ -168,6 +169,10 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             .get("scale")
             .and_then(Value::as_str)
             .and_then(fx::tuning::by_name),
+        // Absent means half a semitone, which is what this control did before
+        // the field existed — a document written by an older build opens
+        // behaving the way it always has rather than suddenly free.
+        pitch_step: (num(v.get("pitchStep"), 0.5) as f32).clamp(0.0, 12.0),
         window_ms: (num(v.get("windowMs"), 40.0) as f32).clamp(5.0, 2000.0),
         quality: quality_from(v.get("quality")),
         // A preset that predates the engine choice keeps the old behaviour
@@ -496,6 +501,7 @@ mod tests {
         l.gain_db(Range::new(0, 3000), -6.0);
         l.stretch = Stretch {
             scale: fx::tuning::by_name("Maqam Rast"),
+            pitch_step: 0.0,
             ratio: 1.75,
             semitones: -3.5,
             window_ms: 65.0,
