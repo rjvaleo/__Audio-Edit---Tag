@@ -120,6 +120,9 @@ pub struct Stretcher {
     /// Somewhere to render the outgoing engine while the incoming one fills
     /// `out`. Sized once, like everything else here.
     scratch: Vec<f32>,
+    /// And somewhere to render the grain cloud when it is layered over an
+    /// engine rather than being the engine.
+    cloud_buf: Vec<f32>,
     /// And somewhere to render each extra layer before it is added in.
     layer_buf: Vec<f32>,
     /// The extra layers, if any have been handed over yet.
@@ -211,6 +214,7 @@ impl Stretcher {
             fading: None,
             scratch: vec![0.0; max_block.max(1) * channels.max(1)],
             layer_buf: vec![0.0; max_block.max(1) * channels.max(1)],
+            cloud_buf: vec![0.0; max_block.max(1) * channels.max(1)],
             bank: None,
             layer_at: vec![u64::MAX; crate::render::MAX_LAYERS],
             position: 0,
@@ -329,8 +333,9 @@ impl Stretcher {
         }
 
         let frames = out.len() / channels.max(1);
-        let reported = self.render_one(self.current, out, channels, src, sp, events);
+        let mut reported = self.render_one(self.current, out, channels, src, sp, events);
         self.add_layers(out, channels, src, sp);
+        reported = reported.max(self.add_cloud(out, channels, src, sp, events));
 
         // Mix in the tail of the engine being left behind.
         if let Some((from, left)) = self.fading {
@@ -366,6 +371,52 @@ impl Stretcher {
         }
 
         self.position += frames as u64;
+        reported
+    }
+
+    /// Mix the grain cloud in over whichever engine is running.
+    ///
+    /// The cloud is not a layer in the sense `add_layers` means. That stack is
+    /// the *same* engine several times over, staggered by a fraction of a hop
+    /// and normalised by root-N; it thickens one sound. This is a second sound
+    /// entirely, reading the same source at the same ratio and mixed in.
+    ///
+    /// Nothing happens when the cloud is switched off, and nothing happens
+    /// when the cloud already *is* the engine — layering it over itself would
+    /// only make it louder.
+    ///
+    /// The grains are reported to the visualiser, so the cloud can be seen
+    /// over a WSOLA document exactly as it is seen when it is the engine.
+    fn add_cloud(
+        &mut self,
+        out: &mut [f32],
+        channels: usize,
+        src: &Source,
+        sp: &StreamParams,
+        events: &mut [GrainEvent],
+    ) -> usize {
+        if !sp.cloud || self.current == Algorithm::Granular {
+            return 0;
+        }
+        let frames = out.len() / channels.max(1);
+        let n = frames.min(self.cloud_buf.len() / channels.max(1));
+        if n == 0 {
+            return 0;
+        }
+        // Switched on mid-flight, or seeked while it was off: the cloud has no
+        // idea where the transport went. Put it there before asking for audio.
+        if self.grain.position() != self.position {
+            self.grain.seek(self.position, sp);
+        }
+        let mut buf = std::mem::take(&mut self.cloud_buf);
+        let reported = self
+            .grain
+            .render(&mut buf[..n * channels], channels, src, sp, events);
+        let (dry, wet) = fx::stretch::cloud_gains(sp.cloud_mix);
+        for k in 0..n * channels {
+            out[k] = out[k] * dry + buf[k] * wet;
+        }
+        self.cloud_buf = buf;
         reported
     }
 

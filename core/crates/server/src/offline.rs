@@ -62,6 +62,8 @@ pub fn stretch_with_automation(
         vocoder: stretch.vocoder,
         pvsola: stretch.pvsola,
         hybrid: stretch.hybrid,
+        cloud: stretch.cloud,
+        cloud_mix: stretch.cloud_mix,
     };
     // The extra engine instances the grain cloud's layers need. The live path
     // hands these over the same way; without them a granular document renders

@@ -553,6 +553,14 @@ fn sp(in_frames: usize, ratio: f32, semitones: f32, window_ms: f32, g: fx::Grain
 
 
         hybrid: fx::hybrid::HybridParams::default(),
+
+
+
+        cloud: false,
+
+
+
+        cloud_mix: 0.5,
     }
 }
 

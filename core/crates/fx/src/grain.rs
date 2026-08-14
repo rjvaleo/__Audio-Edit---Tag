@@ -296,6 +296,11 @@ pub struct StreamParams {
     pub pvsola: crate::pvsola::PvsolaParams,
     /// How the hybrid splits the sound up and what it does with each part.
     pub hybrid: crate::hybrid::HybridParams,
+    /// Whether the grain cloud runs as a layer over the engine above.
+    /// See `Stretch::cloud`; this is the same switch, on the audio thread.
+    pub cloud: bool,
+    /// How much of it, equal power. See `Stretch::cloud_mix`.
+    pub cloud_mix: f32,
 }
 
 impl StreamParams {
@@ -314,6 +319,8 @@ impl StreamParams {
             vocoder: crate::stretch::VocoderParams::default(),
             pvsola: crate::pvsola::PvsolaParams::default(),
             hybrid: crate::hybrid::HybridParams::default(),
+            cloud: false,
+            cloud_mix: 0.5,
         }
     }
 }
@@ -454,6 +461,9 @@ pub fn grains(
         window_ms,
         grain: *g,
         algorithm: crate::stretch::Algorithm::Granular,
+        // The cloud *is* the engine here, so there is nothing to layer it over.
+        cloud: false,
+        cloud_mix: 0.5,
         wsola: crate::stretch::WsolaParams::default(),
 
         vocoder: crate::stretch::VocoderParams::default(),

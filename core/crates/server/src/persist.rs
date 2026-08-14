@@ -65,6 +65,8 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
         .set("windowMs", s.window_ms as f64)
         .set("quality", quality_name(s.quality))
         .set("algorithm", s.algorithm.as_str())
+        .set("cloud", s.cloud)
+        .set("cloudMix", s.cloud_mix as f64)
         .set(
             "vocoder",
             Value::obj()
@@ -175,6 +177,10 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
         // sounds — only about how the next move behaves.
         pitch_step: (num(v.get("pitchStep"), 0.0) as f32).clamp(0.0, 12.0),
         window_ms: (num(v.get("windowMs"), 40.0) as f32).clamp(5.0, 2000.0),
+        // Absent is off, which is what every document written before the cloud
+        // could be layered already sounds like.
+        cloud: matches!(v.get("cloud"), Some(Value::Bool(true))),
+        cloud_mix: (num(v.get("cloudMix"), d.cloud_mix as f64) as f32).clamp(0.0, 1.0),
         quality: quality_from(v.get("quality")),
         // A preset that predates the engine choice keeps the old behaviour
         // rather than silently switching to the new one.
@@ -570,6 +576,8 @@ mod tests {
                 drift_step: true,
                 pan_spread: 0.65,
             },
+                    cloud: false,
+            cloud_mix: 0.5,
         };
         l
     }

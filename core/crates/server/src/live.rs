@@ -51,6 +51,8 @@ fn idle_params() -> StreamParams {
         grain: fx::Grain::default(),
         // Nothing is loaded, so the engine that can start from nothing.
         algorithm: fx::stretch::Algorithm::Granular,
+        cloud: false,
+        cloud_mix: 0.5,
         wsola: fx::stretch::WsolaParams::default(),
 
         vocoder: fx::stretch::VocoderParams::default(),
@@ -166,6 +168,8 @@ pub fn load(
         vocoder: list.stretch.vocoder,
         pvsola: list.stretch.pvsola,
         hybrid: list.stretch.hybrid,
+        cloud: list.stretch.cloud,
+        cloud_mix: list.stretch.cloud_mix,
     };
 
     with(app, |h| {
@@ -254,6 +258,8 @@ pub fn merge_stretch(p: &mut StreamParams, s: &fx::Stretch) {
     p.vocoder = s.vocoder;
     p.pvsola = s.pvsola;
     p.hybrid = s.hybrid;
+    p.cloud = s.cloud;
+    p.cloud_mix = s.cloud_mix;
 }
 
 /// Is the engine holding this document?

@@ -643,3 +643,89 @@ fn a_mono_file_on_a_stereo_device_plays_at_the_right_speed() {
         assert!(rms(tail) > 0.05, "{alg:?}: it fell silent before the end");
     }
 }
+
+/// The grain cloud layered over an engine, live and exported.
+///
+/// The cloud used to be one of five mutually exclusive choices, so picking
+/// WSOLA silenced it entirely. It is not really the same kind of thing as the
+/// other four — they are trying to move a recording through time without being
+/// noticed, and it is an instrument — so it now runs beside whichever of them
+/// is chosen, on the same source at the same ratio.
+///
+/// That gives two renderers to keep in step rather than one, which is the
+/// whole risk of the change: the block renderer and `grain::granular` already
+/// agree frame for frame, and this asserts the *mix* does too.
+#[test]
+fn a_cloud_layered_over_an_engine_plays_what_it_exports() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 2, channels), channels };
+    let n = src.frames();
+    let (ratio, semis) = (2.0f32, 0.0f32);
+    let want = ((n as f32) * ratio) as usize;
+
+    for mix in [0.35f32, 1.0] {
+        let sp = StreamParams {
+            cloud: true,
+            cloud_mix: mix,
+            ..params(n, Algorithm::Wsola, ratio, semis)
+        };
+        let live = run(&src, &sp, 512, want);
+        let offline = fx::Stretch {
+            ratio,
+            semitones: semis,
+            algorithm: Algorithm::Wsola,
+            cloud: true,
+            cloud_mix: mix,
+            ..Default::default()
+        }
+        .process(&src.samples, channels, SR);
+
+        let last = (want - 1) * channels;
+        let worst = live[..last]
+            .iter()
+            .zip(&offline[..last])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
+        assert!(worst < 1e-5, "at mix {mix}: live and export differ by {worst:.2e}");
+    }
+}
+
+/// And it is inert when it is off.
+///
+/// Invariant nine, asserted the only way that means anything: the same
+/// document rendered with the field present and false must be the audio that
+/// was there before the field existed, byte for byte.
+#[test]
+fn a_cloud_switched_off_changes_nothing_at_all() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 4, channels), channels };
+    let n = src.frames();
+    let want = (n as f32 * 2.0) as usize;
+
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Granular] {
+        let plain = params(n, alg, 2.0, 3.0);
+        let off = StreamParams { cloud: false, cloud_mix: 0.9, ..plain };
+        assert_eq!(run(&src, &plain, 512, want), run(&src, &off, 512, want), "{alg:?} live");
+
+        let a = fx::Stretch { ratio: 2.0, semitones: 3.0, algorithm: alg, ..Default::default() };
+        let b = fx::Stretch { cloud: false, cloud_mix: 0.9, ..a };
+        assert_eq!(
+            a.process(&src.samples, channels, SR),
+            b.process(&src.samples, channels, SR),
+            "{alg:?} offline"
+        );
+    }
+}
+
+/// Layering it over the cloud itself would only make the cloud louder.
+#[test]
+fn a_cloud_over_the_cloud_is_still_just_the_cloud() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 4, channels), channels };
+    let n = src.frames();
+    let want = (n as f32 * 2.0) as usize;
+
+    let plain = params(n, Algorithm::Granular, 2.0, 0.0);
+    let doubled = StreamParams { cloud: true, cloud_mix: 0.5, ..plain };
+    assert_eq!(run(&src, &plain, 512, want), run(&src, &doubled, 512, want));
+}

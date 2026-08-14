@@ -3247,7 +3247,8 @@ function sendStretch({ live }) {
     { op: 'stretch', ratio: d.ratio, semitones: d.semitones,
       windowMs: d.windowMs, quality: live ? 'draft' : d.quality,
       algorithm: d.algorithm, vocoder: d.vocoder, wsola: d.wsola,
-      pvsola: d.pvsola, hybrid: d.hybrid },
+      pvsola: d.pvsola, hybrid: d.hybrid,
+      cloud: d.cloud, cloudMix: d.cloudMix },
     { live },
   );
 }
@@ -3313,6 +3314,10 @@ function renderStretch() {
     wsola: { ...WSOLA_DEFAULTS, ...(st.wsola || {}) },
     pvsola: { ...PVSOLA_DEFAULTS, ...(st.pvsola || {}) },
     hybrid: { ...HYBRID_DEFAULTS, ...(st.hybrid || {}) },
+    // A document written before the cloud could be layered has neither field.
+    // Off is what it sounds like, so off is what it opens as.
+    cloud: !!st.cloud,
+    cloudMix: st.cloudMix ?? 0.5,
   };
 
   // Which engine does the stretching. Not a quality ladder — they fail in
@@ -3361,6 +3366,28 @@ function renderStretch() {
     // this engine has anything to put beside it.
     switches.appendChild(scaleButton());
     own.appendChild(switches);
+
+    // The grain cloud, layered over whichever engine is running.
+    //
+    // The picker chooses one of five, and choosing one used to silence the
+    // other four — including the cloud, which is not really the same kind of
+    // thing. The other four are trying to move a recording through time
+    // without being noticed; the cloud is an instrument. So it can now run
+    // beside them on the same source. Nothing to offer when the cloud already
+    // *is* the engine.
+    if (alg !== 'granular') {
+      const d = state.stretchDraft;
+      switches.prepend(check('grain cloud',
+        'Run the grain cloud over this engine, reading the same source at the same stretch',
+        d.cloud,
+        (on) => { d.cloud = on; reflectEngine(); commitStretch(); }));
+      if (d.cloud) {
+        own.appendChild(tip(param('Cloud', d.cloudMix, 0, 1, 0.01,
+          (x) => `${Math.round(x * 100)}%`,
+          (x) => { d.cloudMix = x; previewStretch(); }, () => commitStretch()),
+          'How much cloud against the engine underneath. Equal power, so the middle is not a dip — the two are decorrelated and a straight crossfade would sag there.'));
+      }
+    }
     // The engine's standard controls stay under the picker. Everything that
     // used to be a constant in the algorithm goes to the Extended column
     // instead: those values are constants because that is where the algorithm
@@ -5186,7 +5213,8 @@ async function resetEverything() {
                          vocoder: { ...VOCODER_DEFAULTS },
                          wsola: { ...WSOLA_DEFAULTS },
                          pvsola: { ...PVSOLA_DEFAULTS },
-                         hybrid: { ...HYBRID_DEFAULTS } };
+                         hybrid: { ...HYBRID_DEFAULTS },
+                         cloud: false, cloudMix: 0.5 };
   const grain = {
     ...GRAIN_DEFAULTS,
     seed: state.grainDraft?.seed ?? state.edit?.stretch?.grain?.seed ?? 1,
