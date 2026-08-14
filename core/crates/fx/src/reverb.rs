@@ -127,24 +127,41 @@ fn moorer_damping(lo: f32, hi: f32, sample_rate: u32) -> f32 {
 pub(crate) const MOORER_SPECS: &[ParamSpec] = &[
     // `g` in the paper. It alone sets the reverberation time: Moorer reports
     // about 2 s at 0.83 with these delays.
-    ParamSpec::new("decay", "Decay", 0.0, 0.98, 0.83),
+    //
+    // The top of the range is well past anything he was describing. Decay time
+    // goes as `1 / -log(g)`, so the last hundredth of this control is most of
+    // its travel: 0.83 is two seconds, 0.98 about twenty, and 0.999 several
+    // minutes. It stays below one because at one the loop neither decays nor
+    // settles — for that, use `freeze`, which stops the input as well.
+    ParamSpec::new("decay", "Decay", 0.0, 0.9995, 0.83),
     // Scales the paper's `g₁` values together. At 1 they are used as tabulated.
     ParamSpec::new("damping", "Air absorption", 0.0, 2.0, 1.0),
     // Scales every delay. Moorer notes (p8) that combs as short as 10–15 ms
     // still hold together — "though one might well imagine that one were
     // inside a garbage can rather than the Symphony Hall".
-    ParamSpec::new("size", "Size", 0.2, 2.0, 1.0),
-    ParamSpec::new("predelayMs", "Predelay", 0.0, 250.0, 0.0).unit("ms"),
+    ParamSpec::new("size", "Size", 0.1, 8.0, 1.0),
+    ParamSpec::new("predelayMs", "Predelay", 0.0, 1000.0, 0.0).unit("ms"),
     // The two channels run the same comb bank at slightly different lengths.
     // Moorer's design is mono in and mono out; without this the output is the
     // same in both ears, which no room is.
     ParamSpec::new("spread", "Stereo spread", 0.0, 0.2, 0.06),
     ParamSpec::new("wet", "Wet", 0.0, 1.0, 0.3),
     ParamSpec::new("dry", "Dry", 0.0, 1.0, 1.0),
+    // The all-pass gain. Moorer's own wording is "a gain of 0.7 or so", which
+    // is not the flat instruction the 6 ms delay gets — that one stays fixed
+    // because he names both ways it fails, and this one does not.
+    ParamSpec::new("diffusion", "Diffusion", 0.0, 0.9, MOORER_ALLPASS_G),
+    // Hold whatever is in the tank and stop feeding it.
+    //
+    // Not the same as a decay of one. A loop at unity gain that is still being
+    // fed accumulates without bound; one that is closed to new input sustains
+    // what it already has. Freezing therefore has to do both, and this is the
+    // only way to reach an actually infinite tail.
+    ParamSpec::new("freeze", "Freeze", 0.0, 1.0, 0.0),
 ];
 
 pub struct Moorer {
-    p: [f32; 7],
+    p: [f32; 9],
     combs: Vec<[Comb; 6]>,
     aps: Vec<Allpass>,
     pre: Vec<Comb>,
@@ -155,7 +172,7 @@ pub struct Moorer {
 impl Moorer {
     pub fn new(sample_rate: u32, channels: usize) -> Self {
         let mut me = Moorer {
-            p: [0.83, 1.0, 1.0, 0.0, 0.06, 0.3, 1.0],
+            p: [0.83, 1.0, 1.0, 0.0, 0.06, 0.3, 1.0, MOORER_ALLPASS_G, 0.0],
             combs: Vec::new(),
             aps: Vec::new(),
             pre: Vec::new(),
@@ -171,7 +188,10 @@ impl Moorer {
     /// allocate, and clear the tail while it was still sounding.
     fn build(&mut self, channels: usize) {
         let sr = self.sr as f32;
-        let max_size = 2.0;
+        // Sized for the largest room the control allows, once. The read point
+        // moves inside these; rebuilding on every size change would allocate
+        // and would cut the tail while it was still sounding.
+        let max_size = 8.0;
         let ms = |x: f32| ((x * 0.001 * sr) as usize).max(2);
         self.combs = (0..channels)
             .map(|ch| {
@@ -182,7 +202,7 @@ impl Moorer {
         self.aps = (0..channels)
             .map(|_| Allpass::new(ms(MOORER_ALLPASS_MS)))
             .collect();
-        self.pre = (0..channels).map(|_| Comb::new(ms(250.0))).collect();
+        self.pre = (0..channels).map(|_| Comb::new(ms(1000.0))).collect();
         self.built_for = (self.sr, channels as u32);
     }
 }
@@ -196,7 +216,13 @@ impl Effect for Moorer {
         }
         let n = channels.min(self.combs.len());
         let sr = sample_rate as f32;
-        let (g, damp, size) = (self.p[0], self.p[1], self.p[2]);
+        let (mut g, damp, size) = (self.p[0], self.p[1], self.p[2]);
+        // Frozen: the loop holds at unity and takes nothing new in. Both
+        // halves are needed — see the control's own note.
+        let frozen = self.p[8] >= 0.5;
+        if frozen {
+            g = 1.0;
+        }
         let pre = ((self.p[3] * 0.001 * sr) as usize).max(1);
         let spread = self.p[4];
         let (wet, dry) = (self.p[5], self.p[6]);
@@ -229,13 +255,18 @@ impl Effect for Moorer {
                     // moves the room without reallocating anything.
                     let y = c.buf[(c.at + len - take) % len];
                     c.lp = y * (1.0 - g1) + c.lp * g1;
-                    c.buf[c.at] = delayed + c.lp * g;
+                    // Frozen, the damping comes out of the loop as well. Air
+                    // absorption is a property of a room that is still passing
+                    // sound through itself; a closed tank is not one, and a
+                    // lossy filter in a unity loop is not unity — it decays,
+                    // which is the one thing a freeze must not do.
+                    c.buf[c.at] = if frozen { y } else { delayed + c.lp * g };
                     c.at = (c.at + 1) % len;
                     sum += y;
                 }
                 sum /= 6.0;
 
-                let y = self.aps[ch].step(sum, MOORER_ALLPASS_G);
+                let y = self.aps[ch].step(sum, self.p[7]);
                 frame[ch] = x * dry + y * wet;
             }
         }
@@ -289,17 +320,31 @@ const SCHROEDER_COMBS: [f32; 4] = [29.7, 37.1, 41.1, 43.7];
 const SCHROEDER_APS: [f32; 2] = [5.0, 1.7];
 
 pub(crate) const SCHROEDER_SPECS: &[ParamSpec] = &[
-    ParamSpec::new("decay", "Decay", 0.0, 0.98, 0.805),
-    ParamSpec::new("size", "Size", 0.2, 2.0, 1.0),
-    ParamSpec::new("diffusion", "Diffusion", 0.0, 0.9, 0.7),
+    // Past anything Schroeder was describing, for the same reason Moorer's is:
+    // decay time goes as `1 / -log(g)`, so the last hundredth is most of the
+    // travel.
+    ParamSpec::new("decay", "Decay", 0.0, 0.9995, 0.805),
+    ParamSpec::new("size", "Size", 0.1, 8.0, 1.0),
+    ParamSpec::new("diffusion", "Diffusion", 0.0, 0.95, 0.7),
     ParamSpec::new("wet", "Wet", 0.0, 1.0, 0.3),
     ParamSpec::new("dry", "Dry", 0.0, 1.0, 1.0),
+    // Was a hardcoded 0.05, which is a stereo width control that nobody could
+    // reach — and one this reverb's neighbour has always offered. Appended
+    // rather than inserted so no saved rack's parameter indices move.
+    ParamSpec::new("spread", "Stereo spread", 0.0, 0.2, 0.05),
+    // Schroeder had no predelay at all while Moorer had one, which was an
+    // accident of which paper each was written from rather than a difference
+    // between the designs.
+    ParamSpec::new("predelayMs", "Predelay", 0.0, 1000.0, 0.0).unit("ms"),
+    // Holds the combs at unity and closes them to new input — see Moorer's.
+    ParamSpec::new("freeze", "Freeze", 0.0, 1.0, 0.0),
 ];
 
 pub struct Schroeder {
-    p: [f32; 5],
+    p: [f32; 8],
     combs: Vec<[Comb; 4]>,
     aps: Vec<[Allpass; 2]>,
+    pre: Vec<Comb>,
     sr: u32,
     built_for: (u32, u32),
 }
@@ -307,9 +352,10 @@ pub struct Schroeder {
 impl Schroeder {
     pub fn new(sample_rate: u32, channels: usize) -> Self {
         let mut me = Schroeder {
-            p: [0.805, 1.0, 0.7, 0.3, 1.0],
+            p: [0.805, 1.0, 0.7, 0.3, 1.0, 0.05, 0.0, 0.0],
             combs: Vec::new(),
             aps: Vec::new(),
+            pre: Vec::new(),
             sr: sample_rate.max(1),
             built_for: (0, 0),
         };
@@ -323,12 +369,13 @@ impl Schroeder {
         self.combs = (0..channels)
             .map(|ch| {
                 let stretch = 1.0 + ch as f32 * 0.17;
-                std::array::from_fn(|i| Comb::new(ms(SCHROEDER_COMBS[i] * 2.0 * stretch)))
+                std::array::from_fn(|i| Comb::new(ms(SCHROEDER_COMBS[i] * 8.0 * stretch)))
             })
             .collect();
         self.aps = (0..channels)
             .map(|_| std::array::from_fn(|i| Allpass::new(ms(SCHROEDER_APS[i]))))
             .collect();
+        self.pre = (0..channels).map(|_| Comb::new(ms(1000.0))).collect();
         self.built_for = (self.sr, channels as u32);
     }
 }
@@ -342,12 +389,27 @@ impl Effect for Schroeder {
         }
         let n = channels.min(self.combs.len());
         let sr = sample_rate as f32;
-        let (g, size, diff, wet, dry) = (self.p[0], self.p[1], self.p[2], self.p[3], self.p[4]);
+        let (mut g, size, diff, wet, dry) = (self.p[0], self.p[1], self.p[2], self.p[3], self.p[4]);
+        let frozen = self.p[7] >= 0.5;
+        if frozen {
+            g = 1.0;
+        }
+        let spread = self.p[5];
+        let pre = ((self.p[6] * 0.001 * sr) as usize).max(1);
 
         for frame in buf.chunks_mut(channels) {
             for ch in 0..n.min(frame.len()) {
                 let x = frame[ch];
-                let side = 1.0 + ch as f32 * 0.05;
+                let side = 1.0 + ch as f32 * spread;
+                let delayed = {
+                    let c = &mut self.pre[ch];
+                    let at = c.at;
+                    let len = c.buf.len();
+                    let out = c.buf[(at + len - pre.min(len - 1)) % len];
+                    c.buf[at] = x;
+                    c.at = (at + 1) % len;
+                    out
+                };
                 let mut sum = 0.0;
                 for i in 0..4 {
                     let want = (SCHROEDER_COMBS[i] * size * side * 0.001 * sr) as usize;
@@ -355,7 +417,7 @@ impl Effect for Schroeder {
                     let len = c.buf.len();
                     let take = want.clamp(2, len - 1);
                     let y = c.buf[(c.at + len - take) % len];
-                    c.buf[c.at] = x + y * g;
+                    c.buf[c.at] = if frozen { y } else { delayed + y * g };
                     c.at = (c.at + 1) % len;
                     sum += y;
                 }
@@ -381,6 +443,9 @@ impl Effect for Schroeder {
             for a in pair {
                 a.clear();
             }
+        }
+        for p in &mut self.pre {
+            p.clear();
         }
     }
 
@@ -558,6 +623,156 @@ mod tests {
                 .fold(0f32, f32::max);
             assert!(worst < 1e-6, "{name} moved a fully dry signal by {worst:.2e}");
         }
+    }
+
+    /// The extremes are the point of the extended ranges, so they are measured
+    /// rather than assumed reachable.
+    #[test]
+    fn a_very_long_decay_is_still_ringing_when_an_ordinary_one_has_gone() {
+        let sr = 48_000u32;
+        let energy_after = |g: f32, secs: usize| {
+            let mut r = Moorer::new(sr, 1);
+            r.set("decay", g);
+            r.set("wet", 1.0);
+            r.set("dry", 0.0);
+            r.set("damping", 0.0);
+            let mut b = impulse(sr as usize * (secs + 1), 1);
+            r.process(&mut b, 1, sr);
+            let tail = &b[sr as usize * secs..];
+            tail.iter().fold(0f32, |m, v| m.max(v.abs()))
+        };
+        // Moorer's own example is about two seconds, so at eight it is gone.
+        let ordinary = energy_after(0.83, 8);
+        let cathedral = energy_after(0.9995, 8);
+        assert!(
+            cathedral > ordinary * 50.0,
+            "at eight seconds the long decay had {cathedral:.2e} against {ordinary:.2e}"
+        );
+        assert!(cathedral > 1e-3, "the long decay is not audible at eight seconds");
+    }
+
+    /// Freeze holds what is there. A loop at unity that is *still being fed*
+    /// accumulates without bound, so freezing has to close the input too — and
+    /// this is what says it does.
+    #[test]
+    fn a_frozen_reverb_sustains_without_growing() {
+        let sr = 48_000u32;
+        for (name, mut e) in [
+            ("moorer", Box::new(crate::Driven(Moorer::new(sr, 2))) as Box<dyn Effect>),
+            ("schroeder", Box::new(crate::Driven(Schroeder::new(sr, 2))) as Box<dyn Effect>),
+        ] {
+            e.set_param("wet", 1.0);
+            e.set_param("dry", 0.0);
+            // Fill the tank with a second of noise-ish material, then close it.
+            let mut warm: Vec<f32> = (0..sr as usize * 2)
+                .map(|i| (i as f32 / 7.3).sin() * 0.4 + (i as f32 / 2.1).sin() * 0.3)
+                .collect();
+            e.process(&mut warm, 2, sr);
+            e.set_param("freeze", 1.0);
+
+            // Twenty seconds of silence in. What comes out must keep coming and
+            // must not climb.
+            let mut level = Vec::new();
+            for _ in 0..20 {
+                let mut quiet = vec![0.0f32; sr as usize * 2];
+                e.process(&mut quiet, 2, sr);
+                level.push(quiet.iter().fold(0f32, |m, v| m.max(v.abs())));
+            }
+            let first = level[0];
+            let last = *level.last().unwrap();
+            assert!(first > 1e-3, "{name}: nothing survived the freeze");
+            assert!(
+                last > first * 0.25,
+                "{name}: a frozen tail fell from {first:.3} to {last:.3}"
+            );
+            assert!(
+                last < first * 4.0 && last.is_finite(),
+                "{name}: a frozen tail grew from {first:.3} to {last:.3}"
+            );
+        }
+    }
+
+    /// The new top of the range has to be as safe as the old one was.
+    #[test]
+    fn the_extremes_stay_bounded() {
+        let sr = 48_000u32;
+        for (g, size, damp) in [(0.9995f32, 8.0f32, 0.0f32), (0.9995, 0.1, 2.0), (0.99, 8.0, 2.0)] {
+            let mut r = Moorer::new(sr, 2);
+            r.set("decay", g);
+            r.set("size", size);
+            r.set("damping", damp);
+            r.set("wet", 1.0);
+            r.set("dry", 0.0);
+            let mut b = impulse(sr as usize * 8, 2);
+            r.process(&mut b, 2, sr);
+            let peak = b.iter().fold(0f32, |m, v| m.max(v.abs()));
+            assert!(
+                peak.is_finite() && peak < 8.0,
+                "decay {g} size {size} damping {damp} reached {peak}"
+            );
+        }
+    }
+
+    /// Controls that were constants until the audit that found them.
+    ///
+    /// Schroeder's stereo spread was a hardcoded 0.05 — a width control nobody
+    /// could reach, and one Moorer had always offered. Schroeder had no
+    /// predelay while Moorer did, which was an accident of which paper each was
+    /// written from. And Moorer's all-pass gain is "0.7 or so" in the paper,
+    /// which is not the flat instruction its 6 ms delay gets.
+    #[test]
+    fn the_controls_that_were_constants_all_do_something() {
+        let sr = 48_000u32;
+        let run = |mut e: Box<dyn Effect>, frames: usize| {
+            let mut b = impulse(frames, 2);
+            e.process(&mut b, 2, sr);
+            b
+        };
+        let differs = |a: &[f32], b: &[f32]| {
+            a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0f32, f32::max)
+        };
+
+        // Schroeder's stereo spread.
+        let schroeder = |set: &dyn Fn(&mut Schroeder)| {
+            let mut r = Schroeder::new(sr, 2);
+            r.set("wet", 1.0);
+            r.set("dry", 0.0);
+            set(&mut r);
+            run(Box::new(crate::Driven(r)), sr as usize)
+        };
+        assert!(
+            differs(
+                &schroeder(&|r| { r.set("spread", 0.0); }),
+                &schroeder(&|r| { r.set("spread", 0.2); })
+            ) > 1e-4,
+            "Schroeder's stereo spread changed nothing"
+        );
+
+        // Schroeder's predelay, measured as what it is: a delay.
+        let onset = |ms: f32| {
+            let b = schroeder(&|r| { r.set("predelayMs", ms); });
+            (0..b.len() / 2).find(|&i| b[i * 2].abs() > 1e-5).unwrap_or(0) as f32 * 1000.0
+                / sr as f32
+        };
+        let (near, far) = (onset(0.0), onset(100.0));
+        assert!(
+            (far - near - 100.0).abs() < 12.0,
+            "100 ms of predelay moved the onset by {:.1} ms",
+            far - near
+        );
+
+        // Moorer's diffusion.
+        let moorer = |g: f32| {
+            let mut r = Moorer::new(sr, 2);
+            r.set("wet", 1.0);
+            r.set("dry", 0.0);
+            r.set("diffusion", g);
+            run(Box::new(crate::Driven(r)), sr as usize)
+        };
+        assert!(
+            differs(&moorer(0.0), &moorer(0.9)) > 1e-4,
+            "Moorer's diffusion changed nothing"
+        );
     }
 
     /// The two ears must not be handed the same thing.
