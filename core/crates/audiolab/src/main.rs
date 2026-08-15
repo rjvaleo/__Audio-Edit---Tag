@@ -28,7 +28,16 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    let listener = serve::bind(DEFAULT_PORT)?;
+    // A port can be asked for, which is what lets a scratch instance run beside
+    // a working one on a port of its own. Without it `bind` walks up from 8737
+    // and a second instance lands wherever it happens to fit — which is how a
+    // throwaway server once ended up playing over a real session, on a port
+    // nobody had noticed it take.
+    let preferred = std::env::var("AUDIOLAB_PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(DEFAULT_PORT);
+    let listener = serve::bind(preferred)?;
     let port = listener.local_addr()?.port();
     let url = format!("http://127.0.0.1:{port}/");
 
