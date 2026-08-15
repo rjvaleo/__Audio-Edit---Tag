@@ -910,7 +910,52 @@ function updateOverviewCue() {
     `translateX(${(Math.max(0, Math.min(1, state.cue / total)) * w).toFixed(2)}px)`;
 }
 
+
+/// How much of the file the cloud is reading, drawn on the file.
+///
+/// A playhead is a line because ordinary playback reads one sample at a time.
+/// A grain cloud reads a whole region at once — a spray of two hundred
+/// milliseconds is two hundred milliseconds wide, and layer scatter can put
+/// parts of it seconds away — so a line was saying something untrue about it.
+///
+/// Measured from the grains that are actually sounding rather than worked out
+/// from the controls. Spray, scatter, layer count and the grain length all end
+/// up in the answer without any of them having to be named here, and it cannot
+/// disagree with what is being heard because it *is* what is being heard.
+function updateReadBand() {
+  const el = $('readBand');
+  if (!el) return;
+  const g = state.grains;
+  const { from, to, sampleRate } = state.view;
+  const lane = $('lane');
+  if (!g?.grains?.length || !state.peaks || !sampleRate || to <= from || !lane) {
+    el.style.display = 'none';
+    return;
+  }
+  const sr = g.sampleRate || sampleRate;
+  const playFrame = playbackTime() * sr;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const [outFrame, srcFrame, size] of g.grains) {
+    if (outFrame > playFrame || outFrame + size < playFrame) continue;
+    // The whole span the grain reads, not just where it starts.
+    if (srcFrame < lo) lo = srcFrame;
+    if (srcFrame + size > hi) hi = srcFrame + size;
+  }
+  if (!isFinite(lo) || hi <= lo) { el.style.display = 'none'; return; }
+
+  const w = lane.clientWidth || 0;
+  const px = (f) => ((f - from) / (to - from)) * w;
+  const a = px(lo);
+  const b = px(hi);
+  if (b < 0 || a > w) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.style.transform = `translateX(${Math.max(0, a).toFixed(2)}px)`;
+  el.style.width = `${Math.max(1, Math.min(w, b) - Math.max(0, a)).toFixed(2)}px`;
+}
+
 function updatePlayhead() {
+  updateReadBand();
   const ph = $('playhead');
   const { from, to, sampleRate } = state.view;
   if (!state.peaks || !sampleRate || to <= from) { ph.style.display = 'none'; return; }
