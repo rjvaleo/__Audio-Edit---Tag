@@ -467,9 +467,37 @@ function requestThumbs() {
 /// it — so it has to look the same every time. These five canvases used to take
 /// the accent, which meant a palette could turn every waveform in the program
 /// brown. `--wave` and `--wave-2` are outside the theme map on purpose.
+///
+/// `--wave` is green and is the one drawn; `--wave-2` is the blue alternative
+/// and no call site passes `second` yet. Being outside the map is what protects
+/// them — not being an unusual colour — so `--wave` matching Conifer's accent
+/// exactly is the design rather than a clash, and is what the blue original did
+/// too.
 function waveInk(second = false) {
   return getComputedStyle(document.documentElement)
     .getPropertyValue(second ? '--wave-2' : '--wave').trim();
+}
+
+/// Any token, for the canvases — which cannot write `var(--x)` and have to be
+/// handed a colour.
+///
+/// This is the seam every hardcoded hex in a canvas should come through. There
+/// were 187 of those; the ones still left are why a theme reaches the chrome and
+/// not the plots.
+function ink(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/// Draw with a token at a fraction of its opacity.
+///
+/// The tokens are `oklch(...)` with no alpha channel, and pasting one into an
+/// `rgba()` is what produced the hardcoded literals in the first place. Setting
+/// `globalAlpha` instead keeps the colour a single source of truth and is what
+/// `drawThumb` already did.
+function withAlpha(c, a, draw) {
+  const was = c.globalAlpha;
+  c.globalAlpha = a;
+  try { draw(); } finally { c.globalAlpha = was; }
 }
 
 function drawThumb(canvas, b64, selected) {
@@ -4606,21 +4634,26 @@ function drawLaneWave(c, w, h, frames) {
   const mid = h / 2;
   const half = h / 2 * 0.86;
 
-  c.fillStyle = 'rgba(82,168,255,.13)';
-  c.beginPath();
-  c.moveTo(0, mid);
-  for (let i = 0; i < cols; i++) {
-    let hi = 0;
-    for (const ch of p.channels) hi = Math.max(hi, Math.abs(ch.max[i]), Math.abs(ch.min[i]));
-    c.lineTo((i / (cols - 1)) * w, mid - hi * half);
-  }
-  for (let i = cols - 1; i >= 0; i--) {
-    let hi = 0;
-    for (const ch of p.channels) hi = Math.max(hi, Math.abs(ch.max[i]), Math.abs(ch.min[i]));
-    c.lineTo((i / (cols - 1)) * w, mid + hi * half);
-  }
-  c.closePath();
-  c.fill();
+  // This is audio, so it takes `--wave` like every other waveform in the
+  // program. It was a hardcoded blue, which is why it stayed blue when the
+  // waveform colour changed and the lanes did not.
+  c.fillStyle = waveInk();
+  withAlpha(c, 0.13, () => {
+    c.beginPath();
+    c.moveTo(0, mid);
+    for (let i = 0; i < cols; i++) {
+      let hi = 0;
+      for (const ch of p.channels) hi = Math.max(hi, Math.abs(ch.max[i]), Math.abs(ch.min[i]));
+      c.lineTo((i / (cols - 1)) * w, mid - hi * half);
+    }
+    for (let i = cols - 1; i >= 0; i--) {
+      let hi = 0;
+      for (const ch of p.channels) hi = Math.max(hi, Math.abs(ch.max[i]), Math.abs(ch.min[i]));
+      c.lineTo((i / (cols - 1)) * w, mid + hi * half);
+    }
+    c.closePath();
+    c.fill();
+  });
 }
 
 function drawLane(canvas, lane) {
@@ -6617,14 +6650,23 @@ function drawCloudPad() {
   c.lineWidth = 1;
   c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
 
-  // The head and its spread.
+  // The head and its spread. This is a pointer rather than a reading — it says
+  // where you are about to read from — so it takes `--accent` and moves with the
+  // theme, unlike the waveform under it.
   const bx = geo.x(geo.head);
-  c.fillStyle = 'rgba(82,168,255,.09)';
-  c.fillRect(bx - geo.halfW, h / 2 - geo.halfH, geo.halfW * 2, geo.halfH * 2);
-  c.strokeStyle = 'rgba(140,200,255,.7)';
-  c.strokeRect(bx - geo.halfW, h / 2 - geo.halfH, geo.halfW * 2, geo.halfH * 2);
-  c.strokeStyle = 'rgba(82,168,255,.9)';
-  c.beginPath(); c.moveTo(bx, 0); c.lineTo(bx, h); c.stroke();
+  const acc = ink('--accent');
+  c.fillStyle = acc;
+  withAlpha(c, 0.09, () => {
+    c.fillRect(bx - geo.halfW, h / 2 - geo.halfH, geo.halfW * 2, geo.halfH * 2);
+  });
+  c.strokeStyle = acc;
+  c.lineWidth = 1;
+  withAlpha(c, 0.7, () => {
+    c.strokeRect(bx - geo.halfW, h / 2 - geo.halfH, geo.halfW * 2, geo.halfH * 2);
+  });
+  withAlpha(c, 0.9, () => {
+    c.beginPath(); c.moveTo(bx, 0); c.lineTo(bx, h); c.stroke();
+  });
 
   // The grains themselves, from the renderer's own enumeration.
   const g = state.grains;

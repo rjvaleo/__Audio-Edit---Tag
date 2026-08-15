@@ -66,14 +66,15 @@ const CONIFER = {
     '--text-dim':    '#98a19a', // oklch(70% 0.014 152)
     '--text-dimmer': '#7a837c', // oklch(60% 0.016 152)
 
-    // The accent, and the one judgement call in the theme.
+    // The accent — and, since 15 Aug, the waveform too.
     //
-    // In the blue original the accent *is* the blue waveform colour — both are
-    // oklch(70% 0.16 230), exactly. Going green would put the accent on top of
-    // `--good` and `--wave-2` instead, which are both oklch(72% 0.15 155): a
-    // selection would then be the same colour as a waveform and as the meter
-    // saying a level is safe. So this sits brighter, more saturated and seven
-    // degrees warmer — same family, its own voice.
+    // In the blue original the accent *was* the blue waveform, both
+    // oklch(70% 0.16 230) to the digit. `--wave` now holds this exact value, so
+    // that relationship is back: the colour the interface points with is the
+    // colour it draws audio in.
+    //
+    // It stays clear of `--good`, which is oklch(72% 0.15 155) — a meter saying
+    // a level is safe must not be the same green as the level itself.
     '--accent':      '#4fcc5b', // oklch(75% 0.190 145)
   },
 };
