@@ -813,6 +813,7 @@
         positionJitterMs: 40,
         pitchJitterSemis: 3.0,
         pitchDriftSemis: 5.0,
+        panSpread: 0.0,
         driftRateHz: 0.4,
         // Traversal
         speed: 0.6,
@@ -1058,6 +1059,11 @@
                 // due. Zero when position jitter is off — which is what makes
                 // the Lattice a perfect crystal at rest.
                 dev: (e.srcFrame - (e.outFrame / clamp(params.ratio, 0.01, 100))) / SR,
+                // Where this grain sits across the stereo field, from salt 23
+                // — the one `pan_gains` uses. Salts 21 and 22 below are the
+                // display's own and mean nothing about the sound; anything
+                // drawn from them is decoration.
+                pan: clamp(params.panSpread, 0, 1) * (rand01(params.seed, e.index, 23) * 2 - 1),
                 a: rand01(params.seed, e.index, 21) * Math.PI * 2,
                 b: rand01(params.seed, e.index, 22) * 2 - 1,
                 // How long this grain actually lasts, in seconds, mapped
@@ -1338,9 +1344,17 @@
             // of the file a given radius belongs to is no longer readable from
             // the radius alone; the azimuth still says, because it carries the
             // read position too.
+            // Every axis is now something the grain actually has. It used to
+            // be placed by two randoms the engine does not use — reproducible,
+            // and saying nothing: the same sphere however the stereo field and
+            // the pitch spread were set.
+            //
+            //   around  — where it reads in the file, and its stereo placement
+            //   pole    — how far out of tune it is
+            //   radius  — the swell of the pass, and how loud it is
             const e = out.e;
-            const th = Math.acos(clamp(g.b, -1, 1));
-            const ph = g.a * 0.4 + g.v * Math.PI * 2;
+            const th = Math.acos(clamp(-g.pn, -1, 1));
+            const ph = g.v * Math.PI * 2 + g.pan * Math.PI * 0.45;
             const swell = (1 - Math.cos(g.v * Math.PI * 2)) / 2;
             const rr = R * (0.34 + 0.62 * swell) + e * R * 0.26;
             out.x = rr * Math.sin(th) * Math.cos(ph);
