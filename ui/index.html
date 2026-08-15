@@ -180,6 +180,11 @@
     <div class="lane" id="lane">
       <canvas id="waveCanvas"></canvas>
       <canvas id="specCanvas"></canvas>
+      <!-- The grains, on the sound they read from. A faint mark for every one
+           in the schedule, and a bright one for those sounding right now. See
+           `drawGrainLayer`. Above the waveform, below the selection and the
+           playhead — it is a thing about the sound, not a thing you edit. -->
+      <canvas id="grainLayer"></canvas>
       <div class="selection hidden" id="selection"></div>
       <div class="cue" id="cue"><i></i></div>
       <!-- How wide a swathe of the file the cloud is reading right now. See
