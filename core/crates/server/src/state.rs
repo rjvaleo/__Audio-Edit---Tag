@@ -373,6 +373,19 @@ impl ScanProgress {
     }
 }
 
+/// How many grains a picture may be sent, unless the config says otherwise.
+pub const DEFAULT_GRAIN_CAP: usize = 8_000;
+
+/// A file, decoded once.
+pub struct DecodedSource {
+    pub rel: String,
+    /// Length and modification time when it was read. Cheap to check and enough
+    /// to catch a file that has been replaced.
+    pub stamp: (u64, Option<std::time::SystemTime>),
+    pub samples: std::sync::Arc<Vec<f32>>,
+    pub channels: usize,
+}
+
 pub struct App {
     /// Where the index and config live — beside the executable, not in the library.
     pub data_dir: PathBuf,
@@ -382,6 +395,20 @@ pub struct App {
     /// it survives the device being closed and reopened, which is the only way
     /// to change it — a stream's block length is fixed when it is built.
     pub buffer_frames: RwLock<Option<u32>>,
+    /// How many grains may cross the wire for a picture. See `api_grains`.
+    pub grain_cap: RwLock<usize>,
+    /// A decoded source file, kept so it is not read and decoded again.
+    ///
+    /// The audio in a file does not change, and everything derived from it —
+    /// the level and brightness of every grain — is the same answer every time
+    /// it is asked for. It was being recomputed from a fresh read of the whole
+    /// file on every request, eleven times a second while a slider moved.
+    ///
+    /// Keyed by path *and* by what the file looked like when it was read, so a
+    /// file replaced on disk is decoded again rather than answered from a stale
+    /// copy. One entry: this is a program you work on one sound at a time in,
+    /// and a decoded minute of stereo is twenty megabytes.
+    pub decoded: RwLock<Option<DecodedSource>>,
     pub index: RwLock<Index>,
     pub scan: Arc<ScanProgress>,
     /// Markers and regions, sidecar to the app rather than written into the library.
@@ -454,6 +481,8 @@ impl App {
             data_dir,
             library: RwLock::new(None),
             buffer_frames: RwLock::new(None),
+            grain_cap: RwLock::new(DEFAULT_GRAIN_CAP),
+            decoded: RwLock::new(None),
             index: RwLock::new(Index::default()),
             scan: Arc::new(ScanProgress::default()),
             markers: RwLock::new(markers),
@@ -575,6 +604,12 @@ impl App {
                 *self.library.write().unwrap() = Some(path);
             }
         }
+        if let Some(crate::json::Value::Num(n)) = v.get("grainCap") {
+            let n = *n as usize;
+            if n >= 500 {
+                *self.grain_cap.write().unwrap() = n.min(200_000);
+            }
+        }
         if let Some(crate::json::Value::Num(n)) = v.get("bufferFrames") {
             let n = *n as u32;
             if n > 0 {
@@ -596,6 +631,7 @@ impl App {
         if let Some(n) = *self.buffer_frames.read().unwrap() {
             v = v.set("bufferFrames", n as f64);
         }
+        v = v.set("grainCap", *self.grain_cap.read().unwrap() as f64);
         std::fs::create_dir_all(&self.data_dir)?;
         std::fs::write(self.config_path(), v.to_string())
     }
@@ -603,6 +639,47 @@ impl App {
     pub fn set_library(&self, path: PathBuf) -> std::io::Result<()> {
         *self.library.write().unwrap() = Some(path);
         self.save_config()
+    }
+
+    /// How many grains a picture may be sent.
+    pub fn set_grain_cap(&self, cap: usize) -> std::io::Result<()> {
+        *self.grain_cap.write().unwrap() = cap.clamp(500, 200_000);
+        self.save_config()
+    }
+
+    /// The file, decoded, from the cache when it is the same file.
+    ///
+    /// Returns the samples and the channel count. Reads and decodes only when
+    /// the cache holds something else, or when the file on disk has changed
+    /// under it.
+    pub fn decoded_source(
+        &self,
+        rel: &str,
+        path: &std::path::Path,
+    ) -> Option<(std::sync::Arc<Vec<f32>>, usize)> {
+        let stamp = std::fs::metadata(path)
+            .map(|m| (m.len(), m.modified().ok()))
+            .unwrap_or((0, None));
+        if let Ok(g) = self.decoded.read() {
+            if let Some(d) = g.as_ref() {
+                if d.rel == rel && d.stamp == stamp {
+                    return Some((std::sync::Arc::clone(&d.samples), d.channels));
+                }
+            }
+        }
+        let mut reader = audio_core::open(path).ok()?;
+        let frames = reader.info().frames();
+        let channels = reader.info().channels.max(1) as usize;
+        let samples = std::sync::Arc::new(reader.read_frames(0, frames).ok()?);
+        if let Ok(mut g) = self.decoded.write() {
+            *g = Some(DecodedSource {
+                rel: rel.to_string(),
+                stamp,
+                samples: std::sync::Arc::clone(&samples),
+                channels,
+            });
+        }
+        Some((samples, channels))
     }
 
     /// What to ask the device for. `None` is whatever it offers.

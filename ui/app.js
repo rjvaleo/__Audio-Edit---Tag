@@ -7126,6 +7126,30 @@ const tick = (is) => () => (is() ? '✓' : '');
 /// the delay before you hear a control move.
 const BUFFER_SIZES = [null, 128, 256, 512, 1024, 2048, 4096];
 
+/// How many grains may be sent for a picture.
+///
+/// The schedule is refetched while a control is being dragged, so this is what
+/// each of those moves costs. Nothing draws more than a couple of thousand
+/// marks; a denser sample only makes a thinned cloud look less sampled.
+const GRAIN_CAPS = [2000, 4000, 8000, 16000, 32000];
+
+async function setGrainCap(cap) {
+  try {
+    const r = await postJSON('/api/grains/cap', { cap });
+    state.grainCap = r.cap;
+    toast(`Grain detail: ${r.cap.toLocaleString()} shown at most`);
+    loadGrains();
+  } catch (e) {
+    toast('Could not change the grain detail: ' + e.message);
+  }
+}
+
+async function loadGrainCap() {
+  try { state.grainCap = (await api('/api/grains/cap')).cap; }
+  catch { /* the menu simply shows nothing ticked */ }
+}
+loadGrainCap();
+
 /// Ask the device for a new block size.
 ///
 /// This closes the device and opens it again — a stream's block length is fixed
@@ -7206,6 +7230,14 @@ const MENUS = [
         label: n == null ? 'Buffer: device default' : `Buffer: ${n} frames`,
         key: tick(() => (state.bufferFrames ?? null) === n),
         run: () => setBufferFrames(n),
+      })),
+      { sep: true },
+      // What a picture of the cloud costs. The schedule is refetched on every
+      // move of a control, so this is spending, not quality.
+      ...GRAIN_CAPS.map((n) => ({
+        label: `Grain detail: ${n.toLocaleString()}`,
+        key: tick(() => state.grainCap === n),
+        run: () => setGrainCap(n),
       })),
       { sep: true },
       { label: 'Reset time, pitch and grains', on: editing, run: click('stretchReset') },
