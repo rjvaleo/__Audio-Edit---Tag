@@ -90,6 +90,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/automation") => api_automation_set(app, req),
         ("GET" | "POST", "/api/automation/record") => api_automation_record(app, req),
         ("GET" | "POST", "/api/audio/buffer") => api_audio_buffer(app, req),
+        ("GET" | "POST", "/api/grains/cap") => api_grain_cap(app, req),
         ("GET", "/api/presets") => api_presets_list(app),
         ("POST", "/api/presets") => api_preset_save(app, req),
         ("POST", "/api/presets/apply") => api_preset_apply(app, req),
@@ -882,6 +883,33 @@ fn record_move(
     let _ = app.automation.save(&app.automation_path());
 }
 
+/// Read or set how many grains may be sent for a picture.
+///
+/// Not a quality setting so much as a spending one: the schedule is refetched
+/// while a control is being dragged, so this is how much work each of those
+/// costs. Nothing on screen draws more than a couple of thousand marks, but a
+/// denser sample makes a thinned cloud look less obviously sampled, and the
+/// right number depends on the machine.
+fn api_grain_cap(app: &Arc<App>, req: &Request) -> Response {
+    if req.method == "POST" {
+        let v = json::parse(&String::from_utf8_lossy(&req.body)).unwrap_or(Value::Null);
+        let Some(n) = v.get("cap").and_then(|n| match n {
+            Value::Num(x) if x.is_finite() && *x >= 500.0 => Some(*x as usize),
+            _ => None,
+        }) else {
+            return Response::error(400, "cap must be a number, at least 500");
+        };
+        if let Err(e) = app.set_grain_cap(n) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    Response::json(
+        Value::obj()
+            .set("cap", *app.grain_cap.read().unwrap() as f64)
+            .to_string(),
+    )
+}
+
 /// Read or set how many frames the device is asked for per callback.
 ///
 /// The one cure for a callback that cannot finish in time. Sixteen grain layers
@@ -1097,20 +1125,25 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
     // thousand grains is about a megabyte of JSON, once per edit, on a loopback
     // socket; the cap is still here because a long file at sixteen layers and
     // five hundred a second is millions and nothing can draw those.
-    let stride = (events.len() / 20_000).max(1);
+    let stride = (events.len() / app.grain_cap.read().map(|g| *g).unwrap_or(8_000).max(1)).max(1);
+
+    // Thinned *before* anything is measured. The level and brightness pass used
+    // to run over every grain in the schedule and then throw three quarters of
+    // the answers away — at stride four that is four times the work for the
+    // same picture.
+    let sent: Vec<&fx::grain::GrainEvent> = events.iter().step_by(stride).collect();
 
     // Measure what each grain actually sounds like, not just where it sits.
     // The visualiser is meant to be driven by the audio, so amplitude and
     // brightness come from the source window the grain reads, not from a
     // stand-in derived from the parameters.
+    // From the cache. The audio in a file does not change, so decoding it again
+    // on every request — eleven times a second while a slider moves — was the
+    // largest single cost in here.
     let source = app
         .library_path()
         .and_then(|lib| resolve_within(&lib, rel))
-        .and_then(|p| audio_core::open(&p).ok())
-        .and_then(|mut r| {
-            let n = r.info().frames();
-            r.read_frames(0, n).ok().map(|f| (f, r.info().channels.max(1) as usize))
-        });
+        .and_then(|p| app.decoded_source(rel, &p));
 
     let measure = |start: f32, len: usize| -> (f32, f32) {
         let Some((buf, ch)) = &source else { return (0.0, 0.0) };
@@ -1141,23 +1174,31 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
         (rms, brightness.min(1.0))
     };
 
-    let arr: Vec<Value> = events
+    let arr: Vec<Value> = sent
         .iter()
-        .step_by(stride)
         .map(|e| {
             let (rms, bright) = measure(e.src_frame, e.size as usize);
+            // Rounded to what a picture can use. These were going out at full
+            // precision — seventeen digits to place a dot on a canvas a few
+            // hundred pixels wide — and a grain's worth of that is most of the
+            // payload. A frame is a whole number; a hundredth of a frame is
+            // already far finer than any pixel.
+            let r2 = |v: f32, places: i32| -> f64 {
+                let m = 10f64.powi(places);
+                (v as f64 * m).round() / m
+            };
             Value::Arr(vec![
                 Value::Num(e.out_frame as f64),
-                Value::Num(e.src_frame as f64),
+                Value::Num(r2(e.src_frame, 2)),
                 Value::Num(e.size as f64),
-                Value::Num(e.pitch_semis as f64),
-                Value::Num(rms as f64),
-                Value::Num(bright as f64),
+                Value::Num(r2(e.pitch_semis, 3)),
+                Value::Num(r2(rms, 4)),
+                Value::Num(r2(bright, 4)),
                 // Where this grain sits across the stereo field, from the same
                 // function that places it in the audio. The cloud needs a
                 // left-and-right that is real rather than decorative, and this
                 // is the only one a grain has.
-                Value::Num(pan_of(&st.grain, e.index) as f64),
+                Value::Num(r2(pan_of(&st.grain, e.index), 3)),
                 // The grain's own index. Every jitter it carries is a pure
                 // function of this number, and the braid needs it to work out
                 // which strand a grain belongs to — an ordinal in the array
@@ -1171,7 +1212,7 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
         Value::obj()
             .set("grains", Value::Arr(arr))
             .set("total", events.len())
-            .set("shown", (events.len() + stride - 1) / stride)
+            .set("shown", sent.len())
             .set("outFrames", list.frames())
             .set("srcFrames", list.base_frames())
             .set("sampleRate", list.sample_rate)
