@@ -1336,6 +1336,47 @@ mod tests {
         assert!(core.tail_left > 0, "the budget did not come back on play");
     }
 
+    /// A control moved while sound is playing must reach the effect.
+    ///
+    /// Reported as "the compressor threshold does not respond to the slider,
+    /// but only while a sound is playing" — which is the shape of a live path
+    /// that never lands, since a stopped transport picks the value up from the
+    /// spec the next time the rack is built.
+    #[test]
+    fn a_control_moved_while_playing_reaches_the_effect() {
+        let (mut core, shared) = playing_core(1);
+
+        let mut rack = fx::Rack::new();
+        rack.push(Box::new(fx::Compressor::new(fx::comp::CompSettings::default())));
+        shared.set_rack(Some(rack));
+
+        let mut buf = vec![0.0; 512];
+        // One block to adopt the pending rack.
+        core.fill(&mut buf, 1, &shared);
+        let before = core
+            .rack
+            .as_ref()
+            .and_then(|r| r.get_param(0, "thresholdDb"))
+            .expect("the compressor should report its threshold");
+
+        let want = before - 20.0;
+        shared.set_manual_param(0, "thresholdDb", want);
+
+        // Long enough for a 15 ms smoother to arrive.
+        for _ in 0..64 {
+            core.fill(&mut buf, 1, &shared);
+        }
+        let after = core
+            .rack
+            .as_ref()
+            .and_then(|r| r.get_param(0, "thresholdDb"))
+            .unwrap();
+        assert!(
+            (after - want).abs() < 0.5,
+            "threshold did not reach the effect: asked {want}, arrived {after} (was {before})"
+        );
+    }
+
     #[test]
     fn loop_off_means_no_bounds_however_long_the_region() {
         let s = shared();
