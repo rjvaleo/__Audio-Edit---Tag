@@ -1,0 +1,14 @@
+{
+  "name": "audiolab-ui-tests",
+  "private": true,
+  "type": "module",
+  "description": "Development tooling only. The application is the Rust binary; this exists to drive its interface in a real browser.",
+  "scripts": {
+    "check": "node tools/ui-check.mjs",
+    "scratch": "node tools/scratch-server.mjs",
+    "test:ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

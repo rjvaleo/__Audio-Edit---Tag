@@ -28,3 +28,9 @@ data/
 # The launchers build from source when these are absent, so a fresh clone still
 # works; it just takes a minute the first time.
 bin/
+
+# Development tooling for the interface tests. The application needs none of
+# this — it is one Rust binary — so none of it belongs in the repository.
+node_modules/
+test-results/
+playwright-report/
