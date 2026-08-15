@@ -6656,6 +6656,13 @@ enablePainting($('dock'));
 if (window.ResizeObserver) {
   const c = $('grainCanvas');
   if (c) new ResizeObserver(() => drawGrains()).observe(c);
+  // The pad needs its own. It is redrawn from `drawGrains`, and that loop is
+  // cancelled a moment after playback stops — so resizing the window while
+  // stopped left the canvas at its old backing size with the browser scaling
+  // the stale bitmap to fit. Which is why it came out squashed, with the end
+  // of the file looking folded over.
+  const pad = $('cloudPad');
+  if (pad) new ResizeObserver(() => drawCloudPad()).observe(pad);
 }
 
 // ------------------------------------------------------- which view of the grains
