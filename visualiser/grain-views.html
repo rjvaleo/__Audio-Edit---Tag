@@ -984,6 +984,12 @@
     let focus = { x: 0, y: 0, z: 0 };
     let follow = true;
     let dragging = false, lastMX = 0, lastMY = 0;
+    /// Where the object has been placed by hand, in world units.
+    ///
+    /// Separate from `focus`, which is the follow camera's idea of where the
+    /// interesting part is. This one only moves when you move it.
+    let pan = { x: 0, y: 0, z: 0 };
+    let panning = false;
     let palette = [];
 
     let windowed = false, windowHalfSecs = 0, windowCentre = 0;
@@ -1498,11 +1504,22 @@
         // both exactly as they were.
         const CAMERA_MOVES = false;
         if (CAMERA_MOVES && !dragging) camYaw += (deltaTime / 1000) * params.orbit * 0.30;
-        camDist += (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 800);
-        const cx = focus.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
-        const cy = focus.y + Math.sin(camPitch) * camDist;
-        const cz = focus.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist;
-        camera(cx, cy, cz, focus.x, focus.y, focus.z, 0, 1, 0);
+        // Snapped, not eased. An eased distance is a second of drift every time
+        // the extent changes, and drift is motion that does not repeat.
+        camDist = CAMERA_MOVES
+            ? camDist + (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 800)
+            : fitDist * camZoom;
+        // Where the object sits on screen. Held still and moved by hand: the
+        // focus used to be the point the playhead was working through, eased
+        // toward, which is the drift that made the view feel like it was
+        // wandering off on its own.
+        const fx0 = CAMERA_MOVES ? focus.x : pan.x;
+        const fy0 = CAMERA_MOVES ? focus.y : pan.y;
+        const fz0 = CAMERA_MOVES ? focus.z : pan.z;
+        const cx = fx0 + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
+        const cy = fy0 + Math.sin(camPitch) * camDist;
+        const cz = fz0 + Math.cos(camYaw) * Math.cos(camPitch) * camDist;
+        camera(cx, cy, cz, fx0, fy0, fz0, 0, 1, 0);
         perspective(PI / 3.4, width / height, 5, 40000);
 
         // Pitch drift, made global. It is the one control that is slow and
@@ -1661,7 +1678,7 @@
             focus.x += (0 - focus.x) * k;
             focus.y += (0 - focus.y) * k;
             focus.z += (0 - focus.z) * k;
-        } else if (follow && fw > 0) {
+        } else if (CAMERA_MOVES && follow && fw > 0) {
             const tx = fx / fw, ty = fy / fw, tz = fz / fw;
             let spread = 0;
             for (let i = 0; i < local.length; i += 3) {
@@ -1683,7 +1700,12 @@
             focus.y += (ty - focus.y) * k;
             focus.z += (tz - focus.z) * k;
         } else {
-            fitDist = extent * 2.6;
+            // Floored. The distance is snapped rather than eased when the
+            // camera is held still, and on a frame where the extent has not
+            // been measured yet that is a couple of units — inside the near
+            // plane, where nothing draws and, with no easing left to carry it,
+            // nothing recovers.
+            fitDist = Math.max(extent * 2.6, 240);
             const k = Math.min(1, deltaTime / 400);
             focus.x += (0 - focus.x) * k;
             focus.y += (0 - focus.y) * k;
@@ -2421,17 +2443,39 @@
     function mousePressed() {
         if (mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height) {
             dragging = true; lastMX = mouseX; lastMY = mouseY;
+            // Shift or the right button slides the object instead of turning
+            // it — the two gestures a thing in space needs, and the modifier
+            // is the one every 3D program uses for it.
+            panning = keyIsDown(SHIFT) || mouseButton === RIGHT;
         }
     }
     function mouseReleased() {
         if (dragging) saveViewState();
-        dragging = false;
+        dragging = false; panning = false;
     }
     function mouseDragged() {
         if (!dragging) return;
-        camYaw -= (mouseX - lastMX) * 0.008;
-        camPitch = clamp(camPitch + (mouseY - lastMY) * 0.006, -1.4, 1.4);
+        const dx = mouseX - lastMX, dy = mouseY - lastMY;
+        if (panning) {
+            // Along the screen, not along the world: dragging right moves it
+            // right however the object has been turned. Scaled by distance so
+            // it tracks the pointer at any zoom.
+            const k = camDist * 0.0016;
+            pan.x -= (Math.cos(camYaw) * dx) * k;
+            pan.z += (Math.sin(camYaw) * dx) * k;
+            pan.y -= dy * k;
+        } else {
+            camYaw -= dx * 0.008;
+            camPitch = clamp(camPitch + dy * 0.006, -1.4, 1.4);
+        }
         lastMX = mouseX; lastMY = mouseY;
+    }
+    /// Double-click puts it back in the middle.
+    function doubleClicked() {
+        if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) return;
+        pan = { x: 0, y: 0, z: 0 };
+        saveViewState();
+        return false;
     }
     function mouseWheel(ev) {
         if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) return;
