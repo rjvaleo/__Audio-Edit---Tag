@@ -1283,17 +1283,32 @@
         //    divided by the overlap, so grains sounding together separate into
         //    strands and the count of strands *is* the overlap.
         case 1: {
-            // Strand offset plus a slow winding along the axis. Without the
-            // winding each strand is a straight vertical line and the overlap
-            // is countable but lifeless; with it they plait, which is what
-            // overlapping grains actually do to each other.
-            const th = (g.i * Math.PI * 2) / effectiveOverlap
-                     + g.u * Math.PI * 2 * 3
-                     + now * 0.15;
-            const rr = R * (0.62 + 0.30 * (Math.log2(Math.max(g.rate, 0.002)) + 4) / 8);
-            out.x = Math.cos(th) * rr;
-            out.z = Math.sin(th) * rr;
-            out.y = (g.u - 0.5) * HEIGHT * 2.6 + lift;
+            // Wound onto a torus rather than up a column.
+            //
+            // It was a helix: the strands turned around an axis while the
+            // height rose with the schedule. A helix has two ends, and ends are
+            // where a loop shows — the traversal ran up it and dropped back to
+            // the bottom, and the camera followed it down. Bent into a ring the
+            // last grain is the first one's neighbour, so there is nowhere for
+            // a seam to be and nothing to drop back from.
+            //
+            // The strand offset is unchanged, so the count of strands is still
+            // the overlap. The winding is now the twist of the braid around the
+            // ring, and it has to be a *whole* number of turns per lap or the
+            // two ends meet at an angle, which is the seam again in a subtler
+            // form.
+            const BRAID_TWISTS = 3;
+            const major = g.u * Math.PI * 2;
+            const minor = (g.i * Math.PI * 2) / effectiveOverlap
+                        + major * BRAID_TWISTS;
+            // Pitch pushes a grain out of the tube's wall, as the radius used
+            // to push it out of the column.
+            const rMin = R * (0.10 + 0.20 * (Math.log2(Math.max(g.rate, 0.002)) + 4) / 8);
+            const rMaj = R * 0.58;
+            const ring = rMaj + rMin * Math.cos(minor);
+            out.x = Math.cos(major) * ring;
+            out.z = Math.sin(major) * ring;
+            out.y = rMin * Math.sin(minor) + lift * 0.4;
             break;
         }
 
@@ -1472,8 +1487,17 @@
         }
         const now = cursor;
 
-        // Camera. Auto-orbit unless the mouse has taken over.
-        if (!dragging) camYaw += (deltaTime / 1000) * params.orbit * 0.30;
+        // The camera holds still. Both of its movements are disabled rather
+        // than removed — the auto-orbit here and the drift sway below — because
+        // between them they were the whole reason nothing in this view could
+        // ever look like it was repeating: an angle added to every frame
+        // arrives at the end of a pass wherever it happens to be, so however
+        // well the shapes loop the picture does not.
+        //
+        // It still turns under the hand. `CAMERA_MOVES` back to true restores
+        // both exactly as they were.
+        const CAMERA_MOVES = false;
+        if (CAMERA_MOVES && !dragging) camYaw += (deltaTime / 1000) * params.orbit * 0.30;
         camDist += (fitDist * camZoom - camDist) * Math.min(1, deltaTime / 800);
         const cx = focus.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
         const cy = focus.y + Math.sin(camPitch) * camDist;
@@ -1487,7 +1511,7 @@
         // the drift depth. Turn the depth to zero and the sway stops — which is
         // exactly what happens to the sound.
         const sway = (params.pitchDriftSemis / 24) * 0.20;
-        if (sway > 1e-4) {
+        if (CAMERA_MOVES && sway > 1e-4) {
             rotateZ(Math.sin(now * params.driftRateHz * Math.PI * 2) * sway);
         }
 
