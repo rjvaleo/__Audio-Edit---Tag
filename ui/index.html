@@ -182,6 +182,10 @@
       <canvas id="specCanvas"></canvas>
       <div class="selection hidden" id="selection"></div>
       <div class="cue" id="cue"><i></i></div>
+      <!-- How wide a swathe of the file the cloud is reading right now. See
+           `updateReadBand`: measured from the grains, not guessed from a
+           control, so spray, layer scatter and the grain length are all in it. -->
+      <div class="read-band" id="readBand"></div>
       <div class="playhead" id="playhead"></div>
       <div class="lane-empty" id="laneEmpty">Select a sound on the left.</div>
     </div>
