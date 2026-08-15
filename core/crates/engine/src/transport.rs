@@ -163,7 +163,32 @@ pub struct Shared {
     /// how loud, and only a waveform says what the threshold is actually
     /// cutting into.
     waveform: Mutex<Vec<i8>>,
+
+    /// Recent output as left/right pairs, -127..127, interleaved.
+    ///
+    /// What a goniometer draws: plot right against left and the stereo field
+    /// becomes a shape. Rotated a quarter turn so mono stands upright, a narrow
+    /// vertical line is a mono signal, a round cloud is a wide one, and a
+    /// horizontal smear is the two channels fighting each other — which is the
+    /// one fault in a stereo mix that no meter and no spectrum will show you.
+    ///
+    /// Taken from the same window as the spectrum, so the two describe one
+    /// instant, and decimated on the audio thread rather than sending every
+    /// frame: a scope needs a few hundred points to draw a shape and nothing is
+    /// gained by shipping two thousand.
+    scope: Mutex<Vec<i8>>,
+
+    /// How alike the two channels are, -1 to 1, over the same window.
+    ///
+    /// One is the same signal on both sides; zero is two unrelated ones; below
+    /// zero they are cancelling, which is the fault a goniometer exists to
+    /// show. Stored as bits because the audio thread writes it and nothing may
+    /// block there.
+    correlation: AtomicU32,
 }
+
+/// How many left/right pairs a scope frame carries.
+pub const SCOPE_POINTS: usize = 512;
 
 impl Shared {
     pub fn new(params: StreamParams, source: Arc<Source>) -> Self {
@@ -190,6 +215,8 @@ impl Shared {
             automation: Mutex::new(Vec::new()),
             manual: Mutex::new(Vec::new()),
             spectrum: Mutex::new(Vec::new()),
+            scope: Mutex::new(Vec::new()),
+            correlation: AtomicU32::new(0),
             waveform: Mutex::new(Vec::new()),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
@@ -401,6 +428,16 @@ impl Shared {
         self.spectrum.lock().map(|g| g.clone()).unwrap_or_default()
     }
 
+    /// Recent output as interleaved left/right pairs. See [`Shared::scope`].
+    pub fn scope(&self) -> Vec<i8> {
+        self.scope.lock().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    /// How alike the two channels are, -1 to 1.
+    pub fn correlation(&self) -> f32 {
+        f32::from_bits(self.correlation.load(Ordering::Acquire))
+    }
+
     pub fn waveform(&self) -> Vec<i8> {
         self.waveform.lock().map(|g| g.clone()).unwrap_or_default()
     }
@@ -461,6 +498,8 @@ pub struct Core {
     fft_re: Vec<f32>,
     fft_im: Vec<f32>,
     fft_bins: Vec<u8>,
+    /// The same window kept as left/right pairs, for the goniometer.
+    scope_lr: Vec<f32>,
     params: StreamParams,
     source: Arc<Source>,
     scratch: Vec<GrainEvent>,
@@ -715,6 +754,7 @@ impl Core {
             fft_re: vec![0.0; FFT_SIZE],
             fft_im: vec![0.0; FFT_SIZE],
             fft_bins: vec![0; FFT_SIZE / 2 + 1],
+            scope_lr: vec![0.0; FFT_SIZE * 2],
             params,
             source,
             // Capacity up front: `aim` runs in the callback and must never
@@ -944,6 +984,12 @@ impl Core {
                 sum += out[f * channels + ch];
             }
             self.fft_in[self.fft_at] = sum / channels as f32;
+            // The pair as it stands, for the goniometer. A mono device reports
+            // the one channel on both axes, which draws the straight line a
+            // mono signal actually is rather than pretending to a width it has
+            // not got.
+            self.scope_lr[self.fft_at * 2] = out[f * channels];
+            self.scope_lr[self.fft_at * 2 + 1] = out[f * channels + if channels > 1 { 1 } else { 0 }];
             self.fft_at += 1;
             if self.fft_at < FFT_SIZE {
                 continue;
@@ -970,6 +1016,36 @@ impl Core {
             if let Ok(mut g) = shared.spectrum.try_lock() {
                 g.clear();
                 g.extend_from_slice(&self.fft_bins);
+            }
+            // Every nth pair, so the window becomes a fixed number of points
+            // whatever the transform size is.
+            // Pearson over the window. Two sums and a square root, on a
+            // buffer that is already here — cheap enough to do every frame,
+            // and the one number that says whether a stereo image is real or
+            // is two channels quietly cancelling each other out.
+            let (mut ll, mut rr, mut lr) = (0.0f32, 0.0f32, 0.0f32);
+            for i in 0..FFT_SIZE {
+                let (l, r) = (self.scope_lr[i * 2], self.scope_lr[i * 2 + 1]);
+                ll += l * l;
+                rr += r * r;
+                lr += l * r;
+            }
+            let denom = (ll * rr).sqrt();
+            // Silence is not disagreement. With nothing playing the sums are
+            // zero and the ratio is meaningless, so it reports perfect
+            // agreement rather than a number that jumps about on noise.
+            let corr = if denom > 1e-9 { (lr / denom).clamp(-1.0, 1.0) } else { 1.0 };
+            shared
+                .correlation
+                .store(corr.to_bits(), Ordering::Release);
+
+            if let Ok(mut g) = shared.scope.try_lock() {
+                g.clear();
+                let step = (FFT_SIZE / SCOPE_POINTS).max(1);
+                for i in (0..FFT_SIZE).step_by(step) {
+                    g.push((self.scope_lr[i * 2].clamp(-1.0, 1.0) * 127.0) as i8);
+                    g.push((self.scope_lr[i * 2 + 1].clamp(-1.0, 1.0) * 127.0) as i8);
+                }
             }
             // The same window, reduced to one peak per column. Peak rather than
             // an average: a compressor is reacting to the peaks, so an average

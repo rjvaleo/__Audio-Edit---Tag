@@ -1171,7 +1171,7 @@ body.editing .panel.left { left: var(--rail); }
   border-radius: 7px; background: oklch(9% 0.01 250);
   border: 1px solid var(--line);
 }
-#grainFrame.hidden, #grainCanvas.hidden { display: none; }
+#grainFrame.hidden, #grainCanvas.hidden, #gonioHolder.hidden { display: none; }
 
 .vis-legend {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -1308,7 +1308,7 @@ body.editing .dock { flex: 0 0 300px; }
 #stretchOut { font-size: 9.5px; }
 
 .grain-vis { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-#grainCanvas {
+#grainCanvas, #gonioHolder {
   flex: 1; width: 100%; min-height: 170px; display: block;
   border-radius: 7px; background: oklch(8% 0.01 250); border: 1px solid var(--line);
 }
@@ -1750,3 +1750,9 @@ body.editing .dock { flex: 0 0 330px; }
   font-size: 10px;
   pointer-events: none;
 }
+
+
+/* The torus holder. p5 owns the canvas inside it; this clips and sizes. */
+#gonioHolder { position: relative; overflow: hidden; cursor: grab; }
+#gonioHolder.dragging { cursor: grabbing; }
+#gonioHolder canvas { display: block; width: 100% !important; height: 100% !important; }
