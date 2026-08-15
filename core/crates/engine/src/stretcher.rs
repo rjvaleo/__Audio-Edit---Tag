@@ -81,7 +81,7 @@ impl LayerBank {
                 }
                 // The grain cloud layers inside its own renderer: a layer there
                 // is another schedule, not another engine.
-                Algorithm::Granular => {}
+                Algorithm::Granular | Algorithm::Feedback => {}
             }
         }
         bank
@@ -93,7 +93,7 @@ impl LayerBank {
             Algorithm::Vocoder => self.vocoder.len(),
             Algorithm::Pvsola => self.pvsola.len(),
             Algorithm::Hybrid => self.hybrid.len(),
-            Algorithm::Granular => 0,
+            Algorithm::Granular | Algorithm::Feedback => 0,
         }
     }
 }
@@ -154,6 +154,12 @@ pub fn is_live(_alg: Algorithm) -> bool {
 
 /// What actually runs for a requested engine.
 fn resolve(alg: Algorithm) -> Algorithm {
+    // Feedback *is* the grain cloud; what differs is where its grains read
+    // from, which `shape_of` decides. Running it as anything else here would
+    // put the ring behind an engine that never looks at it.
+    if alg == Algorithm::Feedback {
+        return Algorithm::Granular;
+    }
     if is_live(alg) {
         alg
     } else {
@@ -181,7 +187,7 @@ fn layer_hop(alg: Algorithm, sp: &StreamParams) -> u64 {
         Algorithm::Pvsola => {
             (fx::stretch::fft_size_for(sp.vocoder.window_ms, sp.sample_rate) / 4).max(1)
         }
-        Algorithm::Granular => sp.plan().hop,
+        Algorithm::Granular | Algorithm::Feedback => sp.plan().hop,
     };
     hop.max(1) as u64
 }
@@ -535,7 +541,7 @@ impl Stretcher {
                     e.seek(at, &parts, &stretch_params(lp), lp.hybrid, lp.semitones);
                 }
             }
-            Algorithm::Granular => {}
+            Algorithm::Granular | Algorithm::Feedback => {}
         }
     }
 
@@ -587,7 +593,7 @@ impl Stretcher {
                     );
                 }
             }
-            Algorithm::Granular => out.fill(0.0),
+            Algorithm::Granular | Algorithm::Feedback => out.fill(0.0),
         }
     }
 

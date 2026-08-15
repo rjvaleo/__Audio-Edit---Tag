@@ -413,7 +413,15 @@ fn shape_of(sp: &StreamParams) -> Shape {
         pan_spread: sp.grain.pan_spread,
         seed: sp.grain.seed,
         wrap: sp.grain.wrap,
-        ring_mix: sp.grain.ring_mix,
+        // Gated on the engine, not just the control. A grain reading the ring
+        // depends on the grains before it, so invariant 6 cannot hold for it —
+        // and that has to be one engine's documented property rather than a
+        // condition attached to every guarantee `Granular` currently makes.
+        ring_mix: if sp.algorithm == fx::stretch::Algorithm::Feedback {
+            sp.grain.ring_mix
+        } else {
+            0.0
+        },
         reach: sp.grain.ring_reach_ms * 0.001 * sp.sample_rate as f32,
     }
 }

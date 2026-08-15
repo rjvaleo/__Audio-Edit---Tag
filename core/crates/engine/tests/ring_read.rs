@@ -10,8 +10,19 @@ use fx::grain::{Grain, GrainEvent, StreamParams};
 const SR: u32 = 48_000;
 const BLOCK: usize = 512;
 
+/// The sixth engine. Only this one reads the ring — see the gate test at the
+/// bottom — so every test here has to ask for it by name.
 fn params(in_frames: usize, g: Grain) -> StreamParams {
-    StreamParams { grain: g, ..StreamParams::new(in_frames, SR) }
+    StreamParams {
+        grain: g,
+        algorithm: fx::stretch::Algorithm::Feedback,
+        ..StreamParams::new(in_frames, SR)
+    }
+}
+
+/// The same document on the engine the sixth grew from.
+fn as_granular(in_frames: usize, g: Grain) -> StreamParams {
+    StreamParams { algorithm: fx::stretch::Algorithm::Granular, ..params(in_frames, g) }
 }
 
 /// A cloud dense enough that every output frame is covered by grains.
@@ -299,4 +310,28 @@ fn the_ring_read_does_not_depend_on_the_block_size() {
             );
         }
     }
+}
+
+/// The gate. `Granular` must ignore `ring_mix` entirely, however high it is set.
+///
+/// Not tidiness — it is the reason the sixth engine is a separate variant at
+/// all. A grain reading the ring depends on the grains before it, so invariant 6
+/// cannot hold for it. Kept to one engine that is a documented property; leaking
+/// into `Granular` it would turn every guarantee that engine makes into a
+/// conditional one, silently, for any document that happened to carry a mix.
+#[test]
+fn granular_ignores_the_ring_however_high_the_mix() {
+    let channels = 1;
+    let src = tone(SR as usize, channels);
+    let ring = full_ring(1.0, channels);
+
+    let dry = render(&src, &as_granular(SR as usize, cloud(0.0, 20.0)), None, channels, 4);
+    let asked = render(&src, &as_granular(SR as usize, cloud(1.0, 20.0)), Some(&ring), channels, 4);
+
+    assert_eq!(dry, asked, "Granular read the ring");
+
+    // And the same document on the sixth engine does not ignore it, or the
+    // assertion above would pass for the wrong reason.
+    let heard = render(&src, &params(SR as usize, cloud(1.0, 20.0)), Some(&ring), channels, 4);
+    assert!(heard != dry, "Feedback ignored the ring too — the test proves nothing");
 }

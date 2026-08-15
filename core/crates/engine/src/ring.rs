@@ -32,7 +32,25 @@ pub struct OutputRing {
     written: u64,
 }
 
+/// How much recent output a ring keeps, in seconds.
+///
+/// The upper bound on how far back a grain can reach, and therefore the longest
+/// granular echo the sixth engine can make. Four seconds of stereo at 48 kHz is
+/// about 1.5 MB, allocated once and never resized.
+pub const RING_SECONDS: f32 = 4.0;
+
 impl OutputRing {
+    /// The ring an engine runs with, sized by policy rather than by the caller.
+    ///
+    /// Both the audio thread and the offline renderer build theirs through here
+    /// on purpose. If the two ever got different capacities they would have
+    /// different maximum reaches, and a document whose reach fell between them
+    /// would export as something other than what was auditioned — which is
+    /// invariant 11, and not a thing to leave to two call sites agreeing.
+    pub fn for_engine(sample_rate: u32, channels: usize) -> Self {
+        Self::new((sample_rate as f32 * RING_SECONDS) as usize, channels)
+    }
+
     /// A ring holding `frames` of `channels`-channel audio, zeroed.
     pub fn new(frames: usize, channels: usize) -> Self {
         let channels = channels.max(1);

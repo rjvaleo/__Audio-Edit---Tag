@@ -78,6 +78,11 @@ pub fn stretch_with_automation(
     // Start where the transport starts, so the first block is the first block.
     engine.seek(0, &params);
 
+    // The machine's memory of its own output, for the sixth engine. Built
+    // through the same policy the audio thread uses, so a document cannot
+    // export with a different maximum reach than it auditioned with.
+    let mut ring = engine::OutputRing::for_engine(sample_rate, channels);
+
     let ceiling = (in_frames as u64).saturating_mul(MAX_GROWTH);
     let mut out: Vec<f32> = Vec::with_capacity(base.len());
     let mut block = vec![0.0f32; BLOCK * channels];
@@ -103,7 +108,12 @@ pub fn stretch_with_automation(
         params.grain = stretch.grain;
         crate::automation::apply_stretch(automation, &mut params, frame, sample_rate);
 
-        engine.render(&mut block, channels, &source, &params, &mut events);
+        engine.render_with(&mut block, channels, &source, &params, &mut events, Some(&ring));
+        // Fed back before the block is handed on, which is what makes this a
+        // feedback render rather than a dry one. The live path writes its ring
+        // after the rack; here there is no rack in the loop, so this is the
+        // same point in the chain.
+        ring.write(&block, channels);
         out.extend_from_slice(&block);
         frame += BLOCK as u64;
         consumed += BLOCK as f64 / params.ratio.max(1e-4) as f64;
@@ -112,8 +122,16 @@ pub fn stretch_with_automation(
 }
 
 /// Whether a document needs the streaming path rather than the one-pass one.
-pub fn needs_streaming(automation: &Automation) -> bool {
-    !automation.offline_unsupported().is_empty()
+///
+/// Two reasons, and the second one is not optional. Automation on the stretch
+/// cannot be honoured in a single pass. And **the sixth engine cannot be
+/// rendered in one pass at all**: its grains read the output ring, so each block
+/// depends on the blocks before it. `fx::stretch` has no ring and would quietly
+/// produce the dry cloud instead — the same cloud, without any of the feedback
+/// that was auditioned. Invariant 11 is the whole reason this returns true here
+/// rather than leaving it to whoever calls it to remember.
+pub fn needs_streaming(automation: &Automation, algorithm: fx::stretch::Algorithm) -> bool {
+    algorithm == fx::stretch::Algorithm::Feedback || !automation.offline_unsupported().is_empty()
 }
 
 #[cfg(test)]
@@ -142,6 +160,54 @@ mod tests {
 
     fn tone(frames: usize) -> Vec<f32> {
         (0..frames).map(|i| (i as f32 / 20.0).sin() * 0.5).collect()
+    }
+
+    /// Invariant 11, for the sixth engine.
+    ///
+    /// Its grains read the output ring, so each block depends on the ones before
+    /// it and there is no one-pass form. `fx::stretch` has no ring: handed this
+    /// document it would produce the same cloud with none of the feedback in it,
+    /// silently, and the exported file would not be the sound that was
+    /// auditioned. Nothing about that failure is visible at the call site, which
+    /// is why the decision lives in `needs_streaming` and why this test exists.
+    #[test]
+    fn the_sixth_engine_can_never_take_the_one_pass_path() {
+        use fx::stretch::Algorithm;
+        let quiet = Automation::default();
+        assert!(
+            !needs_streaming(&quiet, Algorithm::Granular),
+            "an untouched granular document should still take the fast path"
+        );
+        assert!(
+            needs_streaming(&quiet, Algorithm::Feedback),
+            "the feedback engine was allowed through the one-pass renderer"
+        );
+        // And every other engine, so this cannot be satisfied by always
+        // returning true.
+        for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola, Algorithm::Hybrid] {
+            assert!(!needs_streaming(&quiet, alg), "{alg:?} was forced to stream");
+        }
+    }
+
+    /// The reason it cannot: a one-pass render of this engine is a different
+    /// sound, not a slightly worse one.
+    #[test]
+    fn a_one_pass_render_of_the_sixth_engine_has_no_feedback_in_it() {
+        let mut st = fx::Stretch::default();
+        st.algorithm = fx::stretch::Algorithm::Feedback;
+        st.grain.density_hz = 200.0;
+        st.grain.ring_mix = 1.0;
+        st.grain.ring_reach_ms = 20.0;
+        st.ratio = 2.0;
+
+        let base = tone(20_000);
+        let one_pass = st.process(&base, 1, 48_000);
+        // Pure feedback against a renderer with no ring: every grain reads a
+        // file it was told not to read, so what comes back is the dry cloud.
+        assert!(
+            one_pass.iter().any(|s| s.abs() > 1e-4),
+            "the one-pass path produced silence, so this test proves nothing"
+        );
     }
 
     #[test]
