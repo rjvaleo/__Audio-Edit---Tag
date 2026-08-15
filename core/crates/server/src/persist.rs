@@ -131,8 +131,6 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("sizeRange", s.grain.size_range as f64)
                 .set("wrap", s.grain.wrap)
                 .set("layerSpread", s.grain.layer_spread as f64)
-                .set("ringMix", s.grain.ring_mix as f64)
-                .set("ringReachMs", s.grain.ring_reach_ms as f64)
                 .set("layerScatter", s.grain.layer_scatter as f64)
                 .set("layerScatterMs", s.grain.layer_scatter_ms as f64)
                 .set("linkJitter", s.grain.link_jitter)
@@ -306,8 +304,6 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             layer_scatter: gf("layerScatter", d.grain.layer_scatter).clamp(0.0, 1.0),
             layer_scatter_ms: gf("layerScatterMs", d.grain.layer_scatter_ms).clamp(0.0, 5000.0),
             layer_read: 0.0,
-            ring_mix: gf("ringMix", d.grain.ring_mix).clamp(0.0, 1.0),
-            ring_reach_ms: gf("ringReachMs", d.grain.ring_reach_ms).clamp(0.0, 4000.0),
             link_jitter: matches!(g.and_then(|x| x.get("linkJitter")), Some(Value::Bool(true))),
             drift_step: matches!(g.and_then(|x| x.get("driftStep")), Some(Value::Bool(true))),
             pan_spread: gf("panSpread", d.grain.pan_spread).clamp(0.0, 1.0),
@@ -587,8 +583,6 @@ mod tests {
                 layer_scatter: 0.6,
                 layer_scatter_ms: 340.0,
                 layer_read: 0.0,
-                ring_mix: 0.35,
-                ring_reach_ms: 725.0,
                 link_jitter: true,
                 drift_step: true,
                 pan_spread: 0.65,

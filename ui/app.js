@@ -3628,7 +3628,7 @@ const WSOLA_DEFAULTS = {
 // Which engines the audio callback can actually run. Mirrors
 // `engine::stretcher::is_live`; the rest are rendered on export and
 // approximated live, which the panel says out loud.
-const LIVE_ENGINES = ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular', 'feedback'];
+const LIVE_ENGINES = ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular'];
 const PVSOLA_DEFAULTS = { anchorFrames: 6, searchMs: 10, blend: 0.5 };
 const HYBRID_DEFAULTS = {
   fftSize: 2048, timeSpan: 17, freqSpan: 17, margin: 2, morphNoise: true,
@@ -3644,7 +3644,6 @@ const GRAIN_DEFAULTS = {
   // double-click reset — silently, because `param` only attaches the handler
   // when it is given a default and says nothing when it is not.
   position: 0,
-  ringMix: 0, ringReachMs: 250,
   layerScatter: 0, layerScatterMs: 120,
 };
 
@@ -3696,7 +3695,6 @@ function renderStretch() {
       <button class="seg-btn" data-alg="pvsola" title="The vocoder, re-anchored to the waveform every few frames. Holds tone together without the phasiness - the one-knob default for pitched material.">PVSOLA</button>
       <button class="seg-btn" data-alg="hybrid" title="Splits the sound into tone, hits and air, and stretches each its own way. The slow one, and the only one that will not repeat noise.">Hybrid</button>
       <button class="seg-btn" data-alg="granular" title="A cloud of grains. Not trying to be transparent - this is the one you hear.">Granular</button>
-      <button class="seg-btn" data-alg="feedback" title="The grain cloud reading its own output instead of the file. Freeze, regeneration, shimmer - and it collapses toward a wavetable as the grains lengthen.">Feedback</button>
     </div>`;
   // The panel has no heading any more, so its reset rides on the engine row —
   // the one line that is always there whichever engine is chosen.
@@ -3740,7 +3738,7 @@ function renderStretch() {
     // without being noticed; the cloud is an instrument. So it can now run
     // beside them on the same source. Nothing to offer when the cloud already
     // *is* the engine.
-    if (alg !== 'granular' && alg !== 'feedback') {
+    if (alg !== 'granular') {
       const d = state.stretchDraft;
       switches.prepend(check('grain cloud',
         'Run the grain cloud over this engine, reading the same source at the same stretch',
@@ -4151,21 +4149,6 @@ function renderGrainParams() {
     tip(gp('Pan spread', 'panSpread', 0, 1, 0.01, (v) => (v <= 0 ? 'centred' : `${Math.round(v * 100)}%`)),
         'How far apart the grains are placed across the stereo field. At zero everything is centred.'),
   ));
-
-  // The sixth engine's own pair. Only shown on it, because only it reads the
-  // ring — Granular ignores these two entirely, deliberately, so that its own
-  // guarantees stay unconditional.
-  if (alg === 'feedback') {
-    extGrain.appendChild(wild('Feedback',
-      'How much of each grain is the machine\u2019s own recent output rather than the file, and how far back it reaches for it.').add(
-      tip(gp('Mix', 'ringMix', 0, 1, 0.01,
-        (v) => (v <= 0 ? 'file' : v >= 1 ? 'output' : `${Math.round(v * 100)}%`)),
-          'How much of each grain comes from what just came out instead of from the file. Resolved per grain, so halfway really is a cloud of grains from two places rather than a blend of two signals. At zero this engine is the grain cloud.'),
-      tip(gp('Reach', 'ringReachMs', 1, 4000, 1,
-        (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`), true),
-          'How far behind the moment a grain starts reading. Short is tight recirculation \u2014 freeze, shimmer, self-oscillation. Long is granular echo, where material returns transformed much later. Bounded by the four seconds the ring holds; past that a grain reads silence rather than something older pretending to be recent.'),
-    ));
-  }
 
   // Layers on their own are a delay line, not a cloud: without this every
   // layer reads the same instant and is laid down a fixed offset later, and
@@ -5277,7 +5260,7 @@ $('presetDelete').onclick = async () => {
 // would be a second thing to get wrong.
 
 const PM_ENUMS = {
-  algorithm: ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular', 'feedback'],
+  algorithm: ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular'],
   quality: ['draft', 'standard', 'best'],
   splice: ['similar', 'different', 'loudest'],
   shape: ['hann', 'triangle', 'rect'],

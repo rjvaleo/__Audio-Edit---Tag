@@ -81,7 +81,7 @@ impl LayerBank {
                 }
                 // The grain cloud layers inside its own renderer: a layer there
                 // is another schedule, not another engine.
-                Algorithm::Granular | Algorithm::Feedback => {}
+                Algorithm::Granular => {}
             }
         }
         bank
@@ -93,7 +93,7 @@ impl LayerBank {
             Algorithm::Vocoder => self.vocoder.len(),
             Algorithm::Pvsola => self.pvsola.len(),
             Algorithm::Hybrid => self.hybrid.len(),
-            Algorithm::Granular | Algorithm::Feedback => 0,
+            Algorithm::Granular => 0,
         }
     }
 }
@@ -154,12 +154,6 @@ pub fn is_live(_alg: Algorithm) -> bool {
 
 /// What actually runs for a requested engine.
 fn resolve(alg: Algorithm) -> Algorithm {
-    // Feedback *is* the grain cloud; what differs is where its grains read
-    // from, which `shape_of` decides. Running it as anything else here would
-    // put the ring behind an engine that never looks at it.
-    if alg == Algorithm::Feedback {
-        return Algorithm::Granular;
-    }
     if is_live(alg) {
         alg
     } else {
@@ -187,7 +181,7 @@ fn layer_hop(alg: Algorithm, sp: &StreamParams) -> u64 {
         Algorithm::Pvsola => {
             (fx::stretch::fft_size_for(sp.vocoder.window_ms, sp.sample_rate) / 4).max(1)
         }
-        Algorithm::Granular | Algorithm::Feedback => sp.plan().hop,
+        Algorithm::Granular => sp.plan().hop,
     };
     hop.max(1) as u64
 }
@@ -325,25 +319,6 @@ impl Stretcher {
         sp: &StreamParams,
         events: &mut [GrainEvent],
     ) -> usize {
-        self.render_with(out, channels, src, sp, events, None)
-    }
-
-    /// As [`render`](Self::render), with the machine's own recent output
-    /// available to grains that read it.
-    ///
-    /// Only the grain paths take it. `add_layers` renders WSOLA and vocoder
-    /// layers, which read the file and nothing else — and for the granular
-    /// algorithm it returns immediately anyway, because `BlockRenderer` does its
-    /// own layering and therefore already has the ring.
-    pub fn render_with(
-        &mut self,
-        out: &mut [f32],
-        channels: usize,
-        src: &Source,
-        sp: &StreamParams,
-        events: &mut [GrainEvent],
-        ring: Option<&crate::ring::OutputRing>,
-    ) -> usize {
         let want = resolve(sp.algorithm);
         if want != self.current {
             // The engine being switched to may be anywhere, or nowhere. Put it
@@ -358,9 +333,9 @@ impl Stretcher {
         }
 
         let frames = out.len() / channels.max(1);
-        let mut reported = self.render_one(self.current, out, channels, src, sp, events, ring);
+        let mut reported = self.render_one(self.current, out, channels, src, sp, events);
         self.add_layers(out, channels, src, sp);
-        reported = reported.max(self.add_cloud(out, channels, src, sp, events, ring));
+        reported = reported.max(self.add_cloud(out, channels, src, sp, events));
 
         // Mix in the tail of the engine being left behind.
         if let Some((from, left)) = self.fading {
@@ -370,7 +345,7 @@ impl Stretcher {
             // allocates nothing, and the buffer returns to the same place with
             // the same capacity — this is a borrow dance, not a reallocation.
             let mut scratch = std::mem::take(&mut self.scratch);
-            self.render_one(from, &mut scratch[..n * channels], channels, src, sp, &mut evs, ring);
+            self.render_one(from, &mut scratch[..n * channels], channels, src, sp, &mut evs);
             for f in 0..n {
                 let done = FADE_FRAMES - left + f;
                 let t = (done as f32 / FADE_FRAMES as f32).clamp(0.0, 1.0);
@@ -419,7 +394,6 @@ impl Stretcher {
         src: &Source,
         sp: &StreamParams,
         events: &mut [GrainEvent],
-        ring: Option<&crate::ring::OutputRing>,
     ) -> usize {
         if !sp.cloud || self.current == Algorithm::Granular {
             return 0;
@@ -437,7 +411,7 @@ impl Stretcher {
         let mut buf = std::mem::take(&mut self.cloud_buf);
         let reported = self
             .grain
-            .render_with(&mut buf[..n * channels], channels, src, sp, events, ring);
+            .render(&mut buf[..n * channels], channels, src, sp, events);
         let (dry, wet) = fx::stretch::cloud_gains(sp.cloud_mix);
         for k in 0..n * channels {
             out[k] = out[k] * dry + buf[k] * wet;
@@ -541,7 +515,7 @@ impl Stretcher {
                     e.seek(at, &parts, &stretch_params(lp), lp.hybrid, lp.semitones);
                 }
             }
-            Algorithm::Granular | Algorithm::Feedback => {}
+            Algorithm::Granular => {}
         }
     }
 
@@ -593,7 +567,7 @@ impl Stretcher {
                     );
                 }
             }
-            Algorithm::Granular | Algorithm::Feedback => out.fill(0.0),
+            Algorithm::Granular => out.fill(0.0),
         }
     }
 
@@ -605,7 +579,6 @@ impl Stretcher {
         src: &Source,
         sp: &StreamParams,
         events: &mut [GrainEvent],
-        ring: Option<&crate::ring::OutputRing>,
     ) -> usize {
         match alg {
             Algorithm::Wsola => {
@@ -643,7 +616,7 @@ impl Stretcher {
                 // Nothing separated yet — the pass is still running on another
                 // thread. The grain cloud covers the gap rather than silence.
                 if self.parts.is_empty() {
-                    return self.grain.render_with(out, channels, src, sp, events, ring);
+                    return self.grain.render(out, channels, src, sp, events);
                 }
                 let parts = std::sync::Arc::clone(&self.parts);
                 self.hybrid.render_pitched(
@@ -656,7 +629,7 @@ impl Stretcher {
                 );
                 0
             }
-            _ => self.grain.render_with(out, channels, src, sp, events, ring),
+            _ => self.grain.render(out, channels, src, sp, events),
         }
     }
 }

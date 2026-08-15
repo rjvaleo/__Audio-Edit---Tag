@@ -83,35 +83,6 @@ pub struct Grain {
     /// Position jitter wraps around the file instead of being clamped inside
     /// it, so a grain pushed past the end reappears at the beginning.
     pub wrap: bool,
-    /// How much of each grain comes from the machine's own recent output
-    /// instead of the file, 0..1.
-    ///
-    /// Zero is the granular engine as it has always been: every grain reads the
-    /// decoded source. One is pure feedback — the cloud is made entirely of what
-    /// just came out of it. In between, the file feeds a recirculating cloud.
-    ///
-    /// Resolved per grain rather than per block, so a cloud at forty per cent
-    /// really is a mixture of grains from two places rather than a uniform blend
-    /// of two signals.
-    ///
-    /// **This does not make the schedule impure.** When a grain starts, how long
-    /// it is, its pitch, its pan and its envelope are all still pure functions of
-    /// grain index and seed. Only a grain's *content* becomes recursive, and
-    /// content is read in `engine`, not here — which is what lets the visualiser
-    /// go on drawing the cloud ahead of the sound.
-    pub ring_mix: f32,
-    /// How far behind the moment a ring-sourced grain begins reading, in
-    /// milliseconds.
-    ///
-    /// The most musical control in the feedback path. Short is tight
-    /// recirculation — freeze, shimmer, self-oscillation. Long is granular echo,
-    /// where material returns transformed much later. Bounded by how much output
-    /// the ring holds; asking for more than that reads silence rather than
-    /// something older pretending to be recent.
-    ///
-    /// Inert while `ring_mix` is zero, which is why it is not part of
-    /// [`Grain::is_clean`].
-    pub ring_reach_ms: f32,
     /// How far each layer's read pointer is thrown from the others, 0..1.
     ///
     /// Zero is where this started and it is why layers used to thicken so
@@ -159,11 +130,6 @@ impl Default for Grain {
             overlap: 2.0,
             // Zero is the sweep's own beginning, which is where it always was.
             position: 0.0,
-            // Zero: every grain reads the file, exactly as before this existed.
-            ring_mix: 0.0,
-            // Inert while the mix is zero. A quarter second is a tight
-            // recirculation rather than an echo — the useful end of the range.
-            ring_reach_ms: 250.0,
             size_jitter: 0.0,
             position_jitter_ms: 0.0,
             pitch_jitter_semis: 0.0,
@@ -212,10 +178,6 @@ impl Grain {
             && !self.link_jitter
             && !self.drift_step
             && self.pan_spread.abs() < 1e-4
-            // Reach is deliberately absent: it changes nothing while the mix is
-            // zero, so a document carrying only a reach is still an untouched
-            // one and may still skip the stretcher.
-            && self.ring_mix.abs() < 1e-4
     }
 
     /// Uniform random in 0..1 for grain `index`. `salt` separates the streams,
