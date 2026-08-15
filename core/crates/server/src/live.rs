@@ -265,10 +265,6 @@ pub fn rack_for(app: &Arc<App>, rel: &str, sample_rate: u32, channels: usize) ->
     }
 }
 
-/// Push the performance parameters of a document at the engine.
-///
-/// Called on every slider move, so it must stay cheap: no decode, no render,
-/// no allocation beyond the rack itself.
 /// Fold a document's stretch settings into the parameters the audio thread holds.
 ///
 /// **Field by field, and deliberately not a replacement.** `in_frames` and
@@ -310,6 +306,66 @@ pub fn holding(app: &Arc<App>, rel: &str) -> bool {
         .is_some_and(|n| n.rel == rel)
 }
 
+/// What actually has to be rebuilt for a parameter change to be heard.
+///
+/// Lifted out of `push_params` because getting it wrong is not a wrong value,
+/// it is a glitch — and it has been wrong three times. The rack used to be
+/// rebuilt unconditionally, which cut every reverb tail on every slider. Then
+/// Density was found re-running an onset detector over the whole source on each
+/// step of a drag, and Layers allocating a fresh engine per layer and throwing
+/// away every splice history. All three are the same mistake: doing expensive,
+/// stateful work to communicate a number.
+///
+/// The rack is absent on purpose. Nothing about a stretch parameter can require
+/// it, and that is enforced by there being no field for it here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Rebuilds {
+    /// The transient map: an onset pass over the entire source.
+    pub map: bool,
+    /// The hybrid's separation: two spectrogram passes per channel.
+    pub parts: bool,
+    /// One engine allocated per extra layer, and every layer's state discarded.
+    pub bank: bool,
+}
+
+impl Rebuilds {
+    pub fn decide(now: &StreamParams, want: &fx::Stretch) -> Rebuilds {
+        // The panel sends `draft` while a control is moving and its real
+        // quality when released, so a drag is already distinguishable from a
+        // decision without inventing a flag.
+        let settled = want.quality != fx::stretch::Quality::Draft;
+
+        Rebuilds {
+            // Deferred while dragging: a moment of stale transient placement is
+            // inaudible, and rebuilding per step is not.
+            map: settled
+                && (now.wsola.preserve_transients != want.wsola.preserve_transients
+                    || now.wsola.sensitivity != want.wsola.sensitivity
+                    || now.wsola.floor != want.wsola.floor
+                    || now.wsola.guard_hops != want.wsola.guard_hops
+                    || now.ratio != want.ratio
+                    || now.window_ms != want.window_ms
+                    || now.grain.overlap != want.grain.overlap
+                    || now.grain.density_hz != want.grain.density_hz),
+            // Only the hybrid separates, and only its own settings decide it.
+            // Already off the calling thread, so it does not wait for a release.
+            parts: want.algorithm == fx::stretch::Algorithm::Hybrid
+                && (now.hybrid.split() != want.hybrid.split()
+                    || now.algorithm != fx::stretch::Algorithm::Hybrid),
+            // Switching engine is not a drag — the new one has to be there
+            // before the next block or it renders with the wrong engine. The
+            // layer count is a drag, and waits.
+            bank: now.algorithm != want.algorithm
+                || (settled && now.grain.layers != want.grain.layers),
+        }
+    }
+}
+
+/// Push the performance parameters of a document at the engine.
+///
+/// Called on every slider move, so it must stay cheap: no decode, no render,
+/// and — since the rack rebuild was taken out — no allocation at all on the
+/// ordinary path. What is left that is not cheap is gated by [`Rebuilds`].
 pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(), String> {
     // Parameters belong to the audio the engine is holding, and only a load
     // changes that. Opening a second sound and moving a slider before playing
@@ -325,45 +381,27 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
         return Ok(());
     }
     with(app, |h| {
-        let mut want_map = false;
-        let mut want_parts = false;
-        let mut want_bank = false;
-        if let Some(mut p) = h.shared.params() {
-            // Only the transient map is expensive to derive, and only these
-            // decide it. Everything else can move under the pointer for free.
-            // Separating runs two spectrogram passes per channel, and it does
-            // not depend on the ratio — only on these four. So dragging the
-            // stretch slider on the hybrid costs what it costs on the vocoder.
-            want_parts = list.stretch.algorithm == fx::stretch::Algorithm::Hybrid
-                && (p.hybrid.split() != list.stretch.hybrid.split()
-                    || p.algorithm != fx::stretch::Algorithm::Hybrid);
-
-            // Building a bank allocates one engine per extra layer, so it
-            // happens only when the engine or the layer count actually moves —
-            // not on every slider.
-            want_bank = p.algorithm != list.stretch.algorithm
-                || p.grain.layers != list.stretch.grain.layers;
-
-            want_map = p.wsola.preserve_transients != list.stretch.wsola.preserve_transients
-                || p.wsola.sensitivity != list.stretch.wsola.sensitivity
-                || p.wsola.floor != list.stretch.wsola.floor
-                || p.wsola.guard_hops != list.stretch.wsola.guard_hops
-                || p.ratio != list.stretch.ratio
-                || p.window_ms != list.stretch.window_ms
-                || p.grain.overlap != list.stretch.grain.overlap
-                || p.grain.density_hz != list.stretch.grain.density_hz;
-
-            merge_stretch(&mut p, &list.stretch);
-            h.shared.set_params(p);
-        }
-        // Rebuilding runs an onset detector over the whole file, so it happens
-        // on this thread and only when it can have changed — and not at all
-        // while transients are not being preserved, which is the usual case.
+        // Decided against what the audio thread is actually running, before the
+        // new values are merged over it — after the merge there is nothing left
+        // to compare. See `Rebuilds`.
+        let r = match h.shared.params() {
+            Some(mut p) => {
+                let r = Rebuilds::decide(&p, &list.stretch);
+                merge_stretch(&mut p, &list.stretch);
+                h.shared.set_params(p);
+                r
+            }
+            None => Rebuilds::default(),
+        };
+        let (want_map, want_parts, want_bank) = (r.map, r.parts, r.bank);
         if want_parts {
             if let Some(src) = h.shared.source() {
                 separate_soon(app, rel, src, list.stretch.hybrid);
             }
         }
+        // An onset detector over the whole file, on this thread. Only when it
+        // can have changed, only once the drag has settled, and not at all
+        // while transients are not being preserved — which is the usual case.
         if want_map && list.stretch.wsola.preserve_transients {
             if let Some(src) = h.shared.source() {
                 h.shared.set_map(map_for(&src, &list.stretch, h.sample_rate));
@@ -462,6 +500,97 @@ fn map_for(
     )
 }
 
+
+#[cfg(test)]
+mod rebuild_tests {
+    use super::Rebuilds;
+    use fx::grain::StreamParams;
+
+    const SR: u32 = 48_000;
+
+    /// What the audio thread is holding for an untouched document.
+    ///
+    /// Derived by folding the document's own defaults in, rather than trusting
+    /// `StreamParams::new` to agree with `Stretch::default()` — they do not
+    /// (one starts on the grain cloud, the other does not), and a baseline that
+    /// already differs would make every test below pass for the wrong reason.
+    fn running() -> StreamParams {
+        let mut p = StreamParams::new(48_000, SR);
+        super::merge_stretch(&mut p, &fx::Stretch::default());
+        p
+    }
+
+    /// A document at the quality the panel sends when a control is released.
+    fn released(f: impl FnOnce(&mut fx::Stretch)) -> fx::Stretch {
+        let mut s = fx::Stretch::default();
+        s.quality = fx::stretch::Quality::Standard;
+        f(&mut s);
+        s
+    }
+
+    fn dragging(f: impl FnOnce(&mut fx::Stretch)) -> fx::Stretch {
+        let mut s = released(f);
+        s.quality = fx::stretch::Quality::Draft;
+        s
+    }
+
+    /// The glitch. Density is in the transient map's inputs, so every step of
+    /// the drag re-ran an onset detector over the whole source.
+    #[test]
+    fn density_does_not_rebuild_the_map_while_the_control_is_moving() {
+        let now = running();
+        let mid = dragging(|s| {
+            s.wsola.preserve_transients = true;
+            s.grain.density_hz = 120.0;
+        });
+        assert!(!Rebuilds::decide(&now, &mid).map, "rebuilt mid-drag");
+
+        let end = released(|s| {
+            s.wsola.preserve_transients = true;
+            s.grain.density_hz = 120.0;
+        });
+        assert!(Rebuilds::decide(&now, &end).map, "never rebuilt at all");
+    }
+
+    /// The other one. Each step allocated a fresh engine per layer and threw
+    /// away every layer's splice history.
+    #[test]
+    fn layers_does_not_rebuild_the_bank_while_the_control_is_moving() {
+        let now = running();
+        assert!(!Rebuilds::decide(&now, &dragging(|s| s.grain.layers = 8)).bank);
+        assert!(Rebuilds::decide(&now, &released(|s| s.grain.layers = 8)).bank);
+    }
+
+    /// But switching engine cannot wait: the next block would render with the
+    /// wrong one.
+    #[test]
+    fn changing_engine_rebuilds_the_bank_even_mid_drag() {
+        let now = running();
+        // Deliberately not the one the document already starts on, or this
+        // would assert nothing.
+        let moved = dragging(|s| s.algorithm = fx::stretch::Algorithm::Vocoder);
+        assert_ne!(now.algorithm, moved.algorithm, "the test picked the same engine");
+        assert!(Rebuilds::decide(&now, &moved).bank);
+    }
+
+    /// Nothing moved, nothing rebuilds — however many times the panel posts.
+    #[test]
+    fn an_unchanged_document_rebuilds_nothing() {
+        let now = running();
+        let same = released(|_| {});
+        assert_eq!(Rebuilds::decide(&now, &same), Rebuilds::default());
+    }
+
+    /// The separation is already off this thread, so it does not wait — but it
+    /// only happens on the engine that has one.
+    #[test]
+    fn only_the_hybrid_separates() {
+        let now = running();
+        let h = dragging(|s| s.algorithm = fx::stretch::Algorithm::Hybrid);
+        assert!(Rebuilds::decide(&now, &h).parts);
+        assert!(!Rebuilds::decide(&now, &dragging(|s| s.algorithm = fx::stretch::Algorithm::Vocoder)).parts);
+    }
+}
 
 #[cfg(test)]
 mod merge_tests {
