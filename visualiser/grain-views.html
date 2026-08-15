@@ -1344,22 +1344,29 @@
             // of the file a given radius belongs to is no longer readable from
             // the radius alone; the azimuth still says, because it carries the
             // read position too.
-            // Every axis is now something the grain actually has. It used to
-            // be placed by two randoms the engine does not use — reproducible,
-            // and saying nothing: the same sphere however the stereo field and
-            // the pitch spread were set.
+            // The cloud at the playhead, one grain for one grain. Every
+            // position is a function of the distance from now, so the present
+            // is the origin and there is no beginning or end to join — which is
+            // why this one needed no closing and should never have been given
+            // the swell that closed it. That swell was motion with no cause in
+            // the audio, which is the one thing a picture of a process must
+            // not have.
             //
-            //   around  — where it reads in the file, and its stereo placement
-            //   pole    — how far out of tune it is
-            //   radius  — the swell of the pass, and how loud it is
+            //   distance — how far from now this grain sounds
+            //   around   — where it sits across the stereo field
+            //   pole     — how far out of tune it is
+            //   size     — its level, through `e`
             const e = out.e;
+            const dt = g.tOut - now;
             const th = Math.acos(clamp(-g.pn, -1, 1));
-            const ph = g.v * Math.PI * 2 + g.pan * Math.PI * 0.45;
-            const swell = (1 - Math.cos(g.v * Math.PI * 2)) / 2;
-            const rr = R * (0.34 + 0.62 * swell) + e * R * 0.26;
+            // A little of the display's own scatter, so a mono cloud is a
+            // sphere rather than a single meridian. It is the only decorative
+            // term left here and it is deliberately small.
+            const ph = g.pan * Math.PI + g.a * 0.18;
+            const rr = R * (0.10 + 0.80 * Math.min(1, Math.abs(dt) / H)) + e * R * 0.22;
             out.x = rr * Math.sin(th) * Math.cos(ph);
             out.z = rr * Math.sin(th) * Math.sin(ph);
-            out.y = rr * Math.cos(th) * 0.55 - g.pn * HEIGHT * 0.5 + lift;
+            out.y = rr * Math.cos(th) * 0.55 + lift * 0.5;
             break;
         }
 
@@ -1606,7 +1613,11 @@
         for (let n = 0; n < grains.length; n++) {
             const g = grains[n];
             // From inside a moment you can only see the moment.
-            if (params.suite === 2 && Math.abs(g.tOut - now) > H) continue;
+            // From inside a moment you can only see the moment. True of the
+            // whole second suite, and now of Swarm as well — it is the cloud at
+            // the playhead rather than the schedule laid out as an object.
+            const momentOnly = params.suite === 2 || params.view === 2;
+            if (momentOnly && Math.abs(g.tOut - now) > H) continue;
             const e = energyOf(g, now);
             tmp.e = e; tmp.n = n;
             project(g, now, tmp);
