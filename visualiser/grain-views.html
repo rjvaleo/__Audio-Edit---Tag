@@ -1012,21 +1012,31 @@
         // So the window moves instead. Every grain within a few seconds of the
         // playhead is drawn, none of them skipped, and the camera is looking
         // there anyway. Density now does on screen what it does to the sound.
+        // Thinned across the whole schedule rather than windowed around the
+        // playhead.
+        //
+        // The window was the right answer when these views were open shapes and
+        // the camera rode the playhead: every grain near it drawn, none skipped,
+        // and nothing else on screen to miss. It is the wrong answer for a
+        // closed ring seen whole — past the cap it built only the arc the
+        // cursor was in and left the rest of the shape unmade, which is why a
+        // stretch above about thirteen times drew a broken braid.
+        //
+        // The cost is the one the window was avoiding: above the cap the number
+        // of grains drawn stops rising with density. So the stride is reported,
+        // and the readout says one in so many rather than pretending this is
+        // all of them.
         let from = 0, count = total;
         scheduleStride = 1;
-        windowed = total > MAX_GRAINS;
-        if (windowed) {
-            const half = Math.floor(MAX_GRAINS / 2);
-            const centre = Math.floor((keepCursor ? cursor : 0) * SR / plan.hop);
-            from = Math.max(0, Math.min(total - MAX_GRAINS, centre - half));
-            count = MAX_GRAINS;
-            windowHalfSecs = (half * plan.hop) / SR;
-            windowCentre = keepCursor ? cursor : 0;
+        windowed = false;
+        if (total > MAX_GRAINS) {
+            scheduleStride = Math.ceil(total / MAX_GRAINS);
+            count = Math.ceil(total / scheduleStride);
         }
 
         grains = [];
         for (let n = 0; n < count; n++) {
-            const i = from + n;
+            const i = from + n * scheduleStride;
             if (i >= total) break;
             const write = i * plan.hop;
             if (write >= plan.outFrames) break;
@@ -1884,7 +1894,10 @@
             `<span class="title">${views()[params.view].name}</span>` +
             `<span class="detail">` +
             `seed ${params.seed} &nbsp;·&nbsp; ${grains.length} grains drawn` +
-            (windowed ? ` <span class="dim">of ${Math.ceil(plan.outFrames / plan.hop).toLocaleString()} — window follows the playhead</span>` : '') + `<br>` +
+            (scheduleStride > 1
+                ? ` <span class="dim">of ${Math.ceil(plan.outFrames / plan.hop).toLocaleString()}`
+                  + ` — one in ${scheduleStride}, the whole shape</span>`
+                : '') + `<br>` +
             `<span class="dim">ratio</span> ${params.ratio.toFixed(2)}× ` +
             `&nbsp;<span class="dim">window</span> ${Math.round(params.windowMs)} ms ` +
             `&nbsp;<span class="dim">overlap</span> ${effectiveOverlap}×<br>` +
