@@ -1894,6 +1894,9 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     seed: gf("seed", cur.seed as f32).max(0.0) as u32,
                     position: gf("position", cur.position).clamp(-1.0, 1.0),
                     scan: gf("scan", cur.scan).clamp(-4.0, 4.0),
+                    ring_mix: gf("ringMix", cur.ring_mix).clamp(0.0, 1.0),
+                    // Bounded by what the ring actually holds; see RING_SECONDS.
+                    ring_reach_ms: gf("ringReachMs", cur.ring_reach_ms).clamp(0.0, 4000.0),
                     reverse: match gv.and_then(|x| x.get("reverse")) {
                         Some(Value::Bool(b)) => *b,
                         _ => cur.reverse,

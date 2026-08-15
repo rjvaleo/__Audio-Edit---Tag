@@ -64,6 +64,18 @@ struct Shape {
     /// grain that started reading a wrapped file must go on doing so, or its
     /// read would jump the moment the switch moved.
     wrap: bool,
+    /// How much of this grain comes from the output ring rather than the file.
+    ///
+    /// Captured at birth for the same reason as everything else here: a grain
+    /// already sounding must not change what it is made of half way through,
+    /// which would be a step in the middle of a grain rather than a change in
+    /// the cloud.
+    ring_mix: f32,
+    /// How far behind the moment this grain began reading the ring, in frames.
+    ///
+    /// Converted from milliseconds at birth so the read loop does no rate
+    /// arithmetic, and so a grain keeps the reach it was born with.
+    reach: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -132,7 +144,15 @@ impl BlockRenderer {
                 pitch_semis: 0.0,
             },
             played: 0,
-            shape: Shape { envelope: 0.5, reverse: false, pan_spread: 0.0, seed: 0, wrap: false },
+            shape: Shape {
+                envelope: 0.5,
+                reverse: false,
+                pan_spread: 0.0,
+                seed: 0,
+                wrap: false,
+                ring_mix: 0.0,
+                reach: 0.0,
+            },
         };
         BlockRenderer {
             streams: [GrainStream::new(); MAX_LAYERS],
@@ -202,6 +222,30 @@ impl BlockRenderer {
         sp: &StreamParams,
         events: &mut [GrainEvent],
     ) -> usize {
+        self.render_with(out, channels, src, sp, events, None)
+    }
+
+    /// As [`render`](Self::render), with the machine's own recent output
+    /// available for grains that read it.
+    ///
+    /// Separate rather than a sixth parameter on `render` because every other
+    /// caller — the offline path, the tests, the layer bank — has no ring and
+    /// never will, and threading `None` through a dozen call sites would say
+    /// nothing while making all of them noisier.
+    ///
+    /// The ring is a block behind: it holds everything written up to the start
+    /// of this block, and this block joins it only after the rack has run. That
+    /// lag is what the `- f - 1` in the read below accounts for, and it is also
+    /// the floor on how tight a feedback loop can be.
+    pub fn render_with(
+        &mut self,
+        out: &mut [f32],
+        channels: usize,
+        src: &Source,
+        sp: &StreamParams,
+        events: &mut [GrainEvent],
+        ring: Option<&crate::ring::OutputRing>,
+    ) -> usize {
         let channels = channels.max(1);
         let frames = out.len() / channels;
         out.fill(0.0);
@@ -257,6 +301,9 @@ impl BlockRenderer {
             );
             let skew = voice.shape.envelope;
             let reverse = voice.shape.reverse;
+            // The voice's own, captured at birth: a grain already sounding must
+            // not change what it is made of part way through.
+            let mix = voice.shape.ring_mix;
 
             // Where in this block the grain's next frame lands.
             let start = if voice.event.out_frame > self.position {
@@ -272,15 +319,45 @@ impl BlockRenderer {
                 let win = fx::grain::env_at(played, size, skew);
                 let step = if reverse { (size - 1 - played) as f32 } else { played as f32 };
                 let pos = voice.event.src_frame + step * voice.event.rate;
+                // Where in the ring this grain is reading, if it reads there at
+                // all. Derived once per frame rather than per channel.
+                //
+                // The frame being written sits at ring-clock `H + f`, since this
+                // block joins the ring starting at its head. The grain began
+                // `played` output frames ago, so it started at `H + f - played`;
+                // it reads `reach` behind that, advanced by `step * rate` — the
+                // same progression the source read uses, which is what makes
+                // pitch shifting work here and gives the feedback path its
+                // shimmer. Converting that to `read`'s "frames behind the newest"
+                // is where the `- 1` comes from.
+                let back = if mix > 0.0 {
+                    voice.shape.reach + played as f32 - step * voice.event.rate - f as f32 - 1.0
+                } else {
+                    0.0
+                };
+
                 for ch in 0..channels {
                     // The device's channel count is not the file's. A mono file
                     // on a stereo output feeds both sides; the source must be
                     // indexed with its own stride, or the read runs off the end.
                     let sch = ch.min(src.channels.saturating_sub(1));
                     let pan = if ch == 0 { gl } else { gr };
-                    out[f * channels + ch] +=
-                        sample_at(&src.samples, src.channels, sch, pos, src.frames(), voice.shape.wrap)
-                            * win * pan;
+                    let dry =
+                        sample_at(&src.samples, src.channels, sch, pos, src.frames(), voice.shape.wrap);
+                    // At a mix of zero this whole branch is skipped, so a
+                    // document that never touches the control renders exactly
+                    // the arithmetic it did before the control existed —
+                    // invariant 9, and the reason the ring read is not simply
+                    // multiplied by zero.
+                    let s = if mix > 0.0 {
+                        // The ring is device-width, so it is indexed by the
+                        // output channel rather than the source's.
+                        let wet = ring.map_or(0.0, |r| r.read(back, ch));
+                        dry + (wet - dry) * mix
+                    } else {
+                        dry
+                    };
+                    out[f * channels + ch] += s * win * pan;
                 }
                 self.norm[f] += win;
                 played += 1;
@@ -336,6 +413,8 @@ fn shape_of(sp: &StreamParams) -> Shape {
         pan_spread: sp.grain.pan_spread,
         seed: sp.grain.seed,
         wrap: sp.grain.wrap,
+        ring_mix: sp.grain.ring_mix,
+        reach: sp.grain.ring_reach_ms * 0.001 * sp.sample_rate as f32,
     }
 }
 

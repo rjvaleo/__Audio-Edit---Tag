@@ -920,9 +920,14 @@ impl Core {
             };
 
             let slice = &mut out[filled * channels..(filled + chunk) * channels];
-            let n = self
-                .renderer
-                .render(slice, channels, &self.source, &self.params, &mut self.scratch);
+            let n = self.renderer.render_with(
+                slice,
+                channels,
+                &self.source,
+                &self.params,
+                &mut self.scratch,
+                Some(&self.ring),
+            );
             report(shared, &self.scratch[..n]);
 
             if let Some((a, b)) = bounds {
