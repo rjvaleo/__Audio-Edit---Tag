@@ -17,6 +17,14 @@
 
   /* Blacks at alpha, which were twenty-three literals across thirteen values.
      Three is enough: everything snapped within .08 of one of them. */
+  /* Audio is drawn in one of two colours and no theme may change them.
+     A waveform is a reading, not decoration: it is the thing you judge level
+     and shape by, and it has to look the same every time you look at it. Tie it
+     to the accent and a palette can turn every waveform in the program brown.
+     Deliberately absent from the theme map. */
+  --wave:      oklch(70% 0.16 230);
+  --wave-2:    oklch(72% 0.15 155);
+
   --shadow-soft: rgba(0,0,0,0.25);
   --shadow:      rgba(0,0,0,0.55);
   --shadow-hard: rgba(0,0,0,0.75);
