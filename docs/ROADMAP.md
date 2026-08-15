@@ -197,9 +197,14 @@ a pop-out.
 
 ## Trim candidates
 
-- **Ten visualisers.** Already flagged as too many and uneven. Which stay
-  matters more than usual now, because each survivor gets ported by hand.
-- **Record.** Part of the product, or a leftover?
+- **Ten visualisers → two.** *Settled:* Swarm 3D and Swarm 2D survive, plus the
+  waveshape view for wavetable. Shear, Braid, Shells, Lattice and the whole V2
+  suite go. The moment views can still tell the truth when a grain reads from a
+  ring; the object views have **source position** as a structural axis and that
+  axis stops existing. See [SIXTH-ENGINE.md](SIXTH-ENGINE.md). This was the
+  largest single line item in stage three and it just got 80% smaller.
+- **Record.** Not a leftover — it moves into Edit. See
+  [TRANSPORT-AND-RECORDING.md](TRANSPORT-AND-RECORDING.md).
 - **Regions** against **Edit** — overlapping ideas of the same thing.
 - **Stats / why-box** — diagnostics that may have done their job.
 
@@ -570,17 +575,14 @@ no server anywhere. Paddle or Lemon Squeezy as merchant of record.
    left, and the one that voids or validates several other pieces of work. It is
    answered by a compositing prototype, not by discussion, and that prototype is
    the first thing built.
-2. **Which visualisers stay?** Each survivor is rewritten by hand in WGSL, so
-   this is a cost decision as much as a taste one — and some of the ten may be
-   worth retiring simply because a native pipeline makes something better
-   possible in their place.
-3. **What happens to the dock?** Stretch travels with Granular; Effects,
+2. **What happens to the dock?** Stretch travels with Granular; Effects,
    Visuals, Automation and Regions have no obvious home.
-4. **Do the library drawers move underneath Browse?**
-5. **What is the order** of Granular, Edit and Browse in the rail?
-6. **Does the plugin host plugins?** Nesting is where this gets silly; my
+3. **Do the library drawers move underneath Browse?**
+4. **What is the order** of Granular, Edit and Browse in the rail?
+5. **Does the plugin host plugins?** Nesting is where this gets silly; my
    instinct is no.
 
 *Settled: tagging and browsing stay and a large app is fine · today's Edit
-button is Granular renamed, and Edit is built new · JUCE is the shell · graphics
-go native on wgpu, past p5 · migrate early, while the surface is small.*
+button is Granular renamed, and Edit is built new · record belongs to Edit ·
+JUCE is the shell · graphics go native on wgpu, past p5 · ten visualisers become
+two plus the waveshape view · migrate early, while the surface is small.*
