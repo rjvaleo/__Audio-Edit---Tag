@@ -967,19 +967,26 @@ function drawGrainLayer() {
   const x = (frame) => ((frame - from) / span) * w;
   const base = state.edit?.stretch?.semitones ?? 0;
 
-  // Thinned when there are more than the lane can resolve, and *said*: a
-  // silently truncated picture reads as a sparse cloud rather than as a
-  // drawing that gave up.
+  // Thinned to what is *in view*, not to the whole schedule.
+  //
+  // Striding the whole file and then dropping whatever fell off the edges meant
+  // zooming in showed the same handful of marks further apart — the picture got
+  // bigger and no more detailed, which is backwards. Zooming in is asking to
+  // see more, so the closer the window gets the more of the real schedule
+  // appears in it.
   const all = g.grains;
-  const stride = Math.max(1, Math.ceil(all.length / GRAIN_LAYER_CAP));
+  const inView = [];
+  for (const ev of all) {
+    if (ev[1] >= from && ev[1] <= to) inView.push(ev);
+  }
+  const stride = Math.max(1, Math.ceil(inView.length / GRAIN_LAYER_CAP));
 
   // ── the layer ───────────────────────────────────────────────────────────
   c.lineWidth = 1;
   c.strokeStyle = 'rgba(140, 190, 250, 0.13)';
   c.beginPath();
-  for (let i = 0; i < all.length; i += stride) {
-    const px = x(all[i][1]);
-    if (px < -2 || px > w + 2) continue;
+  for (let i = 0; i < inView.length; i += stride) {
+    const px = x(inView[i][1]);
     // Short ticks off the centre line rather than full-height bars: the
     // waveform underneath is the thing being read, and a picket fence over it
     // hides exactly what the marks are about.
@@ -1030,7 +1037,7 @@ function drawGrainLayer() {
   if (stride > 1) {
     c.fillStyle = 'rgba(220,228,235,.35)';
     c.font = '9px ui-monospace, monospace';
-    c.fillText(`1 grain in ${stride} shown`, 6, h - 6);
+    c.fillText(`1 grain in ${stride} shown · zoom in for more`, 6, h - 6);
   }
 }
 
