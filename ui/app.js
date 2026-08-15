@@ -2625,83 +2625,13 @@ function slotSummary(slot) {
     .join(' · ');
 }
 
-/// Defaults for the channel compressor, mirroring `MasterSettings`. A document
-/// saved before it existed opens with the controls where the engine assumes
-/// them rather than at undefined.
-const MASTER_DEFAULTS = {
-  on: false, amount: 0.5, autoLevel: true, autoComp: true, ceilingDb: -0.3,
-};
-
-/// Which file the channel strip was built for. Same reason as the stretch
-/// panel: rebuilding it under the pointer kills the drag.
-let masterBuiltFor = null;
-
-/// The channel's compressor: one knob, and two decisions about what the knob
-/// is allowed to work out for itself.
-function renderMaster() {
-  const box = $('masterStrip');
-  if (!box) return;
-  const path = state.selectedFile?.path || null;
-  if (!state.rack) { box.innerHTML = ''; masterBuiltFor = null; return; }
-  state.rack.master = { ...MASTER_DEFAULTS, ...(state.rack.master || {}) };
-  if (masterBuiltFor === path) { reflectMaster(); return; }
-  masterBuiltFor = path;
-  box.innerHTML = '';
-
-  // Read through a getter rather than captured once. `pushRack` replaces
-  // `state.rack` wholesale with the server's reply, so a reference taken at
-  // build time is orphaned from the first push onward — the control would go
-  // on writing to an object nothing else could see, and `reflectMaster` would
-  // paint it straight back from the live one. Which is exactly what the
-  // maximizer switch was doing: dead from the second render on.
-  const m = () => state.rack.master;
-  const set = (k, v) => { m()[k] = v; };
-  const shown = m();
-  // Structural: turning the maximiser on, or changing how it decides. These
-  // change what the effect *is*, so the chain is rebuilt and that is correct.
-  const rebuild = () => pushRack({ immediate: true });
-  // The one continuous control that can move without rebuilding anything.
-  // `Maximizer::set_param` takes `amount` and refuses the ceiling on purpose —
-  // putting the one guarantee that effect makes on a curve would defeat it.
-  const live = (v) => liveParam('master', 'amount', v);
-  // Released: the document catches up, the engine is already there. keepLive,
-  // or this is the tail-cutting rebuild all over again.
-  const settle = () => commitRack();
-
-  state.masterRows = {};
-  const row = (el, key) => { state.masterRows[key] = el; box.appendChild(el); return el; };
-
-  row(check('maximizer', 'Compress and hold the channel under its ceiling', shown.on,
-    (on) => { set('on', on); reflectMaster(); rebuild(); }), 'on');
-
-  row(param('Amount', shown.amount, 0, 1, 0.01,
-    (v) => (v <= 0 ? 'none' : v >= 0.999 ? 'maximize' : `${Math.round(v * 100)}%`),
-    (v) => { set('amount', v); live(v); },
-    () => { settle(); }, false, MASTER_DEFAULTS.amount), 'amount');
-
-  row(check('auto level',
-    'Walk the output up to the ceiling as it plays, rather than leaving the gain where it was',
-    shown.autoLevel, (on) => { set('autoLevel', on); rebuild(); }), 'autoLevel');
-
-  row(check('auto compression',
-    'Take the threshold from the material, so the same setting squeezes a quiet file like a loud one',
-    shown.autoComp, (on) => { set('autoComp', on); rebuild(); }), 'autoComp');
-
-  row(param('Ceiling', shown.ceilingDb, -24, 0, 0.1, (v) => `${v.toFixed(1)} dB`,
-    (v) => { set('ceilingDb', v); }, () => rebuild(), false, MASTER_DEFAULTS.ceilingDb), 'ceilingDb');
-
-  reflectMaster();
-}
-
-/// Everything but the switch is only reachable once it is on.
-function reflectMaster() {
-  const m = state.rack?.master;
-  if (!m || !state.masterRows) return;
-  for (const [k, el] of Object.entries(state.masterRows)) {
-    el.sync?.(m[k]);
-    if (k !== 'on') el.classList.toggle('inactive', !m.on);
-  }
-}
+// The channel strip's defaults and its build cache went with the strip. The
+// maximiser is a module now, so its defaults are declared once in
+// `MAXIMIZER_SPECS` and reach the interface with every other module's — there
+// is no second copy here to drift from them.
+//
+// `spec.master` still exists and is still posted, because documents saved
+// before this carry it and the engine still honours it.
 
 function renderRack() {
   const rail = $('fxModuleRail');
@@ -5786,114 +5716,6 @@ function resetButton(id, label, title, run) {
   b.title = title;
   b.onclick = run;
   return b;
-}
-
-function renderRackParams() {
-  const box = $('rackParams');
-  box.innerHTML = '';
-  const slot = state.rack?.slots[state.rackSelected];
-  if (!slot) return;
-
-  const shaper = state.shapers[slot.kind];
-  const meta = SLOT_META[slot.kind] || { name: shaper ? shaper.label : slot.kind };
-  const head = document.createElement('div');
-  head.className = 'param-head';
-  head.innerHTML = `<span class="t"></span>
-    <button class="ghost">${slot.bypassed ? 'Switch in' : 'Switch out'}</button>`
-    + (shaper ? '<button class="ghost danger" id="rackDrop">Remove</button>' : '');
-  head.querySelector('.t').textContent = meta.name;
-  head.querySelector('button').onclick = () => {
-    slot.bypassed = !slot.bypassed;
-    pushRack({ immediate: true });
-  };
-  box.appendChild(head);
-  // Only a shaper can be taken out. The first three are the chain itself —
-  // switching one out is what removing it means.
-  if (shaper) {
-    $('rackDrop').onclick = () => {
-      state.rack.slots.splice(state.rackSelected, 1);
-      state.rackSelected = Math.max(0, state.rackSelected - 1);
-      pushRack({ immediate: true });
-      renderRack();
-    };
-  }
-
-  const grid = document.createElement('div');
-  grid.className = 'knob-grid';
-  const db1 = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB`;
-  const hz = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} kHz` : `${Math.round(v)} Hz`);
-
-  // Every shaper, from its own description. Nothing here knows what any of
-  // them do — which is the point: the next one added draws itself.
-  if (shaper) {
-    if (!shaper.params.length) {
-      const none = document.createElement('p');
-      none.className = 'engine-note';
-      none.textContent = 'Nothing to set — switch it in or out.';
-      grid.appendChild(none);
-    }
-    slot.params = slot.params || {};
-    for (const p of shaper.params) {
-      if (slot.params[p.key] === undefined) slot.params[p.key] = p.default;
-      const fmt = (v) => {
-        if (p.unit === 'Hz') return v >= 1000 ? `${(v / 1000).toFixed(2)} kHz` : `${Math.round(v)} Hz`;
-        if (p.unit === 'ms') return v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`;
-        if (p.unit === 'dB') return `${v.toFixed(1)} dB`;
-        if (p.unit) return `${v.toFixed(2)}${p.unit}`;
-        return p.min >= 0 && p.max <= 1.001 ? `${Math.round(v * 100)}%` : v.toFixed(2);
-      };
-      const step = (p.max - p.min) / 400;
-      // The log flag is the ninth argument, after the commit callback these
-      // do not need — pushRack already throttles.
-      grid.appendChild(knob(p.label, slot.params[p.key], p.min, p.max, step, fmt,
-        (v) => { slot.params[p.key] = v; pushRack(); }, undefined, p.log, p.default));
-    }
-  }
-
-  if (slot.kind === 'gain') {
-    grid.appendChild(knob('Level', slot.db, -24, 24, 0.1, db1, (v) => { slot.db = v; pushRack(); }, null, false, fxBorn(slot.kind, 'db')));
-  }
-
-  if (slot.kind === 'eq') {
-    const curve = document.createElement('canvas');
-    curve.className = 'eqcurve';
-    box.appendChild(curve);
-    requestAnimationFrame(() => drawEqCurve(curve));
-
-    for (const [key, label] of [['low', 'Low shelf'], ['mid', 'Mid peak'], ['high', 'High shelf']]) {
-      const h = document.createElement('div');
-      h.className = 'band-head';
-      h.textContent = label;
-      grid.appendChild(h);
-      const b = slot[key];
-      grid.appendChild(knob('Gain', b.gainDb, -18, 18, 0.1, db1, (v) => { b.gainDb = v; pushRack(); }, undefined, false, 0));
-      grid.appendChild(knob('Freq', b.freq, 20, 18000, 1, hz, (v) => { b.freq = v; pushRack(); }, null, false, eqBorn(selected, 'freq')));
-      grid.appendChild(knob('Q', b.q, 0.2, 8, 0.05, (v) => v.toFixed(2), (v) => { b.q = v; pushRack(); }, undefined, false, 0.7));
-    }
-    const h = document.createElement('div');
-    h.className = 'band-head';
-    h.textContent = 'High-pass';
-    grid.appendChild(h);
-    grid.appendChild(knob('Cutoff', slot.highPassHz, 0, 400, 1,
-      (v) => (v <= 20 ? 'off' : hz(v)), (v) => { slot.highPassHz = v; pushRack(); }, null, false, fxBorn(slot.kind, 'highPassHz')));
-  }
-
-  if (slot.kind === 'comp') {
-    grid.appendChild(knob('Threshold', slot.thresholdDb, -60, 0, 0.5,
-      (v) => `${v.toFixed(1)} dB`, (v) => { slot.thresholdDb = v; pushRack(); }, null, false, fxBorn(slot.kind, 'thresholdDb')));
-    grid.appendChild(knob('Ratio', slot.ratio, 1, 20, 0.1,
-      (v) => `${v.toFixed(1)}:1`, (v) => { slot.ratio = v; pushRack(); }, null, false, fxBorn(slot.kind, 'ratio')));
-    grid.appendChild(knob('Attack', slot.attackMs, 0.1, 200, 0.1,
-      (v) => `${v.toFixed(1)} ms`, (v) => { slot.attackMs = v; pushRack(); }, null, false, fxBorn(slot.kind, 'attackMs')));
-    grid.appendChild(knob('Release', slot.releaseMs, 5, 1000, 1,
-      (v) => `${Math.round(v)} ms`, (v) => { slot.releaseMs = v; pushRack(); }, null, false, fxBorn(slot.kind, 'releaseMs')));
-    grid.appendChild(knob('Knee', slot.kneeDb, 0, 24, 0.5,
-      (v) => `${v.toFixed(1)} dB`, (v) => { slot.kneeDb = v; pushRack(); }, null, false, fxBorn(slot.kind, 'kneeDb')));
-    grid.appendChild(knob('Makeup', slot.makeupDb, -12, 24, 0.1, db1,
-      (v) => { slot.makeupDb = v; pushRack(); }, null, false, fxBorn(slot.kind, 'makeupDb')));
-  }
-
-  box.appendChild(grid);
 }
 
 /// Draw the EQ response the server computed, so the picture and the filter

@@ -282,3 +282,63 @@ impl Effect for Maximizer {
         }
     }
 }
+
+// ------------------------------------------------------------ as a module
+//
+// The maximiser began as the *channel's* compressor: not a slot, pushed last
+// always, on the reasoning that holding a chain under its ceiling is something
+// only the end of the chain can do. That reasoning is sound and the interface
+// for it was lost anyway — the strip it lived in went when the effects moved to
+// a rail, and for three days there was no way to reach it at all.
+//
+// So it becomes a module. Placeable, orderable, bypassable, and describable to
+// the interface without a panel written by hand. Put it last and it is exactly
+// what it was; put it in the middle and it is a compressor with a ceiling,
+// which is a reasonable thing to want and no longer a thing the program forbids
+// on your behalf.
+//
+// The two automatic modes are floats here because that is how every module
+// parameter travels — automation, presets and the wire all carry numbers, and a
+// switch is a number that happens to have two useful values.
+
+use crate::params::{ParamSpec, Params};
+
+pub const MAXIMIZER_SPECS: &[ParamSpec] = &[
+    ParamSpec::new("amount", "Amount", 0.0, 1.0, 0.5),
+    ParamSpec::new("ceilingDb", "Ceiling", -24.0, 0.0, -0.3).unit("dB"),
+    ParamSpec::new("autoLevel", "Auto level", 0.0, 1.0, 1.0),
+    ParamSpec::new("autoComp", "Auto compression", 0.0, 1.0, 1.0),
+];
+
+impl Params for Maximizer {
+    fn specs(&self) -> &'static [ParamSpec] {
+        MAXIMIZER_SPECS
+    }
+
+    fn get(&self, key: &str) -> Option<f32> {
+        Some(match key {
+            "amount" => self.settings.amount,
+            "ceilingDb" => self.settings.ceiling_db,
+            "autoLevel" => f32::from(u8::from(self.settings.auto_level)),
+            "autoComp" => f32::from(u8::from(self.settings.auto_comp)),
+            _ => return None,
+        })
+    }
+
+    fn set(&mut self, key: &str, value: f32) -> bool {
+        match key {
+            "amount" => self.settings.amount = value.clamp(0.0, 1.0),
+            "ceilingDb" => self.settings.ceiling_db = value.clamp(-24.0, 0.0),
+            // Half, not zero, so a control swept through the middle lands the
+            // same way whichever direction it came from.
+            "autoLevel" => self.settings.auto_level = value >= 0.5,
+            "autoComp" => self.settings.auto_comp = value >= 0.5,
+            _ => return false,
+        }
+        // `on` is not a parameter. A module in the rack is on by definition and
+        // is switched off by bypassing it, like every other module — carrying a
+        // second idea of "off" inside it would give two switches that disagree.
+        self.settings.on = true;
+        true
+    }
+}
