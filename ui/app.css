@@ -1154,12 +1154,17 @@ body.editing .shell { position: relative; }
 /* Tagging belongs to Browse: in Edit the whole right side is the editor's. */
 body.editing .panel.right, body.editing #rightRail { display: none; }
 body.editing .panel.left { left: var(--rail); }
-/* The readout leads the waveform while a control is being dragged. */
+/* The readout leads the waveform while a control is being dragged.
+
+   Colour and nothing else. The sound is already live — every engine runs in the
+   callback — so there is no state to announce and no wait to explain. Earlier
+   versions said "rendering", then "picture catching up", and both made the app
+   look like it was rebuilding audio on every slider move. Text here can only
+   describe something that is not happening.
+
+   If something ever does happen to the audio that the ear cannot account for,
+   that is worth words. This is not that. */
 #stretchOut.pending { color: var(--warn); }
-/* The sound is already live — every engine runs in the callback. It is the
-   picture that lags, and saying "rendering" made the app look like it was
-   rebuilding the audio on every slider move. */
-#stretchOut.pending::after { content: ' · picture catching up…'; opacity: .7; }
 
 /* ---------------------------------------------------- granular tray layout
    The layout itself lives further down, with the control panels. There used to
@@ -1593,12 +1598,6 @@ body.editing .dock { flex: 0 0 330px; }
 .pm-fx-add { padding: 0 8px 8px; }
 .pm-fx-add select { width: 100%; padding: 0 7px; }
 
-/* An engine the audio callback cannot run yet. Marked rather than hidden: it is
-   a real engine and it is what export uses, it just is not what you are
-   hearing. */
-.seg-btn.rendered::after {
-  content: '·'; margin-left: 3px; color: var(--warn); font-weight: 700;
-}
 .engine-note {
   font-size: 10px; line-height: 1.35; color: var(--warn);
   opacity: .85; margin: 2px 0 0;
