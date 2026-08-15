@@ -136,3 +136,27 @@ test('every offered palette keeps the surface ladder in order', async ({ page })
   });
   expect(broken, 'palettes whose surfaces do not get lighter as they rise').toEqual([]);
 });
+
+/// Audio is drawn in one of two colours and no theme may change them.
+///
+/// A waveform is a reading, not decoration — you judge level and shape by it, so
+/// it has to look the same every time you look at it. Five canvases used to take
+/// `--accent`, which meant a palette could turn every waveform in the program
+/// brown.
+test('waveform colours do not move when a theme is applied', async ({ page }) => {
+  await ready(page);
+  const read = () => page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    return { wave: cs.getPropertyValue('--wave').trim(), wave2: cs.getPropertyValue('--wave-2').trim() };
+  });
+
+  const before = await read();
+  expect(before.wave, '--wave is not defined').not.toBe('');
+  expect(before.wave2, '--wave-2 is not defined').not.toBe('');
+
+  for (const p of (await page.evaluate(() => allPalettes().slice(0, 6).map((x) => x.id)))) {
+    await page.evaluate((id) => { themeState.chosen = id; applyChosenTheme(); }, p);
+    expect(await read(), `palette ${p} moved the waveform colour`).toEqual(before);
+  }
+  await page.evaluate(() => { themeState.chosen = null; applyChosenTheme(); });
+});

@@ -461,6 +461,17 @@ function requestThumbs() {
   }, 60);
 }
 
+/// The colour audio is drawn in, whatever the theme.
+///
+/// A waveform is a reading rather than decoration — you judge level and shape by
+/// it — so it has to look the same every time. These five canvases used to take
+/// the accent, which meant a palette could turn every waveform in the program
+/// brown. `--wave` and `--wave-2` are outside the theme map on purpose.
+function waveInk(second = false) {
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(second ? '--wave-2' : '--wave').trim();
+}
+
 function drawThumb(canvas, b64, selected) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -470,7 +481,7 @@ function drawThumb(canvas, b64, selected) {
   const bin = atob(b64);
   const n = bin.length;
   const mid = canvas.height / 2;
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  ctx.fillStyle = waveInk();
   ctx.globalAlpha = selected ? 0.95 : 0.55;
 
   const w = canvas.width / n;
@@ -1669,7 +1680,7 @@ function drawWave() {
 
   const nch = p.channels.length;
   const laneH = h / nch;
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const accent = waveInk();
 
   // Zoomed in far enough that the server ran out of frames to summarise: it
   // clamps the column count to the frame count, so every column now holds
@@ -1779,8 +1790,7 @@ function drawOverview() {
   const p = state.overview;
   if (!p || !p.channels.length) return;
 
-  const accent = getComputedStyle(document.documentElement)
-    .getPropertyValue('--accent').trim();
+  const accent = waveInk();
   const mid = h / 2;
   const half = mid * 0.9;
   const colW = w / p.columns;
@@ -5751,7 +5761,7 @@ function drawEqCurve(canvas) {
     return;
   }
 
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const accent = waveInk();
   ctx.strokeStyle = accent;
   ctx.lineWidth = 1.6;
   ctx.beginPath();
@@ -5918,7 +5928,7 @@ function drawVisualiser(canvas) {
 
   // Log-spaced bars: linear bins put almost everything in the bottom eighth.
   const bars = 64;
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const accent = waveInk();
   ctx.fillStyle = accent;
   const bw = w / bars;
   for (let i = 0; i < bars; i++) {
