@@ -1818,3 +1818,72 @@ fn each_layer_reads_its_own_place() {
     let hi = early.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     assert!(hi - lo > 1_000.0, "every layer read within {} frames of the others", hi - lo);
 }
+
+/// A sampled schedule is the real one, thinned — not a different one.
+///
+/// The pictures never draw more than a few thousand marks, so the whole
+/// enumeration was built and four fifths of it thrown away. Asking only for the
+/// grains that survive is worth doing only if they are the same grains: every
+/// one has to be an event the full enumeration also contains, the count has to
+/// be honest, and the sample has to be spread over the whole render rather than
+/// bunched at the start.
+#[test]
+fn a_sampled_schedule_is_a_faithful_thinning_of_the_whole_one() {
+    let sr = 48_000u32;
+    let frames = sr as usize;
+    let g = fx::Grain {
+        density_hz: 120.0,
+        layers: 4,
+        position_jitter_ms: 90.0,
+        pitch_jitter_semis: 5.0,
+        pan_spread: 0.7,
+        ..fx::Grain::default()
+    };
+
+    let full = fx::grain::grains_layered(frames, sr, 8.0, 0.0, 40.0, &g);
+    let (sample, total) = fx::grain::grains_sampled(frames, sr, 8.0, 0.0, 40.0, &g, 500);
+
+    assert_eq!(total, full.len(), "the reported total is not the real one");
+    assert!(!sample.is_empty());
+    assert!(sample.len() <= 700, "asked for 500 and got {}", sample.len());
+
+    // In time order, which everything downstream assumes.
+    assert!(sample.windows(2).all(|w| w[0].out_frame <= w[1].out_frame));
+
+    // Every sampled grain is a grain the full enumeration also has — same
+    // index, same source frame, same size. A sample that invented grains would
+    // be a different cloud drawn convincingly.
+    let real: std::collections::HashSet<(u64, u64, u32)> = full
+        .iter()
+        .map(|e| (e.index, e.out_frame, e.size))
+        .collect();
+    for e in &sample {
+        assert!(
+            real.contains(&(e.index, e.out_frame, e.size)),
+            "grain {} at {} is not in the real schedule",
+            e.index,
+            e.out_frame
+        );
+    }
+
+    // Spread over the whole render, not bunched at the front.
+    let last = full.last().unwrap().out_frame;
+    let reach = sample.last().unwrap().out_frame;
+    assert!(
+        reach as f64 > last as f64 * 0.9,
+        "the sample stops at {reach} of {last}"
+    );
+
+    // More than one layer is represented, or it is a sample of one schedule
+    // rather than of the stack. Layers cannot be told apart by index — every
+    // layer runs the same ordinals — so they are told apart the way they
+    // actually differ: each is laid down at its own offset within the hop, so
+    // one ordinal appears at several output frames.
+    let first = sample[0].index;
+    let places = sample
+        .iter()
+        .filter(|e| e.index == first)
+        .map(|e| e.out_frame)
+        .collect::<std::collections::HashSet<_>>();
+    assert!(places.len() > 1, "grain {first} appears at only one place — one layer");
+}
