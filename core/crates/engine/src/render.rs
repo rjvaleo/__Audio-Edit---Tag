@@ -60,6 +60,10 @@ struct Shape {
     /// Which deal of the randomness it was thrown by. Re-seeding deals a new
     /// cloud; it must deal the grains still to come, not the ones in the air.
     seed: u32,
+    /// Whether the file is a loop for this grain. Captured with the rest: a
+    /// grain that started reading a wrapped file must go on doing so, or its
+    /// read would jump the moment the switch moved.
+    wrap: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -128,7 +132,7 @@ impl BlockRenderer {
                 pitch_semis: 0.0,
             },
             played: 0,
-            shape: Shape { envelope: 0.5, reverse: false, pan_spread: 0.0, seed: 0 },
+            shape: Shape { envelope: 0.5, reverse: false, pan_spread: 0.0, seed: 0, wrap: false },
         };
         BlockRenderer {
             streams: [GrainStream::new(); MAX_LAYERS],
@@ -275,7 +279,8 @@ impl BlockRenderer {
                     let sch = ch.min(src.channels.saturating_sub(1));
                     let pan = if ch == 0 { gl } else { gr };
                     out[f * channels + ch] +=
-                        sample_at(&src.samples, src.channels, sch, pos, src.frames()) * win * pan;
+                        sample_at(&src.samples, src.channels, sch, pos, src.frames(), voice.shape.wrap)
+                            * win * pan;
                 }
                 self.norm[f] += win;
                 played += 1;
@@ -330,21 +335,38 @@ fn shape_of(sp: &StreamParams) -> Shape {
         reverse: sp.grain.reverse,
         pan_spread: sp.grain.pan_spread,
         seed: sp.grain.seed,
+        wrap: sp.grain.wrap,
     }
 }
 
 /// Linearly interpolated read, clamped at the edges. Identical to the offline
 /// renderer's.
 #[inline]
-fn sample_at(input: &[f32], channels: usize, ch: usize, pos: f32, in_frames: usize) -> f32 {
+fn sample_at(
+    input: &[f32],
+    channels: usize,
+    ch: usize,
+    pos: f32,
+    in_frames: usize,
+    wrap: bool,
+) -> f32 {
     if in_frames == 0 {
         return 0.0;
     }
-    let p = pos.max(0.0);
+    // Identical to the offline renderer's, wrap included. If these two ever
+    // disagree, what you hear and what gets written stop being the same sound.
+    let p = if wrap {
+        pos.rem_euclid(in_frames as f32)
+    } else {
+        pos.max(0.0)
+    };
     let i = p.floor() as usize;
     let t = p - i as f32;
-    let a = i.min(in_frames - 1);
-    let b = (i + 1).min(in_frames - 1);
+    let (a, b) = if wrap {
+        (i % in_frames, (i + 1) % in_frames)
+    } else {
+        (i.min(in_frames - 1), (i + 1).min(in_frames - 1))
+    };
     let s0 = input[a * channels + ch];
     let s1 = input[b * channels + ch];
     s0 + (s1 - s0) * t

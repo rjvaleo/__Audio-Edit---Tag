@@ -1887,3 +1887,84 @@ fn a_sampled_schedule_is_a_faithful_thinning_of_the_whole_one() {
         .collect::<std::collections::HashSet<_>>();
     assert!(places.len() > 1, "grain {first} appears at only one place — one layer");
 }
+
+/// Wrapped, the file is a loop: a grain may start anywhere and reads on past
+/// the end from the beginning.
+///
+/// Unwrapped, a grain that would read off the end is held back to the last
+/// position where it fits, and one that reads past it anyway holds its final
+/// sample — silence with a step in front of it. Wrapped, neither happens.
+#[test]
+fn a_wrapped_file_has_no_last_safe_position() {
+    let sr = 48_000u32;
+    let frames = sr as usize / 2;
+    // A window that is a quarter of the file, which is what makes the limit
+    // bite hard enough to see.
+    let win = 125.0;
+
+    let held = fx::Grain { density_hz: 60.0, wrap: false, ..fx::Grain::default() };
+    let looped = fx::Grain { wrap: true, ..held };
+
+    let a = fx::grain::grains(frames, sr, 4.0, 0.0, win, &held);
+    let b = fx::grain::grains(frames, sr, 4.0, 0.0, win, &looped);
+
+    let last_of = |v: &[fx::grain::GrainEvent]| {
+        v.iter().map(|e| e.src_frame).fold(0f32, f32::max)
+    };
+    let held_reach = last_of(&a) / frames as f32;
+    let loop_reach = last_of(&b) / frames as f32;
+
+    assert!(held_reach < 0.8, "held grains reached {held_reach:.2} of the file");
+    assert!(
+        loop_reach > 0.9,
+        "wrapped grains should be able to start anywhere, reached {loop_reach:.2}"
+    );
+}
+
+/// And the read itself comes back round rather than holding a sample.
+#[test]
+fn a_wrapped_grain_reads_the_start_of_the_file_after_the_end() {
+    let sr = 48_000u32;
+    let frames = sr as usize / 4;
+    // A ramp, so where in the file a sample came from is readable from its
+    // value: the last sample is 1.0 and the first is 0.0.
+    let src: Vec<f32> = (0..frames).map(|i| i as f32 / frames as f32).collect();
+
+    let g = fx::Grain {
+        density_hz: 20.0,
+        wrap: true,
+        position: 0.98,
+        scan: 0.0,
+        ..fx::Grain::default()
+    };
+    let out = fx::grain::granular(&src, 1, sr, 2.0, 0.0, 120.0, &g);
+
+    // Parked at 98% with a 120 ms window on a 250 ms file, every grain runs off
+    // the end. Holding would make the tail a flat line at 1.0; wrapping brings
+    // it back to values near zero.
+    let low = out.iter().filter(|v| **v > 0.0001 && **v < 0.25).count();
+    assert!(
+        low > out.len() / 50,
+        "only {low} samples of {} came from the start of the file",
+        out.len()
+    );
+}
+
+/// Unwrapped is untouched. Invariant nine.
+#[test]
+fn wrapping_is_inert_when_it_is_off() {
+    let sr = 48_000u32;
+    let frames = sr as usize / 2;
+    let src: Vec<f32> = (0..frames).map(|i| (i as f32 / 50.0).sin()).collect();
+    let g = fx::Grain {
+        density_hz: 40.0,
+        position_jitter_ms: 60.0,
+        pitch_jitter_semis: 4.0,
+        size_jitter: 0.4,
+        wrap: false,
+        ..fx::Grain::default()
+    };
+    let a = fx::grain::granular(&src, 1, sr, 3.0, 0.0, 60.0, &g);
+    let b = fx::grain::granular(&src, 1, sr, 3.0, 0.0, 60.0, &fx::Grain { ..g });
+    assert_eq!(a, b);
+}

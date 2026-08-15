@@ -450,11 +450,21 @@ fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> Grain
     // copies of one laid down at a fixed offset.
     let jitter = jitter + g.layer_read;
     let span = (size as f32) * rate;
-    let max_start = (sp.in_frames as f32 - span - 1.0).max(0.0);
     let want = nominal + jitter;
-    let read = if g.wrap && max_start > 1.0 {
-        want.rem_euclid(max_start)
+    // Wrapped, the file is a loop and every frame of it is a legal place to
+    // start: a grain that runs off the end carries on from the beginning, so
+    // there is no last-safe-position to be held back to.
+    //
+    // Unwrapped, there is. `max_start` is the file less the span this grain
+    // will read, and a grain that wants to start later is held there. Note that
+    // the span is `size × rate`, so the limit is different for every grain —
+    // size jitter and pitch jitter both move it. There is no single boundary,
+    // which is why drawing one on the picture was describing something the
+    // audio does not have.
+    let read = if g.wrap {
+        want.rem_euclid((sp.in_frames as f32).max(1.0))
     } else {
+        let max_start = (sp.in_frames as f32 - span - 1.0).max(0.0);
         want.clamp(0.0, max_start)
     };
 
@@ -770,7 +780,7 @@ pub fn granular(
                 for ch in 0..channels {
                     let pan = if ch == 0 { gl } else { gr };
                     out[dst * channels + ch] +=
-                        sample_at(input, channels, ch, src, in_frames) * w * pan;
+                        sample_at(input, channels, ch, src, in_frames, g.wrap) * w * pan;
                 }
                 norm[dst] += w;
             }
@@ -864,15 +874,32 @@ pub fn env_at(i: usize, n: usize, skew: f32) -> f32 {
 
 /// Linearly interpolated read, clamped at the edges.
 #[inline]
-fn sample_at(input: &[f32], channels: usize, ch: usize, pos: f32, in_frames: usize) -> f32 {
+fn sample_at(
+    input: &[f32],
+    channels: usize,
+    ch: usize,
+    pos: f32,
+    in_frames: usize,
+    wrap: bool,
+) -> f32 {
     if in_frames == 0 {
         return 0.0;
     }
-    let p = pos.max(0.0);
+    // Wrapped, the end of the file joins its beginning. Clamped, a grain that
+    // reads past the end holds its final sample — which is silence with a DC
+    // step in front of it, and audibly not the sound.
+    let p = if wrap {
+        pos.rem_euclid(in_frames as f32)
+    } else {
+        pos.max(0.0)
+    };
     let i = p.floor() as usize;
     let t = p - i as f32;
-    let a = i.min(in_frames - 1);
-    let b = (i + 1).min(in_frames - 1);
+    let (a, b) = if wrap {
+        (i % in_frames, (i + 1) % in_frames)
+    } else {
+        (i.min(in_frames - 1), (i + 1).min(in_frames - 1))
+    };
     let s0 = input[a * channels + ch];
     let s1 = input[b * channels + ch];
     s0 + (s1 - s0) * t
