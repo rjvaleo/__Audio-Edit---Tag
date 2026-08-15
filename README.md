@@ -12,7 +12,7 @@
 [![Engines](https://img.shields.io/badge/stretch%20engines-5%20live-8957e5)](#time-stretching)
 [![Shapers](https://img.shields.io/badge/live%20shapers-9-8957e5)](#live-shaping)
 [![Views](https://img.shields.io/badge/grain%20views-10-8957e5)](#watching-the-grains)
-[![Themes](https://img.shields.io/badge/themes-20%20palettes-8957e5)](#themes)
+[![Themes](https://img.shields.io/badge/themes-21-8957e5)](#themes)
 [![Export](https://img.shields.io/badge/export-AIFF%20%2B%20embedded%20settings-6aa84f)](#export)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](#start-here)
 [![Windows](https://img.shields.io/badge/Windows-x86__64%20cross--built-0078D6?logo=windows&logoColor=white)](#building-from-source)
@@ -387,20 +387,39 @@ playhead.
 
 ## Themes
 
-Twenty palettes, ported from Emovis, each one deriving the whole interface — a
-hundred-odd tokens — from four to six colours. Pick one from **Theme** in the
-left rail.
+Twenty-one, from **Theme** in the left rail. They come in two kinds.
 
-Two decisions worth knowing, because both look like bugs otherwise:
+**Derived** — twenty palettes ported from Emovis, each giving four to six
+colours from which the engine works out a hundred-odd tokens. That is the right
+trade for a palette nobody designed for this program: the surface ladder and the
+text steps are ours, and only the colour is theirs.
+
+**Direct** — a theme that states its tokens outright, with no derivation in
+between. There is one, **Conifer**: the interface's own colours with the hue
+moved from blue to green and the deep end pushed deeper. Its lightness ladder is
+held to within half a percent of the original at every step, so the contrast
+structure the panels were designed against is unchanged and only the colour
+moves.
+
+A direct theme states only what it means to change. Everything it leaves out —
+the status colours, every hairline and shadow, both waveform colours — falls
+back to the stylesheet, which is why `--good`, `--warn` and `--bad` keep their
+meaning under it.
+
+Three decisions worth knowing, because each looks like a bug otherwise:
 
 - **Waveforms are always green or blue**, in the browser, in the editor and in
   every panel, whatever the theme is doing. Audio is the thing you are reading;
   it does not get restyled. `--wave` and `--wave-2` sit deliberately outside the
   theme, as do the status colours.
-- **The library ships 47 palettes and the picker offers 20.** The chrome reads
-  depth as lightness — a raised surface is a lighter one — which is a dark-theme
+- **The library holds 48 and the picker offers 21.** The chrome reads depth as
+  lightness — a raised surface is a lighter one — which is a dark-theme
   assumption in every panel. All 27 light palettes break that ladder and all 20
   dark ones hold it, so the light ones are withheld rather than shown broken.
+- **Conifer's two deepest steps are at the sRGB floor.** At that lightness the
+  gamut has no room for colour: raising chroma from 0.020 to 0.060 moves the
+  value by a single bit. The deepest black is green by construction rather than
+  visibly, and the green becomes plain from `--surface` upward.
 
 ## Testing
 

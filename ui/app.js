@@ -8069,9 +8069,23 @@ const themeState = {
 /// here, and the engine already reports which direction a palette wants.
 function allPalettes() {
   const shipped = THEME_PALETTES
-    .filter((p) => Theme.deriveTheme(p.colors).mode === 'dark')
+    .filter((p) => (p.direct ? p.dark : Theme.deriveTheme(p.colors).mode === 'dark'))
     .map((p) => ({ ...p, readOnly: true }));
   return [...shipped, ...themeState.mine];
+}
+
+/// What a palette actually writes onto the document.
+///
+/// Two kinds live in one list. Most give colours and the engine derives sixty
+/// tokens from them; a `direct` theme states its tokens outright and they are
+/// used verbatim, because derivation cannot be argued with and a theme somebody
+/// designed for this interface should not have to be.
+///
+/// Anything a direct theme omits is left to `app.css` — `Theme.apply` clears the
+/// whole map before writing, so the status colours come back on their own.
+function themeTokensFor(p) {
+  if (!p) return null;
+  return p.direct ? p.tokens : Theme.appTokens(p.colors, { plain: themeState.plain }).tokens;
 }
 
 /// Kept in the browser rather than in `data/`.
@@ -8099,7 +8113,7 @@ function saveTheme() {
 function applyChosenTheme() {
   const p = allPalettes().find((x) => x.id === themeState.chosen);
   if (!p) { Theme.apply(null); return; }
-  Theme.apply(Theme.appTokens(p.colors, { plain: themeState.plain }).tokens);
+  Theme.apply(themeTokensFor(p));
 }
 
 function renderThemeList() {
