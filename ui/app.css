@@ -446,6 +446,12 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .lane canvas { position: absolute; left: 0; right: 0; width: 100%; display: block; }
 #waveCanvas { top: 0; height: 100%; z-index: 2; }
+/* Between the waveform and everything you can grab. */
+#grainLayer {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 3; pointer-events: none;
+}
+#grainLayer.hidden { display: none; }
 #specCanvas { display: none; z-index: 1; }
 
 /* With the spectrogram on, the two canvases split the lane. All geometry lives

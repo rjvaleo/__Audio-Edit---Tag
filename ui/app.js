@@ -911,6 +911,123 @@ function updateOverviewCue() {
 }
 
 
+/// The grains, drawn on the sound they read from.
+///
+/// Two layers, because they answer two different questions. The faint one is
+/// every grain in the schedule at the place in the file it reads from — the
+/// shape of what the cloud is going to do to this sound, standing still. The
+/// bright one is the handful sounding at this instant, struck and fading, so
+/// the playhead crossing the file *does* something visible rather than sliding
+/// over a picture.
+///
+/// It sits on the source timeline, which is the lane's axis and not the
+/// schedule's. On a stretched document that means the same few marks are struck
+/// again and again as the head crawls through them, and that is the honest
+/// picture: at eight times the cloud really is re-reading one stretch of file
+/// over and over.
+///
+/// Above the waveform and below the selection: it describes the sound, it is
+/// not something you grab.
+const GRAIN_LAYER_CAP = 2000;
+
+/// How long a struck grain stays lit, in seconds of output.
+const SIZZLE_SECONDS = 0.28;
+
+function drawGrainLayer() {
+  const el = $('grainLayer');
+  if (!el) return;
+  const g = state.grains;
+  const { from, to, sampleRate } = state.view;
+  if (!g?.grains?.length || !state.peaks || !sampleRate || to <= from) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+
+  const w = el.clientWidth, h = el.clientHeight;
+  if (!w || !h) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (el.width !== Math.round(w * dpr)) {
+    el.width = Math.round(w * dpr);
+    el.height = Math.round(h * dpr);
+  }
+  const c = el.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+
+  const sr = g.sampleRate || sampleRate;
+  const playFrame = playbackTime() * sr;
+  const span = to - from;
+  const x = (frame) => ((frame - from) / span) * w;
+  const base = state.edit?.stretch?.semitones ?? 0;
+
+  // Thinned when there are more than the lane can resolve, and *said*: a
+  // silently truncated picture reads as a sparse cloud rather than as a
+  // drawing that gave up.
+  const all = g.grains;
+  const stride = Math.max(1, Math.ceil(all.length / GRAIN_LAYER_CAP));
+
+  // ── the layer ───────────────────────────────────────────────────────────
+  c.lineWidth = 1;
+  c.strokeStyle = 'rgba(140, 190, 250, 0.13)';
+  c.beginPath();
+  for (let i = 0; i < all.length; i += stride) {
+    const px = x(all[i][1]);
+    if (px < -2 || px > w + 2) continue;
+    // Short ticks off the centre line rather than full-height bars: the
+    // waveform underneath is the thing being read, and a picket fence over it
+    // hides exactly what the marks are about.
+    c.moveTo(px, h * 0.5 - 5);
+    c.lineTo(px, h * 0.5 + 5);
+  }
+  c.stroke();
+
+  // ── the sizzle ──────────────────────────────────────────────────────────
+  //
+  // Every grain that has been struck within the last fraction of a second,
+  // brightest at the moment it starts. Drawn from the schedule rather than
+  // remembered, so it is a pure function of where the playhead is — scrub
+  // backwards and the same grains light in the same places.
+  let lit = 0;
+  for (const [outFrame, srcFrame, size, pitch, rms, bright] of all) {
+    const since = (playFrame - outFrame) / sr;
+    if (since < 0 || since > SIZZLE_SECONDS) continue;
+    const px = x(srcFrame);
+    if (px < -4 || px > w + 4) continue;
+    lit++;
+
+    const t = 1 - since / SIZZLE_SECONDS;
+    const heat = t * t;
+    const lvl = Math.min(1, (rms || 0) * 7 + 0.15);
+    const half = (6 + lvl * (h * 0.42)) * (0.45 + heat * 0.55);
+    const warm = (pitch - base) >= 0;
+
+    // The spark: a bright core with a short bloom, which is what makes it read
+    // as struck rather than merely coloured in.
+    const grd = c.createLinearGradient(px, h / 2 - half, px, h / 2 + half);
+    const core = warm
+      ? `rgba(255, ${190 - Math.min(70, (pitch - base) * 6) | 0}, 130,`
+      : `rgba(150, 205, 255,`;
+    grd.addColorStop(0, `${core} 0)`);
+    grd.addColorStop(0.5, `${core} ${(0.28 + heat * 0.62).toFixed(3)})`);
+    grd.addColorStop(1, `${core} 0)`);
+    c.strokeStyle = grd;
+    c.lineWidth = 1 + heat * 1.6 + (bright || 0) * 2;
+    c.beginPath();
+    c.moveTo(px, h / 2 - half);
+    c.lineTo(px, h / 2 + half);
+    c.stroke();
+  }
+
+  // Only when it actually dropped some, and only where it cannot be mistaken
+  // for part of the sound.
+  if (stride > 1) {
+    c.fillStyle = 'rgba(220,228,235,.35)';
+    c.font = '9px ui-monospace, monospace';
+    c.fillText(`1 grain in ${stride} shown`, 6, h - 6);
+  }
+}
+
 /// How much of the file the cloud is reading, drawn on the file.
 ///
 /// A playhead is a line because ordinary playback reads one sample at a time.
@@ -956,6 +1073,7 @@ function updateReadBand() {
 
 function updatePlayhead() {
   updateReadBand();
+  drawGrainLayer();
   const ph = $('playhead');
   const { from, to, sampleRate } = state.view;
   if (!state.peaks || !sampleRate || to <= from) { ph.style.display = 'none'; return; }
