@@ -407,16 +407,25 @@ fn api_peaks(app: &Arc<App>, req: &Request) -> Response {
     let columns: usize = req.number::<usize>("cols", 1000).clamp(1, 8192);
 
     let rel = req.param("p").unwrap_or("");
-    let (irate, ichans) = { let i = reader.info(); (i.sample_rate, i.channels as usize) };
-    let mut rack = app.racks.get(rel).build(irate, ichans);
+    // **Dry.** The waveform shows the material, not the effects.
+    //
+    // It used to be rendered through the rack, so that what you saw was what
+    // you would hear. The intention was right and the cost was not: every
+    // release of every rack control re-rendered the whole visible span, which
+    // zoomed out is the entire file — and that one offline pass is most of what
+    // made a real-time engine feel like it was rendering.
+    //
+    // It was also not quite true. That render built a *fresh* rack from the
+    // spec and warmed it with pre-roll; the chain you are hearing has been
+    // running continuously with real history. For an EQ the two agree, but a
+    // compressor with a long release does not, so the picture was an
+    // approximation being paid for as though it were a recording.
+    //
+    // The edit list still shapes it — cuts, fades and stretch change the
+    // material and belong here. The rack does not: it is processing, and
+    // processing is what the meters and the speakers are for.
     let tile = match &list {
-        Some(l) => edit::render::peak_tile_fx(l, &mut reader, &mut rack, from, count, columns),
-        // No edits, but a rack can still be in play: render the source through
-        // it so the waveform matches what comes out of the speakers.
-        None if !rack.is_empty() => {
-            let plain = edit::EditList::identity(info.frames(), info.channels, info.sample_rate);
-            edit::render::peak_tile_fx(&plain, &mut reader, &mut rack, from, count, columns)
-        }
+        Some(l) => edit::render::peak_tile(l, &mut reader, from, count, columns),
         None => reader.peak_tile(from, count, columns),
     };
     let tile = match tile {
