@@ -1358,6 +1358,13 @@
             //   size     — its level, through `e`
             const e = out.e;
             const dt = g.tOut - now;
+            // `horizon()` rather than the render loop's `H`: that one is scoped
+            // to the loop and this function cannot see it. Reading it here threw
+            // on the first grain, which took the whole draw with it — and a
+            // draw that throws stops every view, not just this one, which is
+            // why picking Swarm made the others vanish until the sketch was
+            // restarted by switching away and back.
+            const H = horizon();
             const th = Math.acos(clamp(-g.pn, -1, 1));
             // A little of the display's own scatter, so a mono cloud is a
             // sphere rather than a single meridian. It is the only decorative
