@@ -35,6 +35,10 @@ test('every palette derives a complete set of this app’s tokens', async ({ pag
       '--accent', '--good', '--warn', '--bad'];
     const bad = [];
     for (const p of THEME_PALETTES) {
+      // A direct theme is not derived and deliberately does not set the status
+      // colours — it leaves them to app.css. Its own completeness is checked in
+      // `a direct theme is applied verbatim` below.
+      if (p.direct) continue;
       const { tokens } = Theme.appTokens(p.colors);
       const missing = wanted.filter((k) => !tokens[k]);
       if (missing.length) bad.push(`${p.name}: ${missing.join(',')}`);
@@ -126,7 +130,10 @@ test('every offered palette keeps the surface ladder in order', async ({ page })
     // Only what the picker offers: light palettes are withheld precisely
     // because this interface cannot wear them yet.
     for (const p of allPalettes()) {
-      const t = Theme.appTokens(p.colors).tokens;
+      // Through the same accessor the app uses, so a direct theme is checked on
+      // the tokens it actually writes rather than on a derivation of the five
+      // colours it happens to show in its swatch.
+      const t = themeTokensFor(p);
       const ls = steps.map((k) => lum(t[k]));
       for (let i = 1; i < ls.length; i++) {
         if (ls[i] < ls[i - 1] - 1) { out.push(`${p.name} at ${steps[i]}`); break; }
@@ -135,6 +142,78 @@ test('every offered palette keeps the surface ladder in order', async ({ page })
     return out;
   });
   expect(broken, 'palettes whose surfaces do not get lighter as they rise').toEqual([]);
+});
+
+/// A direct theme states its tokens rather than deriving them, so what has to
+/// be true of it is different: not "did the engine produce something usable"
+/// but "did the interface get exactly what was written".
+test('a direct theme is applied verbatim, and leaves the rest to app.css', async ({ page }) => {
+  await ready(page);
+
+  const conifer = await page.evaluate(() => THEME_PALETTES.find((p) => p.id === 'conifer'));
+  expect(conifer, 'Conifer is not in the library').toBeTruthy();
+  expect(conifer.direct, 'Conifer should be a direct theme').toBe(true);
+
+  const read = () => page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    const keys = ['--sink', '--well', '--bg', '--surface-0', '--surface', '--surface-2',
+      '--surface-2h', '--surface-3', '--text', '--text-2', '--text-dim', '--text-dimmer',
+      '--accent', '--good', '--warn', '--bad'];
+    return Object.fromEntries(keys.map((k) => [k, cs.getPropertyValue(k).trim()]));
+  });
+
+  const before = await read();
+  await page.evaluate(() => { themeState.chosen = 'conifer'; applyChosenTheme(); });
+  const on = await read();
+
+  // Every token it names, exactly as written — no derivation in between.
+  for (const [k, v] of Object.entries(conifer.tokens)) {
+    expect(on[k], `${k} was not applied verbatim`).toBe(v);
+  }
+
+  // Every token it does not name is left to the stylesheet. The status colours
+  // are the ones that matter: they carry meaning, and a theme that repainted
+  // them could make a clipping meter look safe.
+  for (const k of ['--good', '--warn', '--bad']) {
+    expect(on[k], `${k} should have been left to app.css`).toBe(before[k]);
+  }
+
+  await page.evaluate(() => { themeState.chosen = null; applyChosenTheme(); });
+  expect(await read(), 'unchoosing did not restore the defaults').toEqual(before);
+});
+
+/// The point of this particular theme: it is the app's own look, one hue over.
+/// If the lightness ladder drifts from the blue original the panels stop reading
+/// as depth, and it stops being the same design in a different colour.
+test('Conifer holds the blue original’s contrast structure', async ({ page }) => {
+  await ready(page);
+  const report = await page.evaluate(() => {
+    const lum = (hex) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.substr(i, 2), 16));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const t = THEME_PALETTES.find((p) => p.id === 'conifer').tokens;
+    const steps = ['--sink', '--well', '--bg', '--surface-0', '--surface',
+      '--surface-2', '--surface-2h', '--surface-3'];
+    // What app.css states for the same eight, read off the document with no
+    // theme applied — so this compares against the real thing rather than a
+    // copy of it that could drift.
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      green: steps.map((k) => lum(t[k])),
+      rising: steps.map((k) => t[k]),
+      base: steps.map((k) => cs.getPropertyValue(k).trim()),
+    };
+  });
+
+  // Strictly rising: each surface lighter than the one beneath it.
+  for (let i = 1; i < report.green.length; i++) {
+    expect(report.green[i], `${report.rising[i]} is not lighter than the step below`)
+      .toBeGreaterThan(report.green[i - 1]);
+  }
+  // And the app's own tokens are still oklch — if that ever changes, the hex
+  // values in Conifer were derived from numbers that no longer exist.
+  expect(report.base[2], 'app.css no longer states --bg in oklch').toContain('oklch');
 });
 
 /// Audio is drawn in one of two colours and no theme may change them.

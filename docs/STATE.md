@@ -700,13 +700,37 @@ Three things a reader should know, because each looks like a bug otherwise:
   visualisers, the meters and the waveform, plus blue selection tints — which is
   why a theme currently reaches the chrome and not the canvas.
 
-**The themes are not good yet, and the user has said so repeatedly.** The engine
-and the palettes are not the problem — they derive correctly. The problem is
-that deriving sixty tokens from five colours produces arbitrary-looking results
-*in this interface*. The agreed next step is **direct assignment**: the user
-names eight surface steps, four text steps and one accent, and those are set
-without derivation. Asked for; not yet supplied. **Do not start deriving
-harder.**
+**Derivation was the problem, and direct assignment is the answer.** The engine
+and the palettes derive correctly; deriving sixty tokens from five colours just
+produces arbitrary-looking results *in this interface*. So a palette may now
+carry `tokens` instead of `colors` and those are written verbatim —
+`themeTokensFor()` in `app.js` is the join, and `p.direct` is the flag.
+
+**`Conifer` is the first one**, built 15 Aug on request: the app's own colours
+with hue 250 → 152 and the deep end pushed deeper. Every value is stated in
+`theme-palettes.js` with its oklch original in a comment beside it.
+
+Two things that decide whether a direct theme is right:
+
+- **The lightness ladder must track the original.** Conifer's eight surfaces sit
+  within half a percent of the blue ones at every step, so the panels read as
+  depth exactly as they were designed to. A spec asserts it is strictly rising
+  and that `app.css` still states `--bg` in oklch — because if that ever changes,
+  Conifer's hex values were computed from numbers that no longer exist.
+- **A direct theme states only what it changes.** `Theme.apply` clears the whole
+  map before writing, so anything omitted falls back to the stylesheet. That is
+  how `--good`, `--warn` and `--bad` keep their meaning under it, and it is
+  strictly better than the derived path, which has to move them deliberately.
+
+**The one judgement call in it is the accent.** In the blue original the accent
+*is* the blue waveform — both `oklch(70% 0.16 230)`, exactly. Going green would
+have put it on top of `--good` and `--wave-2`, which are both
+`oklch(72% 0.15 155)`, so a selection would be the same colour as a waveform and
+as the meter saying a level is safe. Conifer's accent sits brighter, more
+saturated and seven degrees warmer — `oklch(75% 0.19 145)`.
+
+**Still true:** ~99 of 187 colours are untokenised, so a theme reaches the
+chrome and not the canvas. The spectrogram is still magenta under Conifer.
 
 ### Testing the interface
 
@@ -1337,10 +1361,9 @@ gesture), `docs/MENUS.md` (every menu item).
 
 ## 12. What is open
 
-**One thing is waiting on the user: the theme colours.** Deriving sixty tokens
-from five produces arbitrary results in this interface, so the agreed next step
-is direct assignment — eight surface steps, four text steps, one accent, named
-rather than derived. Asked for on 15 Aug; not yet supplied. See §7.
+**Nothing is waiting on a decision.** The theme question was settled on 15 Aug:
+direct assignment rather than derivation, with `Conifer` as the first one built
+that way. See §7.
 
 The granular layers question was answered
 on 11 Aug 2026 — option two, compensate by √N in both paths from

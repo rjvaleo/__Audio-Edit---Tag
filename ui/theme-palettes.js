@@ -8,7 +8,78 @@
 // never edited or deleted, so a palette someone builds on can never be pulled
 // out from under them.
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Themes that state their colours instead of deriving them.
+//
+// A palette gives five hexes and the engine works out sixty tokens from them.
+// That is the right trade for a palette nobody designed for this program, and
+// the wrong one for a theme somebody did: derivation cannot be argued with, and
+// in this interface it produces results that look arbitrary however good the
+// palette is. So an entry may carry `tokens` instead, and those are written
+// verbatim.
+//
+// A direct theme states only what it means to change. Anything it leaves out —
+// the status colours, every line and shadow, the two waveform colours — falls
+// back to the stylesheet's own `:root`, because `Theme.apply` clears the map
+// before it writes. That is deliberate: `--good`, `--warn` and `--bad` carry
+// meaning rather than style, and a theme has no business repainting them.
+
+/// The interface's own colours, in green.
+///
+/// Same theme, one hue over: every surface, text step and accent from `app.css`
+/// with hue 250 → 152, and the deep end pushed deeper. The lightness ladder is
+/// held to within half a percent of the blue original at every step, so the
+/// contrast structure the panels were designed against is unchanged and only
+/// the colour moves — which is what "based on the one we've got" has to mean if
+/// it is to mean anything.
+///
+/// **The bottom two steps are at the sRGB floor.** At L=7.5% the gamut has no
+/// room for chroma: raising it from 0.020 to 0.060 moves the value by one bit,
+/// #000200 to #000300. So the deepest black is green by construction rather
+/// than visibly, and the green becomes plain from `--surface` upward. Depth
+/// there is set by lightness alone, and lifting it is the only way to make the
+/// very darkest step read greener.
+const CONIFER = {
+  id: 'conifer',
+  name: 'Conifer',
+  direct: true,
+  dark: true,
+  // For the swatch strip only — the ground, two raised steps, the accent and
+  // the brightest text, which is what the row is trying to show you.
+  colors: ['#000602', '#040c05', '#0d1610', '#4fcc5b', '#ecf0ec'],
+  tokens: {
+    // Eight surfaces. oklch(L C 152), chroma tapering as they rise so the deep
+    // ground is unmistakably green and the raised panels do not go to moss.
+    '--sink':       '#000200',  // oklch(7.5% 0.030 152)
+    '--well':       '#000401',  // oklch(9%   0.028 152)
+    '--bg':         '#000602',  // oklch(11%  0.026 152)
+    '--surface-0':  '#020903',  // oklch(12.5% 0.024 152)
+    '--surface':    '#040c05',  // oklch(14%  0.022 152)
+    '--surface-2':  '#060f08',  // oklch(15.5% 0.021 152)
+    '--surface-2h': '#09120b',  // oklch(17%  0.020 152)
+    '--surface-3':  '#0d1610',  // oklch(19%  0.019 152)
+
+    // Four text steps. Barely tinted — text is for reading, and a green cast
+    // strong enough to notice is one you have to read through all day.
+    '--text':        '#ecf0ec', // oklch(95% 0.006 152)
+    '--text-2':      '#c6ccc7', // oklch(84% 0.010 152)
+    '--text-dim':    '#98a19a', // oklch(70% 0.014 152)
+    '--text-dimmer': '#7a837c', // oklch(60% 0.016 152)
+
+    // The accent, and the one judgement call in the theme.
+    //
+    // In the blue original the accent *is* the blue waveform colour — both are
+    // oklch(70% 0.16 230), exactly. Going green would put the accent on top of
+    // `--good` and `--wave-2` instead, which are both oklch(72% 0.15 155): a
+    // selection would then be the same colour as a waveform and as the meter
+    // saying a level is safe. So this sits brighter, more saturated and seven
+    // degrees warmer — same family, its own voice.
+    '--accent':      '#4fcc5b', // oklch(75% 0.190 145)
+  },
+};
+
 const THEME_PALETTES = [
+  CONIFER,
   { id: 'cocoa-topaz-noonday', name: 'Cocoa topaz noonday', colors: ['#742f14', '#5a84ac', '#c7ac9f', '#fc9c44', '#5c3c2c'] },
   { id: 'amber-walnut-morning', name: 'Amber walnut morning', colors: ['#ebefee', '#ccb499', '#c8906d', '#bb6c43', '#4a413c'] },
   { id: 'driftwood-pearl-morning', name: 'Driftwood pearl morning', colors: ['#bc7b6f', '#5a322a', '#e4a499', '#718a9e', '#cccdc7'] },
