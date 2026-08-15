@@ -67,8 +67,41 @@ source can be the ring, and the honest handling differs for each.
 | **Large overview** (whole file) | the file, read region travelling | the file, with the region the ring was *filled from* — the read head is parked | the region that became the table, frozen |
 | **Main lane waveform** | the file at zoom | unchanged — still the file | unchanged; the table is shown elsewhere |
 | **Grain layer** over the lane | grains at their source positions | **grains sourced from the ring cannot be drawn at file positions** — see below | one grain, spanning the loop |
-| **Cloud pad** in the stretch panel | the read band and cloud | same, plus the ring's fill | collapses — no travel to show |
-| **The ten panel views** | the schedule, as now | the schedule is still pure, so they all still work — but their *source* axis now means the ring | degenerate: one grain repeating is not a cloud |
+| **Cloud pad** in the stretch panel | the read band and cloud | same, plus the ring's fill | replaced by the waveshape view |
+| **Swarm**, 3D and 2D | the cloud at the playhead | unchanged in kind — the schedule is still pure | degenerate: one repeating grain is not a cloud |
+
+## Three views, not eleven
+
+The panel drops from ten views to **two — Swarm 3D and Swarm 2D — plus the
+waveshape view for wavetable.** Shear, Braid, Shells, Lattice and the whole V2
+suite go.
+
+That is partly taste, and the rest is forced by this engine.
+
+**The object views cannot survive a ring.** Shear is *output time against source
+time* — the stretch drawn as a slope. Braid winds source time into a helix.
+Shells maps an octave to a shell. Every one of them has **source position** as a
+structural axis, and once a grain reads from the ring there is no source
+position for it to have. They would not degrade; they would be drawing an axis
+that no longer exists.
+
+**The moment views do survive**, because they are about *now* rather than about
+the file. Swarm shows the grains within a horizon of the playhead, and that
+question stays meaningful whatever the grains are reading. This was already the
+better view before the sixth engine existed — the rewrite from a closed object
+to a moment is what made it good — and the engine now makes it the only kind
+that can be honest.
+
+So the cut follows the same rule as everything else here: **keep what can still
+tell the truth.**
+
+Two dimensionalities of one view is deliberate rather than redundant. 2D is
+cheap, legible and reads at a glance while editing; 3D is the one to look at.
+Same data, same enumeration, different spend.
+
+**And it makes the port affordable.** Each surviving view is rewritten by hand
+in WGSL. Two and a waveshape is a fortnight; ten was the largest single line
+item in the roadmap.
 
 ## The thing WITNESS will not allow
 
@@ -142,6 +175,8 @@ to start.
    when you most want to see what is happening.
 4. **How are ring-sourced grains marked?** Colour is the obvious answer and the
    palette is already carrying pitch.
-5. **What do the ten views do in wavetable mode?** One repeating grain is not a
-   cloud. Going blank is honest but bleak; showing the table is a different
-   picture in a slot that promised a cloud.
+5. **Does Swarm hand over to the waveshape view automatically as the cloud
+   collapses, or do they stay separately selectable?** Handing over follows the
+   sound and means the panel is never showing a cloud that is not there.
+   Separate means you can watch the collapse happen in the view that is losing
+   its subject, which is arguably the more interesting thing to see.
