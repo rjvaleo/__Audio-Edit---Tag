@@ -6727,17 +6727,6 @@ function gonioNoise(i, salt, seed) {
   return x - Math.floor(x);
 }
 
-/// What a correlation figure means, in words.
-///
-/// The number is exact and unreadable at a glance. These are the four readings
-/// that change what you would do about it.
-function corrWord(c) {
-  if (c < -0.2) return 'out of phase';
-  if (c < 0.25) return 'very wide';
-  if (c < 0.85) return 'stereo';
-  return 'near mono';
-}
-
 const gonioCam = { yaw: 0.6, pitch: -0.34, drag: null };
 let gonioSketch = null;
 
@@ -6820,7 +6809,6 @@ function startGonio() {
       const grains = state.grains?.grains;
       const sr = state.grains?.sampleRate || state.view?.sampleRate || 48000;
       const playFrame = playbackTime() * sr;
-      let specks = 0;
 
       if (grains?.length && !k.idle) {
         const want = Math.min(MAX_SPECKS, Math.round(70 + k.population * 400));
@@ -6862,7 +6850,6 @@ function startGonio() {
           else s.ambientMaterial(col[0], col[1], col[2]);
           s.sphere(r, SPECK_X, SPECK_Y);
           s.pop();
-          specks++;
         }
       }
 
@@ -6886,19 +6873,6 @@ function startGonio() {
         }
       }
       s.blendMode(s.BLEND);
-
-      // Said plainly as well as drawn. Below zero the two sides are cancelling
-      // — the fault a goniometer exists to show, and the one thing about a
-      // stereo image you cannot reliably read off the shape at a glance.
-      const read = $('gonioRead');
-      if (read) {
-        const corr = engine.correlation ?? 1;
-        const sign = corr >= 0 ? '+' : '\u2212';
-        read.textContent =
-          `corr ${sign}${Math.abs(corr).toFixed(2)}   ${corrWord(corr)}\n`
-          + (k.idle ? 'idling' : `${specks} specks   bore ${Math.round(k.width * 100)}%`);
-        read.classList.toggle('out-of-phase', corr < 0);
-      }
     };
   });
 
