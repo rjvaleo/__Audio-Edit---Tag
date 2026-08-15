@@ -21,9 +21,20 @@
      A waveform is a reading, not decoration: it is the thing you judge level
      and shape by, and it has to look the same every time you look at it. Tie it
      to the accent and a palette can turn every waveform in the program brown.
-     Deliberately absent from the theme map. */
-  --wave:      oklch(70% 0.16 230);
-  --wave-2:    oklch(72% 0.15 155);
+     Deliberately absent from the theme map.
+
+     Green is the one drawn, blue the alternative — they swapped on 15 Aug 2026.
+     The green is Conifer's accent exactly, oklch(75% 0.19 145), which restores
+     the relationship the blue original had: there, the accent *was* the
+     waveform, both oklch(70% 0.16 230) to the digit. Matching is the design,
+     not a collision — what must never happen is a *palette* moving it, and that
+     is prevented by the token being outside the map rather than by it being an
+     unusual colour.
+
+     `--good` stays oklch(72% 0.15 155) and is deliberately not this: a meter
+     saying a level is safe must not be the same green as the level itself. */
+  --wave:      oklch(75% 0.19 145);
+  --wave-2:    oklch(70% 0.16 230);
 
   --shadow-soft: rgba(0,0,0,0.25);
   --shadow:      rgba(0,0,0,0.55);
