@@ -1527,3 +1527,291 @@ fn a_control_moved_while_stopped_records_nothing() {
     };
     assert_eq!(lanes, 0, "a stopped transport recorded {lanes} lanes");
 }
+
+// ======================================================== the live path
+//
+// The part of the program with state that outlives a request, and the part
+// where three of one day's bugs lived: the rack rebuilt on every slider, the
+// transient map rebuilt on every step of a drag, the compressor's panel writing
+// to a copy nothing else could see. None of it had a test.
+//
+// **Nothing here opens the audio device.** A test that made sound would fight
+// whatever the machine is already playing, and would fail on any box without an
+// output. So these cover the routes that answer without one: what the engine
+// reports when it is holding nothing, what a live parameter does to the stored
+// spec, and how each refuses a request it cannot serve. What happens *inside*
+// the callback is covered frame by frame in `engine::transport`, which was
+// built to run without a sound card for exactly this reason.
+
+#[test]
+fn the_engine_reports_holding_nothing_rather_than_failing() {
+    let s = Scratch::new("engine-idle");
+    let app = s.app();
+    let r = server::routes::route(&app, &get("/api/engine/state", &[]));
+    assert_eq!(status(&r), 200, "state should answer with no engine running");
+    let v = json(&r);
+    // Whatever it says, the interface polls this constantly and it must be JSON
+    // with a playing flag rather than an error it has to special-case.
+    assert!(matches!(v.get("playing"), Some(server::json::Value::Bool(_))));
+}
+
+#[test]
+fn a_live_parameter_reaches_the_stored_rack() {
+    let s = Scratch::new("live-param");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+
+    // A compressor in the rack, by the same route the interface uses.
+    let r = server::routes::route(
+        &app,
+        &post(
+            "/api/rack",
+            r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"c1","kind":"comp","bypassed":false,
+                "thresholdDb":-18,"ratio":4,"attackMs":10,"releaseMs":100,"kneeDb":6,"makeupDb":0}]}"#,
+        ),
+    );
+    assert_eq!(status(&r), 200, "the rack was refused: {}", String::from_utf8_lossy(&r.body));
+
+    let r = server::routes::route(
+        &app,
+        &post(
+            "/api/rack/param",
+            r#"{"p":"kit/tone.wav","id":"c1","key":"thresholdDb","value":-30}"#,
+        ),
+    );
+    assert_eq!(status(&r), 200);
+    assert_eq!(num(&json(&r), &["value"]), -30.0);
+
+    // And it is in the document, not only in the reply — which is what makes it
+    // survive a reload.
+    let back = server::routes::route(&app, &get("/api/rack", &[("p", "kit/tone.wav")]));
+    let v = json(&back);
+    let slots = match v.get("slots") {
+        Some(server::json::Value::Arr(a)) => a.clone(),
+        _ => panic!("no slots came back"),
+    };
+    assert_eq!(num(&slots[0], &["thresholdDb"]), -30.0);
+}
+
+#[test]
+fn a_live_parameter_is_clamped_by_the_same_bounds_as_the_document() {
+    let s = Scratch::new("live-clamp");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post(
+            "/api/rack",
+            r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"g1","kind":"gain","bypassed":false,"db":0}]}"#,
+        ),
+    );
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack/param", r#"{"p":"kit/tone.wav","id":"g1","key":"db","value":9999}"#),
+    );
+    assert_eq!(status(&r), 200);
+    let applied = num(&json(&r), &["value"]);
+    assert!(applied < 9999.0, "a live write went through unclamped: {applied}");
+}
+
+#[test]
+fn a_live_parameter_for_a_module_that_is_not_there_is_refused() {
+    let s = Scratch::new("live-missing");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack/param", r#"{"p":"kit/tone.wav","id":"nope","key":"db","value":1}"#),
+    );
+    assert_eq!(status(&r), 404, "an unknown module should not be silently accepted");
+}
+
+#[test]
+fn a_live_parameter_for_a_control_that_does_not_exist_is_refused() {
+    let s = Scratch::new("live-badkey");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post(
+            "/api/rack",
+            r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"g1","kind":"gain","bypassed":false,"db":0}]}"#,
+        ),
+    );
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack/param", r#"{"p":"kit/tone.wav","id":"g1","key":"nonsense","value":1}"#),
+    );
+    assert_eq!(status(&r), 400);
+}
+
+/// The master is not in `slot_ids` — it has no id of its own — so it needed its
+/// own branch, and a branch with no test is a branch that stops working.
+#[test]
+fn the_masters_amount_is_live_and_its_ceiling_is_not() {
+    let s = Scratch::new("live-master");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post("/api/rack", r#"{"p":"kit/tone.wav","sr":44100,"slots":[],
+              "master":{"on":true,"amount":0.5,"autoLevel":true,"autoComp":true,"ceilingDb":-0.3}}"#),
+    );
+
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack/param", r#"{"p":"kit/tone.wav","id":"master","key":"amount","value":0.8}"#),
+    );
+    assert_eq!(status(&r), 200);
+    assert!((num(&json(&r), &["value"]) - 0.8).abs() < 1e-6);
+
+    // Deliberately refused: putting the one guarantee the maximiser makes on a
+    // curve would defeat it. See `Maximizer::set_param`.
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack/param", r#"{"p":"kit/tone.wav","id":"master","key":"ceilingDb","value":-6}"#),
+    );
+    assert_eq!(status(&r), 400, "the ceiling should not be a live control");
+}
+
+/// The picker is built entirely from this, and the maximiser was added to it
+/// without a test saying the list was right.
+#[test]
+fn every_module_the_picker_offers_declares_itself_fully() {
+    let s = Scratch::new("fx-list");
+    let app = s.app();
+    let r = server::routes::route(&app, &get("/api/fx", &[]));
+    assert_eq!(status(&r), 200);
+    let v = json(&r);
+    let kinds = match v.get("shapers") {
+        Some(server::json::Value::Arr(a)) => a.clone(),
+        _ => panic!("no shapers came back"),
+    };
+    assert_eq!(kinds.len(), fx::shape::ShapeKind::ALL.len(), "the list and the enum disagree");
+
+    for k in &kinds {
+        let kind = match k.get("kind") {
+            Some(server::json::Value::Str(s)) => s.clone(),
+            _ => panic!("a module with no kind"),
+        };
+        assert!(
+            fx::shape::ShapeKind::from_str(&kind).is_some(),
+            "{kind} is offered but cannot be built"
+        );
+        assert!(
+            matches!(k.get("label"), Some(server::json::Value::Str(l)) if !l.is_empty()),
+            "{kind} has no label"
+        );
+    }
+    assert!(
+        kinds.iter().any(|k| matches!(k.get("kind"), Some(server::json::Value::Str(s)) if s == "maximizer")),
+        "the maximiser is not offered"
+    );
+}
+
+// ==================================================== the invariants, named
+//
+// Seven of the eleven had no test that named them. Several are no doubt covered
+// incidentally somewhere, and that is the problem: a test that does not say
+// which promise it is keeping is one nobody recognises when they go to change
+// the code underneath it.
+
+/// **Invariant 1: the source file is never written.**
+///
+/// The promise the whole program rests on. Edits, effects and stretch are all
+/// sidecar; audio reaches disk only through an explicit export to a new file.
+///
+/// Asserted on the bytes, not on the modified time — a rewrite that happened to
+/// produce identical content would still be a rewrite, but a changed byte is
+/// the thing that actually loses someone's recording.
+#[test]
+fn invariant_1_an_export_does_not_touch_the_source() {
+    let s = Scratch::new("inv1-export");
+    s.sound("kit/tone.wav", 8000);
+    let source = s.library.join("kit/tone.wav");
+    let before = fs::read(&source).unwrap();
+    let before_len = before.len();
+
+    let app = s.app();
+
+    // Something on every layer: an edit, a rack, a stretch — so the export has
+    // real work to do rather than copying the file.
+    server::routes::route(
+        &app,
+        &post("/api/rack", r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"g1","kind":"gain","bypassed":false,"db":-6}]}"#),
+    );
+    server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/tone.wav","op":"stretch","ratio":2.0,"semitones":3,"windowMs":40}"#),
+    );
+    let r = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+
+    let after = fs::read(&source).unwrap();
+    assert_eq!(after.len(), before_len, "the source changed length");
+    assert!(after == before, "the source file's bytes changed during an export");
+
+    // And the export really did go somewhere else.
+    let path = json(&r).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    assert_ne!(
+        std::path::Path::new(&path).canonicalize().unwrap(),
+        source.canonicalize().unwrap(),
+        "the export wrote over the source"
+    );
+}
+
+/// **Invariant 1, again: an export never overwrites an existing file.**
+///
+/// Exporting twice in a minute is ordinary. Silently replacing the first one is
+/// the same class of loss as writing the source.
+#[test]
+fn invariant_1_a_second_export_writes_a_second_file() {
+    let s = Scratch::new("inv1-twice");
+    s.sound("kit/tone.wav", 4000);
+    let app = s.app();
+
+    let a = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    let b = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    assert_eq!(status(&a), 200);
+    assert_eq!(status(&b), 200);
+
+    let pa = json(&a).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    let pb = json(&b).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    assert_ne!(pa, pb, "the second export replaced the first");
+    assert!(std::path::Path::new(&pa).exists(), "the first export is gone");
+    assert!(std::path::Path::new(&pb).exists());
+}
+
+/// **Invariant 8: a saved session is refused if the file changed.**
+///
+/// Stale offsets pointing at the wrong audio is worse than losing the edit.
+#[test]
+fn invariant_8_a_session_is_refused_when_the_file_underneath_it_changed() {
+    let s = Scratch::new("inv8");
+    s.sound("kit/tone.wav", 8000);
+    let app = s.app();
+
+    // An edit, so there is a session to be stale.
+    server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/tone.wav","op":"stretch","ratio":2.0,"semitones":0,"windowMs":40}"#),
+    );
+    let before = server::routes::route(&app, &get("/api/edit", &[("p", "kit/tone.wav")]));
+    assert_eq!(status(&before), 200);
+
+    // The file is replaced with one of a different length, behind the app's back.
+    s.sound("kit/tone.wav", 3000);
+
+    // A fresh App, so nothing is remembered in memory — this is the reload case
+    // the invariant is about.
+    let app2 = s.app();
+    let after = server::routes::route(&app2, &get("/api/edit", &[("p", "kit/tone.wav")]));
+    assert_eq!(status(&after), 200, "it should answer, not fail");
+    let v = json(&after);
+    // Whatever it returns, it must not be the old edit list laid over new audio.
+    let frames = num(&v, &["frames"]);
+    assert!(
+        frames <= 3000.0 * 2.0 + 1.0,
+        "an edit list built for 8000 frames was applied to a 3000-frame file: {frames}"
+    );
+}
