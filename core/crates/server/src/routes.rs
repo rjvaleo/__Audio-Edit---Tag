@@ -31,6 +31,13 @@ pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 pub const UI_HTML: &str = include_str!("../../../../ui/index.html");
 pub const UI_CSS: &str = include_str!("../../../../ui/app.css");
 pub const UI_JS: &str = include_str!("../../../../ui/app.js");
+/// The palette-to-theme engine and the palettes it works on.
+///
+/// Separate files rather than more of `app.js` because the engine is a port and
+/// is worth keeping recognisable as one — its arithmetic came from elsewhere and
+/// should stay diffable against where it came from.
+pub const THEME_JS: &str = include_str!("../../../../ui/theme-derive.js");
+pub const THEME_PALETTES_JS: &str = include_str!("../../../../ui/theme-palettes.js");
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
     match (req.method.as_str(), req.path.as_str()) {
@@ -61,6 +68,12 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET" | "HEAD", "/app.css") => {
             Response::ok("text/css; charset=utf-8", UI_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/theme-palettes.js") => {
+            Response::ok("text/javascript; charset=utf-8", THEME_PALETTES_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/theme-derive.js") => {
+            Response::ok("text/javascript; charset=utf-8", THEME_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/app.js") => {
             Response::ok("text/javascript; charset=utf-8", UI_JS.as_bytes().to_vec())

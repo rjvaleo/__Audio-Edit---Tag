@@ -36,6 +36,7 @@
     <button class="rail-btn" data-panel="scan" title="Scan">◴</button>
     <button class="rail-btn" data-panel="import" title="Library folder">⌂</button>
     <button class="rail-btn" data-panel="record" title="Record">●</button>
+    <button class="rail-btn" data-panel="theme" title="Theme">◑</button>
   </nav>
 
   <!-- left panel: the whole library, playable -->
@@ -103,6 +104,27 @@
       </div>
       <p class="note">Scanning reads headers and classifies every file. It never
       renames, moves or deletes anything.</p>
+    </div>
+
+    <div class="panel-body hidden" id="paneTheme">
+      <div class="field-label">Palette</div>
+      <div class="fx-note">A palette gives colour and direction; the ladder of
+      surfaces, text and borders is derived from it, so contrast holds whatever
+      the colours are. Good, warning and bad keep their own hues — a theme is not
+      allowed to repaint what they mean.</div>
+      <div class="theme-list" id="themeList"></div>
+      <div class="divider"></div>
+      <div class="fx-row">
+        <button class="ghost" id="themeNone">No theme</button>
+        <button class="ghost" id="themePlain" title="Light palettes only: take the tint out of the surfaces and leave it in the borders and text">Plain surfaces</button>
+      </div>
+      <div class="divider"></div>
+      <div class="field-label">Your own</div>
+      <div class="fx-row">
+        <input class="mono" id="themeColors" placeholder="#1a1a24 #7c5cff #2ee6a8 …">
+        <button class="primary" id="themeAdd">Add</button>
+      </div>
+      <div class="fx-note">Two colours is enough; four to six reads best.</div>
     </div>
 
     <div class="panel-body hidden" id="paneImport">
@@ -511,6 +533,10 @@
 
 <div class="toast hidden" id="toast"></div>
 
+<!-- Before app.js: the theme engine is plain script, and `Theme` has to exist
+     by the time the rail is built. -->
+<script src="/theme-palettes.js"></script>
+<script src="/theme-derive.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
