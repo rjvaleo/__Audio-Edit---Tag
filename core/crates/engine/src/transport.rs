@@ -19,6 +19,34 @@ use crate::stretcher::Stretcher;
 /// clicks without it.
 const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 
+/// The shortest loop the wrap-and-crossfade path will accept.
+///
+/// Not a musical limit. It is where *wrapping* stops being the right mechanism:
+/// 64 frames is 750 Hz at 48 kHz, so the seam rate is already inside the audio
+/// band, and every wrap calls [`Stretcher::seek`], which re-primes the engine —
+/// FFT state for the vocoder. The cost per second of audio climbs without
+/// bound as the loop shortens. Loops below this want a phase accumulator over
+/// the loop region rather than a smaller number here.
+const MIN_LOOP_FRAMES: u64 = 64;
+
+/// How much fade the seam of a loop this long can afford.
+///
+/// A quarter of the loop, capped at the usual [`LOOP_FADE_FRAMES`]. Ordinary
+/// loops are far longer than 2 kframes and get the full fade; the quarter is
+/// what keeps a short loop from being eaten by its own seam, since a 600-frame
+/// loop given 512 frames of fade either side is almost entirely ramp.
+///
+/// This replaces a guard that refused to loop at all below `LOOP_FADE_FRAMES *
+/// 2`. Refusing was the wrong failure: `loop_bounds` returning `None` means
+/// "not looping" to the caller, which then plays to the end of the document and
+/// pauses. A short loop stopped playback instead of degrading it, and did so
+/// silently. Degrading is the whole point — the fade shrinks, the seam gets
+/// harder, and at the bottom of the range the fade *is* the waveform.
+fn loop_fade(a: u64, b: u64) -> usize {
+    let quarter = (b.saturating_sub(a) / 4) as usize;
+    LOOP_FADE_FRAMES.min(quarter)
+}
+
 /// Window for the output spectrum. About 21 ms at 48 kHz — enough resolution to
 /// be worth looking at, cheap enough to run in the callback.
 const FFT_SIZE: usize = 1024;
@@ -430,7 +458,7 @@ impl Shared {
             0 => end,
             n => n.min(end.max(1)),
         };
-        if b > a + LOOP_FADE_FRAMES as u64 * 2 {
+        if b > a + MIN_LOOP_FRAMES {
             Some((a, b))
         } else {
             None
@@ -851,6 +879,11 @@ impl Core {
             }
         }
 
+        // The seam fade, sized to this loop. Both sides of the wrap use it, so
+        // it is resolved once rather than per chunk — and so the ramp down and
+        // the ramp up are always the same length.
+        let seam = bounds.map_or(LOOP_FADE_FRAMES, |(a, b)| loop_fade(a, b));
+
         let mut filled = 0usize;
         // Where in this block fresh post-wrap material begins, if it does.
         let mut wrapped_at: Option<usize> = None;
@@ -877,7 +910,7 @@ impl Core {
                     // Fade the tail of what we just wrote, then jump. One
                     // source, so this is a fade across the seam rather than an
                     // overlap of two copies.
-                    fade_out(slice, channels, LOOP_FADE_FRAMES);
+                    fade_out(slice, channels, seam);
                     self.renderer.seek(a, &self.params);
                     wrapped_at = Some(filled + chunk);
                 }
@@ -890,7 +923,7 @@ impl Core {
         // everything.
         if let Some(start) = wrapped_at {
             if start < frames {
-                fade_in(&mut out[start * channels..], channels, LOOP_FADE_FRAMES);
+                fade_in(&mut out[start * channels..], channels, seam);
             }
         }
 
@@ -1029,5 +1062,88 @@ fn fade_in(block: &mut [f32], channels: usize, n: usize) {
         for ch in 0..channels {
             block[i * channels + ch] *= k;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fx::grain::StreamParams;
+
+    /// A `Shared` is only atomics plus two mutexes; the source never gets read
+    /// by `loop_bounds`, so an empty one is honest here rather than a stub.
+    fn shared() -> Shared {
+        Shared::new(
+            StreamParams::new(48_000, 48_000),
+            Arc::new(Source { samples: Vec::new(), channels: 2 }),
+        )
+    }
+
+    /// The bug this replaced: a loop of 1000 output frames is shorter than the
+    /// old `LOOP_FADE_FRAMES * 2` guard, so `loop_bounds` returned `None` —
+    /// which the caller reads as "not looping", plays to the end of the
+    /// document and pauses. A short loop stopped the machine.
+    ///
+    /// It is stretch-dependent because `a` and `b` are *output* frames: the
+    /// same region of source falls under the threshold as the ratio drops.
+    #[test]
+    fn a_loop_shorter_than_the_old_threshold_is_honoured() {
+        let s = shared();
+        s.set_loop(true, 0, 1000);
+        assert_eq!(s.loop_bounds(100_000), Some((0, 1000)));
+    }
+
+    #[test]
+    fn a_loop_of_a_few_hundred_frames_is_honoured() {
+        let s = shared();
+        s.set_loop(true, 4_000, 4_300);
+        assert_eq!(s.loop_bounds(100_000), Some((4_000, 4_300)));
+    }
+
+    /// Still refused below the point where wrapping is the wrong mechanism —
+    /// see `MIN_LOOP_FRAMES`. This is the boundary, not a musical judgement.
+    #[test]
+    fn a_loop_at_or_under_the_floor_is_still_refused() {
+        let s = shared();
+        s.set_loop(true, 0, MIN_LOOP_FRAMES);
+        assert_eq!(s.loop_bounds(100_000), None);
+        s.set_loop(true, 0, MIN_LOOP_FRAMES + 1);
+        assert!(s.loop_bounds(100_000).is_some());
+    }
+
+    #[test]
+    fn loop_off_means_no_bounds_however_long_the_region() {
+        let s = shared();
+        s.set_loop(false, 0, 50_000);
+        assert_eq!(s.loop_bounds(100_000), None);
+    }
+
+    /// An ordinary loop is far longer than 2 kframes and is unaffected by any
+    /// of this — it gets exactly the fade it always got.
+    #[test]
+    fn an_ordinary_loop_keeps_the_full_fade() {
+        assert_eq!(loop_fade(0, 48_000), LOOP_FADE_FRAMES);
+        assert_eq!(loop_fade(10_000, 12_048), LOOP_FADE_FRAMES);
+    }
+
+    /// The seam can never eat more than half the loop, because both sides get
+    /// `loop_fade` and each is capped at a quarter. That is the property the
+    /// old guard was protecting by refusing to loop at all.
+    #[test]
+    fn the_two_fades_never_cover_more_than_half_a_loop() {
+        for len in [65u64, 100, 256, 512, 1000, 2048, 4096, 48_000] {
+            let fade = loop_fade(0, len) as u64;
+            assert!(
+                fade * 2 <= len,
+                "a {len}-frame loop got {fade} frames of fade on each side"
+            );
+        }
+    }
+
+    #[test]
+    fn a_short_loop_gets_a_short_fade_rather_than_none() {
+        assert_eq!(loop_fade(0, 400), 100);
+        assert_eq!(loop_fade(0, 100), 25);
+        assert!(loop_fade(0, 65) >= 1, "a loop above the floor must still fade");
     }
 }
