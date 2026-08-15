@@ -29,9 +29,10 @@ test('the engine and its palettes are served and loaded', async ({ page }) => {
 test('every palette derives a complete set of this app’s tokens', async ({ page }) => {
   await ready(page);
   const report = await page.evaluate(() => {
-    const wanted = ['--bg', '--surface', '--surface-2', '--surface-3', '--well',
+    const wanted = ['--sink', '--well', '--bg', '--surface-0', '--surface',
+      '--surface-2', '--surface-2h', '--surface-3',
       '--text', '--text-2', '--text-dim', '--text-dimmer',
-      '--line', '--line-2', '--accent', '--good', '--warn', '--bad'];
+      '--accent', '--good', '--warn', '--bad'];
     const bad = [];
     for (const p of THEME_PALETTES) {
       const { tokens } = Theme.appTokens(p.colors);
@@ -98,4 +99,40 @@ test('status colours stay recognisable under every palette', async ({ page }) =>
     return out;
   });
   expect(bad, 'a palette moved a status colour off its meaning').toEqual([]);
+});
+
+
+/// The property nothing was testing, and the one that decides whether a theme
+/// looks like a design or like a mistake.
+///
+/// The chrome reads depth as lightness: each surface step must be lighter than
+/// the one beneath it. The first token map broke this — it put the well *above*
+/// the background — and no amount of good palette rescues an interface whose
+/// panels are darker than the holes cut in them.
+test('every offered palette keeps the surface ladder in order', async ({ page }) => {
+  await ready(page);
+  const broken = await page.evaluate(() => {
+    const steps = ['--sink', '--well', '--bg', '--surface-0', '--surface',
+      '--surface-2', '--surface-3'];
+    const lum = (c) => {
+      const hex = /^#([0-9a-f]{6})$/i.exec(c);
+      const rgb = /rgb\((\d+) (\d+) (\d+)\)/.exec(c);
+      const [r, g, b] = hex
+        ? [0, 2, 4].map((i) => parseInt(hex[1].substr(i, 2), 16))
+        : [+rgb[1], +rgb[2], +rgb[3]];
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const out = [];
+    // Only what the picker offers: light palettes are withheld precisely
+    // because this interface cannot wear them yet.
+    for (const p of allPalettes()) {
+      const t = Theme.appTokens(p.colors).tokens;
+      const ls = steps.map((k) => lum(t[k]));
+      for (let i = 1; i < ls.length; i++) {
+        if (ls[i] < ls[i - 1] - 1) { out.push(`${p.name} at ${steps[i]}`); break; }
+      }
+    }
+    return out;
+  });
+  expect(broken, 'palettes whose surfaces do not get lighter as they rise').toEqual([]);
 });
