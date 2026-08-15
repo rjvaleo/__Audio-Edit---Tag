@@ -1,13 +1,18 @@
 # Audio Edit & Tag
 
-[![Rust](https://img.shields.io/badge/Rust-1.97-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.97.1-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2021-000000?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
-[![Tests](https://img.shields.io/badge/tests-879%20passing-2ea44f)](#building-from-source)
+[![Cargo](https://img.shields.io/badge/Cargo-workspace-000000?logo=rust&logoColor=white)](#the-workspace)
+[![Tests](https://img.shields.io/badge/tests-934%20passing-2ea44f)](#building-from-source)
+[![Browser tests](https://img.shields.io/badge/browser%20tests-10%20passing-2ea44f?logo=playwright&logoColor=white)](#testing)
 [![Crates](https://img.shields.io/badge/workspace-10%20crates-dea584?logo=rust&logoColor=white)](#the-workspace)
-[![Lines](https://img.shields.io/badge/Rust-36k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
+[![Lines](https://img.shields.io/badge/Rust-47k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
 [![Dependencies](https://img.shields.io/badge/direct%20deps-2-4c9a2a)](#the-stack)
+[![Unsafe](https://img.shields.io/badge/unsafe-none%20in%20the%20program-2ea44f?logo=rust&logoColor=white)](#the-stack)
 [![Engines](https://img.shields.io/badge/stretch%20engines-5%20live-8957e5)](#time-stretching)
 [![Shapers](https://img.shields.io/badge/live%20shapers-9-8957e5)](#live-shaping)
+[![Views](https://img.shields.io/badge/grain%20views-10-8957e5)](#watching-the-grains)
+[![Themes](https://img.shields.io/badge/themes-20%20palettes-8957e5)](#themes)
 [![Export](https://img.shields.io/badge/export-AIFF%20%2B%20embedded%20settings-6aa84f)](#export)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](#start-here)
 [![Windows](https://img.shields.io/badge/Windows-x86__64%20cross--built-0078D6?logo=windows&logoColor=white)](#building-from-source)
@@ -45,6 +50,7 @@ Library tab.
 | **Stretch** | Five engines, **all five running live in the audio callback**, answering one shared set of controls |
 | **Shape** | Nine effects that run under your fingers while the sound plays, rather than being applied and waited for |
 | **Watch** | Ten grain visualisers drawn from the same schedule the renderer is working through |
+| **Theme** | Twenty palettes, each deriving the whole interface from a handful of colours. Waveforms stay green or blue in every one of them |
 | **Export** | AIFF beside the original, named for what was done to it, with every setting written inside the file |
 
 ## The stack
@@ -128,13 +134,14 @@ cross-build".
 | `audio-core` | 2928 | 86 | Container probe and decode (WAV, AIFF, AIFC, headerless PCM), **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 12582 | 237 | RBJ biquads, parametric EQ, compressor, channel maximiser, **five stretchers**, **nine live shapers**, the parameter layer, and the sines/transients/noise separation |
-| `edit` | 3429 | 112 | Non-destructive edit list, **zero-crossing snap**, **measurement** (peak, RMS, silence, clicks), windowed render, WAV and AIFF export |
-| `engine` | 3243 | 44 | Real-time block renderer, all five streaming engines, transport, cpal device |
+| `fx` | 18186 | 308 | RBJ biquads, parametric EQ, compressor, channel maximiser, **five stretchers**, **nine live shapers**, the parameter layer, and the sines/transients/noise separation |
+| `edit` | 3540 | 112 | Non-destructive edit list, **zero-crossing snap**, **measurement** (peak, RMS, silence, clicks), windowed render, WAV and AIFF export |
+| `engine` | 4794 | 69 | Real-time block renderer, all five streaming engines, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1453 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 9395 | 189 | HTTP/1.1 on `std::net`, 37 API routes, JSON, persistence, **marker and region commands** |
-| `audiolab` | 58 | — | The binary |
+| `server` | 13367 | 242 | HTTP/1.1 on `std::net`, 44 API routes, JSON, persistence, **marker and region commands**, the live bridge to the audio thread |
+| `audiolab` | 67 | — | The binary |
+| | **47282** | **934** | |
 
 ## Time stretching
 
@@ -358,6 +365,62 @@ five snares sit 0.85–0.91 of each other and the first *unrelated* sound is at
 0.838. Your own tags never mix into the suggested field, or the system learns
 from itself.
 
+## Watching the grains
+
+Ten views in two suites, at `/grains3d` — standalone, or in a pop-over over the
+editor. They are **not a decoration over the audio**: the picture is drawn from
+`fx::grain::grains()`, the same schedule the renderer is working through, with
+`rand01` ported to JavaScript as a BigInt splitmix64 that matches the Rust
+exactly. A grain you see is a grain you hear.
+
+| Suite | Views | Idea |
+|---|---|---|
+| **The object** | Shear · Braid · Swarm · Shells · Lattice | The whole stretch as a shape you can look around. The ratio is not a number here — it is the slope |
+| **The moment** | Tunnel · Mandala · Rorschach · Vortex · Ripple | Centred on *now*, mirrored, with time moving past a fixed camera |
+
+Each view has a factory look of its own — speed, glow, orbit, trail, colour-by,
+mirrors, palette — and sixteen slots to store your own. Look and slots go to
+`localStorage` because decisions should outlive the window; the camera goes to
+`sessionStorage`, because an empty store *is* the signal that this is the
+session's first look, which is what makes every view open zoomed in on the
+playhead.
+
+## Themes
+
+Twenty palettes, ported from Emovis, each one deriving the whole interface — a
+hundred-odd tokens — from four to six colours. Pick one from **Theme** in the
+left rail.
+
+Two decisions worth knowing, because both look like bugs otherwise:
+
+- **Waveforms are always green or blue**, in the browser, in the editor and in
+  every panel, whatever the theme is doing. Audio is the thing you are reading;
+  it does not get restyled. `--wave` and `--wave-2` sit deliberately outside the
+  theme, as do the status colours.
+- **The library ships 47 palettes and the picker offers 20.** The chrome reads
+  depth as lightness — a raised surface is a lighter one — which is a dark-theme
+  assumption in every panel. All 27 light palettes break that ladder and all 20
+  dark ones hold it, so the light ones are withheld rather than shown broken.
+
+## Testing
+
+    cargo test --release --manifest-path core/Cargo.toml     # 934
+    npm run check                                            # the interface, statically
+    npm run test:ui                                          # the interface, in a browser
+
+The Rust tests are the bulk of it and need nothing installed. The other two are
+development tooling — `package.json` exists for them alone; the application is
+the binary and has no Node in it anywhere.
+
+| | |
+|---|---|
+| `tools/ui-check.mjs` | Reads `ui/` and finds what does not resolve — a control with no default, a pane with no entry in the map, a function nothing calls. It found two dead functions on its first run, one of which had quietly removed the channel maximiser from the product for three days. Runs under `cargo test` too, via `server/tests/interface.rs` |
+| `tools/scratch-server.mjs` | A throwaway instance on a port of its own with a library of its own, so nothing here can touch a working session. `--check` runs 13 API checks |
+| `tests/ui/*.spec.mjs` | Playwright, against that scratch server. The only thing that catches a panel which builds without error and shows nothing — which has happened, more than once |
+
+The last one exists because static analysis cannot see a panel that is present,
+correct and zero pixels tall.
+
 ## Documentation
 
 | | |
@@ -366,6 +429,11 @@ from itself.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How it is built, as built — the crates, the edit model, the DSP, the real-time layers, the server, what it stores |
 | [`docs/CONTROLS.md`](docs/CONTROLS.md) | Every control: click, drag, alt-drag, double-click, right-click, press-and-hold, wheel, keyboard |
 | [`docs/MENUS.md`](docs/MENUS.md) | Every menu item, what it needs to be available, and what it does |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Where this is going — a sellable product, then VST and AU, and what each step costs |
+| [`docs/LICENSING-POLICY.md`](docs/LICENSING-POLICY.md) | What may and may not be read or linked, and why provenance matters once something is for sale |
+| [`docs/THIRD-PARTY.md`](docs/THIRD-PARTY.md) | Every dependency, its licence, and what it would take to remove it |
+| [`docs/LIVE-STATE-AUDIT.md`](docs/LIVE-STATE-AUDIT.md) | Every place a value change used to rebuild the object holding the state — the reverb-tail bug and its siblings |
+| [`docs/TEST-COVERAGE-AUDIT.md`](docs/TEST-COVERAGE-AUDIT.md) | What is tested, what is not, and which invariants no test has yet named |
 | [`visualiser/PRECOMPUTED-WEATHER.md`](visualiser/PRECOMPUTED-WEATHER.md) | The aesthetic argument behind the ten grain views |
 | [`Reference Docs/md/STRETCH-ROADMAP.md`](Reference%20Docs/md/STRETCH-ROADMAP.md) | The stretching theories, which are implemented, and what is next |
 | [`Reference Docs/md/`](Reference%20Docs/md/) | Every reference PDF extracted to markdown — the Driedger thesis, the Peak manual chapters. **Read these, not the PDFs** |
@@ -377,12 +445,18 @@ from itself.
     bin/              built programs, if you have them. Not in git; see below
     data/             everything the app remembers. Not in git; see below
     core/             the Rust workspace
-    docs/             state, architecture, controls, menus
+    docs/             state, architecture, controls, menus, roadmap, audits
     ui/               the interface, embedded into the binary at build time
     visualiser/       the p5.js grain views, served at /grains3d
+    tools/            development only — the static interface check and the scratch server
+    tests/ui/         development only — Playwright specs
     models/           the YAMNet ONNX model
     Audio Library/    sample audio to try it on
     Reference Docs/   papers, the stretch roadmap, and the classification taxonomy
+
+Everything in `ui/` and `visualiser/` is compiled *into* the binary — the
+interface, the stylesheet, the theme engine, the palette library, p5.js and both
+fonts. `tools/` and `tests/` are not; they never ship.
 
 ## The built programs
 
@@ -413,7 +487,7 @@ between the Mac and the PC.
 ## Building from source
 
     cargo build --release --manifest-path core/Cargo.toml     # this machine
-    cargo test  --release --manifest-path core/Cargo.toml     # 879 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 934 tests
 
 For the Windows build from a Mac, once per machine:
 

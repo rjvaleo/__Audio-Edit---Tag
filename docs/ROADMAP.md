@@ -197,12 +197,23 @@ a pop-out.
 
 ## Trim candidates
 
-- **Ten visualisers → two.** *Settled:* Swarm 3D and Swarm 2D survive, plus the
-  waveshape view for wavetable. Shear, Braid, Shells, Lattice and the whole V2
-  suite go. The moment views can still tell the truth when a grain reads from a
-  ring; the object views have **source position** as a structural axis and that
-  axis stops existing. See [SIXTH-ENGINE.md](SIXTH-ENGINE.md). This was the
-  largest single line item in stage three and it just got 80% smaller.
+- **Ten visualisers → two.** *Settled as taste, but its second argument has
+  expired.* Swarm 3D and Swarm 2D survive, plus the waveshape view for
+  wavetable; Shear, Braid, Shells, Lattice and the whole V2 suite go. **All ten
+  still ship** — this was a decision about what gets rewritten in WGSL in stage
+  three, not a change to the current build, and nothing in `visualiser/` was
+  touched.
+
+  Half the reasoning no longer holds. It rested on the sixth engine: once a
+  grain reads from a ring it has no **source position**, so the object views
+  would have been drawing an axis that no longer existed. **The sixth engine was
+  pulled on 15 Aug** (see [SIXTH-ENGINE.md](SIXTH-ENGINE.md)), and with it that
+  argument. Every one of the ten can still tell the truth.
+
+  What survives is the taste argument — they were uneven and there were too many
+  — and the cost one, which is unchanged: each survivor is rewritten by hand in
+  WGSL, and this is the largest single line item in stage three. **Worth
+  re-deciding on its merits rather than inheriting.**
 - **Record.** Not a leftover — it moves into Edit. See
   [TRANSPORT-AND-RECORDING.md](TRANSPORT-AND-RECORDING.md).
 - **Regions** against **Edit** — overlapping ideas of the same thing.
@@ -237,7 +248,10 @@ What it means concretely:
 - **`data/` moves to the per-user OS directory.** It sits beside the executable,
   which is read-only in a signed bundle and replaced by any updater.
 - **Coverage where it is thin**, so the port has something to be checked
-  against. The 898 tests are the only thing that will tell you the DSP survived.
+  against. The 934 tests are the only thing that will tell you the DSP survived.
+  The interface now has its own — a static check and ten Playwright specs — and
+  those are what will tell you the *program* survived, which is a different
+  question and was unanswerable until 15 Aug.
 
 ---
 
@@ -328,6 +342,11 @@ vocoder gives at those ratios. It turns any sound into an ambient pad.
   discipline the grain cloud already follows, applied to a spectrum.
 
 ## The stretchers stay, and a sixth may join them
+
+> **Not the same "sixth engine" as [SIXTH-ENGINE.md](SIXTH-ENGINE.md).** That one
+> was the feedback engine — the cloud reading the machine's own output. It was
+> built and pulled on 15 Aug. The one below is a *transparent* stretcher bought
+> or licensed in, and nothing about it has been built or decided.
 
 Rubber Band would probably beat WSOLA on transparent material. It would also be
 the wrong trade: no library does the grain cloud, and nothing off the shelf

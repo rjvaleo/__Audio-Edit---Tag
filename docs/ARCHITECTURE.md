@@ -28,7 +28,7 @@ instant and fetching them separately would let them disagree.
 
 ## The workspace
 
-Ten crates, ~36k lines. Dependencies point one way only — `audio-core` depends
+Ten crates, ~47k lines. Dependencies point one way only — `audio-core` depends
 on nothing, `server` depends on everything.
 
 | Crate | Lines | Tests | Responsibility |
@@ -36,13 +36,14 @@ on nothing, `server` depends on everything.
 | `audio-core` | 2928 | 86 | Container probe and decode, **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 12582 | 237 | Biquads, EQ, compressor, channel maximiser, five stretchers, **nine live shapers**, the parameter layer, sines/transients/noise separation |
-| `edit` | 3429 | 112 | Non-destructive edit list, **zero-crossing snap**, **measurement**, windowed render, WAV and AIFF export |
-| `engine` | 3243 | 44 | Block renderer, **all five streaming engines**, transport, cpal device |
+| `fx` | 18186 | 308 | Biquads, EQ, compressor, channel maximiser, five stretchers, **nine live shapers**, the parameter layer, sines/transients/noise separation |
+| `edit` | 3540 | 112 | Non-destructive edit list, **zero-crossing snap**, **measurement**, windowed render, WAV and AIFF export |
+| `engine` | 4794 | 69 | Block renderer, **all five streaming engines**, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
-| `yamnet` | 1395 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 9395 | 189 | HTTP/1.1, 37 API routes, JSON, persistence, **marker and region commands** |
-| `audiolab` | 58 | — | The binary |
+| `yamnet` | 1453 | 51 | ONNX inference, band-limited resampling, label policy |
+| `server` | 13367 | 242 | HTTP/1.1, 44 API routes, JSON, persistence, **marker and region commands**, the live bridge |
+| `audiolab` | 67 | — | The binary |
+| | **47282** | **934** | |
 
 ### Dependencies
 
@@ -385,9 +386,11 @@ cross-compiled binary.
 
 ## The interface
 
-Plain HTML, CSS and JavaScript. No bundler, no framework, no build step. `ui/index.html`, `ui/app.css`, `ui/app.js` and
-`visualiser/grain-views.html` are embedded into the binary with `include_str!`
-— **which means the binary must be rebuilt after any interface edit**.
+Plain HTML, CSS and JavaScript. No bundler, no framework, no build step.
+`ui/index.html`, `ui/app.css`, `ui/app.js`, `ui/theme-derive.js`,
+`ui/theme-palettes.js` and `visualiser/grain-views.html` are embedded into the
+binary with `include_str!` — **which means the binary must be rebuilt after any
+interface edit**.
 
 Controls follow one table: name, control, reading, in three columns whose
 widths are declared once. Four kinds — slider, knob, rocker switch, three-way
@@ -397,6 +400,33 @@ See [CONTROLS.md](CONTROLS.md) and [MENUS.md](MENUS.md).
 The visualiser is p5.js in WEBGL — the one place a library is loaded. It is
 served from the binary rather than from a CDN, as are the two fonts, so the app
 reaches the internet at no point at all.
+
+**Themes** derive the whole interface from a handful of colours.
+`theme-derive.js` is the engine, `theme-palettes.js` the 47-palette library, and
+`THEME_TOKEN_MAP` joins the engine's token names to this stylesheet's. Twenty
+palettes are offered: the chrome reads depth as lightness, which is a dark-theme
+assumption, so the light palettes are withheld rather than shown broken.
+**Waveform colours sit outside the theme** — `--wave` and `--wave-2`, green and
+blue, read only through `waveInk()`. Audio is the thing being read; it does not
+get restyled.
+
+**Keyboard input is one dispatcher**, not six listeners. It was six, they could
+not agree on who had handled a key, and shortcuts fired from inside text fields.
+The single handler checks for a text field, then an overlay, then dispatches in
+tiers — so a key means one thing, decided in one place.
+
+### Testing it
+
+The Rust tests cannot see the interface at all, so there are two more layers,
+neither of which ships:
+
+- **`tools/ui-check.mjs`** — static analysis over `ui/`. Unresolved references,
+  controls without defaults, panes missing from `showPane`'s map, functions
+  nothing calls. Runs under `cargo test` via `server/tests/interface.rs`.
+- **`tests/ui/*.spec.mjs`** — Playwright against `tools/scratch-server.mjs`, a
+  throwaway instance on its own port with its own library. This is the only
+  layer that catches a panel which builds without error and renders nothing,
+  which has happened more than once.
 
 ---
 

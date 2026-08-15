@@ -1,25 +1,32 @@
 # What the tests actually cover
 
 *An audit, 15 Aug 2026. Written after a day in which every bug found was in a
-place with no tests, while the parts with 947 tests behaved perfectly.*
+place with no tests, while the parts with heavy coverage behaved perfectly.*
+
+**Re-measured at the end of that day: 934 tests, 19 of 44 routes, 10 browser
+tests.** The numbers below are as re-counted; where the morning's figures
+differed they are noted rather than quietly replaced.
 
 ---
 
 ## The headline
 
-**The tests are deep on arithmetic and absent on the program.**
+**The tests are deep on arithmetic and absent on the program.** Less absent than
+it was — see Progress — but the shape of the gap has not changed.
 
-`fx` alone has 305 tests. Every filter, every stretcher, every shaper is pinned
+`fx` alone has 308 tests. Every filter, every stretcher, every shaper is pinned
 frame by frame. Meanwhile:
 
-- **15 of 41 routes have any test at all.**
-- **The entire live path — load, transport, parameter, state — has none.**
-- **The interface had none until today.**
-- **7 of the 11 invariants are not named by any test**, including the first and
-  most important one.
+- **19 of 44 routes have any test at all** (was 15 of 41 this morning).
+- **The live path had none.** It now has route tests for `engine/state` and
+  `rack/param`; `engine/load`, `engine/transport`, `engine/grains` and `capture`
+  are still uncovered.
+- **The interface had none.** It now has a static check and 10 Playwright specs.
+- **5 of the 11 invariants are not named by any test** (was 7). Invariants 1 and
+  8 were named today.
 
 That is not a small gap in an otherwise even picture. It is a program tested
-thoroughly at the bottom and not at all at the top.
+thoroughly at the bottom and thinly at the top.
 
 ## The evidence, rather than the impression
 
@@ -44,14 +51,18 @@ lesson is only that the coverage stops exactly where the program starts.
 
 ## Routes
 
-15 of 41. What is tested is worth having: the clamps on everything the stretch
-panel posts, tag editing, presets, export, peaks, markers. What is not:
+**19 of 44.** What is tested is worth having: the clamps on everything the
+stretch panel posts, tag editing, presets, export, peaks, markers, and — as of
+today — `engine/state` and `rack/param`.
 
-**The live path — the highest-value gap.** Nothing exercises `engine/load`,
-`engine/transport`, `engine/state`, `engine/grains`, `rack/param` or `capture`.
-This is where three of today's bugs lived, and it is the only part of the
-program with *state that outlives a request* — which is exactly what makes it
-hard to get right and easy to break from a distance.
+The 25 with nothing, grouped by how much it matters:
+
+**The live path, still the highest-value gap.** `engine/load`,
+`engine/transport`, `engine/grains`, `capture`, `audio/buffer`. Better than this
+morning, when the whole group was empty, but the three that *change* engine
+state are still the untested ones. This is the only part of the program with
+state that outlives a request, which is exactly what makes it hard to get right
+and easy to break from a distance.
 
 **The library half.** `browse`, `files`, `folders`, `library`, `sounds`,
 `thumbs`, `order`, `scan`, `scan/stop`, `similar`, `stats`, `space`. Browse is a
@@ -59,50 +70,73 @@ major section of the product and none of it is covered.
 
 **Tagging.** `labels`, `usertag`, `usertags`.
 
-**Odds.** `fx` — the shaper list, which the whole picker is built from and which
-I leaned on this afternoon without a test to say it was right. `save`, `scales`,
-`presets/delete`.
+**Grains.** `grains`, `grains/cap`.
+
+**Odds.** `save`, `scales`, `presets/delete`.
+
+`fx` — the shaper list the whole picker is built from — **is** covered now.
 
 ## Invariants
 
-Only 6, 9, 10 and 11 are named anywhere. The rest may well be covered by tests
-that never say so — and a test that does not name the invariant it protects is
-one nobody will recognise when they go to change it.
+**Six of eleven are named now** — 1, 6, 8, 9, 10 and 11. The rest may well be
+covered by tests that never say so, and a test that does not name the invariant
+it protects is one nobody will recognise when they go to change it.
 
-**Invariant 1 — the source file is never written — has no test that names it.**
-It is the promise the whole program rests on. There is an export test, but
-nothing asserts the source's bytes are identical afterwards.
+**Invariant 1 — the source file is never written — was the worst of these and is
+fixed.** It is the promise the whole program rests on, and this morning there was
+an export test but nothing asserting the source's bytes were identical
+afterwards. There now is, plus a second test that exporting twice writes two
+files rather than replacing one.
 
-| | | named |
-|---|---|---|
-| 1 | The source file is never written | **no** |
-| 2 | Grain randomness is a pure function of index and seed | **no** |
-| 3 | Offline, real-time and visualiser share one enumeration | **no** |
-| 4 | Effects must not change buffer length | **no** |
-| 5 | `output_frames()` equals what `process()` produces | **no** |
-| 6 | A windowed render matches the full render | yes |
-| 7 | Edit operations address the pre-stretch timeline | **no** |
-| 8 | A saved session is refused if the file changed | **no** |
-| 9 | Every control inert at its default | yes |
-| 10 | Nothing above the ceiling once the maximiser is on | yes |
-| 11 | What you hear is what you export | yes |
+| | | named | where |
+|---|---|---|---|
+| 1 | The source file is never written | **yes** | bytes compared before and after an export |
+| 2 | Grain randomness is a pure function of index and seed | **no** | |
+| 3 | Offline, real-time and visualiser share one enumeration | **no** | the one most nearly broken, repeatedly |
+| 4 | Effects must not change buffer length | **no** | |
+| 5 | `output_frames()` equals what `process()` produces | **no** | |
+| 6 | A windowed render matches the full render | yes | `editing.rs`, three tests |
+| 7 | Edit operations address the pre-stretch timeline | **no** | |
+| 8 | A saved session is refused if the file changed | **yes** | |
+| 9 | Every control inert at its default | yes | `rack.rs`, `reverb.rs` |
+| 10 | Nothing above the ceiling once the maximiser is on | yes | `maximizer_module.rs`, `master.rs` |
+| 11 | What you hear is what you export | yes | structural — one implementation, asserted to 1e-6 |
+
+**Invariant 3 is the one to name next**, on the evidence: it is the rule that
+keeps being *nearly* broken. The block renderer once carried its own copy of the
+grain envelope with a comment promising it matched.
 
 ## The interface
 
-Until today: nothing. `tools/ui-check.mjs` now covers references that do not
-resolve and controls without a reset, and found two dead functions on its first
-run — one of which had removed the maximiser from the product entirely.
+Until today: nothing. Now two layers.
 
-What it still cannot see is written in its own KNOWN LIMITS, and the important
-one is that **nothing runs the interface**. A control wired to the wrong value
-passes every check.
+**`tools/ui-check.mjs`** covers references that do not resolve and controls
+without a reset, and found two dead functions on its first run — one of which
+had removed the maximiser from the product entirely. What it cannot see is
+written in its own KNOWN LIMITS, and the important one is that it does not *run*
+anything. A control wired to the wrong value passes every static check.
 
-That gap is now closeable in a way it was not this morning: **the browser
-works.** I had been asserting for hours that it did not, from stale context,
-without ever trying it. It drives the real page at `127.0.0.1:8737` — reads the
-DOM, runs script, reports console errors. Every "does this actually work"
-question I have answered by reading code today could have been answered by
-looking.
+**`tests/ui/*.spec.mjs`** closes that, and the gap turned out to be closeable in
+a way it was not this morning: **the browser works.** I had been asserting for
+hours that it did not, from stale context, without ever trying it. Ten specs now
+drive the real page — the page loads with no console error, opening a sound
+builds every panel, double-click returns a control to its default *in the DOM*,
+every engine can be selected, and the theme panel actually lists themes.
+
+That last one is not a hypothetical. The theme panel shipped broken three
+separate times in one afternoon — the pane was never registered in `showPane`'s
+map, then the button lost the class carrying its handler, then the list rendered
+at zero height — and each time it was announced as working on the strength of
+testing the engine in isolation. **A test that calls a function directly and
+never opens the panel proves nothing about the panel.**
+
+Two traps inside the harness, both of which cost real time:
+
+- **`window.state` is undefined and always will be.** `state` is a `const` at
+  classic-script top level, so it is a lexical global, not a property of
+  `window`. Bare `state` works. This timed out all five specs on the first run.
+- **`state.folders` holds folders, not files.** Handing one to `selectFile` gets
+  as far as reading its sample rate before giving up.
 
 ## Progress
 
@@ -129,28 +163,38 @@ than passing quietly, so "the tests are green" cannot come to mean different
 things on different machines. Confirmed by adding a call to a function that
 does not exist: the test fails and names the line.
 
-**4 and 5 — not started.**
+**4. Interface behaviour tests through the browser — done.** Playwright, 10
+specs, run against `tools/scratch-server.mjs` so they cannot touch a working
+session. `workers: 1` and `fullyParallel: false` because the interface holds one
+document and the server holds one engine; `retries: 0` because a failing
+interface test is nearly always a real fault and retrying hides the difference.
+
+**5. Browse — not started.** Still the largest untested section of the product.
 
 ## What to build, in order
 
-**1. Live-path route tests.** Load a file, play, move a parameter, read the
-state back. Assert the engine holds what was posted. This is where the bugs
-live and where there is nothing at all.
+The original list is done except the last item. What remains, re-ordered on
+what the day actually showed:
 
-**2. Name the invariants.** Seven tests, each asserting the thing the invariant
-promises and saying which one it is. Start with the first: export a file, then
-compare the source's bytes before and after.
+**1. Browse.** A whole section of the product with no coverage — twelve routes
+and the largest single gap left. Lower priority only because it has been stable,
+which is an argument that gets weaker the longer it goes untouched.
 
-**3. Wire `ui-check.mjs` into `cargo test`.** It passes clean now, so it can go
-in without being permanently red. A check nobody runs is not a check.
+**2. Name invariants 3, 2, 5, 4, 7 — in that order.** Three first, because it is
+the one that keeps nearly breaking: assert the offline enumeration, the
+real-time one and the visualiser's agree grain for grain, rather than trusting
+that they call the same function.
 
-**4. Interface behaviour tests, through the browser.** Double-click a control
-and assert it returns to its default *in the DOM* rather than in the source.
-Open each panel and assert no console errors — which would have caught both
-panel-blanking bugs immediately.
+**3. The three live routes that change state** — `engine/load`,
+`engine/transport`, `engine/grains`. `engine/state` and `rack/param` are covered;
+these are not, and they are the ones that mutate.
 
-**5. Browse.** A whole section of the product with no coverage. Lower priority
-only because it has been stable.
+**4. Extend the browser specs past what is on screen.** They currently reach
+only the panels the selected engine happens to build, so the count they assert
+is a floor. Switch engines and re-run the sweep.
+
+**5. The library half of the interface.** Browse has no specs at all, for the
+same reason it has no route tests.
 
 ## The honest limit
 

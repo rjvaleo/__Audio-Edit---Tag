@@ -130,8 +130,11 @@ test('double-clicking any control returns it to its default', async ({ page }) =
   expect(errors).toEqual([]);
 });
 
-/// Six engines, each with its own panel of controls. Switching between them
+/// Five engines, each with its own panel of controls. Switching between them
 /// rebuilds that panel, which is where a missing helper would throw.
+///
+/// Deliberately reads the picker rather than naming the five: a sixth was added
+/// and removed inside one day, and a hard-coded list would have been wrong twice.
 test('every engine can be selected and builds its own controls', async ({ page }) => {
   const errors = watchErrors(page);
   await ready(page);
