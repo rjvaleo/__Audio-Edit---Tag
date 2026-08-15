@@ -7015,6 +7015,7 @@ function pushGrainParams() {
       pitchJitterSemis: g.pitchJitterSemis,
       pitchDriftSemis: g.pitchDriftSemis,
       driftRateHz: g.driftRateHz,
+      panSpread: g.panSpread,
       seed: g.seed,
       // So the geometry is laid out over the real file's length rather than
       // the two seconds the page assumes when it is standing on its own.
