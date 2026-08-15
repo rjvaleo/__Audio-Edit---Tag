@@ -2758,10 +2758,24 @@ function automationUnit(value,min,max,log=false){
 }
 
 function renderFxModuleControls(box, slot, shaper, slotIndex) {
+  // `key` names the one control this row writes, so the value can be moved on
+  // the effect that is already running. Without one there is nothing to address
+  // and the whole rack has to be posted instead — which *rebuilds the chain*,
+  // clearing every delay line and reverb tail in it. That is fine for a control
+  // that has no key and no other way to be sent, and ruinous for one that has
+  // already sent itself: the linked Dry / Wet writes both of its values through
+  // `liveParam` inside `set`, and was then having the rack rebuilt under it
+  // thirty times a second — which is exactly what "the reverb cuts out" is.
+  //
+  // `sent` says the row has taken care of it.
   const add = (label, value, min, max, step, format, set, log = false, key = null,
-               def = undefined) => {
+               def = undefined, sent = false) => {
     box.appendChild(param(label, value, min, max, step, format,
-      (v) => { set(v); if (key) liveParam(slot.id, key, v); else pushRackLive(); },
+      (v) => {
+        set(v);
+        if (key) liveParam(slot.id, key, v);
+        else if (!sent) pushRackLive();
+      },
       () => { commitRack(); }, log, def));
   };
   if (shaper) {
@@ -2786,7 +2800,7 @@ function renderFxModuleControls(box, slot, shaper, slotIndex) {
         // the effect only knows wet and dry.
         liveParam(slot.id,'wet',slot.params.wet);
         liveParam(slot.id,'dry',slot.params.dry);
-      });
+      }, false, null, undefined, true);
     }
     for (const p of shaper.params) {
       if(p.key==='wet'||p.key==='dry')continue;
@@ -2813,7 +2827,10 @@ function renderFxModuleControls(box, slot, shaper, slotIndex) {
   }
   if (slot.kind === 'eq') { renderVisualEq(box, slot, slotIndex); return; }
   if (slot.kind === 'gain') {
-    add('Level', slot.db, -24, 24, 0.1, (v) => `${v.toFixed(1)} dB`, (v) => { slot.db = v; });
+    // Addressed by key like every other control, so moving it does not take
+    // the rest of the chain's delay lines and tails with it.
+    add('Level', slot.db, -24, 24, 0.1, (v) => `${v.toFixed(1)} dB`, (v) => { slot.db = v; },
+        false, 'db', 0);
   } else if (slot.kind === 'comp') {
     renderVisualCompressor(box, slot);
   }
