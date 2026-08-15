@@ -1948,9 +1948,6 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     seed: gf("seed", cur.seed as f32).max(0.0) as u32,
                     position: gf("position", cur.position).clamp(-1.0, 1.0),
                     scan: gf("scan", cur.scan).clamp(-4.0, 4.0),
-                    ring_mix: gf("ringMix", cur.ring_mix).clamp(0.0, 1.0),
-                    // Bounded by what the ring actually holds; see RING_SECONDS.
-                    ring_reach_ms: gf("ringReachMs", cur.ring_reach_ms).clamp(0.0, 4000.0),
                     reverse: match gv.and_then(|x| x.get("reverse")) {
                         Some(Value::Bool(b)) => *b,
                         _ => cur.reverse,
@@ -2177,10 +2174,8 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
     // A lane on the *stretch* cannot go through the one-pass renderer: it
     // applies the stretch whole, with one set of parameters. That path runs the
     // same streaming engine the audio thread runs, so the file follows the
-    // curve for the same reason the speakers do. The sixth engine needs it for
-    // its own reason — its grains read the output ring, so it has no one-pass
-    // form at all.
-    let rendered = if crate::offline::needs_streaming(&automation, list.stretch.algorithm) {
+    // curve for the same reason the speakers do.
+    let rendered = if crate::offline::needs_streaming(&automation) {
         match edit::render::render(&list, &mut reader, 0, list.base_frames()) {
             Ok(base) => {
                 let audio = crate::offline::stretch_with_automation(

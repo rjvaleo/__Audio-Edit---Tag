@@ -154,36 +154,3 @@ test('every engine can be selected and builds its own controls', async ({ page }
   expect(errors, `switching engines reported errors`).toEqual([]);
 });
 
-/// The feedback engine's two controls only exist on it, and the panel is cached
-/// by file *and* engine so that switching to it rebuilds. That cache key was
-/// wrong once, and the controls only appeared after opening a different sound.
-test('the feedback engine reveals its own controls when chosen', async ({ page }) => {
-  await ready(page);
-  await openFirstSound(page);
-
-  // Set the precondition rather than assume it. One server holds one document
-  // for the whole run, so whatever the previous test left selected is still
-  // selected — and this failed first time round because the engine test before
-  // it happened to finish on `feedback`.
-  const pick = async (alg) => {
-    await page.evaluate((a) => {
-      document.querySelector(`#stretchEngine .seg-btn[data-alg="${a}"]`).click();
-    }, alg);
-    await page.waitForTimeout(600);
-  };
-
-  await pick('granular');
-  const before = await page.evaluate(() =>
-    [...document.querySelectorAll('#extGrain .k')].map((k) => k.textContent.trim()),
-  );
-  expect(before, 'the grain panel is empty on granular').not.toEqual([]);
-  expect(before.join(' '), 'Reach should belong to the sixth engine alone').not.toContain('Reach');
-
-  await pick('feedback');
-
-  const after = await page.evaluate(() =>
-    [...document.querySelectorAll('#extGrain .k')].map((k) => k.textContent.trim()),
-  );
-  expect(after, 'the feedback controls did not appear').toContain('Mix');
-  expect(after).toContain('Reach');
-});
