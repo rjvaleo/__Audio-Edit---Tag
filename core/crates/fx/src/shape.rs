@@ -905,6 +905,8 @@ pub enum ShapeKind {
     Boomerang,
     Fit,
     Gate,
+    /// The channel maximiser, as a module you can place.
+    Maximizer,
     DattorroNotch,
     DattorroResonator,
     Regalia,
@@ -932,7 +934,7 @@ pub enum ShapeKind {
 }
 
 impl ShapeKind {
-    pub const ALL: [ShapeKind; 33] = [
+    pub const ALL: [ShapeKind; 34] = [
         ShapeKind::Invert,
         ShapeKind::Swap,
         ShapeKind::Width,
@@ -942,6 +944,7 @@ impl ShapeKind {
         ShapeKind::Boomerang,
         ShapeKind::Fit,
         ShapeKind::Gate,
+        ShapeKind::Maximizer,
         ShapeKind::DattorroNotch,
         ShapeKind::DattorroResonator,
         ShapeKind::Regalia,
@@ -979,6 +982,7 @@ impl ShapeKind {
             ShapeKind::Boomerang => "boomerang",
             ShapeKind::Fit => "fit",
             ShapeKind::Gate => "gate",
+            ShapeKind::Maximizer => "maximizer",
             ShapeKind::DattorroNotch => "dattorro_notch",
             ShapeKind::DattorroResonator => "dattorro_resonator",
             ShapeKind::Regalia => "regalia_mitra",
@@ -1022,6 +1026,7 @@ impl ShapeKind {
             ShapeKind::Boomerang => "Boomerang",
             ShapeKind::Fit => "Amp fit",
             ShapeKind::Gate => "Gate",
+            ShapeKind::Maximizer => "Maximizer",
             ShapeKind::DattorroNotch => "Dattorro notch",
             ShapeKind::DattorroResonator => "Dattorro resonator",
             ShapeKind::Regalia => "Regalia-Mitra EQ",
@@ -1083,6 +1088,7 @@ impl ShapeKind {
             | ShapeKind::Width
             | ShapeKind::Fit
             | ShapeKind::Gate
+            | ShapeKind::Maximizer
             | ShapeKind::Utility => "Utility & dynamics",
         }
     }
@@ -1101,6 +1107,7 @@ impl ShapeKind {
             ShapeKind::Boomerang => REV_SPECS,
             ShapeKind::Fit => FIT_SPECS,
             ShapeKind::Gate => GATE_SPECS,
+            ShapeKind::Maximizer => crate::master::MAXIMIZER_SPECS,
             ShapeKind::DattorroNotch | ShapeKind::DattorroResonator | ShapeKind::Regalia => {
                 crate::dattorro::FILTER_SPECS
             }
@@ -1163,6 +1170,13 @@ pub fn make(
         ShapeKind::Boomerang => apply(ReverseMix::new(sample_rate, channels), params),
         ShapeKind::Fit => apply(AmplitudeFit::default(), params),
         ShapeKind::Gate => apply(Gate::default(), params),
+        // Built switched on: a module in the rack is on by definition, and
+        // `MasterSettings::default` is off because it used to be a channel
+        // strip that had to be opted into.
+        ShapeKind::Maximizer => apply(
+            crate::Maximizer::new(crate::MasterSettings { on: true, ..Default::default() }),
+            params,
+        ),
         ShapeKind::DattorroNotch => apply(
             crate::dattorro::MusicalFilter::new(crate::dattorro::MusicalFilterMode::Notch),
             params,
