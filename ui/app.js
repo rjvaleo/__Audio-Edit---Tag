@@ -6669,6 +6669,13 @@ function drawGrains() {
   // Drawn whether or not the swarm is: the pad is a control as well as a
   // picture, and a control that goes blank when the transport stops is no use.
   drawCloudPad();
+
+  // Only the view that is showing does any work. The swarm was redrawing its
+  // whole canvas every frame while a 3D view was up and it was not even on
+  // screen — a full clear, a pass over every grain in the window and a
+  // gradient per grain, sixty times a second, for nothing.
+  if (grainView !== 0) return;
+
   const set = visSetup(engine.playing);
   if (!set) return;
   const { ctx, w, h } = set;
@@ -6776,7 +6783,12 @@ function drawGrainSwarm(ctx, w, h, g) {
 let grainRaf = null;
 function grainLoop() {
   grainRaf = requestAnimationFrame(grainLoop);
-  if (state.mode === 'edit' && state.grains) drawGrains();
+  if (state.mode !== 'edit' || !state.grains) return;
+  // Nothing to draw into when the stretch panel is not the one showing. The
+  // pad and the swarm both live in it, so with another dock open this loop was
+  // painting two canvases nobody could see.
+  if ($('dockStretch')?.classList.contains('hidden')) return;
+  drawGrains();
 }
 /// The swarm animates only while the engine is playing, so an idle editor
 /// costs nothing.
@@ -6874,7 +6886,17 @@ function setGrainView(v) {
   legend.classList.toggle('hidden', is3d);
   frame.classList.toggle('hidden', !is3d);
 
-  if (!is3d) return;
+  // The frame keeps its engine connection open and polls for it. Hidden, that
+  // is a request every eighth of a second for a picture nobody is looking at.
+  frame.contentWindow?.postMessage(
+    { type: 'grainAwake', awake: is3d }, location.origin);
+
+  if (!is3d) {
+    // Coming back to the swarm from a 3D view: the loop skipped it while it was
+    // hidden, so it holds whatever was on it when you left. Paint it once.
+    drawGrains();
+    return;
+  }
   if (!frame.src) {
     frame.src = `/grains3d?embed=1&view=${v - 1}`;
     // A document's settings cannot be posted at a frame that has not loaded.
