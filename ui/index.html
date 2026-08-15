@@ -338,12 +338,10 @@
               <button class="vis-tab" data-vis="3" title="The free cloud in three dimensions">Swarm 3D</button>
               <button class="vis-tab" data-vis="4" title="An octave to a shell — drift becomes rotation">Shells</button>
               <button class="vis-tab" data-vis="5" title="The hop grid as a crystal, melted by the jitters">Lattice</button>
-              <button class="vis-tab" data-vis="6" title="The stereo field as a torus of specks and mist. Grains sit where they actually are across the image; the bore opens as the sound widens.">Torus</button>
               <button class="vis-tab suite" id="visSuite" title="V1 the object · V2 the moment">V1</button>
               <button class="vis-open" id="visOpen" title="Open a floating panel with every control">&#9974;</button>
             </div>
             <canvas id="grainCanvas"></canvas>
-            <div id="gonioHolder" class="hidden"></div>
             <iframe id="grainFrame" class="hidden" title="3D grain views"></iframe>
             <div class="vis-legend">
               <span><i class="sw hot"></i>bright / sharp</span>
@@ -497,8 +495,6 @@
 
 <div class="toast hidden" id="toast"></div>
 
-<!-- Served from the binary, never fetched. -->
-  <script src="/p5.min.js"></script>
-  <script src="/app.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>
