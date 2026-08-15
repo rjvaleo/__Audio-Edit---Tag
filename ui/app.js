@@ -3130,6 +3130,14 @@ function param(label, value, min, max, step, format, onChange, onCommit, log, de
   // double-click would be worse than one that plainly has no default, and
   // guessing — the midpoint, or zero, or whatever it happened to be built
   // with — would put values in that were never the default of anything.
+  if (def === undefined || def === null || !Number.isFinite(def)) {
+    // Not an error — `check` and the rockers have no meaningful default, and a
+    // control that resets to something which was never anybody's default is
+    // worse than one that plainly does nothing. But a *slider* without one is
+    // almost always an oversight, and the only reason `position` went years
+    // without a reset is that this said nothing at all.
+    console.warn(`control "${label}" has no default — double-click will not reset it`);
+  }
   if (def !== undefined && def !== null && Number.isFinite(def)) {
     el.title = `${label} — double-click to reset to ${format(def)}`;
     const reset = (e) => {
@@ -3646,6 +3654,11 @@ const GRAIN_DEFAULTS = {
   pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5, layers: 1,
   scan: 1, reverse: false, envelope: 0.5, sizeRange: 1, wrap: false,
   layerSpread: 1, linkJitter: false, driftStep: false, panSpread: 0,
+  // Zero is the sweep's own beginning, matching `Grain::default` in `fx`. It
+  // was missing, so Position was the one fader in its group with no
+  // double-click reset — silently, because `param` only attaches the handler
+  // when it is given a default and says nothing when it is not.
+  position: 0,
   ringMix: 0, ringReachMs: 250,
   layerScatter: 0, layerScatterMs: 120,
 };
