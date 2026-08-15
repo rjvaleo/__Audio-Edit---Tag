@@ -1,6 +1,26 @@
 # The sixth engine
 
-*A design. Nothing here is built. It replaces the framing in
+> ## Built 15 Aug 2026. Pulled the same day. **There are five engines.**
+>
+> `Algorithm::Feedback` existed for about six hours: the grain cloud reading the
+> machine's own output through a ring buffer on `Core`, written after the rack
+> and before the fader, audio-thread only and lock-free. It worked, it was
+> tested, and it exported what it played. The user tried it and said *"the
+> feedback engine is useless too — pull it"*, so it is gone (`c2a4e54`) — the
+> variant, `ringMix`, `ringReachMs`, `engine/src/ring.rs`, the picker button and
+> its controls.
+>
+> **This document is kept as the record, not as a plan.** Everything below
+> describes what was built and why it was built that way. Three things outlived
+> it and are still in the program: the WSOLA splice-search bound, the tail decay
+> on the paused branch, and the test harnesses written to prove the ring worked.
+>
+> The **wavetable half was never built**, and its argument does not depend on any
+> of this — a grain exactly one loop long, repeated with no gap, *is* a wavetable
+> oscillator. If that is ever built it will not be built on a ring. See
+> [WAVETABLE-MODE.md](WAVETABLE-MODE.md).
+
+*A design, written before any of it existed. It replaces the framing in
 [WAVETABLE-MODE.md](WAVETABLE-MODE.md) and
 [OUTPUT-SAMPLED-GRAINS.md](OUTPUT-SAMPLED-GRAINS.md) — those describe two
 features, and this describes the one engine they turn out to be.*

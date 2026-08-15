@@ -1,7 +1,25 @@
 # What destroys live audio state
 
 *An audit and a plan. Written 15 Aug 2026 after a granular slider was found to
-be rebuilding the entire effect rack. Nothing here is fixed yet.*
+be rebuilding the entire effect rack.*
+
+> ## All four are fixed. Kept as the record of what the mistake was.
+>
+> | | was | now |
+> |---|---|---|
+> | 1. `push_params` rebuilt the rack on every parameter | `live.rs:383`, unconditional | **deleted.** The only `set_rack` left is in `load`, where the file really did change |
+> | 2. The master strip rebuilt while dragging | `pushRack` every 120 ms | on the live path, like every other control |
+> | 3. Keyless rack controls rebuilt at 32 ms | `pushRackLive` | **removed entirely** — only a comment where it was, explaining why |
+> | 4. Tails were cut dead on stop | `return` before `process_rack` | the paused branch runs the chain on silence, with a four-second countdown |
+>
+> The guard in 1 became a value rather than a flag — `Rebuilds::decide` in
+> [`live.rs:332`](../core/crates/server/src/live.rs:332) returns what must be
+> rebuilt given the parameters that moved, which is testable in a way three
+> booleans scattered through a function were not.
+>
+> Read [`transport.rs`](../core/crates/engine/src/transport.rs) for the tail
+> decay: `TAIL_SILENCE` at `1e-4`, budget reset to four seconds whenever the peak
+> is above it, so a stopped transport rings out and then stops burning a core.
 
 ---
 
@@ -32,7 +50,6 @@ Anything on this list is expensive to lose, and losing it is audible:
 | `LayerBank` | the same, per layer |
 | `TimeMap`, `Parts` | nothing audible directly — but both cost real time to derive |
 | `BlockRenderer` voices | grains currently in flight |
-| `OutputRing` | the sixth engine's entire memory of itself |
 
 ---
 

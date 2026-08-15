@@ -1,9 +1,18 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **879 tests
-passing, working tree clean.** Everything an agent picking this up needs to know, in one file,
-because the per-topic notes live in `~/.claude/projects/…` on one machine and
-this repo travels.
+Written 11 August 2026 as a handoff, and kept up to date since. **934 Rust tests
+and 10 browser tests passing, working tree clean.** Everything an agent picking
+this up needs to know, in one file, because the per-topic notes live in
+`~/.claude/projects/…` on one machine and this repo travels.
+
+**Branch `feedback-engine`, HEAD `c2a4e54`.** `main` is tagged
+`snapshot-2026-08-15` for the state before that branch. The branch name is now
+just a name — the feedback engine it was opened for was built and pulled on the
+same day (§5b). What the branch actually carries is the live-state fixes, the
+theme engine, the interface tests, and the maximiser module.
+
+Run it as `AUDIOLAB_DATA="$PWD/data" ./core/target/release/audiolab` — **not**
+through `Start.command`, which prefers `bin/audiolab` and may be weeks stale.
 
 ---
 
@@ -17,12 +26,18 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 879 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 934 tests
+    npm run check                                             # the interface, statically
+    npm run test:ui                                           # the interface, in a browser
 
 **The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
-`ui/app.css`, `ui/app.js`, `visualiser/grain-views.html`. **Rebuild after any
+`ui/app.css`, `ui/app.js`, `ui/theme-derive.js`, `ui/theme-palettes.js`,
+`visualiser/grain-views.html`, p5.js and both fonts. **Rebuild after any
 interface edit or the browser is served the old file.** This has cost more time
 than anything else in this project.
+
+`package.json` is development tooling only — the application is the binary and
+has no Node in it anywhere. `tools/` and `tests/` never ship.
 
 If you run the binary directly rather than through the launcher, set
 `AUDIOLAB_DATA` or it writes its data beside the binary instead of into `data/`.
@@ -76,7 +91,7 @@ rebuild.
 Rewritten from Python into Rust starting 8 Aug 2026. The old Python app still
 sits in `app/`, untouched and **not deleted**.
 
-Ten crates in `core/crates/`, ~32k lines.
+Ten crates in `core/crates/`, ~47k lines.
 
 | crate | what it is |
 |---|---|
@@ -366,6 +381,45 @@ linear in length and ratio.
 
 ---
 
+## 5b. The sixth engine — built 15 Aug, pulled 15 Aug
+
+Worth knowing about because the repo still carries its name and three of its
+design documents, and because a reader finding those could reasonably conclude
+the program has six engines. **It has five.**
+
+`Algorithm::Feedback` was the grain cloud reading the machine's own output: a
+ring buffer on `Core`, written after the rack and before the fader, audio-thread
+only and lock-free. `ringMix` and `ringReachMs` were document parameters gated
+on the engine, so `Granular` kept its invariants unconditional, and offline
+export forced the streaming path so what you heard was what you exported. It was
+built, tested and it worked. The user tried it and said *"the feedback engine is
+useless too — pull it"*, so it went (`c2a4e54`), along with `engine/src/ring.rs`,
+the picker button, the controls and the tests.
+
+**Three things it left behind, all still in the program:**
+
+- **The WSOLA splice-search bound.** High Search values glitched; the search is
+  now clamped to one output hop. Worst step went from 0.232 to 0.093.
+- **The tail decay on the paused branch** (§6) — found only because the ring
+  made me read that branch closely enough to notice it returned before the rack
+  ran.
+- **Every test harness** written to prove the ring worked, which now covers the
+  rest of the program.
+
+The design documents are kept as the record, not as plans:
+[SIXTH-ENGINE.md](SIXTH-ENGINE.md), [WAVETABLE-MODE.md](WAVETABLE-MODE.md),
+[OUTPUT-SAMPLED-GRAINS.md](OUTPUT-SAMPLED-GRAINS.md). The wavetable argument in
+them stands on its own — a grain exactly one loop long, repeated with no gap,
+*is* a wavetable oscillator — and if it is ever built it will not be built on a
+ring.
+
+**One thing to re-decide rather than inherit:** the roadmap's "ten visualisers →
+two" was settled partly on this engine's account, because a grain reading from a
+ring has no source position for the object views to draw. That argument died
+with the engine. See [ROADMAP.md](ROADMAP.md).
+
+---
+
 ## 6. The real-time engine
 
 Three layers, deliberately separable (`crates/engine`):
@@ -614,6 +668,72 @@ outside is caught too.
 
 **Absent means unchanged.** A control that posts one field does not reset the
 twenty it did not mention.
+
+---
+
+### Themes — ported 15 Aug 2026
+
+The engine came from `/Users/rjvaleo/Documents/Emovis/`, transpiled from
+TypeScript into `ui/theme-derive.js`, with the 47-palette library in
+`ui/theme-palettes.js`. Both are `include_str!`-embedded like everything else.
+
+The piece **neither program had** is `THEME_TOKEN_MAP` — Emovis derived a
+palette into its own token names, and this app's stylesheet uses different ones.
+The map is the join, and `Theme.appTokens` / `Theme.apply` are what write them
+onto `:root`.
+
+Three things a reader should know, because each looks like a bug otherwise:
+
+- **The picker offers 20 of the 47.** The chrome reads depth as lightness — a
+  raised surface is a lighter one — which is a dark-theme assumption in every
+  panel. All 27 light palettes break that ladder and all 20 dark ones hold it,
+  so `allPalettes()` filters on `deriveTheme(...).mode === 'dark'` rather than
+  showing the rest broken. Fixing that means teaching the panels to read depth
+  as contrast instead, which is a real piece of work and not started.
+- **Waveforms are outside the theme, deliberately.** `--wave` and `--wave-2` are
+  green and blue and stay green and blue in every palette, in the browser, the
+  editor and every panel. `waveInk(second)` is the only thing audio canvases may
+  read; anything reaching for `--accent` to draw audio is a bug. Status colours
+  and translucent rules are outside it for the same reason.
+- **The app was never built to be themed.** Only 15 of 202 colours went through
+  tokens when the port landed; 88 do now. The remaining ~99 are hexes in the
+  visualisers, the meters and the waveform, plus blue selection tints — which is
+  why a theme currently reaches the chrome and not the canvas.
+
+**The themes are not good yet, and the user has said so repeatedly.** The engine
+and the palettes are not the problem — they derive correctly. The problem is
+that deriving sixty tokens from five colours produces arbitrary-looking results
+*in this interface*. The agreed next step is **direct assignment**: the user
+names eight surface steps, four text steps and one accent, and those are set
+without derivation. Asked for; not yet supplied. **Do not start deriving
+harder.**
+
+### Testing the interface
+
+There was none of this before 15 Aug, and the reason it exists is that three
+separate breakages reached the user because a feature was announced as working
+having only had its engine tested in isolation.
+
+| | |
+|---|---|
+| `tools/ui-check.mjs` | Static checks over `ui/`: a control with no default, a pane with no entry in `showPane`'s map, a function nothing calls. **Found two dead functions on its first run** — `renderMaster` and `renderRackParams`, one of which had quietly removed the channel maximiser from the product for three days. Also runs under `cargo test`, via `server/tests/interface.rs` |
+| `tools/scratch-server.mjs` | A throwaway instance on its own port with its own library, killed and cleaned up. `AUDIOLAB_PORT` exists so it cannot land on a working session. `--check` runs 13 API checks |
+| `tests/ui/*.spec.mjs` | Playwright, 10 specs against that scratch server. The only thing that catches a panel which builds without error and shows nothing |
+
+**Two traps inside the harness itself**, both of which cost real time:
+
+- **`window.state` is undefined and always will be.** `state` is declared with
+  `const` at the top level of a classic script, which makes it a *lexical*
+  global rather than a property of `window`. Bare `state` works in an evaluated
+  expression. This timed out all five specs the first time.
+- **The automation browser lies about layout** (§10.3) — `document.hidden` is
+  true, so `requestAnimationFrame` never fires. Screenshot first to force
+  layout, then measure.
+
+**The browser works.** `mcp__Claude_Browser__preview_start` on
+`http://127.0.0.1:8737/` opens the real page and `read_page`, `javascript_tool`
+and screenshots all work. Hours were spent asserting it did not, from stale
+context, without once trying it. Verify against the running thing.
 
 ---
 
@@ -1173,8 +1293,9 @@ decisions.**
     press after that. Pick a second sound and the first one played under the
     new picture. Selecting deliberately does not load (loading folds the whole
     document and hands it over), so anything that starts the transport has to
-    ask what is *selected*, not what is loaded. Found by ear, not by a test;
-    the interface still has none.
+    ask what is *selected*, not what is loaded. Found by ear, not by a test —
+    the interface had none at the time. It does now (§7), and this is exactly
+    the class of fault a browser spec catches.
 25. **`render_fx` per block on a stretched document is quadratic.** It renders
     the whole timeline and slices, so a block loop renders the file once per
     block. Two separate places had this and both looked like a hang rather than
@@ -1216,7 +1337,12 @@ gesture), `docs/MENUS.md` (every menu item).
 
 ## 12. What is open
 
-**Nothing is waiting on a decision.** The granular layers question was answered
+**One thing is waiting on the user: the theme colours.** Deriving sixty tokens
+from five produces arbitrary results in this interface, so the agreed next step
+is direct assignment — eight surface steps, four text steps, one accent, named
+rather than derived. Asked for on 15 Aug; not yet supplied. See §7.
+
+The granular layers question was answered
 on 11 Aug 2026 — option two, compensate by √N in both paths from
 `grain::layer_gain`. Kept here because the reasoning still governs the code:
 
@@ -1291,20 +1417,58 @@ down:**
 
 **Thin coverage, honestly:**
 
-- `server/src/live.rs` — the audio-thread bridge. Hard to test without a device.
-- **The interface.** No automated tests at all; only ever checked by driving the
-  browser, which lies (see §10.3).
+- `server/src/live.rs` — the audio-thread bridge. **Better than it was:**
+  `Rebuilds::decide` was extracted specifically so the "what must be rebuilt"
+  question is a value that can be tested without a device. The handover itself
+  still is not.
+- **The interface.** No longer untested — a static check and 10 Playwright specs
+  as of 15 Aug (§7). Still a floor rather than coverage: the specs reach only
+  what is on screen when they run, and the whole library and Browse half has
+  none.
+- **Invariants 2, 3, 4, 5 and 7 are not named by any test.** They hold, and
+  things around them are tested, but nothing asserts them by name. See
+  [TEST-COVERAGE-AUDIT.md](TEST-COVERAGE-AUDIT.md).
 
 **Lower value, still open:**
 
 - The label pass is synchronous — fine for 66 files, not for a real library.
 - `classify.rs:494` duration-veto bug.
-- Other panels have not been audited for the captured-reference bug (§10.6).
+- Other panels have not been audited for the captured-reference bug (§10.6) —
+  though `adoptRack` fixed the rack's own case by filling the existing slot
+  objects rather than replacing `state.rack` wholesale.
+- **WSOLA's Search offers 0–200 ms and is bounded to one hop**, so its top end
+  is inert. The range should shrink to what the hop can actually use, which
+  changes with window and overlap — a UI change, not a DSP one.
 
 ---
 
 ## 13. Recent history
 
+    c2a4e54  Pull the feedback engine
+    2d6c47f  Audio is drawn in blue or green, whatever the theme
+    35d6174  Bound the WSOLA splice search to a hop
+    619174d  Give the interface's colours names, so a theme can reach them
+    f0e51ff  Port the theme engine, rewrite its interface
+    8153940  Drive the real interface in a real browser
+    ea39ee5  A scratch instance, on a port of its own
+    836c4df  Cover the live path, name two invariants, run the interface check
+    21d2d3b  Audit: the tests are deep on arithmetic and absent on the program
+    b61a430  The maximiser is a module
+    9583dac  A check for the interface, which had none
+    fe2b65a  Saving a preset asks for a name and nothing else
+    c23cc7a  The waveform is the material, not the effects
+    96ce7e3  The rack panels were writing to an orphaned copy
+    6030739  Prove a control moved while playing reaches the effect
+    a496375  Position had no default, and nothing said so
+    8c5f88d  Density and Layers stop rebuilding on every step of a drag
+    abb8bd6  Stop rebuilding the chain to say a number changed
+    f8d0d26  Audit: what rebuilds live audio state, and why the reverb ducks
+    1aa67ef  Double-click to reset actually reaches the controls now
+    3cfe3df  The sixth engine
+    b5a0f62  Ten views become two, because eight of them stop being true
+    c7f326f  Decide where this is going before building any of it
+    d22eb6b  A short loop shortens its fade instead of stopping the machine
+    6d120d7  One keyboard listener, because six could not agree
     5f874c6  Snap edits to zero crossings, and do the rest of Peak's edits
     4cb7260  Write down the whole state, including the Peak work
     4cda809  Draw every shaper from its own description
