@@ -6690,22 +6690,6 @@ function drawCloudPad() {
   c.strokeStyle = 'rgba(82,168,255,.9)';
   c.beginPath(); c.moveTo(bx, 0); c.lineTo(bx, h); c.stroke();
 
-  // Where the engine stops being able to start a grain.
-  //
-  // `max_start = frames - span - 1`: past this a grain would read off the end,
-  // so every one that wants to sits exactly here. With a window that is a
-  // quarter of the file that is a quarter of the width, and without the line
-  // the crowd against it looks like the drawing giving up.
-  const winFrames = ((geo.st.windowMs || 40) / 1000) * geo.sr;
-  const maxStart = geo.base - winFrames - 1;
-  if (maxStart > 0 && maxStart < geo.base * 0.97) {
-    const mx = geo.x(maxStart);
-    c.strokeStyle = 'rgba(244,190,73,.30)';
-    c.setLineDash([2, 3]);
-    c.beginPath(); c.moveTo(mx, 0); c.lineTo(mx, h); c.stroke();
-    c.setLineDash([]);
-  }
-
   // The grains themselves, from the renderer's own enumeration.
   const g = state.grains;
   const readout = $('cloudPadRead');
