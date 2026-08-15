@@ -6540,6 +6540,22 @@ function drawCloudPad() {
   c.strokeStyle = 'rgba(82,168,255,.9)';
   c.beginPath(); c.moveTo(bx, 0); c.lineTo(bx, h); c.stroke();
 
+  // Where the engine stops being able to start a grain.
+  //
+  // `max_start = frames - span - 1`: past this a grain would read off the end,
+  // so every one that wants to sits exactly here. With a window that is a
+  // quarter of the file that is a quarter of the width, and without the line
+  // the crowd against it looks like the drawing giving up.
+  const winFrames = ((geo.st.windowMs || 40) / 1000) * geo.sr;
+  const maxStart = geo.base - winFrames - 1;
+  if (maxStart > 0 && maxStart < geo.base * 0.97) {
+    const mx = geo.x(maxStart);
+    c.strokeStyle = 'rgba(244,190,73,.30)';
+    c.setLineDash([2, 3]);
+    c.beginPath(); c.moveTo(mx, 0); c.lineTo(mx, h); c.stroke();
+    c.setLineDash([]);
+  }
+
   // The grains themselves, from the renderer's own enumeration.
   const g = state.grains;
   const readout = $('cloudPadRead');
@@ -6550,6 +6566,18 @@ function drawCloudPad() {
   const baseSemis = geo.st.semitones ?? 0;
   const now = playbackTime();
   const playFrame = now * geo.sr;
+
+  // A grain is not a point, it is a span: it starts at `srcFrame` and reads
+  // forward through `size × rate` frames. Drawn at its start, a cloud of long
+  // grains looks as though the end of the file is never touched — and worse,
+  // the engine refuses to start a grain that would read off the end, so every
+  // one that wants to is clamped to the last legal position and they pile into
+  // a wall there. That wall is real, and it was being drawn as the edge of the
+  // picture. Plotted at the middle of what each grain actually reads, the cloud
+  // covers the file the way the sound does.
+  const readMid = (srcFrame, size, pitchSemis) =>
+    srcFrame + (size * Math.pow(2, pitchSemis / 12)) / 2;
+
   for (const [outFrame, srcFrame, size, pitch, , bright] of g.grains) {
     const dt = (outFrame - playFrame) / geo.sr;
     // Everything is drawn, but what is sounding now is drawn brightest — the
@@ -6565,7 +6593,7 @@ function drawCloudPad() {
     const r = 0.6 + Math.min(1.1, (size / geo.sr) * 8);
     c.fillStyle = grainColour(pitch - baseSemis, bright, alpha);
     c.beginPath();
-    c.arc(geo.x(srcFrame), geo.y(pitch - baseSemis), r, 0, Math.PI * 2);
+    c.arc(geo.x(readMid(srcFrame, size, pitch)), geo.y(pitch - baseSemis), r, 0, Math.PI * 2);
     c.fill();
   }
   if (readout) {
