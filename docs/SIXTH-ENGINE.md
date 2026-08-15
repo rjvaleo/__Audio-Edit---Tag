@@ -175,8 +175,41 @@ to start.
    when you most want to see what is happening.
 4. **How are ring-sourced grains marked?** Colour is the obvious answer and the
    palette is already carrying pitch.
-5. **Does Swarm hand over to the waveshape view automatically as the cloud
-   collapses, or do they stay separately selectable?** Handing over follows the
-   sound and means the panel is never showing a cloud that is not there.
-   Separate means you can watch the collapse happen in the view that is losing
-   its subject, which is arguably the more interesting thing to see.
+*(The handover question is settled — see below.)*
+
+## The collapse is one number, and it drives both
+
+Neither a hard switch nor two separately chosen views: **Swarm and the waveshape
+view crossfade**, and the thing that drives the fade is the same thing that
+drives the sound.
+
+The collapse already exists as a value. Grain length against the loop is one of
+the two controls, and it runs from *many grains per loop* to *one grain that is
+the loop*. Normalised, that is a scalar from cloud to tone. It is **derived, not
+a new control** — nothing extra to invent or to expose.
+
+That scalar drives:
+
+- **the audio**, if the boundary turns out to need a crossfade band at all
+  (see [WAVETABLE-MODE.md](WAVETABLE-MODE.md) — the hope is the two paths can be
+  made to agree at the crossover and the switch is free)
+- **the picture**, always
+
+And if the audio does need a band, **it is the same crossfade**. One value, one
+transition, heard and seen together. A visual fade that ran on its own timing
+would be showing a collapse that was not happening yet — the same class of lie
+as drawing a grain where it did not read.
+
+## It is one scene, not two panels
+
+The important implementation note, because the obvious reading is wrong.
+
+This is **not** one canvas fading out while another fades in. Both views live in
+the same volume, and the crossfade is an alpha blend of two draws in a single
+scene: the cloud **thins** as the waveshape **condenses** in the same space.
+
+That is a far better picture than a dissolve between panels, and it is the thing
+already asked for in another form early on — grains decaying like radioactive
+particles, leaving a trail of smoke and an after-image. The collapse is exactly
+that: a cloud losing its members while a single shape resolves out of where they
+were.
