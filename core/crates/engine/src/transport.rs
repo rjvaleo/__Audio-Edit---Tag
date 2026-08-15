@@ -19,6 +19,21 @@ use crate::stretcher::Stretcher;
 /// clicks without it.
 const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 
+/// Below this peak, a stopped chain counts as quiet.
+///
+/// About -80 dBFS: long after a reverb tail has gone, but above the
+/// denormal-scale noise that would otherwise keep the rack running for ever.
+const TAIL_SILENCE: f32 = 1e-4;
+
+/// How long a stopped rack goes on being processed after it last made a sound.
+///
+/// Four seconds covers any reverb worth having and the gap between repeats of a
+/// slow delay. A countdown rather than a switch, so a delay that is briefly
+/// silent between taps is not mistaken for a finished one.
+fn tail_budget(sample_rate: u32) -> u64 {
+    sample_rate as u64 * 4
+}
+
 /// The shortest loop the wrap-and-crossfade path will accept.
 ///
 /// Not a musical limit. It is where *wrapping* stops being the right mechanism:
@@ -491,6 +506,13 @@ pub struct Core {
     fft_bins: Vec<u8>,
     params: StreamParams,
     source: Arc<Source>,
+    /// Frames of processing a stopped rack still has left before it is treated
+    /// as finished.
+    ///
+    /// What lets a reverb decay after the transport stops instead of being cut
+    /// off mid-tail — and what stops a stopped transport processing silence for
+    /// as long as the application is open.
+    tail_left: u64,
     /// The last few seconds of output, for grains that read what just came out.
     ///
     /// Written every block; nothing reads it yet. See [`crate::ring`].
@@ -747,6 +769,7 @@ impl Core {
             fft_re: vec![0.0; FFT_SIZE],
             fft_im: vec![0.0; FFT_SIZE],
             fft_bins: vec![0; FFT_SIZE / 2 + 1],
+            tail_left: tail_budget(params.sample_rate),
             // Sized by the shared policy, so the offline renderer cannot end
             // up with a different maximum reach. See `OutputRing::for_engine`.
             ring: crate::ring::OutputRing::for_engine(params.sample_rate, channels.max(1)),
@@ -840,15 +863,35 @@ impl Core {
         }
 
         if !shared.is_playing() {
+            // No *new* material — but the chain is not empty. A reverb that
+            // stops dead on the same sample as the transport is the one thing
+            // every listener notices, so the rack keeps running on silence and
+            // its tails ring out.
             out.fill(0.0);
-            // Nothing is passing through the rack, so the meters must fall
-            // rather than hold the last block that was heard.
-            shared.rack_meters.clear();
+            if self.tail_left > 0 {
+                self.process_rack(out, channels);
+                let peak = out.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+                // Counted down rather than stopped at the first quiet block:
+                // a delay with a long gap between repeats is silent in the
+                // middle and would be cut off by a single-block test.
+                if peak < TAIL_SILENCE {
+                    self.tail_left = self.tail_left.saturating_sub((out.len() / channels.max(1)) as u64);
+                } else {
+                    self.tail_left = tail_budget(self.params.sample_rate);
+                }
+            } else {
+                // Long since quiet. Stop processing rather than burning a core
+                // on silence for as long as the app is open.
+                shared.rack_meters.clear();
+            }
             shared
                 .position
                 .store(self.renderer.position(), Ordering::Release);
             return;
         }
+        // Playing again: whatever is in the chain is live material, so the tail
+        // budget is whole again the moment it is needed.
+        self.tail_left = tail_budget(self.params.sample_rate);
 
         let frames = out.len() / channels;
         let end = self.params.plan().out_frames as u64;
@@ -1232,6 +1275,65 @@ mod tests {
         let (core, _shared) = playing_core(2);
         assert_eq!(core.ring.channels(), 2);
         assert!(core.ring.frames() > 0);
+    }
+
+    /// The paused branch must keep running the chain rather than returning.
+    ///
+    /// Cutting a reverb tail on the same sample as the stop is the one thing
+    /// every listener notices, and it is what this used to do: fill silence and
+    /// return before `process_rack` was ever reached. The countdown moving is
+    /// the evidence that the branch is now doing work.
+    #[test]
+    fn a_stopped_transport_keeps_processing_the_chain() {
+        let (mut core, shared) = playing_core(1);
+        shared.set_rack(Some(fx::Rack::new()));
+        let mut buf = vec![0.0; 512];
+        core.fill(&mut buf, 1, &shared);
+        assert!(buf.iter().any(|s| *s != 0.0), "nothing was playing to begin with");
+
+        shared.pause();
+        let before = core.tail_left;
+        core.fill(&mut buf, 1, &shared);
+        assert!(
+            core.tail_left < before,
+            "the paused branch returned without processing the rack"
+        );
+    }
+
+    /// ...but not for ever. A stopped transport must not process silence for as
+    /// long as the application is open.
+    #[test]
+    fn a_stopped_rack_eventually_stops_being_processed() {
+        let (mut core, shared) = playing_core(1);
+        shared.set_rack(Some(fx::Rack::new()));
+        let mut buf = vec![0.0; 512];
+        core.fill(&mut buf, 1, &shared);
+
+        shared.pause();
+        let budget = tail_budget(48_000);
+        // Four seconds of silence, plus a margin.
+        for _ in 0..(budget / 512 + 4) {
+            core.fill(&mut buf, 1, &shared);
+        }
+        assert_eq!(core.tail_left, 0, "a silent chain went on being processed");
+    }
+
+    /// And starting again restores it, or a second stop would have no tail.
+    #[test]
+    fn playing_again_restores_the_tail_budget() {
+        let (mut core, shared) = playing_core(1);
+        shared.set_rack(Some(fx::Rack::new()));
+        let mut buf = vec![0.0; 512];
+
+        shared.pause();
+        for _ in 0..(tail_budget(48_000) / 512 + 4) {
+            core.fill(&mut buf, 1, &shared);
+        }
+        assert_eq!(core.tail_left, 0);
+
+        shared.play();
+        core.fill(&mut buf, 1, &shared);
+        assert!(core.tail_left > 0, "the budget did not come back on play");
     }
 
     #[test]

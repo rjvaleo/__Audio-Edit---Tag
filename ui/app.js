@@ -2499,19 +2499,6 @@ function liveParam(slotId, key, value) {
 }
 
 /// Kept for the paths that still have no id to write against.
-const pushRackLive = throttled(async () => {
-  const f = state.selectedFile;
-  if (!f || !state.rack) return;
-  try {
-    await postJSON('/api/rack', {
-      p: f.path,
-      sr: state.view.sampleRate || 48000,
-      slots: state.rack.slots,
-      master: state.rack.master,
-    });
-  } catch { /* the release commit reports a persistent failure */ }
-}, 32);
-
 /// What a released control does.
 ///
 /// The engine already has the value — `liveParam` sent it — so this is only
@@ -2626,30 +2613,38 @@ function renderMaster() {
   const m = () => state.rack.master;
   const set = (k, v) => { m()[k] = v; };
   const shown = m();
-  const send = throttled(() => pushRack(), 120);
-  const commit = () => pushRack({ immediate: true });
+  // Structural: turning the maximiser on, or changing how it decides. These
+  // change what the effect *is*, so the chain is rebuilt and that is correct.
+  const rebuild = () => pushRack({ immediate: true });
+  // The one continuous control that can move without rebuilding anything.
+  // `Maximizer::set_param` takes `amount` and refuses the ceiling on purpose —
+  // putting the one guarantee that effect makes on a curve would defeat it.
+  const live = (v) => liveParam('master', 'amount', v);
+  // Released: the document catches up, the engine is already there. keepLive,
+  // or this is the tail-cutting rebuild all over again.
+  const settle = () => commitRack();
 
   state.masterRows = {};
   const row = (el, key) => { state.masterRows[key] = el; box.appendChild(el); return el; };
 
   row(check('maximizer', 'Compress and hold the channel under its ceiling', shown.on,
-    (on) => { set('on', on); reflectMaster(); commit(); }), 'on');
+    (on) => { set('on', on); reflectMaster(); rebuild(); }), 'on');
 
   row(param('Amount', shown.amount, 0, 1, 0.01,
     (v) => (v <= 0 ? 'none' : v >= 0.999 ? 'maximize' : `${Math.round(v * 100)}%`),
-    (v) => { set('amount', v); send();  },
-    () => {commit();}, false, MASTER_DEFAULTS.amount), 'amount');
+    (v) => { set('amount', v); live(v); },
+    () => { settle(); }, false, MASTER_DEFAULTS.amount), 'amount');
 
   row(check('auto level',
     'Walk the output up to the ceiling as it plays, rather than leaving the gain where it was',
-    shown.autoLevel, (on) => { set('autoLevel', on); commit(); }), 'autoLevel');
+    shown.autoLevel, (on) => { set('autoLevel', on); rebuild(); }), 'autoLevel');
 
   row(check('auto compression',
     'Take the threshold from the material, so the same setting squeezes a quiet file like a loud one',
-    shown.autoComp, (on) => { set('autoComp', on); commit(); }), 'autoComp');
+    shown.autoComp, (on) => { set('autoComp', on); rebuild(); }), 'autoComp');
 
   row(param('Ceiling', shown.ceilingDb, -24, 0, 0.1, (v) => `${v.toFixed(1)} dB`,
-    (v) => { set('ceilingDb', v); send(); }, () => commit(), false, MASTER_DEFAULTS.ceilingDb), 'ceilingDb');
+    (v) => { set('ceilingDb', v); }, () => rebuild(), false, MASTER_DEFAULTS.ceilingDb), 'ceilingDb');
 
   reflectMaster();
 }
@@ -2810,7 +2805,14 @@ function renderFxModuleControls(box, slot, shaper, slotIndex) {
       (v) => {
         set(v);
         if (key) liveParam(slot.id, key, v);
-        else if (!sent) pushRackLive();
+        else if (!sent) {
+          // Deliberately does nothing but complain. This used to call
+          // `pushRackLive`, which posted the whole rack every 32ms — thirty
+          // rebuilds a second, each one clearing every delay line and reverb
+          // tail in the chain. A control that cannot name its parameter should
+          // be visibly broken, not quietly destructive.
+          console.error(`rack control "${label}" has no key and did not send its own — it will not reach the engine`);
+        }
       },
       () => { commitRack(); }, log, def));
   };

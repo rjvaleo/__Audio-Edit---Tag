@@ -380,7 +380,18 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
                 h.sample_rate,
             ));
         }
-        h.shared.set_rack(rack_for(app, rel, h.sample_rate, h.channels));
+        // The rack is deliberately *not* rebuilt here.
+        //
+        // This runs on every stretch and grain parameter, and handing over a
+        // fresh rack replaces every filter, delay line and reverb tail in the
+        // chain — heard as the effects ducking out and fading back in on each
+        // slider move. The three things above are each guarded for exactly that
+        // reason; this one was not, and it was the loudest of the four.
+        //
+        // Nothing here needs it. The rack belongs to `load` (the file changed)
+        // and to `/api/rack` (its structure changed); a stretch parameter is
+        // neither. `/api/rack` already learned this and guards on `keepLive` —
+        // its comment says so in as many words.
     })
 }
 

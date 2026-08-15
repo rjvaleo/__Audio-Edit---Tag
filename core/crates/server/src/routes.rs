@@ -783,6 +783,38 @@ fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
     };
 
     let mut spec = app.racks.get(rel);
+
+    // The master is not in `slot_ids` — it cannot be added, removed or
+    // reordered, so it has no id of its own. It *is* a slot in the built rack
+    // though: `rack_for` pushes the maximiser last, after every spec slot, so
+    // its live index is exactly the number of them.
+    //
+    // Only `amount` travels this way. `Maximizer::set_param` refuses the
+    // ceiling on purpose — putting the one guarantee the effect makes on a
+    // curve would defeat it — and the two automatic modes change what the
+    // maximiser is rather than where it sits. Those arrive with a rebuild, and
+    // should.
+    if id == "master" {
+        if key != "amount" {
+            return Response::error(400, "only amount is live on the master");
+        }
+        let applied = value.clamp(0.0, 1.0);
+        spec.master.amount = applied;
+        let at = spec.slots.len();
+        app.racks.set(rel, spec);
+        app.save_sessions();
+        if crate::live::holding(app, rel) {
+            let _ = crate::live::with(app, |h| h.shared.set_manual_param(at, key, applied));
+        }
+        return Response::json(
+            Value::obj()
+                .set("id", id.to_string())
+                .set("key", key.to_string())
+                .set("value", applied as f64)
+                .to_string(),
+        );
+    }
+
     let Some(slot) = spec.slot_ids.iter().position(|x| x == id) else {
         return Response::error(404, "no such module in the rack");
     };
