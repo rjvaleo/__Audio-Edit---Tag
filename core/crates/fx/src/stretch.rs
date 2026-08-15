@@ -53,6 +53,28 @@ pub enum Algorithm {
     /// that suits it; sum. The expensive one, and the only one that is not
     /// applying a single compromise to material that is not one thing.
     Hybrid,
+    /// The grain cloud, reading the machine's own recent output instead of the
+    /// file. Time domain, and the only one of the six that is recursive.
+    ///
+    /// It grows from [`Granular`](Algorithm::Granular) rather than sitting
+    /// beside it: grains are already independent reads, so pointing one at the
+    /// output ring is a change of pointer and not of algorithm. What it gains is
+    /// feedback — freeze, regeneration, shimmer when there is a pitch shift in
+    /// the loop — and, as grains lengthen toward the loop, a collapse into a
+    /// wavetable oscillator, which is what a grain exactly one loop long
+    /// repeated with no gap already is.
+    ///
+    /// **It is a separate variant precisely to quarantine what it gives up.**
+    /// A grain reading the ring depends on the grains before it, so invariant 6
+    /// — a windowed render matching a full one — cannot hold. Kept here, that is
+    /// one engine's documented property, alongside stretch which already renders
+    /// whole for the same reason. Made a mode on `Granular` instead, it would
+    /// turn every guarantee that engine currently has into a conditional one.
+    ///
+    /// The schedule stays pure either way: `fx::grain` decides when each grain
+    /// starts and how it is shaped from index and seed alone. Only content is
+    /// recursive, and content is read in `engine`.
+    Feedback,
 }
 
 impl Algorithm {
@@ -63,6 +85,7 @@ impl Algorithm {
             Algorithm::Granular => "granular",
             Algorithm::Pvsola => "pvsola",
             Algorithm::Hybrid => "hybrid",
+            Algorithm::Feedback => "feedback",
         }
     }
 
@@ -73,6 +96,7 @@ impl Algorithm {
             "granular" => Some(Algorithm::Granular),
             "pvsola" => Some(Algorithm::Pvsola),
             "hybrid" => Some(Algorithm::Hybrid),
+            "feedback" => Some(Algorithm::Feedback),
             _ => None,
         }
     }
@@ -415,7 +439,18 @@ impl Stretch {
         // settings on it, and the two stretchers sounded identical because
         // neither was running. An override that cannot be seen is worse than
         // no choice at all.
-        if self.algorithm == Algorithm::Granular {
+        // Feedback joins Granular here because it *is* the grain cloud — but
+        // this one-pass path has no output ring, so what it produces is the dry
+        // cloud with no feedback in it at all.
+        //
+        // That is not a fallback anyone should reach. A feedback render has to
+        // run block by block, feeding each block back as it is produced, which
+        // is what `server::offline`'s streaming path does. `needs_streaming`
+        // returns true for this engine precisely so that path is always the one
+        // taken, and there is a test pinning it — because the failure mode here
+        // is silent, and silently exporting something other than what was
+        // auditioned is invariant 11 broken.
+        if self.algorithm == Algorithm::Granular || self.algorithm == Algorithm::Feedback {
             let out = crate::grain::granular(
                 input, channels, sample_rate, ratio, self.semitones, self.window_ms, &self.grain,
             );
@@ -429,8 +464,10 @@ impl Stretch {
         // idea, and nothing about it is particular to grains.
         let sr = sample_rate.max(1) as f32;
         let stretched = match self.algorithm {
-            // Handled above; it returns before reaching here.
-            Algorithm::Granular => unreachable!("granular returns earlier"),
+            // Both handled above; they return before reaching here.
+            Algorithm::Granular | Algorithm::Feedback => {
+                unreachable!("the grain cloud returns earlier")
+            }
             // Both of these drive the other engines rather than sitting beside
             // them, so they are not wrapped in `layered` — the layers reach
             // them through the vocoder and WSOLA runs they make internally,

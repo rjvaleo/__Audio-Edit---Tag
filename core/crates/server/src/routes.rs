@@ -2123,8 +2123,10 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
     // A lane on the *stretch* cannot go through the one-pass renderer: it
     // applies the stretch whole, with one set of parameters. That path runs the
     // same streaming engine the audio thread runs, so the file follows the
-    // curve for the same reason the speakers do.
-    let rendered = if crate::offline::needs_streaming(&automation) {
+    // curve for the same reason the speakers do. The sixth engine needs it for
+    // its own reason — its grains read the output ring, so it has no one-pass
+    // form at all.
+    let rendered = if crate::offline::needs_streaming(&automation, list.stretch.algorithm) {
         match edit::render::render(&list, &mut reader, 0, list.base_frames()) {
             Ok(base) => {
                 let audio = crate::offline::stretch_with_automation(

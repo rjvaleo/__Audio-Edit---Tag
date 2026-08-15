@@ -19,18 +19,6 @@ use crate::stretcher::Stretcher;
 /// clicks without it.
 const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 
-/// How much recent output the ring keeps, in seconds.
-///
-/// The upper bound on how far back a grain can reach, so it is the longest
-/// granular echo the sixth engine can make. Four seconds of stereo at 48 kHz is
-/// about 1.5 MB, allocated once and never resized.
-///
-/// Sized from the parameters' sample rate at construction, which is what the
-/// stretcher is sized from too. If the device turns out to be running faster
-/// the ring simply holds proportionally less time — it is a capacity, not a
-/// promise about duration, and every read is bounded by `frames()` anyway.
-const RING_SECONDS: f32 = 4.0;
-
 /// The shortest loop the wrap-and-crossfade path will accept.
 ///
 /// Not a musical limit. It is where *wrapping* stops being the right mechanism:
@@ -759,10 +747,9 @@ impl Core {
             fft_re: vec![0.0; FFT_SIZE],
             fft_im: vec![0.0; FFT_SIZE],
             fft_bins: vec![0; FFT_SIZE / 2 + 1],
-            ring: crate::ring::OutputRing::new(
-                (params.sample_rate as f32 * RING_SECONDS) as usize,
-                channels.max(1),
-            ),
+            // Sized by the shared policy, so the offline renderer cannot end
+            // up with a different maximum reach. See `OutputRing::for_engine`.
+            ring: crate::ring::OutputRing::for_engine(params.sample_rate, channels.max(1)),
             params,
             source,
             // Capacity up front: `aim` runs in the callback and must never
