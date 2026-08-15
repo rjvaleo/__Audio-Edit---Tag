@@ -6359,8 +6359,14 @@ function drawCloudPad() {
     // Everything is drawn, but what is sounding now is drawn brightest — the
     // cloud is a shape you are moving through, not only a shape.
     const near = Math.max(0, 1 - Math.abs(dt) / 2.5);
-    const alpha = 0.05 + near * near * 0.6;
-    const r = 1 + Math.min(4, (size / geo.sr) * 26);
+    const alpha = 0.08 + near * near * 0.72;
+    // Dots, not discs. This strip is a hundred and thirty pixels tall and
+    // holds a whole file across, so a five-pixel circle covers a tenth of a
+    // second of source and a sixth of the pitch range — at that scale a grain
+    // was not a grain, it was a blob, and a hundred of them were one blob.
+    // A point says where it is and nothing it has no room to say; length and
+    // brightness are legible in the panel on the right, which has the space.
+    const r = 0.6 + Math.min(1.1, (size / geo.sr) * 8);
     c.fillStyle = grainColour(pitch - baseSemis, bright, alpha);
     c.beginPath();
     c.arc(geo.x(srcFrame), geo.y(pitch - baseSemis), r, 0, Math.PI * 2);
