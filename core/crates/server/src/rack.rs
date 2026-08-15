@@ -68,6 +68,39 @@ impl SlotSpec {
     }
 
     /// What this slot is called in a menu, as opposed to in JSON.
+    /// Take another slot's settings, keeping this one's place in the chain.
+    ///
+    /// Only between slots of the same kind — a preset's reverb has nothing to
+    /// say to a compressor. The bypass switch is deliberately *not* carried
+    /// across: whether a module is switched in is a property of the chain you
+    /// built, not of the sound you are dropping onto it, and a preset that
+    /// silently muted a module would be very hard to diagnose.
+    pub fn take_settings_from(&mut self, other: &SlotSpec) -> bool {
+        match (self, other) {
+            (SlotSpec::Gain { db, .. }, SlotSpec::Gain { db: d, .. }) => *db = *d,
+            (SlotSpec::Eq { settings, .. }, SlotSpec::Eq { settings: o, .. }) => {
+                *settings = o.clone()
+            }
+            (SlotSpec::Comp { settings, .. }, SlotSpec::Comp { settings: o, .. }) => {
+                *settings = o.clone()
+            }
+            (
+                SlotSpec::Shape { kind, params, .. },
+                SlotSpec::Shape { kind: k, params: pr, .. },
+            ) => {
+                // A shaper's kind decides which controls it has, so taking one
+                // shaper's values into another kind would write nonsense. Same
+                // kind or nothing.
+                if kind != k {
+                    return false;
+                }
+                *params = pr.clone();
+            }
+            _ => return false,
+        }
+        true
+    }
+
     pub fn kind_label(&self) -> &'static str {
         match self {
             SlotSpec::Gain { .. } => "Gain",

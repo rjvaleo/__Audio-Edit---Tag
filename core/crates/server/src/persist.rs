@@ -448,6 +448,12 @@ pub fn write_atomic(path: &Path, body: &str) -> std::io::Result<()> {
 pub struct Preset {
     pub name: String,
     pub note: String,
+    /// The sound it was captured from, library-relative.
+    ///
+    /// Only read when a preset is applied "with sound". Empty on every preset
+    /// written before presets knew about sounds at all, and an empty one
+    /// refuses rather than guessing which file was meant.
+    pub path: String,
     pub stretch: Stretch,
     pub rack: RackSpec,
 }
@@ -457,6 +463,7 @@ impl Preset {
         Value::obj()
             .set("name", self.name.clone())
             .set("note", self.note.clone())
+            .set("path", self.path.clone())
             .set("stretch", stretch_to_json(&self.stretch))
             .set("rack", self.rack.to_json())
     }
@@ -469,6 +476,7 @@ impl Preset {
                 .unwrap_or(name)
                 .to_string(),
             note: v.get("note").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+            path: v.get("path").and_then(|n| n.as_str()).unwrap_or("").to_string(),
             stretch: v.get("stretch").map(stretch_from_json).unwrap_or_default(),
             rack: v.get("rack").map(RackSpec::from_json).unwrap_or_else(RackSpec::empty),
         }
@@ -756,6 +764,7 @@ mod tests {
         let p = Preset {
             name: "Swarm 1".into(),
             note: "dense, scattered".into(),
+            path: "kit/swarm.wav".into(),
             stretch: sample_list().stretch,
             rack: RackSpec::default_chain(),
         };
@@ -777,6 +786,9 @@ mod tests {
         .unwrap();
         let p = Preset::from_json("Swarm 1", &v);
         assert_eq!(p.name, "Swarm 1");
+        // No sound recorded, which is what every preset written before this
+        // looks like. Applying one "with sound" refuses rather than guessing.
+        assert_eq!(p.path, "");
         assert_eq!(p.stretch.grain.density_hz, 50.0);
         assert_eq!(p.stretch.grain.position_jitter_ms, 120.0);
         assert_eq!(p.stretch.grain.pitch_jitter_semis, 6.0);
