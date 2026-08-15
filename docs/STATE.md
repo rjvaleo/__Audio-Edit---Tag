@@ -39,9 +39,19 @@ binary.
 Getting this wrong once produced *"You got it SO FUCKING WRONG"* and a wasted
 rebuild.
 
-- **Build, don't ask.** Standing instruction. *"Just build the final version — do
-  the rewrite, it is OK if nothing is working."* Reserve questions for decisions
-  that would waste real work if guessed.
+- **Talk about the thing. Document the thing. Then build the thing.** Their
+  words, 14 Aug 2026, given after this had gone wrong repeatedly. That is the
+  order of work and it is not optional. Talking first is where the thing gets
+  decided; writing it down is where we find out we meant different things; only
+  then is there something to build. Skipping to the end means building the
+  wrong thing confidently.
+
+  What used to be written here — "build, don't ask" — was over-generalised
+  from one remark about one rewrite. They said in capitals: *"I NEVER SAID
+  THAT AND IT IS GETTING YOU IN FUCKING TROUBLE."* Naming a thing is a remark,
+  not a work order. "Fix this" never means "replace this": extending scope here
+  is destruction, not initiative, because what is being touched is usually
+  already right.
 - **Messages arrive mid-turn, voice-dictated and terse.** Often fragments
   ("swap edit and browse buttons"). Read them as precise instructions.
 - **When a UI description is genuinely ambiguous, ask once with concrete
