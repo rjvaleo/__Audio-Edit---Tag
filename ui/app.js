@@ -2525,8 +2525,10 @@ async function commitRack() {
   } catch (e) { toast(e.message); return; }
   renderTabs();
   refreshAutomationTargets();
-  await loadPeaks();
-  if (state.showSpec) loadSpectrogram();
+  // No peaks, no spectrogram. The waveform is the material now, and the rack
+  // does not change the material — it is processing, and processing shows up in
+  // the meters and in the speakers. Re-fetching the picture on every control
+  // release was the single most expensive thing an effect could do.
 }
 
 /// Take the server's canonical rack without breaking what is holding the old one.
@@ -2584,11 +2586,10 @@ function pushRack({ immediate = false } = {}) {
     } catch (e) { toast(e.message); return; }
     renderRack();
     renderTabs();
-    // The waveform must show what will be heard, so it is re-fetched too.
-    await loadPeaks();
-    await loadAutomationWaveform();
+    // The waveform is dry, so adding or removing a module does not change it
+    // either. The automation lanes are redrawn because their *targets* move
+    // with the rack's structure, which is a different thing from its sound.
     repaintAutomationLanes();
-    if (state.showSpec) loadSpectrogram();
     reloadAudioSource();
   };
   // Dragging a slider fires continuously; debounce so we render once per gesture.
