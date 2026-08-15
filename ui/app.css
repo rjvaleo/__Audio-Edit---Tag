@@ -7,6 +7,25 @@
   --surface-2: oklch(15.5% 0.013 250);
   --surface-3: oklch(19% 0.014 250);
   --well:      oklch(9.5% 0.01 250);
+  /* Three steps the stylesheet was already using as literals. Named rather than
+     invented: 8% under the well, 12.5% between the well and the surface, 17%
+     between the surface and the one above it. Every hardcoded surface in the
+     file now lands within half a percent of one of these eight. */
+  --sink:      oklch(8% 0.012 250);
+  --surface-0: oklch(12.5% 0.012 250);
+  --surface-2h: oklch(17% 0.013 250);
+
+  /* Blacks at alpha, which were twenty-three literals across thirteen values.
+     Three is enough: everything snapped within .08 of one of them. */
+  --shadow-soft: rgba(0,0,0,0.25);
+  --shadow:      rgba(0,0,0,0.55);
+  --shadow-hard: rgba(0,0,0,0.75);
+
+  /* Whites at alpha — hairlines, washes and the brightest rules. `--line` and
+     `--line-2` already existed and keep their values. */
+  --wash:      rgba(255,255,255,0.025);
+  --line-3:    rgba(255,255,255,0.14);
+  --line-4:    rgba(255,255,255,0.42);
   --line:      rgba(255,255,255,0.06);
   --line-2:    rgba(255,255,255,0.10);
 
@@ -63,7 +82,7 @@ button { font-family: inherit; cursor: pointer; }
 .transportbar {
   flex-shrink: 0;
   display: flex; align-items: center; gap: 9px; padding: 7px 12px;
-  background: oklch(14% 0.015 255); border-top: 1px solid var(--line);
+  background: var(--surface); border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   overflow-x: auto;
 }
@@ -99,7 +118,7 @@ button { font-family: inherit; cursor: pointer; }
 .rail-btn.active { background: var(--surface-3); border-color: var(--line-2); color: var(--accent); }
 
 .panel {
-  flex-shrink: 0; background: oklch(15% 0.014 250);
+  flex-shrink: 0; background: var(--surface-2);
   display: flex; flex-direction: column; overflow: hidden;
   transition: width .18s ease;
 }
@@ -123,7 +142,7 @@ button { font-family: inherit; cursor: pointer; }
 .filter-box {
   flex: 1; min-width: 0; height: 24px; padding: 0 8px;
   border-radius: 5px; border: 1px solid var(--line-2);
-  background: oklch(11% 0.012 250); color: var(--text);
+  background: var(--bg); color: var(--text);
   font: inherit; font-size: 11px; font-weight: 400;
 }
 .filter-box:focus { outline: none; border-color: var(--accent); }
@@ -140,7 +159,7 @@ button { font-family: inherit; cursor: pointer; }
 
 .primary {
   height: 28px; padding: 0 12px; border-radius: 6px; border: none;
-  background: var(--accent); color: oklch(14% 0.01 250);
+  background: var(--accent); color: var(--surface);
   font-size: 11px; font-weight: 600;
 }
 .primary:hover { filter: brightness(1.08); }
@@ -157,7 +176,7 @@ button { font-family: inherit; cursor: pointer; }
 .field {
   width: 100%; height: 30px; padding: 0 9px;
   border-radius: 6px; border: 1px solid var(--line-2);
-  background: oklch(11% 0.012 250); color: var(--text);
+  background: var(--bg); color: var(--text);
   font: inherit; font-size: 12px;
 }
 textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 1.45; }
@@ -167,7 +186,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   color: var(--text-dimmer); margin-bottom: 6px;
 }
 
-.seg { display: flex; gap: 2px; background: oklch(11% 0.012 250); border-radius: 6px; padding: 2px; }
+.seg { display: flex; gap: 2px; background: var(--bg); border-radius: 6px; padding: 2px; }
 .seg-btn {
   height: 22px; padding: 0 9px; border: none; border-radius: 4px;
   background: transparent; color: var(--text-dim); font-size: 10.5px;
@@ -187,7 +206,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   position: sticky; top: -8px; z-index: 2;
   display: flex; align-items: center; gap: 6px;
   margin: -8px -8px 6px; padding: 8px 10px;
-  background: oklch(15% 0.014 250); border-bottom: 1px solid var(--line);
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
   font-size: 11px; color: var(--text-2); cursor: pointer;
   user-select: none;
 }
@@ -242,11 +261,11 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   display: flex; align-items: center; justify-content: center;
 }
 .file-row .pb:hover { border-color: var(--accent); color: var(--accent); }
-.file-row .pb.on { background: var(--accent); border-color: var(--accent); color: oklch(14% 0.01 250); }
+.file-row .pb.on { background: var(--accent); border-color: var(--accent); color: var(--surface); }
 
 .file-row .thumb {
   width: 54px; height: 24px; flex-shrink: 0;
-  background: oklch(10.5% 0.011 250); border-radius: 4px; display: block;
+  background: var(--bg); border-radius: 4px; display: block;
 }
 .file-row .info { min-width: 0; flex: 1; }
 .file-row .fname {
@@ -277,7 +296,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .tbtn:hover { border-color: var(--accent); }
 .tbtn.small { width: 22px; height: 22px; border-color: var(--line); background: transparent; color: var(--text-dim); }
-.tbtn.play.on { background: var(--accent); color: oklch(14% 0.01 250); border-color: var(--accent); }
+.tbtn.play.on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
 .vsep { width: 1px; height: 20px; background: var(--line-2); flex-shrink: 0; }
 .time { font-size: 13px; letter-spacing: .3px; white-space: nowrap; }
 #rateLabel { font-size: 10.5px; white-space: nowrap; }
@@ -295,7 +314,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .edittools {
   min-height: 36px; flex-shrink: 0;
   display: flex; align-items: center; gap: 6px; padding: 5px 14px;
-  background: oklch(13.5% 0.013 250); border-bottom: 1px solid var(--line);
+  background: var(--surface); border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
 .edittools .ghost { height: 24px; padding: 0 8px; font-size: 10.5px; }
@@ -318,7 +337,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 
 .ruler {
   height: 20px; flex-shrink: 0; position: relative;
-  background: oklch(14.5% 0.013 250); border-bottom: 1px solid var(--line);
+  background: var(--surface); border-bottom: 1px solid var(--line);
   overflow: hidden;
 }
 .marker { position: absolute; top: 0; bottom: 0; pointer-events: none; }
@@ -338,7 +357,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .presetbar {
   height: 30px; flex-shrink: 0;
   display: flex; align-items: center; gap: 8px; padding: 0 12px;
-  background: oklch(13.5% 0.013 250); border-bottom: 1px solid var(--line);
+  background: var(--surface); border-bottom: 1px solid var(--line);
 }
 .presetbar .pb-label {
   font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
@@ -349,7 +368,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 
 .regions {
   height: 24px; flex-shrink: 0; position: relative;
-  background: oklch(14.5% 0.013 250); border-bottom: 1px solid var(--line);
+  background: var(--surface); border-bottom: 1px solid var(--line);
   overflow: hidden;
 }
 /* Nothing in it, so it does not get to keep a row of the window. Deliberately
@@ -396,11 +415,11 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   display: flex; flex-wrap: wrap; justify-content: flex-start;
   align-items: flex-start; gap: 14px 14px; margin-top: 0;
   padding: 16px 14px 14px;
-  border: 1px solid rgba(255,255,255,.10); border-top: 0;
+  border: 1px solid var(--line-2); border-top: 0;
   background:
-    linear-gradient(180deg, rgba(255,255,255,.025), transparent 22px),
-    oklch(12.5% 0.012 250);
-  box-shadow: inset 0 1px rgba(255,255,255,.025), 0 8px 20px rgba(0,0,0,.18);
+    linear-gradient(180deg, var(--wash), transparent 22px),
+    var(--surface-0);
+  box-shadow: inset 0 1px var(--wash), 0 8px 20px var(--shadow-soft);
 }
 .knob {
   width: 58px; flex: 0 0 auto;
@@ -411,9 +430,9 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   cursor: ns-resize; touch-action: none;
   filter: drop-shadow(0 2px 2px rgba(0,0,0,.65));
 }
-.knob .bezel { fill: #090b0e; stroke: rgba(255,255,255,.18); stroke-width: 1; }
-.knob .cap { fill: #11151a; stroke: rgba(255,255,255,.06); stroke-width: 1; }
-.knob .track { fill: none; stroke: rgba(255,255,255,.13); stroke-width: 2.5; stroke-linecap: round; }
+.knob .bezel { fill: #090b0e; stroke: var(--line-3); stroke-width: 1; }
+.knob .cap { fill: #11151a; stroke: var(--line); stroke-width: 1; }
+.knob .track { fill: none; stroke: var(--line-3); stroke-width: 2.5; stroke-linecap: round; }
 .knob .arc   { fill: none; stroke: oklch(70% .18 235); stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 2px rgba(45,157,255,.5)); }
 .knob .ptr   { stroke: #eef7ff; stroke-width: 1.7; stroke-linecap: round; }
 .knob .k {
@@ -426,9 +445,9 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   border-radius: 2px; background: #101c2b; text-align: center;
   font-family: var(--mono); font-size: 8.5px; color: #a9d7ff;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  box-shadow: inset 0 1px 4px rgba(0,0,0,.7);
+  box-shadow: inset 0 1px 4px var(--shadow-hard);
 }
-.knob:hover .track { stroke: rgba(255,255,255,0.18); }
+.knob:hover .track { stroke: var(--line-3); }
 /* While it is being turned, so the one under the pointer is obvious even when
    the pointer has been dragged off it. */
 .knob.turning .arc { filter: brightness(1.3); }
@@ -493,7 +512,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
    cleared. Static, so it reads differently from the moving playhead. */
 .cue {
   position: absolute; top: 0; bottom: 0; left: 0; width: 1px; z-index: 4;
-  background: rgba(255,255,255,0.42);
+  background: var(--line-4);
   pointer-events: none; display: none;
 }
 .cue i {
@@ -542,7 +561,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .stat-card.wide .v { font-size: 12px; font-weight: 500; }
 .why {
   margin-top: 12px; padding: 9px 12px; border-radius: 6px;
-  background: oklch(13% 0.013 250); border-left: 2px solid var(--line-2);
+  background: var(--surface-0); border-left: 2px solid var(--line-2);
   font-size: 11px; line-height: 1.5; color: var(--text-dim);
 }
 .why b { color: var(--text-2); font-weight: 600; }
@@ -552,7 +571,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .dock {
   position: relative;
   flex: 0 0 240px; display: flex; flex-direction: column;
-  background: oklch(13.5% 0.013 250); border-top: 1px solid var(--line-2);
+  background: var(--surface); border-top: 1px solid var(--line-2);
   overflow: hidden;
 }
 /* The dock's tabs used to run down its left edge, which cost every pane 58px
@@ -597,7 +616,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 
 .meter-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .meter-row .k { width: 46px; font-size: 9.5px; color: var(--text-dim); }
-.meter-row .bar { flex: 1; height: 5px; border-radius: 3px; background: oklch(11% 0.012 250); overflow: hidden; }
+.meter-row .bar { flex: 1; height: 5px; border-radius: 3px; background: var(--bg); overflow: hidden; }
 .meter-row .fill { height: 100%; background: var(--accent); }
 .meter-row .v { width: 62px; text-align: right; font-family: var(--mono); font-size: 9.5px; color: var(--text-2); }
 .stat-row { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 4px; }
@@ -613,7 +632,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .insp-field {
   display: flex; flex-direction: column; gap: 2px;
-  padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+  padding: 6px 0; border-bottom: 1px solid var(--wash);
 }
 .insp-field .k { font-size: 9.5px; color: var(--text-dim); }
 .insp-field .v { font-family: var(--mono); font-size: 11px; color: var(--text-2); word-break: break-word; }
@@ -622,7 +641,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 /* ------------------------------------------------------------- scan/search */
 
 .stat-block { display: flex; flex-direction: column; gap: 8px; }
-.progress { height: 4px; border-radius: 2px; background: oklch(11% 0.012 250); overflow: hidden; }
+.progress { height: 4px; border-radius: 2px; background: var(--bg); overflow: hidden; }
 .progress-fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 .progress-wrap { margin-top: 10px; }
 .progress-label { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--text-dim); margin-bottom: 5px; }
@@ -633,7 +652,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .path-display {
   font-size: 10.5px; color: var(--text-2); word-break: break-all;
-  background: oklch(11% 0.012 250); border: 1px solid var(--line);
+  background: var(--bg); border: 1px solid var(--line);
   border-radius: 6px; padding: 8px 9px; margin-bottom: 10px;
 }
 .results { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
@@ -645,13 +664,13 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 /* -------------------------------------------------------------------- modal */
 
 .modal {
-  position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,0.55);
+  position: fixed; inset: 0; z-index: 50; background: var(--shadow);
   display: flex; align-items: center; justify-content: center;
 }
 .modal-box {
   width: 720px; max-width: 90vw; height: 500px; max-height: 85vh;
   background: var(--surface); border: 1px solid var(--line-2);
-  border-radius: 12px; box-shadow: 0 30px 70px rgba(0,0,0,0.6);
+  border-radius: 12px; box-shadow: 0 30px 70px var(--shadow);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .modal-head {
@@ -683,7 +702,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   position: fixed; right: 18px; bottom: 18px; z-index: 60;
   background: var(--surface-3); border: 1px solid var(--accent);
   border-radius: 8px; padding: 10px 15px; font-size: 12px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 30px var(--shadow);
 }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -705,17 +724,17 @@ input, textarea, .path-display, .picker-path, .insp-field .v {
   flex-shrink: 0;
 }
 .modeswitch .seg-btn { font-size: 11px; padding: 0 11px; }
-.modeswitch .seg-btn.active { background: var(--accent); color: oklch(14% 0.01 250); font-weight: 600; }
+.modeswitch .seg-btn.active { background: var(--accent); color: var(--surface); font-weight: 600; }
 body.editing .lane { box-shadow: inset 0 2px 0 var(--accent); }
 #rightRail { border-right: none; border-left: 1px solid var(--line); }
 
 /* Edit mode is visibly a different room: darker chrome, the spectrogram always
    present, and the effects dock open. */
-body.editing .centre { background: oklch(12.5% 0.013 250); }
-body.editing .transport { background: oklch(14% 0.015 255); }
+body.editing .centre { background: var(--surface-0); }
+body.editing .transport { background: var(--surface); }
 .viscanvas {
   width: 100%; height: 90px; display: block; border-radius: 6px;
-  background: oklch(9.5% 0.01 250); border: 1px solid var(--line);
+  background: var(--well); border: 1px solid var(--line);
 }
 .wide-fx { grid-column: 1 / -1; }
 
@@ -727,7 +746,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
    the horizontal axis. */
 #dockEffects.rack-body {
   position: relative; display: flex; padding: 0; overflow: hidden;
-  background: oklch(13.5% 0.013 250);
+  background: var(--surface);
 }
 .fx-module-viewport {
   flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-start;
@@ -740,7 +759,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .fx-module {
   width: 320px; min-width: 320px; height: auto; max-height: 100%; box-sizing: border-box;
   padding: 8px 10px 10px; border-right: 1px solid var(--line-2);
-  background: oklch(16% 0.013 250); display: flex; flex-direction: column; overflow-y: auto;
+  background: var(--surface-2); display: flex; flex-direction: column; overflow-y: auto;
 }
 .fx-module.off .fx-module-controls { opacity: .38; }
 .fx-module-head {
@@ -770,7 +789,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 }
 .fx-end-meter {
   flex: 0 0 22px; width: 22px; min-width: 22px; height: 100%; box-sizing: border-box;
-  padding: 7px 3px; border-right: 1px solid var(--line-2); background: oklch(14.5% .013 250);
+  padding: 7px 3px; border-right: 1px solid var(--line-2); background: var(--surface);
 }
 #fxOutputMeter { border-left: 1px solid var(--line-2); border-right: 0; }
 .vu-label {
@@ -780,8 +799,8 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .vu-well {
   position: relative; flex: 1; width: 9px; min-height: 24px; overflow: hidden;
   display: flex; align-items: flex-end; gap: 1px; padding: 1px;
-  border: 1px solid rgba(255,255,255,.10); border-radius: 2px; background: #090b0d;
-  box-shadow: inset 0 1px 4px rgba(0,0,0,.8);
+  border: 1px solid var(--line-2); border-radius: 2px; background: #090b0d;
+  box-shadow: inset 0 1px 4px var(--shadow-hard);
 }
 .vu-bar {
   width: 3px; height: var(--vu, 0%); display: block;
@@ -796,7 +815,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .eq-graph { height: 242px; display: grid; grid-template-rows: minmax(105px, 1fr) 14px auto; gap: 3px; }
 .eq-graph canvas {
   width: 100%; height: 100%; min-height: 105px; display: block; cursor: crosshair;
-  border: 1px solid rgba(255,255,255,.14); touch-action: none;
+  border: 1px solid var(--line-3); touch-action: none;
 }
 .eq-selected {
   font-size: 8px; font-weight: 700; letter-spacing: .5px; color: #78dd42;
@@ -815,20 +834,20 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .comp-graph { height: 282px; display: grid; grid-template-rows: minmax(120px, 1fr) auto; gap: 4px; }
 .comp-graph canvas {
   width: 100%; height: 100%; min-height: 120px; display: block; cursor: crosshair;
-  border: 1px solid rgba(255,255,255,.14); touch-action: none;
+  border: 1px solid var(--line-3); touch-action: none;
 }
 .comp-slider-stack { display: flex; flex-direction: column; gap: 1px; }
 .comp-slider-stack .param { min-height: 18px; }
 .fx-module.filter-bank-visual { width:390px; min-width:390px; }
 .fx-module.filter-bank-visual .fx-module-controls { display:block; }
-.filter-bank-canvas { width:100%; height:130px; display:block; border:1px solid rgba(255,255,255,.14); margin-bottom:5px; }
+.filter-bank-canvas { width:100%; height:130px; display:block; border:1px solid var(--line-3); margin-bottom:5px; }
 .filter-bank-controls { padding:3px 0 4px; border-top:2px solid var(--filter-color); }
 .filter-bank-title { display:flex; justify-content:space-between; align-items:center; color:var(--filter-color); font-size:9px; font-weight:700; }
 .filter-bank-title .ghost { height:18px; font-size:8px; padding:0 5px; }
 .fx-module.chamberlin-visual { width:390px; min-width:390px; height:min(350px,100%); }
 .fx-module.chamberlin-visual .fx-module-controls { display:block; }
 .chamberlin-graph { height:282px; display:grid; grid-template-rows:minmax(110px,1fr) 14px auto; gap:3px; }
-.chamberlin-graph canvas { width:100%; height:100%; min-height:110px; border:1px solid rgba(255,255,255,.14); touch-action:none; cursor:crosshair; }
+.chamberlin-graph canvas { width:100%; height:100%; min-height:110px; border:1px solid var(--line-3); touch-action:none; cursor:crosshair; }
 .chamberlin-readout { text-align:center; font-size:8px; color:var(--text-dim); }
 .chamberlin-sliders { display:flex; flex-direction:column; gap:1px; }
 .chamberlin-sliders .param[style] .k { color:var(--mode-color); }
@@ -836,14 +855,14 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .fx-add {
   position: sticky; right: 0; flex: 0 0 48px; width: 48px; height: 100%;
   border: 0; border-left: 1px solid var(--line-2); border-radius: 0;
-  background: oklch(15% 0.014 250); color: var(--text-dim);
+  background: var(--surface-2); color: var(--text-dim);
   font: 300 28px/1 var(--sans); cursor: pointer;
 }
 .fx-add:hover { background: var(--surface-3); color: var(--accent); }
 .fx-picker {
   position: absolute; inset: 8px 58px 8px 8px; z-index: 20; overflow: auto;
   padding: 10px; border: 1px solid var(--line-2); border-radius: 8px;
-  background: oklch(14% 0.014 250 / .98); box-shadow: 0 16px 44px rgba(0,0,0,.6);
+  background: oklch(14% 0.014 250 / .98); box-shadow: 0 16px 44px var(--shadow);
 }
 .fx-picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .fx-picker-head span { font-size: 11px; font-weight: 650; color: var(--text-2); }
@@ -862,7 +881,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .rack-body { display: flex; gap: 0; padding: 0; background: #101215; }
 .rack-chain {
   width: 190px; flex-shrink: 0; padding: 12px 10px;
-  border-right: 1px solid rgba(255,255,255,.11); overflow-y: auto;
+  border-right: 1px solid var(--line-2); overflow-y: auto;
   background: linear-gradient(90deg, #15171a, #101215);
 }
 .master-title { margin-top: 14px; }
@@ -878,7 +897,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .rack-slot {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 8px; border-radius: 2px; cursor: pointer; margin-bottom: 4px;
-  border: 1px solid rgba(255,255,255,.07); background: #171a1e;
+  border: 1px solid var(--line); background: #171a1e;
 }
 .rack-slot:hover { background: var(--surface-3); }
 .rack-slot.selected { background: #1a2735; border-color: rgba(73,156,230,.52); box-shadow: inset 2px 0 #3a9df4; }
@@ -950,10 +969,10 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .toggle .k { text-align: right; padding-right: 3px; }
 .rocker {
   position: relative; width: 38px; height: 17px; padding: 0;
-  border-radius: 3px; border: 1px solid rgba(0,0,0,0.55);
+  border-radius: 3px; border: 1px solid var(--shadow);
   /* The housing: a recess, so the plate can sit in it. */
-  background: linear-gradient(oklch(13% 0.01 250), oklch(17% 0.012 250));
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.7);
+  background: linear-gradient(var(--surface-0), var(--surface-2h));
+  box-shadow: inset 0 1px 2px var(--shadow-hard);
   cursor: pointer; overflow: hidden;
 }
 /* The lit half, uncovered by whichever way the plate is tilted. Dull red at
@@ -962,7 +981,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
   content: ''; position: absolute; top: 2px; bottom: 2px; width: 12px;
   right: 3px; border-radius: 2px;
   background: oklch(40% 0.10 25);
-  box-shadow: inset 0 1px 1px rgba(0,0,0,0.5);
+  box-shadow: inset 0 1px 1px var(--shadow);
   transition: background .12s ease, box-shadow .12s ease, left .12s ease, right .12s ease;
 }
 .rocker.on::before {
@@ -976,7 +995,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
   position: absolute; top: 1px; bottom: 1px; left: 1px; width: 22px;
   border-radius: 2px;
   background: linear-gradient(oklch(34% 0.008 250), oklch(24% 0.008 250));
-  box-shadow: 0 1px 2px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.14);
+  box-shadow: 0 1px 2px var(--shadow), inset 0 1px 0 var(--line-3);
   transition: left .12s ease;
 }
 .rocker.on .plate { left: 15px; }
@@ -1025,9 +1044,9 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .param-head {
   display: flex; align-items: center; justify-content: space-between;
   min-height: 58px; margin-bottom: 0; padding: 9px 12px;
-  border: 1px solid rgba(255,255,255,.12);
+  border: 1px solid var(--line-2);
   background: linear-gradient(180deg, #292c30, #191b1e);
-  box-shadow: inset 0 1px rgba(255,255,255,.05), 0 2px 8px rgba(0,0,0,.35);
+  box-shadow: inset 0 1px var(--line), 0 2px 8px rgba(0,0,0,.35);
 }
 .param-head .head-copy { display: grid; grid-template-columns: auto auto; align-items: end; gap: 2px 9px; }
 .param-head .eyebrow { grid-column: 1 / -1; font-size: 7.5px; font-weight: 750; letter-spacing: 1.25px; color: #6d91b3; }
@@ -1035,13 +1054,13 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 .param-head .fx-display {
   min-width: 122px; padding: 4px 7px; border: 1px solid rgba(86,151,211,.34); border-radius: 2px;
   background: #0e1926; color: #9fcdf4; font: 8px var(--mono); text-transform: uppercase;
-  letter-spacing: .35px; box-shadow: inset 0 1px 5px rgba(0,0,0,.75);
+  letter-spacing: .35px; box-shadow: inset 0 1px 5px var(--shadow-hard);
 }
 .param-head .head-actions { display: flex; gap: 6px; }
 .param-head .ghost { border-radius: 2px; text-transform: uppercase; letter-spacing: .4px; font-size: 8.5px; }
 .eqcurve {
   width: 100%; height: 110px; display: block; margin-bottom: 12px;
-  border-radius: 6px; background: oklch(9.5% 0.01 250); border: 1px solid var(--line);
+  border-radius: 6px; background: var(--well); border: 1px solid var(--line);
 }
 .band-head {
   font-size: 9px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
@@ -1049,7 +1068,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 }
 .mini {
   height: 24px; padding: 0 6px; border-radius: 5px;
-  border: 1px solid var(--line-2); background: oklch(11% 0.012 250);
+  border: 1px solid var(--line-2); background: var(--bg);
   color: var(--text-2); font: inherit; font-size: 10.5px;
 }
 .mini:focus { outline: none; border-color: var(--accent); }
@@ -1062,7 +1081,7 @@ body.editing .transport { background: oklch(14% 0.015 255); }
 
 body.editing .panel.left {
   position: absolute; top: 44px; bottom: 0; left: var(--rail); z-index: 30;
-  box-shadow: 12px 0 40px rgba(0,0,0,0.55);
+  box-shadow: 12px 0 40px var(--shadow);
   border-right: 1px solid var(--line-2);
   transform: translateX(0); transition: transform .18s ease, width .18s ease;
 }
@@ -1076,7 +1095,7 @@ body.editing .panel.left.drawer-closed {
 body.editing .panel.left { width: 330px; }
 body.editing .shell { position: relative; }
 
-.scrim { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,0.25); }
+.scrim { position: fixed; inset: 0; z-index: 25; background: var(--shadow-soft); }
 
 /* ----------------------------------------------------------------- tab bar */
 
@@ -1110,7 +1129,7 @@ body.editing .shell { position: relative; }
   border-radius: 3px; background: transparent; color: var(--text-dimmer);
   font-size: 12px; line-height: 15px;
 }
-.tab .close:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+.tab .close:hover { background: var(--line-2); color: var(--text); }
 .tabbar .newtab {
   width: 21px; height: 21px; margin-bottom: 0; flex-shrink: 0;
   border-radius: 5px; border: 1px solid var(--line-2);
@@ -1136,7 +1155,7 @@ body.editing .shell { position: relative; }
 .mode-btn:hover { background: var(--surface-3); color: var(--text-2); }
 .mode-btn.active {
   background: var(--accent); border-color: var(--accent);
-  color: oklch(14% 0.01 250);
+  color: var(--surface);
 }
 .mode-btn:disabled { opacity: .35; cursor: not-allowed; background: transparent; }
 .mode-btn:disabled:hover { background: transparent; color: var(--text-dimmer); }
@@ -1176,13 +1195,13 @@ body.editing .panel.left { left: var(--rail); }
    same data, so they share one spot rather than competing for room. */
 .vis-pick { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .vis-tab {
-  background: oklch(16% 0.013 250); border: 1px solid var(--line);
+  background: var(--surface-2); border: 1px solid var(--line);
   color: var(--text-dim); font: inherit; font-size: 10px;
   padding: 3px 9px; border-radius: 5px; cursor: pointer;
   transition: border-color .15s ease, color .15s ease;
 }
 .vis-tab:hover { border-color: var(--line-2); color: var(--text-2); }
-.vis-tab.active { background: var(--accent); border-color: var(--accent); color: oklch(14% 0.01 250); }
+.vis-tab.active { background: var(--accent); border-color: var(--accent); color: var(--surface); }
 .vis-tab.suite { font-weight: 600; letter-spacing: .04em; }
 .vis-open {
   margin-left: auto; background: none; border: 1px solid var(--line);
@@ -1193,7 +1212,7 @@ body.editing .panel.left { left: var(--rail); }
 
 #grainFrame {
   flex: 1; width: 100%; min-height: 150px; display: block; border: 0;
-  border-radius: 7px; background: oklch(9% 0.01 250);
+  border-radius: 7px; background: var(--well);
   border: 1px solid var(--line);
 }
 #grainFrame.hidden, #grainCanvas.hidden { display: none; }
@@ -1210,28 +1229,28 @@ body.editing .panel.left { left: var(--rail); }
 .vis-pop {
   position: fixed; z-index: 400;
   display: flex; flex-direction: column;
-  background: oklch(11% 0.012 250);
+  background: var(--bg);
   border: 1px solid var(--line-2);
   border-radius: 10px;
-  box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+  box-shadow: 0 24px 70px var(--shadow);
   overflow: hidden;
 }
 .vis-pop.hidden { display: none; }
 .vis-pop-head {
   display: flex; align-items: center; gap: 10px;
   padding: 7px 10px;
-  background: oklch(15% 0.013 250);
+  background: var(--surface-2);
   border-bottom: 1px solid var(--line);
   cursor: move; user-select: none; flex-shrink: 0;
 }
 .vis-pop-title { font-size: 11px; font-weight: 600; color: var(--text-2); }
 .vis-pop-tab {
-  background: oklch(19% 0.014 250); border: 1px solid var(--line);
+  background: var(--surface-3); border: 1px solid var(--line);
   color: var(--text-dim); font: inherit; font-size: 10px;
   padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
 .vis-pop-tab:hover { border-color: var(--line-2); color: var(--text-2); }
-.vis-pop-tab.active { background: var(--accent); border-color: var(--accent); color: oklch(14% 0.01 250); }
+.vis-pop-tab.active { background: var(--accent); border-color: var(--accent); color: var(--surface); }
 .vis-pop-hint { font-size: 9.5px; color: var(--text-dimmer); margin-right: auto; }
 .vis-pop-btn {
   background: none; border: 1px solid var(--line); color: var(--text-dim);
@@ -1261,7 +1280,7 @@ body.editing .dock { flex: 0 0 300px; }
 .tbtn.rec.on { background: var(--bad); border-color: var(--bad); color: white; }
 .tbtn.rec.armed { border-color: var(--bad); color: var(--bad); }
 .rec-label { white-space: nowrap; min-width: 0; }
-.tbtn.loop.on { background: var(--accent); color: oklch(14% 0.01 250); border-color: var(--accent); }
+.tbtn.loop.on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
 .loop-label { font-size: 9.5px; white-space: nowrap; min-width: 52px; }
 .vis-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
 .vis-head .seg-btn { font-size: 10px; padding: 0 9px; }
@@ -1315,7 +1334,7 @@ body.editing .dock { flex: 0 0 300px; }
 .tiny:hover { border-color: var(--accent); color: var(--accent); }
 
 .cpanel {
-  background: oklch(16% 0.013 250); border: 1px solid var(--line);
+  background: var(--surface-2); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px 10px;
   display: flex; flex-direction: column; gap: var(--param-row); min-width: 0;
 }
@@ -1335,7 +1354,7 @@ body.editing .dock { flex: 0 0 300px; }
 .grain-vis { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 #grainCanvas {
   flex: 1; width: 100%; min-height: 170px; display: block;
-  border-radius: 7px; background: oklch(8% 0.01 250); border: 1px solid var(--line);
+  border-radius: 7px; background: var(--sink); border: 1px solid var(--line);
 }
 body.editing .dock { flex: 0 0 330px; }
 
@@ -1345,7 +1364,7 @@ body.editing .dock { flex: 0 0 330px; }
 
 .overview {
   height: 42px; flex-shrink: 0; position: relative; cursor: pointer;
-  background: oklch(11% 0.011 250); border-bottom: 1px solid var(--line);
+  background: var(--bg); border-bottom: 1px solid var(--line);
   overflow: hidden;
 }
 .overview canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -1369,7 +1388,7 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .ov-cue {
   position: absolute; top: 0; bottom: 0; left: 0; width: 1px; z-index: 3;
-  background: rgba(255,255,255,0.40);
+  background: var(--line-4);
   pointer-events: none; display: none;
 }
 
@@ -1435,7 +1454,7 @@ body.editing .dock { flex: 0 0 330px; }
 
 .menubar {
   height: 25px; flex-shrink: 0; display: flex; align-items: stretch;
-  background: oklch(16% 0.014 250); border-bottom: 1px solid var(--line);
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
 }
 .menus { display: flex; align-items: stretch; }
 .menu-title {
@@ -1450,8 +1469,8 @@ body.editing .dock { flex: 0 0 330px; }
 .menu-pop {
   position: fixed; z-index: 500; min-width: 210px;
   padding: 5px; border-radius: 8px;
-  background: oklch(17% 0.014 250); border: 1px solid var(--line-2);
-  box-shadow: 0 16px 44px rgba(0,0,0,0.55);
+  background: var(--surface-2h); border: 1px solid var(--line-2);
+  box-shadow: 0 16px 44px var(--shadow);
 }
 .menu-pop.hidden { display: none; }
 .menu-row {
@@ -1459,7 +1478,7 @@ body.editing .dock { flex: 0 0 330px; }
   padding: 5px 9px; border: none; border-radius: 5px; background: none;
   color: var(--text-2); font: inherit; font-size: 11.5px; text-align: left;
 }
-.menu-row:hover:not(:disabled) { background: var(--accent); color: oklch(14% 0.01 250); }
+.menu-row:hover:not(:disabled) { background: var(--accent); color: var(--surface); }
 .menu-row:disabled { color: var(--text-dimmer); cursor: default; }
 .menu-row .sk {
   margin-left: auto; font-family: var(--mono); font-size: 10px; opacity: .65;
@@ -1488,7 +1507,7 @@ body.editing .dock { flex: 0 0 330px; }
 .modal {
   position: fixed; inset: 0; z-index: 900;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.55);
+  background: var(--shadow);
   backdrop-filter: blur(2px);
 }
 .modal.hidden { display: none; }
@@ -1497,7 +1516,7 @@ body.editing .dock { flex: 0 0 330px; }
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--line-2);
   border-radius: 10px; overflow: hidden;
-  box-shadow: 0 24px 70px rgba(0,0,0,0.6);
+  box-shadow: 0 24px 70px var(--shadow);
 }
 .modal-head, .modal-foot {
   display: flex; align-items: center; gap: 10px;
@@ -1673,7 +1692,7 @@ body.editing .dock { flex: 0 0 330px; }
 .rec-meter {
   display: flex; gap: 3px; height: 74px; padding: 4px;
   border: 1px solid var(--line-2); border-radius: 4px; background: #070b0e;
-  box-shadow: inset 0 1px 5px rgba(0,0,0,.75);
+  box-shadow: inset 0 1px 5px var(--shadow-hard);
 }
 .rec-bar {
   flex: 1; align-self: flex-end; height: var(--rec, 0%); border-radius: 1px;
@@ -1681,7 +1700,7 @@ body.editing .dock { flex: 0 0 330px; }
   transition: height 60ms linear;
 }
 /* At or above full scale the meter itself reads as wrong, not just the bar. */
-.rec-meter.hot { border-color: #e64e4e; box-shadow: inset 0 1px 5px rgba(0,0,0,.75), 0 0 0 1px rgba(230,78,78,.45); }
+.rec-meter.hot { border-color: #e64e4e; box-shadow: inset 0 1px 5px var(--shadow-hard), 0 0 0 1px rgba(230,78,78,.45); }
 .rec-transport { display: flex; align-items: center; gap: 8px; }
 .rec-go {
   width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
@@ -1793,19 +1812,36 @@ body.editing .dock { flex: 0 0 330px; }
 body.dock-sizing { cursor: ns-resize; user-select: none; }
 body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 
+/* Not a mode, but it is a destination, so it is labelled like one. Without the
+   label it was the sixth unnamed symbol in a column of five and could not be
+   found by anyone who had not been told where to look. */
+/// Keeps `rail-btn` — that is what the click handler binds to, and taking it
+/// away to make the button look different left it labelled and completely dead.
+.rail-theme {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  height: auto; padding: 6px 0 4px;
+}
+.rail-theme .ic { font-size: 13px; line-height: 1; }
+.rail-theme .lb { font-size: 8.5px; letter-spacing: .02em; }
+.rail-theme.active { color: var(--accent); }
+
 /* --------------------------------------------------------------- theme pane
    A palette is chosen by looking at it, so the swatch is the control and the
    name is the caption — not the other way round. */
-.theme-list { display: flex; flex-direction: column; gap: 2px; max-height: 46vh; overflow-y: auto; }
+/* No max-height and no flex growth. The pane is already the scroller — giving
+   the list its own bounded box inside a flex column collapsed it to zero and
+   nothing drew at all, which is how this shipped looking empty. */
+.theme-list { display: block; }
+.theme-list > * { margin-bottom: 2px; }
 .theme-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 4px 6px; border-radius: 5px; cursor: pointer;
-  border: 1px solid transparent;
+  padding: 5px 6px; border-radius: 5px; cursor: pointer;
+  border: 1px solid transparent; min-height: 28px;
 }
 .theme-row:hover { background: var(--surface-2); }
 .theme-row.chosen { border-color: var(--accent); background: var(--surface-2); }
 .theme-swatch { display: flex; flex: 0 0 auto; border-radius: 3px; overflow: hidden; }
-.theme-swatch i { width: 13px; height: 15px; display: block; }
+.theme-swatch i { width: 14px; height: 18px; display: block; flex: 0 0 auto; }
 .theme-name {
   flex: 1; min-width: 0; font-size: 11px; color: var(--text-2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

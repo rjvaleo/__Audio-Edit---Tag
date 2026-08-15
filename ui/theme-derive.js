@@ -438,19 +438,30 @@ function themeColor(value) {
 /// six. Collapsing them onto fewer would flatten exactly the contrast the
 /// derivation exists to guarantee.
 const THEME_TOKEN_MAP = {
-  '--bg': '--s-body',
+  // Eight surface steps against the engine's own ladder, in order. Order is the
+  // whole point: the app's chrome reads as depth because each step is lighter
+  // than the one under it, and a map that broke that ordering — as the first
+  // one did, putting the well *above* the background — makes every panel look
+  // like a mistake no matter how good the palette is.
+  '--sink': '--s-900',
+  '--well': '--s-body',
+  '--bg': '--s-page',
+  '--surface-0': '--s-nav',
   '--surface': '--s-card',
   '--surface-2': '--s-raised',
+  '--surface-2h': '--s-raised',
   '--surface-3': '--s-200',
-  '--well': '--s-page',
 
   '--text': '--tx-800',
   '--text-2': '--tx-700',
   '--text-dim': '--tx-500',
   '--text-dimmer': '--tx-400',
 
-  '--line': '--bd-50',
-  '--line-2': '--bd-200',
+  // Lines and shadows are deliberately absent. They are translucent black and
+  // white — `rgba(255,255,255,.06)` and friends — which sit correctly on any
+  // dark ground without being told what colour it is. Mapping them to the
+  // engine's solid borders made every hairline in the interface a hard line,
+  // which is most of what "it looks horrible" was.
 
   // The accent is what the palette is *for*, so it comes from the accent family
   // rather than from a surface.

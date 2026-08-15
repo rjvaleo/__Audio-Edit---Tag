@@ -150,7 +150,7 @@ function toast(msg) {
 function showPane(side, name) {
   const panes = side === 'left'
     ? { browse: 'paneBrowse', search: 'paneSearch', scan: 'paneScan',
-        import: 'paneImport', record: 'paneRecord' }
+        import: 'paneImport', record: 'paneRecord', theme: 'paneTheme' }
     : { inspect: 'paneInspect' };
   for (const [key, id] of Object.entries(panes)) $(id).classList.toggle('hidden', key !== name);
   const titles = { browse: 'Browse', search: 'Search', scan: 'Scan',
@@ -8064,8 +8064,21 @@ const themeState = {
   plain: false,
 };
 
+/// The palettes this interface can actually wear.
+///
+/// The chrome assumes depth reads as *lighter* — a raised surface is a lighter
+/// one — which is a dark-theme assumption baked into every panel. Give it a
+/// light palette and the ladder walks toward white and the whole interface goes
+/// flat: all 27 light palettes in the library break it, all 20 dark ones hold.
+///
+/// So light palettes are withheld rather than offered and disappointing. They
+/// are not gone: when the chrome learns to invert its ladder they are already
+/// here, and the engine already reports which direction a palette wants.
 function allPalettes() {
-  return [...THEME_PALETTES.map((p) => ({ ...p, readOnly: true })), ...themeState.mine];
+  const shipped = THEME_PALETTES
+    .filter((p) => Theme.deriveTheme(p.colors).mode === 'dark')
+    .map((p) => ({ ...p, readOnly: true }));
+  return [...shipped, ...themeState.mine];
 }
 
 /// Kept in the browser rather than in `data/`.
