@@ -299,6 +299,10 @@
 
     <!-- edit window: effects and visuals -->
     <div class="dock hidden" id="dock">
+      <!-- Drag the top edge to make the panel taller. The controls in here run
+           to more than a fixed height can hold, and scrolling a panel of
+           sliders means losing sight of the ones you are not touching. -->
+      <div class="dock-resize" id="dockResize" title="Drag to resize · double-click to reset"></div>
       <div class="dock-panes">
 
       <!-- A horizontal rail of modules with a meter at each end, rather than a

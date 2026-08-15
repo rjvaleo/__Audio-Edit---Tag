@@ -2221,6 +2221,93 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
   };
 });
 
+// ------------------------------------------------------------- dock height
+//
+// The panel holds more controls than a fixed height can show, and scrolling a
+// wall of sliders means losing sight of the ones you are not touching. So it
+// is dragged from its top edge, and remembered.
+//
+// Set as `flex` rather than a height because the stylesheet sizes it with the
+// `flex` shorthand — which writes flex-basis too, so setting basis alone would
+// be overruled by it on the next class change.
+
+const DOCK_MIN = 150;
+/// Leave enough of the waveform to still be a waveform.
+const LANE_MIN = 170;
+
+function dockLimits() {
+  const dock = $('dock');
+  const top = dock?.parentElement?.getBoundingClientRect().top ?? 0;
+  return { min: DOCK_MIN, max: Math.max(DOCK_MIN, window.innerHeight - top - LANE_MIN) };
+}
+
+function setDockHeight(px, remember = true) {
+  const dock = $('dock');
+  if (!dock) return;
+  const { min, max } = dockLimits();
+  const h = Math.round(Math.max(min, Math.min(max, px)));
+  dock.style.flex = `0 0 ${h}px`;
+  if (remember) {
+    try { localStorage.setItem('dockHeight', String(h)); } catch { /* private mode */ }
+  }
+  // The canvases in here size themselves from their box, and their observers
+  // only fire once the layout has settled.
+  requestAnimationFrame(() => {
+    drawGrains();
+    drawWave();
+  });
+}
+
+/// Back to whatever the stylesheet says, by dropping the override.
+function resetDockHeight() {
+  const dock = $('dock');
+  if (!dock) return;
+  dock.style.flex = '';
+  try { localStorage.removeItem('dockHeight'); } catch { /* private mode */ }
+  requestAnimationFrame(() => { drawGrains(); drawWave(); });
+}
+
+(() => {
+  const grip = $('dockResize');
+  const dock = $('dock');
+  if (!grip || !dock) return;
+
+  const stored = (() => {
+    try { return parseInt(localStorage.getItem('dockHeight') || '', 10); }
+    catch { return NaN; }
+  })();
+  if (Number.isFinite(stored)) setDockHeight(stored, false);
+
+  let from = null;
+  grip.onpointerdown = (e) => {
+    from = { y: e.clientY, h: dock.getBoundingClientRect().height };
+    document.body.classList.add('dock-sizing');
+    grip.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  grip.onpointermove = (e) => {
+    if (!from) return;
+    // Upward is taller: the panel grows into the space above it.
+    setDockHeight(from.h + (from.y - e.clientY));
+  };
+  const done = (e) => {
+    if (!from) return;
+    from = null;
+    document.body.classList.remove('dock-sizing');
+    try { grip.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+  };
+  grip.onpointerup = done;
+  grip.onpointercancel = done;
+  grip.ondblclick = resetDockHeight;
+
+  // A window that has shrunk can leave the dock taller than there is room for.
+  window.addEventListener('resize', () => {
+    const now = dock.getBoundingClientRect().height;
+    const { min, max } = dockLimits();
+    if (now > max || now < min) setDockHeight(now);
+  });
+})();
+
 // ================================================================ effect rack
 //
 // The rack is server-side: the browser edits a spec, posts it, and every

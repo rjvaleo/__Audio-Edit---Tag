@@ -588,6 +588,74 @@ pub fn grains_layered(
     out
 }
 
+/// A sample of the schedule, without building the schedule.
+///
+/// The pictures never draw more than a few thousand marks, so the whole
+/// enumeration was being built — ninety thousand grains on a long stretch —
+/// sorted, and then four fifths of it thrown away. Every one of those discarded
+/// grains cost a plan lookup and four hashes for its jitters.
+///
+/// A grain is a pure function of its index, so the ones that will survive can
+/// simply be asked for. Each layer is walked at its own step, which keeps the
+/// sample even across time *and* across layers — striding a merged list does
+/// the same thing, and this arrives at it without the merge.
+///
+/// Returns the sample and the true total, because a picture that has been
+/// thinned should be able to say so.
+pub fn grains_sampled(
+    in_frames: usize,
+    sample_rate: u32,
+    ratio: f32,
+    semitones: f32,
+    window_ms: f32,
+    g: &Grain,
+    cap: usize,
+) -> (Vec<GrainEvent>, usize) {
+    let mut sp = StreamParams::new(in_frames, sample_rate);
+    sp.ratio = ratio;
+    sp.semitones = semitones;
+    sp.window_ms = window_ms;
+    sp.grain = *g;
+
+    let layers = layer_count(&sp).max(1);
+    let cap = cap.max(layers as usize);
+
+    // How many each layer has. Every layer runs the same schedule, so this is
+    // the same number for all of them — worked out once.
+    let p = sp.plan();
+    let hop = p.hop.max(1);
+    let per_layer = if p.out_frames == 0 { 0 } else { p.out_frames.div_ceil(hop) };
+    let total = per_layer * layers as usize;
+    if total == 0 {
+        return (Vec::new(), 0);
+    }
+
+    // The step that lands on about `cap` grains altogether.
+    let want_each = (cap / layers as usize).max(1);
+    let step = per_layer.div_ceil(want_each).max(1);
+
+    let mut out = Vec::with_capacity(total.min(cap) + layers as usize);
+    for l in 0..layers {
+        let lp = layer_params(&sp, l);
+        let off = layer_offset(&sp, l, layers);
+        let mut i = 0usize;
+        while i < per_layer {
+            let write = i * hop;
+            if write >= p.out_frames {
+                break;
+            }
+            let mut e = event_at(i as u64, write, &p, &lp);
+            e.out_frame += off;
+            out.push(e);
+            i += step;
+        }
+    }
+    // In time order. The list is now a few thousand rather than ninety, so the
+    // sort costs a fraction of what it did.
+    out.sort_by_key(|e| e.out_frame);
+    (out, total)
+}
+
 /// Grains produced forward from a position, reading the parameters afresh at
 /// every grain.
 ///

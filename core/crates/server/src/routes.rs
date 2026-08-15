@@ -1107,15 +1107,19 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
         return Response::json(Value::obj().set("grains", Value::Arr(vec![])).to_string());
     };
     let st = list.stretch;
-    // Layered: this feeds the pictures, and the pictures have to show every
-    // schedule the renderer runs. See `grains_layered`.
-    let events = fx::grain::grains_layered(
+    // Only the grains that will actually be sent are built. A grain is a pure
+    // function of its index, so there is no need to enumerate ninety thousand
+    // of them and throw four fifths away — every discarded one cost a plan
+    // lookup and four hashes for its jitters. See `grains_sampled`.
+    let cap = app.grain_cap.read().map(|g| *g).unwrap_or(8_000).max(1);
+    let (sent, total) = fx::grain::grains_sampled(
         list.base_frames() as usize,
         list.sample_rate,
         st.ratio,
         st.semitones,
         st.window_ms,
         &st.grain,
+        cap,
     );
 
     // Cap what crosses the wire. Three thousand was a cap from when this fed an orbit of a few dozen
@@ -1125,13 +1129,8 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
     // thousand grains is about a megabyte of JSON, once per edit, on a loopback
     // socket; the cap is still here because a long file at sixteen layers and
     // five hundred a second is millions and nothing can draw those.
-    let stride = (events.len() / app.grain_cap.read().map(|g| *g).unwrap_or(8_000).max(1)).max(1);
-
-    // Thinned *before* anything is measured. The level and brightness pass used
-    // to run over every grain in the schedule and then throw three quarters of
-    // the answers away — at stride four that is four times the work for the
-    // same picture.
-    let sent: Vec<&fx::grain::GrainEvent> = events.iter().step_by(stride).collect();
+    // What the interface says when it tells you the picture has been thinned.
+    let stride = if sent.is_empty() { 1 } else { (total / sent.len()).max(1) };
 
     // Measure what each grain actually sounds like, not just where it sits.
     // The visualiser is meant to be driven by the audio, so amplitude and
@@ -1211,7 +1210,7 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
     Response::json(
         Value::obj()
             .set("grains", Value::Arr(arr))
-            .set("total", events.len())
+            .set("total", total)
             .set("shown", sent.len())
             .set("outFrames", list.frames())
             .set("srcFrames", list.base_frames())
