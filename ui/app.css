@@ -1750,3 +1750,8 @@ body.editing .dock { flex: 0 0 330px; }
   font-size: 10px;
   pointer-events: none;
 }
+
+/* Sits with the preset picker it modifies, rather than off in a menu: it
+   changes what choosing a preset *does*, so it has to be visible at the moment
+   of choosing. */
+.preset-with-sound { white-space: nowrap; }

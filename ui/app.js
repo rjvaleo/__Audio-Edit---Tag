@@ -4777,6 +4777,26 @@ async function loadPresets() {
   renderPresets();
 }
 
+/// The file a preset names, as the interface's own idea of a file.
+///
+/// Taken from the folder listings when they have it, because those carry the
+/// duration and the tags and everything else that has been learned about it.
+/// Built from the path when they do not — a preset can name a sound in a folder
+/// that has never been opened, and refusing to recall it for want of a listing
+/// would be absurd.
+function fileFromPath(path) {
+  for (const files of Object.values(state.folderFiles || {})) {
+    const hit = files?.find?.((f) => f.path === path);
+    if (hit) return hit;
+  }
+  const cut = path.lastIndexOf('/');
+  return {
+    path,
+    name: cut >= 0 ? path.slice(cut + 1) : path,
+    folder: cut >= 0 ? path.slice(0, cut) : '',
+  };
+}
+
 function renderPresets() {
   const sel = $('presetPick');
   if (!sel) return;
@@ -4794,9 +4814,22 @@ function renderPresets() {
 $('presetPick').onchange = async (e) => {
   const name = e.target.value;
   if (!name || !state.selectedFile) return;
+  // With sound the preset brings its own file and replaces the whole chain;
+  // without it only settings move, onto modules that are already there. See
+  // `docs/PRESETS-WITH-SOUND.md`.
+  const withSound = !!$('presetWithSound')?.checked;
+  let applied;
   try {
-    state.edit = await postJSON('/api/presets/apply', { name, p: state.selectedFile.path });
+    applied = await postJSON('/api/presets/apply',
+      { name, p: state.selectedFile.path, withSound });
   } catch (err) { toast(err.message); return; }
+  state.edit = applied;
+
+  // With sound the file that is now open is the preset's, not the one that was
+  // open when it was chosen, so the rest of the interface has to be told.
+  if (withSound && applied.path && applied.path !== state.selectedFile.path) {
+    await openInEditor(fileFromPath(applied.path));
+  }
 
   // The sliders now disagree with the document, so rebuild them from it.
   stretchBuiltFor = null;
@@ -4809,7 +4842,7 @@ $('presetPick').onchange = async (e) => {
   renderTabs();
   reloadAudioSource();
   const note = state.presets.find((p) => p.name === name)?.note;
-  toast(`Applied “${name}”${note ? ' — ' + note : ''}`);
+  toast(`Applied “${name}”${withSound ? ' with its sound' : ''}${note ? ' — ' + note : ''}`);
 };
 
 $('presetSave').onclick = async () => {

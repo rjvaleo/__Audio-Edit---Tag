@@ -1212,6 +1212,8 @@ fn api_preset_save(app: &Arc<App>, req: &Request) -> Response {
     let preset = crate::persist::Preset {
         name: name.clone(),
         note: v.get("note").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+        // The sound this was taken from, so it can be recalled with it.
+        path: rel.to_string(),
         stretch: app.edits.snapshot(rel).map(|l| l.stretch).unwrap_or_default(),
         rack: app.racks.get(rel),
     };
@@ -1239,20 +1241,74 @@ fn api_preset_apply(app: &Arc<App>, req: &Request) -> Response {
     let Some(preset) = app.presets.read().unwrap().get(name).cloned() else {
         return Response::error(404, "no such preset");
     };
+    let with_sound = matches!(v.get("withSound"), Some(Value::Bool(true)));
+
+    // With sound, the preset's own file is the target — that is the whole
+    // point of it. A preset written before presets knew about sounds has no
+    // path, and one whose sound has since been moved or deleted cannot be
+    // honoured; both say so rather than quietly applying to whatever happens
+    // to be open, which would be a different thing from the one asked for.
+    let rel: &str = if with_sound {
+        if preset.path.is_empty() {
+            return Response::error(
+                409,
+                "this preset was saved before presets remembered their sound, so there is nothing to load",
+            );
+        }
+        if identity_for(app, &preset.path).is_none() {
+            return Response::error(
+                404,
+                &format!("the sound this preset was made from is not in the library: {}", preset.path),
+            );
+        }
+        &preset.path
+    } else {
+        rel
+    };
+
     let Some(identity) = identity_for(app, rel) else {
         return Response::error(404, "no such file in the library");
     };
 
-    // The rack moves whenever the preset holds anything but a factory rack.
-    //
-    // This used to ask whether the *slots* were empty, which is a different
-    // question: the channel maximiser lives in the rack beside the slots rather
-    // than in a place of its own, so a preset that is nothing but a maximiser
-    // setting has no slots and was silently dropped. The guard is still here —
-    // a preset holding a factory rack should not wipe the one you have — it now
-    // just asks about the whole rack.
-    if preset.rack != crate::rack::RackSpec::empty() {
-        app.racks.set(rel, preset.rack.clone());
+    // "With sound" is a complete recall: the file, the rack, the settings, all
+    // of it overwritten. Without it a preset is what it has always been —
+    // settings you drop onto the chain you have already built — except that it
+    // no longer evicts that chain. See `docs/PRESETS-WITH-SOUND.md`.
+    if with_sound {
+        // The rack moves whenever the preset holds anything but a factory rack.
+        //
+        // This used to ask whether the *slots* were empty, which is a different
+        // question: the channel maximiser lives in the rack beside the slots
+        // rather than in a place of its own, so a preset that is nothing but a
+        // maximiser setting has no slots and was silently dropped. The guard is
+        // still here — a preset holding a factory rack should not wipe the one
+        // you have — it now just asks about the whole rack.
+        if preset.rack != crate::rack::RackSpec::empty() {
+            app.racks.set(rel, preset.rack.clone());
+        }
+    } else {
+        // Settings only. Nothing is added, nothing removed, nothing reordered:
+        // a preset with a reverb dropped onto a rack with no reverb adds no
+        // reverb. Matched by kind and by position *among slots of that kind*,
+        // so a preset built with the EQ first still finds the EQ in a chain
+        // that has it third.
+        let mut mine = app.racks.get(rel);
+        let mut used = vec![false; mine.slots.len()];
+        for from in &preset.rack.slots {
+            let hit = mine.slots.iter().enumerate().position(|(i, slot)| {
+                !used[i] && std::mem::discriminant(slot) == std::mem::discriminant(from)
+            });
+            if let Some(i) = hit {
+                if mine.slots[i].take_settings_from(from) {
+                    used[i] = true;
+                }
+            }
+        }
+        // The master is part of the rack and not a slot, so it has to be
+        // carried across by hand or a preset that is only a maximiser setting
+        // would do nothing at all.
+        mine.master = preset.rack.master;
+        app.racks.set(rel, mine);
     }
     let stretch = preset.stretch;
     // Applied as an ordinary edit, so it lands on the undo stack like anything
@@ -1262,7 +1318,19 @@ fn api_preset_apply(app: &Arc<App>, req: &Request) -> Response {
         crate::docs::edit_json(s.list(), s.can_undo(), s.can_redo())
     });
     app.save_sessions();
-    Response::json(out.to_string())
+
+    // And put it on the engine, so "with sound" means the sound is actually
+    // there rather than merely named. After the edit, so what gets loaded is
+    // the document the preset just made.
+    if with_sound {
+        if let Some(path) = app.library_path().and_then(|l| resolve_within(&l, rel)) {
+            let _ = crate::live::load(app, rel, &path, crate::live::Playing::Document);
+        }
+    }
+
+    // The path is returned either way, so the interface knows which file it is
+    // now looking at — with sound that is not the one it asked about.
+    Response::json(out.set("path", rel.to_string()).to_string())
 }
 
 /// Edit a stored preset in place: its name, its note, or any of its values.
@@ -1342,6 +1410,7 @@ fn api_preset_duplicate(app: &Arc<App>, req: &Request) -> Response {
     let preset = crate::persist::Preset {
         name: name.clone(),
         note: v.get("note").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+        path: v.get("path").and_then(|n| n.as_str()).unwrap_or("").to_string(),
         stretch: v.get("stretch").map(crate::persist::stretch_from_json).unwrap_or_default(),
         rack: v
             .get("rack")
