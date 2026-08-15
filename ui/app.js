@@ -6280,12 +6280,17 @@ function cloudPadGeometry(canvas) {
 
   const scan = g.scan ?? 1;
   const pos = g.position ?? 0;
-  const ratio = st.ratio || 1;
   // Where the head is at this instant: its home, plus wherever it has been
   // moved to, plus however far the sweep has carried it. The same three terms
   // `event_at` adds up, so the box sits where the grains are coming from.
+  //
+  // The sweep is the *output* frame over the ratio, and `sourceFrameNow` is
+  // already that — it is the engine's position mapped back through the stretch.
+  // Dividing by the ratio again was dividing twice: at eight times the head
+  // crawled at an eighth speed and reached an eighth of the way across the file
+  // by the time the sound had finished, which is exactly how it looked.
   const home = scan < 0 ? base : 0;
-  const sweep = (sourceFrameNow() / ratio) * scan;
+  const sweep = sourceFrameNow() * scan;
   const head = home + pos * base + sweep;
 
   const sr = state.grains?.sampleRate || state.view?.sampleRate || 48000;
