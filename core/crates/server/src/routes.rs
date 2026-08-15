@@ -2548,6 +2548,15 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
             .set("latency", h.shared.latency_frames() as f64)
             .set("grains", Value::Arr(arr))
             .set("spectrum", Value::Arr(spectrum))
+            // The stereo field, and how alike the two sides are. What a
+            // goniometer draws; see `visualiser/GONIOMETER-CLOUD.md`.
+            .set(
+                "scope",
+                Value::Arr(
+                    h.shared.scope().into_iter().map(|v| Value::Num(v as f64)).collect(),
+                ),
+            )
+            .set("correlation", h.shared.correlation() as f64)
             .set(
                 "waveform",
                 Value::Arr(
