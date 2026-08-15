@@ -730,9 +730,15 @@ function startPolling() {
       engine.waveform = r.waveform && r.waveform.length ? r.waveform : engine.waveform;
       // The rail's meters and its visual editors are driven from the same poll
       // as the playhead, so everything on screen describes one instant.
-      paintRackMeters(r.rackLevels || []);
-      repaintVisualEqs();
-      repaintVisualCompressors();
+      // All three draw into the effects rail, so none of them is worth doing
+      // while another dock is open. The meters are the expensive one: a needle
+      // per stage, redrawn on every poll, whether or not the rail is on screen.
+      engine.rackLevels = r.rackLevels || [];
+      if (!$('dockEffects')?.classList.contains('hidden')) {
+        paintRackMeters(r.rackLevels || []);
+        repaintVisualEqs();
+        repaintVisualCompressors();
+      }
       repaintVisualChamberlins();
       repaintAutomationLanes();
       if (!r.playing && engine.playing) {
@@ -2202,6 +2208,16 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
                     visuals: 'dockVisuals', automation: 'dockAutomation',
                     regions: 'dockRegions' };
     for (const [k, id] of Object.entries(panes)) $(id).classList.toggle('hidden', k !== t.dataset.dock);
+    // Everything in these panels is skipped while its panel is hidden, so a
+    // panel being opened is showing whatever was on it when it was last
+    // closed. Paint it once here; the polls take it from there.
+    if (t.dataset.dock === 'effects') {
+      paintRackMeters(engine.rackLevels || []);
+      repaintVisualEqs();
+      repaintVisualCompressors();
+    } else if (t.dataset.dock === 'stretch') {
+      drawGrains();
+    }
   };
 });
 
@@ -5783,6 +5799,9 @@ function startVisualiser() {
   if (!canvas) return;
   const tick = () => {
     visRaf = requestAnimationFrame(tick);
+    // It lives in the Visuals dock, and a spectrum nobody can see is an FFT
+    // read and a full canvas repaint sixty times a second for nothing.
+    if ($('dockVisuals')?.classList.contains('hidden')) return;
     drawVisualiser(canvas);
   };
   tick();
