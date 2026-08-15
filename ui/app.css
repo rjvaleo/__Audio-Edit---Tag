@@ -1792,3 +1792,27 @@ body.editing .dock { flex: 0 0 330px; }
 /* While dragging, nothing else should take the pointer or select. */
 body.dock-sizing { cursor: ns-resize; user-select: none; }
 body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
+
+/* --------------------------------------------------------------- theme pane
+   A palette is chosen by looking at it, so the swatch is the control and the
+   name is the caption — not the other way round. */
+.theme-list { display: flex; flex-direction: column; gap: 2px; max-height: 46vh; overflow-y: auto; }
+.theme-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px; border-radius: 5px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.theme-row:hover { background: var(--surface-2); }
+.theme-row.chosen { border-color: var(--accent); background: var(--surface-2); }
+.theme-swatch { display: flex; flex: 0 0 auto; border-radius: 3px; overflow: hidden; }
+.theme-swatch i { width: 13px; height: 15px; display: block; }
+.theme-name {
+  flex: 1; min-width: 0; font-size: 11px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.theme-del {
+  background: none; border: 0; color: var(--text-dimmer);
+  font-size: 13px; line-height: 1; padding: 0 2px; cursor: pointer;
+}
+.theme-del:hover { color: var(--bad); }
+#themePlain.on { border-color: var(--accent); color: var(--text); }

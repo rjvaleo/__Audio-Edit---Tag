@@ -154,7 +154,8 @@ function showPane(side, name) {
     : { inspect: 'paneInspect' };
   for (const [key, id] of Object.entries(panes)) $(id).classList.toggle('hidden', key !== name);
   const titles = { browse: 'Browse', search: 'Search', scan: 'Scan',
-                   import: 'Library', record: 'Record', inspect: 'Tags' };
+                   import: 'Library', record: 'Record', inspect: 'Tags',
+                   theme: 'Theme' };
   // Opening the panel starts polling the input; leaving it stops, so nothing
   // is asking a device for levels that nobody is looking at.
   if (side === 'left') recordPanelShown(name === 'record');
@@ -8040,3 +8041,136 @@ document.addEventListener('keydown', (e) => {
     state.sel = null; setCue(0); drawSelection(); applyLoop();
   }
 });
+
+
+// ==================================================================== theme
+//
+// A palette gives colour and direction. Everything else — the surface ladder,
+// the four text steps, the borders — is derived, which is what lets a palette
+// nobody designed for this program still produce a usable interface: the steps
+// are ours and only the colour is theirs.
+//
+// The engine is a port and lives in `theme-derive.js`; the palettes in
+// `theme-palettes.js`. What is here is the manager, in this app's own idiom
+// rather than the React one it arrived in.
+
+const THEME_STORE = 'audiolab.theme';
+
+const themeState = {
+  /// Palettes the user added. The shipped 47 are read-only and live in
+  /// `THEME_PALETTES` — previewable and duplicable, never edited away.
+  mine: [],
+  chosen: null,
+  plain: false,
+};
+
+function allPalettes() {
+  return [...THEME_PALETTES.map((p) => ({ ...p, readOnly: true })), ...themeState.mine];
+}
+
+/// Kept in the browser rather than in `data/`.
+///
+/// A theme is a property of the machine you are looking at, not of the library —
+/// the same library opened on two screens should be allowed to look different on
+/// each. It is also the one setting where losing it costs nothing.
+function loadTheme() {
+  try {
+    const v = JSON.parse(localStorage.getItem(THEME_STORE) || '{}');
+    themeState.mine = Array.isArray(v.mine) ? v.mine : [];
+    themeState.chosen = v.chosen || null;
+    themeState.plain = !!v.plain;
+  } catch { /* a corrupt entry is no theme, not a broken app */ }
+}
+
+function saveTheme() {
+  try {
+    localStorage.setItem(THEME_STORE, JSON.stringify({
+      mine: themeState.mine, chosen: themeState.chosen, plain: themeState.plain,
+    }));
+  } catch { /* private browsing, a full quota — neither is worth a toast */ }
+}
+
+function applyChosenTheme() {
+  const p = allPalettes().find((x) => x.id === themeState.chosen);
+  if (!p) { Theme.apply(null); return; }
+  Theme.apply(Theme.appTokens(p.colors, { plain: themeState.plain }).tokens);
+}
+
+function renderThemeList() {
+  const box = $('themeList');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const p of allPalettes()) {
+    const row = document.createElement('div');
+    row.className = 'theme-row' + (p.id === themeState.chosen ? ' chosen' : '');
+    row.title = `${p.name} — ${p.colors.join(' ')}`;
+
+    const swatch = document.createElement('span');
+    swatch.className = 'theme-swatch';
+    for (const c of p.colors.slice(0, 6)) {
+      const chip = document.createElement('i');
+      chip.style.background = c;
+      swatch.appendChild(chip);
+    }
+
+    const name = document.createElement('span');
+    name.className = 'theme-name';
+    name.textContent = p.name;
+
+    row.append(swatch, name);
+    if (!p.readOnly) {
+      const del = document.createElement('button');
+      del.className = 'theme-del';
+      del.textContent = '×';
+      del.title = 'Remove this palette';
+      del.onclick = (e) => {
+        e.stopPropagation();
+        themeState.mine = themeState.mine.filter((x) => x.id !== p.id);
+        if (themeState.chosen === p.id) themeState.chosen = null;
+        saveTheme(); applyChosenTheme(); renderThemeList();
+      };
+      row.appendChild(del);
+    }
+
+    row.onclick = () => {
+      // Clicking the chosen one takes it off, so there is always a way back to
+      // the interface's own colours without hunting for a button.
+      themeState.chosen = themeState.chosen === p.id ? null : p.id;
+      saveTheme(); applyChosenTheme(); renderThemeList();
+    };
+    box.appendChild(row);
+  }
+}
+
+function wireTheme() {
+  if (!$('themeList')) return;
+  loadTheme();
+  applyChosenTheme();
+  renderThemeList();
+
+  $('themeNone').onclick = () => {
+    themeState.chosen = null;
+    saveTheme(); applyChosenTheme(); renderThemeList();
+  };
+  $('themePlain').onclick = () => {
+    themeState.plain = !themeState.plain;
+    $('themePlain').classList.toggle('on', themeState.plain);
+    saveTheme(); applyChosenTheme();
+  };
+  $('themeAdd').onclick = () => {
+    const raw = $('themeColors').value || '';
+    const colors = raw.split(/[\s,]+/).filter(Boolean)
+      .map((c) => (c.startsWith('#') ? c : `#${c}`))
+      .filter((c) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c));
+    if (colors.length < 2) { toast('Two colours at least'); return; }
+    const taken = allPalettes().map((p) => p.id);
+    let id = `mine-${colors.length}-${Date.now().toString(36)}`;
+    while (taken.includes(id)) id += 'x';
+    themeState.mine.push({ id, name: `Mine ${themeState.mine.length + 1}`, colors });
+    themeState.chosen = id;
+    $('themeColors').value = '';
+    saveTheme(); applyChosenTheme(); renderThemeList();
+  };
+}
+
+wireTheme();
