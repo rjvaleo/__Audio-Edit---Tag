@@ -104,6 +104,33 @@ DOM, runs script, reports console errors. Every "does this actually work"
 question I have answered by reading code today could have been answered by
 looking.
 
+## Progress
+
+**1. Live-path route tests — done.** Seven, covering what the engine reports
+holding nothing, a live parameter reaching the stored document, clamping, both
+refusal paths, the master's amount being live while its ceiling is not, and
+every module the picker offers being one that can actually be built.
+
+None of them opens the audio device. A test that made sound would fight
+whatever the machine is already playing and would fail on any box without an
+output; what happens *inside* the callback is covered frame by frame in
+`engine::transport`, which was built to run without a sound card for this
+reason.
+
+**2. Naming the invariants — started.** 1 and 8 now have tests that say so.
+Invariant 1 is asserted on the source's bytes before and after an export, plus
+a second test that exporting twice writes two files rather than replacing one.
+Five still unnamed: 2, 3, 4, 5, 7.
+
+**3. `ui-check.mjs` wired into `cargo test` — done.**
+`server/tests/interface.rs` runs it, and fails loudly rather than skipping
+silently when it finds something. A machine without node prints SKIPPED rather
+than passing quietly, so "the tests are green" cannot come to mean different
+things on different machines. Confirmed by adding a call to a function that
+does not exist: the test fails and names the line.
+
+**4 and 5 — not started.**
+
 ## What to build, in order
 
 **1. Live-path route tests.** Load a file, play, move a parameter, read the
