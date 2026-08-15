@@ -5294,9 +5294,12 @@ $('presetSave').onclick = async () => {
   const suggested = $('presetPick').value || `Preset ${state.presets.length + 1}`;
   const name = prompt('Save these settings as:', suggested);
   if (name === null || !name.trim()) return;
-  const note = prompt('A note about it (optional):', '') || '';
+  // No note asked for here. Saving a preset is one decision — the name — and a
+  // second dialog for a field that is nearly always left blank turns a quick
+  // capture into a form. The note still exists and is still edited in the
+  // preset manager, which is where a preset is looked *at* rather than made.
   try {
-    const r = await postJSON('/api/presets', { name: name.trim(), note, p: state.selectedFile.path });
+    const r = await postJSON('/api/presets', { name: name.trim(), note: '', p: state.selectedFile.path });
     state.presets = r.presets || [];
     renderPresets();
     $('presetPick').value = name.trim();
