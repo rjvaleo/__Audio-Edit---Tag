@@ -19,6 +19,18 @@ use crate::stretcher::Stretcher;
 /// clicks without it.
 const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 
+/// How much recent output the ring keeps, in seconds.
+///
+/// The upper bound on how far back a grain can reach, so it is the longest
+/// granular echo the sixth engine can make. Four seconds of stereo at 48 kHz is
+/// about 1.5 MB, allocated once and never resized.
+///
+/// Sized from the parameters' sample rate at construction, which is what the
+/// stretcher is sized from too. If the device turns out to be running faster
+/// the ring simply holds proportionally less time — it is a capacity, not a
+/// promise about duration, and every read is bounded by `frames()` anyway.
+const RING_SECONDS: f32 = 4.0;
+
 /// The shortest loop the wrap-and-crossfade path will accept.
 ///
 /// Not a musical limit. It is where *wrapping* stops being the right mechanism:
@@ -491,6 +503,10 @@ pub struct Core {
     fft_bins: Vec<u8>,
     params: StreamParams,
     source: Arc<Source>,
+    /// The last few seconds of output, for grains that read what just came out.
+    ///
+    /// Written every block; nothing reads it yet. See [`crate::ring`].
+    ring: crate::ring::OutputRing,
     scratch: Vec<GrainEvent>,
     /// Where each driven control currently *is*, as opposed to where it has
     /// been asked to go. See [`Smoothed`].
@@ -743,6 +759,10 @@ impl Core {
             fft_re: vec![0.0; FFT_SIZE],
             fft_im: vec![0.0; FFT_SIZE],
             fft_bins: vec![0; FFT_SIZE / 2 + 1],
+            ring: crate::ring::OutputRing::new(
+                (params.sample_rate as f32 * RING_SECONDS) as usize,
+                channels.max(1),
+            ),
             params,
             source,
             // Capacity up front: `aim` runs in the callback and must never
@@ -931,6 +951,27 @@ impl Core {
         // exactly as the offline render orders it.
         self.process_rack(out, channels);
 
+        // Keep the block for grains that read the output rather than the file.
+        //
+        // Here, and not two lines further down, because the fader below is a
+        // *monitoring* control. A ring written after it would mean turning the
+        // monitor down starved the feedback path, so the instrument would
+        // change character with the listening level — which is the opposite of
+        // an instrument. The ring is inside the machine; the fader is outside
+        // it. Capture, further down, is outside it too, which is why that one
+        // goes last: it documents what reached the speakers, while this *is*
+        // the machine's own memory.
+        //
+        // After the rack, so the channel maximiser has already run and
+        // invariant 10's clamp bounds anything that recirculates — though only
+        // while that maximiser is on, so a feedback path will still want its
+        // own bound once something actually reads this.
+        //
+        // Not reached while paused: the early return above happens first, so a
+        // pause holds the ring rather than erasing it under four seconds of
+        // silence. That is what makes a frozen texture survive being stopped.
+        self.ring.write(out, channels);
+
         let gain = f32::from_bits(shared.gain.load(Ordering::Acquire));
         if (gain - 1.0).abs() > 1e-6 {
             for s in out.iter_mut() {
@@ -1109,6 +1150,96 @@ mod tests {
         assert_eq!(s.loop_bounds(100_000), None);
         s.set_loop(true, 0, MIN_LOOP_FRAMES + 1);
         assert!(s.loop_bounds(100_000).is_some());
+    }
+
+    /// A loud, obviously non-silent source, so "did the ring get the audio"
+    /// is answerable by looking at one number.
+    fn loud_source(frames: usize, channels: usize) -> Arc<Source> {
+        Arc::new(Source {
+            samples: vec![0.5; frames * channels],
+            channels,
+        })
+    }
+
+    fn playing_core(channels: usize) -> (Core, Shared) {
+        let src = loud_source(48_000, channels);
+        let sp = StreamParams::new(48_000, 48_000);
+        let shared = Shared::new(sp, Arc::clone(&src));
+        let core = Core::new(512, channels, sp, src);
+        shared.play();
+        (core, shared)
+    }
+
+    #[test]
+    fn playing_fills_the_ring_with_what_came_out() {
+        let (mut core, shared) = playing_core(1);
+        let mut buf = vec![0.0; 512];
+        core.fill(&mut buf, 1, &shared);
+
+        assert_eq!(core.ring.written(), 512, "one block written");
+        let newest = *buf.last().unwrap();
+        assert_eq!(
+            core.ring.read(0.0, 0),
+            newest,
+            "the newest ring frame is the last frame of the block"
+        );
+        assert!(newest != 0.0, "the test source produced silence");
+    }
+
+    /// The reason the write sits above the fader rather than below it. The
+    /// fader is a monitoring control; if the ring were downstream of it,
+    /// turning the monitor down would starve anything reading the ring and the
+    /// instrument would change character with the listening level.
+    #[test]
+    fn the_ring_is_written_before_the_fader() {
+        let (mut core, shared) = playing_core(1);
+        let mut buf = vec![0.0; 512];
+
+        shared.set_gain(1.0);
+        core.fill(&mut buf, 1, &shared);
+        let at_unity = core.ring.read(0.0, 0);
+
+        shared.set_gain(0.25);
+        core.fill(&mut buf, 1, &shared);
+        let at_quarter = core.ring.read(0.0, 0);
+
+        assert!(
+            (*buf.last().unwrap() - at_quarter * 0.25).abs() < 1e-6,
+            "the fader should have quartered the output"
+        );
+        assert!(
+            (at_unity - at_quarter).abs() < 1e-6,
+            "the ring followed the fader: {at_unity} then {at_quarter}"
+        );
+    }
+
+    /// A pause returns before the ring is written, so four seconds of stopped
+    /// transport does not erase what is in it. That is what lets a frozen
+    /// texture survive being stopped and started.
+    #[test]
+    fn pausing_holds_the_ring_rather_than_erasing_it() {
+        let (mut core, shared) = playing_core(1);
+        let mut buf = vec![0.0; 512];
+        core.fill(&mut buf, 1, &shared);
+
+        let held = core.ring.read(0.0, 0);
+        let written = core.ring.written();
+        assert!(held != 0.0);
+
+        shared.pause();
+        for _ in 0..8 {
+            core.fill(&mut buf, 1, &shared);
+        }
+
+        assert_eq!(core.ring.written(), written, "a pause wrote to the ring");
+        assert_eq!(core.ring.read(0.0, 0), held, "a pause overwrote the ring");
+    }
+
+    #[test]
+    fn the_ring_is_as_wide_as_the_device_not_the_file() {
+        let (core, _shared) = playing_core(2);
+        assert_eq!(core.ring.channels(), 2);
+        assert!(core.ring.frames() > 0);
     }
 
     #[test]
