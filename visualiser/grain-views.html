@@ -1332,10 +1332,17 @@
         //    grows as the cursor works through the file; energy pushes a grain
         //    outward as it sounds.
         case 2: {
+            // The shell grew with the read position and then snapped back to
+            // the middle. It swells and settles now — out as the cloud works
+            // into the file, back as it leaves — so the pass closes. Which half
+            // of the file a given radius belongs to is no longer readable from
+            // the radius alone; the azimuth still says, because it carries the
+            // read position too.
             const e = out.e;
             const th = Math.acos(clamp(g.b, -1, 1));
-            const ph = g.a + now * 0.22;
-            const rr = R * (0.34 + 0.62 * g.v) + e * R * 0.26;
+            const ph = g.a * 0.4 + g.v * Math.PI * 2;
+            const swell = (1 - Math.cos(g.v * Math.PI * 2)) / 2;
+            const rr = R * (0.34 + 0.62 * swell) + e * R * 0.26;
             out.x = rr * Math.sin(th) * Math.cos(ph);
             out.z = rr * Math.sin(th) * Math.sin(ph);
             out.y = rr * Math.cos(th) * 0.55 - g.pn * HEIGHT * 0.5 + lift;
@@ -1345,11 +1352,20 @@
         // ── SHELLS: an octave to a shell. The whole structure turns at the
         //    drift rate, so drift is something you watch rather than set.
         case 3: {
+            // The winding already closed — three whole turns per pass — but the
+            // height rose with the read position and did not, so the stack ran
+            // up and dropped back. Height is a circle now: the shells rise as
+            // the cloud works into the file and come back down as it leaves,
+            // so the pass ends where it began.
+            //
+            // The turning term was the drift rate advancing on the clock, which
+            // never lands anywhere in particular at the end of a lap. Gone with
+            // the rest of the camera's movements.
             const rr = R * (0.22 + 0.78 * (g.pn + 1) / 2);
-            const th = g.u * Math.PI * 2 * 3 + now * params.driftRateHz * 0.9;
+            const th = g.u * Math.PI * 2 * 3;
             out.x = Math.cos(th) * rr;
             out.z = Math.sin(th) * rr;
-            out.y = (g.v - 0.5) * HEIGHT * 1.6 + lift;
+            out.y = -Math.cos(g.v * Math.PI * 2) * HEIGHT * 0.8 + lift;
             break;
         }
 
