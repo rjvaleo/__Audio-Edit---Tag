@@ -2433,6 +2433,22 @@
     // iframe should not take instructions from whoever happens to message it.
     window.addEventListener('message', (e) => {
         if (e.origin !== location.origin) return;
+        // Hidden in the app: stop polling the engine and stop drawing. A
+        // display:none frame gets no animation frames anyway, but the poll is
+        // a timer and timers do not care whether anyone is looking — it was a
+        // request every eighth of a second for a picture on no screen.
+        //
+        // The connection is not dropped, only paused, so coming back does not
+        // have to find the engine again.
+        if (e.data && e.data.type === 'grainAwake') {
+            const awake = !!e.data.awake;
+            if (!awake && liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+            else if (awake && live && !liveTimer) {
+                pollEngine();
+                liveTimer = setInterval(pollEngine, 120);
+            }
+            if (awake) loop(); else noLoop();
+        }
         if (e.data && e.data.type === 'grainView') setView(e.data.view | 0);
         if (e.data && e.data.type === 'grainSuite') setSuite(e.data.suite | 0);
 
