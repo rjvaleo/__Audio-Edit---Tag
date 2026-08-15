@@ -2360,6 +2360,42 @@ function defaultFxSlot(kind) {
   return { id, kind, bypassed: false, params };
 }
 
+/// What a rack control was born with, for double-click reset.
+///
+/// Read from the same factory that creates a new module rather than from a
+/// second table, so a reset can never disagree with what adding one gives you.
+/// That is the whole reason `param` refuses to guess: a control that resets to
+/// something which was never anybody's default is worse than one that plainly
+/// does nothing.
+function fxBorn(kind, key) {
+  const s = defaultFxSlot(kind);
+  return s ? s[key] : undefined;
+}
+
+/// The same, for one band of the EQ.
+function eqBorn(index, key) {
+  return defaultEqBands()[index]?.[key];
+}
+
+/// The three-band strip's own defaults, which are a different shape from the
+/// band list: `slot.low` / `.mid` / `.high` rather than `slot.bands[i]`.
+///
+/// Mirrors `fx::eq::EqSettings::default()`. Two tables for one thing is exactly
+/// what `fxBorn` avoids elsewhere by reading the factory — there is no factory
+/// for this shape on the client, so the comment has to carry the promise
+/// instead.
+const EQ_STRIP_DEFAULTS = {
+  low: { freq: 100, q: 0.7, gainDb: 0 },
+  mid: { freq: 1000, q: 1, gainDb: 0 },
+  high: { freq: 8000, q: 0.7, gainDb: 0 },
+};
+
+/// The same, for a shaper — whose defaults are declared by the server with the
+/// rest of its parameter spec, so this is the only place they live.
+function shaperBorn(kind, key) {
+  return state.shapers?.[kind]?.params?.find((p) => p.key === key)?.default;
+}
+
 function addFxModule(kind) {
   if (!kind || !state.rack) return;
   const slot = defaultFxSlot(kind);
@@ -2602,7 +2638,7 @@ function renderMaster() {
   row(param('Amount', shown.amount, 0, 1, 0.01,
     (v) => (v <= 0 ? 'none' : v >= 0.999 ? 'maximize' : `${Math.round(v * 100)}%`),
     (v) => { set('amount', v); send();  },
-    () => {commit();}), 'amount');
+    () => {commit();}, false, MASTER_DEFAULTS.amount), 'amount');
 
   row(check('auto level',
     'Walk the output up to the ceiling as it plays, rather than leaving the gain where it was',
@@ -2613,7 +2649,7 @@ function renderMaster() {
     shown.autoComp, (on) => { set('autoComp', on); commit(); }), 'autoComp');
 
   row(param('Ceiling', shown.ceilingDb, -24, 0, 0.1, (v) => `${v.toFixed(1)} dB`,
-    (v) => { set('ceilingDb', v); send(); }, () => commit()), 'ceilingDb');
+    (v) => { set('ceilingDb', v); send(); }, () => commit(), false, MASTER_DEFAULTS.ceilingDb), 'ceilingDb');
 
   reflectMaster();
 }
@@ -2846,7 +2882,7 @@ function renderDattorroFilterBank(box,slot,shaper){
     {name:'Damping',color:'#62aeda',on:'dampingOn',hz:'dampingHz',q:'dampingQ',amp:'dampingAmp'}];let selected=0;
   const curve=(f,hz)=>{const p=slot.params,q=p[f.q],amp=p[f.amp];if(f.name==='Notch')return-24*amp*Math.exp(-Math.pow(Math.log(hz/p[f.hz])*q,2)*5);if(f.name==='Resonator')return 14*amp*Math.exp(-Math.pow(Math.log(hz/p[f.hz])*q,2));if(f.name==='Damping')return 20*amp*Math.log10(1/Math.sqrt(1+Math.pow(hz/p[f.hz],2*Math.max(.2,q))));return 12*amp*Math.exp(-Math.pow(Math.log(hz/p[f.hz])*q,2));};
   const draw=()=>{const w=canvas.clientWidth,h=canvas.clientHeight;if(!w||!h)return;const d=devicePixelRatio||1;canvas.width=w*d;canvas.height=h*d;const c=canvas.getContext('2d');c.setTransform(d,0,0,d,0,0);const xf=hz=>Math.log(hz/20)/Math.log(1000)*w,yf=db=>h/2-db/48*h;c.fillStyle='#090b0d';c.fillRect(0,0,w,h);c.strokeStyle='rgba(255,255,255,.1)';for(const hz of [20,100,1000,10000,20000]){const x=xf(hz);c.beginPath();c.moveTo(x,0);c.lineTo(x,h);c.stroke();}c.beginPath();c.moveTo(0,yf(0));c.lineTo(w,yf(0));c.stroke();filters.forEach((f,i)=>{if(slot.params[f.on]<.5)return;const pts=[];for(let x=0;x<=w;x+=2){const hz=20*Math.pow(1000,x/w);pts.push([x,yf(curve(f,hz))]);}c.beginPath();c.moveTo(0,yf(0));pts.forEach(([x,y])=>c.lineTo(x,y));c.lineTo(w,yf(0));c.closePath();c.globalAlpha=.22;c.fillStyle=f.color;c.fill();c.globalAlpha=1;c.beginPath();pts.forEach(([x,y],j)=>j?c.lineTo(x,y):c.moveTo(x,y));c.strokeStyle=f.color;c.stroke();const x=xf(slot.params[f.hz]),y=yf(curve(f,slot.params[f.hz]));c.beginPath();c.arc(x,y,i===selected?9:7,0,Math.PI*2);c.fillStyle=i===selected?'#f4f7f9':f.color;c.fill();c.fillStyle='#20252a';c.textAlign='center';c.textBaseline='middle';c.font='bold 9px sans-serif';c.fillText(String(i+1),x,y);});};
-  const controls=()=>{tabs.innerHTML='';filters.forEach((f,i)=>{const b=document.createElement('button');b.className='filter-bank-tab'+(i===selected?' selected':'')+(slot.params[f.on]<.5?' off':'');b.style.setProperty('--filter-color',f.color);b.textContent=f.name;b.onclick=()=>{selected=i;controls();};tabs.appendChild(b);});controlsBox.innerHTML='';const f=filters[selected],toggle=document.createElement('button');toggle.className='ghost';toggle.textContent=slot.params[f.on]>=.5?'On':'Off';toggle.onclick=()=>{slot.params[f.on]=slot.params[f.on]>=.5?0:1;controls();pushRack({immediate:true});};controlsBox.appendChild(toggle);const add=(label,key,min,max,unit='',log=false)=>{let last=slot.params[key];controlsBox.appendChild(param(label,slot.params[key],min,max,(max-min)/400,v=>fxValueFormat({unit,min,max},v),v=>{last=v;slot.params[key]=v;draw();read();liveParam(slot.id,key,v);},()=>{commitRack();},log));};add('Frequency',f.hz,20,20000,'Hz',true);add('Q',f.q,.2,18);add('Amplitude',f.amp,0,1);read();draw();function read(){readout.textContent=`${f.name.toUpperCase()} · ${fxValueFormat({unit:'Hz'},slot.params[f.hz])} · Q ${slot.params[f.q].toFixed(2)} · AMP ${Math.round(slot.params[f.amp]*100)}% · ${slot.params[f.on]>=.5?'ON':'OFF'}`;}};
+  const controls=()=>{tabs.innerHTML='';filters.forEach((f,i)=>{const b=document.createElement('button');b.className='filter-bank-tab'+(i===selected?' selected':'')+(slot.params[f.on]<.5?' off':'');b.style.setProperty('--filter-color',f.color);b.textContent=f.name;b.onclick=()=>{selected=i;controls();};tabs.appendChild(b);});controlsBox.innerHTML='';const f=filters[selected],toggle=document.createElement('button');toggle.className='ghost';toggle.textContent=slot.params[f.on]>=.5?'On':'Off';toggle.onclick=()=>{slot.params[f.on]=slot.params[f.on]>=.5?0:1;controls();pushRack({immediate:true});};controlsBox.appendChild(toggle);const add=(label,key,min,max,unit='',log=false)=>{let last=slot.params[key];controlsBox.appendChild(param(label,slot.params[key],min,max,(max-min)/400,v=>fxValueFormat({unit,min,max},v),v=>{last=v;slot.params[key]=v;draw();read();liveParam(slot.id,key,v);},()=>{commitRack();},log,shaperBorn(slot.kind,key)));};add('Frequency',f.hz,20,20000,'Hz',true);add('Q',f.q,.2,18);add('Amplitude',f.amp,0,1);read();draw();function read(){readout.textContent=`${f.name.toUpperCase()} · ${fxValueFormat({unit:'Hz'},slot.params[f.hz])} · Q ${slot.params[f.q].toFixed(2)} · AMP ${Math.round(slot.params[f.amp]*100)}% · ${slot.params[f.on]>=.5?'ON':'OFF'}`;}};
   const pick=e=>{const r=canvas.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,xf=hz=>Math.log(hz/20)/Math.log(1000)*r.width,yf=db=>r.height/2-db/48*r.height;return filters.map((f,i)=>[i,Math.hypot(px-xf(slot.params[f.hz]),py-yf(curve(f,slot.params[f.hz])))]).sort((a,b)=>a[1]-b[1])[0][0];};let dragging=false;canvas.onpointerdown=e=>{selected=pick(e);dragging=true;canvas.setPointerCapture(e.pointerId);controls();};canvas.onpointermove=e=>{if(!dragging)return;const r=canvas.getBoundingClientRect(),f=filters[selected];slot.params[f.hz]=20*Math.pow(1000,Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)));slot.params[f.q]=Math.max(.2,Math.min(18,(1-(e.clientY-r.top)/r.height)*18));draw();liveParam(slot.id,f.hz,slot.params[f.hz]);liveParam(slot.id,f.q,slot.params[f.q]);};canvas.onpointerup=e=>{const f=filters[selected];dragging=false;try{canvas.releasePointerCapture(e.pointerId);}catch{}controls();pushRack({immediate:true});};controls();
   requestAnimationFrame(draw);new ResizeObserver(draw).observe(canvas);
 }
@@ -2865,7 +2901,7 @@ function renderVisualChamberlin(box,slot,shaper){
   slot.params=slot.params||{};for(const p of shaper.params)if(slot.params[p.key]===undefined)slot.params[p.key]=p.default;box.classList.add('visual-chamberlin-controls');
   const graph=document.createElement('div');graph.className='chamberlin-graph';graph.innerHTML='<canvas></canvas><div class="chamberlin-readout"></div><div class="chamberlin-sliders"></div>';box.appendChild(graph);const canvas=graph.querySelector('canvas'),readout=graph.querySelector('.chamberlin-readout'),stack=graph.querySelector('.chamberlin-sliders');
   let selected='low';const redraw=()=>{readout.textContent=`${selected.toUpperCase()} · ${fxValueFormat({unit:'Hz'},slot.params[selected+'Freq'])} · Q ${slot.params[selected+'Q'].toFixed(2)} · AMP ${Math.round(slot.params[selected+'Amp']*100)}%`;drawVisualChamberlin(canvas,slot.params);};
-  let selectedRows=[];const controls=()=>{stack.innerHTML='';const tabs=document.createElement('div');tabs.className='filter-bank-tabs';for(const [key,label] of [['low','Low pass'],['band','Band pass'],['high','High pass'],['notch','Notch']]){const button=document.createElement('button');button.className='filter-bank-tab'+(key===selected?' selected':'')+(slot.params[key+'On']<.5?' off':'');button.style.setProperty('--filter-color',CHAMBERLIN_COLORS[key]);button.textContent=label;button.onclick=()=>{selected=key;controls();};tabs.appendChild(button);}stack.appendChild(tabs);const toggle=document.createElement('button');toggle.className='ghost';toggle.textContent=slot.params[selected+'On']>=.5?'On':'Off';toggle.onclick=()=>{const key=selected+'On';slot.params[key]=slot.params[key]>=.5?0:1;controls();pushRack({immediate:true});};stack.appendChild(toggle);const add=(label,key,min,max,unit='',log=false)=>{let last=slot.params[key];const row=param(label,slot.params[key],min,max,(max-min)/400,v=>fxValueFormat({unit,min,max},v),v=>{last=v;slot.params[key]=v;redraw();liveParam(slot.id,key,v);},()=>{commitRack();},log);stack.appendChild(row);return row;};selectedRows=[add('Frequency',selected+'Freq',20,18000,'Hz',true),add('Q',selected+'Q',.2,10),add('Amplitude',selected+'Amp',0,1)];add('Drive','drive',.25,8,'x',true);redraw();};
+  let selectedRows=[];const controls=()=>{stack.innerHTML='';const tabs=document.createElement('div');tabs.className='filter-bank-tabs';for(const [key,label] of [['low','Low pass'],['band','Band pass'],['high','High pass'],['notch','Notch']]){const button=document.createElement('button');button.className='filter-bank-tab'+(key===selected?' selected':'')+(slot.params[key+'On']<.5?' off':'');button.style.setProperty('--filter-color',CHAMBERLIN_COLORS[key]);button.textContent=label;button.onclick=()=>{selected=key;controls();};tabs.appendChild(button);}stack.appendChild(tabs);const toggle=document.createElement('button');toggle.className='ghost';toggle.textContent=slot.params[selected+'On']>=.5?'On':'Off';toggle.onclick=()=>{const key=selected+'On';slot.params[key]=slot.params[key]>=.5?0:1;controls();pushRack({immediate:true});};stack.appendChild(toggle);const add=(label,key,min,max,unit='',log=false)=>{let last=slot.params[key];const row=param(label,slot.params[key],min,max,(max-min)/400,v=>fxValueFormat({unit,min,max},v),v=>{last=v;slot.params[key]=v;redraw();liveParam(slot.id,key,v);},()=>{commitRack();},log,shaperBorn(slot.kind,key));stack.appendChild(row);return row;};selectedRows=[add('Frequency',selected+'Freq',20,18000,'Hz',true),add('Q',selected+'Q',.2,10),add('Amplitude',selected+'Amp',0,1)];add('Drive','drive',.25,8,'x',true);redraw();};
   const pick=(e)=>{const r=canvas.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,xf=hz=>Math.log(hz/20)/Math.log(1000)*r.width;return ['low','band','high','notch'].map(key=>[key,Math.hypot(px-xf(slot.params[key+'Freq']),py-r.height*(.84-Math.min(1,slot.params[key+'Q']/10)*.66))]).sort((a,b)=>a[1]-b[1])[0][0];};let dragging=false;canvas.onpointerdown=e=>{selected=pick(e);dragging=true;canvas.setPointerCapture(e.pointerId);controls();};canvas.onpointermove=e=>{if(!dragging)return;const r=canvas.getBoundingClientRect(),freq=selected+'Freq',q=selected+'Q';slot.params[freq]=20*Math.pow(1000,Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)));slot.params[q]=Math.max(.2,Math.min(10,(1-(e.clientY-r.top)/r.height)*10));selectedRows[0].sync(slot.params[freq]);selectedRows[1].sync(slot.params[q]);redraw();liveParam(slot.id,freq,slot.params[freq]);liveParam(slot.id,q,slot.params[q]);};canvas.onpointerup=e=>{const freq=selected+'Freq',q=selected+'Q';dragging=false;try{canvas.releasePointerCapture(e.pointerId);}catch{}pushRack({immediate:true});};controls();requestAnimationFrame(redraw);new ResizeObserver(redraw).observe(canvas);
 }
 
@@ -2915,7 +2951,7 @@ function renderVisualCompressor(box, slot) {
   const slotIndex=state.rack.slots.indexOf(slot);
   const redraw=()=>drawVisualCompressor(canvas,slot,slotIndex);
   const add=(label,key,value,min,max,step,format,set,log=false)=>{let last=value;const target=`fx.${slot.id}.${key}`;const row=param(label,value,min,max,step,format,
-    v=>{last=v;set(v);redraw();liveParam(slot.id,key,v);},()=>{commitRack();},log);stack.appendChild(row);return row;};
+    v=>{last=v;set(v);redraw();liveParam(slot.id,key,v);},()=>{commitRack();},log,fxBorn(slot.kind,key));stack.appendChild(row);return row;};
   const thresholdRow=add('Threshold','thresholdDb',slot.thresholdDb,-60,0,.5,v=>`${v.toFixed(1)} dB`,v=>{slot.thresholdDb=v;});
   add('Ratio','ratio',slot.ratio,1,20,.1,v=>`${v.toFixed(1)}:1`,v=>{slot.ratio=v;});
   add('Attack','attackMs',slot.attackMs,.05,500,.1,v=>`${v.toFixed(1)} ms`,v=>{slot.attackMs=v;},true);
@@ -3016,9 +3052,9 @@ function renderVisualEq(box, slot, slotIndex) {
     const enabled=document.createElement('button');enabled.className='ghost';enabled.textContent=band.enabled?'On':'Off';enabled.onclick=()=>{band.enabled=!band.enabled;controls();pushRack({immediate:true});};
     const shapes=document.createElement('div');shapes.className='eq-shape-icons';for(const [value,icon,label] of EQ_TYPES){const button=document.createElement('button');button.type='button';button.className='eq-shape-icon'+(band.type===value?' selected':'');button.textContent=icon;button.title=label;button.setAttribute('aria-label',label);button.onclick=()=>{band.type=value;if(value==='notch'&&Math.abs(band.gainDb)<.01)band.gainDb=-12;controls();pushRack({immediate:true});};shapes.appendChild(button);}toolbar.append(enabled,shapes);stack.appendChild(toolbar);
     const target=k=>`fx.${slot.id}.band.${selected}.${k}`;
-    stack.appendChild(param('Frequency',band.freq,20,20000,1,v=>fxValueFormat({unit:'Hz'},v),v=>{band.freq=v;redraw();liveParam(slot.id,`band.${selected}.freq`,v);},()=>{commitRack();},true));
-    if(!['highpass','lowpass'].includes(band.type))stack.appendChild(param('Q',band.q,.05,18,.05,v=>v.toFixed(2),v=>{band.q=v;redraw();liveParam(slot.id,`band.${selected}.q`,v);},()=>{commitRack();}));
-    if(!['highpass','lowpass'].includes(band.type))stack.appendChild(param('Gain',band.gainDb,-24,24,.1,v=>`${v.toFixed(1)} dB`,v=>{band.gainDb=v;redraw();liveParam(slot.id,`band.${selected}.gainDb`,v);},()=>{commitRack();}));
+    stack.appendChild(param('Frequency',band.freq,20,20000,1,v=>fxValueFormat({unit:'Hz'},v),v=>{band.freq=v;redraw();liveParam(slot.id,`band.${selected}.freq`,v);},()=>{commitRack();},true, eqBorn(selected, 'freq')));
+    if(!['highpass','lowpass'].includes(band.type))stack.appendChild(param('Q',band.q,.05,18,.05,v=>v.toFixed(2),v=>{band.q=v;redraw();liveParam(slot.id,`band.${selected}.q`,v);},()=>{commitRack();}, false, eqBorn(selected, 'q')));
+    if(!['highpass','lowpass'].includes(band.type))stack.appendChild(param('Gain',band.gainDb,-24,24,.1,v=>`${v.toFixed(1)} dB`,v=>{band.gainDb=v;redraw();liveParam(slot.id,`band.${selected}.gainDb`,v);},()=>{commitRack();}, false, eqBorn(selected, 'gainDb')));
     redraw();
   };
   const pick=(x,y)=>{const rect=canvas.getBoundingClientRect(),px=x-rect.left,py=y-rect.top,xFor=hz=>Math.log(hz/20)/Math.log(1000)*rect.width,yFor=db=>rect.height/2-db/36*rect.height;return slot.bands.map((b,i)=>[i,Math.hypot(px-xFor(b.freq),py-yFor(['highpass','lowpass','notch'].includes(b.type)?0:b.gainDb))]).sort((a,b)=>a[1]-b[1])[0][0];};
@@ -3713,7 +3749,7 @@ function renderStretch() {
       if (d.cloud) {
         own.appendChild(tip(param('Cloud', d.cloudMix, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
-          (x) => { d.cloudMix = x; previewStretch(); }, () => commitStretch()),
+          (x) => { d.cloudMix = x; previewStretch(); }, () => commitStretch(), false, 0.5),
           'How much cloud against the engine underneath. Equal power, so the middle is not a dip — the two are decorrelated and a straight crossfade would sag there.'));
       }
     }
@@ -3734,7 +3770,7 @@ function renderStretch() {
       const v = state.stretchDraft.vocoder;
       own.appendChild(tip(param('Analysis window', v.windowMs, 5, 500, 1,
         (x) => `${Math.round(x)} ms`,
-        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true),
+        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true, VOCODER_DEFAULTS.windowMs),
         "The length of one transform, rounded to a power of two. Long resolves partials that sit close together and smears transients; short does the opposite. This is the vocoder's own window and means something different from the one above."));
       own.appendChild(check('phase lock',
         'Holds each partial together instead of letting it dissolve into neighbouring bins',
@@ -3744,14 +3780,14 @@ function renderStretch() {
         `The vocoder normally copies magnitudes through untouched and rewrites only phase. These do not.${what}`).add(
         tip(param('Freeze', v.magFreeze, 0, 1, 0.01,
           (x) => (x >= 0.999 ? 'held' : `${Math.round(x * 100)}%`),
-          (x) => { v.magFreeze = x; previewStretch(); }, () => commitStretch()),
+          (x) => { v.magFreeze = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magFreeze),
         'Hold the magnitude spectrum where it is instead of following the source. At 100% the sound stops changing timbre and only its phase keeps moving.'),
         tip(param('Blur', v.magBlur, 0, 1, 0.01, (x) => `${Math.round(x * 100)}%`,
-          (x) => { v.magBlur = x; previewStretch(); }, () => commitStretch()),
+          (x) => { v.magBlur = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magBlur),
         "Smear each frame's magnitudes into neighbouring bins. Softens the edges between partials and turns a pitched sound toward noise."),
         tip(param('Gate', v.magGate, 0, 1, 0.01,
           (x) => (x <= 0 ? 'off' : `${Math.round(x * 100)}%`),
-          (x) => { v.magGate = x; previewStretch(); }, () => commitStretch()),
+          (x) => { v.magGate = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magGate),
         "Drop every bin below this share of the frame's loudest. Thins the sound to its strongest partials, and at high settings leaves a sparse, bell-like residue."),
       ));
 
@@ -3759,16 +3795,16 @@ function renderStretch() {
         `How the frequency estimate is believed and how far a peak imposes its phase on its neighbours.${what}`).add(
         tip(param('Freq trust', v.freqTrust, 0, 4, 0.01,
           (x) => (x <= 0.001 ? 'to bins' : `${x.toFixed(2)}×`),
-          (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch()),
+          (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.freqTrust),
         "How far the frequency measured from the phase difference is believed over the bin's nominal centre. At zero every partial is forced onto its bin, which detunes the sound into a metallic grid."),
         tip(param('Phase spread', v.phaseSpread, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
-          (x) => { v.phaseSpread = x; previewStretch(); }, () => commitStretch()),
+          (x) => { v.phaseSpread = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.phaseSpread),
         "How far a peak's phase correction reaches into the bins around it. This is what stops a partial dissolving into its neighbours as the stretch gets long."),
         tip(param('Peak width', v.peakWidth, 1, 16, 1, (x) => `${Math.round(x)} bin`,
-          (x) => { v.peakWidth = Math.round(x); previewStretch(); }, () => commitStretch()),
+          (x) => { v.peakWidth = Math.round(x); previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.peakWidth),
         'How many bins either side of a maximum count as belonging to it. Wider claims more of the spectrum for each peak, which holds thick tone together and blurs closely spaced partials.'),
         tip(param('Lock width', v.lockWidth, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
-          (x) => { v.lockWidth = x; previewStretch(); }, () => commitStretch()),
+          (x) => { v.lockWidth = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.lockWidth),
         'How strongly a peak imposes its phase on the bins it owns. Zero leaves each bin to itself, which is the classic phase vocoder and the classic phasiness.'),
         check('link stereo',
           'Move both channels by one shared correction, so the image survives the stretch instead of drifting apart',
@@ -3794,7 +3830,7 @@ function renderStretch() {
       if (detecting) {
         own.appendChild(tip(param('Detector', w.sensitivity, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
-          (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch()),
+          (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.sensitivity),
         'How eager the onset detector is. Higher finds more hits to protect, including ones that are not really hits; lower protects only the clearest attacks.'));
       }
 
@@ -3802,7 +3838,7 @@ function renderStretch() {
         `How far the similarity search looks, what it goes looking for, and what the result is laid down under.${what}`).add(
         tip(param('Search', w.searchMs, 0, 200, 0.5,
           (x) => (x <= 0 ? 'plain OLA' : `${x.toFixed(1)} ms`),
-          (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch()),
+          (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.searchMs),
         'How far either side of the ideal splice point the similarity search may look for a better join. At zero there is no search at all and this becomes plain overlap-add, which is where the flanging comes from.'),
         tip(seg('Pick', [
           ['similar', 'best', 'The segment that best continues what came before. What WSOLA is for.'],
@@ -3817,7 +3853,7 @@ function renderStretch() {
         ], w.shape, (x) => { w.shape = x; commitStretch(); }),
         'The envelope each spliced segment is laid down under. Hann and triangle both sum flat at the usual overlap; rect does not, which is the point of it.'),
         tip(param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} fr`,
-          (x) => { w.stride = Math.round(x); previewStretch(); }, () => commitStretch()),
+          (x) => { w.stride = Math.round(x); previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.stride),
         'How many frames the similarity search steps by as it looks. Bigger is cheaper and coarser - the join lands near the best place rather than on it.'),
       ));
 
@@ -3827,10 +3863,10 @@ function renderStretch() {
           'What the detector counts as a hit, and how much either side of one is held at its original rate.').add(
           tip(param('Floor', w.floor, 0, 2, 0.01,
             (x) => (x <= 0 ? 'none' : `${x.toFixed(2)}×`),
-            (x) => { w.floor = x; previewStretch(); }, () => commitStretch()),
+            (x) => { w.floor = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.floor),
         'How far above the local average a peak has to rise before it counts as a hit. Low finds hits everywhere, which protects so much of the sound that the stretch stops happening.'),
           tip(param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hop`,
-            (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch()),
+            (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.guardHops),
         'How many hops either side of a detected hit are held at the original rate, so the attack is not laid down twice or cut in half.'),
         ));
       }
@@ -3858,18 +3894,18 @@ function renderStretch() {
       own.appendChild(tip(param('Re-anchor', p.anchorFrames, 1, 64, 1,
         (x) => `${Math.round(x)} fr`,
         (x) => { p.anchorFrames = Math.round(x); previewStretch(); },
-        () => commitStretch()),
+        () => commitStretch(), false, PVSOLA_DEFAULTS.anchorFrames),
         'How many analysis frames the vocoder is allowed to run on its own guesses before being spliced back onto the real waveform. Short kills phasiness and costs splices; long is the plain vocoder again.'));
 
       ext.appendChild(wild('Anchor',
         'How the splice back to the waveform is found and how it is joined. Both off is a hard cut every few frames, which you can hear as a rhythm.').add(
         tip(param('Search', p.searchMs, 0, 200, 0.5,
           (x) => (x <= 0 ? 'no search' : `${x.toFixed(1)} ms`),
-          (x) => { p.searchMs = x; previewStretch(); }, () => commitStretch()),
+          (x) => { p.searchMs = x; previewStretch(); }, () => commitStretch(), false, PVSOLA_DEFAULTS.searchMs),
         'How far the anchor search looks for the best place to splice back onto the waveform. At zero it joins wherever it lands, which you hear as a click every few frames.'),
         tip(param('Blend', p.blend, 0, 1, 0.01,
           (x) => (x <= 0 ? 'butt join' : `${Math.round(x * 100)}%`),
-          (x) => { p.blend = x; previewStretch(); }, () => commitStretch()),
+          (x) => { p.blend = x; previewStretch(); }, () => commitStretch(), false, PVSOLA_DEFAULTS.blend),
         'How much of the anchor is crossfaded rather than butt-joined. The fade is linear here, not equal power, because the search has just spent its whole effort making both sides correlated.'),
       ));
 
@@ -3890,15 +3926,15 @@ function renderStretch() {
       // touching its tone.
       own.appendChild(tip(param('Tone', h.harmonicLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.harmonicLevel = x; previewStretch(); }, () => commitStretch()),
+        (x) => { h.harmonicLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.harmonicLevel),
         "The level of the harmonic part - the ridges that run along time. This is the reason to be in this engine: nothing else here will turn a sound's air down without touching its tone."));
       own.appendChild(tip(param('Hits', h.percussiveLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.percussiveLevel = x; previewStretch(); }, () => commitStretch()),
+        (x) => { h.percussiveLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.percussiveLevel),
         'The level of the percussive part - the ridges that run across frequency. Attacks, clicks and transients, stretched by WSOLA with preservation held on.'));
       own.appendChild(tip(param('Air', h.residualLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.residualLevel = x; previewStretch(); }, () => commitStretch()),
+        (x) => { h.residualLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.residualLevel),
         'The level of the residual - everything that is neither a partial nor a hit. Breath, hiss, room. This is the part Margin decides the existence of.'));
       own.appendChild(check('remake noise',
         'Rebuild the air as fresh noise shaped like the old, instead of stretching it. Off, it repeats at long ratios like every other engine here does',
@@ -3907,17 +3943,17 @@ function renderStretch() {
       ext.appendChild(wild('Separation',
         'How the sound is cut into three. A partial is a ridge along time and a hit is a ridge across frequency; these decide how long and how broad each has to be to count.').add(
         tip(param('Hold', h.timeSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} fr`,
-          (x) => { h.timeSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch()),
+          (x) => { h.timeSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.timeSpan),
         'How many frames long a ridge has to hold steady before it counts as a partial. Longer is stricter and sends more of the sound to the other two parts.'),
         tip(param('Spread', h.freqSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} bin`,
-          (x) => { h.freqSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch()),
+          (x) => { h.freqSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.freqSpan),
         'How many bins wide a ridge has to be before it counts as a hit. Wider is stricter about what an attack is.'),
         tip(param('Margin', h.margin, 1, 8, 0.05,
           (x) => (x <= 1.001 ? 'no air' : `${x.toFixed(2)}×`),
-          (x) => { h.margin = x; previewStretch(); }, () => commitStretch()),
+          (x) => { h.margin = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.margin),
         'How much louder one part has to be than the other before it may claim a bin outright. At 1x nothing is left over and there is no Air at all - which is why the noise remaker then has nothing to work on.'),
         tip(param('Resolution', h.fftSize, 256, 8192, 256, (x) => `${Math.round(x)}`,
-          (x) => { h.fftSize = Math.round(x); previewStretch(); }, () => commitStretch(), true),
+          (x) => { h.fftSize = Math.round(x); previewStretch(); }, () => commitStretch(), true, HYBRID_DEFAULTS.fftSize),
         'The transform size the separation runs at. Bigger tells partials apart more finely and blurs the timing of hits; the separation is a property of the sound, not of the stretch.'),
       ));
 
@@ -5753,7 +5789,7 @@ function renderRackParams() {
   }
 
   if (slot.kind === 'gain') {
-    grid.appendChild(knob('Level', slot.db, -24, 24, 0.1, db1, (v) => { slot.db = v; pushRack(); }));
+    grid.appendChild(knob('Level', slot.db, -24, 24, 0.1, db1, (v) => { slot.db = v; pushRack(); }, null, false, fxBorn(slot.kind, 'db')));
   }
 
   if (slot.kind === 'eq') {
@@ -5769,7 +5805,7 @@ function renderRackParams() {
       grid.appendChild(h);
       const b = slot[key];
       grid.appendChild(knob('Gain', b.gainDb, -18, 18, 0.1, db1, (v) => { b.gainDb = v; pushRack(); }, undefined, false, 0));
-      grid.appendChild(knob('Freq', b.freq, 20, 18000, 1, hz, (v) => { b.freq = v; pushRack(); }));
+      grid.appendChild(knob('Freq', b.freq, 20, 18000, 1, hz, (v) => { b.freq = v; pushRack(); }, null, false, eqBorn(selected, 'freq')));
       grid.appendChild(knob('Q', b.q, 0.2, 8, 0.05, (v) => v.toFixed(2), (v) => { b.q = v; pushRack(); }, undefined, false, 0.7));
     }
     const h = document.createElement('div');
@@ -5777,22 +5813,22 @@ function renderRackParams() {
     h.textContent = 'High-pass';
     grid.appendChild(h);
     grid.appendChild(knob('Cutoff', slot.highPassHz, 0, 400, 1,
-      (v) => (v <= 20 ? 'off' : hz(v)), (v) => { slot.highPassHz = v; pushRack(); }));
+      (v) => (v <= 20 ? 'off' : hz(v)), (v) => { slot.highPassHz = v; pushRack(); }, null, false, fxBorn(slot.kind, 'highPassHz')));
   }
 
   if (slot.kind === 'comp') {
     grid.appendChild(knob('Threshold', slot.thresholdDb, -60, 0, 0.5,
-      (v) => `${v.toFixed(1)} dB`, (v) => { slot.thresholdDb = v; pushRack(); }));
+      (v) => `${v.toFixed(1)} dB`, (v) => { slot.thresholdDb = v; pushRack(); }, null, false, fxBorn(slot.kind, 'thresholdDb')));
     grid.appendChild(knob('Ratio', slot.ratio, 1, 20, 0.1,
-      (v) => `${v.toFixed(1)}:1`, (v) => { slot.ratio = v; pushRack(); }));
+      (v) => `${v.toFixed(1)}:1`, (v) => { slot.ratio = v; pushRack(); }, null, false, fxBorn(slot.kind, 'ratio')));
     grid.appendChild(knob('Attack', slot.attackMs, 0.1, 200, 0.1,
-      (v) => `${v.toFixed(1)} ms`, (v) => { slot.attackMs = v; pushRack(); }));
+      (v) => `${v.toFixed(1)} ms`, (v) => { slot.attackMs = v; pushRack(); }, null, false, fxBorn(slot.kind, 'attackMs')));
     grid.appendChild(knob('Release', slot.releaseMs, 5, 1000, 1,
-      (v) => `${Math.round(v)} ms`, (v) => { slot.releaseMs = v; pushRack(); }));
+      (v) => `${Math.round(v)} ms`, (v) => { slot.releaseMs = v; pushRack(); }, null, false, fxBorn(slot.kind, 'releaseMs')));
     grid.appendChild(knob('Knee', slot.kneeDb, 0, 24, 0.5,
-      (v) => `${v.toFixed(1)} dB`, (v) => { slot.kneeDb = v; pushRack(); }));
+      (v) => `${v.toFixed(1)} dB`, (v) => { slot.kneeDb = v; pushRack(); }, null, false, fxBorn(slot.kind, 'kneeDb')));
     grid.appendChild(knob('Makeup', slot.makeupDb, -12, 24, 0.1, db1,
-      (v) => { slot.makeupDb = v; pushRack(); }));
+      (v) => { slot.makeupDb = v; pushRack(); }, null, false, fxBorn(slot.kind, 'makeupDb')));
   }
 
   box.appendChild(grid);
