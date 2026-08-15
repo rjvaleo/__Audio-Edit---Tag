@@ -252,7 +252,32 @@ impl Streamer for WsolaStream {
         let ratio = p.ratio.clamp(0.01, 100.0);
         let win = (((p.window_ms.clamp(5.0, MAX_WINDOW_MS) / 1000.0) * sr) as usize).max(64) & !1;
         let hop_out = crate::stretch::hop_frames(&p.grain, win, sr).max(1);
-        let search = (((p.wsola.search_ms.clamp(0.0, 200.0)) / 1000.0) * sr) as usize;
+        // How far a splice may be moved to find a better join.
+        //
+        // Bounded by the hop, and that bound is the fix for a real fault: at
+        // 200 ms the search was wide enough that one window could splice from
+        // 180 ms *before* the nominal position and the next from 180 ms after.
+        // Both joins correlate well — the search is doing its job — but the two
+        // windows are then overlap-adding material a third of a second apart,
+        // and what you hear is the sound jumping about inside itself.
+        //
+        // The read pointer does not drift, because it is re-derived from the
+        // output position every hop rather than accumulated. So this is not a
+        // time-base problem; it is adjacent windows being allowed to disagree
+        // about where they are.
+        //
+        // One hop is the bound. Consecutive splices are a hop apart, so a
+        // search of one hop lets adjacent windows reach each other's nominal
+        // position and no further — they can disagree by a window, which is
+        // what the algorithm is for, but not by a third of a second, which is
+        // what it was doing.
+        //
+        // Half a hop was tried first and is the tighter classic figure. It is
+        // also, at the default window and overlap, ten milliseconds — exactly
+        // the control's own default, so Search would have done nothing at all
+        // above it. A control that looks live and is not is the worse fault.
+        let want = (((p.wsola.search_ms.clamp(0.0, 200.0)) / 1000.0) * sr) as usize;
+        let search = want.min(hop_out.max(1));
         let g = &p.grain;
         let steady = g.size_jitter.abs() < 1e-6;
         let pos_jitter = (g.position_jitter_ms / 1000.0) * sr;
