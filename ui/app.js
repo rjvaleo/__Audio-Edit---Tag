@@ -2751,10 +2751,11 @@ function automationUnit(value,min,max,log=false){
 }
 
 function renderFxModuleControls(box, slot, shaper, slotIndex) {
-  const add = (label, value, min, max, step, format, set, log = false, key = null) => {
+  const add = (label, value, min, max, step, format, set, log = false, key = null,
+               def = undefined) => {
     box.appendChild(param(label, value, min, max, step, format,
       (v) => { set(v); if (key) liveParam(slot.id, key, v); else pushRackLive(); },
-      () => { commitRack(); }, log));
+      () => { commitRack(); }, log, def));
   };
   if (shaper) {
     if (slot.kind === 'dattorro_filter_bank') { renderDattorroFilterBank(box, slot, shaper); return; }
@@ -2794,7 +2795,8 @@ function renderFxModuleControls(box, slot, shaper, slotIndex) {
         continue;
       }
       add(p.label, slot.params[p.key], p.min, p.max, (p.max - p.min) / 400,
-        (v) => fxValueFormat(p, v), (v) => { slot.params[p.key] = v; }, p.log, p.key);
+        (v) => fxValueFormat(p, v), (v) => { slot.params[p.key] = v; }, p.log, p.key,
+        p.default);
       if (slot.kind === 'utility' && ['grainMs', 'amount', 'floorDb'].includes(p.key)) {
         const row = box.lastElementChild; fitRows.push(row);
         row.classList.toggle('inactive', slot.params.ampFit < .5);
@@ -3012,7 +3014,7 @@ function renderVisualEq(box, slot, slotIndex) {
 /// would sit at one percent of the travel, with everything musically useful
 /// crushed against the left stop. On a log curve 1× sits in the middle and each
 /// doubling takes the same distance.
-function param(label, value, min, max, step, format, onChange, onCommit, log) {
+function param(label, value, min, max, step, format, onChange, onCommit, log, def) {
   const el = document.createElement('div');
   el.className = 'param';
   // Name, control, reading — one line, three columns, and the columns are the
@@ -3059,6 +3061,27 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
   // Fires on pointer release, which is when the change is worth committing
   // properly rather than previewing.
   if (onCommit) input.onchange = () => onCommit(toVal(+input.value));
+
+  // Double-click puts it back where it started.
+  //
+  // Only when a default was given. A control that quietly did nothing on a
+  // double-click would be worse than one that plainly has no default, and
+  // guessing — the midpoint, or zero, or whatever it happened to be built
+  // with — would put values in that were never the default of anything.
+  if (def !== undefined && def !== null && Number.isFinite(def)) {
+    el.title = `${label} — double-click to reset to ${format(def)}`;
+    const reset = (e) => {
+      e.preventDefault();
+      el.sync(def);
+      onChange(def);
+      if (onCommit) onCommit(def);
+    };
+    input.ondblclick = reset;
+    // The label too: the slider is a thin target, and the row is what reads as
+    // "this parameter".
+    name.ondblclick = reset;
+    out.ondblclick = reset;
+  }
   return el;
 }
 
@@ -3073,7 +3096,7 @@ function param(label, value, min, max, step, format, onChange, onCommit, log) {
 /// eight of these fit where three sliders did, and an effect with a handful of
 /// controls reads as one object instead of a list. Dragged vertically, which is
 /// how a knob has worked since knobs were physical, with shift for fine.
-function knob(label, value, min, max, step, format, onChange, onCommit, log) {
+function knob(label, value, min, max, step, format, onChange, onCommit, log, def) {
   const el = document.createElement('div');
   el.className = 'knob';
   el.innerHTML = `
@@ -3168,6 +3191,19 @@ function knob(label, value, min, max, step, format, onChange, onCommit, log) {
     onChange(quantise(toVal(pos)));
     if (onCommit) onCommit(quantise(toVal(pos)));
   }, { passive: false });
+
+  // Double-click puts it back where it started — the same contract as `param`,
+  // since the two are interchangeable at the call site and a control should not
+  // behave differently for being round.
+  if (def !== undefined && def !== null && Number.isFinite(def)) {
+    el.title = `${label} — double-click to reset to ${format(def)}`;
+    el.ondblclick = (e) => {
+      e.preventDefault();
+      el.sync(def);
+      onChange(def);
+      if (onCommit) onCommit(def);
+    };
+  }
 
   return el;
 }
@@ -3901,7 +3937,7 @@ function renderStretch() {
   rows.ratio = tip(param('Stretch', st.ratio, 0.01, 100, 0.01,
     (v) => (v >= 10 ? `${v.toFixed(0)}×` : v >= 1 ? `${v.toFixed(2)}×` : `${v.toFixed(3)}×`),
     (v) => { state.stretchDraft.ratio = v; showStretchOut(); previewStretch();  },
-    () => {commitStretch();}, true),
+    () => {commitStretch();}, true, 1),
         'How much longer the result is than the source. 1x is untouched, 0.5x is half the length, 100x is the point of a granular stretcher. Logarithmic, so the everyday range is not squeezed into the first tenth of the slider.');
   // The step is the finest the *scale* offers, so dragging cannot land
   // between two degrees and then be snapped back on release. With no scale
@@ -3909,13 +3945,13 @@ function renderStretch() {
   rows.semitones = tip(param('Pitch', st.semitones, -48, 48, scaleStep(),
     (v) => scaleLabel(v),
     (v) => { state.stretchDraft.semitones = v; previewStretch();  },
-    () => {commitStretch();} ),
+    () => {commitStretch();}, false, 0),
         'Shifts the pitch without changing the length. The engine is driven at ratio x pitch and the result read back that much faster, and the two length changes cancel. Twelve semitones is an octave. The tuning it snaps to is chosen on the row above.');
   // Log too: 40 ms is the everyday setting and second-long grains are the
   // extreme, so a linear control would bunch the useful range at one end.
   rows.windowMs = tip(param('Window', st.windowMs, 5, 2000, 1, (v) => `${Math.round(v)} ms`,
     (v) => { state.stretchDraft.windowMs = v; previewStretch();  },
-    () => {commitStretch();}, true),
+    () => {commitStretch();}, true, 40),
         'The length of one piece the engine works with - a splice for WSOLA, a grain for the cloud. Short follows transients and roughens tone; long holds tone together and smears attacks.');
 
   for (const el of Object.values(rows)) box.appendChild(el);
@@ -3993,7 +4029,7 @@ function renderGrainParams() {
     for (const [label, key, min, max, step, fmt, hint] of rows) {
       const el = tip(param(label, g[key], min, max, step, fmt,
         (v) => { state.grainDraft[key] = v; preview();  },
-        () => {commit();}), hint);
+        () => {commit();}, false, GRAIN_DEFAULTS[key]), hint);
       state.grainRows[key] = el;
       group.add(el);
     }
@@ -4002,7 +4038,8 @@ function renderGrainParams() {
 
   const gp = (label, key, min, max, step, fmt, log) => {
     const el = param(label, state.grainDraft[key], min, max, step, fmt,
-      (v) => { state.grainDraft[key] = v; preview(); }, () => commit(), log);
+      (v) => { state.grainDraft[key] = v; preview(); }, () => commit(), log,
+      GRAIN_DEFAULTS[key]);
     state.grainRows[key] = el;
     return el;
   };
@@ -5669,7 +5706,7 @@ function renderRackParams() {
       // The log flag is the ninth argument, after the commit callback these
       // do not need — pushRack already throttles.
       grid.appendChild(knob(p.label, slot.params[p.key], p.min, p.max, step, fmt,
-        (v) => { slot.params[p.key] = v; pushRack(); }, undefined, p.log));
+        (v) => { slot.params[p.key] = v; pushRack(); }, undefined, p.log, p.default));
     }
   }
 
@@ -5689,9 +5726,9 @@ function renderRackParams() {
       h.textContent = label;
       grid.appendChild(h);
       const b = slot[key];
-      grid.appendChild(knob('Gain', b.gainDb, -18, 18, 0.1, db1, (v) => { b.gainDb = v; pushRack(); }));
+      grid.appendChild(knob('Gain', b.gainDb, -18, 18, 0.1, db1, (v) => { b.gainDb = v; pushRack(); }, undefined, false, 0));
       grid.appendChild(knob('Freq', b.freq, 20, 18000, 1, hz, (v) => { b.freq = v; pushRack(); }));
-      grid.appendChild(knob('Q', b.q, 0.2, 8, 0.05, (v) => v.toFixed(2), (v) => { b.q = v; pushRack(); }));
+      grid.appendChild(knob('Q', b.q, 0.2, 8, 0.05, (v) => v.toFixed(2), (v) => { b.q = v; pushRack(); }, undefined, false, 0.7));
     }
     const h = document.createElement('div');
     h.className = 'band-head';
