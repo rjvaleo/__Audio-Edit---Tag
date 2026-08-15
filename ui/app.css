@@ -1756,3 +1756,12 @@ body.editing .dock { flex: 0 0 330px; }
 #gonioHolder { position: relative; overflow: hidden; cursor: grab; }
 #gonioHolder.dragging { cursor: grabbing; }
 #gonioHolder canvas { display: block; width: 100% !important; height: 100% !important; }
+
+/* The readout sits over the canvas as ordinary text. p5's WEBGL text needs a
+   font file vendored and drawn as geometry, which for two lines of monospace
+   would be worse in every way — blurrier, and another asset in the binary. */
+.gonio-read {
+  position: absolute; left: 8px; top: 6px; z-index: 2;
+  font-size: 10px; line-height: 1.5; pointer-events: none; white-space: pre;
+}
+.gonio-read.out-of-phase { color: oklch(70% 0.16 30); opacity: 1; }
