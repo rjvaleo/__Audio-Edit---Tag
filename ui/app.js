@@ -5496,10 +5496,6 @@ function pmTouch() {
 $('presetManage').onclick = openPresetManager;
 $('pmClose').onclick = closePresetManager;
 $('presetManager').onclick = (e) => { if (e.target === $('presetManager')) closePresetManager(); };
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('presetManager').classList.contains('hidden')) closePresetManager();
-});
-
 $('pmRevert').onclick = () => {
   pmState.draft = JSON.parse(JSON.stringify(pmState.clean));
   renderPresetManager();
@@ -6539,19 +6535,6 @@ async function refresh() {
   }
 })();
 
-document.addEventListener('keydown', (e) => {
-  if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
-  const mod = e.metaKey || e.ctrlKey;
-  if (e.code === 'Space') { e.preventDefault(); $('playBtn').click(); }
-  else if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); $('undoBtn').click(); }
-  else if (mod && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); $('redoBtn').click(); }
-  else if (e.key === 'm' && state.mode === 'edit') addMarker();
-  else if (e.key === 'Escape') {
-    state.sel = null; setCue(0); drawSelection(); applyLoop();
-  }
-  else if (e.key === 'Enter' && state.selectedFile) setMode(state.mode === 'edit' ? 'overview' : 'edit');
-});
-
 // ======================================================= grain visualiser
 //
 // The whole grain stream, drawn as it is heard: output time across, source
@@ -7208,10 +7191,6 @@ function place() {
 const visOpen = $('visOpen');
 if (visOpen) visOpen.onclick = openVisPop;
 
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && pop.el && !pop.el.classList.contains('hidden')) closeVisPop();
-});
-
 const rescanBtn = $('rescanBtn');
 if (rescanBtn) rescanBtn.onclick = async () => {
   rescanBtn.disabled = true;
@@ -7496,8 +7475,6 @@ for (const id of ['lane', 'overview', 'regions']) {
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#menuPop') && !e.target.closest('.menu-title')) closeMenus();
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus(); });
-
 // ==================================================== the Peak edit commands
 //
 // Peak's Edit, Action and DSP menus, less the parts that are its own furniture
@@ -8026,17 +8003,98 @@ function setSnap(unit) {
 // The shortcuts the menus advertise. Anything typed into a field belongs to the
 // field, so the whole set stands down while one has focus.
 
+// ============================================================== the keyboard
+//
+// One listener. There were six, and they did not know about each other: a
+// single Escape ran four of them, so dismissing the preset manager also wiped
+// the selection and sent the cue to zero. Nothing called `stopPropagation`,
+// no two agreed on what counted as a text field, and only one of them knew a
+// dialog could be open at all.
+//
+// Three tiers, in order. A key never falls past the tier that claims it:
+//
+//   1. focus is in a text field  — the field owns every key
+//   2. an overlay is open        — Escape closes the topmost, space still
+//                                  plays, nothing else is interpreted
+//   3. otherwise                 — the shortcuts
+//
+// Space stays live in tier 2 on purpose. The transport answers the space bar
+// everywhere, because that is the one binding a user should never have to
+// think about. The ask dialog is the single exception and it enforces that
+// itself: while it is up it holds a handler on the capture phase, so Enter and
+// Escape reach it before this listener exists as far as the event is
+// concerned.
+
+/// A key belongs to the field being typed into, and to nothing else.
+///
+/// `SELECT` is in here because a dropdown takes arrow keys and type-ahead, and
+/// it was the gap that let space start playback with a menu focused. Two of
+/// the old handlers guarded it and three did not.
+function inTextField(t) {
+  if (!t) return false;
+  if (t.isContentEditable) return true;
+  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
+}
+
+/// What Escape should close, most transient first, or null if nothing is open.
+///
+/// A menu is drawn over everything and is the cheapest thing to dismiss, so it
+/// is tested before the panels it may be covering. Returning null is what puts
+/// a keypress through to tier 3, which is why "deselect" can safely live down
+/// there — it now only fires when the screen really is clear.
+function topOverlay() {
+  if (openMenu || !$('menuPop').classList.contains('hidden')) return closeMenus;
+  if (!$('pickerModal').classList.contains('hidden')) {
+    return () => $('pickerModal').classList.add('hidden');
+  }
+  if (!$('presetManager').classList.contains('hidden')) return closePresetManager;
+  if (pop.el && !pop.el.classList.contains('hidden')) return closeVisPop;
+  return null;
+}
+
 document.addEventListener('keydown', (e) => {
-  const t = e.target;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  // 1 — the field owns it.
+  if (inTextField(e.target)) return;
+
+  // The ask dialog has the event already; reacting here as well is how Enter
+  // used to confirm a dialog and change section in the same keystroke.
   if (!$('askModal').classList.contains('hidden')) return;
 
-  if (e.key === '`' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); op('crop')(); }
-  else if (e.key.toLowerCase() === 'g' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); goTo(); }
-  else if (e.key === ']' && e.shiftKey && (e.metaKey || e.ctrlKey)) { e.preventDefault(); fitSelection(); }
-  else if (e.key === 'ArrowLeft' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
-    e.preventDefault(); zoomToSample(false);
-  } else if (e.key === 'ArrowRight' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
-    e.preventDefault(); zoomToSample(true);
+  // 2 — something is open. Escape closes exactly one thing, and stops.
+  const dismiss = topOverlay();
+  if (dismiss) {
+    if (e.key === 'Escape') { e.preventDefault(); dismiss(); return; }
+    if (e.code === 'Space') { e.preventDefault(); $('playBtn').click(); }
+    return;
+  }
+
+  // 3 — the shortcuts.
+  const mod = e.metaKey || e.ctrlKey;
+
+  if (e.code === 'Space') { e.preventDefault(); $('playBtn').click(); }
+
+  else if (mod && !e.shiftKey && e.key === 'z') { e.preventDefault(); $('undoBtn').click(); }
+  else if (mod && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); $('redoBtn').click(); }
+
+  else if (mod && e.key === '`') { e.preventDefault(); op('crop')(); }
+  else if (mod && !e.shiftKey && e.key.toLowerCase() === 'g') { e.preventDefault(); goTo(); }
+  else if (mod && e.shiftKey && e.key === ']') { e.preventDefault(); fitSelection(); }
+
+  else if (!mod && e.shiftKey && e.key === 'ArrowLeft') { e.preventDefault(); zoomToSample(false); }
+  else if (!mod && e.shiftKey && e.key === 'ArrowRight') { e.preventDefault(); zoomToSample(true); }
+
+  // Scoped to Edit, and given a `preventDefault` it never had. A bare letter
+  // with a consequence has no business firing while you are browsing.
+  else if (!mod && e.key === 'm' && state.mode === 'edit') { e.preventDefault(); addMarker(); }
+
+  else if (!mod && e.key === 'Enter' && state.selectedFile) {
+    e.preventDefault();
+    setMode(state.mode === 'edit' ? 'overview' : 'edit');
+  }
+
+  // Nothing is open, so Escape means deselect. This is the branch that used to
+  // fire underneath every dialog on the page.
+  else if (e.key === 'Escape') {
+    state.sel = null; setCue(0); drawSelection(); applyLoop();
   }
 });
