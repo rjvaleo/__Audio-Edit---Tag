@@ -2510,7 +2510,9 @@ async function commitRack() {
   const f = state.selectedFile;
   if (!f || !state.rack) return;
   try {
-    state.rack = await postJSON('/api/rack', {
+    // Adopted rather than assigned: a panel is holding these slot objects and
+    // is about to be written to again. See `adoptRack`.
+    const restructured = adoptRack(await postJSON('/api/rack', {
       p: f.path,
       sr: state.view.sampleRate || 48000,
       slots: state.rack.slots,
@@ -2518,12 +2520,53 @@ async function commitRack() {
       // The engine is already where it needs to be; asking for a rebuild here
       // is what used to cut the reverb tail every time a control was released.
       keepLive: true,
-    });
+    }));
+    if (restructured) renderRack();
   } catch (e) { toast(e.message); return; }
   renderTabs();
   refreshAutomationTargets();
   await loadPeaks();
   if (state.showSpec) loadSpectrogram();
+}
+
+/// Take the server's canonical rack without breaking what is holding the old one.
+///
+/// Every module panel captures its `slot` object when it is built — the
+/// compressor's sliders write to it, its canvas draws from it. Replacing
+/// `state.rack` wholesale with the reply orphaned that reference: from the
+/// first commit onward the panel was writing to an object nothing else could
+/// see, while anything that repainted read the fresh one. The two then
+/// disagreed, and the next commit posted the *fresh* slot's values — undoing
+/// the move that had just been made. Which is exactly what "the display and the
+/// sliders fight each other, and any move puts them to one value" is.
+///
+/// The master panel already knew this and worked around it with a getter; the
+/// module panels never did. Fixing it here fixes all of them at once, and means
+/// a panel may go on holding its slot.
+///
+/// Structure changing — a module added, removed or reordered — genuinely needs
+/// new objects, and the panels are rebuilt for it.
+function adoptRack(fresh) {
+  const cur = state.rack;
+  const sameShape =
+    cur &&
+    Array.isArray(cur.slots) &&
+    Array.isArray(fresh?.slots) &&
+    cur.slots.length === fresh.slots.length &&
+    cur.slots.every((s, i) => s.id === fresh.slots[i].id && s.kind === fresh.slots[i].kind);
+
+  if (!sameShape) {
+    state.rack = fresh;
+    return true;
+  }
+  // Same modules in the same order: fill the objects that already exist rather
+  // than swapping them, so identity survives. The reply is canonical — the
+  // server has clamped and stored it — so writing it back over the local copy
+  // is right, it just must not be a *different* copy.
+  for (let i = 0; i < fresh.slots.length; i++) Object.assign(cur.slots[i], fresh.slots[i]);
+  if (fresh.master) Object.assign(cur.master, fresh.master);
+  if (fresh.slotIds) cur.slotIds = fresh.slotIds;
+  return false;
 }
 
 function pushRack({ immediate = false } = {}) {
@@ -2532,12 +2575,12 @@ function pushRack({ immediate = false } = {}) {
     const f = state.selectedFile;
     if (!f || !state.rack) return;
     try {
-      state.rack = await postJSON('/api/rack', {
+      adoptRack(await postJSON('/api/rack', {
         p: f.path,
         sr: state.view.sampleRate || 48000,
         slots: state.rack.slots,
         master: state.rack.master,
-      });
+      }));
     } catch (e) { toast(e.message); return; }
     renderRack();
     renderTabs();
