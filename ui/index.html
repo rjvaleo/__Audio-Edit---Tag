@@ -309,6 +309,29 @@
          pick — the settings are stored whether or not the engine that reads
          them is the one selected, so this is the only place the whole of a
          preset can be seen at once. -->
+    <!-- Play the pitch from the computer keyboard.
+         The letters are the usual tracker layout — A is the tonic and the row
+         above carries the notes between — but what each one plays comes from
+         the *tuning*, not from twelve semitones. See `noteKeys` in app.js. -->
+    <div class="modal hidden" id="keyboardModal">
+      <div class="modal-card kb-card">
+        <header class="modal-head">
+          <h2>Keys</h2>
+          <span class="modal-sub" id="kbScale"></span>
+          <button class="ghost" id="kbClose" title="Close">Close</button>
+        </header>
+        <div class="kb-body">
+          <div class="kb-piano" id="kbPiano"></div>
+          <div class="kb-legend">
+            <span><b>A</b> is the tonic · the row above plays the notes between</span>
+            <span><b>Z</b> / <b>X</b> shift down and up an octave, and latch</span>
+            <span class="kb-oct" id="kbOctave"></span>
+            <span class="kb-now" id="kbNow"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal hidden" id="presetManager">
       <div class="modal-card">
         <header class="modal-head">

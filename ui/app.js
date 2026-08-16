@@ -3863,6 +3863,7 @@ function renderStretch() {
     // front of it, so it sits at the right-hand end of the row whether or not
     // this engine has anything to put beside it.
     switches.appendChild(scaleButton());
+    switches.appendChild(keysButton());
     own.appendChild(switches);
 
     // The grain cloud, layered over whichever engine is running.
@@ -5064,6 +5065,18 @@ function scaleLabel(v) {
 
 /// The row the engine's switches and the tuning share.
 const engineSwitches = () => document.querySelector('.engine-switches');
+
+/// The Keys window, opened from beside the tuning it follows.
+function keysButton() {
+  const b = document.createElement('button');
+  b.className = 'scale-btn keys-btn';
+  b.textContent = 'Keys';
+  b.title = 'Play the pitch from the computer keyboard. A is the tonic, the row '
+    + 'above plays the notes between, Z and X shift an octave and latch. '
+    + 'The notes follow whichever tuning is chosen.';
+  b.onclick = (e) => { e.stopPropagation(); openKeyboard(); };
+  return b;
+}
 
 function scaleButton() {
   const b = document.createElement('button');
@@ -8513,6 +8526,220 @@ function topOverlay() {
   return null;
 }
 
+
+// ─────────────────────────────────────────────────────────── the note keyboard
+//
+// Play the pitch from the computer keyboard.
+//
+// The letters are the layout every tracker and DAW has used for thirty years:
+// `A` is the tonic, the row above carries the notes between, and the two rows
+// interlock exactly the way a piano's whites and blacks do. `Z` and `X` move an
+// octave and latch, so three presses of `X` is three octaves up.
+//
+// **What each key plays comes from the tuning, not from twelve semitones.** The
+// scale menu offers eighty-one of them and many are not twelve-tone — so the
+// keys are bound to scale *degrees* in order, and an octave is the scale's own
+// span rather than 1200 cents by assumption. On plain 12-TET that reproduces a
+// piano exactly; on a seven-degree scale the eighth key is the tonic again, a
+// span up; on a 22-degree scale the row simply keeps going.
+
+/// The letters, in pitch order. Two rows interlocking as whites and blacks.
+const NOTE_KEYS = [
+  ['a', 0], ['w', 1], ['s', 2], ['e', 3], ['d', 4], ['f', 5], ['t', 6],
+  ['g', 7], ['y', 8], ['h', 9], ['u', 10], ['j', 11], ['k', 12],
+  ['o', 13], ['l', 14], ['p', 15], [';', 16], ["'", 17],
+];
+
+/// Which of those sit on the upper row — the ones a piano draws black.
+const UPPER_ROW = new Set(['w', 'e', 't', 'y', 'u', 'o', 'p']);
+
+const keyboardState = { octave: 0, held: null };
+
+/// The degrees of the chosen tuning, in cents, and the span that repeats.
+///
+/// With no scale the grid is the answer: a pitch step if one is set, and plain
+/// semitones otherwise. That is what "free" already means everywhere else.
+function scaleDegrees() {
+  const name = currentScale();
+  if (name) {
+    for (const g of state.scales || []) {
+      for (const s of g.scales) {
+        if (s.name === name) return { cents: s.cents.slice(), span: s.span || 1200 };
+      }
+    }
+  }
+  const step = currentStep() > 0 ? currentStep() : 1;
+  const n = Math.max(1, Math.round(12 / step));
+  return { cents: Array.from({ length: n }, (_, i) => i * step * 100), span: 1200 };
+}
+
+/// The pitch a key plays, in semitones.
+///
+/// `i` counts degrees from the tonic and may run past the end of the scale, at
+/// which point it wraps and climbs a span — which is what makes the row keep
+/// working whatever the degree count is.
+function noteSemitones(i) {
+  const { cents, span } = scaleDegrees();
+  const n = cents.length || 1;
+  const up = Math.floor(i / n);
+  const c = cents[((i % n) + n) % n];
+  const semis = (up * span + c) / 100 + keyboardState.octave * (span / 100);
+  return Math.max(-48, Math.min(48, semis));
+}
+
+/// Play one. Sets the pitch exactly as the slider does, so everything that
+/// watches it — the readout, automation, the engine — sees one kind of change.
+function playNote(i) {
+  // The draft is built by the stretch panel, and the keys work whether that
+  // panel has been opened or not — so there may not be one yet.
+  if (!state.stretchDraft) return;
+  const v = noteSemitones(i);
+  state.stretchDraft.semitones = v;
+  state.stretchRows?.semitones?.sync?.(v);
+  previewStretch();
+  commitStretch();
+  keyboardState.held = i;
+  paintKeyboard();
+}
+
+function shiftOctave(by) {
+  const { span } = scaleDegrees();
+  const perOct = span / 100;
+  // Latching, and bounded by what the pitch control can actually reach — three
+  // presses of X is three octaves, and a fourth past the end is not a silent
+  // no-op that looks like a missed keystroke.
+  const limit = Math.max(1, Math.floor(48 / Math.max(1, perOct)));
+  keyboardState.octave = Math.max(-limit, Math.min(limit, keyboardState.octave + by));
+  if (keyboardState.held !== null) playNote(keyboardState.held);
+  else paintKeyboard();
+}
+
+const keyboardOpen = () => !$('keyboardModal').classList.contains('hidden');
+
+/// The keys, drawn as a piano.
+///
+/// The lower row is the whites and the upper row the blacks, which is not a
+/// decoration — it is the same relationship the two rows have under your hand.
+/// `W` sits between `A` and `S` on the keyboard and `C#` sits between `C` and
+/// `D` on a piano, so a black drawn straddling the seam it plays is showing you
+/// the layout you are already touching. That correspondence is the whole reason
+/// this letter arrangement has outlasted every program that used it.
+///
+/// The whites are one unbroken row — a piano has no gaps in them. What varies
+/// is where a black sits *over* the seam between two of them: there is one after
+/// the first, second, fourth, fifth, sixth, eighth and ninth, and none after the
+/// third or seventh. Those two bare seams are E to F and B to C, they are why
+/// the pattern repeats every seven, and they are why the letters work out.
+///
+/// Keyed by which white a black follows.
+const WHITE_AFTER = { w: 0, e: 1, t: 3, y: 4, u: 5, o: 7, p: 8 };
+
+function paintKeyboard() {
+  const box = $('kbPiano');
+  if (!box) return;
+  const { cents, span } = scaleDegrees();
+  box.innerHTML = '';
+
+  const whites = NOTE_KEYS.filter(([k]) => !UPPER_ROW.has(k));
+  const blacks = NOTE_KEYS.filter(([k]) => UPPER_ROW.has(k));
+  const unit = 100 / whites.length;
+
+  const label = (key, i) => {
+    const semis = noteSemitones(i);
+    return {
+      semis,
+      html: `<span class="kb-letter">${key.toUpperCase()}</span>`
+        + `<span class="kb-semis">${semis >= 0 ? '+' : ''}${semis.toFixed(2)}</span>`,
+      title: `${key.toUpperCase()} — degree ${(i % (cents.length || 1)) + 1} of ${cents.length}`
+        + `, ${semis >= 0 ? '+' : ''}${semis.toFixed(2)} semitones`,
+    };
+  };
+
+  whites.forEach(([key], n) => {
+    const i = NOTE_KEYS.findIndex(([k]) => k === key);
+    const l = label(key, i);
+    const b = document.createElement('button');
+    b.className = 'kb-key white' + (keyboardState.held === i ? ' on' : '');
+    b.style.left = `${n * unit}%`;
+    b.style.width = `${unit}%`;
+    b.innerHTML = l.html;
+    b.title = l.title;
+    b.onclick = () => playNote(i);
+    box.appendChild(b);
+  });
+
+  blacks.forEach(([key]) => {
+    const after = WHITE_AFTER[key];
+    if (after === undefined) return;
+    const i = NOTE_KEYS.findIndex(([k]) => k === key);
+    const l = label(key, i);
+    const b = document.createElement('button');
+    b.className = 'kb-key black' + (keyboardState.held === i ? ' on' : '');
+    // Straddling the seam between two whites, and a shade left of centre —
+    // which is where the upper row actually sits above the home row.
+    b.style.left = `calc(${(after + 1) * unit}% - ${unit * 0.34}%)`;
+    b.style.width = `${unit * 0.62}%`;
+    b.innerHTML = l.html;
+    b.title = l.title;
+    b.onclick = () => playNote(i);
+    box.appendChild(b);
+  });
+
+  const oct = $('kbOctave');
+  if (oct) {
+    oct.textContent = keyboardState.octave === 0
+      ? 'octave 0'
+      : `octave ${keyboardState.octave > 0 ? '+' : ''}${keyboardState.octave}`;
+    oct.classList.toggle('on', keyboardState.octave !== 0);
+  }
+  const now = $('kbNow');
+  if (now) {
+    now.textContent = keyboardState.held === null
+      ? ''
+      : `${noteSemitones(keyboardState.held).toFixed(2)} st`;
+  }
+  const sc = $('kbScale');
+  if (sc) {
+    sc.textContent = currentScale()
+      ? `${currentScale()} · ${cents.length} degrees to a ${(span / 100).toFixed(2)} st span`
+      : `${cents.length} semitone steps to an octave`;
+  }
+}
+
+function openKeyboard() {
+  $('keyboardModal').classList.remove('hidden');
+  paintKeyboard();
+}
+
+function closeKeyboard() {
+  $('keyboardModal').classList.add('hidden');
+  keyboardState.held = null;
+}
+
+$('kbClose').onclick = closeKeyboard;
+$('keyboardModal').onclick = (e) => { if (e.target === $('keyboardModal')) closeKeyboard(); };
+
+/// Handle a keystroke as a note. Returns true if it was one.
+///
+/// **Live whenever a sound is open in Edit**, not only while the window is
+/// showing — the window is the picture of the layout, not a mode you have to be
+/// in to play. There is one app-wide binding besides these (space, for the
+/// transport) and none of these letters is it, so the keyboard was free to take.
+///
+/// Modifiers are always let through: `⌘Z` is undo and must stay undo.
+function noteKeys(e) {
+  if (state.mode !== 'edit' || !state.selectedFile) return false;
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  const k = e.key.toLowerCase();
+  if (k === 'z') { e.preventDefault(); shiftOctave(-1); return true; }
+  if (k === 'x') { e.preventDefault(); shiftOctave(1); return true; }
+  const at = NOTE_KEYS.findIndex(([n]) => n === k);
+  if (at < 0) return false;
+  e.preventDefault();
+  if (!e.repeat) playNote(at);
+  return true;
+}
+
 document.addEventListener('keydown', (e) => {
   // 1 — the field owns it.
   if (inTextField(e.target)) return;
@@ -8520,6 +8747,11 @@ document.addEventListener('keydown', (e) => {
   // The ask dialog has the event already; reacting here as well is how Enter
   // used to confirm a dialog and change section in the same keystroke.
   if (!$('askModal').classList.contains('hidden')) return;
+
+  // The note keyboard. Before the overlay tier so the Keys window can stay open
+  // while you play, and after the text-field guard so typing a name is typing a
+  // name. Escape is never a note.
+  if (e.key !== 'Escape' && noteKeys(e)) return;
 
   // 2 — something is open. Escape closes exactly one thing, and stops.
   const dismiss = topOverlay();
