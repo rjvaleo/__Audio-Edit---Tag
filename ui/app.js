@@ -3956,8 +3956,10 @@ function renderStretch() {
       const w = state.stretchDraft.wsola;
       const detecting = forced || w.preserveTransients;
       if (!forced) {
-        engineSwitches().prepend(check('preserve transients',
-          'Hold drum hits at their original rate so they are not laid down twice',
+        // Vowels dropped so it fits the row: the tooltip carries the meaning.
+        engineSwitches().prepend(check('prsrv trnsnts',
+          'Preserve transients — hold drum hits at their original rate so they '
+          + 'are not laid down twice',
           w.preserveTransients,
           (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); }));
       }
