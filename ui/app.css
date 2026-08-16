@@ -421,6 +421,17 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 /* What is not a slider still needs the room the container gap used to give it. */
 #dockStretch .toggle { margin: 3px 0; }
 #dockStretch .param-pair .toggle { margin: 0; }
+/* The length readout and the load meter share a line: one says what you asked
+   for, the other what it costs, and they are read together or not at all. */
+.stretch-readout { display: flex; align-items: baseline; gap: 10px; }
+.stretch-readout #stretchOut { flex: 1 1 auto; min-width: 0; }
+.engine-load { flex: 0 0 auto; cursor: pointer; font-size: 11px; }
+/* Three states, because the number alone is not a judgement. Under three
+   quarters is fine and stays quiet; past that it is worth knowing; past one the
+   engine cannot keep up and that is what a dropout is. */
+.engine-load.near { color: var(--warn); }
+.engine-load.over { color: var(--bad); font-weight: 600; }
+
 #dockStretch .engine-pick { margin-bottom: 6px; }
 #dockStretch .wild-head { margin-bottom: 4px; }
 #dockStretch #stretchOut { margin-top: 6px; }

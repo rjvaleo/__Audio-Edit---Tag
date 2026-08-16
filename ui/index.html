@@ -369,7 +369,14 @@
                  rule rather than each carrying its own box. -->
             <div class="cpanel grain-standard">
               <div id="stretchParams"></div>
-              <div class="mono dim" id="stretchOut"></div>
+              <div class="stretch-readout">
+                <span class="mono dim" id="stretchOut"></span>
+                <!-- What the callback is costing, beside the controls that cost
+                     it. Window, layers and density each drive block cost and
+                     they multiply; nothing on screen said so until the sound
+                     broke up. See `paintLoad`. -->
+                <span class="mono dim engine-load" id="engineLoad"></span>
+              </div>
               <!-- The cloud, drawn where it actually is, and draggable. See
                    `drawCloudPad`: this is the read head and its spread, over
                    the real grains and the real waveform. -->

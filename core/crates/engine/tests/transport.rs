@@ -535,3 +535,84 @@ fn a_swapped_out_module_stops_being_heard() {
     let ratio = after_peak / before_peak.max(1e-9);
     assert!(ratio < 0.02, "the old chain is still audible: {ratio:.4} of it");
 }
+
+// ─────────────────────────────────────────────────────────── what a block costs
+
+/// The engine has to know whether it is keeping up.
+///
+/// A block must be made in less time than it takes to play, and that is the one
+/// property separating a live engine from a rendered one. Until now nothing
+/// measured it outside `pv_cost`, which runs on a build machine and says nothing
+/// about the machine a user is on — a 300-render sweep found the median
+/// randomised hybrid at three times real time, which is a dropout arriving with
+/// no warning at all. See `docs/GLITCH-SWEEP.md`.
+#[test]
+fn the_engine_measures_what_its_blocks_cost() {
+    let src = source(48_000, 1);
+    let sp = params(48_000);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, src.channels, sp, src);
+
+    let (now, mean, worst) = shared.load();
+    assert_eq!((now, mean, worst), (0.0, 0.0, 0.0), "load before any block ran");
+
+    shared.play();
+    pump(&mut core, &shared, 1, 512, 40);
+
+    let (now, mean, worst) = shared.load();
+    assert!(now > 0.0, "the last block reported no cost at all");
+    assert!(mean > 0.0, "the average reported no cost at all");
+    assert!(worst >= now, "the worst block is not at least the last one");
+    // The grain cloud is the cheapest engine there is and this is a mono tone.
+    // A whole budget for one block of it would mean the measurement is wrong,
+    // not that the machine is slow.
+    assert!(worst < 1.0, "granular used {} of a block's budget", worst);
+}
+
+/// The worst is only meaningful next to a change you just made, so it can be
+/// forgotten. The average deliberately survives — it is a level, not an event.
+#[test]
+fn the_worst_block_can_be_forgotten_and_the_average_cannot() {
+    let src = source(48_000, 1);
+    let sp = params(48_000);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, src.channels, sp, src);
+    shared.play();
+    pump(&mut core, &shared, 1, 512, 40);
+
+    let (_, mean_before, worst_before) = shared.load();
+    assert!(worst_before > 0.0);
+    shared.reset_load();
+    let (_, mean_after, worst_after) = shared.load();
+    assert_eq!(worst_after, 0.0, "the worst was not forgotten");
+    assert_eq!(mean_after, mean_before, "the average should not have moved");
+}
+
+/// A block that misses its deadline is counted, because the count is what says
+/// "this is happening repeatedly" rather than "this happened once while the
+/// machine was busy elsewhere".
+#[test]
+fn a_late_block_is_counted() {
+    let src = source(48_000, 1);
+    let sp = params(48_000);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    assert_eq!(shared.late_blocks.load(std::sync::atomic::Ordering::Relaxed), 0);
+
+    // Reported directly rather than by trying to make the DSP slow, which would
+    // be a test of this machine's speed and would flap on a busy one.
+    shared.record_block_cost(
+        std::time::Duration::from_millis(20),
+        std::time::Duration::from_millis(10),
+    );
+    assert_eq!(shared.late_blocks.load(std::sync::atomic::Ordering::Relaxed), 1);
+    let (now, _, worst) = shared.load();
+    assert!((now - 2.0).abs() < 0.01, "20ms against a 10ms budget should read 2.0, got {now}");
+    assert!((worst - 2.0).abs() < 0.01);
+
+    // And one that makes its deadline is not counted.
+    shared.record_block_cost(
+        std::time::Duration::from_millis(1),
+        std::time::Duration::from_millis(10),
+    );
+    assert_eq!(shared.late_blocks.load(std::sync::atomic::Ordering::Relaxed), 1);
+}
