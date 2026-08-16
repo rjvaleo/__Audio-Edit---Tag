@@ -1909,3 +1909,47 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .theme-del:hover { color: var(--bad); }
 #themePlain.on { border-color: var(--accent); color: var(--text); }
+
+/* ------------------------------------------------------- the note keyboard */
+
+/* A reference card rather than a dialog: the keys play whether it is open or
+   not, so this is showing you the layout, not gating it. */
+.kb-card { width: min(760px, 92vw); }
+.kb-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+/* A piano, not a row of buttons. The whites are one unbroken row — there are no
+   gaps in them — and the blacks are placed over the seams between them — the same relationship the two
+   keyboard rows have under a hand, which is the point of the letters working out
+   the way they do. Absolute inside a relative box, so both are positioned from
+   one measurement and cannot drift apart. */
+.kb-piano { position: relative; height: 108px; margin: 4px 0 2px; }
+.kb-key {
+  position: absolute; top: 0;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+  gap: 3px; padding: 5px 2px 7px;
+  font-family: var(--mono); cursor: pointer; overflow: hidden;
+}
+.kb-key.white {
+  height: 108px; z-index: 1;
+  border: 1px solid var(--line-3); border-radius: 0 0 5px 5px;
+  background: var(--text-2); color: var(--sink);
+}
+.kb-key.black {
+  height: 66px; z-index: 2;
+  border: 1px solid #000; border-radius: 0 0 4px 4px;
+  background: var(--sink); color: var(--text-2);
+  box-shadow: 0 2px 5px var(--shadow);
+}
+.kb-key.white.on { background: var(--accent); color: var(--sink); }
+.kb-key.black.on { background: var(--accent); color: var(--sink); border-color: var(--accent); }
+.kb-letter { font-size: 12px; font-weight: 700; }
+.kb-semis { font-size: 9px; opacity: 0.7; }
+
+.kb-legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+  font-size: 11px; color: var(--text-dim);
+}
+.kb-legend b { color: var(--text-2); font-family: var(--mono); }
+.kb-oct, .kb-now { font-family: var(--mono); margin-left: auto; }
+.kb-oct.on { color: var(--accent); }
+.kb-now { color: var(--text-2); min-width: 62px; text-align: right; }
