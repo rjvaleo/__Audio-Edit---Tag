@@ -1469,6 +1469,81 @@ function peakWindow() {
 /// Put each canvas where its own data belongs.
 ///
 /// The lane shows `state.view`. A canvas holds whatever range its last response
+// ────────────────────────────────────────────── the waveform/spectrum split ──
+//
+// The boundary between the two canvases, dragged. One custom property on the
+// lane drives both heights and the handle's position, so there is no arithmetic
+// in three places to fall out of step — the same reason the stylesheet owns the
+// rest of this geometry and the drawing code does not touch it.
+
+const SPLIT_STORE = 'audiolab.laneSplit';
+const SPLIT_DEFAULT = 64;
+/// Far enough from either end that neither canvas can be dragged to nothing.
+/// A pane you can lose by accident and cannot get back is worse than one that
+/// stops short.
+const SPLIT_MIN = 25;
+const SPLIT_MAX = 88;
+
+function laneSplit() {
+  const v = Number(localStorage.getItem(SPLIT_STORE));
+  return Number.isFinite(v) && v >= SPLIT_MIN && v <= SPLIT_MAX ? v : SPLIT_DEFAULT;
+}
+
+function setLaneSplit(pct, { save = true } = {}) {
+  const v = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, pct));
+  const lane = $('lane');
+  if (lane) lane.style.setProperty('--split', `${v.toFixed(2)}%`);
+  if (save) {
+    // Kept in the browser like the theme: how tall you like the spectrogram is
+    // a property of the screen you are looking at, not of the library.
+    try { localStorage.setItem(SPLIT_STORE, String(v)); } catch { /* private mode */ }
+  }
+  // The canvases are stretched by CSS rather than redrawn, so nothing has to be
+  // re-rendered — but the waveform's buffer is positioned in pixels.
+  layoutWaveBuffer();
+}
+
+function wireLaneSplit() {
+  const handle = $('laneSplit');
+  const lane = $('lane');
+  if (!handle || !lane) return;
+  setLaneSplit(laneSplit(), { save: false });
+
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    document.body.classList.add('resizing-lane');
+
+    const move = (ev) => {
+      const r = lane.getBoundingClientRect();
+      if (r.height <= 0) return;
+      setLaneSplit(((ev.clientY - r.top) / r.height) * 100, { save: false });
+    };
+    const up = (ev) => {
+      handle.releasePointerCapture(e.pointerId);
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizing-lane');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      const r = lane.getBoundingClientRect();
+      if (r.height > 0) setLaneSplit(((ev.clientY - r.top) / r.height) * 100);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+
+  // Same gesture as every other control here: double-click is "put it back".
+  handle.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    setLaneSplit(SPLIT_DEFAULT);
+  });
+}
+
+wireLaneSplit();
+
 /// covered, which may be wider and may be a window behind — the peaks and the
 /// spectrogram are separate requests and need not agree. So each is sized and
 /// offset from its own range, and the lane, which already clips, hides the
