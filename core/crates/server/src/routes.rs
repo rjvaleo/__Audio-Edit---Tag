@@ -125,6 +125,15 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
         ("GET", "/api/engine/grains") => api_engine_grains(app),
+        // Forget the worst block. It is only meaningful next to a change you
+        // just made — a peak from ten minutes ago says nothing about the
+        // settings in front of you.
+        ("POST", "/api/engine/load/reset") => {
+            match crate::live::with(app, |h| h.shared.reset_load()) {
+                Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
+                Err(e) => Response::error(503, &e),
+            }
+        }
         ("POST", "/api/capture") => api_capture(app, req),
         ("GET", "/api/record") => api_record_state(app),
         ("POST", "/api/record") => api_record(app, req),
@@ -2624,6 +2633,24 @@ fn api_engine_state(app: &Arc<App>) -> Response {
                     .overflows
                     .load(std::sync::atomic::Ordering::Acquire) as f64,
             )
+            // What a block costs against the time it takes to play. One is the
+            // line: past it the engine cannot keep up and the device runs dry.
+            // Measured in the callback rather than predicted from the controls,
+            // because a model would need refitting whenever the DSP changed and
+            // would still be guessing about this machine.
+            .set("load", {
+                let (now, mean, worst) = h.shared.load();
+                Value::obj()
+                    .set("now", now as f64)
+                    .set("mean", mean as f64)
+                    .set("worst", worst as f64)
+                    .set(
+                        "late",
+                        h.shared
+                            .late_blocks
+                            .load(std::sync::atomic::Ordering::Relaxed) as f64,
+                    )
+            })
             .to_string()
     }) {
         Ok(s) => Response::json(s),
@@ -2721,6 +2748,21 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
                         .collect(),
                 ),
             )
+            // What the callback is costing, on the same poll as everything else
+            // for the same reason: one instant, one answer.
+            .set("load", {
+                let (now, mean, worst) = h.shared.load();
+                Value::obj()
+                    .set("now", now as f64)
+                    .set("mean", mean as f64)
+                    .set("worst", worst as f64)
+                    .set(
+                        "late",
+                        h.shared
+                            .late_blocks
+                            .load(std::sync::atomic::Ordering::Relaxed) as f64,
+                    )
+            })
             // Rides along with the playhead rather than on its own poll: the
             // meters and the position describe the same instant, and fetching
             // them separately lets them disagree.

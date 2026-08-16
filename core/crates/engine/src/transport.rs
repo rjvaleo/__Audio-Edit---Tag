@@ -127,6 +127,32 @@ pub struct Shared {
     /// Grains dropped because the voice pool was full.
     pub overflows: AtomicU64,
 
+    // ─────────────────────────────────────────────────────── what a block costs
+    //
+    // The one property that separates a live engine from a rendered one is that
+    // a block must be made faster than it plays, and until now nothing measured
+    // it outside a test. A 300-render sweep found the median randomised hybrid
+    // at three times real time and the vocoder sitting on the line, which is a
+    // dropout you cannot see coming. See `docs/GLITCH-SWEEP.md`.
+    //
+    // Measured rather than predicted. A cost model over window, layers and
+    // density would have to be refitted every time the DSP changed, and would
+    // still be wrong about the machine it is running on; the callback already
+    // knows exactly how long it took. Two clock reads a block, both from the
+    // vDSO, against a budget of milliseconds.
+    /// Load of the last block, as a millionth of the real-time budget.
+    ///
+    /// Fixed point because this is an atomic and the audio thread may not take a
+    /// lock to publish a float. A million is 100% of the budget.
+    load_now: AtomicU32,
+    /// A slow average of the same, so a meter does not flicker.
+    load_mean: AtomicU32,
+    /// The worst block since the last reset. What matters is the worst, not the
+    /// mean — a mean of 40% with a spike to 150% is a click every few seconds.
+    load_worst: AtomicU32,
+    /// Blocks that took longer to make than to play.
+    pub late_blocks: AtomicU64,
+
     /// A rack waiting to be adopted by the audio thread.
     ///
     /// Handed over rather than shared: effects carry filter state that only the
@@ -225,6 +251,10 @@ impl Shared {
             latency: AtomicU64::new(0),
             gain: AtomicU32::new(1.0f32.to_bits()),
             overflows: AtomicU64::new(0),
+            load_now: AtomicU32::new(0),
+            load_mean: AtomicU32::new(0),
+            load_worst: AtomicU32::new(0),
+            late_blocks: AtomicU64::new(0),
             pending_rack: Mutex::new(None),
             pending_map: Mutex::new(None),
             pending_parts: Mutex::new(None),
@@ -334,6 +364,54 @@ impl Shared {
 
     pub fn set_latency_frames(&self, frames: u64) {
         self.latency.store(frames, Ordering::Release);
+    }
+
+    /// What the last block cost, against the time it will take to play.
+    ///
+    /// Called from the audio thread with the block's own duration, so nothing
+    /// here may allocate or lock. One over means the engine is behind and the
+    /// device will run out of audio.
+    pub fn record_block_cost(&self, took: std::time::Duration, budget: std::time::Duration) {
+        let b = budget.as_secs_f64();
+        if b <= 0.0 {
+            return;
+        }
+        let frac = took.as_secs_f64() / b;
+        // Saturating: a stall while a debugger is attached should read as "very
+        // late" rather than wrap to nothing.
+        let ppm = (frac * 1_000_000.0).min(u32::MAX as f64) as u32;
+        self.load_now.store(ppm, Ordering::Relaxed);
+
+        // A slow average, so a meter reads as a level rather than a flicker.
+        // 1/32 per block is about a fifth of a second at 512 frames and 48 kHz.
+        let prev = self.load_mean.load(Ordering::Relaxed);
+        let mean = if prev == 0 { ppm } else { prev - (prev >> 5) + (ppm >> 5) };
+        self.load_mean.store(mean, Ordering::Relaxed);
+
+        // The worst since the last reset. `fetch_max` rather than a load, a
+        // compare and a store, which two callbacks could interleave.
+        self.load_worst.fetch_max(ppm, Ordering::Relaxed);
+        if ppm > 1_000_000 {
+            self.late_blocks.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Last, averaged and worst block cost, as a fraction of the budget.
+    pub fn load(&self) -> (f32, f32, f32) {
+        let f = |v: u32| v as f32 / 1_000_000.0;
+        (
+            f(self.load_now.load(Ordering::Relaxed)),
+            f(self.load_mean.load(Ordering::Relaxed)),
+            f(self.load_worst.load(Ordering::Relaxed)),
+        )
+    }
+
+    /// Forget the worst. The interface offers this because the number is only
+    /// useful next to a change you just made — a peak from ten minutes ago says
+    /// nothing about the settings in front of you.
+    pub fn reset_load(&self) {
+        self.load_worst.store(0, Ordering::Relaxed);
+        self.late_blocks.store(0, Ordering::Relaxed);
     }
 
     pub fn set_loop(&self, on: bool, a: u64, b: u64) {
@@ -791,6 +869,21 @@ impl Core {
     /// seeking and stopping are exactly the things that are miserable to debug
     /// through a pair of speakers.
     pub fn fill(&mut self, out: &mut [f32], channels: usize, shared: &Shared) {
+        // What this block cost, against what it is worth. Two clock reads, both
+        // from the vDSO on every platform this runs on — cheap next to a block
+        // of DSP, and the only honest answer to "can this engine keep up",
+        // which no test on another machine can give.
+        let started = std::time::Instant::now();
+        self.fill_inner(out, channels, shared);
+        let frames = out.len() / channels.max(1);
+        if frames > 0 && self.params.sample_rate > 0 {
+            let budget =
+                std::time::Duration::from_secs_f64(frames as f64 / self.params.sample_rate as f64);
+            shared.record_block_cost(started.elapsed(), budget);
+        }
+    }
+
+    fn fill_inner(&mut self, out: &mut [f32], channels: usize, shared: &Shared) {
         let channels = channels.max(1);
 
         // Pick up changes if they are free to take, otherwise carry on with

@@ -774,6 +774,8 @@ function startPolling() {
       // while another dock is open. The meters are the expensive one: a needle
       // per stage, redrawn on every poll, whether or not the rail is on screen.
       engine.rackLevels = r.rackLevels || [];
+      engine.load = r.load || null;
+      paintLoad();
       if (!$('dockEffects')?.classList.contains('hidden')) {
         paintRackMeters(r.rackLevels || []);
         repaintVisualEqs();
@@ -4359,6 +4361,40 @@ function showStretchOut() {
   el.title = 'Source length, then the length this will render to, and the pitch shift if there is one. '
     + 'The length follows the Stretch slider alone — pitch does not change it. '
     + 'It dims while the waveform is still catching up with the controls.';
+  paintLoad();
+}
+
+/// What the engine is costing, beside the controls that cost it.
+///
+/// Window, layers and density are each monotonic in block cost and they
+/// multiply, and no one control knows what the others are set to — so three
+/// sliders that each look affordable land somewhere unplayable, with nothing on
+/// screen saying so until the sound breaks up. A 300-render sweep put the
+/// median randomised hybrid at three times real time. See
+/// `docs/GLITCH-SWEEP.md`.
+///
+/// Measured in the callback, not predicted from the controls: a model would
+/// need refitting every time the DSP changed and would still be guessing about
+/// this machine.
+function paintLoad() {
+  const el = $('engineLoad');
+  if (!el) return;
+  const l = engine.load;
+  if (!l || !engine.playing) { el.textContent = ''; el.className = 'mono dim engine-load'; return; }
+
+  // The worst block, not the average. A mean of 40% with a spike to 150% is a
+  // click every few seconds, and the mean is what hides it.
+  const pct = Math.round(l.worst * 100);
+  el.textContent = `load ${pct}%`;
+  el.className = 'mono engine-load'
+    + (l.worst >= 1 ? ' over' : l.worst >= 0.75 ? ' near' : ' dim');
+  el.title = `The worst block since this was last reset, as a share of the time that block had to play for.\n`
+    + `Now ${Math.round(l.now * 100)}% · average ${Math.round(l.mean * 100)}% · worst ${pct}%`
+    + (l.late ? `\n${l.late} block${l.late === 1 ? '' : 's'} missed the deadline — that is what a dropout is.` : '')
+    + '\nClick to forget the worst; it only means anything next to a change you just made.';
+  el.onclick = async () => {
+    try { await postJSON('/api/engine/load/reset', {}); } catch { /* not playing */ }
+  };
 }
 
 // ----------------------------------------------------------- automation
