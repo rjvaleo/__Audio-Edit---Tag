@@ -1352,6 +1352,10 @@ body.editing .dock { flex: 0 0 300px; }
   border: 1px solid var(--line-2); background: transparent;
   color: var(--text-dim); font: inherit; font-size: 9.5px; font-weight: 500;
   letter-spacing: 0; text-transform: none;
+  /* One line. `Reset all` is short enough never to have needed saying, but the
+     switches carry names like "preserve transients", and wrapping turned an
+     18px button into a ragged 40px one. */
+  white-space: nowrap;
 }
 .tiny:hover { border-color: var(--accent); color: var(--accent); }
 
