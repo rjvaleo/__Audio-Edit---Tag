@@ -1355,21 +1355,13 @@ body.editing .dock { flex: 0 0 300px; }
 }
 .tiny:hover { border-color: var(--accent); color: var(--accent); }
 
-/* A switch, in the same language as the buttons beside it.
-   Off is an outline and on is filled — the same shape either way, so it reads
-   as one control in two states rather than as two different things. The word is
-   on the button because "which end is lit" is a convention you have to be
-   taught and "on" is not. */
-.tiny.switch {
-  min-width: 34px; text-align: center;
-  font-variant: small-caps; letter-spacing: 0.04em;
-}
+/* A switch is the Reset button with a colour for its state. Nothing else.
+   Same height, same padding, same border, same font — it inherits all of that
+   from `.tiny` and adds one rule. Off it is the Reset button. On it is filled. */
 .tiny.switch.on {
   background: var(--accent); border-color: var(--accent); color: var(--sink);
-  font-weight: 600;
 }
-.tiny.switch.on:hover { filter: brightness(1.08); color: var(--sink); }
-.tiny.switch:active { transform: translateY(0.5px); }
+.tiny.switch.on:hover { color: var(--sink); filter: brightness(1.08); }
 
 .cpanel {
   background: var(--surface-2); border: 1px solid var(--line);

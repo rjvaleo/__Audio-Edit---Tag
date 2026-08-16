@@ -3395,32 +3395,24 @@ function knob(label, value, min, max, step, format, onChange, onCommit, log, def
   return el;
 }
 
-/// A switch: the name in the name column, the control in the control column.
+/// A switch: a button with its own name in it, coloured to say which way it is.
 ///
-/// It was once a button with its own name written on it, which made it the one
-/// control in the panel that did not line up with the others. The name belongs
-/// where every other name is; the switch belongs where every other control is.
+/// Built like `Reset all`, because it is the same kind of thing — a button you
+/// press. The words are *in* it rather than in the name column beside it, and
+/// the state is the colour: outlined and dim when off, filled with the accent
+/// when on.
 ///
-/// A switch, in the same language as every other button in the tray.
-///
-/// It used to be a moulded rocker with a lit end — a small painting of a
-/// physical switch. It looked like nothing else in the program, it was 38px of
-/// housing to say one bit, and at a glance it read as an indicator rather than
-/// as something to press.
-///
-/// So it is a button now, built like `Reset all` and reading `on` or `off`. Off
-/// it is an outline; on it fills with the accent. Two states, both of them
-/// obviously pressable, and the word says which one you are in rather than
-/// leaving you to work it out from which end is glowing.
+/// Two earlier versions got this wrong in opposite directions. A moulded rocker
+/// was a small painting of a physical switch that matched nothing else here and
+/// read as an indicator rather than a control. Replacing it with a name in the
+/// column and a little `on`/`off` box was worse — two things to look at for one
+/// bit, and the eye has to pair them up. One button, its own word, one colour.
 function check(label, title, value, onChange) {
   const el = document.createElement('div');
   el.className = 'param toggle';
-  el.innerHTML = `<span class="k"></span>
-    <button class="tiny switch" role="switch"></button>`;
-  const name = el.querySelector('.k');
-  name.textContent = label;
-  name.title = title || label;
+  el.innerHTML = `<button class="tiny switch" role="switch"></button>`;
   const b = el.querySelector('.switch');
+  b.textContent = label;
   b.title = title || label;
   el.title = title || label;
 
@@ -3428,7 +3420,6 @@ function check(label, title, value, onChange) {
   const paint = () => {
     b.classList.toggle('on', on);
     b.setAttribute('aria-checked', String(on));
-    b.textContent = on ? 'on' : 'off';
   };
   paint();
   b.onclick = () => { on = !on; paint(); onChange(on); };
