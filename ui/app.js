@@ -4209,9 +4209,27 @@ function renderGrainParams() {
     target.appendChild(group);
   }
 
-  const gp = (label, key, min, max, step, fmt, log) => {
+  /// `detent` is a value the control snaps to when it comes close.
+  ///
+  /// For a control whose middle means something. Envelope's 0.5 is the only
+  /// value that gives a pure Hann — every other setting warps the shape — and
+  /// at a step of 0.01 it is one position out of a hundred and one, which on a
+  /// hundred-pixel slider is a single pixel. It was reachable and unhittable,
+  /// so in practice "symmetric" never appeared. A pan control has a centre
+  /// detent for exactly this reason.
+  const gp = (label, key, min, max, step, fmt, log, detent) => {
+    const snap = (v) =>
+      (detent !== undefined && Math.abs(v - detent) < step * 2 ? detent : v);
     const el = param(label, state.grainDraft[key], min, max, step, fmt,
-      (v) => { state.grainDraft[key] = v; preview(); }, () => commit(), log,
+      (v) => {
+        const s = snap(v);
+        // Move the handle too when it snapped, or the reading and the control
+        // disagree — which is the fault this whole panel was audited for.
+        if (s !== v) el.sync(s);
+        state.grainDraft[key] = s;
+        preview();
+      },
+      (v) => { state.grainDraft[key] = snap(v); commit(); }, log,
       GRAIN_DEFAULTS[key]);
     state.grainRows[key] = el;
     return el;
@@ -4247,7 +4265,8 @@ function renderGrainParams() {
   extGrain.appendChild(wild('Shape',
     'The grain envelope, how far sizes may reach, and where the layers sit.').add(
     tip(gp('Envelope', 'envelope', 0, 1, 0.01,
-      (v) => (Math.abs(v - 0.5) < 0.005 ? 'symmetric' : v < 0.5 ? 'percussive' : 'swelling')),
+      (v) => (Math.abs(v - 0.5) < 0.005 ? 'symmetric' : v < 0.5 ? 'percussive' : 'swelling'),
+      false, 0.5),
         'The shape each window is laid down under. Symmetric is a bell; percussive is a sharp attack and a long tail; swelling is the reverse.'),
     tip(gp('Size range', 'sizeRange', 1, 8, 0.05, (v) => `${v.toFixed(2)}×`),
         'How far Size jitter is allowed to reach, as a multiple of the window. Inert until there is some jitter to reach with.'),
