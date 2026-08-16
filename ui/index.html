@@ -322,9 +322,11 @@
         </header>
         <div class="kb-body">
           <div class="kb-piano" id="kbPiano"></div>
+          <!-- One line, cycling. Side by side these forced the panel to 626px
+               for a 286px keyboard; taking turns they cost one line and can say
+               more than they did. See `cycleHint`. -->
           <div class="kb-legend">
-            <span><b>A</b> is the tonic · the row above plays the notes between</span>
-            <span><b>Z</b> / <b>X</b> shift down and up an octave, and latch</span>
+            <span class="kb-hint" id="kbHint"></span>
             <span class="kb-oct" id="kbOctave"></span>
             <span class="kb-now" id="kbNow"></span>
           </div>

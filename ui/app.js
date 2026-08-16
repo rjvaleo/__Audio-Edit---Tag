@@ -8524,6 +8524,9 @@ function topOverlay() {
     return () => $('pickerModal').classList.add('hidden');
   }
   if (!$('presetManager').classList.contains('hidden')) return closePresetManager;
+  // The note keyboard is a floating panel rather than a shadowbox, but it is
+  // still a window, and Escape closes the front one.
+  if (keyboardOpen()) return closeKeyboard;
   if (pop.el && !pop.el.classList.contains('hidden')) return closeVisPop;
   return null;
 }
@@ -8636,6 +8639,10 @@ const keyboardOpen = () => !$('keyboardModal').classList.contains('hidden');
 /// Keyed by which white a black follows.
 const WHITE_AFTER = { w: 0, e: 1, t: 3, y: 4, u: 5, o: 7, p: 8 };
 
+/// One white key, in pixels. The keyboard is this times eleven and the panel is
+/// only as wide as that.
+const KEY_WIDTH = 26;
+
 function paintKeyboard() {
   const box = $('kbPiano');
   if (!box) return;
@@ -8644,7 +8651,12 @@ function paintKeyboard() {
 
   const whites = NOTE_KEYS.filter(([k]) => !UPPER_ROW.has(k));
   const blacks = NOTE_KEYS.filter(([k]) => UPPER_ROW.has(k));
-  const unit = 100 / whites.length;
+  // Sized from the key, not from the panel. Stretching eleven whites across a
+  // 680px window made each one sixty pixels wide against eighty-four tall,
+  // which is not a piano key — a real one is roughly one to six. At 26 by 84
+  // the proportion reads right and the panel is only as wide as the keyboard.
+  const unit = KEY_WIDTH;
+  box.style.width = `${whites.length * unit}px`;
 
   const label = (key, i) => {
     const semis = noteSemitones(i);
@@ -8662,8 +8674,8 @@ function paintKeyboard() {
     const l = label(key, i);
     const b = document.createElement('button');
     b.className = 'kb-key white' + (keyboardState.held === i ? ' on' : '');
-    b.style.left = `${n * unit}%`;
-    b.style.width = `${unit}%`;
+    b.style.left = `${n * unit}px`;
+    b.style.width = `${unit}px`;
     b.innerHTML = l.html;
     b.title = l.title;
     b.onclick = () => playNote(i);
@@ -8679,8 +8691,8 @@ function paintKeyboard() {
     b.className = 'kb-key black' + (keyboardState.held === i ? ' on' : '');
     // Straddling the seam between two whites, and a shade left of centre —
     // which is where the upper row actually sits above the home row.
-    b.style.left = `calc(${(after + 1) * unit}% - ${unit * 0.34}%)`;
-    b.style.width = `${unit * 0.62}%`;
+    b.style.left = `${(after + 1) * unit - unit * 0.34}px`;
+    b.style.width = `${unit * 0.62}px`;
     b.innerHTML = l.html;
     b.title = l.title;
     b.onclick = () => playNote(i);
@@ -8708,17 +8720,70 @@ function paintKeyboard() {
   }
 }
 
+/// The hints, taking turns on one line.
+///
+/// Shown side by side they forced the panel to more than twice the keyboard's
+/// width for text you read once. One at a time they cost a single line and can
+/// say more than they did — and a slow fade is legible in a way a hard swap is
+/// not, because the eye is drawn to the change rather than startled by it.
+const KB_HINTS = [
+  '<b>A</b> is the tonic · the row above plays the notes between',
+  '<b>Z</b> / <b>X</b> shift an octave, and latch',
+  'The notes follow whichever tuning is chosen',
+  'Click a key, or just play — the window need not be open',
+];
+
+let kbHintAt = 0;
+let kbHintTimer = null;
+
+function showHint() {
+  const el = $('kbHint');
+  if (!el) return;
+  el.innerHTML = KB_HINTS[kbHintAt % KB_HINTS.length];
+  el.classList.remove('out');
+}
+
+function cycleHint() {
+  const el = $('kbHint');
+  if (!el) return;
+  el.classList.add('out');
+  // Half a second is the fade in the stylesheet; swapping at the end of it is
+  // what makes this a cross-fade rather than a flicker.
+  setTimeout(() => {
+    kbHintAt += 1;
+    showHint();
+  }, 450);
+}
+
+/// Advance it now, and start the ten seconds again from here — a click that
+/// only queued the next one behind an old timer would sometimes change twice.
+function nudgeHint() {
+  cycleHint();
+  if (kbHintTimer) {
+    clearInterval(kbHintTimer);
+    kbHintTimer = setInterval(cycleHint, 10_000);
+  }
+}
+
 function openKeyboard() {
   $('keyboardModal').classList.remove('hidden');
   paintKeyboard();
+  showHint();
+  // Only while it is open. A timer left running against a hidden panel is a
+  // wakeup every ten seconds for nothing.
+  clearInterval(kbHintTimer);
+  kbHintTimer = setInterval(cycleHint, 10_000);
 }
 
 function closeKeyboard() {
   $('keyboardModal').classList.add('hidden');
   keyboardState.held = null;
+  clearInterval(kbHintTimer);
+  kbHintTimer = null;
 }
 
 $('kbClose').onclick = closeKeyboard;
+$('kbHint').onclick = nudgeHint;
 
 /// Draggable by its header, because a floating panel that cannot be moved is a
 /// panel sitting on top of whatever you wanted to look at.

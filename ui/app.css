@@ -1925,7 +1925,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .kb-panel.hidden { display: none; }
 .kb-card {
-  width: min(680px, 92vw); pointer-events: auto;
+  width: max-content; max-width: 96vw; pointer-events: auto;
   background: var(--surface); border: 1px solid var(--line-2);
   border-radius: 10px; overflow: hidden;
   box-shadow: 0 18px 44px var(--shadow);
@@ -1942,14 +1942,14 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .kb-head .ghost { padding: 0 7px; height: 19px; font-size: 11px; }
 .kb-head .modal-sub { font-size: 10px; }
 .kb-head .modal-sub { flex: 1; }
-.kb-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.kb-body { padding: 7px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
 
 /* A piano, not a row of buttons. The whites are one unbroken row — there are no
    gaps in them — and the blacks are placed over the seams between them — the same relationship the two
    keyboard rows have under a hand, which is the point of the letters working out
    the way they do. Absolute inside a relative box, so both are positioned from
    one measurement and cannot drift apart. */
-.kb-piano { position: relative; height: 84px; margin: 0; }
+.kb-piano { position: relative; height: 84px; margin: 0; flex: 0 0 auto; }
 .kb-key {
   position: absolute; top: 0;
   display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
@@ -1984,10 +1984,20 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 
 .kb-legend {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
-  font-size: 10px; color: var(--text-dim); padding-top: 1px;
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
+  width: 100%; font-size: 10px; color: var(--text-dim); padding-top: 1px;
 }
 .kb-legend b { color: var(--text-2); font-family: var(--mono); }
-.kb-oct, .kb-now { font-family: var(--mono); margin-left: auto; }
+/* One line, cross-fading. `white-space: nowrap` is what keeps it one line —
+   wrapping was what made the panel grow in the first place. */
+.kb-hint {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 1; transition: opacity 0.45s ease;
+  cursor: pointer; user-select: none;
+}
+.kb-hint:hover { color: var(--text-2); }
+.kb-hint.out { opacity: 0; }
+.kb-oct { font-family: var(--mono); margin-left: auto; }
+.kb-now { font-family: var(--mono); }
 .kb-oct.on { color: var(--accent); }
-.kb-now { color: var(--text-2); min-width: 62px; text-align: right; }
+.kb-now { color: var(--text-2); min-width: 46px; text-align: right; }
