@@ -140,11 +140,33 @@ A clean monotonic gradient, which is what a real mechanism looks like:
 | 0.6–0.8 | 8% |
 | 0.8–1.0 (swelling) | 6% |
 
-**Plan:** check whether `env_at` actually reaches zero at both grain edges at the
-percussive end. A window that starts at a non-zero value leaves a step at every
-grain, which is exactly a click. If so this is a small fix with a large payoff,
-and it must be made in `fx::grain` so the offline renderer, the block renderer
-and the visualiser all get it (invariant 3).
+**Cause — measured, not guessed.** The first version of this document said to
+check whether `env_at` reaches zero at the grain edges. It does, at every skew,
+and that turned out to be the wrong question. `env_at` warps time by `t^k` with
+`k = 4^(2·skew−1)`, so at the percussive end `k = 0.25` — and `t^0.25` has an
+*infinite derivative at zero*. The envelope is zero at the first sample and
+already near its peak at the second:
+
+| grain length | percussive (skew 0) | symmetric (0.5) | swelling (1.0) |
+|---|---|---|---|
+| 96 smp (2 ms) | **0.714** | 0.021 | 0.000 |
+| 480 smp (10 ms) | **0.387** | 0.001 | 0.000 |
+| 4800 smp (100 ms) | **0.136** | 0.000 | 0.000 |
+
+*largest single-sample jump in the first ten samples*
+
+So a 10 ms percussive grain goes from silence to 39% of full scale **in one
+sample**. That is a step in all but name, and it is laid down once per grain —
+at 300 grains a second, three hundred times a second. It also explains the shape
+of the gradient exactly: the jump grows as grains get shorter and as skew moves
+toward percussive, which is precisely where the click rate rises.
+
+**Plan:** bound the edge slope rather than the edge value — a minimum rise time
+of a few dozen samples, or a cap on `k` derived from the grain length, so the
+percussive end stays percussive without starting with a cliff. It must be fixed
+in `fx::grain` so the offline renderer, the block renderer and the visualiser all
+get it (invariant 3). This is a handful of lines, and it is the cheapest item on
+this list by a wide margin.
 
 ### 5. Long window plus long stretch clicks
 
@@ -224,13 +246,36 @@ and which is blocked on the PVSOLA speed bug in
 
 ---
 
-## What to do first
+## How much of it is worth doing
 
-**Win 1 is the one to build**, because 2, 8 and part of 9 are the same fault seen
-from different angles: cost is emergent from several controls and nothing in the
-program knows the total. A cost function used by both the panel and the live path
-turns four findings into one piece of work.
+119 of the 300 trials failed. **109 of those 119 failed in exactly one way**, so
+the faults are largely independent and the fixes compose rather than interfere.
 
-Then **4** — small, isolated, and a clean gradient says the mechanism is real.
+Grouping the ten findings by mechanism gives four pieces of work, and what each
+would buy:
 
-Then **3** — a genuine bug with six recorded reproductions.
+| | mechanism | failures it fully cleans | effort |
+|---|---|---:|---|
+| **A** | cost — window × layers × density, ungoverned | 64 (54%) | large |
+| **B** | the envelope's edge slope | 21 (18%) | **hours** |
+| **C** | level — no discipline between engine and output | 13 (11%) | medium |
+| **D** | two real bugs at extreme ratios | 11 (9%) | medium |
+
+Cumulatively:
+
+- **B alone → 18%**, for a handful of lines.
+- **A + B → 75%.**
+- **A + B + C → 90%.**
+- All four → 100%.
+
+**Do B first**, out of order, because measuring it turned a "check whether…" into
+a known cause with a known fix, and it is hours rather than days.
+
+**Then A**, which is the only large piece and the one that matters most. It has
+two halves that should not be confused: making the hybrid stop scaling with
+layers is a real optimisation, while the cost function is a guard rail that stops
+you reaching settings no optimisation will save. Both are worth having; only the
+first makes anything faster.
+
+**C and D can wait.** Together they are a fifth of the failures, and neither is
+in the way of the other two.
