@@ -462,15 +462,36 @@ impl Stretcher {
             let at = (self.position + skip as u64) - off;
 
             let i = layer as usize - 1;
-            // Seek only when the layer has actually lost its place. Re-seeking
-            // every block would throw away the splice chain WSOLA depends on
-            // and make the layers sound nothing like the render.
-            if self.layer_at.get(i).copied() != Some(at) {
+            // Seek only when the layer has actually lost its place.
+            //
+            // **Not on an exact match.** `at` is derived from `off`, and `off`
+            // is derived from Layer spread — so while that control is moving,
+            // `at` differs from where the layer is by a frame or two on *every
+            // block*, and an equality test re-seeks every one of them. Seeking
+            // re-primes the engine: the splice chain for WSOLA, the whole phase
+            // and overlap-add state for the vocoder. Ninety times a second that
+            // is not a stretch, it is a stutter — and it is exactly what the
+            // comment here already warned about while the code did it anyway.
+            //
+            // So there is a tolerance, and inside it the layer simply keeps
+            // playing from where it is. Its alignment then lags the ideal by
+            // under a hop, which is what the layer offset is measured in and is
+            // inaudible; losing the engine's state is not.
+            let stored = self.layer_at.get(i).copied();
+            let slack = hop.max(1);
+            let seeking = match stored {
+                Some(s) => at.abs_diff(s) > slack,
+                None => true,
+            };
+            if seeking {
                 self.seek_layer(i, at, &lp);
             }
             self.render_layer(i, &mut buf[..take * channels], channels, src, &lp);
             if let Some(slot) = self.layer_at.get_mut(i) {
-                *slot = at + take as u64;
+                // Where the layer actually is now, which after a tolerated
+                // mismatch is not where `at` said it should be.
+                let from = if seeking { at } else { stored.unwrap_or(at) };
+                *slot = from + take as u64;
             }
             for k in 0..take * channels {
                 out[skip * channels + k] += buf[k];
