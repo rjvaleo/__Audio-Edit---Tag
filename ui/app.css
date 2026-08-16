@@ -494,10 +494,11 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 
 /* With the spectrogram on, the two canvases split the lane. All geometry lives
    here — the drawing code must not set it, or the two fight and one collapses. */
-/* The waveform is what you work against; the spectrogram is a reference strip,
-   so it takes a quarter and the waveform keeps the rest. */
-.lane.split #waveCanvas { height: 75%; }
-.lane.split #specCanvas { display: block; top: 75%; height: 25%; }
+/* The waveform is what you work against, so it keeps the larger share — but a
+   quarter left the spectrogram squashed to the point of being unreadable, which
+   is worse than not showing it. A third is enough to see a formant move. */
+.lane.split #waveCanvas { height: 64%; }
+.lane.split #specCanvas { display: block; top: 64%; height: 36%; }
 
 .selection {
   position: absolute; top: 0; bottom: 0; z-index: 3;
@@ -1511,6 +1512,9 @@ body.editing .dock { flex: 0 0 330px; }
 /* Which stretch engine. A choice about the material, not a quality ladder, so
    it reads as two named options rather than a slider. */
 .engine-pick { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+/* One button on this row and no more. Random briefly joined Reset here and the
+   engine labels collapsed to nineteen pixels — five engines and a reset is what
+   it holds at the narrowest dock width. Random lives on the preset row. */
 .engine-pick .tiny { margin-left: auto; }
 /* Five engines rather than three, so the padding comes off the buttons before
    it comes off the reset — the row has to hold on the narrowest dock width. */

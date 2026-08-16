@@ -845,13 +845,77 @@ fn hann_at(i: usize, n: usize) -> f32 {
     0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos()
 }
 
+/// How much steeper than a plain Hann the attack may be.
+///
+/// Relative rather than absolute, and the first attempt at this was absolute and
+/// wrong: a 16-sample grain has to travel from silence to full and back in
+/// sixteen samples, so its *Hann* moves by 0.19 a sample. Any fixed bar tight
+/// enough to matter at 10 ms is one a short grain cannot meet however smooth it
+/// is, and the test said so immediately.
+///
+/// So the question is not "how big a step" but "how much sharper than the same
+/// grain unskewed", which is the comparison that makes sense at every length. At
+/// four, the percussive end is still plainly an attack — four times the steepest
+/// point of a Hann — without starting on a cliff.
+const EDGE_SHARPNESS: f32 = 4.0;
+
+/// The time-warping exponent, bounded so the attack cannot be a cliff.
+///
+/// `t^k` with `k < 1` has an **infinite derivative at zero**. That is not a
+/// rounding matter: at the percussive end `k` is 0.25, and a 10 ms grain went
+/// from silence at sample 0 to 39% of full scale at sample 1 — a 2 ms grain
+/// reached 71%. The envelope's *value* at the edge was always zero, which is why
+/// this went unnoticed; what was wrong was how fast it left. Laid down once per
+/// grain at three hundred grains a second, that is a click.
+///
+/// So the floor is derived from the grain's own length, against the Hann of that
+/// same length: a long grain may be far more abrupt in absolute terms, because
+/// one sample is a much smaller part of its rise. A Hann's steepest point moves
+/// by `π/(n−1)` a sample, so the bar is `EDGE_SHARPNESS · π/(n−1)`, and solving
+/// `0.5 − 0.5·cos(2π·t₁^k) ≤ bar` for `k` gives the floor directly.
+///
+/// `k ≥ 1` — the swelling half — is returned untouched. Its slope at both edges
+/// is finite already, and at `t → 1` the cosine flattens it to zero.
+#[inline]
+fn warp_power(n: usize, skew: f32) -> f32 {
+    // 0 → ¼, ½ → 1, 1 → 4. Warping t by this power moves the peak from
+    // 0.5^4 ≈ 0.06 of the way in, to 0.5^(1/4) ≈ 0.84.
+    let k = 4f32.powf(skew * 2.0 - 1.0);
+    if k >= 1.0 || n <= 2 {
+        return k;
+    }
+    let bar = EDGE_SHARPNESS * std::f32::consts::PI / (n - 1) as f32;
+    // A grain short enough that the bar exceeds half the envelope's whole travel
+    // cannot be made smoother by any exponent, and `acos` would be asked for a
+    // value outside its domain.
+    if bar >= 0.5 {
+        return k;
+    }
+    let t1 = 1.0 / (n - 1) as f32;
+    let w_max = (1.0 - 2.0 * bar).acos() / (2.0 * std::f32::consts::PI);
+    // Both logs are negative, so the quotient is positive; `t1 < 1` is
+    // guaranteed by the `n <= 2` guard above.
+    let k_min = w_max.ln() / t1.ln();
+    // Never below a half, whatever the arithmetic says.
+    //
+    // Near the origin the envelope goes as `t^(2k−1)`, so `k = 0.5` is exactly
+    // where its slope stops being infinite. Solving the discrete bound lands
+    // within a few thousandths of it at every length anyway — 0.468 at 96
+    // samples, 0.489 at 48,000 — so this costs nothing audible and turns "close
+    // to the threshold" into "provably at or above it".
+    k.max(k_min.max(0.5))
+}
+
 /// The grain envelope, with its peak moved.
 ///
 /// Warping the position before the cosine rather than reaching for a different
-/// window: the shape stays a Hann and stays smooth at both ends — no clicks —
-/// but the moment it peaks slides. A half is exactly [`hann_at`]; below it the
-/// peak moves early, giving a fast attack and a long tail; above it the same
-/// shape runs backwards.
+/// window: the shape stays a Hann and stays smooth at both ends, but the moment
+/// it peaks slides. A half is exactly [`hann_at`]; below it the peak moves early,
+/// giving a fast attack and a long tail; above it the same shape runs backwards.
+///
+/// **How fast it may leave the edge is bounded** — see [`warp_power`]. It used to
+/// say here that the shape "stays smooth at both ends — no clicks", and that was
+/// measurably untrue at the percussive end for four months.
 ///
 /// Public because the real-time renderer has its own loop and must use this
 /// exact function: the picture, the playback and the exported file are three
@@ -865,10 +929,7 @@ pub fn env_at(i: usize, n: usize, skew: f32) -> f32 {
         return 1.0;
     }
     let t = i as f32 / (n - 1) as f32;
-    // 0 → ¼, ½ → 1, 1 → 4. Warping t by this power moves the peak from
-    // 0.5^4 ≈ 0.06 of the way in, to 0.5^(1/4) ≈ 0.84.
-    let k = 4f32.powf(skew * 2.0 - 1.0);
-    let warped = t.powf(k);
+    let warped = t.powf(warp_power(n, skew));
     0.5 - 0.5 * (2.0 * std::f32::consts::PI * warped).cos()
 }
 

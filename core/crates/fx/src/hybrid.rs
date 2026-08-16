@@ -130,43 +130,61 @@ pub fn stretch(
         crate::stretch::fft_size_for(spec.vocoder.window_ms, sample_rate),
         sample_rate.max(1) as f32,
     );
-    crate::stretch::layered(&spec.grain, channels, hop_l, sample_rate, |g| {
-        let mut sp = sp;
-        sp.grain = *g;
-        one(&parts, channels, sample_rate, ratio, spec, p, &sp, want)
-    })
-}
 
-/// One layer of the hybrid: three engines on three parts, summed.
-#[allow(clippy::too_many_arguments)]
-fn one(
-    parts: &crate::hstream::Parts,
-    channels: usize,
-    sample_rate: u32,
-    ratio: f32,
-    spec: &Stretch,
-    p: HybridParams,
-    sp: &crate::stream::StretchParams,
-    want: usize,
-) -> Vec<f32> {
-    const CHUNK: usize = 1 << 16;
-    let mut hs = crate::hstream::HybridStream::new(CHUNK, channels, sample_rate);
-    // The attacks are stretched with transient preservation on, so they need a
-    // map — derived from the percussive part rather than the whole sound, which
-    // is the point of having separated it.
+    // The transient map, built once for all layers.
+    //
+    // It used to be built inside `one`, so N layers meant N onset passes over
+    // the whole percussive part — and every one of them identical. `layered`
+    // varies only `layers`, `seed` and `layer_read`, while the map depends on
+    // the percussive part, the ratio, the hop and the WSOLA settings, and the
+    // hop comes from `density_hz` and `overlap` alone. Nothing it depends on
+    // moves between layers.
+    //
+    // A 300-render sweep found the hybrid at a median of 3.06× real time, worst
+    // of the five engines by a distance; this is one of the reasons.
+    // See `docs/GLITCH-SWEEP.md`.
     let win = (((spec.window_ms.clamp(5.0, 2000.0) / 1000.0) * sample_rate.max(1) as f32) as usize)
         .max(64);
-    let hop = crate::stretch::hop_frames(&sp.grain, win, sample_rate.max(1) as f32).max(1);
+    let hop = crate::stretch::hop_frames(&spec.grain, win, sample_rate.max(1) as f32).max(1);
     let mut wp = spec.wsola;
     wp.preserve_transients = true;
-    hs.set_map(crate::stream::WsolaStream::build_map(
+    let map = crate::stream::WsolaStream::build_map(
         &parts.percussive,
         channels,
         sample_rate,
         ratio,
         hop,
         &wp,
-    ));
+    );
+
+    crate::stretch::layered(&spec.grain, channels, hop_l, sample_rate, |g| {
+        let mut sp = sp;
+        sp.grain = *g;
+        one(&parts, channels, sample_rate, p, &sp, want, &map)
+    })
+}
+
+/// One layer of the hybrid: three engines on three parts, summed.
+///
+/// The transient map is handed in rather than built here. It is the same for
+/// every layer — see the caller — and building it per layer was an onset pass
+/// over the whole percussive part for each one.
+#[allow(clippy::too_many_arguments)]
+fn one(
+    parts: &crate::hstream::Parts,
+    channels: usize,
+    sample_rate: u32,
+    p: HybridParams,
+    sp: &crate::stream::StretchParams,
+    want: usize,
+    map: &Option<crate::transient::TimeMap>,
+) -> Vec<f32> {
+    const CHUNK: usize = 1 << 16;
+    let mut hs = crate::hstream::HybridStream::new(CHUNK, channels, sample_rate);
+    // The attacks are stretched with transient preservation on, so they need a
+    // map — derived from the percussive part rather than the whole sound, which
+    // is the point of having separated it.
+    hs.set_map(map.clone());
     hs.seek(0, parts, sp, p);
 
     let mut out = vec![0.0; want * channels];
