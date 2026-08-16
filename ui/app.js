@@ -8729,8 +8729,6 @@ function paintKeyboard() {
 const KB_HINTS = [
   '<b>A</b> is the tonic · the row above plays the notes between',
   '<b>Z</b> / <b>X</b> shift an octave, and latch',
-  'The notes follow whichever tuning is chosen',
-  'Click a key, or just play — the window need not be open',
 ];
 
 let kbHintAt = 0;
