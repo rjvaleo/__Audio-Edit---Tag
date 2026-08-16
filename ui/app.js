@@ -8727,7 +8727,7 @@ function paintKeyboard() {
 /// say more than they did — and a slow fade is legible in a way a hard swap is
 /// not, because the eye is drawn to the change rather than startled by it.
 const KB_HINTS = [
-  '<b>A</b> is the tonic · the row above plays the notes between',
+  '<b>A</b> is the tonic',
   '<b>Z</b> / <b>X</b> shift an octave, and latch',
 ];
 
