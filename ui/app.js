@@ -6192,6 +6192,9 @@ function drawSpectrogram() {
   for (let i = 0; i < raw.length; i++) lvl[i] = raw.charCodeAt(i);
   const lut = specRamp();
 
+  const rows = logRows(bins, s.maxHz || 22050);
+  const grid = logGrid(lvl, cols, bins, rows);
+
   for (let c = 0; c < cols; c++) {
     const here = c * bins;
     const left = c > 0 ? here - bins : -1;
@@ -6203,14 +6206,14 @@ function drawSpectrogram() {
       // trailing one, so a sweep reads as a ridge rather than a smear. The
       // gradient is the plain central difference — cheap, and enough. Off the
       // edge of the picture reads as silence.
-      const dx = ((right < 0 ? 0 : lvl[right + b]) - (left < 0 ? 0 : lvl[left + b])) / 255;
-      const dy = ((b < bins - 1 ? lvl[here + b + 1] : 0)
-                - (b > 0 ? lvl[here + b - 1] : 0)) / 255;
+      const dx = ((right < 0 ? 0 : grid[right + b]) - (left < 0 ? 0 : grid[left + b])) / 255;
+      const dy = ((b < bins - 1 ? grid[here + b + 1] : 0)
+                - (b > 0 ? grid[here + b - 1] : 0)) / 255;
       const shade = 1 + (dx - dy) * 1.15 * SPEC_RELIEF;
 
       // Low frequencies at the bottom, which means flipping the row order.
       const i = ((bins - 1 - b) * cols + c) * 4;
-      const k = lvl[here + b] * 3;
+      const k = grid[here + b] * 3;
       const r = lut[k] * shade;
       const g = lut[k + 1] * shade;
       const bl = lut[k + 2] * shade;
@@ -6221,6 +6224,77 @@ function drawSpectrogram() {
     }
   }
   ctx.putImageData(img, 0, 0);
+}
+
+/// The lowest frequency the picture bothers with.
+///
+/// Below this is rumble and DC, and stretching an octave nobody is listening to
+/// across a third of the height would waste the room the change is meant to buy.
+const SPEC_FLOOR_HZ = 30;
+
+/// Which analysis bins each display row covers, on a log frequency axis.
+///
+/// **The axis was linear, and that was the bug.** An FFT's bins are evenly
+/// spaced in hertz, so on a 44.1 kHz file 513 bins reach 22 kHz and everything
+/// musical is crushed into the bottom of the picture. Measured on a real file:
+/// half the energy sat below bin 4 — 172 Hz — ninety per cent below bin 10, and
+/// **nine of the ten deciles of height were exactly zero.** The spectrogram was
+/// drawing correctly and had nothing to show in 97% of its rows, which is why
+/// making the strip taller made it look more broken rather than less.
+///
+/// Hearing is roughly logarithmic, so the rows are too: each one covers a fixed
+/// musical interval rather than a fixed number of hertz, and an octave at the
+/// bottom gets the same room as an octave at the top.
+///
+/// Cached on the two numbers it depends on, because it is the same table for
+/// every column of every redraw and this runs while the sound is playing.
+let logRowCache = null;
+function logRows(bins, maxHz) {
+  if (logRowCache && logRowCache.bins === bins && logRowCache.maxHz === maxHz) {
+    return logRowCache.rows;
+  }
+  const lo = new Int32Array(bins);
+  const hi = new Int32Array(bins);
+  const fmin = Math.min(SPEC_FLOOR_HZ, maxHz / 2);
+  const span = Math.log(maxHz / fmin);
+  for (let r = 0; r < bins; r++) {
+    // r counts up from the bottom of the picture, which is the low end.
+    const f0 = fmin * Math.exp(span * (r / bins));
+    const f1 = fmin * Math.exp(span * ((r + 1) / bins));
+    let a = Math.floor((f0 / maxHz) * (bins - 1));
+    let b = Math.ceil((f1 / maxHz) * (bins - 1));
+    a = Math.max(0, Math.min(bins - 1, a));
+    b = Math.max(a, Math.min(bins - 1, b));
+    lo[r] = a;
+    hi[r] = b;
+  }
+  const rows = { lo, hi };
+  logRowCache = { bins, maxHz, rows };
+  return rows;
+}
+
+/// The levels, remapped onto those rows.
+///
+/// The **loudest** bin in a row's span rather than the average: near the top one
+/// row covers dozens of bins, and averaging a partial with the silence either
+/// side of it is how a harmonic disappears from the picture at exactly the
+/// frequencies the log axis was meant to reveal.
+function logGrid(lvl, cols, bins, rows) {
+  const { lo, hi } = rows;
+  const grid = new Uint8Array(cols * bins);
+  for (let c = 0; c < cols; c++) {
+    const here = c * bins;
+    for (let r = 0; r < bins; r++) {
+      let m = 0;
+      const end = hi[r];
+      for (let b = lo[r]; b <= end; b++) {
+        const v = lvl[here + b];
+        if (v > m) m = v;
+      }
+      grid[here + r] = m;
+    }
+  }
+  return grid;
 }
 
 /// The colour ramp as its 256 stops, so a pixel costs three array reads. The

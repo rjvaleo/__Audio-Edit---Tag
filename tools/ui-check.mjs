@@ -231,7 +231,8 @@ const globals = new Set([
   'IntersectionObserver', 'MutationObserver', 'AbortController', 'URL', 'URLSearchParams',
   'Blob', 'FileReader', 'Image', 'Audio', 'AudioContext', 'structuredClone', 'queueMicrotask',
   'Intl', 'WebSocket', 'EventSource', 'DOMParser', 'getComputedStyle', 'matchMedia',
-  'Uint8Array', 'Int16Array', 'Float32Array', 'ArrayBuffer', 'DataView', 'TextDecoder',
+  'Uint8Array', 'Int16Array', 'Int32Array', 'Uint32Array', 'Float64Array',
+  'Float32Array', 'ArrayBuffer', 'DataView', 'TextDecoder',
   'TextEncoder', 'atob', 'btoa', 'CustomEvent', 'Event', 'Node', 'HTMLElement',
 ]);
 
