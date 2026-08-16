@@ -416,9 +416,10 @@ impl Shared {
         if ppm > 1_000_000 {
             self.late_blocks.fetch_add(1, Ordering::Relaxed);
         }
-        self.govern(ppm, mean);
     }
 
+    /// DISABLED. Kept only so the tests that document why can still run.
+    ///
     /// Shed layers when the callback cannot keep up, and take them back when it
     /// can.
     ///
@@ -976,16 +977,9 @@ impl Core {
         if let Ok(g) = shared.params.try_lock() {
             self.params = *g;
         }
-        // The governor's word, applied once and here. Clamping the parameters
-        // rather than teaching every engine about a cap means the stretcher,
-        // the layer bank and the block renderer all see one number and cannot
-        // disagree about how many layers are running.
-        let asked = self.params.grain.layers.max(1);
-        let allowed = asked.min(shared.layer_cap());
-        self.params.grain.layers = allowed;
         shared
             .layers_running
-            .store(allowed, std::sync::atomic::Ordering::Relaxed);
+            .store(self.params.grain.layers.max(1), std::sync::atomic::Ordering::Relaxed);
         if let Ok(g) = shared.source.try_lock() {
             if !Arc::ptr_eq(&self.source, &g) {
                 self.source = Arc::clone(&g);
