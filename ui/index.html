@@ -292,6 +292,12 @@
       <button class="ghost" id="presetSave">Save as&hellip;</button>
       <button class="ghost" id="presetManage">Manage&hellip;</button>
       <button class="ghost" id="presetDelete">Delete</button>
+      <!-- Random lives here rather than on the engine row, which already had to
+           hold five engines and a reset at the narrowest dock width and lost its
+           labels the moment a second button joined it. A preset is a saved set
+           of these values, so "make me a new set" belongs beside them. -->
+      <button class="ghost" id="stretchRandom"
+              title="Throw every control in the tray somewhere at random. The engine stays where it is, and the seed is reported so a good accident can be found again.">Random</button>
     </div>
 
     <!-- The preset manager. Every preset, and every value inside the one you

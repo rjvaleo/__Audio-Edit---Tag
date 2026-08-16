@@ -161,12 +161,33 @@ at 300 grains a second, three hundred times a second. It also explains the shape
 of the gradient exactly: the jump grows as grains get shorter and as skew moves
 toward percussive, which is precisely where the click rate rises.
 
-**Plan:** bound the edge slope rather than the edge value — a minimum rise time
-of a few dozen samples, or a cap on `k` derived from the grain length, so the
-percussive end stays percussive without starting with a cliff. It must be fixed
-in `fx::grain` so the offline renderer, the block renderer and the visualiser all
-get it (invariant 3). This is a handful of lines, and it is the cheapest item on
-this list by a wide margin.
+**Done, and it did not work.** `warp_power` now bounds the exponent so the
+attack can be at most four times steeper than a Hann of the same length, and
+never below `k = 0.5` — which is exactly where the edge slope stops being
+infinite. Seven tests pin it, the default envelope is untouched to 1e-7, and the
+control still moves the peak.
+
+**Re-running the identical 300 seeds moved clicks from 28 to 26, and the worst
+`stepRatio` did not move at all: 231.2 before, 231.2 after.**
+
+The mechanism is real and the arithmetic above is right. It is simply not what
+is causing these clicks, and the reason is visible in the numbers already
+collected: **the clicking trials are at long windows** — median 160 ms against
+69 ms for clean ones. Work the cliff out for a 548 ms grain, which is the worst
+click in the sweep, and the first-sample jump is 0.0017. There was never a cliff
+there to remove. The gradient by envelope is real, but envelope also correlates
+with other things, and this was a correlation read as a cause.
+
+The fix is kept: it is correct, it is tested, and it removes a genuine
+discontinuity from short percussive grains, which is a case the sweep
+under-samples because window is rolled uniformly over a log range. But it is
+**not** win 4, and the 18% attributed to it above is not banked.
+
+**What to do instead:** stop correlating and locate. The twelve worst clicks are
+recorded with seeds; find *where in the output* the step happens — at a grain
+boundary, at a splice, at the file's end, at a layer offset — and the mechanism
+will name itself. That is the next piece of work on this fault, and it should
+have been the first.
 
 ### 5. Long window plus long stretch clicks
 
@@ -254,28 +275,24 @@ the faults are largely independent and the fixes compose rather than interfere.
 Grouping the ten findings by mechanism gives four pieces of work, and what each
 would buy:
 
-| | mechanism | failures it fully cleans | effort |
-|---|---|---:|---|
-| **A** | cost — window × layers × density, ungoverned | 64 (54%) | large |
-| **B** | the envelope's edge slope | 21 (18%) | **hours** |
-| **C** | level — no discipline between engine and output | 13 (11%) | medium |
-| **D** | two real bugs at extreme ratios | 11 (9%) | medium |
+| | mechanism | failures it would fully clean | effort | state |
+|---|---|---:|---|---|
+| **A** | cost — window × layers × density, ungoverned | 64 (54%) | large | started |
+| **B** | clicks | 21 (18%) | ? | **first attempt failed** |
+| **C** | level — no discipline between engine and output | 13 (11%) | medium | not started |
+| **D** | two real bugs at extreme ratios | 11 (9%) | medium | not started |
 
-Cumulatively:
+**B was attempted first and did not pay.** The envelope edge slope was a real
+defect with a clean measurement behind it, and fixing it moved the click count
+from 28 to 26. See win 4 for why the reasoning was wrong. The lesson is worth
+more than the fix: **a monotonic gradient is not a mechanism.** Locating the
+discontinuity in time would have cost an hour and would have said so.
 
-- **B alone → 18%**, for a handful of lines.
-- **A + B → 75%.**
-- **A + B + C → 90%.**
-- All four → 100%.
+**A is now the whole of the near-term value**, and one piece of it is done: the
+hybrid was rebuilding an identical transient map once per layer — an onset pass
+over the whole percussive part for each — because `layered` varies only
+`layers`, `seed` and `layer_read` while the map depends on none of them. Hoisted.
+The rest of A is the cost function, which is a guard rail rather than an
+optimisation and should not be confused with one.
 
-**Do B first**, out of order, because measuring it turned a "check whether…" into
-a known cause with a known fix, and it is hours rather than days.
-
-**Then A**, which is the only large piece and the one that matters most. It has
-two halves that should not be confused: making the hybrid stop scaling with
-layers is a real optimisation, while the cost function is a guard rail that stops
-you reaching settings no optimisation will save. Both are worth having; only the
-first makes anything faster.
-
-**C and D can wait.** Together they are a fifth of the failures, and neither is
-in the way of the other two.
+**C and D are untouched.** Together a fifth of the failures.

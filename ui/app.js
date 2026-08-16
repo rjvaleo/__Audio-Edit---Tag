@@ -3726,17 +3726,9 @@ function renderStretch() {
     </div>`;
   // The panel has no heading any more, so its reset rides on the engine row —
   // the one line that is always there whichever engine is chosen.
-  // Random rides beside Reset, because they are the same gesture in opposite
-  // directions — one puts the tray back, the other throws it somewhere nobody
-  // would have chosen. The engine stays where it is for both.
-  eng.appendChild(resetButton(
-    'stretchRandom', 'Random',
-    'Throw every control on both sides somewhere at random. The engine stays where it is.',
-    () => {
-      const r = randomizeStretch();
-      toast(`Randomised — seed ${r.seed}`);
-    },
-  ));
+  // Reset rides on the engine row, and Random deliberately does not — see the
+  // preset row in `index.html`. Five engines and one button is what this row
+  // holds at the narrowest dock width; a second one costs the engine labels.
   eng.appendChild(resetButton(
     'stretchReset', 'Reset all',
     'Reset every control on both sides, standard and extended',
@@ -5580,6 +5572,12 @@ function pmTouch() {
   const item = [...$('pmList').children].find((b) => b.classList.contains('active'));
   if (item) item.classList.toggle('dirty', dirty);
 }
+
+$('stretchRandom').onclick = () => {
+  if (!state.selectedFile) { toast('Open a sound first'); return; }
+  const r = randomizeStretch();
+  toast(`Randomised — seed ${r.seed}`);
+};
 
 $('presetManage').onclick = openPresetManager;
 $('pmClose').onclick = closePresetManager;
