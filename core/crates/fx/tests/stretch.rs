@@ -1841,7 +1841,7 @@ fn a_sampled_schedule_is_a_faithful_thinning_of_the_whole_one() {
     };
 
     let full = fx::grain::grains_layered(frames, sr, 8.0, 0.0, 40.0, &g);
-    let (sample, total) = fx::grain::grains_sampled(frames, sr, 8.0, 0.0, 40.0, &g, 500);
+    let (sample, total) = fx::grain::grains_sampled(frames, sr, 8.0, 0.0, 40.0, &g, 500, None);
 
     assert_eq!(total, full.len(), "the reported total is not the real one");
     assert!(!sample.is_empty());
@@ -1967,4 +1967,67 @@ fn wrapping_is_inert_when_it_is_off() {
     let a = fx::grain::granular(&src, 1, sr, 3.0, 0.0, 60.0, &g);
     let b = fx::grain::granular(&src, 1, sr, 3.0, 0.0, 60.0, &fx::Grain { ..g });
     assert_eq!(a, b);
+}
+
+/// Zooming in has to show *more* grains, not fewer.
+///
+/// The sampler used to spend its cap across the whole document. A cloud of three
+/// million grains sent eight thousand, spread evenly — so a window holding a
+/// thousandth of the file held about eight of them, and zoomed all the way in
+/// you saw three or four marks against a wall of sound. The picture stopped
+/// describing the audio at exactly the magnification where it mattered most.
+#[test]
+fn a_window_spends_the_grain_budget_inside_itself() {
+    let sr = 48_000;
+    let frames = sr as usize * 10;
+    let mut g = fx::Grain::default();
+    g.density_hz = 300.0;
+    g.layers = 4;
+    let cap = 2_000;
+
+    let (whole, total) = fx::grain::grains_sampled(frames, sr, 4.0, 0.0, 40.0, &g, cap, None);
+    assert!(total > cap * 10, "not enough grains to be worth sampling: {total}");
+
+    // A hundredth of the output, in the middle.
+    let out_frames = (frames as f32 * 4.0) as u64;
+    let lo = out_frames / 2;
+    let hi = lo + out_frames / 100;
+    let (windowed, _) =
+        fx::grain::grains_sampled(frames, sr, 4.0, 0.0, 40.0, &g, cap, Some((lo, hi)));
+
+    let inside = |v: &[fx::grain::GrainEvent]| {
+        v.iter().filter(|e| e.out_frame >= lo && e.out_frame <= hi).count()
+    };
+    let before = inside(&whole);
+    let after = inside(&windowed);
+
+    assert!(
+        after > before * 10,
+        "windowing bought almost nothing: {before} grains in view before, {after} after",
+    );
+    // And it still respects the budget rather than sending everything.
+    assert!(
+        windowed.len() <= cap * 2,
+        "the window ignored the cap: {} grains for a cap of {cap}",
+        windowed.len(),
+    );
+}
+
+/// Without a window, nothing changes. The whole-document picture is what the
+/// overview and a zoomed-out editor both draw.
+#[test]
+fn no_window_still_samples_the_whole_document() {
+    let sr = 48_000;
+    let frames = sr as usize * 4;
+    let mut g = fx::Grain::default();
+    g.density_hz = 200.0;
+    let cap = 1_000;
+    let (all, _) = fx::grain::grains_sampled(frames, sr, 2.0, 0.0, 40.0, &g, cap, None);
+    assert!(!all.is_empty());
+    let last = all.iter().map(|e| e.out_frame).max().unwrap();
+    let out_frames = (frames as f32 * 2.0) as u64;
+    assert!(
+        last > out_frames / 2,
+        "the unwindowed sample stopped at {last} of {out_frames} — it is not covering the file",
+    );
 }

@@ -1175,6 +1175,15 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
     // of them and throw four fifths away — every discarded one cost a plan
     // lookup and four hashes for its jitters. See `grains_sampled`.
     let cap = app.grain_cap.read().map(|g| *g).unwrap_or(8_000).max(1);
+    // The visible range, if the caller said what it is looking at. The cap is
+    // spent inside it, so zooming in buys detail instead of losing it.
+    let window = match (
+        req.param("from").and_then(|v| v.parse::<u64>().ok()),
+        req.param("to").and_then(|v| v.parse::<u64>().ok()),
+    ) {
+        (Some(a), Some(b)) if b > a => Some((a, b)),
+        _ => None,
+    };
     let (sent, total) = fx::grain::grains_sampled(
         list.base_frames() as usize,
         list.sample_rate,
@@ -1183,6 +1192,7 @@ fn api_grains(app: &Arc<App>, req: &Request) -> Response {
         st.window_ms,
         &st.grain,
         cap,
+        window,
     );
 
     // Cap what crosses the wire. Three thousand was a cap from when this fed an orbit of a few dozen

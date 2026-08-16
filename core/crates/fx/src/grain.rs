@@ -612,6 +612,9 @@ pub fn grains_layered(
 ///
 /// Returns the sample and the true total, because a picture that has been
 /// thinned should be able to say so.
+/// `window` is the range of output frames worth drawing, or `None` for all of
+/// them. The cap is spent inside it — see the comment at the sampling step.
+#[allow(clippy::too_many_arguments)]
 pub fn grains_sampled(
     in_frames: usize,
     sample_rate: u32,
@@ -620,6 +623,7 @@ pub fn grains_sampled(
     window_ms: f32,
     g: &Grain,
     cap: usize,
+    window: Option<(u64, u64)>,
 ) -> (Vec<GrainEvent>, usize) {
     let mut sp = StreamParams::new(in_frames, sample_rate);
     sp.ratio = ratio;
@@ -640,16 +644,35 @@ pub fn grains_sampled(
         return (Vec::new(), 0);
     }
 
-    // The step that lands on about `cap` grains altogether.
-    let want_each = (cap / layers as usize).max(1);
-    let step = per_layer.div_ceil(want_each).max(1);
+    // The window the caller can actually see, in output frames.
+    //
+    // **The cap is spent here rather than across the whole document.** Sampling
+    // the file evenly and then zooming in is how a cloud of three million
+    // grains became three on screen: the eight thousand that survive are spread
+    // over the whole length, so a window holding a thousandth of it holds eight
+    // of them. Zoomed in, that was four grains against a wall of sound, which is
+    // not a picture of anything.
+    //
+    // Given a window, the same eight thousand are spent inside it, so the
+    // detail follows the zoom the way the waveform does.
+    let (lo, hi) = match window {
+        Some((a, b)) if b > a => (a, b.min(p.out_frames as u64)),
+        _ => (0, p.out_frames as u64),
+    };
+    let first = (lo / hop as u64) as usize;
+    let last = (hi.div_ceil(hop as u64) as usize).min(per_layer);
+    let in_window = last.saturating_sub(first).max(1);
 
-    let mut out = Vec::with_capacity(total.min(cap) + layers as usize);
+    // The step that lands on about `cap` grains altogether, within the window.
+    let want_each = (cap / layers as usize).max(1);
+    let step = in_window.div_ceil(want_each).max(1);
+
+    let mut out = Vec::with_capacity(in_window.min(cap) + layers as usize);
     for l in 0..layers {
         let lp = layer_params(&sp, l);
         let off = layer_offset(&sp, l, layers);
-        let mut i = 0usize;
-        while i < per_layer {
+        let mut i = first;
+        while i < last {
             let write = i * hop;
             if write >= p.out_frames {
                 break;
