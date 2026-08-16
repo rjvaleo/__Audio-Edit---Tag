@@ -1016,45 +1016,13 @@ body.editing .transport { background: var(--surface); }
    control in the control column. What is in the control column is a rocker —
    one end pressed in and the other proud, with the recess it uncovers lit — so
    which way it is set reads without having to find the label. */
-/* Not the sliders' fixed name column. A switch is a pair of things that belong
-   together, so the name takes what it needs and the two sit at the right-hand
-   edge — the same way the ones that share a line already did. */
-.toggle { grid-template-columns: minmax(0, 1fr) auto; }
-.toggle .k { text-align: right; padding-right: 3px; }
-.rocker {
-  position: relative; width: 38px; height: 17px; padding: 0;
-  border-radius: 3px; border: 1px solid var(--shadow);
-  /* The housing: a recess, so the plate can sit in it. */
-  background: linear-gradient(var(--surface-0), var(--surface-2h));
-  box-shadow: inset 0 1px 2px var(--shadow-hard);
-  cursor: pointer; overflow: hidden;
-}
-/* The lit half, uncovered by whichever way the plate is tilted. Dull red at
-   rest, green when thrown. */
-.rocker::before {
-  content: ''; position: absolute; top: 2px; bottom: 2px; width: 12px;
-  right: 3px; border-radius: 2px;
-  background: oklch(40% 0.10 25);
-  box-shadow: inset 0 1px 1px var(--shadow);
-  transition: background .12s ease, box-shadow .12s ease, left .12s ease, right .12s ease;
-}
-.rocker.on::before {
-  right: auto; left: 3px;
-  background: var(--good);
-  box-shadow: 0 0 7px var(--good), inset 0 0 2px rgba(255,255,255,0.55);
-}
-/* The plate itself: half the housing, raised, and it moves to cover whichever
-   end is not lit. */
-.rocker .plate {
-  position: absolute; top: 1px; bottom: 1px; left: 1px; width: 22px;
-  border-radius: 2px;
-  background: linear-gradient(oklch(34% 0.008 250), oklch(24% 0.008 250));
-  box-shadow: 0 1px 2px var(--shadow), inset 0 1px 0 var(--line-3);
-  transition: left .12s ease;
-}
-.rocker.on .plate { left: 15px; }
-.rocker:hover { border-color: rgba(255,255,255,0.25); }
-.rocker:active .plate { filter: brightness(1.15); }
+/* The control column holds the control, whatever kind it is — a slider, a knob,
+   a three-way choice or a switch. They are all the same width so a panel reads
+   down its columns as a table.
+
+   The moulded rocker that used to live here is gone: it was a small painting of
+   a physical switch, it matched nothing else in the program, and it spent 38px
+   saying one bit. See `.tiny.switch`. */
 
 .seed-row .v { color: var(--text-2); }
 .seed-row .ghost { width: 100%; }
@@ -1386,6 +1354,22 @@ body.editing .dock { flex: 0 0 300px; }
   letter-spacing: 0; text-transform: none;
 }
 .tiny:hover { border-color: var(--accent); color: var(--accent); }
+
+/* A switch, in the same language as the buttons beside it.
+   Off is an outline and on is filled — the same shape either way, so it reads
+   as one control in two states rather than as two different things. The word is
+   on the button because "which end is lit" is a convention you have to be
+   taught and "on" is not. */
+.tiny.switch {
+  min-width: 34px; text-align: center;
+  font-variant: small-caps; letter-spacing: 0.04em;
+}
+.tiny.switch.on {
+  background: var(--accent); border-color: var(--accent); color: var(--sink);
+  font-weight: 600;
+}
+.tiny.switch.on:hover { filter: brightness(1.08); color: var(--sink); }
+.tiny.switch:active { transform: translateY(0.5px); }
 
 .cpanel {
   background: var(--surface-2); border: 1px solid var(--line);

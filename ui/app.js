@@ -3248,7 +3248,7 @@ function param(label, value, min, max, step, format, onChange, onCommit, log, de
   // guessing — the midpoint, or zero, or whatever it happened to be built
   // with — would put values in that were never the default of anything.
   if (def === undefined || def === null || !Number.isFinite(def)) {
-    // Not an error — `check` and the rockers have no meaningful default, and a
+    // Not an error — `check` and the switches have no meaningful default, and a
     // control that resets to something which was never anybody's default is
     // worse than one that plainly does nothing. But a *slider* without one is
     // almost always an oversight, and the only reason `position` went years
@@ -3395,24 +3395,32 @@ function knob(label, value, min, max, step, format, onChange, onCommit, log, def
   return el;
 }
 
-/// A switch: the name in the name column, a rocker in the control column.
+/// A switch: the name in the name column, the control in the control column.
 ///
-/// It was a button with its own name written on it, which made it the one
+/// It was once a button with its own name written on it, which made it the one
 /// control in the panel that did not line up with the others. The name belongs
 /// where every other name is; the switch belongs where every other control is.
 ///
-/// A rocker rather than a tick box because a rocker says which way it is set
-/// from across the room — one end pressed in, the other proud, and the recess
-/// it uncovers lit.
+/// A switch, in the same language as every other button in the tray.
+///
+/// It used to be a moulded rocker with a lit end — a small painting of a
+/// physical switch. It looked like nothing else in the program, it was 38px of
+/// housing to say one bit, and at a glance it read as an indicator rather than
+/// as something to press.
+///
+/// So it is a button now, built like `Reset all` and reading `on` or `off`. Off
+/// it is an outline; on it fills with the accent. Two states, both of them
+/// obviously pressable, and the word says which one you are in rather than
+/// leaving you to work it out from which end is glowing.
 function check(label, title, value, onChange) {
   const el = document.createElement('div');
   el.className = 'param toggle';
   el.innerHTML = `<span class="k"></span>
-    <button class="rocker" role="switch"><span class="plate"></span></button>`;
+    <button class="tiny switch" role="switch"></button>`;
   const name = el.querySelector('.k');
   name.textContent = label;
   name.title = title || label;
-  const b = el.querySelector('.rocker');
+  const b = el.querySelector('.switch');
   b.title = title || label;
   el.title = title || label;
 
@@ -3420,6 +3428,7 @@ function check(label, title, value, onChange) {
   const paint = () => {
     b.classList.toggle('on', on);
     b.setAttribute('aria-checked', String(on));
+    b.textContent = on ? 'on' : 'off';
   };
   paint();
   b.onclick = () => { on = !on; paint(); onChange(on); };
@@ -3481,7 +3490,7 @@ function tip(el, text) {
   // A segment that explains itself keeps its own words. Those are about the
   // one choice; this is about the row, and the specific of the two is the more
   // useful thing to be told.
-  for (const k of el.querySelectorAll('.seg-btn, .rocker')) {
+  for (const k of el.querySelectorAll('.seg-btn, .switch')) {
     if (!k.title) k.title = text;
   }
   return el;
@@ -5886,7 +5895,7 @@ async function resetExtended() {
 // are exactly the ones nobody would think to try.
 //
 // **It drives the real controls rather than the drafts.** Every range, choice
-// and rocker in the tray is set through the same `input`/`change` events a hand
+// and switch in the tray is set through the same `input`/`change` events a hand
 // would produce, which means it can only ever produce values the interface
 // itself allows — no separate table of ranges to drift out of step with the
 // controls, which is gotcha 7 waiting to happen. It also means what it exercises
@@ -5949,9 +5958,9 @@ function randomizeStretch({ seed = null, commit = true } = {}) {
       btns[Math.floor(rnd() * btns.length)].click();
     }
 
-    // Rockers. Clicked only when the roll disagrees with where it already is,
+    // Switches. Clicked only when the roll disagrees with where it already is,
     // because the handler toggles rather than sets.
-    for (const b of box.querySelectorAll('.rocker')) {
+    for (const b of box.querySelectorAll('.switch')) {
       const want = rnd() < 0.5;
       if (b.classList.contains('on') !== want) b.click();
     }
