@@ -4385,12 +4385,22 @@ function paintLoad() {
   // The worst block, not the average. A mean of 40% with a spike to 150% is a
   // click every few seconds, and the mean is what hides it.
   const pct = Math.round(l.worst * 100);
-  el.textContent = `load ${pct}%`;
+  // What the governor has done, if anything. A program that quietly plays fewer
+  // layers than the control says is lying about its own settings, so this is
+  // said out loud rather than left to be noticed.
+  const asked = state.grainDraft?.layers ?? 1;
+  const thinned = asked > 1 && l.layersRunning > 0 && l.layersRunning < asked;
+  el.textContent = thinned ? `load ${pct}% · ${l.layersRunning}/${asked} layers` : `load ${pct}%`;
   el.className = 'mono engine-load'
-    + (l.worst >= 1 ? ' over' : l.worst >= 0.75 ? ' near' : ' dim');
+    + (thinned || l.worst >= 1 ? ' over' : l.worst >= 0.75 ? ' near' : ' dim');
   el.title = `The worst block since this was last reset, as a share of the time that block had to play for.\n`
     + `Now ${Math.round(l.now * 100)}% · average ${Math.round(l.mean * 100)}% · worst ${pct}%`
     + (l.late ? `\n${l.late} block${l.late === 1 ? '' : 's'} missed the deadline — that is what a dropout is.` : '')
+    + (thinned
+      ? `\n\nRunning ${l.layersRunning} of the ${asked} layers asked for: the engine could not make `
+        + 'blocks fast enough, and a thinner cloud is better than a dropout. It takes them back on '
+        + 'its own once there is room, or immediately if you open another sound.'
+      : '')
     + '\nClick to forget the worst; it only means anything next to a change you just made.';
   el.onclick = async () => {
     try { await postJSON('/api/engine/load/reset', {}); } catch { /* not playing */ }
