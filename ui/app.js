@@ -4212,14 +4212,21 @@ function renderGrainParams() {
   /// `detent` is a value the control snaps to when it comes close.
   ///
   /// For a control whose middle means something. Envelope's 0.5 is the only
-  /// value that gives a pure Hann — every other setting warps the shape — and
-  /// at a step of 0.01 it is one position out of a hundred and one, which on a
-  /// hundred-pixel slider is a single pixel. It was reachable and unhittable,
-  /// so in practice "symmetric" never appeared. A pan control has a centre
-  /// detent for exactly this reason.
+  /// value that gives a pure Hann — every other setting warps the shape — so
+  /// "symmetric" is not one label of three, it is *the* shape the other two are
+  /// departures from.
+  ///
+  /// **The band is sized in pixels, not in steps**, because these sliders are
+  /// 56 px wide. At a step of 0.01 that is half a pixel per step: exactly one
+  /// position out of a hundred and one gave a Hann, and no hand can land on it.
+  /// A first attempt at this snapped within two steps and was still barely more
+  /// than a pixel — measurably better and still unusable. Six per cent of the
+  /// range is about three and a half pixels either side, which is a target.
+  const DETENT_FRAC = 0.06;
   const gp = (label, key, min, max, step, fmt, log, detent) => {
+    const band = (max - min) * DETENT_FRAC;
     const snap = (v) =>
-      (detent !== undefined && Math.abs(v - detent) < step * 2 ? detent : v);
+      (detent !== undefined && Math.abs(v - detent) <= band ? detent : v);
     const el = param(label, state.grainDraft[key], min, max, step, fmt,
       (v) => {
         const s = snap(v);
