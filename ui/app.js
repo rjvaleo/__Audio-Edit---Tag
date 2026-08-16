@@ -776,6 +776,10 @@ function startPolling() {
       engine.rackLevels = r.rackLevels || [];
       engine.load = r.load || null;
       paintLoad();
+      // The schedule is windowed now, and the swarm reads it around the
+      // playhead — so playing out of the covered range would empty it. Cheap:
+      // this returns immediately unless the playhead is near the edge.
+      grainsFollowView();
       if (!$('dockEffects')?.classList.contains('hidden')) {
         paintRackMeters(r.rackLevels || []);
         repaintVisualEqs();
@@ -6864,13 +6868,63 @@ async function refresh() {
 
 state.grains = null;
 
-/// The window the last request was built for, so a redraw at the same zoom does
-/// not re-ask.
+/// The output-frame range the last request covered, so a redraw at the same
+/// zoom does not re-ask.
 let grainsFor = null;
+
+/// How far either side of the playhead the swarm's schedule has to reach.
+///
+/// Four seconds rather than the swarm's own 1.4, so playing on does not need a
+/// new request every second.
+const GRAIN_PLAYHEAD_PAD = 4;
+
+/// **Two pictures read the schedule and they want different ranges.**
+///
+/// The waveform layer wants the grains in the *view*; the swarm wants the ones
+/// around the *playhead*, 1.4 seconds either side. Windowing to the view alone
+/// — which is what made zooming work — empties the swarm whenever the playhead
+/// is elsewhere.
+///
+/// The union of the two is not the answer either, and the measurement says so:
+/// zoomed into the last tenth of a file with the playhead at the start, the
+/// union is the whole document, the cap spreads over all of it, and the swarm
+/// gets sixteen grains. A contiguous window cannot serve two disjoint regions.
+///
+/// So they are two requests, and only when they are actually apart. Following
+/// the playhead — the usual case — the second is skipped entirely.
+function viewWindow() {
+  const v = state.view || {};
+  const ratio = state.edit?.stretch?.ratio ?? 1;
+  const from = Math.max(0, Math.floor((v.from ?? 0) * ratio));
+  const to = Math.ceil((v.to ?? 0) * ratio);
+  return to > from ? [from, to] : null;
+}
+
+function playheadWindow() {
+  const sr = state.grains?.sampleRate || state.view?.sampleRate || 48000;
+  const head = playbackTime() * sr;
+  if (!Number.isFinite(head) || head <= 0) return null;
+  const pad = GRAIN_PLAYHEAD_PAD * sr;
+  return [Math.max(0, Math.floor(head - pad)), Math.ceil(head + pad)];
+}
+
+/// Is the playhead's horizon already inside what the view fetched?
+function covers(win, want) {
+  return !!win && !!want && want[0] >= win[0] && want[1] <= win[1];
+}
+
+/// The playhead's own schedule, when the view is looking somewhere else.
+/// `null` means the view's copy already covers it and the swarm should use that.
+let swarmFor = null;
 
 async function loadGrains() {
   const f = state.selectedFile;
-  if (!f) { state.grains = null; grainsFor = null; drawGrains(); return; }
+  if (!f) {
+    state.grains = null; state.swarm = null;
+    grainsFor = null; swarmFor = null;
+    drawGrains();
+    return;
+  }
 
   // Ask for the range on screen, in *output* frames — the view is in source
   // frames, and the schedule is laid out along the output.
@@ -6878,36 +6932,73 @@ async function loadGrains() {
   // This is what makes zooming show more rather than less. The cap is a few
   // thousand grains and it used to be spread over the whole document, so a
   // window holding a thousandth of the file held a handful of them: zoomed all
-  // the way in on a cloud of three million, you saw three. Spending the same
-  // cap inside the window means the detail follows the zoom, the way the
-  // waveform already does.
-  const v = state.view || {};
-  const ratio = state.edit?.stretch?.ratio ?? 1;
-  const from = Math.max(0, Math.floor((v.from ?? 0) * ratio));
-  const to = Math.ceil((v.to ?? 0) * ratio);
-  const q = to > from ? `&from=${from}&to=${to}` : '';
+  // the way in on a cloud of three million, you saw three.
+  const win = viewWindow();
+  const q = win ? `&from=${win[0]}&to=${win[1]}` : '';
   try {
     state.grains = await api(`/api/grains?p=${encodeURIComponent(f.path)}${q}`);
-    grainsFor = q;
+    grainsFor = win;
   } catch { state.grains = null; grainsFor = null; }
+  await loadSwarmGrains();
   drawGrains();
 }
 
-/// Re-fetch when the view has moved somewhere the last request does not cover.
+/// A second request, only when the playhead is outside the view.
+async function loadSwarmGrains() {
+  const f = state.selectedFile;
+  const want = playheadWindow();
+  if (!f || !want || covers(grainsFor, want)) {
+    state.swarm = null;
+    swarmFor = null;
+    return;
+  }
+  try {
+    state.swarm = await api(
+      `/api/grains?p=${encodeURIComponent(f.path)}&from=${want[0]}&to=${want[1]}`,
+    );
+    swarmFor = want;
+  } catch { state.swarm = null; swarmFor = null; }
+}
+
+/// Re-fetch when the view or the playhead has moved outside what is covered.
 ///
-/// Throttled: zooming and scrolling fire continuously, and each of these is a
-/// schedule walk on the server.
+/// Throttled: zooming, scrolling and playback all fire continuously, and each
+/// of these is a schedule walk on the server.
 let grainsViewTimer = null;
 function grainsFollowView() {
   if (!state.selectedFile || !state.grains) return;
-  const v = state.view || {};
-  const ratio = state.edit?.stretch?.ratio ?? 1;
-  const from = Math.max(0, Math.floor((v.from ?? 0) * ratio));
-  const to = Math.ceil((v.to ?? 0) * ratio);
-  if (!(to > from)) return;
-  if (grainsFor === `&from=${from}&to=${to}`) return;
+  const win = viewWindow();
+  const head = playheadWindow();
+
+  // Stale two ways, and the second is the one that matters.
+  //
+  // Outside what was fetched is obvious. But **zooming in stays inside it** —
+  // and that is precisely when a new request is needed, because the grains held
+  // were sampled across a range far wider than what is now on screen. Testing
+  // only for "outside" meant zooming changed nothing at all: the view narrowed
+  // to sixty frames while the schedule in hand still covered sixty-one million,
+  // and the picture went empty rather than dense.
+  //
+  // So: re-ask when the covered range is more than twice the view. Twice rather
+  // than any narrowing, or every scroll would re-ask.
+  const outside = win && !(grainsFor
+    && win[0] >= grainsFor[0] - 1 && win[1] <= grainsFor[1] + 1);
+  const tooCoarse = win && grainsFor
+    && (grainsFor[1] - grainsFor[0]) > (win[1] - win[0]) * 2;
+  const viewStale = !!(outside || tooCoarse);
+  // The swarm is stale if its horizon is in neither copy. A margin, so playing
+  // forward inside the pad does not re-ask every frame.
+  const sr = state.grains?.sampleRate || 48000;
+  const margin = 1.5 * sr;
+  const near = head ? [head[0] + margin, head[1] - margin] : null;
+  const swarmStale = !!head && !covers(grainsFor, near) && !covers(swarmFor, near);
+  if (!viewStale && !swarmStale) return;
+
   clearTimeout(grainsViewTimer);
-  grainsViewTimer = setTimeout(() => { loadGrains(); }, 120);
+  grainsViewTimer = setTimeout(() => {
+    if (viewStale) loadGrains();
+    else loadSwarmGrains().then(drawGrains);
+  }, 120);
 }
 
 /// Warm and bright for sharp, brilliant grains; cool and deep for flat, dark.
@@ -7192,12 +7283,16 @@ function drawGrains() {
     label.textContent = `${g.total.toLocaleString()} grains${shown}`;
   }
 
+  // The swarm draws around the playhead, so it takes the playhead's copy of the
+  // schedule when the view is looking somewhere else — see `loadSwarmGrains`.
+  const sg = (state.swarm?.grains?.length ? state.swarm : g);
+
   // Levels in the stream are small absolute numbers; normalising against the
   // loudest grain is what makes size vary visibly across the swarm.
-  if (g._peak === undefined) {
-    g._peak = g.grains.reduce((m, r) => Math.max(m, r[4] || 0), 0) || 1;
+  if (sg._peak === undefined) {
+    sg._peak = sg.grains.reduce((m, r) => Math.max(m, r[4] || 0), 0) || 1;
   }
-  drawGrainSwarm(ctx, w, h, g);
+  drawGrainSwarm(ctx, w, h, sg);
 }
 
 /// The swarm: grains as a cloud orbiting the playhead.
