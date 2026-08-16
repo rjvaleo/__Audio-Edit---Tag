@@ -3726,6 +3726,17 @@ function renderStretch() {
     </div>`;
   // The panel has no heading any more, so its reset rides on the engine row —
   // the one line that is always there whichever engine is chosen.
+  // Random rides beside Reset, because they are the same gesture in opposite
+  // directions — one puts the tray back, the other throws it somewhere nobody
+  // would have chosen. The engine stays where it is for both.
+  eng.appendChild(resetButton(
+    'stretchRandom', 'Random',
+    'Throw every control on both sides somewhere at random. The engine stays where it is.',
+    () => {
+      const r = randomizeStretch();
+      toast(`Randomised — seed ${r.seed}`);
+    },
+  ));
   eng.appendChild(resetButton(
     'stretchReset', 'Reset all',
     'Reset every control on both sides, standard and extended',
@@ -5678,6 +5689,101 @@ async function resetExtended() {
   grainBuiltFor = null;
   renderStretch();
   renderGrainParams();
+}
+
+// ─────────────────────────────────────────────────────────── the randomiser ──
+//
+// Throw every control in the stretch tray somewhere at random, commit, and say
+// what it did. Built to find glitches: a cloud has too many interacting
+// parameters to reason about one at a time, and the combinations that break it
+// are exactly the ones nobody would think to try.
+//
+// **It drives the real controls rather than the drafts.** Every range, choice
+// and rocker in the tray is set through the same `input`/`change` events a hand
+// would produce, which means it can only ever produce values the interface
+// itself allows — no separate table of ranges to drift out of step with the
+// controls, which is gotcha 7 waiting to happen. It also means what it exercises
+// is the path a user exercises.
+//
+// The engine picker is deliberately excluded. Which engine you are in is where
+// you are, not a setting — the same reason Reset all leaves it alone — and a
+// sweep wants to hold it fixed and vary everything else.
+
+/// mulberry32. Small, fast, and good enough for choosing slider positions.
+///
+/// Seeded on purpose: a randomiser that cannot be replayed is useless for
+/// finding a fault, because the interesting run is always the one you have just
+/// lost. Every roll records its seed and the same seed gives the same tray.
+function rngFrom(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), 1 | t);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/// The containers a roll reaches, and the one it must not.
+const RANDOM_BOXES = ['stretchParams', 'grainShape', 'grainPitch', 'extEngine', 'extGrain'];
+
+/// Set every control in the tray at random. Returns what it rolled.
+///
+/// `seed` is optional; without one it picks a seed and tells you what it picked,
+/// so an interesting accident is still reproducible afterwards.
+function randomizeStretch({ seed = null, commit = true } = {}) {
+  const used = seed === null ? (Math.random() * 0xffffffff) >>> 0 : seed >>> 0;
+  const rnd = rngFrom(used);
+  const rolled = {};
+
+  for (const boxId of RANDOM_BOXES) {
+    const box = $(boxId);
+    if (!box) continue;
+
+    // Sliders and knobs. A log control's element is 0..1000 ticks, so a uniform
+    // roll over the element is uniform in log space — which is the right
+    // distribution for a control that was given a log sweep in the first place.
+    const ranges = [...box.querySelectorAll('input[type=range]')];
+    for (const input of ranges) {
+      const min = Number(input.min);
+      const max = Number(input.max);
+      const step = Number(input.step) || 1;
+      const steps = Math.max(1, Math.round((max - min) / step));
+      input.value = String(min + Math.round(rnd() * steps) * step);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    // Three-way choices — but never the engine picker.
+    for (const bar of box.querySelectorAll('.seg')) {
+      if (bar.id === 'stretchEngine') continue;
+      const btns = [...bar.querySelectorAll('.seg-btn')];
+      if (!btns.length) continue;
+      btns[Math.floor(rnd() * btns.length)].click();
+    }
+
+    // Rockers. Clicked only when the roll disagrees with where it already is,
+    // because the handler toggles rather than sets.
+    for (const b of box.querySelectorAll('.rocker')) {
+      const want = rnd() < 0.5;
+      if (b.classList.contains('on') !== want) b.click();
+    }
+
+    // One commit per box rather than one per control: `change` is what posts,
+    // and forty posts where five will do turns a sweep into a wait.
+    if (commit && ranges.length) {
+      ranges[ranges.length - 1].dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  // What actually landed, read back from the drafts rather than from what was
+  // rolled — those are two different things whenever a value is clamped, and
+  // the one worth recording is the one the engine got.
+  rolled.seed = used;
+  rolled.algorithm = state.stretchDraft?.algorithm || null;
+  rolled.stretch = JSON.parse(JSON.stringify(state.stretchDraft || {}));
+  rolled.grain = JSON.parse(JSON.stringify(state.grainDraft || {}));
+  return rolled;
 }
 
 async function resetEverything() {
