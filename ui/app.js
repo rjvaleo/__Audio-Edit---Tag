@@ -5074,7 +5074,9 @@ function keysButton() {
   b.title = 'Play the pitch from the computer keyboard. A is the tonic, the row '
     + 'above plays the notes between, Z and X shift an octave and latch. '
     + 'The notes follow whichever tuning is chosen.';
-  b.onclick = (e) => { e.stopPropagation(); openKeyboard(); };
+  // A toggle: it is a panel you leave up, so the way you put it away is the
+  // same button you got it with.
+  b.onclick = (e) => { e.stopPropagation(); (keyboardOpen() ? closeKeyboard : openKeyboard)(); };
   return b;
 }
 
@@ -8717,7 +8719,38 @@ function closeKeyboard() {
 }
 
 $('kbClose').onclick = closeKeyboard;
-$('keyboardModal').onclick = (e) => { if (e.target === $('keyboardModal')) closeKeyboard(); };
+
+/// Draggable by its header, because a floating panel that cannot be moved is a
+/// panel sitting on top of whatever you wanted to look at.
+(() => {
+  const panel = $('keyboardModal');
+  const head = $('kbDrag');
+  if (!panel || !head) return;
+  head.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    e.preventDefault();
+    head.setPointerCapture(e.pointerId);
+    head.classList.add('dragging');
+    const box = panel.getBoundingClientRect();
+    const dx = e.clientX - box.left;
+    const dy = e.clientY - box.top;
+    const move = (ev) => {
+      // Placed from the top-left once dragged, so the centring transform has to
+      // go — otherwise it fights the pointer by half the panel's width.
+      panel.style.transform = 'none';
+      panel.style.bottom = 'auto';
+      panel.style.left = `${Math.max(0, Math.min(window.innerWidth - box.width, ev.clientX - dx))}px`;
+      panel.style.top = `${Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy))}px`;
+    };
+    const up = () => {
+      head.classList.remove('dragging');
+      head.removeEventListener('pointermove', move);
+      head.removeEventListener('pointerup', up);
+    };
+    head.addEventListener('pointermove', move);
+    head.addEventListener('pointerup', up);
+  });
+})();
 
 /// Handle a keystroke as a note. Returns true if it was one.
 ///
