@@ -130,6 +130,73 @@ test('double-clicking any control returns it to its default', async ({ page }) =
   expect(errors).toEqual([]);
 });
 
+/// The spectrogram has to use its height.
+///
+/// It drew correctly for months and still looked broken, because the frequency
+/// axis was linear: an FFT's bins are evenly spaced in hertz, so on a 44.1 kHz
+/// file everything musical was crushed into the bottom 3% and the other 97% was
+/// exactly zero. Nothing in the source was wrong — the canvas was painted, the
+/// geometry was right, and every static check passed. Only looking at it found
+/// it, and only after the strip was made taller and the emptiness got bigger.
+///
+/// So this measures what a person would notice: how much of the height carries
+/// anything at all.
+/// **Where** the content sits, not how many rows have something in them.
+///
+/// Two earlier versions of this test passed with the axis forced back to linear,
+/// and both failures are worth keeping in mind:
+///
+/// - Counting lit rows on a sine: one partial is one row on either axis.
+/// - Counting lit rows on a *sweep*: a sweep visits every frequency, so it
+///   lights every row on either axis. Only the shape of the curve differs.
+///
+/// What actually distinguishes them is height. The scratch fixture is a 234 Hz
+/// sine, which on a linear axis to 22 kHz sits **1.1%** up the picture and on a
+/// log axis from 30 Hz sits **31%** up. That is the measurement, and it is the
+/// same one the real fault was found by: a file whose energy stopped at 600 Hz
+/// filled 3% of the height and looked broken.
+test('the spectrogram puts its content up the picture, not in a hairline at the bottom', async ({ page }) => {
+  const errors = watchErrors(page);
+  await ready(page);
+  await openFirstSound(page);
+  await page.evaluate(() => setMode('edit'));
+  await page.waitForFunction(() => state.showSpec && !!state.spec, { timeout: 20_000 });
+  await page.waitForTimeout(600);
+
+  const report = await page.evaluate(() => {
+    const c = document.getElementById('specCanvas');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let best = 0;
+    let bestRow = 0;
+    for (let y = 0; y < c.height; y++) {
+      let peak = 0;
+      for (let x = 0; x < c.width; x += 3) {
+        const i = (y * c.width + x) * 4;
+        const v = Math.max(d[i], d[i + 1], d[i + 2]);
+        if (v > peak) peak = v;
+      }
+      if (peak > best) { best = peak; bestRow = y; }
+    }
+    // Row 0 is the top of the canvas and the high end, so height above the
+    // bottom is the complement.
+    return { rows: c.height, bestRow, up: (c.height - 1 - bestRow) / (c.height - 1), best };
+  });
+
+  test.info().annotations.push({
+    type: 'brightest row',
+    description: `${(report.up * 100).toFixed(1)}% up the picture`,
+  });
+  expect(report.best, 'the spectrogram drew nothing at all').toBeGreaterThan(32);
+  // Linear puts this fixture at 1.1% and log at 31%. Ten per cent is clear of
+  // both the linear case and any reasonable change to the floor frequency.
+  expect(
+    report.up,
+    `the brightest content is only ${(report.up * 100).toFixed(1)}% up the picture — `
+    + 'the frequency axis has gone back to linear',
+  ).toBeGreaterThan(0.1);
+  expect(errors).toEqual([]);
+});
+
 /// Five engines, each with its own panel of controls. Switching between them
 /// rebuilds that panel, which is where a missing helper would throw.
 ///
