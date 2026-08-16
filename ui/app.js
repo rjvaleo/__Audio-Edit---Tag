@@ -976,7 +976,14 @@ function updateOverviewCue() {
 ///
 /// Above the waveform and below the selection: it describes the sound, it is
 /// not something you grab.
-const GRAIN_LAYER_CAP = 2000;
+/// How many schedule marks the waveform layer will draw.
+///
+/// Raised from 2,000. The server now spends its cap inside the visible window
+/// rather than across the whole document, so at any zoom there are thousands of
+/// real grains on screen to draw — and the old cap threw three quarters of them
+/// away again on this side. Canvas strokes a single path for all of them, so
+/// this is one draw call whatever the number.
+const GRAIN_LAYER_CAP = 12000;
 
 /// How long a struck grain stays lit, in seconds of output.
 const SIZZLE_SECONDS = 0.28;
@@ -1024,18 +1031,32 @@ function drawGrainLayer() {
   const stride = Math.max(1, Math.ceil(inView.length / GRAIN_LAYER_CAP));
 
   // ── the layer ───────────────────────────────────────────────────────────
+  // Marks grow with the zoom. Far out, each grain is a fraction of a pixel and
+  // wants to be a faint tick; far in, one grain may be tens of pixels wide, and
+  // a five-pixel tick says nothing about its length. So the mark is drawn at the
+  // grain's real duration once that is worth seeing, and the opacity rises as
+  // they thin out — which is what "more visible as you zoom in" has to mean if
+  // the density stays honest.
+  const pxPerFrame = w / Math.max(1, to - from);
+  const spread = inView.length ? (to - from) / inView.length : 0;
+  const apart = spread * pxPerFrame;
+  const ink = Math.min(0.55, 0.13 + apart * 0.06);
+  const tall = Math.min(h * 0.42, 5 + apart * 1.5);
+
   c.lineWidth = 1;
-  c.strokeStyle = 'rgba(140, 190, 250, 0.13)';
+  c.strokeStyle = waveInk(true);
+  c.globalAlpha = ink;
   c.beginPath();
   for (let i = 0; i < inView.length; i += stride) {
     const px = x(inView[i][1]);
     // Short ticks off the centre line rather than full-height bars: the
     // waveform underneath is the thing being read, and a picket fence over it
     // hides exactly what the marks are about.
-    c.moveTo(px, h * 0.5 - 5);
-    c.lineTo(px, h * 0.5 + 5);
+    c.moveTo(px, h * 0.5 - tall);
+    c.lineTo(px, h * 0.5 + tall);
   }
   c.stroke();
+  c.globalAlpha = 1;
 
   // ── the sizzle ──────────────────────────────────────────────────────────
   //
@@ -1850,6 +1871,7 @@ function zoom(factor) {
   state.view.to = b;
   loadPeaks();
   if (state.showSpec) loadSpectrogram();
+  grainsFollowView();
 }
 $('zoomIn').onclick = () => zoom(2);
 $('zoomOut').onclick = () => zoom(0.5);
@@ -1857,6 +1879,7 @@ $('zoomFit').onclick = () => {
   state.view.from = 0; state.view.to = 0;
   loadPeaks();
   if (state.showSpec) loadSpectrogram();
+  grainsFollowView();
 };
 
 // ------------------------------------------------------------- overview
@@ -6841,13 +6864,50 @@ async function refresh() {
 
 state.grains = null;
 
+/// The window the last request was built for, so a redraw at the same zoom does
+/// not re-ask.
+let grainsFor = null;
+
 async function loadGrains() {
   const f = state.selectedFile;
-  if (!f) { state.grains = null; drawGrains(); return; }
+  if (!f) { state.grains = null; grainsFor = null; drawGrains(); return; }
+
+  // Ask for the range on screen, in *output* frames — the view is in source
+  // frames, and the schedule is laid out along the output.
+  //
+  // This is what makes zooming show more rather than less. The cap is a few
+  // thousand grains and it used to be spread over the whole document, so a
+  // window holding a thousandth of the file held a handful of them: zoomed all
+  // the way in on a cloud of three million, you saw three. Spending the same
+  // cap inside the window means the detail follows the zoom, the way the
+  // waveform already does.
+  const v = state.view || {};
+  const ratio = state.edit?.stretch?.ratio ?? 1;
+  const from = Math.max(0, Math.floor((v.from ?? 0) * ratio));
+  const to = Math.ceil((v.to ?? 0) * ratio);
+  const q = to > from ? `&from=${from}&to=${to}` : '';
   try {
-    state.grains = await api(`/api/grains?p=${encodeURIComponent(f.path)}`);
-  } catch { state.grains = null; }
+    state.grains = await api(`/api/grains?p=${encodeURIComponent(f.path)}${q}`);
+    grainsFor = q;
+  } catch { state.grains = null; grainsFor = null; }
   drawGrains();
+}
+
+/// Re-fetch when the view has moved somewhere the last request does not cover.
+///
+/// Throttled: zooming and scrolling fire continuously, and each of these is a
+/// schedule walk on the server.
+let grainsViewTimer = null;
+function grainsFollowView() {
+  if (!state.selectedFile || !state.grains) return;
+  const v = state.view || {};
+  const ratio = state.edit?.stretch?.ratio ?? 1;
+  const from = Math.max(0, Math.floor((v.from ?? 0) * ratio));
+  const to = Math.ceil((v.to ?? 0) * ratio);
+  if (!(to > from)) return;
+  if (grainsFor === `&from=${from}&to=${to}`) return;
+  clearTimeout(grainsViewTimer);
+  grainsViewTimer = setTimeout(() => { loadGrains(); }, 120);
 }
 
 /// Warm and bright for sharp, brilliant grains; cool and deep for flat, dark.
@@ -7952,6 +8012,7 @@ function fitSelection() {
   state.view.to = Math.min(frames, state.sel.end + pad);
   loadPeaks();
   if (state.showSpec) loadSpectrogram();
+  grainsFollowView();
 }
 
 /// Peak's Zoom at Sample Level: as far in as the display goes, on the cursor.
@@ -7970,6 +8031,7 @@ function zoomToSample(end = false) {
   state.view.to = from + span;
   loadPeaks();
   if (state.showSpec) loadSpectrogram();
+  grainsFollowView();
 }
 
 /// Peak's Go To: jump to a marker, a region, or a time you type.
@@ -8016,6 +8078,7 @@ function centreOn(frame) {
   state.view.to = a + span;
   loadPeaks();
   if (state.showSpec) loadSpectrogram();
+  grainsFollowView();
 }
 
 // ---------------------------------------------------------- the operations
