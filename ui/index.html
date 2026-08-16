@@ -222,6 +222,11 @@
            control, so spray, layer scatter and the grain length are all in it. -->
       <div class="read-band" id="readBand"></div>
       <div class="playhead" id="playhead"></div>
+      <!-- The boundary between the waveform and the spectrogram, draggable.
+           Only present with the spectrogram on; see `.lane.split` in the
+           stylesheet, which owns the split and reads it from one custom
+           property so the two canvases cannot disagree about where it is. -->
+      <div class="lane-split" id="laneSplit" title="Drag to resize the spectrogram — double-click to put it back"></div>
       <div class="lane-empty" id="laneEmpty">Select a sound on the left.</div>
     </div>
 

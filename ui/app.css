@@ -496,9 +496,32 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
    here — the drawing code must not set it, or the two fight and one collapses. */
 /* The waveform is what you work against, so it keeps the larger share — but a
    quarter left the spectrogram squashed to the point of being unreadable, which
-   is worse than not showing it. A third is enough to see a formant move. */
-.lane.split #waveCanvas { height: 64%; }
-.lane.split #specCanvas { display: block; top: 64%; height: 36%; }
+   is worse than not showing it. A third is the default; the boundary is
+   draggable and `--split` is where it is.
+
+   One property, read by three rules. The canvases and the handle all derive
+   from it, so there is no arithmetic to get out of step — which is the same
+   reason the geometry lives here rather than in the drawing code. */
+.lane.split { --split: 64%; }
+.lane.split #waveCanvas { height: var(--split); }
+.lane.split #specCanvas { display: block; top: var(--split); height: calc(100% - var(--split)); }
+
+/* The handle sits on the seam and is mostly invisible until you go near it.
+   Taller than it looks: a one-pixel target is a one-pixel target, so the hit
+   area straddles the line while the line itself stays hairline. */
+.lane-split { display: none; }
+.lane.split .lane-split {
+  display: block; position: absolute; left: 0; right: 0;
+  top: var(--split); height: 9px; margin-top: -4px;
+  z-index: 6; cursor: ns-resize;
+}
+.lane.split .lane-split::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 4px; height: 1px;
+  background: var(--line-2);
+}
+.lane.split .lane-split:hover::after,
+.lane.split .lane-split.dragging::after { background: var(--accent); height: 2px; }
+body.resizing-lane { cursor: ns-resize; user-select: none; }
 
 .selection {
   position: absolute; top: 0; bottom: 0; z-index: 3;
