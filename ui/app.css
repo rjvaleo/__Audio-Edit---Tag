@@ -1359,13 +1359,14 @@ body.editing .dock { flex: 0 0 300px; }
 }
 .tiny:hover { border-color: var(--accent); color: var(--accent); }
 
-/* A switch is the Reset button with a colour for its state. Nothing else.
-   Same height, same padding, same border, same font — it inherits all of that
-   from `.tiny` and adds one rule. Off it is the Reset button. On it is filled. */
+/* A switch is the Reset button, with the selected state Pick and Window already
+   use. Off is `.tiny` untouched; on is `.seg-btn.active` — raised surface,
+   accent text — so "this one is chosen" looks the same everywhere in the tray
+   whether the control has two states or three. */
 .tiny.switch.on {
-  background: var(--accent); border-color: var(--accent); color: var(--sink);
+  background: var(--surface-3); color: var(--accent);
 }
-.tiny.switch.on:hover { color: var(--sink); filter: brightness(1.08); }
+.tiny.switch.on:hover { color: var(--accent); }
 
 .cpanel {
   background: var(--surface-2); border: 1px solid var(--line);
