@@ -616,3 +616,100 @@ fn a_late_block_is_counted() {
     );
     assert_eq!(shared.late_blocks.load(std::sync::atomic::Ordering::Relaxed), 1);
 }
+
+// ───────────────────────────────────────────────────────────────── the governor
+
+/// Sustained overload sheds layers rather than dropping out.
+///
+/// A dropout is worse than a thinner cloud by a distance, and layers are the
+/// dominant multiplier — each one is another whole engine. Sixteen vocoder
+/// layers at a long window measured 113% of the budget with blocks arriving
+/// late, which is exactly what this exists to survive.
+#[test]
+fn sustained_overload_sheds_layers() {
+    let src = source(4_800, 1);
+    let sp = params(4_800);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let start = shared.layer_cap();
+    assert!(start > 1, "nothing to shed");
+
+    // Reported directly rather than by making the DSP slow, which would test
+    // this machine's speed and flap on a busy one.
+    let over = std::time::Duration::from_millis(20);
+    let budget = std::time::Duration::from_millis(10);
+    for _ in 0..8 {
+        shared.record_block_cost(over, budget);
+    }
+    assert!(
+        shared.layer_cap() < start,
+        "the cap did not move after eight late blocks: {} then {}",
+        start,
+        shared.layer_cap(),
+    );
+}
+
+/// One late block is a hiccup, not a verdict.
+///
+/// Shedding on the first one would make the cloud flap every time the machine
+/// was briefly busy elsewhere, which is more distracting than the thing it is
+/// avoiding.
+#[test]
+fn a_single_late_block_does_not_shed_anything() {
+    let src = source(4_800, 1);
+    let sp = params(4_800);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let start = shared.layer_cap();
+    shared.record_block_cost(
+        std::time::Duration::from_millis(20),
+        std::time::Duration::from_millis(10),
+    );
+    assert_eq!(shared.layer_cap(), start, "one late block moved the cap");
+}
+
+/// And it takes them back when there is room, slowly.
+#[test]
+fn the_governor_recovers_when_the_engine_has_room() {
+    let src = source(4_800, 1);
+    let sp = params(4_800);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let budget = std::time::Duration::from_millis(10);
+
+    for _ in 0..8 {
+        shared.record_block_cost(std::time::Duration::from_millis(20), budget);
+    }
+    let shed = shared.layer_cap();
+    assert!(shed < crate_max());
+
+    // Cheap blocks, for a long time. Recovery is judged on the average, so it
+    // takes a few hundred of them — deliberately, so a cloud does not flap.
+    for _ in 0..2_000 {
+        shared.record_block_cost(std::time::Duration::from_micros(500), budget);
+    }
+    assert!(
+        shared.layer_cap() > shed,
+        "the cap never recovered: shed to {shed}, still {}",
+        shared.layer_cap(),
+    );
+}
+
+/// A cap earned on one file says nothing about the next.
+#[test]
+fn loading_a_document_gives_the_governor_its_head_back() {
+    let src = source(4_800, 1);
+    let sp = params(4_800);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    for _ in 0..8 {
+        shared.record_block_cost(
+            std::time::Duration::from_millis(20),
+            std::time::Duration::from_millis(10),
+        );
+    }
+    assert!(shared.layer_cap() < crate_max());
+    shared.reset_governor();
+    assert_eq!(shared.layer_cap(), crate_max());
+}
+
+fn crate_max() -> u32 {
+    // Mirrors `render::MAX_LAYERS`, which is what the governor starts from.
+    16
+}

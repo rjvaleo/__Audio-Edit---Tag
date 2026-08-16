@@ -153,6 +153,24 @@ pub struct Shared {
     /// Blocks that took longer to make than to play.
     pub late_blocks: AtomicU64,
 
+    // ───────────────────────────────────────────────────────────── the governor
+    //
+    // Layers are the dominant multiplier — each is another whole engine — so
+    // they are what gets shed when the callback cannot keep up. Sixteen vocoder
+    // layers at a long window measured 113% of the budget with blocks arriving
+    // late, and a dropout is worse than a thinner cloud by a distance.
+    //
+    // Deliberately hysteretic. Shedding on one late block would make the sound
+    // flap every time the machine hiccuped, and recovering instantly would put
+    // it straight back over. It falls fast and climbs slowly.
+    /// The most layers the callback may run right now.
+    layer_cap: AtomicU32,
+    /// Evidence for shedding, and evidence for recovering.
+    hot: AtomicU32,
+    cool: AtomicU32,
+    /// Layers the callback actually ran last block, for the interface to report.
+    pub layers_running: AtomicU32,
+
     /// A rack waiting to be adopted by the audio thread.
     ///
     /// Handed over rather than shared: effects carry filter state that only the
@@ -255,6 +273,10 @@ impl Shared {
             load_mean: AtomicU32::new(0),
             load_worst: AtomicU32::new(0),
             late_blocks: AtomicU64::new(0),
+            layer_cap: AtomicU32::new(crate::render::MAX_LAYERS as u32),
+            hot: AtomicU32::new(0),
+            cool: AtomicU32::new(0),
+            layers_running: AtomicU32::new(1),
             pending_rack: Mutex::new(None),
             pending_map: Mutex::new(None),
             pending_parts: Mutex::new(None),
@@ -394,6 +416,69 @@ impl Shared {
         if ppm > 1_000_000 {
             self.late_blocks.fetch_add(1, Ordering::Relaxed);
         }
+        self.govern(ppm, mean);
+    }
+
+    /// Shed layers when the callback cannot keep up, and take them back when it
+    /// can.
+    ///
+    /// **Falls fast, climbs slowly.** Evidence for shedding accumulates four
+    /// times faster than it decays, so a run of late blocks acts within about a
+    /// dozen of them; evidence for recovering has to hold for hundreds. Getting
+    /// this the other way round gives a cloud that flaps between thick and thin,
+    /// which is more distracting than either.
+    ///
+    /// Layers rather than window or density because layers are the dominant
+    /// multiplier — each one is another whole engine — and because thinning a
+    /// cloud is the least destructive of the three. The sound gets smaller, not
+    /// wrong.
+    fn govern(&self, ppm: u32, mean: u32) {
+        const OVER: u32 = 900_000;
+        const EASY: u32 = 450_000;
+        let cap = self.layer_cap.load(Ordering::Relaxed);
+
+        if ppm > OVER {
+            let hot = self.hot.fetch_add(4, Ordering::Relaxed) + 4;
+            if hot >= 32 {
+                self.hot.store(0, Ordering::Relaxed);
+                self.cool.store(0, Ordering::Relaxed);
+                if cap > 1 {
+                    self.layer_cap.store(cap - 1, Ordering::Relaxed);
+                }
+            }
+            return;
+        }
+
+        let hot = self.hot.load(Ordering::Relaxed);
+        if hot > 0 {
+            self.hot.store(hot.saturating_sub(1), Ordering::Relaxed);
+        }
+
+        // Recovery is judged on the average, not the last block: one cheap block
+        // says nothing about whether there is room for another engine.
+        if mean < EASY && cap < crate::render::MAX_LAYERS as u32 {
+            let cool = self.cool.fetch_add(1, Ordering::Relaxed) + 1;
+            if cool >= 400 {
+                self.cool.store(0, Ordering::Relaxed);
+                self.layer_cap.store(cap + 1, Ordering::Relaxed);
+            }
+        } else {
+            self.cool.store(0, Ordering::Relaxed);
+        }
+    }
+
+    /// The most layers the callback may run right now.
+    pub fn layer_cap(&self) -> u32 {
+        self.layer_cap.load(Ordering::Relaxed)
+    }
+
+    /// Give the governor its head back. Called when the document changes, since
+    /// a cap earned by one setting says nothing about the next.
+    pub fn reset_governor(&self) {
+        self.layer_cap
+            .store(crate::render::MAX_LAYERS as u32, Ordering::Relaxed);
+        self.hot.store(0, Ordering::Relaxed);
+        self.cool.store(0, Ordering::Relaxed);
     }
 
     /// Last, averaged and worst block cost, as a fraction of the budget.
@@ -891,6 +976,16 @@ impl Core {
         if let Ok(g) = shared.params.try_lock() {
             self.params = *g;
         }
+        // The governor's word, applied once and here. Clamping the parameters
+        // rather than teaching every engine about a cap means the stretcher,
+        // the layer bank and the block renderer all see one number and cannot
+        // disagree about how many layers are running.
+        let asked = self.params.grain.layers.max(1);
+        let allowed = asked.min(shared.layer_cap());
+        self.params.grain.layers = allowed;
+        shared
+            .layers_running
+            .store(allowed, std::sync::atomic::Ordering::Relaxed);
         if let Ok(g) = shared.source.try_lock() {
             if !Arc::ptr_eq(&self.source, &g) {
                 self.source = Arc::clone(&g);

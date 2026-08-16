@@ -214,6 +214,10 @@ pub fn load(
         // Whatever was separated belongs to the file that just closed.
         h.shared.set_parts(std::sync::Arc::new(fx::hstream::Parts::default()));
         h.shared.request_seek(0);
+        // And so does whatever the governor learned. A layer cap earned by a
+        // dense cloud on the last file would silently thin the next one.
+        h.shared.reset_governor();
+        h.shared.reset_load();
         // An audition carries no rack either. `list` is already the bare file
         // when raw, so the stretch and grain settings are gone with it; the
         // rack is held separately and has to be dropped on its own.

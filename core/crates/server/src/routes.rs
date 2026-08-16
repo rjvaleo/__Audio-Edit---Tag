@@ -2650,6 +2650,13 @@ fn api_engine_state(app: &Arc<App>) -> Response {
                             .late_blocks
                             .load(std::sync::atomic::Ordering::Relaxed) as f64,
                     )
+                    .set("layerCap", h.shared.layer_cap() as f64)
+                    .set(
+                        "layersRunning",
+                        h.shared
+                            .layers_running
+                            .load(std::sync::atomic::Ordering::Relaxed) as f64,
+                    )
             })
             .to_string()
     }) {
@@ -2760,6 +2767,16 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
                         "late",
                         h.shared
                             .late_blocks
+                            .load(std::sync::atomic::Ordering::Relaxed) as f64,
+                    )
+                    // What the governor has done about it. Reported because a
+                    // program that quietly plays fewer layers than the control
+                    // says is lying about its own settings.
+                    .set("layerCap", h.shared.layer_cap() as f64)
+                    .set(
+                        "layersRunning",
+                        h.shared
+                            .layers_running
                             .load(std::sync::atomic::Ordering::Relaxed) as f64,
                     )
             })

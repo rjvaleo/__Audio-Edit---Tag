@@ -480,7 +480,19 @@ impl App {
         let app = App {
             data_dir,
             library: RwLock::new(None),
-            buffer_frames: RwLock::new(None),
+            // Ask for 1024 frames rather than taking the device's default,
+            // which is 512 on most Macs.
+            //
+            // A block has to be *made* faster than it plays, and doubling its
+            // length doubles the time available without doubling the work —
+            // most of what an engine does per block is per-sample, and the
+            // fixed costs per callback are then paid half as often. It is the
+            // cheapest headroom there is. The price is about 21 ms of output
+            // latency at 48 kHz, which the playhead already measures and
+            // subtracts rather than assuming.
+            //
+            // Overridable, and remembered, through `/api/audio/buffer`.
+            buffer_frames: RwLock::new(Some(1024)),
             grain_cap: RwLock::new(DEFAULT_GRAIN_CAP),
             decoded: RwLock::new(None),
             index: RwLock::new(Index::default()),
