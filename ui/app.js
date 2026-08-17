@@ -1674,6 +1674,83 @@ function wireLaneSplit() {
 
 wireLaneSplit();
 
+// ------------------------------------------------- the left panel's width
+//
+// The library list is the one panel whose right width depends on what is in it
+// — long file names, deep folders — so it is the one worth being able to drag.
+
+const LEFT_W_STORE = 'audiolab.leftPanelWidth';
+const LEFT_W_DEFAULT = 330;
+/// Narrow enough to be a sliver, not so narrow the filter box collapses; wide
+/// enough to read a long path, not so wide the editor has nowhere to go.
+const LEFT_W_MIN = 200;
+const LEFT_W_MAX = 720;
+
+function leftPanelWidth() {
+  const v = Number(localStorage.getItem(LEFT_W_STORE));
+  return Number.isFinite(v) && v >= LEFT_W_MIN && v <= LEFT_W_MAX ? v : LEFT_W_DEFAULT;
+}
+
+function setLeftPanelWidth(px, { save = true, redraw = true } = {}) {
+  const v = Math.round(Math.min(LEFT_W_MAX, Math.max(LEFT_W_MIN, px)));
+  const panel = $('leftPanel');
+  if (panel) panel.style.setProperty('--left-w', `${v}px`);
+  if (save) {
+    // Kept in the browser like the lane split and the theme: how wide you like
+    // a panel is a property of the screen, not of the library.
+    try { localStorage.setItem(LEFT_W_STORE, String(v)); } catch { /* private mode */ }
+  }
+  // The lane's canvases are sized in pixels off their own width, so the
+  // waveform has to be re-placed after the space either side of it changes.
+  //
+  // Not on the first application. `redrawLane` reads `resizeTimer`, which is a
+  // `let` declared further down this file — calling it from top-level setup is
+  // inside its temporal dead zone and throws `Cannot access 'resizeTimer'
+  // before initialization`. That exception aborted the rest of `wireLeftPanelResize`
+  // *after* the width was applied and *before* the listeners were attached, so
+  // the grip appeared, took a cursor, and did nothing at all.
+  if (redraw) redrawLane();
+}
+
+function wireLeftPanelResize() {
+  const grip = $('leftGrip');
+  const panel = $('leftPanel');
+  if (!grip || !panel) return;
+  setLeftPanelWidth(leftPanelWidth(), { save: false, redraw: false });
+
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('dragging');
+    document.body.classList.add('resizing-panel');
+
+    // From the panel's own left edge, so the width follows the pointer exactly
+    // rather than drifting by wherever inside the grip the drag started.
+    const left = panel.getBoundingClientRect().left;
+    const move = (ev) => setLeftPanelWidth(ev.clientX - left, { save: false });
+    const up = (ev) => {
+      grip.releasePointerCapture(e.pointerId);
+      grip.classList.remove('dragging');
+      document.body.classList.remove('resizing-panel');
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+      setLeftPanelWidth(ev.clientX - left);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
+  });
+
+  // Same gesture as every other control here: double-click is "put it back".
+  grip.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setLeftPanelWidth(LEFT_W_DEFAULT);
+  });
+}
+
 /// The grain centre grip: same gesture as the lane split, including
 /// double-click to put it back.
 function wireGrainCentre() {
@@ -9751,3 +9828,4 @@ function wireTheme() {
 wireTheme();
 wireWaveColour();
 checkAudioDevice();
+wireLeftPanelResize();
