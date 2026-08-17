@@ -1,25 +1,51 @@
 # Audio Edit & Tag
 
+**Language and build**
+
 [![Rust](https://img.shields.io/badge/Rust-1.97.1-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2021-000000?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
 [![Cargo](https://img.shields.io/badge/Cargo-workspace-000000?logo=rust&logoColor=white)](#the-workspace)
-[![Tests](https://img.shields.io/badge/tests-965%20passing-2ea44f)](#building-from-source)
-[![Browser tests](https://img.shields.io/badge/browser%20tests-24%20passing-2ea44f?logo=playwright&logoColor=white)](#testing)
-[![CI](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml/badge.svg)](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml)
 [![Crates](https://img.shields.io/badge/workspace-10%20crates-dea584?logo=rust&logoColor=white)](#the-workspace)
 [![Lines](https://img.shields.io/badge/Rust-49k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
 [![Dependencies](https://img.shields.io/badge/direct%20deps-2-4c9a2a)](#the-stack)
 [![Unsafe](https://img.shields.io/badge/unsafe-none%20in%20the%20program-2ea44f?logo=rust&logoColor=white)](#the-stack)
+[![Build step](https://img.shields.io/badge/interface%20build%20step-none-2ea44f)](#the-stack)
+
+**How it is built and proved**
+
+[![CI](https://img.shields.io/badge/CI-build%20%2B%20989%20tests%20on%20every%20push-2088FF?logo=githubactions&logoColor=white)](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml)
+[![Runner](https://img.shields.io/badge/runner-ubuntu--latest-E95420?logo=ubuntu&logoColor=white)](docs/CI.md)
+[![Method](https://img.shields.io/badge/method-talk%20%E2%86%92%20document%20%E2%86%92%20build-8957e5)](#how-this-is-built)
+[![TDD](https://img.shields.io/badge/TDD-tests%20first-2ea44f)](#how-this-is-built)
+[![Tests](https://img.shields.io/badge/Rust%20tests-965%20passing-2ea44f?logo=rust&logoColor=white)](#testing)
+[![Browser tests](https://img.shields.io/badge/browser%20tests-24%20passing-2ea44f?logo=playwright&logoColor=white)](#testing)
+[![Playwright](https://img.shields.io/badge/Playwright-1.62-2EAD33?logo=playwright&logoColor=white)](#testing)
+[![Chromium](https://img.shields.io/badge/Chromium-headless-4285F4?logo=googlechrome&logoColor=white)](#testing)
+[![Static check](https://img.shields.io/badge/interface-statically%20checked-2ea44f)](#testing)
+[![Docs](https://img.shields.io/badge/docs-19%20documents-informational)](docs/)
+[![Screenshots](https://img.shields.io/badge/screenshots-generated%20from%20the%20app-6aa84f)](docs/screenshots/)
+
+**What it does**
+
 [![Engines](https://img.shields.io/badge/stretch%20engines-5%20live-8957e5)](#time-stretching)
-[![Shapers](https://img.shields.io/badge/live%20shapers-9-8957e5)](#live-shaping)
+[![Rack](https://img.shields.io/badge/rack%20effects-34-8957e5)](#live-shaping)
+[![Shapers](https://img.shields.io/badge/Peak%20DSP%20live-9-8957e5)](#live-shaping)
 [![Views](https://img.shields.io/badge/grain%20views-10-8957e5)](#watching-the-grains)
 [![Themes](https://img.shields.io/badge/themes-21-8957e5)](#themes)
+[![Routes](https://img.shields.io/badge/HTTP%20API-46%20routes-6aa84f)](#the-stack)
+[![Formats](https://img.shields.io/badge/WAV%20%C2%B7%20AIFF%20%C2%B7%20AIFC%20%C2%B7%20raw%20PCM-read%20%2B%20write-6aa84f)](#the-stack)
 [![Export](https://img.shields.io/badge/export-AIFF%20%2B%20embedded%20settings-6aa84f)](#export)
+[![Non-destructive](https://img.shields.io/badge/originals-never%20written%20to-2ea44f)](#editing)
+
+**Platform**
+
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](#start-here)
 [![Windows](https://img.shields.io/badge/Windows-x86__64%20cross--built-0078D6?logo=windows&logoColor=white)](#building-from-source)
+[![CoreAudio](https://img.shields.io/badge/CoreAudio-native-000000?logo=apple&logoColor=white)](#the-stack)
+[![WASAPI](https://img.shields.io/badge/WASAPI-native-0078D6?logo=windows&logoColor=white)](#the-stack)
 [![Offline](https://img.shields.io/badge/network%20calls-none-2ea44f)](#the-stack)
+[![Runtime](https://img.shields.io/badge/runtime-none%20to%20install-2ea44f)](#start-here)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#licence)
-[![Docs](https://img.shields.io/badge/docs-state%20%C2%B7%20architecture%20%C2%B7%20controls%20%C2%B7%20menus-informational)](docs/)
 
 Browse, audition, tag, edit and mangle a large audio library without moving or
 renaming a single audio file. Tags and edits are sidecar data; **the original
@@ -119,9 +145,44 @@ everything else does.
 
 ![TSV](https://img.shields.io/badge/TSV-flat%20files-6aa84f)
 ![JSON](https://img.shields.io/badge/JSON-hand--rolled-000000?logo=json&logoColor=white)
+![Sidecar](https://img.shields.io/badge/sidecar-originals%20untouched-2ea44f)
+
+</td></tr>
+<tr><td>Server</td><td>
+
+![HTTP/1.1](https://img.shields.io/badge/HTTP%2F1.1-hand--rolled%20on%20std%3A%3Anet-000000)
+![Threads](https://img.shields.io/badge/concurrency-thread%20per%20connection-000000)
+![Routes](https://img.shields.io/badge/routes-46-6aa84f)
+
+</td></tr>
+<tr><td>Tests</td><td>
+
+![Rust tests](https://img.shields.io/badge/cargo%20test-965-2ea44f?logo=rust&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-1.62-2EAD33?logo=playwright&logoColor=white)
+![Chromium](https://img.shields.io/badge/Chromium-headless-4285F4?logo=googlechrome&logoColor=white)
+![Static](https://img.shields.io/badge/ui--check-static%20analysis-2ea44f)
+
+</td></tr>
+<tr><td>Tooling <sub>(never shipped)</sub></td><td>
+
+![Node](https://img.shields.io/badge/Node-25.x-339933?logo=nodedotjs&logoColor=white)
+![npm](https://img.shields.io/badge/npm-dev%20only-CB3837?logo=npm&logoColor=white)
+![Screenshots](https://img.shields.io/badge/screenshots-scripted-6aa84f)
+
+</td></tr>
+<tr><td>Delivery</td><td>
+
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-every%20push-2088FF?logo=githubactions&logoColor=white)
+![Ubuntu](https://img.shields.io/badge/runner-ubuntu--latest-E95420?logo=ubuntu&logoColor=white)
+![Git](https://img.shields.io/badge/Git-000000?logo=git&logoColor=white)
 
 </td></tr>
 </table>
+
+**Node is development tooling and never ships.** `package.json` exists for the
+browser tests, the static interface check and the screenshot script — nothing
+else. The application is one Rust binary with no JavaScript runtime in it
+anywhere, which is why "no runtime to install" is a badge and not a boast.
 
 **Two external crates, on purpose.** `cpal` for the audio device and
 `tract-onnx` for the classifier — 136 crates in the tree once their own
@@ -522,6 +583,88 @@ Three decisions worth knowing, because each looks like a bug otherwise:
   value by a single bit. The deepest black is green by construction rather than
   visibly, and the green becomes plain from `--surface` upward.
 
+## How this is built
+
+The method matters as much as the stack here, and it is not the usual one.
+
+### Talk → document → build
+
+**In that order, and it is not optional.** Talking is where the thing gets
+decided. Writing it down is where we find out we meant different things. Only
+then is there something to build.
+
+Every substantial feature in this repo has a document written *before* the code
+and corrected *after* it, in the same file — `docs/EXPORT-LOOP.md` was written
+to be built to, then gained a "Corrected during the build" section when the tail
+algorithm turned out to be wrong on a dry chain. That correction is worth more
+than the original design, and deleting it to make the document look tidy would
+throw away the only record of why the code is the shape it is.
+
+Skipping to the end means building the wrong thing confidently. Nineteen
+documents in `docs/` are the evidence that this is a real rule rather than an
+aspiration.
+
+### Tests first, and tests that can actually fail
+
+**965 Rust tests and 24 browser tests.** Written first where the shape is known,
+and always before a fix is called done.
+
+Two lessons are burned into how they are written now, both expensive:
+
+- **A test that asserts shape rather than substance proves nothing.** "Every
+  palette derives a complete set of tokens" checked the tokens were *present* —
+  and passed happily while all 47 derived palettes rendered pure black, because
+  sixteen copies of `#000000` is a complete set. Its neighbour, "the surface
+  ladder is in order", passes on seven identical blacks: they are, technically,
+  in order. Both now demand distinct colours and a ladder that climbs.
+- **A test that cannot fail on this machine is not a test yet.** A correctly
+  written test asserted that the engine answers without an audio device, with a
+  comment saying so. It passed for months, on machine after machine, every one
+  of which had a sound card. CI has none — and found it on the first run.
+
+So: ask what environment would make a test fail. If the answer is "one I do not
+have", that is the finding, not a footnote.
+
+### Verify against the running thing
+
+Not against the source, and not against a function called in isolation. The
+theme panel was announced as working three times in one afternoon while its
+button had no handler, its pane was not registered, and its list had zero
+height — each time on the strength of testing the engine underneath it.
+
+**A test that calls a function directly and never opens the panel proves nothing
+about the panel.** Hence the browser layer, and hence the screenshots in this
+file being generated by driving the real binary rather than cropped from a
+recording.
+
+### Four layers, none of which replaces another
+
+| Layer | What only it can catch |
+|---|---|
+| `cargo test` — 965 | The arithmetic. Every filter, stretcher and shaper pinned frame by frame |
+| `tools/ui-check.mjs` | References that do not resolve, controls with no default, panes missing from the map. Found two dead functions on its first run, one of which had removed the channel maximiser from the product for three days |
+| `tests/ui/*.spec.mjs` — 24 | A panel that builds without error and renders nothing. Has happened more than once |
+| `tests/ui/globals.spec.mjs` | Two scripts declaring the same global. Caught **by name**, because what breaks is in whichever file lost — somewhere else entirely, where no behavioural test would look |
+
+### Measure, do not reason
+
+Load, cost and glitching are settled with numbers taken from the running engine,
+not from reading the code. A 300-trial randomised sweep found the glitches; a
+per-block cost histogram showed the vocoder's work is quantised into whole FFT
+transforms; `examples/septcost.rs` reports percentiles because a single worst
+case is noise.
+
+The same rule kills work as well as justifying it. A change to smooth that
+vocoder cost was measured, found to improve one case and make an eight-layer
+case **3.7× worse**, and reverted the same hour. `docs/GLITCH-SWEEP.md` records
+a fix that did not work and says so.
+
+### Everything runs on every push
+
+See [`docs/CI.md`](docs/CI.md). Its value is not that it runs the tests again —
+it is that it runs them **somewhere else**, on a Linux box with no sound card.
+That found two bugs of months' standing on its first two runs.
+
 ## Testing
 
     cargo test --release --manifest-path core/Cargo.toml     # 965
@@ -542,27 +685,9 @@ the binary and has no Node in it anywhere.
 The last one exists because static analysis cannot see a panel that is present,
 correct and zero pixels tall.
 
-### On every push
-
-`.github/workflows/ci.yml` builds the workspace, runs all 965 Rust tests, then
-drives the binary it just built through the 24 browser tests. One job, because
-the browser tests need that exact binary — the interface is `include_str!`-
-embedded, so a second build would be a second interface.
-
-It earned itself on its first two runs, both times by being a machine this had
-never run on:
-
-- **A Linux box.** `cargo test` had only ever run on macOS.
-- **A box with no sound card.** `/api/engine/state` opened the audio device, so
-  it answered 503 — and the interface polls it constantly. The test for that had
-  been written correctly months earlier and *could not fail anywhere it had ever
-  been run*. See [`docs/NO-AUDIO-DEVICE.md`](docs/NO-AUDIO-DEVICE.md).
-
-`tests/ui/globals.spec.mjs` is the other lesson from the same week: `ui/*.js`
-are classic scripts sharing one global scope, so a name declared twice silently
-replaces the other, and the thing that breaks is in whichever file lost —
-somewhere else entirely. It is checked by name because it cannot be caught by
-behaviour.
+**Why each layer exists, and what only it can catch**, is in
+[How this is built](#how-this-is-built) above. `.github/workflows/ci.yml` runs
+every one of them on every push — [`docs/CI.md`](docs/CI.md).
 
 ## Documentation
 
@@ -574,7 +699,14 @@ behaviour.
 | [`docs/MENUS.md`](docs/MENUS.md) | Every menu item, what it needs to be available, and what it does |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Where this is going — a sellable product, then VST and AU, and what each step costs |
 | [`docs/LICENSING-POLICY.md`](docs/LICENSING-POLICY.md) | What may and may not be read or linked, and why provenance matters once something is for sale |
-| [`docs/THIRD-PARTY.md`](docs/THIRD-PARTY.md) | Every dependency, its licence, and what it would take to remove it |
+| [`docs/THIRD-PARTY.md`](docs/THIRD-PARTY.md) | Every dependency, its licence, and what it would take to remove it — including the development tooling, which ships to nobody |
+| [`docs/GLITCH-SWEEP.md`](docs/GLITCH-SWEEP.md) | 300 randomised trials, what they found, and one fix that did not work |
+| [`docs/DATA-DIRECTORY.md`](docs/DATA-DIRECTORY.md) | Every file the program writes, where, and what is lost if you delete it |
+| [`docs/TRANSPORT-AND-RECORDING.md`](docs/TRANSPORT-AND-RECORDING.md) | Playing the sound on screen, and capturing what comes out of the channel |
+| [`docs/PRESETS-WITH-SOUND.md`](docs/PRESETS-WITH-SOUND.md) | Why a preset may carry the sound it was made on, and when that is wrong |
+| [`docs/SIXTH-ENGINE.md`](docs/SIXTH-ENGINE.md) | The feedback engine — built and pulled the same day, and why |
+| [`docs/WAVETABLE-MODE.md`](docs/WAVETABLE-MODE.md) | Reading the file as a wavetable rather than a timeline, and why it is not a second mechanism |
+| [`docs/OUTPUT-SAMPLED-GRAINS.md`](docs/OUTPUT-SAMPLED-GRAINS.md) | Sampling the schedule along the output rather than the source |
 | [`docs/LIVE-STATE-AUDIT.md`](docs/LIVE-STATE-AUDIT.md) | Every place a value change used to rebuild the object holding the state — the reverb-tail bug and its siblings |
 | [`docs/TEST-COVERAGE-AUDIT.md`](docs/TEST-COVERAGE-AUDIT.md) | What is tested, what is not, and which invariants no test has yet named |
 | [`docs/CI.md`](docs/CI.md) | What runs on every push, what it costs, and the two bugs it found on its first two runs |
