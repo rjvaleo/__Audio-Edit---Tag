@@ -362,6 +362,38 @@ impl Stretch {
             && !self.cloud
             // And so is a frozen, blurred or gated spectrum.
             && !self.shapes_the_spectrum()
+            // And so is a hybrid holding its two halves at different levels.
+            && !self.remixes_the_parts()
+    }
+
+    /// Is the hybrid engine remixing the parts it separated?
+    ///
+    /// The hybrid splits the sound into a harmonic part and a percussive one
+    /// and sums them back. At the default levels that sum reconstructs the
+    /// input, so at unity there is nothing to do — but turn the harmonic level
+    /// down and it is a *separation*, which is an effect in its own right and
+    /// has nothing to do with how long the sound is.
+    ///
+    /// Found by `tests/every_control_reaches_the_render.rs`, sweeping every
+    /// control on every engine after Freeze/Blur/Gate turned out to be inert at
+    /// unity. Same fault, same shape, four more controls.
+    ///
+    /// `margin` is not here: it is the separation's own parameter, and with the
+    /// two halves summed back at full level a different margin still reconstructs
+    /// the same input.
+    pub fn remixes_the_parts(&self) -> bool {
+        if self.algorithm != Algorithm::Hybrid {
+            return false;
+        }
+        // Against the *default*, not against zero or false. `morph_noise`
+        // defaults to on, so testing it as a bare truth made every hybrid
+        // document non-identity — every untouched sound would have been
+        // re-synthesised rather than passed through, and every one of them
+        // would have counted as edited.
+        let d = crate::hybrid::HybridParams::default();
+        (self.hybrid.harmonic_level - d.harmonic_level).abs() > 1e-4
+            || (self.hybrid.percussive_level - d.percussive_level).abs() > 1e-4
+            || self.hybrid.morph_noise != d.morph_noise
     }
 
     /// Are the vocoder's *spectrum* controls doing anything here?
