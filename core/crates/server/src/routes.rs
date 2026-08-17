@@ -2851,10 +2851,42 @@ fn api_engine_state(app: &Arc<App>) -> Response {
                             .load(std::sync::atomic::Ordering::Relaxed) as f64,
                     )
             })
+            .set("device", true)
             .to_string()
     }) {
         Ok(s) => Response::json(s),
-        Err(e) => Response::error(503, &e),
+        // No audio device is not an error *here*.
+        //
+        // `live::with` calls `ensure`, which opens the device — so a machine
+        // with no output made this route 503, and the interface polls it
+        // constantly. Every poll failed, on a box that is otherwise perfectly
+        // able to browse, edit and export. The test for this has always been
+        // right and has never been able to fail: every machine it ran on had a
+        // sound card, until CI.
+        //
+        // The other engine routes still refuse: transport and grains genuinely
+        // cannot do their job without a device, and saying so is honest. This
+        // one is a *status* — "what is playing" has a truthful answer when
+        // nothing can play, and it is "nothing".
+        Err(e) => Response::json(
+            Value::obj()
+                .set("playing", false)
+                .set("position", 0.0)
+                .set("sampleRate", 0.0)
+                .set("capturing", false)
+                .set("capturedFrames", 0.0)
+                .set("path", loaded.as_ref().map(|n| n.rel.clone()).unwrap_or_default())
+                .set("inFrames", loaded.as_ref().map(|n| n.frames as f64).unwrap_or(0.0))
+                .set("stream", Value::Null)
+                .set("channels", 0.0)
+                .set("overflows", 0.0)
+                .set("load", Value::Null)
+                // So the interface can say "no audio device" rather than show a
+                // transport that silently never moves.
+                .set("device", false)
+                .set("deviceError", e)
+                .to_string(),
+        ),
     }
 }
 
