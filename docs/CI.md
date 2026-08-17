@@ -64,6 +64,22 @@ assumed the machine had a device. It passed locally and failed on CI.
   87.83 MB, over GitHub's 50 MB guidance. Audio in git makes every clone heavy
   and every cold CI checkout slower. Not addressed.
 
+## The badge
+
+GitHub's own workflow-status badge **does not work on a private repository**.
+The README embeds images through a proxy that fetches them anonymously, and an
+anonymous request for a private repo's badge is a 404 — so it renders as a
+broken image for everyone, including the owner. Verified rather than assumed:
+
+    curl -o /dev/null -w '%{http_code}' \
+      https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml/badge.svg
+    404
+
+So the README carries a static badge that says what CI does and links to the
+Actions page, rather than a live one that would be permanently broken. If this
+repository is ever made public, the dynamic badge becomes the better choice and
+can go back.
+
 ## Watching a run
 
 `gh` is installed.
