@@ -28,22 +28,27 @@ instant and fetching them separately would let them disagree.
 
 ## The workspace
 
-Ten crates, ~47k lines. Dependencies point one way only — `audio-core` depends
+Ten crates, ~49k lines. Dependencies point one way only — `audio-core` depends
 on nothing, `server` depends on everything.
+
+*Counts re-measured 17 Aug 2026.*
 
 | Crate | Lines | Tests | Responsibility |
 |---|---:|---:|---|
 | `audio-core` | 2928 | 86 | Container probe and decode, **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 18186 | 308 | Biquads, EQ, compressor, channel maximiser, five stretchers, **nine live shapers**, the parameter layer, sines/transients/noise separation |
-| `edit` | 3540 | 112 | Non-destructive edit list, **zero-crossing snap**, **measurement**, windowed render, WAV and AIFF export |
-| `engine` | 4794 | 69 | Block renderer, **all five streaming engines**, transport, cpal device |
+| `fx` | 18870 | 319 | Biquads, EQ, compressor, channel maximiser, five stretchers, **34 shapers**, the parameter layer, sines/transients/noise separation, the tail constants and the progress tick |
+| `edit` | 4195 | 126 | Non-destructive edit list, **zero-crossing snap**, **measurement**, windowed render, WAV and AIFF export, **the looped export and its tail** |
+| `engine` | 5148 | 72 | Block renderer, **all five streaming engines**, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1453 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 13367 | 242 | HTTP/1.1, 44 API routes, JSON, persistence, **marker and region commands**, the live bridge |
+| `server` | 13864 | 245 | HTTP/1.1, 47 API routes, JSON, persistence, **marker and region commands**, the live bridge, **the export thread and its progress** |
 | `audiolab` | 67 | — | The binary |
-| | **47282** | **934** | |
+| | **49472** | **965** | |
+
+Plus **24 browser tests** across five spec files, which are not counted above —
+they run under Playwright rather than `cargo test`. See [`CI.md`](CI.md).
 
 ### Dependencies
 
@@ -334,7 +339,18 @@ itself.
 
 ## The server
 
-Hand-rolled HTTP/1.1 on `std::net`. Every path from the interface is resolved
+Hand-rolled HTTP/1.1 on `std::net`, **a thread per connection** — which is what
+lets a long job answer questions about itself while it runs. The export takes
+that seriously: `POST /api/export` starts a render on its own thread and returns
+at once, and `GET /api/export` reports its phase and progress and carries the
+outcome. Nothing holds a lock across a render, so the status route stays
+answerable throughout.
+
+One route is deliberately unlike the others. `GET /api/engine/state` answers
+**with or without an audio device**, because the interface polls it constantly
+and "what is playing" has a truthful answer when nothing can play. The rest of
+the engine routes still refuse without one. See [`NO-AUDIO-DEVICE.md`](NO-AUDIO-DEVICE.md).
+ Every path from the interface is resolved
 inside the library with `resolve_within`, which rejects absolute paths, parent
 components and Windows prefixes before touching the filesystem, then
 canonicalises both sides so a symlink pointing outside is caught too.
@@ -427,6 +443,17 @@ neither of which ships:
   throwaway instance on its own port with its own library. This is the only
   layer that catches a panel which builds without error and renders nothing,
   which has happened more than once.
+- **A third layer that is not a test file at all:** `tests/ui/globals.spec.mjs`
+  reads `ui/theme-derive.js` and `ui/app.js` as *text* and fails if they declare
+  the same top-level name. They are classic scripts sharing one global scope, so
+  the file that loads second silently wins — and what breaks is in whichever
+  file lost, somewhere else entirely. No behavioural test can see the cause. It
+  exists because a `toHex` added to `app.js` replaced the theme engine's, and
+  every derived palette rendered black for an afternoon.
+
+And all of it runs on every push — see [`CI.md`](CI.md), which also records the
+two bugs the first two runs found. Both needed a machine unlike this one: a
+Linux box, and a box with no sound card.
 
 ---
 

@@ -23,6 +23,19 @@ how you use it.
 | **Right-click / Ctrl-click** | Opens the **Edit** menu at the pointer, headed *Selection* or *No selection* so you can see which operations will be available. |
 | **Release after a drag** | If Loop is on, playback jumps to the start of the new selection rather than staying where the drag ended. |
 
+**The grain centre grip.** When a grain schedule is on screen, a short tab sits
+at the left edge of the lane on the line the grain marks are struck from. Drag
+it up or down and the marks and the sparks follow; **double-click puts it back**.
+"Back" is the waveform's centre, derived from where the spectrogram divider sits
+— not a fixed halfway. It used to be `h * 0.5` of the whole lane, which with the
+spectrogram splitting that lane put the marks 61 px below the sound they
+describe. Where you put it is remembered.
+
+It is a short tab rather than a full-width band on purpose: the rest of that
+line has to stay available for selecting. It also swallows `mousedown`, because
+the lane starts selections on that event and stopping `pointerdown` does not
+stop it — without the guard, dragging the grip also swept a selection.
+
 The lane is sample accurate when zoomed in far enough. Past the point where
 there are more pixels than samples it stops drawing a min/max envelope and
 draws the samples themselves — stems, dots and a faint joining line — and the
@@ -195,8 +208,14 @@ zero is a real setting and would be a lie about what is in the file.
 
 ## The grain visualiser
 
-Ten views in two suites, at `/grains3d` or in an in-page pop-over
-(**View → Grain views in a panel**).
+Ten views in two suites, at `/grains3d`, in an in-page pop-over
+(**View → Grain views in a panel**), or in their own window (**Window ▸
+Grains**).
+
+The window is where they live now. They used to occupy half the stretch tray and
+redraw beside the controls whether or not anyone was looking — which cost real
+frame time for nothing. Closed by default; the panel holds the *same* canvas,
+picker and 3D frame, moved rather than copied, so nothing had to be rewired.
 
 | Gesture | What it does |
 |---|---|
@@ -246,7 +265,9 @@ never triggers one.
 | `Space` | Play / pause |
 | `Enter` | Swap between Browse and Edit |
 | `M` | Add a marker at the playhead (Edit only) |
-| `Esc` | Clear the selection, return the cue to the start — and close any open menu or pop-over |
+| `Esc` | Closes the front window first — a menu, a dialog, the Keys panel, the Grains window — and only clears the selection and returns the cue when nothing is open |
+| `A` … `'` | **The note keyboard**, when Keys is open. The home row is the white notes from C; the row above holds the black ones, which is why a QWERTY keyboard fits a piano at all |
+| `Z` / `X` | Down / up an octave. It latches, so repeated presses keep going |
 | `⌘Z` / `Ctrl+Z` | Undo |
 | `⇧⌘Z` / `Ctrl+Shift+Z` | Redo |
 | `` ⌘` `` | Crop to the selection |
@@ -274,6 +295,19 @@ Along the top of Edit, above the overview.
 | Undo · Redo · Revert | Revert throws away every edit and returns to the file as it is on disk. |
 | Bit depth · **Export** | Renders to a new **AIFF beside the original**, named `<sound> <engine> <ratio> <pitch> <window>.aiff`, with every setting written into the file. The only thing here that writes audio, and it never writes over anything. |
 
+**With the loop on, Export asks first.** A box with two questions — how many
+repeats, and whether to keep the tail — plus *Whole file instead*, which skips
+the loop entirely. Enter exports, Escape closes. Loop off opens nothing and
+behaves exactly as it always did. The name gains ` loop 4x` or ` loop 4x tail`
+so a looped export is never mistaken for a whole-file one.
+
+**While it runs**, a bar appears in its own row under the toolbar — the phase
+(*Reading*, *Stretching*, *Effects*, *Tail*, *Writing*), a percentage, and
+**Stop**, which discards the part-written file. Its own row so that nothing on
+the toolbar moves because an export started. A reload mid-export picks the bar
+back up rather than losing it, and a second export while one is running is
+refused rather than interleaved.
+
 ## The transport row
 
 Under the waveform, in Edit only. Browse has no open document to transport.
@@ -282,6 +316,7 @@ Under the waveform, in Edit only. Browse has no open document to transport.
 |---|---|
 | ▶ / ❚❚ | Play / pause — **the sound on screen**, loading it first if the engine is still holding the last one. In the editor this is the whole document: edits, stretch, grains and rack. |
 | ■ | Stop, and return to the cue |
+| **no audio device** | On a machine with no output, a note appears here and these four controls go out of service. Everything else — browsing, editing, tagging, exporting — still works. See [`NO-AUDIO-DEVICE.md`](NO-AUDIO-DEVICE.md). |
 | | *Choosing a different sound, in the library or by switching tabs, stops the transport. It belongs to what is on screen.* |
 | ⟲ | Loop — the selection if there is one, otherwise the whole document |
 | ● | **Capture** — records what is playing; on stop it saves a new file beside the original, named for the file, the module and the time |

@@ -3,10 +3,11 @@
 [![Rust](https://img.shields.io/badge/Rust-1.97.1-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2021-000000?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
 [![Cargo](https://img.shields.io/badge/Cargo-workspace-000000?logo=rust&logoColor=white)](#the-workspace)
-[![Tests](https://img.shields.io/badge/tests-934%20passing-2ea44f)](#building-from-source)
-[![Browser tests](https://img.shields.io/badge/browser%20tests-10%20passing-2ea44f?logo=playwright&logoColor=white)](#testing)
+[![Tests](https://img.shields.io/badge/tests-965%20passing-2ea44f)](#building-from-source)
+[![Browser tests](https://img.shields.io/badge/browser%20tests-24%20passing-2ea44f?logo=playwright&logoColor=white)](#testing)
+[![CI](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml/badge.svg)](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml)
 [![Crates](https://img.shields.io/badge/workspace-10%20crates-dea584?logo=rust&logoColor=white)](#the-workspace)
-[![Lines](https://img.shields.io/badge/Rust-47k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
+[![Lines](https://img.shields.io/badge/Rust-49k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
 [![Dependencies](https://img.shields.io/badge/direct%20deps-2-4c9a2a)](#the-stack)
 [![Unsafe](https://img.shields.io/badge/unsafe-none%20in%20the%20program-2ea44f?logo=rust&logoColor=white)](#the-stack)
 [![Engines](https://img.shields.io/badge/stretch%20engines-5%20live-8957e5)](#time-stretching)
@@ -134,14 +135,17 @@ cross-build".
 | `audio-core` | 2928 | 86 | Container probe and decode (WAV, AIFF, AIFC, headerless PCM), **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 18186 | 308 | RBJ biquads, parametric EQ, compressor, channel maximiser, **five stretchers**, **nine live shapers**, the parameter layer, and the sines/transients/noise separation |
-| `edit` | 3540 | 112 | Non-destructive edit list, **zero-crossing snap**, **measurement** (peak, RMS, silence, clicks), windowed render, WAV and AIFF export |
-| `engine` | 4794 | 69 | Real-time block renderer, all five streaming engines, transport, cpal device |
+| `fx` | 18870 | 319 | RBJ biquads, parametric EQ, compressor, channel maximiser, **five stretchers**, **34 shapers**, the parameter layer, and the sines/transients/noise separation |
+| `edit` | 4195 | 126 | Non-destructive edit list, **zero-crossing snap**, **measurement** (peak, RMS, silence, clicks), windowed render, WAV and AIFF export, **the looped export and its tail** |
+| `engine` | 5148 | 72 | Real-time block renderer, all five streaming engines, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1453 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 13367 | 242 | HTTP/1.1 on `std::net`, 44 API routes, JSON, persistence, **marker and region commands**, the live bridge to the audio thread |
+| `server` | 13864 | 245 | HTTP/1.1 on `std::net`, a thread per connection, 47 API routes, JSON, persistence, **marker and region commands**, the live bridge to the audio thread |
 | `audiolab` | 67 | — | The binary |
-| | **47282** | **934** | |
+| | **49472** | **965** | |
+
+Plus **24 browser tests** across five spec files, which run under Playwright
+rather than `cargo test`. Counts re-measured 17 Aug 2026.
 
 ## Time stretching
 
@@ -348,6 +352,41 @@ is AIFC.
 Reading those settings back in is **not built yet** — but every file written
 carries them, so nothing exported now will need exporting again for it.
 
+### Exporting a loop
+
+If the transport loop is on, Export asks two questions instead of none: **how
+many repeats**, and **whether to keep the tail**. Loop off is the export it
+always was, and opens nothing.
+
+The loop range is the transport's own rule — the selection if there is one, the
+whole document if there is not. The seam matches the engine exactly, a quarter
+of the loop capped at 512 frames, faded out and back in through zero rather
+than overlapped, so **every repeat is exactly the selection's length** and the
+file sounds like what you auditioned.
+
+The **rack runs once, continuously, over the whole tiled stream**. That is the
+point of it: rendering the loop wet and then repeating it would give every
+repeat its own severed reverb tail, chopped at the seam and restarted. This way
+the reverb and the delay bleed across each repeat as they do when it loops.
+
+**The tail** is that same rack fed silence until it stops speaking — cut at the
+last frame above −80 dBFS, plus 50 ms so the file ends in silence. A rack with
+nothing in it that can ring gets no tail at all. Capped at 30 seconds, because
+reverb `freeze` is unbounded by construction and a render has to end.
+
+### Watching it
+
+An export of a four-minute file takes twenty-five seconds; a heavy stretch takes
+minutes. It runs on a thread of its own and reports as it goes — a bar under the
+toolbar naming the phase, and a **Stop** that discards the part-written file.
+
+The tick reaches inside `Stretch::process`, which is the part that actually
+takes the time. A bar fed only by the write loop would sit at zero for the whole
+wait and then jump to full. Progress is counted in *work* frames rather than
+output frames, because `layered` runs the whole engine once per layer.
+
+See [`docs/EXPORT-LOOP.md`](docs/EXPORT-LOOP.md).
+
 ## Tagging
 
 Three systems, kept apart on purpose. Conflating them is what made the old tags
@@ -367,8 +406,13 @@ from itself.
 
 ## Watching the grains
 
-Ten views in two suites, at `/grains3d` — standalone, or in a pop-over over the
-editor. They are **not a decoration over the audio**: the picture is drawn from
+Ten views in two suites, at `/grains3d` — standalone, in a pop-over, or through
+**Window ▸ Grains**.
+
+They used to take half the stretch tray and redraw beside the controls whether
+or not you were looking at them. They are a window now, closed by default, so
+they cost nothing until opened. The 2D swarm, the picker and the 3D frame are
+the same elements moved into it, not copies. They are **not a decoration over the audio**: the picture is drawn from
 `fx::grain::grains()`, the same schedule the renderer is working through, with
 `rand01` ported to JavaScript as a BigInt splitmix64 that matches the Rust
 exactly. A grain you see is a grain you hear.
@@ -388,6 +432,18 @@ playhead.
 ## Themes
 
 Twenty-one, from **Theme** in the left rail. They come in two kinds.
+
+At the top of that panel, above the palettes, is **the waveform's own colour** —
+Blue, Green, Red, Purple, or any colour you like from a swatch. All four are
+neon by construction: the chroma is past what sRGB can show, so it clamps to the
+edge of the gamut. Measured off the pixels: `rgb(0,159,255)`, `rgb(0,239,42)`,
+`rgb(255,0,0)`, `rgb(185,0,255)`.
+
+It is deliberately **not** part of the palette engine. A theme derives sixty
+tokens so the chrome holds contrast; the waveform is not chrome — it is the
+thing being looked at, and it should be the loudest colour on screen rather than
+a consequence of the surfaces behind it. `Theme.apply` only clears tokens in its
+own map, so `--wave` survives every palette change and every "No theme".
 
 **Derived** — twenty palettes ported from Emovis, each giving four to six
 colours from which the engine works out a hundred-odd tokens. That is the right
@@ -423,9 +479,9 @@ Three decisions worth knowing, because each looks like a bug otherwise:
 
 ## Testing
 
-    cargo test --release --manifest-path core/Cargo.toml     # 934
+    cargo test --release --manifest-path core/Cargo.toml     # 965
     npm run check                                            # the interface, statically
-    npm run test:ui                                          # the interface, in a browser
+    npm run test:ui                                          # the interface, in a browser  # 24
 
 The Rust tests are the bulk of it and need nothing installed. The other two are
 development tooling — `package.json` exists for them alone; the application is
@@ -440,6 +496,28 @@ the binary and has no Node in it anywhere.
 The last one exists because static analysis cannot see a panel that is present,
 correct and zero pixels tall.
 
+### On every push
+
+`.github/workflows/ci.yml` builds the workspace, runs all 965 Rust tests, then
+drives the binary it just built through the 24 browser tests. One job, because
+the browser tests need that exact binary — the interface is `include_str!`-
+embedded, so a second build would be a second interface.
+
+It earned itself on its first two runs, both times by being a machine this had
+never run on:
+
+- **A Linux box.** `cargo test` had only ever run on macOS.
+- **A box with no sound card.** `/api/engine/state` opened the audio device, so
+  it answered 503 — and the interface polls it constantly. The test for that had
+  been written correctly months earlier and *could not fail anywhere it had ever
+  been run*. See [`docs/NO-AUDIO-DEVICE.md`](docs/NO-AUDIO-DEVICE.md).
+
+`tests/ui/globals.spec.mjs` is the other lesson from the same week: `ui/*.js`
+are classic scripts sharing one global scope, so a name declared twice silently
+replaces the other, and the thing that breaks is in whichever file lost —
+somewhere else entirely. It is checked by name because it cannot be caught by
+behaviour.
+
 ## Documentation
 
 | | |
@@ -453,6 +531,9 @@ correct and zero pixels tall.
 | [`docs/THIRD-PARTY.md`](docs/THIRD-PARTY.md) | Every dependency, its licence, and what it would take to remove it |
 | [`docs/LIVE-STATE-AUDIT.md`](docs/LIVE-STATE-AUDIT.md) | Every place a value change used to rebuild the object holding the state — the reverb-tail bug and its siblings |
 | [`docs/TEST-COVERAGE-AUDIT.md`](docs/TEST-COVERAGE-AUDIT.md) | What is tested, what is not, and which invariants no test has yet named |
+| [`docs/CI.md`](docs/CI.md) | What runs on every push, what it costs, and the two bugs it found on its first two runs |
+| [`docs/NO-AUDIO-DEVICE.md`](docs/NO-AUDIO-DEVICE.md) | What works without a sound card, what does not, and why no test caught it for months |
+| [`docs/EXPORT-LOOP.md`](docs/EXPORT-LOOP.md) | Exporting the loop with repeats and a tail, and watching an export run |
 | [`visualiser/PRECOMPUTED-WEATHER.md`](visualiser/PRECOMPUTED-WEATHER.md) | The aesthetic argument behind the ten grain views |
 | [`Reference Docs/md/STRETCH-ROADMAP.md`](Reference%20Docs/md/STRETCH-ROADMAP.md) | The stretching theories, which are implemented, and what is next |
 | [`Reference Docs/md/`](Reference%20Docs/md/) | Every reference PDF extracted to markdown — the Driedger thesis, the Peak manual chapters. **Read these, not the PDFs** |
@@ -506,7 +587,7 @@ between the Mac and the PC.
 ## Building from source
 
     cargo build --release --manifest-path core/Cargo.toml     # this machine
-    cargo test  --release --manifest-path core/Cargo.toml     # 934 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 965 tests
 
 For the Windows build from a Mac, once per machine:
 

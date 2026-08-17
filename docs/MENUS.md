@@ -1,8 +1,8 @@
 # The menus
 
-Six menus across the top — **File**, **Edit**, **Action**, **DSP**, **Audio**,
-**View** — plus a right-click anywhere on the waveform, the overview or the
-region strip, which opens the Edit menu at the pointer.
+Seven menus across the top — **File**, **Edit**, **Action**, **DSP**, **Audio**,
+**Window**, **View** — plus a right-click anywhere on the waveform, the overview
+or the region strip, which opens the Edit menu at the pointer.
 
 Action and DSP are named after Peak's own, because that is where the commands
 came from and where anyone who has used Peak will look for them.
@@ -111,6 +111,16 @@ way to run them.
 | Loop | | a file | Loops the selection, or the whole document if there is none. |
 | Capture what is playing | | an open document | Arms the recorder. What comes out of the channel is captured until playback stops, then written as a new file beside the original, named for the file, the module that processed it and the time. It never overwrites. |
 | Reset time, pitch and grains | | an open document | Puts every stretch control back — both the standard and the extended side — while staying on the engine you are working in. Leaves the grain seed alone. |
+
+## Window
+
+The panels that are not part of the editor's own layout. Both are floating, both
+are closed by default, and **Escape closes the front one**.
+
+| Item | Shortcut | Needs | What it does |
+|---|---|---|---|
+| Grains | | an open document | Opens the grain views — the 2D swarm and both 3D suites, with the picker and the legend. They used to take half the stretch tray and redraw beside the controls whether or not anyone was looking; as a window they cost nothing until opened. The panel holds the *same* elements, moved, not copies. |
+| Keys | | an open document | The note keyboard. Plays the pitch from the computer keyboard, bound to whatever tuning is selected. |
 
 ## View
 

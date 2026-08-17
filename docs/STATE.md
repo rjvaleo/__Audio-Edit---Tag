@@ -1,15 +1,26 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **934 Rust tests
-and 10 browser tests passing, working tree clean.** Everything an agent picking
-this up needs to know, in one file, because the per-topic notes live in
+Written 11 August 2026 as a handoff, and kept up to date since. **965 Rust tests
+and 24 browser tests passing, CI green.** Everything an agent picking this up
+needs to know, in one file, because the per-topic notes live in
 `~/.claude/projects/…` on one machine and this repo travels.
 
-**Branch `feedback-engine`, HEAD `c2a4e54`.** `main` is tagged
-`snapshot-2026-08-15` for the state before that branch. The branch name is now
-just a name — the feedback engine it was opened for was built and pulled on the
-same day (§5b). What the branch actually carries is the live-state fixes, the
-theme engine, the interface tests, and the maximiser module.
+**Branch `main`, HEAD `3638914`.** 233 commits, ~49.5k lines of Rust. The work
+formerly on `feedback-engine` is merged; that branch name was already just a
+name, since the feedback engine it was opened for was built and pulled on the
+same day (§5b).
+
+**Two things about this repo's history**, both from 17 Aug 2026:
+
+- **Every commit SHA changed.** The history was rewritten to strip
+  `Co-Authored-By` trailers from 175 of 231 commits, at the owner's instruction.
+  Any hash quoted in this file or in an older document no longer resolves. The
+  content is untouched — the tree hash before and after is identical.
+- **Do not add that trailer to new commits.** Their repo, their authorship.
+
+**Everything runs on every push** — `.github/workflows/ci.yml`, see
+[`CI.md`](CI.md). It found two long-standing bugs on its first two runs, both
+because it is a machine unlike this one.
 
 Run it as `AUDIOLAB_DATA="$PWD/data" ./core/target/release/audiolab` — **not**
 through `Start.command`, which prefers `bin/audiolab` and may be weeks stale.
@@ -26,7 +37,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 934 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 965 tests
     npm run check                                             # the interface, statically
     npm run test:ui                                           # the interface, in a browser
 
@@ -91,7 +102,7 @@ rebuild.
 Rewritten from Python into Rust starting 8 Aug 2026. The old Python app still
 sits in `app/`, untouched and **not deleted**.
 
-Ten crates in `core/crates/`, ~47k lines.
+Ten crates in `core/crates/`, ~49.5k lines.
 
 | crate | what it is |
 |---|---|
@@ -1151,6 +1162,49 @@ you found the sound.
 
 ---
 
+### Exporting a loop, with a tail  *(16 Aug 2026)*
+
+With the transport loop on, Export asks how many repeats and whether to keep the
+tail. Loop off is unchanged and opens nothing.
+
+The loop is **live-transport state and stays that way** — `state.sel` +
+`state.loopOn`, never in the `EditList` or the session. It reaches the file by
+being named in the request: `from`/`to` in *source* frames, which the server maps
+through the stretch.
+
+The seam matches the engine exactly (`loop_fade`: a quarter of the loop capped at
+512 frames, faded to zero and back rather than overlapped), so every repeat is
+exactly the selection's length. The **rack runs once over the whole tiled dry
+stream** — tiling wet audio would give every repeat its own severed reverb tail.
+
+The tail is that rack fed silence, cut at the last frame above `TAIL_SILENCE`
+(−80 dBFS) plus 50 ms, capped at 30 s. A rack that cannot ring gets no tail —
+the first version used the engine's countdown and appended four seconds of pure
+silence to every dry export, which a real export caught (8.500s of file for
+4.500s of audio). Full detail in [`EXPORT-LOOP.md`](EXPORT-LOOP.md).
+
+### Watching an export  *(17 Aug 2026)*
+
+Export is asynchronous. `POST /api/export` starts a render on its own thread and
+answers at once; `GET /api/export` gives phase, progress and the outcome; `POST
+/api/export/stop` gives up and deletes the part file.
+
+The progress tick reaches **inside `Stretch::process`**, because that is the part
+that takes the time — a bar fed only by the write loop sits at zero for the whole
+wait. It ticks from the chunk loops of WSOLA, the vocoder, PVSOLA and the hybrid,
+and from the granular layer boundary. Every existing signature was left alone by
+adding `_with` variants, so none of the ~100 test call sites moved.
+
+Counted in **work frames, not output frames**: `layered` runs the whole engine
+once per layer, so a bar scaled to output length fills in the first sixteenth of
+a sixteen-layer render and stops. The total must match exactly what the renderer
+steps — counting a reading pass the unstretched path does not make left a
+finished export showing 50%.
+
+Cancel rides back on the progress tick's return value, so it reaches inside the
+stretch: 1.3 s from Stop to clear on a ×8 six-layer export, against the entire
+remaining render before.
+
 ## 8. The visualisers
 
 `visualiser/grain-views.html` — one p5.js WEBGL page served at `/grains3d`,
@@ -1332,6 +1386,35 @@ decisions.**
 
 ---
 
+### The interface's scripts share one global scope  *(17 Aug 2026)*
+
+`ui/theme-derive.js`, `ui/theme-palettes.js` and `ui/app.js` are **classic
+scripts**. Every top-level `function` and `const` lands on the same global
+object and the file that loads last wins.
+
+A `function toHex(colour)` added to `app.js` replaced the theme engine's
+`toHex(r, g, b)`. Nothing errored. Every `hsl()` in the engine returned
+`#000000` — **69 of a derived theme's 86 tokens** — and built a canvas doing it,
+so applying a theme took 2.7 seconds. Direct themes never call `hsl()`, so
+Conifer looked fine and only the 47 derived palettes were dead.
+
+`tests/ui/globals.spec.mjs` now fails on a collision **by name**, because what
+breaks is in whichever file lost, somewhere else entirely.
+
+### A test that cannot fail here is not a test yet  *(17 Aug 2026)*
+
+Found twice in one day by CI. `/api/engine/state` opened the audio device, so it
+answered 503 on a box with no output — and the test asserting it answers 200 had
+been written months earlier, correctly, with a comment saying it would fail on a
+machine without an output. Every machine it ran on had a sound card. See
+[`NO-AUDIO-DEVICE.md`](NO-AUDIO-DEVICE.md).
+
+### The browser tab holds the old JavaScript  *(17 Aug 2026)*
+
+The `include_str!` rebuild trap has a mirror. After rebuilding and restarting the
+binary, an already-open tab is still running the previous `app.js`. A fixed bug
+was diagnosed as still broken this way. Reload with a cache-buster first.
+
 ## 11. Reference docs
 
 Every PDF in `Reference Docs/` is extracted to markdown in `Reference Docs/md/`.
@@ -1467,50 +1550,66 @@ down:**
 
 ## 13. Recent history
 
-    c2a4e54  Pull the feedback engine
-    2d6c47f  Audio is drawn in blue or green, whatever the theme
-    35d6174  Bound the WSOLA splice search to a hop
-    619174d  Give the interface's colours names, so a theme can reach them
-    f0e51ff  Port the theme engine, rewrite its interface
-    8153940  Drive the real interface in a real browser
-    ea39ee5  A scratch instance, on a port of its own
-    836c4df  Cover the live path, name two invariants, run the interface check
-    21d2d3b  Audit: the tests are deep on arithmetic and absent on the program
-    b61a430  The maximiser is a module
-    9583dac  A check for the interface, which had none
-    fe2b65a  Saving a preset asks for a name and nothing else
-    c23cc7a  The waveform is the material, not the effects
-    96ce7e3  The rack panels were writing to an orphaned copy
-    6030739  Prove a control moved while playing reaches the effect
-    a496375  Position had no default, and nothing said so
-    8c5f88d  Density and Layers stop rebuilding on every step of a drag
-    abb8bd6  Stop rebuilding the chain to say a number changed
-    f8d0d26  Audit: what rebuilds live audio state, and why the reverb ducks
-    1aa67ef  Double-click to reset actually reaches the controls now
-    3cfe3df  The sixth engine
-    b5a0f62  Ten views become two, because eight of them stop being true
-    c7f326f  Decide where this is going before building any of it
-    d22eb6b  A short loop shortens its fade instead of stopping the machine
-    6d120d7  One keyboard listener, because six could not agree
-    5f874c6  Snap edits to zero crossings, and do the rest of Peak's edits
-    4cb7260  Write down the whole state, including the Peak work
-    4cda809  Draw every shaper from its own description
-    d260c74  Wire the shapers into the rack, generically
-    95e843a  Add parameter API and live shape effects
-    05879fb  Bring the docs up to live layering
-    d520e3e  Layer the streaming engines live, so you can hear them
-    3b65f58  Scatter the layers, so they make a cloud instead of a comb
-    e77d979  Stream the hybrid — all five engines run in the callback now
-    3fe4cea  Cross-fade between engines, so switching one does not click
-    6a52cdf  Stream PVSOLA, and spread its work across the blocks it plays for
-    e492768  Stream the phase vocoder, and delete the copy of it
-    f1e8ac3  Let the engine picker change what you hear, not just what you export
-    3b4d361  Put back the level granular layering takes away
-    0756f51  Write down the three options on granular layers
-    d08064c  Write the whole project state down in one file
-    15b86dc  Make WSOLA a streaming engine, and have the offline render drive it
-    eebe611  Pin the whole routing table, and add a preset manager
-    90e07bb  Show the underlying engines' controls on the two new panels
-    5de2f48  Finish the stretch roadmap: PVSOLA and a hybrid engine
-    da0cd6e  Stop tracking the built programs, and run whichever is newer
-    d990eb3  Serve p5 and the fonts from the binary, so the views work offline
+*Regenerated 17 Aug 2026. Every hash below is post-rewrite; the ones quoted in
+older documents no longer resolve.*
+
+    3638914  The no-device test must not assume the machine has a device
+    378284e  Stop asking the engine on a machine with no audio device
+    f54de94  Engine state answers on a machine with no audio device
+    f163e61  One CI job, not two
+    69a379e  Build and test on every push
+    8ac7ba9  Watch an export run, and fix the theme engine going black
+    c12aa84  Add loop export UI and fix tail trimming
+    fdebe0f  Add loop export and polish stretch UI
+    d9508e9  Toggle "on" is the same selected state as Pick and Window
+    760fa40  prsrv trnsnts
+    f99a94f  Stop the toggle buttons wrapping to two lines
+    875d4f4  Toggles are the Reset button with a colour for state
+    fa0e57f  Switches are buttons now, like every other button in the tray
+    76d4808  "A is the tonic" is the whole of it
+    511165d  Two hints, not four
+    a217fc0  Narrow the keys, and give the hints one line to take turns on
+    ddf5c33  The keyboard is a floating panel, not a shadowbox
+    23157fb  Play the pitch from the computer keyboard
+    295538f  The swarm needs the playhead's grains, not the view's
+    43059eb  Zooming in showed fewer grains, not more
+    4885f78  The envelope's centre was half a pixel wide
+    1219252  Layer spread and Overlap re-seeded every engine on every block
+    f953fd4  Remove the governor: it caused the glitching it was meant to prevent
+    b65d82c  Keep the engines playing: a bigger buffer, and a governor that sheds layers
+    ab7e288  The engine measures what its blocks cost, and says so
+    45e6049  The spectrogram's frequency axis was linear
+    c4c3800  Drag the boundary between the waveform and the spectrogram
+    17e3aab  Bound the envelope's edge slope, and hoist the hybrid's map
+    e103efd  The clicks are an envelope slope, not an envelope value
+    6b7765e  A randomiser, and 300 trials of what it breaks
+    fe64b56  The waveform is green
+    46ec26f  Conifer: the interface's own colours, in green
+    98c0e19  Bring the docs up to what is actually built
+    9632f7d  Pull the feedback engine
+    74f0ffb  Audio is drawn in blue or green, whatever the theme
+    753ef68  Bound the WSOLA splice search to a hop
+    9c6fcee  Give the interface's colours names, so a theme can reach them
+    03bd3a9  Port the theme engine, rewrite its interface
+    b9ccae9  Drive the real interface in a real browser
+    1239a14  A scratch instance, on a port of its own
+    4f9780c  Cover the live path, name two invariants, run the interface check
+    ac885ae  Audit: the tests are deep on arithmetic and absent on the program
+    c5f740a  The maximiser is a module
+    7795ade  A check for the interface, which had none
+    0f46dde  Saving a preset asks for a name and nothing else
+    3b8519e  The waveform is the material, not the effects
+    65630c2  The rack panels were writing to an orphaned copy
+    fa93f72  Prove a control moved while playing reaches the effect
+    1b8d7ee  Position had no default, and nothing said so
+    2ab1eda  Density and Layers stop rebuilding on every step of a drag
+    27207d8  Stop rebuilding the chain to say a number changed
+    8262e4d  Colour, not commentary
+    3fe5cfc  Audit: what rebuilds live audio state, and why the reverb ducks
+    b277d7e  Double-click to reset actually reaches the controls now
+    9502af1  The sixth engine
+    7de87b0  Grains can read the ring, and at the default mix nothing changes
+    8102b68  The ring: the machine's own memory of what just came out
+    3205248  The collapse is one number, heard and seen together
+    95b8c06  Ten views become two, because eight of them stop being true
+    d0067fd  The wavetable is not a second mechanism
