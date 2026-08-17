@@ -2,7 +2,7 @@
 
 use indexer::{tsv, FileRecord, FILE_COLUMNS};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 /// One row as the browser needs it. Narrower than [`FileRecord`] — the index
@@ -373,6 +373,66 @@ impl ScanProgress {
     }
 }
 
+/// How far an export has got, and how it ended.
+///
+/// The same shape as [`ScanProgress`] and for the same reason: a job that runs
+/// on its own thread while the browser asks about it. The difference is that an
+/// export *produces* something, so the outcome has to be kept here too — the
+/// request that started it returned long before the file existed, and there is
+/// nowhere else for the path to be reported.
+///
+/// `done` and `total` are in **work frames**, not output frames. A sixteen-layer
+/// stretch does sixteen passes over the output, and a bar scaled to the output
+/// length would fill in the first sixteenth and then sit still — see
+/// `fx::Stretch::work_frames`.
+#[derive(Default)]
+pub struct ExportProgress {
+    pub running: AtomicBool,
+    pub cancel: AtomicBool,
+    pub done: AtomicU64,
+    pub total: AtomicU64,
+    pub phase: Mutex<String>,
+    /// Where the finished file went, or empty while running.
+    pub path: Mutex<String>,
+    /// What went wrong, or empty.
+    pub error: Mutex<String>,
+    pub frames: AtomicU64,
+    /// Bumped when a run finishes, so the browser can tell a fresh result from
+    /// the one it already reported without comparing paths.
+    pub serial: AtomicU64,
+}
+
+impl ExportProgress {
+    pub fn begin(&self, total: u64) {
+        self.cancel.store(false, Ordering::Relaxed);
+        self.done.store(0, Ordering::Relaxed);
+        self.total.store(total.max(1), Ordering::Relaxed);
+        self.frames.store(0, Ordering::Relaxed);
+        if let Ok(mut x) = self.path.lock() {
+            x.clear();
+        }
+        if let Ok(mut x) = self.error.lock() {
+            x.clear();
+        }
+        self.say("starting");
+    }
+
+    pub fn say(&self, what: &str) {
+        if let Ok(mut x) = self.phase.lock() {
+            x.clear();
+            x.push_str(what);
+        }
+    }
+
+    pub fn step(&self, n: u64) {
+        self.done.fetch_add(n, Ordering::Relaxed);
+    }
+
+    pub fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
+}
+
 /// How many grains a picture may be sent, unless the config says otherwise.
 pub const DEFAULT_GRAIN_CAP: usize = 8_000;
 
@@ -411,6 +471,7 @@ pub struct App {
     pub decoded: RwLock<Option<DecodedSource>>,
     pub index: RwLock<Index>,
     pub scan: Arc<ScanProgress>,
+    pub export: Arc<ExportProgress>,
     /// Markers and regions, sidecar to the app rather than written into the library.
     pub markers: RwLock<crate::docs::MarkerStore>,
     /// Open edit sessions, one per file, held for the life of the process.
@@ -497,6 +558,7 @@ impl App {
             decoded: RwLock::new(None),
             index: RwLock::new(Index::default()),
             scan: Arc::new(ScanProgress::default()),
+            export: Arc::new(ExportProgress::default()),
             markers: RwLock::new(markers),
             audio: std::sync::Mutex::new(None),
             prints: RwLock::new(prints),

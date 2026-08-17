@@ -245,6 +245,40 @@ pub const GAIN_DB_MAX: f32 = 24.0;
 /// reason to agree while only one of them had a tail; now that the export can
 /// ring out too, a difference between them would mean the file did not end
 /// where the sound did.
+/// Somewhere for a long render to say how far it has got.
+///
+/// `Fn` behind a shared reference rather than `&mut dyn FnMut`, so it can be
+/// copied into every engine and every closure without borrow gymnastics — the
+/// stretchers nest (layers drive whole engine runs) and a `&mut` would have to
+/// be reborrowed through each. The one implementation that matters writes
+/// atomics, which needs no mutation.
+///
+/// The argument is **frames produced since the last call**, not a total. Only
+/// the caller knows how many passes an engine will make, so accumulating is its
+/// job; an engine just says what it did.
+/// Returning `false` means "give up" — see [`tick`].
+pub type Progress<'a> = Option<&'a (dyn Fn(u64) -> bool + Sync)>;
+
+/// Report `n` more frames. `false` back means the caller wants to stop.
+///
+/// The stop channel rides on the progress one rather than being a second
+/// argument because they are needed in exactly the same places — the chunk
+/// loops — and a stretch that cannot be interrupted is a cancel button that
+/// does nothing for minutes on a big render.
+///
+/// Stopping leaves the rest of the output buffer as the zeros it was allocated
+/// with, so the length is still right and the caller gets a partial render
+/// rather than a corrupt one. Nothing in the app keeps it: the only caller that
+/// stops is an export being cancelled, and that deletes the file.
+#[inline]
+#[must_use]
+pub fn tick(p: Progress, n: u64) -> bool {
+    match p {
+        Some(f) => f(n),
+        None => true,
+    }
+}
+
 pub const TAIL_SILENCE: f32 = 1e-4;
 
 /// How long a chain goes on being processed after it last made a sound.

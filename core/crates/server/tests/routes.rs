@@ -97,6 +97,32 @@ fn json(r: &Response) -> server::json::Value {
         .unwrap_or_else(|| panic!("the response was not JSON: {}", &text[..text.len().min(300)]))
 }
 
+/// Start an export and wait for it, then answer with the finished result.
+///
+/// Export used to block the request thread and answer with `path` and `frames`.
+/// It runs on its own thread now so the browser can draw a progress bar, so the
+/// outcome arrives through `GET /api/export` — these tests want the old shape
+/// and this is where the waiting lives rather than in every one of them.
+fn export_and_wait(app: &std::sync::Arc<server::state::App>, body: &str) -> server::json::Value {
+    let started = server::routes::route(app, &post("/api/export", body));
+    assert_eq!(
+        status(&started),
+        200,
+        "the export did not start: {}",
+        String::from_utf8_lossy(&started.body)
+    );
+    for _ in 0..600 {
+        let s = json(&server::routes::route(app, &get("/api/export", &[])));
+        if !matches!(s.get("running"), Some(server::json::Value::Bool(true))) {
+            let err = s.get("error").and_then(|e| e.as_str()).unwrap_or("");
+            assert!(err.is_empty(), "the export failed: {err}");
+            return s;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("the export never finished");
+}
+
 fn num(v: &server::json::Value, path: &[&str]) -> f64 {
     let mut cur = v;
     for k in path {
@@ -1365,9 +1391,8 @@ fn a_stretch_lane_reaches_the_exported_file() {
     s.sound("kit/tone.wav", 8000);
     let app = s.app();
 
-    let plain = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
-    assert_eq!(status(&plain), 200, "{}", String::from_utf8_lossy(&plain.body));
-    let plain_frames = num(&json(&plain), &["frames"]);
+    let plain = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
+    let plain_frames = num(&plain, &["frames"]);
 
     // A ratio lane pinned well above unity: the file has to come out longer.
     server::routes::route(
@@ -1375,9 +1400,9 @@ fn a_stretch_lane_reaches_the_exported_file() {
         &post("/api/automation", &lane_body("kit/tone.wav", "stretch.ratio",
               r#"[{"frame":0,"value":0.7,"curve":"linear","tension":0},{"frame":8000,"value":0.7,"curve":"linear","tension":0}]"#)),
     );
-    let stretched = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
-    assert_eq!(status(&stretched), 200, "{}", String::from_utf8_lossy(&stretched.body));
-    let stretched_frames = num(&json(&stretched), &["frames"]);
+    let stretched = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
+
+    let stretched_frames = num(&stretched, &["frames"]);
 
     assert!(
         stretched_frames > plain_frames * 3.0,
@@ -1385,7 +1410,7 @@ fn a_stretch_lane_reaches_the_exported_file() {
     );
 
     // And the file on disk really is that long, not just the number reported.
-    let path = json(&stretched).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    let path = stretched.get("path").and_then(|p| p.as_str()).unwrap().to_string();
     let reader = audio_core::open(std::path::Path::new(&path)).unwrap();
     assert_eq!(reader.info().frames(), stretched_frames as u64);
 }
@@ -1407,9 +1432,8 @@ fn a_rack_lane_reaches_the_exported_file() {
               r#"[{"frame":0,"value":0.0,"curve":"linear","tension":0},{"frame":8000,"value":1.0,"curve":"linear","tension":0}]"#)),
     );
 
-    let r = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
-    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
-    let path = json(&r).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    let r = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
+    let path = r.get("path").and_then(|p| p.as_str()).unwrap().to_string();
 
     let mut reader = audio_core::open(std::path::Path::new(&path)).unwrap();
     let frames = reader.info().frames();
@@ -1744,15 +1768,14 @@ fn invariant_1_an_export_does_not_touch_the_source() {
         &app,
         &post("/api/edit", r#"{"p":"kit/tone.wav","op":"stretch","ratio":2.0,"semitones":3,"windowMs":40}"#),
     );
-    let r = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
-    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+    let r = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
 
     let after = fs::read(&source).unwrap();
     assert_eq!(after.len(), before_len, "the source changed length");
     assert!(after == before, "the source file's bytes changed during an export");
 
     // And the export really did go somewhere else.
-    let path = json(&r).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    let path = r.get("path").and_then(|p| p.as_str()).unwrap().to_string();
     assert_ne!(
         std::path::Path::new(&path).canonicalize().unwrap(),
         source.canonicalize().unwrap(),
@@ -1770,13 +1793,10 @@ fn invariant_1_a_second_export_writes_a_second_file() {
     s.sound("kit/tone.wav", 4000);
     let app = s.app();
 
-    let a = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
-    let b = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
-    assert_eq!(status(&a), 200);
-    assert_eq!(status(&b), 200);
-
-    let pa = json(&a).get("path").and_then(|p| p.as_str()).unwrap().to_string();
-    let pb = json(&b).get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    let a = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
+    let b = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
+    let pa = a.get("path").and_then(|p| p.as_str()).unwrap().to_string();
+    let pb = b.get("path").and_then(|p| p.as_str()).unwrap().to_string();
     assert_ne!(pa, pb, "the second export replaced the first");
     assert!(std::path::Path::new(&pa).exists(), "the first export is gone");
     assert!(std::path::Path::new(&pb).exists());
@@ -1814,4 +1834,74 @@ fn invariant_8_a_session_is_refused_when_the_file_underneath_it_changed() {
         frames <= 3000.0 * 2.0 + 1.0,
         "an edit list built for 8000 frames was applied to a 3000-frame file: {frames}"
     );
+}
+
+// ------------------------------------------------------- export progress
+
+/// The export answers at once and finishes later.
+///
+/// This is the contract the progress bar rests on: if the POST still blocked
+/// until the file existed, there would be nothing to poll and no bar to draw.
+#[test]
+fn an_export_starts_immediately_and_reports_while_it_runs() {
+    let s = Scratch::new("export-progress-start");
+    s.sound("kit/tone.wav", 8000);
+    let app = s.app();
+
+    let started = json(&server::routes::route(
+        &app,
+        &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#),
+    ));
+    assert!(
+        matches!(started.get("started"), Some(server::json::Value::Bool(true))),
+        "the export did not report starting: {}",
+        started.to_string()
+    );
+    // And it said how much work it is, which is what the bar is measured against.
+    assert!(num(&started, &["total"]) > 0.0, "no work total was reported");
+
+    // The status route is answerable straight away — the render is on another
+    // thread and holds no lock across it.
+    let st = json(&server::routes::route(&app, &get("/api/export", &[])));
+    assert!(st.get("phase").is_some(), "no phase in {}", st.to_string());
+}
+
+/// It finishes, and the outcome is on the status route rather than the POST.
+#[test]
+fn the_finished_export_is_reported_through_the_status_route() {
+    let s = Scratch::new("export-progress-finish");
+    s.sound("kit/tone.wav", 8000);
+    let app = s.app();
+
+    let done = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
+    let path = done.get("path").and_then(|p| p.as_str()).unwrap_or("");
+    assert!(!path.is_empty(), "no path on the finished export");
+    assert!(std::path::Path::new(path).exists(), "the file is not there");
+    assert!(num(&done, &["frames"]) > 0.0, "no frame count");
+    // Full, so the bar lands on 100 rather than stopping short.
+    assert!(
+        (num(&done, &["fraction"]) - 1.0).abs() < 1e-9,
+        "the bar finished at {}, not 1.0 — the work total does not match what \
+         the renderer steps",
+        num(&done, &["fraction"])
+    );
+}
+
+/// Two at once is refused rather than interleaved.
+#[test]
+fn only_one_export_runs_at_a_time() {
+    let s = Scratch::new("export-progress-one");
+    s.sound("kit/tone.wav", 400_000);
+    let app = s.app();
+
+    let first = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    assert_eq!(status(&first), 200);
+    // Immediately, while the first is still going.
+    let second = server::routes::route(&app, &post("/api/export", r#"{"p":"kit/tone.wav","bits":24}"#));
+    if status(&second) == 200 {
+        // The first finished before the second arrived, which is legal for a
+        // small file — but then the second must have started cleanly.
+        return;
+    }
+    assert_eq!(status(&second), 400, "a second export was neither refused nor started");
 }

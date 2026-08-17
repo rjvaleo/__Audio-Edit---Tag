@@ -42,6 +42,15 @@ test('every palette derives a complete set of this app’s tokens', async ({ pag
       const { tokens } = Theme.appTokens(p.colors);
       const missing = wanted.filter((k) => !tokens[k]);
       if (missing.length) bad.push(`${p.name}: ${missing.join(',')}`);
+      // Present is not the same as derived. Every one of these was present and
+      // every one of them was `#000000` when the engine's `toHex` had been
+      // replaced by a same-named function in `app.js` — this test passed
+      // throughout. A palette that derives sixteen copies of one colour has not
+      // derived a theme.
+      const distinct = new Set(wanted.map((k) => tokens[k]));
+      if (distinct.size < 8) {
+        bad.push(`${p.name}: ${distinct.size} distinct colours across ${wanted.length} tokens`);
+      }
     }
     return { count: THEME_PALETTES.length, bad };
   });
@@ -137,6 +146,21 @@ test('every offered palette keeps the surface ladder in order', async ({ page })
       const ls = steps.map((k) => lum(t[k]));
       for (let i = 1; i < ls.length; i++) {
         if (ls[i] < ls[i - 1] - 1) { out.push(`${p.name} at ${steps[i]}`); break; }
+      }
+      // In order is not enough — a ladder of seven identical colours is in
+      // order. It has to actually climb, and every rung has to be its own
+      // colour.
+      //
+      // This is not hypothetical: while every derived token was coming back
+      // `#000000`, this test passed. The tolerance that allows a rung to sit a
+      // hair below the one under it also allows a flat ladder of black. The
+      // real palettes span 18 (Conifer, the tightest) to 64, with all seven
+      // rungs distinct in every one of them.
+      const span = ls[ls.length - 1] - ls[0];
+      if (span < 10) out.push(`${p.name}: the ladder spans only ${span.toFixed(1)}`);
+      const rungs = new Set(ls.map((v) => v.toFixed(1)));
+      if (rungs.size < steps.length) {
+        out.push(`${p.name}: only ${rungs.size} of ${steps.length} surfaces are distinct`);
       }
     }
     return out;

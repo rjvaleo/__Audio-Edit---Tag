@@ -215,6 +215,15 @@
               title="Render to a new AIFF beside the original, named for the engine, ratio, pitch and window — with every setting written into the file">Export</button>
     </div>
 
+    <!-- Only while an export is running. Its own row, so no button anywhere
+         moves when it appears. -->
+    <div class="export-progress hidden" id="exportProgress">
+      <span class="ep-phase" id="epPhase">Exporting</span>
+      <div class="progress"><div class="progress-fill" id="epFill"></div></div>
+      <span class="ep-pct" id="epPct">0%</span>
+      <button class="tiny" id="epStop" title="Stop this export and discard the part-written file">Stop</button>
+    </div>
+
     <!-- whole-file overview with the zoom window marked -->
     <div class="overview" id="overview">
       <canvas id="overviewCanvas"></canvas>

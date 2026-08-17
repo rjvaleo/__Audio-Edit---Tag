@@ -359,6 +359,17 @@ pub(crate) fn propagate_all(
 /// sum and applied to all of them. Neither is right for every source, so both
 /// are here and the trade is stated rather than hidden.
 pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f32> {
+    stretch_with(input, channels, ratio, s, None)
+}
+
+/// The same, saying how far it has got as it goes.
+pub fn stretch_with(
+    input: &[f32],
+    channels: usize,
+    ratio: f32,
+    s: Settings,
+    prog: crate::Progress,
+) -> Vec<f32> {
     let channels = channels.max(1);
     if input.is_empty() {
         return Vec::new();
@@ -415,6 +426,9 @@ pub fn stretch(input: &[f32], channels: usize, ratio: f32, s: Settings) -> Vec<f
         let take = CHUNK.min(want - at);
         vs.render(&mut out[at * channels..(at + take) * channels], channels, input, &p);
         at += take;
+        if !crate::tick(prog, take as u64) {
+            break;
+        }
     }
     out
 }

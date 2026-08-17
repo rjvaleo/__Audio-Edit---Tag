@@ -150,3 +150,64 @@ and window.
   export. A whole-file export with a tail is a reasonable thing to want later,
   and the machinery will already be there — but it is not this change.
 - **No crossfade control.** The engine's number, so the two cannot disagree.
+
+
+# Watching an export
+
+Added 16 Aug 2026, after the loop work made exports long enough to need it.
+
+## Why it needed real plumbing
+
+Export used to block the request thread and answer with the finished path. A
+four-minute file takes twenty-five seconds; a heavy stretch takes minutes. The
+browser had nothing to draw and no way to stop it.
+
+The first instinct — count the write loop — is worthless here. `Stretch::process`
+dominates a big export by a distance, and it is one call: a bar fed only by the
+write loop sits at 0% for the entire wait and then jumps to 100%.
+
+So the tick had to go *inside* the stretch, at the `while at < want` chunk loops
+of WSOLA, the vocoder, PVSOLA and the hybrid, and at the layer boundary of the
+granular pass. Every existing signature was left alone by adding `_with`
+variants — `process_with`, `stretch_with`, `granular_with` — so the ~100 test
+call sites did not move.
+
+## The shape
+
+    POST /api/export   → starts a thread, answers at once with the work total
+    GET  /api/export   → phase, done/total, fraction, and the outcome
+    POST /api/export/stop
+
+`ExportProgress` on `App` mirrors `ScanProgress`, which was already exactly this
+pattern. The server is a thread per connection with no lock held across a render
+(`serve.rs:37`), so the status route stays answerable while the export runs.
+
+## Work frames, not output frames
+
+`done`/`total` are counted in **work**, because `layered` runs the whole engine
+once per layer and the grain cloud is a second full pass. A bar scaled to output
+length would fill in the first sixteenth of a sixteen-layer render and stop.
+`Stretch::work_frames` is that arithmetic.
+
+The three phases cost wildly different amounts per frame, so the bar is a
+proportion of work done, not a prediction of time. What makes it honest is the
+phase name beside it.
+
+**The total must match exactly what the renderer steps.** The first cut counted
+a reading pass the unstretched path never makes, and a finished export stopped
+the bar at 50%. There is a test pinning the finished fraction at 1.0.
+
+## Cancel
+
+The stop flag is checked at every phase boundary and once per block — and, since
+it rides back on the progress tick's return value, inside the stretch's chunk
+loops too. Stopping there leaves the rest of the output buffer as the zeros it
+was allocated with, so the length is still right and what comes back is partial
+rather than corrupt. Nothing keeps it: the file is deleted.
+
+Measured on a ×8, six-layer export: **1.3s** from pressing Stop to the bar
+clearing, against the whole remaining render before the tick could answer.
+
+A cancel surfaces as `io::ErrorKind::Interrupted`, which is *not* a failure and
+must not be reported as one — it was, at first, and said "failed" on a file the
+user had deliberately stopped.

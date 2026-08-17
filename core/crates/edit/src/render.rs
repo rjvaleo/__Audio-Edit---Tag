@@ -518,6 +518,66 @@ where
     Ok(total)
 }
 
+/// Told what a long render is doing, and how far into it it has got.
+///
+/// Two callbacks rather than one: the phase changes a handful of times and the
+/// frame count changes constantly, and a caller wanting to say "Stretching, 40%"
+/// needs both. `Fn` behind shared references for the same reason
+/// [`fx::Progress`] is — the stretchers nest, and the progress one is handed
+/// straight to `Stretch::process_with`.
+pub struct Watch<'a> {
+    pub phase: &'a (dyn Fn(&'static str) + Sync),
+    /// Step `n` frames. Returning `false` asks the render to give up, which is
+    /// how a cancel reaches inside the stretch — the one phase long enough to
+    /// need it.
+    pub progress: &'a (dyn Fn(u64) -> bool + Sync),
+    /// True to give up. Checked at every phase boundary and once per block.
+    ///
+    /// **Not** during the stretch. `Stretch::process` is one call that runs to
+    /// completion, and stopping partway would mean handing back a buffer of the
+    /// wrong length for `fit` to pad — slower than simply finishing, and a
+    /// stranger thing to reason about. On a long stretch a cancel is therefore
+    /// noticed when the stretch ends. The file is deleted either way, so what
+    /// is lost is CPU, not correctness.
+    pub stop: &'a (dyn Fn() -> bool + Sync),
+}
+
+/// Phase names, so the caller and the renderer cannot disagree about spelling.
+pub mod phase {
+    pub const READING: &str = "reading";
+    pub const STRETCHING: &str = "stretching";
+    pub const EFFECTS: &str = "effects";
+    pub const TAIL: &str = "tail";
+    pub const WRITING: &str = "writing";
+}
+
+pub type Watching<'a> = Option<&'a Watch<'a>>;
+
+fn say(w: Watching, name: &'static str) {
+    if let Some(x) = w {
+        (x.phase)(name);
+    }
+}
+
+fn step(w: Watching, n: u64) {
+    if let Some(x) = w {
+        let _ = (x.progress)(n);
+    }
+}
+
+fn stopped(w: Watching) -> bool {
+    w.map(|x| (x.stop)()).unwrap_or(false)
+}
+
+fn give_up() -> io::Error {
+    io::Error::new(io::ErrorKind::Interrupted, "export cancelled")
+}
+
+/// The progress half on its own, for handing to `Stretch::process_with`.
+fn stretch_progress<'a>(w: Watching<'a>) -> fx::Progress<'a> {
+    w.map(|x| x.progress)
+}
+
 /// What to repeat, how many times, and whether to let the rack ring out.
 ///
 /// `from`/`to` are **output** frames — the caller maps the selection through the
@@ -586,7 +646,26 @@ pub fn render_loop_to_aiff_controlled<S: RandomAccessSource, W: Write, F>(
     bits: u16,
     meta: &audio_core::aiff::Meta,
     plan: &LoopPlan,
+    control: F,
+) -> io::Result<u64>
+where
+    F: FnMut(&mut Rack, u64),
+{
+    render_loop_to_aiff_watched(list, reader, rack, out, bits, meta, plan, control, None)
+}
+
+/// The same, reporting what it is doing as it goes.
+#[allow(clippy::too_many_arguments)]
+pub fn render_loop_to_aiff_watched<S: RandomAccessSource, W: Write, F>(
+    list: &EditList,
+    reader: &mut Reader<S>,
+    rack: &mut Rack,
+    out: &mut W,
+    bits: u16,
+    meta: &audio_core::aiff::Meta,
+    plan: &LoopPlan,
     mut control: F,
+    watch: Watching,
 ) -> io::Result<u64>
 where
     F: FnMut(&mut Rack, u64),
@@ -597,11 +676,16 @@ where
     // Dry: the stretch applied, the rack not. A stretched document cannot be
     // rendered from the middle — WSOLA chooses each splice from the one before
     // it — so the whole thing is produced and then sliced.
+    say(watch, phase::READING);
     let dry = if list.is_stretched() {
         let base = render(list, reader, 0, list.base_frames())?;
-        list.stretch.process(&base, ch, sr)
+        step(watch, list.base_frames());
+        say(watch, phase::STRETCHING);
+        list.stretch.process_with(&base, ch, sr, stretch_progress(watch))
     } else {
-        render(list, reader, 0, list.frames())?
+        let b = render(list, reader, 0, list.frames())?;
+        step(watch, list.frames());
+        b
     };
 
     let have = (dry.len() / ch) as u64;
@@ -641,6 +725,7 @@ where
     }
 
     // One continuous pass, so the rack never restarts mid-stream.
+    say(watch, phase::EFFECTS);
     rack.reset();
     let mut frame = 0u64;
     for block in audio.chunks_mut(1024 * ch) {
@@ -652,9 +737,13 @@ where
         } else {
             to.saturating_sub(1)
         };
+        if stopped(watch) {
+            return Err(give_up());
+        }
         control(rack, doc);
         rack.process(block, ch, sr);
         frame += (block.len() / ch) as u64;
+        step(watch, (block.len() / ch) as u64);
     }
 
     // Where the tail stopped saying anything: the **last** frame above the
@@ -672,6 +761,7 @@ where
     // silence on the end of every export from a dry chain.
     let mut total = musical;
     if plan.tail {
+        say(watch, phase::TAIL);
         let end = (audio.len() / ch) as u64;
         let mut last_loud: Option<u64> = None;
         for f in musical..end {
@@ -692,6 +782,10 @@ where
         }
     }
 
+    if stopped(watch) {
+        return Err(give_up());
+    }
+    say(watch, phase::WRITING);
     let codec = codec_for(bits);
     let bps = codec.bytes_per_sample() as u64;
     out.write_all(&audio_core::aiff::header(
@@ -725,7 +819,25 @@ pub fn render_to_aiff_controlled<S: RandomAccessSource, W: Write, F>(
     out: &mut W,
     bits: u16,
     meta: &audio_core::aiff::Meta,
+    control: F,
+) -> io::Result<u64>
+where
+    F: FnMut(&mut Rack, u64),
+{
+    render_to_aiff_watched(list, reader, rack, out, bits, meta, control, None)
+}
+
+/// The same, reporting what it is doing as it goes.
+#[allow(clippy::too_many_arguments)]
+pub fn render_to_aiff_watched<S: RandomAccessSource, W: Write, F>(
+    list: &EditList,
+    reader: &mut Reader<S>,
+    rack: &mut Rack,
+    out: &mut W,
+    bits: u16,
+    meta: &audio_core::aiff::Meta,
     mut control: F,
+    watch: Watching,
 ) -> io::Result<u64>
 where
     F: FnMut(&mut Rack, u64),
@@ -766,20 +878,31 @@ where
     if list.is_stretched() {
         // Stretch is a property of the document and has to be applied whole —
         // WSOLA picks each splice from the one before it.
+        say(watch, phase::READING);
         let base = render(list, reader, 0, list.base_frames())?;
-        let mut audio = list.stretch.process(&base, ch, list.sample_rate);
+        step(watch, list.base_frames());
+        say(watch, phase::STRETCHING);
+        let mut audio = list
+            .stretch
+            .process_with(&base, ch, list.sample_rate, stretch_progress(watch));
+        say(watch, phase::WRITING);
         let mut done = 0u64;
         for block in audio.chunks_mut(BLOCK as usize * ch) {
             control(rack, done);
             rack.process(block, ch, list.sample_rate);
             emit(block, out)?;
             done += (block.len() / ch) as u64;
+            step(watch, (block.len() / ch) as u64);
+            if stopped(watch) {
+                return Err(give_up());
+            }
         }
     } else {
         // No pre-roll: the rack runs continuously from frame zero to the end,
         // in order, which is exactly what playback does. Pre-roll exists for
         // *windowed* renders that start in the middle with cold filters, and
         // this one never does.
+        say(watch, phase::WRITING);
         let mut done = 0u64;
         while done < total {
             let n = BLOCK.min(total - done);
@@ -788,6 +911,10 @@ where
             rack.process(&mut block, ch, list.sample_rate);
             emit(&mut block, out)?;
             done += n;
+            step(watch, n);
+            if stopped(watch) {
+                return Err(give_up());
+            }
         }
     }
     // An odd number of bytes leaves the next chunk misaligned, and the header

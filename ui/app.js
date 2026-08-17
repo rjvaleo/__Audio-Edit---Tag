@@ -2461,7 +2461,13 @@ function exportLoopRange() {
   return frames > 0 ? { from: 0, to: frames } : null;
 }
 
-/// Send it. `range` null is the whole-file export, byte for byte what it was.
+/// Start it, then watch. `range` null is the whole-file export.
+///
+/// The request returns as soon as the render has a thread of its own, so what
+/// comes back says only that it started — the outcome arrives through
+/// `/api/export`, which is also where the progress comes from. A four-minute
+/// file takes twenty-five seconds and the old call simply blocked for all of
+/// it with nothing on screen.
 async function runExport(range, repeats, tail) {
   if (!state.selectedFile) return;
   const body = { p: state.selectedFile.path, bits: state.exportBits };
@@ -2472,14 +2478,89 @@ async function runExport(range, repeats, tail) {
     body.tail = !!tail;
   }
   try {
-    const r = await postJSON('/api/export', body);
-    const name = (r.path || '').split('/').pop();
-    const what = r.looped
-      ? `${r.repeats}× loop${r.tail ? ' with tail' : ''}`
-      : 'whole file';
-    toast(`Exported ${what}, ${state.exportBits}-bit AIFF beside the original — ${name}`);
-  } catch (e) { toast('Export failed: ' + e.message); }
+    await postJSON('/api/export', body);
+  } catch (e) {
+    toast('Export failed: ' + e.message);
+    return;
+  }
+  showExportProgress(true);
+  pollExport();
 }
+
+// ----------------------------------------------------------- the export bar
+
+/// What the server calls each phase, in words.
+///
+/// Named here rather than sent as prose so the server keeps saying one word and
+/// the interface decides how to put it — the same split the rest of the app
+/// uses for its labels.
+const EXPORT_PHASES = {
+  starting: 'Starting',
+  reading: 'Reading',
+  stretching: 'Stretching',
+  effects: 'Effects',
+  tail: 'Tail',
+  writing: 'Writing',
+  stopping: 'Stopping',
+  done: 'Done',
+  cancelled: 'Cancelled',
+  failed: 'Failed',
+};
+
+function showExportProgress(on) {
+  $('exportProgress').classList.toggle('hidden', !on);
+  $('exportBtn').disabled = on || !state.selectedFile;
+  if (on) {
+    $('epFill').style.width = '0%';
+    $('epPct').textContent = '0%';
+    $('epPhase').textContent = 'Starting';
+  }
+}
+
+let exportSerial = null;
+
+async function pollExport() {
+  let s;
+  try { s = await api('/api/export'); } catch { showExportProgress(false); return; }
+
+  const pct = Math.round((s.fraction || 0) * 100);
+  $('epFill').style.width = pct + '%';
+  $('epPct').textContent = pct + '%';
+  $('epPhase').textContent = EXPORT_PHASES[s.phase] || s.phase || 'Exporting';
+
+  if (s.running) { setTimeout(pollExport, 250); return; }
+
+  showExportProgress(false);
+  // `serial` is bumped once per finished run, so a poll landing after a result
+  // has already been reported does not report it twice.
+  if (s.serial === exportSerial) return;
+  exportSerial = s.serial;
+
+  if (s.error) { toast('Export failed: ' + s.error); return; }
+  if (s.cancelled || s.phase === 'cancelled') { toast('Export stopped — nothing written'); return; }
+  if (s.path) {
+    const name = s.path.split('/').pop();
+    const secs = state.view?.sampleRate ? (s.frames / state.view.sampleRate) : 0;
+    toast(`Exported ${secs.toFixed(2)}s, ${state.exportBits}-bit AIFF beside the original — ${name}`);
+  }
+}
+
+$('epStop').onclick = () => {
+  $('epStop').disabled = true;
+  api('/api/export/stop', { method: 'POST' })
+    .catch(() => {})
+    .finally(() => { $('epStop').disabled = false; });
+};
+
+// An export left running when the page was reloaded is still running, and the
+// bar is the only way to find out. Picked up rather than lost.
+(async () => {
+  try {
+    const s = await api('/api/export');
+    exportSerial = s.serial;
+    if (s.running) { showExportProgress(true); pollExport(); }
+  } catch { /* server not up yet; the next export starts its own poll */ }
+})();
 
 // ------------------------------------------------------------- the loop box
 
@@ -9326,11 +9407,27 @@ const themeState = {
 /// So light palettes are withheld rather than offered and disappointing. They
 /// are not gone: when the chrome learns to invert its ladder they are already
 /// here, and the engine already reports which direction a palette wants.
+/// The shipped list, derived once.
+///
+/// Deciding whether a palette is dark means deriving it, and there are 47 that
+/// need it. The answer depends only on `p.colors`, which is a constant — so
+/// doing it per call was 47 derivations to answer a question whose answer never
+/// changes, on every theme click and twice at startup.
+///
+/// That was survivable while a derivation was microseconds. It stopped being
+/// survivable the day one cost 54ms and the whole call took 2.7 seconds. The
+/// underlying bug is fixed, but the work was always wasted; see
+/// `tests/ui/globals.spec.mjs`.
+let shippedPalettes = null;
+
 function allPalettes() {
-  const shipped = THEME_PALETTES
-    .filter((p) => (p.direct ? p.dark : Theme.deriveTheme(p.colors).mode === 'dark'))
-    .map((p) => ({ ...p, readOnly: true }));
-  return [...shipped, ...themeState.mine];
+  if (!shippedPalettes) {
+    shippedPalettes = THEME_PALETTES
+      .filter((p) => (p.direct ? p.dark : Theme.deriveTheme(p.colors).mode === 'dark'))
+      .map((p) => ({ ...p, readOnly: true }));
+  }
+  // `mine` is not cached: it is what the Add button changes.
+  return [...shippedPalettes, ...themeState.mine];
 }
 
 /// What a palette actually writes onto the document.
@@ -9504,7 +9601,7 @@ function renderWaveColours() {
   if (own) {
     const shown = waveColourValue(choice) || getComputedStyle(document.documentElement)
       .getPropertyValue('--wave').trim();
-    const hex = toHex(shown);
+    const hex = cssHex(shown);
     if (hex) own.value = hex;
   }
 }
@@ -9516,7 +9613,16 @@ function renderWaveColours() {
 /// were red and green — `oklch(0.7 0.24 250)` came back `#0100fa` and purple came
 /// back black. A pixel is the colour after gamut clamping, which is the colour
 /// actually on screen and the right thing for the swatch to start from.
-function toHex(colour) {
+///
+/// **Named `cssHex`, not `toHex`.** `ui/theme-derive.js` and this file are both
+/// classic scripts and share one global scope, and this one loads second — so a
+/// `function toHex` here silently replaced the engine's own `toHex(r, g, b)`.
+/// Every `hsl()` in the theme engine then handed three numbers to a
+/// one-argument function, which returned black: 69 of a derived theme's 86
+/// tokens came out `#000000`, and each one built a canvas to do it. See
+/// `tests/ui/globals.spec.mjs`, which now fails if the two files declare the
+/// same name.
+function cssHex(colour) {
   if (!colour) return null;
   if (/^#[0-9a-f]{6}$/i.test(colour)) return colour.toLowerCase();
   try {

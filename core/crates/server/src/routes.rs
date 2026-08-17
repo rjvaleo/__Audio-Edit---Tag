@@ -115,6 +115,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/edit") => api_edit_apply(app, req),
         ("POST", "/api/measure") => api_measure(app, req),
         ("POST", "/api/export") => api_export(app, req),
+        ("GET", "/api/export") => api_export_status(app),
+        ("POST", "/api/export/stop") => api_export_stop(app),
         ("GET", "/api/similar") => api_similar(app, req),
         ("GET", "/api/labels") => api_labels(app, req),
         ("GET", "/api/space") => api_space(app),
@@ -2119,6 +2121,34 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
 }
 
 /// Render the edited result to a new file. Never writes over the source.
+fn api_export_status(app: &Arc<App>) -> Response {
+    let e = &app.export;
+    let done = e.done.load(Ordering::Relaxed);
+    let total = e.total.load(Ordering::Relaxed).max(1);
+    Response::json(
+        Value::obj()
+            .set("running", e.running.load(Ordering::Relaxed))
+            .set("done", done)
+            .set("total", total)
+            // Sent resolved as well as raw: the browser should not have to know
+            // that a stretch counts its work in passes.
+            .set("fraction", (done as f64 / total as f64).min(1.0))
+            .set("phase", e.phase.lock().map(|x| x.clone()).unwrap_or_default())
+            .set("path", e.path.lock().map(|x| x.clone()).unwrap_or_default())
+            .set("error", e.error.lock().map(|x| x.clone()).unwrap_or_default())
+            .set("frames", e.frames.load(Ordering::Relaxed))
+            .set("serial", e.serial.load(Ordering::Relaxed))
+            .set("cancelled", e.cancelled())
+            .to_string(),
+    )
+}
+
+fn api_export_stop(app: &Arc<App>) -> Response {
+    app.export.cancel.store(true, Ordering::Relaxed);
+    app.export.say("stopping");
+    Response::json(Value::obj().set("ok", true).to_string())
+}
+
 fn api_export(app: &Arc<App>, req: &Request) -> Response {
     let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
         return Response::error(400, "invalid JSON");
@@ -2198,18 +2228,134 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         }
     }
 
-    let mut reader = match audio_core::open(&src) {
-        Ok(r) => r,
-        Err(e) => return Response::error(400, &e.to_string()),
+    // What the bar is measured against, decided before anything starts.
+    //
+    // Reading the base, the stretch's own passes, and one pass to write. The
+    // three cost wildly different amounts per frame — the stretch dominates a
+    // big export by a distance — so this is a proportion, not a prediction of
+    // time. It is honest about *what it is doing* at every moment, which is
+    // what the phase name is for.
+    // Counted to match exactly what the renderer steps, phase by phase. Getting
+    // this wrong is not cosmetic: the first cut counted a reading pass that the
+    // unstretched path does not make, and the bar stopped at 50% on a finished
+    // export.
+    let base_frames = list.base_frames();
+    let stretched = list.is_stretched();
+    // Reading is only its own phase when the stretch needs the whole document
+    // up front; otherwise it happens inside the block loop and is counted there.
+    let reading = if stretched { base_frames } else { list.frames() };
+    let stretching = list.stretch.work_frames(base_frames);
+    let total_work = match plan.as_ref() {
+        Some(p) => {
+            // read/stretch, then one rack pass over the tiled stream — including
+            // the silence appended for the tail, which the rack really does run
+            // over. The final quantise-and-write pass is not counted: it is a
+            // few percent of the whole and its length is not known until the
+            // tail has been measured.
+            let musical = p.to.saturating_sub(p.from) * p.repeats.max(1) as u64;
+            let pad = if p.tail { fx::TAIL_CAP_SECONDS * list.sample_rate as u64 } else { 0 };
+            reading + stretching + musical + pad
+        }
+        // The unstretched whole-file path steps only its write loop.
+        None if !stretched => list.frames(),
+        None => reading + stretching + list.frames(),
     };
-    let file = match std::fs::File::create(&target) {
-        Ok(f) => f,
-        Err(e) => return Response::error(500, &e.to_string()),
-    };
+
+    let plan_looped = plan.is_some();
+    if app.export.running.swap(true, Ordering::SeqCst) {
+        return Response::error(400, "an export is already running");
+    }
+    app.export.begin(total_work);
+
+    // Off the request thread. The server is a thread per connection
+    // (`serve.rs:37`) with no lock held across a render, so the status route
+    // stays answerable the whole time — which is the point.
+    let app2 = Arc::clone(app);
+    let rel2 = rel.to_string();
+    let src2 = src.clone();
+    let target2 = target.clone();
+    std::thread::spawn(move || {
+        let app = &app2;
+        let rel = rel2.as_str();
+        let outcome = run_export(
+            app, rel, &src2, &target2, &list, &automation, plan.as_ref(), bits,
+        );
+        match outcome {
+            Ok(frames) if !app.export.cancelled() => {
+                app.export.frames.store(frames, Ordering::Relaxed);
+                if let Ok(mut x) = app.export.path.lock() {
+                    *x = target2.to_string_lossy().to_string();
+                }
+                app.export.say("done");
+            }
+            Ok(_) => {
+                // Cancelled: the part-written file is not an export and would
+                // only be found later and wondered about.
+                let _ = std::fs::remove_file(&target2);
+                app.export.say("cancelled");
+            }
+            // A cancel arrives as an error, because that is how a render stops
+            // partway — `Interrupted` from the block loops, or a short buffer
+            // from a stretch that broke out of its chunk loop. Neither is a
+            // failure and neither should be reported as one.
+            Err(e) if app.export.cancelled() || e.kind() == std::io::ErrorKind::Interrupted => {
+                let _ = std::fs::remove_file(&target2);
+                app.export.say("cancelled");
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&target2);
+                if let Ok(mut x) = app.export.error.lock() {
+                    *x = e.to_string();
+                }
+                app.export.say("failed");
+            }
+        }
+        app.export.serial.fetch_add(1, Ordering::SeqCst);
+        app.export.running.store(false, Ordering::SeqCst);
+    });
+
+    Response::json(
+        Value::obj()
+            .set("ok", true)
+            .set("started", true)
+            .set("total", total_work)
+            .set("path", target.to_string_lossy().to_string())
+            .set("looped", plan_looped)
+            .to_string(),
+    )
+}
+
+/// The render itself, on its own thread, reporting as it goes.
+#[allow(clippy::too_many_arguments)]
+fn run_export(
+    app: &Arc<App>,
+    rel: &str,
+    src: &std::path::Path,
+    target: &std::path::Path,
+    list: &edit::EditList,
+    automation: &crate::automation::Automation,
+    plan: Option<&edit::render::LoopPlan>,
+    bits: u16,
+) -> std::io::Result<u64> {
+    let mut reader = audio_core::open(src)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+    let file = std::fs::File::create(target)?;
     let mut out = std::io::BufWriter::new(file);
     let spec = app.racks.get(rel);
-    let meta = crate::docs::export_meta(rel, &list, &spec, &automation);
+    let meta = crate::docs::export_meta(rel, list, &spec, automation);
     let mut rack = spec.build(list.sample_rate, list.channels as usize);
+
+    let progress = app.export.clone();
+    let phase_of = progress.clone();
+    let stop_of = app.export.clone();
+    let watch = edit::render::Watch {
+        phase: &move |name: &'static str| phase_of.say(name),
+        progress: &move |n: u64| {
+            progress.step(n);
+            !progress.cancelled()
+        },
+        stop: &move || stop_of.cancelled(),
+    };
 
     // The lanes are resolved at the same document frames the playhead reports,
     // so the file is what was auditioned rather than a second interpretation
@@ -2228,24 +2374,28 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
     // applies the stretch whole, with one set of parameters. That path runs the
     // same streaming engine the audio thread runs, so the file follows the
     // curve for the same reason the speakers do.
-    let rendered = if let Some(plan) = plan.as_ref() {
+    let rendered = if let Some(plan) = plan {
         // The loop takes precedence over the streaming-stretch path: a lane on
         // the stretch and a looped export together would need the streaming
         // engine restarted per repeat, which is a different piece of work. The
         // lane is still followed *within* the loop by the control hook.
-        edit::render::render_loop_to_aiff_controlled(
-            &list, &mut reader, &mut rack, &mut out, bits, &meta, plan, control,
+        edit::render::render_loop_to_aiff_watched(
+            list, &mut reader, &mut rack, &mut out, bits, &meta, plan, control, Some(&watch),
         )
-    } else if crate::offline::needs_streaming(&automation) {
-        match edit::render::render(&list, &mut reader, 0, list.base_frames()) {
+    } else if crate::offline::needs_streaming(automation) {
+        app.export.say(edit::render::phase::READING);
+        match edit::render::render(list, &mut reader, 0, list.base_frames()) {
             Ok(base) => {
+                app.export.step(list.base_frames());
+                app.export.say(edit::render::phase::STRETCHING);
                 let audio = crate::offline::stretch_with_automation(
                     &base,
                     list.channels as usize,
                     list.sample_rate,
                     &list.stretch,
-                    &automation,
+                    automation,
                 );
+                app.export.say(edit::render::phase::WRITING);
                 edit::render::write_aiff_controlled(
                     audio, list.channels, list.sample_rate, &mut rack, &mut out, bits, &meta,
                     control,
@@ -2254,25 +2404,13 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
             Err(e) => Err(e),
         }
     } else {
-        edit::render::render_to_aiff_controlled(
-            &list, &mut reader, &mut rack, &mut out, bits, &meta, control,
+        edit::render::render_to_aiff_watched(
+            list, &mut reader, &mut rack, &mut out, bits, &meta, control, Some(&watch),
         )
     };
-
-    match rendered {
-        Ok(frames) => Response::json(
-            Value::obj()
-                .set("ok", true)
-                .set("path", target.to_string_lossy().to_string())
-                .set("frames", frames)
-                .set("looped", plan.is_some())
-                .set("repeats", plan.as_ref().map(|p| p.repeats).unwrap_or(0))
-                .set("tail", plan.as_ref().map(|p| p.tail).unwrap_or(false))
-                .to_string(),
-        ),
-        Err(e) => Response::error(500, &e.to_string()),
-    }
+    rendered
 }
+
 
 fn api_stats(app: &Arc<App>, req: &Request) -> Response {
     let path = match library_file(app, req) {

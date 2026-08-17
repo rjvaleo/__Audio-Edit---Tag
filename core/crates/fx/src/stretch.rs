@@ -394,6 +394,49 @@ impl Stretch {
     /// factor, then read back that much faster. The two length changes cancel,
     /// leaving the duration set by `ratio` alone.
     pub fn process(&self, input: &[f32], channels: usize, sample_rate: u32) -> Vec<f32> {
+        self.process_with(input, channels, sample_rate, None)
+    }
+
+    /// How many frames of work this stretch will do, all passes counted.
+    ///
+    /// Not the output length. `layered` runs the whole engine once per layer,
+    /// and the grain cloud is a second full pass on top — so a sixteen-layer
+    /// render with the cloud on does seventeen times the output length in work,
+    /// and a progress bar scaled to the output length would fill in the first
+    /// seventeenth and then sit there.
+    ///
+    /// PVSOLA and the hybrid are not wrapped in `layered` here: they drive the
+    /// other engines and reach the layers internally, so their work is counted
+    /// once. That matches where the ticks actually come from.
+    pub fn work_frames(&self, in_frames: u64) -> u64 {
+        if self.is_identity() || in_frames == 0 {
+            return 0;
+        }
+        let ratio = self.ratio.clamp(0.01, 100.0);
+        let want = ((in_frames as f64) * ratio as f64).round() as u64;
+        let layers = self.grain.layers.clamp(1, 16) as u64;
+        let passes = match self.algorithm {
+            // Counted once: the layers happen inside them.
+            Algorithm::Pvsola | Algorithm::Hybrid => 1,
+            _ => layers,
+        };
+        let cloud = if self.cloud && self.algorithm != Algorithm::Granular { 1 } else { 0 };
+        want * passes + want * cloud
+    }
+
+    /// The same stretch, saying how far it has got as it goes.
+    ///
+    /// The ticks come from inside the engines' chunk loops, so they arrive at a
+    /// useful rate whatever the ratio — this is the phase that dominates a big
+    /// export, and a bar that only moved once it was finished would be telling
+    /// the user nothing during the part they are waiting for.
+    pub fn process_with(
+        &self,
+        input: &[f32],
+        channels: usize,
+        sample_rate: u32,
+        prog: crate::Progress,
+    ) -> Vec<f32> {
         let channels = channels.max(1);
         if input.is_empty() || channels == 0 {
             return Vec::new();
@@ -416,8 +459,9 @@ impl Stretch {
         // neither was running. An override that cannot be seen is worse than
         // no choice at all.
         if self.algorithm == Algorithm::Granular {
-            let out = crate::grain::granular(
-                input, channels, sample_rate, ratio, self.semitones, self.window_ms, &self.grain,
+            let out = crate::grain::granular_with(
+                input, channels, sample_rate, ratio, self.semitones, self.window_ms,
+                &self.grain, prog,
             );
             return fit(out, want, channels);
         }
@@ -435,21 +479,23 @@ impl Stretch {
             // them, so they are not wrapped in `layered` — the layers reach
             // them through the vocoder and WSOLA runs they make internally,
             // and wrapping them here would run every layer twice.
-            Algorithm::Pvsola => crate::pvsola::stretch(
+            Algorithm::Pvsola => crate::pvsola::stretch_with(
                 input,
                 channels,
                 sample_rate,
                 ratio * pitch,
                 self,
                 self.pvsola,
+                prog,
             ),
-            Algorithm::Hybrid => crate::hybrid::stretch(
+            Algorithm::Hybrid => crate::hybrid::stretch_with(
                 input,
                 channels,
                 sample_rate,
                 ratio * pitch,
                 self,
                 self.hybrid,
+                prog,
             ),
             Algorithm::Wsola => {
                 let win = (((self.window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(64);
@@ -463,13 +509,14 @@ impl Stretch {
                         self.quality,
                         self.wsola,
                         g,
+                        prog,
                     )
                 })
             }
             Algorithm::Vocoder => {
                 let n = fft_size_for(self.vocoder.window_ms, sample_rate);
                 layered(&self.grain, channels, hop_frames(&self.grain, n, sr), sample_rate, |g| {
-                    crate::vocoder::stretch(
+                    crate::vocoder::stretch_with(
                         input,
                         channels,
                         ratio * pitch,
@@ -487,6 +534,7 @@ impl Stretch {
                             grain: *g,
                             sample_rate,
                         },
+                        prog,
                     )
                 })
             }
@@ -499,7 +547,7 @@ impl Stretch {
 
         // Hold the promised length exactly, so timeline arithmetic stays honest.
         let out = fit(out, want, channels);
-        self.with_cloud(out, input, channels, sample_rate, ratio, want)
+        self.with_cloud(out, input, channels, sample_rate, ratio, want, prog)
     }
 
     /// Mix the grain cloud in over an engine's output.
@@ -520,13 +568,15 @@ impl Stretch {
         sample_rate: u32,
         ratio: f32,
         want: usize,
+        prog: crate::Progress,
     ) -> Vec<f32> {
         if !self.cloud || self.algorithm == Algorithm::Granular {
             return dry;
         }
         let wet = fit(
-            crate::grain::granular(
-                input, channels, sample_rate, ratio, self.semitones, self.window_ms, &self.grain,
+            crate::grain::granular_with(
+                input, channels, sample_rate, ratio, self.semitones, self.window_ms,
+                &self.grain, prog,
             ),
             want,
             channels,
@@ -717,6 +767,7 @@ fn wsola(
     quality: Quality,
     params: WsolaParams,
     g: &crate::Grain,
+    prog: crate::Progress,
 ) -> Vec<f32> {
     let in_frames = input.len() / channels;
     let sr = sample_rate.max(1) as f32;
@@ -770,6 +821,9 @@ fn wsola(
         let n = CHUNK.min(want - at);
         s.render(&mut out[at * channels..(at + n) * channels], channels, input, &p);
         at += n;
+        if !crate::tick(prog, n as u64) {
+            break;
+        }
     }
     out
 }
