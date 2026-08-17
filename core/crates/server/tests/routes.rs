@@ -1577,6 +1577,26 @@ fn the_engine_reports_holding_nothing_rather_than_failing() {
     // Whatever it says, the interface polls this constantly and it must be JSON
     // with a playing flag rather than an error it has to special-case.
     assert!(matches!(v.get("playing"), Some(server::json::Value::Bool(_))));
+    // And it says whether there is a device at all, so the interface can tell
+    // "nothing is playing" from "nothing can play".
+    //
+    // This assertion holds on both kinds of machine, which is the point: the
+    // developer's has a sound card and takes the success path, CI's has none
+    // and takes the other. Before this, the route was a 503 on CI and the test
+    // above could not fail anywhere it was ever run.
+    assert!(
+        matches!(v.get("device"), Some(server::json::Value::Bool(_))),
+        "no `device` flag in {}",
+        v.to_string()
+    );
+    // With no device it must still be the idle shape rather than half an object.
+    if matches!(v.get("device"), Some(server::json::Value::Bool(false))) {
+        assert!(matches!(v.get("playing"), Some(server::json::Value::Bool(false))),
+            "no device, but it claims to be playing");
+        for k in ["position", "sampleRate", "channels", "inFrames"] {
+            assert!(v.get(k).is_some(), "no `{k}` in the device-less state");
+        }
+    }
 }
 
 #[test]
