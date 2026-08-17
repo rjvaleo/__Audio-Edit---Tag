@@ -26,6 +26,8 @@ renaming a single audio file. Tags and edits are sidecar data; **the original
 audio is never written to**. Audio reaches disk only when you explicitly export,
 and export writes a new file.
 
+![The editor](docs/screenshots/02-editor.png)
+
 ## Start here
 
 | | |
@@ -42,6 +44,8 @@ remembers whichever library you pick, and you can change it any time from the
 Library tab.
 
 ## What it does
+
+![The library](docs/screenshots/01-library.png)
 
 | | |
 |---|---|
@@ -180,6 +184,10 @@ turned down without touching its tone.
 same streaming engines the callback drives — one implementation, not two kept in
 step — and that is asserted to 1e-6 rather than claimed.
 
+![The granular engine](docs/screenshots/03-stretch-granular.png)
+
+*The granular engine's controls. Every engine gets the same set — see below.*
+
 ### One control set, every engine
 
 These drive **all five**. They were never granular ideas: every engine lays
@@ -225,6 +233,10 @@ and be laid down a fixed fraction of a hop later — a delay line, and regular
 delays make regular notches. Sixteen layers took the spectrum's ripple from
 7.8 dB to 11.9 dB and made the sound *thinner*. Scatter and Range fix that;
 after, sixteen layers sit at or below the ripple of one.
+
+![PVSOLA](docs/screenshots/04-stretch-pvsola.png)
+
+*PVSOLA, with its own three controls on the right of the same table.*
 
 ### What each engine adds
 
@@ -280,6 +292,23 @@ separation is Fitzgerald's median filtering with Driedger's HPR-M masks; PVSOLA
 is Moinet and Dutoit (DAFx-12); the noise morphing is Moliner, Lehtonen and
 Välimäki (2023).
 
+## Playing it from the keyboard
+
+![The note keyboard](docs/screenshots/08-keyboard.png)
+
+**Window ▸ Keys**, or the button on the stretch row. The home row is the white
+notes from C and the row above holds the black ones — which is why a QWERTY
+keyboard fits a piano at all, and why the offsets land where a player expects.
+`Z` and `X` shift an octave down and up, and they latch, so repeated presses
+keep going.
+
+It plays the **pitch control**, not a sampler: the note is a semitone offset
+into whatever engine and stretch are already set up, so a four-minute drone
+becomes something you can play a line on. And it binds to the tuning that is
+selected — at 12 steps to the octave the keys are semitones, and under any other
+tuning they are that tuning's degrees, so the black keys stop being black keys
+and start being wherever that scale's steps fall.
+
 ## Live shaping
 
 Peak's DSP menu is a list of things you apply to a selection and wait for. Most
@@ -305,11 +334,18 @@ than they ever were offline — *Boomerang* offline needs to know where the
 selection ends, but live it is a rolling buffer read backwards, so the reversal
 chases the playhead and the throw length becomes a control it never had.
 
+![The effects rack](docs/screenshots/07-effects.png)
+
 The interface draws every one of them from `/api/fx`; nothing in the JavaScript
 knows what any shaper does. An effect gains a control by declaring one in
 `fx::shape` and neither the rack nor the interface is touched.
 
 ## Editing
+
+![Grains on the sound they read from](docs/screenshots/05-grains-on-the-waveform.png)
+
+*Zoomed in: the grain schedule drawn on the sound it reads from, the selection,
+and the spectrogram sharing the lane.*
 
 A clip list, never a rewrite. Cutting an hour out of a recording costs two
 integers.
@@ -351,6 +387,8 @@ is AIFC.
 
 Reading those settings back in is **not built yet** — but every file written
 carries them, so nothing exported now will need exporting again for it.
+
+![Exporting a loop](docs/screenshots/10-export-loop.png)
 
 ### Exporting a loop
 
@@ -406,6 +444,11 @@ from itself.
 
 ## Watching the grains
 
+| | |
+|---|---|
+| ![Braid](docs/screenshots/06-grain-views-braid.png) | ![Lattice](docs/screenshots/06-grain-views-lattice.png) |
+| **Braid** — time wound into a helix; the strands are the overlap | **Lattice** — the hop grid as a crystal, melted by the jitters |
+
 Ten views in two suites, at `/grains3d` — standalone, in a pop-over, or through
 **Window ▸ Grains**.
 
@@ -444,6 +487,8 @@ tokens so the chrome holds contrast; the waveform is not chrome — it is the
 thing being looked at, and it should be the loudest colour on screen rather than
 a consequence of the surfaces behind it. `Theme.apply` only clears tokens in its
 own map, so `--wave` survives every palette change and every "No theme".
+
+![The theme panel](docs/screenshots/09-themes.png)
 
 **Derived** — twenty palettes ported from Emovis, each giving four to six
 colours from which the engine works out a hundred-odd tokens. That is the right
@@ -491,6 +536,7 @@ the binary and has no Node in it anywhere.
 |---|---|
 | `tools/ui-check.mjs` | Reads `ui/` and finds what does not resolve — a control with no default, a pane with no entry in the map, a function nothing calls. It found two dead functions on its first run, one of which had quietly removed the channel maximiser from the product for three days. Runs under `cargo test` too, via `server/tests/interface.rs` |
 | `tools/scratch-server.mjs` | A throwaway instance on a port of its own with a library of its own, so nothing here can touch a working session. `--check` runs 13 API checks |
+| `tools/screenshots.mjs` | Takes the pictures in this file, from the running program. `node tools/screenshots.mjs` — so when the interface changes they are one command from being right again, rather than quietly three versions stale |
 | `tests/ui/*.spec.mjs` | Playwright, against that scratch server. The only thing that catches a panel which builds without error and shows nothing — which has happened, more than once |
 
 The last one exists because static analysis cannot see a panel that is present,
