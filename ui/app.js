@@ -551,6 +551,15 @@ const engine = {
   deviceRate: 48000,
   /// performance.now() when `position` was last heard from.
   heard: 0,
+  /// Whether this machine has an audio output at all.
+  ///
+  /// `null` until asked. The server opens the device lazily, so a box with no
+  /// output answers every engine route with 503 — and the interface used to
+  /// keep asking, which put a failed request in the console for every engine
+  /// switch and every transport press. Browsing, editing, tagging and
+  /// exporting all work perfectly well without a device; only playback does
+  /// not. So it asks once and then stops asking.
+  device: null,
   spectrum: null,
   /// The shape of the last output window, -127..127. What the compressor's
   /// display draws its signal from.
@@ -576,7 +585,47 @@ $('volume').oninput = (e) => {
   enginePost({ gain: engine.gain });
 };
 
+/// Is there anything to play through?
+const noAudio = () => engine.device === false;
+
+/// Ask once, at startup, and tell the interface.
+///
+/// `/api/engine/state` is the one engine route that answers without a device —
+/// see `api_engine_state`. Everything else here is gated on what it says.
+async function checkAudioDevice() {
+  try {
+    const r = await api('/api/engine/state');
+    engine.device = r.device !== false;
+    engine.deviceError = r.deviceError || '';
+  } catch {
+    // Unreachable is not the same as absent: leave it unknown and let the
+    // calls try, rather than switching the transport off over one bad fetch.
+    engine.device = null;
+  }
+  reflectAudioDevice();
+}
+
+/// Say so, once, in the transport bar — and take the controls out of service.
+///
+/// A transport that looks live and silently does nothing is worse than one that
+/// says why.
+function reflectAudioDevice() {
+  const off = noAudio();
+  const note = $('noAudio');
+  if (note) {
+    note.classList.toggle('hidden', !off);
+    note.title = engine.deviceError || 'This machine has no audio output.';
+  }
+  for (const id of ['playBtn', 'stopBtn', 'loopBtn', 'recBtn']) {
+    const b = $(id);
+    if (!b) continue;
+    b.disabled = off;
+    if (off) b.title = 'No audio device on this machine';
+  }
+}
+
 async function enginePost(body) {
+  if (noAudio()) return null;
   try {
     return await postJSON('/api/engine/transport', body);
   } catch (e) {
@@ -587,6 +636,7 @@ async function enginePost(body) {
 
 /// Load a file into the engine. Expensive — once per file, never per control.
 async function engineLoad(file, { raw = false } = {}) {
+  if (noAudio()) return false;
   try {
     const r = await api(
       `/api/engine/load?p=${encodeURIComponent(file.path)}${raw ? '&raw=1' : ''}`,
@@ -758,7 +808,7 @@ let pollTimer = null;
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(async () => {
-    if (!engine.playing) { stopPolling(); return; }
+    if (!engine.playing || noAudio()) { stopPolling(); return; }
     try {
       const r = await api('/api/engine/grains');
       engine.position = r.position;
@@ -4833,7 +4883,9 @@ function paintLoad() {
       : '')
     + '\nClick to forget the worst; it only means anything next to a change you just made.';
   el.onclick = async () => {
-    try { await postJSON('/api/engine/load/reset', {}); } catch { /* not playing */ }
+    if (!noAudio()) {
+      try { await postJSON('/api/engine/load/reset', {}); } catch { /* not playing */ }
+    }
   };
 }
 
@@ -9698,3 +9750,4 @@ function wireTheme() {
 
 wireTheme();
 wireWaveColour();
+checkAudioDevice();
