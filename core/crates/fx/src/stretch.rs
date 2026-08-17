@@ -360,6 +360,45 @@ impl Stretch {
             // A cloud over a document at unity is still a cloud. Without this
             // the whole thing would short-circuit to the input untouched.
             && !self.cloud
+            // And so is a frozen, blurred or gated spectrum.
+            && !self.shapes_the_spectrum()
+    }
+
+    /// Are the vocoder's *spectrum* controls doing anything here?
+    ///
+    /// Freeze, Blur and Gate are effects in their own right — they do not merely
+    /// change how a stretch is performed, they change the sound. So a document at
+    /// ratio 1.0 with Blur wound up is **not** an identity, however still the
+    /// time axis is.
+    ///
+    /// Reported as "I can't hear freeze, blur or gate in any of the engines", and
+    /// it went further than not hearing them. `is_identity` gates three separate
+    /// things, and all three were wrong at unity:
+    ///
+    /// - `EditList::is_stretched` — the export skipped the stretch entirely, so
+    ///   the render came out **bit-identical** to the input.
+    /// - `App::save_sessions` — a document "back at its original state is worth
+    ///   forgetting", so the setting was dropped when the file was closed.
+    /// - the `edited` flag, which told the interface nothing had been done.
+    ///
+    /// The live engine has no identity shortcut and always ran them, which is
+    /// what made this so confusing to pin down: it worked while you dragged the
+    /// slider and was gone from the file and from the session afterwards.
+    ///
+    /// Only on the engines that actually run a vocoder. WSOLA and Granular never
+    /// look at these values, so a stale one left on the document must not make
+    /// an untouched sound count as edited.
+    ///
+    /// The *phase* controls are deliberately not here. They change how a vocoder
+    /// runs rather than adding an effect, and at unity there is no vocoder for
+    /// them to change.
+    pub fn shapes_the_spectrum(&self) -> bool {
+        matches!(
+            self.algorithm,
+            Algorithm::Vocoder | Algorithm::Pvsola | Algorithm::Hybrid
+        ) && (self.vocoder.mag_freeze > 0.0
+            || self.vocoder.mag_blur > 0.0
+            || self.vocoder.mag_gate > 0.0)
     }
 
     /// Are the granular controls doing anything, whichever engine is selected?

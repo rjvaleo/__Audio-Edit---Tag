@@ -1401,6 +1401,39 @@ Conifer looked fine and only the 47 derived palettes were dead.
 `tests/ui/globals.spec.mjs` now fails on a collision **by name**, because what
 breaks is in whichever file lost, somewhere else entirely.
 
+### `is_identity` gates three things, and it was wrong at unity  *(17 Aug 2026)*
+
+Reported as *"I can't hear freeze, blur or gate in any of the engines"*.
+
+`Stretch::is_identity()` tested ratio, semitones, the grain settings and the
+cloud — and **not** the vocoder's own Freeze, Blur and Gate. So a document at
+ratio 1.0 with any of them wound up counted as untouched, and three separate
+things went wrong at once:
+
+- `EditList::is_stretched` — **the export skipped the stretch entirely**, so the
+  rendered file came out bit-identical to the input.
+- `App::save_sessions` — *"a document back at its original state is worth
+  forgetting"*, so the setting was **dropped when the file was closed**.
+- The `edited` flag told the interface nothing had been done.
+
+The live engine has no identity shortcut and always ran them, which is what made
+it hard to pin down: it worked while you dragged the slider, and was gone from
+the file and from the session afterwards.
+
+Fixed by `Stretch::shapes_the_spectrum()`, which `is_identity` now consults. Only
+on the three engines that actually run a vocoder, so a stale value cannot make an
+untouched WSOLA document count as edited. The phase controls are deliberately not
+included: they change how a vocoder runs rather than adding an effect, and at
+unity there is no vocoder for them to change.
+
+**Two wrong turns on the way, both worth remembering.** The first measurement
+said Freeze was 100× weaker than Blur and I nearly reported it as broken — the
+test signal was three constant sines, and Freeze *holds the spectrum*, so on
+material whose spectrum never moves there is nothing to hold. And the first
+conclusion was "the DSP is fine, so it must be the plumbing", when in fact the
+DSP, the plumbing and the live path were all fine and the fault was a predicate
+three layers away.
+
 ### A test that cannot fail here is not a test yet  *(17 Aug 2026)*
 
 Found twice in one day by CI. `/api/engine/state` opened the audio device, so it
