@@ -49,6 +49,11 @@
 
   <!-- left panel: the whole library, playable -->
   <aside class="panel left" id="leftPanel">
+    <!-- Drag the edge to resize; double-click to put it back. Inside the panel
+         rather than between it and the shell, so it moves with the panel and
+         disappears with it when the panel is collapsed. -->
+    <div class="panel-grip" id="leftGrip"
+         title="Drag to resize the panel · double-click to put it back"></div>
     <div class="panel-head">
       <span id="leftPanelTitle">Browse</span>
       <input class="filter-box" id="treeFilter" placeholder="filter&hellip;">

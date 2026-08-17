@@ -1442,6 +1442,24 @@ been written months earlier, correctly, with a comment saying it would fail on a
 machine without an output. Every machine it ran on had a sound card. See
 [`NO-AUDIO-DEVICE.md`](NO-AUDIO-DEVICE.md).
 
+### Top-level setup runs before the `let`s below it  *(17 Aug 2026)*
+
+`ui/app.js` is one long classic script, and anything called at top level runs
+with every `let` and `const` *below* that point still in its temporal dead zone.
+
+`wireLeftPanelResize()` was called mid-file. It applied the stored width, then
+called `redrawLane()`, which reads `resizeTimer` — a `let` declared further down
+— and threw `Cannot access 'resizeTimer' before initialization`. The exception
+landed **after** the width was applied and **before** `addEventListener`, so the
+resize grip appeared, took a `col-resize` cursor, and did nothing at all.
+
+Nothing about the function looked wrong, and reading it taught nothing. The
+console named it in one line.
+
+**Rule.** Call wiring functions from the block at the bottom of the file with the
+rest of the wiring, not from wherever they happen to be defined. And when
+something is present, styled and inert, read the console before reading the code.
+
 ### The browser tab holds the old JavaScript  *(17 Aug 2026)*
 
 The `include_str!` rebuild trap has a mirror. After rebuilding and restarting the
