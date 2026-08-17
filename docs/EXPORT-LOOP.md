@@ -98,8 +98,21 @@ inventing new ones:
   is not mistaken for a finished one.
 
 Offline it is: append silence after the last repeat, run the rack over it as
-part of the same continuous stream, then walk forward from the end of the
-musical part applying that countdown and cut where it expires.
+part of the same continuous stream, then find where it stopped saying anything.
+
+**Corrected during the build.** The first cut used the countdown directly and
+that was wrong offline: a rack with nothing in it that can ring never rises
+above the floor, so the countdown never resets and its full four seconds get
+appended — four seconds of digital silence on the end of every tailed export
+from a dry chain. Caught on a real export, 8.500s of file for 4.500s of audio.
+
+The countdown exists because the live transport cannot see the future and must
+not cut a slow delay off between taps. Offline the whole tail is already in
+hand, so the rule is simply **the last frame above the floor**, plus 50 ms so
+the file ends in silence rather than on an audible sample. That is exact, it is
+immune to the gap problem the countdown was invented for, and a rack that cannot
+ring gets no tail at all. `TAIL_SILENCE` is still shared; `tail_budget` stays
+the engine's.
 
 A hard cap of **30 seconds** on top, because reverb `freeze` (reverb.rs:159) is
 documented as "the only way to reach an actually infinite tail" — it is

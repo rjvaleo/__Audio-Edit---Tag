@@ -657,29 +657,38 @@ where
         frame += (block.len() / ch) as u64;
     }
 
-    // Where the tail stopped saying anything. The countdown is restored by any
-    // peak above the floor, so a delay that is briefly silent between taps is
-    // not mistaken for a finished one.
+    // Where the tail stopped saying anything: the **last** frame above the
+    // floor, not the first quiet one.
+    //
+    // The live transport counts down four seconds of quiet before it gives up,
+    // because it cannot see the future — a delay that is briefly silent between
+    // taps must not be cut off mid-pattern. Offline the whole tail is already in
+    // hand, so the last audible frame can simply be found, which is both exact
+    // and immune to the gap problem the countdown exists to solve.
+    //
+    // It also fixes what the countdown got plainly wrong here: a rack with
+    // nothing in it that can ring never rises above the floor at all, and the
+    // countdown still appended its full budget — four seconds of digital
+    // silence on the end of every export from a dry chain.
     let mut total = musical;
     if plan.tail {
-        let budget = fx::tail_budget(sr);
-        let mut left = budget;
         let end = (audio.len() / ch) as u64;
-        total = end;
+        let mut last_loud: Option<u64> = None;
         for f in musical..end {
             let mut peak = 0.0f32;
             for c in 0..ch {
                 peak = peak.max(audio[f as usize * ch + c].abs());
             }
             if peak > fx::TAIL_SILENCE {
-                left = budget;
-            } else {
-                left -= 1;
-                if left == 0 {
-                    total = f + 1;
-                    break;
-                }
+                last_loud = Some(f);
             }
+        }
+        // A short margin past it, so the file ends in silence rather than on a
+        // sample still above the floor — inaudible either way, but a clean end
+        // is what a rendered file should have.
+        const MARGIN_MS: u64 = 50;
+        if let Some(f) = last_loud {
+            total = (f + 1 + sr as u64 * MARGIN_MS / 1000).min(end);
         }
     }
 
