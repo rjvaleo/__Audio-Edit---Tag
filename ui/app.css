@@ -1684,6 +1684,14 @@ body.editing .dock { flex: 0 0 330px; }
   backdrop-filter: blur(2px);
 }
 .modal.hidden { display: none; }
+
+/* The export-loop box. Narrow: it asks two questions. */
+.export-card { width: 460px; max-width: 92vw; }
+.export-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.export-body .fx-row { align-items: center; gap: 10px; }
+.export-label { width: 56px; font-size: 11px; color: var(--text-dim); }
+#elRepeats { width: 64px; height: 22px; text-align: center; }
+.export-body .fx-note { margin: 0; flex: 1; }
 .modal-card {
   width: min(1080px, 94vw); height: min(700px, 88vh);
   display: flex; flex-direction: column;

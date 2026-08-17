@@ -2447,13 +2447,101 @@ $('revertBtn').onclick = async () => { await editOp({ op: 'revert' }); syncStret
 ///
 /// The path is long and mostly the library, so the toast says the name — which
 /// is the part that changed and the part you will look for.
-$('exportBtn').onclick = async () => {
+/// What the transport is looping, in **source** frames, or `null`.
+///
+/// The same rule the transport uses: the selection if there is one, the whole
+/// document if there is not — see `applyLoop`. Source frames rather than the
+/// engine frames `applyLoop` sends, because the export is at the document's own
+/// sample rate and the server maps them through the stretch itself.
+function exportLoopRange() {
+  if (!state.loopOn) return null;
+  const sel = state.sel;
+  if (sel && sel.end > sel.start) return { from: sel.start, to: sel.end };
+  const frames = state.edit?.baseFrames || state.view?.frames || 0;
+  return frames > 0 ? { from: 0, to: frames } : null;
+}
+
+/// Send it. `range` null is the whole-file export, byte for byte what it was.
+async function runExport(range, repeats, tail) {
   if (!state.selectedFile) return;
+  const body = { p: state.selectedFile.path, bits: state.exportBits };
+  if (range) {
+    body.from = Math.round(range.from);
+    body.to = Math.round(range.to);
+    body.repeats = repeats;
+    body.tail = !!tail;
+  }
   try {
-    const r = await postJSON('/api/export', { p: state.selectedFile.path, bits: state.exportBits });
+    const r = await postJSON('/api/export', body);
     const name = (r.path || '').split('/').pop();
-    toast(`Exported ${state.exportBits}-bit AIFF beside the original — ${name}`);
+    const what = r.looped
+      ? `${r.repeats}× loop${r.tail ? ' with tail' : ''}`
+      : 'whole file';
+    toast(`Exported ${what}, ${state.exportBits}-bit AIFF beside the original — ${name}`);
   } catch (e) { toast('Export failed: ' + e.message); }
+}
+
+// ------------------------------------------------------------- the loop box
+
+let exportRange = null;
+
+function exportSeconds(range, repeats) {
+  const sr = state.view?.sampleRate || 48000;
+  const ratio = state.edit?.stretch?.ratio ?? 1;
+  return ((range.to - range.from) / sr) * ratio * repeats;
+}
+
+function paintExportLoop() {
+  if (!exportRange) return;
+  const repeats = Math.max(1, Math.min(512, +$('elRepeats').value || 1));
+  const sr = state.view?.sampleRate || 48000;
+  const ratio = state.edit?.stretch?.ratio ?? 1;
+  const one = ((exportRange.to - exportRange.from) / sr) * ratio;
+  $('elRange').textContent = `${one.toFixed(2)}s loop`;
+  $('elLength').textContent =
+    `${exportSeconds(exportRange, repeats).toFixed(2)}s of audio${
+      $('elTail').classList.contains('on') ? ', plus the tail' : ''}`;
+}
+
+function openExportLoop(range) {
+  exportRange = range;
+  $('exportLoop').classList.remove('hidden');
+  paintExportLoop();
+  $('elRepeats').focus();
+  $('elRepeats').select();
+}
+
+function closeExportLoop() {
+  $('exportLoop').classList.add('hidden');
+  exportRange = null;
+}
+
+$('exportBtn').onclick = () => {
+  if (!state.selectedFile) return;
+  // Loop off is the export that was always here — no box, no questions.
+  const range = exportLoopRange();
+  if (!range) { runExport(null); return; }
+  openExportLoop(range);
+};
+
+$('elClose').onclick = closeExportLoop;
+$('elRepeats').oninput = paintExportLoop;
+$('elRepeats').onkeydown = (e) => {
+  // Tier 1 owns the key while a field has focus, so Enter has to be handled
+  // here or it does nothing at all.
+  if (e.key === 'Enter') { e.preventDefault(); $('elGo').click(); }
+};
+$('elTail').onclick = () => {
+  $('elTail').classList.toggle('on');
+  paintExportLoop();
+};
+$('elWhole').onclick = () => { closeExportLoop(); runExport(null); };
+$('elGo').onclick = () => {
+  const range = exportRange;
+  const repeats = Math.max(1, Math.min(512, +$('elRepeats').value || 1));
+  const tail = $('elTail').classList.contains('on');
+  closeExportLoop();
+  runExport(range, repeats, tail);
 };
 
 // -------------------------------------------------------------- effects dock
@@ -8828,10 +8916,13 @@ function topOverlay() {
   if (!$('pickerModal').classList.contains('hidden')) {
     return () => $('pickerModal').classList.add('hidden');
   }
+  if (!$('exportLoop').classList.contains('hidden')) return closeExportLoop;
   if (!$('presetManager').classList.contains('hidden')) return closePresetManager;
   // The note keyboard is a floating panel rather than a shadowbox, but it is
-  // still a window, and Escape closes the front one.
+  // still a window, and Escape closes the front one. So is the grain views
+  // window, which was opened after this list was written and left out of it.
   if (keyboardOpen()) return closeKeyboard;
+  if (visWindowOpen()) return closeVisWindow;
   if (pop.el && !pop.el.classList.contains('hidden')) return closeVisPop;
   return null;
 }

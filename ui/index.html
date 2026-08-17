@@ -396,6 +396,36 @@
       </div>
     </div>
 
+    <!-- Asked only when the loop is on. Export with the loop off is unchanged
+         and opens nothing. -->
+    <div class="modal hidden" id="exportLoop">
+      <div class="modal-card export-card">
+        <header class="modal-head">
+          <h2>Export loop</h2>
+          <span class="modal-sub" id="elRange"></span>
+          <button class="ghost" id="elClose" title="Close">Close</button>
+        </header>
+        <div class="export-body">
+          <div class="fx-row">
+            <label class="export-label" for="elRepeats">Repeats</label>
+            <input class="mono" type="number" id="elRepeats" min="1" max="512" step="1" value="4">
+            <span class="fx-note" id="elLength"></span>
+          </div>
+          <div class="fx-row">
+            <label class="export-label" for="elTail">Tail</label>
+            <button class="tiny switch" id="elTail">Tail</button>
+            <span class="fx-note">Let the reverbs and delays finish sounding
+            after the last repeat, instead of cutting them off.</span>
+          </div>
+        </div>
+        <footer class="modal-foot">
+          <span class="pm-status" id="elStatus"></span>
+          <button class="ghost" id="elWhole">Whole file instead</button>
+          <button class="primary" id="elGo">Export</button>
+        </footer>
+      </div>
+    </div>
+
     <div class="regions hidden" id="regions"></div>
 
     <!-- overview: stats for the selected sound -->
