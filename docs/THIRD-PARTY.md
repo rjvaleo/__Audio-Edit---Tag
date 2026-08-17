@@ -1,7 +1,8 @@
 # Third-party licences
 
-*Generated from `cargo metadata` on 15 Aug 2026. Regenerate whenever a dependency
-is added or bumped — the command is at the bottom.*
+*Generated from `cargo metadata` on 15 Aug 2026, with the development tooling
+added by hand on 17 Aug. Regenerate whenever a dependency is added or bumped —
+the command is at the bottom.*
 
 This program links **190 third-party packages**. MIT and Apache-2.0 both
 *require* attribution in distributed binaries, so this file discharges a legal
@@ -48,6 +49,25 @@ These ship inside the binary via `include_str!` and are invisible to
 
 None of these blocks a sale. All four need a notice, and one — p5's missing
 licence text — is a gap that exists right now.
+
+## Not in the table — the development tooling
+
+Nothing here ships. It is listed because "every dependency" should mean every
+dependency, and because a reader who finds `package.json` in the repo deserves
+to know why a program with no runtime has one.
+
+| tool | licence | what it is for | ships? |
+|---|---|---|---|
+| **`@playwright/test` ^1.49** (1.62.1 installed) | Apache-2.0 | The 24 browser tests, and `tools/screenshots.mjs`, which takes the README's pictures from the running program | **No** |
+| **Chromium**, via `playwright install` | BSD-3-Clause and others | The browser those tests drive. Downloaded to a cache outside the repo | **No** |
+
+`package.json` exists for these alone. The application is one Rust binary with
+no Node in it anywhere — `npm run check` and `npm run test:ui` are the only
+things that use them, plus CI, which runs both.
+
+Apache-2.0 requires attribution *in distributed binaries*. Neither of these is
+distributed, so nothing is owed; they are here so that the sentence "this file
+lists every dependency" stays true.
 
 ## Packages
 
