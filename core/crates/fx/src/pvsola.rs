@@ -69,6 +69,19 @@ pub fn stretch(
     spec: &Stretch,
     p: PvsolaParams,
 ) -> Vec<f32> {
+    stretch_with(input, channels, sample_rate, ratio, spec, p, None)
+}
+
+/// The same, saying how far it has got as it goes.
+pub fn stretch_with(
+    input: &[f32],
+    channels: usize,
+    sample_rate: u32,
+    ratio: f32,
+    spec: &Stretch,
+    p: PvsolaParams,
+    prog: crate::Progress,
+) -> Vec<f32> {
     let channels = channels.max(1);
     let in_frames = input.len() / channels;
     let ratio = ratio.clamp(0.01, 100.0);
@@ -123,6 +136,9 @@ pub fn stretch(
                 &p,
             );
             at += take;
+            if !crate::tick(prog, take as u64) {
+                break;
+            }
         }
         out
     })

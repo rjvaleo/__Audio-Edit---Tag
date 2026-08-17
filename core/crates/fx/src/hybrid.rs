@@ -103,6 +103,19 @@ pub fn stretch(
     spec: &Stretch,
     p: HybridParams,
 ) -> Vec<f32> {
+    stretch_with(input, channels, sample_rate, ratio, spec, p, None)
+}
+
+/// The same, saying how far it has got as it goes.
+pub fn stretch_with(
+    input: &[f32],
+    channels: usize,
+    sample_rate: u32,
+    ratio: f32,
+    spec: &Stretch,
+    p: HybridParams,
+    prog: crate::Progress,
+) -> Vec<f32> {
     let channels = channels.max(1);
     let in_frames = input.len() / channels;
     let want = ((in_frames as f64) * ratio as f64).round() as usize;
@@ -160,7 +173,7 @@ pub fn stretch(
     crate::stretch::layered(&spec.grain, channels, hop_l, sample_rate, |g| {
         let mut sp = sp;
         sp.grain = *g;
-        one(&parts, channels, sample_rate, p, &sp, want, &map)
+        one(&parts, channels, sample_rate, p, &sp, want, &map, prog)
     })
 }
 
@@ -178,6 +191,7 @@ fn one(
     sp: &crate::stream::StretchParams,
     want: usize,
     map: &Option<crate::transient::TimeMap>,
+    prog: crate::Progress,
 ) -> Vec<f32> {
     const CHUNK: usize = 1 << 16;
     let mut hs = crate::hstream::HybridStream::new(CHUNK, channels, sample_rate);
@@ -199,6 +213,9 @@ fn one(
             p,
         );
         at += take;
+        if !crate::tick(prog, take as u64) {
+            break;
+        }
     }
     out
 }

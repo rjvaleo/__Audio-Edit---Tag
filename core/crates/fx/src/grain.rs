@@ -754,6 +754,26 @@ pub fn granular(
     window_ms: f32,
     g: &Grain,
 ) -> Vec<f32> {
+    granular_with(input, channels, sample_rate, ratio, semitones, window_ms, g, None)
+}
+
+/// The same, saying how far it has got as it goes.
+///
+/// Reported per layer rather than per grain: a grain is a few hundred frames
+/// and there are millions of them, so a tick each would cost more than it told
+/// anyone. At one layer this reports once, at the end — which is honest, since
+/// a one-layer granular pass has no internal boundary to report from.
+#[allow(clippy::too_many_arguments)]
+pub fn granular_with(
+    input: &[f32],
+    channels: usize,
+    sample_rate: u32,
+    ratio: f32,
+    semitones: f32,
+    window_ms: f32,
+    g: &Grain,
+    prog: crate::Progress,
+) -> Vec<f32> {
     let channels = channels.max(1);
     let in_frames = input.len() / channels;
     if in_frames == 0 {
@@ -781,6 +801,12 @@ pub fn granular(
             lg.seed = g.seed.wrapping_add(layer.wrapping_mul(0x9E37_79B9));
         }
         lg.layer_read = g.layer_throw(layer, sample_rate);
+        // One tick per layer, at the top. Reporting the layer *before* it is
+        // rendered rather than after means the bar reaches full only when the
+        // last layer is actually finished.
+        if !crate::tick(prog, p.out_frames as u64 / layers.max(1) as u64) {
+            break;
+        }
         let even = ((p.hop as u64 * layer as u64) / layers as u64) as f32;
         let offset = (even * spread) as usize;
 

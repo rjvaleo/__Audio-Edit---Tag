@@ -764,6 +764,22 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 .progress { height: 4px; border-radius: 2px; background: var(--bg); overflow: hidden; }
 .progress-fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 .progress-wrap { margin-top: 10px; }
+
+/* The export bar. Its own row under the toolbar rather than something squeezed
+   into it: nothing on that toolbar may move because an export started. */
+.export-progress {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  height: 26px; padding: 0 10px;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.export-progress.hidden { display: none; }
+.export-progress .progress { flex: 1; height: 6px; }
+/* The one fill in the app that should not glide: it is redrawn four times a
+   second from a real measurement, and a 200ms ease makes it lag behind. */
+.export-progress .progress-fill { transition: width .1s linear; }
+.ep-phase { font-size: 10.5px; color: var(--text-2); width: 96px; }
+.ep-pct { font-size: 10.5px; color: var(--text-dim); width: 34px; text-align: right; }
+#epStop { width: 48px; }
 .progress-label { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--text-dim); margin-bottom: 5px; }
 .scan-controls { display: flex; gap: 8px; }
 .note {
