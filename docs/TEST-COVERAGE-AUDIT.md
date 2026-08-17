@@ -7,6 +7,13 @@ place with no tests, while the parts with heavy coverage behaved perfectly.*
 tests.** The numbers below are as re-counted; where the morning's figures
 differed they are noted rather than quietly replaced.
 
+> **Update, 17 Aug 2026: 965 Rust tests and 24 browser tests**, and the audit's
+> central claim has been tested from the outside for the first time. See
+> [What CI changed](#what-ci-changed) at the end — the short version is that two
+> long-standing bugs were found in one day by running the suite on a machine
+> unlike this one, and that a test which cannot fail in any environment you have
+> is not yet a test.
+
 ---
 
 ## The headline
@@ -201,3 +208,75 @@ same reason it has no route tests.
 Complete coverage is not the goal and is not reachable. What is reachable: **no
 part of the program with zero coverage.** Today the live path and the interface
 were at zero, and that is where every fault of the day was found.
+
+
+---
+
+## What CI changed
+
+*Added 17 Aug 2026.*
+
+`.github/workflows/ci.yml` now builds and runs everything on every push. Its
+first two runs found two bugs that had been in the program for months, and both
+were invisible here for the same reason: **the development machine is not a
+representative machine.**
+
+### A test that could not fail
+
+`the_engine_reports_holding_nothing_rather_than_failing` asserts that
+`/api/engine/state` answers 200. It was written months ago with a comment
+stating plainly that nothing in that section opens the audio device, *because it
+would fail on a box without an output*.
+
+The route did open the device. On every machine the suite had ever run on there
+was a sound card, so the assertion passed and the case it was written for was
+never reached. CI has no sound card. See [`NO-AUDIO-DEVICE.md`](NO-AUDIO-DEVICE.md).
+
+**The general form:** a test whose failure requires an environment you do not
+have is not yet a test. It is a statement of intent. The value of CI is not that
+it runs the tests again — it is that it runs them somewhere else.
+
+### A test that passed on all-black
+
+The theme engine spent an afternoon deriving `#000000` for **69 of 86 tokens**
+on every one of the 47 derived palettes, because a `toHex` added to `app.js`
+silently replaced the theme engine's own — `ui/*.js` are classic scripts sharing
+one global scope, and the file that loads second wins.
+
+**Seven of the eight theme tests passed throughout.** Two of them are the
+lesson:
+
+- *"every palette derives a complete set of tokens"* checked the tokens were
+  **present**. Sixteen copies of black is a complete set.
+- *"every palette keeps the surface ladder in order"* passes on seven identical
+  blacks, because they are, technically, in order.
+
+Both now require distinct colours and a ladder that climbs. This is the same
+vacuity the audit already names above — asserting shape rather than substance —
+found again, in tests written after the audit.
+
+`tests/ui/globals.spec.mjs` catches the class by **name**, because a collision
+breaks whichever file lost it, somewhere else entirely, and no behavioural test
+of the theme engine can see the cause.
+
+### The count
+
+| | 15 Aug | 17 Aug |
+|---|---|---|
+| Rust tests | 934 | **965** |
+| Browser specs | 10 | **24** |
+| Spec files | 2 | **5** |
+
+New: `tests/ui/globals.spec.mjs` (global-scope collisions, the derived palettes
+are real colours, applying a theme is instant), `tests/ui/no-audio.spec.mjs`
+(the deviceless machine), `tests/ui/buttons.spec.mjs` (button geometry, measured
+to the pixel), and `core/crates/edit/tests/export_loop.rs` (14 tests on loop
+repeats, seams, and the tail).
+
+### Still true
+
+Everything in *The honest limit* below stands. Routes are still thin, most
+invariants are still unnamed, and the tests are still deep on arithmetic and
+thin on the program. CI does not change that shape — it changes how many
+machines the existing tests are asked to be true on, which turned out to be
+worth two bugs on day one.
