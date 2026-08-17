@@ -180,3 +180,41 @@ test('zooming in shows the schedule for the zoomed view', async ({ page }) => {
     `zoomed to ${out.view} frames but the schedule still covers ${out.narrowFor}`,
   ).toBeLessThan(out.wideFor);
 });
+
+/// The canvas has to match the element in *both* directions.
+///
+/// The resize test used to be `if (el.width !== want)`, so a change in height
+/// alone never re-sized the backing store. Made the window taller and the
+/// element went to 663 CSS px while its canvas stayed 766 device px — the marks
+/// drawn squashed by a factor of 1.7, at a size nothing on screen had. The width
+/// is the dimension that usually changes, which is why it survived so long.
+test('the grain canvas follows a height-only resize', async ({ page }) => {
+  await editing(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => drawGrainLayer());
+
+  // Taller, same width.
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.waitForTimeout(600);
+
+  const out = await page.evaluate(() => {
+    drawGrainLayer();
+    const l = document.getElementById('grainLayer');
+    const dpr = window.devicePixelRatio || 1;
+    return {
+      clientW: l.clientWidth, clientH: l.clientHeight,
+      backingW: l.width, backingH: l.height,
+      wantW: Math.round(l.clientWidth * dpr), wantH: Math.round(l.clientHeight * dpr),
+    };
+  });
+
+  expect(out.clientH, 'the lane did not get taller, so this proves nothing')
+    .toBeGreaterThan(100);
+  expect(
+    out.backingH,
+    `the element is ${out.clientW}x${out.clientH} but its canvas is `
+    + `${out.backingW}x${out.backingH} — everything drawn into it is at the wrong scale`,
+  ).toBe(out.wantH);
+  expect(out.backingW).toBe(out.wantW);
+});

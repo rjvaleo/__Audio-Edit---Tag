@@ -1104,7 +1104,14 @@ function drawGrainLayer() {
   const w = el.clientWidth, h = el.clientHeight;
   if (!w || !h) return;
   const dpr = window.devicePixelRatio || 1;
-  if (el.width !== Math.round(w * dpr)) {
+  // Both dimensions, not just the width.
+  //
+  // Testing the width alone meant a change in *height* never re-sized the
+  // backing store: make the window taller and the element went to 663 CSS px
+  // while its canvas stayed 766 device px tall — everything drawn into it
+  // squashed by a factor of 1.7, at a size nothing on screen had. The width is
+  // the one that usually changes, which is exactly why this survived.
+  if (el.width !== Math.round(w * dpr) || el.height !== Math.round(h * dpr)) {
     el.width = Math.round(w * dpr);
     el.height = Math.round(h * dpr);
   }
@@ -7659,7 +7666,9 @@ function visSetup(fade) {
   const h = canvas.clientHeight;
   if (!w || !h) return null;
   const dpr = window.devicePixelRatio || 1;
-  if (canvas.width !== Math.round(w * dpr)) {
+  // Both dimensions — see `drawGrainLayer`, where testing only the width left
+  // the backing store the wrong height after a vertical resize.
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
   }
@@ -7749,7 +7758,9 @@ function drawCloudPad() {
   const dpr = window.devicePixelRatio || 1;
   if (!geo) return;
   const { w, h } = geo;
-  if (canvas.width !== Math.round(w * dpr)) {
+  // Both dimensions — see `drawGrainLayer`, where testing only the width left
+  // the backing store the wrong height after a vertical resize.
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
   }
