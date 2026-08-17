@@ -2234,6 +2234,10 @@ function redrawLane() {
     drawMarkers();
     drawCue();
     drawOverview();
+    // The grain layer is part of this lane and was not in this list, so a
+    // resize left its marks at the pixel positions of the *old* width while
+    // everything under them moved.
+    drawGrainLayer();
   }, 60);
 }
 window.addEventListener('resize', redrawLane);
@@ -7417,6 +7421,41 @@ let grainsFor = null;
 /// why that appeared to fix it.
 let grainsPath = null;
 let grainsFailedAt = 0;
+
+/// Which request the state in hand belongs to.
+///
+/// `loadGrains` is async and is called from six places — selecting a file, an
+/// edit, a zoom, a scroll, the playback poll, the failure retry. Nothing stopped
+/// two of them being in flight at once, and nothing said which answer was the
+/// current one, so **the response that happened to land last won** whether or
+/// not it was the one asked for last.
+///
+/// Both failures were reproduced before this was written:
+///
+/// - Ask for the whole document, then zoom in and ask again. If the first
+///   request is the slower one it lands second, and `state.grains` and
+///   `grainsFor` end up describing four minutes of file while the view is on a
+///   fraction of a second. The picture is a handful of marks — the "zoomed in
+///   and saw three grains" symptom, by a different route.
+/// - Switch sounds while a request is in flight and the *previous* file's
+///   grains are drawn on the new file's waveform.
+///
+/// A ticket per request fixes both: a response that is not the newest is
+/// dropped entirely rather than written and then corrected. Nothing partial is
+/// ever stored, so `state.grains`, `grainsFor` and `grainsPath` always describe
+/// one single response.
+let grainsSeq = 0;
+/// The swarm has its own counter, and that is not a detail.
+///
+/// Sharing one counter meant `loadSwarmGrains` — which `loadGrains` awaits —
+/// bumped the number its caller was holding, so every view fetch declared
+/// itself superseded by its own child and returned before drawing anything.
+/// The redraw would have stopped completely. Caught by reading it back rather
+/// than by running it, which is luck; the test below is not luck.
+let swarmSeq = 0;
+
+/// Is this response still wanted at all — same file, still selected?
+const stillWanted = (f) => state.selectedFile?.path === f.path;
 const GRAIN_RETRY_MS = 1200;
 
 /// How far either side of the playhead the swarm's schedule has to reach.
@@ -7483,12 +7522,18 @@ async function loadGrains() {
   // the way in on a cloud of three million, you saw three.
   const win = viewWindow();
   const q = win ? `&from=${win[0]}&to=${win[1]}` : '';
+  const seq = ++grainsSeq;
   try {
-    state.grains = await api(`/api/grains?p=${encodeURIComponent(f.path)}${q}`);
+    const got = await api(`/api/grains?p=${encodeURIComponent(f.path)}${q}`);
+    // Superseded while it was in the air. Drop it whole — writing it and
+    // letting something later notice is what put the wrong window on screen.
+    if (seq !== grainsSeq || !stillWanted(f)) return;
+    state.grains = got;
     grainsFor = win;
     grainsPath = f.path;
     grainsFailedAt = 0;
   } catch {
+    if (seq !== grainsSeq || !stillWanted(f)) return;
     // Keep the picture if it belongs to this file — a stale schedule is closer
     // to the truth than a blank lane, and it is replaced the moment the retry
     // lands. Grains from a *different* file would be a lie, so those do go.
@@ -7497,6 +7542,7 @@ async function loadGrains() {
     grainsFailedAt = performance.now();
   }
   await loadSwarmGrains();
+  if (seq !== grainsSeq || !stillWanted(f)) return;
   drawGrains();
   // The lane's own layer too. It is otherwise only drawn from `updatePlayhead`,
   // which does not run with the transport stopped — so a schedule that arrived
@@ -7513,12 +7559,21 @@ async function loadSwarmGrains() {
     swarmFor = null;
     return;
   }
+  // The swarm's own ticket, on the same counter — a swarm fetch that outlives
+  // the view fetch that triggered it must not write either.
+  const seq = ++swarmSeq;
   try {
-    state.swarm = await api(
+    const got = await api(
       `/api/grains?p=${encodeURIComponent(f.path)}&from=${want[0]}&to=${want[1]}`,
     );
+    if (seq !== swarmSeq || !stillWanted(f)) return;
+    state.swarm = got;
     swarmFor = want;
-  } catch { state.swarm = null; swarmFor = null; }
+  } catch {
+    if (seq !== swarmSeq || !stillWanted(f)) return;
+    state.swarm = null;
+    swarmFor = null;
+  }
 }
 
 /// Re-fetch when the view or the playhead has moved outside what is covered.
@@ -7527,6 +7582,19 @@ async function loadSwarmGrains() {
 /// of these is a schedule walk on the server.
 let grainsViewTimer = null;
 function grainsFollowView() {
+  // Re-place what is already in hand, first and always.
+  //
+  // This function used to redraw *only* when it decided to re-fetch. The marks
+  // are drawn at pixel positions derived from `state.view`, so any zoom or
+  // scroll moves the waveform out from under them — and if the schedule in hand
+  // still covered the new view, nothing ever corrected it. Measured: scroll by
+  // 15% of the span and the canvas came back byte-identical.
+  //
+  // Even when a fetch *is* warranted it is debounced by 120 ms, so there was a
+  // window on every single view change where the marks were simply in the wrong
+  // places. Drawing first closes both cases: the picture is always right for
+  // the data in hand, and a fetch only ever improves the data.
+  drawGrainLayer();
   if (!state.selectedFile) return;
 
   // The last ask failed: try again, on a timer of its own so a server that is
