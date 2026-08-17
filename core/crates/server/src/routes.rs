@@ -2130,6 +2130,18 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         Some(Value::Num(n)) => *n as u16,
         _ => 24,
     };
+    // The loop, in **source** frames — which is what the selection already is.
+    // Mapping it through the stretch happens below, where the ratio is known;
+    // the browser holds engine frames, at the device rate, which is a different
+    // number. All optional: absent is the whole-file export, unchanged.
+    let num = |k: &str| match v.get(k) {
+        Some(Value::Num(n)) => Some(*n),
+        _ => None,
+    };
+    let loop_from = num("from").unwrap_or(0.0).max(0.0) as u64;
+    let loop_to = num("to").unwrap_or(0.0).max(0.0) as u64;
+    let repeats = num("repeats").unwrap_or(0.0).max(0.0) as u32;
+    let want_tail = matches!(v.get("tail"), Some(Value::Bool(true)));
     let Some(lib) = app.library_path() else {
         return Response::error(400, "no library chosen");
     };
@@ -2155,9 +2167,31 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         .automation
         .get_for(rel, list.frames(), list.channels, list.sample_rate);
 
+    // Source frames to output frames. `list.frames()` is the document after the
+    // stretch and `base_frames()` before it, so their ratio is the mapping —
+    // and it is exactly the one the renderer's own output was built at, which
+    // asking `Stretch::output_frames` again would only approximate.
+    let base = list.base_frames().max(1);
+    let to_out = |f: u64| ((f as u128 * list.frames() as u128) / base as u128) as u64;
+    let plan = if repeats >= 1 && loop_to > loop_from {
+        Some(edit::render::LoopPlan {
+            from: to_out(loop_from),
+            to: to_out(loop_to),
+            repeats,
+            tail: want_tail,
+        })
+    } else {
+        None
+    };
+
     // Beside the original, named for the engine and the three settings that
     // decide what you hear. Everything else goes *inside* the file.
-    let target = crate::docs::export_target(&lib, rel, &list.stretch);
+    let target = crate::docs::export_target_looped(
+        &lib,
+        rel,
+        &list.stretch,
+        plan.as_ref().map(|p| (p.repeats, p.tail)),
+    );
     if let Some(parent) = target.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
             return Response::error(500, &e.to_string());
@@ -2194,7 +2228,15 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
     // applies the stretch whole, with one set of parameters. That path runs the
     // same streaming engine the audio thread runs, so the file follows the
     // curve for the same reason the speakers do.
-    let rendered = if crate::offline::needs_streaming(&automation) {
+    let rendered = if let Some(plan) = plan.as_ref() {
+        // The loop takes precedence over the streaming-stretch path: a lane on
+        // the stretch and a looped export together would need the streaming
+        // engine restarted per repeat, which is a different piece of work. The
+        // lane is still followed *within* the loop by the control hook.
+        edit::render::render_loop_to_aiff_controlled(
+            &list, &mut reader, &mut rack, &mut out, bits, &meta, plan, control,
+        )
+    } else if crate::offline::needs_streaming(&automation) {
         match edit::render::render(&list, &mut reader, 0, list.base_frames()) {
             Ok(base) => {
                 let audio = crate::offline::stretch_with_automation(
@@ -2223,6 +2265,9 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
                 .set("ok", true)
                 .set("path", target.to_string_lossy().to_string())
                 .set("frames", frames)
+                .set("looped", plan.is_some())
+                .set("repeats", plan.as_ref().map(|p| p.repeats).unwrap_or(0))
+                .set("tail", plan.as_ref().map(|p| p.tail).unwrap_or(false))
                 .to_string(),
         ),
         Err(e) => Response::error(500, &e.to_string()),

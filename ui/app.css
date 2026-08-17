@@ -205,13 +205,52 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   color: var(--text-dimmer); margin-bottom: 6px;
 }
 
-.seg { display: flex; gap: 2px; background: var(--bg); border-radius: 6px; padding: 2px; }
+/* No flex. An inline row of inline-block buttons, spaced by margin rather than
+   by `gap`, so nothing about a button's width or position depends on how many
+   of them there are. */
+.seg {
+  display: inline-block; white-space: nowrap; vertical-align: middle;
+  background: var(--bg); border-radius: 6px; padding: 2px;
+}
 .seg-btn {
+  display: inline-block; vertical-align: middle;
   height: 22px; padding: 0 9px; border: none; border-radius: 4px;
   background: transparent; color: var(--text-dim); font-size: 10.5px;
+  margin-right: 2px;
 }
+/* Always a gap. Buttons that touch read as one bar with lines drawn on it, and
+   a selected one with a dark border needs the row's colour either side of it to
+   be seen at all. */
+.seg-btn:last-child { margin-right: 0; }
+.seg-param .seg-btn { margin-right: 2px; }
+.seg-param .seg-btn:last-child { margin-right: 0; }
 .seg-btn:hover { color: var(--text-2); }
 .seg-btn.active { background: var(--surface-3); color: var(--accent); }
+
+/* The waveform colours. Fixed widths, sized for the longest of the four —
+   a button is not allowed to change shape because of what is beside it. The
+   chip carries the colour; the word carries the name. */
+.wave-seg { display: block; }
+.wave-seg .seg-btn {
+  width: 66px; padding: 0; text-align: center; white-space: nowrap;
+}
+.wave-seg .seg-btn i {
+  display: inline-block; vertical-align: middle; width: 7px; height: 7px;
+  border-radius: 50%; margin: -1px 5px 0 0; background: var(--chip);
+  box-shadow: 0 0 5px var(--chip);
+}
+.wave-seg .seg-btn.active { background: var(--surface-3); color: var(--text); }
+.wave-own { align-items: center; gap: 8px; margin-top: 7px; }
+.wave-own-label { font-size: 11px; color: var(--text-dim); }
+/* The native swatch, trimmed to the height of everything else on the row. */
+#waveOwn {
+  width: 46px; height: 22px; padding: 0; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--bg); cursor: pointer;
+}
+#waveOwn::-webkit-color-swatch-wrapper { padding: 2px; }
+#waveOwn::-webkit-color-swatch { border: none; border-radius: 3px; }
+#waveOwn::-moz-color-swatch { border: none; border-radius: 3px; }
+.wave-own #waveReset { height: 22px; padding: 0 9px; font-size: 10.5px; }
 
 .check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); }
 .check input { accent-color: var(--accent); }
@@ -289,7 +328,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .file-row .info { min-width: 0; flex: 1; }
 .file-row .fname {
   font-size: 11px; color: var(--text-2);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .file-row.selected .fname { color: var(--text); }
 .file-row .fmeta {
@@ -359,6 +398,10 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   background: var(--surface); border-bottom: 1px solid var(--line);
   overflow: hidden;
 }
+/* Empty, it was a 20px grey bar between the overview and the waveform that read
+   as padding, because that is all it was. It gets its height back the moment
+   there is a marker to put in it — the same deal `.regions` already had. */
+.ruler.bare { height: 0; border-bottom: 0; }
 .marker { position: absolute; top: 0; bottom: 0; pointer-events: none; }
 .marker .flag {
   position: absolute; top: 3px; left: 0; width: 0; height: 0;
@@ -501,6 +544,29 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   z-index: 3; pointer-events: none;
 }
 #grainLayer.hidden { display: none; }
+
+/* The grain centre grip. The line itself is drawn on the canvas with the marks
+   it belongs to; this is only the handle. It shows on hover and while dragging,
+   and the guide across the lane appears only while you are actually moving it —
+   a permanent rule through the middle of the waveform is one more line between
+   you and the sound. */
+.grain-centre {
+  position: absolute; left: 0; width: 34px; height: 13px; margin-top: -6px;
+  z-index: 4; cursor: ns-resize; touch-action: none;
+}
+.grain-centre.hidden { display: none; }
+.grain-centre i {
+  position: absolute; left: 4px; right: 4px; top: 5px; height: 3px;
+  border-radius: 2px; background: var(--text-dimmer); opacity: .5;
+  transition: opacity .12s, background .12s;
+}
+.grain-centre:hover i, .grain-centre.dragging i { background: var(--accent); opacity: 1; }
+/* The guide, while dragging only. */
+.grain-centre::after {
+  content: ''; position: absolute; left: 34px; top: 6px; width: 100vw; height: 1px;
+  background: var(--accent); opacity: 0; pointer-events: none;
+}
+.grain-centre.dragging::after { opacity: .55; }
 #specCanvas { display: none; z-index: 1; }
 
 /* With the spectrogram on, the two canvases split the lane. All geometry lives
@@ -968,7 +1034,7 @@ body.editing .transport { background: var(--surface); }
 .rack-slot.selected .nm { color: var(--text); }
 .rack-slot .sm {
   font-family: var(--mono); font-size: 9px; color: var(--text-dimmer);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .rack-slot .power {
   width: 10px; height: 10px; flex-shrink: 0; padding: 0; border-radius: 50%;
@@ -998,6 +1064,21 @@ body.editing .transport { background: var(--surface); }
   text-align: right;
 }
 .param input[type=range] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent); }
+
+/* No knob on any slider in the app.
+   The handle was in the way of the thing it sits on and dated the panel; the
+   filled track already says where the value is, which is the whole job. Hidden
+   rather than removed — `opacity: 0` keeps the native geometry and the
+   `accent-color` fill exactly as they were, where `appearance: none` would take
+   the fill with it and leave the track to be painted by hand.
+
+   It is still a slider: the same hit area, the same drag, the same keyboard. */
+input[type=range]::-webkit-slider-thumb { opacity: 0; }
+input[type=range]::-moz-range-thumb { opacity: 0; border: 0; }
+
+/* One height everywhere. Thirty-eight sliders were 14px and the transport's
+   volume was 16 — the only one out of step in the whole app. */
+#volume { height: 14px; }
 /* A bar the stroke is currently crossing. */
 /* A control that is present but cannot do anything yet, because the switch
    above it is off. Dimmed rather than hidden: it says what is waiting. */
@@ -1010,7 +1091,9 @@ body.editing .transport { background: var(--surface); }
    columns between them. */
 .seg-param { grid-template-columns: var(--param-k) minmax(0, 1fr); }
 .seg-param .seg { width: 100%; }
-.seg-param .seg-btn { flex: 1; min-width: 0; }
+/* Equal thirds by width, not by flex growth, with the two 2px gaps taken out
+   first so they never butt against one another. */
+.seg-param .seg-btn { width: calc((100% - 8px) / 3); padding: 0; min-width: 0; }
 
 /* A switch sits in the table like everything else: name in the name column,
    control in the control column. What is in the control column is a rocker —
@@ -1364,9 +1447,9 @@ body.editing .dock { flex: 0 0 300px; }
    accent text — so "this one is chosen" looks the same everywhere in the tray
    whether the control has two states or three. */
 .tiny.switch.on {
-  background: var(--surface-3); color: var(--accent);
+  background: var(--accent); border-color: var(--sink); color: var(--sink);
 }
-.tiny.switch.on:hover { color: var(--accent); }
+.tiny.switch.on:hover { color: var(--sink); filter: brightness(1.08); }
 
 .cpanel {
   background: var(--surface-2); border: 1px solid var(--line);
@@ -1526,18 +1609,70 @@ body.editing .dock { flex: 0 0 330px; }
 
 /* Which stretch engine. A choice about the material, not a quality ladder, so
    it reads as two named options rather than a slider. */
-.engine-pick { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
-/* One button on this row and no more. Random briefly joined Reset here and the
-   engine labels collapsed to nineteen pixels — five engines and a reset is what
-   it holds at the narrowest dock width. Random lives on the preset row. */
-.engine-pick .tiny { margin-left: auto; }
+/* The row reserves RESET's place instead of letting it sit on top of the tabs.
+   RESET is absolutely positioned at the right-hand end, so without this the
+   five tabs ran straight under it — 53px of overlap at a narrow window, with
+   `Granular` underneath the button. */
+.engine-pick {
+  display: block; position: relative; white-space: nowrap;
+  min-height: 24px; margin-bottom: 2px;
+}
+/* Reset is the next button on the row. Not a different kind of button placed
+   near it — the same one, with a different word in it.
+   
+   It inherits nothing from `.tiny` here: every property that decides where a
+   button sits and how big it is is restated to match `.engine-pick .seg-btn`
+   exactly. That is why it lines up — same height, same font, same border, same
+   vertical-align, same box-sizing — rather than because a padding was tuned
+   until it looked close.
+   
+   It is in the flow, so it cannot overlap the tabs at any width or zoom. It was
+   `position: absolute; right: 0`, which let it land on top of "Granular"
+   whenever the tabs were wider than the space left over. */
+.engine-pick .tiny {
+  position: static; display: inline-block; vertical-align: top;
+  box-sizing: border-box;
+  height: 22px; width: auto; padding: 0 2px; margin: 0 0 0 6px;
+  font-size: 10px; font-weight: 500; letter-spacing: 0; text-transform: none;
+  border: 1px solid var(--line-2); border-radius: 4px;
+  background: transparent; color: var(--text-dim);
+  line-height: 20px;
+}
+.engine-pick .tiny:hover { border-color: var(--accent); color: var(--accent); }
 /* Five engines rather than three, so the padding comes off the buttons before
    it comes off the reset — the row has to hold on the narrowest dock width. */
-.engine-pick .seg { flex: 1 1 auto; min-width: 0; }
-.engine-pick .seg-btn { font-size: 10px; padding: 0 5px; flex: 1 1 auto; min-width: 0; }
+/* The engines, as they were, with a border added.
+   Transparent and borderless, an unchosen engine read as a word printed on the
+   panel rather than something to click. A border is the whole change — the
+   size, the type and the chosen state are what they were. */
+.engine-pick .seg { padding: 0; background: transparent; gap: 2px; }
+/* 2px of padding. Measured: at 5px the tabs were 273 wide and RESET needs 71,
+   which is 344 in a 324px panel — RESET sat on `Granular`. At 3px they came to
+   exactly 253 and RESET starts at 253, touching with no gap at all. 2px leaves
+   ten pixels of daylight between the two. */
+.engine-pick .seg-btn {
+  box-sizing: border-box;
+  height: 22px; width: auto; padding: 0 2px; font-size: 10px;
+  border: 1px solid var(--line-2); border-radius: 4px;
+  vertical-align: top; line-height: 20px;
+}
+.engine-pick .seg-btn:hover { border-color: var(--line-3); }
+/* Selected takes a dark border, so the chosen one is outlined against the row
+   rather than only tinted. */
+.engine-pick .seg-btn.active { border-color: var(--sink); }
 .engine-pick .check { font-size: 10px; transition: opacity .15s ease; }
 /* The chosen engine's own controls, under the picker. */
-.engine-params { display: flex; flex-direction: column; gap: 9px; margin: 8px 0 2px; }
+/* No gap between the rows. Every other slider group in the tray — the stretch
+   rows, the wild groups — puts its rows straight under one another at 16px, and
+   a 9px gap here made the engine's own sliders sit 25px apart. Measured, not
+   guessed: Re-anchor at 653 and Analysis window at 678 against Stretch/Pitch at
+   731/747. */
+/* The three containers under the picker, in order: the button row, the three
+   core sliders, then the engine's own. Same spacing in each, so a slider is
+   16px below the one above it wherever it lives. */
+.engine-switch-host { margin: 8px 0 2px; }
+.stretch-core { display: flex; flex-direction: column; gap: 0; }
+.engine-params { display: flex; flex-direction: column; gap: 0; margin: 0 0 2px; }
 
 /* ------------------------------------------------------------ the modal
    One card over a dimmed page. Used by the preset manager, and built to be
@@ -1798,11 +1933,113 @@ body.editing .dock { flex: 0 0 330px; }
 
 /* The engine's switches and its tuning, on one row: whatever this engine has
    on the left, the scale at the right-hand end. */
+/* Every button the same fixed size, always.
+   Sharing the row between however many buttons happen to be there made them
+   change size with the engine: two buttons came out fat, three came out medium,
+   and the same control was a different shape depending on what was beside it.
+   A fixed width means a button is a button. */
+/* Four fixed slots on one line, and WSOLA is the master.
+   1 the engine's own switch · 2 the grain cloud · 3 the tuning · 4 Keys.
+   Every button is placed by its slot, so a control is in the same spot on every
+   engine and an engine with nothing for slot 1 leaves a hole instead of sliding
+   the rest along. Keys is slot 4 and slot 4 is the right-hand end of the row.
+   Equally spaced by construction: 71px wide, 77px apart. */
 .engine-switches {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  min-height: 20px; margin-bottom: 2px;
+  display: block; position: relative; margin-bottom: 2px;
+  height: 18px; white-space: nowrap;
 }
-.engine-switches .scale-btn { margin-left: auto; }
+.engine-switches > [data-slot] {
+  position: absolute; top: 0; margin: 0; width: 71px;
+  /* Zero line-height on the slot, restored on the button inside it. Without
+     this the `.param` wrapper's line box pushed the toggles three pixels below
+     the tuning and Keys, which are buttons in their own right. */
+  line-height: 0;
+}
+.engine-switches > [data-slot] > * { line-height: normal; vertical-align: top; }
+/* The switches flow from the left in order; the tuning and Keys are always the
+   last two places on the row, whatever the engine put before them. Keys is the
+   final position on the panel and does not move. */
+.engine-switches > [data-slot] {
+  display: inline-block; vertical-align: top;
+}
+/* Four fixed places, 71 wide and 77 apart — so every gap is exactly 6, at every
+   width, on every engine.
+   
+   The two arrangements that came before each broke one half of this. Pinning
+   the tuning and Keys to the row's right edge kept them still but left the
+   middle gap to be whatever was left over: 28px at one width, zero at another,
+   with the grain cloud butting into the tuning as the panel narrowed. Letting
+   all four flow made the gaps even but moved the tuning and Keys every time an
+   engine had a different number of switches.
+   
+   Fixed offsets do both. An engine with nothing for a slot leaves it empty
+   rather than sliding the rest along. */
+.engine-switches > [data-slot="1"] { position: absolute; left: 0; margin: 0; }
+.engine-switches > [data-slot="2"] { position: absolute; left: 77px; margin: 0; }
+.engine-switches > [data-slot="3"] { position: absolute; left: 154px; margin: 0; }
+.engine-switches > [data-slot="4"] { position: absolute; left: 231px; margin: 0; }
+
+/* A pop-out, not a setting. Everything else on this row changes a value; this
+   opens a window, so it is a different shape: filled rather than outlined, with
+   the mark that says a window is coming. Always at the right-hand end. */
+.popout-btn {
+  display: inline-block; vertical-align: top; margin: 0;
+  width: 71px; height: 18px; padding: 0 4px;
+  border: 1px solid var(--line-3); border-radius: 4px;
+  background: var(--surface-2h); color: var(--text-2);
+  font: inherit; font-size: 9.5px; font-weight: 500;
+  white-space: nowrap; cursor: pointer;
+}
+.popout-btn:hover { border-color: var(--accent); color: var(--accent); }
+.popout-btn.on { border-color: var(--accent); color: var(--accent); }
+.popout-mark { font-style: normal; opacity: 0.65; margin-left: 3px; font-size: 8.5px; }
+/* `vertical-align: top` on everything, so the inline-blocks sit on the row's
+   top edge instead of on a text baseline — that baseline is what put the
+   toggles four pixels below the tuning and Keys. */
+.engine-switches > * {
+  display: inline-block; vertical-align: top;
+  width: 71px; margin: 0 6px 0 0;
+}
+.engine-switches .scale-btn {
+  display: inline-block; vertical-align: top;
+  margin: 0 6px 0 0; max-width: none; width: 71px; height: 18px; padding: 0 3px;
+}
+/* The name takes what is left after the caret, which is always visible — a
+   dropdown with its arrow cut off is just a button. */
+.scale-name { overflow: hidden; text-overflow: clip; }
+.menu-caret { font-style: normal; opacity: 0.6; font-size: 8px; margin-left: 2px; }
+/* Not inline-flex. The caret is an inline glyph after the name; centring is
+   `text-align`, which is what it was for. */
+.scale-btn { text-align: center; }
+/* Every `.tiny` in the tray is the same size wherever it sits, for the same
+   reason it is the same word: a button is recognised by its shape before it is
+   read, and a Reset that is one width here and another there is two buttons.
+
+   71px is measured, not chosen: the row is 304px, it has to hold four buttons
+   and three 6px gaps, and the widest collapsed label — "prsrv trnsnts" — is
+   61px of text. 71 minus 8px of padding leaves 63. It fits, and it does not
+   wrap. */
+.tiny { width: 71px; padding: 0 4px; }
+/* `check` returns a `.param` row — a three-column grid sized to the control
+   table — and on this row that grid is 158px of nothing before the button even
+   starts. Here the wrapper is just the button. */
+/* Not a `.param` grid on this row.
+   `check` returns a three-column control-table row, and inside a slot that grid
+   centred the button in a taller box — which is what put the toggles four
+   pixels below the tuning and Keys. Here the wrapper is the button's box and
+   nothing else. */
+.engine-switches .param.toggle {
+  display: inline-block; vertical-align: top;
+  width: 71px; height: 18px; margin: 0 6px 0 0; padding: 0;
+  grid-template-columns: none; align-items: initial;
+}
+.engine-switches .param.toggle .tiny { width: 71px; height: 18px; display: block; }
+/* `#dockStretch .toggle { margin: 3px 0 }` is an ID selector and outranks the
+   class rule above, which is where the toggles' three-pixel drop came from —
+   they sat below the tuning and Keys on what was meant to be one line. Matched
+   here at the same specificity rather than fought with `!important`. */
+#dockStretch .engine-switches > [data-slot] { margin: 0 6px 0 0; padding: 0; }
+
 
 
 /* The cloud pad: the grain cloud drawn where it actually is, with the read
@@ -1906,7 +2143,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .kb-panel.hidden { display: none; }
 .kb-card {
-  width: max-content; max-width: 96vw; pointer-events: auto;
+  max-width: 96vw; pointer-events: auto;
   background: var(--surface); border: 1px solid var(--line-2);
   border-radius: 10px; overflow: hidden;
   box-shadow: 0 18px 44px var(--shadow);
@@ -1922,7 +2159,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .kb-head h2 { margin: 0; font-size: 12px; }
 .kb-head .ghost { padding: 0 7px; height: 19px; font-size: 11px; }
 .kb-head .modal-sub { font-size: 10px; }
-.kb-head .modal-sub { flex: 1; }
+.kb-head .modal-sub { min-width: 0; overflow: hidden; white-space: nowrap; }
 .kb-body { padding: 7px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
 
 /* A piano, not a row of buttons. The whites are one unbroken row — there are no
@@ -1982,3 +2219,14 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .kb-now { font-family: var(--mono); }
 .kb-oct.on { color: var(--accent); }
 .kb-now { color: var(--text-2); min-width: 46px; text-align: right; }
+
+
+/* The grain views, as a window rather than half the stretch tray. */
+.vis-window-card { width: min(760px, 92vw); }
+.vis-window-body { padding: 6px; }
+.vis-window-body .grain-vis {
+  display: flex; flex-direction: column; gap: 6px;
+  width: 100%; height: 420px; min-height: 0;
+}
+.vis-window-body #grainCanvas,
+.vis-window-body #grainFrame { flex: 1 1 auto; min-height: 0; width: 100%; }

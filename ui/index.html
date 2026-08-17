@@ -115,6 +115,24 @@
     </div>
 
     <div class="panel-body hidden" id="paneTheme">
+      <!-- The waveform's colour, on its own and above the palette. It is not
+           derived from a theme and a theme does not touch it: which colour reads
+           best against a sound is a matter of the sound, not of the chrome. -->
+      <div class="field-label">Waveform</div>
+      <div class="seg wave-seg" id="waveColours">
+        <button class="seg-btn" data-wave="blue"><i></i>Blue</button>
+        <button class="seg-btn" data-wave="green"><i></i>Green</button>
+        <button class="seg-btn" data-wave="red"><i></i>Red</button>
+        <button class="seg-btn" data-wave="purple"><i></i>Purple</button>
+      </div>
+      <div class="fx-row wave-own">
+        <label class="wave-own-label" for="waveOwn">Your own</label>
+        <input type="color" id="waveOwn" value="#39ff5a" title="Any colour you like — the waveform takes it as you move">
+        <button class="ghost" id="waveReset">Reset</button>
+      </div>
+      <div class="fx-note">Neon, so the sound reads against the surface behind
+      it. The grain marks keep their own colour.</div>
+      <div class="divider"></div>
       <div class="field-label">Palette</div>
       <div class="fx-note">A palette gives colour and direction; the ladder of
       surfaces, text and borders is derived from it, so contrast holds whatever
@@ -215,6 +233,12 @@
            `drawGrainLayer`. Above the waveform, below the selection and the
            playhead — it is a thing about the sound, not a thing you edit. -->
       <canvas id="grainLayer"></canvas>
+      <!-- The line the grain marks are struck from. It defaulted to the middle
+           of the lane, which is not the middle of the waveform once the
+           spectrogram takes the bottom of it — so it is a grip you place. A
+           short tab at the left edge rather than a full-width band, because the
+           rest of that line has to stay available for selecting. -->
+      <div class="grain-centre hidden" id="grainCentre" title="Drag to move the grain centre line · double-click to centre on the waveform"><i></i></div>
       <div class="selection hidden" id="selection"></div>
       <div class="cue" id="cue"><i></i></div>
       <!-- How wide a swathe of the file the cloud is reading right now. See
@@ -313,6 +337,23 @@
          The letters are the usual tracker layout — A is the tonic and the row
          above carries the notes between — but what each one plays comes from
          the *tuning*, not from twelve semitones. See `noteKeys` in app.js. -->
+    <!-- The grain views, as a window.
+         They used to sit in the stretch tray taking half its width and
+         redrawing beside the controls. `#grainVis` is *moved* into here when the
+         window opens rather than rebuilt, so the view picker, the 2D canvas, the
+         3D iframe and the legend are the same elements the drawing code already
+         holds — nothing had to be rewired. -->
+    <div class="kb-panel hidden" id="visWindow">
+      <div class="kb-card vis-window-card">
+        <header class="kb-head" id="visWindowDrag">
+          <h2>Grains</h2>
+          <span class="modal-sub" id="visWindowSub"></span>
+          <button class="ghost" id="visWindowClose" title="Close">Close</button>
+        </header>
+        <div class="vis-window-body" id="visWindowBody"></div>
+      </div>
+    </div>
+
     <div class="kb-panel hidden" id="keyboardModal">
       <div class="kb-card">
         <header class="kb-head" id="kbDrag">
@@ -419,7 +460,13 @@
               <div id="extGrain"></div>
             </div>
           </div>
-          <div class="grain-vis">
+          <!-- The grain views used to live here, taking half the tray and
+               redrawing every frame beside the controls. They are a window now:
+               Window ▸ Grain visualiser. The markup moves wholesale rather than
+               being rebuilt, so the view picker, the canvas, the iframe and the
+               legend are the same elements the code already drives — it is
+               `buildVisPop` that adopts them. -->
+          <div class="grain-vis hidden" id="grainVis">
             <div class="vis-pick" id="visPick">
               <button class="vis-tab active" data-vis="0" title="The original swarm">Swarm 2D</button>
               <button class="vis-tab" data-vis="1" title="Output time against source time — the stretch as a slope">Shear</button>
