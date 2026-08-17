@@ -19,20 +19,9 @@ use crate::stretcher::Stretcher;
 /// clicks without it.
 const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 
-/// Below this peak, a stopped chain counts as quiet.
-///
-/// About -80 dBFS: long after a reverb tail has gone, but above the
-/// denormal-scale noise that would otherwise keep the rack running for ever.
-const TAIL_SILENCE: f32 = 1e-4;
-
-/// How long a stopped rack goes on being processed after it last made a sound.
-///
-/// Four seconds covers any reverb worth having and the gap between repeats of a
-/// slow delay. A countdown rather than a switch, so a delay that is briefly
-/// silent between taps is not mistaken for a finished one.
-fn tail_budget(sample_rate: u32) -> u64 {
-    sample_rate as u64 * 4
-}
+/// The tail constants live in `fx` now, because the offline renderer rings out
+/// too and the two must not drift — see `fx::TAIL_SILENCE`.
+use fx::{tail_budget, TAIL_SILENCE};
 
 /// The shortest loop the wrap-and-crossfade path will accept.
 ///

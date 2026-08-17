@@ -235,6 +235,34 @@ pub const GAIN_DB_MIN: f32 = -24.0;
 pub const GAIN_DB_MAX: f32 = 24.0;
 
 /// One slot in the rack: an effect plus whether it is switched in.
+/// Below this peak, a chain with nothing going into it counts as quiet.
+///
+/// About -80 dBFS: long after a reverb tail has gone, but above the
+/// denormal-scale noise that would otherwise keep a rack running for ever.
+///
+/// Here rather than in the engine because both the live transport and the
+/// offline renderer have to agree on when a tail has finished. They had no
+/// reason to agree while only one of them had a tail; now that the export can
+/// ring out too, a difference between them would mean the file did not end
+/// where the sound did.
+pub const TAIL_SILENCE: f32 = 1e-4;
+
+/// How long a chain goes on being processed after it last made a sound.
+///
+/// Four seconds covers any reverb worth having and the gap between repeats of a
+/// slow delay. A countdown rather than a switch, so a delay that is briefly
+/// silent between taps is not mistaken for a finished one.
+pub fn tail_budget(sample_rate: u32) -> u64 {
+    sample_rate as u64 * 4
+}
+
+/// The longest an offline tail may run, whatever the countdown says.
+///
+/// Reverb `freeze` is documented as the only way to reach an actually infinite
+/// tail — it is unbounded by construction, and a render has to end. Live
+/// playback needs no such cap because stopping is a thing the listener does.
+pub const TAIL_CAP_SECONDS: u64 = 30;
+
 pub struct Slot {
     pub effect: Box<dyn Effect>,
     pub bypassed: bool,

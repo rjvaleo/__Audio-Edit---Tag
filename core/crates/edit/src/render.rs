@@ -518,6 +518,197 @@ where
     Ok(total)
 }
 
+/// What to repeat, how many times, and whether to let the rack ring out.
+///
+/// `from`/`to` are **output** frames — the caller maps the selection through the
+/// stretch before it gets here, because the ratio is the server's to know.
+pub struct LoopPlan {
+    pub from: u64,
+    pub to: u64,
+    pub repeats: u32,
+    pub tail: bool,
+}
+
+/// How much fade the seam of a loop this long can afford.
+///
+/// A quarter of the loop capped at 512 frames, which is `loop_fade` in the
+/// engine's transport. The same number on purpose: the export has to sound like
+/// what was auditioned, and a seam of a different length would not.
+fn loop_fade(len: u64) -> usize {
+    const LOOP_FADE_FRAMES: usize = 512;
+    LOOP_FADE_FRAMES.min((len / 4) as usize)
+}
+
+/// Ramp the last `n` frames of a slice down to silence.
+fn fade_out(block: &mut [f32], channels: usize, n: usize) {
+    let channels = channels.max(1);
+    let frames = block.len() / channels;
+    let n = n.min(frames);
+    for i in 0..n {
+        let k = 1.0 - (i + 1) as f32 / n as f32;
+        let f = frames - n + i;
+        for ch in 0..channels {
+            block[f * channels + ch] *= k;
+        }
+    }
+}
+
+/// Ramp the first `n` frames of a slice up from silence.
+fn fade_in(block: &mut [f32], channels: usize, n: usize) {
+    let channels = channels.max(1);
+    let frames = block.len() / channels;
+    let n = n.min(frames);
+    for i in 0..n {
+        let k = (i + 1) as f32 / n as f32;
+        for ch in 0..channels {
+            block[i * channels + ch] *= k;
+        }
+    }
+}
+
+/// Export the loop, repeated, optionally letting the rack finish sounding.
+///
+/// Buffer-first, unlike [`render_to_aiff_controlled`], which writes its header
+/// from `list.frames()` before producing a sample. A tail's length is not
+/// knowable until the rack has been run, so the samples have to exist before the
+/// header can be written — the shape [`write_aiff_controlled`] already uses.
+///
+/// The tiling is of **dry** audio and the rack is run once, continuously, over
+/// the whole tiled stream. Rendering the loop wet and then repeating it would
+/// give every repeat its own severed reverb tail, chopped at the seam and
+/// restarted; running the rack over the tiled stream lets the reverb and the
+/// delay bleed across each repeat exactly as they do when the transport loops.
+pub fn render_loop_to_aiff_controlled<S: RandomAccessSource, W: Write, F>(
+    list: &EditList,
+    reader: &mut Reader<S>,
+    rack: &mut Rack,
+    out: &mut W,
+    bits: u16,
+    meta: &audio_core::aiff::Meta,
+    plan: &LoopPlan,
+    mut control: F,
+) -> io::Result<u64>
+where
+    F: FnMut(&mut Rack, u64),
+{
+    let ch = list.channels.max(1) as usize;
+    let sr = list.sample_rate;
+
+    // Dry: the stretch applied, the rack not. A stretched document cannot be
+    // rendered from the middle — WSOLA chooses each splice from the one before
+    // it — so the whole thing is produced and then sliced.
+    let dry = if list.is_stretched() {
+        let base = render(list, reader, 0, list.base_frames())?;
+        list.stretch.process(&base, ch, sr)
+    } else {
+        render(list, reader, 0, list.frames())?
+    };
+
+    let have = (dry.len() / ch) as u64;
+    let from = plan.from.min(have);
+    let to = plan.to.min(have);
+    if to <= from {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "loop range is empty after mapping through the stretch",
+        ));
+    }
+    let loop_len = to - from;
+    let repeats = plan.repeats.max(1) as u64;
+    let seam = loop_fade(loop_len);
+
+    let mut audio: Vec<f32> = Vec::with_capacity((loop_len * repeats) as usize * ch);
+    for r in 0..repeats {
+        let at = audio.len();
+        audio.extend_from_slice(&dry[(from as usize * ch)..(to as usize * ch)]);
+        let this = &mut audio[at..];
+        // The engine does not overlap two copies — one source, so it fades the
+        // outgoing material to zero and the incoming material up from zero
+        // across the jump. Every repeat keeps its exact length; the seam is a
+        // dip through zero.
+        if r + 1 < repeats {
+            fade_out(this, ch, seam);
+        }
+        if r > 0 {
+            fade_in(this, ch, seam);
+        }
+    }
+    drop(dry);
+
+    let musical = loop_len * repeats;
+    if plan.tail {
+        audio.resize(((musical + fx::TAIL_CAP_SECONDS * sr as u64) as usize) * ch, 0.0);
+    }
+
+    // One continuous pass, so the rack never restarts mid-stream.
+    rack.reset();
+    let mut frame = 0u64;
+    for block in audio.chunks_mut(1024 * ch) {
+        // The document frame this block starts at, wrapped back into the loop
+        // so an automation lane repeats with the audio instead of running off
+        // the end. Through the tail it holds at the loop's last frame.
+        let doc = if frame < musical {
+            from + (frame % loop_len)
+        } else {
+            to.saturating_sub(1)
+        };
+        control(rack, doc);
+        rack.process(block, ch, sr);
+        frame += (block.len() / ch) as u64;
+    }
+
+    // Where the tail stopped saying anything. The countdown is restored by any
+    // peak above the floor, so a delay that is briefly silent between taps is
+    // not mistaken for a finished one.
+    let mut total = musical;
+    if plan.tail {
+        let budget = fx::tail_budget(sr);
+        let mut left = budget;
+        let end = (audio.len() / ch) as u64;
+        total = end;
+        for f in musical..end {
+            let mut peak = 0.0f32;
+            for c in 0..ch {
+                peak = peak.max(audio[f as usize * ch + c].abs());
+            }
+            if peak > fx::TAIL_SILENCE {
+                left = budget;
+            } else {
+                left -= 1;
+                if left == 0 {
+                    total = f + 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    let codec = codec_for(bits);
+    let bps = codec.bytes_per_sample() as u64;
+    out.write_all(&audio_core::aiff::header(
+        total * ch as u64 * bps,
+        list.channels.max(1),
+        sr,
+        codec,
+        meta,
+    ))?;
+
+    let mut written = 0u64;
+    for block in audio[..(total as usize * ch)].chunks(1024 * ch) {
+        let mut bytes = Vec::with_capacity(block.len() * bps as usize);
+        for v in block.iter() {
+            quantise(*v, bits, true, &mut bytes);
+        }
+        written += bytes.len() as u64;
+        out.write_all(&bytes)?;
+    }
+    if written % 2 == 1 {
+        out.write_all(&[0])?;
+    }
+    out.flush()?;
+    Ok(total)
+}
+
 pub fn render_to_aiff_controlled<S: RandomAccessSource, W: Write, F>(
     list: &EditList,
     reader: &mut Reader<S>,

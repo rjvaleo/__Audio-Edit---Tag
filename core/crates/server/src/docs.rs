@@ -229,12 +229,28 @@ pub fn edit_json(list: &EditList, can_undo: bool, can_redo: bool) -> Value {
 /// Always all four, even at their defaults. A name that omits what is inert is
 /// a name you cannot predict, sort or grep.
 pub fn export_name(rel: &str, stretch: &fx::Stretch) -> String {
+    export_name_looped(rel, stretch, None)
+}
+
+/// The same name, with the loop said out loud when there is one.
+///
+/// `loop 4x` and `loop 4x tail` go before the extension, so a looped export
+/// sorts beside the whole-file one it came from and is never mistaken for it.
+pub fn export_name_looped(
+    rel: &str,
+    stretch: &fx::Stretch,
+    looped: Option<(u32, bool)>,
+) -> String {
     let stem = Path::new(rel)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "export".into());
+    let mark = match looped {
+        Some((n, tail)) => format!(" loop {n}x{}", if tail { " tail" } else { "" }),
+        None => String::new(),
+    };
     format!(
-        "{stem} {} {:.2}x {}{:.1}st {}ms.aiff",
+        "{stem} {} {:.2}x {}{:.1}st {}ms{mark}.aiff",
         stretch.algorithm.as_str(),
         stretch.ratio,
         if stretch.semitones >= 0.0 { "+" } else { "" },
@@ -249,8 +265,17 @@ pub fn export_name(rel: &str, stretch: &fx::Stretch) -> String {
 /// will be looking for it. The source is opened read-only and is never
 /// touched; this only ever creates a new name.
 pub fn export_target(lib: &Path, rel: &str, stretch: &fx::Stretch) -> PathBuf {
+    export_target_looped(lib, rel, stretch, None)
+}
+
+pub fn export_target_looped(
+    lib: &Path,
+    rel: &str,
+    stretch: &fx::Stretch,
+    looped: Option<(u32, bool)>,
+) -> PathBuf {
     let dir = Path::new(rel).parent().map(|p| lib.join(p)).unwrap_or_else(|| lib.to_path_buf());
-    unique(dir.join(export_name(rel, stretch)))
+    unique(dir.join(export_name_looped(rel, stretch, looped)))
 }
 
 /// A name nothing is using yet.

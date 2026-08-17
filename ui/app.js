@@ -987,6 +987,52 @@ function updateOverviewCue() {
 /// real grains on screen to draw — and the old cap threw three quarters of them
 /// away again on this side. Canvas strokes a single path for all of them, so
 /// this is one draw call whatever the number.
+/// Where on the lane the grain marks are struck from, as a fraction of its
+/// height.
+///
+/// It was `h / 2` — the middle of the *layer*, which spans the whole lane. With
+/// the spectrogram splitting that lane the waveform only has the top of it, so
+/// the marks were struck from a line well below the sound they describe. The
+/// default now follows the split, and the grip overrides it.
+const GRAIN_CENTRE_STORE = 'audiolab.grainCentre';
+
+function grainCentreDefault() {
+  const lane = $('lane');
+  if (lane && lane.classList.contains('split')) return laneSplit() / 200;
+  return 0.5;
+}
+
+function grainCentre() {
+  const v = Number(localStorage.getItem(GRAIN_CENTRE_STORE));
+  return Number.isFinite(v) && v > 0.02 && v < 0.98 ? v : grainCentreDefault();
+}
+
+function setGrainCentre(frac, { save = true } = {}) {
+  const v = Math.min(0.98, Math.max(0.02, frac));
+  if (save) {
+    try { localStorage.setItem(GRAIN_CENTRE_STORE, String(v)); } catch { /* private mode */ }
+  } else {
+    setGrainCentre.live = v;
+  }
+  placeGrainCentre(v);
+  drawGrainLayer();
+  return v;
+}
+
+function placeGrainCentre(frac) {
+  const grip = $('grainCentre');
+  if (grip) grip.style.top = `${(frac * 100).toFixed(3)}%`;
+}
+
+/// While dragging, the live value; otherwise what is stored.
+function grainCentreNow() {
+  const grip = $('grainCentre');
+  if (grip?.classList.contains('dragging') && setGrainCentre.live !== undefined) {
+    return setGrainCentre.live;
+  }
+  return grainCentre();
+}
+
 const GRAIN_LAYER_CAP = 12000;
 
 /// How long a struck grain stays lit, in seconds of output.
@@ -999,9 +1045,11 @@ function drawGrainLayer() {
   const { from, to, sampleRate } = state.view;
   if (!g?.grains?.length || !state.peaks || !sampleRate || to <= from) {
     el.classList.add('hidden');
+    $('grainCentre')?.classList.add('hidden');
     return;
   }
   el.classList.remove('hidden');
+  $('grainCentre')?.classList.remove('hidden');
 
   const w = el.clientWidth, h = el.clientHeight;
   if (!w || !h) return;
@@ -1014,6 +1062,7 @@ function drawGrainLayer() {
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, w, h);
 
+  const mid = h * grainCentreNow();
   const sr = g.sampleRate || sampleRate;
   const playFrame = playbackTime() * sr;
   const span = to - from;
@@ -1056,8 +1105,8 @@ function drawGrainLayer() {
     // Short ticks off the centre line rather than full-height bars: the
     // waveform underneath is the thing being read, and a picket fence over it
     // hides exactly what the marks are about.
-    c.moveTo(px, h * 0.5 - tall);
-    c.lineTo(px, h * 0.5 + tall);
+    c.moveTo(px, mid - tall);
+    c.lineTo(px, mid + tall);
   }
   c.stroke();
   c.globalAlpha = 1;
@@ -1084,7 +1133,7 @@ function drawGrainLayer() {
 
     // The spark: a bright core with a short bloom, which is what makes it read
     // as struck rather than merely coloured in.
-    const grd = c.createLinearGradient(px, h / 2 - half, px, h / 2 + half);
+    const grd = c.createLinearGradient(px, mid - half, px, mid + half);
     const core = warm
       ? `rgba(255, ${190 - Math.min(70, (pitch - base) * 6) | 0}, 130,`
       : `rgba(150, 205, 255,`;
@@ -1094,8 +1143,8 @@ function drawGrainLayer() {
     c.strokeStyle = grd;
     c.lineWidth = 1 + heat * 1.6 + (bright || 0) * 2;
     c.beginPath();
-    c.moveTo(px, h / 2 - half);
-    c.lineTo(px, h / 2 + half);
+    c.moveTo(px, mid - half);
+    c.lineTo(px, mid + half);
     c.stroke();
   }
 
@@ -1528,6 +1577,10 @@ function setLaneSplit(pct, { save = true } = {}) {
   // The canvases are stretched by CSS rather than redrawn, so nothing has to be
   // re-rendered — but the waveform's buffer is positioned in pixels.
   layoutWaveBuffer();
+  // Unless it has been placed by hand, the grain centre is the waveform's
+  // centre — so it moves when the waveform's share of the lane does.
+  placeGrainCentre(grainCentre());
+  drawGrainLayer();
 }
 
 function wireLaneSplit() {
@@ -1570,6 +1623,60 @@ function wireLaneSplit() {
 }
 
 wireLaneSplit();
+
+/// The grain centre grip: same gesture as the lane split, including
+/// double-click to put it back.
+function wireGrainCentre() {
+  const grip = $('grainCentre');
+  const lane = $('lane');
+  if (!grip || !lane) return;
+  placeGrainCentre(grainCentre());
+
+  // The lane starts a selection on `mousedown`, which is a separate event from
+  // `pointerdown` — stopping one does not stop the other, and without this a
+  // drag on the grip also swept a selection across the file underneath it.
+  for (const ev of ['mousedown', 'click', 'dblclick']) {
+    grip.addEventListener(ev, (e) => e.stopPropagation());
+  }
+
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('dragging');
+
+    const frac = (ev) => {
+      const r = lane.getBoundingClientRect();
+      return r.height > 0 ? (ev.clientY - r.top) / r.height : null;
+    };
+    const move = (ev) => {
+      const f = frac(ev);
+      if (f !== null) setGrainCentre(f, { save: false });
+    };
+    const up = (ev) => {
+      grip.releasePointerCapture(e.pointerId);
+      grip.classList.remove('dragging');
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+      const f = frac(ev);
+      setGrainCentre(f === null ? grainCentre() : f);
+      setGrainCentre.live = undefined;
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
+  });
+
+  grip.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    try { localStorage.removeItem(GRAIN_CENTRE_STORE); } catch { /* private mode */ }
+    setGrainCentre.live = undefined;
+    placeGrainCentre(grainCentreDefault());
+    drawGrainLayer();
+  });
+}
+wireGrainCentre();
 
 /// covered, which may be wider and may be a window behind — the peaks and the
 /// spectrogram are separate requests and need not agree. So each is sized and
@@ -3407,14 +3514,59 @@ function knob(label, value, min, max, step, format, onChange, onCommit, log, def
 /// read as an indicator rather than a control. Replacing it with a name in the
 /// column and a little `on`/`off` box was worse — two things to look at for one
 /// bit, and the eye has to pair them up. One button, its own word, one colour.
+/// Make a label fit a small button, in the order the eye loses least.
+///
+/// Anything parenthesised goes first, then anything after a dash — both are
+/// qualifiers rather than the name. Only if it is still too long do the vowels
+/// come out, and never the first letter of a word: "preserve transients" reads
+/// as "prsrv trnsnts" but "rsrv rnsnts" reads as nothing.
+const LABEL_MAX = 11;
+
+/// Number words become numbers — on the button only, never in the tooltip.
+/// Cardinals and ordinals both, because "fifth" is as long as "five" and half
+/// as common in a label.
+const NUMBER_WORDS = [
+  ['first', '1st'], ['second', '2nd'], ['third', '3rd'], ['fourth', '4th'],
+  ['fifth', '5th'], ['sixth', '6th'], ['seventh', '7th'], ['eighth', '8th'],
+  ['ninth', '9th'], ['tenth', '10th'], ['eleventh', '11th'], ['twelfth', '12th'],
+  ['sixteenth', '16th'],
+  ['zero', '0'], ['one', '1'], ['two', '2'], ['three', '3'], ['four', '4'],
+  ['five', '5'], ['six', '6'], ['seven', '7'], ['eight', '8'], ['nine', '9'],
+  ['ten', '10'], ['eleven', '11'], ['twelve', '12'], ['sixteen', '16'],
+];
+
+function digits(t) {
+  let out = t;
+  for (const [word, num] of NUMBER_WORDS) {
+    out = out.replace(new RegExp(`\\b${word}\\b`, 'gi'), num);
+  }
+  return out;
+}
+
+function fitLabel(text) {
+  // Ordered by what the eye loses least: qualifiers, then long number words,
+  // then vowels.
+  //
+  // **Never truncated and never ellipsised.** A cut word is unreadable and a
+  // trailing "…" says only that something is missing; "trnsnts" is still the
+  // word. Dropping vowels is the last step and it is where this stops — if the
+  // result is still wide, the button is wide.
+  let t = String(text).replace(/\s*\([^)]*\)/g, '').replace(/\s*[-–—].*$/, '').trim();
+  t = digits(t);
+  if (t.length <= LABEL_MAX) return t;
+  return t.replace(/\B[aeiou]/gi, '');
+}
+
 function check(label, title, value, onChange) {
   const el = document.createElement('div');
   el.className = 'param toggle';
   el.innerHTML = `<button class="tiny switch" role="switch"></button>`;
   const b = el.querySelector('.switch');
-  b.textContent = label;
-  b.title = title || label;
-  el.title = title || label;
+  const short = fitLabel(label);
+  b.textContent = short;
+  // The full name always survives in the tooltip, so shortening never loses it.
+  b.title = short === label ? (title || label) : `${label} — ${title || ''}`.replace(/ — $/, '');
+  el.title = b.title;
 
   let on = !!value;
   const paint = () => {
@@ -3822,7 +3974,7 @@ function renderStretch() {
   eng.className = 'engine-pick';
   eng.innerHTML = `
     <div class="seg" id="stretchEngine">
-      <button class="seg-btn" data-alg="wsola" title="Time domain. Keeps transients intact - drums, percussion, one-shots.">WSOLA</button>
+      <button class="seg-btn" data-alg="wsola" title="WSOLA — time domain. Keeps transients intact: drums, percussion, one-shots.">WSOLA</button>
       <button class="seg-btn" data-alg="vocoder" title="Frequency domain. Holds chords and sustained tone together - pads, strings.">Vocoder</button>
       <button class="seg-btn" data-alg="pvsola" title="The vocoder, re-anchored to the waveform every few frames. Holds tone together without the phasiness - the one-knob default for pitched material.">PVSOLA</button>
       <button class="seg-btn" data-alg="hybrid" title="Splits the sound into tone, hits and air, and stretches each its own way. The slow one, and the only one that will not repeat noise.">Hybrid</button>
@@ -3834,18 +3986,36 @@ function renderStretch() {
   // preset row in `index.html`. Five engines and one button is what this row
   // holds at the narrowest dock width; a second one costs the engine labels.
   eng.appendChild(resetButton(
-    'stretchReset', 'Reset all',
+    'stretchReset', 'Reset',
     'Reset every control on both sides, standard and extended',
     resetEverything,
   ));
   box.appendChild(eng);
+
+  // The order under the picker is fixed, and it is the same on every engine:
+  //
+  //   1. the button row
+  //   2. Stretch, Pitch, Window — always, always these three
+  //   3. whatever sliders this engine has of its own
+  //
+  // They used to come third, after the engine's own controls, so the first
+  // slider under the buttons was `Re-anchor` on PVSOLA, `Analysis window` on
+  // the vocoder and `Tone` on the hybrid. Three separate containers rather than
+  // one, so the order cannot depend on what happens to be appended when.
+  const switchHost = document.createElement('div');
+  switchHost.className = 'engine-switch-host';
+  eng.after(switchHost);
+
+  const coreHost = document.createElement('div');
+  coreHost.className = 'stretch-core';
+  switchHost.after(coreHost);
 
   // Each engine gets its own controls. They mean different things by a
   // "window" — a splice for WSOLA, an analysis frame for the vocoder, a grain
   // for the cloud — so one shared slider was three half-explained ones.
   const own = document.createElement('div');
   own.className = 'engine-params';
-  eng.after ? eng.after(own) : box.appendChild(own);
+  coreHost.after(own);
 
   const reflectEngine = () => {
     const alg = state.stretchDraft.algorithm;
@@ -3862,9 +4032,22 @@ function renderStretch() {
     // The tuning goes on first and the engine's own switches are prepended in
     // front of it, so it sits at the right-hand end of the row whether or not
     // this engine has anything to put beside it.
-    switches.appendChild(scaleButton());
-    switches.appendChild(keysButton());
-    own.appendChild(switches);
+    // Four fixed slots, and WSOLA is the master.
+    //
+    // 1 the engine's own switch · 2 the grain cloud · 3 the tuning · 4 Keys.
+    // An engine with nothing for slot 1 leaves it empty rather than sliding the
+    // rest left, so no button ever moves when you change engine — which is the
+    // whole point of a row of controls you learn the position of.
+    const scale = scaleButton();
+    scale.dataset.slot = '3';
+    switches.appendChild(scale);
+    const keys = keysButton();
+    keys.dataset.slot = '4';
+    switches.appendChild(keys);
+    // Its own host, above the three core sliders — `own` is cleared and rebuilt
+    // per engine and sits below them.
+    switchHost.innerHTML = '';
+    switchHost.appendChild(switches);
 
     // The grain cloud, layered over whichever engine is running.
     //
@@ -3876,10 +4059,12 @@ function renderStretch() {
     // *is* the engine.
     if (alg !== 'granular') {
       const d = state.stretchDraft;
-      switches.prepend(check('grain cloud',
+      const cloudRow = check('grain cloud',
         'Run the grain cloud over this engine, reading the same source at the same stretch',
         d.cloud,
-        (on) => { d.cloud = on; reflectEngine(); commitStretch(); }));
+        (on) => { d.cloud = on; reflectEngine(); commitStretch(); });
+      cloudRow.dataset.slot = '2';
+      switches.prepend(cloudRow);
       if (d.cloud) {
         own.appendChild(tip(param('Cloud', d.cloudMix, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
@@ -3906,9 +4091,24 @@ function renderStretch() {
         (x) => `${Math.round(x)} ms`,
         (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true, VOCODER_DEFAULTS.windowMs),
         "The length of one transform, rounded to a power of two. Long resolves partials that sit close together and smears transients; short does the opposite. This is the vocoder's own window and means something different from the one above."));
-      own.appendChild(check('phase lock',
+      const phaseRow = check('phase lock',
         'Holds each partial together instead of letting it dissolve into neighbouring bins',
-        v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); }));
+        v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); });
+      const alg = state.stretchDraft.algorithm;
+      if (alg === 'pvsola' || alg === 'vocoder') {
+        // Neither has a switch of its own, so slot 1 on the row is empty and
+        // this sits there — beside the grain cloud rather than loose among the
+        // sliders. Slot 1 packs from the left and the grain cloud follows it,
+        // so the tuning and Keys keep the two places they always have.
+        //
+        // Hybrid keeps it in the panel: it already has `remake noise` on the
+        // row, and two of its own switches plus the cloud, the tuning and Keys
+        // is five buttons where the row holds four.
+        phaseRow.dataset.slot = '1';
+        engineSwitches().prepend(phaseRow);
+      } else {
+        own.appendChild(phaseRow);
+      }
 
       ext.appendChild(wild('Spectrum',
         `The vocoder normally copies magnitudes through untouched and rewrites only phase. These do not.${what}`).add(
@@ -3956,12 +4156,12 @@ function renderStretch() {
       const w = state.stretchDraft.wsola;
       const detecting = forced || w.preserveTransients;
       if (!forced) {
-        // Vowels dropped so it fits the row: the tooltip carries the meaning.
-        engineSwitches().prepend(check('prsrv trnsnts',
-          'Preserve transients — hold drum hits at their original rate so they '
-          + 'are not laid down twice',
+        const ptRow = check('preserve transients',
+          'Hold drum hits at their original rate so they are not laid down twice',
           w.preserveTransients,
-          (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); }));
+          (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); });
+        ptRow.dataset.slot = '1';
+        engineSwitches().prepend(ptRow);
       }
       if (detecting) {
         own.appendChild(tip(param('Detector', w.sensitivity, 0, 1, 0.01,
@@ -4152,7 +4352,12 @@ function renderStretch() {
     () => {commitStretch();}, true, 40),
         'The length of one piece the engine works with - a splice for WSOLA, a grain for the cloud. Short follows transients and roughens tone; long holds tone together and smears attacks.');
 
-  for (const el of Object.values(rows)) box.appendChild(el);
+  // Into the core host, which sits directly under the button row — not appended
+  // to the end of the panel, which is what put them below the engine's own
+  // sliders.
+  const core = box.querySelector('.stretch-core') || box;
+  core.innerHTML = '';
+  for (const el of Object.values(rows)) core.appendChild(el);
   state.stretchRows = rows;
   showStretchOut();
 }
@@ -5071,8 +5276,11 @@ const engineSwitches = () => document.querySelector('.engine-switches');
 /// The Keys window, opened from beside the tuning it follows.
 function keysButton() {
   const b = document.createElement('button');
-  b.className = 'scale-btn keys-btn';
-  b.textContent = 'Keys';
+  // Its own kind. Everything else on this row sets a value; this opens a
+  // window, and a button that opens a window should not look like a button that
+  // changes a setting.
+  b.className = 'popout-btn';
+  b.innerHTML = 'Keys <i class="popout-mark">⧉</i>';
   b.title = 'Play the pitch from the computer keyboard. A is the tonic, the row '
     + 'above plays the notes between, Z and X shift an octave and latch. '
     + 'The notes follow whichever tuning is chosen.';
@@ -5085,8 +5293,15 @@ function keysButton() {
 function scaleButton() {
   const b = document.createElement('button');
   b.className = 'scale-btn' + (currentScale() ? ' on' : '');
-  b.textContent = currentScale() || (currentStep() > 0 ? `${currentStep()} st grid` : 'free');
-  b.title = 'Snap the pitch shift to a tuning';
+  // A caret, because this opens a menu. Keys carries a window mark instead:
+  // one says "a list is coming", the other says "a window is coming", and they
+  // are not the same promise.
+  const name = fitLabel(currentScale() || (currentStep() > 0 ? `${currentStep()} st grid` : 'free'));
+  b.innerHTML = `<span class="scale-name"></span><i class="menu-caret">▾</i>`;
+  b.querySelector('.scale-name').textContent = name;
+  b.title = currentScale()
+    ? `${currentScale()} — snap the pitch shift to a tuning`
+    : 'Snap the pitch shift to a tuning';
   b.onclick = (e) => { e.stopPropagation(); openScaleMenu(b); };
   return b;
 }
@@ -6014,6 +6229,10 @@ function placeExtendedReset() {
   if (!panel) return;
   if (!extResetBtn) {
     extResetBtn = resetButton(
+      // `Reset`, not `Reset all`. They are different actions: this one clears
+      // the extended column and `Reset all` on the engine row clears both. Two
+      // names because two things — the consistency rule is that one *thing* is
+      // named once, not that every button says the same word.
       'extReset', 'Reset',
       'Reset only the extended controls — the standard ones are left alone',
       resetExtended,
@@ -6125,6 +6344,7 @@ function addRegion() {
 function drawMarkers() {
   const ruler = $('ruler');
   ruler.innerHTML = '';
+  ruler.classList.toggle('bare', !state.annotations.markers.length);
   for (const m of state.annotations.markers) {
     const x = framesToX(m.frame);
     if (x < 0 || x > 1) continue;
@@ -6889,6 +7109,18 @@ state.grains = null;
 /// zoom does not re-ask.
 let grainsFor = null;
 
+/// Which file the grains in hand belong to, and when the last ask failed.
+///
+/// A dropped request is not "there are no grains". It used to be treated as one
+/// — the catch cleared `state.grains`, and `grainsFollowView` will not ask again
+/// when there is nothing in hand — so a single failed fetch stopped the picture
+/// for good while the sound carried on, and the only way back was an action that
+/// called `loadGrains` itself. Reselecting a view from the menu is one, which is
+/// why that appeared to fix it.
+let grainsPath = null;
+let grainsFailedAt = 0;
+const GRAIN_RETRY_MS = 1200;
+
 /// How far either side of the playhead the swarm's schedule has to reach.
 ///
 /// Four seconds rather than the swarm's own 1.4, so playing on does not need a
@@ -6939,6 +7171,7 @@ async function loadGrains() {
   if (!f) {
     state.grains = null; state.swarm = null;
     grainsFor = null; swarmFor = null;
+    grainsPath = null; grainsFailedAt = 0;
     drawGrains();
     return;
   }
@@ -6955,9 +7188,22 @@ async function loadGrains() {
   try {
     state.grains = await api(`/api/grains?p=${encodeURIComponent(f.path)}${q}`);
     grainsFor = win;
-  } catch { state.grains = null; grainsFor = null; }
+    grainsPath = f.path;
+    grainsFailedAt = 0;
+  } catch {
+    // Keep the picture if it belongs to this file — a stale schedule is closer
+    // to the truth than a blank lane, and it is replaced the moment the retry
+    // lands. Grains from a *different* file would be a lie, so those do go.
+    if (grainsPath !== f.path) { state.grains = null; grainsPath = null; }
+    grainsFor = null;
+    grainsFailedAt = performance.now();
+  }
   await loadSwarmGrains();
   drawGrains();
+  // The lane's own layer too. It is otherwise only drawn from `updatePlayhead`,
+  // which does not run with the transport stopped — so a schedule that arrived
+  // while stopped stayed invisible until you pressed play.
+  drawGrainLayer();
 }
 
 /// A second request, only when the playhead is outside the view.
@@ -6983,7 +7229,18 @@ async function loadSwarmGrains() {
 /// of these is a schedule walk on the server.
 let grainsViewTimer = null;
 function grainsFollowView() {
-  if (!state.selectedFile || !state.grains) return;
+  if (!state.selectedFile) return;
+
+  // The last ask failed: try again, on a timer of its own so a server that is
+  // genuinely down is asked once a second rather than eight times.
+  if (grainsFailedAt) {
+    if (performance.now() - grainsFailedAt < GRAIN_RETRY_MS) return;
+    grainsFailedAt = 0;
+    loadGrains();
+    return;
+  }
+  if (!state.grains) return;
+
   const win = viewWindow();
   const head = playheadWindow();
 
@@ -7014,7 +7271,7 @@ function grainsFollowView() {
   clearTimeout(grainsViewTimer);
   grainsViewTimer = setTimeout(() => {
     if (viewStale) loadGrains();
-    else loadSwarmGrains().then(drawGrains);
+    else loadSwarmGrains().then(() => { drawGrains(); drawGrainLayer(); });
   }, 120);
 }
 
@@ -7563,6 +7820,42 @@ const pop = {
 
 const fence = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+// ───────────────────────────────────────────────────── the grain views window
+//
+// The views were half the stretch tray, drawing every frame beside the controls
+// you were trying to read. They are a window now, opened from Window ▸ Grains.
+//
+// `#grainVis` is moved into the window rather than rebuilt: the picker, the 2D
+// canvas, the 3D iframe and the legend are the same nodes `drawGrains` and
+// `visSetup` already hold references to, so nothing needed rewiring and the 2D
+// swarm keeps working exactly as it did.
+
+const visWindowOpen = () => !$('visWindow').classList.contains('hidden');
+
+function openVisWindow() {
+  const win = $('visWindow');
+  const body = $('visWindowBody');
+  const vis = $('grainVis');
+  if (!win || !body || !vis) return;
+  if (vis.parentElement !== body) body.appendChild(vis);
+  vis.classList.remove('hidden');
+  win.classList.remove('hidden');
+  // The canvas measures zero inside a hidden panel, and one sized from that
+  // stays a sliver however big the window gets. Draw after it is visible.
+  requestAnimationFrame(() => drawGrains());
+}
+
+function closeVisWindow() {
+  const win = $('visWindow');
+  if (!win) return;
+  win.classList.add('hidden');
+  $('grainVis')?.classList.add('hidden');
+}
+
+function toggleVisWindow() {
+  (visWindowOpen() ? closeVisWindow : openVisWindow)();
+}
+
 function openVisPop() {
   if (!pop.el) buildVisPop();
   // Visible *before* the document loads. An iframe created inside a
@@ -7828,6 +8121,16 @@ const MENUS = [
       })),
       { sep: true },
       { label: 'Reset time, pitch and grains', on: editing, run: click('stretchReset') },
+    ],
+  },
+  {
+    // Its own menu, because this is where windows live and there will be more
+    // of them: the views today, the keyboard beside them.
+    title: 'Window',
+    items: [
+      { label: 'Grains', on: () => editing(), run: toggleVisWindow },
+      { label: 'Keys', on: () => editing() && hasFile(),
+        run: () => (keyboardOpen() ? closeKeyboard() : openKeyboard()) },
     ],
   },
   {
@@ -8658,7 +8961,13 @@ function paintKeyboard() {
   // which is not a piano key — a real one is roughly one to six. At 26 by 84
   // the proportion reads right and the panel is only as wide as the keyboard.
   const unit = KEY_WIDTH;
-  box.style.width = `${whites.length * unit}px`;
+  const span_px = whites.length * unit;
+  box.style.width = `${span_px}px`;
+  // The window is the width of the keyboard, full stop. Letting it size to its
+  // contents meant a long scale name set the width and the keyboard sat in a
+  // wide empty box.
+  const card = document.querySelector('.kb-card');
+  if (card) card.style.width = `${span_px + 14}px`;
 
   const label = (key, i) => {
     const semis = noteSemitones(i);
@@ -8716,9 +9025,12 @@ function paintKeyboard() {
   }
   const sc = $('kbScale');
   if (sc) {
+    // Same rules as a button: no parentheses, no qualifier after a dash, and
+    // the words collapse rather than the panel growing to hold them. This line
+    // was stretching the window past the keyboard it is describing.
     sc.textContent = currentScale()
-      ? `${currentScale()} · ${cents.length} degrees to a ${(span / 100).toFixed(2)} st span`
-      : `${cents.length} semitone steps to an octave`;
+      ? `${fitLabel(currentScale())} · ${cents.length} deg`
+      : `${cents.length} steps / oct`;
   }
 }
 
@@ -8782,6 +9094,7 @@ function closeKeyboard() {
   kbHintTimer = null;
 }
 
+$('visWindowClose').onclick = closeVisWindow;
 $('kbClose').onclick = closeKeyboard;
 $('kbHint').onclick = nudgeHint;
 
@@ -9017,6 +9330,144 @@ function renderThemeList() {
   }
 }
 
+// ------------------------------------------------------------ waveform colour
+
+/// Four neon colours for the waveform, and anything else you name.
+///
+/// Deliberately *not* part of the palette engine. A theme derives sixty tokens
+/// from a handful of colours so the chrome holds contrast; the waveform is not
+/// chrome — it is the thing being looked at, and it wants to be the loudest
+/// colour on the screen rather than a consequence of the surfaces behind it.
+/// `Theme.apply` only clears the tokens in its own map, so this one survives
+/// every palette change and every "No theme".
+///
+/// The chroma is past what sRGB can show on purpose: it clamps to the edge of
+/// the gamut, which is exactly as neon as the display goes.
+const WAVE_COLOURS = {
+  blue:   'oklch(70% 0.24 250)',
+  green:  'oklch(82% 0.28 145)',
+  red:    'oklch(64% 0.29 27)',
+  purple: 'oklch(60% 0.32 310)',
+};
+const WAVE_STORE = 'audiolab.waveColour';
+
+/// What is stored: one of the four names, a `#hex`, or nothing for the default.
+function waveChoice() {
+  try { return localStorage.getItem(WAVE_STORE) || null; } catch { return null; }
+}
+
+function waveColourValue(choice) {
+  if (!choice) return null;
+  return WAVE_COLOURS[choice] || (/^#[0-9a-f]{3,8}$/i.test(choice) ? choice : null);
+}
+
+/// `--wave` inline on `:root`, which beats the stylesheet without touching it —
+/// the same trick `Theme.apply` uses, and removing it is how the default comes
+/// back rather than a copy of the default that could drift.
+function applyWaveColour({ save = true, redraw = true } = {}) {
+  const choice = applyWaveColour.live ?? waveChoice();
+  const value = waveColourValue(choice);
+  const root = document.documentElement;
+  if (value) root.style.setProperty('--wave', value);
+  else root.style.removeProperty('--wave');
+  if (save && applyWaveColour.live === undefined) renderWaveColours();
+  if (redraw) {
+    // Everywhere the waveform is drawn, not just the lane: the overview, the
+    // browse rows and the automation lanes all take `--wave`.
+    drawWave(); drawOverview(); drawGrainLayer();
+    // The browse rows hold their waveform in a canvas each, drawn once when the
+    // row was built — so they are repainted from the thumbnails already in hand
+    // rather than re-fetched.
+    for (const row of document.querySelectorAll('.file-row')) {
+      const path = row.dataset.path;
+      const thumb = row.querySelector('.thumb');
+      if (thumb && path && state.thumbs?.[path]) {
+        drawThumb(thumb, state.thumbs[path], row.classList.contains('selected'));
+      }
+    }
+  }
+}
+
+function setWaveColour(choice) {
+  try {
+    if (choice) localStorage.setItem(WAVE_STORE, choice);
+    else localStorage.removeItem(WAVE_STORE);
+  } catch { /* private mode — it still applies for this session */ }
+  applyWaveColour.live = undefined;
+  applyWaveColour();
+}
+
+function renderWaveColours() {
+  const box = $('waveColours');
+  if (!box) return;
+  const choice = waveChoice();
+  for (const b of box.querySelectorAll('[data-wave]')) {
+    b.classList.toggle('active', b.dataset.wave === choice);
+    b.style.setProperty('--chip', WAVE_COLOURS[b.dataset.wave]);
+  }
+  // The swatch starts from what is on screen, whichever way it got there — so
+  // reaching for your own colour is a nudge from the current one rather than
+  // from whatever the picker happened to hold last. A named colour is `oklch`
+  // and the native swatch only speaks hex, so it goes through the browser.
+  const own = $('waveOwn');
+  if (own) {
+    const shown = waveColourValue(choice) || getComputedStyle(document.documentElement)
+      .getPropertyValue('--wave').trim();
+    const hex = toHex(shown);
+    if (hex) own.value = hex;
+  }
+}
+
+/// Any CSS colour to `#rrggbb`, by painting one pixel of it and reading it back.
+///
+/// Not through `getComputedStyle`: a modern browser keeps `oklch()` as `oklch()`
+/// there, so scraping numbers out of it read the lightness and chroma as if they
+/// were red and green — `oklch(0.7 0.24 250)` came back `#0100fa` and purple came
+/// back black. A pixel is the colour after gamut clamping, which is the colour
+/// actually on screen and the right thing for the swatch to start from.
+function toHex(colour) {
+  if (!colour) return null;
+  if (/^#[0-9a-f]{6}$/i.test(colour)) return colour.toLowerCase();
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = 1; cv.height = 1;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#000';
+    c.fillStyle = colour;
+    c.fillRect(0, 0, 1, 1);
+    const [r, g, b] = c.getImageData(0, 0, 1, 1).data;
+    return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+  } catch { return null; }
+}
+
+function wireWaveColour() {
+  const box = $('waveColours');
+  if (!box) return;
+  applyWaveColour({ redraw: false });
+  renderWaveColours();
+
+  for (const b of box.querySelectorAll('[data-wave]')) {
+    b.onclick = () => {
+      // Clicking the chosen one takes it off, the same gesture the palette list
+      // uses to get back to the interface's own colours.
+      setWaveColour(waveChoice() === b.dataset.wave ? null : b.dataset.wave);
+    };
+  }
+
+  const own = $('waveOwn');
+  if (own) {
+    // Live while dragging in the picker, committed on change — so you can see
+    // the waveform take the colour before deciding.
+    own.addEventListener('input', () => {
+      applyWaveColour.live = own.value;
+      applyWaveColour({ save: false });
+    });
+    own.addEventListener('change', () => setWaveColour(own.value));
+  }
+  const reset = $('waveReset');
+  if (reset) reset.onclick = () => setWaveColour(null);
+}
+
 function wireTheme() {
   if (!$('themeList')) return;
   loadTheme();
@@ -9049,3 +9500,4 @@ function wireTheme() {
 }
 
 wireTheme();
+wireWaveColour();
