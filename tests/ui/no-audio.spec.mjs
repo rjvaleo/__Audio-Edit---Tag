@@ -93,11 +93,20 @@ test('with no audio device, the transport says why', async ({ page }) => {
   await ready(page);
   await openFirstSound(page);
 
-  // Before: on this machine there is a device, so nothing is announced.
-  expect(await page.evaluate(() => $('noAudio').classList.contains('hidden')),
-    'the warning shows on a machine that has audio').toBe(true);
-  expect(await page.evaluate(() => $('playBtn').disabled),
-    'the transport is disabled on a machine that has audio').toBe(false);
+  // The "before" depends on the machine, and assuming it does not is the exact
+  // mistake this file exists about: written as an unconditional "the warning is
+  // hidden", it passed on the developer's Mac and failed on CI, where there
+  // really is no device and the warning was correctly showing.
+  const hasDevice = await page.evaluate(() => engine.device !== false);
+  if (hasDevice) {
+    expect(await page.evaluate(() => $('noAudio').classList.contains('hidden')),
+      'a machine with audio is being warned it has none').toBe(true);
+    expect(await page.evaluate(() => $('playBtn').disabled),
+      'a machine with audio has its transport switched off').toBe(false);
+  } else {
+    expect(await page.evaluate(() => $('noAudio').classList.contains('hidden')),
+      'this machine has no device and nothing said so').toBe(false);
+  }
 
   await pretendNoDevice(page);
 
