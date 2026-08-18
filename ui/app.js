@@ -9709,7 +9709,7 @@ let shippedPalettes = null;
 function allPalettes() {
   if (!shippedPalettes) {
     shippedPalettes = THEME_PALETTES
-      .filter((p) => (p.direct ? p.dark : Theme.deriveTheme(p.colors).mode === 'dark'))
+      .filter((p) => (p.direct || !p.colors ? p.dark : Theme.deriveTheme(p.colors).mode === 'dark'))
       .map((p) => ({ ...p, readOnly: true }));
   }
   // `mine` is not cached: it is what the Add button changes.
@@ -9765,11 +9765,18 @@ function renderThemeList() {
   for (const p of allPalettes()) {
     const row = document.createElement('div');
     row.className = 'theme-row' + (p.id === themeState.chosen ? ' chosen' : '');
-    row.title = `${p.name} — ${p.colors.join(' ')}`;
+    // A theme saved from the editor states its tokens outright and has no five
+    // colours behind it. Assuming every palette carries `colors` threw here at
+    // load, which aborted the rest of `app.js` — so the meters, the room and
+    // everything after simply never came into being.
+    const chips = p.colors
+      || (p.tokens ? ['--accent', '--surface-2', '--surface', '--bg', '--sink']
+        .map((k) => p.tokens[k]).filter(Boolean) : []);
+    row.title = `${p.name} — ${chips.join(' ')}`;
 
     const swatch = document.createElement('span');
     swatch.className = 'theme-swatch';
-    for (const c of p.colors.slice(0, 6)) {
+    for (const c of chips.slice(0, 6)) {
       const chip = document.createElement('i');
       chip.style.background = c;
       swatch.appendChild(chip);
@@ -10564,11 +10571,31 @@ function tmeWire() {
   $('themeEditSave')?.addEventListener('click', () => {
     const name = prompt('Name this theme', `Mine ${themeState.mine.length + 1}`);
     if (!name) return;
-    // Saved as a *direct* theme: its tokens are written verbatim rather than
-    // re-derived from five colours, because these were not derived from five
-    // colours and running them back through the engine would not return them.
+    // A *complete* palette, in the shape everything else produces.
+    //
+    // The first version saved `{id, name, direct, tokens}` and nothing else.
+    // Every shipped palette carries `colors`, and the one shipped direct theme
+    // also carries `dark` — so `renderThemeList` read `p.colors.join(' ')` on an
+    // entry that had none, threw at load, and aborted the rest of `app.js`.
+    // The meters, the room and everything defined after them never came into
+    // being. Guarding the readers was the patch; producing the right shape is
+    // the fix, and it is this editor's job because this editor made the theme.
+    const tokens = tmeTokens();
     const id = `mine-${Date.now().toString(36)}`;
-    themeState.mine.push({ id, name, direct: true, tokens: tmeTokens() });
+    themeState.mine.push({
+      id,
+      name,
+      direct: true,
+      tokens,
+      // For the swatch chips, and so the row has something to describe itself
+      // with. These are the colours that were actually picked.
+      colors: ['--accent', '--surface-2', '--surface', '--bg', '--sink']
+        .map((k) => tokens[k]).filter(Boolean),
+      // Which way round it is, the same question `deriveTheme` answers for a
+      // five-colour palette. A direct theme has to state it: nothing can work
+      // it out from tokens that were never derived.
+      dark: (themeEditor.surface?.l ?? 0) < 0.5,
+    });
     themeState.chosen = id;
     saveTheme();
     renderThemeList();
