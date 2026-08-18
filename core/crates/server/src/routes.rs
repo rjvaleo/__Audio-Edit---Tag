@@ -37,6 +37,8 @@ pub const UI_JS: &str = include_str!("../../../../ui/app.js");
 /// is worth keeping recognisable as one — its arithmetic came from elsewhere and
 /// should stay diffable against where it came from.
 pub const THEME_JS: &str = include_str!("../../../../ui/theme-derive.js");
+/// The unified visualiser's renderer. See `docs/VISUALISER.md`.
+pub const VIS_GL_JS: &str = include_str!("../../../../ui/vis-gl.js");
 pub const THEME_PALETTES_JS: &str = include_str!("../../../../ui/theme-palettes.js");
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
@@ -71,6 +73,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/theme-palettes.js") => {
             Response::ok("text/javascript; charset=utf-8", THEME_PALETTES_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/vis-gl.js") => {
+            Response::ok("text/javascript; charset=utf-8", VIS_GL_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/theme-derive.js") => {
             Response::ok("text/javascript; charset=utf-8", THEME_JS.as_bytes().to_vec())

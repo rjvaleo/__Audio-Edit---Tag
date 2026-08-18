@@ -236,6 +236,24 @@ const globals = new Set([
   'TextEncoder', 'atob', 'btoa', 'CustomEvent', 'Event', 'Node', 'HTMLElement',
 ]);
 
+// The other scripts on the page.
+//
+// `index.html` loads several classic scripts into one shared global scope, so a
+// function declared in any of them is callable from `app.js`. Reading their
+// declarations rather than listing the names by hand means adding a script is a
+// script tag and nothing else — the first version of this check made
+// `vgAttach` and `vgSmooth` look undeclared the moment `vis-gl.js` existed.
+for (const src of [...html.matchAll(/<script src="\/([\w.-]+)"><\/script>/g)]) {
+  const name = src[1];
+  if (name === 'app.js') continue;
+  let text;
+  try { text = readFileSync(join(root, 'ui', name), 'utf8'); } catch { continue; }
+  const flat = code(text);
+  for (const m of flat.matchAll(/\bfunction\s+(\w+)\s*\(/g)) declared.add(m[1]);
+  for (const m of flat.matchAll(/^(?:const|let|var)\s+(\w+)/gm)) declared.add(m[1]);
+  notes.push(`${name} shares the global scope`);
+}
+
 let calls = 0;
 const missing = new Map();
 for (const m of bare.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {

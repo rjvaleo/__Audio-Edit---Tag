@@ -2286,68 +2286,120 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .vis-window-body #grainFrame { flex: 1 1 auto; min-height: 0; width: 100%; }
 
 /* ─────────────────────────────────────────────────────────── the master bus ──
-   One surface in the room the grain views left, not three boxes in a scroller.
-   The goniometer sits over the spectrum; the meters are hard right. No panel
-   chrome — the displays are the panel. See `docs/MASTER-BUS.md`.
+   A meter bridge, not three little boxes. Big numbers across the top because
+   the whole reason a bridge carries numbers is that they can be read from
+   across the room; the field below them; the ladders hard right.
 
-   Every colour is a token. The visualisers are full of raw hexes and a theme
-   reaches the chrome but not the canvas; there was no reason to add to that. */
+   Every colour is a token, so a theme reaches this. */
 .master-bus {
   flex: 1 1 auto; min-width: 0; min-height: 0;
-  display: flex; gap: 12px;
-  /* Nothing scrolls. Everything is sized as a share of the tray. */
+  display: flex; gap: 10px;
   overflow: hidden;
 }
 .mb-main {
   flex: 1 1 auto; min-width: 0; min-height: 0;
-  display: flex; flex-direction: column; gap: 8px;
-}
-.mb-side {
-  flex: 0 0 152px; min-height: 0;
   display: flex; flex-direction: column; gap: 7px;
 }
+.mb-side {
+  flex: 0 0 128px; min-height: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+/* ── the overview ── */
+.mb-top {
+  flex: 0 0 auto;
+  display: flex; align-items: baseline; gap: 0;
+  padding: 2px 0 5px;
+  border-bottom: 1px solid var(--line-2);
+}
+.mb-stat {
+  display: flex; flex-direction: column; gap: 0;
+  /* Fixed, not shared. Numbers that move about as their neighbours change
+     width are unreadable at a glance, which is the only way these are read. */
+  width: 104px; flex: 0 0 104px;
+}
+.mb-stat-end { margin-left: auto; text-align: right; align-items: flex-end; }
+.mb-stat-k {
+  font-size: 8.5px; letter-spacing: .12em; color: var(--text-dim);
+}
+.mb-stat-v {
+  font-size: 26px; line-height: 1.05; font-weight: 600;
+  color: var(--text); font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.mb-stat-u { font-size: 8.5px; letter-spacing: .08em; color: var(--text-dim); }
+.mb-stat-v.hot { color: var(--warn); }
+.mb-stat-v.over { color: var(--bad); }
+.mb-stat-v.good { color: var(--good); }
 
 /* The canvases are placed rather than flowed. A canvas is a replaced element
-   with its own intrinsic size, and `height: 100%` on a flex item whose own
-   height is `auto` does not resolve — which is how it ends up 150 px tall in a
-   400 px box. Absolute against a positioned cell always fills it. */
+   with its own intrinsic size, so `height: 100%` on a flex item whose own
+   height is `auto` does not resolve. Absolute against a positioned cell does. */
 .mb-cell { position: relative; min-height: 0; }
 .mb-cell > canvas {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  display: block; background: var(--bg); border-radius: 3px;
+  display: block; background: var(--sink); border-radius: 4px;
 }
-/* The goniometer takes the top; the spectrum takes whatever is left, which is
-   the display that benefits most from height. */
-.mb-cell-gonio { flex: 0 0 40%; }
-.mb-cell-spec { flex: 1 1 auto; }
+/* A share rather than a fixed height, so the diamond grows with the tray — its
+   size is bounded by the height of its cell, and a short wide cell draws a
+   postage stamp in a field of nothing. No minimum: a floor here plus one on the
+   spectrum adds up to more than a short tray has, and the overflow is hidden,
+   which silently cuts the bottom off whichever came last. */
+.mb-cell-gonio { flex: 0 0 38%; }
+.mb-cell-spec { flex: 1 1 auto; min-height: 0; }
 .mb-cell-vu { flex: 1 1 auto; }
 
-/* A note in the corner of the display it belongs to, rather than a header
-   above a box. */
+/* Bottom right, out of the way of the frequency labels along the top. */
 .mb-note {
-  position: absolute; top: 4px; right: 7px;
+  position: absolute; bottom: 4px; right: 8px;
   font-size: 9px; color: var(--text-dim); pointer-events: none;
   text-shadow: 0 1px 3px var(--shadow);
 }
 .mb-state { font-size: 9px; color: var(--text-dim); text-align: right; }
 
-/* Label, then a column per channel. The values are what was actually asked for
-   — "an actual readout, not just meters". */
+/* How much detail the analyser is asked for. Fixed widths — never flex. */
+.mb-res { position: absolute; left: 26px; bottom: 4px; display: flex; gap: 3px; }
+.mb-res-btn {
+  width: 30px; height: 15px; padding: 0;
+  border: 1px solid var(--line-2); background: transparent; border-radius: 3px;
+  color: var(--text-dim); font: inherit; font-size: 8.5px; line-height: 1;
+  cursor: pointer;
+}
+.mb-res-btn:hover { color: var(--text-2); border-color: var(--line); }
+.mb-res-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+
 .mb-reads {
   flex: 0 0 auto;
-  display: grid; grid-template-columns: 34px repeat(2, minmax(0, 1fr));
-  gap: 1px 6px; align-items: baseline;
+  display: grid; grid-template-columns: 30px repeat(2, minmax(0, 1fr));
+  gap: 1px 5px; align-items: baseline;
 }
-.mb-k { font-size: 8.5px; letter-spacing: .05em; color: var(--text-dim); }
-.mb-h {
-  font-size: 8.5px; letter-spacing: .07em;
-  color: var(--text-dim); text-align: right;
-}
+.mb-k { font-size: 8px; letter-spacing: .05em; color: var(--text-dim); }
+.mb-h { font-size: 8px; letter-spacing: .07em; color: var(--text-dim); text-align: right; }
 .mb-v {
-  font-size: 10.5px; color: var(--text-2); text-align: right;
+  font-size: 10px; color: var(--text-2); text-align: right;
   font-variant-numeric: tabular-nums;
 }
-/* Over the ceiling's knee, so the output stage is rounding peaks off. Not an
-   error — it is what that stage is for — but you should be able to see it. */
 .mb-v.hot { color: var(--warn); }
 .mb-v.over { color: var(--bad); }
+
+/* ───────────────────────────────────────────── the tray's right-hand column ──
+   The visualiser over the meters. Asked for as "small version on the right in
+   the panel" with the big one in a pop-out window, because the granular
+   controls have to stay workable while it runs — which is what ruled fullscreen
+   out. See `docs/VISUALISER.md`. */
+.tray-right {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+/* The visualiser takes what is left; the meters are an instrument and want a
+   fixed, readable size rather than a share of whatever is going. */
+.tray-right > .grain-vis { flex: 1 1 auto; min-height: 0; }
+.tray-right > .master-bus { flex: 0 0 218px; }
+/* Popped out, the meters take the whole column back. */
+.tray-right > .grain-vis.hidden + .master-bus { flex: 1 1 auto; }
+
+#visGl {
+  flex: 1; width: 100%; min-height: 0; display: block;
+  border-radius: 7px; background: var(--sink); border: 1px solid var(--line);
+}
+#visGl.hidden { display: none; }
