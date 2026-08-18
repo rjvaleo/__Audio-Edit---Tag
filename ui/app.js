@@ -10200,272 +10200,10 @@ function drawMasterVu() {
   c.fillText('R', xs[1] + barW / 2, top + plotH + 2);
 }
 
-/// A segmented bar, the way a hardware meter does it.
-///
-/// Discrete cells rather than a continuous fill: a segmented meter is read by
-/// counting, and counting is faster than judging a length.
-function mbSegments(c, x, y, w, h, frac, cells, colourAt) {
-  const cw = w / cells;
-  for (let i = 0; i < cells; i++) {
-    const on = (i + 0.5) / cells <= frac;
-    c.globalAlpha = on ? 1 : 0.13;
-    c.fillStyle = colourAt(i / (cells - 1));
-    c.fillRect(x + i * cw + 0.5, y, cw - 1, h);
-  }
-  c.globalAlpha = 1;
-}
-
-/// The goniometer.
-///
-/// A diamond rather than a circle — the square rotated forty-five degrees is
-/// the actual bound of two channels at full scale, so the trace touching a
-/// corner means something, where touching a circle drawn round it does not.
-/// Mono goes straight up; anything leaning horizontal is what disappears when
-/// somebody sums to mono.
-///
-/// Balance across the top, correlation across the foot, both segmented.
-function drawGonio() {
-  const f = mbFit($('mbGonio'));
-  if (!f) return;
-  const { c, w, h } = f;
-  const d = masterBus.data;
-
-  const dim = mbInk('--text-dim', '#78838c');
-  const line = mbInk('--line-2', '#2a3138');
-  const ink = mbInk('--wave', '#5fd47a');
-  const warn = mbInk('--warn', '#e0a23c');
-  const bad = mbInk('--bad', '#e05c4a');
-  const good = mbInk('--good', '#4fbf7a');
-
-  const strip = 9, lab = 9;
-  const top = strip + lab, bottom = strip + lab;
-  const cx = w / 2, cy = top + (h - top - bottom) / 2;
-  const rad = Math.min(w / 2, (h - top - bottom) / 2) - 2;
-  if (rad <= 6) return;
-
-  // ── balance, across the top ──
-  c.font = '7.5px ui-monospace, monospace';
-  c.textBaseline = 'top';
-  if (d) {
-    const l = d.left.vu, r = d.right.vu;
-    const bal = l + r > 1e-6 ? (r - l) / (l + r) : 0;   // −1 hard left, +1 right
-    const cells = 25, at = Math.round((bal + 1) / 2 * (cells - 1));
-    const cw = w / cells;
-    for (let i = 0; i < cells; i++) {
-      const near = 1 - Math.min(1, Math.abs(i - at) / 2.5);
-      c.globalAlpha = 0.12 + near * 0.88;
-      c.fillStyle = i === Math.floor(cells / 2) ? dim : ink;
-      c.fillRect(i * cw + 0.5, 0, cw - 1, strip - 3);
-    }
-    c.globalAlpha = 1;
-  }
-  c.fillStyle = dim;
-  c.textAlign = 'left'; c.fillText('L', 1, strip - 2);
-  c.textAlign = 'right'; c.fillText('R', w - 1, strip - 2);
-
-  // ── the diamond ──
-  c.strokeStyle = line;
-  c.lineWidth = 1;
-  for (const k of [1, 0.5]) {
-    c.globalAlpha = k === 1 ? 0.8 : 0.4;
-    c.beginPath();
-    c.moveTo(cx, cy - rad * k); c.lineTo(cx + rad * k, cy);
-    c.lineTo(cx, cy + rad * k); c.lineTo(cx - rad * k, cy);
-    c.closePath(); c.stroke();
-  }
-  c.setLineDash([2, 3]);
-  c.globalAlpha = 0.35;
-  c.beginPath();
-  c.moveTo(cx, cy - rad); c.lineTo(cx, cy + rad);
-  c.moveTo(cx - rad, cy); c.lineTo(cx + rad, cy);
-  c.stroke();
-  c.setLineDash([]);
-  c.globalAlpha = 1;
-
-  c.fillStyle = dim;
-  c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillText('M', cx, cy - rad - 5);
-  c.fillText('S', cx + rad + 6, cy);
-
-  // ── the cloud ──
-  const xy = d?.lissajous;
-  if (xy && xy.length >= 4) {
-    const n = xy.length / 2;
-    const k = rad;
-    // Additive, so where the trace crosses itself it burns brighter. That
-    // density *is* the reading — a tight bright spine is a coherent image.
-    const prev = c.globalCompositeOperation;
-    c.globalCompositeOperation = 'lighter';
-    const head = Math.max(0, n - MB_GONIO_HEAD);
-    for (const [from, to, alpha, r] of [[0, head, 0.16, 0.7], [head, n, 0.5, 1.1]]) {
-      if (to <= from) continue;
-      c.fillStyle = ink;
-      c.globalAlpha = alpha;
-      c.beginPath();
-      for (let i = from; i < to; i++) {
-        const l = xy[i * 2], rr = xy[i * 2 + 1];
-        const px = cx + (l - rr) * 0.5 * k;
-        const py = cy - (l + rr) * 0.5 * k;
-        c.moveTo(px + r, py);
-        c.arc(px, py, r, 0, Math.PI * 2);
-      }
-      c.fill();
-    }
-    c.globalAlpha = 1;
-    c.globalCompositeOperation = prev;
-  }
-
-  // ── correlation, across the foot ──
-  const y = h - strip;
-  if (d) {
-    mbSegments(c, 0, y, w, strip - 2, (d.correlation + 1) / 2, 29,
-      (t) => (t < 0.34 ? bad : t < 0.5 ? warn : good));
-  }
-  c.fillStyle = dim;
-  c.textBaseline = 'bottom';
-  c.textAlign = 'left'; c.fillText('−1', 1, y - 1);
-  c.textAlign = 'center'; c.fillText('0', w / 2, y - 1);
-  c.textAlign = 'right'; c.fillText('+1', w - 1, y - 1);
-}
-
-/// The spectrum.
-///
-/// Filled solid rather than drawn as a wire: the references are all solid, and
-/// they are right — a filled spectrum reads as a mass of energy, which is what
-/// it is, while a line reads as a graph of something abstract.
-///
-/// Frequencies along the top so the labels are not fighting the low end where
-/// the energy usually is, dB down both sides, and a peak hold that falls.
-function drawMasterSpectrum() {
-  const f = mbFit($('mbSpectrum'));
-  if (!f) return;
-  const { c, w, h } = f;
-  const d = masterBus.data;
-
-  const dim = mbInk('--text-dim', '#78838c');
-  const line = mbInk('--line-2', '#2a3138');
-  const ink = mbInk('--wave', '#5fd47a');
-  const warn = mbInk('--warn', '#e0a23c');
-
-  const lo = d?.lo ?? 20, hi = d?.hi ?? 20000;
-  const top = 11, gutL = 22, gutR = 20, foot = 16;
-  // A foot for the resolution buttons and the readout, so nothing is drawn
-  // under them.
-  const plotW = w - gutL - gutR, plotH = h - top - foot;
-  const xOf = (hz) => gutL + Math.log(hz / lo) / Math.log(hi / lo) * plotW;
-  const yOf = (db) => top + (1 - Math.max(0, Math.min(1,
-    (db - MB_SPEC_FLOOR) / (0 - MB_SPEC_FLOOR)))) * plotH;
-
-  c.font = '8px ui-monospace, monospace';
-  c.lineWidth = 1;
-  c.strokeStyle = line;
-  c.textBaseline = 'top';
-  for (const hz of [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]) {
-    const x = Math.round(xOf(hz)) + 0.5;
-    if (x < gutL || x > w - gutR) continue;
-    c.globalAlpha = 0.26;
-    c.beginPath(); c.moveTo(x, top); c.lineTo(x, top + plotH); c.stroke();
-    c.globalAlpha = 1;
-    c.fillStyle = dim;
-    c.textAlign = 'center';
-    c.fillText(hz >= 1000 ? `${hz / 1000}k` : String(hz), x, 1);
-  }
-  c.textBaseline = 'middle';
-  for (const db of [-12, -24, -36, -48, -60, -72, -84]) {
-    const y = Math.round(yOf(db)) + 0.5;
-    c.globalAlpha = 0.2;
-    c.beginPath(); c.moveTo(gutL, y); c.lineTo(w - gutR, y); c.stroke();
-    c.globalAlpha = 1;
-    if (db % 24 === 0 || db === -12) {
-      c.fillStyle = dim;
-      c.textAlign = 'right'; c.fillText(String(db), gutL - 3, y);
-      c.textAlign = 'left'; c.fillText(String(db), w - gutR + 3, y);
-    }
-  }
-
-  const bands = d?.spectrum;
-  if (!bands || !bands.length) {
-    c.fillStyle = dim;
-    c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText('press play for the live spectrum', w / 2, top + plotH / 2);
-    $('mbPeakHz').textContent = '';
-    return;
-  }
-
-  if (!masterBus.specHold || masterBus.specHold.length !== bands.length) {
-    masterBus.specHold = bands.slice();
-  }
-  const hold = masterBus.specHold;
-  const fall = MB_HOLD_FALL_DB * (MB_POLL_MS / 1000);
-  for (let i = 0; i < bands.length; i++) {
-    hold[i] = bands[i] >= hold[i] ? bands[i] : Math.max(bands[i], hold[i] - fall);
-  }
-
-  const bx = (i) => gutL + (i + 0.5) / bands.length * plotW;
-
-  // ── the mass ──
-  const grd = c.createLinearGradient(0, top, 0, top + plotH);
-  grd.addColorStop(0, ink);
-  grd.addColorStop(0.55, ink);
-  grd.addColorStop(1, 'rgba(0,0,0,0)');
-  c.save();
-  c.beginPath();
-  c.rect(gutL, top, plotW, plotH);
-  c.clip();
-  c.beginPath();
-  c.moveTo(gutL, top + plotH);
-  for (let i = 0; i < bands.length; i++) c.lineTo(bx(i), yOf(bands[i]));
-  c.lineTo(w - gutR, top + plotH);
-  c.closePath();
-  c.globalAlpha = 0.42;
-  c.fillStyle = grd;
-  c.fill();
-  c.globalAlpha = 1;
-
-  c.beginPath();
-  for (let i = 0; i < bands.length; i++) {
-    const x = bx(i), y = yOf(bands[i]);
-    i ? c.lineTo(x, y) : c.moveTo(x, y);
-  }
-  c.strokeStyle = ink;
-  c.lineWidth = 1.4;
-  c.stroke();
-
-  c.beginPath();
-  for (let i = 0; i < hold.length; i++) {
-    const x = bx(i), y = yOf(hold[i]);
-    i ? c.lineTo(x, y) : c.moveTo(x, y);
-  }
-  c.strokeStyle = warn;
-  c.globalAlpha = 0.55;
-  c.lineWidth = 1;
-  c.stroke();
-  c.globalAlpha = 1;
-  c.restore();
-
-  // ── where the energy actually is ──
-  let peak = 0;
-  for (let i = 1; i < bands.length; i++) if (bands[i] > bands[peak]) peak = i;
-  if (bands[peak] > MB_SPEC_FLOOR + 6) {
-    const hz = lo * Math.pow(hi / lo, (peak + 0.5) / bands.length);
-    c.strokeStyle = warn;
-    c.globalAlpha = 0.85;
-    c.beginPath(); c.arc(bx(peak), yOf(bands[peak]), 3, 0, Math.PI * 2); c.stroke();
-    c.globalAlpha = 1;
-    const note = noteName(hz);
-    $('mbPeakHz').textContent =
-      `${hz >= 1000 ? `${(hz / 1000).toFixed(2)} kHz` : `${hz.toFixed(0)} Hz`}`
-      + `${note ? ` · ${note}` : ''} · ${mbDb(bands[peak])} dB`;
-  } else {
-    $('mbPeakHz').textContent = '';
-  }
-}
-
 /// What the numbers say. The part that was actually asked for.
 function paintMasterReads() {
   const d = masterBus.data;
   const kneeDb = d?.knee ? 20 * Math.log10(d.knee) : -3;
-  const refDb = d?.vuRef ?? -18;
 
   for (const [side, key] of [['left', 'L'], ['right', 'R']]) {
     const ch = d?.[side];
@@ -10486,35 +10224,42 @@ function paintMasterReads() {
     }
   }
 
-  // ── the overview ──
-  const peakDb = d ? Math.max(d.left.peakDb, d.right.peakDb) : null;
-  const rmsDb = d ? Math.max(d.left.vuDb, d.right.vuDb) : null;
-  const maxDb = Math.max(masterBus.hold.l, masterBus.hold.r);
-
-  const set = (id, text, cls) => {
-    const el = $(id);
-    if (!el) return;
-    el.textContent = text;
-    el.classList.toggle('over', cls === 'over');
-    el.classList.toggle('hot', cls === 'hot');
-    el.classList.toggle('good', cls === 'good');
-  };
-  const band = (v) => (v == null ? null : v >= -0.2 ? 'over' : v >= kneeDb ? 'hot' : null);
-
-  set('mbPeakBig', d ? mbDb(peakDb) : '—', band(peakDb));
-  set('mbRmsBig', d ? mbDb(rmsDb) : '—', null);
-  set('mbVuBig', d ? (rmsDb <= -119 ? '−∞' : mbSigned(rmsDb - refDb)) : '—', null);
-  set('mbMaxBig', d && maxDb > MB_METER_FLOOR ? mbDb(maxDb) : '—', band(maxDb));
   // Sustained negative correlation is the state where every other meter looks
   // fine and the mono fold-down does not, so it is the one worth colouring.
-  set('mbCorrBig', d ? mbSigned(d.correlation, 2) : '—',
-    d ? (d.correlation < 0 ? 'over' : d.correlation > 0.5 ? 'good' : 'hot') : null);
+  const corr = $('mbCorrBig');
+  if (corr) {
+    corr.textContent = d ? mbSigned(d.correlation, 2) : '—';
+    corr.classList.toggle('over', !!d && d.correlation < 0);
+    corr.classList.toggle('good', !!d && d.correlation > 0.5);
+    corr.classList.toggle('hot', !!d && d.correlation >= 0 && d.correlation <= 0.5);
+  }
   const word = $('mbCorrWord');
   if (word) {
     word.textContent = !d ? ''
       : d.correlation > 0.9 ? 'near mono'
       : d.correlation < 0 ? 'out of phase'
       : d.correlation < 0.4 ? 'wide' : 'stereo';
+  }
+
+  // Where the energy actually is. This used to be drawn onto the flat spectrum;
+  // the room has no room for a label, so it is computed here and shown in the
+  // corner instead.
+  const note = $('mbPeakHz');
+  if (note) {
+    const bands = d?.spectrum;
+    if (!bands || !bands.length) note.textContent = '';
+    else {
+      let top = 0;
+      for (let i = 1; i < bands.length; i++) if (bands[i] > bands[top]) top = i;
+      if (bands[top] <= MB_SPEC_FLOOR + 6) note.textContent = '';
+      else {
+        const hz = d.lo * Math.pow(d.hi / d.lo, (top + 0.5) / bands.length);
+        const name = noteName(hz);
+        note.textContent =
+          `${hz >= 1000 ? `${(hz / 1000).toFixed(2)} kHz` : `${hz.toFixed(0)} Hz`}`
+          + `${name ? ` · ${name}` : ''} · ${mbDb(bands[top])} dB`;
+      }
+    }
   }
 
   const st = $('mbState');
@@ -10539,7 +10284,7 @@ async function mbTick() {
     // One band per pixel of the display about to be drawn into: as much detail
     // as can be seen and not a number more. The transform size is the knob —
     // that is frequency resolution, and it is the one worth choosing.
-    const el = $('mbSpectrum');
+    const el = $('visGl');
     const want = Math.max(64, Math.min(2048, Math.round(el?.clientWidth || 256)));
     const r = await api(`/api/engine/master?fft=${masterBus.fft}&bands=${want}`);
     masterBus.data = r && r.live ? r : null;
@@ -10552,9 +10297,12 @@ async function mbTick() {
   if (!mbVisible()) return;
   mbUpdateHold(performance.now());
   drawMasterVu();
-  drawGonio();
-  drawMasterSpectrum();
   paintMasterReads();
+  // The room only moves when there is something new to move it, so the
+  // waterfall is pushed at the poll's rate and drawn at the display's.
+  if (visGl && masterBus.data?.spectrum) {
+    visGl.push(masterBus.data.spectrum, masterBus.data.lissajous);
+  }
 }
 
 function wireMasterRes() {
@@ -10579,8 +10327,68 @@ function startMasterBus() {
   masterBus.timer = setInterval(mbTick, MB_POLL_MS);
   // The panels are drawn once so they are not blank before the first reply
   // lands, and again whenever the tray is resized under them.
-  const redraw = () => { if (mbVisible()) { drawMasterVu(); drawGonio(); drawMasterSpectrum(); } };
+  const redraw = () => { if (mbVisible()) drawMasterVu(); };
   if (window.ResizeObserver) new ResizeObserver(redraw).observe($('masterBus'));
   redraw();
 }
 startMasterBus();
+
+// ───────────────────────────────────────────────────────────────── the box ──
+//
+// The master bus as a room in perspective: the spectrum along the floor
+// travelling backwards as the sound plays, the Lissajous in the sky with time
+// as its third axis, the ladders standing at the right end. Rendered by
+// `vis-gl.js`, which is ours — see `docs/VISUALISER.md`.
+
+let visGl = null;
+let visGlRaf = null;
+
+/// A theme token as a WebGL colour.
+function vgRgb(token, fallback) {
+  const hex = cssHex(mbInk(token, fallback)) || fallback;
+  return new Float32Array([
+    parseInt(hex.slice(1, 3), 16) / 255,
+    parseInt(hex.slice(3, 5), 16) / 255,
+    parseInt(hex.slice(5, 7), 16) / 255,
+  ]);
+}
+
+function visGlTick() {
+  visGlRaf = requestAnimationFrame(visGlTick);
+  const el = $('visGl');
+  // A scene nobody is looking at is a full GPU frame for nothing.
+  if (!el || el.offsetParent === null) return;
+
+  if (!visGl) {
+    visGl = vgAttach(el);
+    if (!visGl) {
+      // No WebGL. Say so once rather than leave a dead black rectangle.
+      const note = $('mbPeakHz');
+      if (note) note.textContent = 'no WebGL on this display';
+      cancelAnimationFrame(visGlRaf);
+      visGlRaf = null;
+      return;
+    }
+  }
+
+  const w = el.clientWidth, h = el.clientHeight;
+  if (!w || !h) return;
+  // Capped at 2×. Nine times the fill at 3× buys nothing on a glow.
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (el.width !== Math.round(w * dpr) || el.height !== Math.round(h * dpr)) {
+    el.width = Math.round(w * dpr);
+    el.height = Math.round(h * dpr);
+  }
+
+  visGl.frame({
+    cold: vgRgb('--wave-2', '#4a9fd8'),
+    hot: vgRgb('--wave', '#5fd47a'),
+    core: vgRgb('--accent', '#7fd0ff'),
+  });
+}
+
+function startVisGl() {
+  if (visGlRaf) return;
+  visGlRaf = requestAnimationFrame(visGlTick);
+}
+startVisGl();

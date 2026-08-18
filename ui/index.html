@@ -541,42 +541,13 @@
                not a stage on the way there. See `docs/MASTER-BUS.md`. -->
           <div class="master-bus" id="masterBus">
             <div class="mb-main">
-              <!-- The overview. Big enough to read from across the room, which
-                   is the whole reason a meter bridge has numbers on it. -->
-              <div class="mb-top">
-                <div class="mb-stat">
-                  <span class="mb-stat-k">PEAK</span>
-                  <span class="mono mb-stat-v" id="mbPeakBig">—</span>
-                  <span class="mb-stat-u">dBFS</span>
-                </div>
-                <div class="mb-stat">
-                  <span class="mb-stat-k">RMS</span>
-                  <span class="mono mb-stat-v" id="mbRmsBig">—</span>
-                  <span class="mb-stat-u">dBFS</span>
-                </div>
-                <div class="mb-stat">
-                  <span class="mb-stat-k">VU</span>
-                  <span class="mono mb-stat-v" id="mbVuBig">—</span>
-                  <span class="mb-stat-u">units</span>
-                </div>
-                <div class="mb-stat">
-                  <span class="mb-stat-k">CORR</span>
-                  <span class="mono mb-stat-v" id="mbCorrBig">—</span>
-                  <span class="mb-stat-u" id="mbCorrWord"></span>
-                </div>
-                <div class="mb-stat mb-stat-end">
-                  <span class="mb-stat-k">MAX</span>
-                  <span class="mono mb-stat-v" id="mbMaxBig">—</span>
-                  <span class="mb-stat-u">dBFS</span>
-                </div>
-              </div>
-              <div class="mb-cell mb-cell-gonio">
-                <canvas id="mbGonio"
-                  title="Mid up the middle, sides left and right. A vertical trace is mono; a horizontal one is out of phase and will vanish if anyone sums it."></canvas>
-              </div>
-              <div class="mb-cell mb-cell-spec">
-                <canvas id="mbSpectrum"
-                  title="Transform of the master bus, 20 Hz to 20 kHz geometric. The faint line is the peak hold."></canvas>
+              <!-- The box. The spectrum runs along its floor and travels
+                   backwards as the sound plays, the Lissajous hangs in the sky
+                   with time as its third axis, and the ladders stand at the
+                   right end. See `docs/VISUALISER.md`. -->
+              <div class="mb-cell mb-cell-3d">
+                <canvas id="visGl"
+                  title="The master bus as a room. Depth is time: what you hear now is at the front and travels away from you."></canvas>
                 <span class="mono mb-note" id="mbPeakHz"></span>
                 <div class="mb-res" id="mbRes">
                   <button class="mb-res-btn" data-fft="1024">1k</button>
@@ -606,6 +577,9 @@
                 <span class="mb-k">HOLD</span>
                 <span class="mono mb-v" id="mbLhold">—</span>
                 <span class="mono mb-v" id="mbRhold">—</span>
+                <span class="mb-k">CORR</span>
+                <span class="mono mb-v" id="mbCorrBig">—</span>
+                <span class="mb-word" id="mbCorrWord"></span>
               </div>
               <span class="mono mb-state" id="mbState"></span>
             </div>

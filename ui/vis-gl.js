@@ -1,247 +1,276 @@
-// The unified visualiser's renderer. WebGL, written here, no dependency.
+// The 3D visualiser. WebGL, written here, no dependency.
 //
-// Four layers composited into one image with additive blending, so where they
-// overlap they bloom rather than occlude: a spectrum field, the grain cloud as
-// point sprites, the goniometer as a bright core, and a level glow behind all
-// of it. See `docs/VISUALISER.md`.
+// A room seen in perspective:
 //
-// WebGL 1 and unsigned-byte textures only — no float-texture extension, no
-// instancing, nothing that needs asking permission for. It runs wherever the
-// rest of the interface does, and where it does not, `vgAttach` returns null
-// and the caller falls back.
+//   · the **spectrum along the floor**, the newest frame at the front and older
+//     ones receding into the distance — depth is time,
+//   · the **Lissajous in the sky**, given a third axis so the stereo trace is
+//     an object hanging in the space rather than a flat figure,
+//   · the **VU ladders standing at the right**.
+//
+// See `docs/VISUALISER.md`. WebGL 1 only — no extensions, no vertex texture
+// fetch (which WebGL 1 is allowed to refuse), nothing that needs asking.
 //
 // One global scope: every name in here starts `vg`.
 
-/// Compile one shader, or say exactly which one failed and why.
-function vgShader(gl, type, src) {
-  const s = gl.createShader(type);
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-    const log = gl.getShaderInfoLog(s);
-    gl.deleteShader(s);
-    throw new Error(`${type === gl.VERTEX_SHADER ? 'vertex' : 'fragment'} shader: ${log}`);
-  }
-  return s;
-}
+/// How far the room runs back, as a multiple of the distance to its front face.
+/// This sets how strongly it converges: the back face draws at `1 / (1 + D)` of
+/// the front one.
+const VG_DEPTH = 1.9;
+/// Where the floor sits below the eye, and the ceiling above it, at the front
+/// face. Their ratio is what puts the vanishing point above the middle, which
+/// is what lets you see the floor at all.
+const VG_FLOOR_Y = -0.38;
+const VG_CEIL_Y = 0.62;
 
-/// A linked program with its uniforms and attributes already looked up.
+/// Frames kept for the trail. About three seconds at the poll's rate, which is
+/// long enough to see a phrase move away from you.
+const VG_HISTORY = 56;
+/// Points in one Lissajous figure. The trace arrives with a thousand-odd pairs;
+/// at the size this draws, and fifty-six deep, a quarter of them is the same
+/// picture for a quarter of the memory.
+const VG_LISS_POINTS = 256;
+/// How thick the leading edge is drawn, in world units.
 ///
-/// Looking these up per frame is a string hash per name per draw; there are
-/// three programs here and they are built once.
-function vgProgram(gl, vsrc, fsrc) {
-  const p = gl.createProgram();
-  const vs = vgShader(gl, gl.VERTEX_SHADER, vsrc);
-  const fs = vgShader(gl, gl.FRAGMENT_SHADER, fsrc);
-  gl.attachShader(p, vs);
-  gl.attachShader(p, fs);
-  gl.linkProgram(p);
-  gl.deleteShader(vs);
-  gl.deleteShader(fs);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    const log = gl.getProgramInfoLog(p);
-    gl.deleteProgram(p);
-    throw new Error(`link: ${log}`);
-  }
-  const u = {}, a = {};
-  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) {
-    const n = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, '');
-    u[n] = gl.getUniformLocation(p, n);
-  }
-  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_ATTRIBUTES); i++) {
-    const n = gl.getActiveAttrib(p, i).name;
-    a[n] = gl.getAttribLocation(p, n);
-  }
-  return { p, u, a };
-}
+/// It is geometry rather than `gl.lineWidth`, which almost every driver clamps
+/// to 1 and is therefore not a way to make anything thicker.
+const VG_LEAD = 0.012;
+/// Points across the floor. Independent of how many bands the server sends —
+/// the floor is resampled to this, so changing the analyser's resolution does
+/// not rebuild the mesh.
+const VG_FLOOR_BANDS = 280;
 
-// ── the spectrum field, and the glow behind everything ──────────────────────
+// ── matrices ────────────────────────────────────────────────────────────────
 //
-// One full-screen quad doing two jobs. They are the only two layers that cover
-// the whole frame, and running them in one pass halves the fill.
+// Column-major, the way WebGL wants them. Four functions is the whole of the
+// linear algebra this needs; a matrix library would be a dependency for less
+// code than its own import line.
 
-const VG_QUAD_VS = `
-attribute vec2 aXY;
-varying vec2 vUV;
-void main() {
-  vUV = aXY * 0.5 + 0.5;
-  gl_Position = vec4(aXY, 0.0, 1.0);
-}`;
+function vgIdentity() {
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+}
 
-const VG_QUAD_FS = `
-precision mediump float;
-varying vec2 vUV;
-uniform sampler2D uSpec;   // the band spectrum, one texel per band
-uniform float uLevel;      // 300 ms VU, 0..1
-uniform float uCorr;       // -1..1
-uniform vec3 uCold;
-uniform vec3 uHot;
-uniform float uTilt;       // how much of the frame the field occupies
+function vgMul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1]
+        + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+    }
+  }
+  return o;
+}
 
-void main() {
-  // The ridge. uSpec holds each band's height; the field is a glow that
-  // falls away either side of it, plus a dim wash beneath so the shape reads
-  // as a solid mass rather than a wire.
-  float band = texture2D(uSpec, vec2(vUV.x, 0.5)).r * uTilt;
-  float d = vUV.y - band;
-  float ridge = exp(-abs(d) * 30.0);
-  float under = smoothstep(0.0, 0.015, band - vUV.y) * (0.10 + band * 0.22);
-  vec3 col = mix(uCold, uHot, clamp(band * 1.4, 0.0, 1.0));
-
-  // Behind it, a glow that follows loudness. Warm when the image is coherent,
-  // cold when it is not — so a mix drifting out of phase changes the colour of
-  // the whole frame rather than only a needle nobody is looking at.
-  vec2 c = vUV - 0.5;
-  float r = length(vec2(c.x * 1.6, c.y));
-  float halo = exp(-r * 3.2) * uLevel * 0.55;
-  vec3 haloCol = mix(vec3(0.85, 0.30, 0.25), uHot, clamp(uCorr * 0.5 + 0.5, 0.0, 1.0));
-
-  float a = ridge * 0.85 + under + halo;
-  gl_FragColor = vec4(col * (ridge * 0.85 + under) + haloCol * halo, a);
-}`;
-
-// ── the grain cloud ─────────────────────────────────────────────────────────
-
-const VG_GRAIN_VS = `
-attribute vec2 aPos;    // x: where in the source, y: pitch
-attribute vec2 aAux;    // x: level, y: when it is struck, in seconds
-uniform float uPlay;    // the playhead, in the same seconds
-uniform float uSpan;    // how long a grain stays lit
-uniform float uScale;   // point size, scaled for the canvas
-varying float vHeat;
-void main() {
-  float since = uPlay - aAux.y;
-  float lit = (since < 0.0 || since > uSpan) ? 0.0 : 1.0 - since / uSpan;
-  vHeat = lit * lit;
-  gl_PointSize = (1.5 + aAux.x * 22.0) * (0.55 + vHeat * 2.6) * uScale;
-  gl_Position = vec4(aPos.x * 2.0 - 1.0, aPos.y, 0.0, 1.0);
-}`;
-
-const VG_GRAIN_FS = `
-precision mediump float;
-varying float vHeat;
-uniform vec3 uCold;
-uniform vec3 uHot;
-uniform float uInk;
-void main() {
-  // A soft disc. Squaring the falloff gives a core with a halo, which is what
-  // makes a point read as struck rather than as a dot.
-  float d = length(gl_PointCoord - 0.5) * 2.0;
-  float a = smoothstep(1.0, 0.0, d);
-  a *= a;
-  vec3 col = mix(uCold, uHot, vHeat);
-  gl_FragColor = vec4(col, a * (0.10 + vHeat * 0.9) * uInk);
-}`;
-
-// ── the goniometer core ─────────────────────────────────────────────────────
-
-const VG_GONIO_VS = `
-attribute vec2 aLR;
-attribute float aAge;     // 0 oldest, 1 newest
-uniform float uScale;
-uniform float uAspect;
-varying float vAge;
-void main() {
-  vAge = aAge;
-  // Mid up, sides across — the forty-five degree rotation that puts a mono
-  // signal on the vertical.
-  vec2 p = vec2(aLR.x - aLR.y, aLR.x + aLR.y) * 0.70710678 * uScale;
-  gl_Position = vec4(p.x / uAspect, p.y, 0.0, 1.0);
-  gl_PointSize = 1.0 + aAge * 2.5;
-}`;
-
-const VG_GONIO_FS = `
-precision mediump float;
-varying float vAge;
-uniform vec3 uInk;
-void main() {
-  float d = length(gl_PointCoord - 0.5) * 2.0;
-  float a = smoothstep(1.0, 0.0, d);
-  gl_FragColor = vec4(uInk, a * (0.12 + vAge * 0.75));
-}`;
-
-/// Attach a composite scene to a canvas.
+/// An off-axis frustum, given the rectangle it should see at the near plane.
 ///
-/// Returns `null` when WebGL is unavailable, which is a fallback and not an
-/// error — the caller shows the 2D swarm instead.
+/// Not a symmetric `perspective` with a tilted camera, and the difference is
+/// the whole look: the panel **is** the box, so the box's front face has to
+/// land exactly on the edges of the canvas. Tilt the camera and it no longer
+/// does — the near rectangle rotates out of alignment and you get a box
+/// floating in a field of nothing, which is what the first attempt was.
+///
+/// Keeping the camera square to the room and shifting the frustum instead puts
+/// the vanishing point wherever you like — above the middle, so the floor is
+/// seen from above — while the near face still fills the frame.
+function vgFrustum(l, r, b, t, n, f) {
+  const o = new Float32Array(16);
+  o[0] = (2 * n) / (r - l);
+  o[5] = (2 * n) / (t - b);
+  o[8] = (r + l) / (r - l);
+  o[9] = (t + b) / (t - b);
+  o[10] = -(f + n) / (f - n);
+  o[11] = -1;
+  o[14] = -(2 * f * n) / (f - n);
+  return o;
+}
+
+function vgLookAt(eye, at, up) {
+  const z = vgNorm([eye[0] - at[0], eye[1] - at[1], eye[2] - at[2]]);
+  const x = vgNorm(vgCross(up, z));
+  const y = vgCross(z, x);
+  return new Float32Array([
+    x[0], y[0], z[0], 0,
+    x[1], y[1], z[1], 0,
+    x[2], y[2], z[2], 0,
+    -(x[0] * eye[0] + x[1] * eye[1] + x[2] * eye[2]),
+    -(y[0] * eye[0] + y[1] * eye[1] + y[2] * eye[2]),
+    -(z[0] * eye[0] + z[1] * eye[1] + z[2] * eye[2]), 1,
+  ]);
+}
+
+const vgCross = (a, b) => [
+  a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0],
+];
+function vgNorm(v) {
+  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+}
+
+// ── shaders ─────────────────────────────────────────────────────────────────
+
+/// Everything in the room is drawn by this one pair.
+///
+/// Position, plus a "weight" that means whatever the layer wants it to mean —
+/// height for the floor, age for the trace, level for the ladders. It picks the
+/// colour and the brightness, and the depth fade is applied on top of both so
+/// the far end of the room recedes rather than crowding the near end.
+const VG_VS = `
+attribute vec3 aPos;
+attribute float aW;
+uniform mat4 uMVP;
+uniform float uPointSize;
+varying float vW;
+varying float vDepth;
+void main() {
+  vW = aW;
+  vec4 p = uMVP * vec4(aPos, 1.0);
+  // 0 at the front of the room, 1 at the back. Taken from the world position
+  // rather than from gl_Position.z, which is already curved by the projection.
+  vDepth = clamp(-aPos.z, 0.0, 1.0);
+  gl_Position = p;
+  gl_PointSize = uPointSize / max(0.35, p.w) ;
+}`;
+
+const VG_FS = `
+precision mediump float;
+varying float vW;
+varying float vDepth;
+uniform vec3 uCold;
+uniform vec3 uHot;
+uniform float uAlpha;
+uniform float uRound;   // 1 for point sprites, 0 for lines and triangles
+void main() {
+  float a = uAlpha;
+  if (uRound > 0.5) {
+    float d = length(gl_PointCoord - 0.5) * 2.0;
+    a *= smoothstep(1.0, 0.0, d);
+  }
+  // The far end of the room is dimmer, which is the whole of the depth cue when
+  // there is no fog and no shadow to give one. Only a little dimmer, though:
+  // additive blending over a dark panel loses more than it looks like it
+  // should, and the trail has to still be there when it reaches the back wall
+  // rather than dissolving somewhere in the middle of the room.
+  float far = 1.0 - vDepth * 0.42;
+  vec3 col = mix(uCold, uHot, clamp(vW, 0.0, 1.0));
+  // Lifted at the top end so a loud band burns rather than merely brightens.
+  col += uHot * pow(clamp(vW, 0.0, 1.0), 3.0) * 0.55;
+  gl_FragColor = vec4(col, a * far * (0.42 + vW * 0.78));
+}`;
+
+/// Attach the scene to a canvas. `null` when WebGL is unavailable, which is a
+/// fallback and not an error — the caller shows the flat meters instead.
 function vgAttach(canvas) {
   let gl;
   try {
-    gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false })
+    gl = canvas.getContext('webgl', { alpha: true, antialias: true })
       || canvas.getContext('experimental-webgl');
   } catch { return null; }
   if (!gl) return null;
 
-  let quad, grain, gonio;
+  let prog;
   try {
-    quad = vgProgram(gl, VG_QUAD_VS, VG_QUAD_FS);
-    grain = vgProgram(gl, VG_GRAIN_VS, VG_GRAIN_FS);
-    gonio = vgProgram(gl, VG_GONIO_VS, VG_GONIO_FS);
+    const compile = (type, src) => {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        throw new Error(gl.getShaderInfoLog(s));
+      }
+      return s;
+    };
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, VG_VS));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, VG_FS));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(p));
+    }
+    prog = {
+      p,
+      aPos: gl.getAttribLocation(p, 'aPos'),
+      aW: gl.getAttribLocation(p, 'aW'),
+      uMVP: gl.getUniformLocation(p, 'uMVP'),
+      uCold: gl.getUniformLocation(p, 'uCold'),
+      uHot: gl.getUniformLocation(p, 'uHot'),
+      uAlpha: gl.getUniformLocation(p, 'uAlpha'),
+      uRound: gl.getUniformLocation(p, 'uRound'),
+      uPointSize: gl.getUniformLocation(p, 'uPointSize'),
+    };
   } catch (e) {
     console.warn('visualiser:', e.message);
     return null;
   }
 
-  const quadBuf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const posBuf = gl.createBuffer();
+  const wBuf = gl.createBuffer();
+  // The landscape gets buffers of its own. It is thirty thousand vertices and
+  // it only changes when a frame is pushed — rebuilding it sixty times a second
+  // to draw the same thing twenty times would be the whole cost of the scene.
+  const meshPosBuf = gl.createBuffer();
+  const meshWBuf = gl.createBuffer();
+  let meshRows = 0;
+  let meshKey = '';
+  let pushes = 0;
 
-  const specTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, specTex);
-  for (const [k, v] of [
-    [gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
-    [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE],
-  ]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  /// The waterfall, oldest row first so the newest is drawn last and on top.
+  /// A plain array of rows rather than a ring, because it is rebuilt into one
+  /// vertex buffer anyway and 56 shifts of a typed array is nothing.
+  const history = [];
 
-  const grainPos = gl.createBuffer();
-  const grainAux = gl.createBuffer();
-  const gonioBuf = gl.createBuffer();
-  const gonioAge = gl.createBuffer();
+  // Reused every frame. Sized on first use and never grown again.
+  let floorPos = null, floorW = null;
+  let leadPos = null, leadW = null;
+  let skyPos = null, skyW = null;
 
-  let grainCount = 0;
-  /// Which schedule is on the card. Uploading tens of thousands of points every
-  /// frame would be the whole cost of the scene, and the schedule only changes
-  /// when the document does.
-  let grainKey = null;
-  let gonioCount = 0;
-  let specWidth = 0;
-
-  const bind = (buf, loc, size) => {
-    if (loc === undefined || loc < 0) return;
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  const draw = (mode, pos, wts, count, alpha, round, cold, hot, size) => {
+    if (!count) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(prog.aPos);
+    gl.vertexAttribPointer(prog.aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, wBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, wts, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(prog.aW);
+    gl.vertexAttribPointer(prog.aW, 1, gl.FLOAT, false, 0, 0);
+    gl.uniform1f(prog.uAlpha, alpha);
+    gl.uniform1f(prog.uRound, round ? 1 : 0);
+    gl.uniform1f(prog.uPointSize, size || 1);
+    gl.uniform3fv(prog.uCold, cold);
+    gl.uniform3fv(prog.uHot, hot);
+    gl.drawArrays(mode, 0, count);
   };
 
   return {
-    /// Hand the scene a schedule. Cheap to call; it only uploads when the
-    /// schedule is not the one already on the card.
-    grains(list, key, sampleRate, sourceFrames) {
-      if (key === grainKey) return;
-      grainKey = key;
-      if (!list || !list.length || !sourceFrames) { grainCount = 0; return; }
-      const n = list.length;
-      const pos = new Float32Array(n * 2);
-      const aux = new Float32Array(n * 2);
-      const sr = sampleRate || 48000;
-      for (let i = 0; i < n; i++) {
-        const g = list[i];
-        pos[i * 2] = g[1] / sourceFrames;
-        // Pitch across the vertical, clamped so a wild scatter still lands on
-        // screen instead of being thrown off the top.
-        pos[i * 2 + 1] = Math.max(-0.95, Math.min(0.95, (g[3] || 0) / 24));
-        aux[i * 2] = Math.min(1, (g[4] || 0) * 6);
-        aux[i * 2 + 1] = g[0] / sr;
+    /// Push one frame onto the trail — a spectrum for the floor and a Lissajous
+    /// for the sky. Called at the poll's rate, not the display's: the room only
+    /// moves when there is something new to move it.
+    push(bands, pairs) {
+      if (!bands || !bands.length) return;
+      let liss = null;
+      if (pairs && pairs.length >= 4) {
+        const n = pairs.length / 2;
+        liss = new Float32Array(VG_LISS_POINTS * 2);
+        for (let i = 0; i < VG_LISS_POINTS; i++) {
+          const k = Math.floor(i / VG_LISS_POINTS * n);
+          liss[i * 2] = pairs[k * 2];
+          liss[i * 2 + 1] = pairs[k * 2 + 1];
+        }
       }
-      gl.bindBuffer(gl.ARRAY_BUFFER, grainPos);
-      gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
-      gl.bindBuffer(gl.ARRAY_BUFFER, grainAux);
-      gl.bufferData(gl.ARRAY_BUFFER, aux, gl.DYNAMIC_DRAW);
-      grainCount = n;
+      const row = new Float32Array(VG_FLOOR_BANDS);
+      for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+        // Resampled by taking the loudest source band in range. An analyser
+        // that averages a tone away is not an analyser, and that is as true of
+        // the floor as of the flat one.
+        const a = Math.floor(i / VG_FLOOR_BANDS * bands.length);
+        const b = Math.max(a + 1, Math.floor((i + 1) / VG_FLOOR_BANDS * bands.length));
+        let m = -Infinity;
+        for (let k = a; k < b && k < bands.length; k++) if (bands[k] > m) m = bands[k];
+        row[i] = Math.max(0, Math.min(1, (m + 96) / 96));
+      }
+      history.push({ row, liss });
+      while (history.length > VG_HISTORY) history.shift();
+      pushes++;
     },
 
-    /// Draw one frame. `f` carries already-interpolated values, so this does no
-    /// smoothing of its own — see `vgSmooth`.
     frame(f) {
       const w = canvas.width, h = canvas.height;
       if (!w || !h) return;
@@ -252,105 +281,216 @@ function vgAttach(canvas) {
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
-      // ── the field and the glow ──
-      if (f.spectrum && f.spectrum.length) {
-        const n = f.spectrum.length;
-        gl.bindTexture(gl.TEXTURE_2D, specTex);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-        if (n !== specWidth) {
-          specWidth = n;
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, n, 1, 0, gl.LUMINANCE,
-            gl.UNSIGNED_BYTE, f.spectrum);
-        } else {
-          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, n, 1, gl.LUMINANCE,
-            gl.UNSIGNED_BYTE, f.spectrum);
+      // The room. The eye sits at the origin looking down −Z; the front face is
+      // one unit away and is exactly what the canvas shows, so the box's near
+      // edges *are* the edges of the panel.
+      const aspect = w / h;
+      const near = 1.0;
+      const yb = VG_FLOOR_Y, yt = VG_CEIL_Y;
+      const halfW = (yt - yb) * 0.5 * aspect;
+      const far = near * (1 + VG_DEPTH);
+      const mvp = vgFrustum(-halfW, halfW, yb, yt, near, far + 1);
+      gl.useProgram(prog.p);
+      gl.uniformMatrix4fv(prog.uMVP, false, mvp);
+
+      // Depth runs 0 at the front to 1 at the back, which is what the shaders
+      // fade against.
+      const zAt = (t) => -(near + t * (far - near));
+
+      // ── the room ──
+      //
+      // Only the four runs back and the far rectangle. The near rectangle is
+      // the canvas border and drawing it would be a line painted on the bezel.
+      {
+        const fr = [[-halfW, yb], [halfW, yb], [halfW, yt], [-halfW, yt]];
+        const pos = new Float32Array(8 * 3 * 2);
+        const wts = new Float32Array(8 * 2);
+        let v = 0;
+        const put = (x, y, z, weight) => {
+          pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
+          wts[v] = weight; v++;
+        };
+        // Full size, at the back. The projection is what shrinks it.
+        //
+        // These corners used to be pre-multiplied by `near / far` as well,
+        // which applied the perspective twice: the wall drew at the square of
+        // the convergence, so it sat far beyond where the floor actually ends
+        // and the terrain appeared to stop short of the room in a hard edge. It
+        // was not stopping short — the wall was in the wrong place.
+        for (let i = 0; i < 4; i++) {
+          const [x0, y0] = fr[i];
+          const [x1, y1] = fr[(i + 1) % 4];
+          put(x0, y0, zAt(1), 0.16);
+          put(x1, y1, zAt(1), 0.16);
+          // and the corner run from the canvas edge back to it
+          put(x0, y0, zAt(0), 0.02);
+          put(x0, y0, zAt(1), 0.16);
         }
-        gl.useProgram(quad.p);
-        bind(quadBuf, quad.a.aXY, 2);
-        gl.uniform1i(quad.u.uSpec, 0);
-        gl.uniform1f(quad.u.uLevel, f.level);
-        gl.uniform1f(quad.u.uCorr, f.correlation);
-        gl.uniform1f(quad.u.uTilt, 0.82);
-        gl.uniform3fv(quad.u.uCold, f.cold);
-        gl.uniform3fv(quad.u.uHot, f.hot);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        draw(gl.LINES, pos, wts, v, 0.85, false, f.cold, f.cold, 1);
       }
 
-      // ── the cloud ──
-      if (grainCount) {
-        gl.useProgram(grain.p);
-        bind(grainPos, grain.a.aPos, 2);
-        bind(grainAux, grain.a.aAux, 2);
-        gl.uniform1f(grain.u.uPlay, f.playSeconds);
-        gl.uniform1f(grain.u.uSpan, 0.28);
-        gl.uniform1f(grain.u.uScale, Math.max(0.6, h / 420));
-        gl.uniform1f(grain.u.uInk, 0.9);
-        gl.uniform3fv(grain.u.uCold, f.cold);
-        gl.uniform3fv(grain.u.uHot, f.hot);
-        gl.drawArrays(gl.POINTS, 0, grainCount);
+      // ── the landscape ──
+      //
+      // The floor is a surface, not a set of wires: every pair of neighbouring
+      // frames is joined into a strip, so what you are looking at is terrain
+      // with the newest ridge at the near edge and everything before it running
+      // away to the back wall.
+      const rows = history.length;
+      const ridgeY = (v) => yb + v * (yt - yb) * 0.62;
+      const xAt = (i) => ((i / (VG_FLOOR_BANDS - 1)) * 2 - 1) * halfW;
+      // Against the room's full depth, not against however many frames happen to
+      // be in hand. Dividing by `rows` made a half-filled trail span the whole
+      // room and then crawl backwards as it filled — the trail should *grow*
+      // into the room from the near edge and reach the back wall when it is
+      // full, which is what a fixed step per frame gives.
+      const ageOf = (r) => (rows - 1 - r) / Math.max(1, VG_HISTORY - 1);
+
+      if (rows > 1) {
+        const key = `${pushes}|${rows}|${halfW.toFixed(4)}`;
+        if (key !== meshKey) {
+          meshKey = key;
+          meshRows = rows - 1;
+          const per = VG_FLOOR_BANDS * 2;
+          const pos = new Float32Array(meshRows * per * 3);
+          const wts = new Float32Array(meshRows * per);
+          let v = 0;
+          for (let r = 0; r < meshRows; r++) {
+            const a = history[r].row, b = history[r + 1].row;
+            const za = zAt(ageOf(r)), zbb = zAt(ageOf(r + 1));
+            for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+              const x = xAt(i);
+              pos[v * 3] = x; pos[v * 3 + 1] = ridgeY(a[i]); pos[v * 3 + 2] = za;
+              wts[v] = a[i]; v++;
+              pos[v * 3] = x; pos[v * 3 + 1] = ridgeY(b[i]); pos[v * 3 + 2] = zbb;
+              wts[v] = b[i]; v++;
+            }
+          }
+          gl.bindBuffer(gl.ARRAY_BUFFER, meshPosBuf);
+          gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, meshWBuf);
+          gl.bufferData(gl.ARRAY_BUFFER, wts, gl.DYNAMIC_DRAW);
+        }
+        // One upload, many draws: a strip per pair, so the near ones are laid
+        // over the far ones without a depth buffer.
+        gl.bindBuffer(gl.ARRAY_BUFFER, meshPosBuf);
+        gl.enableVertexAttribArray(prog.aPos);
+        gl.vertexAttribPointer(prog.aPos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, meshWBuf);
+        gl.enableVertexAttribArray(prog.aW);
+        gl.vertexAttribPointer(prog.aW, 1, gl.FLOAT, false, 0, 0);
+        gl.uniform1f(prog.uRound, 0);
+        gl.uniform1f(prog.uPointSize, 1);
+        gl.uniform3fv(prog.uCold, f.cold);
+        gl.uniform3fv(prog.uHot, f.hot);
+        const per = VG_FLOOR_BANDS * 2;
+        for (let r = 0; r < meshRows; r++) {
+          gl.uniform1f(prog.uAlpha, 0.20 + (1 - ageOf(r)) * 0.26);
+          gl.drawArrays(gl.TRIANGLE_STRIP, r * per, per);
+        }
       }
 
-      // ── the core ──
-      if (f.lissajous && f.lissajous.length >= 4) {
-        const n = f.lissajous.length / 2;
-        if (n !== gonioCount) {
-          const age = new Float32Array(n);
-          for (let i = 0; i < n; i++) age[i] = i / (n - 1);
-          gl.bindBuffer(gl.ARRAY_BUFFER, gonioAge);
-          gl.bufferData(gl.ARRAY_BUFFER, age, gl.STATIC_DRAW);
-          gonioCount = n;
+      // The wire over it, so the ridges keep their edge.
+      if (rows) {
+        if (!floorPos || floorPos.length !== VG_FLOOR_BANDS * 3) {
+          floorPos = new Float32Array(VG_FLOOR_BANDS * 3);
+          floorW = new Float32Array(VG_FLOOR_BANDS);
         }
-        gl.bindBuffer(gl.ARRAY_BUFFER, gonioBuf);
-        gl.bufferData(gl.ARRAY_BUFFER, f.lissajous, gl.DYNAMIC_DRAW);
-        gl.useProgram(gonio.p);
-        bind(gonioBuf, gonio.a.aLR, 2);
-        bind(gonioAge, gonio.a.aAge, 1);
-        gl.uniform1f(gonio.u.uScale, 0.42);
-        gl.uniform1f(gonio.u.uAspect, Math.max(0.2, w / h));
-        gl.uniform3fv(gonio.u.uInk, f.core);
-        gl.drawArrays(gl.POINTS, 0, gonioCount);
+        for (let r = 0; r < rows; r++) {
+          const row = history[r].row;
+          const age = ageOf(r);
+          const z = zAt(age);
+          for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+            floorPos[i * 3] = xAt(i);
+            floorPos[i * 3 + 1] = ridgeY(row[i]);
+            floorPos[i * 3 + 2] = z;
+            floorW[i] = row[i];
+          }
+          draw(gl.LINE_STRIP, floorPos, floorW, VG_FLOOR_BANDS,
+            0.34 + (1 - age) * 0.5, false, f.cold, f.hot, 1);
+        }
+
+        // ── the leading edge ──
+        //
+        // The frame you are hearing *now*, drawn with weight. As a ribbon, not
+        // a fat line: `gl.lineWidth` is clamped to 1 by almost every driver and
+        // is therefore not a way to make anything thicker.
+        const now = history[rows - 1].row;
+        const z = zAt(0);
+        const n2 = VG_FLOOR_BANDS * 2;
+        if (!leadPos || leadPos.length !== n2 * 3) {
+          leadPos = new Float32Array(n2 * 3);
+          leadW = new Float32Array(n2);
+        }
+        for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+          const x = xAt(i), y = ridgeY(now[i]);
+          leadPos[i * 6] = x; leadPos[i * 6 + 1] = y - VG_LEAD; leadPos[i * 6 + 2] = z;
+          leadPos[i * 6 + 3] = x; leadPos[i * 6 + 4] = y + VG_LEAD; leadPos[i * 6 + 5] = z;
+          leadW[i * 2] = now[i]; leadW[i * 2 + 1] = now[i];
+        }
+        draw(gl.TRIANGLE_STRIP, leadPos, leadW, n2, 1.0, false, f.cold, f.hot, 1);
+      }
+
+      // ── the sky ──
+      //
+      // A ring pushed out of round by the sound. Angle is position around the
+      // circle and radius is what the signal is doing there, so a quiet passage
+      // is a clean circle and a loud one is a ragged crown — and because the
+      // two channels displace it differently, a wide image wobbles where a mono
+      // one only breathes.
+      //
+      // It trails the way the floor does: one ring per frame of history, the
+      // newest at the near edge and the rest on their way to the back wall.
+      //
+      // Drawn round on screen at every depth because the frustum's width is
+      // derived from its height times the aspect, so one world unit is the same
+      // number of pixels across as it is up.
+      {
+        const skyY = yb + (yt - yb) * 0.72;
+        const r0 = (yt - yb) * 0.17;
+        if (!skyPos || skyPos.length !== (VG_LISS_POINTS + 1) * 3) {
+          skyPos = new Float32Array((VG_LISS_POINTS + 1) * 3);
+          skyW = new Float32Array(VG_LISS_POINTS + 1);
+        }
+        for (let r = 0; r < rows; r++) {
+          const liss = history[r].liss;
+          if (!liss) continue;
+          const age = ageOf(r);
+          const z = zAt(age);
+          for (let i = 0; i <= VG_LISS_POINTS; i++) {
+            const k = i % VG_LISS_POINTS;                   // closed, so the
+            const th = (k / VG_LISS_POINTS) * Math.PI * 2;  // last point is the first
+            const l = liss[k * 2], rr = liss[k * 2 + 1];
+            const mid = (l + rr) * 0.5, side = (l - rr) * 0.5;
+            const rad = r0 * (1 + mid * 0.85 + side * 0.55);
+            skyPos[i * 3] = Math.cos(th) * rad;
+            skyPos[i * 3 + 1] = skyY + Math.sin(th) * rad;
+            skyPos[i * 3 + 2] = z;
+            skyW[i] = Math.min(1, 0.25 + Math.abs(mid) * 1.6);
+          }
+          const lead = r === rows - 1;
+          // The floor runs all the way to the wall; the ring does not. Every
+          // older ring is smaller by the same perspective, so a trail carried
+          // to the back converges on a point and reads as a hard cone with a
+          // spike at its tip. Easing it out over the last third leaves the
+          // shape hanging in the air with nothing to snag on.
+          const ease = 1 - Math.pow(Math.max(0, age - 0.34) / 0.66, 1.6);
+          draw(gl.LINE_STRIP, skyPos, skyW, VG_LISS_POINTS + 1,
+            lead ? 1.0 : (0.28 + (1 - age) * 0.5) * Math.max(0, ease),
+            false, f.core, f.hot, 1);
+          // The frame being heard now gets weight, the same way the floor's
+          // leading ridge does.
+          if (lead) {
+            draw(gl.POINTS, skyPos, skyW, VG_LISS_POINTS + 1, 0.85, true,
+              f.core, f.hot, 7);
+          }
+        }
       }
     },
 
     dispose() {
-      for (const b of [quadBuf, grainPos, grainAux, gonioBuf, gonioAge]) gl.deleteBuffer(b);
-      gl.deleteTexture(specTex);
-      for (const p of [quad, grain, gonio]) gl.deleteProgram(p.p);
-    },
-  };
-}
-
-/// Twenty hertz of data, sixty hertz of picture.
-///
-/// The master bus polls five times slower than the display refreshes, which is
-/// the right rate for numbers and the wrong one for motion. This keeps the
-/// last frame and walks it towards the new one, so the picture moves at the
-/// display's rate off a feed that does not. It is the difference between
-/// "dynamic" and "steppy", and it costs nothing.
-function vgSmooth() {
-  let spec = null;
-  let level = 0, corr = 1;
-  return {
-    /// `k` is how far to travel towards the target this frame. Frame-rate
-    /// independent: at 60 fps a 0.25 constant is a very different filter than
-    /// at 20, and the scene must not change character with the refresh rate.
-    step(target, dt) {
-      const k = 1 - Math.exp(-dt * 14);
-      level += (target.level - level) * k;
-      corr += (target.correlation - corr) * k;
-      const t = target.spectrum;
-      if (t && t.length) {
-        if (!spec || spec.length !== t.length) spec = new Uint8Array(t);
-        else {
-          for (let i = 0; i < t.length; i++) {
-            // Fast up, slow down. A spectrum that eases *into* a transient
-            // misses it; one that eases out of it is how a peak reads as decay.
-            const d = t[i] - spec[i];
-            spec[i] += d > 0 ? d : d * k;
-          }
-        }
-      }
-      return { level, correlation: corr, spectrum: spec };
+      gl.deleteBuffer(posBuf);
+      gl.deleteBuffer(wBuf);
+      gl.deleteProgram(prog.p);
     },
   };
 }
