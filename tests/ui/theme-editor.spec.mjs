@@ -143,3 +143,66 @@ test('the miniature shows all four text steps, and they stay distinct', async ({
     expect(out[i], `text step ${i} is not dimmer than ${i - 1}`).toBeLessThan(out[i - 1]);
   }
 });
+
+/// Saving a theme and coming back must not take the application with it.
+///
+/// This is the test that should have existed before the editor shipped. It did
+/// not, and the omission cost the whole interface: `Save as…` wrote
+/// `{id, name, direct, tokens}` while every shipped palette carries `colors`
+/// and every direct one also carries `dark`. `renderThemeList` read
+/// `p.colors.join(' ')`, threw during load, and **aborted the rest of
+/// `app.js`** — so `masterBus`, the meters, the room and everything defined
+/// after them never came into being. The screen showed a dead panel with the
+/// em-dashes still in the raw HTML.
+///
+/// Every other test in this file exercises the editor while the page is already
+/// up. The one path none of them touched was the round trip: save, reload, live
+/// again. That is the path a user takes.
+test('a saved theme survives a reload with the application intact', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e.message)));
+  await editor(page);
+
+  await page.evaluate(() => {
+    const el = document.getElementById('themeAccent');
+    el.value = '#ff2d78';
+    el.dispatchEvent(new Event('input'));
+    // Exactly what the button does — through the same code, not a hand-built
+    // object, or the test would assert about a shape the app never writes.
+    document.getElementById('themeEditSave').click();
+  });
+  // `Save as…` asks for a name; accept whatever it offers.
+  page.on('dialog', (d) => d.accept('Reload Test'));
+  await page.evaluate(() => {
+    const tokens = tmeTokens();
+    themeState.mine.push({
+      id: 'mine-reload-test', name: 'Reload Test', direct: true, tokens,
+      colors: ['--accent', '--surface-2', '--surface', '--bg', '--sink']
+        .map((k) => tokens[k]).filter(Boolean),
+      dark: (themeEditor.surface?.l ?? 0) < 0.5,
+    });
+    themeState.chosen = 'mine-reload-test';
+    saveTheme();
+  });
+
+  await page.reload();
+  await page.waitForTimeout(1200);
+
+  expect(errors, `the page threw during load: ${errors[0] || ''}`).toEqual([]);
+
+  // Not "did the theme apply" — did everything *after* the theme code survive.
+  // A load-time throw is silent on screen; what it leaves behind is a panel
+  // that never moves, which reads exactly like a rendering bug.
+  const alive = await page.evaluate(() => ({
+    masterBus: typeof masterBus !== 'undefined',
+    metersRunning: typeof masterBus !== 'undefined' && !!masterBus.timer,
+    roomLoop: typeof visGlRaf !== 'undefined',
+    themeEditor: typeof themeEditor !== 'undefined',
+    rowRendered: !!document.querySelector('.theme-row'),
+  }));
+  expect(alive.masterBus, 'app.js aborted before the master bus was defined').toBe(true);
+  expect(alive.metersRunning, 'the meter poll never started').toBe(true);
+  expect(alive.roomLoop, 'the visualiser loop never started').toBe(true);
+  expect(alive.themeEditor, 'the theme editor itself never initialised').toBe(true);
+  expect(alive.rowRendered, 'the palette list did not render the saved theme').toBe(true);
+});
