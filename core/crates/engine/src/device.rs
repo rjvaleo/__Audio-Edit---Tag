@@ -41,6 +41,12 @@ impl Engine {
         source: Arc<Source>,
         buffer_frames: Option<u32>,
     ) -> Result<Engine, String> {
+        // Build the FFT twiddle table here, on the thread that is opening the
+        // device, rather than letting the first transform build it inside the
+        // audio callback. It is 32 KB and once per process, but "once" inside a
+        // callback is still one block that missed its deadline.
+        audio_core::fft::prime();
+
         let host = cpal::default_host();
         let device = host
             .default_output_device()
