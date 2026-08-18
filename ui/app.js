@@ -1174,8 +1174,17 @@ function drawGrainLayer() {
   // brightest at the moment it starts. Drawn from the schedule rather than
   // remembered, so it is a pure function of where the playhead is — scrub
   // backwards and the same grains light in the same places.
+  // Struck from the densest copy that covers the playhead. The view's schedule
+  // is thinned to fit the cap across the whole window; the swarm's is eight
+  // seconds wide and so arrives whole. Ticks stay on the view copy — they are a
+  // picture of the *whole* range and want its spread, not the playhead's.
+  const sparks = (swarmFor && state.swarm?.grains?.length
+    && playFrame >= swarmFor[0] && playFrame <= swarmFor[1])
+    ? state.swarm.grains
+    : all;
+
   let lit = 0;
-  for (const [outFrame, srcFrame, size, pitch, rms, bright] of all) {
+  for (const [outFrame, srcFrame, size, pitch, rms, bright] of sparks) {
     const since = (playFrame - outFrame) / sr;
     if (since < 0 || since > SIZZLE_SECONDS) continue;
     const px = x(srcFrame);
@@ -7535,6 +7544,26 @@ function covers(win, want) {
   return !!win && !!want && want[0] >= win[0] && want[1] <= win[1];
 }
 
+/// Whether the view's schedule is too thinned to strike sparks from.
+///
+/// The cap is spent across whatever window was asked for, so zoomed out on a
+/// long stretch it is spread very thin: measured at ratio 19.4, density 91,
+/// three layers, the reply held 7,983 grains of a real 2,913,063 — one in 365.
+/// The ticks survive that (they are a density picture and thinning is honest),
+/// but the sizzle does not: at any moment 91 × 3 × 0.28 s ≈ 76 grains should be
+/// lit, and one in 365 of them is *nought point two*. What you see is a spark
+/// appearing alone, twice a second, which reads exactly like a redraw running
+/// at two frames a second. It is not — the layer draws in under a millisecond.
+/// There is simply almost nothing in the frame.
+///
+/// So when the view copy is thin, the sparks come from the playhead's own copy,
+/// which is eight seconds wide and therefore never thinned at all.
+function viewIsThin() {
+  const g = state.grains;
+  if (!g || !g.total || !g.grains) return false;
+  return g.total > g.grains.length * 2;
+}
+
 /// The playhead's own schedule, when the view is looking somewhere else.
 /// `null` means the view's copy already covers it and the swarm should use that.
 let swarmFor = null;
@@ -7590,7 +7619,9 @@ async function loadGrains() {
 async function loadSwarmGrains() {
   const f = state.selectedFile;
   const want = playheadWindow();
-  if (!f || !want || covers(grainsFor, want)) {
+  // `covers` alone was the test, and it is not enough: a range can *contain*
+  // the playhead while holding one grain in 365 of it. Density counts too.
+  if (!f || !want || (covers(grainsFor, want) && !viewIsThin())) {
     state.swarm = null;
     swarmFor = null;
     return;
@@ -7617,8 +7648,17 @@ async function loadSwarmGrains() {
 /// Throttled: zooming, scrolling and playback all fire continuously, and each
 /// of these is a schedule walk on the server.
 let grainsViewTimer = null;
+/// The view the grain layer was last drawn for.
+///
+/// `grainsFollowView` is called from the playback poll twenty times a second as
+/// well as on every zoom and scroll. Redrawing unconditionally there added
+/// twenty full redraws a second on top of the sixty the transport loop already
+/// does — for a picture that had not moved. The redraw is needed when the
+/// *view* moves, which is what this remembers.
+let grainDrawnFor = null;
+
 function grainsFollowView() {
-  // Re-place what is already in hand, first and always.
+  // Re-place what is already in hand, when the view has actually moved.
   //
   // This function used to redraw *only* when it decided to re-fetch. The marks
   // are drawn at pixel positions derived from `state.view`, so any zoom or
@@ -7630,7 +7670,11 @@ function grainsFollowView() {
   // window on every single view change where the marks were simply in the wrong
   // places. Drawing first closes both cases: the picture is always right for
   // the data in hand, and a fetch only ever improves the data.
-  drawGrainLayer();
+  const now = `${state.view?.from}:${state.view?.to}`;
+  if (now !== grainDrawnFor) {
+    grainDrawnFor = now;
+    drawGrainLayer();
+  }
   if (!state.selectedFile) return;
 
   // The last ask failed: try again, on a timer of its own so a server that is
@@ -7667,7 +7711,8 @@ function grainsFollowView() {
   const sr = state.grains?.sampleRate || 48000;
   const margin = 1.5 * sr;
   const near = head ? [head[0] + margin, head[1] - margin] : null;
-  const swarmStale = !!head && !covers(grainsFor, near) && !covers(swarmFor, near);
+  const swarmStale = !!head && !covers(swarmFor, near)
+    && !(covers(grainsFor, near) && !viewIsThin());
   if (!viewStale && !swarmStale) return;
 
   clearTimeout(grainsViewTimer);
