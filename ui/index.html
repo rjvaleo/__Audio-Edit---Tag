@@ -138,6 +138,61 @@
       <div class="fx-note">Neon, so the sound reads against the surface behind
       it. The grain marks keep their own colour.</div>
       <div class="divider"></div>
+
+      <!-- The editor. A miniature of the interface, three pickers, and every
+           change on screen as you make it. See `docs/THEME-EDITOR.md`. -->
+      <div class="field-label">Make your own</div>
+      <div class="theme-mini" id="themeMini">
+        <div class="tm-rail">
+          <span class="tm-icon on"></span><span class="tm-icon"></span><span class="tm-icon"></span>
+        </div>
+        <div class="tm-body">
+          <div class="tm-bar">
+            <span class="tm-btn">Cut</span><span class="tm-btn">Crop</span>
+            <span class="tm-btn on">Export</span>
+            <span class="tm-title">a sound.aif</span>
+          </div>
+          <div class="tm-lane"><i></i></div>
+          <div class="tm-panels">
+            <div class="tm-panel">
+              <div class="tm-head">Time &amp; Pitch</div>
+              <div class="tm-row"><span class="tm-k">Stretch</span>
+                <span class="tm-slider"><i style="width:62%"></i></span>
+                <span class="tm-v">4.00×</span></div>
+              <div class="tm-row"><span class="tm-k">Pitch</span>
+                <span class="tm-slider"><i style="width:38%"></i></span>
+                <span class="tm-v">+0.0 st</span></div>
+              <div class="tm-steps">
+                <span class="tm-t1">text</span><span class="tm-t2">second</span>
+                <span class="tm-t3">dim</span><span class="tm-t4">dimmer</span>
+              </div>
+            </div>
+            <div class="tm-panel tm-panel-2">
+              <div class="tm-head">Master</div>
+              <div class="tm-meters"><i style="height:72%"></i><i style="height:58%"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="theme-picks">
+        <label class="tm-pick"><span>Surface</span>
+          <input type="color" id="themeSurface" value="#0e1116"></label>
+        <label class="tm-pick"><span>Text</span>
+          <input type="color" id="themeText" value="#e6ebef"></label>
+        <label class="tm-pick"><span>Accent</span>
+          <input type="color" id="themeAccent" value="#4aa3ff"></label>
+      </div>
+      <div class="fx-row theme-edit-actions">
+        <button class="ghost" id="themeEditReset">Reset</button>
+        <button class="ghost" id="themeEditApply">Apply</button>
+        <button class="ghost" id="themeEditSave">Save as…</button>
+      </div>
+      <div class="fx-note">The ladder is measured from the interface's own
+      colours and reproduced, so the contrast the panels were designed against
+      holds whatever you pick. Good, warning and bad keep their meaning; the
+      waveform keeps its own colour.</div>
+
+      <div class="divider"></div>
       <div class="field-label">Palette</div>
       <div class="fx-note">A palette gives colour and direction; the ladder of
       surfaces, text and borders is derived from it, so contrast holds whatever

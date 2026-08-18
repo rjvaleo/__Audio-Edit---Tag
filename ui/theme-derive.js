@@ -498,8 +498,18 @@ Theme.appTokens = function appTokens(colors, { plain = false } = {}) {
 /// Set as inline custom properties on `:root`, which beats the stylesheet's
 /// `:root` block without touching it — so "no theme" is removing them rather
 /// than restoring a copy of the defaults that could drift from the real ones.
+Theme.applyTo = function applyTo(el, tokens) {
+  if (!el) return;
+  for (const key of Object.keys(THEME_TOKEN_MAP)) el.style.removeProperty(key);
+  for (const [k, v] of Object.entries(tokens || {})) el.style.setProperty(k, v);
+};
+
+/// The same, onto the document — which is what makes a theme global.
+///
+/// Scoping the variables to an element instead themes everything inside it and
+/// nothing outside, because the whole interface reads its colours through
+/// `var(--x)`. That is what the editor's miniature is: the same tokens on a
+/// container rather than on the root.
 Theme.apply = function apply(tokens) {
-  const root = document.documentElement;
-  for (const key of Object.keys(THEME_TOKEN_MAP)) root.style.removeProperty(key);
-  for (const [k, v] of Object.entries(tokens || {})) root.style.setProperty(k, v);
+  Theme.applyTo(document.documentElement, tokens);
 };

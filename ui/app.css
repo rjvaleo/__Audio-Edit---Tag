@@ -2384,3 +2384,97 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   border-radius: 7px; background: var(--sink); border: 1px solid var(--line);
 }
 #visGl.hidden { display: none; }
+
+/* ────────────────────────────────────────────────────────── the theme editor ──
+   A miniature of the interface, built from real elements rather than drawn as a
+   picture — a screenshot goes stale the moment anything is restyled, and this
+   is repainted by the same stylesheet as the thing it stands for.
+
+   Its tokens are set on `#themeMini` itself, so it can show a theme the page is
+   not wearing. See `docs/THEME-EDITOR.md`. */
+.theme-mini {
+  display: flex; gap: 0; height: 176px; margin: 8px 0 10px;
+  border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  background: var(--bg);
+  /* Its own stacking context, so the page's theme cannot leak in over it. */
+  isolation: isolate;
+}
+.tm-rail {
+  flex: 0 0 22px; background: var(--surface-0);
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding-top: 6px; border-right: 1px solid var(--line);
+}
+.tm-icon { width: 12px; height: 12px; border-radius: 3px; background: var(--surface-2); }
+.tm-icon.on { background: var(--accent); }
+
+.tm-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.tm-bar {
+  display: flex; align-items: center; gap: 4px; padding: 5px 6px;
+  background: var(--surface-0); border-bottom: 1px solid var(--line);
+}
+.tm-btn {
+  font-size: 7.5px; padding: 2px 5px; border-radius: 3px;
+  border: 1px solid var(--line-2); color: var(--text-2); background: transparent;
+}
+.tm-btn.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.tm-title { margin-left: auto; font-size: 7.5px; color: var(--text-dim); }
+
+.tm-lane {
+  flex: 0 0 34px; background: var(--sink); position: relative;
+  border-bottom: 1px solid var(--line);
+}
+/* The waveform keeps its own colour — a theme has no business repainting the
+   sound, which is why `--wave` is not in the map. */
+.tm-lane > i {
+  position: absolute; left: 4px; right: 4px; top: 50%; height: 15px;
+  transform: translateY(-50%); border-radius: 1px;
+  background: repeating-linear-gradient(90deg,
+    var(--wave) 0 1px, transparent 1px 3px);
+  opacity: .85;
+}
+
+.tm-panels { flex: 1 1 auto; display: flex; gap: 5px; padding: 5px; min-height: 0; }
+.tm-panel {
+  flex: 1 1 auto; min-width: 0; background: var(--surface); border-radius: 4px;
+  border: 1px solid var(--line); padding: 5px 6px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.tm-panel-2 { flex: 0 0 46px; }
+.tm-head {
+  font-size: 7px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.tm-row { display: flex; align-items: center; gap: 5px; }
+.tm-k { flex: 0 0 34px; font-size: 7.5px; color: var(--text-2); }
+.tm-slider {
+  flex: 1 1 auto; height: 5px; border-radius: 3px; background: var(--well);
+  overflow: hidden;
+}
+.tm-slider > i { display: block; height: 100%; background: var(--accent); }
+.tm-v { flex: 0 0 34px; font-size: 7.5px; color: var(--text); text-align: right; }
+
+/* All four text steps, because a ladder that collapses is the failure a theme
+   most often has and the one hardest to see on a page full of other things. */
+.tm-steps { display: flex; gap: 6px; margin-top: auto; font-size: 7.5px; }
+.tm-t1 { color: var(--text); }
+.tm-t2 { color: var(--text-2); }
+.tm-t3 { color: var(--text-dim); }
+.tm-t4 { color: var(--text-dimmer); }
+
+.tm-meters { flex: 1 1 auto; display: flex; gap: 3px; align-items: flex-end; }
+.tm-meters > i {
+  flex: 1 1 auto; background: var(--accent); border-radius: 1px; min-height: 2px;
+}
+
+/* Fixed widths, never flex. */
+.theme-picks { display: flex; gap: 6px; margin-bottom: 8px; }
+.tm-pick {
+  width: 78px; display: flex; flex-direction: column; gap: 3px;
+  font-size: 9px; color: var(--text-dim);
+}
+.tm-pick input[type="color"] {
+  width: 78px; height: 22px; padding: 0; border: 1px solid var(--line-2);
+  border-radius: 4px; background: transparent; cursor: pointer;
+}
+.theme-edit-actions { gap: 6px; }
+.theme-edit-actions .ghost { width: 84px; }

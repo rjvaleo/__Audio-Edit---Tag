@@ -10400,3 +10400,181 @@ function startVisGl() {
   visGlRaf = requestAnimationFrame(visGlTick);
 }
 startVisGl();
+
+// ────────────────────────────────────────────────────────── the theme editor ──
+//
+// A miniature of the interface, three pickers, and every change on screen as
+// you make it. See `docs/THEME-EDITOR.md`.
+//
+// The ladder is not invented. The palette that ships is already a good theme,
+// so the spacing between its surfaces and its text steps is *measured* from the
+// stylesheet and reproduced — what the pickers choose is where the ladder sits
+// and what colour it is, never how far apart its rungs are.
+
+/// Which tokens the editor drives, grouped by the picker that moves them, and
+/// in ladder order within each group.
+const TME_SURFACES = [
+  '--sink', '--well', '--bg', '--surface-0',
+  '--surface', '--surface-2', '--surface-2h', '--surface-3',
+];
+const TME_TEXTS = ['--text', '--text-2', '--text-dim', '--text-dimmer'];
+/// The step each group's offsets are measured against.
+const TME_SURFACE_BASE = '--bg';
+const TME_TEXT_BASE = '--text';
+
+const themeEditor = {
+  /// The stylesheet's own values, resolved once. Null until first asked for.
+  defaults: null,
+  surface: null,
+  text: null,
+  accent: null,
+};
+
+/// A CSS colour as hue, saturation and lightness, or null.
+///
+/// `rgbToHsl` hands back an **object**, not a triple, and its saturation and
+/// lightness are 0..1 rather than percentages — destructuring it as an array
+/// and clamping against 0..100 was three bugs in one line, and produced tokens
+/// that were silently never written.
+///
+/// `cssHex` is what makes this work at all: the stylesheet states its colours
+/// in `oklch`, and this resolves any CSS colour the browser understands.
+function tmeHsl(colour) {
+  const hex = cssHex(colour);
+  if (!hex) return null;
+  const c = rgbToHsl(hexToRgb(hex));
+  return (c && Number.isFinite(c.l)) ? c : null;
+}
+
+/// The stylesheet's colours, with any theme temporarily lifted off.
+///
+/// `Theme.apply` writes the current theme as inline properties on `:root`,
+/// which beat the stylesheet. Reading the defaults therefore means taking those
+/// off, reading, and putting them back — otherwise the "defaults" measured are
+/// whatever theme happens to be on, and every edit compounds the last one.
+function tmeDefaults() {
+  if (themeEditor.defaults) return themeEditor.defaults;
+  const root = document.documentElement;
+  const held = {};
+  for (const k of [...TME_SURFACES, ...TME_TEXTS, '--accent']) {
+    const v = root.style.getPropertyValue(k);
+    if (v) held[k] = v;
+    root.style.removeProperty(k);
+  }
+  const cs = getComputedStyle(root);
+  const out = {};
+  for (const k of [...TME_SURFACES, ...TME_TEXTS, '--accent']) {
+    out[k] = tmeHsl(cs.getPropertyValue(k).trim());
+  }
+  for (const [k, v] of Object.entries(held)) root.style.setProperty(k, v);
+  themeEditor.defaults = out;
+  return out;
+}
+
+/// One group of tokens, moved to sit where a picked colour says.
+///
+/// Additive on every axis, so the *spacing* is untouched: the gap between two
+/// surfaces stays exactly the gap the interface was designed with, and only
+/// where the whole ladder sits and what colour it is can change. Scaling
+/// instead would compress the ladder toward one end as the picked colour got
+/// darker, which is most of what made the old derivation look arbitrary.
+function tmeLadder(keys, baseKey, picked, defaults) {
+  const base = defaults[baseKey];
+  const out = {};
+  if (!base || !picked) return out;
+  for (const k of keys) {
+    const d = defaults[k];
+    if (!d) continue;
+    // 0..1 on both axes, which is the range `hsl` speaks.
+    out[k] = hsl(
+      picked.h,
+      clamp(picked.s + (d.s - base.s), 0, 1),
+      clamp(picked.l + (d.l - base.l), 0, 1),
+    );
+  }
+  return out;
+}
+
+/// The full token set for the three colours currently picked.
+function tmeTokens() {
+  const d = tmeDefaults();
+  const surface = themeEditor.surface || d[TME_SURFACE_BASE];
+  const text = themeEditor.text || d[TME_TEXT_BASE];
+  const accent = themeEditor.accent || d['--accent'];
+  return {
+    ...tmeLadder(TME_SURFACES, TME_SURFACE_BASE, surface, d),
+    ...tmeLadder(TME_TEXTS, TME_TEXT_BASE, text, d),
+    // Verbatim. The accent is the one colour that was chosen rather than
+    // derived, and deriving it back off itself would be a way of ignoring it.
+    '--accent': hsl(accent.h, accent.s, accent.l),
+  };
+}
+
+/// Repaint the miniature. Only the miniature — the page changes on Apply.
+function tmePaint() {
+  const mini = $('themeMini');
+  if (!mini) return;
+  Theme.applyTo(mini, tmeTokens());
+}
+
+function tmeWire() {
+  const mini = $('themeMini');
+  if (!mini) return;
+  const d = tmeDefaults();
+
+  // The pickers start on the colours actually in force, so the miniature opens
+  // showing the interface as it is rather than as some default guess.
+  const seed = (id, group, fallback) => {
+    const el = $(id);
+    if (!el) return;
+    const h = fallback;
+    if (h) el.value = cssHex(hsl(h.h, h.s, h.l)) || el.value;
+    themeEditor[group] = h;
+    // `input` rather than `change`: the whole point is that it moves as you do.
+    el.addEventListener('input', () => {
+      themeEditor[group] = tmeHsl(el.value);
+      tmePaint();
+    });
+  };
+  seed('themeSurface', 'surface', d[TME_SURFACE_BASE]);
+  seed('themeText', 'text', d[TME_TEXT_BASE]);
+  seed('themeAccent', 'accent', d['--accent']);
+
+  $('themeEditReset')?.addEventListener('click', () => {
+    themeEditor.surface = d[TME_SURFACE_BASE];
+    themeEditor.text = d[TME_TEXT_BASE];
+    themeEditor.accent = d['--accent'];
+    for (const [id, g] of [['themeSurface', 'surface'], ['themeText', 'text'],
+      ['themeAccent', 'accent']]) {
+      const el = $(id), h = themeEditor[g];
+      if (el && h) el.value = cssHex(hsl(h.h, h.s, h.l)) || el.value;
+    }
+    tmePaint();
+  });
+
+  $('themeEditApply')?.addEventListener('click', () => {
+    // Onto the page, and nothing is chosen in the list any more — what is on
+    // screen is this, and the list saying otherwise would be a lie.
+    themeState.chosen = null;
+    saveTheme();
+    renderThemeList();
+    Theme.apply(tmeTokens());
+  });
+
+  $('themeEditSave')?.addEventListener('click', () => {
+    const name = prompt('Name this theme', `Mine ${themeState.mine.length + 1}`);
+    if (!name) return;
+    // Saved as a *direct* theme: its tokens are written verbatim rather than
+    // re-derived from five colours, because these were not derived from five
+    // colours and running them back through the engine would not return them.
+    const id = `mine-${Date.now().toString(36)}`;
+    themeState.mine.push({ id, name, direct: true, tokens: tmeTokens() });
+    themeState.chosen = id;
+    saveTheme();
+    renderThemeList();
+    applyChosenTheme();
+  });
+
+  tmePaint();
+}
+tmeWire();
