@@ -399,6 +399,22 @@ impl Shared {
         let mean = if prev == 0 { ppm } else { prev - (prev >> 5) + (ppm >> 5) };
         self.load_mean.store(mean, Ordering::Relaxed);
 
+        // Decide how many layers the machine can actually carry.
+        //
+        // This is the same `govern` that was pulled out on 15 Aug for causing
+        // the glitching it was meant to prevent — and it was never the culprit.
+        // What was: the callback applied the verdict by writing it back into its
+        // own persistent parameters, `self.params.grain.layers = allowed`, so the
+        // next block read the already-reduced number and reduced it again. A
+        // ratchet, sixteen layers to one while you listened, rebuilding the bank
+        // at every step.
+        //
+        // The verdict is a *cap* now, read by `Stretcher::live_layers` and never
+        // written anywhere. The requested count is untouched, so the cap is
+        // recomputed against what you asked for rather than against its own last
+        // answer, and it cannot walk.
+        self.govern(ppm, mean);
+
         // The worst since the last reset. `fetch_max` rather than a load, a
         // compare and a store, which two callbacks could interleave.
         self.load_worst.fetch_max(ppm, Ordering::Relaxed);
@@ -966,6 +982,8 @@ impl Core {
         if let Ok(g) = shared.params.try_lock() {
             self.params = *g;
         }
+        // Read, never written into `self.params`. See `record_block_cost`.
+        self.renderer.set_layer_cap(shared.layer_cap());
         shared
             .layers_running
             .store(self.params.grain.layers.max(1), std::sync::atomic::Ordering::Relaxed);
@@ -1152,6 +1170,21 @@ impl Core {
                 *s *= gain;
             }
         }
+
+        // The last thing before it leaves: round the peaks rather than let the
+        // converter slice them.
+        //
+        // A rack can drive the channel a long way over — the "Breaking Again"
+        // preset reaches +10.3 dBFS through a +16 dB shelf and a compressor with
+        // makeup, with its own limiter switched off — and everything past full
+        // scale arrives at the device as a hard corner. Below −3 dBFS this
+        // changes nothing whatsoever, so it cannot colour a mix that was not
+        // already too loud.
+        //
+        // After the fader, so pulling the volume down really does get you out of
+        // it, and before the capture and the meters, so what is recorded and what
+        // is displayed are what actually left.
+        fx::soften(out);
 
         // Keep a copy, if anyone asked. Last, so what lands on disk is what
         // came out of the speakers rather than some earlier stage of it.

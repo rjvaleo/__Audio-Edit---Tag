@@ -190,6 +190,7 @@ fn main() {
             index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0 }; 4096];
         let mut rk = rack(SR, ch);
         let (mut dry_peak, mut wet_peak, mut over) = (0.0f32, 0.0f32, 0usize);
+        let (mut soft_peak, mut soft_over) = (0.0f32, 0usize);
         let mut total = 0usize;
         for _ in 0..300 {
             st.render(&mut out, ch, &src, &sp, &mut ev);
@@ -200,6 +201,15 @@ fn main() {
                 if v.abs() > 1.0 { over += 1; }
                 total += 1;
             }
+            // The same block through the soft ceiling — every block, not the
+            // last one. Comparing one block against a 300-block maximum is how
+            // the first version of this reported -13 dBFS and meant nothing.
+            let mut soft = out.clone();
+            fx::soften(&mut soft);
+            for v in soft.iter() {
+                soft_peak = soft_peak.max(v.abs());
+                if v.abs() > 1.0 { soft_over += 1; }
+            }
         }
         let db = |x: f32| 20.0 * x.max(1e-9).log10();
         println!("level, over {} blocks at 2048:", 300);
@@ -207,6 +217,8 @@ fn main() {
         println!("  peak after the rack      : {:.3}  ({:+.1} dBFS)", wet_peak, db(wet_peak));
         println!("  samples past full scale  : {} of {}  ({:.2}%)", over, total,
                  over as f64 / total as f64 * 100.0);
+        println!("  after the soft ceiling   : {:.3}  ({:+.1} dBFS), {} past full scale",
+                 soft_peak, db(soft_peak), soft_over);
     }
 
     println!("is the extra overlap doing anything?");

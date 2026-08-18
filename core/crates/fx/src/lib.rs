@@ -279,6 +279,58 @@ pub fn tick(p: Progress, n: u64) -> bool {
     }
 }
 
+/// Where the soft ceiling starts. Below this nothing is touched at all.
+///
+/// −3 dBFS. Ordinary material never reaches it, so the curve is inaudible until
+/// something is genuinely too loud.
+pub const CEILING_KNEE: f32 = 0.7079458;
+
+/// Round the peaks instead of slicing them.
+///
+/// A hard clip is a corner, and a corner is broadband distortion — it puts
+/// energy at every frequency at once, which is the crackle you hear when a mix
+/// runs hot. This is the same idea a mastering saturator uses: leave everything
+/// below the knee exactly as it is, and bend what is above it along a `tanh`
+/// that approaches full scale without ever reaching it.
+///
+/// Chosen over a limiter deliberately. A limiter holds the level by riding gain,
+/// which is transparent until it is not and then audibly ducks whatever else is
+/// playing. Asked which was preferred, the answer was "some light distortion
+/// rather than hard clips" — so this colours the peak and leaves everything
+/// else alone.
+///
+/// Zero latency, and no state: a sample's output depends on that sample only, so
+/// it cannot pump, cannot overshoot, and behaves the same offline as live.
+/// `tanh` is only evaluated for samples above the knee, which on normal material
+/// is none of them.
+#[inline]
+pub fn soft_ceiling(x: f32) -> f32 {
+    let a = x.abs();
+    if a <= CEILING_KNEE {
+        return x;
+    }
+    let span = CEILING - CEILING_KNEE;
+    let y = CEILING_KNEE + span * ((a - CEILING_KNEE) / span).tanh();
+    if x < 0.0 { -y } else { y }
+}
+
+/// Where the curve asymptotes: a hair under full scale, not at it.
+///
+/// `tanh` reaches 1.0 exactly in f32 arithmetic once its argument passes about
+/// nine, so aiming at 1.0 puts every heavily-driven sample on the same value —
+/// a flat top, which is the corner this exists to avoid. Aiming just under
+/// leaves the output strictly inside full scale for any finite input.
+///
+/// −0.009 dB. Inaudible as a level; the point is only that it is not 1.0.
+pub const CEILING: f32 = 0.999;
+
+/// Apply it across a block.
+pub fn soften(buf: &mut [f32]) {
+    for s in buf.iter_mut() {
+        *s = soft_ceiling(*s);
+    }
+}
+
 pub const TAIL_SILENCE: f32 = 1e-4;
 
 /// How long a chain goes on being processed after it last made a sound.
