@@ -503,6 +503,11 @@ where
     for block in audio.chunks_mut(1024 * ch) {
         control(rack, frame);
         rack.process(block, ch, sample_rate);
+        // The same soft ceiling the engine applies, so the file is what was
+        // heard. Without it here, a rack that drives the channel over would be
+        // rounded live and hard-clipped in the render — two different sounds
+        // from one document, which is the one thing this program does not do.
+        fx::soften(block);
         let mut bytes = Vec::with_capacity(block.len() * bps as usize);
         for v in block.iter() {
             quantise(*v, bits, true, &mut bytes);
@@ -797,6 +802,11 @@ where
     ))?;
 
     let mut written = 0u64;
+    // The same soft ceiling the engine applies, so the file is what was heard.
+    // Without it here, a rack that drives the channel over would be rounded
+    // live and hard-clipped in the render — two different sounds from one
+    // document, which is the one thing this program does not do.
+    fx::soften(&mut audio[..(total as usize * ch)]);
     for block in audio[..(total as usize * ch)].chunks(1024 * ch) {
         let mut bytes = Vec::with_capacity(block.len() * bps as usize);
         for v in block.iter() {

@@ -100,6 +100,9 @@ impl LayerBank {
 
 /// Every engine the audio thread can run, all resident.
 pub struct Stretcher {
+    /// The most layers the machine can carry, measured. Never written into
+    /// `StreamParams` — see `set_layer_cap`.
+    layer_cap: u32,
     grain: BlockRenderer,
     wsola: Pitched<WsolaStream>,
     vocoder: Pitched<VocoderStream>,
@@ -212,6 +215,7 @@ impl Stretcher {
             parts: std::sync::Arc::new(Parts::default()),
             current: Algorithm::Granular,
             fading: None,
+            layer_cap: crate::render::MAX_LAYERS as u32,
             scratch: vec![0.0; max_block.max(1) * channels.max(1)],
             layer_buf: vec![0.0; max_block.max(1) * channels.max(1)],
             cloud_buf: vec![0.0; max_block.max(1) * channels.max(1)],
@@ -244,8 +248,20 @@ impl Stretcher {
 
     /// What the callback can actually layer right now, which is not always what
     /// was asked for — a bank takes a moment to build.
+    /// The most layers the machine has been measured to carry.
+    ///
+    /// Set from `Shared::layer_cap` once a block. Deliberately *not* folded into
+    /// `StreamParams`: the moment a cap is written back into the parameters, the
+    /// next decision is made against the capped number instead of the requested
+    /// one, and it walks itself to one layer. That is the bug this whole
+    /// mechanism was withdrawn for once already.
+    pub fn set_layer_cap(&mut self, cap: u32) {
+        self.layer_cap = cap.max(1);
+    }
+
     pub fn live_layers(&self, sp: &StreamParams) -> u32 {
-        let want = sp.grain.layers.clamp(1, crate::render::MAX_LAYERS as u32);
+        let want = sp.grain.layers.clamp(1, crate::render::MAX_LAYERS as u32)
+            .min(self.layer_cap);
         if resolve(sp.algorithm) == Algorithm::Granular {
             return want;
         }
