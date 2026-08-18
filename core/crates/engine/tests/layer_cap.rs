@@ -16,10 +16,20 @@ use std::sync::Arc;
 /// A `Shared` needs params and a source to exist; neither is read by the load
 /// bookkeeping under test, so an empty one is honest rather than a stub.
 fn shared() -> Shared {
-    Shared::new(
+    let s = Shared::new(
         StreamParams::new(1000, 48_000),
         Arc::new(Source { samples: Vec::new(), channels: 1 }),
-    )
+    );
+    // The renderer publishes this every block; nothing renders here, so it is
+    // set by hand. It matters: the governor sheds from what is *running*, not
+    // from the abstract ceiling, so a `Shared` that claims one running layer
+    // has nothing it is allowed to take away.
+    running(&s, 16);
+    s
+}
+
+fn running(s: &Shared, n: u32) {
+    s.layers_running.store(n, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// A quiet engine keeps every layer it was given.
@@ -98,4 +108,57 @@ fn resetting_restores_every_layer() {
     assert!(s.layer_cap() < 16);
     s.reset_governor();
     assert_eq!(s.layer_cap(), 16, "a new document did not restore the layers");
+}
+
+/// The load that actually gets complained about: spiky, not sustained.
+///
+/// "Breaking Again" sits at about 68% of budget and misses roughly 1.5
+/// deadlines a second. Every miss is a hole in the sound — a click — and one
+/// and a half a second reads as crackling. The governor's original arithmetic
+/// added 4 for a busy block and subtracted 1 for every block that was not,
+/// which against this pattern comes to +5.8 versus −22.0 a second: it could
+/// never reach its threshold, and the engine glitched along at a
+/// comfortable-looking average while the user heard it plainly.
+#[test]
+fn a_spiky_load_that_misses_deadlines_sheds_a_layer() {
+    let s = shared();
+    running(&s, 3);                                     // a three-layer document
+    let budget = std::time::Duration::from_millis(43);   // 2048 frames at 48k
+    let start = 3;
+
+    // Ten seconds of it: 23 blocks a second, of which about 1.5 are late and
+    // the rest sit at a perfectly ordinary two-thirds of budget.
+    let mut late_total = 0;
+    for block in 0..234 {
+        if block % 16 == 0 {
+            s.record_block_cost(budget * 3 / 2, budget);     // 150% — missed
+            late_total += 1;
+        } else {
+            s.record_block_cost(budget * 68 / 100, budget);  // 68% — fine
+        }
+    }
+
+    assert!(late_total > 10, "the test pattern did not miss enough deadlines");
+    assert!(
+        s.layer_cap() < start,
+        "{late_total} missed deadlines in ten seconds shed nothing — still {} layers. \
+         A block that misses its deadline is a click, and this is what crackling is.",
+        s.layer_cap(),
+    );
+}
+
+/// Being busy is not the same as being late. A hard-working engine that always
+/// makes its deadline must keep every layer it was given.
+#[test]
+fn busy_but_never_late_sheds_nothing() {
+    let s = shared();
+    let budget = std::time::Duration::from_millis(43);
+    let start = s.layer_cap();
+    for _ in 0..2000 {
+        s.record_block_cost(budget * 85 / 100, budget);   // 85%, never over
+    }
+    assert_eq!(
+        s.layer_cap(), start,
+        "layers were shed from a load that never missed a deadline",
+    );
 }

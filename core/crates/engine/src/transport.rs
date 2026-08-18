@@ -439,17 +439,52 @@ impl Shared {
     /// cloud is the least destructive of the three. The sound gets smaller, not
     /// wrong.
     fn govern(&self, ppm: u32, mean: u32) {
+        /// A block that did not make its deadline. This is not "load is high",
+        /// it is a hole in the sound.
+        const LATE: u32 = 1_000_000;
         const OVER: u32 = 900_000;
         const EASY: u32 = 450_000;
+        /// Evidence needed before a layer goes. Two missed deadlines is a
+        /// coincidence; a run of them is a setting that does not fit.
+        const SHED_AT: u32 = 64;
         let cap = self.layer_cap.load(Ordering::Relaxed);
 
-        if ppm > OVER {
-            let hot = self.hot.fetch_add(4, Ordering::Relaxed) + 4;
-            if hot >= 32 {
+        // Weighted by what was actually heard.
+        //
+        // This used to add 4 for anything past 90% of budget and subtract 1 for
+        // every block that was not, which is only ever reached by a *sustained*
+        // overload. The load that people actually complain about is spiky: the
+        // "Breaking Again" preset sits at 68% of budget and misses about 1.5
+        // deadlines a second, which is a click and a half a second and reads as
+        // crackling. Through the old arithmetic that came to +5.8 against -22.0
+        // per second — it could not reach the threshold from there, ever, and
+        // the engine glitched along at a comfortable-looking average.
+        //
+        // A missed deadline now counts for eight times as much as merely being
+        // busy, so that same 1.5 a second crosses the line in about two and a
+        // half seconds. Being busy without missing anything still costs nothing.
+        let step = if ppm >= LATE {
+            32
+        } else if ppm > OVER {
+            4
+        } else {
+            0
+        };
+        if step > 0 {
+            let hot = self.hot.fetch_add(step, Ordering::Relaxed) + step;
+            if hot >= SHED_AT {
                 self.hot.store(0, Ordering::Relaxed);
                 self.cool.store(0, Ordering::Relaxed);
-                if cap > 1 {
-                    self.layer_cap.store(cap - 1, Ordering::Relaxed);
+                // Shed from what is *running*, not from the abstract ceiling.
+                //
+                // The cap starts at sixteen whatever the document asks for, so
+                // decrementing it on a three-layer document would spend fourteen
+                // sheds — a good half-minute of crackling — before it changed
+                // anything at all. What is running is the number that matters.
+                let running = self.layers_running.load(Ordering::Relaxed).max(1);
+                let base = cap.min(running);
+                if base > 1 {
+                    self.layer_cap.store(base - 1, Ordering::Relaxed);
                 }
             }
             return;
@@ -984,9 +1019,18 @@ impl Core {
         }
         // Read, never written into `self.params`. See `record_block_cost`.
         self.renderer.set_layer_cap(shared.layer_cap());
+        // What is *actually* being rendered, which is the requested count under
+        // the cap — not the requested count.
+        //
+        // This published the request, so the interface said "3 of 3" while two
+        // were sounding, which is the program lying about its own settings. It
+        // also fed the governor: shedding is measured from what is running, and
+        // reading back an unchanging 3 made every further trigger shed again
+        // from 3 rather than from 2.
+        let running = self.renderer.live_layers(&self.params).max(1);
         shared
             .layers_running
-            .store(self.params.grain.layers.max(1), std::sync::atomic::Ordering::Relaxed);
+            .store(running, std::sync::atomic::Ordering::Relaxed);
         if let Ok(g) = shared.source.try_lock() {
             if !Arc::ptr_eq(&self.source, &g) {
                 self.source = Arc::clone(&g);
