@@ -9,13 +9,13 @@ use fx::grain::StreamParams;
 use fx::stretch::Algorithm;
 
 const SR: u32 = 48_000;
-const BLOCK: usize = 2048;          // the configured buffer
+static BLOCK_SIZES: &[usize] = &[256, 512, 1024, 2048];
 
-fn cost(sp: &StreamParams, src: &Source, ch: usize) -> (f64, f64, usize) {
-    let budget = BLOCK as f64 / SR as f64;
-    let mut st = Stretcher::new(BLOCK, ch, SR);
+fn cost(sp: &StreamParams, src: &Source, ch: usize, block: usize) -> (f64, f64, usize) {
+    let budget = block as f64 / SR as f64;
+    let mut st = Stretcher::new(block, ch, SR);
     st.set_bank(engine::stretcher::LayerBank::build(
-        sp.algorithm, sp.grain.layers, BLOCK, ch, SR));
+        sp.algorithm, sp.grain.layers, block, ch, SR));
     // The hybrid works on a *separated* source and is handed it from off the
     // audio thread. Without this it has nothing to do and reports a tenth of a
     // percent — which is not "fast", it is "not running", and reporting it as a
@@ -25,7 +25,7 @@ fn cost(sp: &StreamParams, src: &Source, ch: usize) -> (f64, f64, usize) {
             &src.samples, ch, sp.hybrid)));
     }
     st.seek(0, sp);
-    let mut out = vec![0f32; BLOCK * ch];
+    let mut out = vec![0f32; block * ch];
     let mut ev = vec![fx::grain::GrainEvent {
         index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0 }; 8192];
     for _ in 0..12 { st.render(&mut out, ch, src, sp, &mut ev); }
@@ -57,12 +57,15 @@ fn main() {
     }
     let src = Source { samples, channels: ch };
 
-    println!("per-block cost at {BLOCK} frames / {SR} Hz, stereo. over = blocks past budget, of 120\n");
-    println!("  {:<9} {:>6} {:>7} {:>8} {:>7} {:>7} {:>6}", "engine", "layers", "window", "mean", "p95", "over", "verdict");
-    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola,
-                Algorithm::Hybrid, Algorithm::Granular] {
+    println!("How small a buffer can each setting stand?\n");
+    println!("  Lower buffer = lower latency. The limit is the worst *block*, not the average.\n");
+    println!("  {:<9} {:>6} {:>7}   {}", "engine", "layers", "window", "256    512   1024   2048   (worst block, % of that buffer's budget)");
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola, Algorithm::Hybrid] {
         for layers in [1u32, 3, 8] {
-            for win in [46.0f32, 190.0] {
+            let win = 190.0f32;
+            let mut row = String::new();
+            let mut safest = 0usize;
+            for &block in BLOCK_SIZES {
                 let mut sp = StreamParams::new(n, SR);
                 sp.algorithm = alg;
                 sp.ratio = 8.0;
@@ -70,22 +73,14 @@ fn main() {
                 sp.grain.overlap = 2.0;
                 sp.window_ms = win;
                 sp.vocoder.window_ms = win;
-                // The granular engine's layering does not go through the
-                // bank at all — `LayerBank::build` has an empty arm for it — so
-                // this harness cannot speak for it and says so rather than
-                // printing a number that looks like an answer.
-                if alg == Algorithm::Granular {
-                    println!("  {:<9} {:>6} {:>6.0}ms {:>7} {:>6} {:>7} {:>6}",
-                        format!("{alg:?}"), layers, win, "-", "-", "-", "not measured");
-                    continue;
-                }
-                let (mean, p95, over) = cost(&sp, &src, ch);
-                let verdict = if over == usize::MAX { "SILENT" }
-                    else if over > 6 { "DROPS" } else if p95 > 100.0 { "risky" } else { "ok" };
-                let shown = if over == usize::MAX { "-".to_string() } else { over.to_string() };
-                println!("  {:<9} {:>6} {:>6.0}ms {:>7.1}% {:>6.1}% {:>7} {:>6}",
-                    format!("{alg:?}"), layers, win, mean, p95, shown, verdict);
+                let (_mean, p95, _over) = cost(&sp, &src, ch, block);
+                row.push_str(&format!("{p95:>6.0}%"));
+                if p95 < 80.0 && safest == 0 { safest = block; }
             }
+            let ms = safest as f64 / SR as f64 * 1000.0;
+            println!("  {:<9} {:>6} {:>6.0}ms  {}   -> {} ({:.1} ms)",
+                format!("{alg:?}"), layers, win, row,
+                if safest > 0 { safest.to_string() } else { "none".into() }, ms);
         }
     }
 }

@@ -5916,6 +5916,33 @@ function fileFromPath(path) {
   };
 }
 
+/// The real record for a path, fetching its folder if it is not loaded yet.
+///
+/// `fileFromPath` searches only the folders already open and otherwise invents a
+/// stub carrying nothing but a path and a name. That is enough to *play* a
+/// sound — the engine is loaded by path — and not nearly enough to *draw* one:
+/// `selectFile` takes the sample rate from the record, so a stub gives a view of
+/// zero frames, no peaks are ever fetched, and `updatePlayhead` hides the
+/// playhead because there are no peaks.
+///
+/// Which is exactly what recalling a preset with its sound did when the sound
+/// lived in a folder that had not been expanded: the audio played and the lane
+/// stayed empty, showing whatever the last file had left on the canvas.
+async function resolveFile(path) {
+  const known = fileFromPath(path);
+  if (known.sampleRate) return known;
+  const cut = path.lastIndexOf('/');
+  const folder = cut >= 0 ? path.slice(0, cut) : '';
+  try {
+    const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+    state.folderFiles = state.folderFiles || {};
+    state.folderFiles[folder] = files;
+    const hit = files.find((f) => f.path === path);
+    if (hit) return hit;
+  } catch { /* the stub below still plays, which beats refusing to open it */ }
+  return known;
+}
+
 function renderPresets() {
   const sel = $('presetPick');
   if (!sel) return;
@@ -5947,7 +5974,9 @@ $('presetPick').onchange = async (e) => {
   // With sound the file that is now open is the preset's, not the one that was
   // open when it was chosen, so the rest of the interface has to be told.
   if (withSound && applied.path && applied.path !== state.selectedFile.path) {
-    await openInEditor(fileFromPath(applied.path));
+    // Resolved, not invented — a stub opens a sound that plays and cannot be
+    // drawn. See `resolveFile`.
+    await openInEditor(await resolveFile(applied.path));
   }
 
   // The sliders now disagree with the document, so rebuild them from it.
