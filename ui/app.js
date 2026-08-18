@@ -10235,10 +10235,18 @@ function paintMasterReads() {
   }
   const word = $('mbCorrWord');
   if (word) {
+    // One short word, always.
+    //
+    // "out of phase" wrapped to two lines in a column this narrow, which made
+    // the row taller and shoved every reading below it down the panel — the
+    // whole block jumped every time the correlation crossed zero. The state it
+    // names is the one you most want to watch steadily, so it is the one that
+    // must not make the meter move.
     word.textContent = !d ? ''
-      : d.correlation > 0.9 ? 'near mono'
-      : d.correlation < 0 ? 'out of phase'
+      : d.correlation > 0.9 ? 'mono'
+      : d.correlation < 0 ? 'phase'
       : d.correlation < 0.4 ? 'wide' : 'stereo';
+    word.classList.toggle('warn', !!d && d.correlation < 0);
   }
 
   // Where the energy actually is. This used to be drawn onto the flat spectrum;

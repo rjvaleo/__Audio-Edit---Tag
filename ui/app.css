@@ -2353,8 +2353,15 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .mb-v.over { color: var(--bad); }
 .mb-v.good { color: var(--good); }
 /* What the correlation number means, in the column beside it — there is no
-   room for a sentence and no need for one. */
-.mb-word { font-size: 8px; color: var(--text-dim); text-align: right; }
+   room for a sentence and no need for one.
+
+   Pinned to one line whatever it says. A word that wraps changes the row's
+   height, and a row that changes height moves every reading under it. */
+.mb-word {
+  font-size: 8px; color: var(--text-dim); text-align: right;
+  white-space: nowrap; overflow: hidden; line-height: 1.35;
+}
+.mb-word.warn { color: var(--bad); }
 
 /* ───────────────────────────────────────────── the tray's right-hand column ──
    The visualiser over the meters. Asked for as "small version on the right in
