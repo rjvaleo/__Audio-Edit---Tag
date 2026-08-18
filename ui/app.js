@@ -8258,6 +8258,10 @@ for (const b of document.querySelectorAll('.vis-tab')) {
   if (b.id === 'visSuite') continue;
   b.onclick = () => setGrainView(+b.dataset.vis);
 }
+// Apply the starting view rather than assuming the markup already matches it.
+// It did not: `grainView` opened on the composite while the markup still had
+// the 2D swarm showing, so the default view was never the one on screen.
+setGrainView(grainView);
 const visSuiteBtn = $('visSuite');
 if (visSuiteBtn) visSuiteBtn.onclick = () => setGrainSuite(grainSuite === 1 ? 2 : 1);
 // A floating panel rather than a new tab. The whole point of watching the
@@ -10005,7 +10009,15 @@ const MB_HOLD_FALL_DB = 18;
 /// the live edge; the rest is the short tail that makes the shape legible.
 const MB_GONIO_HEAD = 160;
 
+const MB_FFT_STORE = 'audiolab.masterFft';
+
 const masterBus = {
+  /// The analyser's transform size. Frequency resolution, and the only part of
+  /// the detail worth choosing by hand — the band count follows the pixels.
+  fft: (() => {
+    const v = Number(localStorage.getItem(MB_FFT_STORE));
+    return [1024, 2048, 4096, 8192, 16384].includes(v) ? v : 4096;
+  })(),
   /// The last reply, or null when there is nothing playing to report on.
   data: null,
   /// Peak hold per channel: the value, and when it was set.
@@ -10091,14 +10103,15 @@ function mbUpdateHold(now) {
   }
 }
 
-/// The VU pair, vertical.
+/// The level ladders.
 ///
-/// The bar is 300 ms of RMS — loudness, which is what a VU is for. The mark
-/// riding above it is the fast peak, which a 300 ms meter cannot show you and
-/// which is what tells you the ceiling is about to start rounding things off.
+/// Two-tone, the way a mastering meter is: a solid body that is 300 ms of RMS —
+/// loudness, which is what you mix by — with a dimmer extension above it
+/// reaching the peak. One bar tells you both, and the gap between them is the
+/// crest factor, read at a glance.
 ///
-/// Right-aligned in its row, with the scale to their left, so the two columns
-/// of numbers beside them read as belonging to the same instrument.
+/// The scale runs down **both** sides. On a meter this narrow a single column
+/// of numbers is always on the wrong side of one of the two bars.
 function drawMasterVu() {
   const f = mbFit($('mbVu'));
   if (!f) return;
@@ -10110,88 +10123,107 @@ function drawMasterVu() {
   const bad = mbInk('--bad', '#e05c4a');
   const dim = mbInk('--text-dim', '#78838c');
   const line = mbInk('--line-2', '#2a3138');
-  const text2 = mbInk('--text-2', '#c7ced4');
 
   const refDb = d?.vuRef ?? -18;
   const kneeDb = d?.knee ? 20 * Math.log10(d.knee) : -3;
 
-  const barW = 17, gap = 7, foot = 11, top = 3;
+  const barW = 20, gap = 4, foot = 10, top = 4;
   const plotH = h - foot - top;
-  // Hard right, which is what was asked for.
-  const rightX = w - 1;
-  const xs = [rightX - barW * 2 - gap, rightX - barW];
+  const mid = w / 2;
+  const xs = [mid - barW - gap / 2, mid + gap / 2];
   const yOf = (db) => top + (1 - mbX(db)) * plotH;
 
-  // ── the ladder, to the left of the meters ──
   c.font = '8px ui-monospace, monospace';
   c.lineWidth = 1;
   c.textBaseline = 'middle';
-  c.textAlign = 'right';
-  const labelR = xs[0] - 4;
-  for (const t of [0, -6, -12, -18, -24, -36, -48, -60]) {
+  for (const t of [0, -6, -12, -18, -24, -30, -36, -48, -60]) {
     const y = Math.round(yOf(t)) + 0.5;
     c.strokeStyle = line;
-    c.globalAlpha = t === refDb ? 0.9 : 0.35;
-    c.beginPath();
-    c.moveTo(xs[0] - 2, y);
-    c.lineTo(rightX, y);
-    c.stroke();
+    c.globalAlpha = t === refDb ? 0.9 : 0.3;
+    c.beginPath(); c.moveTo(xs[0], y); c.lineTo(xs[1] + barW, y); c.stroke();
     c.globalAlpha = 1;
-    // The reference is named. "0 VU = −18 dBFS" is a choice, and the meter
-    // should say which one was made rather than leave it to be assumed.
+    // Named, because "0 VU = −18 dBFS" is a choice and the meter should say
+    // which one was made rather than leave it to be assumed.
     c.fillStyle = t === refDb ? warn : dim;
-    c.fillText(t === refDb ? '0 VU' : String(t), labelR, y);
+    c.textAlign = 'right'; c.fillText(t === refDb ? '0VU' : String(t), xs[0] - 3, y);
+    c.textAlign = 'left'; c.fillText(String(t), xs[1] + barW + 3, y);
   }
 
-  // ── the two bars ──
   for (const [i, side] of ['left', 'right'].entries()) {
     const x = xs[i];
-    c.fillStyle = 'rgba(255,255,255,.035)';
+    c.fillStyle = 'rgba(255,255,255,.04)';
     c.fillRect(x, top, barW, plotH);
     if (!d) continue;
 
-    const vuDb = d[side].vuDb;
-    const endY = yOf(vuDb);
-    // Three zones, each filled where it actually falls: green to the reference,
-    // amber to the knee, red above it. Flat colours rather than a gradient, so
-    // the boundaries sit where the numbers say they do.
-    for (const [a, b, colour] of [
-      [MB_METER_FLOOR, refDb, good], [refDb, kneeDb, warn], [kneeDb, 0, bad],
-    ]) {
-      const yBottom = yOf(a), yTop = Math.max(yOf(b), endY);
-      if (yBottom <= yTop) continue;
-      c.fillStyle = colour;
-      c.fillRect(x, yTop, barW, yBottom - yTop);
-    }
+    const zone = (db) => (db >= kneeDb ? bad : db >= refDb ? warn : good);
 
+    // The peak extension first, dim, so the solid body paints over its foot.
+    //
+    // Shaded by the level at each height rather than by the peak: colouring the
+    // whole extension red because its tip is red paints eleven decibels of
+    // perfectly good signal as an alarm.
     const pk = d[side].peakDb;
     if (pk > MB_METER_FLOOR) {
-      c.fillStyle = pk >= kneeDb ? bad : text2;
-      c.fillRect(x, Math.round(yOf(pk)) - 1, barW, 2);
+      c.globalAlpha = 0.3;
+      for (const [lo2, hi2, colour] of [
+        [MB_METER_FLOOR, refDb, good], [refDb, kneeDb, warn], [kneeDb, 0, bad],
+      ]) {
+        const yB = yOf(lo2), yT = Math.max(yOf(hi2), yOf(pk));
+        if (yB <= yT) continue;
+        c.fillStyle = colour;
+        c.fillRect(x, yT, barW, yB - yT);
+      }
+      c.globalAlpha = 1;
     }
+    // Then the body, in the three zones it actually crosses.
+    const vuDb = d[side].vuDb;
+    const endY = yOf(vuDb);
+    for (const [lo, hi, colour] of [
+      [MB_METER_FLOOR, refDb, good], [refDb, kneeDb, warn], [kneeDb, 0, bad],
+    ]) {
+      const yB = yOf(lo), yT = Math.max(yOf(hi), endY);
+      if (yB <= yT) continue;
+      c.fillStyle = colour;
+      c.fillRect(x, yT, barW, yB - yT);
+    }
+    // And the hold, riding on top of both.
     const held = masterBus.hold[i ? 'r' : 'l'];
     if (held > MB_METER_FLOOR) {
-      c.globalAlpha = 0.6;
-      c.fillStyle = held >= kneeDb ? bad : dim;
-      c.fillRect(x, Math.round(yOf(held)), barW, 1);
-      c.globalAlpha = 1;
+      c.fillStyle = zone(held);
+      c.fillRect(x, Math.round(yOf(held)) - 1, barW, 2);
     }
   }
 
   c.fillStyle = dim;
-  c.textAlign = 'center';
-  c.textBaseline = 'top';
-  c.fillText('L', xs[0] + barW / 2, top + plotH + 3);
-  c.fillText('R', xs[1] + barW / 2, top + plotH + 3);
+  c.textAlign = 'center'; c.textBaseline = 'top';
+  c.fillText('L', xs[0] + barW / 2, top + plotH + 2);
+  c.fillText('R', xs[1] + barW / 2, top + plotH + 2);
+}
+
+/// A segmented bar, the way a hardware meter does it.
+///
+/// Discrete cells rather than a continuous fill: a segmented meter is read by
+/// counting, and counting is faster than judging a length.
+function mbSegments(c, x, y, w, h, frac, cells, colourAt) {
+  const cw = w / cells;
+  for (let i = 0; i < cells; i++) {
+    const on = (i + 0.5) / cells <= frac;
+    c.globalAlpha = on ? 1 : 0.13;
+    c.fillStyle = colourAt(i / (cells - 1));
+    c.fillRect(x + i * cw + 0.5, y, cw - 1, h);
+  }
+  c.globalAlpha = 1;
 }
 
 /// The goniometer.
 ///
-/// Rotated forty-five degrees, which is the convention and is not decoration:
-/// it puts the mono sum straight up, so a mono signal draws a vertical line and
-/// anything leaning horizontal is the part that disappears when somebody sums
-/// to mono. Drawn square, because the angle *is* the reading and a stretched
-/// circle reports the wrong one.
+/// A diamond rather than a circle — the square rotated forty-five degrees is
+/// the actual bound of two channels at full scale, so the trace touching a
+/// corner means something, where touching a circle drawn round it does not.
+/// Mono goes straight up; anything leaning horizontal is what disappears when
+/// somebody sums to mono.
+///
+/// Balance across the top, correlation across the foot, both segmented.
 function drawGonio() {
   const f = mbFit($('mbGonio'));
   if (!f) return;
@@ -10201,109 +10233,109 @@ function drawGonio() {
   const dim = mbInk('--text-dim', '#78838c');
   const line = mbInk('--line-2', '#2a3138');
   const ink = mbInk('--wave', '#5fd47a');
+  const warn = mbInk('--warn', '#e0a23c');
   const bad = mbInk('--bad', '#e05c4a');
+  const good = mbInk('--good', '#4fbf7a');
 
-  const strip = 12;                       // the correlation strip along the foot
-  const cx = w / 2, cy = (h - strip) / 2;
-  const rad = Math.min(w, h - strip) / 2 - 12;
-  if (rad <= 4) return;
+  const strip = 9, lab = 9;
+  const top = strip + lab, bottom = strip + lab;
+  const cx = w / 2, cy = top + (h - top - bottom) / 2;
+  const rad = Math.min(w / 2, (h - top - bottom) / 2) - 2;
+  if (rad <= 6) return;
 
-  // ── the frame ──
+  // ── balance, across the top ──
+  c.font = '7.5px ui-monospace, monospace';
+  c.textBaseline = 'top';
+  if (d) {
+    const l = d.left.vu, r = d.right.vu;
+    const bal = l + r > 1e-6 ? (r - l) / (l + r) : 0;   // −1 hard left, +1 right
+    const cells = 25, at = Math.round((bal + 1) / 2 * (cells - 1));
+    const cw = w / cells;
+    for (let i = 0; i < cells; i++) {
+      const near = 1 - Math.min(1, Math.abs(i - at) / 2.5);
+      c.globalAlpha = 0.12 + near * 0.88;
+      c.fillStyle = i === Math.floor(cells / 2) ? dim : ink;
+      c.fillRect(i * cw + 0.5, 0, cw - 1, strip - 3);
+    }
+    c.globalAlpha = 1;
+  }
+  c.fillStyle = dim;
+  c.textAlign = 'left'; c.fillText('L', 1, strip - 2);
+  c.textAlign = 'right'; c.fillText('R', w - 1, strip - 2);
+
+  // ── the diamond ──
   c.strokeStyle = line;
   c.lineWidth = 1;
-  c.beginPath(); c.arc(cx, cy, rad, 0, Math.PI * 2); c.stroke();
-  c.globalAlpha = 0.55;
-  c.beginPath(); c.arc(cx, cy, rad / 2, 0, Math.PI * 2); c.stroke();
-  c.globalAlpha = 1;
-
-  // The diagonals are the individual channels; vertical is mono, horizontal is
-  // everything that would cancel.
-  c.setLineDash([2, 3]);
-  for (const [dx, dy] of [[1, 0], [0, 1], [0.7071, 0.7071], [0.7071, -0.7071]]) {
-    c.globalAlpha = dx === 0 || dy === 0 ? 0.5 : 0.28;
+  for (const k of [1, 0.5]) {
+    c.globalAlpha = k === 1 ? 0.8 : 0.4;
     c.beginPath();
-    c.moveTo(cx - dx * rad, cy - dy * rad);
-    c.lineTo(cx + dx * rad, cy + dy * rad);
-    c.stroke();
+    c.moveTo(cx, cy - rad * k); c.lineTo(cx + rad * k, cy);
+    c.lineTo(cx, cy + rad * k); c.lineTo(cx - rad * k, cy);
+    c.closePath(); c.stroke();
   }
+  c.setLineDash([2, 3]);
+  c.globalAlpha = 0.35;
+  c.beginPath();
+  c.moveTo(cx, cy - rad); c.lineTo(cx, cy + rad);
+  c.moveTo(cx - rad, cy); c.lineTo(cx + rad, cy);
+  c.stroke();
   c.setLineDash([]);
   c.globalAlpha = 1;
 
   c.fillStyle = dim;
-  c.font = '8px ui-monospace, monospace';
   c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillText('M', cx, cy - rad - 6);
-  c.fillText('L', cx - rad * 0.72 - 5, cy - rad * 0.72 - 4);
-  c.fillText('R', cx + rad * 0.72 + 5, cy - rad * 0.72 - 4);
+  c.fillText('M', cx, cy - rad - 5);
   c.fillText('S', cx + rad + 6, cy);
 
-  // ── the trace ──
+  // ── the cloud ──
   const xy = d?.lissajous;
   if (xy && xy.length >= 4) {
     const n = xy.length / 2;
-    // Mid up, sides across. The root-two keeps a full-scale mono signal inside
-    // the circle instead of a third of the way outside it.
-    const k = rad / Math.SQRT2;
+    const k = rad;
+    // Additive, so where the trace crosses itself it burns brighter. That
+    // density *is* the reading — a tight bright spine is a coherent image.
+    const prev = c.globalCompositeOperation;
+    c.globalCompositeOperation = 'lighter';
     const head = Math.max(0, n - MB_GONIO_HEAD);
-    for (const [from, to, alpha, size] of [[0, head, 0.30, 1], [head, n, 0.85, 1.6]]) {
+    for (const [from, to, alpha, r] of [[0, head, 0.16, 0.7], [head, n, 0.5, 1.1]]) {
       if (to <= from) continue;
       c.fillStyle = ink;
       c.globalAlpha = alpha;
       c.beginPath();
       for (let i = from; i < to; i++) {
-        const l = xy[i * 2], r = xy[i * 2 + 1];
-        const x = cx + (l - r) * k;
-        const y = cy - (l + r) * k;
-        c.moveTo(x, y);
-        c.arc(x, y, size / 2, 0, Math.PI * 2);
+        const l = xy[i * 2], rr = xy[i * 2 + 1];
+        const px = cx + (l - rr) * 0.5 * k;
+        const py = cy - (l + rr) * 0.5 * k;
+        c.moveTo(px + r, py);
+        c.arc(px, py, r, 0, Math.PI * 2);
       }
       c.fill();
     }
     c.globalAlpha = 1;
+    c.globalCompositeOperation = prev;
   }
 
-  // ── correlation, along the foot ──
-  const y = h - strip + 4;
-  c.fillStyle = 'rgba(255,255,255,.05)';
-  c.fillRect(0, y, w, 6);
-  c.strokeStyle = line;
-  for (const t of [-1, -0.5, 0, 0.5, 1]) {
-    const x = Math.round((t + 1) / 2 * w) + 0.5;
-    c.globalAlpha = t === 0 ? 0.8 : 0.35;
-    c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 6); c.stroke();
-  }
-  c.globalAlpha = 1;
-  c.fillStyle = dim;
-  c.font = '8px ui-monospace, monospace';
-  c.textBaseline = 'bottom';
-  for (const [t, label, align] of [[-1, '−1', 'left'], [0, '0', 'center'], [1, '+1', 'right']]) {
-    c.textAlign = align;
-    const x = (t + 1) / 2 * w;
-    c.fillText(label, t < 0 ? x + 1 : t > 0 ? x - 1 : x, y - 1);
-  }
-  // What the two ends actually mean, in the room the circle does not use.
-  c.textAlign = 'left'; c.textBaseline = 'middle';
-  c.globalAlpha = 0.75;
-  c.fillText('out of phase', 3, cy - rad * 0.55);
-  c.textAlign = 'right';
-  c.fillText('mono', w - 3, cy - rad * 0.55);
-  c.globalAlpha = 1;
+  // ── correlation, across the foot ──
+  const y = h - strip;
   if (d) {
-    const corr = d.correlation;
-    const x = (corr + 1) / 2 * w;
-    // Negative correlation is the one worth colouring: it is the state where
-    // the meters look fine and the mono fold-down does not.
-    c.fillStyle = corr < 0 ? bad : ink;
-    c.fillRect(Math.min(w - 2, Math.max(0, x - 1)), y - 1, 2, 8);
+    mbSegments(c, 0, y, w, strip - 2, (d.correlation + 1) / 2, 29,
+      (t) => (t < 0.34 ? bad : t < 0.5 ? warn : good));
   }
+  c.fillStyle = dim;
+  c.textBaseline = 'bottom';
+  c.textAlign = 'left'; c.fillText('−1', 1, y - 1);
+  c.textAlign = 'center'; c.fillText('0', w / 2, y - 1);
+  c.textAlign = 'right'; c.fillText('+1', w - 1, y - 1);
 }
 
 /// The spectrum.
 ///
-/// The bands arrive geometric from 20 Hz to 20 kHz, so an octave is the same
-/// width wherever it sits and `x` is simply the band's index. Annotated because
-/// an unlabelled spectrum tells you a shape and not a fact — the grid says
-/// where, the peak-hold says how much, and the readout names the note.
+/// Filled solid rather than drawn as a wire: the references are all solid, and
+/// they are right — a filled spectrum reads as a mass of energy, which is what
+/// it is, while a line reads as a graph of something abstract.
+///
+/// Frequencies along the top so the labels are not fighting the low end where
+/// the energy usually is, dB down both sides, and a peak hold that falls.
 function drawMasterSpectrum() {
   const f = mbFit($('mbSpectrum'));
   if (!f) return;
@@ -10316,36 +10348,38 @@ function drawMasterSpectrum() {
   const warn = mbInk('--warn', '#e0a23c');
 
   const lo = d?.lo ?? 20, hi = d?.hi ?? 20000;
-  const pad = 13;                                     // room for the Hz labels
-  const plot = h - pad;
-  const xOf = (hz) => Math.log(hz / lo) / Math.log(hi / lo) * w;
-  const yOf = (db) => plot - Math.max(0, Math.min(1, (db - MB_SPEC_FLOOR) / (0 - MB_SPEC_FLOOR))) * plot;
+  const top = 11, gutL = 22, gutR = 20, foot = 16;
+  // A foot for the resolution buttons and the readout, so nothing is drawn
+  // under them.
+  const plotW = w - gutL - gutR, plotH = h - top - foot;
+  const xOf = (hz) => gutL + Math.log(hz / lo) / Math.log(hi / lo) * plotW;
+  const yOf = (db) => top + (1 - Math.max(0, Math.min(1,
+    (db - MB_SPEC_FLOOR) / (0 - MB_SPEC_FLOOR)))) * plotH;
 
-  // ── the grid ──
   c.font = '8px ui-monospace, monospace';
-  c.strokeStyle = line;
   c.lineWidth = 1;
+  c.strokeStyle = line;
   c.textBaseline = 'top';
-  for (const hz of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
+  for (const hz of [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]) {
     const x = Math.round(xOf(hz)) + 0.5;
-    if (x < 6 || x > w - 6) continue;
-    c.globalAlpha = 0.3;
-    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, plot); c.stroke();
+    if (x < gutL || x > w - gutR) continue;
+    c.globalAlpha = 0.26;
+    c.beginPath(); c.moveTo(x, top); c.lineTo(x, top + plotH); c.stroke();
     c.globalAlpha = 1;
     c.fillStyle = dim;
     c.textAlign = 'center';
-    c.fillText(hz >= 1000 ? `${hz / 1000}k` : String(hz), x, plot + 3);
+    c.fillText(hz >= 1000 ? `${hz / 1000}k` : String(hz), x, 1);
   }
   c.textBaseline = 'middle';
   for (const db of [-12, -24, -36, -48, -60, -72, -84]) {
     const y = Math.round(yOf(db)) + 0.5;
-    c.globalAlpha = 0.22;
-    c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+    c.globalAlpha = 0.2;
+    c.beginPath(); c.moveTo(gutL, y); c.lineTo(w - gutR, y); c.stroke();
     c.globalAlpha = 1;
-    if (db % 24 === 0) {
+    if (db % 24 === 0 || db === -12) {
       c.fillStyle = dim;
-      c.textAlign = 'left';
-      c.fillText(String(db), 2, y);
+      c.textAlign = 'right'; c.fillText(String(db), gutL - 3, y);
+      c.textAlign = 'left'; c.fillText(String(db), w - gutR + 3, y);
     }
   }
 
@@ -10353,15 +10387,11 @@ function drawMasterSpectrum() {
   if (!bands || !bands.length) {
     c.fillStyle = dim;
     c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText('press play for the live spectrum', w / 2, plot / 2);
+    c.fillText('press play for the live spectrum', w / 2, top + plotH / 2);
     $('mbPeakHz').textContent = '';
     return;
   }
 
-  // ── the hold ──
-  //
-  // Falls rather than resets. A hold that only ever rises fills in solid within
-  // a few seconds and stops meaning anything.
   if (!masterBus.specHold || masterBus.specHold.length !== bands.length) {
     masterBus.specHold = bands.slice();
   }
@@ -10371,16 +10401,24 @@ function drawMasterSpectrum() {
     hold[i] = bands[i] >= hold[i] ? bands[i] : Math.max(bands[i], hold[i] - fall);
   }
 
-  const bx = (i) => (i + 0.5) / bands.length * w;
+  const bx = (i) => gutL + (i + 0.5) / bands.length * plotW;
 
-  // ── the curve ──
+  // ── the mass ──
+  const grd = c.createLinearGradient(0, top, 0, top + plotH);
+  grd.addColorStop(0, ink);
+  grd.addColorStop(0.55, ink);
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  c.save();
   c.beginPath();
-  c.moveTo(0, plot);
+  c.rect(gutL, top, plotW, plotH);
+  c.clip();
+  c.beginPath();
+  c.moveTo(gutL, top + plotH);
   for (let i = 0; i < bands.length; i++) c.lineTo(bx(i), yOf(bands[i]));
-  c.lineTo(w, plot);
+  c.lineTo(w - gutR, top + plotH);
   c.closePath();
-  c.globalAlpha = 0.18;
-  c.fillStyle = ink;
+  c.globalAlpha = 0.42;
+  c.fillStyle = grd;
   c.fill();
   c.globalAlpha = 1;
 
@@ -10390,7 +10428,7 @@ function drawMasterSpectrum() {
     i ? c.lineTo(x, y) : c.moveTo(x, y);
   }
   c.strokeStyle = ink;
-  c.lineWidth = 1.2;
+  c.lineWidth = 1.4;
   c.stroke();
 
   c.beginPath();
@@ -10399,34 +10437,36 @@ function drawMasterSpectrum() {
     i ? c.lineTo(x, y) : c.moveTo(x, y);
   }
   c.strokeStyle = warn;
-  c.globalAlpha = 0.5;
+  c.globalAlpha = 0.55;
   c.lineWidth = 1;
   c.stroke();
   c.globalAlpha = 1;
+  c.restore();
 
   // ── where the energy actually is ──
-  let top = 0;
-  for (let i = 1; i < bands.length; i++) if (bands[i] > bands[top]) top = i;
-  if (bands[top] > MB_SPEC_FLOOR + 6) {
-    const hz = lo * Math.pow(hi / lo, (top + 0.5) / bands.length);
-    const x = bx(top), y = yOf(bands[top]);
+  let peak = 0;
+  for (let i = 1; i < bands.length; i++) if (bands[i] > bands[peak]) peak = i;
+  if (bands[peak] > MB_SPEC_FLOOR + 6) {
+    const hz = lo * Math.pow(hi / lo, (peak + 0.5) / bands.length);
     c.strokeStyle = warn;
-    c.globalAlpha = 0.8;
-    c.beginPath(); c.arc(x, y, 3, 0, Math.PI * 2); c.stroke();
+    c.globalAlpha = 0.85;
+    c.beginPath(); c.arc(bx(peak), yOf(bands[peak]), 3, 0, Math.PI * 2); c.stroke();
     c.globalAlpha = 1;
     const note = noteName(hz);
     $('mbPeakHz').textContent =
       `${hz >= 1000 ? `${(hz / 1000).toFixed(2)} kHz` : `${hz.toFixed(0)} Hz`}`
-      + `${note ? ` · ${note}` : ''} · ${mbDb(bands[top])} dB`;
+      + `${note ? ` · ${note}` : ''} · ${mbDb(bands[peak])} dB`;
   } else {
     $('mbPeakHz').textContent = '';
   }
 }
 
-/// The numbers beside the meters — the part that was actually asked for.
+/// What the numbers say. The part that was actually asked for.
 function paintMasterReads() {
   const d = masterBus.data;
   const kneeDb = d?.knee ? 20 * Math.log10(d.knee) : -3;
+  const refDb = d?.vuRef ?? -18;
+
   for (const [side, key] of [['left', 'L'], ['right', 'R']]) {
     const ch = d?.[side];
     const hold = masterBus.hold[key === 'L' ? 'l' : 'r'];
@@ -10435,7 +10475,7 @@ function paintMasterReads() {
     if (!vu) continue;
     // Silence is −∞, not −102.0. The units are a difference from the
     // reference, so at the floor the arithmetic gives a real number and it is a
-    // meaningless one — a meter reading "−102.0 units" looks like a measurement.
+    // meaningless one — printing it makes silence look like a measurement.
     vu.textContent = ch ? (ch.vuDb <= -119 ? '−∞' : mbSigned(ch.vuUnits)) : '—';
     rms.textContent = ch ? mbDb(ch.vuDb) : '—';
     pk.textContent = ch ? mbDb(ch.peakDb) : '—';
@@ -10446,17 +10486,45 @@ function paintMasterReads() {
     }
   }
 
-  const corr = $('mbCorr');
-  if (corr) corr.textContent = d ? `corr ${mbSigned(d.correlation, 2)}` : '';
+  // ── the overview ──
+  const peakDb = d ? Math.max(d.left.peakDb, d.right.peakDb) : null;
+  const rmsDb = d ? Math.max(d.left.vuDb, d.right.vuDb) : null;
+  const maxDb = Math.max(masterBus.hold.l, masterBus.hold.r);
+
+  const set = (id, text, cls) => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle('over', cls === 'over');
+    el.classList.toggle('hot', cls === 'hot');
+    el.classList.toggle('good', cls === 'good');
+  };
+  const band = (v) => (v == null ? null : v >= -0.2 ? 'over' : v >= kneeDb ? 'hot' : null);
+
+  set('mbPeakBig', d ? mbDb(peakDb) : '—', band(peakDb));
+  set('mbRmsBig', d ? mbDb(rmsDb) : '—', null);
+  set('mbVuBig', d ? (rmsDb <= -119 ? '−∞' : mbSigned(rmsDb - refDb)) : '—', null);
+  set('mbMaxBig', d && maxDb > MB_METER_FLOOR ? mbDb(maxDb) : '—', band(maxDb));
+  // Sustained negative correlation is the state where every other meter looks
+  // fine and the mono fold-down does not, so it is the one worth colouring.
+  set('mbCorrBig', d ? mbSigned(d.correlation, 2) : '—',
+    d ? (d.correlation < 0 ? 'over' : d.correlation > 0.5 ? 'good' : 'hot') : null);
+  const word = $('mbCorrWord');
+  if (word) {
+    word.textContent = !d ? ''
+      : d.correlation > 0.9 ? 'near mono'
+      : d.correlation < 0 ? 'out of phase'
+      : d.correlation < 0.4 ? 'wide' : 'stereo';
+  }
 
   const st = $('mbState');
   if (st) {
     if (!d) st.textContent = 'idle';
     // How much of the last hundred milliseconds the output stage is rounding
-    // off. Worth saying plainly: the ceiling working is not a fault, but it is
-    // something you should be able to see rather than only hear.
+    // off. The ceiling working is not a fault, but it should be visible rather
+    // than only audible.
     else if (d.overKnee > 0.0005) st.textContent = `ceiling ${(d.overKnee * 100).toFixed(0)}%`;
-    else st.textContent = `${(d.rate / 1000).toFixed(1)} kHz`;
+    else st.textContent = `${(d.rate / 1000).toFixed(1)} kHz · ${(d.fft || 4096) / 1024}k`;
   }
 }
 
@@ -10468,7 +10536,12 @@ async function mbTick() {
   // route. See `docs/NO-AUDIO-DEVICE.md`.
   if (noAudio()) { masterBus.data = null; return; }
   try {
-    const r = await api('/api/engine/master');
+    // One band per pixel of the display about to be drawn into: as much detail
+    // as can be seen and not a number more. The transform size is the knob —
+    // that is frequency resolution, and it is the one worth choosing.
+    const el = $('mbSpectrum');
+    const want = Math.max(64, Math.min(2048, Math.round(el?.clientWidth || 256)));
+    const r = await api(`/api/engine/master?fft=${masterBus.fft}&bands=${want}`);
     masterBus.data = r && r.live ? r : null;
   } catch {
     // A meter that cannot reach the server shows nothing rather than the last
@@ -10484,8 +10557,25 @@ async function mbTick() {
   paintMasterReads();
 }
 
+function wireMasterRes() {
+  for (const b of document.querySelectorAll('.mb-res-btn')) {
+    b.classList.toggle('active', +b.dataset.fft === masterBus.fft);
+    b.onclick = () => {
+      masterBus.fft = +b.dataset.fft;
+      try { localStorage.setItem(MB_FFT_STORE, String(masterBus.fft)); } catch { /* private mode */ }
+      for (const o of document.querySelectorAll('.mb-res-btn')) {
+        o.classList.toggle('active', o === b);
+      }
+      // The hold is in the old resolution's bands and would be compared against
+      // the new ones index by index, which draws a hold that never happened.
+      masterBus.specHold = null;
+    };
+  }
+}
+
 function startMasterBus() {
   if (masterBus.timer) return;
+  wireMasterRes();
   masterBus.timer = setInterval(mbTick, MB_POLL_MS);
   // The panels are drawn once so they are not blank before the first reply
   // lands, and again whenever the tray is resized under them.

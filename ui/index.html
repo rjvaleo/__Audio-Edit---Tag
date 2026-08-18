@@ -511,6 +511,7 @@
                being rebuilt, so the view picker, the canvas, the iframe and the
                legend are the same elements the code already drives — it is
                `buildVisPop` that adopts them. -->
+          <div class="tray-right">
           <div class="grain-vis hidden" id="grainVis">
             <div class="vis-pick" id="visPick">
               <button class="vis-tab active" data-vis="0" title="The original swarm">Swarm 2D</button>
@@ -540,21 +541,56 @@
                not a stage on the way there. See `docs/MASTER-BUS.md`. -->
           <div class="master-bus" id="masterBus">
             <div class="mb-main">
+              <!-- The overview. Big enough to read from across the room, which
+                   is the whole reason a meter bridge has numbers on it. -->
+              <div class="mb-top">
+                <div class="mb-stat">
+                  <span class="mb-stat-k">PEAK</span>
+                  <span class="mono mb-stat-v" id="mbPeakBig">—</span>
+                  <span class="mb-stat-u">dBFS</span>
+                </div>
+                <div class="mb-stat">
+                  <span class="mb-stat-k">RMS</span>
+                  <span class="mono mb-stat-v" id="mbRmsBig">—</span>
+                  <span class="mb-stat-u">dBFS</span>
+                </div>
+                <div class="mb-stat">
+                  <span class="mb-stat-k">VU</span>
+                  <span class="mono mb-stat-v" id="mbVuBig">—</span>
+                  <span class="mb-stat-u">units</span>
+                </div>
+                <div class="mb-stat">
+                  <span class="mb-stat-k">CORR</span>
+                  <span class="mono mb-stat-v" id="mbCorrBig">—</span>
+                  <span class="mb-stat-u" id="mbCorrWord"></span>
+                </div>
+                <div class="mb-stat mb-stat-end">
+                  <span class="mb-stat-k">MAX</span>
+                  <span class="mono mb-stat-v" id="mbMaxBig">—</span>
+                  <span class="mb-stat-u">dBFS</span>
+                </div>
+              </div>
               <div class="mb-cell mb-cell-gonio">
                 <canvas id="mbGonio"
                   title="Mid up the middle, sides left and right. A vertical trace is mono; a horizontal one is out of phase and will vanish if anyone sums it."></canvas>
-                <span class="mono mb-note" id="mbCorr"></span>
               </div>
               <div class="mb-cell mb-cell-spec">
                 <canvas id="mbSpectrum"
-                  title="4096-point transform of the master bus, 20 Hz to 20 kHz geometric. The faint line is the peak hold."></canvas>
+                  title="Transform of the master bus, 20 Hz to 20 kHz geometric. The faint line is the peak hold."></canvas>
                 <span class="mono mb-note" id="mbPeakHz"></span>
+                <div class="mb-res" id="mbRes">
+                  <button class="mb-res-btn" data-fft="1024">1k</button>
+                  <button class="mb-res-btn" data-fft="2048">2k</button>
+                  <button class="mb-res-btn active" data-fft="4096">4k</button>
+                  <button class="mb-res-btn" data-fft="8192">8k</button>
+                  <button class="mb-res-btn" data-fft="16384">16k</button>
+                </div>
               </div>
             </div>
             <div class="mb-side">
               <div class="mb-cell mb-cell-vu">
                 <canvas id="mbVu"
-                  title="0 VU is −18 dBFS (EBU R68). The bar integrates over 300 ms; the mark riding above it is the fast peak."></canvas>
+                  title="0 VU is −18 dBFS (EBU R68). The solid body is 300 ms of RMS; the dimmer extension above it is the peak."></canvas>
               </div>
               <div class="mb-reads" id="mbReads">
                 <span class="mb-k"></span><span class="mb-h">L</span><span class="mb-h">R</span>
@@ -573,6 +609,7 @@
               </div>
               <span class="mono mb-state" id="mbState"></span>
             </div>
+          </div>
           </div>
         </div>
 
@@ -722,6 +759,7 @@
      by the time the rail is built. -->
 <script src="/theme-palettes.js"></script>
 <script src="/theme-derive.js"></script>
+<script src="/vis-gl.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -71,7 +71,8 @@ async function paint(page) {
       visible: mbVisible(),
       vuLit: lit('mbVu'), gonioLit: lit('mbGonio'), specLit: lit('mbSpectrum'),
       lvu: txt('mbLvu'), lrms: txt('mbLrms'), lpk: txt('mbLpk'),
-      rvu: txt('mbRvu'), corr: txt('mbCorr'), peakHz: txt('mbPeakHz'),
+      rvu: txt('mbRvu'), corr: txt('mbCorrBig'), word: txt('mbCorrWord'),
+      peakBig: txt('mbPeakBig'), rmsBig: txt('mbRmsBig'), peakHz: txt('mbPeakHz'),
       stateNote: txt('mbState'),
     };
   }, FEED);
@@ -99,7 +100,11 @@ test('the readouts say what the payload says', async ({ page }) => {
   expect(out.lrms).toBe('−14.4');
   expect(out.lpk).toBe('−2.6');
   expect(out.rvu).toBe('+2.1');
-  expect(out.corr).toBe('corr +0.78');
+  expect(out.corr).toBe('+0.78');
+  // The overview carries the loudest of the two channels, not the left one.
+  expect(out.peakBig).toBe('−2.6');
+  expect(out.rmsBig).toBe('−14.4');
+  expect(out.word).toBe('stereo');
   // 1.2% of the last hundred milliseconds was above the ceiling's knee.
   expect(out.stateNote).toBe('ceiling 1%');
 });
@@ -147,10 +152,10 @@ test('with no engine the panels are empty rather than stale', async ({ page }) =
     drawMasterVu(); drawGonio(); drawMasterSpectrum(); paintMasterReads();
     return { lvu: document.getElementById('mbLvu').textContent,
              stateNote: document.getElementById('mbState').textContent,
-             corr: document.getElementById('mbCorr').textContent };
+             corr: document.getElementById('mbCorrBig').textContent };
   });
   // Freezing on the last reading is the one behaviour a meter may not have.
   expect(after.lvu).toBe('—');
-  expect(after.corr).toBe('');
+  expect(after.corr).toBe('—');
   expect(after.stateNote).toBe('idle');
 });
