@@ -101,6 +101,19 @@ fn idle_params() -> StreamParams {
     }
 }
 
+/// Run `f` with the audio handle **only if one is already open**.
+///
+/// Unlike [`with`], this never opens the device. Anything that merely *reports*
+/// on the engine should use this: a poll that opens a sound card as a side
+/// effect is exactly how `/api/engine/state` came to answer 503 on a machine
+/// that had none — see `docs/NO-AUDIO-DEVICE.md`. A meter has nothing to say
+/// until something is playing, and nothing can play without a device already
+/// being open, so there is never a reason for one to force the issue.
+pub fn peek<T>(app: &Arc<App>, f: impl FnOnce(&Handle) -> T) -> Option<T> {
+    let slot = app.audio.lock().ok()?;
+    Some(f(slot.as_ref()?))
+}
+
 /// Run `f` with the audio handle, opening the device if this is the first ask.
 pub fn with<T>(app: &Arc<App>, f: impl FnOnce(&Handle) -> T) -> Result<T, String> {
     ensure(app)?;

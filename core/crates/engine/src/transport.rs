@@ -239,6 +239,69 @@ pub struct Shared {
     /// how loud, and only a waveform says what the threshold is actually
     /// cutting into.
     waveform: Mutex<Vec<i8>>,
+
+    /// The master bus, with the two channels kept apart. See [`Scope`].
+    scope: Mutex<Scope>,
+}
+
+/// Frames of master output kept for the meters.
+///
+/// Set by the slowest consumer: a true VU integrates over 300 ms, which is
+/// 14,400 frames at 48 kHz. This covers that with room to spare, and covers a
+/// 4096-point transform four times over. 128 KB, sized once, never grown.
+pub const SCOPE_FRAMES: usize = 16_384;
+
+/// The last [`SCOPE_FRAMES`] of what left the engine, L and R apart.
+///
+/// The callback's entire job here is to copy into this. No window, no
+/// transform, no log10 — everything the meters show is worked out from it on a
+/// thread that is allowed to take its time.
+///
+/// This exists because `measure` sums to mono before it does anything else, and
+/// a Lissajous plots L against R. A mono sum has already thrown away the only
+/// thing a goniometer draws. See `docs/MASTER-BUS.md`.
+pub struct Scope {
+    pub l: Vec<f32>,
+    pub r: Vec<f32>,
+    /// Where the next frame goes, and therefore where the ring's oldest frame
+    /// is once it has wrapped.
+    pub at: usize,
+    pub filled: bool,
+    /// Zero until something has actually played, which is how a caller tells
+    /// "silence" from "nothing has happened yet".
+    pub rate: u32,
+}
+
+impl Scope {
+    fn new() -> Self {
+        Scope {
+            l: vec![0.0; SCOPE_FRAMES],
+            r: vec![0.0; SCOPE_FRAMES],
+            at: 0,
+            filled: false,
+            rate: 0,
+        }
+    }
+
+    /// Interleaved output in, two rings out.
+    ///
+    /// A mono stream is written to both sides, so a Lissajous of a mono file
+    /// draws the 45-degree line it ought to rather than nothing at all.
+    fn write(&mut self, out: &[f32], channels: usize, rate: u32) {
+        let ch = channels.max(1);
+        self.rate = rate;
+        for f in 0..out.len() / ch {
+            let a = out[f * ch];
+            let b = if ch > 1 { out[f * ch + 1] } else { a };
+            self.l[self.at] = a;
+            self.r[self.at] = b;
+            self.at += 1;
+            if self.at >= SCOPE_FRAMES {
+                self.at = 0;
+                self.filled = true;
+            }
+        }
+    }
 }
 
 impl Shared {
@@ -275,6 +338,7 @@ impl Shared {
             manual: Mutex::new(Vec::new()),
             spectrum: Mutex::new(Vec::new()),
             waveform: Mutex::new(Vec::new()),
+            scope: Mutex::new(Scope::new()),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
         }
@@ -642,6 +706,58 @@ impl Shared {
 
     pub fn set_gain(&self, g: f32) {
         self.gain.store(g.clamp(0.0, 4.0).to_bits(), Ordering::Release);
+    }
+
+    /// The master bus in time order, oldest first, with the rate it came out at.
+    ///
+    /// `None` until something has played. The ring is copied out under the lock
+    /// and the caller does its arithmetic outside it — a 4096-point transform
+    /// must never be holding a lock the audio thread is about to want. The copy
+    /// itself is a 128 KB memcpy; the callback takes `try_lock` and skips a
+    /// block rather than wait for it, which costs one block of scope data and
+    /// nothing else.
+    /// Copy a block of interleaved output into the master bus ring.
+    ///
+    /// `try_lock`: the audio thread skips a block rather than wait, which costs
+    /// one block of meter data and never a deadline.
+    pub fn push_scope(&self, out: &[f32], channels: usize, rate: u32) {
+        if let Ok(mut g) = self.scope.try_lock() {
+            g.write(out, channels, rate);
+        }
+    }
+
+    pub fn scope_snapshot(&self) -> Option<(Vec<f32>, Vec<f32>, u32)> {
+        let g = self.scope.lock().ok()?;
+        if g.rate == 0 {
+            return None;
+        }
+        let (mut l, mut r) = (Vec::new(), Vec::new());
+        if g.filled {
+            l.reserve_exact(SCOPE_FRAMES);
+            r.reserve_exact(SCOPE_FRAMES);
+            l.extend_from_slice(&g.l[g.at..]);
+            l.extend_from_slice(&g.l[..g.at]);
+            r.extend_from_slice(&g.r[g.at..]);
+            r.extend_from_slice(&g.r[..g.at]);
+        } else {
+            if g.at == 0 {
+                return None;
+            }
+            l.extend_from_slice(&g.l[..g.at]);
+            r.extend_from_slice(&g.r[..g.at]);
+        }
+        Some((l, r, g.rate))
+    }
+
+    /// Drop the master bus to silence, so the meters fall when playback stops
+    /// rather than freezing on the last block that was heard.
+    pub fn clear_scope(&self) {
+        if let Ok(mut g) = self.scope.lock() {
+            g.l.fill(0.0);
+            g.r.fill(0.0);
+            g.at = 0;
+            g.filled = false;
+        }
     }
 
     pub fn spectrum(&self) -> Vec<u8> {
@@ -1110,6 +1226,16 @@ impl Core {
                 // on silence for as long as the app is open.
                 shared.rack_meters.clear();
             }
+            // The stopped path returns here, so without this the master bus
+            // would freeze on the last block that was heard and the meters
+            // would hang at whatever they happened to be showing.
+            //
+            // A ringing tail is real audio leaving the bus and belongs on the
+            // meters; after it, `out` is silence, and writing that drains the
+            // ring so the meters fall the way a meter should. It is a four
+            // kilobyte copy per block — the "burning a core" this branch avoids
+            // was a rack full of reverbs, not a memcpy.
+            shared.push_scope(out, channels, self.params.sample_rate);
             shared
                 .position
                 .store(self.renderer.position(), Ordering::Release);
@@ -1248,6 +1374,10 @@ impl Core {
                 }
             }
         }
+
+        // The master bus, kept in stereo. A copy and nothing more — see
+        // [`Scope`] for why the analysis is not done here.
+        shared.push_scope(out, channels, self.params.sample_rate);
 
         self.measure(out, channels, shared);
 

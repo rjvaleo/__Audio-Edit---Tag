@@ -2284,3 +2284,70 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .vis-window-body #grainCanvas,
 .vis-window-body #grainFrame { flex: 1 1 auto; min-height: 0; width: 100%; }
+
+/* ─────────────────────────────────────────────────────────── the master bus ──
+   One surface in the room the grain views left, not three boxes in a scroller.
+   The goniometer sits over the spectrum; the meters are hard right. No panel
+   chrome — the displays are the panel. See `docs/MASTER-BUS.md`.
+
+   Every colour is a token. The visualisers are full of raw hexes and a theme
+   reaches the chrome but not the canvas; there was no reason to add to that. */
+.master-bus {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; gap: 12px;
+  /* Nothing scrolls. Everything is sized as a share of the tray. */
+  overflow: hidden;
+}
+.mb-main {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mb-side {
+  flex: 0 0 152px; min-height: 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+
+/* The canvases are placed rather than flowed. A canvas is a replaced element
+   with its own intrinsic size, and `height: 100%` on a flex item whose own
+   height is `auto` does not resolve — which is how it ends up 150 px tall in a
+   400 px box. Absolute against a positioned cell always fills it. */
+.mb-cell { position: relative; min-height: 0; }
+.mb-cell > canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  display: block; background: var(--bg); border-radius: 3px;
+}
+/* The goniometer takes the top; the spectrum takes whatever is left, which is
+   the display that benefits most from height. */
+.mb-cell-gonio { flex: 0 0 40%; }
+.mb-cell-spec { flex: 1 1 auto; }
+.mb-cell-vu { flex: 1 1 auto; }
+
+/* A note in the corner of the display it belongs to, rather than a header
+   above a box. */
+.mb-note {
+  position: absolute; top: 4px; right: 7px;
+  font-size: 9px; color: var(--text-dim); pointer-events: none;
+  text-shadow: 0 1px 3px var(--shadow);
+}
+.mb-state { font-size: 9px; color: var(--text-dim); text-align: right; }
+
+/* Label, then a column per channel. The values are what was actually asked for
+   — "an actual readout, not just meters". */
+.mb-reads {
+  flex: 0 0 auto;
+  display: grid; grid-template-columns: 34px repeat(2, minmax(0, 1fr));
+  gap: 1px 6px; align-items: baseline;
+}
+.mb-k { font-size: 8.5px; letter-spacing: .05em; color: var(--text-dim); }
+.mb-h {
+  font-size: 8.5px; letter-spacing: .07em;
+  color: var(--text-dim); text-align: right;
+}
+.mb-v {
+  font-size: 10.5px; color: var(--text-2); text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Over the ceiling's knee, so the output stage is rounding peaks off. Not an
+   error — it is what that stage is for — but you should be able to see it. */
+.mb-v.hot { color: var(--warn); }
+.mb-v.over { color: var(--bad); }

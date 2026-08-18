@@ -264,6 +264,46 @@ else {
   notes.push(`${known.size} engines in the picker`);
 }
 
+// ------------------------------------------------- the markup actually nests
+//
+// Added after an edit to `index.html` left two orphan `</div>` behind and the
+// whole page fell apart: the extra tags closed `.grain-split` and the dock
+// early, so the browser list, the tag panel and the rail all landed on top of
+// one another. Nothing caught it — the interface check passed, every Rust test
+// passed, and the browser tests passed too, because Playwright's queries find
+// elements perfectly well in a tree that is nested wrongly.
+//
+// A tag counter would have caught it in a second, so here is one.
+{
+  const lineIn = (i) => html.slice(0, i).split('\n').length;
+  // Void elements never close; everything else is expected to.
+  const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+    'link', 'meta', 'param', 'source', 'track', 'wbr']);
+  const stack = [];
+  const tag = /<(\/?)([a-zA-Z][\w-]*)([^>]*)>/g;
+  let m;
+  while ((m = tag.exec(html))) {
+    const [, slash, name, rest] = m;
+    const lower = name.toLowerCase();
+    if (VOID.has(lower) || rest.trimEnd().endsWith('/')) continue;
+    if (!slash) { stack.push({ name: lower, at: m.index }); continue; }
+    const open = stack.pop();
+    if (!open) {
+      fail(`index.html:${lineIn(m.index)}  </${lower}> closes nothing — `
+        + 'there is an orphan closing tag, and everything after it nests wrongly');
+      continue;
+    }
+    if (open.name !== lower) {
+      fail(`index.html:${lineIn(m.index)}  </${lower}> closes a <${open.name}> `
+        + `opened at line ${lineIn(open.at)}`);
+    }
+  }
+  for (const left of stack) {
+    fail(`index.html:${lineIn(left.at)}  <${left.name}> is never closed`);
+  }
+  notes.push(`${(html.match(/<div\b/g) || []).length} divs, balanced`);
+}
+
 // ------------------------------------------------------------------ report
 
 for (const n of notes) console.log(`  ${n}`);

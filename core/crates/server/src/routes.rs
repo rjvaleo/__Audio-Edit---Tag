@@ -127,6 +127,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
         ("GET", "/api/engine/grains") => api_engine_grains(app),
+        ("GET", "/api/engine/master") => api_engine_master(app, req),
         // Forget the worst block. It is only meaningful next to a change you
         // just made — a peak from ten minutes ago says nothing about the
         // settings in front of you.
@@ -1158,6 +1159,125 @@ fn pan_of(g: &fx::Grain, index: u64) -> f32 {
     } else {
         ((r - l) / sum).clamp(-1.0, 1.0)
     }
+}
+
+// ─────────────────────────────────────────────────────────── the master bus ──
+//
+// See `docs/MASTER-BUS.md`. The audio callback copies L and R into a ring and
+// does nothing else with them; everything below happens here, on a thread that
+// is allowed to take as long as it likes.
+
+/// Points in the goniometer trace. About 21 ms at 48 kHz — a short window of
+/// *every* sample, because a Lissajous decimated is a picture of a different,
+/// aliased signal.
+const LISSAJOUS_POINTS: usize = 1024;
+
+/// The master analyser's transform, when the caller does not say.
+///
+/// 11.7 Hz per bin at 48 kHz, against the 43 Hz of the 1024-point one that used
+/// to run in the callback. The caller can ask for more: the ring holds
+/// [`engine::transport::SCOPE_FRAMES`], so 16,384 is the largest transform
+/// there is data for, and it is the ceiling here.
+const MASTER_FFT: usize = 4096;
+const MASTER_FFT_MIN: usize = 256;
+const MASTER_FFT_MAX: usize = 16_384;
+
+/// Bands in the published spectrum, when the caller does not say. Geometric
+/// from 20 Hz to 20 kHz, so an octave takes the same width wherever it sits.
+///
+/// The interface asks for one band per pixel of the display it is about to draw
+/// into, which is as much detail as can be seen and no more.
+const MASTER_BANDS: usize = 256;
+const MASTER_BANDS_MIN: usize = 24;
+const MASTER_BANDS_MAX: usize = 2048;
+const MASTER_LO_HZ: f32 = 20.0;
+const MASTER_HI_HZ: f32 = 20_000.0;
+
+/// Two decimal places is a tenth of a pixel on any meter anyone will draw, and
+/// it keeps the goniometer's thousand pairs to a few kilobytes instead of
+/// thirty.
+fn round2(v: f32) -> f64 {
+    ((v * 100.0).round() / 100.0) as f64
+}
+
+fn channel_json(c: &audio_core::meter::Channel) -> Value {
+    Value::obj()
+        .set("vu", c.vu as f64)
+        .set("vuDb", c.vu_db as f64)
+        .set("vuUnits", c.vu_units as f64)
+        .set("peak", c.peak as f64)
+        .set("peakDb", c.peak_db as f64)
+}
+
+/// What the master bus is doing right now.
+///
+/// `live: false` whenever there is nothing to report — no device, or nothing
+/// has played yet. Never an error: a meter that 503s is a meter that fills the
+/// log while telling the interface nothing it can act on.
+fn api_engine_master(app: &Arc<App>, req: &Request) -> Response {
+    // The snapshot is taken under the locks and the arithmetic is done outside
+    // them. A 4096-point transform must never be holding something the audio
+    // thread is about to want.
+    let snap = crate::live::peek(app, |h| h.shared.scope_snapshot()).flatten();
+    let Some((l, r, rate)) = snap else {
+        return Response::json(Value::obj().set("live", false).to_string());
+    };
+
+    // The display says how much detail it wants. `fft` is rounded down to a
+    // power of two rather than rejected, so a caller asking for 3000 gets 2048
+    // and a picture, not a 400 and none.
+    let fft = req
+        .param("fft")
+        .and_then(|v| v.parse::<usize>().ok())
+        .map(|n| {
+            let n = n.clamp(MASTER_FFT_MIN, MASTER_FFT_MAX);
+            1usize << (usize::BITS - 1 - n.leading_zeros()) as usize
+        })
+        .unwrap_or(MASTER_FFT);
+    let nbands = req
+        .param("bands")
+        .and_then(|v| v.parse::<usize>().ok())
+        .map(|n| n.clamp(MASTER_BANDS_MIN, MASTER_BANDS_MAX))
+        .unwrap_or(MASTER_BANDS);
+
+    let m = audio_core::meter::master(&l, &r, rate, fx::CEILING_KNEE);
+    let bands =
+        audio_core::meter::spectrum(&l, &r, rate, fft, nbands, MASTER_LO_HZ, MASTER_HI_HZ);
+    let pts = audio_core::meter::lissajous(&l, &r, LISSAJOUS_POINTS);
+
+    // Flat, and interleaved. A thousand `[l, r]` arrays is twice the JSON of a
+    // thousand pairs of numbers and says exactly the same thing.
+    let mut xy = Vec::with_capacity(pts.len() * 2);
+    for (a, b) in &pts {
+        xy.push(Value::Num(round2(*a)));
+        xy.push(Value::Num(round2(*b)));
+    }
+
+    Response::json(
+        Value::obj()
+            .set("live", true)
+            .set("rate", rate as f64)
+            .set("frames", m.frames as f64)
+            .set("left", channel_json(&m.left))
+            .set("right", channel_json(&m.right))
+            .set("correlation", m.correlation as f64)
+            // How much of the last hundred milliseconds the output stage is
+            // rounding off. Zero means the soft ceiling is not doing anything.
+            .set("overKnee", m.over_knee as f64)
+            .set("vuRef", audio_core::meter::VU_REF_DBFS as f64)
+            // What was actually used, which is not always what was asked for.
+            .set("fft", fft as f64)
+            .set("bins", (rate as f64) / fft as f64)
+            .set("knee", fx::CEILING_KNEE as f64)
+            .set("lo", MASTER_LO_HZ as f64)
+            .set("hi", MASTER_HI_HZ as f64)
+            .set(
+                "spectrum",
+                Value::Arr(bands.into_iter().map(|v| Value::Num(round2(v))).collect()),
+            )
+            .set("lissajous", Value::Arr(xy))
+            .to_string(),
+    )
 }
 
 /// The grain schedule for the visualiser.
