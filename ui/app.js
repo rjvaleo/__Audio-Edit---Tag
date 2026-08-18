@@ -9982,3 +9982,515 @@ wireTheme();
 wireWaveColour();
 checkAudioDevice();
 wireLeftPanelResize();
+
+// ─────────────────────────────────────────────────────────── the master bus ──
+//
+// Three panels reading one tap. The audio callback copies L and R into a ring
+// and does nothing else with them; the transform, the correlation and the
+// 300 ms integration all happen on the server, and this draws the answers.
+// See `docs/MASTER-BUS.md`.
+
+/// The data arrives at this rate, so there is nothing to be gained by drawing
+/// faster. A sixty-hertz loop over a twenty-hertz feed redraws the same numbers
+/// three times and costs three times as much to do it.
+const MB_POLL_MS = 50;
+/// The bottom of the meter scale, in dBFS.
+const MB_METER_FLOOR = -60;
+/// The bottom of the spectrum.
+const MB_SPEC_FLOOR = -96;
+/// How long a peak stays where it landed, and how fast it falls after that.
+const MB_HOLD_MS = 1400;
+const MB_HOLD_FALL_DB = 18;
+/// How much of the goniometer trace is drawn bright. The newest samples read as
+/// the live edge; the rest is the short tail that makes the shape legible.
+const MB_GONIO_HEAD = 160;
+
+const masterBus = {
+  /// The last reply, or null when there is nothing playing to report on.
+  data: null,
+  /// Peak hold per channel: the value, and when it was set.
+  hold: { l: MB_METER_FLOOR, r: MB_METER_FLOOR, lAt: 0, rAt: 0 },
+  /// The spectrum's own hold, one value per band.
+  specHold: null,
+  timer: null,
+};
+
+/// A proper minus sign, matching every other number in the interface.
+function mbDb(v, places = 1) {
+  if (!Number.isFinite(v) || v <= -119) return '−∞';
+  return v.toFixed(places).replace('-', '−');
+}
+
+function mbSigned(v, places = 1) {
+  if (!Number.isFinite(v)) return '—';
+  return (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(places);
+}
+
+const MB_NOTES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+
+/// The nearest equal-tempered note to a frequency, A440.
+///
+/// On a spectrum analyser this is the difference between "there is energy at
+/// 87 Hz" and "that is an F2" — which is the one a musician can act on.
+function noteName(hz) {
+  if (!(hz > 0)) return '';
+  const midi = Math.round(69 + 12 * Math.log2(hz / 440));
+  if (midi < 12 || midi > 127) return '';
+  return `${MB_NOTES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
+}
+
+/// A token, read from the document so a theme actually reaches these panels.
+function mbInk(name, fallback = '#8a949c') {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+/// Size a canvas to its element and hand back a context ready to draw in CSS
+/// pixels, or `null` when it has no size worth drawing into.
+///
+/// **Both dimensions.** Testing only the width is what left the grain layer's
+/// backing store at the old height after a window resize, drawing everything
+/// squashed at a size nothing on screen had.
+function mbFit(el) {
+  if (!el) return null;
+  const w = el.clientWidth, h = el.clientHeight;
+  if (!w || !h) return null;
+  const dpr = window.devicePixelRatio || 1;
+  const wantW = Math.round(w * dpr), wantH = Math.round(h * dpr);
+  if (el.width !== wantW || el.height !== wantH) { el.width = wantW; el.height = wantH; }
+  const c = el.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+  return { c, w, h };
+}
+
+/// Whether anything would be seen if it were drawn.
+///
+/// `offsetParent` is null whenever the element or any ancestor is display:none,
+/// which covers the dock being shut and another dock tab being chosen without
+/// having to know about either.
+function mbVisible() {
+  const el = $('masterBus');
+  return !!el && el.offsetParent !== null && el.clientWidth > 0;
+}
+
+/// dBFS to a fraction of the meter's width.
+const mbX = (db) => Math.max(0, Math.min(1, (db - MB_METER_FLOOR) / (0 - MB_METER_FLOOR)));
+
+function mbUpdateHold(now) {
+  const d = masterBus.data;
+  for (const [side, key, at] of [['left', 'l', 'lAt'], ['right', 'r', 'rAt']]) {
+    const db = d ? d[side].peakDb : -120;
+    const h = masterBus.hold;
+    if (db >= h[key]) { h[key] = db; h[at] = now; continue; }
+    const idle = now - h[at];
+    if (idle > MB_HOLD_MS) {
+      h[key] = Math.max(db, h[key] - MB_HOLD_FALL_DB * (idle - MB_HOLD_MS) / 1000);
+      h[at] = now - MB_HOLD_MS;
+    }
+  }
+}
+
+/// The VU pair, vertical.
+///
+/// The bar is 300 ms of RMS — loudness, which is what a VU is for. The mark
+/// riding above it is the fast peak, which a 300 ms meter cannot show you and
+/// which is what tells you the ceiling is about to start rounding things off.
+///
+/// Right-aligned in its row, with the scale to their left, so the two columns
+/// of numbers beside them read as belonging to the same instrument.
+function drawMasterVu() {
+  const f = mbFit($('mbVu'));
+  if (!f) return;
+  const { c, w, h } = f;
+  const d = masterBus.data;
+
+  const good = mbInk('--good', '#4fbf7a');
+  const warn = mbInk('--warn', '#e0a23c');
+  const bad = mbInk('--bad', '#e05c4a');
+  const dim = mbInk('--text-dim', '#78838c');
+  const line = mbInk('--line-2', '#2a3138');
+  const text2 = mbInk('--text-2', '#c7ced4');
+
+  const refDb = d?.vuRef ?? -18;
+  const kneeDb = d?.knee ? 20 * Math.log10(d.knee) : -3;
+
+  const barW = 17, gap = 7, foot = 11, top = 3;
+  const plotH = h - foot - top;
+  // Hard right, which is what was asked for.
+  const rightX = w - 1;
+  const xs = [rightX - barW * 2 - gap, rightX - barW];
+  const yOf = (db) => top + (1 - mbX(db)) * plotH;
+
+  // ── the ladder, to the left of the meters ──
+  c.font = '8px ui-monospace, monospace';
+  c.lineWidth = 1;
+  c.textBaseline = 'middle';
+  c.textAlign = 'right';
+  const labelR = xs[0] - 4;
+  for (const t of [0, -6, -12, -18, -24, -36, -48, -60]) {
+    const y = Math.round(yOf(t)) + 0.5;
+    c.strokeStyle = line;
+    c.globalAlpha = t === refDb ? 0.9 : 0.35;
+    c.beginPath();
+    c.moveTo(xs[0] - 2, y);
+    c.lineTo(rightX, y);
+    c.stroke();
+    c.globalAlpha = 1;
+    // The reference is named. "0 VU = −18 dBFS" is a choice, and the meter
+    // should say which one was made rather than leave it to be assumed.
+    c.fillStyle = t === refDb ? warn : dim;
+    c.fillText(t === refDb ? '0 VU' : String(t), labelR, y);
+  }
+
+  // ── the two bars ──
+  for (const [i, side] of ['left', 'right'].entries()) {
+    const x = xs[i];
+    c.fillStyle = 'rgba(255,255,255,.035)';
+    c.fillRect(x, top, barW, plotH);
+    if (!d) continue;
+
+    const vuDb = d[side].vuDb;
+    const endY = yOf(vuDb);
+    // Three zones, each filled where it actually falls: green to the reference,
+    // amber to the knee, red above it. Flat colours rather than a gradient, so
+    // the boundaries sit where the numbers say they do.
+    for (const [a, b, colour] of [
+      [MB_METER_FLOOR, refDb, good], [refDb, kneeDb, warn], [kneeDb, 0, bad],
+    ]) {
+      const yBottom = yOf(a), yTop = Math.max(yOf(b), endY);
+      if (yBottom <= yTop) continue;
+      c.fillStyle = colour;
+      c.fillRect(x, yTop, barW, yBottom - yTop);
+    }
+
+    const pk = d[side].peakDb;
+    if (pk > MB_METER_FLOOR) {
+      c.fillStyle = pk >= kneeDb ? bad : text2;
+      c.fillRect(x, Math.round(yOf(pk)) - 1, barW, 2);
+    }
+    const held = masterBus.hold[i ? 'r' : 'l'];
+    if (held > MB_METER_FLOOR) {
+      c.globalAlpha = 0.6;
+      c.fillStyle = held >= kneeDb ? bad : dim;
+      c.fillRect(x, Math.round(yOf(held)), barW, 1);
+      c.globalAlpha = 1;
+    }
+  }
+
+  c.fillStyle = dim;
+  c.textAlign = 'center';
+  c.textBaseline = 'top';
+  c.fillText('L', xs[0] + barW / 2, top + plotH + 3);
+  c.fillText('R', xs[1] + barW / 2, top + plotH + 3);
+}
+
+/// The goniometer.
+///
+/// Rotated forty-five degrees, which is the convention and is not decoration:
+/// it puts the mono sum straight up, so a mono signal draws a vertical line and
+/// anything leaning horizontal is the part that disappears when somebody sums
+/// to mono. Drawn square, because the angle *is* the reading and a stretched
+/// circle reports the wrong one.
+function drawGonio() {
+  const f = mbFit($('mbGonio'));
+  if (!f) return;
+  const { c, w, h } = f;
+  const d = masterBus.data;
+
+  const dim = mbInk('--text-dim', '#78838c');
+  const line = mbInk('--line-2', '#2a3138');
+  const ink = mbInk('--wave', '#5fd47a');
+  const bad = mbInk('--bad', '#e05c4a');
+
+  const strip = 12;                       // the correlation strip along the foot
+  const cx = w / 2, cy = (h - strip) / 2;
+  const rad = Math.min(w, h - strip) / 2 - 12;
+  if (rad <= 4) return;
+
+  // ── the frame ──
+  c.strokeStyle = line;
+  c.lineWidth = 1;
+  c.beginPath(); c.arc(cx, cy, rad, 0, Math.PI * 2); c.stroke();
+  c.globalAlpha = 0.55;
+  c.beginPath(); c.arc(cx, cy, rad / 2, 0, Math.PI * 2); c.stroke();
+  c.globalAlpha = 1;
+
+  // The diagonals are the individual channels; vertical is mono, horizontal is
+  // everything that would cancel.
+  c.setLineDash([2, 3]);
+  for (const [dx, dy] of [[1, 0], [0, 1], [0.7071, 0.7071], [0.7071, -0.7071]]) {
+    c.globalAlpha = dx === 0 || dy === 0 ? 0.5 : 0.28;
+    c.beginPath();
+    c.moveTo(cx - dx * rad, cy - dy * rad);
+    c.lineTo(cx + dx * rad, cy + dy * rad);
+    c.stroke();
+  }
+  c.setLineDash([]);
+  c.globalAlpha = 1;
+
+  c.fillStyle = dim;
+  c.font = '8px ui-monospace, monospace';
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText('M', cx, cy - rad - 6);
+  c.fillText('L', cx - rad * 0.72 - 5, cy - rad * 0.72 - 4);
+  c.fillText('R', cx + rad * 0.72 + 5, cy - rad * 0.72 - 4);
+  c.fillText('S', cx + rad + 6, cy);
+
+  // ── the trace ──
+  const xy = d?.lissajous;
+  if (xy && xy.length >= 4) {
+    const n = xy.length / 2;
+    // Mid up, sides across. The root-two keeps a full-scale mono signal inside
+    // the circle instead of a third of the way outside it.
+    const k = rad / Math.SQRT2;
+    const head = Math.max(0, n - MB_GONIO_HEAD);
+    for (const [from, to, alpha, size] of [[0, head, 0.30, 1], [head, n, 0.85, 1.6]]) {
+      if (to <= from) continue;
+      c.fillStyle = ink;
+      c.globalAlpha = alpha;
+      c.beginPath();
+      for (let i = from; i < to; i++) {
+        const l = xy[i * 2], r = xy[i * 2 + 1];
+        const x = cx + (l - r) * k;
+        const y = cy - (l + r) * k;
+        c.moveTo(x, y);
+        c.arc(x, y, size / 2, 0, Math.PI * 2);
+      }
+      c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+
+  // ── correlation, along the foot ──
+  const y = h - strip + 4;
+  c.fillStyle = 'rgba(255,255,255,.05)';
+  c.fillRect(0, y, w, 6);
+  c.strokeStyle = line;
+  for (const t of [-1, -0.5, 0, 0.5, 1]) {
+    const x = Math.round((t + 1) / 2 * w) + 0.5;
+    c.globalAlpha = t === 0 ? 0.8 : 0.35;
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 6); c.stroke();
+  }
+  c.globalAlpha = 1;
+  c.fillStyle = dim;
+  c.font = '8px ui-monospace, monospace';
+  c.textBaseline = 'bottom';
+  for (const [t, label, align] of [[-1, '−1', 'left'], [0, '0', 'center'], [1, '+1', 'right']]) {
+    c.textAlign = align;
+    const x = (t + 1) / 2 * w;
+    c.fillText(label, t < 0 ? x + 1 : t > 0 ? x - 1 : x, y - 1);
+  }
+  // What the two ends actually mean, in the room the circle does not use.
+  c.textAlign = 'left'; c.textBaseline = 'middle';
+  c.globalAlpha = 0.75;
+  c.fillText('out of phase', 3, cy - rad * 0.55);
+  c.textAlign = 'right';
+  c.fillText('mono', w - 3, cy - rad * 0.55);
+  c.globalAlpha = 1;
+  if (d) {
+    const corr = d.correlation;
+    const x = (corr + 1) / 2 * w;
+    // Negative correlation is the one worth colouring: it is the state where
+    // the meters look fine and the mono fold-down does not.
+    c.fillStyle = corr < 0 ? bad : ink;
+    c.fillRect(Math.min(w - 2, Math.max(0, x - 1)), y - 1, 2, 8);
+  }
+}
+
+/// The spectrum.
+///
+/// The bands arrive geometric from 20 Hz to 20 kHz, so an octave is the same
+/// width wherever it sits and `x` is simply the band's index. Annotated because
+/// an unlabelled spectrum tells you a shape and not a fact — the grid says
+/// where, the peak-hold says how much, and the readout names the note.
+function drawMasterSpectrum() {
+  const f = mbFit($('mbSpectrum'));
+  if (!f) return;
+  const { c, w, h } = f;
+  const d = masterBus.data;
+
+  const dim = mbInk('--text-dim', '#78838c');
+  const line = mbInk('--line-2', '#2a3138');
+  const ink = mbInk('--wave', '#5fd47a');
+  const warn = mbInk('--warn', '#e0a23c');
+
+  const lo = d?.lo ?? 20, hi = d?.hi ?? 20000;
+  const pad = 13;                                     // room for the Hz labels
+  const plot = h - pad;
+  const xOf = (hz) => Math.log(hz / lo) / Math.log(hi / lo) * w;
+  const yOf = (db) => plot - Math.max(0, Math.min(1, (db - MB_SPEC_FLOOR) / (0 - MB_SPEC_FLOOR))) * plot;
+
+  // ── the grid ──
+  c.font = '8px ui-monospace, monospace';
+  c.strokeStyle = line;
+  c.lineWidth = 1;
+  c.textBaseline = 'top';
+  for (const hz of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
+    const x = Math.round(xOf(hz)) + 0.5;
+    if (x < 6 || x > w - 6) continue;
+    c.globalAlpha = 0.3;
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, plot); c.stroke();
+    c.globalAlpha = 1;
+    c.fillStyle = dim;
+    c.textAlign = 'center';
+    c.fillText(hz >= 1000 ? `${hz / 1000}k` : String(hz), x, plot + 3);
+  }
+  c.textBaseline = 'middle';
+  for (const db of [-12, -24, -36, -48, -60, -72, -84]) {
+    const y = Math.round(yOf(db)) + 0.5;
+    c.globalAlpha = 0.22;
+    c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+    c.globalAlpha = 1;
+    if (db % 24 === 0) {
+      c.fillStyle = dim;
+      c.textAlign = 'left';
+      c.fillText(String(db), 2, y);
+    }
+  }
+
+  const bands = d?.spectrum;
+  if (!bands || !bands.length) {
+    c.fillStyle = dim;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('press play for the live spectrum', w / 2, plot / 2);
+    $('mbPeakHz').textContent = '';
+    return;
+  }
+
+  // ── the hold ──
+  //
+  // Falls rather than resets. A hold that only ever rises fills in solid within
+  // a few seconds and stops meaning anything.
+  if (!masterBus.specHold || masterBus.specHold.length !== bands.length) {
+    masterBus.specHold = bands.slice();
+  }
+  const hold = masterBus.specHold;
+  const fall = MB_HOLD_FALL_DB * (MB_POLL_MS / 1000);
+  for (let i = 0; i < bands.length; i++) {
+    hold[i] = bands[i] >= hold[i] ? bands[i] : Math.max(bands[i], hold[i] - fall);
+  }
+
+  const bx = (i) => (i + 0.5) / bands.length * w;
+
+  // ── the curve ──
+  c.beginPath();
+  c.moveTo(0, plot);
+  for (let i = 0; i < bands.length; i++) c.lineTo(bx(i), yOf(bands[i]));
+  c.lineTo(w, plot);
+  c.closePath();
+  c.globalAlpha = 0.18;
+  c.fillStyle = ink;
+  c.fill();
+  c.globalAlpha = 1;
+
+  c.beginPath();
+  for (let i = 0; i < bands.length; i++) {
+    const x = bx(i), y = yOf(bands[i]);
+    i ? c.lineTo(x, y) : c.moveTo(x, y);
+  }
+  c.strokeStyle = ink;
+  c.lineWidth = 1.2;
+  c.stroke();
+
+  c.beginPath();
+  for (let i = 0; i < hold.length; i++) {
+    const x = bx(i), y = yOf(hold[i]);
+    i ? c.lineTo(x, y) : c.moveTo(x, y);
+  }
+  c.strokeStyle = warn;
+  c.globalAlpha = 0.5;
+  c.lineWidth = 1;
+  c.stroke();
+  c.globalAlpha = 1;
+
+  // ── where the energy actually is ──
+  let top = 0;
+  for (let i = 1; i < bands.length; i++) if (bands[i] > bands[top]) top = i;
+  if (bands[top] > MB_SPEC_FLOOR + 6) {
+    const hz = lo * Math.pow(hi / lo, (top + 0.5) / bands.length);
+    const x = bx(top), y = yOf(bands[top]);
+    c.strokeStyle = warn;
+    c.globalAlpha = 0.8;
+    c.beginPath(); c.arc(x, y, 3, 0, Math.PI * 2); c.stroke();
+    c.globalAlpha = 1;
+    const note = noteName(hz);
+    $('mbPeakHz').textContent =
+      `${hz >= 1000 ? `${(hz / 1000).toFixed(2)} kHz` : `${hz.toFixed(0)} Hz`}`
+      + `${note ? ` · ${note}` : ''} · ${mbDb(bands[top])} dB`;
+  } else {
+    $('mbPeakHz').textContent = '';
+  }
+}
+
+/// The numbers beside the meters — the part that was actually asked for.
+function paintMasterReads() {
+  const d = masterBus.data;
+  const kneeDb = d?.knee ? 20 * Math.log10(d.knee) : -3;
+  for (const [side, key] of [['left', 'L'], ['right', 'R']]) {
+    const ch = d?.[side];
+    const hold = masterBus.hold[key === 'L' ? 'l' : 'r'];
+    const vu = $(`mb${key}vu`), rms = $(`mb${key}rms`);
+    const pk = $(`mb${key}pk`), hd = $(`mb${key}hold`);
+    if (!vu) continue;
+    // Silence is −∞, not −102.0. The units are a difference from the
+    // reference, so at the floor the arithmetic gives a real number and it is a
+    // meaningless one — a meter reading "−102.0 units" looks like a measurement.
+    vu.textContent = ch ? (ch.vuDb <= -119 ? '−∞' : mbSigned(ch.vuUnits)) : '—';
+    rms.textContent = ch ? mbDb(ch.vuDb) : '—';
+    pk.textContent = ch ? mbDb(ch.peakDb) : '—';
+    hd.textContent = d && hold > MB_METER_FLOOR ? mbDb(hold) : '—';
+    for (const [el, v] of [[pk, ch?.peakDb], [hd, hold]]) {
+      el.classList.toggle('over', !!d && v >= -0.2);
+      el.classList.toggle('hot', !!d && v < -0.2 && v >= kneeDb);
+    }
+  }
+
+  const corr = $('mbCorr');
+  if (corr) corr.textContent = d ? `corr ${mbSigned(d.correlation, 2)}` : '';
+
+  const st = $('mbState');
+  if (st) {
+    if (!d) st.textContent = 'idle';
+    // How much of the last hundred milliseconds the output stage is rounding
+    // off. Worth saying plainly: the ceiling working is not a fault, but it is
+    // something you should be able to see rather than only hear.
+    else if (d.overKnee > 0.0005) st.textContent = `ceiling ${(d.overKnee * 100).toFixed(0)}%`;
+    else st.textContent = `${(d.rate / 1000).toFixed(1)} kHz`;
+  }
+}
+
+async function mbTick() {
+  if (!mbVisible()) return;
+  // No sound card, no master bus. Without this the meters ask the engine
+  // twenty times a second forever on a machine that has none — which is the
+  // exact fault `tests/ui/no-audio.spec.mjs` was written for, arriving by a new
+  // route. See `docs/NO-AUDIO-DEVICE.md`.
+  if (noAudio()) { masterBus.data = null; return; }
+  try {
+    const r = await api('/api/engine/master');
+    masterBus.data = r && r.live ? r : null;
+  } catch {
+    // A meter that cannot reach the server shows nothing rather than the last
+    // thing it saw. Freezing on a stale reading is the one behaviour a meter is
+    // not allowed to have.
+    masterBus.data = null;
+  }
+  if (!mbVisible()) return;
+  mbUpdateHold(performance.now());
+  drawMasterVu();
+  drawGonio();
+  drawMasterSpectrum();
+  paintMasterReads();
+}
+
+function startMasterBus() {
+  if (masterBus.timer) return;
+  masterBus.timer = setInterval(mbTick, MB_POLL_MS);
+  // The panels are drawn once so they are not blank before the first reply
+  // lands, and again whenever the tray is resized under them.
+  const redraw = () => { if (mbVisible()) { drawMasterVu(); drawGonio(); drawMasterSpectrum(); } };
+  if (window.ResizeObserver) new ResizeObserver(redraw).observe($('masterBus'));
+  redraw();
+}
+startMasterBus();

@@ -6,6 +6,7 @@
 
 pub mod aiff;
 pub mod fft;
+pub mod meter;
 mod probe;
 mod reader;
 mod source;

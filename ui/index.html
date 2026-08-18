@@ -532,6 +532,48 @@
               <span class="mono dim" id="grainCount"></span>
             </div>
           </div>
+
+          <!-- The master bus, in the room the grain views left behind. One
+               surface, not three boxes: the goniometer over the spectrum, the
+               meters hard right. Everything here is measured after the fader
+               and after the soft ceiling, so it is what left the speakers and
+               not a stage on the way there. See `docs/MASTER-BUS.md`. -->
+          <div class="master-bus" id="masterBus">
+            <div class="mb-main">
+              <div class="mb-cell mb-cell-gonio">
+                <canvas id="mbGonio"
+                  title="Mid up the middle, sides left and right. A vertical trace is mono; a horizontal one is out of phase and will vanish if anyone sums it."></canvas>
+                <span class="mono mb-note" id="mbCorr"></span>
+              </div>
+              <div class="mb-cell mb-cell-spec">
+                <canvas id="mbSpectrum"
+                  title="4096-point transform of the master bus, 20 Hz to 20 kHz geometric. The faint line is the peak hold."></canvas>
+                <span class="mono mb-note" id="mbPeakHz"></span>
+              </div>
+            </div>
+            <div class="mb-side">
+              <div class="mb-cell mb-cell-vu">
+                <canvas id="mbVu"
+                  title="0 VU is −18 dBFS (EBU R68). The bar integrates over 300 ms; the mark riding above it is the fast peak."></canvas>
+              </div>
+              <div class="mb-reads" id="mbReads">
+                <span class="mb-k"></span><span class="mb-h">L</span><span class="mb-h">R</span>
+                <span class="mb-k">VU</span>
+                <span class="mono mb-v" id="mbLvu">—</span>
+                <span class="mono mb-v" id="mbRvu">—</span>
+                <span class="mb-k">RMS</span>
+                <span class="mono mb-v" id="mbLrms">—</span>
+                <span class="mono mb-v" id="mbRrms">—</span>
+                <span class="mb-k">PEAK</span>
+                <span class="mono mb-v" id="mbLpk">—</span>
+                <span class="mono mb-v" id="mbRpk">—</span>
+                <span class="mb-k">HOLD</span>
+                <span class="mono mb-v" id="mbLhold">—</span>
+                <span class="mono mb-v" id="mbRhold">—</span>
+              </div>
+              <span class="mono mb-state" id="mbState"></span>
+            </div>
+          </div>
         </div>
 
       </div>
