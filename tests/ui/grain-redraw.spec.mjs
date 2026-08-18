@@ -36,6 +36,13 @@ async function editing(page) {
     await new Promise((r) => setTimeout(r, 300));
     state.grainDraft.densityHz = 120;
     state.grainDraft.layers = 2;
+    // Pinned, not inherited. The document is saved, so whatever the previous
+    // test left on this sound is still on it — and the grain window is
+    // expressed in *output* frames, which is the view scaled by the ratio. A
+    // test that set a ratio of 200 made the next one's window a hundred times
+    // wider than it expected, and it failed for a reason that had nothing to do
+    // with what it was testing.
+    state.stretchDraft.ratio = 2;
     await editOp({ op: 'stretch', ...state.stretchDraft, grain: state.grainDraft });
   });
   await page.waitForTimeout(2500);
@@ -217,4 +224,70 @@ test('the grain canvas follows a height-only resize', async ({ page }) => {
     + `${out.backingW}x${out.backingH} — everything drawn into it is at the wrong scale`,
   ).toBe(out.wantH);
   expect(out.backingW).toBe(out.wantW);
+});
+
+/// A big stretch must not starve the sparks.
+///
+/// Reported as "we lost some grain fidelity in the redraw — super slow, not as
+/// visual, almost like 2 to 4 frames a second". It was neither slow nor a frame
+/// rate: `drawGrainLayer` measured 0.72 ms, comfortably inside a 60 fps frame.
+/// The lane was drawing an almost empty picture.
+///
+/// The cap is spent across the window asked for, so zoomed out on a long
+/// stretch the reply is thin — measured at ratio 19.4, density 91, three
+/// layers: 7,983 grains of a real 2,913,063, one in 365. The ticks tolerate
+/// that. The sizzle cannot: ~76 grains should be lit at any instant and one in
+/// 365 of them is a fifth of one. Sparks arriving alone, a couple a second, is
+/// what was being seen.
+///
+/// The playhead's own eight-second window is never thinned, so that is where
+/// the sparks come from now. This asserts the dense copy is actually fetched
+/// and actually covers the playhead — without it the sizzle silently falls back
+/// to the thin one and the symptom returns with nothing failing.
+test('a thinned view still has a dense schedule to strike sparks from', async ({ page }) => {
+  await editing(page);
+
+  const out = await page.evaluate(async () => {
+    // Far past what any cap can hold, so the view copy is certainly thinned.
+    state.stretchDraft.ratio = 200;
+    state.grainDraft.densityHz = 500;
+    state.grainDraft.layers = 8;
+    await editOp({ op: 'stretch', ...state.stretchDraft, grain: state.grainDraft });
+    await new Promise((r) => setTimeout(r, 2500));
+
+    // A playhead inside the stretch, without making a sound.
+    const real = playbackTime;
+    playbackTime = () => (state.grains?.outFrames || 0) / (state.view.sampleRate || 48000) * 0.5;
+    await loadGrains();
+    await new Promise((r) => setTimeout(r, 1200));
+
+    const sr = state.grains?.sampleRate || 48000;
+    const head = playbackTime() * sr;
+    const r = {
+      thin: viewIsThin(),
+      viewShown: state.grains?.grains?.length || 0,
+      viewTotal: state.grains?.total || 0,
+      swarmShown: state.swarm?.grains?.length || 0,
+      swarmCovers: !!(swarmFor && head >= swarmFor[0] && head <= swarmFor[1]),
+    };
+    playbackTime = real;
+    // Put the sound back. These run against a real library and an edit is
+    // saved, so leaving a two-hundred-times stretch at eight layers on somebody
+    // else's file is not a thing a test gets to do.
+    state.stretchDraft.ratio = 2;
+    state.grainDraft.densityHz = 120;
+    state.grainDraft.layers = 2;
+    await editOp({ op: 'stretch', ...state.stretchDraft, grain: state.grainDraft });
+    return r;
+  });
+
+  if (!out.thin) {
+    test.skip(true,
+      `the scratch library's sounds only reach ${out.viewTotal} grains — nothing was thinned`);
+  }
+  expect(out.swarmShown,
+    `the view holds ${out.viewShown} of ${out.viewTotal} grains and there is no dense `
+    + 'copy at all — the sparks have nothing to come from').toBeGreaterThan(0);
+  expect(out.swarmCovers,
+    'a dense schedule was fetched but it does not cover the playhead').toBe(true);
 });
