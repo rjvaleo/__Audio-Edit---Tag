@@ -459,7 +459,23 @@ function vgAttach(canvas) {
           for (let i = 0; i <= VG_LISS_POINTS; i++) {
             const k = i % VG_LISS_POINTS;                   // closed, so the
             const th = (k / VG_LISS_POINTS) * Math.PI * 2;  // last point is the first
-            const l = liss[k * 2], rr = liss[k * 2 + 1];
+            // Periodic by construction.
+            //
+            // Reading the window straight round meant the radius came from its
+            // last sample on one side of the seam and its first on the other —
+            // two unrelated numbers, so the ring closed with a visible kink.
+            // Closing the *line* does not help; the discontinuity is in the
+            // shape.
+            //
+            // So the angle does not index the window linearly. It sweeps
+            // forward and back along a raised cosine, which returns to sample
+            // zero at the seam with its slope already at zero — continuous in
+            // both value and rate, and with no flat spot, which a cross-fade
+            // into the head would have left.
+            const u = k / VG_LISS_POINTS;
+            const j = Math.round((1 - Math.cos(u * Math.PI * 2)) * 0.5
+              * (VG_LISS_POINTS - 1));
+            const l = liss[j * 2], rr = liss[j * 2 + 1];
             const mid = (l + rr) * 0.5, side = (l - rr) * 0.5;
             const rad = r0 * (1 + mid * 0.85 + side * 0.55);
             skyPos[i * 3] = Math.cos(th) * rad;

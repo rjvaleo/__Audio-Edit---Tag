@@ -114,6 +114,9 @@ test('the readouts say what the payload says', async ({ page }) => {
   expect(out.rvu).toBe('+2.1');
   expect(out.corr).toBe('+0.78');
   expect(out.word).toBe('stereo');
+  // One short word, always — a wrapping word changes the row height and moves
+  // every reading below it.
+  expect(out.word.includes(' '), 'the correlation word can wrap').toBe(false);
   // 1.2% of the last hundred milliseconds was above the ceiling's knee.
   expect(out.stateNote).toBe('ceiling 1%');
 });
