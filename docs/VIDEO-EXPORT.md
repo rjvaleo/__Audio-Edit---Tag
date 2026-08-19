@@ -144,18 +144,30 @@ the last spectrum frame reaching the back wall, 2.8 seconds after the final
 sample. Silence on the audio track, a room draining on the video track. That is
 what a tail is.
 
-Two consequences worth stating before they surprise someone. The audio stream is
-shorter than the video stream, which some players dislike and which the muxer
-has to declare deliberately rather than by accident. And the number is derived,
-not chosen: if `VG_HISTORY` or `MB_POLL_MS` move, the outro moves with them, so
-it should be computed from the pair rather than written down as 2.8.
+**The audio track runs the whole way, and the outro is silence in it.** Not a
+short audio stream against a long video one — actual samples, all zero, to the
+last video frame. A file whose streams end at different times is a file that
+some players stop early, some pad themselves, and some report a duration for
+that does not match what they then play; and the muxer has to declare the
+mismatch deliberately rather than trip over it. Writing the silence costs 2.8
+seconds of zeroes and removes the whole class of problem. The two streams are
+the same length and the file says one duration.
+
+So the audio is: the sound, then the rack's tail sounding out, then digital
+silence while the room finishes draining.
+
+The other thing to keep straight is that the outro's length is derived rather
+than chosen. It is `VG_HISTORY` divided by the poll rate — 56 frames at 50 ms —
+and if either constant moves the outro has to move with it. Compute it from the
+pair. Do not write down 2.8.
 
 ## Decided
 
 - **MP4, H.264.** The container that plays everywhere, and the muxer written
   here.
 - **Frame rate is a choice of 30 or 60**, beside the size in the same box.
-- **The video runs past the audio**, as above.
+- **The video runs past the sound**, and the audio track is padded with silence
+  to meet it, so both streams end together.
 - **Vertical's camera is not being designed here.** The finding above stands —
   a tall frame is a narrower room and the ring keeps its size while the room
   loses its width — but what to do about it is coming from elsewhere.
