@@ -6964,7 +6964,8 @@ const ROOM_LAYERS = [
   { key: 'lead', label: 'Edge', hint: 'The frame you are hearing now, drawn with weight along the near edge.' },
   { key: 'sky', label: 'Ring', hint: 'The Lissajous hanging in the sky, pushed out of round by the sound.' },
   { key: 'skin', label: 'Skin', hint: 'The surface between the rings, so the trail is a tube rather than a stack of hoops. Needs Ring.' },
-  { key: 'data', label: 'Data', hint: 'Live grain telemetry, in the corner.' },
+  { key: 'grains', label: 'Grains', hint: 'Every grain in the schedule, as a streak: depth is when it sounds, its length is how long for, across is pan and up is pitch.' },
+  { key: 'data', label: 'Data', hint: 'The schedule itself, printed on the back wall.' },
 ];
 
 /// How many rows travel together before a blank line, and which way each block
@@ -11319,6 +11320,17 @@ function visGlTick() {
     core: vgRgb('--accent', '#7fd0ff'),
     cam: roomCamera(),
     layers: roomLayers(),
+    // The schedule itself, so the room draws the grains that exist rather than
+    // a model of how many there ought to be.
+    grains: state.grains?.grains || null,
+    grainRate: state.grains?.sampleRate || 44100,
+    srcFrames: state.grains?.srcFrames || 0,
+    position: engine.position || 0,
+    // The playhead counts in engine frames at the *device* rate; the schedule
+    // counts in output frames at the document's. A file at 44.1k on a device at
+    // 48k would drift apart steadily if both were divided by the same number.
+    positionRate: engine.deviceRate || state.grains?.sampleRate || 44100,
+    pollMs: MB_POLL_MS,
   });
 }
 

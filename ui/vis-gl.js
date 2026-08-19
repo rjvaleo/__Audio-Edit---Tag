@@ -58,6 +58,15 @@ const VG_HISTORY = 56;
 /// at the size this draws, and fifty-six deep, a quarter of them is the same
 /// picture for a quarter of the memory.
 const VG_LISS_POINTS = 256;
+
+/// How many grain streaks may be drawn at once.
+///
+/// The schedule can hold far more than this — a long file at sixteen layers is
+/// millions — and nothing is served by drawing them: past a few thousand the
+/// room is a solid wash and the cost is real. The cap is on what is *drawn*,
+/// not on what is read, so the ones nearest the playhead are the ones that get
+/// in.
+const VG_GRAIN_CAP = 3000;
 // The leading edge's thickness is `camera.lead`. It is geometry rather than
 // `gl.lineWidth`, which almost every driver clamps to 1 and is therefore not a
 // way to make anything thicker.
@@ -246,6 +255,7 @@ function vgAttach(canvas) {
   let floorPos = null, floorW = null;
   let leadPos = null, leadW = null;
   let skyPos = null, skyW = null;
+  let grainPos = null, grainW = null;
   let skyPrev = null, skyPrevW = null, skyBand = null, skyBandW = null;
 
   const draw = (mode, pos, wts, count, alpha, round, cold, hot, size) => {
@@ -306,7 +316,7 @@ function vgAttach(canvas) {
       const cam = vgCamera(f && f.cam);
       // And owns which parts are drawn. Everything, unless told otherwise —
       // a caller that says nothing gets the room it has always had.
-      const on = { room: true, floor: true, lead: true, sky: true, skin: true, ...(f && f.layers) };
+      const on = { room: true, floor: true, lead: true, sky: true, skin: true, grains: true, ...(f && f.layers) };
       gl.viewport(0, 0, w, h);
       gl.disable(gl.DEPTH_TEST);
       gl.enable(gl.BLEND);
@@ -467,6 +477,89 @@ function vgAttach(canvas) {
           leadW[i * 2] = now[i]; leadW[i * 2 + 1] = now[i];
         }
         draw(gl.TRIANGLE_STRIP, leadPos, leadW, n2, 1.0, false, f.cold, f.hot, 1);
+      }
+
+      // ── the grains ──
+      //
+      // Every grain the schedule holds, drawn as the streak it actually is.
+      //
+      // The room already means something along every axis, so the grains take
+      // those meanings rather than inventing new ones: **depth is time**, which
+      // is the whole idea of this box, so a grain is born at the near face and
+      // travels away from you exactly as the floor does. Across is where it
+      // sits in the stereo field and up is what it was pitched by.
+      //
+      // A streak's *length* is the grain's own duration, because a grain is not
+      // a dot — it sounds for as long as it sounds, and in a room where depth
+      // is time that length is visible rather than inferred. Two clouds with
+      // the same number of grains and different windows look different here,
+      // which is the thing that was hard to see anywhere else.
+      //
+      // Read from `f.grains`, which is the schedule the renderer is working
+      // through — not a model of it. Whatever rule decides how often a grain is
+      // laid down, this draws what was actually laid down.
+      if (on.grains && f.grains && f.grains.length) {
+        const g = f.grains;
+        const sr = f.grainRate || 44100;
+        const span = VG_HISTORY * (f.pollMs || 50) / 1000;   // seconds the room holds
+        const now = (f.position || 0) / (f.positionRate || sr);
+        const pitchSpan = 12;                                 // semitones to the ceiling
+
+        const want = Math.min(g.length, VG_GRAIN_CAP);
+        if (!grainPos || grainPos.length !== VG_GRAIN_CAP * 6) {
+          grainPos = new Float32Array(VG_GRAIN_CAP * 6);
+          grainW = new Float32Array(VG_GRAIN_CAP * 2);
+        }
+        let n = 0;
+        for (let i = 0; i < g.length && n < want; i++) {
+          const e = g[i];
+          const t0 = e[0] / sr;
+          const age = (now - t0) / span;
+          // Not yet sounded, or already gone past the back wall.
+          if (age < -0.02 || age > 1) continue;
+          const life = (e[2] / sr) / span;
+          const a0 = Math.max(0, age);
+          const a1 = Math.min(1, age + life);
+          if (a1 <= a0) continue;
+
+          // Scattered across the face of the room, and travelling back.
+          //
+          // The first version put source position along x, which drew the
+          // schedule as a diagonal ribbon — true, and readable as a chart, but
+          // it made the grains the one thing in this box that is not doing what
+          // the box does. Everything else here fills the frame and recedes;
+          // depth is time and the other two axes are where a thing *is*. The
+          // grains now do the same.
+          //
+          // The scatter is a hash of the grain's own index, so it is stable:
+          // a grain keeps its place for its whole life instead of being
+          // re-thrown every frame, and the same schedule draws the same cloud
+          // twice. `index` is the right key because every jitter the engine
+          // gives a grain is already a pure function of it.
+          const h = (e[7] | 0) * 2654435761 >>> 0;
+          const hx = ((h & 0xffff) / 0x8000) - 1;            // -1..1
+          const hy = (((h >>> 16) & 0xffff) / 0x8000) - 1;
+          // Pan and pitch still read, as a lean on the scatter rather than as
+          // the whole of it: a panned cloud drifts to its side, a detuned one
+          // rises, and neither collapses to a line when it is left at zero.
+          const pitchFrac = Math.max(-1, Math.min(1, (e[3] || 0) / pitchSpan));
+          const x = (hx * 0.82 + (e[6] || 0) * 0.18) * halfW;
+          const y = yb + (yt - yb)
+            * (0.5 + Math.max(-0.48, Math.min(0.48, hy * 0.34 + pitchFrac * 0.22)));
+          const w = Math.min(1, Math.sqrt(Math.max(0, e[4] || 0)) * 2.2);
+
+          grainPos[n * 6] = x; grainPos[n * 6 + 1] = y; grainPos[n * 6 + 2] = zAt(a0);
+          grainPos[n * 6 + 3] = x; grainPos[n * 6 + 4] = y; grainPos[n * 6 + 5] = zAt(a1);
+          grainW[n * 2] = w;
+          grainW[n * 2 + 1] = w * 0.35;   // the tail fades as the grain ends
+          n++;
+        }
+        if (n) {
+          draw(gl.LINES, grainPos, grainW, n * 2, 0.85, false, f.cold, f.core, 1);
+          // The heads, so a dense cloud still reads as separate events rather
+          // than as hatching.
+          draw(gl.POINTS, grainPos, grainW, n * 2, 0.5, true, f.core, f.hot, 3);
+        }
       }
 
       // ── the sky ──
