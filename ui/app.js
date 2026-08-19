@@ -4359,16 +4359,13 @@ function renderStretch() {
       <button class="seg-btn" data-alg="hybrid" title="Splits the sound into tone, hits and air, and stretches each its own way. The slow one, and the only one that will not repeat noise.">Hybrid</button>
       <button class="seg-btn" data-alg="granular" title="A cloud of grains. Not trying to be transparent - this is the one you hear.">Granular</button>
     </div>`;
-  // The panel has no heading any more, so its reset rides on the engine row —
-  // the one line that is always there whichever engine is chosen.
-  // Reset rides on the engine row, and Random deliberately does not — see the
-  // preset row in `index.html`. Five engines and one button is what this row
-  // holds at the narrowest dock width; a second one costs the engine labels.
-  eng.appendChild(resetButton(
-    'stretchReset', 'Reset',
-    'Reset every control on both sides, standard and extended',
-    resetEverything,
-  ));
+  // No reset button on this row any more.
+  //
+  // It was the sixth thing on a row that already lost its engine labels the
+  // moment a second button joined it, and it spent all of its time being a
+  // button you did not want next to five you did. Double-clicking an engine
+  // tab does the same job — see the tabs' `ondblclick` below — which costs the
+  // row nothing and puts the gesture on the thing it resets.
   box.appendChild(eng);
 
   // The order under the picker is fixed, and it is the same on every engine:
@@ -4706,6 +4703,16 @@ function renderStretch() {
       reflectEngine();
       commitStretch();
     };
+    // Double-click resets everything, standard and extended, which is what the
+    // button that used to sit at the end of this row did.
+    //
+    // The engine you land on is where you were already going: the first click
+    // selects, and reset deliberately does not move you somewhere else — see
+    // `resetEverything`. So double-clicking the tab you are on resets in place,
+    // and double-clicking another one arrives there with the controls fresh.
+    //
+    // Undoable like any other edit, because it goes through `editOp`.
+    b.ondblclick = () => { resetEverything(); };
   }
   reflectEngine();
 
@@ -6639,10 +6646,9 @@ function placeExtendedReset() {
   if (!panel) return;
   if (!extResetBtn) {
     extResetBtn = resetButton(
-      // `Reset`, not `Reset all`. They are different actions: this one clears
-      // the extended column and `Reset all` on the engine row clears both. Two
-      // names because two things — the consistency rule is that one *thing* is
-      // named once, not that every button says the same word.
+      // This one clears the extended column only. Everything, standard and
+      // extended, is a double-click on an engine tab — a gesture rather than a
+      // button, so the two do not have to compete for the same strip of room.
       'extReset', 'Reset',
       'Reset only the extended controls — the standard ones are left alone',
       resetExtended,
@@ -8659,7 +8665,7 @@ const MENUS = [
         run: () => setGrainCap(n),
       })),
       { sep: true },
-      { label: 'Reset time, pitch and grains', on: editing, run: click('stretchReset') },
+      { label: 'Reset time, pitch and grains', on: editing, run: resetEverything },
     ],
   },
   {
