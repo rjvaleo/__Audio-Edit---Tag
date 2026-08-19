@@ -2031,3 +2031,60 @@ fn no_window_still_samples_the_whole_document() {
         "the unwindowed sample stopped at {last} of {out_frames} — it is not covering the file",
     );
 }
+
+// ── the cloud's own rate ─────────────────────────────────────────────────────
+//
+// A grain is an event: the same number are laid down every second whether they
+// are short or long. The window used to decide the rate, which is why
+// lengthening a grain thinned the cloud.
+
+#[test]
+fn the_window_no_longer_decides_how_many_grains_there_are() {
+    let sr = 48_000;
+    let mut g = fx::Grain::default();
+    g.rate_hz = 50.0;
+
+    // Two windows an order of magnitude apart, same rate.
+    let short = fx::grain::plan(sr as usize, sr, 1.0, 20.0, &g);
+    let long = fx::grain::plan(sr as usize, sr, 1.0, 500.0, &g);
+
+    assert_eq!(short.hop, long.hop, "the window moved the hop");
+    // Fifty a second at 48k is a grain every 960 frames.
+    assert_eq!(short.hop, 960, "the rate is not what was asked for");
+    // And the grains really are the lengths asked for; only the spacing is
+    // fixed. A cloud of long grains at the same rate is a denser overlap, not
+    // fewer events.
+    assert!(long.base_size > short.base_size * 20, "the window stopped mattering entirely");
+}
+
+#[test]
+fn without_a_rate_the_old_rule_still_runs() {
+    let sr = 48_000;
+    let g = fx::Grain::default();
+    assert_eq!(g.rate_hz, 0.0, "the default changed, and old documents with it");
+
+    // Window over overlap, exactly as before: 40 ms at 2x is a 20 ms hop.
+    let p = fx::grain::plan(sr as usize, sr, 1.0, 40.0, &g);
+    assert_eq!(p.hop, (0.020 * sr as f32) as usize);
+
+    // And doubling the window still halves the rate, which is the behaviour
+    // `rate_hz` exists to replace rather than to delete.
+    let wide = fx::grain::plan(sr as usize, sr, 1.0, 80.0, &g);
+    assert_eq!(wide.hop, p.hop * 2);
+}
+
+#[test]
+fn the_cloud_rate_leaves_the_window_engines_alone() {
+    let sr = 48_000.0;
+    let mut g = fx::Grain::default();
+    g.rate_hz = 200.0;
+
+    // `hop_frames` is what WSOLA, the vocoder, PVSOLA and the hybrid read. It
+    // must not see this at all: a 200 Hz rate against an 8192-point window is
+    // the 15x overlap that measured unplayable, and it is meaningless there
+    // anyway — that hop is how far a transform advances.
+    let win = 8192;
+    let with_rate = fx::stretch::hop_frames(&g, win, sr);
+    let without = fx::stretch::hop_frames(&fx::Grain::default(), win, sr);
+    assert_eq!(with_rate, without, "the cloud's rate reached a window engine");
+}
