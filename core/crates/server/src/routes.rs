@@ -2092,6 +2092,9 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 };
 
                 let grain = fx::Grain {
+                    // The cloud's own emission rate. Zero keeps the old rule, so a
+                    // document written before this existed sounds as it did.
+                    rate_hz: gf("rateHz", cur.rate_hz).clamp(0.0, 2000.0),
                     density_hz: gf("densityHz", cur.density_hz).clamp(0.0, 500.0),
                     layers: gf("layers", cur.layers as f32).clamp(1.0, 16.0) as u32,
                     overlap: gf("overlap", cur.overlap).clamp(1.0, 8.0),
@@ -2945,6 +2948,7 @@ fn api_engine_state(app: &Arc<App>) -> Response {
                             .set("windowMs", p.window_ms as f64)
                             .set("inFrames", p.in_frames as f64)
                             .set("outFrames", p.plan().out_frames as f64)
+                            .set("rateHz", p.grain.rate_hz as f64)
                             .set("densityHz", p.grain.density_hz as f64)
                             .set("overlap", p.grain.overlap as f64)
                             .set("sizeJitter", p.grain.size_jitter as f64)

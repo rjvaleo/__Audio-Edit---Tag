@@ -15,8 +15,33 @@
 /// exactly as the plain stretcher did.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Grain {
+    /// Grains per second, **for the grain cloud alone**.
+    ///
+    /// The rate the cloud emits at, independent of how long a grain lasts. A
+    /// grain is an event: it is spawned, it sounds for as long as it lasts, and
+    /// it ends, and none of that waits on the grain before it. So the same
+    /// number of them is laid down every second whether they are five
+    /// milliseconds long or two seconds.
+    ///
+    /// This is not `density_hz`, and the difference is the whole reason it
+    /// exists. `density_hz` is read by every engine — WSOLA, the vocoder,
+    /// PVSOLA and the hybrid all take their hop from it through
+    /// `stretch::hop_frames`, where it means how far a *transform* advances
+    /// rather than how often a grain is thrown. Making it the cloud's control
+    /// would reach into four engines that do not want it: past a 100 ms window
+    /// it takes them from 2x overlap to the floor's 8x, four times the
+    /// transform work, for a setting that only ever described grains. See
+    /// `docs/GRAIN-EMISSION.md`.
+    ///
+    /// Zero means "as it always was": the hop comes from `density_hz` if that
+    /// is set, and from the window over `overlap` if it is not. A document
+    /// written before this existed therefore sounds exactly as it did.
+    pub rate_hz: f32,
     /// Grains per second. Zero derives it from grain size and overlap, which is
     /// the classic behaviour.
+    ///
+    /// Shared with the window engines; see `rate_hz` above for why the cloud no
+    /// longer takes its own rate from here.
     pub density_hz: f32,
     /// How many grains cover any given moment. 2.0 is 50% overlap.
     pub overlap: f32,
@@ -126,6 +151,7 @@ pub struct Grain {
 impl Default for Grain {
     fn default() -> Self {
         Grain {
+            rate_hz: 0.0,
             density_hz: 0.0,
             overlap: 2.0,
             // Zero is the sweep's own beginning, which is where it always was.
@@ -278,7 +304,20 @@ pub fn plan(
     // rather than a stutter, so two seconds is allowed.
     let base_size = (((window_ms.clamp(5.0, 2000.0) / 1000.0) * sr) as usize).max(32);
     let overlap = g.overlap.clamp(1.0, 8.0);
-    let hop = if g.density_hz > 0.0 {
+    // The cloud's own rate first, then the shared one, then the window.
+    //
+    // Only the first of these is free of the window. `density_hz` is the same
+    // number the window engines read; the third *is* the window, divided by how
+    // many should cover a moment, and it is why lengthening a grain used to
+    // thin the cloud — at 40 ms and 2x it lays down fifty a second, and at
+    // 200 ms it lays down ten.
+    //
+    // No floor beyond the eight frames that keep the schedule finite. A small
+    // hop is the entire point here, unlike in `stretch::hop_frames` where it is
+    // an overlap of a transform and has to bear some relation to its size.
+    let hop = if g.rate_hz > 0.0 {
+        ((sr / g.rate_hz.clamp(0.1, 2000.0)) as usize).max(8)
+    } else if g.density_hz > 0.0 {
         ((sr / g.density_hz.clamp(0.5, 2000.0)) as usize).max(8)
     } else {
         (base_size as f32 / overlap).max(8.0) as usize
@@ -840,12 +879,21 @@ pub fn granular_with(
     // put back what layering takes away. Both paths call `layer_gain`; see it
     // for why the compensation is a square root.
     let lift = layer_gain(g.layers);
+    // Floored at one, exactly as the live renderer floors it.
+    //
+    // Dividing by the summed envelope outright is right for a stretcher and
+    // wrong for an emitter: a grain sounding alone becomes `(s·w)/w = s`, its
+    // envelope divided straight back out, flat and clicking at both ends. That
+    // was inaudible only while `hop = size / overlap` guaranteed overlap, and
+    // the cloud's rate is free of the window now.
+    //
+    // The two paths have to agree to the sample — `engine::render` renders the
+    // same schedule a block at a time and there are tests that hold it — so
+    // this is not merely the same idea in both places, it is the same rule.
     for f in 0..p.out_frames {
-        let n = norm[f];
-        if n > 1e-6 {
-            for ch in 0..channels {
-                out[f * channels + ch] = out[f * channels + ch] / n * lift;
-            }
+        let n = norm[f].max(1.0);
+        for ch in 0..channels {
+            out[f * channels + ch] = out[f * channels + ch] / n * lift;
         }
     }
     out.truncate(p.out_frames * channels);

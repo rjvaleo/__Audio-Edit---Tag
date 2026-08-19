@@ -66,7 +66,22 @@ const VG_LISS_POINTS = 256;
 /// room is a solid wash and the cost is real. The cap is on what is *drawn*,
 /// not on what is read, so the ones nearest the playhead are the ones that get
 /// in.
-const VG_GRAIN_CAP = 3000;
+const VG_GRAIN_CAP = 6000;
+
+/// How long the grains persist along the depth axis, in seconds.
+///
+/// **Not the floor's trail.** The terrain holds `VG_HISTORY` frames at the
+/// poll's rate, which is 2.8 seconds, and while the grains shared that number
+/// the room drew about a hundred of them out of four thousand in hand — the
+/// depth window was the limit, not the cap, and the picture was thinner than
+/// the waveform's own grain layer for no reason anybody could see.
+///
+/// The floor's length is set by what a spectrum trail is worth keeping. A
+/// grain's is set by how much of the schedule is worth having in the air at
+/// once, which is a different question with a much longer answer: they are
+/// discrete marks that stay legible stacked deep, where a spectrum ridge just
+/// becomes fog.
+const VG_GRAIN_SPAN_S = 14;
 // The leading edge's thickness is `camera.lead`. It is geometry rather than
 // `gl.lineWidth`, which almost every driver clamps to 1 and is therefore not a
 // way to make anything thicker.
@@ -501,7 +516,7 @@ function vgAttach(canvas) {
       if (on.grains && f.grains && f.grains.length) {
         const g = f.grains;
         const sr = f.grainRate || 44100;
-        const span = VG_HISTORY * (f.pollMs || 50) / 1000;   // seconds the room holds
+        const span = VG_GRAIN_SPAN_S;                        // seconds of schedule in the air
         const now = (f.position || 0) / (f.positionRate || sr);
         const pitchSpan = 12;                                 // semitones to the ceiling
 
@@ -555,10 +570,14 @@ function vgAttach(canvas) {
           n++;
         }
         if (n) {
-          draw(gl.LINES, grainPos, grainW, n * 2, 0.85, false, f.cold, f.core, 1);
-          // The heads, so a dense cloud still reads as separate events rather
-          // than as hatching.
-          draw(gl.POINTS, grainPos, grainW, n * 2, 0.5, true, f.core, f.hot, 3);
+          // Glow, then the mark, then the head — which is how the waveform's
+          // own grain layer reads: a soft wash that gathers where grains are
+          // dense, a definite line for each one, and a brighter point where it
+          // starts. The wash is what makes a thousand of them look like a
+          // thousand instead of like hatching.
+          draw(gl.POINTS, grainPos, grainW, n * 2, 0.10, true, f.cold, f.core, 14);
+          draw(gl.LINES, grainPos, grainW, n * 2, 0.55, false, f.cold, f.core, 1);
+          draw(gl.POINTS, grainPos, grainW, n * 2, 0.45, true, f.core, f.hot, 3);
         }
       }
 
@@ -576,7 +595,11 @@ function vgAttach(canvas) {
       // Drawn round on screen at every depth because the frustum's width is
       // derived from its height times the aspect, so one world unit is the same
       // number of pixels across as it is up.
-      if (on.sky) {
+      // The skin stands on its own, the way the terrain does against the edge.
+      // Both are built from the same rings, so the geometry is shared — but
+      // which of them is *drawn* is two decisions, and a surface with no hoops
+      // on it is a perfectly good thing to want.
+      if (on.sky || on.skin) {
         const skyY = yb + (yt - yb) * cam.skyAt;
         const r0 = (yt - yb) * cam.ring;
         const N = VG_LISS_POINTS + 1;
@@ -677,7 +700,7 @@ function vgAttach(canvas) {
         }
 
         // ── the hoops ──
-        for (let r = 0; r < rows; r++) {
+        for (let r = 0; on.sky && r < rows; r++) {
           if (!ringInto(r, skyPos, skyW)) continue;
           const age = ageOf(r);
           const lead = r === rows - 1;

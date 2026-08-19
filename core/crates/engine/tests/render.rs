@@ -129,7 +129,20 @@ fn channels_stay_separate() {
     let sp = params(in_frames, Grain::default(), 1.0, 0.0);
 
     let out = render_blocks(&src, &sp, 256, 4_000);
-    for f in 200..3_800 {
+    // From one hop in, not from frame 200.
+    //
+    // The cloud opens with its first grain's attack now. Until the second grain
+    // starts there is only one sounding, so the summed envelope is below unity
+    // — and the normaliser is floored at one, which means the opening is the
+    // grain's own fade rather than a level pulled up to full instantly. That
+    // floor is what stops an isolated grain having its envelope divided back
+    // out and clicking at both ends; the price is that the first hop is a fade
+    // in, which is what an emitter should do and what the old rule hid.
+    //
+    // The window is 40 ms at 2x overlap, so one hop is 20 ms. Steady state
+    // starts after that and the reconstruction is exact from there on.
+    let hop = (0.020 * SR as f32) as usize;
+    for f in (hop * 2)..3_800 {
         assert!((out[f * 2] - 0.5).abs() < 0.02, "left drifted at {f}: {}", out[f * 2]);
         assert!((out[f * 2 + 1] + 0.5).abs() < 0.02, "right drifted at {f}: {}", out[f * 2 + 1]);
     }

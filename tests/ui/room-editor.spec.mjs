@@ -711,3 +711,100 @@ test('the grains are drawn from the schedule, and spread across the source',
     const off = await shot();
     expect(off.n, 'something kept drawing after the grains were turned off').toBe(0);
   });
+
+/// The skin stands on its own, the way the terrain does against the edge.
+test('the skin draws with the hoops turned off', async ({ page }) => {
+  await openRoom(page);
+
+  const lit = await page.evaluate(async () => {
+    const gl = document.getElementById('visGl');
+    const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
+    if (!ctx) return null;
+    for (const k of ['floor', 'lead', 'room', 'data', 'grains']) roomEdit.layers[k] = false;
+
+    const liss = new Float32Array(512);
+    for (let i = 0; i < 256; i++) {
+      const t = (i / 256) * Math.PI * 2;
+      liss[i * 2] = 0.7 * Math.sin(t * 3);
+      liss[i * 2 + 1] = 0.7 * Math.sin(t * 2);
+    }
+    for (let i = 0; i < 24; i++) visGl.push(new Float32Array(128).fill(-40), liss);
+
+    const count = () => new Promise((res) => requestAnimationFrame(() => {
+      visGl.frame({ cold: [0.3, 0.6, 0.9], hot: [0.4, 0.8, 0.5], core: [0.5, 0.8, 1],
+        cam: roomCamera(), layers: roomLayers() });
+      const px = new Uint8Array(gl.width * gl.height * 4);
+      ctx.readPixels(0, 0, gl.width, gl.height, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
+      let n = 0;
+      for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 12) n++;
+      res(n);
+    }));
+
+    roomEdit.layers.sky = false; roomEdit.layers.skin = true;
+    const skinOnly = await count();
+    roomEdit.layers.skin = false;
+    const neither = await count();
+    return { skinOnly, neither };
+  });
+
+  if (lit === null) test.skip(true, 'no readable WebGL context in this harness');
+  expect(lit.skinOnly, 'the skin needs the hoops to draw').toBeGreaterThan(0);
+  expect(lit.neither, 'something drew with both off').toBe(0);
+});
+
+/// The grains persist far deeper than the floor's trail.
+///
+/// They shared the terrain's 2.8 seconds and the room drew about a hundred of
+/// four thousand in hand — the depth window was the limit, not the cap, and the
+/// room was thinner than the waveform's own grain layer for no visible reason.
+/// A spectrum ridge becomes fog when it is stacked deep; a grain stays a mark.
+test('the room holds far more schedule than the floor does', async ({ page }) => {
+  await openRoom(page);
+
+  const seen = await page.evaluate(() => {
+    const gl = document.getElementById('visGl');
+    const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
+    if (!ctx) return null;
+    for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+    roomEdit.layers.grains = true;
+
+    // Twelve seconds of grains at fifty a second, and a playhead at the end of
+    // them — so what is drawn is entirely a question of how deep the room is.
+    const sr = 44100, srcFrames = sr * 60;
+    const grains = [];
+    for (let i = 0; i < 600; i++) {
+      grains.push([Math.round((i / 50) * sr), Math.round((i / 600) * srcFrames),
+        Math.round(sr * 0.04), 0, 0.5, 0.5, 0, i]);
+    }
+
+    const shot = () => {
+      visGl.frame({
+        cold: [0.3, 0.6, 0.9], hot: [0.4, 0.8, 0.5], core: [0.5, 0.8, 1],
+        cam: roomCamera(), layers: roomLayers(),
+        grains, grainRate: sr, srcFrames,
+        position: sr * 12, positionRate: sr, pollMs: 50,
+      });
+      const px = new Uint8Array(gl.width * gl.height * 4);
+      ctx.readPixels(0, 0, gl.width, gl.height, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
+      let n = 0;
+      for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 12) n++;
+      return n;
+    };
+
+    // How many of those 600 fall inside the room, worked out the same way the
+    // renderer does, so the assertion is about the window and not about pixels.
+    const inSpan = (span) => grains.filter((e) => {
+      const a = (12 - e[0] / sr) / span;
+      return a >= -0.02 && a <= 1;
+    }).length;
+
+    return { lit: shot(), floorsTrail: inSpan(2.8), roomsDepth: inSpan(14) };
+  });
+
+  if (seen === null) test.skip(true, 'no readable WebGL context in this harness');
+  expect(seen.lit, 'the grains drew nothing').toBeGreaterThan(0);
+  expect(seen.floorsTrail, 'the floor-length window should hold about 140').toBeLessThan(200);
+  // Five times the depth, five times the schedule in the air.
+  expect(seen.roomsDepth, `${seen.roomsDepth} in the room against ${seen.floorsTrail} in the floor's trail`)
+    .toBeGreaterThan(seen.floorsTrail * 3);
+});
