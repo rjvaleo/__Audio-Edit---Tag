@@ -61,8 +61,28 @@ writeFileSync(join(data, 'config.json'), JSON.stringify({ library }));
 
 // --------------------------------------------------------------- the server
 
-if (!spawnSync('test', ['-x', binary]).status === 0) {
-  console.error(`no binary at ${binary} — cargo build --release --manifest-path core/Cargo.toml`);
+// Build first, always.
+//
+// The interface is `include_str!`-embedded in the binary, so editing `ui/app.js`
+// and running the suite without a rebuild tests **the previous interface** —
+// and passes, which is the worst possible outcome: a green run that proves
+// nothing about the change that was just made. Checking the file merely exists,
+// which is what this did, cannot catch that.
+//
+// `cargo build` is a no-op when nothing has moved, so the cost of never being
+// able to make that mistake again is a fraction of a second per run.
+process.stderr.write('building the binary the tests will drive…\n');
+const built = spawnSync(
+  'cargo',
+  ['build', '--release', '--manifest-path', join(root, 'core/Cargo.toml')],
+  { stdio: ['ignore', 'ignore', 'inherit'] },
+);
+if (built.status !== 0) {
+  console.error('the build failed — the suite would have run against the last one');
+  process.exit(1);
+}
+if (spawnSync('test', ['-x', binary]).status !== 0) {
+  console.error(`no binary at ${binary} after a successful build`);
   process.exit(1);
 }
 
