@@ -28,61 +28,54 @@ to it with the root. Everything in the interface reads its colours through
 `var(--x)`, so scoping the variables to a container themes everything inside it
 and nothing outside.
 
-## No colour codes
+## Ported, not invented
 
-The first version put three `<input type="color">` in the panel. That is a
-developer's idea of a colour tool: nobody chooses a theme by typing `#0e1116`.
+This is Emovis' `lib/theme-studio`, which was written to be lifted: it depends
+on React and nothing else there, and on nothing at all here. Its derivation
+engine came across long ago as `theme-derive.js`; the editor is what never did.
 
-What the panel offers instead is five things you can feel, each drawn as a strip
-you drag, painted with what it does across its whole length so the choice is
-visible before it is made:
+Two attempts were made at writing one from scratch first — three colour pickers,
+then five sliders — and both were worse than the thing that already existed. The
+port took less time than either.
 
-| control | what it moves |
-|---|---|
-| **Hue** | the whole theme turns |
-| **Accent** | its own hue, so the interval against the theme can be chosen |
-| **Colour** | how saturated the surfaces are, grey through to vivid |
-| **Contrast** | how far apart the rungs sit — flat and moody, or every panel separated |
-| **Light** | where the ladder sits, deep black through to a light interface |
+## What it is
 
-Six **variations** sit under them — as is, warmer, cooler, complement, triad,
-mono — because turning one hue at a time only ever finds the theme next door,
-and the interesting ones are usually a third of the way round the wheel.
+A palette is a name and a handful of brand colours. The engine turns those into
+this application's tokens, and the preview is painted entirely from them, which
+is what makes it an editor rather than a form.
 
-Beside them, the **contrast figures**: text, dim and dimmer against the surface
-they sit on, in WCAG ratios, marked when they fall under 4.5 and coloured when
-they fall under 3. A theme that cannot be read is not a theme, and that is not
-obvious by eye on a colour you have been staring at for a minute.
+- A filterable **list**, with the shipped palettes marked *built in* and the one
+  in use marked *applied*.
+- **Name**, and **N colours** — each a colour well *and* a hex field. Both,
+  deliberately: the well is how a colour is chosen, the hex is how one arrives
+  from a style guide. Add and remove them freely.
+- **Apply**, **Duplicate**, **Delete**. A built-in can be previewed and
+  duplicated but never edited or deleted, so a palette someone has built on can
+  never be pulled out from under them.
+- **Copy JSON** and **Import JSON**, so a palette can leave and come back.
+- A **token inspector** — every derived value with its chip. Sixty rows is a
+  reference rather than a control, but when a theme looks wrong this is where
+  the reason is.
 
-**Light and dark are one control, not a switch.** Push *Light* past the middle
-and the text ladder turns over: the default is light text on dark ground with
-its dim steps *below* the brightest, and on a light theme the text must be dark
-with its dim steps *above* — otherwise "dim" would mean brighter than the thing
-it is dimming.
+**Clicking a palette wears it.** The studio this came from is an admin screen
+with the application somewhere else, so there a click opened a palette without
+applying it. Here the panel sits inside the thing being themed and looking at
+the app in a theme is the entire reason to click one. It opens in the editor at
+the same time.
 
-## The ladder, not the colours
+## The waveform belongs to the palette
 
-The earlier plan was to name eight surface steps, four text steps and one accent
-directly, because deriving sixty tokens from five produces arbitrary results.
-That plan was wrong — not because derivation is fine, but because hand-naming
-thirteen colours is work, and asking someone to do work is not a design.
+It used to sit above the studio as one standing choice, on the argument that a
+theme has no business colouring the sound. That argument was about *derivation*
+and it still holds — the waveform is not worked out from the surfaces, because
+which colour reads best against a sound is a matter of the sound. But a theme
+can still **carry** one, and being asked for it is what makes a theme a whole
+look rather than the chrome half of one.
 
-**The palette that ships is already a good theme.** So the ladder is not
-invented: it is *measured* from the stylesheet's own `:root` and reproduced.
+Each palette holds its own; wearing a palette brings its waveform with it.
+Without one, the standing choice stands.
 
-- Read every default surface and text token, resolved to RGB.
-- Record each one's lightness and saturation relative to the base of its group.
-- Given a picked colour, keep those relationships and move the hue, the
-  saturation and the whole ladder's lightness to match it.
-
-The contrast structure the panels were designed against is preserved by
-construction, because it is copied from the panels' own design rather than
-guessed at. What the pickers choose is where the ladder sits and what colour it
-is — not how far apart its rungs are.
-
-Three pickers: **surface**, **text**, **accent**.
-
-## What a theme still may not touch
+## What a theme still may not touch## What a theme still may not touch
 
 `--good`, `--warn` and `--bad` carry meaning rather than style. `--wave` and
 `--wave-2` belong to the sound, not the chrome. Lines and shadows are
