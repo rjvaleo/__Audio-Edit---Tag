@@ -35,10 +35,14 @@ The first branch is already the behaviour we want, and there is already a
 **Density** slider in front of it — 0 to 500, where 0 reads "auto". So the
 emission model is half-built.
 
-## Density is not granular's to take
+## The cloud needs a rate of its own
 
-**This is the finding that changes the shape of the job.** `density_hz` does not
-belong to the grain cloud. It is read by every engine:
+**The cloud is the granular engine — the thing that emits the grains you hear.**
+This whole document is about sound. Where the room and the streaks come into it
+they are a readout, and they are the last section.
+
+The cloud's rate should be a control the cloud owns, and there is no such
+control today. There is one field, `density_hz`, and every engine reads it:
 
 ```rust
 Algorithm::Wsola   => hop_frames(&sp.grain, win, sr)
@@ -72,12 +76,17 @@ At the default 40 ms window nothing moves. Past 100 ms the window engines go
 from 2× overlap to the floor's 8× — four times the transform work — for a
 setting that was only ever meant to describe grains.
 
-**The grain cloud therefore needs its own rate**, and `density_hz` should keep
-meaning what it means to the window engines. One field is currently carrying two
-unrelated ideas: for WSOLA and the vocoder it is a quality-and-cost knob on a
-transform, and for the cloud it is an aesthetic control over how often something
-is thrown into the air. Splitting them is the change, and it also settles a
-confusion that is already there.
+**So the cloud gets a rate of its own**, and `density_hz` is left meaning what
+it means to the window engines. One field is carrying two unrelated ideas: for
+WSOLA and the vocoder it is a quality-and-cost knob on a transform, and for the
+cloud it is how often something is thrown into the air.
+
+To be plain about which way this cuts, because the finding is easy to read
+backwards: it is not an argument for the cloud having less say over its own
+rate. It is the reason the cloud cannot get that say by borrowing a field that
+is already spoken for. The cloud ends up with more control, not less — a rate
+that is its own, that the window no longer touches, and that no other engine
+can be broken by.
 
 ## The gain law is safe only because of the coupling
 
