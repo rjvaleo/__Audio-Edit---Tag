@@ -4322,7 +4322,7 @@ const HYBRID_DEFAULTS = {
   harmonicLevel: 1, percussiveLevel: 1, residualLevel: 1,
 };
 const GRAIN_DEFAULTS = {
-  densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
+  rateHz: 0, densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
   pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5, layers: 1,
   scan: 1, reverse: false, envelope: 0.5, sizeRange: 1, wrap: false,
   layerSpread: 1, linkJitter: false, driftStep: false, panSpread: 0,
@@ -4819,8 +4819,10 @@ function renderGrainParams() {
      'How often something is laid down, how long it is, how many of them, and how much any of that varies. Every engine answers these — a window is a splice for WSOLA and an analysis frame for the vocoder.', [
       ['Position', 'position', -1, 1, 0.001, (v) => `${(v * 100).toFixed(1)}%`,
        'Where in the source the cloud reads from, as a fraction of the file. Measured from where the sweep begins — the start going forwards, the end going backwards — so zero is the ordinary sweep. Turn Scan down to nothing and this is the whole instrument: the read head parks wherever you put it and the cloud is made from that one place. Automate it and the head skips around under its own hand.'],
+      ['Rate', 'rateHz', 0, 500, 1, (v) => (v <= 0 ? 'off' : `${Math.round(v)}/s`),
+       'Grains per second, for the cloud alone — how often a grain is thrown, with nothing to do with how long it lasts. A grain is an event: it is spawned, it sounds for as long as it sounds, and it ends, and none of that waits on the one before it. So the same number are laid down every second whether they are five milliseconds long or two. Off, the old rule applies and the rate comes from the window instead, which is why lengthening a grain used to thin the cloud. This control is the cloud’s own and does not touch WSOLA, the vocoder, PVSOLA or the hybrid — Density does, and reaching into them is what it costs.'],
       ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'auto' : `${Math.round(v)}/s`),
-       'How often a window is laid down, in windows per second. On “auto” the rate comes from the window length divided by Overlap instead, which is what keeps the sound even as the window changes.'],
+       'How often a window is laid down, in windows per second. Read by every engine, so it is the *window* engines’ control as much as the cloud’s; for the cloud alone use Rate above. On “auto” the rate comes from the window length divided by Overlap instead, which is what keeps the sound even as the window changes.'],
       ['Layers', 'layers', 1, 16, 1, (v) => `${Math.round(v)}×`,
        'How many copies of the whole engine run at once, each reading its own place in the source. Level is compensated by the square root of the count, which is exact once Scatter or the jitters have decorrelated them.'],
       ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`,
@@ -6200,6 +6202,7 @@ const PM_SCHEMA = [
     ['stretch.hybrid.fftSize', 'Resolution'],
   ]],
   ['Grain shape', [
+    ['stretch.grain.rateHz', 'Rate'],
     ['stretch.grain.densityHz', 'Density'],
     ['stretch.grain.layers', 'Layers'],
     ['stretch.grain.overlap', 'Overlap'],
@@ -6963,7 +6966,7 @@ const ROOM_LAYERS = [
   { key: 'floor', label: 'Terrain', hint: 'The spectrum along the floor, receding as it ages.' },
   { key: 'lead', label: 'Edge', hint: 'The frame you are hearing now, drawn with weight along the near edge.' },
   { key: 'sky', label: 'Ring', hint: 'The Lissajous hanging in the sky, pushed out of round by the sound.' },
-  { key: 'skin', label: 'Skin', hint: 'The surface between the rings, so the trail is a tube rather than a stack of hoops. Needs Ring.' },
+  { key: 'skin', label: 'Skin', hint: 'The surface between the rings, so the trail is a tube rather than a stack of hoops. Stands on its own — the hoops can be off.' },
   { key: 'grains', label: 'Grains', hint: 'Every grain in the schedule, as a streak: depth is when it sounds, its length is how long for, across is pan and up is pitch.' },
   { key: 'data', label: 'Data', hint: 'The schedule itself, printed on the back wall.' },
 ];
@@ -8937,6 +8940,7 @@ function pushGrainParams() {
       ratio: st.ratio,
       semitones: st.semitones,
       windowMs: st.windowMs,
+      rateHz: g.rateHz,
       densityHz: g.densityHz,
       overlap: g.overlap,
       sizeJitter: g.sizeJitter,

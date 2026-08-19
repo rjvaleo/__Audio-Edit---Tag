@@ -186,9 +186,32 @@ impl BlockRenderer {
         }
     }
 
+    /// Take a grain, stealing the oldest voice if the pool is full.
+    ///
+    /// It used to drop the *incoming* grain. For a stretcher that is
+    /// defensible; for an emitter it is backwards. The newest grain is the one
+    /// carrying the material you are listening for, so at the ceiling the cloud
+    /// stopped taking in anything new and played out what it already had — a
+    /// smear that got staler the harder you pushed it.
+    ///
+    /// Stealing the oldest keeps the cloud current, and makes the ceiling sound
+    /// like a limit on *how many at once* rather than on *how new*. The
+    /// overflow counter still counts, because a stolen voice is still a grain
+    /// that did not get to finish.
     fn push(&mut self, event: GrainEvent, shape: Shape) {
         if self.live == MAX_VOICES {
             self.overflows += 1;
+            // The oldest is the one that has played the most of itself, which
+            // is also the one with least left to lose.
+            let mut oldest = 0;
+            let mut played = 0u32;
+            for (i, v) in self.voices[..self.live].iter().enumerate() {
+                if v.played >= played {
+                    played = v.played;
+                    oldest = i;
+                }
+            }
+            self.voices[oldest] = Voice { event, played: 0, shape };
             return;
         }
         self.voices[self.live] = Voice { event, played: 0, shape };
@@ -315,13 +338,34 @@ impl BlockRenderer {
         // About fifteen milliseconds. Slower and adding a layer feels late;
         // faster and the step is back.
         let k = 1.0 - (-1.0f32 / (0.015 * sp.sample_rate.max(1) as f32)).exp();
+        // Normalise only where grains pile above unity.
+        //
+        // Dividing by the summed envelope outright is the right thing for a
+        // stretcher and the wrong thing for an emitter. For a grain sounding
+        // alone it is `(s·w)/w = s` — the envelope divided straight back out,
+        // so the grain plays flat, begins and ends at full amplitude, and
+        // clicks at both ends.
+        //
+        // That has never been audible, and the reason is the coupling this
+        // release removes: `hop = size / overlap` *guarantees* grains overlap,
+        // so `norm` is always a sum of two or more Hann windows and sits near
+        // one. With the cloud's rate free of the window, a low rate or a short
+        // grain leaves real gaps — and every grain alone in a gap would lose
+        // its shape.
+        //
+        // So the floor is one. Above it the division behaves exactly as it did:
+        // dense clouds hold their level while the texture thickens. Below it
+        // grains simply sum, which is what an emitter should do — adding grains
+        // adds level the way adding stars adds light — and the silence between
+        // them stays silence. The knee is at one grain covering each moment,
+        // which is also where the cloud stops being able to reconstruct a
+        // signal and starts being a scatter of events: the gain law and the
+        // aesthetic change hands in the same place.
         for f in 0..frames {
             self.lift += (want - self.lift) * k;
-            let n = self.norm[f];
-            if n > 1e-6 {
-                for ch in 0..channels {
-                    out[f * channels + ch] = out[f * channels + ch] / n * self.lift;
-                }
+            let n = self.norm[f].max(1.0);
+            for ch in 0..channels {
+                out[f * channels + ch] = out[f * channels + ch] / n * self.lift;
             }
         }
 
