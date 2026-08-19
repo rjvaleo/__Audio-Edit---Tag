@@ -2316,6 +2316,21 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* The room's front face lands exactly on this element's edges, so a border or
    a rounded corner would be a frame drawn over the frame. The panel is the box. */
 #visGl { border: 0; border-radius: 0; background: transparent; }
+
+/* The panel filling the screen.
+   Normally it is a flex child with the page behind it, so it never needed a
+   background of its own. Fullscreen there is nothing behind it at all and the
+   browser paints its own black, which is not this theme's black — the room
+   would sit in a colour the palette never chose. Padding keeps the box off the
+   bezel; the front face still lands on the element's edges, which is now
+   almost the whole screen. */
+#masterBus:fullscreen {
+  background: var(--bg);
+  padding: 12px;
+  gap: 14px;
+}
+/* Room to read them at that size. The column is sized for a dock, not a wall. */
+#masterBus:fullscreen .mb-side { flex-basis: 176px; }
 .mb-cell-3d { flex: 1 1 auto; min-height: 0; }
 .mb-cell-vu { flex: 1 1 auto; }
 
