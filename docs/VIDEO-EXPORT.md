@@ -125,12 +125,43 @@ of holding their absolute size.
 Square sits in between and probably survives with the numbers it has. It should
 be looked at before it is promised.
 
-## Undecided
+## Two tails, and the video outlives both
 
-- **Container.** MP4 with H.264 plays everywhere and is the more work to mux;
-  WebM with VP9 is the simpler mux and the narrower audience.
-- **Frame rate.** 30 or 60. At 4K60 a ten-minute render is 36,000 frames and
-  somewhere between 1.5 and 3 GB.
-- **Whether the tail extends the video past the audio** or the two end together.
-- **What vertical's camera actually is**, which wants looking at rather than
-  deciding on paper.
+The audio tail is the one `docs/EXPORT-LOOP.md` already builds: after the last
+repeat the rack goes on sounding, and those samples are kept instead of being
+truncated. It is part of the audio, so the picture covers it the way it covers
+everything else.
+
+There is a second one, and it is the room's rather than the rack's. The floor
+holds `VG_HISTORY` frames of spectrum — 56 of them, pushed at `MB_POLL_MS` of
+50 ms — so **2.8 seconds** of sound are on their way to the back wall at any
+moment. When the audio stops, that terrain is still travelling. Cut the video on
+the last sample and the room is chopped mid-journey with the last ridges hanging
+in the middle of it.
+
+So the video runs past the audio, and keeps running until the room has emptied:
+the last spectrum frame reaching the back wall, 2.8 seconds after the final
+sample. Silence on the audio track, a room draining on the video track. That is
+what a tail is.
+
+Two consequences worth stating before they surprise someone. The audio stream is
+shorter than the video stream, which some players dislike and which the muxer
+has to declare deliberately rather than by accident. And the number is derived,
+not chosen: if `VG_HISTORY` or `MB_POLL_MS` move, the outro moves with them, so
+it should be computed from the pair rather than written down as 2.8.
+
+## Decided
+
+- **MP4, H.264.** The container that plays everywhere, and the muxer written
+  here.
+- **Frame rate is a choice of 30 or 60**, beside the size in the same box.
+- **The video runs past the audio**, as above.
+- **Vertical's camera is not being designed here.** The finding above stands —
+  a tall frame is a narrower room and the ring keeps its size while the room
+  loses its width — but what to do about it is coming from elsewhere.
+
+## Still open
+
+- Nothing blocking. The size list, the container, the rate and the two tails are
+  settled; the remaining unknowns are the ordinary ones that turn up while
+  writing a muxer.
