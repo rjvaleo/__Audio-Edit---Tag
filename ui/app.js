@@ -991,6 +991,27 @@ $('stopBtn').onclick = () => {
   paintTime();
 };
 
+/// Double-click for the top of the file, rather than for the cue.
+///
+/// Stop returns to the cue, which is right — it is where you said playback
+/// starts from — but it leaves no way back to the beginning except moving the
+/// cue there, and then you have lost the cue.
+///
+/// So the cue is deliberately not touched by this. The comment on `state.cue`
+/// is the reason: the point of a cue is that auditioning the same moment over
+/// and over does not mean re-finding it, and a transport gesture that quietly
+/// threw it away would cost more than it saved. This is a return to zero, not
+/// a re-cue.
+///
+/// The pair of clicks underneath arrive first and each returns to the cue, so
+/// the seek to zero lands last and wins.
+$('stopBtn').ondblclick = () => {
+  pausePlayback();
+  seekSource(0);
+  updatePlayhead();
+  paintTime();
+};
+
 // ------------------------------------------------------------ loop playback
 
 // Loop is simply on or off. What it loops follows from whether anything is
