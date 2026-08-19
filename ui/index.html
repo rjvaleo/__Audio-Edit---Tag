@@ -174,18 +174,44 @@
           </div>
         </div>
       </div>
-      <div class="theme-picks">
-        <label class="tm-pick"><span>Surface</span>
-          <input type="color" id="themeSurface" value="#0e1116"></label>
-        <label class="tm-pick"><span>Text</span>
-          <input type="color" id="themeText" value="#e6ebef"></label>
-        <label class="tm-pick"><span>Accent</span>
-          <input type="color" id="themeAccent" value="#4aa3ff"></label>
+      <!-- No hex fields. Nobody chooses a theme by typing a colour code —
+           you turn the hue until it looks right, decide how colourful and how
+           contrasty, and pick the accent against it. See `docs/THEME-EDITOR.md`. -->
+      <div class="tm-ctl">
+        <span class="tm-ctl-k">Hue</span>
+        <canvas class="tm-strip" id="themeHue"
+          title="Drag. The whole theme turns with it."></canvas>
       </div>
+      <div class="tm-ctl">
+        <span class="tm-ctl-k">Accent</span>
+        <canvas class="tm-strip" id="themeAccentHue"
+          title="Drag. Marked against the theme's own hue, so you can see the interval you are choosing."></canvas>
+      </div>
+      <div class="tm-ctl">
+        <span class="tm-ctl-k">Colour</span>
+        <canvas class="tm-strip tm-strip-sm" id="themeChroma"
+          title="How colourful the surfaces are — grey at one end, saturated at the other."></canvas>
+      </div>
+      <div class="tm-ctl">
+        <span class="tm-ctl-k">Contrast</span>
+        <canvas class="tm-strip tm-strip-sm" id="themeContrast"
+          title="How far apart the steps sit. Low is flat and moody; high separates every panel."></canvas>
+      </div>
+      <div class="tm-ctl">
+        <span class="tm-ctl-k">Light</span>
+        <canvas class="tm-strip tm-strip-sm" id="themeLift"
+          title="Where the whole ladder sits — deep black through to a light interface."></canvas>
+      </div>
+
+      <div class="tm-vary-head">
+        <span class="tm-ctl-k">Variations</span>
+        <span class="mono dim tm-contrast" id="themeContrastRead"></span>
+      </div>
+      <div class="tm-vary" id="themeVary"></div>
       <div class="fx-row theme-edit-actions">
         <button class="ghost" id="themeEditReset">Reset</button>
         <button class="ghost" id="themeEditApply">Apply</button>
-        <button class="ghost" id="themeEditSave">Save as…</button>
+        <button class="ghost" id="themeEditSave">Save as&hellip;</button>
       </div>
       <div class="fx-note">The ladder is measured from the interface's own
       colours and reproduced, so the contrast the panels were designed against

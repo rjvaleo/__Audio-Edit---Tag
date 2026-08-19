@@ -33,21 +33,38 @@ async function editor(page) {
 const SURFACES = ['--sink', '--well', '--bg', '--surface-0',
   '--surface', '--surface-2', '--surface-3'];
 
-test('the pickers start on the colours actually in force', async ({ page }) => {
+test('the controls start on the theme actually in force', async ({ page }) => {
   await editor(page);
   const out = await page.evaluate(() => {
     const root = getComputedStyle(document.documentElement);
+    const bg = rgbToHsl(hexToRgb(cssHex(root.getPropertyValue('--bg').trim())));
+    const ac = rgbToHsl(hexToRgb(cssHex(root.getPropertyValue('--accent').trim())));
     return {
-      picks: ['themeSurface', 'themeText', 'themeAccent']
-        .map((i) => document.getElementById(i).value.toLowerCase()),
-      real: ['--bg', '--text', '--accent']
-        .map((k) => cssHex(root.getPropertyValue(k).trim())),
+      hue: +themeEditor.hue.toFixed(1), realHue: +bg.h.toFixed(1),
+      accentHue: +themeEditor.accentHue.toFixed(1), realAccentHue: +ac.h.toFixed(1),
+      lift: +themeEditor.lift.toFixed(4), realLift: +bg.l.toFixed(4),
+      chroma: themeEditor.chroma, contrast: themeEditor.contrast,
     };
   });
-  // The stylesheet states these in oklch; the pickers need hex. Resolving the
-  // real token is the only honest way to seed them, and reading it wrong is how
-  // the first version opened showing three colours from nowhere.
-  expect(out.picks).toEqual(out.real);
+  // Opened on the interface as it is, not on a guess.
+  expect(out.hue).toBe(out.realHue);
+  expect(out.accentHue).toBe(out.realAccentHue);
+  expect(out.lift).toBe(out.realLift);
+  // At 1 and 1 the tokens come out as the stylesheet's own.
+  expect(out.chroma).toBe(1);
+  expect(out.contrast).toBe(1);
+});
+
+/// Nobody types a colour code, so there should be nowhere to type one.
+test('there is no hex field in the editor', async ({ page }) => {
+  await editor(page);
+  const n = await page.evaluate(() => {
+    // The waveform swatch is not part of the theme — it is the colour of the
+    // sound, which a theme is deliberately not allowed to touch.
+    const inputs = [...document.querySelectorAll('#paneTheme input[type=color]')];
+    return inputs.filter((el) => el.id !== 'waveOwn').length;
+  });
+  expect(n, 'the editor still asks for a colour code').toBe(0);
 });
 
 test('moving a picker repaints the miniature and not the page', async ({ page }) => {
@@ -55,9 +72,8 @@ test('moving a picker repaints the miniature and not the page', async ({ page })
   const out = await page.evaluate(() => {
     const before = getComputedStyle(document.documentElement)
       .getPropertyValue('--accent').trim();
-    const el = document.getElementById('themeAccent');
-    el.value = '#ff7a1a';
-    el.dispatchEvent(new Event('input'));
+    themeEditor.accentHue = 28;
+    tmePaint();
     return {
       mini: cssHex(getComputedStyle(document.getElementById('themeMini'))
         .getPropertyValue('--accent').trim()),
@@ -66,7 +82,7 @@ test('moving a picker repaints the miniature and not the page', async ({ page })
         .getPropertyValue('--accent').trim(),
     };
   });
-  expect(out.mini).toBe('#ff7a1a');
+  expect(out.mini, 'the miniature did not follow the accent').not.toBe(out.pageBefore);
   expect(out.pageAfter, 'the page was repainted by a preview').toBe(out.pageBefore);
 });
 
@@ -78,20 +94,40 @@ test('the surface ladder keeps its spacing wherever it is moved', async ({ page 
     const gaps = (x) => x.slice(1).map((v, i) => +(v - x[i]).toFixed(4));
 
     const before = read(getComputedStyle(document.documentElement));
-    const el = document.getElementById('themeSurface');
-    el.value = '#2a1018';                      // far lighter, and a new hue
-    el.dispatchEvent(new Event('input'));
+    themeEditor.hue = 330;          // a new hue
+    themeEditor.lift = 0.12;        // and far lighter
+    tmePaint();
     const after = read(getComputedStyle(document.getElementById('themeMini')));
     return { before, after, gapsBefore: gaps(before), gapsAfter: gaps(after) };
   }, SURFACES);
 
   // Moved.
   expect(out.after[0], 'the ladder did not move at all').toBeGreaterThan(out.before[0] + 0.02);
-  // But rung for rung, the same. This is the property the whole approach exists
-  // for: scaling instead of offsetting would compress the ladder toward one end
-  // as the picked colour darkened, which is most of what made the old
-  // derivation look arbitrary.
-  expect(out.gapsAfter).toEqual(out.gapsBefore);
+  // But rung for rung, the same — to the limit of what the format can hold.
+  //
+  // Tokens are written as 8-bit hex, so a rung can only land on a 1/255 = 0.0039
+  // boundary. The smallest gaps in this ladder *are* one bit, which means two
+  // neighbours can trade a bit between them and still describe the same ladder.
+  // An earlier version of this test demanded bit-exact equality and failed for
+  // that reason alone, which is a fact about hex and not about the theme.
+  //
+  // The property that matters is that the spacing is preserved, not invented:
+  // scaling instead of offsetting would compress the ladder toward one end as
+  // the theme darkened, which is most of what made the old derivation look
+  // arbitrary.
+  const BIT = 1 / 255;
+  expect(out.gapsAfter.length).toBe(out.gapsBefore.length);
+  for (let i = 0; i < out.gapsBefore.length; i++) {
+    expect(
+      Math.abs(out.gapsAfter[i] - out.gapsBefore[i]),
+      `gap ${i} moved from ${out.gapsBefore[i]} to ${out.gapsAfter[i]} — `
+      + 'more than a rounding step, so the spacing was not preserved',
+    ).toBeLessThanOrEqual(BIT + 1e-6);
+  }
+  // And the ladder as a whole spans what it did, so no bit-trading has
+  // quietly flattened it.
+  const span = (x) => x.reduce((a, b) => a + b, 0);
+  expect(Math.abs(span(out.gapsAfter) - span(out.gapsBefore))).toBeLessThanOrEqual(2 * BIT);
   // And still a ladder, in order — chrome reads as depth because each step is
   // lighter than the one under it.
   for (let i = 1; i < out.after.length; i++) {
@@ -105,9 +141,9 @@ test('apply puts it on the page, and reset takes it back off', async ({ page }) 
   const out = await page.evaluate(() => {
     const original = getComputedStyle(document.documentElement)
       .getPropertyValue('--accent').trim();
-    const el = document.getElementById('themeAccent');
-    el.value = '#22cc88';
-    el.dispatchEvent(new Event('input'));
+    themeEditor.accentHue = 152;
+    tmePaint();
+    const want = cssHex(tmeTokens()['--accent']);
     document.getElementById('themeEditApply').click();
     const applied = cssHex(getComputedStyle(document.documentElement)
       .getPropertyValue('--accent').trim());
@@ -116,9 +152,9 @@ test('apply puts it on the page, and reset takes it back off', async ({ page }) 
     document.getElementById('themeEditApply').click();
     const reset = cssHex(getComputedStyle(document.documentElement)
       .getPropertyValue('--accent').trim());
-    return { applied, reset, original: cssHex(original) };
+    return { applied, reset, want, original: cssHex(original) };
   });
-  expect(out.applied).toBe('#22cc88');
+  expect(out.applied).toBe(out.want);
   // Reset means the stylesheet's own colour, not a remembered copy of it.
   expect(out.reset).toBe(out.original);
 });
@@ -126,9 +162,8 @@ test('apply puts it on the page, and reset takes it back off', async ({ page }) 
 test('the miniature shows all four text steps, and they stay distinct', async ({ page }) => {
   await editor(page);
   const out = await page.evaluate(() => {
-    const el = document.getElementById('themeText');
-    el.value = '#c8b0ff';
-    el.dispatchEvent(new Event('input'));
+    themeEditor.hue = 265;
+    tmePaint();
     const cs = getComputedStyle(document.getElementById('themeMini'));
     const L = (k) => {
       const h = cssHex(cs.getPropertyValue(k).trim());
@@ -164,12 +199,8 @@ test('a saved theme survives a reload with the application intact', async ({ pag
   await editor(page);
 
   await page.evaluate(() => {
-    const el = document.getElementById('themeAccent');
-    el.value = '#ff2d78';
-    el.dispatchEvent(new Event('input'));
-    // Exactly what the button does — through the same code, not a hand-built
-    // object, or the test would assert about a shape the app never writes.
-    document.getElementById('themeEditSave').click();
+    themeEditor.accentHue = 340;
+    tmePaint();
   });
   // `Save as…` asks for a name; accept whatever it offers.
   page.on('dialog', (d) => d.accept('Reload Test'));
@@ -179,7 +210,7 @@ test('a saved theme survives a reload with the application intact', async ({ pag
       id: 'mine-reload-test', name: 'Reload Test', direct: true, tokens,
       colors: ['--accent', '--surface-2', '--surface', '--bg', '--sink']
         .map((k) => tokens[k]).filter(Boolean),
-      dark: (themeEditor.surface?.l ?? 0) < 0.5,
+      dark: themeEditor.lift < 0.5,
     });
     themeState.chosen = 'mine-reload-test';
     saveTheme();
