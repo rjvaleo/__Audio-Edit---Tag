@@ -74,8 +74,9 @@ test('double-clicking the room takes the panel full screen and back', async ({ p
   expect(during.clientW, 'the box did not get wider').toBeGreaterThan(before.clientW);
   expect(during.backingW, 'the backing store did not follow the box')
     .toBeGreaterThan(before.backingW);
-  // The meter column is given room to be read at that size.
-  expect(during.sideW, 'the meter column did not widen').toBeGreaterThan(before.sideW);
+  // And nothing else. Full screen is what the video export films, which has no
+  // meter column, so the room takes the whole frame.
+  expect(during.sideW, 'the meter column is still taking a strip of the room').toBe(0);
 
   // Double-click again to come back. Escape works too, but that is the
   // browser's own handling of fullscreen rather than anything this code does —

@@ -2316,6 +2316,16 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* The room's front face lands exactly on this element's edges, so a border or
    a rounded corner would be a frame drawn over the frame. The panel is the box. */
 #visGl { border: 0; border-radius: 0; background: transparent; }
+/* The stacking in this cell, stated in one place because it is the whole
+   illusion.
+   The data is *behind* the canvas, which is what puts the room in front of it:
+   the canvas clears to transparent and blends additively, so the terrain, the
+   ring and the leading edge lie over the text the way they would lie over
+   anything painted on the far wall. Everything that is furniture rather than
+   room — the peak readout, the FFT sizes, the editor — sits above the canvas,
+   because those are things on the glass and not things in the box. */
+.mb-cell-3d > #visGl { z-index: 1; }
+.mb-cell-3d > .mb-note, .mb-cell-3d > .mb-res { z-index: 2; }
 
 /* The panel filling the screen.
    Normally it is a flex child with the page behind it, so it never needed a
@@ -2329,20 +2339,124 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   padding: 12px;
   gap: 14px;
 }
-/* Room to read them at that size. The column is sized for a dock, not a wall. */
-#masterBus:fullscreen .mb-side { flex-basis: 176px; }
+/* Full screen is the room and nothing else.
+   The meter column was kept at first, on the reasoning that the numbers stay
+   readable at that size. That was the wrong call: full screen is the state you
+   put this in to *look* at the room — it is what the video export films, and
+   that has no meter column either — so a strip of ladders down one side is a
+   strip of the room taken away for something you can read any other time. */
+#masterBus:fullscreen .mb-side { display: none; }
+#masterBus:fullscreen { gap: 0; }
 
 /* ── the room editor ──────────────────────────────────────────────────────────
    An overlay that does not take the pointer. Everything that edits the room is
    a drag on the room, so the only things here that can be clicked are the
    frame shapes and the way back. */
+/* Top right, the one corner of the room with nothing in it. */
+.re-open {
+  position: absolute; top: 5px; right: 6px; z-index: 5;
+  height: 15px; padding: 0 7px;
+  border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
+  color: var(--text-2); font: inherit; font-size: 8.5px; line-height: 1;
+  letter-spacing: .05em; cursor: pointer;
+}
+/* Full strength, and a word rather than a glyph.
+   The first version was a 17px mark at 55% opacity that came up to full only on
+   hover, which is a fine way to keep a corner tidy and a useless way to tell
+   anyone the room can be posed at all: on a dark box it simply was not there.
+   An affordance that has to be hovered to be seen has not been offered. */
+.re-open:hover { color: var(--text-2); border-color: var(--line); }
+.re-open.on { color: var(--bg); background: var(--accent); border-color: var(--accent); opacity: 1; }
+
 .room-edit {
-  position: absolute; inset: 0; pointer-events: none;
+  position: absolute; inset: 0; pointer-events: none; z-index: 4;
   display: flex; flex-direction: column; justify-content: space-between;
-  padding: 6px 8px; z-index: 2;
+  padding: 6px 8px;
 }
 .room-edit.hidden { display: none; }
 .re-frames { display: flex; gap: 3px; pointer-events: auto; }
+.re-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+/* The one control here that is a value rather than a choice, and it is still a
+   drag: how strongly the data sits on the wall is a thing you judge by looking
+   at it against the room, not a number anyone could name. */
+.re-slider {
+  pointer-events: auto; width: 54px; height: 11px; margin: 0;
+  accent-color: var(--accent); background: transparent; cursor: ew-resize;
+}
+.re-tag {
+  font-size: 7.5px; letter-spacing: .1em; color: var(--text-dim);
+  width: 38px; flex: 0 0 auto;
+}
+
+/* ── the grain block ──────────────────────────────────────────────────────────
+   A readout in the corner of the room. Monospaced, tight, and lit from the
+   accent, because this is a glitch instrument and this is the part of it that
+   should look like the inside of one. It stays legible: every value is a real
+   number the engine is working to, so the styling gets the glow and the numbers
+   keep the contrast. */
+/* Down the right, under the Room button.
+   The left of the room belongs to the editor's rows and the bottom corners are
+   the FFT sizes and the peak readout, so the right column is the one edge with
+   nothing already on it. Put top-left, it sat straight on top of the layer
+   buttons the moment the editor was opened. */
+/* Printed on the room's back wall.
+   Position and scale are set from the camera in `paintRoomData` — the wall is
+   GPU geometry and never exists as an element, so there is nothing to attach
+   to and the rectangle is derived instead. No background: it is on the wall,
+   not on a card in front of it. */
+.room-data {
+  position: absolute; z-index: 0;
+  /* Clipped to the wall. The block's box is the wall's box, so anything that
+     does not fit is simply not seen — no bleed past the corners of the room. */
+  overflow: hidden;
+  padding: 0;
+  /* Stated here rather than inherited from the `mono` class, because the whole
+     layout is measured in `ch` and a proportional face would make that unit
+     mean nothing. */
+  font-family: var(--mono);
+  /* Small, thin, and the wall's own blue.
+     The room's wireframe is drawn at weights of 0.02 to 0.16, which in the
+     shader is essentially pure `uCold` — the `--wave-2` token — and very dim.
+     Type set at the interface's usual size and colour was heavier than every
+     line in the box, so the readout became the loudest thing on screen when it
+     is meant to be the faintest. Same hue, thinner stroke, smaller. */
+  font-size: 7px; line-height: 9px; font-weight: 300; pointer-events: none;
+  color: var(--wave-2);
+  /* Thins the stroke on macOS, which is most of the difference between type
+     that sits on the wall and type that sits in front of it. */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  overflow: hidden; white-space: pre;
+  font-variant-numeric: tabular-nums;
+  /* Ligatures off. `JetBrains Mono` will otherwise join things like `->` into
+     one glyph, which is one character narrower than the two it replaced. */
+  font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0;
+}
+.room-data.hidden { display: none; }
+/* White, and the same size as everything else in this box.
+   The first version was accent-coloured and larger than its neighbours, which
+   made a readout look like a badge. This is a stream of numbers to be read
+   past rather than a label to be noticed, so it takes the interface's own text
+   colour and the same 8.5px the FFT row and the camera line use. */
+/* All of it the wall's blue, only the strength differs — and none of it as
+   strong as the leading edge, which is the thing in this box that is supposed
+   to be bright. */
+.rd-head { color: color-mix(in srgb, var(--wave-2) 62%, transparent); margin-bottom: 1px; }
+.rd-hdr { color: color-mix(in srgb, var(--wave-2) 45%, transparent); letter-spacing: .04em; }
+.rd-row { color: color-mix(in srgb, var(--wave-2) 70%, transparent); }
+/* The rows further down fall away, the same way the floor does with depth. */
+.rd-row:nth-child(n+9) { color: color-mix(in srgb, var(--wave-2) 52%, transparent); }
+.rd-row:nth-child(n+15) { color: color-mix(in srgb, var(--wave-2) 38%, transparent); }
+.rd-row:nth-child(n+22) { color: color-mix(in srgb, var(--wave-2) 26%, transparent); }
+.rd-idle { color: color-mix(in srgb, var(--wave-2) 30%, transparent); }
+/* The blank line between blocks. It carries spaces rather than being absent, so
+   the grid never shifts when a block happens to be short. */
+.rd-gap { visibility: hidden; }
+/* Over budget, or grains being dropped. Not decoration — the two states where
+   what you are hearing is not what the settings asked for. */
+/* The two states where what you hear is not what was asked for. Still thin,
+   still small — just not blue. */
+.room-data.rd-hot .rd-head { color: color-mix(in srgb, var(--bad) 75%, transparent); }
 .re-btn {
   height: 15px; padding: 0 7px;
   border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
@@ -2383,7 +2497,12 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   max-width: 100%;
   outline: 1px solid var(--line-2);
 }
-.mb-cell-3d { flex: 1 1 auto; min-height: 0; }
+/* The room's ground.
+   It was on the canvas, which made the canvas opaque and hid whatever was
+   behind it. It belongs on the cell: then the stack from back to front is
+   ground, the grain block printed on the far wall, and the room itself drawn
+   over both on glass. */
+.mb-cell-3d { flex: 1 1 auto; min-height: 0; background: var(--sink); border-radius: 4px; }
 .mb-cell-vu { flex: 1 1 auto; }
 
 /* Bottom right, out of the way of the frequency labels along the top. */
@@ -2446,9 +2565,15 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* Popped out, the meters take the whole column back. */
 .tray-right > .grain-vis.hidden + .master-bus { flex: 1 1 auto; }
 
+/* Layout only.
+   This rule used to also set `background: var(--sink)`, a border and a radius —
+   all three of which the rule further up deliberately removes, and being later
+   at equal specificity it won. The border and radius were a frame drawn over
+   the room's own front face, and the opaque background sat over anything behind
+   the canvas, which is where the grain block is printed. The ground moved to
+   the cell; the canvas is glass. */
 #visGl {
   flex: 1; width: 100%; min-height: 0; display: block;
-  border-radius: 7px; background: var(--sink); border: 1px solid var(--line);
 }
 #visGl.hidden { display: none; }
 
