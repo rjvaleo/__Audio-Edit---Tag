@@ -271,6 +271,10 @@ function vgAttach(canvas) {
   let leadPos = null, leadW = null;
   let skyPos = null, skyW = null;
   let grainPos = null, grainW = null;
+  // The grains in the air. Each is on its own journey once it is in here.
+  const grainLive = [];
+  let grainClock = 0;
+  let grainSeen = null;
   let skyPrev = null, skyPrevW = null, skyBand = null, skyBandW = null;
 
   const draw = (mode, pos, wts, count, alpha, round, cold, hot, size) => {
@@ -513,71 +517,108 @@ function vgAttach(canvas) {
       // Read from `f.grains`, which is the schedule the renderer is working
       // through — not a model of it. Whatever rule decides how often a grain is
       // laid down, this draws what was actually laid down.
-      if (on.grains && f.grains && f.grains.length) {
-        const g = f.grains;
-        const sr = f.grainRate || 44100;
-        const span = VG_GRAIN_SPAN_S;                        // seconds of schedule in the air
-        const now = (f.position || 0) / (f.positionRate || sr);
-        const pitchSpan = 12;                                 // semitones to the ceiling
+      // ── the grains ──
+      //
+      // **They spawn, and then they are on their own.**
+      //
+      // Every other traveller in this room works that way already: a spectrum
+      // frame is pushed once and then walks to the back wall on its own, and it
+      // keeps walking after the sound has stopped. The grains did not — they
+      // were worked out fresh every frame from where the playhead is, which
+      // welds them to it: stop the transport and they freeze, seek and they
+      // jump, and none of that is what a thing travelling through a room does.
+      //
+      // So a grain is spawned when it sounds, given a place in the room, and
+      // from then on it ages against the wall clock like everything else here.
+      // Its journey is its own. The schedule decides when one is born and
+      // nothing after that.
+      if (on.grains) {
+        const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        const dt = grainClock ? Math.min(0.25, (nowMs - grainClock) / 1000) : 0;
+        grainClock = nowMs;
 
-        const want = Math.min(g.length, VG_GRAIN_CAP);
-        if (!grainPos || grainPos.length !== VG_GRAIN_CAP * 6) {
-          grainPos = new Float32Array(VG_GRAIN_CAP * 6);
-          grainW = new Float32Array(VG_GRAIN_CAP * 2);
+        // Age everyone, and bury whoever has reached the wall.
+        if (dt > 0) {
+          const step = dt / VG_GRAIN_SPAN_S;
+          let keep = 0;
+          for (let i = 0; i < grainLive.length; i++) {
+            const p = grainLive[i];
+            p.age += step;
+            if (p.age <= 1) grainLive[keep++] = p;
+          }
+          grainLive.length = keep;
         }
-        let n = 0;
-        for (let i = 0; i < g.length && n < want; i++) {
-          const e = g[i];
-          const t0 = e[0] / sr;
-          const age = (now - t0) / span;
-          // Not yet sounded, or already gone past the back wall.
-          if (age < -0.02 || age > 1) continue;
-          const life = (e[2] / sr) / span;
-          const a0 = Math.max(0, age);
-          const a1 = Math.min(1, age + life);
-          if (a1 <= a0) continue;
 
-          // Scattered across the face of the room, and travelling back.
-          //
-          // The first version put source position along x, which drew the
-          // schedule as a diagonal ribbon — true, and readable as a chart, but
-          // it made the grains the one thing in this box that is not doing what
-          // the box does. Everything else here fills the frame and recedes;
-          // depth is time and the other two axes are where a thing *is*. The
-          // grains now do the same.
-          //
-          // The scatter is a hash of the grain's own index, so it is stable:
-          // a grain keeps its place for its whole life instead of being
-          // re-thrown every frame, and the same schedule draws the same cloud
-          // twice. `index` is the right key because every jitter the engine
-          // gives a grain is already a pure function of it.
-          const h = (e[7] | 0) * 2654435761 >>> 0;
-          const hx = ((h & 0xffff) / 0x8000) - 1;            // -1..1
-          const hy = (((h >>> 16) & 0xffff) / 0x8000) - 1;
-          // Pan and pitch still read, as a lean on the scatter rather than as
-          // the whole of it: a panned cloud drifts to its side, a detuned one
-          // rises, and neither collapses to a line when it is left at zero.
-          const pitchFrac = Math.max(-1, Math.min(1, (e[3] || 0) / pitchSpan));
-          const x = (hx * 0.82 + (e[6] || 0) * 0.18) * halfW;
-          const y = yb + (yt - yb)
-            * (0.5 + Math.max(-0.48, Math.min(0.48, hy * 0.34 + pitchFrac * 0.22)));
-          const w = Math.min(1, Math.sqrt(Math.max(0, e[4] || 0)) * 2.2);
+        // Birth: every grain the playhead has crossed since the last frame.
+        if (f.grains && f.grains.length) {
+          const sr = f.grainRate || 44100;
+          const now = (f.position || 0) / (f.positionRate || sr);
+          // A seek, a restart, or the first frame. Do not pour the whole file
+          // into the room to catch up — the grains between then and now were
+          // never heard, so they were never born.
+          if (grainSeen === null || now < grainSeen || now - grainSeen > 1.0) {
+            grainSeen = now;
+          }
+          if (now > grainSeen) {
+            const pitchSpan = 12;                     // semitones to the ceiling
+            for (let i = 0; i < f.grains.length; i++) {
+              const e = f.grains[i];
+              const t0 = e[0] / sr;
+              if (t0 <= grainSeen || t0 > now) continue;
+              if (grainLive.length >= VG_GRAIN_CAP) break;
 
-          grainPos[n * 6] = x; grainPos[n * 6 + 1] = y; grainPos[n * 6 + 2] = zAt(a0);
-          grainPos[n * 6 + 3] = x; grainPos[n * 6 + 4] = y; grainPos[n * 6 + 5] = zAt(a1);
-          grainW[n * 2] = w;
-          grainW[n * 2 + 1] = w * 0.35;   // the tail fades as the grain ends
-          n++;
+              // Scattered across the room, stable per grain: the hash is of the
+              // grain's own index, which is the same key every jitter the
+              // engine gives it is already a pure function of. So a grain keeps
+              // its place for its whole journey.
+              const h = (e[7] | 0) * 2654435761 >>> 0;
+              const hx = ((h & 0xffff) / 0x8000) - 1;
+              const hy = (((h >>> 16) & 0xffff) / 0x8000) - 1;
+              const pitchFrac = Math.max(-1, Math.min(1, (e[3] || 0) / pitchSpan));
+              grainLive.push({
+                age: 0,
+                // Held as fractions of the room rather than as world units, so
+                // a grain already travelling keeps its place when the camera
+                // moves under it.
+                fx: hx * 0.86 + (e[6] || 0) * 0.14,
+                fy: Math.max(-0.48, Math.min(0.48, hy * 0.34 + pitchFrac * 0.22)),
+                // How much of the room's depth this grain's own length covers.
+                life: Math.max(0.004, (e[2] / sr) / VG_GRAIN_SPAN_S),
+                w: Math.min(1, Math.sqrt(Math.max(0, e[4] || 0)) * 2.2),
+              });
+            }
+            grainSeen = now;
+          }
         }
-        if (n) {
-          // Glow, then the mark, then the head — which is how the waveform's
-          // own grain layer reads: a soft wash that gathers where grains are
-          // dense, a definite line for each one, and a brighter point where it
-          // starts. The wash is what makes a thousand of them look like a
-          // thousand instead of like hatching.
-          draw(gl.POINTS, grainPos, grainW, n * 2, 0.10, true, f.cold, f.core, 14);
-          draw(gl.LINES, grainPos, grainW, n * 2, 0.55, false, f.cold, f.core, 1);
-          draw(gl.POINTS, grainPos, grainW, n * 2, 0.45, true, f.core, f.hot, 3);
+
+        if (grainLive.length) {
+          if (!grainPos || grainPos.length !== VG_GRAIN_CAP * 6) {
+            grainPos = new Float32Array(VG_GRAIN_CAP * 6);
+            grainW = new Float32Array(VG_GRAIN_CAP * 2);
+          }
+          let n = 0;
+          for (let i = 0; i < grainLive.length && n < VG_GRAIN_CAP; i++) {
+            const p = grainLive[i];
+            const a0 = Math.max(0, p.age);
+            const a1 = Math.min(1, p.age + p.life);
+            if (a1 <= a0) continue;
+            const x = p.fx * halfW;
+            const y = yb + (yt - yb) * (0.5 + p.fy);
+            grainPos[n * 6] = x; grainPos[n * 6 + 1] = y; grainPos[n * 6 + 2] = zAt(a0);
+            grainPos[n * 6 + 3] = x; grainPos[n * 6 + 4] = y; grainPos[n * 6 + 5] = zAt(a1);
+            grainW[n * 2] = p.w;
+            grainW[n * 2 + 1] = p.w * 0.35;
+            n++;
+          }
+          if (n) {
+            // Glow, then the mark, then the head — which is how the waveform's
+            // own grain layer reads: a soft wash that gathers where grains are
+            // dense, a definite line for each one, and a brighter point where
+            // it starts.
+            draw(gl.POINTS, grainPos, grainW, n * 2, 0.10, true, f.cold, f.core, 14);
+            draw(gl.LINES, grainPos, grainW, n * 2, 0.55, false, f.cold, f.core, 1);
+            draw(gl.POINTS, grainPos, grainW, n * 2, 0.45, true, f.core, f.hot, 3);
+          }
         }
       }
 

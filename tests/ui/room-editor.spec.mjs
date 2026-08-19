@@ -638,78 +638,89 @@ test('the ring is a surface, not a stack of hoops', async ({ page }) => {
 // Depth is when it sounds, its length is how long for, across is where in the
 // source it reads.
 
-test('the grains are drawn from the schedule, and spread across the source',
+test('grains spawn from the schedule, then travel on their own',
   async ({ page }) => {
     await openRoom(page);
 
-    // A schedule made here rather than whatever the scratch library happens to
-    // produce. Its two tones are a second long and the schedule is windowed
-    // around the playhead, so the real count swings between five and forty
-    // between runs — which is a fine thing for the app and a useless thing to
-    // assert against. What is being held is the *mapping*: a hundred grains
-    // spread evenly across the source must come out spread across the room.
-    const made = await page.evaluate(() => {
+    const out = await page.evaluate(async () => {
+      const gl = document.getElementById('visGl');
+      const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
+      if (!ctx) return null;
+      for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+      roomEdit.layers.grains = true;
+
       const sr = 44100, srcFrames = sr * 10;
       const grains = [];
       for (let i = 0; i < 100; i++) {
         const f = i / 99;
-        grains.push([
-          Math.round(f * sr * 2),      // out: over the two seconds the room holds
-          Math.round(f * srcFrames),   // src: evenly across the file
-          Math.round(sr * 0.04),       // size: 40 ms
-          0, 0.5, 0.5, 0, i,           // pitch, rms, bright, pan, index
-        ]);
+        grains.push([Math.round(f * sr * 2), Math.round(f * srcFrames),
+          Math.round(sr * 0.04), 0, 0.5, 0.5, 0, i]);
       }
-      window.__probe = { grains, sr, srcFrames };
-      for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
-      roomEdit.layers.grains = true;
-      return grains.length;
-    });
-    expect(made).toBe(100);
 
-    const shot = async () => page.evaluate(() => {
-      const gl = document.getElementById('visGl');
-      const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
-      if (!ctx) return null;
-      const p = window.__probe;
-      visGl.frame({
-        cold: [0.3, 0.6, 0.9], hot: [0.4, 0.8, 0.5], core: [0.5, 0.8, 1],
-        cam: roomCamera(), layers: roomLayers(),
-        grains: p.grains, grainRate: p.sr, srcFrames: p.srcFrames,
-        // Playhead at the far end, so every grain is inside the room.
-        position: p.sr * 2, positionRate: p.sr, pollMs: 50,
-      });
-      const px = new Uint8Array(gl.width * gl.height * 4);
-      ctx.readPixels(0, 0, gl.width, gl.height, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
-      const cols = new Set();
-      const rws = new Set();
-      let n = 0;
-      for (let i = 0; i < px.length; i += 4) {
-        if (px[i] + px[i + 1] + px[i + 2] > 12) {
-          n++;
-          const p = (i / 4) | 0;
-          cols.add(p % gl.width);
-          rws.add((p / gl.width) | 0);
+      const paint = (payload) => {
+        visGl.frame({
+          cold: [0.3, 0.6, 0.9], hot: [0.4, 0.8, 0.5], core: [0.5, 0.8, 1],
+          cam: roomCamera(), layers: roomLayers(),
+          grainRate: sr, srcFrames, positionRate: sr, pollMs: 50,
+          ...payload,
+        });
+        const px = new Uint8Array(gl.width * gl.height * 4);
+        ctx.readPixels(0, 0, gl.width, gl.height, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
+        const cols = new Set(); const rws = new Set();
+        let n = 0, deepest = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] + px[i + 1] + px[i + 2] > 12) {
+            n++;
+            const q = (i / 4) | 0;
+            cols.add(q % gl.width); rws.add((q / gl.width) | 0);
+          }
         }
+        return { n, cols: cols.size, rows: rws.size, width: gl.width, height: gl.height, deepest };
+      };
+
+      // The first frame only sets the baseline: nothing has been crossed yet,
+      // so nothing is born. That is the point — the schedule says *when* a
+      // grain arrives, and arriving is an event, not a standing fact.
+      const first = paint({ grains, position: 0 });
+      // Walked forward the way a playhead walks, in steps well under the jump
+      // that counts as a seek. A seek is not a birth: skipping two seconds
+      // ahead did not *play* the grains in between, so they were never heard
+      // and must never appear.
+      let born = first;
+      for (let t = 0.1; t <= 2.0001; t += 0.1) {
+        born = paint({ grains, position: Math.round(sr * t) });
       }
-      return { n, cols: cols.size, rows: rws.size, width: gl.width, height: gl.height };
+
+      // Now sever it: no schedule at all, and no playhead. Whatever is in the
+      // room was heard, and it should still be flying.
+      await new Promise((r) => setTimeout(r, 350));
+      const orphaned = paint({ grains: null, position: 0 });
+      await new Promise((r) => setTimeout(r, 350));
+      const later = paint({ grains: null, position: 0 });
+
+      return { first, born, orphaned, later };
     });
 
-    const on = await shot();
-    if (on === null) test.skip(true, 'no readable WebGL context in this harness');
-    expect(on.n, 'the grains drew nothing').toBeGreaterThan(0);
-    // Scattered over the face of the room, not laid along one axis. The first
-    // version put source position along x and drew a diagonal ribbon; before
-    // that, pan alone put every grain on the same column and the cloud was one
-    // invisible line. Both would fail one of these two.
-    expect(on.cols, `the cloud lit ${on.cols} columns of ${on.width}`)
-      .toBeGreaterThan(on.width * 0.2);
-    expect(on.rows, `the cloud lit ${on.rows} rows of ${on.height}`)
-      .toBeGreaterThan(on.height * 0.1);
+    if (out === null) test.skip(true, 'no readable WebGL context in this harness');
 
-    await page.evaluate(() => { roomEdit.layers.grains = false; });
-    const off = await shot();
-    expect(off.n, 'something kept drawing after the grains were turned off').toBe(0);
+    expect(out.first.n, 'grains appeared before the playhead reached them').toBe(0);
+    expect(out.born.n, 'the playhead crossed the schedule and nothing was born')
+      .toBeGreaterThan(0);
+    // Scattered over the face of the room, not laid along one axis.
+    expect(out.born.cols, `the cloud lit ${out.born.cols} columns of ${out.born.width}`)
+      .toBeGreaterThan(out.born.width * 0.2);
+    expect(out.born.rows, `the cloud lit ${out.born.rows} rows of ${out.born.height}`)
+      .toBeGreaterThan(out.born.height * 0.1);
+
+    // The half that matters here: the data is gone and they are still there.
+    expect(out.orphaned.n, 'the grains vanished the moment the schedule did')
+      .toBeGreaterThan(0);
+    expect(out.later.n, 'the grains stopped travelling once orphaned')
+      .toBeGreaterThan(0);
+    // And they are receding — a grain further from the eye covers less of the
+    // screen, so the lit area falls as the journey goes on.
+    expect(out.later.n, `${out.orphaned.n} then ${out.later.n}: they are not receding`)
+      .toBeLessThan(out.orphaned.n);
   });
 
 /// The skin stands on its own, the way the terrain does against the edge.
@@ -778,12 +789,16 @@ test('the room holds far more schedule than the floor does', async ({ page }) =>
     }
 
     const shot = () => {
-      visGl.frame({
-        cold: [0.3, 0.6, 0.9], hot: [0.4, 0.8, 0.5], core: [0.5, 0.8, 1],
-        cam: roomCamera(), layers: roomLayers(),
-        grains, grainRate: sr, srcFrames,
-        position: sr * 12, positionRate: sr, pollMs: 50,
-      });
+      // Walked, not jumped: a grain is born when the playhead crosses it, and
+      // a leap forward is a seek rather than twelve seconds of playing.
+      for (let t = 0; t <= 12.0001; t += 0.2) {
+        visGl.frame({
+          cold: [0.3, 0.6, 0.9], hot: [0.4, 0.8, 0.5], core: [0.5, 0.8, 1],
+          cam: roomCamera(), layers: roomLayers(),
+          grains, grainRate: sr, srcFrames,
+          position: Math.round(sr * t), positionRate: sr, pollMs: 50,
+        });
+      }
       const px = new Uint8Array(gl.width * gl.height * 4);
       ctx.readPixels(0, 0, gl.width, gl.height, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
       let n = 0;
