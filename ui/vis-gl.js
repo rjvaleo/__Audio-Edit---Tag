@@ -246,6 +246,7 @@ function vgAttach(canvas) {
   let floorPos = null, floorW = null;
   let leadPos = null, leadW = null;
   let skyPos = null, skyW = null;
+  let skyPrev = null, skyPrevW = null, skyBand = null, skyBandW = null;
 
   const draw = (mode, pos, wts, count, alpha, round, cold, hot, size) => {
     if (!count) return;
@@ -303,6 +304,9 @@ function vgAttach(canvas) {
       // The caller owns the camera, because which camera is right depends on
       // the frame being drawn for and this file has no opinion about that.
       const cam = vgCamera(f && f.cam);
+      // And owns which parts are drawn. Everything, unless told otherwise —
+      // a caller that says nothing gets the room it has always had.
+      const on = { room: true, floor: true, lead: true, sky: true, skin: true, ...(f && f.layers) };
       gl.viewport(0, 0, w, h);
       gl.disable(gl.DEPTH_TEST);
       gl.enable(gl.BLEND);
@@ -334,7 +338,7 @@ function vgAttach(canvas) {
       //
       // Only the four runs back and the far rectangle. The near rectangle is
       // the canvas border and drawing it would be a line painted on the bezel.
-      {
+      if (on.room) {
         const fr = [[-halfW, yb], [halfW, yb], [halfW, yt], [-halfW, yt]];
         const pos = new Float32Array(8 * 3 * 2);
         const wts = new Float32Array(8 * 2);
@@ -378,7 +382,7 @@ function vgAttach(canvas) {
       // full, which is what a fixed step per frame gives.
       const ageOf = (r) => (rows - 1 - r) / Math.max(1, VG_HISTORY - 1);
 
-      if (rows > 1) {
+      if (on.floor && rows > 1) {
         const key = `${pushes}|${rows}|${halfW.toFixed(4)}`;
         if (key !== meshKey) {
           meshKey = key;
@@ -422,8 +426,10 @@ function vgAttach(canvas) {
         }
       }
 
-      // The wire over it, so the ridges keep their edge.
-      if (rows) {
+      // The wire over it, so the ridges keep their edge. It is the frame you are
+      // hearing *now*, so it is its own layer: the terrain can be turned off and
+      // this still says where the sound is.
+      if (on.lead && rows) {
         if (!floorPos || floorPos.length !== VG_FLOOR_BANDS * 3) {
           floorPos = new Float32Array(VG_FLOOR_BANDS * 3);
           floorW = new Float32Array(VG_FLOOR_BANDS);
@@ -477,19 +483,28 @@ function vgAttach(canvas) {
       // Drawn round on screen at every depth because the frustum's width is
       // derived from its height times the aspect, so one world unit is the same
       // number of pixels across as it is up.
-      {
+      if (on.sky) {
         const skyY = yb + (yt - yb) * cam.skyAt;
         const r0 = (yt - yb) * cam.ring;
-        if (!skyPos || skyPos.length !== (VG_LISS_POINTS + 1) * 3) {
-          skyPos = new Float32Array((VG_LISS_POINTS + 1) * 3);
-          skyW = new Float32Array(VG_LISS_POINTS + 1);
+        const N = VG_LISS_POINTS + 1;
+        if (!skyPos || skyPos.length !== N * 3) {
+          skyPos = new Float32Array(N * 3);
+          skyW = new Float32Array(N);
+          skyPrev = new Float32Array(N * 3);
+          skyPrevW = new Float32Array(N);
+          // Two rings interleaved: A0 B0 A1 B1 … which a triangle strip reads
+          // as the band between them.
+          skyBand = new Float32Array(N * 2 * 3);
+          skyBandW = new Float32Array(N * 2);
         }
-        for (let r = 0; r < rows; r++) {
+
+        /// One ring, into the buffers given. False when that frame has no
+        /// figure to build one from.
+        const ringInto = (r, pos, wts) => {
           const liss = history[r].liss;
-          if (!liss) continue;
-          const age = ageOf(r);
-          const z = zAt(age);
-          for (let i = 0; i <= VG_LISS_POINTS; i++) {
+          if (!liss) return false;
+          const z = zAt(ageOf(r));
+          for (let i = 0; i < N; i++) {
             const k = i % VG_LISS_POINTS;                   // closed, so the
             const th = (k / VG_LISS_POINTS) * Math.PI * 2;  // last point is the first
             // Periodic by construction.
@@ -511,26 +526,75 @@ function vgAttach(canvas) {
             const l = liss[j * 2], rr = liss[j * 2 + 1];
             const mid = (l + rr) * 0.5, side = (l - rr) * 0.5;
             const rad = r0 * (1 + mid * 0.85 + side * 0.55);
-            skyPos[i * 3] = Math.cos(th) * rad;
-            skyPos[i * 3 + 1] = skyY + Math.sin(th) * rad;
-            skyPos[i * 3 + 2] = z;
-            skyW[i] = Math.min(1, 0.25 + Math.abs(mid) * 1.6);
+            pos[i * 3] = Math.cos(th) * rad;
+            pos[i * 3 + 1] = skyY + Math.sin(th) * rad;
+            pos[i * 3 + 2] = z;
+            wts[i] = Math.min(1, 0.25 + Math.abs(mid) * 1.6);
           }
+          return true;
+        };
+
+        // The floor runs all the way to the wall; the ring does not. Every
+        // older ring is smaller by the same perspective, so a trail carried to
+        // the back converges on a point and reads as a hard cone with a spike
+        // at its tip. Easing it out over the last third leaves the shape
+        // hanging in the air with nothing to snag on.
+        const easeAt = (age) => 1 - Math.pow(Math.max(0, age - 0.34) / 0.66, 1.6);
+
+        // ── the skin ──
+        //
+        // The rings were a stack of separate loops, which reads as a stack of
+        // separate loops. Joined between neighbours the same way the floor
+        // joins its ridges, the trail becomes a surface — a tube the sound is
+        // pushing out of round, with the light running along it instead of
+        // sitting on each hoop.
+        //
+        // Built one band at a time rather than as one mesh, because unlike the
+        // floor each band carries its own fade and the ring's easing runs out
+        // before the back wall.
+        let havePrev = false;
+        for (let r = 0; on.skin && r < rows; r++) {
+          const ok = ringInto(r, skyPos, skyW);
+          if (ok && havePrev) {
+            for (let i = 0; i < N; i++) {
+              skyBand[i * 6] = skyPrev[i * 3];
+              skyBand[i * 6 + 1] = skyPrev[i * 3 + 1];
+              skyBand[i * 6 + 2] = skyPrev[i * 3 + 2];
+              skyBand[i * 6 + 3] = skyPos[i * 3];
+              skyBand[i * 6 + 4] = skyPos[i * 3 + 1];
+              skyBand[i * 6 + 5] = skyPos[i * 3 + 2];
+              skyBandW[i * 2] = skyPrevW[i];
+              skyBandW[i * 2 + 1] = skyW[i];
+            }
+            const age = ageOf(r);
+            // Well under the lines' own alpha. A skin at full strength buries
+            // the hoops it is made of, and the hoops are the reading — this is
+            // the body between them, not a replacement for them.
+            const a = 0.16 * (1 - age * 0.7) * Math.max(0, easeAt(age));
+            if (a > 0.002) {
+              draw(gl.TRIANGLE_STRIP, skyBand, skyBandW, N * 2, a, false,
+                f.core, f.hot, 1);
+            }
+          }
+          if (ok) {
+            skyPrev.set(skyPos);
+            skyPrevW.set(skyW);
+            havePrev = true;
+          }
+        }
+
+        // ── the hoops ──
+        for (let r = 0; r < rows; r++) {
+          if (!ringInto(r, skyPos, skyW)) continue;
+          const age = ageOf(r);
           const lead = r === rows - 1;
-          // The floor runs all the way to the wall; the ring does not. Every
-          // older ring is smaller by the same perspective, so a trail carried
-          // to the back converges on a point and reads as a hard cone with a
-          // spike at its tip. Easing it out over the last third leaves the
-          // shape hanging in the air with nothing to snag on.
-          const ease = 1 - Math.pow(Math.max(0, age - 0.34) / 0.66, 1.6);
-          draw(gl.LINE_STRIP, skyPos, skyW, VG_LISS_POINTS + 1,
-            lead ? 1.0 : (0.28 + (1 - age) * 0.5) * Math.max(0, ease),
+          draw(gl.LINE_STRIP, skyPos, skyW, N,
+            lead ? 1.0 : (0.28 + (1 - age) * 0.5) * Math.max(0, easeAt(age)),
             false, f.core, f.hot, 1);
           // The frame being heard now gets weight, the same way the floor's
           // leading ridge does.
           if (lead) {
-            draw(gl.POINTS, skyPos, skyW, VG_LISS_POINTS + 1, 0.85, true,
-              f.core, f.hot, 7);
+            draw(gl.POINTS, skyPos, skyW, N, 0.85, true, f.core, f.hot, 7);
           }
         }
       }

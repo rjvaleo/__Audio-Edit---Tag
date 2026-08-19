@@ -632,8 +632,34 @@
                      actually edits is a grab on the room itself — see
                      `docs/ROOM-EDITOR.md`. The overlay does not take the
                      pointer; only its buttons do. -->
+                <!-- Always there, because a thing you can pose should say so
+                     without being looked up in a menu. Top right: the FFT row
+                     is bottom left and the peak readout is bottom right. -->
+                <button class="re-open" id="roomEditOpen"
+                  title="The room: which parts are drawn, which frame shape, and the camera. Drag the room to move it.">Room</button>
+                <!-- Live grain telemetry, in the room's corner. Its own
+                     layer, so it goes away with the rest. -->
+                <div class="room-data mono hidden" id="roomData"></div>
                 <div class="room-edit hidden" id="roomEdit">
-                  <div class="re-frames" id="reFrames"></div>
+                  <div class="re-row">
+                    <span class="re-tag">LAYERS</span>
+                    <div class="re-frames" id="reLayers"></div>
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">STREAMS</span>
+                    <div class="re-frames" id="reStreams"></div>
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">BLOCK</span>
+                    <div class="re-frames" id="reChunks"></div>
+                    <input class="re-slider" id="reOpacity" type="range"
+                      min="5" max="100" step="1"
+                      title="How strongly the data sits on the wall">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">FRAME</span>
+                    <div class="re-frames" id="reFrames"></div>
+                  </div>
                   <button class="re-btn re-reset" id="reReset"
                     title="Put this frame's camera back to the one in the source">Reset</button>
                   <div class="re-nums mono" id="reNums"

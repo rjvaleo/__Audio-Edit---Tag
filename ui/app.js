@@ -873,6 +873,9 @@ function startPolling() {
       // per stage, redrawn on every poll, whether or not the rail is on screen.
       engine.rackLevels = r.rackLevels || [];
       engine.load = r.load || null;
+      // Grains the voice pool had no room for. Counted in the callback and
+      // surfaced rather than degrading quietly.
+      engine.overflows = r.overflows ?? engine.overflows ?? 0;
       paintLoad();
       // The schedule is windowed now, and the swarm reads it around the
       // playhead — so playing out of the covered range would empty it. Cheap:
@@ -6948,7 +6951,69 @@ const ROOM_CAM_DEFAULT = {
   depth: 1.9, floorY: -0.38, ceilY: 0.62, shiftX: 0, skyAt: 0.72, ring: 0.17,
 };
 
-const roomEdit = { on: false, frame: 'dock', cams: {}, drag: null };
+/// What the room draws. Each part is its own decision.
+///
+/// The box was one picture with four things always in it. Turned on and off
+/// separately they are a set: terrain alone is a landscape, the ring alone is a
+/// scope hanging in the dark, the wireframe alone is the room empty. The
+/// renderer defaults to all of them, so anything that does not pass this — the
+/// grain views, a test — draws what it always drew.
+const ROOM_LAYERS = [
+  { key: 'room', label: 'Box', hint: 'The wireframe: the four runs back and the far wall.' },
+  { key: 'floor', label: 'Terrain', hint: 'The spectrum along the floor, receding as it ages.' },
+  { key: 'lead', label: 'Edge', hint: 'The frame you are hearing now, drawn with weight along the near edge.' },
+  { key: 'sky', label: 'Ring', hint: 'The Lissajous hanging in the sky, pushed out of round by the sound.' },
+  { key: 'skin', label: 'Skin', hint: 'The surface between the rings, so the trail is a tube rather than a stack of hoops. Needs Ring.' },
+  { key: 'data', label: 'Data', hint: 'Live grain telemetry, in the corner.' },
+];
+
+/// How many rows travel together before a blank line, and which way each block
+/// runs. Alternating blocks read in opposite directions, so neighbouring groups
+/// slide against each other and the movement is visible — a single column all
+/// going one way at this size reads as a static texture.
+const ROOM_CHUNKS = [2, 4, 8];
+
+const roomEdit = {
+  on: false, frame: 'dock', cams: {}, drag: null, layers: {},
+  chunk: 4,
+  opacity: 0.7,
+};
+
+try {
+  const v = JSON.parse(localStorage.getItem('roomData') || '{}');
+  if (ROOM_CHUNKS.includes(v.chunk)) roomEdit.chunk = v.chunk;
+  if (typeof v.opacity === 'number') roomEdit.opacity = Math.max(0.05, Math.min(1, v.opacity));
+} catch {}
+
+function saveRoomData() {
+  try {
+    localStorage.setItem('roomData',
+      JSON.stringify({ chunk: roomEdit.chunk, opacity: roomEdit.opacity }));
+  } catch {}
+}
+
+try {
+  roomEdit.layers = JSON.parse(localStorage.getItem('roomLayers') || '{}') || {};
+} catch { roomEdit.layers = {}; }
+
+try {
+  roomEdit.streams = JSON.parse(localStorage.getItem('roomStreams') || 'null');
+} catch { roomEdit.streams = null; }
+
+/// On unless somebody has turned it off.
+function roomLayerOn(key) {
+  return roomEdit.layers[key] !== false;
+}
+
+function roomLayers() {
+  const out = {};
+  for (const l of ROOM_LAYERS) out[l.key] = roomLayerOn(l.key);
+  return out;
+}
+
+function saveRoomLayers() {
+  try { localStorage.setItem('roomLayers', JSON.stringify(roomEdit.layers)); } catch {}
+}
 
 try {
   roomEdit.cams = JSON.parse(localStorage.getItem('roomCameras') || '{}') || {};
@@ -7004,6 +7069,57 @@ function paintRoomNums() {
   for (const b of document.querySelectorAll('#reFrames .re-btn')) {
     b.classList.toggle('active', b.dataset.frame === roomEdit.frame);
   }
+  for (const b of document.querySelectorAll('#reLayers .re-btn')) {
+    b.classList.toggle('active', roomLayerOn(b.dataset.layer));
+  }
+  for (const b of document.querySelectorAll('#reStreams .re-btn')) {
+    b.classList.toggle('active', roomStreamOn(b.dataset.stream));
+  }
+  for (const b of document.querySelectorAll('#reChunks .re-btn')) {
+    b.classList.toggle('active', +b.dataset.chunk === roomEdit.chunk);
+  }
+}
+
+function buildRoomLayers() {
+  const box = $('reLayers');
+  if (!box || box.children.length) return;
+  for (const l of ROOM_LAYERS) {
+    const b = document.createElement('button');
+    b.className = 're-btn';
+    b.dataset.layer = l.key;
+    b.textContent = l.label;
+    b.title = l.hint;
+    b.onclick = () => {
+      roomEdit.layers[l.key] = !roomLayerOn(l.key);
+      saveRoomLayers();
+      paintRoomNums();
+      paintRoomData();
+    };
+    box.appendChild(b);
+  }
+}
+
+function buildRoomChunks() {
+  const box = $('reChunks');
+  if (!box || box.children.length) return;
+  for (const n of ROOM_CHUNKS) {
+    const b = document.createElement('button');
+    b.className = 're-btn';
+    b.dataset.chunk = String(n);
+    b.textContent = String(n);
+    b.title = `Rows travel in blocks of ${n}, every other block running the other way.`;
+    b.onclick = () => { roomEdit.chunk = n; saveRoomData(); paintRoomNums(); paintRoomData(); };
+    box.appendChild(b);
+  }
+  const slider = $('reOpacity');
+  if (slider) {
+    slider.value = String(Math.round(roomEdit.opacity * 100));
+    slider.oninput = () => {
+      roomEdit.opacity = Math.max(0.05, Math.min(1, slider.value / 100));
+      paintRoomData();
+    };
+    slider.onchange = saveRoomData;
+  }
 }
 
 function buildRoomFrames() {
@@ -7028,11 +7144,19 @@ function buildRoomFrames() {
 
 function toggleRoomEdit() {
   roomEdit.on = !roomEdit.on;
+  buildRoomLayers();
+  buildRoomStreams();
+  buildRoomChunks();
   buildRoomFrames();
   $('masterBus')?.classList.toggle('room-editing', roomEdit.on);
   $('roomEdit')?.classList.toggle('hidden', !roomEdit.on);
+  $('roomEditOpen')?.classList.toggle('on', roomEdit.on);
   applyRoomFrame();
   paintRoomNums();
+  // Straight away, rather than on the next meter poll — which does not come at
+  // all when nothing is playing, so opening the editor on a stopped transport
+  // showed an empty corner.
+  paintRoomData();
 }
 
 /// Which part of the room a drag has hold of.
@@ -7126,6 +7250,268 @@ function roomZoneAt(y, h) {
     saveRoomCameras();
   }, { passive: false });
 })();
+
+/// The streams a grain carries.
+///
+/// Every one of these is a real number the schedule is working to — the same
+/// array `api_grains` sends the swarm and the braid, read column by column
+/// rather than plotted. Nothing here is invented for the look of it.
+const ROOM_STREAMS = [
+  { key: 'idx', label: 'IDX', w: 6, get: (g) => g[7], fmt: (v) => String(Math.round(v)) },
+  { key: 'out', label: 'OUT', w: 8, get: (g, sr) => g[0] / sr, fmt: (v) => v.toFixed(3) },
+  { key: 'src', label: 'SRC', w: 8, get: (g, sr) => g[1] / sr, fmt: (v) => v.toFixed(3) },
+  { key: 'size', label: 'SIZE', w: 7, get: (g, sr) => (g[2] / sr) * 1000, fmt: (v) => v.toFixed(1) },
+  { key: 'pitch', label: 'PIT', w: 7, get: (g) => g[3], fmt: (v) => (v >= 0 ? '+' : '') + v.toFixed(2) },
+  { key: 'rms', label: 'RMS', w: 7, get: (g) => g[4], fmt: (v) => v.toFixed(4) },
+  { key: 'brt', label: 'BRT', w: 7, get: (g) => g[5], fmt: (v) => v.toFixed(4) },
+  { key: 'pan', label: 'PAN', w: 7, get: (g) => g[6], fmt: (v) => (v >= 0 ? '+' : '') + v.toFixed(2) },
+];
+
+/// One line of the grain block, in pixels. Matches `.room-data` in the
+/// stylesheet, and has to: the fitting counts whole lines against the wall's
+/// height, so a disagreement here spills text past the bottom of the room.
+const ROOM_LINE = 9;
+
+/// The width of one character, measured once.
+///
+/// The layout is counted in characters — every column is a character width and
+/// the fitting decides in whole columns — so the number has to come from the
+/// face actually in use rather than from an assumption about it.
+function roomChPx(el) {
+  if (roomChPx.v) return roomChPx.v;
+  const probe = document.createElement('span');
+  probe.className = 'room-data';
+  probe.style.cssText = 'position:absolute;visibility:hidden;width:auto;height:auto;';
+  probe.textContent = '0'.repeat(40);
+  (el.parentElement || document.body).appendChild(probe);
+  const w = probe.offsetWidth / 40;
+  probe.remove();
+  roomChPx.v = w > 0 ? w : 5.1;
+  return roomChPx.v;
+}
+
+/// Where the room's back wall lands on screen, in canvas pixels.
+///
+/// The same projection the renderer uses, done once in JavaScript so the data
+/// can be *printed on the wall* rather than floated in front of it. The room is
+/// a box with parallel walls, so the far rectangle has the same world extent as
+/// the near one and differs only by its depth — which under the frustum makes
+/// it `1 / (1 + depth)` of the size, offset by whatever `shiftX` has done to
+/// the vanishing point.
+///
+/// Derived rather than measured, because there is nothing to measure: the wall
+/// is drawn by the GPU and never exists as an element.
+function roomBackWall(w, h) {
+  // A hidden panel measures zero, and a zero width makes the aspect zero, which
+  // makes the frustum's half-width zero, which divides. Everything downstream
+  // then becomes NaN and lands in a style attribute, where it is silent.
+  if (!(w > 0) || !(h > 0)) return { x: 0, y: 0, w: 1, h: 1, k: 1 };
+  const c = roomCamNow();
+  const yb = c.floorY, yt = c.ceilY;
+  const hh = yt - yb;
+  const aspect = w / h;
+  const halfW = hh * 0.5 * aspect;
+  const sx = c.shiftX * halfW;
+  const k = 1 / (1 + c.depth);
+
+  // Frustum: x_ndc = x/(halfW(1+depth)) - sx/halfW, and likewise up.
+  const xNdc = (x) => x / (halfW * (1 + c.depth)) - sx / halfW;
+  const yNdc = (y) => (2 * y) / (hh * (1 + c.depth)) - (yb + yt) / hh;
+
+  const x0 = (xNdc(-halfW) + 1) / 2 * w;
+  const x1 = (xNdc(halfW) + 1) / 2 * w;
+  const yTop = (1 - yNdc(yt)) / 2 * h;
+  const yBot = (1 - yNdc(yb)) / 2 * h;
+  return { x: x0, y: yTop, w: Math.max(1, x1 - x0), h: Math.max(1, yBot - yTop), k };
+}
+
+/// One cell, exactly `w` characters wide, whatever it was handed.
+///
+/// Short values are padded and long ones are cut. Nothing is allowed to widen
+/// its column: a single grain with an unusual number in it would otherwise
+/// shove every column after it sideways for one frame and back again the next,
+/// which reads as the whole block twitching.
+function fitCell(v, w) {
+  const t = String(v);
+  if (t.length > w) return t.slice(0, w).replace(/\.$/, ' ');
+  return t.padStart(w);
+}
+
+/// Which columns are up. A few by default: all eight at once is a wall.
+const ROOM_STREAM_DEFAULT = ['idx', 'src', 'size', 'pitch', 'rms'];
+
+function roomStreamOn(key) {
+  const set = roomEdit.streams;
+  return set ? set[key] === true : ROOM_STREAM_DEFAULT.includes(key);
+}
+
+function saveRoomStreams() {
+  try { localStorage.setItem('roomStreams', JSON.stringify(roomEdit.streams || {})); } catch {}
+}
+
+/// The grain block: the schedule itself, running past.
+///
+/// Not a summary. The rows are grains — the ones nearest the playhead, in the
+/// order they are laid down — so what you are reading is the same list the
+/// cloud is drawing and the engine is working through, arriving as fast as the
+/// playhead crosses it.
+///
+/// One aggregate line at the top, because rate, load and the drop counter are
+/// the three things you want without having to add anything up. The drop
+/// counter especially: it is the pool being full and grains being thrown away,
+/// which is audible and which nothing else on screen says.
+function paintRoomData() {
+  const el = $('roomData');
+  if (!el) return;
+  const show = roomLayerOn('data');
+  el.classList.toggle('hidden', !show);
+  if (!show) return;
+
+  const st = state.stretchDraft || {};
+  const g = state.grainDraft || {};
+  const l = engine.load || null;
+  const win = st.windowMs || 0;
+  const auto = !(g.densityHz > 0);
+  const rate = auto ? (win > 0 ? (1000 / win) * (g.overlap || 1) : 0) : g.densityHz;
+  const drops = Math.round(engine.overflows || 0);
+  const asked = Math.max(1, Math.round(g.layers || 1));
+  const running = l && l.layersRunning > 0 ? Math.round(l.layersRunning) : asked;
+
+  // Every field its own width, so the header is the same length whatever the
+  // numbers are. A readout that reflows as the values change is one you cannot
+  // read while it runs — the eye goes back to finding the column instead of
+  // reading it.
+  const head = [
+    fitCell(`${rate ? rate.toFixed(0) : '—'}/s`, 6),
+    fitCell(`${win.toFixed(0)}ms`, 6),
+    fitCell(`L${running}/${asked}`, 6),
+    fitCell(`${l ? Math.round(l.now * 100) : 0}%`, 4),
+    fitCell(`D${drops}`, 5),
+  ].join(' ');
+
+  const wanted = ROOM_STREAMS.filter((c) => roomStreamOn(c.key));
+  const sched = state.grains;
+  const sr = sched?.sampleRate || 44100;
+  const all = sched?.grains || [];
+
+  // How many rows fit, rather than a number picked once and wrong at every
+  // other size. The room is the same box in a dock and on a wall.
+  const cell = el.parentElement?.getBoundingClientRect();
+  // On the back wall, so it recedes with the room instead of sitting on the
+  // glass in front of it. The wall is smaller than the canvas by the room's
+  // own convergence, so the block is scaled to fit its width and the line count
+  // follows what is left of its height.
+  const wall = roomBackWall(cell?.width || 300, cell?.height || 150);
+  // Fixed size. The text does not scale with the room — it is small type
+  // printed on the wall, and type on a wall does not change size when you move
+  // the wall. What changes is how much of it fits, which is worked out here in
+  // whole lines and whole columns so nothing is ever cut in half.
+  const ch = roomChPx(el);
+  const lines = Math.max(0, Math.floor(wall.h / ROOM_LINE) - 2);
+  const rows = Math.max(0, Math.min(64, lines));
+
+  // Whole columns only. A column that does not fit is left out rather than
+  // clipped down the middle of its numbers, which would read as damage.
+  const room = Math.max(0, Math.floor(wall.w / ch));
+  const cols = [];
+  let used = 0;
+  for (const c of wanted) {
+    const next = used ? used + 1 + c.w : c.w;
+    if (next > room) break;
+    cols.push(c);
+    used = next;
+  }
+
+  // Around the playhead, so it runs with the sound instead of sitting still at
+  // the top of the file.
+  const pos = engine.position || 0;
+  let first = 0;
+  for (let i = 0; i < all.length; i++) { if (all[i][0] >= pos) { first = i; break; } }
+  const window = all.slice(Math.max(0, first - 1), Math.max(0, first - 1) + rows);
+
+  const line = (cells) => cells.join(' ');
+  const out = [];
+  // Trimmed to the wall like everything else. Clipping alone would leave it
+  // cut through the middle of a number, which reads as a fault rather than as
+  // a wall that ran out.
+  out.push(`<div class="rd-head">${head.slice(0, room)}</div>`);
+  if (cols.length) {
+    out.push('<div class="rd-hdr">'
+      + line(cols.map((c) => fitCell(c.label, c.w))) + '</div>');
+    // Always `rows` lines, padded with blanks. Rendering only the grains in
+    // range let the block grow and shrink under the sound, which moves
+    // everything else in the corner with it.
+    //
+    // Laid down in blocks of `chunk` with a blank line between, and every other
+    // block reversed. Reversing is what makes the movement readable: the
+    // schedule runs one way, so a single column of it slides uniformly and at
+    // this size that looks like nothing moving at all. Against a neighbour
+    // going the other way it is obvious.
+    const blank = line(cols.map((c) => ' '.repeat(c.w)));
+    const chunk = roomEdit.chunk;
+    let printed = 0;
+    let block = 0;
+    while (printed < rows) {
+      const take = Math.min(chunk, rows - printed);
+      const slice = [];
+      for (let i = 0; i < take; i++) {
+        const row = window[printed + i];
+        slice.push(row
+          ? line(cols.map((c) => fitCell(c.fmt(c.get(row, sr)), c.w)))
+          : blank);
+      }
+      if (block % 2 === 1) slice.reverse();
+      for (const text of slice) out.push(`<div class="rd-row">${text}</div>`);
+      printed += take;
+      block++;
+      // One blank line between blocks, and never one left hanging at the end.
+      if (printed < rows) { out.push(`<div class="rd-row rd-gap">${blank}</div>`); printed++; }
+    }
+  }
+  el.innerHTML = out.join('');
+  // The box is as wide as its columns and no wider, in characters — which is an
+  // exact unit here because the face is monospaced. Set from the columns rather
+  // than left to the content, so turning a stream on moves the left edge once
+  // and then nothing moves again.
+  // The block *is* the wall: its box is the wall's box, and anything that does
+  // not fit is clipped rather than allowed over the edge. No transform — a
+  // scaled block was the previous attempt and it made the type grow and shrink
+  // with the room, which is not what printing on a wall looks like.
+  el.style.left = `${Math.round(wall.x)}px`;
+  el.style.top = `${Math.round(wall.y)}px`;
+  el.style.width = `${Math.round(wall.w)}px`;
+  el.style.height = `${Math.round(wall.h)}px`;
+  el.style.right = 'auto';
+  el.style.bottom = 'auto';
+  el.style.transform = '';
+  el.style.opacity = String(roomEdit.opacity);
+  el.classList.toggle('rd-hot', !!(l && l.worst >= 1) || drops > 0);
+}
+
+function buildRoomStreams() {
+  const box = $('reStreams');
+  if (!box || box.children.length) return;
+  for (const c of ROOM_STREAMS) {
+    const b = document.createElement('button');
+    b.className = 're-btn';
+    b.dataset.stream = c.key;
+    b.textContent = c.label;
+    b.title = `Show the ${c.label} column in the grain block.`;
+    b.onclick = () => {
+      if (!roomEdit.streams) {
+        roomEdit.streams = {};
+        for (const d of ROOM_STREAMS) roomEdit.streams[d.key] = ROOM_STREAM_DEFAULT.includes(d.key);
+      }
+      roomEdit.streams[c.key] = !roomStreamOn(c.key);
+      saveRoomStreams();
+      paintRoomNums();
+      paintRoomData();
+    };
+    box.appendChild(b);
+  }
+}
+
+$('roomEditOpen')?.addEventListener('click', toggleRoomEdit);
 
 $('reReset')?.addEventListener('click', () => {
   delete roomEdit.cams[roomEdit.frame];
@@ -10805,9 +11191,51 @@ async function mbTick() {
   paintMasterReads();
   // The room only moves when there is something new to move it, so the
   // waterfall is pushed at the poll's rate and drawn at the display's.
+  paintRoomData();
   if (visGl && masterBus.data?.spectrum) {
     visGl.push(masterBus.data.spectrum, masterBus.data.lissajous);
+  } else if (visGl && roomEdit.on) {
+    // Something to pose against.
+    //
+    // The room is fed by the meter, so with nothing playing there is nothing in
+    // it — which is right for a meter and useless for a camera. Turning the
+    // editor on with the transport stopped gave a black rectangle and invisible
+    // things to drag.
+    //
+    // So while the room is being posed it is given a **still test pattern**: a
+    // fixed spectrum shape and a fixed figure, pushed at the poll's rate so the
+    // terrain fills and then holds. Steady is the point — a camera is judged
+    // against something that is not moving, and a signal that jumps under the
+    // hand is the same fault the theme editor's miniature was built to avoid.
+    visGl.push(...roomTestCard());
   }
+}
+
+/// A fixed room to aim at: a few humps across the spectrum and a lopsided
+/// figure, so floor, depth and ring all have something in them. Deterministic,
+/// so the picture is the same every time the editor is opened and two poses can
+/// actually be compared.
+function roomTestCard() {
+  if (!roomTestCard.made) {
+    const bands = new Float32Array(256);
+    for (let i = 0; i < bands.length; i++) {
+      const f = i / (bands.length - 1);
+      // Three humps and a slope, in dB, over the meter's own range.
+      const hump = (at, w) => Math.exp(-((f - at) ** 2) / (2 * w * w));
+      const v = 0.92 * hump(0.08, 0.05) + 0.66 * hump(0.32, 0.09) + 0.44 * hump(0.7, 0.14);
+      bands[i] = -96 + 96 * Math.max(0.04, v * (1 - 0.45 * f));
+    }
+    const liss = new Float32Array(512);
+    for (let i = 0; i < 256; i++) {
+      const t = (i / 256) * Math.PI * 2;
+      // Not a circle: a wide-ish image, so the ring is visibly pushed out of
+      // round the way real material pushes it.
+      liss[i * 2] = 0.62 * Math.sin(t * 3);
+      liss[i * 2 + 1] = 0.62 * Math.sin(t * 2);
+    }
+    roomTestCard.made = [bands, liss];
+  }
+  return roomTestCard.made;
 }
 
 function wireMasterRes() {
@@ -10890,6 +11318,7 @@ function visGlTick() {
     hot: vgRgb('--wave', '#5fd47a'),
     core: vgRgb('--accent', '#7fd0ff'),
     cam: roomCamera(),
+    layers: roomLayers(),
   });
 }
 
