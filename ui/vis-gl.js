@@ -67,6 +67,11 @@ const VG_LISS_POINTS = 256;
 /// not on what is read, so the ones nearest the playhead are the ones that get
 /// in.
 const VG_GRAIN_CAP = 3000;
+
+/// Sprites per grain. A grain is drawn as a short run of soft points along its
+/// own depth rather than as one mark, which is what lets overlapping grains
+/// build into mass instead of hatching into wires.
+const VG_GRAIN_PUFFS = 5;
 // The leading edge's thickness is `camera.lead`. It is geometry rather than
 // `gl.lineWidth`, which almost every driver clamps to 1 and is therefore not a
 // way to make anything thicker.
@@ -506,12 +511,13 @@ function vgAttach(canvas) {
         const pitchSpan = 12;                                 // semitones to the ceiling
 
         const want = Math.min(g.length, VG_GRAIN_CAP);
-        if (!grainPos || grainPos.length !== VG_GRAIN_CAP * 6) {
-          grainPos = new Float32Array(VG_GRAIN_CAP * 6);
-          grainW = new Float32Array(VG_GRAIN_CAP * 2);
+        const per = VG_GRAIN_PUFFS;
+        if (!grainPos || grainPos.length !== VG_GRAIN_CAP * per * 3) {
+          grainPos = new Float32Array(VG_GRAIN_CAP * per * 3);
+          grainW = new Float32Array(VG_GRAIN_CAP * per);
         }
         let n = 0;
-        for (let i = 0; i < g.length && n < want; i++) {
+        for (let i = 0; i < g.length && n < want * per; i++) {
           const e = g[i];
           const t0 = e[0] / sr;
           const age = (now - t0) / span;
@@ -522,43 +528,55 @@ function vgAttach(canvas) {
           const a1 = Math.min(1, age + life);
           if (a1 <= a0) continue;
 
-          // Scattered across the face of the room, and travelling back.
+          // Scattered across the room and **overhead**.
           //
-          // The first version put source position along x, which drew the
-          // schedule as a diagonal ribbon — true, and readable as a chart, but
-          // it made the grains the one thing in this box that is not doing what
-          // the box does. Everything else here fills the frame and recedes;
-          // depth is time and the other two axes are where a thing *is*. The
-          // grains now do the same.
+          // The scatter is a hash of the grain's own index, so it is stable: a
+          // grain keeps its place for its whole life instead of being re-thrown
+          // every frame, and the same schedule draws the same cloud twice.
+          // `index` is the right key because every jitter the engine gives a
+          // grain is already a pure function of it.
           //
-          // The scatter is a hash of the grain's own index, so it is stable:
-          // a grain keeps its place for its whole life instead of being
-          // re-thrown every frame, and the same schedule draws the same cloud
-          // twice. `index` is the right key because every jitter the engine
-          // gives a grain is already a pure function of it.
+          // The band sits in the upper part of the room, so the cloud passes
+          // above you rather than through you. Pan leans the x and pitch leans
+          // the y — a lean on the scatter rather than the whole of it, so
+          // neither collapses to a line when it is left at zero.
           const h = (e[7] | 0) * 2654435761 >>> 0;
           const hx = ((h & 0xffff) / 0x8000) - 1;            // -1..1
           const hy = (((h >>> 16) & 0xffff) / 0x8000) - 1;
-          // Pan and pitch still read, as a lean on the scatter rather than as
-          // the whole of it: a panned cloud drifts to its side, a detuned one
-          // rises, and neither collapses to a line when it is left at zero.
+          const hz = (((h >>> 8) & 0xff) / 128) - 1;
           const pitchFrac = Math.max(-1, Math.min(1, (e[3] || 0) / pitchSpan));
-          const x = (hx * 0.82 + (e[6] || 0) * 0.18) * halfW;
+          const x = (hx * 0.86 + (e[6] || 0) * 0.14) * halfW;
           const y = yb + (yt - yb)
-            * (0.5 + Math.max(-0.48, Math.min(0.48, hy * 0.34 + pitchFrac * 0.22)));
-          const w = Math.min(1, Math.sqrt(Math.max(0, e[4] || 0)) * 2.2);
+            * Math.max(0.5, Math.min(0.99, 0.78 + hy * 0.16 + pitchFrac * 0.12));
 
-          grainPos[n * 6] = x; grainPos[n * 6 + 1] = y; grainPos[n * 6 + 2] = zAt(a0);
-          grainPos[n * 6 + 3] = x; grainPos[n * 6 + 4] = y; grainPos[n * 6 + 5] = zAt(a1);
-          grainW[n * 2] = w;
-          grainW[n * 2 + 1] = w * 0.35;   // the tail fades as the grain ends
-          n++;
+          // A grain is a puff, not a line.
+          //
+          // Drawn as a short run of soft round sprites along its own depth, so
+          // overlapping grains build up into mass the way cloud does instead of
+          // hatching into wires. The sprites are the shader's round mode, which
+          // falls off to nothing at the edge — hard points would only be a
+          // coarser wire.
+          const w = Math.min(1, Math.sqrt(Math.max(0, e[4] || 0)) * 2.2);
+          for (let k = 0; k < per && n < want * per; k++) {
+            const u = per === 1 ? 0 : k / (per - 1);
+            const a = a0 + (a1 - a0) * u;
+            // A little wander across its life, so a puff is not a straight bar
+            // of dots.
+            const drift = (u - 0.5) * 0.06 * hz * halfW;
+            grainPos[n * 3] = x + drift;
+            grainPos[n * 3 + 1] = y + (u - 0.5) * 0.02 * (yt - yb);
+            grainPos[n * 3 + 2] = zAt(a);
+            // Thickest in the middle of the grain and nothing at its ends,
+            // which is the envelope it is actually played with.
+            grainW[n] = w * Math.sin(Math.PI * (0.15 + u * 0.7));
+            n++;
+          }
         }
         if (n) {
-          draw(gl.LINES, grainPos, grainW, n * 2, 0.85, false, f.cold, f.core, 1);
-          // The heads, so a dense cloud still reads as separate events rather
-          // than as hatching.
-          draw(gl.POINTS, grainPos, grainW, n * 2, 0.5, true, f.core, f.hot, 3);
+          // Big, soft and faint. The mass comes from how many overlap, not from
+          // any one of them being visible on its own.
+          draw(gl.POINTS, grainPos, grainW, n, 0.30, true, f.cold, f.core, 26);
+          draw(gl.POINTS, grainPos, grainW, n, 0.22, true, f.core, f.hot, 9);
         }
       }
 
