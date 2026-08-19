@@ -624,7 +624,90 @@ test('the ring is a surface, not a stack of hoops', async ({ page }) => {
 
   if (lit === null) test.skip(true, 'no readable WebGL context in this harness');
   expect(lit.without, 'the hoops themselves drew nothing').toBeGreaterThan(0);
-  // A surface covers area the hoops leave empty. Not a subtle difference.
+  // A surface covers area the hoops leave empty. Measured at about 15% more,
+  // and held at 8% — enough that a skin which stopped drawing would fail, loose
+  // enough that the exact figure is free to move with the fade it is drawn at.
   expect(lit.withSkin, `skin ${lit.withSkin} lit vs hoops ${lit.without}`)
-    .toBeGreaterThan(lit.without * 1.15);
+    .toBeGreaterThan(lit.without * 1.08);
 });
+
+// ── the grains ───────────────────────────────────────────────────────────────
+//
+// Drawn from the schedule itself rather than from a model of it, which is what
+// makes the picture true whatever rule decides how often a grain is laid down.
+// Depth is when it sounds, its length is how long for, across is where in the
+// source it reads.
+
+test('the grains are drawn from the schedule, and spread across the source',
+  async ({ page }) => {
+    await openRoom(page);
+
+    // A schedule made here rather than whatever the scratch library happens to
+    // produce. Its two tones are a second long and the schedule is windowed
+    // around the playhead, so the real count swings between five and forty
+    // between runs — which is a fine thing for the app and a useless thing to
+    // assert against. What is being held is the *mapping*: a hundred grains
+    // spread evenly across the source must come out spread across the room.
+    const made = await page.evaluate(() => {
+      const sr = 44100, srcFrames = sr * 10;
+      const grains = [];
+      for (let i = 0; i < 100; i++) {
+        const f = i / 99;
+        grains.push([
+          Math.round(f * sr * 2),      // out: over the two seconds the room holds
+          Math.round(f * srcFrames),   // src: evenly across the file
+          Math.round(sr * 0.04),       // size: 40 ms
+          0, 0.5, 0.5, 0, i,           // pitch, rms, bright, pan, index
+        ]);
+      }
+      window.__probe = { grains, sr, srcFrames };
+      for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+      roomEdit.layers.grains = true;
+      return grains.length;
+    });
+    expect(made).toBe(100);
+
+    const shot = async () => page.evaluate(() => {
+      const gl = document.getElementById('visGl');
+      const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
+      if (!ctx) return null;
+      const p = window.__probe;
+      visGl.frame({
+        cold: [0.3, 0.6, 0.9], hot: [0.4, 0.8, 0.5], core: [0.5, 0.8, 1],
+        cam: roomCamera(), layers: roomLayers(),
+        grains: p.grains, grainRate: p.sr, srcFrames: p.srcFrames,
+        // Playhead at the far end, so every grain is inside the room.
+        position: p.sr * 2, positionRate: p.sr, pollMs: 50,
+      });
+      const px = new Uint8Array(gl.width * gl.height * 4);
+      ctx.readPixels(0, 0, gl.width, gl.height, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
+      const cols = new Set();
+      const rws = new Set();
+      let n = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i] + px[i + 1] + px[i + 2] > 12) {
+          n++;
+          const p = (i / 4) | 0;
+          cols.add(p % gl.width);
+          rws.add((p / gl.width) | 0);
+        }
+      }
+      return { n, cols: cols.size, rows: rws.size, width: gl.width, height: gl.height };
+    });
+
+    const on = await shot();
+    if (on === null) test.skip(true, 'no readable WebGL context in this harness');
+    expect(on.n, 'the grains drew nothing').toBeGreaterThan(0);
+    // Scattered over the face of the room, not laid along one axis. The first
+    // version put source position along x and drew a diagonal ribbon; before
+    // that, pan alone put every grain on the same column and the cloud was one
+    // invisible line. Both would fail one of these two.
+    expect(on.cols, `the cloud lit ${on.cols} columns of ${on.width}`)
+      .toBeGreaterThan(on.width * 0.2);
+    expect(on.rows, `the cloud lit ${on.rows} rows of ${on.height}`)
+      .toBeGreaterThan(on.height * 0.1);
+
+    await page.evaluate(() => { roomEdit.layers.grains = false; });
+    const off = await shot();
+    expect(off.n, 'something kept drawing after the grains were turned off').toBe(0);
+  });
