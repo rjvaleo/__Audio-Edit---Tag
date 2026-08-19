@@ -2,16 +2,18 @@
 
 Written 18 Aug 2026, when it was worked out. Not built yet.
 
+This is about the sound.
+
 A grain is an event. It is spawned, it sounds for as long as it lasts, and it
-ends — and none of that has to wait for the grain before it or make room for the
-grain after it. **A set number of grains is emitted each second, and how big
-they are has nothing to do with how many there are.** Stretch, pitch and window
-shape the linear sound; grains live outside that, spawned on their own, like
-shooting stars.
+ends — and none of that waits on the grain before it or makes room for the grain
+after it. **A set number of grains is emitted each second, and how big they are
+has nothing to do with how many there are.** Stretch, pitch and window shape the
+linear sound; grains live outside that, spawned on their own, like shooting
+stars.
 
-That is not what the program does today.
+That is not what you hear today.
 
-## What it does today
+## What you hear today
 
 `fx::grain::plan` decides the hop two ways:
 
@@ -24,22 +26,63 @@ let hop = if g.density_hz > 0.0 {
 ```
 
 `Grain::density_hz` defaults to `0.0`, so every document ever saved takes the
-second branch, where the hop *is* the window divided by Overlap. Lengthen the
-window and the hop lengthens with it: at 40 ms and 2× overlap the schedule lays
-down fifty grains a second, and at 200 ms it lays down ten. The grains got
-bigger and the cloud got thinner, which is the complaint and is exactly what the
-arithmetic says will happen.
+second branch, where the hop *is* the window divided by Overlap. At 40 ms and
+2× overlap the schedule lays down fifty grains a second; at 200 ms it lays down
+ten. The grains got longer and the cloud got thinner. That is the complaint, and
+it is exactly what the arithmetic says will happen.
 
 The first branch is already the behaviour we want, and there is already a
-**Density** slider for it — 0 to 500, where 0 reads "auto". So the emission
-model is half-built. What is wrong is which half is the default, and the fact
-that the control presents itself as an override of the real rule rather than as
-the rule.
+**Density** slider in front of it — 0 to 500, where 0 reads "auto". So the
+emission model is half-built.
 
-## The part that is not a default flip
+## Density is not granular's to take
 
-`BlockRenderer::render` accumulates every sounding grain into the block and
-divides the result by the summed envelope:
+**This is the finding that changes the shape of the job.** `density_hz` does not
+belong to the grain cloud. It is read by every engine:
+
+```rust
+Algorithm::Wsola   => hop_frames(&sp.grain, win, sr)
+Algorithm::Vocoder | Hybrid => hop_frames(&sp.grain, fft_size, sr)
+Algorithm::Granular => sp.plan().hop
+```
+
+and `stretch::hop_frames` reads the same `density_hz` field. For a window engine
+the hop is not an emission rate at all — it is how far a *transform* advances,
+and shortening it multiplies the work.
+
+That has already been paid for once. The comment above the floor in
+`hop_frames` records it: density at 91 Hz against an 8192-point window asks for
+**15.5× overlap** where a phase vocoder normally runs at 4×, and on the
+"Breaking Again" preset it measured **102.3% of the real-time budget with 101 of
+200 blocks over** — not a spike, simply unplayable. The same preset at density 0
+costs 13.8% and never misses. A floor of `win / 8` was put in to stop it.
+
+So making density the default would reach straight into four engines that do not
+want it:
+
+| window | hop now (2×) | hop at 50/s | floored | resulting overlap |
+|---|---|---|---|---|
+| 40 ms | 960 | 960 | 960 | 2.0× |
+| 100 ms | 2400 | 960 | 960 | 5.0× |
+| 200 ms | 4800 | 960 | 1200 | 8.0× |
+| 500 ms | 12000 | 960 | 3000 | 8.0× |
+| 1000 ms | 24000 | 960 | 6000 | 8.0× |
+
+At the default 40 ms window nothing moves. Past 100 ms the window engines go
+from 2× overlap to the floor's 8× — four times the transform work — for a
+setting that was only ever meant to describe grains.
+
+**The grain cloud therefore needs its own rate**, and `density_hz` should keep
+meaning what it means to the window engines. One field is currently carrying two
+unrelated ideas: for WSOLA and the vocoder it is a quality-and-cost knob on a
+transform, and for the cloud it is an aesthetic control over how often something
+is thrown into the air. Splitting them is the change, and it also settles a
+confusion that is already there.
+
+## The gain law is safe only because of the coupling
+
+`BlockRenderer::render` accumulates every sounding grain and divides the block by
+the summed envelope:
 
 ```rust
 out[f * channels + ch] += sample * win * pan;
@@ -52,95 +95,108 @@ For one grain sounding alone that is `(s·w)/w = s`. **The envelope is divided
 straight back out.** The grain plays flat, begins and ends at full amplitude,
 and clicks at both ends.
 
-This is invisible today, and it is invisible for a reason worth stating
-plainly: `hop = size / overlap` *guarantees* that grains overlap, so `norm` is
-always a sum of two or more Hann windows and sits near unity. The gain law is
-safe only because of the coupling we are about to remove. Take the coupling out
-and a low density, or a short window, leaves gaps — and every grain that finds
-itself alone in a gap loses its shape.
+You have never heard this, and the reason is the coupling itself: `hop = size /
+overlap` *guarantees* grains overlap, so `norm` is always a sum of two or more
+Hann windows and sits near unity. Take the coupling out and a low rate, or a
+short window, leaves gaps — and every grain that finds itself alone in a gap
+loses its shape and clicks.
 
-So the gain law has to change in the same breath: divide by `norm.max(1.0)`.
-Attenuate only where grains pile above unity; leave the sparse places their
-envelopes and let the silence between them be silence. A dense cloud then
-behaves exactly as it does now, and a sparse one becomes what it is supposed to
-be — separate events with air around them.
+Divide by `norm.max(1.0)` instead. Attenuate only where grains pile above unity;
+leave the sparse places their envelopes, and let the silence between them be
+silence.
 
-This is the whole difference between the change working and the change sounding
-broken, and it is one line.
+What that does to loudness is worth saying out loud, because it is a real change
+in how the instrument behaves:
 
-## The voice pool assumed the coupling too
+- **Sparse** — below unity overlap, grains simply sum. Adding density adds
+  level, the way adding stars adds light. Correct, and what the model implies.
+- **Dense** — above unity, the division takes over and level holds steady while
+  the texture thickens. Which is what it does today.
 
-`MAX_VOICES` is 1024, and the comment that sets it reasons from "2000 grains a
-second against a half-second window" — a thousand sounding at once, which fits.
-That arithmetic only holds while the window is what sets the rate. Emitted
-independently, the number sounding at once is `density × window × layers`: a
-hundred a second, a two-second window and sixteen layers is 3200, and grains
-start being dropped.
+The knee is at exactly one grain covering each moment, which is also the point
+where the cloud stops being able to reconstruct a signal and starts being a
+scatter of events. The gain law and the aesthetic change hands in the same
+place.
 
-`BlockRenderer::overflows` already counts them, which is the right instinct —
-it was built to be seen rather than to degrade quietly. What it now needs is
-either a bigger pool or an honest statement that density, window and layers
-spend one budget between them.
+## At the ceiling, it drops the wrong grain
 
-## What Overlap becomes
+```rust
+fn push(&mut self, event: GrainEvent, shape: Shape) {
+    if self.live == MAX_VOICES {
+        self.overflows += 1;
+        return;
+    }
+```
 
-An observation rather than a control: `overlap = density × window`. The field
-stays so that documents written before this still open, and the panel can go on
-showing the number, because knowing how many grains cover a moment is genuinely
-useful. It stops being a thing you set.
+When the pool is full the **new** grain is thrown away and the old ones are left
+to finish. For a stretcher that is defensible. For an emitter it is backwards:
+the newest grain is the one carrying the material you are listening for, and at
+the ceiling the cloud would stop taking in anything new and slowly play out
+what it already had — a smear that gets staler the harder you push it.
 
-This matters for the obvious next idea, which is to make the density control say
-*how many grains are playing* instead of how many are emitted. That number is
+An instrument steals the oldest voice instead. That keeps the cloud current and
+makes the ceiling sound like a limit on *how many at once* rather than a limit
+on *how new*.
+
+`MAX_VOICES` is 1024, and the comment sizing it reasons from "2000 grains a
+second against a half-second window" — a thousand at once, which fits. That
+arithmetic assumes the coupling too. Emitted freely, the number sounding at once
+is `rate × window × layers`: a hundred a second, a two-second window, sixteen
+layers is 3200.
+
+## What the cloud becomes
+
+Granular stops being a stretcher that happens to sound grainy and becomes an
+emitter that can also stretch. Once the rate is free of the window, nothing
+guarantees the grains cover the output, so a sparse setting will not reconstruct
+the source — it will scatter pieces of it. That is the point, and it is also a
+capability the engine did not have: at any density below unity overlap the
+result is not a stretch of the sound, it is a sound made *of* the sound.
+
+The read pointer is untouched. Scan, Position, the jitters and wrap all still
+place each grain in the source exactly as they do now; there are simply more or
+fewer grains sampling the same trajectory.
+
+## Overlap becomes an observation
+
+`overlap = rate × window`. The field stays so old documents open, and the panel
+can go on showing the number, because how many grains cover a moment is worth
+knowing. It stops being a thing you set.
+
+This is also the answer to the obvious next idea — making the control read *how
+many grains are playing* rather than how many are emitted. That number **is**
 Overlap, and holding it fixed while the window grows is precisely what makes the
-rate fall — the behaviour we are removing. Emission is the rate; concurrency is
-the consequence. The instrument should let you set the first and watch the
-second.
+rate fall: the behaviour being removed. Emission is the rate; concurrency is the
+consequence. Set the first, watch the second.
 
-## The room already knows what to do with this
+## The room, briefly
 
-The master bus is a box seen in perspective — an off-axis frustum, the spectrum
-along the floor, the Lissajous in the sky, the ladders at the right — and its
-organising idea is that **depth is time**: what you hear now is at the front and
-travels away from you. See `docs/MASTER-BUS.md` and `ui/vis-gl.js`.
+The master bus box maps **depth to time** — what you hear now is at the front and
+travels away. A grain born at the near face and receding makes the two newly
+independent quantities visible as two independent things: **how far back it gets
+before it dies is its window; how many are born a second is the rate.** Across is
+pan, up is pitch, the envelope is the brightness along the streak, and a grain
+the pool could not hold is a ghost. The floor, sky and ladders do not move.
 
-That is the mapping grains have been waiting for. A grain is born at the near
-face and recedes. Depth is its age, and it winks out when its life ends. So:
-
-- **How far back a grain gets before it dies is its window.** How many are born
-  each second is its density. The two quantities we have just made independent
-  become two visually independent things — the *length* of a streak and the
-  *number* of streaks — and you can see at a glance that changing one has not
-  touched the other. A short window at high density is a blizzard of sparks near
-  the front face; a long window at the same density is the same number of stars,
-  each drawing a streak deep into the room.
-- **Across is pan, up is pitch.** Both already exist per grain — `pan_spread`,
-  and the pitch jitter and drift — so a detuned cloud rises and falls and a wide
-  one spreads out.
-- **The envelope is the brightness along the streak.** `Grain::envelope` already
-  sharpens the attack or makes grains swell; that reads directly as whether a
-  star flares at the front or glows at the back.
-- **Overflow is drawn.** A grain the pool could not hold appears as a ghost, so
-  the ceiling is something you see rather than something you infer.
-
-The floor, the sky and the ladders do not move. Grains fly in the air between
-them, which is empty space today.
+Detail in `docs/MASTER-BUS.md` and `ui/vis-gl.js`. It is a readout of the change,
+not the change.
 
 ## Order
 
-1. **The gain law**, `norm.max(1.0)`. It has to land first or everything after it
-   clicks. Tests in `engine/tests/render.rs` and across `fx/tests/` reach for
-   density, overlap and window and will need reading before they are trusted.
-2. **Density becomes the default.** A real rate rather than `0.0`, and the window
-   stops touching the hop.
-3. **The voice pool**, resized or restated as a budget.
-4. **Overlap becomes derived**, shown and not set, old documents still opening.
-5. **Grains in the room**, once the model underneath them is true.
+1. **A grain rate of its own**, separate from `density_hz`, so the cloud can be
+   changed without touching WSOLA, the vocoder, PVSOLA or the hybrid.
+2. **The gain law**, `norm.max(1.0)`. It has to land with the rate or the sparse
+   settings click. Tests across `engine/tests/render.rs` and `fx/tests/` reach
+   for density, overlap and window and need reading before they are trusted.
+3. **Voice stealing** — oldest rather than newest, and a pool sized for
+   `rate × window × layers`.
+4. **Overlap becomes derived**, shown and not set.
+5. **The room**, once the model underneath it is true.
 
 ## Undecided
 
-- **What the default density should be.** Fifty a second is a cloud; twenty is
+- **What the default rate should be.** Fifty a second is a cloud; twenty is
   sparse and legible.
-- **Whether saved documents inherit it.** Changing the default retroactively
-  means every session already on disk sounds different when it is reopened.
-  Leaving them alone means the old coupling lives on in exactly the documents
-  most likely to be reopened.
+- **Whether saved documents inherit it.** Changing it retroactively means every
+  session on disk sounds different when reopened; leaving them means the old
+  coupling survives in exactly the documents most likely to be opened.
