@@ -446,6 +446,45 @@ pub struct DecodedSource {
     pub channels: usize,
 }
 
+/// A one-at-a-time flag for the passes that measure the whole library.
+///
+/// Both measuring passes walk every file that has not been measured yet, and
+/// neither used to know that another thread was already walking it. The server
+/// is a thread per connection, and the panel that asks for neighbours is
+/// refreshed by ordinary interface work — dragging the visualiser's window size
+/// is enough. Thirteen requests arrived while the first was still working and
+/// thirteen threads each decoded the same library from the beginning: 600% of
+/// the machine spent computing one answer thirteen times over. Because nothing
+/// was written until a pass finished, not one of them could see another's work,
+/// so the thirteenth was no further along than the first.
+///
+/// A request that finds a pass already running answers from what is known
+/// instead of starting a second one. The work is not lost — the pass that holds
+/// the flag is still doing it, and saves as it goes.
+#[derive(Default)]
+pub struct Pass(AtomicBool);
+
+impl Pass {
+    /// `None` when another thread is already inside, in which case the caller
+    /// should answer with what it has rather than wait. Waiting would be the
+    /// same stall by a politer route.
+    pub fn enter(&self) -> Option<PassGuard<'_>> {
+        self.0
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| PassGuard(&self.0))
+    }
+}
+
+/// Clears the flag however the pass ends, including by panic.
+pub struct PassGuard<'a>(&'a AtomicBool);
+
+impl Drop for PassGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 pub struct App {
     /// Where the index and config live — beside the executable, not in the library.
     pub data_dir: PathBuf,
@@ -522,6 +561,10 @@ pub struct App {
     /// document's parameters describe the cloud it is drawing.
     /// What the engine is holding, if anything.
     pub playing: RwLock<Option<NowPlaying>>,
+    /// Held while the fingerprint pass is running. See [`Pass`].
+    pub print_pass: Pass,
+    /// Held while the classifier pass is running. See [`Pass`].
+    pub label_pass: Pass,
 }
 
 impl App {
@@ -568,6 +611,8 @@ impl App {
             overrides: RwLock::new(overrides),
             user_tags: RwLock::new(user_tags),
             playing: RwLock::new(None),
+            print_pass: Pass::default(),
+            label_pass: Pass::default(),
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             automation,

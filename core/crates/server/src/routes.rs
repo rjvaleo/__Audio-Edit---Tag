@@ -9,6 +9,18 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+/// How many files one measuring pass takes on before answering.
+///
+/// The number is a compromise between a request that returns and a queue that
+/// drains. Thirty-two files is a second or two of work on a normal library, and
+/// ordinary use of the interface produces requests often enough that a few
+/// hundred unmeasured files are worked through in the background of a session
+/// rather than in front of one stalled click.
+const PASS_BATCH: usize = 32;
+
+/// How often the classifier's answers reach disk within a pass.
+const LABEL_FLUSH: usize = 8;
+
 /// The 3D grain visualiser.
 ///
 /// Served from here rather than opened as a file so it is same-origin with the
@@ -3444,6 +3456,8 @@ fn reindex_for(app: &Arc<App>, rel: &str) {
 
 fn ensure_prints(app: &Arc<App>) -> usize {
     let Some(lib) = app.library_path() else { return 0 };
+    // One pass at a time, and this one answers nothing if another is running.
+    let Some(_pass) = app.print_pass.enter() else { return 0 };
 
     // Which files still need measuring, decided while holding only read locks.
     let wanted: Vec<String> = {
@@ -3463,9 +3477,18 @@ fn ensure_prints(app: &Arc<App>) -> usize {
         return 0;
     }
 
+    // A slice of the queue, not all of it.
+    //
+    // A request has to come back. Adding a folder of six hundred sounds made
+    // the first request that touched this into a walk of the whole library
+    // inside one HTTP handler, and the interface waited on it for as long as it
+    // took. The queue is worked through across the requests that ordinary use
+    // produces, and each one returns having made the picture a little more
+    // complete.
+    let batch = wanted.len().min(PASS_BATCH);
     let mut built = Vec::new();
     let (mut no_path, mut no_open, mut no_fp) = (0usize, 0usize, 0usize);
-    for rel in &wanted {
+    for rel in wanted.iter().take(batch) {
         let Some(path) = resolve_within(&lib, rel) else { no_path += 1; continue };
         let mut r = match audio_core::open(&path) {
             Ok(r) => r,
@@ -3478,10 +3501,10 @@ fn ensure_prints(app: &Arc<App>) -> usize {
     }
     // Worth saying out loud: a library where nothing can be measured should not
     // look the same as one where everything matched.
-    if !wanted.is_empty() && built.len() < wanted.len() {
+    if built.len() < batch {
         eprintln!(
             "fingerprints: {} of {} measured ({} unresolved, {} unopenable, {} unmeasurable)",
-            built.len(), wanted.len(), no_path, no_open, no_fp
+            built.len(), batch, no_path, no_open, no_fp
         );
     }
 
@@ -3529,6 +3552,9 @@ fn model(app: &Arc<App>) -> Option<Arc<yamnet::Model>> {
 /// borrowing a name from whom.
 fn ensure_labels(app: &Arc<App>) -> usize {
     let Some(lib) = app.library_path() else { return 0 };
+    // One pass at a time. See `Pass`: this is the flag that stops a slider drag
+    // turning one classification of the library into thirteen of them.
+    let Some(_pass) = app.label_pass.enter() else { return 0 };
 
     let wanted: Vec<String> = {
         let idx = app.index.read().unwrap();
@@ -3541,12 +3567,15 @@ fn ensure_labels(app: &Arc<App>) -> usize {
             .collect()
     };
 
+    // A slice of the queue. Classifying one file is a whole decode, a resample
+    // and a run of the model, and doing six hundred of them is minutes of work
+    // that used to happen inside a single request.
+    let batch = wanted.len().min(PASS_BATCH);
     let mut built = 0usize;
-    if !wanted.is_empty() {
+    if batch > 0 {
         let Some(model) = model(app) else { return 0 };
-        let mut measured: Vec<(String, Vec<yamnet::Detection>)> = Vec::new();
 
-        for rel in &wanted {
+        for rel in wanted.iter().take(batch) {
             let Some(path) = resolve_within(&lib, rel) else { continue };
             let Ok(mut r) = audio_core::open(&path) else { continue };
             let info = *r.info();
@@ -3556,27 +3585,48 @@ fn ensure_labels(app: &Arc<App>) -> usize {
             // More than the panel shows. Storing the tail costs almost nothing
             // and means anything built later — a visualiser, an export — has
             // the model's fuller opinion without a second pass over the audio.
-            match model.label(&mono, 8) {
+            let words = match model.label(&mono, 8) {
                 // An empty list is a real answer — the model heard nothing it
                 // could name — and storing it stops the file being re-analysed
                 // on every request for the rest of time.
-                Ok(words) => measured.push((rel.clone(), words)),
-                Err(e) => eprintln!("labelling {rel}: {e}"),
+                Ok(words) => words,
+                Err(e) => { eprintln!("labelling {rel}: {e}"); continue }
+            };
+
+            // Written as it goes, not banked to the end.
+            //
+            // Holding the results until the pass finished meant that stopping
+            // the program — or losing patience with it — threw away every file
+            // it had measured, and the next run started from nothing. A file
+            // that has been through the model is a fact about that file; it
+            // should survive the process that learned it.
+            let mut store = app.labels.write().unwrap();
+            store.insert(rel, words);
+            built += 1;
+            if built % LABEL_FLUSH == 0 {
+                let _ = store.save(&app.labels_path());
             }
         }
 
-        built = measured.len();
-        let mut store = app.labels.write().unwrap();
-        for (rel, words) in measured {
-            store.insert(&rel, words);
+        if built % LABEL_FLUSH != 0 {
+            let store = app.labels.read().unwrap();
+            let _ = store.save(&app.labels_path());
         }
-        let _ = store.save(&app.labels_path());
     }
 
     // Loans depend on which files are present, so they are worked out afresh
     // rather than stored. Only redone when something changed or the derived
     // view is empty, because the ranking behind it is quadratic.
-    let stale = built > 0 || app.heard.read().unwrap().is_empty();
+    //
+    // Once the queue is drained, not once per batch. The ranking is the
+    // expensive part and its answer only settles when there is nothing left to
+    // measure, so running it after every slice would be paying the quadratic
+    // cost twenty times over to watch an incomplete answer change.
+    // Whether this call took on what was left, rather than whether every file
+    // in it succeeded. A file the model cannot read never leaves the queue, and
+    // counting successes would let one of those hold the ranking back forever.
+    let drained = wanted.len() <= batch;
+    let stale = (built > 0 && drained) || app.heard.read().unwrap().is_empty();
     if stale {
         ensure_prints(app);
         let prints = app.prints.read().unwrap();
