@@ -13,15 +13,43 @@
 //
 // One global scope: every name in here starts `vg`.
 
-/// How far the room runs back, as a multiple of the distance to its front face.
-/// This sets how strongly it converges: the back face draws at `1 / (1 + D)` of
-/// the front one.
-const VG_DEPTH = 1.9;
-/// Where the floor sits below the eye, and the ceiling above it, at the front
-/// face. Their ratio is what puts the vanishing point above the middle, which
-/// is what lets you see the floor at all.
-const VG_FLOOR_Y = -0.38;
-const VG_CEIL_Y = 0.62;
+/// The room's shape and the camera looking into it, in one value.
+///
+/// These were six constants read straight out of the module at every draw call,
+/// which was fine while there was one frame shape to draw for. There are five
+/// now — the video export offers 16:9, 1:1, 4:5 and 9:16, and the numbers that
+/// suit a wide dock do not suit a tall frame — so the camera is a value that
+/// can be handed in per frame and edited while you look at it. See
+/// `docs/ROOM-EDITOR.md`.
+///
+/// * `depth` — how far the room runs back, as a multiple of the distance to its
+///   front face. This sets how strongly it converges: the back face draws at
+///   `1 / (1 + depth)` of the front one.
+/// * `floorY`, `ceilY` — where the floor sits below the eye and the ceiling
+///   above it, at the front face. **Their asymmetry about zero is the camera
+///   angle.** The frustum is shifted rather than the camera tilted, which is
+///   what puts the vanishing point above the middle so the floor is visible at
+///   all, while the front face still lands exactly on the canvas edges.
+/// * `shiftX` — the same trick sideways. Zero is the vanishing point centred.
+/// * `skyAt`, `ring` — where the Lissajous hangs up the room, and how big it
+///   is, both as fractions of the room's height. Taken from the height and
+///   never the width, which is what keeps it round at any aspect.
+/// * `lead` — how thick the floor's leading edge is drawn, in world units.
+const VG_CAMERA = {
+  depth: 1.9,
+  floorY: -0.38,
+  ceilY: 0.62,
+  shiftX: 0,
+  skyAt: 0.72,
+  ring: 0.17,
+  lead: 0.012,
+};
+
+/// A camera with anything missing filled in from the default, so a stored one
+/// from before a field existed still draws.
+function vgCamera(c) {
+  return c ? { ...VG_CAMERA, ...c } : VG_CAMERA;
+}
 
 /// Frames kept for the trail. About three seconds at the poll's rate, which is
 /// long enough to see a phrase move away from you.
@@ -30,11 +58,9 @@ const VG_HISTORY = 56;
 /// at the size this draws, and fifty-six deep, a quarter of them is the same
 /// picture for a quarter of the memory.
 const VG_LISS_POINTS = 256;
-/// How thick the leading edge is drawn, in world units.
-///
-/// It is geometry rather than `gl.lineWidth`, which almost every driver clamps
-/// to 1 and is therefore not a way to make anything thicker.
-const VG_LEAD = 0.012;
+// The leading edge's thickness is `camera.lead`. It is geometry rather than
+// `gl.lineWidth`, which almost every driver clamps to 1 and is therefore not a
+// way to make anything thicker.
 /// Points across the floor. Independent of how many bands the server sends —
 /// the floor is resampled to this, so changing the analyser's resolution does
 /// not rebuild the mesh.
@@ -274,6 +300,9 @@ function vgAttach(canvas) {
     frame(f) {
       const w = canvas.width, h = canvas.height;
       if (!w || !h) return;
+      // The caller owns the camera, because which camera is right depends on
+      // the frame being drawn for and this file has no opinion about that.
+      const cam = vgCamera(f && f.cam);
       gl.viewport(0, 0, w, h);
       gl.disable(gl.DEPTH_TEST);
       gl.enable(gl.BLEND);
@@ -286,10 +315,14 @@ function vgAttach(canvas) {
       // edges *are* the edges of the panel.
       const aspect = w / h;
       const near = 1.0;
-      const yb = VG_FLOOR_Y, yt = VG_CEIL_Y;
+      const yb = cam.floorY, yt = cam.ceilY;
       const halfW = (yt - yb) * 0.5 * aspect;
-      const far = near * (1 + VG_DEPTH);
-      const mvp = vgFrustum(-halfW, halfW, yb, yt, near, far + 1);
+      const far = near * (1 + cam.depth);
+      // Sideways off-axis, the same way the vertical one works: the camera does
+      // not turn, the frustum slides, so the front face stays square to the
+      // frame however far the vanishing point moves.
+      const sx = cam.shiftX * halfW;
+      const mvp = vgFrustum(-halfW + sx, halfW + sx, yb, yt, near, far + 1);
       gl.useProgram(prog.p);
       gl.uniformMatrix4fv(prog.uMVP, false, mvp);
 
@@ -423,8 +456,8 @@ function vgAttach(canvas) {
         }
         for (let i = 0; i < VG_FLOOR_BANDS; i++) {
           const x = xAt(i), y = ridgeY(now[i]);
-          leadPos[i * 6] = x; leadPos[i * 6 + 1] = y - VG_LEAD; leadPos[i * 6 + 2] = z;
-          leadPos[i * 6 + 3] = x; leadPos[i * 6 + 4] = y + VG_LEAD; leadPos[i * 6 + 5] = z;
+          leadPos[i * 6] = x; leadPos[i * 6 + 1] = y - cam.lead; leadPos[i * 6 + 2] = z;
+          leadPos[i * 6 + 3] = x; leadPos[i * 6 + 4] = y + cam.lead; leadPos[i * 6 + 5] = z;
           leadW[i * 2] = now[i]; leadW[i * 2 + 1] = now[i];
         }
         draw(gl.TRIANGLE_STRIP, leadPos, leadW, n2, 1.0, false, f.cold, f.hot, 1);
@@ -445,8 +478,8 @@ function vgAttach(canvas) {
       // derived from its height times the aspect, so one world unit is the same
       // number of pixels across as it is up.
       {
-        const skyY = yb + (yt - yb) * 0.72;
-        const r0 = (yt - yb) * 0.17;
+        const skyY = yb + (yt - yb) * cam.skyAt;
+        const r0 = (yt - yb) * cam.ring;
         if (!skyPos || skyPos.length !== (VG_LISS_POINTS + 1) * 3) {
           skyPos = new Float32Array((VG_LISS_POINTS + 1) * 3);
           skyW = new Float32Array(VG_LISS_POINTS + 1);

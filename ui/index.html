@@ -627,6 +627,18 @@
                 <canvas id="visGl"
                   title="The master bus as a room. Depth is time: what you hear now is at the front and travels away from you. Double-click for full screen."></canvas>
                 <span class="mono mb-note" id="mbPeakHz"></span>
+                <!-- The room editor's furniture. Frame shapes, the numbers the
+                     dragging has produced, and a way back. Everything that
+                     actually edits is a grab on the room itself — see
+                     `docs/ROOM-EDITOR.md`. The overlay does not take the
+                     pointer; only its buttons do. -->
+                <div class="room-edit hidden" id="roomEdit">
+                  <div class="re-frames" id="reFrames"></div>
+                  <button class="re-btn re-reset" id="reReset"
+                    title="Put this frame's camera back to the one in the source">Reset</button>
+                  <div class="re-nums mono" id="reNums"
+                    title="What the dragging has made. Click to copy, to paste into vis-gl.js as the new default."></div>
+                </div>
                 <div class="mb-res" id="mbRes">
                   <button class="mb-res-btn" data-fft="1024">1k</button>
                   <button class="mb-res-btn" data-fft="2048">2k</button>

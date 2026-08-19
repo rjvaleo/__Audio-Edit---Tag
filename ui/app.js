@@ -6919,6 +6919,227 @@ document.querySelectorAll('[data-fft]').forEach((b) => {
   };
 });
 
+// ───────────────────────────────────────────────────────────── the room editor
+//
+// The room's shape and camera are numbers nobody can picture. `floorY` at -0.38
+// against `ceilY` at 0.62 is not a quantity, it is *how far you are looking
+// down*, and the only way to choose it is to look down and see. So there is
+// nothing to type here: you drag the room and the room moves. The numbers are
+// an output, shown so a result worth keeping can become the default in
+// `vis-gl.js`. See `docs/ROOM-EDITOR.md`.
+
+/// The frame shapes the video export offers, plus the dock's own.
+///
+/// Each keeps its own camera, because the constants that suit a wide panel do
+/// not survive being narrowed — at 9:16 the room is a third of the width it was
+/// designed for and the sky ring, whose radius comes from the height and so
+/// does not shrink with it, takes 60% of what is left.
+const ROOM_FRAMES = [
+  { key: 'dock', label: 'Dock', ratio: 0 },
+  { key: '16x9', label: '16:9', ratio: 16 / 9 },
+  { key: '1x1', label: '1:1', ratio: 1 },
+  { key: '4x5', label: '4:5', ratio: 4 / 5 },
+  { key: '9x16', label: '9:16', ratio: 9 / 16 },
+];
+
+/// What the source ships. Kept here as well as in `vis-gl.js` so a drag has
+/// something to start from and Reset has something to go back to.
+const ROOM_CAM_DEFAULT = {
+  depth: 1.9, floorY: -0.38, ceilY: 0.62, shiftX: 0, skyAt: 0.72, ring: 0.17,
+};
+
+const roomEdit = { on: false, frame: 'dock', cams: {}, drag: null };
+
+try {
+  roomEdit.cams = JSON.parse(localStorage.getItem('roomCameras') || '{}') || {};
+} catch { roomEdit.cams = {}; }
+
+/// What to draw with. Null is "whatever the source says", which is what every
+/// frame is until somebody poses it.
+function roomCamera() {
+  return roomEdit.cams[roomEdit.frame] || null;
+}
+
+function saveRoomCameras() {
+  try { localStorage.setItem('roomCameras', JSON.stringify(roomEdit.cams)); } catch {}
+}
+
+/// The camera being edited, filled in, so a drag has something to add to even
+/// on a frame nobody has touched.
+function roomCamNow() {
+  return { ...ROOM_CAM_DEFAULT, ...(roomEdit.cams[roomEdit.frame] || {}) };
+}
+
+function roomFrame() {
+  return ROOM_FRAMES.find((f) => f.key === roomEdit.frame) || ROOM_FRAMES[0];
+}
+
+/// Letterbox the room into the shape being designed for.
+///
+/// Width from height, so the box keeps the panel's height and gives back the
+/// width it does not need. A tall frame inside a wide dock is a tall strip in
+/// the middle of it — which is exactly what it will be in the file, which is
+/// the whole reason for looking at it this way rather than imagining it.
+function applyRoomFrame() {
+  const cell = document.querySelector('#masterBus .mb-cell-3d');
+  if (!cell) return;
+  const f = roomFrame();
+  const framed = roomEdit.on && f.ratio > 0;
+  cell.classList.toggle('re-framed', framed);
+  cell.style.aspectRatio = framed ? String(f.ratio) : '';
+}
+
+function paintRoomNums() {
+  const el = $('reNums');
+  if (!el) return;
+  const c = roomCamNow();
+  const n = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
+  el.textContent =
+    `depth ${n(c.depth)}  floorY ${n(c.floorY)}  ceilY ${n(c.ceilY)}  `
+    + `shiftX ${n(c.shiftX)}  skyAt ${n(c.skyAt)}  ring ${n(c.ring)}`;
+  el.dataset.copy = JSON.stringify({
+    depth: +n(c.depth), floorY: +n(c.floorY), ceilY: +n(c.ceilY),
+    shiftX: +n(c.shiftX), skyAt: +n(c.skyAt), ring: +n(c.ring),
+  });
+  for (const b of document.querySelectorAll('#reFrames .re-btn')) {
+    b.classList.toggle('active', b.dataset.frame === roomEdit.frame);
+  }
+}
+
+function buildRoomFrames() {
+  const box = $('reFrames');
+  if (!box || box.children.length) return;
+  for (const f of ROOM_FRAMES) {
+    const b = document.createElement('button');
+    b.className = 're-btn';
+    b.dataset.frame = f.key;
+    b.textContent = f.label;
+    b.title = f.ratio > 0
+      ? `Pose the room for a ${f.label} frame. Its camera is kept separately.`
+      : "The dock's own shape.";
+    b.onclick = () => {
+      roomEdit.frame = f.key;
+      applyRoomFrame();
+      paintRoomNums();
+    };
+    box.appendChild(b);
+  }
+}
+
+function toggleRoomEdit() {
+  roomEdit.on = !roomEdit.on;
+  buildRoomFrames();
+  $('masterBus')?.classList.toggle('room-editing', roomEdit.on);
+  $('roomEdit')?.classList.toggle('hidden', !roomEdit.on);
+  applyRoomFrame();
+  paintRoomNums();
+}
+
+/// Which part of the room a drag has hold of.
+///
+/// Two zones rather than two modifier keys: a modifier is a thing you have to
+/// be told and a zone is a thing you find. The ring hangs `skyAt` of the way up
+/// the room, so it sits `1 - skyAt` of the way down the canvas — the top third
+/// contains it at every setting it is usable at.
+function roomZoneAt(y, h) {
+  return y < h * 0.34 ? 'sky' : 'camera';
+}
+
+(function wireRoomDrag() {
+  const gl = $('visGl');
+  if (!gl) return;
+
+  gl.addEventListener('pointerdown', (e) => {
+    if (!roomEdit.on) return;
+    const r = gl.getBoundingClientRect();
+    roomEdit.drag = {
+      zone: roomZoneAt(e.clientY - r.top, r.height),
+      x: e.clientX, y: e.clientY, w: r.width, h: r.height,
+      cam: roomCamNow(),
+    };
+    gl.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  gl.addEventListener('pointermove', (e) => {
+    const d = roomEdit.drag;
+    if (!d) return;
+    const dx = (e.clientX - d.x) / Math.max(1, d.w);
+    const dy = (e.clientY - d.y) / Math.max(1, d.h);
+    const c = { ...d.cam };
+
+    if (d.zone === 'sky') {
+      // The ring: how far up the room it hangs, and how big across it is.
+      c.skyAt = Math.max(0.05, Math.min(0.98, d.cam.skyAt - dy));
+      c.ring = Math.max(0.02, Math.min(0.6, d.cam.ring + dx * 0.5));
+    } else {
+      // The camera.
+      //
+      // The room's height is held and its *asymmetry about zero* moves, because
+      // that asymmetry is the tilt. `floorY` and `ceilY` are not two
+      // independent numbers, and offering them as two would be two controls for
+      // one thing — which is the mistake a panel of fields makes by its nature.
+      //
+      // The horizon goes where the hand goes. Drag down and the horizon comes
+      // down with it, which shows less floor — the opposite convention, where
+      // dragging down tilts the camera down and reveals *more* floor, is how an
+      // orbit control behaves, and this is not an orbit control. Nothing here
+      // is a camera you fly; it is a room you take hold of.
+      //
+      // The floor's near edge is pinned to the bottom of the frame by
+      // construction — it sits at `floorY`, which is the frustum's bottom — so
+      // what a vertical drag changes is how high the horizon sits above it, and
+      // that is the whole of the tilt.
+      const h = d.cam.ceilY - d.cam.floorY;
+      const eye = Math.max(0.02, Math.min(0.98, (-d.cam.floorY) / h - dy));
+      c.floorY = -eye * h;
+      c.ceilY = (1 - eye) * h;
+      // Sideways is the same off-axis trick and the same rule: the vanishing
+      // point follows the hand. Shifting the frustum right swings the view
+      // right, which moves the vanishing point *left* in the frame, so the sign
+      // is against the drag.
+      c.shiftX = Math.max(-1, Math.min(1, d.cam.shiftX - dx * 2));
+    }
+    roomEdit.cams[roomEdit.frame] = c;
+    paintRoomNums();
+  });
+
+  const end = (e) => {
+    if (!roomEdit.drag) return;
+    roomEdit.drag = null;
+    try { gl.releasePointerCapture(e.pointerId); } catch {}
+    saveRoomCameras();
+  };
+  gl.addEventListener('pointerup', end);
+  gl.addEventListener('pointercancel', end);
+
+  // Depth is a scroll because it is the one dimension not on the screen to be
+  // grabbed. Exponential, so the room lengthens by the same proportion per
+  // notch wherever it already is.
+  gl.addEventListener('wheel', (e) => {
+    if (!roomEdit.on) return;
+    e.preventDefault();
+    const c = roomCamNow();
+    c.depth = Math.max(0.2, Math.min(12, c.depth * Math.exp(-e.deltaY * 0.0015)));
+    roomEdit.cams[roomEdit.frame] = c;
+    paintRoomNums();
+    saveRoomCameras();
+  }, { passive: false });
+})();
+
+$('reReset')?.addEventListener('click', () => {
+  delete roomEdit.cams[roomEdit.frame];
+  saveRoomCameras();
+  paintRoomNums();
+});
+
+$('reNums')?.addEventListener('click', (e) => {
+  navigator.clipboard?.writeText(e.currentTarget.dataset.copy || '').then(
+    () => toast('camera copied — paste it into VG_CAMERA in vis-gl.js'),
+    () => toast('could not reach the clipboard'),
+  );
+});
+
 // ─────────────────────────────────────────────────── the box, filling the screen
 //
 // The panel goes fullscreen, not the canvas.
@@ -8741,6 +8962,8 @@ const MENUS = [
       { label: 'Grains', on: () => editing(), run: toggleVisWindow },
       { label: 'Master bus full screen', key: tick(() => masterIsFullscreen()),
         on: () => editing(), run: toggleMasterFullscreen },
+      { label: 'Edit the room', key: tick(() => roomEdit.on),
+        on: () => editing(), run: toggleRoomEdit },
       { label: 'Keys', on: () => editing() && hasFile(),
         run: () => (keyboardOpen() ? closeKeyboard() : openKeyboard()) },
     ],
@@ -10666,6 +10889,7 @@ function visGlTick() {
     cold: vgRgb('--wave-2', '#4a9fd8'),
     hot: vgRgb('--wave', '#5fd47a'),
     core: vgRgb('--accent', '#7fd0ff'),
+    cam: roomCamera(),
   });
 }
 
