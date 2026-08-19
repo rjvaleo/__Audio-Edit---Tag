@@ -28,7 +28,39 @@ to it with the root. Everything in the interface reads its colours through
 `var(--x)`, so scoping the variables to a container themes everything inside it
 and nothing outside.
 
-## Three pickers, not thirteen
+## No colour codes
+
+The first version put three `<input type="color">` in the panel. That is a
+developer's idea of a colour tool: nobody chooses a theme by typing `#0e1116`.
+
+What the panel offers instead is five things you can feel, each drawn as a strip
+you drag, painted with what it does across its whole length so the choice is
+visible before it is made:
+
+| control | what it moves |
+|---|---|
+| **Hue** | the whole theme turns |
+| **Accent** | its own hue, so the interval against the theme can be chosen |
+| **Colour** | how saturated the surfaces are, grey through to vivid |
+| **Contrast** | how far apart the rungs sit — flat and moody, or every panel separated |
+| **Light** | where the ladder sits, deep black through to a light interface |
+
+Six **variations** sit under them — as is, warmer, cooler, complement, triad,
+mono — because turning one hue at a time only ever finds the theme next door,
+and the interesting ones are usually a third of the way round the wheel.
+
+Beside them, the **contrast figures**: text, dim and dimmer against the surface
+they sit on, in WCAG ratios, marked when they fall under 4.5 and coloured when
+they fall under 3. A theme that cannot be read is not a theme, and that is not
+obvious by eye on a colour you have been staring at for a minute.
+
+**Light and dark are one control, not a switch.** Push *Light* past the middle
+and the text ladder turns over: the default is light text on dark ground with
+its dim steps *below* the brightest, and on a light theme the text must be dark
+with its dim steps *above* — otherwise "dim" would mean brighter than the thing
+it is dimming.
+
+## The ladder, not the colours
 
 The earlier plan was to name eight surface steps, four text steps and one accent
 directly, because deriving sixty tokens from five produces arbitrary results.

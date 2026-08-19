@@ -2466,15 +2466,35 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   flex: 1 1 auto; background: var(--accent); border-radius: 1px; min-height: 2px;
 }
 
-/* Fixed widths, never flex. */
-.theme-picks { display: flex; gap: 6px; margin-bottom: 8px; }
-.tm-pick {
-  width: 78px; display: flex; flex-direction: column; gap: 3px;
-  font-size: 9px; color: var(--text-dim);
+/* The controls. Strips you drag, not fields you type into — nobody chooses a
+   theme by pasting a colour code. Each one paints what it does, so the choice
+   is visible before it is made. */
+.tm-ctl { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.tm-ctl-k {
+  flex: 0 0 56px; font-size: 9px; letter-spacing: .04em; color: var(--text-dim);
 }
-.tm-pick input[type="color"] {
-  width: 78px; height: 22px; padding: 0; border: 1px solid var(--line-2);
-  border-radius: 4px; background: transparent; cursor: pointer;
+.tm-strip {
+  flex: 1 1 auto; min-width: 0; height: 20px; display: block;
+  border-radius: 4px; border: 1px solid var(--line-2);
+  cursor: ew-resize; touch-action: none;
 }
+.tm-strip-sm { height: 14px; }
+
+.tm-vary-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 10px 0 5px;
+}
+.tm-contrast { font-size: 9px; }
+/* Below three to one, body text is not readable on that ground. */
+.tm-contrast.warn { color: var(--bad); }
+/* Six candidates from the current setting. Fixed widths — never flex. */
+.tm-vary { display: flex; gap: 5px; margin-bottom: 9px; }
+.tm-swatch-btn {
+  width: 46px; height: 30px; padding: 0; cursor: pointer;
+  border: 1px solid var(--line-2); border-radius: 4px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.tm-swatch-btn:hover { border-color: var(--text-dim); }
+.tm-swatch-btn i { display: block; flex: 1 1 auto; }
 .theme-edit-actions { gap: 6px; }
 .theme-edit-actions .ghost { width: 84px; }

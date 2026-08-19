@@ -10418,34 +10418,40 @@ startVisGl();
 // stylesheet and reproduced — what the pickers choose is where the ladder sits
 // and what colour it is, never how far apart its rungs are.
 
-/// Which tokens the editor drives, grouped by the picker that moves them, and
-/// in ladder order within each group.
+/// Which tokens the editor drives, in ladder order within each group.
 const TME_SURFACES = [
   '--sink', '--well', '--bg', '--surface-0',
   '--surface', '--surface-2', '--surface-2h', '--surface-3',
 ];
 const TME_TEXTS = ['--text', '--text-2', '--text-dim', '--text-dimmer'];
-/// The step each group's offsets are measured against.
 const TME_SURFACE_BASE = '--bg';
 const TME_TEXT_BASE = '--text';
 
+/// Above this the theme is a light one, and the text ladder turns over.
+const TME_FLIP = 0.5;
+
+/// The theme, as five things you can feel.
+///
+/// Not a set of colours to be typed. Nobody picks a theme by pasting `#0e1116`:
+/// you turn the hue until it looks right, decide how colourful and how contrasty
+/// it should be, and choose the accent against it. These five numbers are that,
+/// and every token is worked out from them.
 const themeEditor = {
   /// The stylesheet's own values, resolved once. Null until first asked for.
   defaults: null,
-  surface: null,
-  text: null,
-  accent: null,
+  hue: 210,        // 0..360, the surfaces
+  accentHue: 230,  // 0..360, on its own so the interval can be chosen
+  chroma: 1,       // 0..2, how colourful — a multiple of the measured saturation
+  contrast: 1,     // 0..2, how far apart the rungs sit
+  lift: 0.02,      // 0..0.95, where the whole ladder sits
 };
 
 /// A CSS colour as hue, saturation and lightness, or null.
 ///
 /// `rgbToHsl` hands back an **object**, not a triple, and its saturation and
-/// lightness are 0..1 rather than percentages — destructuring it as an array
-/// and clamping against 0..100 was three bugs in one line, and produced tokens
-/// that were silently never written.
-///
-/// `cssHex` is what makes this work at all: the stylesheet states its colours
-/// in `oklch`, and this resolves any CSS colour the browser understands.
+/// lightness are 0..1 rather than percentages. `cssHex` is what makes this work
+/// at all: the stylesheet states its colours in `oklch`, and this resolves any
+/// CSS colour the browser understands.
 function tmeHsl(colour) {
   const hex = cssHex(colour);
   if (!hex) return null;
@@ -10462,102 +10468,243 @@ function tmeHsl(colour) {
 function tmeDefaults() {
   if (themeEditor.defaults) return themeEditor.defaults;
   const root = document.documentElement;
+  const keys = [...TME_SURFACES, ...TME_TEXTS, '--accent'];
   const held = {};
-  for (const k of [...TME_SURFACES, ...TME_TEXTS, '--accent']) {
+  for (const k of keys) {
     const v = root.style.getPropertyValue(k);
     if (v) held[k] = v;
     root.style.removeProperty(k);
   }
   const cs = getComputedStyle(root);
   const out = {};
-  for (const k of [...TME_SURFACES, ...TME_TEXTS, '--accent']) {
-    out[k] = tmeHsl(cs.getPropertyValue(k).trim());
-  }
+  for (const k of keys) out[k] = tmeHsl(cs.getPropertyValue(k).trim());
   for (const [k, v] of Object.entries(held)) root.style.setProperty(k, v);
   themeEditor.defaults = out;
   return out;
 }
 
-/// One group of tokens, moved to sit where a picked colour says.
+/// The whole token set, from the five numbers.
 ///
-/// Additive on every axis, so the *spacing* is untouched: the gap between two
-/// surfaces stays exactly the gap the interface was designed with, and only
-/// where the whole ladder sits and what colour it is can change. Scaling
-/// instead would compress the ladder toward one end as the picked colour got
-/// darker, which is most of what made the old derivation look arbitrary.
-function tmeLadder(keys, baseKey, picked, defaults) {
-  const base = defaults[baseKey];
+/// The ladder is not invented: the spacing between the interface's own steps is
+/// measured and reproduced, scaled by `contrast`. At contrast 1 the gaps are
+/// exactly the gaps the panels were designed with.
+function tmeTokens(over = {}) {
+  const e = { ...themeEditor, ...over };
+  const d = tmeDefaults();
+  const sBase = d[TME_SURFACE_BASE], tBase = d[TME_TEXT_BASE];
+  if (!sBase || !tBase) return {};
   const out = {};
-  if (!base || !picked) return out;
-  for (const k of keys) {
-    const d = defaults[k];
-    if (!d) continue;
-    // 0..1 on both axes, which is the range `hsl` speaks.
+
+  for (const k of TME_SURFACES) {
+    const t = d[k];
+    if (!t) continue;
     out[k] = hsl(
-      picked.h,
-      clamp(picked.s + (d.s - base.s), 0, 1),
-      clamp(picked.l + (d.l - base.l), 0, 1),
+      e.hue,
+      clamp(t.s * e.chroma, 0, 1),
+      clamp(e.lift + (t.l - sBase.l) * e.contrast, 0, 1),
     );
   }
+
+  // Text turns over when the theme does. The default ladder is light text on
+  // dark ground with its dimmer steps *below* the brightest; on a light theme
+  // the text must be dark and its dimmer steps *above*, or "dim" would mean
+  // brighter than the thing it is dimming.
+  const flip = e.lift >= TME_FLIP;
+  const dir = flip ? -1 : 1;
+  const textBase = flip ? 1 - tBase.l : tBase.l;
+  for (const k of TME_TEXTS) {
+    const t = d[k];
+    if (!t) continue;
+    out[k] = hsl(
+      e.hue,
+      clamp(t.s * e.chroma * 0.6, 0, 1),
+      clamp(textBase + (t.l - tBase.l) * e.contrast * dir, 0, 1),
+    );
+  }
+
+  const ac = d['--accent'];
+  if (ac) out['--accent'] = hsl(e.accentHue, clamp(ac.s * e.chroma, 0, 1), ac.l);
   return out;
 }
 
-/// The full token set for the three colours currently picked.
-function tmeTokens() {
-  const d = tmeDefaults();
-  const surface = themeEditor.surface || d[TME_SURFACE_BASE];
-  const text = themeEditor.text || d[TME_TEXT_BASE];
-  const accent = themeEditor.accent || d['--accent'];
-  return {
-    ...tmeLadder(TME_SURFACES, TME_SURFACE_BASE, surface, d),
-    ...tmeLadder(TME_TEXTS, TME_TEXT_BASE, text, d),
-    // Verbatim. The accent is the one colour that was chosen rather than
-    // derived, and deriving it back off itself would be a way of ignoring it.
-    '--accent': hsl(accent.h, accent.s, accent.l),
-  };
+// ── contrast, because a theme that cannot be read is not a theme ────────────
+
+/// WCAG relative luminance.
+function tmeLuma(hex) {
+  const f = hexToRgb(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
 }
 
-/// Repaint the miniature. Only the miniature — the page changes on Apply.
+function tmeContrastOf(a, b) {
+  const l1 = tmeLuma(a), l2 = tmeLuma(b);
+  const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/// What the current setting does to legibility, said plainly.
+function tmePaintContrast(tokens) {
+  const el = $('themeContrastRead');
+  if (!el) return;
+  const bg = tokens['--surface'] || tokens['--bg'];
+  const pairs = [['text', '--text'], ['dim', '--text-dim'], ['dimmer', '--text-dimmer']];
+  const parts = [];
+  let worst = Infinity;
+  for (const [name, k] of pairs) {
+    if (!tokens[k] || !bg) continue;
+    const r = tmeContrastOf(tokens[k], bg);
+    worst = Math.min(worst, r);
+    // 4.5 is the readable threshold for body text; 3 for large or incidental.
+    parts.push(`${name} ${r.toFixed(1)}${r >= 4.5 ? '' : r >= 3 ? '·' : '!'}`);
+  }
+  el.textContent = parts.join('  ');
+  el.classList.toggle('warn', worst < 3);
+}
+
+// ── the strips ──────────────────────────────────────────────────────────────
+
+/// Paint one control, and make it draggable.
+///
+/// Each strip shows what it does across its whole length, so the choice is
+/// visible before it is made rather than discovered by trying it.
+function tmeStrip(id, read, write, paint) {
+  const el = $(id);
+  if (!el) return () => {};
+  const draw = () => {
+    const w = el.clientWidth, h = el.clientHeight;
+    if (!w || !h) return;
+    const dpr = window.devicePixelRatio || 1;
+    if (el.width !== Math.round(w * dpr) || el.height !== Math.round(h * dpr)) {
+      el.width = Math.round(w * dpr); el.height = Math.round(h * dpr);
+    }
+    const c = el.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    for (let x = 0; x < w; x++) {
+      c.fillStyle = paint(x / (w - 1));
+      c.fillRect(x, 0, 1, h);
+    }
+    // The marker. Drawn twice, dark under light, so it is visible at both ends.
+    const px = Math.round(read() * (w - 1)) + 0.5;
+    c.strokeStyle = 'rgba(0,0,0,.75)'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(px, 0); c.lineTo(px, h); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,.95)'; c.lineWidth = 1.25;
+    c.beginPath(); c.moveTo(px, 0); c.lineTo(px, h); c.stroke();
+  };
+
+  let dragging = false;
+  const at = (ev) => {
+    const r = el.getBoundingClientRect();
+    write(Math.max(0, Math.min(1, (ev.clientX - r.left) / Math.max(1, r.width))));
+    tmePaint();
+  };
+  el.addEventListener('pointerdown', (e) => {
+    dragging = true; el.setPointerCapture(e.pointerId); at(e);
+  });
+  el.addEventListener('pointermove', (e) => { if (dragging) at(e); });
+  const up = (e) => {
+    dragging = false;
+    try { el.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+  };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  if (window.ResizeObserver) new ResizeObserver(draw).observe(el);
+  return draw;
+}
+
+let tmeRedraw = [];
+
+// ── variations ──────────────────────────────────────────────────────────────
+
+/// Six candidates from where you are: the classic intervals plus a greyscale.
+///
+/// Offered because turning one hue at a time finds the theme next door, and the
+/// interesting ones are usually a third of the way round the wheel.
+const TME_VARIATIONS = [
+  { name: 'as is', dh: 0, da: 0 },
+  { name: 'warmer', dh: 30, da: 30 },
+  { name: 'cooler', dh: -30, da: -30 },
+  { name: 'complement', dh: 0, da: 180 },
+  { name: 'triad', dh: 120, da: -120 },
+  { name: 'mono', dh: 0, da: 0, chroma: 0.15 },
+];
+
+function tmeRenderVariations() {
+  const box = $('themeVary');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const v of TME_VARIATIONS) {
+    const over = {
+      hue: (themeEditor.hue + v.dh + 360) % 360,
+      accentHue: (themeEditor.accentHue + v.da + 360) % 360,
+      ...(v.chroma === undefined ? {} : { chroma: v.chroma }),
+    };
+    const t = tmeTokens(over);
+    const b = document.createElement('button');
+    b.className = 'tm-swatch-btn';
+    b.title = v.name;
+    for (const k of ['--surface-2', '--surface', '--bg', '--accent']) {
+      const i = document.createElement('i');
+      i.style.background = t[k] || 'transparent';
+      b.appendChild(i);
+    }
+    b.onclick = () => {
+      Object.assign(themeEditor, over);
+      tmePaint();
+    };
+    box.appendChild(b);
+  }
+}
+
+/// Repaint the miniature and the controls. Only those — the page changes on
+/// Apply, so a colour can be moved back and forth without the thing being
+/// judged jumping under your hand.
 function tmePaint() {
-  const mini = $('themeMini');
-  if (!mini) return;
-  Theme.applyTo(mini, tmeTokens());
+  const tokens = tmeTokens();
+  Theme.applyTo($('themeMini'), tokens);
+  tmePaintContrast(tokens);
+  tmeRenderVariations();
+  for (const d of tmeRedraw) d();
+}
+
+function tmeSeedFromDefaults() {
+  const d = tmeDefaults();
+  themeEditor.hue = d[TME_SURFACE_BASE]?.h ?? 210;
+  themeEditor.accentHue = d['--accent']?.h ?? 230;
+  themeEditor.chroma = 1;
+  themeEditor.contrast = 1;
+  themeEditor.lift = d[TME_SURFACE_BASE]?.l ?? 0.02;
 }
 
 function tmeWire() {
-  const mini = $('themeMini');
-  if (!mini) return;
+  if (!$('themeMini')) return;
+  tmeSeedFromDefaults();
   const d = tmeDefaults();
 
-  // The pickers start on the colours actually in force, so the miniature opens
-  // showing the interface as it is rather than as some default guess.
-  const seed = (id, group, fallback) => {
-    const el = $(id);
-    if (!el) return;
-    const h = fallback;
-    if (h) el.value = cssHex(hsl(h.h, h.s, h.l)) || el.value;
-    themeEditor[group] = h;
-    // `input` rather than `change`: the whole point is that it moves as you do.
-    el.addEventListener('input', () => {
-      themeEditor[group] = tmeHsl(el.value);
-      tmePaint();
-    });
-  };
-  seed('themeSurface', 'surface', d[TME_SURFACE_BASE]);
-  seed('themeText', 'text', d[TME_TEXT_BASE]);
-  seed('themeAccent', 'accent', d['--accent']);
+  tmeRedraw = [
+    tmeStrip('themeHue', () => themeEditor.hue / 360, (t) => { themeEditor.hue = t * 360; },
+      (t) => hsl(t * 360, clamp(0.55 * themeEditor.chroma, 0.12, 1), 0.5)),
+    tmeStrip('themeAccentHue', () => themeEditor.accentHue / 360,
+      (t) => { themeEditor.accentHue = t * 360; },
+      (t) => hsl(t * 360, 0.62, 0.55)),
+    tmeStrip('themeChroma', () => themeEditor.chroma / 2, (t) => { themeEditor.chroma = t * 2; },
+      (t) => hsl(themeEditor.hue, clamp((d[TME_SURFACE_BASE]?.s ?? 0.5) * t * 2, 0, 1),
+        clamp(themeEditor.lift + 0.16, 0.06, 0.92))),
+    tmeStrip('themeContrast', () => themeEditor.contrast / 2,
+      (t) => { themeEditor.contrast = t * 2; },
+      (t) => {
+        // The strip shows the spread it buys: flat at the left, separated at
+        // the right.
+        const spread = (t * 2) * 0.16;
+        return hsl(themeEditor.hue, 0.2, clamp(themeEditor.lift + spread, 0, 1));
+      }),
+    tmeStrip('themeLift', () => themeEditor.lift / 0.95, (t) => { themeEditor.lift = t * 0.95; },
+      (t) => hsl(themeEditor.hue, clamp(0.3 * themeEditor.chroma, 0, 1), t * 0.95)),
+  ];
 
-  $('themeEditReset')?.addEventListener('click', () => {
-    themeEditor.surface = d[TME_SURFACE_BASE];
-    themeEditor.text = d[TME_TEXT_BASE];
-    themeEditor.accent = d['--accent'];
-    for (const [id, g] of [['themeSurface', 'surface'], ['themeText', 'text'],
-      ['themeAccent', 'accent']]) {
-      const el = $(id), h = themeEditor[g];
-      if (el && h) el.value = cssHex(hsl(h.h, h.s, h.l)) || el.value;
-    }
-    tmePaint();
-  });
+  $('themeEditReset')?.addEventListener('click', () => { tmeSeedFromDefaults(); tmePaint(); });
 
   $('themeEditApply')?.addEventListener('click', () => {
     // Onto the page, and nothing is chosen in the list any more — what is on
@@ -10571,15 +10718,10 @@ function tmeWire() {
   $('themeEditSave')?.addEventListener('click', () => {
     const name = prompt('Name this theme', `Mine ${themeState.mine.length + 1}`);
     if (!name) return;
-    // A *complete* palette, in the shape everything else produces.
-    //
-    // The first version saved `{id, name, direct, tokens}` and nothing else.
-    // Every shipped palette carries `colors`, and the one shipped direct theme
-    // also carries `dark` — so `renderThemeList` read `p.colors.join(' ')` on an
-    // entry that had none, threw at load, and aborted the rest of `app.js`.
-    // The meters, the room and everything defined after them never came into
-    // being. Guarding the readers was the patch; producing the right shape is
-    // the fix, and it is this editor's job because this editor made the theme.
+    // A *complete* palette, in the shape everything else produces. Saving one
+    // without `colors` threw in `renderThemeList` at the next load and took the
+    // whole application down with it; this editor made the theme, so producing
+    // a shape the rest of it can read is this editor's job.
     const tokens = tmeTokens();
     const id = `mine-${Date.now().toString(36)}`;
     themeState.mine.push({
@@ -10587,14 +10729,9 @@ function tmeWire() {
       name,
       direct: true,
       tokens,
-      // For the swatch chips, and so the row has something to describe itself
-      // with. These are the colours that were actually picked.
       colors: ['--accent', '--surface-2', '--surface', '--bg', '--sink']
         .map((k) => tokens[k]).filter(Boolean),
-      // Which way round it is, the same question `deriveTheme` answers for a
-      // five-colour palette. A direct theme has to state it: nothing can work
-      // it out from tokens that were never derived.
-      dark: (themeEditor.surface?.l ?? 0) < 0.5,
+      dark: themeEditor.lift < TME_FLIP,
     });
     themeState.chosen = id;
     saveTheme();
