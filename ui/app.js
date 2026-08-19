@@ -7748,10 +7748,31 @@ function grainsFollowView() {
     loadGrains();
     return;
   }
-  if (!state.grains) return;
-
   const win = viewWindow();
   const head = playheadWindow();
+
+  // Nothing in hand at all: ask for it.
+  //
+  // This used to `return`, which left the poll able to *refresh* a schedule but
+  // never to fetch a first one. So any way the schedule came to be missing — a
+  // request superseded by a newer one, a race while switching sounds, a reply
+  // that failed — was permanent: the marks and the read band stayed away until
+  // something else happened to call `loadGrains`, which is why moving any grain
+  // control made them all appear at once.
+  //
+  // The document has to be a granular one for there to be anything to ask for,
+  // and the debounce below keeps this to one request rather than twenty a
+  // second while it is in flight.
+  if (!state.grains?.grains?.length) {
+    // `grain` hangs off `stretch`, not off the document. Testing
+    // `state.edit.grain` would have been false on every document there is, so
+    // this branch would have returned early every time and fetched nothing —
+    // the same silence it was written to end.
+    if (!win || !state.edit?.stretch) return;
+    clearTimeout(grainsViewTimer);
+    grainsViewTimer = setTimeout(() => loadGrains(), 120);
+    return;
+  }
 
   // Stale two ways, and the second is the one that matters.
   //
