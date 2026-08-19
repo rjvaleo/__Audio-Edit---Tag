@@ -1925,3 +1925,65 @@ fn only_one_export_runs_at_a_time() {
     }
     assert_eq!(status(&second), 400, "a second export was neither refused nor started");
 }
+
+// ── the measuring passes ──────────────────────────────────────────────────────
+//
+// A library of six hundred sounds added at once turned the first request that
+// touched the classifier into a walk of the whole library, and the server is a
+// thread per connection, so every request that arrived while it worked started
+// its own walk. Thirteen threads were measured decoding the same files from the
+// beginning at once, none of them able to see the others' work because nothing
+// reached disk until a pass finished.
+//
+// The property is that a second caller does not start a second pass.
+
+#[test]
+fn only_one_thread_can_be_inside_a_pass() {
+    use server::state::Pass;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let pass = Arc::new(Pass::default());
+    // How many got in at all, and how many were inside together. The second is
+    // the number that was wrong: it used to be all of them.
+    let entered = Arc::new(AtomicUsize::new(0));
+    let inside = Arc::new(AtomicUsize::new(0));
+    let most = Arc::new(AtomicUsize::new(0));
+
+    let mut hands = Vec::new();
+    for _ in 0..13 {
+        let (pass, entered, inside, most) =
+            (pass.clone(), entered.clone(), inside.clone(), most.clone());
+        hands.push(std::thread::spawn(move || {
+            let Some(_guard) = pass.enter() else { return };
+            entered.fetch_add(1, Ordering::SeqCst);
+            let n = inside.fetch_add(1, Ordering::SeqCst) + 1;
+            most.fetch_max(n, Ordering::SeqCst);
+            // Long enough that the others are certainly trying.
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            inside.fetch_sub(1, Ordering::SeqCst);
+        }));
+    }
+    for h in hands {
+        h.join().unwrap();
+    }
+
+    assert_eq!(most.load(Ordering::SeqCst), 1, "two passes ran at once");
+    assert!(entered.load(Ordering::SeqCst) >= 1, "nobody ran the pass at all");
+    assert_eq!(inside.load(Ordering::SeqCst), 0, "a pass never finished");
+}
+
+#[test]
+fn a_pass_can_be_run_again_once_the_last_one_has_finished() {
+    use server::state::Pass;
+
+    let pass = Pass::default();
+    {
+        let first = pass.enter();
+        assert!(first.is_some(), "the first caller should get in");
+        assert!(pass.enter().is_none(), "the second should be turned away");
+    }
+    // The flag is cleared by the guard going out of scope, not by the pass
+    // remembering to clear it, so an early return or a panic cannot wedge it
+    // shut. A wedged flag would mean the library never got measured again.
+    assert!(pass.enter().is_some(), "the flag was not released");
+}
