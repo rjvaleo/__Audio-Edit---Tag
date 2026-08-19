@@ -291,3 +291,54 @@ test('a thinned view still has a dense schedule to strike sparks from', async ({
   expect(out.swarmCovers,
     'a dense schedule was fetched but it does not cover the playhead').toBe(true);
 });
+
+/// A missing schedule must repair itself.
+///
+/// Reported as "no grains visible, no red selection — yet when I select the
+/// number of grains from the menu it all appears". That menu calls
+/// `setGrainCap`, which calls `loadGrains`, which is the only reason it came
+/// back: the poll could *refresh* a schedule it already had but could never
+/// fetch a first one, because `grainsFollowView` began
+///
+///     if (!state.grains) return;
+///
+/// So any way the schedule came to be missing — a request superseded by a newer
+/// one, a race while switching sounds, a reply that failed — was permanent. The
+/// marks and the read band stayed away until something unrelated happened to
+/// ask again.
+///
+/// The cause of any particular gap is not what this tests. It tests that a gap
+/// closes on its own, whatever opened it.
+test('a schedule that goes missing is fetched again by the poll', async ({ page }) => {
+  await editing(page);
+
+  // A stretch worth drawing, so there is something to lose.
+  await page.evaluate(async () => {
+    state.stretchDraft.ratio = 6;
+    state.grainDraft.densityHz = 110;
+    state.grainDraft.layers = 2;
+    await editOp({ op: 'stretch', ...state.stretchDraft, grain: state.grainDraft });
+  });
+  await page.waitForTimeout(2500);
+
+  const had = await page.evaluate(() => state.grains?.grains?.length || 0);
+  expect(had, 'no schedule to begin with, so this proves nothing').toBeGreaterThan(0);
+
+  // However it happens — superseded, raced, failed.
+  await page.evaluate(() => { state.grains = null; grainsFor = null; drawGrainLayer(); });
+  expect(await page.evaluate(() => state.grains)).toBeNull();
+
+  // One turn of the poll, which is what runs while a sound plays.
+  await page.evaluate(() => grainsFollowView());
+  await page.waitForTimeout(2000);
+
+  const back = await page.evaluate(() => ({
+    grains: state.grains?.grains?.length || 0,
+    forWindow: grainsFor,
+    path: grainsPath,
+    selected: state.selectedFile?.path,
+  }));
+  expect(back.grains, 'the poll never fetched the missing schedule').toBeGreaterThan(0);
+  expect(back.forWindow, 'it came back without a window').not.toBeNull();
+  expect(back.path, 'it came back holding another sound’s grains').toBe(back.selected);
+});
