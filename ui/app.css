@@ -2331,6 +2331,58 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 /* Room to read them at that size. The column is sized for a dock, not a wall. */
 #masterBus:fullscreen .mb-side { flex-basis: 176px; }
+
+/* ── the room editor ──────────────────────────────────────────────────────────
+   An overlay that does not take the pointer. Everything that edits the room is
+   a drag on the room, so the only things here that can be clicked are the
+   frame shapes and the way back. */
+.room-edit {
+  position: absolute; inset: 0; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 6px 8px; z-index: 2;
+}
+.room-edit.hidden { display: none; }
+.re-frames { display: flex; gap: 3px; pointer-events: auto; }
+.re-btn {
+  height: 15px; padding: 0 7px;
+  border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
+  color: var(--text-dim); font: inherit; font-size: 8.5px; line-height: 1;
+  cursor: pointer;
+}
+.re-btn:hover { color: var(--text-2); border-color: var(--line); }
+.re-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.re-reset { pointer-events: auto; align-self: flex-start; }
+/* Bottom left, clear of the peak readout at bottom right and the FFT row —
+   which the editor hides while it is up, because the room is being posed and
+   not measured. */
+.re-nums {
+  font-size: 8.5px; line-height: 1.5; color: var(--text-dim);
+  pointer-events: auto; cursor: copy; align-self: flex-start;
+  background: var(--bg); border-radius: 3px; padding: 3px 6px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.re-nums:hover { color: var(--text-2); }
+/* While the room is being posed it is a thing you grab, and it says so. */
+#masterBus.room-editing #visGl { cursor: grab; }
+#masterBus.room-editing #visGl:active { cursor: grabbing; }
+#masterBus.room-editing #mbRes { display: none; }
+/* A frame shape other than the dock's letterboxes inside whatever room the
+   panel has, so what you are looking at is the shape you are designing for and
+   not a wide panel you have to imagine your way out of. */
+/* `align-self: center` is doing the work and it is worth saying why.
+   The cell lives in a column flex, so its height comes from `flex: 1 1 auto`
+   and its width from the cross axis — which stretches by default. Stretched, a
+   width is already decided and `aspect-ratio` has nothing to derive. Centring
+   it on the cross axis makes the width shrink-to-fit instead, and then the
+   ratio can set it from the height.
+   The first attempt used `flex: 0 1 auto` and got a box 0 by 0: basis `auto`
+   against a canvas that is absolutely positioned means no content, which means
+   no height, which through the ratio means no width either. */
+.mb-cell-3d.re-framed {
+  align-self: center;
+  max-width: 100%;
+  outline: 1px solid var(--line-2);
+}
 .mb-cell-3d { flex: 1 1 auto; min-height: 0; }
 .mb-cell-vu { flex: 1 1 auto; }
 
