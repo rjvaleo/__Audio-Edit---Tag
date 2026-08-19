@@ -2498,3 +2498,77 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .tm-swatch-btn i { display: block; flex: 1 1 auto; }
 .theme-edit-actions { gap: 6px; }
 .theme-edit-actions .ghost { width: 84px; }
+
+/* ─────────────────────────────────────────────────────────────── the studio ──
+   Ported from Emovis' theme studio, which scopes everything under `.ts-studio`
+   and injects its own stylesheet so it can be lifted whole. Here the host has a
+   stylesheet already, so the rules live in it — but the `ts-` prefix is kept,
+   because that is what makes the port traceable to what it came from. */
+.ts-head { display: flex; gap: 6px; align-items: center; margin-bottom: 7px; }
+.ts-filter { flex: 1 1 auto; min-width: 0; }
+/* Fixed width, never flex. */
+.ts-new { width: 62px; }
+
+.ts-ed-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 10px 0 7px;
+}
+.ts-ed-title {
+  font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-2);
+}
+.ts-tag {
+  font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-dim); border: 1px solid var(--line-2);
+  border-radius: 999px; padding: 1px 7px;
+}
+
+.ts-editor { display: flex; flex-direction: column; gap: 9px; }
+.ts-field { display: flex; flex-direction: column; gap: 4px; }
+
+/* A colour well and its hex, side by side. Both, deliberately: the well is how
+   a colour is chosen, the hex is how one arrives from a style guide. */
+.ts-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.ts-swatch {
+  display: flex; align-items: center; gap: 4px;
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 4px;
+}
+.ts-swatch input[type="color"] {
+  width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.ts-swatch input[type="text"] {
+  width: 68px; border: 0; background: transparent; color: var(--text-2);
+  font-family: var(--mono); font-size: 10px;
+}
+.ts-swatch input[type="text"]:focus { outline: 1px solid var(--line); border-radius: 3px; }
+.ts-x {
+  width: 16px; height: 16px; padding: 0; line-height: 1;
+  border: 0; background: transparent; color: var(--text-dim);
+  cursor: pointer; font-size: 12px;
+}
+.ts-x:hover { color: var(--bad); }
+.ts-add { width: 74px; }
+.ts-actions { gap: 6px; }
+.ts-actions .ghost { width: 92px; }
+
+.ts-tokens {
+  max-height: 190px; overflow: auto;
+  font-family: var(--mono); font-size: 9px;
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 5px;
+}
+.ts-tokens > div { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+.ts-tokens i {
+  width: 11px; height: 11px; border-radius: 3px; flex: 0 0 11px;
+  border: 1px solid var(--line-2);
+}
+.ts-tokens b { flex: 0 0 108px; color: var(--text-2); font-weight: 500; }
+.ts-tokens span { color: var(--text-dim); }
+
+.ts-error {
+  font-size: 9.5px; color: var(--bad);
+  border: 1px solid var(--bad); border-radius: 5px; padding: 5px 7px;
+}
+.ts-empty { font-size: 9.5px; color: var(--text-dim); padding: 8px 2px; }
+/* The one open in the editor, as distinct from the one being worn. */
+.theme-row.editing { outline: 1px solid var(--accent); outline-offset: -1px; }
+.theme-inline-note { color: var(--text-dim); font-style: normal; font-size: 9px; }

@@ -9754,17 +9754,53 @@ function saveTheme() {
 
 function applyChosenTheme() {
   const p = allPalettes().find((x) => x.id === themeState.chosen);
-  if (!p) { Theme.apply(null); return; }
-  Theme.apply(themeTokensFor(p));
+  Theme.apply(p ? themeTokensFor(p) : null);
+  // The waveform travels with the theme. `applyWaveColour` is defined below
+  // this, but this only ever runs from a handler or after load, never during
+  // it, so the ordering is safe — unlike reaching for it at declaration time.
+  if (typeof applyWaveColour === 'function') applyWaveColour({ save: false });
 }
+
+/// The studio's own state, declared here rather than beside the rest of the
+/// studio because `renderThemeList` reads it and runs during load.
+///
+/// `let` and `const` hoist into a dead zone: until the declaration executes,
+/// even `typeof` on the name throws. Declaring these after their first reader
+/// therefore did not merely leave them undefined — it threw during load and
+/// took the rest of `app.js` with it, which is the same failure as the palette
+/// that had no `colors`. Load order is a real dependency and this file is one
+/// long script.
+///
+/// `tsSelected` is the palette open in the editor. `themeState.chosen` is the
+/// one the application is wearing. They are different, and you edit one while
+/// wearing another.
+let tsSelected = null;
+let tsFilterText = '';
+let tsShowTokens = false;
 
 function renderThemeList() {
   const box = $('themeList');
   if (!box) return;
   box.innerHTML = '';
-  for (const p of allPalettes()) {
+  const q = tsFilterText.trim().toLowerCase();
+  const shown = q
+    ? allPalettes().filter((p) => p.name.toLowerCase().includes(q))
+    : allPalettes();
+  if (!shown.length) {
+    const empty = document.createElement('div');
+    empty.className = 'ts-empty';
+    empty.textContent = q ? 'No palettes match that filter.' : 'No palettes yet.';
+    box.appendChild(empty);
+    return;
+  }
+  for (const p of shown) {
     const row = document.createElement('div');
-    row.className = 'theme-row' + (p.id === themeState.chosen ? ' chosen' : '');
+    // Two different states, and conflating them was the old behaviour's fault:
+    // `chosen` is the palette the application is *wearing*, `tsSelected` is the
+    // one open in the editor. You edit one while wearing another.
+    row.className = 'theme-row'
+      + (p.id === themeState.chosen ? ' chosen' : '')
+      + (p.id === tsSelected ? ' editing' : '');
     // A theme saved from the editor states its tokens outright and has no five
     // colours behind it. Assuming every palette carries `colors` threw here at
     // load, which aborted the rest of `app.js` — so the meters, the room and
@@ -9785,6 +9821,14 @@ function renderThemeList() {
     const name = document.createElement('span');
     name.className = 'theme-name';
     name.textContent = p.name;
+    for (const [when, text] of [[p.id === themeState.chosen, ' · applied'],
+      [p.readOnly, ' · built in']]) {
+      if (!when) continue;
+      const note = document.createElement('i');
+      note.className = 'theme-inline-note';
+      note.textContent = text;
+      name.appendChild(note);
+    }
 
     row.append(swatch, name);
     if (!p.readOnly) {
@@ -9804,8 +9848,17 @@ function renderThemeList() {
     row.onclick = () => {
       // Clicking the chosen one takes it off, so there is always a way back to
       // the interface's own colours without hunting for a button.
+      // Click a theme to *see* it. The studio this came from is an admin
+      // screen with the application elsewhere, so there it made sense to open a
+      // palette without wearing it. Here the panel sits inside the thing being
+      // themed — the whole point of clicking one is to look at the app in it.
+      // It opens in the editor at the same time.
+      tsSelected = p.id;
       themeState.chosen = themeState.chosen === p.id ? null : p.id;
-      saveTheme(); applyChosenTheme(); renderThemeList();
+      saveTheme();
+      applyChosenTheme();
+      tsRender();
+      renderThemeList();
     };
     box.appendChild(row);
   }
@@ -9833,8 +9886,41 @@ const WAVE_COLOURS = {
 const WAVE_STORE = 'audiolab.waveColour';
 
 /// What is stored: one of the four names, a `#hex`, or nothing for the default.
+///
+/// A palette carries its own now, so this is the *worn* palette's waveform,
+/// then the standing choice in local storage, which is what a fresh install and
+/// a "No theme" both fall back to.
+///
+/// **Not the palette open in the editor.** Preferring that meant clicking a
+/// palette to look at it repainted the real waveform — which breaks the rule
+/// the rest of the studio keeps, that selecting opens a palette and only Apply
+/// wears it. What the editor is holding belongs to the preview; see
+/// `waveShown`.
+///
+/// Deliberately not written with `tsPalette`, which is a `const` declared in the
+/// studio block far below: calling it from here at load time would reach into
+/// its dead zone and throw. `allPalettes` and `themeState` are declared above.
 function waveChoice() {
+  const worn = themeState.chosen
+    ? allPalettes().find((p) => p.id === themeState.chosen)?.wave
+    : null;
+  if (worn) return worn;
   try { return localStorage.getItem(WAVE_STORE) || null; } catch { return null; }
+}
+
+/// What the *editor* is showing — the open palette's waveform when there is
+/// one, otherwise whatever the page is wearing. This drives the swatches and
+/// the miniature, and never the page.
+function waveShown() {
+  const open = tsSelected ? allPalettes().find((p) => p.id === tsSelected) : null;
+  return open?.wave ?? waveChoice();
+}
+
+/// Whether the waveform controls are editing a palette rather than the standing
+/// default — true when an editable palette is open in the studio.
+function waveEditsPalette() {
+  const p = tsSelected ? allPalettes().find((x) => x.id === tsSelected) : null;
+  return !!p && !p.readOnly;
 }
 
 function waveColourValue(choice) {
@@ -9870,10 +9956,23 @@ function applyWaveColour({ save = true, redraw = true } = {}) {
 }
 
 function setWaveColour(choice) {
-  try {
-    if (choice) localStorage.setItem(WAVE_STORE, choice);
-    else localStorage.removeItem(WAVE_STORE);
-  } catch { /* private mode — it still applies for this session */ }
+  // Onto the palette when one is open, so a theme carries the sound's colour
+  // with it. Onto local storage otherwise, which is the standing default.
+  if (waveEditsPalette()) {
+    const p = allPalettes().find((x) => x.id === tsSelected);
+    const i = themeState.mine.findIndex((x) => x.id === p.id);
+    if (i >= 0) {
+      if (choice) themeState.mine[i] = { ...themeState.mine[i], wave: choice };
+      else { const { wave, ...rest } = themeState.mine[i]; themeState.mine[i] = rest; }
+      saveTheme();
+      renderThemeList();
+    }
+  } else {
+    try {
+      if (choice) localStorage.setItem(WAVE_STORE, choice);
+      else localStorage.removeItem(WAVE_STORE);
+    } catch { /* private mode — it still applies for this session */ }
+  }
   applyWaveColour.live = undefined;
   applyWaveColour();
 }
@@ -9881,7 +9980,8 @@ function setWaveColour(choice) {
 function renderWaveColours() {
   const box = $('waveColours');
   if (!box) return;
-  const choice = waveChoice();
+  // What the editor is holding, not what the page is wearing.
+  const choice = waveShown();
   for (const b of box.querySelectorAll('[data-wave]')) {
     b.classList.toggle('active', b.dataset.wave === choice);
     b.style.setProperty('--chip', WAVE_COLOURS[b.dataset.wave]);
@@ -10418,327 +10518,326 @@ startVisGl();
 // stylesheet and reproduced — what the pickers choose is where the ladder sits
 // and what colour it is, never how far apart its rungs are.
 
-/// Which tokens the editor drives, in ladder order within each group.
-const TME_SURFACES = [
-  '--sink', '--well', '--bg', '--surface-0',
-  '--surface', '--surface-2', '--surface-2h', '--surface-3',
-];
-const TME_TEXTS = ['--text', '--text-2', '--text-dim', '--text-dimmer'];
-const TME_SURFACE_BASE = '--bg';
-const TME_TEXT_BASE = '--text';
+// ────────────────────────────────────────────────────────────── theme studio ──
+//
+// Ported from Emovis' `lib/theme-studio`, which was written to be lifted: it
+// depends on React and nothing else there, and on nothing at all here. The
+// derivation engine came across long ago as `theme-derive.js`; this is the
+// editor that was supposed to come with it.
+//
+// A palette is a name and a handful of brand colours. The engine turns those
+// into sixty-odd tokens, and the preview is painted entirely from them — which
+// is what makes this an editor rather than a form. See `docs/THEME-EDITOR.md`.
 
-/// Above this the theme is a light one, and the text ladder turns over.
-const TME_FLIP = 0.5;
-
-/// The theme, as five things you can feel.
-///
-/// Not a set of colours to be typed. Nobody picks a theme by pasting `#0e1116`:
-/// you turn the hue until it looks right, decide how colourful and how contrasty
-/// it should be, and choose the accent against it. These five numbers are that,
-/// and every token is worked out from them.
-const themeEditor = {
-  /// The stylesheet's own values, resolved once. Null until first asked for.
-  defaults: null,
-  hue: 210,        // 0..360, the surfaces
-  accentHue: 230,  // 0..360, on its own so the interval can be chosen
-  chroma: 1,       // 0..2, how colourful — a multiple of the measured saturation
-  contrast: 1,     // 0..2, how far apart the rungs sit
-  lift: 0.02,      // 0..0.95, where the whole ladder sits
-};
-
-/// A CSS colour as hue, saturation and lightness, or null.
-///
-/// `rgbToHsl` hands back an **object**, not a triple, and its saturation and
-/// lightness are 0..1 rather than percentages. `cssHex` is what makes this work
-/// at all: the stylesheet states its colours in `oklch`, and this resolves any
-/// CSS colour the browser understands.
-function tmeHsl(colour) {
-  const hex = cssHex(colour);
-  if (!hex) return null;
-  const c = rgbToHsl(hexToRgb(hex));
-  return (c && Number.isFinite(c.l)) ? c : null;
-}
-
-/// The stylesheet's colours, with any theme temporarily lifted off.
-///
-/// `Theme.apply` writes the current theme as inline properties on `:root`,
-/// which beat the stylesheet. Reading the defaults therefore means taking those
-/// off, reading, and putting them back — otherwise the "defaults" measured are
-/// whatever theme happens to be on, and every edit compounds the last one.
-function tmeDefaults() {
-  if (themeEditor.defaults) return themeEditor.defaults;
-  const root = document.documentElement;
-  const keys = [...TME_SURFACES, ...TME_TEXTS, '--accent'];
-  const held = {};
-  for (const k of keys) {
-    const v = root.style.getPropertyValue(k);
-    if (v) held[k] = v;
-    root.style.removeProperty(k);
+/// `#abc` → `#aabbcc`; anything unparseable → null.
+function tsNormalizeHex(input) {
+  const v = String(input).trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/i.test(v)) {
+    return `#${v.split('').map((c) => c + c).join('')}`.toLowerCase();
   }
-  const cs = getComputedStyle(root);
-  const out = {};
-  for (const k of keys) out[k] = tmeHsl(cs.getPropertyValue(k).trim());
-  for (const [k, v] of Object.entries(held)) root.style.setProperty(k, v);
-  themeEditor.defaults = out;
-  return out;
+  return /^[0-9a-f]{6}$/i.test(v) ? `#${v.toLowerCase()}` : null;
 }
 
-/// The whole token set, from the five numbers.
-///
-/// The ladder is not invented: the spacing between the interface's own steps is
-/// measured and reproduced, scaled by `contrast`. At contrast 1 the gaps are
-/// exactly the gaps the panels were designed with.
-function tmeTokens(over = {}) {
-  const e = { ...themeEditor, ...over };
-  const d = tmeDefaults();
-  const sBase = d[TME_SURFACE_BASE], tBase = d[TME_TEXT_BASE];
-  if (!sBase || !tBase) return {};
-  const out = {};
-
-  for (const k of TME_SURFACES) {
-    const t = d[k];
-    if (!t) continue;
-    out[k] = hsl(
-      e.hue,
-      clamp(t.s * e.chroma, 0, 1),
-      clamp(e.lift + (t.l - sBase.l) * e.contrast, 0, 1),
-    );
-  }
-
-  // Text turns over when the theme does. The default ladder is light text on
-  // dark ground with its dimmer steps *below* the brightest; on a light theme
-  // the text must be dark and its dimmer steps *above*, or "dim" would mean
-  // brighter than the thing it is dimming.
-  const flip = e.lift >= TME_FLIP;
-  const dir = flip ? -1 : 1;
-  const textBase = flip ? 1 - tBase.l : tBase.l;
-  for (const k of TME_TEXTS) {
-    const t = d[k];
-    if (!t) continue;
-    out[k] = hsl(
-      e.hue,
-      clamp(t.s * e.chroma * 0.6, 0, 1),
-      clamp(textBase + (t.l - tBase.l) * e.contrast * dir, 0, 1),
-    );
-  }
-
-  const ac = d['--accent'];
-  if (ac) out['--accent'] = hsl(e.accentHue, clamp(ac.s * e.chroma, 0, 1), ac.l);
-  return out;
+function tsPaletteId(name, taken = []) {
+  const base = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '').slice(0, 48) || 'palette';
+  if (!taken.includes(base)) return base;
+  let n = 2;
+  while (taken.includes(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
 }
 
-// ── contrast, because a theme that cannot be read is not a theme ────────────
+const TS_NEW_COLORS = ['#2e5496', '#7fa1d6', '#e8e4dc', '#3a3a3c'];
 
-/// WCAG relative luminance.
-function tmeLuma(hex) {
-  const f = hexToRgb(hex).map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+const tsPalette = () => allPalettes().find((p) => p.id === tsSelected) || null;
+
+/// The tokens for a palette, and which way round it came out.
+function tsDerive(p) {
+  if (!p) return null;
+  try {
+    if (p.direct) return { tokens: p.tokens || {}, mode: p.dark ? 'dark' : 'light' };
+    if (!p.colors?.length) return null;
+    return Theme.appTokens(p.colors, { plain: themeState.plain });
+  } catch { return null; }
 }
 
-function tmeContrastOf(a, b) {
-  const l1 = tmeLuma(a), l2 = tmeLuma(b);
-  const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
-  return (hi + 0.05) / (lo + 0.05);
-}
-
-/// What the current setting does to legibility, said plainly.
-function tmePaintContrast(tokens) {
-  const el = $('themeContrastRead');
+function tsError(message) {
+  const el = $('tsError');
   if (!el) return;
-  const bg = tokens['--surface'] || tokens['--bg'];
-  const pairs = [['text', '--text'], ['dim', '--text-dim'], ['dimmer', '--text-dimmer']];
-  const parts = [];
-  let worst = Infinity;
-  for (const [name, k] of pairs) {
-    if (!tokens[k] || !bg) continue;
-    const r = tmeContrastOf(tokens[k], bg);
-    worst = Math.min(worst, r);
-    // 4.5 is the readable threshold for body text; 3 for large or incidental.
-    parts.push(`${name} ${r.toFixed(1)}${r >= 4.5 ? '' : r >= 3 ? '·' : '!'}`);
-  }
-  el.textContent = parts.join('  ');
-  el.classList.toggle('warn', worst < 3);
+  el.textContent = message || '';
+  el.classList.toggle('hidden', !message);
 }
 
-// ── the strips ──────────────────────────────────────────────────────────────
-
-/// Paint one control, and make it draggable.
-///
-/// Each strip shows what it does across its whole length, so the choice is
-/// visible before it is made rather than discovered by trying it.
-function tmeStrip(id, read, write, paint) {
-  const el = $(id);
-  if (!el) return () => {};
-  const draw = () => {
-    const w = el.clientWidth, h = el.clientHeight;
-    if (!w || !h) return;
-    const dpr = window.devicePixelRatio || 1;
-    if (el.width !== Math.round(w * dpr) || el.height !== Math.round(h * dpr)) {
-      el.width = Math.round(w * dpr); el.height = Math.round(h * dpr);
-    }
-    const c = el.getContext('2d');
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.clearRect(0, 0, w, h);
-    for (let x = 0; x < w; x++) {
-      c.fillStyle = paint(x / (w - 1));
-      c.fillRect(x, 0, 1, h);
-    }
-    // The marker. Drawn twice, dark under light, so it is visible at both ends.
-    const px = Math.round(read() * (w - 1)) + 0.5;
-    c.strokeStyle = 'rgba(0,0,0,.75)'; c.lineWidth = 3;
-    c.beginPath(); c.moveTo(px, 0); c.lineTo(px, h); c.stroke();
-    c.strokeStyle = 'rgba(255,255,255,.95)'; c.lineWidth = 1.25;
-    c.beginPath(); c.moveTo(px, 0); c.lineTo(px, h); c.stroke();
-  };
-
-  let dragging = false;
-  const at = (ev) => {
-    const r = el.getBoundingClientRect();
-    write(Math.max(0, Math.min(1, (ev.clientX - r.left) / Math.max(1, r.width))));
-    tmePaint();
-  };
-  el.addEventListener('pointerdown', (e) => {
-    dragging = true; el.setPointerCapture(e.pointerId); at(e);
-  });
-  el.addEventListener('pointermove', (e) => { if (dragging) at(e); });
-  const up = (e) => {
-    dragging = false;
-    try { el.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
-  };
-  el.addEventListener('pointerup', up);
-  el.addEventListener('pointercancel', up);
-  if (window.ResizeObserver) new ResizeObserver(draw).observe(el);
-  return draw;
+/// Replace the edited palette in the user's own list.
+function tsUpdate(next) {
+  const i = themeState.mine.findIndex((p) => p.id === next.id);
+  if (i < 0) return;
+  themeState.mine[i] = next;
+  saveTheme();
+  tsError(null);
+  tsRender();
+  renderThemeList();
+  // If the application is wearing the palette being edited, it follows along.
+  if (themeState.chosen === next.id) applyChosenTheme();
 }
 
-let tmeRedraw = [];
+function tsSetColor(index, raw) {
+  const p = tsPalette();
+  if (!p || p.readOnly) return;
+  const hex = tsNormalizeHex(raw);
+  // A half-typed "#2e5" must not wipe the colour — the field keeps what was
+  // typed and the palette keeps its last readable value.
+  if (!hex) return;
+  const colors = [...p.colors];
+  colors[index] = hex;
+  tsUpdate({ ...p, colors });
+}
 
-// ── variations ──────────────────────────────────────────────────────────────
-
-/// Six candidates from where you are: the classic intervals plus a greyscale.
+/// The swatch row: a colour well and its hex, per colour.
 ///
-/// Offered because turning one hue at a time finds the theme next door, and the
-/// interesting ones are usually a third of the way round the wheel.
-const TME_VARIATIONS = [
-  { name: 'as is', dh: 0, da: 0 },
-  { name: 'warmer', dh: 30, da: 30 },
-  { name: 'cooler', dh: -30, da: -30 },
-  { name: 'complement', dh: 0, da: 180 },
-  { name: 'triad', dh: 120, da: -120 },
-  { name: 'mono', dh: 0, da: 0, chroma: 0.15 },
-];
-
-function tmeRenderVariations() {
-  const box = $('themeVary');
+/// Both, deliberately. The well is how a colour is *chosen* and the hex is how
+/// one is *carried* — brand colours arrive as codes, from a style guide or a
+/// designer, and a picker with no way to paste one is a toy.
+function tsRenderSwatches(p) {
+  const box = $('tsSwatches');
   if (!box) return;
   box.innerHTML = '';
-  for (const v of TME_VARIATIONS) {
-    const over = {
-      hue: (themeEditor.hue + v.dh + 360) % 360,
-      accentHue: (themeEditor.accentHue + v.da + 360) % 360,
-      ...(v.chroma === undefined ? {} : { chroma: v.chroma }),
-    };
-    const t = tmeTokens(over);
-    const b = document.createElement('button');
-    b.className = 'tm-swatch-btn';
-    b.title = v.name;
-    for (const k of ['--surface-2', '--surface', '--bg', '--accent']) {
-      const i = document.createElement('i');
-      i.style.background = t[k] || 'transparent';
-      b.appendChild(i);
+  const label = $('tsColoursLabel');
+  if (label) label.textContent = `Colours · ${p.colors.length}`;
+
+  p.colors.forEach((colour, index) => {
+    const cell = document.createElement('div');
+    cell.className = 'ts-swatch';
+
+    const well = document.createElement('input');
+    well.type = 'color';
+    well.value = colour;
+    well.disabled = !!p.readOnly;
+    well.setAttribute('aria-label', `Colour ${index + 1}`);
+    well.oninput = () => tsSetColor(index, well.value);
+
+    const hex = document.createElement('input');
+    hex.type = 'text';
+    hex.value = colour;
+    hex.spellcheck = false;
+    hex.disabled = !!p.readOnly;
+    hex.setAttribute('aria-label', `Colour ${index + 1} hex`);
+    hex.oninput = () => tsSetColor(index, hex.value);
+    hex.onblur = () => { hex.value = (tsPalette()?.colors || [])[index] || colour; };
+
+    cell.append(well, hex);
+    if (!p.readOnly && p.colors.length > 2) {
+      const x = document.createElement('button');
+      x.className = 'ts-x';
+      x.textContent = '×';
+      x.title = 'Remove this colour';
+      x.onclick = () => tsUpdate({ ...p, colors: p.colors.filter((_, i) => i !== index) });
+      cell.appendChild(x);
     }
-    b.onclick = () => {
-      Object.assign(themeEditor, over);
-      tmePaint();
-    };
-    box.appendChild(b);
+    box.appendChild(cell);
+  });
+
+  if (!p.readOnly) {
+    const add = document.createElement('button');
+    add.className = 'ghost ts-add';
+    add.textContent = '+ Colour';
+    add.onclick = () => tsUpdate({ ...p, colors: [...p.colors, '#888888'] });
+    box.appendChild(add);
   }
 }
 
-/// Repaint the miniature and the controls. Only those — the page changes on
-/// Apply, so a colour can be moved back and forth without the thing being
-/// judged jumping under your hand.
-function tmePaint() {
-  const tokens = tmeTokens();
-  Theme.applyTo($('themeMini'), tokens);
-  tmePaintContrast(tokens);
-  tmeRenderVariations();
-  for (const d of tmeRedraw) d();
+/// Every derived token, with a chip. Shown on request because sixty rows is a
+/// reference, not a control — but when a theme looks wrong this is where the
+/// reason is.
+function tsRenderTokens(derived) {
+  const box = $('tsTokens');
+  if (!box) return;
+  box.classList.toggle('hidden', !tsShowTokens);
+  const btn = $('tsTokensBtn');
+  const entries = Object.entries(derived?.tokens || {});
+  if (btn) btn.textContent = tsShowTokens ? 'Hide tokens' : `Show ${entries.length} tokens`;
+  if (!tsShowTokens) return;
+  box.innerHTML = '';
+  for (const [k, v] of entries) {
+    const row = document.createElement('div');
+    const chip = document.createElement('i');
+    // Some tokens are "R G B" triplets, because that side interpolated them
+    // into `rgb()` with an alpha.
+    chip.style.background = /^\d/.test(v) ? `rgb(${v})` : v;
+    const name = document.createElement('b');
+    name.textContent = k;
+    const val = document.createElement('span');
+    val.textContent = v;
+    row.append(chip, name, val);
+    box.appendChild(row);
+  }
 }
 
-function tmeSeedFromDefaults() {
-  const d = tmeDefaults();
-  themeEditor.hue = d[TME_SURFACE_BASE]?.h ?? 210;
-  themeEditor.accentHue = d['--accent']?.h ?? 230;
-  themeEditor.chroma = 1;
-  themeEditor.contrast = 1;
-  themeEditor.lift = d[TME_SURFACE_BASE]?.l ?? 0.02;
+function tsRender() {
+  const p = tsPalette();
+  const editor = $('tsEditor');
+  const title = $('tsEditing');
+  const mode = $('tsMode');
+  if (!editor) return;
+
+  editor.classList.toggle('hidden', !p);
+  if (!p) {
+    if (title) title.textContent = 'Select a palette, or make one';
+    mode?.classList.add('hidden');
+    return;
+  }
+
+  const derived = tsDerive(p);
+  if (title) {
+    title.textContent = `${p.readOnly ? 'Viewing' : 'Editing'} · ${p.name}`;
+  }
+  if (mode) {
+    mode.textContent = derived?.mode || '';
+    mode.classList.toggle('hidden', !derived?.mode);
+  }
+  const nameField = $('tsName');
+  if (nameField && document.activeElement !== nameField) {
+    nameField.value = p.name;
+    nameField.disabled = !!p.readOnly;
+  }
+  $('tsDelete')?.classList.toggle('hidden', !!p.readOnly);
+
+  tsRenderSwatches(p);
+  renderWaveColours();
+  // The preview is this application's own chrome. Emovis previewed a board of
+  // lanes and status pills; the parts that show whether a theme works are
+  // whatever the host is actually made of.
+  // The miniature wears the palette's own waveform colour, so what the sound
+  // looks like against those surfaces is visible before applying anything.
+  const mini = $('themeMini');
+  Theme.applyTo(mini, derived?.tokens || null);
+  const wave = waveColourValue(waveShown());
+  if (mini) {
+    if (wave) mini.style.setProperty('--wave', wave);
+    else mini.style.removeProperty('--wave');
+  }
+  tsRenderTokens(derived);
 }
 
-function tmeWire() {
-  if (!$('themeMini')) return;
-  tmeSeedFromDefaults();
-  const d = tmeDefaults();
-
-  tmeRedraw = [
-    tmeStrip('themeHue', () => themeEditor.hue / 360, (t) => { themeEditor.hue = t * 360; },
-      (t) => hsl(t * 360, clamp(0.55 * themeEditor.chroma, 0.12, 1), 0.5)),
-    tmeStrip('themeAccentHue', () => themeEditor.accentHue / 360,
-      (t) => { themeEditor.accentHue = t * 360; },
-      (t) => hsl(t * 360, 0.62, 0.55)),
-    tmeStrip('themeChroma', () => themeEditor.chroma / 2, (t) => { themeEditor.chroma = t * 2; },
-      (t) => hsl(themeEditor.hue, clamp((d[TME_SURFACE_BASE]?.s ?? 0.5) * t * 2, 0, 1),
-        clamp(themeEditor.lift + 0.16, 0.06, 0.92))),
-    tmeStrip('themeContrast', () => themeEditor.contrast / 2,
-      (t) => { themeEditor.contrast = t * 2; },
-      (t) => {
-        // The strip shows the spread it buys: flat at the left, separated at
-        // the right.
-        const spread = (t * 2) * 0.16;
-        return hsl(themeEditor.hue, 0.2, clamp(themeEditor.lift + spread, 0, 1));
-      }),
-    tmeStrip('themeLift', () => themeEditor.lift / 0.95, (t) => { themeEditor.lift = t * 0.95; },
-      (t) => hsl(themeEditor.hue, clamp(0.3 * themeEditor.chroma, 0, 1), t * 0.95)),
-  ];
-
-  $('themeEditReset')?.addEventListener('click', () => { tmeSeedFromDefaults(); tmePaint(); });
-
-  $('themeEditApply')?.addEventListener('click', () => {
-    // Onto the page, and nothing is chosen in the list any more — what is on
-    // screen is this, and the list saying otherwise would be a lie.
-    themeState.chosen = null;
+function tsImportJson(text) {
+  try {
+    const doc = JSON.parse(text);
+    const list = Array.isArray(doc) ? doc : [doc];
+    const taken = allPalettes().map((p) => p.id);
+    const clean = list
+      .filter((p) => p && typeof p.name === 'string' && Array.isArray(p.colors))
+      .map((p) => ({
+        id: tsPaletteId(p.id || p.name, taken),
+        name: p.name,
+        colors: p.colors.map((c) => tsNormalizeHex(c)).filter(Boolean),
+        note: p.note || 'Imported',
+      }))
+      .filter((p) => p.colors.length >= 2);
+    if (!clean.length) throw new Error('No palettes with at least two readable hex values.');
+    themeState.mine.push(...clean);
+    tsSelected = clean[0].id;
     saveTheme();
     renderThemeList();
-    Theme.apply(tmeTokens());
+    tsRender();
+    tsError(null);
+  } catch (e) {
+    tsError(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function tsWire() {
+  if (!$('tsEditor')) return;
+
+  // Open on something.
+  //
+  // The original selects the first palette on mount; that line did not come
+  // across, so the editor sat hidden behind "select a palette, or make one" and
+  // read as missing. Preferring the palette being worn is the better default
+  // still — you almost always want to look at the one you are wearing.
+  if (!tsSelected) {
+    tsSelected = themeState.chosen || allPalettes()[0]?.id || null;
+  }
+
+  $('tsFilter')?.addEventListener('input', (e) => {
+    tsFilterText = e.target.value;
+    renderThemeList();
   });
 
-  $('themeEditSave')?.addEventListener('click', () => {
-    const name = prompt('Name this theme', `Mine ${themeState.mine.length + 1}`);
-    if (!name) return;
-    // A *complete* palette, in the shape everything else produces. Saving one
-    // without `colors` threw in `renderThemeList` at the next load and took the
-    // whole application down with it; this editor made the theme, so producing
-    // a shape the rest of it can read is this editor's job.
-    const tokens = tmeTokens();
-    const id = `mine-${Date.now().toString(36)}`;
-    themeState.mine.push({
-      id,
-      name,
-      direct: true,
-      tokens,
-      colors: ['--accent', '--surface-2', '--surface', '--bg', '--sink']
-        .map((k) => tokens[k]).filter(Boolean),
-      dark: themeEditor.lift < TME_FLIP,
-    });
-    themeState.chosen = id;
+  $('tsNew')?.addEventListener('click', () => {
+    const palette = {
+      id: tsPaletteId('new palette', allPalettes().map((p) => p.id)),
+      name: 'New palette',
+      colors: [...TS_NEW_COLORS],
+      note: 'Made here',
+    };
+    themeState.mine.push(palette);
+    tsSelected = palette.id;
     saveTheme();
     renderThemeList();
+    tsRender();
+  });
+
+  $('tsName')?.addEventListener('input', (e) => {
+    const p = tsPalette();
+    if (p && !p.readOnly) tsUpdate({ ...p, name: e.target.value });
+  });
+
+  $('tsDuplicate')?.addEventListener('click', () => {
+    const p = tsPalette();
+    if (!p) return;
+    const copy = {
+      id: tsPaletteId(`${p.name} copy`, allPalettes().map((x) => x.id)),
+      name: `${p.name} copy`,
+      // A built-in states its tokens outright; a copy of one has to carry them,
+      // because there are no five colours behind it to derive them from again.
+      ...(p.direct ? { direct: true, tokens: { ...p.tokens }, dark: p.dark } : {}),
+      colors: [...(p.colors || [])],
+      note: `Duplicated from ${p.name}`,
+    };
+    themeState.mine.push(copy);
+    tsSelected = copy.id;
+    saveTheme();
+    renderThemeList();
+    tsRender();
+  });
+
+  $('tsDelete')?.addEventListener('click', () => {
+    const p = tsPalette();
+    if (!p || p.readOnly) return;
+    themeState.mine = themeState.mine.filter((x) => x.id !== p.id);
+    if (themeState.chosen === p.id) { themeState.chosen = null; applyChosenTheme(); }
+    tsSelected = themeState.mine[0]?.id || null;
+    saveTheme();
+    renderThemeList();
+    tsRender();
+  });
+
+  $('tsApply')?.addEventListener('click', () => {
+    const p = tsPalette();
+    if (!p) return;
+    themeState.chosen = p.id;
+    saveTheme();
     applyChosenTheme();
+    renderThemeList();
   });
 
-  tmePaint();
+  $('tsTokensBtn')?.addEventListener('click', () => {
+    tsShowTokens = !tsShowTokens;
+    tsRenderTokens(tsDerive(tsPalette()));
+  });
+
+  $('tsCopy')?.addEventListener('click', () => {
+    const mine = themeState.mine.map(({ id, name, colors, note }) => ({ id, name, colors, note }));
+    navigator.clipboard?.writeText(JSON.stringify(mine, null, 2))
+      .then(() => toast(`${mine.length} palette${mine.length === 1 ? '' : 's'} copied`))
+      .catch(() => tsError('The clipboard refused. Copy from the tokens list instead.'));
+  });
+
+  $('tsImport')?.addEventListener('click', () => {
+    const text = prompt('Paste palette JSON — one object or an array of { name, colors }');
+    if (text) tsImportJson(text);
+  });
+
+  tsRender();
 }
-tmeWire();
+tsWire();

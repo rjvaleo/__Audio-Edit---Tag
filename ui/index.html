@@ -120,25 +120,6 @@
     </div>
 
     <div class="panel-body hidden" id="paneTheme">
-      <!-- The waveform's colour, on its own and above the palette. It is not
-           derived from a theme and a theme does not touch it: which colour reads
-           best against a sound is a matter of the sound, not of the chrome. -->
-      <div class="field-label">Waveform</div>
-      <div class="seg wave-seg" id="waveColours">
-        <button class="seg-btn" data-wave="blue"><i></i>Blue</button>
-        <button class="seg-btn" data-wave="green"><i></i>Green</button>
-        <button class="seg-btn" data-wave="red"><i></i>Red</button>
-        <button class="seg-btn" data-wave="purple"><i></i>Purple</button>
-      </div>
-      <div class="fx-row wave-own">
-        <label class="wave-own-label" for="waveOwn">Your own</label>
-        <input type="color" id="waveOwn" value="#39ff5a" title="Any colour you like — the waveform takes it as you move">
-        <button class="ghost" id="waveReset">Reset</button>
-      </div>
-      <div class="fx-note">Neon, so the sound reads against the surface behind
-      it. The grain marks keep their own colour.</div>
-      <div class="divider"></div>
-
       <!-- The editor. A miniature of the interface, three pickers, and every
            change on screen as you make it. See `docs/THEME-EDITOR.md`. -->
       <div class="field-label">Make your own</div>
@@ -177,49 +158,65 @@
       <!-- No hex fields. Nobody chooses a theme by typing a colour code —
            you turn the hue until it looks right, decide how colourful and how
            contrasty, and pick the accent against it. See `docs/THEME-EDITOR.md`. -->
-      <div class="tm-ctl">
-        <span class="tm-ctl-k">Hue</span>
-        <canvas class="tm-strip" id="themeHue"
-          title="Drag. The whole theme turns with it."></canvas>
-      </div>
-      <div class="tm-ctl">
-        <span class="tm-ctl-k">Accent</span>
-        <canvas class="tm-strip" id="themeAccentHue"
-          title="Drag. Marked against the theme's own hue, so you can see the interval you are choosing."></canvas>
-      </div>
-      <div class="tm-ctl">
-        <span class="tm-ctl-k">Colour</span>
-        <canvas class="tm-strip tm-strip-sm" id="themeChroma"
-          title="How colourful the surfaces are — grey at one end, saturated at the other."></canvas>
-      </div>
-      <div class="tm-ctl">
-        <span class="tm-ctl-k">Contrast</span>
-        <canvas class="tm-strip tm-strip-sm" id="themeContrast"
-          title="How far apart the steps sit. Low is flat and moody; high separates every panel."></canvas>
-      </div>
-      <div class="tm-ctl">
-        <span class="tm-ctl-k">Light</span>
-        <canvas class="tm-strip tm-strip-sm" id="themeLift"
-          title="Where the whole ladder sits — deep black through to a light interface."></canvas>
+      <div class="ts-ed-head">
+        <span class="ts-ed-title" id="tsEditing">Select a palette, or make one</span>
+        <span class="ts-tag hidden" id="tsMode"></span>
       </div>
 
-      <div class="tm-vary-head">
-        <span class="tm-ctl-k">Variations</span>
-        <span class="mono dim tm-contrast" id="themeContrastRead"></span>
+      <div class="ts-editor hidden" id="tsEditor">
+        <label class="ts-field">
+          <span class="field-label">Name</span>
+          <input class="field" id="tsName">
+        </label>
+        <div class="ts-field">
+          <span class="field-label" id="tsColoursLabel">Colours</span>
+          <div class="ts-swatches" id="tsSwatches"></div>
+        </div>
+        <!-- The waveform belongs to the palette now. It is still not *derived*
+             from it — which colour reads best against a sound is a matter of
+             the sound, not of the surfaces behind it — but a theme carries its
+             own, so choosing a theme sets the sound's colour too. -->
+        <div class="ts-field">
+          <span class="field-label">Waveform</span>
+          <div class="seg wave-seg" id="waveColours">
+            <button class="seg-btn" data-wave="blue"><i></i>Blue</button>
+            <button class="seg-btn" data-wave="green"><i></i>Green</button>
+            <button class="seg-btn" data-wave="red"><i></i>Red</button>
+            <button class="seg-btn" data-wave="purple"><i></i>Purple</button>
+          </div>
+          <div class="fx-row wave-own">
+            <label class="wave-own-label" for="waveOwn">Your own</label>
+            <input type="color" id="waveOwn" value="#39ff5a" title="Any colour you like — the waveform takes it as you move">
+            <button class="ghost" id="waveReset">Reset</button>
+          </div>
+          <div class="fx-note">Neon, so the sound reads against the surface
+          behind it. The grain marks keep their own colour.</div>
+        </div>
+        <div class="fx-note">Direction is read, not chosen: a palette that
+        averages light becomes a light theme, one that averages dark becomes a
+        dark one. Surfaces borrow the hue and a damped share of the saturation,
+        but their lightness comes from a fixed ladder — which is what keeps text
+        legible whatever the palette holds.</div>
+        <div class="fx-row ts-actions">
+          <button class="ghost" id="tsApply">Apply</button>
+          <button class="ghost" id="tsDuplicate">Duplicate</button>
+          <button class="ghost danger" id="tsDelete">Delete</button>
+        </div>
+        <div class="fx-row ts-actions">
+          <button class="ghost" id="tsTokensBtn">Show tokens</button>
+          <button class="ghost" id="tsCopy">Copy JSON</button>
+          <button class="ghost" id="tsImport">Import JSON&hellip;</button>
+        </div>
+        <div class="ts-tokens hidden" id="tsTokens"></div>
+        <div class="ts-error hidden" id="tsError"></div>
       </div>
-      <div class="tm-vary" id="themeVary"></div>
-      <div class="fx-row theme-edit-actions">
-        <button class="ghost" id="themeEditReset">Reset</button>
-        <button class="ghost" id="themeEditApply">Apply</button>
-        <button class="ghost" id="themeEditSave">Save as&hellip;</button>
-      </div>
-      <div class="fx-note">The ladder is measured from the interface's own
-      colours and reproduced, so the contrast the panels were designed against
-      holds whatever you pick. Good, warning and bad keep their meaning; the
-      waveform keeps its own colour.</div>
 
       <div class="divider"></div>
       <div class="field-label">Palette</div>
+      <div class="ts-head">
+        <input class="field ts-filter" id="tsFilter" placeholder="Filter&hellip;">
+        <button class="ghost ts-new" id="tsNew">+ New</button>
+      </div>
       <div class="fx-note">A palette gives colour and direction; the ladder of
       surfaces, text and borders is derived from it, so contrast holds whatever
       the colours are. Good, warning and bad keep their own hues — a theme is not
