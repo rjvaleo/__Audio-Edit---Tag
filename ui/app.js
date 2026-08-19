@@ -6898,6 +6898,50 @@ document.querySelectorAll('[data-fft]').forEach((b) => {
   };
 });
 
+// ─────────────────────────────────────────────────── the box, filling the screen
+//
+// The panel goes fullscreen, not the canvas.
+//
+// A fullscreen element is positioned as though it were fixed, and an element
+// with `position: fixed` has no `offsetParent` — which is precisely what
+// `visGlTick` tests to decide whether anybody is looking at the scene. Take the
+// canvas fullscreen and the renderer concludes it is hidden and stops drawing,
+// at the exact moment it fills the screen. Taking `#masterBus` instead leaves
+// the canvas an ordinary absolute child of a positioned cell, and brings the
+// meters along with it, which is what you want at that size anyway: the room
+// gets the whole screen bar a narrow column and the numbers stay readable.
+//
+// Nothing needs resizing by hand. `visGlTick` already reconciles the canvas's
+// backing store with its client size on every frame, so the box refills the
+// screen on the first frame after the change and again on the way out.
+function masterIsFullscreen() {
+  return !!document.fullscreenElement && document.fullscreenElement === $('masterBus');
+}
+
+async function toggleMasterFullscreen() {
+  const el = $('masterBus');
+  if (!el) return;
+  try {
+    if (masterIsFullscreen()) await document.exitFullscreen();
+    else if (document.fullscreenElement) {
+      // Something else is already filling the screen. Hand it over rather than
+      // failing: a request while another element holds it is rejected.
+      await document.exitFullscreen();
+      await el.requestFullscreen();
+    } else await el.requestFullscreen();
+  } catch (e) {
+    // Refused — an embedded view without the permission, or a gesture the
+    // browser will not accept. A toast rather than the box's own corner: that
+    // corner is `#mbPeakHz`, which the meter tick rewrites on every update, so
+    // a message left there is gone before it can be read.
+    toast(`full screen refused — ${e.name}`);
+  }
+}
+
+// Double-click the room itself. Not the meter column beside it, which is a
+// column of numbers and has nothing to gain from the whole screen.
+$('masterBus')?.querySelector('.mb-cell-3d')?.addEventListener('dblclick', toggleMasterFullscreen);
+
 async function loadSpectrogram() {
   const f = state.selectedFile;
   if (!f || !state.showSpec) return;
@@ -8674,6 +8718,8 @@ const MENUS = [
     title: 'Window',
     items: [
       { label: 'Grains', on: () => editing(), run: toggleVisWindow },
+      { label: 'Master bus full screen', key: tick(() => masterIsFullscreen()),
+        on: () => editing(), run: toggleMasterFullscreen },
       { label: 'Keys', on: () => editing() && hasFile(),
         run: () => (keyboardOpen() ? closeKeyboard() : openKeyboard()) },
     ],
