@@ -11322,9 +11322,24 @@ function visGlTick() {
     layers: roomLayers(),
     // The schedule itself, so the room draws the grains that exist rather than
     // a model of how many there ought to be.
-    grains: state.grains?.grains || null,
-    grainRate: state.grains?.sampleRate || 44100,
-    srcFrames: state.grains?.srcFrames || 0,
+    //
+    // **The swarm's window first, and the view's only as a fallback.**
+    //
+    // `state.grains` covers the *visible waveform*, which has nothing to do
+    // with where the playhead is: press play without follow on and the head
+    // walks straight out of the fetched range, so the room empties, and it
+    // fills again when something scrolls the view and triggers a refetch. That
+    // reads as the picture looping — blanking at the end and starting over —
+    // and it is really the room being handed a schedule for somewhere else.
+    //
+    // `state.swarm` is the same schedule fetched *around the playhead*, which
+    // is the window this room is built on: depth is time from now, so the
+    // grains it wants are the ones near now. It is null whenever the view's
+    // range already covers the playhead densely enough, and then the view's own
+    // copy is the right answer anyway.
+    grains: (state.swarm?.grains?.length ? state.swarm : state.grains)?.grains || null,
+    grainRate: (state.swarm?.grains?.length ? state.swarm : state.grains)?.sampleRate || 44100,
+    srcFrames: (state.swarm?.grains?.length ? state.swarm : state.grains)?.srcFrames || 0,
     position: engine.position || 0,
     // The playhead counts in engine frames at the *device* rate; the schedule
     // counts in output frames at the document's. A file at 44.1k on a device at
