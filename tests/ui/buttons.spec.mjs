@@ -45,40 +45,59 @@ const readEngineRow = () => ({
     return { t: b.textContent, top: Math.round(r.top), h: Math.round(r.height),
       left: Math.round(r.left), right: Math.round(r.right) };
   }),
-  reset: (() => {
-    const b = document.getElementById('stretchReset');
-    const r = b.getBoundingClientRect();
-    return { t: b.textContent, top: Math.round(r.top), h: Math.round(r.height),
-      left: Math.round(r.left), right: Math.round(r.right) };
-  })(),
 });
 
-/// Reset is the next button on the row, not a different kind of button near it.
-///
-/// It was 18px tall against the tabs' 22px and sat on a different line, and it
-/// was absolutely positioned so it could land *on top of* "Granular" at widths
-/// I was not looking at.
-test('Reset sits on the same line as the engine tabs, at the same size', async ({ page }) => {
+/// Reset is a gesture on the tabs now, not a sixth button on a row with room
+/// for five. The button it replaces was the thing this file was written about.
+test('double-clicking an engine tab resets every control', async ({ page }) => {
   await openStretchPanel(page);
 
   for (const alg of ENGINES) {
     await chooseEngine(page, alg);
-    const { tabs, reset } = await page.evaluate(readEngineRow);
 
-    expect(tabs.length, `${alg}: no engine tabs found`).toBe(5);
+    // Move things off their defaults through the app's own path, so this is a
+    // real edit and not a poked variable.
+    await page.evaluate(async () => {
+      state.stretchDraft.ratio = 7.5;
+      state.stretchDraft.windowMs = 180;
+      state.grainDraft.densityHz = 120;
+      await commitStretch();
+    });
+    await page.waitForTimeout(250);
+    const moved = await page.evaluate(() => state.stretchDraft.ratio);
+    expect(moved, `${alg}: the ratio never moved, so the reset proves nothing`)
+      .toBeCloseTo(7.5, 3);
 
-    // Same horizontal line. To the pixel — not "about".
-    for (const tab of tabs) {
-      expect(reset.top, `${alg}: Reset top ${reset.top} vs tab "${tab.t}" top ${tab.top}`)
-        .toBe(tab.top);
-    }
-    // Same size.
-    for (const tab of tabs) {
-      expect(reset.h, `${alg}: Reset height ${reset.h} vs tab "${tab.t}" height ${tab.h}`)
-        .toBe(tab.h);
-    }
-    // And it is called Reset, not RESET.
-    expect(reset.t, `${alg}: the reset button reads "${reset.t}"`).toBe('Reset');
+    await page.dblclick(`#stretchEngine .seg-btn[data-alg="${alg}"]`);
+    await page.waitForTimeout(500);
+
+    const after = await page.evaluate(() => ({
+      ratio: state.stretchDraft.ratio,
+      win: state.stretchDraft.windowMs,
+      density: state.grainDraft.densityHz,
+      alg: state.stretchDraft.algorithm,
+    }));
+    expect(after.ratio, `${alg}: the ratio did not reset`).toBe(1);
+    expect(after.win, `${alg}: the window did not reset`).toBe(40);
+    expect(after.density, `${alg}: the grain density did not reset`).toBe(0);
+    // Reset puts the controls back; it does not move you somewhere else.
+    expect(after.alg, `${alg}: the double-click moved the engine`).toBe(alg);
+  }
+});
+
+/// The row it used to sit on has nothing but tabs now.
+test('the engine row holds five tabs and nothing else', async ({ page }) => {
+  await openStretchPanel(page);
+
+  for (const alg of ENGINES) {
+    await chooseEngine(page, alg);
+    const extra = await page.evaluate(() =>
+      [...document.querySelector('.engine-pick').querySelectorAll('button')]
+        .filter((b) => !b.matches('#stretchEngine .seg-btn'))
+        .map((b) => b.textContent.trim()));
+    expect(extra, `${alg}: unexpected buttons on the engine row`).toEqual([]);
+    expect(await page.evaluate(() => !!document.getElementById('stretchReset')),
+      `${alg}: the reset button is still there`).toBe(false);
   }
 });
 
@@ -88,8 +107,8 @@ test('nothing on the engine row overlaps anything else', async ({ page }) => {
 
   for (const alg of ENGINES) {
     await chooseEngine(page, alg);
-    const { tabs, reset } = await page.evaluate(readEngineRow);
-    const all = [...tabs, reset].sort((a, b) => a.left - b.left);
+    const { tabs } = await page.evaluate(readEngineRow);
+    const all = [...tabs].sort((a, b) => a.left - b.left);
 
     for (let i = 1; i < all.length; i++) {
       expect(
