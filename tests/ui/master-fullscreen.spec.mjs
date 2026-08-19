@@ -42,6 +42,11 @@ const readBox = () => {
     clientH: gl.clientHeight,
     // The renderer's own liveness test. Null here and it stops drawing.
     hasOffsetParent: gl.offsetParent !== null,
+    // And the *poll's* liveness test, which is a different element and the one
+    // that actually broke: `mbVisible` reads `#masterBus`, which is the element
+    // that goes fullscreen, so it read the room filling the screen as the room
+    // being closed and stopped feeding it. The picture froze.
+    polling: mbVisible(),
     sideW: Math.round(document.querySelector('#masterBus .mb-side').getBoundingClientRect().width),
   };
 };
@@ -52,6 +57,7 @@ test('double-clicking the room takes the panel full screen and back', async ({ p
   const before = await page.evaluate(readBox);
   expect(before.full, 'started out full screen').toBe(false);
   expect(before.hasOffsetParent, 'the canvas was already considered hidden').toBe(true);
+  expect(before.polling, 'the master bus was not being polled to begin with').toBe(true);
 
   await page.dblclick('#masterBus .mb-cell-3d');
   await page.waitForTimeout(700);
@@ -62,6 +68,9 @@ test('double-clicking the room takes the panel full screen and back', async ({ p
   // whole reason the panel is the thing that goes fullscreen.
   expect(during.hasOffsetParent, 'the canvas lost its offsetParent, so it will stop drawing')
     .toBe(true);
+  // The one that was actually wrong. Without this the box fills the screen and
+  // holds a still picture of the last frame before it got there.
+  expect(during.polling, 'the poll stopped, so the room is a frozen picture').toBe(true);
   expect(during.clientW, 'the box did not get wider').toBeGreaterThan(before.clientW);
   expect(during.backingW, 'the backing store did not follow the box')
     .toBeGreaterThan(before.backingW);
@@ -80,6 +89,7 @@ test('double-clicking the room takes the panel full screen and back', async ({ p
   expect(after.clientW, 'the box did not return to its docked width')
     .toBeLessThan(during.clientW);
   expect(after.hasOffsetParent, 'the canvas came back hidden').toBe(true);
+  expect(after.polling, 'the poll did not resume on the way out').toBe(true);
 });
 
 test('the menu item toggles the same thing', async ({ page }) => {

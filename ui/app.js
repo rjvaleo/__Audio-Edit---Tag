@@ -10324,9 +10324,19 @@ function mbFit(el) {
 /// `offsetParent` is null whenever the element or any ancestor is display:none,
 /// which covers the dock being shut and another dock tab being chosen without
 /// having to know about either.
+///
+/// And it is null for a fullscreen element too, which is the one state where
+/// this read exactly the wrong answer. A fullscreen element is positioned as
+/// though it were fixed, and a fixed element has no `offsetParent` — so the
+/// panel filling the screen looked identical to the panel being closed, the
+/// poll that feeds the room stopped, and what you got was a still picture of
+/// the last frame before it went up. The most visible the thing ever gets was
+/// the one case counted as hidden.
 function mbVisible() {
   const el = $('masterBus');
-  return !!el && el.offsetParent !== null && el.clientWidth > 0;
+  if (!el) return false;
+  if (document.fullscreenElement === el) return el.clientWidth > 0;
+  return el.offsetParent !== null && el.clientWidth > 0;
 }
 
 /// dBFS to a fraction of the meter's width.
