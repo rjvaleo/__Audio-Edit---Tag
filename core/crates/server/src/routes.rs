@@ -53,6 +53,9 @@ pub const THEME_JS: &str = include_str!("../../../../ui/theme-derive.js");
 pub const VIS_GL_JS: &str = include_str!("../../../../ui/vis-gl.js");
 /// The solids the grain cloud draws its grains as. See `docs/GRAIN-SHAPES.md`.
 pub const GRAIN_SHAPES_JS: &str = include_str!("../../../../ui/grain-shapes.js");
+/// The room's palette: what each drawn thing is coloured with, and what that
+/// colour is read against. See `docs/ROOM-PAINT.md`.
+pub const ROOM_PAINT_JS: &str = include_str!("../../../../ui/room-paint.js");
 /// The MP4 muxer and the thing that drives it. See `docs/VIDEO-EXPORT.md`.
 pub const MP4_JS: &str = include_str!("../../../../ui/mp4.js");
 pub const VIDEO_EXPORT_JS: &str = include_str!("../../../../ui/video-export.js");
@@ -99,6 +102,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/grain-shapes.js") => {
             Response::ok("text/javascript; charset=utf-8", GRAIN_SHAPES_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/room-paint.js") => {
+            Response::ok("text/javascript; charset=utf-8", ROOM_PAINT_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/vis-gl.js") => {
             Response::ok("text/javascript; charset=utf-8", VIS_GL_JS.as_bytes().to_vec())

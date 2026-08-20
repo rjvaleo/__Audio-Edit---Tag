@@ -3025,3 +3025,53 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    cannot change — and it sits over the picture, which is the one place this
    view has nothing to spare. */
 .rv-room #roomEditOpen { display: none; }
+
+/* ────────────────────────────────────────────────── the room's palette ──
+   A row per paintable thing, the row showing the gradient it is drawn with.
+   See `docs/ROOM-PAINT.md`. */
+
+.rv-admin-head { display: flex; gap: 4px; padding: 5px 6px; }
+.rv-tab {
+  flex: 1 1 auto; height: 20px; border-radius: 4px;
+  border: 1px solid var(--line-2); background: transparent;
+  color: var(--text-dim); font: inherit; font-size: 9px; letter-spacing: .4px;
+  text-transform: uppercase; cursor: pointer;
+}
+.rv-tab:hover { background: var(--surface-3); color: var(--text-2); }
+.rv-tab.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.rp-head { padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+.rp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
+.rp-row .re-tag {
+  flex: 0 0 100%; font-size: 8.5px; letter-spacing: .6px; color: var(--text-dimmer);
+}
+.rp-row .re-slider { flex: 1 1 80px; width: auto; }
+.rp-row > select.field, .rp-name { flex: 1 1 90px; min-width: 0; height: 18px; font-size: 10px; }
+.rp-gens .re-btn { flex: 1 1 auto; }
+.rp-btns .re-btn { flex: 0 0 auto; }
+
+/* One thing in the room, and the gradient it is painted with. */
+.rp-slot { border-bottom: 1px solid var(--line); }
+.rp-slot-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 4px 2px; background: transparent; border: 0;
+  color: var(--text-2); font: inherit; font-size: 10px; text-align: left;
+  cursor: pointer;
+}
+.rp-slot-head:hover { background: var(--surface-3); }
+/* **The strip is the ramp, not a picture of it.** Built by `rpGradientCss` from
+   the same stops in the same order as the row uploaded to the shader, so it
+   cannot show one thing while the room draws another. */
+.rp-strip {
+  flex: 0 0 44px; height: 13px; border-radius: 2px;
+  border: 1px solid var(--line-2);
+}
+.rp-slot-name { flex: 1 1 auto; min-width: 0; }
+.rp-slot-mode {
+  flex: 0 0 auto; font-size: 8.5px; color: var(--text-dimmer);
+  letter-spacing: .3px;
+}
+.rp-edit { padding: 5px 2px 7px; }
+.rp-edit .re-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.rp-stop .re-colour { flex: 0 0 24px; height: 17px; }
+.rp-stops, .rp-range { margin-top: 4px; }

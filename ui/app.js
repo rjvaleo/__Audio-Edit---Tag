@@ -3088,6 +3088,10 @@ async function runVideoExport() {
         cold: vgRgb('--wave-2', '#4a9fd8'),
         hot: vgRgb('--wave', '#5fd47a'),
         core: vgRgb('--accent', '#7fd0ff'),
+        // The same palette the live room is drawn with. Handed over rather than
+        // rebuilt: the film and the room disagreeing about a colour is the
+        // fault this program has already shipped once, over the background.
+        paint: rpForRenderer(),
         ringDrive: roomEdit.ringDrive,
         ringEdge: roomEdit.ringEdge,
         ringPoints: roomEdit.ringPoints,
@@ -3108,8 +3112,12 @@ async function runVideoExport() {
       },
       // What the room is drawn *on*. It clears to transparent and the page
       // shows through, so an offscreen canvas has nothing behind it at all.
-      background: getComputedStyle(document.body).getPropertyValue('--bg').trim()
-        || getComputedStyle(document.body).backgroundColor || '#000',
+      // **The ground, from one place.** The live room sits on `--sink` (the
+      // room cell's own background) and this used to read `--bg`, which is a
+      // different token and a visibly different black — so the file came out on
+      // a lighter ground than the thing that had been posed. Both now ask the
+      // palette, and the palette falls back to the cell's own colour.
+      background: roomGroundColour(),
       fetchSchedule: grainsAt,
       // The same few seconds either side the live room asks for.
       padSeconds: GRAIN_PLAYHEAD_PAD,
@@ -7498,6 +7506,38 @@ function roomFog() {
 }
 
 /// `#rrggbb` as the three floats the shaders want.
+/// The ground the room is drawn on.
+///
+/// One answer, asked by both the live room and the film. They read two
+/// different tokens before this — `--sink` for the cell on screen and `--bg`
+/// for the export — which are a visibly different black, so an exported file
+/// came out on a lighter ground than the room it was posed in.
+function roomGroundColour() {
+  const bg = rpSlot('background');
+  if (bg.mode === 'flat' && bg.colour) return bg.colour;
+  const cell = document.querySelector('#masterBus .mb-cell-3d');
+  const v = cell ? getComputedStyle(cell).backgroundColor : '';
+  return cssHex(v) || v || '#07090c';
+}
+
+/// Put the palette's two non-geometry slots on the page.
+///
+/// The data block and the ground are type and a background rather than marks in
+/// the scene, so they are CSS and not shader work — but they are in the same
+/// palette, because from the outside they are two more things in the room that
+/// have a colour.
+function applyRoomPaintCss() {
+  const cell = document.querySelector('#masterBus .mb-cell-3d');
+  const bg = rpSlot('background');
+  if (cell) cell.style.background = bg.mode === 'flat' && bg.colour ? bg.colour : '';
+  const data = $('roomData');
+  const d = rpSlot('data');
+  // The block fades down the wall in five steps, each a `color-mix` against
+  // `--wave-2`. Overriding that one token inside the block keeps every step and
+  // changes what they are steps *of*.
+  if (data) data.style.setProperty('--wave-2', d.mode === 'flat' && d.colour ? d.colour : '');
+}
+
 function vgHexRgb(hex) {
   const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
   if (!m) return [0, 0, 0];
@@ -8013,10 +8053,34 @@ function enterRoomView() {
   $('roomView')?.classList.remove('hidden');
 
   setRoomAdminWidth(roomAdminWidth(), { save: false });
+  rpPanel();
+  applyRoomPaintCss();
   applyRoomFrame();
   paintRoomNums();
   paintRoomData();
 }
+
+/// The two tabs. The controls and the palette are both long enough to need the
+/// whole column, and stacking them puts everything below the fold behind a
+/// scroll past something unrelated.
+function wireRoomTabs() {
+  for (const b of document.querySelectorAll('#roomAdmin .rv-tab')) {
+    b.onclick = () => {
+      const want = b.dataset.rvtab;
+      for (const o of document.querySelectorAll('#roomAdmin .rv-tab')) {
+        o.classList.toggle('active', o === b);
+      }
+      $('roomAdminBody')?.classList.toggle('hidden', want !== 'controls');
+      $('roomPaintBody')?.classList.toggle('hidden', want !== 'paint');
+      if (want === 'paint') rpPanel();
+    };
+  }
+}
+wireRoomTabs();
+
+// What was being used last time. Before the first frame, so the room is never
+// drawn once in the theme's colours and then again in the palette's.
+rpRestore();
 
 function leaveRoomView() {
   $('roomView')?.classList.add('hidden');
@@ -12299,6 +12363,9 @@ function visGlTick() {
     cold: vgRgb('--wave-2', '#4a9fd8'),
     hot: vgRgb('--wave', '#5fd47a'),
     core: vgRgb('--accent', '#7fd0ff'),
+    // The palette. Null while nothing has been said about colour, and the
+    // three above are then the whole of it — which is the room as it shipped.
+    paint: rpForRenderer(),
     cam: roomCameraDrawn(),
     layers: roomLayers(),
     occlude: roomOcclude(),
