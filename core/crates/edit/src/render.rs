@@ -71,6 +71,29 @@ pub fn render_fx<S: RandomAccessSource>(
 }
 
 /// Render `[start, start+count)` of the edited timeline to interleaved f32.
+/// Lay a narrower interleaved buffer out across more channels.
+///
+/// Every channel gets the same samples. Not a pan law and not a matrix: this is
+/// one signal about to be *given* a stereo field by what happens next, and
+/// halving it here to keep the sum constant would only make the result quieter
+/// than what was auditioned.
+pub fn widen(frames: &[f32], from: usize, to: usize) -> Vec<f32> {
+    let from = from.max(1);
+    if to <= from {
+        return frames.to_vec();
+    }
+    let n = frames.len() / from;
+    let mut out = Vec::with_capacity(n * to);
+    for i in 0..n {
+        for ch in 0..to {
+            // Beyond what the file has, repeat its last channel — which for the
+            // mono case is the only one there is.
+            out.push(frames[i * from + ch.min(from - 1)]);
+        }
+    }
+    out
+}
+
 pub fn render<S: RandomAccessSource>(
     list: &EditList,
     reader: &mut Reader<S>,
@@ -113,6 +136,24 @@ pub fn render<S: RandomAccessSource>(
         };
 
         let mut frames = reader.read_frames(src_from, len)?;
+        // **Widened at the read, if the document is wider than the file.**
+        //
+        // A mono file played through this program is not a mono sound: the
+        // grain engine pans, the rack reverberates and the spatialisation puts
+        // it across the field, and the transport runs all of that at the
+        // *device's* channel count rather than the source's. The render used to
+        // run it at the source's, so a mono file came out of the speakers in
+        // stereo and out of the export as one channel with `pan_gains` returning
+        // (1, 1) — the picture drew a pan column the file could not hold.
+        //
+        // Widening here rather than at the end is what makes the difference:
+        // everything downstream — the stretch, the grains, the rack — then works
+        // in the width the sound is going to be heard in, which is where the
+        // stereo is actually made.
+        let file_ch = reader.info().channels.max(1) as usize;
+        if file_ch < channels {
+            frames = widen(&frames, file_ch, channels);
+        }
         if clip.reversed {
             reverse_frames(&mut frames, channels);
         }
@@ -935,4 +976,51 @@ where
     }
     out.flush()?;
     Ok(total)
+}
+
+#[cfg(test)]
+mod widen_tests {
+    use super::*;
+
+    /// A mono file played through this program is not a mono sound.
+    ///
+    /// The transport runs at the *device's* channel count, so the grain
+    /// engine's pan, the rack's reverbs and the spatialisation are all working
+    /// in stereo before anything reaches the speakers. Rendering at the file's
+    /// own width discarded every one of them: `pan_gains` returns (1, 1) below
+    /// two channels, so the grains did not move at all and the export was mono
+    /// while the room drew a PAN column and the speakers played a stereo field.
+    #[test]
+    fn a_mono_signal_is_laid_across_both_channels() {
+        let mono = vec![0.25, -0.5, 0.75];
+        let wide = widen(&mono, 1, 2);
+        assert_eq!(wide, vec![0.25, 0.25, -0.5, -0.5, 0.75, 0.75]);
+    }
+
+    /// Not halved on the way. What follows is about to *give* this a stereo
+    /// field; arriving quieter than it was auditioned would be a second fault
+    /// dressed as gain staging.
+    #[test]
+    fn widening_does_not_change_the_level() {
+        let mono = vec![1.0, -1.0];
+        let wide = widen(&mono, 1, 2);
+        assert!(wide.iter().all(|v| v.abs() == 1.0), "the level moved: {wide:?}");
+    }
+
+    /// Already wide enough is left alone, and asking for narrower does not
+    /// silently throw a channel away.
+    #[test]
+    fn nothing_happens_when_there_is_nothing_to_widen() {
+        let stereo = vec![0.1, 0.2, 0.3, 0.4];
+        assert_eq!(widen(&stereo, 2, 2), stereo);
+        assert_eq!(widen(&stereo, 2, 1), stereo);
+    }
+
+    /// Beyond what the file has, the last channel repeats — so a stereo file in
+    /// a wider document does not leave silent channels in the middle.
+    #[test]
+    fn past_the_end_the_last_channel_repeats() {
+        let stereo = vec![0.1, 0.2];
+        assert_eq!(widen(&stereo, 2, 3), vec![0.1, 0.2, 0.2]);
+    }
 }
