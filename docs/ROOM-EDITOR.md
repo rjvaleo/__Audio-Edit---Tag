@@ -409,3 +409,37 @@ Two things came out of that, and the second is the one worth keeping:
   nothing about whether the interface ever asked it to. Every one of this room's
   controls has now been wrong in one of those two ways at least once.
 
+## Fog, after actually reading the references
+
+Two links were sent with the request and the work was done without opening them:
+the shader pasted alongside was implemented and the particle side was written
+from memory. Both were then reported as wrong, and both were.
+
+**Fog starts at the near plane, not at the eye.** Lettier: *"The fog's intensity
+is `fogMin` before or at the start of the fog's `near` distance."* The first
+version measured distance as `length(aPos)`, and the near plane of this room is a
+whole unit from the eye — so `exp(-density × 1.0)` laid better than a third of
+the fog's colour over the nearest thing in the picture, and the same again over
+everything behind it. Everything came out tinted and nothing came out *further
+away*, which is what "it is colouring the whole scene" meant.
+
+Measured from where the fog starts, with a red fog on a blue room: the front of
+the room takes 0.04 of the fog's colour and the back wall 0.71. Exponential
+squared is twenty to one. Before the fix it was 0.48 against 0.67 — a ratio of
+1.4, which is a wash.
+
+**The particles are textureless and noise-attenuated.** MirzaBeig's description
+is precisely that: *"textureless fog particles using a highly customizable shader
+to attenuate noise values."* The first version drew soft gaussian discs, which is
+a shape you can name — and a hundred of them is a hundred discs. Two octaves of
+value noise now push the edge in and out and thin the body unevenly, seeded from
+each sprite's own position so no two are alike and none of them boils frame to
+frame.
+
+### A shader that will not compile says nothing
+
+`vgAttach` returns null and every caller finds no room at all, which surfaces
+somewhere else entirely as "cannot read properties of null". A varying declared
+in the vertex shader and not the fragment one cost ten minutes of looking in the
+wrong place. It is a `console.error` now, and it says which half failed.
+

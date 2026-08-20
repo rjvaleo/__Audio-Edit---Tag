@@ -1152,11 +1152,23 @@ test('fog tints by real distance, and the far wall takes more of it',
     expect(out.off.far, 'the room was already the fog colour').toBeLessThan(0.02);
 
     // The shader half: it lands, and it lands by distance.
-    expect(out.tint.near, 'the fog put none of its colour on anything')
-      .toBeGreaterThan(0.05);
-    expect(out.tint.far, `the near edge took ${out.tint.near.toFixed(3)} of the fog `
-      + `and the far wall ${out.tint.far.toFixed(3)} — distance did nothing, which `
-      + 'is what a clamped depth looks like').toBeGreaterThan(out.tint.near * 1.15);
+    expect(out.tint.far, 'the fog put none of its colour on anything')
+      .toBeGreaterThan(0.2);
+    // **And the front of the room is nearly clear.**
+    //
+    // "The fog's intensity is fogMin before or at the start of the fog's near
+    // distance." The first version measured distance from the *eye*, and the
+    // near plane of this room is a whole unit away — so `exp(-density * 1.0)`
+    // put better than a third of the fog's colour on the nearest thing in the
+    // picture and the same again on everything behind it. That is not depth,
+    // it is a tint on the whole scene, and it was reported as exactly that.
+    // Measured from where the fog starts, the front comes out near nothing and
+    // the back wall takes several times as much.
+    expect(out.tint.near, `the front of the room took ${out.tint.near.toFixed(3)} `
+      + 'of the fog — it should be nearly clear there').toBeLessThan(0.3);
+    expect(out.tint.far, `the front took ${out.tint.near.toFixed(3)} and the back `
+      + `wall ${out.tint.far.toFixed(3)} — that is a tint, not a distance`)
+      .toBeGreaterThan(out.tint.near * 2.0);
 
     // The volume half: there is something in the air, not only on the walls.
     expect(out.whole.lit, `${out.tint.lit} lit with the tint alone and `
