@@ -82,3 +82,32 @@ Without one, the standing choice stands.
 translucent black and white, which sit correctly on any ground without being
 told what colour it is. None of them are offered, for the same reasons they are
 absent from `THEME_TOKEN_MAP`.
+
+## A colour well cannot be rebuilt while it is being used
+
+The swatches were re-rendered from scratch on every change: `tsRenderSwatches`
+did `innerHTML = ''` and built the row again. Moving a colour well fires `input`
+for **every step of the drag**, so the very `<input type="color">` the system's
+colour panel was attached to was destroyed under it, over and over. The panel
+stays open, pointing at an element no longer in the document, and nothing done
+in it reaches the palette. The hex field lost its caret to the same thing on
+every keystroke.
+
+`tsRender` already knew this about the name field — it will not write into it
+while it has focus. The swatches never learned it.
+
+They update in place now, and rebuild only when the *shape* changes: a different
+number of colours, or read-only flipping. Nothing is written into an element that
+has focus.
+
+### The value was never the broken part
+
+It arrived correctly the whole time. `tsSetColor` had already run by the moment
+the DOM was thrown away, so the palette held exactly the right colour — a test
+that asserted on the palette would have passed on the fault, cheerfully, forever.
+
+What has to survive is the *element*. The test drives a run of `input` events at
+one well and asserts it is still in the document and still the same node
+afterwards. Put the `innerHTML = ''` back and it fails on the first step:
+`alive: false`.
+
