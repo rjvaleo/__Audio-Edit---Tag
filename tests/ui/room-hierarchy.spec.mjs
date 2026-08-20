@@ -719,20 +719,35 @@ test('the room editor\'s controls can be clicked, not just dispatched at',
     expect(await page.evaluate(() => roomEdit.grainFillBg),
       'the BG chip took a click and did nothing').toBe(false);
 
-    // The sliders, the layer chips and the occlusion switches too, since they
-    // all sit under the same overlay.
-    for (const id of ['reRing', 'reRingDrive', 'reRingEdge', 'reGrainDensity',
-      'reGrainBright', 'reOpacity', 'reRingPoints', 'reLeadThick', 'reClear',
-      'reReset']) {
-      await expect(page.locator(`#${id}`), `#${id} is not reachable`).toBeVisible();
-      const box = await page.locator(`#${id}`).boundingBox();
-      expect(box, `#${id} has no box to click`).not.toBeNull();
+    // **Every control in the panel, found rather than listed.**
+    //
+    // This was a list of ids somebody had to remember to extend, and twice
+    // somebody did not: the whole fill row shipped unclickable, and later the
+    // fog's type selector, because `select` was not among the elements handed
+    // the pointer back. Asking the DOM what is in there cannot fall behind.
+    const ids = await page.evaluate(() => [...document.querySelectorAll(
+      '#roomEdit input, #roomEdit select, #roomEdit button')]
+      .map((el) => el.id).filter(Boolean));
+    expect(ids.length, 'no controls found in the room editor at all')
+      .toBeGreaterThan(10);
+    for (const id of ids) {
+      const el = page.locator(`#${id}`);
+      if (!await el.isVisible()) continue;   // a chip inside a collapsed row
+      const box = await el.boundingBox();
+      if (!box || box.width < 2 || box.height < 2) continue;
       // A real pointer landing on it must find the slider and not the overlay.
-      const hit = await page.evaluate(({ x, y }) => {
-        const el = document.elementFromPoint(x, y);
-        return el ? el.id || el.className : null;
-      }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
-      expect(hit, `a pointer over #${id} lands on "${hit}" instead`).toBe(id);
+      // What a real pointer aimed at the middle of it would actually hit. The
+      // control itself, or something inside it — a `<span>` in a label counts,
+      // because the click still reaches the input through it.
+      const hit = await page.evaluate(({ x, y, want }) => {
+        const at = document.elementFromPoint(x, y);
+        if (!at) return null;
+        return at.closest(`#${want}`) || at.id === want
+          ? want
+          : (at.id || at.className || at.tagName);
+      }, { x: box.x + box.width / 2, y: box.y + box.height / 2, want: id });
+      expect(hit, `a pointer over #${id} lands on "${hit}" instead — that control `
+        + 'cannot be used').toBe(id);
     }
 
     await page.locator('#reLayers .re-occ[data-occlude="grains"]').click({ timeout: 3000 });
