@@ -29,6 +29,11 @@ export default defineConfig({
   reporter: [['list']],
   timeout: 30_000,
   use: {
+    // **Headless, and stated rather than assumed.** These runs are frequent and
+    // a browser window taking focus in the middle of somebody's work is not a
+    // cost worth paying for a test that nobody is watching. `PWHEAD=1` opens it
+    // when you do want to watch.
+    headless: !process.env.PWHEAD,
     baseURL: `http://127.0.0.1:${PORT}`,
     ...devices['Desktop Chrome'],
     // The panels are laid out for a real window; at a phone's width the docks
