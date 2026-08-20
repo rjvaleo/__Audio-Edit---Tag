@@ -331,8 +331,13 @@ varying float vW;
 varying float vDepth;
 varying float vDist;
 varying float vHeight;
+varying float vSeed;
 void main() {
   vW = aW;
+  // A number of its own for each sprite, so a field of them is not the same
+  // puff drawn a hundred times. Taken from where it is, which is stable frame
+  // to frame — a random here would boil.
+  vSeed = fract(dot(aPos, vec3(12.9898, 78.233, 37.719)) * 0.1031);
   vec4 p = uMVP * vec4(aPos, 1.0);
   // **How far this is from the eye, in world units.**
   //
@@ -360,6 +365,7 @@ varying float vW;
 varying float vDepth;
 varying float vDist;
 varying float vHeight;
+varying float vSeed;
 uniform vec3 uCold;
 uniform vec3 uHot;
 uniform float uAlpha;
@@ -380,31 +386,74 @@ uniform int uFogType;   // 0 linear, 1 exp, 2 exp squared, 3 height, 4 off
 /// room hold mist while the ring above it stays clear.
 float fogSurvives() {
   if (uFogType == 4) return 1.0;
+  // **Measured from where the fog starts, not from the eye.**
+  //
+  // "The fog's intensity is fogMin before or at the start of the fog's near
+  // distance" — and the near plane of this room is a whole unit from the eye,
+  // so measuring from the eye meant exp(-density * 1.0) at the very front:
+  // better than a third of the fog's colour laid over the nearest thing in the
+  // picture, and the same again over everything behind it. That is not depth,
+  // that is a tint on the whole scene, and it was reported as exactly that.
+  float d = max(0.0, vDist - uFogNear);
   if (uFogType == 0) {
-    return (uFogFar - vDist) / max(1e-4, uFogFar - uFogNear);
+    return 1.0 - clamp(d / max(1e-4, uFogFar - uFogNear), 0.0, 1.0);
   }
   if (uFogType == 1) {
-    return exp(-uFogDensity * vDist);
+    return exp(-uFogDensity * d);
   }
   if (uFogType == 2) {
-    float d = uFogDensity * vDist;
-    return exp(-d * d);
+    float e = uFogDensity * d;
+    return exp(-e * e);
   }
   // Height. Thicker low down, which is what ground mist is.
   float h = exp(-(vHeight - uFogHeight) * 2.2);
-  return exp(-uFogDensity * vDist * h);
+  return exp(-uFogDensity * d * h);
+}
+
+/// Value noise, and two octaves of it.
+///
+/// **Textureless.** The reference builds its fog by attenuating noise rather
+/// than by drawing a picture of a cloud, which is what keeps it from tiling and
+/// what lets one sprite be a different shape from the next without a single
+/// byte of texture memory. Two octaves is enough at the size these are drawn:
+/// one is a smooth blob and three is a cost nobody can see.
+float fogHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float fogNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = fogHash(i);
+  float b = fogHash(i + vec2(1.0, 0.0));
+  float c = fogHash(i + vec2(0.0, 1.0));
+  float d = fogHash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fogFbm(vec2 p) {
+  return fogNoise(p) * 0.65 + fogNoise(p * 2.17 + 4.3) * 0.35;
 }
 
 void main() {
   float a = uAlpha;
   if (uRound > 0.5) {
-    float d = length(gl_PointCoord - 0.5) * 2.0;
+    vec2 uv = gl_PointCoord - 0.5;
+    float d = length(uv) * 2.0;
     if (uSoft > 0.5) {
       // **Smoke, not a disc.** A linear falloff gives a sprite with a visible
       // rim, and a hundred of them overlapping reads as a hundred circles. A
       // gaussian core taken to nothing before the edge is what makes them pile
       // up into something continuous.
+      //
+      // And the noise is what stops them being *circles*. The edge is pushed in
+      // and out by it and the body is thinned unevenly, so no two of them are
+      // the same shape and none of them is a shape you can name.
+      float n = fogFbm(uv * 3.4 + vSeed * 31.7);
+      d *= mix(0.72, 1.28, n);
       a *= exp(-d * d * 3.2) * smoothstep(1.0, 0.55, d);
+      a *= mix(0.45, 1.25, fogFbm(uv * 6.1 + vSeed * 11.3 + 9.0));
     } else {
       a *= smoothstep(1.0, 0.0, d);
     }
@@ -475,7 +524,11 @@ function vgAttach(canvas) {
       uFogType: gl.getUniformLocation(p, 'uFogType'),
     };
   } catch (e) {
-    console.warn('visualiser:', e.message);
+    // **Loud, because the failure is otherwise silent.** A shader that will not
+    // compile leaves `vgAttach` returning null, and every caller then finds no
+    // room at all — which surfaces somewhere else entirely as "cannot read
+    // properties of null". The message here is the only thing that says why.
+    console.error('visualiser: the room would not compile —', e.message);
     return null;
   }
 
