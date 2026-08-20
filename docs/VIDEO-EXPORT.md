@@ -317,3 +317,39 @@ Worth writing down because "it does not look right" and "that control does
 nothing" are the same sentence from outside, and the answer was neither. What
 was actually wrong was the cloud, above.
 
+## The film runs on its own clock
+
+Everything in the room that moves by itself — a grain ageing towards the back
+wall, the fog drifting — was measured against `performance.now()`. That is right
+for a room being watched and wrong for one being filmed: an offline render goes
+as fast as the machine manages, so the gap between one frame and the next is
+however long the *last* one took to encode. A frame that took fifty milliseconds
+aged the cloud by fifty and the next one by five, and what that looks like in the
+finished file is a single lurch — reported as "a single frame stutter when
+rendering at 30 fps and full resolution".
+
+A caller that knows what time its frame is at now says so, and gets a room that
+moves by the film's clock. A caller that says nothing gets the wall clock,
+unchanged.
+
+The test renders the same ninety frames twice, once with a hundred and twenty
+milliseconds of deliberate stall in the middle:
+
+| | frames changed by the stall |
+|---|---|
+| wall clock | 87 of 90 |
+| film clock | **0 of 90** |
+
+Which also means a render is now reproducible: the same document filmed twice is
+the same file, whatever else the machine was doing.
+
+### It cost two goes to measure
+
+The first attempt compared how *evenly* the picture moved and reported the fixed
+version as worse, because the two runs had different typical step sizes and the
+ratio between worst and typical is not a measure of anything. The second
+compared the two films frame for frame — the right question — and still found
+every frame different, because `grainLive` and `grainClock` are held between
+frames on purpose and the previous run's cloud was still in the air. `clear()`
+exists for that. Only then did the number go to zero.
+

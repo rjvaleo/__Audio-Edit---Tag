@@ -752,6 +752,25 @@ function vgAttach(canvas) {
       // The caller owns the camera, because which camera is right depends on
       // the frame being drawn for and this file has no opinion about that.
       const cam = vgCamera(f && f.cam);
+
+      // ── what time it is here ──
+      //
+      // **The wall clock is right for a live room and wrong for a film.**
+      // Everything in here that moves on its own — a grain ageing towards the
+      // back wall, the fog drifting — was measured against `performance.now()`,
+      // which is exactly what a room being watched wants. An offline render is
+      // not being watched: it runs as fast as the machine manages, so the gap
+      // between one frame and the next is however long the last one took to
+      // encode. A frame that took fifty milliseconds aged the cloud by fifty
+      // and the next one by five, and what that looks like in the finished file
+      // is a stutter — the picture lurching once and carrying on.
+      //
+      // So a caller that knows what time its frame is at says so, and gets a
+      // room that moves by the film's clock rather than by the machine's. A
+      // caller that says nothing gets the wall clock, unchanged.
+      const clockMs = f && typeof f.clock === 'number'
+        ? f.clock * 1000
+        : (typeof performance !== 'undefined' ? performance.now() : Date.now());
       // And owns which parts are drawn. Everything, unless told otherwise —
       // a caller that says nothing gets the room it has always had.
       const on = { room: true, floor: true, lead: true, sky: true, skin: true, grains: true, ...(f && f.layers) };
@@ -920,7 +939,13 @@ function vgAttach(canvas) {
           floorPos = new Float32Array(VG_FLOOR_BANDS * 3);
           floorW = new Float32Array(VG_FLOOR_BANDS);
         }
-        for (let r = 0; r < rows; r++) {
+        // Every ridge is its own draw call with two buffer uploads behind it,
+        // and there are fifty-six of them — the same arithmetic that made the
+        // rings expensive, in the other half of the room. The ones at the back
+        // are within a few pixels of each other and already faded; drawing
+        // every third one there is not visible and drawing all of them is a
+        // third of the frame.
+        for (let r = rows - 1; r >= 0; r -= 1 + Math.floor(ageOf(r) * 2.4)) {
           const row = history[r].row;
           const age = ageOf(r);
           const z = zAt(age);
@@ -1042,7 +1067,7 @@ function vgAttach(canvas) {
           f && typeof f.grainDensity === 'number' ? f.grainDensity : 1));
         const bright = Math.max(0.05, Math.min(3,
           f && typeof f.grainBright === 'number' ? f.grainBright : 1));
-        const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        const nowMs = clockMs;
         const dt = grainClock ? Math.min(0.25, (nowMs - grainClock) / 1000) : 0;
         grainClock = nowMs;
 
@@ -1433,6 +1458,42 @@ function vgAttach(canvas) {
           f && typeof f.ringEdge === 'number' ? f.ringEdge : 0.035));
         const skyY = yb + (yt - yb) * cam.skyAt;
         const r0 = (yt - yb) * cam.ring;
+        // ── how many points *this* ring needs ──
+        //
+        // **Not all of them get the full count.** The trail is fifty-six rings
+        // deep and only the nearest one is anywhere near the size of the frame;
+        // the rest are receding and the furthest is a third of the width of the
+        // front. Building every one of them at a thousand points, twice over
+        // for the skin and the hoops, and again for the border, is a third of a
+        // million vertex writes and a hundred and seventy draw calls a frame.
+        // Full screen fell to between one and three frames a second — which
+        // does not read as a slow visual, it reads as a mouse that has stopped
+        // working.
+        //
+        // The leading ring keeps everything, because it is the one being looked
+        // at. The rest fall away with distance, which is the same argument the
+        // grain shapes make about detail nobody can see.
+        const ptsAt = (age) => Math.max(64,
+          Math.round(pts * (0.28 + 0.72 * (1 - age))) & ~1);
+        // The skin is one count for every band, because a band joins two rings
+        // and the two have to have the same number of points to be joined at
+        // all. A surface needs far fewer than an outline does.
+        const skinPts = Math.max(64, Math.min(pts, 256));
+        // ── and how many of the rings are drawn at all ──
+        //
+        // **Fifty-six rings, three passes each.** A band of skin, a hoop, and a
+        // dark border under the hoop — and every one of those is its own draw
+        // call with two buffer uploads behind it, so the trail alone was a
+        // hundred and seventy draws and three hundred and forty uploads a
+        // frame. In the dock that is affordable. Full screen it was half of an
+        // eighty-millisecond frame, and a room at thirteen frames a second is
+        // not a slow visual, it is a mouse that has stopped working.
+        //
+        // The rings at the back are stacked within a few pixels of each other —
+        // the easing has already faded them and the perspective has already
+        // shrunk them together. Drawing every third one there is not visible;
+        // drawing all of them is most of the cost.
+        const strideAt = (age) => 1 + Math.floor(age * 2.4);
         const N = pts + 1;
         // Allocated once at the largest the ring can be, so moving the
         // resolution does not throw away four buffers and build four more on
@@ -1450,14 +1511,15 @@ function vgAttach(canvas) {
         }
 
         /// One ring, into the buffers given. False when that frame has no
-        /// figure to build one from.
-        const ringInto = (r, pos, wts) => {
+        /// figure to build one from. Returns how many points it wrote.
+        const ringInto = (r, pos, wts, count) => {
           const liss = history[r].liss;
           if (!liss) return false;
+          const n = count || pts;
           const z = zAt(ageOf(r));
-          for (let i = 0; i < N; i++) {
-            const k = i % pts;                   // closed, so the
-            const th = (k / pts) * Math.PI * 2;  // last point is the first
+          for (let i = 0; i <= n; i++) {
+            const k = i % n;                   // closed, so the
+            const th = (k / n) * Math.PI * 2;  // last point is the first
             // Periodic by construction.
             //
             // Reading the window straight round meant the radius came from its
@@ -1471,7 +1533,7 @@ function vgAttach(canvas) {
             // zero at the seam with its slope already at zero — continuous in
             // both value and rate, and with no flat spot, which a cross-fade
             // into the head would have left.
-            const u = k / pts;
+            const u = k / n;
             // Into the *stored* trace, whose length has nothing to do with how
             // many points are being drawn — and at a fractional place in it, not
             // a rounded one.
@@ -1528,10 +1590,10 @@ function vgAttach(canvas) {
         // floor each band carries its own fade and the ring's easing runs out
         // before the back wall.
         let havePrev = false;
-        for (let r = 0; wantSkin && r < rows; r++) {
-          const ok = ringInto(r, skyPos, skyW);
+        for (let r = rows - 1; wantSkin && r >= 0; r -= strideAt(ageOf(r))) {
+          const ok = ringInto(r, skyPos, skyW, skinPts);
           if (ok && havePrev) {
-            for (let i = 0; i < N; i++) {
+            for (let i = 0; i <= skinPts; i++) {
               skyBand[i * 6] = skyPrev[i * 3];
               skyBand[i * 6 + 1] = skyPrev[i * 3 + 1];
               skyBand[i * 6 + 2] = skyPrev[i * 3 + 2];
@@ -1547,22 +1609,24 @@ function vgAttach(canvas) {
             // the body between them, not a replacement for them.
             const a = 0.16 * (1 - age * 0.7) * Math.max(0, easeAt(age));
             if (a > 0.002) {
-              draw(gl.TRIANGLE_STRIP, skyBand, skyBandW, N * 2, a, false,
+              draw(gl.TRIANGLE_STRIP, skyBand, skyBandW, (skinPts + 1) * 2, a, false,
                 f.core, f.hot, 1);
             }
           }
           if (ok) {
-            skyPrev.set(skyPos);
-            skyPrevW.set(skyW);
+            skyPrev.set(skyPos.subarray(0, (skinPts + 1) * 3));
+            skyPrevW.set(skyW.subarray(0, skinPts + 1));
             havePrev = true;
           }
         }
 
         // ── the hoops ──
-        for (let r = 0; wantSky && r < rows; r++) {
-          if (!ringInto(r, skyPos, skyW)) continue;
+        for (let r = rows - 1; wantSky && r >= 0; r -= strideAt(ageOf(r))) {
           const age = ageOf(r);
           const lead = r === rows - 1;
+          // The one being looked at keeps every point it was asked for.
+          const rn = lead ? pts : ptsAt(age);
+          if (!ringInto(r, skyPos, skyW, rn)) continue;
 
           // ── the outline ──
           //
@@ -1577,9 +1641,13 @@ function vgAttach(canvas) {
           // laid out by angle from its centre, so "along the radius" is exactly
           // perpendicular to the line — no screen-space maths needed, and none
           // of `lineWidth`, which almost every driver clamps to 1.
-          if (edge > 0) {
+          // The border is what separates one hoop from the one behind it, and
+          // by the back of the room there is nothing left to separate: the
+          // easing has faded them and they are a few pixels apart. Near ones
+          // only.
+          if (edge > 0 && age < 0.45) {
             const w = r0 * edge;
-            for (let i = 0; i < N; i++) {
+            for (let i = 0; i <= rn; i++) {
               const px = skyPos[i * 3], py = skyPos[i * 3 + 1] - skyY;
               const d = Math.hypot(px, py) || 1;
               const ux = px / d, uy = py / d;
@@ -1593,7 +1661,9 @@ function vgAttach(canvas) {
               skyBandW[i * 2 + 1] = 1;
             }
             const dark = (lead ? 0.9 : 0.62) * Math.max(0, easeAt(age));
-            if (dark > 0.004) drawDark(gl.TRIANGLE_STRIP, skyBand, skyBandW, N * 2, dark);
+            if (dark > 0.004) {
+              drawDark(gl.TRIANGLE_STRIP, skyBand, skyBandW, (rn + 1) * 2, dark);
+            }
           }
           // **No beads.** The leading ring used to carry a point sprite at
           // every vertex, to give the frame being heard now the weight the
@@ -1602,7 +1672,7 @@ function vgAttach(canvas) {
           // analyser's block size and says nothing whatever about the sound.
           // The line is drawn at full alpha instead, which is the same emphasis
           // without the dots.
-          draw(gl.LINE_STRIP, skyPos, skyW, N,
+          draw(gl.LINE_STRIP, skyPos, skyW, rn + 1,
             lead ? 1.0 : (0.28 + (1 - age) * 0.5) * Math.max(0, easeAt(age)),
             false, f.core, f.hot, 1);
         }
@@ -1624,7 +1694,7 @@ function vgAttach(canvas) {
         }
         // Slowly, and on the wall clock, so it drifts while the room is paused
         // as well as while it is running. Air does not stop when the sound does.
-        const t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+        const t = clockMs / 1000;
         for (let i = 0; i < motes; i++) {
           // Its own place, held for good: a hash rather than a random, so the
           // haze does not reshuffle itself every frame into a different fog.

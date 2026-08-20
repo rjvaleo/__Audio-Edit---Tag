@@ -337,6 +337,10 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
       layers,
       occlude,
       order,
+      // **The film's clock, not the machine's.** Everything in the room that
+      // moves on its own ages against this, and a render that is going as fast
+      // as it can has no useful wall clock to offer it — see `clockMs`.
+      clock: t,
       pollMs: MB_POLL_MS,
       // The schedule, so the grain layer has something to spawn from. Without
       // it the room draws its terrain and its ring and no cloud at all.

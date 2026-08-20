@@ -221,3 +221,79 @@ test('what gets encoded is opaque, and has the cloud in it', async ({ page }) =>
     + ' — that is not a window').toBe(true);
 });
 
+/// The film runs on its own clock, not the machine's.
+///
+/// **Everything in the room that moves on its own was aged against
+/// `performance.now()`** — right for a room being watched, wrong for one being
+/// filmed. An offline render goes as fast as the machine manages, so the gap
+/// between frames is however long the last one took to encode: a frame that
+/// took fifty milliseconds aged the cloud by fifty and the next by five. What
+/// that looks like in the finished file is a stutter, the picture lurching once
+/// and carrying on, and it was reported as exactly that.
+test('a stall while rendering does not reach the file', async ({ page }) => {
+  await openFile(page);
+  const out = await page.evaluate(async () => {
+    const c = document.createElement('canvas');
+    c.width = 320; c.height = 180;
+    const gl = vgAttach(c);
+    if (!gl) return null;
+    const raw = c.getContext('webgl');
+    const sr = 44100, grains = [];
+    for (let i = 0; i < 400; i++) {
+      const t = i / 60;
+      grains.push([Math.round(t * sr), Math.round((t / 6) * sr * 10),
+        Math.round(sr * 0.04), 0, 0.6, 0.5, 0, i]);
+    }
+    const run = (useClock, stall) => {
+      // Empty the room first, or the last film's cloud is still in the air and
+      // its clock is still where it stopped.
+      gl.clear();
+      const seen = [];
+      for (let k = 0; k < 90; k++) {
+        const t = k / 30;
+        // What a slow encode or a collection pause does to a render.
+        if (stall && k === 45) {
+          const until = performance.now() + 120;
+          while (performance.now() < until) { /* hold the thread */ }
+        }
+        gl.frame({
+          cold: [0.3, 0.6, 0.9], hot: [0.4, 0.8, 0.5], core: [0.5, 0.8, 1],
+          cam: roomCamera(),
+          layers: { room: false, floor: false, lead: false, sky: false,
+            skin: false, grains: true },
+          order: roomOrder(), occlude: {},
+          ...(useClock ? { clock: t } : {}),
+          grains, grainRate: sr, srcFrames: sr * 10, positionRate: sr, pollMs: 50,
+          position: Math.round(sr * t),
+        });
+        const px = new Uint8Array(c.width * c.height * 4);
+        raw.readPixels(0, 0, c.width, c.height, raw.RGBA, raw.UNSIGNED_BYTE, px);
+        let lit = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] + px[i + 1] + px[i + 2] > 12) lit++;
+        }
+        seen.push(lit);
+      }
+      return seen;
+    };
+    const differ = (useClock) => {
+      const a = run(useClock, false);
+      const b = run(useClock, true);
+      let n = 0;
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+      return { changed: n, of: a.length };
+    };
+    return { wall: differ(false), clock: differ(true) };
+  });
+  if (out === null) test.skip(true, 'no readable WebGL context in this harness');
+
+  // On the machine's clock the stall is in the picture.
+  expect(out.wall.changed, 'a stall changed nothing even on the wall clock — the '
+    + 'test is no longer stalling anything').toBeGreaterThan(10);
+  // On the film's clock it is not there at all: the same film, frame for frame,
+  // whatever the machine was doing while it was made.
+  expect(out.clock.changed, `${out.clock.changed} of ${out.clock.of} frames moved `
+    + 'because the render was slow — the film is still on the machine\'s clock')
+    .toBe(0);
+});
+
