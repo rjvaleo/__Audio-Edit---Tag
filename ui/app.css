@@ -2483,7 +2483,13 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    opened. The test did not catch it because it dispatched the events straight
    at the elements, which is the one way of driving a control that cannot tell
    whether the control can be reached. */
-.re-row .re-btn, .re-check, .re-check input, .re-colour { pointer-events: auto; }
+/* `select` is on this list because it was not, and the fog's type could not be
+   changed at all: it opened nothing, because the pointer went through it to the
+   room behind. Every kind of control that goes in this panel has to be named
+   here, and the reachability test now walks every one of them rather than a
+   list somebody remembered to update. */
+.re-row .re-btn, .re-check, .re-check input, .re-colour,
+.re-row select, .re-row input { pointer-events: auto; }
 .re-check { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
 .re-check input { width: 10px; height: 10px; margin: 0; accent-color: var(--accent); }
 .re-colour {

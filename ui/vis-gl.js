@@ -476,17 +476,29 @@ void main() {
   // Lifted at the top end so a loud band burns rather than merely brightens.
   col += uHot * pow(clamp(vW, 0.0, 1.0), 3.0) * 0.55;
 
-  // **Fog is a mix toward its own colour, not a fade to black.** Distance does
-  // not make a thing dimmer, it makes it more like the air in front of it —
-  // which is why a foggy day is bright and flat rather than dark. Over an
-  // additive scene that means the far end of the room takes the fog's hue and
-  // loses its own, which is the depth cue this room never had: the old one
-  // clamped its depth to a constant and dimmed everything equally.
+  // ── fog, on an additive scene ──
+  //
+  // **A thing in fog is not recoloured, it is lost in it.** The first version
+  // mixed each fragment toward the fog's colour, which on a scene that adds
+  // light does not obscure anything — it repaints it. Every line in the room
+  // came out the fog's hue at the fog's brightness, near ones included, and
+  // what that looks like is a coloured film laid over the picture. It was
+  // reported as exactly that, twice.
+  //
+  // The haze is already on the canvas by the time any of this is drawn, so what
+  // a distant fragment has to do is *give way to it*: contribute less of itself
+  // the more air is in front of it, and let what is behind show through. On an
+  // additive pass that is simply its own alpha, and it is the whole of the
+  // effect — a far ridge dissolves into the fog instead of turning its colour.
   float f = clamp(fogSurvives(), 0.0, 1.0);
-  col = mix(uFogColor, col, f);
+  a *= mix(0.04, 1.0, f);
 
-  // And a little of the old attenuation, so the back of the room settles rather
-  // than staying as loud as the front.
+  // A little of the hue as well, for the case where the volume is switched off
+  // and there is no haze behind for the fragment to give way to.
+  col = mix(uFogColor, col, mix(0.45, 1.0, f));
+
+  // And the plain depth cue, so the back of the room settles rather than
+  // staying as loud as the front even with no fog at all.
   float far = 1.0 - clamp(vDepth * 0.5, 0.0, 0.55);
   gl_FragColor = vec4(col, a * far * (0.42 + vW * 0.78));
 }`;
@@ -616,6 +628,20 @@ function vgAttach(canvas) {
   /// what is behind it towards black without painting an opaque hole: the room
   /// is drawn on glass with the page's own ground behind it, and a border that
   /// punched through to nothing would be a border around a hole.
+  /// Geometry that *covers* what is behind it instead of adding to it.
+  ///
+  /// **This is what fog is, and additive blending cannot do it.** Everything
+  /// else in this room adds — which is right for light, and wrong for air. Fog
+  /// that adds paints its colour over the whole picture, the near things
+  /// included, and what you get is a tint on the scene rather than something
+  /// the scene is standing in. Ordinary alpha over the top: the fog hides what
+  /// is behind it in proportion to how much of it there is.
+  const drawOver = (mode, pos, wts, count, alpha, cold, hot, size) => {
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    draw(mode, pos, wts, count, alpha, true, cold, hot, size);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  };
+
   const drawDark = (mode, pos, wts, count, alpha) => {
     if (!count) return;
     gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
@@ -1122,6 +1148,9 @@ function vgAttach(canvas) {
                 // lose detail on its way to the wall, it turned into a different
                 // solid three times. See `grainShapeFor`.
                 shape: grainShapeFor(h3 >>> 16, grainDetailFor(level)),
+                // What its mist wanders by. Fixed here, like everything else
+                // about it.
+                mist: h2 ^ 0x5bf03635,
                 phase: ((h4 & 0xffff) / 0x10000) * Math.PI * 2,
                 spin: (0.35 + ((h4 >>> 16) & 0xffff) / 0x10000)
                   * VG_GRAIN_SPIN * Math.PI * 2 * (h4 & 1 ? 1 : -1),
@@ -1251,7 +1280,19 @@ function vgAttach(canvas) {
             if (misting && sn < VG_MIST_CAP - mistCount) {
               // Its own wander, so two grains side by side do not shed the same
               // shape. Drawn from bits of the hash nothing else is using.
-              const mh = ((p.shape.lines * 2654435761) ^ (i * 40503)) >>> 0;
+              // **Its own number, not its place in the list.**
+              //
+              // This was seeded from `i`, the index into `grainLive` — and that
+              // array is compacted every frame as grains reach the wall
+              // (`grainLive[keep++] = p`), so a grain's index shifts under it
+              // the moment anything ahead of it dies. Its mist then jumped
+              // sideways to wherever the new index put it: soft orbs that
+              // appear, and then relocate, over and over through a render.
+              //
+              // The same fault as a grain changing shape in mid-air, and the
+              // same lesson: nothing about a grain may be derived from where it
+              // happens to sit in a list.
+              const mh = p.mist;
               for (let k = 1; k <= mistCount; k++) {
                 const lag = (k / mistCount) * mistLen;
                 const back = a0 - lag;
@@ -1630,6 +1671,25 @@ function vgAttach(canvas) {
         }
         const strength = Math.max(0, Math.min(1.5,
           fog.density === undefined ? 0.5 : fog.density));
+        // **Back to front.** Alpha blending is order-dependent in a way
+        // additive never was: a near mote has to be laid over a far one, or the
+        // far one covers it and the haze has no depth in it at all. Nothing
+        // else in this room needed sorting, because addition does not care.
+        const order2 = new Array(motes);
+        for (let i = 0; i < motes; i++) order2[i] = i;
+        order2.sort((a, b) => fogPos[a * 3 + 2] - fogPos[b * 3 + 2]);
+        const sorted = new Float32Array(motes * 3);
+        const sortedW = new Float32Array(motes);
+        for (let i = 0; i < motes; i++) {
+          const j = order2[i];
+          sorted[i * 3] = fogPos[j * 3];
+          sorted[i * 3 + 1] = fogPos[j * 3 + 1];
+          sorted[i * 3 + 2] = fogPos[j * 3 + 2];
+          sortedW[i] = fogW[j];
+        }
+        fogPos.set(sorted.subarray(0, motes * 3));
+        fogW.set(sortedW.subarray(0, motes));
+
         drawSoft = true;
         // Three sizes of the same field. One size is a texture; three is a
         // depth of air.
@@ -1641,9 +1701,9 @@ function vgAttach(canvas) {
         // do not say when they have, so a size past that is a size that means
         // something different on every machine. More, smaller motes instead.
         const rgb = fog.rgb || [0.5, 0.6, 0.7];
-        draw(gl.POINTS, fogPos, fogW, motes, 0.11 * strength, true, rgb, rgb, 48);
-        draw(gl.POINTS, fogPos, fogW, motes, 0.07 * strength, true, rgb, rgb, 104);
-        draw(gl.POINTS, fogPos, fogW, motes, 0.04 * strength, true, rgb, rgb, 190);
+        drawOver(gl.POINTS, fogPos, fogW, motes, 0.11 * strength, rgb, rgb, 48);
+        drawOver(gl.POINTS, fogPos, fogW, motes, 0.07 * strength, rgb, rgb, 104);
+        drawOver(gl.POINTS, fogPos, fogW, motes, 0.04 * strength, rgb, rgb, 190);
         drawSoft = false;
       }
 
