@@ -211,3 +211,40 @@ clearing, against the whole remaining render before the tick could answer.
 A cancel surfaces as `io::ErrorKind::Interrupted`, which is *not* a failure and
 must not be reported as one — it was, at first, and said "failed" on a file the
 user had deliberately stopped.
+
+## The render is stereo, because the sound is
+
+Added 19 Aug 2026, after a video export came out mono.
+
+**The transport runs at the device's channel count, not the source's** — it says
+so in `transport.rs` where it takes it. So a mono file is already being played
+through a stereo chain, and everything that makes it stereo happens in that
+chain: the grain engine's own pan, the rack's reverbs and delays, the
+spatialisation.
+
+The render used to run at the *source's* count. `pan_gains` returns (1, 1) below
+two channels, so a mono document exported with every one of those switched on
+came out as one channel with the pan discarded — while the speakers played a
+stereo field and the room drew a PAN column and a stereo Lissajous from the same
+schedule. The picture, the playback and the file are meant to agree, and this is
+the one place they did not.
+
+**A mono document now always renders stereo.** Not "when the rack has something
+in it" or "when the grain engine is panning": the processing can always make
+stereo, and a rule with conditions in it produces a mono file on Tuesday and a
+stereo one on Wednesday from the same sound, leaving whoever collected them to
+work out why.
+
+The widening happens **at the read**, in `edit::render::render`, not at the end.
+Everything downstream — the stretch, the grains, the rack — then works in the
+width the sound is going to be heard in, which is where the stereo is actually
+made. Widening afterwards would copy a mono result into two channels and produce
+a file that is stereo in name only.
+
+Every channel gets the same samples and nothing is halved on the way: what
+follows is about to *give* this a stereo field, and arriving quieter than it was
+auditioned would be a second fault dressed as gain staging.
+
+This changes the plain audio export too, deliberately. A mono source now exports
+as a stereo AIFF.
+
