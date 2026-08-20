@@ -296,6 +296,8 @@
       </select>
       <button class="primary" id="exportBtn"
               title="Render to a new AIFF beside the original, named for the engine, ratio, pitch and window — with every setting written into the file">Export</button>
+      <button class="ghost" id="videoBtn"
+              title="Film the room with the sound it is drawn from. Opens the export box, where the range, the size and the frame rate are chosen.">Video</button>
     </div>
 
     <!-- Only while an export is running. Its own row, so no button anywhere
@@ -510,10 +512,27 @@
             <span class="fx-note">Let the reverbs and delays finish sounding
             after the last repeat, instead of cutting them off.</span>
           </div>
+          <div class="fx-row">
+            <label class="export-label">Range</label>
+            <button class="tiny switch on" id="elScopeSel"
+              title="Film the selection, repeated as set above.">Selection</button>
+            <button class="tiny switch" id="elScopeAll"
+              title="Film the whole file, once, ignoring the loop and the repeats.">Whole file</button>
+            <span class="fx-note" id="elScopeNote"></span>
+          </div>
+          <div class="fx-row">
+            <label class="export-label" for="elVideoSize">Video</label>
+            <select class="field" id="elVideoSize"></select>
+            <select class="field" id="elVideoFps"></select>
+            <span class="fx-note">The room, filmed with the sound it is drawn
+            from. The picture runs on past the end while the room empties, and
+            the sound is padded with silence to meet it.</span>
+          </div>
         </div>
         <footer class="modal-foot">
           <span class="pm-status" id="elStatus"></span>
           <button class="ghost" id="elWhole">Whole file instead</button>
+          <button class="ghost" id="elVideo">Export video</button>
           <button class="primary" id="elGo">Export</button>
         </footer>
       </div>
@@ -650,6 +669,86 @@
                     <div class="re-frames" id="reStreams"></div>
                   </div>
                   <div class="re-row">
+                    <span class="re-tag">RING</span>
+                    <input class="re-slider" id="reRing" type="range"
+                      min="15" max="300" step="1"
+                      title="How big the ring and the skin are drawn. The camera holds the pose; this is the size.">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">DRIVE</span>
+                    <input class="re-slider" id="reRingDrive" type="range"
+                      min="0" max="800" step="1"
+                      title="How hard the sound pushes the ring out of round. Well past 1× at the top — a breath becomes a crown.">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">SMOOTH</span>
+                    <input class="re-slider" id="reRingPoints" type="range"
+                      min="48" max="2048" step="8"
+                      title="How finely the ring is drawn. The curve is interpolated between the analyser's samples, so this is not capped by how many it sends — the top of the range is a smooth curve with no corners and no nodes in it.">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">STROKE</span>
+                    <input class="re-slider" id="reRingEdge" type="range"
+                      min="0" max="250" step="1"
+                      title="How thick the dark border under the ring's lines is, as a fraction of the ring's radius. Nothing at the bottom.">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">CLOUD</span>
+                    <input class="re-slider" id="reGrainDensity" type="range"
+                      min="4" max="100" step="1"
+                      title="How much of the cloud is drawn. The schedule is untouched — this thins the picture, not the sound.">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">EDGE</span>
+                    <label class="re-check" title="The thick band over the frame you are hearing now. Off, the frame is still drawn — it is the ridge line the band sits on.">
+                      <input type="checkbox" id="reLeadThick"><span>thick</span>
+                    </label>
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">FOG</span>
+                    <label class="re-check" title="Distance fog: the far end of the room takes the fog's colour and loses its own, the way distance really works.">
+                      <input type="checkbox" id="reFog"><span>on</span>
+                    </label>
+                    <select class="field" id="reFogType" title="How the fog thickens with distance.">
+                      <option value="1">Exp</option>
+                      <option value="2">Exp²</option>
+                      <option value="0">Linear</option>
+                      <option value="3">Height</option>
+                    </select>
+                    <input class="re-slider" id="reFogDensity" type="range"
+                      min="0" max="200" step="1" title="How thick it is.">
+                    <input class="re-colour" id="reFogColour" type="color"
+                      title="The colour of the air. Distant things tend towards it.">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">MIST</span>
+                    <label class="re-check" title="Smoke dripping off the grain shapes: what each one shed a moment ago, falling as it goes.">
+                      <input type="checkbox" id="reMist"><span>on</span>
+                    </label>
+                    <input class="re-slider" id="reMistAmount" type="range"
+                      min="6" max="100" step="1"
+                      title="How much of it — how many points each grain sheds.">
+                    <input class="re-slider" id="reMistLength" type="range"
+                      min="4" max="600" step="1"
+                      title="How long the drips are: how far back along its own journey a grain's mist reaches.">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">FILL</span>
+                    <label class="re-check" title="Fill the grain shapes in. The wires are still drawn on top, so a filled grain keeps its far side.">
+                      <input type="checkbox" id="reGrainFill"><span>on</span>
+                    </label>
+                    <button class="re-btn" id="reGrainFillBg"
+                      title="Fill with the background instead of a colour: the shape takes the light out of whatever is behind it rather than painting over it.">BG</button>
+                    <input class="re-colour" id="reGrainFillColour" type="color"
+                      title="The colour to fill the shapes with, when not filling with the background.">
+                  </div>
+                  <div class="re-row">
+                    <span class="re-tag">BURN</span>
+                    <input class="re-slider" id="reGrainBright" type="range"
+                      min="15" max="300" step="1"
+                      title="How brightly the grains burn.">
+                  </div>
+                  <div class="re-row">
                     <span class="re-tag">BLOCK</span>
                     <div class="re-frames" id="reChunks"></div>
                     <input class="re-slider" id="reOpacity" type="range"
@@ -660,8 +759,12 @@
                     <span class="re-tag">FRAME</span>
                     <div class="re-frames" id="reFrames"></div>
                   </div>
-                  <button class="re-btn re-reset" id="reReset"
-                    title="Put this frame's camera back to the one in the source">Reset</button>
+                  <div class="re-foot">
+                    <button class="re-btn re-reset" id="reClear"
+                      title="Empty the room: the trail and every grain still in the air. The camera and the settings are left alone.">Clear</button>
+                    <button class="re-btn re-reset" id="reReset"
+                      title="Put this frame's camera back to the one in the source">Reset</button>
+                  </div>
                   <div class="re-nums mono" id="reNums"
                     title="What the dragging has made. Click to copy, to paste into vis-gl.js as the new default."></div>
                 </div>
@@ -849,7 +952,10 @@
      by the time the rail is built. -->
 <script src="/theme-palettes.js"></script>
 <script src="/theme-derive.js"></script>
+<script src="/grain-shapes.js"></script>
+<script src="/mp4.js"></script>
 <script src="/vis-gl.js"></script>
+<script src="/video-export.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
