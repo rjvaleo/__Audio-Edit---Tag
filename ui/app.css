@@ -896,7 +896,7 @@ body.editing .lane { box-shadow: inset 0 2px 0 var(--accent); }
 
 /* Edit mode is visibly a different room: darker chrome, the spectrogram always
    present, and the effects dock open. */
-body.editing .centre { background: var(--surface-0); }
+body.editing .centre, body.roomview .centre { background: var(--surface-0); }
 body.editing .transport { background: var(--surface); }
 .viscanvas {
   width: 100%; height: 90px; display: block; border-radius: 6px;
@@ -1230,21 +1230,21 @@ input[type=range]::-moz-range-thumb { opacity: 0; border: 0; }
    In Edit the editor needs its full width, and the library is only there when
    you are reaching for the next thing, so it becomes a drawer over the top. */
 
-body.editing .panel.left {
+body.docmode .panel.left {
   position: absolute; top: 44px; bottom: 0; left: var(--rail); z-index: 30;
   box-shadow: 12px 0 40px var(--shadow);
   border-right: 1px solid var(--line-2);
   transform: translateX(0); transition: transform .18s ease, width .18s ease;
 }
-body.editing .panel.left.drawer-closed {
+body.docmode .panel.left.drawer-closed {
   /* Its own width plus the rail: translateX(-100%) alone leaves the panel's
      right edge sitting exactly over the rail, hiding the buttons behind it. */
   transform: translateX(calc(-100% - var(--rail)));
   box-shadow: none;
 }
 /* The drawer floats, so it must not also reserve space. */
-body.editing .panel.left { width: 330px; }
-body.editing .shell { position: relative; }
+body.docmode .panel.left { width: 330px; }
+body.docmode .shell { position: relative; }
 
 .scrim { position: fixed; inset: 0; z-index: 25; background: var(--shadow-soft); }
 
@@ -1322,8 +1322,8 @@ body.editing .shell { position: relative; }
 }
 
 /* Tagging belongs to Browse: in Edit the whole right side is the editor's. */
-body.editing .panel.right, body.editing #rightRail { display: none; }
-body.editing .panel.left { left: var(--rail); }
+body.docmode .panel.right, body.docmode #rightRail { display: none; }
+body.docmode .panel.left { left: var(--rail); }
 /* The readout leads the waveform while a control is being dragged.
 
    Colour and nothing else. The sound is already live — every engine runs in the
@@ -2866,3 +2866,162 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* The one open in the editor, as distinct from the one being worn. */
 .theme-row.editing { outline: 1px solid var(--accent); outline-offset: -1px; }
 .theme-inline-note { color: var(--text-dim); font-style: normal; font-size: 9px; }
+
+/* ─────────────────────────────────────────────── the room, at full size ──
+   A third workspace: the controls in a column on the left, the room taking
+   everything else. See `docs/ROOM-VIEW.md`.
+
+   The parts in here are borrowed from the dock rather than copied, so almost
+   all of this stylesheet's work is undoing the overlay geometry those parts
+   wear in their other home. */
+
+.roomview { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+.roomview.hidden { display: none; }
+
+.rv-admin {
+  /* Wide enough for a labelled row of controls and no wider. The room is what
+     the height and the width are for. */
+  width: var(--rv-admin-w, 300px);
+  flex: 0 0 auto; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--surface-2); border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+.rv-admin-head {
+  flex: 0 0 auto; padding: 7px 10px 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10px; font-weight: 600; letter-spacing: .5px;
+  text-transform: uppercase; color: var(--text-dim);
+}
+/* The controls scroll rather than wrap. In the dock the panel wraps into
+   columns because it is laid over a wide room and has nowhere else to go; here
+   it has a column of its own and wrapping would put half the controls off the
+   right-hand edge of a 300px panel. */
+.rv-admin-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
+
+/* The overlay, un-overlaid.
+   In the dock `.room-edit` is `position: absolute; inset: 0` with
+   `pointer-events: none`, because it lies over a canvas that is itself a
+   control — the room is posed by dragging it. In this panel there is no canvas
+   underneath, so it is an ordinary block that takes the pointer like any other
+   panel. The per-control `pointer-events: auto` rules stay harmlessly true. */
+.rv-admin .room-edit {
+  position: static; inset: auto; pointer-events: auto;
+  flex-wrap: nowrap; max-height: none; padding: 0;
+  gap: 0;
+}
+/* A settings row, not a strip of controls squeezed over a picture.
+   **The label goes on its own line.** In the dock a row is `TAG control` on one
+   line, which works because the dock's rows carry one control each and the ones
+   that do not simply run off into the room. Here the panel is 300px and the
+   busiest rows carry four things — FOG is a switch, a menu, a slider and a
+   swatch — so a label competing for that width leaves every control too small
+   to aim at. Above the controls it costs a line of height, which a scrolling
+   column has, and buys the full width for the things you actually touch. */
+.rv-admin .room-edit .re-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  margin: 0 0 8px; padding: 0 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.rv-admin .room-edit .re-row:last-of-type { border-bottom: 0; }
+.rv-admin .room-edit .re-tag {
+  flex: 0 0 100%; text-align: left;
+  font-size: 8.5px; letter-spacing: .6px; color: var(--text-dimmer);
+}
+/* Room to actually aim at. These are 54px in the dock because they are laid
+   over a picture and every pixel of it counts; here the panel is the point. */
+.rv-admin .room-edit .re-slider { flex: 1 1 120px; width: auto; height: 14px; }
+/* The menus and swatches sit on the control line with the sliders. */
+.rv-admin .room-edit .re-row > select.field { flex: 1 1 90px; min-width: 0; }
+.rv-admin .room-edit .re-colour { flex: 0 0 26px; height: 18px; }
+.rv-admin .room-edit .re-frames { flex: 1 1 100%; flex-wrap: wrap; }
+/* The layer stack wants the full width — it is a hierarchy you drag, and a
+   row you cannot see the whole of is a row you cannot aim the grip at. */
+.rv-admin .room-edit #reLayers { flex: 1 1 100%; }
+.rv-admin .room-edit .re-nums { margin-top: 8px; white-space: pre-wrap; }
+.rv-admin .room-edit .re-foot { margin-top: 8px; }
+
+/* The divider. Its own element rather than a border on the panel, because a
+   border cannot be grabbed. */
+.rv-grip {
+  flex: 0 0 5px; cursor: col-resize; background: transparent;
+  border-right: 1px solid var(--line);
+}
+.rv-grip:hover, .rv-grip.dragging { background: var(--accent); border-right-color: var(--accent); }
+
+.rv-stage {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 6px; padding: 8px;
+}
+/* The frame selector, over the picture it shapes. */
+.rv-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.rv-bar .re-row { margin-bottom: 0; }
+
+/* The room takes everything that is left. `min-height: 0` is what actually
+   makes that true in a flex column — without it the canvas's own intrinsic
+   height wins and the stage grows past the window. */
+.rv-room { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+.rv-room > .master-bus { flex: 1 1 auto; min-width: 0; min-height: 0; }
+
+.rv-foot {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+}
+/* The transport is a bar with its own background in the editor, where it spans
+   the window. Here it sits in a row beside the export button and should read as
+   part of that row. */
+.rv-foot > .transportbar {
+  flex: 1 1 auto; min-width: 0; border: 0; background: transparent; padding: 0;
+}
+.rv-foot > #videoBtn { flex: 0 0 auto; }
+
+/* The meters stay in the dock. This stage is the picture being composed, and
+   the VU column is a mixing readout rather than part of it — at 128px fixed it
+   was taking two thirds of the room's width in a narrow window. Everything it
+   shows is still on the dock's master bus, which is where you go to mix. */
+.rv-room > .master-bus > .mb-side { display: none; }
+.rv-room > .master-bus > .mb-main { flex: 1 1 auto; min-width: 0; }
+
+/* ── the frame you are actually exporting ──
+   Picking 16:9 or 9:16 has to *show* that shape, not merely pose a camera for
+   it. The whole reason the frame selector exists is that a portrait
+   composition cannot be judged by looking at a landscape one and imagining —
+   which is the argument `docs/ROOM-EDITOR.md` makes for the selector in the
+   first place, and it is only half true until the box on screen is the box
+   that gets rendered.
+
+   So the stage becomes a viewport and the room is fitted inside it, letterboxed,
+   with the dead space around it left plainly empty. What is inside the outline
+   is what lands in the file.
+
+   `aspect-ratio` alone will not do this here. The cell is a flex item, and flex
+   resolves one axis from the container before the ratio gets a say — so the box
+   comes out right in whichever direction flex did not touch and overflows in
+   the other. Sizing against the container's own height (`cqh`) settles both at
+   once: the width is the smaller of what the stage has and what the height
+   allows, and the ratio derives the height back from it. */
+/* `align-items` is deliberately not touched here. Centring the row that way
+   replaces the default `stretch`, so every child sizes to its own content
+   instead of to the stage — and the master bus's height is entirely inherited,
+   so it collapses to nothing and takes the room with it. The framed cell
+   centres itself with auto margins instead, which centres without disturbing
+   how anything is sized. */
+.rv-room { container-type: size; }
+.rv-room .mb-cell-3d.re-framed {
+  flex: 0 0 auto;
+  margin: auto;
+  width: min(100%, calc(100cqh * var(--rv-ratio, 1)));
+  height: auto;
+  aspect-ratio: var(--rv-ratio, 1);
+  /* Bright enough to read as the edge of the picture rather than as another
+     line in the room. The room's own wires are drawn at a fraction of this. */
+  outline: 1px solid var(--line-2);
+}
+/* Unframed, the room is the stage — the dock's own shape, filling everything.
+   That is what `Dock` means. */
+.rv-room .mb-cell-3d:not(.re-framed) { flex: 1 1 auto; }
+
+/* The overlay's own open/close button. In this view the panel is always open
+   beside the room, so a button that toggles it is a control for a state that
+   cannot change — and it sits over the picture, which is the one place this
+   view has nothing to spare. */
+.rv-room #roomEditOpen { display: none; }

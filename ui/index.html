@@ -28,6 +28,14 @@
     <button class="mode-btn active" data-mode="overview" title="Browse the library">
       <span class="ic">▤</span><span class="lb">Browse</span>
     </button>
+    <!-- The room at full size, with every control it has beside it rather than
+         floating over it. The overlay in the dock is the same controls in a
+         corner of a small canvas; this is where they are actually usable. The
+         sound driving it is the open document's, the same one the dock's room
+         is drawn from. -->
+    <button class="mode-btn" data-mode="room" title="The room, full size, with all of its controls">
+      <span class="ic">◈</span><span class="lb">Room</span>
+    </button>
 
     <div class="rail-sep"></div>
 
@@ -346,6 +354,35 @@
            property so the two canvases cannot disagree about where it is. -->
       <div class="lane-split" id="laneSplit" title="Drag to resize the spectrogram — double-click to put it back"></div>
       <div class="lane-empty" id="laneEmpty">Select a sound on the left.</div>
+    </div>
+
+    <!-- The room, full size, with its controls beside it.
+         **Nothing in here is a copy.** The room, its control panel and the
+         transport are the same elements the dock uses, moved in when this view
+         opens and put back when it closes — see `roomAdopt`. A second canvas
+         and a second set of controls would be two things to keep in step, and
+         this program has already learned twice what that costs: the live room
+         and the exported film drifted apart in the background colour, and the
+         theme editor's swatches drifted from the palette they were editing.
+         One set of controls cannot disagree with itself. -->
+    <div class="roomview hidden" id="roomView">
+      <aside class="rv-admin" id="roomAdmin">
+        <div class="rv-admin-head"><span>Room</span></div>
+        <!-- `#roomEdit` is moved in here. The panel is laid out differently at
+             this width — see `.rv-admin .room-edit` — but it is the same DOM
+             carrying the same handlers. -->
+        <div class="rv-admin-body" id="roomAdminBody"></div>
+      </aside>
+      <div class="rv-grip" id="roomGrip"
+           title="Drag to resize the controls · double-click to put it back"></div>
+      <section class="rv-stage" id="roomStage">
+        <div class="rv-bar" id="roomStageBar"></div>
+        <!-- `#masterBus` is moved in here. Everything that feeds it is gated on
+             whether it is on screen rather than on where it sits, so the meters,
+             the poll and the room's own feed follow it. -->
+        <div class="rv-room" id="roomStageRoom"></div>
+        <div class="rv-foot" id="roomFoot"></div>
+      </section>
     </div>
 
     <div class="transportbar hidden" id="transportBar">
@@ -755,7 +792,11 @@
                       min="5" max="100" step="1"
                       title="How strongly the data sits on the wall">
                   </div>
-                  <div class="re-row">
+                  <!-- Moved above the room in the full view, where the wireframe
+                       puts it: the frame shape is a question about the picture
+                       you are composing, so it belongs over the picture rather
+                       than at the bottom of a list of settings. -->
+                  <div class="re-row" id="reFrameRow">
                     <span class="re-tag">FRAME</span>
                     <div class="re-frames" id="reFrames"></div>
                   </div>
