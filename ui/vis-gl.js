@@ -238,7 +238,11 @@ const VG_MIST_CAP = 120000;
 /// spread through the room's depth, at the fog's own colour — which is what
 /// every engine that has convincing fog actually draws, whatever the shader
 /// does on top.
-const VG_FOG_MOTES = 220;
+///
+/// The count is high because the field reaches well past the frame on every
+/// side: fog with a visible edge is not fog, so most of these are never seen
+/// and the ones in frame are what make it dense enough to read as air.
+const VG_FOG_MOTES = 1400;
 
 // The leading edge's thickness is `camera.lead`. It is geometry rather than
 // `gl.lineWidth`, which almost every driver clamps to 1 and is therefore not a
@@ -450,9 +454,18 @@ void main() {
       // And the noise is what stops them being *circles*. The edge is pushed in
       // and out by it and the body is thinned unevenly, so no two of them are
       // the same shape and none of them is a shape you can name.
+      // **The corners have to go, whatever the noise does.**
+      //
+      // A point sprite is a square and the circular cutoff is the only thing
+      // hiding that. Warping the radius by noise pushed the cutoff outward —
+      // at 0.72 a corner pixel at 1.41 comes back as 1.01 and survives — so the
+      // sprite's actual square edge appeared, and a field of them read as a
+      // grid of bright squares knocked into the picture. The mask is taken from
+      // the *unwarped* radius and the noise only shapes what is inside it.
+      float hard = smoothstep(1.0, 0.72, d);
       float n = fogFbm(uv * 3.4 + vSeed * 31.7);
-      d *= mix(0.72, 1.28, n);
-      a *= exp(-d * d * 3.2) * smoothstep(1.0, 0.55, d);
+      float dn = d * mix(0.72, 1.28, n);
+      a *= exp(-dn * dn * 3.2) * hard;
       a *= mix(0.45, 1.25, fogFbm(uv * 6.1 + vSeed * 11.3 + 9.0));
     } else {
       a *= smoothstep(1.0, 0.0, d);
@@ -1584,29 +1597,53 @@ function vgAttach(canvas) {
           // reaches the wall reappears at the front instead of the field
           // slowly emptying.
           const zf = (hz + t * drift * 0.06) % 1;
-          const x = (hx + Math.sin(t * drift + hz * 9.0) * 0.06) * halfW * 1.15;
-          const y = yb + (yt - yb) * (0.5 + hy * 0.62
+          // **Well past the frame on every side.**
+          //
+          // The field was a slab a shade wider than the room — ±1.15 of its
+          // half-width and ±0.62 of its height — and a slab has edges. Near the
+          // front, where the frustum is at its widest and a mote is at its
+          // biggest, those edges land *inside* the picture: a rectangle of air
+          // with clear air around it, which is the square that was reported.
+          //
+          // Fog has no boundary you are supposed to see. The field is drawn far
+          // enough out that its own edge is always off the frame, at both ends
+          // of the room, and the motes that fall outside cost a vertex each and
+          // nothing more.
+          const x = (hx * 2.6 + Math.sin(t * drift + hz * 9.0) * 0.06) * halfW;
+          const y = yb + (yt - yb) * (0.5 + hy * 1.45
             + Math.sin(t * drift * 0.7 + hx * 7.0) * 0.03);
           fogPos[i * 3] = x;
           fogPos[i * 3 + 1] = y;
           fogPos[i * 3 + 2] = zAt(zf);
-          // Thin at both ends of its travel, so nothing pops in or out at the
-          // wall. The weight is what the shader mixes the colour by, and the
-          // fog's own colour is what it is being mixed *to*, so this is left
-          // low: a mote is air, not a light.
-          fogW[i] = 0.08 + Math.sin(zf * Math.PI) * 0.12;
+          // **Thin at the front, thick at the back**, the same way the tint is.
+          //
+          // The motes were spread evenly through the room and drawn at one
+          // alpha, so there was as much haze a hand's breadth from the eye as
+          // there was at the back wall — which is a colour wash over the whole
+          // picture rather than air with depth in it, and it is what was left of
+          // "the fog only colours the whole scene" after the tint was fixed.
+          //
+          // Nothing pops at either end: it comes up from nothing at the near
+          // plane and eases off again as it reaches the wall.
+          const depthIn = Math.pow(zf, 1.6) * (1 - Math.pow(zf, 6));
+          fogW[i] = 0.05 + depthIn * 0.22;
         }
         const strength = Math.max(0, Math.min(1.5,
           fog.density === undefined ? 0.5 : fog.density));
         drawSoft = true;
         // Three sizes of the same field. One size is a texture; three is a
         // depth of air.
-        draw(gl.POINTS, fogPos, fogW, motes, 0.10 * strength, true,
-          fog.rgb || [0.5, 0.6, 0.7], fog.rgb || [0.5, 0.6, 0.7], 90);
-        draw(gl.POINTS, fogPos, fogW, motes, 0.06 * strength, true,
-          fog.rgb || [0.5, 0.6, 0.7], fog.rgb || [0.5, 0.6, 0.7], 180);
-        draw(gl.POINTS, fogPos, fogW, motes, 0.03 * strength, true,
-          fog.rgb || [0.5, 0.6, 0.7], fog.rgb || [0.5, 0.6, 0.7], 330);
+        //
+        // **None of them enormous.** A point sprite is a square, and the bigger
+        // it is the more of the picture one square covers when anything goes
+        // wrong with its mask — a third of the canvas, in the case that was
+        // reported. Drivers also clamp `gl_PointSize` somewhere around 255 and
+        // do not say when they have, so a size past that is a size that means
+        // something different on every machine. More, smaller motes instead.
+        const rgb = fog.rgb || [0.5, 0.6, 0.7];
+        draw(gl.POINTS, fogPos, fogW, motes, 0.11 * strength, true, rgb, rgb, 48);
+        draw(gl.POINTS, fogPos, fogW, motes, 0.07 * strength, true, rgb, rgb, 104);
+        draw(gl.POINTS, fogPos, fogW, motes, 0.04 * strength, true, rgb, rgb, 190);
         drawSoft = false;
       }
 
