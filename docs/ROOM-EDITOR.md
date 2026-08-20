@@ -468,3 +468,24 @@ runs of high contrast reported zero with the fault deliberately in place, twice.
 It only measured noise. It is not kept: a test that cannot fail is worse than no
 test, because it is read as evidence.
 
+### Nothing about a grain may come from where it sits in a list
+
+The mist appeared as soft orbs that relocated part way through a render. Its
+sideways wander was seeded from `i`, the index into `grainLive` — and that array
+is compacted every frame as grains reach the wall (`grainLive[keep++] = p`), so a
+grain's index shifts the moment anything ahead of it dies. Its mist jumped to
+wherever the new index put it.
+
+Exactly the fault that made grains change shape in mid-air, in a different
+place. The seed is fixed at birth now, like the shape, the spin and the pace.
+
+### Every control in the panel, found rather than listed
+
+The fog's type selector could not be opened at all: `.room-edit` is
+`pointer-events: none` and the rule handing it back named buttons, checkboxes and
+swatches — not `select`. The reachability test had a hand-written list of ids and
+`reFogType` was not on it, so it passed.
+
+It asks the DOM what is in the panel now. A list somebody has to remember to
+extend has already failed twice: the whole fill row, and then this.
+
