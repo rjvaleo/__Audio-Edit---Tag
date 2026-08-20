@@ -2566,6 +2566,21 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* While the room is being posed it is a thing you grab, and it says so. */
 #masterBus.room-editing #visGl { cursor: grab; }
 #masterBus.room-editing #visGl:active { cursor: grabbing; }
+/* **A control is not a thing you drag the room by.**
+   The room is posed by dragging it, so while the editor is open the canvas
+   wears a grab hand — and the panel over it is `pointer-events: none`, so the
+   hand carried straight through every control on it. The pointer said "you can
+   move this" over a slider, a checkbox and a colour swatch alike, which is the
+   opposite of what each of them does. Each says what it is instead. */
+.room-edit .re-btn,
+.room-edit .re-check,
+.room-edit .re-check input,
+.room-edit select,
+.room-edit .re-colour { cursor: pointer; }
+.room-edit .re-slider { cursor: ew-resize; }
+.room-edit .re-layer .re-grip { cursor: grab; }
+.room-edit .re-layer.re-dragging .re-grip { cursor: grabbing; }
+.room-edit .re-nums { cursor: copy; }
 #masterBus.room-editing #mbRes { display: none; }
 /* A frame shape other than the dock's letterboxes inside whatever room the
    panel has, so what you are looking at is the shape you are designing for and
