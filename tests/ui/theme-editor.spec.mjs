@@ -371,3 +371,74 @@ test('each palette keeps its own waveform, and wearing one brings it', async ({ 
   expect(out.secondWave).toBe('red');
   expect(out.wearingFirst).not.toBe(out.wearingSecond);
 });
+
+/// A colour well cannot be rebuilt while it is being used.
+///
+/// Moving one fires `input` for every step of the drag, and every one of those
+/// came back through `tsRenderSwatches`, which did `innerHTML = ''`. So the very
+/// `<input type="color">` the system's colour panel was attached to was
+/// destroyed under it, over and over: the panel stays open, pointing at an
+/// element no longer in the document, and nothing done in it reaches the
+/// palette. The hex field lost its caret to the same thing on every keystroke.
+///
+/// **The value is not what to assert on.** It arrived correctly even while
+/// broken — `tsSetColor` had already run by the time the DOM was thrown away —
+/// so a test that checked the palette held the right colour passed on the fault.
+/// What has to survive is the element.
+test('a colour well survives being dragged', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => typeof themeState !== 'undefined', { timeout: 20_000 });
+
+  const out = await page.evaluate(async () => {
+    // Somewhere editable to work in.
+    document.getElementById('tsNew').click();
+    await new Promise((r) => setTimeout(r, 100));
+    const wells = () => [...document.querySelectorAll(
+      '#tsSwatches .ts-swatch input[type=color]')];
+    const first = wells()[0];
+    if (!first) return { err: 'the editor has no colour wells' };
+
+    // What a drag in the system colour panel actually does: a run of `input`
+    // events on one element that has to still be there at the end of it.
+    const held = first;
+    const seen = [];
+    for (const c of ['#112233', '#224466', '#3388aa', '#44ccdd']) {
+      held.value = c;
+      held.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 10));
+      seen.push({
+        alive: document.contains(held),
+        same: wells()[0] === held,
+        palette: (tsPalette()?.colors || [])[0],
+      });
+    }
+    return { seen };
+  });
+  expect(out.err, out.err).toBeUndefined();
+
+  for (const [i, step] of out.seen.entries()) {
+    expect(step.alive, `the well was removed from the document on drag step ${i + 1}`)
+      .toBe(true);
+    expect(step.same, `the well was replaced by a new element on drag step ${i + 1} — `
+      + 'the colour panel is now pointing at nothing').toBe(true);
+  }
+  // And the colour still gets through, which was never the broken part.
+  expect(out.seen[out.seen.length - 1].palette).toBe('#44ccdd');
+});
+
+/// Adding or removing a colour does still rebuild, because the shape changed.
+test('the swatch row rebuilds when the number of colours changes', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => typeof themeState !== 'undefined', { timeout: 20_000 });
+  const out = await page.evaluate(async () => {
+    document.getElementById('tsNew').click();
+    await new Promise((r) => setTimeout(r, 100));
+    const count = () => document.querySelectorAll('#tsSwatches .ts-swatch').length;
+    const before = count();
+    document.querySelector('#tsSwatches .ts-add').click();
+    await new Promise((r) => setTimeout(r, 60));
+    return { before, after: count() };
+  });
+  expect(out.after, 'adding a colour did not add a swatch').toBe(out.before + 1);
+});
+

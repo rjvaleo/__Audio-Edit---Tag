@@ -12259,9 +12259,36 @@ function tsSetColor(index, raw) {
 function tsRenderSwatches(p) {
   const box = $('tsSwatches');
   if (!box) return;
-  box.innerHTML = '';
   const label = $('tsColoursLabel');
   if (label) label.textContent = `Colours · ${p.colors.length}`;
+
+  // ── in place, when the shape has not changed ──
+  //
+  // **A colour well cannot be rebuilt while it is being used.** Moving one
+  // fires `input` for every step of the drag, each of which came back through
+  // here and did `innerHTML = ''` — so the very `<input type="color">` the
+  // system's colour panel was attached to was destroyed under it, over and
+  // over. The panel stays open, pointing at an element no longer in the
+  // document, and nothing you do in it reaches the palette. The hex field lost
+  // its caret to the same thing on every keystroke.
+  //
+  // `tsRender` already knows this about the name field, which it will not write
+  // into while it has focus. The swatches never learned it.
+  //
+  // So: rebuild only when the number of colours changes, and never write into
+  // an element somebody is using.
+  const shape = `${p.colors.length}|${!!p.readOnly}`;
+  const cells = [...box.querySelectorAll('.ts-swatch')];
+  if (box.dataset.shape === shape && cells.length === p.colors.length) {
+    p.colors.forEach((colour, index) => {
+      const [well, hex] = cells[index].querySelectorAll('input');
+      if (well && document.activeElement !== well) well.value = colour;
+      if (hex && document.activeElement !== hex) hex.value = colour;
+    });
+    return;
+  }
+  box.dataset.shape = shape;
+  box.innerHTML = '';
 
   p.colors.forEach((colour, index) => {
     const cell = document.createElement('div');
