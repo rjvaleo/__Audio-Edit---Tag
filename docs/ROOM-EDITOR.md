@@ -443,3 +443,28 @@ somewhere else entirely as "cannot read properties of null". A varying declared
 in the vertex shader and not the fragment one cost ten minutes of looking in the
 wrong place. It is a `console.error` now, and it says which half failed.
 
+### The square was the field's own edge
+
+Reported as "a strange square knock-out when the fog is on". Two guesses were
+wrong before the right one, and the wrong ones are worth keeping because both
+were plausible and both were checked.
+
+**Not the sprite's corners.** A point sprite is a square and the circular cutoff
+is the only thing hiding it, so warping the radius by noise looked like the
+culprit — at 0.72 a corner pixel at 1.41 comes back as 1.01. That is a hair over
+the cutoff rather than under it, so the corners were being cut all along. The
+mask is taken from the unwarped radius now anyway, because relying on that
+margin is relying on a coincidence.
+
+**It was the field.** The motes were scattered through a slab a shade wider than
+the room — ±1.15 of its half-width, ±0.62 of its height — and a slab has edges.
+Near the front, where the frustum is widest and a mote is biggest, those edges
+land *inside* the picture: a rectangle of air with clear air around it. The field
+now reaches far enough out that its own edge is always off the frame at both ends
+of the room, which costs a vertex per unseen mote and nothing else.
+
+**And an edge detector that could not see any of it.** A scan for long straight
+runs of high contrast reported zero with the fault deliberately in place, twice.
+It only measured noise. It is not kept: a test that cannot fail is worse than no
+test, because it is read as evidence.
+
