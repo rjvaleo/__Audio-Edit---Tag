@@ -790,3 +790,54 @@ mod tests {
         assert!(worst > 1e-3, "both channels came out identical");
     }
 }
+
+#[cfg(test)]
+mod dual_mono_tests {
+    use super::*;
+    use crate::Effect;
+
+    /// **A reverb is what turns a widened mono file into a stereo sound.**
+    ///
+    /// Laying a mono source across two channels gives the same sound twice, and
+    /// the same sound twice is mono however many channels carry it. The width
+    /// has to be *made*, and this is one of the two places that makes it: each
+    /// channel runs the same comb bank at a slightly different length, so what
+    /// comes back on the left is not what comes back on the right.
+    fn dual_mono(frames: usize, sr: u32) -> Vec<f32> {
+        let mut v = Vec::with_capacity(frames * 2);
+        for i in 0..frames {
+            // A short burst, then silence for the tail to sound into.
+            let s = if i < 400 {
+                (i as f32 / sr as f32 * 440.0 * std::f32::consts::TAU).sin() * 0.6
+            } else {
+                0.0
+            };
+            v.push(s);
+            v.push(s);
+        }
+        v
+    }
+
+    fn widest(buf: &[f32]) -> f32 {
+        let mut worst = 0.0f32;
+        for i in 0..buf.len() / 2 {
+            worst = worst.max((buf[i * 2] - buf[i * 2 + 1]).abs());
+        }
+        worst
+    }
+
+    #[test]
+    fn the_reverb_pulls_the_two_channels_apart() {
+        let sr = 48_000;
+        let mut buf = dual_mono(sr as usize / 2, sr);
+        assert!(widest(&buf) < 1e-9, "the input was not dual mono to begin with");
+        let mut r = Moorer::new(sr, 2);
+        r.process(&mut buf, 2, sr);
+        assert!(
+            widest(&buf) > 1e-4,
+            "the reverb returned the same sound on both sides: {}",
+            widest(&buf)
+        );
+    }
+
+}

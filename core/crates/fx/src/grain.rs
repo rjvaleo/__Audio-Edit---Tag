@@ -1241,3 +1241,74 @@ mod layer_tests {
         assert!(!out.is_empty());
     }
 }
+
+#[cfg(test)]
+mod widened_stereo_tests {
+    use super::*;
+
+    /// A mono source, laid across two channels, through the cloud.
+    fn cloud(spread: f32) -> (Vec<f32>, usize) {
+        let sr = 48_000;
+        let frames = sr as usize / 2;
+        // Mono, widened the way `edit::render` widens it at the read: the same
+        // sample in both channels.
+        let mut input = Vec::with_capacity(frames * 2);
+        for i in 0..frames {
+            let v = (i as f32 / sr as f32 * 220.0 * std::f32::consts::TAU).sin() * 0.5;
+            input.push(v);
+            input.push(v);
+        }
+        let mut g = Grain::default();
+        g.pan_spread = spread;
+        g.seed = 12345;
+        let out = granular(&input, 2, sr, 2.0, 0.0, 60.0, &g);
+        (out, 2)
+    }
+
+    fn channels_differ(out: &[f32], ch: usize) -> f32 {
+        let mut worst = 0.0f32;
+        for i in 0..out.len() / ch {
+            worst = worst.max((out[i * ch] - out[i * ch + 1]).abs());
+        }
+        worst
+    }
+
+    /// **Widening alone is dual mono, and dual mono sounds mono.**
+    ///
+    /// Laying a mono file across two channels does not make it stereo — it makes
+    /// it the same sound twice. What makes it stereo is the cloud placing each
+    /// grain, and that is off until it is asked for: `pan_gains` returns unity
+    /// on both sides when the spread is nought, which is the default.
+    #[test]
+    fn without_spread_both_channels_are_the_same_sound() {
+        let (out, ch) = cloud(0.0);
+        assert!(
+            channels_differ(&out, ch) < 1e-6,
+            "the channels differ with no pan spread asked for"
+        );
+    }
+
+    /// And with it, they are genuinely apart — each grain to its own place.
+    #[test]
+    fn with_spread_the_grains_land_in_different_places() {
+        let (out, ch) = cloud(0.8);
+        let d = channels_differ(&out, ch);
+        assert!(
+            d > 0.01,
+            "the channels are still the same sound with the spread up: worst \
+             difference {d}"
+        );
+    }
+
+    /// The placement is per grain and stable, not a wobble on the whole cloud:
+    /// the same seed puts the same grain in the same place every time.
+    #[test]
+    fn a_grain_keeps_its_place() {
+        let a = cloud(0.8).0;
+        let b = cloud(0.8).0;
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!((x - y).abs() < 1e-9, "the same cloud came out twice differently");
+        }
+    }
+}

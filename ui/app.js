@@ -176,16 +176,22 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
     showPane('left', b.dataset.panel);
     openDrawer();
   }));
+/// The modes where the library is an overlay drawer rather than a docked
+/// column. Both of them give the whole width to something else — the editor's
+/// lane, the room — so the library arrives over the top and goes away again,
+/// instead of squeezing what you came here to look at.
+const drawerMode = () => state.mode === 'edit' || state.mode === 'room';
+
 function openDrawer() {
   state.drawerOpen = true;
   $('leftPanel').classList.remove('collapsed', 'drawer-closed');
-  $('scrim').classList.toggle('hidden', state.mode !== 'edit');
+  $('scrim').classList.toggle('hidden', !drawerMode());
 }
 
 function closeDrawer() {
   state.drawerOpen = false;
   $('scrim').classList.add('hidden');
-  if (state.mode === 'edit') $('leftPanel').classList.add('drawer-closed');
+  if (drawerMode()) $('leftPanel').classList.add('drawer-closed');
   else $('leftPanel').classList.add('collapsed');
 }
 
@@ -1374,13 +1380,30 @@ function updatePlayhead() {
 // ============================================================ centre column
 
 function setMode(mode) {
+  // Which modes play the *document* rather than a library file. Edit and Room
+  // are both looking at the open sound — the room is drawn from the same
+  // playback the editor drives, which is what makes the picture and the
+  // waveform the same thing seen twice.
+  const docMode = mode === 'edit' || mode === 'room';
+
   // Crossing between the library and the editor changes what playback *is* —
   // the sound over there, the document over here — so anything running belongs
   // to the side it was started on. Same rule as choosing a different sound.
-  if (engine.playing && engine.raw !== (mode !== 'edit')) pausePlayback();
+  //
+  // Edit and Room are the same side, so moving between those two leaves the
+  // transport alone: walking over to the room to look at what you are hearing
+  // must not stop it.
+  if (engine.playing && engine.raw !== !docMode) pausePlayback();
 
+  const wasRoom = state.mode === 'room';
   state.mode = mode;
   const editing = mode === 'edit';
+  const room = mode === 'room';
+
+  // Borrowed elements go home before anything is measured or toggled. Leaving
+  // this until later would have the mode's own show/hide rules applied to
+  // elements still sitting inside a hidden view.
+  if (wasRoom && !room) leaveRoomView();
 
   // The spectrogram is not an option in edit mode, it is what edit mode is for.
   state.showSpec = editing;
@@ -1394,18 +1417,36 @@ function setMode(mode) {
   }
   $('editTools').classList.toggle('hidden', !editing);
   // The transport belongs to the editor now. Browse has no open document to
-  // transport, and the user asked for it gone there.
-  $('transportBar').classList.toggle('hidden', !editing);
+  // transport, and the user asked for it gone there. The room has one and
+  // shows it, moved down beside the export button — see `enterRoomView`.
+  $('transportBar').classList.toggle('hidden', !docMode);
   $('ruler').classList.toggle('hidden', !editing);
   $('regions').classList.toggle('hidden', !editing);
   $('presetBar').classList.toggle('hidden', !editing);
   $('dock').classList.toggle('hidden', !editing);
-  $('statsView').classList.toggle('hidden', editing);
+  // The library's readout, which is Browse's own middle. Every other mode has
+  // something else to put there.
+  $('statsView').classList.toggle('hidden', mode !== 'overview');
   $('tabBar').classList.toggle('hidden', !editing);
+  // The lane is the sound as a document — the thing you cut. The room is the
+  // sound as a picture, and it takes the whole middle; the overview strip along
+  // the top is what stays, because that is the one that says *where you are*.
+  $('lane').classList.toggle('hidden', room);
   document.querySelectorAll('#leftRail .mode-btn').forEach((b) =>
     b.classList.toggle('active', b.dataset.mode === mode));
-  $('modeLabel').textContent = editing ? 'Edit' : 'Browse';
+  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : 'Browse';
   document.body.classList.toggle('editing', editing);
+  document.body.classList.toggle('roomview', room);
+  // The modes that give the whole width to the middle, so the library becomes
+  // a floating drawer rather than a docked column. Its own class rather than
+  // `.editing, .roomview` repeated down the stylesheet: the drawer's geometry
+  // is one idea and it should have one name, or the next mode to want it will
+  // be a third selector added to six rules.
+  document.body.classList.toggle('docmode', docMode);
+
+  // After the toggles, so the parts it borrows are in the state this mode gave
+  // them before they are moved.
+  if (room) enterRoomView();
 
   // Edit has nothing to say about folder tags, and the rail's Browse tools
   // only make sense in Browse — but the library button still opens the drawer.
@@ -1418,14 +1459,17 @@ function setMode(mode) {
   }
 
   const panel = $('leftPanel');
-  if (editing) {
-    // Docked column becomes an overlay drawer, shut by default: the editor
-    // gets the whole width until you go looking for something.
+  if (docMode) {
+    // Docked column becomes an overlay drawer, shut by default: the editor and
+    // the room each get the whole width until you go looking for something.
     panel.classList.remove('collapsed');
     panel.classList.add('drawer-closed');
     state.drawerOpen = false;
     $('scrim').classList.add('hidden');
-    // Entering edit mode with a file previewed makes it the first document.
+    // Entering with a file previewed makes it the first document. The room
+    // wants this as much as the editor does: it is drawn from the document's
+    // own playback, so arriving with nothing open is arriving at a test card
+    // and a space bar that does nothing.
     if (state.selectedFile && !state.tabs.length) {
       state.tabs.push(blankTab(state.selectedFile));
       state.activeTab = 0;
@@ -7505,6 +7549,11 @@ function applyRoomFrame() {
   const framed = roomEdit.on && f.ratio > 0;
   cell.classList.toggle('re-framed', framed);
   cell.style.aspectRatio = framed ? String(f.ratio) : '';
+  // The ratio as a bare number as well, for the full view's fit. `aspect-ratio`
+  // on its own does not letterbox inside a flex parent — the flex sizing wins
+  // in one direction and the box overflows in the other — so the stage works
+  // the width out itself against the height it actually has. See `.rv-room`.
+  cell.style.setProperty('--rv-ratio', framed ? String(f.ratio) : '');
 }
 
 function paintRoomNums() {
@@ -7887,6 +7936,146 @@ function toggleRoomEdit() {
   // showed an empty corner.
   paintRoomData();
 }
+
+// ───────────────────────────────────────────────────── the room, at full size ──
+//
+// A third workspace beside Browse and Edit: the room as big as the window will
+// give it, with every control it has laid out beside it instead of floating in
+// the corner of a canvas the size of a postcard.
+//
+// **Built by moving, not by copying.** The room, its controls, the transport
+// and the video button are the elements the dock already owns. This view
+// borrows them and hands them back. There is no second canvas, no second panel
+// and no second set of handlers, so there is nothing here that can fall out of
+// step with the dock's version of the same thing.
+//
+// That is not tidiness. This program has shipped that exact fault twice: the
+// live room and the exported film kept their own background colour and drifted
+// (`--sink` against `--bg`), and the theme editor rebuilt its swatches from
+// scratch under the colour panel that was using them. A control that exists
+// once cannot disagree with itself.
+
+/// Where a borrowed element came from, so it can be put back exactly.
+///
+/// The parent on its own is not enough. An element appended back to its old
+/// parent has still moved — it lands at the end — and `#transportBar` returning
+/// *after* the dock instead of before it is a different page. The next sibling
+/// is what actually pins the place.
+const roomBorrowed = new Map();
+
+function roomAdopt(id, hostId) {
+  const el = $(id), host = $(hostId);
+  if (!el || !host || el.parentNode === host) return;
+  if (!roomBorrowed.has(id)) {
+    roomBorrowed.set(id, { parent: el.parentNode, next: el.nextSibling });
+  }
+  host.appendChild(el);
+}
+
+function roomReleaseAll() {
+  for (const [id, home] of roomBorrowed) {
+    const el = $(id);
+    if (el && home.parent) home.parent.insertBefore(el, home.next);
+  }
+  roomBorrowed.clear();
+}
+
+/// What the full view borrows, and where each piece goes.
+///
+/// The frame selector is taken out of the control list and put over the room:
+/// the frame shape is a question about the picture being composed, so it
+/// belongs above the picture rather than at the bottom of a column of settings.
+const ROOM_VIEW_PARTS = [
+  ['masterBus', 'roomStageRoom'],
+  ['roomEdit', 'roomAdminBody'],
+  ['reFrameRow', 'roomStageBar'],
+  ['transportBar', 'roomFoot'],
+  ['videoBtn', 'roomFoot'],
+];
+
+function enterRoomView() {
+  // The controls are the whole point of this view, so they are open here
+  // whether or not the dock's overlay had been opened. Leaving `roomEdit.on`
+  // false would give a full-screen room and an empty panel beside it.
+  roomEdit.on = true;
+  buildRoomLayers();
+  buildRoomStreams();
+  buildRoomChunks();
+  buildRoomFrames();
+  $('roomEdit')?.classList.remove('hidden');
+  $('masterBus')?.classList.add('room-editing');
+  $('roomEditOpen')?.classList.add('on');
+
+  for (const [id, host] of ROOM_VIEW_PARTS) roomAdopt(id, host);
+  // The transport is hidden by mode and this is a mode that wants it.
+  $('transportBar')?.classList.remove('hidden');
+  $('videoBtn')?.classList.remove('hidden');
+  $('roomView')?.classList.remove('hidden');
+
+  setRoomAdminWidth(roomAdminWidth(), { save: false });
+  applyRoomFrame();
+  paintRoomNums();
+  paintRoomData();
+}
+
+function leaveRoomView() {
+  $('roomView')?.classList.add('hidden');
+  roomReleaseAll();
+  // Put the overlay back to shut. It was forced open on the way in, and a
+  // panel that opens itself over the dock's room because you visited another
+  // workspace is a setting changed behind your back.
+  roomEdit.on = false;
+  $('roomEdit')?.classList.add('hidden');
+  $('masterBus')?.classList.remove('room-editing');
+  $('roomEditOpen')?.classList.remove('on');
+  applyRoomFrame();
+}
+
+const ROOM_ADMIN_STORE = 'roomAdminW';
+const ROOM_ADMIN_MIN = 210;
+const ROOM_ADMIN_MAX = 620;
+
+function roomAdminWidth() {
+  const n = parseInt(localStorage.getItem(ROOM_ADMIN_STORE) || '', 10);
+  return Number.isFinite(n) ? n : 300;
+}
+
+function setRoomAdminWidth(px, { save = true } = {}) {
+  const v = Math.round(Math.min(ROOM_ADMIN_MAX, Math.max(ROOM_ADMIN_MIN, px)));
+  $('roomAdmin')?.style.setProperty('--rv-admin-w', `${v}px`);
+  if (save) {
+    try { localStorage.setItem(ROOM_ADMIN_STORE, String(v)); } catch { /* private mode */ }
+  }
+}
+
+function wireRoomGrip() {
+  const grip = $('roomGrip'), panel = $('roomAdmin');
+  if (!grip || !panel) return;
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('dragging');
+    document.body.classList.add('resizing-panel');
+    // Measured from the panel's own left edge, so the width tracks the pointer
+    // exactly instead of drifting by wherever inside the grip the drag began.
+    const left = panel.getBoundingClientRect().left;
+    const move = (ev) => setRoomAdminWidth(ev.clientX - left, { save: false });
+    const up = (ev) => {
+      grip.releasePointerCapture(e.pointerId);
+      grip.classList.remove('dragging');
+      document.body.classList.remove('resizing-panel');
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+      setRoomAdminWidth(ev.clientX - left);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
+  });
+  grip.addEventListener('dblclick', () => setRoomAdminWidth(300));
+}
+wireRoomGrip();
 
 /// Which part of the room a drag has hold of.
 ///
