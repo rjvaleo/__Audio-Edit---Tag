@@ -87,7 +87,14 @@ if (spawnSync('test', ['-x', binary]).status !== 0) {
 }
 
 const child = spawn(binary, [], {
-  env: { ...process.env, AUDIOLAB_DATA: data, AUDIOLAB_PORT: String(PORT) },
+  // No browser. This is spawned once per test run and nobody has ever wanted a
+  // window for it — the suite drives its own.
+  env: {
+    ...process.env,
+    AUDIOLAB_DATA: data,
+    AUDIOLAB_PORT: String(PORT),
+    AUDIOLAB_NO_BROWSER: '1',
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 

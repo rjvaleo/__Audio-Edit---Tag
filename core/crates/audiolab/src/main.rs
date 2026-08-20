@@ -55,7 +55,16 @@ fn main() -> std::io::Result<()> {
 }
 
 /// Best-effort: if this fails the URL is printed above and still works.
+///
+/// **`AUDIOLAB_NO_BROWSER` stops it.** Double-clicking the launcher should open
+/// the app, which is the whole point of a launcher. But the server is also
+/// restarted over and over while working on it — by a person or by a tool — and
+/// every one of those restarts throwing a window in front of whatever else is
+/// on screen is intolerable after the third time.
 fn open_browser(url: &str) {
+    if std::env::var_os("AUDIOLAB_NO_BROWSER").is_some() {
+        return;
+    }
     let (cmd, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
         ("open", vec![url])
     } else if cfg!(windows) {
