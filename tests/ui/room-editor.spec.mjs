@@ -290,25 +290,160 @@ test('the streams can be picked, and the columns follow', async ({ page }) => {
     paintRoomData();
     return document.querySelector('#roomData .rd-hdr')?.textContent || '';
   });
-  expect(before, 'PAN was already up').not.toContain('PAN');
+  expect(before, 'BRT was already up').not.toContain('BRT');
   expect(before, 'the default columns are missing').toContain('IDX');
 
   await page.evaluate(() => {
-    document.querySelector('#reStreams .re-btn[data-stream="pan"]').click();
+    document.querySelector('#reStreams .re-btn[data-stream="brt"]').click();
     document.querySelector('#reStreams .re-btn[data-stream="idx"]').click();
   });
   await page.waitForTimeout(150);
 
   const after = await page.evaluate(() => {
     paintRoomData();
-    return document.querySelector('#roomData .rd-hdr')?.textContent || '';
+    return {
+      hdr: document.querySelector('#roomData .rd-hdr')?.textContent || '',
+      // How many of the eight have room on this wall at all. Every stream has a
+      // fixed place, so what fits is decided by the wall and not by how many
+      // are switched on — see the note in `paintRoomData`.
+      room: Math.floor(roomBackWall(
+        document.getElementById('roomData').parentElement.getBoundingClientRect().width,
+        document.getElementById('roomData').parentElement.getBoundingClientRect().height,
+      ).w / roomChPx(document.getElementById('roomData'))),
+    };
   });
-  expect(after, 'PAN did not appear').toContain('PAN');
-  expect(after, 'IDX did not go away').not.toContain('IDX');
+  expect(after.hdr, 'IDX did not go away').not.toContain('IDX');
+  // BRT's place is the seventh, which is past the edge of a dock-sized wall.
+  // **A stream is only shown where its own column falls on the wall**, and
+  // switching its neighbours off no longer buys it room — that is the price of
+  // the columns holding still, and it is the whole of the trade. On a taller
+  // frame, where the wall is wider, the same click brings it up.
+  if (after.room >= 56) {
+    expect(after.hdr, 'BRT did not appear on a wall wide enough for it').toContain('BRT');
+  } else {
+    expect(after.hdr, 'BRT was drawn past the edge of the wall').not.toContain('BRT');
+  }
 
   // And it is per-column, not all-or-nothing.
-  expect(after, 'the other columns went with it').toContain('SIZE');
+  expect(after.hdr, 'the other columns went with it').toContain('SIZE');
 });
+
+/// The back wall is tiled, not stretched.
+///
+/// One block of columns is narrower than the wall and the schedule around the
+/// playhead is shorter than the wall is tall, so printing one of each left most
+/// of the wall empty. The answer is more of it, not bigger: this is small type
+/// printed on a wall, and type on a wall does not grow because the wall is big.
+test('the data tiles across and down the back wall', async ({ page }) => {
+  await openRoom(page);
+  const out = await page.evaluate(() => {
+    roomEdit.layers.data = true;
+    paintRoomData();
+    const el = document.getElementById('roomData');
+    const rows = [...el.querySelectorAll('.rd-row')];
+    const hdr = el.querySelector('.rd-hdr')?.textContent || '';
+    // How many times one tile's first label appears across a line.
+    const count = (s, needle) => s.split(needle).length - 1;
+    return {
+      hdr,
+      across: count(hdr, 'RMS'),
+      // Nothing printed should be an empty line except the gaps between blocks,
+      // which carry spaces on purpose.
+      printed: rows.filter((r) => !r.classList.contains('rd-gap')).length,
+      filled: rows.filter((r) => !r.classList.contains('rd-gap')
+        && r.textContent.trim().length > 0).length,
+      size: getComputedStyle(el).fontSize,
+    };
+  });
+
+  // Down: every printed row carries data. Before this, the wall ran out of
+  // schedule and the rest of it was blank.
+  expect(out.printed, 'no rows were printed at all').toBeGreaterThan(4);
+  expect(out.filled, `${out.filled} of ${out.printed} printed rows have anything `
+    + 'in them — the wall stops part way down').toBe(out.printed);
+
+  // Across: at dock size one tile may be the whole width, which is why this
+  // only asks that the tiling is whole tiles rather than a stretched one.
+  expect(out.across, 'the header lost its columns').toBeGreaterThanOrEqual(1);
+
+  // And the type did not grow to fill anything.
+  expect(out.size, 'the block was scaled instead of repeated').toBe('7px');
+});
+
+/// On a wall with room for more than one, there is more than one.
+test('a wider wall gets more tiles, not bigger ones', async ({ page }) => {
+  await openRoom(page);
+  await page.evaluate(() => { roomEdit.layers.data = true; paintRoomData(); });
+  const dock = await page.evaluate(() => ({
+    hdr: document.querySelector('#roomData .rd-hdr')?.textContent || '',
+    size: getComputedStyle(document.getElementById('roomData')).fontSize,
+  }));
+
+  // The panel goes fullscreen, which is what makes the wall wide.
+  await page.dblclick('#masterBus .mb-cell-3d');
+  await page.waitForTimeout(600);
+  const full = await page.evaluate(() => {
+    paintRoomData();
+    return {
+      hdr: document.querySelector('#roomData .rd-hdr')?.textContent || '',
+      size: getComputedStyle(document.getElementById('roomData')).fontSize,
+    };
+  });
+  const count = (s) => s.split('RMS').length - 1;
+
+  expect(count(full.hdr), `${count(dock.hdr)} tiles in the dock and `
+    + `${count(full.hdr)} on the whole screen — the wall did not tile`)
+    .toBeGreaterThan(count(dock.hdr));
+  // Tiled, not stretched: same type at both sizes.
+  expect(full.size, 'the type grew with the wall').toBe(dock.size);
+});
+
+/// A column's place does not depend on its neighbours being switched on.
+///
+/// The block is a readout you watch while it runs. Packing only the streams
+/// that were on meant switching one off pulled every column after it to the
+/// left — turn off IDX and SRC lands where OUT was, so a number you had been
+/// reading in one place became a different number in the same place. That is
+/// the same fault as a field that reflows as its value changes, which is why
+/// every field is padded to a fixed width in the first place.
+test('a stream keeps its column when its neighbours are switched off',
+  async ({ page }) => {
+    await openRoom(page);
+    const read = (off) => page.evaluate((drop) => {
+      roomEdit.layers.data = true;
+      roomEdit.streams = Object.fromEntries(
+        ROOM_STREAMS.map((c) => [c.key, !drop.includes(c.key)]));
+      paintRoomData();
+      const hdr = document.querySelector('#roomData .rd-hdr')?.textContent || '';
+      const row = document.querySelector('#roomData .rd-row')?.textContent || '';
+      return { hdr, row };
+    }, off);
+
+    const all = await read([]);
+    const some = await read(['idx', 'src']);
+
+    // Where a label sits, before and after.
+    for (const label of ['OUT', 'SIZE', 'PIT', 'RMS']) {
+      expect(some.hdr.indexOf(label),
+        `${label} moved from ${all.hdr.indexOf(label)} to ${some.hdr.indexOf(label)} `
+        + `when two other streams were switched off`).toBe(all.hdr.indexOf(label));
+    }
+    // The ones that were switched off leave their room behind rather than
+    // closing it up.
+    expect(some.hdr.indexOf('IDX'), 'IDX is still printed').toBe(-1);
+    expect(some.hdr.length, 'the header closed up instead of holding its places')
+      .toBe(all.hdr.length);
+
+    // And the numbers are under the labels, which is the point of all of it.
+    // `fitCell` right-aligns every field, so a column's right edge is where its
+    // label's right edge is.
+    for (const label of ['OUT', 'SIZE', 'RMS']) {
+      const end = some.hdr.indexOf(label) + label.length;
+      const under = some.row.slice(0, end).trimEnd();
+      expect(under.length, `the ${label} column's numbers do not end where `
+        + 'its header does').toBe(end);
+    }
+  });
 
 test('the rows are grains, not a summary', async ({ page }) => {
   await openRoom(page);

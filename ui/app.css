@@ -2370,12 +2370,30 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 
 .room-edit {
   position: absolute; inset: 0; pointer-events: none; z-index: 4;
-  display: flex; flex-direction: column; justify-content: space-between;
+  /* **Stacked from the top, not spread.** `space-between` spreads the children
+     over the height it has — and when the panel wants more height than the room
+     cell gives it, spreading pushes the last of them out through the bottom
+     edge. That is not a wrap or a clip: the buttons land outside the canvas,
+     over the dock beneath it, where a pointer aimed at them hits the dock
+     instead. Adding one more row of controls was enough to do it. Stacked from
+     the top, everything stays inside and the readout takes what is left. */
+  /* **Wrapped into columns, rather than trimmed row by row.**
+     Every control added here made the panel taller, and twice it grew past the
+     room cell and pushed `Clear` and `Reset` out through the bottom edge — not
+     clipped, but *outside* the canvas, over the dock beneath it, where a pointer
+     aimed at them hits the dock. Tightening the rhythm bought one row each time
+     and was never going to buy the next.
+     Wrapping is the structural answer: when the column runs out of height the
+     rest starts a new one beside it. The room is wide and the panel was using a
+     fifth of it. */
+  display: flex; flex-direction: column; flex-wrap: wrap;
+  justify-content: flex-start; align-content: flex-start;
+  max-height: 100%; column-gap: 14px;
   padding: 6px 8px;
 }
 .room-edit.hidden { display: none; }
 .re-frames { display: flex; gap: 3px; pointer-events: auto; }
-.re-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.re-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
 /* The one control here that is a value rather than a choice, and it is still a
    drag: how strongly the data sits on the wall is a thing you judge by looking
    at it against the room, not a number anyone could name. */
@@ -2433,6 +2451,55 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0;
 }
 .room-data.hidden { display: none; }
+
+/* The layer stack. One row a layer, highest at the top — the list is the
+   hierarchy, so it is read the way a hierarchy is read. */
+#reLayers { display: flex; flex-direction: column; gap: 1px; align-items: stretch; }
+.re-layer {
+  display: flex; align-items: center; gap: 3px;
+  border-radius: 3px;
+  /* The row is the drag handle, so it must not select as text under the
+     pointer — a half-selected label mid-drag reads as a broken control. */
+  user-select: none; -webkit-user-select: none;
+}
+.re-layer .re-grip {
+  cursor: grab; opacity: .3; font-size: 9px; line-height: 1;
+  padding: 0 1px; letter-spacing: -1px;
+}
+.re-layer:hover .re-grip { opacity: .65; }
+/* The name takes the room that is going, so the occlusion switches line up in a
+   column of their own rather than sitting at ragged distances from the left. */
+.re-layer .re-layer-name { flex: 1 1 auto; text-align: left; }
+.re-layer .re-occ { flex: 0 0 auto; padding: 0 4px; opacity: .45; }
+.re-layer .re-occ.active { opacity: 1; }
+/* Nothing is occluding, so the order is doing nothing. The rows still work —
+   they turn layers on and off — but the grips are not worth reaching for. */
+/* The fill row: a checkbox, a BG chip and a swatch.
+   **Every one of these has to take the pointer back.** The overlay is
+   `pointer-events: none` so that dragging the room works through it, and only
+   the things that are controls hand it back — which was a list of three, and
+   anything added since had to join it or arrive dead. The whole fill row did
+   arrive dead: the checkbox could not be checked and the swatch could not be
+   opened. The test did not catch it because it dispatched the events straight
+   at the elements, which is the one way of driving a control that cannot tell
+   whether the control can be reached. */
+.re-row .re-btn, .re-check, .re-check input, .re-colour { pointer-events: auto; }
+.re-check { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.re-check input { width: 10px; height: 10px; margin: 0; accent-color: var(--accent); }
+.re-colour {
+  width: 22px; height: 14px; padding: 0; border: 0; background: none;
+  cursor: pointer; border-radius: 2px;
+}
+.re-colour::-webkit-color-swatch-wrapper { padding: 0; }
+.re-colour::-webkit-color-swatch { border: 1px solid rgba(255,255,255,.25); border-radius: 2px; }
+#reLayers.re-flat .re-grip { opacity: .12; }
+#reLayers.re-flat .re-grip:hover { opacity: .3; }
+/* The Data block is type on the wall rather than geometry in the room, so it
+   has no place in the order and nothing to occlude with. */
+.re-layer.re-layer-off-stage .re-grip { width: 7px; }
+.re-layer.re-layer-off-stage { opacity: .82; }
+.re-layer.re-dragging { opacity: .4; }
+.re-layer.re-over { outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
 /* White, and the same size as everything else in this box.
    The first version was accent-coloured and larger than its neighbours, which
    made a readout look like a badge. This is a stream of numbers to be read
@@ -2442,7 +2509,15 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    strong as the leading edge, which is the thing in this box that is supposed
    to be bright. */
 .rd-head { color: color-mix(in srgb, var(--wave-2) 62%, transparent); margin-bottom: 1px; }
-.rd-hdr { color: color-mix(in srgb, var(--wave-2) 45%, transparent); letter-spacing: .04em; }
+/* No letter-spacing, and this is the reason.
+   The whole block is laid out in characters — `fitCell` pads every field to a
+   fixed width and the fitting counts whole columns against the wall — and that
+   arithmetic is only true if one character is one `ch` everywhere in the box.
+   The header carried `letter-spacing: .04em`, which at this size is a quarter
+   of a pixel a character: invisible on any one letter and a full column of
+   drift by the far side of a forty-character line, so the labels sat further
+   and further left of the numbers they name the further across you read. */
+.rd-hdr { color: color-mix(in srgb, var(--wave-2) 45%, transparent); }
 .rd-row { color: color-mix(in srgb, var(--wave-2) 70%, transparent); }
 /* The rows further down fall away, the same way the floor does with depth. */
 .rd-row:nth-child(n+9) { color: color-mix(in srgb, var(--wave-2) 52%, transparent); }
@@ -2465,7 +2540,13 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .re-btn:hover { color: var(--text-2); border-color: var(--line); }
 .re-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
-.re-reset { pointer-events: auto; align-self: flex-start; }
+/* Clear and Reset sit together, and both have to take the pointer back from
+   the overlay. `align-self` no longer applies now that they share a line. */
+.re-reset { pointer-events: auto; }
+/* No `margin-top: auto` any more: in a wrapping column that pushes the footer
+   to the bottom of whichever column it lands in, which is not the same thing as
+   the bottom of the panel and looks like a mistake wherever it happens to be. */
+.re-foot { display: flex; gap: 4px; align-self: flex-start; margin-top: 4px; }
 /* Bottom left, clear of the peak readout at bottom right and the FFT row —
    which the editor hides while it is up, because the room is being posed and
    not measured. */

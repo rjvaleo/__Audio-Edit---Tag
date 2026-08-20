@@ -17,3 +17,5 @@ pub mod safety;
 pub mod serve;
 pub mod state;
 pub mod usertags;
+/// The picture for a video export. See `docs/VIDEO-EXPORT.md`.
+pub mod video;

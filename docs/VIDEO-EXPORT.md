@@ -177,3 +177,143 @@ pair. Do not write down 2.8.
 - Nothing blocking. The size list, the container, the rate and the two tails are
   settled; the remaining unknowns are the ordinary ones that turn up while
   writing a muxer.
+
+---
+
+# Built, 19 Aug 2026
+
+To the design above. What it is made of, and the two things that were wrong
+first.
+
+## The parts
+
+- **`core/crates/server/src/video.rs`** — the reel. `meter::spectrum` and
+  `meter::lissajous` run over the rendered samples at the room's own rate, with
+  the outro appended as silence. Five tests.
+- **`POST /api/video`** — renders through *the very same `run_export`* the audio
+  export uses, into a scratch file that is read back and deleted. Rendering it
+  twice by two routes would be two things to keep in step.
+- **`GET /api/video/frames`** and **`/api/video/audio`** — raw little-endian
+  `f32`, because a three-minute file at the poll rate is millions of numbers and
+  as JSON that is hundreds of megabytes of decimal digits to print and parse.
+  What reads them wants typed arrays at the other end anyway.
+- **`ui/mp4.js`** — the muxer. Fragmented MP4.
+- **`ui/video-export.js`** — replays the reel into a `vis-gl` of its own at the
+  chosen size, encodes with `VideoEncoder`/`AudioEncoder`, muxes, saves.
+- The **export dialog** gained a size, a rate and a second button. Everything
+  about *what* to render — the loop, the repeats, the tail — was already on it
+  and already meant the same thing.
+
+## The room's clock is not the video's clock
+
+The terrain is pushed at `MB_POLL_MS` and travels at `MB_POLL_MS`. Push it once
+per *video* frame instead and the room drains two or three times too fast: the
+same picture, played wrong. So the reel is analysed at the poll rate, and a
+video frame pushes only when it has crossed into the next one. Which also means
+the analysis is a third of the work it would otherwise be at 60fps.
+
+## Two things that were wrong first
+
+**A signed shift.** `48000 << 16` is −1,149,239,296, because a bitwise shift in
+JavaScript converts to a 32-bit *signed* integer first. The audio sample entry
+is 16.16 fixed point, so that is exactly where a sample rate goes. The file that
+came out had a correct box at every level with sane lengths — it parsed
+perfectly — and no decoder would open it. `Mp4Writer` shifts unsigned now and
+has a `fixed()` that never goes near a shift.
+
+**Checking the wrong thing.** The first check was a box-tree walk: every box
+parsed, every length added up, nothing trailing. It passed on the broken file.
+A muxer is only correct if a *decoder* opens what it wrote, so the test loads
+the blob into a `<video>` element and reads back the duration and the
+dimensions. That is the assertion; the box walk was a way of feeling good.
+
+## Known, and not yet done
+
+- **The grain cloud is not in the video.** The room draws it from the schedule
+  around the playhead, which the offline path does not fetch. The terrain, the
+  ring, the skin and the box are all there.
+- **Vertical still has the composition problem** written down above. It renders;
+  it renders a narrow room with a ring most of the way across it. The camera it
+  wants is not designed yet.
+
+## The film has to be the room, not *a* room
+
+It is drawn by a second `vis-gl` on a canvas of its own, and **every way that
+canvas differs from the one on screen is a way the film comes out looking like
+something else**. Three did, and all three were reported as "it does not look
+like the app" rather than as three separate faults, which is what that class of
+bug looks like from outside.
+
+- **Nothing behind it.** The room clears to transparent and the page shows
+  through — `--bg`, and in fullscreen the panel paints it explicitly for exactly
+  this reason. An offscreen canvas has nothing behind it at all, and H.264 has no
+  alpha, so what was a room on the theme's near-black became a room composited
+  against whatever the encoder assumed. The frame that gets encoded is now the
+  room drawn onto an opaque ground.
+
+- **No schedule, so no cloud.** The grain layer spawns from `f.grains`, which the
+  offline path never fetched. The terrain, the ring and the skin were all there,
+  which is what made it look like a colour problem rather than a missing layer.
+
+- **One clock where there are two.** A grain's `e[0]` counts document frames at
+  the *document's* sample rate; `position` counts rendered frames at the
+  *rendered* rate. The room is given both, exactly as the live one is. Handing it
+  one for both puts every grain at the wrong moment on any file whose rate is not
+  the device's — and correctly, invisibly, on any file where they happen to
+  match.
+
+The lesson worth keeping: the live call site is the specification. Anything the
+room is given there and not here is a difference, whether or not it is obvious
+what it does.
+
+## A loop is filmed as a loop
+
+The audio for a looped export is the loop tiled, so the same stretch of schedule
+sounds again each time round. A playhead that ran straight past the end would
+leave the room empty for every repeat after the first, so the position is
+wrapped into the loop's range — in *output* frames, which is the loop mapped
+through the stretch ratio. Past the last repeat it holds at the end, because what
+is sounding there is the rack's tail rather than more schedule.
+
+## What the range control is for
+
+`exportBtn` only opens the box when the loop is on — with it off, the audio
+export is the one that was always here, no box and no questions, and that is
+worth keeping. It left the video unreachable in exactly the case where somebody
+has no loop set and wants to film the whole thing, so the video has a button of
+its own that always opens the box, and a Selection / Whole file choice inside it.
+
+Its own choice rather than being read off the loop, because they are different
+questions: a video of the whole file is an ordinary thing to want while a loop
+happens to be set.
+
+## The cloud is asked for in windows
+
+**The cap on a schedule request is spent inside the range asked for.** Ask for
+the whole document and eight thousand grains are spread across the entire file,
+so any one instant holds almost none — which in the room reads as a cloud that
+is not there, and made a film of a dense granular passage look nothing like the
+passage.
+
+The live room asks for a few seconds either side of the playhead and gets eight
+thousand *there*. So does the film, refetching as the playhead leaves what it
+has — before the edge rather than at it, so a grain about to be crossed is
+already in hand. A loop asks for the place *in the loop* rather than how far
+into the film it is.
+
+This is the third time the same shape of fault has turned up in this feature:
+the film is drawn by a second room, and every way that room is fed differently
+from the one on screen is a way the film comes out looking like something else.
+The live call site is the specification.
+
+## Occlusion in the film, and how it was checked
+
+Reported as not working. It was: measured through the export path, the terrain
+occluding from the top of the list took a tenth of the light out of the encoded
+frames, and from the bottom of the list took none — which is exactly right,
+since nothing is drawn after it.
+
+Worth writing down because "it does not look right" and "that control does
+nothing" are the same sentence from outside, and the answer was neither. What
+was actually wrong was the cloud, above.
+

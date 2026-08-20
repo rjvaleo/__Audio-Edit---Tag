@@ -2820,6 +2820,8 @@ function paintExportLoop() {
 
 function openExportLoop(range) {
   exportRange = range;
+  buildVideoPickers();
+  paintVideoScope();
   $('exportLoop').classList.remove('hidden');
   paintExportLoop();
   $('elRepeats').focus();
@@ -2839,6 +2841,20 @@ $('exportBtn').onclick = () => {
   openExportLoop(range);
 };
 
+/// The video's own way in.
+///
+/// `exportBtn` only opens this box when the loop is on — with it off, the audio
+/// export is the one that was always here, no box and no questions, and that is
+/// worth keeping. But it left the video unreachable in exactly the case where
+/// somebody has no loop set and wants to film the whole thing. So the video has
+/// a button of its own, and it always opens the box.
+$('videoBtn').onclick = () => {
+  if (!state.selectedFile) return;
+  const why = videoExportSupport();
+  if (why) { toast(why); return; }
+  openExportLoop(exportLoopRange());
+};
+
 $('elClose').onclick = closeExportLoop;
 $('elRepeats').oninput = paintExportLoop;
 $('elRepeats').onkeydown = (e) => {
@@ -2851,6 +2867,238 @@ $('elTail').onclick = () => {
   paintExportLoop();
 };
 $('elWhole').onclick = () => { closeExportLoop(); runExport(null); };
+
+// ── the video ───────────────────────────────────────────────────────────────
+//
+// The same box, with a second destination on it. Everything the video needs
+// about *what* to render — the loop, the repeats, the tail — is already on this
+// dialog and already means the same thing; only the size and the rate are new.
+// See `docs/VIDEO-EXPORT.md`.
+
+/// What the video is filming: the selection, or the whole file.
+///
+/// Its own choice rather than being read off the loop, because the two are
+/// different questions. The loop decides what the *audio* export renders; a
+/// video of the whole file is a perfectly ordinary thing to want while a loop
+/// happens to be set, and a video of the selection is what you want most of the
+/// time whether or not the loop is currently on.
+let videoScope = 'selection';
+
+function paintVideoScope() {
+  const range = exportRange;
+  // Nothing selected means there is nothing to choose between.
+  if (!range) videoScope = 'whole';
+  $('elScopeSel').classList.toggle('on', videoScope === 'selection');
+  $('elScopeAll').classList.toggle('on', videoScope === 'whole');
+  $('elScopeSel').disabled = !range;
+  const note = $('elScopeNote');
+  if (!note) return;
+  if (!range) {
+    note.textContent = 'No selection — the whole file, once.';
+  } else if (videoScope === 'selection') {
+    const secs = (range.to - range.from) / (state.view?.sampleRate || 44100);
+    note.textContent = `${secs.toFixed(2)}s, repeated as set above.`;
+  } else {
+    note.textContent = 'The whole file, once, ignoring the loop.';
+  }
+}
+
+$('elScopeSel').onclick = () => {
+  if (!exportRange) return;
+  videoScope = 'selection';
+  paintVideoScope();
+};
+$('elScopeAll').onclick = () => { videoScope = 'whole'; paintVideoScope(); };
+
+function buildVideoPickers() {
+  const size = $('elVideoSize');
+  const fps = $('elVideoFps');
+  if (!size || size.children.length) return;
+  for (const s of VIDEO_SIZES) {
+    const o = document.createElement('option');
+    o.value = s.key;
+    o.textContent = `${s.label} · ${s.w}×${s.h}`;
+    size.appendChild(o);
+  }
+  size.value = localStorage.getItem('videoSize') || 'hd';
+  size.onchange = () => { try { localStorage.setItem('videoSize', size.value); } catch {} };
+  for (const r of VIDEO_RATES) {
+    const o = document.createElement('option');
+    o.value = String(r);
+    o.textContent = `${r} fps`;
+    fps.appendChild(o);
+  }
+  fps.value = localStorage.getItem('videoFps') || '30';
+  fps.onchange = () => { try { localStorage.setItem('videoFps', fps.value); } catch {} };
+}
+
+let videoRun = null;
+
+/// A duration, said the way somebody waiting would say it.
+function videoWhen(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  if (seconds < 90) return `${Math.max(1, Math.round(seconds))}s`;
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m}m ${Math.round(seconds - m * 60)}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+async function runVideoExport() {
+  if (videoRun) {
+    videoRun.abort();
+    return;
+  }
+  const why = videoExportSupport();
+  if (why) { toast(why); return; }
+  if (!state.selectedFile) return;
+  const size = VIDEO_SIZES.find((s) => s.key === $('elVideoSize').value) || VIDEO_SIZES[1];
+  const fps = +$('elVideoFps').value || 30;
+  // The selection looped, or the whole file once. `repeats: 0` is how the
+  // server is told there is no loop plan, which is the same thing the audio
+  // export's "Whole file instead" says.
+  const filming = videoScope === 'selection' && exportRange ? exportRange : null;
+  const repeats = filming
+    ? Math.max(1, Math.min(512, +$('elRepeats').value || 1))
+    : 0;
+  const tail = $('elTail').classList.contains('on');
+
+  const ctrl = new AbortController();
+  videoRun = ctrl;
+  $('elVideo').textContent = 'Stop';
+
+  // The same bar the audio export uses, rather than a second way of saying the
+  // same thing in a different corner.
+  $('exportProgress').classList.remove('hidden');
+  $('epFill').style.width = '0%';
+  $('epPct').textContent = '0%';
+  $('epPhase').textContent = 'Filming';
+
+  // **What is left, not just what is done.** A percentage on its own says
+  // nothing about whether to wait or go and do something else, and the useful
+  // part of filming is that it is a known number of frames at a rate that
+  // settles within a second or two. So the count and the time are shown, and
+  // the time is measured over the *recent* rate rather than the whole run —
+  // the first few frames include compiling shaders and warming an encoder, and
+  // an average that never forgets them reads high for minutes.
+  const began = performance.now();
+  let mark = began;
+  let markDone = 0;
+  let rate = 0;
+  const say = (text, f, done, total) => {
+    const pct = Math.max(0, Math.min(100, Math.round((f || 0) * 100)));
+    $('epFill').style.width = pct + '%';
+    $('epPct').textContent = pct + '%';
+    $('epPhase').textContent = text;
+    let line = text;
+    if (total) {
+      const now = performance.now();
+      if (now - mark > 400) {
+        const inst = (done - markDone) / ((now - mark) / 1000);
+        rate = rate ? rate * 0.7 + inst * 0.3 : inst;
+        mark = now;
+        markDone = done;
+      }
+      line = `${text} · ${done.toLocaleString()} of ${total.toLocaleString()}`;
+      if (rate > 0.01) {
+        const left = (total - done) / rate;
+        line += ` · ${videoWhen(left)} left · ${rate.toFixed(0)}/s`;
+      }
+    } else {
+      line = `${text} · ${pct}%`;
+    }
+    $('elStatus').textContent = line;
+  };
+  try {
+    // The loop's range in *output* frames, so a repeat plays the same grains
+    // again rather than running off the end of the document.
+    //
+    // The schedule itself is fetched in windows as the film walks, the same way
+    // the live room fetches its swarm — see `videoExport`. One request for the
+    // whole document spends the cap across the entire file and leaves any given
+    // moment nearly empty.
+    const grainsAt = (from, to) => api(
+      `/api/grains?p=${encodeURIComponent(state.selectedFile.path)}&from=${from}&to=${to}`,
+    ).catch(() => null);
+    const ratio = state.edit?.baseFrames
+      ? (state.edit.frames || state.view?.frames || state.edit.baseFrames) / state.edit.baseFrames
+      : 1;
+    const loopOut = filming
+      ? { from: Math.round(filming.from * ratio), to: Math.round(filming.to * ratio) }
+      : null;
+    const blob = await videoExport({
+      path: state.selectedFile.path,
+      from: filming ? filming.from : 0,
+      to: filming ? filming.to : 0,
+      repeats,
+      tail,
+      size,
+      fps,
+      // The room as it is posed right now, at the frame being filmed. The
+      // camera is the pose; the aspect comes from the canvas, which is why a
+      // wide room in a tall frame is a narrower room and not a squashed one.
+      camera: roomCameraDrawn(),
+      layers: roomLayers(),
+      occlude: roomOcclude(),
+      order: roomOrder(),
+      room: {
+        cold: vgRgb('--wave-2', '#4a9fd8'),
+        hot: vgRgb('--wave', '#5fd47a'),
+        core: vgRgb('--accent', '#7fd0ff'),
+        ringDrive: roomEdit.ringDrive,
+        ringEdge: roomEdit.ringEdge,
+        ringPoints: roomEdit.ringPoints,
+        leadThick: roomEdit.leadThick,
+        grainDensity: roomEdit.grainDensity,
+        grainBright: roomEdit.grainBright,
+        grainFill: {
+          on: roomEdit.grainFill,
+          bg: roomEdit.grainFillBg,
+          rgb: vgHexRgb(roomEdit.grainFillColour),
+        },
+        mist: {
+          on: roomEdit.mist,
+          amount: roomEdit.mistAmount,
+          length: roomEdit.mistLength,
+        },
+        fog: roomFog(),
+      },
+      // What the room is drawn *on*. It clears to transparent and the page
+      // shows through, so an offscreen canvas has nothing behind it at all.
+      background: getComputedStyle(document.body).getPropertyValue('--bg').trim()
+        || getComputedStyle(document.body).backgroundColor || '#000',
+      fetchSchedule: grainsAt,
+      // The same few seconds either side the live room asks for.
+      padSeconds: GRAIN_PLAYHEAD_PAD,
+      loopOut,
+      signal: ctrl.signal,
+      onStage: say,
+    });
+    const name = (state.selectedFile.name || 'room').replace(/\.[^.]+$/, '');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name} — room ${size.w}x${size.h} ${fps}fps.mp4`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+    $('elStatus').textContent = `saved · ${(blob.size / 1e6).toFixed(1)} MB`;
+    toast('video saved');
+  } catch (e) {
+    if (String(e.message) === 'cancelled') {
+      $('elStatus').textContent = 'stopped';
+    } else {
+      $('elStatus').textContent = `failed — ${e.message}`;
+      toast('video export failed: ' + e.message);
+    }
+  } finally {
+    videoRun = null;
+    $('elVideo').textContent = 'Export video';
+    $('exportProgress').classList.add('hidden');
+  }
+}
+
+$('elVideo').onclick = () => {
+  if (videoRun) { videoRun.abort(); postJSON('/api/video/stop', {}).catch(() => {}); return; }
+  runVideoExport();
+};
 $('elGo').onclick = () => {
   const range = exportRange;
   const repeats = Math.max(1, Math.min(512, +$('elRepeats').value || 1));
@@ -6968,8 +7216,15 @@ const ROOM_LAYERS = [
   { key: 'sky', label: 'Ring', hint: 'The Lissajous hanging in the sky, pushed out of round by the sound.' },
   { key: 'skin', label: 'Skin', hint: 'The surface between the rings, so the trail is a tube rather than a stack of hoops. Stands on its own — the hoops can be off.' },
   { key: 'grains', label: 'Grains', hint: 'Every grain in the schedule, as a streak: depth is when it sounds, its length is how long for, across is pan and up is pitch.' },
-  { key: 'data', label: 'Data', hint: 'The schedule itself, printed on the back wall.' },
+  // Not drawn in the room. It is HTML printed on the back wall, which is why it
+  // has neither a place in the hierarchy nor an occlusion switch: it is not in
+  // the scene the depth buffer describes, and offering it either control would
+  // be offering a control that does nothing.
+  { key: 'data', label: 'Data', gl: false, hint: 'The schedule itself, printed on the back wall. Not drawn in the room — it is type on the wall, so it neither occludes nor takes a place in the hierarchy.' },
 ];
+
+/// The layers the renderer actually draws. `data` is the one that is not.
+const ROOM_GL_LAYERS = ROOM_LAYERS.filter((l) => l.gl !== false);
 
 /// How many rows travel together before a blank line, and which way each block
 /// runs. Alternating blocks read in opposite directions, so neighbouring groups
@@ -6981,24 +7236,175 @@ const roomEdit = {
   on: false, frame: 'dock', cams: {}, drag: null, layers: {},
   chunk: 4,
   opacity: 0.7,
+  /// Highest first. Kept as a list rather than as a rank on each layer because
+  /// the thing being edited is an order, and an order is a list.
+  order: ROOM_GL_LAYERS.map((l) => l.key),
+  /// Which layers stand in the way of the ones below them.
+  occlude: {},
+  /// How big the ring is, as a multiple of the camera's own `ring`. The camera
+  /// holds the pose; this is the size, and they are two different questions —
+  /// posing the room should not resize what is in it.
+  ringScale: 1,
+  /// How much of the cloud is drawn, and how hot it burns.
+  ///
+  /// **Both are about the picture and neither is about the sound.** The cloud's
+  /// rate has its own control in front of the engine — `Density`, in grains per
+  /// second — and that one changes what you hear. This one changes how many of
+  /// the grains that *are* sounding get a shape in the room, which at a few
+  /// hundred a second is the difference between a cloud you can see through and
+  /// a fog. Naming them both density is unfortunate and unavoidable: they are
+  /// both the density of a cloud, one you hear and one you look at.
+  grainDensity: 1,
+  grainBright: 1,
+  /// How hard the sound pushes the ring out of round. One is what it always was.
+  ringDrive: 1,
+  /// How thick the dark border under the ring's lines is, as a fraction of the
+  /// ring's radius.
+  ringEdge: 0.035,
+  /// How finely the ring is drawn. What is *stored* is the whole trace either
+  /// way, so this can be moved while looking at it.
+  ringPoints: 1024,
+  /// The thick band over the frame being heard now. The ridge line under it is
+  /// drawn either way — see `drawLead`.
+  leadThick: true,
+  /// Filling the grain shapes in.
+  ///
+  /// `bg` is not a colour. The room is drawn on glass with the page's own
+  /// ground behind it, so filling with "the background" means taking the light
+  /// out of what is behind the shape rather than painting anything over it —
+  /// a different pass, which is why it is a state and not a swatch value.
+  /// Smoke dripping off the shapes: whether, how much, and how long the drips
+  /// are as a fraction of a grain's whole journey.
+  /// Distance fog. Its own thing entirely from the mist: the mist is particles
+  /// shed by grains, and this is what the air does to everything behind it.
+  fog: false,
+  fogType: 1,
+  fogDensity: 0.5,
+  fogColour: '#7f8fa6',
+  mist: false,
+  mistAmount: 0.5,
+  mistLength: 0.06,
+  grainFill: false,
+  grainFillBg: true,
+  grainFillColour: '#1b2b3a',
 };
+
+/// The layers, in the order they are drawn — highest in the hierarchy first.
+///
+/// Anything that is not in the stored list is appended in the order
+/// `ROOM_LAYERS` gives, so a layer added to the program later turns up at the
+/// bottom rather than not at all.
+function roomOrder() {
+  const out = [];
+  for (const k of roomEdit.order || []) {
+    if (ROOM_GL_LAYERS.some((l) => l.key === k) && !out.includes(k)) out.push(k);
+  }
+  for (const l of ROOM_GL_LAYERS) if (!out.includes(l.key)) out.push(l.key);
+  return out;
+}
+
+/// Whether anything in the room is standing in anything else's way.
+///
+/// **The hierarchy does nothing until something does.** Everything in this room
+/// is drawn with additive blending, and addition does not care what order it
+/// happens in — with nothing occluding, reversing the whole stack gives a
+/// picture identical to the last pixel. It is only when a layer writes depth
+/// that being drawn earlier means anything at all, and the list says so rather
+/// than letting somebody drag rows around expecting a change they cannot get.
+function roomHierarchyLive() {
+  return ROOM_GL_LAYERS.some((l) => roomLayerOn(l.key) && roomOccludeOn(l.key));
+}
+
+/// Off unless somebody has turned it on. Occlusion changes what the room looks
+/// like fundamentally, so it is asked for rather than assumed.
+function roomOccludeOn(key) {
+  return roomEdit.occlude[key] === true;
+}
+
+function roomOcclude() {
+  const out = {};
+  for (const l of ROOM_GL_LAYERS) out[l.key] = roomOccludeOn(l.key);
+  return out;
+}
 
 try {
   const v = JSON.parse(localStorage.getItem('roomData') || '{}');
   if (ROOM_CHUNKS.includes(v.chunk)) roomEdit.chunk = v.chunk;
   if (typeof v.opacity === 'number') roomEdit.opacity = Math.max(0.05, Math.min(1, v.opacity));
+  if (typeof v.ringScale === 'number') {
+    roomEdit.ringScale = Math.max(0.15, Math.min(3, v.ringScale));
+  }
+  if (typeof v.grainDensity === 'number') {
+    roomEdit.grainDensity = Math.max(0.04, Math.min(1, v.grainDensity));
+  }
+  if (typeof v.grainBright === 'number') {
+    roomEdit.grainBright = Math.max(0.15, Math.min(3, v.grainBright));
+  }
+  if (typeof v.ringDrive === 'number') {
+    roomEdit.ringDrive = Math.max(0, Math.min(8, v.ringDrive));
+  }
+  if (typeof v.ringEdge === 'number') {
+    roomEdit.ringEdge = Math.max(0, Math.min(0.25, v.ringEdge));
+  }
+  if (typeof v.ringPoints === 'number') {
+    roomEdit.ringPoints = Math.max(48, Math.min(2048, Math.round(v.ringPoints)));
+  }
+  if (typeof v.leadThick === 'boolean') roomEdit.leadThick = v.leadThick;
+  if (typeof v.fog === 'boolean') roomEdit.fog = v.fog;
+  if (typeof v.fogType === 'number') roomEdit.fogType = Math.max(0, Math.min(3, v.fogType | 0));
+  if (typeof v.fogDensity === 'number') {
+    roomEdit.fogDensity = Math.max(0, Math.min(2, v.fogDensity));
+  }
+  if (typeof v.fogColour === 'string' && /^#[0-9a-f]{6}$/i.test(v.fogColour)) {
+    roomEdit.fogColour = v.fogColour;
+  }
+  if (typeof v.mist === 'boolean') roomEdit.mist = v.mist;
+  if (typeof v.mistAmount === 'number') {
+    roomEdit.mistAmount = Math.max(0.06, Math.min(1, v.mistAmount));
+  }
+  if (typeof v.mistLength === 'number') {
+    roomEdit.mistLength = Math.max(0.004, Math.min(0.6, v.mistLength));
+  }
+  if (typeof v.grainFill === 'boolean') roomEdit.grainFill = v.grainFill;
+  if (typeof v.grainFillBg === 'boolean') roomEdit.grainFillBg = v.grainFillBg;
+  if (typeof v.grainFillColour === 'string' && /^#[0-9a-f]{6}$/i.test(v.grainFillColour)) {
+    roomEdit.grainFillColour = v.grainFillColour;
+  }
 } catch {}
 
 function saveRoomData() {
   try {
-    localStorage.setItem('roomData',
-      JSON.stringify({ chunk: roomEdit.chunk, opacity: roomEdit.opacity }));
+    localStorage.setItem('roomData', JSON.stringify({
+      chunk: roomEdit.chunk, opacity: roomEdit.opacity, ringScale: roomEdit.ringScale,
+      grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
+      ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
+      leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
+      mist: roomEdit.mist, mistAmount: roomEdit.mistAmount,
+      mistLength: roomEdit.mistLength,
+      fog: roomEdit.fog, fogType: roomEdit.fogType,
+      fogDensity: roomEdit.fogDensity, fogColour: roomEdit.fogColour,
+      grainFill: roomEdit.grainFill, grainFillBg: roomEdit.grainFillBg,
+      grainFillColour: roomEdit.grainFillColour,
+    }));
   } catch {}
 }
 
 try {
   roomEdit.layers = JSON.parse(localStorage.getItem('roomLayers') || '{}') || {};
 } catch { roomEdit.layers = {}; }
+
+try {
+  const v = JSON.parse(localStorage.getItem('roomHierarchy') || 'null');
+  if (v && Array.isArray(v.order)) roomEdit.order = v.order;
+  if (v && v.occlude && typeof v.occlude === 'object') roomEdit.occlude = v.occlude;
+} catch {}
+
+function saveRoomHierarchy() {
+  try {
+    localStorage.setItem('roomHierarchy',
+      JSON.stringify({ order: roomOrder(), occlude: roomEdit.occlude }));
+  } catch {}
+}
 
 try {
   roomEdit.streams = JSON.parse(localStorage.getItem('roomStreams') || 'null');
@@ -7027,6 +7433,49 @@ try {
 /// frame is until somebody poses it.
 function roomCamera() {
   return roomEdit.cams[roomEdit.frame] || null;
+}
+
+/// The air, as the renderer wants it.
+///
+/// The near and far are the room's own front and back rather than numbers
+/// anybody types: linear fog that ran out somewhere other than the back wall
+/// would be a control about the fog rather than about the room.
+function roomFog() {
+  const cam = vgCamera(roomCamera());
+  return {
+    on: roomEdit.fog,
+    type: roomEdit.fogType,
+    rgb: vgHexRgb(roomEdit.fogColour),
+    density: roomEdit.fogDensity,
+    near: 1,
+    far: 1 + cam.depth,
+    height: cam.floorY,
+  };
+}
+
+/// `#rrggbb` as the three floats the shaders want.
+function vgHexRgb(hex) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  if (!m) return [0, 0, 0];
+  return [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255];
+}
+
+/// The camera as the renderer should use it, with the ring's own size applied.
+///
+/// Kept apart from `roomCamera` on purpose. That one is the *pose* — it is what
+/// the dragging writes, what `reNums` prints and what gets pasted back into
+/// `vis-gl.js` as a new default. The ring's size is a preference about what is
+/// in the room rather than about where the room is, and folding it into the
+/// pose would mean every camera copied out carried somebody's slider position
+/// with it.
+function roomCameraDrawn() {
+  const c = roomCamera();
+  const k = roomEdit.ringScale;
+  if (k === 1) return c;
+  // `vgCamera` fills in whatever is missing, so this works on a posed camera,
+  // on a partial one, and on no camera at all.
+  const base = vgCamera(c);
+  return { ...base, ring: base.ring * k };
 }
 
 function saveRoomCameras() {
@@ -7073,8 +7522,21 @@ function paintRoomNums() {
   for (const b of document.querySelectorAll('#reFrames .re-btn')) {
     b.classList.toggle('active', b.dataset.frame === roomEdit.frame);
   }
-  for (const b of document.querySelectorAll('#reLayers .re-btn')) {
+  for (const b of document.querySelectorAll('#reLayers .re-layer-name')) {
     b.classList.toggle('active', roomLayerOn(b.dataset.layer));
+  }
+  const fillBgBtn = $('reGrainFillBg');
+  if (fillBgBtn) fillBgBtn.classList.toggle('active', !!roomEdit.grainFillBg);
+  const fillBox = $('reGrainFill');
+  if (fillBox) fillBox.checked = !!roomEdit.grainFill;
+  const thickBox = $('reLeadThick');
+  if (thickBox) thickBox.checked = !!roomEdit.leadThick;
+  const mistBox = $('reMist');
+  if (mistBox) mistBox.checked = !!roomEdit.mist;
+  const fogBox = $('reFog');
+  if (fogBox) fogBox.checked = !!roomEdit.fog;
+  for (const b of document.querySelectorAll('#reLayers .re-occ')) {
+    b.classList.toggle('active', roomOccludeOn(b.dataset.occlude));
   }
   for (const b of document.querySelectorAll('#reStreams .re-btn')) {
     b.classList.toggle('active', roomStreamOn(b.dataset.stream));
@@ -7084,12 +7546,51 @@ function paintRoomNums() {
   }
 }
 
+/// The layer stack: one row each, highest at the top.
+///
+/// Stacked rather than laid in a line because the list *is* the hierarchy — the
+/// order decides who is drawn first and therefore who is seen — and a hierarchy
+/// read left to right is a hierarchy nobody reads. Top to bottom is how every
+/// other stack of layers is written down.
+///
+/// Rebuilt whenever the order changes, unlike the other chip rows, which are
+/// built once and only ever have their `active` class flipped.
 function buildRoomLayers() {
   const box = $('reLayers');
-  if (!box || box.children.length) return;
-  for (const l of ROOM_LAYERS) {
+  if (!box) return;
+  box.innerHTML = '';
+  // The drawn layers in hierarchy order, then the ones that are not in the
+  // room at all. Listing only `roomOrder()` dropped the Data block off the
+  // stack entirely — it is still a layer you turn on and off, it just has no
+  // place in an order it is not part of.
+  const listed = [
+    ...roomOrder(),
+    ...ROOM_LAYERS.filter((l) => l.gl === false).map((l) => l.key),
+  ];
+  for (const key of listed) {
+    const l = ROOM_LAYERS.find((x) => x.key === key);
+    if (!l) continue;
+    const drawn = l.gl !== false;
+    const row = document.createElement('div');
+    row.className = drawn ? 're-layer' : 're-layer re-layer-off-stage';
+    row.dataset.layer = l.key;
+    row.draggable = drawn;
+
+    // The grip is the whole row, but only this says so. Nothing to grip on a
+    // layer that is not in the room's draw order.
+    const grip = document.createElement('span');
+    grip.className = 're-grip';
+    grip.textContent = drawn ? '⠿' : '';
+    if (drawn) {
+      grip.title = 'Drag to move this layer up or down the hierarchy. Higher is '
+        + 'drawn first, so with occlusion on it is the one you see. Everything '
+        + 'here is drawn additively, so until something occludes, the order '
+        + 'makes no difference at all.';
+    }
+    row.appendChild(grip);
+
     const b = document.createElement('button');
-    b.className = 're-btn';
+    b.className = 're-btn re-layer-name';
     b.dataset.layer = l.key;
     b.textContent = l.label;
     b.title = l.hint;
@@ -7099,8 +7600,93 @@ function buildRoomLayers() {
       paintRoomNums();
       paintRoomData();
     };
-    box.appendChild(b);
+    row.appendChild(b);
+
+    // Its own switch, per layer, because "does this hide things" is a different
+    // question from "is this drawn" and the answer differs by layer: a terrain
+    // that masks the sky is a landscape, and a wireframe box that masks
+    // everything inside it is an empty box.
+    //
+    // Only for the layers the renderer draws. The Data block is type printed on
+    // the back wall rather than geometry in the scene, so it has nothing to
+    // occlude with and nothing to be occluded by — and a switch that does
+    // nothing is worse than a missing one.
+    if (drawn) {
+      const o = document.createElement('button');
+      o.className = 're-btn re-occ';
+      o.dataset.occlude = l.key;
+      o.textContent = '◑';
+      o.title = `Occlusion for ${l.label}: stand in the way of every layer below `
+        + 'this one, instead of adding light to it. It masks with the geometry it '
+        + 'actually has, so a surface hides a great deal and a few wireframe '
+        + 'lines hide very little.';
+      o.onclick = () => {
+        roomEdit.occlude[l.key] = !roomOccludeOn(l.key);
+        saveRoomHierarchy();
+        buildRoomLayers();
+      };
+      row.appendChild(o);
+    }
+    box.appendChild(row);
   }
+  // Said out loud rather than left to be discovered: with nothing occluding,
+  // dragging these around changes nothing, because additive blending does not
+  // care what order it happens in.
+  const live = roomHierarchyLive();
+  box.classList.toggle('re-flat', !live);
+  const tag = box.parentElement?.querySelector('.re-tag');
+  if (tag) {
+    tag.title = live
+      ? 'Highest first. A layer with occlusion on is drawn before the ones below '
+        + 'it, so it is the one you see where they meet.'
+      : 'Nothing is occluding, so this order does nothing yet — the room is drawn '
+        + 'additively and addition does not care what order it happens in. Turn '
+        + 'on occlusion for a layer and its place in this list starts to matter.';
+  }
+  wireRoomLayerDrag(box);
+  paintRoomNums();
+}
+
+/// Dragging a layer up or down the stack.
+///
+/// The native drag events rather than pointer maths, because the room's own
+/// pointer handling is a camera drag and the two would fight over the same
+/// gestures. This is a list being reordered, which is what these events are
+/// for.
+function wireRoomLayerDrag(box) {
+  let from = null;
+  box.ondragstart = (e) => {
+    const row = e.target.closest?.('.re-layer');
+    if (!row) return;
+    from = row.dataset.layer;
+    row.classList.add('re-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox will not start a drag without something on the transfer.
+    try { e.dataTransfer.setData('text/plain', from); } catch {}
+  };
+  box.ondragend = () => {
+    from = null;
+    for (const r of box.querySelectorAll('.re-layer')) {
+      r.classList.remove('re-dragging', 're-over');
+    }
+  };
+  box.ondragover = (e) => {
+    if (!from) return;
+    e.preventDefault();
+    const row = e.target.closest?.('.re-layer');
+    for (const r of box.querySelectorAll('.re-layer')) r.classList.toggle('re-over', r === row);
+  };
+  box.ondrop = (e) => {
+    if (!from) return;
+    e.preventDefault();
+    const row = e.target.closest?.('.re-layer');
+    if (!row || row.dataset.layer === from) return;
+    const order = roomOrder().filter((k) => k !== from);
+    order.splice(order.indexOf(row.dataset.layer), 0, from);
+    roomEdit.order = order;
+    saveRoomHierarchy();
+    buildRoomLayers();
+  };
 }
 
 function buildRoomChunks() {
@@ -7114,6 +7700,145 @@ function buildRoomChunks() {
     b.title = `Rows travel in blocks of ${n}, every other block running the other way.`;
     b.onclick = () => { roomEdit.chunk = n; saveRoomData(); paintRoomNums(); paintRoomData(); };
     box.appendChild(b);
+  }
+  const ring = $('reRing');
+  if (ring) {
+    ring.value = String(Math.round(roomEdit.ringScale * 100));
+    ring.oninput = () => {
+      roomEdit.ringScale = Math.max(0.15, Math.min(3, ring.value / 100));
+      paintRoomNums();
+    };
+    ring.onchange = saveRoomData;
+  }
+  const edge = $('reRingEdge');
+  if (edge) {
+    edge.value = String(Math.round(roomEdit.ringEdge * 1000));
+    edge.oninput = () => {
+      roomEdit.ringEdge = Math.max(0, Math.min(0.25, edge.value / 1000));
+    };
+    edge.onchange = saveRoomData;
+  }
+  const pts = $('reRingPoints');
+  if (pts) {
+    pts.value = String(Math.round(roomEdit.ringPoints));
+    pts.oninput = () => {
+      roomEdit.ringPoints = Math.max(48, Math.min(2048, Math.round(pts.value)));
+    };
+    pts.onchange = saveRoomData;
+  }
+  const thick = $('reLeadThick');
+  if (thick) {
+    thick.checked = !!roomEdit.leadThick;
+    thick.onchange = () => {
+      roomEdit.leadThick = thick.checked;
+      saveRoomData();
+      paintRoomNums();
+    };
+  }
+  const fog = $('reFog');
+  if (fog) {
+    fog.checked = !!roomEdit.fog;
+    fog.onchange = () => { roomEdit.fog = fog.checked; saveRoomData(); paintRoomNums(); };
+  }
+  const fogType = $('reFogType');
+  if (fogType) {
+    fogType.value = String(roomEdit.fogType);
+    fogType.onchange = () => {
+      roomEdit.fogType = Math.max(0, Math.min(3, +fogType.value | 0));
+      saveRoomData();
+    };
+  }
+  const fogDen = $('reFogDensity');
+  if (fogDen) {
+    fogDen.value = String(Math.round(roomEdit.fogDensity * 100));
+    fogDen.oninput = () => {
+      roomEdit.fogDensity = Math.max(0, Math.min(2, fogDen.value / 100));
+    };
+    fogDen.onchange = saveRoomData;
+  }
+  const fogCol = $('reFogColour');
+  if (fogCol) {
+    fogCol.value = roomEdit.fogColour;
+    fogCol.oninput = () => { roomEdit.fogColour = fogCol.value; };
+    fogCol.onchange = saveRoomData;
+  }
+  const mist = $('reMist');
+  if (mist) {
+    mist.checked = !!roomEdit.mist;
+    mist.onchange = () => {
+      roomEdit.mist = mist.checked;
+      saveRoomData();
+      paintRoomNums();
+    };
+  }
+  const mistAmt = $('reMistAmount');
+  if (mistAmt) {
+    mistAmt.value = String(Math.round(roomEdit.mistAmount * 100));
+    mistAmt.oninput = () => {
+      roomEdit.mistAmount = Math.max(0.06, Math.min(1, mistAmt.value / 100));
+    };
+    mistAmt.onchange = saveRoomData;
+  }
+  const mistLen = $('reMistLength');
+  if (mistLen) {
+    mistLen.value = String(Math.round(roomEdit.mistLength * 1000));
+    mistLen.oninput = () => {
+      roomEdit.mistLength = Math.max(0.004, Math.min(0.6, mistLen.value / 1000));
+    };
+    mistLen.onchange = saveRoomData;
+  }
+  const fill = $('reGrainFill');
+  if (fill) {
+    fill.checked = !!roomEdit.grainFill;
+    fill.onchange = () => {
+      roomEdit.grainFill = fill.checked;
+      saveRoomData();
+      paintRoomNums();
+    };
+  }
+  const fillBg = $('reGrainFillBg');
+  if (fillBg) {
+    fillBg.onclick = () => {
+      roomEdit.grainFillBg = !roomEdit.grainFillBg;
+      saveRoomData();
+      paintRoomNums();
+    };
+  }
+  const fillCol = $('reGrainFillColour');
+  if (fillCol) {
+    fillCol.value = roomEdit.grainFillColour;
+    fillCol.oninput = () => {
+      roomEdit.grainFillColour = fillCol.value;
+      // Picking a colour is asking for that colour, so it stops filling with
+      // the background — otherwise the swatch would sit there doing nothing.
+      roomEdit.grainFillBg = false;
+      paintRoomNums();
+    };
+    fillCol.onchange = saveRoomData;
+  }
+  const drive = $('reRingDrive');
+  if (drive) {
+    drive.value = String(Math.round(roomEdit.ringDrive * 100));
+    drive.oninput = () => {
+      roomEdit.ringDrive = Math.max(0, Math.min(8, drive.value / 100));
+    };
+    drive.onchange = saveRoomData;
+  }
+  const dens = $('reGrainDensity');
+  if (dens) {
+    dens.value = String(Math.round(roomEdit.grainDensity * 100));
+    dens.oninput = () => {
+      roomEdit.grainDensity = Math.max(0.04, Math.min(1, dens.value / 100));
+    };
+    dens.onchange = saveRoomData;
+  }
+  const bright = $('reGrainBright');
+  if (bright) {
+    bright.value = String(Math.round(roomEdit.grainBright * 100));
+    bright.oninput = () => {
+      roomEdit.grainBright = Math.max(0.15, Math.min(3, bright.value / 100));
+    };
+    bright.onchange = saveRoomData;
   }
   const slider = $('reOpacity');
   if (slider) {
@@ -7393,7 +8118,6 @@ function paintRoomData() {
     fitCell(`D${drops}`, 5),
   ].join(' ');
 
-  const wanted = ROOM_STREAMS.filter((c) => roomStreamOn(c.key));
   const sched = state.grains;
   const sr = sched?.sampleRate || 44100;
   const all = sched?.grains || [];
@@ -7414,17 +8138,58 @@ function paintRoomData() {
   const lines = Math.max(0, Math.floor(wall.h / ROOM_LINE) - 2);
   const rows = Math.max(0, Math.min(64, lines));
 
-  // Whole columns only. A column that does not fit is left out rather than
-  // clipped down the middle of its numbers, which would read as damage.
+  // ── every stream has a home ──
+  //
+  // **A column's place is fixed, whether or not it is switched on.** Packing
+  // only the columns that were on meant turning one off pulled every column
+  // after it to the left — switch off IDX and SRC lands where OUT was, so a
+  // number you had been reading in one place is now a different number in the
+  // same place. The block is a readout you watch while it runs, and a readout
+  // whose columns move under you cannot be watched: the eye goes back to
+  // finding the column instead of reading it, which is the same reason every
+  // field is padded to a fixed width in the first place.
+  //
+  // So a stream that is off leaves its width behind as blank. It costs wall.
+  // What it buys is that PIT is always in the same place, and the header above
+  // it is the header of the numbers under it.
   const room = Math.max(0, Math.floor(wall.w / ch));
-  const cols = [];
-  let used = 0;
-  for (const c of wanted) {
-    const next = used ? used + 1 + c.w : c.w;
-    if (next > room) break;
-    cols.push(c);
-    used = next;
+  const slots = [];
+  let at = 0;
+  for (const c of ROOM_STREAMS) {
+    // Whole columns only. A column that does not fit is left out rather than
+    // clipped down the middle of its numbers, which would read as damage.
+    if (at + c.w <= room) slots.push({ c, on: roomStreamOn(c.key) });
+    at += c.w + 1;
   }
+  const cols = slots;
+
+  // ── the wall is tiled, not stretched ──
+  //
+  // One block of columns is narrower than the back wall and the schedule around
+  // the playhead is shorter than the wall is tall, so printing one of each left
+  // the wall mostly empty. **Repeated instead of resized**: the type stays the
+  // size it is — it is small type printed on a wall, and type on a wall does not
+  // grow because the wall is big — and what fills the space is more of it.
+  //
+  // Across by whole tiles and down by whole rows, so a tile is never cut in
+  // half at an edge. What does not fit is not drawn.
+  //
+  // A tile ends at its last *switched-on* column. The empty places after that
+  // are still reserved — nothing moves — but they are not printed, or every
+  // tile would carry the width of the streams that are off and the tiles would
+  // sit that far apart. Leading empties are kept, because those are what hold
+  // the columns still.
+  let lastOn = -1;
+  for (let i = 0; i < cols.length; i++) if (cols[i].on) lastOn = i;
+  const tileCols = lastOn >= 0 ? cols.slice(0, lastOn + 1) : [];
+  const tileChars = tileCols.length
+    ? tileCols.reduce((w, s2) => w + s2.c.w, 0) + (tileCols.length - 1)
+    : 0;
+  // A gap between tiles, or two of them read as one row of columns.
+  const TILE_GAP = 3;
+  const across = tileChars > 0
+    ? Math.max(1, Math.floor((room + TILE_GAP) / (tileChars + TILE_GAP)))
+    : 1;
 
   // Around the playhead, so it runs with the sound instead of sitting still at
   // the top of the file.
@@ -7434,14 +8199,24 @@ function paintRoomData() {
   const window = all.slice(Math.max(0, first - 1), Math.max(0, first - 1) + rows);
 
   const line = (cells) => cells.join(' ');
+  /// One tile of a row, with the switched-off streams standing empty in their
+  /// own places.
+  const slotLine = (cell) => line(tileCols.map((s) => (s.on ? cell(s.c) : ' '.repeat(s.c.w))));
+  /// That tile, repeated across the wall.
+  const tiled = (text) => {
+    if (across <= 1) return text;
+    const out2 = [];
+    for (let t = 0; t < across; t++) out2.push(text);
+    return out2.join(' '.repeat(TILE_GAP));
+  };
   const out = [];
   // Trimmed to the wall like everything else. Clipping alone would leave it
   // cut through the middle of a number, which reads as a fault rather than as
   // a wall that ran out.
   out.push(`<div class="rd-head">${head.slice(0, room)}</div>`);
-  if (cols.length) {
+  if (cols.some((s) => s.on)) {
     out.push('<div class="rd-hdr">'
-      + line(cols.map((c) => fitCell(c.label, c.w))) + '</div>');
+      + tiled(slotLine((c) => fitCell(c.label, c.w))) + '</div>');
     // Always `rows` lines, padded with blanks. Rendering only the grains in
     // range let the block grow and shrink under the sound, which moves
     // everything else in the corner with it.
@@ -7451,7 +8226,7 @@ function paintRoomData() {
     // schedule runs one way, so a single column of it slides uniformly and at
     // this size that looks like nothing moving at all. Against a neighbour
     // going the other way it is obvious.
-    const blank = line(cols.map((c) => ' '.repeat(c.w)));
+    const blank = tiled(line(tileCols.map((s) => ' '.repeat(s.c.w))));
     const chunk = roomEdit.chunk;
     let printed = 0;
     let block = 0;
@@ -7459,9 +8234,15 @@ function paintRoomData() {
       const take = Math.min(chunk, rows - printed);
       const slice = [];
       for (let i = 0; i < take; i++) {
-        const row = window[printed + i];
+        // Down the wall the same way: when the schedule around the playhead
+        // runs out, it starts again rather than leaving the rest of the wall
+        // blank. A grain repeated further down is the same grain, which is the
+        // whole idea of a tile.
+        const row = window.length
+          ? window[(printed + i) % window.length]
+          : null;
         slice.push(row
-          ? line(cols.map((c) => fitCell(c.fmt(c.get(row, sr)), c.w)))
+          ? tiled(slotLine((c) => fitCell(c.fmt(c.get(row, sr)), c.w)))
           : blank);
       }
       if (block % 2 === 1) slice.reverse();
@@ -7516,6 +8297,13 @@ function buildRoomStreams() {
 }
 
 $('roomEditOpen')?.addEventListener('click', toggleRoomEdit);
+
+$('reClear')?.addEventListener('click', () => {
+  // The room only. Nothing here is a setting, so there is nothing to save and
+  // nothing to put back — the trail and the cloud simply start again.
+  visGl?.clear?.();
+  paintRoomNums();
+});
 
 $('reReset')?.addEventListener('click', () => {
   delete roomEdit.cams[roomEdit.frame];
@@ -11322,8 +12110,27 @@ function visGlTick() {
     cold: vgRgb('--wave-2', '#4a9fd8'),
     hot: vgRgb('--wave', '#5fd47a'),
     core: vgRgb('--accent', '#7fd0ff'),
-    cam: roomCamera(),
+    cam: roomCameraDrawn(),
     layers: roomLayers(),
+    occlude: roomOcclude(),
+    order: roomOrder(),
+    grainDensity: roomEdit.grainDensity,
+    grainBright: roomEdit.grainBright,
+    ringDrive: roomEdit.ringDrive,
+    ringEdge: roomEdit.ringEdge,
+    leadThick: roomEdit.leadThick,
+    ringPoints: roomEdit.ringPoints,
+    grainFill: {
+      on: roomEdit.grainFill,
+      bg: roomEdit.grainFillBg,
+      rgb: vgHexRgb(roomEdit.grainFillColour),
+    },
+    mist: {
+      on: roomEdit.mist,
+      amount: roomEdit.mistAmount,
+      length: roomEdit.mistLength,
+    },
+    fog: roomFog(),
     // The schedule itself, so the room draws the grains that exist rather than
     // a model of how many there ought to be.
     //
