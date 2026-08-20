@@ -367,11 +367,21 @@
          One set of controls cannot disagree with itself. -->
     <div class="roomview hidden" id="roomView">
       <aside class="rv-admin" id="roomAdmin">
-        <div class="rv-admin-head"><span>Room</span></div>
+        <!-- Two tabs rather than one long column. The controls run to fourteen
+             rows and the palette to fourteen things that each open an editor;
+             stacked, everything below the fold is found by scrolling past
+             something unrelated. -->
+        <div class="rv-admin-head">
+          <button class="rv-tab active" data-rvtab="controls">Controls</button>
+          <button class="rv-tab" data-rvtab="paint">Colour</button>
+        </div>
         <!-- `#roomEdit` is moved in here. The panel is laid out differently at
              this width — see `.rv-admin .room-edit` — but it is the same DOM
              carrying the same handlers. -->
         <div class="rv-admin-body" id="roomAdminBody"></div>
+        <!-- The palette. Built by `paintRoomPaint`; only ever shown here,
+             because the dock's overlay has no room for it. -->
+        <div class="rv-admin-body hidden" id="roomPaintBody"></div>
       </aside>
       <div class="rv-grip" id="roomGrip"
            title="Drag to resize the controls · double-click to put it back"></div>
@@ -994,6 +1004,9 @@
 <script src="/theme-palettes.js"></script>
 <script src="/theme-derive.js"></script>
 <script src="/grain-shapes.js"></script>
+<!-- The room's palette. Before vis-gl.js is not required — nothing runs at
+     load — but it is read by app.js on its first frame. -->
+<script src="/room-paint.js"></script>
 <script src="/mp4.js"></script>
 <script src="/vis-gl.js"></script>
 <script src="/video-export.js"></script>

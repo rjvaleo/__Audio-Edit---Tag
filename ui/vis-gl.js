@@ -70,6 +70,15 @@ const VG_HISTORY = 56;
 /// Fifty-six frames of this is under half a megabyte.
 const VG_LISS_POINTS = 1024;
 
+/// The palette atlas: 256 samples across, one row per paintable thing.
+///
+/// Both powers of two, which is what lets the texture take a LINEAR filter
+/// without mipmaps on WebGL 1. 256 is where a gradient stops banding at the
+/// sizes anything here is drawn at; sixteen rows is thirteen things and three
+/// spare, at a cost of three kilobytes.
+const VG_RAMP_W = 256;
+const VG_RAMP_ROWS = 16;
+
 /// How finely the ring is drawn, unless the caller says otherwise.
 const VG_RING_POINTS = 1024;
 /// Below this a ring is visibly a polygon.
@@ -329,15 +338,30 @@ function vgNorm(v) {
 const VG_VS = `
 attribute vec3 aPos;
 attribute float aW;
+// A second quantity per vertex, for colour to be driven by.
+//
+// aW already means something different in every layer — a level in a
+// frequency bin on the floor, an amplitude on the ring, a grain's own loudness
+// in the cloud — and it is the weight the *drawing* uses, so it is not free to
+// be repurposed. This one carries whatever else that layer knows and would
+// otherwise throw away: the band's frequency, the ring's stereo width, a
+// grain's pan or length.
+//
+// Nought when nothing supplies it, set as a constant attribute rather than
+// left undefined — an unbound attribute array reads whatever was in the slot
+// last, which is the previous layer's data in the shape of this one's.
+attribute float aW2;
 uniform mat4 uMVP;
 uniform float uPointSize;
 varying float vW;
+varying float vW2;
 varying float vDepth;
 varying float vDist;
 varying float vHeight;
 varying float vSeed;
 void main() {
   vW = aW;
+  vW2 = aW2;
   // A number of its own for each sprite, so a field of them is not the same
   // puff drawn a hundred times. Taken from where it is, which is stable frame
   // to frame — a random here would boil.
@@ -366,12 +390,23 @@ void main() {
 const VG_FS = `
 precision mediump float;
 varying float vW;
+varying float vW2;
 varying float vDepth;
 varying float vDist;
 varying float vHeight;
 varying float vSeed;
 uniform vec3 uCold;
 uniform vec3 uHot;
+// The palette, as an atlas: one row of 256 samples per paintable thing in the
+// room. A texture rather than an array of stop colours because the number of
+// stops is then the interface's business and not the shader's, and because one
+// texture bound once is cheaper than re-uploading uniforms at every draw call.
+uniform sampler2D uRamp;
+uniform float uRampV;    // which row, already at its centre
+uniform int uRampOn;     // 0 keeps the two-colour path this room shipped with
+uniform int uDrive;      // which quantity the ramp is read against
+uniform vec2 uRange;     // the part of that quantity the ramp is spent on
+uniform float uCurve;    // and how it is spent across it
 uniform float uAlpha;
 uniform float uRound;   // 1 for point sprites, 0 for lines and triangles
 uniform float uSoft;    // 1 for the smoke sprites, 0 for everything else
@@ -472,9 +507,40 @@ void main() {
     }
   }
 
-  vec3 col = mix(uCold, uHot, clamp(vW, 0.0, 1.0));
-  // Lifted at the top end so a loud band burns rather than merely brightens.
-  col += uHot * pow(clamp(vW, 0.0, 1.0), 3.0) * 0.55;
+  // ── the colour ──
+  //
+  // Two paths, and the first is the room exactly as it was: a mix between two
+  // colours read against the weight. Anything the palette has not been given an
+  // opinion about still takes it, so a scheme with nothing set is the picture
+  // this room has always drawn, to the byte.
+  float wv = clamp(vW, 0.0, 1.0);
+  vec3 col;
+  if (uRampOn == 1) {
+    // **What the ramp is read against is a choice.** The weight means something
+    // different in every layer and it is not always the interesting thing about
+    // a vertex — a spectrum coloured by frequency says something the same
+    // spectrum coloured by loudness does not.
+    float d0 = wv;
+    if (uDrive == 1) d0 = clamp(vDepth * 0.125, 0.0, 1.0);
+    else if (uDrive == 2) d0 = clamp((vDist - 1.0) * 0.25, 0.0, 1.0);
+    else if (uDrive == 3) d0 = clamp(vHeight + 0.5, 0.0, 1.0);
+    else if (uDrive == 4) d0 = vSeed;
+    else if (uDrive == 5) d0 = clamp(vW2, 0.0, 1.0);
+    // The window of that quantity the ramp is spent across. Without it a fog
+    // whose depth only ever reaches a quarter would only ever show the first
+    // quarter of its own gradient, which is how the fog read as flat however
+    // its two ends were set.
+    float t = clamp((d0 - uRange.x) / max(1e-4, uRange.y - uRange.x), 0.0, 1.0);
+    col = texture2D(uRamp, vec2(pow(t, uCurve), uRampV)).rgb;
+    // The burn stays on the weight whatever the ramp is read against: it is the
+    // top of the gradient bleeding at loud, and loudness is what makes a thing
+    // burn regardless of what is choosing its hue.
+    col += texture2D(uRamp, vec2(1.0, uRampV)).rgb * pow(wv, 3.0) * 0.55;
+  } else {
+    col = mix(uCold, uHot, wv);
+    // Lifted at the top end so a loud band burns rather than merely brightens.
+    col += uHot * pow(wv, 3.0) * 0.55;
+  }
 
   // ── fog, on an additive scene ──
   //
@@ -534,9 +600,16 @@ function vgAttach(canvas) {
       p,
       aPos: gl.getAttribLocation(p, 'aPos'),
       aW: gl.getAttribLocation(p, 'aW'),
+      aW2: gl.getAttribLocation(p, 'aW2'),
       uMVP: gl.getUniformLocation(p, 'uMVP'),
       uCold: gl.getUniformLocation(p, 'uCold'),
       uHot: gl.getUniformLocation(p, 'uHot'),
+      uRamp: gl.getUniformLocation(p, 'uRamp'),
+      uRampV: gl.getUniformLocation(p, 'uRampV'),
+      uRampOn: gl.getUniformLocation(p, 'uRampOn'),
+      uDrive: gl.getUniformLocation(p, 'uDrive'),
+      uRange: gl.getUniformLocation(p, 'uRange'),
+      uCurve: gl.getUniformLocation(p, 'uCurve'),
       uAlpha: gl.getUniformLocation(p, 'uAlpha'),
       uRound: gl.getUniformLocation(p, 'uRound'),
       uSoft: gl.getUniformLocation(p, 'uSoft'),
@@ -559,11 +632,37 @@ function vgAttach(canvas) {
 
   const posBuf = gl.createBuffer();
   const wBuf = gl.createBuffer();
+  const w2Buf = gl.createBuffer();
+
+  // ── the palette ──
+  //
+  // One texture holding every ramp in the room, a row each, 256 samples across.
+  // Sixteen rows because it has to be a power of two and thirteen things are
+  // drawn; the spare rows cost 3 kB.
+  //
+  // Uploaded only when the palette actually changes, which is when somebody
+  // moves a colour. Between those it is bound and read like any other texture.
+  const rampTex = gl.createTexture();
+  let rampVersion = -1;
+  gl.bindTexture(gl.TEXTURE_2D, rampTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  // Clamped, so the ends of a ramp are the ends of a ramp. Repeating would make
+  // the darkest colour appear next to the brightest at t = 1.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+    new Uint8Array([255, 255, 255, 255]));
+
+  /// The palette this frame is being drawn with, or null for the room's own
+  /// two colours. Set once at the top of a frame and read at every draw.
+  let paints = null;
   // The landscape gets buffers of its own. It is thirty thousand vertices and
   // it only changes when a frame is pushed — rebuilding it sixty times a second
   // to draw the same thing twenty times would be the whole cost of the scene.
   const meshPosBuf = gl.createBuffer();
   const meshWBuf = gl.createBuffer();
+  const meshW2Buf = gl.createBuffer();
   let meshRows = 0;
   let meshKey = '';
   let pushes = 0;
@@ -572,6 +671,24 @@ function vgAttach(canvas) {
   /// A plain array of rows rather than a ring, because it is rebuilt into one
   /// vertex buffer anyway and 56 shifts of a typed array is nothing.
   const history = [];
+
+  // ── the second drive, per layer ──
+  //
+  // One extra quantity each, and it is the one that layer knows and cannot
+  // otherwise express. Everything else a ramp might be read against is already
+  // a varying: loudness is the weight, pitch is the height, time is the depth.
+  // What is missing is different in each place —
+  //
+  //   the floor and the leading edge : which frequency a band is
+  //   the ring and its skin          : how wide the stereo image is there
+  //   the cloud and its mist         : where a grain is panned
+  //
+  // — so there is one attribute rather than five, and each layer fills it with
+  // its own answer. A second, third and fourth attribute would be three more
+  // buffers uploaded every frame to carry numbers no layer asks for at once.
+  let floorHz = null, leadHz = null;
+  let skyW2 = null, skyPrevW2 = null, skyBandW2 = null;
+  let grainW2 = null, grainLineW2 = null, mistW2 = null, grainFillW2 = null;
 
   // Reused every frame. Sized on first use and never grown again.
   let floorPos = null, floorW = null;
@@ -601,7 +718,13 @@ function vgAttach(canvas) {
   /// of one pass rather than of every one.
   let drawSoft = false;
 
-  const draw = (mode, pos, wts, count, alpha, round, cold, hot, size) => {
+  /// `slot` names which of the room's paintable things this is, so the palette
+  /// can have an opinion about it. Left out — or set to something the palette
+  /// says nothing about — the draw takes `cold`/`hot` exactly as it always has.
+  ///
+  /// `w2` is the second quantity for a ramp to be read against, when this layer
+  /// has one worth offering.
+  const draw = (mode, pos, wts, count, alpha, round, cold, hot, size, slot, w2) => {
     if (!count) return;
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
     gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
@@ -611,6 +734,30 @@ function vgAttach(canvas) {
     gl.bufferData(gl.ARRAY_BUFFER, wts, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(prog.aW);
     gl.vertexAttribPointer(prog.aW, 1, gl.FLOAT, false, 0, 0);
+    // **Bound to something, always.** A disabled attribute array keeps whatever
+    // was last written to that slot, so a layer with no second quantity would
+    // silently colour itself from the previous layer's numbers read as its own.
+    if (prog.aW2 >= 0) {
+      if (w2 && w2.length >= count) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, w2Buf);
+        gl.bufferData(gl.ARRAY_BUFFER, w2, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(prog.aW2);
+        gl.vertexAttribPointer(prog.aW2, 1, gl.FLOAT, false, 0, 0);
+      } else {
+        gl.disableVertexAttribArray(prog.aW2);
+        gl.vertexAttrib1f(prog.aW2, 0);
+      }
+    }
+    const pt = slot && paints ? paints[slot] : null;
+    if (pt) {
+      gl.uniform1i(prog.uRampOn, 1);
+      gl.uniform1f(prog.uRampV, pt.v);
+      gl.uniform1i(prog.uDrive, pt.drive | 0);
+      gl.uniform2f(prog.uRange, pt.lo, pt.hi);
+      gl.uniform1f(prog.uCurve, pt.curve);
+    } else {
+      gl.uniform1i(prog.uRampOn, 0);
+    }
     gl.uniform1f(prog.uAlpha, alpha);
     gl.uniform1f(prog.uRound, round ? 1 : 0);
     gl.uniform1f(prog.uSoft, drawSoft ? 1 : 0);
@@ -636,9 +783,9 @@ function vgAttach(canvas) {
   /// included, and what you get is a tint on the scene rather than something
   /// the scene is standing in. Ordinary alpha over the top: the fog hides what
   /// is behind it in proportion to how much of it there is.
-  const drawOver = (mode, pos, wts, count, alpha, cold, hot, size) => {
+  const drawOver = (mode, pos, wts, count, alpha, cold, hot, size, slot, w2) => {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    draw(mode, pos, wts, count, alpha, true, cold, hot, size);
+    draw(mode, pos, wts, count, alpha, true, cold, hot, size, slot, w2);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   };
 
@@ -794,6 +941,26 @@ function vgAttach(canvas) {
       // has always drawn.
       const fog = (f && f.fog) || null;
       gl.useProgram(prog.p);
+
+      // ── the palette ──
+      //
+      // Off unless asked for, same rule as the fog: a caller that says nothing
+      // about colour gets the room's own two, which is the picture this has
+      // always drawn.
+      const paint = (f && f.paint) || null;
+      paints = paint && paint.slots ? paint.slots : null;
+      if (paint && paint.atlas && paint.version !== rampVersion) {
+        gl.bindTexture(gl.TEXTURE_2D, rampTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, VG_RAMP_W, VG_RAMP_ROWS, 0,
+          gl.RGBA, gl.UNSIGNED_BYTE, paint.atlas);
+        rampVersion = paint.version;
+      }
+      // Bound whatever happens: the sampler defaults to unit 0 and reading an
+      // unbound sampler is undefined, even on the passes that never sample it.
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, rampTex);
+      gl.uniform1i(prog.uRamp, 0);
+
       gl.uniform1i(prog.uFogType, fog && fog.on ? (fog.type | 0) : 4);
       gl.uniform3fv(prog.uFogColor, (fog && fog.rgb) || [0.5, 0.6, 0.7]);
       gl.uniform1f(prog.uFogDensity, fog && typeof fog.density === 'number'
@@ -866,7 +1033,7 @@ function vgAttach(canvas) {
           put(x0, y0, zAt(0), 0.02);
           put(x0, y0, zAt(1), 0.16);
         }
-        draw(gl.LINES, pos, wts, v, 0.85, false, f.cold, f.cold, 1);
+        draw(gl.LINES, pos, wts, v, 0.85, false, f.cold, f.cold, 1, 'box');
       };
 
       // ── the landscape ──
@@ -894,22 +1061,28 @@ function vgAttach(canvas) {
           const per = VG_FLOOR_BANDS * 2;
           const pos = new Float32Array(meshRows * per * 3);
           const wts = new Float32Array(meshRows * per);
+          // The band's frequency, for a surface coloured by pitch rather than
+          // by loudness. Uploaded with the mesh, so it costs nothing per frame.
+          const hz = new Float32Array(meshRows * per);
           let v = 0;
           for (let r = 0; r < meshRows; r++) {
             const a = history[r].row, b = history[r + 1].row;
             const za = zAt(ageOf(r)), zbb = zAt(ageOf(r + 1));
             for (let i = 0; i < VG_FLOOR_BANDS; i++) {
               const x = xAt(i);
+              const fr = i / (VG_FLOOR_BANDS - 1);
               pos[v * 3] = x; pos[v * 3 + 1] = ridgeY(a[i]); pos[v * 3 + 2] = za;
-              wts[v] = a[i]; v++;
+              wts[v] = a[i]; hz[v] = fr; v++;
               pos[v * 3] = x; pos[v * 3 + 1] = ridgeY(b[i]); pos[v * 3 + 2] = zbb;
-              wts[v] = b[i]; v++;
+              wts[v] = b[i]; hz[v] = fr; v++;
             }
           }
           gl.bindBuffer(gl.ARRAY_BUFFER, meshPosBuf);
           gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
           gl.bindBuffer(gl.ARRAY_BUFFER, meshWBuf);
           gl.bufferData(gl.ARRAY_BUFFER, wts, gl.DYNAMIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, meshW2Buf);
+          gl.bufferData(gl.ARRAY_BUFFER, hz, gl.DYNAMIC_DRAW);
         }
         // One upload, many draws: a strip per pair, so the near ones are laid
         // over the far ones without a depth buffer.
@@ -919,10 +1092,28 @@ function vgAttach(canvas) {
         gl.bindBuffer(gl.ARRAY_BUFFER, meshWBuf);
         gl.enableVertexAttribArray(prog.aW);
         gl.vertexAttribPointer(prog.aW, 1, gl.FLOAT, false, 0, 0);
+        if (prog.aW2 >= 0) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, meshW2Buf);
+          gl.enableVertexAttribArray(prog.aW2);
+          gl.vertexAttribPointer(prog.aW2, 1, gl.FLOAT, false, 0, 0);
+        }
         gl.uniform1f(prog.uRound, 0);
         gl.uniform1f(prog.uPointSize, 1);
         gl.uniform3fv(prog.uCold, f.cold);
         gl.uniform3fv(prog.uHot, f.hot);
+        // The surface takes its own place in the palette. It and the ridges
+        // over it were locked to one pair of colours, which is why the two read
+        // as one thing however either was set.
+        const mp = paints && paints.terrainMesh;
+        if (mp) {
+          gl.uniform1i(prog.uRampOn, 1);
+          gl.uniform1f(prog.uRampV, mp.v);
+          gl.uniform1i(prog.uDrive, mp.drive | 0);
+          gl.uniform2f(prog.uRange, mp.lo, mp.hi);
+          gl.uniform1f(prog.uCurve, mp.curve);
+        } else {
+          gl.uniform1i(prog.uRampOn, 0);
+        }
         const per = VG_FLOOR_BANDS * 2;
         for (let r = 0; r < meshRows; r++) {
           gl.uniform1f(prog.uAlpha, 0.20 + (1 - ageOf(r)) * 0.26);
@@ -938,6 +1129,13 @@ function vgAttach(canvas) {
         if (!floorPos || floorPos.length !== VG_FLOOR_BANDS * 3) {
           floorPos = new Float32Array(VG_FLOOR_BANDS * 3);
           floorW = new Float32Array(VG_FLOOR_BANDS);
+        }
+        // Where each band sits across the spectrum, nought to one. Constant for
+        // the life of the room, so it is filled once rather than per ridge —
+        // there are fifty-six of them a frame.
+        if (!floorHz || floorHz.length !== VG_FLOOR_BANDS) {
+          floorHz = new Float32Array(VG_FLOOR_BANDS);
+          for (let i = 0; i < VG_FLOOR_BANDS; i++) floorHz[i] = i / (VG_FLOOR_BANDS - 1);
         }
         // Every ridge is its own draw call with two buffer uploads behind it,
         // and there are fifty-six of them — the same arithmetic that made the
@@ -956,7 +1154,8 @@ function vgAttach(canvas) {
             floorW[i] = row[i];
           }
           draw(gl.LINE_STRIP, floorPos, floorW, VG_FLOOR_BANDS,
-            0.34 + (1 - age) * 0.5, false, f.cold, f.hot, 1);
+            0.34 + (1 - age) * 0.5, false, f.cold, f.hot, 1,
+            'terrainRidge', floorHz);
         }
 
         // ── the leading edge ──
@@ -978,6 +1177,13 @@ function vgAttach(canvas) {
         if (!leadPos || leadPos.length !== n2 * 3) {
           leadPos = new Float32Array(n2 * 3);
           leadW = new Float32Array(n2);
+          // Two vertices a band — the top and the bottom of the ribbon — and
+          // both are the same frequency.
+          leadHz = new Float32Array(n2);
+          for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+            const hz = i / (VG_FLOOR_BANDS - 1);
+            leadHz[i * 2] = hz; leadHz[i * 2 + 1] = hz;
+          }
         }
         for (let i = 0; i < VG_FLOOR_BANDS; i++) {
           const x = xAt(i), y = ridgeY(now[i]);
@@ -985,7 +1191,8 @@ function vgAttach(canvas) {
           leadPos[i * 6 + 3] = x; leadPos[i * 6 + 4] = y + cam.lead; leadPos[i * 6 + 5] = z;
           leadW[i * 2] = now[i]; leadW[i * 2 + 1] = now[i];
         }
-        draw(gl.TRIANGLE_STRIP, leadPos, leadW, n2, 1.0, false, f.cold, f.hot, 1);
+        draw(gl.TRIANGLE_STRIP, leadPos, leadW, n2, 1.0, false, f.cold, f.hot, 1,
+          'lead', leadHz);
       };
 
       // ── the grains ──
@@ -1197,6 +1404,14 @@ function vgAttach(canvas) {
             grainFillW = new Float32Array(VG_GRAIN_FILL_CAP);
             mistPos = new Float32Array(VG_MIST_CAP * 3);
             mistW = new Float32Array(VG_MIST_CAP);
+            // Where each grain is panned. Nought hard left, one hard right.
+            // Everything else a grain could colour by is already a varying —
+            // its loudness is the weight, its pitch is its height in the room,
+            // how long ago it sounded is its depth. Pan is the one that is not.
+            grainW2 = new Float32Array(VG_GRAIN_CAP);
+            grainLineW2 = new Float32Array(VG_GRAIN_LINE_CAP);
+            grainFillW2 = new Float32Array(VG_GRAIN_FILL_CAP);
+            mistW2 = new Float32Array(VG_MIST_CAP);
           }
           // A grain is a solid standing in the room, so its size is measured
           // against the room's height and not against the frustum's width — a
@@ -1222,9 +1437,14 @@ function vgAttach(canvas) {
             // Hot when it lands, cooling as it goes.
             const lit = Math.min(1, p.w * (1 + VG_GRAIN_FLASH
               * Math.exp(-a0 * VG_GRAIN_FLASH_FALL)));
+            // Across the room is pan, which is what `fx` is: the schedule's own
+            // pan with the grain's scatter on top. Folded to nought..one here
+            // because that is the range a ramp is read over.
+            const pan = fx * 0.5 + 0.5;
 
             grainPos[n * 3] = x; grainPos[n * 3 + 1] = y; grainPos[n * 3 + 2] = z;
             grainW[n] = lit;
+            grainW2[n] = pan;
             n++;
 
             if (ln >= VG_GRAIN_LINE_CAP - 256) continue;
@@ -1297,6 +1517,7 @@ function vgAttach(canvas) {
                 grainFillPos[fn * 3 + 1] = y + m10 * vx + m11 * vy + m12 * vz;
                 grainFillPos[fn * 3 + 2] = z + m20 * vx + m21 * vy + m22 * vz;
                 grainFillW[fn] = lit;
+                grainFillW2[fn] = pan;
                 fn++;
               }
             }
@@ -1340,6 +1561,7 @@ function vgAttach(canvas) {
                 // weight and ends at zero is faint along its whole length, and
                 // faint over a black room is not there at all.
                 mistW[sn] = lit * (1 - t2 * 0.75);
+                mistW2[sn] = pan;
                 sn++;
               }
             }
@@ -1352,6 +1574,7 @@ function vgAttach(canvas) {
               grainLinePos[ln * 3 + 1] = y + m10 * vx + m11 * vy + m12 * vz;
               grainLinePos[ln * 3 + 2] = z + m20 * vx + m21 * vy + m22 * vz;
               grainLineW[ln] = lit;
+              grainLineW2[ln] = pan;
               ln++;
             }
           }
@@ -1395,13 +1618,13 @@ function vgAttach(canvas) {
               // because "how much mist" plainly means both.
               const thick = 0.16 + mistDensity * 0.5;
               draw(gl.POINTS, mistPos, mistW, sn, a(thick), true,
-                f.cold, f.core, 12);
+                f.cold, f.core, 12, 'mist', mistW2);
               draw(gl.POINTS, mistPos, mistW, sn, a(thick * 0.55), true,
-                f.cold, f.core, 30);
+                f.cold, f.core, 30, 'mist', mistW2);
               // A third, very large and very faint, which is what turns a run
               // of sprites into a body of smoke rather than a string of puffs.
               draw(gl.POINTS, mistPos, mistW, sn, a(thick * 0.22), true,
-                f.cold, f.core, 64);
+                f.cold, f.core, 64, 'mist', mistW2);
               drawSoft = false;
             }
             // The skins first, so every wire lands on top of them — including
@@ -1410,11 +1633,14 @@ function vgAttach(canvas) {
             if (fn) {
               if (fillBg) drawDark(gl.TRIANGLES, grainFillPos, grainFillW, fn, 0.88);
               else draw(gl.TRIANGLES, grainFillPos, grainFillW, fn, a(0.5), false,
-                fillRgb, fillRgb, 1);
+                fillRgb, fillRgb, 1, 'grainFill', grainFillW2);
             }
-            draw(gl.POINTS, grainPos, grainW, n, a(0.07), true, f.cold, f.core, 11);
-            if (ln) draw(gl.LINES, grainLinePos, grainLineW, ln, a(0.5), false, f.cold, f.core, 1);
-            draw(gl.POINTS, grainPos, grainW, n, a(0.3), true, f.core, f.hot, 2);
+            draw(gl.POINTS, grainPos, grainW, n, a(0.07), true, f.cold, f.core, 11,
+              'grainBloom', grainW2);
+            if (ln) draw(gl.LINES, grainLinePos, grainLineW, ln, a(0.5), false,
+              f.cold, f.core, 1, 'grainWire', grainLineW2);
+            draw(gl.POINTS, grainPos, grainW, n, a(0.3), true, f.core, f.hot, 2,
+              'grainCore', grainW2);
           }
         }
       };
@@ -1508,11 +1734,16 @@ function vgAttach(canvas) {
           // as the band between them.
           skyBand = new Float32Array(cap * 2 * 3);
           skyBandW = new Float32Array(cap * 2);
+          // How wide the stereo image is at each point of the ring. Already
+          // worked out to place the point and thrown away until now.
+          skyW2 = new Float32Array(cap);
+          skyPrevW2 = new Float32Array(cap);
+          skyBandW2 = new Float32Array(cap * 2);
         }
 
         /// One ring, into the buffers given. False when that frame has no
         /// figure to build one from. Returns how many points it wrote.
-        const ringInto = (r, pos, wts, count) => {
+        const ringInto = (r, pos, wts, count, w2) => {
           const liss = history[r].liss;
           if (!liss) return false;
           const n = count || pts;
@@ -1567,6 +1798,10 @@ function vgAttach(canvas) {
             pos[i * 3 + 1] = skyY + Math.sin(th) * rad;
             pos[i * 3 + 2] = z;
             wts[i] = Math.min(1, 0.25 + Math.abs(mid) * 1.6);
+            // Nought is mono, one is as wide as this figure gets. `side` is
+            // signed — which channel leads — and what reads as width is how far
+            // from the middle it is either way.
+            if (w2) w2[i] = Math.min(1, Math.abs(side) * 2.4);
           }
           return true;
         };
@@ -1591,7 +1826,7 @@ function vgAttach(canvas) {
         // before the back wall.
         let havePrev = false;
         for (let r = rows - 1; wantSkin && r >= 0; r -= strideAt(ageOf(r))) {
-          const ok = ringInto(r, skyPos, skyW, skinPts);
+          const ok = ringInto(r, skyPos, skyW, skinPts, skyW2);
           if (ok && havePrev) {
             for (let i = 0; i <= skinPts; i++) {
               skyBand[i * 6] = skyPrev[i * 3];
@@ -1602,6 +1837,8 @@ function vgAttach(canvas) {
               skyBand[i * 6 + 5] = skyPos[i * 3 + 2];
               skyBandW[i * 2] = skyPrevW[i];
               skyBandW[i * 2 + 1] = skyW[i];
+              skyBandW2[i * 2] = skyPrevW2[i];
+              skyBandW2[i * 2 + 1] = skyW2[i];
             }
             const age = ageOf(r);
             // Well under the lines' own alpha. A skin at full strength buries
@@ -1610,12 +1847,13 @@ function vgAttach(canvas) {
             const a = 0.16 * (1 - age * 0.7) * Math.max(0, easeAt(age));
             if (a > 0.002) {
               draw(gl.TRIANGLE_STRIP, skyBand, skyBandW, (skinPts + 1) * 2, a, false,
-                f.core, f.hot, 1);
+                f.core, f.hot, 1, 'skin', skyBandW2);
             }
           }
           if (ok) {
             skyPrev.set(skyPos.subarray(0, (skinPts + 1) * 3));
             skyPrevW.set(skyW.subarray(0, skinPts + 1));
+            skyPrevW2.set(skyW2.subarray(0, skinPts + 1));
             havePrev = true;
           }
         }
@@ -1626,7 +1864,7 @@ function vgAttach(canvas) {
           const lead = r === rows - 1;
           // The one being looked at keeps every point it was asked for.
           const rn = lead ? pts : ptsAt(age);
-          if (!ringInto(r, skyPos, skyW, rn)) continue;
+          if (!ringInto(r, skyPos, skyW, rn, skyW2)) continue;
 
           // ── the outline ──
           //
@@ -1674,7 +1912,7 @@ function vgAttach(canvas) {
           // without the dots.
           draw(gl.LINE_STRIP, skyPos, skyW, rn + 1,
             lead ? 1.0 : (0.28 + (1 - age) * 0.5) * Math.max(0, easeAt(age)),
-            false, f.core, f.hot, 1);
+            false, f.core, f.hot, 1, 'ring', skyW2);
         }
       };
 
@@ -1771,9 +2009,9 @@ function vgAttach(canvas) {
         // do not say when they have, so a size past that is a size that means
         // something different on every machine. More, smaller motes instead.
         const rgb = fog.rgb || [0.5, 0.6, 0.7];
-        drawOver(gl.POINTS, fogPos, fogW, motes, 0.11 * strength, rgb, rgb, 48);
-        drawOver(gl.POINTS, fogPos, fogW, motes, 0.07 * strength, rgb, rgb, 104);
-        drawOver(gl.POINTS, fogPos, fogW, motes, 0.04 * strength, rgb, rgb, 190);
+        drawOver(gl.POINTS, fogPos, fogW, motes, 0.11 * strength, rgb, rgb, 48, 'fog');
+        drawOver(gl.POINTS, fogPos, fogW, motes, 0.07 * strength, rgb, rgb, 104, 'fog');
+        drawOver(gl.POINTS, fogPos, fogW, motes, 0.04 * strength, rgb, rgb, 190, 'fog');
         drawSoft = false;
       }
 
