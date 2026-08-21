@@ -261,6 +261,13 @@ const VG_FOG_MOTES = 1400;
 /// not rebuild the mesh.
 const VG_FLOOR_BANDS = 280;
 
+/// How tall the terrain stands, as a fraction of the room's height.
+///
+/// A full-height ridge would reach the ceiling on a loud band and there would be
+/// nothing above it for the ring to hang in, so the floor is given most of the
+/// room and not all of it.
+const VG_RIDGE = 0.62;
+
 // ── matrices ────────────────────────────────────────────────────────────────
 //
 // Column-major, the way WebGL wants them. Four functions is the whole of the
@@ -657,6 +664,24 @@ function vgAttach(canvas) {
   /// The palette this frame is being drawn with, or null for the room's own
   /// two colours. Set once at the top of a frame and read at every draw.
   let paints = null;
+
+  // ── the room's own shape ──
+  //
+  // Held here rather than taken per frame because **`push` needs them too** and
+  // it runs on the meter's clock, not the display's. A row is resampled to the
+  // floor's width as it arrives and the trail is trimmed to its depth there, so
+  // both numbers have to be known outside `frame`.
+  //
+  // Set from `f.geom` at the top of every frame; the defaults are the shape the
+  // room shipped with, so a caller that says nothing about geometry draws the
+  // room it always drew.
+  let geomBands = VG_FLOOR_BANDS;
+  let geomHistory = VG_HISTORY;
+  let geomRidge = VG_RIDGE;
+  // How many seconds of sound the room's depth stands for, and how big a
+  // grain is drawn against the room's height.
+  let geomSpan = VG_GRAIN_SPAN_S;
+  let geomBody = VG_GRAIN_BODY;
   // The landscape gets buffers of its own. It is thirty thousand vertices and
   // it only changes when a frame is pushed — rebuilding it sixty times a second
   // to draw the same thing twenty times would be the whole cost of the scene.
@@ -862,6 +887,18 @@ function vgAttach(canvas) {
     /// there is nowhere for the two to disagree unseen.
     grainShapeNames: () => grainLive.map((p) => p.drawn && p.drawn.name),
 
+    /// The trail as it actually stands: how many frames deep, and how wide each
+    /// of them is.
+    ///
+    /// The terrain is a filled surface that always spans the room whatever its
+    /// depth — six rows is a coarser mesh over the same ground, not a shorter
+    /// one — so no count of lit pixels can tell a deep trail from a shallow
+    /// one. Three attempts at measuring it from the picture said the control
+    /// did nothing, and all three were measuring something the control does not
+    /// change. Same reason `grainShapeNames` exists.
+    trail: () => ({ rows: history.length, bands: geomBands, ridge: geomRidge,
+      span: geomSpan, body: geomBody }),
+
     /// Push one frame onto the trail — a spectrum for the floor and a Lissajous
     /// for the sky. Called at the poll's rate, not the display's: the room only
     /// moves when there is something new to move it.
@@ -877,19 +914,19 @@ function vgAttach(canvas) {
           liss[i * 2 + 1] = pairs[k * 2 + 1];
         }
       }
-      const row = new Float32Array(VG_FLOOR_BANDS);
-      for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+      const row = new Float32Array(geomBands);
+      for (let i = 0; i < geomBands; i++) {
         // Resampled by taking the loudest source band in range. An analyser
         // that averages a tone away is not an analyser, and that is as true of
         // the floor as of the flat one.
-        const a = Math.floor(i / VG_FLOOR_BANDS * bands.length);
-        const b = Math.max(a + 1, Math.floor((i + 1) / VG_FLOOR_BANDS * bands.length));
+        const a = Math.floor(i / geomBands * bands.length);
+        const b = Math.max(a + 1, Math.floor((i + 1) / geomBands * bands.length));
         let m = -Infinity;
         for (let k = a; k < b && k < bands.length; k++) if (bands[k] > m) m = bands[k];
         row[i] = Math.max(0, Math.min(1, (m + 96) / 96));
       }
       history.push({ row, liss });
-      while (history.length > VG_HISTORY) history.shift();
+      while (history.length > geomHistory) history.shift();
       pushes++;
     },
 
@@ -947,6 +984,30 @@ function vgAttach(canvas) {
       // Off unless asked for, same rule as the fog: a caller that says nothing
       // about colour gets the room's own two, which is the picture this has
       // always drawn.
+      // ── the room's shape ──
+      //
+      // Anything not named keeps the shape the room shipped with, the same rule
+      // the fog and the palette follow.
+      //
+      // **Changing the floor's width throws the trail away.** Every stored row
+      // is an array of the old width, and a mesh built from a mix of the two is
+      // read off the end of the short ones. Cheaper and more honest to start
+      // the terrain again than to resample what is already in the air.
+      const g = (f && f.geom) || null;
+      if (g) {
+        const wantBands = Math.max(8, Math.min(2048, Math.round(g.bands || geomBands)));
+        if (wantBands !== geomBands) {
+          geomBands = wantBands;
+          history.length = 0;
+          meshKey = '';
+        }
+        geomHistory = Math.max(2, Math.min(240, Math.round(g.history || geomHistory)));
+        while (history.length > geomHistory) history.shift();
+        geomRidge = Math.max(0.02, Math.min(1.6, g.ridge ?? geomRidge));
+        geomSpan = Math.max(0.5, Math.min(90, g.span ?? geomSpan));
+        geomBody = Math.max(0.002, Math.min(0.3, g.body ?? geomBody));
+      }
+
       const paint = (f && f.paint) || null;
       paints = paint && paint.slots ? paint.slots : null;
       if (paint && paint.atlas && paint.version !== rampVersion) {
@@ -1043,22 +1104,25 @@ function vgAttach(canvas) {
       // with the newest ridge at the near edge and everything before it running
       // away to the back wall.
       const rows = history.length;
-      const ridgeY = (v) => yb + v * (yt - yb) * 0.62;
-      const xAt = (i) => ((i / (VG_FLOOR_BANDS - 1)) * 2 - 1) * halfW;
+      const ridgeY = (v) => yb + v * (yt - yb) * geomRidge;
+      const xAt = (i) => ((i / (geomBands - 1)) * 2 - 1) * halfW;
       // Against the room's full depth, not against however many frames happen to
       // be in hand. Dividing by `rows` made a half-filled trail span the whole
       // room and then crawl backwards as it filled — the trail should *grow*
       // into the room from the near edge and reach the back wall when it is
       // full, which is what a fixed step per frame gives.
-      const ageOf = (r) => (rows - 1 - r) / Math.max(1, VG_HISTORY - 1);
+      const ageOf = (r) => (rows - 1 - r) / Math.max(1, geomHistory - 1);
 
       const drawFloor = () => {
         if (rows <= 1) return;
-        const key = `${pushes}|${rows}|${halfW.toFixed(4)}`;
+        // The floor's width is in the key: change it and every stored row is
+        // the wrong length, so a cached mesh built from the old ones would be
+        // read past its end.
+        const key = `${pushes}|${rows}|${geomBands}|${halfW.toFixed(4)}`;
         if (key !== meshKey) {
           meshKey = key;
           meshRows = rows - 1;
-          const per = VG_FLOOR_BANDS * 2;
+          const per = geomBands * 2;
           const pos = new Float32Array(meshRows * per * 3);
           const wts = new Float32Array(meshRows * per);
           // The band's frequency, for a surface coloured by pitch rather than
@@ -1068,9 +1132,9 @@ function vgAttach(canvas) {
           for (let r = 0; r < meshRows; r++) {
             const a = history[r].row, b = history[r + 1].row;
             const za = zAt(ageOf(r)), zbb = zAt(ageOf(r + 1));
-            for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+            for (let i = 0; i < geomBands; i++) {
               const x = xAt(i);
-              const fr = i / (VG_FLOOR_BANDS - 1);
+              const fr = i / (geomBands - 1);
               pos[v * 3] = x; pos[v * 3 + 1] = ridgeY(a[i]); pos[v * 3 + 2] = za;
               wts[v] = a[i]; hz[v] = fr; v++;
               pos[v * 3] = x; pos[v * 3 + 1] = ridgeY(b[i]); pos[v * 3 + 2] = zbb;
@@ -1114,7 +1178,7 @@ function vgAttach(canvas) {
         } else {
           gl.uniform1i(prog.uRampOn, 0);
         }
-        const per = VG_FLOOR_BANDS * 2;
+        const per = geomBands * 2;
         for (let r = 0; r < meshRows; r++) {
           gl.uniform1f(prog.uAlpha, 0.20 + (1 - ageOf(r)) * 0.26);
           gl.drawArrays(gl.TRIANGLE_STRIP, r * per, per);
@@ -1126,16 +1190,16 @@ function vgAttach(canvas) {
       // this still says where the sound is.
       const drawLead = () => {
         if (!rows) return;
-        if (!floorPos || floorPos.length !== VG_FLOOR_BANDS * 3) {
-          floorPos = new Float32Array(VG_FLOOR_BANDS * 3);
-          floorW = new Float32Array(VG_FLOOR_BANDS);
+        if (!floorPos || floorPos.length !== geomBands * 3) {
+          floorPos = new Float32Array(geomBands * 3);
+          floorW = new Float32Array(geomBands);
         }
         // Where each band sits across the spectrum, nought to one. Constant for
         // the life of the room, so it is filled once rather than per ridge —
         // there are fifty-six of them a frame.
-        if (!floorHz || floorHz.length !== VG_FLOOR_BANDS) {
-          floorHz = new Float32Array(VG_FLOOR_BANDS);
-          for (let i = 0; i < VG_FLOOR_BANDS; i++) floorHz[i] = i / (VG_FLOOR_BANDS - 1);
+        if (!floorHz || floorHz.length !== geomBands) {
+          floorHz = new Float32Array(geomBands);
+          for (let i = 0; i < geomBands; i++) floorHz[i] = i / (geomBands - 1);
         }
         // Every ridge is its own draw call with two buffer uploads behind it,
         // and there are fifty-six of them — the same arithmetic that made the
@@ -1147,13 +1211,13 @@ function vgAttach(canvas) {
           const row = history[r].row;
           const age = ageOf(r);
           const z = zAt(age);
-          for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+          for (let i = 0; i < geomBands; i++) {
             floorPos[i * 3] = xAt(i);
             floorPos[i * 3 + 1] = ridgeY(row[i]);
             floorPos[i * 3 + 2] = z;
             floorW[i] = row[i];
           }
-          draw(gl.LINE_STRIP, floorPos, floorW, VG_FLOOR_BANDS,
+          draw(gl.LINE_STRIP, floorPos, floorW, geomBands,
             0.34 + (1 - age) * 0.5, false, f.cold, f.hot, 1,
             'terrainRidge', floorHz);
         }
@@ -1173,19 +1237,19 @@ function vgAttach(canvas) {
         if (f && f.leadThick === false) return;
         const now = history[rows - 1].row;
         const z = zAt(0);
-        const n2 = VG_FLOOR_BANDS * 2;
+        const n2 = geomBands * 2;
         if (!leadPos || leadPos.length !== n2 * 3) {
           leadPos = new Float32Array(n2 * 3);
           leadW = new Float32Array(n2);
           // Two vertices a band — the top and the bottom of the ribbon — and
           // both are the same frequency.
           leadHz = new Float32Array(n2);
-          for (let i = 0; i < VG_FLOOR_BANDS; i++) {
-            const hz = i / (VG_FLOOR_BANDS - 1);
+          for (let i = 0; i < geomBands; i++) {
+            const hz = i / (geomBands - 1);
             leadHz[i * 2] = hz; leadHz[i * 2 + 1] = hz;
           }
         }
-        for (let i = 0; i < VG_FLOOR_BANDS; i++) {
+        for (let i = 0; i < geomBands; i++) {
           const x = xAt(i), y = ridgeY(now[i]);
           leadPos[i * 6] = x; leadPos[i * 6 + 1] = y - cam.lead; leadPos[i * 6 + 2] = z;
           leadPos[i * 6 + 3] = x; leadPos[i * 6 + 4] = y + cam.lead; leadPos[i * 6 + 5] = z;
@@ -1280,7 +1344,7 @@ function vgAttach(canvas) {
 
         // Age everyone, and bury whoever has reached the wall.
         if (dt > 0) {
-          const step = dt / VG_GRAIN_SPAN_S;
+          const step = dt / geomSpan;
           let keep = 0;
           for (let i = 0; i < grainLive.length; i++) {
             const p = grainLive[i];
@@ -1364,7 +1428,7 @@ function vgAttach(canvas) {
                 // Its pace is in here too: a grain travelling faster crosses
                 // more of the room in the time it sounds for, so it draws the
                 // longer streak, which is the same arithmetic as the floor's.
-                life: Math.max(0.004, (e[2] / sr) / VG_GRAIN_SPAN_S) * vel,
+                life: Math.max(0.004, (e[2] / sr) / geomSpan) * vel,
                 w: level,
                 // Which solid it is, where it started turning and how fast.
                 // Drawn from the grain's own index like everything else here,
@@ -1417,7 +1481,7 @@ function vgAttach(canvas) {
           // against the room's height and not against the frustum's width — a
           // grain that swelled every time the panel was widened would be
           // describing the panel and not the sound.
-          const rad = (yt - yb) * VG_GRAIN_BODY;
+          const rad = (yt - yb) * geomBody;
           let n = 0, ln = 0, mn = 0, fn = 0, sn = 0;
           for (let i = 0; i < grainLive.length && n < VG_GRAIN_CAP; i++) {
             const p = grainLive[i];

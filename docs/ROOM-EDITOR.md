@@ -489,3 +489,67 @@ swatches — not `select`. The reachability test had a hand-written list of ids 
 It asks the DOM what is in the panel now. A list somebody has to remember to
 extend has already failed twice: the whole fill row, and then this.
 
+
+## The shape, which is not the pose
+
+Added 20 Aug 2026.
+
+Everything above is about **where you stand**, and it is all dragged on the room
+itself for the reason this document opens with. None of that has changed and
+none of it has acquired a number field.
+
+What it did not cover is what the room *is*. Five constants in `vis-gl.js`
+decided that, and nothing could reach them:
+
+| | was | what it is |
+|---|---|---|
+| `FLOOR` | `VG_FLOOR_BANDS` 280 | how finely the spectrum is resolved across the floor |
+| `TRAIL` | `VG_HISTORY` 56 | how far back the terrain runs before it reaches the wall |
+| `RIDGE` | a literal `0.62` | how tall the terrain stands, as a fraction of the room's height |
+| `SPAN` | `VG_GRAIN_SPAN_S` 14 | how many seconds of sound the room's depth stands for |
+| `GRAIN` | `VG_GRAIN_BODY` 0.032 | how big a grain is drawn |
+
+These are a **Shape** tab beside Controls and Colour, and they are sliders with
+their values shown — which is the opposite of the rule for the camera, and the
+distinction is the point. `floorY = -0.38` is a number nobody can picture
+because what it means is *how far you are looking down*. "The trail is 56 frames
+deep" is a number that says exactly what it is.
+
+They are kept off the camera for the same reason the ring's size is: a camera
+copied out of `reNums` and pasted back into `vis-gl.js` should not carry
+somebody's floor resolution with it.
+
+### Two of them are not free
+
+**The floor's width and the trail's depth are read by `push`, not by `frame`**,
+because a row is resampled to the floor's width as it arrives and the trail is
+trimmed as it grows. Both run on the meter's clock rather than the display's, so
+they are held on the renderer and set from `f.geom` at the top of each frame
+rather than read out of the frame argument where they are needed.
+
+**Changing the floor's width empties the trail.** Every stored row is an array
+of the old width and a surface built from a mix of the two is read off the end
+of the short ones. Starting the terrain again is cheaper and more honest than
+resampling what is already in the air. The mesh cache key carries the width for
+the same reason.
+
+### Three ways of measuring the trail that all said it was broken
+
+The depth control was reported by its own test as doing nothing, three times,
+and it was working every time.
+
+The terrain is a **filled surface**, and `ageOf` normalises against the depth
+setting rather than against the row count — so the trail always spans the room
+whatever its depth. Six rows is a coarser mesh over the same ground, not a
+shorter one.
+
+So: counting lit pixels gave 3451 at every depth. Measuring the top and bottom
+of the lit region gave the same y at every depth. Counting dark-to-lit
+transitions down a column gave 1 at every depth, because the surface fills the
+gaps between the ridges that were being counted.
+
+All three were measuring something the control does not change. `visGl.trail()`
+reports what the renderer actually holds, for the same reason
+`grainShapeNames()` exists — some things about this room cannot be recovered
+from its picture, and a test that guesses at them from pixels is a test that
+reports confident nonsense.
