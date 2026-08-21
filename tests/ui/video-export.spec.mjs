@@ -297,3 +297,101 @@ test('a stall while rendering does not reach the file', async ({ page }) => {
     .toBe(0);
 });
 
+
+// ── the camera the film is shot with ──
+//
+// `docs/ROOM-EDITOR.md`: *"Each frame keeps its own camera. That is what the
+// video export reads when a size is chosen, so picking Vertical in the export
+// box gets the camera that was designed for vertical rather than the wide one
+// squeezed."*
+//
+// That was the intent and not the behaviour. The export read `roomEdit.frame` —
+// whatever the view happened to be showing — so posing the room for 9:16 and
+// then exporting HD filmed the portrait camera into a landscape frame.
+
+test('the film is shot with the camera posed for its own shape', async ({ page }) => {
+  await openFile(page);
+  const got = await page.evaluate(() => {
+    roomEdit.cams = {
+      '16x9': { depth: 1.9, floorY: -0.38, ceilY: 0.62, shiftX: 0, skyAt: 0.72, ring: 0.17 },
+      '9x16': { depth: 4.4, floorY: -0.90, ceilY: 0.20, shiftX: 0, skyAt: 0.30, ring: 0.50 },
+    };
+    // The view is showing portrait. What is exported must not follow it.
+    roomEdit.frame = '9x16';
+    const of = (w, h) => {
+      const c = roomCameraForAspect(w / h);
+      return { frame: roomFrameForAspect(w / h), depth: +c.depth.toFixed(2) };
+    };
+    return { hd: of(1920, 1080), vertical: of(1080, 1920), square: of(1080, 1080) };
+  });
+
+  expect(got.hd.frame).toBe('16x9');
+  expect(got.hd.depth, 'a wide film takes the wide camera, not the one on screen').toBe(1.9);
+  expect(got.vertical.frame).toBe('9x16');
+  expect(got.vertical.depth).toBe(4.4);
+  // A shape nobody has posed falls back to the one being looked at, which is at
+  // least a pose somebody chose — better than a shipped constant.
+  expect(got.square.frame).toBe('1x1');
+  expect(got.square.depth).toBe(4.4);
+});
+
+// ── the bar during the render ──
+//
+// The render ahead of the filming is the same one an audio export makes, and it
+// reports itself through the server's export tracker. The video's status route
+// read the *video* job, which has nothing to say until the analysis starts — so
+// the first phase sat at a hard zero. On a forty-times stretch that is minutes
+// of a dead bar, which reads as a hang.
+
+test('the render phase reports progress rather than sitting at zero', async ({ page }) => {
+  await openFile(page);
+  const seen = await page.evaluate(async () => {
+    // **The longest file there is, stretched as far as it will go.** An
+    // unstretched render of a short file finishes inside a single poll, so the
+    // phase this test exists for is never sampled — the first cut asserted on a
+    // run whose very first report was already `Analysing` and read that as the
+    // render being silent, and the second picked whichever file came first
+    // alphabetically, which in the test library is a tenth of a second long.
+    //
+    // The fault only shows on a long render, which is also the only time
+    // anybody notices it.
+    const folder = state.folders[0].name;
+    const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+    const longest = files.slice().sort((a, b) => (b.frames || 0) - (a.frames || 0))[0];
+    const p = longest.path;
+    await postJSON('/api/edit', { p, op: 'stretch', ratio: 100, algorithm: 'wsola' });
+    try {
+      await postJSON('/api/video', { p, from: 0, to: 0, repeats: 0, tail: false,
+        fps: 20, bands: 64, liss: 128, fft: 2048, outro: 0.5 });
+      const out = [];
+      for (let i = 0; i < 400; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        const s = await api('/api/video');
+        out.push({ phase: s.phase, done: s.done, total: s.total,
+          stage: s.stage, frac: s.fraction });
+        if (!s.running && (s.phase === 'ready' || s.phase === 'failed')) break;
+        // Enough of the render seen to prove the point; the rest is time.
+        if (out.filter((x) => x.phase === 'rendering').length > 8) break;
+      }
+      await postJSON('/api/video/stop', {});
+      return out;
+    } finally {
+      // The document is the library's, not the test's.
+      await postJSON('/api/edit', { p, op: 'stretch', ratio: 1 });
+    }
+  });
+
+  const render = seen.filter((s) => s.phase === 'rendering');
+  expect(render.length, 'the render phase was actually observed').toBeGreaterThan(1);
+  // **The fault, said plainly.** The phase named itself the whole time and the
+  // number behind it never moved: `done` 0 of a `total` of 1, because the
+  // render reports into the server's export tracker and this route was reading
+  // the video job. On a forty-times stretch that is minutes of a dead bar.
+  expect(Math.max(...render.map((s) => s.total)), 'it has a real total').toBeGreaterThan(1);
+  expect(Math.max(...render.map((s) => s.done)), 'and a count that moves').toBeGreaterThan(0);
+  // And it says which of the render's own passes it is in. Reading, stretching
+  // and writing cost wildly different amounts per frame, so a bar with no
+  // account of which one it is in moves in unexplained lurches.
+  const stages = new Set(render.map((s) => s.stage).filter(Boolean));
+  expect([...stages].length, 'the render names its inner stage').toBeGreaterThan(0);
+});
