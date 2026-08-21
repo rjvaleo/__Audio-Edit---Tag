@@ -3087,3 +3087,51 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   font-family: var(--mono); font-size: 9px; color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+
+/* ─────────────────────────────────────────────── the room's handles ──
+   Visible grips for the things that can be moved in the room. Only while it is
+   being edited — they are furniture for the editing, not part of the picture,
+   and nothing here is ever in a filmed frame (the film draws the room to its
+   own canvas and never sees this element). */
+.room-handles { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.room-handles.hidden { display: none; }
+
+.rh {
+  position: absolute; pointer-events: auto;
+  background: var(--accent);
+  border: 1px solid var(--bg);
+  border-radius: 2px;
+  opacity: .55;
+  transform: translate(-50%, -50%);
+  transition: opacity .12s ease, box-shadow .12s ease;
+}
+.rh:hover, .rh.dragging { opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* Sized and shaped by what they do: a grip that stretches the wall sideways is
+   a tall thin bar on its edge, and one that stretches it up and down is a wide
+   flat bar on its top. The shape says which way it moves before it is touched. */
+.rh-w { width: 5px; height: 22px; cursor: ew-resize; }
+.rh-h { width: 22px; height: 5px; cursor: ns-resize; }
+.rh-depth { width: 11px; height: 11px; border-radius: 50%; cursor: move; }
+.rh-ring { width: 11px; height: 11px; border-radius: 50%; cursor: move; }
+
+/* The eye line runs the width of the frame, so its grip is a line rather than a
+   point — the whole of it is the thing you take hold of. */
+.rh-horizon {
+  left: 0; right: 0; width: auto; height: 3px;
+  transform: translateY(-50%);
+  border-radius: 0; border: 0; opacity: .3;
+  cursor: ns-resize;
+}
+.rh-horizon:hover, .rh-horizon.dragging { opacity: .75; box-shadow: none; }
+
+/* A word on what it does, on the way past. */
+.rh-tip {
+  position: absolute; pointer-events: none;
+  transform: translate(-50%, -160%);
+  font-size: 8.5px; letter-spacing: .3px; white-space: nowrap;
+  color: var(--text-2); background: var(--surface-2);
+  border: 1px solid var(--line-2); border-radius: 3px; padding: 1px 4px;
+  opacity: 0; transition: opacity .12s ease;
+}
+.rh:hover + .rh-tip, .rh.dragging + .rh-tip { opacity: 1; }
