@@ -150,3 +150,39 @@ outside and the test fails.
 
 Embedded with `include_str!` in `core/crates/server/src/routes.rs`. **Rebuild
 the binary after editing any of them** or the browser is served the old file.
+
+## The sound the room is drawing
+
+Added 20 Aug 2026, after it was reported as "stretch and grain aren't
+functioning in the room designer, and I just exported a video and they didn't
+work there either."
+
+Both halves were one fault, and it was not that anything was broken.
+
+This workspace hides the dock, and **every stretch and grain control lives in
+it**. So they were not misbehaving — they were not on screen. A room whose sound
+cannot be changed from inside it is a room that cannot be designed.
+
+The export half follows from the first: the film is rendered from the
+*document*, so a video made from here carried whatever the editor had last been
+given. Nothing was ignoring the settings; there had been no way to set them.
+
+They are borrowed like everything else here — `#grainControls` moves into a
+**Sound** tab and goes home on the way out. Four tabs now: Room, Sound, Shape,
+Colour.
+
+### Present is not the same as usable
+
+The check that would have caught this is the one already written for the room's
+own panel: it walks what is in the tab and asks `elementFromPoint` whether a
+real pointer would land on each control. The controls were in the DOM the whole
+time, inside a hidden dock — a test that only asked whether they existed would
+have passed throughout.
+
+It is worth recording that the first run of that check reported **none** of the
+forty-four reachable, and that was the test environment rather than the program:
+the library tray leaves by a `transform` transition, and a hidden browser tab
+freezes transitions at their first frame, so the drawer sat over the panel
+forever. The same thing had already been diagnosed once in this file's history.
+Finishing the animation before measuring is what makes the reading mean
+anything.

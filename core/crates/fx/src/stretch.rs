@@ -485,7 +485,7 @@ impl Stretch {
         }
         let ratio = self.ratio.clamp(0.01, 100.0);
         let want = ((in_frames as f64) * ratio as f64).round() as u64;
-        let layers = self.grain.layers.clamp(1, 16) as u64;
+        let layers = self.grain.layers.clamp(1, crate::grain::MAX_LAYERS as u32) as u64;
         let passes = match self.algorithm {
             // Counted once: the layers happen inside them.
             Algorithm::Pvsola | Algorithm::Hybrid => 1,
@@ -797,7 +797,7 @@ pub(crate) fn layered<F>(
 where
     F: FnMut(&crate::Grain) -> Vec<f32>,
 {
-    let layers = g.layers.clamp(1, 16);
+    let layers = g.layers.clamp(1, crate::grain::MAX_LAYERS as u32);
     if layers == 1 {
         return render(g);
     }

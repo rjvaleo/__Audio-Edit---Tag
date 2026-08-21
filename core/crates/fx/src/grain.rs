@@ -437,7 +437,7 @@ impl Grain {
 /// accepted cost of the two paths agreeing, chosen deliberately over a
 /// measurement only one of them can take.
 pub fn layer_gain(layers: u32) -> f32 {
-    (layers.clamp(1, 16) as f32).sqrt()
+    (layers.clamp(1, MAX_LAYERS as u32) as f32).sqrt()
 }
 
 /// One grain, given its index and where it lands.
@@ -520,7 +520,21 @@ fn event_at(index: u64, write: usize, p: &GrainPlan, sp: &StreamParams) -> Grain
 /// Independent grain streams. Matches the clamp in [`granular`], and has to: a
 /// layer the renderer refuses to run is a layer you hear offline and not while
 /// playing.
-pub const MAX_LAYERS: usize = 16;
+///
+/// **Sixty-four, and it is the only place the number is written.** It was
+/// sixteen, and sixteen was also spelled out by hand in five other clamps and
+/// two of the server's routes — so raising it meant finding all eight, and
+/// missing one would have been a layer the live engine ran and the renderer
+/// refused, or the reverse. Which is the exact fault the paragraph above says
+/// this constant exists to prevent.
+///
+/// What holds the ceiling down in practice is not this number, it is the
+/// governor in `engine::transport`: it sheds layers when blocks actually miss
+/// their deadline, so asking for more than the machine can do costs a thinner
+/// cloud rather than holes in the sound. The readout says which is happening —
+/// `L{running}/{asked}` in the room's data block, and the load line under the
+/// grain panel.
+pub const MAX_LAYERS: usize = 64;
 
 /// How many schedules are running. Clamped exactly as the offline renderer
 /// clamps it, so the two never disagree about how many there are.
@@ -831,7 +845,7 @@ pub fn granular_with(
     // genuinely its own rather than the same cloud drawn twice, and its own
     // offset within the hop, so the layers interleave instead of stacking on
     // the same instants and merely getting louder.
-    let layers = g.layers.clamp(1, 16);
+    let layers = g.layers.clamp(1, MAX_LAYERS as u32);
     let spread = g.layer_spread.clamp(0.0, 4.0);
     let skew = g.envelope.clamp(0.0, 1.0);
     for layer in 0..layers {
@@ -1141,7 +1155,7 @@ mod layer_tests {
         // Every layer schedules its own grains, so the count is what the cloud
         // is actually made of.
         let mut total = 0;
-        let l = g.layers.clamp(1, 16);
+        let l = g.layers.clamp(1, MAX_LAYERS as u32);
         for layer in 0..l {
             let mut lg = g;
             if layer > 0 {
@@ -1310,5 +1324,66 @@ mod widened_stereo_tests {
         for (x, y) in a.iter().zip(b.iter()) {
             assert!((x - y).abs() < 1e-9, "the same cloud came out twice differently");
         }
+    }
+}
+
+#[cfg(test)]
+mod layer_ceiling_tests {
+    use super::*;
+
+    /// The ceiling is one number, and everything that clamps to it agrees.
+    ///
+    /// It was sixteen, written by hand in eight places: two clamps in this
+    /// module, two in `stretch`, one in each of the server's two persistence
+    /// paths, and two more in tests. Raising it meant finding all of them, and
+    /// missing one would have been a layer the live engine ran and the offline
+    /// renderer refused — the exact disagreement `MAX_LAYERS` exists to
+    /// prevent, and one that is inaudible until an export comes back different
+    /// from what was auditioned.
+    ///
+    /// So this asks the two paths the same question rather than trusting that
+    /// the number was changed everywhere.
+    #[test]
+    fn every_path_agrees_on_the_ceiling() {
+        let mut sp = StreamParams::new(48_000, 48_000);
+        sp.grain.layers = MAX_LAYERS as u32;
+        assert_eq!(
+            layer_count(&sp),
+            MAX_LAYERS as u32,
+            "the live path will not run what the ceiling allows",
+        );
+
+        // Past it, both paths land on the ceiling rather than on some other
+        // number of their own.
+        sp.grain.layers = MAX_LAYERS as u32 * 4;
+        assert_eq!(layer_count(&sp), MAX_LAYERS as u32);
+
+        // And the level compensation is √N across the whole range, or the sound
+        // changes loudness as the ceiling is approached.
+        for n in [1u32, 4, 16, MAX_LAYERS as u32] {
+            let want = (n as f32).sqrt();
+            assert!(
+                (layer_gain(n) - want).abs() < 1e-5,
+                "layer_gain({n}) was {}, wanted {want}",
+                layer_gain(n),
+            );
+        }
+        // Past the ceiling it holds at the ceiling's gain rather than growing.
+        assert!(
+            (layer_gain(MAX_LAYERS as u32 * 4) - (MAX_LAYERS as f32).sqrt()).abs() < 1e-5,
+        );
+    }
+
+    /// Sixteen was the ceiling and is now an ordinary setting.
+    ///
+    /// The number people actually had is worth a test of its own: if a later
+    /// change puts the ceiling back below it, this says so in the language of
+    /// what was lost rather than as an off-by-one in a constant.
+    #[test]
+    fn the_old_ceiling_is_now_an_ordinary_setting() {
+        assert!(MAX_LAYERS > 16, "the ceiling is back where it was");
+        let mut sp = StreamParams::new(48_000, 48_000);
+        sp.grain.layers = 16;
+        assert_eq!(layer_count(&sp), 16, "sixteen layers is no longer honoured");
     }
 }

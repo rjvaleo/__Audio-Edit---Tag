@@ -286,7 +286,7 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
         grain: Grain {
             rate_hz: gf("rateHz", d.grain.rate_hz).clamp(0.0, 2000.0),
             density_hz: gf("densityHz", d.grain.density_hz).clamp(0.0, 500.0),
-            layers: gf("layers", d.grain.layers as f32).clamp(1.0, 16.0) as u32,
+            layers: gf("layers", d.grain.layers as f32).clamp(1.0, fx::grain::MAX_LAYERS as f32) as u32,
             overlap: gf("overlap", d.grain.overlap).clamp(1.0, 8.0),
             size_jitter: gf("sizeJitter", d.grain.size_jitter).clamp(0.0, 1.0),
             position_jitter_ms: gf("positionJitterMs", d.grain.position_jitter_ms)

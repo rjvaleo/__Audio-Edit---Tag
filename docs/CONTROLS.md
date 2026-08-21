@@ -331,3 +331,41 @@ Under the waveform, in Edit only. Browse has no open document to transport.
 Directly under the transport: the dock's own tabs (**Time & Pitch**, **FX**,
 **Visuals**, **Regions**), a rule, then the document preset controls —
 a dropdown, **Save as…** and **Delete**.
+
+## Layers, and the governor
+
+Added 20 Aug 2026.
+
+**The ceiling is sixty-four.** It was sixteen — and sixteen was also written out
+by hand in eight other places: two clamps in `fx::grain`, two in `fx::stretch`,
+one in each of the server's two persistence paths, and four assertions across
+three test files. Raising it meant finding all of them, and missing one would
+have been a layer the live engine ran and the offline renderer refused, which is
+inaudible until an export comes back different from what was auditioned.
+
+`fx::grain::MAX_LAYERS` is the only place the number is written now, and
+`every_path_agrees_on_the_ceiling` asks the two paths the same question rather
+than trusting that it was changed everywhere.
+
+### The engine plays what it is asked for
+
+There is a governor in `engine::transport` that sheds layers when audio blocks
+miss their deadline. It is **off by default**.
+
+What it looks like from outside is the program quietly overriding a setting:
+`load 29% · 5/12 layers`, with no note of when it might give them back — and it
+climbs home at four hundred easy blocks per layer, so "when" is the better part
+of half a minute. A tool that changes your numbers without being asked is worse
+than one that struggles audibly, because the struggle is information and the
+silence is not.
+
+On, it does what it always did, and a thinner cloud is genuinely better than
+holes in the sound. **Shift-click the load readout** to switch it. That is where
+the switch is because that is where the problem appears — the moment you want it
+off is the moment you are looking at "5 of 12", and a switch you have to go
+looking for is one you do not know exists.
+
+The flag lives on the audio thread's shared state, which is rebuilt whenever a
+sound is opened, so the interface re-sends it on every load. Without that it
+would lapse on the next file and the layers would start disappearing again with
+nothing having been changed.

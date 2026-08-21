@@ -651,6 +651,11 @@ async function engineLoad(file, { raw = false } = {}) {
     engine.path = file.path;
     engine.raw = raw;
     engine.deviceRate = r.sampleRate || 48000;
+    // The governor's flag lives on the audio thread's shared state, and opening
+    // a sound builds a fresh one — so without this the setting would lapse on
+    // the next file and the layers would start disappearing again with nothing
+    // having been changed.
+    await pushShedLayers();
     return true;
   } catch (e) {
     toast('Cannot play: ' + e.message);
@@ -5163,8 +5168,8 @@ function renderGrainParams() {
        'Grains per second, for the cloud alone — how often a grain is thrown, with nothing to do with how long it lasts. A grain is an event: it is spawned, it sounds for as long as it sounds, and it ends, and none of that waits on the one before it. So the same number are laid down every second whether they are five milliseconds long or two. Off, the old rule applies and the rate comes from the window instead, which is why lengthening a grain used to thin the cloud. This control is the cloud’s own and does not touch WSOLA, the vocoder, PVSOLA or the hybrid — Density does, and reaching into them is what it costs.'],
       ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'auto' : `${Math.round(v)}/s`),
        'How often a window is laid down, in windows per second. Read by every engine, so it is the *window* engines’ control as much as the cloud’s; for the cloud alone use Rate above. On “auto” the rate comes from the window length divided by Overlap instead, which is what keeps the sound even as the window changes.'],
-      ['Layers', 'layers', 1, 16, 1, (v) => `${Math.round(v)}×`,
-       'How many copies of the whole engine run at once, each reading its own place in the source. Level is compensated by the square root of the count, which is exact once Scatter or the jitters have decorrelated them.'],
+      ['Layers', 'layers', 1, 64, 1, (v) => `${Math.round(v)}×`,
+       'How many copies of the whole engine run at once, each reading its own place in the source. Level is compensated by the square root of the count, which is exact once Scatter or the jitters have decorrelated them. The ceiling is sixty-four; what stops you before that is the machine, and the load line says so — if it reads fewer running than asked for, the engine is shedding layers to keep the sound whole rather than refusing them.'],
       ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`,
        'How many windows cover any one moment. Only read while Density is on “auto”. More overlap is smoother and more expensive; at 1x the windows are laid end to end.'],
       ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`,
@@ -5413,13 +5418,52 @@ function paintLoad() {
       ? `\n\nRunning ${l.layersRunning} of the ${asked} layers asked for: the engine could not make `
         + 'blocks fast enough, and a thinner cloud is better than a dropout. It takes them back on '
         + 'its own once there is room, or immediately if you open another sound.'
+        + '\n\nShift-click to stop it doing that — the engine will then play every layer you ask '
+        + 'for and let the sound break if it cannot.'
       : '')
     + '\nClick to forget the worst; it only means anything next to a change you just made.';
-  el.onclick = async () => {
-    if (!noAudio()) {
-      try { await postJSON('/api/engine/load/reset', {}); } catch { /* not playing */ }
+  el.onclick = async (e) => {
+    if (noAudio()) return;
+    // **Shift-click is the switch.** It sits on the readout that shows the
+    // shedding rather than in a settings panel somewhere else, because the
+    // moment you want it off is the moment you are looking at "5 of 12" — and
+    // a switch you have to go and find is one you do not know exists.
+    if (e.shiftKey) {
+      const want = !roomShedLayers();
+      try {
+        const r = await postJSON('/api/engine/shed', { on: want });
+        setRoomShedLayers(!!r.shedding);
+        toast(r.shedding
+          ? 'Layers will be shed when the engine cannot keep up'
+          : 'Every layer will be played, even if the sound breaks');
+      } catch { /* not playing */ }
+      return;
     }
+    try { await postJSON('/api/engine/load/reset', {}); } catch { /* not playing */ }
   };
+}
+
+/// Whether the engine may take layers away when it cannot keep up.
+///
+/// **Off by default**, which is the engine playing what the control says. Kept
+/// in the browser like every other preference about how the program behaves,
+/// and pushed at the engine whenever a sound is opened — the flag lives on the
+/// audio thread's shared state and a fresh engine starts from its own default,
+/// so without re-sending it the setting would quietly lapse on the next file.
+const SHED_STORE = 'engineShedLayers';
+
+function roomShedLayers() {
+  try { return localStorage.getItem(SHED_STORE) === '1'; } catch { return false; }
+}
+
+function setRoomShedLayers(on) {
+  try { localStorage.setItem(SHED_STORE, on ? '1' : '0'); } catch { /* private mode */ }
+}
+
+async function pushShedLayers() {
+  if (noAudio()) return;
+  try { await postJSON('/api/engine/shed', { on: roomShedLayers() }); }
+  catch { /* nothing open yet */ }
 }
 
 // ----------------------------------------------------------- automation
@@ -8167,6 +8211,12 @@ function roomReleaseAll() {
 const ROOM_VIEW_PARTS = [
   ['masterBus', 'roomStageRoom'],
   ['roomEdit', 'roomAdminBody'],
+  // **The sound the room is drawing.** This workspace hides the dock, and the
+  // stretch and grain controls live in it — so without borrowing them there is
+  // no way to change the sound from here at all. That shipped: the controls
+  // were not broken, they were simply not on screen, and an export then
+  // rendered whatever the document had last been given in the editor.
+  ['grainControls', 'roomSoundBody'],
   ['reFrameRow', 'roomStageBar'],
   ['transportBar', 'roomFoot'],
   ['videoBtn', 'roomFoot'],
@@ -8211,6 +8261,7 @@ function wireRoomTabs() {
         o.classList.toggle('active', o === b);
       }
       $('roomAdminBody')?.classList.toggle('hidden', want !== 'controls');
+      $('roomSoundBody')?.classList.toggle('hidden', want !== 'sound');
       $('roomGeomBody')?.classList.toggle('hidden', want !== 'geom');
       $('roomPaintBody')?.classList.toggle('hidden', want !== 'paint');
       if (want === 'paint') rpPanel();
@@ -8411,8 +8462,10 @@ function paintRoomHandles() {
     const [x, y, t] = hd.at(hw, c);
     const p = roomProject(x, y, t, w, h, c);
     if (hd.key === 'horizon') {
+      // A tab at the left edge: it only needs its height placed, and the rest
+      // of that line stays available for taking hold of the room.
       el.style.top = `${p.y}px`;
-      tip.style.left = '12px';
+      tip.style.left = '38px';
       tip.style.top = `${p.y}px`;
       continue;
     }

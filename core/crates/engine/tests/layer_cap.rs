@@ -24,7 +24,7 @@ fn shared() -> Shared {
     // set by hand. It matters: the governor sheds from what is *running*, not
     // from the abstract ceiling, so a `Shared` that claims one running layer
     // has nothing it is allowed to take away.
-    running(&s, 16);
+    running(&s, MAX as u32);
     s
 }
 
@@ -33,9 +33,19 @@ fn running(s: &Shared, n: u32) {
 }
 
 /// A quiet engine keeps every layer it was given.
+/// The ceiling, from the one place it is written.
+///
+/// These read `16` by hand, so raising the real ceiling left four assertions
+/// testing a number the program no longer used — three of them still passed,
+/// which is the worst way for a test to be wrong.
+const MAX: usize = engine::render::MAX_LAYERS;
+
 #[test]
 fn an_easy_load_never_shed_a_layer() {
     let s = shared();
+    // Shedding is off unless asked for — the engine plays what the control
+    // says. These are the governor's own tests, so they turn it on.
+    s.set_shed_layers(true);
     let start = s.layer_cap();
     let budget = std::time::Duration::from_millis(10);
     // A tenth of budget, for far longer than the governor's patience.
@@ -49,6 +59,9 @@ fn an_easy_load_never_shed_a_layer() {
 #[test]
 fn an_overload_sheds_layers_and_then_settles() {
     let s = shared();
+    // Shedding is off unless asked for — the engine plays what the control
+    // says. These are the governor's own tests, so they turn it on.
+    s.set_shed_layers(true);
     let budget = std::time::Duration::from_millis(10);
     let start = s.layer_cap();
 
@@ -68,6 +81,9 @@ fn an_overload_sheds_layers_and_then_settles() {
 #[test]
 fn a_long_overload_cannot_go_below_one_layer() {
     let s = shared();
+    // Shedding is off unless asked for — the engine plays what the control
+    // says. These are the governor's own tests, so they turn it on.
+    s.set_shed_layers(true);
     let budget = std::time::Duration::from_millis(10);
     for _ in 0..20_000 {
         s.record_block_cost(budget * 3, budget);
@@ -79,12 +95,15 @@ fn a_long_overload_cannot_go_below_one_layer() {
 #[test]
 fn the_cap_recovers_when_the_load_drops() {
     let s = shared();
+    // Shedding is off unless asked for — the engine plays what the control
+    // says. These are the governor's own tests, so they turn it on.
+    s.set_shed_layers(true);
     let budget = std::time::Duration::from_millis(10);
     for _ in 0..400 {
         s.record_block_cost(budget * 2, budget);
     }
     let shed = s.layer_cap();
-    assert!(shed < 16, "nothing was shed to recover from");
+    assert!(shed < MAX as u32, "nothing was shed to recover from");
 
     // Easy again, for long enough to earn a layer back. Recovery is judged on
     // the mean, which is a slow average, so this has to run a while.
@@ -101,13 +120,16 @@ fn the_cap_recovers_when_the_load_drops() {
 #[test]
 fn resetting_restores_every_layer() {
     let s = shared();
+    // Shedding is off unless asked for — the engine plays what the control
+    // says. These are the governor's own tests, so they turn it on.
+    s.set_shed_layers(true);
     let budget = std::time::Duration::from_millis(10);
     for _ in 0..400 {
         s.record_block_cost(budget * 2, budget);
     }
-    assert!(s.layer_cap() < 16);
+    assert!(s.layer_cap() < MAX as u32);
     s.reset_governor();
-    assert_eq!(s.layer_cap(), 16, "a new document did not restore the layers");
+    assert_eq!(s.layer_cap(), MAX as u32, "a new document did not restore the layers");
 }
 
 /// The load that actually gets complained about: spiky, not sustained.
@@ -122,6 +144,9 @@ fn resetting_restores_every_layer() {
 #[test]
 fn a_spiky_load_that_misses_deadlines_sheds_a_layer() {
     let s = shared();
+    // Shedding is off unless asked for — the engine plays what the control
+    // says. These are the governor's own tests, so they turn it on.
+    s.set_shed_layers(true);
     running(&s, 3);                                     // a three-layer document
     let budget = std::time::Duration::from_millis(43);   // 2048 frames at 48k
     let start = 3;
@@ -152,6 +177,9 @@ fn a_spiky_load_that_misses_deadlines_sheds_a_layer() {
 #[test]
 fn busy_but_never_late_sheds_nothing() {
     let s = shared();
+    // Shedding is off unless asked for — the engine plays what the control
+    // says. These are the governor's own tests, so they turn it on.
+    s.set_shed_layers(true);
     let budget = std::time::Duration::from_millis(43);
     let start = s.layer_cap();
     for _ in 0..2000 {
@@ -161,4 +189,51 @@ fn busy_but_never_late_sheds_nothing() {
         s.layer_cap(), start,
         "layers were shed from a load that never missed a deadline",
     );
+}
+
+/// The switch, and the only thing that decides it.
+///
+/// Shedding is a program overriding a setting you made. That is defensible when
+/// the alternative is a hole in the sound, and indefensible as the only
+/// behaviour on offer — "5 of 12 layers" at 29% of budget, with no note of when
+/// it might give them back, reads as the control being broken.
+#[test]
+fn the_governor_can_be_switched_off() {
+    let s = shared();
+    let budget = std::time::Duration::from_millis(10);
+
+    // On, it does what it always did.
+    s.set_shed_layers(true);
+    for _ in 0..400 {
+        s.record_block_cost(budget * 2, budget);
+    }
+    let shed = s.layer_cap();
+    assert!(shed < MAX as u32, "the governor did not shed with the switch on");
+
+    // Off, it hands them straight back rather than climbing home over four
+    // hundred easy blocks a layer.
+    s.set_shed_layers(false);
+    assert_eq!(s.layer_cap(), MAX as u32, "switching it off did not restore the layers");
+
+    // And the same overload no longer takes anything, however long it runs.
+    for _ in 0..2_000 {
+        s.record_block_cost(budget * 4, budget);
+    }
+    assert_eq!(
+        s.layer_cap(),
+        MAX as u32,
+        "layers were shed with the governor switched off",
+    );
+}
+
+/// Off is what a fresh engine starts as.
+#[test]
+fn the_engine_plays_what_it_is_asked_for_by_default() {
+    let s = shared();
+    assert!(!s.sheds_layers(), "the governor is on by default");
+    let budget = std::time::Duration::from_millis(10);
+    for _ in 0..2_000 {
+        s.record_block_cost(budget * 4, budget);
+    }
+    assert_eq!(s.layer_cap(), MAX as u32, "a default engine shed layers");
 }
