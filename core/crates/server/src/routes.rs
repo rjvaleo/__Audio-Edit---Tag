@@ -174,6 +174,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         // Forget the worst block. It is only meaningful next to a change you
         // just made — a peak from ten minutes ago says nothing about the
         // settings in front of you.
+        ("POST", "/api/engine/shed") => api_engine_shed(app, req),
         ("POST", "/api/engine/load/reset") => {
             match crate::live::with(app, |h| h.shared.reset_load()) {
                 Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
@@ -2142,7 +2143,7 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     // document written before this existed sounds as it did.
                     rate_hz: gf("rateHz", cur.rate_hz).clamp(0.0, 2000.0),
                     density_hz: gf("densityHz", cur.density_hz).clamp(0.0, 500.0),
-                    layers: gf("layers", cur.layers as f32).clamp(1.0, 16.0) as u32,
+                    layers: gf("layers", cur.layers as f32).clamp(1.0, fx::grain::MAX_LAYERS as f32) as u32,
                     overlap: gf("overlap", cur.overlap).clamp(1.0, 8.0),
                     size_jitter: gf("sizeJitter", cur.size_jitter).clamp(0.0, 1.0),
                     position_jitter_ms: gf("positionJitterMs", cur.position_jitter_ms)
@@ -3248,6 +3249,32 @@ fn write_tags_file(lib: &Path, folder: &str, all: &Value) -> std::io::Result<()>
 // interface to it: one expensive call to load a file, and a handful of cheap
 // ones that only ever touch atomics.
 
+/// Whether the engine may take layers away when it cannot keep up.
+///
+/// Off by default — see `Shared::shed_layers`. This is the switch, and it is
+/// the only thing that decides it: the governor reads the flag and nothing
+/// else, so there is no second path that can shed while it is off.
+fn api_engine_shed(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let on = matches!(v.get("on"), Some(Value::Bool(true)));
+    let applied = crate::live::with(app, |h| {
+        h.shared.set_shed_layers(on);
+        h.shared.sheds_layers()
+    });
+    Response::json(
+        Value::obj()
+            .set("ok", true)
+            // What it actually is now, not what was asked: with no engine open
+            // there is nothing to set and saying otherwise would be a lie the
+            // interface then displays.
+            .set("shedding", *applied.as_ref().unwrap_or(&on))
+            .set("engine", applied.is_ok())
+            .to_string(),
+    )
+}
+
 fn api_engine_load(app: &Arc<App>, req: &Request) -> Response {
     let path = match library_file(app, req) {
         Ok(p) => p,
@@ -3340,6 +3367,7 @@ fn api_engine_state(app: &Arc<App>) -> Response {
                             .load(std::sync::atomic::Ordering::Relaxed) as f64,
                     )
                     .set("layerCap", h.shared.layer_cap() as f64)
+                    .set("shedding", h.shared.sheds_layers())
                     .set(
                         "layersRunning",
                         h.shared
@@ -3494,6 +3522,7 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
                     // program that quietly plays fewer layers than the control
                     // says is lying about its own settings.
                     .set("layerCap", h.shared.layer_cap() as f64)
+                    .set("shedding", h.shared.sheds_layers())
                     .set(
                         "layersRunning",
                         h.shared

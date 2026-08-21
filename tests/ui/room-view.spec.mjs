@@ -228,3 +228,90 @@ test('the divider resizes the controls and the size is remembered', async ({ pag
   await page.evaluate(() => setMode('room'));
   expect(await width()).toBe(after);
 });
+
+// ── the sound the room is drawing ──
+//
+// This workspace hides the dock, and every stretch and grain control lives in
+// it. So they were not broken, they were *not on screen* — and a room you
+// cannot change the sound of is a room you cannot design. An export made from
+// here then rendered whatever the document had last been given in the editor,
+// which read as the export ignoring them too.
+
+test('the stretch and grain controls are reachable in the room', async ({ page }) => {
+  await openApp(page);
+  await page.evaluate(async () => {
+    const folder = state.folders[0].name;
+    const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+    await selectFile(files[0]);
+    setMode('room');
+  });
+  await page.waitForSelector('#roomAdmin .rv-tab[data-rvtab="sound"]');
+  await page.click('#roomAdmin .rv-tab[data-rvtab="sound"]');
+
+  const got = await page.evaluate(() => {
+    const body = document.getElementById('roomSoundBody');
+    const ctrls = body.querySelectorAll('input, select, button');
+    let reachable = 0;
+    const bad = [];
+    for (const el of ctrls) {
+      el.scrollIntoView({ block: 'center' });
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      if (hit && (hit === el || el.contains(hit) || hit.contains(el))) reachable++;
+      else bad.push({ el: el.id || el.className, over: hit ? (hit.id || hit.className) : 'nothing' });
+    }
+    return {
+      moved: document.getElementById('grainControls')?.parentElement?.id,
+      hasStretch: !!body.querySelector('#stretchParams'),
+      hasGrain: !!body.querySelector('#grainShape'),
+      total: ctrls.length, reachable, bad: bad.slice(0, 5),
+    };
+  });
+
+  expect(got.moved, 'the controls were not borrowed into the room').toBe('roomSoundBody');
+  expect(got.hasStretch).toBe(true);
+  expect(got.hasGrain).toBe(true);
+  expect(got.total).toBeGreaterThan(20);
+  // Present is not the same as usable. This is the check that would have caught
+  // it: they were in the DOM the whole time, inside a hidden dock.
+  expect(got.bad).toEqual([]);
+  expect(got.reachable).toBe(got.total);
+});
+
+test('a grain control in the room reaches the document', async ({ page }) => {
+  await openApp(page);
+  await page.evaluate(async () => {
+    const folder = state.folders[0].name;
+    const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+    await selectFile(files[0]);
+    setMode('room');
+  });
+  await page.click('#roomAdmin .rv-tab[data-rvtab="sound"]');
+
+  const got = await page.evaluate(async () => {
+    const p = state.selectedFile.path;
+    const slider = [...document.querySelectorAll('#roomSoundBody input[type="range"]')]
+      .find((s) => (s.closest('div')?.textContent || '').includes('Layers'));
+    if (!slider) return { err: 'no Layers slider in the room' };
+    slider.value = '12';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 900));
+    const doc = await api(`/api/edit?p=${encodeURIComponent(p)}`);
+    const layers = (doc?.stretch?.grain || {}).layers;
+    // Put it back: the library is the user's, not the test's.
+    slider.value = '1';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 600));
+    return { max: slider.max, layers };
+  });
+
+  expect(got.err).toBeUndefined();
+  // **What the export renders is the document.** So a control that reaches the
+  // document is a control the film obeys, which is the other half of the report.
+  expect(got.layers, 'the control did not reach the document').toBe(12);
+  // And the ceiling is the raised one, not the sixteen it was.
+  expect(Number(got.max)).toBeGreaterThan(16);
+});

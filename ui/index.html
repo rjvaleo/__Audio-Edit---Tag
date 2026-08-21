@@ -372,7 +372,8 @@
              stacked, everything below the fold is found by scrolling past
              something unrelated. -->
         <div class="rv-admin-head">
-          <button class="rv-tab active" data-rvtab="controls">Controls</button>
+          <button class="rv-tab active" data-rvtab="controls">Room</button>
+          <button class="rv-tab" data-rvtab="sound">Sound</button>
           <button class="rv-tab" data-rvtab="geom">Shape</button>
           <button class="rv-tab" data-rvtab="paint">Colour</button>
         </div>
@@ -380,6 +381,9 @@
              this width — see `.rv-admin .room-edit` — but it is the same DOM
              carrying the same handlers. -->
         <div class="rv-admin-body" id="roomAdminBody"></div>
+        <!-- The stretch and the grain cloud: what the room is drawing. Moved in
+             from the dock, which this workspace hides. -->
+        <div class="rv-admin-body hidden" id="roomSoundBody"></div>
         <!-- The room's own shape, as against the camera's pose. Built by
              `rgPanel`. The pose is not in here on purpose — it is dragged on
              the room itself, and `docs/ROOM-EDITOR.md` is the argument. -->
@@ -624,7 +628,11 @@
 
       <div class="dock-body" id="dockStretch">
         <div class="grain-split">
-          <div class="grain-controls">
+          <!-- Every stretch and grain control. Borrowed by the Room workspace,
+               which hides the dock — without that they are simply unreachable
+               there, and a room you cannot change the sound of is a room you
+               cannot design. See `ROOM_VIEW_PARTS`. -->
+          <div class="grain-controls" id="grainControls">
             <!-- One panel, like Extended: the groups inside are separated by a
                  rule rather than each carrying its own box. -->
             <div class="cpanel grain-standard">
