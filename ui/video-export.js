@@ -118,13 +118,24 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
     // The server's own two phases, named as it names them. Rendering has no
     // count worth showing — it is a stretch measured in passes over frames —
     // so it reports a fraction and the analysis reports frames.
-    const name = s.phase === 'rendering' ? 'Rendering the sound'
-      : s.phase === 'reading' ? 'Reading it back'
-      : 'Analysing';
-    if (s.phase === 'analysing' && s.total > 1) {
-      onStage(name, (s.fraction || 0) * 0.18, s.done, s.total);
+    // **The render is most of the wait and it used to report nothing.** It is
+    // the same render an audio export makes, and its progress goes into the
+    // server's export tracker — which this route now reads while that phase is
+    // running. Before that it sat at a hard zero for the whole stretch, which
+    // on a forty-times render is minutes of a dead bar, and reads as a hang.
+    //
+    // `stage` is what the render is doing inside itself: reading, stretching,
+    // writing. Those cost wildly different amounts per frame, so without it the
+    // bar moves in lurches with nothing to account for them.
+    if (s.phase === 'rendering') {
+      const inner = s.stage && s.stage !== 'starting' ? `Rendering · ${s.stage}` : 'Rendering the sound';
+      onStage(inner, (s.fraction || 0) * 0.14, s.done, s.total);
+    } else if (s.phase === 'reading') {
+      onStage('Reading it back', 0.14);
+    } else if (s.phase === 'analysing' && s.total > 1) {
+      onStage('Analysing', 0.15 + (s.fraction || 0) * 0.03, s.done, s.total);
     } else {
-      onStage(name, (s.fraction || 0) * 0.12);
+      onStage('Analysing', 0.15);
     }
   });
 

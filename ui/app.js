@@ -3080,7 +3080,9 @@ async function runVideoExport() {
       // The room as it is posed right now, at the frame being filmed. The
       // camera is the pose; the aspect comes from the canvas, which is why a
       // wide room in a tall frame is a narrower room and not a squashed one.
-      camera: roomCameraDrawn(),
+      // The camera posed for **the shape being filmed**, which is not
+      // necessarily the shape on screen. See `roomCameraForAspect`.
+      camera: roomCameraForAspect(size.w / size.h),
       layers: roomLayers(),
       occlude: roomOcclude(),
       order: roomOrder(),
@@ -7544,6 +7546,42 @@ function vgHexRgb(hex) {
   return [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255];
 }
 
+/// Which posed frame a given shape is, by its aspect.
+///
+/// The export box offers nine sizes and the room keeps five cameras, and the
+/// two are matched by shape rather than by name: 720p, HD, 1440p and 4K are all
+/// 16:9 and all want the camera posed for 16:9.
+function roomFrameForAspect(aspect) {
+  let best = null, bestGap = Infinity;
+  for (const f of ROOM_FRAMES) {
+    if (f.ratio <= 0) continue;
+    const gap = Math.abs(f.ratio - aspect);
+    if (gap < bestGap) { bestGap = gap; best = f; }
+  }
+  // Nothing close enough to be that shape falls back to the dock's own camera,
+  // which is what an unrecognised size should get.
+  return best && bestGap < 0.06 ? best.key : null;
+}
+
+/// The camera to film a given shape with.
+///
+/// **The shape being exported, not the one on screen.** `docs/ROOM-EDITOR.md`
+/// says what this is for: *"picking Vertical in the export box gets the camera
+/// that was designed for vertical rather than the wide one squeezed"* — and the
+/// export read `roomEdit.frame` instead, which is whatever the view happened to
+/// be showing. Posing the room for 9:16 and then exporting HD filmed the
+/// portrait camera into a landscape frame.
+///
+/// A frame nobody has posed falls back to the one being looked at rather than
+/// to the shipped default. The rule is *use the camera meant for this shape*,
+/// and when there is no such camera the one in front of you is a better guess
+/// than a constant — it is at least a pose somebody chose.
+function roomCameraForAspect(aspect) {
+  const key = roomFrameForAspect(aspect);
+  const posed = key && roomEdit.cams[key];
+  return roomCameraDrawn(posed ? key : undefined);
+}
+
 /// The camera as the renderer should use it, with the ring's own size applied.
 ///
 /// Kept apart from `roomCamera` on purpose. That one is the *pose* — it is what
@@ -7552,8 +7590,8 @@ function vgHexRgb(hex) {
 /// in the room rather than about where the room is, and folding it into the
 /// pose would mean every camera copied out carried somebody's slider position
 /// with it.
-function roomCameraDrawn() {
-  const c = roomCamera();
+function roomCameraDrawn(frameKey) {
+  const c = frameKey ? (roomEdit.cams[frameKey] || null) : roomCamera();
   const k = roomEdit.ringScale;
   if (k === 1) return c;
   // `vgCamera` fills in whatever is missing, so this works on a posed camera,
