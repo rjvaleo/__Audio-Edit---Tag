@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "audiolab",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/rjvaleo/Documents/MultiGrainLive && AUDIOLAB_DATA=\"$PWD/data\" exec ./core/target/release/audiolab"
+      ],
+      "port": 8737
+    },
+    {
+      "name": "audiolab-scratch",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/scratch-server.mjs"],
+      "port": 8791
+    }
+  ]
+}
