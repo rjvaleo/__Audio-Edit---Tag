@@ -553,3 +553,75 @@ reports what the renderer actually holds, for the same reason
 `grainShapeNames()` exists — some things about this room cannot be recovered
 from its picture, and a test that guesses at them from pixels is a test that
 reports confident nonsense.
+
+## The back of the room, and visible grips
+
+Added 20 Aug 2026.
+
+The room was a **rectangular prism**: the front and back rectangles the same
+size in world units, with the projection doing all of the narrowing. So the far
+rectangle's size was entirely decided by `depth` — which moves the wall away and
+takes its width and its height with it in step, because that is what distance
+does.
+
+`backW` and `backH` are the two coming apart. They say how wide and how tall the
+far rectangle is against the near one, **in world units, before the perspective
+divide**. One is the straight prism this always was. Below one the walls
+converge and the room reads as longer than it is; above one they splay and the
+back opens out.
+
+Applied as a taper linear in depth, `1 + (back − 1) · t`, so **at the front it is
+one whatever the setting**. That is not a detail: the box's near edges *are* the
+edges of the panel — it is why `#visGl` has no border — and a taper that reached
+the front would break that identity quietly, leaving a room that still looked
+like a room in a panel that had stopped being the box. It is its own test.
+
+Everything in the room travels with the walls: the floor and its ridges, the
+ring and its skin, the cloud and the mist it sheds. A cloud that kept the front
+face's width in a narrowed room would spill through the walls on its way to the
+back.
+
+The height tapers about the room's **own middle**, so a shorter back pulls the
+floor up and the ceiling down together. Tapering about the floor would tilt the
+room instead of narrowing it, and tilting is the eye line's job and already has
+a gesture.
+
+### The grips
+
+The room has always been posed by dragging it, and this document argues for that
+over a panel of numbers. What it never had was anything *showing* where to take
+hold — the gestures were zones you had to be told about.
+
+Seven grips now, in a layer over the canvas, shown only while the room is being
+edited: the two that move the back's width, the two that move its height, the
+wall itself for depth, the ring, and the eye line. The last three are the
+gestures that already existed, with something to aim at.
+
+Their shapes say which way they move before they are touched: a tall thin bar on
+a side edge, a wide flat bar on a top edge, a line across the frame for the eye
+line — which is one grip and not two because `floorY` and `ceilY` are not two
+numbers, they are one asymmetry.
+
+They are DOM over the canvas rather than geometry in the scene, so they are
+never in a filmed frame: the export draws the room to its own canvas and never
+sees this element.
+
+**They are built once and then only moved.** Rebuilding them on every repaint
+would drop a drag on its first pointer move — the same fault the palette's
+colour wells and the theme editor's swatches both had.
+
+### Two frustums, written twice
+
+The renderer's projection runs on the GPU as a matrix; `roomProject` answers for
+a single point on the CPU, because a grip has to be placed in pixels. They are
+the same frustum written out twice, which is a thing worth being nervous about.
+
+What holds them together is a test that measures the far rectangle **off the
+canvas** and compares it against what `roomBackWall` predicted: 364 against 364
+straight, 164 against 164 narrowed, 656 against 656 splayed. Exact at every
+setting.
+
+That measurement only works at native resolution. The box is drawn at weights of
+0.02 to 0.16, so a half-size copy of the canvas blurs a one-pixel line below any
+threshold worth setting — the first version of it read a blank picture at every
+setting and reported the taper doing nothing.

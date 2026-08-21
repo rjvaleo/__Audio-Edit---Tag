@@ -1192,6 +1192,9 @@ function drawGrainLayer() {
   if (el.width !== Math.round(w * dpr) || el.height !== Math.round(h * dpr)) {
     el.width = Math.round(w * dpr);
     el.height = Math.round(h * dpr);
+    // The room is a different size on screen, so the grips are in the wrong
+    // places until they are told. Only on the frames where it actually changed.
+    if (roomEdit.on) paintRoomHandles();
   }
   const c = el.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -7289,6 +7292,9 @@ const ROOM_FRAMES = [
 /// something to start from and Reset has something to go back to.
 const ROOM_CAM_DEFAULT = {
   depth: 1.9, floorY: -0.38, ceilY: 0.62, shiftX: 0, skyAt: 0.72, ring: 0.17,
+  // How wide and how tall the far rectangle is against the near one, before the
+  // perspective divide. One is the straight prism this room always was.
+  backW: 1, backH: 1,
 };
 
 /// What the room draws. Each part is its own decision.
@@ -7720,9 +7726,16 @@ function applyRoomFrame() {
   // in one direction and the box overflows in the other — so the stage works
   // the width out itself against the height it actually has. See `.rv-room`.
   cell.style.setProperty('--rv-ratio', framed ? String(f.ratio) : '');
+  // The cell has just changed shape, so every projected point has moved.
+  afterLayout(() => paintRoomHandles());
 }
 
 function paintRoomNums() {
+  // The grips sit on the room, so anything that moves the room moves them.
+  // Called from here rather than from the draw loop: the camera only changes
+  // when something edits it, and writing seven elements' styles sixty times a
+  // second to say nothing would be the same waste as redrawing a still scene.
+  paintRoomHandles();
   const el = $('reNums');
   if (!el) return;
   const c = roomCamNow();
@@ -8280,6 +8293,176 @@ function roomZoneAt(y, h) {
   return y < h * 0.34 ? 'sky' : 'camera';
 }
 
+// ────────────────────────────────────────────────────────── the handles ──
+//
+// The room has always been posed by dragging it, and `docs/ROOM-EDITOR.md`
+// argues for that over a panel of numbers. What it never had was anything
+// **showing** where to take hold: the gestures were zones you had to be told
+// about. These are the same idea with the grips made visible, plus two that
+// could not be dragged at all before — the width and the height of the far
+// rectangle, on their own, against the near one.
+//
+// Placed from `roomProject`, so a handle sits on the thing it moves however the
+// room is posed. Nothing here is drawn into the room: they are DOM over the
+// canvas, in a layer that goes away with the editor and is never in a film.
+
+/// Every handle: where it sits, and what dragging it does.
+///
+/// `at` gives a point in the room — world x and y on the front face, and how
+/// far back — and `move` is handed the drag in fractions of the canvas.
+const ROOM_HANDLES = [
+  {
+    key: 'backW-r', cls: 'rh-w', tip: 'Back width',
+    at: (hw, c) => [hw, (c.floorY + c.ceilY) / 2, 1],
+    move: (c, d, dx) => { c.backW = clampBack(d.backW + dx * 2.2); },
+  },
+  {
+    key: 'backW-l', cls: 'rh-w', tip: 'Back width',
+    at: (hw, c) => [-hw, (c.floorY + c.ceilY) / 2, 1],
+    move: (c, d, dx) => { c.backW = clampBack(d.backW - dx * 2.2); },
+  },
+  {
+    key: 'backH-t', cls: 'rh-h', tip: 'Back height',
+    at: (hw, c) => [0, c.ceilY, 1],
+    move: (c, d, dx, dy) => { c.backH = clampBack(d.backH - dy * 2.2); },
+  },
+  {
+    key: 'backH-b', cls: 'rh-h', tip: 'Back height',
+    at: (hw, c) => [0, c.floorY, 1],
+    move: (c, d, dx, dy) => { c.backH = clampBack(d.backH + dy * 2.2); },
+  },
+  {
+    // The gesture that already existed on the back wall, with something to aim
+    // at. Pushing the wall away is the room getting longer.
+    key: 'depth', cls: 'rh-depth', tip: 'Depth',
+    at: (hw, c) => [0, (c.floorY + c.ceilY) / 2, 1],
+    move: (c, d, dx, dy) => {
+      c.depth = Math.max(0.2, Math.min(12, d.depth * Math.exp(dy * 3)));
+    },
+  },
+  {
+    // Up the room, and how big across. Both on one grip because they are one
+    // thing you are judging — how the hoop sits in the space.
+    key: 'ring', cls: 'rh-ring', tip: 'Ring',
+    at: (hw, c) => [0, c.floorY + (c.ceilY - c.floorY) * c.skyAt, 0.12],
+    move: (c, d, dx, dy) => {
+      c.skyAt = Math.max(0.05, Math.min(0.98, d.skyAt - dy));
+      c.ring = Math.max(0.02, Math.min(0.6, d.ring + dx * 0.5));
+    },
+  },
+  {
+    // The eye line. A line rather than a point, because the whole width of it
+    // is the thing — and because `floorY` and `ceilY` are not two numbers, they
+    // are one asymmetry, which is why this is one grip.
+    key: 'horizon', cls: 'rh-horizon', tip: 'Eye line',
+    at: (hw, c) => [0, 0, 0],
+    move: (c, d, dx, dy) => {
+      const hgt = d.ceilY - d.floorY;
+      const eye = Math.max(0.02, Math.min(0.98, (-d.floorY) / hgt - dy));
+      c.floorY = -eye * hgt;
+      c.ceilY = (1 - eye) * hgt;
+    },
+  },
+];
+
+/// A quarter to four times the front. Past that the box stops reading as a room
+/// — at nothing the back is a point and the walls meet, and far out the taper
+/// beats the perspective and the room turns inside out.
+function clampBack(v) {
+  return Math.max(0.05, Math.min(4, v));
+}
+
+function paintRoomHandles() {
+  const host = $('roomHandles');
+  const gl = $('visGl');
+  if (!host || !gl) return;
+  const show = roomEdit.on;
+  host.classList.toggle('hidden', !show);
+  if (!show) return;
+
+  const w = gl.clientWidth, h = gl.clientHeight;
+  if (!(w > 0) || !(h > 0)) return;
+  const c = roomCamNow();
+  const hw = roomHalfW(w, h, c);
+
+  // Built once and then only moved. Rebuilding them every frame would drop any
+  // drag in progress on the very first pointer move — the same fault the
+  // palette's colour wells and the theme editor's swatches both had.
+  if (host.children.length !== ROOM_HANDLES.length * 2) {
+    host.innerHTML = '';
+    for (const hd of ROOM_HANDLES) {
+      const el = document.createElement('i');
+      el.className = `rh ${hd.cls}`;
+      el.dataset.handle = hd.key;
+      el.title = hd.tip;
+      host.appendChild(el);
+      const tip = document.createElement('span');
+      tip.className = 'rh-tip';
+      tip.textContent = hd.tip;
+      host.appendChild(tip);
+    }
+    wireRoomHandles();
+  }
+
+  for (let i = 0; i < ROOM_HANDLES.length; i++) {
+    const hd = ROOM_HANDLES[i];
+    const el = host.children[i * 2];
+    const tip = host.children[i * 2 + 1];
+    const [x, y, t] = hd.at(hw, c);
+    const p = roomProject(x, y, t, w, h, c);
+    if (hd.key === 'horizon') {
+      el.style.top = `${p.y}px`;
+      tip.style.left = '12px';
+      tip.style.top = `${p.y}px`;
+      continue;
+    }
+    el.style.left = `${p.x}px`;
+    el.style.top = `${p.y}px`;
+    tip.style.left = `${p.x}px`;
+    tip.style.top = `${p.y}px`;
+  }
+}
+
+function wireRoomHandles() {
+  const host = $('roomHandles');
+  const gl = $('visGl');
+  if (!host || !gl) return;
+  for (const el of host.querySelectorAll('.rh')) {
+    el.addEventListener('pointerdown', (e) => {
+      const hd = ROOM_HANDLES.find((x) => x.key === el.dataset.handle);
+      if (!hd) return;
+      // **Stopped here.** The canvas underneath has its own drag on it, and
+      // without this a pull on a handle also swings the whole view.
+      e.preventDefault();
+      e.stopPropagation();
+      el.setPointerCapture(e.pointerId);
+      el.classList.add('dragging');
+      const r = gl.getBoundingClientRect();
+      const from = { ...roomCamNow() };
+      const move = (ev) => {
+        const dx = (ev.clientX - e.clientX) / Math.max(1, r.width);
+        const dy = (ev.clientY - e.clientY) / Math.max(1, r.height);
+        const c = { ...from };
+        hd.move(c, from, dx, dy);
+        roomEdit.cams[roomEdit.frame] = c;
+        paintRoomNums();
+        paintRoomHandles();
+      };
+      const up = () => {
+        el.releasePointerCapture(e.pointerId);
+        el.classList.remove('dragging');
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+        saveRoomData();
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+    });
+  }
+}
+
 (function wireRoomDrag() {
   const gl = $('visGl');
   if (!gl) return;
@@ -8401,6 +8584,38 @@ function roomChPx(el) {
   return roomChPx.v;
 }
 
+/// Where a point in the room lands on screen, in canvas pixels.
+///
+/// `x` and `y` are world units on the **front** face and `t` is how far back it
+/// sits, nought to one — so `(halfW, ceilY, 1)` is the far top corner however
+/// the back has been tapered, because the taper is applied here.
+///
+/// The arithmetic is `vgFrustum`'s, written out. It is duplicated rather than
+/// shared because the renderer's copy runs on the GPU as a matrix and this one
+/// has to answer for a single point on the CPU — but they are the same frustum,
+/// and `the handles sit on the room they are dragging` is the test that says so.
+function roomProject(x, y, t, w, h, cam) {
+  if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
+  const c = cam ? vgCamera(cam) : roomCamNow();
+  const yb = c.floorY, yt = c.ceilY, hh = yt - yb;
+  const halfW = hh * 0.5 * (w / h);
+  const sx = c.shiftX * halfW;
+  const near = 1;
+  const z = near + t * (near * (1 + c.depth) - near);
+  const yMid = (yb + yt) * 0.5;
+  const wx = x * (1 + ((c.backW ?? 1) - 1) * t);
+  const wy = yMid + (y - yMid) * (1 + ((c.backH ?? 1) - 1) * t);
+  const xNdc = (near * wx) / (halfW * z) - sx / halfW;
+  const yNdc = (2 * near * wy) / (hh * z) - (yb + yt) / hh;
+  return { x: (xNdc + 1) / 2 * w, y: (1 - yNdc) / 2 * h };
+}
+
+/// The room's half-width in world units, at the front face.
+function roomHalfW(w, h, cam) {
+  const c = cam ? vgCamera(cam) : roomCamNow();
+  return (c.ceilY - c.floorY) * 0.5 * (w / h);
+}
+
 /// Where the room's back wall lands on screen, in canvas pixels.
 ///
 /// The same projection the renderer uses, done once in JavaScript so the data
@@ -8432,10 +8647,20 @@ function roomBackWall(w, h, cam) {
   const xNdc = (x) => x / (halfW * (1 + c.depth)) - sx / halfW;
   const yNdc = (y) => (2 * y) / (hh * (1 + c.depth)) - (yb + yt) / hh;
 
-  const x0 = (xNdc(-halfW) + 1) / 2 * w;
-  const x1 = (xNdc(halfW) + 1) / 2 * w;
-  const yTop = (1 - yNdc(yt)) / 2 * h;
-  const yBot = (1 - yNdc(yb)) / 2 * h;
+  // **The far rectangle is the near one through the taper.** The wall is not
+  // simply the front face shrunk by distance any more — its width and its
+  // height can be set against the front — so the block printed on it and the
+  // handle that drags it both have to ask for the tapered corners rather than
+  // the square ones. See `taperX` in `vis-gl.js`.
+  const bw = c.backW ?? 1;
+  const bh = c.backH ?? 1;
+  const yMid = (yb + yt) * 0.5;
+  const tY = (y) => yMid + (y - yMid) * bh;
+
+  const x0 = (xNdc(-halfW * bw) + 1) / 2 * w;
+  const x1 = (xNdc(halfW * bw) + 1) / 2 * w;
+  const yTop = (1 - yNdc(tY(yt))) / 2 * h;
+  const yBot = (1 - yNdc(tY(yb))) / 2 * h;
   return { x: x0, y: yTop, w: Math.max(1, x1 - x0), h: Math.max(1, yBot - yTop), k };
 }
 

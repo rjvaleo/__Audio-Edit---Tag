@@ -711,6 +711,12 @@
                 <!-- Live grain telemetry, in the room's corner. Its own
                      layer, so it goes away with the rest. -->
                 <div class="room-data mono hidden" id="roomData"></div>
+                <!-- The handles. Only while the room is being edited: they are
+                     furniture for the editing and not part of the picture, and
+                     they must never be in a filmed frame. Placed by
+                     `paintRoomHandles` from the room's own projection, so a
+                     handle is always on the thing it drags. -->
+                <div class="room-handles hidden" id="roomHandles"></div>
                 <div class="room-edit hidden" id="roomEdit">
                   <div class="re-row">
                     <span class="re-tag">LAYERS</span>
