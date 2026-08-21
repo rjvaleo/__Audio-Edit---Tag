@@ -3094,6 +3094,7 @@ async function runVideoExport() {
         // rebuilt: the film and the room disagreeing about a colour is the
         // fault this program has already shipped once, over the background.
         paint: rpForRenderer(),
+        geom: roomGeom(),
         ringDrive: roomEdit.ringDrive,
         ringEdge: roomEdit.ringEdge,
         ringPoints: roomEdit.ringPoints,
@@ -7375,6 +7376,24 @@ const roomEdit = {
   grainFill: false,
   grainFillBg: true,
   grainFillColour: '#1b2b3a',
+  /// The room's own shape, as against the camera's pose.
+  ///
+  /// **These are not the camera and they are kept apart from it on purpose.**
+  /// The camera is where you stand — what dragging writes, what `reNums` prints
+  /// and what gets pasted back into `vis-gl.js` as a new default. This is what
+  /// the room *is*: how wide the floor is resolved, how far back the trail runs
+  /// before it reaches the wall, how tall the terrain stands. A camera copied
+  /// out should not carry somebody's floor resolution with it, the same
+  /// argument that keeps the ring's size out of it.
+  ///
+  /// Null means the shape the renderer ships with.
+  geomBands: 280,
+  geomHistory: 56,
+  geomRidge: 0.62,
+  /// How many seconds of sound the room's depth stands for, and how big a
+  /// grain is drawn. Both are the scale of the box rather than a pose in it.
+  geomSpan: 14,
+  geomBody: 0.032,
 };
 
 /// The layers, in the order they are drawn — highest in the hierarchy first.
@@ -7438,6 +7457,23 @@ try {
     roomEdit.ringPoints = Math.max(48, Math.min(2048, Math.round(v.ringPoints)));
   }
   if (typeof v.leadThick === 'boolean') roomEdit.leadThick = v.leadThick;
+  // The room's own shape. Clamped to the same range the renderer clamps to, so
+  // a stored value can never ask for a room it will not draw.
+  if (typeof v.geomBands === 'number') {
+    roomEdit.geomBands = Math.max(8, Math.min(2048, Math.round(v.geomBands)));
+  }
+  if (typeof v.geomHistory === 'number') {
+    roomEdit.geomHistory = Math.max(2, Math.min(240, Math.round(v.geomHistory)));
+  }
+  if (typeof v.geomRidge === 'number') {
+    roomEdit.geomRidge = Math.max(0.02, Math.min(1.6, v.geomRidge));
+  }
+  if (typeof v.geomSpan === 'number') {
+    roomEdit.geomSpan = Math.max(0.5, Math.min(90, v.geomSpan));
+  }
+  if (typeof v.geomBody === 'number') {
+    roomEdit.geomBody = Math.max(0.002, Math.min(0.3, v.geomBody));
+  }
   if (typeof v.fog === 'boolean') roomEdit.fog = v.fog;
   if (typeof v.fogType === 'number') roomEdit.fogType = Math.max(0, Math.min(3, v.fogType | 0));
   if (typeof v.fogDensity === 'number') {
@@ -7464,6 +7500,9 @@ function saveRoomData() {
   try {
     localStorage.setItem('roomData', JSON.stringify({
       chunk: roomEdit.chunk, opacity: roomEdit.opacity, ringScale: roomEdit.ringScale,
+      geomBands: roomEdit.geomBands, geomHistory: roomEdit.geomHistory,
+      geomRidge: roomEdit.geomRidge,
+      geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
       grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
       ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
       leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
@@ -7521,6 +7560,21 @@ try {
 /// frame is until somebody poses it.
 function roomCamera() {
   return roomEdit.cams[roomEdit.frame] || null;
+}
+
+/// The room's shape, as the renderer wants it.
+///
+/// One accessor for both callers. The live room and the film reading their
+/// geometry from two places is the fault this program shipped over the
+/// background colour, and there is no reason to leave a second one.
+function roomGeom() {
+  return {
+    bands: roomEdit.geomBands,
+    history: roomEdit.geomHistory,
+    ridge: roomEdit.geomRidge,
+    span: roomEdit.geomSpan,
+    body: roomEdit.geomBody,
+  };
 }
 
 /// The air, as the renderer wants it.
@@ -8125,6 +8179,7 @@ function enterRoomView() {
   $('roomView')?.classList.remove('hidden');
 
   setRoomAdminWidth(roomAdminWidth(), { save: false });
+  rgPanel();
   rpPanel();
   applyRoomPaintCss();
   applyRoomFrame();
@@ -8143,8 +8198,10 @@ function wireRoomTabs() {
         o.classList.toggle('active', o === b);
       }
       $('roomAdminBody')?.classList.toggle('hidden', want !== 'controls');
+      $('roomGeomBody')?.classList.toggle('hidden', want !== 'geom');
       $('roomPaintBody')?.classList.toggle('hidden', want !== 'paint');
       if (want === 'paint') rpPanel();
+      if (want === 'geom') rgPanel();
     };
   }
 }
@@ -12484,6 +12541,7 @@ function visGlTick() {
     // The palette. Null while nothing has been said about colour, and the
     // three above are then the whole of it — which is the room as it shipped.
     paint: rpForRenderer(),
+    geom: roomGeom(),
     cam: roomCameraDrawn(),
     layers: roomLayers(),
     occlude: roomOcclude(),

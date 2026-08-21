@@ -702,3 +702,105 @@ function rpApply() {
   rpRemember();
   if (typeof applyRoomPaintCss === 'function') applyRoomPaintCss();
 }
+
+// ────────────────────────────────────────────────────── the room's own shape ──
+//
+// **The shape, not the pose.** Where you stand in the room is dragged on the
+// room itself and always has been — `docs/ROOM-EDITOR.md` makes the argument at
+// length, and it is a good one: `floorY = -0.38` against `ceilY = 0.62` is not
+// a number anybody can picture, and a field with it in puts a spreadsheet
+// between you and the box. Nothing in here is a camera field.
+//
+// What is in here is the geometry that had no control of any kind: how finely
+// the floor is resolved, how far back the trail runs before it reaches the
+// wall, how tall the terrain stands, how many seconds of sound the depth stands
+// for, and how big a grain is drawn. Every one was a constant in `vis-gl.js`.
+
+const RG_ROWS = [
+  { key: 'geomBands', tag: 'FLOOR', min: 8, max: 1024, step: 1, round: true,
+    unit: ' bands',
+    hint: 'How finely the spectrum is resolved across the floor. **Changing it '
+      + 'empties the trail** — every frame already in the air is a row of the '
+      + 'old width, and a surface built from a mix of the two would be read off '
+      + 'the end of the short ones.' },
+  { key: 'geomHistory', tag: 'TRAIL', min: 2, max: 240, step: 1, round: true,
+    unit: ' frames',
+    hint: 'How far back the terrain runs before it reaches the wall, in frames '
+      + 'of spectrum. At the meter’s rate the default is about three '
+      + 'seconds of sound standing in the room at once.' },
+  { key: 'geomRidge', tag: 'RIDGE', min: 0.02, max: 1.6, step: 0.01,
+    hint: 'How tall the terrain stands, as a fraction of the room’s height. '
+      + 'Full height leaves nothing above it for the ring to hang in.' },
+  { key: 'geomSpan', tag: 'SPAN', min: 0.5, max: 90, step: 0.5, unit: ' s',
+    hint: 'How many seconds of sound the room’s depth stands for. Depth is '
+      + 'time here, so this is the scale of that axis: shorter and the cloud '
+      + 'crosses the room quickly, longer and it hangs.' },
+  { key: 'geomBody', tag: 'GRAIN', min: 0.002, max: 0.3, step: 0.001,
+    hint: 'How big a grain is drawn, against the room’s height rather than '
+      + 'the frame’s width — a grain that swelled when the panel was '
+      + 'widened would be describing the panel and not the sound.' },
+];
+
+const RG_DEFAULTS = {
+  geomBands: 280, geomHistory: 56, geomRidge: 0.62, geomSpan: 14, geomBody: 0.032,
+};
+
+function rgFormat(row, v) {
+  const n = row.round ? String(Math.round(v)) : v.toFixed(row.step < 0.01 ? 3 : 2);
+  return n + (row.unit || '');
+}
+
+function rgPanel() {
+  const host = document.getElementById('roomGeomBody');
+  if (!host) return;
+  // Not while a slider is being dragged: rebuilding the element under the
+  // pointer drops the drag, which is the same fault the palette's colour wells
+  // had and the theme editor's before them.
+  if (document.activeElement && host.contains(document.activeElement)) return;
+
+  host.innerHTML = '';
+  const note = rpEl('div', 'rg-note');
+  note.textContent = 'Where you stand is dragged on the room itself. This is '
+    + 'what the room is.';
+  host.appendChild(note);
+
+  for (const row of RG_ROWS) {
+    const box = rpEl('div', 'rp-row');
+    const tag = rpEl('span', 're-tag', row.tag);
+    tag.title = row.hint.replace(/\*\*/g, '');
+    box.appendChild(tag);
+
+    const sl = rpEl('input', 're-slider');
+    sl.type = 'range';
+    // Sliders count in whole steps, so a value that is a fraction is scaled up
+    // and back down rather than handed over as a decimal the control rounds.
+    const k = row.round ? 1 : 1000;
+    sl.min = String(Math.round(row.min * k));
+    sl.max = String(Math.round(row.max * k));
+    sl.step = String(Math.max(1, Math.round(row.step * k)));
+    sl.value = String(Math.round((roomEdit[row.key] ?? RG_DEFAULTS[row.key]) * k));
+    sl.title = row.hint.replace(/\*\*/g, '');
+    const read = rpEl('span', 'rg-read', rgFormat(row, roomEdit[row.key]));
+    sl.oninput = () => {
+      roomEdit[row.key] = +sl.value / k;
+      read.textContent = rgFormat(row, roomEdit[row.key]);
+      // In place. The room picks it up on its own next frame.
+      saveRoomData();
+    };
+    box.appendChild(sl);
+    box.appendChild(read);
+    host.appendChild(box);
+  }
+
+  const foot = rpEl('div', 'rp-row rp-btns');
+  const reset = rpEl('button', 're-btn', 'Back to default');
+  reset.title = 'Put the room back to the shape it ships with. The camera is '
+    + 'not touched — Reset beside the room is the one that does that.';
+  reset.onclick = () => {
+    Object.assign(roomEdit, RG_DEFAULTS);
+    saveRoomData();
+    rgPanel();
+  };
+  foot.appendChild(reset);
+  host.appendChild(foot);
+}
