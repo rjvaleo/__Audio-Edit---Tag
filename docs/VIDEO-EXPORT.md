@@ -407,16 +407,56 @@ the shipped default: the rule is *use the camera meant for this shape*, and when
 there is no such camera, the one in front of you is at least a pose somebody
 chose.
 
-## What the film still does not have
+## The data block, filmed
 
-**The data block is not in it.** The schedule printed on the back wall is HTML
-positioned behind the canvas — the room is drawn on glass over it — and the
-export draws only the GL canvas onto a flat ground. So a layer that can be
-switched on in the view is absent from the file.
+The schedule printed on the back wall is HTML positioned *behind* the canvas —
+the room is drawn on glass over it — and the export drew only the GL canvas onto
+a flat ground. So a layer that could be switched on in the view was absent from
+the file.
 
-It is not a line of plumbing. `roomBackWall` works from `roomCamNow()` and
-`paintRoomData` writes DOM from live state, so filming it means parameterising
-both on a camera and an offline schedule, then drawing the lines with the 2D
-context at the export's own scale with the wall's five fade steps. That is its
-own piece of work and it has not been done.
+**One builder, two destinations.** `paintRoomData` was doing two jobs: working
+out the wall of numbers, and writing it into the DOM. The first half is now
+`roomDataBlock`, which hands back lines and takes everything that differs
+between the two as an argument — the wall, how wide a character is on it, the
+schedule, where the playhead is, and the header.
+
+The live block writes those lines as `<div>`s. The film draws them into its own
+2D context. Two builders would be two things to keep in step, and this program
+has shipped that fault over the background colour and over five draw calls'
+worth of palette.
+
+Three things had to be parameterised for the second caller to be possible:
+
+- **`roomBackWall` took no camera** and read `roomCamNow()`. The film is shot
+  with the camera posed for its own shape, which is not the one on screen.
+- **The line height was a constant.** The type does not scale with the *room* —
+  small type printed on a wall does not grow because the wall is big — but a
+  film is the same composition at a different resolution, and 7px in a
+  1080-tall frame is half what it is in a 762-tall panel. The film scales by the
+  frame's height so it looks like the view rather than like the view with the
+  readout shrunk.
+- **The fade down the wall was five `color-mix` steps in the stylesheet.**
+  `roomDataAlpha` owns the ladder now, so the wall cannot fade differently on
+  film than it does on screen.
+
+The header loses its load and its drop count offline. There is no engine running
+to ask, and both are properties of playback rather than of the sound; the
+document's own rate, window and layer count are still true and still printed.
+
+It is drawn **between the ground and the room**, which is where it lives: on
+screen the block is at `z-index: 0` with the canvas at 1 over it. Drawn after
+the room it would be type on the glass, in front of everything.
+
+### Testing it needs two different cameras
+
+The test films twice, with the block on and off, and counts red — a colour
+nothing else in the room draws — out of the frame handed to the encoder rather
+than out of the GL canvas, which is the thing that never had the block in it.
+
+Then it checks the red landed inside the back wall's rectangle. **That assertion
+passed with the wrong camera deliberately wired in**, because the test posed
+only the shape being filmed: `roomCameraForAspect` then fell back to the current
+view, which was the same camera by another route and put the wall in the same
+place. It poses two visibly different cameras now, and with the wall taken from
+the wrong one the block is clipped down to 157 red pixels from over a thousand.
 

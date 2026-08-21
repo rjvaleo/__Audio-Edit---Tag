@@ -395,3 +395,128 @@ test('the render phase reports progress rather than sitting at zero', async ({ p
   const stages = new Set(render.map((s) => s.stage).filter(Boolean));
   expect([...stages].length, 'the render names its inner stage').toBeGreaterThan(0);
 });
+
+// ── the schedule, printed on the filmed wall ──
+//
+// The live block is HTML *behind* the canvas — the room is drawn on glass over
+// it — so an export that filmed only the canvas left it out of the file
+// entirely. A layer that could be switched on in the view was simply absent
+// from the render.
+
+test('the data block is filmed, and lands on the back wall', async ({ page }) => {
+  await openFile(page);
+  const out = await page.evaluate(async () => {
+    if (videoExportSupport()) return { skip: videoExportSupport() };
+    const size = { w: 480, h: 270 };
+    // **Two cameras that are genuinely different**, or the placement assertion
+    // below cannot tell the filmed one from the one on screen. Posing only the
+    // shape being filmed leaves `roomCameraForAspect` falling back to the
+    // current view — the same camera by another route, and a wall in the same
+    // place either way. The first cut of this test did exactly that and passed
+    // with the wrong camera deliberately wired in.
+    roomEdit.cams = {
+      '16x9': { depth: 1.6, floorY: -0.30, ceilY: 0.55, shiftX: 0, skyAt: 0.72, ring: 0.17 },
+      dock: { depth: 5.5, floorY: -0.95, ceilY: 0.25, shiftX: 0.4, skyAt: 0.3, ring: 0.5 },
+    };
+    roomEdit.frame = 'dock';
+    const camera = roomCameraForAspect(size.w / size.h);
+
+    // What the *encoder* is handed, which is the ground, the block and the room
+    // composited — not the GL canvas on its own, which is the thing that never
+    // had the block in it.
+    const grab = async (dataOn) => {
+      const shots = [];
+      const Real = window.VideoFrame;
+      window.VideoFrame = class extends Real {
+        constructor(src, init) {
+          if (shots.length < 1) {
+            const c = document.createElement('canvas');
+            c.width = size.w; c.height = size.h;
+            const g = c.getContext('2d');
+            g.drawImage(src, 0, 0);
+            shots.push(g.getImageData(0, 0, size.w, size.h).data);
+          }
+          super(src, init);
+        }
+      };
+      try {
+        await videoExport({
+          path: state.selectedFile.path,
+          from: 0, to: 0, repeats: 0, tail: false,
+          size, fps: 30, camera,
+          // Only the box, so the wall has an edge to check the block against
+          // without a terrain crossing the same pixels.
+          layers: { room: true, floor: false, lead: false, sky: false,
+            skin: false, grains: false, data: dataOn },
+          occlude: {}, order: roomOrder(),
+          // Blue room, so nothing the room draws is red.
+          room: { cold: [0.1, 0.3, 0.9], hot: [0.2, 0.5, 1], core: [0.3, 0.6, 1] },
+          background: '#000',
+          data: {
+            on: dataOn,
+            chunk: roomEdit.chunk,
+            opacity: 1,
+            // Pure red. Nothing else in this film draws red, so a red pixel came
+            // from the block and from nothing else.
+            colour: '#ff0000',
+            head: roomDataHead(false),
+            ch: roomChPx(document.getElementById('roomData')) || 5.1,
+            line: ROOM_LINE,
+            font: 'monospace',
+            fontPx: 7,
+            scale: 1.5,
+          },
+          fetchSchedule: (f, t) => api(
+            `/api/grains?p=${encodeURIComponent(state.selectedFile.path)}&from=${f}&to=${t}`,
+          ).catch(() => null),
+          padSeconds: GRAIN_PLAYHEAD_PAD,
+          loopOut: null,
+          onStage: () => {},
+        });
+      } finally {
+        window.VideoFrame = Real;
+      }
+      return shots[0];
+    };
+
+    const red = (d) => {
+      let n = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+      for (let y = 0; y < size.h; y++) {
+        for (let x = 0; x < size.w; x++) {
+          const i = (y * size.w + x) * 4;
+          if (d[i] > 70 && d[i] > d[i + 1] * 2 + 30 && d[i] > d[i + 2] * 2 + 30) {
+            n++;
+            if (x < x0) x0 = x; if (x > x1) x1 = x;
+            if (y < y0) y0 = y; if (y > y1) y1 = y;
+          }
+        }
+      }
+      return { n, x0, x1, y0, y1 };
+    };
+
+    const on = red(await grab(true));
+    const off = red(await grab(false));
+    return { on, off, wall: roomBackWall(size.w, size.h, camera), size };
+  });
+  if (out.skip) test.skip(true, out.skip);
+
+  // **It is in the film.** This is the whole fault: before, the answer was zero.
+  expect(out.on.n, 'the block was not filmed at all').toBeGreaterThan(200);
+  // And it is the block that put it there, not something else that happens to
+  // be reddish — with the layer off there is none of it.
+  expect(out.off.n, 'red appeared with the block switched off').toBeLessThan(20);
+
+  // **On the wall, not over the frame.** The wall is smaller than the canvas by
+  // the room's own convergence, and it is worked out for the camera being
+  // filmed with rather than the one on screen. A block using the wrong camera,
+  // or the live canvas size, lands somewhere else entirely.
+  const w = out.wall;
+  const slack = 3;
+  expect(out.on.x0).toBeGreaterThanOrEqual(Math.floor(w.x) - slack);
+  expect(out.on.x1).toBeLessThanOrEqual(Math.ceil(w.x + w.w) + slack);
+  expect(out.on.y0).toBeGreaterThanOrEqual(Math.floor(w.y) - slack);
+  expect(out.on.y1).toBeLessThanOrEqual(Math.ceil(w.y + w.h) + slack);
+  // And it is not a stripe in one corner — it fills a good part of the wall.
+  expect(out.on.x1 - out.on.x0, 'the block barely spans the wall')
+    .toBeGreaterThan(w.w * 0.3);
+});
