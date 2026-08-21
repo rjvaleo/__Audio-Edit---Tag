@@ -1737,6 +1737,24 @@ body.editing .dock { flex: 0 0 330px; }
 .export-body .fx-row { align-items: center; gap: 10px; }
 .export-label { width: 56px; font-size: 11px; color: var(--text-dim); }
 #elRepeats { width: 64px; height: 22px; text-align: center; }
+/* The two video menus, sized to their own options.
+   `.field` is `width: 100%`, which is right for a field on its own line and
+   wrong for two of them in a flex row: each asks for the whole row, so the pair
+   took 946 px of 1046 and squeezed the note beside them into a 40 px column
+   three hundred pixels tall — a stack of single letters, which is what
+   "the text isn't readable" was.
+   Sized to their content instead, with a ceiling so the longest option
+   ("Square large · 2048×2048") cannot push the note out again, and at the
+   height of the switches they sit beside rather than the 30 px a field gets
+   when it has a line to itself. */
+#elVideoSize, #elVideoFps {
+  flex: 0 0 auto;
+  width: auto; min-width: 0;
+  height: 22px; padding: 0 6px;
+  font-size: 11px;
+}
+#elVideoSize { max-width: 200px; }
+#elVideoFps { max-width: 96px; }
 .export-body .fx-note { margin: 0; flex: 1; }
 .modal-card {
   width: min(1080px, 94vw); height: min(700px, 88vh);

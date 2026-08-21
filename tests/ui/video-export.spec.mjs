@@ -520,3 +520,40 @@ test('the data block is filmed, and lands on the back wall', async ({ page }) =>
   expect(out.on.x1 - out.on.x0, 'the block barely spans the wall')
     .toBeGreaterThan(w.w * 0.3);
 });
+
+// ── the export box's own layout ──
+//
+// `.field` is `width: 100%`, which is right for a field with a line to itself
+// and wrong for two of them in a flex row: each asks for the whole row, so the
+// pair took 946 px of 1046 and squeezed the note beside them into a 40 px
+// column three hundred pixels tall — a stack of single letters.
+
+test('the video menus leave room for the line they sit on', async ({ page }) => {
+  await openFile(page);
+  await page.evaluate(() => document.getElementById('videoBtn').click());
+  await page.waitForSelector('#exportLoop #elVideoSize', { state: 'visible' });
+
+  const got = await page.evaluate(() => {
+    const sel = document.getElementById('elVideoSize');
+    const fps = document.getElementById('elVideoFps');
+    const row = sel.closest('.fx-row');
+    const note = row.querySelector('.fx-note');
+    const w = (el) => el.getBoundingClientRect().width;
+    const h = (el) => el.getBoundingClientRect().height;
+    return {
+      row: w(row), size: w(sel), fps: w(fps),
+      noteW: w(note), noteH: h(note),
+      // The longest option still fits rather than being clipped to "Square la…".
+      clipped: sel.scrollWidth > sel.clientWidth + 1,
+    };
+  });
+
+  // Together they take a modest share of the row, not nearly all of it.
+  expect((got.size + got.fps) / got.row,
+    'the two menus take most of the row').toBeLessThan(0.45);
+  // **The note is a line of prose, not a column of letters.** This is the check
+  // that names the actual complaint: it was 40 px wide and 317 tall.
+  expect(got.noteW, 'the note is squeezed into a column').toBeGreaterThan(got.row * 0.4);
+  expect(got.noteH, 'the note has wrapped into a tower').toBeLessThan(60);
+  expect(got.clipped, 'the size menu cannot show its own longest option').toBe(false);
+});
