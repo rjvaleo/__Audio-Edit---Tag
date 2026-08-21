@@ -311,7 +311,11 @@ fn every_grain_control_is_bounded() {
     assert!(g("pitchJitterSemis") <= 24.0);
     assert!(g("pitchDriftSemis") <= 24.0);
     assert!(g("driftRateHz") <= 20.0);
-    assert!(g("layers") <= 16.0 && g("layers") >= 1.0, "layers {}", g("layers"));
+    assert!(
+        g("layers") <= fx::grain::MAX_LAYERS as f64 && g("layers") >= 1.0,
+        "layers {}",
+        g("layers")
+    );
     assert!(g("scan").abs() <= 4.0, "scan {}", g("scan"));
     assert!(g("envelope") <= 1.0);
     assert!(g("sizeRange") <= 8.0);
@@ -757,7 +761,7 @@ fn the_manager_cannot_store_a_value_the_engines_would_refuse() {
     assert!(num(p, &["stretch", "semitones"]).abs() <= 48.0);
     assert!(num(p, &["stretch", "pvsola", "anchorFrames"]) <= 64.0);
     assert!(num(p, &["stretch", "hybrid", "margin"]) <= 8.0);
-    assert!(num(p, &["stretch", "grain", "layers"]) <= 16.0);
+    assert!(num(p, &["stretch", "grain", "layers"]) <= fx::grain::MAX_LAYERS as f64);
 }
 
 #[test]

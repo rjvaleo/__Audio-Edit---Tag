@@ -3115,15 +3115,28 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rh-depth { width: 11px; height: 11px; border-radius: 50%; cursor: move; }
 .rh-ring { width: 11px; height: 11px; border-radius: 50%; cursor: move; }
 
-/* The eye line runs the width of the frame, so its grip is a line rather than a
-   point — the whole of it is the thing you take hold of. */
+/* The eye line: a **short tab at the left edge**, not a band across the frame.
+   A full-width grip was the first version and it took the whole middle of the
+   room with it — which is exactly where you reach to swing the view, so the
+   oldest gesture in this panel stopped working along the one line people
+   naturally grab. This program has already learned that once, for the grain
+   centre line: "a short tab at the left edge rather than a full-width band,
+   because the rest of that line has to stay available for selecting."
+
+   The hairline is drawn as a marker so the eye line is still *visible* the
+   whole way across, and it takes no pointer — only the tab does. */
 .rh-horizon {
-  left: 0; right: 0; width: auto; height: 3px;
-  transform: translateY(-50%);
-  border-radius: 0; border: 0; opacity: .3;
+  left: 0; width: 26px; height: 9px;
+  transform: translate(0, -50%);
+  border-radius: 0 3px 3px 0;
   cursor: ns-resize;
 }
-.rh-horizon:hover, .rh-horizon.dragging { opacity: .75; box-shadow: none; }
+.rh-horizon::after {
+  /* The line itself, shown and not grabbable. */
+  content: ''; position: absolute; left: 26px; top: 50%;
+  width: 100vw; height: 1px; margin-top: -0.5px;
+  background: var(--accent); opacity: .28; pointer-events: none;
+}
 
 /* A word on what it does, on the way past. */
 .rh-tip {
@@ -3135,3 +3148,19 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   opacity: 0; transition: opacity .12s ease;
 }
 .rh:hover + .rh-tip, .rh.dragging + .rh-tip { opacity: 1; }
+
+/* The stretch and grain controls, in the room's own panel.
+   They are laid out for a wide dock pane, where they sit beside the room; here
+   they are a column 300px across, so the two-across split and the fixed widths
+   have to give. Same DOM, same handlers — see `ROOM_VIEW_PARTS`. */
+#roomSoundBody > .grain-controls {
+  display: block; width: auto; max-width: none; min-width: 0;
+  overflow: visible;
+}
+#roomSoundBody .cpanel { width: auto; min-width: 0; margin-bottom: 8px; }
+#roomSoundBody .grain-extended { display: block; }
+/* The sliders are sized for the dock's row; give them the panel's width. */
+#roomSoundBody .p-row { display: flex; flex-wrap: wrap; align-items: center; }
+#roomSoundBody .p-row > input[type="range"] { flex: 1 1 110px; min-width: 0; width: auto; }
+#roomSoundBody .cloud-pad-wrap { width: auto; }
+#roomSoundBody #cloudPad { width: 100%; height: auto; aspect-ratio: 1; }

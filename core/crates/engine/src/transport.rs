@@ -154,6 +154,20 @@ pub struct Shared {
     // it straight back over. It falls fast and climbs slowly.
     /// The most layers the callback may run right now.
     layer_cap: AtomicU32,
+    /// Whether the governor may take layers away.
+    ///
+    /// **Off by default: the engine plays what you asked for.** Shedding was
+    /// the only behaviour, and what it looks like from outside is the program
+    /// quietly overriding a setting — "5 of 12 layers" at 29% load, with no
+    /// note of when it might give them back. A tool that changes your numbers
+    /// without being asked is worse than one that struggles audibly, because
+    /// the struggle is information and the silence is not.
+    ///
+    /// On, it does what it always did: sheds a layer at a time when blocks
+    /// actually miss their deadline, so an over-ambitious setting costs a
+    /// thinner cloud rather than holes in the sound. The load readout says
+    /// which is happening either way.
+    shed_layers: AtomicBool,
     /// Evidence for shedding, and evidence for recovering.
     hot: AtomicU32,
     cool: AtomicU32,
@@ -326,6 +340,7 @@ impl Shared {
             load_worst: AtomicU32::new(0),
             late_blocks: AtomicU64::new(0),
             layer_cap: AtomicU32::new(crate::render::MAX_LAYERS as u32),
+            shed_layers: AtomicBool::new(false),
             hot: AtomicU32::new(0),
             cool: AtomicU32::new(0),
             layers_running: AtomicU32::new(1),
@@ -503,6 +518,20 @@ impl Shared {
     /// cloud is the least destructive of the three. The sound gets smaller, not
     /// wrong.
     fn govern(&self, ppm: u32, mean: u32) {
+        // Switched off: the cap stays where it belongs and nothing is taken
+        // away. Held rather than merely skipped, so turning it off while it has
+        // already shed gives the layers straight back instead of waiting out
+        // four hundred easy blocks per layer to climb home.
+        if !self.shed_layers.load(Ordering::Relaxed) {
+            let full = crate::render::MAX_LAYERS as u32;
+            if self.layer_cap.load(Ordering::Relaxed) != full {
+                self.layer_cap.store(full, Ordering::Relaxed);
+                self.hot.store(0, Ordering::Relaxed);
+                self.cool.store(0, Ordering::Relaxed);
+            }
+            return;
+        }
+
         /// A block that did not make its deadline. This is not "load is high",
         /// it is a hole in the sound.
         const LATE: u32 = 1_000_000;
@@ -579,6 +608,18 @@ impl Shared {
 
     /// Give the governor its head back. Called when the document changes, since
     /// a cap earned by one setting says nothing about the next.
+    /// Whether the governor may take layers away. See [`Shared::shed_layers`].
+    pub fn set_shed_layers(&self, on: bool) {
+        self.shed_layers.store(on, Ordering::Relaxed);
+        if !on {
+            self.reset_governor();
+        }
+    }
+
+    pub fn sheds_layers(&self) -> bool {
+        self.shed_layers.load(Ordering::Relaxed)
+    }
+
     pub fn reset_governor(&self) {
         self.layer_cap
             .store(crate::render::MAX_LAYERS as u32, Ordering::Relaxed);
