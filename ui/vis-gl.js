@@ -43,6 +43,19 @@ const VG_CAMERA = {
   skyAt: 0.72,
   ring: 0.17,
   lead: 0.012,
+  // ── the back of the room ──
+  //
+  // How wide and how tall the far rectangle is against the near one, **in world
+  // units, before the perspective divide**. One is a straight prism, which is
+  // what this room always was: the box's walls run parallel and the only thing
+  // that shrinks the back is the projection.
+  //
+  // Below one the walls converge and the room reads as longer than it is; above
+  // one they splay and the back opens out. Neither is available from `depth`,
+  // which moves the back away and takes the width and the height with it in
+  // step — this is the pair of them coming apart.
+  backW: 1,
+  backH: 1,
 };
 
 /// A camera with anything missing filled in from the default, so a stored one
@@ -1065,6 +1078,29 @@ function vgAttach(canvas) {
       // fade against.
       const zAt = (t) => -(near + t * (far - near));
 
+      // ── the taper ──
+      //
+      // The room was a rectangular prism: front and back the same size in world
+      // units, with the projection doing all of the narrowing. These let the far
+      // rectangle be a different size from the near one, which the perspective
+      // then shrinks on top — so the walls can converge past what distance
+      // alone does, or splay out against it.
+      //
+      // Linear in `t` rather than in the projected width, because what is being
+      // dragged is where the *back* is and the front is pinned to the canvas
+      // edges. At `t = 0` both are one whatever the setting, so the near face
+      // still lands exactly on the panel and "the panel is the box" survives.
+      const backW = cam.backW ?? 1;
+      const backH = cam.backH ?? 1;
+      const taperX = (t) => 1 + (backW - 1) * t;
+      const taperY = (t) => 1 + (backH - 1) * t;
+      // The height tapers about the room's own middle, so a shorter back pulls
+      // the floor up and the ceiling down together. Tapering about the floor
+      // would tilt the room instead of narrowing it, which is the eye line's
+      // job and already has a gesture.
+      const yMid = (yb + yt) * 0.5;
+      const yTap = (y, t) => yMid + (y - yMid) * taperY(t);
+
       // ── the room ──
       //
       // Only the four runs back and the far rectangle. The near rectangle is
@@ -1085,14 +1121,17 @@ function vgAttach(canvas) {
         // the convergence, so it sat far beyond where the floor actually ends
         // and the terrain appeared to stop short of the room in a hard edge. It
         // was not stopping short — the wall was in the wrong place.
+        // The far rectangle is the near one through the taper, so a room whose
+        // back has been pulled in is a box with sloping walls rather than a
+        // smaller rectangle floating at the same distance.
         for (let i = 0; i < 4; i++) {
           const [x0, y0] = fr[i];
           const [x1, y1] = fr[(i + 1) % 4];
-          put(x0, y0, zAt(1), 0.16);
-          put(x1, y1, zAt(1), 0.16);
+          put(x0 * taperX(1), yTap(y0, 1), zAt(1), 0.16);
+          put(x1 * taperX(1), yTap(y1, 1), zAt(1), 0.16);
           // and the corner run from the canvas edge back to it
           put(x0, y0, zAt(0), 0.02);
-          put(x0, y0, zAt(1), 0.16);
+          put(x0 * taperX(1), yTap(y0, 1), zAt(1), 0.16);
         }
         draw(gl.LINES, pos, wts, v, 0.85, false, f.cold, f.cold, 1, 'box');
       };
@@ -1104,8 +1143,10 @@ function vgAttach(canvas) {
       // with the newest ridge at the near edge and everything before it running
       // away to the back wall.
       const rows = history.length;
-      const ridgeY = (v) => yb + v * (yt - yb) * geomRidge;
-      const xAt = (i) => ((i / (geomBands - 1)) * 2 - 1) * halfW;
+      // Both take the row's depth now: the floor narrows with the walls and
+      // the ridges stand on it rather than through it.
+      const ridgeY = (v, t) => yTap(yb + v * (yt - yb) * geomRidge, t || 0);
+      const xAt = (i, t) => ((i / (geomBands - 1)) * 2 - 1) * halfW * taperX(t || 0);
       // Against the room's full depth, not against however many frames happen to
       // be in hand. Dividing by `rows` made a half-filled trail span the whole
       // room and then crawl backwards as it filled — the trail should *grow*
@@ -1131,13 +1172,13 @@ function vgAttach(canvas) {
           let v = 0;
           for (let r = 0; r < meshRows; r++) {
             const a = history[r].row, b = history[r + 1].row;
-            const za = zAt(ageOf(r)), zbb = zAt(ageOf(r + 1));
+            const ta = ageOf(r), tb = ageOf(r + 1);
+            const za = zAt(ta), zbb = zAt(tb);
             for (let i = 0; i < geomBands; i++) {
-              const x = xAt(i);
               const fr = i / (geomBands - 1);
-              pos[v * 3] = x; pos[v * 3 + 1] = ridgeY(a[i]); pos[v * 3 + 2] = za;
+              pos[v * 3] = xAt(i, ta); pos[v * 3 + 1] = ridgeY(a[i], ta); pos[v * 3 + 2] = za;
               wts[v] = a[i]; hz[v] = fr; v++;
-              pos[v * 3] = x; pos[v * 3 + 1] = ridgeY(b[i]); pos[v * 3 + 2] = zbb;
+              pos[v * 3] = xAt(i, tb); pos[v * 3 + 1] = ridgeY(b[i], tb); pos[v * 3 + 2] = zbb;
               wts[v] = b[i]; hz[v] = fr; v++;
             }
           }
@@ -1212,8 +1253,8 @@ function vgAttach(canvas) {
           const age = ageOf(r);
           const z = zAt(age);
           for (let i = 0; i < geomBands; i++) {
-            floorPos[i * 3] = xAt(i);
-            floorPos[i * 3 + 1] = ridgeY(row[i]);
+            floorPos[i * 3] = xAt(i, age);
+            floorPos[i * 3 + 1] = ridgeY(row[i], age);
             floorPos[i * 3 + 2] = z;
             floorW[i] = row[i];
           }
@@ -1250,7 +1291,7 @@ function vgAttach(canvas) {
           }
         }
         for (let i = 0; i < geomBands; i++) {
-          const x = xAt(i), y = ridgeY(now[i]);
+          const x = xAt(i, 0), y = ridgeY(now[i], 0);
           leadPos[i * 6] = x; leadPos[i * 6 + 1] = y - cam.lead; leadPos[i * 6 + 2] = z;
           leadPos[i * 6 + 3] = x; leadPos[i * 6 + 4] = y + cam.lead; leadPos[i * 6 + 5] = z;
           leadW[i * 2] = now[i]; leadW[i * 2 + 1] = now[i];
@@ -1495,8 +1536,12 @@ function vgAttach(canvas) {
             // about the sound.
             const fx = Math.max(-0.98, Math.min(0.98, p.fx + p.dx * a0));
             const fy = Math.max(-0.49, Math.min(0.49, p.fy + p.dy * a0));
-            const x = fx * halfW;
-            const y = yb + (yt - yb) * (0.5 + fy);
+            // A grain travels with the walls: held inside the box at every
+            // depth rather than inside the box the front face describes. A
+            // cloud that kept the front's width in a room whose back has been
+            // pulled in would spill through the walls on its way to the wall.
+            const x = fx * halfW * taperX(a0);
+            const y = yTap(yb + (yt - yb) * (0.5 + fy), a0);
             const z = zAt(a0);
             // Hot when it lands, cooling as it goes.
             const lit = Math.min(1, p.w * (1 + VG_GRAIN_FLASH
@@ -1811,7 +1856,9 @@ function vgAttach(canvas) {
           const liss = history[r].liss;
           if (!liss) return false;
           const n = count || pts;
-          const z = zAt(ageOf(r));
+          // Named, because the taper needs it as well as the depth does.
+          const age = ageOf(r);
+          const z = zAt(age);
           for (let i = 0; i <= n; i++) {
             const k = i % n;                   // closed, so the
             const th = (k / n) * Math.PI * 2;  // last point is the first
@@ -1858,8 +1905,11 @@ function vgAttach(canvas) {
             const rr = spline(liss[a0 + 1], liss[b0 + 1], liss[c0 + 1], liss[d0 + 1]);
             const mid = (l + rr) * 0.5, side = (l - rr) * 0.5;
             const rad = r0 * (1 + (mid * 0.85 + side * 0.55) * drive);
-            pos[i * 3] = Math.cos(th) * rad;
-            pos[i * 3 + 1] = skyY + Math.sin(th) * rad;
+            // The hoop narrows with the room and keeps its centre on the
+            // room's own axis, so a tapered box has the trail running down its
+            // middle rather than out through the ceiling.
+            pos[i * 3] = Math.cos(th) * rad * taperX(age);
+            pos[i * 3 + 1] = yTap(skyY + Math.sin(th) * rad, age);
             pos[i * 3 + 2] = z;
             wts[i] = Math.min(1, 0.25 + Math.abs(mid) * 1.6);
             // Nought is mono, one is as wide as this figure gets. `side` is
