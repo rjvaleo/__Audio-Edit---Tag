@@ -353,3 +353,70 @@ every frame different, because `grainLive` and `grainClock` are held between
 frames on purpose and the previous run's cloud was still in the air. `clear()`
 exists for that. Only then did the number go to zero.
 
+## The bar during the render, and the camera it films with
+
+Added 20 Aug 2026, after both were reported.
+
+### The render reported nothing
+
+Filming is preceded by a render of the sound, and that render is the same one an
+audio export makes, through the same `run_export`. It reports itself into
+`app.export` — and `/api/video` was reading the *video* job, which has nothing
+to say until the analysis starts.
+
+So the first phase named itself correctly and sat at `done: 0` of a `total: 1`
+for its entire length. On a short file that is invisible. On a forty-times
+stretch it is minutes of a bar that does not move, and it reads as a hang —
+which is exactly how it was reported.
+
+The status route now reads the export's numbers while that phase is running, and
+carries a `stage` field for what the render is doing *inside* itself: reading,
+stretching, writing. Those three cost wildly different amounts per frame, so a
+bar with no account of which one it is in moves in unexplained lurches.
+
+Measured on a 30× stretch: sixty-seven samples across the phase, `stage` moving
+`stretching → writing`, and the fraction climbing 0.02 → 0.94. Every one of
+those samples used to read zero.
+
+**A test for this needs a long render.** Two attempts did not have one. The
+first drove the whole export on the test library's short file, whose render
+finishes inside a single 200 ms poll — its very first report was already
+`Analysing`, and that was read as the render being silent. The second stretched
+it but took whichever file came first alphabetically, which in that library is a
+tenth of a second. It takes the longest file there is at the maximum ratio.
+
+### The camera was the one on screen
+
+`docs/ROOM-EDITOR.md` says what the per-frame cameras are for:
+
+> *Each frame keeps its own camera. That is what the video export reads when a
+> size is chosen, so picking Vertical in the export box gets the camera that was
+> designed for vertical rather than the wide one squeezed.*
+
+That was the intent and not the behaviour. The export passed
+`roomCameraDrawn()`, which reads `roomEdit.frame` — whatever the view happens to
+be showing. Posing the room for 9:16 and then exporting HD filmed the portrait
+camera into a landscape frame.
+
+`roomCameraForAspect` matches by shape rather than by name, because the export
+box offers nine sizes against five cameras — 720p, HD, 1440p and 4K are all 16:9
+and all want the camera posed for 16:9.
+
+A shape nobody has posed falls back to the camera being looked at rather than to
+the shipped default: the rule is *use the camera meant for this shape*, and when
+there is no such camera, the one in front of you is at least a pose somebody
+chose.
+
+## What the film still does not have
+
+**The data block is not in it.** The schedule printed on the back wall is HTML
+positioned behind the canvas — the room is drawn on glass over it — and the
+export draws only the GL canvas onto a flat ground. So a layer that can be
+switched on in the view is absent from the file.
+
+It is not a line of plumbing. `roomBackWall` works from `roomCamNow()` and
+`paintRoomData` writes DOM from live state, so filming it means parameterising
+both on a camera and an offline schedule, then drawing the lines with the 2D
+context at the export's own scale with the wall's five fade steps. That is its
+own piece of work and it has not been done.
+

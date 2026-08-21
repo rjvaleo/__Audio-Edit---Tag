@@ -156,7 +156,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/export/stop") => api_export_stop(app),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
         ("POST", "/api/video") => api_video(app, req),
-        ("GET", "/api/video") => api_video_status(),
+        ("GET", "/api/video") => api_video_status(app),
         ("GET", "/api/video/frames") => api_video_frames(req),
         ("GET", "/api/video/audio") => api_video_audio(),
         ("POST", "/api/video/stop") => api_video_stop(),
@@ -2425,27 +2425,8 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
     // this wrong is not cosmetic: the first cut counted a reading pass that the
     // unstretched path does not make, and the bar stopped at 50% on a finished
     // export.
-    let base_frames = list.base_frames();
     let stretched = list.is_stretched();
-    // Reading is only its own phase when the stretch needs the whole document
-    // up front; otherwise it happens inside the block loop and is counted there.
-    let reading = if stretched { base_frames } else { list.frames() };
-    let stretching = list.stretch.work_frames(base_frames);
-    let total_work = match plan.as_ref() {
-        Some(p) => {
-            // read/stretch, then one rack pass over the tiled stream — including
-            // the silence appended for the tail, which the rack really does run
-            // over. The final quantise-and-write pass is not counted: it is a
-            // few percent of the whole and its length is not known until the
-            // tail has been measured.
-            let musical = p.to.saturating_sub(p.from) * p.repeats.max(1) as u64;
-            let pad = if p.tail { fx::TAIL_CAP_SECONDS * list.sample_rate as u64 } else { 0 };
-            reading + stretching + musical + pad
-        }
-        // The unstretched whole-file path steps only its write loop.
-        None if !stretched => list.frames(),
-        None => reading + stretching + list.frames(),
-    };
+    let total_work = export_total_work(&list, plan.as_ref());
 
     let plan_looped = plan.is_some();
     if app.export.running.swap(true, Ordering::SeqCst) {
@@ -2585,6 +2566,12 @@ fn api_video(app: &Arc<App>, req: &Request) -> Response {
     }
     job.begin(1);
 
+    // The render ahead is the same one an audio export makes, and it reports
+    // itself through `app.export`. Started here so that it has a total to count
+    // against: without this the video's first phase — which on a long stretch is
+    // most of the wait — sat at a hard zero and read as a hang.
+    app.export.begin(export_total_work(&list, plan.as_ref()));
+
     let app2 = Arc::clone(app);
     let rel2 = rel.to_string();
     let scratch = app.data_dir.join("video-render.wav");
@@ -2656,16 +2643,41 @@ fn api_video(app: &Arc<App>, req: &Request) -> Response {
     Response::json(Value::obj().set("ok", true).set("started", true).to_string())
 }
 
-fn api_video_status() -> Response {
+fn api_video_status(app: &Arc<App>) -> Response {
     let job = crate::video::job();
-    let done = job.done.load(Ordering::Relaxed);
-    let total = job.total.load(Ordering::Relaxed).max(1);
+    let phase = job.phase.lock().map(|x| x.clone()).unwrap_or_default();
+    // **While the sound is being rendered, the progress worth reporting is the
+    // render's own.** It goes into `app.export`, because it is the same render
+    // an audio export makes through the same code — so this route reads it from
+    // there rather than the video job, which has nothing to say until the
+    // analysis starts. Reported as its own phase either way, so the interface
+    // can still name what is happening.
+    let rendering = phase == "rendering";
+    let done = if rendering {
+        app.export.done.load(Ordering::Relaxed)
+    } else {
+        job.done.load(Ordering::Relaxed)
+    };
+    let total = if rendering {
+        app.export.total.load(Ordering::Relaxed).max(1)
+    } else {
+        job.total.load(Ordering::Relaxed).max(1)
+    };
     let mut v = Value::obj()
         .set("running", job.running.load(Ordering::Relaxed))
         .set("done", done as f64)
         .set("total", total as f64)
         .set("fraction", (done as f64 / total as f64).min(1.0))
-        .set("phase", job.phase.lock().map(|x| x.clone()).unwrap_or_default())
+        .set("phase", phase.clone())
+        // What the render is doing inside itself — reading, stretching,
+        // writing. The three cost wildly different amounts per frame, so a bar
+        // that only said "rendering" would move in lurches with no account of
+        // why. Empty except during that phase.
+        .set("stage", if rendering {
+            app.export.phase.lock().map(|x| x.clone()).unwrap_or_default()
+        } else {
+            String::new()
+        })
         .set("error", job.error.lock().map(|x| x.clone()).unwrap_or_default())
         .set("serial", job.serial.load(Ordering::Relaxed) as f64);
     if let Ok(g) = job.reel.lock() {
@@ -2762,6 +2774,48 @@ fn api_video_audio() -> Response {
 /// A wider document is left exactly as it is.
 fn render_channels(list: &edit::EditList) -> u16 {
     list.channels.max(2)
+}
+
+/// What the export's bar is measured against, decided before anything starts.
+///
+/// Reading the base, the stretch's own passes, and one pass to write. The three
+/// cost wildly different amounts per frame — the stretch dominates a big export
+/// by a distance — so this is a proportion, not a prediction of time. It is
+/// honest about *what it is doing* at every moment, which is what the phase name
+/// is for.
+///
+/// Counted to match exactly what the renderer steps, phase by phase. Getting it
+/// wrong is not cosmetic: the first cut counted a reading pass that the
+/// unstretched path does not make, and the bar stopped at 50% on a finished
+/// export.
+///
+/// **Shared with the video export**, which renders the same sound through the
+/// same `run_export` before it films anything. That render used to report
+/// nothing at all — the numbers went into `app.export` while the video's status
+/// route read the video job, so a stretch that takes minutes sat at a hard zero
+/// and read as a hang. One total, counted once, for the one render.
+pub fn export_total_work(list: &edit::EditList, plan: Option<&edit::render::LoopPlan>) -> u64 {
+    let base_frames = list.base_frames();
+    let stretched = list.is_stretched();
+    // Reading is only its own phase when the stretch needs the whole document
+    // up front; otherwise it happens inside the block loop and is counted there.
+    let reading = if stretched { base_frames } else { list.frames() };
+    let stretching = list.stretch.work_frames(base_frames);
+    match plan {
+        Some(p) => {
+            // read/stretch, then one rack pass over the tiled stream — including
+            // the silence appended for the tail, which the rack really does run
+            // over. The final quantise-and-write pass is not counted: it is a
+            // few percent of the whole and its length is not known until the
+            // tail has been measured.
+            let musical = p.to.saturating_sub(p.from) * p.repeats.max(1) as u64;
+            let pad = if p.tail { fx::TAIL_CAP_SECONDS * list.sample_rate as u64 } else { 0 };
+            reading + stretching + musical + pad
+        }
+        // The unstretched whole-file path steps only its write loop.
+        None if !stretched => list.frames(),
+        None => reading + stretching + list.frames(),
+    }
 }
 
 fn run_export(
