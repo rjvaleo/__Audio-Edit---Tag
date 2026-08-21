@@ -95,11 +95,67 @@ async function videoFetchFrames(status, onProgress) {
   return out;
 }
 
+/// The schedule, printed on the back wall of the filmed room.
+///
+/// **The same lines the live block prints**, from `roomDataBlock` — the film is
+/// meant to be what the room looks like, and a second builder would be a second
+/// thing to keep in step. What differs is only where they are put: HTML
+/// positioned over the page there, glyphs in a 2D context here.
+///
+/// The wall is worked out for **the camera being filmed with**, which is not
+/// necessarily the one on screen — see `roomCameraForAspect`.
+function drawRoomData(ctx, size, camera, data, sched, position) {
+  const wall = roomBackWall(size.w, size.h, camera);
+  const scale = data.scale > 0 ? data.scale : 1;
+  const ch = data.ch * scale;
+  const lineH = data.line * scale;
+  if (!(ch > 0) || !(lineH > 0)) return;
+
+  const block = roomDataBlock({
+    wall,
+    ch,
+    line: lineH,
+    sched,
+    position,
+    chunk: data.chunk,
+    head: data.head,
+  });
+
+  ctx.save();
+  // Clipped to the wall, the same way the live block's box *is* the wall's box
+  // and anything that does not fit is simply not seen. Without this a tile that
+  // overhangs would print across the room and out over the floor.
+  ctx.beginPath();
+  ctx.rect(wall.x, wall.y, wall.w, wall.h);
+  ctx.clip();
+  ctx.font = `300 ${data.fontPx * scale}px ${data.font}`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+
+  const rgb = dataRgb(data.colour);
+  for (let i = 0; i < block.length; i++) {
+    const b = block[i];
+    // The stylesheet's five steps, in numbers. `roomDataAlpha` owns the ladder
+    // so the wall cannot fade differently on film than it does on screen.
+    const a = roomDataAlpha(b.kind, i) * (data.opacity ?? 1);
+    if (a <= 0.001 || !b.text) continue;
+    ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+    ctx.fillText(b.text, wall.x, wall.y + i * lineH);
+  }
+  ctx.restore();
+}
+
+function dataRgb(hex) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  if (!m) return [120, 160, 210];
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
 /// Film it.
 ///
 /// `onStage(text, fraction)` is called throughout; `signal` stops it.
 async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
-  layers, occlude, order, room, background, schedule, fetchSchedule, padSeconds,
+  layers, occlude, order, room, background, data, schedule, fetchSchedule, padSeconds,
   loopOut, signal, onStage }) {
   const why = videoExportSupport();
   if (why) throw new Error(why);
@@ -371,6 +427,12 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
 
     ctx.fillStyle = background || '#000';
     ctx.fillRect(0, 0, size.w, size.h);
+    // **Between the ground and the room, which is where it lives.** On screen
+    // the block sits at `z-index: 0` with the canvas at 1 over it, so the
+    // terrain, the ring and the leading edge lie over the text the way they
+    // would lie over anything painted on the far wall. Drawn after the room it
+    // would be type on the glass instead, in front of everything.
+    if (data && data.on) drawRoomData(ctx, size, camera, data, sched, at);
     ctx.drawImage(canvas, 0, 0);
 
     const vf = new VideoFrame(flat, {

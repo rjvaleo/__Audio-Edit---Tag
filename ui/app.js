@@ -3114,6 +3114,40 @@ async function runVideoExport() {
       },
       // What the room is drawn *on*. It clears to transparent and the page
       // shows through, so an offscreen canvas has nothing behind it at all.
+      // ── the schedule printed on the back wall ──
+      //
+      // The live block is HTML *behind* the canvas — the room is drawn on glass
+      // over it — so filming only the canvas left it out of the file entirely.
+      // A layer you can switch on in the view was simply absent from the export.
+      //
+      // What crosses over is the settings; the lines themselves are built per
+      // frame by `roomDataBlock`, the same function the live block uses, from
+      // that frame's own schedule.
+      data: {
+        on: roomLayerOn('data'),
+        chunk: roomEdit.chunk,
+        opacity: roomEdit.opacity,
+        colour: roomDataColour(),
+        // No engine offline, so no load and no drop count — those are
+        // properties of playback rather than of the sound. See `roomDataHead`.
+        head: roomDataHead(false),
+        ch: roomChPx($('roomData')),
+        line: ROOM_LINE,
+        font: getComputedStyle(document.documentElement)
+          .getPropertyValue('--mono').trim() || 'monospace',
+        fontPx: 7,
+        // **How much bigger the film is than the room on screen.**
+        //
+        // The type does not scale with the *room* — small type printed on a
+        // wall does not grow because the wall is big, which is why the live
+        // block is a fixed 7px however the panel is sized. But a film is the
+        // same composition at a different resolution, and 7px in a 1080-tall
+        // frame is half the size it is in a 762-tall panel. Scaling by the
+        // frame's height is what makes the film look like the view rather than
+        // like the view with the readout shrunk.
+        scale: ($('visGl')?.clientHeight || size.h) > 0
+          ? size.h / ($('visGl').clientHeight || size.h) : 1,
+      },
       // **The ground, from one place.** The live room sits on `--sink` (the
       // room cell's own background) and this used to read `--bg`, which is a
       // different token and a visibly different black — so the file came out on
@@ -8321,12 +8355,15 @@ function roomChPx(el) {
 ///
 /// Derived rather than measured, because there is nothing to measure: the wall
 /// is drawn by the GPU and never exists as an element.
-function roomBackWall(w, h) {
+function roomBackWall(w, h, cam) {
   // A hidden panel measures zero, and a zero width makes the aspect zero, which
   // makes the frustum's half-width zero, which divides. Everything downstream
   // then becomes NaN and lands in a style attribute, where it is silent.
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0, w: 1, h: 1, k: 1 };
-  const c = roomCamNow();
+  // The camera it is being drawn with, which offline is not the one on screen —
+  // the film is shot with the camera posed for its own shape. See
+  // `roomCameraForAspect`.
+  const c = cam ? vgCamera(cam) : roomCamNow();
   const yb = c.floorY, yt = c.ceilY;
   const hh = yt - yb;
   const aspect = w / h;
@@ -8380,53 +8417,22 @@ function saveRoomStreams() {
 /// the three things you want without having to add anything up. The drop
 /// counter especially: it is the pool being full and grains being thrown away,
 /// which is audible and which nothing else on screen says.
-function paintRoomData() {
-  const el = $('roomData');
-  if (!el) return;
-  const show = roomLayerOn('data');
-  el.classList.toggle('hidden', !show);
-  if (!show) return;
-
-  const st = state.stretchDraft || {};
-  const g = state.grainDraft || {};
-  const l = engine.load || null;
-  const win = st.windowMs || 0;
-  const auto = !(g.densityHz > 0);
-  const rate = auto ? (win > 0 ? (1000 / win) * (g.overlap || 1) : 0) : g.densityHz;
-  const drops = Math.round(engine.overflows || 0);
-  const asked = Math.max(1, Math.round(g.layers || 1));
-  const running = l && l.layersRunning > 0 ? Math.round(l.layersRunning) : asked;
-
-  // Every field its own width, so the header is the same length whatever the
-  // numbers are. A readout that reflows as the values change is one you cannot
-  // read while it runs — the eye goes back to finding the column instead of
-  // reading it.
-  const head = [
-    fitCell(`${rate ? rate.toFixed(0) : '—'}/s`, 6),
-    fitCell(`${win.toFixed(0)}ms`, 6),
-    fitCell(`L${running}/${asked}`, 6),
-    fitCell(`${l ? Math.round(l.now * 100) : 0}%`, 4),
-    fitCell(`D${drops}`, 5),
-  ].join(' ');
-
-  const sched = state.grains;
+/// The grain block's lines, worked out and handed back rather than written.
+///
+/// **One builder, two destinations.** The live block is HTML behind the canvas
+/// and the filmed one is type drawn into the export's own 2D context, and they
+/// have to be the same wall of numbers — the film is meant to be what the room
+/// looks like. Two builders would be two things to keep in step, which is the
+/// fault this program has shipped over the background colour and over five
+/// draw calls' worth of palette.
+///
+/// Everything that differs between the two is an argument: the wall it is
+/// printed on, how wide a character is there, the schedule, where the playhead
+/// is, and the header — which offline has no engine to ask about load or drops.
+function roomDataBlock({ wall, ch, line: lineH, sched, position, chunk, head }) {
   const sr = sched?.sampleRate || 44100;
   const all = sched?.grains || [];
-
-  // How many rows fit, rather than a number picked once and wrong at every
-  // other size. The room is the same box in a dock and on a wall.
-  const cell = el.parentElement?.getBoundingClientRect();
-  // On the back wall, so it recedes with the room instead of sitting on the
-  // glass in front of it. The wall is smaller than the canvas by the room's
-  // own convergence, so the block is scaled to fit its width and the line count
-  // follows what is left of its height.
-  const wall = roomBackWall(cell?.width || 300, cell?.height || 150);
-  // Fixed size. The text does not scale with the room — it is small type
-  // printed on the wall, and type on a wall does not change size when you move
-  // the wall. What changes is how much of it fits, which is worked out here in
-  // whole lines and whole columns so nothing is ever cut in half.
-  const ch = roomChPx(el);
-  const lines = Math.max(0, Math.floor(wall.h / ROOM_LINE) - 2);
+  const lines = Math.max(0, Math.floor(wall.h / (lineH || ROOM_LINE)) - 2);
   const rows = Math.max(0, Math.min(64, lines));
 
   // ── every stream has a home ──
@@ -8436,13 +8442,7 @@ function paintRoomData() {
   // after it to the left — switch off IDX and SRC lands where OUT was, so a
   // number you had been reading in one place is now a different number in the
   // same place. The block is a readout you watch while it runs, and a readout
-  // whose columns move under you cannot be watched: the eye goes back to
-  // finding the column instead of reading it, which is the same reason every
-  // field is padded to a fixed width in the first place.
-  //
-  // So a stream that is off leaves its width behind as blank. It costs wall.
-  // What it buys is that PIT is always in the same place, and the header above
-  // it is the header of the numbers under it.
+  // whose columns move under you cannot be watched.
   const room = Math.max(0, Math.floor(wall.w / ch));
   const slots = [];
   let at = 0;
@@ -8462,14 +8462,11 @@ function paintRoomData() {
   // size it is — it is small type printed on a wall, and type on a wall does not
   // grow because the wall is big — and what fills the space is more of it.
   //
-  // Across by whole tiles and down by whole rows, so a tile is never cut in
-  // half at an edge. What does not fit is not drawn.
-  //
   // A tile ends at its last *switched-on* column. The empty places after that
   // are still reserved — nothing moves — but they are not printed, or every
   // tile would carry the width of the streams that are off and the tiles would
-  // sit that far apart. Leading empties are kept, because those are what hold
-  // the columns still.
+  // sit that far apart. Leading empties are kept, because those hold the
+  // columns still.
   let lastOn = -1;
   for (let i = 0; i < cols.length; i++) if (cols[i].on) lastOn = i;
   const tileCols = lastOn >= 0 ? cols.slice(0, lastOn + 1) : [];
@@ -8484,9 +8481,8 @@ function paintRoomData() {
 
   // Around the playhead, so it runs with the sound instead of sitting still at
   // the top of the file.
-  const pos = engine.position || 0;
   let first = 0;
-  for (let i = 0; i < all.length; i++) { if (all[i][0] >= pos) { first = i; break; } }
+  for (let i = 0; i < all.length; i++) { if (all[i][0] >= position) { first = i; break; } }
   const window = all.slice(Math.max(0, first - 1), Math.max(0, first - 1) + rows);
 
   const line = (cells) => cells.join(' ');
@@ -8500,14 +8496,14 @@ function paintRoomData() {
     for (let t = 0; t < across; t++) out2.push(text);
     return out2.join(' '.repeat(TILE_GAP));
   };
+
   const out = [];
   // Trimmed to the wall like everything else. Clipping alone would leave it
   // cut through the middle of a number, which reads as a fault rather than as
   // a wall that ran out.
-  out.push(`<div class="rd-head">${head.slice(0, room)}</div>`);
-  if (cols.some((s) => s.on)) {
-    out.push('<div class="rd-hdr">'
-      + tiled(slotLine((c) => fitCell(c.label, c.w))) + '</div>');
+  out.push({ kind: 'head', text: head.slice(0, room) });
+  if (cols.some((s2) => s2.on)) {
+    out.push({ kind: 'hdr', text: tiled(slotLine((c) => fitCell(c.label, c.w))) });
     // Always `rows` lines, padded with blanks. Rendering only the grains in
     // range let the block grow and shrink under the sound, which moves
     // everything else in the corner with it.
@@ -8517,8 +8513,7 @@ function paintRoomData() {
     // schedule runs one way, so a single column of it slides uniformly and at
     // this size that looks like nothing moving at all. Against a neighbour
     // going the other way it is obvious.
-    const blank = tiled(line(tileCols.map((s) => ' '.repeat(s.c.w))));
-    const chunk = roomEdit.chunk;
+    const blank = tiled(line(tileCols.map((s2) => ' '.repeat(s2.c.w))));
     let printed = 0;
     let block = 0;
     while (printed < rows) {
@@ -8529,26 +8524,111 @@ function paintRoomData() {
         // runs out, it starts again rather than leaving the rest of the wall
         // blank. A grain repeated further down is the same grain, which is the
         // whole idea of a tile.
-        const row = window.length
-          ? window[(printed + i) % window.length]
-          : null;
+        const row = window.length ? window[(printed + i) % window.length] : null;
         slice.push(row
           ? tiled(slotLine((c) => fitCell(c.fmt(c.get(row, sr)), c.w)))
           : blank);
       }
       if (block % 2 === 1) slice.reverse();
-      for (const text of slice) out.push(`<div class="rd-row">${text}</div>`);
+      for (const text of slice) out.push({ kind: 'row', text });
       printed += take;
       block++;
       // One blank line between blocks, and never one left hanging at the end.
-      if (printed < rows) { out.push(`<div class="rd-row rd-gap">${blank}</div>`); printed++; }
+      if (printed < rows) { out.push({ kind: 'gap', text: blank }); printed++; }
     }
   }
-  el.innerHTML = out.join('');
-  // The box is as wide as its columns and no wider, in characters — which is an
-  // exact unit here because the face is monospaced. Set from the columns rather
-  // than left to the content, so turning a stream on moves the left edge once
-  // and then nothing moves again.
+  return out;
+}
+
+/// The header line: what the engine is doing, rather than what the schedule is.
+///
+/// `live` false is the filmed one, which has no running engine to ask — the
+/// document's own settings are still true, and the load and the drop count are
+/// a property of playback rather than of the sound, so they are left out.
+function roomDataHead(live) {
+  const st = state.stretchDraft || {};
+  const g = state.grainDraft || {};
+  const l = live ? (engine.load || null) : null;
+  const win = st.windowMs || 0;
+  const auto = !(g.densityHz > 0);
+  const rate = auto ? (win > 0 ? (1000 / win) * (g.overlap || 1) : 0) : g.densityHz;
+  const drops = live ? Math.round(engine.overflows || 0) : 0;
+  const asked = Math.max(1, Math.round(g.layers || 1));
+  const running = l && l.layersRunning > 0 ? Math.round(l.layersRunning) : asked;
+
+  // Every field its own width, so the header is the same length whatever the
+  // numbers are. A readout that reflows as the values change is one you cannot
+  // read while it runs — the eye goes back to finding the column instead of
+  // reading it.
+  return [
+    fitCell(`${rate ? rate.toFixed(0) : '—'}/s`, 6),
+    fitCell(`${win.toFixed(0)}ms`, 6),
+    fitCell(`L${running}/${asked}`, 6),
+    fitCell(`${l ? Math.round(l.now * 100) : 0}%`, 4),
+    fitCell(`D${drops}`, 5),
+  ].join(' ');
+}
+
+/// How far down the wall a line has faded, nought to one.
+///
+/// The stylesheet says this in five `color-mix` steps against `--wave-2`, and
+/// the filmed block has to say the same thing in numbers. Kept here rather than
+/// in either caller so the two cannot drift — a wall that faded differently on
+/// film would be the same fault as a background that did.
+function roomDataAlpha(kind, childIndex) {
+  if (kind === 'gap') return 0;
+  if (kind === 'head') return 1;
+  if (kind === 'hdr') return 0.45;
+  // `nth-child` counts every child, the header and the column names included.
+  const n = childIndex + 1;
+  if (n >= 22) return 0.26;
+  if (n >= 15) return 0.38;
+  if (n >= 9) return 0.52;
+  return 0.70;
+}
+
+/// What the block is printed in.
+///
+/// The palette owns it — `data` is one of its slots — and falls back to the
+/// token the stylesheet uses. Resolved to a hex here because the film has to
+/// draw it into a 2D context, where `color-mix` and custom properties mean
+/// nothing.
+function roomDataColour() {
+  const d = rpSlot('data');
+  if (d.mode === 'flat' && d.colour) return d.colour;
+  return rpToken('--wave-2', '#4a9fd8');
+}
+
+function paintRoomData() {
+  const el = $('roomData');
+  if (!el) return;
+  const show = roomLayerOn('data');
+  el.classList.toggle('hidden', !show);
+  if (!show) return;
+
+  const l = engine.load || null;
+  const drops = Math.round(engine.overflows || 0);
+
+  // How many rows fit, rather than a number picked once and wrong at every
+  // other size. The room is the same box in a dock and on a wall.
+  const cell = el.parentElement?.getBoundingClientRect();
+  // On the back wall, so it recedes with the room instead of sitting on the
+  // glass in front of it.
+  const wall = roomBackWall(cell?.width || 300, cell?.height || 150);
+  const ch = roomChPx(el);
+
+  const block = roomDataBlock({
+    wall,
+    ch,
+    line: ROOM_LINE,
+    sched: state.grains,
+    position: engine.position || 0,
+    chunk: roomEdit.chunk,
+    head: roomDataHead(true),
+  });
+
+  const cls = { head: 'rd-head', hdr: 'rd-hdr', row: 'rd-row', gap: 'rd-row rd-gap' };
+  el.innerHTML = block.map((b) => `<div class="${cls[b.kind]}">${b.text}</div>`).join('');
   // The block *is* the wall: its box is the wall's box, and anything that does
   // not fit is clipped rather than allowed over the edge. No transform — a
   // scaled block was the previous attempt and it made the type grow and shrink
