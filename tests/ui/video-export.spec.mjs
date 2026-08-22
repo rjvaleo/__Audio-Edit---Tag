@@ -357,8 +357,14 @@ test('the render phase reports progress rather than sitting at zero', async ({ p
     // anybody notices it.
     const folder = state.folders[0].name;
     const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
-    const longest = files.slice().sort((a, b) => (b.frames || 0) - (a.frames || 0))[0];
+    // **`duration`, because there is no `frames`.** The listing carries seconds
+    // and not a frame count, so sorting on `frames` compared `0 - 0` for every
+    // pair — a no-op that left the file picked at random. It passed whenever
+    // that happened to be a long one and failed in the full suite when it was
+    // the tenth-of-a-second sample, whose render is over inside a single poll.
+    const longest = files.slice().sort((a, b) => (b.duration || 0) - (a.duration || 0))[0];
     const p = longest.path;
+    const seconds = longest.duration || 0;
     await postJSON('/api/edit', { p, op: 'stretch', ratio: 100, algorithm: 'wsola' });
     try {
       await postJSON('/api/video', { p, from: 0, to: 0, repeats: 0, tail: false,
@@ -375,15 +381,33 @@ test('the render phase reports progress rather than sitting at zero', async ({ p
         // Enough of the render seen to prove the point; the rest is time.
         if (out.filter((x) => x.phase === 'rendering').length > 8) break;
       }
+      // **Stopped, and waited for.** `stop` only raises the cancel flag; the
+      // worker notices it on its next pass and clears `running` after that. A
+      // test that returns the moment it has asked leaves a job still running,
+      // and the next one to post gets "a video analysis is already running" —
+      // which is a failure in a test that did nothing wrong.
       await postJSON('/api/video/stop', {});
-      return out;
+      for (let i = 0; i < 200; i++) {
+        const s = await api('/api/video').catch(() => null);
+        if (s && !s.running) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      // An object, not the bare array: a property hung on an array does not
+      // survive being serialised out of the page.
+      return { samples: out, seconds };
     } finally {
       // The document is the library's, not the test's.
       await postJSON('/api/edit', { p, op: 'stretch', ratio: 1 });
     }
   });
 
-  const render = seen.filter((s) => s.phase === 'rendering');
+  // The precondition, said out loud. Without a file long enough to stretch into
+  // a render worth watching, this test proves nothing — and it should say so
+  // rather than pass or fail on a coin toss.
+  expect(seen.seconds, 'no file long enough to observe a render')
+    .toBeGreaterThan(0.5);
+
+  const render = seen.samples.filter((s) => s.phase === 'rendering');
   // **One sample is enough, and asking for more was a race.**
   //
   // The property is that the render *reports* — a real total and a count off
