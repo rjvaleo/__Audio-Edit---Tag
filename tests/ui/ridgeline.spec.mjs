@@ -189,6 +189,43 @@ test('silence is flat, and sound makes peaks in the middle', async ({ page }) =>
   expect(got.loud.tail, 'the tails stopped being flat').toBeGreaterThanOrEqual(80);
 });
 
+test('a floor keeps the auto-gain off the noise under a recording', async ({ page }) => {
+  await openRidge(page);
+  const got = await page.evaluate(`(() => {
+    const r = visRenderer();
+    const run = (floor, amp, rows) => {
+      roomEdit.ridge = { source: 'wave', rows: 80, floor };
+      r.configure(ridgeSettings());
+      r.clear();
+      ${FEED}(r, rows, amp);
+      return ${CROSS}(0.5);
+    };
+    // Far under anything audible — about −66dB — and pushed for long enough that
+    // the ceiling has decayed a long way. Four hundred rows is twenty seconds.
+    const quiet = { floored: run(0.004, 0.0005, 400), open: run(0, 0.0005, 400) };
+    // And the floor must not touch material that is actually there.
+    const loud = { floored: run(0.004, 0.9, 80) };
+    return { quiet, loud };
+  })()`);
+
+  // **The fault.** With no floor the ceiling keeps falling through a quiet
+  // passage, the gain keeps climbing to meet it, and what is left to normalise
+  // is the noise under the recording — so the picture is at full height over
+  // dead air. Peaks hide the lines behind them, so a busy stack counts *fewer*
+  // lines than a flat one.
+  expect(got.quiet.open, 'the auto-gain did not run away, so this proves nothing')
+    .toBeLessThan(70);
+
+  // Floored, the same material is flat: eighty lines, or eighty-one mid-slide.
+  expect(got.quiet.floored, 'inaudible material is still being drawn')
+    .toBeGreaterThanOrEqual(80);
+  expect(got.quiet.floored).toBeLessThanOrEqual(81);
+
+  // And sound still draws, or the floor has simply broken the picture.
+  expect(got.loud.floored, 'the floor swallowed audible sound too')
+    .toBeLessThan(70);
+});
+
 test('the fill is what hides the lines behind', async ({ page }) => {
   await openRidge(page);
   const got = await page.evaluate(`(() => {

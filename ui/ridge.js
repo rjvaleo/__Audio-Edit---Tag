@@ -62,6 +62,11 @@ const RDG_DEFAULTS = {
   smooth: 2,
   /// How hard the sound drives the height.
   gain: 1,
+  /// **Silence, as an amplitude.** Anything under this is drawn flat, and the
+  /// auto-gain in `push` is not allowed to reach below it. Roughly −48dB, which
+  /// is under the noise of a recording and well under anything meant to be
+  /// heard. At nought there is no floor at all.
+  floor: 0.004,
 };
 
 /// The room's `push` arrives at this rate, so this many rows a second.
@@ -331,18 +336,42 @@ function rdgAttach(canvas) {
       } else if (cfg.source === 'driven') {
         const s = RIDGE_STATS;
         // The four numbers, from the sound rather than from the spreads.
-        const h = s.heightMean * (0.25 + heard.level * 2.2 * cfg.gain);
+        // Gated on the same floor as the waveform — see there. `heard.level` is
+        // already a share of the analyser's range rather than an amplitude, so
+        // the floor is read against it directly.
+        const gate = cfg.floor > 0
+          ? Math.max(0, Math.min(1, (heard.level - cfg.floor) / cfg.floor))
+          : 1;
+        const h = s.heightMean * (0.25 + heard.level * 2.2 * cfg.gain) * gate;
         v = rdgSynthRow(n, born * 2654435761 % 2147483647,
           h, heard.pos, heard.width, s.baselineSd * (1 + heard.flat * 6));
       } else {
         v = rdgWaveRow(n, pairs, cfg.window, cfg.smooth);
-        // Into the same units the pulses use, so every source shares one scale
-        // and switching between them does not change how tall the stack is.
         let peak = 0;
         for (let i = 0; i < n; i++) if (v[i] > peak) peak = v[i];
-        ceiling = Math.max(peak, ceiling * 0.995);
+
+        // **Below the floor is silence, and silence is flat.**
+        //
+        // The scale below is an auto-gain: the ceiling decays at 0.995 a push,
+        // which at twenty a second halves it in seven seconds. Through a quiet
+        // passage it keeps falling, the gain keeps climbing, and what is left to
+        // normalise is the noise under the recording — so a stretch with nothing
+        // audible in it is drawn at full height, hunting and alive. It is the
+        // one part of this that lies about the sound.
+        //
+        // The floor stops it twice over: nothing quieter than this is drawn at
+        // all, and the ceiling is not allowed to chase down past it, so there is
+        // no gain left to run away with.
+        const floor = Math.max(0, cfg.floor || 0);
+        // Fading in over the octave above the floor rather than switching on at
+        // it, because a gate that opens in one push clacks.
+        const gate = floor <= 0
+          ? 1
+          : Math.max(0, Math.min(1, (peak - floor) / floor));
+
+        ceiling = Math.max(peak, ceiling * 0.995, floor);
         const k = (RIDGE_STATS.heightMean * 1.6 * cfg.gain) / Math.max(1e-4, ceiling);
-        for (let i = 0; i < n; i++) v[i] *= k;
+        for (let i = 0; i < n; i++) v[i] *= k * gate;
       }
 
       if (cfg.source !== 'wave' && cfg.smooth > 0) rdgSmooth(v, cfg.smooth);
@@ -514,6 +543,8 @@ const RDG_ROWS_UI = [
     hint: 'How thick the line is, as a fraction of the frame height — so it looks the same filmed at 1080 and at 4K rather than vanishing at the larger one. It will not go below one pixel: under that a canvas cannot draw a thinner line, only a fainter one, which reads as brightness and shimmers as the stack slides.' },
   { key: 'window', tag: 'WINDOW', min: 0, max: 1, step: 0.01,
     hint: 'How hard the sound is pulled to the middle. One is the sleeve: flat tails, everything in the centre. Nought is an honest oscilloscope running edge to edge. Waveform source only.' },
+  { key: 'floor', tag: 'SILENCE', min: 0, max: 0.05, step: 0.001,
+    hint: 'Anything quieter than this is drawn flat, and the auto-gain will not reach below it. Without one a quiet passage is normalised until the noise under the recording fills the frame — the picture busy over dead air. At nought there is no floor and the gain runs as far as it likes.' },
   { key: 'smooth', tag: 'SMOOTH', min: 0, max: 8, step: 1, round: true,
     hint: 'Softening across each line. Raw audio is spiky; the pulses are jagged but coherent.' },
   { key: 'gain', tag: 'GAIN', min: 0.1, max: 6, step: 0.05,

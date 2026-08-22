@@ -92,6 +92,22 @@ Silence then gives flat lines with no special case, because `|0| = 0`. That is
 exactly the requirement — *no sound playing, all the waveforms flat* — and it
 falls out of the arithmetic rather than being tested for.
 
+**SILENCE is a floor, and it exists because the height is auto-gained.** A row
+is scaled against a ceiling that decays at 0.995 a push — twenty a second, so it
+halves in about seven. That is what keeps a quiet passage legible and a loud one
+in frame. It is also a lie waiting to happen: through a stretch with nothing
+audible in it the ceiling keeps falling, the gain keeps climbing to meet it, and
+the only thing left to normalise is the noise under the recording. The picture
+goes on hunting and peaking over dead air.
+
+The floor stops it twice. Nothing quieter than it is drawn at all — the row
+fades out over the octave above it rather than switching off, because a gate
+that opens in one push clacks — and the ceiling is not allowed to decay below
+it, so there is no gain left to run away with. The default is 0.004, about
+−48dB: under the noise of a recording and well under anything meant to be heard.
+At 0 there is no floor, which is the old behaviour and is kept so the difference
+can be seen rather than argued about.
+
 **WINDOW is a control from 0 to 1.** At 1 it is the sleeve. At 0 the waveform
 runs edge to edge untouched, which is the honest oscilloscope and is worth being
 able to see.
@@ -165,6 +181,7 @@ setting rather than four builds.
 | WINDOW | how hard the energy is pulled to the middle (phase 4) |
 | SMOOTH | across samples, and on arrival |
 | GAIN | how hard the sound drives the height |
+| SILENCE | the amplitude under which nothing is drawn |
 
 Plus a **MODULE** selector beside FRAME in the stage bar: which visualiser you
 are looking at is the same class of decision as what shape it is drawn in.
