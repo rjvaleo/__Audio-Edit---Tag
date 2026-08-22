@@ -3266,3 +3266,49 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   background: var(--accent); border-color: var(--accent); color: var(--bg);
 }
 #ridgeEdit .re-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+
+/* ── the card of type ── */
+/*
+   See `docs/ROOM-TEXT.md`. Its own canvas over the module's, because one of the
+   two modules is WebGL and has no 2D context to set type with. It takes the
+   pointer only while the card is being edited — the rest of the time the room
+   underneath must still be draggable through it.
+*/
+.rt-canvas {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+}
+.rt-canvas.rt-live { pointer-events: auto; }
+
+/*
+   Typing into it. The real text sits in a textarea over the drawn card, and the
+   drawn one is cleared while it is open so the two are never both on screen
+   saying slightly different things.
+*/
+.rt-input {
+  position: absolute;
+  z-index: 7;
+  margin: 0;
+  border: 1px dashed var(--accent, #7fd0ff);
+  outline: none;
+  resize: none;
+  background: rgba(6, 9, 12, 0.86);
+  color: var(--text, #eceff2);
+  font: 600 13px/1.4 var(--mono, ui-monospace, SFMono-Regular, monospace);
+  text-align: center;
+  padding: 6px;
+}
+
+/* A line of guidance where a control would be misleading — the card is placed
+   by dragging it, and four sliders pretending otherwise would be worse. */
+.re-note {
+  color: var(--muted, #8b93a1);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 0 6px;
+}
+/* Everything under the switch, while the card is off. */
+.rt-off > .re-row:not(:first-child),
+.rt-off > .re-note { opacity: 0.4; pointer-events: none; }
