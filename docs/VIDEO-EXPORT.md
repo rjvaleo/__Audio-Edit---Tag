@@ -460,3 +460,41 @@ view, which was the same camera by another route and put the wall in the same
 place. It poses two visibly different cameras now, and with the wall taken from
 the wrong one the block is clipped down to 157 red pixels from over a thousand.
 
+
+
+## The box opens on the shape the room is in
+
+Added 21 Aug 2026.
+
+Composing in 9:16 and then opening the export box on `HD` means filming the
+vertical camera into a landscape frame. The shape is a decision already made;
+the box should arrive agreeing with it rather than asking again.
+
+**The shape is the room's, the resolution stays yours.** `videoSizeForFrame`
+matches the frame's aspect and then picks, among the sizes of that shape, the
+one nearest the pixel count already chosen — so 4K with the room in 9:16 becomes
+Vertical 4K rather than Vertical, and matching the frame does not quietly cost
+three quarters of the pixels.
+
+`Dock` means "whatever shape the panel is", so it says nothing about the film
+and leaves the choice alone.
+
+It is applied on every open rather than once when the pickers are built: the
+frame can change between one export and the next, and the box is the last place
+that choice is visible before it is filmed.
+
+Together with `roomCameraForAspect` this closes the loop — the frame decides the
+export size, and the export size decides which posed camera is filmed.
+
+### A test that was red for the wrong reason
+
+`the render phase reports progress` asserted that **two or more** poll samples
+landed inside the rendering phase. That is a race against however fast the
+machine renders, and it passed in isolation while failing inside the full suite
+twice.
+
+The property worth guarding is that the render *reports* — a real total and a
+count off zero — not that the poll won the race. One sample proves it, and the
+poll is faster now besides. A test that goes red for reasons unrelated to the
+thing it guards teaches you to ignore it, which costs more than the coverage is
+worth.
