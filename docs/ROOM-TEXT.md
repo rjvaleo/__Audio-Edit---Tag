@@ -66,6 +66,28 @@ is in front of everything. This is the opposite of the data block, which is
 painted before the room so the terrain and the ring lie over it the way they
 would lie over anything painted on the far wall.
 
+## Where its panel lives
+
+With the other two, inside `masterBus` — and that is a trap worth writing down,
+because it blanked the visualiser for a whole afternoon.
+
+`masterBus` is itself borrowed into the room stage when the workspace opens. So
+a control panel inside it is not merely a panel that might be visible in the
+wrong place: it is **carried into the picture** and drawn on top of the room.
+`roomEdit` and `ridgeEdit` both carry `hidden` in the markup and are shown only
+while the admin overlay is open, which is why they never did this. The card's
+panel was added without it and sat over the dock's room in every mode.
+
+Three places have to agree, and the third is the one that was missed: hidden in
+the markup, hidden when the overlay is closed, and **hidden again when the room
+view is left** — `roomReleaseAll` puts a panel back inside `masterBus`, and
+putting it back is not the same as hiding it.
+
+`tests/ui/room-view.spec.mjs` asserts no `.room-edit` overlaps the visual cell,
+in the dock, in the workspace, and on the way back out. It is written against
+every panel rather than the three that exist, because the next one added is the
+next one to do this.
+
 ## Fractions, not pixels
 
 The box is stored as fractions of the frame and the type as a fraction of the
