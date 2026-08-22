@@ -176,11 +176,25 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
     showPane('left', b.dataset.panel);
     openDrawer();
   }));
+/// The modes that are looking at the open **document** rather than at a file in
+/// the library.
+///
+/// **Playback is a different thing in each.** In Browse a click is a question
+/// about the file, so it plays bare — no edits, no stretch, no grain cloud, no
+/// rack. In Edit and in Room the document is the point and it plays in full.
+///
+/// One name for it, taking the mode as an argument so `setMode` can ask about
+/// the mode it is moving *to*. It exists because this was written out as
+/// `state.mode !== 'edit'` in the play path, and adding a third mode quietly
+/// turned that into "the room plays raw" — which is the granular engine not
+/// running when you press play in the room.
+const playsDocument = (m = state.mode) => m === 'edit' || m === 'room';
+
 /// The modes where the library is an overlay drawer rather than a docked
 /// column. Both of them give the whole width to something else — the editor's
 /// lane, the room — so the library arrives over the top and goes away again,
 /// instead of squeezing what you came here to look at.
-const drawerMode = () => state.mode === 'edit' || state.mode === 'room';
+const drawerMode = () => playsDocument();
 
 function openDrawer() {
   state.drawerOpen = true;
@@ -798,7 +812,7 @@ function seekSource(srcFrame) {
 ///
 /// In the editor the document is the point, so it plays in full.
 async function playFile(file) {
-  const raw = state.mode !== 'edit';
+  const raw = !playsDocument();
   // Same sound *and* the same kind of playback: otherwise it has to be
   // reloaded, or pressing play in the editor would resume the audition.
   if (engine.path === file.path && engine.raw === raw) {
@@ -1392,7 +1406,7 @@ function setMode(mode) {
   // are both looking at the open sound — the room is drawn from the same
   // playback the editor drives, which is what makes the picture and the
   // waveform the same thing seen twice.
-  const docMode = mode === 'edit' || mode === 'room';
+  const docMode = playsDocument(mode);
 
   // Crossing between the library and the editor changes what playback *is* —
   // the sound over there, the document over here — so anything running belongs
@@ -10360,11 +10374,16 @@ function drawGrainSwarm(ctx, w, h, g) {
 let grainRaf = null;
 function grainLoop() {
   grainRaf = requestAnimationFrame(grainLoop);
-  if (state.mode !== 'edit' || !state.grains) return;
-  // Nothing to draw into when the stretch panel is not the one showing. The
-  // pad and the swarm both live in it, so with another dock open this loop was
-  // painting two canvases nobody could see.
-  if ($('dockStretch')?.classList.contains('hidden')) return;
+  if (!playsDocument() || !state.grains) return;
+  // Nothing to draw into when the controls are not on screen — with another
+  // dock open this loop was painting two canvases nobody could see.
+  //
+  // **Asked of the pad itself, not of the container it happens to be in.** The
+  // controls live in the dock in Edit and in the room's Sound tab in Room, so a
+  // check named after `#dockStretch` said "hidden" in the room and stopped the
+  // pad animating there — while the controls were on screen and being used.
+  const pad = $('cloudPad');
+  if (!pad || pad.offsetParent === null) return;
   drawGrains();
 }
 /// The swarm animates only while the engine is playing, so an idle editor

@@ -315,3 +315,60 @@ test('a grain control in the room reaches the document', async ({ page }) => {
   // And the ceiling is the raised one, not the sixteen it was.
   expect(Number(got.max)).toBeGreaterThan(16);
 });
+
+// ── the room plays the document, not the bare file ──
+//
+// `playFile` decided this with `state.mode !== 'edit'`. Adding a third mode
+// quietly turned that into "the room plays raw" — and raw means no edits, no
+// stretch, no grain cloud and no rack, which is the granular engine not running
+// when you press play in the room.
+//
+// The button is the same element in both modes; it is the *mode* that changed
+// what pressing it meant.
+
+test('pressing play in the room plays the document', async ({ page }) => {
+  await openApp(page);
+  await page.evaluate(async () => {
+    const folder = state.folders[0].name;
+    const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+    await selectFile(files[0]);
+    const p = state.selectedFile.path;
+    // A document with something to lose: a granular stretch is exactly what
+    // raw playback drops on the floor.
+    await postJSON('/api/edit', { p, op: 'stretch', ratio: 12, algorithm: 'granular', quality: 'standard' });
+  });
+
+  const got = await page.evaluate(async () => {
+    const out = {};
+    for (const mode of ['edit', 'room', 'overview']) {
+      setMode(mode);
+      await new Promise((r) => setTimeout(r, 200));
+      // What `playFile` would decide, without having to start the engine.
+      out[mode] = { raw: !playsDocument(), inRoomFoot: !!document.getElementById('playBtn').closest('#roomFoot') };
+    }
+    return out;
+  });
+
+  // Browse auditions the bare sound — a click there is a question about the
+  // file, and answering it through last week's stretch answers a different one.
+  expect(got.overview.raw, 'Browse should audition raw').toBe(true);
+  // Edit and Room are both looking at the document.
+  expect(got.edit.raw, 'Edit should play the document').toBe(false);
+  expect(got.room.raw, 'the room played the bare file instead of the document').toBe(false);
+  // And it really is the room's own transport being pressed.
+  expect(got.room.inRoomFoot).toBe(true);
+
+  // End to end: the engine is loaded as the document when the room's transport
+  // is used, not as an audition.
+  const live = await page.evaluate(async () => {
+    setMode('room');
+    await new Promise((r) => setTimeout(r, 300));
+    document.getElementById('playBtn').click();
+    await new Promise((r) => setTimeout(r, 1200));
+    const st = await api('/api/engine/state');
+    document.getElementById('playBtn').click();
+    return { engineRaw: engine.raw, playing: st.playing };
+  });
+  expect(live.playing).toBe(true);
+  expect(live.engineRaw, 'the engine was loaded as a raw audition').toBe(false);
+});
