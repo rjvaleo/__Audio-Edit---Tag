@@ -7484,6 +7484,11 @@ const roomEdit = {
   /// grain is drawn. Both are the scale of the box rather than a pose in it.
   geomSpan: 14,
   geomBody: 0.032,
+  /// Which visualiser is on screen. See `VIS_MODULES`.
+  module: 'room',
+  /// The ridgeline's own settings. Its defaults live in `ridge.js` beside the
+  /// renderer that reads them; this is only what has been changed from them.
+  ridge: {},
 };
 
 /// The layers, in the order they are drawn — highest in the hierarchy first.
@@ -7564,6 +7569,8 @@ try {
   if (typeof v.geomBody === 'number') {
     roomEdit.geomBody = Math.max(0.002, Math.min(0.3, v.geomBody));
   }
+  if (v.module === 'ridge' || v.module === 'room') roomEdit.module = v.module;
+  if (v.ridge && typeof v.ridge === 'object') roomEdit.ridge = { ...v.ridge };
   if (typeof v.fog === 'boolean') roomEdit.fog = v.fog;
   if (typeof v.fogType === 'number') roomEdit.fogType = Math.max(0, Math.min(3, v.fogType | 0));
   if (typeof v.fogDensity === 'number') {
@@ -7593,6 +7600,7 @@ function saveRoomData() {
       geomBands: roomEdit.geomBands, geomHistory: roomEdit.geomHistory,
       geomRidge: roomEdit.geomRidge,
       geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
+      module: roomEdit.module, ridge: roomEdit.ridge,
       grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
       ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
       leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
@@ -8229,6 +8237,82 @@ function toggleRoomEdit() {
   paintRoomData();
 }
 
+// ─────────────────────────────────────────────────────── the visual modules ──
+//
+// Two visualisers, and you choose one. Not layers of the same picture — the room
+// is a box in perspective and the ridgeline is a stack of lines, and nothing is
+// gained by drawing them over each other.
+//
+// **Each gets its own canvas.** A canvas can only ever have one kind of context:
+// once `#visGl` has been given WebGL it can never give a 2D one, so the two
+// cannot share an element. One is shown, the other hidden, and each is attached
+// the first time it is asked for.
+//
+// The contract is the one `vgAttach` already had, which is why this is a naming
+// job rather than an invention: `push(bands, pairs)`, `frame(f)`, `clear()`.
+const VIS_MODULES = [
+  { key: 'room', label: 'Room', canvas: 'visGl', attach: (c) => vgAttach(c),
+    hint: 'The master bus as a room in perspective. Depth is time.' },
+  { key: 'ridge', label: 'Ridgeline', canvas: 'visRidge', attach: (c) => rdgAttach(c),
+    hint: 'Stacked lines, each hiding what is behind it. The waveform of the moment, pulled to the middle.' },
+];
+
+/// The live renderers, one per module, built lazily. A module never opened costs
+/// nothing — no context, no buffers, no shaders.
+const visLive = {};
+
+function visModuleKey() {
+  return roomEdit.module === 'ridge' ? 'ridge' : 'room';
+}
+
+function visModule() {
+  return VIS_MODULES.find((m) => m.key === visModuleKey()) || VIS_MODULES[0];
+}
+
+/// The canvas the chosen module draws on, with the other one hidden.
+function visCanvas() {
+  const want = visModule();
+  for (const m of VIS_MODULES) {
+    const el = $(m.canvas);
+    if (el) el.classList.toggle('hidden', m.key !== want.key);
+  }
+  return $(want.canvas);
+}
+
+/// The renderer for the chosen module, attached if it is not yet.
+///
+/// Null when the machine will not give it a context, which is a fallback rather
+/// than an error — the same thing `vgAttach` has always returned.
+function visRenderer() {
+  const m = visModule();
+  const el = $(m.canvas);
+  if (!el) return null;
+  if (!visLive[m.key]) {
+    visLive[m.key] = m.attach(el) || null;
+    if (!visLive[m.key]) return null;
+  }
+  return visLive[m.key];
+}
+
+/// Switch module. The sound keeps arriving either way — `mbTick` pushes at the
+/// meter's rate to whichever is chosen, so the one you switch to fills up from
+/// the moment you arrive rather than showing you the last four seconds of
+/// something you were not watching.
+function setVisModule(key) {
+  roomEdit.module = key === 'ridge' ? 'ridge' : 'room';
+  saveRoomData();
+  visCanvas();
+  buildRidgePanel();
+  paintRidgePanel();
+  const panel = $('roomEdit');
+  const ridge = $('ridgeEdit');
+  const onRidge = roomEdit.module === 'ridge';
+  if (panel) panel.classList.toggle('hidden', onRidge || !roomEdit.on);
+  if (ridge) ridge.classList.toggle('hidden', !onRidge || !roomEdit.on);
+  applyRoomFrame();
+  paintVisModulePicker();
+}
+
 // ───────────────────────────────────────────────────── the room, at full size ──
 //
 // A third workspace beside Browse and Edit: the room as big as the window will
@@ -8280,6 +8364,9 @@ function roomReleaseAll() {
 const ROOM_VIEW_PARTS = [
   ['masterBus', 'roomStageRoom'],
   ['roomEdit', 'roomAdminBody'],
+  // The other module's panel, borrowed the same way. Only one is ever
+  // shown; both travel so switching module inside the workspace works.
+  ['ridgeEdit', 'roomAdminBody'],
   // **The sound the room is drawing.** This workspace hides the dock, and the
   // stretch and grain controls live in it — so without borrowing them there is
   // no way to change the sound from here at all. That shipped: the controls
@@ -8300,7 +8387,6 @@ function enterRoomView() {
   buildRoomStreams();
   buildRoomChunks();
   buildRoomFrames();
-  $('roomEdit')?.classList.remove('hidden');
   $('masterBus')?.classList.add('room-editing');
   $('roomEditOpen')?.classList.add('on');
 
@@ -8311,6 +8397,9 @@ function enterRoomView() {
   $('roomView')?.classList.remove('hidden');
 
   setRoomAdminWidth(roomAdminWidth(), { save: false });
+  buildVisModulePicker();
+  buildRidgePanel();
+  setVisModule(roomEdit.module);
   rgPanel();
   rpPanel();
   applyRoomPaintCss();
@@ -12765,8 +12854,19 @@ async function mbTick() {
   // The room only moves when there is something new to move it, so the
   // waterfall is pushed at the poll's rate and drawn at the display's.
   paintRoomData();
-  if (visGl && masterBus.data?.spectrum) {
-    visGl.push(masterBus.data.spectrum, masterBus.data.lissajous);
+  // **Whichever module is chosen gets the sound.** One feed, at the meter's
+  // rate; the modules differ in what they draw with it, not in what they are
+  // given.
+  const vis = visRenderer();
+  // The settings before the row is made, not after. See `configure`.
+  if (vis && vis.configure) vis.configure(ridgeSettings());
+  if (vis && masterBus.data?.spectrum) {
+    vis.push(masterBus.data.spectrum, masterBus.data.lissajous);
+  } else if (vis && visModuleKey() === 'ridge') {
+    // Silence is a picture too, and for the ridgeline it is the right one: flat
+    // lines, which is what the top and bottom of the plot look like. So it is
+    // fed nothing rather than a test card, and the stack goes quiet honestly.
+    vis.push(new Float32Array(0), null);
   } else if (visGl && roomEdit.on) {
     // Something to pose against.
     //
@@ -12859,14 +12959,64 @@ function vgRgb(token, fallback) {
   ]);
 }
 
+/// The ridgeline's settings, as the renderer wants them — its own defaults with
+/// whatever has been changed laid over.
+function ridgeSettings() {
+  return { ...RDG_DEFAULTS, ...(roomEdit.ridge || {}) };
+}
+
+/// What it is drawn in. The palette owns it, the same way it owns the room's
+/// fourteen slots, and falls back to the theme.
+///
+/// **The fill is the background by default and is its own slot anyway.** It is
+/// what hides the lines behind, so it is normally the ground — but a picture
+/// where the fill is a shade off the ground is a different and sometimes better
+/// picture, and there is no reason to forbid it.
+function ridgePaint() {
+  const pick = (key, fallback) => {
+    const c = rpSlot(key);
+    return c.mode === 'flat' && c.colour ? c.colour : fallback;
+  };
+  const ground = pick('ridgeBackground', rpToken('--sink', '#07090c'));
+  return {
+    line: pick('ridgeLine', rpToken('--text', '#ffffff')),
+    fill: pick('ridgeFill', ground),
+    background: ground,
+  };
+}
+
 function visGlTick() {
   visGlRaf = requestAnimationFrame(visGlTick);
+
+  // ── the ridgeline ──
+  //
+  // Its own canvas and its own loop, because the two modules share nothing but
+  // the contract. Drawn at the device's pixel ratio like the room, so hairlines
+  // stay hair-thin on a retina display instead of being drawn at half density
+  // and scaled up.
+  if (visModuleKey() === 'ridge') {
+    const rc = $('visRidge');
+    if (!rc || rc.offsetParent === null) return;
+    const rr = visRenderer();
+    if (!rr) return;
+    const rw = rc.clientWidth, rh = rc.clientHeight;
+    if (!rw || !rh) return;
+    const rdpr = Math.min(2, window.devicePixelRatio || 1);
+    if (rc.width !== Math.round(rw * rdpr) || rc.height !== Math.round(rh * rdpr)) {
+      rc.width = Math.round(rw * rdpr);
+      rc.height = Math.round(rh * rdpr);
+    }
+    rr.frame({ ridge: ridgeSettings(), ridgePaint: ridgePaint() });
+    return;
+  }
+
   const el = $('visGl');
   // A scene nobody is looking at is a full GPU frame for nothing.
   if (!el || el.offsetParent === null) return;
 
   if (!visGl) {
     visGl = vgAttach(el);
+    visLive.room = visGl;
     if (!visGl) {
       // No WebGL. Say so once rather than leave a dead black rectangle.
       const note = $('mbPeakHz');

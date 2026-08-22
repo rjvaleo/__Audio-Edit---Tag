@@ -56,6 +56,10 @@ pub const GRAIN_SHAPES_JS: &str = include_str!("../../../../ui/grain-shapes.js")
 /// The room's palette: what each drawn thing is coloured with, and what that
 /// colour is read against. See `docs/ROOM-PAINT.md`.
 pub const ROOM_PAINT_JS: &str = include_str!("../../../../ui/room-paint.js");
+/// The ridgeline visualiser and the CP 1919 pulses it is measured against.
+/// See `docs/RIDGELINE.md`.
+pub const RIDGE_JS: &str = include_str!("../../../../ui/ridge.js");
+pub const RIDGE_DATA_JS: &str = include_str!("../../../../ui/ridge-data.js");
 /// The MP4 muxer and the thing that drives it. See `docs/VIDEO-EXPORT.md`.
 pub const MP4_JS: &str = include_str!("../../../../ui/mp4.js");
 pub const VIDEO_EXPORT_JS: &str = include_str!("../../../../ui/video-export.js");
@@ -105,6 +109,12 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/room-paint.js") => {
             Response::ok("text/javascript; charset=utf-8", ROOM_PAINT_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/ridge.js") => {
+            Response::ok("text/javascript; charset=utf-8", RIDGE_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/ridge-data.js") => {
+            Response::ok("text/javascript; charset=utf-8", RIDGE_DATA_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/vis-gl.js") => {
             Response::ok("text/javascript; charset=utf-8", VIS_GL_JS.as_bytes().to_vec())

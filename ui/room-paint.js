@@ -61,7 +61,32 @@ const RP_SLOTS = [
     hint: 'The ground the room is drawn on. One colour: the room adds light to it.' },
 ];
 
-const RP_BY_KEY = Object.fromEntries(RP_SLOTS.map((s) => [s.key, s]));
+/// The ridgeline's slots.
+///
+/// Three, because that is what the picture has: a stroke, the fill under it that
+/// hides what is behind, and the ground. The fill is normally the ground and is
+/// its own slot anyway — a fill a shade off the ground is a different and
+/// sometimes better picture, and there is no reason to forbid it.
+const RP_RIDGE_SLOTS = [
+  { key: 'ridgeLine', label: 'Line', row: -1, own: null, css: true, flat: true,
+    hint: 'The stroke. White on black is the sleeve.' },
+  { key: 'ridgeFill', label: 'Fill', row: -1, own: null, css: true, flat: true,
+    hint: 'Under each line, hiding the lines behind it. Normally the background — that is what makes the stack read as depth rather than as a hairball.' },
+  { key: 'ridgeBackground', label: 'Background', row: -1, own: null, css: true, flat: true,
+    hint: 'The ground it is drawn on.' },
+];
+
+/// The slots the palette is showing: whichever module is on screen.
+///
+/// `RP_SLOTS` was never specific to the room except by being the only list, so
+/// this is the whole of what "per-module colours" costs.
+function rpSlots() {
+  return (typeof roomEdit !== 'undefined' && roomEdit.module === 'ridge')
+    ? RP_RIDGE_SLOTS : RP_SLOTS;
+}
+
+const RP_BY_KEY = Object.fromEntries(
+  RP_SLOTS.concat(RP_RIDGE_SLOTS).map((s) => [s.key, s]));
 
 /// What a ramp can be read against. The index is what the shader switches on.
 ///
@@ -159,6 +184,9 @@ function rpInheritedPair(key) {
     case 'fog': return ['#7f8fa6', '#7f8fa6'];
     case 'data': return [cold, cold];
     case 'background': return [rpToken('--sink', '#07090c'), rpToken('--sink', '#07090c')];
+    case 'ridgeLine': return [rpToken('--text', '#ffffff'), rpToken('--text', '#ffffff')];
+    case 'ridgeFill': case 'ridgeBackground':
+      return [rpToken('--sink', '#07090c'), rpToken('--sink', '#07090c')];
     default: return [cold, hot];
   }
 }
@@ -422,7 +450,7 @@ function rpPanel() {
 
   host.innerHTML = '';
   host.appendChild(rpHeadRow());
-  for (const s of RP_SLOTS) host.appendChild(rpSlotRow(s));
+  for (const s of rpSlots()) host.appendChild(rpSlotRow(s));
 }
 
 function rpEl(tag, cls, text) {
