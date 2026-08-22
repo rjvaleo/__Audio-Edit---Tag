@@ -324,3 +324,79 @@ test('its controls are reachable by a real pointer', async ({ page }) => {
   expect(bad.out).toEqual([]);
   expect(bad.checked).toBeGreaterThan(8);
 });
+
+// ── the film ──
+//
+// A module that only works live is half-built. `docs/VIDEO-EXPORT.md` records
+// this program shipping that twice — the background colour, and the data block —
+// so the export gets its own test rather than an assumption.
+
+test('the export films the module that is chosen', async ({ page }) => {
+  await openRidge(page);
+  const out = await page.evaluate(async () => {
+    if (videoExportSupport()) return { skip: videoExportSupport() };
+    const size = { key: 'test', label: 'test', w: 320, h: 180 };
+
+    // What the *encoder* is handed — the ground and the picture composited —
+    // not the module's own canvas, which is the thing that cannot disagree
+    // with itself.
+    const shoot = async (module) => {
+      const seen = [];
+      const Real = window.VideoFrame;
+      window.VideoFrame = class extends Real {
+        constructor(src, init) {
+          if (seen.length < 1) {
+            const c = document.createElement('canvas');
+            c.width = size.w; c.height = size.h;
+            const g = c.getContext('2d');
+            g.drawImage(src, 0, 0);
+            seen.push(g.getImageData(0, 0, size.w, size.h).data);
+          }
+          super(src, init);
+        }
+      };
+      try {
+        await videoExport({
+          path: state.selectedFile.path,
+          from: 0, to: 0, repeats: 0, tail: false,
+          size, fps: 30,
+          module,
+          ridge: { ...ridgeSettings(), source: 'pulsar', rows: 40 },
+          // Pure red on near-black. Nothing the room draws is red, so a red
+          // pixel in the file came from the ridgeline and from nothing else.
+          ridgePaint: { line: '#ff0000', fill: '#000000', background: '#000000' },
+          camera: roomCameraDrawn(),
+          layers: roomLayers(), occlude: roomOcclude(), order: roomOrder(),
+          room: { cold: [0.15, 0.4, 0.9], hot: [0.2, 0.6, 1], core: [0.3, 0.7, 1] },
+          background: '#000000',
+          fetchSchedule: (f, t) => api(
+            `/api/grains?p=${encodeURIComponent(state.selectedFile.path)}&from=${f}&to=${t}`,
+          ).catch(() => null),
+          padSeconds: GRAIN_PLAYHEAD_PAD,
+          loopOut: null,
+          onStage: () => {},
+        });
+      } finally {
+        window.VideoFrame = Real;
+      }
+      const d = seen[0];
+      let red = 0, blue = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i] > 90 && d[i] > d[i+1] * 2 + 20 && d[i] > d[i+2] * 2 + 20) red++;
+        if (d[i+2] > 60 && d[i+2] > d[i] * 2 + 20) blue++;
+      }
+      return { red, blue };
+    };
+
+    return { ridge: await shoot('ridge'), room: await shoot('room') };
+  });
+  if (out.skip) test.skip(true, out.skip);
+
+  // Filming the ridgeline puts its lines in the file.
+  expect(out.ridge.red, 'the ridgeline was not in the film').toBeGreaterThan(200);
+  // **And filming the room does not** — which is what says the export is
+  // actually reading the choice rather than drawing whatever it always drew.
+  expect(out.room.red, 'the room’s film carried the ridgeline’s lines')
+    .toBeLessThan(50);
+  expect(out.room.blue, 'the room was not in its own film').toBeGreaterThan(100);
+});

@@ -361,7 +361,13 @@ function rdgAttach(canvas) {
     /// Draw one picture.
     frame(f) {
       if (f && f.ridge) this.configure(f.ridge);
-      clockNow = (f && typeof f.clock === 'number') ? f.clock : performance.now();
+      // **`f.clock` is in seconds**, which is the room's convention and
+      // therefore the export's — `vis-gl.js` does `f.clock * 1000` for the same
+      // reason. Reading it as milliseconds makes the slide finish in the first
+      // twentieth of a frame and the stack step exactly as it did before.
+      clockNow = (f && typeof f.clock === 'number')
+        ? f.clock * 1000
+        : performance.now();
       if (!everPushed) lastPushAt = clockNow;
       const W = canvas.width, H = canvas.height;
       if (!W || !H) return;
@@ -397,7 +403,17 @@ function rdgAttach(canvas) {
 
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
-      ctx.lineWidth = Math.max(0.75, H * cfg.weight);
+      // **Never thinner than one device pixel.**
+      //
+      // Below that the canvas cannot make the line narrower, so it makes it
+      // *fainter* instead — a half-pixel stroke is drawn as a full pixel at half
+      // opacity. WEIGHT then reads as a brightness control rather than a
+      // thickness one, and because the stack slides through sub-pixel positions
+      // the same line lands differently every frame and shimmers.
+      //
+      // Floored, the thinnest setting is a crisp hairline and the slider's lower
+      // reach is honest about doing nothing further.
+      ctx.lineWidth = Math.max(1, H * cfg.weight);
       ctx.strokeStyle = line;
       ctx.fillStyle = under;
 
@@ -494,8 +510,8 @@ const RDG_ROWS_UI = [
     hint: 'How many row-gaps the tallest peak reaches. Under about four the stack reads as a bar chart; ten is the sleeve, where peaks tangle several rows deep.' },
   { key: 'span', tag: 'SPAN', min: 0.3, max: 1, step: 0.01,
     hint: 'How much of the width the lines run across, leaving the flat tails either side.' },
-  { key: 'weight', tag: 'WEIGHT', min: 0.0004, max: 0.006, step: 0.0001,
-    hint: 'Stroke width, as a fraction of the frame height — so it looks the same filmed at 1080 and at 4K rather than vanishing at the larger one.' },
+  { key: 'weight', tag: 'WEIGHT', min: 0.0008, max: 0.006, step: 0.0001,
+    hint: 'How thick the line is, as a fraction of the frame height — so it looks the same filmed at 1080 and at 4K rather than vanishing at the larger one. It will not go below one pixel: under that a canvas cannot draw a thinner line, only a fainter one, which reads as brightness and shimmers as the stack slides.' },
   { key: 'window', tag: 'WINDOW', min: 0, max: 1, step: 0.01,
     hint: 'How hard the sound is pulled to the middle. One is the sleeve: flat tails, everything in the centre. Nought is an honest oscilloscope running edge to edge. Waveform source only.' },
   { key: 'smooth', tag: 'SMOOTH', min: 0, max: 8, step: 1, round: true,
