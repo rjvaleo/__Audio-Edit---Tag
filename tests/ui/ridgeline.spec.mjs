@@ -226,6 +226,61 @@ test('a floor keeps the auto-gain off the noise under a recording', async ({ pag
     .toBeLessThan(70);
 });
 
+/// The remembered module draws on the way in, without being visited first.
+///
+/// **The choice was remembered and the canvas was not.** `visRidge` carries
+/// `hidden` in the markup, only `visCanvas` takes it off, and `visCanvas` was
+/// reachable only through `setVisModule` — which nothing called at startup. So a
+/// session that had last used the ridgeline came back to a tick that read the
+/// module as `ridge`, found that canvas `display: none`, and returned. Every
+/// frame, for ever. The panel stayed black until the room view was opened,
+/// because opening it calls `setVisModule`, and that was the only thing that
+/// ever revealed the canvas.
+///
+/// Load a sound and look at it. That is the whole test, and it is the thing that
+/// was broken.
+test('the remembered module draws on load, without opening the room first', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => typeof setMode === 'function', { timeout: 20_000 });
+  // A session that last used the ridgeline, stored the way the app stores it.
+  await page.evaluate(() => {
+    const d = JSON.parse(localStorage.getItem('roomData') || '{}');
+    d.module = 'ridge';
+    localStorage.setItem('roomData', JSON.stringify(d));
+  });
+
+  await page.reload();
+  await page.waitForFunction(() => typeof setMode === 'function' && typeof rdgAttach === 'function',
+    { timeout: 20_000 });
+  await page.evaluate(async () => {
+    const folder = state.folders[0].name;
+    const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+    await selectFile(files[0]);
+    setMode('edit');
+  });
+  await page.waitForTimeout(1200);
+
+  const got = await page.evaluate(() => {
+    const r = document.getElementById('visRidge');
+    const shown = getComputedStyle(r).display !== 'none' && r.clientWidth > 0;
+    let ink = null;
+    if (shown && r.width) {
+      const d = r.getContext('2d').getImageData(0, 0, r.width, r.height).data;
+      let lit = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 60) lit++;
+      ink = (100 * lit / (r.width * r.height));
+    }
+    return { module: visModuleKey(), shown, ink, attached: Object.keys(visLive) };
+  });
+
+  expect(got.module, 'the module was not remembered').toBe('ridge');
+  expect(got.shown, 'the chosen module’s canvas is still hidden on load').toBe(true);
+  expect(got.attached, 'no renderer was ever attached').toContain('ridge');
+  // Silence is a full stack of flat lines, so there is always ink to find.
+  expect(got.ink, 'nothing was drawn without opening the room view first')
+    .toBeGreaterThan(1);
+});
+
 test('the fill is what hides the lines behind', async ({ page }) => {
   await openRidge(page);
   const got = await page.evaluate(`(() => {
