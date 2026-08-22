@@ -2884,9 +2884,35 @@ function paintExportLoop() {
       $('elTail').classList.contains('on') ? ', plus the tail' : ''}`;
 }
 
+/// The export size that matches the frame the room is posed in.
+///
+/// **The shape is the room's; the resolution stays yours.** Composing in 9:16
+/// and then opening the export box on `HD` means filming the vertical camera
+/// into a landscape frame — the shape is a decision already made, and the box
+/// should arrive agreeing with it rather than asking again.
+///
+/// So the orientation follows the frame and the resolution is carried across:
+/// 4K with the room in 9:16 becomes Vertical 4K, not Vertical. `Dock` says
+/// nothing about shape, so it leaves the choice alone.
+function videoSizeForFrame(current) {
+  const f = roomFrame();
+  if (!f || !(f.ratio > 0)) return current;
+  const same = VIDEO_SIZES.filter((s) => Math.abs(s.w / s.h - f.ratio) < 0.02);
+  if (!same.length || same.some((s) => s.key === current)) return current;
+  const cur = VIDEO_SIZES.find((s) => s.key === current);
+  const px = cur ? cur.w * cur.h : 1920 * 1080;
+  return same.reduce((best, s) =>
+    (Math.abs(s.w * s.h - px) < Math.abs(best.w * best.h - px) ? s : best)).key;
+}
+
 function openExportLoop(range) {
   exportRange = range;
   buildVideoPickers();
+  // Set on every open rather than once when the pickers are built: the frame
+  // can change between one export and the next, and the box is the last place
+  // that choice is visible before it is filmed.
+  const size = $('elVideoSize');
+  if (size) size.value = videoSizeForFrame(size.value);
   paintVideoScope();
   $('exportLoop').classList.remove('hidden');
   paintExportLoop();

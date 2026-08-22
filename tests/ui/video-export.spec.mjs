@@ -364,8 +364,10 @@ test('the render phase reports progress rather than sitting at zero', async ({ p
       await postJSON('/api/video', { p, from: 0, to: 0, repeats: 0, tail: false,
         fps: 20, bands: 64, liss: 128, fft: 2048, outro: 0.5 });
       const out = [];
-      for (let i = 0; i < 400; i++) {
-        await new Promise((r) => setTimeout(r, 50));
+      for (let i = 0; i < 900; i++) {
+        // As fast as the round trip allows. The render is the thing being
+        // watched and it is over in a second or two on a small file.
+        await new Promise((r) => setTimeout(r, 15));
         const s = await api('/api/video');
         out.push({ phase: s.phase, done: s.done, total: s.total,
           stage: s.stage, frac: s.fraction });
@@ -382,7 +384,14 @@ test('the render phase reports progress rather than sitting at zero', async ({ p
   });
 
   const render = seen.filter((s) => s.phase === 'rendering');
-  expect(render.length, 'the render phase was actually observed').toBeGreaterThan(1);
+  // **One sample is enough, and asking for more was a race.**
+  //
+  // The property is that the render *reports* — a real total and a count off
+  // zero. Requiring two samples asked instead that the poll win a race against
+  // however fast the machine renders, which passed alone and failed inside the
+  // full suite twice. A test that is red for reasons unrelated to the thing it
+  // guards teaches you to ignore it.
+  expect(render.length, 'the render phase was never observed at all').toBeGreaterThan(0);
   // **The fault, said plainly.** The phase named itself the whole time and the
   // number behind it never moved: `done` 0 of a `total` of 1, because the
   // render reports into the server's export tracker and this route was reading
@@ -556,4 +565,56 @@ test('the video menus leave room for the line they sit on', async ({ page }) => 
   expect(got.noteW, 'the note is squeezed into a column').toBeGreaterThan(got.row * 0.4);
   expect(got.noteH, 'the note has wrapped into a tower').toBeLessThan(60);
   expect(got.clipped, 'the size menu cannot show its own longest option').toBe(false);
+});
+
+// ── the export box opens on the shape the room is posed in ──
+//
+// Composing in 9:16 and then opening the export box on `HD` means filming the
+// vertical camera into a landscape frame. The shape is a decision already made;
+// the box should arrive agreeing with it rather than asking again.
+
+test('opening the export box matches the frame the room is in', async ({ page }) => {
+  await openFile(page);
+  const got = await page.evaluate(async () => {
+    const sel = () => document.getElementById('elVideoSize');
+    const open = async (frame, remembered) => {
+      closeExportLoop();
+      roomEdit.frame = frame;
+      applyRoomFrame();
+      // Whatever size was last chosen, standing in for the user's preference.
+      if (sel()) sel().value = remembered;
+      document.getElementById('videoBtn').click();
+      await new Promise((r) => setTimeout(r, 150));
+      const v = sel().value;
+      const s = VIDEO_SIZES.find((x) => x.key === v);
+      return { key: v, ratio: s.w / s.h, px: s.w * s.h };
+    };
+    const out = {
+      vertFromHd: await open('9x16', 'hd'),
+      vertFrom4k: await open('9x16', '4k'),
+      square: await open('1x1', 'hd'),
+      portrait: await open('4x5', '720p'),
+      wideFromVertical: await open('16x9', 'vertical'),
+      dock: await open('dock', 'vertical'),
+    };
+    closeExportLoop();
+    roomEdit.frame = 'dock';
+    applyRoomFrame();
+    return out;
+  });
+
+  expect(got.vertFromHd.ratio).toBeCloseTo(9 / 16, 2);
+  expect(got.square.ratio).toBeCloseTo(1, 2);
+  expect(got.portrait.ratio).toBeCloseTo(4 / 5, 2);
+  expect(got.wideFromVertical.ratio).toBeCloseTo(16 / 9, 2);
+
+  // **The resolution stays yours.** Only the shape is the room's — 4K with the
+  // room in 9:16 becomes Vertical 4K, not Vertical, or matching the frame would
+  // quietly cost you three quarters of the pixels.
+  expect(got.vertFrom4k.key).toBe('vertical4k');
+  expect(got.vertFrom4k.px).toBeGreaterThan(got.vertFromHd.px * 3);
+
+  // Dock is the frame that means "whatever shape the panel is", so it says
+  // nothing about the film and leaves the choice alone.
+  expect(got.dock.key).toBe('vertical');
 });
