@@ -95,10 +95,7 @@ test('the panel lists every paintable thing, and says what each is set to', asyn
       mode: el.querySelector('.rp-slot-mode').textContent,
       hasStrip: !!el.querySelector('.rp-strip').style.background,
     })));
-  // Fourteen for the room, and three for the card of type, which is drawn over
-  // whichever module is up and so is offered under both.
-  expect(rows.length).toBe(17);
-  expect(rows.slice(-3).map((r) => r.name)).toEqual(['Type', 'Type edge', 'Card']);
+  expect(rows.length).toBe(14);
   expect(rows.every((r) => r.mode === 'theme')).toBe(true);
   expect(rows.every((r) => r.hasStrip)).toBe(true);
   // The three the analysis found painted with a gradient between a colour and

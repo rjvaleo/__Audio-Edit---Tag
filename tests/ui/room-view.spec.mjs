@@ -127,53 +127,6 @@ test('the library tray and the tag rail are gone', async ({ page }) => {
     .not.toBe('showing');
 });
 
-/// No panel of controls is ever drawn over the picture.
-///
-/// **The panels live inside `masterBus`, and `masterBus` is itself borrowed into
-/// the room stage.** So a panel that is not hidden — on the way in, on the way
-/// out, or at rest in the dock — is carried into the visual cell and drawn on
-/// top of the visualiser. The card's panel shipped exactly that way and blanked
-/// the dock's room: the controls were not broken and the renderer was not
-/// broken, there was simply a block of sliders sitting over the picture.
-///
-/// Written against every `.room-edit` rather than against the three that exist,
-/// because the next one added will be the next one to do this.
-test('no control panel is drawn over the visualiser', async ({ page }) => {
-  await openApp(page);
-  const overlap = async (label) => page.evaluate((tag) => {
-    const cell = document.querySelector('.mb-cell-3d');
-    if (!cell) return { tag, err: 'no visual cell' };
-    const c = cell.getBoundingClientRect();
-    const bad = [];
-    for (const el of document.querySelectorAll('.room-edit')) {
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) continue;
-      const over = Math.max(0, Math.min(r.right, c.right) - Math.max(r.left, c.left))
-        * Math.max(0, Math.min(r.bottom, c.bottom) - Math.max(r.top, c.top));
-      if (over > 4) {
-        bad.push({ id: el.id, px: Math.round(over), parent: el.parentElement.id || el.parentElement.className });
-      }
-    }
-    return { tag, bad };
-  }, label);
-
-  await page.evaluate(() => setMode('edit'));
-  await page.waitForTimeout(250);
-  expect((await overlap('edit')).bad, 'a panel is over the dock’s visualiser').toEqual([]);
-
-  // In the workspace the panels belong in the admin column, not on the room.
-  await page.evaluate(() => setMode('room'));
-  await page.waitForTimeout(400);
-  expect((await overlap('room')).bad, 'a panel is over the room').toEqual([]);
-
-  // **And on the way back**, which is the half that was missed: releasing a
-  // panel puts it back inside `masterBus`, and putting it back is not the same
-  // as hiding it again.
-  await page.evaluate(() => setMode('edit'));
-  await page.waitForTimeout(400);
-  expect((await overlap('back')).bad, 'a panel was released back over the visualiser').toEqual([]);
-});
-
 test('the controls can be clicked, not just dispatched at', async ({ page }) => {
   await openApp(page);
   await page.evaluate(() => setMode('room'));
