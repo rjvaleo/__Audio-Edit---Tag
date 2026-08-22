@@ -356,7 +356,10 @@ test('the palette paints it, and shows its slots and not the room’s', async ({
   await page.click('#roomAdmin .rv-tab[data-rvtab="paint"]');
   const slots = await page.evaluate(() =>
     [...document.querySelectorAll('#roomPaintBody .rp-slot-name')].map((e) => e.textContent));
-  expect(slots).toEqual(['Line', 'Fill', 'Background']);
+  // Its own three, then the card's — which belongs to the room rather than to
+  // either module, so it is offered under both. What must not appear here is
+  // the room's fourteen.
+  expect(slots).toEqual(['Line', 'Fill', 'Background', 'Type', 'Type edge', 'Card']);
 
   const got = await page.evaluate(`(() => {
     const r = visRenderer();

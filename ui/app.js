@@ -3135,6 +3135,10 @@ async function runVideoExport() {
       module: visModuleKey(),
       ridge: ridgeSettings(),
       ridgePaint: ridgePaint(),
+      // The card of type, in front of it all. Handed over already resolved, the
+      // same way the palette is: the film has no page to read colours from.
+      text: roomTextSettings(),
+      textPaint: roomTextPaint(),
       camera: roomCameraForAspect(size.w / size.h),
       layers: roomLayers(),
       occlude: roomOcclude(),
@@ -7557,6 +7561,10 @@ try {
     roomEdit.ringPoints = Math.max(48, Math.min(2048, Math.round(v.ringPoints)));
   }
   if (typeof v.leadThick === 'boolean') roomEdit.leadThick = v.leadThick;
+  // The card of type. Taken whole rather than field by field: `rtSettings`
+  // merges it over the defaults, so a card saved before a control existed opens
+  // with that control at its default instead of undefined.
+  if (v.text && typeof v.text === 'object') roomEdit.text = v.text;
   // The room's own shape. Clamped to the same range the renderer clamps to, so
   // a stored value can never ask for a room it will not draw.
   if (typeof v.geomBands === 'number') {
@@ -7605,7 +7613,7 @@ function saveRoomData() {
       geomBands: roomEdit.geomBands, geomHistory: roomEdit.geomHistory,
       geomRidge: roomEdit.geomRidge,
       geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
-      module: roomEdit.module, ridge: roomEdit.ridge,
+      module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
       grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
       ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
       leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
@@ -8233,6 +8241,7 @@ function toggleRoomEdit() {
   buildRoomFrames();
   $('masterBus')?.classList.toggle('room-editing', roomEdit.on);
   $('roomEdit')?.classList.toggle('hidden', !roomEdit.on);
+  $('textEdit')?.classList.toggle('hidden', !roomTextPanelOn());
   $('roomEditOpen')?.classList.toggle('on', roomEdit.on);
   applyRoomFrame();
   paintRoomNums();
@@ -8320,6 +8329,10 @@ function setVisModule(key) {
   const onRidge = roomEdit.module === 'ridge';
   if (panel) panel.classList.toggle('hidden', onRidge || !roomEdit.on);
   if (ridge) ridge.classList.toggle('hidden', !onRidge || !roomEdit.on);
+  // Under both modules, unlike the two above: the card is the room's, not
+  // either visualiser's. Hidden with them, though — everything in here is a
+  // control, and controls are not part of the picture.
+  $('textEdit')?.classList.toggle('hidden', !roomTextPanelOn());
   applyRoomFrame();
   paintVisModulePicker();
 }
@@ -8378,6 +8391,12 @@ const ROOM_VIEW_PARTS = [
   // The other module's panel, borrowed the same way. Only one is ever
   // shown; both travel so switching module inside the workspace works.
   ['ridgeEdit', 'roomAdminBody'],
+  // **The card's panel, which must travel too.** It lives inside `masterBus`
+  // with the other two, and `masterBus` is itself borrowed into the room stage —
+  // so a panel that is not taken out of it first is carried *into the picture*
+  // and drawn over the visualiser. That is exactly what it did: a block of
+  // controls sitting on top of the room, in the dock and in the full view both.
+  ['textEdit', 'roomAdminBody'],
   // **The sound the room is drawing.** This workspace hides the dock, and the
   // stretch and grain controls live in it — so without borrowing them there is
   // no way to change the sound from here at all. That shipped: the controls
@@ -8410,6 +8429,8 @@ function enterRoomView() {
   setRoomAdminWidth(roomAdminWidth(), { save: false });
   buildVisModulePicker();
   buildRidgePanel();
+  buildRoomTextPanel();
+  $('textEdit')?.classList.toggle('hidden', !roomTextPanelOn());
   setVisModule(roomEdit.module);
   rgPanel();
   rpPanel();
@@ -8452,6 +8473,13 @@ function leaveRoomView() {
   // workspace is a setting changed behind your back.
   roomEdit.on = false;
   $('roomEdit')?.classList.add('hidden');
+  // **And the card's panel with it.** These live inside `masterBus`, which is
+  // itself borrowed into the room stage — so a panel released back into it
+  // without being hidden again is put straight back on top of the visualiser.
+  // `roomEdit` has always been hidden here for that reason; the card's was not,
+  // and it covered the dock's room until it was.
+  $('textEdit')?.classList.add('hidden');
+  $('ridgeEdit')?.classList.add('hidden');
   $('masterBus')?.classList.remove('room-editing');
   $('roomEditOpen')?.classList.remove('on');
   applyRoomFrame();
@@ -12976,6 +13004,32 @@ function ridgeSettings() {
   return { ...RDG_DEFAULTS, ...(roomEdit.ridge || {}) };
 }
 
+/// The card of type. See `docs/ROOM-TEXT.md`.
+function roomTextSettings() {
+  return rtSettings(roomEdit.text);
+}
+
+/// What the card is drawn in.
+///
+/// **The card itself defaults to the background of whichever module is on**,
+/// which is the whole of why it works: filled with the ground, the card is not a
+/// panel laid over the picture but a hole in it, and the lines behind simply
+/// stop at its edge.
+function roomTextPaint() {
+  const pick = (key, fallback) => {
+    const c = rpSlot(key);
+    return c.mode === 'flat' && c.colour ? c.colour : fallback;
+  };
+  const ground = visModuleKey() === 'ridge'
+    ? ridgePaint().background
+    : rpToken('--bg', '#07090c');
+  return {
+    face: pick('textFace', rpToken('--text', '#ffffff')),
+    side: pick('textSide', rpToken('--muted', '#6d7480')),
+    card: pick('textCard', ground),
+  };
+}
+
 /// What it is drawn in. The palette owns it, the same way it owns the room's
 /// fourteen slots, and falls back to the theme.
 ///
@@ -12994,6 +13048,302 @@ function ridgePaint() {
     fill: pick('ridgeFill', ground),
     background: ground,
   };
+}
+
+/// The card's controls.
+///
+/// Its own block rather than a tab, and shown under both modules, because the
+/// card belongs to the room and not to either visualiser.
+function buildRoomTextPanel() {
+  const host = $('textEdit');
+  if (!host || host.children.length) return;
+  const set = (k, v) => {
+    roomEdit.text = { ...roomTextSettings(), [k]: v };
+    saveRoomData();
+    paintRoomText();
+    paintRoomTextPanel();
+  };
+
+  const head = rpEl('div', 're-row');
+  head.appendChild(rpEl('span', 're-tag', 'TEXT'));
+  const on = rpEl('button', 're-btn', 'off');
+  on.id = 'rtOn';
+  on.title = 'A card of type, in front of everything. Filled with the background, so the picture stops at its edge rather than running behind it.';
+  on.onclick = () => set('on', !roomTextSettings().on);
+  head.appendChild(on);
+  const edit = rpEl('button', 're-btn', 'edit');
+  edit.title = 'Type into the card. Double-clicking it in the room does the same.';
+  edit.onclick = () => {
+    if (!roomTextSettings().on) set('on', true);
+    const c = roomTextCanvas();
+    if (c) openRoomTextInput(c);
+  };
+  head.appendChild(edit);
+  host.appendChild(head);
+
+  // Where it stands, which is the one thing better dragged than typed — so this
+  // says so rather than offering four more sliders for it.
+  const note = rpEl('div', 're-note',
+    'Drag the card to move it and its corners to size it. Double-click to type.');
+  host.appendChild(note);
+
+  // Solid or wireframe. A pair of buttons rather than a switch, because there
+  // are two of them and they are both nouns.
+  const styleRow = rpEl('div', 're-row');
+  styleRow.appendChild(rpEl('span', 're-tag', 'STYLE'));
+  const styleBox = rpEl('div', 're-frames');
+  styleBox.id = 'rtStyle';
+  for (const [key, label, hint] of [
+    ['solid', 'solid', 'Filled letters, with their sides a solid mass.'],
+    ['wire', 'wireframe', 'Outlines all the way through, so the picture shows between the rungs and the letters read as built rather than as printed.'],
+  ]) {
+    const b = rpEl('button', 're-btn', label);
+    b.dataset.rtStyle = key;
+    b.title = hint;
+    b.onclick = () => set('style', key);
+    styleBox.appendChild(b);
+  }
+  styleRow.appendChild(styleBox);
+  host.appendChild(styleRow);
+
+  const alignRow = rpEl('div', 're-row');
+  alignRow.appendChild(rpEl('span', 're-tag', 'ALIGN'));
+  const alignBox = rpEl('div', 're-frames');
+  alignBox.id = 'rtAlign';
+  for (const a of ['left', 'center', 'right']) {
+    const b = rpEl('button', 're-btn', a === 'center' ? 'centre' : a);
+    b.dataset.rtAlign = a;
+    b.onclick = () => set('align', a);
+    alignBox.appendChild(b);
+  }
+  alignRow.appendChild(alignBox);
+  host.appendChild(alignRow);
+
+  for (const row of RT_UI) {
+    const box = rpEl('div', 're-row');
+    const tag = rpEl('span', 're-tag', row.tag);
+    tag.title = row.hint;
+    box.appendChild(tag);
+    const sl = rpEl('input', 're-slider');
+    sl.type = 'range';
+    const k = row.round ? 1 : 10000;
+    sl.min = String(Math.round(row.min * k));
+    sl.max = String(Math.round(row.max * k));
+    sl.step = String(Math.max(1, Math.round(row.step * k)));
+    sl.dataset.rtKey = row.key;
+    sl.title = row.hint;
+    const read = rpEl('span', 'rg-read', '');
+    read.dataset.rtRead = row.key;
+    sl.oninput = () => set(row.key, +sl.value / k);
+    box.appendChild(sl);
+    box.appendChild(read);
+    host.appendChild(box);
+  }
+  paintRoomTextPanel();
+}
+
+function paintRoomTextPanel() {
+  const host = $('textEdit');
+  if (!host || !host.children.length) return;
+  const st = roomTextSettings();
+  const on = $('rtOn');
+  if (on) {
+    on.classList.toggle('active', st.on);
+    on.textContent = st.on ? 'on' : 'off';
+  }
+  for (const b of host.querySelectorAll('[data-rt-align]')) {
+    b.classList.toggle('active', b.dataset.rtAlign === st.align);
+  }
+  for (const b of host.querySelectorAll('[data-rt-style]')) {
+    b.classList.toggle('active', b.dataset.rtStyle === st.style);
+  }
+  for (const row of RT_UI) {
+    const sl = host.querySelector(`[data-rt-key="${row.key}"]`);
+    const read = host.querySelector(`[data-rt-read="${row.key}"]`);
+    if (!sl) continue;
+    const k = row.round ? 1 : 10000;
+    if (document.activeElement !== sl) sl.value = String(Math.round(st[row.key] * k));
+    if (read) {
+      read.textContent = row.round ? String(Math.round(st[row.key]))
+        : (row.step < 0.001 ? st[row.key].toFixed(4) : st[row.key].toFixed(2));
+    }
+    // Nothing to lean if the letters are flat.
+    if (row.key === 'angle') {
+      sl.closest('.re-row').classList.toggle('dim-block', st.depth <= 0);
+    }
+    // The rungs and the stroke are the wireframe's, and mean nothing to solid
+    // letters.
+    if (row.wire) {
+      sl.closest('.re-row').classList.toggle('dim-block', st.style !== 'wire');
+    }
+  }
+  // Everything below the switch is inert while the card is off.
+  host.classList.toggle('rt-off', !st.on);
+}
+
+/// Whether the card's controls should be on screen.
+///
+/// **Only in the room workspace, never in the dock.** In the dock a `.room-edit`
+/// is `position: absolute; inset: 0` — it covers the whole visual cell, by
+/// design, because it *is* the editing overlay. There is only ever meant to be
+/// one. Showing a second one there stacks two full-cell panels and you get the
+/// card's controls laid over the room's.
+///
+/// In the admin column they are ordinary blocks in a scrolling list, so any
+/// number of them sit happily together. The test of it is not which mode is on
+/// but where the panel actually *is*: `roomAdopt` moves it, and where it has
+/// been moved to is what decides how it is laid out.
+function roomTextPanelOn() {
+  const el = $('textEdit');
+  return !!(el && roomEdit.on && el.parentElement && el.parentElement.id === 'roomAdminBody');
+}
+
+/// The card's own canvas, over whichever module is drawing.
+///
+/// **A canvas of its own, not the module's.** One of the two modules is WebGL
+/// and has no 2D context to set type with, and reaching into the other one's
+/// context to draw over it would make the card a feature of the ridgeline rather
+/// than of the room. This follows the module's canvas about instead, at the same
+/// size and the same pixel ratio.
+let roomTextHot = null;
+let roomTextDrag = null;
+
+function roomTextCanvas() {
+  const host = visCanvas();
+  if (!host || !host.parentElement) return null;
+  let c = $('roomTextGl');
+  if (!c) {
+    c = document.createElement('canvas');
+    c.id = 'roomTextGl';
+    c.className = 'rt-canvas';
+    wireRoomText(c);
+  }
+  if (c.parentElement !== host.parentElement) host.parentElement.appendChild(c);
+  const w = host.clientWidth, h = host.clientHeight;
+  if (!w || !h) return null;
+  c.style.left = `${host.offsetLeft}px`;
+  c.style.top = `${host.offsetTop}px`;
+  c.style.width = `${w}px`;
+  c.style.height = `${h}px`;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+  if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+  return c;
+}
+
+/// Whether the card is being posed rather than merely shown: the admin panel is
+/// open, and the card is on. Only then does it take the pointer, and only then
+/// are its grips drawn.
+function roomTextPosing() {
+  return !!(roomEdit.on && roomTextSettings().on);
+}
+
+function paintRoomText() {
+  const c = roomTextCanvas();
+  if (!c) return;
+  const st = roomTextSettings();
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  c.classList.toggle('rt-live', roomTextPosing());
+  if (!st.on) return;
+  // Not while it is being typed into — the textarea is showing the same words a
+  // few pixels away and two of them is worse than none.
+  if (!$('roomTextInput')) rtDraw(ctx, c.width, c.height, st, roomTextPaint());
+  if (roomTextPosing()) rtPaintGrips(ctx, st, c.width, c.height, roomTextHot);
+}
+
+/// Moving, resizing, and typing.
+function wireRoomText(c) {
+  const dpr = () => Math.min(2, window.devicePixelRatio || 1);
+  const at = (e) => {
+    const r = c.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * dpr(), y: (e.clientY - r.top) * dpr() };
+  };
+  const put = (patch) => {
+    roomEdit.text = { ...roomTextSettings(), ...patch };
+    saveRoomData();
+    paintRoomText();
+  };
+
+  c.addEventListener('pointermove', (e) => {
+    if (!roomTextPosing()) return;
+    if (roomTextDrag) {
+      const p = at(e);
+      const st = roomTextDrag.start;
+      put(rtDrag(st, c.width, c.height, roomTextDrag.grip,
+        p.x - roomTextDrag.from.x, p.y - roomTextDrag.from.y));
+      return;
+    }
+    const p = at(e);
+    const hit = rtHit(roomTextSettings(), c.width, c.height, p.x, p.y, 10 * dpr());
+    if (hit !== roomTextHot) { roomTextHot = hit; paintRoomText(); }
+    c.style.cursor = hit ? (RT_CURSOR[hit] || 'default') : 'default';
+  });
+
+  c.addEventListener('pointerdown', (e) => {
+    if (!roomTextPosing()) return;
+    const p = at(e);
+    const grip = rtHit(roomTextSettings(), c.width, c.height, p.x, p.y, 10 * dpr());
+    if (!grip) return;
+    e.preventDefault();
+    e.stopPropagation();
+    c.setPointerCapture(e.pointerId);
+    roomTextDrag = { grip, from: p, start: roomTextSettings() };
+  });
+
+  const stop = (e) => {
+    if (!roomTextDrag) return;
+    roomTextDrag = null;
+    try { c.releasePointerCapture(e.pointerId); } catch {}
+  };
+  c.addEventListener('pointerup', stop);
+  c.addEventListener('pointercancel', stop);
+
+  // **Double-click to type**, which is where a text box's words come from.
+  c.addEventListener('dblclick', (e) => {
+    if (!roomTextPosing()) return;
+    const p = at(e);
+    if (rtHit(roomTextSettings(), c.width, c.height, p.x, p.y, 10 * dpr()) !== 'move') return;
+    e.preventDefault();
+    openRoomTextInput(c);
+  });
+}
+
+/// The textarea, over the card, holding the real words.
+function openRoomTextInput(c) {
+  if ($('roomTextInput')) return;
+  const st = roomTextSettings();
+  const box = rtBox(st, c.width, c.height);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const t = document.createElement('textarea');
+  t.id = 'roomTextInput';
+  t.className = 'rt-input';
+  t.value = st.text;
+  t.style.left = `${c.offsetLeft + box.x / dpr}px`;
+  t.style.top = `${c.offsetTop + box.y / dpr}px`;
+  t.style.width = `${box.w / dpr}px`;
+  t.style.height = `${box.h / dpr}px`;
+  c.parentElement.appendChild(t);
+  t.focus();
+  t.select();
+
+  const close = (keep) => {
+    if (keep) {
+      roomEdit.text = { ...roomTextSettings(), text: t.value };
+      saveRoomData();
+    }
+    t.remove();
+    paintRoomText();
+    paintRoomTextPanel();
+  };
+  // Enter makes a line, because the card is more than one line of type. Escape
+  // abandons, and clicking away keeps — the way every other field here behaves.
+  t.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(false); }
+    e.stopPropagation();
+  });
+  t.addEventListener('blur', () => close(true));
+  paintRoomText();
 }
 
 function visGlTick() {
@@ -13018,6 +13368,7 @@ function visGlTick() {
       rc.height = Math.round(rh * rdpr);
     }
     rr.frame({ ridge: ridgeSettings(), ridgePaint: ridgePaint() });
+    paintRoomText();
     return;
   }
 
@@ -13103,6 +13454,8 @@ function visGlTick() {
     positionRate: engine.deviceRate || state.grains?.sampleRate || 44100,
     pollMs: MB_POLL_MS,
   });
+  // In front of the room, as it is in front of the ridgeline.
+  paintRoomText();
 }
 
 function startVisGl() {
