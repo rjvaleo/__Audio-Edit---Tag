@@ -96,6 +96,96 @@ test('the room films, and a decoder opens what came out', async ({ page }) => {
     .toBeLessThan(2 / out.fps + 0.05);
 });
 
+/// A film that can be scrubbed.
+///
+/// The picture is drawn and encoded in full before a note of the sound is, so a
+/// muxer that waits for every track to have a second in hand waits for ever and
+/// writes the whole film as one fragment. One fragment is one place a seek can
+/// land — the beginning — so the file plays perfectly and freezes the moment the
+/// scrub bar is touched. What is checked is the shape of the file, because that
+/// is the part that decides it: several fragments, each opening on a keyframe,
+/// and an index saying where they are.
+test('the film is cut into fragments, and indexed so it can be scrubbed', async ({ page }) => {
+  await openFile(page);
+  const out = await page.evaluate(async () => {
+    const why = videoExportSupport();
+    if (why) return { skip: why };
+    const size = { key: 'test', label: 'test', w: 320, h: 180 };
+    const blob = await videoExport({
+      path: state.selectedFile.path,
+      from: 0, to: 0, repeats: 0, tail: false,
+      size, fps: 30,
+      camera: roomCameraDrawn(),
+      layers: roomLayers(), occlude: roomOcclude(), order: roomOrder(),
+      room: { cold: [0.2, 0.45, 0.85], hot: [1, 0.72, 0.35], core: [0.55, 0.85, 1] },
+      background: '#000',
+      onStage: () => {},
+    });
+    const d = new Uint8Array(await blob.arrayBuffer());
+    const dv = new DataView(d.buffer);
+    const name = (at) => String.fromCharCode(d[at + 4], d[at + 5], d[at + 6], d[at + 7]);
+
+    // Walk the top level and note what is there, in order.
+    const boxes = [];
+    let at = 0;
+    while (at + 8 <= d.length) {
+      const sz = dv.getUint32(at);
+      if (sz < 8) break;
+      boxes.push({ name: name(at), at, size: sz });
+      at += sz;
+    }
+
+    const sidx = boxes.find((b) => b.name === 'sidx');
+    const read = () => {
+      const o = sidx.at + 8 + 4;           // header, then version and flags
+      const timescale = dv.getUint32(o + 4);
+      const count = dv.getUint16(o + 18);
+      const refs = [];
+      let e = o + 20;
+      for (let i = 0; i < count; i++) {
+        refs.push({
+          bytes: dv.getUint32(e) & 0x7fffffff,
+          seconds: dv.getUint32(e + 4) / timescale,
+          startsOnKeyframe: (dv.getUint32(e + 8) >>> 31) === 1,
+        });
+        e += 12;
+      }
+      return { timescale, refs };
+    };
+    return {
+      order: boxes.map((b) => b.name),
+      moofs: boxes.filter((b) => b.name === 'moof').length,
+      sidx: sidx ? read() : null,
+      declared: await new Promise((res) => {
+        const v = document.createElement('video');
+        v.onloadedmetadata = () => res(v.duration);
+        v.onerror = () => res(-1);
+        v.src = URL.createObjectURL(blob);
+      }),
+    };
+  });
+  if (out.skip) test.skip(true, out.skip);
+
+  expect(out.sidx, 'there is no sidx, so nothing says where the fragments are').not.toBeNull();
+  // Between the header and the first fragment: a `first_offset` of nought says
+  // the first fragment begins where the index ends, and it has to be true.
+  expect(out.order.slice(0, 4)).toEqual(['ftyp', 'moov', 'sidx', 'moof']);
+
+  expect(out.moofs, 'the whole film is in one fragment, so a seek has nowhere to land')
+    .toBeGreaterThan(1);
+  expect(out.sidx.refs.length, 'the index does not cover every fragment')
+    .toBe(out.moofs);
+
+  const loose = out.sidx.refs.filter((r) => !r.startsOnKeyframe);
+  expect(loose.length, `${loose.length} fragments do not open on a keyframe`).toBe(0);
+
+  // The index has to add up to the film, or a player trusts it and stops early.
+  const indexed = out.sidx.refs.reduce((n, r) => n + r.seconds, 0);
+  expect(Math.abs(indexed - out.declared),
+    `the index covers ${indexed.toFixed(2)}s of a ${out.declared.toFixed(2)}s film`)
+    .toBeLessThan(0.1);
+});
+
 /// The picture outlives the sound, and the sound runs the whole way as silence.
 test('the video runs past the audio, and both streams end together',
   async ({ page }) => {
