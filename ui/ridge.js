@@ -435,24 +435,42 @@ function rdgAttach(canvas) {
         // stack instead, which looks like the picture falling into the frame.
         const base = top + gap * (first + r - 1 - slide);
 
+        // ── the line, edge to edge ──
+        //
+        // **SPAN narrows the signal, not the line.** The signal occupies the
+        // middle and the row runs flat from the frame's left edge to meet it and
+        // flat again to the right edge — so every line is one unbroken stroke
+        // across the picture however narrow the signal is.
+        //
+        // Narrowing the stroke itself was the first version, and it left eighty
+        // lines stopping in mid-air with a band of nothing either side: *"there
+        // is nothing to connect to the wall so it looks strange."*
+        //
+        // The tails carry the row's own end values rather than a nominal zero,
+        // so they meet the signal with no step at the join.
+        const yL = base - (v[0] - RIDGE_MIN) * amp;
+        const yR = base - (v[n - 1] - RIDGE_MIN) * amp;
+        const walk = () => {
+          ctx.moveTo(0, yL);
+          ctx.lineTo(xAt(0, n), yL);
+          for (let i = 1; i < n; i++) {
+            ctx.lineTo(xAt(i, n), base - (v[i] - RIDGE_MIN) * amp);
+          }
+          ctx.lineTo(W, yR);
+        };
+
         ctx.beginPath();
-        ctx.moveTo(xAt(0, n), base - (v[0] - RIDGE_MIN) * amp);
-        for (let i = 1; i < n; i++) {
-          ctx.lineTo(xAt(i, n), base - (v[i] - RIDGE_MIN) * amp);
-        }
+        walk();
         if (cfg.fill) {
-          ctx.lineTo(xAt(n - 1, n), base + gap);
-          ctx.lineTo(xAt(0, n), base + gap);
+          ctx.lineTo(W, base + gap);
+          ctx.lineTo(0, base + gap);
           ctx.closePath();
           ctx.fill();
           // Re-walk for the stroke: the closing edge along the bottom is
           // structural and must not be drawn, or every row carries a bar under
           // it and the picture is a grid.
           ctx.beginPath();
-          ctx.moveTo(xAt(0, n), base - (v[0] - RIDGE_MIN) * amp);
-          for (let i = 1; i < n; i++) {
-            ctx.lineTo(xAt(i, n), base - (v[i] - RIDGE_MIN) * amp);
-          }
+          walk();
         }
         ctx.stroke();
       }
