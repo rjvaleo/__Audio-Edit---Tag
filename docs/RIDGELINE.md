@@ -361,3 +361,20 @@ first cut grew the stack from nothing at twenty rows a second, so switching to i
 gave four seconds of an empty frame with a few lines creeping up it. That reads
 as broken rather than as quiet. `clear` fills the stack flat; new rows still
 arrive at the bottom and push these off the top.
+
+
+## SPAN narrows the signal, not the line
+
+The first cut drew the polyline itself across `span` of the width, so at anything
+under one the eighty lines stopped in mid-air with a band of nothing either side:
+*"it does shrink and grow the middle, but there is nothing to connect to the wall
+so it looks strange."*
+
+Every line now runs unbroken from the frame's left edge to its right, and SPAN
+decides how much of that width the *signal* occupies. The tails carry the row's
+own end values rather than a nominal zero, so they meet the signal with no step
+at the join.
+
+Measured at the far edge of the frame — 0.8% across, outside any span — the line
+count is the full stack at span 1, 0.6 and 0.35 alike, while the centre goes on
+occluding at 68.
