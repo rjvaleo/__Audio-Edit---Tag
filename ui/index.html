@@ -395,7 +395,12 @@
       <div class="rv-grip" id="roomGrip"
            title="Drag to resize the controls · double-click to put it back"></div>
       <section class="rv-stage" id="roomStage">
-        <div class="rv-bar" id="roomStageBar"></div>
+        <div class="rv-bar" id="roomStageBar">
+          <!-- Which visualiser you are looking at: the same class of decision as
+               what shape it is drawn in, so it sits beside the frame. -->
+          <span class="re-tag">VIEW</span>
+          <div class="re-frames" id="rgModules"></div>
+        </div>
         <!-- `#masterBus` is moved in here. Everything that feeds it is gated on
              whether it is on screen rather than on where it sits, so the meters,
              the poll and the room's own feed follow it. -->
@@ -705,6 +710,13 @@
               <div class="mb-cell mb-cell-3d">
                 <canvas id="visGl"
                   title="The master bus as a room. Depth is time: what you hear now is at the front and travels away from you. Double-click for full screen."></canvas>
+                <!-- The ridgeline's own canvas. **Not shared with the room**: a
+                     canvas can only ever have one kind of context, and once
+                     `#visGl` is WebGL it can never give a 2D one. One is shown
+                     and the other hidden; each is built the first time it is
+                     asked for. -->
+                <canvas id="visRidge" class="hidden"
+                  title="Stacked lines, each one hiding what is behind it. The waveform of the moment, pulled to the middle."></canvas>
                 <span class="mono mb-note" id="mbPeakHz"></span>
                 <!-- The room editor's furniture. Frame shapes, the numbers the
                      dragging has produced, and a way back. Everything that
@@ -725,6 +737,11 @@
                      `paintRoomHandles` from the room's own projection, so a
                      handle is always on the thing it drags. -->
                 <div class="room-handles hidden" id="roomHandles"></div>
+                <!-- The ridgeline's controls. Its own panel rather than rows
+                     added to the room's: the two modules share a contract and
+                     nothing else, and a panel that showed FOG beside WINDOW
+                     would be describing neither. -->
+                <div class="room-edit hidden" id="ridgeEdit"></div>
                 <div class="room-edit hidden" id="roomEdit">
                   <div class="re-row">
                     <span class="re-tag">LAYERS</span>
@@ -1026,6 +1043,10 @@
 <!-- The room's palette. Before vis-gl.js is not required — nothing runs at
      load — but it is read by app.js on its first frame. -->
 <script src="/room-paint.js"></script>
+<!-- The ridgeline: the CP 1919 pulses, and the visualiser measured against
+     them. See `docs/RIDGELINE.md`. -->
+<script src="/ridge-data.js"></script>
+<script src="/ridge.js"></script>
 <script src="/mp4.js"></script>
 <script src="/vis-gl.js"></script>
 <script src="/video-export.js"></script>

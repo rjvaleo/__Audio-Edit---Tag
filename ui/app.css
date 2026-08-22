@@ -3230,3 +3230,39 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    which is a 9:16 room 882 px tall in a 125 px dock. Only the width floor
    belongs here; the sizing belongs to the frame. */
 .mb-main.re-beside > .mb-cell-3d { min-width: 0; }
+
+/* ─────────────────────────────────────────────────────── the ridgeline ──
+   A second visualiser on its own canvas. See `docs/RIDGELINE.md`. A canvas can
+   only ever have one kind of context, so the two modules cannot share an
+   element — one is shown and the other hidden. */
+#visRidge {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  display: block; border: 0; border-radius: 0; background: transparent;
+  z-index: 1;
+}
+#visRidge.hidden { display: none; }
+.mb-cell-3d > #visRidge { z-index: 1; }
+/* The readout beside each slider, like the room's shape panel. */
+.rv-admin #ridgeEdit .rg-read,
+#ridgeEdit .rg-read {
+  flex: 0 0 auto; min-width: 46px; text-align: right;
+  font-family: var(--mono); font-size: 9px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+/* Laid out like the room's panel: label on its own line, control full width. */
+.rv-admin #ridgeEdit { position: static; inset: auto; pointer-events: auto;
+  flex-wrap: nowrap; max-height: none; padding: 0; gap: 0; }
+.rv-admin #ridgeEdit .re-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  margin: 0 0 8px; padding: 0 0 8px; border-bottom: 1px solid var(--line);
+}
+.rv-admin #ridgeEdit .re-tag {
+  flex: 0 0 100%; text-align: left;
+  font-size: 8.5px; letter-spacing: .6px; color: var(--text-dimmer);
+}
+.rv-admin #ridgeEdit .re-slider { flex: 1 1 110px; width: auto; height: 14px; }
+.rv-admin #ridgeEdit .re-frames { flex: 1 1 100%; flex-wrap: wrap; }
+.rv-admin #ridgeEdit .re-btn.active {
+  background: var(--accent); border-color: var(--accent); color: var(--bg);
+}
+#ridgeEdit .re-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
