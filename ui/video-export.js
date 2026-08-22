@@ -156,7 +156,7 @@ function dataRgb(hex) {
 /// `onStage(text, fraction)` is called throughout; `signal` stops it.
 async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   layers, occlude, order, room, background, data, schedule, fetchSchedule, padSeconds,
-  loopOut, signal, onStage, module, ridge, ridgePaint, text, textPaint }) {
+  loopOut, signal, onStage, module, ridge, ridgePaint }) {
   const why = videoExportSupport();
   if (why) throw new Error(why);
 
@@ -454,14 +454,6 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
     // would be type on the glass instead, in front of everything.
     if (data && data.on) drawRoomData(ctx, size, camera, data, sched, at);
     ctx.drawImage(canvas, 0, 0);
-    // **After the room, because the card is in front of everything.** Unlike the
-    // data block, which is painted on the far wall and is meant to be occluded
-    // by what is in the room, this is a card standing in front of the picture —
-    // filled with the ground, so the picture stops at its edge.
-    //
-    // The same routine the room draws with, at the film's size. See
-    // `docs/ROOM-TEXT.md`: one routine, so what is on screen is what is filmed.
-    if (text && text.on) rtDraw(ctx, size.w, size.h, text, textPaint);
 
     const vf = new VideoFrame(flat, {
       timestamp: Math.round((k * 1e6) / fps),
