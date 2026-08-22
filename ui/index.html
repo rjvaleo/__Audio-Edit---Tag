@@ -717,6 +717,11 @@
                      asked for. -->
                 <canvas id="visRidge" class="hidden"
                   title="Stacked lines, each one hiding what is behind it. The waveform of the moment, pulled to the middle."></canvas>
+                <!-- The room built out of ridgelines, on its own canvas for the
+                     same reason: this one is Babylon's, and a canvas gives one
+                     kind of context for ever. See `docs/ROOM-3D.md`. -->
+                <canvas id="visRoom3d" class="hidden"
+                  title="The stacked lines on all five surfaces of the room — floor, ceiling, both walls, and the sleeve itself on the back wall."></canvas>
                 <span class="mono mb-note" id="mbPeakHz"></span>
                 <!-- The room editor's furniture. Frame shapes, the numbers the
                      dragging has produced, and a way back. Everything that
@@ -742,6 +747,7 @@
                      nothing else, and a panel that showed FOG beside WINDOW
                      would be describing neither. -->
                 <div class="room-edit hidden" id="ridgeEdit"></div>
+                <div class="room-edit hidden" id="room3dEdit"></div>
                 <div class="room-edit hidden" id="roomEdit">
                   <div class="re-row">
                     <span class="re-tag">LAYERS</span>
@@ -1047,6 +1053,9 @@
 <!-- The ridgeline: the CP 1919 pulses, and the visualiser measured against
      them. See `docs/RIDGELINE.md`. -->
 <script src="/ridge-data.js"></script>
+<!-- The engine, then the module that uses it. See `docs/ROOM-3D.md`. -->
+<script src="/vendor/babylon.js"></script>
+<script src="/room3d.js"></script>
 <script src="/ridge.js"></script>
 <script src="/room-text.js"></script>
 <script src="/mp4.js"></script>

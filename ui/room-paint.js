@@ -81,7 +81,11 @@ const RP_RIDGE_SLOTS = [
 /// `RP_SLOTS` was never specific to the room except by being the only list, so
 /// this is the whole of what "per-module colours" costs.
 function rpSlots() {
-  const own = (typeof roomEdit !== 'undefined' && roomEdit.module === 'ridge')
+  // The stacked-line modules share three slots — line, fill, ground — because
+  // they are the same picture flat and in a room. Only the room proper has the
+  // fourteen.
+  const own = (typeof roomEdit !== 'undefined' && roomEdit.module !== 'room'
+    && roomEdit.module !== undefined)
     ? RP_RIDGE_SLOTS : RP_SLOTS;
   // The card is drawn over both modules, so its colours are on offer under both
   // — appended rather than merged in, so the module's own slots stay together
