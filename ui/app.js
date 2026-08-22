@@ -13109,6 +13109,21 @@ function startVisGl() {
   if (visGlRaf) return;
   visGlRaf = requestAnimationFrame(visGlTick);
 }
+
+// **Show the module that was chosen, before the first frame.**
+//
+// The choice is remembered and the canvases are not: `visRidge` carries
+// `hidden` in the markup and only `visCanvas` takes it off, and `visCanvas` was
+// only ever reached through `setVisModule` — which nothing calls on the way in.
+// So a session that had last used the ridgeline came back to a tick that read
+// the module as `ridge`, found that canvas `display: none`, and returned. Every
+// frame. For ever.
+//
+// Nothing drew, and the panel was black until the room view was opened, because
+// opening it calls `setVisModule` and that is what finally revealed the canvas.
+// The renderer was never broken and neither was the module: it was simply never
+// shown, and the only thing that showed it was somewhere you had to go first.
+visCanvas();
 startVisGl();
 
 // ────────────────────────────────────────────────────────── the theme editor ──
