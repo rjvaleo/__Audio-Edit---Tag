@@ -618,10 +618,34 @@ test('the room is drawn on glass, with the ground behind it', async ({ page }) =
 test('rows travel in blocks, and every other block runs the other way',
   async ({ page }) => {
     await openRoom(page);
-    await page.evaluate(() => {
+    // **A cloud this test owns.** `openRoom` resets the room's own settings but
+    // not the document's, so whichever grain rate an earlier test left behind
+    // decides whether the window round the playhead holds one grain or forty.
+    // With one, every row of the block prints the same grain and every index is
+    // the same number — which is `first block did not ascend (0 → 0)`, and it
+    // is what made this pass alone and fail in the suite.
+    await page.evaluate(async () => {
+      // **The longest file there is, not whichever came first.** `openRoom`
+      // takes `files[0]`, and in the test library that is a tenth of a second —
+      // eight times stretched at eighty grains a second is *nine* grains, so
+      // the window round the playhead holds one or two and the block prints the
+      // same grain in every row. Reading a direction off that compares 0 with
+      // 0 whatever the renderer did.
+      const folder = state.folders[0].name;
+      const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+      const longest = files.slice().sort((a, b) => (b.duration || 0) - (a.duration || 0))[0];
+      await selectFile(longest);
       document.querySelector('#stretchEngine .seg-btn[data-alg="granular"]')?.click();
+      await postJSON('/api/edit', {
+        p: state.selectedFile.path, op: 'stretch',
+        ratio: 8, algorithm: 'granular', quality: 'standard',
+        grain: { rateHz: 80, layers: 1, densityHz: 0 },
+      });
     });
-    await page.waitForTimeout(700);
+    // Waited for rather than slept through: the schedule arrives when it
+    // arrives, and 700 ms was a guess that held until the machine was busy.
+    await page.waitForFunction(
+      () => (state.grains?.grains?.length || 0) > 20, null, { timeout: 15_000 });
 
     const shape = await page.evaluate(() => {
       // A very shallow room, so the back wall is nearly the size of the front
@@ -653,6 +677,13 @@ test('rows travel in blocks, and every other block runs the other way',
       + 'not enough here to see two blocks').toBeGreaterThanOrEqual(4);
     // Two on, one off, two on…
     expect(shape.pattern, `the blocks came out as "${shape.pattern}"`).toMatch(/^##(\.##)+/);
+
+    // The precondition, said plainly. Reading a *direction* needs a window with
+    // more than one grain in it; with one, every row is that grain and the
+    // comparison is 0 against 0 whatever the renderer did.
+    expect(new Set(shape.firsts).size,
+      `the block printed the same grain in every row (${shape.firsts.slice(0, 6).join(', ')})`)
+      .toBeGreaterThan(1);
 
     // The first block ascends and the second descends.
     const [a, b, c, d] = shape.firsts;
