@@ -7776,7 +7776,14 @@ function applyRoomFrame() {
   const cell = document.querySelector('#masterBus .mb-cell-3d');
   if (!cell) return;
   const f = roomFrame();
-  const framed = roomEdit.on && f.ratio > 0;
+  // **The frame is honoured whether or not the controls are open.**
+  //
+  // It used to need `roomEdit.on`, so closing the panel snapped the room back
+  // to the dock's own shape and threw away the frame you had chosen — which
+  // reads as the setting not sticking. The frame is a decision about the
+  // picture, not a state of the editing session; `Dock` is the setting that
+  // means "whatever shape the panel is".
+  const framed = f.ratio > 0;
   cell.classList.toggle('re-framed', framed);
   cell.style.aspectRatio = framed ? String(f.ratio) : '';
   // The ratio as a bare number as well, for the full view's fit. `aspect-ratio`
@@ -7784,6 +7791,28 @@ function applyRoomFrame() {
   // in one direction and the box overflows in the other — so the stage works
   // the width out itself against the height it actually has. See `.rv-room`.
   cell.style.setProperty('--rv-ratio', framed ? String(f.ratio) : '');
+  // ── a portrait room puts its controls beside it ──
+  //
+  // The panel is `inset: 0` over the room, which is right when the room is the
+  // whole cell. Letterboxed to 9:16 in a wide dock the room is a narrow column
+  // and the panel is inside *that* — a 300px control stack in a 200px box.
+  //
+  // There is empty cell either side of a portrait room and nothing in it, so
+  // the controls go there. Landscape frames letterbox into thin bars top and
+  // bottom, which no control would fit in, so those keep the overlay.
+  //
+  // Only while the panel is the dock's: in the Room workspace it has been moved
+  // into the admin column already and is not this element's business.
+  const main = cell.parentElement;
+  const panel = $('roomEdit');
+  const mine = panel && (panel.parentElement === cell || panel.parentElement === main);
+  if (main && mine) {
+    const beside = framed && f.ratio < 1;
+    main.classList.toggle('re-beside', beside);
+    if (beside && panel.parentElement !== main) main.insertBefore(panel, cell);
+    else if (!beside && panel.parentElement !== cell) cell.appendChild(panel);
+  }
+
   // The cell has just changed shape, so every projected point has moved.
   afterLayout(() => paintRoomHandles());
 }

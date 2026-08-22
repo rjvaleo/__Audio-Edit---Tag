@@ -625,3 +625,47 @@ That measurement only works at native resolution. The box is drawn at weights of
 0.02 to 0.16, so a half-size copy of the canvas blurs a one-pixel line below any
 threshold worth setting — the first version of it read a blank picture at every
 setting and reported the taper doing nothing.
+
+
+## The frame outlives the panel, and portrait stands its controls outside
+
+Added 21 Aug 2026.
+
+**The chosen frame used to need the panel open.** `applyRoomFrame` gated on
+`roomEdit.on && f.ratio > 0`, so closing the controls snapped the room back to
+the dock's own shape and threw the choice away — which reads as the setting not
+sticking. `Dock` is the setting that means *whatever shape the panel is*; the
+other four are decisions about the picture and outlive the editing session.
+
+**A portrait frame puts its controls beside the room.** `.room-edit` is
+`inset: 0` over the room, which is right when the room is the whole cell.
+Letterboxed to 9:16 in a wide dock the room is a seventy-pixel column and the
+panel was inside *that*. There is empty cell either side of a portrait room and
+nothing in it, so the panel moves out of the cell and lays beside it. Landscape
+frames letterbox into thin bars top and bottom, which no control would fit in,
+so those keep the overlay.
+
+Only while the panel is the dock's. In the Room workspace it has already been
+moved into the admin column and is not the cell's business.
+
+### Two ways the sizing went wrong, both worth keeping
+
+**`max-width: 100%` is not a fit.** The framed cell was `align-self: center` with
+a width ceiling, so the ratio derived the height — and a 9:16 frame in a 125 px
+dock came out **882 px tall**, forcing the whole dock open. Sizing the width
+against the container's own height settles both at once, the same way the full
+view's stage does.
+
+**And then the beside layout outranked it.**
+`.mb-main.re-beside > .mb-cell-3d` is three classes; `.mb-cell-3d.re-framed` is
+two. A `flex: 1 1 auto` in the beside rule therefore beat the frame's
+`flex: 0 0 auto` and grew the cell back to the whole container — the 882 px room
+again, this time only in portrait, which is the only state the beside layout is
+ever in. The sizing belongs to the frame; only the width floor belongs to the
+beside layout.
+
+That one is worth a note about testing, too: the first attempt at breaking it
+put `flex: 1 1 auto` back and the test **passed**, because the frame's sizing is
+also restated at the beside layout's own specificity. Both had to be removed
+before the fault reappeared. A break that does not break is not evidence that
+the test is weak — but it is not evidence that it is strong, either.
