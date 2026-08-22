@@ -43,6 +43,21 @@ const RT_DEFAULTS = {
   pad: 0.55,
   align: 'center',
   weight: 700,
+  /// `solid` or `wire`. Solid letters are filled and their sides are a solid
+  /// mass; wireframe ones are drawn as outlines all the way through, so the
+  /// picture behind shows between the rungs and the letters read as built
+  /// rather than as printed.
+  style: 'solid',
+  /// How many outlines are drawn between the face and the back, in wireframe.
+  /// These are the rungs of the extrusion — the depth contours — and how far
+  /// apart they are is the whole look of it.
+  rungs: 9,
+  /// The stroke, as a fraction of the frame's height, so it is the same weight
+  /// filmed at 1080 and at 4K. Floored at a device pixel where it is drawn: a
+  /// canvas cannot draw a line thinner than that, only fainter, which reads as
+  /// brightness rather than as weight and shimmers. See `docs/RIDGELINE.md`,
+  /// which learned this the expensive way.
+  wire: 0.0016,
   /// Nought turns the card off and leaves the letters standing on the picture.
   card: 1,
 };
@@ -72,6 +87,10 @@ const RT_UI = [
     hint: 'Between the letters, as a share of the size.' },
   { key: 'pad', tag: 'PAD', min: 0, max: 2, step: 0.05,
     hint: 'Inside the card’s edge, as a share of the size.' },
+  { key: 'rungs', tag: 'RUNGS', min: 2, max: 48, step: 1, round: true, wire: true,
+    hint: 'How many outlines are drawn between the face of the letters and their back. These are the depth contours; two is a front and a back with nothing between them, and a lot of them closes back up into something near solid. Wireframe only.' },
+  { key: 'wire', tag: 'STROKE', min: 0.0006, max: 0.006, step: 0.0001, wire: true,
+    hint: 'How thick the outlines are, as a share of the frame height — so they look the same filmed at 1080 and at 4K. It will not go below one pixel: under that a canvas draws a fainter line rather than a thinner one. Wireframe only.' },
   { key: 'card', tag: 'CARD', min: 0, max: 1, step: 0.01,
     hint: 'How solid the card is. At nought there is no card and the letters stand on the picture itself.' },
 ];
@@ -169,9 +188,45 @@ function rtDraw(ctx, W, H, state, paint) {
   // away into it instead of ending on a hard edge in mid-air.
   const rad = st.angle * Math.PI / 180;
   const dep = st.depth * size;
+  const dx = Math.cos(rad), dy = Math.sin(rad);
+  const wire = st.style === 'wire';
+
+  if (wire) {
+    // ── the letters as a frame ──
+    //
+    // **Outlines all the way through, not a filled mass.** The rungs are the
+    // depth contours: the same glyph drawn at intervals between the face and the
+    // back, so what stands off the card is a cage with the picture showing
+    // between its bars. Filled sides would hide it, which is the one thing this
+    // mode exists not to do.
+    //
+    // Back to front so the face's outline is the one drawn last and unbroken.
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    // A device pixel is the floor. Under it a canvas cannot draw a thinner line
+    // and draws a fainter one instead, so the control would read as brightness.
+    ctx.lineWidth = Math.max(1, st.wire * H);
+    const rungs = Math.max(2, Math.min(64, Math.round(st.rungs)));
+    if (dep >= 0.5) {
+      for (let i = rungs - 1; i >= 1; i--) {
+        const t = i / (rungs - 1);
+        ctx.strokeStyle = rtMix(side, card, t * 0.7);
+        const ox = dx * dep * t, oy = dy * dep * t;
+        for (let l = 0; l < lines.length; l++) {
+          ctx.strokeText(lines[l], anchorX + ox, first + l * step + oy);
+        }
+      }
+    }
+    ctx.strokeStyle = face;
+    for (let l = 0; l < lines.length; l++) {
+      ctx.strokeText(lines[l], anchorX, first + l * step);
+    }
+    ctx.restore();
+    return;
+  }
+
   if (dep >= 0.5) {
     const steps = Math.max(1, Math.min(400, Math.round(dep)));
-    const dx = Math.cos(rad), dy = Math.sin(rad);
     for (let i = steps; i >= 1; i--) {
       const t = i / steps;
       ctx.fillStyle = rtMix(side, card, t * 0.85);

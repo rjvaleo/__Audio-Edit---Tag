@@ -32,6 +32,21 @@ in degrees, measured the way a screen measures — 0 is to the right and 90 is
 down. At DEPTH 0 the letters are flat, which is a legitimate thing to want, and
 LEAN dims itself when there is nothing to lean.
 
+## Solid, or a frame
+
+STYLE picks between the two. Solid letters are filled and their sides are a
+solid mass. **Wireframe ones are outlines all the way through**: the same glyph
+stroked at intervals between the face and the back, so what stands off the card
+is a cage with the picture showing between its bars. RUNGS is how many of those
+intervals there are — two is a front and a back with nothing between them, and a
+great many closes back up into something near solid — and STROKE is how thick
+they are, as a share of the frame height so it survives being filmed at 4K.
+
+The stroke is floored at one device pixel. Under that a canvas cannot draw a
+thinner line and draws a fainter one instead, so the control reads as brightness
+rather than as weight and the line shimmers as things move under it. The
+ridgeline learned this the expensive way; see `docs/RIDGELINE.md`.
+
 ## One routine, two places
 
 `rtDraw` draws the card, and **both the room and the film call it**. The data
@@ -83,6 +98,7 @@ eastwards. A grip is one of nine known things and is compared as one.
 | | |
 | --- | --- |
 | TEXT | the switch, and a button that opens the words for editing |
+| STYLE | solid letters, or a wireframe drawn through |
 | ALIGN | left, centred, right |
 | SIZE | cap height, as a share of the frame height |
 | DEPTH | how far the letters stand off, as a share of their size |
@@ -90,6 +106,8 @@ eastwards. A grip is one of nine known things and is compared as one.
 | LEAD | between the lines |
 | TRACK | between the letters |
 | PAD | inside the card's edge |
+| RUNGS | outlines between the face and the back; wireframe only |
+| STROKE | how thick those outlines are; wireframe only |
 | CARD | how solid the card is; 0 is no card at all |
 
 And three colours in the palette, offered under both modules because the card
@@ -108,6 +126,8 @@ appear — that is obvious on sight:
   read their own ink as a leak.
 - **the letters stand off**, and leaning them moves the ink without changing how
   much of it there is — which is what makes it depth rather than a bolder face.
+- **the wireframe is hollow**, measured as less ink than the solid at the same
+  size and depth. Both drawing something is not the difference between them.
 - **dragging holds the opposite edge**, and moving changes where and not how big.
 - **the card is in the same fractions** at 640×360 and at 4K.
 - **the film draws it**, watched at the routine rather than at a canvas: the
