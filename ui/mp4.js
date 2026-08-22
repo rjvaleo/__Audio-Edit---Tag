@@ -162,6 +162,10 @@ class Mp4Muxer {
     this.parts = [];
     this.sequence = 1;
     this.started = false;
+    /// What each fragment turned out to be once written — bytes, span, and
+    /// whether it opens on a keyframe. None of it is known until the fragment
+    /// is built, and `sidx` needs all of it at once. See `index`.
+    this.fragments = [];
   }
 
   /// Hand a chunk over, with the metadata the encoder gave alongside it.
@@ -181,27 +185,82 @@ class Mp4Muxer {
       time: us(chunk.timestamp),
       sync: chunk.type === 'key',
     });
-    this.maybeFlush();
   }
 
-  /// Write a fragment once every track has enough to write.
+  /// Cut everything held into fragments, at the end.
   ///
-  /// Every track, not any track: a fragment holding one track's second and
-  /// nothing of the other's puts them out of step in the file even though both
-  /// are complete in it.
-  maybeFlush(force = false) {
-    const ready = (t) => {
-      if (!t.samples.length) return false;
-      const span = t.samples.reduce((s, x) => s + x.duration, 0);
-      return span >= this.fragmentSeconds * t.timescale;
-    };
-    const all = this.tracks.every((t) => force ? t.samples.length : ready(t));
-    if (!all) return;
+  /// **Not as the samples arrive.** This used to write a fragment as soon as
+  /// every track had a second in hand — right for a muxer being fed both
+  /// streams together, and wrong for this one. The film is drawn and encoded in
+  /// full, and only then is the sound. So for the whole of the video pass the
+  /// audio track held nothing, "every track has enough" was never true, and not
+  /// one fragment was written: the entire film ended up in a single `moof` with
+  /// the sound stapled on the end.
+  ///
+  /// A file like that plays perfectly and cannot be scrubbed. With one fragment
+  /// there is one place a seek can land, and it is the beginning — which is
+  /// what every seek into a fifteen-second export did.
+  ///
+  /// Cutting at the end costs nothing, because all of it is in memory either
+  /// way, and it can cut where it wants to: on keyframes, so every fragment
+  /// opens on a picture that needs nothing before it.
+  cutFragments() {
+    const held = this.tracks.map((t) => ({ t, s: t.samples.splice(0) }));
+    if (!held.some((x) => x.s.length)) return;
     if (!this.started) {
       this.parts.push(this.header());
       this.started = true;
     }
-    this.parts.push(this.fragment());
+    const v = this.video;
+    const vid = held.find((x) => x.t === v);
+    // Sound with no picture is one fragment and nothing to align to.
+    if (!vid || !vid.s.length) {
+      for (const x of held) x.t.samples = x.s;
+      this.parts.push(this.fragment());
+      return;
+    }
+
+    // Where each track's samples begin, in its own ticks, so the sound can be
+    // cut at the same instants as the picture despite counting differently.
+    const starts = new Map();
+    for (const x of held) {
+      const acc = new Float64Array(x.s.length + 1);
+      for (let i = 0; i < x.s.length; i++) acc[i + 1] = acc[i] + x.s[i].duration;
+      starts.set(x.t, acc);
+    }
+
+    // Cut on a keyframe, but no more often than asked for.
+    const vAcc = starts.get(v);
+    const want = this.fragmentSeconds * v.timescale;
+    const bounds = [];
+    let lastCut = 0;
+    for (let i = 1; i < vid.s.length; i++) {
+      if (vid.s[i].sync && vAcc[i] - lastCut >= want) {
+        bounds.push(i);
+        lastCut = vAcc[i];
+      }
+    }
+    bounds.push(vid.s.length);
+
+    const cursor = new Map(held.map((x) => [x.t, 0]));
+    let from = 0;
+    for (const to of bounds) {
+      const until = vAcc[to] / v.timescale;
+      for (const x of held) {
+        if (x.t === v) { x.t.samples = x.s.slice(from, to); continue; }
+        const acc = starts.get(x.t);
+        const k = cursor.get(x.t);
+        // Up to the same moment — and the last fragment takes whatever is left,
+        // so nothing is dropped to a rounding error.
+        let end = k;
+        if (to === vid.s.length) end = x.s.length;
+        else while (end < x.s.length && acc[end] / x.t.timescale < until) end++;
+        x.t.samples = x.s.slice(k, end);
+        cursor.set(x.t, end);
+      }
+      this.parts.push(this.fragment());
+      from = to;
+    }
   }
 
   /// `ftyp` and `moov`: what the file is, and what is in it.
@@ -328,6 +387,9 @@ class Mp4Muxer {
     const taking = this.tracks.map((t) => ({ track: t, samples: t.samples.splice(0) }))
       .filter((x) => x.samples.length);
     if (!taking.length) return new Uint8Array(0);
+    // Where the picture has got to *before* this fragment moves it on, which is
+    // this fragment's own start. Read here because the write loop advances it.
+    const startedAt = this.video ? this.video.at : 0;
 
     // The offsets in `trun` are measured from the start of the `moof`, which is
     // why the whole thing is written once to find its length and then written
@@ -391,17 +453,65 @@ class Mp4Muxer {
         track.at += s.duration;
       }
     }
+    // What this fragment came to, for the index.
+    const vid = taking.find((x) => x.track === this.video);
+    if (vid) {
+      this.fragments.push({
+        bytes: total,
+        time: startedAt,
+        duration: vid.samples.reduce((n, x) => n + x.duration, 0),
+        sync: !!vid.samples[0].sync,
+      });
+    }
     this.sequence++;
     return out;
   }
 
+  /// `sidx`: which byte each stretch of time begins at.
+  ///
+  /// **Without this a fragmented file cannot be scrubbed.** The samples already
+  /// say which of them are sync points, but that only helps a player that has
+  /// already found the right fragment, and in a fragmented file nothing says
+  /// where the fragments are. A player asked for ten seconds in has no way to
+  /// work out which `moof` holds it short of reading every one from the front.
+  /// Some do. Most hand back the first frame instead.
+  ///
+  /// One index for the whole file, written between the `moov` and the first
+  /// fragment — so `first_offset` is nought: the first fragment begins where
+  /// this box ends.
+  index() {
+    const t = this.video;
+    const w = new Mp4Writer();
+    w.full('sidx', 0, 0, (b) => {
+      b.u32(t.id);
+      b.u32(t.timescale);
+      b.u32(this.fragments.length ? this.fragments[0].time : 0);
+      b.u32(0);
+      b.u16(0);
+      b.u16(this.fragments.length);
+      for (const f of this.fragments) {
+        // Top bit clear: this reference is media, not another index.
+        b.u32(f.bytes & 0x7fffffff);
+        b.u32(f.duration);
+        // Starts with a stream access point of type 1 — an IDR needing nothing
+        // before it. Say otherwise and a player decodes from the fragment
+        // before to be safe, which is the stall this box exists to avoid.
+        b.u32(f.sync ? 0x90000000 : 0);
+      }
+    });
+    return w.done();
+  }
+
   /// Everything still held, then the file.
   finish(type = 'video/mp4') {
-    this.maybeFlush(true);
+    this.cutFragments();
     if (!this.started) {
       this.parts.unshift(this.header());
       this.started = true;
     }
+    // Between the header and the first fragment, which is where a `first_offset`
+    // of nought says it is.
+    if (this.video && this.fragments.length) this.parts.splice(1, 0, this.index());
     return new Blob(this.parts, { type });
   }
 }
