@@ -120,6 +120,31 @@ test('both modules answer the same contract', async ({ page }) => {
   expect(got.room.canvas).toBe(true);
   expect(got.ridge.canvas).toBe(true);
   expect(got.ridge.live).toBe(true);
+  // And the third, which is the whole point of there being a contract at all.
+  expect(got.room3d.canvas).toBe(true);
+});
+
+/// The early list of keys and the real list of modules say the same thing.
+///
+/// **They are two lists because they have to be.** The stored settings are read
+/// at load, before `VIS_MODULES` exists — and a `const` touched before its
+/// declaration throws rather than coming back undefined, so reading it there
+/// takes the whole script down. `VIS_MODULE_KEYS` is a plain list early enough
+/// to use; `VIS_MODULES` carries the canvases and the attach functions and
+/// cannot move up to meet it.
+///
+/// Two lists that must agree is exactly the arrangement that quietly stops
+/// agreeing. This is the thing that keeps them honest — a module missing from
+/// the early list is remembered, stored, and then silently dropped on the way
+/// back in, which is a fault with nothing on screen to explain it.
+test('every module is in the list read at load', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => typeof VIS_MODULES !== 'undefined');
+  const got = await page.evaluate(() => ({
+    modules: VIS_MODULES.map((m) => m.key),
+    early: VIS_MODULE_KEYS.slice(),
+  }));
+  expect(got.early.slice().sort()).toEqual(got.modules.slice().sort());
 });
 
 test('choosing a module shows one canvas and hides the other', async ({ page }) => {
@@ -128,18 +153,23 @@ test('choosing a module shows one canvas and hides the other', async ({ page }) 
     const shown = () => ({
       room: !document.getElementById('visGl').classList.contains('hidden'),
       ridge: !document.getElementById('visRidge').classList.contains('hidden'),
+      room3d: !document.getElementById('visRoom3d').classList.contains('hidden'),
     });
     setVisModule('ridge');
     const onRidge = shown();
     setVisModule('room');
     const onRoom = shown();
+    setVisModule('room3d');
+    const onSurfaces = shown();
     setVisModule('ridge');
-    return { onRidge, onRoom };
+    return { onRidge, onRoom, onSurfaces };
   });
-  // A canvas can only ever have one kind of context, so these cannot share an
-  // element and both being visible would be two pictures over each other.
-  expect(got.onRidge).toEqual({ room: false, ridge: true });
-  expect(got.onRoom).toEqual({ room: true, ridge: false });
+  // A canvas can only ever have one kind of context — one is WebGL's, one is a
+  // 2D one, one is Babylon's — so these cannot share an element, and two being
+  // visible at once would be two pictures over each other.
+  expect(got.onRidge).toEqual({ room: false, ridge: true, room3d: false });
+  expect(got.onRoom).toEqual({ room: true, ridge: false, room3d: false });
+  expect(got.onSurfaces).toEqual({ room: false, ridge: false, room3d: true });
 });
 
 test('the choice of module is remembered', async ({ page }) => {

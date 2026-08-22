@@ -60,6 +60,12 @@ pub const ROOM_PAINT_JS: &str = include_str!("../../../../ui/room-paint.js");
 /// See `docs/RIDGELINE.md`.
 pub const RIDGE_JS: &str = include_str!("../../../../ui/ridge.js");
 pub const RIDGE_DATA_JS: &str = include_str!("../../../../ui/ridge-data.js");
+/// **Babylon, vendored whole.** Everything this program serves is embedded, so
+/// the engine is too — eight megabytes of it. `include_bytes` rather than
+/// `include_str` because nothing here needs it as text and validating eight
+/// megabytes as UTF-8 at compile time buys nothing.
+pub const BABYLON_JS: &[u8] = include_bytes!("../../../../ui/vendor/babylon.js");
+pub const ROOM3D_JS: &str = include_str!("../../../../ui/room3d.js");
 pub const ROOM_TEXT_JS: &str = include_str!("../../../../ui/room-text.js");
 /// The MP4 muxer and the thing that drives it. See `docs/VIDEO-EXPORT.md`.
 pub const MP4_JS: &str = include_str!("../../../../ui/mp4.js");
@@ -113,6 +119,17 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/room-text.js") => {
             Response::ok("text/javascript; charset=utf-8", ROOM_TEXT_JS.as_bytes().to_vec())
+        }
+        // The engine. Cached hard and for ever: it is a pinned version of a
+        // third-party build and it does not change between runs, unlike every
+        // other file here, which is why it does not get `no-store`.
+        ("GET" | "HEAD", "/vendor/babylon.js") => Response::ok(
+            "text/javascript; charset=utf-8",
+            BABYLON_JS.to_vec(),
+        )
+        .with("Cache-Control", "public, max-age=31536000, immutable"),
+        ("GET" | "HEAD", "/room3d.js") => {
+            Response::ok("text/javascript; charset=utf-8", ROOM3D_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/ridge.js") => {
             Response::ok("text/javascript; charset=utf-8", RIDGE_JS.as_bytes().to_vec())

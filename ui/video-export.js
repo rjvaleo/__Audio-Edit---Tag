@@ -156,7 +156,8 @@ function dataRgb(hex) {
 /// `onStage(text, fraction)` is called throughout; `signal` stops it.
 async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   layers, occlude, order, room, background, data, schedule, fetchSchedule, padSeconds,
-  loopOut, signal, onStage, module, ridge, ridgePaint, text, textPaint }) {
+  loopOut, signal, onStage, module, ridge, ridgePaint, room3d, room3dPaint,
+  text, textPaint }) {
   const why = videoExportSupport();
   if (why) throw new Error(why);
 
@@ -228,7 +229,7 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   // The settings have to be in hand before any row is made, and the export
   // pushes a run of them before it draws anything. See `configure` in
   // `ridge.js`.
-  if (gl.configure) gl.configure(ridge);
+  if (gl.configure) gl.configure(module === 'room3d' ? room3d : ridge);
 
   // ── something behind it ──
   //
@@ -420,6 +421,11 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
       // room's — a module takes what it understands out of the frame.
       ridge,
       ridgePaint,
+      // What the surfaces read. Each module takes what it understands out of
+      // the frame and ignores the rest, which is what lets one reel drive any
+      // of the three.
+      room3d,
+      room3dPaint,
       cam: camera,
       layers,
       occlude,

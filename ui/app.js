@@ -3135,6 +3135,8 @@ async function runVideoExport() {
       module: visModuleKey(),
       ridge: ridgeSettings(),
       ridgePaint: ridgePaint(),
+      room3d: room3dSettings(),
+      room3dPaint: ridgePaint(),
       // The card of type, in front of it all. Handed over already resolved, the
       // same way the palette is: the film has no page to read colours from.
       text: roomTextSettings(),
@@ -7414,6 +7416,18 @@ const ROOM_LAYERS = [
 /// The layers the renderer actually draws. `data` is the one that is not.
 const ROOM_GL_LAYERS = ROOM_LAYERS.filter((l) => l.gl !== false);
 
+/// The visual modules, by key.
+///
+/// **A plain list, and here rather than beside `VIS_MODULES`.** The stored
+/// settings are read at load, which is before `VIS_MODULES` exists — and a
+/// `const` referenced before its declaration does not come back undefined, it
+/// throws, so reaching for it there takes the whole script down. `VIS_MODULES`
+/// carries the canvases and the attach functions and cannot move up here
+/// because those are defined later still.
+///
+/// The two are kept in step by a test rather than by hope.
+const VIS_MODULE_KEYS = ['room', 'ridge', 'room3d'];
+
 /// How many rows travel together before a blank line, and which way each block
 /// runs. Alternating blocks read in opposite directions, so neighbouring groups
 /// slide against each other and the movement is visible — a single column all
@@ -7565,6 +7579,7 @@ try {
   // merges it over the defaults, so a card saved before a control existed opens
   // with that control at its default instead of undefined.
   if (v.text && typeof v.text === 'object') roomEdit.text = v.text;
+  if (v.room3d && typeof v.room3d === 'object') roomEdit.room3d = v.room3d;
   // The room's own shape. Clamped to the same range the renderer clamps to, so
   // a stored value can never ask for a room it will not draw.
   if (typeof v.geomBands === 'number') {
@@ -7582,7 +7597,10 @@ try {
   if (typeof v.geomBody === 'number') {
     roomEdit.geomBody = Math.max(0.002, Math.min(0.3, v.geomBody));
   }
-  if (v.module === 'ridge' || v.module === 'room') roomEdit.module = v.module;
+  // Any module there is. This said `'ridge' || 'room'`, so a third module was
+  // remembered, stored, and then silently dropped on the way back in — the app
+  // opened on the room every time with nothing on screen to say why.
+  if (VIS_MODULE_KEYS.includes(v.module)) roomEdit.module = v.module;
   if (v.ridge && typeof v.ridge === 'object') roomEdit.ridge = { ...v.ridge };
   if (typeof v.fog === 'boolean') roomEdit.fog = v.fog;
   if (typeof v.fogType === 'number') roomEdit.fogType = Math.max(0, Math.min(3, v.fogType | 0));
@@ -7614,6 +7632,7 @@ function saveRoomData() {
       geomRidge: roomEdit.geomRidge,
       geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
       module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
+      room3d: roomEdit.room3d,
       grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
       ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
       leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
@@ -8240,7 +8259,9 @@ function toggleRoomEdit() {
   buildRoomChunks();
   buildRoomFrames();
   $('masterBus')?.classList.toggle('room-editing', roomEdit.on);
-  $('roomEdit')?.classList.toggle('hidden', !roomEdit.on);
+  $('roomEdit')?.classList.toggle('hidden', visModuleKey() !== 'room' || !roomEdit.on);
+  $('ridgeEdit')?.classList.toggle('hidden', visModuleKey() !== 'ridge' || !roomEdit.on);
+  $('room3dEdit')?.classList.toggle('hidden', visModuleKey() !== 'room3d' || !roomEdit.on);
   $('textEdit')?.classList.toggle('hidden', !roomTextPanelOn());
   $('roomEditOpen')?.classList.toggle('on', roomEdit.on);
   applyRoomFrame();
@@ -8269,6 +8290,8 @@ const VIS_MODULES = [
     hint: 'The master bus as a room in perspective. Depth is time.' },
   { key: 'ridge', label: 'Ridgeline', canvas: 'visRidge', attach: (c) => rdgAttach(c),
     hint: 'Stacked lines, each hiding what is behind it. The waveform of the moment, pulled to the middle.' },
+  { key: 'room3d', label: 'Surfaces', canvas: 'visRoom3d', attach: (c) => r3Attach(c),
+    hint: 'The stacked lines on all five surfaces of a room — floor, ceiling, both walls, and the sleeve itself on the back wall.' },
 ];
 
 /// The live renderers, one per module, built lazily. A module never opened costs
@@ -8276,7 +8299,7 @@ const VIS_MODULES = [
 const visLive = {};
 
 function visModuleKey() {
-  return roomEdit.module === 'ridge' ? 'ridge' : 'room';
+  return VIS_MODULES.some((m) => m.key === roomEdit.module) ? roomEdit.module : 'room';
 }
 
 function visModule() {
@@ -8307,7 +8330,7 @@ function visRenderer() {
     // Settings first, then fill: `clear` builds the stack at the row count and
     // width it has been told about, so it has to be told before it is called.
     if (visLive[m.key].configure) {
-      visLive[m.key].configure(ridgeSettings());
+      visLive[m.key].configure(m.key === 'room3d' ? room3dSettings() : ridgeSettings());
       visLive[m.key].clear();
     }
   }
@@ -8319,16 +8342,18 @@ function visRenderer() {
 /// the moment you arrive rather than showing you the last four seconds of
 /// something you were not watching.
 function setVisModule(key) {
-  roomEdit.module = key === 'ridge' ? 'ridge' : 'room';
+  roomEdit.module = VIS_MODULES.some((m) => m.key === key) ? key : 'room';
   saveRoomData();
   visCanvas();
   buildRidgePanel();
   paintRidgePanel();
-  const panel = $('roomEdit');
-  const ridge = $('ridgeEdit');
-  const onRidge = roomEdit.module === 'ridge';
-  if (panel) panel.classList.toggle('hidden', onRidge || !roomEdit.on);
-  if (ridge) ridge.classList.toggle('hidden', !onRidge || !roomEdit.on);
+  // Each module's own panel, and only its own. Written as "is this the module"
+  // rather than "is this the ridgeline", because there are three now and the
+  // next one added should not have to find this line.
+  const shown = visModuleKey();
+  $('roomEdit')?.classList.toggle('hidden', shown !== 'room' || !roomEdit.on);
+  $('ridgeEdit')?.classList.toggle('hidden', shown !== 'ridge' || !roomEdit.on);
+  $('room3dEdit')?.classList.toggle('hidden', shown !== 'room3d' || !roomEdit.on);
   // Under both modules, unlike the two above: the card is the room's, not
   // either visualiser's. Hidden with them, though — everything in here is a
   // control, and controls are not part of the picture.
@@ -8391,6 +8416,7 @@ const ROOM_VIEW_PARTS = [
   // The other module's panel, borrowed the same way. Only one is ever
   // shown; both travel so switching module inside the workspace works.
   ['ridgeEdit', 'roomAdminBody'],
+  ['room3dEdit', 'roomAdminBody'],
   // **The card's panel, which must travel too.** It lives inside `masterBus`
   // with the other two, and `masterBus` is itself borrowed into the room stage —
   // so a panel that is not taken out of it first is carried *into the picture*
@@ -8429,6 +8455,7 @@ function enterRoomView() {
   setRoomAdminWidth(roomAdminWidth(), { save: false });
   buildVisModulePicker();
   buildRidgePanel();
+  buildRoom3dPanel();
   buildRoomTextPanel();
   $('textEdit')?.classList.toggle('hidden', !roomTextPanelOn());
   setVisModule(roomEdit.module);
@@ -8480,6 +8507,7 @@ function leaveRoomView() {
   // and it covered the dock's room until it was.
   $('textEdit')?.classList.add('hidden');
   $('ridgeEdit')?.classList.add('hidden');
+  $('room3dEdit')?.classList.add('hidden');
   $('masterBus')?.classList.remove('room-editing');
   $('roomEditOpen')?.classList.remove('on');
   applyRoomFrame();
@@ -12898,10 +12926,12 @@ async function mbTick() {
   // given.
   const vis = visRenderer();
   // The settings before the row is made, not after. See `configure`.
-  if (vis && vis.configure) vis.configure(ridgeSettings());
+  if (vis && vis.configure) {
+    vis.configure(visModuleKey() === 'room3d' ? room3dSettings() : ridgeSettings());
+  }
   if (vis && masterBus.data?.spectrum) {
     vis.push(masterBus.data.spectrum, masterBus.data.lissajous);
-  } else if (vis && visModuleKey() === 'ridge') {
+  } else if (vis && visModuleKey() !== 'room') {
     // Silence is a picture too, and for the ridgeline it is the right one: flat
     // lines, which is what the top and bottom of the plot look like. So it is
     // fed nothing rather than a test card, and the stack goes quiet honestly.
@@ -13004,6 +13034,11 @@ function ridgeSettings() {
   return { ...RDG_DEFAULTS, ...(roomEdit.ridge || {}) };
 }
 
+/// The room built out of ridgelines. See `docs/ROOM-3D.md`.
+function room3dSettings() {
+  return { ...R3_DEFAULTS, ...(roomEdit.room3d || {}) };
+}
+
 /// The card of type. See `docs/ROOM-TEXT.md`.
 function roomTextSettings() {
   return rtSettings(roomEdit.text);
@@ -13020,9 +13055,9 @@ function roomTextPaint() {
     const c = rpSlot(key);
     return c.mode === 'flat' && c.colour ? c.colour : fallback;
   };
-  const ground = visModuleKey() === 'ridge'
-    ? ridgePaint().background
-    : rpToken('--bg', '#07090c');
+  const ground = visModuleKey() === 'room'
+    ? rpToken('--bg', '#07090c')
+    : ridgePaint().background;
   return {
     face: pick('textFace', rpToken('--text', '#ffffff')),
     side: pick('textSide', rpToken('--muted', '#6d7480')),
@@ -13179,6 +13214,77 @@ function paintRoomTextPanel() {
   }
   // Everything below the switch is inert while the card is off.
   host.classList.toggle('rt-off', !st.on);
+}
+
+/// The surfaces module's controls.
+function buildRoom3dPanel() {
+  const host = $('room3dEdit');
+  if (!host || host.children.length) return;
+  const set = (k, v) => {
+    roomEdit.room3d = { ...room3dSettings(), [k]: v };
+    saveRoomData();
+    const r = visLive.room3d;
+    if (r && r.configure) r.configure(room3dSettings());
+    paintRoom3dPanel();
+  };
+
+  const faceRow = rpEl('div', 're-row');
+  faceRow.appendChild(rpEl('span', 're-tag', 'FACES'));
+  const faceBox = rpEl('div', 're-frames');
+  faceBox.id = 'r3Faces';
+  for (const [key, label] of R3_FACES) {
+    const b = rpEl('button', 're-btn', label);
+    b.dataset.r3Face = key;
+    b.title = key === 'back'
+      ? 'The sleeve itself, at the end of the room: rows born at the bottom and climbing.'
+      : `The ${label.toLowerCase()}, with its rows running away from you into the room.`;
+    b.onclick = () => set(key, !room3dSettings()[key]);
+    faceBox.appendChild(b);
+  }
+  faceRow.appendChild(faceBox);
+  host.appendChild(faceRow);
+
+  for (const row of R3_UI) {
+    const box = rpEl('div', 're-row');
+    const tag = rpEl('span', 're-tag', row.tag);
+    tag.title = row.hint;
+    box.appendChild(tag);
+    const sl = rpEl('input', 're-slider');
+    sl.type = 'range';
+    const k = row.round ? 1 : 1000;
+    sl.min = String(Math.round(row.min * k));
+    sl.max = String(Math.round(row.max * k));
+    sl.step = String(Math.max(1, Math.round(row.step * k)));
+    sl.dataset.r3Key = row.key;
+    sl.title = row.hint;
+    const read = rpEl('span', 'rg-read', '');
+    read.dataset.r3Read = row.key;
+    sl.oninput = () => set(row.key, +sl.value / k);
+    box.appendChild(sl);
+    box.appendChild(read);
+    host.appendChild(box);
+  }
+  paintRoom3dPanel();
+}
+
+function paintRoom3dPanel() {
+  const host = $('room3dEdit');
+  if (!host || !host.children.length) return;
+  const st = room3dSettings();
+  for (const b of host.querySelectorAll('[data-r3-face]')) {
+    b.classList.toggle('active', !!st[b.dataset.r3Face]);
+  }
+  for (const row of R3_UI) {
+    const sl = host.querySelector(`[data-r3-key="${row.key}"]`);
+    const read = host.querySelector(`[data-r3-read="${row.key}"]`);
+    if (!sl) continue;
+    const k = row.round ? 1 : 1000;
+    if (document.activeElement !== sl) sl.value = String(Math.round(st[row.key] * k));
+    if (read) {
+      read.textContent = row.round ? String(Math.round(st[row.key]))
+        : (row.step < 0.01 ? st[row.key].toFixed(3) : st[row.key].toFixed(2));
+    }
+  }
 }
 
 /// Whether the card's controls should be on screen.
@@ -13355,6 +13461,22 @@ function visGlTick() {
   // the contract. Drawn at the device's pixel ratio like the room, so hairlines
   // stay hair-thin on a retina display instead of being drawn at half density
   // and scaled up.
+  if (visModuleKey() === 'room3d') {
+    const rc = $('visRoom3d');
+    if (!rc || rc.offsetParent === null) return;
+    const rr = visRenderer();
+    if (!rr) return;
+    const rw = rc.clientWidth, rh = rc.clientHeight;
+    if (!rw || !rh) return;
+    const rdpr = Math.min(2, window.devicePixelRatio || 1);
+    if (rc.width !== Math.round(rw * rdpr) || rc.height !== Math.round(rh * rdpr)) {
+      rc.width = Math.round(rw * rdpr);
+      rc.height = Math.round(rh * rdpr);
+    }
+    rr.frame({ room3d: room3dSettings(), room3dPaint: ridgePaint() });
+    return;
+  }
+
   if (visModuleKey() === 'ridge') {
     const rc = $('visRidge');
     if (!rc || rc.offsetParent === null) return;
