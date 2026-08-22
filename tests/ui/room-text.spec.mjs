@@ -218,6 +218,49 @@ test('dragging an edge holds the opposite one', async ({ page }) => {
   expect(Math.round(got.afterMove.y)).toBe(Math.round(got.before.y - 20));
 });
 
+test('the card cannot be dragged out of the frame', async ({ page }) => {
+  await openCard(page);
+  const got = await page.evaluate(() => {
+    roomEdit.text = { ...rtSettings(roomEdit.text), on: true };
+    const W = 1117, H = 762;
+    // Haul both corners outwards, over and over, the way a hand does.
+    let st = roomTextSettings();
+    for (let i = 0; i < 12; i++) {
+      st = { ...st, ...rtDrag(st, W, H, 'se', 400, 400) };
+      st = { ...st, ...rtDrag(st, W, H, 'nw', -400, -400) };
+      // Through the same door the app puts it through, which is where the
+      // clamp lives.
+      roomEdit.text = st;
+      st = roomTextSettings();
+    }
+    const flung = rtBox(st, W, H);
+
+    // And a card already saved broken — from before there was a clamp — must
+    // come back inside the frame rather than stay black for ever.
+    roomEdit.text = { on: true, x: 9, y: -4, w: 12, h: 30 };
+    const rescued = rtBox(roomTextSettings(), W, H);
+    return { flung, rescued, W, H };
+  });
+
+  // **Never the whole frame.** A card the size of the room is filled with the
+  // ground across the whole of it, which does not read as a card — it reads as
+  // an empty window, with nothing on screen to say otherwise. So there is always
+  // a margin of picture around it.
+  expect(got.flung.w, 'the card filled the frame edge to edge')
+    .toBeLessThan(got.W * 0.97);
+  expect(got.flung.h, 'the card filled the frame top to bottom')
+    .toBeLessThan(got.H * 0.97);
+
+  // Some of it is always on screen, so its grips can be reached again.
+  const onScreen = (b) => Math.max(0, Math.min(b.x + b.w, got.W) - Math.max(b.x, 0))
+    * Math.max(0, Math.min(b.y + b.h, got.H) - Math.max(b.y, 0));
+  expect(onScreen(got.flung), 'the card was flung off screen').toBeGreaterThan(0);
+
+  expect(got.rescued.w).toBeLessThan(got.W * 0.97);
+  expect(got.rescued.h).toBeLessThan(got.H * 0.97);
+  expect(onScreen(got.rescued), 'a card saved broken did not come back').toBeGreaterThan(0);
+});
+
 test('the card sits in the same place at any size', async ({ page }) => {
   await openCard(page);
   const got = await page.evaluate(() => {

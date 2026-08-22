@@ -95,10 +95,43 @@ const RT_UI = [
     hint: 'How solid the card is. At nought there is no card and the letters stand on the picture itself.' },
 ];
 
-/// Merge what is stored over the defaults. Anything absent is a default, so a
-/// card saved before a control existed still opens.
+/// Merge what is stored over the defaults, and keep the card inside the frame.
+///
+/// Anything absent is a default, so a card saved before a control existed still
+/// opens with that control at its default rather than at `undefined`.
+///
+/// **And the box is clamped here, on the way out, not on the way in.** A card
+/// dragged bigger than the frame is filled with the background colour across the
+/// whole of it — which does not look like an oversized card, it looks like an
+/// empty window, because the ground is exactly what an empty window is. There is
+/// nothing on screen to tell you what happened and nothing to grab to undo it,
+/// and it is written to storage, so it survives a reload and the room is simply
+/// black for ever.
+///
+/// Clamping on read rather than on write is what makes that recoverable: a card
+/// already saved in that state comes back inside the frame the next time it is
+/// looked at, without anyone having to find and clear the storage.
 function rtSettings(stored) {
-  return { ...RT_DEFAULTS, ...(stored || {}) };
+  const st = { ...RT_DEFAULTS, ...(stored || {}) };
+  const num = (v, lo, hi, dflt) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt;
+  };
+  // Never so small it cannot be grabbed again, and never quite the whole frame.
+  //
+  // **The ceiling is short of one on purpose.** Clamped to exactly the frame the
+  // card still fills the window edge to edge with the ground, which is the same
+  // black rectangle and just as unreadable — the clamp stops the runaway but
+  // leaves the symptom. A margin means there is always some picture round the
+  // outside, so a card that has been dragged too far still looks like a card
+  // that has been dragged too far.
+  st.w = num(st.w, 0.03, 0.95, RT_DEFAULTS.w);
+  st.h = num(st.h, 0.03, 0.95, RT_DEFAULTS.h);
+  // The centre stays inside the frame, so some of the card is always on screen
+  // with its grips reachable however far it was flung.
+  st.x = num(st.x, 0, 1, RT_DEFAULTS.x);
+  st.y = num(st.y, 0, 1, RT_DEFAULTS.y);
+  return st;
 }
 
 /// The card's box in pixels, from its fractions.
