@@ -81,8 +81,12 @@ const RP_RIDGE_SLOTS = [
 /// `RP_SLOTS` was never specific to the room except by being the only list, so
 /// this is the whole of what "per-module colours" costs.
 function rpSlots() {
-  return (typeof roomEdit !== 'undefined' && roomEdit.module === 'ridge')
+  const own = (typeof roomEdit !== 'undefined' && roomEdit.module === 'ridge')
     ? RP_RIDGE_SLOTS : RP_SLOTS;
+  // The card is drawn over both modules, so its colours are on offer under both
+  // — appended rather than merged in, so the module's own slots stay together
+  // at the top of the list where they were.
+  return typeof RT_SLOTS === 'undefined' ? own : own.concat(RT_SLOTS);
 }
 
 const RP_BY_KEY = Object.fromEntries(
