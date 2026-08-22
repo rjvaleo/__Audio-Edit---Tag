@@ -160,6 +160,28 @@ test('the letters stand off the card, in the direction they lean', async ({ page
     .toBeLessThan(0.25);
 });
 
+test('wireframe letters are drawn through, not filled', async ({ page }) => {
+  await openCard(page);
+  const got = await page.evaluate(`(() => {
+    ${FEED}(80);
+    const same = { text: 'OO', size: 0.1, depth: 0.6, angle: 135, w: 0.5, h: 0.26 };
+    const solid = ${SHOT}({ ...same, style: 'solid' });
+    const wire = ${SHOT}({ ...same, style: 'wire', rungs: 10, wire: 0.0016 });
+    return { solid: solid.whole, wire: wire.whole, box: solid.box, canvas: solid.canvas };
+  })()`);
+
+  // Both drew letters.
+  expect(got.solid, 'the solid letters drew nothing').toBeGreaterThan(0.02);
+  expect(got.wire, 'the wireframe letters drew nothing').toBeGreaterThan(0.01);
+
+  // **And the wireframe is the lighter of the two**, because it is outlines
+  // where the other is a filled mass — the counters of the O and the space
+  // between the rungs are card, not type. This is the whole difference between
+  // the two modes, so it is the thing asserted rather than that both drew.
+  expect(got.wire, 'the wireframe put down as much ink as the solid, so it is not hollow')
+    .toBeLessThan(got.solid * 0.75);
+});
+
 test('dragging an edge holds the opposite one', async ({ page }) => {
   await openCard(page);
   const got = await page.evaluate(() => {

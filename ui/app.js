@@ -13068,6 +13068,25 @@ function buildRoomTextPanel() {
     'Drag the card to move it and its corners to size it. Double-click to type.');
   host.appendChild(note);
 
+  // Solid or wireframe. A pair of buttons rather than a switch, because there
+  // are two of them and they are both nouns.
+  const styleRow = rpEl('div', 're-row');
+  styleRow.appendChild(rpEl('span', 're-tag', 'STYLE'));
+  const styleBox = rpEl('div', 're-frames');
+  styleBox.id = 'rtStyle';
+  for (const [key, label, hint] of [
+    ['solid', 'solid', 'Filled letters, with their sides a solid mass.'],
+    ['wire', 'wireframe', 'Outlines all the way through, so the picture shows between the rungs and the letters read as built rather than as printed.'],
+  ]) {
+    const b = rpEl('button', 're-btn', label);
+    b.dataset.rtStyle = key;
+    b.title = hint;
+    b.onclick = () => set('style', key);
+    styleBox.appendChild(b);
+  }
+  styleRow.appendChild(styleBox);
+  host.appendChild(styleRow);
+
   const alignRow = rpEl('div', 're-row');
   alignRow.appendChild(rpEl('span', 're-tag', 'ALIGN'));
   const alignBox = rpEl('div', 're-frames');
@@ -13116,16 +13135,27 @@ function paintRoomTextPanel() {
   for (const b of host.querySelectorAll('[data-rt-align]')) {
     b.classList.toggle('active', b.dataset.rtAlign === st.align);
   }
+  for (const b of host.querySelectorAll('[data-rt-style]')) {
+    b.classList.toggle('active', b.dataset.rtStyle === st.style);
+  }
   for (const row of RT_UI) {
     const sl = host.querySelector(`[data-rt-key="${row.key}"]`);
     const read = host.querySelector(`[data-rt-read="${row.key}"]`);
     if (!sl) continue;
     const k = row.round ? 1 : 10000;
     if (document.activeElement !== sl) sl.value = String(Math.round(st[row.key] * k));
-    if (read) read.textContent = row.round ? String(Math.round(st[row.key])) : st[row.key].toFixed(2);
+    if (read) {
+      read.textContent = row.round ? String(Math.round(st[row.key]))
+        : (row.step < 0.001 ? st[row.key].toFixed(4) : st[row.key].toFixed(2));
+    }
     // Nothing to lean if the letters are flat.
     if (row.key === 'angle') {
       sl.closest('.re-row').classList.toggle('dim-block', st.depth <= 0);
+    }
+    // The rungs and the stroke are the wireframe's, and mean nothing to solid
+    // letters.
+    if (row.wire) {
+      sl.closest('.re-row').classList.toggle('dim-block', st.style !== 'wire');
     }
   }
   // Everything below the switch is inert while the card is off.
