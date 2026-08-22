@@ -88,6 +88,24 @@ west edge and leaves the east where it is. Holding the centre instead makes the
 card slide sideways while it grows, which feels greasy and is what the room's
 geometry handles did before they were fixed.
 
+**And it cannot be dragged out of the frame.** This shipped without a clamp and
+took the room out entirely: the corners could be hauled until the card was ten
+thousand pixels across a eleven-hundred-pixel window, and because the card is
+filled with *the background colour*, a card larger than the frame does not look
+like an oversized card. It looks like an empty window — the ground is exactly
+what an empty window is. Nothing on screen said what had happened, nothing was
+left to grab, and it was written to storage, so it survived a reload and the
+room was simply black.
+
+Two things follow from that, and both are load-bearing. The clamp is applied
+**on read rather than on write**, so a card already saved in the broken state
+comes back inside the frame the next time it is looked at, without anyone having
+to go and clear their storage. And the ceiling is **short of the full frame**,
+not equal to it: clamped to exactly the frame the card still fills the window
+edge to edge with the ground, which is the same black rectangle and just as
+unreadable. A margin means a card dragged too far still looks like a card
+dragged too far.
+
 There is a trap here worth naming, because it was live for an afternoon: the
 grips were matched with `grip.includes('e')`, which reads well and is wrong —
 `'move'` contains an `e`, so dragging the card by its middle also stretched it
@@ -130,6 +148,9 @@ appear — that is obvious on sight:
   size and depth. Both drawing something is not the difference between them.
 - **dragging holds the opposite edge**, and moving changes where and not how big.
 - **the card is in the same fractions** at 640×360 and at 4K.
+- **it cannot be dragged out of the frame**, hauled by both corners a dozen
+  times through the same door the app puts it through — and a card already
+  stored broken comes back inside the frame when it is next read.
 - **the film draws it**, watched at the routine rather than at a canvas: the
   module's canvas is composited *under* the card and never sees it, so a probe
   reading that canvas would report the card missing however well it worked. The
