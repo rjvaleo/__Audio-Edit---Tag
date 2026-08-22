@@ -2612,10 +2612,29 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    The first attempt used `flex: 0 1 auto` and got a box 0 by 0: basis `auto`
    against a canvas that is absolutely positioned means no content, which means
    no height, which through the ratio means no width either. */
+/* Letterboxed *inside* the cell it was given, not sized past it.
+   `align-self: center` with `max-width: 100%` caps the width and lets the ratio
+   derive the height — so a 9:16 frame in a short dock came out 882 px tall and
+   forced the whole dock open. Sizing the width against the container's own
+   height settles both at once, the same way the full view's stage does: the
+   width is the smaller of what there is and what the height allows, and the
+   ratio derives the height back from it. */
+.mb-main { container-type: size; }
 .mb-cell-3d.re-framed {
-  align-self: center;
-  max-width: 100%;
+  flex: 0 0 auto;
+  margin: auto;
+  width: min(100%, calc(100cqh * var(--rv-ratio, 1)));
+  height: auto;
+  aspect-ratio: var(--rv-ratio, 1);
   outline: 1px solid var(--line-2);
+}
+/* Beside the controls, the room has the width they left rather than the whole
+   container's, so the ceiling is that instead — and the frame's own sizing is
+   restated at this specificity so nothing in the beside layout outranks it. */
+.mb-main.re-beside > .mb-cell-3d.re-framed {
+  flex: 0 0 auto;
+  width: min(100%, calc(100cqh * var(--rv-ratio, 1)));
+  height: auto;
 }
 /* The room's ground.
    It was on the canvas, which made the canvas opaque and hid whatever was
@@ -3182,3 +3201,32 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 #roomSoundBody .p-row > input[type="range"] { flex: 1 1 110px; min-width: 0; width: auto; }
 #roomSoundBody .cloud-pad-wrap { width: auto; }
 #roomSoundBody #cloudPad { width: 100%; height: auto; aspect-ratio: 1; }
+
+/* ── a portrait room puts its controls beside it ──
+   `.room-edit` is `inset: 0` over the room, which is right when the room fills
+   the cell. Letterboxed to 9:16 in a wide dock the room is a narrow column and
+   the panel was inside *that* — a stack of controls in a two-hundred-pixel box.
+   There is empty cell either side of a portrait room and nothing in it, so the
+   panel is moved out of the cell and laid beside it. See `applyRoomFrame`. */
+.mb-main.re-beside { flex-direction: row; align-items: stretch; gap: 10px; }
+.mb-main.re-beside > .room-edit {
+  position: static; inset: auto;
+  /* It takes the pointer here: there is no canvas under it any more, so the
+     reason it refuses the pointer in the overlay does not apply. */
+  pointer-events: auto;
+  flex: 0 0 clamp(180px, 34%, 300px);
+  min-width: 0; max-height: none;
+  flex-wrap: nowrap; overflow: auto;
+  padding: 0;
+}
+.mb-main.re-beside > .room-edit .re-row { flex-wrap: wrap; margin-bottom: 5px; }
+.mb-main.re-beside > .room-edit .re-tag { flex: 0 0 100%; text-align: left; }
+.mb-main.re-beside > .room-edit .re-slider { flex: 1 1 90px; width: auto; }
+.mb-main.re-beside > .room-edit .re-frames { flex: 1 1 100%; flex-wrap: wrap; }
+/* The room takes what is left, still letterboxed to its own ratio.
+   **It must not re-assert `flex`.** `.mb-main.re-beside > .mb-cell-3d` is three
+   classes and `.mb-cell-3d.re-framed` is two, so a `flex: 1 1 auto` here
+   outranks the framed rule and grows the cell back to the full container —
+   which is a 9:16 room 882 px tall in a 125 px dock. Only the width floor
+   belongs here; the sizing belongs to the frame. */
+.mb-main.re-beside > .mb-cell-3d { min-width: 0; }

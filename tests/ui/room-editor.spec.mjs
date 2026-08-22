@@ -958,3 +958,94 @@ test('the room holds far more schedule than the floor does', async ({ page }) =>
   expect(seen.roomsDepth, `${seen.roomsDepth} in the room against ${seen.floorsTrail} in the floor's trail`)
     .toBeGreaterThan(seen.floorsTrail * 3);
 });
+
+// ── the frame is honoured, and a portrait room stands its controls outside ──
+//
+// The chosen frame used to need the panel open: `roomEdit.on && f.ratio > 0`.
+// Closing the panel snapped the room back to the dock's own shape and threw the
+// choice away, which reads as the setting not sticking. `Dock` is the setting
+// that means "whatever shape the panel is"; the rest are decisions about the
+// picture and outlive the editing session.
+
+test('the frame is kept whether or not the controls are open', async ({ page }) => {
+  await openRoom(page);
+  const got = await page.evaluate(async () => {
+    const cell = () => document.querySelector('#masterBus .mb-cell-3d');
+    const out = {};
+    if (roomEdit.on) toggleRoomEdit();          // closed
+    for (const key of ['16x9', '1x1', '9x16', 'dock']) {
+      roomEdit.frame = key;
+      applyRoomFrame();
+      await new Promise((r) => setTimeout(r, 150));
+      const b = cell().getBoundingClientRect();
+      out[key] = { ratio: +(b.width / b.height).toFixed(2),
+        framed: cell().classList.contains('re-framed') };
+    }
+    return out;
+  });
+  expect(got['16x9'].ratio).toBeCloseTo(16 / 9, 1);
+  expect(got['1x1'].ratio).toBeCloseTo(1, 1);
+  expect(got['9x16'].ratio).toBeCloseTo(9 / 16, 1);
+  // Dock is the one that means "the shape of the panel", so it is not framed.
+  expect(got.dock.framed).toBe(false);
+});
+
+test('a framed room fits its cell instead of forcing the dock open', async ({ page }) => {
+  await openRoom(page);
+  const got = await page.evaluate(async () => {
+    const cell = () => document.querySelector('#masterBus .mb-cell-3d');
+    const main = () => document.querySelector('#masterBus .mb-main');
+    const start = main().getBoundingClientRect().height;
+    const out = {};
+    for (const key of ['dock', '16x9', '1x1', '4x5', '9x16']) {
+      roomEdit.frame = key;
+      applyRoomFrame();
+      await new Promise((r) => setTimeout(r, 150));
+      const c = cell().getBoundingClientRect();
+      const m = main().getBoundingClientRect();
+      out[key] = {
+        fits: c.width <= m.width + 1 && c.height <= m.height + 1,
+        dockHeld: Math.abs(m.height - start) <= 1,
+      };
+    }
+    return out;
+  });
+  for (const [key, v] of Object.entries(got)) {
+    // A 9:16 frame in a short dock came out 882 px tall and forced the whole
+    // dock open, because the width was capped and the ratio derived the height.
+    expect(v.fits, `${key} does not fit inside its cell`).toBe(true);
+    expect(v.dockHeld, `${key} changed the dock's height`).toBe(true);
+  }
+});
+
+test('a portrait room puts its controls beside it, not inside it', async ({ page }) => {
+  await openRoom(page);
+  const got = await page.evaluate(async () => {
+    const cell = () => document.querySelector('#masterBus .mb-cell-3d');
+    const main = () => document.querySelector('#masterBus .mb-main');
+    const panel = () => document.getElementById('roomEdit');
+    const out = {};
+    for (const key of ['dock', '16x9', '1x1', '4x5', '9x16']) {
+      roomEdit.frame = key;
+      applyRoomFrame();
+      await new Promise((r) => setTimeout(r, 150));
+      const p = panel().getBoundingClientRect();
+      const c = cell().getBoundingClientRect();
+      out[key] = {
+        outside: panel().parentElement === main(),
+        // Actually clear of the room, not merely reparented.
+        clearOfTheRoom: p.right <= c.left + 1 || p.left >= c.right - 1,
+      };
+    }
+    return out;
+  });
+  // Landscape letterboxes into thin bars top and bottom, which no control would
+  // fit in — those keep the overlay.
+  expect(got.dock.outside).toBe(false);
+  expect(got['16x9'].outside).toBe(false);
+  expect(got['1x1'].outside).toBe(false);
+  // Portrait leaves empty cell either side, and that is where they go.
+  expect(got['4x5'].outside, '4:5 kept its controls inside the room').toBe(true);
+  expect(got['9x16'].outside, '9:16 kept its controls inside the room').toBe(true);
+  expect(got['9x16'].clearOfTheRoom, 'the controls still overlap the room').toBe(true);
+});
