@@ -8241,6 +8241,7 @@ function toggleRoomEdit() {
   buildRoomFrames();
   $('masterBus')?.classList.toggle('room-editing', roomEdit.on);
   $('roomEdit')?.classList.toggle('hidden', !roomEdit.on);
+  $('textEdit')?.classList.toggle('hidden', !roomEdit.on);
   $('roomEditOpen')?.classList.toggle('on', roomEdit.on);
   applyRoomFrame();
   paintRoomNums();
@@ -8328,6 +8329,10 @@ function setVisModule(key) {
   const onRidge = roomEdit.module === 'ridge';
   if (panel) panel.classList.toggle('hidden', onRidge || !roomEdit.on);
   if (ridge) ridge.classList.toggle('hidden', !onRidge || !roomEdit.on);
+  // Under both modules, unlike the two above: the card is the room's, not
+  // either visualiser's. Hidden with them, though — everything in here is a
+  // control, and controls are not part of the picture.
+  $('textEdit')?.classList.toggle('hidden', !roomEdit.on);
   applyRoomFrame();
   paintVisModulePicker();
 }
@@ -8386,6 +8391,12 @@ const ROOM_VIEW_PARTS = [
   // The other module's panel, borrowed the same way. Only one is ever
   // shown; both travel so switching module inside the workspace works.
   ['ridgeEdit', 'roomAdminBody'],
+  // **The card's panel, which must travel too.** It lives inside `masterBus`
+  // with the other two, and `masterBus` is itself borrowed into the room stage —
+  // so a panel that is not taken out of it first is carried *into the picture*
+  // and drawn over the visualiser. That is exactly what it did: a block of
+  // controls sitting on top of the room, in the dock and in the full view both.
+  ['textEdit', 'roomAdminBody'],
   // **The sound the room is drawing.** This workspace hides the dock, and the
   // stretch and grain controls live in it — so without borrowing them there is
   // no way to change the sound from here at all. That shipped: the controls
@@ -8419,6 +8430,7 @@ function enterRoomView() {
   buildVisModulePicker();
   buildRidgePanel();
   buildRoomTextPanel();
+  $('textEdit')?.classList.toggle('hidden', !roomEdit.on);
   setVisModule(roomEdit.module);
   rgPanel();
   rpPanel();
@@ -8461,6 +8473,13 @@ function leaveRoomView() {
   // workspace is a setting changed behind your back.
   roomEdit.on = false;
   $('roomEdit')?.classList.add('hidden');
+  // **And the card's panel with it.** These live inside `masterBus`, which is
+  // itself borrowed into the room stage — so a panel released back into it
+  // without being hidden again is put straight back on top of the visualiser.
+  // `roomEdit` has always been hidden here for that reason; the card's was not,
+  // and it covered the dock's room until it was.
+  $('textEdit')?.classList.add('hidden');
+  $('ridgeEdit')?.classList.add('hidden');
   $('masterBus')?.classList.remove('room-editing');
   $('roomEditOpen')?.classList.remove('on');
   applyRoomFrame();
