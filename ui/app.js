@@ -3130,6 +3130,11 @@ async function runVideoExport() {
       // wide room in a tall frame is a narrower room and not a squashed one.
       // The camera posed for **the shape being filmed**, which is not
       // necessarily the shape on screen. See `roomCameraForAspect`.
+      // Which visualiser is being filmed, and what it needs. One place decides
+      // it; the export is told rather than working it out again.
+      module: visModuleKey(),
+      ridge: ridgeSettings(),
+      ridgePaint: ridgePaint(),
       camera: roomCameraForAspect(size.w / size.h),
       layers: roomLayers(),
       occlude: roomOcclude(),

@@ -156,7 +156,7 @@ function dataRgb(hex) {
 /// `onStage(text, fraction)` is called throughout; `signal` stops it.
 async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   layers, occlude, order, room, background, data, schedule, fetchSchedule, padSeconds,
-  loopOut, signal, onStage }) {
+  loopOut, signal, onStage, module, ridge, ridgePaint }) {
   const why = videoExportSupport();
   if (why) throw new Error(why);
 
@@ -211,8 +211,24 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   const canvas = document.createElement('canvas');
   canvas.width = size.w;
   canvas.height = size.h;
-  const gl = vgAttach(canvas);
-  if (!gl) throw new Error('this machine would not give a second WebGL context');
+  // **The module that is on screen, not the room by default.**
+  //
+  // Passed in rather than read from a global here: which visualiser is chosen
+  // lives in one place, and a second copy of that decision inside the filming
+  // code is exactly how the film and the room come to disagree — see the
+  // background colour, twice, in this file's own history.
+  const pick = (typeof VIS_MODULES !== 'undefined' && VIS_MODULES.find((m) => m.key === module))
+    || null;
+  const gl = pick ? pick.attach(canvas) : vgAttach(canvas);
+  if (!gl) {
+    throw new Error(pick && pick.key !== 'room'
+      ? `this machine would not give the ${pick.label} a canvas`
+      : 'this machine would not give a second WebGL context');
+  }
+  // The settings have to be in hand before any row is made, and the export
+  // pushes a run of them before it draws anything. See `configure` in
+  // `ridge.js`.
+  if (gl.configure) gl.configure(ridge);
 
   // ── something behind it ──
   //
@@ -400,6 +416,10 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
     }
     gl.frame({
       ...room,
+      // What the ridgeline reads. The room ignores them and it ignores the
+      // room's — a module takes what it understands out of the frame.
+      ridge,
+      ridgePaint,
       cam: camera,
       layers,
       occlude,
