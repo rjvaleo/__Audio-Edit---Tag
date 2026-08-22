@@ -313,3 +313,51 @@ What means something is the **difference**. With the fill it is 45; without it,
   drives and generators are not wired to them.
 - The frame selector letterboxes the room's cell and the ridgeline shares it, so
   it follows — but that is inherited rather than tested.
+
+
+## It stepped up the page
+
+Reported the moment it was first watched, and right: rows arrive twenty times a
+second and the stack is eighty deep, so snapping each row to its slot moved the
+whole picture a full row-gap every fifty milliseconds. At sixty frames a second
+that is one jump and two still frames — a stair, not a scroll.
+
+The stack is offset by however far through the gap between pushes it is, and one
+row beyond the top is kept so nothing arrives out of nowhere at the edge.
+Measured across one gap, the tenth line down moves 212 → 208 → 203 → 199 → 195:
+seventeen pixels, exactly one gap, in five places instead of one.
+
+**The clock is the caller's when it offers one.** The film renders as fast as it
+can and its wall clock means nothing, so it passes `clock` exactly as the room
+does. Without that the slide would be a function of how long a frame took to
+encode, which is the stutter `docs/VIDEO-EXPORT.md` already records once.
+
+Three things went wrong getting there, and two were the probe rather than the
+code — worth writing down because both wasted a measurement that looked
+authoritative:
+
+- **The canvas was never sized.** Calling `frame` directly skips the tick that
+  sets the backing store, so the row gap came back as two pixels and every
+  reading was of a 300×150 default.
+- **The clocks were mixed.** The push stamped the wall clock and the probe then
+  asked for frames on a made-up one, so the difference clamped to nought and the
+  stack sat still. It looked exactly like the slide not working.
+- **The offset went the wrong way and was out by one.** Adding the slide drops
+  the picture into the frame instead of lifting it out; and the spare row landed
+  *at* the top rather than a gap above it.
+
+### Eighty or eighty-one
+
+The row leaving at the top is still partly in the margin, so a picture caught
+mid-slide carries a fractional extra line. The tests allow both. Pinning it to
+exactly eighty would be asserting that the stack does not move, which is the
+thing that was being fixed.
+
+## Silence is a full stack, not an empty frame
+
+At rest this picture is eighty flat lines — that is what the top and bottom of
+the plot are, and what *"no sound playing, all the waveforms flat"* means. The
+first cut grew the stack from nothing at twenty rows a second, so switching to it
+gave four seconds of an empty frame with a few lines creeping up it. That reads
+as broken rather than as quiet. `clear` fills the stack flat; new rows still
+arrive at the bottom and push these off the top.

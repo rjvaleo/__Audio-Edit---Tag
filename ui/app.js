@@ -8290,6 +8290,12 @@ function visRenderer() {
   if (!visLive[m.key]) {
     visLive[m.key] = m.attach(el) || null;
     if (!visLive[m.key]) return null;
+    // Settings first, then fill: `clear` builds the stack at the row count and
+    // width it has been told about, so it has to be told before it is called.
+    if (visLive[m.key].configure) {
+      visLive[m.key].configure(ridgeSettings());
+      visLive[m.key].clear();
+    }
   }
   return visLive[m.key];
 }
