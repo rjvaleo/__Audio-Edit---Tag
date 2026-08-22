@@ -249,6 +249,25 @@ function rdgAttach(canvas) {
 
   const cfg = { ...RDG_DEFAULTS };
 
+  // ── sliding, rather than stepping ──
+  //
+  // Rows arrive twenty times a second and the stack is eighty deep, so snapping
+  // each row to its slot moves the whole picture a full row-gap every fifty
+  // milliseconds. That is a visible stair, and it was: *"it seems to step up the
+  // page."*
+  //
+  // So the stack is offset by however far through the gap between pushes we are,
+  // and one row beyond the top is kept and drawn so nothing appears out of
+  // nowhere at the edge as it slides.
+  //
+  // **The clock is the caller's when it offers one.** The film has no wall clock
+  // worth having — it renders as fast as it can — so it passes `clock`, exactly
+  // as the room does, and the slide is then a function of the film's own time
+  // rather than of how long a frame took to encode.
+  let clockNow = 0;
+  let lastPushAt = 0;
+  let everPushed = false;
+
   return {
     /// Take the settings, without drawing.
     ///
@@ -264,10 +283,23 @@ function rdgAttach(canvas) {
     },
 
     /// Empty it. Not a reset: the settings belong to the caller.
+    ///
+    /// **Emptied to a full stack of flat lines, not to nothing.** At rest this
+    /// picture is eighty flat lines — that is what the top and bottom of the
+    /// sleeve are, and it is what "no sound playing, all the waveforms flat"
+    /// means. Starting from nothing and growing at twenty rows a second gives
+    /// four seconds of an empty frame with a few lines creeping up it, which
+    /// reads as broken rather than as quiet.
+    ///
+    /// New rows still arrive at the bottom and push these off the top, so the
+    /// motion is unchanged; there is simply always a stack for them to push.
     clear() {
       rows.length = 0;
       born = 0;
       ceiling = 0.0001;
+      const n = Math.max(8, Math.min(2048, cfg.points | 0));
+      const want = Math.max(2, Math.min(400, cfg.rows | 0));
+      for (let i = 0; i <= want; i++) rows.push({ v: new Float32Array(n), level: 0 });
     },
 
     /// What is actually held, for the tests. Some of this cannot be recovered
@@ -316,12 +348,21 @@ function rdgAttach(canvas) {
       if (cfg.source !== 'wave' && cfg.smooth > 0) rdgSmooth(v, cfg.smooth);
       rows.push({ v, level: heard.level });
       born++;
-      while (rows.length > Math.max(2, Math.min(400, cfg.rows | 0))) rows.shift();
+      lastPushAt = clockNow;
+      everPushed = true;
+      // One more than is drawn: the spare is what slides in at the top.
+      const want = Math.max(2, Math.min(400, cfg.rows | 0)) + 1;
+      while (rows.length > want) rows.shift();
+      // Asking for more rows fills the new ones flat rather than leaving the
+      // stack short until enough sound has arrived to grow it.
+      while (rows.length < want) rows.unshift({ v: new Float32Array(v.length), level: 0 });
     },
 
     /// Draw one picture.
     frame(f) {
       if (f && f.ridge) this.configure(f.ridge);
+      clockNow = (f && typeof f.clock === 'number') ? f.clock : performance.now();
+      if (!everPushed) lastPushAt = clockNow;
       const W = canvas.width, H = canvas.height;
       if (!W || !H) return;
 
@@ -334,6 +375,14 @@ function rdgAttach(canvas) {
       ctx.fillStyle = ground;
       ctx.fillRect(0, 0, W, H);
       if (!rows.length) return;
+      // **Clipped to its own box.** The spare row sits above the top and slides
+      // down into view, so without this it is drawn outside the picture — which
+      // on a canvas is harmless and on the eye is a line appearing from nothing
+      // above the stack.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.clip();
 
       const want = Math.max(2, Math.min(400, cfg.rows | 0));
       const pad = H * 0.045;
@@ -362,12 +411,29 @@ function rdgAttach(canvas) {
       // New rows arrive at the bottom, so a row's age decides how far up it has
       // travelled — and a stack that is not yet full grows from the bottom
       // rather than starting full of nothing.
+      // How far through the gap between pushes we are. Clamped, because a
+      // stalled feed must park the stack rather than let it slide away.
+      const step = 1000 / RDG_PUSH_HZ;
+      const slide = Math.max(0, Math.min(1, (clockNow - lastPushAt) / step));
+
+      // Short of a full stack only while the row count has just been raised —
+      // `clear` fills it, so ordinarily this is nought.
       const first = Math.max(0, want - rows.length);
       for (let r = 0; r < rows.length; r++) {
         const v = rows[r].v;
         const n = v.length;
-        const slot = first + r;
-        const base = top + gap * slot;
+        // **The spare sits one gap above the top, and the stack rises.**
+        //
+        // `rows[0]` is the spare. At rest it is a whole gap above `top`, so it
+        // is clipped away and exactly the asked-for number of lines is on
+        // screen; `rows[1]` is the top visible line and `rows[want]` is the
+        // bottom one. As the slide runs to one the whole stack lifts by a gap,
+        // and the push that follows shifts the array by one — so the two
+        // motions join with nothing jumping.
+        //
+        // Subtracting the slide is what makes it rise. Adding it drops the
+        // stack instead, which looks like the picture falling into the frame.
+        const base = top + gap * (first + r - 1 - slide);
 
         ctx.beginPath();
         ctx.moveTo(xAt(0, n), base - (v[0] - RIDGE_MIN) * amp);
@@ -390,6 +456,7 @@ function rdgAttach(canvas) {
         }
         ctx.stroke();
       }
+      ctx.restore();
     },
   };
 }
