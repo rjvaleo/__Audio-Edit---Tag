@@ -204,6 +204,10 @@ const ST_DEFAULTS = {
   // ground it takes a bite out of the picture and the lines stop at its edge.
   // Standing in open space it is a wall hung in front of everything, and in the
   // background colour that is indistinguishable from the picture going out.
+  // **Off.** The words are not wanted on the stage, and this is the only type it
+  // has — the flat card is not painted over this scene any more, see
+  // `visGlTick`. Nothing about the object is gone: the geometry, its controls
+  // and its tests are all still here, and this switch turns it back on.
   typeOn: false,
   typeSize: 0.5,
   typeDepth: 0.35,
@@ -547,6 +551,24 @@ function stDetail(cfg, n, lo, hi) {
 /// **The admin is built from this.** The room's controls were written out by
 /// hand, one row per thing, which is why adding a layer meant editing a panel —
 /// and why the panel and the renderer could disagree about what existed.
+/// Settings the admin does not list.
+///
+/// **Not deleted — unlisted.** The type object is still built, still lit, still
+/// filmed, still tested and still switchable from a saved scene; it is only
+/// absent from the panel. Taking an entry out of `ST_OBJECTS`, `ST_GROUPS` or
+/// `ST_UI` instead would take the thing itself with it, and the point of these
+/// three lists is that they describe what exists rather than deciding it.
+///
+/// Empty this set and every control comes back where it was.
+const ST_ADMIN_HIDDEN = new Set([
+  'typeOn', 'typeSize', 'typeDepth', 'typeLean', 'typeAt', 'typeHigh', 'typeSwing',
+]);
+
+/// Whether a setting is offered in the admin.
+function stInAdmin(key) {
+  return !ST_ADMIN_HIDDEN.has(key);
+}
+
 const ST_OBJECTS = [
   // ── things in the room ──
   { key: 'shell', group: 'Things', label: 'Walls', hint: 'The room itself: five surfaces for the light to land on.' },

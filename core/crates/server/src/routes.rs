@@ -40,6 +40,32 @@ pub const P5_JS: &str = include_str!("../../../../visualiser/p5.min.js");
 /// designed in.
 pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 
+/// What build of the interface this binary carries.
+///
+/// **A number the page can read, because "restart the server" does not reload a
+/// window that is already open.** A native window fetches `app.js` once and
+/// keeps it; rebuilding and restarting changes what the *next* load would get
+/// and nothing at all about the one on screen. A whole day went on that — the
+/// server serving the corrected file the entire time, the window running the
+/// old one, and every report from either side true about a different copy of
+/// the program.
+///
+/// So it is derived from the bytes of the interface itself rather than from a
+/// clock: it changes when, and only when, the UI changes. The page records the
+/// value it loaded with and compares it against the live one, and a window that
+/// has fallen behind can say so instead of being argued with.
+pub fn ui_build_id() -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for part in [UI_HTML, UI_CSS, UI_JS, STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
+                 VIS_GL_JS, RIDGE_JS, ROOM3D_JS, ROOM_PAINT_JS, VIDEO_EXPORT_JS] {
+        for b in part.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+    h
+}
+
 pub const UI_HTML: &str = include_str!("../../../../ui/index.html");
 pub const UI_CSS: &str = include_str!("../../../../ui/app.css");
 pub const UI_JS: &str = include_str!("../../../../ui/app.js");
@@ -242,6 +268,8 @@ fn api_state(app: &Arc<App>) -> Response {
     let idx = app.index.read().unwrap();
     let (running, done, total, current) = app.scan.snapshot();
     let v = Value::obj()
+        // Which interface this binary is serving. See `ui_build_id`.
+        .set("uiBuild", format!("{:016x}", ui_build_id()))
         .set(
             "library",
             lib.as_ref()

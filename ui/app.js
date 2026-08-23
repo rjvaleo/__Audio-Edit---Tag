@@ -8577,6 +8577,20 @@ function roomReleaseAll() {
 /// The frame selector is taken out of the control list and put over the room:
 /// the frame shape is a question about the picture being composed, so it
 /// belongs above the picture rather than at the bottom of a column of settings.
+/// Whether the card's controls are offered in the room's admin at all.
+///
+/// **Off, and the panel is not deleted.** Everything the card is — `rtDraw`,
+/// `RT_UI`, the grips, the settings, the export path, `docs/ROOM-TEXT.md` — is
+/// still here and still works; it is simply not listed. One `true` puts the
+/// whole panel back exactly as it was.
+const ROOM_TEXT_IN_ADMIN = false;
+
+// **Declared here, above the list that reads it.** A `const` is not hoisted into
+// scope the way a function is: written below the array literal it lands in the
+// temporal dead zone, `app.js` throws while it is still loading, and *nothing*
+// works — no folders, no modules, a blank interface and a stack trace about a
+// flag that reads as unrelated.
+
 const ROOM_VIEW_PARTS = [
   ['masterBus', 'roomStageRoom'],
   ['roomEdit', 'roomAdminBody'],
@@ -8590,7 +8604,10 @@ const ROOM_VIEW_PARTS = [
   // so a panel that is not taken out of it first is carried *into the picture*
   // and drawn over the visualiser. That is exactly what it did: a block of
   // controls sitting on top of the room, in the dock and in the full view both.
-  ['textEdit', 'roomAdminBody'],
+  // Borrowed only while `ROOM_TEXT_IN_ADMIN` is on — see `roomTextPanelOn`. The
+  // pair stays written down so the panel travels correctly the moment it is put
+  // back, rather than being rediscovered as the bug it was.
+  ...(ROOM_TEXT_IN_ADMIN ? [['textEdit', 'roomAdminBody']] : []),
   // **The sound the room is drawing.** This workspace hides the dock, and the
   // stretch and grain controls live in it — so without borrowing them there is
   // no way to change the sound from here at all. That shipped: the controls
@@ -10039,8 +10056,37 @@ $('pickerChoose').onclick = async () => {
 
 // =================================================================== startup
 
+/// The interface this window loaded, against the one the server has now.
+///
+/// **A window does not reload because the server did.** A native window fetches
+/// `app.js` once and keeps it, so rebuilding the binary and restarting changes
+/// what the *next* load would get and nothing at all about the one on screen.
+/// This cost a day: the server serving the corrected file the whole time, the
+/// window running the old one, and every report from either side true about a
+/// different copy of the program. `curl` proves what a new load would receive;
+/// it proves nothing about what is in front of anybody.
+///
+/// So the window remembers the build it started with and says so when it falls
+/// behind. It does not reload itself — reloading out from under someone
+/// mid-edit is worse than being out of date — it just stops the question
+/// "which build am I running" from taking an hour to answer.
+let uiBuildLoaded = null;
+
+function noteBuild(id) {
+  if (!id) return;
+  if (uiBuildLoaded === null) { uiBuildLoaded = id; return; }
+  if (id === uiBuildLoaded) return;
+  toast('The interface has been rebuilt — reload this window (Cmd-R) to pick it up.');
+}
+
+/// What build this window is actually running, for anyone who asks.
+function uiBuild() {
+  return { loaded: uiBuildLoaded };
+}
+
 async function refresh() {
   const s = await api('/api/state');
+  noteBuild(s.uiBuild);
   state.library = s.library;
   $('libraryLabel').textContent = s.library || '';
   $('libraryPath').textContent = s.library || 'none chosen';
@@ -13225,6 +13271,13 @@ function room3dSettings() {
 /// which is a control that lies.
 function stageSettings() {
   const base = { ...ST_DEFAULTS, ...(roomEdit.stage || {}) };
+  // **A setting that is not in the admin is not taken from a saved scene
+  // either.** Otherwise a value stored before it was unlisted turns the thing
+  // on and nothing on screen can turn it off again — the switch it needs is the
+  // one that was just taken away. Saved scenes are not edited to achieve this;
+  // the value is simply ignored while the key is hidden, so emptying
+  // `ST_ADMIN_HIDDEN` hands every one of them straight back.
+  for (const k of ST_ADMIN_HIDDEN) base[k] = ST_DEFAULTS[k];
   if (typeof ST_SLOTS === 'undefined' || typeof rpSlot !== 'function') return base;
   const painted = {
     stageTerrain: 'terrainColour',
@@ -13590,6 +13643,10 @@ function buildStagePanel() {
   // is a list of everything rather than a way of reaching anything.
   let objGroup = null;
   for (const o of ST_OBJECTS) {
+    // Described but not listed — see `ST_ADMIN_HIDDEN`. The group header is only
+    // written when a switch is actually about to go under it, or hiding the last
+    // switch in a group leaves an empty heading behind.
+    if (!stInAdmin(o.key)) continue;
     if (o.group !== objGroup) {
       objGroup = o.group;
       const row = rpEl('div', 're-row');
@@ -13622,21 +13679,26 @@ function buildStagePanel() {
   // reach for and the sliders under it are the detail.
   const seen = new Set();
   for (const g of ST_GROUPS) {
+    const pads = (g.pads || []).filter((s) => stInAdmin(s.x) && stInAdmin(s.y));
+    const sliders = (g.sliders || []).filter((k) => stInAdmin(k));
+    // A group with nothing left in it is a heading over a gap.
+    if (!pads.length && !sliders.length) continue;
     const head = rpEl('div', 'st-group');
     head.textContent = g.label;
     host.appendChild(head);
-    for (const spec of g.pads || []) {
+    for (const spec of pads) {
       const el = stagePad(spec, set);
       if (el) { host.appendChild(el); seen.add(spec.x); seen.add(spec.y); }
     }
-    for (const key of g.sliders || []) {
+    for (const key of sliders) {
       const row = ST_UI.find((r) => r.key === key);
       if (row) { host.appendChild(stageSlider(row, set)); seen.add(key); }
     }
   }
   // Anything described but not placed in a group still gets a control, so a
   // setting added without touching the groups is reachable rather than lost.
-  const rest = ST_UI.filter((r) => !seen.has(r.key));
+  // Unlisted settings are the one exception, and they are unlisted on purpose.
+  const rest = ST_UI.filter((r) => !seen.has(r.key) && stInAdmin(r.key));
   if (rest.length) {
     const head = rpEl('div', 'st-group');
     head.textContent = 'Other';
@@ -13803,6 +13865,7 @@ function wireStageDrag(canvas) {
 /// but where the panel actually *is*: `roomAdopt` moves it, and where it has
 /// been moved to is what decides how it is laid out.
 function roomTextPanelOn() {
+  if (!ROOM_TEXT_IN_ADMIN) return false;
   const el = $('textEdit');
   return !!(el && roomEdit.on && el.parentElement && el.parentElement.id === 'roomAdminBody');
 }
@@ -13845,6 +13908,16 @@ function roomTextCanvas() {
 /// are its grips drawn.
 function roomTextPosing() {
   return !!(roomEdit.on && roomTextSettings().on);
+}
+
+/// Take the flat card out of the picture without forgetting what it says.
+///
+/// `display: none` rather than a clear, for the reason in `paintRoomText`: a
+/// module that never paints this never clears it either, and a stale card near
+/// the frame is a black rectangle over a working picture.
+function hideRoomText() {
+  const c = $('roomTextGl');
+  if (c) c.style.display = 'none';
 }
 
 function paintRoomText() {
@@ -14000,7 +14073,25 @@ function visGlTick() {
       position: engine.position || 0,
       positionRate: engine.deviceRate || state.grains?.sampleRate || 44100,
     });
-    paintRoomText();
+    // **Not the flat card. The stage has type of its own.**
+    //
+    // `roomTextGl` is a 2D canvas at `z-index: 6` laid over the picture, and it
+    // was being painted here as well as on every other module — so on the stage
+    // the same words were drawn twice, once as geometry standing in the scene
+    // and once as a sticker over the frame. The sticker is the one you see: it
+    // is on top, it does not occlude and is not occluded, and solo cannot touch
+    // it because it is not in the scene at all. Every object here can be
+    // switched off and looked at on its own; that one could not, and it is the
+    // reason the type never looked like it was in the room.
+    //
+    // **Never here, not even to pose.** `roomTextPosing()` is only "the room
+    // admin is open and the text is switched on", which is true the whole time
+    // anyone is in this workspace — so gating on it left the card and its grips
+    // drawn exactly as before, dashed rectangle and all. And the grips move the
+    // *card's* rectangle, which on this module corresponds to nothing: the words
+    // here are geometry, and where they stand is `typeAt`, `typeHigh`,
+    // `typeSize`, `typeLean` and `typeSwing`.
+    hideRoomText();
     return;
   }
 
