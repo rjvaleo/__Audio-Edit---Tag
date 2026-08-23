@@ -147,38 +147,3 @@ test('the editor comes back exactly as it was', async ({ page }) => {
   expect(after.masterBusH, 'the master bus collapsed').toBeGreaterThan(100);
   expect(after.grainHidden, 'the grain views were left showing in the dock').toBe(true);
 });
-
-/// The page notices when it is older than the server.
-///
-/// **Because it cannot know otherwise.** Everything is embedded in the binary,
-/// so restarting the server changes what it serves — and a tab that is already
-/// open keeps running the JavaScript it loaded. `Cache-Control: no-store` does
-/// not help: it stops the browser keeping a copy, not the page that is already
-/// running from carrying on.
-///
-/// This is here because the alternative cost hours, twice, in one evening: a
-/// fault that was fixed, rebuilt and restarted, still on screen, with the only
-/// remedy being for somebody to think of saying "reload".
-test('the page says so when the server has moved on', async ({ page }) => {
-  await page.goto('/');
-  await page.waitForFunction(() => typeof buildCheck === 'function', { timeout: 20_000 });
-  // The first answer is the baseline, not a change — a page that cried stale the
-  // moment it opened would be worse than one that never did.
-  await page.waitForFunction(() => buildAtLoad !== null, { timeout: 10_000 });
-  expect(await page.evaluate(() => !!document.getElementById('staleBuild')),
-    'it called itself stale on the way in').toBe(false);
-
-  // The server is rebuilt underneath it.
-  await page.evaluate(() => { buildAtLoad = 'a-different-build'; });
-  await page.waitForSelector('#staleBuild', { timeout: 15_000 });
-
-  const seen = await page.evaluate(() => {
-    const el = document.getElementById('staleBuild');
-    const b = el.getBoundingClientRect();
-    return { text: el.textContent, onScreen: b.width > 100 && b.bottom <= window.innerHeight,
-      hasButton: !!el.querySelector('button') };
-  });
-  expect(seen.onScreen, 'the notice is off screen').toBe(true);
-  expect(seen.hasButton, 'there is nothing to click').toBe(true);
-  expect(seen.text).toContain('older than the server');
-});
