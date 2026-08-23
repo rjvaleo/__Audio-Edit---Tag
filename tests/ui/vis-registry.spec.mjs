@@ -55,15 +55,22 @@ test('the list knows about every visualiser', async ({ page }) => {
   // Four on the bus and eleven grain views: the count is written down so that
   // adding one without adding it to the picker is a failure and not a surprise.
   expect(got.all.length).toBe(15);
+  // **The state of the port.** Ten of the grain views were p5 in an iframe and
+  // are now arrangements of the stage — the same scene with its cloud laid out
+  // differently. What is left on an old engine is the room, the flat stack, and
+  // the flat swarm.
+  expect(got.engines.p5, 'the iframe still owns grain views').toBe(0);
+  expect(got.engines.webgl1).toBe(1);
+  expect(got.engines.canvas2d).toBe(2);
 
   // **The state of the port, as a number.** When a phase of the plan lands this
   // changes, and it changing without the plan changing is worth being told.
   const total = Object.values(got.engines).reduce((a, b) => a + b, 0);
   expect(total).toBe(15);
-  // Two on the new engine now — the surfaces and the stage. This number going up
-  // is the port making progress, and it going up without the plan changing is
-  // worth being told about.
-  expect(got.engines.babylon).toBe(2);
+  // Twelve on the new engine: the surfaces, the stage, and the ten arrangements.
+  // This number going up is the port making progress, and it going up without
+  // the plan changing is worth being told about.
+  expect(got.engines.babylon).toBe(12);
 });
 
 test('the picker offers all of them, grouped', async ({ page }) => {
@@ -102,7 +109,10 @@ test('choosing any visual puts its own host on the stage', async ({ page }) => {
     await page.waitForTimeout(220);
     const r = await page.evaluate(() => {
       const v = visEntry(visualKey());
-      const want = v.family === 'bus' ? 'masterBus' : 'grainVis';
+      // An arrangement is the stage, whichever family it is filed under: the ten
+      // grain views are the same scene with its cloud laid out differently, so
+      // they show up on the bus's host and not the iframe's.
+      const want = (v.family === 'bus' || visIsStage(v)) ? 'masterBus' : 'grainVis';
       const host = document.getElementById(want);
       const box = host.getBoundingClientRect();
       return {

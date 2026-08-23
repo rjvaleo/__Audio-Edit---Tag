@@ -63,33 +63,36 @@ const VIS_ALL = [
 
   // ── the grains ──
   //
-  // The first is drawn in the page; the other ten are in `grain-views.html`,
-  // which is why they carry a suite and a view number instead of a canvas. That
-  // is exactly what Phase 1 of the port removes.
+  // **Arrangements of the stage, not renderers of their own.** These were ten
+  // drawings in a separate document on a separate engine, and the only thing
+  // that actually differed between them was where a grain goes. Written as that
+  // — a function from a grain to a place — all ten live in the one scene, which
+  // is why they now carry a `layout` instead of a frame and a view number.
+  //
+  // What they gain by it: the palette, the unified controls, the lighting, and
+  // the export, which they have never had.
+  //
+  // The flat swarm stays where it is for now. It is the eleventh and it is drawn
+  // in the page rather than in the iframe, so it is not what the iframe is
+  // costing.
   {
     key: 'swarm2d', family: 'grain', label: 'Swarm 2D', engine: 'canvas2d',
     canvas: 'grainCanvas', view: 0, films: false,
     hint: 'The original swarm, drawn flat.',
   },
   ...[
-    ['shear', 'Shear', 'Output time against source time — the stretch as a slope.'],
-    ['braid', 'Braid', 'Time wound into a helix — strands are the overlap.'],
-    ['swarm3d', 'Swarm 3D', 'The free cloud in three dimensions.'],
-    ['shells', 'Shells', 'An octave to a shell — drift becomes rotation.'],
-    ['lattice', 'Lattice', 'The hop grid as a crystal, melted by the jitters.'],
-  ].map(([key, label, hint], i) => ({
-    key: `v1-${key}`, family: 'grain', label, engine: 'p5',
-    frame: 'grainFrame', suite: 1, view: i + 1, films: false, hint,
-  })),
-  ...[
-    ['tunnel', 'Tunnel', 'Grains arrive out of the dark and pass you. Depth is how far a grain is from now.'],
-    ['mandala', 'Mandala', 'Now is the centre. Distance from the middle is distance from this instant.'],
-    ['rorschach', 'Rorschach', 'Reflected in both axes, so which way time runs cannot be said.'],
-    ['vortex', 'Vortex', 'Grains spiral in from the future, cross the present, and unwind into the past.'],
-    ['ripple', 'Ripple', 'A standing wave with its own reflection under it.'],
-  ].map(([key, label, hint], i) => ({
-    key: `v2-${key}`, family: 'grain', label, engine: 'p5',
-    frame: 'grainFrame', suite: 2, view: i + 1, films: false, hint,
+    ['swarm', 'Swarm 3D'], ['shear', 'Shear'], ['braid', 'Braid'],
+    ['shells', 'Shells'], ['lattice', 'Lattice'],
+    ['tunnel', 'Tunnel'], ['mandala', 'Mandala'], ['rorschach', 'Rorschach'],
+    ['vortex', 'Vortex'], ['ripple', 'Ripple'],
+  ].map(([layout, label]) => ({
+    key: `g-${layout}`, family: 'grain', label, engine: 'babylon',
+    canvas: 'visStage', panel: 'stageEdit', films: true,
+    // The stage, arranged this way. See `ST_LAYOUTS` in `ui/stage.js`.
+    stage: true, layout,
+    hint: (typeof ST_LAYOUTS !== 'undefined'
+      ? (ST_LAYOUTS.find((l) => l.key === layout) || {}).hint
+      : '') || label,
   })),
 ];
 
@@ -113,6 +116,11 @@ function visPortRemaining() {
   const out = { babylon: 0, webgl1: 0, canvas2d: 0, p5: 0 };
   for (const v of VIS_ALL) out[v.engine] = (out[v.engine] || 0) + 1;
   return out;
+}
+
+/// Whether a visual is the stage wearing a particular arrangement.
+function visIsStage(v) {
+  return !!(v && (v.key === 'stage' || v.stage));
 }
 
 /// Whether a visual is drawn in this page or in the iframe.

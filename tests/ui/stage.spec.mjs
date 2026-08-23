@@ -451,3 +451,65 @@ test('every object is worth seeing on its own', async ({ page }) => {
     expect(max, `${k} is too dark to see on its own`).toBeGreaterThan(110);
   }
 });
+
+test('the ten grain views are arrangements of the one cloud', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openStage(page);
+  const got = await page.evaluate(async () => {
+    const r = visLive.stage;
+    const sr = 44100, grains = [];
+    for (let i = 0; i < 4000; i++) {
+      grains.push([Math.round((i / 4000) * 4 * sr), 0, Math.round(0.25 * sr), 0, 0, 0, Math.sin(i * 0.13) * 0.8, i]);
+    }
+    const out = {};
+    for (const l of ST_LAYOUTS) {
+      const s = { ...stageSettings(), cloudLayout: l.key, solo: 'cloudOn', cloudDensity: 0.8 };
+      r.configure(s); r.clear();
+      const bands = new Float32Array(128).fill(-18);
+      for (let i = 0; i < 40; i++) r.push(bands, new Float32Array(2048));
+      for (let k = 0; k < 22; k++) {
+        r.frame({ stage: s, stagePaint: ridgePaint(), clock: 5 + k * 0.033,
+          grains, grainRate: sr, position: Math.round((k / 22) * 2.2 * sr), positionRate: sr });
+        await new Promise((res) => requestAnimationFrame(res));
+      }
+      const c = document.getElementById('visStage');
+      const gl = c.getContext('webgl2') || c.getContext('webgl');
+      const buf = new Uint8Array(c.width * c.height * 4);
+      gl.readPixels(0, 0, c.width, c.height, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      // A coarse fingerprint of where the ink is, so two arrangements are told
+      // apart by their shape rather than by how much of it there is.
+      const cells = new Array(16).fill(0);
+      for (let y = 0; y < c.height; y += 3) {
+        for (let x = 0; x < c.width; x += 3) {
+          const i = (y * c.width + x) * 4;
+          if (Math.max(buf[i], buf[i+1], buf[i+2]) > 40) {
+            cells[Math.min(3, (y * 4 / c.height) | 0) * 4 + Math.min(3, (x * 4 / c.width) | 0)]++;
+          }
+        }
+      }
+      const total = cells.reduce((a, b) => a + b, 0) || 1;
+      out[l.key] = { live: r.stats().live, shape: cells.map((v) => Math.round(v / total * 100)) };
+    }
+    return out;
+  });
+
+  const keys = Object.keys(got);
+  expect(keys.length, 'there are not ten arrangements').toBe(10);
+
+  for (const k of keys) {
+    expect(got[k].live, `${k} put no grains in the room`).toBeGreaterThan(50);
+    expect(got[k].shape.reduce((a, b) => a + b, 0), `${k} drew nothing`).toBeGreaterThan(50);
+  }
+
+  // **They have to be different pictures.** Ten names over one arrangement is
+  // what a menu of aliases looks like, and the whole claim here is that the
+  // difference between the grain views was only ever where a grain goes.
+  const seen = new Map();
+  for (const k of keys) {
+    const sig = got[k].shape.join(',');
+    if (seen.has(sig)) {
+      throw new Error(`${k} and ${seen.get(sig)} draw the same picture`);
+    }
+    seen.set(sig, k);
+  }
+});
