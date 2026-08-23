@@ -52,14 +52,18 @@ test('the list knows about every visualiser', async ({ page }) => {
   expect(got.dupes, 'a visual is listed twice').toEqual([]);
   expect(got.orphans, 'a visual is in a family that does not exist').toEqual([]);
   expect(got.families).toEqual(['bus', 'grain']);
-  // Three on the bus and eleven grain views: the count is written down so that
+  // Four on the bus and eleven grain views: the count is written down so that
   // adding one without adding it to the picker is a failure and not a surprise.
-  expect(got.all.length).toBe(14);
+  expect(got.all.length).toBe(15);
 
   // **The state of the port, as a number.** When a phase of the plan lands this
   // changes, and it changing without the plan changing is worth being told.
   const total = Object.values(got.engines).reduce((a, b) => a + b, 0);
-  expect(total).toBe(14);
+  expect(total).toBe(15);
+  // Two on the new engine now — the surfaces and the stage. This number going up
+  // is the port making progress, and it going up without the plan changing is
+  // worth being told about.
+  expect(got.engines.babylon).toBe(2);
 });
 
 test('the picker offers all of them, grouped', async ({ page }) => {

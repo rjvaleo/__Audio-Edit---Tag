@@ -7426,7 +7426,7 @@ const ROOM_GL_LAYERS = ROOM_LAYERS.filter((l) => l.gl !== false);
 /// because those are defined later still.
 ///
 /// The two are kept in step by a test rather than by hope.
-const VIS_MODULE_KEYS = ['room', 'ridge', 'room3d'];
+const VIS_MODULE_KEYS = ['room', 'ridge', 'room3d', 'stage'];
 
 /// How many rows travel together before a blank line, and which way each block
 /// runs. Alternating blocks read in opposite directions, so neighbouring groups
@@ -7580,6 +7580,7 @@ try {
   // with that control at its default instead of undefined.
   if (v.text && typeof v.text === 'object') roomEdit.text = v.text;
   if (v.room3d && typeof v.room3d === 'object') roomEdit.room3d = v.room3d;
+  if (v.stage && typeof v.stage === 'object') roomEdit.stage = v.stage;
   // The room's own shape. Clamped to the same range the renderer clamps to, so
   // a stored value can never ask for a room it will not draw.
   if (typeof v.geomBands === 'number') {
@@ -7636,7 +7637,7 @@ function saveRoomData() {
       geomRidge: roomEdit.geomRidge,
       geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
       module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
-      room3d: roomEdit.room3d, visual: roomEdit.visual,
+      room3d: roomEdit.room3d, stage: roomEdit.stage, visual: roomEdit.visual,
       grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
       ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
       leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
@@ -8296,6 +8297,8 @@ const VIS_MODULES = [
     hint: 'Stacked lines, each hiding what is behind it. The waveform of the moment, pulled to the middle.' },
   { key: 'room3d', label: 'Surfaces', canvas: 'visRoom3d', attach: (c) => r3Attach(c),
     hint: 'The stacked lines on all five surfaces of a room — floor, ceiling, both walls, and the sleeve itself on the back wall.' },
+  { key: 'stage', label: 'Stage', canvas: 'visStage', attach: (c) => stAttach(c),
+    hint: 'One room with real light, real air and real particles in it.' },
 ];
 
 /// The live renderers, one per module, built lazily. A module never opened costs
@@ -8334,7 +8337,8 @@ function visRenderer() {
     // Settings first, then fill: `clear` builds the stack at the row count and
     // width it has been told about, so it has to be told before it is called.
     if (visLive[m.key].configure) {
-      visLive[m.key].configure(m.key === 'room3d' ? room3dSettings() : ridgeSettings());
+      visLive[m.key].configure(m.key === 'room3d' ? room3dSettings()
+        : m.key === 'stage' ? stageSettings() : ridgeSettings());
       visLive[m.key].clear();
     }
   }
@@ -13070,7 +13074,8 @@ async function mbTick() {
   const vis = visRenderer();
   // The settings before the row is made, not after. See `configure`.
   if (vis && vis.configure) {
-    vis.configure(visModuleKey() === 'room3d' ? room3dSettings() : ridgeSettings());
+    vis.configure(visModuleKey() === 'room3d' ? room3dSettings()
+      : visModuleKey() === 'stage' ? stageSettings() : ridgeSettings());
   }
   if (vis && masterBus.data?.spectrum) {
     vis.push(masterBus.data.spectrum, masterBus.data.lissajous);
@@ -13180,6 +13185,11 @@ function ridgeSettings() {
 /// The room built out of ridgelines. See `docs/ROOM-3D.md`.
 function room3dSettings() {
   return { ...R3_DEFAULTS, ...(roomEdit.room3d || {}) };
+}
+
+/// The rebuild. See `docs/PORT-PLAN.md`.
+function stageSettings() {
+  return { ...ST_DEFAULTS, ...(roomEdit.stage || {}) };
 }
 
 /// The card of type. See `docs/ROOM-TEXT.md`.
@@ -13617,6 +13627,23 @@ function visGlTick() {
   // the contract. Drawn at the device's pixel ratio like the room, so hairlines
   // stay hair-thin on a retina display instead of being drawn at half density
   // and scaled up.
+  if (visModuleKey() === 'stage') {
+    const sc = $('visStage');
+    if (!sc || sc.offsetParent === null) return;
+    const sr = visRenderer();
+    if (!sr) return;
+    const sw = sc.clientWidth, sh = sc.clientHeight;
+    if (!sw || !sh) return;
+    const sdpr = Math.min(2, window.devicePixelRatio || 1);
+    if (sc.width !== Math.round(sw * sdpr) || sc.height !== Math.round(sh * sdpr)) {
+      sc.width = Math.round(sw * sdpr);
+      sc.height = Math.round(sh * sdpr);
+    }
+    sr.frame({ stage: stageSettings(), stagePaint: ridgePaint() });
+    paintRoomText();
+    return;
+  }
+
   if (visModuleKey() === 'room3d') {
     const rc = $('visRoom3d');
     if (!rc || rc.offsetParent === null) return;
