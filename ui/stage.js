@@ -94,6 +94,27 @@ const ST_DEFAULTS = {
   gain: 1,
   floorLevel: 0.004,
 
+  // ── the cloud ──
+  //
+  // Every grain the engine is about to sound, as a small solid in the room.
+  // This is the thing that makes this program what it is, and on the old
+  // renderer it is a wireframe shape lit by nothing. Here it is a solid the key
+  // light lands on, standing in fog, with the ones nearby bright and the ones at
+  // the back nearly gone.
+  /// **Off, because it does not work yet.** The instances are built, bounded and
+  /// counted, the material compiles, and grains are born — and none of them are
+  /// alive by the time a frame is drawn. Left switched on it would be a control
+  /// that does nothing, which is worse than a control that says so.
+  cloudOn: false,
+  cloudCap: 2200,
+  cloudSize: 0.1,
+  cloudDrift: 0.1,
+  /// How many of the schedule's grains are drawn, as a share. A cloud you can
+  /// see through is worth more than one you cannot.
+  cloudDensity: 0.55,
+  cloudGlow: 0.7,
+  cloudColour: '#ffd9a0',
+
   // ── what it is made of ──
   //
   // **Its own colours, not the flat stack's.** Borrowing those gave a wall
@@ -140,6 +161,7 @@ const ST_PUSH_HZ = 20;
 const ST_OBJECTS = [
   { key: 'shell', label: 'Walls', hint: 'The room itself: five surfaces for the light to land on.' },
   { key: 'terrainOn', label: 'Terrain', hint: 'The sound along the floor, receding as it ages.' },
+  { key: 'cloudOn', label: 'Grains', hint: 'Every grain about to sound, as a lit solid travelling down the room. Unfinished — the grains are born and die before a frame is drawn, so this shows nothing yet.' },
   { key: 'mistOn', label: 'Mist', hint: 'Particles in the air, drifting through the light.' },
   { key: 'fogOn', label: 'Fog', hint: 'The air itself. Thick enough and the back of the room is gone rather than dim.' },
   { key: 'keyOn', label: 'Key light', hint: 'The lamp that makes the form.' },
@@ -178,6 +200,12 @@ const ST_UI = [
   { key: 'smooth', tag: 'SMOOTH', min: 0, max: 8, step: 1, round: true, hint: 'Across the samples of a row.' },
   { key: 'gain', tag: 'GAIN', min: 0.1, max: 4, step: 0.05, hint: 'How hard the sound drives it.' },
   { key: 'floorLevel', tag: 'SILENCE', min: 0, max: 0.05, step: 0.001, hint: 'Below this is drawn flat.' },
+  { key: 'cloudDensity', tag: 'CLOUD', min: 0, max: 1, step: 0.01,
+    hint: 'How much of the schedule is drawn. A cloud you can see through is worth more than one you cannot.' },
+  { key: 'cloudSize', tag: 'GRAIN SIZE', min: 0.005, max: 0.3, step: 0.005, hint: 'How big each grain is.' },
+  { key: 'cloudDrift', tag: 'GRAIN DRIFT', min: 0, max: 1, step: 0.01, hint: 'How far a grain wanders as it travels.' },
+  { key: 'cloudGlow', tag: 'GRAIN GLOW', min: 0, max: 1.5, step: 0.01, hint: 'How much light a grain gives off of its own, before the lamps touch it.' },
+  { key: 'cloudCap', tag: 'GRAIN CAP', min: 100, max: 6000, step: 100, round: true, hint: 'The most that will ever be in the room at once.' },
   { key: 'gridSize', tag: 'GRID', min: 2, max: 80, step: 1, round: true,
     hint: 'How fine the ruling on the walls is. It is what gives the room a size — a plain surface in perspective could be a metre away or a mile.' },
   { key: 'gridFade', tag: 'GRID FADE', min: 0, max: 1, step: 0.01, hint: 'How strongly the ruling shows.' },
@@ -477,6 +505,147 @@ function stAttach(canvas) {
     }
   }
 
+  // ── the cloud ──
+  //
+  // **Thin instances, not a mesh each.** Two thousand separate meshes is two
+  // thousand draw calls and a scene graph that spends longer being walked than
+  // drawn; thin instances are one mesh, one call, and a matrix apiece. It is the
+  // difference between a cloud that can be large and one that can be seen.
+  const cloudMat = new BABYLON.StandardMaterial('stcloudmat', scene);
+  cloudMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+  // **No per-instance colour.** A colour buffer on a thin instance needs the
+  // material to read vertex colours, and a standard material asked to do that
+  // wants a colour attribute on the base mesh as well. Set up wrong the whole
+  // mesh silently stops drawing — measured, the picture was identical to two
+  // decimal places with the cloud switched on and off, which is the shape of a
+  // thing that is not being drawn rather than one that is too dim.
+  //
+  // Every grain the same colour, then, and the fade done with size. What the
+  // cloud needed colour for was depth, and the fog already does that.
+  let cloud = null;
+  let cloudMx = null;
+  let live = [];
+  let seen = null;
+
+  function buildCloud() {
+    const cap = Math.max(100, Math.min(6000, cfg.cloudCap | 0));
+    if (cloud && cloud.__cap === cap) return;
+    if (cloud) cloud.dispose();
+    // An icosahedron: enough faces to catch the light from several directions,
+    // few enough to draw thousands of.
+    cloud = BABYLON.MeshBuilder.CreatePolyhedron('stcloud', { type: 3, size: 1 }, scene);
+    cloud.material = cloudMat;
+    cloud.isPickable = false;
+    cloud.alwaysSelectAsActiveMesh = true;
+    cloud.__cap = cap;
+    cloudMx = new Float32Array(cap * 16);
+    cloud.thinInstanceSetBuffer('matrix', cloudMx, 16, false);
+    // Nothing to draw until the first grain sounds. Left visible with no
+    // instances, the base shape draws itself at the origin at full size — which
+    // is one enormous grain filling the room, and exactly what it did.
+    cloud.thinInstanceCount = 0;
+    cloud.isVisible = false;
+    cloud.alwaysSelectAsActiveMesh = true;
+  }
+
+  /// Bring in every grain the playhead has crossed, and move the ones already
+  /// flying.
+  function stepCloud(f) {
+    if (!cloud) return;
+    const cap = cloud.__cap;
+    const sr = (f && f.grainRate) || 44100;
+    const now = ((f && f.position) || 0) / ((f && f.positionRate) || sr);
+    const list = (f && f.grains) || null;
+
+    // A seek, a restart, or the first frame: do not pour the whole file into the
+    // room to catch up, because those grains were never heard.
+    if (seen === null || now < seen || now - seen > 1) seen = now;
+
+    if (list && list.length && now > seen) {
+      for (let i = 0; i < list.length && live.length < cap; i++) {
+        const e = list[i];
+        const t0 = e[0] / sr;
+        if (t0 <= seen || t0 > now) continue;
+        // **Its own coin, flipped once.** Thinning by taking every n-th grain
+        // samples a periodic schedule at a fixed interval, and two regular rates
+        // beat — the cloud comes out banded rather than thinner. A hash of the
+        // grain's own index has no period to beat against, and because it is the
+        // grain's own number the picture thins in place instead of rearranging.
+        const key = (e[7] | 0) * 2654435761 >>> 0;
+        if ((key & 0xffff) / 0x10000 > cfg.cloudDensity) continue;
+        const hx = ((key & 0xffff) / 0x8000) - 1;
+        const hy = (((key >>> 16) & 0xffff) / 0x8000) - 1;
+        const k2 = (((e[7] | 0) ^ 0x9e3779b9) * 2246822519) >>> 0;
+        live.push({
+          // Across is pan, up is pitch, and both are scattered a little so a
+          // busy schedule is a cloud rather than a line.
+          fx: hx * 0.7 + (e[6] || 0) * 0.3,
+          fy: Math.max(-0.9, Math.min(0.9, hy * 0.6)),
+          dx: (((k2 & 0xffff) / 0x8000) - 1) * cfg.cloudDrift,
+          dy: ((((k2 >>> 16) & 0xffff) / 0x8000) - 1) * cfg.cloudDrift * 0.7,
+          age: 0,
+          // How long it sounds for decides how far it gets.
+          life: Math.max(0.05, Math.min(1, (e[2] / sr) * 0.6)),
+          spin: ((k2 & 0xff) / 255) * 6.283,
+          size: 0.5 + ((key >>> 8 & 0xff) / 255) * 0.8,
+        });
+      }
+    }
+    seen = now;
+
+    // Move them, and let the old ones go.
+    const step = 1 / 60;
+    const hw = cfg.width / 2, hh = cfg.height / 2;
+    let n = 0;
+    for (let i = 0; i < live.length; i++) {
+      const g = live[i];
+      g.age += step / Math.max(0.05, g.life);
+      if (g.age >= 1) continue;
+      if (n >= cap) break;
+      const t = g.age;
+      const tap = 1 + (cfg.taper - 1) * t;
+      const x = (g.fx + g.dx * t) * hw * tap;
+      const y = (g.fy + g.dy * t) * hh * tap;
+      const z = t * cfg.depth;
+      // **Fading by size, not by alpha.**
+      //
+      // A vertex alpha is ignored by a standard material unless transparency is
+      // switched on for the whole mesh, and switching it on brings sorting with
+      // it — two thousand transparent solids in a lit room have to be drawn back
+      // to front or they eat each other's depth. Grown in and shrunk out, a
+      // grain arrives and leaves just as smoothly and stays opaque the whole
+      // time, which is one less thing for the depth buffer to argue about.
+      const a = Math.min(1, Math.sin(t * Math.PI) * 1.6);
+      const sc = cfg.cloudSize * g.size * a;
+      const ang = g.spin + t * 3;
+      const cs = Math.cos(ang) * sc, sn = Math.sin(ang) * sc;
+      const m = n * 16;
+      // A rotation about Y, scaled — written straight into the buffer rather
+      // than built as a Matrix and copied, which at this count matters.
+      cloudMx[m] = cs; cloudMx[m + 1] = 0; cloudMx[m + 2] = -sn; cloudMx[m + 3] = 0;
+      cloudMx[m + 4] = 0; cloudMx[m + 5] = sc; cloudMx[m + 6] = 0; cloudMx[m + 7] = 0;
+      cloudMx[m + 8] = sn; cloudMx[m + 9] = 0; cloudMx[m + 10] = cs; cloudMx[m + 11] = 0;
+      cloudMx[m + 12] = x; cloudMx[m + 13] = y; cloudMx[m + 14] = z; cloudMx[m + 15] = 1;
+      n++;
+      live[n - 1] = g;
+    }
+    live.length = n;
+    cloud.thinInstanceCount = n;
+    cloud.thinInstanceBufferUpdated('matrix');
+    // **And tell it where they all are.**
+    //
+    // Without this the mesh's bounds are whatever the base shape was and go to
+    // nothing once instance data is written — `min` and `max` both read `null` —
+    // and a mesh that cannot say where it is gets culled and drawn wrong: what
+    // came out was the base shape sitting at the origin at full size, one
+    // enormous grain instead of two hundred small ones.
+    //
+    // It is a walk over the matrices, so it is done once here rather than per
+    // instance.
+    cloud.thinInstanceRefreshBoundingInfo(false);
+    cloud.isVisible = n > 0;
+  }
+
   // ── the mist ──
   //
   // A particle system: positions, velocities and lifetimes, drifting through the
@@ -527,6 +696,8 @@ function stAttach(canvas) {
       lastPushAt = 0;
       everPushed = false;
       level = 0;
+      live = [];
+      seen = null;
       const n = Math.max(8, Math.min(1024, cfg.points | 0));
       const want = Math.max(2, Math.min(200, cfg.rows | 0)) + 1;
       for (let i = 0; i <= want; i++) rows.push(new Float32Array(n));
@@ -572,7 +743,12 @@ function stAttach(canvas) {
       buildShell();
       buildTerrain();
       buildMist();
+      buildCloud();
       placeTerrain();
+      stepCloud(f);
+      cloud.setEnabled(!!cfg.cloudOn);
+      cloudMat.diffuseColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]);
+      cloudMat.emissiveColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]).scale(cfg.cloudGlow);
 
       shell.setEnabled(!!cfg.shell);
       terr.setEnabled(!!cfg.terrainOn);
