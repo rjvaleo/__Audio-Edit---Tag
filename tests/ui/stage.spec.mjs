@@ -247,3 +247,84 @@ test('the pads move two things at once, and up is more', async ({ page }) => {
   expect(after.keySide).toBeCloseTo(0.6, 1);
   expect(after.keyHigh, 'up is not more').toBeCloseTo(0.6, 1);
 });
+
+test('the preview is a proxy, and the film gets all of it', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(async () => {
+    const r = visLive.stage;
+    const eng = BABYLON.EngineStore.Instances[BABYLON.EngineStore.Instances.length - 1];
+    const sc = eng.scenes[eng.scenes.length - 1];
+    const build = async (detail) => {
+      const s = { ...stageSettings(), detail };
+      r.configure(s); r.clear();
+      const bands = new Float32Array(128).fill(-18);
+      for (let i = 0; i < 30; i++) r.push(bands, new Float32Array(2048));
+      r.frame({ stage: s, stagePaint: ridgePaint(), clock: 5 });
+      await new Promise(res => requestAnimationFrame(res));
+      const t = sc.meshes.find((m) => m.name === 'stterrmesh');
+      return { verts: t ? t.getTotalVertices() : 0, rows: s.rows, points: s.points };
+    };
+    return { coarse: await build(0.25), mid: await build(0.55), full: await build(1) };
+  });
+
+  // **Fewer of the same lines.** A proxy is the same picture drawn with less of
+  // it, which is what a video editor cuts against before delivering at 4K.
+  expect(got.coarse.verts, 'the preview is not any coarser').toBeLessThan(got.full.verts * 0.3);
+  expect(got.mid.verts).toBeGreaterThan(got.coarse.verts);
+  expect(got.full.verts).toBeGreaterThan(got.mid.verts);
+
+  // And the numbers themselves do not move: they are the full counts, and what
+  // the detail scales is how many of them get built. A preview that edited the
+  // settings would hand the film whatever the preview happened to be set to.
+  expect(got.coarse.rows).toBe(got.full.rows);
+  expect(got.coarse.points).toBe(got.full.points);
+  // 120 rows × 320 samples, which is what the film is meant to draw.
+  expect(got.full.verts).toBe(got.full.rows * got.full.points);
+});
+
+test('the film asks for full detail whatever the preview is set to', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(async () => {
+    const why = videoExportSupport();
+    if (why) return { skip: why };
+    roomEdit.stage = { ...stageSettings(), detail: 0.2 };
+
+    const m = VIS_MODULES.find((x) => x.key === 'stage');
+    if (!m.__real) m.__real = m.attach;
+    const asked = [];
+    m.attach = (canvas) => {
+      const r = m.__real(canvas);
+      if (!r) return r;
+      const rc = r.configure.bind(r);
+      r.configure = (s) => { asked.push(s && s.detail); return rc(s); };
+      return r;
+    };
+    const size = { key: 'test', label: 'test', w: 320, h: 180 };
+    try {
+      await videoExport({
+        path: state.selectedFile.path,
+        from: 0, to: 0, repeats: 1, tail: 0, size, fps: 30,
+        module: 'stage',
+        ridge: ridgeSettings(), ridgePaint: ridgePaint(),
+        room3d: room3dSettings(), room3dPaint: ridgePaint(),
+        stage: stageSettings(), stagePaint: ridgePaint(),
+        text: roomTextSettings(), textPaint: roomTextPaint(),
+        camera: roomCameraForAspect(size.w / size.h),
+        layers: roomLayers(), occlude: roomOcclude(), order: roomOrder(),
+        room: { cold: [0.2, 0.45, 0.85], hot: [1, 0.72, 0.35], core: [0.55, 0.85, 1],
+          paint: rpForRenderer(), geom: roomGeom() },
+        onStage: () => {},
+      });
+    } finally {
+      m.attach = m.__real;
+    }
+    return { asked, preview: stageSettings().detail };
+  });
+  if (got.skip) test.skip(true, got.skip);
+
+  expect(got.preview, 'the preview was not left coarse').toBeCloseTo(0.2, 2);
+  // **Every configure the film makes asks for all of it.** A film shot at the
+  // preview's detail is a 4K picture of a proxy.
+  expect(got.asked.length).toBeGreaterThan(0);
+  expect(got.asked.every((d) => d === 1), `the film asked for ${got.asked.join(', ')}`).toBe(true);
+});
