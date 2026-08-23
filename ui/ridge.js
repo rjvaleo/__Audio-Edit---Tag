@@ -661,24 +661,7 @@ function paintRidgePanel() {
   }
 }
 
-/// The module picker, beside the frame selector.
-function paintVisModulePicker() {
-  const box = document.getElementById('rgModules');
-  if (!box) return;
-  for (const b of box.querySelectorAll('[data-vis-module]')) {
-    b.classList.toggle('active', b.dataset.visModule === visModuleKey());
-  }
-}
-
-function buildVisModulePicker() {
-  const box = document.getElementById('rgModules');
-  if (!box || box.children.length) return;
-  for (const m of VIS_MODULES) {
-    const b = rpEl('button', 're-btn', m.label);
-    b.dataset.visModule = m.key;
-    b.title = m.hint;
-    b.onclick = () => setVisModule(m.key);
-    box.appendChild(b);
-  }
-  paintVisModulePicker();
-}
+// The picker used to be here, because this file added the second module and a
+// list of two is easy to write wherever you happen to be standing. It belongs
+// with the list of every visual instead — see `visBuildPicker` in `app.js` and
+// `ui/vis-registry.js`.

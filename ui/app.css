@@ -3312,3 +3312,11 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* Everything under the switch, while the card is off. */
 .rt-off > .re-row:not(:first-child),
 .rt-off > .re-note { opacity: 0.4; pointer-events: none; }
+
+/* The family headings in the visual picker. A label in a row of buttons, so it
+   has to read as a label and not as a button that is switched off. */
+.re-frames .vis-fam {
+  flex: 0 0 100%;
+  margin: 6px 0 2px;
+  opacity: 0.75;
+}
