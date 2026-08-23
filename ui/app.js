@@ -8267,6 +8267,7 @@ function toggleRoomEdit() {
   $('roomEdit')?.classList.toggle('hidden', visModuleKey() !== 'room' || !roomEdit.on);
   $('ridgeEdit')?.classList.toggle('hidden', visModuleKey() !== 'ridge' || !roomEdit.on);
   $('room3dEdit')?.classList.toggle('hidden', visModuleKey() !== 'room3d' || !roomEdit.on);
+  $('stageEdit')?.classList.toggle('hidden', visModuleKey() !== 'stage' || !roomEdit.on);
   $('textEdit')?.classList.toggle('hidden', !roomTextPanelOn());
   $('roomEditOpen')?.classList.toggle('on', roomEdit.on);
   applyRoomFrame();
@@ -8494,6 +8495,7 @@ function setVisModule(key) {
   $('roomEdit')?.classList.toggle('hidden', shown !== 'room' || !roomEdit.on);
   $('ridgeEdit')?.classList.toggle('hidden', shown !== 'ridge' || !roomEdit.on);
   $('room3dEdit')?.classList.toggle('hidden', shown !== 'room3d' || !roomEdit.on);
+  $('stageEdit')?.classList.toggle('hidden', shown !== 'stage' || !roomEdit.on);
   // Under both modules, unlike the two above: the card is the room's, not
   // either visualiser's. Hidden with them, though — everything in here is a
   // control, and controls are not part of the picture.
@@ -8557,6 +8559,7 @@ const ROOM_VIEW_PARTS = [
   // shown; both travel so switching module inside the workspace works.
   ['ridgeEdit', 'roomAdminBody'],
   ['room3dEdit', 'roomAdminBody'],
+  ['stageEdit', 'roomAdminBody'],
   // **The card's panel, which must travel too.** It lives inside `masterBus`
   // with the other two, and `masterBus` is itself borrowed into the room stage —
   // so a panel that is not taken out of it first is carried *into the picture*
@@ -8596,6 +8599,7 @@ function enterRoomView() {
   buildVisModulePicker();
   buildRidgePanel();
   buildRoom3dPanel();
+  buildStagePanel();
   buildRoomTextPanel();
   $('textEdit')?.classList.toggle('hidden', !roomTextPanelOn());
   setVisModule(roomEdit.module);
@@ -8648,6 +8652,7 @@ function leaveRoomView() {
   $('textEdit')?.classList.add('hidden');
   $('ridgeEdit')?.classList.add('hidden');
   $('room3dEdit')?.classList.add('hidden');
+  $('stageEdit')?.classList.add('hidden');
   // Whatever was borrowed onto the stage goes home hidden if that is how it was
   // found. `roomReleaseAll` above puts it back in the tree; this puts its class
   // back, and the dock's layout depends on that class — see `visRehide`.
@@ -13418,6 +13423,98 @@ function buildRoom3dPanel() {
     host.appendChild(box);
   }
   paintRoom3dPanel();
+}
+
+/// The stage's controls: what is switched on, then everything with a number.
+///
+/// Built from `ST_OBJECTS` and `ST_UI` rather than written out by hand, so a
+/// thing added to the scene appears here by having been described once. The
+/// room's own panel is a row per control in the markup, which is why adding a
+/// layer to it means editing a panel and why the two could disagree about what
+/// exists.
+function buildStagePanel() {
+  const host = $('stageEdit');
+  if (!host || host.children.length) return;
+  const set = (k, v) => {
+    roomEdit.stage = { ...stageSettings(), [k]: v };
+    saveRoomData();
+    const r = visLive.stage;
+    if (r && r.configure) r.configure(stageSettings());
+    paintStagePanel();
+  };
+
+  const objRow = rpEl('div', 're-row');
+  objRow.appendChild(rpEl('span', 're-tag', 'IN THE ROOM'));
+  const objBox = rpEl('div', 're-frames');
+  objBox.id = 'stObjects';
+  for (const o of ST_OBJECTS) {
+    const b = rpEl('button', 're-btn', o.label);
+    b.dataset.stObj = o.key;
+    b.title = o.hint;
+    b.onclick = () => set(o.key, !stageSettings()[o.key]);
+    objBox.appendChild(b);
+  }
+  objRow.appendChild(objBox);
+  host.appendChild(objRow);
+
+  for (const row of ST_UI) {
+    const box = rpEl('div', 're-row');
+    const tag = rpEl('span', 're-tag', row.tag);
+    tag.title = row.hint;
+    box.appendChild(tag);
+    const sl = rpEl('input', 're-slider');
+    sl.type = 'range';
+    const k = row.round ? 1 : 1000;
+    sl.min = String(Math.round(row.min * k));
+    sl.max = String(Math.round(row.max * k));
+    sl.step = String(Math.max(1, Math.round(row.step * k)));
+    sl.dataset.stKey = row.key;
+    sl.title = row.hint;
+    const read = rpEl('span', 'rg-read', '');
+    read.dataset.stRead = row.key;
+    sl.oninput = () => set(row.key, +sl.value / k);
+    box.appendChild(sl);
+    box.appendChild(read);
+    host.appendChild(box);
+  }
+
+  const foot = rpEl('div', 're-row');
+  const reset = rpEl('button', 're-btn', 'Back to default');
+  reset.title = 'Put the whole room back to the shape and the light it ships with.';
+  reset.onclick = () => { roomEdit.stage = {}; saveRoomData();
+    const r = visLive.stage; if (r && r.configure) r.configure(stageSettings());
+    paintStagePanel(); };
+  foot.appendChild(reset);
+  host.appendChild(foot);
+
+  paintStagePanel();
+}
+
+function paintStagePanel() {
+  const host = $('stageEdit');
+  if (!host || !host.children.length) return;
+  const st = stageSettings();
+  for (const b of host.querySelectorAll('[data-st-obj]')) {
+    b.classList.toggle('active', !!st[b.dataset.stObj]);
+  }
+  for (const row of ST_UI) {
+    const sl = host.querySelector(`[data-st-key="${row.key}"]`);
+    const read = host.querySelector(`[data-st-read="${row.key}"]`);
+    if (!sl) continue;
+    const k = row.round ? 1 : 1000;
+    if (document.activeElement !== sl) sl.value = String(Math.round(st[row.key] * k));
+    if (read) {
+      read.textContent = row.round ? String(Math.round(st[row.key]))
+        : (row.step < 0.01 ? st[row.key].toFixed(3) : st[row.key].toFixed(2));
+    }
+    // A control for a thing that is switched off says so rather than lying.
+    const owner = { gridSize: 'grid', gridFade: 'grid', wireWidth: 'wire',
+      shadowSoft: 'shadows', bloomAmount: 'bloom', bloomThreshold: 'bloom',
+      fogDensity: 'fogOn', mist: 'mistOn', mistSize: 'mistOn', mistDrift: 'mistOn',
+      key: 'keyOn', keySide: 'keyOn', keyHigh: 'keyOn', keyAt: 'keyOn',
+      fill: 'fillOn', rim: 'rimOn' }[row.key];
+    if (owner) sl.closest('.re-row').classList.toggle('dim-block', !st[owner]);
+  }
 }
 
 function paintRoom3dPanel() {
