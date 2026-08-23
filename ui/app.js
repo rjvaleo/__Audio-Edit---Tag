@@ -13617,6 +13617,16 @@ function visGlTick() {
       rc.height = Math.round(rh * rdpr);
     }
     rr.frame({ room3d: room3dSettings(), room3dPaint: ridgePaint() });
+    // **The card, here too.** This branch returned without painting it, and the
+    // overlay is a canvas that keeps whatever was last drawn on it: pick the
+    // room, get a card, come back here, and the card is still on screen with
+    // nothing repainting or clearing it. A card sized near the frame is then a
+    // black rectangle over a working picture, on a module that never drew it —
+    // which reads exactly like the renderer being broken.
+    //
+    // Every module that draws into this stage paints the overlay, so the card is
+    // either on all of them or on none.
+    paintRoomText();
     return;
   }
 
@@ -14104,3 +14114,55 @@ function tsWire() {
   tsRender();
 }
 tsWire();
+
+// ─────────────────────────────────────────────────────────────── the build ──
+//
+// **A page does not know it is out of date.** Everything here is embedded in
+// the binary, so restarting the server changes what it serves — but a tab that
+// is already open keeps running the JavaScript it loaded, and `no-store` does
+// not help: it stops the browser keeping a copy, not the page that is already
+// running from carrying on running.
+//
+// The cost of that is not theoretical. Whole stretches of an evening have gone
+// into chasing a fault that was fixed, rebuilt and restarted, and was still on
+// screen because this tab had not been reloaded — with the person looking at it
+// concluding, reasonably, that the fix had not worked. Twice the answer was
+// "reload" and twice nobody knew to say it.
+//
+// So the page asks what build the server is holding, keeps asking, and says so
+// when the answer changes. It does not reload anything by itself: a reload in
+// the middle of a render or an edit would be its own kind of rude.
+let buildAtLoad = null;
+
+async function buildCheck() {
+  try {
+    const r = await fetch('/api/build', { cache: 'no-store' });
+    if (!r.ok) return;
+    const { build } = await r.json();
+    if (!build) return;
+    if (buildAtLoad === null) { buildAtLoad = build; return; }
+    if (build !== buildAtLoad) showStaleBuild();
+  } catch { /* the server is down or restarting; ask again later */ }
+}
+
+function showStaleBuild() {
+  if ($('staleBuild')) return;
+  const bar = document.createElement('div');
+  bar.id = 'staleBuild';
+  bar.className = 'stale-build';
+  bar.innerHTML = '<span>This page is older than the server.</span>';
+  const go = document.createElement('button');
+  go.className = 'primary';
+  go.textContent = 'Reload';
+  go.onclick = () => location.reload();
+  bar.appendChild(go);
+  document.body.appendChild(bar);
+}
+
+buildCheck();
+// Often enough to catch a restart while you are looking at it, rarely enough to
+// be nothing. It is a local request that reads three strings and hashes them.
+setInterval(buildCheck, 4000);
+// And immediately on coming back to the tab, which is when a restart usually
+// happened while you were somewhere else.
+window.addEventListener('focus', buildCheck);
