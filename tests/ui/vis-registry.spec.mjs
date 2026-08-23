@@ -66,13 +66,24 @@ test('the picker offers all of them, grouped', async ({ page }) => {
   await open(page);
   await page.evaluate(() => setMode('room'));
   await page.waitForTimeout(600);
-  const got = await page.evaluate(() => ({
-    buttons: [...document.querySelectorAll('#rgModules [data-visual]')].map((b) => b.dataset.visual),
-    headings: [...document.querySelectorAll('#rgModules .vis-fam')].map((e) => e.textContent),
-    all: VIS_ALL.map((v) => v.key),
-  }));
-  expect(got.buttons, 'the picker and the list disagree').toEqual(got.all);
-  expect(got.headings.length, 'the families are not labelled').toBe(2);
+  const got = await page.evaluate(() => {
+    const sel = document.getElementById('rgVisual');
+    const bar = document.getElementById('roomStageBar');
+    return {
+      options: [...sel.options].map((o) => o.value),
+      groups: [...sel.querySelectorAll('optgroup')].map((g) => g.label),
+      all: VIS_ALL.map((v) => v.key),
+      // **It has to fit the bar it lives on.** A row of buttons did not: the
+      // family headings were full width, everything after them wrapped, and the
+      // picker looked empty with the list perfectly intact behind it.
+      fitsBar: bar ? sel.getBoundingClientRect().bottom <= bar.getBoundingClientRect().bottom + 1 : null,
+      onScreen: sel.getBoundingClientRect().width > 40,
+    };
+  });
+  expect(got.options, 'the picker and the list disagree').toEqual(got.all);
+  expect(got.groups, 'the families are not labelled').toEqual(['Master bus', 'Grains']);
+  expect(got.onScreen, 'the picker is not visible').toBe(true);
+  expect(got.fitsBar, 'the picker overflows the bar it sits on').toBe(true);
 });
 
 test('choosing any visual puts its own host on the stage', async ({ page }) => {
@@ -94,7 +105,7 @@ test('choosing any visual puts its own host on the stage', async ({ page }) => {
         key: v.key,
         onStage: host.parentElement.id === 'roomStageRoom',
         big: box.width > 50 && box.height > 50,
-        active: document.querySelector('#rgModules .re-btn.active')?.dataset.visual,
+        active: document.getElementById('rgVisual').value,
       };
     });
     if (!r.onStage || !r.big || r.active !== r.key) bad.push(r);
