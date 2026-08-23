@@ -385,3 +385,26 @@ test('the picture itself is the control', async ({ page }) => {
   await page.waitForTimeout(250);
   expect((await read()).eye, 'the wheel did not dolly').toBeGreaterThan(lamp.eye);
 });
+
+test('the type stands in the space and is passed in front of', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(`(async () => {
+    roomEdit.text = { ...rtSettings(roomEdit.text), on: true, text: 'UNKNOWN\\nPLEASURES' };
+    return {
+      off: await ${RUN}({ typeOn: false, cloudOn: false }),
+      near: await ${RUN}({ typeOn: true, typeSize: 0.6, typeAt: 0.05, cloudOn: false }),
+      far: await ${RUN}({ typeOn: true, typeSize: 0.6, typeAt: 0.95, cloudOn: false }),
+    };
+  })()`);
+
+  // It is there.
+  expect(got.near.mean, 'the type drew nothing').toBeGreaterThan(got.off.mean * 1.05);
+
+  // **And it is in the space rather than over it.** Standing at the far end it
+  // is behind everything and small; at the near end it is in front and large. A
+  // sheet laid over the picture would look the same wherever it was told to
+  // stand, which is exactly what the flat card does and why it belongs here
+  // instead.
+  expect(got.near.mean, 'moving the type through the space changed nothing')
+    .toBeGreaterThan(got.far.mean * 1.15);
+});

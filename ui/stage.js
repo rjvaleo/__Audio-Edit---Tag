@@ -181,6 +181,27 @@ const ST_DEFAULTS = {
   sleeveSpan: 0.86,
   sleeveColour: '#dfe9f2',
 
+  // ── the type ──
+  //
+  // Words standing in the space, as geometry. The card next door is a flat
+  // canvas laid over the picture: it takes no perspective, nothing passes in
+  // front of it, and it keeps whatever was last drawn on it when a module that
+  // does not repaint it takes the stage. All three are the same fault and all
+  // three stop existing once the letters are things in the scene.
+  //
+  // No card behind them. Flat, the card is the whole idea — filled with the
+  // ground it takes a bite out of the picture and the lines stop at its edge.
+  // Standing in open space it is a wall hung in front of everything, and in the
+  // background colour that is indistinguishable from the picture going out.
+  typeOn: false,
+  typeSize: 0.5,
+  typeDepth: 0.35,
+  typeLean: 135,
+  typeAt: 0.32,
+  typeHigh: 0,
+  typeSwing: 0,
+  typeColour: '#ffffff',
+
   // ── what it is made of ──
   //
   // **The sound is the light source.** That is the whole look of this program and
@@ -268,6 +289,7 @@ const ST_OBJECTS = [
   { key: 'shell', group: 'Things', label: 'Walls', hint: 'The room itself: five surfaces for the light to land on.' },
   { key: 'terrainOn', group: 'Things', label: 'Terrain', hint: 'The sound along the floor, receding as it ages.' },
   { key: 'cloudOn', group: 'Things', label: 'Grains', hint: 'Every grain about to sound, as a lit solid travelling down the room.' },
+  { key: 'typeOn', group: 'Things', label: 'Type', hint: 'Words standing in the space as geometry — the sound passes in front of them and behind them.' },
   { key: 'ringOn', group: 'Things', label: 'Ring', hint: 'The Lissajous hung in the room, every frame of it joined into a tube with depth as time.' },
   { key: 'sleeveOn', group: 'Things', label: 'Sleeve', hint: 'The stacked lines on the room’s own surfaces — the sleeve, lit.' },
 
@@ -379,8 +401,15 @@ const ST_GROUPS = [
     sliders: ['ringHigh', 'ringRows', 'ringPoints'],
   },
   {
+    key: 'type', label: 'Type',
+    pads: [],
+    sliders: ['typeSize', 'typeDepth', 'typeLean', 'typeSwing'],
+  },
+  {
     key: 'sleeve', label: 'Sleeve',
     pads: [
+      { x: 'typeAt', y: 'typeHigh', label: 'TYPE',
+        hint: 'How far into the space the words stand, and how high. Deep enough and the sound passes in front of them.' },
       { x: 'sleeveSpan', y: 'sleeveRelief', label: 'STACK',
         hint: 'How far the lines run across each surface, against how far they stand off it.' },
     ],
@@ -457,6 +486,12 @@ const ST_UI = [
   { key: 'contrast', tag: 'CONTRAST', min: 0.5, max: 3, step: 0.01, hint: 'How far apart the lit and the unlit are.' },
   { key: 'exposure', tag: 'EXPOSURE', min: 0.2, max: 3, step: 0.01, hint: 'How much light reaches the film.' },
   { key: 'vignette', tag: 'VIGNETTE', min: 0, max: 1.5, step: 0.01, hint: 'How far the corners fall off.' },
+  { key: 'typeSize', tag: 'TYPE', min: 0.05, max: 3, step: 0.01, hint: 'How big the letters are, in room units.' },
+  { key: 'typeDepth', tag: 'TYPE DEPTH', min: 0, max: 2, step: 0.01, hint: 'How far they stand off themselves. Nought is flat lettering facing you.' },
+  { key: 'typeLean', tag: 'TYPE LEAN', min: 0, max: 360, step: 1, round: true, hint: 'Which way they stand off, in degrees.' },
+  { key: 'typeAt', tag: 'TYPE AT', min: 0, max: 1, step: 0.01, hint: 'How far into the space they stand. Deep enough and the sound passes in front of them.' },
+  { key: 'typeHigh', tag: 'TYPE HIGH', min: -2, max: 2, step: 0.01, hint: 'How high they hang.' },
+  { key: 'typeSwing', tag: 'TYPE ACROSS', min: -3, max: 3, step: 0.01, hint: 'How far across.' },
   { key: 'detail', tag: 'DETAIL', min: 0.15, max: 1, step: 0.05,
     hint: 'How much of the full row and sample count the preview draws. The film always draws all of it — this is the proxy you watch while you work, and it changes nothing you can see the shape of.' },
   { key: 'glow', tag: 'GLOW', min: 0, max: 3, step: 0.02,
@@ -747,6 +782,106 @@ function stAttach(canvas) {
         lp[i * 3 + 2] = pos[i * 3 + 2];
       }
       wire.updateVerticesData(BABYLON.VertexBuffer.PositionKind, lp);
+    }
+  }
+
+  // ── the type ──
+  //
+  // Glyphs drawn once into a texture and stood on planes in the space. Repeating
+  // the plane along the lean gives real relief: the same extrusion the flat card
+  // fakes, except here the depth buffer means the sound passes in front of it
+  // and behind it, and the camera moving past it actually moves past it.
+  //
+  // Rebuilt only when the words or their shape change. A texture redrawn every
+  // frame is how an engine is made slower than the canvas it replaced.
+  let typePlanes = [];
+  let typeTex = null;
+  let typeMats = [];
+  let typeKey = '';
+
+  function disposeType() {
+    for (const m of typePlanes) m.dispose();
+    for (const m of typeMats) m.dispose();
+    if (typeTex) typeTex.dispose();
+    typePlanes = []; typeMats = []; typeTex = null; typeKey = '';
+  }
+
+  function placeType() {
+    const words = typeof roomTextSettings === 'function' ? roomTextSettings() : null;
+    const text = words ? String(words.text || '') : '';
+    const on = !!cfg.typeOn && !!text.trim();
+    if (!on) {
+      for (const m of typePlanes) m.setEnabled(false);
+      return;
+    }
+    const steps = cfg.typeDepth > 0 ? Math.max(2, Math.min(48, Math.round(6 + cfg.typeDepth * 20))) : 1;
+    const key = [text, words.align, words.weight, words.track, words.lead, steps, cfg.typeColour].join('|');
+    if (key !== typeKey) {
+      disposeType();
+      typeKey = key;
+
+      // Big enough that the camera can come close without it going soft.
+      const W = 2048;
+      const lines = text.split('\n');
+      const H = 1024;
+      typeTex = new BABYLON.DynamicTexture('sttype', { width: W, height: H }, scene, true);
+      typeTex.hasAlpha = true;
+      const g = typeTex.getContext();
+      g.clearRect(0, 0, W, H);
+      const px = Math.max(24, (H / Math.max(1, lines.length)) * 0.62);
+      g.font = `${words.weight} ${px}px ${typeof RT_FONT !== 'undefined' ? RT_FONT : 'sans-serif'}`;
+      g.textBaseline = 'middle';
+      g.textAlign = 'center';
+      if ('letterSpacing' in g) g.letterSpacing = `${words.track * px}px`;
+      const step = words.lead * px;
+      const first = H / 2 - (lines.length - 1) * step / 2;
+      g.fillStyle = '#ffffff';
+      for (let l = 0; l < lines.length; l++) g.fillText(lines[l], W / 2, first + l * step);
+      typeTex.update();
+
+      for (let i = 0; i < steps; i++) {
+        const m = new BABYLON.StandardMaterial(`sttypem${i}`, scene);
+        m.disableLighting = true;
+        m.diffuseColor = new BABYLON.Color3(0, 0, 0);
+        m.specularColor = new BABYLON.Color3(0, 0, 0);
+        m.emissiveTexture = typeTex;
+        m.opacityTexture = typeTex;
+        m.backFaceCulling = false;
+        typeMats.push(m);
+        const pl = BABYLON.MeshBuilder.CreatePlane(`sttype${i}`,
+          { width: 1, height: 1, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, scene);
+        pl.material = m;
+        pl.isPickable = false;
+        typePlanes.push(pl);
+      }
+    }
+
+    const rad = cfg.typeLean * Math.PI / 180;
+    const dep = cfg.typeDepth * cfg.typeSize;
+    const n = typePlanes.length;
+    const c = stRgb(cfg.typeColour, [1, 1, 1]);
+    const glow = Math.max(0, cfg.glow);
+    for (let i = 0; i < n; i++) {
+      // Back to front, so the face is drawn last and unbroken, and each copy
+      // dimmer as it recedes — the sides falling away rather than ending on a
+      // hard edge in mid-air.
+      const t = n === 1 ? 0 : i / (n - 1);
+      const pl = typePlanes[n - 1 - i];
+      const m = typeMats[n - 1 - i];
+      pl.setEnabled(true);
+      pl.scaling.set(cfg.typeSize * 4, cfg.typeSize * 2, 1);
+      pl.position.set(
+        (cfg.typeSwing || 0) + Math.cos(rad) * dep * t,
+        (cfg.typeHigh || 0) - Math.sin(rad) * dep * t,
+        cfg.typeAt * cfg.depth + dep * t * 0.5,
+      );
+      // **Divided among the copies, not repeated on each.** A dozen emissive
+      // planes stacked along a lean is a dozen lots of the same light through
+      // the bloom, and the letters come out as a white blot with the words
+      // barely legible inside it. The face keeps most of it and the sides get
+      // what is left, which is what an extrusion looks like anyway.
+      const fade = i === 0 ? 0.42 : (1 - t) * 0.42 / Math.max(1, n * 0.5);
+      m.emissiveColor = new BABYLON.Color3(c[0] * glow * fade, c[1] * glow * fade, c[2] * glow * fade);
     }
   }
 
@@ -1273,6 +1408,7 @@ function stAttach(canvas) {
       placeTerrain();
       placeRing();
       placeSleeve();
+      placeType();
       ring.setEnabled(!!cfg.ringOn);
       if (ringWire) ringWire.setEnabled(!!cfg.ringOn && !!cfg.wire);
       ringMat.diffuseColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
