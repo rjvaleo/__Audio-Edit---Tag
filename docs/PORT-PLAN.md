@@ -55,7 +55,7 @@ draws. It is the refactor, and it is the only phase that touches every file.
 **Done when** all fourteen are pickable from the Room, each shows its own
 controls, and every existing test still passes.
 
-### Phase 1 — dissolve the iframe *(failed; see below)*
+### Phase 1 — dissolve the iframe *(one of ten; see below)*
 
 The ten grain views come in-process onto Babylon: one scene, one camera rig, and
 a builder per view. They stop polling for themselves and are fed by the same push
@@ -69,31 +69,69 @@ its 954 KB out of the binary.
 originals side by side**, and the iframe and p5 are gone. The middle clause is
 the one that was skipped.
 
-**Where it got to: not done, and the reason is worth keeping.**
+**Where it got to: one view ported, nine still to do.**
 
 Ten functions were written instead of a port, on the theory that the only thing
 that ever differed between the views was *where a grain goes* — so written as a
 function from a grain to a place, all ten would fall out of the one scene. They
 do draw, and they do film.
 
-They are also **much worse pictures**, which is the whole of it. Put the two
-Mandalas side by side: the p5 one is a dense radial weave, thousands of strokes
-deep, and the stage one is a scatter of lit dots on black. Placement was never
-what those views were. The stroke was, and the accumulation, and the density, and
-several thousand lines of decisions that ten functions do not contain. The theory
-was wrong and the output says so at a glance.
+Nine of them are still **much worse pictures**, which is the whole of it. Put the
+two Mandalas side by side as they first stood: the p5 one a dense radial weave,
+thousands of strokes deep, and the stage one a scatter of lit dots on black.
+Placement was never what those views were. The stroke was, and the accumulation,
+and the density, and several thousand lines of decisions that ten functions do
+not contain. The theory was wrong and the output said so at a glance.
 
 So the rule for this work — *same or better, only upgrades* — was not met, and
-Phase 1 is open. What exists is an addition filed under its own family with its
-own labels (`Mandala · stage`), because two entries called "Mandala" in one
-picker is an invitation to pick the worse one by accident. The originals are
-untouched, and they are the ones to reach for.
+Phase 1 stayed open. What exists is an addition filed under its own family with
+its own labels (`Mandala · stage`), because two entries called "Mandala" in one
+picker is an invitation to pick one of them by accident. The originals are
+untouched, and for the nine that are still placement they are the ones to reach
+for.
 
 **What a real Phase 1 needs**, which is now the actual work: the stroke and the
 accumulation, not just the placement — line geometry rather than instanced dots,
 the per-view drawing decisions read out of `grain-views.html` view by view, and
 each one held up against the original before it is called done. That is a port,
 and it is the size the original said it was.
+
+**Mandala, done that way.** The first one, and it took the whole of the above.
+What it needed, in the order the failures came:
+
+- **A grain is a stroke.** Billboarded quads with length from the grain's
+  duration and tilt from its read rate, on a shader with no lighting in it,
+  additive on black. A dot carries a position and nothing else, and a lit solid
+  cannot pile up — a solid in front of a solid is one solid — so the cloud came
+  out as countable objects, which is exactly what it is not.
+- **The moment, not the object.** Every position is a function of `tOut - now`,
+  read out of a window of the schedule either side of the playhead, so the
+  present is the origin and the future half of the picture exists. The
+  birth-and-age cloud can never draw a grain that has not sounded yet, and half
+  of "blooming outward in both directions" was missing because of it.
+- **The kaleidoscope**, which is where the density comes from: the cloud is
+  placed once and written twelve times under a rotation and an alternating flip.
+  Flipped *then* turned — the other order puts each pair of folds on top of one
+  another.
+- **Fourteen colours and three energy tiers**, from the original's own palette
+  and its own Hann-window energy, trail included.
+
+Traps met, all of them the same shape — everything green, nothing on screen:
+
+- **Listing `world0`..`world3` in a ShaderMaterial's attributes.** Babylon adds
+  them itself for thin instances; listing them too puts each name in the effect
+  twice and the duplicate takes the location the first was bound to. The mesh
+  compiles, reports ready, is walked, is submitted, and draws nothing.
+- **Stroke widths in world units.** The original's are `strokeWeight` — pixels.
+  Carried over as room units they came out at two millimetres in a four-metre
+  room, which is under a pixel: every tick present, every tick drawn, nothing
+  visible. And measured against the *buffer* height rather than the CSS height
+  they are half width again on any retina display.
+- **A hidden pane does not composite.** Not just no `requestAnimationFrame` —
+  no frames at all, so a screenshot returns whatever was last on screen while
+  `readPixels` returns stale buffer. Both lie, and they lie consistently, which
+  is worse. Rendering into an `<img>` from `toDataURL` in the same synchronous
+  turn as the draw is the way to actually see what the renderer made.
 
 **The document is still there, and it is not going anywhere.** `grain-views.html`
 and p5 are still served and still reachable. The 954KB is the price of the ten

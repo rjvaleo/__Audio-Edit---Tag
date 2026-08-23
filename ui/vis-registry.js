@@ -42,7 +42,7 @@ const VIS_FAMILIES = [
   // else — which is what listing them under the same family did, and why they
   // now sit apart with the originals untouched beside them.
   { key: 'arrangement', label: 'Stage arrangements', host: 'masterBus',
-    hint: 'The stage with its cloud placed the way each grain view places it. Lit, in the one scene, and filmable — but coarser than the originals under Grains, which are the ones to reach for.' },
+    hint: 'The stage with its cloud placed the way each grain view places it. Lit, in the one scene, and filmable. Mandala is a port and draws the strokes; the other nine are placement only and still coarser than the originals under Grains.' },
 ];
 
 /// Every visual there is.
@@ -107,20 +107,23 @@ const VIS_ALL = [
 
   // ── the stage, with its cloud laid out ──
   //
-  // **These are not the grain views and they are not as good.** The claim behind
-  // them was that the only thing that ever differed between the ten views was
-  // where a grain goes, so ten short functions would do. Put side by side that
-  // is plainly false: the p5 Mandala is a dense radial weave of thousands of
-  // strokes and this one is a scatter of lit dots. Same placement rule, nothing
-  // like the same picture — because the picture was never only the placement.
-  // It was the stroke, the accumulation, the density, the decisions in 2823
-  // lines that these ten functions do not contain.
+  // **One of these is a port. Nine are still arrangements.** The claim behind
+  // all ten was that the only thing that ever differed between the grain views
+  // was where a grain goes, so ten short functions would do. Put side by side
+  // that was plainly false: the p5 Mandala is a dense radial weave of thousands
+  // of strokes and the arrangement was a scatter of lit dots in the same
+  // positions. The picture was never only the placement. It was the stroke, the
+  // accumulation and the density.
   //
-  // So they keep the layout name and say what they are, because a picker
-  // offering two things called "Mandala" is an offer to pick the worse one by
-  // mistake. The rule on this work is *same or better* and these are not it;
-  // they are here for what the originals cannot do — the palette, the lighting,
-  // and the export — and for nothing else until they earn more.
+  // Mandala now has all three — strokes rather than solids, additive on black,
+  // the kaleidoscope, the colour ramp and the moment window — and is drawn from
+  // the original's own projection. The other nine are still placement only, and
+  // still worse than what they are named after.
+  //
+  // All ten keep `· stage` on the end, because a picker offering two things
+  // called "Mandala" is an offer to pick one of them by mistake, and both are
+  // still here. The rule on this work is *same or better*; only where an entry
+  // has met it does its hint stop pointing at the original.
   ...[
     ['swarm', 'Swarm'], ['shear', 'Shear'], ['braid', 'Braid'],
     ['shells', 'Shells'], ['lattice', 'Lattice'],
@@ -132,6 +135,10 @@ const VIS_ALL = [
     canvas: 'visStage', panel: 'stageEdit', films: true,
     // The stage, arranged this way. See `ST_LAYOUTS` in `ui/stage.js`.
     stage: true, layout,
+    // Whether this one is the port or still the sketch of it. Read off the
+    // layout itself, so the list cannot claim a view is done when it is not.
+    ported: typeof ST_LAYOUTS !== 'undefined'
+      && !!(ST_LAYOUTS.find((l) => l.key === layout) || {}).ported,
     hint: (typeof ST_LAYOUTS !== 'undefined'
       ? (ST_LAYOUTS.find((l) => l.key === layout) || {}).hint
       : '') || label,
