@@ -13649,6 +13649,84 @@ function paintRoom3dPanel() {
   }
 }
 
+/// Dragging the picture itself.
+///
+/// **The thing you are steering should be under your hand.** A pad beside the
+/// picture is better than two sliders, and the picture is better than a pad:
+/// there is no mapping to hold in your head, no reaching away from what you are
+/// looking at, and no wondering which of two numbers to try next.
+///
+/// Plain drag stands the camera somewhere else — across and up. Shift-drag moves
+/// the key light instead, because where the lamp hangs is the other thing you
+/// change while watching. The wheel dollies.
+///
+/// It is attached once and never removed. The canvas outlives any one visual and
+/// a listener added on each switch is a listener added many times.
+function wireStageDrag(canvas) {
+  if (canvas.__stDrag) return;
+  canvas.__stDrag = true;
+  let from = null;
+
+  const bounds = (key) => ST_UI.find((r) => r.key === key);
+  const nudge = (key, delta) => {
+    const def = bounds(key);
+    if (!def) return;
+    const st = stageSettings();
+    const span = def.max - def.min;
+    const next = Math.max(def.min, Math.min(def.max, st[key] + delta * span));
+    roomEdit.stage = { ...st, [key]: next };
+  };
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (visModuleKey() !== 'stage') return;
+    from = { x: e.clientX, y: e.clientY, shift: e.shiftKey };
+    canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = 'grabbing';
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!from || visModuleKey() !== 'stage') return;
+    const b = canvas.getBoundingClientRect();
+    const dx = (e.clientX - from.x) / Math.max(1, b.width);
+    const dy = (e.clientY - from.y) / Math.max(1, b.height);
+    from = { ...from, x: e.clientX, y: e.clientY };
+    if (from.shift) {
+      nudge('keySide', dx);
+      // Up is up. Screen y grows downward and a lamp that goes down when you
+      // drag up is a lamp nobody can aim.
+      nudge('keyHigh', -dy);
+    } else {
+      // Drag left, the camera goes right: the picture follows the hand, which is
+      // the way every map and every viewport has ever worked.
+      nudge('swing', -dx * 2);
+      nudge('lift', dy * 2);
+    }
+    saveRoomData();
+    const r = visLive.stage;
+    if (r && r.configure) r.configure(stageSettings());
+    paintStagePanel();
+  });
+
+  const stop = (e) => {
+    if (!from) return;
+    from = null;
+    canvas.style.cursor = '';
+    try { canvas.releasePointerCapture(e.pointerId); } catch {}
+  };
+  canvas.addEventListener('pointerup', stop);
+  canvas.addEventListener('pointercancel', stop);
+
+  canvas.addEventListener('wheel', (e) => {
+    if (visModuleKey() !== 'stage') return;
+    e.preventDefault();
+    nudge('eye', (e.deltaY > 0 ? 1 : -1) * 0.04);
+    saveRoomData();
+    const r = visLive.stage;
+    if (r && r.configure) r.configure(stageSettings());
+    paintStagePanel();
+  }, { passive: false });
+}
+
 /// Whether the card's controls should be on screen.
 ///
 /// **Only in the room workspace, never in the dock.** In the dock a `.room-edit`
@@ -13850,6 +13928,7 @@ function visGlTick() {
     }
     // The schedule, so the cloud has something to be. Handed over the same way
     // the room is handed it — see `docs/PORT-PLAN.md`.
+    wireStageDrag(sc);
     sr.frame({
       stage: stageSettings(),
       stagePaint: ridgePaint(),
