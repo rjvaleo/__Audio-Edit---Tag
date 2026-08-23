@@ -8416,7 +8416,16 @@ function setVisual(key) {
   // grain views used to be ten drawings in another document; now choosing one
   // sets the stage's layout and shows the stage. See `ST_LAYOUTS`.
   if (visIsStage(v)) {
-    if (v.layout) roomEdit.stage = { ...stageSettings(), cloudLayout: v.layout };
+    // **Ink for an arrangement, solids for the room.** The ten views are drawn
+    // as strokes, additive on black, which is what they are; the stage's own
+    // cloud is a lit solid standing in the fog, which is what *it* is. One
+    // renderer serving both would take one of the two pictures away, and the
+    // rule on this work is that nothing is taken away.
+    if (v.layout) {
+      roomEdit.stage = { ...stageSettings(), cloudLayout: v.layout, cloudInk: true };
+    } else {
+      roomEdit.stage = { ...stageSettings(), cloudInk: false };
+    }
     saveRoomData();
     showStageFamily('bus');
     setVisModule('stage');
@@ -13706,6 +13715,8 @@ function buildStagePanel() {
     for (const row of rest) host.appendChild(stageSlider(row, set));
   }
 
+  buildViewEditor(host, set);
+
   const foot = rpEl('div', 're-row');
   const reset = rpEl('button', 're-btn', 'Back to default');
   reset.title = 'Put the whole room back to the shape and the light it ships with.';
@@ -13718,9 +13729,201 @@ function buildStagePanel() {
   paintStagePanel();
 }
 
+
+/// The view's own look, and the library of looks.
+///
+/// **Ten views is ten things to look at, not one thing seen ten ways.** Braid
+/// wants long trails and Shear wants none; sharing one set of controls means
+/// every switch of view is followed by a re-dial. So what is edited here belongs
+/// to the arrangement that is showing, and switching away and back finds it as
+/// it was left. See `ST_LOOKS`.
+///
+/// The pads are the other half of that: a look worth keeping is usually worth
+/// dropping onto a different view, so the library is shared while what it lands
+/// on is not. Click recalls, shift-click saves what is showing, alt-click
+/// clears — and they are on disk, because a saved look is a decision.
+function buildViewEditor(host, set) {
+  const wrap = rpEl('div', 'st-view');
+  wrap.id = 'stageViewEdit';
+  host.appendChild(wrap);
+  paintViewEditor();
+  return wrap;
+}
+
+/// The look being edited: whichever arrangement is on the stage.
+///
+/// Null when the stage is showing as itself rather than as one of the ten — the
+/// room's own cloud is lit solids and has none of this.
+function viewEditKey() {
+  const st = stageSettings();
+  if (!st.cloudInk) return null;
+  const lay = (typeof stLayout === 'function') ? stLayout(st.cloudLayout) : null;
+  return lay && lay.ported ? lay.key : null;
+}
+
+function setViewLook(patch) {
+  const key = viewEditKey();
+  if (!key) return;
+  const st = stageSettings();
+  const looks = { ...(st.looks || {}) };
+  looks[key] = { ...stLook(st, key), ...patch };
+  roomEdit.stage = { ...st, looks };
+  saveRoomData();
+  const r = visLive.stage;
+  if (r && r.configure) r.configure(stageSettings());
+  paintViewEditor();
+}
+
+let stagePads = null;
+
+function paintViewEditor() {
+  const wrap = $('stageViewEdit');
+  if (!wrap) return;
+  const key = viewEditKey();
+  wrap.innerHTML = '';
+  // Nothing to edit when the stage is showing as itself. An empty panel is
+  // better than a panel of controls that quietly write to nothing.
+  wrap.classList.toggle('hidden', !key);
+  if (!key) return;
+  const look = stLook(stageSettings(), key);
+  const lay = stLayout(key);
+
+  const head = rpEl('div', 'st-group');
+  head.textContent = `${lay.label} — look`;
+  wrap.appendChild(head);
+
+  // ── the palette ──
+  //
+  // Three colours, spread across fourteen. The middle one is the midpoint
+  // rather than a third of the way along, which is what makes three colours sit
+  // in a picture as a range instead of as three stripes.
+  const prow = rpEl('div', 're-row');
+  prow.appendChild(rpEl('span', 're-tag', 'PALETTE'));
+  for (let i = 0; i < 3; i++) {
+    const c = document.createElement('input');
+    c.type = 'color';
+    c.className = 'st-swatch';
+    c.value = look.palette[i];
+    c.title = ['The near end of the ramp.', 'The middle of it.', 'The far end.'][i];
+    c.oninput = () => {
+      const pal = look.palette.slice();
+      pal[i] = c.value;
+      setViewLook({ palette: pal });
+    };
+    prow.appendChild(c);
+  }
+  wrap.appendChild(prow);
+
+  // ── what the colour is of ──
+  const crow = rpEl('div', 're-row');
+  crow.appendChild(rpEl('span', 're-tag', 'COLOUR BY'));
+  const cbox = rpEl('div', 're-frames');
+  for (const [k, v] of Object.entries(ST_COLOUR_BY)) {
+    const b = rpEl('button', 're-btn', v.label);
+    b.classList.toggle('active', look.colourBy === k);
+    b.title = 'Stretched across the range this cloud actually uses, not the range it could have — a couple of semitones against forty-eight is a monochrome picture.';
+    b.onclick = () => setViewLook({ colourBy: k });
+    cbox.appendChild(b);
+  }
+  crow.appendChild(cbox);
+  wrap.appendChild(crow);
+
+  // ── the numbers ──
+  const num = (tag, k, lo, hi, step, hint, round) => {
+    const row = rpEl('div', 're-row');
+    row.appendChild(rpEl('span', 're-tag', tag));
+    const sl = rpEl('input', 're-slider');
+    sl.type = 'range';
+    sl.min = String(Math.round(lo * 1000));
+    sl.max = String(Math.round(hi * 1000));
+    sl.step = String(Math.round(step * 1000));
+    sl.value = String(Math.round(look[k] * 1000));
+    sl.title = hint;
+    const read = rpEl('span', 'rg-read', round ? String(Math.round(look[k])) : look[k].toFixed(2));
+    sl.oninput = () => {
+      const v = Number(sl.value) / 1000;
+      read.textContent = round ? String(Math.round(v)) : v.toFixed(2);
+      setViewLook({ [k]: round ? Math.round(v) : v });
+    };
+    row.appendChild(sl);
+    row.appendChild(read);
+    wrap.appendChild(row);
+  };
+  // The fold is a property of the looking rather than of the sound, so it only
+  // means anything where there is a moment to look at.
+  if (lay.suite === 2) {
+    num('FOLDS', 'mirror', 1, 14, 1,
+      'How many times the cloud is repeated around the circle. One is no fold at all.', true);
+  }
+  num('GLOW', 'glow', 0, 2, 0.01,
+    'How much light a stroke gives off. This is the control that matters: the picture is additive on black, so glow is the whole exposure.');
+  num('TRAIL', 'trail', 0, 1, 0.01,
+    'How long a grain lingers after it has finished sounding. Physically there is nothing there — it is an afterimage, so the eye can see where the playhead has been.');
+
+  // ── the pads ──
+  if (!stagePads) stagePads = stReadPads();
+  const phead = rpEl('div', 're-row');
+  phead.appendChild(rpEl('span', 're-tag', 'LOOKS'));
+  wrap.appendChild(phead);
+  const grid = rpEl('div', 're-frames');
+  grid.className = 're-frames st-pads';
+  for (let i = 0; i < ST_PAD_COUNT; i++) {
+    const pad = stagePads[i];
+    const b = rpEl('button', 're-btn', pad ? pad.name : '·');
+    b.classList.toggle('st-pad-empty', !pad);
+    b.title = pad
+      ? `${pad.name}\n\nClick to drop it on ${lay.label}. Shift-click to overwrite it with what is showing. Alt-click to clear it.`
+      : 'Empty. Shift-click to save what is showing here.';
+    b.onclick = (e) => {
+      if (e.altKey) {
+        stagePads[i] = null;
+        stWritePads(stagePads);
+        paintViewEditor();
+        return;
+      }
+      if (e.shiftKey) {
+        const cur = stLook(stageSettings(), key);
+        stagePads[i] = { name: lay.label, glow: cur.glow, trail: cur.trail,
+          mirror: cur.mirror, colourBy: cur.colourBy, palette: cur.palette.slice() };
+        stWritePads(stagePads);
+        paintViewEditor();
+        return;
+      }
+      if (!pad) return;
+      setViewLook({ glow: pad.glow, trail: pad.trail, mirror: pad.mirror,
+        colourBy: pad.colourBy, palette: pad.palette.slice() });
+    };
+    grid.appendChild(b);
+  }
+  wrap.appendChild(grid);
+
+  // ── back to how the view ships ──
+  const frow = rpEl('div', 're-row');
+  const back = rpEl('button', 're-btn', 'Back to the view\u2019s own look');
+  back.title = 'Everything above, returned to what this view opens as. The other nine are untouched.';
+  back.onclick = () => {
+    const st = stageSettings();
+    const looks = { ...(st.looks || {}) };
+    delete looks[key];
+    roomEdit.stage = { ...st, looks };
+    saveRoomData();
+    const r = visLive.stage;
+    if (r && r.configure) r.configure(stageSettings());
+    paintViewEditor();
+  };
+  frow.appendChild(back);
+  wrap.appendChild(frow);
+}
+
 function paintStagePanel() {
   const host = $('stageEdit');
   if (!host || !host.children.length) return;
+  // **Rebuilt, not just refreshed.** What the view editor offers depends on
+  // which arrangement is showing — the fold means nothing to a view of the whole
+  // object — so it cannot be painted once and left. Built once and left, it went
+  // on showing the controls for whichever view happened to be up when the panel
+  // was first made, and writing to that one.
+  paintViewEditor();
   const st = stageSettings();
   for (const b of host.querySelectorAll('[data-st-obj]')) {
     b.classList.toggle('active', !!st[b.dataset.stObj]);
@@ -14068,8 +14271,23 @@ function visGlTick() {
     sr.frame({
       stage: stageSettings(),
       stagePaint: ridgePaint(),
+      // **Two copies, because two kinds of view want different things.**
+      //
+      // The moment views draw a window either side of the playhead and want it
+      // as dense as it comes — that is the swarm copy, eight seconds wide and
+      // unthinned. The object views draw the *whole* schedule, and handed the
+      // window instead they draw eight seconds of a thirty second piece: Shear
+      // came out as a clump against the left edge, which reads as a broken
+      // projection rather than as three quarters of the file not being there.
       grains: (state.swarm?.grains?.length ? state.swarm : state.grains)?.grains || null,
+      schedule: state.grains?.grains || null,
       grainRate: state.grains?.sampleRate || 44100,
+      // How long the piece is and how long the source is. The object views lay
+      // the *whole* schedule out — Shear states the ratio as a slope, Braid
+      // winds the output onto a ring, Shells makes the read position a height —
+      // and none of that can be worked out from a list of grains alone.
+      outFrames: state.grains?.outFrames || 0,
+      srcFrames: state.grains?.srcFrames || 0,
       position: engine.position || 0,
       positionRate: engine.deviceRate || state.grains?.sampleRate || 44100,
     });

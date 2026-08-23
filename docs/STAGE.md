@@ -16,7 +16,7 @@ rather than a program.
 | --- | --- |
 | Terrain | the sound along the floor, receding as it ages |
 | Sleeve | the stacked lines on the surfaces — the sleeve, on any of five faces |
-| Grains | every grain about to sound, as a lit solid, in one of ten arrangements |
+| Grains | every grain about to sound — a lit solid on the stage itself, or additive strokes in one of the ten views |
 | Ring | the Lissajous with depth as time: hoops of light converging on a vanishing point |
 | Type | words standing in the space, passed in front of and behind |
 | Mist | particles drifting through the light |
@@ -126,27 +126,68 @@ now:
 Where the balance lands: terrain 7.6, sleeve 6.8, type 6.1, ring 4.5, grains 4.4,
 mist atmospheric. The sound loudest, everything else supporting it.
 
-## The ten arrangements
+## The ten views
 
 `ST_LAYOUTS`. Ten placements — a function from a grain to a place — each a few
 lines.
 
-**They were not the ten grain views, and the theory that said they were is
-wrong.** The claim was that placement was the only thing that ever differed
-between those views. Side by side it did not survive a glance: the p5 Mandala is
-a dense radial weave and the arrangement was a scatter of dots in the same
-positions. What placement leaves out is the stroke, the accumulation and the
-density, and those are most of the picture. See `docs/PORT-PLAN.md`.
+**They are the ten grain views now, and the theory that said placement was
+enough was wrong.** The first version claimed the only thing separating those
+views was where a grain goes. Side by side it did not survive a glance: the p5
+Mandala is a dense radial weave and the arrangement was a scatter of dots in the
+same positions. What placement leaves out is the stroke, the accumulation and the
+density, and those are most of the picture.
 
-**Mandala is now a port; the other nine are still arrangements.** A ported layout
-carries a `project` and a `ported` flag, and the cloud is drawn by the stroke
-renderer below rather than as solids. Nine still carry only `at`, and are the
-stage's cloud laid out that way — lit and filmable, and not as good as what they
-are named after.
+All ten carry them now. Every projection is transcribed from
+`visualiser/grain-views.html` in the units it was written in — `R` 300, `SPAN`
+520, `HEIGHT` 260 — with **one** scale into room units at the end, so the two can
+be read side by side and any difference is a mistake rather than a decision. Ten
+projections each doing their own conversion is ten chances to get it subtly
+wrong, and the first attempt managed exactly that in all ten.
+
+Two kinds, and the difference decides almost everything:
+
+| | | |
+| --- | --- | --- |
+| **The object** | Shear, Braid, Shells, Lattice | the whole schedule laid out as one thing. No fold — folding it would fold the object. Thinned across all of it, never cut off at the buffer's cap. |
+| **The moment** | Swarm, Tunnel, Mandala, Rorschach, Vortex, Ripple | a window either side of the playhead, so the present is the origin by construction. Folded, because the symmetry is a property of the looking. |
+
+`fit` is the only per-view number here that is not the original's. It says how
+far a view reaches as a multiple of `R` — the Lattice is a grid of `SPAN × 1.7`
+across and the Mandala is a disc of `R`, and framed identically one is a speck
+and the other runs off every edge. It exists because the original fits a camera
+to each view and this one stands in a room you can walk around.
 
 Their test fingerprints where the ink falls and fails if any two are the same
-picture, which is a check that ten names are not aliases for one layout — a much
-smaller claim than the one that was made for them.
+picture, and a second one checks all ten are actually drawn as strokes rather
+than quietly falling back to the placement-only sketch.
+
+## The look belongs to the view
+
+**Ten views is ten things to look at, not one thing seen ten ways.** Braid wants
+long trails and Shear wants none; one set of controls for all ten means every
+switch of view is followed by a re-dial. So `ST_LOOKS` gives each its own
+palette, fold count, glow, trail and colour source — `VIEW_DEFAULTS` from the
+original, unchanged — and the editor writes to whichever is showing. Switch away
+and back and it is as you left it.
+
+The split is between the look and the sound. Glow, trails, folds, the palette and
+what the colour is *of* describe a picture and are per view. Ratio, window,
+density and the jitters describe the sound, and there is only one sound.
+
+**What the colour is of** is measured across the range the cloud actually uses,
+not the range it could have. Against the engine's ±48 semitones a couple of
+semitones of jitter — which is a lot to listen to — spans a fiftieth of the
+palette and the whole thing comes out monochrome.
+
+`ST_SEED_PADS` is the other half: six looks in a sixteen-pad library, on disk,
+shared across the views. A look worth keeping is usually worth dropping onto a
+different view, which is the whole reason to keep one — so the library is shared
+while what it lands on is not. Click recalls, shift-click saves what is showing,
+alt-click clears.
+
+`speed` and `orbit` did not come across. Both drive the original's own clock and
+camera; here the playhead is the clock and the camera is yours.
 
 ## The cloud drawn as strokes
 
@@ -201,6 +242,12 @@ nothing at all — no frames, no pixels, and a screenshot showing whatever was l
 composited. Every symptom of a dead renderer, from a renderer that is perfectly
 alive and correctly not wasting work on a page nobody is looking at. Check
 `document.hidden` before concluding anything from a pane.
+
+**Replacing the first match of a line that appears in two functions.** The stroke
+path and the solid path are near-identical for a dozen lines each, and a density
+change meant for one landed in the other — leaving a `const` referenced above its
+own declaration in the function that did not get it. Neither behaved as written
+and neither said so.
 
 **Listing `world0`..`world3` in a `ShaderMaterial`'s attributes.** Babylon adds
 them itself for a mesh with thin instances; listing them as well puts each name

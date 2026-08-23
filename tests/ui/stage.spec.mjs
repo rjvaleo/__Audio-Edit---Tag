@@ -563,3 +563,137 @@ test('the palette paints the stage', async ({ page }) => {
   // where a scheme starts from, not what it is stuck with.
   expect(got.back, 'inheriting did not go back to the default').toBe(got.before);
 });
+
+test('all ten views are ported, and each is drawn as strokes', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openStage(page);
+  const got = await page.evaluate(async () => {
+    const r = visLive.stage;
+    const sr = 44100, grains = [];
+    // A schedule with variation in it: without a spread of pitch every grain
+    // lands on the same colour and, in the folded views, on the same angle —
+    // which is a real picture of a monotone cloud and a useless test.
+    for (let i = 0; i < 3000; i++) {
+      grains.push([Math.round((i / 3000) * 8 * sr), Math.round((i / 3000) * 3 * sr),
+        Math.round((0.03 + (i % 7) * 0.01) * sr), ((i * 37) % 25) - 12,
+        0.2 + 0.3 * Math.abs(Math.sin(i * 0.11)), 0.4, Math.sin(i * 0.13) * 0.8, i]);
+    }
+    const out = { ported: [], shapes: {} };
+    for (const l of ST_LAYOUTS) {
+      if (l.ported) out.ported.push(l.key);
+      const s = { ...stageSettings(), cloudLayout: l.key, cloudInk: true,
+        solo: 'cloudOn', cloudDensity: 1, detail: 1 };
+      r.configure(s); r.clear();
+      const bands = new Float32Array(128).fill(-18);
+      for (let i = 0; i < 30; i++) r.push(bands, new Float32Array(2048));
+      for (let k = 0; k < 18; k++) {
+        r.frame({ stage: s, stagePaint: ridgePaint(), clock: 5 + k * 0.033,
+          grains, schedule: grains, grainRate: sr,
+          outFrames: 8 * sr, srcFrames: 3 * sr,
+          position: Math.round(4 * sr), positionRate: sr });
+        await new Promise((res) => requestAnimationFrame(res));
+      }
+      const c = document.getElementById('visStage');
+      const gl = c.getContext('webgl2') || c.getContext('webgl');
+      const buf = new Uint8Array(c.width * c.height * 4);
+      gl.readPixels(0, 0, c.width, c.height, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      const cells = new Array(16).fill(0);
+      let lit = 0;
+      for (let y = 0; y < c.height; y += 3) {
+        for (let x = 0; x < c.width; x += 3) {
+          const i = (y * c.width + x) * 4;
+          if (Math.max(buf[i], buf[i + 1], buf[i + 2]) > 40) {
+            lit++;
+            cells[Math.min(3, (y * 4 / c.height) | 0) * 4 + Math.min(3, (x * 4 / c.width) | 0)]++;
+          }
+        }
+      }
+      const total = cells.reduce((a, b) => a + b, 0) || 1;
+      out.shapes[l.key] = { lit, ink: r.stats().inked,
+        shape: cells.map((v) => Math.round(v / total * 100)) };
+    }
+    return out;
+  });
+
+  // **All ten, not one.** The count is written down so that a view quietly
+  // falling back to the placement-only sketch is a failure rather than a
+  // slightly worse picture nobody notices.
+  expect(got.ported.length, 'a view is not ported').toBe(10);
+
+  for (const [k, v] of Object.entries(got.shapes)) {
+    expect(v.ink, `${k} put no strokes in the room`).toBeGreaterThan(50);
+    expect(v.lit, `${k} drew nothing`).toBeGreaterThan(200);
+  }
+
+  // And they are still ten different pictures rather than ten names over one.
+  const keys = Object.keys(got.shapes);
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      const a = got.shapes[keys[i]].shape, b = got.shapes[keys[j]].shape;
+      const apart = a.reduce((sum, v, n) => sum + Math.abs(v - b[n]), 0);
+      expect(apart, `${keys[i]} and ${keys[j]} are the same picture`).toBeGreaterThan(8);
+    }
+  }
+});
+
+test('a look belongs to the view it was set on', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(() => {
+    // Every view opens as itself: Braid wants long trails and Shear wants none,
+    // and one set of controls for all ten means every switch of view is
+    // followed by a re-dial.
+    const opens = Object.fromEntries(ST_LAYOUTS.map((l) => [l.key, stLook(stageSettings(), l.key)]));
+    setVisual('g-vortex');
+    setViewLook({ glow: 0.42, colourBy: 'size' });
+    const vortex = stLook(stageSettings(), 'vortex');
+    const shear = stLook(stageSettings(), 'shear');
+    return {
+      defaultsDiffer: new Set(Object.values(opens).map((l) => JSON.stringify(l))).size,
+      vortex: { glow: vortex.glow, colourBy: vortex.colourBy },
+      shearGlow: shear.glow,
+      shearOpens: opens.shear.glow,
+      pads: stReadPads().filter(Boolean).length,
+      padNames: stReadPads().filter(Boolean).map((p) => p.name),
+      colourBy: Object.keys(ST_COLOUR_BY),
+    };
+  });
+
+  // Ten views, ten looks. Seeding them all the same is the same mistake as
+  // sharing the sliders.
+  expect(got.defaultsDiffer, 'the views all open looking the same').toBeGreaterThan(7);
+  expect(got.vortex).toEqual({ glow: 0.42, colourBy: 'size' });
+  // **And editing one leaves the other nine alone**, which is the whole claim.
+  expect(got.shearGlow, 'editing one view changed another').toBe(got.shearOpens);
+
+  // The pad library starts with the six the original ships.
+  expect(got.padNames).toEqual(['Swarm', 'Trails', 'Kaleid', 'Ink', 'Ember', 'Still']);
+  expect(got.colourBy).toEqual(['pitch', 'rate', 'position', 'size', 'source', 'time']);
+});
+
+test('the view editor offers the showing view, and only where it means something', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(async () => {
+    const read = (key) => {
+      setVisual(key);
+      const w = document.getElementById('stageViewEdit');
+      return { hidden: w.classList.contains('hidden'),
+        head: (w.querySelector('.st-group') || {}).textContent || '',
+        tags: [...w.querySelectorAll('.re-tag')].map((t) => t.textContent),
+        pads: w.querySelectorAll('.st-pads .re-btn').length };
+    };
+    return { moment: read('g-vortex'), object: read('g-shear'), room: read('stage') };
+  });
+
+  // A moment view folds and an object view does not — folding the whole
+  // schedule would fold the object itself — so the control is only offered
+  // where it does something.
+  expect(got.moment.tags).toContain('FOLDS');
+  expect(got.object.tags, 'an object view was offered a fold').not.toContain('FOLDS');
+  expect(got.moment.head).toContain('Vortex');
+  expect(got.object.head).toContain('Shear');
+  expect(got.moment.pads).toBe(16);
+
+  // **The stage showing as itself has none of this.** Its cloud is lit solids,
+  // and a panel of controls writing to nothing is worse than no panel.
+  expect(got.room.hidden, 'the room was offered a view editor').toBe(true);
+});
