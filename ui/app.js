@@ -13537,19 +13537,27 @@ function buildStagePanel() {
     paintStagePanel();
   };
 
-  const objRow = rpEl('div', 're-row');
-  objRow.appendChild(rpEl('span', 're-tag', 'IN THE ROOM'));
-  const objBox = rpEl('div', 're-frames');
-  objBox.id = 'stObjects';
+  // **Everything has a switch, and the switches are grouped too.** Twenty
+  // buttons in one row is the same fault as forty-four sliders in a column: it
+  // is a list of everything rather than a way of reaching anything.
+  let objGroup = null;
   for (const o of ST_OBJECTS) {
+    if (o.group !== objGroup) {
+      objGroup = o.group;
+      const row = rpEl('div', 're-row');
+      row.appendChild(rpEl('span', 're-tag', (o.group || 'Things').toUpperCase()));
+      const box = rpEl('div', 're-frames');
+      box.dataset.stObjGroup = o.group || 'Things';
+      row.appendChild(box);
+      host.appendChild(row);
+    }
+    const box = host.querySelector(`[data-st-obj-group="${o.group || 'Things'}"]`);
     const b = rpEl('button', 're-btn', o.label);
     b.dataset.stObj = o.key;
     b.title = o.hint;
     b.onclick = () => set(o.key, !stageSettings()[o.key]);
-    objBox.appendChild(b);
+    box.appendChild(b);
   }
-  objRow.appendChild(objBox);
-  host.appendChild(objRow);
 
   // Grouped, and pads before sliders in each group: the pad is the control you
   // reach for and the sliders under it are the detail.

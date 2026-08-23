@@ -28,39 +28,53 @@
 /// The room, the camera, the light, the air.
 const ST_DEFAULTS = {
   // ── the room ──
-  width: 2.4,
-  height: 2.2,
-  depth: 6,
+  width: 4.2,
+  height: 3,
+  depth: 9,
   /// How far the back of the room draws in from the front. At one it is a box;
   /// under one it is a funnel, which is what gives the old room its perspective
   /// even before the camera has one.
   taper: 0.72,
-  shell: true,
+  /// **Off.** It is not a room — the box was only ever a way of getting depth
+  /// into a flat picture, and with real perspective and real fog the depth is
+  /// already there. What is wanted is infinite space: the sound, and nothing
+  /// else in the frame at all.
+  ///
+  /// Left on, the walls are the largest thing in shot and the eye reads them
+  /// first, which is exactly backwards. They stay available because a bounded
+  /// space is a different and sometimes useful picture.
+  shell: false,
   /// How matte the walls are. Nothing in here is glossy on purpose — a specular
   /// highlight on a wall reads as a mistake at this scale.
   rough: 0.55,
 
   // ── the camera ──
-  eye: 2.4,
-  lift: 0.35,
-  aim: 0.45,
-  fov: 0.9,
+  //
+  // **Close, wide, and low.** With the box gone there is no mouth to frame and
+  // nothing to stand back from — the picture is the sound in open space, so the
+  // camera belongs *in* it rather than looking at it from outside. Standing back
+  // left the stack in the middle third of the frame with black all round, which
+  // is a photograph of a visualiser rather than the visualiser.
+  eye: 1.15,
+  lift: 0.12,
+  aim: 0.3,
+  fov: 1.12,
 
   // ── the light ──
   //
   // Three: a key that makes the form, a fill that stops the dark going black,
   // and a rim from behind that finds the edges. It is the ordinary way to light
   // anything and it is ordinary because it works.
-  ambient: 0.5,
+  ambient: 0.12,
   keyOn: true,
-  key: 2.6,
+  key: 1.1,
   keyAt: 0.22,
   keySide: -0.35,
   keyHigh: 0.75,
   fillOn: true,
-  fill: 0.9,
+  fill: 0.22,
   rimOn: true,
-  rim: 1.4,
+  rim: 0.5,
   /// The key light answering the sound rather than sitting still. Nought is a
   /// lamp; up is the room breathing with what it is playing.
   drive: 0.55,
@@ -70,7 +84,7 @@ const ST_DEFAULTS = {
   /// Exponential-squared: thick close to, and hiding the back of the room
   /// entirely rather than shading it a bit. Linear is the honest surveyor's fog
   /// and looks like a fade; this looks like air.
-  fogDensity: 0.045,
+  fogDensity: 0.055,
 
   // ── the mist ──
   //
@@ -85,10 +99,14 @@ const ST_DEFAULTS = {
 
   // ── the sound ──
   terrainOn: true,
-  rows: 60,
-  points: 140,
-  relief: 0.5,
-  span: 0.9,
+  /// **Fine.** A stack of sixty rows at a hundred and forty samples is a sketch;
+  /// the line quality is most of what this looks like, and a render at 4K will
+  /// show every place it was not enough. The preview carries the same numbers —
+  /// it is one scene, and a preview that is not the picture is not a preview.
+  rows: 120,
+  points: 320,
+  relief: 0.42,
+  span: 1,
   window: 0.6,
   smooth: 2,
   gain: 1,
@@ -119,8 +137,8 @@ const ST_DEFAULTS = {
   // the shape of the sound is something you read off the highlight rather than
   // off a tangle of lines.
   ringOn: true,
-  ringRows: 90,
-  ringPoints: 128,
+  ringRows: 160,
+  ringPoints: 256,
   /// **Narrow, and hung high.** The tube runs away from the camera, so seen down
   /// its own axis a wide one is a disc filling the room rather than a tube going
   /// anywhere. Small enough to read as a bore, and lifted clear of the terrain
@@ -141,11 +159,15 @@ const ST_DEFAULTS = {
   //
   // The floor is left to the terrain by default. Both on the same surface is two
   // pictures of the same sound fighting for the same plane.
+  /// **Minimal to start with.** All five faces at this resolution is a tunnel of
+  /// lines dense enough to moiré, and the eye has nowhere to rest. The back wall
+  /// alone is the sleeve itself; the terrain has the floor; and the other three
+  /// are there for when a picture wants them rather than by default.
   sleeveOn: true,
   sleeveFloor: false,
-  sleeveCeiling: true,
-  sleeveLeft: true,
-  sleeveRight: true,
+  sleeveCeiling: false,
+  sleeveLeft: false,
+  sleeveRight: false,
   sleeveBack: true,
   sleeveRelief: 0.3,
   sleeveSpan: 0.86,
@@ -153,16 +175,25 @@ const ST_DEFAULTS = {
 
   // ── what it is made of ──
   //
-  // **Its own colours, not the flat stack's.** Borrowing those gave a wall
-  // colour of `#010204`, which is the *ground* — right for a picture drawn as
-  // glowing lines over black, and hopeless for a surface meant to catch light.
-  // No lamp makes a black wall bright; it only makes it a slightly less black
-  // wall. A lit room needs things with tone in them for the light to find.
-  wallColour: '#243544',
-  floorColour: '#2b3d4e',
-  terrainColour: '#cfe0ee',
+  // **The sound is the light source.** That is the whole look of this program and
+  // the first pass here threw it away: lamps were pointed *at* the sound, which
+  // turns the signal into a lit grey object in a lit grey room, and then the
+  // walls — the biggest thing in frame — are the most prominent thing in the
+  // picture. Correct, and rudimentary.
+  //
+  // The old renderers glow because they are additive lines on true black: there
+  // is nothing in the frame that is not signal. So here the signal is *emissive*
+  // and the room is nearly nothing — walls dark enough to read as structure and
+  // no more, and the lamps kept for modelling the grains rather than for lighting
+  // the scene.
+  wallColour: '#0d1620',
+  floorColour: '#0d1620',
+  terrainColour: '#dff0ff',
   mistColour: '#9fc4e0',
-  groundColour: '#05080c',
+  groundColour: '#000000',
+  /// How much of its own light each signal object gives off. This is what makes
+  /// a ridge a glowing line rather than a grey surface with a lamp on it.
+  glow: 1,
 
   // ── how well it is drawn ──
   //
@@ -170,18 +201,20 @@ const ST_DEFAULTS = {
   // planes reads as coloured cardboard however well it is lit. Definition comes
   // from detail at three scales — a grain in the surface, a line on the form,
   // and a falloff at the edges — and none of those are lighting.
-  grid: true,
+  /// The ruling on the walls. Nothing to rule when there are none, so it
+  /// follows them off.
+  grid: false,
   gridSize: 24,
-  gridFade: 0.55,
+  gridFade: 0.22,
   wire: true,
   wireWidth: 1.4,
   shadows: true,
   shadowSoft: 32,
   bloom: true,
-  bloomAmount: 0.55,
-  bloomThreshold: 0.62,
+  bloomAmount: 1.05,
+  bloomThreshold: 0.32,
   vignette: 0.45,
-  contrast: 1.35,
+  contrast: 1.7,
   exposure: 1.05,
   fxaa: true,
 };
@@ -195,21 +228,39 @@ const ST_PUSH_HZ = 20;
 /// hand, one row per thing, which is why adding a layer meant editing a panel —
 /// and why the panel and the renderer could disagree about what existed.
 const ST_OBJECTS = [
-  { key: 'shell', label: 'Walls', hint: 'The room itself: five surfaces for the light to land on.' },
-  { key: 'terrainOn', label: 'Terrain', hint: 'The sound along the floor, receding as it ages.' },
-  { key: 'cloudOn', label: 'Grains', hint: 'Every grain about to sound, as a lit solid travelling down the room.' },
-  { key: 'ringOn', label: 'Ring', hint: 'The Lissajous hung in the room, every frame of it joined into a tube with depth as time.' },
-  { key: 'sleeveOn', label: 'Sleeve', hint: 'The stacked lines on the room’s own surfaces — the sleeve, lit.' },
-  { key: 'sleeveFloor', label: '· floor', hint: 'Off by default: the terrain already has the floor, and two pictures of the same sound on one plane fight.' },
-  { key: 'sleeveCeiling', label: '· ceiling', hint: 'Stacked lines overhead, hanging down.' },
-  { key: 'sleeveLeft', label: '· left', hint: 'Up the left wall, running away into the room.' },
-  { key: 'sleeveRight', label: '· right', hint: 'Up the right wall.' },
-  { key: 'sleeveBack', label: '· back', hint: 'The sleeve itself, at the end of the room: rows born at the bottom and climbing.' },
-  { key: 'mistOn', label: 'Mist', hint: 'Particles in the air, drifting through the light.' },
-  { key: 'fogOn', label: 'Fog', hint: 'The air itself. Thick enough and the back of the room is gone rather than dim.' },
-  { key: 'keyOn', label: 'Key light', hint: 'The lamp that makes the form.' },
-  { key: 'fillOn', label: 'Fill', hint: 'Stops the shadow side going to black.' },
-  { key: 'rimOn', label: 'Rim', hint: 'From behind, to find the edges.' },
+  // ── things in the room ──
+  { key: 'shell', group: 'Things', label: 'Walls', hint: 'The room itself: five surfaces for the light to land on.' },
+  { key: 'terrainOn', group: 'Things', label: 'Terrain', hint: 'The sound along the floor, receding as it ages.' },
+  { key: 'cloudOn', group: 'Things', label: 'Grains', hint: 'Every grain about to sound, as a lit solid travelling down the room.' },
+  { key: 'ringOn', group: 'Things', label: 'Ring', hint: 'The Lissajous hung in the room, every frame of it joined into a tube with depth as time.' },
+  { key: 'sleeveOn', group: 'Things', label: 'Sleeve', hint: 'The stacked lines on the room’s own surfaces — the sleeve, lit.' },
+
+  // ── which surfaces the sleeve is on ──
+  { key: 'sleeveFloor', group: 'Sleeve faces', label: 'Floor', hint: 'Off by default: the terrain already has the floor, and two pictures of the same sound on one plane fight.' },
+  { key: 'sleeveCeiling', group: 'Sleeve faces', label: 'Ceiling', hint: 'Stacked lines overhead, hanging down.' },
+  { key: 'sleeveLeft', group: 'Sleeve faces', label: 'Left', hint: 'Up the left wall, running away into the room.' },
+  { key: 'sleeveRight', group: 'Sleeve faces', label: 'Right', hint: 'Up the right wall.' },
+  { key: 'sleeveBack', group: 'Sleeve faces', label: 'Back', hint: 'The sleeve itself, at the end of the room: rows born at the bottom and climbing.' },
+
+  // ── the air ──
+  { key: 'mistOn', group: 'Air', label: 'Mist', hint: 'Particles in the air, drifting through the light.' },
+  { key: 'fogOn', group: 'Air', label: 'Fog', hint: 'The air itself. Thick enough and the back of the room is gone rather than dim.' },
+
+  // ── the lamps ──
+  { key: 'keyOn', group: 'Lamps', label: 'Key', hint: 'The lamp that makes the form.' },
+  { key: 'fillOn', group: 'Lamps', label: 'Fill', hint: 'Stops the shadow side going to black.' },
+  { key: 'rimOn', group: 'Lamps', label: 'Rim', hint: 'From behind, to find the edges.' },
+
+  // ── how it is drawn ──
+  //
+  // These had no switch at all, which meant the only way to see what any of them
+  // was doing was to drag its slider to nothing and back — and `fxaa` has no
+  // slider, so there was no way at all.
+  { key: 'grid', group: 'Look', label: 'Grid', hint: 'The ruling on the walls. It is what gives the room a size — a plain surface in perspective could be a metre away or a mile.' },
+  { key: 'wire', group: 'Look', label: 'Wire', hint: 'The bright line along the terrain’s ridges, over the lit surface.' },
+  { key: 'shadows', group: 'Look', label: 'Shadows', hint: 'The key light casting. A thing with no shadow is a thing not standing anywhere.' },
+  { key: 'bloom', group: 'Look', label: 'Bloom', hint: 'Bright things spilling. The old renderer got this free from additive blending; a lit one has to ask.' },
+  { key: 'fxaa', group: 'Look', label: 'Smooth', hint: 'Anti-aliasing. Off, every edge in here is a staircase, and a room is nothing but edges.' },
 ];
 
 /// The controls, in groups, with the pairs that are really one gesture given a
@@ -300,6 +351,8 @@ const ST_GROUPS = [
   {
     key: 'look', label: 'Look',
     pads: [
+      { x: 'glow', y: 'bloomAmount', label: 'GLOW',
+        hint: 'How much light the sound gives off, against how far it spills. This pair is the look — everything else is the room it happens in.' },
       { x: 'exposure', y: 'contrast', label: 'FILM',
         hint: 'How much light reaches it, against how far apart the lit and unlit are.' },
       { x: 'bloomAmount', y: 'bloomThreshold', label: 'BLOOM',
@@ -333,8 +386,8 @@ const ST_UI = [
   { key: 'mistSize', tag: 'MIST SIZE', min: 0.005, max: 0.3, step: 0.005, hint: 'How big each one is.' },
   { key: 'mistDrift', tag: 'DRIFT', min: 0, max: 0.5, step: 0.005, hint: 'How fast they move.' },
   { key: 'relief', tag: 'RELIEF', min: 0.02, max: 2, step: 0.01, hint: 'How high the terrain stands.' },
-  { key: 'rows', tag: 'ROWS', min: 8, max: 160, step: 1, round: true, hint: 'How many rows of it.' },
-  { key: 'points', tag: 'POINTS', min: 32, max: 400, step: 4, round: true, hint: 'Samples along a row.' },
+  { key: 'rows', tag: 'ROWS', min: 8, max: 320, step: 1, round: true, hint: 'How many rows of it. The line quality is most of what this looks like.' },
+  { key: 'points', tag: 'POINTS', min: 32, max: 1024, step: 8, round: true, hint: 'Samples along a row. Below about sixty the peaks go faceted; a 4K render will show it.' },
   { key: 'span', tag: 'SPAN', min: 0.3, max: 1, step: 0.01, hint: 'How much of the floor it crosses.' },
   { key: 'window', tag: 'WINDOW', min: 0, max: 1, step: 0.01, hint: 'How hard the sound is pulled to the middle.' },
   { key: 'smooth', tag: 'SMOOTH', min: 0, max: 8, step: 1, round: true, hint: 'Across the samples of a row.' },
@@ -349,7 +402,7 @@ const ST_UI = [
   { key: 'ringSize', tag: 'RING', min: 0.05, max: 1.5, step: 0.01, hint: 'How wide the tube is.' },
   { key: 'ringDrive', tag: 'RING DRIVE', min: 0, max: 4, step: 0.02, hint: 'How hard the sound pushes it out of round.' },
   { key: 'ringHigh', tag: 'RING HIGH', min: -1, max: 1, step: 0.01, hint: 'How high it hangs.' },
-  { key: 'ringRows', tag: 'RING ROWS', min: 8, max: 240, step: 1, round: true, hint: 'How far back it goes, in frames of sound.' },
+  { key: 'ringRows', tag: 'RING ROWS', min: 8, max: 400, step: 1, round: true, hint: 'How far back it goes, in frames of sound.' },
   { key: 'ringPoints', tag: 'RING FINE', min: 16, max: 512, step: 8, round: true, hint: 'How finely each hoop is drawn.' },
   { key: 'sleeveRelief', tag: 'SLEEVE', min: 0.02, max: 1, step: 0.01,
     hint: 'How far the stacked lines stand off the walls. The surfaces face each other, so past about a third they meet in the middle.' },
@@ -365,6 +418,8 @@ const ST_UI = [
   { key: 'contrast', tag: 'CONTRAST', min: 0.5, max: 3, step: 0.01, hint: 'How far apart the lit and the unlit are.' },
   { key: 'exposure', tag: 'EXPOSURE', min: 0.2, max: 3, step: 0.01, hint: 'How much light reaches the film.' },
   { key: 'vignette', tag: 'VIGNETTE', min: 0, max: 1.5, step: 0.01, hint: 'How far the corners fall off.' },
+  { key: 'glow', tag: 'GLOW', min: 0, max: 3, step: 0.02,
+    hint: 'How much light the sound gives off of its own. This is the look: at nought the signal is a grey surface with a lamp on it, and up it is a glowing line the way the old renderers draw it.' },
 ];
 
 function stRgb(hex, fallback) {
@@ -678,6 +733,7 @@ function stAttach(canvas) {
   sleeveMat.specularColor = new BABYLON.Color3(0.08, 0.08, 0.08);
   sleeveMat.backFaceCulling = false;
   const sleeves = {};
+  const sleeveWires = {};
   let sleeveKey = '';
 
   function buildSleeve() {
@@ -704,6 +760,18 @@ function stAttach(canvas) {
       m.material = sleeveMat;
       m.isPickable = false;
       sleeves[f] = m;
+
+      // The line, one per row, over a fill that hides what is behind it.
+      if (sleeveWires[f]) sleeveWires[f].dispose();
+      const lines = [];
+      for (let r = 0; r < R; r++) {
+        const one = [];
+        for (let i = 0; i < P; i++) one.push(new BABYLON.Vector3(0, 0, 0));
+        lines.push(one);
+      }
+      sleeveWires[f] = BABYLON.MeshBuilder.CreateLineSystem(`stsleevewire_${f}`,
+        { lines, updatable: true }, scene);
+      sleeveWires[f].isPickable = false;
     }
   }
 
@@ -717,6 +785,7 @@ function stAttach(canvas) {
       if (!m) continue;
       const want = !!cfg.sleeveOn && !!cfg[`sleeve${f[0].toUpperCase()}${f.slice(1)}`];
       m.setEnabled(want);
+      if (sleeveWires[f]) sleeveWires[f].setEnabled(want && !!cfg.wire);
       if (!want) continue;
       const b = stFaceBasis(f);
       const pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
@@ -737,6 +806,21 @@ function stAttach(canvas) {
       const nrm = new Float32Array(pos.length);
       BABYLON.VertexData.ComputeNormals(pos, m.getIndices(), nrm);
       m.updateVerticesData(BABYLON.VertexBuffer.NormalKind, nrm);
+
+      const w = sleeveWires[f];
+      if (w) {
+        // A hair off the surface, or the two argue for the depth buffer and the
+        // ridge comes out dashed.
+        const lp = new Float32Array(R * P * 3);
+        for (let i = 0; i < R * P; i++) {
+          lp[i * 3] = pos[i * 3] + b.n[0] * 0.004;
+          lp[i * 3 + 1] = pos[i * 3 + 1] + b.n[1] * 0.004;
+          lp[i * 3 + 2] = pos[i * 3 + 2] + b.n[2] * 0.004;
+        }
+        w.updateVerticesData(BABYLON.VertexBuffer.PositionKind, lp);
+        const c = stRgb(cfg.sleeveColour, [1, 1, 1]);
+        w.color = new BABYLON.Color3(c[0] * cfg.glow, c[1] * cfg.glow, c[2] * cfg.glow);
+      }
     }
   }
 
@@ -1110,22 +1194,19 @@ function stAttach(canvas) {
       placeTerrain();
       placeRing();
       placeSleeve();
-      sleeveMat.diffuseColor = stColor(cfg.sleeveColour, [0.87, 0.91, 0.95]);
-      sleeveMat.emissiveColor = stColor(cfg.sleeveColour, [0.87, 0.91, 0.95]).scale(0.06);
       ring.setEnabled(!!cfg.ringOn);
       ringMat.diffuseColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
-      ringMat.emissiveColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]).scale(0.12);
       stepCloud(f);
       cloud.setEnabled(!!cfg.cloudOn);
       cloudMat.diffuseColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]);
-      cloudMat.emissiveColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]).scale(cfg.cloudGlow);
 
       shell.setEnabled(!!cfg.shell);
       terr.setEnabled(!!cfg.terrainOn);
       if (wire) {
         wire.setEnabled(!!cfg.terrainOn && !!cfg.wire);
         const wc = stRgb(cfg.terrainColour, [1, 1, 1]);
-        wire.color = new BABYLON.Color3(wc[0], wc[1], wc[2]);
+        const gg = Math.max(0, cfg.glow);
+        wire.color = new BABYLON.Color3(wc[0] * gg, wc[1] * gg, wc[2] * gg);
         wire.alpha = Math.max(0.05, Math.min(1, cfg.wireWidth / 2));
       }
       // The ruling, and the shadows it helps you read.
@@ -1138,13 +1219,36 @@ function stAttach(canvas) {
         shadowGen.blurKernel = Math.max(1, cfg.shadowSoft);
         shadowGen.getShadowMap().renderList = cfg.shadows && cfg.terrainOn ? [terr] : [];
       }
+      // ── the line glows; the surface hides ──
+      //
+      // **A filled surface made emissive is a white slab.** That is what the
+      // first attempt at this produced: the terrain lit from inside came out as
+      // a featureless ramp, brighter than the room but with no form in it at all.
+      //
+      // The old renderers are not surfaces. They are *lines*, with a fill behind
+      // them whose only job is to stop you seeing the lines further back — the
+      // fill is the background colour and is meant to be invisible. That is the
+      // whole trick, and inverting it is exactly how a picture goes from a
+      // stack of ridges to a sheet of white.
+      //
+      // So here: the surface takes the ground's own colour and emits nothing,
+      // and the line over it carries all the glow. The difference from the flat
+      // version is that this fill is a real solid in a depth buffer, so it hides
+      // what is behind it from any angle rather than only from one.
+      const g = Math.max(0, cfg.glow);
+      const ground2 = stColor(cfg.groundColour, [0, 0, 0]);
+      terrMat.emissiveColor = ground2.scale(1);
+      terrMat.diffuseColor = ground2.scale(1);
+      sleeveMat.emissiveColor = ground2.scale(1);
+      sleeveMat.diffuseColor = ground2.scale(1);
+      ringMat.emissiveColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]).scale(0.45 * g);
+      cloudMat.emissiveColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]).scale(cfg.cloudGlow * g);
+
       shellMat.diffuseColor = stColor(cfg.wallColour, [0.14, 0.21, 0.27]);
       // A little of its own, or the walls are a hole behind the terrain: a lamp
       // inside a room only lights what it reaches, and the corners it does not
       // reach have nothing to say they are corners.
-      shellMat.emissiveColor = stColor(cfg.wallColour, [0.14, 0.21, 0.27]).scale(0.16);
-      terrMat.diffuseColor = stColor(cfg.terrainColour, [0.81, 0.88, 0.93]);
-      terrMat.emissiveColor = stColor(cfg.terrainColour, [0.81, 0.88, 0.93]).scale(0.07);
+      shellMat.emissiveColor = stColor(cfg.wallColour, [0.14, 0.21, 0.27]).scale(0.5);
 
       // ── the air ──
       if (cfg.fogOn && cfg.fogDensity > 0) {
