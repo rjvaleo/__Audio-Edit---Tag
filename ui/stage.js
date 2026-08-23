@@ -137,15 +137,19 @@ const ST_DEFAULTS = {
   // the shape of the sound is something you read off the highlight rather than
   // off a tangle of lines.
   ringOn: true,
-  ringRows: 160,
+  /// **Not too many.** Concentric hoops converging on a vanishing point is the
+  /// portal, and past about a hundred of them the ones near the centre are
+  /// closer together than a pixel and beat against each other — a moiré rosette
+  /// where the far end should be.
+  ringRows: 96,
   ringPoints: 256,
   /// **Narrow, and hung high.** The tube runs away from the camera, so seen down
   /// its own axis a wide one is a disc filling the room rather than a tube going
   /// anywhere. Small enough to read as a bore, and lifted clear of the terrain
   /// so both can be seen at once.
-  ringSize: 0.16,
+  ringSize: 0.5,
   ringAt: 0.42,
-  ringHigh: 0.52,
+  ringHigh: 0.34,
   /// How hard the sound pushes it out of round.
   ringDrive: 1,
 
@@ -834,6 +838,7 @@ function stAttach(canvas) {
   ringMat.specularColor = new BABYLON.Color3(0.15, 0.15, 0.15);
   ringMat.backFaceCulling = false;
   let ring = null;
+  let ringWire = null;
   let ringKey = '';
 
   function buildRing() {
@@ -861,6 +866,22 @@ function stAttach(canvas) {
     vd.applyToMesh(ring, true);
     ring.material = ringMat;
     ring.isPickable = false;
+
+    // **Hoops of light over a dark tube.** A solid tube made emissive is the
+    // white-slab fault again — and in open space, with the camera inside the
+    // run of it, a bright solid is a cone aimed at the lens. The surface is
+    // there only to stop you seeing the hoops behind; the hoops are the picture.
+    if (ringWire) ringWire.dispose();
+    const loops = [];
+    for (let r = 0; r < R; r++) {
+      const one = [];
+      // Closed: the last point is the first, or every hoop has a gap in it.
+      for (let i = 0; i <= P; i++) one.push(new BABYLON.Vector3(0, 0, 0));
+      loops.push(one);
+    }
+    ringWire = BABYLON.MeshBuilder.CreateLineSystem('stringwire',
+      { lines: loops, updatable: true }, scene);
+    ringWire.isPickable = false;
   }
 
   function placeRing() {
@@ -870,31 +891,52 @@ function stAttach(canvas) {
     const pos = ring.getVerticesData(BABYLON.VertexBuffer.PositionKind);
     const hh = cfg.height / 2;
     const cy = cfg.ringHigh * hh;
+    const lp = ringWire ? new Float32Array(R * (P + 1) * 3) : null;
     for (let r = 0; r < R; r++) {
       const t = r / (R - 1);
-      const tap = 1 + (cfg.taper - 1) * t;
       const h = hoops[r];
+      // **No taper.** The taper is the room's, and it belongs to things lying on
+      // the room's surfaces. Applied to the ring it shrinks the far hoops and
+      // swells the near ones, and with the camera inside the run of it that
+      // reads as a funnel aimed at the lens rather than a tube going away.
       for (let i = 0; i < P; i++) {
         const a = (i / P) * Math.PI * 2;
-        // The hoop is a circle pushed out of round by what the two channels
-        // were doing: the figure is the deviation, not the shape itself, so a
-        // silent room is a clean tube rather than nothing at all.
+        // The hoop is a circle pushed out of round by what the two channels were
+        // doing: the figure is the deviation, not the shape itself, so silence is
+        // a clean bore rather than nothing at all.
         const L = h ? h[i * 2] : 0;
         const Rr = h ? h[i * 2 + 1] : 0;
         const push = (L + Rr) * 0.5 * cfg.ringDrive;
-        const rad = cfg.ringSize * tap * (1 + push);
+        const rad = cfg.ringSize * (1 + push);
+        const x = Math.cos(a) * rad;
+        const y = cy + Math.sin(a) * rad;
+        // Behind the camera's own position and running away, so the near hoops
+        // are the sound of a moment ago rather than something in the lens.
+        const z = cfg.ringAt * cfg.depth * 0.1 + t * cfg.depth;
         const j = (r * P + i) * 3;
-        pos[j] = Math.cos(a) * rad;
-        pos[j + 1] = cy * tap + Math.sin(a) * rad;
-        // Starting a little way in: a hoop at the very mouth of the room is
-        // inches from the lens and swallows the frame.
-        pos[j + 2] = cfg.ringAt * cfg.depth * 0.35 + t * cfg.depth * 0.8;
+        pos[j] = x; pos[j + 1] = y; pos[j + 2] = z;
+        if (lp) {
+          const q = (r * (P + 1) + i) * 3;
+          lp[q] = x; lp[q + 1] = y; lp[q + 2] = z;
+        }
+      }
+      // The closing point of each loop.
+      if (lp) {
+        const first = (r * (P + 1)) * 3;
+        const last = (r * (P + 1) + P) * 3;
+        lp[last] = lp[first]; lp[last + 1] = lp[first + 1]; lp[last + 2] = lp[first + 2];
       }
     }
     ring.updateVerticesData(BABYLON.VertexBuffer.PositionKind, pos);
     const nrm = new Float32Array(pos.length);
     BABYLON.VertexData.ComputeNormals(pos, ring.getIndices(), nrm);
     ring.updateVerticesData(BABYLON.VertexBuffer.NormalKind, nrm);
+    if (ringWire && lp) {
+      ringWire.updateVerticesData(BABYLON.VertexBuffer.PositionKind, lp);
+      const c = stRgb(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
+      const g = Math.max(0, cfg.glow);
+      ringWire.color = new BABYLON.Color3(c[0] * g, c[1] * g, c[2] * g);
+    }
   }
 
   // ── the cloud ──
@@ -1195,6 +1237,7 @@ function stAttach(canvas) {
       placeRing();
       placeSleeve();
       ring.setEnabled(!!cfg.ringOn);
+      if (ringWire) ringWire.setEnabled(!!cfg.ringOn && !!cfg.wire);
       ringMat.diffuseColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
       stepCloud(f);
       cloud.setEnabled(!!cfg.cloudOn);
@@ -1241,7 +1284,8 @@ function stAttach(canvas) {
       terrMat.diffuseColor = ground2.scale(1);
       sleeveMat.emissiveColor = ground2.scale(1);
       sleeveMat.diffuseColor = ground2.scale(1);
-      ringMat.emissiveColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]).scale(0.45 * g);
+      ringMat.emissiveColor = ground2.scale(1);
+      ringMat.diffuseColor = ground2.scale(1);
       cloudMat.emissiveColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]).scale(cfg.cloudGlow * g);
 
       shellMat.diffuseColor = stColor(cfg.wallColour, [0.14, 0.21, 0.27]);
