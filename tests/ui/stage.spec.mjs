@@ -328,3 +328,60 @@ test('the film asks for full detail whatever the preview is set to', async ({ pa
   expect(got.asked.length).toBeGreaterThan(0);
   expect(got.asked.every((d) => d === 1), `the film asked for ${got.asked.join(', ')}`).toBe(true);
 });
+
+test('the picture itself is the control', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => typeof setVisual === 'function', { timeout: 30_000 });
+  await page.evaluate(async () => {
+    const folder = state.folders[0].name;
+    const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+    await selectFile(files[0]);
+    localStorage.removeItem('roomData');
+    roomEdit.stage = {};
+    setMode('room');
+  });
+  await page.waitForTimeout(700);
+  await page.selectOption('#rgVisual', 'stage');
+  await page.waitForTimeout(900);
+
+  const read = () => page.evaluate(() => stageSettings());
+  const box = await (await page.$('#visStage')).boundingBox();
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const before = await read();
+
+  // **Drag left and the camera goes right.** The picture follows the hand, the
+  // way every map and every viewport has ever worked.
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx - 200, cy - 100, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const dragged = await read();
+  expect(dragged.swing, 'dragging the picture did not move the camera')
+    .toBeGreaterThan(before.swing);
+  expect(dragged.lift, 'dragging up did not raise the camera')
+    .toBeLessThan(before.lift);
+
+  // Shift is the lamp, because where it hangs is the other thing you change
+  // while watching. And up is up: screen y grows downward, and a lamp that goes
+  // down when you drag up is a lamp nobody can aim.
+  await page.keyboard.down('Shift');
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 220, cy - 120, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(250);
+  const lamp = await read();
+  expect(lamp.keySide, 'shift-drag did not move the key').toBeGreaterThan(dragged.keySide);
+  expect(lamp.keyHigh, 'dragging the lamp up sent it down').toBeGreaterThan(dragged.keyHigh);
+  // And the camera stayed where it was put.
+  expect(lamp.swing).toBeCloseTo(dragged.swing, 5);
+
+  // The wheel dollies.
+  await page.mouse.move(cx, cy);
+  await page.mouse.wheel(0, 400);
+  await page.waitForTimeout(250);
+  expect((await read()).eye, 'the wheel did not dolly').toBeGreaterThan(lamp.eye);
+});

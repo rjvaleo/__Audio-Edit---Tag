@@ -56,6 +56,10 @@ const ST_DEFAULTS = {
   // left the stack in the middle third of the frame with black all round, which
   // is a photograph of a visualiser rather than the visualiser.
   eye: 1.15,
+  /// Sideways. There is no orbit here on purpose — a scene with no walls has no
+  /// centre to orbit about, and swinging the camera across the space is what you
+  /// actually want when you drag sideways in open space.
+  swing: 0,
   lift: 0.12,
   aim: 0.3,
   fov: 1.12,
@@ -321,6 +325,8 @@ const ST_GROUPS = [
   {
     key: 'camera', label: 'Camera',
     pads: [
+      { x: 'swing', y: 'lift', label: 'STANDPOINT',
+        hint: 'Where the camera stands, across and up. The same thing dragging the picture does.' },
       { x: 'aim', y: 'lift', label: 'VIEW',
         hint: 'Where the camera stands and what it looks at — one gesture, not two numbers.' },
       { x: 'eye', y: 'fov', label: 'LENS',
@@ -403,6 +409,7 @@ const ST_UI = [
     hint: 'How far the back draws in. At one it is a box; under one it is a funnel, which is perspective before the camera has any.' },
   { key: 'eye', tag: 'EYE', min: 0.2, max: 8, step: 0.05, hint: 'How far back the camera stands.' },
   { key: 'lift', tag: 'LIFT', min: -1.5, max: 1.5, step: 0.01, hint: 'How high it stands.' },
+  { key: 'swing', tag: 'SWING', min: -3, max: 3, step: 0.01, hint: 'How far across the space it stands. Drag the picture sideways.' },
   { key: 'aim', tag: 'AIM', min: 0, max: 1, step: 0.01, hint: 'How far down the room it looks.' },
   { key: 'fov', tag: 'LENS', min: 0.3, max: 1.6, step: 0.01, hint: 'The field of view.' },
   { key: 'ambient', tag: 'AMBIENT', min: 0, max: 1, step: 0.01, hint: 'The light that comes from nowhere. Too much and nothing has form.' },
@@ -1407,8 +1414,8 @@ function stAttach(canvas) {
       }
 
       // ── the camera ──
-      camera.position.set(0, cfg.lift, -cfg.eye);
-      camera.setTarget(new BABYLON.Vector3(0, 0, cfg.depth * cfg.aim));
+      camera.position.set(cfg.swing || 0, cfg.lift, -cfg.eye);
+      camera.setTarget(new BABYLON.Vector3((cfg.swing || 0) * 0.25, 0, cfg.depth * cfg.aim));
       camera.fov = cfg.fov;
 
       scene.render();
