@@ -224,7 +224,11 @@ test('the pads move two things at once, and up is more', async ({ page }) => {
         ...[...e.querySelectorAll('[data-st-key]')].map((x) => x.dataset.stKey),
         ...[...e.querySelectorAll('.st-pad')].flatMap((x) => [x.dataset.stPadX, x.dataset.stPadY]),
       ]).size,
-      described: ST_UI.length,
+      // Everything described *and listed*. A setting can be hidden from the
+      // panel without being deleted — see `ST_ADMIN_HIDDEN` — and the check is
+      // still that nothing offered goes missing, not that everything that
+      // exists is offered.
+      described: ST_UI.filter((r) => stInAdmin(r.key)).length,
     };
   });
   expect(shape.pads, 'no pads were built').toBeGreaterThan(8);
