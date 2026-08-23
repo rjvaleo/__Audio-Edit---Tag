@@ -55,7 +55,7 @@ draws. It is the refactor, and it is the only phase that touches every file.
 **Done when** all fourteen are pickable from the Room, each shows its own
 controls, and every existing test still passes.
 
-### Phase 1 — dissolve the iframe *(the views are in; the document is not out)*
+### Phase 1 — dissolve the iframe *(failed; see below)*
 
 The ten grain views come in-process onto Babylon: one scene, one camera rig, and
 a builder per view. They stop polling for themselves and are fed by the same push
@@ -65,20 +65,40 @@ This is the phase with the most to gain. Those ten views pick up the palette, th
 unified controls, and — for the first time — **the export**. It also takes p5 and
 its 954 KB out of the binary.
 
-**Done when** all ten draw in-process, film, and the iframe and p5 are gone.
+**Done when** all ten draw in-process, film, **look at least as good as the p5
+originals side by side**, and the iframe and p5 are gone. The middle clause is
+the one that was skipped.
 
-**Where it got to.** All ten draw in-process and all ten film, which is the half
-that matters — and it took ten functions rather than a port of 2823 lines,
-because the only thing that ever differed between those views was *where a grain
-goes*. Written as a function from a grain to a place, they are arrangements of
-the one scene. In ten scenes they would have been ten programs.
+**Where it got to: not done, and the reason is worth keeping.**
 
-**The document is still there, and deliberately.** `grain-views.html` and p5 are
-still served and still reachable from the editor's own grain tabs. Deleting them
-is a deletion of 2823 lines of carefully made work in favour of ten short
-functions written this evening — and the person whose work it is has said, of
-the older visualisers, that the originals were the best. That is a judgement to
-be asked for, not assumed. The 954KB stays until it is.
+Ten functions were written instead of a port, on the theory that the only thing
+that ever differed between the views was *where a grain goes* — so written as a
+function from a grain to a place, all ten would fall out of the one scene. They
+do draw, and they do film.
+
+They are also **much worse pictures**, which is the whole of it. Put the two
+Mandalas side by side: the p5 one is a dense radial weave, thousands of strokes
+deep, and the stage one is a scatter of lit dots on black. Placement was never
+what those views were. The stroke was, and the accumulation, and the density, and
+several thousand lines of decisions that ten functions do not contain. The theory
+was wrong and the output says so at a glance.
+
+So the rule for this work — *same or better, only upgrades* — was not met, and
+Phase 1 is open. What exists is an addition filed under its own family with its
+own labels (`Mandala · stage`), because two entries called "Mandala" in one
+picker is an invitation to pick the worse one by accident. The originals are
+untouched, and they are the ones to reach for.
+
+**What a real Phase 1 needs**, which is now the actual work: the stroke and the
+accumulation, not just the placement — line geometry rather than instanced dots,
+the per-view drawing decisions read out of `grain-views.html` view by view, and
+each one held up against the original before it is called done. That is a port,
+and it is the size the original said it was.
+
+**The document is still there, and it is not going anywhere.** `grain-views.html`
+and p5 are still served and still reachable. The 954KB is the price of the ten
+best pictures this program has, and it stays until something is measurably better
+than them — not until something merely exists that draws the same arrangement.
 
 The arrangements are additions. Nothing was taken away to make room for them.
 

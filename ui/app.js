@@ -8446,18 +8446,25 @@ function setVisual(key) {
 function showStageFamily(family) {
   const view = $('roomView');
   if (!view || view.classList.contains('hidden')) return;
-  for (const fam of VIS_FAMILIES) {
-    const el = $(fam.host);
+  // **Decided by host, not by family.** More than one family can live in the
+  // same element — the stage arrangements are their own family and share
+  // `masterBus` with the bus visuals — and walking the families sending home
+  // "the ones that are not this one" then sends the wanted host home again on a
+  // later turn of the loop. Every visual came out with nothing on the stage.
+  const want = (VIS_FAMILIES.find((f) => f.key === family) || {}).host;
+  const hosts = [...new Set(VIS_FAMILIES.map((f) => f.host))];
+  for (const host of hosts) {
+    const el = $(host);
     if (!el) continue;
-    if (fam.key === family) {
-      roomAdopt(fam.host, 'roomStageRoom');
+    if (host === want) {
+      roomAdopt(host, 'roomStageRoom');
       visUnhide(el);
     } else if (el.parentElement && el.parentElement.id === 'roomStageRoom') {
       // Sent home rather than hidden in place: left on the stage it keeps its
       // box, and the next thing adopted stacks underneath it.
-      const home = roomBorrowed.get(fam.host);
+      const home = roomBorrowed.get(host);
       if (home && home.parent) home.parent.insertBefore(el, home.next);
-      roomBorrowed.delete(fam.host);
+      roomBorrowed.delete(host);
       visRehide(el);
     }
   }

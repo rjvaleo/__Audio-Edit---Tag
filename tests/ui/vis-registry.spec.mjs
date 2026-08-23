@@ -46,30 +46,36 @@ test('the list knows about every visualiser', async ({ page }) => {
     engines: visPortRemaining(),
     // Nothing may be listed twice, and every one needs a family that exists.
     dupes: VIS_ALL.map((v) => v.key).filter((k, i, a) => a.indexOf(k) !== i),
+    labelDupes: VIS_ALL.map((v) => v.label).filter((l, i, a) => a.indexOf(l) !== i),
     orphans: VIS_ALL.filter((v) => !VIS_FAMILIES.some((f) => f.key === v.family)).map((v) => v.key),
   }));
 
   expect(got.dupes, 'a visual is listed twice').toEqual([]);
+  // **No two visuals may share a label.** Two entries called "Mandala" — the p5
+  // original and the stage's arrangement of the same name — is an offer to pick
+  // the worse one by accident, and that is exactly what happened. A key being
+  // unique is not enough; the name on the picker is what is actually chosen from.
+  expect(got.labelDupes, 'two visuals share a name in the picker').toEqual([]);
   expect(got.orphans, 'a visual is in a family that does not exist').toEqual([]);
-  expect(got.families).toEqual(['bus', 'grain']);
-  // Four on the bus and eleven grain views: the count is written down so that
-  // adding one without adding it to the picker is a failure and not a surprise.
-  expect(got.all.length).toBe(15);
-  // **The state of the port.** Ten of the grain views were p5 in an iframe and
-  // are now arrangements of the stage — the same scene with its cloud laid out
-  // differently. What is left on an old engine is the room, the flat stack, and
-  // the flat swarm.
-  expect(got.engines.p5, 'the iframe still owns grain views').toBe(0);
-  expect(got.engines.webgl1).toBe(1);
-  expect(got.engines.canvas2d).toBe(2);
+  expect(got.families).toEqual(['bus', 'grain', 'arrangement']);
+  // Four on the bus, eleven grain views, ten stage arrangements. The count is
+  // written down so that adding one without adding it to the picker is a
+  // failure and not a surprise.
+  expect(got.all.length).toBe(25);
+
+  // **Nothing was replaced.** The ten arrangements sit beside the ten grain
+  // views rather than over them: same shapes, different engine, different scene,
+  // different decisions, and they look it. Listing them under the grain family
+  // gave their names to something else and quietly retired ten pieces of work.
+  expect(got.engines.p5, 'the original grain views were removed').toBe(10);
+  expect(got.engines.webgl1, 'the original room was removed').toBe(1);
+  expect(got.engines.canvas2d, 'the flat stack or the flat swarm was removed').toBe(2);
 
   // **The state of the port, as a number.** When a phase of the plan lands this
   // changes, and it changing without the plan changing is worth being told.
   const total = Object.values(got.engines).reduce((a, b) => a + b, 0);
-  expect(total).toBe(15);
+  expect(total).toBe(25);
   // Twelve on the new engine: the surfaces, the stage, and the ten arrangements.
-  // This number going up is the port making progress, and it going up without
-  // the plan changing is worth being told about.
   expect(got.engines.babylon).toBe(12);
 });
 
@@ -92,7 +98,8 @@ test('the picker offers all of them, grouped', async ({ page }) => {
     };
   });
   expect(got.options, 'the picker and the list disagree').toEqual(got.all);
-  expect(got.groups, 'the families are not labelled').toEqual(['Master bus', 'Grains']);
+  expect(got.groups, 'the families are not labelled')
+    .toEqual(['Master bus', 'Grains', 'Stage arrangements']);
   expect(got.onScreen, 'the picker is not visible').toBe(true);
   expect(got.fitsBar, 'the picker overflows the bar it sits on').toBe(true);
 });
