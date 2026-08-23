@@ -408,3 +408,46 @@ test('the type stands in the space and is passed in front of', async ({ page }) 
   expect(got.near.mean, 'moving the type through the space changed nothing')
     .toBeGreaterThan(got.far.mean * 1.15);
 });
+
+test('solo shows one thing without editing the switches', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(`(async () => {
+    const before = { ...stageSettings() };
+    const all = await ${RUN}({});
+    const one = await ${RUN}({ solo: 'terrainOn' });
+    const back = await ${RUN}({ solo: null });
+    return { all: all.mean, one: one.mean, back: back.mean,
+      switchesBefore: Object.fromEntries(ST_OBJECTS.map((o) => [o.key, before[o.key]])),
+      switchesAfter: Object.fromEntries(ST_OBJECTS.map((o) => [o.key, stageSettings()[o.key]])) };
+  })()`);
+
+  // Soloed, there is less in the frame.
+  expect(got.one, 'solo showed everything').toBeLessThan(got.all * 0.8);
+  // And letting go puts it all back.
+  expect(got.back, 'the scene did not come back').toBeCloseTo(got.all, 0);
+
+  // **It is a filter, not an edit.** Turning the other eight off to look at one
+  // means turning eight back on afterwards and hoping you remembered which.
+  expect(got.switchesAfter, 'solo edited the switches').toEqual(got.switchesBefore);
+});
+
+test('every object is worth seeing on its own', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(`(async () => {
+    roomEdit.text = { ...rtSettings(roomEdit.text), on: true, text: 'UNKNOWN' };
+    const out = {};
+    for (const k of ['terrainOn', 'ringOn', 'cloudOn', 'sleeveOn', 'typeOn']) {
+      out[k] = (await ${RUN}({ solo: k, typeOn: true })).max;
+    }
+    return out;
+  })()`);
+
+  // **Bright enough to see, soloed.** This is the check that catches an object
+  // going dark when something else changes underneath it: the grains are lit
+  // solids, and when the lamps came down to modelling strength the brightest
+  // grain in the room fell to 63 of 255 — findable, not visible — while the
+  // scene as a whole looked fine because five other things were still in it.
+  for (const [k, max] of Object.entries(got)) {
+    expect(max, `${k} is too dark to see on its own`).toBeGreaterThan(110);
+  }
+});

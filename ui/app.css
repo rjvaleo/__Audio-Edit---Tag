@@ -3366,3 +3366,12 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 
 /* The stage takes the pointer: dragging it stands the camera somewhere else. */
 #visStage { cursor: grab; touch-action: none; }
+
+/* Soloing. The one being looked at is marked, and everything it is hiding says
+   so — a scene with eight things missing should not look like eight things
+   broken. */
+.st-solo {
+  outline: 1px solid var(--accent, #7fd0ff);
+  outline-offset: 1px;
+}
+.st-muted { opacity: 0.35; }

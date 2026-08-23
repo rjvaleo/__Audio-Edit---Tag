@@ -96,8 +96,12 @@ const ST_DEFAULTS = {
   // room's mist is shed by grains and lives as long as the shape does; this is
   // the air itself having something in it.
   mistOn: true,
-  mist: 1400,
-  mistSize: 0.055,
+  /// Soloed, the mist read nothing at all: a thousand particles at four
+  /// hundredths of a unit across, in a space nine units deep, is a few dozen
+  /// pixels spread over the whole frame. More of them, larger, and brighter —
+  /// air you can see is the point of having any.
+  mist: 2600,
+  mistSize: 0.11,
   mistDrift: 0.05,
   mistLife: 6,
 
@@ -130,7 +134,12 @@ const ST_DEFAULTS = {
   /// How many of the schedule's grains are drawn, as a share. A cloud you can
   /// see through is worth more than one you cannot.
   cloudDensity: 0.55,
-  cloudGlow: 0.4,
+  /// **Their own light, because the lamps are dim now.** The grains are solids
+  /// and were lit by the key; once the lamps came down to modelling strength
+  /// they went with them — soloed, the brightest grain in the room read 63 of
+  /// 255, which is a shape you can just about find rather than a thing you can
+  /// see.
+  cloudGlow: 0.62,
   cloudColour: '#ffd9a0',
 
   // ── the ring ──
@@ -151,7 +160,7 @@ const ST_DEFAULTS = {
   /// its own axis a wide one is a disc filling the room rather than a tube going
   /// anywhere. Small enough to read as a bore, and lifted clear of the terrain
   /// so both can be seen at once.
-  ringSize: 0.5,
+  ringSize: 0.62,
   ringAt: 0.42,
   ringHigh: 0.34,
   /// How hard the sound pushes it out of round.
@@ -201,6 +210,16 @@ const ST_DEFAULTS = {
   typeHigh: 0,
   typeSwing: 0,
   typeColour: '#ffffff',
+
+  /// **One thing at a time.** With nine objects in the scene, judging any one of
+  /// them means judging it through the other eight — and every balance decision
+  /// made that way is really a decision about the pile. Soloed, an object is
+  /// tuned on its own and then let back in.
+  ///
+  /// The key of the switch to isolate, or null for all of them. It is not saved
+  /// as a picture: solo is a way of working, not a look, and a session that
+  /// opened soloed would look broken.
+  solo: null,
 
   // ── what it is made of ──
   //
@@ -267,6 +286,21 @@ const ST_DEFAULTS = {
 
 /// The rate rows arrive at, which is the room's poll rate.
 const ST_PUSH_HZ = 20;
+
+/// Whether an object draws, given what is soloed.
+///
+/// **Solo does not change the switches.** Turning the other eight off to look at
+/// one would mean turning eight back on afterwards and hoping you remembered
+/// which — so this is a filter over the answer rather than an edit to the state.
+/// Let go of solo and the scene is exactly as it was.
+function stShows(cfg, key) {
+  if (!cfg[key]) return false;
+  if (!cfg.solo) return true;
+  if (cfg.solo === key) return true;
+  // A soloed sleeve keeps its faces, or soloing it shows nothing at all.
+  if (cfg.solo === 'sleeveOn' && key.startsWith('sleeve')) return true;
+  return false;
+}
 
 /// How many of a thing to actually build, after the preview's scaling.
 ///
@@ -809,7 +843,7 @@ function stAttach(canvas) {
   function placeType() {
     const words = typeof roomTextSettings === 'function' ? roomTextSettings() : null;
     const text = words ? String(words.text || '') : '';
-    const on = !!cfg.typeOn && !!text.trim();
+    const on = stShows(cfg, 'typeOn') && !!text.trim();
     if (!on) {
       for (const m of typePlanes) m.setEnabled(false);
       return;
@@ -844,7 +878,15 @@ function stAttach(canvas) {
         m.disableLighting = true;
         m.diffuseColor = new BABYLON.Color3(0, 0, 0);
         m.specularColor = new BABYLON.Color3(0, 0, 0);
-        m.emissiveTexture = typeTex;
+        // **The texture masks; the colour lights.**
+        //
+        // An `emissiveTexture` *is* the emission — a white glyph sheet emits
+        // white and `emissiveColor` does not scale it. Three different
+        // multipliers gave an identical measured mean, which is the signature of
+        // a number nothing reads.
+        //
+        // So the shape comes from the alpha and the brightness from the colour:
+        // a plane of one colour, cut out in the shape of the letters.
         m.opacityTexture = typeTex;
         m.backFaceCulling = false;
         typeMats.push(m);
@@ -880,7 +922,12 @@ function stAttach(canvas) {
       // the bloom, and the letters come out as a white blot with the words
       // barely legible inside it. The face keeps most of it and the sides get
       // what is left, which is what an extrusion looks like anyway.
-      const fade = i === 0 ? 0.42 : (1 - t) * 0.42 / Math.max(1, n * 0.5);
+      // **Saturation, not brightness, is what made the words loud.** Trimming
+      // the multiplier from 0.42 to 0.3 changed the measured mean by nothing at
+      // all: the face was already past white and the bloom was spreading the
+      // clipped part. Below one it comes back down the curve and the letters are
+      // type in a room rather than a lamp shaped like type.
+      const fade = i === 0 ? 0.85 : (1 - t) * 0.85 / Math.max(1, n * 0.4);
       m.emissiveColor = new BABYLON.Color3(c[0] * glow * fade, c[1] * glow * fade, c[2] * glow * fade);
     }
   }
@@ -959,7 +1006,7 @@ function stAttach(canvas) {
     for (const f of ST_FACES) {
       const m = sleeves[f];
       if (!m) continue;
-      const want = !!cfg.sleeveOn && !!cfg[`sleeve${f[0].toUpperCase()}${f.slice(1)}`];
+      const want = stShows(cfg, 'sleeveOn') && !!cfg[`sleeve${f[0].toUpperCase()}${f.slice(1)}`];
       m.setEnabled(want);
       if (sleeveWires[f]) sleeveWires[f].setEnabled(want && !!cfg.wire);
       if (!want) continue;
@@ -1409,17 +1456,17 @@ function stAttach(canvas) {
       placeRing();
       placeSleeve();
       placeType();
-      ring.setEnabled(!!cfg.ringOn);
-      if (ringWire) ringWire.setEnabled(!!cfg.ringOn && !!cfg.wire);
+      ring.setEnabled(stShows(cfg, 'ringOn'));
+      if (ringWire) ringWire.setEnabled(stShows(cfg, 'ringOn') && !!cfg.wire);
       ringMat.diffuseColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
       stepCloud(f);
-      cloud.setEnabled(!!cfg.cloudOn);
+      cloud.setEnabled(stShows(cfg, 'cloudOn'));
       cloudMat.diffuseColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]);
 
-      shell.setEnabled(!!cfg.shell);
-      terr.setEnabled(!!cfg.terrainOn);
+      shell.setEnabled(stShows(cfg, 'shell'));
+      terr.setEnabled(stShows(cfg, 'terrainOn'));
       if (wire) {
-        wire.setEnabled(!!cfg.terrainOn && !!cfg.wire);
+        wire.setEnabled(stShows(cfg, 'terrainOn') && !!cfg.wire);
         const wc = stRgb(cfg.terrainColour, [1, 1, 1]);
         const gg = Math.max(0, cfg.glow);
         wire.color = new BABYLON.Color3(wc[0] * gg, wc[1] * gg, wc[2] * gg);
@@ -1468,7 +1515,7 @@ function stAttach(canvas) {
       shellMat.emissiveColor = stColor(cfg.wallColour, [0.14, 0.21, 0.27]).scale(0.5);
 
       // ── the air ──
-      if (cfg.fogOn && cfg.fogDensity > 0) {
+      if (stShows(cfg, 'fogOn') && cfg.fogDensity > 0) {
         scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
         scene.fogDensity = cfg.fogDensity;
         scene.fogColor = new BABYLON.Color3(ground[0], ground[1], ground[2]);
@@ -1482,9 +1529,9 @@ function stAttach(canvas) {
       // lamp pumps is a disco, and a room where none of them do is a diagram.
       amb.intensity = cfg.ambient;
       amb.diffuse = stColor(cfg.wallColour, [0.2, 0.3, 0.4]);
-      key.setEnabled(!!cfg.keyOn);
-      fill.setEnabled(!!cfg.fillOn);
-      rim.setEnabled(!!cfg.rimOn);
+      key.setEnabled(stShows(cfg, 'keyOn'));
+      fill.setEnabled(stShows(cfg, 'fillOn'));
+      rim.setEnabled(stShows(cfg, 'rimOn'));
       key.intensity = cfg.key * (1 + level * cfg.drive);
       key.diffuse = stColor(cfg.terrainColour, [1, 1, 1]);
       key.position.set(
@@ -1508,7 +1555,7 @@ function stAttach(canvas) {
       // ── the mist ──
       if (mist) {
         const want = Math.max(0, Math.min(6000, cfg.mist | 0));
-        mist.emitRate = cfg.mistOn ? want / 4 : 0;
+        mist.emitRate = stShows(cfg, 'mistOn') ? want / 4 : 0;
         mist.minSize = cfg.mistSize * 0.5;
         mist.maxSize = cfg.mistSize;
         mist.minEmitBox = new BABYLON.Vector3(-cfg.width / 2, -cfg.height / 2, 0);
@@ -1518,8 +1565,9 @@ function stAttach(canvas) {
         mist.direction1 = new BABYLON.Vector3(-cfg.mistDrift, cfg.mistDrift, -cfg.mistDrift);
         mist.direction2 = new BABYLON.Vector3(cfg.mistDrift, cfg.mistDrift * 2, cfg.mistDrift);
         const c = stRgb(cfg.mistColour, [1, 1, 1]);
-        mist.color1 = new BABYLON.Color4(c[0], c[1], c[2], 0.22);
-        mist.color2 = new BABYLON.Color4(c[0], c[1], c[2], 0.06);
+        const mg = Math.max(0, cfg.glow);
+        mist.color1 = new BABYLON.Color4(c[0], c[1], c[2], 0.5 * mg);
+        mist.color2 = new BABYLON.Color4(c[0], c[1], c[2], 0.16 * mg);
         mist.colorDead = new BABYLON.Color4(c[0], c[1], c[2], 0);
       }
 

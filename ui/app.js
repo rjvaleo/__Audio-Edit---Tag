@@ -7639,7 +7639,9 @@ function saveRoomData() {
       geomRidge: roomEdit.geomRidge,
       geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
       module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
-      room3d: roomEdit.room3d, stage: roomEdit.stage, visual: roomEdit.visual,
+      room3d: roomEdit.room3d,
+      stage: roomEdit.stage ? { ...roomEdit.stage, solo: null } : roomEdit.stage,
+      visual: roomEdit.visual,
       grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
       ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
       leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
@@ -13533,7 +13535,9 @@ function buildStagePanel() {
   if (!host || host.children.length) return;
   const set = (k, v) => {
     roomEdit.stage = { ...stageSettings(), [k]: v };
-    saveRoomData();
+    // Solo is a way of working rather than a look, and a session that opened
+    // soloed would look broken.
+    if (k !== 'solo') saveRoomData();
     const r = visLive.stage;
     if (r && r.configure) r.configure(stageSettings());
     paintStagePanel();
@@ -13556,8 +13560,19 @@ function buildStagePanel() {
     const box = host.querySelector(`[data-st-obj-group="${o.group || 'Things'}"]`);
     const b = rpEl('button', 're-btn', o.label);
     b.dataset.stObj = o.key;
-    b.title = o.hint;
-    b.onclick = () => set(o.key, !stageSettings()[o.key]);
+    // **Shift to solo.** Judging one object through the other eight is really
+    // judging the pile; soloed it is tuned on its own and then let back in. It
+    // is a filter rather than an edit, so letting go of it puts the scene back
+    // exactly as it was without anyone having to remember what was on.
+    b.title = `${o.hint}\n\nShift-click to solo.`;
+    b.onclick = (e) => {
+      if (e.shiftKey) {
+        const st = stageSettings();
+        set('solo', st.solo === o.key ? null : o.key);
+        return;
+      }
+      set(o.key, !stageSettings()[o.key]);
+    };
     box.appendChild(b);
   }
 
@@ -13605,7 +13620,13 @@ function paintStagePanel() {
   const st = stageSettings();
   for (const b of host.querySelectorAll('[data-st-obj]')) {
     b.classList.toggle('active', !!st[b.dataset.stObj]);
+    b.classList.toggle('st-solo', st.solo === b.dataset.stObj);
+    // Everything not soloed says so, or a scene with eight things missing looks
+    // like eight things broken.
+    b.classList.toggle('st-muted', !!st.solo && st.solo !== b.dataset.stObj
+      && !(st.solo === 'sleeveOn' && b.dataset.stObj.startsWith('sleeve')));
   }
+  host.classList.toggle('st-soloing', !!st.solo);
   for (const row of ST_UI) {
     const sl = host.querySelector(`[data-st-key="${row.key}"]`);
     const read = host.querySelector(`[data-st-read="${row.key}"]`);
