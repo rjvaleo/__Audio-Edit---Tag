@@ -159,6 +159,13 @@ the instant it is born — four thousand born, four thousand dead, never one ali
 with the cloud working perfectly the whole time. Any test that drives this
 directly must stop `visGlRaf` first.
 
+**A hidden page does not animate.** `requestAnimationFrame` does not fire while
+`document.hidden` is true, so a preview pane that is not the fronted tab draws
+nothing at all — no frames, no pixels, and a screenshot showing whatever was last
+composited. Every symptom of a dead renderer, from a renderer that is perfectly
+alive and correctly not wasting work on a page nobody is looking at. Check
+`document.hidden` before concluding anything from a pane.
+
 **A grain's age is a subtraction from the playhead**, not an accumulator stepped
 per frame. An accumulator ties how long a grain lives to how fast the machine
 draws, and the film draws as fast as it can.
