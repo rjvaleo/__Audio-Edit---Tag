@@ -3313,10 +3313,6 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rt-off > .re-row:not(:first-child),
 .rt-off > .re-note { opacity: 0.4; pointer-events: none; }
 
-/* The family headings in the visual picker. A label in a row of buttons, so it
-   has to read as a label and not as a button that is switched off. */
-.re-frames .vis-fam {
-  flex: 0 0 100%;
-  margin: 6px 0 2px;
-  opacity: 0.75;
-}
+/* The visual picker. Fourteen of them live on a bar one line tall, so it is a
+   menu — a row of buttons wrapped out of sight the first time this shipped. */
+.vis-pick-sel { max-width: 170px; }

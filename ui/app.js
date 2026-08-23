@@ -8350,30 +8350,38 @@ function visRenderer() {
 function buildVisModulePicker() {
   const box = $('rgModules');
   if (!box || box.children.length) return;
+  // **A menu, not a row of buttons.** Three fitted along the stage bar; fourteen
+  // do not, and the first version of this put a full-width family heading in a
+  // bar one line tall — everything after it wrapped out of sight and the picker
+  // looked empty. A bar is a bar: what goes in it has to be one line at any
+  // width, and a menu is one line however long the list gets.
+  const sel = rpEl('select', 'field mini vis-pick-sel');
+  sel.id = 'rgVisual';
+  sel.title = 'Which visualiser is on the stage.';
   for (const fam of VIS_FAMILIES) {
-    const head = rpEl('span', 're-tag vis-fam', fam.label);
-    head.title = fam.hint;
-    box.appendChild(head);
+    const group = document.createElement('optgroup');
+    group.label = fam.label;
     for (const v of visFamily(fam.key)) {
-      const b = rpEl('button', 're-btn', v.label);
-      b.dataset.visual = v.key;
-      // What it is, and honestly what draws it. The state of the port is worth
-      // being readable off the interface rather than out of a document.
-      b.title = `${v.hint}\n\n${v.engine}${v.films ? ' · films' : ' · does not film yet'}`;
-      b.onclick = () => setVisual(v.key);
-      box.appendChild(b);
+      const o = document.createElement('option');
+      o.value = v.key;
+      // The state of the port, readable off the interface rather than out of a
+      // document: a visual that cannot be filmed yet says so here.
+      o.textContent = v.films ? v.label : `${v.label} ·`;
+      o.title = `${v.hint}\n\n${v.engine}${v.films ? ' · films' : ' · does not film yet'}`;
+      group.appendChild(o);
     }
+    sel.appendChild(group);
   }
+  sel.onchange = () => setVisual(sel.value);
+  box.appendChild(sel);
   paintVisModulePicker();
 }
 
 function paintVisModulePicker() {
-  const box = $('rgModules');
-  if (!box) return;
+  const sel = $('rgVisual');
+  if (!sel) return;
   const on = visualKey();
-  for (const b of box.querySelectorAll('[data-visual]')) {
-    b.classList.toggle('active', b.dataset.visual === on);
-  }
+  if (sel.value !== on) sel.value = on;
 }
 
 /// Which visual is on screen, as the registry knows it.
