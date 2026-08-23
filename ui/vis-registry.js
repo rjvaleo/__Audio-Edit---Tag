@@ -55,6 +55,12 @@ const VIS_ALL = [
     hint: 'The stacked lines on all five surfaces of a room — floor, ceiling, both walls, and the sleeve itself on the back wall.',
   },
 
+  {
+    key: 'stage', family: 'bus', label: 'Stage', engine: 'babylon',
+    canvas: 'visStage', panel: 'stageEdit', films: true,
+    hint: 'One room with real light, real air and real particles — the room everything else is being rebuilt into.',
+  },
+
   // ── the grains ──
   //
   // The first is drawn in the page; the other ten are in `grain-views.html`,

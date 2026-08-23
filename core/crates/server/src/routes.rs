@@ -66,6 +66,7 @@ pub const RIDGE_DATA_JS: &str = include_str!("../../../../ui/ridge-data.js");
 /// megabytes as UTF-8 at compile time buys nothing.
 pub const BABYLON_JS: &[u8] = include_bytes!("../../../../ui/vendor/babylon.js");
 pub const ROOM3D_JS: &str = include_str!("../../../../ui/room3d.js");
+pub const STAGE_JS: &str = include_str!("../../../../ui/stage.js");
 pub const VIS_REGISTRY_JS: &str = include_str!("../../../../ui/vis-registry.js");
 pub const ROOM_TEXT_JS: &str = include_str!("../../../../ui/room-text.js");
 /// The MP4 muxer and the thing that drives it. See `docs/VIDEO-EXPORT.md`.
@@ -131,6 +132,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         .with("Cache-Control", "public, max-age=31536000, immutable"),
         ("GET" | "HEAD", "/vis-registry.js") => {
             Response::ok("text/javascript; charset=utf-8", VIS_REGISTRY_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/stage.js") => {
+            Response::ok("text/javascript; charset=utf-8", STAGE_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/room3d.js") => {
             Response::ok("text/javascript; charset=utf-8", ROOM3D_JS.as_bytes().to_vec())
