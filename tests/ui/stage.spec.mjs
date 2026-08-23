@@ -182,3 +182,52 @@ test('the sleeve is on the walls, and each face can be taken away', async ({ pag
   // Lit, not merely coloured: a ridge standing off a wall has a bright side.
   expect(got.all.max, 'the sleeve is not catching any light').toBeGreaterThan(120);
 });
+
+test('the pads move two things at once, and up is more', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => typeof setVisual === 'function', { timeout: 30_000 });
+  await page.evaluate(async () => {
+    const folder = state.folders[0].name;
+    const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
+    await selectFile(files[0]);
+    setMode('room');
+  });
+  await page.waitForTimeout(700);
+  await page.selectOption('#rgVisual', 'stage');
+  await page.waitForTimeout(800);
+
+  const shape = await page.evaluate(() => {
+    const e = document.getElementById('stageEdit');
+    return {
+      groups: e.querySelectorAll('.st-group').length,
+      pads: e.querySelectorAll('.st-pad').length,
+      // Every control described has to be reachable: a setting in `ST_UI` that
+      // no group claims still gets a slider under "Other", so adding one cannot
+      // quietly strand it.
+      placed: new Set([
+        ...[...e.querySelectorAll('[data-st-key]')].map((x) => x.dataset.stKey),
+        ...[...e.querySelectorAll('.st-pad')].flatMap((x) => [x.dataset.stPadX, x.dataset.stPadY]),
+      ]).size,
+      described: ST_UI.length,
+    };
+  });
+  expect(shape.pads, 'no pads were built').toBeGreaterThan(8);
+  expect(shape.groups, 'the controls are not grouped').toBeGreaterThan(5);
+  expect(shape.placed, 'a described control has no control').toBe(shape.described);
+
+  // **One gesture, two numbers.** The point of a pad is that the pair moves
+  // together; if only one axis answered it would be a slider wearing a square.
+  const pad = await page.$('[data-st-pad-x="keySide"]');
+  await pad.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(200);
+  const box = await pad.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.2);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+
+  const after = await page.evaluate(() => stageSettings());
+  // 80% across a range of −1..1, and 20% from the top, which is 80% *up*.
+  expect(after.keySide).toBeCloseTo(0.6, 1);
+  expect(after.keyHigh, 'up is not more').toBeCloseTo(0.6, 1);
+});
