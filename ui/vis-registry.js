@@ -14,7 +14,9 @@
 // a visual should be adding an entry.
 //
 // The `engine` field is the honest state of the port, not an aspiration: it says
-// what actually draws that visual today. When a phase of `docs/PORT-PLAN.md`
+// what actually draws that visual today. Nothing in here is a claim that one
+// entry supersedes another — where two entries draw the same shape, both are
+// listed and the label says which is which. When a phase of `docs/PORT-PLAN.md`
 // lands, the entry changes with it, and the count of what is still on the old
 // engines is `visPortRemaining()`.
 
@@ -30,6 +32,17 @@ const VIS_FAMILIES = [
     hint: 'What left the speakers. One stream of sound, drawn as a room, a stack, or a set of walls.' },
   { key: 'grain', label: 'Grains', host: 'grainVis',
     hint: 'The schedule itself — every grain about to sound, with where it reads from, how long it lasts, and what pitch it is at.' },
+  // **The arrangements are their own family, and the originals keep theirs.**
+  //
+  // The stage can lay its cloud out ten ways, and those ten are the same shapes
+  // the grain views draw. They are not replacements: they are drawn by a
+  // different engine, in a different scene, from a different set of decisions,
+  // and they look different. Filing them over the top of the originals would
+  // have quietly retired ten pieces of work by giving their names to something
+  // else — which is what listing them under the same family did, and why they
+  // now sit apart with the originals untouched beside them.
+  { key: 'arrangement', label: 'Stage arrangements', host: 'masterBus',
+    hint: 'The stage with its cloud placed the way each grain view places it. Lit, in the one scene, and filmable — but coarser than the originals under Grains, which are the ones to reach for.' },
 ];
 
 /// Every visual there is.
@@ -61,32 +74,61 @@ const VIS_ALL = [
     hint: 'One room with real light, real air and real particles — the room everything else is being rebuilt into.',
   },
 
-  // ── the grains ──
+  // ── the grains, as they have always been ──
   //
-  // **Arrangements of the stage, not renderers of their own.** These were ten
-  // drawings in a separate document on a separate engine, and the only thing
-  // that actually differed between them was where a grain goes. Written as that
-  // — a function from a grain to a place — all ten live in the one scene, which
-  // is why they now carry a `layout` instead of a frame and a view number.
-  //
-  // What they gain by it: the palette, the unified controls, the lighting, and
-  // the export, which they have never had.
-  //
-  // The flat swarm stays where it is for now. It is the eleventh and it is drawn
-  // in the page rather than in the iframe, so it is not what the iframe is
-  // costing.
+  // The flat swarm in the page, and ten views in `visualiser/grain-views.html`
+  // on p5 — which is why they carry a suite and a view number instead of a
+  // canvas. They are untouched and they stay.
   {
     key: 'swarm2d', family: 'grain', label: 'Swarm 2D', engine: 'canvas2d',
     canvas: 'grainCanvas', view: 0, films: false,
     hint: 'The original swarm, drawn flat.',
   },
   ...[
-    ['swarm', 'Swarm 3D'], ['shear', 'Shear'], ['braid', 'Braid'],
+    ['shear', 'Shear', 'Output time against source time — the stretch as a slope.'],
+    ['braid', 'Braid', 'Time wound into a helix — strands are the overlap.'],
+    ['swarm3d', 'Swarm 3D', 'The free cloud in three dimensions.'],
+    ['shells', 'Shells', 'An octave to a shell — drift becomes rotation.'],
+    ['lattice', 'Lattice', 'The hop grid as a crystal, melted by the jitters.'],
+  ].map(([key, label, hint], i) => ({
+    key: `v1-${key}`, family: 'grain', label, engine: 'p5',
+    frame: 'grainFrame', suite: 1, view: i + 1, films: false, hint,
+  })),
+  ...[
+    ['tunnel', 'Tunnel', 'Grains arrive out of the dark and pass you. Depth is how far a grain is from now.'],
+    ['mandala', 'Mandala', 'Now is the centre. Distance from the middle is distance from this instant.'],
+    ['rorschach', 'Rorschach', 'Reflected in both axes, so which way time runs cannot be said.'],
+    ['vortex', 'Vortex', 'Grains spiral in from the future, cross the present, and unwind into the past.'],
+    ['ripple', 'Ripple', 'A standing wave with its own reflection under it.'],
+  ].map(([key, label, hint], i) => ({
+    key: `v2-${key}`, family: 'grain', label, engine: 'p5',
+    frame: 'grainFrame', suite: 2, view: i + 1, films: false, hint,
+  })),
+
+  // ── the stage, with its cloud laid out ──
+  //
+  // **These are not the grain views and they are not as good.** The claim behind
+  // them was that the only thing that ever differed between the ten views was
+  // where a grain goes, so ten short functions would do. Put side by side that
+  // is plainly false: the p5 Mandala is a dense radial weave of thousands of
+  // strokes and this one is a scatter of lit dots. Same placement rule, nothing
+  // like the same picture — because the picture was never only the placement.
+  // It was the stroke, the accumulation, the density, the decisions in 2823
+  // lines that these ten functions do not contain.
+  //
+  // So they keep the layout name and say what they are, because a picker
+  // offering two things called "Mandala" is an offer to pick the worse one by
+  // mistake. The rule on this work is *same or better* and these are not it;
+  // they are here for what the originals cannot do — the palette, the lighting,
+  // and the export — and for nothing else until they earn more.
+  ...[
+    ['swarm', 'Swarm'], ['shear', 'Shear'], ['braid', 'Braid'],
     ['shells', 'Shells'], ['lattice', 'Lattice'],
     ['tunnel', 'Tunnel'], ['mandala', 'Mandala'], ['rorschach', 'Rorschach'],
     ['vortex', 'Vortex'], ['ripple', 'Ripple'],
   ].map(([layout, label]) => ({
-    key: `g-${layout}`, family: 'grain', label, engine: 'babylon',
+    key: `g-${layout}`, family: 'arrangement', label: `${label} · stage`,
+    engine: 'babylon',
     canvas: 'visStage', panel: 'stageEdit', films: true,
     // The stage, arranged this way. See `ST_LAYOUTS` in `ui/stage.js`.
     stage: true, layout,

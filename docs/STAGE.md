@@ -128,15 +128,21 @@ mist atmospheric. The sound loudest, everything else supporting it.
 
 ## The ten arrangements
 
-`ST_LAYOUTS`. The grain views were ten drawings in a separate document on a
-separate engine, and the only thing that actually differed between them was
-*where a grain goes*. Written as that — a function from a grain to a place — all
-ten are a few lines each.
+`ST_LAYOUTS`. Ten placements — a function from a grain to a place — each a few
+lines.
 
-Their test does not check that they draw. It fingerprints where the ink falls in
-each and fails if any two are the same picture, because ten names over one
-arrangement is what a menu of aliases looks like and the whole claim is that the
-difference was only ever the placement.
+**They are not the ten grain views, and the theory that said they were is wrong.**
+The claim was that placement was the only thing that ever differed between those
+views. Side by side it does not survive a glance: the p5 Mandala is a dense
+radial weave and this one is a scatter of dots in the same arrangement. What
+placement leaves out is the stroke, the accumulation and the density, and those
+are most of the picture. See `docs/PORT-PLAN.md` — Phase 1 is open again because
+of it.
+
+What they are is the stage's cloud, laid out ten ways, lit and filmable. Their
+test fingerprints where the ink falls and fails if any two are the same picture,
+which is a check that ten names are not aliases for one layout — a much smaller
+claim than the one that was made for them.
 
 ## Traps met along the way
 
