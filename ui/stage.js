@@ -131,6 +131,26 @@ const ST_DEFAULTS = {
   /// How hard the sound pushes it out of round.
   ringDrive: 1,
 
+  // ── the sleeve ──
+  //
+  // The stacked lines on the room's own surfaces — the Unknown Pleasures
+  // arrangement, in the same scene as everything else rather than in a module of
+  // its own. Lit, which is the difference: `room3d.js` draws them as ribbons that
+  // emit their own colour, and here a ridge has a bright side and a shadow side
+  // and the ones at the back go into the fog.
+  //
+  // The floor is left to the terrain by default. Both on the same surface is two
+  // pictures of the same sound fighting for the same plane.
+  sleeveOn: true,
+  sleeveFloor: false,
+  sleeveCeiling: true,
+  sleeveLeft: true,
+  sleeveRight: true,
+  sleeveBack: true,
+  sleeveRelief: 0.3,
+  sleeveSpan: 0.86,
+  sleeveColour: '#dfe9f2',
+
   // ── what it is made of ──
   //
   // **Its own colours, not the flat stack's.** Borrowing those gave a wall
@@ -179,6 +199,12 @@ const ST_OBJECTS = [
   { key: 'terrainOn', label: 'Terrain', hint: 'The sound along the floor, receding as it ages.' },
   { key: 'cloudOn', label: 'Grains', hint: 'Every grain about to sound, as a lit solid travelling down the room.' },
   { key: 'ringOn', label: 'Ring', hint: 'The Lissajous hung in the room, every frame of it joined into a tube with depth as time.' },
+  { key: 'sleeveOn', label: 'Sleeve', hint: 'The stacked lines on the room’s own surfaces — the sleeve, lit.' },
+  { key: 'sleeveFloor', label: '· floor', hint: 'Off by default: the terrain already has the floor, and two pictures of the same sound on one plane fight.' },
+  { key: 'sleeveCeiling', label: '· ceiling', hint: 'Stacked lines overhead, hanging down.' },
+  { key: 'sleeveLeft', label: '· left', hint: 'Up the left wall, running away into the room.' },
+  { key: 'sleeveRight', label: '· right', hint: 'Up the right wall.' },
+  { key: 'sleeveBack', label: '· back', hint: 'The sleeve itself, at the end of the room: rows born at the bottom and climbing.' },
   { key: 'mistOn', label: 'Mist', hint: 'Particles in the air, drifting through the light.' },
   { key: 'fogOn', label: 'Fog', hint: 'The air itself. Thick enough and the back of the room is gone rather than dim.' },
   { key: 'keyOn', label: 'Key light', hint: 'The lamp that makes the form.' },
@@ -228,6 +254,9 @@ const ST_UI = [
   { key: 'ringHigh', tag: 'RING HIGH', min: -1, max: 1, step: 0.01, hint: 'How high it hangs.' },
   { key: 'ringRows', tag: 'RING ROWS', min: 8, max: 240, step: 1, round: true, hint: 'How far back it goes, in frames of sound.' },
   { key: 'ringPoints', tag: 'RING FINE', min: 16, max: 512, step: 8, round: true, hint: 'How finely each hoop is drawn.' },
+  { key: 'sleeveRelief', tag: 'SLEEVE', min: 0.02, max: 1, step: 0.01,
+    hint: 'How far the stacked lines stand off the walls. The surfaces face each other, so past about a third they meet in the middle.' },
+  { key: 'sleeveSpan', tag: 'SLEEVE SPAN', min: 0.3, max: 1, step: 0.01, hint: 'How much of each surface they run across.' },
   { key: 'gridSize', tag: 'GRID', min: 2, max: 80, step: 1, round: true,
     hint: 'How fine the ruling on the walls is. It is what gives the room a size — a plain surface in perspective could be a metre away or a mile.' },
   { key: 'gridFade', tag: 'GRID FADE', min: 0, max: 1, step: 0.01, hint: 'How strongly the ruling shows.' },
@@ -525,6 +554,92 @@ function stAttach(canvas) {
         lp[i * 3 + 2] = pos[i * 3 + 2];
       }
       wire.updateVerticesData(BABYLON.VertexBuffer.PositionKind, lp);
+    }
+  }
+
+  // ── the sleeve ──
+  //
+  // One builder for all five faces, because a surface is only four vectors: a
+  // corner, the way the lines run across it, the way the rows travel, and the way
+  // a peak stands off. The back wall is the odd one and is the point — on the
+  // other four the rows run away into the room, and on the back there is no depth
+  // left to run into, so they climb. That is the sleeve, in place.
+  const ST_FACES = ['floor', 'ceiling', 'left', 'right', 'back'];
+
+  function stFaceBasis(k) {
+    const hw = cfg.width / 2, hh = cfg.height / 2, d = cfg.depth;
+    return {
+      floor: { o: [-hw, -hh, 0], u: [hw * 2, 0, 0], v: [0, 0, d], n: [0, 1, 0] },
+      ceiling: { o: [-hw, hh, 0], u: [hw * 2, 0, 0], v: [0, 0, d], n: [0, -1, 0] },
+      left: { o: [-hw, -hh, 0], u: [0, hh * 2, 0], v: [0, 0, d], n: [1, 0, 0] },
+      right: { o: [hw, -hh, 0], u: [0, hh * 2, 0], v: [0, 0, d], n: [-1, 0, 0] },
+      back: { o: [-hw, -hh, d], u: [hw * 2, 0, 0], v: [0, hh * 2, 0], n: [0, 0, -1] },
+    }[k];
+  }
+
+  const sleeveMat = new BABYLON.StandardMaterial('stsleevemat', scene);
+  sleeveMat.specularColor = new BABYLON.Color3(0.08, 0.08, 0.08);
+  sleeveMat.backFaceCulling = false;
+  const sleeves = {};
+  let sleeveKey = '';
+
+  function buildSleeve() {
+    const R = Math.max(2, Math.min(200, cfg.rows | 0));
+    const P = Math.max(8, Math.min(1024, cfg.points | 0));
+    const k = `${R}|${P}`;
+    if (k === sleeveKey) return;
+    sleeveKey = k;
+    for (const f of ST_FACES) { if (sleeves[f]) { sleeves[f].dispose(); delete sleeves[f]; } }
+    const idx = [];
+    for (let r = 0; r < R - 1; r++) {
+      for (let i = 0; i < P - 1; i++) {
+        const a = r * P + i, b = a + 1, c = a + P, e = c + 1;
+        idx.push(a, c, b, b, c, e);
+      }
+    }
+    for (const f of ST_FACES) {
+      const m = new BABYLON.Mesh(`stsleeve_${f}`, scene);
+      const vd = new BABYLON.VertexData();
+      vd.positions = new Float32Array(R * P * 3);
+      vd.indices = idx.slice();
+      vd.normals = new Float32Array(R * P * 3);
+      vd.applyToMesh(m, true);
+      m.material = sleeveMat;
+      m.isPickable = false;
+      sleeves[f] = m;
+    }
+  }
+
+  function placeSleeve() {
+    const R = Math.max(2, Math.min(200, cfg.rows | 0));
+    const P = Math.max(8, Math.min(1024, cfg.points | 0));
+    const span = Math.max(0.05, Math.min(1, cfg.sleeveSpan));
+    const margin = (1 - span) / 2;
+    for (const f of ST_FACES) {
+      const m = sleeves[f];
+      if (!m) continue;
+      const want = !!cfg.sleeveOn && !!cfg[`sleeve${f[0].toUpperCase()}${f.slice(1)}`];
+      m.setEnabled(want);
+      if (!want) continue;
+      const b = stFaceBasis(f);
+      const pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+      for (let r = 0; r < R; r++) {
+        const t = r / (R - 1);
+        const row = rows[r];
+        for (let i = 0; i < P; i++) {
+          const fx = margin + (i / (P - 1)) * span;
+          const h = row ? row[Math.min(row.length - 1, Math.round((i / (P - 1)) * (row.length - 1)))] : 0;
+          const dd = h * cfg.sleeveRelief;
+          const j = (r * P + i) * 3;
+          pos[j] = b.o[0] + b.u[0] * fx + b.v[0] * t + b.n[0] * dd;
+          pos[j + 1] = b.o[1] + b.u[1] * fx + b.v[1] * t + b.n[1] * dd;
+          pos[j + 2] = b.o[2] + b.u[2] * fx + b.v[2] * t + b.n[2] * dd;
+        }
+      }
+      m.updateVerticesData(BABYLON.VertexBuffer.PositionKind, pos);
+      const nrm = new Float32Array(pos.length);
+      BABYLON.VertexData.ComputeNormals(pos, m.getIndices(), nrm);
+      m.updateVerticesData(BABYLON.VertexBuffer.NormalKind, nrm);
     }
   }
 
@@ -894,8 +1009,12 @@ function stAttach(canvas) {
       buildMist();
       buildCloud();
       buildRing();
+      buildSleeve();
       placeTerrain();
       placeRing();
+      placeSleeve();
+      sleeveMat.diffuseColor = stColor(cfg.sleeveColour, [0.87, 0.91, 0.95]);
+      sleeveMat.emissiveColor = stColor(cfg.sleeveColour, [0.87, 0.91, 0.95]).scale(0.06);
       ring.setEnabled(!!cfg.ringOn);
       ringMat.diffuseColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
       ringMat.emissiveColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]).scale(0.12);

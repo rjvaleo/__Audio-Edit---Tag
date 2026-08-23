@@ -136,14 +136,18 @@ test('the cloud is drawn, not merely counted', async ({ page }) => {
 
 test('the ring is a surface the light runs along', async ({ page }) => {
   await openStage(page);
+  // The rest of the room is switched off, including the sleeve — a scene with
+  // nine objects in it is one where any single object is a rounding error, and
+  // this test is about the ring.
+  //
   // **Asked at a size where the answer is not noise.** At its default the tube is
   // a sixth of the room across and seen down its own axis, so it moves a
   // whole-frame average by about four per cent — which is drawing, but is too
   // close to nothing to assert on. Widened, the same question has an obvious
   // answer, and it is the same ring either way.
   const got = await page.evaluate(`(async () => ({
-    on: await ${RUN}({ ringOn: true, ringSize: 0.5, cloudOn: false, terrainOn: false }),
-    off: await ${RUN}({ ringOn: false, ringSize: 0.5, cloudOn: false, terrainOn: false }),
+    on: await ${RUN}({ ringOn: true, ringSize: 0.5, cloudOn: false, terrainOn: false, sleeveOn: false }),
+    off: await ${RUN}({ ringOn: false, ringSize: 0.5, cloudOn: false, terrainOn: false, sleeveOn: false }),
   }))()`);
 
   // It puts light in the room, and taking it away takes that light with it.
@@ -154,4 +158,27 @@ test('the ring is a surface the light runs along', async ({ page }) => {
   // lamp can find it. A lit tube has a bright side and a dark one, so the
   // brightest pixel is well above the flat colour it is painted in.
   expect(got.on.max, 'the ring is not being lit, only coloured').toBeGreaterThan(150);
+});
+
+test('the sleeve is on the walls, and each face can be taken away', async ({ page }) => {
+  await openStage(page);
+  const bare = { cloudOn: false, ringOn: false, terrainOn: false, mistOn: false };
+  const got = await page.evaluate(`(async () => ({
+    all: await ${RUN}({ ...${JSON.stringify(bare)}, sleeveOn: true, sleeveRelief: 0.5 }),
+    none: await ${RUN}({ ...${JSON.stringify(bare)}, sleeveOn: false }),
+    noBack: await ${RUN}({ ...${JSON.stringify(bare)}, sleeveOn: true, sleeveRelief: 0.5, sleeveBack: false }),
+  }))()`);
+
+  // It is there, and switching the whole thing off takes it away.
+  expect(got.all.mean, 'the sleeve drew nothing')
+    .toBeGreaterThan(got.none.mean * 1.05);
+
+  // **And face by face.** Five surfaces of the same sound look alike from a
+  // distance, so "something is drawn" proves nothing about which. Taking one
+  // away has to change the picture, or they are not five things.
+  expect(Math.abs(got.noBack.mean - got.all.mean), 'the back wall is not its own face')
+    .toBeGreaterThan(0.3);
+
+  // Lit, not merely coloured: a ridge standing off a wall has a bright side.
+  expect(got.all.max, 'the sleeve is not catching any light').toBeGreaterThan(120);
 });
