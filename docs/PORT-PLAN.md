@@ -55,7 +55,7 @@ draws. It is the refactor, and it is the only phase that touches every file.
 **Done when** all fourteen are pickable from the Room, each shows its own
 controls, and every existing test still passes.
 
-### Phase 1 — dissolve the iframe
+### Phase 1 — dissolve the iframe *(the views are in; the document is not out)*
 
 The ten grain views come in-process onto Babylon: one scene, one camera rig, and
 a builder per view. They stop polling for themselves and are fed by the same push
@@ -66,6 +66,21 @@ unified controls, and — for the first time — **the export**. It also takes p
 its 954 KB out of the binary.
 
 **Done when** all ten draw in-process, film, and the iframe and p5 are gone.
+
+**Where it got to.** All ten draw in-process and all ten film, which is the half
+that matters — and it took ten functions rather than a port of 2823 lines,
+because the only thing that ever differed between those views was *where a grain
+goes*. Written as a function from a grain to a place, they are arrangements of
+the one scene. In ten scenes they would have been ten programs.
+
+**The document is still there, and deliberately.** `grain-views.html` and p5 are
+still served and still reachable from the editor's own grain tabs. Deleting them
+is a deletion of 2823 lines of carefully made work in favour of ten short
+functions written this evening — and the person whose work it is has said, of
+the older visualisers, that the originals were the best. That is a judgement to
+be asked for, not assumed. The 954KB stays until it is.
+
+The arrangements are additions. Nothing was taken away to make room for them.
 
 ### Phase 2 — Swarm 2D
 
@@ -100,7 +115,22 @@ rather than forgotten. If it moves, it moves last and only to retire `ridge.js`.
 ### Phase 5 — retire
 
 `vis-gl.js`, `grain-views.html`, `p5.min.js`, and the postMessage bridge come out
-once nothing calls them.
+once nothing calls them — and only once someone has looked at what replaces each
+and said it is better. "Nothing calls it" is a fact about the code; "it is no
+longer worth having" is a judgement about the work, and the second one is not
+mine to make.
+
+### What the stage has, as of the rebuild so far
+
+Nine objects in one scene, every one with a switch and a solo: walls, terrain,
+grains, ring, sleeve, type, mist, fog, and three lamps. Real lighting, real
+exponential fog, a particle system, shadows, ACES tone mapping and bloom.
+
+Controls: fourteen pads for the pairs that are one gesture, sliders for what is
+genuinely one number, all of it generated from a description rather than written
+out by hand — and the picture itself is draggable, which is better than either.
+
+DETAIL is the preview's proxy; the film always draws all of it.
 
 ## What this is not
 
