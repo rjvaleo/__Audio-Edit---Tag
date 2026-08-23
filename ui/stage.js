@@ -240,6 +240,9 @@ const ST_DEFAULTS = {
   floorColour: '#0d1620',
   terrainColour: '#dff0ff',
   mistColour: '#9fc4e0',
+  /// The ring had no colour of its own and borrowed the mist's, which meant the
+  /// palette could not paint it separately from the air.
+  ringColour: '#bcd8ec',
   groundColour: '#000000',
   /// How much of its own light each signal object gives off. This is what makes
   /// a ridge a glowing line rather than a grey surface with a lamp on it.
@@ -288,6 +291,35 @@ const ST_DEFAULTS = {
 
 /// The rate rows arrive at, which is the room's poll rate.
 const ST_PUSH_HZ = 20;
+
+/// The stage's colours, as palette slots.
+///
+/// **Because there is a colour manager and this was ignoring it.** Every other
+/// visual takes its colours from the palette; the stage was carrying its own
+/// defaults, which meant a scheme applied to the room did nothing here and the
+/// two could not be made to match.
+///
+/// Flat colours rather than ramps: these are what a thing *is*, not a value read
+/// against a range. The room's fourteen include ramps because a floor coloured
+/// by frequency is a floor whose colour means something; a wall is just a wall.
+const ST_SLOTS = [
+  { key: 'stageTerrain', label: 'Terrain', row: -1, own: null, css: true, flat: true,
+    hint: 'The stacked lines along the floor. The brightest thing in the scene by default, because it is the sound.' },
+  { key: 'stageSleeve', label: 'Sleeve', row: -1, own: null, css: true, flat: true,
+    hint: 'The stacked lines on the surfaces.' },
+  { key: 'stageRing', label: 'Ring', row: -1, own: null, css: true, flat: true,
+    hint: 'The hoops of the portal.' },
+  { key: 'stageGrains', label: 'Grains', row: -1, own: null, css: true, flat: true,
+    hint: 'Every grain about to sound.' },
+  { key: 'stageMist', label: 'Mist', row: -1, own: null, css: true, flat: true,
+    hint: 'What is floating in the air.' },
+  { key: 'stageType', label: 'Type', row: -1, own: null, css: true, flat: true,
+    hint: 'The words standing in the space.' },
+  { key: 'stageWalls', label: 'Walls', row: -1, own: null, css: true, flat: true,
+    hint: 'The room, when it is switched on at all.' },
+  { key: 'stageGround', label: 'Ground', row: -1, own: null, css: true, flat: true,
+    hint: 'What everything is drawn on, and what the fog is made of. Black is the look; anything else is a mood.' },
+];
 
 /// The ten arrangements of the cloud.
 ///
@@ -1261,7 +1293,7 @@ function stAttach(canvas) {
     ring.updateVerticesData(BABYLON.VertexBuffer.NormalKind, nrm);
     if (ringWire && lp) {
       ringWire.updateVerticesData(BABYLON.VertexBuffer.PositionKind, lp);
-      const c = stRgb(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
+      const c = stRgb(cfg.ringColour, [0.62, 0.77, 0.88]);
       const g = Math.max(0, cfg.glow);
       ringWire.color = new BABYLON.Color3(c[0] * g, c[1] * g, c[2] * g);
     }
@@ -1574,7 +1606,7 @@ function stAttach(canvas) {
       placeType();
       ring.setEnabled(stShows(cfg, 'ringOn'));
       if (ringWire) ringWire.setEnabled(stShows(cfg, 'ringOn') && !!cfg.wire);
-      ringMat.diffuseColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
+      ringMat.diffuseColor = stColor(cfg.ringColour, [0.62, 0.77, 0.88]);
       stepCloud(f);
       cloud.setEnabled(stShows(cfg, 'cloudOn'));
       cloudMat.diffuseColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]);
