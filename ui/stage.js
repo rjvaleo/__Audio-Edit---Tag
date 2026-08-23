@@ -101,18 +101,14 @@ const ST_DEFAULTS = {
   // renderer it is a wireframe shape lit by nothing. Here it is a solid the key
   // light lands on, standing in fog, with the ones nearby bright and the ones at
   // the back nearly gone.
-  /// **Off, because it does not work yet.** The instances are built, bounded and
-  /// counted, the material compiles, and grains are born — and none of them are
-  /// alive by the time a frame is drawn. Left switched on it would be a control
-  /// that does nothing, which is worse than a control that says so.
-  cloudOn: false,
+  cloudOn: true,
   cloudCap: 2200,
-  cloudSize: 0.1,
+  cloudSize: 0.05,
   cloudDrift: 0.1,
   /// How many of the schedule's grains are drawn, as a share. A cloud you can
   /// see through is worth more than one you cannot.
   cloudDensity: 0.55,
-  cloudGlow: 0.7,
+  cloudGlow: 0.4,
   cloudColour: '#ffd9a0',
 
   // ── what it is made of ──
@@ -161,7 +157,7 @@ const ST_PUSH_HZ = 20;
 const ST_OBJECTS = [
   { key: 'shell', label: 'Walls', hint: 'The room itself: five surfaces for the light to land on.' },
   { key: 'terrainOn', label: 'Terrain', hint: 'The sound along the floor, receding as it ages.' },
-  { key: 'cloudOn', label: 'Grains', hint: 'Every grain about to sound, as a lit solid travelling down the room. Unfinished — the grains are born and die before a frame is drawn, so this shows nothing yet.' },
+  { key: 'cloudOn', label: 'Grains', hint: 'Every grain about to sound, as a lit solid travelling down the room.' },
   { key: 'mistOn', label: 'Mist', hint: 'Particles in the air, drifting through the light.' },
   { key: 'fogOn', label: 'Fog', hint: 'The air itself. Thick enough and the back of the room is gone rather than dim.' },
   { key: 'keyOn', label: 'Key light', hint: 'The lamp that makes the form.' },
@@ -526,6 +522,9 @@ function stAttach(canvas) {
   let cloudMx = null;
   let live = [];
   let seen = null;
+  let cloudBorn = 0;
+  let cloudDied = 0;
+  let cloudNow = -1;
 
   function buildCloud() {
     const cap = Math.max(100, Math.min(6000, cfg.cloudCap | 0));
@@ -559,6 +558,7 @@ function stAttach(canvas) {
 
     // A seek, a restart, or the first frame: do not pour the whole file into the
     // room to catch up, because those grains were never heard.
+    cloudNow = now;
     if (seen === null || now < seen || now - seen > 1) seen = now;
 
     if (list && list.length && now > seen) {
@@ -576,7 +576,21 @@ function stAttach(canvas) {
         const hx = ((key & 0xffff) / 0x8000) - 1;
         const hy = (((key >>> 16) & 0xffff) / 0x8000) - 1;
         const k2 = (((e[7] | 0) ^ 0x9e3779b9) * 2246822519) >>> 0;
+        cloudBorn++;
         live.push({
+          // **When it was born, on the playhead's own clock.**
+          //
+          // Age was accumulated per frame before this, which ties how long a
+          // grain lives to how fast the machine draws — and worse, the step was
+          // clamped, so a frame longer than the clamp aged a grain past its whole
+          // life at once. Every grain died on the frame it was born: measured,
+          // four thousand three hundred and ninety-five born and the same number
+          // dead, with never one alive to draw.
+          //
+          // Held as a birth time instead, age is a subtraction. There is no
+          // accumulator to drift, nothing to clamp, and the film — which draws as
+          // fast as it can — gets the same cloud as the room.
+          born: t0,
           // Across is pan, up is pitch, and both are scattered a little so a
           // busy schedule is a cloud rather than a line.
           fx: hx * 0.7 + (e[6] || 0) * 0.3,
@@ -585,7 +599,10 @@ function stAttach(canvas) {
           dy: ((((k2 >>> 16) & 0xffff) / 0x8000) - 1) * cfg.cloudDrift * 0.7,
           age: 0,
           // How long it sounds for decides how far it gets.
-          life: Math.max(0.05, Math.min(1, (e[2] / sr) * 0.6)),
+          // How long it takes to cross the room. Its own length decides it, but
+          // floored well above a grain's actual duration — a twentieth of a
+          // second is a real grain and an invisible streak.
+          life: Math.max(0.6, Math.min(4, (e[2] / sr) * 4)),
           spin: ((k2 & 0xff) / 255) * 6.283,
           size: 0.5 + ((key >>> 8 & 0xff) / 255) * 0.8,
         });
@@ -593,15 +610,19 @@ function stAttach(canvas) {
     }
     seen = now;
 
-    // Move them, and let the old ones go.
-    const step = 1 / 60;
+    // Move them, and let the old ones go. Age is a subtraction from the
+    // playhead, so nothing here depends on how often this is called.
     const hw = cfg.width / 2, hh = cfg.height / 2;
     let n = 0;
     for (let i = 0; i < live.length; i++) {
       const g = live[i];
-      g.age += step / Math.max(0.05, g.life);
-      if (g.age >= 1) continue;
-      if (n >= cap) break;
+      g.age = (now - g.born) / Math.max(0.05, g.life);
+      if (g.age >= 1 || g.age < 0) { cloudDied++; continue; }
+      // **No break here.** This loop is the one that keeps the survivors, and
+      // breaking out of it at the cap threw away every grain after the cut —
+      // which is why a full cloud went from seventeen hundred to none in one
+      // frame rather than thinning. The cap belongs on births, where it is.
+      if (n >= cap) { n = cap; break; }
       const t = g.age;
       const tap = 1 + (cfg.taper - 1) * t;
       const x = (g.fx + g.dx * t) * hw * tap;
@@ -724,6 +745,16 @@ function stAttach(canvas) {
       const want = Math.max(2, Math.min(200, cfg.rows | 0)) + 2;
       while (rows.length > want) rows.pop();
       while (rows.length < want) rows.push(new Float32Array(n));
+    },
+
+    /// What the room is actually doing, for anyone asking from outside.
+    ///
+    /// Not debugging scaffolding: a cloud that is empty and a cloud that is not
+    /// being drawn look identical from the far side of a canvas, and telling
+    /// them apart by reading pixels is guesswork. This says which.
+    stats() {
+      return { rows: rows.length, live: live.length, born: cloudBorn, died: cloudDied,
+        seen, now: cloudNow, cap: cloud ? cloud.__cap : 0 };
     },
 
     frame(f) {
