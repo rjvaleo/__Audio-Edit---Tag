@@ -212,6 +212,103 @@ const ST_OBJECTS = [
   { key: 'rimOn', label: 'Rim', hint: 'From behind, to find the edges.' },
 ];
 
+/// The controls, in groups, with the pairs that are really one gesture given a
+/// pad instead of two sliders.
+///
+/// **A slider is the wrong shape for most of this.** Where the camera stands is
+/// one decision with two numbers in it, and split across two sliders you make it
+/// by alternating between them and watching a third thing — the picture — to see
+/// whether you have arrived. On a pad it is one movement, and the thing you are
+/// steering is under your hand rather than beside it.
+///
+/// So: pads for the pairs, sliders only for what is genuinely one number, and
+/// the whole lot in groups small enough to hold in your head. Forty-four sliders
+/// in a column is a list, and a list is not an instrument.
+const ST_GROUPS = [
+  {
+    key: 'room', label: 'Room',
+    pads: [
+      { x: 'width', y: 'height', label: 'SIZE',
+        hint: 'How wide and how tall, together. Drag.' },
+      { x: 'depth', y: 'taper', label: 'THROAT',
+        hint: 'How far it runs back, against how far the far end draws in. Down and right is a long funnel; up and left is a shallow box.' },
+    ],
+    sliders: [],
+  },
+  {
+    key: 'camera', label: 'Camera',
+    pads: [
+      { x: 'aim', y: 'lift', label: 'VIEW',
+        hint: 'Where the camera stands and what it looks at — one gesture, not two numbers.' },
+      { x: 'eye', y: 'fov', label: 'LENS',
+        hint: 'How far back, against how wide. Close and wide is the inside of the thing; far and narrow is a diagram of it.' },
+    ],
+    sliders: [],
+  },
+  {
+    key: 'light', label: 'Light',
+    pads: [
+      { x: 'keySide', y: 'keyHigh', label: 'KEY',
+        hint: 'Where the main lamp hangs. Drag it around the room.' },
+      { x: 'key', y: 'ambient', label: 'BALANCE',
+        hint: 'The key against the light that comes from nowhere. Right and down is dramatic; left and up is flat.' },
+    ],
+    sliders: ['keyAt', 'fill', 'rim', 'drive'],
+  },
+  {
+    key: 'air', label: 'Air',
+    pads: [
+      { x: 'fogDensity', y: 'mist', label: 'ATMOSPHERE',
+        hint: 'How thick the air is, against how much is floating in it.' },
+    ],
+    sliders: ['mistSize', 'mistDrift'],
+  },
+  {
+    key: 'sound', label: 'Sound',
+    pads: [
+      { x: 'relief', y: 'gain', label: 'TERRAIN',
+        hint: 'How high the floor stands, against how hard the sound drives it.' },
+      { x: 'span', y: 'window', label: 'SHAPE',
+        hint: 'How wide it runs, against how hard it is pulled to the middle.' },
+    ],
+    sliders: ['rows', 'points', 'smooth', 'floorLevel'],
+  },
+  {
+    key: 'grains', label: 'Grains',
+    pads: [
+      { x: 'cloudDensity', y: 'cloudSize', label: 'CLOUD',
+        hint: 'How much of the schedule is drawn, against how big each grain is.' },
+    ],
+    sliders: ['cloudDrift', 'cloudGlow', 'cloudCap'],
+  },
+  {
+    key: 'ring', label: 'Ring',
+    pads: [
+      { x: 'ringSize', y: 'ringDrive', label: 'BORE',
+        hint: 'How wide the tube is, against how hard the sound pushes it out of round.' },
+    ],
+    sliders: ['ringHigh', 'ringRows', 'ringPoints'],
+  },
+  {
+    key: 'sleeve', label: 'Sleeve',
+    pads: [
+      { x: 'sleeveSpan', y: 'sleeveRelief', label: 'STACK',
+        hint: 'How far the lines run across each surface, against how far they stand off it.' },
+    ],
+    sliders: [],
+  },
+  {
+    key: 'look', label: 'Look',
+    pads: [
+      { x: 'exposure', y: 'contrast', label: 'FILM',
+        hint: 'How much light reaches it, against how far apart the lit and unlit are.' },
+      { x: 'bloomAmount', y: 'bloomThreshold', label: 'BLOOM',
+        hint: 'How much the bright parts spill, against how bright a thing has to be before it does.' },
+    ],
+    sliders: ['vignette', 'gridSize', 'gridFade', 'wireWidth', 'shadowSoft'],
+  },
+];
+
 /// The sliders.
 const ST_UI = [
   { key: 'depth', tag: 'DEPTH', min: 2, max: 14, step: 0.1, hint: 'How far the room runs back.' },

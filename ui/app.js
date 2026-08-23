@@ -13432,6 +13432,100 @@ function buildRoom3dPanel() {
 /// room's own panel is a row per control in the markup, which is why adding a
 /// layer to it means editing a panel and why the two could disagree about what
 /// exists.
+/// One control, two numbers.
+///
+/// **A pad, because it is one gesture.** Where the key light hangs is a single
+/// decision with two components; split into two sliders you make it by
+/// alternating between them and checking a third thing to see whether you have
+/// arrived. Here the two axes are under one finger and the thing being steered
+/// is the picture.
+function stagePad(spec, set) {
+  const xDef = ST_UI.find((r) => r.key === spec.x);
+  const yDef = ST_UI.find((r) => r.key === spec.y);
+  if (!xDef || !yDef) return null;
+
+  const wrap = rpEl('div', 'st-pad-wrap');
+  const tag = rpEl('span', 're-tag', spec.label);
+  tag.title = spec.hint;
+  wrap.appendChild(tag);
+
+  const pad = rpEl('div', 'st-pad');
+  pad.title = spec.hint;
+  pad.dataset.stPadX = spec.x;
+  pad.dataset.stPadY = spec.y;
+  const dot = rpEl('div', 'st-pad-dot');
+  pad.appendChild(dot);
+  const read = rpEl('span', 'st-pad-read', '');
+  read.dataset.stPadRead = `${spec.x}|${spec.y}`;
+
+  const frac = (def, v) => (v - def.min) / Math.max(1e-9, def.max - def.min);
+  const val = (def, f) => {
+    const raw = def.min + Math.max(0, Math.min(1, f)) * (def.max - def.min);
+    return def.round ? Math.round(raw) : Math.round(raw / def.step) * def.step;
+  };
+
+  let dragging = false;
+  const put = (e) => {
+    const b = pad.getBoundingClientRect();
+    const fx = (e.clientX - b.left) / b.width;
+    // Up is more. A pad where up means less is a pad nobody trusts.
+    const fy = 1 - (e.clientY - b.top) / b.height;
+    const st = stageSettings();
+    roomEdit.stage = { ...st, [spec.x]: val(xDef, fx), [spec.y]: val(yDef, fy) };
+    saveRoomData();
+    const r = visLive.stage;
+    if (r && r.configure) r.configure(stageSettings());
+    paintStagePanel();
+  };
+  pad.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    pad.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    put(e);
+  });
+  pad.addEventListener('pointermove', (e) => { if (dragging) put(e); });
+  const stop = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try { pad.releasePointerCapture(e.pointerId); } catch {}
+  };
+  pad.addEventListener('pointerup', stop);
+  pad.addEventListener('pointercancel', stop);
+
+  pad.__paint = () => {
+    const st = stageSettings();
+    dot.style.left = `${Math.max(0, Math.min(1, frac(xDef, st[spec.x]))) * 100}%`;
+    dot.style.bottom = `${Math.max(0, Math.min(1, frac(yDef, st[spec.y]))) * 100}%`;
+    const fmt = (d, v) => (d.round ? String(Math.round(v)) : v.toFixed(d.step < 0.01 ? 3 : 2));
+    read.textContent = `${xDef.tag} ${fmt(xDef, st[spec.x])}  ·  ${yDef.tag} ${fmt(yDef, st[spec.y])}`;
+  };
+
+  wrap.appendChild(pad);
+  wrap.appendChild(read);
+  return wrap;
+}
+
+function stageSlider(row, set) {
+  const box = rpEl('div', 're-row');
+  const tag = rpEl('span', 're-tag', row.tag);
+  tag.title = row.hint;
+  box.appendChild(tag);
+  const sl = rpEl('input', 're-slider');
+  sl.type = 'range';
+  const k = row.round ? 1 : 1000;
+  sl.min = String(Math.round(row.min * k));
+  sl.max = String(Math.round(row.max * k));
+  sl.step = String(Math.max(1, Math.round(row.step * k)));
+  sl.dataset.stKey = row.key;
+  sl.title = row.hint;
+  const read = rpEl('span', 'rg-read', '');
+  read.dataset.stRead = row.key;
+  sl.oninput = () => set(row.key, +sl.value / k);
+  box.appendChild(sl);
+  box.appendChild(read);
+  return box;
+}
+
 function buildStagePanel() {
   const host = $('stageEdit');
   if (!host || host.children.length) return;
@@ -13457,25 +13551,30 @@ function buildStagePanel() {
   objRow.appendChild(objBox);
   host.appendChild(objRow);
 
-  for (const row of ST_UI) {
-    const box = rpEl('div', 're-row');
-    const tag = rpEl('span', 're-tag', row.tag);
-    tag.title = row.hint;
-    box.appendChild(tag);
-    const sl = rpEl('input', 're-slider');
-    sl.type = 'range';
-    const k = row.round ? 1 : 1000;
-    sl.min = String(Math.round(row.min * k));
-    sl.max = String(Math.round(row.max * k));
-    sl.step = String(Math.max(1, Math.round(row.step * k)));
-    sl.dataset.stKey = row.key;
-    sl.title = row.hint;
-    const read = rpEl('span', 'rg-read', '');
-    read.dataset.stRead = row.key;
-    sl.oninput = () => set(row.key, +sl.value / k);
-    box.appendChild(sl);
-    box.appendChild(read);
-    host.appendChild(box);
+  // Grouped, and pads before sliders in each group: the pad is the control you
+  // reach for and the sliders under it are the detail.
+  const seen = new Set();
+  for (const g of ST_GROUPS) {
+    const head = rpEl('div', 'st-group');
+    head.textContent = g.label;
+    host.appendChild(head);
+    for (const spec of g.pads || []) {
+      const el = stagePad(spec, set);
+      if (el) { host.appendChild(el); seen.add(spec.x); seen.add(spec.y); }
+    }
+    for (const key of g.sliders || []) {
+      const row = ST_UI.find((r) => r.key === key);
+      if (row) { host.appendChild(stageSlider(row, set)); seen.add(key); }
+    }
+  }
+  // Anything described but not placed in a group still gets a control, so a
+  // setting added without touching the groups is reachable rather than lost.
+  const rest = ST_UI.filter((r) => !seen.has(r.key));
+  if (rest.length) {
+    const head = rpEl('div', 'st-group');
+    head.textContent = 'Other';
+    host.appendChild(head);
+    for (const row of rest) host.appendChild(stageSlider(row, set));
   }
 
   const foot = rpEl('div', 're-row');
@@ -13508,12 +13607,15 @@ function paintStagePanel() {
         : (row.step < 0.01 ? st[row.key].toFixed(3) : st[row.key].toFixed(2));
     }
     // A control for a thing that is switched off says so rather than lying.
-    const owner = { gridSize: 'grid', gridFade: 'grid', wireWidth: 'wire',
+    const owner2 = { gridSize: 'grid', gridFade: 'grid', wireWidth: 'wire',
       shadowSoft: 'shadows', bloomAmount: 'bloom', bloomThreshold: 'bloom',
       fogDensity: 'fogOn', mist: 'mistOn', mistSize: 'mistOn', mistDrift: 'mistOn',
       key: 'keyOn', keySide: 'keyOn', keyHigh: 'keyOn', keyAt: 'keyOn',
       fill: 'fillOn', rim: 'rimOn' }[row.key];
-    if (owner) sl.closest('.re-row').classList.toggle('dim-block', !st[owner]);
+    if (owner2) sl.closest('.re-row').classList.toggle('dim-block', !st[owner2]);
+  }
+  for (const pad of host.querySelectorAll('.st-pad')) {
+    if (pad.__paint) pad.__paint();
   }
 }
 
