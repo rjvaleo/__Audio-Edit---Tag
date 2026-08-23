@@ -51,14 +51,14 @@ const ST_DEFAULTS = {
   // Three: a key that makes the form, a fill that stops the dark going black,
   // and a rim from behind that finds the edges. It is the ordinary way to light
   // anything and it is ordinary because it works.
-  ambient: 0.32,
+  ambient: 0.5,
   keyOn: true,
   key: 2.6,
   keyAt: 0.22,
-  keySide: -0.55,
+  keySide: -0.35,
   keyHigh: 0.75,
   fillOn: true,
-  fill: 0.55,
+  fill: 0.9,
   rimOn: true,
   rim: 1.4,
   /// The key light answering the sound rather than sitting still. Nought is a
@@ -106,6 +106,27 @@ const ST_DEFAULTS = {
   terrainColour: '#cfe0ee',
   mistColour: '#9fc4e0',
   groundColour: '#05080c',
+
+  // ── how well it is drawn ──
+  //
+  // The first pass had lights and nothing for them to find: flat diffuse on flat
+  // planes reads as coloured cardboard however well it is lit. Definition comes
+  // from detail at three scales — a grain in the surface, a line on the form,
+  // and a falloff at the edges — and none of those are lighting.
+  grid: true,
+  gridSize: 24,
+  gridFade: 0.55,
+  wire: true,
+  wireWidth: 1.4,
+  shadows: true,
+  shadowSoft: 32,
+  bloom: true,
+  bloomAmount: 0.55,
+  bloomThreshold: 0.62,
+  vignette: 0.45,
+  contrast: 1.35,
+  exposure: 1.05,
+  fxaa: true,
 };
 
 /// The rate rows arrive at, which is the room's poll rate.
@@ -157,6 +178,17 @@ const ST_UI = [
   { key: 'smooth', tag: 'SMOOTH', min: 0, max: 8, step: 1, round: true, hint: 'Across the samples of a row.' },
   { key: 'gain', tag: 'GAIN', min: 0.1, max: 4, step: 0.05, hint: 'How hard the sound drives it.' },
   { key: 'floorLevel', tag: 'SILENCE', min: 0, max: 0.05, step: 0.001, hint: 'Below this is drawn flat.' },
+  { key: 'gridSize', tag: 'GRID', min: 2, max: 80, step: 1, round: true,
+    hint: 'How fine the ruling on the walls is. It is what gives the room a size — a plain surface in perspective could be a metre away or a mile.' },
+  { key: 'gridFade', tag: 'GRID FADE', min: 0, max: 1, step: 0.01, hint: 'How strongly the ruling shows.' },
+  { key: 'wireWidth', tag: 'WIRE', min: 0.2, max: 4, step: 0.1,
+    hint: 'The bright line along the terrain’s ridges, over the lit surface. The old room was only ever this line; here it is the highlight on a solid.' },
+  { key: 'shadowSoft', tag: 'SHADOW', min: 0, max: 64, step: 1, round: true, hint: 'How soft the key light’s shadows are. At nought they are hard.' },
+  { key: 'bloomAmount', tag: 'BLOOM', min: 0, max: 2, step: 0.02, hint: 'How much the bright parts spill.' },
+  { key: 'bloomThreshold', tag: 'BLOOM AT', min: 0, max: 1, step: 0.01, hint: 'How bright a thing has to be before it spills.' },
+  { key: 'contrast', tag: 'CONTRAST', min: 0.5, max: 3, step: 0.01, hint: 'How far apart the lit and the unlit are.' },
+  { key: 'exposure', tag: 'EXPOSURE', min: 0.2, max: 3, step: 0.01, hint: 'How much light reaches the film.' },
+  { key: 'vignette', tag: 'VIGNETTE', min: 0, max: 1.5, step: 0.01, hint: 'How far the corners fall off.' },
 ];
 
 function stRgb(hex, fallback) {
@@ -195,6 +227,23 @@ function stAttach(canvas) {
   camera.minZ = 0.01;
   camera.maxZ = 200;
 
+  // ── how it is drawn ──
+  //
+  // **Four samples, then a pipeline.** Without multisampling every edge in here
+  // is a staircase, and a room is nothing but edges. Without tone mapping the
+  // lit parts clip to flat white and the unlit parts crush to flat black, which
+  // is most of why the first pass read as cardboard: there was no middle.
+  //
+  // The bloom is not decoration. The look this program has always had is light
+  // that spills, and on the old renderer that came free from additive blending;
+  // on a lit renderer it has to be asked for, or the bright ridges are merely
+  // pale rather than glowing.
+  let pipe = null;
+  try {
+    pipe = new BABYLON.DefaultRenderingPipeline('stpipe', true, scene, [camera]);
+    pipe.samples = 4;
+  } catch (e) { pipe = null; }
+
   // ── the lamps ──
   //
   // Real lights, which is the whole point. `HemisphericLight` is the ambient —
@@ -202,8 +251,22 @@ function stAttach(canvas) {
   // rim. Their intensities are set every frame from the settings, so moving a
   // slider moves the light rather than rebuilding anything.
   const amb = new BABYLON.HemisphericLight('stamb', new BABYLON.Vector3(0, 1, 0), scene);
-  const key = new BABYLON.PointLight('stkey', new BABYLON.Vector3(-1, 1, 1), scene);
-  const fill = new BABYLON.HemisphericLight('stfill', new BABYLON.Vector3(0, -1, 0), scene);
+  // A spot rather than a bare point, because a point light cannot cast a
+  // shadow cheaply and shadows are most of what "definition" means: a thing
+  // with no shadow is a thing that is not standing anywhere.
+  const key = new BABYLON.SpotLight('stkey', new BABYLON.Vector3(-1, 1, 1),
+    new BABYLON.Vector3(0.3, -0.4, 1), Math.PI * 0.9, 2, scene);
+  let shadowGen = null;
+  try {
+    shadowGen = new BABYLON.ShadowGenerator(1024, key);
+    shadowGen.useBlurExponentialShadowMap = true;
+    shadowGen.blurKernel = 32;
+  } catch (e) { shadowGen = null; }
+  // Opposite the key and low, so the wall the key misses is *modelled* rather
+  // than merely lifted off black. A single ambient makes the dark side flat; a
+  // second lamp makes it a surface facing away from the light, which is a
+  // different and much better-looking thing.
+  const fill = new BABYLON.HemisphericLight('stfill', new BABYLON.Vector3(1, 0.4, -0.3), scene);
   const rim = new BABYLON.DirectionalLight('strim', new BABYLON.Vector3(0, -0.2, -1), scene);
 
   let cfg = { ...ST_DEFAULTS };
@@ -215,6 +278,50 @@ function stAttach(canvas) {
   let lastPushAt = 0;
   let everPushed = false;
   let level = 0;
+
+  // ── a ruling for the walls ──
+  //
+  // **A plain surface in perspective has no size.** It could be a metre away or
+  // a mile; there is nothing in it to measure against. A ruling gives the room a
+  // scale, and it is the single biggest thing between "coloured cardboard" and
+  // "a room" — more than the lights, which had nothing to land on that showed
+  // they had landed.
+  //
+  // Drawn, not fetched: nothing here loads a file.
+  let gridTex = null;
+  function buildGrid() {
+    const n = Math.max(2, Math.min(80, cfg.gridSize | 0));
+    const k = `${n}|${cfg.gridFade}|${cfg.wallColour}`;
+    if (gridTex && gridTex.__k === k) return gridTex;
+    if (gridTex) gridTex.dispose();
+    const S = 512;
+    const t = new BABYLON.DynamicTexture('stgrid', { width: S, height: S }, scene, true);
+    const g = t.getContext();
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, S, S);
+    const step = S / n;
+    g.strokeStyle = `rgba(0,0,0,${0.55 * cfg.gridFade})`;
+    g.lineWidth = 1;
+    for (let i = 0; i <= n; i++) {
+      const at = Math.round(i * step) + 0.5;
+      g.beginPath(); g.moveTo(at, 0); g.lineTo(at, S); g.stroke();
+      g.beginPath(); g.moveTo(0, at); g.lineTo(S, at); g.stroke();
+    }
+    // Every fifth heavier, so the eye can count without being told to.
+    g.strokeStyle = `rgba(0,0,0,${0.9 * cfg.gridFade})`;
+    g.lineWidth = 2;
+    for (let i = 0; i <= n; i += 5) {
+      const at = Math.round(i * step) + 0.5;
+      g.beginPath(); g.moveTo(at, 0); g.lineTo(at, S); g.stroke();
+      g.beginPath(); g.moveTo(0, at); g.lineTo(S, at); g.stroke();
+    }
+    t.update();
+    t.__k = k;
+    t.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+    t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+    gridTex = t;
+    return t;
+  }
 
   // ── the shell ──
   const shellMat = new BABYLON.StandardMaterial('stshell', scene);
@@ -233,29 +340,37 @@ function stAttach(canvas) {
     // taper, so the room converges before the lens does anything.
     const near = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
     const far = near.map(([x, y]) => [x * t, y * t]);
-    const pos = [], idx = [], nrm = [];
-    const quad = (a, b, c, e) => {
+    const pos = [], idx = [], nrm = [], uvs = [];
+    const quad = (a, b, c, e, us, vs) => {
       const base = pos.length / 3;
       for (const p of [a, b, c, e]) pos.push(p[0], p[1], p[2]);
+      // Measured in room units rather than nought-to-one, so the ruling is the
+      // same size on a long wall as on a short one — stretched to fit, a grid
+      // says the opposite of what a grid is for.
+      uvs.push(0, 0, us, 0, us, vs, 0, vs);
       idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     };
     for (let i = 0; i < 4; i++) {
       const [nx0, ny0] = near[i], [nx1, ny1] = near[(i + 1) % 4];
       const [fx0, fy0] = far[i], [fx1, fy1] = far[(i + 1) % 4];
-      quad([nx0, ny0, 0], [nx1, ny1, 0], [fx1, fy1, d], [fx0, fy0, d]);
+      const across = Math.hypot(nx1 - nx0, ny1 - ny0);
+      quad([nx0, ny0, 0], [nx1, ny1, 0], [fx1, fy1, d], [fx0, fy0, d], across, d);
     }
     // And the back.
     quad([far[0][0], far[0][1], d], [far[1][0], far[1][1], d],
-      [far[2][0], far[2][1], d], [far[3][0], far[3][1], d]);
+      [far[2][0], far[2][1], d], [far[3][0], far[3][1], d],
+      cfg.width * t, cfg.height * t);
     shell = new BABYLON.Mesh('stshellmesh', scene);
     const vd = new BABYLON.VertexData();
     vd.positions = pos;
     vd.indices = idx;
+    vd.uvs = uvs;
     BABYLON.VertexData.ComputeNormals(pos, idx, nrm);
     vd.normals = nrm;
     vd.applyToMesh(shell, true);
     shell.material = shellMat;
     shell.isPickable = false;
+    shell.receiveShadows = true;
   }
 
   // ── the terrain ──
@@ -264,6 +379,11 @@ function stAttach(canvas) {
   terrMat.backFaceCulling = false;
   let terr = null;
   let terrKey = '';
+  let wire = null;
+  const wireMat = new BABYLON.StandardMaterial('stwiremat', scene);
+  wireMat.wireframe = true;
+  wireMat.disableLighting = true;
+  wireMat.backFaceCulling = false;
 
   function buildTerrain() {
     const R = Math.max(2, Math.min(200, cfg.rows | 0));
@@ -288,6 +408,25 @@ function stAttach(canvas) {
     vd.applyToMesh(terr, true);
     terr.material = terrMat;
     terr.isPickable = false;
+    if (shadowGen) shadowGen.addShadowCaster(terr);
+
+    // **The line follows the rows, not every edge of every triangle.**
+    //
+    // Babylon's `wireframe` draws the mesh's own triangulation, which on a grid
+    // this fine is two diagonals per square and reads as moiré — noise, at any
+    // distance, and worse the further away it is. The look this program has
+    // always had is one line per row of sound, and that is also the only version
+    // of it that survives perspective.
+    if (wire) wire.dispose();
+    const lines = [];
+    for (let r = 0; r < R; r++) {
+      const one = [];
+      for (let i = 0; i < P; i++) one.push(new BABYLON.Vector3(0, 0, 0));
+      lines.push(one);
+    }
+    wire = BABYLON.MeshBuilder.CreateLineSystem('stwire', { lines, updatable: true }, scene);
+    wire.isPickable = false;
+    wire.__R = R; wire.__P = P;
   }
 
   function placeTerrain() {
@@ -325,6 +464,17 @@ function stAttach(canvas) {
     const nrm = new Float32Array(pos.length);
     BABYLON.VertexData.ComputeNormals(pos, idx, nrm);
     terr.updateVerticesData(BABYLON.VertexBuffer.NormalKind, nrm);
+    if (wire) {
+      // The line sits a shade above the surface it belongs to, or the two argue
+      // for the depth buffer and the ridge comes out dashed.
+      const lp = new Float32Array(R * P * 3);
+      for (let i = 0; i < R * P; i++) {
+        lp[i * 3] = pos[i * 3];
+        lp[i * 3 + 1] = pos[i * 3 + 1] + 0.006;
+        lp[i * 3 + 2] = pos[i * 3 + 2];
+      }
+      wire.updateVerticesData(BABYLON.VertexBuffer.PositionKind, lp);
+    }
   }
 
   // ── the mist ──
@@ -426,6 +576,22 @@ function stAttach(canvas) {
 
       shell.setEnabled(!!cfg.shell);
       terr.setEnabled(!!cfg.terrainOn);
+      if (wire) {
+        wire.setEnabled(!!cfg.terrainOn && !!cfg.wire);
+        const wc = stRgb(cfg.terrainColour, [1, 1, 1]);
+        wire.color = new BABYLON.Color3(wc[0], wc[1], wc[2]);
+        wire.alpha = Math.max(0.05, Math.min(1, cfg.wireWidth / 2));
+      }
+      // The ruling, and the shadows it helps you read.
+      shellMat.diffuseTexture = cfg.grid ? buildGrid() : null;
+      if (shellMat.diffuseTexture) {
+        shellMat.diffuseTexture.uScale = 1;
+        shellMat.diffuseTexture.vScale = 1;
+      }
+      if (shadowGen) {
+        shadowGen.blurKernel = Math.max(1, cfg.shadowSoft);
+        shadowGen.getShadowMap().renderList = cfg.shadows && cfg.terrainOn ? [terr] : [];
+      }
       shellMat.diffuseColor = stColor(cfg.wallColour, [0.14, 0.21, 0.27]);
       // A little of its own, or the walls are a hole behind the terrain: a lamp
       // inside a room only lights what it reaches, and the corners it does not
@@ -460,6 +626,12 @@ function stAttach(canvas) {
         cfg.keyAt * cfg.depth,
       );
       key.range = cfg.depth * 3;
+      // Aimed at the middle of the room from wherever it hangs, so moving it
+      // swings the light across the walls rather than merely relocating a glow.
+      const aimAt = new BABYLON.Vector3(0, -cfg.height * 0.2, cfg.depth * 0.5);
+      key.direction = aimAt.subtract(key.position).normalize();
+      key.angle = Math.PI * 0.85;
+      key.exponent = 1.5;
       fill.intensity = cfg.fill;
       fill.diffuse = stColor(cfg.floorColour, [0.2, 0.3, 0.4]);
       rim.intensity = cfg.rim;
@@ -482,6 +654,32 @@ function stAttach(canvas) {
         mist.color1 = new BABYLON.Color4(c[0], c[1], c[2], 0.22);
         mist.color2 = new BABYLON.Color4(c[0], c[1], c[2], 0.06);
         mist.colorDead = new BABYLON.Color4(c[0], c[1], c[2], 0);
+      }
+
+      // ── the film ──
+      //
+      // Tone mapping first, because without it the lit parts clip to white and
+      // the unlit crush to black, and everything between — which is where form
+      // lives — is thrown away.
+      if (pipe) {
+        pipe.fxaaEnabled = !!cfg.fxaa;
+        pipe.bloomEnabled = !!cfg.bloom;
+        pipe.bloomWeight = cfg.bloomAmount;
+        pipe.bloomThreshold = cfg.bloomThreshold;
+        pipe.bloomKernel = 48;
+        pipe.imageProcessingEnabled = true;
+        const ip = pipe.imageProcessing;
+        if (ip) {
+          ip.toneMappingEnabled = true;
+          ip.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
+          ip.exposure = cfg.exposure;
+          ip.contrast = cfg.contrast;
+          ip.vignetteEnabled = cfg.vignette > 0;
+          ip.vignetteWeight = cfg.vignette * 4;
+          ip.vignetteStretch = 0.4;
+          ip.vignetteColor = new BABYLON.Color4(ground[0], ground[1], ground[2], 0);
+          ip.vignetteBlendMode = BABYLON.ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
+        }
       }
 
       // ── the camera ──
