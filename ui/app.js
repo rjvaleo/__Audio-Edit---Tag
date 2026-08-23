@@ -13211,8 +13211,29 @@ function room3dSettings() {
 }
 
 /// The rebuild. See `docs/PORT-PLAN.md`.
+/// **The palette wins over the defaults.** The colours in `ST_DEFAULTS` are where
+/// a scheme starts from, not what it is stuck with — a slot the palette has been
+/// given a colour for overrides the default, and one left inheriting keeps it.
+/// Without this the colour manager applied to the stage did nothing at all,
+/// which is a control that lies.
 function stageSettings() {
-  return { ...ST_DEFAULTS, ...(roomEdit.stage || {}) };
+  const base = { ...ST_DEFAULTS, ...(roomEdit.stage || {}) };
+  if (typeof ST_SLOTS === 'undefined' || typeof rpSlot !== 'function') return base;
+  const painted = {
+    stageTerrain: 'terrainColour',
+    stageSleeve: 'sleeveColour',
+    stageRing: 'ringColour',
+    stageGrains: 'cloudColour',
+    stageMist: 'mistColour',
+    stageType: 'typeColour',
+    stageWalls: 'wallColour',
+    stageGround: 'groundColour',
+  };
+  for (const [slot, key] of Object.entries(painted)) {
+    const c = rpSlot(slot);
+    if (c && c.mode === 'flat' && c.colour) base[key] = c.colour;
+  }
+  return base;
 }
 
 /// The card of type. See `docs/ROOM-TEXT.md`.

@@ -513,3 +513,49 @@ test('the ten grain views are arrangements of the one cloud', async ({ page }) =
     seen.set(sig, k);
   }
 });
+
+test('the palette paints the stage', async ({ page }) => {
+  await openStage(page);
+  const slots = await page.evaluate(() => rpSlots().map((s) => s.key));
+  // Its own eight, not the room's fourteen and not the flat stack's three. It
+  // is neither of those, and offering it either one's slots is offering controls
+  // that paint nothing — which is what it did: a scheme applied while the stage
+  // was up changed the room and left the stage exactly as it was.
+  expect(slots).toContain('stageTerrain');
+  expect(slots).toContain('stageGround');
+  expect(slots, 'the stage is being offered the flat stack’s slots')
+    .not.toContain('ridgeLine');
+
+  const got = await page.evaluate(async () => {
+    const before = stageSettings().terrainColour;
+    rpSetSlot('stageTerrain', { mode: 'flat', colour: '#ff2200' });
+    const after = stageSettings().terrainColour;
+
+    // And it has to reach the picture, not merely the settings.
+    const r = visLive.stage;
+    const s = { ...stageSettings(), solo: 'terrainOn' };
+    r.configure(s); r.clear();
+    const bands = new Float32Array(128).fill(-18);
+    for (let i = 0; i < 40; i++) r.push(bands, new Float32Array(2048));
+    for (let k = 0; k < 18; k++) {
+      r.frame({ stage: s, stagePaint: ridgePaint(), clock: 5 + k * 0.033 });
+      await new Promise((res) => requestAnimationFrame(res));
+    }
+    const c = document.getElementById('visStage');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    const buf = new Uint8Array(c.width * c.height * 4);
+    gl.readPixels(0, 0, c.width, c.height, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let red = 0;
+    for (let i = 0; i < buf.length; i += 4) {
+      if (buf[i] > 80 && buf[i+1] < 70 && buf[i+2] < 70) red++;
+    }
+    rpSetSlot('stageTerrain', { mode: 'inherit' });
+    return { before, after, red, back: stageSettings().terrainColour };
+  });
+
+  expect(got.after, 'the palette did not reach the settings').toBe('#ff2200');
+  expect(got.red, 'the palette did not reach the picture').toBeGreaterThan(1000);
+  // A slot left inheriting keeps the default: the colours in ST_DEFAULTS are
+  // where a scheme starts from, not what it is stuck with.
+  expect(got.back, 'inheriting did not go back to the default').toBe(got.before);
+});
