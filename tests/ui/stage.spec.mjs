@@ -86,19 +86,32 @@ const RUN = `(async (patch, opts) => {
     mean: +(sum / (c.width * c.height)).toFixed(1), max, stats: r.stats() };
 })`;
 
-test('the room is lit, and the light can be turned off', async ({ page }) => {
+test('the sound is what gives off the light', async ({ page }) => {
   await openStage(page);
   const got = await page.evaluate(`(async () => ({
     lit: await ${RUN}({}),
-    dark: await ${RUN}({ keyOn: false, fillOn: false, rimOn: false, ambient: 0, cloudOn: false }),
+    noGlow: await ${RUN}({ glow: 0 }),
+    noLamps: await ${RUN}({ keyOn: false, fillOn: false, rimOn: false, ambient: 0 }),
   }))()`);
 
-  // **Lamps that do something.** Every renderer before this drew lines that emit
-  // their own light, where switching the lighting off is not a question that can
-  // be asked. Here it is, and the answer has to be darkness.
-  expect(got.lit.mean, 'the room is not lit').toBeGreaterThan(12);
-  expect(got.dark.mean, 'putting every lamp out changed nothing')
-    .toBeLessThan(got.lit.mean * 0.6);
+  expect(got.lit.mean, 'nothing was drawn at all').toBeGreaterThan(4);
+
+  // **GLOW is the picture.** This started out the other way round — lamps
+  // pointed at the sound — and the result was a lit grey object in a lit grey
+  // room, with the walls the most prominent thing in frame. Correct, and
+  // rudimentary. The look this program has always had is that the signal emits
+  // and nothing else does, so taking the glow away has to take the picture with
+  // it.
+  expect(got.noGlow.mean, 'the glow is not what is drawing the picture')
+    .toBeLessThan(got.lit.mean * 0.55);
+
+  // And the lamps are for modelling the grains, not for lighting the scene —
+  // putting them out dims the solids and leaves the glowing lines alone. A test
+  // that demanded darkness here would be describing the version that was wrong.
+  expect(got.noLamps.mean, 'the lamps do nothing at all')
+    .toBeLessThan(got.lit.mean);
+  expect(got.noLamps.mean, 'the lamps are still lighting the whole room')
+    .toBeGreaterThan(got.lit.mean * 0.3);
 });
 
 test('the cloud fills and empties rather than filling up', async ({ page }) => {
@@ -119,6 +132,9 @@ test('the cloud fills and empties rather than filling up', async ({ page }) => {
 });
 
 test('the cloud is drawn, not merely counted', async ({ page }) => {
+  // Two runs of real frames through a ten-mesh scene: slower than the default
+  // allows, and measuring fewer frames would weaken the thing being measured.
+  test.setTimeout(90_000);
   await openStage(page);
   const got = await page.evaluate(`(async () => ({
     on: await ${RUN}({ cloudOn: true }, { frames: 40 }),
