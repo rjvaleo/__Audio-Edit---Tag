@@ -3316,23 +3316,3 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* The visual picker. Fourteen of them live on a bar one line tall, so it is a
    menu — a row of buttons wrapped out of sight the first time this shipped. */
 .vis-pick-sel { max-width: 170px; }
-
-/* The page is older than the server. Deliberately hard to miss and deliberately
-   not a modal: it interrupts nothing, and reloading stays the reader's choice —
-   a page that reloaded itself mid-render would be its own kind of rude. */
-.stale-build {
-  position: fixed;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  border-radius: 8px;
-  background: var(--warn, #b8860b);
-  color: #0b0e12;
-  font: 600 12px/1 var(--mono, ui-monospace, SFMono-Regular, monospace);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
-}

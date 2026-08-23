@@ -187,8 +187,6 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/edit") => api_edit_apply(app, req),
         ("POST", "/api/measure") => api_measure(app, req),
         ("POST", "/api/export") => api_export(app, req),
-        // Which build this is. See `api_build`.
-        ("GET", "/api/build") => api_build(),
         ("GET", "/api/export") => api_export_status(app),
         ("POST", "/api/export/stop") => api_export_stop(app),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
@@ -2345,34 +2343,6 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
 }
 
 /// Render the edited result to a new file. Never writes over the source.
-/// Which build of the interface this server is holding.
-///
-/// **Because a page does not know it is out of date.** Everything here is
-/// embedded in the binary, so restarting the server changes what it serves — but
-/// a tab that is already open keeps running the JavaScript it loaded, and
-/// `Cache-Control: no-store` does not help with that: it stops the browser
-/// *storing* a copy, not the page that is already running from carrying on.
-///
-/// The cost of that is not theoretical. Whole stretches of an evening have gone
-/// into chasing a fault that was fixed, rebuilt and restarted, and was still on
-/// screen because the tab had not been reloaded — with the person looking at it
-/// perfectly reasonably concluding the fix had not worked.
-///
-/// So the interface asks, and says so when the answer changes. A hash of what is
-/// actually being served, rather than a version number somebody has to remember
-/// to raise.
-fn api_build() -> Response {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    // The three that decide what the interface *is*. A change to any of them is
-    // a change an already-open page cannot see.
-    UI_HTML.hash(&mut h);
-    UI_JS.hash(&mut h);
-    UI_CSS.hash(&mut h);
-    Response::json(Value::obj().set("build", format!("{:016x}", h.finish())).to_string())
-}
-
 fn api_export_status(app: &Arc<App>) -> Response {
     let e = &app.export;
     let done = e.done.load(Ordering::Relaxed);
