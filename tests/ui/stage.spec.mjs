@@ -133,3 +133,25 @@ test('the cloud is drawn, not merely counted', async ({ page }) => {
   expect(got.on.mean, 'the cloud put no light in the room')
     .toBeGreaterThan(got.off.mean * 1.05);
 });
+
+test('the ring is a surface the light runs along', async ({ page }) => {
+  await openStage(page);
+  // **Asked at a size where the answer is not noise.** At its default the tube is
+  // a sixth of the room across and seen down its own axis, so it moves a
+  // whole-frame average by about four per cent — which is drawing, but is too
+  // close to nothing to assert on. Widened, the same question has an obvious
+  // answer, and it is the same ring either way.
+  const got = await page.evaluate(`(async () => ({
+    on: await ${RUN}({ ringOn: true, ringSize: 0.5, cloudOn: false, terrainOn: false }),
+    off: await ${RUN}({ ringOn: false, ringSize: 0.5, cloudOn: false, terrainOn: false }),
+  }))()`);
+
+  // It puts light in the room, and taking it away takes that light with it.
+  expect(got.on.mean, 'the ring drew nothing').toBeGreaterThan(got.off.mean * 1.1);
+
+  // **A surface, not a stack of hoops.** The old room draws the Lissajous as
+  // wire, which cannot catch a highlight; the point of moving it here is that a
+  // lamp can find it. A lit tube has a bright side and a dark one, so the
+  // brightest pixel is well above the flat colour it is painted in.
+  expect(got.on.max, 'the ring is not being lit, only coloured').toBeGreaterThan(150);
+});

@@ -111,6 +111,26 @@ const ST_DEFAULTS = {
   cloudGlow: 0.4,
   cloudColour: '#ffd9a0',
 
+  // ── the ring ──
+  //
+  // The Lissajous, hung in the room with depth as time — every frame's figure
+  // kept and the run of them joined into a tube. On the old renderer it is a
+  // stack of wire hoops; here it is a surface, so the light runs along it and
+  // the shape of the sound is something you read off the highlight rather than
+  // off a tangle of lines.
+  ringOn: true,
+  ringRows: 90,
+  ringPoints: 128,
+  /// **Narrow, and hung high.** The tube runs away from the camera, so seen down
+  /// its own axis a wide one is a disc filling the room rather than a tube going
+  /// anywhere. Small enough to read as a bore, and lifted clear of the terrain
+  /// so both can be seen at once.
+  ringSize: 0.16,
+  ringAt: 0.42,
+  ringHigh: 0.52,
+  /// How hard the sound pushes it out of round.
+  ringDrive: 1,
+
   // ── what it is made of ──
   //
   // **Its own colours, not the flat stack's.** Borrowing those gave a wall
@@ -158,6 +178,7 @@ const ST_OBJECTS = [
   { key: 'shell', label: 'Walls', hint: 'The room itself: five surfaces for the light to land on.' },
   { key: 'terrainOn', label: 'Terrain', hint: 'The sound along the floor, receding as it ages.' },
   { key: 'cloudOn', label: 'Grains', hint: 'Every grain about to sound, as a lit solid travelling down the room.' },
+  { key: 'ringOn', label: 'Ring', hint: 'The Lissajous hung in the room, every frame of it joined into a tube with depth as time.' },
   { key: 'mistOn', label: 'Mist', hint: 'Particles in the air, drifting through the light.' },
   { key: 'fogOn', label: 'Fog', hint: 'The air itself. Thick enough and the back of the room is gone rather than dim.' },
   { key: 'keyOn', label: 'Key light', hint: 'The lamp that makes the form.' },
@@ -202,6 +223,11 @@ const ST_UI = [
   { key: 'cloudDrift', tag: 'GRAIN DRIFT', min: 0, max: 1, step: 0.01, hint: 'How far a grain wanders as it travels.' },
   { key: 'cloudGlow', tag: 'GRAIN GLOW', min: 0, max: 1.5, step: 0.01, hint: 'How much light a grain gives off of its own, before the lamps touch it.' },
   { key: 'cloudCap', tag: 'GRAIN CAP', min: 100, max: 6000, step: 100, round: true, hint: 'The most that will ever be in the room at once.' },
+  { key: 'ringSize', tag: 'RING', min: 0.05, max: 1.5, step: 0.01, hint: 'How wide the tube is.' },
+  { key: 'ringDrive', tag: 'RING DRIVE', min: 0, max: 4, step: 0.02, hint: 'How hard the sound pushes it out of round.' },
+  { key: 'ringHigh', tag: 'RING HIGH', min: -1, max: 1, step: 0.01, hint: 'How high it hangs.' },
+  { key: 'ringRows', tag: 'RING ROWS', min: 8, max: 240, step: 1, round: true, hint: 'How far back it goes, in frames of sound.' },
+  { key: 'ringPoints', tag: 'RING FINE', min: 16, max: 512, step: 8, round: true, hint: 'How finely each hoop is drawn.' },
   { key: 'gridSize', tag: 'GRID', min: 2, max: 80, step: 1, round: true,
     hint: 'How fine the ruling on the walls is. It is what gives the room a size — a plain surface in perspective could be a metre away or a mile.' },
   { key: 'gridFade', tag: 'GRID FADE', min: 0, max: 1, step: 0.01, hint: 'How strongly the ruling shows.' },
@@ -297,6 +323,7 @@ function stAttach(canvas) {
   let paint = { line: '#eceff2', fill: '#12202c', background: '#05080c' };
 
   let rows = [];
+  let hoops = [];
   let ceiling = 1e-4;
   let clockNow = 0;
   let lastPushAt = 0;
@@ -499,6 +526,79 @@ function stAttach(canvas) {
       }
       wire.updateVerticesData(BABYLON.VertexBuffer.PositionKind, lp);
     }
+  }
+
+  // ── the ring ──
+  //
+  // A tube: one hoop per frame of sound, the run of them joined into a surface.
+  // Built once at a size and then only its positions rewritten, like everything
+  // else here — rebuilding a mesh every frame is how an engine is made slower
+  // than the hand-written thing it replaced.
+  const ringMat = new BABYLON.StandardMaterial('stringmat', scene);
+  ringMat.specularColor = new BABYLON.Color3(0.15, 0.15, 0.15);
+  ringMat.backFaceCulling = false;
+  let ring = null;
+  let ringKey = '';
+
+  function buildRing() {
+    const R = Math.max(2, Math.min(400, cfg.ringRows | 0));
+    const P = Math.max(16, Math.min(512, cfg.ringPoints | 0));
+    const k = `${R}|${P}`;
+    if (k === ringKey && ring) return;
+    ringKey = k;
+    if (ring) ring.dispose();
+    const idx = [];
+    for (let r = 0; r < R - 1; r++) {
+      for (let i = 0; i < P; i++) {
+        // Wrapped, because a hoop closes: the last point joins the first, and
+        // without that the tube has a seam running down its length.
+        const j = (i + 1) % P;
+        const a = r * P + i, b = r * P + j, c = (r + 1) * P + i, d = (r + 1) * P + j;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+    ring = new BABYLON.Mesh('stringmesh', scene);
+    const vd = new BABYLON.VertexData();
+    vd.positions = new Float32Array(R * P * 3);
+    vd.indices = idx;
+    vd.normals = new Float32Array(R * P * 3);
+    vd.applyToMesh(ring, true);
+    ring.material = ringMat;
+    ring.isPickable = false;
+  }
+
+  function placeRing() {
+    if (!ring) return;
+    const R = Math.max(2, Math.min(400, cfg.ringRows | 0));
+    const P = Math.max(16, Math.min(512, cfg.ringPoints | 0));
+    const pos = ring.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+    const hh = cfg.height / 2;
+    const cy = cfg.ringHigh * hh;
+    for (let r = 0; r < R; r++) {
+      const t = r / (R - 1);
+      const tap = 1 + (cfg.taper - 1) * t;
+      const h = hoops[r];
+      for (let i = 0; i < P; i++) {
+        const a = (i / P) * Math.PI * 2;
+        // The hoop is a circle pushed out of round by what the two channels
+        // were doing: the figure is the deviation, not the shape itself, so a
+        // silent room is a clean tube rather than nothing at all.
+        const L = h ? h[i * 2] : 0;
+        const Rr = h ? h[i * 2 + 1] : 0;
+        const push = (L + Rr) * 0.5 * cfg.ringDrive;
+        const rad = cfg.ringSize * tap * (1 + push);
+        const j = (r * P + i) * 3;
+        pos[j] = Math.cos(a) * rad;
+        pos[j + 1] = cy * tap + Math.sin(a) * rad;
+        // Starting a little way in: a hoop at the very mouth of the room is
+        // inches from the lens and swallows the frame.
+        pos[j + 2] = cfg.ringAt * cfg.depth * 0.35 + t * cfg.depth * 0.8;
+      }
+    }
+    ring.updateVerticesData(BABYLON.VertexBuffer.PositionKind, pos);
+    const nrm = new Float32Array(pos.length);
+    BABYLON.VertexData.ComputeNormals(pos, ring.getIndices(), nrm);
+    ring.updateVerticesData(BABYLON.VertexBuffer.NormalKind, nrm);
   }
 
   // ── the cloud ──
@@ -712,6 +812,7 @@ function stAttach(canvas) {
 
     clear() {
       rows = [];
+      hoops = [];
       ceiling = 1e-4;
       clockNow = 0;
       lastPushAt = 0;
@@ -738,6 +839,23 @@ function stAttach(canvas) {
       for (let i = 0; i < n; i++) v[i] *= k * gate;
       // What the light answers, smoothed so a lamp does not stutter.
       level = level * 0.8 + Math.min(1, peak / Math.max(1e-4, ceiling)) * 0.2;
+
+      // The figure of this instant, resampled to the tube's own fineness. Kept
+      // beside the row rather than derived later: a Lissajous is what the two
+      // channels were doing *then*, and there is no way back to it afterwards.
+      const rp = Math.max(16, Math.min(512, cfg.ringPoints | 0));
+      const hoop = new Float32Array(rp * 2);
+      if (pairs && pairs.length >= 4) {
+        const m = pairs.length / 2;
+        for (let i = 0; i < rp; i++) {
+          const k = Math.min(m - 1, Math.round((i / rp) * m));
+          hoop[i * 2] = pairs[k * 2];
+          hoop[i * 2 + 1] = pairs[k * 2 + 1];
+        }
+      }
+      hoops.unshift(hoop);
+      const wantH = Math.max(2, Math.min(400, cfg.ringRows | 0)) + 1;
+      while (hoops.length > wantH) hoops.pop();
 
       rows.unshift(v);
       lastPushAt = clockNow;
@@ -775,7 +893,12 @@ function stAttach(canvas) {
       buildTerrain();
       buildMist();
       buildCloud();
+      buildRing();
       placeTerrain();
+      placeRing();
+      ring.setEnabled(!!cfg.ringOn);
+      ringMat.diffuseColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]);
+      ringMat.emissiveColor = stColor(cfg.ringColour || cfg.mistColour, [0.62, 0.77, 0.88]).scale(0.12);
       stepCloud(f);
       cloud.setEnabled(!!cfg.cloudOn);
       cloudMat.diffuseColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]);
