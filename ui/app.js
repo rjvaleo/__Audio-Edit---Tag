@@ -13736,7 +13736,16 @@ function visGlTick() {
       sc.width = Math.round(sw * sdpr);
       sc.height = Math.round(sh * sdpr);
     }
-    sr.frame({ stage: stageSettings(), stagePaint: ridgePaint() });
+    // The schedule, so the cloud has something to be. Handed over the same way
+    // the room is handed it — see `docs/PORT-PLAN.md`.
+    sr.frame({
+      stage: stageSettings(),
+      stagePaint: ridgePaint(),
+      grains: (state.swarm?.grains?.length ? state.swarm : state.grains)?.grains || null,
+      grainRate: state.grains?.sampleRate || 44100,
+      position: engine.position || 0,
+      positionRate: engine.deviceRate || state.grains?.sampleRate || 44100,
+    });
     paintRoomText();
     return;
   }
