@@ -7601,6 +7601,10 @@ try {
   // remembered, stored, and then silently dropped on the way back in — the app
   // opened on the room every time with nothing on screen to say why.
   if (VIS_MODULE_KEYS.includes(v.module)) roomEdit.module = v.module;
+  // The visual, which may be a grain view and so is not one of the module keys.
+  // Left as it is found and checked against the registry when it is read — the
+  // registry is not loaded yet here, and reaching for it would throw.
+  if (typeof v.visual === 'string') roomEdit.visual = v.visual;
   if (v.ridge && typeof v.ridge === 'object') roomEdit.ridge = { ...v.ridge };
   if (typeof v.fog === 'boolean') roomEdit.fog = v.fog;
   if (typeof v.fogType === 'number') roomEdit.fogType = Math.max(0, Math.min(3, v.fogType | 0));
@@ -7632,7 +7636,7 @@ function saveRoomData() {
       geomRidge: roomEdit.geomRidge,
       geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
       module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
-      room3d: roomEdit.room3d,
+      room3d: roomEdit.room3d, visual: roomEdit.visual,
       grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
       ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
       leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
@@ -8337,6 +8341,130 @@ function visRenderer() {
   return visLive[m.key];
 }
 
+/// The picker: everything there is, grouped by what it is looking at.
+///
+/// **Built from `VIS_ALL`.** The old one listed `VIS_MODULES`, which knew only
+/// about the three on the master bus — the eleven grain views were reachable
+/// from a different panel in a different workspace, and nothing anywhere listed
+/// the fourteen together. See `docs/PORT-PLAN.md`.
+function buildVisModulePicker() {
+  const box = $('rgModules');
+  if (!box || box.children.length) return;
+  for (const fam of VIS_FAMILIES) {
+    const head = rpEl('span', 're-tag vis-fam', fam.label);
+    head.title = fam.hint;
+    box.appendChild(head);
+    for (const v of visFamily(fam.key)) {
+      const b = rpEl('button', 're-btn', v.label);
+      b.dataset.visual = v.key;
+      // What it is, and honestly what draws it. The state of the port is worth
+      // being readable off the interface rather than out of a document.
+      b.title = `${v.hint}\n\n${v.engine}${v.films ? ' · films' : ' · does not film yet'}`;
+      b.onclick = () => setVisual(v.key);
+      box.appendChild(b);
+    }
+  }
+  paintVisModulePicker();
+}
+
+function paintVisModulePicker() {
+  const box = $('rgModules');
+  if (!box) return;
+  const on = visualKey();
+  for (const b of box.querySelectorAll('[data-visual]')) {
+    b.classList.toggle('active', b.dataset.visual === on);
+  }
+}
+
+/// Which visual is on screen, as the registry knows it.
+function visualKey() {
+  const v = visEntry(roomEdit.visual);
+  if (v) return v.key;
+  // Nothing chosen, or a key stored before this list existed: fall back to
+  // whichever bus module was remembered, which used to be the whole question.
+  return visModuleKey();
+}
+
+/// Show one visual, whichever family it belongs to.
+///
+/// **The one way in.** `setVisModule` still exists and still does the right
+/// thing for the three on the master bus, but it cannot reach the grain views —
+/// they are in another element and, for now, another document. This is what the
+/// interface calls; it works out which host belongs on the stage and puts it
+/// there.
+function setVisual(key) {
+  const v = visEntry(key) || VIS_ALL[0];
+  roomEdit.visual = v.key;
+  saveRoomData();
+  showStageFamily(v.family);
+  if (v.family === 'bus') {
+    setVisModule(v.key);
+  } else {
+    if (typeof setGrainSuite === 'function' && v.suite) setGrainSuite(v.suite);
+    if (typeof setGrainView === 'function') setGrainView(v.view);
+  }
+  paintVisModulePicker();
+}
+
+/// Put the right host on the room's stage.
+///
+/// The two families live in two elements — `masterBus` and `grainVis` — and only
+/// one can be on the stage at a time. Borrowed with `roomAdopt`, so each goes
+/// home to the exact place it came from: the same machinery the workspace has
+/// always used for the bus.
+function showStageFamily(family) {
+  const view = $('roomView');
+  if (!view || view.classList.contains('hidden')) return;
+  for (const fam of VIS_FAMILIES) {
+    const el = $(fam.host);
+    if (!el) continue;
+    if (fam.key === family) {
+      roomAdopt(fam.host, 'roomStageRoom');
+      visUnhide(el);
+    } else if (el.parentElement && el.parentElement.id === 'roomStageRoom') {
+      // Sent home rather than hidden in place: left on the stage it keeps its
+      // box, and the next thing adopted stacks underneath it.
+      const home = roomBorrowed.get(fam.host);
+      if (home && home.parent) home.parent.insertBefore(el, home.next);
+      roomBorrowed.delete(fam.host);
+      visRehide(el);
+    }
+  }
+}
+
+/// `hidden`, taken off and put back exactly.
+///
+/// **The class is load-bearing somewhere else.** `#grainVis` ships hidden, and
+/// the dock's stylesheet reads that:
+///
+///     .tray-right > .grain-vis.hidden + .master-bus { flex: 1 1 auto; }
+///
+/// — the master bus is only given its size *while the grain views are hidden*.
+/// Borrowing the grain views onto the room's stage and stripping `hidden` to
+/// show them therefore resizes something in a workspace you are not even
+/// looking at, and leaves it resized, because nothing ever put the class back.
+/// The visual panel in the editor collapsed and stayed collapsed.
+///
+/// So it is restored rather than assumed: what was hidden goes back to hidden
+/// when it goes home. A class that only says "not on screen" is safe to toggle;
+/// this one is also a selector somebody else depends on, and there is no way to
+/// tell which from the name.
+const VIS_WAS_HIDDEN = new WeakSet();
+
+function visUnhide(el) {
+  if (el.classList.contains('hidden')) {
+    VIS_WAS_HIDDEN.add(el);
+    el.classList.remove('hidden');
+  }
+}
+
+function visRehide(el) {
+  if (VIS_WAS_HIDDEN.has(el)) {
+    el.classList.add('hidden');
+    VIS_WAS_HIDDEN.delete(el);
+  }
+}
+
 /// Switch module. The sound keeps arriving either way — `mbTick` pushes at the
 /// meter's rate to whichever is chosen, so the one you switch to fills up from
 /// the moment you arrive rather than showing you the last four seconds of
@@ -8508,6 +8636,13 @@ function leaveRoomView() {
   $('textEdit')?.classList.add('hidden');
   $('ridgeEdit')?.classList.add('hidden');
   $('room3dEdit')?.classList.add('hidden');
+  // Whatever was borrowed onto the stage goes home hidden if that is how it was
+  // found. `roomReleaseAll` above puts it back in the tree; this puts its class
+  // back, and the dock's layout depends on that class — see `visRehide`.
+  for (const fam of VIS_FAMILIES) {
+    const el = $(fam.host);
+    if (el) visRehide(el);
+  }
   $('masterBus')?.classList.remove('room-editing');
   $('roomEditOpen')?.classList.remove('on');
   applyRoomFrame();
