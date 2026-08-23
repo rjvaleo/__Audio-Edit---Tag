@@ -131,18 +131,48 @@ mist atmospheric. The sound loudest, everything else supporting it.
 `ST_LAYOUTS`. Ten placements — a function from a grain to a place — each a few
 lines.
 
-**They are not the ten grain views, and the theory that said they were is wrong.**
-The claim was that placement was the only thing that ever differed between those
-views. Side by side it does not survive a glance: the p5 Mandala is a dense
-radial weave and this one is a scatter of dots in the same arrangement. What
-placement leaves out is the stroke, the accumulation and the density, and those
-are most of the picture. See `docs/PORT-PLAN.md` — Phase 1 is open again because
-of it.
+**They were not the ten grain views, and the theory that said they were is
+wrong.** The claim was that placement was the only thing that ever differed
+between those views. Side by side it did not survive a glance: the p5 Mandala is
+a dense radial weave and the arrangement was a scatter of dots in the same
+positions. What placement leaves out is the stroke, the accumulation and the
+density, and those are most of the picture. See `docs/PORT-PLAN.md`.
 
-What they are is the stage's cloud, laid out ten ways, lit and filmable. Their
-test fingerprints where the ink falls and fails if any two are the same picture,
-which is a check that ten names are not aliases for one layout — a much smaller
-claim than the one that was made for them.
+**Mandala is now a port; the other nine are still arrangements.** A ported layout
+carries a `project` and a `ported` flag, and the cloud is drawn by the stroke
+renderer below rather than as solids. Nine still carry only `at`, and are the
+stage's cloud laid out that way — lit and filmable, and not as good as what they
+are named after.
+
+Their test fingerprints where the ink falls and fails if any two are the same
+picture, which is a check that ten names are not aliases for one layout — a much
+smaller claim than the one that was made for them.
+
+## The cloud drawn as strokes
+
+**A grain is a tick, not a dot**, and this is the single largest difference
+between an arrangement and the view it is named after. A dot carries a position
+and nothing else; a stroke carries how long the grain lasts in its length and
+what rate it reads at in its tilt — two more facts about the sound, in the mark,
+at no cost in clutter. Billboarded, so both read from any angle.
+
+**Additive, on black, with no lighting and no depth writing.** The density is the
+accumulation: overlapping strokes sum, and where the cloud piles up the picture
+goes white without anything being told to be brighter. Lit solids cannot do this
+— a solid in front of a solid is one solid — which is why the same grains drawn
+as objects came out countable.
+
+**The moment, not the object.** A ported view reads a window of the schedule
+either side of the playhead rather than remembering grains as they are born, so
+the grains that have *not sounded yet* are in the picture too. The birth-and-age
+cloud has no future in it, and for a view whose whole claim is the present
+blooming outward in both directions that is half the picture missing.
+
+**The kaleidoscope is where the density comes from.** The cloud is placed once
+and written *k* times under a rotation and an alternating flip — the symmetry is
+a property of the looking rather than of the sound. Flipped then turned, in that
+order: turning first and flipping the result puts each pair of folds on top of
+one another, and twelve of them read as six.
 
 ## Traps met along the way
 
@@ -171,6 +201,27 @@ nothing at all — no frames, no pixels, and a screenshot showing whatever was l
 composited. Every symptom of a dead renderer, from a renderer that is perfectly
 alive and correctly not wasting work on a page nobody is looking at. Check
 `document.hidden` before concluding anything from a pane.
+
+**Listing `world0`..`world3` in a `ShaderMaterial`'s attributes.** Babylon adds
+them itself for a mesh with thin instances; listing them as well puts each name
+in the effect twice, and the duplicate takes the attribute location the first was
+bound to. The material compiles, `isReady` is true, the mesh is walked, its
+`render` is called without throwing — and nothing is drawn. Every check green and
+no picture.
+
+**A stroke width is a number of pixels, not a size in the room.** The old
+renderers set these with `strokeWeight`. Carried across as world units they came
+out at two millimetres in a four-metre room, which is under a pixel — and
+measured against the canvas *buffer* height rather than its CSS height they are
+half that again on any retina display.
+
+**A hidden pane does not composite at all.** Not merely no `requestAnimationFrame`
+— no frames, so a screenshot returns whatever was last on screen, and `readPixels`
+on a context without `preserveDrawingBuffer` returns a stale buffer that does not
+change however many times the scene is rendered. Both lie, and both lie
+*consistently*, which is what makes them convincing. To actually see what the
+renderer made: render, then `toDataURL` the canvas in the same synchronous turn,
+and put the result in an `<img>`.
 
 **A grain's age is a subtraction from the playhead**, not an accumulator stepped
 per frame. An accumulator ties how long a grain lives to how fast the machine

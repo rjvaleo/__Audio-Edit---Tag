@@ -389,6 +389,28 @@ const ST_LAYOUTS = [
   {
     key: 'mandala', label: 'Mandala', suite: 2,
     hint: 'Now is the centre. A grain’s distance from the middle is its distance from this instant, so the present blooms outward both ways at once.',
+    // **Ported, not approximated.** The first version of this placed a grain by
+    // its own age and a hash, which is a different quantity entirely: age runs
+    // one way and only forwards, so the cloud could only ever bloom outward in
+    // one direction and half the picture was missing. This is the projection out
+    // of `visualiser/grain-views.html` — `projectV2` case 1 — with the same
+    // numbers, and `ported` is what says the tick renderer draws it rather than
+    // the solid cloud.
+    //
+    //   angle   one wedge of the fold, turning slowly. Anything wider than the
+    //           wedge lands on top of its own reflection.
+    //   radius  how far this grain is from *now*, in either direction.
+    //   depth   what it is reading, lifted, less how far out of tune it is.
+    ported: true,
+    project: (g, k) => {
+      const th = g.c * k.wedge + k.spin * 0.35;
+      const rad = k.R * (0.06 + 0.94 * Math.abs(g.w));
+      return [
+        Math.cos(th) * rad,
+        Math.sin(th) * rad,
+        g.amp * k.H * 0.85 * 0.55 - g.pn * k.H * 0.3,
+      ];
+    },
     at: (g, t, w, h, d) => {
       const a = g.seed * Math.PI * 2 + g.pitch * 3;
       const r = Math.abs(t - 0.5) * 2;
@@ -426,6 +448,72 @@ const ST_LAYOUTS = [
 
 function stLayout(key) {
   return ST_LAYOUTS.find((l) => l.key === key) || ST_LAYOUTS[0];
+}
+
+/// How many colours a cloud is spread across.
+const ST_CBINS = 14;
+
+// ── what a view looks like, not just where its grains go ──
+//
+// **The placement was never the picture.** Ten short `at` functions were written
+// on the theory that the only thing separating the grain views was where a grain
+// goes; put the two Mandalas side by side and that is plainly false. The p5 one
+// is a dense radial weave and the arrangement was a scatter of lit dots in the
+// same positions. What placement leaves out is the stroke, the accumulation and
+// the density, and between them they are most of what you are looking at.
+//
+// So a ported view carries its look as well: the three colours its palette is
+// built from, how many times the cloud is folded, and how much light it gives
+// off. These are the numbers out of `visualiser/grain-views.html` — the `LOOKS`
+// table there — and they are not defaults to be improved on. They are the view.
+const ST_LOOKS = {
+  mandala: { palette: ['#b388eb', '#8093f1', '#f7aef8'], mirror: 12, glow: 1.6, trail: 0.65 },
+};
+
+/// Fourteen colours across the three the view is built from.
+///
+/// The middle colour is the midpoint rather than a third of the way along, so
+/// the ramp reads as two joined gradients — which is what makes a palette of
+/// three sit in a picture as a range instead of as three stripes.
+function stRamp(hexes, n) {
+  const at = (h) => stRgb(h, [1, 1, 1]);
+  const a = at(hexes[0]), b = at(hexes[1]), d = at(hexes[2]);
+  const mix = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    out.push(t < 0.5 ? mix(a, b, t * 2) : mix(b, d, (t - 0.5) * 2));
+  }
+  return out;
+}
+
+/// How long a grain's stroke is, from how long it sounds for.
+///
+/// Absolute and log-scaled rather than relative to the window asked for. Measured
+/// against its own window every grain draws the same tick and the size slider
+/// does nothing at all; measured against the engine's whole range a five
+/// millisecond grain is a speck and a two second one is a streak.
+function stTickScale(seconds) {
+  const lo = Math.log(0.004), hi = Math.log(2.2);
+  const s = Math.max(0.004, Math.min(2.2, seconds));
+  return 0.22 + ((Math.log(s) - lo) / (hi - lo)) * 2.9;
+}
+
+/// A grain's own amplitude envelope, at this instant, plus its afterimage.
+///
+/// The Hann window the renderer actually applies to that grain — so what glows
+/// is a readout of the audio and the picture cannot disagree with the sound. The
+/// tail is the one honest embellishment: the grain has finished and is making no
+/// sound, and the decay is there so the eye can see where the playhead has been.
+function stEnergy(dt, dur, trail) {
+  const d = Math.max(dur, 1e-9);
+  const phase = dt / d;
+  if (phase < 0) return 0;
+  if (phase <= 1) return 0.5 - 0.5 * Math.cos(Math.PI * 2 * phase);
+  if (trail <= 0) return 0;
+  const tail = Math.max(d * 5 * trail, 0.05);
+  const k = (dt - d) / tail;
+  return k >= 1 ? 0 : (1 - k) * (1 - k) * 0.55 * trail;
 }
 
 /// Whether an object draws, given what is soloed.
@@ -1472,6 +1560,306 @@ function stAttach(canvas) {
     cloud.isVisible = n > 0;
   }
 
+
+  // ── the cloud, as strokes ──
+  //
+  // **A grain is a tick, not a dot.** This is the single largest difference
+  // between the arrangements and the views they were named after, and it is why
+  // the first attempt read as a scatter: a dot carries a position and nothing
+  // else, while a stroke carries how long the grain lasts in its length and what
+  // rate it reads at in its tilt. Two more facts about the sound, in the mark
+  // itself, at no cost in clutter.
+  //
+  // Billboarded, so both read from any angle — the length is the length whatever
+  // the camera is doing, rather than foreshortening away the moment the view
+  // turns.
+  //
+  // **Additive, on black.** The density is the accumulation. Every renderer this
+  // program has had glows because overlapping strokes sum, and where the cloud
+  // piles up the picture goes white without anything being told to be brighter.
+  // Drawn as lit solids the same grains cannot pile up — a solid in front of a
+  // solid is one solid — so the cloud came out as countable objects, which is
+  // exactly what it is not.
+  //
+  // A shader rather than a standard material, because what is wanted here is
+  // *no* lighting, a per-instance colour, and a soft edge, and a lit material
+  // asked for all three is a material fighting its own defaults. See the note on
+  // per-instance colour buffers in `docs/STAGE.md`.
+  const ST_TICK_VERT = `
+    precision highp float;
+    attribute vec3 position;
+    attribute vec2 uv;
+    attribute vec4 gcol;
+    #include<instancesDeclaration>
+    uniform mat4 viewProjection;
+    varying vec2 vUV;
+    varying vec4 vCol;
+    void main(void) {
+      #include<instancesVertex>
+      vUV = uv;
+      vCol = gcol;
+      gl_Position = viewProjection * finalWorld * vec4(position, 1.0);
+    }`;
+  const ST_TICK_FRAG = `
+    precision highp float;
+    varying vec2 vUV;
+    varying vec4 vCol;
+    void main(void) {
+      // Across the stroke, a falloff rather than an edge — a hard-edged
+      // rectangle reads as a rectangle at any size, and what is wanted is a
+      // stroke. Along it, eased at the two ends so a tick has ends rather
+      // than corners.
+      float across = 1.0 - abs(vUV.y * 2.0 - 1.0);
+      float along = 1.0 - pow(abs(vUV.x * 2.0 - 1.0), 4.0);
+      float a = pow(max(across, 0.0), 0.9) * max(along, 0.0);
+      if (a <= 0.003) discard;
+      gl_FragColor = vec4(vCol.rgb, vCol.a * a);
+    }`;
+  BABYLON.Effect.ShadersStore.stgraintickVertexShader = ST_TICK_VERT;
+  BABYLON.Effect.ShadersStore.stgraintickFragmentShader = ST_TICK_FRAG;
+
+  const tickMat = new BABYLON.ShaderMaterial('sttickmat', scene, 'stgraintick', {
+    // **The instance attributes are not listed here.** Babylon appends
+    // `world0`..`world3` itself when a mesh has thin instances; listing them as
+    // well puts each name in the effect twice, and the duplicate takes the
+    // attribute location the first one was bound to. What comes out is a mesh
+    // that compiles, reports ready, is walked, is submitted and draws nothing —
+    // every check green and no picture.
+    attributes: ['position', 'uv', 'gcol'],
+    uniforms: ['world', 'viewProjection'],
+    needAlphaBlending: true,
+  });
+  tickMat.backFaceCulling = false;
+  tickMat.alphaMode = BABYLON.Constants.ALPHA_ADD;
+  // **Additive and depth-blind, both.** Ticks that write depth occlude each
+  // other, and a cloud whose strokes hide one another is the countable-objects
+  // picture again by another route. Nothing here is solid; it is light.
+  tickMat.disableDepthWrite = true;
+  tickMat.needAlphaBlending = () => true;
+
+  let ticks = null;
+  let tickMx = null;
+  let tickCol = null;
+  let tickCap = 0;
+  /// How many times the last frame folded the cloud, so a count of strokes can
+  /// be turned back into a count of grains.
+  let tickFolds = 1;
+  /// The grain handed to a projection, reused every time round the loop.
+  const gs = { c: 0.5, w: 0, amp: 0, pn: 0 };
+
+  function buildTicks(cap) {
+    if (ticks && tickCap === cap) return;
+    if (ticks) ticks.dispose();
+    ticks = BABYLON.MeshBuilder.CreatePlane('sttick', { size: 1 }, scene);
+    ticks.material = tickMat;
+    ticks.isPickable = false;
+    ticks.alwaysSelectAsActiveMesh = true;
+    // Nothing behind it and nothing in front: it is drawn last, over the lit
+    // scene, the way additive ink goes on last.
+    ticks.renderingGroupId = 1;
+    tickCap = cap;
+    tickMx = new Float32Array(cap * 16);
+    tickCol = new Float32Array(cap * 4);
+    ticks.thinInstanceSetBuffer('matrix', tickMx, 16, false);
+    ticks.thinInstanceSetBuffer('gcol', tickCol, 4, false);
+    // The base shape draws itself at the origin at full size when there are no
+    // instances — one enormous grain filling the room. See `docs/STAGE.md`.
+    ticks.thinInstanceCount = 0;
+    ticks.isVisible = false;
+  }
+
+  /// What the whole schedule looks like, measured once rather than assumed.
+  ///
+  /// The colour coordinate is a grain's pitch stretched across the range *this
+  /// cloud* actually uses. Against the engine's theoretical ±48 semitones a
+  /// couple of semitones of jitter — which is a lot to listen to — spans a
+  /// fiftieth of the palette and the cloud comes out monochrome.
+  let schedStats = null;
+  let schedFor = null;
+
+  function statsFor(list) {
+    if (schedFor === list && schedStats) return schedStats;
+    schedFor = list;
+    let lo = Infinity, hi = -Infinity, amp = 1e-6, size = 0, n = 0;
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i][3] || 0;
+      if (p < lo) lo = p;
+      if (p > hi) hi = p;
+      if ((list[i][4] || 0) > amp) amp = list[i][4];
+      size += list[i][2] || 0;
+      n++;
+    }
+    if (!n) { lo = 0; hi = 0; }
+    schedStats = { lo, span: hi - lo, amp, size: n ? size / n : 0 };
+    return schedStats;
+  }
+
+  /// The moment, drawn.
+  ///
+  /// **Every position is a function of `tOut - now`**, so the present is the
+  /// origin by construction and the cloud is always centred. That is what makes
+  /// this a picture of an instant rather than of a file: it draws the grains
+  /// that are *about* to sound as well as the ones that have, which is the whole
+  /// of "blooming outward in both directions at once" and the half the
+  /// birth-and-age cloud can never show — it has no future in it.
+  function stepTicks(f, lay) {
+    const list = (f && f.grains) || null;
+    const sr = (f && f.grainRate) || 44100;
+    const now = ((f && f.position) || 0) / ((f && f.positionRate) || sr);
+    const look = ST_LOOKS[lay.key] || {};
+    const k = Math.max(1, Math.round(look.mirror || 6));
+    tickFolds = k;
+    const cap = stDetail(cfg, cfg.cloudCap | 0, 100, 6000) * k;
+    buildTicks(cap);
+    if (!list || !list.length) { ticks.isVisible = false; return; }
+
+    const st = statsFor(list);
+    // How far ahead or behind a grain still counts as part of this moment.
+    // Outside it nothing is drawn: from inside a moment you cannot see the whole
+    // piece, and pretending otherwise is a different picture.
+    const H = Math.max((st.size / sr) * 14, 1.6);
+    const ramp = stRamp(look.palette || ['#b388eb', '#8093f1', '#f7aef8'], ST_CBINS);
+    const glow = Math.max(0, cfg.cloudGlow) * (look.glow || 1);
+    const trail = look.trail == null ? 0.5 : look.trail;
+    // **How big the disc is, against the frame it has to fit in.**
+    //
+    // The original sets this to a fifth of its camera distance and frames the
+    // view at three and a half times the radius, so the disc fills most of the
+    // height. Carried over as a fraction of the *room* it came out at nearly
+    // twice the camera's distance from the origin — a mandala the frame was
+    // standing inside, with the middle of it behind the eye.
+    const R = Math.min(cfg.width, cfg.height) * 0.28;
+    const HH = cfg.height * 0.55;
+
+    // Screen-space basis, so a stroke is legible whatever the camera is doing.
+    const fwd = camera.getForwardRay ? camera.getForwardRay().direction : new BABYLON.Vector3(0, 0, 1);
+    const upW = new BABYLON.Vector3(0, 1, 0);
+    let rgt = BABYLON.Vector3.Cross(upW, fwd);
+    if (rgt.lengthSquared() < 1e-6) rgt = new BABYLON.Vector3(1, 0, 0);
+    rgt.normalize();
+    const up = BABYLON.Vector3.Cross(fwd, rgt).normalize();
+    const nrm = fwd;
+    // **A stroke is a width on the screen, not a size in the room.**
+    //
+    // The original sets these with `strokeWeight`, which is pixels — a couple of
+    // pixels for a grain merely present and five for one sounding. Written as
+    // world units instead they came out at two millimetres in a four-metre room,
+    // which is under a pixel: every tick was there, every tick was drawn, and
+    // nothing was visible. So the conversion is explicit — how much of the world
+    // one pixel covers at this distance through this lens — and every number
+    // below is the original's, in the original's units.
+    //
+    // Against the canvas's *CSS* height, not its buffer height. On a retina
+    // display the buffer is twice the size, so measured against that every
+    // stroke comes out half the width the original draws, which on a two pixel
+    // line is the difference between a stroke and nothing at all.
+    const dist = BABYLON.Vector3.Distance(camera.position, BABYLON.Vector3.Zero());
+    const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+    const cssH = Math.max(1, engine.getRenderHeight() / dpr);
+    const wpp = (2 * dist * Math.tan(cfg.fov / 2)) / cssH;
+    const wedge = (Math.PI * 2) / k;
+    const spin = now * 0.55;
+    const ctx = { R, H: HH, wedge, spin, now };
+
+    let n = 0;
+    for (let i = 0; i < list.length && n + k <= cap; i++) {
+      const e = list[i];
+      const dt = e[0] / sr - now;
+      if (dt > H || dt < -H) continue;
+      // Thinned by the grain's own number, not by taking every n-th: a periodic
+      // schedule sampled at a fixed interval beats against itself and comes out
+      // banded rather than thinner. See the same note on the solid cloud.
+      const key = (e[7] | 0) * 2654435761 >>> 0;
+      if ((key & 0xffff) / 0x10000 > cfg.cloudDensity) continue;
+
+      const dur = (e[2] || 0) / sr;
+      // **A grain that has not sounded yet is still drawn.** It is dark — the
+      // dimmest of the three tiers — but it is there, and it is half of what
+      // this view is: the present blooming outward in both directions at once.
+      // Culled on energy, only the past survived and the picture was a half
+      // moon of ink with nothing coming.
+      const en = stEnergy(-dt, dur, trail);
+
+      // What every ported projection reads, in one object that is filled and
+      // refilled rather than built per grain — this loop runs over the whole
+      // schedule on every frame, and a fresh pair of objects a grain is a few
+      // thousand allocations a frame for nothing.
+      //
+      //   c    where this grain sits in the palette, by pitch
+      //   w    how far it is from now, signed: −1 gone, 0 now, +1 coming
+      //   amp  how loud the stretch of source it reads is
+      //   pn   how far out of tune it is
+      gs.c = st.span > 1e-9 ? ((e[3] || 0) - st.lo) / st.span : 0.5;
+      gs.w = Math.max(-1, Math.min(1, dt / H));
+      gs.amp = Math.min(1, (e[4] || 0) / st.amp);
+      gs.pn = Math.max(-1, Math.min(1, (e[3] || 0) / 48));
+      const at = lay.project(gs, ctx);
+
+      // The mark itself: length is how long the grain lasts, tilt is what rate
+      // it reads at, and both are facts about the sound rather than decoration.
+      // Length in pixels, the way the original sets it: a five millisecond grain
+      // is a speck and a two second one is a streak, and the run between them is
+      // logarithmic so the window slider moves it visibly at every setting.
+      const L = 14 * stTickScale(dur) * wpp;
+      const semis = e[3] || 0;
+      const tilt = Math.max(-2.2, Math.min(2.2, semis / 12)) * 0.62;
+      const ca = Math.cos(tilt), sa = Math.sin(tilt);
+      const dxv = rgt.x * ca + up.x * sa, dyv = rgt.y * ca + up.y * sa, dzv = rgt.z * ca + up.z * sa;
+      const pxv = -rgt.x * sa + up.x * ca, pyv = -rgt.y * sa + up.y * ca, pzv = -rgt.z * sa + up.z * ca;
+
+      // Three tiers, dimmest first — the sounding grains sit on top of the ones
+      // merely present, which is what makes overlap legible as brightness.
+      const ei = en > 0.55 ? 2 : (en > 0.08 ? 1 : 0);
+      // Never thinner than a pixel and a bit. A stroke narrower than the screen
+      // can draw is not a faint stroke, it is an absent one — and the whole
+      // cloud went missing that way while every tick was present and correct.
+      const wgt = Math.max(1.6, (ei === 0 ? 3.8 : (ei === 1 ? 5.6 : 9.5)) * 0.9) * wpp;
+      const alpha = Math.min(1, (ei === 0 ? 0.35 : (ei === 1 ? 0.65 : 0.92)) * glow);
+      const ci = Math.max(0, Math.min(ST_CBINS - 1, Math.floor(gs.c * ST_CBINS)));
+      const col = ramp[ci];
+
+      // The kaleidoscope. The cloud is placed once and written k times under a
+      // rotation and an alternating flip — the symmetry is a property of the
+      // looking rather than of the sound, which is exactly what it should be,
+      // and it is where the density comes from. Twelve folds is twelve times the
+      // ink for one pass over the schedule.
+      for (let s = 0; s < k; s++) {
+        const a = (s * Math.PI * 2) / k + now * 0.12;
+        const cr = Math.cos(a), sr2 = Math.sin(a);
+        // **Flipped, then turned** — the order the original applies them in, and
+        // not a detail: turning first and flipping the result reflects every
+        // other wedge about the wrong axis, so the folds land on top of one
+        // another and twelve of them read as six.
+        const fl = (s & 1) ? -1 : 1;
+        const rot = (x, y) => { const yy = y * fl; return [x * cr - yy * sr2, x * sr2 + yy * cr]; };
+        const p = rot(at[0], at[1]);
+        const d2 = rot(dxv, dyv);
+        const q2 = rot(pxv, pyv);
+        const nn2 = rot(nrm.x, nrm.y);
+        const m = n * 16;
+        tickMx[m] = d2[0] * L; tickMx[m + 1] = d2[1] * L; tickMx[m + 2] = dzv * L; tickMx[m + 3] = 0;
+        tickMx[m + 4] = q2[0] * wgt; tickMx[m + 5] = q2[1] * wgt; tickMx[m + 6] = pzv * wgt; tickMx[m + 7] = 0;
+        tickMx[m + 8] = nn2[0]; tickMx[m + 9] = nn2[1]; tickMx[m + 10] = nrm.z; tickMx[m + 11] = 0;
+        tickMx[m + 12] = p[0]; tickMx[m + 13] = p[1]; tickMx[m + 14] = at[2]; tickMx[m + 15] = 1;
+        const c4 = n * 4;
+        tickCol[c4] = col[0]; tickCol[c4 + 1] = col[1]; tickCol[c4 + 2] = col[2]; tickCol[c4 + 3] = alpha;
+        n++;
+      }
+    }
+
+    ticks.thinInstanceCount = n;
+    ticks.thinInstanceBufferUpdated('matrix');
+    ticks.thinInstanceBufferUpdated('gcol');
+    // **No bounding refresh.** The solid cloud needs one because a mesh that
+    // cannot say where it is gets culled and drawn wrong. This one is never
+    // culled — `alwaysSelectAsActiveMesh` — and refreshing it is a walk over
+    // every matrix in the buffer, every frame, twelve of them per grain. That
+    // walk on its own was enough to push the stage's tests past their timeout.
+    // The one thing the refresh was really guarding against is below: a visible
+    // mesh with no instances draws its base shape at the origin at full size.
+    ticks.isVisible = n > 0;
+  }
+
   // ── the mist ──
   //
   // A particle system: positions, velocities and lifetimes, drifting through the
@@ -1576,7 +1964,14 @@ function stAttach(canvas) {
     /// being drawn look identical from the far side of a canvas, and telling
     /// them apart by reading pixels is guesswork. This says which.
     stats() {
-      return { rows: rows.length, live: live.length, born: cloudBorn, died: cloudDied,
+      // **How many grains are in the room, whichever renderer put them there.**
+      // A ported view draws strokes and never touches the solid cloud, so
+      // reading `live` alone reports nought for exactly the views that work.
+      // The tick count is per fold, so it is divided back down to grains.
+      const folds = Math.max(1, tickFolds);
+      const inked = ticks && ticks.isEnabled() ? Math.round(ticks.thinInstanceCount / folds) : 0;
+      return { rows: rows.length, live: live.length + inked, solids: live.length, inked,
+        born: cloudBorn, died: cloudDied,
         seen, now: cloudNow, cap: cloud ? cloud.__cap : 0 };
     },
 
@@ -1607,8 +2002,19 @@ function stAttach(canvas) {
       ring.setEnabled(stShows(cfg, 'ringOn'));
       if (ringWire) ringWire.setEnabled(stShows(cfg, 'ringOn') && !!cfg.wire);
       ringMat.diffuseColor = stColor(cfg.ringColour, [0.62, 0.77, 0.88]);
-      stepCloud(f);
-      cloud.setEnabled(stShows(cfg, 'cloudOn'));
+      // **One arrangement or the other, never both.** A ported view is drawn as
+      // strokes and the rest as solids, and a view that is halfway through the
+      // port draws twice — the same grains as ink and as objects, in the same
+      // places, which reads as neither.
+      const lay = stLayout(cfg.cloudLayout);
+      const inked = !!lay.ported;
+      const showCloud = stShows(cfg, 'cloudOn');
+      // Nothing is built for a cloud that is switched off. The strokes are a
+      // pass over the whole schedule and a write of one matrix per fold, which
+      // is real work to do for something nobody is going to see.
+      if (inked) { if (showCloud) stepTicks(f, lay); } else stepCloud(f);
+      if (ticks) ticks.setEnabled(inked && showCloud);
+      cloud.setEnabled(!inked && showCloud);
       cloudMat.diffuseColor = stColor(cfg.cloudColour, [1, 0.85, 0.63]);
 
       shell.setEnabled(stShows(cfg, 'shell'));
