@@ -13494,6 +13494,19 @@ function paintRoomText() {
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, c.width, c.height);
   c.classList.toggle('rt-live', roomTextPosing());
+  // **Off means gone, not merely cleared.**
+  //
+  // This canvas sits over the picture at `z-index: 6` and it keeps whatever was
+  // last drawn on it. Only some of the modules paint it, so switching to one
+  // that does not left the last card hanging over a working picture with
+  // nothing to clear it — and a card sized near the frame is a black rectangle,
+  // which is indistinguishable from the renderer having died. It cost an
+  // evening, twice, on two different modules.
+  //
+  // Clearing is not enough on its own, because a module that never calls this
+  // never clears either. Taken out of the layout altogether, a stale card cannot
+  // be shown by anybody.
+  c.style.display = st.on ? 'block' : 'none';
   if (!st.on) return;
   // Not while it is being typed into — the textarea is showing the same words a
   // few pixels away and two of them is worse than none.
@@ -13617,6 +13630,9 @@ function visGlTick() {
       rc.height = Math.round(rh * rdpr);
     }
     rr.frame({ room3d: room3dSettings(), room3dPaint: ridgePaint() });
+    // The card, on this module too. Left out, this branch was the one that
+    // showed everybody else's leftovers.
+    paintRoomText();
     return;
   }
 
