@@ -3137,6 +3137,8 @@ async function runVideoExport() {
       ridgePaint: ridgePaint(),
       room3d: room3dSettings(),
       room3dPaint: ridgePaint(),
+      stage: stageSettings(),
+      stagePaint: ridgePaint(),
       // The card of type, in front of it all. Handed over already resolved, the
       // same way the palette is: the film has no page to read colours from.
       text: roomTextSettings(),

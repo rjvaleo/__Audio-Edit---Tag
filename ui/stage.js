@@ -199,6 +199,23 @@ const ST_DEFAULTS = {
   /// a ridge a glowing line rather than a grey surface with a lamp on it.
   glow: 1,
 
+  // ── detail, and the difference between watching and filming ──
+  //
+  // **The preview is not the render.** A video editor cuts at a lower resolution
+  // than it delivers at, and this is the same: the film goes out at 4K where
+  // every row and every sample shows, and the thing on screen is a window a
+  // fraction of that size where most of them land on the same pixel.
+  //
+  // So the row and sample counts above are the *full* numbers — what the film
+  // gets — and this scales them down for the preview. The picture is the same
+  // picture, drawn with fewer of the same lines, which is what a proxy is. The
+  // export sets it to one.
+  //
+  // It does not touch anything you can see the shape of: the camera, the light,
+  // the glow and the geometry are identical either way, or the preview would be
+  // lying about the framing rather than merely being coarser.
+  detail: 0.55,
+
   // ── how well it is drawn ──
   //
   // The first pass had lights and nothing for them to find: flat diffuse on flat
@@ -225,6 +242,17 @@ const ST_DEFAULTS = {
 
 /// The rate rows arrive at, which is the room's poll rate.
 const ST_PUSH_HZ = 20;
+
+/// How many of a thing to actually build, after the preview's scaling.
+///
+/// **One place decides it.** Scaled at each use site instead, the terrain and
+/// the sleeve would drift apart the first time one of them was edited, and a
+/// preview whose objects disagree about how detailed they are is worse than one
+/// that is simply coarse.
+function stDetail(cfg, n, lo, hi) {
+  const d = Math.max(0.05, Math.min(1, cfg.detail === undefined ? 1 : cfg.detail));
+  return Math.max(lo, Math.min(hi, Math.round(n * d)));
+}
 
 /// Everything that can be switched on or off, in the order the panel shows it.
 ///
@@ -422,6 +450,8 @@ const ST_UI = [
   { key: 'contrast', tag: 'CONTRAST', min: 0.5, max: 3, step: 0.01, hint: 'How far apart the lit and the unlit are.' },
   { key: 'exposure', tag: 'EXPOSURE', min: 0.2, max: 3, step: 0.01, hint: 'How much light reaches the film.' },
   { key: 'vignette', tag: 'VIGNETTE', min: 0, max: 1.5, step: 0.01, hint: 'How far the corners fall off.' },
+  { key: 'detail', tag: 'DETAIL', min: 0.15, max: 1, step: 0.05,
+    hint: 'How much of the full row and sample count the preview draws. The film always draws all of it — this is the proxy you watch while you work, and it changes nothing you can see the shape of.' },
   { key: 'glow', tag: 'GLOW', min: 0, max: 3, step: 0.02,
     hint: 'How much light the sound gives off of its own. This is the look: at nought the signal is a grey surface with a lamp on it, and up it is a glowing line the way the old renderers draw it.' },
 ];
@@ -622,8 +652,8 @@ function stAttach(canvas) {
   wireMat.backFaceCulling = false;
 
   function buildTerrain() {
-    const R = Math.max(2, Math.min(200, cfg.rows | 0));
-    const P = Math.max(8, Math.min(1024, cfg.points | 0));
+    const R = stDetail(cfg, cfg.rows | 0, 2, 200);
+    const P = stDetail(cfg, cfg.points | 0, 8, 1024);
     const k = `${R}|${P}`;
     if (k === terrKey && terr) return;
     terrKey = k;
@@ -667,8 +697,8 @@ function stAttach(canvas) {
 
   function placeTerrain() {
     if (!terr) return;
-    const R = Math.max(2, Math.min(200, cfg.rows | 0));
-    const P = Math.max(8, Math.min(1024, cfg.points | 0));
+    const R = stDetail(cfg, cfg.rows | 0, 2, 200);
+    const P = stDetail(cfg, cfg.points | 0, 8, 1024);
     const hw = cfg.width / 2, hh = cfg.height / 2, d = cfg.depth;
     const span = Math.max(0.05, Math.min(1, cfg.span));
     const margin = (1 - span) / 2;
@@ -741,8 +771,8 @@ function stAttach(canvas) {
   let sleeveKey = '';
 
   function buildSleeve() {
-    const R = Math.max(2, Math.min(200, cfg.rows | 0));
-    const P = Math.max(8, Math.min(1024, cfg.points | 0));
+    const R = stDetail(cfg, cfg.rows | 0, 2, 200);
+    const P = stDetail(cfg, cfg.points | 0, 8, 1024);
     const k = `${R}|${P}`;
     if (k === sleeveKey) return;
     sleeveKey = k;
@@ -780,8 +810,8 @@ function stAttach(canvas) {
   }
 
   function placeSleeve() {
-    const R = Math.max(2, Math.min(200, cfg.rows | 0));
-    const P = Math.max(8, Math.min(1024, cfg.points | 0));
+    const R = stDetail(cfg, cfg.rows | 0, 2, 200);
+    const P = stDetail(cfg, cfg.points | 0, 8, 1024);
     const span = Math.max(0.05, Math.min(1, cfg.sleeveSpan));
     const margin = (1 - span) / 2;
     for (const f of ST_FACES) {
@@ -842,8 +872,8 @@ function stAttach(canvas) {
   let ringKey = '';
 
   function buildRing() {
-    const R = Math.max(2, Math.min(400, cfg.ringRows | 0));
-    const P = Math.max(16, Math.min(512, cfg.ringPoints | 0));
+    const R = stDetail(cfg, cfg.ringRows | 0, 2, 400);
+    const P = stDetail(cfg, cfg.ringPoints | 0, 16, 512);
     const k = `${R}|${P}`;
     if (k === ringKey && ring) return;
     ringKey = k;
@@ -886,8 +916,8 @@ function stAttach(canvas) {
 
   function placeRing() {
     if (!ring) return;
-    const R = Math.max(2, Math.min(400, cfg.ringRows | 0));
-    const P = Math.max(16, Math.min(512, cfg.ringPoints | 0));
+    const R = stDetail(cfg, cfg.ringRows | 0, 2, 400);
+    const P = stDetail(cfg, cfg.ringPoints | 0, 16, 512);
     const pos = ring.getVerticesData(BABYLON.VertexBuffer.PositionKind);
     const hh = cfg.height / 2;
     const cy = cfg.ringHigh * hh;
@@ -965,7 +995,7 @@ function stAttach(canvas) {
   let cloudNow = -1;
 
   function buildCloud() {
-    const cap = Math.max(100, Math.min(6000, cfg.cloudCap | 0));
+    const cap = stDetail(cfg, cfg.cloudCap | 0, 100, 6000);
     if (cloud && cloud.__cap === cap) return;
     if (cloud) cloud.dispose();
     // An icosahedron: enough faces to catch the light from several directions,
@@ -1158,13 +1188,13 @@ function stAttach(canvas) {
       level = 0;
       live = [];
       seen = null;
-      const n = Math.max(8, Math.min(1024, cfg.points | 0));
-      const want = Math.max(2, Math.min(200, cfg.rows | 0)) + 1;
+      const n = stDetail(cfg, cfg.points | 0, 8, 1024);
+      const want = stDetail(cfg, cfg.rows | 0, 2, 200) + 1;
       for (let i = 0; i <= want; i++) rows.push(new Float32Array(n));
     },
 
     push(bands, pairs) {
-      const n = Math.max(8, Math.min(1024, cfg.points | 0));
+      const n = stDetail(cfg, cfg.points | 0, 8, 1024);
       let v = typeof rdgWaveRow === 'function'
         ? rdgWaveRow(n, pairs, cfg.window, cfg.smooth)
         : new Float32Array(n);
@@ -1181,7 +1211,7 @@ function stAttach(canvas) {
       // The figure of this instant, resampled to the tube's own fineness. Kept
       // beside the row rather than derived later: a Lissajous is what the two
       // channels were doing *then*, and there is no way back to it afterwards.
-      const rp = Math.max(16, Math.min(512, cfg.ringPoints | 0));
+      const rp = stDetail(cfg, cfg.ringPoints | 0, 16, 512);
       const hoop = new Float32Array(rp * 2);
       if (pairs && pairs.length >= 4) {
         const m = pairs.length / 2;
@@ -1192,13 +1222,13 @@ function stAttach(canvas) {
         }
       }
       hoops.unshift(hoop);
-      const wantH = Math.max(2, Math.min(400, cfg.ringRows | 0)) + 1;
+      const wantH = stDetail(cfg, cfg.ringRows | 0, 2, 400) + 1;
       while (hoops.length > wantH) hoops.pop();
 
       rows.unshift(v);
       lastPushAt = clockNow;
       everPushed = true;
-      const want = Math.max(2, Math.min(200, cfg.rows | 0)) + 2;
+      const want = stDetail(cfg, cfg.rows | 0, 2, 200) + 2;
       while (rows.length > want) rows.pop();
       while (rows.length < want) rows.push(new Float32Array(n));
     },

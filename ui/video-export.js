@@ -157,7 +157,7 @@ function dataRgb(hex) {
 async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   layers, occlude, order, room, background, data, schedule, fetchSchedule, padSeconds,
   loopOut, signal, onStage, module, ridge, ridgePaint, room3d, room3dPaint,
-  text, textPaint }) {
+  stage, stagePaint, text, textPaint }) {
   const why = videoExportSupport();
   if (why) throw new Error(why);
 
@@ -229,7 +229,15 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   // The settings have to be in hand before any row is made, and the export
   // pushes a run of them before it draws anything. See `configure` in
   // `ridge.js`.
-  if (gl.configure) gl.configure(module === 'room3d' ? room3d : ridge);
+  // **The film gets all of it.** `detail` is the preview's proxy — fewer of the
+  // same lines so a window a fraction of 4K stays responsive — and the render is
+  // the thing those numbers were chosen for. A film shot at the preview's
+  // detail would be a 4K picture of a proxy.
+  if (gl.configure) {
+    gl.configure(module === 'room3d' ? room3d
+      : module === 'stage' ? { ...stage, detail: 1 }
+        : ridge);
+  }
 
   // ── something behind it ──
   //
@@ -426,6 +434,9 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
       // of the three.
       room3d,
       room3dPaint,
+      // Full detail, for the same reason.
+      stage: stage ? { ...stage, detail: 1 } : stage,
+      stagePaint,
       cam: camera,
       layers,
       occlude,
