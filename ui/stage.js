@@ -134,6 +134,8 @@ const ST_DEFAULTS = {
   /// How many of the schedule's grains are drawn, as a share. A cloud you can
   /// see through is worth more than one you cannot.
   cloudDensity: 0.55,
+  /// Which of the ten arrangements the cloud is in. See `ST_LAYOUTS`.
+  cloudLayout: 'swarm',
   /// **Their own light, because the lamps are dim now.** The grains are solids
   /// and were lit by the key; once the lamps came down to modelling strength
   /// they went with them — soloed, the brightest grain in the room read 63 of
@@ -286,6 +288,113 @@ const ST_DEFAULTS = {
 
 /// The rate rows arrive at, which is the room's poll rate.
 const ST_PUSH_HZ = 20;
+
+/// The ten arrangements of the cloud.
+///
+/// **A named visualiser is an arrangement, not a renderer.** The grain views were
+/// ten separate drawings in a separate document on a separate engine, and the
+/// only thing that actually differed between them was *where a grain goes*. Every
+/// one of them reads the same schedule, ages it the same way, and draws the same
+/// solid — so what they are is a function from a grain to a place.
+///
+/// Written as that function, all ten fit here. `g` carries the grain's stable
+/// hashes and its pan and pitch; `t` is how far through its life it is. The
+/// return is a place in the space, in room units.
+///
+/// This is Phase 1 of `docs/PORT-PLAN.md` arriving as ten functions rather than
+/// as a port of two and a half thousand lines, and it is why the plan was
+/// reframed around one scene: in ten scenes these would have been ten programs.
+const ST_LAYOUTS = [
+  {
+    key: 'swarm', label: 'Swarm', suite: 1,
+    hint: 'The free cloud — the form most people mean by granular. It travels away from you as it ages.',
+    at: (g, t, w, h, d) => [
+      (g.fx + g.dx * t) * w, (g.fy + g.dy * t) * h, t * d,
+    ],
+  },
+  {
+    key: 'shear', label: 'Shear', suite: 1,
+    hint: 'Output time across, source time into the screen, pitch up. The stretch is not a number here — it is the slope.',
+    at: (g, t, w, h, d) => [
+      (t * 2 - 1) * w, g.pitch * h, (g.src * 0.8 + t * 0.2) * d,
+    ],
+  },
+  {
+    key: 'braid', label: 'Braid', suite: 1,
+    hint: 'Time wound into a helix, so overlap resolves into countable strands.',
+    at: (g, t, w, h, d) => {
+      const a = t * Math.PI * 6 + g.seed * Math.PI * 2;
+      return [Math.cos(a) * w * 0.45, Math.sin(a) * h * 0.45, t * d];
+    },
+  },
+  {
+    key: 'shells', label: 'Shells', suite: 1,
+    hint: 'Sorted onto concentric shells by pitch, an octave to a shell. Drift stops being a number and becomes a rotation you can watch.',
+    at: (g, t, w, h, d) => {
+      const shell = 0.25 + Math.abs(g.pitch) * 0.7;
+      const a = g.seed * Math.PI * 2 + t * 2;
+      return [Math.cos(a) * w * shell, Math.sin(a) * h * shell, t * d];
+    },
+  },
+  {
+    key: 'lattice', label: 'Lattice', suite: 1,
+    hint: 'The bare hop grid as a crystal. With every jitter at nought it is perfect; raise them and it melts.',
+    at: (g, t, w, h, d) => {
+      const n = 7;
+      const q = (v) => (Math.round(v * n) / n);
+      return [q(g.fx) * w, q(g.fy) * h, q(t) * d];
+    },
+  },
+  {
+    key: 'tunnel', label: 'Tunnel', suite: 2,
+    hint: 'Grains arrive out of the dark and pass you. Depth is how far a grain is from now; the bore breathes with the source.',
+    at: (g, t, w, h, d) => {
+      const a = g.seed * Math.PI * 2;
+      const r = 0.55 + g.src * 0.35;
+      return [Math.cos(a) * w * r, Math.sin(a) * h * r, t * d];
+    },
+  },
+  {
+    key: 'mandala', label: 'Mandala', suite: 2,
+    hint: 'Now is the centre. A grain’s distance from the middle is its distance from this instant, so the present blooms outward both ways at once.',
+    at: (g, t, w, h, d) => {
+      const a = g.seed * Math.PI * 2 + g.pitch * 3;
+      const r = Math.abs(t - 0.5) * 2;
+      return [Math.cos(a) * w * r, Math.sin(a) * h * r, d * 0.35];
+    },
+  },
+  {
+    key: 'rorschach', label: 'Rorschach', suite: 2,
+    hint: 'Reflected in both axes, so which way time runs cannot be said — which is the point, from inside a moment.',
+    at: (g, t, w, h, d) => {
+      const side = g.seed > 0.5 ? 1 : -1;
+      const up = ((g.seed * 7) % 1) > 0.5 ? 1 : -1;
+      return [Math.abs(g.fx + g.dx * t) * w * side, Math.abs(g.fy) * h * up, t * d];
+    },
+  },
+  {
+    key: 'vortex', label: 'Vortex', suite: 2,
+    hint: 'Grains spiral in from the future, cross the present, and unwind into the past.',
+    at: (g, t, w, h, d) => {
+      const a = t * Math.PI * 4 + g.seed * Math.PI * 2;
+      const r = Math.abs(t - 0.5) * 1.6;
+      return [Math.cos(a) * w * r, Math.sin(a) * h * r, t * d];
+    },
+  },
+  {
+    key: 'ripple', label: 'Ripple', suite: 2,
+    hint: 'A standing wave with its own reflection under it. The surface is the source; the grains ride it as it passes.',
+    at: (g, t, w, h, d) => {
+      const x = (g.fx + g.dx * t);
+      const wave = Math.sin(x * 5 + t * 6) * 0.35 + g.pitch * 0.25;
+      return [x * w, wave * h, t * d];
+    },
+  },
+];
+
+function stLayout(key) {
+  return ST_LAYOUTS.find((l) => l.key === key) || ST_LAYOUTS[0];
+}
 
 /// Whether an object draws, given what is soloed.
 ///
@@ -1234,7 +1343,13 @@ function stAttach(canvas) {
         const hy = (((key >>> 16) & 0xffff) / 0x8000) - 1;
         const k2 = (((e[7] | 0) ^ 0x9e3779b9) * 2246822519) >>> 0;
         cloudBorn++;
+        const k3 = (((e[7] | 0) ^ 0x85ebca6b) * 0xc2b2ae35) >>> 0;
         live.push({
+          // What every arrangement reads: two stable scatters, where in the
+          // source it reads from, what pitch it is at, and a seed of its own.
+          seed: (key >>> 8 & 0xffff) / 0x10000,
+          src: (k3 & 0xffff) / 0x10000,
+          pitch: Math.max(-1, Math.min(1, hy)),
           // **When it was born, on the playhead's own clock.**
           //
           // Age was accumulated per frame before this, which ties how long a
@@ -1270,6 +1385,7 @@ function stAttach(canvas) {
     // Move them, and let the old ones go. Age is a subtraction from the
     // playhead, so nothing here depends on how often this is called.
     const hw = cfg.width / 2, hh = cfg.height / 2;
+    const lay = stLayout(cfg.cloudLayout);
     let n = 0;
     for (let i = 0; i < live.length; i++) {
       const g = live[i];
@@ -1281,10 +1397,10 @@ function stAttach(canvas) {
       // frame rather than thinning. The cap belongs on births, where it is.
       if (n >= cap) { n = cap; break; }
       const t = g.age;
-      const tap = 1 + (cfg.taper - 1) * t;
-      const x = (g.fx + g.dx * t) * hw * tap;
-      const y = (g.fy + g.dy * t) * hh * tap;
-      const z = t * cfg.depth;
+      // Where a grain goes is the whole of what the ten grain views were. See
+      // `ST_LAYOUTS`.
+      const at = lay.at(g, t, hw, hh, cfg.depth);
+      const x = at[0], y = at[1], z = at[2];
       // **Fading by size, not by alpha.**
       //
       // A vertex alpha is ignored by a standard material unless transparency is

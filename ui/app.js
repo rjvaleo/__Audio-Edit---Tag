@@ -8412,6 +8412,20 @@ function visualKey() {
 function setVisual(key) {
   const v = visEntry(key) || VIS_ALL[0];
   roomEdit.visual = v.key;
+  // **An arrangement is the stage with its cloud laid out differently.** The ten
+  // grain views used to be ten drawings in another document; now choosing one
+  // sets the stage's layout and shows the stage. See `ST_LAYOUTS`.
+  if (visIsStage(v)) {
+    if (v.layout) roomEdit.stage = { ...stageSettings(), cloudLayout: v.layout };
+    saveRoomData();
+    showStageFamily('bus');
+    setVisModule('stage');
+    const r = visLive.stage;
+    if (r && r.configure) r.configure(stageSettings());
+    paintStagePanel();
+    paintVisModulePicker();
+    return;
+  }
   saveRoomData();
   showStageFamily(v.family);
   if (v.family === 'bus') {
