@@ -136,6 +136,18 @@ const ST_DEFAULTS = {
   cloudDensity: 0.55,
   /// Which of the ten arrangements the cloud is in. See `ST_LAYOUTS`.
   cloudLayout: 'swarm',
+  /// Whether the cloud is drawn as strokes or as lit solids.
+  ///
+  /// **Both, and neither replaces the other.** An arrangement is the grain view
+  /// it is named after — additive strokes on black, which is the whole of why
+  /// those pictures glow. The stage's own cloud is a lit solid standing in fog,
+  /// which is a different and equally deliberate thing. Choosing an arrangement
+  /// turns this on; the stage itself leaves it off.
+  cloudInk: false,
+  /// What each view looks like, where it has been edited away from its default.
+  /// Keyed by layout, so a look belongs to the view it was set on — see
+  /// `ST_LOOKS`.
+  looks: {},
   /// **Their own light, because the lamps are dim now.** The grains are solids
   /// and were lit by the key; once the lamps came down to modelling strength
   /// they went with them — soloed, the brightest grain in the room read 63 of
@@ -327,45 +339,113 @@ const ST_SLOTS = [
 
 /// The ten arrangements of the cloud.
 ///
-/// **A named visualiser is an arrangement, not a renderer.** The grain views were
-/// ten separate drawings in a separate document on a separate engine, and the
-/// only thing that actually differed between them was *where a grain goes*. Every
-/// one of them reads the same schedule, ages it the same way, and draws the same
-/// solid — so what they are is a function from a grain to a place.
+/// The space the grain views are drawn in, in the units they were written in.
 ///
-/// Written as that function, all ten fit here. `g` carries the grain's stable
-/// hashes and its pan and pitch; `t` is how far through its life it is. The
-/// return is a place in the space, in room units.
+/// **Transcribed rather than translated.** Every projection below is the one out
+/// of `visualiser/grain-views.html`, number for number, so the two can be read
+/// side by side and any difference is a mistake rather than a decision. What
+/// converts to room units is a single scale applied afterwards — see `stFit` —
+/// because ten projections each carrying their own conversion is ten chances to
+/// get it subtly wrong, and the first attempt at these got exactly that wrong in
+/// every one of them.
+const ST_P5 = { SPAN: 520, HEIGHT: 260, R: 300 };
+/// How far the source waveform lifts a grain off its bare position.
+const ST_RIDE = ST_P5.HEIGHT * 0.85;
+
+/// A stable angle for a grain, from its own number.
 ///
-/// This is Phase 1 of `docs/PORT-PLAN.md` arriving as ten functions rather than
-/// as a port of two and a half thousand lines, and it is why the plan was
-/// reframed around one scene: in ten scenes these would have been ten programs.
+/// The original takes this from the seeded generator on salt 21 — the display's
+/// own scatter, which means nothing about the sound and is deliberately small.
+/// Here it is a hash of the grain's index, which has the same property that
+/// matters: the same grain gets the same angle every frame and every replay.
+function stSpin(i) {
+  const h = ((i | 0) ^ 0x9e3779b9) * 2246822519 >>> 0;
+  return ((h & 0xffff) / 0x10000) * Math.PI * 2;
+}
+
+/// **A named visualiser is an arrangement of the one cloud.**
+///
+/// Every entry says where a grain goes, in the original's space. `g` carries
+/// everything a projection can ask about a grain:
+///
+///   tOut tSrc dur   when it sounds, where it reads, how long it lasts
+///   dt w            how far from now, raw and over the horizon (−1 gone, +1 coming)
+///   u v             how far through the output and the source
+///   semis rate pn   pitch, as a shift, a ratio and folded to −1..1
+///   a               how loud the source is where it reads (the lift)
+///   dev             how far its read strayed from where it was due
+///   c               where it sits in the palette — see `ST_COLOUR_BY`
+///   pan i n         across the field, its own number, and its place in the draw
+///
+/// `k` carries the frame: `R`, `SPAN`, `HEIGHT`, `wedge`, `spin`, `now`, and the
+/// measured `overlap`, `cell` and `devScale` the object views need.
+///
+/// `suite` 1 is *the object* — the whole schedule laid out, no fold. `suite` 2 is
+/// *the moment* — a window either side of the playhead, folded. `sym` is how it
+/// folds. `moment` says which grains are drawn at all.
 const ST_LAYOUTS = [
   {
-    key: 'swarm', label: 'Swarm', suite: 1,
-    hint: 'The free cloud — the form most people mean by granular. It travels away from you as it ages.',
-    at: (g, t, w, h, d) => [
-      (g.fx + g.dx * t) * w, (g.fy + g.dy * t) * h, t * d,
-    ],
+    key: 'swarm', label: 'Swarm', suite: 1, ported: true, moment: true, fit: 1.05,
+    hint: 'The cloud at the playhead, one grain for one grain. Distance from the middle is distance from now; the angle carries pitch and where it sits across the field.',
+    project: (g, k) => {
+      const lift = -g.a * ST_RIDE;
+      const th = Math.acos(Math.max(-1, Math.min(1, -g.pn)));
+      // A little of the display's own scatter, so a mono cloud is a sphere
+      // rather than a single meridian. Deliberately small.
+      const ph = g.pan * Math.PI + stSpin(g.i) * 0.18;
+      const rr = k.R * (0.10 + 0.80 * Math.min(1, Math.abs(g.dt) / k.H))
+               + g.e * k.R * 0.22;
+      return [rr * Math.sin(th) * Math.cos(ph),
+              rr * Math.cos(th) * 0.55 + lift * 0.5,
+              rr * Math.sin(th) * Math.sin(ph)];
+    },
+    at: (g, t, w, h, d) => [(g.fx + g.dx * t) * w, (g.fy + g.dy * t) * h, t * d],
   },
   {
-    key: 'shear', label: 'Shear', suite: 1,
-    hint: 'Output time across, source time into the screen, pitch up. The stretch is not a number here — it is the slope.',
-    at: (g, t, w, h, d) => [
-      (t * 2 - 1) * w, g.pitch * h, (g.src * 0.8 + t * 0.2) * d,
-    ],
+    key: 'shear', label: 'Shear', suite: 1, ported: true, fit: 0.95,
+    hint: 'Output time across, source time into the screen, pitch up. The stretch is not a number here — it is the slope. Push it high and the diagonal flattens into a sheet.',
+    project: (g, k) => {
+      const lift = -g.a * ST_RIDE;
+      const scale = k.SPAN / Math.max(k.outSec, k.srcSec, 1e-6);
+      return [(g.tOut - k.outSec / 2) * scale,
+              -g.pn * k.HEIGHT + lift,
+              (g.tSrc - k.srcSec / 2) * scale];
+    },
+    at: (g, t, w, h, d) => [(t * 2 - 1) * w, g.pitch * h, (g.src * 0.8 + t * 0.2) * d],
   },
   {
-    key: 'braid', label: 'Braid', suite: 1,
-    hint: 'Time wound into a helix, so overlap resolves into countable strands.',
+    key: 'braid', label: 'Braid', suite: 1, ported: true, fit: 0.85,
+    hint: 'Time wound onto a ring so that overlap resolves into countable strands. Raise overlap and new strands appear; raise density and the winding tightens.',
+    project: (g, k) => {
+      const lift = -g.a * ST_RIDE;
+      // A whole number of turns per lap, or the two ends meet at an angle and
+      // the seam is back in a subtler form.
+      const TWISTS = 3;
+      const major = g.u * Math.PI * 2;
+      const minor = (g.i * Math.PI * 2) / k.overlap + major * TWISTS;
+      // Pitch pushes a grain out of the tube's wall.
+      const rMin = k.R * (0.10 + 0.20 * (Math.log2(Math.max(g.rate, 0.002)) + 4) / 8);
+      const ring = k.R * 0.58 + rMin * Math.cos(minor);
+      return [Math.cos(major) * ring,
+              rMin * Math.sin(minor) + lift * 0.4,
+              Math.sin(major) * ring];
+    },
     at: (g, t, w, h, d) => {
       const a = t * Math.PI * 6 + g.seed * Math.PI * 2;
       return [Math.cos(a) * w * 0.45, Math.sin(a) * h * 0.45, t * d];
     },
   },
   {
-    key: 'shells', label: 'Shells', suite: 1,
-    hint: 'Sorted onto concentric shells by pitch, an octave to a shell. Drift stops being a number and becomes a rotation you can watch.',
+    key: 'shells', label: 'Shells', suite: 1, ported: true, fit: 1.05,
+    hint: 'Sorted onto concentric shells by pitch, an octave to a shell. Height is a circle, so the pass ends where it began.',
+    project: (g, k) => {
+      const lift = -g.a * ST_RIDE;
+      const rr = k.R * (0.22 + 0.78 * (g.pn + 1) / 2);
+      const th = g.u * Math.PI * 2 * 3;
+      return [Math.cos(th) * rr,
+              -Math.cos(g.v * Math.PI * 2) * k.HEIGHT * 0.8 + lift,
+              Math.sin(th) * rr];
+    },
     at: (g, t, w, h, d) => {
       const shell = 0.25 + Math.abs(g.pitch) * 0.7;
       const a = g.seed * Math.PI * 2 + t * 2;
@@ -373,57 +453,65 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'lattice', label: 'Lattice', suite: 1,
-    hint: 'The bare hop grid as a crystal. With every jitter at nought it is perfect; raise them and it melts.',
+    key: 'lattice', label: 'Lattice', suite: 1, ported: true, fit: 1.55,
+    hint: 'The bare hop grid, drawn as a crystal. With every jitter at nought it is perfect; raise them and it melts — order to chaos as one continuous gesture.',
+    project: (g, k) => {
+      const lift = -g.a * ST_RIDE;
+      const gx = g.n % k.side, gz = Math.floor(g.n / k.side);
+      // The grid is where a grain *would* be if nothing varied. Every axis is
+      // then pushed by a real deviation, so what you see is a cloud that still
+      // remembers the lattice it came from rather than a flat sheet with a
+      // ripple in it.
+      const rateDev = Math.log2(Math.max(g.rate, 1e-6));
+      const cl = (v, m) => Math.max(-m, Math.min(m, v));
+      return [(gx - k.side / 2) * k.cell + cl(g.dev * k.devScale, k.cell * 3),
+              -g.pn * k.HEIGHT * 1.1 + (g.dur / Math.max(k.baseDur, 1e-6) - 1) * 90 + lift,
+              (gz - k.side / 2) * k.cell + cl(rateDev * k.HEIGHT * 0.5, k.cell * 4)];
+    },
     at: (g, t, w, h, d) => {
-      const n = 7;
-      const q = (v) => (Math.round(v * n) / n);
+      const n = 7, q = (v) => (Math.round(v * n) / n);
       return [q(g.fx) * w, q(g.fy) * h, q(t) * d];
     },
   },
   {
-    key: 'tunnel', label: 'Tunnel', suite: 2,
-    hint: 'Grains arrive out of the dark and pass you. Depth is how far a grain is from now; the bore breathes with the source.',
+    key: 'tunnel', label: 'Tunnel', suite: 2, sym: 'rot', ported: true, moment: true, fit: 0.9,
+    hint: 'Grains arrive out of the dark and pass you. Depth is how far off a grain is from now, so the future is the far wall and the past is behind your head. The bore breathes with the source.',
+    project: (g, k) => {
+      const th = g.c * k.wedge + k.spin;
+      const r = k.R * (0.30 + 0.55 * g.a) + (1 - Math.abs(g.w)) * k.R * 0.18;
+      // The past is compressed hard: everything already sounded goes behind the
+      // eye, where it is not so much gone as invisible — and a tunnel you cannot
+      // see out of is just a wall.
+      return [Math.cos(th) * r, Math.sin(th) * r,
+              -(g.w > 0 ? g.w : g.w * 0.28) * k.R * 4.5];
+    },
     at: (g, t, w, h, d) => {
-      const a = g.seed * Math.PI * 2;
-      const r = 0.55 + g.src * 0.35;
+      const a = g.seed * Math.PI * 2, r = 0.55 + g.src * 0.35;
       return [Math.cos(a) * w * r, Math.sin(a) * h * r, t * d];
     },
   },
   {
-    key: 'mandala', label: 'Mandala', suite: 2,
-    hint: 'Now is the centre. A grain’s distance from the middle is its distance from this instant, so the present blooms outward both ways at once.',
-    // **Ported, not approximated.** The first version of this placed a grain by
-    // its own age and a hash, which is a different quantity entirely: age runs
-    // one way and only forwards, so the cloud could only ever bloom outward in
-    // one direction and half the picture was missing. This is the projection out
-    // of `visualiser/grain-views.html` — `projectV2` case 1 — with the same
-    // numbers, and `ported` is what says the tick renderer draws it rather than
-    // the solid cloud.
-    //
-    //   angle   one wedge of the fold, turning slowly. Anything wider than the
-    //           wedge lands on top of its own reflection.
-    //   radius  how far this grain is from *now*, in either direction.
-    //   depth   what it is reading, lifted, less how far out of tune it is.
-    ported: true,
+    key: 'mandala', label: 'Mandala', suite: 2, sym: 'rot', ported: true, moment: true, fit: 1,
+    hint: 'Now is the centre. A grain’s distance from the middle is its distance from this instant, so the present blooms outward in both directions at once — what is coming and what has gone, indistinguishable.',
     project: (g, k) => {
       const th = g.c * k.wedge + k.spin * 0.35;
       const rad = k.R * (0.06 + 0.94 * Math.abs(g.w));
-      return [
-        Math.cos(th) * rad,
-        Math.sin(th) * rad,
-        g.amp * k.H * 0.85 * 0.55 - g.pn * k.H * 0.3,
-      ];
+      return [Math.cos(th) * rad, Math.sin(th) * rad,
+              g.a * ST_RIDE * 0.55 - g.pn * k.HEIGHT * 0.3];
     },
     at: (g, t, w, h, d) => {
-      const a = g.seed * Math.PI * 2 + g.pitch * 3;
-      const r = Math.abs(t - 0.5) * 2;
+      const a = g.seed * Math.PI * 2 + g.pitch * 3, r = Math.abs(t - 0.5) * 2;
       return [Math.cos(a) * w * r, Math.sin(a) * h * r, d * 0.35];
     },
   },
   {
-    key: 'rorschach', label: 'Rorschach', suite: 2,
-    hint: 'Reflected in both axes, so which way time runs cannot be said — which is the point, from inside a moment.',
+    key: 'rorschach', label: 'Rorschach', suite: 2, sym: 'mirror', ported: true, moment: true, fit: 1.15,
+    hint: 'Reflected in both axes. Time runs across, and the fold makes it impossible to say which way — which is the point, from inside a moment.',
+    project: (g, k) => [
+      g.w * k.SPAN * 0.62,
+      -(g.a * ST_RIDE * 0.55) - g.pn * k.HEIGHT * 0.45 - 40,
+      (g.c - 0.5) * k.SPAN * 0.5,
+    ],
     at: (g, t, w, h, d) => {
       const side = g.seed > 0.5 ? 1 : -1;
       const up = ((g.seed * 7) % 1) > 0.5 ? 1 : -1;
@@ -431,24 +519,137 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'vortex', label: 'Vortex', suite: 2,
-    hint: 'Grains spiral in from the future, cross the present, and unwind into the past.',
+    key: 'vortex', label: 'Vortex', suite: 2, sym: 'rot', ported: true, moment: true, fit: 1,
+    hint: 'Grains spiral in from the future, cross the present, and unwind into the past. Drift and jitter twist the arms.',
+    project: (g, k) => {
+      const th = g.dt * 2.1 + g.c * k.wedge + k.spin;
+      const rad = k.R * (0.10 + 0.90 * Math.abs(g.w));
+      return [Math.cos(th) * rad, Math.sin(th) * rad,
+              g.a * ST_RIDE * 0.55 * 1.6 - g.pn * k.HEIGHT * 0.25];
+    },
     at: (g, t, w, h, d) => {
-      const a = t * Math.PI * 4 + g.seed * Math.PI * 2;
-      const r = Math.abs(t - 0.5) * 1.6;
+      const a = t * Math.PI * 4 + g.seed * Math.PI * 2, r = Math.abs(t - 0.5) * 1.6;
       return [Math.cos(a) * w * r, Math.sin(a) * h * r, t * d];
     },
   },
   {
-    key: 'ripple', label: 'Ripple', suite: 2,
-    hint: 'A standing wave with its own reflection under it. The surface is the source; the grains ride it as it passes.',
+    key: 'ripple', label: 'Ripple', suite: 2, sym: 'mirror', ported: true, moment: true, fit: 1.3,
+    hint: 'A standing wave with its own reflection under it. The surface is the source; the grains are what is riding it as it passes.',
+    project: (g, k) => [
+      g.w * k.SPAN * 0.72,
+      -(g.a * ST_RIDE * 0.55) * 1.3
+        + Math.sin(g.dt * 5.5 + g.c * 7 + k.now * 1.6) * k.HEIGHT * 0.22 - 30,
+      (g.c - 0.5) * k.SPAN * 0.55,
+    ],
     at: (g, t, w, h, d) => {
       const x = (g.fx + g.dx * t);
-      const wave = Math.sin(x * 5 + t * 6) * 0.35 + g.pitch * 0.25;
-      return [x * w, wave * h, t * d];
+      const wv = Math.sin(x * 5 + t * 6) * 0.35 + g.pitch * 0.25;
+      return [x * w, wv * h, t * d];
     },
   },
 ];
+
+
+/// ═══════════════════════════════════════════════════════════════════════════
+/// THE LOOK
+///
+/// **Ten views is ten things to look at, not one thing seen ten ways.** Braid
+/// wants long trails and Shear wants none, and having them fight over one set of
+/// controls means every switch is followed by a re-dial. So the look belongs to
+/// the view, exactly as it does in `visualiser/grain-views.html`.
+///
+/// The split is between the look and the sound. Glow, trails, folds, what the
+/// colour is *of*, and the palette describe a picture and are per view. Ratio,
+/// window, density and the jitters describe the sound, and there is only one
+/// sound.
+/// ═══════════════════════════════════════════════════════════════════════════
+
+/// What each view looks like before anyone has touched it.
+///
+/// These are `VIEW_DEFAULTS` from the original, unchanged. `speed` and `orbit`
+/// are not here: both drive the original's own clock and camera, and on the
+/// stage the playhead is the clock and the camera is yours.
+const ST_LOOKS = {
+  shear:     { glow: 1.0, trail: 0.15, mirror: 4,  colourBy: 'pitch',    palette: ['#4a6fa5', '#8fb339', '#d97757'] },
+  braid:     { glow: 1.3, trail: 0.70, mirror: 4,  colourBy: 'rate',     palette: ['#2f5d8a', '#6fa8a0', '#f0a04b'] },
+  swarm:     { glow: 1.5, trail: 0.45, mirror: 6,  colourBy: 'pitch',    palette: ['#6a9bcc', '#788c5d', '#d97757'] },
+  shells:    { glow: 1.4, trail: 0.55, mirror: 6,  colourBy: 'pitch',    palette: ['#7b5ea7', '#4ea1a1', '#ffcb69'] },
+  lattice:   { glow: 0.8, trail: 0.12, mirror: 4,  colourBy: 'size',     palette: ['#33475b', '#9db4c0', '#e08e45'] },
+  tunnel:    { glow: 1.4, trail: 0.75, mirror: 1,  colourBy: 'time',     palette: ['#12263a', '#2a9d8f', '#e9c46a'] },
+  mandala:   { glow: 1.6, trail: 0.65, mirror: 12, colourBy: 'pitch',    palette: ['#b388eb', '#8093f1', '#f7aef8'] },
+  rorschach: { glow: 1.2, trail: 0.50, mirror: 2,  colourBy: 'position', palette: ['#1b1b1e', '#8d99ae', '#ef233c'] },
+  vortex:    { glow: 1.5, trail: 0.80, mirror: 6,  colourBy: 'rate',     palette: ['#03071e', '#dc2f02', '#ffba08'] },
+  ripple:    { glow: 1.0, trail: 0.35, mirror: 2,  colourBy: 'source',   palette: ['#14213d', '#4cc9f0', '#f72585'] },
+};
+
+/// The six looks the pad grid starts with.
+///
+/// `SEED_PADS` from the original. Not locked — a pad is a pad — but there so the
+/// grid is worth pressing before anything has been saved to it. A look is worth
+/// dropping onto whichever view you are in, which is the whole reason to keep
+/// one, so the library is shared and what it lands on is per view.
+const ST_SEED_PADS = [
+  { name: 'Swarm',  glow: 1.4, trail: 0.30, mirror: 6,  colourBy: 'pitch',  palette: ['#6a9bcc', '#788c5d', '#d97757'] },
+  { name: 'Trails', glow: 1.1, trail: 0.90, mirror: 4,  colourBy: 'time',   palette: ['#3d5a80', '#98c1d9', '#ee6c4d'] },
+  { name: 'Kaleid', glow: 1.6, trail: 0.72, mirror: 12, colourBy: 'rate',   palette: ['#b388eb', '#8093f1', '#f7aef8'] },
+  { name: 'Ink',    glow: 0.5, trail: 0.55, mirror: 2,  colourBy: 'size',   palette: ['#2b2b2b', '#8a8a8a', '#f2f2f2'] },
+  { name: 'Ember',  glow: 1.8, trail: 0.80, mirror: 8,  colourBy: 'pitch',  palette: ['#4a1c00', '#c1440e', '#ffd166'] },
+  { name: 'Still',  glow: 0.8, trail: 0.15, mirror: 1,  colourBy: 'source', palette: ['#6a9bcc', '#788c5d', '#d97757'] },
+];
+
+const ST_PAD_COUNT = 16;
+const ST_LOOK_KEYS = ['glow', 'trail', 'mirror', 'colourBy', 'palette'];
+
+/// What the colour is *of*.
+///
+/// **Measured across the cloud, not against the theoretical range.** Against the
+/// engine's ±48 semitones a couple of semitones of jitter — which is a lot to
+/// listen to — spans a fiftieth of the palette and the whole thing comes out
+/// monochrome. What matters visually is how big a deviation is against the rest
+/// of *this* cloud, so the range is measured and a cloud with no variation at
+/// all falls to the middle rather than dividing by zero.
+const ST_COLOUR_BY = {
+  pitch:    { label: 'Pitch',    of: (g) => g.semis },
+  rate:     { label: 'Rate',     of: (g) => Math.log2(Math.max(g.rate, 1e-6)) },
+  position: { label: 'Position', of: (g) => g.dev },
+  size:     { label: 'Size',     of: (g) => g.dur },
+  source:   { label: 'Source',   of: (g) => g.v },
+  time:     { label: 'Time',     of: (g) => g.u },
+};
+
+/// The pad library, on disk.
+///
+/// **One library, not one per view.** A look is worth dropping onto whichever
+/// view you are in — that is the whole reason to keep one — so the pads are
+/// shared and what they land on is per view. Recalling into Braid changes Braid
+/// and leaves Shear as you left it.
+///
+/// In `localStorage` because a saved look is a decision, and decisions outlive
+/// the window.
+const ST_PAD_STORE = 'audiolab.stage.pads.v1';
+
+function stReadPads() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ST_PAD_STORE));
+    if (Array.isArray(saved) && saved.length === ST_PAD_COUNT) return saved;
+  } catch { /* blocked or full */ }
+  const pads = new Array(ST_PAD_COUNT).fill(null);
+  ST_SEED_PADS.forEach((v, i) => { pads[i] = { ...v, palette: v.palette.slice() }; });
+  return pads;
+}
+
+function stWritePads(pads) {
+  try { localStorage.setItem(ST_PAD_STORE, JSON.stringify(pads)); } catch { /* blocked */ }
+}
+
+/// The look a view is wearing: its own default, with anything edited over it.
+function stLook(cfg, key) {
+  const base = ST_LOOKS[key] || ST_LOOKS.mandala;
+  const edit = ((cfg && cfg.looks) || {})[key] || {};
+  const out = { ...base, ...edit };
+  out.palette = (edit.palette || base.palette).slice();
+  return out;
+}
 
 function stLayout(key) {
   return ST_LAYOUTS.find((l) => l.key === key) || ST_LAYOUTS[0];
@@ -456,23 +657,6 @@ function stLayout(key) {
 
 /// How many colours a cloud is spread across.
 const ST_CBINS = 14;
-
-// ── what a view looks like, not just where its grains go ──
-//
-// **The placement was never the picture.** Ten short `at` functions were written
-// on the theory that the only thing separating the grain views was where a grain
-// goes; put the two Mandalas side by side and that is plainly false. The p5 one
-// is a dense radial weave and the arrangement was a scatter of lit dots in the
-// same positions. What placement leaves out is the stroke, the accumulation and
-// the density, and between them they are most of what you are looking at.
-//
-// So a ported view carries its look as well: the three colours its palette is
-// built from, how many times the cloud is folded, and how much light it gives
-// off. These are the numbers out of `visualiser/grain-views.html` — the `LOOKS`
-// table there — and they are not defaults to be improved on. They are the view.
-const ST_LOOKS = {
-  mandala: { palette: ['#b388eb', '#8093f1', '#f7aef8'], mirror: 12, glow: 1.6, trail: 0.65 },
-};
 
 /// Fourteen colours across the three the view is built from.
 ///
@@ -1667,7 +1851,8 @@ function stAttach(canvas) {
   /// be turned back into a count of grains.
   let tickFolds = 1;
   /// The grain handed to a projection, reused every time round the loop.
-  const gs = { c: 0.5, w: 0, amp: 0, pn: 0 };
+  const gs = { c: 0.5, w: 0, a: 0, e: 0, pn: 0, semis: 0, rate: 1, dur: 0,
+    tOut: 0, tSrc: 0, dt: 0, u: 0, v: 0, dev: 0, pan: 0, i: 0, n: 0 };
 
   function buildTicks(cap) {
     if (ticks && tickCap === cap) return;
@@ -1699,20 +1884,57 @@ function stAttach(canvas) {
   let schedStats = null;
   let schedFor = null;
 
-  function statsFor(list) {
-    if (schedFor === list && schedStats) return schedStats;
+  function statsFor(list, sr, outFrames, srcFrames, colourBy) {
+    const sig = `${list.length}|${outFrames}|${srcFrames}|${colourBy}`;
+    if (schedFor === list && schedStats && schedStats.sig === sig) return schedStats;
     schedFor = list;
-    let lo = Infinity, hi = -Infinity, amp = 1e-6, size = 0, n = 0;
+
+    const outSec = (outFrames || 1) / sr;
+    const srcSec = (srcFrames || 1) / sr;
+    const ratio = Math.max(0.01, Math.min(100, outSec / Math.max(srcSec, 1e-9)));
+    const of = (ST_COLOUR_BY[colourBy] || ST_COLOUR_BY.pitch).of;
+
+    let lo = Infinity, hi = -Infinity, amp = 1e-6, size = 0, dev = 1e-6;
+    let firstOut = Infinity, lastOut = -Infinity;
+    const g = { semis: 0, rate: 1, dev: 0, dur: 0, v: 0, u: 0 };
     for (let i = 0; i < list.length; i++) {
-      const p = list[i][3] || 0;
-      if (p < lo) lo = p;
-      if (p > hi) hi = p;
-      if ((list[i][4] || 0) > amp) amp = list[i][4];
-      size += list[i][2] || 0;
-      n++;
+      const e = list[i];
+      g.semis = e[3] || 0;
+      g.rate = Math.pow(2, g.semis / 12);
+      g.dur = (e[2] || 0) / sr;
+      g.v = (e[1] || 0) / Math.max(srcFrames || 1, 1);
+      g.u = (e[0] || 0) / Math.max(outFrames || 1, 1);
+      // How far this grain's read strayed from where it was nominally due.
+      // Nought when position jitter is off, which is what makes the Lattice a
+      // perfect crystal at rest.
+      g.dev = ((e[1] || 0) - (e[0] || 0) / ratio) / sr;
+      const c = of(g);
+      if (c < lo) lo = c;
+      if (c > hi) hi = c;
+      if ((e[4] || 0) > amp) amp = e[4];
+      if (Math.abs(g.dev) > dev) dev = Math.abs(g.dev);
+      size += e[2] || 0;
+      if (e[0] < firstOut) firstOut = e[0];
+      if (e[0] > lastOut) lastOut = e[0];
     }
-    if (!n) { lo = 0; hi = 0; }
-    schedStats = { lo, span: hi - lo, amp, size: n ? size / n : 0 };
+    const n = list.length;
+    if (!n) { lo = 0; hi = 0; firstOut = 0; lastOut = 0; }
+    const baseDur = n ? (size / n) / sr : 0.04;
+    // **Overlap, measured rather than asked for.** The braid's strand count is
+    // the overlap, and the engine's setting for it does not reach this far — but
+    // it is not needed: how many windows cover a moment is how long one lasts
+    // divided by how far apart they are, and both are in the schedule.
+    const hop = n > 1 ? ((lastOut - firstOut) / (n - 1)) / sr : baseDur;
+    const overlap = Math.max(1, Math.min(16, baseDur / Math.max(hop, 1e-6)));
+    // The lattice's grid, and how hard to push a grain off it. The original
+    // scales the push by the position-jitter setting; measured against the
+    // cloud's own largest deviation it is the same picture and needs nothing
+    // passed in — perfect at rest, melting as the jitter comes up.
+    const side = Math.max(1, Math.ceil(Math.sqrt(n)));
+    const cell = (ST_P5.SPAN * 1.7) / side;
+    schedStats = { sig, lo, span: hi - lo, amp, size: n ? size / n : 0,
+      baseDur, outSec, srcSec, ratio, overlap, side, cell,
+      devScale: (ST_P5.HEIGHT) / Math.max(dev, 1e-6), of };
     return schedStats;
   }
 
@@ -1725,33 +1947,49 @@ function stAttach(canvas) {
   /// of "blooming outward in both directions at once" and the half the
   /// birth-and-age cloud can never show — it has no future in it.
   function stepTicks(f, lay) {
-    const list = (f && f.grains) || null;
+    // The window for a moment, the whole schedule for an object. See the note
+    // where these are handed over in `visGlTick`.
+    const list = (f && (lay.moment ? f.grains : (f.schedule || f.grains))) || null;
     const sr = (f && f.grainRate) || 44100;
     const now = ((f && f.position) || 0) / ((f && f.positionRate) || sr);
-    const look = ST_LOOKS[lay.key] || {};
-    const k = Math.max(1, Math.round(look.mirror || 6));
-    tickFolds = k;
-    const cap = stDetail(cfg, cfg.cloudCap | 0, 100, 6000) * k;
+    const look = stLook(cfg, lay.key);
+    // **The fold belongs to the moment, not to the object.** Suite one lays the
+    // whole schedule out as one thing and folding it would fold the thing
+    // itself; suite two is a window on an instant, and the symmetry is a
+    // property of the looking.
+    const k = lay.suite === 2 ? Math.max(1, Math.round(look.mirror || 1)) : 1;
+    const folds = lay.sym === 'mirror' ? Math.min(4, k) : k;
+    tickFolds = folds;
+    const cap = stDetail(cfg, cfg.cloudCap | 0, 100, 6000) * folds;
     buildTicks(cap);
     if (!list || !list.length) { ticks.isVisible = false; return; }
 
-    const st = statsFor(list);
+    const st = statsFor(list, sr, f.outFrames, f.srcFrames, look.colourBy);
     // How far ahead or behind a grain still counts as part of this moment.
     // Outside it nothing is drawn: from inside a moment you cannot see the whole
     // piece, and pretending otherwise is a different picture.
-    const H = Math.max((st.size / sr) * 14, 1.6);
-    const ramp = stRamp(look.palette || ['#b388eb', '#8093f1', '#f7aef8'], ST_CBINS);
-    const glow = Math.max(0, cfg.cloudGlow) * (look.glow || 1);
+    const H = Math.max(st.baseDur * 14, 1.6);
+    const ramp = stRamp(look.palette, ST_CBINS);
+    const glow = Math.max(0, cfg.cloudGlow) * (look.glow == null ? 1 : look.glow);
     const trail = look.trail == null ? 0.5 : look.trail;
-    // **How big the disc is, against the frame it has to fit in.**
+
+    // **One scale from the original's space into the room.**
     //
-    // The original sets this to a fifth of its camera distance and frames the
-    // view at three and a half times the radius, so the disc fills most of the
-    // height. Carried over as a fraction of the *room* it came out at nearly
-    // twice the camera's distance from the origin — a mandala the frame was
-    // standing inside, with the middle of it behind the eye.
-    const R = Math.min(cfg.width, cfg.height) * 0.28;
-    const HH = cfg.height * 0.55;
+    // Every projection is written in the units it was written in — `R` 300,
+    // `SPAN` 520, `HEIGHT` 260 — and this is the only place they become metres.
+    // Ten projections each doing their own conversion is ten chances to get it
+    // subtly wrong, and the first attempt managed exactly that in all ten.
+    //
+    // Sized so the view fills the frame from where the camera is standing.
+    // `fit` is how far this particular view reaches as a multiple of `R`: the
+    // Lattice is a grid of `SPAN * 1.7` across and the Mandala is a disc of `R`,
+    // and framed identically one of them is a speck and the other runs off every
+    // edge. It is the only per-view number here that is not the original's, and
+    // it exists because the original fits its camera to each view and this one
+    // stands in a room you can walk around.
+    const dist = BABYLON.Vector3.Distance(camera.position, BABYLON.Vector3.Zero());
+    const half = dist * Math.tan(cfg.fov / 2);
+    const scale = (half * 1.15) / (ST_P5.R * (lay.fit || 1));
 
     // Screen-space basis, so a stroke is legible whatever the camera is doing.
     const fwd = camera.getForwardRay ? camera.getForwardRay().direction : new BABYLON.Vector3(0, 0, 1);
@@ -1767,64 +2005,91 @@ function stAttach(canvas) {
     // pixels for a grain merely present and five for one sounding. Written as
     // world units instead they came out at two millimetres in a four-metre room,
     // which is under a pixel: every tick was there, every tick was drawn, and
-    // nothing was visible. So the conversion is explicit — how much of the world
-    // one pixel covers at this distance through this lens — and every number
-    // below is the original's, in the original's units.
-    //
-    // Against the canvas's *CSS* height, not its buffer height. On a retina
-    // display the buffer is twice the size, so measured against that every
-    // stroke comes out half the width the original draws, which on a two pixel
-    // line is the difference between a stroke and nothing at all.
-    const dist = BABYLON.Vector3.Distance(camera.position, BABYLON.Vector3.Zero());
+    // nothing was visible. Against the canvas's *CSS* height, not its buffer
+    // height: on a retina display the buffer is twice the size, and measured
+    // against that every stroke comes out half the width the original draws.
     const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
     const cssH = Math.max(1, engine.getRenderHeight() / dpr);
     const wpp = (2 * dist * Math.tan(cfg.fov / 2)) / cssH;
-    const wedge = (Math.PI * 2) / k;
-    const spin = now * 0.55;
-    const ctx = { R, H: HH, wedge, spin, now };
+
+    const ctx = {
+      R: ST_P5.R, SPAN: ST_P5.SPAN, HEIGHT: ST_P5.HEIGHT,
+      wedge: (Math.PI * 2) / Math.max(1, k), spin: now * 0.55, now, H,
+      outSec: st.outSec, srcSec: st.srcSec, overlap: st.overlap,
+      side: st.side, cell: st.cell, devScale: st.devScale, baseDur: st.baseDur,
+    };
+
+    // **Thinned across the whole thing, not cut off at the cap.**
+    //
+    // An object view is a picture of the *entire* schedule. Filling the buffer
+    // in schedule order and stopping fills it with the first few seconds of the
+    // piece and draws nothing after — Shear came out as a clump against the left
+    // edge instead of a diagonal across the frame, which reads as a broken
+    // projection rather than as a missing three quarters of the file. So the
+    // density is lowered until the whole thing fits, through the same per-grain
+    // hash, which thins in place rather than rearranging.
+    const room = Math.floor(cap / folds);
+    const density = lay.moment
+      ? cfg.cloudDensity
+      : Math.min(cfg.cloudDensity, room / Math.max(1, list.length));
+    // How many marks the lattice has to find a grid for. Its side is the square
+    // root of what is *drawn*, not of what exists, or the crystal is a corner of
+    // a grid several times too big.
+    // How many marks there will actually be: the schedule after thinning, or the
+    // room in the buffer, whichever runs out first. Multiplying the *capped*
+    // count by the density instead counts the thinning twice, and the grid came
+    // out a third of the side it needed — so the crystal ran off the bottom of
+    // the room in a column eighty rows deep.
+    const expect = Math.min(list.length * density, room);
+    ctx.side = Math.max(1, Math.ceil(Math.sqrt(expect)));
+    ctx.cell = (ST_P5.SPAN * 1.7) / ctx.side;
 
     let n = 0;
-    for (let i = 0; i < list.length && n + k <= cap; i++) {
+    let drawn = 0;
+    for (let i = 0; i < list.length && n + folds <= cap; i++) {
       const e = list[i];
       const dt = e[0] / sr - now;
-      if (dt > H || dt < -H) continue;
+      // The moment views draw a window either side of the playhead. The object
+      // views draw the whole schedule, because that is what they are of.
+      if (lay.moment && (dt > H || dt < -H)) continue;
       // Thinned by the grain's own number, not by taking every n-th: a periodic
       // schedule sampled at a fixed interval beats against itself and comes out
-      // banded rather than thinner. See the same note on the solid cloud.
+      // banded rather than thinner.
       const key = (e[7] | 0) * 2654435761 >>> 0;
-      if ((key & 0xffff) / 0x10000 > cfg.cloudDensity) continue;
+      if ((key & 0xffff) / 0x10000 > density) continue;
 
       const dur = (e[2] || 0) / sr;
       // **A grain that has not sounded yet is still drawn.** It is dark — the
-      // dimmest of the three tiers — but it is there, and it is half of what
-      // this view is: the present blooming outward in both directions at once.
-      // Culled on energy, only the past survived and the picture was a half
-      // moon of ink with nothing coming.
+      // dimmest of the three tiers — but it is there, and for the moment views
+      // it is half of what they are: the present blooming outward both ways.
       const en = stEnergy(-dt, dur, trail);
 
-      // What every ported projection reads, in one object that is filled and
-      // refilled rather than built per grain — this loop runs over the whole
-      // schedule on every frame, and a fresh pair of objects a grain is a few
-      // thousand allocations a frame for nothing.
-      //
-      //   c    where this grain sits in the palette, by pitch
-      //   w    how far it is from now, signed: −1 gone, 0 now, +1 coming
-      //   amp  how loud the stretch of source it reads is
-      //   pn   how far out of tune it is
-      gs.c = st.span > 1e-9 ? ((e[3] || 0) - st.lo) / st.span : 0.5;
+      gs.semis = e[3] || 0;
+      gs.rate = Math.pow(2, gs.semis / 12);
+      gs.dur = dur;
+      gs.tOut = e[0] / sr;
+      gs.tSrc = e[1] / sr;
+      gs.dt = dt;
       gs.w = Math.max(-1, Math.min(1, dt / H));
-      gs.amp = Math.min(1, (e[4] || 0) / st.amp);
-      gs.pn = Math.max(-1, Math.min(1, (e[3] || 0) / 48));
+      gs.u = (e[0] || 0) / Math.max(f.outFrames || 1, 1);
+      gs.v = (e[1] || 0) / Math.max(f.srcFrames || 1, 1);
+      gs.dev = ((e[1] || 0) - (e[0] || 0) / st.ratio) / sr;
+      gs.a = Math.min(1, (e[4] || 0) / st.amp);
+      gs.e = en;
+      gs.pan = e[6] || 0;
+      gs.i = e[7] | 0;
+      gs.n = drawn++;
+      gs.pn = Math.max(-1, Math.min(1, gs.semis / 48));
+      gs.c = st.span > 1e-9 ? (st.of(gs) - st.lo) / st.span : 0.5;
+
       const at = lay.project(gs, ctx);
+      // The original draws in a space with y downward; this one has y up.
+      const px = at[0] * scale, py = -at[1] * scale, pz = at[2] * scale;
 
       // The mark itself: length is how long the grain lasts, tilt is what rate
       // it reads at, and both are facts about the sound rather than decoration.
-      // Length in pixels, the way the original sets it: a five millisecond grain
-      // is a speck and a two second one is a streak, and the run between them is
-      // logarithmic so the window slider moves it visibly at every setting.
       const L = 14 * stTickScale(dur) * wpp;
-      const semis = e[3] || 0;
-      const tilt = Math.max(-2.2, Math.min(2.2, semis / 12)) * 0.62;
+      const tilt = Math.max(-2.2, Math.min(2.2, Math.log2(Math.max(gs.rate, 1e-6)))) * 0.62;
       const ca = Math.cos(tilt), sa = Math.sin(tilt);
       const dxv = rgt.x * ca + up.x * sa, dyv = rgt.y * ca + up.y * sa, dzv = rgt.z * ca + up.z * sa;
       const pxv = -rgt.x * sa + up.x * ca, pyv = -rgt.y * sa + up.y * ca, pzv = -rgt.z * sa + up.z * ca;
@@ -1833,28 +2098,37 @@ function stAttach(canvas) {
       // merely present, which is what makes overlap legible as brightness.
       const ei = en > 0.55 ? 2 : (en > 0.08 ? 1 : 0);
       // Never thinner than a pixel and a bit. A stroke narrower than the screen
-      // can draw is not a faint stroke, it is an absent one — and the whole
-      // cloud went missing that way while every tick was present and correct.
+      // can draw is not a faint stroke, it is an absent one.
       const wgt = Math.max(1.6, (ei === 0 ? 3.8 : (ei === 1 ? 5.6 : 9.5)) * 0.9) * wpp;
       const alpha = Math.min(1, (ei === 0 ? 0.35 : (ei === 1 ? 0.65 : 0.92)) * glow);
       const ci = Math.max(0, Math.min(ST_CBINS - 1, Math.floor(gs.c * ST_CBINS)));
       const col = ramp[ci];
 
-      // The kaleidoscope. The cloud is placed once and written k times under a
-      // rotation and an alternating flip — the symmetry is a property of the
-      // looking rather than of the sound, which is exactly what it should be,
-      // and it is where the density comes from. Twelve folds is twelve times the
-      // ink for one pass over the schedule.
-      for (let s = 0; s < k; s++) {
-        const a = (s * Math.PI * 2) / k + now * 0.12;
-        const cr = Math.cos(a), sr2 = Math.sin(a);
-        // **Flipped, then turned** — the order the original applies them in, and
-        // not a detail: turning first and flipping the result reflects every
-        // other wedge about the wrong axis, so the folds land on top of one
-        // another and twelve of them read as six.
-        const fl = (s & 1) ? -1 : 1;
-        const rot = (x, y) => { const yy = y * fl; return [x * cr - yy * sr2, x * sr2 + yy * cr]; };
-        const p = rot(at[0], at[1]);
+      // **The fold.** The cloud is placed once and written out several times
+      // under a transform, rather than every grain being duplicated into the
+      // schedule — a dozen extra writes against a dozen times the work. It is
+      // also where the density of a moment view comes from.
+      //
+      //   rot     turned by a share of the circle, every other one flipped.
+      //           Flipped *then* turned: the other order reflects each pair
+      //           about the wrong axis and twelve folds read as six.
+      //   mirror  folded in x, then in y, then both. Four copies and no more,
+      //           because a fifth is one of the first four again.
+      for (let s = 0; s < folds; s++) {
+        let fx = 1, fy = 1, cr = 1, sr2 = 0;
+        if (lay.sym === 'mirror') {
+          fx = (s & 1) ? -1 : 1;
+          fy = (s & 2) ? -1 : 1;
+        } else if (k > 1) {
+          const ang = (s * Math.PI * 2) / k + now * 0.12;
+          cr = Math.cos(ang); sr2 = Math.sin(ang);
+          fy = (s & 1) ? -1 : 1;
+        }
+        const rot = (x, y) => {
+          const xx = x * fx, yy = y * fy;
+          return [xx * cr - yy * sr2, xx * sr2 + yy * cr];
+        };
+        const p = rot(px, py);
         const d2 = rot(dxv, dyv);
         const q2 = rot(pxv, pyv);
         const nn2 = rot(nrm.x, nrm.y);
@@ -1862,7 +2136,7 @@ function stAttach(canvas) {
         tickMx[m] = d2[0] * L; tickMx[m + 1] = d2[1] * L; tickMx[m + 2] = dzv * L; tickMx[m + 3] = 0;
         tickMx[m + 4] = q2[0] * wgt; tickMx[m + 5] = q2[1] * wgt; tickMx[m + 6] = pzv * wgt; tickMx[m + 7] = 0;
         tickMx[m + 8] = nn2[0]; tickMx[m + 9] = nn2[1]; tickMx[m + 10] = nrm.z; tickMx[m + 11] = 0;
-        tickMx[m + 12] = p[0]; tickMx[m + 13] = p[1]; tickMx[m + 14] = at[2]; tickMx[m + 15] = 1;
+        tickMx[m + 12] = p[0]; tickMx[m + 13] = p[1]; tickMx[m + 14] = pz; tickMx[m + 15] = 1;
         const c4 = n * 4;
         tickCol[c4] = col[0]; tickCol[c4 + 1] = col[1]; tickCol[c4 + 2] = col[2]; tickCol[c4 + 3] = alpha;
         n++;
@@ -2029,7 +2303,7 @@ function stAttach(canvas) {
       // port draws twice — the same grains as ink and as objects, in the same
       // places, which reads as neither.
       const lay = stLayout(cfg.cloudLayout);
-      const inked = !!lay.ported;
+      const inked = !!(lay.ported && cfg.cloudInk);
       const showCloud = stShows(cfg, 'cloudOn');
       // Nothing is built for a cloud that is switched off. The strokes are a
       // pass over the whole schedule and a write of one matrix per fold, which

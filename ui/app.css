@@ -3375,3 +3375,40 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   outline-offset: 1px;
 }
 .st-muted { opacity: 0.35; }
+
+/* ── the view's own look ── */
+/*
+   Ten views is ten things to look at, not one thing seen ten ways: Braid wants
+   long trails and Shear wants none. So this block edits whichever arrangement
+   is on the stage, and switching away and back finds it as it was left.
+
+   It is absent rather than disabled when the stage is showing as itself — the
+   room's own cloud is lit solids and has none of these.
+*/
+.st-view { margin-top: 6px; }
+.st-swatch {
+  width: 26px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line, #223);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+/* Sixteen of them, four to a row, so the grid is a shape you can aim at rather
+   than a list you have to read. */
+.st-pads {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  flex: 1 1 100%;
+}
+.st-pads .re-btn {
+  overflow: hidden;
+  padding: 4px 2px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* An empty pad is a place to put something, not a broken button. */
+.st-pads .re-btn.st-pad-empty { border-style: dashed; opacity: 0.45; }

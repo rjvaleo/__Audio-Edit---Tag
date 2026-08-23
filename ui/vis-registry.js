@@ -42,7 +42,7 @@ const VIS_FAMILIES = [
   // else — which is what listing them under the same family did, and why they
   // now sit apart with the originals untouched beside them.
   { key: 'arrangement', label: 'Stage arrangements', host: 'masterBus',
-    hint: 'The stage with its cloud placed the way each grain view places it. Lit, in the one scene, and filmable. Mandala is a port and draws the strokes; the other nine are placement only and still coarser than the originals under Grains.' },
+    hint: 'The ten grain views, in this engine: the same projections, drawn as additive strokes with the same folds, palettes and trails. Each carries its own look and its own editor, and unlike the originals they film.' },
 ];
 
 /// Every visual there is.
@@ -105,25 +105,24 @@ const VIS_ALL = [
     frame: 'grainFrame', suite: 2, view: i + 1, films: false, hint,
   })),
 
-  // ── the stage, with its cloud laid out ──
+  // ── the ten views, on this engine ──
   //
-  // **One of these is a port. Nine are still arrangements.** The claim behind
-  // all ten was that the only thing that ever differed between the grain views
-  // was where a grain goes, so ten short functions would do. Put side by side
-  // that was plainly false: the p5 Mandala is a dense radial weave of thousands
-  // of strokes and the arrangement was a scatter of lit dots in the same
-  // positions. The picture was never only the placement. It was the stroke, the
-  // accumulation and the density.
+  // **A port now, not an arrangement.** The claim behind the first version was
+  // that the only thing separating the grain views was where a grain goes, so
+  // ten short functions would do. Side by side that was plainly false: the p5
+  // Mandala is a dense radial weave and the arrangement was a scatter of lit
+  // dots in the same positions. The picture was never only the placement — it
+  // was the stroke, the accumulation and the density.
   //
-  // Mandala now has all three — strokes rather than solids, additive on black,
-  // the kaleidoscope, the colour ramp and the moment window — and is drawn from
-  // the original's own projection. The other nine are still placement only, and
-  // still worse than what they are named after.
+  // All ten have those now. Every projection is transcribed from
+  // `visualiser/grain-views.html` in the units it was written in, drawn as
+  // billboarded strokes, additive on black, with the original's own folds,
+  // energy tiers, colour ramps, trails and per-view looks. See `ST_LAYOUTS`.
   //
-  // All ten keep `· stage` on the end, because a picker offering two things
-  // called "Mandala" is an offer to pick one of them by mistake, and both are
-  // still here. The rule on this work is *same or better*; only where an entry
-  // has met it does its hint stop pointing at the original.
+  // They keep `· stage` on the end because both are still here and a picker
+  // offering two things called "Mandala" is an offer to pick one of them by
+  // mistake. What this side has that the originals do not: the palette, the
+  // lighting, the rest of the scene to stand in — and the export.
   ...[
     ['swarm', 'Swarm'], ['shear', 'Shear'], ['braid', 'Braid'],
     ['shells', 'Shells'], ['lattice', 'Lattice'],
