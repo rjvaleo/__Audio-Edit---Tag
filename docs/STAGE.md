@@ -251,6 +251,38 @@ alt-click clears.
 `speed` and `orbit` did not come across. Both drive the original's own clock and
 camera; here the playhead is the clock and the camera is yours.
 
+## The catalogue of solids
+
+**All thirty-four, not one.** The cloud drew a single icosahedron because that is
+what one `CreatePolyhedron` call gives you, and every grain in the room was the
+same object at a different size. The old room has never done that:
+`ui/grain-shapes.js` builds a catalogue off the sheets in `Gran Shapes/` — the
+Platonic five, the prisms and pyramids, the swept forms, the truncations, the
+spiked stars, the simplex projections — and gives each grain one of them by its
+own number, decided once when it is born and never revised.
+
+Every model carries triangles as well as edges, so here they can be what the
+stage's cloud is meant to be: **lit solids standing in fog**, rather than the
+wireframes the old room draws them as because it has no lamp and no depth buffer.
+One mesh per shape, each with its own thin-instance buffer — a thin instance is
+an instance *of a mesh*, so a cloud of thirty-four solids is thirty-four clouds,
+which is the same trade the single mesh made and the only one on offer.
+
+**Three of them have no skin, on purpose.** A simplex projection is a graph
+rather than a surface: every pair of its vertices is joined and none of that is a
+face, and the catalogue says so by shipping them with no triangles. Built as
+solids they are meshes with no indices, which draw nothing — a grain assigned one
+is a grain that silently is not there. They are drawn as edges instead, which is
+what they are.
+
+`SHAPE`, under Grains:
+
+| | |
+| --- | --- |
+| Every shape | one from the whole catalogue, by the grain's own number |
+| By how loud it is | the old room's rule — the intricate solids kept for the loud grains, because there a grain is a wireframe and thirty edges on an eight-pixel mark cost the same as thirty that can be seen. Here a shape is one draw call however many grains wear it, so that bound buys nothing and is not the default. |
+| *a named solid* | the whole cloud drawn as that one |
+
 ## The cloud drawn as strokes
 
 **A grain is a tick, not a dot**, and this is the single largest difference

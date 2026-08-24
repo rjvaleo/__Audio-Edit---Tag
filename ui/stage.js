@@ -63,11 +63,27 @@ const ST_DEFAULTS = {
   /// Round the target, in radians. Nought looks down the room.
   orbit: 0,
   /// Above or below it. Level at nought; the ten views open a little above.
-  tilt: 0.12,
+  ///
+  /// **These three are the old rig's opening shot, re-expressed.** It stood at
+  /// `(0, 0.12, −1.15)` and looked at `(0, 0, 2.7)`, so the distance between
+  /// those two is 3.85 and the angle above is `asin(0.12 / 3.85)`. Carried over
+  /// as `dist: 1.6` — the old `eye` measured from the *origin* rather than from
+  /// the target — the camera opened two and a third units further down the room
+  /// than it ever had, and the ring, the sleeve and the type were all off the
+  /// front of the frame. Every one of their tests said "drew nothing", which is
+  /// what a thing behind the camera looks like.
+  tilt: 0.031,
   /// How far back from the point it is looking at.
-  dist: 1.6,
+  dist: 3.85,
   /// The point it turns around, and what it looks at. Slid by shift-drag.
-  panX: 0, panY: 0, panZ: 0,
+  ///
+  /// **Down the room, not at the origin.** The stage's own cloud travels away
+  /// from you as it ages — it runs the length of `depth` — so a camera turning
+  /// around the origin is turning around one end of it and most of the cloud is
+  /// out of frame. The old rig aimed at `depth × aim`, which is this number; the
+  /// ten ported views set it to nought when they are chosen, because they are
+  /// built around the present and the present is the origin.
+  panX: 0, panY: 0, panZ: 2.7,
 
   // **The old rig, kept and unlisted.** `eye`, `swing`, `lift` and `aim` slid
   // the camera on a plane and aimed it down the room's axis. Nothing reads them
@@ -155,6 +171,14 @@ const ST_DEFAULTS = {
   cloudDensity: 0.55,
   /// Which of the ten arrangements the cloud is in. See `ST_LAYOUTS`.
   cloudLayout: 'swarm',
+  /// Which solid a grain is drawn as.
+  ///
+  /// **`auto` is the catalogue.** Every grain gets one of the thirty-seven in
+  /// `ui/grain-shapes.js` from its own hash, at a tier set by how loud it is — a
+  /// grain eight pixels across cannot show the difference between a dodecahedron
+  /// and an icosahedron, so the intricate ones only turn up on grains with the
+  /// pixels to hold them. Naming one instead draws the whole cloud as that.
+  cloudShape: 'auto',
   /// Whether the cloud is drawn as strokes or as lit solids.
   ///
   /// **Both, and neither replaces the other.** An arrangement is the grain view
@@ -867,7 +891,7 @@ const ST_GROUPS = [
   {
     key: 'grains', label: 'Grains', owner: 'cloudOn',
     hint: 'Every grain about to sound.',
-    sliders: ['cloudDensity', 'cloudSize', 'cloudDrift', 'cloudGlow', 'cloudCap'],
+    sliders: ['cloudShape', 'cloudDensity', 'cloudSize', 'cloudDrift', 'cloudGlow', 'cloudCap'],
   },
   {
     key: 'ring', label: 'Ring', owner: 'ringOn',
@@ -901,6 +925,21 @@ const ST_GROUPS = [
       'wireWidth', 'detail'],
   },
 ];
+
+/// The settings that are a choice from a list rather than a number.
+///
+/// A slider over thirty-eight named solids is a slider you cannot aim: the
+/// values have no order, the readout is a number nobody can read as a shape, and
+/// there is no way to get back to the one you liked. So the panel builds these
+/// as a menu, and `ST_UI` says which by carrying a `pick`.
+const ST_PICKS = {
+  cloudShape: () => [
+    { value: 'auto', label: 'Every shape' },
+    { value: 'tiered', label: 'By how loud it is' },
+    ...(typeof GRAIN_SHAPES === 'undefined' ? []
+      : GRAIN_SHAPES.map((m) => ({ value: m.name, label: m.name }))),
+  ],
+};
 
 /// The camera's own numbers, pinned above the groups.
 ///
@@ -961,6 +1000,9 @@ const ST_UI = [
     hint: 'How much of the schedule is drawn. A cloud you can see through is worth more than one you cannot.' },
   { key: 'cloudSize', tag: 'GRAIN SIZE', min: 0.005, max: 0.3, step: 0.005, hint: 'How big each grain is.' },
   { key: 'cloudDrift', tag: 'GRAIN DRIFT', min: 0, max: 1, step: 0.01, hint: 'How far a grain wanders as it travels.' },
+  // Not a number, so not a slider — see `ST_PICKS`.
+  { key: 'cloudShape', tag: 'SHAPE', pick: 'cloudShape',
+    hint: 'Which solid a grain is drawn as. On “every shape” each one gets one from the whole catalogue by its own number. On “by how loud it is” the intricate solids are kept for the loud grains, which is what the old room does. Or name one and the whole cloud is that.' },
   { key: 'cloudGlow', tag: 'GRAIN GLOW', min: 0, max: 1.5, step: 0.01, hint: 'How much light one grain gives off of its own, before the lamps touch it. Only the cloud — everything else the sound is drawn as is LINE GLOW, under Look.' },
   { key: 'cloudCap', tag: 'GRAIN CAP', min: 100, max: 6000, step: 100, round: true, hint: 'The most that will ever be in the room at once.' },
   { key: 'ringSize', tag: 'RING', min: 0.05, max: 1.5, step: 0.01, hint: 'How wide the tube is.' },
@@ -1650,12 +1692,94 @@ function stAttach(canvas) {
   let cloudDied = 0;
   let cloudNow = -1;
 
+  // ── the catalogue of solids ──
+  //
+  // **All thirty-seven, not one.** The cloud drew a single icosahedron because
+  // that is what one `CreatePolyhedron` call gives you, and every grain in the
+  // room was the same object at a different size. The room on the old renderer
+  // has never done that: `ui/grain-shapes.js` builds a catalogue from the sheets
+  // in `Gran Shapes/` — the Platonic five, the prisms and pyramids, the swept
+  // forms, the truncations, the spiked stars, the simplex projections — and
+  // gives each grain one of them by its own hash.
+  //
+  // Every model carries triangles as well as edges, so on this renderer they can
+  // be what the stage's cloud is meant to be: lit solids standing in the fog,
+  // rather than the wireframes the old room draws them as because it has no lamp
+  // and no depth buffer.
+  //
+  // One mesh per shape, each with its own thin-instance buffer, because a thin
+  // instance is an instance *of a mesh* — thirty-seven draw calls against
+  // thirty-seven separate clouds, which is the same trade the single mesh made
+  // and the only one on offer.
+  const cloudShapes = new Map();
+
+  function shapeMesh(model) {
+    let e = cloudShapes.get(model.name);
+    if (e) return e;
+    const id = `stgrain_${model.name.replace(/[^a-z0-9]/gi, '_')}`;
+    let mesh;
+    // **The three simplex projections have no skin, on purpose.** A simplex is a
+    // graph rather than a surface — every pair of its vertices is joined and none
+    // of that is a face — and the catalogue says so by shipping them with no
+    // triangles at all. Built as solids they are meshes with no indices, which
+    // draw nothing: a grain assigned one is a grain that silently is not there.
+    // So they are drawn as what they are.
+    if (!model.tri || !model.tri.length) {
+      const lines = [];
+      for (let i = 0; i < model.idx.length; i += 2) {
+        const a = model.idx[i] * 3, b = model.idx[i + 1] * 3;
+        lines.push([
+          new BABYLON.Vector3(model.pos[a], model.pos[a + 1], model.pos[a + 2]),
+          new BABYLON.Vector3(model.pos[b], model.pos[b + 1], model.pos[b + 2]),
+        ]);
+      }
+      mesh = BABYLON.MeshBuilder.CreateLineSystem(id, { lines }, scene);
+      mesh.__wire = true;
+    } else {
+      mesh = new BABYLON.Mesh(id, scene);
+      const vd = new BABYLON.VertexData();
+      vd.positions = Array.from(model.pos);
+      vd.indices = Array.from(model.tri);
+      // Worked out rather than shipped: the catalogue is built for a renderer
+      // with no lamp in it and carries no normals, and a lit solid without them
+      // is a flat silhouette.
+      const nrm = new Float32Array(vd.positions.length);
+      BABYLON.VertexData.ComputeNormals(vd.positions, vd.indices, nrm);
+      vd.normals = Array.from(nrm);
+      vd.applyToMesh(mesh, true);
+      mesh.material = cloudMat;
+    }
+    mesh.isPickable = false;
+    mesh.alwaysSelectAsActiveMesh = true;
+    mesh.thinInstanceCount = 0;
+    mesh.isVisible = false;
+    e = { mesh, mx: new Float32Array(0), cap: 0, n: 0, wire: !!mesh.__wire };
+    cloudShapes.set(model.name, e);
+    return e;
+  }
+
+  /// Room for `n` instances of a shape, without reallocating every frame.
+  ///
+  /// Grown geometrically and never shrunk: which shapes are busy changes with
+  /// the sound, and a buffer that is resized whenever the cloud shifts is a
+  /// buffer that is resized constantly.
+  function shapeRoom(e, n) {
+    if (e.cap >= n) return;
+    e.cap = Math.max(16, n * 2);
+    e.mx = new Float32Array(e.cap * 16);
+    e.mesh.thinInstanceSetBuffer('matrix', e.mx, 16, false);
+  }
+
+  /// The catalogue is off: every grain the same solid, as it was.
+  const ST_ONE_SHAPE = 'icosahedron';
+
   function buildCloud() {
     const cap = stDetail(cfg, cfg.cloudCap | 0, 100, 6000);
     if (cloud && cloud.__cap === cap) return;
     if (cloud) cloud.dispose();
-    // An icosahedron: enough faces to catch the light from several directions,
-    // few enough to draw thousands of.
+    // The base mesh is still here and still used when the catalogue is switched
+    // off — an icosahedron: enough faces to catch the light from several
+    // directions, few enough to draw thousands of.
     cloud = BABYLON.MeshBuilder.CreatePolyhedron('stcloud', { type: 3, size: 1 }, scene);
     cloud.material = cloudMat;
     cloud.isPickable = false;
@@ -1669,6 +1793,29 @@ function stAttach(canvas) {
     cloud.thinInstanceCount = 0;
     cloud.isVisible = false;
     cloud.alwaysSelectAsActiveMesh = true;
+  }
+
+  /// Which solid a grain is, decided once when it is born.
+  ///
+  /// **Never re-decided.** The tier is a property of the grain's birth and not
+  /// of its age — see the note on `grainShapeFor`. Worked out afresh each frame
+  /// from how bright and how near it is, a grain leaves the front of the room a
+  /// pentagonal pyramid and reaches the back wall an octahedron, changing shape
+  /// in mid-air.
+  function shapeFor(key, level) {
+    if (typeof GRAIN_SHAPES === 'undefined') return null;
+    const want = cfg.cloudShape || 'auto';
+    // **Every shape, spread by the grain's own number.** The old room tiers the
+    // catalogue by how loud a grain is, so a quiet file only ever shows the six
+    // simplest solids — which is right there, where a grain is a wireframe drawn
+    // as lines and thirty edges on an eight-pixel mark cost the same as thirty
+    // that can be seen. Here a shape is one instanced draw call however many
+    // grains wear it, so that bound buys nothing and the whole catalogue is on.
+    if (want === 'auto') return GRAIN_SHAPES[(key >>> 16) % GRAIN_SHAPES.length];
+    // The room's own rule, for when the picture should say how loud a grain is
+    // by how intricate it is.
+    if (want === 'tiered') return grainShapeFor((key >>> 16) % 0xffff, grainDetailFor(level));
+    return GRAIN_SHAPES.find((m) => m.name === want) || null;
   }
 
   /// Bring in every grain the playhead has crossed, and move the ones already
@@ -1735,6 +1882,12 @@ function stAttach(canvas) {
           life: Math.max(0.6, Math.min(4, (e[2] / sr) * 4)),
           spin: ((k2 & 0xff) / 255) * 6.283,
           size: 0.5 + ((key >>> 8 & 0xff) / 255) * 0.8,
+          // Which solid it is. Decided here, once, and kept — see `shapeFor`.
+          // **The same level the old room derives**, or the tiers land in a
+          // different place and only the simplest few solids ever turn up. Root
+          // scaled, not linear: a grain's RMS is small and clustered, and read
+          // straight it never reaches the tier where the intricate shapes are.
+          shape: shapeFor(key, Math.min(1, Math.sqrt(Math.max(0, e[4] || 0)) * 2.2)),
         });
       }
     }
@@ -1771,19 +1924,47 @@ function stAttach(canvas) {
       const sc = cfg.cloudSize * g.size * a;
       const ang = g.spin + t * 3;
       const cs = Math.cos(ang) * sc, sn = Math.sin(ang) * sc;
-      const m = n * 16;
-      // A rotation about Y, scaled — written straight into the buffer rather
-      // than built as a Matrix and copied, which at this count matters.
-      cloudMx[m] = cs; cloudMx[m + 1] = 0; cloudMx[m + 2] = -sn; cloudMx[m + 3] = 0;
-      cloudMx[m + 4] = 0; cloudMx[m + 5] = sc; cloudMx[m + 6] = 0; cloudMx[m + 7] = 0;
-      cloudMx[m + 8] = sn; cloudMx[m + 9] = 0; cloudMx[m + 10] = cs; cloudMx[m + 11] = 0;
-      cloudMx[m + 12] = x; cloudMx[m + 13] = y; cloudMx[m + 14] = z; cloudMx[m + 15] = 1;
+      // **Into its own shape's buffer.** A thin instance is an instance of a
+      // mesh, so a cloud of thirty-seven different solids is thirty-seven
+      // clouds — each one written, sized and drawn on its own.
+      const into = g.shape ? shapeMesh(g.shape) : null;
+      if (into) {
+        shapeRoom(into, into.n + 1);
+        // `shapeRoom` may have handed out a new array.
+        writeGrain(into.mx, into.n, cs, sn, sc, x, y, z);
+        into.n++;
+      } else {
+        writeGrain(cloudMx, n, cs, sn, sc, x, y, z);
+      }
       n++;
       live[n - 1] = g;
     }
     live.length = n;
-    cloud.thinInstanceCount = n;
-    cloud.thinInstanceBufferUpdated('matrix');
+
+    // Every shape that had anything in it draws; every shape that did not is
+    // switched off rather than left showing its last frame.
+    let plain = 0;
+    // **Gated on the switch, like everything else in the room.** The base mesh
+    // was and these were not, so switching the grains off or soloing something
+    // else left thirty-four clouds drawing.
+    const showing = stShows(cfg, 'cloudOn');
+    for (const e of cloudShapes.values()) {
+      e.mesh.thinInstanceCount = e.n;
+      if (e.n) e.mesh.thinInstanceBufferUpdated('matrix');
+      e.mesh.isVisible = e.n > 0 && showing;
+      e.mesh.setEnabled(e.n > 0 && showing);
+      // The wire ones take their colour from the cloud rather than from a
+      // material, because a line mesh has its own.
+      if (e.wire && e.n) {
+        const c = stRgb(cfg.cloudColour, [1, 0.85, 0.63]);
+        const gg = Math.max(0, cfg.cloudGlow) * Math.max(0, cfg.glow);
+        e.mesh.color = new BABYLON.Color3(c[0] * gg, c[1] * gg, c[2] * gg);
+      }
+      e.n = 0;
+    }
+    for (const g of live) if (!g.shape) plain++;
+    cloud.thinInstanceCount = plain;
+    if (plain) cloud.thinInstanceBufferUpdated('matrix');
     // **And tell it where they all are.**
     //
     // Without this the mesh's bounds are whatever the base shape was and go to
@@ -1795,7 +1976,19 @@ function stAttach(canvas) {
     // It is a walk over the matrices, so it is done once here rather than per
     // instance.
     cloud.thinInstanceRefreshBoundingInfo(false);
-    cloud.isVisible = n > 0;
+    cloud.isVisible = plain > 0;
+  }
+
+  /// One grain's matrix, written straight into the buffer.
+  ///
+  /// A rotation about Y, scaled — written rather than built as a `Matrix` and
+  /// copied, which at this count matters.
+  function writeGrain(buf, i, cs, sn, sc, x, y, z) {
+    const m = i * 16;
+    buf[m] = cs; buf[m + 1] = 0; buf[m + 2] = -sn; buf[m + 3] = 0;
+    buf[m + 4] = 0; buf[m + 5] = sc; buf[m + 6] = 0; buf[m + 7] = 0;
+    buf[m + 8] = sn; buf[m + 9] = 0; buf[m + 10] = cs; buf[m + 11] = 0;
+    buf[m + 12] = x; buf[m + 13] = y; buf[m + 14] = z; buf[m + 15] = 1;
   }
 
 
