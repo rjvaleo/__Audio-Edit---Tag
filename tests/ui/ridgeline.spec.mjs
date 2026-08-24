@@ -386,10 +386,13 @@ test('the palette paints it, and shows its slots and not the room’s', async ({
   await page.click('#roomAdmin .rv-tab[data-rvtab="paint"]');
   const slots = await page.evaluate(() =>
     [...document.querySelectorAll('#roomPaintBody .rp-slot-name')].map((e) => e.textContent));
-  // Its own three, then the card's — which belongs to the room rather than to
-  // either module, so it is offered under both. What must not appear here is
-  // the room's fourteen.
-  expect(slots).toEqual(['Line', 'Fill', 'Background', 'Type', 'Type edge', 'Card']);
+  // **Its own three, and only those.** The card of type used to add three more
+  // under every module; its panel is not in the admin any more — see
+  // `ROOM_TEXT_IN_ADMIN` — and colours for something nothing offers to draw are
+  // rows that paint nothing. Nothing is deleted: `RT_SLOTS` is still described,
+  // and putting the panel back puts these rows back with it. What must not
+  // appear here is the room's fourteen.
+  expect(slots).toEqual(['Line', 'Fill', 'Background']);
 
   const got = await page.evaluate(`(() => {
     const r = visRenderer();

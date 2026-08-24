@@ -86,9 +86,14 @@ function rpSlots() {
   // stack, and offering it either one's slots is offering controls that paint
   // nothing — which is what it did: a scheme applied while the stage was up
   // changed the room's colours and left the stage exactly as it was.
-  if (on === 'stage' && typeof ST_SLOTS !== 'undefined') {
-    return typeof RT_SLOTS === 'undefined' ? ST_SLOTS : ST_SLOTS.concat(RT_SLOTS);
-  }
+  // **The card's three are only on offer while the card is.** The stage has type
+  // of its own — `stageType` — and appending the card's slots put two rows
+  // called "Type" in one list, colouring two different things. The card's panel
+  // is not in the admin any more either, so these were three colours for
+  // something nothing was drawing. See `ROOM_TEXT_IN_ADMIN`.
+  const card = (typeof RT_SLOTS !== 'undefined'
+    && (typeof ROOM_TEXT_IN_ADMIN === 'undefined' || ROOM_TEXT_IN_ADMIN)) ? RT_SLOTS : [];
+  if (on === 'stage' && typeof ST_SLOTS !== 'undefined') return ST_SLOTS.concat(card);
   // The stacked-line modules share three slots — line, fill, ground — because
   // they are the same picture flat and in a room. Only the room proper has the
   // fourteen.
@@ -96,7 +101,7 @@ function rpSlots() {
   // The card is drawn over both modules, so its colours are on offer under both
   // — appended rather than merged in, so the module's own slots stay together
   // at the top of the list where they were.
-  return typeof RT_SLOTS === 'undefined' ? own : own.concat(RT_SLOTS);
+  return own.concat(card);
 }
 
 const RP_BY_KEY = Object.fromEntries(
@@ -308,12 +313,35 @@ const RP_GENERATORS = [
   { key: 'bw', label: 'Black & white' },
 ];
 
-/// The slots that carry the room's light, and roughly how bright each should
-/// sit relative to the others. The cloud burns hottest, the box is furniture.
+/// The slots that carry the light, and roughly how bright each should sit
+/// relative to the others. In the room the cloud burns hottest and the box is
+/// furniture; on the stage the sound is loudest and everything else supports it,
+/// which is the balance `docs/STAGE.md` arrived at by soloing each object.
 const RP_WEIGHT = {
   box: 0.30, terrainMesh: 0.42, terrainRidge: 0.72, lead: 0.86,
   ring: 0.78, skin: 0.40, grainBloom: 0.50, grainWire: 0.72,
   grainCore: 1.00, grainFill: 0.26, mist: 0.44, fog: 0.34, data: 0.55,
+  // The stage. Terrain 7.6, sleeve 6.8, type 6.1, ring 4.5, grains 4.4, mist
+  // atmospheric — measured, not guessed. Without these every stage slot fell to
+  // the default half and a monochrome scheme came out as eight identical
+  // swatches.
+  stageTerrain: 1.00, stageSleeve: 0.88, stageType: 0.78, stageRing: 0.58,
+  stageGrains: 0.56, stageMist: 0.34, stageWalls: 0.28, stageGround: 0.05,
+};
+
+/// Which family a slot belongs to, for the schemes that tell them apart by hue.
+///
+/// 0 the ground and what stands on it, 1 the space around it, 2 what is in the
+/// air. Named rather than sniffed out of the key, because sniffing is what the
+/// first version did — `s.key.startsWith('terrain')` and friends — and every
+/// stage slot fell through every test to family 2.
+const RP_FAMILY = {
+  box: 0, terrainMesh: 0, terrainRidge: 0, lead: 0,
+  ring: 1, skin: 1,
+  grainBloom: 2, grainWire: 2, grainCore: 2, grainFill: 2, mist: 2, fog: 2, data: 2,
+  stageTerrain: 0, stageWalls: 0, stageGround: 0,
+  stageRing: 1, stageSleeve: 1,
+  stageGrains: 2, stageMist: 2, stageType: 2,
 };
 
 function rpRamp(key, drive, a, b, extra) {
@@ -326,9 +354,25 @@ function rpGenerate(kind, hue0) {
   const slots = {};
   const lit = (k) => RP_WEIGHT[k] ?? 0.5;
 
-  for (const s of RP_SLOTS) {
-    if (s.key === 'background') continue;
+  // **Whatever the panel is actually showing.** This walked `RP_SLOTS` — the
+  // room's fourteen — whichever module was up, so pressing a scheme while the
+  // stage was on screen wrote colours for slots the stage does not have and left
+  // every slot it does have untouched. Every swatch stayed on "theme" and every
+  // one of them drew the same gradient, because `RP_SLOTS.indexOf` is −1 for a
+  // stage slot and −1 is the same number for all of them.
+  const here = (typeof rpSlots === 'function') ? rpSlots() : RP_SLOTS;
+
+  for (const s of here) {
+    // **The ground is not given a colour with the rest.** Every scheme here is
+    // additive — the picture adds light to whatever it is drawn on — so a pale
+    // ground is a ground that cannot be drawn on, and the room has always
+    // special-cased it below. The stage's ground is the same thing under a
+    // different name, and left in the loop it came out mid-lightness and washed
+    // the whole scene to pale cyan.
+    if (s.key === 'background' || s.key === 'stageGround') continue;
     const w = lit(s.key);
+    // Its place in *this* list, which is what spreads the hues apart.
+    const at = here.indexOf(s);
     let lo, hi, drive = 0;
 
     if (kind === 'mono') {
@@ -338,9 +382,7 @@ function rpGenerate(kind, hue0) {
       // Three primaries, one per family: the floor, the sky, the cloud. What
       // makes this legible is that the families are told apart by hue rather
       // than by brightness, so all three can be loud at once.
-      const fam = s.key.startsWith('terrain') || s.key === 'lead' || s.key === 'box' ? 0
-        : s.key === 'ring' || s.key === 'skin' ? 1 : 2;
-      const h = [0, 122, 218][fam];
+      const h = [0, 122, 218][RP_FAMILY[s.key] ?? 2];
       lo = hsl(h, 0.85, 0.14 + w * 0.10);
       hi = hsl(h, 0.92, 0.48 + w * 0.30);
     } else if (kind === 'spectrum') {
@@ -349,15 +391,15 @@ function rpGenerate(kind, hue0) {
       // have shown and never did, because the only quantity on offer was level.
       const own = s.own === 'freq';
       if (own) drive = 5;
-      const h = own ? h0 : (h0 + RP_SLOTS.indexOf(s) * 29) % 360;
+      const h = own ? h0 : (h0 + at * 29) % 360;
       lo = hsl(h, 0.9, 0.22);
       hi = hsl((h + (own ? 300 : 40)) % 360, 0.9, 0.6);
     } else if (kind === 'vibrant') {
-      const h = (h0 + RP_SLOTS.indexOf(s) * 47) % 360;
+      const h = (h0 + at * 47) % 360;
       lo = hsl(h, 0.95, 0.18 + w * 0.10);
       hi = hsl((h + 34) % 360, 1.0, 0.52 + w * 0.26);
     } else if (kind === 'muted') {
-      const h = (h0 + RP_SLOTS.indexOf(s) * 13) % 360;
+      const h = (h0 + at * 13) % 360;
       lo = hsl(h, 0.16, 0.16 + w * 0.10);
       hi = hsl(h, 0.24, 0.44 + w * 0.20);
     } else { // bw
@@ -371,12 +413,15 @@ function rpGenerate(kind, hue0) {
   }
 
   // The ground. Dark in every scheme, because every scheme is additive.
-  slots.background = {
+  const ground = {
     mode: 'flat',
     colour: kind === 'bw' ? '#000000'
       : kind === 'muted' ? hsl(h0, 0.10, 0.07)
         : hsl(h0, 0.35, 0.055),
   };
+  slots.background = ground;
+  // The stage calls it something else and needs it just as dark.
+  if (here.some((s) => s.key === 'stageGround')) slots.stageGround = { ...ground };
   return { name: RP_GENERATORS.find((g) => g.key === kind)?.label || kind, slots };
 }
 
