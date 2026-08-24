@@ -306,7 +306,15 @@
               title="Render to a new AIFF beside the original, named for the engine, ratio, pitch and window — with every setting written into the file">Export</button>
       <button class="ghost" id="videoBtn"
               title="Film the room with the sound it is drawn from. Opens the export box, where the range, the size and the frame rate are chosen.">Video</button>
+      <!-- The menu of visuals is twenty-five long and most sessions use four of
+           them. This is where you say which four, and in what order. -->
+      <button class="ghost icon-btn" id="visMenuBtn"
+              title="Which visuals are offered, and in what order.">&#9881;</button>
     </div>
+    <!-- Anchored under the gear rather than floated in the middle of the screen:
+         it edits the menu you are about to use, and a box that covers the thing
+         it is about is a box you have to close to check your work. -->
+    <div class="vis-menu-admin hidden" id="visMenuAdmin"></div>
 
     <!-- Only while an export is running. Its own row, so no button anywhere
          moves when it appears. -->

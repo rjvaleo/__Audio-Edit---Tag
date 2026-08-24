@@ -2947,6 +2947,20 @@ $('videoBtn').onclick = () => {
   openExportLoop(exportLoopRange());
 };
 
+$('visMenuBtn').onclick = (e) => {
+  e.stopPropagation();
+  toggleVisMenuAdmin();
+};
+
+// Anywhere else closes it. A panel that edits the menu is a panel you open,
+// change one thing in, and leave.
+document.addEventListener('pointerdown', (e) => {
+  const host = $('visMenuAdmin');
+  if (!host || host.classList.contains('hidden')) return;
+  if (host.contains(e.target) || $('visMenuBtn')?.contains(e.target)) return;
+  toggleVisMenuAdmin(false);
+});
+
 $('elClose').onclick = closeExportLoop;
 $('elRepeats').oninput = paintExportLoop;
 $('elRepeats').onkeydown = (e) => {
@@ -8356,9 +8370,51 @@ function visRenderer() {
 /// about the three on the master bus — the eleven grain views were reachable
 /// from a different panel in a different workspace, and nothing anywhere listed
 /// the fourteen together. See `docs/PORT-PLAN.md`.
+/// Which visuals the menu offers, and in what order.
+///
+/// **Twenty-five entries, and most sessions use four.** The list in
+/// `vis-registry.js` says what exists; this says what is *offered*, which is a
+/// different question and belongs to whoever is working rather than to the
+/// program. Nothing here removes a visual — a hidden one is still in the
+/// registry, still reachable from `setVisual`, and still in a saved room; it is
+/// simply not in the menu.
+///
+/// In `localStorage`, not in the room data: which visuals you want to see is a
+/// preference that outlives any one document.
+const VIS_MENU_STORE = 'audiolab.vismenu.v1';
+let visMenuState = null;
+
+function visMenu() {
+  if (visMenuState) return visMenuState;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(VIS_MENU_STORE)); } catch { /* blocked */ }
+  const all = VIS_ALL.map((v) => v.key);
+  const order = Array.isArray(saved?.order) ? saved.order.filter((k) => all.includes(k)) : [];
+  // **Anything the registry has gained since this was saved goes on the end**,
+  // rather than being silently absent. A new visual that nobody can find because
+  // of a stored preference is the same bug as one that was never listed.
+  for (const k of all) if (!order.includes(k)) order.push(k);
+  const hidden = Array.isArray(saved?.hidden) ? saved.hidden.filter((k) => all.includes(k)) : [];
+  visMenuState = { order, hidden };
+  return visMenuState;
+}
+
+function saveVisMenu() {
+  try { localStorage.setItem(VIS_MENU_STORE, JSON.stringify(visMenu())); } catch { /* blocked */ }
+}
+
+/// The entries the menu offers, in the order it offers them.
+function visMenuList() {
+  const m = visMenu();
+  return m.order.map((k) => visEntry(k)).filter((v) => v && !m.hidden.includes(v.key));
+}
+
 function buildVisModulePicker() {
   const box = $('rgModules');
-  if (!box || box.children.length) return;
+  if (!box) return;
+  // Rebuilt rather than left alone: the menu is editable now, so "it already
+  // exists" is not a reason to keep whatever it last said.
+  box.innerHTML = '';
   // **A menu, not a row of buttons.** Three fitted along the stage bar; fourteen
   // do not, and the first version of this put a full-width family heading in a
   // bar one line tall — everything after it wrapped out of sight and the picker
@@ -8367,10 +8423,16 @@ function buildVisModulePicker() {
   const sel = rpEl('select', 'field mini vis-pick-sel');
   sel.id = 'rgVisual';
   sel.title = 'Which visualiser is on the stage.';
+  // Grouped by family, but in the order the menu was put in — so a family with
+  // everything hidden leaves no empty heading behind, and a reordered menu is
+  // read in the order it was arranged.
+  const shown = visMenuList();
   for (const fam of VIS_FAMILIES) {
+    const mine = shown.filter((v) => v.family === fam.key);
+    if (!mine.length) continue;
     const group = document.createElement('optgroup');
     group.label = fam.label;
-    for (const v of visFamily(fam.key)) {
+    for (const v of mine) {
       const o = document.createElement('option');
       o.value = v.key;
       // The state of the port, readable off the interface rather than out of a
@@ -8390,7 +8452,120 @@ function paintVisModulePicker() {
   const sel = $('rgVisual');
   if (!sel) return;
   const on = visualKey();
+  // **A hidden visual that is showing stays in the menu.** Otherwise the menu
+  // says one thing and the stage says another, and there is no way back to what
+  // you are looking at.
+  if (on && !sel.querySelector(`option[value="${on}"]`)) {
+    const v = visEntry(on);
+    if (v) {
+      const o = document.createElement('option');
+      o.value = v.key;
+      o.textContent = `${v.label} · hidden`;
+      sel.appendChild(o);
+    }
+  }
   if (sel.value !== on) sel.value = on;
+}
+
+/// The menu's own admin: what is offered, and in what order.
+///
+/// Anchored under the gear in the edit bar rather than floated over the middle
+/// of the screen — it edits the menu you are about to use, and a box that covers
+/// the thing it is about is a box you have to close to check your work.
+function buildVisMenuAdmin() {
+  const host = $('visMenuAdmin');
+  if (!host) return;
+  const m = visMenu();
+  host.innerHTML = '';
+
+  const head = rpEl('div', 'vma-head');
+  head.appendChild(rpEl('span', 're-tag', 'MENU'));
+  const all = rpEl('button', 're-btn', 'Show all');
+  all.title = 'Put every visual back in the menu. Nothing was ever removed — only unlisted.';
+  all.onclick = () => { m.hidden.length = 0; saveVisMenu(); buildVisMenuAdmin(); buildVisModulePicker(); };
+  const reset = rpEl('button', 're-btn', 'Default order');
+  reset.title = 'Back to the order the registry lists them in.';
+  reset.onclick = () => {
+    m.order = VIS_ALL.map((v) => v.key);
+    saveVisMenu(); buildVisMenuAdmin(); buildVisModulePicker();
+  };
+  head.appendChild(all);
+  head.appendChild(reset);
+  host.appendChild(head);
+
+  // **Grouped, because the menu is grouped.** The picker draws its families as
+  // headings and always will — twenty-five names in one flat list is the thing
+  // the families are there to prevent — so an order that crossed a family
+  // boundary is an order the menu cannot show. Moving a row past the end of its
+  // family did nothing at all and gave no reason, which is worse than not
+  // offering it. So the admin groups the same way, and up and down move within
+  // the family, which is exactly what the menu can express.
+  const list = rpEl('div', 'vma-list');
+  for (const fam of VIS_FAMILIES) {
+    const mine = m.order.filter((k) => (visEntry(k) || {}).family === fam.key);
+    if (!mine.length) continue;
+    const head = rpEl('div', 'vma-fam-head', fam.label);
+    head.title = fam.hint;
+    list.appendChild(head);
+
+    mine.forEach((key, n) => {
+      const v = visEntry(key);
+      const off = m.hidden.includes(key);
+      const row = rpEl('div', 'vma-row');
+      row.classList.toggle('vma-off', off);
+
+      // Shown or not. An eye rather than a checkbox: the question is whether you
+      // can see it, and the answer should look like the question.
+      const eye = rpEl('button', 'vma-eye', off ? '\u25CB' : '\u25CF');
+      eye.title = off ? 'Hidden. Click to put it back in the menu.' : 'In the menu. Click to hide it.';
+      eye.onclick = () => {
+        if (off) m.hidden.splice(m.hidden.indexOf(key), 1); else m.hidden.push(key);
+        saveVisMenu(); buildVisMenuAdmin(); buildVisModulePicker(); paintVisModulePicker();
+      };
+      row.appendChild(eye);
+
+      const name = rpEl('span', 'vma-name', v.label);
+      name.title = v.hint;
+      row.appendChild(name);
+
+      // Swap with its neighbour *in this family*, wherever the two of them
+      // happen to sit in the whole list.
+      const swap = (with_) => {
+        const a = m.order.indexOf(key);
+        const b = m.order.indexOf(mine[with_]);
+        if (a < 0 || b < 0) return;
+        m.order[a] = mine[with_];
+        m.order[b] = key;
+        saveVisMenu(); buildVisMenuAdmin(); buildVisModulePicker();
+      };
+      const up = rpEl('button', 'vma-move', '\u2191');
+      up.title = 'Move it up the menu.';
+      up.disabled = n === 0;
+      up.onclick = () => swap(n - 1);
+      const down = rpEl('button', 'vma-move', '\u2193');
+      down.title = 'Move it down the menu.';
+      down.disabled = n === mine.length - 1;
+      down.onclick = () => swap(n + 1);
+      row.appendChild(up);
+      row.appendChild(down);
+      list.appendChild(row);
+    });
+  }
+  host.appendChild(list);
+
+  const foot = rpEl('div', 'vma-foot');
+  foot.textContent = `${m.order.length - m.hidden.length} of ${m.order.length} in the menu. Hiding one does not remove it.`;
+  host.appendChild(foot);
+}
+
+function toggleVisMenuAdmin(show) {
+  const host = $('visMenuAdmin');
+  const btn = $('visMenuBtn');
+  if (!host) return;
+  const on = show === undefined ? host.classList.contains('hidden') : show;
+  if (on) buildVisMenuAdmin();
+  host.classList.toggle('hidden', !on);
+  if (btn) btn.classList.toggle('active', on);
 }
 
 /// Which visual is on screen, as the registry knows it.
@@ -8628,6 +8803,10 @@ const ROOM_VIEW_PARTS = [
   ['reFrameRow', 'roomStageBar'],
   ['transportBar', 'roomFoot'],
   ['videoBtn', 'roomFoot'],
+  // The gear travels with the button it sits beside, and its panel with the
+  // gear — anchored, not floated, so it opens where you pressed.
+  ['visMenuBtn', 'roomFoot'],
+  ['visMenuAdmin', 'roomFoot'],
 ];
 
 function enterRoomView() {
@@ -8646,6 +8825,7 @@ function enterRoomView() {
   // The transport is hidden by mode and this is a mode that wants it.
   $('transportBar')?.classList.remove('hidden');
   $('videoBtn')?.classList.remove('hidden');
+  $('visMenuBtn')?.classList.remove('hidden');
   $('roomView')?.classList.remove('hidden');
 
   setRoomAdminWidth(roomAdminWidth(), { save: false });
@@ -13884,8 +14064,12 @@ function paintViewEditor() {
     num('FOLDS', 'mirror', 1, 14, 1,
       'How many times the cloud is repeated around the circle. One is no fold at all.', true);
   }
-  num('GLOW', 'glow', 0, 2, 0.01,
-    'How much light a stroke gives off. This is the control that matters: the picture is additive on black, so glow is the whole exposure.');
+  // **The third glow, and the third name.** This one is the view's own: it
+  // multiplies GRAIN GLOW for whichever of the ten is showing, so Mandala can
+  // be hot and Lattice cool without either touching the other. Called GLOW like
+  // the other two it was one word over three different things in one panel.
+  num('INK', 'glow', 0, 2, 0.01,
+    'How much light this view’s strokes give off, on top of GRAIN GLOW. The picture is additive on black, so this is the whole exposure — and it belongs to this view alone.');
   num('TRAIL', 'trail', 0, 1, 0.01,
     'How long a grain lingers after it has finished sounding. Physically there is nothing there — it is an afterimage, so the eye can see where the playhead has been.');
 

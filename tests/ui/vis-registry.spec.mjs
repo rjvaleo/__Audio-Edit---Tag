@@ -97,6 +97,11 @@ test('the picker offers all of them, grouped', async ({ page }) => {
       onScreen: sel.getBoundingClientRect().width > 40,
     };
   });
+  // **Everything, until somebody says otherwise.** The menu is editable — see
+  // `visMenu` — and what it offers is the registry's list minus whatever has
+  // been hidden, in whatever order it has been put in. Untouched, that is the
+  // registry's own list in the registry's own order, which is what a fresh
+  // session has to show.
   expect(got.options, 'the picker and the list disagree').toEqual(got.all);
   expect(got.groups, 'the families are not labelled')
     .toEqual(['Master bus', 'Grains', 'Stage arrangements']);
@@ -167,4 +172,73 @@ test('the editor comes back exactly as it was', async ({ page }) => {
   expect(after, 'the editor did not come back the way it was').toEqual(before);
   expect(after.masterBusH, 'the master bus collapsed').toBeGreaterThan(100);
   expect(after.grainHidden, 'the grain views were left showing in the dock').toBe(true);
+});
+
+test('the menu can be reordered and thinned, and nothing is lost by it', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => setMode('room'));
+  await page.waitForTimeout(600);
+
+  const got = await page.evaluate(async () => {
+    const opts = () => [...document.getElementById('rgVisual').options].map((o) => o.value);
+    const before = opts();
+    toggleVisMenuAdmin(true);
+    const host = document.getElementById('visMenuAdmin');
+    const rows = host.querySelectorAll('.vma-row').length;
+
+    // Hide two.
+    host.querySelectorAll('.vma-eye')[1].click();
+    host.querySelectorAll('.vma-eye')[2].click();
+    const thinned = opts();
+
+    // **Within its family**, because that is what the menu can show. Take the
+    // last of the grain views to the top of the grain views, one press at a
+    // time.
+    const grains = () => visMenu().order.filter((k) => visEntry(k).family === 'grain');
+    const key = grains()[grains().length - 1];
+    for (let n = 0; n < 20; n++) {
+      if (grains()[0] === key) break;
+      const host2 = document.getElementById('visMenuAdmin');
+      const row = [...host2.querySelectorAll('.vma-row')]
+        .find((r) => r.querySelector('.vma-name').textContent === visEntry(key).label);
+      row.querySelectorAll('.vma-move')[0].click();
+    }
+    const moved = opts();
+
+    // What is on the stage stays reachable even when it is hidden.
+    setVisual('ridge');
+    const withHiddenShowing = opts();
+
+    // Read what was saved *before* putting it all back, or the check is of the
+    // restore rather than of the saving.
+    const stored = JSON.parse(localStorage.getItem('audiolab.vismenu.v1'));
+
+    // And nothing was removed: the registry is untouched and Show all restores.
+    document.getElementById('visMenuAdmin').querySelector('.re-btn').click();
+    const restored = opts();
+    const firstGrain = moved.find((k) => visEntry(k).family === 'grain');
+    return { before, rows, thinned, moved, firstGrain, key, stored,
+      withHiddenShowing, restored, all: VIS_ALL.map((v) => v.key) };
+  });
+
+  // Every visual is offered for editing, whether or not it is in the menu.
+  expect(got.rows, 'the admin does not list every visual').toBe(got.all.length);
+
+  // **Hiding takes it out of the menu and nothing else.**
+  expect(got.thinned.length).toBe(got.before.length - 2);
+  expect(got.all.length, 'hiding a visual removed it from the registry').toBe(got.rows);
+
+  // Reordering is reordering — within the family, which is the only order the
+  // menu can express.
+  expect(got.firstGrain, 'moving a row to the top of its family did not move it')
+    .toBe(got.key);
+
+  // **A hidden visual that is showing stays in the menu**, or the menu says one
+  // thing, the stage says another, and there is no way back to what you are
+  // looking at.
+  expect(got.withHiddenShowing, 'the showing visual fell out of the menu').toContain('ridge');
+
+  // And it is all reversible.
+  expect(got.restored.length).toBe(got.all.length);
+  expect(got.stored.hidden.length, 'the choice was not saved').toBe(2);
 });

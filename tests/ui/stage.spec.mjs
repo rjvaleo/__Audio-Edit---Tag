@@ -238,11 +238,19 @@ test('every control is labelled, reachable, and filed under its own object', asy
       owners: ST_GROUPS.filter((g) => g.owner)
         .map((g) => [g.owner, !!ST_OBJECTS.find((o) => o.key === g.owner)]),
       note: !!e.querySelector('.st-note'),
+      tagDupes: (() => {
+        const tags = [...e.querySelectorAll('.re-tag')].map((t) => t.textContent);
+        return tags.filter((t, i) => tags.indexOf(t) !== i);
+      })(),
       cam: [...e.querySelectorAll('[data-st-key]')].slice(0, 4).map((x) => x.dataset.stKey),
     };
   });
 
   expect(shape.pads, 'a pad is still in the panel').toBe(0);
+  // **No two controls share a name.** Two things called GLOW in one panel is the
+  // same fault as two pads sharing an axis: you cannot tell which one you are
+  // moving, and the one you wanted is somewhere else.
+  expect(shape.tagDupes, 'two controls share a name').toEqual([]);
   expect(shape.dupes, 'a control is offered twice under two names').toEqual([]);
   expect(new Set(shape.sliders).size, 'a described control has no control').toBe(shape.described);
   // One section per object, and one of them open: fifty numbers are only a list
