@@ -17,6 +17,15 @@ async function open(page) {
     { timeout: 30_000 },
   );
   await page.evaluate(async () => {
+    // **The menu is a saved preference, so it outlives a test.** Hiding and
+    // reordering in one test left the next one looking at a menu somebody else
+    // had arranged — which is a real fault in the test, not in the menu, and it
+    // reads as the picker and the registry disagreeing.
+    localStorage.removeItem('audiolab.vismenu.v1');
+    if (typeof visMenuState !== 'undefined') visMenuState = null;
+    buildVisModulePicker();
+  });
+  await page.evaluate(async () => {
     const folder = state.folders[0].name;
     const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
     await selectFile(files[0]);
@@ -213,8 +222,11 @@ test('the menu can be reordered and thinned, and nothing is lost by it', async (
     // restore rather than of the saving.
     const stored = JSON.parse(localStorage.getItem('audiolab.vismenu.v1'));
 
-    // And nothing was removed: the registry is untouched and Show all restores.
-    document.getElementById('visMenuAdmin').querySelector('.re-btn').click();
+    // And nothing was removed: the registry is untouched, and Show all and
+    // Default order put both halves of the choice back.
+    const btns = document.getElementById('visMenuAdmin').querySelectorAll('.vma-head .re-btn');
+    btns[0].click();
+    btns[1].click();
     const restored = opts();
     const firstGrain = moved.find((k) => visEntry(k).family === 'grain');
     return { before, rows, thinned, moved, firstGrain, key, stored,
@@ -238,7 +250,7 @@ test('the menu can be reordered and thinned, and nothing is lost by it', async (
   // looking at.
   expect(got.withHiddenShowing, 'the showing visual fell out of the menu').toContain('ridge');
 
-  // And it is all reversible.
-  expect(got.restored.length).toBe(got.all.length);
+  // And it is all reversible, both halves of it.
+  expect(got.restored, 'the menu did not come back the way it was').toEqual(got.all);
   expect(got.stored.hidden.length, 'the choice was not saved').toBe(2);
 });

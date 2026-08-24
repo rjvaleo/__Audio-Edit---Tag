@@ -788,3 +788,46 @@ test('the view editor offers the showing view, and only where it means something
   // and a panel of controls writing to nothing is worse than no panel.
   expect(got.room.hidden, 'the room was offered a view editor').toBe(true);
 });
+
+test('a generated scheme paints the slots the panel is offering', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(() => {
+    const labels = rpSlots().map((s) => s.label);
+    const out = {};
+    for (const kind of ['mono', 'rgb', 'spectrum', 'vibrant', 'muted', 'bw']) {
+      const sch = rpGenerate(kind, 200);
+      const mine = rpSlots().map((s) => sch.slots[s.key]);
+      out[kind] = {
+        missing: mine.filter((c) => !c).length,
+        unique: new Set(mine.map((c) => (c || {}).colour)).size,
+        ground: (sch.slots.stageGround || {}).colour,
+      };
+    }
+    return { labels, dupes: labels.filter((l, i) => labels.indexOf(l) !== i), out };
+  });
+
+  // **A scheme has to paint what the panel is showing.** The generator walked
+  // the room's fourteen slots whichever module was up, so pressing one while the
+  // stage was on screen wrote colours the stage does not have and left every
+  // slot it does have untouched — every swatch stayed on "theme" and every one
+  // of them drew the same gradient, because an index into the wrong list is −1
+  // and −1 is the same number for all of them.
+  for (const [kind, v] of Object.entries(got.out)) {
+    expect(v.missing, `${kind} left a slot unpainted`).toBe(0);
+    expect(v.unique, `${kind} gave every slot the same colour`).toBeGreaterThan(4);
+
+    // **And the ground stays dark.** Every scheme here is additive — the picture
+    // adds light to what it is drawn on — so a pale ground is a ground that
+    // cannot be drawn on. Left in the loop with the rest it came out mid grey
+    // and washed the whole scene out.
+    const g = v.ground || '#000000';
+    const lum = [1, 3, 5].reduce((a, i) => a + parseInt(g.slice(i, i + 2), 16), 0) / 3;
+    expect(lum, `${kind} gave the ground a light colour`).toBeLessThan(60);
+  }
+
+  // Two rows called "Type" coloured two different things: the stage's own type
+  // and the flat card's letter face. The card is not in the admin any more, so
+  // its three slots are not on offer either.
+  expect(got.dupes, 'two colour slots share a name').toEqual([]);
+  expect(got.labels).toEqual(['Terrain', 'Sleeve', 'Ring', 'Grains', 'Mist', 'Type', 'Walls', 'Ground']);
+});
