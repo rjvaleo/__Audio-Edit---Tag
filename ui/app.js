@@ -8426,6 +8426,8 @@ function setVisual(key) {
     } else {
       roomEdit.stage = { ...stageSettings(), cloudInk: false };
     }
+    // Framed for the shape that is about to be drawn. See `open` in `ST_LAYOUTS`.
+    if (v.layout) frameStageView();
     saveRoomData();
     showStageFamily('bus');
     setVisModule('stage');
@@ -13680,39 +13682,66 @@ function buildStagePanel() {
         return;
       }
       set(o.key, !stageSettings()[o.key]);
+      // **The two halves of the panel stay in step.** Turning a thing on and
+      // then hunting for its controls is the navigation problem the sections
+      // were meant to solve, not one to leave in place.
+      const owner = ST_GROUPS.find((g) => g.owner === o.key);
+      if (owner) { stageOpenGroup = owner.key; paintStagePanel(); }
     };
     box.appendChild(b);
   }
 
-  // Grouped, and pads before sliders in each group: the pad is the control you
-  // reach for and the sliders under it are the detail.
-  const seen = new Set();
+  // ── where you are standing ──
+  //
+  // **Pinned above the scene, not filed among it.** The camera is not a thing in
+  // the room; it is where you are to look at the room, and every 3D application
+  // treats that as a property of the viewport. So it sits apart, it says what the
+  // gestures are, and its numbers are a readout you can also dial.
+  const camHead = rpEl('div', 'st-group');
+  camHead.textContent = 'View';
+  host.appendChild(camHead);
+  const camNote = rpEl('div', 'st-note',
+    'Drag the picture to orbit · shift-drag to slide · wheel to pull in · alt-drag the key light · double-click to frame it again');
+  host.appendChild(camNote);
+  for (const key of ST_CAM_UI) {
+    const row = ST_UI.find((r) => r.key === key);
+    if (row) host.appendChild(stageSlider(row, set));
+  }
+  const camRow = rpEl('div', 're-row');
+  const frame = rpEl('button', 're-btn', 'Frame it');
+  frame.title = 'Back to where this view opens. Double-clicking the picture does the same thing.';
+  frame.onclick = () => frameStageView();
+  camRow.appendChild(frame);
+  host.appendChild(camRow);
+
+  // ── one section per object ──
+  //
+  // Named after the switch that turns the object on, in the same order as the
+  // switches, so the thing you are looking at and the controls for it have the
+  // same name in the same order in both halves of the panel.
+  //
+  // **One open at a time.** Fifty numbers are only a list when they are all on
+  // screen at once; opened one section at a time they are eight or nine, which
+  // is a set you can read.
   for (const g of ST_GROUPS) {
-    const pads = (g.pads || []).filter((s) => stInAdmin(s.x) && stInAdmin(s.y));
     const sliders = (g.sliders || []).filter((k) => stInAdmin(k));
-    // A group with nothing left in it is a heading over a gap.
-    if (!pads.length && !sliders.length) continue;
-    const head = rpEl('div', 'st-group');
-    head.textContent = g.label;
-    host.appendChild(head);
-    for (const spec of pads) {
-      const el = stagePad(spec, set);
-      if (el) { host.appendChild(el); seen.add(spec.x); seen.add(spec.y); }
-    }
+    if (!sliders.length) continue;
+    const head = rpEl('button', 'st-group st-fold', g.label);
+    head.dataset.stFold = g.key;
+    head.title = g.hint;
+    const body = rpEl('div', 'st-fold-body');
+    body.dataset.stFoldBody = g.key;
     for (const key of sliders) {
       const row = ST_UI.find((r) => r.key === key);
-      if (row) { host.appendChild(stageSlider(row, set)); seen.add(key); }
+      if (row) body.appendChild(stageSlider(row, set));
     }
-  }
-  // Anything described but not placed in a group still gets a control, so a
-  // setting added without touching the groups is reachable rather than lost.
-  // Unlisted settings are the one exception, and they are unlisted on purpose.
-  const rest = ST_UI.filter((r) => !seen.has(r.key) && stInAdmin(r.key));
-  if (rest.length) {
-    const head = rpEl('div', 'st-group');
-    head.textContent = 'Other';
+    head.onclick = () => {
+      const openNow = stageOpenGroup === g.key ? null : g.key;
+      stageOpenGroup = openNow;
+      paintStagePanel();
+    };
     host.appendChild(head);
-    for (const row of rest) host.appendChild(stageSlider(row, set));
+    host.appendChild(body);
   }
 
   buildViewEditor(host, set);
@@ -13915,9 +13944,18 @@ function paintViewEditor() {
   wrap.appendChild(frow);
 }
 
+/// Which section of the panel is open. One at a time — see `ST_GROUPS`.
+let stageOpenGroup = 'grains';
+
 function paintStagePanel() {
   const host = $('stageEdit');
   if (!host || !host.children.length) return;
+  for (const b of host.querySelectorAll('[data-st-fold]')) {
+    b.classList.toggle('open', b.dataset.stFold === stageOpenGroup);
+  }
+  for (const b of host.querySelectorAll('[data-st-fold-body]')) {
+    b.classList.toggle('hidden', b.dataset.stFoldBody !== stageOpenGroup);
+  }
   // **Rebuilt, not just refreshed.** What the view editor offers depends on
   // which arrangement is showing — the fold means nothing to a view of the whole
   // object — so it cannot be painted once and left. Built once and left, it went
@@ -13990,26 +14028,50 @@ function paintRoom3dPanel() {
 ///
 /// It is attached once and never removed. The canvas outlives any one visual and
 /// a listener added on each switch is a listener added many times.
+/// Turning the picture over, the way every 3D application does it.
+///
+/// **The camera belongs to the viewport, not to the panel.** Maya tumbles on
+/// alt-drag, Blender orbits on middle-drag, and both pan on a modifier and dolly
+/// on the wheel; not one of them asks you to find a slider. Before this the stage
+/// had five camera numbers across three pads and *no way to get round the far
+/// side of anything* — the rig slid on a plane and aimed down the room's axis, so
+/// a view could be shuffled sideways and squinted at but never turned over.
+///
+///   drag         orbit. Drag left and the subject turns to the left, because
+///                the picture follows the hand — the way every map and every
+///                viewport has ever worked.
+///   shift-drag   pan. Slides the point being orbited, which is what lets you
+///                look at a corner of something rather than always its middle.
+///   alt-drag     the key light, which used to be shift-drag and had to move
+///                when the camera took the modifier every other program uses.
+///   wheel        dolly. Proportional, so it closes in smoothly instead of
+///                crawling far out and lurching close in.
+///   double-click frame it again: back to how this view opens.
 function wireStageDrag(canvas) {
   if (canvas.__stDrag) return;
   canvas.__stDrag = true;
   let from = null;
 
   const bounds = (key) => ST_UI.find((r) => r.key === key);
-  const nudge = (key, delta) => {
-    const def = bounds(key);
-    if (!def) return;
+  const put = (patch) => {
     const st = stageSettings();
-    const span = def.max - def.min;
-    const next = Math.max(def.min, Math.min(def.max, st[key] + delta * span));
-    roomEdit.stage = { ...st, [key]: next };
+    const next = { ...st };
+    for (const [k, v] of Object.entries(patch)) {
+      const def = bounds(k);
+      next[k] = def ? Math.max(def.min, Math.min(def.max, v)) : v;
+    }
+    roomEdit.stage = next;
+    saveRoomData();
+    const r = visLive.stage;
+    if (r && r.configure) r.configure(stageSettings());
+    paintStagePanel();
   };
 
   canvas.addEventListener('pointerdown', (e) => {
     if (visModuleKey() !== 'stage') return;
-    from = { x: e.clientX, y: e.clientY, shift: e.shiftKey };
+    from = { x: e.clientX, y: e.clientY, alt: e.altKey, shift: e.shiftKey };
     canvas.setPointerCapture(e.pointerId);
-    canvas.style.cursor = 'grabbing';
+    canvas.style.cursor = e.altKey ? 'crosshair' : (e.shiftKey ? 'move' : 'grabbing');
   });
 
   canvas.addEventListener('pointermove', (e) => {
@@ -14018,21 +14080,31 @@ function wireStageDrag(canvas) {
     const dx = (e.clientX - from.x) / Math.max(1, b.width);
     const dy = (e.clientY - from.y) / Math.max(1, b.height);
     from = { ...from, x: e.clientX, y: e.clientY };
-    if (from.shift) {
-      nudge('keySide', dx);
-      // Up is up. Screen y grows downward and a lamp that goes down when you
+    const st = stageSettings();
+
+    if (from.alt) {
+      const kd = bounds('keySide'), kh = bounds('keyHigh');
+      // Up is up. Screen y grows downward, and a lamp that goes down when you
       // drag up is a lamp nobody can aim.
-      nudge('keyHigh', -dy);
-    } else {
-      // Drag left, the camera goes right: the picture follows the hand, which is
-      // the way every map and every viewport has ever worked.
-      nudge('swing', -dx * 2);
-      nudge('lift', dy * 2);
+      put({ keySide: st.keySide + dx * (kd.max - kd.min),
+            keyHigh: st.keyHigh - dy * (kh.max - kh.min) });
+      return;
     }
-    saveRoomData();
-    const r = visLive.stage;
-    if (r && r.configure) r.configure(stageSettings());
-    paintStagePanel();
+    if (from.shift) {
+      // Panning slides the point in the camera's own plane, not the world's, or
+      // dragging right sends the subject sideways *and* into the screen as soon
+      // as the view has been turned at all.
+      const scale = st.dist * Math.tan(st.fov / 2) * 2;
+      const c = Math.cos(st.orbit), sn = Math.sin(st.orbit);
+      put({ panX: (st.panX || 0) - dx * scale * c,
+            panZ: (st.panZ || 0) + dx * scale * sn,
+            panY: (st.panY || 0) + dy * scale });
+      return;
+    }
+    // Orbit. Pitch stops short of the poles: straight overhead the up vector is
+    // undefined and the picture snaps through a half turn.
+    put({ orbit: st.orbit - dx * Math.PI * 2,
+          tilt: Math.max(-1.45, Math.min(1.45, st.tilt + dy * Math.PI)) });
   });
 
   const stop = (e) => {
@@ -14044,15 +14116,40 @@ function wireStageDrag(canvas) {
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
 
+  // **Framed again.** Every view has an opening camera, and finding your way
+  // back to it by hand after a good look round is the one thing an orbit rig
+  // makes worse than a fixed one.
+  canvas.addEventListener('dblclick', (e) => {
+    if (visModuleKey() !== 'stage') return;
+    e.preventDefault();
+    frameStageView();
+  });
+
   canvas.addEventListener('wheel', (e) => {
     if (visModuleKey() !== 'stage') return;
     e.preventDefault();
-    nudge('eye', (e.deltaY > 0 ? 1 : -1) * 0.04);
-    saveRoomData();
-    const r = visLive.stage;
-    if (r && r.configure) r.configure(stageSettings());
-    paintStagePanel();
+    const st = stageSettings();
+    // Proportional, so it closes in at the same *rate* wherever it starts. A
+    // fixed step crawls when you are far out and jumps through the subject when
+    // you are close.
+    put({ dist: st.dist * (e.deltaY > 0 ? 1.12 : 1 / 1.12) });
   }, { passive: false });
+}
+
+/// Put the camera back where this view opens.
+///
+/// Each of the ten is a different shape and wants looking at from a different
+/// place — a tunnel is looked *down* and a lattice is looked *across*. See
+/// `open` in `ST_LAYOUTS`.
+function frameStageView() {
+  const st = stageSettings();
+  const lay = (typeof stLayout === 'function' && st.cloudInk) ? stLayout(st.cloudLayout) : null;
+  const open = (lay && lay.open) || { orbit: 0, tilt: 0.12, dist: 1.6 };
+  roomEdit.stage = { ...st, ...open, panX: 0, panY: 0, panZ: 0 };
+  saveRoomData();
+  const r = visLive.stage;
+  if (r && r.configure) r.configure(stageSettings());
+  paintStagePanel();
 }
 
 /// Whether the card's controls should be on screen.
