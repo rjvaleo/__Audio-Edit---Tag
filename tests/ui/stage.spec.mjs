@@ -199,7 +199,7 @@ test('the sleeve is on the walls, and each face can be taken away', async ({ pag
   expect(got.all.max, 'the sleeve is not catching any light').toBeGreaterThan(120);
 });
 
-test('the pads move two things at once, and up is more', async ({ page }) => {
+test('every control is labelled, reachable, and filed under its own object', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => typeof setVisual === 'function', { timeout: 30_000 });
   await page.evaluate(async () => {
@@ -214,42 +214,109 @@ test('the pads move two things at once, and up is more', async ({ page }) => {
 
   const shape = await page.evaluate(() => {
     const e = document.getElementById('stageEdit');
+    const sliders = [...e.querySelectorAll('[data-st-key]')].map((x) => x.dataset.stKey);
     return {
-      groups: e.querySelectorAll('.st-group').length,
+      folds: [...e.querySelectorAll('[data-st-fold]')].map((b) => b.dataset.stFold),
+      open: [...e.querySelectorAll('[data-st-fold-body]')]
+        .filter((b) => !b.classList.contains('hidden')).map((b) => b.dataset.stFoldBody),
+      // **No pads.** A pad is two numbers with their names, their values and
+      // their ranges taken off to save a row, and you cannot dial a number you
+      // cannot read. `stagePad` is still in the source and nothing calls it.
       pads: e.querySelectorAll('.st-pad').length,
-      // Every control described has to be reachable: a setting in `ST_UI` that
-      // no group claims still gets a slider under "Other", so adding one cannot
-      // quietly strand it.
-      placed: new Set([
-        ...[...e.querySelectorAll('[data-st-key]')].map((x) => x.dataset.stKey),
-        ...[...e.querySelectorAll('.st-pad')].flatMap((x) => [x.dataset.stPadX, x.dataset.stPadY]),
-      ]).size,
+      sliders,
+      // Nothing twice. `lift` used to be half of two different pads and
+      // `bloomAmount` half of two others: moving one moved the other, and
+      // neither said so.
+      dupes: sliders.filter((k, i) => sliders.indexOf(k) !== i),
       // Everything described *and listed*. A setting can be hidden from the
       // panel without being deleted — see `ST_ADMIN_HIDDEN` — and the check is
-      // still that nothing offered goes missing, not that everything that
-      // exists is offered.
+      // that nothing offered goes missing, not that everything that exists is
+      // offered.
       described: ST_UI.filter((r) => stInAdmin(r.key)).length,
+      // Each section is named after the switch that turns its object on, so the
+      // two halves of the panel say the same words in the same order.
+      owners: ST_GROUPS.filter((g) => g.owner)
+        .map((g) => [g.owner, !!ST_OBJECTS.find((o) => o.key === g.owner)]),
+      note: !!e.querySelector('.st-note'),
+      cam: [...e.querySelectorAll('[data-st-key]')].slice(0, 4).map((x) => x.dataset.stKey),
     };
   });
-  expect(shape.pads, 'no pads were built').toBeGreaterThan(8);
-  expect(shape.groups, 'the controls are not grouped').toBeGreaterThan(5);
-  expect(shape.placed, 'a described control has no control').toBe(shape.described);
 
-  // **One gesture, two numbers.** The point of a pad is that the pair moves
-  // together; if only one axis answered it would be a slider wearing a square.
-  const pad = await page.$('[data-st-pad-x="keySide"]');
-  await pad.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(200);
-  const box = await pad.boundingBox();
-  await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.2);
-  await page.mouse.down();
-  await page.mouse.up();
-  await page.waitForTimeout(300);
+  expect(shape.pads, 'a pad is still in the panel').toBe(0);
+  expect(shape.dupes, 'a control is offered twice under two names').toEqual([]);
+  expect(new Set(shape.sliders).size, 'a described control has no control').toBe(shape.described);
+  // One section per object, and one of them open: fifty numbers are only a list
+  // when they are all on screen at once.
+  expect(shape.folds.length, 'the controls are not in sections').toBeGreaterThan(5);
+  expect(shape.open.length, 'more than one section is open').toBe(1);
+  for (const [key, exists] of shape.owners) {
+    expect(exists, `${key} names a section but no switch`).toBe(true);
+  }
 
-  const after = await page.evaluate(() => stageSettings());
-  // 80% across a range of −1..1, and 20% from the top, which is 80% *up*.
-  expect(after.keySide).toBeCloseTo(0.6, 1);
-  expect(after.keyHigh, 'up is not more').toBeCloseTo(0.6, 1);
+  // **The camera is above the scene, not filed in it.** It is not a thing in the
+  // room; it is where you are standing to look at the room.
+  expect(shape.cam).toEqual(['orbit', 'tilt', 'dist', 'fov']);
+  expect(shape.note, 'the panel does not say what the gestures are').toBe(true);
+});
+
+test('the picture can be turned over, and framed again', async ({ page }) => {
+  await openStage(page);
+  const got = await page.evaluate(async () => {
+    const cam = () => {
+      const eng = BABYLON.EngineStore.Instances[BABYLON.EngineStore.Instances.length - 1];
+      const sc = eng.scenes[eng.scenes.length - 1];
+      return sc.activeCamera.position.asArray().map((v) => +v.toFixed(3));
+    };
+    const put = (patch) => {
+      roomEdit.stage = { ...stageSettings(), ...patch };
+      visLive.stage.configure(stageSettings());
+      visLive.stage.frame({ stage: stageSettings(), stagePaint: ridgePaint() });
+    };
+    setVisual('g-mandala');
+    const opened = { ...stageSettings() };
+    put({ orbit: 0 }); const front = cam();
+    put({ orbit: Math.PI / 2 }); const side = cam();
+    put({ orbit: Math.PI }); const back = cam();
+    put({ tilt: 1.2, orbit: 0 }); const above = cam();
+    put({ dist: 6, tilt: 0 }); const far = cam();
+    // Every view opens from a place that suits its shape.
+    const opens = ST_LAYOUTS.map((l) => l.open && [l.open.orbit, l.open.tilt, l.open.dist]);
+    setVisual('g-lattice');
+    const lattice = { ...stageSettings() };
+    put({ orbit: 2.2, tilt: -1, dist: 9, panX: 3 });
+    frameStageView();
+    const framed = { ...stageSettings() };
+    return { opened: [opened.orbit, opened.tilt, opened.dist], front, side, back, above, far,
+      opens, lattice: [lattice.orbit, lattice.tilt, lattice.dist],
+      framed: [framed.orbit, framed.tilt, framed.dist, framed.panX] };
+  });
+
+  // **It goes round.** The rig this replaced slid the camera on a plane at a
+  // fixed depth and aimed it down the room's axis — you could shuffle sideways
+  // and squint at a thing but never get to the far side of it, which is the
+  // whole of what these views are for.
+  const r = (p) => Math.hypot(p[0], p[2]);
+  expect(got.front[2], 'the camera is not in front at nought').toBeLessThan(0);
+  expect(got.back[2], 'half a turn did not put it behind').toBeGreaterThan(0);
+  expect(Math.abs(got.side[0]), 'a quarter turn did not put it to the side').toBeGreaterThan(1);
+  expect(r(got.side)).toBeCloseTo(r(got.front), 1);
+  // Tilt lifts it without changing how far away it is.
+  expect(got.above[1], 'tilt did not raise it').toBeGreaterThan(got.front[1]);
+  // Distance is distance.
+  expect(r(got.far)).toBeGreaterThan(5);
+
+  // Ten shapes, ten places to look at them from.
+  expect(got.opens.every(Boolean), 'a view has no opening camera').toBe(true);
+  expect(new Set(got.opens.map(String)).size, 'the views all open from the same place')
+    .toBeGreaterThan(4);
+  // Choosing a view puts the camera where that view opens.
+  expect(got.opened, 'choosing a view did not frame it').toEqual(got.opens[6]);
+
+  // **And back.** Finding your way home by hand after a good look round is the
+  // one thing an orbit rig makes worse than a fixed one.
+  expect(got.framed.slice(0, 3), 'framing it again did not put the camera back')
+    .toEqual(got.lattice);
+  expect(got.framed[3], 'framing it again left the target where it had been slid').toBe(0);
 });
 
 test('the preview is a proxy, and the film gets all of it', async ({ page }) => {
@@ -354,22 +421,23 @@ test('the picture itself is the control', async ({ page }) => {
   const cy = box.y + box.height / 2;
   const before = await read();
 
-  // **Drag left and the camera goes right.** The picture follows the hand, the
-  // way every map and every viewport has ever worked.
+  // **Drag left and the subject turns left.** The picture follows the hand, the
+  // way every map and every viewport has ever worked — and it *orbits*, which
+  // the rig this replaced could not do at all.
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 200, cy - 100, { steps: 6 });
   await page.mouse.up();
   await page.waitForTimeout(250);
   const dragged = await read();
-  expect(dragged.swing, 'dragging the picture did not move the camera')
-    .toBeGreaterThan(before.swing);
-  expect(dragged.lift, 'dragging up did not raise the camera')
-    .toBeLessThan(before.lift);
+  expect(dragged.orbit, 'dragging the picture did not turn it')
+    .toBeGreaterThan(before.orbit);
+  expect(dragged.tilt, 'dragging up did not raise the camera')
+    .toBeLessThan(before.tilt);
 
-  // Shift is the lamp, because where it hangs is the other thing you change
-  // while watching. And up is up: screen y grows downward, and a lamp that goes
-  // down when you drag up is a lamp nobody can aim.
+  // **Shift pans**, which is the modifier Blender and Maya both use for it, and
+  // it slides the point being orbited rather than the camera — so you can look
+  // at a corner of something instead of always its middle.
   await page.keyboard.down('Shift');
   await page.mouse.move(cx, cy);
   await page.mouse.down();
@@ -377,17 +445,32 @@ test('the picture itself is the control', async ({ page }) => {
   await page.mouse.up();
   await page.keyboard.up('Shift');
   await page.waitForTimeout(250);
-  const lamp = await read();
-  expect(lamp.keySide, 'shift-drag did not move the key').toBeGreaterThan(dragged.keySide);
-  expect(lamp.keyHigh, 'dragging the lamp up sent it down').toBeGreaterThan(dragged.keyHigh);
-  // And the camera stayed where it was put.
-  expect(lamp.swing).toBeCloseTo(dragged.swing, 5);
+  const panned = await read();
+  expect(Math.abs(panned.panX - dragged.panX) + Math.abs(panned.panY - dragged.panY),
+    'shift-drag did not slide the target').toBeGreaterThan(0.05);
+  // And the turn stayed where it was put.
+  expect(panned.orbit).toBeCloseTo(dragged.orbit, 5);
 
-  // The wheel dollies.
+  // **Alt is the lamp**, moved off shift when the camera took the modifier every
+  // other program uses for panning. Up is up: screen y grows downward, and a
+  // lamp that goes down when you drag up is a lamp nobody can aim.
+  await page.keyboard.down('Alt');
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 220, cy - 120, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  await page.waitForTimeout(250);
+  const lamp = await read();
+  expect(lamp.keySide, 'alt-drag did not move the key').toBeGreaterThan(panned.keySide);
+  expect(lamp.keyHigh, 'dragging the lamp up sent it down').toBeGreaterThan(panned.keyHigh);
+
+  // The wheel dollies, proportionally — a fixed step crawls when you are far out
+  // and jumps through the subject when you are close.
   await page.mouse.move(cx, cy);
   await page.mouse.wheel(0, 400);
   await page.waitForTimeout(250);
-  expect((await read()).eye, 'the wheel did not dolly').toBeGreaterThan(lamp.eye);
+  expect((await read()).dist, 'the wheel did not dolly').toBeGreaterThan(lamp.dist);
 });
 
 test('the type stands in the space and is passed in front of', async ({ page }) => {

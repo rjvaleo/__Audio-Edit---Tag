@@ -3412,3 +3412,43 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 /* An empty pad is a place to put something, not a broken button. */
 .st-pads .re-btn.st-pad-empty { border-style: dashed; opacity: 0.45; }
+
+/* ── the stage panel, as sections ── */
+/*
+   One section per object, named after the switch that turns it on, one open at
+   a time. Fifty numbers are only a list when they are all on screen at once;
+   opened eight or nine at a time they are a set you can read.
+
+   The pads that used to be here are gone from the panel — a pad is two numbers
+   with their names, their values and their ranges taken off to save one row,
+   and you cannot dial a number you cannot read. `stagePad` is still in the
+   source; nothing calls it.
+*/
+.st-fold {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 3px;
+  border: 0;
+  border-bottom: 1px solid var(--line, #223);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.st-fold::after {
+  content: '+';
+  color: var(--muted, #8b93a1);
+  font: 600 12px/1 var(--mono, ui-monospace, monospace);
+}
+.st-fold.open { color: var(--text-1, #dfe6ef); border-bottom-color: var(--accent, #7fd0ff); }
+.st-fold.open::after { content: '\2212'; color: var(--accent, #7fd0ff); }
+.st-fold:hover { color: var(--text-2, #b6c0cd); }
+.st-fold-body { padding: 4px 0 10px; }
+
+/* What the gestures are, said once where you would look for them. */
+.st-note {
+  margin: 4px 0 8px;
+  color: var(--muted, #8b93a1);
+  font: 10px/1.5 var(--mono, ui-monospace, monospace);
+}

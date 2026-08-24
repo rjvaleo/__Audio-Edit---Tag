@@ -79,25 +79,71 @@ detail is a 4K picture of a proxy.
 
 ## The controls
 
-Forty-four sliders in a column is a list, and a list is not an instrument. Most
-of what is in here is not one number anyway — where the camera stands, where the
-key hangs, how wide against how deep — each is a single decision with two
-components, and split across two sliders you make it by alternating between them
-and watching a third thing to see whether you have arrived.
+**An audit, and what it found.** Fifty-eight numbers and twenty-one switches,
+reached through seventeen two-axis pads, under headings like "Sound" and "Look".
+Three faults, all of them the same fault — the panel was organised by *kind of
+parameter* rather than by *what it belongs to*:
 
-So: **pads** for the pairs, sliders only for what is genuinely one number,
-grouped small enough to hold in your head. Up is more, which sounds too obvious
-to write down and is the thing that makes a pad trustworthy.
+| | |
+| --- | --- |
+| The same number under two names | `lift` was half of STANDPOINT and half of VIEW. `bloomAmount` was half of GLOW and half of BLOOM. Moving one moved the other and neither pad said so. |
+| Things filed away from their object | The type's position lived in the Sleeve group. Which object a control belonged to — the one fact you navigate by — was the thing the headings did not say. |
+| `detail` stranded | Described but in no group, so it fell through to a heading called "Other". |
+| The camera was five numbers and could not turn | `swing`, `lift`, `eye`, `aim`, `fov` across three pads. See below. |
 
-Better than a pad is **the picture**. Drag it and the camera stands somewhere
-else; shift-drag moves the key light; the wheel dollies. Drag left and the camera
-goes right — the picture follows the hand, the way every map and every viewport
-has ever worked.
+**A pad is two numbers with their names taken off.** They went in because
+forty-four sliders in a column is a list rather than an instrument, which was
+true; the answer was wrong. A pad hides both labels, both values and both ranges
+to save one row, and you cannot dial a number you cannot read — nor tell, when
+two pads share an axis, that you are moving the same thing twice. They are gone
+from the panel. `stagePad` is still in the source and nothing calls it.
 
-Everything described in `ST_UI` that no group claims still gets a slider under
-"Other", and a test checks that the number of controls placed equals the number
-described, so adding a setting without touching the groups leaves it reachable
-rather than stranded.
+What is there instead: **one section per object, named after the switch that
+turns that object on, in the same order as the switches.** Every control is a
+labelled slider with its value showing. One section is open at a time — fifty
+numbers are only a list when they are all on screen at once; eight or nine is a
+set you can read — and turning an object on opens its section, so the two halves
+of the panel stay in step.
+
+A test checks that nothing is offered twice, that every described control has
+exactly one control, and that every section names a switch that exists.
+
+## Where you are standing
+
+**The camera belongs to the picture, not to the panel.** Every 3D application
+has settled on the same thing: [Maya](https://cycookery.com/article/how-to-pan-and-orbit-in-maya)
+tumbles on alt-drag, pans on middle-drag and dollies on right-drag;
+[Blender](https://docs.blender.org/manual/en/latest/editors/3dview/navigate/navigation.html)
+orbits on middle-drag, pans on shift and dollies on the wheel. Not one of them
+asks you to find a slider.
+
+What was here was a **dolly rig**: the camera slid on a plane at a fixed depth
+and aimed down the room's axis. That is a rig for looking *at a room*, and it is
+why the ten views could not be turned over — you could shuffle sideways and
+squint at a thing but never get round the far side of it, which is most of what
+those views are for.
+
+Now it is an orbit: a target, a distance, and two angles round it.
+
+| | |
+| --- | --- |
+| drag | orbit. Drag left and the subject turns left — the picture follows the hand. |
+| shift-drag | pan. Slides the *target*, so you can look at a corner of something rather than always its middle. In the camera's own plane, or turning the view makes a sideways drag also push into the screen. |
+| alt-drag | the key light. It was on shift, and moved when the camera took the modifier every other program uses. |
+| wheel | dolly, proportional — a fixed step crawls far out and jumps through the subject close in. |
+| double-click | frame it again. |
+
+**Each of the ten opens from its own place.** A tunnel is looked down, a lattice
+across from above, and a fold is only a fold seen square on; one opening camera
+for all of them showed most of them edge-on, which reads as a broken projection
+rather than as a good picture badly framed. `open` in `ST_LAYOUTS`, and it is
+where double-click puts you back.
+
+The four numbers above the sections — ORBIT, TILT, DISTANCE, LENS — are a readout
+you can also dial, because a drag cannot hit an exact framing and cannot tell you
+what it hit. The old `eye`, `swing`, `lift` and `aim` are described and unlisted,
+not deleted: a saved scene may still carry them, and taking four keys out of
+`ST_ADMIN_HIDDEN` puts the old rig back.
 
 ## Solo
 

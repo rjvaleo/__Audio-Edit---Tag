@@ -55,6 +55,25 @@ const ST_DEFAULTS = {
   // camera belongs *in* it rather than looking at it from outside. Standing back
   // left the stack in the middle third of the frame with black all round, which
   // is a photograph of a visualiser rather than the visualiser.
+  // ── where the camera stands ──
+  //
+  // **Two angles, a distance and a point to look at**, which is what every 3D
+  // application means by a camera. Turn it with the picture: drag orbits,
+  // shift-drag slides the point, the wheel pulls in.
+  /// Round the target, in radians. Nought looks down the room.
+  orbit: 0,
+  /// Above or below it. Level at nought; the ten views open a little above.
+  tilt: 0.12,
+  /// How far back from the point it is looking at.
+  dist: 1.6,
+  /// The point it turns around, and what it looks at. Slid by shift-drag.
+  panX: 0, panY: 0, panZ: 0,
+
+  // **The old rig, kept and unlisted.** `eye`, `swing`, `lift` and `aim` slid
+  // the camera on a plane and aimed it down the room's axis. Nothing reads them
+  // any more — see the camera block — and nothing offers them, but they are here
+  // because a saved scene may still carry them and because deleting a rig is not
+  // the same as replacing it.
   eye: 1.15,
   /// Sideways. There is no orbit here on purpose — a scene with no walls has no
   /// centre to orbit about, and swinging the camera across the space is what you
@@ -383,9 +402,16 @@ function stSpin(i) {
 /// `suite` 1 is *the object* — the whole schedule laid out, no fold. `suite` 2 is
 /// *the moment* — a window either side of the playhead, folded. `sym` is how it
 /// folds. `moment` says which grains are drawn at all.
+///
+/// `open` is where the camera stands when the view is chosen, and where
+/// double-clicking the picture puts it back. Ten shapes want looking at from ten
+/// places: a tunnel is looked *down*, a lattice is looked *across* from above,
+/// and a fold is only a fold seen square on. One opening camera for all of them
+/// showed most of them edge-on, which reads as a broken projection rather than
+/// as a good picture badly framed.
 const ST_LAYOUTS = [
   {
-    key: 'swarm', label: 'Swarm', suite: 1, ported: true, moment: true, fit: 1.05,
+    key: 'swarm', label: 'Swarm', suite: 1, ported: true, moment: true, fit: 1.05, open: { orbit: 0.2, tilt: 0.5, dist: 1.9 },
     hint: 'The cloud at the playhead, one grain for one grain. Distance from the middle is distance from now; the angle carries pitch and where it sits across the field.',
     project: (g, k) => {
       const lift = -g.a * ST_RIDE;
@@ -402,7 +428,7 @@ const ST_LAYOUTS = [
     at: (g, t, w, h, d) => [(g.fx + g.dx * t) * w, (g.fy + g.dy * t) * h, t * d],
   },
   {
-    key: 'shear', label: 'Shear', suite: 1, ported: true, fit: 0.95,
+    key: 'shear', label: 'Shear', suite: 1, ported: true, fit: 0.95, open: { orbit: -0.5, tilt: 0.35, dist: 2.1 },
     hint: 'Output time across, source time into the screen, pitch up. The stretch is not a number here — it is the slope. Push it high and the diagonal flattens into a sheet.',
     project: (g, k) => {
       const lift = -g.a * ST_RIDE;
@@ -414,7 +440,7 @@ const ST_LAYOUTS = [
     at: (g, t, w, h, d) => [(t * 2 - 1) * w, g.pitch * h, (g.src * 0.8 + t * 0.2) * d],
   },
   {
-    key: 'braid', label: 'Braid', suite: 1, ported: true, fit: 0.85,
+    key: 'braid', label: 'Braid', suite: 1, ported: true, fit: 0.85, open: { orbit: 0.3, tilt: 0.75, dist: 2.2 },
     hint: 'Time wound onto a ring so that overlap resolves into countable strands. Raise overlap and new strands appear; raise density and the winding tightens.',
     project: (g, k) => {
       const lift = -g.a * ST_RIDE;
@@ -436,7 +462,7 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'shells', label: 'Shells', suite: 1, ported: true, fit: 1.05,
+    key: 'shells', label: 'Shells', suite: 1, ported: true, fit: 1.05, open: { orbit: 0.4, tilt: 0.5, dist: 2.2 },
     hint: 'Sorted onto concentric shells by pitch, an octave to a shell. Height is a circle, so the pass ends where it began.',
     project: (g, k) => {
       const lift = -g.a * ST_RIDE;
@@ -453,7 +479,7 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'lattice', label: 'Lattice', suite: 1, ported: true, fit: 1.55,
+    key: 'lattice', label: 'Lattice', suite: 1, ported: true, fit: 1.55, open: { orbit: 0.25, tilt: 0.55, dist: 2.4 },
     hint: 'The bare hop grid, drawn as a crystal. With every jitter at nought it is perfect; raise them and it melts — order to chaos as one continuous gesture.',
     project: (g, k) => {
       const lift = -g.a * ST_RIDE;
@@ -474,7 +500,7 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'tunnel', label: 'Tunnel', suite: 2, sym: 'rot', ported: true, moment: true, fit: 0.9,
+    key: 'tunnel', label: 'Tunnel', suite: 2, sym: 'rot', ported: true, moment: true, fit: 0.9, open: { orbit: 0, tilt: 0.05, dist: 1.5 },
     hint: 'Grains arrive out of the dark and pass you. Depth is how far off a grain is from now, so the future is the far wall and the past is behind your head. The bore breathes with the source.',
     project: (g, k) => {
       const th = g.c * k.wedge + k.spin;
@@ -491,7 +517,7 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'mandala', label: 'Mandala', suite: 2, sym: 'rot', ported: true, moment: true, fit: 1,
+    key: 'mandala', label: 'Mandala', suite: 2, sym: 'rot', ported: true, moment: true, fit: 1, open: { orbit: 0, tilt: 0.02, dist: 1.7 },
     hint: 'Now is the centre. A grain’s distance from the middle is its distance from this instant, so the present blooms outward in both directions at once — what is coming and what has gone, indistinguishable.',
     project: (g, k) => {
       const th = g.c * k.wedge + k.spin * 0.35;
@@ -505,7 +531,7 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'rorschach', label: 'Rorschach', suite: 2, sym: 'mirror', ported: true, moment: true, fit: 1.15,
+    key: 'rorschach', label: 'Rorschach', suite: 2, sym: 'mirror', ported: true, moment: true, fit: 1.15, open: { orbit: 0, tilt: 0.18, dist: 1.9 },
     hint: 'Reflected in both axes. Time runs across, and the fold makes it impossible to say which way — which is the point, from inside a moment.',
     project: (g, k) => [
       g.w * k.SPAN * 0.62,
@@ -519,7 +545,7 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'vortex', label: 'Vortex', suite: 2, sym: 'rot', ported: true, moment: true, fit: 1,
+    key: 'vortex', label: 'Vortex', suite: 2, sym: 'rot', ported: true, moment: true, fit: 1, open: { orbit: 0, tilt: 0.02, dist: 1.7 },
     hint: 'Grains spiral in from the future, cross the present, and unwind into the past. Drift and jitter twist the arms.',
     project: (g, k) => {
       const th = g.dt * 2.1 + g.c * k.wedge + k.spin;
@@ -533,7 +559,7 @@ const ST_LAYOUTS = [
     },
   },
   {
-    key: 'ripple', label: 'Ripple', suite: 2, sym: 'mirror', ported: true, moment: true, fit: 1.3,
+    key: 'ripple', label: 'Ripple', suite: 2, sym: 'mirror', ported: true, moment: true, fit: 1.3, open: { orbit: 0, tilt: 0.1, dist: 1.9 },
     hint: 'A standing wave with its own reflection under it. The surface is the source; the grains are what is riding it as it passes.',
     project: (g, k) => [
       g.w * k.SPAN * 0.72,
@@ -746,6 +772,8 @@ function stDetail(cfg, n, lo, hi) {
 /// Empty this set and every control comes back where it was.
 const ST_ADMIN_HIDDEN = new Set([
   'typeOn', 'typeSize', 'typeDepth', 'typeLean', 'typeAt', 'typeHigh', 'typeSwing',
+  // The dolly rig the orbit replaced. See the camera block.
+  'eye', 'lift', 'swing', 'aim',
 ]);
 
 /// Whether a setting is offered in the admin.
@@ -802,101 +830,84 @@ const ST_OBJECTS = [
 /// So: pads for the pairs, sliders only for what is genuinely one number, and
 /// the whole lot in groups small enough to hold in your head. Forty-four sliders
 /// in a column is a list, and a list is not an instrument.
+/// The controls, grouped by the thing they belong to.
+///
+/// **An audit, acted on.** What was here was fifty-eight numbers and twenty-one
+/// switches under headings like "Sound" and "Look", reached through seventeen
+/// two-axis pads. Three faults, all of them the same fault:
+///
+///   - **The same number appeared twice under two names.** `lift` was half of
+///     STANDPOINT and half of VIEW; `bloomAmount` was half of GLOW and half of
+///     BLOOM. Moving one moved the other and neither pad said so.
+///   - **Things were filed by parameter rather than by object.** The type's
+///     position lived in the Sleeve group. Which object a control belonged to —
+///     the one fact you actually navigate by — was the one thing the headings did
+///     not say.
+///   - **A pad is two numbers with their names taken off.** They were put in
+///     because forty-four sliders in a column is a list rather than an
+///     instrument, which was true; the answer was wrong. A pad hides both labels,
+///     both values and both ranges to save one row, and you cannot dial a number
+///     you cannot read.
+///
+/// So: one section per object, named after the switch that turns that object on,
+/// in the same order as the switches. Every control is a labelled slider with its
+/// value showing. One section open at a time, because forty-four sliders are only
+/// a list when they are all on screen at once.
+///
+/// The camera is not in here at all. It belongs to the picture — drag to orbit,
+/// shift-drag to slide, wheel to pull in — which is where every 3D application
+/// has put it since Maya, and the numbers for it are a readout pinned above these
+/// rather than a group among them. See `wireStageDrag`.
 const ST_GROUPS = [
   {
-    key: 'room', label: 'Room',
-    pads: [
-      { x: 'width', y: 'height', label: 'SIZE',
-        hint: 'How wide and how tall, together. Drag.' },
-      { x: 'depth', y: 'taper', label: 'THROAT',
-        hint: 'How far it runs back, against how far the far end draws in. Down and right is a long funnel; up and left is a shallow box.' },
-    ],
-    sliders: [],
+    key: 'terrain', label: 'Terrain', owner: 'terrainOn',
+    hint: 'The sound along the floor, receding as it ages.',
+    sliders: ['relief', 'gain', 'span', 'window', 'smooth', 'floorLevel', 'rows', 'points'],
   },
   {
-    key: 'camera', label: 'Camera',
-    pads: [
-      { x: 'swing', y: 'lift', label: 'STANDPOINT',
-        hint: 'Where the camera stands, across and up. The same thing dragging the picture does.' },
-      { x: 'aim', y: 'lift', label: 'VIEW',
-        hint: 'Where the camera stands and what it looks at — one gesture, not two numbers.' },
-      { x: 'eye', y: 'fov', label: 'LENS',
-        hint: 'How far back, against how wide. Close and wide is the inside of the thing; far and narrow is a diagram of it.' },
-    ],
-    sliders: [],
+    key: 'grains', label: 'Grains', owner: 'cloudOn',
+    hint: 'Every grain about to sound.',
+    sliders: ['cloudDensity', 'cloudSize', 'cloudDrift', 'cloudGlow', 'cloudCap'],
   },
   {
-    key: 'light', label: 'Light',
-    pads: [
-      { x: 'keySide', y: 'keyHigh', label: 'KEY',
-        hint: 'Where the main lamp hangs. Drag it around the room.' },
-      { x: 'key', y: 'ambient', label: 'BALANCE',
-        hint: 'The key against the light that comes from nowhere. Right and down is dramatic; left and up is flat.' },
-    ],
-    sliders: ['keyAt', 'fill', 'rim', 'drive'],
+    key: 'ring', label: 'Ring', owner: 'ringOn',
+    hint: 'The Lissajous hung in the room, with depth as time.',
+    sliders: ['ringSize', 'ringDrive', 'ringHigh', 'ringRows', 'ringPoints'],
   },
   {
-    key: 'air', label: 'Air',
-    pads: [
-      { x: 'fogDensity', y: 'mist', label: 'ATMOSPHERE',
-        hint: 'How thick the air is, against how much is floating in it.' },
-    ],
-    sliders: ['mistSize', 'mistDrift'],
+    key: 'sleeve', label: 'Sleeve', owner: 'sleeveOn',
+    hint: 'The stacked lines on the room’s own surfaces.',
+    sliders: ['sleeveSpan', 'sleeveRelief'],
   },
   {
-    key: 'sound', label: 'Sound',
-    pads: [
-      { x: 'relief', y: 'gain', label: 'TERRAIN',
-        hint: 'How high the floor stands, against how hard the sound drives it.' },
-      { x: 'span', y: 'window', label: 'SHAPE',
-        hint: 'How wide it runs, against how hard it is pulled to the middle.' },
-    ],
-    sliders: ['rows', 'points', 'smooth', 'floorLevel'],
+    key: 'air', label: 'Air', owner: 'fogOn',
+    hint: 'The air itself, and what is floating in it.',
+    sliders: ['fogDensity', 'mist', 'mistSize', 'mistDrift'],
   },
   {
-    key: 'grains', label: 'Grains',
-    pads: [
-      { x: 'cloudDensity', y: 'cloudSize', label: 'CLOUD',
-        hint: 'How much of the schedule is drawn, against how big each grain is.' },
-    ],
-    sliders: ['cloudDrift', 'cloudGlow', 'cloudCap'],
+    key: 'lamps', label: 'Lamps', owner: 'keyOn',
+    hint: 'Three lamps. The sound gives off its own light; these are for modelling the solids.',
+    sliders: ['key', 'keySide', 'keyHigh', 'keyAt', 'fill', 'rim', 'ambient', 'drive', 'shadowSoft'],
   },
   {
-    key: 'ring', label: 'Ring',
-    pads: [
-      { x: 'ringSize', y: 'ringDrive', label: 'BORE',
-        hint: 'How wide the tube is, against how hard the sound pushes it out of round.' },
-    ],
-    sliders: ['ringHigh', 'ringRows', 'ringPoints'],
+    key: 'room', label: 'Room', owner: 'shell',
+    hint: 'The box. Off by default — it was only ever a way of getting depth into a flat picture — but its size is what everything else is scaled against.',
+    sliders: ['width', 'height', 'depth', 'taper', 'gridSize', 'gridFade'],
   },
   {
-    key: 'type', label: 'Type',
-    pads: [],
-    sliders: ['typeSize', 'typeDepth', 'typeLean', 'typeSwing'],
-  },
-  {
-    key: 'sleeve', label: 'Sleeve',
-    pads: [
-      { x: 'typeAt', y: 'typeHigh', label: 'TYPE',
-        hint: 'How far into the space the words stand, and how high. Deep enough and the sound passes in front of them.' },
-      { x: 'sleeveSpan', y: 'sleeveRelief', label: 'STACK',
-        hint: 'How far the lines run across each surface, against how far they stand off it.' },
-    ],
-    sliders: [],
-  },
-  {
-    key: 'look', label: 'Look',
-    pads: [
-      { x: 'glow', y: 'bloomAmount', label: 'GLOW',
-        hint: 'How much light the sound gives off, against how far it spills. This pair is the look — everything else is the room it happens in.' },
-      { x: 'exposure', y: 'contrast', label: 'FILM',
-        hint: 'How much light reaches it, against how far apart the lit and unlit are.' },
-      { x: 'bloomAmount', y: 'bloomThreshold', label: 'BLOOM',
-        hint: 'How much the bright parts spill, against how bright a thing has to be before it does.' },
-    ],
-    sliders: ['vignette', 'gridSize', 'gridFade', 'wireWidth', 'shadowSoft'],
+    key: 'look', label: 'Look', owner: null,
+    hint: 'How the whole frame is exposed and developed, after everything in it has been drawn.',
+    sliders: ['glow', 'bloomAmount', 'bloomThreshold', 'exposure', 'contrast', 'vignette',
+      'wireWidth', 'detail'],
   },
 ];
+
+/// The camera's own numbers, pinned above the groups.
+///
+/// Not a group: it is not a thing in the room, it is where you are standing to
+/// look at the room, and every 3D application treats that as a property of the
+/// viewport rather than of the scene.
+const ST_CAM_UI = ['orbit', 'tilt', 'dist', 'fov'];
 
 /// The sliders.
 const ST_UI = [
@@ -905,11 +916,27 @@ const ST_UI = [
   { key: 'height', tag: 'HEIGHT', min: 1, max: 6, step: 0.05, hint: 'How tall it is.' },
   { key: 'taper', tag: 'TAPER', min: 0.2, max: 1, step: 0.01,
     hint: 'How far the back draws in. At one it is a box; under one it is a funnel, which is perspective before the camera has any.' },
-  { key: 'eye', tag: 'EYE', min: 0.2, max: 8, step: 0.05, hint: 'How far back the camera stands.' },
-  { key: 'lift', tag: 'LIFT', min: -1.5, max: 1.5, step: 0.01, hint: 'How high it stands.' },
-  { key: 'swing', tag: 'SWING', min: -3, max: 3, step: 0.01, hint: 'How far across the space it stands. Drag the picture sideways.' },
-  { key: 'aim', tag: 'AIM', min: 0, max: 1, step: 0.01, hint: 'How far down the room it looks.' },
-  { key: 'fov', tag: 'LENS', min: 0.3, max: 1.6, step: 0.01, hint: 'The field of view.' },
+  // ── the camera ──
+  //
+  // **These are readouts as much as controls.** Turning a view over is a thing
+  // you do to the picture, not to a slider: drag orbits, shift-drag slides the
+  // point it turns around, the wheel pulls in. The numbers are here so a framing
+  // can be dialled exactly and read back, which a drag cannot do.
+  { key: 'orbit', tag: 'ORBIT', min: -3.15, max: 3.15, step: 0.01, hint: 'Round the subject. Drag the picture sideways to do the same thing.' },
+  { key: 'tilt', tag: 'TILT', min: -1.45, max: 1.45, step: 0.01, hint: 'Above it or below it. Drag the picture up and down.' },
+  { key: 'dist', tag: 'DISTANCE', min: 0.2, max: 20, step: 0.05, hint: 'How far back from what it is looking at. The wheel does this.' },
+  { key: 'fov', tag: 'LENS', min: 0.3, max: 1.6, step: 0.01, hint: 'The field of view. Wide and close is the inside of a thing; narrow and far is a diagram of it.' },
+
+  // **The old rig, described and unlisted.** `eye`, `swing`, `lift` and `aim`
+  // slid the camera on a plane and aimed it down the room's axis, which is a rig
+  // for looking at a room rather than at a thing standing in one. Nothing reads
+  // them now. They stay described so that a saved scene carrying them is still
+  // legible, and so putting them back is a matter of taking four keys out of
+  // `ST_ADMIN_HIDDEN`.
+  { key: 'eye', tag: 'EYE', min: 0.2, max: 8, step: 0.05, hint: 'How far back the camera stands. Replaced by DISTANCE.' },
+  { key: 'lift', tag: 'LIFT', min: -1.5, max: 1.5, step: 0.01, hint: 'How high it stands. Replaced by TILT.' },
+  { key: 'swing', tag: 'SWING', min: -3, max: 3, step: 0.01, hint: 'How far across the space it stands. Replaced by ORBIT.' },
+  { key: 'aim', tag: 'AIM', min: 0, max: 1, step: 0.01, hint: 'How far down the room it looks. Replaced by the target, which shift-drag moves.' },
   { key: 'ambient', tag: 'AMBIENT', min: 0, max: 1, step: 0.01, hint: 'The light that comes from nowhere. Too much and nothing has form.' },
   { key: 'key', tag: 'KEY', min: 0, max: 4, step: 0.02, hint: 'The main lamp.' },
   { key: 'keySide', tag: 'KEY SIDE', min: -1, max: 1, step: 0.01, hint: 'Which side it stands.' },
@@ -2448,8 +2475,28 @@ function stAttach(canvas) {
       }
 
       // ── the camera ──
-      camera.position.set(cfg.swing || 0, cfg.lift, -cfg.eye);
-      camera.setTarget(new BABYLON.Vector3((cfg.swing || 0) * 0.25, 0, cfg.depth * cfg.aim));
+      //
+      // **An orbit, not a dolly on rails.** What was here slid the camera about
+      // on a plane at a fixed depth and aimed it down the room's axis: `swing`
+      // across, `lift` up, `eye` back, `aim` at. That is a rig for looking *at a
+      // room*, and it is why the ten views could not be turned over — there was
+      // no way to get round the far side of anything, only to shuffle sideways
+      // and squint at it.
+      //
+      // This is the rig every 3D application has: a target, a distance, and two
+      // angles round it. Drag turns it, shift-drag slides the target, the wheel
+      // pulls in. See `wireStageDrag`.
+      //
+      // The old four are not deleted — they are unlisted, and `ST_CAM_LEGACY`
+      // says how to read them back if this is ever wound in.
+      const tgt = new BABYLON.Vector3(cfg.panX || 0, cfg.panY || 0, cfg.panZ || 0);
+      const ct = Math.cos(cfg.tilt), st2 = Math.sin(cfg.tilt);
+      camera.position.set(
+        tgt.x + Math.sin(cfg.orbit) * ct * cfg.dist,
+        tgt.y + st2 * cfg.dist,
+        tgt.z - Math.cos(cfg.orbit) * ct * cfg.dist,
+      );
+      camera.setTarget(tgt);
       camera.fov = cfg.fov;
 
       scene.render();
