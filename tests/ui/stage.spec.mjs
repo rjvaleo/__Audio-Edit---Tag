@@ -214,7 +214,13 @@ test('every control is labelled, reachable, and filed under its own object', asy
 
   const shape = await page.evaluate(() => {
     const e = document.getElementById('stageEdit');
-    const sliders = [...e.querySelectorAll('[data-st-key]')].map((x) => x.dataset.stKey);
+    // Sliders and menus both: a setting that is a choice from a list is built as
+    // a menu — see `ST_PICKS` — and counting only the sliders reports it as a
+    // described control with no control.
+    const sliders = [
+      ...[...e.querySelectorAll('[data-st-key]')].map((x) => x.dataset.stKey),
+      ...[...e.querySelectorAll('[data-st-pick]')].map((x) => x.dataset.stPick),
+    ];
     return {
       folds: [...e.querySelectorAll('[data-st-fold]')].map((b) => b.dataset.stFold),
       open: [...e.querySelectorAll('[data-st-fold-body]')]
@@ -830,4 +836,73 @@ test('a generated scheme paints the slots the panel is offering', async ({ page 
   // its three slots are not on offer either.
   expect(got.dupes, 'two colour slots share a name').toEqual([]);
   expect(got.labels).toEqual(['Terrain', 'Sleeve', 'Ring', 'Grains', 'Mist', 'Type', 'Walls', 'Ground']);
+});
+
+test('the cloud draws the whole catalogue of solids', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openStage(page);
+  const got = await page.evaluate(async () => {
+    const r = visLive.stage;
+    const sr = 44100, grains = [];
+    // A spread of levels, so the tiered rule has loud grains to give the
+    // intricate solids to as well as quiet ones.
+    for (let i = 0; i < 2500; i++) {
+      grains.push([Math.round((i / 2500) * 6 * sr), 0, Math.round(0.05 * sr),
+        ((i * 37) % 25) - 12, 0.02 + 0.6 * Math.abs(Math.sin(i * 0.017)), 0.4,
+        Math.sin(i * 0.13) * 0.8, i]);
+    }
+    const run = async (patch, frames) => {
+      const s = { ...stageSettings(), cloudInk: false, solo: 'cloudOn',
+        cloudDensity: 1, cloudCap: 4000, detail: 1, ...patch };
+      r.configure(s); r.clear();
+      const bands = new Float32Array(128).fill(-18);
+      for (let i = 0; i < 20; i++) r.push(bands, new Float32Array(2048));
+      for (let k = 0; k < (frames || 50); k++) {
+        r.frame({ stage: s, stagePaint: ridgePaint(), clock: 5 + k * 0.033,
+          grains, schedule: grains, grainRate: sr,
+          outFrames: 6 * sr, srcFrames: 6 * sr,
+          position: Math.round(sr * (1 + k * 0.03)), positionRate: sr });
+        await new Promise((res) => requestAnimationFrame(res));
+      }
+      const eng = BABYLON.EngineStore.Instances[BABYLON.EngineStore.Instances.length - 1];
+      const sc = eng.scenes[eng.scenes.length - 1];
+      const mine = sc.meshes.filter((m) => m.name.startsWith('stgrain_'));
+      return {
+        drawing: mine.filter((m) => m.isEnabled() && m.thinInstanceCount > 0)
+          .map((m) => m.name.replace('stgrain_', '')),
+        wire: mine.filter((m) => m.getClassName() === 'LinesMesh' && m.thinInstanceCount > 0).length,
+      };
+    };
+    const all = await run({ cloudShape: 'auto' });
+    const tiered = await run({ cloudShape: 'tiered' });
+    const one = await run({ cloudShape: 'cube' });
+    const off = await run({ solo: 'terrainOn' }, 12);
+    return { all, tiered, one, off, catalogue: GRAIN_SHAPES.length,
+      faceless: GRAIN_SHAPES.filter((m) => !m.tri || !m.tri.length).map((m) => m.name) };
+  });
+
+  // **All of them, not one.** The cloud drew a single icosahedron because that
+  // is what one `CreatePolyhedron` call gives you, and every grain in the room
+  // was the same object at a different size.
+  expect(got.all.drawing.length, 'the cloud is not drawing the whole catalogue')
+    .toBe(got.catalogue);
+
+  // **The three simplex projections have no skin, on purpose** — a simplex is a
+  // graph rather than a surface. Built as solids they are meshes with no
+  // indices, which draw nothing: a grain assigned one is silently not there.
+  expect(got.faceless.length).toBe(3);
+  expect(got.all.wire, 'the faceless solids are not drawn as edges').toBe(3);
+
+  // The old room's rule is still on offer, and it is a different picture: the
+  // intricate solids are kept for the loud grains.
+  expect(got.tiered.drawing.length, 'the tiered rule offered nothing')
+    .toBeGreaterThan(3);
+
+  // Naming one draws the whole cloud as that and nothing else.
+  expect(got.one.drawing).toEqual(['cube']);
+
+  // And they answer the switch, like everything else in the room. The base mesh
+  // was gated and these were not, so soloing something else left thirty-four
+  // clouds drawing.
+  expect(got.off.drawing, 'the shapes ignored solo').toEqual([]);
 });

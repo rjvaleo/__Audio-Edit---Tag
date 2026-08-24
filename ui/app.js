@@ -8601,8 +8601,8 @@ function setVisual(key) {
     } else {
       roomEdit.stage = { ...stageSettings(), cloudInk: false };
     }
-    // Framed for the shape that is about to be drawn. See `open` in `ST_LAYOUTS`.
-    if (v.layout) frameStageView();
+    // The room and the views in it are framed differently — see `frameStageView`.
+    frameStageView();
     saveRoomData();
     showStageFamily('bus');
     setVisModule('stage');
@@ -13800,6 +13800,24 @@ function stageSlider(row, set) {
   const tag = rpEl('span', 're-tag', row.tag);
   tag.title = row.hint;
   box.appendChild(tag);
+  // **A choice from a list is a menu, not a slider.** Thirty-eight named solids
+  // have no order to slide along, no readout anyone can read as a shape, and no
+  // way back to the one you liked. See `ST_PICKS`.
+  if (row.pick && typeof ST_PICKS !== 'undefined' && ST_PICKS[row.pick]) {
+    const sel = rpEl('select', 'field mini');
+    sel.dataset.stPick = row.key;
+    sel.title = row.hint;
+    for (const o of ST_PICKS[row.pick]()) {
+      const opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.label;
+      sel.appendChild(opt);
+    }
+    sel.value = stageSettings()[row.key];
+    sel.onchange = () => set(row.key, sel.value);
+    box.appendChild(sel);
+    return box;
+  }
   const sl = rpEl('input', 're-slider');
   sl.type = 'range';
   const k = row.round ? 1 : 1000;
@@ -14157,6 +14175,8 @@ function paintStagePanel() {
   }
   host.classList.toggle('st-soloing', !!st.solo);
   for (const row of ST_UI) {
+    const pick = host.querySelector(`[data-st-pick="${row.key}"]`);
+    if (pick && document.activeElement !== pick) pick.value = st[row.key];
     const sl = host.querySelector(`[data-st-key="${row.key}"]`);
     const read = host.querySelector(`[data-st-read="${row.key}"]`);
     if (!sl) continue;
@@ -14328,8 +14348,16 @@ function wireStageDrag(canvas) {
 function frameStageView() {
   const st = stageSettings();
   const lay = (typeof stLayout === 'function' && st.cloudInk) ? stLayout(st.cloudLayout) : null;
-  const open = (lay && lay.open) || { orbit: 0, tilt: 0.12, dist: 1.6 };
-  roomEdit.stage = { ...st, ...open, panX: 0, panY: 0, panZ: 0 };
+  // **The room is framed differently from the views in it.** A ported view is
+  // built around the present and the present is the origin, so it turns around
+  // nothing. The stage showing as itself is a room its cloud travels the length
+  // of, so it turns around a point partway down that room — which is where the
+  // old rig aimed, and without it the camera orbits one end of the cloud and
+  // most of it is off screen.
+  const open = (lay && lay.open)
+    || { orbit: ST_DEFAULTS.orbit, tilt: ST_DEFAULTS.tilt, dist: ST_DEFAULTS.dist };
+  const at = lay ? 0 : (st.depth || 9) * 0.3;
+  roomEdit.stage = { ...st, ...open, panX: 0, panY: 0, panZ: at };
   saveRoomData();
   const r = visLive.stage;
   if (r && r.configure) r.configure(stageSettings());
