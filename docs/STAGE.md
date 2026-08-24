@@ -34,8 +34,24 @@ eye reads first. Measured, correct, and rudimentary.
 
 Every renderer this program has had glows because it is additive lines on true
 black: nothing in the frame is not signal. So here the signal **emits** and the
-lamps are for modelling the solids. `GLOW` is the control that matters and it has
-a pad of its own.
+lamps are for modelling the solids.
+
+**Two glows, named for what emits.** `LINE GLOW`, under Look, is every line the
+sound is drawn as — the terrain's ridge, the ring, the sleeve — and the mist and
+the type that stand in the same light. `GRAIN GLOW`, under Grains, is one grain's
+own light. They were both called GLOW, which is the same fault as two pads
+sharing an axis: one panel, one word, two different things. A third, `INK`, is in each view's own
+editor: it multiplies GRAIN GLOW for whichever of the ten is showing, so Mandala
+can be hot and Lattice cool without either touching the other. `BLOOM` is none of
+them — it is the spill, and it happens to the whole frame after everything in it
+has been drawn.
+
+| | | |
+| --- | --- | --- |
+| `LINE GLOW` | Look | every line the sound is drawn as, plus the mist and the type |
+| `GRAIN GLOW` | Grains | one grain's own light |
+| `INK` | the view's editor | this view's strokes, on top of GRAIN GLOW |
+| `BLOOM` | Look | the spill, over the finished frame |
 
 **A filled surface made emissive is a white slab.** That was the first attempt at
 the above: the terrain lit from inside came out as a featureless ramp, brighter

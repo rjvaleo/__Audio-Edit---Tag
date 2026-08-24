@@ -961,7 +961,7 @@ const ST_UI = [
     hint: 'How much of the schedule is drawn. A cloud you can see through is worth more than one you cannot.' },
   { key: 'cloudSize', tag: 'GRAIN SIZE', min: 0.005, max: 0.3, step: 0.005, hint: 'How big each grain is.' },
   { key: 'cloudDrift', tag: 'GRAIN DRIFT', min: 0, max: 1, step: 0.01, hint: 'How far a grain wanders as it travels.' },
-  { key: 'cloudGlow', tag: 'GRAIN GLOW', min: 0, max: 1.5, step: 0.01, hint: 'How much light a grain gives off of its own, before the lamps touch it.' },
+  { key: 'cloudGlow', tag: 'GRAIN GLOW', min: 0, max: 1.5, step: 0.01, hint: 'How much light one grain gives off of its own, before the lamps touch it. Only the cloud — everything else the sound is drawn as is LINE GLOW, under Look.' },
   { key: 'cloudCap', tag: 'GRAIN CAP', min: 100, max: 6000, step: 100, round: true, hint: 'The most that will ever be in the room at once.' },
   { key: 'ringSize', tag: 'RING', min: 0.05, max: 1.5, step: 0.01, hint: 'How wide the tube is.' },
   { key: 'ringDrive', tag: 'RING DRIVE', min: 0, max: 4, step: 0.02, hint: 'How hard the sound pushes it out of round.' },
@@ -977,7 +977,7 @@ const ST_UI = [
   { key: 'wireWidth', tag: 'WIRE', min: 0.2, max: 4, step: 0.1,
     hint: 'The bright line along the terrain’s ridges, over the lit surface. The old room was only ever this line; here it is the highlight on a solid.' },
   { key: 'shadowSoft', tag: 'SHADOW', min: 0, max: 64, step: 1, round: true, hint: 'How soft the key light’s shadows are. At nought they are hard.' },
-  { key: 'bloomAmount', tag: 'BLOOM', min: 0, max: 2, step: 0.02, hint: 'How much the bright parts spill.' },
+  { key: 'bloomAmount', tag: 'BLOOM', min: 0, max: 2, step: 0.02, hint: 'How far the bright parts spill into what is next to them. This happens to the whole frame after everything in it is drawn, so it is downstream of both glows rather than a third one.' },
   { key: 'bloomThreshold', tag: 'BLOOM AT', min: 0, max: 1, step: 0.01, hint: 'How bright a thing has to be before it spills.' },
   { key: 'contrast', tag: 'CONTRAST', min: 0.5, max: 3, step: 0.01, hint: 'How far apart the lit and the unlit are.' },
   { key: 'exposure', tag: 'EXPOSURE', min: 0.2, max: 3, step: 0.01, hint: 'How much light reaches the film.' },
@@ -990,8 +990,13 @@ const ST_UI = [
   { key: 'typeSwing', tag: 'TYPE ACROSS', min: -3, max: 3, step: 0.01, hint: 'How far across.' },
   { key: 'detail', tag: 'DETAIL', min: 0.15, max: 1, step: 0.05,
     hint: 'How much of the full row and sample count the preview draws. The film always draws all of it — this is the proxy you watch while you work, and it changes nothing you can see the shape of.' },
-  { key: 'glow', tag: 'GLOW', min: 0, max: 3, step: 0.02,
-    hint: 'How much light the sound gives off of its own. This is the look: at nought the signal is a grey surface with a lamp on it, and up it is a glowing line the way the old renderers draw it.' },
+  // **Two glows, and they were both called GLOW.** One panel offering the same
+  // word twice is the fault the sections were rebuilt to remove, and these are
+  // not the same thing: this one is every line the sound is drawn as, and
+  // `cloudGlow` is a single grain's own light. The keys are untouched — a saved
+  // scene still reads — only the names on the panel change.
+  { key: 'glow', tag: 'LINE GLOW', min: 0, max: 3, step: 0.02,
+    hint: 'How much light the drawn line gives off of its own — the terrain’s ridge, the ring, the sleeve, and the mist and the type that stand in the same light. This is the look: at nought the signal is a grey surface with a lamp on it, and up it is a glowing line the way the old renderers draw it. The grains have their own, under Grains.' },
 ];
 
 function stRgb(hex, fallback) {
