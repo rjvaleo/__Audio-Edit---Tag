@@ -56,7 +56,8 @@ pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 /// has fallen behind can say so instead of being argued with.
 pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
-    for part in [UI_HTML, UI_CSS, UI_JS, SETTINGS_JS, STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
+    for part in [UI_HTML, UI_CSS, UI_JS, SETTINGS_JS, SHAPES_4D_JS, PANEL_4D_JS,
+                 STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
                  VIS_GL_JS, RIDGE_JS, ROOM3D_JS, ROOM_PAINT_JS, VIDEO_EXPORT_JS] {
         for b in part.as_bytes() {
             h ^= *b as u64;
@@ -102,6 +103,12 @@ pub const THEME_PALETTES_JS: &str = include_str!("../../../../ui/theme-palettes.
 /// Every preference the interface keeps, and the table that says what each one
 /// is. Served before anything that reads a preference; see `ui/settings.js`.
 pub const SETTINGS_JS: &str = include_str!("../../../../ui/settings.js");
+/// The regular 4-polytopes and the projection that brings them into three
+/// dimensions. Pure geometry — see `docs/SHAPES-4D.md`.
+pub const SHAPES_4D_JS: &str = include_str!("../../../../ui/shapes-4d.js");
+/// The modelling-package panel that drives them: object manager, attribute
+/// manager, and six planes of rotation.
+pub const PANEL_4D_JS: &str = include_str!("../../../../ui/panel-4d.js");
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
     match (req.method.as_str(), req.path.as_str()) {
@@ -132,6 +139,12 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET" | "HEAD", "/app.css") => {
             Response::ok("text/css; charset=utf-8", UI_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/shapes-4d.js") => {
+            Response::ok("text/javascript; charset=utf-8", SHAPES_4D_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/panel-4d.js") => {
+            Response::ok("text/javascript; charset=utf-8", PANEL_4D_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/settings.js") => {
             Response::ok("text/javascript; charset=utf-8", SETTINGS_JS.as_bytes().to_vec())

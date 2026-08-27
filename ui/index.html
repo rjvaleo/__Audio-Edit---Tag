@@ -399,6 +399,11 @@
           <button class="rv-tab" data-rvtab="sound">Sound</button>
           <button class="rv-tab" data-rvtab="geom">Shape</button>
           <button class="rv-tab" data-rvtab="paint">Colour</button>
+          <!-- The four-dimensional solids. Its own tab rather than a section of
+               Shape, because what is in it is a different kind of thing: Shape
+               is the room's own geometry, this is a catalogue of objects with an
+               attribute manager, in the idiom of a modelling package. -->
+          <button class="rv-tab" data-rvtab="dim4">4D</button>
         </div>
         <!-- `#roomEdit` is moved in here. The panel is laid out differently at
              this width — see `.rv-admin .room-edit` — but it is the same DOM
@@ -414,6 +419,13 @@
         <!-- The palette. Built by `rpPanel`; only ever shown here, because the
              dock's overlay has no room for it. -->
         <div class="rv-admin-body hidden" id="roomPaintBody"></div>
+        <!-- Preview above, controls below — the modelling-package arrangement,
+             where the viewport is the thing and the attribute manager serves it.
+             Built by `p4Panel` in `panel-4d.js`. -->
+        <div class="rv-admin-body hidden" id="room4dBody">
+          <div class="p4-view"><canvas id="p4Canvas"></canvas></div>
+          <div id="p4Panel"></div>
+        </div>
       </aside>
       <div class="rv-grip" id="roomGrip"
            title="Drag to resize the controls · double-click to put it back"></div>
@@ -1101,6 +1113,9 @@
      it touches the DOM; it is loaded first so no later script has to wonder
      whether it exists yet. -->
 <script src="/settings.js"></script>
+<!-- The four-dimensional solids, and the panel that drives them. The geometry
+     knows nothing about the DOM; the panel is loaded after it. -->
+<script src="/shapes-4d.js"></script>
 <script src="/theme-palettes.js"></script>
 <script src="/theme-derive.js"></script>
 <script src="/grain-shapes.js"></script>
@@ -1122,6 +1137,7 @@
 <script src="/mp4.js"></script>
 <script src="/vis-gl.js"></script>
 <script src="/video-export.js"></script>
+<script src="/panel-4d.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
