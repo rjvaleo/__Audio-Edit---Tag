@@ -10,6 +10,38 @@
 
 const $ = (id) => document.getElementById(id);
 
+/// The preferences, live.
+///
+/// `Settings` (in `settings.js`) is the pure half — the table of what a setting
+/// is and what counts as a readable value. This is the one mutable copy the
+/// interface reads and writes, loaded once here so that no call site has to
+/// parse anything, and so a setting can be read during load without reaching
+/// for `localStorage` again.
+const prefs = Settings.load(localStorage);
+
+/// Change one, write them all, and tell whoever is listening.
+///
+/// Everything that has to happen when a setting moves is registered rather than
+/// called from here, because the settings panel, the menus and the controls on
+/// the page can all set the same value and none of them should have to know
+/// what the others need repainting.
+const prefsListeners = new Set();
+
+function setPref(key, value, { save = true } = {}) {
+  if (!(key in Settings.SPEC)) return prefs[key];
+  const next = Settings.SPEC[key].read(value);
+  const changed = prefs[key] !== next;
+  prefs[key] = next;
+  if (save) Settings.persist(localStorage, prefs);
+  if (changed) for (const fn of prefsListeners) fn(key, next);
+  return next;
+}
+
+/// Called whenever any setting changes. `key` says which.
+function onPrefChange(fn) {
+  prefsListeners.add(fn);
+}
+
 const api = async (path, opts) => {
   const r = await fetch(path, opts);
   const body = await r.json().catch(() => ({ error: 'bad response from server' }));
@@ -64,6 +96,7 @@ const state = {
   /// past a playhead pinned to the middle; `page` leaves it alone until it runs
   /// off the edge and then turns the page. An app setting, not a per-document
   /// one — it is how you like to watch, not something about the sound.
+  /// Filled from the store at load; the values here are only the shape.
   follow: { on: true, mode: 'scroll' },
 
   sel: null,                   // {start, end} in timeline frames
@@ -263,11 +296,12 @@ const folderCount = (f) =>
   state.playAll ? (f.files ?? f.audioFiles) : (f.headerFiles ?? f.audioFiles);
 
 function setPlayAll(on) {
-  state.playAll = on;
-  $('playAll').checked = on;
+  state.playAll = setPref('playAll', !!on);
+  $('playAll').checked = state.playAll;
   buildTree();
 }
 
+state.playAll = prefs.playAll;
 $('playAll').checked = state.playAll;
 $('playAll').onchange = (e) => setPlayAll(e.target.checked);
 
@@ -1141,23 +1175,25 @@ function updateOverviewCue() {
 /// the spectrogram splitting that lane the waveform only has the top of it, so
 /// the marks were struck from a line well below the sound they describe. The
 /// default now follows the split, and the grip overrides it.
-const GRAIN_CENTRE_STORE = 'audiolab.grainCentre';
-
 function grainCentreDefault() {
   const lane = $('lane');
   if (lane && lane.classList.contains('split')) return laneSplit() / 200;
   return 0.5;
 }
 
+/// Where it was put by hand, or where the layout says it belongs.
+///
+/// `null` in the store means nobody has placed it — which is a different answer
+/// from any number, and is why this one setting cannot state its default in the
+/// table with the rest.
 function grainCentre() {
-  const v = Number(localStorage.getItem(GRAIN_CENTRE_STORE));
-  return Number.isFinite(v) && v > 0.02 && v < 0.98 ? v : grainCentreDefault();
+  return prefs.grainCentre === null ? grainCentreDefault() : prefs.grainCentre;
 }
 
 function setGrainCentre(frac, { save = true } = {}) {
   const v = Math.min(0.98, Math.max(0.02, frac));
   if (save) {
-    try { localStorage.setItem(GRAIN_CENTRE_STORE, String(v)); } catch { /* private mode */ }
+    setPref('grainCentre', v);
   } else {
     setGrainCentre.live = v;
   }
@@ -1771,28 +1807,23 @@ function peakWindow() {
 // in three places to fall out of step — the same reason the stylesheet owns the
 // rest of this geometry and the drawing code does not touch it.
 
-const SPLIT_STORE = 'audiolab.laneSplit';
-const SPLIT_DEFAULT = 64;
 /// Far enough from either end that neither canvas can be dragged to nothing.
 /// A pane you can lose by accident and cannot get back is worse than one that
-/// stops short.
+/// stops short. The bounds live in `Settings.SPEC` now and are applied on the
+/// way in as well as the way out; these two are kept because the drag handler
+/// reads them to decide what a gesture means.
 const SPLIT_MIN = 25;
 const SPLIT_MAX = 88;
 
-function laneSplit() {
-  const v = Number(localStorage.getItem(SPLIT_STORE));
-  return Number.isFinite(v) && v >= SPLIT_MIN && v <= SPLIT_MAX ? v : SPLIT_DEFAULT;
-}
+const laneSplit = () => prefs.laneSplit;
 
 function setLaneSplit(pct, { save = true } = {}) {
-  const v = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, pct));
+  // Kept in the browser like the theme: how tall you like the spectrogram is a
+  // property of the screen you are looking at, not of the library. The clamp is
+  // the store's now, so `v` is read back rather than computed twice.
+  const v = save ? setPref('laneSplit', pct) : Settings.SPEC.laneSplit.read(pct);
   const lane = $('lane');
   if (lane) lane.style.setProperty('--split', `${v.toFixed(2)}%`);
-  if (save) {
-    // Kept in the browser like the theme: how tall you like the spectrogram is
-    // a property of the screen you are looking at, not of the library.
-    try { localStorage.setItem(SPLIT_STORE, String(v)); } catch { /* private mode */ }
-  }
   // The canvases are stretched by CSS rather than redrawn, so nothing has to be
   // re-rendered — but the waveform's buffer is positioned in pixels.
   layoutWaveBuffer();
@@ -1848,27 +1879,20 @@ wireLaneSplit();
 // The library list is the one panel whose right width depends on what is in it
 // — long file names, deep folders — so it is the one worth being able to drag.
 
-const LEFT_W_STORE = 'audiolab.leftPanelWidth';
-const LEFT_W_DEFAULT = 330;
+const LEFT_W_DEFAULT = Settings.SPEC.leftPanelWidth.def;
 /// Narrow enough to be a sliver, not so narrow the filter box collapses; wide
 /// enough to read a long path, not so wide the editor has nowhere to go.
 const LEFT_W_MIN = 200;
 const LEFT_W_MAX = 720;
 
-function leftPanelWidth() {
-  const v = Number(localStorage.getItem(LEFT_W_STORE));
-  return Number.isFinite(v) && v >= LEFT_W_MIN && v <= LEFT_W_MAX ? v : LEFT_W_DEFAULT;
-}
+const leftPanelWidth = () => prefs.leftPanelWidth;
 
 function setLeftPanelWidth(px, { save = true, redraw = true } = {}) {
-  const v = Math.round(Math.min(LEFT_W_MAX, Math.max(LEFT_W_MIN, px)));
+  // Kept in the browser like the lane split and the theme: how wide you like a
+  // panel is a property of the screen, not of the library.
+  const v = save ? setPref('leftPanelWidth', px) : Settings.SPEC.leftPanelWidth.read(px);
   const panel = $('leftPanel');
   if (panel) panel.style.setProperty('--left-w', `${v}px`);
-  if (save) {
-    // Kept in the browser like the lane split and the theme: how wide you like
-    // a panel is a property of the screen, not of the library.
-    try { localStorage.setItem(LEFT_W_STORE, String(v)); } catch { /* private mode */ }
-  }
   // The lane's canvases are sized in pixels off their own width, so the
   // waveform has to be re-placed after the space either side of it changes.
   //
@@ -1966,7 +1990,7 @@ function wireGrainCentre() {
 
   grip.addEventListener('dblclick', (e) => {
     e.preventDefault();
-    try { localStorage.removeItem(GRAIN_CENTRE_STORE); } catch { /* private mode */ }
+    setPref('grainCentre', null);
     setGrainCentre.live = undefined;
     placeGrainCentre(grainCentreDefault());
     drawGrainLayer();
@@ -2054,6 +2078,10 @@ function refetchWindow() {
 
 function setFollow(change) {
   Object.assign(state.follow, change);
+  // Whether you follow, and how, is how you like to watch rather than anything
+  // about the sound — so it outlives the session, which it did not before.
+  if ('on' in change) setPref('followOn', !!state.follow.on);
+  if ('mode' in change) setPref('followMode', state.follow.mode);
   reflectFollow();
   if (state.follow.on) {
     followPlayhead();
@@ -2072,6 +2100,8 @@ function reflectFollow() {
 
 $('followBtn').onclick = () => setFollow({ on: !state.follow.on });
 $('followMode').onchange = (e) => setFollow({ mode: e.target.value });
+state.follow.on = prefs.followOn;
+state.follow.mode = prefs.followMode;
 reflectFollow();
 
 async function loadPeaks() {
@@ -8898,21 +8928,18 @@ function leaveRoomView() {
   applyRoomFrame();
 }
 
-const ROOM_ADMIN_STORE = 'roomAdminW';
 const ROOM_ADMIN_MIN = 210;
 const ROOM_ADMIN_MAX = 620;
 
-function roomAdminWidth() {
-  const n = parseInt(localStorage.getItem(ROOM_ADMIN_STORE) || '', 10);
-  return Number.isFinite(n) ? n : 300;
-}
+/// The clamp used to be on the write only, so a width saved on a wider screen
+/// came back unclamped and the column could open past its own maximum. The
+/// store applies the bounds on the way in as well.
+const roomAdminWidth = () => prefs.roomAdminWidth;
 
 function setRoomAdminWidth(px, { save = true } = {}) {
   const v = Math.round(Math.min(ROOM_ADMIN_MAX, Math.max(ROOM_ADMIN_MIN, px)));
   $('roomAdmin')?.style.setProperty('--rv-admin-w', `${v}px`);
-  if (save) {
-    try { localStorage.setItem(ROOM_ADMIN_STORE, String(v)); } catch { /* private mode */ }
-  }
+  if (save) setPref('roomAdminWidth', v);
 }
 
 function wireRoomGrip() {
@@ -11463,22 +11490,10 @@ const MENUS = [
       { sep: true },
       { label: 'Capture what is playing', on: () => editing() && hasFile(), run: click('recBtn') },
       { sep: true },
-      // The cure for a callback that cannot finish in time. Doubling the block
-      // doubles the time it has and doubles the delay before a moved control
-      // is heard, which is the trade — hence a choice, not a constant.
-      ...BUFFER_SIZES.map((n) => ({
-        label: n == null ? 'Buffer: device default' : `Buffer: ${n} frames`,
-        key: tick(() => (state.bufferFrames ?? null) === n),
-        run: () => setBufferFrames(n),
-      })),
-      { sep: true },
-      // What a picture of the cloud costs. The schedule is refetched on every
-      // move of a control, so this is spending, not quality.
-      ...GRAIN_CAPS.map((n) => ({
-        label: `Grain detail: ${n.toLocaleString()}`,
-        key: tick(() => state.grainCap === n),
-        run: () => setGrainCap(n),
-      })),
+      // The buffer size and the grain cap were twelve rows here — seven and
+      // five — which made a menu about playing a sound mostly configuration.
+      // They are settings, they are in Settings, and this is a menu of things
+      // you can do again.
       { sep: true },
       { label: 'Reset time, pitch and grains', on: editing, run: resetEverything },
     ],
@@ -11503,18 +11518,9 @@ const MENUS = [
       { label: 'Browse', on: () => state.mode !== 'overview', run: () => setMode('overview') },
       { label: 'Edit', on: () => state.mode !== 'edit', run: () => setMode('edit') },
       { sep: true },
-      { label: 'Play all files', key: tick(() => state.playAll), run: click('playAll') },
-      { sep: true },
       { label: 'Zoom in', key: '+', on: hasFile, run: click('zoomIn') },
       { label: 'Zoom out', key: '−', on: hasFile, run: click('zoomOut') },
       { label: 'Fit', on: hasFile, run: click('zoomFit') },
-      { sep: true },
-      { label: 'Follow playhead', key: tick(() => state.follow.on),
-        on: hasFile, run: () => setFollow({ on: !state.follow.on }) },
-      { label: 'Follow by scrolling', key: tick(() => state.follow.mode === 'scroll'),
-        on: () => hasFile() && state.follow.on, run: () => setFollow({ mode: 'scroll' }) },
-      { label: 'Follow by paging', key: tick(() => state.follow.mode === 'page'),
-        on: () => hasFile() && state.follow.on, run: () => setFollow({ mode: 'page' }) },
       { sep: true },
       { label: 'Grain views in a panel', on: editing, run: () => openVisPop() },
     ],
@@ -11577,6 +11583,176 @@ function showMenu(items, x, y, heading) {
   pop.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 6)) + 'px';
   pop.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 6)) + 'px';
 }
+
+// ------------------------------------------------------------------ settings
+//
+// Twenty-one of the menu bar's seventy-eight rows were not commands at all.
+// Seven buffer sizes and five grain-detail levels sat in the Audio menu among
+// five actual transport commands, which made a menu about playing a sound 70%
+// configuration; four more sat in View. They are here now, and the menus are
+// back to being lists of things you can *do*.
+//
+// **Snap deliberately stays in Action as well.** It is read by every edit
+// command and the toolbar already carries it for that reason — it is the one
+// setting with a real claim to be near the work. It is repeated here rather
+// than moved, and both surfaces write through the same `setSnap`.
+//
+// Two of these are not in `prefs` at all: the audio buffer and the grain cap
+// live on the server, because the engine owns them. They are settings from
+// where you are sitting, so they are in the settings panel, and their rows read
+// and write the server rather than the store. Where a setting lives is an
+// implementation detail; where it is *found* should not be.
+
+/// What the panel draws, in the order it draws it.
+///
+/// Each row: what it is called, the sentence saying what you are trading, how
+/// to read it now and what to do when it moves. Nothing else knows this list,
+/// so adding a row here is the whole job of adding a setting.
+const SETTINGS_PANEL = [
+  {
+    group: 'How edits land',
+    rows: [
+      { key: 'snap', label: 'Snap edits to',
+        why: 'Where a cut, crop, fade or region edge is allowed to fall. Zero crossings avoid the click you get from cutting mid-wave; CD frames are multiples of 588 samples, for regions going to a Red Book disc. Also in the Action menu and on the toolbar.',
+        type: 'select',
+        options: [['zero', 'Zero crossings'], ['cd', 'CD frames'], ['off', 'Nowhere — exactly where I put it']],
+        get: () => state.snap, set: (v) => setSnap(v) },
+    ],
+  },
+  {
+    group: 'What the library lists',
+    rows: [
+      { key: 'playAll', label: 'Show files with no audio header',
+        why: 'Caches, sidecars and raw dumps, read as headerless PCM. Mostly noise, occasionally worth hearing. The folder counts follow it.',
+        type: 'check', get: () => state.playAll, set: (v) => setPlayAll(v) },
+    ],
+  },
+  {
+    group: 'Watching it play',
+    rows: [
+      { key: 'followOn', label: 'Keep the playhead on screen',
+        why: 'Off, and the lane stays where you left it while the sound plays past.',
+        type: 'check', get: () => state.follow.on, set: (v) => setFollow({ on: v }) },
+      { key: 'followMode', label: 'And do it by',
+        why: 'Scrolling pins the playhead to the middle and slides the file past it. Paging leaves it alone until it reaches the edge, then turns the page.',
+        type: 'select', options: [['scroll', 'Scrolling'], ['page', 'Paging']],
+        // Dimmed rather than removed when following is off: a control that
+        // vanishes teaches you nothing about why.
+        off: () => !state.follow.on,
+        get: () => state.follow.mode, set: (v) => setFollow({ mode: v }) },
+    ],
+  },
+  {
+    group: 'What things cost',
+    rows: [
+      { key: 'buffer', label: 'Audio buffer',
+        why: 'How long the engine has to fill each block. Doubling it doubles the time it has and doubles the delay before a control you move is heard — so a bigger buffer cures dropouts and costs responsiveness.',
+        type: 'select',
+        options: BUFFER_SIZES.map((n) => [n === null ? '' : String(n),
+          n === null ? 'The device’s own size' : `${n} frames`]),
+        get: () => (state.bufferFrames == null ? '' : String(state.bufferFrames)),
+        set: (v) => setBufferFrames(v === '' ? null : Number(v)) },
+      { key: 'grainCap', label: 'Grain detail',
+        why: 'How many grains a picture of the cloud is drawn from. The schedule is re-fetched every time you move a control, so this is spending rather than quality — the sound is identical either way.',
+        type: 'select', options: GRAIN_CAPS.map((n) => [String(n), n.toLocaleString()]),
+        get: () => String(state.grainCap ?? ''), set: (v) => setGrainCap(Number(v)) },
+      { key: 'masterFft', label: 'Analyser resolution',
+        why: 'The transform size behind the master bus spectrum. More bands, more arithmetic per frame — the band count on screen follows the pixels either way.',
+        when: 'Applies to the next frame drawn.',
+        type: 'select', options: [1024, 2048, 4096, 8192, 16384].map((n) => [String(n), `${n} bands`]),
+        get: () => String(masterBus.fft),
+        set: (v) => { masterBus.fft = setPref('masterFft', Number(v)); wireMasterRes(); } },
+    ],
+  },
+];
+
+function buildSettingsPanel() {
+  const box = $('settingsBody');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const section of SETTINGS_PANEL) {
+    const head = document.createElement('div');
+    head.className = 'set-group';
+    head.textContent = section.group;
+    box.appendChild(head);
+
+    for (const row of section.rows) {
+      const el = document.createElement('div');
+      el.className = 'set-row';
+      if (row.off?.()) el.classList.add('set-off');
+
+      const label = document.createElement('span');
+      label.className = 'set-label';
+      label.textContent = row.label;
+      if (row.when) {
+        const when = document.createElement('span');
+        when.className = 'set-when';
+        when.textContent = row.when;
+        label.appendChild(when);
+      }
+      el.appendChild(label);
+
+      let control;
+      if (row.type === 'check') {
+        control = document.createElement('input');
+        control.type = 'checkbox';
+        control.checked = !!row.get();
+        control.onchange = () => { row.set(control.checked); buildSettingsPanel(); };
+      } else {
+        control = document.createElement('select');
+        control.className = 'field';
+        for (const [value, text] of row.options) {
+          const o = document.createElement('option');
+          o.value = value;
+          o.textContent = text;
+          control.appendChild(o);
+        }
+        control.value = String(row.get());
+        control.disabled = !!row.off?.();
+        control.onchange = () => { row.set(control.value); buildSettingsPanel(); };
+      }
+      control.id = `set-${row.key}`;
+      el.appendChild(control);
+
+      const why = document.createElement('span');
+      why.className = 'set-why';
+      why.textContent = row.why;
+      el.appendChild(why);
+
+      box.appendChild(el);
+    }
+  }
+}
+
+function openSettings() {
+  buildSettingsPanel();
+  $('settingsModal')?.classList.remove('hidden');
+}
+
+function closeSettings() {
+  $('settingsModal')?.classList.add('hidden');
+}
+
+$('settingsOpen')?.addEventListener('click', openSettings);
+$('settingsClose')?.addEventListener('click', closeSettings);
+// The dark edge closes it, like every other overlay here.
+$('settingsModal')?.addEventListener('click', (e) => {
+  if (e.target === $('settingsModal')) closeSettings();
+});
+$('settingsReset')?.addEventListener('click', () => {
+  for (const [key, spec] of Object.entries(Settings.SPEC)) setPref(key, spec.def, { save: false });
+  Settings.persist(localStorage, prefs);
+  // Back through the setters, so everything that watches a setting hears about
+  // it — the store alone changes no pixels.
+  setSnap(prefs.snap);
+  setPlayAll(prefs.playAll);
+  setFollow({ on: prefs.followOn, mode: prefs.followMode });
+  setLaneSplit(prefs.laneSplit);
+  setLeftPanelWidth(prefs.leftPanelWidth);
+  masterBus.fft = prefs.masterFft;
+  buildSettingsPanel();
+  toast('Settings put back to their defaults');
+});
 
 function buildMenuBar() {
   const bar = $('menuBar');
@@ -11726,14 +11902,13 @@ function ask(title, fields, { hint = '', note = '', okLabel = 'OK' } = {}) {
 /// Where edits land. Kept across sessions, because it is a way of working
 /// rather than a property of a sound — and on by default, as Peak's Auto Snap
 /// is, because the alternative is that every cut can click.
-state.snap = localStorage.getItem('audiolab.snap') || 'zero';
+state.snap = prefs.snap;
 
 const snapSel = $('snapUnit');
 if (snapSel) {
   snapSel.value = state.snap;
   snapSel.onchange = (e) => {
-    state.snap = e.target.value;
-    localStorage.setItem('audiolab.snap', state.snap);
+    state.snap = setPref('snap', e.target.value);
   };
 }
 
@@ -12123,8 +12298,7 @@ MENUS.splice(2, 0,
 );
 
 function setSnap(unit) {
-  state.snap = unit;
-  localStorage.setItem('audiolab.snap', unit);
+  state.snap = setPref('snap', unit);
   const sel = $('snapUnit');
   if (sel) sel.value = unit;
   toast(unit === 'off' ? 'Snap off' : `Snapping to ${unit === 'zero' ? 'zero crossings' : unit.toUpperCase()}`);
@@ -13025,15 +13199,10 @@ const MB_HOLD_FALL_DB = 18;
 /// the live edge; the rest is the short tail that makes the shape legible.
 const MB_GONIO_HEAD = 160;
 
-const MB_FFT_STORE = 'audiolab.masterFft';
-
 const masterBus = {
   /// The analyser's transform size. Frequency resolution, and the only part of
   /// the detail worth choosing by hand — the band count follows the pixels.
-  fft: (() => {
-    const v = Number(localStorage.getItem(MB_FFT_STORE));
-    return [1024, 2048, 4096, 8192, 16384].includes(v) ? v : 4096;
-  })(),
+  fft: prefs.masterFft,
   /// The last reply, or null when there is nothing playing to report on.
   data: null,
   /// Peak hold per channel: the value, and when it was set.
@@ -13399,8 +13568,7 @@ function wireMasterRes() {
   for (const b of document.querySelectorAll('.mb-res-btn')) {
     b.classList.toggle('active', +b.dataset.fft === masterBus.fft);
     b.onclick = () => {
-      masterBus.fft = +b.dataset.fft;
-      try { localStorage.setItem(MB_FFT_STORE, String(masterBus.fft)); } catch { /* private mode */ }
+      masterBus.fft = setPref('masterFft', +b.dataset.fft);
       for (const o of document.querySelectorAll('.mb-res-btn')) {
         o.classList.toggle('active', o === b);
       }

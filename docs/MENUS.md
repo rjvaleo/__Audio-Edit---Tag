@@ -15,6 +15,17 @@ cannot drift apart.
 than removed: a command that vanishes teaches you nothing, one that is dimmed
 tells you what you are missing. Each entry below says what it needs.
 
+**A menu holds commands, not settings.** Twenty-one of these seventy-eight rows
+used to be neither — seven buffer sizes and five grain-detail levels in Audio,
+four follow-and-listing switches in View. They are in **⚙ Settings** at the
+right of the bar now, and the menus are back to sixty-two rows of things you
+can do. The one exception is snap, which stays in Action *as well*: every edit
+command reads it, which is also why the toolbar carries it.
+
+Dimming and settings answer different questions, and both are right. A dimmed
+item is unavailable *right now* and its dimness is the explanation. A setting
+is a standing preference, and its home is the panel.
+
 ---
 
 ## File
@@ -112,6 +123,11 @@ way to run them.
 | Capture what is playing | | an open document | Arms the recorder. What comes out of the channel is captured until playback stops, then written as a new file beside the original, named for the file, the module that processed it and the time. It never overwrites. |
 | Reset time, pitch and grains | | an open document | Puts every stretch control back — both the standard and the extended side — while staying on the engine you are working in. Leaves the grain seed alone. |
 
+The **audio buffer** and the **grain detail** were twelve rows here, which made
+a menu about playing a sound seventy per cent configuration. Both are in ⚙
+Settings, under *What things cost* — where the sentence explaining what each one
+trades fits beside it.
+
 ## Window
 
 The panels that are not part of the editor's own layout. Both are floating, both
@@ -128,20 +144,47 @@ are closed by default, and **Escape closes the front one**.
 |---|---|---|
 | Browse | | Switches to the library. |
 | Edit | | Switches to the editor. |
-| **Play all files** | ✓ when on | Whether the browser lists files with no audio header — peak caches, sidecars, raw dumps. Off by default. The folder counts follow it. |
 | Zoom in | `+` | Halves the visible window. |
 | Zoom out | `−` | Doubles it. |
 | Fit | | The whole file. |
-| **Follow playhead** | ✓ when on | Whether the lane keeps the playhead on screen while playing. |
-| Follow by scrolling | ✓ when chosen | The playhead is pinned to the middle and the file slides past it. |
-| Follow by paging | ✓ when chosen | The playhead runs across, and the view turns the page when it reaches the edge. |
 | Grain views in a panel | | Opens the visualiser as a movable, resizable pop-over over the app. |
 
-The three items that show a ✓ are settings rather than commands — the check
-mark in the shortcut column is their current state, read at the moment the menu
-opens. The two follow-mode items dim when Follow playhead is off.
+**Play all files** and the three **follow** rows were here. They are settings —
+how you like to watch, and what the library lists — and they are in ⚙ Settings
+now. Neither survived a reload while it lived in this menu, which is most of the
+argument: a preference that forgets itself every session is not a preference.
+
+This menu still lists two of the rail's three modes. Room is missing from it,
+and that is a defect rather than a decision.
 
 ---
+
+## ⚙ Settings
+
+At the right of the menu bar, and a modal rather than a rail row: settings decide
+what the rail and the menus contain, so a control that can switch itself off from
+under you is a trap — and a modal leaves the thing you are configuring on screen
+behind it.
+
+Everything in it is kept **in this browser**, said on the panel rather than
+implied. It is built entirely from `SETTINGS_PANEL` in `app.js`, so adding a row
+to that table is the whole job of adding a setting; there is no second list.
+
+| Group | Rows |
+|---|---|
+| How edits land | Snap — also in Action, and on the toolbar |
+| What the library lists | Files with no audio header |
+| Watching it play | Keep the playhead on screen; and do it by scrolling or paging |
+| What things cost | Audio buffer, grain detail, analyser resolution |
+
+Every row carries the sentence saying what it trades, because every one of these
+is a trade and the reasoning used to live only in a source comment. A row whose
+effect is deferred says when it lands — a switch that appears to do nothing is
+indistinguishable from a broken one.
+
+Two of them are not per-browser at all: the buffer and the grain cap live on the
+server, because the engine owns them. Where a setting is *kept* is an
+implementation detail; where it is *found* should not be.
 
 ## What is not in a menu
 
