@@ -13,7 +13,22 @@
      lands, without reserving vertical space until then. -->
 <!-- A slim menu bar. It holds more than the row it replaced ever did, at
      three quarters of its height. -->
-<header class="menubar"><nav class="menus" id="menuBar"></nav></header>
+<!-- Menus left, controls right. The left of the bar says what you can do to the
+     open document; the right is the one control that is about the application
+     rather than about the sound. Nothing else goes on this side. -->
+<header class="menubar">
+  <nav class="menus" id="menuBar"></nav>
+  <div class="menubar-right">
+    <!-- Labelled, like everything else in this bar. The rail already learned
+         this one the hard way: a lone unnamed glyph at the end of a set was
+         simply not findable. The variation selector after the gear forces the
+         text glyph, or macOS substitutes a colour emoji that matches nothing
+         else on screen. -->
+    <button class="menu-title menu-gear" id="settingsOpen"
+            title="Settings — how this browser behaves, and what things cost"
+            aria-haspopup="dialog"><span class="gear">⚙&#xFE0E;</span>Settings</button>
+  </div>
+</header>
 <div class="menu-pop hidden" id="menuPop"></div>
 <span class="hidden" id="rateLabel"></span>
 <span class="hidden" id="libraryLabel"></span>
@@ -1053,10 +1068,39 @@
   </div>
 </div>
 
+<!-- Settings.
+     A modal from the menu bar rather than a row in the rail, for two reasons.
+     Settings decide what the rail and the menus contain, so a control that can
+     switch itself off from under you is a trap. And a modal leaves the thing
+     you are configuring on screen behind it, which a page does not.
+
+     Built entirely from `SETTINGS_PANEL`, so adding a setting to that table is
+     what puts it on screen — there is no second list here to fall out of step
+     with the first. -->
+<div class="modal hidden" id="settingsModal">
+  <div class="modal-box settings-box">
+    <div class="modal-head">
+      <span>Settings</span>
+      <span class="modal-sub">kept in this browser</span>
+      <button class="x" id="settingsClose">×</button>
+    </div>
+    <div class="settings-body" id="settingsBody"></div>
+    <div class="modal-foot">
+      <span class="ask-note">Every one of these applies straight away.</span>
+      <div class="spacer"></div>
+      <button class="ghost" id="settingsReset">Put everything back</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast hidden" id="toast"></div>
 
 <!-- Before app.js: the theme engine is plain script, and `Theme` has to exist
      by the time the rail is built. -->
+<!-- The preference store, before anything that reads a preference. Nothing in
+     it touches the DOM; it is loaded first so no later script has to wonder
+     whether it exists yet. -->
+<script src="/settings.js"></script>
 <script src="/theme-palettes.js"></script>
 <script src="/theme-derive.js"></script>
 <script src="/grain-shapes.js"></script>

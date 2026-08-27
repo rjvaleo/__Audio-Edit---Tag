@@ -114,6 +114,61 @@ function clamp(v, lo, hi) {
 function luminance([r, g, b]) {
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
+/**
+ * Round the short way. The mean of 350° and 10° is 0°, not 180°, and a linear
+ * blend between them would sweep a red ramp through cyan on its way.
+ */
+function mixHue(a, b, t) {
+    const d = ((b - a + 540) % 360) - 180;
+    return (a + d * t + 360) % 360;
+}
+/** The lightness axis every token in this file is placed on, floor to ceiling. */
+const RAMP_FLOOR = 0.07;
+const RAMP_CEIL = 0.95;
+/**
+ * The palette, laid along the lightness axis.
+ *
+ * **This is what makes a palette's colours all count.** The engine used to read
+ * four numbers out of a card however many colours it held — a hue and a
+ * saturation for the ground, the same pair for the accent — and derive all sixty
+ * tokens from those. Everything else you picked was inert: it could tip the
+ * light/dark decision through the mean, and otherwise did nothing at all. Which
+ * two colours won was decided by a sort nobody could see, so nudging one
+ * could hand the ground to a different swatch and lurch the whole theme.
+ *
+ * Now the card is sorted dark to light and spread evenly across the axis, and
+ * every token asks the ramp for the hue and saturation at its own lightness.
+ * The dark colours become the surfaces, the light ones become the text, and
+ * anything in between lands in between — which is a rule you can see working by
+ * looking at the swatch row, rather than one you have to be told.
+ *
+ * **Spread by rank, not by the colours' own luminance.** Placing each stop at
+ * its true luminance was the first attempt and it is a no-op: the ladder's
+ * surfaces sit at lightness 0.07–0.38 while a real card's darkest colour is
+ * rarely below 0.15, so four to eight of the eight surface rungs pinned to the
+ * darkest stop and the ramp never moved. Rank spreads the card over the whole
+ * axis whatever range it happens to occupy.
+ *
+ * Lightness is still ours and still fixed — principle 2 up top — so a card of
+ * five near-identical mid-tones yields the same legible ladder it always did.
+ * Only the colour at each rung is the palette's.
+ */
+function paletteRamp(colors) {
+    const stops = colors
+        .map((hex) => rgbToHsl(hexToRgb(hex)))
+        .sort((a, b) => a.l - b.l);
+    return function at(l) {
+        if (stops.length === 1)
+            return stops[0];
+        const t = clamp((l - RAMP_FLOOR) / (RAMP_CEIL - RAMP_FLOOR), 0, 1) * (stops.length - 1);
+        const i = Math.min(Math.floor(t), stops.length - 2);
+        const f = t - i;
+        return {
+            h: mixHue(stops[i].h, stops[i + 1].h, f),
+            s: stops[i].s + (stops[i + 1].s - stops[i].s) * f,
+        };
+    };
+}
 // ---- the status hues, which no palette may repaint --------------------------
 const STATUS_HUE = { done: 145, progress: 212, risk: 42, blocked: 355, external: 275 };
 const FAMILY_HUE = { emerald: 152, amber: 42, red: 355, indigo: 235, violet: 275 };
@@ -177,13 +232,40 @@ function deriveTheme(colors) {
     const gs = ground.s < 0.04 ? 0 : clamp(ground.s * 0.85, 0.05, 0.5);
     const ah = accent.s < 0.04 ? gh : accent.h;
     const as = accent.s < 0.04 ? Math.max(gs, 0.05) : clamp(accent.s, 0.3, 0.85);
+    // The ground pair above is still worked out, and still used — as the caps on
+    // how saturated a surface or a line may get, and as the answer for a card of
+    // one colour. What it no longer does is decide the hue of all sixty tokens
+    // on its own; `ramp` does that now, per token, at that token's lightness.
+    const ramp = paletteRamp(colors);
     if (mode === 'dark')
-        return { mode, ...darkTokens(gh, gs, ah, as) };
-    const light = lightTokens(gh, gs, ah, as);
+        return { mode, ...darkTokens(ramp, gh, gs, ah, as) };
+    const light = lightTokens(ramp, gh, gs, ah, as);
     return { mode, ...light, plainTokens: withWhiteSurfaces(light.tokens) };
 }
-function darkTokens(gh, gs, ah, as) {
-    const g = (l, sat = gs) => hsl(gh, sat, l);
+/**
+ * The ground colour at one rung of the ladder.
+ *
+ * Hue always comes from the ramp. Saturation comes from the ramp too when the
+ * caller did not ask for a particular one — damped and clamped exactly as the
+ * single ground pair used to be, so no rung can run away with a card's most
+ * saturated colour. Where a caller *does* name a saturation it is honoured
+ * outright: those are the deliberate ones — text held near grey so it stays
+ * readable, hairlines held faint — and a ramp has no business arguing with
+ * them. Only their hue moves.
+ *
+ * `flat` is the fallback hue for a card with no colour in it at all, which is
+ * the one case where there is nothing for the ramp to say.
+ */
+function groundAt(ramp, flat, l, sat, damp, lo, hi) {
+    const at = ramp(l);
+    const h = at.s < 0.04 ? flat : at.h;
+    return hsl(h, sat === undefined ? clamp(at.s * damp, lo, hi) : sat, l);
+}
+function darkTokens(ramp, gh, gs, ah, as) {
+    // Same damping the single ground pair carried: 0.85 of the card's saturation,
+    // never below 0.05 or the tint vanishes, never above 0.5 or the panels go to
+    // poster paint.
+    const g = (l, sat) => groundAt(ramp, gh, l, sat, 0.85, 0.05, 0.5);
     const a = (l, sat = as) => hsl(ah, sat, l);
     const txSat = Math.min(gs, 0.14);
     const status = (h) => ({ bg: hsl(h, 0.42, 0.22), text: hsl(h, 0.75, 0.74) });
@@ -287,14 +369,18 @@ function darkTokens(gh, gs, ah, as) {
         swatch: { surface: g(0.17), accent: a(0.68, Math.min(as, 0.6)), ink: g(0.95, txSat) },
     };
 }
-function lightTokens(gh, gs, ah, as) {
+function lightTokens(ramp, gh, gs, ah, as) {
     // A light theme's surfaces are tints, not whites. The floor matters as much
     // as the ceiling: below roughly 0.18 the tint disappears at these lightnesses
     // and every palette converges on the same white page, which is the one thing
     // a palette theme must not do. The `whitePageSurfaces` setting exists for
     // anyone who does want plain white.
     const sSat = clamp(gs, 0.24, 0.6);
-    const g = (l, sat = sSat) => hsl(gh, sat, l);
+    // The same floor and ceiling, per rung. A light theme reads the ramp from the
+    // other end without being told to: its surfaces sit high on the lightness
+    // axis, so they ask the ramp near the top and get the card's light colours,
+    // while its text sits low and gets the dark ones.
+    const g = (l, sat) => groundAt(ramp, gh, l, sat, 1, 0.24, 0.6);
     const a = (l, sat = as) => hsl(ah, sat, l);
     const status = (h) => ({ bg: hsl(h, 0.55, 0.91), text: hsl(h, 0.7, 0.31) });
     const done = status(STATUS_HUE.done);

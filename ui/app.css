@@ -1628,6 +1628,44 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .menu-title:hover, .menu-title.open { background: var(--surface-3); color: var(--text); }
 
+/* Pushed right with `margin-left:auto`, so the cluster keeps the far end of the
+   bar however many menus there are. */
+.menubar-right { display: flex; align-items: stretch; margin-left: auto; }
+.menu-gear { gap: 5px; }
+.menu-gear .gear { font-size: 11px; opacity: .8; }
+
+/* ---- settings ---------------------------------------------------------- */
+
+.settings-box { width: min(560px, 94vw); }
+.settings-body {
+  padding: 4px 0 2px; max-height: min(62vh, 560px); overflow-y: auto;
+}
+.set-group {
+  padding: 11px 16px 4px; font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--text-dimmer);
+}
+.set-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 16px;
+  align-items: center; padding: 8px 16px; border-top: 1px solid var(--line-2);
+}
+.set-row:first-of-type { border-top: none; }
+.set-row .set-label { font-size: 12.5px; color: var(--text); }
+/* The reason it is a choice at all. Every setting here is a trade, and the
+   sentence saying what you are trading used to live only in a source comment. */
+.set-row .set-why {
+  grid-column: 1 / -1; font-size: 11px; color: var(--text-dim);
+  line-height: 1.45; margin-top: -2px;
+}
+.set-row .field { min-width: 148px; }
+.set-row select.field { padding: 3px 6px; font-size: 11.5px; }
+/* A setting whose effect is deferred says so, because a switch that appears to
+   do nothing is indistinguishable from a broken one. */
+.set-when {
+  display: inline-block; margin-left: 7px; font-size: 10px;
+  color: var(--warn); text-transform: none; letter-spacing: 0;
+}
+.set-row.set-off .set-label, .set-row.set-off .set-why { opacity: .45; }
+
 /* One popup element, reused by the menu bar and by right-click, so the two can
    never drift apart in appearance or behaviour. */
 .menu-pop {
