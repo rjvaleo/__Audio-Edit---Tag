@@ -8888,8 +8888,10 @@ function wireRoomTabs() {
       $('roomSoundBody')?.classList.toggle('hidden', want !== 'sound');
       $('roomGeomBody')?.classList.toggle('hidden', want !== 'geom');
       $('roomPaintBody')?.classList.toggle('hidden', want !== 'paint');
+      $('room4dBody')?.classList.toggle('hidden', want !== 'dim4');
       if (want === 'paint') rpPanel();
       if (want === 'geom') rgPanel();
+      if (want === 'dim4') p4Panel();
     };
   }
 }

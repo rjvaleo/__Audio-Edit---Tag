@@ -1666,6 +1666,71 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .set-row.set-off .set-label, .set-row.set-off .set-why { opacity: .45; }
 
+/* ---- the 4D solids ------------------------------------------------------ */
+/* Laid out the way a modelling package is: the viewport on top, the object
+   manager under it, and the attribute manager under that. */
+
+.p4-view {
+  height: 210px; margin: 0 0 8px; border-radius: 6px;
+  background: var(--sink); border: 1px solid var(--line-2);
+  overflow: hidden;
+}
+.p4-view canvas { display: block; width: 100%; height: 100%; }
+
+.p4-objects {
+  display: flex; flex-direction: column; gap: 1px;
+  margin-bottom: 4px; max-height: 168px; overflow-y: auto;
+}
+.p4-obj {
+  display: grid; grid-template-columns: 26px 1fr auto; gap: 7px;
+  align-items: center; text-align: left; width: 100%;
+  padding: 4px 7px; border: none; border-radius: 4px;
+  background: none; color: var(--text-dim); font: inherit; font-size: 11px;
+}
+.p4-obj:hover { background: var(--surface-2h); color: var(--text-2); }
+.p4-obj.active { background: var(--surface-3); color: var(--text); }
+.p4-obj-dim {
+  font-size: 9px; font-weight: 700; letter-spacing: .04em;
+  color: var(--text-dimmer); font-variant-numeric: tabular-nums;
+}
+.p4-obj.active .p4-obj-dim { color: var(--accent); }
+.p4-obj-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p4-obj-n {
+  font-size: 9.5px; color: var(--text-dimmer);
+  font-variant-numeric: tabular-nums; font-family: var(--mono, ui-monospace, monospace);
+}
+
+.p4-about { padding: 2px 2px 7px; }
+.p4-about-name { font-size: 12px; color: var(--text); margin-bottom: 2px; }
+.p4-about-hint { font-size: 10.5px; color: var(--text-dim); line-height: 1.45; }
+.p4-about-n {
+  font-size: 9.5px; color: var(--text-dimmer); margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two columns of coordinate fields, as every coordinates manager has. */
+.p4-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 7px; margin-bottom: 5px; }
+.p4-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+
+.p4-num { display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 5px; }
+.p4-num-lb {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  color: var(--text-dimmer); text-align: right;
+}
+/* The three planes that reach into the fourth dimension. Marked rather than
+   separated, so the six still read as one set. */
+.p4-w { font-style: normal; color: var(--accent); font-size: 8.5px; margin-left: 1px; }
+.p4-num-in {
+  width: 100%; min-width: 0; padding: 2px 5px;
+  border: 1px solid var(--line-2); border-radius: 3px;
+  background: var(--surface); color: var(--text);
+  font: inherit; font-size: 10.5px; font-variant-numeric: tabular-nums;
+  /* The pointer says the number is draggable before you try it. */
+  cursor: ew-resize;
+}
+.p4-num-in:focus { outline: none; border-color: var(--accent); cursor: text; }
+.p4-num-in.p4-scrubbing { border-color: var(--accent); background: var(--surface-2h); }
+
 /* One popup element, reused by the menu bar and by right-click, so the two can
    never drift apart in appearance or behaviour. */
 .menu-pop {
