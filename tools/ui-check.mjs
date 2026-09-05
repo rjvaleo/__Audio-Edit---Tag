@@ -224,6 +224,12 @@ const globals = new Set([
   'new', 'delete', 'void', 'do', 'else', 'in', 'of', 'yield', 'super', 'this',
   'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Set',
   'Map', 'Promise', 'Error', 'RegExp', 'Symbol', 'BigInt', 'Infinity', 'NaN',
+  // The weak collections, which were missing while `Set` and `Map` were here.
+  // `new WeakSet()` in `visUnhide` failed this check — and therefore `cargo
+  // test`, through `server/tests/interface.rs` — for as long as it has existed.
+  // A checker that reports a language builtin as a dangling reference trains
+  // people to ignore it, which is worse than not having it.
+  'WeakSet', 'WeakMap', 'WeakRef',
   'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent', 'decodeURIComponent',
   'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame',
   'cancelAnimationFrame', 'fetch', 'alert', 'confirm', 'prompt', 'console', 'document',
@@ -231,8 +237,13 @@ const globals = new Set([
   'IntersectionObserver', 'MutationObserver', 'AbortController', 'URL', 'URLSearchParams',
   'Blob', 'FileReader', 'Image', 'Audio', 'AudioContext', 'structuredClone', 'queueMicrotask',
   'Intl', 'WebSocket', 'EventSource', 'DOMParser', 'getComputedStyle', 'matchMedia',
-  'Uint8Array', 'Int16Array', 'Int32Array', 'Uint32Array', 'Float64Array',
-  'Float32Array', 'ArrayBuffer', 'DataView', 'TextDecoder',
+  // The typed arrays, completed. `Uint16Array` was the only one missing, which
+  // is the same gap in a different family — it is used for every edge list in
+  // `grain-shapes.js` and `shapes-4d.js`, and would have failed this check the
+  // day either of them moved into `app.js`.
+  'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array',
+  'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array',
+  'ArrayBuffer', 'DataView', 'TextDecoder',
   'TextEncoder', 'atob', 'btoa', 'CustomEvent', 'Event', 'Node', 'HTMLElement',
 ]);
 
