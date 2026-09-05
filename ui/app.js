@@ -237,6 +237,13 @@ function openDrawer() {
 
 function closeDrawer() {
   state.drawerOpen = false;
+  // **The input device is opened by `showPane` and has to be closed by whoever
+  // shuts the panel.** Shutting the drawer is not going to another pane, so
+  // `showPane` never runs and `recordPanelShown(false)` never fires — the
+  // microphone stayed open and polling behind a closed drawer, for as long as
+  // the panel had a Record pane. Every route out of it comes through here: the
+  // rail, the ×, and the scrim.
+  recordPanelShown(false);
   $('scrim').classList.add('hidden');
   if (drawerMode()) $('leftPanel').classList.add('drawer-closed');
   else $('leftPanel').classList.add('collapsed');
