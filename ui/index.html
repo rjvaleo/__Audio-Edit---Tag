@@ -217,9 +217,11 @@
         </div>
         <div class="fx-note">Direction is read, not chosen: a palette that
         averages light becomes a light theme, one that averages dark becomes a
-        dark one. Surfaces borrow the hue and a damped share of the saturation,
-        but their lightness comes from a fixed ladder — which is what keeps text
-        legible whatever the palette holds.</div>
+        dark one. Every colour on the card counts — they are sorted dark to light
+        and spread along the interface's own lightness axis, so the dark ones
+        become the surfaces and the light ones become the text. Lightness itself
+        comes from a fixed ladder, which is what keeps text legible whatever the
+        palette holds.</div>
         <div class="fx-row ts-actions">
           <button class="ghost" id="tsApply">Apply</button>
           <button class="ghost" id="tsDuplicate">Duplicate</button>
