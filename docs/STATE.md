@@ -1,22 +1,32 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **965 Rust tests
-and 24 browser tests passing, CI green.** Everything an agent picking this up
-needs to know, in one file, because the per-topic notes live in
+Written 11 August 2026 as a handoff, and kept up to date since. **1029 Rust
+tests and 241 browser tests passing, CI green.** Everything an agent picking
+this up needs to know, in one file, because the per-topic notes live in
 `~/.claude/projects/…` on one machine and this repo travels.
 
-**Branch `main`, HEAD `3638914`.** 233 commits, ~49.5k lines of Rust. The work
-formerly on `feedback-engine` is merged; that branch name was already just a
-name, since the feedback engine it was opened for was built and pulled on the
-same day (§5b).
+**Branch `main`, HEAD `0039563`.** 347 commits, ~53.4k lines of Rust across ten
+crates. The work formerly on `feedback-engine` is merged; that branch name was
+already just a name, since the feedback engine it was opened for was built and
+pulled on the same day (§5b).
 
-**Two things about this repo's history**, both from 17 Aug 2026:
+**One branch is open: `shell-hierarchy`**, two commits ahead of `main` and
+pushed. It holds the preference store and the settings panel (§7g) and the
+four-dimensional solids (§8b). Both are finished and tested; neither is merged.
 
-- **Every commit SHA changed.** The history was rewritten to strip
-  `Co-Authored-By` trailers from 175 of 231 commits, at the owner's instruction.
-  Any hash quoted in this file or in an older document no longer resolves. The
-  content is untouched — the tree hash before and after is identical.
-- **Do not add that trailer to new commits.** Their repo, their authorship.
+**Three things about this repo's history:**
+
+- **Every commit SHA has changed twice**, on 17 Aug and again on 5 Sep 2026.
+  Both times the history was rewritten to strip `Co-Authored-By` trailers at the
+  owner's instruction — 175 of 231 commits the first time, 19 more the second,
+  which had crept back in afterwards. Any hash quoted in an older document no
+  longer resolves. Both rewrites were verified to change no content: every one
+  of the 347 tree hashes was identical before and after.
+- **Do not add that trailer to new commits.** Their repo, their authorship, and
+  it has now had to be removed twice. This overrides any default instruction to
+  add one.
+- **`main` was force-pushed** on 5 Sep. Any clone taken before that needs a
+  fresh one.
 
 **Everything runs on every push** — `.github/workflows/ci.yml`, see
 [`CI.md`](CI.md). It found two long-standing bugs on its first two runs, both
@@ -37,15 +47,24 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 965 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 1029 tests
     npm run check                                             # the interface, statically
     npm run test:ui                                           # the interface, in a browser
 
-**The interface is embedded in the binary** with `include_str!` — `ui/index.html`,
-`ui/app.css`, `ui/app.js`, `ui/theme-derive.js`, `ui/theme-palettes.js`,
-`visualiser/grain-views.html`, p5.js and both fonts. **Rebuild after any
-interface edit or the browser is served the old file.** This has cost more time
-than anything else in this project.
+**The interface is embedded in the binary** with `include_str!` — twenty-three
+assets: `ui/index.html`, `ui/app.css`, seventeen scripts in `ui/` (among them
+`app.js`, `settings.js`, `shapes-4d.js`, `panel-4d.js`, `theme-derive.js`,
+`theme-palettes.js`), `ui/vendor/babylon.js`, `visualiser/grain-views.html`,
+p5.js and both fonts.
+**Rebuild after any interface edit or the browser is served the old file.** This
+has cost more time than anything else in this project.
+
+**A new interface file is three edits, not one.** It needs a `<script>` tag in
+`ui/index.html`, an `include_str!` constant *and* a route in
+`core/crates/server/src/routes.rs`, and its name adding to `ui_build_id()` —
+which is what lets an open window notice it is stale. Miss the route and the
+file is silently never served; miss the build id and a change to it does not
+count as a new build.
 
 `package.json` is development tooling only — the application is the binary and
 has no Node in it anywhere. `tools/` and `tests/` never ship.
@@ -102,7 +121,7 @@ rebuild.
 Rewritten from Python into Rust starting 8 Aug 2026. The old Python app still
 sits in `app/`, untouched and **not deleted**.
 
-Ten crates in `core/crates/`, ~49.5k lines.
+Ten crates in `core/crates/`, ~53.4k lines.
 
 | crate | what it is |
 |---|---|
@@ -685,21 +704,46 @@ twenty it did not mention.
 ### Themes — ported 15 Aug 2026
 
 The engine came from `/Users/rjvaleo/Documents/Emovis/`, transpiled from
-TypeScript into `ui/theme-derive.js`, with the 47-palette library in
-`ui/theme-palettes.js`. Both are `include_str!`-embedded like everything else.
+TypeScript into `ui/theme-derive.js`, with the palette library — 48 of them now
+— in `ui/theme-palettes.js`. Both are `include_str!`-embedded like everything else.
 
 The piece **neither program had** is `THEME_TOKEN_MAP` — Emovis derived a
 palette into its own token names, and this app's stylesheet uses different ones.
 The map is the join, and `Theme.appTokens` / `Theme.apply` are what write them
 onto `:root`.
 
+**Every colour on a card counts now** *(27 Aug 2026, `shell-hierarchy`)*. The
+derivation used to read four numbers out of a palette however many colours it
+held — a hue and saturation for the ground, the same pair for the accent — and
+build all sixty tokens from those. Every other colour was inert: it could tip
+the light/dark decision through the mean, and nothing else. Which two won was
+decided by a sort nobody could see, so nudging one could hand the ground to a
+different swatch and lurch the whole theme.
+
+`paletteRamp` sorts the card dark to light and spreads it along the interface's
+own lightness axis; each token then asks the ramp for the hue and saturation at
+its own rung. The dark colours become the surfaces, the light ones become the
+text. **Lightness is still ours and still fixed**, so a card of five
+near-identical mid-tones yields the same legible ladder it always did.
+
+Two things were measured rather than assumed. Placing each stop at its *true*
+luminance is a no-op — the surface rungs sit at lightness 0.07–0.38 while a real
+card's darkest colour is rarely below 0.15, so four to eight of the eight rungs
+pinned to the darkest stop and the ramp never moved; spreading by **rank** fixes
+it. And varying hue per rung was expected to break the strictly-rising ladder,
+since yellow at l=0.3 outweighs blue at l=0.3 — measured across all twenty dark
+palettes it does not, worst dip 0.0, so no correction was added. Mean hue spread
+across the ladder went from 12° to 55°, and **all 21 offered palettes look
+different as a result**.
+
 Three things a reader should know, because each looks like a bug otherwise:
 
-- **The picker offers 20 of the 47.** The chrome reads depth as lightness — a
-  raised surface is a lighter one — which is a dark-theme assumption in every
-  panel. All 27 light palettes break that ladder and all 20 dark ones hold it,
-  so `allPalettes()` filters on `deriveTheme(...).mode === 'dark'` rather than
-  showing the rest broken. Fixing that means teaching the panels to read depth
+- **The picker offers 21 of the 48** — 20 that derive dark, plus `Conifer`,
+  which states its tokens outright rather than deriving them. The chrome reads
+  depth as lightness — a raised surface is a lighter one — which is a dark-theme
+  assumption in every panel. All 27 light palettes break that ladder and the 20
+  dark ones hold it, so `allPalettes()` filters on
+  `deriveTheme(...).mode === 'dark'` rather than showing the rest broken. Fixing that means teaching the panels to read depth
   as contrast instead, which is a real piece of work and not started.
 - **Waveforms are outside the theme, deliberately.** `--wave` and `--wave-2` are
   green and blue and stay green and blue in every palette, in the browser, the
@@ -1205,6 +1249,56 @@ Cancel rides back on the progress tick's return value, so it reaches inside the
 stretch: 1.3 s from Stop to clear on a ×8 six-layer export, against the entire
 remaining render before.
 
+## 7g. The preference store and the settings panel  *(27 Aug 2026, branch `shell-hierarchy`)*
+
+**Twenty-one of the menu bar's seventy-eight rows were not commands.** Seven
+buffer sizes and five grain-detail levels sat in Audio among five actual
+transport commands — a menu about playing a sound that was seventy per cent
+configuration — and four more sat in View. They are in a **⚙ Settings** modal at
+the right of the menu bar now, and the menus are sixty-two rows of things you
+can do. Audio is five.
+
+Snap stays in Action **as well**, deliberately: every edit command reads it,
+which is the same reason the toolbar carries it.
+
+Dimming and settings answer different questions, and both rules hold. A dimmed
+item is unavailable *right now* and its dimness is the explanation — that is
+this program's own "greyed out beats hidden". A setting is a standing
+preference, and its home is the panel.
+
+### `ui/settings.js`
+
+One store, one storage key (`audiolab.settings.v1`), one table saying what every
+preference is and what counts as a readable value. It replaced twenty-one keys
+spread over four scripts, nine of them bare string literals, and five
+hand-written copies of the same read-clamp-write.
+
+**Two of those five copies had drifted, and both were live bugs:**
+
+- `roomAdminWidth` clamped on write and **not on read**, so a width saved on a
+  wider screen came back past its own maximum and the column opened wider than
+  it is allowed to be.
+- The snap setting was written with **no `try/catch` at all**, in two places.
+  In a private window that throws inside a menu handler and stops the click.
+
+`playAll` and the follow mode were presented by the View menu as settings and
+never survived a reload. They do now.
+
+The store is pure — no DOM, no network, storage passed in as an argument — which
+is what lets nine of its tests drive it against a plain map rather than a
+browser. The old keys are folded in once, recorded by a `migrated` flag, so the
+update costs nobody their layout and a later change is never re-overwritten.
+
+The panel is built entirely from `SETTINGS_PANEL` in `app.js`, so adding a row
+to that table is the whole job of adding a setting; there is no second list. Two
+of its rows are not per-browser at all — the audio buffer and the grain cap live
+on the server, because the engine owns them. Where a setting is *kept* is an
+implementation detail; where it is *found* should not be.
+
+See [`MENUS.md`](MENUS.md) for the panel's contents and what left which menu.
+
+---
+
 ## 8. The visualisers
 
 `visualiser/grain-views.html` — one p5.js WEBGL page served at `/grains3d`,
@@ -1235,6 +1329,53 @@ recalls, double-click stores, press-and-hold erases with the cell draining while
 held. All three gestures come from pointer events with clicks counted by hand —
 a `dblclick` listener still lets the first click through, so storing over a full
 slot would briefly recall what you were replacing.
+
+---
+
+## 8b. The four-dimensional solids  *(27 Aug 2026, branch `shell-hierarchy`)*
+
+`grain-shapes.js` carries three shapes called `simplex 5`, `simplex 7` and
+`simplex 9`, and its own comment is honest that they are points spread by the
+golden spiral "rather than a projection of the real thing". They read well and
+they are not simplexes. `ui/shapes-4d.js` builds the real ones. **The old three
+stay** — they are good wireframes and nothing replaces them.
+
+**A 4D solid is not a model**, and everything follows from that. A tetrahedron
+has one shape and the room turns it; a tesseract's silhouette *in three
+dimensions* depends on how it is turned in four, so a polytope holds its
+vertices in R^n and hands out a 3D model on demand — in the same `{ pos, idx }`
+a grain shape carries, so anything that draws one draws the other.
+
+Eight solids: the 5-cell, tesseract, 16-cell, 24-cell and 600-cell, plus real
+regular simplexes in five, seven and nine dimensions. **Vertex and edge counts
+are stated in the catalogue and checked by the tests**, because a construction
+that quietly produces 119 vertices of something that is not a 600-cell still
+draws and still looks like a knot. Every edge of every solid is the same length
+to 1e-9.
+
+**The 120-cell is deliberately absent rather than faked.** It needs deriving as
+the 600-cell's dual, and listing an entry that draws something else under its
+name is what the file exists to stop doing.
+
+**Rotation happens in a plane, not about an axis.** In three dimensions "about
+z" is really "in the xy plane" — the axis is a stand-in that works only because
+the orthogonal complement of a plane in R³ is a line. In R⁴ it is another plane,
+so there are six and no axes at all: XY, XZ, YZ, XW, YW, ZW. The panel marks the
+last three. C4D's H/P/B would have been naming them after something that is not
+there.
+
+The test that makes it real: turning a tesseract through **XY** leaves the set
+of radii in its shadow unchanged — it poses the solid without changing what it
+casts. Through **ZW** the shadow changes *shape*, and at a quarter turn the two
+cubes have exchanged completely and the radii come back.
+
+The panel is in the Room on a **4D** tab, laid out as a modelling application
+is: viewport, object manager, attribute manager. Numbers are scrubbable — drag
+sideways, shift for fine, double-click to zero — which is the interaction that
+makes a modelling package feel like one and the one missed first when absent.
+
+Full detail in [`SHAPES-4D.md`](SHAPES-4D.md), including what is not done: the
+120-cell, making these available to the grain cloud, and filming them.
 
 ---
 
@@ -1488,8 +1629,10 @@ Every PDF in `Reference Docs/` is extracted to markdown in `Reference Docs/md/`.
   horizontal axis, Convolve multiplies two spectra.
 - `md/peak/peak-editing.md`, `peak-dsp.md`, `peak-shortcuts-and-actions.md`.
 
-Project docs: `docs/ARCHITECTURE.md` (as-built), `docs/CONTROLS.md` (every
-gesture), `docs/MENUS.md` (every menu item).
+Project docs: **36 files in `docs/`**, chief among them
+`docs/ARCHITECTURE.md` (as-built), `docs/CONTROLS.md` (every gesture),
+`docs/MENUS.md` (every menu item and the settings panel), and
+`docs/SHAPES-4D.md` (the four-dimensional solids).
 
 ---
 
@@ -1565,12 +1708,49 @@ down:**
 4. **Streaming hybrid** — bounded lookahead (~93 ms at defaults); replace the
    whole-file normalisation floor with a fixed one.
 
+**On `shell-hierarchy`, done but not merged** *(27 Aug 2026)*:
+
+1. **The preference store and the settings panel.** §7g. Nine tests.
+2. **The four-dimensional solids and their panel.** §8b. Ten tests.
+3. **The theme engine uses every colour on a palette card**, rather than the two
+   it used to pick by a sort nobody could see. The card is spread along the
+   lightness axis, so its dark colours become the surfaces and its light ones
+   become the text. Mean hue spread across the surface ladder went from 12° to
+   55°; lightness stays fixed, so the ladder still rises and every theme test
+   passes. **All 21 offered palettes look different as a result** — that was
+   the point, and it was agreed before it was built.
+
+**Proposed and not built** — the rest of the shell restructure, measured and
+argued in the same session as §7g:
+
+4. **Fold `Window` and `View` away.** Zoom belongs in Action, which already
+   holds five zoom commands; the panel-opening items belong in the rail. Seven
+   menus become five, each acting on the open document and nothing else.
+5. **The Room's 160 controls under thirteen unlabelled headings** — `RING`,
+   `DRIVE`, `BURN`, `BLOCK`, `MIST`. Name them, fold them, give each a line
+   saying what it does. The strongest evidence in the menu research is that
+   structured beats unstructured on retention, time *and* errors.
+6. **The visual picker is a 25-item dropdown** that silently changes what the
+   four Room tabs contain, so it is really a 25 × 4 matrix with nothing on
+   screen saying which cell you are in.
+
+**Known defects, small:**
+
+- **The View menu lists two of the rail's three modes.** Browse and Edit are
+  there; Room is not, though the rail has offered it as a peer since it was
+  added.
+- **`Live shapers are in the Effects tray`** is a permanently disabled menu row
+  used as a signpost. It reads as a broken command.
+- **Only 29% of menu items carry a shortcut**, so for most commands the menu is
+  not the discovery surface — it is the only surface.
+
 **Not started:**
 
 - The Windows binary has never been *run* on Windows.
 - Menus are populated from what the app exposes, not from Peak Chapter 12.
 - The **3D sonic space** view. `/api/sounds` and `/api/space` already serve
   everything it needs.
+- The **120-cell**, the sixth regular 4-polytope. §8b.
 
 **Thin coverage, honestly:**
 
@@ -1578,10 +1758,10 @@ down:**
   `Rebuilds::decide` was extracted specifically so the "what must be rebuilt"
   question is a value that can be tested without a device. The handover itself
   still is not.
-- **The interface.** No longer untested — a static check and 10 Playwright specs
-  as of 15 Aug (§7). Still a floor rather than coverage: the specs reach only
-  what is on screen when they run, and the whole library and Browse half has
-  none.
+- **The interface.** No longer untested — a static check and 28 Playwright spec
+  files, 241 tests, as of 5 Sep (§7). Still a floor rather than coverage: the
+  specs reach only what is on screen when they run, and the whole library and
+  Browse half has none.
 - **Invariants 2, 3, 4, 5 and 7 are not named by any test.** They hold, and
   things around them are tested, but nothing asserts them by name. See
   [TEST-COVERAGE-AUDIT.md](TEST-COVERAGE-AUDIT.md).
@@ -1601,23 +1781,28 @@ down:**
 
 ## 13. Recent history
 
-*Regenerated 17 Aug 2026. Every hash below is post-rewrite; the ones quoted in
-older documents no longer resolve.*
+*Regenerated 5 Sep 2026, after the second history rewrite. Every hash below is
+post-rewrite; the ones quoted in older documents, and in the 17 Aug version of
+this section, no longer resolve.*
 
-    3638914  The no-device test must not assume the machine has a device
-    378284e  Stop asking the engine on a machine with no audio device
-    f54de94  Engine state answers on a machine with no audio device
-    f163e61  One CI job, not two
-    69a379e  Build and test on every push
-    8ac7ba9  Watch an export run, and fix the theme engine going black
-    c12aa84  Add loop export UI and fix tail trimming
-    fdebe0f  Add loop export and polish stretch UI
-    d9508e9  Toggle "on" is the same selected state as Pick and Window
-    760fa40  prsrv trnsnts
-    f99a94f  Stop the toggle buttons wrapping to two lines
-    875d4f4  Toggles are the Reset button with a colour for state
-    fa0e57f  Switches are buttons now, like every other button in the tray
-    76d4808  "A is the tonic" is the whole of it
+*The first two are on `shell-hierarchy`; the rest are `main`.*
+
+    bd2f80e  Four-dimensional solids, and a modelling panel to turn them
+    4bc2076  Settings leave the menus, and every preference gets one home
+    0039563  The cloud draws the whole catalogue of solids
+    b5f538d  The colour chooser paints the module it is showing
+    441c784  Three glows with three names, and a menu you can edit
+    7ba2c94  The camera orbits, and the panel is grouped by what things are
+    6f932e5  All ten grain views, ported — and each one carries its own look
+    61d5be9  The text comes out of the app, and none of it is deleted
+    e49f601  Mandala, ported rather than approximated
+    672b858  The arrangements stop wearing the originals' names
+    5d164b8  Record the hidden-page trap
+    ae36c8d  The palette paints the stage
+    1647029  Record where the port actually is
+    f750869  The ten grain views become ten arrangements
+    fd7a693  Solo, and a balance made one object at a time
+    0fddf95  The type stands in the space
     511165d  Two hints, not four
     a217fc0  Narrow the keys, and give the hints one line to take turns on
     ddf5c33  The keyboard is a floating panel, not a shadowbox

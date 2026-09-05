@@ -28,26 +28,26 @@ instant and fetching them separately would let them disagree.
 
 ## The workspace
 
-Ten crates, ~49k lines. Dependencies point one way only — `audio-core` depends
+Ten crates, ~53k lines. Dependencies point one way only — `audio-core` depends
 on nothing, `server` depends on everything.
 
 *Counts re-measured 17 Aug 2026.*
 
 | Crate | Lines | Tests | Responsibility |
 |---|---:|---:|---|
-| `audio-core` | 2928 | 86 | Container probe and decode, **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
+| `audio-core` | 3501 | 97 | Container probe and decode, **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 18870 | 319 | Biquads, EQ, compressor, channel maximiser, five stretchers, **34 shapers**, the parameter layer, sines/transients/noise separation, the tail constants and the progress tick |
-| `edit` | 4195 | 126 | Non-destructive edit list, **zero-crossing snap**, **measurement**, windowed render, WAV and AIFF export, **the looped export and its tail** |
-| `engine` | 5148 | 72 | Block renderer, **all five streaming engines**, transport, cpal device |
+| `fx` | 19910 | 344 | Biquads, EQ, compressor, channel maximiser, five stretchers, **34 shapers**, the parameter layer, sines/transients/noise separation, the tail constants and the progress tick |
+| `edit` | 4293 | 130 | Non-destructive edit list, **zero-crossing snap**, **measurement**, windowed render, WAV and AIFF export, **the looped export and its tail** |
+| `engine` | 6277 | 89 | Block renderer, **all five streaming engines**, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1453 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 13864 | 245 | HTTP/1.1, 47 API routes, JSON, persistence, **marker and region commands**, the live bridge, **the export thread and its progress** |
-| `audiolab` | 67 | — | The binary |
-| | **49472** | **965** | |
+| `server` | 14908 | 252 | HTTP/1.1, 52 API routes, JSON, persistence, **marker and region commands**, the live bridge, **the export thread and its progress** |
+| `audiolab` | 76 | — | The binary |
+| | **53365** | **1029** | |
 
-Plus **24 browser tests** across five spec files, which are not counted above —
+Plus **241 browser tests** across 28 spec files, which are not counted above —
 they run under Playwright rather than `cargo test`. See [`CI.md`](CI.md).
 
 ### Dependencies

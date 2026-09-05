@@ -248,7 +248,7 @@ What it means concretely:
 - **`data/` moves to the per-user OS directory.** It sits beside the executable,
   which is read-only in a signed bundle and replaced by any updater.
 - **Coverage where it is thin**, so the port has something to be checked
-  against. The 965 tests are the only thing that will tell you the DSP survived.
+  against. The 1029 tests are the only thing that will tell you the DSP survived.
   The interface now has its own — a static check and ten Playwright specs — and
   those are what will tell you the *program* survived, which is a different
   question and was unanswerable until 15 Aug.

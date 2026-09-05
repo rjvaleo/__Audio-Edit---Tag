@@ -7,7 +7,7 @@ place with no tests, while the parts with heavy coverage behaved perfectly.*
 tests.** The numbers below are as re-counted; where the morning's figures
 differed they are noted rather than quietly replaced.
 
-> **Update, 17 Aug 2026: 965 Rust tests and 24 browser tests**, and the audit's
+> **Update, 5 Sep 2026: 1029 Rust tests and 241 browser tests**, and the audit's
 > central claim has been tested from the outside for the first time. See
 > [What CI changed](#what-ci-changed) at the end — the short version is that two
 > long-standing bugs were found in one day by running the suite on a machine
@@ -28,7 +28,7 @@ frame by frame. Meanwhile:
 - **The live path had none.** It now has route tests for `engine/state` and
   `rack/param`; `engine/load`, `engine/transport`, `engine/grains` and `capture`
   are still uncovered.
-- **The interface had none.** It now has a static check and 10 Playwright specs.
+- **The interface had none.** It now has a static check and 28 Playwright spec files.
 - **5 of the 11 invariants are not named by any test** (was 7). Invariants 1 and
   8 were named today.
 
@@ -261,11 +261,21 @@ of the theme engine can see the cause.
 
 ### The count
 
-| | 15 Aug | 17 Aug |
-|---|---|---|
-| Rust tests | 934 | **965** |
-| Browser specs | 10 | **24** |
-| Spec files | 2 | **5** |
+| | 15 Aug | 17 Aug | 5 Sep |
+|---|---|---|---|
+| Rust tests | 934 | 965 | **1029** |
+| Browser tests | 10 | 24 | **241** |
+| Spec files | 2 | 5 | **28** |
+
+The 5 Sep re-count also found `cargo test` **red**, and red since whenever
+`VIS_WAS_HIDDEN = new WeakSet()` was written: `tools/ui-check.mjs` had `Set` and
+`Map` in its globals list but not `WeakSet`, so it reported a language builtin
+as a dangling reference and `server/tests/interface.rs` failed with it. The
+suite was reported as green throughout, here and in the README. Two lessons
+already in this file — *a test that cannot fail is not a test yet*, and *verify
+against the running thing* — have a third beside them now: **a number in a
+document is not a measurement.** Every figure in this table was re-measured by
+running the suites, not by reading the last document that quoted them.
 
 New: `tests/ui/globals.spec.mjs` (global-scope collisions, the derived palettes
 are real colours, applying a theme is instant), `tests/ui/no-audio.spec.mjs`

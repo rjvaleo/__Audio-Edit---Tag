@@ -44,6 +44,15 @@ A palette is a name and a handful of brand colours. The engine turns those into
 this application's tokens, and the preview is painted entirely from them, which
 is what makes it an editor rather than a form.
 
+**Every colour you put on a card is used** — since 27 Aug 2026. Before that the
+engine read four numbers out of the card however many colours it held, and the
+rest were inert; the swatch row was offering choices that did nothing, and which
+two mattered was decided by a sort you could not see. The card is now sorted
+dark to light and spread along the lightness axis, so its dark colours become
+the surfaces and its light ones become the text. Lightness itself is still the
+engine's, which is what keeps contrast legible whatever the card holds. See
+[STATE.md](STATE.md) §7.
+
 - A filterable **list**, with the shipped palettes marked *built in* and the one
   in use marked *applied*.
 - **Name**, and **N colours** — each a colour well *and* a hex field. Both,
