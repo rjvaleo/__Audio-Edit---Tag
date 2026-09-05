@@ -1,0 +1,216 @@
+/* The left rail — see `docs/RAIL.md`.
+ *
+ * **Self-contained on purpose.** Everything the rail needs is in this file and
+ * `rail.js`; nothing here depends on a rule in `app.css` and nothing in
+ * `app.css` needs to change. Porting this to the desktop build is: copy two
+ * files, swap one markup block, add two tags.
+ *
+ * The old rules — `.rail`, `.rail-btn`, `.mode-btn`, `.rail-sep` in `app.css`
+ * around lines 124 and 1298 — are left alone and simply stop matching, because
+ * `rail.js` emits its own classes. Deleting them is a separate job and it
+ * belongs to whoever ports this back.
+ */
+
+:root {
+  /* The icon column, and it never changes. That is the whole trick: the glyph
+     lives in a fixed-width first column and the label appears in a second one,
+     so opening the rail cannot move the icon.
+     62px because that is what `--rail` already is in `app.css` — the closed
+     rail has to stay exactly the width the rest of the layout expects. */
+  --rail-icon: 62px;
+  --rail-open: 168px;
+}
+
+/* `z-index` and `flex-shrink` come from `.rail` in `app.css`, which this still
+   carries — the element is `class="rail rl"`. Only the arrangement is new.
+ *
+ * **`align-items` has to be said out loud.** `.rail` sets it to `center`, which
+ * is right for a column of 30px glyphs and wrong for rows that are wider than
+ * the rail: a 168px button centred in a 62px column starts at -53px, and
+ * `overflow: hidden` then eats the icon. Inheriting the old rule's z-index was
+ * deliberate; inheriting its alignment was not, and it cost a rail that
+ * rendered as an empty strip. */
+#leftRail.rl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: var(--rail-icon);
+  padding: 8px 0;
+  background: var(--surface-2);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+  transition: width .16s ease;
+}
+#leftRail.rl.open { width: var(--rail-open); }
+
+@media (prefers-reduced-motion: reduce) {
+  #leftRail.rl { transition: none; }
+}
+
+/* ── a destination ─────────────────────────────────────────────────────────
+ *
+ * Grid, not flex, and the first column is fixed at the icon's width. That is
+ * what pins the glyph: the label lives in a second column that is simply not
+ * visible when the rail is narrow, so opening the rail reveals the word without
+ * moving the icon a pixel.
+ */
+#leftRail .rl-item {
+  display: grid;
+  grid-template-columns: var(--rail-icon) 1fr;
+  align-items: center;
+  width: var(--rail-open);
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#leftRail .rl-item .rl-ic {
+  /* The icon column, centred in it. Same box in both states. */
+  display: grid;
+  place-items: center;
+  /* Less the border-left, so the glyph sits on the same axis as the closed
+     rail's centre rather than two pixels right of it. */
+  width: calc(var(--rail-icon) - 2px);
+  font-size: 17px;
+  line-height: 1;
+}
+/* The drawn icons. `currentColor` is the whole reason they are inline SVG —
+   lit, dim and hover are already decided by the button's own colour, so there
+   is no second set of rules to keep level with it. */
+#leftRail .rl-item .rl-ic svg {
+  width: 19px;
+  height: 19px;
+  display: block;
+}
+#leftRail .rl-item .rl-lb {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+#leftRail.rl.open .rl-item .rl-lb { opacity: 1; }
+
+#leftRail .rl-item:hover { background: var(--surface-3); color: var(--text-2); }
+/* `.rl-on`, not `.active` — see the note in `rail.js`. The app's `.active` is
+   two independent flags and this column has one question. */
+#leftRail .rl-item.rl-on {
+  background: var(--surface-3);
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+#leftRail .rl-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── the sub-sections under Browse ─────────────────────────────────────────
+ *
+ * Indented, smaller, and only there when Browse is where you are. They are the
+ * library's own parts — scanning it, choosing its folder, recording into it —
+ * and they were never siblings of the workspaces.
+ *
+ * Hidden entirely when the rail is closed rather than shown as a second column
+ * of glyphs: five more icons under four would read as nine destinations.
+ */
+#leftRail .rl-sub {
+  display: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0 6px;
+}
+#leftRail.rl.open .rl-sub.shown { display: flex; }
+
+#leftRail .rl-child {
+  display: grid;
+  grid-template-columns: var(--rail-icon) 1fr;
+  align-items: center;
+  width: var(--rail-open);
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#leftRail .rl-child .rl-ic {
+  display: grid;
+  place-items: center;
+  /* Indented by shrinking the icon's box and pushing it right, so the child's
+     glyph sits inside the parent's column rather than beside it. */
+  width: var(--rail-icon);
+  padding-left: 14px;
+  font-size: 12px;
+  line-height: 1;
+}
+#leftRail .rl-child .rl-lb {
+  font-size: 11px;
+  white-space: nowrap;
+}
+#leftRail .rl-child:hover { background: var(--surface-3); color: var(--text-2); }
+#leftRail .rl-child.active { color: var(--accent); }
+#leftRail .rl-child.rl-on { color: var(--accent); }
+#leftRail .rl-child:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ── the handle ────────────────────────────────────────────────────────────
+ *
+ * At the bottom, away from the destinations, because it is not one. It is the
+ * only control here that changes the rail rather than the app.
+ */
+#leftRail .rl-spacer { flex: 1; }
+
+#leftRail .rl-toggle {
+  display: grid;
+  grid-template-columns: var(--rail-icon) 1fr;
+  align-items: center;
+  width: var(--rail-open);
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#leftRail .rl-toggle .rl-ic {
+  display: grid;
+  place-items: center;
+  width: var(--rail-icon);
+  font-size: 13px;
+  transition: transform .16s ease;
+}
+#leftRail.rl.open .rl-toggle .rl-ic { transform: rotate(180deg); }
+#leftRail .rl-toggle .rl-lb { font-size: 11px; white-space: nowrap; opacity: 0; }
+#leftRail.rl.open .rl-toggle .rl-lb { opacity: 1; }
+#leftRail .rl-toggle:hover { background: var(--surface-3); color: var(--text-2); }
+#leftRail .rl-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ── record ─────────────────────────────────────────────────────────────────
+   An action, not a destination: its own row under a rule, so the four above it
+   stay one kind of thing. Red because a record button is red — and it is the
+   only red in this column, which is what makes it findable from across the
+   window. */
+#leftRail .rl-actions {
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+#leftRail .rl-item.rl-rec { color: var(--rec-red, #e0503f); }
+#leftRail .rl-item.rl-rec:hover {
+  color: var(--rec-hot, #ff6a55);
+  background: color-mix(in srgb, var(--rec-red, #e0503f) 12%, transparent);
+}
+/* It never lights the way a destination does — it opens a window and gives it
+   back, so there is nothing for it to be "current" for. */
+#leftRail .rl-item.rl-rec.rl-on { background: none; }

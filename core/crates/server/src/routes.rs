@@ -56,7 +56,7 @@ pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 /// has fallen behind can say so instead of being argued with.
 pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
-    for part in [UI_HTML, UI_CSS, UI_JS, SETTINGS_JS, SHAPES_4D_JS, PANEL_4D_JS,
+    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SETTINGS_JS, SHAPES_4D_JS, PANEL_4D_JS,
                  STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
                  VIS_GL_JS, RIDGE_JS, ROOM3D_JS, ROOM_PAINT_JS, VIDEO_EXPORT_JS] {
         for b in part.as_bytes() {
@@ -103,6 +103,10 @@ pub const THEME_PALETTES_JS: &str = include_str!("../../../../ui/theme-palettes.
 /// Every preference the interface keeps, and the table that says what each one
 /// is. Served before anything that reads a preference; see `ui/settings.js`.
 pub const SETTINGS_JS: &str = include_str!("../../../../ui/settings.js");
+/// The left rail, and its own stylesheet. Ported from the edge build; it emits
+/// its own markup and depends on no rule in `app.css`. See `docs/RAIL.md`.
+pub const RAIL_JS: &str = include_str!("../../../../ui/rail.js");
+pub const RAIL_CSS: &str = include_str!("../../../../ui/rail.css");
 /// The regular 4-polytopes and the projection that brings them into three
 /// dimensions. Pure geometry — see `docs/SHAPES-4D.md`.
 pub const SHAPES_4D_JS: &str = include_str!("../../../../ui/shapes-4d.js");
@@ -145,6 +149,12 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/panel-4d.js") => {
             Response::ok("text/javascript; charset=utf-8", PANEL_4D_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/rail.js") => {
+            Response::ok("text/javascript; charset=utf-8", RAIL_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/rail.css") => {
+            Response::ok("text/css; charset=utf-8", RAIL_CSS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/settings.js") => {
             Response::ok("text/javascript; charset=utf-8", SETTINGS_JS.as_bytes().to_vec())

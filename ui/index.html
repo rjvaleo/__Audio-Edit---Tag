@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Audio Library</title>
 <link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/rail.css">
 </head>
 <body>
 
@@ -35,40 +36,14 @@
 
 <div class="shell">
 
-  <!-- left rail: the two workspaces, then the tools inside Browse -->
-  <nav class="rail" id="leftRail">
-    <button class="mode-btn" data-mode="edit" title="Edit the open sounds">
-      <span class="ic">✎</span><span class="lb">Edit</span>
-    </button>
-    <button class="mode-btn active" data-mode="overview" title="Browse the library">
-      <span class="ic">▤</span><span class="lb">Browse</span>
-    </button>
-    <!-- The room at full size, with every control it has beside it rather than
-         floating over it. The overlay in the dock is the same controls in a
-         corner of a small canvas; this is where they are actually usable. The
-         sound driving it is the open document's, the same one the dock's room
-         is drawn from. -->
-    <button class="mode-btn" data-mode="room" title="The room, full size, with all of its controls">
-      <span class="ic">◈</span><span class="lb">Room</span>
-    </button>
+  <!-- The left rail. Emitted by `rail.js`, which is loaded before `app.js`
+       because `app.js` reads these buttons at parse time. Ported from the edge
+       build — see the header of `ui/rail.js` and `docs/RAIL.md`.
 
-    <div class="rail-sep"></div>
-
-    <button class="rail-btn active" data-panel="browse" title="Library">≡</button>
-    <button class="rail-btn" data-panel="search" title="Search">⌕</button>
-    <button class="rail-btn" data-panel="scan" title="Scan">◴</button>
-    <button class="rail-btn" data-panel="import" title="Library folder">⌂</button>
-    <button class="rail-btn" data-panel="record" title="Record">●</button>
-
-    <div class="rail-sep"></div>
-
-    <!-- Labelled, and below a rule. The five above are library tools and read
-         as a set; this is somewhere else you go, and as an unnamed glyph at the
-         bottom of that set it was simply not findable. -->
-    <button class="rail-btn rail-theme" data-panel="theme" title="Palette and colours">
-      <span class="ic">◑</span><span class="lb">Theme</span>
-    </button>
-  </nav>
+       The nine hand-written buttons that used to be here answered two
+       questions at two sizes: which workspace am I in, and which panel of the
+       library is open. Four destinations answer one. -->
+  <nav class="rail rl" id="leftRail"></nav>
 
   <!-- left panel: the whole library, playable -->
   <aside class="panel left" id="leftPanel">
@@ -1114,6 +1089,9 @@
 <!-- The preference store, before anything that reads a preference. Nothing in
      it touches the DOM; it is loaded first so no later script has to wonder
      whether it exists yet. -->
+<!-- Before `app.js`: it finds the rail's buttons at parse time, so they
+     have to exist by then. -->
+<script src="/rail.js"></script>
 <script src="/settings.js"></script>
 <!-- The four-dimensional solids, and the panel that drives them. The geometry
      knows nothing about the DOM; the panel is loaded after it. -->
