@@ -99,6 +99,13 @@
 #leftRail.rl.open .rl-item .rl-lb { opacity: 1; }
 
 #leftRail .rl-item:hover { background: var(--surface-3); color: var(--text-2); }
+/* `.mode-btn:disabled:hover` in `app.css` is (0,3,0) and loses to the rule
+   above, so Grain lit up on hover while refusing the click. Said here instead,
+   where it can win. */
+#leftRail .rl-item:disabled,
+#leftRail .rl-item.rl-off { opacity: .35; cursor: not-allowed; }
+#leftRail .rl-item:disabled:hover,
+#leftRail .rl-item.rl-off:hover { background: transparent; color: var(--text-dim); }
 /* `.rl-on`, not `.active` — see the note in `rail.js`. The app's `.active` is
    two independent flags and this column has one question. */
 #leftRail .rl-item.rl-on {

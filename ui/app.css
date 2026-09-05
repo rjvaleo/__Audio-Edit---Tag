@@ -1242,8 +1242,13 @@ body.docmode .panel.left.drawer-closed {
   transform: translateX(calc(-100% - var(--rail)));
   box-shadow: none;
 }
-/* The drawer floats, so it must not also reserve space. */
-body.docmode .panel.left { width: 330px; }
+/* The drawer floats, so it must not also reserve space.
+   **The width is still the reader's.** This said `330px` outright, which beat
+   `.panel.left` on both specificity and source order — so the grip did nothing
+   in Edit and Room, and a drag that appeared to move nothing still saved on
+   pointerup and rewrote the width Browse would show next. The 330 was never
+   load-bearing: the drawer is hidden by a transform, which works at any width. */
+body.docmode .panel.left { width: var(--left-w, 330px); }
 body.docmode .shell { position: relative; }
 
 .scrim { position: fixed; inset: 0; z-index: 25; background: var(--shadow-soft); }

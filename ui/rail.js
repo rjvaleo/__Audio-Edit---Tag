@@ -161,8 +161,16 @@
     rail.className = 'rail rl';
     rail.replaceChildren();
 
-    let open = false;
-    try { open = localStorage.getItem(STORE) === '1'; } catch { /* blocked */ }
+    // **Open on a fresh profile, not closed.** The library's own parts — Search,
+    // Scan, Folder — are only drawn when the rail is open, so a rail that starts
+    // collapsed starts with four of its ten controls invisible and no hint that
+    // they exist. Once somebody collapses it that is remembered; the default is
+    // the only thing being decided here.
+    let open = true;
+    try {
+      const saved = localStorage.getItem(STORE);
+      if (saved !== null) open = saved === '1';
+    } catch { /* blocked */ }
     rail.classList.toggle('open', open);
     width(open);
 
@@ -285,6 +293,9 @@
         panel && !panel.classList.contains('collapsed') &&
         !panel.classList.contains('drawer-closed');
       if (themeShown) return rail.querySelector('.rl-item[data-panel="theme"]');
+      // Record is an action and never lights — but a second click on it still
+      // has to shut the pane it opened, so `whereFor` answers for it even
+      // though `current()`, which drives the light, does not.
       const mode = (typeof state !== 'undefined' && state.mode) || 'overview';
       return rail.querySelector(`.rl-item[data-mode="${mode}"]`);
     };
@@ -328,18 +339,29 @@
       return !t.classList.contains('hidden');
     };
 
+    /// **The rail shuts the left panel and nothing else.**
+    ///
+    /// It used to hide whatever a destination's tray resolved to, which meant
+    /// reaching into `#dock` and `.room-edit`. Neither is this file's to touch:
+    /// `setMode` is the only place `#dock` is ever un-hidden, and the
+    /// `.room-edit` nodes are moved into the room's admin column by `roomAdopt`
+    /// with `setVisModule` deciding which one shows. Hiding either left it
+    /// hidden with nothing to put it back.
+    ///
+    /// A workspace's furniture belongs to `setMode`, which the rail calls and
+    /// then leaves alone. Only the drawer is the rail's.
     const shutTray = (item) => {
       const t = tray(item);
-      if (!t) return;
-      if (t.id === 'leftPanel') closeDrawer();
-      else t.classList.add('hidden');
+      if (!t || t.id !== 'leftPanel') return;
+      closeDrawer();
     };
 
+    /// The mirror of `shutTray`: the drawer is opened here, and a workspace's
+    /// own furniture is left to `setMode`, which has already run by this point.
     const openTray = (item) => {
       const t = tray(item);
-      if (!t) return;
-      if (t.id === 'leftPanel') openDrawer();
-      else t.classList.remove('hidden');
+      if (!t || t.id !== 'leftPanel') return;
+      openDrawer();
     };
 
     // ── going somewhere ─────────────────────────────────────────────────────
@@ -369,8 +391,21 @@
         return false;
       }
 
-      // Shut everything first, so a swap cannot leave two trays open.
-      items().forEach((b) => { if (b !== item) shutTray(b); });
+      // **Only a workspace shuts the other workspaces' trays.**
+      //
+      // This used to run for every destination, and Theme is a pane rather than
+      // a mode — so opening the palette while in Grain added `.hidden` to
+      // `#dock` and took the whole granular rack off screen. Nothing put it
+      // back either, because `#dock` is un-hidden in exactly one place,
+      // `setMode`, which a pane destination never calls.
+      //
+      // The same act was reaching into `.room-edit`, which is not this file's
+      // to touch: those nodes are moved into the room's admin column by
+      // `roomAdopt` and `setVisModule` decides which of them is showing.
+      //
+      // A pane lives in the left panel, and `showPane` already swaps whatever
+      // was in there. It has no business closing the workspace behind it.
+      if (mode) items().forEach((b) => { if (b !== item) shutTray(b); });
 
       if (pane === 'theme' || pane === 'record') {
         // A pane rather than a workspace. Record additionally needs the library
@@ -411,7 +446,13 @@
       // shuts its tray. Clicking a different one goes there, and the previous
       // tray is gone in the same act — which is why a swap looks instant while
       // opening from nothing slides.
-      if (item === current() && trayOpen(item)) {
+      // Once to open, once to close. Record is included by asking whether *its*
+      // pane is the one showing, rather than by asking `current()` — which
+      // deliberately never returns it, because it never lights.
+      const recPane = document.getElementById('paneRecord');
+      const isOpenRecord = item.classList.contains('rl-rec')
+        && recPane && !recPane.classList.contains('hidden') && trayOpen(item);
+      if (isOpenRecord || (item === current() && trayOpen(item))) {
         shutTray(item);
         sync();
         return;
