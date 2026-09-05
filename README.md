@@ -6,23 +6,23 @@
 [![Edition](https://img.shields.io/badge/edition-2021-000000?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
 [![Cargo](https://img.shields.io/badge/Cargo-workspace-000000?logo=rust&logoColor=white)](#the-workspace)
 [![Crates](https://img.shields.io/badge/workspace-10%20crates-dea584?logo=rust&logoColor=white)](#the-workspace)
-[![Lines](https://img.shields.io/badge/Rust-49k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
+[![Lines](https://img.shields.io/badge/Rust-53k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
 [![Dependencies](https://img.shields.io/badge/direct%20deps-2-4c9a2a)](#the-stack)
 [![Unsafe](https://img.shields.io/badge/unsafe-none%20in%20the%20program-2ea44f?logo=rust&logoColor=white)](#the-stack)
 [![Build step](https://img.shields.io/badge/interface%20build%20step-none-2ea44f)](#the-stack)
 
 **How it is built and proved**
 
-[![CI](https://img.shields.io/badge/CI-build%20%2B%20989%20tests%20on%20every%20push-2088FF?logo=githubactions&logoColor=white)](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-build%20%2B%201270%20tests%20on%20every%20push-2088FF?logo=githubactions&logoColor=white)](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml)
 [![Runner](https://img.shields.io/badge/runner-ubuntu--latest-E95420?logo=ubuntu&logoColor=white)](docs/CI.md)
 [![Method](https://img.shields.io/badge/method-talk%20%E2%86%92%20document%20%E2%86%92%20build-8957e5)](#how-this-is-built)
 [![TDD](https://img.shields.io/badge/TDD-tests%20first-2ea44f)](#how-this-is-built)
-[![Tests](https://img.shields.io/badge/Rust%20tests-965%20passing-2ea44f?logo=rust&logoColor=white)](#testing)
-[![Browser tests](https://img.shields.io/badge/browser%20tests-24%20passing-2ea44f?logo=playwright&logoColor=white)](#testing)
+[![Tests](https://img.shields.io/badge/Rust%20tests-1029%20passing-2ea44f?logo=rust&logoColor=white)](#testing)
+[![Browser tests](https://img.shields.io/badge/browser%20tests-241%20passing-2ea44f?logo=playwright&logoColor=white)](#testing)
 [![Playwright](https://img.shields.io/badge/Playwright-1.62-2EAD33?logo=playwright&logoColor=white)](#testing)
 [![Chromium](https://img.shields.io/badge/Chromium-headless-4285F4?logo=googlechrome&logoColor=white)](#testing)
 [![Static check](https://img.shields.io/badge/interface-statically%20checked-2ea44f)](#testing)
-[![Docs](https://img.shields.io/badge/docs-19%20documents-informational)](docs/)
+[![Docs](https://img.shields.io/badge/docs-36%20documents-informational)](docs/)
 [![Screenshots](https://img.shields.io/badge/screenshots-generated%20from%20the%20app-6aa84f)](docs/screenshots/)
 
 **What it does**
@@ -32,7 +32,7 @@
 [![Shapers](https://img.shields.io/badge/Peak%20DSP%20live-9-8957e5)](#live-shaping)
 [![Views](https://img.shields.io/badge/grain%20views-10-8957e5)](#watching-the-grains)
 [![Themes](https://img.shields.io/badge/themes-21-8957e5)](#themes)
-[![Routes](https://img.shields.io/badge/HTTP%20API-46%20routes-6aa84f)](#the-stack)
+[![Routes](https://img.shields.io/badge/HTTP%20API-52%20routes-6aa84f)](#the-stack)
 [![Formats](https://img.shields.io/badge/WAV%20%C2%B7%20AIFF%20%C2%B7%20AIFC%20%C2%B7%20raw%20PCM-read%20%2B%20write-6aa84f)](#the-stack)
 [![Export](https://img.shields.io/badge/export-AIFF%20%2B%20embedded%20settings-6aa84f)](#export)
 [![Non-destructive](https://img.shields.io/badge/originals-never%20written%20to-2ea44f)](#editing)
@@ -157,7 +157,7 @@ everything else does.
 </td></tr>
 <tr><td>Tests</td><td>
 
-![Rust tests](https://img.shields.io/badge/cargo%20test-965-2ea44f?logo=rust&logoColor=white)
+![Rust tests](https://img.shields.io/badge/cargo%20test-1029-2ea44f?logo=rust&logoColor=white)
 ![Playwright](https://img.shields.io/badge/Playwright-1.62-2EAD33?logo=playwright&logoColor=white)
 ![Chromium](https://img.shields.io/badge/Chromium-headless-4285F4?logo=googlechrome&logoColor=white)
 ![Static](https://img.shields.io/badge/ui--check-static%20analysis-2ea44f)
@@ -197,20 +197,20 @@ cross-build".
 
 | Crate | Lines | Tests | What it is |
 |---|---:|---:|---|
-| `audio-core` | 2928 | 86 | Container probe and decode (WAV, AIFF, AIFC, headerless PCM), **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
+| `audio-core` | 3501 | 97 | Container probe and decode (WAV, AIFF, AIFC, headerless PCM), **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 18870 | 319 | RBJ biquads, parametric EQ, compressor, channel maximiser, **five stretchers**, **34 shapers**, the parameter layer, and the sines/transients/noise separation |
-| `edit` | 4195 | 126 | Non-destructive edit list, **zero-crossing snap**, **measurement** (peak, RMS, silence, clicks), windowed render, WAV and AIFF export, **the looped export and its tail** |
-| `engine` | 5148 | 72 | Real-time block renderer, all five streaming engines, transport, cpal device |
+| `fx` | 19910 | 344 | RBJ biquads, parametric EQ, compressor, channel maximiser, **five stretchers**, **34 shapers**, the parameter layer, and the sines/transients/noise separation |
+| `edit` | 4293 | 130 | Non-destructive edit list, **zero-crossing snap**, **measurement** (peak, RMS, silence, clicks), windowed render, WAV and AIFF export, **the looped export and its tail** |
+| `engine` | 6277 | 89 | Real-time block renderer, all five streaming engines, transport, cpal device |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1453 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 13864 | 245 | HTTP/1.1 on `std::net`, a thread per connection, 47 API routes, JSON, persistence, **marker and region commands**, the live bridge to the audio thread |
-| `audiolab` | 67 | — | The binary |
-| | **49472** | **965** | |
+| `server` | 14908 | 252 | HTTP/1.1 on `std::net`, a thread per connection, 52 API routes, JSON, persistence, **marker and region commands**, the live bridge to the audio thread |
+| `audiolab` | 76 | — | The binary |
+| | **53365** | **1029** | |
 
-Plus **24 browser tests** across five spec files, which run under Playwright
-rather than `cargo test`. Counts re-measured 17 Aug 2026.
+Plus **241 browser tests** across 28 spec files, which run under Playwright
+rather than `cargo test`. Counts re-measured 5 Sep 2026.
 
 ## Time stretching
 
@@ -600,13 +600,13 @@ algorithm turned out to be wrong on a dry chain. That correction is worth more
 than the original design, and deleting it to make the document look tidy would
 throw away the only record of why the code is the shape it is.
 
-Skipping to the end means building the wrong thing confidently. Nineteen
+Skipping to the end means building the wrong thing confidently. Thirty-six
 documents in `docs/` are the evidence that this is a real rule rather than an
 aspiration.
 
 ### Tests first, and tests that can actually fail
 
-**965 Rust tests and 24 browser tests.** Written first where the shape is known,
+**1029 Rust tests and 241 browser tests.** Written first where the shape is known,
 and always before a fix is called done.
 
 Two lessons are burned into how they are written now, both expensive:
@@ -641,9 +641,9 @@ recording.
 
 | Layer | What only it can catch |
 |---|---|
-| `cargo test` — 965 | The arithmetic. Every filter, stretcher and shaper pinned frame by frame |
+| `cargo test` — 1029 | The arithmetic. Every filter, stretcher and shaper pinned frame by frame |
 | `tools/ui-check.mjs` | References that do not resolve, controls with no default, panes missing from the map. Found two dead functions on its first run, one of which had removed the channel maximiser from the product for three days |
-| `tests/ui/*.spec.mjs` — 24 | A panel that builds without error and renders nothing. Has happened more than once |
+| `tests/ui/*.spec.mjs` — 241 | A panel that builds without error and renders nothing. Has happened more than once |
 | `tests/ui/globals.spec.mjs` | Two scripts declaring the same global. Caught **by name**, because what breaks is in whichever file lost — somewhere else entirely, where no behavioural test would look |
 
 ### Measure, do not reason
@@ -667,9 +667,9 @@ That found two bugs of months' standing on its first two runs.
 
 ## Testing
 
-    cargo test --release --manifest-path core/Cargo.toml     # 965
+    cargo test --release --manifest-path core/Cargo.toml     # 1029
     npm run check                                            # the interface, statically
-    npm run test:ui                                          # the interface, in a browser  # 24
+    npm run test:ui                                          # the interface, in a browser  # 241
 
 The Rust tests are the bulk of it and need nothing installed. The other two are
 development tooling — `package.json` exists for them alone; the application is
@@ -712,6 +712,12 @@ every one of them on every push — [`docs/CI.md`](docs/CI.md).
 | [`docs/CI.md`](docs/CI.md) | What runs on every push, what it costs, and the two bugs it found on its first two runs |
 | [`docs/NO-AUDIO-DEVICE.md`](docs/NO-AUDIO-DEVICE.md) | What works without a sound card, what does not, and why no test caught it for months |
 | [`docs/EXPORT-LOOP.md`](docs/EXPORT-LOOP.md) | Exporting the loop with repeats and a tail, and watching an export run |
+| [`docs/SHAPES-4D.md`](docs/SHAPES-4D.md) | The regular 4-polytopes, why a 4D solid is not a model, and the six planes of rotation |
+| [`docs/GRAIN-SHAPES.md`](docs/GRAIN-SHAPES.md) | The catalogue of solids the grain cloud draws its grains as, and three that were wrong first |
+| [`docs/THEME-EDITOR.md`](docs/THEME-EDITOR.md) | The palette editor, and why two attempts at writing one from scratch were worse than the port |
+| [`docs/VISUALISER.md`](docs/VISUALISER.md), [`STAGE.md`](docs/STAGE.md), [`RIDGELINE.md`](docs/RIDGELINE.md), [`ROOM-3D.md`](docs/ROOM-3D.md), [`ROOM-VIEW.md`](docs/ROOM-VIEW.md), [`ROOM-EDITOR.md`](docs/ROOM-EDITOR.md), [`ROOM-PAINT.md`](docs/ROOM-PAINT.md), [`ROOM-TEXT.md`](docs/ROOM-TEXT.md) | The visualisers, one document each — what each draws, what it is fed, and what its controls mean |
+| [`docs/VIDEO-EXPORT.md`](docs/VIDEO-EXPORT.md), [`PORT-PLAN.md`](docs/PORT-PLAN.md), [`MODULAR-CANVAS-PLAN.md`](docs/MODULAR-CANVAS-PLAN.md) | Filming a visualiser, and moving all of them onto one engine |
+| [`docs/MASTER-BUS.md`](docs/MASTER-BUS.md), [`GRAIN-EMISSION.md`](docs/GRAIN-EMISSION.md), [`DATTORRO-MODULE-INVENTORY.md`](docs/DATTORRO-MODULE-INVENTORY.md) | The master bus and its meters, how grains are emitted, and every Dattorro module with what it would take to build |
 | [`visualiser/PRECOMPUTED-WEATHER.md`](visualiser/PRECOMPUTED-WEATHER.md) | The aesthetic argument behind the ten grain views |
 | [`Reference Docs/md/STRETCH-ROADMAP.md`](Reference%20Docs/md/STRETCH-ROADMAP.md) | The stretching theories, which are implemented, and what is next |
 | [`Reference Docs/md/`](Reference%20Docs/md/) | Every reference PDF extracted to markdown — the Driedger thesis, the Peak manual chapters. **Read these, not the PDFs** |
@@ -732,9 +738,17 @@ every one of them on every push — [`docs/CI.md`](docs/CI.md).
     Audio Library/    sample audio to try it on
     Reference Docs/   papers, the stretch roadmap, and the classification taxonomy
 
-Everything in `ui/` and `visualiser/` is compiled *into* the binary — the
-interface, the stylesheet, the theme engine, the palette library, p5.js and both
+Everything in `ui/` and `visualiser/` is compiled *into* the binary —
+**twenty-three embedded assets**: the page, the stylesheet, seventeen of the
+interface's own scripts (the preference store, the theme engine, the palette
+library, the four-dimensional solids, the visualisers), Babylon, p5.js and both
 fonts. `tools/` and `tests/` are not; they never ship.
+
+**Adding a file to `ui/` is three edits, not one.** A `<script>` tag in
+`ui/index.html`, an `include_str!` constant *and* a route in
+`core/crates/server/src/routes.rs`, and its name in `ui_build_id()` — which is
+what lets an already-open window notice it is stale. Miss the route and the file
+is silently never served.
 
 ## The built programs
 
@@ -765,7 +779,7 @@ between the Mac and the PC.
 ## Building from source
 
     cargo build --release --manifest-path core/Cargo.toml     # this machine
-    cargo test  --release --manifest-path core/Cargo.toml     # 965 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 1029 tests
 
 For the Windows build from a Mac, once per machine:
 

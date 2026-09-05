@@ -58,7 +58,7 @@ to know why a program with no runtime has one.
 
 | tool | licence | what it is for | ships? |
 |---|---|---|---|
-| **`@playwright/test` ^1.49** (1.62.1 installed) | Apache-2.0 | The 24 browser tests, and `tools/screenshots.mjs`, which takes the README's pictures from the running program | **No** |
+| **`@playwright/test` ^1.49** (1.62.1 installed) | Apache-2.0 | The 241 browser tests, and `tools/screenshots.mjs`, which takes the README's pictures from the running program | **No** |
 | **Chromium**, via `playwright install` | BSD-3-Clause and others | The browser those tests drive. Downloaded to a cache outside the repo | **No** |
 
 `package.json` exists for these alone. The application is one Rust binary with

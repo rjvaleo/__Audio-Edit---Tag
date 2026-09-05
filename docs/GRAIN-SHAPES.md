@@ -69,6 +69,14 @@ something claiming an identity it misses by a few degrees.
 sheets is the chording — a dense knot of lines through a spherical shell, unlike
 anything else here — not the particular projection.
 
+**They are not simplexes, and the real ones now exist beside them.**
+`ui/shapes-4d.js` builds genuine regular simplexes in five, seven and nine
+dimensions, projected the way the sheets actually show, along with the five
+regular 4-polytopes — see [`SHAPES-4D.md`](SHAPES-4D.md). Nothing here is
+replaced: these three are good wireframes at eight pixels and forty deep, which
+is what this catalogue is for, and a real 9-simplex projection is a different
+picture rather than a better one.
+
 ### Three things that were wrong first, and how they read
 
 Each of these produced a *plausible* picture, which is why they are worth

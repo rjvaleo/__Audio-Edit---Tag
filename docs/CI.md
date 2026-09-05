@@ -11,10 +11,10 @@ One job on `ubuntu-latest`:
 
 1. `libasound2-dev` — `engine` links cpal, which on Linux is ALSA
 2. `cargo build --release`
-3. `cargo test --release` — 965 tests
+3. `cargo test --release` — 1029 tests
 4. `npm ci`, `npm run check` — the static interface check
 5. `npx playwright install --with-deps chromium`
-6. `npx playwright test` — 24 browser tests
+6. `npx playwright test` — 241 browser tests
 
 ## One job, not two
 

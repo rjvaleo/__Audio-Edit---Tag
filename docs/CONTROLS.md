@@ -4,8 +4,13 @@ Mouse, keyboard and gesture, in one place. Menu items are in
 [MENUS.md](MENUS.md); this page is everything you can do by pointing at
 something.
 
-Two workspaces: **Browse** (the library) and **Edit** (one open document).
-`Enter` swaps between them. Almost everything below only exists in Edit.
+Three workspaces, on the left rail: **Browse** (the library), **Edit** (one open
+document) and **Room** (the visualiser full size, with every control it has
+beside it). `Enter` swaps between the first two. Almost everything below only
+exists in Edit.
+
+*The View menu lists only Browse and Edit — a known defect, recorded in
+[STATE.md](STATE.md) §12, not a statement that Room is something lesser.*
 
 ---
 
@@ -252,6 +257,42 @@ Six start filled — Swarm, Trails, Kaleid, Ink, Ember, Still.
 | **Drag the title bar** | Moves it. |
 | **Drag the corner** | Resizes it; the picture grows and shrinks with the box. |
 | **`Esc`** | Closes it. |
+
+---
+
+## The 4D solids
+
+In the Room, on the **4D** tab. Laid out as a modelling application is —
+viewport, object manager, attribute manager — because anyone who has used
+Cinema 4D, Blender or Maya already knows that shape, and half a convention is
+worse than none.
+
+| Gesture | What it does |
+|---|---|
+| **Click an object** | Selects it. What is selected decides what the rest of the panel is about — the attribute manager shows that solid's parameters and nothing else. |
+| **Drag sideways on a number** | **Scrubs it.** The interaction every modelling package has and no web form does. Pointer capture, so the drag survives the pointer leaving the 60px field — which it does immediately. |
+| **⇧ Shift while scrubbing** | Fine. Roughly an eighth of the step. |
+| **Double-click a number** | Puts it back to its default — zero for a rotation plane, 2.5 for the eye. The same convention every other control here keeps. |
+| **Click into a number** | Places a caret and selects, so a value can still be typed exactly. A press that never moves is a click, not a scrub. |
+
+**Six rotation planes, not three axes.** In three dimensions "about z" is really
+"in the xy plane" — the axis works only because the orthogonal complement of a
+plane in R³ is a line. In R⁴ it is another plane, so there are six: XY, XZ, YZ,
+XW, YW, ZW. The last three are marked **·w**, and they are the ones that change
+the *shape* of the shadow rather than its pose. See
+[SHAPES-4D.md](SHAPES-4D.md).
+
+---
+
+## Settings
+
+**⚙ Settings** at the right of the menu bar. A modal, not a rail row — settings
+decide what the rail and the menus contain, and a control that can switch itself
+off from under you is a trap; a modal also leaves the thing you are configuring
+on screen behind it.
+
+Closes on the ⨯, or by clicking the dark edge. Every row applies straight away,
+and every row says what it trades. Contents are in [MENUS.md](MENUS.md).
 
 ---
 
