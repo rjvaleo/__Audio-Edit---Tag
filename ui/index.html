@@ -402,6 +402,53 @@
         <div class="rv-admin-body hidden" id="room4dBody">
           <div class="p4-view"><canvas id="p4Canvas"></canvas></div>
           <div id="p4Panel"></div>
+          <!-- The solid as the ROOM draws it, as against the modelling panel
+               above, which is the catalogue.
+
+               **Here rather than in the Room tab.** That tab's panel is also the
+               overlay laid over the dock's little room, so six more rows made it
+               tall enough to cover the room underneath — and the camera drag,
+               which is aimed at the middle of the picture, started landing on
+               the panel instead. Three room-editor tests caught it. The 4D tab
+               is only ever shown in the full room view, where there is nothing
+               behind it to cover. -->
+          <div class="re-tag" style="margin-top:14px">IN THE ROOM</div>
+          <div class="re-row">
+            <span class="re-tag">SOLID</span>
+            <select class="field mini" id="reSolidShape"
+              title="Which solid hangs in the room. Four-dimensional shapes, then the grain shapes."></select>
+          </div>
+          <div class="re-row">
+            <span class="re-tag">TURN</span>
+            <input class="re-slider" id="reSolidSpin" type="range"
+              min="0" max="800" step="1"
+              title="How hard the sound turns it through the fourth dimension. At the top a loud passage passes the solid's cells through each other, which no rotation in three dimensions can do. Four-dimensional shapes only.">
+          </div>
+          <div class="re-row">
+            <span class="re-tag">SWELL</span>
+            <input class="re-slider" id="reSolidSwell" type="range"
+              min="0" max="200" step="1"
+              title="How far the waveform swings off each edge.">
+          </div>
+          <div class="re-row">
+            <span class="re-tag">EYE</span>
+            <input class="re-slider" id="reSolidEye" type="range"
+              min="140" max="800" step="1"
+              title="How far down the w axis you are standing. Close in exaggerates the nesting; far off flattens it toward parallel. Four-dimensional shapes only.">
+          </div>
+          <div class="re-row">
+            <span class="re-tag">SIZE</span>
+            <input class="re-slider" id="reSolidSize" type="range"
+              min="4" max="90" step="1"
+              title="How big it is drawn, as a share of the room's height. Its own size — nothing to do with the ring's.">
+          </div>
+          <div class="re-row"><span class="re-tag">PATH</span>
+            <button class="re-btn" id="reSolidPathAdd"
+              title="Add a waypoint halfway along. The shape passes through every point on the path.">+ Waypoint</button>
+            <button class="re-btn" id="reSolidPathReset"
+              title="Back to a straight run down the room.">Straight</button>
+          </div>
+          <div class="re-path" id="reSolidPath"></div>
         </div>
       </aside>
       <div class="rv-grip" id="roomGrip"

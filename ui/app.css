@@ -3245,6 +3245,43 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .room-handles { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 .room-handles.hidden { display: none; }
 
+/* The solid's path, over the room. Pointer events only on the handles: the
+   line is there to be read, and a click on it that did nothing but eat the
+   drag would make the room feel broken. */
+.room-path {
+  position: absolute; inset: 0; z-index: 7;
+  pointer-events: none; overflow: visible;
+}
+.room-path.hidden { display: none; }
+.room-path .rp-line {
+  fill: none; stroke: var(--accent); stroke-width: 1.2;
+  stroke-opacity: .55; stroke-dasharray: 5 4;
+}
+.room-path .rp-pt {
+  fill: var(--surface); stroke: var(--accent); stroke-width: 1.6;
+  pointer-events: auto; cursor: move;
+}
+.room-path .rp-pt:hover, .room-path .rp-pt.dragging {
+  fill: var(--accent); stroke: var(--text);
+}
+/* The ends are square, the waypoints round — so which is the front and which
+   is a stop on the way is legible without a label. */
+.room-path .rp-end { rx: 1; }
+/* The floor bead: smaller and hollow, because it is the shadow of the point
+   rather than the point. Same drag, different plane. */
+.room-path .rp-foot { fill: none; stroke-opacity: .8; cursor: ns-resize; }
+.room-path .rp-foot:hover, .room-path .rp-foot.dragging {
+  fill: var(--accent); stroke: var(--text); stroke-opacity: 1;
+}
+.room-path .rp-lb {
+  fill: var(--text-dim); font-size: 9px; font-family: inherit;
+  pointer-events: none; text-anchor: middle;
+}
+.room-path .rp-depth {
+  stroke: var(--accent); stroke-width: 1; stroke-opacity: .3;
+  stroke-dasharray: 2 3;
+}
+
 .rh {
   position: absolute; pointer-events: auto;
   background: var(--accent);

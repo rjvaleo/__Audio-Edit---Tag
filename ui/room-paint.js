@@ -41,19 +41,21 @@ const RP_SLOTS = [
     hint: 'The thick ribbon over the frame you are hearing now.' },
   { key: 'ring', label: 'Ring', row: 4, own: 'width',
     hint: 'The Lissajous hoops hanging in the sky.' },
-  { key: 'skin', label: 'Skin', row: 5, own: 'width',
+  { key: 'polytope', label: 'Solid', row: 5, own: 'depth4',
+    hint: 'The four-dimensional solid hanging with the ring. Its own quantity is depth in the fourth dimension, before the projection — so an edge on the far side of w can be coloured differently from one on the near side, which is the one thing about this shape nothing else in the room knows.' },
+  { key: 'skin', label: 'Skin', row: 6, own: 'width',
     hint: 'The surface between the hoops.' },
-  { key: 'grainBloom', label: 'Grain bloom', row: 6, own: 'pan',
+  { key: 'grainBloom', label: 'Grain bloom', row: 7, own: 'pan',
     hint: 'The soft wash around each grain.' },
-  { key: 'grainWire', label: 'Grain wires', row: 7, own: 'pan',
+  { key: 'grainWire', label: 'Grain wires', row: 8, own: 'pan',
     hint: 'The tumbling solid itself.' },
-  { key: 'grainCore', label: 'Grain core', row: 8, own: 'pan',
+  { key: 'grainCore', label: 'Grain core', row: 9, own: 'pan',
     hint: 'The burning point at its centre.' },
-  { key: 'grainFill', label: 'Grain fill', row: 9, own: 'pan',
+  { key: 'grainFill', label: 'Grain fill', row: 10, own: 'pan',
     hint: 'The skin inside the solid. Only drawn with FILL on and not filling with the background.' },
-  { key: 'mist', label: 'Mist', row: 10, own: 'pan',
+  { key: 'mist', label: 'Mist', row: 11, own: 'pan',
     hint: 'The smoke dripping off the grains.' },
-  { key: 'fog', label: 'Fog', row: 11, own: null,
+  { key: 'fog', label: 'Fog', row: 12, own: null,
     hint: 'The air itself. Its weight only ever runs 0.05 to 0.27, so leave the range alone or most of the ramp is never reached.' },
   { key: 'data', label: 'Data block', row: -1, own: null, css: true,
     hint: 'The schedule printed on the back wall. Type, not geometry — one colour, faded down the wall.' },
@@ -122,6 +124,7 @@ const RP_DRIVES = [
 ];
 
 const RP_OWN_LABEL = {
+  depth4: 'Depth in w',
   freq: 'Frequency',
   width: 'Stereo width',
   pan: 'Pan',
@@ -318,6 +321,7 @@ const RP_GENERATORS = [
 /// furniture; on the stage the sound is loudest and everything else supports it,
 /// which is the balance `docs/STAGE.md` arrived at by soloing each object.
 const RP_WEIGHT = {
+  polytope: 0.70,
   box: 0.30, terrainMesh: 0.42, terrainRidge: 0.72, lead: 0.86,
   ring: 0.78, skin: 0.40, grainBloom: 0.50, grainWire: 0.72,
   grainCore: 1.00, grainFill: 0.26, mist: 0.44, fog: 0.34, data: 0.55,
@@ -336,6 +340,7 @@ const RP_WEIGHT = {
 /// first version did — `s.key.startsWith('terrain')` and friends — and every
 /// stage slot fell through every test to family 2.
 const RP_FAMILY = {
+  polytope: 1,
   box: 0, terrainMesh: 0, terrainRidge: 0, lead: 0,
   ring: 1, skin: 1,
   grainBloom: 2, grainWire: 2, grainCore: 2, grainFill: 2, mist: 2, fog: 2, data: 2,

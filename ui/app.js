@@ -1256,7 +1256,7 @@ function drawGrainLayer() {
     el.height = Math.round(h * dpr);
     // The room is a different size on screen, so the grips are in the wrong
     // places until they are told. Only on the frames where it actually changed.
-    if (roomEdit.on) paintRoomHandles();
+    if (roomEdit.on) { paintRoomHandles(); paintSolidPath(); }
   }
   const c = el.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -3210,6 +3210,14 @@ async function runVideoExport() {
         ringDrive: roomEdit.ringDrive,
         ringEdge: roomEdit.ringEdge,
         ringPoints: roomEdit.ringPoints,
+        solidShape: roomEdit.solidShape,
+        solidSpin: roomEdit.solidSpin,
+        solidSwell: roomEdit.solidSwell,
+        solidEye: roomEdit.solidEye,
+    solidSize: roomEdit.solidSize,
+    solidPath: roomEdit.solidPath,
+        solidSize: roomEdit.solidSize,
+        solidPath: roomEdit.solidPath,
         leadThick: roomEdit.leadThick,
         grainDensity: roomEdit.grainDensity,
         grainBright: roomEdit.grainBright,
@@ -7459,6 +7467,7 @@ const ROOM_LAYERS = [
   { key: 'sky', label: 'Ring', hint: 'The Lissajous hanging in the sky, pushed out of round by the sound.' },
   { key: 'skin', label: 'Skin', hint: 'The surface between the rings, so the trail is a tube rather than a stack of hoops. Stands on its own — the hoops can be off.' },
   { key: 'grains', label: 'Grains', hint: 'Every grain in the schedule, as a streak: depth is when it sounds, its length is how long for, across is pan and up is pitch.' },
+  { key: 'solid', label: 'Solid', off: true, hint: 'A four-dimensional solid hanging with the ring, turned through the fourth dimension by the sound — loud passages pass its cells through each other, which no amount of turning in three dimensions can do. The spectrum pushes its vertices out, so it breathes as well as turns. Off by default.' },
   // Not drawn in the room. It is HTML printed on the back wall, which is why it
   // has neither a place in the hierarchy nor an occlusion switch: it is not in
   // the scene the depth buffer describes, and offering it either control would
@@ -7512,6 +7521,21 @@ const roomEdit = {
   grainDensity: 1,
   grainBright: 1,
   /// How hard the sound pushes the ring out of round. One is what it always was.
+  /// The four-dimensional solid: which one, how hard the sound turns it
+  /// through the fourth dimension, how far the spectrum swells it, and where
+  /// the eye stands on the w axis.
+  solidShape: 'cell8',
+  solidSpin: 1,
+  solidSwell: 0.6,
+  solidEye: 2.5,
+  /// Its own place in the room. The ring is at 0.72; this is deliberately
+  /// elsewhere, because they are two different things.
+  solidSize: 0.3,
+  /// The path the trail travels, front first. `x` runs -1 at the left wall to 1
+  /// at the right, `y` 0 on the floor to 1 at the ceiling, `z` 0 at the near
+  /// face to 1 at the back wall. Two points is a straight run; anything between
+  /// them is a waypoint the shape passes through.
+  solidPath: [{ x: 0, y: 0.42, z: 0.08 }, { x: 0, y: 0.42, z: 1 }],
   ringDrive: 1,
   /// How thick the dark border under the ring's lines is, as a fraction of the
   /// ring's radius.
@@ -7618,6 +7642,31 @@ try {
   if (typeof v.grainBright === 'number') {
     roomEdit.grainBright = Math.max(0.15, Math.min(3, v.grainBright));
   }
+  // Validated like everything else here: a stored shape the catalogue no longer
+  // offers falls back rather than leaving the layer drawing nothing.
+  if (typeof v.solidShape === 'string'
+      && ((typeof Shapes4D !== 'undefined' && Shapes4D.entry(v.solidShape))
+        || (typeof GRAIN_SHAPES !== 'undefined'
+          && GRAIN_SHAPES.some((m) => m.name === v.solidShape)))) {
+    roomEdit.solidShape = v.solidShape;
+  }
+  if (typeof v.solidSpin === 'number') roomEdit.solidSpin = Math.max(0, Math.min(8, v.solidSpin));
+  if (typeof v.solidSwell === 'number') roomEdit.solidSwell = Math.max(0, Math.min(2, v.solidSwell));
+  if (typeof v.solidEye === 'number') roomEdit.solidEye = Math.max(1.4, Math.min(8, v.solidEye));
+  if (typeof v.solidSize === 'number') roomEdit.solidSize = Math.max(0.04, Math.min(0.9, v.solidSize));
+  // A path needs at least a front and an end. Anything shorter, or carrying a
+  // number that is not one, falls back to the straight run rather than leaving
+  // the layer with a path it cannot walk.
+  if (Array.isArray(v.solidPath) && v.solidPath.length >= 2) {
+    const pts = v.solidPath
+      .filter((q) => q && Number.isFinite(+q.x) && Number.isFinite(+q.y) && Number.isFinite(+q.z))
+      .map((q) => ({
+        x: Math.max(-1, Math.min(1, +q.x)),
+        y: Math.max(0, Math.min(1, +q.y)),
+        z: Math.max(0, Math.min(1, +q.z)),
+      }));
+    if (pts.length >= 2) roomEdit.solidPath = pts;
+  }
   if (typeof v.ringDrive === 'number') {
     roomEdit.ringDrive = Math.max(0, Math.min(8, v.ringDrive));
   }
@@ -7695,6 +7744,9 @@ function saveRoomData() {
       visual: roomEdit.visual,
       grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
       ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
+      solidShape: roomEdit.solidShape, solidSpin: roomEdit.solidSpin,
+      solidSwell: roomEdit.solidSwell, solidEye: roomEdit.solidEye,
+      solidSize: roomEdit.solidSize, solidPath: roomEdit.solidPath,
       leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
       mist: roomEdit.mist, mistAmount: roomEdit.mistAmount,
       mistLength: roomEdit.mistLength,
@@ -7728,8 +7780,19 @@ try {
 } catch { roomEdit.streams = null; }
 
 /// On unless somebody has turned it off.
+/// Whether a layer is drawn. Absent means on, which is what makes every layer
+/// this room shipped with keep drawing — except one that says otherwise.
+///
+/// **A layer added later cannot default to on.** The room is a picture people
+/// have already arranged; one that gains an object because the program was
+/// updated is a picture that changed by itself. `off: true` in `ROOM_LAYERS` is
+/// how a new layer says "somebody has to ask for me", and the solid is the
+/// first to use it.
 function roomLayerOn(key) {
-  return roomEdit.layers[key] !== false;
+  const stored = roomEdit.layers[key];
+  if (typeof stored === 'boolean') return stored;
+  const spec = ROOM_LAYERS.find((l) => l.key === key);
+  return !(spec && spec.off);
 }
 
 function roomLayers() {
@@ -7940,7 +8003,7 @@ function applyRoomFrame() {
   }
 
   // The cell has just changed shape, so every projected point has moved.
-  afterLayout(() => paintRoomHandles());
+  afterLayout(() => { paintRoomHandles(); paintSolidPath(); });
 }
 
 function paintRoomNums() {
@@ -8264,6 +8327,91 @@ function buildRoomChunks() {
       roomEdit.ringDrive = Math.max(0, Math.min(8, drive.value / 100));
     };
     drive.onchange = saveRoomData;
+  }
+  // The solid's own four.
+  // Both catalogues, grouped, because they are two kinds of thing: eight solids
+  // that need four dimensions to hold them, and thirty-four that do not. The
+  // grain shapes are already drawn in this room at eight pixels; there is no
+  // reason a dodecahedron should not also be available at four hundred.
+  const sShape = $('reSolidShape');
+  if (sShape) {
+    if (!sShape.options.length) {
+      const group = (label, entries) => {
+        if (!entries.length) return;
+        const g = document.createElement('optgroup');
+        g.label = label;
+        for (const e of entries) {
+          const o = document.createElement('option');
+          o.value = e.value;
+          o.textContent = e.label;
+          if (e.hint) o.title = e.hint;
+          g.appendChild(o);
+        }
+        sShape.appendChild(g);
+      };
+      group('Four dimensions', typeof Shapes4D !== 'undefined'
+        ? Shapes4D.CATALOGUE.map((e) => ({ value: e.key, label: e.label, hint: e.hint }))
+        : []);
+      group('Grain shapes', typeof GRAIN_SHAPES !== 'undefined'
+        ? GRAIN_SHAPES.map((m) => ({
+          value: m.name,
+          label: m.name.replace(/^./, (c) => c.toUpperCase()),
+          hint: `${m.verts} vertices · ${m.lines} edges`,
+        }))
+        : []);
+    }
+    sShape.value = roomEdit.solidShape;
+    sShape.onchange = () => { roomEdit.solidShape = sShape.value; saveRoomData(); };
+  }
+  const sSpin = $('reSolidSpin');
+  if (sSpin) {
+    sSpin.value = String(Math.round(roomEdit.solidSpin * 100));
+    sSpin.oninput = () => { roomEdit.solidSpin = Math.max(0, Math.min(8, sSpin.value / 100)); };
+    sSpin.onchange = saveRoomData;
+  }
+  const sSwell = $('reSolidSwell');
+  if (sSwell) {
+    sSwell.value = String(Math.round(roomEdit.solidSwell * 100));
+    sSwell.oninput = () => { roomEdit.solidSwell = Math.max(0, Math.min(2, sSwell.value / 100)); };
+    sSwell.onchange = saveRoomData;
+  }
+  const sEye = $('reSolidEye');
+  if (sEye) {
+    sEye.value = String(Math.round(roomEdit.solidEye * 100));
+    sEye.oninput = () => { roomEdit.solidEye = Math.max(1.4, Math.min(8, sEye.value / 100)); };
+    sEye.onchange = saveRoomData;
+  }
+  const sSize = $('reSolidSize');
+  if (sSize) {
+    sSize.value = String(Math.round(roomEdit.solidSize * 100));
+    sSize.oninput = () => { roomEdit.solidSize = Math.max(0.04, Math.min(0.9, sSize.value / 100)); };
+    sSize.onchange = saveRoomData;
+  }
+  const addWp = $('reSolidPathAdd');
+  if (addWp) {
+    addWp.onclick = () => {
+      // Halfway along, between the two points it lands between — so a new
+      // waypoint changes nothing until it is moved, which is what makes adding
+      // one safe to do while watching.
+      const p = roomEdit.solidPath;
+      const i = Math.max(1, Math.floor(p.length / 2));
+      const a = p[i - 1], b = p[i];
+      p.splice(i, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 });
+      saveRoomData();
+      solidPathPanel();
+      // The overlay is where the path actually is, so it has to hear about a
+      // point appearing — a new waypoint with no handle is one you cannot move.
+      paintSolidPath();
+    };
+  }
+  const resetWp = $('reSolidPathReset');
+  if (resetWp) {
+    resetWp.onclick = () => {
+      roomEdit.solidPath = [{ x: 0, y: 0.42, z: 0.08 }, { x: 0, y: 0.42, z: 1 }];
+      saveRoomData();
+      solidPathPanel();
+      paintSolidPath();
+    };
   }
   const dens = $('reGrainDensity');
   if (dens) {
@@ -8879,6 +9027,7 @@ function enterRoomView() {
   applyRoomFrame();
   paintRoomNums();
   paintRoomData();
+  paintSolidPath();
 }
 
 /// The two tabs. The controls and the palette are both long enough to need the
@@ -9069,6 +9218,207 @@ function clampBack(v) {
   return Math.max(0.05, Math.min(4, v));
 }
 
+/// The solid's path, drawn in the room and grabbed there.
+///
+/// **This is the third attempt at these controls and the first one in the
+/// room.** The first was three sliders; the second was rows of typed X, Y and
+/// Z. `docs/ROOM-EDITOR.md` argues against exactly that — *"you edit the room
+/// by dragging the room"*, *"there are no inputs"* — and records the same
+/// lesson being learned and then undone once before. It was undone again here.
+///
+/// So the path is a curve in the room with its points on it. Drag one and it
+/// moves in its own plane, under the cursor. Hold shift and the same drag moves
+/// it in depth instead, which is the one thing a flat pointer cannot say by
+/// itself — the dotted line down to the floor is what makes that readable.
+function paintSolidPath() {
+  const host = $('roomHandles');
+  const gl = $('visGl');
+  if (!host || !gl) return;
+  // **Inside `#roomHandles`, not beside it.**
+  //
+  // It began as its own element in `index.html`, next to the handles — and that
+  // put it inside `#masterBus`, which `roomAdopt` moves into the room stage
+  // whole. So it was carried into the picture, which is the fault this file
+  // already documents for the card's panel, and it broke every camera drag:
+  // three room-editor tests went from passing to failing and the vanishing
+  // point simply stopped moving.
+  //
+  // `#roomHandles` is already the container for furniture that is over the room
+  // but not in it — never filmed, hidden with the editor, and moved by whatever
+  // moves the rest. Putting it there means no new sibling appears anywhere.
+  let svg = host.querySelector('.room-path');
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'room-path');
+    host.appendChild(svg);
+  }
+  // Only while the room's own editor is open, like every other handle here —
+  // and never for a solid that is not being drawn.
+  // Only where the solid actually is: the room's own module, its editor open,
+  // and the layer switched on. `#roomHandles` forgets the module check and
+  // strands itself over the ridgeline; this one does not.
+  const show = roomEdit.on && state.mode === 'room'
+    && typeof visModuleKey === 'function' && visModuleKey() === 'room'
+    && typeof roomLayerOn === 'function' && roomLayerOn('solid');
+  svg.classList.toggle('hidden', !show);
+  if (!show) return;
+
+  const w = gl.clientWidth, h = gl.clientHeight;
+  if (!(w > 0) || !(h > 0)) return;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+
+  const c = roomCamNow();
+  const hw = roomHalfW(w, h, c);
+  // **A stored room from before this existed has no path.** `roomEdit` is
+  // rebuilt from `roomData`, so a document saved by an older build comes back
+  // without one — and this function is called from `paintRoomNums`, which is on
+  // the camera-drag path. Throwing here took the drag down with it and the
+  // vanishing point simply stopped moving, with nothing on screen to say why.
+  const pts = Array.isArray(roomEdit.solidPath) && roomEdit.solidPath.length >= 2
+    ? roomEdit.solidPath
+    : null;
+  if (!pts) { svg.classList.add('hidden'); return; }
+  const at = (pt) => roomProject(pt.x * hw, c.floorY + (c.ceilY - c.floorY) * pt.y,
+    Math.max(0, Math.min(1, pt.z)), w, h, c);
+
+  // Rebuilt only when the number of points changes — moving one must never
+  // replace the element being dragged, which is the fault the palette's colour
+  // wells and the theme editor's swatches both had.
+  if (svg.dataset.n !== String(pts.length)) {
+    svg.dataset.n = String(pts.length);
+    svg.innerHTML = '';
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    line.setAttribute('class', 'rp-line');
+    svg.appendChild(line);
+    pts.forEach((_, i) => {
+      const drop = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      drop.setAttribute('class', 'rp-depth');
+      svg.appendChild(drop);
+      // **The floor is where depth is set.** A pointer is two numbers and the
+      // room is three, and every way of supplying the third with a modifier is
+      // a mode — which this room does not have anywhere else. So each point has
+      // two bodies: one where it is, and one on the floor beneath it. The air
+      // bead moves it across and up; the floor bead moves it across and back.
+      // Both are a plain drag in a plane, and neither needs to be explained.
+      //
+      // It is also the only way to pick them apart. Two points at the same
+      // place on screen and different depths are stacked in the air and far
+      // apart on the floor — measured on the default path, eleven pixels
+      // against a hundred and three.
+      const foot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      foot.setAttribute('class', 'rp-pt rp-foot');
+      foot.setAttribute('r', 4);
+      foot.dataset.i = String(i);
+      foot.dataset.floor = '1';
+      svg.appendChild(foot);
+      const end = i === 0 || i === pts.length - 1;
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('class', `rp-pt${end ? ' rp-end' : ''}`);
+      dot.setAttribute('r', end ? 6 : 5);
+      dot.dataset.i = String(i);
+      svg.appendChild(dot);
+      const lb = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      lb.setAttribute('class', 'rp-lb');
+      lb.textContent = i === 0 ? 'front' : i === pts.length - 1 ? 'end' : String(i);
+      svg.appendChild(lb);
+    });
+    wireSolidPath();
+  }
+
+  const screen = pts.map(at);
+  svg.querySelector('.rp-line').setAttribute('points',
+    screen.map((p) => `${p.x},${p.y}`).join(' '));
+  const kids = [...svg.children].slice(1);
+  pts.forEach((pt, i) => {
+    const drop = kids[i * 4], foot = kids[i * 4 + 1];
+    const dot = kids[i * 4 + 2], lb = kids[i * 4 + 3];
+    if (!drop || !foot || !dot || !lb) return;
+    const p = screen[i];
+    // Down to the floor at the same depth: the only cue that says how far back
+    // a point is, since a dot on its own is the same dot at any depth.
+    const floor = roomProject(pt.x * hw, c.floorY, Math.max(0, Math.min(1, pt.z)), w, h, c);
+    drop.setAttribute('x1', p.x); drop.setAttribute('y1', p.y);
+    drop.setAttribute('x2', floor.x); drop.setAttribute('y2', floor.y);
+    foot.setAttribute('cx', floor.x); foot.setAttribute('cy', floor.y);
+    dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+    lb.setAttribute('x', p.x); lb.setAttribute('y', p.y - 11);
+  });
+}
+
+function wireSolidPath() {
+  const svg = $('roomHandles')?.querySelector('.room-path');
+  const gl = $('visGl');
+  if (!svg || !gl) return;
+  for (const dot of svg.querySelectorAll('.rp-pt')) {
+    dot.onpointerdown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const i = +dot.dataset.i;
+      const pt = roomEdit.solidPath[i];
+      if (!pt) return;
+      dot.setPointerCapture(e.pointerId);
+      dot.classList.add('dragging');
+      const box = gl.getBoundingClientRect();
+      const start = { ...pt };
+
+      const onFloor = dot.dataset.floor === '1';
+      const move = (ev) => {
+        const w = gl.clientWidth, h = gl.clientHeight;
+        const c = roomCamNow();
+        const hw = roomHalfW(w, h, c);
+        const px = ev.clientX - box.left, py = ev.clientY - box.top;
+        if (onFloor) {
+          // Which depth puts the floor at this height on screen? The floor
+          // recedes monotonically up the picture, so bisection finds it exactly
+          // and without a matrix inverse for a plane the projection does not
+          // give one for. Twenty-two halvings is a millionth of the room.
+          let lo = 0, hi = 1;
+          for (let k = 0; k < 22; k++) {
+            const mid = (lo + hi) / 2;
+            if (roomProject(0, c.floorY, mid, w, h, c).y > py) lo = mid; else hi = mid;
+          }
+          pt.z = Math.max(0, Math.min(1, (lo + hi) / 2));
+          // Across at that depth, so the bead stays under the cursor in both
+          // directions rather than only in one.
+          const world = roomUnproject(px, py, pt.z, w, h, c);
+          pt.x = Math.max(-1, Math.min(1, world.x / (hw || 1)));
+        } else {
+          const world = roomUnproject(px, py, Math.max(0, Math.min(1, pt.z)), w, h, c);
+          pt.x = Math.max(-1, Math.min(1, world.x / (hw || 1)));
+          pt.y = Math.max(0, Math.min(1,
+            (world.y - c.floorY) / ((c.ceilY - c.floorY) || 1)));
+        }
+        paintSolidPath();
+      };
+      const up = (ev) => {
+        dot.classList.remove('dragging');
+        try { dot.releasePointerCapture(ev.pointerId); } catch { /* gone */ }
+        dot.onpointermove = null;
+        dot.onpointerup = null;
+        dot.onpointercancel = null;
+        saveRoomData();
+      };
+      dot.onpointermove = move;
+      dot.onpointerup = up;
+      dot.onpointercancel = up;
+    };
+    // A waypoint is removed where it is, rather than by finding its row in a
+    // list somewhere else.
+    dot.ondblclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const i = +dot.dataset.i;
+      const pts = roomEdit.solidPath;
+      if (i === 0 || i === pts.length - 1 || pts.length <= 2) return;
+      pts.splice(i, 1);
+      saveRoomData();
+      paintSolidPath();
+    };
+  }
+}
+
 function paintRoomHandles() {
   const host = $('roomHandles');
   const gl = $('visGl');
@@ -9085,8 +9435,14 @@ function paintRoomHandles() {
   // Built once and then only moved. Rebuilding them every frame would drop any
   // drag in progress on the very first pointer move — the same fault the
   // palette's colour wells and the theme editor's swatches both had.
-  if (host.children.length !== ROOM_HANDLES.length * 2) {
+  // The path's SVG lives in here too, so the count is the handles' own share
+  // rather than every child — otherwise adding the path rebuilt the handles on
+  // every frame, and a handle rebuilt mid-drag drops the drag.
+  let handleKids = [...host.children].filter((el) => !el.classList.contains('room-path'));
+  if (handleKids.length !== ROOM_HANDLES.length * 2) {
+    const keep = host.querySelector('.room-path');
     host.innerHTML = '';
+    if (keep) host.appendChild(keep);
     for (const hd of ROOM_HANDLES) {
       const el = document.createElement('i');
       el.className = `rh ${hd.cls}`;
@@ -9099,12 +9455,16 @@ function paintRoomHandles() {
       host.appendChild(tip);
     }
     wireRoomHandles();
+    // Re-read after the rebuild, or this frame positions nothing: the list was
+    // taken before the elements it names existed.
+    handleKids = [...host.children].filter((el) => !el.classList.contains('room-path'));
   }
 
   for (let i = 0; i < ROOM_HANDLES.length; i++) {
     const hd = ROOM_HANDLES[i];
-    const el = host.children[i * 2];
-    const tip = host.children[i * 2 + 1];
+    const el = handleKids[i * 2];
+    const tip = handleKids[i * 2 + 1];
+    if (!el || !tip) continue;
     const [x, y, t] = hd.at(hw, c);
     const p = roomProject(x, y, t, w, h, c);
     if (hd.key === 'horizon') {
@@ -9146,6 +9506,7 @@ function wireRoomHandles() {
         roomEdit.cams[roomEdit.frame] = c;
         paintRoomNums();
         paintRoomHandles();
+        paintSolidPath();
       };
       const up = () => {
         el.releasePointerCapture(e.pointerId);
@@ -9307,6 +9668,34 @@ function roomProject(x, y, t, w, h, cam) {
   const xNdc = (near * wx) / (halfW * z) - sx / halfW;
   const yNdc = (2 * near * wy) / (hh * z) - (yb + yt) / hh;
   return { x: (xNdc + 1) / 2 * w, y: (1 - yNdc) / 2 * h };
+}
+
+/// The reverse of `roomProject`, at a depth you already know.
+///
+/// **A pointer is two numbers and the room is three.** Something has to supply
+/// the third and there is no honest way around it, so this takes the `t` the
+/// thing being dragged is already at. Given that, the frustum inverts in closed
+/// form: the point stays exactly under the cursor and moves in its own plane
+/// and nowhere else, which is what makes a drag feel like holding something
+/// rather than steering it.
+function roomUnproject(px, py, t, w, h, cam) {
+  if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
+  const c = cam ? vgCamera(cam) : roomCamNow();
+  const yb = c.floorY, yt = c.ceilY, hh = yt - yb;
+  const halfW = hh * 0.5 * (w / h);
+  const sx = c.shiftX * halfW;
+  const near = 1;
+  const z = near + t * (near * (1 + c.depth) - near);
+  const yMid = (yb + yt) * 0.5;
+  const xNdc = (px / w) * 2 - 1;
+  const yNdc = 1 - (py / h) * 2;
+  // Undo the projection, then undo the taper — in that order, because the taper
+  // is applied in world space before the camera ever sees the point.
+  const wx = (xNdc + sx / halfW) * halfW * z / near;
+  const wy = ((yNdc + (yb + yt) / hh) * hh * z) / (2 * near);
+  const tx = 1 + ((c.backW ?? 1) - 1) * t;
+  const ty = 1 + ((c.backH ?? 1) - 1) * t;
+  return { x: wx / (tx || 1), y: yMid + (wy - yMid) / (ty || 1) };
 }
 
 /// The room's half-width in world units, at the front face.
@@ -11762,6 +12151,26 @@ $('settingsReset')?.addEventListener('click', () => {
   buildSettingsPanel();
   toast('Settings put back to their defaults');
 });
+
+/// The panel's half of the path: what is not a place.
+///
+/// **The coordinates are not here any more.** They were rows of typed X, Y and
+/// Z, and `docs/ROOM-EDITOR.md` had already argued against exactly that before
+/// they were written — *"A field with `-0.38` in it puts a spreadsheet between
+/// you and the room."* The path is dragged in the room now, by
+/// `paintSolidPath`. What is left here is the two things that are not a place:
+/// adding a waypoint, and putting the whole path back.
+function solidPathPanel() {
+  const box = $('reSolidPath');
+  if (!box) return;
+  box.innerHTML = '';
+  const note = document.createElement('div');
+  note.className = 'fx-note';
+  note.textContent = roomEdit.on
+    ? 'Drag a point in the room to move it across and up. Drag its bead on the floor to move it across and back. Double-click a waypoint to remove it.'
+    : 'Open the room editor to drag the path.';
+  box.appendChild(note);
+}
 
 function buildMenuBar() {
   const bar = $('menuBar');
@@ -14879,6 +15288,16 @@ function visGlTick() {
     ringEdge: roomEdit.ringEdge,
     leadThick: roomEdit.leadThick,
     ringPoints: roomEdit.ringPoints,
+    // **The live room and the film are two frame calls, not one.** A setting
+    // added to only one of them is a control that works on screen and not in
+    // the export, or the reverse — which is the fault this program has already
+    // shipped once, over the background colour.
+    solidShape: roomEdit.solidShape,
+    solidSpin: roomEdit.solidSpin,
+    solidSwell: roomEdit.solidSwell,
+    solidEye: roomEdit.solidEye,
+    solidSize: roomEdit.solidSize,
+    solidPath: roomEdit.solidPath,
     grainFill: {
       on: roomEdit.grainFill,
       bg: roomEdit.grainFillBg,

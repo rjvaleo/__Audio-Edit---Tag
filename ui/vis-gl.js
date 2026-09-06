@@ -206,7 +206,7 @@ const VG_GRAIN_LINE_CAP = 48000;
 ///
 /// The interface stacks its chips in this order, top to bottom, so the list on
 /// screen and the list here are the same list read the same way.
-const VG_LAYER_ORDER = ['room', 'sky', 'skin', 'grains', 'lead', 'floor'];
+const VG_LAYER_ORDER = ['room', 'solid', 'sky', 'skin', 'grains', 'lead', 'floor'];
 
 /// The most mask vertices the grain cloud will write in one frame.
 ///
@@ -732,6 +732,26 @@ function vgAttach(canvas) {
   let floorPos = null, floorW = null;
   let leadPos = null, leadW = null;
   let skyPos = null, skyW = null;
+  // The solid's own buffers, and the two angles it accumulates. Kept out here
+  // because turning *by* the level means remembering where it got to.
+  /// The last frame's view, for projecting between the room and the screen.
+  let view = null;
+  let solidPos = null, solidW = null, solidW2 = null, solidEnv = null;
+  let solidZw = 0, solidXw = 0, solidSpinPhase = 0, solidLast = 0;
+  /// Where the solid was standing at each frame on the trail.
+  ///
+  /// **Without this the trail collapses.** Every copy was drawn in the pose the
+  /// solid is in *now* and only pushed further back, so twenty identical
+  /// wireframes nested inside each other by perspective and the whole thing
+  /// read as one shape falling into a point. The trail has to be the shape as
+  /// it *was* — which means remembering how it was turned, once per frame of
+  /// history, and rebuilding each copy from its own pose.
+  const solidPast = [];
+  let solidPushSeen = -1;
+  let solidCentroid = 0.5, solidGate = 0;
+  /// Which slice of the spectrum each vertex reads, per shape. Worked out once:
+  /// it depends only on the solid's rest pose.
+  const solidCache = new Map();
   let grainPos = null, grainW = null;
   // The bodies. A wireframe solid a grain, so they cannot share the buffer the
   // wash and the core are drawn from.
@@ -859,6 +879,61 @@ function vgAttach(canvas) {
   };
 
   return {
+    /// Where a point in the room lands on the screen, in CSS pixels.
+    ///
+    /// **The thing a manipulator cannot work without.** A handle has to be
+    /// drawn where its object is and hit-tested where the pointer is, and both
+    /// are this. `behind` is true for a point behind the eye, whose projection
+    /// is meaningless — a caller that draws it anyway gets a handle mirrored
+    /// through the centre of the frame, which looks like a bug in the drag.
+    project(x, y, z) {
+      if (!view) return null;
+      const m = view.mvp;
+      const cw = -z;
+      if (cw <= 1e-6) return { x: 0, y: 0, behind: true };
+      const ndcX = (m[0] * x + m[8] * z) / cw;
+      const ndcY = (m[5] * y + m[9] * z) / cw;
+      const dpr = view.w / (canvas.clientWidth || view.w);
+      return {
+        x: (ndcX * 0.5 + 0.5) * view.w / dpr,
+        y: (1 - (ndcY * 0.5 + 0.5)) * view.h / dpr,
+        behind: false,
+      };
+    },
+
+    /// The reverse, at a depth you already know.
+    ///
+    /// A pointer is two numbers and the room is three, so something has to
+    /// supply the third — there is no honest way around it. Given the `z` a
+    /// thing is already at, this is exact rather than a guess: the frustum is
+    /// invertible in closed form, so dragging a point across the screen moves
+    /// it in its own plane and nowhere else, and it stays under the cursor.
+    unprojectAtZ(sx, sy, z) {
+      if (!view) return null;
+      const m = view.mvp;
+      const dpr = view.w / (canvas.clientWidth || view.w);
+      const ndcX = (sx * dpr / view.w) * 2 - 1;
+      const ndcY = 1 - (sy * dpr / view.h) * 2;
+      const cw = -z;
+      return {
+        x: (ndcX * cw - m[8] * z) / m[0],
+        y: (ndcY * cw - m[9] * z) / m[5],
+        z,
+      };
+    },
+
+    /// The room's own extents, so a caller can speak in its terms rather than
+    /// in world units — the floor, the ceiling, the half-width and the depth.
+    extents() {
+      if (!view) return null;
+      return {
+        yb: view.yb, yt: view.yt, halfW: view.halfW,
+        near: view.near, far: view.far,
+        zAt: (t) => -(view.near + Math.max(0, Math.min(1, t)) * (view.far - view.near)),
+        taperX: (t) => 1 + (view.backW - 1) * t,
+      };
+    },
+
     /// Empty the room.
     ///
     /// Everything in here accumulates on purpose. The trail is fifty-six frames
@@ -883,6 +958,12 @@ function vgAttach(canvas) {
       meshKey = '';
       meshRows = 0;
       pushes = 0;
+      // **The solid's accumulators too.** They turn *by* the sound rather than
+      // to a position, so they hold whatever they reached — which is right for
+      // a room being watched and wrong for a film, where it would mean the same
+      // export starting from a different angle every time it was run.
+      solidZw = 0; solidXw = 0; solidSpinPhase = 0; solidLast = 0; solidGate = 0;
+      solidPast.length = 0; solidPushSeen = -1;
     },
 
     /// The solids the grains in the air were last actually drawn as.
@@ -970,7 +1051,10 @@ function vgAttach(canvas) {
         : (typeof performance !== 'undefined' ? performance.now() : Date.now());
       // And owns which parts are drawn. Everything, unless told otherwise —
       // a caller that says nothing gets the room it has always had.
-      const on = { room: true, floor: true, lead: true, sky: true, skin: true, grains: true, ...(f && f.layers) };
+      const on = { room: true, floor: true, lead: true, sky: true, skin: true, grains: true,
+        // Off unless asked for: it is a new thing in an old room, and a room that
+        // gains an object because it was updated is a room that changed by itself.
+        solid: false, ...(f && f.layers) };
       // Which layers stand in the way of the ones after them, and what order
       // "after" means. Occlusion is off for everything unless asked for, so a
       // caller that says nothing — the grain views, a test — gets the flat
@@ -1093,6 +1177,18 @@ function vgAttach(canvas) {
       const backW = cam.backW ?? 1;
       const backH = cam.backH ?? 1;
       const taperX = (t) => 1 + (backW - 1) * t;
+      // **Kept, so something outside can ask where a world point is.**
+      // Nothing could before: the matrix was built here, used and dropped, so a
+      // handle drawn over the room had no way to know where to sit. Anything
+      // that manipulates the room by grabbing it needs this and its inverse.
+      //
+      // **Here rather than beside the matrix**, which is twenty lines up and
+      // inside `backW`'s dead zone: `const` does not hoist a value, so naming
+      // it early threw `Cannot access 'backW' before initialization` on every
+      // single frame — and an exception in here is silent, so the room simply
+      // stopped drawing with nothing in the console to say why. This project
+      // has a note about exactly that trap; I wrote the same one anyway.
+      view = { mvp, w, h, near, far, yb, yt, halfW, sx, backW, backH };
       const taperY = (t) => 1 + (backH - 1) * t;
       // The height tapers about the room's own middle, so a shorter back pulls
       // the floor up and the ceiling down together. Tapering about the floor
@@ -2156,11 +2252,291 @@ function vgAttach(canvas) {
       // * A layer at the bottom of the list masks no *other* layer, because
       //   nothing is drawn after it — but it still occludes itself, which for
       //   the terrain means its near ridges standing in front of its far ones.
+      // ── the solid ──────────────────────────────────────────────────────────
+      //
+      // **A four-dimensional solid, turned by the sound.**
+      //
+      // The ring is a circle pushed out of round; this is the same idea one
+      // dimension up. A tesseract's shadow in three dimensions depends on how
+      // it is turned in *four* — rotate it through ZW and its two cubes pass
+      // through each other and change places. No amount of turning it in three
+      // does that, which is the whole reason for drawing one.
+      //
+      // So the sound drives the fourth-dimensional turn. XY and YZ tick over
+      // on the clock, slowly and steadily, so it always reads as an object;
+      // **ZW is driven by level**, and that is the one you see. A quiet passage
+      // barely moves it. A loud one turns it inside out.
+      //
+      // The spectrum then pushes the vertices out along their own directions,
+      // the way it pushes the ring out of round — so the shape breathes as well
+      // as turning. Each vertex takes a fixed band rather than one chosen by
+      // where it currently is, because a vertex that re-picks its band as the
+      // solid turns flickers between two unrelated numbers.
+      // ── the solid ──────────────────────────────────────────────────────────
+      //
+      // **Every edge is the waveform, drawn along it.** Not a shape the sound
+      // nudges — the line itself *is* the trace, the way an oscilloscope draws
+      // one. A tesseract has thirty-two edges, so you get the same waveform
+      // thirty-two times, once down each edge. That is the whole idea and the
+      // two earlier attempts both missed it: the first turned a rigid solid and
+      // called the rotation the music; the second pushed the vertices out
+      // radially, which is the ring's trick and not this one.
+      //
+      // **It is not the ring and does not live where the ring lives.** Its own
+      // size, its own height, its own depth, its own controls. They do similar
+      // things; they are not the same thing, and stacking one on the other made
+      // both illegible.
+      const drawSolid = () => {
+        const key = (f && f.solidShape) || 'cell8';
+        // Both catalogues. A four-dimensional shape carries a `w` and turns in
+        // six planes; a grain shape has no `w` and turns in three. Everything
+        // after this is the same for either.
+        const is4d = typeof Shapes4D !== 'undefined' && !!Shapes4D.entry(key);
+        let shape = null;
+        if (is4d) {
+          shape = Shapes4D.shape(key);
+        } else if (typeof GRAIN_SHAPES !== 'undefined') {
+          const g = GRAIN_SHAPES.find((m) => m.name === key);
+          if (g) {
+            let built = solidCache.get(key);
+            if (!built) {
+              const verts = [];
+              for (let i = 0; i < g.verts; i++) {
+                verts.push([g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]]);
+              }
+              const edges = [];
+              for (let i = 0; i < g.lines; i++) edges.push([g.idx[i * 2], g.idx[i * 2 + 1]]);
+              built = { dim: 3, verts, edges };
+              solidCache.set(key, built);
+            }
+            shape = built;
+          }
+        }
+        if (!shape || !shape.verts.length) return;
+
+        const rows = history.length;
+        if (!rows) return;
+
+        // How hard the sound turns it through the fourth dimension, and how far
+        // the trace swings off each edge.
+        const spin = Math.max(0, Math.min(8,
+          f && typeof f.solidSpin === 'number' ? f.solidSpin : 1));
+        const swell = Math.max(0, Math.min(2,
+          f && typeof f.solidSwell === 'number' ? f.solidSwell : 0.6));
+
+        // ── where it is, and how big — nothing to do with the ring ──
+        const size = (yt - yb) * Math.max(0.04, Math.min(0.9,
+          f && typeof f.solidSize === 'number' ? f.solidSize : 0.3));
+        // ── the path it travels ────────────────────────────────────────────
+        //
+        // **Not a straight run back.** The trail used to recede down the room's
+        // own axis and nothing else, so every copy sat on one line and the only
+        // thing that changed was distance. A path lets the front be somewhere
+        // different from the end, with waypoints between, so the shape travels
+        // through the room rather than falling away from the camera.
+        //
+        // A point is `{ x, y, z }` in the room's own terms: `x` from -1 at the
+        // left wall to 1 at the right, `y` from 0 on the floor to 1 at the
+        // ceiling, `z` from 0 at the near face to 1 at the back wall. Two
+        // points is a straight line; add more and it curves through them.
+        const path = (f && Array.isArray(f.solidPath) && f.solidPath.length >= 2)
+          ? f.solidPath
+          : [{ x: 0, y: 0.42, z: 0.08 }, { x: 0, y: 0.42, z: 1 }];
+
+        /// Where on the path a copy of a given age stands.
+        ///
+        /// Catmull-Rom through the points — the same spline the ring reads its
+        /// trace with, and for the same reason: it passes through every point
+        /// given rather than near it, so a waypoint is somewhere the shape
+        /// actually goes. The ends are clamped by repeating the first and last,
+        /// which keeps a two-point path exactly straight.
+        const pathAt = (t) => {
+          const n = path.length;
+          const u = Math.max(0, Math.min(0.99999, t)) * (n - 1);
+          const i = Math.floor(u), fr = u - i;
+          const P = (k) => path[Math.max(0, Math.min(n - 1, k))];
+          const a = P(i - 1), b = P(i), c = P(i + 1), d = P(i + 2);
+          const cr = (p, q, r2, s2) => 0.5 * (2 * q
+            + (-p + r2) * fr
+            + (2 * p - 5 * q + 4 * r2 - s2) * fr * fr
+            + (-p + 3 * q - 3 * r2 + s2) * fr * fr * fr);
+          return {
+            x: cr(a.x, b.x, c.x, d.x),
+            y: cr(a.y, b.y, c.y, d.y),
+            z: cr(a.z, b.z, c.z, d.z),
+          };
+        };
+
+        // ── how it is turned ──
+        const newest = history[rows - 1];
+        const row = newest && newest.row;
+        let level = 0;
+        if (row && row.length) {
+          for (let i = 0; i < row.length; i++) level += row[i];
+          level /= row.length;
+        }
+        const dt = Math.max(0, Math.min(0.1, (clockMs - solidLast) / 1000));
+        solidLast = clockMs;
+        // Turned *by* the sound rather than to a position, so it keeps whatever
+        // it reached and simply stops turning when the sound does — a flywheel
+        // rather than a needle snapping back to rest.
+        solidGate += (Math.min(1, level * 3) - solidGate)
+          * (1 - Math.exp(-dt / (level * 3 > solidGate ? 0.08 : 0.45)));
+        solidZw += dt * spin * solidGate * 0.7;
+        solidXw += dt * spin * solidGate * 0.23;
+        solidSpinPhase += dt * (0.05 + 0.3 * solidGate);
+
+        const angles = {
+          xy: solidSpinPhase, yz: solidSpinPhase * 0.37,
+          zw: solidZw, xw: solidXw,
+        };
+        // One pose per frame of history, recorded as the trail advances.
+        if (pushes !== solidPushSeen) {
+          solidPushSeen = pushes;
+          solidPast.push({ ...angles });
+          while (solidPast.length > geomHistory) solidPast.shift();
+        }
+
+        const eye = Math.max(1.4, Math.min(8, f && f.solidEye ? f.solidEye : 2.5));
+        /// The shape as it stood at one frame on the trail.
+        const poseAt = (ang) => {
+          const t = is4d
+            ? Shapes4D.rotate(shape.verts, ang)
+            : shape.verts.map((p) => {
+              const c1 = Math.cos(ang.xy), s1 = Math.sin(ang.xy);
+              const c2 = Math.cos(ang.yz), s2 = Math.sin(ang.yz);
+              const x = p[0] * c1 - p[1] * s1, y = p[0] * s1 + p[1] * c1;
+              return [x, y * c2 - p[2] * s2, y * s2 + p[2] * c2];
+            });
+          return { turned: t, flat: is4d ? Shapes4D.project(t, { eye }) : t };
+        };
+
+        // ── the buffers ──
+        //
+        // Enough pieces per edge to resolve a waveform, and fewer where there
+        // are hundreds of edges — the 600-cell's are shorter than the detail
+        // would be, and 720 edges at sixty-four apiece is a wall of line.
+        const ne = shape.edges.length;
+        const seg = ne <= 40 ? 64 : ne <= 120 ? 28 : 10;
+        const per = ne * seg * 2;
+        if (!solidPos || solidPos.length !== per * 3) {
+          solidPos = new Float32Array(per * 3);
+          solidW = new Float32Array(per);
+          solidW2 = new Float32Array(per);
+        }
+
+        // The hoops' own easing and stride, which live inside `drawRings`.
+        const strideAt = (age) => 1 + Math.floor(age * 2.4);
+        const easeAt = (age) => 1 - Math.pow(Math.max(0, age - 0.34) / 0.66, 1.6);
+
+        /// One copy of the whole wireframe, every edge carrying the trace.
+        const solidInto = (liss, age, flat, turned, ox, oy, oz) => {
+          const tx = taperX(age);
+          let v = 0;
+          for (let e = 0; e < ne; e++) {
+            const pair = shape.edges[e];
+            const A = flat[pair[0]], B = flat[pair[1]];
+            const wA = turned[pair[0]][3] || 0, wB = turned[pair[1]][3] || 0;
+            // The edge's own direction, and two directions across it. The
+            // trace swings off the line in these — mid one way, side the
+            // other — so each edge carries the stereo figure rather than a
+            // flattened copy of it.
+            let dx = B[0] - A[0], dy = B[1] - A[1], dz = B[2] - A[2];
+            const dl = Math.hypot(dx, dy, dz) || 1;
+            dx /= dl; dy /= dl; dz /= dl;
+            const ux = Math.abs(dy) < 0.9 ? 0 : 1, uy = Math.abs(dy) < 0.9 ? 1 : 0;
+            let n1x = dy * 0 - dz * uy, n1y = dz * ux - dx * 0, n1z = dx * uy - dy * ux;
+            const n1l = Math.hypot(n1x, n1y, n1z) || 1;
+            n1x /= n1l; n1y /= n1l; n1z /= n1l;
+            const n2x = dy * n1z - dz * n1y, n2y = dz * n1x - dx * n1z, n2z = dx * n1y - dy * n1x;
+            // How far the trace swings off the line, as a share of the solid.
+            const amp = size * 0.42 * swell;
+
+            let px = 0, py = 0, pz = 0, pw = 0, pm = 0, have = false;
+            for (let k = 0; k <= seg; k++) {
+              const t = k / seg;
+              // **The same run of waveform down every edge.** `t` is where you
+              // are along this edge and nothing else, so all thirty-two edges
+              // draw the same trace — which is what makes it read as one
+              // signal wrapped round a shape rather than as noise.
+              let l = 0, rr = 0;
+              if (liss) {
+                const q = t * (VG_LISS_POINTS - 1);
+                const i1 = Math.floor(q), fr = q - i1;
+                const at = (o) => Math.max(0, Math.min(VG_LISS_POINTS - 1, i1 + o)) * 2;
+                const a0 = at(-1), b0 = at(0), c0 = at(1), d0 = at(2);
+                const spline = (a, b, c, d) => 0.5 * (2 * b
+                  + (-a + c) * fr
+                  + (2 * a - 5 * b + 4 * c - d) * fr * fr
+                  + (-a + 3 * b - 3 * c + d) * fr * fr * fr);
+                l = spline(liss[a0], liss[b0], liss[c0], liss[d0]);
+                rr = spline(liss[a0 + 1], liss[b0 + 1], liss[c0 + 1], liss[d0 + 1]);
+              }
+              const mid = (l + rr) * 0.5, side = (l - rr) * 0.5;
+              // Down the edge, then off it by the trace.
+              const bx = (A[0] + (B[0] - A[0]) * t) * size;
+              const by = (A[1] + (B[1] - A[1]) * t) * size;
+              const bz = (A[2] + (B[2] - A[2]) * t) * size;
+              const x = bx + (n1x * mid + n2x * side) * amp;
+              const y = by + (n1y * mid + n2y * side) * amp;
+              const z = bz + (n1z * mid + n2z * side) * amp;
+              const w4 = wA + (wB - wA) * t;
+              const lit = Math.min(1, 0.2 + Math.abs(mid) * 1.8);
+              if (have) {
+                solidPos[v * 3] = ox + px * tx;
+                solidPos[v * 3 + 1] = yTap(oy + py, age);
+                solidPos[v * 3 + 2] = oz + pz; solidW[v] = pm;
+                solidW2[v] = pw * 0.32 + 0.5; v++;
+                solidPos[v * 3] = ox + x * tx;
+                solidPos[v * 3 + 1] = yTap(oy + y, age);
+                solidPos[v * 3 + 2] = oz + z; solidW[v] = lit;
+                solidW2[v] = w4 * 0.32 + 0.5; v++;
+              }
+              px = x; py = y; pz = z; pw = w4; pm = lit; have = true;
+            }
+          }
+          return v;
+        };
+
+        // ── the trail ──
+        //
+        // The whole shape, redrawn as it was at each frame of history — every
+        // edge, in the pose it held then, carrying the sound of that moment.
+        // The stride and the easing are the hoops', so it thins the way the
+        // rest of the room does.
+        for (let r = rows - 1; r >= 0; r -= strideAt(ageOf(r))) {
+          const hist = history[r];
+          if (!hist) continue;
+          const age = ageOf(r);
+          const lead = r === rows - 1;
+          const a = (lead ? 0.95 : 0.30) * Math.max(0, easeAt(age));
+          if (a <= 0.003) continue;
+          // **Its own pose, not today's.** `back` counts frames from the newest;
+          // the pose list is walked from its own end so the two stay lined up
+          // however either was trimmed.
+          const back = rows - 1 - r;
+          const i = solidPast.length - 1 - back;
+          const pose = poseAt(i >= 0 ? solidPast[i] : angles);
+          // Where on the path this one stands, in the room's own coordinates.
+          // The sideways offset narrows with the room, so a path that runs to
+          // the left wall still meets it at the back rather than passing
+          // through it.
+          const at = pathAt(age);
+          const ox = at.x * halfW * taperX(age);
+          const oy = yb + (yt - yb) * at.y;
+          const oz = zAt(Math.max(0, Math.min(1, at.z)));
+          const v = solidInto(hist.liss, age, pose.flat, pose.turned, ox, oy, oz);
+          if (!v) continue;
+          draw(gl.LINES, solidPos, solidW, v, a, false, f.cold, f.hot, 1, 'polytope', solidW2);
+        }
+      };
+
       const LAYER_DRAW = {
         room: drawRoom,
         floor: drawFloor,
         lead: drawLead,
         grains: () => drawGrains(!!occ.grains),
+        solid: drawSolid,
         skin: () => drawRings(true, false),
         sky: () => drawRings(false, true),
       };
