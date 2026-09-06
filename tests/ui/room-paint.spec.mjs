@@ -95,12 +95,16 @@ test('the panel lists every paintable thing, and says what each is set to', asyn
       mode: el.querySelector('.rp-slot-mode').textContent,
       hasStrip: !!el.querySelector('.rp-strip').style.background,
     })));
-  // **Fourteen for the room, and no longer three for the card of type.** The
+  // **Fifteen for the room, and no longer three for the card of type.** The
   // card's panel is not in the admin — see `ROOM_TEXT_IN_ADMIN` — and colours for
   // something nothing offers to draw are three rows that paint nothing. Nothing
   // is deleted: `RT_SLOTS` is still described, and putting the panel back puts
   // the rows back with it.
-  expect(rows.length).toBe(14);
+  // Fifteen since the four-dimensional solid gained a slot of its own — it is
+  // drawn in the scene like everything else here, so it is painted like
+  // everything else here.
+  expect(rows.length).toBe(15);
+  expect(rows.map((r) => r.name), 'the solid is paintable').toContain('Solid');
   expect(rows.map((r) => r.name), 'the card of type is still offering colours')
     .not.toContain('Type edge');
   expect(rows.every((r) => r.mode === 'theme')).toBe(true);
@@ -198,8 +202,8 @@ test('a generator paints every object at once', async ({ page }) => {
   for (const [kind, r] of Object.entries(got)) {
     expect(r.covered, `${kind} leaves nothing unpainted`).toBe(true);
     expect(r.groundFlat, `${kind} gives the room a flat ground`).toBe(true);
-    // Twelve things are drawn in the scene; the other two are CSS.
-    expect(r.sent, `${kind} reaches the renderer`).toBe(12);
+    // Thirteen things are drawn in the scene; the other two are CSS.
+    expect(r.sent, `${kind} reaches the renderer`).toBe(13);
   }
 });
 
@@ -329,4 +333,34 @@ test('a colour well is not rebuilt while it is being used', async ({ page }) => 
   expect(alive.inDocument, 'the well is still in the document').toBe(true);
   expect(alive.sameNode, 'and is still the same element').toBe(true);
   expect(alive.landed).toBe('#171717');
+});
+
+test('editing one stop does not put the other back', async ({ page }) => {
+  await openRoom(page);
+  await page.click('#roomAdmin .rv-tab[data-rvtab="paint"]');
+  // Reported from the Solid's ramp: pick a colour for one stop, then for the
+  // other, and the first one comes back — in the strip and in the room, while
+  // the well still shows what was picked. Every stop's handler rebuilt the list
+  // from a copy taken when the editor opened, so each edit undid the last.
+  const got = await page.evaluate(() => {
+    rpSetSlot('polytope', { mode: 'ramp', drive: 0, lo: 0, hi: 1, curve: 1,
+      stops: [{ at: 0, c: '#111111' }, { at: 1, c: '#222222' }] });
+    rpOpen = 'polytope';
+    rpPanel();
+    const wells = [...document.querySelectorAll('#roomPaintBody .rp-stop input[type="color"]')];
+    if (wells.length !== 2) return { wells: wells.length };
+    const set = (w, c) => { w.value = c; w.dispatchEvent(new Event('input', { bubbles: true })); };
+    set(wells[1], '#00ff00');
+    set(wells[0], '#ff0000');
+    const after = rpSlot('polytope').stops.map((s) => s.c);
+    // Then a stop is added; the two colours already picked have to survive it.
+    document.querySelector('#roomPaintBody .rp-stops .re-btn').click();
+    const added = rpSlot('polytope').stops.map((s) => s.c);
+    const strip = document.querySelector('#roomPaintBody .rp-slot .rp-strip').style.background;
+    return { wells: 2, after, added, strip, want: rpGradientCss('polytope') };
+  });
+  expect(got.wells).toBe(2);
+  expect(got.after, 'both edits landed').toEqual(['#ff0000', '#00ff00']);
+  expect(got.added.slice(0, 2), 'adding a stop kept them').toEqual(['#ff0000', '#00ff00']);
+  expect(got.added.length).toBe(3);
 });

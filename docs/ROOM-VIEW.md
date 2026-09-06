@@ -146,6 +146,8 @@ outside and the test fails.
   the divider, and the third mode in `setMode`.
 - `ui/app.css` — `.roomview` and everything under `.rv-`, which is mostly
   undoing the overlay geometry the borrowed parts wear in their other home.
+- `ui/section-presets.js` — the look picker on the stage bar; see
+  [`SECTION-PRESETS.md`](SECTION-PRESETS.md).
 - `tests/ui/room-view.spec.mjs`.
 
 Embedded with `include_str!` in `core/crates/server/src/routes.rs`. **Rebuild

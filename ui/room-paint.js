@@ -672,60 +672,61 @@ function rpSlotEditor(s) {
 
 function rpStopsEditor(s) {
   const box = rpEl('div', 'rp-stops');
-  const stops = rpStops(s.key);
+  // **One list, shared by every control in the editor, and written in place.**
+  // Each handler used to rebuild the stops from a copy taken when the editor
+  // opened, so the second stop you touched put the first one back to what it
+  // was — the well still showed the colour you picked, the strip and the room
+  // did not. Sorted once, here: the rows are built in this order and each
+  // handler addresses its own row by index, so the order must not move under
+  // them while the editor is open. A stop dragged past its neighbour is sorted
+  // on the next rebuild.
+  const live = [...rpStops(s.key)].sort((a, b) => a.at - b.at);
+  const push = () => {
+    rpSetSlot(s.key, { stops: live.map((x) => ({ ...x })) });
+    rpApply();
+    const strip = box.closest('.rp-slot')?.querySelector('.rp-strip');
+    if (strip) strip.style.background = rpGradientCss(s.key);
+  };
+
   const tag = rpEl('div', 'rp-row');
   tag.appendChild(rpEl('span', 're-tag', 'STOPS'));
   const add = rpEl('button', 're-btn', '+');
   add.title = 'Another colour in the gradient, dropped in the largest gap.';
   add.onclick = () => {
-    const sorted = [...stops].sort((a, b) => a.at - b.at);
     // Into the widest gap rather than at the end: a stop added at 1.0 lands on
     // top of the one already there and appears to do nothing.
     let bestAt = 0.5, best = -1;
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const gap = sorted[i + 1].at - sorted[i].at;
-      if (gap > best) { best = gap; bestAt = (sorted[i].at + sorted[i + 1].at) / 2; }
+    for (let i = 0; i < live.length - 1; i++) {
+      const gap = live[i + 1].at - live[i].at;
+      if (gap > best) { best = gap; bestAt = (live[i].at + live[i + 1].at) / 2; }
     }
-    rpSetSlot(s.key, { stops: [...sorted, { at: bestAt, c: '#ffffff' }] });
-    rpApply(); rpPanel();
+    live.push({ at: bestAt, c: '#ffffff' });
+    push(); rpPanel();
   };
   tag.appendChild(add);
   box.appendChild(tag);
 
-  const sorted = [...stops].sort((a, b) => a.at - b.at);
-  sorted.forEach((st, i) => {
+  live.forEach((st, i) => {
     const row = rpEl('div', 'rp-row rp-stop');
     const well = rpEl('input', 're-colour');
     well.type = 'color';
     well.value = st.c;
-    well.oninput = () => {
-      const next = sorted.map((x, j) => (j === i ? { ...x, c: well.value } : x));
-      rpSetSlot(s.key, { stops: next });
-      rpApply();
-      const strip = box.closest('.rp-slot')?.querySelector('.rp-strip');
-      if (strip) strip.style.background = rpGradientCss(s.key);
-    };
+    well.oninput = () => { live[i] = { ...live[i], c: well.value }; push(); };
     row.appendChild(well);
 
     const at = rpEl('input', 're-slider');
     at.type = 'range'; at.min = '0'; at.max = '100'; at.step = '1';
     at.value = String(Math.round(st.at * 100));
     at.title = 'Where in the gradient this colour sits.';
-    at.oninput = () => {
-      const next = sorted.map((x, j) => (j === i ? { ...x, at: +at.value / 100 } : x));
-      rpSetSlot(s.key, { stops: next });
-      rpApply();
-      const strip = box.closest('.rp-slot')?.querySelector('.rp-strip');
-      if (strip) strip.style.background = rpGradientCss(s.key);
-    };
+    at.oninput = () => { live[i] = { ...live[i], at: +at.value / 100 }; push(); };
     row.appendChild(at);
 
-    if (sorted.length > 2) {
+    if (live.length > 2) {
       const del = rpEl('button', 're-btn', '−');
       del.title = 'Take this colour out. Two is the fewest a gradient can have.';
       del.onclick = () => {
-        rpSetSlot(s.key, { stops: sorted.filter((_, j) => j !== i) });
-        rpApply(); rpPanel();
+        live.splice(i, 1);
+        push(); rpPanel();
       };
       row.appendChild(del);
     }

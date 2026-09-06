@@ -57,6 +57,10 @@
       title: 'The room, full size, and everything that draws it',
     },
     {
+      icon: 'seq', label: 'Seq', mode: 'seq',
+      title: 'The scale sequencer — a second voice, run from the same transport',
+    },
+    {
       icon: 'theme', label: 'Theme', panel: 'theme',
       title: 'Palette and colours',
     },
@@ -130,6 +134,9 @@
       '<path d="M7.6 18.5h9.2a3.4 3.4 0 0 0 .35-6.78 5.35 5.35 0 0 0-10.03-2.3 4.1 4.1 0 0 0 .48 9.08z"/><circle cx="9.6" cy="13.4" r=".85" fill="currentColor" stroke="none"/><circle cx="13" cy="11.9" r=".85" fill="currentColor" stroke="none"/><circle cx="15.4" cy="14.6" r=".85" fill="currentColor" stroke="none"/><circle cx="11.7" cy="15.6" r=".85" fill="currentColor" stroke="none"/>',
     visual:
       '<rect x="3.5" y="3.5" width="17" height="17" rx="1.6"/><path d="M5.5 7.2 Q12 5.4 18.5 7.2"/><path d="M5.5 9.4 Q12 5.8 18.5 9.4"/><path d="M5.5 11.6 Q12 6.2 18.5 11.6"/><path d="M5.5 13.8 Q12 8.4 18.5 13.8"/><path d="M5.5 16.0 Q12 12.4 18.5 16.0"/><path d="M5.5 18.2 Q12 16.4 18.5 18.2"/>',
+    // Four steps of a sequence, at four heights.
+    seq:
+      '<rect x="3.5" y="12.5" width="3.4" height="8"/><rect x="8.7" y="7.5" width="3.4" height="13"/><rect x="13.9" y="10" width="3.4" height="10.5"/><rect x="19.1" y="4" width="3.4" height="16.5"/>',
     theme:
       '<path d="M12 3.6c-4.8 0-8.6 3.5-8.6 7.8s3.8 7.8 8.6 7.8c1 0 1.75-.8 1.75-1.75 0-.45-.18-.86-.46-1.16-.28-.3-.46-.7-.46-1.15 0-.96.78-1.74 1.74-1.74h2.05 c2.85 0 5.16-2.3 5.16-5.15 0-2.9-4.2-4.65-9.82-4.65z"/><circle cx="7.6" cy="10.6" r="1.15" fill="currentColor" stroke="none"/><circle cx="10.4" cy="7.3" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.6" cy="7.1" r="1.15" fill="currentColor" stroke="none"/><circle cx="17.6" cy="9.6" r="1.15" fill="currentColor" stroke="none"/>',
     browse:

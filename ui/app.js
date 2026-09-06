@@ -221,7 +221,7 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
 /// `state.mode !== 'edit'` in the play path, and adding a third mode quietly
 /// turned that into "the room plays raw" — which is the granular engine not
 /// running when you press play in the room.
-const playsDocument = (m = state.mode) => m === 'edit' || m === 'room';
+const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq';
 
 /// The modes where the library is an overlay drawer rather than a docked
 /// column. Both of them give the whole width to something else — the editor's
@@ -876,6 +876,7 @@ function startPlayback() {
   startTransportLoop();
   startPolling();
   startSwarm();
+  seqSync(true);
 }
 
 function pausePlayback() {
@@ -890,6 +891,8 @@ function pausePlayback() {
   updateOverviewPlayhead();
   paintTime();
   stopSwarm();
+  seqSync(false);
+  if (state.captureArmed) endCapture();
 }
 
 function reflectTransport() {
@@ -1464,6 +1467,7 @@ function setMode(mode) {
   state.mode = mode;
   const editing = mode === 'edit';
   const room = mode === 'room';
+  const seq = mode === 'seq';
 
   // Borrowed elements go home before anything is measured or toggled. Leaving
   // this until later would have the mode's own show/hide rules applied to
@@ -1496,12 +1500,15 @@ function setMode(mode) {
   // The lane is the sound as a document — the thing you cut. The room is the
   // sound as a picture, and it takes the whole middle; the overview strip along
   // the top is what stays, because that is the one that says *where you are*.
-  $('lane').classList.toggle('hidden', room);
+  $('lane').classList.toggle('hidden', room || seq);
+  $('seqView')?.classList.toggle('hidden', !seq);
+  if (seq) seqEnsureFrame();
   document.querySelectorAll('#leftRail .mode-btn').forEach((b) =>
     b.classList.toggle('active', b.dataset.mode === mode));
-  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : 'Browse';
+  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : 'Browse';
   document.body.classList.toggle('editing', editing);
   document.body.classList.toggle('roomview', room);
+  document.body.classList.toggle('seqview', seq);
   // The modes that give the whole width to the middle, so the library becomes
   // a floating drawer rather than a docked column. Its own class rather than
   // `.editing, .roomview` repeated down the stylesheet: the drawer's geometry
@@ -5707,9 +5714,31 @@ function renderAutomation() {
   box.innerHTML = '';
   const targets = automationTargets();
 
-  for (const lane of state.automation.lanes || []) {
+  // The whole take at a glance, in the sequencer's idiom: one canvas, every
+  // lane stacked, coloured by what it moves. Below it, the editor for the one
+  // lane that is selected — click a row on the timeline to choose it.
+  const lanes = state.automation.lanes || [];
+  const timeline = document.createElement('canvas');
+  timeline.className = 'automation-timeline';
+  timeline.id = 'automationTimeline';
+  timeline.onclick = (e) => {
+    const r = timeline.getBoundingClientRect();
+    const laneH = +timeline.dataset.laneH || AT_LANE;
+    // Canvas pixels per screen pixel; one when the canvas has no layout yet.
+    const scale = r.height ? timeline.height / r.height : 1;
+    const y = (e.clientY - r.top) * scale - AT_RULER;
+    const hit = lanes[Math.floor(y / laneH)];
+    if (hit) { state.automationSel = hit.id; renderAutomation(); }
+  };
+  box.appendChild(timeline);
+  drawAutomationTimeline(timeline);
+
+  const chosen = lanes.find((l) => l.id === state.automationSel) || lanes[0] || null;
+  state.automationSel = chosen ? chosen.id : null;
+  for (const lane of chosen ? [chosen] : []) {
     const row = document.createElement('article');
     row.className = 'automation-lane';
+    row.dataset.lane = lane.id;
 
     const controls = document.createElement('div');
     controls.className = 'automation-lane-controls';
@@ -6027,13 +6056,13 @@ function drawLane(canvas, lane) {
 }
 
 function repaintAutomationLanes() {
-  const rows = document.querySelectorAll('.automation-lane');
-  if (!rows.length) return;
-  rows.forEach((row, i) => {
-    const lane = state.automation.lanes?.[i];
+  const tl = $('automationTimeline');
+  if (tl) drawAutomationTimeline(tl);
+  for (const row of document.querySelectorAll('.automation-lane')) {
+    const lane = (state.automation.lanes || []).find((l) => l.id === row.dataset.lane);
     const canvas = row.querySelector('.automation-canvas');
     if (lane && canvas) drawLane(canvas, lane);
-  });
+  }
 }
 
 /// Drop breakpoints the curve does not need, within `tol` of full scale.
@@ -6057,8 +6086,12 @@ $('automationAdd').onclick = () => {
   if (!targets.length) { toast('Nothing to automate yet'); return; }
   automationCheckpoint();
   const [target, label] = targets[0];
+  const id = newLaneId();
+  // The new lane is the one the editor opens on; a lane added and not shown
+  // is a lane that appears to have failed to arrive.
+  state.automationSel = id;
   state.automation.lanes.push({
-    id: newLaneId(), target, label, enabled: true, trim: 0, loop: null,
+    id, target, label, enabled: true, trim: 0, loop: null,
     // Two points, not one: a lane with a single breakpoint is a constant, and
     // looks identical whatever you do to it until you add a second.
     points: [{ frame: 0, value: 0.5, curve: 'linear', tension: 0 },
@@ -6077,6 +6110,10 @@ $('automationBypass').onchange = (e) => {
 };
 
 $('automationRecord').onchange = (e) => setAutomationRecord(e.target.value);
+$('automationCapture')?.addEventListener('click', () => {
+  if (!state.captureArmed) { startCapture(); return; }
+  if (engine.playing) pausePlayback(); else endCapture();
+});
 
 $('automationSimplify').onclick = () => {
   automationCheckpoint();
@@ -7629,8 +7666,13 @@ function roomOcclude() {
   return out;
 }
 
-try {
-  const v = JSON.parse(localStorage.getItem('roomData') || '{}');
+/// Take a stored room in, field by field, each one checked and clamped.
+///
+/// One reader for both places a room comes from: what this browser kept, and a
+/// look recalled from a section preset. A room written before a control
+/// existed simply leaves that control where it is.
+function readRoomData(v) {
+  if (!v || typeof v !== 'object') return;
   if (ROOM_CHUNKS.includes(v.chunk)) roomEdit.chunk = v.chunk;
   if (typeof v.opacity === 'number') roomEdit.opacity = Math.max(0.05, Math.min(1, v.opacity));
   if (typeof v.ringScale === 'number') {
@@ -7729,33 +7771,38 @@ try {
   if (typeof v.grainFillColour === 'string' && /^#[0-9a-f]{6}$/i.test(v.grainFillColour)) {
     roomEdit.grainFillColour = v.grainFillColour;
   }
-} catch {}
+}
+
+try { readRoomData(JSON.parse(localStorage.getItem('roomData') || '{}')); } catch {}
+
+/// The room as it is stored: every setting `readRoomData` reads back.
+function roomDataSnapshot() {
+  return {
+    chunk: roomEdit.chunk, opacity: roomEdit.opacity, ringScale: roomEdit.ringScale,
+    geomBands: roomEdit.geomBands, geomHistory: roomEdit.geomHistory,
+    geomRidge: roomEdit.geomRidge,
+    geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
+    module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
+    room3d: roomEdit.room3d,
+    stage: roomEdit.stage ? { ...roomEdit.stage, solo: null } : roomEdit.stage,
+    visual: roomEdit.visual,
+    grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
+    ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
+    solidShape: roomEdit.solidShape, solidSpin: roomEdit.solidSpin,
+    solidSwell: roomEdit.solidSwell, solidEye: roomEdit.solidEye,
+    solidSize: roomEdit.solidSize, solidPath: roomEdit.solidPath,
+    leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
+    mist: roomEdit.mist, mistAmount: roomEdit.mistAmount,
+    mistLength: roomEdit.mistLength,
+    fog: roomEdit.fog, fogType: roomEdit.fogType,
+    fogDensity: roomEdit.fogDensity, fogColour: roomEdit.fogColour,
+    grainFill: roomEdit.grainFill, grainFillBg: roomEdit.grainFillBg,
+    grainFillColour: roomEdit.grainFillColour,
+  };
+}
 
 function saveRoomData() {
-  try {
-    localStorage.setItem('roomData', JSON.stringify({
-      chunk: roomEdit.chunk, opacity: roomEdit.opacity, ringScale: roomEdit.ringScale,
-      geomBands: roomEdit.geomBands, geomHistory: roomEdit.geomHistory,
-      geomRidge: roomEdit.geomRidge,
-      geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
-      module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
-      room3d: roomEdit.room3d,
-      stage: roomEdit.stage ? { ...roomEdit.stage, solo: null } : roomEdit.stage,
-      visual: roomEdit.visual,
-      grainDensity: roomEdit.grainDensity, grainBright: roomEdit.grainBright,
-      ringDrive: roomEdit.ringDrive, ringEdge: roomEdit.ringEdge,
-      solidShape: roomEdit.solidShape, solidSpin: roomEdit.solidSpin,
-      solidSwell: roomEdit.solidSwell, solidEye: roomEdit.solidEye,
-      solidSize: roomEdit.solidSize, solidPath: roomEdit.solidPath,
-      leadThick: roomEdit.leadThick, ringPoints: roomEdit.ringPoints,
-      mist: roomEdit.mist, mistAmount: roomEdit.mistAmount,
-      mistLength: roomEdit.mistLength,
-      fog: roomEdit.fog, fogType: roomEdit.fogType,
-      fogDensity: roomEdit.fogDensity, fogColour: roomEdit.fogColour,
-      grainFill: roomEdit.grainFill, grainFillBg: roomEdit.grainFillBg,
-      grainFillColour: roomEdit.grainFillColour,
-    }));
-  } catch {}
+  try { localStorage.setItem('roomData', JSON.stringify(roomDataSnapshot())); } catch {}
 }
 
 try {
@@ -8029,6 +8076,8 @@ function paintRoomNums() {
   for (const b of document.querySelectorAll('#reLayers .re-layer-name')) {
     b.classList.toggle('active', roomLayerOn(b.dataset.layer));
   }
+  // The solid's rows follow its layer in the dock's overlay; see `.re-solid`.
+  $('roomEdit')?.classList.toggle('re-solid-off', !roomLayerOn('solid'));
   const fillBgBtn = $('reGrainFillBg');
   if (fillBgBtn) fillBgBtn.classList.toggle('active', !!roomEdit.grainFillBg);
   const fillBox = $('reGrainFill');
@@ -9057,6 +9106,494 @@ wireRoomTabs();
 // drawn once in the theme's colours and then again in the palette's.
 rpRestore();
 
+// ───────────────────────────────────────────────── presets for one section ──
+//
+// The preset row holds the document: every engine at once, on the server, with
+// the sound it was made on if asked. These are narrower on purpose. A *look* is
+// everything the room is — layers, hierarchy, cameras, palette, the solid and
+// its path, every slider on every module — and none of the sound. A *cloud* is
+// the grain section and none of the look. Each is put back without touching
+// the other, which is what a preset for a section is for. The store is
+// `ui/section-presets.js`; see `docs/SECTION-PRESETS.md`.
+
+/// Everything the room is, as one object.
+function visualSnapshot() {
+  return {
+    room: roomDataSnapshot(),
+    layers: { ...roomEdit.layers },
+    order: roomOrder(),
+    occlude: { ...roomEdit.occlude },
+    streams: roomEdit.streams ? { ...roomEdit.streams } : null,
+    cams: JSON.parse(JSON.stringify(roomEdit.cams || {})),
+    paint: {
+      name: roomPaint.scheme.name || '',
+      slots: JSON.parse(JSON.stringify(roomPaint.scheme.slots || {})),
+    },
+  };
+}
+
+/// Every slider in the room's panel, the field it moves, and the scale the
+/// element counts in. They are built once by `buildRoomChunks` and left alone
+/// after, so a value that changes under them — a recalled look — has to be
+/// pushed in.
+const ROOM_SLIDERS = [
+  ['reRing', 'ringScale', 100], ['reRingDrive', 'ringDrive', 100],
+  ['reRingEdge', 'ringEdge', 1000], ['reRingPoints', 'ringPoints', 1],
+  ['reFogDensity', 'fogDensity', 100],
+  ['reMistAmount', 'mistAmount', 100], ['reMistLength', 'mistLength', 1000],
+  ['reSolidSpin', 'solidSpin', 100], ['reSolidSwell', 'solidSwell', 100],
+  ['reSolidEye', 'solidEye', 100], ['reSolidSize', 'solidSize', 100],
+  ['reGrainDensity', 'grainDensity', 100], ['reGrainBright', 'grainBright', 100],
+  ['reOpacity', 'opacity', 100],
+];
+
+function syncRoomSliders() {
+  for (const [id, key, k] of ROOM_SLIDERS) {
+    const el = $(id);
+    if (el && typeof roomEdit[key] === 'number') el.value = String(Math.round(roomEdit[key] * k));
+  }
+  const shape = $('reSolidShape');
+  if (shape && shape.options.length) shape.value = roomEdit.solidShape;
+  const fogType = $('reFogType');
+  if (fogType) fogType.value = String(roomEdit.fogType);
+  const fogCol = $('reFogColour');
+  if (fogCol) fogCol.value = roomEdit.fogColour;
+  const fillCol = $('reGrainFillColour');
+  if (fillCol) fillCol.value = roomEdit.grainFillColour;
+}
+
+/// Put a look back: state, storage, renderer and every panel, in that order.
+function applyVisual(v) {
+  if (!v || typeof v !== 'object') return false;
+  readRoomData(v.room);
+  if (v.layers && typeof v.layers === 'object') {
+    roomEdit.layers = {};
+    for (const l of ROOM_LAYERS) {
+      if (typeof v.layers[l.key] === 'boolean') roomEdit.layers[l.key] = v.layers[l.key];
+    }
+  }
+  if (Array.isArray(v.order)) roomEdit.order = v.order.filter((k) => typeof k === 'string');
+  if (v.occlude && typeof v.occlude === 'object') roomEdit.occlude = { ...v.occlude };
+  if (v.streams === null || (v.streams && typeof v.streams === 'object')) {
+    roomEdit.streams = v.streams ? { ...v.streams } : null;
+  }
+  if (v.cams && typeof v.cams === 'object') roomEdit.cams = JSON.parse(JSON.stringify(v.cams));
+  if (v.paint && v.paint.slots && typeof v.paint.slots === 'object') {
+    roomPaint.scheme = {
+      name: typeof v.paint.name === 'string' ? v.paint.name : '',
+      slots: JSON.parse(JSON.stringify(v.paint.slots)),
+    };
+    rpTouch();
+  }
+  saveRoomData();
+  saveRoomLayers();
+  saveRoomHierarchy();
+  saveRoomStreams();
+  saveRoomCameras();
+  rpApply();
+  refreshVisualPanels();
+  return true;
+}
+
+/// Every panel that shows a room value, told the values changed.
+///
+/// The same list `enterRoomView` walks, because it is the same job: the room's
+/// state has been set from somewhere other than its controls, and the controls
+/// have to catch up. The two module renderers that hold a copy of their
+/// settings are handed the new ones; the room itself reads `roomEdit` every
+/// frame and needs no telling.
+function refreshVisualPanels() {
+  setVisModule(roomEdit.module);
+  buildRoomLayers();
+  syncRoomSliders();
+  const r3 = visLive.room3d;
+  if (r3 && r3.configure) r3.configure(room3dSettings());
+  const st = visLive.stage;
+  if (st && st.configure) st.configure(stageSettings());
+  paintRoom3dPanel();
+  paintStagePanel();
+  paintRoomTextPanel();
+  paintRidgePanel();
+  rgPanel();
+  rpPanel();
+  applyRoomFrame();
+  paintRoomNums();
+  paintRoomData();
+  paintSolidPath();
+}
+
+/// A picker rebuilt from the store: the blank first, then every name.
+function paintSectionPicker(sel, kind, select) {
+  if (!sel) return;
+  const keep = select === undefined ? sel.value : select;
+  sel.innerHTML = '';
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = '— none —';
+  sel.appendChild(blank);
+  for (const p of SectionPresets.list(localStorage, kind)) {
+    const o = document.createElement('option');
+    o.value = p.name;
+    o.textContent = p.name;
+    sel.appendChild(o);
+  }
+  sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
+}
+
+function paintVisualPresets(select) { paintSectionPicker($('vpPick'), 'visual', select); }
+function paintGrainPresets(select) { paintSectionPicker($('gpPick'), 'grain', select); }
+
+$('vpPick')?.addEventListener('change', () => {
+  const name = $('vpPick').value;
+  if (!name) return;
+  const v = SectionPresets.get(localStorage, 'visual', name);
+  if (!v) { toast('That look is gone'); paintVisualPresets(''); return; }
+  applyVisual(v);
+  toast(`Look: ${name}`);
+});
+$('vpSave')?.addEventListener('click', () => {
+  const suggested = $('vpPick').value
+    || `Look ${SectionPresets.list(localStorage, 'visual').length + 1}`;
+  const name = prompt('Save this look as:', suggested);
+  if (name === null) return;
+  const stored = SectionPresets.save(localStorage, 'visual', name, visualSnapshot());
+  if (!stored) { toast('A look needs a name'); return; }
+  paintVisualPresets(stored);
+  toast(`Saved “${stored}”`);
+});
+$('vpDelete')?.addEventListener('click', () => {
+  const name = $('vpPick').value;
+  if (!name) { toast('Pick a look first'); return; }
+  if (!confirm(`Delete the look “${name}”? The room is left as it is.`)) return;
+  SectionPresets.remove(localStorage, 'visual', name);
+  paintVisualPresets('');
+  toast(`Deleted “${name}”`);
+});
+paintVisualPresets('');
+
+// ── the cloud ──
+
+/// The grain section and nothing else. The seed stays with the document — it
+/// has no control of its own, and a preset that carried one would replay the
+/// same accident into every sound it was recalled on.
+function grainSnapshot() {
+  const out = {};
+  const g = state.grainDraft || state.edit?.stretch?.grain || {};
+  for (const k of Object.keys(GRAIN_DEFAULTS)) if (g[k] !== undefined) out[k] = g[k];
+  return out;
+}
+
+/// Put a cloud back, over the defaults, with the document's own seed.
+///
+/// Through `editOp` like every other change, so it lands on the undo stack and
+/// the server clamps it the way it clamps a slider. A value of the wrong kind
+/// — a string where a number goes — is left at its default rather than sent.
+async function applyGrain(v) {
+  if (!state.selectedFile) { toast('Open a sound first'); return false; }
+  if (!v || typeof v !== 'object') return false;
+  const grain = {
+    ...GRAIN_DEFAULTS,
+    seed: state.grainDraft?.seed ?? state.edit?.stretch?.grain?.seed ?? 1,
+  };
+  for (const k of Object.keys(GRAIN_DEFAULTS)) {
+    if (typeof v[k] === typeof GRAIN_DEFAULTS[k]) grain[k] = v[k];
+  }
+  state.grainDraft = { ...grain };
+  await editOp({ op: 'stretch', ...state.stretchDraft, grain });
+  // The panel is built once per file and engine; a recalled cloud is neither,
+  // so it is rebuilt the way Reset rebuilds it.
+  grainBuiltFor = null;
+  renderGrainParams();
+  syncGrainSliders();
+  return true;
+}
+
+$('gpPick')?.addEventListener('change', async () => {
+  const name = $('gpPick').value;
+  if (!name) return;
+  const v = SectionPresets.get(localStorage, 'grain', name);
+  if (!v) { toast('That cloud is gone'); paintGrainPresets(''); return; }
+  if (await applyGrain(v)) toast(`Cloud: ${name}`);
+});
+$('gpSave')?.addEventListener('click', () => {
+  if (!state.selectedFile) { toast('Open a sound first'); return; }
+  const suggested = $('gpPick').value
+    || `Cloud ${SectionPresets.list(localStorage, 'grain').length + 1}`;
+  const name = prompt('Save this cloud as:', suggested);
+  if (name === null) return;
+  const stored = SectionPresets.save(localStorage, 'grain', name, grainSnapshot());
+  if (!stored) { toast('A cloud needs a name'); return; }
+  paintGrainPresets(stored);
+  toast(`Saved “${stored}”`);
+});
+$('gpDelete')?.addEventListener('click', () => {
+  const name = $('gpPick').value;
+  if (!name) { toast('Pick a cloud first'); return; }
+  if (!confirm(`Delete the cloud “${name}”? The sound is left as it is.`)) return;
+  SectionPresets.remove(localStorage, 'grain', name);
+  paintGrainPresets('');
+  toast(`Deleted “${name}”`);
+});
+paintGrainPresets('');
+
+// ───────────────────────────────────────────────── the sequencer, in a frame ──
+//
+// The scale sequencer is its own program — a browser synth with a step grid
+// and a performance recorder — and it runs here as itself, in a frame under the
+// Seq button, served from this binary at `/sequencer/`. Nothing of it is
+// copied into this file. What crosses the frame boundary is two messages each
+// way: the engine's play and stop go in, and the sequencer's sound comes out as
+// a spectrum and a figure the room can draw, mixed with the engine's own.
+//
+// **The mix is a picture, not a signal.** The engine plays through the sound
+// card and the sequencer through the browser; they meet in the air. What is
+// mixed here is what the room is drawn from, so the visual is both voices at
+// once. Mixing the audio itself — for the export, and for a third and fourth
+// voice — means feeding the sequencer into the engine, which is the next step
+// and is not this one. See `docs/SEQUENCER.md`.
+
+const seq = { feed: null, feedAt: 0, ready: false, want: { bands: 0, lo: 0, hi: 0 } };
+
+function seqFrame() { return $('seqFrame'); }
+
+/// Give the frame its address the first time it is shown. A session that never
+/// opens the sequencer never loads it, and never starts its audio context.
+function seqEnsureFrame() {
+  const f = seqFrame();
+  if (f && !f.getAttribute('src')) f.src = '/sequencer/';
+}
+
+function seqPost(m) {
+  const f = seqFrame();
+  if (f && f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage(m, location.origin);
+}
+
+/// The engine's transport, told to the sequencer. Play plays it; stop stops it.
+function seqSync(playing) { seqPost({ type: 'seq:transport', playing }); }
+
+/// Ask for the spectrum in the shape the room is about to draw.
+function seqAsk(bands, lo, hi) {
+  if (seq.want.bands === bands && seq.want.lo === lo && seq.want.hi === hi) return;
+  seq.want = { bands, lo, hi };
+  seqPost({ type: 'seq:want', bands, lo, hi });
+}
+
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin) return;
+  const m = e.data || {};
+  if (m.type === 'seq:ready') {
+    seq.ready = true;
+    seqSync(engine.playing);
+  } else if (m.type === 'seq:feed') {
+    seq.feed = m.playing ? m : null;
+    seq.feedAt = performance.now();
+  }
+});
+
+/// Whether the sequencer is sounding right now — a feed that has gone quiet
+/// for half a second is a frame that stopped, not a silence to keep drawing.
+function seqPlaying() {
+  return !!seq.feed && performance.now() - seq.feedAt < 500;
+}
+
+/// The engine's master feed with the sequencer's sound folded in.
+///
+/// Spectra add as power, so two voices at the same level read six decibels
+/// louder than one, which is what a meter would say. The figures add as
+/// samples and clip at the rails, which is what a scope would show. With the
+/// engine silent the sequencer's feed stands in whole, so the room still has
+/// something to draw.
+function seqMix(data, bands) {
+  if (!seqPlaying()) return data;
+  const f = seq.feed;
+  seqAsk(bands, data?.lo || 20, data?.hi || 20000);
+  const spec = f.spectrum || [];
+  if (!data) {
+    const db = (v) => 20 * Math.log10(Math.max(1e-5, v));
+    const side = { vu: f.rms, vuDb: db(f.rms), vuUnits: 0, peak: f.peak, peakDb: db(f.peak) };
+    return {
+      live: true, seq: true, rate: f.rate || 48000, frames: 0,
+      left: side, right: { ...side }, correlation: 1, overKnee: 0, vuRef: -18, knee: 0.7079458,
+      lo: 20, hi: 20000, spectrum: spec.slice(0, bands), lissajous: f.lissajous || [],
+    };
+  }
+  const out = { ...data, seq: true };
+  if (Array.isArray(data.spectrum) && spec.length) {
+    const mixed = data.spectrum.slice();
+    const n = Math.min(mixed.length, spec.length);
+    for (let i = 0; i < n; i++) {
+      mixed[i] = 10 * Math.log10(10 ** (mixed[i] / 10) + 10 ** (spec[i] / 10));
+    }
+    out.spectrum = mixed;
+  }
+  if (Array.isArray(data.lissajous) && Array.isArray(f.lissajous)) {
+    const xy = data.lissajous.slice();
+    const n = Math.min(xy.length, f.lissajous.length);
+    for (let i = 0; i < n; i++) xy[i] = Math.max(-1, Math.min(1, xy[i] + f.lissajous[i]));
+    out.lissajous = xy;
+  }
+  return out;
+}
+
+// ───────────────────────────────────────────── capturing a performance ──
+//
+// The sequencer's REC PERF, here: one button that arms every control and
+// rolls the transport. The server does the writing — every control that moves
+// while it plays lands in a lane of its own, created if it has none — and
+// stopping the transport ends the take. Latch, so a control keeps laying its
+// value down after the hand comes off, which is what a performance is.
+
+state.captureArmed = false;
+
+async function startCapture() {
+  if (!state.selectedFile) { toast('Open a sound first'); return; }
+  await setAutomationRecord('latch');
+  state.captureArmed = true;
+  const b = $('automationCapture');
+  if (b) { b.classList.add('recording'); b.textContent = '⏺ CAPTURING'; }
+  if (!engine.playing) startPlayback();
+}
+
+async function endCapture() {
+  state.captureArmed = false;
+  const b = $('automationCapture');
+  if (b) { b.classList.remove('recording'); b.textContent = '⏺ Capture'; }
+  await setAutomationRecord('off');
+  await loadAutomation();
+}
+
+// ─────────────────────────────────────── the timeline, in the sequencer's idiom ──
+//
+// One canvas, every lane stacked, each in the colour of the module it moves,
+// its name in a gutter on the left, a ruler along the top and a glowing head
+// where the transport is. This is the sequencer's performance timeline, drawn
+// over the document's frames instead of its seconds. Click a lane to open its
+// editor underneath.
+
+const AT_GUTTER = 120;
+const AT_RULER = 18;
+const AT_LANE = 34;
+const AT_MIN_LANE = 14;
+
+/// Lane colours follow module identity, as the sequencer's do.
+function laneColour(target) {
+  if (target.startsWith('stretch.grain.')) return '#00e5ff';
+  if (/^stretch\.(wsola|vocoder|pvsola|hybrid)\./.test(target)) return '#7fff00';
+  if (target.startsWith('stretch.')) return '#ff6b35';
+  if (target.startsWith('fx.')) return '#ff60b8';
+  return '#c8d8e0';
+}
+
+/// The lane's name as the gutter shows it: the control, without its group.
+function laneShortLabel(lane) {
+  const l = lane.label || lane.target;
+  return l.replace(/^.*— /, '').toUpperCase();
+}
+
+function drawAutomationTimeline(canvas) {
+  const lanes = state.automation.lanes || [];
+  const cssW = canvas.clientWidth || 800;
+  const n = Math.max(1, lanes.length);
+  const laneH = lanes.length > 8 ? Math.max(AT_MIN_LANE, Math.floor(300 / n)) : AT_LANE;
+  const H = AT_RULER + n * laneH + 6;
+  if (canvas.width !== cssW) canvas.width = cssW;
+  if (canvas.height !== H) canvas.height = H;
+  canvas.dataset.laneH = String(laneH);
+  const W = canvas.width;
+  const c = canvas.getContext('2d');
+  c.fillStyle = '#0a0c0e';
+  c.fillRect(0, 0, W, H);
+
+  const frames = laneFrames();
+  const sr = state.view?.sampleRate || 44100;
+  const plotW = W - AT_GUTTER - 8;
+  const xOf = (fr) => AT_GUTTER + (fr / frames) * plotW;
+
+  // The ruler, and the bars down the plot.
+  c.fillStyle = '#0d1115';
+  c.fillRect(AT_GUTTER, 0, plotW, AT_RULER);
+  c.font = '7px ui-monospace';
+  c.textAlign = 'left';
+  for (let i = 0; i <= 8; i++) {
+    const x = AT_GUTTER + (i * plotW) / 8;
+    c.strokeStyle = '#1e2830';
+    c.beginPath(); c.moveTo(x, AT_RULER - 5); c.lineTo(x, H - 4); c.stroke();
+    c.fillStyle = '#2a3540';
+    if (i < 8) c.fillText(fmtTime((frames * i) / 8 / sr), x + 2, AT_RULER - 7);
+  }
+  for (const m of state.annotations?.markers || []) {
+    const x = xOf(m.frame);
+    c.strokeStyle = 'rgba(244,190,73,.45)';
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H - 4); c.stroke();
+  }
+
+  if (!lanes.length) {
+    c.fillStyle = '#2a3540';
+    c.font = '10px ui-monospace';
+    c.textAlign = 'center';
+    c.fillText('NO LANES — ⏺ CAPTURE, THEN PERFORM WHILE IT PLAYS', W / 2, AT_RULER + laneH / 2 + 4);
+  }
+
+  lanes.forEach((lane, li) => {
+    const y0 = AT_RULER + li * laneH;
+    const colour = laneColour(lane.target);
+    const dim = lane.enabled === false || state.automation.bypassed;
+    const sel = lane.id === state.automationSel;
+    if (sel) {
+      c.fillStyle = 'rgba(0,229,255,0.06)';
+      c.fillRect(0, y0 + 1, W, laneH - 2);
+    }
+    c.strokeStyle = '#1e2830';
+    c.strokeRect(AT_GUTTER + 0.5, y0 + 1.5, plotW - 1, laneH - 3);
+    c.fillStyle = dim ? '#4a6070' : colour;
+    c.font = '9px ui-monospace';
+    c.textAlign = 'left';
+    c.fillText(laneShortLabel(lane).slice(0, 18), 4, y0 + laneH / 2 + 3);
+
+    const p = (lane.points || []).slice().sort((a, b) => a.frame - b.frame);
+    if (!p.length) return;
+    const yOf = (v) => y0 + laneH - 5 - v * (laneH - 9);
+    c.beginPath();
+    // Held flat out to both edges, as the lane is: it goes on meaning
+    // something past its last breakpoint.
+    c.moveTo(AT_GUTTER, yOf(p[0].value));
+    c.lineTo(xOf(p[0].frame), yOf(p[0].value));
+    for (let i = 0; i < p.length - 1; i++) {
+      for (let k = 1; k <= 12; k++) {
+        const t = k / 12;
+        const kk = curveT(t, p[i]);
+        c.lineTo(
+          xOf(p[i].frame + (p[i + 1].frame - p[i].frame) * t),
+          yOf(p[i].value + (p[i + 1].value - p[i].value) * kk),
+        );
+      }
+    }
+    const last = p[p.length - 1];
+    c.lineTo(xOf(last.frame), yOf(last.value));
+    c.lineTo(AT_GUTTER + plotW, yOf(last.value));
+    c.strokeStyle = dim ? '#3d5162' : colour;
+    c.lineWidth = sel ? 2.5 : 1.5;
+    c.globalAlpha = dim ? 0.6 : 1;
+    c.stroke();
+    c.globalAlpha = 1;
+    c.lineWidth = 1;
+  });
+
+  // The head: orange when playing, red when writing.
+  if (engine.playing) {
+    const x = xOf(sourceFrameNow());
+    const armed = state.automationRecord && state.automationRecord !== 'off';
+    const col = armed ? '#ff3333' : '#ff6b35';
+    c.strokeStyle = col;
+    c.lineWidth = 2;
+    c.shadowColor = col;
+    c.shadowBlur = 6;
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H - 4); c.stroke();
+    c.shadowBlur = 0;
+    c.lineWidth = 1;
+  }
+}
+
 function leaveRoomView() {
   $('roomView')?.classList.add('hidden');
   roomReleaseAll();
@@ -9353,18 +9890,20 @@ function wireSolidPath() {
   if (!svg || !gl) return;
   for (const dot of svg.querySelectorAll('.rp-pt')) {
     dot.onpointerdown = (e) => {
+      if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       const i = +dot.dataset.i;
       const pt = roomEdit.solidPath[i];
       if (!pt) return;
-      dot.setPointerCapture(e.pointerId);
+      try { dot.setPointerCapture(e.pointerId); } catch { /* the move guard covers it */ }
       dot.classList.add('dragging');
       const box = gl.getBoundingClientRect();
       const start = { ...pt };
 
       const onFloor = dot.dataset.floor === '1';
       const move = (ev) => {
+        if (ev.buttons === 0) { up(ev); return; }
         const w = gl.clientWidth, h = gl.clientHeight;
         const c = roomCamNow();
         const hw = roomHalfW(w, h, c);
@@ -9398,11 +9937,13 @@ function wireSolidPath() {
         dot.onpointermove = null;
         dot.onpointerup = null;
         dot.onpointercancel = null;
+        dot.onlostpointercapture = null;
         saveRoomData();
       };
       dot.onpointermove = move;
       dot.onpointerup = up;
       dot.onpointercancel = up;
+      dot.onlostpointercapture = up;
     };
     // A waypoint is removed where it is, rather than by finding its row in a
     // list somewhere else.
@@ -9438,11 +9979,17 @@ function paintRoomHandles() {
   // The path's SVG lives in here too, so the count is the handles' own share
   // rather than every child — otherwise adding the path rebuilt the handles on
   // every frame, and a handle rebuilt mid-drag drops the drag.
-  let handleKids = [...host.children].filter((el) => !el.classList.contains('room-path'));
+  // The zone word is a tip in look and not in kind: it belongs to the room,
+  // not to a grip, and counting it here rebuilt every grip on every frame —
+  // which is what dropped the camera drag the first time this shipped.
+  const isGrip = (el) => el.classList.contains('rh')
+    || (el.classList.contains('rh-tip') && !el.classList.contains('rh-zone-tip'));
+  let handleKids = [...host.children].filter(isGrip);
   if (handleKids.length !== ROOM_HANDLES.length * 2) {
-    const keep = host.querySelector('.room-path');
+    // Everything that is not a grip — the path, the zone furniture — stays.
+    const keep = [...host.children].filter((el) => !isGrip(el));
     host.innerHTML = '';
-    if (keep) host.appendChild(keep);
+    for (const el of keep) host.appendChild(el);
     for (const hd of ROOM_HANDLES) {
       const el = document.createElement('i');
       el.className = `rh ${hd.cls}`;
@@ -9457,7 +10004,7 @@ function paintRoomHandles() {
     wireRoomHandles();
     // Re-read after the rebuild, or this frame positions nothing: the list was
     // taken before the elements it names existed.
-    handleKids = [...host.children].filter((el) => !el.classList.contains('room-path'));
+    handleKids = [...host.children].filter(isGrip);
   }
 
   for (let i = 0; i < ROOM_HANDLES.length; i++) {
@@ -9490,15 +10037,23 @@ function wireRoomHandles() {
     el.addEventListener('pointerdown', (e) => {
       const hd = ROOM_HANDLES.find((x) => x.key === el.dataset.handle);
       if (!hd) return;
+      // The first button only. A secondary press opens a menu, and the menu
+      // takes the release with it — see `wireRoomDrag`.
+      if (e.button !== 0) return;
       // **Stopped here.** The canvas underneath has its own drag on it, and
       // without this a pull on a handle also swings the whole view.
       e.preventDefault();
       e.stopPropagation();
-      el.setPointerCapture(e.pointerId);
+      try { el.setPointerCapture(e.pointerId); } catch { /* not held; the move guard covers it */ }
       el.classList.add('dragging');
+      host.classList.add('gripping');
       const r = gl.getBoundingClientRect();
       const from = { ...roomCamNow() };
       const move = (ev) => {
+        // A move with no button down is a release this element never heard
+        // about. Ending here is what stops a grip following the pointer with
+        // nothing pressed.
+        if (ev.buttons === 0) { up(ev); return; }
         const dx = (ev.clientX - e.clientX) / Math.max(1, r.width);
         const dy = (ev.clientY - e.clientY) / Math.max(1, r.height);
         const c = { ...from };
@@ -9509,18 +10064,64 @@ function wireRoomHandles() {
         paintSolidPath();
       };
       const up = () => {
-        el.releasePointerCapture(e.pointerId);
+        try { el.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
         el.classList.remove('dragging');
+        host.classList.remove('gripping');
         el.removeEventListener('pointermove', move);
         el.removeEventListener('pointerup', up);
         el.removeEventListener('pointercancel', up);
+        el.removeEventListener('lostpointercapture', up);
         saveRoomData();
       };
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', up);
       el.addEventListener('pointercancel', up);
+      el.addEventListener('lostpointercapture', up);
     });
   }
+}
+
+/// What a press on the bare room takes hold of, said while the pointer is
+/// over it and while it drags.
+///
+/// The room's two gestures were zones you had to be told about — the sky for
+/// the ring, the rest for the camera — with no line between them and nothing
+/// under the hand to say which you were on. So the zone is shown: a word at
+/// the pointer naming it and what each axis does, and, over the sky, the band
+/// itself. Grips have their own glow; this is for the room between them.
+const ROOM_ZONE_TIPS = {
+  sky: 'RING — up/down: height · left/right: size',
+  camera: 'CAMERA — up/down: tilt · left/right: swing',
+};
+
+function roomZoneShow(zone, e, dragging) {
+  const host = $('roomHandles');
+  const gl = $('visGl');
+  if (!host || !gl) return;
+  // Each made on its own if missing, so losing one to a rebuild elsewhere
+  // can never leave the other pointing at nothing.
+  let band = host.querySelector('.rh-zone');
+  if (!band) {
+    band = document.createElement('i');
+    band.className = 'rh-zone';
+    host.appendChild(band);
+  }
+  let tip = host.querySelector('.rh-zone-tip');
+  if (!tip) {
+    tip = document.createElement('span');
+    tip.className = 'rh-tip rh-zone-tip';
+    host.appendChild(tip);
+  }
+  const on = !!zone && roomEdit.on && !host.classList.contains('gripping');
+  host.dataset.zone = on ? zone : '';
+  host.classList.toggle('zone-dragging', on && dragging);
+  gl.style.cursor = !roomEdit.on ? '' : dragging ? 'grabbing' : 'grab';
+  if (!on) { tip.style.opacity = '0'; return; }
+  const r = gl.getBoundingClientRect();
+  tip.textContent = ROOM_ZONE_TIPS[zone] || zone;
+  tip.style.left = `${Math.max(60, Math.min(r.width - 60, e.clientX - r.left))}px`;
+  tip.style.top = `${e.clientY - r.top + 22}px`;
+  tip.style.opacity = '1';
 }
 
 (function wireRoomDrag() {
@@ -9529,19 +10130,34 @@ function wireRoomHandles() {
 
   gl.addEventListener('pointerdown', (e) => {
     if (!roomEdit.on) return;
+    // **The first button only.** A secondary press — right button, ctrl-click,
+    // a two-finger tap — opens the context menu, and the menu takes the
+    // release with it: `pointerup` never arrives, the drag is never ended, and
+    // from then on the room follows the pointer with nothing pressed. That is
+    // "the mouse gets stuck".
+    if (e.button !== 0) return;
     const r = gl.getBoundingClientRect();
     roomEdit.drag = {
       zone: roomZoneAt(e.clientY - r.top, r.height),
       x: e.clientX, y: e.clientY, w: r.width, h: r.height,
       cam: roomCamNow(),
     };
-    gl.setPointerCapture(e.pointerId);
+    try { gl.setPointerCapture(e.pointerId); } catch { /* the move guard covers it */ }
+    roomZoneShow(roomEdit.drag.zone, e, true);
     e.preventDefault();
   });
 
   gl.addEventListener('pointermove', (e) => {
     const d = roomEdit.drag;
-    if (!d) return;
+    if (!d) {
+      // Not dragging: say what a press here would take hold of.
+      if (roomEdit.on) roomZoneShow(roomZoneAt(e.clientY - gl.getBoundingClientRect().top, gl.clientHeight), e, false);
+      return;
+    }
+    // The second half of the same guard: a move with no button down is a
+    // release this element never heard about.
+    if (e.buttons === 0) { end(e); return; }
+    roomZoneShow(d.zone, e, true);
     const dx = (e.clientX - d.x) / Math.max(1, d.w);
     const dy = (e.clientY - d.y) / Math.max(1, d.h);
     const c = { ...d.cam };
@@ -9586,10 +10202,13 @@ function wireRoomHandles() {
     if (!roomEdit.drag) return;
     roomEdit.drag = null;
     try { gl.releasePointerCapture(e.pointerId); } catch {}
+    roomZoneShow(null, e, false);
     saveRoomCameras();
   };
   gl.addEventListener('pointerup', end);
   gl.addEventListener('pointercancel', end);
+  gl.addEventListener('lostpointercapture', end);
+  gl.addEventListener('pointerleave', (e) => { if (!roomEdit.drag) roomZoneShow(null, e, false); });
 
   // Depth is a scroll because it is the one dimension not on the screen to be
   // grabbed. Exponential, so the room lengthens by the same proportion per
@@ -13908,7 +14527,7 @@ async function mbTick() {
     const el = $('visGl');
     const want = Math.max(64, Math.min(2048, Math.round(el?.clientWidth || 256)));
     const r = await api(`/api/engine/master?fft=${masterBus.fft}&bands=${want}`);
-    masterBus.data = r && r.live ? r : null;
+    masterBus.data = seqMix(r && r.live ? r : null, want);
   } catch {
     // A meter that cannot reach the server shows nothing rather than the last
     // thing it saw. Freezing on a stale reading is the one behaviour a meter is

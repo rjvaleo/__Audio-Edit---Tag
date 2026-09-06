@@ -51,11 +51,12 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     npm run check                                             # the interface, statically
     npm run test:ui                                           # the interface, in a browser
 
-**The interface is embedded in the binary** with `include_str!` — twenty-three
-assets: `ui/index.html`, `ui/app.css`, seventeen scripts in `ui/` (among them
-`app.js`, `settings.js`, `shapes-4d.js`, `panel-4d.js`, `theme-derive.js`,
+**The interface is embedded in the binary** with `include_str!` — twenty-four
+assets: `ui/index.html`, `ui/app.css`, eighteen scripts in `ui/` (among them
+`app.js`, `settings.js`, `section-presets.js`, `shapes-4d.js`, `panel-4d.js`, `theme-derive.js`,
 `theme-palettes.js`), `ui/vendor/babylon.js`, `visualiser/grain-views.html`,
-p5.js and both fonts.
+p5.js and both fonts — and, since 6 Sep 2026, the six files of the scale
+sequencer under `ui/sequencer/`, served at `/sequencer/`.
 **Rebuild after any interface edit or the browser is served the old file.** This
 has cost more time than anything else in this project.
 
@@ -922,6 +923,18 @@ the gate's −40 dB threshold into −4000%.
 Ported onto `main` on 12 Aug 2026 from the discarded `codex/breakpoint-automation`
 branch, rewritten rather than copied. `core/crates/server/src/automation.rs`.
 
+**6 Sep 2026 — every engine control records.** The eight stretch targets
+became one table, `STRETCH_TARGETS`, of forty-eight: the grain section whole,
+pitch movement, scan and shape, and the WSOLA, vocoder, PVSOLA and hybrid
+controls the engine takes live. Switches and counts are steps, with an exact
+inverse rather than a search. Controls whose change rebuilds the file — the
+engine, the hybrid's FFT and spans, WSOLA's transient map — are left off on
+purpose. **⏺ Capture** on the Automation tab is Latch with the transport in one
+press, and the tab draws the take as one stacked timeline in the scale
+sequencer's idiom. See [`AUTOMATION-CAPTURE.md`](AUTOMATION-CAPTURE.md). The
+sequencer itself is in the program too, under **Seq** on the rail — see
+[`SEQUENCER.md`](SEQUENCER.md).
+
 **A lane stores unit values, 0..1.** The range belongs to the effect. There is
 one place each range is written down — `fx::GAIN_DB_MIN`, `fx::eq::EQ_FREQ_MIN`
 and so on — and both `automation::resolve` and the interface read it. The
@@ -1296,6 +1309,18 @@ on the server, because the engine owns them. Where a setting is *kept* is an
 implementation detail; where it is *found* should not be.
 
 See [`MENUS.md`](MENUS.md) for the panel's contents and what left which menu.
+
+### `ui/section-presets.js`  *(6 Sep 2026)*
+
+Presets for one section at a time, beside the document's. A **look** — every
+layer, switch, camera, slider, module setting and the palette by value, none of
+the sound — on the Room view's stage bar. A **cloud** — the grain section, not
+the seed and not the window — over the grain controls. Both kept in the browser
+beside the rest of the room's state; the store is pure in the manner of
+`settings.js`. The room's stored settings gained one reader (`readRoomData`)
+and one writer (`roomDataSnapshot`) on the way, so a look is the same object a
+reload reads. There is still only one randomiser, and it is the stretch tray's.
+See [`SECTION-PRESETS.md`](SECTION-PRESETS.md).
 
 ---
 

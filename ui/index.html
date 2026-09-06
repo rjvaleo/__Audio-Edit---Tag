@@ -402,53 +402,6 @@
         <div class="rv-admin-body hidden" id="room4dBody">
           <div class="p4-view"><canvas id="p4Canvas"></canvas></div>
           <div id="p4Panel"></div>
-          <!-- The solid as the ROOM draws it, as against the modelling panel
-               above, which is the catalogue.
-
-               **Here rather than in the Room tab.** That tab's panel is also the
-               overlay laid over the dock's little room, so six more rows made it
-               tall enough to cover the room underneath — and the camera drag,
-               which is aimed at the middle of the picture, started landing on
-               the panel instead. Three room-editor tests caught it. The 4D tab
-               is only ever shown in the full room view, where there is nothing
-               behind it to cover. -->
-          <div class="re-tag" style="margin-top:14px">IN THE ROOM</div>
-          <div class="re-row">
-            <span class="re-tag">SOLID</span>
-            <select class="field mini" id="reSolidShape"
-              title="Which solid hangs in the room. Four-dimensional shapes, then the grain shapes."></select>
-          </div>
-          <div class="re-row">
-            <span class="re-tag">TURN</span>
-            <input class="re-slider" id="reSolidSpin" type="range"
-              min="0" max="800" step="1"
-              title="How hard the sound turns it through the fourth dimension. At the top a loud passage passes the solid's cells through each other, which no rotation in three dimensions can do. Four-dimensional shapes only.">
-          </div>
-          <div class="re-row">
-            <span class="re-tag">SWELL</span>
-            <input class="re-slider" id="reSolidSwell" type="range"
-              min="0" max="200" step="1"
-              title="How far the waveform swings off each edge.">
-          </div>
-          <div class="re-row">
-            <span class="re-tag">EYE</span>
-            <input class="re-slider" id="reSolidEye" type="range"
-              min="140" max="800" step="1"
-              title="How far down the w axis you are standing. Close in exaggerates the nesting; far off flattens it toward parallel. Four-dimensional shapes only.">
-          </div>
-          <div class="re-row">
-            <span class="re-tag">SIZE</span>
-            <input class="re-slider" id="reSolidSize" type="range"
-              min="4" max="90" step="1"
-              title="How big it is drawn, as a share of the room's height. Its own size — nothing to do with the ring's.">
-          </div>
-          <div class="re-row"><span class="re-tag">PATH</span>
-            <button class="re-btn" id="reSolidPathAdd"
-              title="Add a waypoint halfway along. The shape passes through every point on the path.">+ Waypoint</button>
-            <button class="re-btn" id="reSolidPathReset"
-              title="Back to a straight run down the room.">Straight</button>
-          </div>
-          <div class="re-path" id="reSolidPath"></div>
         </div>
       </aside>
       <div class="rv-grip" id="roomGrip"
@@ -459,6 +412,19 @@
                what shape it is drawn in, so it sits beside the frame. -->
           <span class="re-tag">VIEW</span>
           <div class="re-frames" id="rgModules"></div>
+          <!-- A look: everything the room is, kept under a name. On the bar
+               rather than in any one tab, because it covers all of them —
+               layers, hierarchy, cameras, palette, the solid, every module's
+               own settings. See `docs/SECTION-PRESETS.md`. -->
+          <span class="re-tag">LOOK</span>
+          <div class="re-frames sp-row" id="visualPresetRow">
+            <select class="field mini sp-pick" id="vpPick"
+              title="A saved look: every layer, colour, camera and setting in the room, and none of the sound."></select>
+            <button class="re-btn" id="vpSave"
+              title="Keep the room exactly as it is now, under a name.">Save as&hellip;</button>
+            <button class="re-btn" id="vpDelete"
+              title="Forget the look named in the picker. The room is not touched.">Delete</button>
+          </div>
         </div>
         <!-- `#masterBus` is moved in here. Everything that feeds it is gated on
              whether it is on screen rather than on where it sits, so the meters,
@@ -466,6 +432,13 @@
         <div class="rv-room" id="roomStageRoom"></div>
         <div class="rv-foot" id="roomFoot"></div>
       </section>
+    </div>
+
+    <!-- The scale sequencer, in a frame: a second voice on the same transport.
+         The frame is given its address the first time this is shown, so a
+         session that never opens it never loads it. See `docs/SEQUENCER.md`. -->
+    <div class="seqview hidden" id="seqView">
+      <iframe id="seqFrame" class="seq-frame" title="Scale sequencer"></iframe>
     </div>
 
     <div class="transportbar hidden" id="transportBar">
@@ -717,6 +690,19 @@
                   title="The grain cloud over the source. Drag the box to move the read head; drag an edge to widen the spray or the pitch scatter."></canvas>
                 <span class="mono dim cloud-pad-read" id="cloudPadRead"></span>
               </div>
+              <!-- A cloud: the grain section on its own, without the sound
+                   and without the rest of the engine. Static markup rather
+                   than a row inside `#grainShape`, which is rebuilt for every
+                   file. See `docs/SECTION-PRESETS.md`. -->
+              <div class="grain-preset-row" id="grainPresetRow">
+                <span class="re-tag">CLOUD</span>
+                <select class="mini" id="gpPick"
+                  title="A saved cloud: every grain control, and nothing else. The sound and the seed stay as they are."></select>
+                <button class="ghost" id="gpSave"
+                  title="Keep the grain controls as they are now, under a name.">Save as&hellip;</button>
+                <button class="ghost" id="gpDelete"
+                  title="Forget the cloud named in the picker. The sound is not touched.">Delete</button>
+              </div>
               <div id="grainShape"></div>
               <div id="grainPitch"></div>
             </div>
@@ -833,6 +819,59 @@
                       min="0" max="800" step="1"
                       title="How hard the sound pushes the ring out of round. Well past 1× at the top — a breath becomes a crown.">
                   </div>
+                  <!-- The four-dimensional solid. Under the ring's controls,
+                       because it hangs in the same room and is read against it.
+
+                       It was moved to the 4D tab for a while: six more rows
+                       and the camera drag started landing on the panel instead
+                       of the room. Neither the rows nor the panel's height was
+                       the fault — the menu below was, drawn full width by
+                       `.field`, a bar across the room no drag could cross. It
+                       is the width of its text now, and the controls live
+                       where they belong.
+
+                       In the dock's overlay they are shown only while the Solid
+                       layer is on: the overlay wraps its rows into columns
+                       across a room a few hundred pixels wide, and these six
+                       were a third column that ran off the edge of it. With the
+                       layer off they move nothing. In the Room view, a column
+                       with room to spare, they are always there. -->
+                  <div class="re-row re-solid">
+                    <span class="re-tag">SOLID</span>
+                    <select class="field mini" id="reSolidShape"
+                      title="Which solid hangs in the room. Four-dimensional shapes, then the grain shapes."></select>
+                  </div>
+                  <div class="re-row re-solid">
+                    <span class="re-tag">TURN</span>
+                    <input class="re-slider" id="reSolidSpin" type="range"
+                      min="0" max="800" step="1"
+                      title="How hard the sound turns it through the fourth dimension. At the top a loud passage passes the solid's cells through each other, which no rotation in three dimensions can do. Four-dimensional shapes only.">
+                  </div>
+                  <div class="re-row re-solid">
+                    <span class="re-tag">SWELL</span>
+                    <input class="re-slider" id="reSolidSwell" type="range"
+                      min="0" max="200" step="1"
+                      title="How far the waveform swings off each edge.">
+                  </div>
+                  <div class="re-row re-solid">
+                    <span class="re-tag">EYE</span>
+                    <input class="re-slider" id="reSolidEye" type="range"
+                      min="140" max="800" step="1"
+                      title="How far down the w axis you are standing. Close in exaggerates the nesting; far off flattens it toward parallel. Four-dimensional shapes only.">
+                  </div>
+                  <div class="re-row re-solid">
+                    <span class="re-tag">SIZE</span>
+                    <input class="re-slider" id="reSolidSize" type="range"
+                      min="4" max="90" step="1"
+                      title="How big it is drawn, as a share of the room's height. Its own size — nothing to do with the ring's.">
+                  </div>
+                  <div class="re-row re-solid"><span class="re-tag">PATH</span>
+                    <button class="re-btn" id="reSolidPathAdd"
+                      title="Add a waypoint halfway along. The shape passes through every point on the path.">+ Waypoint</button>
+                    <button class="re-btn" id="reSolidPathReset"
+                      title="Back to a straight run down the room.">Straight</button>
+                  </div>
+                  <div class="re-path" id="reSolidPath"></div>
                   <div class="re-row">
                     <span class="re-tag">SMOOTH</span>
                     <input class="re-slider" id="reRingPoints" type="range"
@@ -996,6 +1035,10 @@
       <div class="dock-body automation-body hidden" id="dockAutomation">
         <div class="automation-toolbar">
           <button class="primary" id="automationAdd">Add lane</button>
+          <!-- The scale sequencer's REC PERF, here: arm every control and roll.
+               Every move while it plays lands in a lane of its own. -->
+          <button class="ghost automation-capture" id="automationCapture"
+            title="Arm every control and roll the transport. Every move you make while it plays is written into a lane of its own, the way the scale sequencer records a performance. Press again, or stop, to finish.">&#9210; Capture</button>
           <label class="check" title="Write a control's moves into its lane while the transport is running. Touch records while the hand is on the control; Latch keeps recording until you stop.">
             Record
             <select id="automationRecord">
@@ -1140,6 +1183,8 @@
      have to exist by then. -->
 <script src="/rail.js"></script>
 <script src="/settings.js"></script>
+<!-- Presets for one section at a time. Pure, like the store above it. -->
+<script src="/section-presets.js"></script>
 <!-- The four-dimensional solids, and the panel that drives them. The geometry
      knows nothing about the DOM; the panel is loaded after it. -->
 <script src="/shapes-4d.js"></script>
