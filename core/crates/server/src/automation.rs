@@ -395,58 +395,239 @@ pub fn resolve(slot: &crate::rack::SlotSpec, key: &str, unit: f32) -> Option<f32
     })
 }
 
-/// A stretch lane's unit value as the number the document's control takes.
+/// How a stretch target's lane value becomes a number, and back.
 ///
-/// Split out of [`apply_stretch`] so that the mapping exists exactly once and
-/// can be run *backwards* — see [`unit_for`]. Recording automation needs to
-/// turn a control's real value into a lane value, and the only safe way to do
-/// that is to search this function rather than to write its inverse out again.
-/// An inverse written by hand is two copies of every range, and they drift.
+/// Every range is written once, in the same table that names the target and
+/// labels it for the menu. The version this replaced had three matches on the
+/// same names — a value map, a field reader and a field writer — and a test to
+/// catch them drifting. A table cannot drift, and a target is added by adding a
+/// line to it and one arm to each of the two accessors below, which the same
+/// test still insists on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Range {
+    /// A straight line from the first number to the second.
+    Lin(f32, f32),
+    /// A logarithmic sweep, for the controls whose slider is one.
+    Log(f32, f32),
+    /// Whole numbers from the first to the second, rounded.
+    Int(f32, f32),
+    /// Off below a half, on from a half. A lane can still drive it — a switch
+    /// thrown at a moment is a performance too.
+    Switch,
+}
+
+impl Range {
+    /// The number a lane value stands for.
+    pub fn value(self, u: f32) -> f32 {
+        let u = u.clamp(0.0, 1.0);
+        match self {
+            Range::Lin(lo, hi) => lo + u * (hi - lo),
+            Range::Log(lo, hi) => (lo.ln() + (hi.ln() - lo.ln()) * u).exp(),
+            Range::Int(lo, hi) => (lo + u * (hi - lo)).round(),
+            Range::Switch => {
+                if u >= 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
+    /// The lane value that stands for a number — the exact inverse, so a
+    /// recorded move lands where the control was.
+    ///
+    /// No search. `unit_for` bisects a forward map, which is right for the rack's
+    /// smooth ranges and wrong for a step: a switch or a count has flat runs,
+    /// and bisection on a flat run lands on the edge of it, where a rounding
+    /// error decides which side the take plays back on.
+    pub fn unit(self, v: f32) -> f32 {
+        let u = match self {
+            Range::Lin(lo, hi) | Range::Int(lo, hi) => {
+                if hi == lo {
+                    0.0
+                } else {
+                    (v - lo) / (hi - lo)
+                }
+            }
+            Range::Log(lo, hi) => (v.max(lo).ln() - lo.ln()) / (hi.ln() - lo.ln()),
+            Range::Switch => {
+                if v >= 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        };
+        u.clamp(0.0, 1.0)
+    }
+}
+
+/// Every document control a lane can drive: its name, the label the menu
+/// shows, and its range. The ranges are the document's own — what
+/// `persist::stretch_from_json` clamps to; if one moves, both move.
+///
+/// **Only what the engine takes while it is running.** The runner writes these
+/// straight into the audio thread's parameters a hundred and twenty times a
+/// second, with no rebuild in between. So the ones that *are* a rebuild are not
+/// here, on purpose:
+///
+/// - the engine and its quality — where you are, not a setting (`Reset all`
+///   makes the same argument);
+/// - the hybrid's FFT size, time span and frequency span, which separate the
+///   whole file again (`live::separate_soon`);
+/// - WSOLA's transient preservation, which runs an onset detector over the
+///   whole file (`live::map_for`);
+/// - the WSOLA splice and window choices, the vocoder's nothing, and the tuning
+///   scale — choices rather than sweeps, with no order a line could run along;
+/// - the seed, which is the document's, and `layer_read`, which has no control.
+pub const STRETCH_TARGETS: &[(&str, &str, Range)] = &[
+    // The document's own three, and the cloud's blend over the engine.
+    ("stretch.ratio", "Time & Pitch — Stretch", Range::Log(RATIO_MIN, RATIO_MAX)),
+    ("stretch.semitones", "Time & Pitch — Pitch", Range::Lin(SEMITONE_MIN, SEMITONE_MAX)),
+    ("stretch.windowMs", "Time & Pitch — Window", Range::Log(WINDOW_MS_MIN, WINDOW_MS_MAX)),
+    ("stretch.cloudMix", "Time & Pitch — Cloud over engine", Range::Lin(0.0, 1.0)),
+    // Grain shape.
+    ("stretch.grain.position", "Grains — Read position", Range::Lin(-1.0, 1.0)),
+    ("stretch.grain.rateHz", "Grains — Rate", Range::Lin(0.0, 2000.0)),
+    ("stretch.grain.densityHz", "Grains — Density", Range::Lin(0.0, DENSITY_MAX)),
+    ("stretch.grain.layers", "Grains — Layers", Range::Int(1.0, fx::grain::MAX_LAYERS as f32)),
+    ("stretch.grain.overlap", "Grains — Overlap", Range::Lin(1.0, 8.0)),
+    ("stretch.grain.sizeJitter", "Grains — Size jitter", Range::Lin(0.0, 1.0)),
+    ("stretch.grain.positionJitterMs", "Grains — Position jitter", Range::Lin(0.0, POS_JITTER_MAX)),
+    // Pitch movement.
+    ("stretch.grain.pitchJitterSemis", "Pitch movement — Pitch jitter", Range::Lin(0.0, PITCH_JITTER_MAX)),
+    ("stretch.grain.pitchDriftSemis", "Pitch movement — Pitch drift", Range::Lin(0.0, 24.0)),
+    ("stretch.grain.driftRateHz", "Pitch movement — Drift rate", Range::Log(0.01, 20.0)),
+    ("stretch.grain.driftStep", "Pitch movement — Step the drift", Range::Switch),
+    ("stretch.grain.linkJitter", "Pitch movement — Link jitter", Range::Switch),
+    // Scan and shape.
+    ("stretch.grain.scan", "Scan & shape — Scan", Range::Lin(-4.0, 4.0)),
+    ("stretch.grain.reverse", "Scan & shape — Reverse grains", Range::Switch),
+    ("stretch.grain.wrap", "Scan & shape — Wrap positions", Range::Switch),
+    ("stretch.grain.envelope", "Scan & shape — Envelope", Range::Lin(0.0, 1.0)),
+    ("stretch.grain.sizeRange", "Scan & shape — Size range", Range::Lin(1.0, 8.0)),
+    ("stretch.grain.layerSpread", "Scan & shape — Layer spread", Range::Lin(0.0, 4.0)),
+    ("stretch.grain.layerScatter", "Scan & shape — Layer scatter", Range::Lin(0.0, 1.0)),
+    ("stretch.grain.layerScatterMs", "Scan & shape — Scatter range", Range::Lin(0.0, 5000.0)),
+    ("stretch.grain.panSpread", "Scan & shape — Pan spread", Range::Lin(0.0, 1.0)),
+    // WSOLA.
+    ("stretch.wsola.sensitivity", "WSOLA — Detector", Range::Lin(0.0, 1.0)),
+    ("stretch.wsola.searchMs", "WSOLA — Search", Range::Lin(0.0, 200.0)),
+    ("stretch.wsola.stride", "WSOLA — Stride", Range::Int(1.0, 256.0)),
+    ("stretch.wsola.guardHops", "WSOLA — Guard", Range::Lin(1.0, 16.0)),
+    ("stretch.wsola.floor", "WSOLA — Floor", Range::Lin(0.0, 2.0)),
+    // Vocoder.
+    ("stretch.vocoder.windowMs", "Vocoder — Analysis window", Range::Log(5.0, 500.0)),
+    ("stretch.vocoder.phaseLock", "Vocoder — Phase lock", Range::Switch),
+    ("stretch.vocoder.freqTrust", "Vocoder — Freq trust", Range::Lin(0.0, 4.0)),
+    ("stretch.vocoder.phaseSpread", "Vocoder — Phase spread", Range::Lin(0.0, 4.0)),
+    ("stretch.vocoder.peakWidth", "Vocoder — Peak width", Range::Int(1.0, 32.0)),
+    ("stretch.vocoder.lockWidth", "Vocoder — Lock width", Range::Lin(0.0, 4.0)),
+    ("stretch.vocoder.magFreeze", "Vocoder — Freeze", Range::Lin(0.0, 1.0)),
+    ("stretch.vocoder.magBlur", "Vocoder — Blur", Range::Lin(0.0, 1.0)),
+    ("stretch.vocoder.magGate", "Vocoder — Gate", Range::Lin(0.0, 1.0)),
+    ("stretch.vocoder.stereoLink", "Vocoder — Link stereo", Range::Switch),
+    // PVSOLA.
+    ("stretch.pvsola.anchorFrames", "PVSOLA — Re-anchor", Range::Int(1.0, 64.0)),
+    ("stretch.pvsola.searchMs", "PVSOLA — Search", Range::Lin(0.0, 200.0)),
+    ("stretch.pvsola.blend", "PVSOLA — Blend", Range::Lin(0.0, 1.0)),
+    // Hybrid — the levels and the margin, which the separation reads live.
+    ("stretch.hybrid.margin", "Hybrid — Margin", Range::Lin(1.0, 8.0)),
+    ("stretch.hybrid.morphNoise", "Hybrid — Remake noise", Range::Switch),
+    ("stretch.hybrid.harmonicLevel", "Hybrid — Tone", Range::Lin(0.0, 4.0)),
+    ("stretch.hybrid.percussiveLevel", "Hybrid — Hits", Range::Lin(0.0, 4.0)),
+    ("stretch.hybrid.residualLevel", "Hybrid — Air", Range::Lin(0.0, 4.0)),
+];
+
+/// A target's range, if it is one of the document's.
+pub fn stretch_range(target: &str) -> Option<Range> {
+    STRETCH_TARGETS.iter().find(|(t, _, _)| *t == target).map(|(_, _, r)| *r)
+}
+
+/// A stretch lane's unit value as the number the document's control takes.
 pub fn stretch_value(target: &str, u: f32) -> Option<f32> {
-    let log = |lo: f32, hi: f32| (lo.ln() + (hi.ln() - lo.ln()) * u.clamp(0.0, 1.0)).exp();
-    Some(match target {
-        "stretch.ratio" => log(RATIO_MIN, RATIO_MAX),
-        "stretch.semitones" => SEMITONE_MIN + u * (SEMITONE_MAX - SEMITONE_MIN),
-        "stretch.windowMs" => log(WINDOW_MS_MIN, WINDOW_MS_MAX),
-        "stretch.grain.densityHz" => u * DENSITY_MAX,
-        "stretch.grain.positionJitterMs" => u * POS_JITTER_MAX,
-        "stretch.grain.pitchJitterSemis" => u * PITCH_JITTER_MAX,
-        // Already a fraction of the source at both ends. A lane on this is the
-        // read head being moved around by hand, which is the point of it.
-        "stretch.grain.position" => u,
-        "stretch.cloudMix" => u,
-        _ => return None,
-    })
+    stretch_range(target).map(|r| r.value(u))
+}
+
+/// The lane value that stands for a control's number — what recording writes.
+pub fn stretch_unit(target: &str, value: f32) -> Option<f32> {
+    stretch_range(target).map(|r| r.unit(value))
 }
 
 /// Where a stretch target's value lives on the document.
 ///
 /// The mirror of the match in [`apply_stretch`], for reading rather than
-/// writing: recording has to notice that the ratio moved and by how much, and
+/// writing: recording has to notice that a control moved and by how much, and
 /// the only thing that knows which field "stretch.ratio" means is a list of
-/// names. Pinned against the menu by `every_offered_target_actually_resolves`,
-/// so a target added to one list and not the other fails the suite rather than
-/// going quietly unrecordable.
+/// names. Switches read as nought or one and counts as their number, which is
+/// what [`Range::unit`] expects back. Pinned against the table by
+/// `every_offered_target_actually_resolves`, so a line added to the table and
+/// not here fails the suite rather than going quietly unrecordable.
 pub fn stretch_field(s: &fx::Stretch, target: &str) -> Option<f32> {
+    let b = |on: bool| if on { 1.0 } else { 0.0 };
+    let g = &s.grain;
     Some(match target {
         "stretch.ratio" => s.ratio,
         "stretch.semitones" => s.semitones,
         "stretch.windowMs" => s.window_ms,
-        "stretch.grain.densityHz" => s.grain.density_hz,
-        "stretch.grain.positionJitterMs" => s.grain.position_jitter_ms,
-        "stretch.grain.pitchJitterSemis" => s.grain.pitch_jitter_semis,
-        "stretch.grain.position" => s.grain.position,
         "stretch.cloudMix" => s.cloud_mix,
+        "stretch.grain.position" => g.position,
+        "stretch.grain.rateHz" => g.rate_hz,
+        "stretch.grain.densityHz" => g.density_hz,
+        "stretch.grain.layers" => g.layers as f32,
+        "stretch.grain.overlap" => g.overlap,
+        "stretch.grain.sizeJitter" => g.size_jitter,
+        "stretch.grain.positionJitterMs" => g.position_jitter_ms,
+        "stretch.grain.pitchJitterSemis" => g.pitch_jitter_semis,
+        "stretch.grain.pitchDriftSemis" => g.pitch_drift_semis,
+        "stretch.grain.driftRateHz" => g.drift_rate_hz,
+        "stretch.grain.driftStep" => b(g.drift_step),
+        "stretch.grain.linkJitter" => b(g.link_jitter),
+        "stretch.grain.scan" => g.scan,
+        "stretch.grain.reverse" => b(g.reverse),
+        "stretch.grain.wrap" => b(g.wrap),
+        "stretch.grain.envelope" => g.envelope,
+        "stretch.grain.sizeRange" => g.size_range,
+        "stretch.grain.layerSpread" => g.layer_spread,
+        "stretch.grain.layerScatter" => g.layer_scatter,
+        "stretch.grain.layerScatterMs" => g.layer_scatter_ms,
+        "stretch.grain.panSpread" => g.pan_spread,
+        "stretch.wsola.sensitivity" => s.wsola.sensitivity,
+        "stretch.wsola.searchMs" => s.wsola.search_ms,
+        "stretch.wsola.stride" => s.wsola.stride as f32,
+        "stretch.wsola.guardHops" => s.wsola.guard_hops,
+        "stretch.wsola.floor" => s.wsola.floor,
+        "stretch.vocoder.windowMs" => s.vocoder.window_ms,
+        "stretch.vocoder.phaseLock" => b(s.vocoder.phase_lock),
+        "stretch.vocoder.freqTrust" => s.vocoder.freq_trust,
+        "stretch.vocoder.phaseSpread" => s.vocoder.phase_spread,
+        "stretch.vocoder.peakWidth" => s.vocoder.peak_width as f32,
+        "stretch.vocoder.lockWidth" => s.vocoder.lock_width,
+        "stretch.vocoder.magFreeze" => s.vocoder.mag_freeze,
+        "stretch.vocoder.magBlur" => s.vocoder.mag_blur,
+        "stretch.vocoder.magGate" => s.vocoder.mag_gate,
+        "stretch.vocoder.stereoLink" => b(s.vocoder.stereo_link),
+        "stretch.pvsola.anchorFrames" => s.pvsola.anchor_frames as f32,
+        "stretch.pvsola.searchMs" => s.pvsola.search_ms,
+        "stretch.pvsola.blend" => s.pvsola.blend,
+        "stretch.hybrid.margin" => s.hybrid.margin,
+        "stretch.hybrid.morphNoise" => b(s.hybrid.morph_noise),
+        "stretch.hybrid.harmonicLevel" => s.hybrid.harmonic_level,
+        "stretch.hybrid.percussiveLevel" => s.hybrid.percussive_level,
+        "stretch.hybrid.residualLevel" => s.hybrid.residual_level,
         _ => return None,
     })
 }
 
 /// The lane value that would produce `value`, by searching the forward map.
 ///
-/// Every mapping here is monotonic in the unit — they are all a straight line
-/// or a logarithmic one — so bisection finds the answer to more precision than
-/// a lane can hold, in a fixed forty steps. That is nothing at control rate,
-/// and it costs no second copy of a single range.
+/// For the rack's controls, whose ranges live in `resolve`. Every mapping there
+/// is monotonic in the unit — a straight line or a logarithmic one — so
+/// bisection finds the answer to more precision than a lane can hold, in a
+/// fixed forty steps. The document's own controls do not come through here:
+/// their table knows its inverse, and some of them are steps, on which a search
+/// lands on an edge.
 ///
 /// Returns `None` for a target the forward function does not know, which is
 /// the same answer everything else here gives to a name it cannot resolve.
@@ -483,21 +664,63 @@ pub fn apply_stretch(a: &Automation, p: &mut fx::grain::StreamParams, frame: u64
         let Some(u) = l.value_at(frame, seconds) else {
             continue;
         };
-        // The ranges live in `stretch_value`; this only decides which field the
-        // answer lands in. Two matches on the same names, but only one of them
-        // knows a number — and it is the one recording can be run backwards.
+        // The ranges live in the table; this only decides which field the
+        // answer lands in.
         let Some(v) = stretch_value(&l.target, u) else {
             continue;
         };
+        let on = v >= 0.5;
+        let n = v.round().max(0.0) as u32;
+        let g = &mut p.grain;
         match l.target.as_str() {
             "stretch.ratio" => p.ratio = v,
             "stretch.semitones" => p.semitones = v,
             "stretch.windowMs" => p.window_ms = v,
-            "stretch.grain.densityHz" => p.grain.density_hz = v,
-            "stretch.grain.positionJitterMs" => p.grain.position_jitter_ms = v,
-            "stretch.grain.pitchJitterSemis" => p.grain.pitch_jitter_semis = v,
-            "stretch.grain.position" => p.grain.position = v,
             "stretch.cloudMix" => p.cloud_mix = v,
+            "stretch.grain.position" => g.position = v,
+            "stretch.grain.rateHz" => g.rate_hz = v,
+            "stretch.grain.densityHz" => g.density_hz = v,
+            "stretch.grain.layers" => g.layers = n,
+            "stretch.grain.overlap" => g.overlap = v,
+            "stretch.grain.sizeJitter" => g.size_jitter = v,
+            "stretch.grain.positionJitterMs" => g.position_jitter_ms = v,
+            "stretch.grain.pitchJitterSemis" => g.pitch_jitter_semis = v,
+            "stretch.grain.pitchDriftSemis" => g.pitch_drift_semis = v,
+            "stretch.grain.driftRateHz" => g.drift_rate_hz = v,
+            "stretch.grain.driftStep" => g.drift_step = on,
+            "stretch.grain.linkJitter" => g.link_jitter = on,
+            "stretch.grain.scan" => g.scan = v,
+            "stretch.grain.reverse" => g.reverse = on,
+            "stretch.grain.wrap" => g.wrap = on,
+            "stretch.grain.envelope" => g.envelope = v,
+            "stretch.grain.sizeRange" => g.size_range = v,
+            "stretch.grain.layerSpread" => g.layer_spread = v,
+            "stretch.grain.layerScatter" => g.layer_scatter = v,
+            "stretch.grain.layerScatterMs" => g.layer_scatter_ms = v,
+            "stretch.grain.panSpread" => g.pan_spread = v,
+            "stretch.wsola.sensitivity" => p.wsola.sensitivity = v,
+            "stretch.wsola.searchMs" => p.wsola.search_ms = v,
+            "stretch.wsola.stride" => p.wsola.stride = n,
+            "stretch.wsola.guardHops" => p.wsola.guard_hops = v,
+            "stretch.wsola.floor" => p.wsola.floor = v,
+            "stretch.vocoder.windowMs" => p.vocoder.window_ms = v,
+            "stretch.vocoder.phaseLock" => p.vocoder.phase_lock = on,
+            "stretch.vocoder.freqTrust" => p.vocoder.freq_trust = v,
+            "stretch.vocoder.phaseSpread" => p.vocoder.phase_spread = v,
+            "stretch.vocoder.peakWidth" => p.vocoder.peak_width = n,
+            "stretch.vocoder.lockWidth" => p.vocoder.lock_width = v,
+            "stretch.vocoder.magFreeze" => p.vocoder.mag_freeze = v,
+            "stretch.vocoder.magBlur" => p.vocoder.mag_blur = v,
+            "stretch.vocoder.magGate" => p.vocoder.mag_gate = v,
+            "stretch.vocoder.stereoLink" => p.vocoder.stereo_link = on,
+            "stretch.pvsola.anchorFrames" => p.pvsola.anchor_frames = n,
+            "stretch.pvsola.searchMs" => p.pvsola.search_ms = v,
+            "stretch.pvsola.blend" => p.pvsola.blend = v,
+            "stretch.hybrid.margin" => p.hybrid.margin = v,
+            "stretch.hybrid.morphNoise" => p.hybrid.morph_noise = on,
+            "stretch.hybrid.harmonicLevel" => p.hybrid.harmonic_level = v,
+            "stretch.hybrid.percussiveLevel" => p.hybrid.percussive_level = v,
+            "stretch.hybrid.residualLevel" => p.hybrid.residual_level = v,
             _ => {}
         }
     }
@@ -520,19 +743,10 @@ pub const PITCH_JITTER_MAX: f32 = 24.0;
 /// One list, used to build the interface's menu *and* to tell a stale lane from
 /// a live one, so the two cannot disagree about what exists.
 pub fn targets(spec: &crate::rack::RackSpec) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = [
-        ("stretch.ratio", "Time & Pitch — Stretch"),
-        ("stretch.semitones", "Time & Pitch — Pitch"),
-        ("stretch.windowMs", "Time & Pitch — Window"),
-        ("stretch.grain.densityHz", "Grains — Density"),
-        ("stretch.grain.positionJitterMs", "Grains — Position jitter"),
-        ("stretch.grain.pitchJitterSemis", "Grains — Pitch jitter"),
-        ("stretch.grain.position", "Grains — Read position"),
-        ("stretch.cloudMix", "Grains — Cloud over engine"),
-    ]
-    .iter()
-    .map(|(a, b)| (a.to_string(), b.to_string()))
-    .collect();
+    let mut out: Vec<(String, String)> = STRETCH_TARGETS
+        .iter()
+        .map(|(a, b, _)| (a.to_string(), b.to_string()))
+        .collect();
 
     for (i, slot) in spec.slots.iter().enumerate() {
         let name = slot.kind_label();
@@ -1423,15 +1637,19 @@ mod tests {
                     "{target} plays back but cannot be recorded"
                 );
 
-                // And the search has to land where the forward map came from,
+                // And the inverse has to land where the forward map came from,
                 // or a recorded take sits somewhere other than where the
-                // control was when it was recorded.
+                // control was when it was recorded. Checked on the *value*: a
+                // switch and a count quantise the unit, so a unit of 0.17 on a
+                // switch is rightly 0 on the way back — but the number the
+                // control shows must survive the trip exactly.
                 for u in [0.0f32, 0.17, 0.5, 0.83, 1.0] {
                     let v = stretch_value(&target, u).expect("forward");
-                    let back = unit_for(|x| stretch_value(&target, x), v).expect("inverse");
+                    let back = stretch_unit(&target, v).expect("inverse");
+                    let again = stretch_value(&target, back).expect("forward again");
                     assert!(
-                        (back - u).abs() < 1e-4,
-                        "{target}: {u} became {v} and came back {back}"
+                        (again - v).abs() <= 1e-3 * v.abs().max(1.0),
+                        "{target}: unit {u} is {v}, which reads back as unit {back} = {again}"
                     );
                 }
                 continue;
@@ -1463,5 +1681,31 @@ mod tests {
             }
         }
         assert!(stretched >= 6, "the document's own targets went missing");
+    }
+
+    /// A switch lane throws the switch, a count lane sets the count, and a move
+    /// on either records as the lane value that plays the same thing back.
+    #[test]
+    fn switches_and_counts_are_steps_not_sweeps() {
+        let mut p = fx::grain::StreamParams::new(1000, 48_000);
+        apply_stretch(&automation(vec![lane("stretch.grain.reverse", vec![(0, 0.9)])]), &mut p, 0, 48_000);
+        assert!(p.grain.reverse, "a lane at 0.9 did not throw the switch");
+        apply_stretch(&automation(vec![lane("stretch.grain.reverse", vec![(0, 0.1)])]), &mut p, 0, 48_000);
+        assert!(!p.grain.reverse, "a lane at 0.1 did not throw it back");
+
+        apply_stretch(&automation(vec![lane("stretch.grain.layers", vec![(0, 0.5)])]), &mut p, 0, 48_000);
+        let mid = (1.0 + 0.5 * (fx::grain::MAX_LAYERS as f32 - 1.0)).round() as u32;
+        assert_eq!(p.grain.layers, mid, "a lane at a half is not the middle count");
+
+        // Three layers is three layers on the way back — not the edge of a
+        // rounding step where a search would have left it.
+        let u = stretch_unit("stretch.grain.layers", 3.0).unwrap();
+        assert_eq!(stretch_value("stretch.grain.layers", u).unwrap(), 3.0);
+        assert_eq!(stretch_unit("stretch.grain.wrap", 1.0), Some(1.0));
+        assert_eq!(stretch_unit("stretch.grain.wrap", 0.0), Some(0.0));
+
+        // The read position runs the whole way the control does.
+        assert_eq!(stretch_value("stretch.grain.position", 0.0), Some(-1.0));
+        assert_eq!(stretch_value("stretch.grain.position", 1.0), Some(1.0));
     }
 }

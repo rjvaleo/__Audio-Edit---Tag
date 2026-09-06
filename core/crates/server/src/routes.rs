@@ -56,7 +56,9 @@ pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 /// has fallen behind can say so instead of being argued with.
 pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
-    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SETTINGS_JS, SHAPES_4D_JS, PANEL_4D_JS,
+    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SETTINGS_JS, SECTION_PRESETS_JS,
+                 SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
+                 SHAPES_4D_JS, PANEL_4D_JS,
                  STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
                  VIS_GL_JS, RIDGE_JS, ROOM3D_JS, ROOM_PAINT_JS, VIDEO_EXPORT_JS] {
         for b in part.as_bytes() {
@@ -67,6 +69,14 @@ pub fn ui_build_id() -> u64 {
     h
 }
 
+/// **Every interface file is served `no-store`, not just `app.js`.**
+///
+/// Only `app.js` was, so a rebuilt `index.html`, `app.css` or any of the other
+/// scripts sat in the browser's cache and a plain reload kept serving the old
+/// one. What that looks like is a control you have just added being absent from
+/// the window with no error anywhere — which cost real time here, twice, and
+/// once to the owner rather than to me. The interface is embedded in the binary
+/// and changes with it; there is nothing here worth caching.
 pub const UI_HTML: &str = include_str!("../../../../ui/index.html");
 pub const UI_CSS: &str = include_str!("../../../../ui/app.css");
 pub const UI_JS: &str = include_str!("../../../../ui/app.js");
@@ -103,6 +113,19 @@ pub const THEME_PALETTES_JS: &str = include_str!("../../../../ui/theme-palettes.
 /// Every preference the interface keeps, and the table that says what each one
 /// is. Served before anything that reads a preference; see `ui/settings.js`.
 pub const SETTINGS_JS: &str = include_str!("../../../../ui/settings.js");
+/// Presets for one section at a time — a look, or a cloud — kept apart from the
+/// document's preset. Pure, like the store above; see `docs/SECTION-PRESETS.md`.
+pub const SECTION_PRESETS_JS: &str = include_str!("../../../../ui/section-presets.js");
+/// The scale sequencer, vendored whole from `rjvaleo/scale-sequencer` at commit
+/// `e0b8189` and served under `/sequencer/`, plus the one file that is ours:
+/// the bridge that ties its transport to the engine's and hands its sound to
+/// the room. See `docs/SEQUENCER.md`.
+pub const SEQ_HTML: &str = include_str!("../../../../ui/sequencer/index.html");
+pub const SEQ_APP_JS: &str = include_str!("../../../../ui/sequencer/app.js");
+pub const SEQ_PERF_JS: &str = include_str!("../../../../ui/sequencer/performance.js");
+pub const SEQ_CSS: &str = include_str!("../../../../ui/sequencer/style.css");
+pub const SEQ_PRESETS: &str = include_str!("../../../../ui/sequencer/presets.json");
+pub const SEQ_BRIDGE_JS: &str = include_str!("../../../../ui/sequencer/bridge.js");
 /// The left rail, and its own stylesheet. Ported from the edge build; it emits
 /// its own markup and depends on no rule in `app.css`. See `docs/RAIL.md`.
 pub const RAIL_JS: &str = include_str!("../../../../ui/rail.js");
@@ -146,36 +169,75 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/shapes-4d.js") => {
             Response::ok("text/javascript; charset=utf-8", SHAPES_4D_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/panel-4d.js") => {
             Response::ok("text/javascript; charset=utf-8", PANEL_4D_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/rail.js") => {
             Response::ok("text/javascript; charset=utf-8", RAIL_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/rail.css") => {
             Response::ok("text/css; charset=utf-8", RAIL_CSS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/settings.js") => {
             Response::ok("text/javascript; charset=utf-8", SETTINGS_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/section-presets.js") => {
+            Response::ok("text/javascript; charset=utf-8", SECTION_PRESETS_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer" | "/sequencer/" | "/sequencer/index.html") => {
+            Response::ok("text/html; charset=utf-8", SEQ_HTML.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/app.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_APP_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/performance.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_PERF_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/bridge.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_BRIDGE_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/style.css") => {
+            Response::ok("text/css; charset=utf-8", SEQ_CSS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/presets.json") => {
+            Response::ok("application/json; charset=utf-8", SEQ_PRESETS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/theme-palettes.js") => {
             Response::ok("text/javascript; charset=utf-8", THEME_PALETTES_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/mp4.js") => {
             Response::ok("text/javascript; charset=utf-8", MP4_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/video-export.js") => {
             Response::ok("text/javascript; charset=utf-8", VIDEO_EXPORT_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/grain-shapes.js") => {
             Response::ok("text/javascript; charset=utf-8", GRAIN_SHAPES_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/room-paint.js") => {
             Response::ok("text/javascript; charset=utf-8", ROOM_PAINT_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/room-text.js") => {
             Response::ok("text/javascript; charset=utf-8", ROOM_TEXT_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         // The engine. Cached hard and for ever: it is a pinned version of a
         // third-party build and it does not change between runs, unlike every
@@ -187,24 +249,31 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         .with("Cache-Control", "public, max-age=31536000, immutable"),
         ("GET" | "HEAD", "/vis-registry.js") => {
             Response::ok("text/javascript; charset=utf-8", VIS_REGISTRY_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/stage.js") => {
             Response::ok("text/javascript; charset=utf-8", STAGE_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/room3d.js") => {
             Response::ok("text/javascript; charset=utf-8", ROOM3D_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/ridge.js") => {
             Response::ok("text/javascript; charset=utf-8", RIDGE_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/ridge-data.js") => {
             Response::ok("text/javascript; charset=utf-8", RIDGE_DATA_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/vis-gl.js") => {
             Response::ok("text/javascript; charset=utf-8", VIS_GL_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/theme-derive.js") => {
             Response::ok("text/javascript; charset=utf-8", THEME_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/app.js") => {
             Response::ok("text/javascript; charset=utf-8", UI_JS.as_bytes().to_vec())
@@ -1042,8 +1111,10 @@ fn record_stretch_moves(app: &Arc<App>, rel: &str, was: &fx::Stretch, now: &fx::
         if (a - b).abs() < 1e-9 {
             continue;
         }
-        let t = target.clone();
-        record_move(app, rel, &target, &label, |u| crate::automation::stretch_value(&t, u), b);
+        let Some(unit) = crate::automation::stretch_unit(&target, b) else {
+            continue;
+        };
+        record_unit(app, rel, &target, &label, unit);
     }
 }
 
@@ -1060,6 +1131,18 @@ fn record_move(
     forward: impl Fn(f32) -> Option<f32>,
     value: f32,
 ) {
+    let Some(unit) = crate::automation::unit_for(forward, value) else {
+        return;
+    };
+    record_unit(app, rel, target, label, unit);
+}
+
+/// Write one lane value into its lane, if recording is armed and running.
+///
+/// The document's own controls arrive here with the unit already known — their
+/// table holds the exact inverse — and the rack's arrive through `record_move`,
+/// which searches for it.
+fn record_unit(app: &Arc<App>, rel: &str, target: &str, label: &str, unit: f32) {
     use crate::automation::Record;
     let mode = app.automation.record_mode();
     if mode == Record::Off {
@@ -1071,9 +1154,6 @@ fn record_move(
         return;
     }
     let Some(frame) = crate::automation::playhead(app) else {
-        return;
-    };
-    let Some(unit) = crate::automation::unit_for(forward, value) else {
         return;
     };
     let rate = app

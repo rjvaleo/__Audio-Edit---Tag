@@ -4,9 +4,10 @@ Mouse, keyboard and gesture, in one place. Menu items are in
 [MENUS.md](MENUS.md); this page is everything you can do by pointing at
 something.
 
-Three workspaces, on the left rail: **Browse** (the library), **Edit** (one open
-document) and **Room** (the visualiser full size, with every control it has
-beside it). `Enter` swaps between the first two. Almost everything below only
+Four workspaces, on the left rail: **Browse** (the library), **Edit** (one open
+document), **Room** (the visualiser full size, with every control it has
+beside it) and **Seq** (the scale sequencer, a second voice on the same
+transport — see [`SEQUENCER.md`](SEQUENCER.md)). `Enter` swaps between the first two. Almost everything below only
 exists in Edit.
 
 *The View menu lists only Browse and Edit — a known defect, recorded in
@@ -372,6 +373,22 @@ Under the waveform, in Edit only. Browse has no open document to transport.
 Directly under the transport: the dock's own tabs (**Time & Pitch**, **FX**,
 **Visuals**, **Regions**), a rule, then the document preset controls —
 a dropdown, **Save as…** and **Delete**.
+
+That preset is the document's: every engine at once, on the server, with the
+sound if asked. Two narrower ones sit in their own sections — a **look** on the
+Room view's stage bar, a **cloud** over the grain controls — and each is a
+picker, **Save as…** and **Delete** on one line. A look is everything the room
+is and none of the sound; a cloud is the grain section and none of the look,
+the seed or the window. See [`SECTION-PRESETS.md`](SECTION-PRESETS.md).
+
+**⏺ Capture**, on the Automation tab, arms every engine control and rolls the
+transport; every move while it plays lands in a lane of its own, drawn on one
+stacked timeline in the scale sequencer's idiom. See
+[`AUTOMATION-CAPTURE.md`](AUTOMATION-CAPTURE.md).
+
+**Random**, on the same row, throws every control in the stretch tray somewhere
+at random and reports its seed. It is the only randomiser: the room has none,
+though the Colour tab's generators give a different palette every click.
 
 ## Layers, and the governor
 

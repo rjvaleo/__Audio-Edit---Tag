@@ -704,6 +704,9 @@ every one of them on every push — [`docs/CI.md`](docs/CI.md).
 | [`docs/DATA-DIRECTORY.md`](docs/DATA-DIRECTORY.md) | Every file the program writes, where, and what is lost if you delete it |
 | [`docs/TRANSPORT-AND-RECORDING.md`](docs/TRANSPORT-AND-RECORDING.md) | Playing the sound on screen, and capturing what comes out of the channel |
 | [`docs/PRESETS-WITH-SOUND.md`](docs/PRESETS-WITH-SOUND.md) | Why a preset may carry the sound it was made on, and when that is wrong |
+| [`docs/SECTION-PRESETS.md`](docs/SECTION-PRESETS.md) | A look and a cloud: presets for one section at a time, and where the randomiser is |
+| [`docs/AUTOMATION-CAPTURE.md`](docs/AUTOMATION-CAPTURE.md) | Capturing a performance: every engine control records, and the take is drawn as the sequencer draws one |
+| [`docs/SEQUENCER.md`](docs/SEQUENCER.md) | The scale sequencer inside the program, on the engine's transport, mixed into the room's picture |
 | [`docs/SIXTH-ENGINE.md`](docs/SIXTH-ENGINE.md) | The feedback engine — built and pulled the same day, and why |
 | [`docs/WAVETABLE-MODE.md`](docs/WAVETABLE-MODE.md) | Reading the file as a wavetable rather than a timeline, and why it is not a second mechanism |
 | [`docs/OUTPUT-SAMPLED-GRAINS.md`](docs/OUTPUT-SAMPLED-GRAINS.md) | Sampling the schedule along the output rather than the source |

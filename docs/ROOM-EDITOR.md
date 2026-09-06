@@ -290,6 +290,63 @@ be clicked, not just dispatched at` clicks instead, and asks
 with `<canvas id="visGl"> intercepts pointer events`, which is the fault said out
 loud.
 
+### A full-width control is a wall  *(6 Sep 2026)*
+
+The solid's six rows joined this panel and three camera-drag tests failed. The
+first answer was to move the rows to the 4D tab, which put the controls where
+nobody would look for them; the second was to cap the panel's height and let it
+scroll, which clipped the lower rows and — because the rows had to take the
+pointer for the cap to scroll — covered the sky, so the ring could not be
+raised. Both answered the wrong question. The rows were never the fault. The
+shape *menu* was: `.field` is `width: 100%`, and a control that spans the
+overlay is a bar across the room no drag can cross. It is the width of its
+text now, in the overlay only; in the Room view's column it is still full
+width, because there it lies over nothing.
+
+That fixed the drags and not the column count. The overlay wraps its rows into
+columns across the dock's room, and six more rows were a third column that ran
+off the room's right edge — a slider a pointer could not reach, which the
+click test in `room-hierarchy.spec.mjs` is there to catch. So in the overlay
+the six rows are shown only while the Solid layer is on (`.re-solid`, toggled
+by `paintRoomNums`); with the layer off they move nothing. In the Room view,
+which has a column to itself, they are always there — that is where the solid
+is designed, and it is the panel the rows were asked back onto.
+
+## Nothing may keep the pointer  *(6 Sep 2026)*
+
+Reported as "moving objects around on the stage is inconsistent — sometimes
+the mouse gets stuck." Stuck means the room following the pointer with
+nothing pressed, and that is always a drag that was started and never ended:
+the element that began it never heard the release. The common way is a
+secondary press — right button, ctrl-click, a two-finger tap — which opens the
+context menu, and the menu takes `pointerup` with it. From then on every
+`pointermove` is read as a drag.
+
+Every drag in the room — the bare room's two zones, the grips, the path's
+beads — now does three things it did not: it refuses any button but the
+first; it ends itself on the first move that arrives with no button down,
+which is the release it never heard; and it listens for `lostpointercapture`,
+which is the browser saying the same thing. `tests/ui/room-grips.spec.mjs`
+holds a drag with its release taken away and insists the room stops.
+
+### It says what is under the hand
+
+The second half of the report: "it's hard to know which control you're
+controlling." The grips lit on hover, but a change of opacity on a five-pixel
+bar is not a state anyone can see, and the room's own two gestures — the sky
+for the ring, the rest for the camera — had no line between them and nothing
+under the hand at all.
+
+So: a grip glows under the pointer and while dragged, and the thin bars
+reach four pixels past their long edges so they can be caught — the round
+grips do not, because the depth grip sits at the vanishing point, which is
+exactly where a hand goes to swing the room, and padding it stole that
+gesture; the sky zone is drawn as a band
+while the pointer is over it; and a word at the pointer names the zone and
+what each axis does — `RING — up/down: height · left/right: size`, `CAMERA —
+up/down: tilt · left/right: swing`. The cursor is a hand. None of it takes the
+pointer, and none of it is in a film.
+
 ## Clear
 
 Empties the room: the spectrum trail and every grain still in the air.

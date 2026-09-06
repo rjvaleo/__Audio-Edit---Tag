@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCALE SEQUENCER — Tuning Prototype</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="header">
+      <div class="logo">SCALE SEQ <span>/ TUNING PROTO</span></div>
+      <div class="subtitle">
+        True Pitch · Pulse/PWM · Dual LFO · Filter ADSR · Key Follow · 88 Keys
+      </div>
+    </div>
+
+    <div class="transport">
+      <button class="btn" id="playBtn" onclick="togglePlay()">▶ PLAY</button>
+      <button class="btn stop-btn" onclick="stopSeq()">■ STOP</button>
+      <div class="divider"></div>
+      <div class="knob-group">
+        <span class="knob-label">BPM</span>
+        <div
+          class="knob"
+          onmousedown="knobDown(event, 'bpmSlider')"
+          ontouchstart="knobTouchStart(event,'bpmSlider')"
+        ></div>
+        <input
+          type="range"
+          class="knob-hidden"
+          id="bpmSlider"
+          min="40"
+          max="240"
+          value="120"
+          oninput="updateBPM(this.value)"
+        />
+        <span class="knob-val" id="bpmVal">120</span>
+      </div>
+      <div class="knob-group">
+        <span class="knob-label">STEPS</span>
+        <div
+          class="knob"
+          onmousedown="knobDown(event, 'stepsSlider')"
+          ontouchstart="knobTouchStart(event,'stepsSlider')"
+        ></div>
+        <input
+          type="range"
+          class="knob-hidden"
+          id="stepsSlider"
+          min="1"
+          max="16"
+          value="8"
+          oninput="updateSteps(this.value)"
+        />
+        <span class="knob-val" id="stepsVal">8</span>
+      </div>
+      <div class="divider"></div>
+      <div class="pos-display" id="posDisplay">01 · 01</div>
+      <div class="divider"></div>
+      <div class="knob-group">
+        <span class="knob-label">DIRECTION</span>
+        <select id="dirSelect" onchange="direction = this.value">
+          <option value="fwd">FORWARD</option>
+          <option value="rev">REVERSE</option>
+          <option value="ping">PING-PONG</option>
+          <option value="rand">RANDOM</option>
+        </select>
+      </div>
+      <div class="knob-group">
+        <span class="knob-label">STEP LEN</span>
+        <select id="stepLenSelect" onchange="updateStepLen(this.value)">
+          <option value="0.25">1/16</option>
+          <option value="0.5" selected>1/8</option>
+          <option value="1">1/4</option>
+          <option value="2">1/2</option>
+        </select>
+      </div>
+      <div class="divider"></div>
+      <!-- PRESETS -->
+      <div class="preset-group">
+        <span class="knob-label">PRESET</span>
+        <div class="preset-controls">
+          <button class="btn preset-save-btn" onclick="savePreset()">
+            + SAVE
+          </button>
+          <select
+            id="presetSelect"
+            class="preset-select"
+            onchange="loadPreset(this.value)"
+          >
+            <option value="">— recall —</option>
+          </select>
+          <button
+            class="btn preset-del-btn"
+            onclick="deleteSelectedPreset()"
+            title="Delete selected preset"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="preset-controls preset-controls-row2">
+          <select id="morphSelect" class="preset-select">
+            <option value="">— morph to —</option>
+          </select>
+          <button
+            class="btn preset-morph-btn"
+            onclick="
+              morphToPreset(document.getElementById('morphSelect').value)
+            "
+            title="Morph to selected preset over the morph time"
+          >
+            ⟿ MORPH
+          </button>
+          <div class="knob-group knob-group-inline">
+            <span class="knob-label">TIME</span>
+            <div
+              class="knob"
+              onmousedown="knobDown(event, 'morphTimeSlider')"
+              ontouchstart="knobTouchStart(event,'morphTimeSlider')"
+            ></div>
+            <input
+              type="range"
+              class="knob-hidden"
+              id="morphTimeSlider"
+              min="0.5"
+              max="30"
+              step="0.5"
+              value="5"
+              oninput="updateMorphTime(this.value)"
+            />
+            <span class="knob-val" id="morphTimeVal">5.0s</span>
+          </div>
+          <button
+            class="btn preset-export-btn"
+            onclick="exportPresets()"
+            title="Download presets as JSON file"
+          >
+            ↓ EXPORT
+          </button>
+          <button
+            class="btn preset-import-btn"
+            onclick="document.getElementById('presetFileInput').click()"
+            title="Load presets from JSON file"
+          >
+            ↑ IMPORT
+          </button>
+          <input
+            type="file"
+            id="presetFileInput"
+            accept=".json"
+            style="display: none"
+            onchange="importPresets(this)"
+          />
+        </div>
+        <span class="preset-name-display" id="presetNameDisplay"
+          >NO PRESET</span
+        >
+      </div>
+      <div class="divider"></div>
+      <!-- CAPTURE -->
+      <div class="capture-group">
+        <span class="knob-label">CAPTURE</span>
+        <div class="capture-controls">
+          <button class="btn" id="captureBtn" onclick="toggleCapture()">
+            ⏺ REC
+          </button>
+          <span class="capture-timer" id="captureTimer"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="main">
+      <!-- SCALE PANEL -->
+      <div class="scale-panel">
+        <div class="panel-header">
+          SCALE LIBRARY — <span id="scaleCount">0</span> SCALES
+        </div>
+        <div class="scale-list" id="scaleList"></div>
+      </div>
+
+      <!-- RIGHT PANEL -->
+      <div class="right-panel">
+        <!-- SYNTH / ADSR + FILTER ROW -->
+        <div class="synth-row">
+          <span class="row-label">SYNTH</span>
+          <!-- ADSR canvas + knobs sub-block -->
+          <div class="adsr-block">
+            <canvas
+              id="adsrCanvas"
+              width="220"
+              height="52"
+              style="
+                background: #0a0c0e;
+                border: 1px solid #1e2830;
+                height: 52px;
+                margin-bottom: 6px;
+              "
+            ></canvas>
+            <div class="adsr-knobs">
+              <div class="knob-group">
+                <span class="knob-label">ATK</span>
+                <div
+                  class="knob"
+                  id="atkKnob"
+                  data-min="1"
+                  data-max="500"
+                  data-value="10"
+                  data-target="atkVal"
+                  data-unit="ms"
+                  onmousedown="knobDown(event, 'atkSlider')"
+                  ontouchstart="knobTouchStart(event,'atkSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="1"
+                  max="500"
+                  value="10"
+                  id="atkSlider"
+                  oninput="updateEnv()"
+                />
+                <span class="knob-val" id="atkVal">10ms</span>
+              </div>
+              <div class="knob-group">
+                <span class="knob-label">DEC</span>
+                <div
+                  class="knob"
+                  id="decKnob"
+                  data-min="1"
+                  data-max="500"
+                  data-value="80"
+                  data-target="decVal"
+                  data-unit="ms"
+                  onmousedown="knobDown(event, 'decSlider')"
+                  ontouchstart="knobTouchStart(event,'decSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="1"
+                  max="500"
+                  value="80"
+                  id="decSlider"
+                  oninput="updateEnv()"
+                />
+                <span class="knob-val" id="decVal">80ms</span>
+              </div>
+              <div class="knob-group">
+                <span class="knob-label">SUS</span>
+                <div
+                  class="knob"
+                  id="susKnob"
+                  data-min="0"
+                  data-max="100"
+                  data-value="60"
+                  data-target="susVal"
+                  data-unit="%"
+                  onmousedown="knobDown(event, 'susSlider')"
+                  ontouchstart="knobTouchStart(event,'susSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="60"
+                  id="susSlider"
+                  oninput="updateEnv()"
+                />
+                <span class="knob-val" id="susVal">60%</span>
+              </div>
+              <div class="knob-group">
+                <span class="knob-label">REL</span>
+                <div
+                  class="knob"
+                  id="relKnob"
+                  data-min="1"
+                  data-max="2000"
+                  data-value="200"
+                  data-target="relVal"
+                  data-unit="ms"
+                  onmousedown="knobDown(event, 'relSlider')"
+                  ontouchstart="knobTouchStart(event,'relSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="1"
+                  max="2000"
+                  value="200"
+                  id="relSlider"
+                  oninput="updateEnv()"
+                />
+                <span class="knob-val" id="relVal">200ms</span>
+              </div>
+              <div class="knob-group">
+                <span class="knob-label">VOL</span>
+                <div
+                  class="knob"
+                  id="volKnob"
+                  data-min="0"
+                  data-max="100"
+                  data-value="70"
+                  data-target="volVal"
+                  data-unit="%"
+                  onmousedown="knobDown(event, 'volSlider')"
+                  ontouchstart="knobTouchStart(event,'volSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="70"
+                  id="volSlider"
+                  oninput="updateVol(this.value)"
+                />
+                <span class="knob-val" id="volVal">70%</span>
+              </div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="stacked-selects">
+            <div class="select-row">
+              <span class="knob-label">WAVE</span>
+              <select id="waveSelect" onchange="setWaveType(this.value)">
+                <option value="sine">SINE</option>
+                <option value="triangle">TRIANGLE</option>
+                <option value="sawtooth">SAW</option>
+                <option value="square">SQUARE</option>
+                <option value="pulse">PULSE/PWM</option>
+              </select>
+            </div>
+            <div class="select-row">
+              <span class="knob-label">ROOT</span>
+              <select id="rootSelect" onchange="updateRoot(this.value)">
+                <option value="0">C</option>
+                <option value="2">D</option>
+                <option value="4">E</option>
+                <option value="5">F</option>
+                <option value="7">G</option>
+                <option value="9" selected>A</option>
+                <option value="11">B</option>
+              </select>
+            </div>
+            <div class="select-row">
+              <span class="knob-label">OCT</span>
+              <select id="octaveSelect" onchange="updateRoot()">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4" selected>4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+              </select>
+            </div>
+            <div class="select-row">
+              <span class="knob-label">HZ</span>
+              <span class="knob-val" id="rootHzDisplay" style="font-size: 11px"
+                >440.0</span
+              >
+            </div>
+            <div class="select-row" id="pwGroup" style="opacity: 0.35">
+              <span class="knob-label">PW</span>
+              <div
+                class="knob"
+                onmousedown="knobDown(event, 'pwSlider')"
+                ontouchstart="knobTouchStart(event,'pwSlider')"
+              ></div>
+              <input
+                type="range"
+                class="knob-hidden"
+                min="5"
+                max="95"
+                value="50"
+                id="pwSlider"
+                oninput="updatePW(this.value)"
+              />
+              <span class="knob-val" id="pwVal">50%</span>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <span class="row-label" style="color: #ff6b35">FILTER</span>
+          <div class="knob-group">
+            <span class="knob-label">CUTOFF</span>
+            <div
+              class="knob"
+              onmousedown="knobDown(event, 'cutoffSlider')"
+              ontouchstart="knobTouchStart(event,'cutoffSlider')"
+            ></div>
+            <input
+              type="range"
+              class="knob-hidden"
+              min="0"
+              max="100"
+              value="67"
+              id="cutoffSlider"
+              oninput="updateFilter()"
+            />
+            <span class="knob-val" id="cutoffVal">2.0kHz</span>
+          </div>
+          <div class="knob-group">
+            <span class="knob-label">RESO</span>
+            <div
+              class="knob"
+              onmousedown="knobDown(event, 'resSlider')"
+              ontouchstart="knobTouchStart(event,'resSlider')"
+            ></div>
+            <input
+              type="range"
+              class="knob-hidden"
+              min="0"
+              max="100"
+              value="10"
+              id="resSlider"
+              oninput="updateFilter()"
+            />
+            <span class="knob-val" id="resVal">Q 2.1</span>
+          </div>
+          <div class="knob-group">
+            <span class="knob-label">KEY FOLLOW</span>
+            <div
+              class="knob"
+              onmousedown="knobDown(event, 'keyFollowSlider')"
+              ontouchstart="knobTouchStart(event,'keyFollowSlider')"
+            ></div>
+            <input
+              type="range"
+              class="knob-hidden"
+              min="0"
+              max="100"
+              value="0"
+              id="keyFollowSlider"
+              oninput="updateKeyFollow()"
+            />
+            <span class="knob-val" id="keyFollowVal">0%</span>
+          </div>
+          <div class="divider"></div>
+          <!-- Filter ADSR -->
+          <div class="adsr-block">
+            <canvas
+              id="fadsrCanvas"
+              width="180"
+              height="44"
+              style="
+                background: #0a0c0e;
+                border: 1px solid #2a1a0a;
+                height: 44px;
+                margin-bottom: 4px;
+              "
+            ></canvas>
+            <div class="adsr-knobs">
+              <div class="knob-group">
+                <span class="knob-label" style="color: #ff6b35">F·ATK</span>
+                <div
+                  class="knob"
+                  onmousedown="knobDown(event, 'fatkSlider')"
+                  ontouchstart="knobTouchStart(event,'fatkSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="1"
+                  max="500"
+                  value="10"
+                  id="fatkSlider"
+                  oninput="updateFilterADSR()"
+                />
+                <span class="knob-val" id="fatkVal">10ms</span>
+              </div>
+              <div class="knob-group">
+                <span class="knob-label" style="color: #ff6b35">F·DEC</span>
+                <div
+                  class="knob"
+                  onmousedown="knobDown(event, 'fdecSlider')"
+                  ontouchstart="knobTouchStart(event,'fdecSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="1"
+                  max="500"
+                  value="150"
+                  id="fdecSlider"
+                  oninput="updateFilterADSR()"
+                />
+                <span class="knob-val" id="fdecVal">150ms</span>
+              </div>
+              <div class="knob-group">
+                <span class="knob-label" style="color: #ff6b35">F·SUS</span>
+                <div
+                  class="knob"
+                  onmousedown="knobDown(event, 'fsusSlider')"
+                  ontouchstart="knobTouchStart(event,'fsusSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="30"
+                  id="fsusSlider"
+                  oninput="updateFilterADSR()"
+                />
+                <span class="knob-val" id="fsusVal">30%</span>
+              </div>
+              <div class="knob-group">
+                <span class="knob-label" style="color: #ff6b35">F·REL</span>
+                <div
+                  class="knob"
+                  onmousedown="knobDown(event, 'frelSlider')"
+                  ontouchstart="knobTouchStart(event,'frelSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="1"
+                  max="2000"
+                  value="300"
+                  id="frelSlider"
+                  oninput="updateFilterADSR()"
+                />
+                <span class="knob-val" id="frelVal">300ms</span>
+              </div>
+              <div class="knob-group">
+                <span class="knob-label" style="color: #ff6b35">F·AMT</span>
+                <div
+                  class="knob"
+                  onmousedown="knobDown(event, 'famtSlider')"
+                  ontouchstart="knobTouchStart(event,'famtSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="-100"
+                  max="100"
+                  value="50"
+                  id="famtSlider"
+                  oninput="updateFilterADSR()"
+                />
+                <span class="knob-val" id="famtVal">+50%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LFO ROW (all 4 LFOs) -->
+        <div class="synth-row" style="gap: 12px">
+          <div class="lfo-unit">
+            <div class="lfo-label-col">
+              <span class="row-label" style="color: #ff6b35">LFO 1</span>
+              <canvas
+                id="lfo1Canvas"
+                width="40"
+                height="44"
+                style="background: #0a0c0e; border: 1px solid #1e2830"
+              ></canvas>
+            </div>
+            <div class="stacked-selects">
+              <div class="select-row">
+                <span class="knob-label">SHAPE</span>
+                <select
+                  id="lfo1WaveSelect"
+                  onchange="updateLFO(0)"
+                  style="font-size: 10px"
+                >
+                  <option value="sine">SINE</option>
+                  <option value="triangle">TRI</option>
+                  <option value="sawtooth">SAW</option>
+                </select>
+              </div>
+              <div class="select-row">
+                <span class="knob-label">TARGET</span>
+                <select
+                  id="lfo1TargetSelect"
+                  onchange="changeLFOTarget(0, this.value)"
+                  style="font-size: 10px"
+                >
+                  <option value="">—</option>
+                  <option value="filter" selected>FILTER</option>
+                  <option value="resonance">RESO</option>
+                  <option value="volume">VOLUME</option>
+                  <option value="pw">PULSE W</option>
+                  <option value="delay-wet">DLY WET</option>
+                </select>
+              </div>
+            </div>
+            <div class="lfo-rd-col">
+              <div class="lfo-knob">
+                <span class="knob-label">RATE</span>
+                <div
+                  class="knob knob-sm"
+                  onmousedown="knobDown(event, 'lfo1RateSlider')"
+                  ontouchstart="knobTouchStart(event,'lfo1RateSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="50"
+                  id="lfo1RateSlider"
+                  oninput="updateLFO(0)"
+                />
+                <span class="knob-val" id="lfo1RateVal">1.0Hz</span>
+              </div>
+              <div class="lfo-knob">
+                <span class="knob-label">DEPTH</span>
+                <div
+                  class="knob knob-sm"
+                  onmousedown="knobDown(event, 'lfo1DepthSlider')"
+                  ontouchstart="knobTouchStart(event,'lfo1DepthSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="20"
+                  id="lfo1DepthSlider"
+                  oninput="updateLFO(0)"
+                />
+                <span class="knob-val" id="lfo1DepthVal">20%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="lfo-unit">
+            <div class="lfo-label-col">
+              <span class="row-label" style="color: #00e5ff">LFO 2</span>
+              <canvas
+                id="lfo2Canvas"
+                width="40"
+                height="44"
+                style="background: #0a0c0e; border: 1px solid #1e2830"
+              ></canvas>
+            </div>
+            <div class="stacked-selects">
+              <div class="select-row">
+                <span class="knob-label">SHAPE</span>
+                <select
+                  id="lfo2WaveSelect"
+                  onchange="updateLFO(1)"
+                  style="font-size: 10px"
+                >
+                  <option value="sine">SINE</option>
+                  <option value="triangle">TRI</option>
+                  <option value="sawtooth">SAW</option>
+                </select>
+              </div>
+              <div class="select-row">
+                <span class="knob-label">TARGET</span>
+                <select
+                  id="lfo2TargetSelect"
+                  onchange="changeLFOTarget(1, this.value)"
+                  style="font-size: 10px"
+                >
+                  <option value="">—</option>
+                  <option value="filter">FILTER</option>
+                  <option value="resonance">RESO</option>
+                  <option value="volume">VOLUME</option>
+                  <option value="pw" selected>PULSE W</option>
+                  <option value="delay-wet">DLY WET</option>
+                </select>
+              </div>
+            </div>
+            <div class="lfo-rd-col">
+              <div class="lfo-knob">
+                <span class="knob-label">RATE</span>
+                <div
+                  class="knob knob-sm"
+                  onmousedown="knobDown(event, 'lfo2RateSlider')"
+                  ontouchstart="knobTouchStart(event,'lfo2RateSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="40"
+                  id="lfo2RateSlider"
+                  oninput="updateLFO(1)"
+                />
+                <span class="knob-val" id="lfo2RateVal">0.55Hz</span>
+              </div>
+              <div class="lfo-knob">
+                <span class="knob-label">DEPTH</span>
+                <div
+                  class="knob knob-sm"
+                  onmousedown="knobDown(event, 'lfo2DepthSlider')"
+                  ontouchstart="knobTouchStart(event,'lfo2DepthSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="25"
+                  id="lfo2DepthSlider"
+                  oninput="updateLFO(1)"
+                />
+                <span class="knob-val" id="lfo2DepthVal">25%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="lfo-unit">
+            <div class="lfo-label-col">
+              <span class="row-label" style="color: #a0ff60">LFO 3</span>
+              <canvas
+                id="lfo3Canvas"
+                width="40"
+                height="44"
+                style="background: #0a0c0e; border: 1px solid #1e2830"
+              ></canvas>
+            </div>
+            <div class="stacked-selects">
+              <div class="select-row">
+                <span class="knob-label">SHAPE</span>
+                <select
+                  id="lfo3WaveSelect"
+                  onchange="updateLFO(2)"
+                  style="font-size: 10px"
+                >
+                  <option value="sine">SINE</option>
+                  <option value="triangle">TRI</option>
+                  <option value="sawtooth">SAW</option>
+                </select>
+              </div>
+              <div class="select-row">
+                <span class="knob-label">TARGET</span>
+                <select
+                  id="lfo3TargetSelect"
+                  onchange="changeLFOTarget(2, this.value)"
+                  style="font-size: 10px"
+                >
+                  <option value="" selected>—</option>
+                  <option value="filter">FILTER</option>
+                  <option value="resonance">RESO</option>
+                  <option value="volume">VOLUME</option>
+                  <option value="pw">PULSE W</option>
+                  <option value="delay-wet">DLY WET</option>
+                </select>
+              </div>
+            </div>
+            <div class="lfo-rd-col">
+              <div class="lfo-knob">
+                <span class="knob-label">RATE</span>
+                <div
+                  class="knob knob-sm"
+                  onmousedown="knobDown(event, 'lfo3RateSlider')"
+                  ontouchstart="knobTouchStart(event,'lfo3RateSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="40"
+                  id="lfo3RateSlider"
+                  oninput="updateLFO(2)"
+                />
+                <span class="knob-val" id="lfo3RateVal">0.55Hz</span>
+              </div>
+              <div class="lfo-knob">
+                <span class="knob-label">DEPTH</span>
+                <div
+                  class="knob knob-sm"
+                  onmousedown="knobDown(event, 'lfo3DepthSlider')"
+                  ontouchstart="knobTouchStart(event,'lfo3DepthSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="0"
+                  id="lfo3DepthSlider"
+                  oninput="updateLFO(2)"
+                />
+                <span class="knob-val" id="lfo3DepthVal">0%</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- DELAY + REVERB ROW -->
+        <div class="synth-row synth-row-scroll">
+          <div
+            style="
+              display: flex;
+              gap: 24px;
+              align-items: center;
+              flex-wrap: nowrap;
+              padding: 0;
+              min-width: max-content;
+            "
+          >
+            <span class="row-label" style="color: #7fff00">DELAY</span>
+            <div class="knob-group">
+              <span class="knob-label">TIME</span>
+              <select
+                id="delayTimeSelect"
+                onchange="updateDelay()"
+                style="font-size: 10px"
+              >
+                <option value="0.125">1/32</option>
+                <option value="0.25">1/16</option>
+                <option value="0.33333">1/8T</option>
+                <option value="0.5" selected>1/8</option>
+                <option value="0.75">D 1/8</option>
+                <option value="1">1/4</option>
+                <option value="1.33333">1/4T</option>
+                <option value="1.5">D 1/4</option>
+                <option value="2">1/2</option>
+                <option value="3">D 1/2</option>
+                <option value="4">1 BAR</option>
+              </select>
+              <span class="knob-val" id="delayTimeVal" style="font-size: 9px"
+                >250ms</span
+              >
+            </div>
+            <div class="knob-group">
+              <span class="knob-label">TAPE</span>
+              <select
+                id="tapeSpeedSelect"
+                onchange="updateTapeSpeed()"
+                style="font-size: 10px"
+              >
+                <option value="studio30">30 IPS</option>
+                <option value="studio15">15 IPS</option>
+                <option value="studio75" selected>7.5 IPS</option>
+                <option value="studio375">3.75 IPS</option>
+                <option value="cassette">CASSETTE 1⅞</option>
+                <option value="micro">MICRO 15/16</option>
+              </select>
+              <span class="knob-val" id="tapeSpeedVal" style="font-size: 9px"
+                >7.5 IPS</span
+              >
+            </div>
+            <div class="knob-group">
+              <span class="knob-label">FEEDBACK</span>
+              <div
+                class="knob"
+                onmousedown="knobDown(event, 'delayFbSlider')"
+                ontouchstart="knobTouchStart(event,'delayFbSlider')"
+              ></div>
+              <input
+                type="range"
+                class="knob-hidden"
+                min="0"
+                max="95"
+                value="35"
+                id="delayFbSlider"
+                oninput="updateDelay()"
+              />
+              <span class="knob-val" id="delayFbVal">35%</span>
+            </div>
+            <div class="knob-group">
+              <span class="knob-label">WET</span>
+              <div
+                class="knob"
+                onmousedown="knobDown(event, 'delayWetSlider')"
+                ontouchstart="knobTouchStart(event,'delayWetSlider')"
+              ></div>
+              <input
+                type="range"
+                class="knob-hidden"
+                min="0"
+                max="100"
+                value="25"
+                id="delayWetSlider"
+                oninput="updateDelay()"
+              />
+              <span class="knob-val" id="delayWetVal">25%</span>
+            </div>
+            <div class="knob-group">
+              <span class="knob-label">SPREAD</span>
+              <div
+                class="knob"
+                onmousedown="knobDown(event, 'delaySpreadSlider')"
+                ontouchstart="knobTouchStart(event,'delaySpreadSlider')"
+              ></div>
+              <input
+                type="range"
+                class="knob-hidden"
+                min="0"
+                max="100"
+                value="100"
+                id="delaySpreadSlider"
+                oninput="updateDelay()"
+              />
+              <span class="knob-val" id="delaySpreadVal">100%</span>
+            </div>
+            <div class="knob-group">
+              <span class="knob-label">HI CUT</span>
+              <div
+                class="knob"
+                onmousedown="knobDown(event, 'delayHiCutSlider')"
+                ontouchstart="knobTouchStart(event,'delayHiCutSlider')"
+              ></div>
+              <input
+                type="range"
+                class="knob-hidden"
+                min="0"
+                max="100"
+                value="75"
+                id="delayHiCutSlider"
+                oninput="updateDelay()"
+              />
+              <span class="knob-val" id="delayHiCutVal">6.3kHz</span>
+            </div>
+            <div class="divider"></div>
+            <div class="knob-group" style="align-items: flex-start">
+              <span class="knob-label">PING-PONG</span>
+              <canvas
+                id="ppCanvas"
+                width="140"
+                height="50"
+                style="background: #0a0c0e; border: 1px solid #1e2830"
+              ></canvas>
+            </div>
+            <div class="divider"></div>
+            <!-- SCALE DISPLAY (compact, inline with delay row) -->
+            <div class="scale-display">
+              <div class="scale-display-head">
+                <div class="scale-display-name" id="activeScaleName">
+                  PYTHAGOREAN TUNING
+                </div>
+                <div class="scale-display-info" id="activeScaleInfo">
+                  Ancient Greek · 12 notes · Just intonation (3-limit)
+                </div>
+              </div>
+              <div class="scale-degrees" id="scaleDegrees"></div>
+            </div>
+          </div>
+          <!-- /inner scroll wrapper -->
+        </div>
+
+        <!-- SEQUENCER -->
+        <div class="seq-panel">
+          <div class="step-grid" id="stepGrid"></div>
+        </div>
+        <div
+          class="seq-resize"
+          onmousedown="seqResizeStart(event)"
+          ondblclick="seqResizeReset()"
+          title="DRAG TO RESIZE · DOUBLE-CLICK TO RESET"
+        ></div>
+
+        <!-- PERFORMANCE -->
+        <div class="perf-panel">
+          <div class="perf-header" onclick="perfToggleCollapse()">
+            <span
+              ><span id="perfCollapseIcon">▸</span> PERFORMANCE —
+              <span id="perfName">NO TAKE</span></span
+            >
+            <span class="perf-header-info" id="perfHeaderInfo">—</span>
+          </div>
+          <div id="perfBody" style="display: none">
+            <div class="perf-transport">
+              <button class="btn perf-rec-btn" id="perfRecBtn" onclick="perfToggleRec()">
+                ⏺ REC PERF
+              </button>
+              <button class="btn" id="perfPlayBtn" onclick="perfTogglePlay()">
+                ▶ PLAY PERF
+              </button>
+              <button class="btn" onclick="perfStop()">⏹</button>
+              <div class="divider"></div>
+              <button class="btn perf-gen-btn" onclick="perfGenerate()">
+                ◌ GENERATE
+              </button>
+              <div class="knob-group-inline">
+                <span class="knob-label">VARIATION</span>
+                <div
+                  class="knob knob-sm"
+                  onmousedown="knobDown(event, 'perfVarSlider')"
+                  ontouchstart="knobTouchStart(event,'perfVarSlider')"
+                ></div>
+                <input
+                  type="range"
+                  class="knob-hidden"
+                  min="0"
+                  max="100"
+                  value="35"
+                  id="perfVarSlider"
+                  oninput="updatePerfVar()"
+                />
+                <span class="knob-val" id="perfVarVal">35%</span>
+              </div>
+              <div class="divider"></div>
+              <select
+                class="preset-select perf-select"
+                id="perfSelect"
+                onchange="perfLoad(this.value)"
+              >
+                <option value="">— takes —</option>
+              </select>
+              <button class="btn preset-del-btn" onclick="perfDeleteSelected()">
+                DEL
+              </button>
+              <div class="divider"></div>
+              <span class="perf-sel-info" id="perfSelInfo"></span>
+              <button
+                class="btn perf-keep-btn"
+                id="perfKeepBtn"
+                style="display: none"
+                onclick="perfKeepGesture()"
+              >
+                KEEP
+              </button>
+              <button
+                class="btn perf-cut-btn"
+                id="perfCutBtn"
+                style="display: none"
+                onclick="perfCutGesture()"
+              >
+                CUT
+              </button>
+              <button
+                class="btn perf-gen-btn"
+                id="perfRerollBtn"
+                style="display: none"
+                onclick="perfReroll()"
+              >
+                ◌ REROLL
+              </button>
+              <button
+                class="btn perf-brain-btn"
+                id="perfBrainBtn"
+                onclick="perfToggleBrain()"
+              >
+                BRAIN
+              </button>
+            </div>
+            <canvas id="perfCanvas" height="120"></canvas>
+            <div
+              class="perf-resize"
+              onmousedown="perfResizeStart(event)"
+              ondblclick="perfResizeReset()"
+              title="DRAG TO RESIZE · DOUBLE-CLICK TO RESET"
+            ></div>
+            <div class="perf-brain" id="perfBrain" style="display: none">
+              <canvas id="brainFormCanvas" height="100"></canvas>
+              <canvas id="brainTransCanvas" height="100"></canvas>
+              <canvas id="brainTimingCanvas" height="100"></canvas>
+              <canvas id="brainRangeCanvas" height="100"></canvas>
+            </div>
+            <div class="perf-status-row">
+              <span id="perfStatus"
+                >READY — ⏺ REC PERF CAPTURES KNOB MOVES, SWITCHES, SCALE AND
+                STEP EDITS WHILE YOU PLAY</span
+              >
+              <span class="perf-pos" id="perfPos">— · —</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 88-KEY STRIP -->
+        <div class="keyboard-panel">
+          <div class="kb-label">
+            88-NOTE KEYBOARD — SCALE DEGREES HIGHLIGHTED
+          </div>
+          <div class="kb-strip" id="kbStrip"></div>
+        </div>
+
+        <!-- STATUS -->
+        <div class="status-bar">
+          <div>SCALE: <span id="statusScale">PYTHAGOREAN</span></div>
+          <div>ROOT: <span id="statusRoot">A4 · 440.0 Hz</span></div>
+          <div>PLAYING: <span id="statusNote">—</span></div>
+          <div>FREQ: <span id="statusFreq">—</span></div>
+          <div>STEP: <span id="statusStep">—</span></div>
+          <div>TUNING: <span>TRUE PITCH · NOT 12-TET QUANTIZED</span></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="performance.js"></script>
+    <!-- Not part of the sequencer: the bridge to the granular engine it is
+         embedded in. Does nothing when the page is opened on its own. -->
+    <script src="bridge.js"></script>
+  </body>
+</html>

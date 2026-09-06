@@ -2517,6 +2517,23 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   max-height: 100%; column-gap: 14px;
   padding: 6px 8px;
 }
+/* The one menu in the overlay. `.field` is full width, and a full-width
+   control in a panel that lies over the room is a bar the room cannot be
+   dragged through — which is how six rows for the solid came to cover the
+   camera's drag target. Capping the panel's height was the wrong answer (it
+   clipped the lower rows and, with the rows made to take the pointer so the
+   cap could scroll, covered the sky). The control is the width of its text. */
+.room-edit select.mini { width: auto; max-width: 150px; height: 16px; font-size: 9px; padding: 0 3px; }
+/* In the room view it is a column, not an overlay: no cap, no scroll of its
+   own — `.rv-admin-body` already scrolls around it. */
+.rv-admin .room-edit select.mini { width: 100%; max-width: none; height: 24px; font-size: 10.5px; padding: 0 6px; }
+/* The solid's six rows, in the overlay, only while its layer is on. Six more
+   rows are a third wrapped column, and that column ran off the right edge of
+   the dock's room — controls a pointer could not reach. With the layer off
+   they move nothing. In the Room view they are always shown. */
+.room-edit.re-solid-off .re-row.re-solid { display: none; }
+.rv-admin .room-edit.re-solid-off .re-row.re-solid { display: flex; }
+
 .room-edit.hidden { display: none; }
 .re-frames { display: flex; gap: 3px; pointer-events: auto; }
 .re-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
@@ -3263,6 +3280,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .room-path .rp-pt:hover, .room-path .rp-pt.dragging {
   fill: var(--accent); stroke: var(--text);
+  filter: drop-shadow(0 0 5px var(--accent));
 }
 /* The ends are square, the waypoints round — so which is the front and which
    is a stop on the way is legible without a label. */
@@ -3291,7 +3309,40 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   transform: translate(-50%, -50%);
   transition: opacity .12s ease, box-shadow .12s ease;
 }
-.rh:hover, .rh.dragging { opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+/* Under the hand it lights. Bright enough to read against the room, and the
+   glow says which one — the grips are small and close, and a change of
+   opacity on a five-pixel bar was not a state anyone could see. */
+.rh:hover, .rh.dragging {
+  opacity: 1;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent),
+              0 0 12px 2px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.rh.dragging { background: var(--text); }
+/* A larger hand than the mark, for the bars only: five pixels wide is hard
+   to land on, so each reaches four past its long edges. The round grips get
+   none — the depth grip sits at the vanishing point, which is exactly where
+   a hand goes to swing the room, and padding it stole that gesture. */
+.rh-w::before { content: ''; position: absolute; inset: -2px -4px; }
+.rh-h::before { content: ''; position: absolute; inset: -4px -2px; }
+
+/* The room's own two gestures, shown. The band is the sky zone, drawn while
+   the pointer is over it; the word at the pointer names the zone and its two
+   axes. Neither takes the pointer. */
+.rh-zone {
+  position: absolute; left: 0; right: 0; top: 0; height: 34%;
+  pointer-events: none; opacity: 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  background: linear-gradient(color-mix(in srgb, var(--accent) 10%, transparent), transparent);
+  transition: opacity .12s ease;
+}
+.room-handles[data-zone="sky"] .rh-zone { opacity: 1; }
+.room-handles.zone-dragging[data-zone="sky"] .rh-zone { opacity: 1; }
+.rh-zone-tip { transform: translate(-50%, 0); transition: opacity .12s ease; }
+/* One word at a time: a grip under the hand says its own, and the zone's
+   goes quiet until the pointer is back on the bare room. */
+.room-handles:has(.rh:hover) .rh-zone-tip,
+.room-handles:has(.rh:hover) .rh-zone,
+.room-handles:has(.rp-pt:hover) .rh-zone-tip { opacity: 0 !important; }
 
 /* Sized and shaped by what they do: a grip that stretches the wall sideways is
    a tall thin bar on its edge, and one that stretches it up and down is a wide
@@ -3682,3 +3733,36 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    positioning context or the panel anchors to the window and opens somewhere
    nobody pressed. */
 .edittools { position: relative; }
+
+/* ── presets for one section ─────────────────────────────────────────────────
+   A look on the stage bar, a cloud over the grain controls. Each is one line:
+   a picker, Save as…, Delete. See `docs/SECTION-PRESETS.md`. */
+.sp-row { align-items: center; }
+.sp-row .sp-pick { width: auto; min-width: 96px; max-width: 160px; height: 18px; font-size: 10px; }
+.grain-preset-row {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 8px;
+}
+.grain-preset-row .re-tag { width: auto; }
+.grain-preset-row .mini { flex: 1 1 100px; min-width: 0; }
+.grain-preset-row .ghost {
+  height: 22px; padding: 0 8px; font-size: 10px; white-space: nowrap; flex: 0 0 auto;
+}
+
+/* ── the sequencer, in a frame ─────────────────────────────────────────────── */
+.seqview { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; background: #0a0c0e; }
+.seqview.hidden { display: none; }
+.seq-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #0a0c0e; }
+
+/* ── the automation timeline, in the sequencer's idiom ────────────────────────
+   One canvas, every lane stacked, coloured by the module it moves, the name
+   in a gutter on the left, a glowing head where the transport is. Click a
+   lane to open its editor underneath. */
+.automation-timeline {
+  width: 100%; display: block; background: #0a0c0e;
+  border: 1px solid #1e2830; border-radius: 3px; cursor: pointer;
+}
+.automation-capture { border-color: #ff6b35; color: #ff6b35; }
+.automation-capture.recording {
+  border-color: #ff3333; color: #ff3333; animation: at-rec-pulse 1s ease-in-out infinite;
+}
+@keyframes at-rec-pulse { 50% { opacity: .45; } }

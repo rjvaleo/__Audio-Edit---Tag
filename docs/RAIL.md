@@ -26,12 +26,13 @@ it cannot carry it.
 
 ## What it becomes
 
-**Four buttons. One kind. Nothing else.**
+**Four buttons. One kind. Nothing else.** *(Five since 6 Sep 2026 — see the note under the table.)*
 
 | | | |
 |---|---|---|
 | 1 | **Grain** | the granular engine — where a sound is worked on |
 | 2 | **Visual** | the room, and what it draws |
+| — | **Seq** | the scale sequencer, a second voice on the same transport *(added 6 Sep 2026; see [`SEQUENCER.md`](SEQUENCER.md))* |
 | 3 | **Theme** | how it all looks |
 | 4 | **Browse** | every file, and everything to do with the library |
 

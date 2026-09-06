@@ -164,6 +164,22 @@ both produced a confident wrong answer first:
 Setting only `terrainRidge` also fails, quietly: the surface underneath is most
 of the lit area and it was still inheriting, so its blue sat over the answer.
 
+## A stop that would not stick  *(6 Sep 2026)*
+
+Reported on the Solid's ramp: pick a colour for one stop, then for the other,
+and the first goes back to what it was — in the strip and in the room, while
+its well still shows the colour you picked. Every control in the stops editor
+rebuilt the list from a copy taken when the editor opened, so each edit was
+made against the list as it was *before the last one*. Adding or removing a
+stop did the same, and threw away every colour picked since the panel was
+built.
+
+The editor keeps one list now, written in place by every handler and pushed
+whole. It is sorted once, when the editor is built, because each row addresses
+its stop by index and the order must not move under it; a stop dragged past
+its neighbour is sorted on the next rebuild. `editing one stop does not put the
+other back` in `tests/ui/room-paint.spec.mjs` is the case.
+
 ## Where it lives
 
 - `ui/room-paint.js` — the slots, the scheme, the atlas, the generators, storage

@@ -1,0 +1,952 @@
+@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;400;600&display=swap");
+
+:root {
+  --bg: #0a0c0e;
+  --bg2: #111418;
+  --bg3: #181d22;
+  --border: #1e2830;
+  --accent: #00e5ff;
+  --accent2: #ff6b35;
+  --accent3: #7fff00;
+  --dim: #2a3540;
+  --text: #c8d8e0;
+  --text-dim: #4a6070;
+  --active: #00e5ff22;
+  --step-on: #00e5ff;
+  --step-off: #1a2830;
+  --playing: #ff6b35;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 12px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* HEADER */
+.header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.logo {
+  font-family: "Teko", sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 4px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.logo span {
+  color: var(--text-dim);
+  font-weight: 300;
+}
+.subtitle {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* TRANSPORT */
+.transport {
+  background: var(--bg2);
+  border-bottom: 2px solid var(--border);
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 11px;
+  padding: 5px 14px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all 0.1s;
+}
+.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.btn.stop-btn {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+.btn.stop-btn:hover {
+  background: var(--accent2);
+  color: var(--bg);
+}
+
+.bpm-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.label {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100px;
+  height: 2px;
+  background: var(--dim);
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  cursor: pointer;
+}
+.val-display {
+  color: var(--accent);
+  min-width: 36px;
+  font-size: 13px;
+}
+.divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+}
+.pos-display {
+  color: var(--accent);
+  font-size: 16px;
+  font-family: "Teko", sans-serif;
+  letter-spacing: 3px;
+  min-width: 60px;
+}
+
+/* MAIN LAYOUT */
+.main {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: 1fr;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+/* SCALE PANEL */
+.scale-panel {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel-header {
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.scale-category {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  padding: 6px 12px 3px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.scale-list {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dim) var(--bg2);
+}
+.scale-item {
+  padding: 5px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #0d1115;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.1s;
+}
+.scale-item:hover {
+  background: var(--active);
+}
+.scale-item.selected {
+  background: var(--active);
+  border-left: 2px solid var(--accent);
+}
+.scale-name {
+  color: var(--text);
+  font-size: 11px;
+}
+.scale-info {
+  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+/* RIGHT PANEL — scrolls vertically so every module stays reachable when the
+   rows outgrow the window */
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dim) var(--bg2);
+}
+
+/* Horizontally-scrollable synth row (delay+reverb) */
+.synth-row-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dim) var(--bg2);
+}
+
+/* SYNTH CONTROLS */
+/* Fixed control rows must never be crushed when vertical space runs out —
+   only the seq-panel flexes; overflow clips at the bottom instead. */
+.synth-row,
+.synth-row-scroll,
+.scale-display,
+.keyboard-panel,
+.waveform-panel,
+.status-bar,
+.perf-panel {
+  flex-shrink: 0;
+}
+.synth-row {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.knob-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.knob-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.knob-val {
+  font-size: 12px;
+  color: var(--accent);
+  min-width: 40px;
+  text-align: center;
+}
+.knob-slider {
+  width: 70px;
+}
+
+.root-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stacked-selects {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  justify-content: center;
+}
+.select-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.select-row .knob-label {
+  min-width: 32px;
+  text-align: right;
+}
+.select-row select {
+  font-size: 10px;
+  padding: 2px 5px;
+}
+.lfo-label-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.lfo-unit {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.lfo-rd-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lfo-knob {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+.lfo-knob .knob-label {
+  min-width: 30px;
+  text-align: right;
+}
+.lfo-knob .knob-val {
+  min-width: 34px;
+  text-align: left;
+}
+.knob-sm {
+  width: 26px;
+  height: 26px;
+}
+.knob-sm::after {
+  width: 2px;
+  height: 8px;
+  top: 1px;
+}
+select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  outline: none;
+}
+select:focus {
+  border-color: var(--accent);
+}
+
+/* SCALE DISPLAY — compact, lives inline in the delay row */
+.scale-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.scale-display-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  max-width: 170px;
+}
+.scale-display-name {
+  font-family: "Teko", sans-serif;
+  font-size: 15px;
+  color: var(--accent);
+  letter-spacing: 1px;
+  line-height: 1.1;
+}
+.scale-display-info {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+/* chips stack into two rows (1 2 3 … / then the rest) — column count is set
+   per scale by renderScaleDegrees so the block never scrolls or grows taller */
+.scale-degrees {
+  display: grid;
+  grid-auto-flow: row;
+  gap: 3px 4px;
+}
+.degree-chip {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 1.15;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  min-width: 42px;
+}
+.degree-chip.root-chip {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.degree-num {
+  font-size: 9px;
+  color: var(--text-dim);
+}
+.degree-hz {
+  font-size: 9px;
+  color: var(--accent3);
+}
+.degree-cents {
+  font-size: 8px;
+  color: var(--text-dim);
+}
+
+/* SEQUENCER */
+.seq-panel {
+  flex: 1;
+  /* the note window always keeps at least one full, usable step row —
+     when space runs out, panels below it clip instead */
+  min-height: 150px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.seq-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.seq-steps-label {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.step-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 4px;
+}
+.step {
+  background: var(--step-off);
+  border: 1px solid var(--border);
+  padding: 6px 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.1s;
+  min-height: 80px;
+  user-select: none;
+}
+.step:hover {
+  border-color: var(--dim);
+}
+.step.active-step {
+  border-color: var(--accent);
+  background: var(--active);
+}
+.step.playing-step {
+  background: var(--playing) !important;
+  border-color: var(--playing) !important;
+}
+.step.playing-step .step-num {
+  color: var(--bg) !important;
+}
+.step-num {
+  font-size: 9px;
+  color: var(--text-dim);
+}
+.step-note {
+  font-family: "Teko", sans-serif;
+  font-size: 16px;
+  color: var(--text);
+}
+.step.active-step .step-note {
+  color: var(--accent);
+}
+.step-hz {
+  font-size: 8px;
+  color: var(--text-dim);
+}
+.step-rest {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.step-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-top: auto;
+}
+.step-btn-row {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+}
+.step-mini-btn {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 8px;
+  padding: 2px 0;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.1s;
+}
+.step-mini-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.step-mini-btn.rest-active {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+
+/* 88-NOTE KEYBOARD DISPLAY */
+.keyboard-panel {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  padding: 8px 20px;
+  overflow-x: auto;
+}
+.kb-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.kb-strip {
+  display: flex;
+  gap: 1px;
+  height: 32px;
+  min-width: max-content;
+}
+.kb-key {
+  flex: 1;
+  min-width: 6px;
+  max-width: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.05s;
+}
+.kb-key.in-scale {
+  background: var(--dim);
+  border-color: var(--accent);
+}
+.kb-key.root-key {
+  background: var(--accent);
+}
+.kb-key.playing-key {
+  background: var(--playing) !important;
+}
+.kb-key:hover {
+  background: #2a4050;
+}
+
+/* WAVEFORM */
+.waveform-panel {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  padding: 6px 20px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+canvas.waveform {
+  width: 200px;
+  height: 40px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.env-display {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+canvas.env-canvas {
+  width: 120px;
+  height: 40px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+/* STATUS BAR */
+.status-bar {
+  background: var(--bg3);
+  border-top: 1px solid var(--border);
+  padding: 4px 20px;
+  display: flex;
+  gap: 24px;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+.status-bar span {
+  color: var(--accent);
+}
+.row-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  align-self: center;
+}
+
+/* ── ROTARY KNOB ─────────────────────────────────────────────────────────── */
+.knob-hidden {
+  display: none;
+}
+
+.knob {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #1a2530 60%, #0e1418 100%);
+  border: 2px solid var(--border);
+  position: relative;
+  cursor: ns-resize;
+  user-select: none;
+  box-shadow:
+    0 0 0 1px #0a0c0e,
+    inset 0 1px 3px rgba(0, 0, 0, 0.6);
+  transition: border-color 0.1s;
+}
+.knob:hover {
+  border-color: var(--accent);
+}
+.knob::after {
+  content: "";
+  position: absolute;
+  width: 3px;
+  height: 11px;
+  background: var(--accent);
+  top: 2px;
+  left: 50%;
+  transform-origin: bottom center;
+  transform: translateX(-50%) rotate(var(--rot, -135deg));
+  border-radius: 2px;
+}
+.knob.active {
+  border-color: var(--accent);
+}
+
+/* ADSR sub-block: canvas stacked above knob row */
+.adsr-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: fit-content;
+}
+.adsr-block > canvas {
+  width: 100%;
+  display: block;
+}
+.adsr-knobs {
+  display: flex;
+  gap: 10px;
+}
+
+/* ── PRESETS ─────────────────────────────────────────────────────────────── */
+.preset-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+.preset-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.preset-save-btn {
+  border-color: var(--accent3);
+  color: var(--accent3);
+  font-size: 10px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.preset-save-btn:hover {
+  background: var(--accent3);
+  color: var(--bg);
+}
+.preset-del-btn {
+  border-color: var(--accent2);
+  color: var(--accent2);
+  font-size: 10px;
+  padding: 4px 8px;
+}
+.preset-del-btn:hover {
+  background: var(--accent2);
+  color: var(--bg);
+}
+.preset-select {
+  flex: 1;
+  font-size: 10px;
+  max-width: 200px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: "Share Tech Mono", monospace;
+  padding: 3px 6px;
+  cursor: pointer;
+  outline: none;
+}
+.preset-select:focus {
+  border-color: var(--accent);
+}
+.preset-name-display {
+  font-size: 9px;
+  color: var(--accent3);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.7;
+}
+.preset-export-btn {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-size: 10px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.preset-export-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+.preset-import-btn {
+  border-color: var(--text-dim);
+  color: var(--text-dim);
+  font-size: 10px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.preset-import-btn:hover {
+  border-color: var(--text);
+  color: var(--text);
+}
+.preset-morph-btn {
+  border-color: var(--accent3);
+  color: var(--accent3);
+  font-size: 10px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.preset-morph-btn:hover {
+  background: var(--accent3);
+  color: var(--bg);
+}
+.preset-controls-row2 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+/* inline knob-group for morph time inside preset row */
+.knob-group-inline {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.knob-group-inline .knob-label {
+  white-space: nowrap;
+}
+
+/* ── PERFORMANCE ─────────────────────────────────────────────────────────── */
+.perf-panel {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+}
+.perf-header {
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 20px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: flex;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.perf-header-info {
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+.perf-transport {
+  padding: 6px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.perf-rec-btn {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+.perf-rec-btn.recording {
+  border-color: #ff3333;
+  color: #ff3333;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+.perf-gen-btn {
+  border-color: var(--accent3);
+  color: var(--accent3);
+}
+.perf-gen-btn:hover {
+  background: var(--accent3);
+  color: var(--bg);
+}
+.perf-keep-btn {
+  border-color: var(--accent3);
+  color: var(--accent3);
+}
+.perf-cut-btn {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+.perf-brain-btn.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.perf-select {
+  max-width: 220px;
+}
+.perf-sel-info {
+  font-size: 9px;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+#perfCanvas {
+  display: block;
+  width: calc(100% - 40px);
+  margin: 6px 20px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  cursor: crosshair;
+}
+.perf-resize,
+.seq-resize {
+  height: 7px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.perf-resize {
+  margin: 0 20px 2px;
+}
+.perf-resize::after,
+.seq-resize::after {
+  content: "";
+  width: 48px;
+  height: 2px;
+  background: var(--dim);
+}
+.perf-resize:hover::after,
+.seq-resize:hover::after {
+  background: var(--accent);
+}
+.perf-brain {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 6px;
+}
+.perf-brain canvas {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.perf-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 20px 6px;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+.perf-pos {
+  font-family: "Teko", sans-serif;
+  font-size: 16px;
+  letter-spacing: 3px;
+  color: var(--accent);
+}
+
+/* ── CAPTURE ─────────────────────────────────────────────────────────────── */
+.capture-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 80px;
+}
+.capture-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+#captureBtn {
+  white-space: nowrap;
+  font-size: 10px;
+  padding: 4px 10px;
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+#captureBtn:hover {
+  background: var(--accent2);
+  color: var(--bg);
+}
+#captureBtn.capturing {
+  border-color: #ff3333;
+  color: #ff3333;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.capture-timer {
+  font-size: 11px;
+  font-family: "Share Tech Mono", monospace;
+  color: #ff3333;
+  letter-spacing: 1px;
+  min-width: 36px;
+}
