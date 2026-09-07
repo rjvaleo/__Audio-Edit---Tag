@@ -108,16 +108,28 @@ test('dragging sideways slides the frustum and never turns the camera',
       .toBeCloseTo(before.fov, 6);
   });
 
-test('the sky zone moves the ring and not the camera', async ({ page }) => {
+test('the ring is dragged by its bead, and the camera stays put', async ({ page }) => {
   await openRoom(page);
+  // The beads live in the Room view, where the picture is the whole middle.
+  await page.evaluate(() => setMode('room'));
+  await page.waitForSelector('#roomStageRoom #visGl', { state: 'visible', timeout: 20_000 });
+  await page.evaluate(() => { roomEdit.layers.sky = true; paintRoomBeads(); });
   const before = await page.evaluate(cam);
-
-  // Top of the room, where the ring hangs.
-  await dragRoom(page, [0.5, 0.15], [0.5, 0.05]);
+  const at = await page.evaluate(() => {
+    const dot = $('roomHandles').querySelector('.rp-pt.rp-ring');
+    const r = $('visGl').getBoundingClientRect();
+    return { x: r.left + +dot.getAttribute('cx'), y: r.top + +dot.getAttribute('cy') };
+  });
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 40, at.y - 60, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
   const after = await page.evaluate(cam);
-
   expect(after.ring.y, 'the ring did not rise').toBeGreaterThan(before.ring.y);
-  expect(after.pitch, 'a drag on the sky moved the camera').toBeCloseTo(before.pitch, 6);
+  expect(after.ring.x, 'the ring did not move across').toBeGreaterThan(before.ring.x);
+  expect(after.pitch, 'a drag on the ring moved the camera').toBeCloseTo(before.pitch, 6);
+  expect(after.height, 'a drag on the ring moved the eye').toBeCloseTo(before.height, 6);
 });
 
 test('each frame shape keeps its own camera', async ({ page }) => {
@@ -498,7 +510,7 @@ test('the data sits on the back wall and follows the camera', async ({ page }) =
       left: parseFloat(el.style.left), top: parseFloat(el.style.top),
       w: parseFloat(el.style.width), h: parseFloat(el.style.height),
       wall: { x: Math.round(wall.x), y: Math.round(wall.y), w: Math.round(wall.w), h: Math.round(wall.h) },
-      depth: roomCamNow().depth,
+      depth: roomEdit.geomReach,
       rows: el.querySelectorAll('.rd-row').length,
     };
   };
@@ -512,12 +524,10 @@ test('the data sits on the back wall and follows the camera', async ({ page }) =
   // Push the room deeper. The wall converges harder, so it gets smaller — and
   // the block, being the wall, goes with it. The *type* does not: that is held
   // by its own test.
-  await page.evaluate(() => {
-    const c = roomCamNow(); c.depth = c.depth * 3;
-    roomEdit.cams[roomEdit.frame] = c;
-  });
+  // The terrain's length is the terrain's own now, not the camera's.
+  await page.evaluate(() => { roomEdit.geomReach *= 3; });
   const far = await page.evaluate(read);
-  expect(far.depth, 'the room did not get deeper').toBeGreaterThan(near.depth);
+  expect(far.depth, 'the terrain did not get longer').toBeGreaterThan(near.depth);
   expect(far.w, `the wall did not recede (${near.w} → ${far.w})`).toBeLessThan(near.w);
   expect(far.left, 'the block came off the wall').toBe(far.wall.x);
   // Less wall, so fewer lines of it. Never more.

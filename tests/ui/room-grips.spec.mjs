@@ -68,33 +68,24 @@ test('a drag that lost its release ends on the next move with no button down', a
   expect(got.after, 'the room moved on a move with nothing pressed').toBe(got.during);
 });
 
-test('the zone under the hand is named, and the sky band shows over the sky', async ({ page }) => {
+test('the whole picture is the camera, and the word under the hand says so', async ({ page }) => {
   await openRoom(page);
   const gl = page.locator('#visGl');
   const box = await gl.boundingBox();
-  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.1);
-  await page.waitForTimeout(100);
-  const sky = await page.evaluate(() => ({
-    zone: $('roomHandles').dataset.zone,
-    tip: $('roomHandles').querySelector('.rh-zone-tip')?.textContent,
-    band: getComputedStyle($('roomHandles').querySelector('.rh-zone')).opacity,
-    cursor: $('visGl').style.cursor,
-  }));
-  expect(sky.zone).toBe('sky');
-  expect(sky.tip).toMatch(/^RING/);
-  expect(sky.band).toBe('1');
-  expect(sky.cursor).toBe('grab');
-  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.7);
-  await page.waitForTimeout(100);
-  const camera = await page.evaluate(() => ({
-    zone: $('roomHandles').dataset.zone,
-    tip: $('roomHandles').querySelector('.rh-zone-tip')?.textContent,
-    band: getComputedStyle($('roomHandles').querySelector('.rh-zone')).opacity,
-  }));
-  expect(camera.zone).toBe('camera');
-  expect(camera.tip).toMatch(/^CAMERA/);
-  expect(camera.band).toBe('0');
-  // Off the room, nothing is claimed.
+  for (const fy of [0.1, 0.7]) {
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * fy);
+    await page.waitForTimeout(100);
+    const got = await page.evaluate(() => ({
+      zone: $('roomHandles').dataset.zone,
+      tip: $('roomHandles').querySelector('.rh-zone-tip')?.textContent,
+      band: getComputedStyle($('roomHandles').querySelector('.rh-zone')).opacity,
+      cursor: $('visGl').style.cursor,
+    }));
+    expect(got.zone).toBe('camera');
+    expect(got.tip).toMatch(/^CAMERA/);
+    expect(got.band, 'there is no sky zone to band').toBe('0');
+    expect(got.cursor).toBe('grab');
+  }
   await page.mouse.move(5, 5);
   await page.waitForTimeout(100);
   expect(await page.evaluate(() => $('roomHandles').dataset.zone)).toBe('');
@@ -124,20 +115,21 @@ test('a bead drag that lost its release ends too', async ({ page }) => {
   const got = await page.evaluate(() => {
     roomEdit.layers.solid = true;
     paintSolidPath();
-    const dot = $('roomHandles').querySelector('.rp-pt:not(.rp-foot)');
+    const dot = $('roomHandles').querySelector('.rp-pt[data-key^="path:"]:not(.rp-foot)');
     if (!dot) return { dot: false };
     const r = $('visGl').getBoundingClientRect();
     const cx = +dot.getAttribute('cx'), cy = +dot.getAttribute('cy');
     const ev = (type, dy, buttons) => new PointerEvent(type, {
       clientX: r.left + cx, clientY: r.top + cy + dy, pointerId: 1, button: 0, buttons, bubbles: true,
     });
-    const start = { ...roomEdit.solidPath[+dot.dataset.i] };
+    const idx = +dot.dataset.key.split(':')[1];
+    const start = { ...roomEdit.solidPath[idx] };
     dot.dispatchEvent(ev('pointerdown', 0, 1));
     dot.dispatchEvent(ev('pointermove', 20, 1));
-    const during = roomEdit.solidPath[+dot.dataset.i].y;
+    const during = roomEdit.solidPath[idx].y;
     dot.dispatchEvent(ev('pointermove', 60, 0));
     const dragging = dot.classList.contains('dragging');
-    const after = roomEdit.solidPath[+dot.dataset.i].y;
+    const after = roomEdit.solidPath[idx].y;
     roomEdit.layers.solid = false;
     return { dot: true, start: start.y, during, after, dragging };
   });

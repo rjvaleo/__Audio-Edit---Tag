@@ -107,7 +107,7 @@ test('a drag writes a world camera, and the box it draws is the one the drag mad
   expect(got.world.pitch).not.toBeCloseTo(6.843, 3);
   expect(got.world.height).toBeCloseTo(-before.floorY, 9);
   expect(got.world.height).toBeCloseTo(-got.drawn.floorY, 9);
-  expect(got.readout).toMatch(/^height .* pitch .*° .* yaw .*° .* reach /);
+  expect(got.readout).toMatch(/^height .* pitch .*° .* yaw .*° .* fov /);
   expect(got.copy.height).toBeCloseTo(got.world.height, 3);
   expect(got.saved && got.saved.height, 'the world camera was not saved').toBeCloseTo(got.world.height, 9);
 });
@@ -199,7 +199,7 @@ test('the box is gone and the ground is a layer, a slot and a horizon', async ({
   expect(got.order[0]).toBe('grid');
   expect(got.slot, 'the ground is painted against distance').toBe('distance');
   expect(got.noBoxSlot).toBe(true);
-  expect(got.grips).toEqual(['depth', 'ring', 'horizon']);
+  expect(got.grips).toEqual(['depth', 'horizon']);
   // The ground recedes upward on the canvas and converges: the far end of the
   // reach is above the near line, twenty units out is above that, and from
   // twenty to seventy-nine it moves less than it did from near to twenty.
@@ -234,4 +234,120 @@ test('a turn moves the world, a pitch moves the horizon, and the box\'s frame sh
   expect(got.turned.x).toBeLessThan(got.level.x);
   expect(got.up.y).toBeGreaterThan(got.level.y);
   for (const f of got.frames) expect(f.ok, f.key).toBe(true);
+});
+
+
+// ── step four: everything moves ──
+
+test('everything with a place goes anywhere: the ring, the path, the terrain', async ({ page }) => {
+  await openRoom(page);
+  const got = await page.evaluate(() => {
+    roomEdit.layers.sky = true;
+    roomEdit.layers.solid = true;
+    const kept = { path: JSON.stringify(roomEdit.solidPath), at: { ...roomEdit.geomAt }, cam: JSON.stringify(roomEdit.cams[roomEdit.frame] || null) };
+    const bead = (k) => roomBeads().find((b) => b.key === k);
+    // The ring, far off and high up.
+    bead('ring').set({ x: 5, y: 3, z: -30 });
+    const ring = { ...roomWorldNow().ring };
+    // A path point behind the eye and below nothing — no clamp anywhere.
+    bead('path:0').set({ x: -8, y: 2.5, z: 4 });
+    // The terrain, moved off to one side and further in.
+    bead('terrain').set({ x: 3, z: -6 });
+    const at = { ...roomEdit.geomAt };
+    // Round-tripped through what is kept, still unclamped.
+    readRoomData(roomDataSnapshot());
+    const back = { path0: { ...roomEdit.solidPath[0] }, at: { ...roomEdit.geomAt } };
+    // The film's far end followed the terrain.
+    const gl = $('visGl');
+    const wall = roomBackWall(gl.clientWidth, gl.clientHeight);
+    const beads = roomBeads().map((b) => b.key);
+    roomEdit.solidPath = JSON.parse(kept.path);
+    roomEdit.geomAt = kept.at;
+    if (kept.cam !== 'null') roomEdit.cams[roomEdit.frame] = JSON.parse(kept.cam); else delete roomEdit.cams[roomEdit.frame];
+    roomEdit.layers.sky = true;
+    roomEdit.layers.solid = false;
+    paintRoomBeads();
+    return { ring, at, back, wall, beads };
+  });
+  expect(got.ring).toEqual({ x: 5, y: 3, z: -30, size: got.ring.size });
+  expect(got.at).toEqual({ x: 3, z: -6 });
+  expect(got.back.path0).toEqual({ x: -8, y: 2.5, z: 4 });
+  expect(got.back.at).toEqual({ x: 3, z: -6 });
+  expect(got.wall.w).toBeGreaterThan(0);
+  expect(got.beads).toContain('ring');
+  expect(got.beads).toContain('terrain');
+  expect(got.beads.filter((k) => k.startsWith('path:')).length).toBeGreaterThanOrEqual(2);
+});
+
+test('the camera walks, sidesteps, pans, tilts and rises, by wheel and by slider', async ({ page }) => {
+  await openRoom(page);
+  const gl = page.locator('#visGl');
+  const box = await gl.boundingBox();
+  const before = await page.evaluate(() => roomWorldNow());
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.6);
+  await page.mouse.wheel(0, -300);
+  await page.waitForTimeout(100);
+  const walked = await page.evaluate(() => roomWorldNow());
+  expect(walked.z, 'the wheel did not walk the eye forward').toBeLessThan(before.z);
+  expect(walked.x).toBeCloseTo(before.x, 6);
+  await page.keyboard.down('Shift');
+  await page.mouse.wheel(0, -300);
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(100);
+  const stepped = await page.evaluate(() => roomWorldNow());
+  expect(stepped.x, 'shift and wheel did not sidestep').not.toBeCloseTo(walked.x, 6);
+  expect(stepped.z).toBeCloseTo(walked.z, 6);
+  const bySlider = await page.evaluate(() => {
+    const set = (id, v) => { const el = $(id); el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+    set('reCamPan', 30);
+    set('reCamTilt', -12);
+    set('reCamHeight', 250);
+    set('reCamZ', -700);
+    const w = roomWorldNow();
+    const out = { yaw: w.yaw, pitch: w.pitch, height: w.height, z: w.z, readout: $('reNums').textContent };
+    delete roomEdit.cams[roomEdit.frame];
+    paintRoomNums();
+    return out;
+  });
+  expect(bySlider.yaw).toBe(30);
+  expect(bySlider.pitch).toBe(-12);
+  expect(bySlider.height).toBeCloseTo(2.5, 6);
+  expect(bySlider.z).toBeCloseTo(-7, 6);
+  expect(bySlider.readout).toMatch(/at -?[\d.]+,-7\.000/);
+});
+
+test('a camera and a path from before the world could move are brought up to date', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => typeof state !== 'undefined', { timeout: 20_000 });
+  await page.evaluate(() => {
+    localStorage.setItem('roomCamerasWorld', JSON.stringify({
+      dock: { height: 0.5, pitch: 3, yaw: 10, fov: 50, reach: 2.5, aspect: 1.5, ring: { x: 0, y: 0.6, z: 0.2, size: 0.2 } },
+    }));
+    const data = JSON.parse(localStorage.getItem('roomData') || '{}');
+    delete data.solidPathUnits;
+    data.solidPath = [{ x: 0.5, y: 0.5, z: 0 }, { x: -0.5, y: 0.5, z: 1 }];
+    delete data.geomReach;
+    localStorage.setItem('roomData', JSON.stringify(data));
+  });
+  await page.reload();
+  await page.waitForFunction(() => typeof roomEdit !== 'undefined', { timeout: 20_000 });
+  const got = await page.evaluate(() => {
+    const out = {
+      cam: roomEdit.cams.dock, reach: roomEdit.geomReach, path: roomEdit.solidPath.map((p) => ({ ...p })),
+    };
+    delete roomEdit.cams.dock;
+    localStorage.removeItem('roomCamerasWorld');
+    return out;
+  });
+  expect(got.cam.v).toBe(2);
+  expect(got.cam.x).toBe(0);
+  expect(got.cam.z).toBe(0);
+  expect(got.cam.ring.z, 'the ring\'s depth was not made absolute').toBeCloseTo(-1.2, 9);
+  expect(got.reach, 'the reach did not move to the terrain').toBe(2.5);
+  // Half of the half-width across — the box's x ran -1 to 1 over the floor —
+  // half a height up, from the front edge to the far end.
+  expect(got.path[0].x).toBeCloseTo(0.5 * 1.78 / 2, 6);
+  expect(got.path[0].y).toBeCloseTo(0.5, 6);
+  expect(got.path[0].z).toBeCloseTo(-1, 6);
+  expect(got.path[1].z).toBeCloseTo(-1 - 2.5, 6);
 });
