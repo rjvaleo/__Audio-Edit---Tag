@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;400;600&display=swap");
 /* Ported from the AudioLab design: same oklch palette, type scale and panel
    geometry, rebuilt as plain CSS so the app needs no build step and no CDN. */
 
@@ -3753,16 +3754,86 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .seqview.hidden { display: none; }
 .seq-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #0a0c0e; }
 
-/* ── the automation timeline, in the sequencer's idiom ────────────────────────
-   One canvas, every lane stacked, coloured by the module it moves, the name
-   in a gutter on the left, a glowing head where the transport is. Click a
-   lane to open its editor underneath. */
-.automation-timeline {
-  width: 100%; display: block; background: #0a0c0e;
-  border: 1px solid #1e2830; border-radius: 3px; cursor: pointer;
+/* ── PERFORMANCE ─────────────────────────────────────────────────────────────
+   The scale sequencer's panel, on the grain page. These are its rules and
+   its palette, scoped to the Automation tab so the two panels are one thing
+   seen twice. The variable names are the sequencer's own, redeclared here so
+   its rules read unchanged. */
+.automation-body {
+  --bg: #0a0c0e; --bg2: #111418; --bg3: #181d22; --border: #1e2830;
+  --accent: #00e5ff; --accent2: #ff6b35; --accent3: #7fff00; --dim: #2a3540;
+  --text: #c8d8e0; --text-dim: #4a6070;
+  display: block; gap: 0; padding: 0;
+  background: var(--bg); color: var(--text);
+  font-family: "Share Tech Mono", monospace; font-size: 12px;
 }
-.automation-capture { border-color: #ff6b35; color: #ff6b35; }
-.automation-capture.recording {
-  border-color: #ff3333; color: #ff3333; animation: at-rec-pulse 1s ease-in-out infinite;
+.automation-body .btn {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  font-family: "Share Tech Mono", monospace; font-size: 11px; padding: 5px 14px;
+  cursor: pointer; letter-spacing: 1px; text-transform: uppercase; transition: all 0.1s;
+  border-radius: 0; height: auto; line-height: normal;
 }
-@keyframes at-rec-pulse { 50% { opacity: .45; } }
+.automation-body .btn:hover { border-color: var(--accent); color: var(--accent); }
+.automation-body .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.automation-body .divider { width: 1px; height: 24px; background: var(--border); }
+.automation-body .knob-label { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+.automation-body .preset-del-btn { border-color: var(--accent2); color: var(--accent2); font-size: 10px; padding: 4px 8px; }
+.automation-body .preset-del-btn:hover { background: var(--accent2); color: var(--bg); }
+.automation-body .preset-select {
+  flex: 1; font-size: 10px; max-width: 200px; background: var(--bg3);
+  border: 1px solid var(--border); color: var(--text);
+  font-family: "Share Tech Mono", monospace; padding: 3px 6px; cursor: pointer;
+  border-radius: 0; height: auto;
+}
+.automation-body .preset-select:focus { border-color: var(--accent); outline: none; }
+.automation-body .perf-mode { flex: 0 0 auto; }
+.automation-body .perf-check {
+  display: flex; align-items: center; gap: 5px; font-size: 10px;
+  color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase;
+}
+.perf-panel { background: var(--bg2); border-top: 1px solid var(--border); }
+.perf-header {
+  background: var(--bg3); border-bottom: 1px solid var(--border); padding: 6px 20px;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent);
+  display: flex; justify-content: space-between; cursor: pointer; user-select: none;
+}
+.perf-header-info { color: var(--text-dim); letter-spacing: 1px; }
+.perf-transport {
+  padding: 6px 20px; display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.perf-rec-btn { border-color: var(--accent2) !important; color: var(--accent2) !important; }
+.perf-rec-btn.recording {
+  border-color: #ff3333 !important; color: #ff3333 !important;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+.perf-select { max-width: 220px; }
+.perf-sel-info { font-size: 9px; color: var(--accent); letter-spacing: 1px; margin-left: auto; }
+#perfCanvas {
+  display: block; width: calc(100% - 40px); margin: 6px 20px 0;
+  background: var(--bg); border: 1px solid var(--border); cursor: crosshair;
+}
+.perf-resize {
+  height: 7px; cursor: ns-resize; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; margin: 0 20px 2px;
+}
+.perf-resize::after { content: ""; width: 48px; height: 2px; background: var(--dim); }
+.perf-resize:hover::after { background: var(--accent); }
+.perf-status-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 3px 20px 6px; font-size: 9px; color: var(--text-dim); letter-spacing: 1px;
+}
+.perf-pos { font-family: "Teko", sans-serif; font-size: 16px; letter-spacing: 3px; color: var(--accent); }
+@keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* The lane the editor is open on, under the timeline, in the same palette. */
+.automation-body .automation-lanes { padding: 0 20px 6px; }
+.automation-body .automation-lane {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 0;
+  font-family: "Share Tech Mono", monospace;
+}
+.automation-body .automation-lane select {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  font-family: "Share Tech Mono", monospace; font-size: 10px; border-radius: 0;
+}
+.automation-body .automation-canvas { background: var(--bg); border-radius: 0; }

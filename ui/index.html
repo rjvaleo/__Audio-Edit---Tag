@@ -606,6 +606,13 @@
             after the last repeat, instead of cutting them off.</span>
           </div>
           <div class="fx-row">
+            <label class="export-label" for="elSeq">Sequencer</label>
+            <button class="tiny switch" id="elSeq"
+              title="Only for a film. The sequencer renders itself for the film's span, on the same clock, and its sound and its picture go in with the engine's.">Seq</button>
+            <span class="fx-note">Put the sequencer in the film too: its pattern,
+            its loaded take, its sound and its picture. Open Seq first.</span>
+          </div>
+          <div class="fx-row">
             <label class="export-label">Range</label>
             <button class="tiny switch on" id="elScopeSel"
               title="Film the selection, repeated as set above.">Selection</button>
@@ -1032,32 +1039,57 @@
         </div>
       </div>
 
+      <!-- PERFORMANCE — the scale sequencer's panel, here. Same header, same
+           transport row, same timeline, same status row; `perf-panel.js` is its
+           drawing carried over, and the palette is its palette. The ids the
+           lanes have always been wired by are kept, so the machinery under it
+           is unchanged. -->
       <div class="dock-body automation-body hidden" id="dockAutomation">
-        <div class="automation-toolbar">
-          <button class="primary" id="automationAdd">Add lane</button>
-          <!-- The scale sequencer's REC PERF, here: arm every control and roll.
-               Every move while it plays lands in a lane of its own. -->
-          <button class="ghost automation-capture" id="automationCapture"
-            title="Arm every control and roll the transport. Every move you make while it plays is written into a lane of its own, the way the scale sequencer records a performance. Press again, or stop, to finish.">&#9210; Capture</button>
-          <label class="check" title="Write a control's moves into its lane while the transport is running. Touch records while the hand is on the control; Latch keeps recording until you stop.">
-            Record
-            <select id="automationRecord">
-              <option value="off">off</option>
-              <option value="touch">touch</option>
-              <option value="latch">latch</option>
-            </select>
-          </label>
-          <label class="check" title="Stop every lane without deleting any of them">
-            <input type="checkbox" id="automationBypass"> Bypass all
-          </label>
-          <button class="ghost" id="automationSimplify" title="Drop breakpoints the curve does not need">Simplify</button>
-          <button class="ghost" id="automationLoop" title="Wrap every lane's curve over the selection">Loop selection</button>
-          <button class="ghost" id="automationInvert" title="Turn every lane upside down">Invert</button>
-          <button class="ghost" id="automationUndo">Undo</button>
-          <button class="ghost" id="automationRedo">Redo</button>
-          <span class="automation-note" id="automationNote"></span>
+        <div class="perf-panel">
+          <div class="perf-header" id="perfHeader">
+            <span><span id="perfCollapseIcon">&#9662;</span> PERFORMANCE &mdash;
+              <span id="perfName">NO TAKE</span></span>
+            <span class="perf-header-info" id="perfHeaderInfo">&mdash;</span>
+          </div>
+          <div id="perfBody">
+            <div class="perf-transport">
+              <button class="btn perf-rec-btn" id="automationCapture"
+                title="Arm every control and roll the transport. Every move while it plays is written into a lane of its own. Press again, or stop, to finish.">&#9210; REC PERF</button>
+              <button class="btn" id="perfPlayBtn" title="Play the sound with its lanes">&#9654; PLAY PERF</button>
+              <button class="btn" id="perfStopBtn" title="Stop, and return to the cue">&#9209;</button>
+              <div class="divider"></div>
+              <button class="btn" id="automationAdd" title="A lane drawn by hand">+ LANE</button>
+              <select class="preset-select perf-select" id="perfLaneSelect" title="Which lane the editor below is open on">
+                <option value="">&mdash; lanes &mdash;</option>
+              </select>
+              <button class="btn preset-del-btn" id="perfLaneDel" title="Delete the lane the editor is open on">DEL</button>
+              <div class="divider"></div>
+              <span class="knob-label">RECORD</span>
+              <select class="preset-select perf-select perf-mode" id="automationRecord"
+                title="Write a control's moves into its lane while the transport is running. Touch records while the hand is on the control; Latch keeps recording until you stop.">
+                <option value="off">OFF</option>
+                <option value="touch">TOUCH</option>
+                <option value="latch">LATCH</option>
+              </select>
+              <label class="perf-check" title="Stop every lane without deleting any of them"><input type="checkbox" id="automationBypass"> BYPASS</label>
+              <div class="divider"></div>
+              <button class="btn" id="automationSimplify" title="Drop breakpoints the curve does not need">SIMPLIFY</button>
+              <button class="btn" id="automationLoop" title="Wrap every lane's curve over the selection">LOOP SEL</button>
+              <button class="btn" id="automationInvert" title="Turn every lane upside down">INVERT</button>
+              <button class="btn" id="automationUndo">UNDO</button>
+              <button class="btn" id="automationRedo">REDO</button>
+              <span class="perf-sel-info" id="automationNote"></span>
+            </div>
+            <canvas id="perfCanvas" height="120"></canvas>
+            <div class="perf-resize" id="perfResize" title="DRAG TO RESIZE &middot; DOUBLE-CLICK TO RESET"></div>
+            <!-- The lane the editor is open on: its breakpoints, drawn large. -->
+            <div class="automation-lanes" id="automationLanes"></div>
+            <div class="perf-status-row">
+              <span id="perfStatus">READY &mdash; &#9210; REC PERF CAPTURES EVERY CONTROL MOVE WHILE THE SOUND PLAYS</span>
+              <span class="perf-pos" id="perfPos">&mdash; &middot; &mdash;</span>
+            </div>
+          </div>
         </div>
-        <div class="automation-lanes" id="automationLanes"></div>
       </div>
 
       <div class="dock-body hidden" id="dockRegions">
@@ -1185,6 +1217,9 @@
 <script src="/settings.js"></script>
 <!-- Presets for one section at a time. Pure, like the store above it. -->
 <script src="/section-presets.js"></script>
+<!-- The scale sequencer's performance panel, carried over. Nothing runs at
+     load; app.js draws it. -->
+<script src="/perf-panel.js"></script>
 <!-- The four-dimensional solids, and the panel that drives them. The geometry
      knows nothing about the DOM; the panel is loaded after it. -->
 <script src="/shapes-4d.js"></script>

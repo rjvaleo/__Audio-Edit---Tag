@@ -839,6 +839,9 @@ function seekSource(srcFrame) {
   engine.position = p;
   engine.heard = performance.now();
   enginePost({ seek: p });
+  // Straight away, not at the next clock tick: a seek is a discontinuity and
+  // the sequencer should land with it.
+  if (engine.playing) seqClock();
 }
 
 // ------------------------------------------------------------- transport
@@ -899,6 +902,11 @@ function reflectTransport() {
   const b = $('playBtn');
   b.classList.toggle('on', engine.playing);
   b.textContent = engine.playing ? '❚❚' : '▶';
+  const pp = $('perfPlayBtn');
+  if (pp) {
+    pp.textContent = engine.playing ? '⏸ PLAYING' : '▶ PLAY PERF';
+    pp.classList.toggle('active', engine.playing);
+  }
   markPlaying();
   // One more pass so the lane playhead is cleared when playback ends; the poll
   // loop that normally draws it has already stopped by then.
@@ -3012,6 +3020,10 @@ $('elRepeats').onkeydown = (e) => {
   // here or it does nothing at all.
   if (e.key === 'Enter') { e.preventDefault(); $('elGo').click(); }
 };
+$('elSeq')?.addEventListener('click', () => {
+  if (!seqLoaded()) { toast('Open Seq first — the sequencer is not loaded'); return; }
+  $('elSeq').classList.toggle('on');
+});
 $('elTail').onclick = () => {
   $('elTail').classList.toggle('on');
   paintExportLoop();
@@ -3175,6 +3187,10 @@ async function runVideoExport() {
     const loopOut = filming
       ? { from: Math.round(filming.from * ratio), to: Math.round(filming.to * ratio) }
       : null;
+    // The sequencer, if it is loaded and asked for. Its grid runs along the
+    // engine's output time from the document's start, so the film's first
+    // frame is at the range's start, stretched.
+    const seqAt0 = ((filming ? filming.from : 0) / (state.view?.sampleRate || 48000)) * timeRatio();
     const blob = await videoExport({
       path: state.selectedFile.path,
       from: filming ? filming.from : 0,
@@ -3183,6 +3199,8 @@ async function runVideoExport() {
       tail,
       size,
       fps,
+      sequencer: seqInFilm() ? seqRenderForFilm : null,
+      seqAt0,
       // The room as it is posed right now, at the frame being filmed. The
       // camera is the pose; the aspect comes from the canvas, which is why a
       // wide room in a tall frame is a narrower room and not a squashed one.
@@ -5714,25 +5732,10 @@ function renderAutomation() {
   box.innerHTML = '';
   const targets = automationTargets();
 
-  // The whole take at a glance, in the sequencer's idiom: one canvas, every
-  // lane stacked, coloured by what it moves. Below it, the editor for the one
-  // lane that is selected — click a row on the timeline to choose it.
+  // The take, in the sequencer's own panel: `perf-panel.js` draws every lane
+  // on the one timeline above; this builds the editor for the lane that is
+  // open, chosen on the timeline or in the lanes menu.
   const lanes = state.automation.lanes || [];
-  const timeline = document.createElement('canvas');
-  timeline.className = 'automation-timeline';
-  timeline.id = 'automationTimeline';
-  timeline.onclick = (e) => {
-    const r = timeline.getBoundingClientRect();
-    const laneH = +timeline.dataset.laneH || AT_LANE;
-    // Canvas pixels per screen pixel; one when the canvas has no layout yet.
-    const scale = r.height ? timeline.height / r.height : 1;
-    const y = (e.clientY - r.top) * scale - AT_RULER;
-    const hit = lanes[Math.floor(y / laneH)];
-    if (hit) { state.automationSel = hit.id; renderAutomation(); }
-  };
-  box.appendChild(timeline);
-  drawAutomationTimeline(timeline);
-
   const chosen = lanes.find((l) => l.id === state.automationSel) || lanes[0] || null;
   state.automationSel = chosen ? chosen.id : null;
   for (const lane of chosen ? [chosen] : []) {
@@ -5808,8 +5811,6 @@ function renderAutomation() {
 
     const canvas = document.createElement('canvas');
     canvas.className = 'automation-canvas';
-    canvas.width = 1200;
-    canvas.height = 110;
     wireLane(canvas, lane);
 
     row.append(controls, canvas);
@@ -5817,6 +5818,27 @@ function renderAutomation() {
     drawLane(canvas, lane);
   }
   automationNote();
+  perfFillLaneSelect();
+  perfUpdateHeader();
+  perfDrawTimeline();
+}
+
+/// The lanes menu on the performance row, and the lane it stands on.
+function perfFillLaneSelect() {
+  const sel = $('perfLaneSelect');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = '— lanes —';
+  sel.appendChild(blank);
+  for (const l of state.automation.lanes || []) {
+    const o = document.createElement('option');
+    o.value = l.id;
+    o.textContent = perfLaneLabel(l);
+    sel.appendChild(o);
+  }
+  sel.value = state.automationSel || '';
 }
 
 /// The document's length, which is what a lane's frames are measured against.
@@ -5981,18 +6003,24 @@ function drawLaneWave(c, w, h, frames) {
 }
 
 function drawLane(canvas, lane) {
+  // At the screen's own resolution. It was a fixed 1200 by 110 stretched to
+  // whatever width the tab had, which is what made it soft.
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 1200;
+  const h = 110;
+  if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
+  if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
   const c = canvas.getContext('2d');
-  const w = canvas.width;
-  const h = canvas.height;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
   const frames = laneFrames();
   const sr = state.view?.sampleRate || 44100;
   c.clearRect(0, 0, w, h);
 
   drawLaneWave(c, w, h, frames);
 
-  c.strokeStyle = '#22303d';
-  c.fillStyle = 'rgba(220,228,235,.45)';
-  c.font = '9px ui-monospace';
+  c.strokeStyle = '#1e2830';
+  c.fillStyle = '#4a6070';
+  c.font = '9px "Share Tech Mono", monospace';
   for (let i = 0; i <= 8; i++) {
     const x = (i * w) / 8;
     c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
@@ -6006,7 +6034,8 @@ function drawLane(canvas, lane) {
 
   const p = (lane.points || []).slice().sort((a, b) => a.frame - b.frame);
   const dim = lane.enabled === false || state.automation.bypassed;
-  c.strokeStyle = dim ? '#3d5162' : '#52a8ff';
+  // The lane's own colour, the one the timeline above draws it in.
+  c.strokeStyle = dim ? '#3d5162' : perfLaneColor(lane.target);
   c.fillStyle = c.strokeStyle;
   c.lineWidth = 2;
 
@@ -6036,8 +6065,8 @@ function drawLane(canvas, lane) {
       const x = (v.frame / frames) * w;
       const y = (1 - v.value) * h;
       c.beginPath(); c.arc(x, y, 5, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#071018';
-      c.font = 'bold 8px ui-monospace';
+      c.fillStyle = '#0a0c0e';
+      c.font = 'bold 8px "Share Tech Mono", monospace';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(String(i + 1), x, y);
@@ -6056,8 +6085,7 @@ function drawLane(canvas, lane) {
 }
 
 function repaintAutomationLanes() {
-  const tl = $('automationTimeline');
-  if (tl) drawAutomationTimeline(tl);
+  perfDrawTimeline();
   for (const row of document.querySelectorAll('.automation-lane')) {
     const lane = (state.automation.lanes || []).find((l) => l.id === row.dataset.lane);
     const canvas = row.querySelector('.automation-canvas');
@@ -6114,6 +6142,33 @@ $('automationCapture')?.addEventListener('click', () => {
   if (!state.captureArmed) { startCapture(); return; }
   if (engine.playing) pausePlayback(); else endCapture();
 });
+$('perfPlayBtn')?.addEventListener('click', () => {
+  if (!state.selectedFile) { toast('Open a sound first'); return; }
+  if (engine.playing) pausePlayback(); else startPlayback();
+});
+$('perfStopBtn')?.addEventListener('click', () => { pausePlayback(); returnToCue(); updatePlayhead(); });
+$('perfLaneSelect')?.addEventListener('change', (e) => {
+  if (!e.target.value) return;
+  state.automationSel = e.target.value;
+  renderAutomation();
+});
+$('perfLaneDel')?.addEventListener('click', () => {
+  const lane = (state.automation.lanes || []).find((l) => l.id === state.automationSel);
+  if (!lane) { toast('Pick a lane first'); return; }
+  automationCheckpoint();
+  state.automation.lanes = state.automation.lanes.filter((x) => x !== lane);
+  state.automationSel = null;
+  saveAutomation();
+  renderAutomation();
+});
+$('perfCanvas')?.addEventListener('click', (e) => {
+  const id = perfLaneAt(e.currentTarget, e.clientX, e.clientY);
+  if (id) { state.automationSel = id; renderAutomation(); }
+});
+$('perfHeader')?.addEventListener('click', perfToggleCollapse);
+$('perfResize')?.addEventListener('mousedown', perfResizeStart);
+$('perfResize')?.addEventListener('dblclick', perfResizeReset);
+window.addEventListener('resize', () => { if ($('perfCanvas')) perfDrawTimeline(); });
 
 $('automationSimplify').onclick = () => {
   automationCheckpoint();
@@ -9352,7 +9407,7 @@ paintGrainPresets('');
 // voice — means feeding the sequencer into the engine, which is the next step
 // and is not this one. See `docs/SEQUENCER.md`.
 
-const seq = { feed: null, feedAt: 0, ready: false, want: { bands: 0, lo: 0, hi: 0 } };
+const seq = { feed: null, feedAt: 0, ready: false, clock: null, want: { bands: 0, lo: 0, hi: 0 } };
 
 function seqFrame() { return $('seqFrame'); }
 
@@ -9368,8 +9423,25 @@ function seqPost(m) {
   if (f && f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage(m, location.origin);
 }
 
-/// The engine's transport, told to the sequencer. Play plays it; stop stops it.
-function seqSync(playing) { seqPost({ type: 'seq:transport', playing }); }
+/// The engine's transport, told to the sequencer. Play plays it *from where
+/// the engine is*; stop stops it. The position is the engine's output time in
+/// seconds — `playbackTime` — which is the one clock both run on.
+function seqSync(playing) {
+  seqPost({ type: 'seq:transport', playing, at: playing ? playbackTime() : 0 });
+  clearInterval(seq.clock);
+  seq.clock = null;
+  if (playing) {
+    // The position, four times a second, so a seek or a loop wrap reaches the
+    // sequencer and a creep between the two clocks is caught. The sequencer
+    // decides whether the difference is worth acting on.
+    seq.clock = setInterval(seqClock, 250);
+  }
+}
+
+function seqClock() {
+  if (!engine.playing) return;
+  seqPost({ type: 'seq:clock', playing: true, at: playbackTime() });
+}
 
 /// Ask for the spectrum in the shape the room is about to draw.
 function seqAsk(bands, lo, hi) {
@@ -9387,6 +9459,14 @@ window.addEventListener('message', (e) => {
   } else if (m.type === 'seq:feed') {
     seq.feed = m.playing ? m : null;
     seq.feedAt = performance.now();
+  } else if (m.type === 'seq:render-progress') {
+    for (const r of seqRenders.values()) r.onProgress?.(m.fraction || 0);
+  } else if (m.type === 'seq:rendered') {
+    const r = seqRenders.get(m.id);
+    if (!r) return;
+    seqRenders.delete(m.id);
+    if (m.error) r.reject(new Error(`the sequencer could not render: ${m.error}`));
+    else r.resolve(m);
   }
 });
 
@@ -9419,20 +9499,59 @@ function seqMix(data, bands) {
   }
   const out = { ...data, seq: true };
   if (Array.isArray(data.spectrum) && spec.length) {
-    const mixed = data.spectrum.slice();
-    const n = Math.min(mixed.length, spec.length);
-    for (let i = 0; i < n; i++) {
-      mixed[i] = 10 * Math.log10(10 ** (mixed[i] / 10) + 10 ** (spec[i] / 10));
-    }
-    out.spectrum = mixed;
+    out.spectrum = seqMixSpectrum(data.spectrum.slice(), spec);
   }
   if (Array.isArray(data.lissajous) && Array.isArray(f.lissajous)) {
-    const xy = data.lissajous.slice();
-    const n = Math.min(xy.length, f.lissajous.length);
-    for (let i = 0; i < n; i++) xy[i] = Math.max(-1, Math.min(1, xy[i] + f.lissajous[i]));
-    out.lissajous = xy;
+    out.lissajous = seqMixLiss(data.lissajous.slice(), f.lissajous);
   }
   return out;
+}
+
+/// Two spectra, in decibels, added as power — in place into `a`.
+function seqMixSpectrum(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) a[i] = 10 * Math.log10(10 ** (a[i] / 10) + 10 ** (b[i] / 10));
+  return a;
+}
+
+/// Two figures, added as samples and clipped at the rails — in place into `a`.
+function seqMixLiss(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) a[i] = Math.max(-1, Math.min(1, a[i] + b[i]));
+  return a;
+}
+
+// ── the sequencer, in the film ──
+//
+// The film is rendered offline, so the sequencer renders itself offline too,
+// inside its frame, and hands back its sound and its picture for the film's
+// span. See `renderFilm` in `ui/sequencer/bridge.js`.
+
+const seqRenders = new Map();
+let seqRenderId = 0;
+
+/// Whether the sequencer is loaded at all — a frame that was never opened has
+/// nothing to render.
+function seqLoaded() {
+  const f = seqFrame();
+  return !!(f && f.getAttribute('src') && seq.ready);
+}
+
+/// Whether the film should carry it: loaded, and the switch on the dialog on.
+function seqInFilm() {
+  return seqLoaded() && !!$('elSeq')?.classList.contains('on');
+}
+
+/// Ask the frame for its part of the film. Resolves to the render, or null if
+/// the sequencer is not there to ask.
+function seqRenderForFilm(spec) {
+  if (!seqLoaded()) return Promise.resolve(null);
+  const id = ++seqRenderId;
+  const { onProgress, ...ask } = spec;
+  return new Promise((resolve, reject) => {
+    seqRenders.set(id, { resolve, reject, onProgress });
+    seqPost({ type: 'seq:render', id, ...ask });
+  });
 }
 
 // ───────────────────────────────────────────── capturing a performance ──
@@ -9451,147 +9570,21 @@ async function startCapture() {
   state.captureArmed = true;
   const b = $('automationCapture');
   if (b) { b.classList.add('recording'); b.textContent = '⏺ CAPTURING'; }
+  perfSetStatus('CAPTURING — EVERY CONTROL MOVE IS BEING RECORDED');
   if (!engine.playing) startPlayback();
 }
 
 async function endCapture() {
   state.captureArmed = false;
   const b = $('automationCapture');
-  if (b) { b.classList.remove('recording'); b.textContent = '⏺ Capture'; }
+  if (b) { b.classList.remove('recording'); b.textContent = '⏺ REC PERF'; }
   await setAutomationRecord('off');
   await loadAutomation();
-}
-
-// ─────────────────────────────────────── the timeline, in the sequencer's idiom ──
-//
-// One canvas, every lane stacked, each in the colour of the module it moves,
-// its name in a gutter on the left, a ruler along the top and a glowing head
-// where the transport is. This is the sequencer's performance timeline, drawn
-// over the document's frames instead of its seconds. Click a lane to open its
-// editor underneath.
-
-const AT_GUTTER = 120;
-const AT_RULER = 18;
-const AT_LANE = 34;
-const AT_MIN_LANE = 14;
-
-/// Lane colours follow module identity, as the sequencer's do.
-function laneColour(target) {
-  if (target.startsWith('stretch.grain.')) return '#00e5ff';
-  if (/^stretch\.(wsola|vocoder|pvsola|hybrid)\./.test(target)) return '#7fff00';
-  if (target.startsWith('stretch.')) return '#ff6b35';
-  if (target.startsWith('fx.')) return '#ff60b8';
-  return '#c8d8e0';
-}
-
-/// The lane's name as the gutter shows it: the control, without its group.
-function laneShortLabel(lane) {
-  const l = lane.label || lane.target;
-  return l.replace(/^.*— /, '').toUpperCase();
-}
-
-function drawAutomationTimeline(canvas) {
   const lanes = state.automation.lanes || [];
-  const cssW = canvas.clientWidth || 800;
-  const n = Math.max(1, lanes.length);
-  const laneH = lanes.length > 8 ? Math.max(AT_MIN_LANE, Math.floor(300 / n)) : AT_LANE;
-  const H = AT_RULER + n * laneH + 6;
-  if (canvas.width !== cssW) canvas.width = cssW;
-  if (canvas.height !== H) canvas.height = H;
-  canvas.dataset.laneH = String(laneH);
-  const W = canvas.width;
-  const c = canvas.getContext('2d');
-  c.fillStyle = '#0a0c0e';
-  c.fillRect(0, 0, W, H);
-
-  const frames = laneFrames();
-  const sr = state.view?.sampleRate || 44100;
-  const plotW = W - AT_GUTTER - 8;
-  const xOf = (fr) => AT_GUTTER + (fr / frames) * plotW;
-
-  // The ruler, and the bars down the plot.
-  c.fillStyle = '#0d1115';
-  c.fillRect(AT_GUTTER, 0, plotW, AT_RULER);
-  c.font = '7px ui-monospace';
-  c.textAlign = 'left';
-  for (let i = 0; i <= 8; i++) {
-    const x = AT_GUTTER + (i * plotW) / 8;
-    c.strokeStyle = '#1e2830';
-    c.beginPath(); c.moveTo(x, AT_RULER - 5); c.lineTo(x, H - 4); c.stroke();
-    c.fillStyle = '#2a3540';
-    if (i < 8) c.fillText(fmtTime((frames * i) / 8 / sr), x + 2, AT_RULER - 7);
-  }
-  for (const m of state.annotations?.markers || []) {
-    const x = xOf(m.frame);
-    c.strokeStyle = 'rgba(244,190,73,.45)';
-    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H - 4); c.stroke();
-  }
-
-  if (!lanes.length) {
-    c.fillStyle = '#2a3540';
-    c.font = '10px ui-monospace';
-    c.textAlign = 'center';
-    c.fillText('NO LANES — ⏺ CAPTURE, THEN PERFORM WHILE IT PLAYS', W / 2, AT_RULER + laneH / 2 + 4);
-  }
-
-  lanes.forEach((lane, li) => {
-    const y0 = AT_RULER + li * laneH;
-    const colour = laneColour(lane.target);
-    const dim = lane.enabled === false || state.automation.bypassed;
-    const sel = lane.id === state.automationSel;
-    if (sel) {
-      c.fillStyle = 'rgba(0,229,255,0.06)';
-      c.fillRect(0, y0 + 1, W, laneH - 2);
-    }
-    c.strokeStyle = '#1e2830';
-    c.strokeRect(AT_GUTTER + 0.5, y0 + 1.5, plotW - 1, laneH - 3);
-    c.fillStyle = dim ? '#4a6070' : colour;
-    c.font = '9px ui-monospace';
-    c.textAlign = 'left';
-    c.fillText(laneShortLabel(lane).slice(0, 18), 4, y0 + laneH / 2 + 3);
-
-    const p = (lane.points || []).slice().sort((a, b) => a.frame - b.frame);
-    if (!p.length) return;
-    const yOf = (v) => y0 + laneH - 5 - v * (laneH - 9);
-    c.beginPath();
-    // Held flat out to both edges, as the lane is: it goes on meaning
-    // something past its last breakpoint.
-    c.moveTo(AT_GUTTER, yOf(p[0].value));
-    c.lineTo(xOf(p[0].frame), yOf(p[0].value));
-    for (let i = 0; i < p.length - 1; i++) {
-      for (let k = 1; k <= 12; k++) {
-        const t = k / 12;
-        const kk = curveT(t, p[i]);
-        c.lineTo(
-          xOf(p[i].frame + (p[i + 1].frame - p[i].frame) * t),
-          yOf(p[i].value + (p[i + 1].value - p[i].value) * kk),
-        );
-      }
-    }
-    const last = p[p.length - 1];
-    c.lineTo(xOf(last.frame), yOf(last.value));
-    c.lineTo(AT_GUTTER + plotW, yOf(last.value));
-    c.strokeStyle = dim ? '#3d5162' : colour;
-    c.lineWidth = sel ? 2.5 : 1.5;
-    c.globalAlpha = dim ? 0.6 : 1;
-    c.stroke();
-    c.globalAlpha = 1;
-    c.lineWidth = 1;
-  });
-
-  // The head: orange when playing, red when writing.
-  if (engine.playing) {
-    const x = xOf(sourceFrameNow());
-    const armed = state.automationRecord && state.automationRecord !== 'off';
-    const col = armed ? '#ff3333' : '#ff6b35';
-    c.strokeStyle = col;
-    c.lineWidth = 2;
-    c.shadowColor = col;
-    c.shadowBlur = 6;
-    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H - 4); c.stroke();
-    c.shadowBlur = 0;
-    c.lineWidth = 1;
-  }
+  const points = lanes.reduce((n, l) => n + (l.points || []).length, 0);
+  perfSetStatus(lanes.length
+    ? `SAVED — ${lanes.length} LANES · ${points} POINTS · ${perfDuration().toFixed(1)}s`
+    : 'CAPTURE ENDED — NOTHING MOVED, NOTHING RECORDED');
 }
 
 function leaveRoomView() {

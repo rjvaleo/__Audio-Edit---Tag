@@ -73,7 +73,7 @@ test('Capture arms latch, and ending it disarms and refetches the take', async (
   expect(after.button).toBe(false);
 });
 
-test('the take is drawn as one stacked timeline, and a click opens a lane', async ({ page }) => {
+test('the take is drawn as the sequencer draws one, and a click on a lane opens it', async ({ page }) => {
   await open(page);
   const got = await page.evaluate(() => {
     const kept = JSON.stringify(state.automation.lanes);
@@ -84,24 +84,46 @@ test('the take is drawn as one stacked timeline, and a click opens a lane', asyn
     ];
     state.automationSel = null;
     renderAutomation();
-    const tl = $('automationTimeline');
+    const tl = $('perfCanvas');
     const rows = () => [...document.querySelectorAll('.automation-lane')].map((r) => r.dataset.lane);
     const first = rows();
-    // Click the second row.
-    const laneH = +tl.dataset.laneH;
+    // The panel is the sequencer's: its header, its transport row, its
+    // timeline, its status row, its resize grip.
+    const panel = {
+      header: $('perfHeader')?.textContent.replace(/\s+/g, ' ').trim(),
+      info: $('perfHeaderInfo')?.textContent,
+      rec: $('automationCapture')?.textContent.trim(),
+      play: $('perfPlayBtn')?.textContent.trim(),
+      status: !!$('perfStatus'), pos: $('perfPos')?.textContent, grip: !!$('perfResize'),
+      lanesMenu: [...$('perfLaneSelect').options].map((o) => o.textContent),
+      font: getComputedStyle($('automationCapture')).fontFamily,
+    };
+    // Click the second lane, by the rects the draw left.
+    const hit = perfLaneHits.find((h) => h.id === 'b');
     const r = tl.getBoundingClientRect();
-    const y = r.top + (AT_RULER + laneH * 1.5) * (r.height / tl.height);
-    tl.dispatchEvent(new MouseEvent('click', { clientX: r.left + r.width / 2, clientY: y, bubbles: true }));
+    tl.dispatchEvent(new MouseEvent('click', {
+      clientX: r.left + r.width / 2, clientY: r.top + (hit.y0 + hit.y1) / 2, bubbles: true,
+    }));
     const second = rows();
-    const colours = ['stretch.grain.rateHz', 'stretch.vocoder.magFreeze', 'fx.g.db', 'stretch.ratio'].map(laneColour);
+    const colours = ['stretch.grain.rateHz', 'stretch.vocoder.magFreeze', 'fx.g.db', 'stretch.ratio'].map(perfLaneColor);
+    const height = tl.offsetHeight;
     state.automation.lanes = JSON.parse(kept);
     state.automationSel = null;
     renderAutomation();
-    return { drawn: !!tl && tl.height > AT_RULER + 3 * laneH - 1, laneH, first, second, colours };
+    return { first, second, colours, panel, height, hits: perfLaneHits.length };
   });
-  expect(got.drawn, 'the timeline canvas was not drawn for three lanes').toBe(true);
+  expect(got.panel.header).toMatch(/^▾ PERFORMANCE — /);
+  expect(got.panel.info).toMatch(/3 LANES/);
+  expect(got.panel.rec).toBe('⏺ REC PERF');
+  expect(got.panel.play).toBe('▶ PLAY PERF');
+  expect(got.panel.status).toBe(true);
+  expect(got.panel.pos).toBe('— · —');
+  expect(got.panel.grip).toBe(true);
+  expect(got.panel.lanesMenu).toEqual(['— lanes —', 'RATE', 'FREEZE', 'LEVEL']);
+  expect(got.panel.font).toMatch(/Share Tech Mono/);
+  // Ruler, three lanes and the struct lane, at the sequencer's own heights.
+  expect(got.height).toBe(18 + 3 * 34 + 22 + 6);
   expect(got.first, 'one editor, for the first lane').toEqual(['a']);
   expect(got.second, 'the click did not open the second lane').toEqual(['b']);
-  // Four modules, four colours: grains, engines, the document, the rack.
   expect(new Set(got.colours).size).toBe(4);
 });
