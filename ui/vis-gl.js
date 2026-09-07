@@ -156,10 +156,38 @@ function vgBoxOf(c) {
   return vgIsWorld(c) ? vgBoxFromWorld(c) : c;
 }
 
+/// How far the world is drawn — the ground grid, the fog — beyond the layers'
+/// own reach. Far enough that the grid meets its horizon rather than ending.
+const VG_HORIZON = 80;
+/// The ground grid's spacing, in world units (the near plane is one unit from
+/// the eye, and the box's height was one).
+const VG_GRID_STEP = 0.5;
+
+/// A world point through a matrix, to normalised device coordinates. `w` is
+/// the clip depth; behind the eye it is not positive.
+function vgProjectPoint(m, x, y, z) {
+  const cx = m[0] * x + m[4] * y + m[8] * z + m[12];
+  const cy = m[1] * x + m[5] * y + m[9] * z + m[13];
+  const cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+  return { x: cx / cw, y: cy / cw, w: cw };
+}
+
+/// The world point at a given `z` that lands at `(ndcX, ndcY)`. Two linear
+/// equations in `x` and `y`; a general matrix, so a turned or pitched camera
+/// unprojects as exactly as a straight one.
+function vgUnprojectAtZ(m, ndcX, ndcY, z) {
+  const a = m[0] - ndcX * m[3], b = m[4] - ndcX * m[7];
+  const c = m[1] - ndcY * m[3], d = m[5] - ndcY * m[7];
+  const e = ndcX * (m[11] * z + m[15]) - (m[8] * z + m[12]);
+  const f = ndcY * (m[11] * z + m[15]) - (m[9] * z + m[13]);
+  const det = a * d - b * c;
+  if (Math.abs(det) < 1e-12) return { x: 0, y: 0, z };
+  return { x: (e * d - b * f) / det, y: (a * f - c * e) / det, z };
+}
+
 /// The world's own view: a look-at from the eye along pitch and yaw, and a
-/// symmetric perspective of `fov` degrees. Not yet what the room draws with —
-/// that is the box's frustum until the ground replaces it — but it is the
-/// matrix step two puts in, here so it can be checked before it is trusted.
+/// symmetric perspective of `fov` degrees. What the room draws with, since the
+/// ground replaced the box.
 function vgWorldView(w, aspect, near, far) {
   const d = VG_WORLD_DEFAULT;
   const height = Number.isFinite(w?.height) ? w.height : d.height;
@@ -317,7 +345,7 @@ const VG_GRAIN_LINE_CAP = 48000;
 ///
 /// The interface stacks its chips in this order, top to bottom, so the list on
 /// screen and the list here are the same list read the same way.
-const VG_LAYER_ORDER = ['room', 'solid', 'sky', 'skin', 'grains', 'lead', 'floor'];
+const VG_LAYER_ORDER = ['grid', 'solid', 'sky', 'skin', 'grains', 'lead', 'floor'];
 
 /// The most mask vertices the grain cloud will write in one frame.
 ///
@@ -814,6 +842,9 @@ function vgAttach(canvas) {
   const meshW2Buf = gl.createBuffer();
   let meshRows = 0;
   let meshKey = '';
+  let gridKey = '';
+  let gridMinor = null;
+  let gridMajor = null;
   let pushes = 0;
 
   /// The waterfall, oldest row first so the newest is drawn last and on top.
@@ -999,15 +1030,12 @@ function vgAttach(canvas) {
     /// through the centre of the frame, which looks like a bug in the drag.
     project(x, y, z) {
       if (!view) return null;
-      const m = view.mvp;
-      const cw = -z;
-      if (cw <= 1e-6) return { x: 0, y: 0, behind: true };
-      const ndcX = (m[0] * x + m[8] * z) / cw;
-      const ndcY = (m[5] * y + m[9] * z) / cw;
+      const p = vgProjectPoint(view.mvp, x, y, z);
+      if (p.w <= 1e-6) return { x: 0, y: 0, behind: true };
       const dpr = view.w / (canvas.clientWidth || view.w);
       return {
-        x: (ndcX * 0.5 + 0.5) * view.w / dpr,
-        y: (1 - (ndcY * 0.5 + 0.5)) * view.h / dpr,
+        x: (p.x * 0.5 + 0.5) * view.w / dpr,
+        y: (1 - (p.y * 0.5 + 0.5)) * view.h / dpr,
         behind: false,
       };
     },
@@ -1021,16 +1049,10 @@ function vgAttach(canvas) {
     /// it in its own plane and nowhere else, and it stays under the cursor.
     unprojectAtZ(sx, sy, z) {
       if (!view) return null;
-      const m = view.mvp;
       const dpr = view.w / (canvas.clientWidth || view.w);
       const ndcX = (sx * dpr / view.w) * 2 - 1;
       const ndcY = 1 - (sy * dpr / view.h) * 2;
-      const cw = -z;
-      return {
-        x: (ndcX * cw - m[8] * z) / m[0],
-        y: (ndcY * cw - m[9] * z) / m[5],
-        z,
-      };
+      return vgUnprojectAtZ(view.mvp, ndcX, ndcY, z);
     },
 
     /// The room's own extents, so a caller can speak in its terms rather than
@@ -1140,7 +1162,7 @@ function vgAttach(canvas) {
       if (!w || !h) return;
       // The caller owns the camera, because which camera is right depends on
       // the frame being drawn for and this file has no opinion about that.
-      const cam = vgCamera(f && f.cam);
+      const camIn = vgCamera(f && f.cam);
 
       // ── what time it is here ──
       //
@@ -1162,7 +1184,7 @@ function vgAttach(canvas) {
         : (typeof performance !== 'undefined' ? performance.now() : Date.now());
       // And owns which parts are drawn. Everything, unless told otherwise —
       // a caller that says nothing gets the room it has always had.
-      const on = { room: true, floor: true, lead: true, sky: true, skin: true, grains: true,
+      const on = { grid: true, floor: true, lead: true, sky: true, skin: true, grains: true,
         // Off unless asked for: it is a new thing in an old room, and a room that
         // gains an object because it was updated is a room that changed by itself.
         solid: false, ...(f && f.layers) };
@@ -1258,14 +1280,31 @@ function vgAttach(canvas) {
       // edges *are* the edges of the panel.
       const aspect = w / h;
       const near = 1.0;
-      const yb = cam.floorY, yt = cam.ceilY;
+      // **The world camera, whatever shape it arrived in.** A box camera — a
+      // film's, a test's — is read as the world camera it maps to; the world
+      // camera is what the view is built from. The box the layers still lay
+      // themselves along is derived from it: the ground is y = 0, the ceiling
+      // is where the box's was above the floor, and the eye stands at
+      // `height` looking along its pitch and yaw. See `docs/OPEN-WORLD.md`.
+      const wc = vgIsWorld(f && f.cam) ? { ...VG_WORLD_DEFAULT, ...f.cam } : vgWorldFromBox(camIn, aspect);
+      const box = vgBoxFromWorld(wc);
+      // What the layers still read — the ring's place, the lead's weight — as
+      // the box the world camera maps to.
+      const cam = { ...camIn, ...box };
+      const hh = box.ceilY - box.floorY;
+      const height = wc.height;
+      const yb = 0, yt = hh;
       const halfW = (yt - yb) * 0.5 * aspect;
-      const far = near * (1 + cam.depth);
+      // The layers' reach, and the world's: the grid and the fog go on to the
+      // horizon, past where the trail and the cloud stop.
+      const far = near * (1 + box.depth);
+      const horizon = Math.max(far + 1, VG_HORIZON);
       // Sideways off-axis, the same way the vertical one works: the camera does
       // not turn, the frustum slides, so the front face stays square to the
       // frame however far the vanishing point moves.
-      const sx = cam.shiftX * halfW;
-      const mvp = vgFrustum(-halfW + sx, halfW + sx, yb, yt, near, far + 1);
+      const sx = 0;
+      const wv = vgWorldView({ ...wc, fov: 2 * Math.atan(hh / 2) * VG_DEG }, aspect, near, horizon);
+      const mvp = wv.mvp;
       gl.useProgram(prog.p);
       gl.uniformMatrix4fv(prog.uMVP, false, mvp);
 
@@ -1285,8 +1324,11 @@ function vgAttach(canvas) {
       // dragged is where the *back* is and the front is pinned to the canvas
       // edges. At `t = 0` both are one whatever the setting, so the near face
       // still lands exactly on the panel and "the panel is the box" survives.
-      const backW = cam.backW ?? 1;
-      const backH = cam.backH ?? 1;
+      // The box's taper is gone with the box. The two names stay for the
+      // layers that still call them, and answer the identity, until each
+      // layer is re-placed in the world.
+      const backW = 1;
+      const backH = 1;
       const taperX = (t) => 1 + (backW - 1) * t;
       // **Kept, so something outside can ask where a world point is.**
       // Nothing could before: the matrix was built here, used and dropped, so a
@@ -1299,7 +1341,7 @@ function vgAttach(canvas) {
       // single frame — and an exception in here is silent, so the room simply
       // stopped drawing with nothing in the console to say why. This project
       // has a note about exactly that trap; I wrote the same one anyway.
-      view = { mvp, w, h, near, far, yb, yt, halfW, sx, backW, backH };
+      view = { mvp, w, h, near, far, yb, yt, halfW, sx, backW, backH, height, horizon, wc };
       const taperY = (t) => 1 + (backH - 1) * t;
       // The height tapers about the room's own middle, so a shorter back pulls
       // the floor up and the ceiling down together. Tapering about the floor
@@ -1312,35 +1354,52 @@ function vgAttach(canvas) {
       //
       // Only the four runs back and the far rectangle. The near rectangle is
       // the canvas border and drawing it would be a line painted on the bezel.
-      const drawRoom = () => {
-        const fr = [[-halfW, yb], [halfW, yb], [halfW, yt], [-halfW, yt]];
-        const pos = new Float32Array(8 * 3 * 2);
-        const wts = new Float32Array(8 * 2);
-        let v = 0;
-        const put = (x, y, z, weight) => {
-          pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
-          wts[v] = weight; v++;
-        };
-        // Full size, at the back. The projection is what shrinks it.
-        //
-        // These corners used to be pre-multiplied by `near / far` as well,
-        // which applied the perspective twice: the wall drew at the square of
-        // the convergence, so it sat far beyond where the floor actually ends
-        // and the terrain appeared to stop short of the room in a hard edge. It
-        // was not stopping short — the wall was in the wrong place.
-        // The far rectangle is the near one through the taper, so a room whose
-        // back has been pulled in is a box with sloping walls rather than a
-        // smaller rectangle floating at the same distance.
-        for (let i = 0; i < 4; i++) {
-          const [x0, y0] = fr[i];
-          const [x1, y1] = fr[(i + 1) % 4];
-          put(x0 * taperX(1), yTap(y0, 1), zAt(1), 0.16);
-          put(x1 * taperX(1), yTap(y1, 1), zAt(1), 0.16);
-          // and the corner run from the canvas edge back to it
-          put(x0, y0, zAt(0), 0.02);
-          put(x0 * taperX(1), yTap(y0, 1), zAt(1), 0.16);
+      // **The ground.** Where the box drew its four runs back and its far wall,
+      // the world draws a grid on the ground: lines across at a fixed spacing
+      // from the near plane to the horizon, and lines along from as far left as
+      // the eye can see at the horizon to as far right. Every fourth line is
+      // heavier, so distance can be counted. Light grey — the theme's marks
+      // are for the sound; this is the floor they stand on — and, like
+      // everything else here, fogged and thinned with distance, so the horizon
+      // reads as far rather than as an edge. Its weight is distance, for the
+      // palette to read a ramp against.
+      const drawGrid = () => {
+        const key = `${halfW.toFixed(4)}|${horizon}|${aspect.toFixed(4)}|${hh.toFixed(4)}`;
+        if (key !== gridKey) {
+          gridKey = key;
+          const step = VG_GRID_STEP;
+          const zNear = -near, zFar = -horizon;
+          const xMax = Math.ceil(((hh / 2) * aspect * horizon + halfW) / step) * step;
+          const across = Math.floor((horizon - near) / step) + 1;
+          const along = Math.floor((2 * xMax) / step) + 1;
+          const minor = [], major = [];
+          const wOf = (z) => (-z - near) / (horizon - near);
+          let n = 0;
+          for (let i = 0; i < across; i++, n++) {
+            const z = zNear - i * step;
+            (n % 4 === 0 ? major : minor).push(-xMax, 0, z, wOf(z), xMax, 0, z, wOf(z));
+          }
+          n = 0;
+          for (let i = 0; i < along; i++, n++) {
+            const x = -xMax + i * step;
+            (n % 4 === 0 ? major : minor).push(x, 0, zNear, 0, x, 0, zFar, 1);
+          }
+          const pack = (list) => {
+            const count = list.length / 4;
+            const pos = new Float32Array(count * 3);
+            const wts = new Float32Array(count);
+            for (let i = 0; i < count; i++) {
+              pos[i * 3] = list[i * 4]; pos[i * 3 + 1] = list[i * 4 + 1]; pos[i * 3 + 2] = list[i * 4 + 2];
+              wts[i] = list[i * 4 + 3];
+            }
+            return { pos, wts, count };
+          };
+          gridMinor = pack(minor);
+          gridMajor = pack(major);
         }
-        draw(gl.LINES, pos, wts, v, 0.85, false, f.cold, f.cold, 1, 'box');
+        const grey = [0.62, 0.66, 0.70];
+        draw(gl.LINES, gridMinor.pos, gridMinor.wts, gridMinor.count, 0.14, false, grey, grey, 1, 'grid');
+        draw(gl.LINES, gridMajor.pos, gridMajor.wts, gridMajor.count, 0.30, false, grey, grey, 1, 'grid');
       };
 
       // ── the landscape ──
@@ -2643,7 +2702,7 @@ function vgAttach(canvas) {
       };
 
       const LAYER_DRAW = {
-        room: drawRoom,
+        grid: drawGrid,
         floor: drawFloor,
         lead: drawLead,
         grains: () => drawGrains(!!occ.grains),

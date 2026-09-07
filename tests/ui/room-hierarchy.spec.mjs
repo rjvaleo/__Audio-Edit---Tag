@@ -136,7 +136,7 @@ test('each layer has its own occlusion, off until asked for', async ({ page }) =
       .classList.contains('active'),
   }));
   expect(on.map.grains, 'the switch did not take').toBe(true);
-  expect(on.map.room, 'one switch turned another layer on').toBe(false);
+  expect(on.map.grid, 'one switch turned another layer on').toBe(false);
   expect(on.lit, 'the switch does not show as on').toBe(true);
 
   await page.reload();
@@ -158,7 +158,7 @@ test('occlusion takes light out of the cloud without taking it out of a grain',
       const gl = document.getElementById('visGl');
       const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
       if (!ctx) return null;
-      for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+      for (const k of ['floor', 'lead', 'sky', 'skin', 'grid', 'data']) roomEdit.layers[k] = false;
       roomEdit.layers.grains = true;
 
       const sr = 44100, srcFrames = sr * 10;
@@ -227,8 +227,10 @@ test('the ring slider resizes the ring without touching the camera', async ({ pa
   await openRoom(page);
   const out = await page.evaluate(() => {
     const posed = roomCamera();
-    const small = (() => { roomEdit.ringScale = 0.4; return roomCameraDrawn().ring; })();
-    const big = (() => { roomEdit.ringScale = 2.2; return roomCameraDrawn().ring; })();
+    // The drawn camera may be a box (a number) or a world camera (a size).
+    const ringOf = (c) => (typeof c.ring === 'number' ? c.ring : c.ring.size);
+    const small = (() => { roomEdit.ringScale = 0.4; return ringOf(roomCameraDrawn()); })();
+    const big = (() => { roomEdit.ringScale = 2.2; return ringOf(roomCameraDrawn()); })();
     return { posed, small, big, base: vgCamera(roomCamera()).ring };
   });
   expect(out.small, 'the slider did not shrink the ring').toBeLessThan(out.base);
@@ -264,7 +266,7 @@ test('the ring size is remembered', async ({ page }) => {
 test('the cloud slider thins the picture and not the schedule', async ({ page }) => {
   await openRoom(page);
   const out = await page.evaluate(async () => {
-    for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+    for (const k of ['floor', 'lead', 'sky', 'skin', 'grid', 'data']) roomEdit.layers[k] = false;
     roomEdit.layers.grains = true;
 
     const sr = 44100, srcFrames = sr * 10;
@@ -323,7 +325,7 @@ test('the burn slider brightens the same cloud', async ({ page }) => {
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+    for (const k of ['floor', 'lead', 'sky', 'skin', 'grid', 'data']) roomEdit.layers[k] = false;
     roomEdit.layers.grains = true;
 
     const sr = 44100, srcFrames = sr * 10;
@@ -403,7 +405,7 @@ test('with nothing occluding, the order makes no usable difference', async ({ pa
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['room', 'floor', 'lead', 'sky', 'skin', 'grains']) roomEdit.layers[k] = true;
+    for (const k of ['grid', 'floor', 'lead', 'sky', 'skin', 'grains']) roomEdit.layers[k] = true;
     roomEdit.layers.data = false;
     pushSignal();
     const shot = (order) => {
@@ -454,7 +456,7 @@ test('occlusion only reaches the layers below it in the list', async ({ page }) 
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['room', 'floor', 'lead', 'sky', 'skin', 'grains']) roomEdit.layers[k] = true;
+    for (const k of ['grid', 'floor', 'lead', 'sky', 'skin', 'grains']) roomEdit.layers[k] = true;
     roomEdit.layers.data = false;
     pushSignal();
     const shot = (order, occlude) => {
@@ -521,7 +523,7 @@ test('the drive slider reaches far past what the ring used to do', async ({ page
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['floor', 'lead', 'skin', 'grains', 'data', 'room']) roomEdit.layers[k] = false;
+    for (const k of ['floor', 'lead', 'skin', 'grains', 'data', 'grid']) roomEdit.layers[k] = false;
     roomEdit.layers.sky = true;
     pushSignal();
     const shot = (ringDrive) => {
@@ -564,7 +566,7 @@ test('the ring carries a dark border under its lines', async ({ page }) => {
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['floor', 'lead', 'skin', 'grains', 'data', 'room']) roomEdit.layers[k] = false;
+    for (const k of ['floor', 'lead', 'skin', 'grains', 'data', 'grid']) roomEdit.layers[k] = false;
     roomEdit.layers.sky = true;
     pushSignal();
     const shot = (ringEdge) => {
@@ -603,7 +605,7 @@ test('a filled grain keeps its far side', async ({ page }) => {
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+    for (const k of ['floor', 'lead', 'sky', 'skin', 'grid', 'data']) roomEdit.layers[k] = false;
     roomEdit.layers.grains = true;
 
     const sr = 44100, srcFrames = sr * 10;
@@ -763,7 +765,7 @@ test('the stroke slider sets how thick the ring\'s border is', async ({ page }) 
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['floor', 'lead', 'skin', 'grains', 'data', 'room']) roomEdit.layers[k] = false;
+    for (const k of ['floor', 'lead', 'skin', 'grains', 'data', 'grid']) roomEdit.layers[k] = false;
     roomEdit.layers.sky = true;
     pushSignal();
     const shot = (ringEdge) => {
@@ -817,7 +819,7 @@ test('Clear empties the trail and the cloud, and leaves the settings alone',
       const gl = document.getElementById('visGl');
       const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
       if (!ctx) return null;
-      for (const k of ['room', 'floor', 'lead', 'sky', 'skin', 'grains']) roomEdit.layers[k] = true;
+      for (const k of ['grid', 'floor', 'lead', 'sky', 'skin', 'grains']) roomEdit.layers[k] = true;
       roomEdit.layers.data = false;
 
       // Fill it: a trail, and a cloud walked in against the wall clock so the
@@ -897,7 +899,7 @@ test('the leading edge can lose its band and keep its line', async ({ page }) =>
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['room', 'floor', 'sky', 'skin', 'grains', 'data']) roomEdit.layers[k] = false;
+    for (const k of ['grid', 'floor', 'sky', 'skin', 'grains', 'data']) roomEdit.layers[k] = false;
     roomEdit.layers.lead = true;
     pushSignal();
     const shot = (leadThick) => {
@@ -963,7 +965,7 @@ test('the ring can be drawn finer, past what the trace actually holds',
       const gl = document.getElementById('visGl');
       const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
       if (!ctx) return null;
-      for (const k of ['floor', 'lead', 'skin', 'grains', 'data', 'room']) roomEdit.layers[k] = false;
+      for (const k of ['floor', 'lead', 'skin', 'grains', 'data', 'grid']) roomEdit.layers[k] = false;
       roomEdit.layers.sky = true;
       pushSignal();
       const shot = (ringPoints) => {
@@ -1041,7 +1043,7 @@ test('the mist is visible, and off means off', async ({ page }) => {
     if (!ctx) return null;
     for (const k of ['floor', 'lead', 'sky', 'skin', 'data']) roomEdit.layers[k] = false;
     roomEdit.layers.grains = true;
-    roomEdit.layers.room = true;
+    roomEdit.layers.grid = true;
 
     const sr = 44100, srcFrames = sr * 10, grains = [];
     for (let i = 0; i < 400; i++) {
@@ -1122,7 +1124,7 @@ test('fog tints by real distance, and the far wall takes more of it',
       for (const k of ['floor', 'lead', 'sky', 'skin', 'grains', 'data']) {
         roomEdit.layers[k] = false;
       }
-      roomEdit.layers.room = true;
+      roomEdit.layers.grid = true;
       const shot = (fog) => {
         visGl.frame({
           cold: [0.2, 0.45, 0.85], hot: [0.2, 0.45, 0.85], core: [0.2, 0.45, 0.85],
@@ -1146,7 +1148,10 @@ test('fog tints by real distance, and the far wall takes more of it',
           const red = Math.max(0, px[i] - px[i + 2] * 0.5);
           if (Math.abs(x - W / 2) < W * 0.18 && Math.abs(y - H / 2) < H * 0.18) {
             cRed += red; cSum += v;
-          } else if (x < W * 0.06 || x > W * 0.94) {
+          } else if (y < H * 0.12) {
+            // The nearest ground: the bottom rows. (readPixels counts rows
+            // from the bottom.) The frame's edge columns were the near walls
+            // when there were walls; on open ground they run to the horizon.
             eRed += red; eSum += v;
           }
         }
@@ -1163,12 +1168,17 @@ test('fog tints by real distance, and the far wall takes more of it',
     });
     if (out === null) test.skip(true, 'no readable WebGL context in this harness');
 
-    // A blue room has no red in it at all.
-    expect(out.off.far, 'the room was already the fog colour').toBeLessThan(0.02);
+    // The ground is grey — a little red by this measure, since grey has as
+    // much red as anything else — and not the fog's red. What the fog adds is
+    // measured over that, not from nought: the box's cold blue lines, which
+    // had no red at all, went with the box.
+    expect(out.off.far, 'the ground was already the fog colour').toBeLessThan(0.2);
+    const addedFar = out.tint.far - out.off.far;
+    const addedNear = out.tint.near - out.off.near;
 
     // The shader half: it lands, and it lands by distance.
-    expect(out.tint.far, 'the fog put none of its colour on anything')
-      .toBeGreaterThan(0.2);
+    expect(addedFar, 'the fog put none of its colour on anything')
+      .toBeGreaterThan(0.15);
     // **And the front of the room is nearly clear.**
     //
     // "The fog's intensity is fogMin before or at the start of the fog's near
@@ -1179,11 +1189,11 @@ test('fog tints by real distance, and the far wall takes more of it',
     // it is a tint on the whole scene, and it was reported as exactly that.
     // Measured from where the fog starts, the front comes out near nothing and
     // the back wall takes several times as much.
-    expect(out.tint.near, `the front of the room took ${out.tint.near.toFixed(3)} `
-      + 'of the fog — it should be nearly clear there').toBeLessThan(0.3);
-    expect(out.tint.far, `the front took ${out.tint.near.toFixed(3)} and the back `
-      + `wall ${out.tint.far.toFixed(3)} — that is a tint, not a distance`)
-      .toBeGreaterThan(out.tint.near * 2.0);
+    expect(addedNear, `the front of the room took ${addedNear.toFixed(3)} `
+      + 'of the fog — it should be nearly clear there').toBeLessThan(0.15);
+    expect(addedFar, `the front took ${addedNear.toFixed(3)} and the far end `
+      + `${addedFar.toFixed(3)} — that is a tint, not a distance`)
+      .toBeGreaterThan(Math.max(0.02, addedNear) * 2.0);
 
     // The volume half: there is something in the air, not only on the walls.
     expect(out.whole.lit, `${out.tint.lit} lit with the tint alone and `
