@@ -7553,7 +7553,7 @@ const ROOM_CAM_DEFAULT = {
 /// renderer defaults to all of them, so anything that does not pass this — the
 /// grain views, a test — draws what it always drew.
 const ROOM_LAYERS = [
-  { key: 'room', label: 'Box', hint: 'The wireframe: the four runs back and the far wall.' },
+  { key: 'grid', label: 'Ground', hint: 'The grid on the ground, running to the horizon. Light grey, heavier every fourth line, so distance can be counted.' },
   { key: 'floor', label: 'Terrain', hint: 'The spectrum along the floor, receding as it ages.' },
   { key: 'lead', label: 'Edge', hint: 'The frame you are hearing now, drawn with weight along the near edge.' },
   { key: 'sky', label: 'Ring', hint: 'The Lissajous hanging in the sky, pushed out of round by the sound.' },
@@ -8074,14 +8074,20 @@ function roomCameraForAspect(aspect) {
 /// pose would mean every camera copied out carried somebody's slider position
 /// with it.
 function roomCameraDrawn(frameKey) {
-  // The renderer draws a box; a world camera is turned back into the one it
-  // was made from on the way. See `vgBoxOf`.
-  const c = vgBoxOf(frameKey ? (roomEdit.cams[frameKey] || null) : roomCamera());
+  // The world camera, as kept; the renderer builds its view from it and
+  // derives the box its layers still lay themselves along. A box camera —
+  // a film's, a test's — passes through, and the renderer reads it as the
+  // world camera it maps to.
+  const raw = frameKey ? (roomEdit.cams[frameKey] || null) : roomCamera();
   const k = roomEdit.ringScale;
-  if (k === 1) return c;
-  // `vgCamera` fills in whatever is missing, so this works on a posed camera,
-  // on a partial one, and on no camera at all.
-  const base = vgCamera(c);
+  // Nothing posed: the renderer's own default, scaled if the ring is.
+  if (!raw) return k === 1 ? null : { ...VG_CAMERA, ring: VG_CAMERA.ring * k };
+  if (vgIsWorld(raw)) {
+    const wc = { ...VG_WORLD_DEFAULT, ...raw };
+    return k === 1 ? wc : { ...wc, ring: { ...wc.ring, size: wc.ring.size * k } };
+  }
+  if (k === 1) return raw;
+  const base = vgCamera(raw);
   return { ...base, ring: base.ring * k };
 }
 
@@ -9741,26 +9747,8 @@ function roomZoneAt(y, h) {
 /// `at` gives a point in the room — world x and y on the front face, and how
 /// far back — and `move` is handed the drag in fractions of the canvas.
 const ROOM_HANDLES = [
-  {
-    key: 'backW-r', cls: 'rh-w', tip: 'Back width',
-    at: (hw, c) => [hw, (c.floorY + c.ceilY) / 2, 1],
-    move: (c, d, dx) => { c.backW = clampBack(d.backW + dx * 2.2); },
-  },
-  {
-    key: 'backW-l', cls: 'rh-w', tip: 'Back width',
-    at: (hw, c) => [-hw, (c.floorY + c.ceilY) / 2, 1],
-    move: (c, d, dx) => { c.backW = clampBack(d.backW - dx * 2.2); },
-  },
-  {
-    key: 'backH-t', cls: 'rh-h', tip: 'Back height',
-    at: (hw, c) => [0, c.ceilY, 1],
-    move: (c, d, dx, dy) => { c.backH = clampBack(d.backH - dy * 2.2); },
-  },
-  {
-    key: 'backH-b', cls: 'rh-h', tip: 'Back height',
-    at: (hw, c) => [0, c.floorY, 1],
-    move: (c, d, dx, dy) => { c.backH = clampBack(d.backH + dy * 2.2); },
-  },
+  // The back's four grips went with the back: there is no far wall to widen
+  // or raise. See `docs/OPEN-WORLD.md`, step two.
   {
     // The gesture that already existed on the back wall, with something to aim
     // at. Pushing the wall away is the room getting longer.
@@ -9798,10 +9786,6 @@ const ROOM_HANDLES = [
 /// A quarter to four times the front. Past that the box stops reading as a room
 /// — at nothing the back is a point and the walls meet, and far out the taper
 /// beats the perspective and the room turns inside out.
-function clampBack(v) {
-  return Math.max(0.05, Math.min(4, v));
-}
-
 /// The solid's path, drawn in the room and grabbed there.
 ///
 /// **This is the third attempt at these controls and the first one in the
@@ -10320,110 +10304,74 @@ function roomChPx(el) {
 /// shared because the renderer's copy runs on the GPU as a matrix and this one
 /// has to answer for a single point on the CPU — but they are the same frustum,
 /// and `the handles sit on the room they are dragging` is the test that says so.
+/// The view the room is drawn with, for the helpers below: the same numbers
+/// the renderer builds its own from, so a grip sits on the thing it moves.
+///
+/// A world camera is used as it is; a box camera — a film's, a test's — is
+/// read as the world camera it maps to at this aspect, which is what the
+/// renderer does with it; nothing means the camera being posed.
+function roomView(w, h, cam) {
+  const aspect = w / h;
+  const wc = cam
+    ? (vgIsWorld(cam) ? { ...VG_WORLD_DEFAULT, ...cam } : vgWorldFromBox(cam, aspect))
+    : roomWorldNow();
+  const box = vgBoxFromWorld(wc);
+  const hh = box.ceilY - box.floorY;
+  const near = 1;
+  const far = near * (1 + box.depth);
+  const horizon = Math.max(far + 1, VG_HORIZON);
+  const wv = vgWorldView({ ...wc, fov: 2 * Math.atan(hh / 2) * VG_DEG }, aspect, near, horizon);
+  return { box, wc, hh, height: wc.height, halfW: hh * 0.5 * aspect, near, far, horizon, mvp: wv.mvp };
+}
+
+/// A point in the room to a point on the canvas.
+///
+/// `x` runs across, `y` is measured the way the box measured it — from the
+/// eye, so the floor is at `floorY` — and `t` is how far back along the
+/// layers' reach. The world's ground is `y = 0` with the eye at `height`, so
+/// the box's `y` is lifted by the eye's height on the way in.
 function roomProject(x, y, t, w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
-  const c = cam ? vgCamera(vgBoxOf(cam)) : roomCamNow();
-  const yb = c.floorY, yt = c.ceilY, hh = yt - yb;
-  const halfW = hh * 0.5 * (w / h);
-  const sx = c.shiftX * halfW;
-  const near = 1;
-  const z = near + t * (near * (1 + c.depth) - near);
-  const yMid = (yb + yt) * 0.5;
-  const wx = x * (1 + ((c.backW ?? 1) - 1) * t);
-  const wy = yMid + (y - yMid) * (1 + ((c.backH ?? 1) - 1) * t);
-  const xNdc = (near * wx) / (halfW * z) - sx / halfW;
-  const yNdc = (2 * near * wy) / (hh * z) - (yb + yt) / hh;
-  return { x: (xNdc + 1) / 2 * w, y: (1 - yNdc) / 2 * h };
+  const v = roomView(w, h, cam);
+  const z = -(v.near + Math.max(0, Math.min(1, t)) * (v.far - v.near));
+  const p = vgProjectPoint(v.mvp, x, y + v.height, z);
+  return { x: (p.x + 1) / 2 * w, y: (1 - p.y) / 2 * h };
 }
 
-/// The reverse of `roomProject`, at a depth you already know.
-///
-/// **A pointer is two numbers and the room is three.** Something has to supply
-/// the third and there is no honest way around it, so this takes the `t` the
-/// thing being dragged is already at. Given that, the frustum inverts in closed
-/// form: the point stays exactly under the cursor and moves in its own plane
-/// and nowhere else, which is what makes a drag feel like holding something
-/// rather than steering it.
+/// The reverse, at a depth you already know: the point at `t` that lands
+/// under the pixel. Exact for a turned or pitched camera, since the matrix
+/// is inverted rather than a frustum assumed.
 function roomUnproject(px, py, t, w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
-  const c = cam ? vgCamera(vgBoxOf(cam)) : roomCamNow();
-  const yb = c.floorY, yt = c.ceilY, hh = yt - yb;
-  const halfW = hh * 0.5 * (w / h);
-  const sx = c.shiftX * halfW;
-  const near = 1;
-  const z = near + t * (near * (1 + c.depth) - near);
-  const yMid = (yb + yt) * 0.5;
-  const xNdc = (px / w) * 2 - 1;
-  const yNdc = 1 - (py / h) * 2;
-  // Undo the projection, then undo the taper — in that order, because the taper
-  // is applied in world space before the camera ever sees the point.
-  const wx = (xNdc + sx / halfW) * halfW * z / near;
-  const wy = ((yNdc + (yb + yt) / hh) * hh * z) / (2 * near);
-  const tx = 1 + ((c.backW ?? 1) - 1) * t;
-  const ty = 1 + ((c.backH ?? 1) - 1) * t;
-  return { x: wx / (tx || 1), y: yMid + (wy - yMid) / (ty || 1) };
+  const v = roomView(w, h, cam);
+  const z = -(v.near + Math.max(0, Math.min(1, t)) * (v.far - v.near));
+  const q = vgUnprojectAtZ(v.mvp, (px / w) * 2 - 1, 1 - (py / h) * 2, z);
+  return { x: q.x, y: q.y - v.height };
 }
 
-/// The room's half-width in world units, at the front face.
 function roomHalfW(w, h, cam) {
-  const c = cam ? vgCamera(vgBoxOf(cam)) : roomCamNow();
-  return (c.ceilY - c.floorY) * 0.5 * (w / h);
+  return roomView(w, h, cam).halfW;
 }
 
-/// Where the room's back wall lands on screen, in canvas pixels.
-///
-/// The same projection the renderer uses, done once in JavaScript so the data
-/// can be *printed on the wall* rather than floated in front of it. The room is
-/// a box with parallel walls, so the far rectangle has the same world extent as
-/// the near one and differs only by its depth — which under the frustum makes
-/// it `1 / (1 + depth)` of the size, offset by whatever `shiftX` has done to
-/// the vanishing point.
-///
-/// Derived rather than measured, because there is nothing to measure: the wall
-/// is drawn by the GPU and never exists as an element.
+/// Where the far end of the layers' reach lands on the canvas: the rectangle
+/// the data block and the text card are printed on, until they are boards
+/// standing in the world. The four corners of the far cross-section are
+/// projected and their bounds taken, so under a pitched or turned camera the
+/// block still covers the end of the room rather than a rectangle the box
+/// would have drawn.
 function roomBackWall(w, h, cam) {
-  // A hidden panel measures zero, and a zero width makes the aspect zero, which
-  // makes the frustum's half-width zero, which divides. Everything downstream
-  // then becomes NaN and lands in a style attribute, where it is silent.
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0, w: 1, h: 1, k: 1 };
-  // The camera it is being drawn with, which offline is not the one on screen —
-  // the film is shot with the camera posed for its own shape. See
-  // `roomCameraForAspect`.
-  const c = cam ? vgCamera(vgBoxOf(cam)) : roomCamNow();
-  const yb = c.floorY, yt = c.ceilY;
-  const hh = yt - yb;
-  const aspect = w / h;
-  const halfW = hh * 0.5 * aspect;
-  const sx = c.shiftX * halfW;
-  const k = 1 / (1 + c.depth);
-
-  // Frustum: x_ndc = x/(halfW(1+depth)) - sx/halfW, and likewise up.
-  const xNdc = (x) => x / (halfW * (1 + c.depth)) - sx / halfW;
-  const yNdc = (y) => (2 * y) / (hh * (1 + c.depth)) - (yb + yt) / hh;
-
-  // **The far rectangle is the near one through the taper.** The wall is not
-  // simply the front face shrunk by distance any more — its width and its
-  // height can be set against the front — so the block printed on it and the
-  // handle that drags it both have to ask for the tapered corners rather than
-  // the square ones. See `taperX` in `vis-gl.js`.
-  const bw = c.backW ?? 1;
-  const bh = c.backH ?? 1;
-  const yMid = (yb + yt) * 0.5;
-  const tY = (y) => yMid + (y - yMid) * bh;
-
-  const x0 = (xNdc(-halfW * bw) + 1) / 2 * w;
-  const x1 = (xNdc(halfW * bw) + 1) / 2 * w;
-  const yTop = (1 - yNdc(tY(yt))) / 2 * h;
-  const yBot = (1 - yNdc(tY(yb))) / 2 * h;
-  return { x: x0, y: yTop, w: Math.max(1, x1 - x0), h: Math.max(1, yBot - yTop), k };
+  const v = roomView(w, h, cam);
+  const k = 1 / (1 + v.box.depth);
+  const z = -v.far;
+  const pts = [[-v.halfW, 0], [v.halfW, 0], [v.halfW, v.hh], [-v.halfW, v.hh]]
+    .map(([x, y]) => vgProjectPoint(v.mvp, x, y, z))
+    .map((p) => ({ x: (p.x + 1) / 2 * w, y: (1 - p.y) / 2 * h }));
+  const x0 = Math.min(...pts.map((p) => p.x)), x1 = Math.max(...pts.map((p) => p.x));
+  const y0 = Math.min(...pts.map((p) => p.y)), y1 = Math.max(...pts.map((p) => p.y));
+  return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), k };
 }
 
-/// One cell, exactly `w` characters wide, whatever it was handed.
-///
-/// Short values are padded and long ones are cut. Nothing is allowed to widen
-/// its column: a single grain with an unusual number in it would otherwise
-/// shove every column after it sideways for one frame and back again the next,
-/// which reads as the whole block twitching.
 function fitCell(v, w) {
   const t = String(v);
   if (t.length > w) return t.slice(0, w).replace(/\.$/, ' ');

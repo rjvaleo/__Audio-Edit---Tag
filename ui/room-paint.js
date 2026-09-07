@@ -31,8 +31,8 @@
 /// and cost nothing; this is the one thing each layer knows that would
 /// otherwise be thrown away.
 const RP_SLOTS = [
-  { key: 'box', label: 'Box', row: 0, own: null,
-    hint: 'The wireframe: the four runs back and the far wall. Its weight is depth — 0.02 at the front, 0.16 at the wall — so a ramp on it runs along the room.' },
+  { key: 'grid', label: 'Ground', row: 0, own: 'distance',
+    hint: 'The grid on the ground, running to the horizon. Light grey until painted; its own quantity is distance, nought at the near line and one at the horizon, so a ramp on it runs away from you.' },
   { key: 'terrainMesh', label: 'Terrain surface', row: 1, own: 'freq',
     hint: 'The solid floor between the ridges.' },
   { key: 'terrainRidge', label: 'Terrain ridges', row: 2, own: 'freq',
@@ -124,6 +124,7 @@ const RP_DRIVES = [
 ];
 
 const RP_OWN_LABEL = {
+  distance: 'Distance',
   depth4: 'Depth in w',
   freq: 'Frequency',
   width: 'Stereo width',
@@ -198,7 +199,7 @@ function rpInheritedPair(key) {
   const hot = rpToken('--wave', '#5fd47a');
   const core = rpToken('--accent', '#7fd0ff');
   switch (key) {
-    case 'box': return [cold, cold];
+    case 'grid': return ['#9ea9b3', '#9ea9b3'];
     case 'terrainMesh': case 'terrainRidge': case 'lead': return [cold, hot];
     case 'ring': case 'skin': case 'grainCore': return [core, hot];
     case 'grainBloom': case 'grainWire': case 'mist': return [cold, core];
@@ -322,7 +323,7 @@ const RP_GENERATORS = [
 /// which is the balance `docs/STAGE.md` arrived at by soloing each object.
 const RP_WEIGHT = {
   polytope: 0.70,
-  box: 0.30, terrainMesh: 0.42, terrainRidge: 0.72, lead: 0.86,
+  grid: 0.30, terrainMesh: 0.42, terrainRidge: 0.72, lead: 0.86,
   ring: 0.78, skin: 0.40, grainBloom: 0.50, grainWire: 0.72,
   grainCore: 1.00, grainFill: 0.26, mist: 0.44, fog: 0.34, data: 0.55,
   // The stage. Terrain 7.6, sleeve 6.8, type 6.1, ring 4.5, grains 4.4, mist
@@ -341,7 +342,7 @@ const RP_WEIGHT = {
 /// stage slot fell through every test to family 2.
 const RP_FAMILY = {
   polytope: 1,
-  box: 0, terrainMesh: 0, terrainRidge: 0, lead: 0,
+  grid: 0, terrainMesh: 0, terrainRidge: 0, lead: 0,
   ring: 1, skin: 1,
   grainBloom: 2, grainWire: 2, grainCore: 2, grainFill: 2, mist: 2, fog: 2, data: 2,
   stageTerrain: 0, stageWalls: 0, stageGround: 0,

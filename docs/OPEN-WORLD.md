@@ -54,3 +54,55 @@ picture moves then, and not before.
   `roomCameraDrawn`, `roomFog` and the projection helpers read through
   `vgBoxOf`; the readout in `paintRoomNums`.
 - `tests/ui/open-world.spec.mjs`.
+
+## Step two: the ground, and the horizon
+
+The box is gone. The room is drawn with the world's own view — a look-at
+from the eye at `height`, along `pitch` and `yaw`, through a symmetric
+perspective whose field of view is what the box's height gave — and the
+picture moved for the first time: a tilt is now a pitched camera rather than
+a shifted window, and a slid vanishing point is a turn.
+
+**The ground is a grid.** `drawGrid` in `vis-gl.js`, first in the draw
+order where the box was: lines across at half a unit from the near plane to
+the horizon, lines along from as far left as the eye can see at the horizon
+to as far right, every fourth one heavier, light grey, fogged and thinned
+with distance so the horizon reads as far rather than as an edge. It is the
+`grid` layer — **Ground** in the list, where **Box** was — and the `grid`
+slot in the palette, whose own quantity is distance, nought at the near line
+and one at the horizon. `VG_HORIZON` is eighty units; the layers' own reach
+is still the box's depth, and the grid runs on past it.
+
+**The layers still lay themselves along the old box**, derived from the
+world camera: the ground is `y = 0`, the ceiling is where the box's was
+above the floor, the reach is where the far wall was. The taper is gone;
+the two names the layers still call answer the identity until each layer is
+re-placed in the world in step three. The far cross-section is still where
+the data block and the text card are printed, projected through the new
+view and bounded, until they are boards.
+
+**The back's four grips went with the back.** There is no far wall to widen
+or raise. What remains is the depth grip, the ring's grip and the eye line.
+The projection helpers in `app.js` — `roomProject`, `roomUnproject`,
+`roomHalfW`, `roomBackWall` — are the renderer's own matrix in closed form
+again, through `roomView`, and `roomUnproject` inverts the general matrix
+rather than assuming a frustum, so a turned or pitched camera unprojects as
+exactly as a straight one. `room-geometry.spec.mjs` now checks that and no
+longer measures a back.
+
+**A film's camera and a test's camera still pass through as boxes.** The
+renderer reads a box camera as the world camera it maps to at the canvas's
+own aspect, which is exactly what the helpers do, so the two agree.
+
+### Where it lives, step two
+
+- `ui/vis-gl.js` — `VG_HORIZON`, `VG_GRID_STEP`, `vgProjectPoint`,
+  `vgUnprojectAtZ`; the frame builds its view from the world camera and
+  derives the box; `drawGrid` in place of `drawRoom`; `VG_LAYER_ORDER`;
+  `project` and `unprojectAtZ` on the general matrix.
+- `ui/app.js` — `ROOM_LAYERS` (`grid`), `ROOM_HANDLES` without the back,
+  `roomCameraDrawn` hands the world camera over, `roomView` and the four
+  helpers on it.
+- `ui/room-paint.js` — the `grid` slot, its label, weight and family.
+- `tests/ui/open-world.spec.mjs`, `tests/ui/room-geometry.spec.mjs`,
+  `tests/ui/room-hierarchy.spec.mjs` (`grid` for `room`).

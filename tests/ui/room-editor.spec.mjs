@@ -235,19 +235,19 @@ test('turning a layer off stops it being drawn', async ({ page }) => {
   expect(seen.all.sky, 'the ring was not on to begin with').toBe(true);
   expect(seen.off.floor, 'the terrain kept being drawn after being turned off').toBe(false);
   expect(seen.off.sky, 'the ring kept being drawn after being turned off').toBe(false);
-  expect(seen.off.room, 'turning the terrain off took the wireframe with it').toBe(true);
+  expect(seen.off.grid, 'turning the terrain off took the wireframe with it').toBe(true);
   expect(seen.back.floor, 'the terrain did not come back').toBe(true);
   expect(seen.back.sky, 'the ring came back on its own').toBe(false);
 });
 
 test('the layers survive a reload', async ({ page }) => {
   await openRoom(page);
-  await page.evaluate(() => document.querySelector('#reLayers .re-btn[data-layer="room"]').click());
+  await page.evaluate(() => document.querySelector('#reLayers .re-btn[data-layer="grid"]').click());
   await page.waitForTimeout(150);
 
   await page.reload();
   await page.waitForFunction(() => typeof roomLayerOn === 'function', { timeout: 20_000 });
-  expect(await page.evaluate(() => roomLayerOn('room')), 'the wireframe came back on')
+  expect(await page.evaluate(() => roomLayerOn('grid')), 'the wireframe came back on')
     .toBe(false);
   expect(await page.evaluate(() => roomLayerOn('floor')), 'the terrain was turned off too')
     .toBe(true);
@@ -746,7 +746,7 @@ test('the ring is a surface, not a stack of hoops', async ({ page }) => {
 
   const lit = await page.evaluate(async () => {
     // The ring alone, so nothing else can account for the difference.
-    for (const k of ['floor', 'lead', 'room', 'data']) {
+    for (const k of ['floor', 'lead', 'grid', 'data']) {
       if (roomLayerOn(k)) roomEdit.layers[k] = false;
     }
     roomEdit.layers.sky = true;
@@ -812,7 +812,7 @@ test('grains spawn from the schedule, then travel on their own',
       const gl = document.getElementById('visGl');
       const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
       if (!ctx) return null;
-      for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+      for (const k of ['floor', 'lead', 'sky', 'skin', 'grid', 'data']) roomEdit.layers[k] = false;
       roomEdit.layers.grains = true;
 
       const sr = 44100, srcFrames = sr * 10;
@@ -897,7 +897,7 @@ test('the skin draws with the hoops turned off', async ({ page }) => {
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['floor', 'lead', 'room', 'data', 'grains']) roomEdit.layers[k] = false;
+    for (const k of ['floor', 'lead', 'grid', 'data', 'grains']) roomEdit.layers[k] = false;
 
     const liss = new Float32Array(512);
     for (let i = 0; i < 256; i++) {
@@ -942,7 +942,7 @@ test('the room holds far more schedule than the floor does', async ({ page }) =>
     const gl = document.getElementById('visGl');
     const ctx = gl.getContext('webgl', { preserveDrawingBuffer: true });
     if (!ctx) return null;
-    for (const k of ['floor', 'lead', 'sky', 'skin', 'room', 'data']) roomEdit.layers[k] = false;
+    for (const k of ['floor', 'lead', 'sky', 'skin', 'grid', 'data']) roomEdit.layers[k] = false;
     roomEdit.layers.grains = true;
 
     // Twelve seconds of grains at fifty a second, and a playhead at the end of

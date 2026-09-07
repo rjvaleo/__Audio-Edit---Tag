@@ -120,17 +120,18 @@ test('the film and the projection helpers take a camera in either shape', async 
     const a = roomProject(0.2, -0.1, 0.5, w, h, posed);
     const b = roomProject(0.2, -0.1, 0.5, w, h, world);
     const wa = roomBackWall(w, h, posed), wb = roomBackWall(w, h, world);
-    // Posed as a world camera, drawn as the box.
+    // Posed as a world camera, handed to the renderer as one — it builds its
+    // view from it and derives the box its layers still read.
     roomEdit.cams[roomEdit.frame] = world;
     const drawnA = roomCameraDrawn(undefined);
     delete roomEdit.cams[roomEdit.frame];
-    return { a, b, wa, wb, drawnHasFloor: !!drawnA && 'floorY' in drawnA && !('height' in drawnA) };
+    return { a, b, wa, wb, drawnHasFloor: !!drawnA && 'height' in drawnA };
   }, POSED);
   expect(got.b.x).toBeCloseTo(got.a.x, 6);
   expect(got.b.y).toBeCloseTo(got.a.y, 6);
   expect(got.wb.x).toBeCloseTo(got.wa.x, 6);
   expect(got.wb.w).toBeCloseTo(got.wa.w, 6);
-  expect(got.drawnHasFloor, 'the renderer was handed a world camera').toBe(true);
+  expect(got.drawnHasFloor, 'the renderer was not handed the world camera').toBe(true);
 });
 
 test('the world\'s own view looks along its pitch and yaw and narrows with distance', async ({ page }) => {
@@ -166,4 +167,70 @@ test('the world\'s own view looks along its pitch and yaw and narrows with dista
   expect(Math.abs(got.r20[0])).toBeLessThan(Math.abs(got.r2[0]));
   expect(got.t[0]).toBeLessThan(0);
   expect(got.u[1]).toBeLessThan(got.flat[1]);
+});
+
+// ── step two: the ground ──
+
+test('the box is gone and the ground is a layer, a slot and a horizon', async ({ page }) => {
+  await openRoom(page);
+  const got = await page.evaluate(() => {
+    const gl = $('visGl');
+    const w = gl.clientWidth, h = gl.clientHeight;
+    const c = roomCamNow();
+    // The ground straight ahead, at three depths along the reach.
+    const y = (t) => roomProject(0, c.floorY, t, w, h, c).y;
+    // And on out to the horizon, past the layers' reach, through the same view.
+    const v = roomView(w, h);
+    const far = (z) => (1 - vgProjectPoint(v.mvp, 0, 0, -z).y) / 2 * h;
+    return {
+      layers: ROOM_LAYERS.map((l) => l.key),
+      order: VG_LAYER_ORDER,
+      slot: rpSlots().find((s) => s.key === 'grid')?.own,
+      noBoxSlot: !rpSlots().some((s) => s.key === 'box'),
+      grips: ROOM_HANDLES.map((g) => g.key),
+      near: y(0), mid: y(0.5), end: y(1),
+      far20: far(20), far79: far(79), horizonPx: far(v.horizon),
+      h,
+    };
+  });
+  expect(got.layers).toContain('grid');
+  expect(got.layers).not.toContain('room');
+  expect(got.order[0]).toBe('grid');
+  expect(got.slot, 'the ground is painted against distance').toBe('distance');
+  expect(got.noBoxSlot).toBe(true);
+  expect(got.grips).toEqual(['depth', 'ring', 'horizon']);
+  // The ground recedes upward on the canvas and converges: the far end of the
+  // reach is above the near line, twenty units out is above that, and from
+  // twenty to seventy-nine it moves less than it did from near to twenty.
+  expect(got.mid).toBeLessThan(got.near);
+  expect(got.end).toBeLessThan(got.mid);
+  expect(got.far20).toBeLessThan(got.end);
+  expect(got.far79).toBeLessThan(got.far20);
+  expect(got.far20 - got.far79).toBeLessThan(got.end - got.far20);
+  // And it never crosses the eye line: the horizon stays below the middle
+  // when the camera looks slightly up, as the default does.
+  expect(got.horizonPx).toBeGreaterThan(got.h * 0.3);
+});
+
+test('a turn moves the world, a pitch moves the horizon, and the box\'s frame shapes still draw', async ({ page }) => {
+  await openRoom(page);
+  const got = await page.evaluate(() => {
+    const gl = $('visGl');
+    const w = gl.clientWidth, h = gl.clientHeight;
+    const base = roomWorldNow();
+    const ahead = (cam) => roomProject(0, 0, 0.5, w, h, cam);
+    const turned = ahead({ ...base, yaw: base.yaw + 15 });
+    const level = ahead(base);
+    const up = ahead({ ...base, pitch: base.pitch + 10 });
+    // Every frame shape's camera, as the film asks for it, draws through the
+    // renderer without complaint.
+    const frames = ROOM_FRAMES.map((f) => {
+      const cam = roomCameraForAspect(f.ratio || w / h);
+      return { key: f.key, ok: cam === null || typeof cam === 'object' };
+    });
+    return { turned, level, up, frames };
+  });
+  expect(got.turned.x).toBeLessThan(got.level.x);
+  expect(got.up.y).toBeGreaterThan(got.level.y);
+  for (const f of got.frames) expect(f.ok, f.key).toBe(true);
 });
