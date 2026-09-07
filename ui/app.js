@@ -7907,9 +7907,49 @@ function saveRoomLayers() {
   try { localStorage.setItem('roomLayers', JSON.stringify(roomEdit.layers)); } catch {}
 }
 
+// The cameras, one per frame shape, as world cameras.
+//
+// `roomCameras` holds what `main` wrote: box cameras. Read here once, turned
+// into world cameras with the frame's own aspect, and kept under a key of
+// this branch's own — so the old key stays as it was for `main`, and a room
+// posed there opens here looking the same. See `docs/OPEN-WORLD.md`.
+const ROOM_CAMERAS_KEY = 'roomCamerasWorld';
+function roomCamerasMigrate(boxes) {
+  const out = {};
+  for (const [key, cam] of Object.entries(boxes || {})) {
+    if (!cam || typeof cam !== 'object') continue;
+    if (vgIsWorld(cam)) { out[key] = cam; continue; }
+    const frame = ROOM_FRAMES.find((f) => f.key === key);
+    out[key] = vgWorldFromBox(cam, frame && frame.ratio > 0 ? frame.ratio : VG_WORLD_DEFAULT.aspect);
+  }
+  return out;
+}
 try {
-  roomEdit.cams = JSON.parse(localStorage.getItem('roomCameras') || '{}') || {};
+  const kept = JSON.parse(localStorage.getItem(ROOM_CAMERAS_KEY) || 'null');
+  if (kept && typeof kept === 'object') {
+    roomEdit.cams = roomCamerasMigrate(kept);
+  } else {
+    roomEdit.cams = roomCamerasMigrate(JSON.parse(localStorage.getItem('roomCameras') || '{}') || {});
+    if (Object.keys(roomEdit.cams).length) {
+      try { localStorage.setItem(ROOM_CAMERAS_KEY, JSON.stringify(roomEdit.cams)); } catch {}
+    }
+  }
 } catch { roomEdit.cams = {}; }
+
+/// The aspect the room is being posed at right now: the frame's, or the
+/// cell's when the frame is the dock's own.
+function roomAspectNow() {
+  const f = roomFrame();
+  if (f && f.ratio > 0) return f.ratio;
+  const gl = $('visGl');
+  const w = gl?.clientWidth || 0, h = gl?.clientHeight || 0;
+  return w > 0 && h > 0 ? w / h : VG_WORLD_DEFAULT.aspect;
+}
+
+/// Keep a box camera for the frame being posed, as a world camera.
+function roomSetCam(box) {
+  roomEdit.cams[roomEdit.frame] = vgWorldFromBox(box, roomAspectNow());
+}
 
 /// What to draw with. Null is "whatever the source says", which is what every
 /// frame is until somebody poses it.
@@ -7938,7 +7978,7 @@ function roomGeom() {
 /// anybody types: linear fog that ran out somewhere other than the back wall
 /// would be a control about the fog rather than about the room.
 function roomFog() {
-  const cam = vgCamera(roomCamera());
+  const cam = vgCamera(vgBoxOf(roomCamera()));
   return {
     on: roomEdit.fog,
     type: roomEdit.fogType,
@@ -8034,7 +8074,9 @@ function roomCameraForAspect(aspect) {
 /// pose would mean every camera copied out carried somebody's slider position
 /// with it.
 function roomCameraDrawn(frameKey) {
-  const c = frameKey ? (roomEdit.cams[frameKey] || null) : roomCamera();
+  // The renderer draws a box; a world camera is turned back into the one it
+  // was made from on the way. See `vgBoxOf`.
+  const c = vgBoxOf(frameKey ? (roomEdit.cams[frameKey] || null) : roomCamera());
   const k = roomEdit.ringScale;
   if (k === 1) return c;
   // `vgCamera` fills in whatever is missing, so this works on a posed camera,
@@ -8044,13 +8086,21 @@ function roomCameraDrawn(frameKey) {
 }
 
 function saveRoomCameras() {
-  try { localStorage.setItem('roomCameras', JSON.stringify(roomEdit.cams)); } catch {}
+  try { localStorage.setItem(ROOM_CAMERAS_KEY, JSON.stringify(roomEdit.cams)); } catch {}
+}
+
+/// The camera being edited, as the world camera it is.
+function roomWorldNow() {
+  const c = roomEdit.cams[roomEdit.frame];
+  if (vgIsWorld(c)) return { ...VG_WORLD_DEFAULT, ...c };
+  return vgWorldFromBox(c || ROOM_CAM_DEFAULT, roomAspectNow());
 }
 
 /// The camera being edited, filled in, so a drag has something to add to even
 /// on a frame nobody has touched.
 function roomCamNow() {
-  return { ...ROOM_CAM_DEFAULT, ...(roomEdit.cams[roomEdit.frame] || {}) };
+  // As the box it draws, whatever shape it is kept in. See `roomWorldNow`.
+  return { ...ROOM_CAM_DEFAULT, ...(vgBoxOf(roomEdit.cams[roomEdit.frame]) || {}) };
 }
 
 function roomFrame() {
@@ -8116,14 +8166,18 @@ function paintRoomNums() {
   paintRoomHandles();
   const el = $('reNums');
   if (!el) return;
-  const c = roomCamNow();
+  // The world camera: where you stand and which way you look. The box it
+  // draws is derived; what is printed, and what is copied, is the thing that
+  // is kept.
+  const w = roomWorldNow();
   const n = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
   el.textContent =
-    `depth ${n(c.depth)}  floorY ${n(c.floorY)}  ceilY ${n(c.ceilY)}  `
-    + `shiftX ${n(c.shiftX)}  skyAt ${n(c.skyAt)}  ring ${n(c.ring)}`;
+    `height ${n(w.height)}  pitch ${n(w.pitch)}°  yaw ${n(w.yaw)}°  `
+    + `reach ${n(w.reach)}  ring ${n(w.ring.at)}/${n(w.ring.size)}`;
   el.dataset.copy = JSON.stringify({
-    depth: +n(c.depth), floorY: +n(c.floorY), ceilY: +n(c.ceilY),
-    shiftX: +n(c.shiftX), skyAt: +n(c.skyAt), ring: +n(c.ring),
+    height: +n(w.height), pitch: +n(w.pitch), yaw: +n(w.yaw), reach: +n(w.reach),
+    aspect: +n(w.aspect), ring: { at: +n(w.ring.at), size: +n(w.ring.size) },
+    taper: { w: +n(w.taper.w), h: +n(w.taper.h) },
   });
   for (const b of document.querySelectorAll('#reFrames .re-btn')) {
     b.classList.toggle('active', b.dataset.frame === roomEdit.frame);
@@ -10051,7 +10105,7 @@ function wireRoomHandles() {
         const dy = (ev.clientY - e.clientY) / Math.max(1, r.height);
         const c = { ...from };
         hd.move(c, from, dx, dy);
-        roomEdit.cams[roomEdit.frame] = c;
+        roomSetCam(c);
         paintRoomNums();
         paintRoomHandles();
         paintSolidPath();
@@ -10187,7 +10241,7 @@ function roomZoneShow(zone, e, dragging) {
       // is against the drag.
       c.shiftX = Math.max(-1, Math.min(1, d.cam.shiftX - dx * 2));
     }
-    roomEdit.cams[roomEdit.frame] = c;
+    roomSetCam(c);
     paintRoomNums();
   });
 
@@ -10211,7 +10265,7 @@ function roomZoneShow(zone, e, dragging) {
     e.preventDefault();
     const c = roomCamNow();
     c.depth = Math.max(0.2, Math.min(12, c.depth * Math.exp(-e.deltaY * 0.0015)));
-    roomEdit.cams[roomEdit.frame] = c;
+    roomSetCam(c);
     paintRoomNums();
     saveRoomCameras();
   }, { passive: false });
@@ -10268,7 +10322,7 @@ function roomChPx(el) {
 /// and `the handles sit on the room they are dragging` is the test that says so.
 function roomProject(x, y, t, w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
-  const c = cam ? vgCamera(cam) : roomCamNow();
+  const c = cam ? vgCamera(vgBoxOf(cam)) : roomCamNow();
   const yb = c.floorY, yt = c.ceilY, hh = yt - yb;
   const halfW = hh * 0.5 * (w / h);
   const sx = c.shiftX * halfW;
@@ -10292,7 +10346,7 @@ function roomProject(x, y, t, w, h, cam) {
 /// rather than steering it.
 function roomUnproject(px, py, t, w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
-  const c = cam ? vgCamera(cam) : roomCamNow();
+  const c = cam ? vgCamera(vgBoxOf(cam)) : roomCamNow();
   const yb = c.floorY, yt = c.ceilY, hh = yt - yb;
   const halfW = hh * 0.5 * (w / h);
   const sx = c.shiftX * halfW;
@@ -10312,7 +10366,7 @@ function roomUnproject(px, py, t, w, h, cam) {
 
 /// The room's half-width in world units, at the front face.
 function roomHalfW(w, h, cam) {
-  const c = cam ? vgCamera(cam) : roomCamNow();
+  const c = cam ? vgCamera(vgBoxOf(cam)) : roomCamNow();
   return (c.ceilY - c.floorY) * 0.5 * (w / h);
 }
 
@@ -10335,7 +10389,7 @@ function roomBackWall(w, h, cam) {
   // The camera it is being drawn with, which offline is not the one on screen —
   // the film is shot with the camera posed for its own shape. See
   // `roomCameraForAspect`.
-  const c = cam ? vgCamera(cam) : roomCamNow();
+  const c = cam ? vgCamera(vgBoxOf(cam)) : roomCamNow();
   const yb = c.floorY, yt = c.ceilY;
   const hh = yt - yb;
   const aspect = w / h;

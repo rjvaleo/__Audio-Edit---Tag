@@ -187,9 +187,11 @@ test('dragging a grip reshapes the back, and only the back', async ({ page }) =>
       const b = el.getBoundingClientRect();
       const x0 = b.x + b.width / 2, y0 = b.y + b.height / 2;
       el.setPointerCapture = () => {}; el.releasePointerCapture = () => {};
-      el.dispatchEvent(new PointerEvent('pointerdown', { clientX: x0, clientY: y0, bubbles: true, pointerId: 1 }));
-      el.dispatchEvent(new PointerEvent('pointermove', { clientX: x0 + dx, clientY: y0 + dy, bubbles: true, pointerId: 1 }));
-      el.dispatchEvent(new PointerEvent('pointerup', { clientX: x0 + dx, clientY: y0 + dy, bubbles: true, pointerId: 1 }));
+      // A drag has a button down. Without `buttons` the grip reads the move as
+      // a release it never heard about and lets go — see `room-grips`.
+      el.dispatchEvent(new PointerEvent('pointerdown', { clientX: x0, clientY: y0, bubbles: true, pointerId: 1, button: 0, buttons: 1 }));
+      el.dispatchEvent(new PointerEvent('pointermove', { clientX: x0 + dx, clientY: y0 + dy, bubbles: true, pointerId: 1, buttons: 1 }));
+      el.dispatchEvent(new PointerEvent('pointerup', { clientX: x0 + dx, clientY: y0 + dy, bubbles: true, pointerId: 1, button: 0, buttons: 0 }));
     };
     const wall = () => { const q = roomBackWall(r.width, r.height); return { w: q.w, h: q.h }; };
     const before = wall();

@@ -64,6 +64,117 @@ function vgCamera(c) {
   return c ? { ...VG_CAMERA, ...c } : VG_CAMERA;
 }
 
+// ── the world camera ────────────────────────────────────────────────────────
+//
+// The room's camera is a box: a floor and a ceiling at the near plane, a
+// vanishing point slid sideways, a far wall. The open world's camera is a
+// place you stand: a height above the ground, a pitch, a yaw, a reach. This
+// is the second, and the mapping between the two, exact both ways, so that a
+// stored world camera draws the very box it was made from until the box goes.
+// See `docs/OPEN-WORLD-PLAN.md`, step one, and `docs/OPEN-WORLD.md`.
+//
+// Angles are degrees, because the readout prints them and a person reads
+// them. The box's tilt is the frustum's asymmetry, so its pitch is the angle
+// to the middle of the near rectangle; its yaw is the angle to the slid
+// vanishing point, which depends on the aspect the room was posed in — so a
+// world camera carries the aspect it was made at, and the trip back is exact
+// whatever the window is doing now. Until the ground replaces the box, the
+// ring's place and the taper come along unchanged.
+
+const VG_WORLD_DEFAULT = {
+  /// The eye above the ground.
+  height: 0.38,
+  /// Up is positive. Degrees.
+  pitch: 6.843,
+  /// Right is positive. Degrees.
+  yaw: 0,
+  /// How far the world is drawn, as a multiple of the near distance — the
+  /// box's depth, until there is a ground to measure along.
+  reach: 1.9,
+  /// The aspect the camera was posed at, which the box's sideways slide is
+  /// measured against.
+  aspect: 16 / 9,
+  /// Where the ring hangs and how big — the box's own two numbers, until the
+  /// ring has a place in the world.
+  ring: { at: 0.72, size: 0.17 },
+  /// The box's taper. Goes with the box.
+  taper: { w: 1, h: 1 },
+};
+
+const VG_DEG = 180 / Math.PI;
+
+/// Whether a stored camera is a world one. A box camera has a floor.
+function vgIsWorld(c) {
+  return !!c && typeof c === 'object' && !('floorY' in c) && ('height' in c || 'pitch' in c);
+}
+
+/// A box camera as a world camera, posed at `aspect`.
+function vgWorldFromBox(b, aspect) {
+  const c = vgCamera(b);
+  const a = aspect > 0 ? aspect : VG_WORLD_DEFAULT.aspect;
+  const hh = c.ceilY - c.floorY;
+  const halfW = hh * 0.5 * a;
+  return {
+    height: -c.floorY,
+    pitch: Math.atan((c.floorY + c.ceilY) / 2) * VG_DEG,
+    yaw: Math.atan(c.shiftX * halfW) * VG_DEG,
+    reach: c.depth,
+    aspect: a,
+    ring: { at: c.skyAt, size: c.ring },
+    taper: { w: c.backW ?? 1, h: c.backH ?? 1 },
+  };
+}
+
+/// A world camera as the box it draws. The exact inverse of the above.
+function vgBoxFromWorld(w) {
+  const d = VG_WORLD_DEFAULT;
+  const height = Number.isFinite(w?.height) ? w.height : d.height;
+  const pitch = Number.isFinite(w?.pitch) ? w.pitch : d.pitch;
+  const yaw = Number.isFinite(w?.yaw) ? w.yaw : d.yaw;
+  const a = w?.aspect > 0 ? w.aspect : d.aspect;
+  const floorY = -height;
+  const ceilY = 2 * Math.tan(pitch / VG_DEG) + height;
+  const hh = ceilY - floorY;
+  const halfW = hh * 0.5 * a;
+  const shiftX = halfW > 0 ? Math.tan(yaw / VG_DEG) / halfW : 0;
+  return {
+    depth: Number.isFinite(w?.reach) ? w.reach : d.reach,
+    floorY,
+    ceilY,
+    shiftX: Math.max(-1, Math.min(1, shiftX)),
+    skyAt: Number.isFinite(w?.ring?.at) ? w.ring.at : d.ring.at,
+    ring: Number.isFinite(w?.ring?.size) ? w.ring.size : d.ring.size,
+    backW: Number.isFinite(w?.taper?.w) ? w.taper.w : 1,
+    backH: Number.isFinite(w?.taper?.h) ? w.taper.h : 1,
+  };
+}
+
+/// Whatever shape a camera arrives in, the box it draws. A box camera passes
+/// through; a world camera is turned back; nothing is the default.
+function vgBoxOf(c) {
+  if (!c) return null;
+  return vgIsWorld(c) ? vgBoxFromWorld(c) : c;
+}
+
+/// The world's own view: a look-at from the eye along pitch and yaw, and a
+/// symmetric perspective of `fov` degrees. Not yet what the room draws with —
+/// that is the box's frustum until the ground replaces it — but it is the
+/// matrix step two puts in, here so it can be checked before it is trusted.
+function vgWorldView(w, aspect, near, far) {
+  const d = VG_WORLD_DEFAULT;
+  const height = Number.isFinite(w?.height) ? w.height : d.height;
+  const pitch = (Number.isFinite(w?.pitch) ? w.pitch : d.pitch) / VG_DEG;
+  const yaw = (Number.isFinite(w?.yaw) ? w.yaw : d.yaw) / VG_DEG;
+  const fov = (Number.isFinite(w?.fov) ? w.fov : 2 * Math.atan(0.5) * VG_DEG) / VG_DEG;
+  const eye = [0, height, 0];
+  const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
+  const at = [eye[0] + dir[0], eye[1] + dir[1], eye[2] + dir[2]];
+  const view = vgLookAt(eye, at, [0, 1, 0]);
+  const t = Math.tan(fov / 2) * near;
+  const proj = vgFrustum(-t * aspect, t * aspect, -t, t, near, far);
+  return { eye, dir, view, proj, mvp: vgMul(proj, view) };
+}
+
 /// Frames kept for the trail. About three seconds at the poll's rate, which is
 /// long enough to see a phrase move away from you.
 const VG_HISTORY = 56;
