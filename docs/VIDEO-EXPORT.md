@@ -508,3 +508,11 @@ and figure into every frame of the reel. Its grid runs on the engine's
 output time from the document's start, so a film of a range that begins
 part-way in begins the sequencer part-way in too (`seqAt0`). See
 [`SEQUENCER.md`](SEQUENCER.md).
+
+## The ground grid stays out of the film  *(7 Sep 2026, `open-world`)*
+
+The grid on the ground is furniture for posing: it says where the ground is
+while you stand in the world and drag the camera. A film is the sound, not
+the stage, so `runVideoExport` hands the renderer the room's layers with
+`grid` off, whatever the room on screen is showing — and with the grid goes
+the horizon it draws.

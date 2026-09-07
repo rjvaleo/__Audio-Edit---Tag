@@ -30,8 +30,8 @@ test('the handles sit on the room they are dragging', async ({ page }) => {
     paintRoomHandles();
     const gl = document.getElementById('visGl');
     const r = gl.getBoundingClientRect();
-    const c = roomCamNow();
-    const hw = roomHalfW(r.width, r.height, c);
+    const c = roomWorldNow();
+    const hw = roomHalfW(r.width, r.height);
     const at = (key) => {
       const el = document.querySelector(`.rh[data-handle="${key}"]`);
       const b = el.getBoundingClientRect();
@@ -42,9 +42,9 @@ test('the handles sit on the room they are dragging', async ({ page }) => {
       return [p.x, p.y];
     };
     return {
-      depth: at('depth'), depthWant: want(0, (c.floorY + c.ceilY) / 2, 1),
-      ring: at('ring'), ringWant: want(0, c.floorY + (c.ceilY - c.floorY) * c.skyAt, 0.12),
-      horizon: at('horizon')[1], horizonWant: want(0, 0, 0)[1],
+      depth: at('depth'), depthWant: want(0, VG_WORLD_H / 2, 1),
+      ring: at('ring'), ringWant: want(c.ring.x, c.ring.y, c.ring.z / c.reach),
+      horizon: at('horizon')[1], horizonWant: want(0, c.height, 0)[1],
       hw, keys: [...document.querySelectorAll('.rh')].map((e) => e.dataset.handle),
     };
   });

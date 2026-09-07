@@ -3220,7 +3220,10 @@ async function runVideoExport() {
       text: roomTextSettings(),
       textPaint: roomTextPaint(),
       camera: roomCameraForAspect(size.w / size.h),
-      layers: roomLayers(),
+      // The ground grid is furniture for posing: it says where the ground is
+      // while you stand in the world. A film is the sound, not the stage, so
+      // the grid — and with it the horizon it draws — stays out of it.
+      layers: { ...roomLayers(), grid: false },
       occlude: roomOcclude(),
       order: roomOrder(),
       room: {
@@ -7676,6 +7679,10 @@ const roomEdit = {
   /// grain is drawn. Both are the scale of the box rather than a pose in it.
   geomSpan: 14,
   geomBody: 0.032,
+  /// How wide the terrain is, in the world's units. A size, not a property of
+  /// the camera: the box's floor was as wide as the frame, and a window of a
+  /// different shape drew a different room. This does not.
+  geomWidth: 1.78,
   /// Which visualiser is on screen. See `VIS_MODULES`.
   module: 'room',
   /// The ridgeline's own settings. Its defaults live in `ridge.js` beside the
@@ -7797,6 +7804,9 @@ function readRoomData(v) {
   if (typeof v.geomBody === 'number') {
     roomEdit.geomBody = Math.max(0.002, Math.min(0.3, v.geomBody));
   }
+  if (typeof v.geomWidth === 'number') {
+    roomEdit.geomWidth = Math.max(0.2, Math.min(40, v.geomWidth));
+  }
   // Any module there is. This said `'ridge' || 'room'`, so a third module was
   // remembered, stored, and then silently dropped on the way back in — the app
   // opened on the room every time with nothing on screen to say why.
@@ -7837,6 +7847,7 @@ function roomDataSnapshot() {
     geomBands: roomEdit.geomBands, geomHistory: roomEdit.geomHistory,
     geomRidge: roomEdit.geomRidge,
     geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
+    geomWidth: roomEdit.geomWidth,
     module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
     room3d: roomEdit.room3d,
     stage: roomEdit.stage ? { ...roomEdit.stage, solo: null } : roomEdit.stage,
@@ -7946,9 +7957,9 @@ function roomAspectNow() {
   return w > 0 && h > 0 ? w / h : VG_WORLD_DEFAULT.aspect;
 }
 
-/// Keep a box camera for the frame being posed, as a world camera.
-function roomSetCam(box) {
-  roomEdit.cams[roomEdit.frame] = vgWorldFromBox(box, roomAspectNow());
+/// Keep a world camera for the frame being posed.
+function roomSetWorld(wc) {
+  roomEdit.cams[roomEdit.frame] = { ...wc, aspect: roomAspectNow() };
 }
 
 /// What to draw with. Null is "whatever the source says", which is what every
@@ -7969,6 +7980,7 @@ function roomGeom() {
     ridge: roomEdit.geomRidge,
     span: roomEdit.geomSpan,
     body: roomEdit.geomBody,
+    width: roomEdit.geomWidth,
   };
 }
 
@@ -7978,15 +7990,16 @@ function roomGeom() {
 /// anybody types: linear fog that ran out somewhere other than the back wall
 /// would be a control about the fog rather than about the room.
 function roomFog() {
-  const cam = vgCamera(vgBoxOf(roomCamera()));
+  const cam = roomWorldNow();
   return {
     on: roomEdit.fog,
     type: roomEdit.fogType,
     rgb: vgHexRgb(roomEdit.fogColour),
     density: roomEdit.fogDensity,
     near: 1,
-    far: 1 + cam.depth,
-    height: cam.floorY,
+    far: 1 + cam.reach,
+    // Height fog rises from the ground, and the ground is nought.
+    height: 0,
   };
 }
 
@@ -8179,11 +8192,11 @@ function paintRoomNums() {
   const n = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
   el.textContent =
     `height ${n(w.height)}  pitch ${n(w.pitch)}°  yaw ${n(w.yaw)}°  `
-    + `reach ${n(w.reach)}  ring ${n(w.ring.at)}/${n(w.ring.size)}`;
+    + `fov ${n(w.fov)}°  reach ${n(w.reach)}  ring ${n(w.ring.y)}/${n(w.ring.size)}`;
   el.dataset.copy = JSON.stringify({
-    height: +n(w.height), pitch: +n(w.pitch), yaw: +n(w.yaw), reach: +n(w.reach),
-    aspect: +n(w.aspect), ring: { at: +n(w.ring.at), size: +n(w.ring.size) },
-    taper: { w: +n(w.taper.w), h: +n(w.taper.h) },
+    height: +n(w.height), pitch: +n(w.pitch), yaw: +n(w.yaw), fov: +n(w.fov), reach: +n(w.reach),
+    aspect: +n(w.aspect),
+    ring: { x: +n(w.ring.x), y: +n(w.ring.y), z: +n(w.ring.z), size: +n(w.ring.size) },
   });
   for (const b of document.querySelectorAll('#reFrames .re-btn')) {
     b.classList.toggle('active', b.dataset.frame === roomEdit.frame);
@@ -9748,37 +9761,31 @@ function roomZoneAt(y, h) {
 /// far back — and `move` is handed the drag in fractions of the canvas.
 const ROOM_HANDLES = [
   // The back's four grips went with the back: there is no far wall to widen
-  // or raise. See `docs/OPEN-WORLD.md`, step two.
+  // or raise. Every grip here is a place in the world — `at` is a world
+  // point, `move` edits the world camera.
   {
-    // The gesture that already existed on the back wall, with something to aim
-    // at. Pushing the wall away is the room getting longer.
-    key: 'depth', cls: 'rh-depth', tip: 'Depth',
-    at: (hw, c) => [0, (c.floorY + c.ceilY) / 2, 1],
+    key: 'depth', cls: 'rh-depth', tip: 'Reach',
+    at: (hw, c) => [0, VG_WORLD_H / 2, 1],
     move: (c, d, dx, dy) => {
-      c.depth = Math.max(0.2, Math.min(12, d.depth * Math.exp(dy * 3)));
+      c.reach = Math.max(0.2, Math.min(12, d.reach * Math.exp(dy * 3)));
     },
   },
   {
-    // Up the room, and how big across. Both on one grip because they are one
-    // thing you are judging — how the hoop sits in the space.
     key: 'ring', cls: 'rh-ring', tip: 'Ring',
-    at: (hw, c) => [0, c.floorY + (c.ceilY - c.floorY) * c.skyAt, 0.12],
+    at: (hw, c) => [c.ring.x, c.ring.y, Math.max(0, Math.min(1, c.ring.z / Math.max(0.01, c.reach)))],
     move: (c, d, dx, dy) => {
-      c.skyAt = Math.max(0.05, Math.min(0.98, d.skyAt - dy));
-      c.ring = Math.max(0.02, Math.min(0.6, d.ring + dx * 0.5));
+      c.ring.y = Math.max(0.05, Math.min(0.98, d.ring.y - dy * VG_WORLD_H));
+      c.ring.size = Math.max(0.02, Math.min(0.6, d.ring.size + dx * 0.5));
     },
   },
   {
-    // The eye line. A line rather than a point, because the whole width of it
-    // is the thing — and because `floorY` and `ceilY` are not two numbers, they
-    // are one asymmetry, which is why this is one grip.
-    key: 'horizon', cls: 'rh-horizon', tip: 'Eye line',
-    at: (hw, c) => [0, 0, 0],
+    key: 'horizon', cls: 'rh-horizon', tip: 'Eye height',
+    at: (hw, c) => [0, c.height, 0],
     move: (c, d, dx, dy) => {
-      const hgt = d.ceilY - d.floorY;
-      const eye = Math.max(0.02, Math.min(0.98, (-d.floorY) / hgt - dy));
-      c.floorY = -eye * hgt;
-      c.ceilY = (1 - eye) * hgt;
+      // Down the frame is down in the world: drag the eye line down and you
+      // stand lower. A frame's height of drag is the view's height of world.
+      const span = 2 * Math.tan(d.fov / 2 / VG_DEG);
+      c.height = Math.max(0.02, Math.min(6, d.height - dy * span));
     },
   },
 ];
@@ -9848,7 +9855,7 @@ function paintSolidPath() {
     ? roomEdit.solidPath
     : null;
   if (!pts) { svg.classList.add('hidden'); return; }
-  const at = (pt) => roomProject(pt.x * hw, c.floorY + (c.ceilY - c.floorY) * pt.y,
+  const at = (pt) => roomProject(pt.x * hw, VG_WORLD_H * pt.y,
     Math.max(0, Math.min(1, pt.z)), w, h, c);
 
   // Rebuilt only when the number of points changes — moving one must never
@@ -9906,7 +9913,7 @@ function paintSolidPath() {
     const p = screen[i];
     // Down to the floor at the same depth: the only cue that says how far back
     // a point is, since a dot on its own is the same dot at any depth.
-    const floor = roomProject(pt.x * hw, c.floorY, Math.max(0, Math.min(1, pt.z)), w, h, c);
+    const floor = roomProject(pt.x * hw, 0, Math.max(0, Math.min(1, pt.z)), w, h, c);
     drop.setAttribute('x1', p.x); drop.setAttribute('y1', p.y);
     drop.setAttribute('x2', floor.x); drop.setAttribute('y2', floor.y);
     foot.setAttribute('cx', floor.x); foot.setAttribute('cy', floor.y);
@@ -9947,7 +9954,7 @@ function wireSolidPath() {
           let lo = 0, hi = 1;
           for (let k = 0; k < 22; k++) {
             const mid = (lo + hi) / 2;
-            if (roomProject(0, c.floorY, mid, w, h, c).y > py) lo = mid; else hi = mid;
+            if (roomProject(0, 0, mid, w, h, c).y > py) lo = mid; else hi = mid;
           }
           pt.z = Math.max(0, Math.min(1, (lo + hi) / 2));
           // Across at that depth, so the bead stays under the cursor in both
@@ -9957,8 +9964,7 @@ function wireSolidPath() {
         } else {
           const world = roomUnproject(px, py, Math.max(0, Math.min(1, pt.z)), w, h, c);
           pt.x = Math.max(-1, Math.min(1, world.x / (hw || 1)));
-          pt.y = Math.max(0, Math.min(1,
-            (world.y - c.floorY) / ((c.ceilY - c.floorY) || 1)));
+          pt.y = Math.max(0, Math.min(1, world.y / VG_WORLD_H));
         }
         paintSolidPath();
       };
@@ -10001,8 +10007,8 @@ function paintRoomHandles() {
 
   const w = gl.clientWidth, h = gl.clientHeight;
   if (!(w > 0) || !(h > 0)) return;
-  const c = roomCamNow();
-  const hw = roomHalfW(w, h, c);
+  const c = roomWorldNow();
+  const hw = roomHalfW(w, h);
 
   // Built once and then only moved. Rebuilding them every frame would drop any
   // drag in progress on the very first pointer move — the same fault the
@@ -10079,7 +10085,7 @@ function wireRoomHandles() {
       el.classList.add('dragging');
       host.classList.add('gripping');
       const r = gl.getBoundingClientRect();
-      const from = { ...roomCamNow() };
+      const from = JSON.parse(JSON.stringify(roomWorldNow()));
       const move = (ev) => {
         // A move with no button down is a release this element never heard
         // about. Ending here is what stops a grip following the pointer with
@@ -10087,9 +10093,9 @@ function wireRoomHandles() {
         if (ev.buttons === 0) { up(ev); return; }
         const dx = (ev.clientX - e.clientX) / Math.max(1, r.width);
         const dy = (ev.clientY - e.clientY) / Math.max(1, r.height);
-        const c = { ...from };
+        const c = JSON.parse(JSON.stringify(from));
         hd.move(c, from, dx, dy);
-        roomSetCam(c);
+        roomSetWorld(c);
         paintRoomNums();
         paintRoomHandles();
         paintSolidPath();
@@ -10122,7 +10128,7 @@ function wireRoomHandles() {
 /// itself. Grips have their own glow; this is for the room between them.
 const ROOM_ZONE_TIPS = {
   sky: 'RING — up/down: height · left/right: size',
-  camera: 'CAMERA — up/down: tilt · left/right: swing',
+  camera: 'CAMERA — up/down: pitch · left/right: turn',
 };
 
 function roomZoneShow(zone, e, dragging) {
@@ -10171,7 +10177,7 @@ function roomZoneShow(zone, e, dragging) {
     roomEdit.drag = {
       zone: roomZoneAt(e.clientY - r.top, r.height),
       x: e.clientX, y: e.clientY, w: r.width, h: r.height,
-      cam: roomCamNow(),
+      cam: roomWorldNow(),
     };
     try { gl.setPointerCapture(e.pointerId); } catch { /* the move guard covers it */ }
     roomZoneShow(roomEdit.drag.zone, e, true);
@@ -10191,41 +10197,22 @@ function roomZoneShow(zone, e, dragging) {
     roomZoneShow(d.zone, e, true);
     const dx = (e.clientX - d.x) / Math.max(1, d.w);
     const dy = (e.clientY - d.y) / Math.max(1, d.h);
-    const c = { ...d.cam };
+    const c = JSON.parse(JSON.stringify(d.cam));
 
     if (d.zone === 'sky') {
-      // The ring: how far up the room it hangs, and how big across it is.
-      c.skyAt = Math.max(0.05, Math.min(0.98, d.cam.skyAt - dy));
-      c.ring = Math.max(0.02, Math.min(0.6, d.cam.ring + dx * 0.5));
+      // The ring: how high it hangs, and how big across it is.
+      c.ring.y = Math.max(0.05, Math.min(0.98, d.cam.ring.y - dy * VG_WORLD_H));
+      c.ring.size = Math.max(0.02, Math.min(0.6, d.cam.ring.size + dx * 0.5));
     } else {
-      // The camera.
-      //
-      // The room's height is held and its *asymmetry about zero* moves, because
-      // that asymmetry is the tilt. `floorY` and `ceilY` are not two
-      // independent numbers, and offering them as two would be two controls for
-      // one thing — which is the mistake a panel of fields makes by its nature.
-      //
-      // The horizon goes where the hand goes. Drag down and the horizon comes
-      // down with it, which shows less floor — the opposite convention, where
-      // dragging down tilts the camera down and reveals *more* floor, is how an
-      // orbit control behaves, and this is not an orbit control. Nothing here
-      // is a camera you fly; it is a room you take hold of.
-      //
-      // The floor's near edge is pinned to the bottom of the frame by
-      // construction — it sits at `floorY`, which is the frustum's bottom — so
-      // what a vertical drag changes is how high the horizon sits above it, and
-      // that is the whole of the tilt.
-      const h = d.cam.ceilY - d.cam.floorY;
-      const eye = Math.max(0.02, Math.min(0.98, (-d.cam.floorY) / h - dy));
-      c.floorY = -eye * h;
-      c.ceilY = (1 - eye) * h;
-      // Sideways is the same off-axis trick and the same rule: the vanishing
-      // point follows the hand. Shifting the frustum right swings the view
-      // right, which moves the vanishing point *left* in the frame, so the sign
-      // is against the drag.
-      c.shiftX = Math.max(-1, Math.min(1, d.cam.shiftX - dx * 2));
+      // The camera: a point with a direction. Up and down is pitch, sideways
+      // is a turn. The horizon goes where the hand goes — drag down and the
+      // horizon comes down with it, which is looking up — and the vanishing
+      // point follows the hand, which is turning the other way. A frame's
+      // worth of drag is a field of view's worth of world.
+      c.pitch = Math.max(-80, Math.min(80, d.cam.pitch + dy * d.cam.fov));
+      c.yaw = ((d.cam.yaw - dx * d.cam.fov * (d.w / Math.max(1, d.h)) + 540) % 360) - 180;
     }
-    roomSetCam(c);
+    roomSetWorld(c);
     paintRoomNums();
   });
 
@@ -10247,9 +10234,9 @@ function roomZoneShow(zone, e, dragging) {
   gl.addEventListener('wheel', (e) => {
     if (!roomEdit.on) return;
     e.preventDefault();
-    const c = roomCamNow();
-    c.depth = Math.max(0.2, Math.min(12, c.depth * Math.exp(-e.deltaY * 0.0015)));
-    roomSetCam(c);
+    const c = roomWorldNow();
+    c.reach = Math.max(0.2, Math.min(12, c.reach * Math.exp(-e.deltaY * 0.0015)));
+    roomSetWorld(c);
     paintRoomNums();
     saveRoomCameras();
   }, { passive: false });
@@ -10315,26 +10302,25 @@ function roomView(w, h, cam) {
   const wc = cam
     ? (vgIsWorld(cam) ? { ...VG_WORLD_DEFAULT, ...cam } : vgWorldFromBox(cam, aspect))
     : roomWorldNow();
-  const box = vgBoxFromWorld(wc);
-  const hh = box.ceilY - box.floorY;
   const near = 1;
-  const far = near * (1 + box.depth);
+  const far = near * (1 + wc.reach);
   const horizon = Math.max(far + 1, VG_HORIZON);
-  const wv = vgWorldView({ ...wc, fov: 2 * Math.atan(hh / 2) * VG_DEG }, aspect, near, horizon);
-  return { box, wc, hh, height: wc.height, halfW: hh * 0.5 * aspect, near, far, horizon, mvp: wv.mvp };
+  const wv = vgWorldView(wc, aspect, near, horizon);
+  return {
+    wc, hh: VG_WORLD_H, height: wc.height, halfW: roomEdit.geomWidth / 2,
+    near, far, horizon, mvp: wv.mvp,
+  };
 }
 
 /// A point in the room to a point on the canvas.
 ///
-/// `x` runs across, `y` is measured the way the box measured it — from the
-/// eye, so the floor is at `floorY` — and `t` is how far back along the
-/// layers' reach. The world's ground is `y = 0` with the eye at `height`, so
-/// the box's `y` is lifted by the eye's height on the way in.
+/// `x` runs across, `y` is up from the ground, and `t` is how far back along
+/// the layers' reach — a world point, through the world's view.
 function roomProject(x, y, t, w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
   const v = roomView(w, h, cam);
   const z = -(v.near + Math.max(0, Math.min(1, t)) * (v.far - v.near));
-  const p = vgProjectPoint(v.mvp, x, y + v.height, z);
+  const p = vgProjectPoint(v.mvp, x, y, z);
   return { x: (p.x + 1) / 2 * w, y: (1 - p.y) / 2 * h };
 }
 
@@ -10346,7 +10332,7 @@ function roomUnproject(px, py, t, w, h, cam) {
   const v = roomView(w, h, cam);
   const z = -(v.near + Math.max(0, Math.min(1, t)) * (v.far - v.near));
   const q = vgUnprojectAtZ(v.mvp, (px / w) * 2 - 1, 1 - (py / h) * 2, z);
-  return { x: q.x, y: q.y - v.height };
+  return { x: q.x, y: q.y };
 }
 
 function roomHalfW(w, h, cam) {
@@ -10362,7 +10348,7 @@ function roomHalfW(w, h, cam) {
 function roomBackWall(w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0, w: 1, h: 1, k: 1 };
   const v = roomView(w, h, cam);
-  const k = 1 / (1 + v.box.depth);
+  const k = 1 / (1 + v.wc.reach);
   const z = -v.far;
   const pts = [[-v.halfW, 0], [v.halfW, 0], [v.halfW, v.hh], [-v.halfW, v.hh]]
     .map(([x, y]) => vgProjectPoint(v.mvp, x, y, z))

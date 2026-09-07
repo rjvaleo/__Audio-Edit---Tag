@@ -833,10 +833,15 @@ const RG_ROWS = [
     hint: 'How big a grain is drawn, against the room’s height rather than '
       + 'the frame’s width — a grain that swelled when the panel was '
       + 'widened would be describing the panel and not the sound.' },
+  { key: 'geomWidth', tag: 'WIDTH', min: 0.2, max: 40, step: 0.05, unit: ' u',
+    hint: 'How wide the terrain is, in the world\'s units. A size in the world, not a '
+      + 'property of the camera: stand closer and it is bigger, further and it is '
+      + 'smaller, and that is all.' },
 ];
 
 const RG_DEFAULTS = {
   geomBands: 280, geomHistory: 56, geomRidge: 0.62, geomSpan: 14, geomBody: 0.032,
+  geomWidth: 1.78,
 };
 
 function rgFormat(row, v) {
