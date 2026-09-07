@@ -837,11 +837,15 @@ const RG_ROWS = [
     hint: 'How wide the terrain is, in the world\'s units. A size in the world, not a '
       + 'property of the camera: stand closer and it is bigger, further and it is '
       + 'smaller, and that is all.' },
+  { key: 'geomReach', tag: 'REACH', min: 0.2, max: 40, step: 0.05, unit: ' u',
+    hint: 'How long the terrain is, in the world\'s units — how far back the trail '
+      + 'and the cloud run from its front edge. The front edge itself is dragged on '
+      + 'the picture, by its bead on the ground.' },
 ];
 
 const RG_DEFAULTS = {
   geomBands: 280, geomHistory: 56, geomRidge: 0.62, geomSpan: 14, geomBody: 0.032,
-  geomWidth: 1.78,
+  geomWidth: 1.78, geomReach: 1.9,
 };
 
 function rgFormat(row, v) {

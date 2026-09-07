@@ -826,6 +826,35 @@
                       min="0" max="800" step="1"
                       title="How hard the sound pushes the ring out of round. Well past 1× at the top — a breath becomes a crown.">
                   </div>
+                  <!-- The camera: where you stand and where you look. The same
+                       pose a drag on the picture makes, as numbers, for a
+                       precise one. Room view only — the dock's overlay has no
+                       room for five more rows, and the drags are there. -->
+                  <div class="re-row re-cam">
+                    <span class="re-tag">PAN</span>
+                    <input class="re-slider" id="reCamPan" type="range" min="-180" max="180" step="1"
+                      title="Which way the camera looks, in degrees. Dragging the picture sideways is the same.">
+                  </div>
+                  <div class="re-row re-cam">
+                    <span class="re-tag">TILT</span>
+                    <input class="re-slider" id="reCamTilt" type="range" min="-80" max="80" step="1"
+                      title="Up and down, in degrees. Dragging the picture up and down is the same.">
+                  </div>
+                  <div class="re-row re-cam">
+                    <span class="re-tag">HEIGHT</span>
+                    <input class="re-slider" id="reCamHeight" type="range" min="2" max="600" step="1"
+                      title="The eye above the ground, in hundredths of a unit. Dragging the eye line is the same.">
+                  </div>
+                  <div class="re-row re-cam">
+                    <span class="re-tag">SIDE</span>
+                    <input class="re-slider" id="reCamX" type="range" min="-2000" max="2000" step="1"
+                      title="Where you stand, across, in hundredths of a unit. Shift and scroll on the picture is the same.">
+                  </div>
+                  <div class="re-row re-cam">
+                    <span class="re-tag">WALK</span>
+                    <input class="re-slider" id="reCamZ" type="range" min="-2000" max="2000" step="1"
+                      title="Where you stand, along — negative is further in. Scrolling on the picture is the same.">
+                  </div>
                   <!-- The four-dimensional solid. Under the ring's controls,
                        because it hangs in the same room and is read against it.
 

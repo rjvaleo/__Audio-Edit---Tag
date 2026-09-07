@@ -7630,7 +7630,7 @@ const roomEdit = {
   /// at the right, `y` 0 on the floor to 1 at the ceiling, `z` 0 at the near
   /// face to 1 at the back wall. Two points is a straight run; anything between
   /// them is a waypoint the shape passes through.
-  solidPath: [{ x: 0, y: 0.42, z: 0.08 }, { x: 0, y: 0.42, z: 1 }],
+  solidPath: [{ x: 0, y: 0.42, z: -1.152 }, { x: 0, y: 0.42, z: -2.9 }],
   ringDrive: 1,
   /// How thick the dark border under the ring's lines is, as a fraction of the
   /// ring's radius.
@@ -7683,6 +7683,11 @@ const roomEdit = {
   /// the camera: the box's floor was as wide as the frame, and a window of a
   /// different shape drew a different room. This does not.
   geomWidth: 1.78,
+  /// How long the terrain is, in units, and where its front edge lies. The
+  /// cloud, the mist and the motes ride on it; the ring and the solid have
+  /// places of their own.
+  geomReach: 1.9,
+  geomAt: { x: 0, z: -1 },
   /// Which visualiser is on screen. See `VIS_MODULES`.
   module: 'room',
   /// The ridgeline's own settings. Its defaults live in `ridge.js` beside the
@@ -7761,13 +7766,16 @@ function readRoomData(v) {
   // A path needs at least a front and an end. Anything shorter, or carrying a
   // number that is not one, falls back to the straight run rather than leaving
   // the layer with a path it cannot walk.
+  // The path, in units, anywhere at all. A path from before the world —
+  // fractions of the box — is laid where the box would have put it, once.
   if (Array.isArray(v.solidPath) && v.solidPath.length >= 2) {
+    const units = v.solidPathUnits === true;
     const pts = v.solidPath
       .filter((q) => q && Number.isFinite(+q.x) && Number.isFinite(+q.y) && Number.isFinite(+q.z))
-      .map((q) => ({
-        x: Math.max(-1, Math.min(1, +q.x)),
-        y: Math.max(0, Math.min(1, +q.y)),
-        z: Math.max(0, Math.min(1, +q.z)),
+      .map((q) => (units ? { x: +q.x, y: +q.y, z: +q.z } : {
+        x: +q.x * roomEdit.geomWidth / 2,
+        y: +q.y * VG_WORLD_H,
+        z: roomEdit.geomAt.z - +q.z * roomEdit.geomReach,
       }));
     if (pts.length >= 2) roomEdit.solidPath = pts;
   }
@@ -7807,6 +7815,12 @@ function readRoomData(v) {
   if (typeof v.geomWidth === 'number') {
     roomEdit.geomWidth = Math.max(0.2, Math.min(40, v.geomWidth));
   }
+  if (typeof v.geomReach === 'number') {
+    roomEdit.geomReach = Math.max(0.2, Math.min(40, v.geomReach));
+  }
+  if (v.geomAt && Number.isFinite(v.geomAt.x) && Number.isFinite(v.geomAt.z)) {
+    roomEdit.geomAt = { x: v.geomAt.x, z: v.geomAt.z };
+  }
   // Any module there is. This said `'ridge' || 'room'`, so a third module was
   // remembered, stored, and then silently dropped on the way back in — the app
   // opened on the room every time with nothing on screen to say why.
@@ -7838,6 +7852,47 @@ function readRoomData(v) {
   }
 }
 
+// The cameras, one per frame shape, as world cameras.
+//
+// `roomCameras` holds what `main` wrote: box cameras. Read here once, turned
+// into world cameras with the frame's own aspect, and kept under a key of
+// this branch's own — so the old key stays as it was for `main`, and a room
+// posed there opens here looking the same. See `docs/OPEN-WORLD.md`.
+const ROOM_CAMERAS_KEY = 'roomCamerasWorld';
+function roomCamerasMigrate(boxes) {
+  const out = {};
+  for (const [key, cam] of Object.entries(boxes || {})) {
+    if (!cam || typeof cam !== 'object') continue;
+    if (vgIsWorld(cam)) {
+      // A camera from before the eye could move carried the reach; it is the
+      // terrain's now, and the first one seen decides it.
+      if (!(cam.v >= 2) && Number.isFinite(cam.reach) && !roomEdit.geomReachSet) {
+        roomEdit.geomReach = cam.reach;
+        roomEdit.geomReachSet = true;
+      }
+      out[key] = vgWorldUpgrade(cam);
+      continue;
+    }
+    const frame = ROOM_FRAMES.find((f) => f.key === key);
+    out[key] = vgWorldFromBox(cam, frame && frame.ratio > 0 ? frame.ratio : VG_WORLD_DEFAULT.aspect);
+  }
+  return out;
+}
+try {
+  const kept = JSON.parse(localStorage.getItem(ROOM_CAMERAS_KEY) || 'null');
+  if (kept && typeof kept === 'object') {
+    roomEdit.cams = roomCamerasMigrate(kept);
+  } else {
+    roomEdit.cams = roomCamerasMigrate(JSON.parse(localStorage.getItem('roomCameras') || '{}') || {});
+    if (Object.keys(roomEdit.cams).length) {
+      try { localStorage.setItem(ROOM_CAMERAS_KEY, JSON.stringify(roomEdit.cams)); } catch {}
+    }
+  }
+} catch { roomEdit.cams = {}; }
+
+// The cameras first, above: a camera from before the eye could move carried
+// the terrain's reach, and a path from before the world is laid along that
+// reach — so the reach has to be known before the path is read.
 try { readRoomData(JSON.parse(localStorage.getItem('roomData') || '{}')); } catch {}
 
 /// The room as it is stored: every setting `readRoomData` reads back.
@@ -7847,7 +7902,8 @@ function roomDataSnapshot() {
     geomBands: roomEdit.geomBands, geomHistory: roomEdit.geomHistory,
     geomRidge: roomEdit.geomRidge,
     geomSpan: roomEdit.geomSpan, geomBody: roomEdit.geomBody,
-    geomWidth: roomEdit.geomWidth,
+    geomWidth: roomEdit.geomWidth, geomReach: roomEdit.geomReach, geomAt: roomEdit.geomAt,
+    solidPathUnits: true,
     module: roomEdit.module, ridge: roomEdit.ridge, text: roomEdit.text,
     room3d: roomEdit.room3d,
     stage: roomEdit.stage ? { ...roomEdit.stage, solo: null } : roomEdit.stage,
@@ -7918,34 +7974,6 @@ function saveRoomLayers() {
   try { localStorage.setItem('roomLayers', JSON.stringify(roomEdit.layers)); } catch {}
 }
 
-// The cameras, one per frame shape, as world cameras.
-//
-// `roomCameras` holds what `main` wrote: box cameras. Read here once, turned
-// into world cameras with the frame's own aspect, and kept under a key of
-// this branch's own — so the old key stays as it was for `main`, and a room
-// posed there opens here looking the same. See `docs/OPEN-WORLD.md`.
-const ROOM_CAMERAS_KEY = 'roomCamerasWorld';
-function roomCamerasMigrate(boxes) {
-  const out = {};
-  for (const [key, cam] of Object.entries(boxes || {})) {
-    if (!cam || typeof cam !== 'object') continue;
-    if (vgIsWorld(cam)) { out[key] = cam; continue; }
-    const frame = ROOM_FRAMES.find((f) => f.key === key);
-    out[key] = vgWorldFromBox(cam, frame && frame.ratio > 0 ? frame.ratio : VG_WORLD_DEFAULT.aspect);
-  }
-  return out;
-}
-try {
-  const kept = JSON.parse(localStorage.getItem(ROOM_CAMERAS_KEY) || 'null');
-  if (kept && typeof kept === 'object') {
-    roomEdit.cams = roomCamerasMigrate(kept);
-  } else {
-    roomEdit.cams = roomCamerasMigrate(JSON.parse(localStorage.getItem('roomCameras') || '{}') || {});
-    if (Object.keys(roomEdit.cams).length) {
-      try { localStorage.setItem(ROOM_CAMERAS_KEY, JSON.stringify(roomEdit.cams)); } catch {}
-    }
-  }
-} catch { roomEdit.cams = {}; }
 
 /// The aspect the room is being posed at right now: the frame's, or the
 /// cell's when the frame is the dock's own.
@@ -7959,7 +7987,7 @@ function roomAspectNow() {
 
 /// Keep a world camera for the frame being posed.
 function roomSetWorld(wc) {
-  roomEdit.cams[roomEdit.frame] = { ...wc, aspect: roomAspectNow() };
+  roomEdit.cams[roomEdit.frame] = { ...wc, v: 2, aspect: roomAspectNow() };
 }
 
 /// What to draw with. Null is "whatever the source says", which is what every
@@ -7981,6 +8009,8 @@ function roomGeom() {
     span: roomEdit.geomSpan,
     body: roomEdit.geomBody,
     width: roomEdit.geomWidth,
+    reach: roomEdit.geomReach,
+    at: roomEdit.geomAt,
   };
 }
 
@@ -7997,7 +8027,7 @@ function roomFog() {
     rgb: vgHexRgb(roomEdit.fogColour),
     density: roomEdit.fogDensity,
     near: 1,
-    far: 1 + cam.reach,
+    far: 1 + roomEdit.geomReach,
     // Height fog rises from the ground, and the ground is nought.
     height: 0,
   };
@@ -8111,7 +8141,7 @@ function saveRoomCameras() {
 /// The camera being edited, as the world camera it is.
 function roomWorldNow() {
   const c = roomEdit.cams[roomEdit.frame];
-  if (vgIsWorld(c)) return { ...VG_WORLD_DEFAULT, ...c };
+  if (vgIsWorld(c)) return { ...VG_WORLD_DEFAULT, ...vgWorldUpgrade(c) };
   return vgWorldFromBox(c || ROOM_CAM_DEFAULT, roomAspectNow());
 }
 
@@ -8192,12 +8222,13 @@ function paintRoomNums() {
   const n = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
   el.textContent =
     `height ${n(w.height)}  pitch ${n(w.pitch)}°  yaw ${n(w.yaw)}°  `
-    + `fov ${n(w.fov)}°  reach ${n(w.reach)}  ring ${n(w.ring.y)}/${n(w.ring.size)}`;
+    + `fov ${n(w.fov)}°  at ${n(w.x)},${n(w.z)}  ring ${n(w.ring.x)},${n(w.ring.y)},${n(w.ring.z)}/${n(w.ring.size)}`;
   el.dataset.copy = JSON.stringify({
-    height: +n(w.height), pitch: +n(w.pitch), yaw: +n(w.yaw), fov: +n(w.fov), reach: +n(w.reach),
-    aspect: +n(w.aspect),
+    v: 2, x: +n(w.x), z: +n(w.z), height: +n(w.height), pitch: +n(w.pitch), yaw: +n(w.yaw),
+    fov: +n(w.fov), aspect: +n(w.aspect),
     ring: { x: +n(w.ring.x), y: +n(w.ring.y), z: +n(w.ring.z), size: +n(w.ring.size) },
   });
+  syncCamRows();
   for (const b of document.querySelectorAll('#reFrames .re-btn')) {
     b.classList.toggle('active', b.dataset.frame === roomEdit.frame);
   }
@@ -8584,7 +8615,8 @@ function buildRoomChunks() {
   const resetWp = $('reSolidPathReset');
   if (resetWp) {
     resetWp.onclick = () => {
-      roomEdit.solidPath = [{ x: 0, y: 0.42, z: 0.08 }, { x: 0, y: 0.42, z: 1 }];
+      roomEdit.solidPath = [{ x: 0, y: 0.42, z: roomEdit.geomAt.z - 0.08 * roomEdit.geomReach },
+        { x: 0, y: 0.42, z: roomEdit.geomAt.z - roomEdit.geomReach }];
       saveRoomData();
       solidPathPanel();
       paintSolidPath();
@@ -8614,6 +8646,39 @@ function buildRoomChunks() {
       paintRoomData();
     };
     slider.onchange = saveRoomData;
+  }
+  // The camera's own numbers, as sliders: the same pose a drag makes, for a
+  // precise one. Each writes the world camera and repaints; the readout and
+  // the sliders are kept in step by `syncCamRows`.
+  for (const [id, key, k, lo, hi] of ROOM_CAM_ROWS) {
+    const el = $(id);
+    if (!el) continue;
+    el.oninput = () => {
+      const c = roomWorldNow();
+      c[key] = Math.max(lo, Math.min(hi, el.value / k));
+      roomSetWorld(c);
+      paintRoomNums();
+    };
+    el.onchange = saveRoomCameras;
+  }
+  syncCamRows();
+}
+
+/// The camera sliders: element, field, the scale the element counts in, and
+/// the range in the world's own units.
+const ROOM_CAM_ROWS = [
+  ['reCamPan', 'yaw', 1, -180, 180],
+  ['reCamTilt', 'pitch', 1, -80, 80],
+  ['reCamHeight', 'height', 100, 0.02, 6],
+  ['reCamX', 'x', 100, -20, 20],
+  ['reCamZ', 'z', 100, -20, 20],
+];
+
+function syncCamRows() {
+  const w = roomWorldNow();
+  for (const [id, key, k] of ROOM_CAM_ROWS) {
+    const el = $(id);
+    if (el && document.activeElement !== el) el.value = String(Math.round(w[key] * k));
   }
 }
 
@@ -9738,8 +9803,10 @@ wireRoomGrip();
 /// be told and a zone is a thing you find. The ring hangs `skyAt` of the way up
 /// the room, so it sits `1 - skyAt` of the way down the canvas — the top third
 /// contains it at every setting it is usable at.
-function roomZoneAt(y, h) {
-  return y < h * 0.34 ? 'sky' : 'camera';
+function roomZoneAt() {
+  // The whole picture is the camera. The ring used to be dragged from a
+  // zone across the top; it has beads now, like everything with a place.
+  return 'camera';
 }
 
 // ────────────────────────────────────────────────────────── the handles ──
@@ -9760,32 +9827,23 @@ function roomZoneAt(y, h) {
 /// `at` gives a point in the room — world x and y on the front face, and how
 /// far back — and `move` is handed the drag in fractions of the canvas.
 const ROOM_HANDLES = [
-  // The back's four grips went with the back: there is no far wall to widen
-  // or raise. Every grip here is a place in the world — `at` is a world
-  // point, `move` edits the world camera.
+  // Two grips on the picture. Everything else that has a place — the ring,
+  // the solid's path, the terrain — has beads, and is dragged where it is.
   {
     key: 'depth', cls: 'rh-depth', tip: 'Reach',
-    at: (hw, c) => [0, VG_WORLD_H / 2, 1],
+    at: (c) => [roomEdit.geomAt.x, VG_WORLD_H / 2, 1],
     move: (c, d, dx, dy) => {
-      c.reach = Math.max(0.2, Math.min(12, d.reach * Math.exp(dy * 3)));
-    },
-  },
-  {
-    key: 'ring', cls: 'rh-ring', tip: 'Ring',
-    at: (hw, c) => [c.ring.x, c.ring.y, Math.max(0, Math.min(1, c.ring.z / Math.max(0.01, c.reach)))],
-    move: (c, d, dx, dy) => {
-      c.ring.y = Math.max(0.05, Math.min(0.98, d.ring.y - dy * VG_WORLD_H));
-      c.ring.size = Math.max(0.02, Math.min(0.6, d.ring.size + dx * 0.5));
+      c.geom.reach = Math.max(0.2, Math.min(40, d.geom.reach * Math.exp(dy * 3)));
     },
   },
   {
     key: 'horizon', cls: 'rh-horizon', tip: 'Eye height',
-    at: (hw, c) => [0, c.height, 0],
+    at: (c) => [c.cam.x, c.cam.height, 0],
     move: (c, d, dx, dy) => {
       // Down the frame is down in the world: drag the eye line down and you
       // stand lower. A frame's height of drag is the view's height of world.
-      const span = 2 * Math.tan(d.fov / 2 / VG_DEG);
-      c.height = Math.max(0.02, Math.min(6, d.height - dy * span));
+      const span = 2 * Math.tan(d.cam.fov / 2 / VG_DEG);
+      c.cam.height = Math.max(0.02, d.cam.height - dy * span);
     },
   },
 ];
@@ -9805,124 +9863,129 @@ const ROOM_HANDLES = [
 /// moves in its own plane, under the cursor. Hold shift and the same drag moves
 /// it in depth instead, which is the one thing a flat pointer cannot say by
 /// itself — the dotted line down to the floor is what makes that readable.
-function paintSolidPath() {
+// ───────────────────────────────────────────────── the beads: everything moves ──
+//
+// Everything with a place in the world is dragged where it is, by the same
+// two beads: one in the air, for across and up, and one on the ground beneath
+// it, for across and along. A pointer is two numbers and the world is three,
+// so something has to supply the third; the two beads are the two planes,
+// and neither needs a mode. Nothing is clamped to anything. The solid's path
+// has a bead per point, the ring has one, and the terrain's front edge has a
+// bead on the ground alone, since the terrain lies on it.
+
+/// Everything with a place, as beads.
+function roomBeads() {
+  const out = [];
+  if (roomLayerOn('solid') && Array.isArray(roomEdit.solidPath) && roomEdit.solidPath.length >= 2) {
+    const all = roomEdit.solidPath;
+    all.forEach((pt, i) => out.push({
+      key: `path:${i}`, path: true,
+      end: i === 0 || i === all.length - 1,
+      label: i === 0 ? 'front' : i === all.length - 1 ? 'end' : String(i),
+      get: () => pt,
+      set: (p) => { Object.assign(pt, p); },
+      // A waypoint is removed where it is; the ends stay.
+      remove: () => { if (all.length > 2 && i > 0 && i < all.length - 1) all.splice(i, 1); },
+      save: saveRoomData,
+    }));
+  }
+  if (roomLayerOn('sky') || roomLayerOn('skin')) {
+    out.push({
+      key: 'ring', label: 'ring',
+      get: () => ({ ...roomWorldNow().ring }),
+      set: (p) => { const c = roomWorldNow(); c.ring = { ...c.ring, ...p }; roomSetWorld(c); },
+      save: saveRoomCameras,
+    });
+  }
+  out.push({
+    key: 'terrain', label: 'terrain', floorOnly: true,
+    get: () => ({ x: roomEdit.geomAt.x, y: 0, z: roomEdit.geomAt.z }),
+    set: (p) => { roomEdit.geomAt = { x: p.x, z: p.z }; },
+    save: saveRoomData,
+  });
+  return out;
+}
+
+function paintRoomBeads() {
   const host = $('roomHandles');
   const gl = $('visGl');
   if (!host || !gl) return;
-  // **Inside `#roomHandles`, not beside it.**
-  //
-  // It began as its own element in `index.html`, next to the handles — and that
-  // put it inside `#masterBus`, which `roomAdopt` moves into the room stage
-  // whole. So it was carried into the picture, which is the fault this file
-  // already documents for the card's panel, and it broke every camera drag:
-  // three room-editor tests went from passing to failing and the vanishing
-  // point simply stopped moving.
-  //
-  // `#roomHandles` is already the container for furniture that is over the room
-  // but not in it — never filmed, hidden with the editor, and moved by whatever
-  // moves the rest. Putting it there means no new sibling appears anywhere.
   let svg = host.querySelector('.room-path');
   if (!svg) {
     svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'room-path');
     host.appendChild(svg);
   }
-  // Only while the room's own editor is open, like every other handle here —
-  // and never for a solid that is not being drawn.
-  // Only where the solid actually is: the room's own module, its editor open,
-  // and the layer switched on. `#roomHandles` forgets the module check and
-  // strands itself over the ridgeline; this one does not.
   const show = roomEdit.on && state.mode === 'room'
-    && typeof visModuleKey === 'function' && visModuleKey() === 'room'
-    && typeof roomLayerOn === 'function' && roomLayerOn('solid');
+    && typeof visModuleKey === 'function' && visModuleKey() === 'room';
   svg.classList.toggle('hidden', !show);
   if (!show) return;
-
   const w = gl.clientWidth, h = gl.clientHeight;
   if (!(w > 0) || !(h > 0)) return;
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.setAttribute('width', w);
   svg.setAttribute('height', h);
 
-  const c = roomCamNow();
-  const hw = roomHalfW(w, h, c);
-  // **A stored room from before this existed has no path.** `roomEdit` is
-  // rebuilt from `roomData`, so a document saved by an older build comes back
-  // without one — and this function is called from `paintRoomNums`, which is on
-  // the camera-drag path. Throwing here took the drag down with it and the
-  // vanishing point simply stopped moving, with nothing on screen to say why.
-  const pts = Array.isArray(roomEdit.solidPath) && roomEdit.solidPath.length >= 2
-    ? roomEdit.solidPath
-    : null;
-  if (!pts) { svg.classList.add('hidden'); return; }
-  const at = (pt) => roomProject(pt.x * hw, VG_WORLD_H * pt.y,
-    Math.max(0, Math.min(1, pt.z)), w, h, c);
-
-  // Rebuilt only when the number of points changes — moving one must never
-  // replace the element being dragged, which is the fault the palette's colour
-  // wells and the theme editor's swatches both had.
-  if (svg.dataset.n !== String(pts.length)) {
-    svg.dataset.n = String(pts.length);
+  const beads = roomBeads();
+  const keys = beads.map((b) => b.key).join('|');
+  // Rebuilt only when the set of beads changes — moving one must never
+  // replace the element being dragged.
+  if (svg.dataset.keys !== keys) {
+    svg.dataset.keys = keys;
     svg.innerHTML = '';
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
     line.setAttribute('class', 'rp-line');
     svg.appendChild(line);
-    pts.forEach((_, i) => {
+    for (const b of beads) {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.dataset.key = b.key;
       const drop = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       drop.setAttribute('class', 'rp-depth');
-      svg.appendChild(drop);
-      // **The floor is where depth is set.** A pointer is two numbers and the
-      // room is three, and every way of supplying the third with a modifier is
-      // a mode — which this room does not have anywhere else. So each point has
-      // two bodies: one where it is, and one on the floor beneath it. The air
-      // bead moves it across and up; the floor bead moves it across and back.
-      // Both are a plain drag in a plane, and neither needs to be explained.
-      //
-      // It is also the only way to pick them apart. Two points at the same
-      // place on screen and different depths are stacked in the air and far
-      // apart on the floor — measured on the default path, eleven pixels
-      // against a hundred and three.
+      g.appendChild(drop);
       const foot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      foot.setAttribute('class', 'rp-pt rp-foot');
-      foot.setAttribute('r', 4);
-      foot.dataset.i = String(i);
+      foot.setAttribute('class', `rp-pt rp-foot${b.floorOnly ? ' rp-only' : ''}`);
+      foot.setAttribute('r', b.floorOnly ? 6 : 4);
+      foot.dataset.key = b.key;
       foot.dataset.floor = '1';
-      svg.appendChild(foot);
-      const end = i === 0 || i === pts.length - 1;
-      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      dot.setAttribute('class', `rp-pt${end ? ' rp-end' : ''}`);
-      dot.setAttribute('r', end ? 6 : 5);
-      dot.dataset.i = String(i);
-      svg.appendChild(dot);
+      g.appendChild(foot);
+      if (!b.floorOnly) {
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('class', `rp-pt${b.end ? ' rp-end' : ''}${b.key === 'ring' ? ' rp-ring' : ''}`);
+        dot.setAttribute('r', b.end || b.key === 'ring' ? 6 : 5);
+        dot.dataset.key = b.key;
+        g.appendChild(dot);
+      }
       const lb = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       lb.setAttribute('class', 'rp-lb');
-      lb.textContent = i === 0 ? 'front' : i === pts.length - 1 ? 'end' : String(i);
-      svg.appendChild(lb);
-    });
-    wireSolidPath();
+      lb.textContent = b.label;
+      g.appendChild(lb);
+      svg.appendChild(g);
+    }
+    wireRoomBeads();
   }
 
-  const screen = pts.map(at);
-  svg.querySelector('.rp-line').setAttribute('points',
-    screen.map((p) => `${p.x},${p.y}`).join(' '));
-  const kids = [...svg.children].slice(1);
-  pts.forEach((pt, i) => {
-    const drop = kids[i * 4], foot = kids[i * 4 + 1];
-    const dot = kids[i * 4 + 2], lb = kids[i * 4 + 3];
-    if (!drop || !foot || !dot || !lb) return;
-    const p = screen[i];
-    // Down to the floor at the same depth: the only cue that says how far back
-    // a point is, since a dot on its own is the same dot at any depth.
-    const floor = roomProject(pt.x * hw, 0, Math.max(0, Math.min(1, pt.z)), w, h, c);
-    drop.setAttribute('x1', p.x); drop.setAttribute('y1', p.y);
+  const pathPts = [];
+  for (const b of beads) {
+    const g = svg.querySelector(`g[data-key="${b.key}"]`);
+    if (!g) continue;
+    const p = b.get();
+    const air = roomProjectAt(p.x, p.y, p.z, w, h);
+    const floor = roomProjectAt(p.x, 0, p.z, w, h);
+    const [drop, foot, third, fourth] = g.children;
+    const dot = b.floorOnly ? null : third;
+    const lb = b.floorOnly ? third : fourth;
+    drop.setAttribute('x1', air.x); drop.setAttribute('y1', air.y);
     drop.setAttribute('x2', floor.x); drop.setAttribute('y2', floor.y);
     foot.setAttribute('cx', floor.x); foot.setAttribute('cy', floor.y);
-    dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
-    lb.setAttribute('x', p.x); lb.setAttribute('y', p.y - 11);
-  });
+    if (dot) { dot.setAttribute('cx', air.x); dot.setAttribute('cy', air.y); }
+    lb.setAttribute('x', air.x); lb.setAttribute('y', (b.floorOnly ? floor.y : air.y) - 11);
+    g.classList.toggle('hidden', !!air.behind && !!floor.behind);
+    if (b.path) pathPts.push(`${air.x},${air.y}`);
+  }
+  svg.querySelector('.rp-line').setAttribute('points', pathPts.join(' '));
 }
 
-function wireSolidPath() {
+function wireRoomBeads() {
   const svg = $('roomHandles')?.querySelector('.room-path');
   const gl = $('visGl');
   if (!svg || !gl) return;
@@ -9931,42 +9994,28 @@ function wireSolidPath() {
       if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
-      const i = +dot.dataset.i;
-      const pt = roomEdit.solidPath[i];
-      if (!pt) return;
+      const bead = roomBeads().find((b) => b.key === dot.dataset.key);
+      if (!bead) return;
       try { dot.setPointerCapture(e.pointerId); } catch { /* the move guard covers it */ }
       dot.classList.add('dragging');
       const box = gl.getBoundingClientRect();
-      const start = { ...pt };
-
       const onFloor = dot.dataset.floor === '1';
       const move = (ev) => {
         if (ev.buttons === 0) { up(ev); return; }
         const w = gl.clientWidth, h = gl.clientHeight;
-        const c = roomCamNow();
-        const hw = roomHalfW(w, h, c);
         const px = ev.clientX - box.left, py = ev.clientY - box.top;
+        const p = bead.get();
         if (onFloor) {
-          // Which depth puts the floor at this height on screen? The floor
-          // recedes monotonically up the picture, so bisection finds it exactly
-          // and without a matrix inverse for a plane the projection does not
-          // give one for. Twenty-two halvings is a millionth of the room.
-          let lo = 0, hi = 1;
-          for (let k = 0; k < 22; k++) {
-            const mid = (lo + hi) / 2;
-            if (roomProject(0, 0, mid, w, h, c).y > py) lo = mid; else hi = mid;
-          }
-          pt.z = Math.max(0, Math.min(1, (lo + hi) / 2));
-          // Across at that depth, so the bead stays under the cursor in both
-          // directions rather than only in one.
-          const world = roomUnproject(px, py, pt.z, w, h, c);
-          pt.x = Math.max(-1, Math.min(1, world.x / (hw || 1)));
+          // Across and along, on the ground, wherever the pointer's ray lands.
+          const g = roomGroundAt(px, py, w, h);
+          if (g) bead.set({ x: g.x, z: g.z });
         } else {
-          const world = roomUnproject(px, py, Math.max(0, Math.min(1, pt.z)), w, h, c);
-          pt.x = Math.max(-1, Math.min(1, world.x / (hw || 1)));
-          pt.y = Math.max(0, Math.min(1, world.y / VG_WORLD_H));
+          // Across and up, in the plane the point is already at.
+          const q = roomUnprojectZ(px, py, p.z, w, h);
+          bead.set({ x: q.x, y: q.y });
         }
-        paintSolidPath();
+        paintRoomBeads();
+        paintRoomNums();
       };
       const up = (ev) => {
         dot.classList.remove('dragging');
@@ -9975,27 +10024,28 @@ function wireSolidPath() {
         dot.onpointerup = null;
         dot.onpointercancel = null;
         dot.onlostpointercapture = null;
-        saveRoomData();
+        if (bead.save) bead.save();
       };
       dot.onpointermove = move;
       dot.onpointerup = up;
       dot.onpointercancel = up;
       dot.onlostpointercapture = up;
     };
-    // A waypoint is removed where it is, rather than by finding its row in a
-    // list somewhere else.
     dot.ondblclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const i = +dot.dataset.i;
-      const pts = roomEdit.solidPath;
-      if (i === 0 || i === pts.length - 1 || pts.length <= 2) return;
-      pts.splice(i, 1);
-      saveRoomData();
-      paintSolidPath();
+      const bead = roomBeads().find((b) => b.key === dot.dataset.key);
+      if (!bead || !bead.remove) return;
+      bead.remove();
+      if (bead.save) bead.save();
+      paintRoomBeads();
     };
   }
 }
+
+/// The old names, for everything that still calls them.
+function paintSolidPath() { paintRoomBeads(); }
+function wireSolidPath() { wireRoomBeads(); }
 
 function paintRoomHandles() {
   const host = $('roomHandles');
@@ -10007,8 +10057,7 @@ function paintRoomHandles() {
 
   const w = gl.clientWidth, h = gl.clientHeight;
   if (!(w > 0) || !(h > 0)) return;
-  const c = roomWorldNow();
-  const hw = roomHalfW(w, h);
+  const c = { cam: roomWorldNow(), geom: { reach: roomEdit.geomReach } };
 
   // Built once and then only moved. Rebuilding them every frame would drop any
   // drag in progress on the very first pointer move — the same fault the
@@ -10049,7 +10098,7 @@ function paintRoomHandles() {
     const el = handleKids[i * 2];
     const tip = handleKids[i * 2 + 1];
     if (!el || !tip) continue;
-    const [x, y, t] = hd.at(hw, c);
+    const [x, y, t] = hd.at(c);
     const p = roomProject(x, y, t, w, h, c);
     if (hd.key === 'horizon') {
       // A tab at the left edge: it only needs its height placed, and the rest
@@ -10085,7 +10134,7 @@ function wireRoomHandles() {
       el.classList.add('dragging');
       host.classList.add('gripping');
       const r = gl.getBoundingClientRect();
-      const from = JSON.parse(JSON.stringify(roomWorldNow()));
+      const from = { cam: JSON.parse(JSON.stringify(roomWorldNow())), geom: { reach: roomEdit.geomReach } };
       const move = (ev) => {
         // A move with no button down is a release this element never heard
         // about. Ending here is what stops a grip following the pointer with
@@ -10095,7 +10144,8 @@ function wireRoomHandles() {
         const dy = (ev.clientY - e.clientY) / Math.max(1, r.height);
         const c = JSON.parse(JSON.stringify(from));
         hd.move(c, from, dx, dy);
-        roomSetWorld(c);
+        roomSetWorld(c.cam);
+        roomEdit.geomReach = c.geom.reach;
         paintRoomNums();
         paintRoomHandles();
         paintSolidPath();
@@ -10127,8 +10177,7 @@ function wireRoomHandles() {
 /// the pointer naming it and what each axis does, and, over the sky, the band
 /// itself. Grips have their own glow; this is for the room between them.
 const ROOM_ZONE_TIPS = {
-  sky: 'RING — up/down: height · left/right: size',
-  camera: 'CAMERA — up/down: pitch · left/right: turn',
+  camera: 'CAMERA — drag: tilt · pan · scroll: walk · shift+scroll: sidestep',
 };
 
 function roomZoneShow(zone, e, dragging) {
@@ -10199,11 +10248,7 @@ function roomZoneShow(zone, e, dragging) {
     const dy = (e.clientY - d.y) / Math.max(1, d.h);
     const c = JSON.parse(JSON.stringify(d.cam));
 
-    if (d.zone === 'sky') {
-      // The ring: how high it hangs, and how big across it is.
-      c.ring.y = Math.max(0.05, Math.min(0.98, d.cam.ring.y - dy * VG_WORLD_H));
-      c.ring.size = Math.max(0.02, Math.min(0.6, d.cam.ring.size + dx * 0.5));
-    } else {
+    {
       // The camera: a point with a direction. Up and down is pitch, sideways
       // is a turn. The horizon goes where the hand goes — drag down and the
       // horizon comes down with it, which is looking up — and the vanishing
@@ -10234,8 +10279,19 @@ function roomZoneShow(zone, e, dragging) {
   gl.addEventListener('wheel', (e) => {
     if (!roomEdit.on) return;
     e.preventDefault();
+    // Walking. The wheel moves the eye through the world along the way it
+    // looks; with shift, sideways. Nothing here is a size — it is where you
+    // stand.
     const c = roomWorldNow();
-    c.reach = Math.max(0.2, Math.min(12, c.reach * Math.exp(-e.deltaY * 0.0015)));
+    const stepAlong = -e.deltaY * 0.004;
+    const yaw = c.yaw / VG_DEG;
+    if (e.shiftKey) {
+      c.x += Math.cos(yaw) * stepAlong;
+      c.z += Math.sin(yaw) * stepAlong;
+    } else {
+      c.x += Math.sin(yaw) * stepAlong;
+      c.z += -Math.cos(yaw) * stepAlong;
+    }
     roomSetWorld(c);
     paintRoomNums();
     saveRoomCameras();
@@ -10300,26 +10356,63 @@ function roomChPx(el) {
 function roomView(w, h, cam) {
   const aspect = w / h;
   const wc = cam
-    ? (vgIsWorld(cam) ? { ...VG_WORLD_DEFAULT, ...cam } : vgWorldFromBox(cam, aspect))
+    ? (vgIsWorld(cam) ? { ...VG_WORLD_DEFAULT, ...vgWorldUpgrade(cam) } : vgWorldFromBox(cam, aspect))
     : roomWorldNow();
   const near = 1;
-  const far = near * (1 + wc.reach);
-  const horizon = Math.max(far + 1, VG_HORIZON);
+  const reach = roomEdit.geomReach;
+  const at = roomEdit.geomAt;
+  const far = near + reach;
+  const horizon = VG_HORIZON + Math.hypot(wc.x, wc.z) + reach;
   const wv = vgWorldView(wc, aspect, near, horizon);
   return {
     wc, hh: VG_WORLD_H, height: wc.height, halfW: roomEdit.geomWidth / 2,
-    near, far, horizon, mvp: wv.mvp,
+    near, far, reach, at, horizon, mvp: wv.mvp,
+    eye: [wc.x, wc.height, wc.z],
   };
+}
+
+/// A place in the world to a point on the canvas.
+function roomProjectAt(x, y, z, w, h, cam) {
+  if (!(w > 0) || !(h > 0)) return { x: 0, y: 0, behind: true };
+  const v = roomView(w, h, cam);
+  const p = vgProjectPoint(v.mvp, x, y, z);
+  return { x: (p.x + 1) / 2 * w, y: (1 - p.y) / 2 * h, behind: p.w <= 1e-6 };
+}
+
+/// The place at a known `z` that lands under the pixel.
+function roomUnprojectZ(px, py, z, w, h, cam) {
+  if (!(w > 0) || !(h > 0)) return { x: 0, y: 0, z };
+  const v = roomView(w, h, cam);
+  return vgUnprojectAtZ(v.mvp, (px / w) * 2 - 1, 1 - (py / h) * 2, z);
+}
+
+/// The place on the ground under the pixel, or null when the pixel is above
+/// the horizon and the ray never lands.
+function roomGroundAt(px, py, w, h, cam) {
+  if (!(w > 0) || !(h > 0)) return null;
+  const v = roomView(w, h, cam);
+  const nx = (px / w) * 2 - 1, ny = 1 - (py / h) * 2;
+  // Two points on the ray, then the one on it with no height.
+  const a = vgUnprojectAtZ(v.mvp, nx, ny, v.eye[2] - 1);
+  const b = vgUnprojectAtZ(v.mvp, nx, ny, v.eye[2] - 2);
+  const dy = b.y - a.y;
+  if (Math.abs(dy) < 1e-9) return null;
+  const s = -a.y / dy;
+  if (s < -0.999) return null;
+  const x = a.x + (b.x - a.x) * s, z = a.z + (b.z - a.z) * s;
+  // Ahead of the eye, not behind it.
+  const fwd = (x - v.eye[0]) * Math.sin(v.wc.yaw / VG_DEG) - (z - v.eye[2]) * Math.cos(v.wc.yaw / VG_DEG);
+  return fwd > 0 ? { x, y: 0, z } : null;
 }
 
 /// A point in the room to a point on the canvas.
 ///
 /// `x` runs across, `y` is up from the ground, and `t` is how far back along
-/// the layers' reach — a world point, through the world's view.
+/// the terrain — a world point, through the world's view.
 function roomProject(x, y, t, w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
   const v = roomView(w, h, cam);
-  const z = -(v.near + Math.max(0, Math.min(1, t)) * (v.far - v.near));
+  const z = v.at.z - Math.max(0, Math.min(1, t)) * v.reach;
   const p = vgProjectPoint(v.mvp, x, y, z);
   return { x: (p.x + 1) / 2 * w, y: (1 - p.y) / 2 * h };
 }
@@ -10330,7 +10423,7 @@ function roomProject(x, y, t, w, h, cam) {
 function roomUnproject(px, py, t, w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0 };
   const v = roomView(w, h, cam);
-  const z = -(v.near + Math.max(0, Math.min(1, t)) * (v.far - v.near));
+  const z = v.at.z - Math.max(0, Math.min(1, t)) * v.reach;
   const q = vgUnprojectAtZ(v.mvp, (px / w) * 2 - 1, 1 - (py / h) * 2, z);
   return { x: q.x, y: q.y };
 }
@@ -10348,9 +10441,9 @@ function roomHalfW(w, h, cam) {
 function roomBackWall(w, h, cam) {
   if (!(w > 0) || !(h > 0)) return { x: 0, y: 0, w: 1, h: 1, k: 1 };
   const v = roomView(w, h, cam);
-  const k = 1 / (1 + v.wc.reach);
-  const z = -v.far;
-  const pts = [[-v.halfW, 0], [v.halfW, 0], [v.halfW, v.hh], [-v.halfW, v.hh]]
+  const k = 1 / (1 + v.reach);
+  const z = v.at.z - v.reach;
+  const pts = [[v.at.x - v.halfW, 0], [v.at.x + v.halfW, 0], [v.at.x + v.halfW, v.hh], [v.at.x - v.halfW, v.hh]]
     .map(([x, y]) => vgProjectPoint(v.mvp, x, y, z))
     .map((p) => ({ x: (p.x + 1) / 2 * w, y: (1 - p.y) / 2 * h }));
   const x0 = Math.min(...pts.map((p) => p.x)), x1 = Math.max(...pts.map((p) => p.x));

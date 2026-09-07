@@ -3277,7 +3277,10 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .room-path .rp-pt {
   fill: var(--surface); stroke: var(--accent); stroke-width: 1.6;
-  pointer-events: auto; cursor: move;
+  /* `all`, not `auto`: in SVG, `auto` hits only what is painted, and a bead
+     drawn hollow — the ring's, the feet — would take the pointer on its rim
+     alone and let the middle fall through to the room. */
+  pointer-events: all; cursor: move;
 }
 .room-path .rp-pt:hover, .room-path .rp-pt.dragging {
   fill: var(--accent); stroke: var(--text);
@@ -3837,3 +3840,14 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   font-family: "Share Tech Mono", monospace; font-size: 10px; border-radius: 0;
 }
 .automation-body .automation-canvas { background: var(--bg); border-radius: 0; }
+
+/* ── the camera rows, and the beads that move everything ────────────────────
+   The camera's sliders live in the Room view's column; the dock's overlay has
+   the drags and no room for five more rows. */
+body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
+.room-path g.hidden { display: none; }
+/* The ring's bead, and the terrain's: the same beads as the path's, told apart
+   by shape — the ring's is round and open, the terrain's is a square on the
+   ground. */
+.room-path .rp-ring { fill: none; stroke-width: 2; }
+.room-path .rp-only { rx: 1; }

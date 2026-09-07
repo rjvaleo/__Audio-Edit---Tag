@@ -69,6 +69,12 @@ function vgCamera(c) {
 // ring's place and the taper come along unchanged.
 
 const VG_WORLD_DEFAULT = {
+  /// The shape of this record. Two: the eye has a place, the ring's depth is
+  /// absolute, and the layers' reach belongs to the geometry.
+  v: 2,
+  /// Where the eye stands: across, and along. `height` is up.
+  x: 0,
+  z: 0,
   /// The eye above the ground.
   height: 0.38,
   /// Up is positive. Degrees.
@@ -78,15 +84,12 @@ const VG_WORLD_DEFAULT = {
   /// How much it sees, top to bottom. Degrees. The box's height was one unit
   /// at one unit's distance, which is this.
   fov: 53.13,
-  /// How far the sound's layers run back, in units — the terrain's length,
-  /// the trail's, the cloud's. The grid and the fog go on to the horizon.
-  reach: 1.9,
   /// The aspect the camera was posed at, which a box camera's sideways slide
   /// is measured against on the way in.
   aspect: 16 / 9,
-  /// Where the ring hangs, in units — across, up from the ground, back from
-  /// the near plane — and its radius.
-  ring: { x: 0, y: 0.72, z: 0, size: 0.17 },
+  /// Where the ring hangs, in units — across, up from the ground, and along
+  /// (negative is away from where the eye starts) — and its radius.
+  ring: { x: 0, y: 0.72, z: -1, size: 0.17 },
 };
 
 /// The layers' own height unit: what the box's floor-to-ceiling was. The
@@ -96,6 +99,13 @@ const VG_WORLD_H = 1;
 /// The terrain's width, in units, when nothing says otherwise: the box's
 /// floor at sixteen by nine.
 const VG_WORLD_W = 1.78;
+/// The terrain's length, in units, when nothing says otherwise: the box's
+/// depth.
+const VG_WORLD_REACH = 1.9;
+/// Where the terrain's front edge lies when nothing says otherwise: one unit
+/// ahead of where the eye starts, which is where the box's near face was.
+const VG_WORLD_AT = { x: 0, z: -1 };
+
 
 const VG_DEG = 180 / Math.PI;
 
@@ -111,13 +121,34 @@ function vgWorldFromBox(b, aspect) {
   const hh = c.ceilY - c.floorY;
   const halfW = hh * 0.5 * a;
   return {
+    v: 2,
+    x: 0,
+    z: 0,
     height: -c.floorY,
     pitch: Math.atan((c.floorY + c.ceilY) / 2) * VG_DEG,
     yaw: Math.atan(c.shiftX * halfW) * VG_DEG,
     fov: 2 * Math.atan(hh / 2) * VG_DEG,
+    // The box's depth is the layers' reach; carried on the camera only so a
+    // box camera arriving alone can still say how long its room was.
     reach: c.depth,
     aspect: a,
-    ring: { x: 0, y: c.skyAt * VG_WORLD_H, z: 0, size: c.ring * VG_WORLD_H },
+    ring: { x: 0, y: c.skyAt * VG_WORLD_H, z: -1, size: c.ring * VG_WORLD_H },
+  };
+}
+
+/// A world camera from before the eye could move: the ring's depth was
+/// behind the near plane and the reach rode on the camera. Brought up to
+/// date, once, wherever one is read.
+function vgWorldUpgrade(w) {
+  if (!w || typeof w !== 'object') return w;
+  if (w.v >= 2) return w;
+  const ring = w.ring || VG_WORLD_DEFAULT.ring;
+  return {
+    ...w,
+    v: 2,
+    x: Number.isFinite(w.x) ? w.x : 0,
+    z: Number.isFinite(w.z) ? w.z : 0,
+    ring: { x: Number.isFinite(ring.x) ? ring.x : 0, y: ring.y, z: -1 - (Number.isFinite(ring.z) ? ring.z : 0), size: ring.size },
   };
 }
 
@@ -139,7 +170,7 @@ function vgBoxFromWorld(w) {
   const shiftX = halfW > 0 ? Math.tan(yaw / VG_DEG) / halfW : 0;
   const ring = w?.ring || d.ring;
   return {
-    depth: Number.isFinite(w?.reach) ? w.reach : d.reach,
+    depth: Number.isFinite(w?.reach) ? w.reach : VG_WORLD_REACH,
     floorY,
     ceilY,
     shiftX: Math.max(-1, Math.min(1, shiftX)),
@@ -193,7 +224,7 @@ function vgWorldView(w, aspect, near, far) {
   const pitch = (Number.isFinite(w?.pitch) ? w.pitch : d.pitch) / VG_DEG;
   const yaw = (Number.isFinite(w?.yaw) ? w.yaw : d.yaw) / VG_DEG;
   const fov = (Number.isFinite(w?.fov) ? w.fov : 2 * Math.atan(0.5) * VG_DEG) / VG_DEG;
-  const eye = [0, height, 0];
+  const eye = [Number.isFinite(w?.x) ? w.x : 0, height, Number.isFinite(w?.z) ? w.z : 0];
   const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
   const at = [eye[0] + dir[0], eye[1] + dir[1], eye[2] + dir[2]];
   const view = vgLookAt(eye, at, [0, 1, 0]);
@@ -841,6 +872,8 @@ function vgAttach(canvas) {
   const meshW2Buf = gl.createBuffer();
   let meshRows = 0;
   let geomWidth = VG_WORLD_W;
+  let geomReach = VG_WORLD_REACH;
+  let geomAt = { ...VG_WORLD_AT };
   let meshKey = '';
   let gridKey = '';
   let gridMinor = null;
@@ -1062,8 +1095,8 @@ function vgAttach(canvas) {
       return {
         yb: view.yb, yt: view.yt, halfW: view.halfW,
         near: view.near, far: view.far,
-        zAt: (t) => -(view.near + Math.max(0, Math.min(1, t)) * (view.far - view.near)),
-        width: view.halfW * 2,
+        zAt: (t) => view.geomAt.z - Math.max(0, Math.min(1, t)) * view.geomReach,
+        width: view.halfW * 2, reach: view.geomReach, at: view.geomAt,
       };
     },
 
@@ -1237,6 +1270,8 @@ function vgAttach(canvas) {
         geomSpan = Math.max(0.5, Math.min(90, g.span ?? geomSpan));
         geomBody = Math.max(0.002, Math.min(0.3, g.body ?? geomBody));
         geomWidth = Math.max(0.2, Math.min(40, g.width ?? geomWidth));
+        geomReach = Math.max(0.2, Math.min(40, g.reach ?? geomReach));
+        if (g.at && Number.isFinite(g.at.x) && Number.isFinite(g.at.z)) geomAt = { x: g.at.x, z: g.at.z };
       }
 
       const paint = (f && f.paint) || null;
@@ -1287,7 +1322,7 @@ function vgAttach(canvas) {
       // themselves along is derived from it: the ground is y = 0, the ceiling
       // is where the box's was above the floor, and the eye stands at
       // `height` looking along its pitch and yaw. See `docs/OPEN-WORLD.md`.
-      const wc = vgIsWorld(f && f.cam) ? { ...VG_WORLD_DEFAULT, ...f.cam } : vgWorldFromBox(camIn, aspect);
+      const wc = vgIsWorld(f && f.cam) ? { ...VG_WORLD_DEFAULT, ...vgWorldUpgrade(f.cam) } : vgWorldFromBox(camIn, aspect);
       const height = wc.height;
       // **World sizes.** The ground is y = 0; the layers' height unit and the
       // terrain's width are sizes in the world, and the camera has no say in
@@ -1298,8 +1333,11 @@ function vgAttach(canvas) {
       const fovT = Math.tan(wc.fov / 2 / VG_DEG);
       // The layers' reach, and the world's: the grid and the fog go on to the
       // horizon, past where the trail and the cloud stop.
-      const far = near * (1 + wc.reach);
-      const horizon = Math.max(far + 1, VG_HORIZON);
+      // The terrain's own length and place. The layers that ride on it — the
+      // cloud, the mist, the motes — are placed along it; the ring and the
+      // solid have places of their own.
+      const far = near + geomReach;
+      const horizon = VG_HORIZON + Math.hypot(wc.x, wc.z) + geomReach;
       // Sideways off-axis, the same way the vertical one works: the camera does
       // not turn, the frustum slides, so the front face stays square to the
       // frame however far the vanishing point moves.
@@ -1310,7 +1348,7 @@ function vgAttach(canvas) {
 
       // Depth runs 0 at the front to 1 at the back, which is what the shaders
       // fade against.
-      const zAt = (t) => -(near + t * (far - near));
+      const zAt = (t) => geomAt.z - t * geomReach;
 
       // ── the taper ──
       //
@@ -1336,7 +1374,7 @@ function vgAttach(canvas) {
       // single frame — and an exception in here is silent, so the room simply
       // stopped drawing with nothing in the console to say why. This project
       // has a note about exactly that trap; I wrote the same one anyway.
-      view = { mvp, w, h, near, far, yb, yt, halfW, height, horizon, wc };
+      view = { mvp, w, h, near, far, yb, yt, halfW, height, horizon, wc, geomAt, geomReach };
       // The height tapers about the room's own middle, so a shorter back pulls
       // the floor up and the ceiling down together. Tapering about the floor
       // would tilt the room instead of narrowing it, which is the eye line's
@@ -1356,25 +1394,27 @@ function vgAttach(canvas) {
       // reads as far rather than as an edge. Its weight is distance, for the
       // palette to read a ramp against.
       const drawGrid = () => {
-        const key = `${halfW.toFixed(4)}|${horizon}|${aspect.toFixed(4)}|${fovT.toFixed(4)}`;
+        // Fixed to the world — a line is at a multiple of the spacing whatever
+        // the eye does — and laid out around wherever the eye stands, so
+        // walking never reaches an edge of it.
+        const step = VG_GRID_STEP;
+        const ex = Math.round(wc.x / step) * step, ez = Math.round(wc.z / step) * step;
+        const key = `${ex}|${ez}|${VG_HORIZON}`;
         if (key !== gridKey) {
           gridKey = key;
-          const step = VG_GRID_STEP;
-          const zNear = -near, zFar = -horizon;
-          const xMax = Math.ceil((fovT * aspect * horizon + halfW) / step) * step;
-          const across = Math.floor((horizon - near) / step) + 1;
-          const along = Math.floor((2 * xMax) / step) + 1;
+          const R = VG_HORIZON;
+          const count = Math.floor((2 * R) / step) + 1;
           const minor = [], major = [];
-          const wOf = (z) => (-z - near) / (horizon - near);
-          let n = 0;
-          for (let i = 0; i < across; i++, n++) {
-            const z = zNear - i * step;
-            (n % 4 === 0 ? major : minor).push(-xMax, 0, z, wOf(z), xMax, 0, z, wOf(z));
+          const wOf = (dx, dz) => Math.min(1, Math.hypot(dx, dz) / R);
+          for (let i = 0; i < count; i++) {
+            const z = ez - R + i * step;
+            const n = Math.round(z / step);
+            (n % 4 === 0 ? major : minor).push(ex - R, 0, z, wOf(R, z - ez), ex + R, 0, z, wOf(R, z - ez));
           }
-          n = 0;
-          for (let i = 0; i < along; i++, n++) {
-            const x = -xMax + i * step;
-            (n % 4 === 0 ? major : minor).push(x, 0, zNear, 0, x, 0, zFar, 1);
+          for (let i = 0; i < count; i++) {
+            const x = ex - R + i * step;
+            const n = Math.round(x / step);
+            (n % 4 === 0 ? major : minor).push(x, 0, ez - R, wOf(x - ex, R), x, 0, ez + R, wOf(x - ex, R));
           }
           const pack = (list) => {
             const count = list.length / 4;
@@ -1404,7 +1444,7 @@ function vgAttach(canvas) {
       // Both take the row's depth now: the floor narrows with the walls and
       // the ridges stand on it rather than through it.
       const ridgeY = (v) => yb + v * (yt - yb) * geomRidge;
-      const xAt = (i) => ((i / (geomBands - 1)) * 2 - 1) * halfW;
+      const xAt = (i) => geomAt.x + ((i / (geomBands - 1)) * 2 - 1) * halfW;
       // Against the room's full depth, not against however many frames happen to
       // be in hand. Dividing by `rows` made a half-filled trail span the whole
       // room and then crawl backwards as it filled — the trail should *grow*
@@ -1798,7 +1838,7 @@ function vgAttach(canvas) {
             // depth rather than inside the box the front face describes. A
             // cloud that kept the front's width in a room whose back has been
             // pulled in would spill through the walls on its way to the wall.
-            const x = fx * halfW;
+            const x = geomAt.x + fx * halfW;
             const y = yb + (yt - yb) * (0.5 + fy);
             const z = zAt(a0);
             // Hot when it lands, cooling as it goes.
@@ -1919,7 +1959,7 @@ function vgAttach(canvas) {
                 const fyk = p.fy + p.dy * back - mistLen * t2 * t2 * 2.4;
                 // A little sideways wander so the trail is smoke and not wire.
                 const wob = Math.sin(t2 * 9.0 + (mh & 0xff) * 0.0246) * mistLen * 0.35;
-                mistPos[sn * 3] = Math.max(-1.02, Math.min(1.02, fxk + wob)) * halfW;
+                mistPos[sn * 3] = geomAt.x + Math.max(-1.02, Math.min(1.02, fxk + wob)) * halfW;
                 mistPos[sn * 3 + 1] = yb + (yt - yb) * (0.5 + Math.max(-0.55,
                   Math.min(0.55, fyk)));
                 mistPos[sn * 3 + 2] = zAt(back);
@@ -2116,7 +2156,7 @@ function vgAttach(canvas) {
           const n = count || pts;
           // Named, because the taper needs it as well as the depth does.
           const age = ageOf(r);
-          const z = zAt(age) - wc.ring.z;
+          const z = wc.ring.z - age * geomReach;
           for (let i = 0; i <= n; i++) {
             const k = i % n;                   // closed, so the
             const th = (k / n) * Math.PI * 2;  // last point is the first
@@ -2330,7 +2370,7 @@ function vgAttach(canvas) {
           // enough out that its own edge is always off the frame, at both ends
           // of the room, and the motes that fall outside cost a vertex each and
           // nothing more.
-          const x = (hx * 2.6 + Math.sin(t * drift + hz * 9.0) * 0.06) * halfW;
+          const x = geomAt.x + (hx * 2.6 + Math.sin(t * drift + hz * 9.0) * 0.06) * halfW;
           const y = yb + (yt - yb) * (0.5 + hy * 1.45
             + Math.sin(t * drift * 0.7 + hx * 7.0) * 0.03);
           fogPos[i * 3] = x;
@@ -2503,7 +2543,7 @@ function vgAttach(canvas) {
         // points is a straight line; add more and it curves through them.
         const path = (f && Array.isArray(f.solidPath) && f.solidPath.length >= 2)
           ? f.solidPath
-          : [{ x: 0, y: 0.42, z: 0.08 }, { x: 0, y: 0.42, z: 1 }];
+          : [{ x: 0, y: 0.42, z: -1.152 }, { x: 0, y: 0.42, z: -2.9 }];
 
         /// Where on the path a copy of a given age stands.
         ///
@@ -2683,9 +2723,10 @@ function vgAttach(canvas) {
           // the left wall still meets it at the back rather than passing
           // through it.
           const at = pathAt(age);
-          const ox = at.x * halfW;
-          const oy = yb + (yt - yb) * at.y;
-          const oz = zAt(Math.max(0, Math.min(1, at.z)));
+          // A place in the world, in units.
+          const ox = at.x;
+          const oy = at.y;
+          const oz = at.z;
           const v = solidInto(hist.liss, age, pose.flat, pose.turned, ox, oy, oz);
           if (!v) continue;
           draw(gl.LINES, solidPos, solidW, v, a, false, f.cold, f.hot, 1, 'polytope', solidW2);

@@ -160,3 +160,43 @@ next thing.
 - `ui/room-paint.js` — the **WIDTH** row.
 - `tests/ui/room-editor.spec.mjs`, `room-grips.spec.mjs`,
   `room-geometry.spec.mjs`, `open-world.spec.mjs` — in world terms.
+
+## Step four: everything moves
+
+A world you cannot move through, with things in it you cannot move, is a
+room. Both are gone.
+
+**Everything with a place has beads, and goes anywhere.** The ring, every
+point of the solid's path, and the terrain's front edge are dragged where
+they are: a bead in the air for across and up, a bead on the ground for
+across and along — the same two beads, the same two planes, no mode.
+Nothing is clamped to anything. The ring lost its zone across the top of
+the picture and its grip; the path lost its fractions of a box for units;
+the terrain gained a place (`geomAt`) and its length became its own
+(`geomReach`, on the Shape tab as **REACH**) rather than the camera's. A
+path or a camera kept from before this is brought up to date once, where
+it is read.
+
+**The camera moves too.** It has a place now — `x`, `z`, and `height` — as
+well as a direction. On the picture: drag to tilt and pan, scroll to walk
+along the way you look, shift and scroll to sidestep, the eye line grip to
+rise. On the Room tab, the same as numbers: **PAN**, **TILT**, **HEIGHT**,
+**SIDE**, **WALK**. The readout prints where you stand. The whole picture is
+the camera; there is no sky zone.
+
+**The grid is the world's, not the eye's.** Its lines are at multiples of
+the spacing whatever the eye does, and it is laid out around wherever the
+eye stands, so walking never finds an edge of it.
+
+### Where it lives, step four
+
+- `ui/vis-gl.js` — `v: 2` world cameras with `x` and `z`, `vgWorldUpgrade`,
+  the eye in `vgWorldView`, `geomReach` and `geomAt`, the ring and the path
+  absolute, the grid around the eye.
+- `ui/app.js` — `roomBeads`, `paintRoomBeads`, `wireRoomBeads`;
+  `roomProjectAt`, `roomUnprojectZ`, `roomGroundAt`; walking on the wheel;
+  `ROOM_CAM_ROWS` and `syncCamRows`; the path in units and its migration;
+  `geomReach` and `geomAt`.
+- `ui/index.html` — the camera rows; `ui/room-paint.js` — **REACH**.
+- `tests/ui/open-world.spec.mjs` — everything goes anywhere; the camera
+  walks, sidesteps, pans, tilts and rises; the old records come up to date.
