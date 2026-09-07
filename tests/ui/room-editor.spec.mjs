@@ -60,7 +60,9 @@ async function dragRoom(page, from, to) {
   await page.waitForTimeout(150);
 }
 
-const cam = () => roomCamNow();
+const cam = () => roomWorldNow();
+/// What the source ships: the box's tilt, as a pitch.
+const VG_WORLD_DEFAULT_PITCH = 6.843;
 
 test('dragging the lower room tilts the camera and keeps the room its own height',
   async ({ page }) => {
@@ -71,15 +73,19 @@ test('dragging the lower room tilts the camera and keeps the room its own height
     await dragRoom(page, [0.5, 0.6], [0.5, 0.85]);
     const after = await page.evaluate(cam);
 
-    expect(after.floorY, 'the floor did not move').not.toBeCloseTo(before.floorY, 4);
+    // A tilt is a pitch: the camera is a point with a direction, and a drag
+    // turns it. The field of view and the eye's height are untouched.
+    expect(after.pitch, 'the camera did not pitch').not.toBeCloseTo(before.pitch, 4);
+    expect(after.height, 'the eye moved instead of pitching').toBeCloseTo(before.height, 6);
     // The whole point: the height is held and the asymmetry moves. Two fields
     // would let these drift apart; one gesture cannot.
-    const h0 = before.ceilY - before.floorY;
-    const h1 = after.ceilY - after.floorY;
+    const h0 = before.fov;
+    const h1 = after.fov;
     expect(h1, `the room changed height (${h0} to ${h1}) instead of tilting`)
       .toBeCloseTo(h0, 6);
     // Dragging down looks further up, so the floor takes less of the frame.
-    expect(after.floorY, 'the tilt went the wrong way').toBeGreaterThan(before.floorY);
+    // Drag down and the horizon comes down with it, which is looking up.
+    expect(after.pitch, 'the pitch went the wrong way').toBeGreaterThan(before.pitch);
   });
 
 test('dragging sideways slides the frustum and never turns the camera',
@@ -93,11 +99,13 @@ test('dragging sideways slides the frustum and never turns the camera',
     // Against the drag, because shifting the frustum right swings the view
     // right, which carries the vanishing point left. The hand and the vanishing
     // point go the same way; the number goes the other.
-    expect(after.shiftX, 'the vanishing point did not move sideways')
-      .toBeLessThan(before.shiftX);
+    // Sideways is a turn: the vanishing point follows the hand, which is the
+    // camera turning the other way.
+    expect(after.yaw, 'the camera did not turn')
+      .toBeLessThan(before.yaw);
     // A sideways drag is not a tilt.
-    expect(after.ceilY - after.floorY, 'the room resized on a sideways drag')
-      .toBeCloseTo(before.ceilY - before.floorY, 6);
+    expect(after.fov, 'the view resized on a sideways drag')
+      .toBeCloseTo(before.fov, 6);
   });
 
 test('the sky zone moves the ring and not the camera', async ({ page }) => {
@@ -108,8 +116,8 @@ test('the sky zone moves the ring and not the camera', async ({ page }) => {
   await dragRoom(page, [0.5, 0.15], [0.5, 0.05]);
   const after = await page.evaluate(cam);
 
-  expect(after.skyAt, 'the ring did not rise').toBeGreaterThan(before.skyAt);
-  expect(after.floorY, 'a drag on the sky moved the camera').toBeCloseTo(before.floorY, 6);
+  expect(after.ring.y, 'the ring did not rise').toBeGreaterThan(before.ring.y);
+  expect(after.pitch, 'a drag on the sky moved the camera').toBeCloseTo(before.pitch, 6);
 });
 
 test('each frame shape keeps its own camera', async ({ page }) => {
@@ -117,12 +125,12 @@ test('each frame shape keeps its own camera', async ({ page }) => {
 
   await dragRoom(page, [0.5, 0.6], [0.5, 0.85]);
   const dock = await page.evaluate(cam);
-  expect(dock.floorY, 'the dock camera did not move').not.toBeCloseTo(-0.38, 4);
+  expect(dock.pitch, 'the dock camera did not move').not.toBeCloseTo(VG_WORLD_DEFAULT_PITCH, 3);
 
   // Switch to the tall frame: untouched, so it is still what the source ships.
   await page.evaluate(() => { roomEdit.frame = '9x16'; applyRoomFrame(); paintRoomNums(); });
   const vert = await page.evaluate(cam);
-  expect(vert.floorY, 'the tall frame inherited the dock camera').toBeCloseTo(-0.38, 6);
+  expect(vert.pitch, 'the tall frame inherited the dock camera').toBeCloseTo(VG_WORLD_DEFAULT_PITCH, 3);
 
   // And the room is actually that shape now, not a wide panel to imagine from.
   const shape = await page.evaluate(() => {
@@ -133,8 +141,8 @@ test('each frame shape keeps its own camera', async ({ page }) => {
 
   // Back to the dock and the posed camera is still there.
   await page.evaluate(() => { roomEdit.frame = 'dock'; applyRoomFrame(); paintRoomNums(); });
-  expect((await page.evaluate(cam)).floorY, 'the dock camera was lost')
-    .toBeCloseTo(dock.floorY, 6);
+  expect((await page.evaluate(cam)).pitch, 'the dock camera was lost')
+    .toBeCloseTo(dock.pitch, 6);
 });
 
 test('a posed camera survives a reload, and Reset puts it back', async ({ page }) => {
@@ -144,13 +152,13 @@ test('a posed camera survives a reload, and Reset puts it back', async ({ page }
 
   await page.reload();
   await page.waitForFunction(() => typeof roomEdit !== 'undefined', { timeout: 20_000 });
-  const back = await page.evaluate(() => roomCamNow());
-  expect(back.floorY, 'the camera did not survive a reload').toBeCloseTo(posed.floorY, 6);
+  const back = await page.evaluate(() => roomWorldNow());
+  expect(back.pitch, 'the camera did not survive a reload').toBeCloseTo(posed.pitch, 6);
 
   await page.evaluate(() => { if (!roomEdit.on) toggleRoomEdit(); document.getElementById('reReset').click(); });
   await page.waitForTimeout(150);
-  expect((await page.evaluate(cam)).floorY, 'Reset did not restore the source camera')
-    .toBeCloseTo(-0.38, 6);
+  expect((await page.evaluate(cam)).pitch, 'Reset did not restore the source camera')
+    .toBeCloseTo(VG_WORLD_DEFAULT_PITCH, 3);
 });
 
 /// The fault that made the tool look broken: opening it with nothing playing.

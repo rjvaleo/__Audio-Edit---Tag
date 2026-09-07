@@ -732,3 +732,31 @@ test('opening the export box matches the frame the room is in', async ({ page })
   // nothing about the film and leaves the choice alone.
   expect(got.dock.key).toBe('vertical');
 });
+
+test('the film is shot without the ground grid, whatever the room is showing', async ({ page }) => {
+  await openFile(page);
+  const got = await page.evaluate(async () => {
+    // The grid on, as it is while posing.
+    roomEdit.layers.grid = true;
+    // Stand in for the exporter and for the check that needs a codec, so
+    // what is asserted is only what the room hands over.
+    let seen = null;
+    const realExport = videoExport, realSupport = videoExportSupport;
+    videoExport = async (opts) => { seen = opts; return new Blob([]); };
+    videoExportSupport = () => null;
+    let onScreen = null;
+    try {
+      await runVideoExport();
+      onScreen = roomLayerOn('grid');
+    } finally {
+      videoExport = realExport;
+      videoExportSupport = realSupport;
+      delete roomEdit.layers.grid;
+    }
+    return seen && { grid: seen.layers.grid, floor: seen.layers.floor, onScreen };
+  });
+  expect(got, 'the exporter was never asked').not.toBeNull();
+  expect(got.onScreen, 'the room on screen still shows the grid').toBe(true);
+  expect(got.grid, 'the grid went into the film').toBe(false);
+  expect(got.floor, 'the terrain was dropped with it').toBe(true);
+});

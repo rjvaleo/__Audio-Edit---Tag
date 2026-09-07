@@ -43,19 +43,6 @@ const VG_CAMERA = {
   skyAt: 0.72,
   ring: 0.17,
   lead: 0.012,
-  // ── the back of the room ──
-  //
-  // How wide and how tall the far rectangle is against the near one, **in world
-  // units, before the perspective divide**. One is a straight prism, which is
-  // what this room always was: the box's walls run parallel and the only thing
-  // that shrinks the back is the projection.
-  //
-  // Below one the walls converge and the room reads as longer than it is; above
-  // one they splay and the back opens out. Neither is available from `depth`,
-  // which moves the back away and takes the width and the height with it in
-  // step — this is the pair of them coming apart.
-  backW: 1,
-  backH: 1,
 };
 
 /// A camera with anything missing filled in from the default, so a stored one
@@ -88,18 +75,27 @@ const VG_WORLD_DEFAULT = {
   pitch: 6.843,
   /// Right is positive. Degrees.
   yaw: 0,
-  /// How far the world is drawn, as a multiple of the near distance — the
-  /// box's depth, until there is a ground to measure along.
+  /// How much it sees, top to bottom. Degrees. The box's height was one unit
+  /// at one unit's distance, which is this.
+  fov: 53.13,
+  /// How far the sound's layers run back, in units — the terrain's length,
+  /// the trail's, the cloud's. The grid and the fog go on to the horizon.
   reach: 1.9,
-  /// The aspect the camera was posed at, which the box's sideways slide is
-  /// measured against.
+  /// The aspect the camera was posed at, which a box camera's sideways slide
+  /// is measured against on the way in.
   aspect: 16 / 9,
-  /// Where the ring hangs and how big — the box's own two numbers, until the
-  /// ring has a place in the world.
-  ring: { at: 0.72, size: 0.17 },
-  /// The box's taper. Goes with the box.
-  taper: { w: 1, h: 1 },
+  /// Where the ring hangs, in units — across, up from the ground, back from
+  /// the near plane — and its radius.
+  ring: { x: 0, y: 0.72, z: 0, size: 0.17 },
 };
+
+/// The layers' own height unit: what the box's floor-to-ceiling was. The
+/// terrain's ridges, the cloud's spread and the solid's path are fractions of
+/// it, and it is a size in the world, not a property of the camera.
+const VG_WORLD_H = 1;
+/// The terrain's width, in units, when nothing says otherwise: the box's
+/// floor at sixteen by nine.
+const VG_WORLD_W = 1.78;
 
 const VG_DEG = 180 / Math.PI;
 
@@ -118,10 +114,10 @@ function vgWorldFromBox(b, aspect) {
     height: -c.floorY,
     pitch: Math.atan((c.floorY + c.ceilY) / 2) * VG_DEG,
     yaw: Math.atan(c.shiftX * halfW) * VG_DEG,
+    fov: 2 * Math.atan(hh / 2) * VG_DEG,
     reach: c.depth,
     aspect: a,
-    ring: { at: c.skyAt, size: c.ring },
-    taper: { w: c.backW ?? 1, h: c.backH ?? 1 },
+    ring: { x: 0, y: c.skyAt * VG_WORLD_H, z: 0, size: c.ring * VG_WORLD_H },
   };
 }
 
@@ -129,23 +125,26 @@ function vgWorldFromBox(b, aspect) {
 function vgBoxFromWorld(w) {
   const d = VG_WORLD_DEFAULT;
   const height = Number.isFinite(w?.height) ? w.height : d.height;
-  const pitch = Number.isFinite(w?.pitch) ? w.pitch : d.pitch;
   const yaw = Number.isFinite(w?.yaw) ? w.yaw : d.yaw;
+  const fov = Number.isFinite(w?.fov) ? w.fov : d.fov;
   const a = w?.aspect > 0 ? w.aspect : d.aspect;
+  // The box has no pitch of its own: its floor is pinned to the bottom of
+  // the frame, so the eye's height *is* the tilt. A world camera's pitch is
+  // its own and does not survive this trip; nothing that draws reads it
+  // from here any more.
   const floorY = -height;
-  const ceilY = 2 * Math.tan(pitch / VG_DEG) + height;
-  const hh = ceilY - floorY;
+  const hh = 2 * Math.tan(fov / 2 / VG_DEG);
+  const ceilY = floorY + hh;
   const halfW = hh * 0.5 * a;
   const shiftX = halfW > 0 ? Math.tan(yaw / VG_DEG) / halfW : 0;
+  const ring = w?.ring || d.ring;
   return {
     depth: Number.isFinite(w?.reach) ? w.reach : d.reach,
     floorY,
     ceilY,
     shiftX: Math.max(-1, Math.min(1, shiftX)),
-    skyAt: Number.isFinite(w?.ring?.at) ? w.ring.at : d.ring.at,
-    ring: Number.isFinite(w?.ring?.size) ? w.ring.size : d.ring.size,
-    backW: Number.isFinite(w?.taper?.w) ? w.taper.w : 1,
-    backH: Number.isFinite(w?.taper?.h) ? w.taper.h : 1,
+    skyAt: (Number.isFinite(ring.y) ? ring.y : d.ring.y) / VG_WORLD_H,
+    ring: (Number.isFinite(ring.size) ? ring.size : d.ring.size) / VG_WORLD_H,
   };
 }
 
@@ -841,6 +840,7 @@ function vgAttach(canvas) {
   const meshWBuf = gl.createBuffer();
   const meshW2Buf = gl.createBuffer();
   let meshRows = 0;
+  let geomWidth = VG_WORLD_W;
   let meshKey = '';
   let gridKey = '';
   let gridMinor = null;
@@ -1063,7 +1063,7 @@ function vgAttach(canvas) {
         yb: view.yb, yt: view.yt, halfW: view.halfW,
         near: view.near, far: view.far,
         zAt: (t) => -(view.near + Math.max(0, Math.min(1, t)) * (view.far - view.near)),
-        taperX: (t) => 1 + (view.backW - 1) * t,
+        width: view.halfW * 2,
       };
     },
 
@@ -1236,6 +1236,7 @@ function vgAttach(canvas) {
         geomRidge = Math.max(0.02, Math.min(1.6, g.ridge ?? geomRidge));
         geomSpan = Math.max(0.5, Math.min(90, g.span ?? geomSpan));
         geomBody = Math.max(0.002, Math.min(0.3, g.body ?? geomBody));
+        geomWidth = Math.max(0.2, Math.min(40, g.width ?? geomWidth));
       }
 
       const paint = (f && f.paint) || null;
@@ -1287,23 +1288,22 @@ function vgAttach(canvas) {
       // is where the box's was above the floor, and the eye stands at
       // `height` looking along its pitch and yaw. See `docs/OPEN-WORLD.md`.
       const wc = vgIsWorld(f && f.cam) ? { ...VG_WORLD_DEFAULT, ...f.cam } : vgWorldFromBox(camIn, aspect);
-      const box = vgBoxFromWorld(wc);
-      // What the layers still read — the ring's place, the lead's weight — as
-      // the box the world camera maps to.
-      const cam = { ...camIn, ...box };
-      const hh = box.ceilY - box.floorY;
       const height = wc.height;
-      const yb = 0, yt = hh;
-      const halfW = (yt - yb) * 0.5 * aspect;
+      // **World sizes.** The ground is y = 0; the layers' height unit and the
+      // terrain's width are sizes in the world, and the camera has no say in
+      // them — it is a point with a direction and a field of view, and the
+      // picture is only the projection.
+      const yb = 0, yt = VG_WORLD_H;
+      const halfW = geomWidth / 2;
+      const fovT = Math.tan(wc.fov / 2 / VG_DEG);
       // The layers' reach, and the world's: the grid and the fog go on to the
       // horizon, past where the trail and the cloud stop.
-      const far = near * (1 + box.depth);
+      const far = near * (1 + wc.reach);
       const horizon = Math.max(far + 1, VG_HORIZON);
       // Sideways off-axis, the same way the vertical one works: the camera does
       // not turn, the frustum slides, so the front face stays square to the
       // frame however far the vanishing point moves.
-      const sx = 0;
-      const wv = vgWorldView({ ...wc, fov: 2 * Math.atan(hh / 2) * VG_DEG }, aspect, near, horizon);
+      const wv = vgWorldView(wc, aspect, near, horizon);
       const mvp = wv.mvp;
       gl.useProgram(prog.p);
       gl.uniformMatrix4fv(prog.uMVP, false, mvp);
@@ -1324,12 +1324,7 @@ function vgAttach(canvas) {
       // dragged is where the *back* is and the front is pinned to the canvas
       // edges. At `t = 0` both are one whatever the setting, so the near face
       // still lands exactly on the panel and "the panel is the box" survives.
-      // The box's taper is gone with the box. The two names stay for the
-      // layers that still call them, and answer the identity, until each
-      // layer is re-placed in the world.
-      const backW = 1;
-      const backH = 1;
-      const taperX = (t) => 1 + (backW - 1) * t;
+
       // **Kept, so something outside can ask where a world point is.**
       // Nothing could before: the matrix was built here, used and dropped, so a
       // handle drawn over the room had no way to know where to sit. Anything
@@ -1341,14 +1336,11 @@ function vgAttach(canvas) {
       // single frame — and an exception in here is silent, so the room simply
       // stopped drawing with nothing in the console to say why. This project
       // has a note about exactly that trap; I wrote the same one anyway.
-      view = { mvp, w, h, near, far, yb, yt, halfW, sx, backW, backH, height, horizon, wc };
-      const taperY = (t) => 1 + (backH - 1) * t;
+      view = { mvp, w, h, near, far, yb, yt, halfW, height, horizon, wc };
       // The height tapers about the room's own middle, so a shorter back pulls
       // the floor up and the ceiling down together. Tapering about the floor
       // would tilt the room instead of narrowing it, which is the eye line's
       // job and already has a gesture.
-      const yMid = (yb + yt) * 0.5;
-      const yTap = (y, t) => yMid + (y - yMid) * taperY(t);
 
       // ── the room ──
       //
@@ -1364,12 +1356,12 @@ function vgAttach(canvas) {
       // reads as far rather than as an edge. Its weight is distance, for the
       // palette to read a ramp against.
       const drawGrid = () => {
-        const key = `${halfW.toFixed(4)}|${horizon}|${aspect.toFixed(4)}|${hh.toFixed(4)}`;
+        const key = `${halfW.toFixed(4)}|${horizon}|${aspect.toFixed(4)}|${fovT.toFixed(4)}`;
         if (key !== gridKey) {
           gridKey = key;
           const step = VG_GRID_STEP;
           const zNear = -near, zFar = -horizon;
-          const xMax = Math.ceil(((hh / 2) * aspect * horizon + halfW) / step) * step;
+          const xMax = Math.ceil((fovT * aspect * horizon + halfW) / step) * step;
           const across = Math.floor((horizon - near) / step) + 1;
           const along = Math.floor((2 * xMax) / step) + 1;
           const minor = [], major = [];
@@ -1411,8 +1403,8 @@ function vgAttach(canvas) {
       const rows = history.length;
       // Both take the row's depth now: the floor narrows with the walls and
       // the ridges stand on it rather than through it.
-      const ridgeY = (v, t) => yTap(yb + v * (yt - yb) * geomRidge, t || 0);
-      const xAt = (i, t) => ((i / (geomBands - 1)) * 2 - 1) * halfW * taperX(t || 0);
+      const ridgeY = (v) => yb + v * (yt - yb) * geomRidge;
+      const xAt = (i) => ((i / (geomBands - 1)) * 2 - 1) * halfW;
       // Against the room's full depth, not against however many frames happen to
       // be in hand. Dividing by `rows` made a half-filled trail span the whole
       // room and then crawl backwards as it filled — the trail should *grow*
@@ -1558,8 +1550,8 @@ function vgAttach(canvas) {
         }
         for (let i = 0; i < geomBands; i++) {
           const x = xAt(i, 0), y = ridgeY(now[i], 0);
-          leadPos[i * 6] = x; leadPos[i * 6 + 1] = y - cam.lead; leadPos[i * 6 + 2] = z;
-          leadPos[i * 6 + 3] = x; leadPos[i * 6 + 4] = y + cam.lead; leadPos[i * 6 + 5] = z;
+          leadPos[i * 6] = x; leadPos[i * 6 + 1] = y - camIn.lead; leadPos[i * 6 + 2] = z;
+          leadPos[i * 6 + 3] = x; leadPos[i * 6 + 4] = y + camIn.lead; leadPos[i * 6 + 5] = z;
           leadW[i * 2] = now[i]; leadW[i * 2 + 1] = now[i];
         }
         draw(gl.TRIANGLE_STRIP, leadPos, leadW, n2, 1.0, false, f.cold, f.hot, 1,
@@ -1806,8 +1798,8 @@ function vgAttach(canvas) {
             // depth rather than inside the box the front face describes. A
             // cloud that kept the front's width in a room whose back has been
             // pulled in would spill through the walls on its way to the wall.
-            const x = fx * halfW * taperX(a0);
-            const y = yTap(yb + (yt - yb) * (0.5 + fy), a0);
+            const x = fx * halfW;
+            const y = yb + (yt - yb) * (0.5 + fy);
             const z = zAt(a0);
             // Hot when it lands, cooling as it goes.
             const lit = Math.min(1, p.w * (1 + VG_GRAIN_FLASH
@@ -2057,8 +2049,8 @@ function vgAttach(canvas) {
         // ring's radius. Zero is none.
         const edge = Math.max(0, Math.min(0.4,
           f && typeof f.ringEdge === 'number' ? f.ringEdge : 0.035));
-        const skyY = yb + (yt - yb) * cam.skyAt;
-        const r0 = (yt - yb) * cam.ring;
+        const skyY = wc.ring.y;
+        const r0 = wc.ring.size;
         // ── how many points *this* ring needs ──
         //
         // **Not all of them get the full count.** The trail is fifty-six rings
@@ -2124,7 +2116,7 @@ function vgAttach(canvas) {
           const n = count || pts;
           // Named, because the taper needs it as well as the depth does.
           const age = ageOf(r);
-          const z = zAt(age);
+          const z = zAt(age) - wc.ring.z;
           for (let i = 0; i <= n; i++) {
             const k = i % n;                   // closed, so the
             const th = (k / n) * Math.PI * 2;  // last point is the first
@@ -2174,8 +2166,8 @@ function vgAttach(canvas) {
             // The hoop narrows with the room and keeps its centre on the
             // room's own axis, so a tapered box has the trail running down its
             // middle rather than out through the ceiling.
-            pos[i * 3] = Math.cos(th) * rad * taperX(age);
-            pos[i * 3 + 1] = yTap(skyY + Math.sin(th) * rad, age);
+            pos[i * 3] = wc.ring.x + Math.cos(th) * rad;
+            pos[i * 3 + 1] = skyY + Math.sin(th) * rad;
             pos[i * 3 + 2] = z;
             wts[i] = Math.min(1, 0.25 + Math.abs(mid) * 1.6);
             // Nought is mono, one is as wide as this figure gets. `side` is
@@ -2601,7 +2593,6 @@ function vgAttach(canvas) {
 
         /// One copy of the whole wireframe, every edge carrying the trace.
         const solidInto = (liss, age, flat, turned, ox, oy, oz) => {
-          const tx = taperX(age);
           let v = 0;
           for (let e = 0; e < ne; e++) {
             const pair = shape.edges[e];
@@ -2653,12 +2644,12 @@ function vgAttach(canvas) {
               const w4 = wA + (wB - wA) * t;
               const lit = Math.min(1, 0.2 + Math.abs(mid) * 1.8);
               if (have) {
-                solidPos[v * 3] = ox + px * tx;
-                solidPos[v * 3 + 1] = yTap(oy + py, age);
+                solidPos[v * 3] = ox + px;
+                solidPos[v * 3 + 1] = oy + py;
                 solidPos[v * 3 + 2] = oz + pz; solidW[v] = pm;
                 solidW2[v] = pw * 0.32 + 0.5; v++;
-                solidPos[v * 3] = ox + x * tx;
-                solidPos[v * 3 + 1] = yTap(oy + y, age);
+                solidPos[v * 3] = ox + x;
+                solidPos[v * 3 + 1] = oy + y;
                 solidPos[v * 3 + 2] = oz + z; solidW[v] = lit;
                 solidW2[v] = w4 * 0.32 + 0.5; v++;
               }
@@ -2692,7 +2683,7 @@ function vgAttach(canvas) {
           // the left wall still meets it at the back rather than passing
           // through it.
           const at = pathAt(age);
-          const ox = at.x * halfW * taperX(age);
+          const ox = at.x * halfW;
           const oy = yb + (yt - yb) * at.y;
           const oz = zAt(Math.max(0, Math.min(1, at.z)));
           const v = solidInto(hist.liss, age, pose.flat, pose.turned, ox, oy, oz);

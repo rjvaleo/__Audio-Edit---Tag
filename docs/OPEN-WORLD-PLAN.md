@@ -284,5 +284,5 @@ machine in.
 ## Where this is
 
 The `open-world` branch, from `main` at the sequencer-in-the-film commit.
-`main` keeps the room exactly as it is. **Steps one and two are built** —
-see [`OPEN-WORLD.md`](OPEN-WORLD.md). Steps three onward are not.
+`main` keeps the room exactly as it is. **Steps one to three are built** —
+see [`OPEN-WORLD.md`](OPEN-WORLD.md). Steps four onward are not.

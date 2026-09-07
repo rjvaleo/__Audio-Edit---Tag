@@ -18,7 +18,7 @@ async function openRoom(page) {
   await page.waitForSelector('#roomStageRoom #visGl', { state: 'visible', timeout: 20_000 });
 }
 
-const POSED = { depth: 4.4, floorY: -0.9, ceilY: 0.2, shiftX: 0.4, skyAt: 0.5, ring: 0.3, backW: 0.8, backH: 1.2 };
+const POSED = { depth: 4.4, floorY: -0.9, ceilY: 0.2, shiftX: 0.4, skyAt: 0.5, ring: 0.3 };
 
 test('a box camera becomes a world camera and back, exactly, at any aspect', async ({ page }) => {
   await openRoom(page);
@@ -34,7 +34,7 @@ test('a box camera becomes a world camera and back, exactly, at any aspect', asy
   for (const g of got) {
     expect(g.world).toBe(true);
     expect(g.boxIsWorld).toBe(false);
-    for (const k of ['depth', 'floorY', 'ceilY', 'shiftX', 'skyAt', 'ring', 'backW', 'backH']) {
+    for (const k of ['depth', 'floorY', 'ceilY', 'shiftX', 'skyAt', 'ring']) {
       expect(g.back[k], `${k} did not survive the round trip`).toBeCloseTo(g.box[k], 9);
     }
   }
@@ -75,7 +75,7 @@ test('a room posed on main opens here looking the same, migrated once', async ({
   expect(got.isWorld, 'the stored camera is not a world camera').toBe(true);
   expect(got.kept && got.kept['16x9'].height, 'the migrated form was not written').toBeCloseTo(0.9, 9);
   expect(got.old['16x9'].floorY, 'main\'s own key was touched').toBe(-0.9);
-  for (const k of ['depth', 'floorY', 'ceilY', 'shiftX', 'skyAt', 'ring', 'backW', 'backH']) {
+  for (const k of ['depth', 'floorY', 'ceilY', 'shiftX', 'skyAt', 'ring']) {
     expect(got.drawn16[k], `16:9 ${k}`).toBeCloseTo(POSED[k], 9);
   }
   expect(got.drawnDock.shiftX).toBeCloseTo(-0.2, 9);
@@ -103,8 +103,9 @@ test('a drag writes a world camera, and the box it draws is the one the drag mad
   }));
   expect('height' in got.stored, 'the drag did not write a world camera').toBe(true);
   expect('floorY' in got.stored, 'the drag wrote a box').toBe(false);
-  expect(got.drawn.floorY).not.toBeCloseTo(before.floorY, 4);
-  expect(got.drawn.ceilY - got.drawn.floorY).toBeCloseTo(before.ceilY - before.floorY, 6);
+  // A drag down the room is a pitch; the eye stays where it stood.
+  expect(got.world.pitch).not.toBeCloseTo(6.843, 3);
+  expect(got.world.height).toBeCloseTo(-before.floorY, 9);
   expect(got.world.height).toBeCloseTo(-got.drawn.floorY, 9);
   expect(got.readout).toMatch(/^height .* pitch .*° .* yaw .*° .* reach /);
   expect(got.copy.height).toBeCloseTo(got.world.height, 3);
@@ -178,7 +179,7 @@ test('the box is gone and the ground is a layer, a slot and a horizon', async ({
     const w = gl.clientWidth, h = gl.clientHeight;
     const c = roomCamNow();
     // The ground straight ahead, at three depths along the reach.
-    const y = (t) => roomProject(0, c.floorY, t, w, h, c).y;
+    const y = (t) => roomProject(0, 0, t, w, h, c).y;
     // And on out to the horizon, past the layers' reach, through the same view.
     const v = roomView(w, h);
     const far = (z) => (1 - vgProjectPoint(v.mvp, 0, 0, -z).y) / 2 * h;

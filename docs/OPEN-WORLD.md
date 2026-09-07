@@ -106,3 +106,57 @@ own aspect, which is exactly what the helpers do, so the two agree.
 - `ui/room-paint.js` — the `grid` slot, its label, weight and family.
 - `tests/ui/open-world.spec.mjs`, `tests/ui/room-geometry.spec.mjs`,
   `tests/ui/room-hierarchy.spec.mjs` (`grid` for `room`).
+
+## Step three: world sizes, one perspective
+
+There is no taper. There never should have been a word for one. The camera
+is a point with a direction and a field of view, everything else has a size
+and a place in the world, and the picture is nothing but the projection:
+close is big, far is small, and that is all.
+
+**The camera lost the box's last habits.** `pitch`, `yaw` and `height` are
+independent now — the box tied tilt to height, because its floor was pinned
+to the frame's bottom edge — and the field of view is the camera's own
+field, `fov`, rather than a number derived from the box's height. A drag on
+the room pitches and turns the camera; the eye line grip raises and lowers
+the eye; the depth grip sets the reach; the ring's grip and the sky zone
+move the ring. What the readout prints is the camera: height, pitch, yaw,
+field of view, reach, the ring.
+
+**The layers stopped borrowing the camera's numbers for their own sizes.**
+The terrain's width was the frame's width at the near plane — a window of
+a different shape drew a different room. It is `geomWidth` now, in units,
+on the Shape tab as **WIDTH**, and it does not care what the window is. The
+height the layers measure against — the terrain's ridge, the cloud's
+spread, the solid's path — is a unit of the world, `VG_WORLD_H`, not the
+box's floor-to-ceiling. The ring has a place in the world: `ring.x`,
+`ring.y`, `ring.z` in units, and a radius, `ring.size`.
+
+**The taper is gone from the renderer** — `taperX`, `yTap`, `backW`,
+`backH`, the closures every layer once placed itself through — and from
+the world camera. A box camera still reads as the world camera it maps to,
+and a world camera still gives back the box it would draw for anything
+that asks for one in the old words, except that a world camera's pitch is
+its own and does not survive that trip; nothing that draws reads it that
+way any more.
+
+### What still speaks the box
+
+`roomCamNow` and `vgBoxFromWorld`, kept so that the film's per-frame
+cameras, a look recalled from a preset and the older tests can hand over
+or read a box, and the layers' depth, which still runs to the camera's
+`reach` in units — the terrain's length, the trail's, the cloud's — rather
+than to the sound's own span. Making depth a measure of seconds is the
+next thing.
+
+### Where it lives, step three
+
+- `ui/vis-gl.js` — `VG_WORLD_DEFAULT` with `fov` and a placed `ring`,
+  `VG_WORLD_H`, `VG_WORLD_W`, the frame's world sizes, the layers without
+  the taper, `geomWidth`.
+- `ui/app.js` — `geomWidth` in the room's settings, `roomSetWorld`, the
+  grips and the room drag editing the world camera, `roomView` and the
+  helpers in world `y`, the readout.
+- `ui/room-paint.js` — the **WIDTH** row.
+- `tests/ui/room-editor.spec.mjs`, `room-grips.spec.mjs`,
+  `room-geometry.spec.mjs`, `open-world.spec.mjs` — in world terms.

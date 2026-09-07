@@ -26,7 +26,7 @@ test('a secondary press does not start a drag, and the room does not follow the 
   const got = await page.evaluate(() => {
     const gl = $('visGl');
     const r = gl.getBoundingClientRect();
-    const before = roomCamNow();
+    const before = roomWorldNow();
     const at = (x, y, extra) => new PointerEvent('pointerdown', {
       clientX: r.left + r.width * x, clientY: r.top + r.height * y, pointerId: 1,
       bubbles: true, ...extra,
@@ -37,8 +37,8 @@ test('a secondary press does not start a drag, and the room does not follow the 
     gl.dispatchEvent(new PointerEvent('pointermove', {
       clientX: r.left + r.width * 0.5, clientY: r.top + r.height * 0.9, pointerId: 1, buttons: 0, bubbles: true,
     }));
-    const after = roomCamNow();
-    return { started, moved: after.floorY !== before.floorY };
+    const after = roomWorldNow();
+    return { started, moved: after.pitch !== before.pitch };
   });
   expect(got.started, 'a secondary press started a drag').toBe(false);
   expect(got.moved, 'the room followed a pointer with nothing pressed').toBe(false);
@@ -56,11 +56,11 @@ test('a drag that lost its release ends on the next move with no button down', a
     gl.dispatchEvent(ev('pointerdown', 0.6, 1));
     const started = !!roomEdit.drag;
     gl.dispatchEvent(ev('pointermove', 0.7, 1));
-    const during = roomCamNow().floorY;
+    const during = roomWorldNow().pitch;
     // No pointerup ever comes. The next move has no button down.
     gl.dispatchEvent(ev('pointermove', 0.9, 0));
     const ended = !roomEdit.drag;
-    const after = roomCamNow().floorY;
+    const after = roomWorldNow().pitch;
     return { started, ended, during, after };
   });
   expect(got.started).toBe(true);

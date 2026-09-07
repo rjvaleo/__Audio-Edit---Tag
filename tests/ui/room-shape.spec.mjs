@@ -148,7 +148,7 @@ test('the shape is remembered, and the panel drives it', async ({ page }) => {
   const rows = await page.evaluate(() =>
     [...document.querySelectorAll('#roomGeomBody .rp-row')]
       .map((r) => r.querySelector('.re-tag')?.textContent).filter(Boolean));
-  expect(rows).toEqual(['FLOOR', 'TRAIL', 'RIDGE', 'SPAN', 'GRAIN']);
+  expect(rows).toEqual(['FLOOR', 'TRAIL', 'RIDGE', 'SPAN', 'GRAIN', 'WIDTH']);
 
   // Driven through the control, not by writing the state — a slider that is
   // present and wired to nothing would pass every assertion above.
