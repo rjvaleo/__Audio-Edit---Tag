@@ -157,7 +157,7 @@ function dataRgb(hex) {
 async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   layers, occlude, order, room, background, data, schedule, fetchSchedule, padSeconds,
   loopOut, signal, onStage, module, ridge, ridgePaint, room3d, room3dPaint,
-  stage, stagePaint, text, textPaint }) {
+  stage, stagePaint, text, textPaint, sequencer, seqAt0 }) {
   const why = videoExportSupport();
   if (why) throw new Error(why);
 
@@ -206,6 +206,38 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   const channels = status.channels;
   const rate = status.rate;
   const audioFrames = audio.length / channels;
+
+  // ── the sequencer, if it is in the film ──
+  //
+  // Rendered offline in its own frame for the film's span, at the film's
+  // rate, and measured there the way the room measures it live. Its sound is
+  // added into the film's track here; its picture is added into each frame of
+  // the reel where the reel is read, below.
+  let seqReel = null;
+  if (sequencer) {
+    onStage('Rendering the sequencer', 0.23);
+    seqReel = await sequencer({
+      at0: seqAt0 || 0,
+      seconds: status.frames / pollHz,
+      rate,
+      fps: pollHz,
+      bands: status.bands,
+      lo: status.lo || 20,
+      hi: status.hi || 20000,
+      liss: status.liss,
+      onProgress: (f) => onStage('Rendering the sequencer', 0.23 + f * 0.04),
+    });
+    if (signal?.aborted) throw new Error('cancelled');
+    if (seqReel && seqReel.left) {
+      const n = Math.min(audioFrames, seqReel.left.length);
+      for (let i = 0; i < n; i++) {
+        const l = seqReel.left[i];
+        const r = channels > 1 ? seqReel.right[i] : l;
+        audio[i * channels] = Math.max(-1, Math.min(1, audio[i * channels] + l));
+        if (channels > 1) audio[i * channels + 1] = Math.max(-1, Math.min(1, audio[i * channels + 1] + r));
+      }
+    }
+  }
 
   // The room, at the size being filmed, on a canvas of its own. The live one
   // keeps drawing whatever it was drawing; this is not it.
@@ -399,6 +431,11 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
       const base = pushed * per;
       frame.set(reel.subarray(base, base + status.bands));
       liss.set(reel.subarray(base + status.bands, base + per));
+      if (seqReel && pushed < seqReel.frames) {
+        seqMixSpectrum(frame, seqReel.spectra.subarray(pushed * status.bands, (pushed + 1) * status.bands));
+        const lw = seqReel.lissN * 2;
+        seqMixLiss(liss, seqReel.liss.subarray(pushed * lw, (pushed + 1) * lw));
+      }
       gl.push(frame, liss);
     }
     // Where the playhead is, as the room reckons it.

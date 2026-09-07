@@ -498,3 +498,13 @@ count off zero — not that the poll won the race. One sample proves it, and the
 poll is faster now besides. A test that goes red for reasons unrelated to the
 thing it guards teaches you to ignore it, which costs more than the coverage is
 worth.
+
+## The sequencer, in the film  *(6 Sep 2026)*
+
+With **Sequencer** on in the export dialog, the scale sequencer renders
+itself offline inside its frame for the film's span — pattern, loaded take,
+and sound — and the export mixes its sound into the track and its spectrum
+and figure into every frame of the reel. Its grid runs on the engine's
+output time from the document's start, so a film of a range that begins
+part-way in begins the sequencer part-way in too (`seqAt0`). See
+[`SEQUENCER.md`](SEQUENCER.md).

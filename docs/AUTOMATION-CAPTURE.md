@@ -12,7 +12,8 @@ engine control that can be changed while the engine runs.
 
 ## Capture
 
-**⏺ Capture** on the Automation tab. It arms the recorder in Latch and rolls
+**⏺ REC PERF** on the Automation tab — the sequencer's button, on the
+sequencer's panel. It arms the recorder in Latch and rolls
 the transport; every control that moves while it plays is written into a lane
 of its own, and a control keeps laying its value down after the hand comes
 off, which is what a performance is. Stopping the transport ends the take, as
@@ -20,7 +21,7 @@ does pressing the button again. The lanes appear on the timeline as they are
 drawn, because the tab refetches them while armed.
 
 Record's own three-way switch is still there. Touch and Latch do what they
-did; Capture is Latch with the transport, in one press.
+did; REC PERF is Latch with the transport, in one press.
 
 ## What records
 
@@ -80,15 +81,35 @@ would stall playback every tick:
 
 They can be set by hand before a take and stay put through it.
 
-## The timeline
+## The panel is the sequencer's
 
-The Automation tab draws the take the way the sequencer does: one canvas,
-every lane stacked, each in the colour of the module it moves — grains cyan,
-the engines green, the document orange, the rack pink — its name in a gutter
-on the left, a ruler along the top, and a glowing head where the transport is,
-red while it is writing. Click a lane and its editor opens underneath, with
-the breakpoints, the curve menu and the target menu exactly as before. One
-editor at a time: fourteen open editors is a wall.
+The Automation tab is the scale sequencer's PERFORMANCE panel, carried over
+rather than imitated. `ui/perf-panel.js` is `performance.js` from
+`rjvaleo/scale-sequencer` — the same constants (a 92-pixel gutter, an
+18-pixel ruler, 34-pixel lanes that compress to 14 when the panel is
+resized, a 22-pixel STRUCT lane), the same drawing (section tints for INTRO,
+BUILD, PEAK and OUTRO along the ruler; lanes in the colour of the module
+they move; the selected lane in a dashed box; a glowing head, red while
+writing), the same header (`PERFORMANCE — <take>`, with the take's length and
+lane count on the right), the same transport row (`⏺ REC PERF`, `▶ PLAY
+PERF`, `⏹`, the lanes menu and DEL), the same resize grip and collapse, the
+same status row with the position display in Teko. The stylesheet rules are
+the sequencer's, scoped to the tab under its own palette, and the two faces
+are the two the sequencer loads. When the two programs become one
+arrangement, this is the timeline they will share.
+
+What differs is only what the data is: a lane has breakpoints in document
+frames where a gesture has points in seconds, so the ruler counts seconds —
+the document keeps no tempo — and the STRUCT lane carries what the document
+has that is discrete: its markers, its regions, the selection. Click a lane
+on the timeline, or pick it from the lanes menu, and its editor opens
+underneath with the breakpoints drawn large, in the lane's own colour, at the
+screen's resolution. The editor's canvas used to be a fixed 1200 by 110
+stretched to whatever width the tab had, which is what made it soft.
+
+The faces come from Google Fonts, exactly as the sequencer takes them; offline
+both fall back to the system monospace, and the panel is the same panel in a
+different face.
 
 ## Where it lives
 
@@ -99,8 +120,10 @@ editor at a time: fourteen open editors is a wall.
 - `core/crates/server/src/routes.rs` — `record_stretch_moves` goes through
   `stretch_unit`; `record_unit` is the shared write, `record_move` the rack's
   searching front to it.
-- `ui/app.js` — `startCapture`, `endCapture`, `drawAutomationTimeline`,
-  `laneColour`; `renderAutomation` and `repaintAutomationLanes`.
-- `ui/index.html` — `#automationCapture`; `ui/app.css` — `.automation-timeline`,
-  `.automation-capture`.
+- `ui/perf-panel.js` — the sequencer's panel: `perfDrawTimeline`,
+  `perfLaneColor`, `perfLaneLabel`, header, status, position, resize, collapse.
+- `ui/app.js` — `startCapture`, `endCapture`, `perfFillLaneSelect`;
+  `renderAutomation` and `repaintAutomationLanes` draw through the panel.
+- `ui/index.html` — the panel's markup under `#dockAutomation`;
+  `ui/app.css` — the `.perf-*` rules and the palette on `.automation-body`.
 - `tests/ui/automation-capture.spec.mjs`.

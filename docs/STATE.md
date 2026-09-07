@@ -53,7 +53,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
 
 **The interface is embedded in the binary** with `include_str!` — twenty-four
 assets: `ui/index.html`, `ui/app.css`, eighteen scripts in `ui/` (among them
-`app.js`, `settings.js`, `section-presets.js`, `shapes-4d.js`, `panel-4d.js`, `theme-derive.js`,
+`app.js`, `settings.js`, `section-presets.js`, `perf-panel.js`, `shapes-4d.js`, `panel-4d.js`, `theme-derive.js`,
 `theme-palettes.js`), `ui/vendor/babylon.js`, `visualiser/grain-views.html`,
 p5.js and both fonts — and, since 6 Sep 2026, the six files of the scale
 sequencer under `ui/sequencer/`, served at `/sequencer/`.
