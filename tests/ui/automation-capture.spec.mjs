@@ -127,3 +127,27 @@ test('the take is drawn as the sequencer draws one, and a click on a lane opens 
   expect(got.second, 'the click did not open the second lane').toEqual(['b']);
   expect(new Set(got.colours).size).toBe(4);
 });
+
+// The record mode lives in the server's memory, so a reload does not clear it.
+// The page used to come up saying Off whatever the server was doing: arm,
+// reload, and every control moved on every file from then on was written
+// into a lane until the server was restarted. The page now asks, says so,
+// and lets go of the recorder when it leaves.
+test('a recorder left armed is shown on reload, and leaving the page disarms it', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => postJSON('/api/automation/record', { mode: 'latch' }));
+  await page.reload();
+  await open(page);
+  await page.waitForFunction(() => state.automationRecord === 'latch', { timeout: 10_000 });
+  const shown = await page.evaluate(() => ({
+    control: $('automationRecord').value,
+    status: $('perfStatus')?.textContent || '',
+  }));
+  expect(shown.control, 'the control still says Off').toBe('latch');
+  expect(shown.status, 'nothing said the recorder was armed').toMatch(/LEFT ARMED/);
+
+  // Leave. The beacon goes out as the page unloads.
+  await page.goto('about:blank');
+  await expect.poll(async () => (await (await page.request.get('/api/automation/record')).json()).mode,
+    { timeout: 5_000, message: 'the server is still armed after the page left' }).toBe('off');
+});

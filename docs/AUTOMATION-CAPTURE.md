@@ -127,3 +127,17 @@ different face.
 - `ui/index.html` — the panel's markup under `#dockAutomation`;
   `ui/app.css` — the `.perf-*` rules and the palette on `.automation-body`.
 - `tests/ui/automation-capture.spec.mjs`.
+
+## The record mode is the server's, and the page asks
+
+Record mode (off, touch, latch) is held in the server's memory. A reload does
+not clear it, and the page used to come up saying Off regardless. Arm, reload,
+and every control moved on every file from then on was written into a
+`rec-` lane, until the server itself was restarted — which is how lanes turn up
+on files nobody meant to capture.
+
+Now `syncAutomationRecord` asks `/api/automation/record` when a file opens and
+shows what it is told; if the recorder was left armed the status line says so.
+And `pagehide` sends a beacon setting the mode to off, because a recording is
+something you are doing, and you are not doing it once the page is gone. One
+consequence: closing one window disarms a capture running in another.

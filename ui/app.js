@@ -1747,6 +1747,7 @@ async function selectFile(file, { keepTab = false } = {}) {
   loadAnnotations();
   loadRack();
   loadAutomation();
+  syncAutomationRecord();
   loadOverview();
   renderGrainParams();
   loadGrains();
@@ -3226,7 +3227,14 @@ async function runVideoExport() {
       layers: { ...roomLayers(), grid: false },
       occlude: roomOcclude(),
       order: roomOrder(),
-      room: {
+      // **A copy, taken now.** The film draws its frames over the minutes an
+      // encode takes, and it reads these settings on every frame. Handed the
+      // live objects — the path was the very array the beads write into — a
+      // waypoint added or moved while encoding was drawn into the film at
+      // the moment it happened, which looked like a recording being played
+      // back. The film is the room as posed when Export was pressed; what is
+      // done to the room afterwards stays out of it.
+      room: structuredClone({
         cold: vgRgb('--wave-2', '#4a9fd8'),
         hot: vgRgb('--wave', '#5fd47a'),
         core: vgRgb('--accent', '#7fd0ff'),
@@ -3242,8 +3250,6 @@ async function runVideoExport() {
         solidSpin: roomEdit.solidSpin,
         solidSwell: roomEdit.solidSwell,
         solidEye: roomEdit.solidEye,
-    solidSize: roomEdit.solidSize,
-    solidPath: roomEdit.solidPath,
         solidSize: roomEdit.solidSize,
         solidPath: roomEdit.solidPath,
         leadThick: roomEdit.leadThick,
@@ -3260,7 +3266,7 @@ async function runVideoExport() {
           length: roomEdit.mistLength,
         },
         fog: roomFog(),
-      },
+      }),
       // What the room is drawn *on*. It clears to transparent and the page
       // shows through, so an offscreen canvas has nothing behind it at all.
       // ── the schedule printed on the back wall ──
@@ -5643,12 +5649,19 @@ async function setAutomationRecord(mode) {
     toast('Recording could not be armed: ' + e.message);
     return;
   }
+  showAutomationRecord(mode);
+}
+
+/// The page's side of the record mode: the state, the control, and the poll
+/// that keeps the lanes fresh while a take is landing.
+function showAutomationRecord(mode) {
   state.automationRecord = mode;
   const el = $('automationRecord');
   if (el) el.value = mode;
   // A take lands on the server, so the lanes here are behind until refetched.
   // While armed, keep them fresh so the curve appears as it is drawn.
   clearInterval(recordPoll);
+  recordPoll = null;
   if (mode !== 'off') {
     recordPoll = setInterval(async () => {
       if (!engine.playing) return;
@@ -5657,6 +5670,33 @@ async function setAutomationRecord(mode) {
     }, 400);
   }
 }
+
+/// **The record mode is the server's, and the page has to ask.** It lives in
+/// the server's memory, so a reload does not clear it — but a reloaded page
+/// used to come up saying Off whatever the server was doing. Arm, reload, and
+/// every control moved on every file from then on was quietly written into a
+/// lane, until the server itself was restarted. Now the page asks on the way
+/// in, shows what it is told, and says so when it was left armed.
+async function syncAutomationRecord() {
+  let mode = 'off';
+  try { mode = (await api('/api/automation/record')).mode || 'off'; } catch { return; }
+  if (mode === (state.automationRecord || 'off')) return;
+  showAutomationRecord(mode);
+  if (mode !== 'off') {
+    perfSetStatus('RECORDING WAS LEFT ARMED — EVERY MOVE IS BEING RECORDED · SET RECORD TO OFF TO STOP');
+  }
+}
+
+// Leaving the page disarms it. A recording is something you are doing, and
+// you are not doing it once the page is gone. A beacon, because an ordinary
+// request from a page that is closing is dropped.
+window.addEventListener('pagehide', () => {
+  if ((state.automationRecord || 'off') === 'off') return;
+  try {
+    navigator.sendBeacon('/api/automation/record',
+      new Blob([JSON.stringify({ mode: 'off' })], { type: 'application/json' }));
+  } catch {}
+});
 let recordPoll = null;
 
 function automationCheckpoint() {

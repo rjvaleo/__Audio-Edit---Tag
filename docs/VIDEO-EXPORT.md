@@ -516,3 +516,19 @@ while you stand in the world and drag the camera. A film is the sound, not
 the stage, so `runVideoExport` hands the renderer the room's layers with
 `grid` off, whatever the room on screen is showing — and with the grid goes
 the horizon it draws.
+
+## The film is a snapshot, not a window
+
+The film draws its frames in the page over the minutes an encode takes, and it
+reads the room's settings on every frame. It used to be handed the live
+objects — the solid's path was the very array the beads write into — so a
+waypoint added or moved while the encode ran was drawn into the film at the
+moment it happened. From the chair that looked like the film playing back a
+recording of the session. It was aliasing: the editor and the film were looking
+at one object.
+
+`runVideoExport` now hands over a `structuredClone` of the room settings. The
+film is the room as posed when Export was pressed, and what is done to the room
+afterwards stays out of it. The camera, layers and paint were already fresh
+objects; the test that covers this edits the path mid-encode and checks the
+film never sees it.
