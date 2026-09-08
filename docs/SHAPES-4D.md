@@ -128,3 +128,30 @@ panel pointing at nothing.
   *when* a grain's 4D orientation should move and what it should follow.
 - Nothing films them yet — the export path is the visualiser's, and this is a
   panel-side canvas.
+
+## Every axis turns, and every shape takes every control
+
+Two faults, found together. The simplexes of five, seven and nine dimensions
+were built in those dimensions and then only ever turned in the first four —
+`s4Rotate` walked the six planes on X, Y, Z and W and nothing else — so their
+extra axes sat still under a fixed perspective division, and all three were
+the same knot with more chords. `s4PlanesFor(dim)` now adds, for every axis
+past the fourth, that axis against X, Y and Z (`x4`, `y4`, `z4`, `x5` …), and
+`s4Rotate` turns through every plane the vertices have. The six keys the
+panel knows still mean what they did; a plane not named is not turned.
+
+And the grain shapes — three-dimensional, from `grain-shapes.js` — ignored
+TURN and EYE: the sound's turn drove `zw` and `xw`, which a three-dimensional
+shape has no planes for, and the eye only entered the four-dimensional
+projection. `vgSolidPose` in `vis-gl.js` now poses either kind: a
+three-dimensional shape takes the sound's turn about its vertical and folds
+the second drive into its spin, its depth stands in for `w` so it is coloured
+through the same way, and the eye is a perspective along its own depth — close
+in, the near side swells and the far shrinks, the same nesting the tesseract
+shows. `vgSolidAngles(dim, clock, zw, xw)` drives every plane past the fourth
+from the same two sound numbers at its own rate, so a 9-simplex turns in all
+twenty-one of its planes and no two of them together.
+
+Tests in `shapes-4d.spec.mjs`: a higher simplex turns through its extra axes
+while a tesseract ignores those keys; every shape in both catalogues answers
+the sound's turn and the eye.
