@@ -73,11 +73,11 @@ test('dragging the room orbits: the pitch changes, the eye rises, the pivot and 
     await dragRoom(page, [0.5, 0.6], [0.5, 0.85]);
     const after = await page.evaluate(() => ({ ...roomWorldNow(), pivot: camPivot(roomWorldNow()) }));
 
-    // Drag down and the world's top tips toward you: you are higher, looking
-    // down, at the same pivot, through the same lens.
+    // Drag down and you go down under the pivot, looking up at it, through
+    // the same lens.
     expect(after.pitch, 'the camera did not pitch').not.toBeCloseTo(before.pitch, 4);
-    expect(after.pitch, 'the pitch went the wrong way').toBeLessThan(before.pitch);
-    expect(after.height, 'the eye did not rise over the pivot').toBeGreaterThan(before.height);
+    expect(after.pitch, 'the pitch went the wrong way').toBeGreaterThan(before.pitch);
+    expect(after.height, 'the eye did not drop under the pivot').toBeLessThan(before.height);
     expect(after.fov, 'the lens changed on an orbit').toBeCloseTo(before.fov, 6);
     for (let i = 0; i < 3; i++) expect(after.pivot[i], 'the pivot moved').toBeCloseTo(before.pivot[i], 4);
   });

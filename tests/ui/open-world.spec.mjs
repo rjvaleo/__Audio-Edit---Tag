@@ -104,9 +104,9 @@ test('a drag writes a world camera, and the box it draws is the one the drag mad
   expect('height' in got.stored, 'the drag did not write a world camera').toBe(true);
   expect('floorY' in got.stored, 'the drag wrote a box').toBe(false);
   // A drag down the room orbits: the pitch changes, and the eye moves round
-  // the pivot to keep looking at it.
+  // the pivot to keep looking at it — down, since the drag went down.
   expect(got.world.pitch).not.toBeCloseTo(6.843, 3);
-  expect(got.world.height, 'the eye did not rise over the pivot').toBeGreaterThan(-before.floorY);
+  expect(got.world.height, 'the eye did not drop under the pivot').toBeLessThan(-before.floorY);
   expect(got.world.height).toBeCloseTo(-got.drawn.floorY, 9);
   expect(got.readout).toMatch(/^height .* pitch .*° .* yaw .*° .* fov .* focus /);
   expect(got.copy.height).toBeCloseTo(got.world.height, 3);
@@ -368,6 +368,40 @@ test('the camera orbits, tracks, dollies, looks and flies, by hand, wheel, key a
 // A picked point gets a gizmo: one arrow per axis. Pulling an arrow moves
 // the point along that axis and nothing else; the bead itself moves freely,
 // under the hand. Delete takes a picked waypoint out; Escape lets go.
+// The beads and the gizmo sit on the things they move, so a camera move has
+// to carry them: they stayed where the old view put them until a bead was
+// next dragged.
+test('the beads and the gizmo follow the camera', async ({ page }) => {
+  await openRoom(page);
+  await page.evaluate(() => setMode('room'));
+  await page.waitForSelector('#roomStageRoom #visGl', { state: 'visible', timeout: 20_000 });
+  const got = await page.evaluate(() => {
+    roomEdit.layers.solid = true;
+    paintRoomBeads();
+    roomPick('path:0');
+    const svg = $('roomHandles').querySelector('.room-path');
+    const dot = svg.querySelector('.rp-pt[data-key="path:0"]');
+    const tip = svg.querySelector('g[data-key="path:0"] .rp-tip-x');
+    const at = (el) => [+el.getAttribute('cx'), +el.getAttribute('cy')];
+    const before = { dot: at(dot), tip: at(tip) };
+    // An orbit by slider, as a drag would: the camera moves, nothing else.
+    const el = $('reCamOrbit');
+    el.value = '40';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    const after = { dot: at(dot), tip: at(tip) };
+    const p = roomEdit.solidPath[0];
+    const want = roomProjectAt(p.x, p.y, p.z, $('visGl').clientWidth, $('visGl').clientHeight);
+    delete roomEdit.cams[roomEdit.frame];
+    paintRoomNums();
+    roomEdit.layers.solid = false;
+    return { before, after, want: [want.x, want.y] };
+  });
+  expect(got.after.dot[0], 'the bead stayed where the old view put it').not.toBeCloseTo(got.before.dot[0], 1);
+  expect(got.after.dot[0]).toBeCloseTo(got.want[0], 3);
+  expect(got.after.dot[1]).toBeCloseTo(got.want[1], 3);
+  expect(got.after.tip[0], 'the gizmo stayed where the old view put it').not.toBeCloseTo(got.before.tip[0], 1);
+});
+
 test('a picked point is moved along one axis by its arrow, and removed by Delete', async ({ page }) => {
   await openRoom(page);
   await page.evaluate(() => setMode('room'));

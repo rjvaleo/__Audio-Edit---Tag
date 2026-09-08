@@ -230,9 +230,11 @@ are the whole vocabulary, in `ui/app.js` after `roomWorldNow`.
 | frame | F, or the Frame button: the picked point, or the ring, at the pivot |
 | home | Home: the frame's camera back to the source's |
 
-The world follows the hand: orbit right and it turns right under you, orbit
-down and its top tips toward you; track keeps the point under the hand under
-it; dolly right or up is in. Look turns the eye in place. The right button is
+Sideways, the world follows the hand: orbit right and it turns right under
+you. Up and down is the camera's own: orbit down and you go down under the
+pivot, looking up; up and you rise over it. Track keeps the point under the
+hand under it; dolly right or up is in. Look turns the eye in place, down
+looking up, as a flight stick does. The right button is
 a gesture, so the menu it would open is suppressed while the editor is on —
 which is also what stops the release being lost.
 
