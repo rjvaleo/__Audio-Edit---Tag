@@ -103,11 +103,12 @@ test('a drag writes a world camera, and the box it draws is the one the drag mad
   }));
   expect('height' in got.stored, 'the drag did not write a world camera').toBe(true);
   expect('floorY' in got.stored, 'the drag wrote a box').toBe(false);
-  // A drag down the room is a pitch; the eye stays where it stood.
+  // A drag down the room orbits: the pitch changes, and the eye moves round
+  // the pivot to keep looking at it.
   expect(got.world.pitch).not.toBeCloseTo(6.843, 3);
-  expect(got.world.height).toBeCloseTo(-before.floorY, 9);
+  expect(got.world.height, 'the eye did not rise over the pivot').toBeGreaterThan(-before.floorY);
   expect(got.world.height).toBeCloseTo(-got.drawn.floorY, 9);
-  expect(got.readout).toMatch(/^height .* pitch .*° .* yaw .*° .* fov /);
+  expect(got.readout).toMatch(/^height .* pitch .*° .* yaw .*° .* fov .* focus /);
   expect(got.copy.height).toBeCloseTo(got.world.height, 3);
   expect(got.saved && got.saved.height, 'the world camera was not saved').toBeCloseTo(got.world.height, 9);
 });
@@ -199,7 +200,7 @@ test('the box is gone and the ground is a layer, a slot and a horizon', async ({
   expect(got.order[0]).toBe('grid');
   expect(got.slot, 'the ground is painted against distance').toBe('distance');
   expect(got.noBoxSlot).toBe(true);
-  expect(got.grips).toEqual(['depth', 'horizon']);
+  expect(got.grips).toEqual(['depth']);
   // The ground recedes upward on the canvas and converges: the far end of the
   // reach is above the near line, twenty units out is above that, and from
   // twenty to seventy-nine it moves less than it did from near to twenty.
@@ -279,41 +280,150 @@ test('everything with a place goes anywhere: the ring, the path, the terrain', a
   expect(got.beads.filter((k) => k.startsWith('path:')).length).toBeGreaterThanOrEqual(2);
 });
 
-test('the camera walks, sidesteps, pans, tilts and rises, by wheel and by slider', async ({ page }) => {
+// The gestures every 3D program shares. Orbit and dolly keep the pivot where
+// it is; track carries it; look and fly leave the eye's place or its direction
+// alone. The sliders are the same moves as numbers.
+test('the camera orbits, tracks, dollies, looks and flies, by hand, wheel, key and slider', async ({ page }) => {
   await openRoom(page);
   const gl = page.locator('#visGl');
   const box = await gl.boundingBox();
-  const before = await page.evaluate(() => roomWorldNow());
-  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.6);
+  const mid = { x: box.x + box.width * 0.5, y: box.y + box.height * 0.6 };
+  const read = () => page.evaluate(() => {
+    const c = roomWorldNow();
+    return { ...c, focus: camFocus(c), pivot: camPivot(c) };
+  });
+  const close = (a, b, what, digits = 4) => {
+    for (let i = 0; i < 3; i++) expect(a[i], `${what}: the pivot moved`).toBeCloseTo(b[i], digits);
+  };
+  const before = await read();
+
+  // Wheel up: the dolly comes in, and the pivot stays put.
+  await page.mouse.move(mid.x, mid.y);
   await page.mouse.wheel(0, -300);
   await page.waitForTimeout(100);
-  const walked = await page.evaluate(() => roomWorldNow());
-  expect(walked.z, 'the wheel did not walk the eye forward').toBeLessThan(before.z);
-  expect(walked.x).toBeCloseTo(before.x, 6);
+  const dollied = await read();
+  expect(dollied.focus, 'the wheel did not dolly in').toBeLessThan(before.focus);
+  close(dollied.pivot, before.pivot, 'dolly');
+
+  // Shift and drag: track. The direction holds, the pivot goes with the hand.
   await page.keyboard.down('Shift');
-  await page.mouse.wheel(0, -300);
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down();
+  await page.mouse.move(mid.x + 80, mid.y, { steps: 6 });
+  await page.mouse.up();
   await page.keyboard.up('Shift');
   await page.waitForTimeout(100);
-  const stepped = await page.evaluate(() => roomWorldNow());
-  expect(stepped.x, 'shift and wheel did not sidestep').not.toBeCloseTo(walked.x, 6);
-  expect(stepped.z).toBeCloseTo(walked.z, 6);
+  const tracked = await read();
+  expect(tracked.yaw).toBeCloseTo(dollied.yaw, 6);
+  expect(tracked.pitch).toBeCloseTo(dollied.pitch, 6);
+  expect(tracked.pivot[0], 'a track to the right did not carry the world right').toBeLessThan(dollied.pivot[0]);
+
+  // Right-drag: look. The eye stays, the direction turns.
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(mid.x + 60, mid.y, { steps: 6 });
+  await page.mouse.up({ button: 'right' });
+  await page.waitForTimeout(100);
+  const looked = await read();
+  expect(looked.x).toBeCloseTo(tracked.x, 6);
+  expect(looked.z).toBeCloseTo(tracked.z, 6);
+  expect(looked.yaw, 'a right-drag did not look round').toBeGreaterThan(tracked.yaw);
+
+  // W: a step the way you look.
+  await page.mouse.move(mid.x, mid.y);
+  await page.keyboard.press('w');
+  await page.waitForTimeout(100);
+  const flown = await read();
+  const d = Math.hypot(flown.x - looked.x, flown.height - looked.height, flown.z - looked.z);
+  expect(d, 'W did not step').toBeGreaterThan(0.001);
+  expect(flown.yaw).toBeCloseTo(looked.yaw, 6);
+
+  // The sliders, and the set views.
   const bySlider = await page.evaluate(() => {
     const set = (id, v) => { const el = $(id); el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
-    set('reCamPan', 30);
+    const p0 = camPivot(roomWorldNow());
+    set('reCamOrbit', 30);
     set('reCamTilt', -12);
-    set('reCamHeight', 250);
-    set('reCamZ', -700);
+    set('reCamDolly', 250);
+    set('reCamFov', 40);
     const w = roomWorldNow();
-    const out = { yaw: w.yaw, pitch: w.pitch, height: w.height, z: w.z, readout: $('reNums').textContent };
+    const out = { yaw: w.yaw, pitch: w.pitch, focus: camFocus(w), fov: w.fov, p0, p1: camPivot(w), readout: $('reNums').textContent };
+    $('reCamTop').click();
+    const t = roomWorldNow();
+    out.top = { pitch: t.pitch, p2: camPivot(t) };
     delete roomEdit.cams[roomEdit.frame];
     paintRoomNums();
     return out;
   });
-  expect(bySlider.yaw).toBe(30);
-  expect(bySlider.pitch).toBe(-12);
-  expect(bySlider.height).toBeCloseTo(2.5, 6);
-  expect(bySlider.z).toBeCloseTo(-7, 6);
-  expect(bySlider.readout).toMatch(/at -?[\d.]+,-7\.000/);
+  expect(bySlider.yaw).toBeCloseTo(30, 6);
+  expect(bySlider.pitch).toBeCloseTo(-12, 6);
+  expect(bySlider.focus).toBeCloseTo(2.5, 6);
+  expect(bySlider.fov).toBe(40);
+  close(bySlider.p1, bySlider.p0, 'sliders');
+  expect(bySlider.readout).toMatch(/focus 2\.500/);
+  expect(bySlider.top.pitch, 'Top did not look down').toBeCloseTo(-89, 6);
+  close(bySlider.top.p2, bySlider.p0, 'top view');
+});
+
+// A picked point gets a gizmo: one arrow per axis. Pulling an arrow moves
+// the point along that axis and nothing else; the bead itself moves freely,
+// under the hand. Delete takes a picked waypoint out; Escape lets go.
+test('a picked point is moved along one axis by its arrow, and removed by Delete', async ({ page }) => {
+  await openRoom(page);
+  await page.evaluate(() => setMode('room'));
+  await page.waitForSelector('#roomStageRoom #visGl', { state: 'visible', timeout: 20_000 });
+  const got = await page.evaluate(async () => {
+    roomEdit.layers.solid = true;
+    roomEdit.solidPath = [{ x: 0, y: 0.42, z: -1.2 }, { x: 0.2, y: 0.5, z: -2 }, { x: 0, y: 0.42, z: -2.8 }];
+    paintRoomBeads();
+    const r = $('visGl').getBoundingClientRect();
+    const svg = $('roomHandles').querySelector('.room-path');
+    const dot = svg.querySelector('.rp-pt[data-key="path:1"]');
+    const ev = (el, type, x, y, buttons) => el.dispatchEvent(new PointerEvent(type, {
+      clientX: r.left + x, clientY: r.top + y, pointerId: 1, button: 0, buttons, bubbles: true,
+    }));
+    const at = (el) => [+el.getAttribute('cx'), +el.getAttribute('cy')];
+    // Pick it: a press and release with no travel.
+    let [cx, cy] = at(dot);
+    ev(dot, 'pointerdown', cx, cy, 1); ev(dot, 'pointerup', cx, cy, 0);
+    const picked = roomEdit.pick;
+    const giz = svg.querySelector('g[data-key="path:1"] .rp-giz');
+    const shown = giz && !giz.classList.contains('hidden');
+    const tips = [...giz.querySelectorAll('.rp-tip')].filter((t) => !t.classList.contains('hidden')).map((t) => t.dataset.axis);
+    // Pull the green arrow: only y changes.
+    const before = { ...roomEdit.solidPath[1] };
+    const ty = giz.querySelector('.rp-tip-y');
+    let [tx, tyy] = at(ty);
+    ev(ty, 'pointerdown', tx, tyy, 1);
+    ev(ty, 'pointermove', tx, tyy - 40, 1);
+    ev(ty, 'pointerup', tx, tyy - 40, 0);
+    const afterY = { ...roomEdit.solidPath[1] };
+    // Pull the red arrow: only x changes.
+    const txp = giz.querySelector('.rp-tip-x');
+    [tx, tyy] = at(txp);
+    ev(txp, 'pointerdown', tx, tyy, 1);
+    ev(txp, 'pointermove', tx + 40, tyy, 1);
+    ev(txp, 'pointerup', tx + 40, tyy, 0);
+    const afterX = { ...roomEdit.solidPath[1] };
+    // Delete takes it out.
+    roomEdit.hover = true;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    const points = roomEdit.solidPath.length;
+    const pickAfter = roomEdit.pick;
+    roomEdit.layers.solid = false;
+    return { picked, shown, tips, before, afterY, afterX, points, pickAfter };
+  });
+  expect(got.picked).toBe('path:1');
+  expect(got.shown, 'no gizmo on the picked point').toBe(true);
+  expect(got.tips.sort()).toEqual(['x', 'y', 'z']);
+  expect(got.afterY.y, 'the green arrow did not lift the point').toBeGreaterThan(got.before.y);
+  expect(got.afterY.x).toBeCloseTo(got.before.x, 9);
+  expect(got.afterY.z).toBeCloseTo(got.before.z, 9);
+  expect(got.afterX.x, 'the red arrow did not move the point across').toBeGreaterThan(got.afterY.x);
+  expect(got.afterX.y).toBeCloseTo(got.afterY.y, 9);
+  expect(got.afterX.z).toBeCloseTo(got.afterY.z, 9);
+  expect(got.points, 'Delete did not remove the picked waypoint').toBe(2);
+  expect(got.pickAfter).toBeNull();
 });
 
 test('a camera and a path from before the world could move are brought up to date', async ({ page }) => {

@@ -43,14 +43,12 @@ test('the handles sit on the room they are dragging', async ({ page }) => {
     };
     return {
       depth: at('depth'), depthWant: want(0, VG_WORLD_H / 2, 1),
-      horizon: at('horizon')[1], horizonWant: want(c.x, c.height, 0)[1],
       hw, keys: [...document.querySelectorAll('.rh')].map((e) => e.dataset.handle),
     };
   });
-  expect(got.keys.sort()).toEqual(['depth', 'horizon']);
+  expect(got.keys.sort()).toEqual(['depth']);
   expect(got.depth[0]).toBeCloseTo(got.depthWant[0], 0);
   expect(got.depth[1]).toBeCloseTo(got.depthWant[1], 0);
-  expect(got.horizon).toBeCloseTo(got.horizonWant, 0);
   expect(got.hw).toBeGreaterThan(0);
 });
 
@@ -93,5 +91,5 @@ test('the grips are only there while the room is being edited', async ({ page })
   });
   expect(got.off).toBe(true);
   expect(got.on).toBe(true);
-  expect(got.count).toBe(2);
+  expect(got.count).toBe(1);
 });

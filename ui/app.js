@@ -7632,7 +7632,7 @@ const VIS_MODULE_KEYS = ['room', 'ridge', 'room3d', 'stage'];
 const ROOM_CHUNKS = [2, 4, 8];
 
 const roomEdit = {
-  on: false, frame: 'dock', cams: {}, drag: null, layers: {},
+  on: false, frame: 'dock', cams: {}, drag: null, pick: null, hover: false, layers: {},
   chunk: 4,
   opacity: 0.7,
   /// Highest first. Kept as a list rather than as a rank on each layer because
@@ -8213,6 +8213,126 @@ function roomWorldNow() {
   return vgWorldFromBox(c || ROOM_CAM_DEFAULT, roomAspectNow());
 }
 
+// ──────────────────────── the camera, the way every 3D program has it ──
+//
+// An eye, a pivot it looks at, and the gestures Maya, Blender, Unity and
+// Unreal share: **orbit** (tumble) around the pivot, **track** (pan) across
+// the view, **dolly** (zoom) toward it, and **look** (fly) from where you
+// stand. The record stays the eye's place and direction; `focus` is how far
+// ahead the pivot sits, kept once a gesture has set it, and until then the
+// ring's distance along the look, since the ring is what the room is about.
+
+const CAM_PITCH_MAX = 89;
+/// Degrees per pixel of drag: orbit, and looking around.
+const CAM_ORBIT_DEG = 0.4;
+const CAM_LOOK_DEG = 0.25;
+const camWrap = (deg) => ((deg % 360) + 540) % 360 - 180;
+const camClampPitch = (deg) => Math.max(-CAM_PITCH_MAX, Math.min(CAM_PITCH_MAX, deg));
+
+/// The way the eye looks, as a unit vector.
+function camDir(c) {
+  const p = c.pitch / VG_DEG, y = c.yaw / VG_DEG;
+  return [Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(y) * Math.cos(p)];
+}
+/// Its right hand, level.
+function camRight(c) {
+  const y = c.yaw / VG_DEG;
+  return [Math.cos(y), 0, Math.sin(y)];
+}
+/// Its up, at right angles to both.
+function camUp(c) {
+  const d = camDir(c), r = camRight(c);
+  return [r[1] * d[2] - r[2] * d[1], r[2] * d[0] - r[0] * d[2], r[0] * d[1] - r[1] * d[0]];
+}
+/// How far ahead the pivot is.
+function camFocus(c) {
+  if (Number.isFinite(c.focus) && c.focus > 0) return c.focus;
+  const d = camDir(c), r = c.ring || VG_WORLD_DEFAULT.ring;
+  const f = (r.x - c.x) * d[0] + (r.y - c.height) * d[1] + (r.z - c.z) * d[2];
+  return Math.max(0.2, f);
+}
+/// Where the pivot is.
+function camPivot(c) {
+  const d = camDir(c), f = camFocus(c);
+  return [c.x + d[0] * f, c.height + d[1] * f, c.z + d[2] * f];
+}
+/// The eye placed `f` back from `pivot` along the way it already looks.
+function camLookFrom(c, pivot, f) {
+  const d = camDir(c);
+  c.x = pivot[0] - d[0] * f;
+  c.height = pivot[1] - d[1] * f;
+  c.z = pivot[2] - d[2] * f;
+  c.focus = f;
+  return c;
+}
+/// Orbit: turn about the pivot, staying the same distance from it.
+function camOrbit(c, dyaw, dpitch) {
+  const p = camPivot(c), f = camFocus(c);
+  c.yaw = camWrap(c.yaw + dyaw);
+  c.pitch = camClampPitch(c.pitch + dpitch);
+  return camLookFrom(c, p, f);
+}
+/// Dolly: toward the pivot (k < 1) or away from it, keeping it where it is.
+function camDolly(c, k) {
+  const p = camPivot(c);
+  return camLookFrom(c, p, Math.max(0.05, camFocus(c) * k));
+}
+/// Track: slide across the view. `dxPx`, `dyPx` are the hand's travel in
+/// pixels, and the world at the pivot's distance keeps pace with the hand.
+function camTrack(c, dxPx, dyPx, h) {
+  const s = 2 * camFocus(c) * Math.tan(c.fov / 2 / VG_DEG) / Math.max(1, h);
+  const r = camRight(c), u = camUp(c);
+  c.focus = camFocus(c);
+  c.x += (-r[0] * dxPx + u[0] * dyPx) * s;
+  c.height += (-r[1] * dxPx + u[1] * dyPx) * s;
+  c.z += (-r[2] * dxPx + u[2] * dyPx) * s;
+  return c;
+}
+/// Look: turn in place, as a first-person camera does.
+function camLook(c, dyaw, dpitch) {
+  c.focus = camFocus(c);
+  c.yaw = camWrap(c.yaw + dyaw);
+  c.pitch = camClampPitch(c.pitch + dpitch);
+  return c;
+}
+/// Fly: step forward, sideways and up from where you stand.
+function camFly(c, fwd, side, up) {
+  const d = camDir(c), r = camRight(c);
+  c.focus = camFocus(c);
+  c.x += d[0] * fwd + r[0] * side;
+  c.height += d[1] * fwd + r[1] * side + up;
+  c.z += d[2] * fwd + r[2] * side;
+  return c;
+}
+/// Aim: turn from where the eye stands to look at `p`, and make it the pivot.
+function camAim(c, p) {
+  const dx = p[0] - c.x, dy = p[1] - c.height, dz = p[2] - c.z;
+  const f = Math.hypot(dx, dy, dz);
+  if (f < 1e-6) return c;
+  c.yaw = Math.atan2(dx, -dz) * VG_DEG;
+  c.pitch = camClampPitch(Math.asin(dy / f) * VG_DEG);
+  c.focus = f;
+  return c;
+}
+/// A set view — front, side, top — of the same pivot from the same distance.
+function camView(c, which) {
+  const p = camPivot(c), f = camFocus(c);
+  if (which === 'front') { c.yaw = 0; c.pitch = 0; }
+  else if (which === 'side') { c.yaw = 90; c.pitch = 0; }
+  else if (which === 'top') { c.yaw = 0; c.pitch = -CAM_PITCH_MAX; }
+  return camLookFrom(c, p, f);
+}
+
+/// Frame: put `p` at the pivot, `size` across, without turning.
+function roomFrameOn(p, size) {
+  const c = roomWorldNow();
+  const f = Math.max(0.3, (size || 0.2) * 2.5 / Math.tan(c.fov / 2 / VG_DEG));
+  camLookFrom(c, p, f);
+  roomSetWorld(c);
+  paintRoomNums();
+  saveRoomCameras();
+}
+
 /// The camera being edited, filled in, so a drag has something to add to even
 /// on a frame nobody has touched.
 function roomCamNow() {
@@ -8290,9 +8410,9 @@ function paintRoomNums() {
   const n = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
   el.textContent =
     `height ${n(w.height)}  pitch ${n(w.pitch)}°  yaw ${n(w.yaw)}°  `
-    + `fov ${n(w.fov)}°  at ${n(w.x)},${n(w.z)}  ring ${n(w.ring.x)},${n(w.ring.y)},${n(w.ring.z)}/${n(w.ring.size)}`;
+    + `fov ${n(w.fov)}°  focus ${n(camFocus(w))}  at ${n(w.x)},${n(w.z)}  ring ${n(w.ring.x)},${n(w.ring.y)},${n(w.ring.z)}/${n(w.ring.size)}`;
   el.dataset.copy = JSON.stringify({
-    v: 2, x: +n(w.x), z: +n(w.z), height: +n(w.height), pitch: +n(w.pitch), yaw: +n(w.yaw),
+    v: 2, x: +n(w.x), z: +n(w.z), height: +n(w.height), pitch: +n(w.pitch), yaw: +n(w.yaw), focus: +n(camFocus(w)),
     fov: +n(w.fov), aspect: +n(w.aspect),
     ring: { x: +n(w.ring.x), y: +n(w.ring.y), z: +n(w.ring.z), size: +n(w.ring.size) },
   });
@@ -8718,35 +8838,43 @@ function buildRoomChunks() {
   // The camera's own numbers, as sliders: the same pose a drag makes, for a
   // precise one. Each writes the world camera and repaints; the readout and
   // the sliders are kept in step by `syncCamRows`.
-  for (const [id, key, k, lo, hi] of ROOM_CAM_ROWS) {
+  for (const [id, , k, lo, hi, apply] of ROOM_CAM_ROWS) {
     const el = $(id);
     if (!el) continue;
     el.oninput = () => {
       const c = roomWorldNow();
-      c[key] = Math.max(lo, Math.min(hi, el.value / k));
+      apply(c, Math.max(lo, Math.min(hi, el.value / k)));
       roomSetWorld(c);
       paintRoomNums();
     };
     el.onchange = saveRoomCameras;
   }
+  // The set views, and framing what is picked.
+  for (const [id, which] of [['reCamFront', 'front'], ['reCamSide', 'side'], ['reCamTop', 'top']]) {
+    const b = $(id);
+    if (b) b.onclick = () => { roomSetWorld(camView(roomWorldNow(), which)); paintRoomNums(); saveRoomCameras(); };
+  }
+  const fr = $('reCamFrame');
+  if (fr) fr.onclick = roomFramePick;
   syncCamRows();
 }
 
 /// The camera sliders: element, field, the scale the element counts in, and
 /// the range in the world's own units.
 const ROOM_CAM_ROWS = [
-  ['reCamPan', 'yaw', 1, -180, 180],
-  ['reCamTilt', 'pitch', 1, -80, 80],
-  ['reCamHeight', 'height', 100, 0.02, 6],
-  ['reCamX', 'x', 100, -20, 20],
-  ['reCamZ', 'z', 100, -20, 20],
+  // Orbit and tilt turn about the pivot, as the drag does; dolly moves toward
+  // it. The field of view is the lens.
+  ['reCamOrbit', (c) => c.yaw, 1, -180, 180, (c, v) => camOrbit(c, v - c.yaw, 0)],
+  ['reCamTilt', (c) => c.pitch, 1, -CAM_PITCH_MAX, CAM_PITCH_MAX, (c, v) => camOrbit(c, 0, v - c.pitch)],
+  ['reCamDolly', camFocus, 100, 0.05, 20, (c, v) => camDolly(c, v / camFocus(c))],
+  ['reCamFov', (c) => c.fov, 1, 15, 120, (c, v) => { c.fov = v; }],
 ];
 
 function syncCamRows() {
   const w = roomWorldNow();
-  for (const [id, key, k] of ROOM_CAM_ROWS) {
+  for (const [id, read, k] of ROOM_CAM_ROWS) {
     const el = $(id);
-    if (el && document.activeElement !== el) el.value = String(Math.round(w[key] * k));
+    if (el && document.activeElement !== el) el.value = String(Math.round(read(w) * k));
   }
 }
 
@@ -9896,23 +10024,14 @@ function roomZoneAt() {
 /// `at` gives a point in the room — world x and y on the front face, and how
 /// far back — and `move` is handed the drag in fractions of the canvas.
 const ROOM_HANDLES = [
-  // Two grips on the picture. Everything else that has a place — the ring,
-  // the solid's path, the terrain — has beads, and is dragged where it is.
+  // One grip on the picture, for the terrain's length. Everything with a
+  // place — the ring, the solid's path, the terrain — has a bead and a move
+  // gizmo, and is dragged where it is. The camera is the picture itself.
   {
     key: 'depth', cls: 'rh-depth', tip: 'Reach',
     at: (c) => [roomEdit.geomAt.x, VG_WORLD_H / 2, 1],
     move: (c, d, dx, dy) => {
       c.geom.reach = Math.max(0.2, Math.min(40, d.geom.reach * Math.exp(dy * 3)));
-    },
-  },
-  {
-    key: 'horizon', cls: 'rh-horizon', tip: 'Eye height',
-    at: (c) => [c.cam.x, c.cam.height, 0],
-    move: (c, d, dx, dy) => {
-      // Down the frame is down in the world: drag the eye line down and you
-      // stand lower. A frame's height of drag is the view's height of world.
-      const span = 2 * Math.tan(d.cam.fov / 2 / VG_DEG);
-      c.cam.height = Math.max(0.02, d.cam.height - dy * span);
     },
   },
 ];
@@ -9975,6 +10094,39 @@ function roomBeads() {
   return out;
 }
 
+/// The three axes a picked bead can be pushed along, in the colours every 3D
+/// program gives them.
+const ROOM_AXES = [
+  { key: 'x', dir: [1, 0, 0] },
+  { key: 'y', dir: [0, 1, 0] },
+  { key: 'z', dir: [0, 0, 1] },
+];
+
+/// Pick a bead — or nothing — and show it: the gizmo on the bead, the row in
+/// the list.
+function roomPick(key) {
+  roomEdit.pick = key || null;
+  paintRoomBeads();
+  solidPathPanel();
+}
+
+/// The picked bead, if it is still there.
+function roomPicked() {
+  return roomEdit.pick ? roomBeads().find((b) => b.key === roomEdit.pick) || null : null;
+}
+
+/// Frame what is picked, or the ring.
+function roomFramePick() {
+  const b = roomPicked();
+  if (b) {
+    const p = b.get();
+    roomFrameOn([p.x, p.y, p.z], b.key === 'ring' ? roomWorldNow().ring.size * 2 : roomEdit.solidSize * VG_WORLD_H);
+  } else {
+    const r = roomWorldNow().ring;
+    roomFrameOn([r.x, r.y, r.z], r.size * 2);
+  }
+}
+
 function paintRoomBeads() {
   const host = $('roomHandles');
   const gl = $('visGl');
@@ -9997,35 +10149,44 @@ function paintRoomBeads() {
 
   const beads = roomBeads();
   const keys = beads.map((b) => b.key).join('|');
+  if (roomEdit.pick && !beads.some((b) => b.key === roomEdit.pick)) roomEdit.pick = null;
   // Rebuilt only when the set of beads changes — moving one must never
-  // replace the element being dragged.
+  // replace the element being dragged. Picking one shows a gizmo that was
+  // built with it, for the same reason.
   if (svg.dataset.keys !== keys) {
     svg.dataset.keys = keys;
     svg.innerHTML = '';
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    line.setAttribute('class', 'rp-line');
-    svg.appendChild(line);
+    const el = (tag, cls) => {
+      const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      e.setAttribute('class', cls);
+      return e;
+    };
+    svg.appendChild(el('polyline', 'rp-line'));
     for (const b of beads) {
-      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const g = el('g', 'rp-bead');
       g.dataset.key = b.key;
-      const drop = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      drop.setAttribute('class', 'rp-depth');
-      g.appendChild(drop);
-      const foot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      foot.setAttribute('class', `rp-pt rp-foot${b.floorOnly ? ' rp-only' : ''}`);
-      foot.setAttribute('r', b.floorOnly ? 6 : 4);
-      foot.dataset.key = b.key;
-      foot.dataset.floor = '1';
-      g.appendChild(foot);
-      if (!b.floorOnly) {
-        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        dot.setAttribute('class', `rp-pt${b.end ? ' rp-end' : ''}${b.key === 'ring' ? ' rp-ring' : ''}`);
-        dot.setAttribute('r', b.end || b.key === 'ring' ? 6 : 5);
-        dot.dataset.key = b.key;
-        g.appendChild(dot);
+      g.appendChild(el('line', 'rp-depth'));
+      // The point's shadow on the ground: shown, not grabbed. The gizmo's
+      // green arrow is how it goes up and down.
+      const shadow = el('circle', 'rp-shadow');
+      shadow.setAttribute('r', 3);
+      g.appendChild(shadow);
+      const giz = el('g', 'rp-giz hidden');
+      for (const ax of ROOM_AXES) {
+        if (b.floorOnly && ax.key === 'y') continue;
+        giz.appendChild(el('line', `rp-ax rp-ax-${ax.key}`));
+        const tip = el('circle', `rp-tip rp-tip-${ax.key}`);
+        tip.setAttribute('r', 5);
+        tip.dataset.key = b.key;
+        tip.dataset.axis = ax.key;
+        giz.appendChild(tip);
       }
-      const lb = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      lb.setAttribute('class', 'rp-lb');
+      g.appendChild(giz);
+      const dot = el('circle', `rp-pt${b.end ? ' rp-end' : ''}${b.key === 'ring' ? ' rp-ring' : ''}${b.floorOnly ? ' rp-only' : ''}`);
+      dot.setAttribute('r', b.end || b.key === 'ring' || b.floorOnly ? 6 : 5);
+      dot.dataset.key = b.key;
+      g.appendChild(dot);
+      const lb = el('text', 'rp-lb');
       lb.textContent = b.label;
       g.appendChild(lb);
       svg.appendChild(g);
@@ -10040,66 +10201,107 @@ function paintRoomBeads() {
     const p = b.get();
     const air = roomProjectAt(p.x, p.y, p.z, w, h);
     const floor = roomProjectAt(p.x, 0, p.z, w, h);
-    const [drop, foot, third, fourth] = g.children;
-    const dot = b.floorOnly ? null : third;
-    const lb = b.floorOnly ? third : fourth;
+    const q = (cls) => g.querySelector(`.${cls}`);
+    const drop = q('rp-depth'), shadow = q('rp-shadow'), dot = q('rp-pt'), lb = q('rp-lb'), giz = q('rp-giz');
     drop.setAttribute('x1', air.x); drop.setAttribute('y1', air.y);
     drop.setAttribute('x2', floor.x); drop.setAttribute('y2', floor.y);
-    foot.setAttribute('cx', floor.x); foot.setAttribute('cy', floor.y);
-    if (dot) { dot.setAttribute('cx', air.x); dot.setAttribute('cy', air.y); }
-    lb.setAttribute('x', air.x); lb.setAttribute('y', (b.floorOnly ? floor.y : air.y) - 11);
+    drop.classList.toggle('hidden', !!b.floorOnly);
+    shadow.setAttribute('cx', floor.x); shadow.setAttribute('cy', floor.y);
+    shadow.classList.toggle('hidden', !!b.floorOnly);
+    dot.setAttribute('cx', air.x); dot.setAttribute('cy', air.y);
+    const picked = roomEdit.pick === b.key;
+    dot.classList.toggle('picked', picked);
+    lb.setAttribute('x', air.x); lb.setAttribute('y', air.y - 11);
     g.classList.toggle('hidden', !!air.behind && !!floor.behind);
+    giz.classList.toggle('hidden', !picked);
+    if (picked) {
+      // Each arrow is a unit of the world along its axis, scaled to a hand's
+      // length on screen — so it points the way that axis goes from here,
+      // however the camera stands. An axis seen end-on has nowhere to point
+      // and is not offered.
+      for (const ax of ROOM_AXES) {
+        const line = giz.querySelector(`.rp-ax-${ax.key}`), tip = giz.querySelector(`.rp-tip-${ax.key}`);
+        if (!line || !tip) continue;
+        const e = roomProjectAt(p.x + ax.dir[0], p.y + ax.dir[1], p.z + ax.dir[2], w, h);
+        const vx = e.x - air.x, vy = e.y - air.y, len = Math.hypot(vx, vy);
+        const off = e.behind || len < 2;
+        line.classList.toggle('hidden', off);
+        tip.classList.toggle('hidden', off);
+        if (off) continue;
+        const k = 46 / len;
+        line.setAttribute('x1', air.x); line.setAttribute('y1', air.y);
+        line.setAttribute('x2', air.x + vx * k); line.setAttribute('y2', air.y + vy * k);
+        tip.setAttribute('cx', air.x + vx * k); tip.setAttribute('cy', air.y + vy * k);
+      }
+    }
     if (b.path) pathPts.push(`${air.x},${air.y}`);
   }
   svg.querySelector('.rp-line').setAttribute('points', pathPts.join(' '));
+}
+
+/// A drag on an element of the overlay: pointer capture, the lost-release
+/// guard, and the bead's save at the end. `plan(bead, e)` is handed the press
+/// and returns the move — `(dxPx, dyPx) => void` — for this drag.
+function roomBeadDrag(el, plan) {
+  el.onpointerdown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const bead = roomBeads().find((b) => b.key === el.dataset.key);
+    if (!bead) return;
+    if (roomEdit.pick !== bead.key) roomPick(bead.key);
+    try { el.setPointerCapture(e.pointerId); } catch { /* the move guard covers it */ }
+    el.classList.add('dragging');
+    const move = plan(bead, e);
+    const onMove = (ev) => {
+      if (ev.buttons === 0) { up(ev); return; }
+      move(ev.clientX - e.clientX, ev.clientY - e.clientY, ev);
+      paintRoomBeads();
+      paintRoomNums();
+    };
+    const up = (ev) => {
+      el.classList.remove('dragging');
+      try { el.releasePointerCapture(ev.pointerId); } catch { /* gone */ }
+      el.onpointermove = null;
+      el.onpointerup = null;
+      el.onpointercancel = null;
+      el.onlostpointercapture = null;
+      if (bead.save) bead.save();
+    };
+    el.onpointermove = onMove;
+    el.onpointerup = up;
+    el.onpointercancel = up;
+    el.onlostpointercapture = up;
+  };
 }
 
 function wireRoomBeads() {
   const svg = $('roomHandles')?.querySelector('.room-path');
   const gl = $('visGl');
   if (!svg || !gl) return;
+  // The bead itself: a free move, in the plane facing the camera — the point
+  // stays under the hand. On the ground for what lies on it.
   for (const dot of svg.querySelectorAll('.rp-pt')) {
-    dot.onpointerdown = (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const bead = roomBeads().find((b) => b.key === dot.dataset.key);
-      if (!bead) return;
-      try { dot.setPointerCapture(e.pointerId); } catch { /* the move guard covers it */ }
-      dot.classList.add('dragging');
+    roomBeadDrag(dot, (bead) => {
       const box = gl.getBoundingClientRect();
-      const onFloor = dot.dataset.floor === '1';
-      const move = (ev) => {
-        if (ev.buttons === 0) { up(ev); return; }
-        const w = gl.clientWidth, h = gl.clientHeight;
-        const px = ev.clientX - box.left, py = ev.clientY - box.top;
-        const p = bead.get();
-        if (onFloor) {
-          // Across and along, on the ground, wherever the pointer's ray lands.
-          const g = roomGroundAt(px, py, w, h);
+      const w = gl.clientWidth, h = gl.clientHeight;
+      const c = roomWorldNow();
+      const p0 = { ...bead.get() };
+      if (bead.floorOnly) {
+        return (dx, dy, ev) => {
+          const g = roomGroundAt(ev.clientX - box.left, ev.clientY - box.top, w, h);
           if (g) bead.set({ x: g.x, z: g.z });
-        } else {
-          // Across and up, in the plane the point is already at.
-          const q = roomUnprojectZ(px, py, p.z, w, h);
-          bead.set({ x: q.x, y: q.y });
-        }
-        paintRoomBeads();
-        paintRoomNums();
-      };
-      const up = (ev) => {
-        dot.classList.remove('dragging');
-        try { dot.releasePointerCapture(ev.pointerId); } catch { /* gone */ }
-        dot.onpointermove = null;
-        dot.onpointerup = null;
-        dot.onpointercancel = null;
-        dot.onlostpointercapture = null;
-        if (bead.save) bead.save();
-      };
-      dot.onpointermove = move;
-      dot.onpointerup = up;
-      dot.onpointercancel = up;
-      dot.onlostpointercapture = up;
-    };
+        };
+      }
+      const d = camDir(c), r = camRight(c), u = camUp(c);
+      const depth = (p0.x - c.x) * d[0] + (p0.y - c.height) * d[1] + (p0.z - c.z) * d[2];
+      const s = 2 * Math.max(0.05, depth) * Math.tan(c.fov / 2 / VG_DEG) / Math.max(1, h);
+      return (dx, dy) => bead.set({
+        x: p0.x + (r[0] * dx - u[0] * dy) * s,
+        y: p0.y + (r[1] * dx - u[1] * dy) * s,
+        z: p0.z + (r[2] * dx - u[2] * dy) * s,
+      });
+    });
     dot.ondblclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -10107,8 +10309,28 @@ function wireRoomBeads() {
       if (!bead || !bead.remove) return;
       bead.remove();
       if (bead.save) bead.save();
-      paintRoomBeads();
+      roomPick(null);
     };
+  }
+  // An arrow: the move along that one axis, by the hand's travel along the
+  // arrow as it lies on screen.
+  for (const tip of svg.querySelectorAll('.rp-tip')) {
+    roomBeadDrag(tip, (bead) => {
+      const w = gl.clientWidth, h = gl.clientHeight;
+      const ax = ROOM_AXES.find((a) => a.key === tip.dataset.axis) || ROOM_AXES[0];
+      const p0 = { ...bead.get() };
+      const a = roomProjectAt(p0.x, p0.y, p0.z, w, h);
+      const e = roomProjectAt(p0.x + ax.dir[0], p0.y + ax.dir[1], p0.z + ax.dir[2], w, h);
+      const vx = e.x - a.x, vy = e.y - a.y, len = Math.max(1e-6, Math.hypot(vx, vy));
+      return (dx, dy) => {
+        const along = (dx * vx + dy * vy) / (len * len);
+        bead.set({
+          x: p0.x + ax.dir[0] * along,
+          y: p0.y + ax.dir[1] * along,
+          z: p0.z + ax.dir[2] * along,
+        });
+      };
+    });
   }
 }
 
@@ -10169,14 +10391,6 @@ function paintRoomHandles() {
     if (!el || !tip) continue;
     const [x, y, t] = hd.at(c);
     const p = roomProject(x, y, t, w, h, c);
-    if (hd.key === 'horizon') {
-      // A tab at the left edge: it only needs its height placed, and the rest
-      // of that line stays available for taking hold of the room.
-      el.style.top = `${p.y}px`;
-      tip.style.left = '38px';
-      tip.style.top = `${p.y}px`;
-      continue;
-    }
     el.style.left = `${p.x}px`;
     el.style.top = `${p.y}px`;
     tip.style.left = `${p.x}px`;
@@ -10246,7 +10460,8 @@ function wireRoomHandles() {
 /// the pointer naming it and what each axis does, and, over the sky, the band
 /// itself. Grips have their own glow; this is for the room between them.
 const ROOM_ZONE_TIPS = {
-  camera: 'CAMERA — drag: tilt · pan · scroll: walk · shift+scroll: sidestep',
+  camera: 'ORBIT — drag · shift: track · ctrl: dolly · right: look · wheel: dolly · 2×click: focus · F: frame',
+  orbit: 'ORBIT', track: 'TRACK', dolly: 'DOLLY', look: 'LOOK',
 };
 
 function roomZoneShow(zone, e, dragging) {
@@ -10268,7 +10483,7 @@ function roomZoneShow(zone, e, dragging) {
     host.appendChild(tip);
   }
   const on = !!zone && roomEdit.on && !host.classList.contains('gripping');
-  host.dataset.zone = on ? zone : '';
+  host.dataset.zone = on ? (dragging ? 'camera' : zone) : '';
   host.classList.toggle('zone-dragging', on && dragging);
   gl.style.cursor = !roomEdit.on ? '' : dragging ? 'grabbing' : 'grab';
   if (!on) { tip.style.opacity = '0'; return; }
@@ -10279,26 +10494,45 @@ function roomZoneShow(zone, e, dragging) {
   tip.style.opacity = '1';
 }
 
+/// Which gesture a press is, from its button and its modifiers — the bindings
+/// Maya, Blender, Unity and Unreal share between them.
+///
+///   orbit   drag · alt+drag
+///   track   shift+drag · middle-drag · alt+middle-drag
+///   dolly   ctrl+drag · ctrl+middle-drag · alt+right-drag · wheel
+///   look    right-drag
+function camGesture(e) {
+  const alt = e.altKey, shift = e.shiftKey, ctrl = e.ctrlKey || e.metaKey;
+  if (e.button === 1) return ctrl ? 'dolly' : 'track';
+  if (e.button === 2) return alt || ctrl ? 'dolly' : 'look';
+  if (e.button === 0) return shift ? 'track' : ctrl ? 'dolly' : 'orbit';
+  return null;
+}
+
 (function wireRoomDrag() {
   const gl = $('visGl');
   if (!gl) return;
 
+  gl.addEventListener('pointerenter', () => { roomEdit.hover = true; });
+  gl.addEventListener('pointerleave', (e) => { roomEdit.hover = false; if (!roomEdit.drag) roomZoneShow(null, e, false); });
+  // The right button is a gesture here, so the menu it would open is not.
+  // Without this the menu takes the release with it and the room follows the
+  // pointer with nothing pressed — see `docs/ROOM-EDITOR.md`, "the mouse
+  // gets stuck".
+  gl.addEventListener('contextmenu', (e) => { if (roomEdit.on) e.preventDefault(); });
+
   gl.addEventListener('pointerdown', (e) => {
     if (!roomEdit.on) return;
-    // **The first button only.** A secondary press — right button, ctrl-click,
-    // a two-finger tap — opens the context menu, and the menu takes the
-    // release with it: `pointerup` never arrives, the drag is never ended, and
-    // from then on the room follows the pointer with nothing pressed. That is
-    // "the mouse gets stuck".
-    if (e.button !== 0) return;
+    const mode = camGesture(e);
+    if (!mode) return;
     const r = gl.getBoundingClientRect();
     roomEdit.drag = {
-      zone: roomZoneAt(e.clientY - r.top, r.height),
+      zone: 'camera', mode, moved: false,
       x: e.clientX, y: e.clientY, w: r.width, h: r.height,
       cam: roomWorldNow(),
     };
     try { gl.setPointerCapture(e.pointerId); } catch { /* the move guard covers it */ }
-    roomZoneShow(roomEdit.drag.zone, e, true);
+    roomZoneShow(mode, e, true);
     e.preventDefault();
   });
 
@@ -10306,65 +10540,98 @@ function roomZoneShow(zone, e, dragging) {
     const d = roomEdit.drag;
     if (!d) {
       // Not dragging: say what a press here would take hold of.
-      if (roomEdit.on) roomZoneShow(roomZoneAt(e.clientY - gl.getBoundingClientRect().top, gl.clientHeight), e, false);
+      if (roomEdit.on) roomZoneShow('camera', e, false);
       return;
     }
-    // The second half of the same guard: a move with no button down is a
-    // release this element never heard about.
+    // A move with no button down is a release this element never heard
+    // about.
     if (e.buttons === 0) { end(e); return; }
-    roomZoneShow(d.zone, e, true);
-    const dx = (e.clientX - d.x) / Math.max(1, d.w);
-    const dy = (e.clientY - d.y) / Math.max(1, d.h);
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (Math.hypot(dx, dy) > 3) d.moved = true;
+    roomZoneShow(d.mode, e, true);
     const c = JSON.parse(JSON.stringify(d.cam));
-
-    {
-      // The camera: a point with a direction. Up and down is pitch, sideways
-      // is a turn. The horizon goes where the hand goes — drag down and the
-      // horizon comes down with it, which is looking up — and the vanishing
-      // point follows the hand, which is turning the other way. A frame's
-      // worth of drag is a field of view's worth of world.
-      c.pitch = Math.max(-80, Math.min(80, d.cam.pitch + dy * d.cam.fov));
-      c.yaw = ((d.cam.yaw - dx * d.cam.fov * (d.w / Math.max(1, d.h)) + 540) % 360) - 180;
-    }
+    // The world follows the hand. Orbit: drag right and the world turns
+    // right under you, drag down and its top tips toward you. Track: the
+    // point under the hand stays under it. Dolly: right or up is in. Look:
+    // the view goes where the hand goes.
+    if (d.mode === 'orbit') camOrbit(c, -dx * CAM_ORBIT_DEG, -dy * CAM_ORBIT_DEG);
+    else if (d.mode === 'track') camTrack(c, dx, dy, d.h);
+    else if (d.mode === 'dolly') camDolly(c, Math.exp(-(dx - dy) * 0.004));
+    else if (d.mode === 'look') camLook(c, dx * CAM_LOOK_DEG, -dy * CAM_LOOK_DEG);
     roomSetWorld(c);
     paintRoomNums();
   });
 
   const end = (e) => {
-    if (!roomEdit.drag) return;
+    const d = roomEdit.drag;
+    if (!d) return;
     roomEdit.drag = null;
     try { gl.releasePointerCapture(e.pointerId); } catch {}
-    roomZoneShow(null, e, false);
+    roomZoneShow(roomEdit.hover ? 'camera' : null, e, false);
+    // A click on the bare room, with nothing moved, lets go of what was picked.
+    if (!d.moved && d.mode === 'orbit' && roomEdit.pick) roomPick(null);
     saveRoomCameras();
   };
   gl.addEventListener('pointerup', end);
   gl.addEventListener('pointercancel', end);
   gl.addEventListener('lostpointercapture', end);
-  gl.addEventListener('pointerleave', (e) => { if (!roomEdit.drag) roomZoneShow(null, e, false); });
 
-  // Depth is a scroll because it is the one dimension not on the screen to be
-  // grabbed. Exponential, so the room lengthens by the same proportion per
-  // notch wherever it already is.
+  // Double-click on the ground: look there, and make it the pivot.
+  gl.addEventListener('dblclick', (e) => {
+    if (!roomEdit.on) return;
+    const r = gl.getBoundingClientRect();
+    const g = roomGroundAt(e.clientX - r.left, e.clientY - r.top, gl.clientWidth, gl.clientHeight);
+    if (!g) return;
+    roomSetWorld(camAim(roomWorldNow(), [g.x, 0, g.z]));
+    paintRoomNums();
+    saveRoomCameras();
+  });
+
+  // The wheel is the dolly, as it is everywhere; a pinch arrives as the same
+  // with ctrl held. Sideways scroll tracks sideways, shift and scroll tracks
+  // up and down.
   gl.addEventListener('wheel', (e) => {
     if (!roomEdit.on) return;
     e.preventDefault();
-    // Walking. The wheel moves the eye through the world along the way it
-    // looks; with shift, sideways. Nothing here is a size — it is where you
-    // stand.
     const c = roomWorldNow();
-    const stepAlong = -e.deltaY * 0.004;
-    const yaw = c.yaw / VG_DEG;
+    const h = gl.clientHeight;
     if (e.shiftKey) {
-      c.x += Math.cos(yaw) * stepAlong;
-      c.z += Math.sin(yaw) * stepAlong;
+      camTrack(c, 0, -(e.deltaY || e.deltaX), h);
     } else {
-      c.x += Math.sin(yaw) * stepAlong;
-      c.z += -Math.cos(yaw) * stepAlong;
+      if (e.deltaX) camTrack(c, -e.deltaX, 0, h);
+      if (e.deltaY) camDolly(c, Math.exp(e.deltaY * 0.0015));
     }
     roomSetWorld(c);
     paintRoomNums();
     saveRoomCameras();
   }, { passive: false });
+
+  // Keys, while the hand is over the room: fly with WASD and QE, frame with
+  // F, home with Home, and the picked point with Delete and Escape. Taken
+  // before anything else hears them, so a letter is a step here and not a
+  // note on the keyboard.
+  document.addEventListener('keydown', (e) => {
+    if (!roomEdit.on || !roomEdit.hover || inTextField(e.target)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const c = roomWorldNow();
+    const step = camFocus(c) * 0.06;
+    const fly = {
+      w: [step, 0, 0], s: [-step, 0, 0], a: [0, -step, 0], d: [0, step, 0],
+      q: [0, 0, -step], e: [0, 0, step],
+    }[k];
+    let took = true;
+    if (fly) { camFly(c, ...fly); roomSetWorld(c); paintRoomNums(); saveRoomCameras(); }
+    else if (k === 'f') roomFramePick();
+    else if (k === 'Home') { delete roomEdit.cams[roomEdit.frame]; saveRoomCameras(); paintRoomNums(); }
+    else if (k === 'Escape' && roomEdit.pick) roomPick(null);
+    else if ((k === 'Delete' || k === 'Backspace') && roomEdit.pick) {
+      const b = roomPicked();
+      if (b && b.remove) { b.remove(); if (b.save) b.save(); }
+      roomPick(null);
+    } else took = false;
+    if (took) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
 })();
 
 /// The streams a grain carries.
@@ -12927,7 +13194,9 @@ function solidPathPanel() {
   pts.forEach((pt, i) => {
     const end = i === 0 || i === pts.length - 1;
     const row = document.createElement('div');
-    row.className = 're-wp';
+    row.className = `re-wp${roomEdit.pick === `path:${i}` ? ' picked' : ''}`;
+    row.dataset.key = `path:${i}`;
+    row.onclick = () => roomPick(roomEdit.pick === `path:${i}` ? null : `path:${i}`);
     const name = document.createElement('span');
     name.className = 're-wp-name mono';
     name.textContent = i === 0 ? 'front' : end ? 'end' : String(i);
@@ -12941,11 +13210,11 @@ function solidPathPanel() {
       x.textContent = '×';
       x.title = 'Remove this waypoint';
       x.dataset.wp = String(i);
-      x.onclick = () => {
+      x.onclick = (ev) => {
+        ev.stopPropagation();
         roomEdit.solidPath.splice(i, 1);
         saveRoomData();
-        solidPathPanel();
-        paintSolidPath();
+        roomPick(null);
       };
       row.appendChild(x);
     }
@@ -12954,7 +13223,7 @@ function solidPathPanel() {
   const note = document.createElement('div');
   note.className = 'fx-note';
   note.textContent = roomEdit.on
-    ? 'Drag a point in the room to move it across and up. Drag its bead on the floor to move it across and back. Double-click a waypoint in the room, or × it here, to remove it.'
+    ? 'Click a point to pick it: drag it freely, or pull an arrow to move it along one axis. Delete removes a picked waypoint; so does × here.'
     : 'Open the room editor to drag the path. × removes a waypoint.';
   box.appendChild(note);
 }
