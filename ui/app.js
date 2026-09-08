@@ -8401,6 +8401,11 @@ function paintRoomNums() {
   // when something edits it, and writing seven elements' styles sixty times a
   // second to say nothing would be the same waste as redrawing a still scene.
   paintRoomHandles();
+  // The beads and the gizmo sit on the things they move, which sit in the
+  // world, which the camera looks at — so a camera move repaints them too.
+  // Without this they stayed where the old view put them until a bead was
+  // next dragged.
+  paintRoomBeads();
   const el = $('reNums');
   if (!el) return;
   // The world camera: where you stand and which way you look. The box it
@@ -10550,14 +10555,15 @@ function camGesture(e) {
     if (Math.hypot(dx, dy) > 3) d.moved = true;
     roomZoneShow(d.mode, e, true);
     const c = JSON.parse(JSON.stringify(d.cam));
-    // The world follows the hand. Orbit: drag right and the world turns
-    // right under you, drag down and its top tips toward you. Track: the
+    // Sideways, the world follows the hand: drag right and it turns right
+    // under you. Up and down is the camera's: drag down and you go down
+    // under the pivot, looking up; drag up and you rise over it. Track: the
     // point under the hand stays under it. Dolly: right or up is in. Look:
-    // the view goes where the hand goes.
-    if (d.mode === 'orbit') camOrbit(c, -dx * CAM_ORBIT_DEG, -dy * CAM_ORBIT_DEG);
+    // sideways goes where the hand goes; down looks up, as a flight stick.
+    if (d.mode === 'orbit') camOrbit(c, -dx * CAM_ORBIT_DEG, dy * CAM_ORBIT_DEG);
     else if (d.mode === 'track') camTrack(c, dx, dy, d.h);
     else if (d.mode === 'dolly') camDolly(c, Math.exp(-(dx - dy) * 0.004));
-    else if (d.mode === 'look') camLook(c, dx * CAM_LOOK_DEG, -dy * CAM_LOOK_DEG);
+    else if (d.mode === 'look') camLook(c, dx * CAM_LOOK_DEG, dy * CAM_LOOK_DEG);
     roomSetWorld(c);
     paintRoomNums();
   });
