@@ -8840,19 +8840,27 @@ function buildRoomChunks() {
     };
     slider.onchange = saveRoomData;
   }
-  // The camera's own numbers, as sliders: the same pose a drag makes, for a
-  // precise one. Each writes the world camera and repaints; the readout and
-  // the sliders are kept in step by `syncCamRows`.
-  for (const [id, , k, lo, hi, apply] of ROOM_CAM_ROWS) {
+  // The camera's channel box. Each attribute writes the world camera and
+  // repaints; the fields are kept in step by `syncCamRows`.
+  for (const [id, read, apply, step, digits] of ROOM_CAM_CHANNELS) {
     const el = $(id);
     if (!el) continue;
-    el.oninput = () => {
-      const c = roomWorldNow();
-      apply(c, Math.max(lo, Math.min(hi, el.value / k)));
-      roomSetWorld(c);
-      paintRoomNums();
-    };
-    el.onchange = saveRoomCameras;
+    wireChannel(el, {
+      get: () => read(roomWorldNow()),
+      set: (v) => { const c = roomWorldNow(); apply(c, v); roomSetWorld(c); paintRoomNums(); },
+      step, digits, save: saveRoomCameras,
+    });
+  }
+  // The picked point's channels.
+  for (const [id, axis] of [['reObjTx', 'x'], ['reObjTy', 'y'], ['reObjTz', 'z']]) {
+    const el = $(id);
+    if (!el) continue;
+    wireChannel(el, {
+      get: () => { const b = roomPicked(); return b ? +b.get()[axis] || 0 : 0; },
+      set: (v) => { const b = roomPicked(); if (!b) return; b.set({ [axis]: v }); paintRoomBeads(); paintRoomNums(); },
+      step: 0.01, digits: 3,
+      save: () => { const b = roomPicked(); if (b && b.save) b.save(); },
+    });
   }
   // The set views, and framing what is picked.
   for (const [id, which] of [['reCamFront', 'front'], ['reCamSide', 'side'], ['reCamTop', 'top']]) {
@@ -8864,22 +8872,99 @@ function buildRoomChunks() {
   syncCamRows();
 }
 
-/// The camera sliders: element, field, the scale the element counts in, and
-/// the range in the world's own units.
-const ROOM_CAM_ROWS = [
-  // Orbit and tilt turn about the pivot, as the drag does; dolly moves toward
-  // it. The field of view is the lens.
-  ['reCamOrbit', (c) => c.yaw, 1, -180, 180, (c, v) => camOrbit(c, v - c.yaw, 0)],
-  ['reCamTilt', (c) => c.pitch, 1, -CAM_PITCH_MAX, CAM_PITCH_MAX, (c, v) => camOrbit(c, 0, v - c.pitch)],
-  ['reCamDolly', camFocus, 100, 0.05, 20, (c, v) => camDolly(c, v / camFocus(c))],
-  ['reCamFov', (c) => c.fov, 1, 15, 120, (c, v) => { c.fov = v; }],
+/// The camera's channel box, as Maya has it: Translate, Rotate, Focal
+/// Length and Center of Interest. Element, what it reads from the camera,
+/// what typing a value does to the camera, the step a pixel of scrub or an
+/// arrow key is, and the places shown.
+///
+/// Translate carries the pivot with the eye, as moving a camera does.
+/// Rotate turns in place. Focal length is the 35 mm equivalent — 24 mm is
+/// the default lens here — and the center of interest is the pivot's
+/// distance, so typing it is a dolly.
+const ROOM_CAM_CHANNELS = [
+  ['reCamTx', (c) => c.x, (c, v) => { c.focus = camFocus(c); c.x = v; }, 0.01, 3],
+  ['reCamTy', (c) => c.height, (c, v) => { c.focus = camFocus(c); c.height = v; }, 0.01, 3],
+  ['reCamTz', (c) => c.z, (c, v) => { c.focus = camFocus(c); c.z = v; }, 0.01, 3],
+  ['reCamRx', (c) => c.pitch, (c, v) => camLook(c, 0, camClampPitch(v) - c.pitch), 0.5, 1],
+  ['reCamRy', (c) => c.yaw, (c, v) => camLook(c, camWrap(v) - c.yaw, 0), 0.5, 1],
+  ['reCamFocal', (c) => 12 / Math.tan(c.fov / 2 / VG_DEG),
+    (c, v) => { c.fov = 2 * Math.atan(12 / Math.max(4, Math.min(600, v))) * VG_DEG; }, 0.25, 1],
+  ['reCamCoi', camFocus, (c, v) => camDolly(c, Math.max(0.05, v) / camFocus(c)), 0.01, 3],
 ];
 
+/// A channel: a number typed, stepped with the arrows, or scrubbed by
+/// dragging across it — the field is its own slider, as in Maya and
+/// Blender. A press that does not travel is a click, and focuses it to type;
+/// one that travels scrubs, and never focuses.
+function wireChannel(el, { get, set, step, digits, save }) {
+  const show = () => { el.value = (+get() || 0).toFixed(digits); };
+  el.show = show;
+  el.onfocus = () => el.select();
+  el.onchange = () => {
+    const v = parseFloat(el.value);
+    if (Number.isFinite(v)) { set(v); save(); }
+    show();
+  };
+  el.onkeydown = (e) => {
+    if (e.key === 'Enter') { el.blur(); return; }
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    set(get() + (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1));
+    show();
+    save();
+  };
+  el.onpointerdown = (e) => {
+    if (e.button !== 0 || document.activeElement === el) return;
+    const x0 = e.clientX, v0 = get();
+    let moved = false;
+    const move = (ev) => {
+      const dx = ev.clientX - x0;
+      if (!moved && Math.abs(dx) < 3) return;
+      if (!moved) {
+        moved = true;
+        el.blur();
+        el.classList.add('scrubbing');
+        try { el.setPointerCapture(e.pointerId); } catch { /* the guard below */ }
+      }
+      if (ev.buttons === 0) { up(ev); return; }
+      set(v0 + dx * step * (ev.shiftKey ? 10 : 1));
+      show();
+    };
+    const up = (ev) => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      if (!moved) return;
+      el.classList.remove('scrubbing');
+      try { el.releasePointerCapture(ev.pointerId); } catch { /* gone */ }
+      save();
+      el.blur();
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
+  show();
+}
+
 function syncCamRows() {
-  const w = roomWorldNow();
-  for (const [id, read, k] of ROOM_CAM_ROWS) {
+  for (const [id] of ROOM_CAM_CHANNELS) {
     const el = $(id);
-    if (el && document.activeElement !== el) el.value = String(Math.round(read(w) * k));
+    if (el && el.show && document.activeElement !== el) el.show();
+  }
+  // The picked point's row: shown while something is picked, named for it.
+  const row = $('reObjRow');
+  if (row) {
+    const b = roomPicked();
+    row.classList.toggle('hidden', !b);
+    if (b) {
+      $('reObjTag').textContent = (b.label || 'point').toUpperCase();
+      $('reObjRowY')?.classList.toggle('hidden', !!b.floorOnly);
+      for (const id of ['reObjTx', 'reObjTy', 'reObjTz']) {
+        const el = $(id);
+        if (el && el.show && document.activeElement !== el) el.show();
+      }
+    }
   }
 }
 
@@ -10113,6 +10198,7 @@ function roomPick(key) {
   roomEdit.pick = key || null;
   paintRoomBeads();
   solidPathPanel();
+  syncCamRows();
 }
 
 /// The picked bead, if it is still there.
@@ -10354,6 +10440,7 @@ function paintRoomHandles() {
   const w = gl.clientWidth, h = gl.clientHeight;
   if (!(w > 0) || !(h > 0)) return;
   const c = { cam: roomWorldNow(), geom: { reach: roomEdit.geomReach } };
+  paintRoomGnomon(host, c.cam);
 
   // Built once and then only moved. Rebuilding them every frame would drop any
   // drag in progress on the very first pointer move — the same fault the
@@ -10400,6 +10487,42 @@ function paintRoomHandles() {
     el.style.top = `${p.y}px`;
     tip.style.left = `${p.x}px`;
     tip.style.top = `${p.y}px`;
+  }
+}
+
+/// The view axis in the corner: X, Y and Z as the camera sees them, so which
+/// way the world goes is always in the picture. Each axis is its direction
+/// in the camera's frame — across, up — and an axis pointing away is drawn
+/// short, as it looks.
+function paintRoomGnomon(host, cam) {
+  let svg = host.querySelector('.room-gnomon');
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'room-gnomon');
+    svg.setAttribute('viewBox', '0 0 64 64');
+    for (const k of ['x', 'y', 'z']) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', `g${k}`);
+      line.dataset.axis = k;
+      svg.appendChild(line);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('class', `g${k}`);
+      t.dataset.axis = k;
+      t.textContent = k.toUpperCase();
+      svg.appendChild(t);
+    }
+    host.appendChild(svg);
+  }
+  const r = camRight(cam), u = camUp(cam);
+  const o = 32, len = 24;
+  for (const ax of ROOM_AXES) {
+    const sx = ax.dir[0] * r[0] + ax.dir[1] * r[1] + ax.dir[2] * r[2];
+    const sy = ax.dir[0] * u[0] + ax.dir[1] * u[1] + ax.dir[2] * u[2];
+    const line = svg.querySelector(`line[data-axis="${ax.key}"]`);
+    const t = svg.querySelector(`text[data-axis="${ax.key}"]`);
+    line.setAttribute('x1', o); line.setAttribute('y1', o);
+    line.setAttribute('x2', o + sx * len); line.setAttribute('y2', o - sy * len);
+    t.setAttribute('x', o + sx * (len + 7)); t.setAttribute('y', o - sy * (len + 7));
   }
 }
 

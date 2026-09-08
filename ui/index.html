@@ -826,30 +826,38 @@
                       min="0" max="800" step="1"
                       title="How hard the sound pushes the ring out of round. Well past 1× at the top — a breath becomes a crown.">
                   </div>
-                  <!-- The camera, as every 3D program has it: orbit, tilt
-                       and dolly about a pivot, and the lens. The same moves
-                       the gestures on the picture make, as numbers. Room
-                       view only — the dock's overlay has no room for them,
-                       and the gestures are there. -->
-                  <div class="re-row re-cam">
-                    <span class="re-tag">ORBIT</span>
-                    <input class="re-slider" id="reCamOrbit" type="range" min="-180" max="180" step="1"
-                      title="Round the pivot, in degrees. Dragging the picture sideways is the same.">
+                  <!-- The camera's channel box, as Maya has it: Translate,
+                       Rotate, Focal Length and Center of Interest, each a
+                       typed number that is also scrubbed by dragging across
+                       the field. No sliders — a camera is posed on the
+                       picture, and these are its numbers. Room view only. -->
+                  <div class="re-row re-cam re-chan">
+                    <span class="re-tag">TRANSLATE X</span>
+                    <input class="re-num mono" id="reCamTx" inputmode="decimal" title="Where the eye stands, across. Type, or drag across the field; shift drags faster.">
                   </div>
-                  <div class="re-row re-cam">
-                    <span class="re-tag">TILT</span>
-                    <input class="re-slider" id="reCamTilt" type="range" min="-89" max="89" step="1"
-                      title="Over the pivot, in degrees: down is from above. Dragging the picture up and down is the same.">
+                  <div class="re-row re-cam re-chan">
+                    <span class="re-tag">TRANSLATE Y</span>
+                    <input class="re-num mono" id="reCamTy" inputmode="decimal" title="The eye above the ground.">
                   </div>
-                  <div class="re-row re-cam">
-                    <span class="re-tag">DOLLY</span>
-                    <input class="re-slider" id="reCamDolly" type="range" min="5" max="2000" step="1"
-                      title="How far from the pivot, in hundredths of a unit. The wheel is the same.">
+                  <div class="re-row re-cam re-chan">
+                    <span class="re-tag">TRANSLATE Z</span>
+                    <input class="re-num mono" id="reCamTz" inputmode="decimal" title="Along; negative is into the picture.">
                   </div>
-                  <div class="re-row re-cam">
-                    <span class="re-tag">FOV</span>
-                    <input class="re-slider" id="reCamFov" type="range" min="15" max="120" step="1"
-                      title="The lens, in degrees top to bottom. Narrow is a long lens.">
+                  <div class="re-row re-cam re-chan">
+                    <span class="re-tag">ROTATE X</span>
+                    <input class="re-num mono" id="reCamRx" inputmode="decimal" title="Tilt, in degrees. Up is positive.">
+                  </div>
+                  <div class="re-row re-cam re-chan">
+                    <span class="re-tag">ROTATE Y</span>
+                    <input class="re-num mono" id="reCamRy" inputmode="decimal" title="Turn, in degrees. Right is positive.">
+                  </div>
+                  <div class="re-row re-cam re-chan">
+                    <span class="re-tag">FOCAL LENGTH</span>
+                    <input class="re-num mono" id="reCamFocal" inputmode="decimal" title="In millimetres, 35 mm equivalent. Longer is narrower; 24 is the default.">
+                  </div>
+                  <div class="re-row re-cam re-chan">
+                    <span class="re-tag">CENTER OF INT</span>
+                    <input class="re-num mono" id="reCamCoi" inputmode="decimal" title="Center of interest — how far ahead the pivot sits that the view orbits round and dollies toward.">
                   </div>
                   <div class="re-row re-cam">
                     <span class="re-tag">VIEW</span>
@@ -858,8 +866,23 @@
                     <button class="re-btn" id="reCamTop" title="Straight down.">Top</button>
                     <button class="re-btn" id="reCamFrame" title="Put the picked point — or the ring — at the pivot, filling the view. F does the same.">Frame</button>
                   </div>
+                  <!-- The picked point's own channels, while one is picked. -->
+                  <div class="re-obj hidden" id="reObjRow">
+                    <div class="re-row re-cam re-chan">
+                      <span class="re-tag re-obj-tag"><b id="reObjTag">POINT</b> X</span>
+                      <input class="re-num mono" id="reObjTx" inputmode="decimal" title="Translate X — across.">
+                    </div>
+                    <div class="re-row re-cam re-chan" id="reObjRowY">
+                      <span class="re-tag re-obj-tag">Y</span>
+                      <input class="re-num mono" id="reObjTy" inputmode="decimal" title="Translate Y — up.">
+                    </div>
+                    <div class="re-row re-cam re-chan">
+                      <span class="re-tag re-obj-tag">Z</span>
+                      <input class="re-num mono" id="reObjTz" inputmode="decimal" title="Translate Z — along; negative is into the picture.">
+                    </div>
+                  </div>
                   <div class="re-row re-cam re-legend">
-                    <span class="fx-note">drag orbit · shift+drag track · ctrl+drag dolly · right-drag look · wheel dolly · shift+wheel track · double-click focus · WASD QE fly · F frame · Home reset · click a point, pull an arrow · Delete removes it</span>
+                    <span class="fx-note">drag orbit · shift+drag track · ctrl+drag dolly · right-drag look · wheel dolly · shift+wheel track · double-click focus · WASD QE fly · F frame · Home reset · click a point, pull an arrow · Delete removes it · drag across a number to scrub it</span>
                   </div>
                   <!-- The four-dimensional solid. Under the ring's controls,
                        because it hangs in the same room and is read against it.

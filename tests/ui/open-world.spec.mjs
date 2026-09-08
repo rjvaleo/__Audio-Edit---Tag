@@ -338,36 +338,124 @@ test('the camera orbits, tracks, dollies, looks and flies, by hand, wheel, key a
   expect(d, 'W did not step').toBeGreaterThan(0.001);
   expect(flown.yaw).toBeCloseTo(looked.yaw, 6);
 
-  // The sliders, and the set views.
-  const bySlider = await page.evaluate(() => {
-    const set = (id, v) => { const el = $(id); el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
-    const p0 = camPivot(roomWorldNow());
-    set('reCamOrbit', 30);
-    set('reCamTilt', -12);
-    set('reCamDolly', 250);
-    set('reCamFov', 40);
+  // The channel box: typed, stepped, scrubbed. And the set views.
+  const typed = await page.evaluate(() => {
+    const type = (id, v) => { const el = $(id); el.focus(); el.value = String(v); el.dispatchEvent(new Event('change', { bubbles: true })); el.blur(); };
+    const eye0 = (({ x, height, z }) => [x, height, z])(roomWorldNow());
+    type('reCamRy', 30);
+    type('reCamRx', -12);
+    const turned = roomWorldNow();
+    const eye1 = [turned.x, turned.height, turned.z];
+    const p0 = camPivot(turned);
+    type('reCamCoi', 2.5);
+    type('reCamFocal', 35);
     const w = roomWorldNow();
-    const out = { yaw: w.yaw, pitch: w.pitch, focus: camFocus(w), fov: w.fov, p0, p1: camPivot(w), readout: $('reNums').textContent };
+    const out = {
+      yaw: w.yaw, pitch: w.pitch, eye0, eye1, focus: camFocus(w), fov: w.fov, p0, p1: camPivot(w),
+      shown: { ry: $('reCamRy').value, coi: $('reCamCoi').value, focal: $('reCamFocal').value },
+      readout: $('reNums').textContent,
+    };
+    // Translate carries the pivot with the eye.
+    out.eyeX = w.x;
+    type('reCamTx', 1.5);
+    const moved = roomWorldNow();
+    out.tx = moved.x;
+    out.p2 = camPivot(moved);
     $('reCamTop').click();
     const t = roomWorldNow();
-    out.top = { pitch: t.pitch, p2: camPivot(t) };
+    out.top = { pitch: t.pitch, p3: camPivot(t) };
     delete roomEdit.cams[roomEdit.frame];
     paintRoomNums();
     return out;
   });
-  expect(bySlider.yaw).toBeCloseTo(30, 6);
-  expect(bySlider.pitch).toBeCloseTo(-12, 6);
-  expect(bySlider.focus).toBeCloseTo(2.5, 6);
-  expect(bySlider.fov).toBe(40);
-  close(bySlider.p1, bySlider.p0, 'sliders');
-  expect(bySlider.readout).toMatch(/focus 2\.500/);
-  expect(bySlider.top.pitch, 'Top did not look down').toBeCloseTo(-89, 6);
-  close(bySlider.top.p2, bySlider.p0, 'top view');
+  expect(typed.yaw).toBeCloseTo(30, 6);
+  expect(typed.pitch).toBeCloseTo(-12, 6);
+  close(typed.eye1, typed.eye0, 'rotate', 6);
+  expect(typed.focus).toBeCloseTo(2.5, 6);
+  expect(typed.fov).toBeCloseTo(2 * Math.atan(12 / 35) * 180 / Math.PI, 6);
+  close(typed.p1, typed.p0, 'center of interest');
+  expect(typed.shown.ry).toBe('30.0');
+  expect(typed.shown.coi).toBe('2.500');
+  expect(typed.shown.focal).toBe('35.0');
+  expect(typed.readout).toMatch(/focus 2\.500/);
+  expect(typed.tx).toBeCloseTo(1.5, 6);
+  expect(typed.p2[0] - typed.p1[0], 'translate did not carry the pivot').toBeCloseTo(1.5 - typed.eyeX, 6);
+  expect(typed.top.pitch, 'Top did not look down').toBeCloseTo(-89, 6);
+  close(typed.top.p3, typed.p2, 'top view');
 });
 
-// A picked point gets a gizmo: one arrow per axis. Pulling an arrow moves
-// the point along that axis and nothing else; the bead itself moves freely,
-// under the hand. Delete takes a picked waypoint out; Escape lets go.
+// A channel is its own slider: drag across it and it scrubs; a press that
+// does not travel is a click and focuses it to type. Arrows step it.
+test('a channel is scrubbed by dragging across it, and stepped by the arrows', async ({ page }) => {
+  await openRoom(page);
+  await page.evaluate(() => setMode('room'));
+  await page.waitForSelector('#roomStageRoom #visGl', { state: 'visible', timeout: 20_000 });
+  const el = page.locator('#reCamRy');
+  await expect(el).toBeVisible();
+  const box = await el.boundingBox();
+  const before = await page.evaluate(() => roomWorldNow().yaw);
+  await page.mouse.move(box.x + 10, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 50, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const scrubbed = await page.evaluate(() => ({
+    yaw: roomWorldNow().yaw, focused: document.activeElement === $('reCamRy'),
+    shown: $('reCamRy').value, saved: JSON.parse(localStorage.getItem('roomCamerasWorld') || '{}')[roomEdit.frame]?.yaw,
+  }));
+  expect(scrubbed.yaw, 'the drag did not scrub').toBeCloseTo(before + 40 * 0.5, 3);
+  expect(scrubbed.focused, 'a scrub focused the field').toBe(false);
+  expect(scrubbed.shown).toBe(scrubbed.yaw.toFixed(1));
+  expect(scrubbed.saved).toBeCloseTo(scrubbed.yaw, 6);
+  // A click focuses it to type.
+  await el.click();
+  expect(await page.evaluate(() => document.activeElement === $('reCamRy'))).toBe(true);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  const stepped = await page.evaluate(() => roomWorldNow().yaw);
+  expect(stepped).toBeCloseTo(scrubbed.yaw + 1, 3);
+  await page.evaluate(() => { delete roomEdit.cams[roomEdit.frame]; paintRoomNums(); });
+});
+
+// The picked point has channels of its own, and the view axis in the corner
+// turns with the camera.
+test('a picked point has its own channels, and the view axis turns with the camera', async ({ page }) => {
+  await openRoom(page);
+  await page.evaluate(() => setMode('room'));
+  await page.waitForSelector('#roomStageRoom #visGl', { state: 'visible', timeout: 20_000 });
+  const got = await page.evaluate(() => {
+    roomEdit.layers.solid = true;
+    roomEdit.solidPath = [{ x: 0, y: 0.42, z: -1.2 }, { x: 0.2, y: 0.5, z: -2 }, { x: 0, y: 0.42, z: -2.8 }];
+    paintRoomBeads();
+    const hiddenBefore = $('reObjRow').classList.contains('hidden');
+    roomPick('path:1');
+    const shown = !$('reObjRow').classList.contains('hidden');
+    const tag = $('reObjTag').textContent;
+    const was = $('reObjTy').value;
+    const el = $('reObjTy');
+    el.focus(); el.value = '0.9'; el.dispatchEvent(new Event('change', { bubbles: true })); el.blur();
+    const y = roomEdit.solidPath[1].y;
+    const saved = JSON.parse(localStorage.getItem('roomData') || '{}').solidPath[1].y;
+    // The gnomon: X points right at yaw 0, and swings when the camera turns.
+    const ax = () => { const l = $('roomHandles').querySelector('.room-gnomon line[data-axis="x"]'); return +l.getAttribute('x2') - +l.getAttribute('x1'); };
+    const x0 = ax();
+    const c = roomWorldNow(); c.yaw = 90; roomSetWorld(c); paintRoomNums();
+    const x90 = ax();
+    delete roomEdit.cams[roomEdit.frame]; paintRoomNums();
+    roomPick(null);
+    roomEdit.layers.solid = false;
+    return { hiddenBefore, shown, tag, was, y, saved, x0, x90 };
+  });
+  expect(got.hiddenBefore, 'the point row showed with nothing picked').toBe(true);
+  expect(got.shown, 'the point row did not show for the pick').toBe(true);
+  expect(got.tag).toBe('1');
+  expect(got.was).toBe('0.500');
+  expect(got.y, 'typing into the channel did not move the point').toBeCloseTo(0.9, 9);
+  expect(got.saved).toBeCloseTo(0.9, 9);
+  expect(got.x0, 'X does not point right at yaw 0').toBeGreaterThan(20);
+  expect(Math.abs(got.x90), 'X did not swing away when the camera turned').toBeLessThan(2);
+});
+
 // The beads and the gizmo sit on the things they move, so a camera move has
 // to carry them: they stayed where the old view put them until a bead was
 // next dragged.
@@ -385,9 +473,9 @@ test('the beads and the gizmo follow the camera', async ({ page }) => {
     const at = (el) => [+el.getAttribute('cx'), +el.getAttribute('cy')];
     const before = { dot: at(dot), tip: at(tip) };
     // An orbit by slider, as a drag would: the camera moves, nothing else.
-    const el = $('reCamOrbit');
-    el.value = '40';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    const el = $('reCamRy');
+    el.focus(); el.value = '40';
+    el.dispatchEvent(new Event('change', { bubbles: true })); el.blur();
     const after = { dot: at(dot), tip: at(tip) };
     const p = roomEdit.solidPath[0];
     const want = roomProjectAt(p.x, p.y, p.z, $('visGl').clientWidth, $('visGl').clientHeight);
