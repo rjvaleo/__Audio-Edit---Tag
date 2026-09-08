@@ -1098,3 +1098,73 @@ test('a portrait room puts its controls beside it, not inside it', async ({ page
   expect(got['9x16'].outside, '9:16 kept its controls inside the room').toBe(true);
   expect(got['9x16'].clearOfTheRoom, 'the controls still overlap the room').toBe(true);
 });
+
+// Clear is the whole room back to default — every setting, every camera, the
+// paint and the path with its waypoints — not only the trail. The editor
+// stays open on the frame it was on.
+test('Clear puts every setting back to default, waypoints included', async ({ page }) => {
+  await openRoom(page);
+  const out = await page.evaluate(() => {
+    if (!roomEdit.on) toggleRoomEdit();
+    document.getElementById('reSolidPathAdd').click();
+    document.getElementById('reSolidPathAdd').click();
+    roomEdit.ringDrive = 3;
+    roomEdit.geomReach = 4.5;
+    roomEdit.layers.grid = false;
+    roomEdit.cams[roomEdit.frame] = { ...roomWorldNow(), height: 2.5 };
+    roomEdit.text = { on: true, body: 'hello' };
+    const added = roomEdit.solidPath.length;
+    document.getElementById('reClear').click();
+    const saved = JSON.parse(localStorage.getItem('roomData') || '{}');
+    return {
+      added, points: roomEdit.solidPath.length,
+      ringDrive: roomEdit.ringDrive, reach: roomEdit.geomReach,
+      grid: roomEdit.layers.grid, cams: Object.keys(roomEdit.cams).length,
+      text: 'text' in roomEdit, on: roomEdit.on,
+      savedPoints: (saved.solidPath || []).length,
+      listed: document.querySelectorAll('#reSolidPath .re-wp').length,
+    };
+  });
+  expect(out.added, 'the waypoints were never added').toBe(4);
+  expect(out.points, 'the waypoints survived Clear').toBe(2);
+  expect(out.savedPoints, 'the saved scene kept the waypoints').toBe(2);
+  expect(out.ringDrive).toBe(1);
+  expect(out.reach).toBe(1.9);
+  expect(out.grid, 'a layer switch survived Clear').toBeUndefined();
+  expect(out.cams, 'a posed camera survived Clear').toBe(0);
+  expect(out.text, 'a saved-scene key survived Clear').toBe(false);
+  expect(out.on, 'Clear shut the editor').toBe(true);
+  expect(out.listed, 'the list did not follow').toBe(2);
+});
+
+test('a waypoint can be removed from the list, one at a time', async ({ page }) => {
+  await openRoom(page);
+  const out = await page.evaluate(() => {
+    if (state.mode !== 'room') setMode('room');
+    if (!roomEdit.on) toggleRoomEdit();
+    roomEdit.layers.solid = true;
+    document.getElementById('reSolidPathReset').click();
+    document.getElementById('reSolidPathAdd').click();
+    document.getElementById('reSolidPathAdd').click();
+    const before = {
+      points: roomEdit.solidPath.length,
+      rows: document.querySelectorAll('#reSolidPath .re-wp').length,
+      xs: document.querySelectorAll('#reSolidPath .re-wp-x').length,
+    };
+    document.querySelector('#reSolidPath .re-wp-x[data-wp="1"]').click();
+    const after = {
+      points: roomEdit.solidPath.length,
+      xs: document.querySelectorAll('#reSolidPath .re-wp-x').length,
+      beads: document.querySelectorAll('.room-path g[data-key^="path:"]').length,
+      saved: (JSON.parse(localStorage.getItem('roomData') || '{}').solidPath || []).length,
+    };
+    return { before, after };
+  });
+  expect(out.before.points).toBe(4);
+  expect(out.before.rows, 'the list does not show every point').toBe(4);
+  expect(out.before.xs, 'the ends must not be removable').toBe(2);
+  expect(out.after.points, 'the waypoint was not removed').toBe(3);
+  expect(out.after.xs).toBe(1);
+  expect(out.after.beads, 'the beads in the room did not follow').toBe(3);
+  expect(out.after.saved, 'the removal was not saved').toBe(3);
+});
