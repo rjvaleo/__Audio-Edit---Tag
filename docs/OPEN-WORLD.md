@@ -238,9 +238,23 @@ looking up, as a flight stick does. The right button is
 a gesture, so the menu it would open is suppressed while the editor is on —
 which is also what stops the release being lost.
 
-**The panel** has ORBIT, TILT, DOLLY and FOV, the same moves as numbers, and
-Front, Side, Top and Frame. The eye-line tab is gone; the reach grip stays,
-since it is the terrain's length and not the camera's.
+**The panel is a channel box, not sliders.** As Maya's: Translate X Y Z,
+Rotate X Y, Focal Length (35 mm equivalent; 24 mm is this room's default
+lens) and Center of Interest (the pivot's distance). Each is a typed number
+that is also its own slider — drag across the field to scrub it, shift for
+ten times the step, the arrow keys to step it, a click to type. Translate
+carries the pivot with the eye, as moving a camera does; Rotate turns in
+place; typing the center of interest is a dolly. Front, Side, Top and Frame
+sit under them. The four sliders that were there first were a mistake: a
+camera is posed on the picture, and a panel is for its numbers.
+
+**A picked point has channels too** — Translate X Y Z in the same row style,
+shown while something is picked and named for it — and **a view axis** sits
+in the corner of the picture, X red, Y green, Z blue, turning with the
+camera, as every 3D program draws one.
+
+The eye-line tab is gone; the reach grip stays, since it is the terrain's
+length and not the camera's.
 
 **Objects have a gizmo.** Click a bead to pick it. Three arrows appear — X
 red, Y green, Z blue — each a unit of the world along its axis scaled to a

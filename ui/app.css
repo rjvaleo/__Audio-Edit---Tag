@@ -3846,3 +3846,26 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .re-wp { cursor: pointer; }
 .re-wp.picked .re-wp-name { color: var(--accent); }
 .re-legend .fx-note { white-space: normal; }
+
+/* The channel box: typed numbers, scrubbed by dragging across the field —
+   the way Maya's are. No spinners; the arrows and the drag are the step. */
+.re-chan { margin-bottom: 1px; }
+.re-chan .re-tag { width: 74px; white-space: nowrap; }
+.re-chan .re-tag b { font-weight: 600; color: var(--accent); }
+.re-num {
+  width: 64px; flex: 0 0 auto; font-size: 9px; padding: 1px 4px;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--line-2); border-radius: 2px;
+  cursor: ew-resize; text-align: right;
+}
+.re-num:focus { cursor: text; outline: none; border-color: var(--accent); }
+.re-num.scrubbing { border-color: var(--accent); color: var(--accent); user-select: none; }
+.re-num::-webkit-outer-spin-button, .re-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* The view axis in the corner of the picture: X red, Y green, Z blue,
+   as every 3D program draws it, turning with the camera. */
+.room-gnomon { position: absolute; left: 8px; bottom: 8px; width: 64px; height: 64px; pointer-events: none; overflow: visible; }
+.room-gnomon line { stroke-width: 2; stroke-linecap: round; }
+.room-gnomon text { font-size: 8px; font-family: inherit; text-anchor: middle; dominant-baseline: middle; }
+.room-gnomon .gx { stroke: #e5484d; fill: #e5484d; }
+.room-gnomon .gy { stroke: #46a758; fill: #46a758; }
+.room-gnomon .gz { stroke: #3e63dd; fill: #3e63dd; }

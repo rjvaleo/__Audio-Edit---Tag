@@ -445,3 +445,4 @@ the room editor is open. See `docs/OPEN-WORLD.md`, step five.
 | Home | this frame's camera back to the source's |
 | click a point · pull an arrow | pick it · move it along that axis |
 | Delete · Escape | remove the picked waypoint · let go |
+| drag across a channel · click it · arrows | scrub it · type it · step it |
