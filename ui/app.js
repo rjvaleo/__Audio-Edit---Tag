@@ -8750,7 +8750,7 @@ function buildRoomChunks() {
         }
         sShape.appendChild(g);
       };
-      group('Four dimensions', typeof Shapes4D !== 'undefined'
+      group('Four dimensions and more', typeof Shapes4D !== 'undefined'
         ? Shapes4D.CATALOGUE.map((e) => ({ value: e.key, label: e.label, hint: e.hint }))
         : []);
       group('Grain shapes', typeof GRAIN_SHAPES !== 'undefined'

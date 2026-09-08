@@ -282,14 +282,37 @@ const S4_PLANES = [
   { key: 'zw', label: 'ZW', a: 2, b: 3, familiar: false },
 ];
 
-/// Turn a set of vertices through the six planes, in the order above.
+/// The planes a solid of `dim` dimensions can turn in: the six above, and for
+/// every axis past the fourth, that axis against X, Y and Z — keyed `x4`,
+/// `y4`, `z4`, `x5` … A 9-simplex has twenty-one; a tesseract the six.
+///
+/// **This is what made the higher simplexes look alike.** They were built in
+/// five, seven and nine dimensions and then only ever turned in the first
+/// four, so their extra axes sat still and every one of them was the same
+/// knot with a different number of chords. Turned through those axes they
+/// come alive in different ways, which is the point of having them.
+const s4PlanesMemo = new Map();
+function s4PlanesFor(dim) {
+  if (s4PlanesMemo.has(dim)) return s4PlanesMemo.get(dim);
+  const out = S4_PLANES.slice();
+  for (let d = 4; d < dim; d++) {
+    for (const [name, a] of [['x', 0], ['y', 1], ['z', 2]]) {
+      out.push({ key: `${name}${d}`, label: `${name.toUpperCase()}${d}`, a, b: d, familiar: false });
+    }
+  }
+  s4PlanesMemo.set(dim, out);
+  return out;
+}
+
+/// Turn a set of vertices through every plane they have, in the order above.
 ///
 /// Rotations in four dimensions do not commute any more than they do in three,
 /// so the order is part of the answer and is fixed here rather than left to
-/// whoever calls it. Angles are radians, keyed by plane.
+/// whoever calls it. Angles are radians, keyed by plane; a plane not named is
+/// not turned, so the six keys the panel knows still mean what they did.
 function s4Rotate(verts, angles) {
   let out = verts;
-  for (const p of S4_PLANES) {
+  for (const p of s4PlanesFor(verts[0].length)) {
     const t = angles?.[p.key] || 0;
     if (!t) continue;
     const c = Math.cos(t), s = Math.sin(t);
@@ -426,6 +449,7 @@ function s4Entry(key) {
 
 const Shapes4D = {
   PLANES: S4_PLANES,
+  planesFor: s4PlanesFor,
   CATALOGUE: SHAPES_4D,
   shape: s4Shape,
   entry: s4Entry,

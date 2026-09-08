@@ -109,6 +109,84 @@ const VG_WORLD_AT = { x: 0, z: -1 };
 
 const VG_DEG = 180 / Math.PI;
 
+// ── the solid: one shape, any dimension, every control ─────────────────────
+//
+// Both catalogues come through here. A four-dimensional (or higher) solid
+// carries a `w` and turns in every plane it has; a grain shape is three
+// dimensional and turns in three. **Every control reaches every shape.** The
+// sound's turn — `zw`, `xw` — used to touch only the four-dimensional ones,
+// and the eye only their projection, so the grain shapes sat there ignoring
+// TURN and EYE. Now a three-dimensional shape takes the sound's turn in the
+// planes it has, and the eye is a perspective along its own depth — close
+// in, its near side swells and its far side shrinks, which is the same
+// nesting the tesseract shows — and its depth stands in for `w`, so it is
+// coloured through the same way.
+
+const VG_SOLID_CACHE = new Map();
+
+/// A shape by key, from either catalogue: `{ shape, is4d }`, or null.
+function vgSolidShape(key) {
+  if (typeof Shapes4D !== 'undefined' && Shapes4D.entry(key)) {
+    return { shape: Shapes4D.shape(key), is4d: true };
+  }
+  if (typeof GRAIN_SHAPES === 'undefined') return null;
+  const g = GRAIN_SHAPES.find((m) => m.name === key);
+  if (!g) return null;
+  let built = VG_SOLID_CACHE.get(key);
+  if (!built) {
+    const verts = [];
+    for (let i = 0; i < g.verts; i++) verts.push([g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]]);
+    const edges = [];
+    for (let i = 0; i < g.lines; i++) edges.push([g.idx[i * 2], g.idx[i * 2 + 1]]);
+    built = { dim: 3, verts, edges };
+    VG_SOLID_CACHE.set(key, built);
+  }
+  return { shape: built, is4d: false };
+}
+
+/// The angles for a shape of `dim` dimensions from the solid's four drives:
+/// the clock's slow turn, and the sound's. Every plane past the fourth axis
+/// is driven from the same two numbers at its own rate, so a 9-simplex turns
+/// in all twenty-one of its planes and no two of them together.
+function vgSolidAngles(dim, clock, zw, xw) {
+  const a = { xy: clock, yz: clock * 0.37, zw, xw };
+  for (let d = 4; d < dim; d++) {
+    a[`x${d}`] = zw * (0.53 + 0.11 * d);
+    a[`y${d}`] = xw * (0.71 + 0.07 * d);
+    a[`z${d}`] = clock * (0.19 + 0.05 * d);
+  }
+  return a;
+}
+
+/// A shape as it stands: turned by `ang`, seen from `eye`. `turned` keeps a
+/// fourth number per vertex for the colour — `w`, or depth for a
+/// three-dimensional shape — and `flat` is three-dimensional.
+function vgSolidPose(shape, is4d, ang, eye) {
+  if (is4d) {
+    const t = Shapes4D.rotate(shape.verts, ang);
+    return { turned: t, flat: Shapes4D.project(t, { eye }) };
+  }
+  // Three planes: the clock's two, and the sound's turn about the vertical
+  // — plus the sound's second drive folded into the spin, so TURN is seen.
+  const xy = (ang.xy || 0) + (ang.xw || 0), yz = ang.yz || 0, xz = ang.zw || 0;
+  const c1 = Math.cos(xy), s1 = Math.sin(xy);
+  const c2 = Math.cos(yz), s2 = Math.sin(yz);
+  const c3 = Math.cos(xz), s3 = Math.sin(xz);
+  const turned = shape.verts.map((p) => {
+    const x1 = p[0] * c1 - p[1] * s1, y1 = p[0] * s1 + p[1] * c1;
+    const y2 = y1 * c2 - p[2] * s2, z2 = y1 * s2 + p[2] * c2;
+    const x3 = x1 * c3 + z2 * s3, z3 = -x1 * s3 + z2 * c3;
+    return [x3, y2, z3, z3];
+  });
+  // Perspective along the shape's own depth, held clear of its far vertex
+  // the way the four-dimensional projection holds clear of `w`.
+  let far = 0;
+  for (const v of turned) far = Math.max(far, v[2]);
+  const e = Math.max(eye, far + 0.05);
+  const flat = turned.map((v) => { const k = e / (e - v[2]); return [v[0] * k, v[1] * k, v[2] * k]; });
+  return { turned, flat };
+}
+
 /// Whether a stored camera is a world one. A box camera has a floor.
 function vgIsWorld(c) {
   return !!c && typeof c === 'object' && !('floorY' in c) && ('height' in c || 'pitch' in c);
@@ -926,7 +1004,6 @@ function vgAttach(canvas) {
   let solidCentroid = 0.5, solidGate = 0;
   /// Which slice of the spectrum each vertex reads, per shape. Worked out once:
   /// it depends only on the solid's rest pose.
-  const solidCache = new Map();
   let grainPos = null, grainW = null;
   // The bodies. A wireframe solid a grain, so they cannot share the buffer the
   // wash and the core are drawn from.
@@ -2490,31 +2567,10 @@ function vgAttach(canvas) {
       // both illegible.
       const drawSolid = () => {
         const key = (f && f.solidShape) || 'cell8';
-        // Both catalogues. A four-dimensional shape carries a `w` and turns in
-        // six planes; a grain shape has no `w` and turns in three. Everything
-        // after this is the same for either.
-        const is4d = typeof Shapes4D !== 'undefined' && !!Shapes4D.entry(key);
-        let shape = null;
-        if (is4d) {
-          shape = Shapes4D.shape(key);
-        } else if (typeof GRAIN_SHAPES !== 'undefined') {
-          const g = GRAIN_SHAPES.find((m) => m.name === key);
-          if (g) {
-            let built = solidCache.get(key);
-            if (!built) {
-              const verts = [];
-              for (let i = 0; i < g.verts; i++) {
-                verts.push([g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]]);
-              }
-              const edges = [];
-              for (let i = 0; i < g.lines; i++) edges.push([g.idx[i * 2], g.idx[i * 2 + 1]]);
-              built = { dim: 3, verts, edges };
-              solidCache.set(key, built);
-            }
-            shape = built;
-          }
-        }
-        if (!shape || !shape.verts.length) return;
+        // Both catalogues, through one door — see `vgSolidShape`.
+        const found = vgSolidShape(key);
+        if (!found || !found.shape.verts.length) return;
+        const { shape, is4d } = found;
 
         const rows = history.length;
         if (!rows) return;
@@ -2588,10 +2644,7 @@ function vgAttach(canvas) {
         solidXw += dt * spin * solidGate * 0.23;
         solidSpinPhase += dt * (0.05 + 0.3 * solidGate);
 
-        const angles = {
-          xy: solidSpinPhase, yz: solidSpinPhase * 0.37,
-          zw: solidZw, xw: solidXw,
-        };
+        const angles = vgSolidAngles(shape.verts[0].length, solidSpinPhase, solidZw, solidXw);
         // One pose per frame of history, recorded as the trail advances.
         if (pushes !== solidPushSeen) {
           solidPushSeen = pushes;
@@ -2601,17 +2654,7 @@ function vgAttach(canvas) {
 
         const eye = Math.max(1.4, Math.min(8, f && f.solidEye ? f.solidEye : 2.5));
         /// The shape as it stood at one frame on the trail.
-        const poseAt = (ang) => {
-          const t = is4d
-            ? Shapes4D.rotate(shape.verts, ang)
-            : shape.verts.map((p) => {
-              const c1 = Math.cos(ang.xy), s1 = Math.sin(ang.xy);
-              const c2 = Math.cos(ang.yz), s2 = Math.sin(ang.yz);
-              const x = p[0] * c1 - p[1] * s1, y = p[0] * s1 + p[1] * c1;
-              return [x, y * c2 - p[2] * s2, y * s2 + p[2] * c2];
-            });
-          return { turned: t, flat: is4d ? Shapes4D.project(t, { eye }) : t };
-        };
+        const poseAt = (ang) => vgSolidPose(shape, is4d, ang, eye);
 
         // ── the buffers ──
         //

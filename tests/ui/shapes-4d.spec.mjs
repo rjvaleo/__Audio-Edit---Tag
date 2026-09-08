@@ -136,6 +136,82 @@ test('a rotation into the fourth dimension does what no 3D rotation can', async 
   expect(got.edgesHeld, 'a solid gained or lost edges while turning').toBe(true);
 });
 
+// The simplexes of five, seven and nine dimensions were built in those
+// dimensions and then only ever turned in the first four, so their extra axes
+// sat still and all three looked alike. Now every axis a shape has can turn.
+test('a simplex above four dimensions turns through its extra axes, and a tesseract ignores those keys', async ({ page }) => {
+  await ready(page);
+  const got = await page.evaluate(() => {
+    const shadow = (key, angles) => {
+      const sh = Shapes4D.shape(key);
+      const flat = Shapes4D.project(Shapes4D.rotate(sh.verts, angles), { eye: 2.5 });
+      return flat.map((v) => v.map((x) => +x.toFixed(9)));
+    };
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    return {
+      planes: { four: Shapes4D.planesFor(4).length, seven: Shapes4D.planesFor(7).length, nine: Shapes4D.planesFor(9).length },
+      keys7: Shapes4D.planesFor(7).map((p) => p.key),
+      simplexMoves: !same(shadow('simplex7', {}), shadow('simplex7', { x4: 0.7 })),
+      simplexMovesHigh: !same(shadow('simplex9', {}), shadow('simplex9', { z8: 0.5 })),
+      tesseractHolds: same(shadow('cell8', {}), shadow('cell8', { x4: 0.7, z8: 0.5 })),
+      sixStillWork: !same(shadow('simplex7', {}), shadow('simplex7', { zw: 0.4 })),
+      // Turned differently, the three simplexes are three different pictures.
+      differ: (() => {
+        const a = { x4: 0.7, y4: 0.3, zw: 0.5 };
+        const r = (k) => shadow(k, a).map((v) => Math.hypot(...v)).sort((p, q) => p - q);
+        const s5 = r('simplex5'), s7 = r('simplex7'), s9 = r('simplex9');
+        const spread = (v) => v[v.length - 1] - v[0];
+        return [spread(s5), spread(s7), spread(s9)];
+      })(),
+    };
+  });
+  expect(got.planes).toEqual({ four: 6, seven: 15, nine: 21 });
+  expect(got.keys7).toEqual(expect.arrayContaining(['xy', 'zw', 'x4', 'y4', 'z4', 'x5', 'y6', 'z6']));
+  expect(got.simplexMoves, 'the 7-simplex did not turn through its fifth axis').toBe(true);
+  expect(got.simplexMovesHigh, 'the 9-simplex did not turn through its ninth axis').toBe(true);
+  expect(got.tesseractHolds, 'a plane the tesseract does not have moved it').toBe(true);
+  expect(got.sixStillWork).toBe(true);
+  expect(new Set(got.differ.map((v) => v.toFixed(3))).size, 'the three simplexes came out the same').toBe(3);
+});
+
+// Every control reaches every shape. The grain shapes used to ignore TURN and
+// EYE; the sound's turn and the eye now pose a three-dimensional shape too.
+test('every shape in both catalogues answers the sound\'s turn and the eye', async ({ page }) => {
+  await ready(page);
+  const got = await page.evaluate(() => {
+    const keys = [...Shapes4D.CATALOGUE.map((e) => e.key), ...GRAIN_SHAPES.slice(0, 4).map((m) => m.name)];
+    const out = {};
+    for (const key of keys) {
+      const found = vgSolidShape(key);
+      if (!found) { out[key] = null; continue; }
+      const { shape, is4d } = found;
+      const dim = shape.verts[0].length;
+      const rest = vgSolidAngles(dim, 0.3, 0, 0);
+      const loud = vgSolidAngles(dim, 0.3, 0.9, 0.3);
+      const flat = (ang, eye) => JSON.stringify(vgSolidPose(shape, is4d, ang, eye).flat.map((v) => v.map((x) => +x.toFixed(6))));
+      const pose = vgSolidPose(shape, is4d, loud, 2.5);
+      out[key] = {
+        is4d, dim,
+        turns: flat(rest, 2.5) !== flat(loud, 2.5),
+        eyeMatters: flat(loud, 1.6) !== flat(loud, 6),
+        coloured: pose.turned.every((v) => v.length >= 4 && Number.isFinite(v[3])),
+        three: pose.flat.every((v) => v.length === 3),
+        edges: shape.edges.length,
+      };
+    }
+    return out;
+  });
+  for (const [key, r] of Object.entries(got)) {
+    expect(r, `${key} is not a shape`).not.toBeNull();
+    expect(r.turns, `${key} does not answer the sound's turn`).toBe(true);
+    expect(r.eyeMatters, `${key} does not answer the eye`).toBe(true);
+    expect(r.coloured, `${key} has no fourth number to colour by`).toBe(true);
+    expect(r.three, `${key} did not come out three-dimensional`).toBe(true);
+  }
+  expect(got.cell8.is4d).toBe(true);
+  expect(Object.values(got).some((r) => !r.is4d), 'no grain shape was tested').toBe(true);
+});
+
 test('the projection never divides by nothing, however close the eye is put', async ({ page }) => {
   await ready(page);
   const bad = await page.evaluate(() => {
