@@ -3851,3 +3851,9 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
    ground. */
 .room-path .rp-ring { fill: none; stroke-width: 2; }
 .room-path .rp-only { rx: 1; }
+
+/* The path's waypoints, listed: name, place, and a × on the ones that can go. */
+.re-wp { display: flex; align-items: center; gap: 6px; font-size: 9.5px; line-height: 1.6; }
+.re-wp-name { flex: 0 0 34px; color: var(--text-2); }
+.re-wp-at { flex: 1 1 auto; color: var(--text-dimmer); white-space: pre; }
+.re-wp-x { flex: 0 0 auto; padding: 0 6px; line-height: 1.2; }

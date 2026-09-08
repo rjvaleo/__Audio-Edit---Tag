@@ -726,3 +726,18 @@ put `flex: 1 1 auto` back and the test **passed**, because the frame's sizing is
 also restated at the beside layout's own specificity. Both had to be removed
 before the fault reappeared. A break that does not break is not evidence that
 the test is weak — but it is not evidence that it is strong, either.
+
+## Clear, and the waypoint list
+
+**Clear** is the whole room back to the way it shipped: every setting, every
+posed camera, the paint scheme, and the solid's path with its waypoints — and
+the trail emptied with them. It used to empty only the trail and leave the
+settings alone. `roomClear` copies `ROOM_EDIT_FACTORY` (the `roomEdit` literal,
+captured before anything saved is read) back over `roomEdit`, drops keys that
+only a saved scene put there, resets the paint, saves every store, and tells
+every panel. The editor stays open on the frame it was on. There is no confirm
+and no undo; save a section preset first if the scene matters.
+
+**Waypoints** are listed under the PATH row — name, place, and a × on every
+point that can go (the two ends cannot). Double-clicking a bead in the room
+still removes it. Dragging a bead refreshes the list when the drag ends.

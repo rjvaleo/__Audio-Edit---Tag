@@ -7735,6 +7735,34 @@ const roomEdit = {
   ridge: {},
 };
 
+/// **The room as shipped.** Every setting's default, copied before anything
+/// saved is read, so Clear has something to put back.
+const ROOM_EDIT_FACTORY = JSON.parse(JSON.stringify(roomEdit));
+
+/// Clear: the whole room back to its defaults — every setting, every camera,
+/// the paint, the path and its waypoints — and the trail emptied with it.
+/// The editor stays open on the frame it was on; that is where you are, not a
+/// setting. Keys that only exist because a saved scene put them there are
+/// dropped, so their defaults come from their own tables again.
+function roomClear() {
+  const keep = { on: roomEdit.on, frame: roomEdit.frame, drag: null };
+  for (const k of Object.keys(roomEdit)) if (!(k in ROOM_EDIT_FACTORY)) delete roomEdit[k];
+  Object.assign(roomEdit, JSON.parse(JSON.stringify(ROOM_EDIT_FACTORY)), keep);
+  roomPaint.scheme = rpDefaultScheme();
+  rpTouch();
+  rpRemember();
+  saveRoomData();
+  saveRoomLayers();
+  saveRoomHierarchy();
+  saveRoomStreams();
+  saveRoomCameras();
+  rpApply();
+  refreshVisualPanels();
+  visGl?.clear?.();
+  paintRoomNums();
+  toast('Room cleared — every setting back to default');
+}
+
 /// The layers, in the order they are drawn — highest in the hierarchy first.
 ///
 /// Anything that is not in the stored list is appended in the order
@@ -9453,6 +9481,7 @@ function refreshVisualPanels() {
   paintRoomNums();
   paintRoomData();
   paintSolidPath();
+  solidPathPanel();
 }
 
 /// A picker rebuilt from the store: the blank first, then every name.
@@ -9926,7 +9955,7 @@ function roomBeads() {
       set: (p) => { Object.assign(pt, p); },
       // A waypoint is removed where it is; the ends stay.
       remove: () => { if (all.length > 2 && i > 0 && i < all.length - 1) all.splice(i, 1); },
-      save: saveRoomData,
+      save: () => { saveRoomData(); solidPathPanel(); },
     }));
   }
   if (roomLayerOn('sky') || roomLayerOn('skin')) {
@@ -10772,12 +10801,7 @@ function buildRoomStreams() {
 
 $('roomEditOpen')?.addEventListener('click', toggleRoomEdit);
 
-$('reClear')?.addEventListener('click', () => {
-  // The room only. Nothing here is a setting, so there is nothing to save and
-  // nothing to put back — the trail and the cloud simply start again.
-  visGl?.clear?.();
-  paintRoomNums();
-});
+$('reClear')?.addEventListener('click', roomClear);
 
 $('reReset')?.addEventListener('click', () => {
   delete roomEdit.cams[roomEdit.frame];
@@ -12897,11 +12921,41 @@ function solidPathPanel() {
   const box = $('reSolidPath');
   if (!box) return;
   box.innerHTML = '';
+  // Every point on the path, where it is, and a way to take a waypoint out
+  // without finding its bead — the ends stay, because a path has two.
+  const pts = Array.isArray(roomEdit.solidPath) ? roomEdit.solidPath : [];
+  pts.forEach((pt, i) => {
+    const end = i === 0 || i === pts.length - 1;
+    const row = document.createElement('div');
+    row.className = 're-wp';
+    const name = document.createElement('span');
+    name.className = 're-wp-name mono';
+    name.textContent = i === 0 ? 'front' : end ? 'end' : String(i);
+    const at = document.createElement('span');
+    at.className = 're-wp-at mono';
+    at.textContent = `${(+pt.x).toFixed(2)}  ${(+pt.y).toFixed(2)}  ${(+pt.z).toFixed(2)}`;
+    row.append(name, at);
+    if (!end) {
+      const x = document.createElement('button');
+      x.className = 're-btn re-wp-x';
+      x.textContent = '×';
+      x.title = 'Remove this waypoint';
+      x.dataset.wp = String(i);
+      x.onclick = () => {
+        roomEdit.solidPath.splice(i, 1);
+        saveRoomData();
+        solidPathPanel();
+        paintSolidPath();
+      };
+      row.appendChild(x);
+    }
+    box.appendChild(row);
+  });
   const note = document.createElement('div');
   note.className = 'fx-note';
   note.textContent = roomEdit.on
-    ? 'Drag a point in the room to move it across and up. Drag its bead on the floor to move it across and back. Double-click a waypoint to remove it.'
-    : 'Open the room editor to drag the path.';
+    ? 'Drag a point in the room to move it across and up. Drag its bead on the floor to move it across and back. Double-click a waypoint in the room, or × it here, to remove it.'
+    : 'Open the room editor to drag the path. × removes a waypoint.';
   box.appendChild(note);
 }
 

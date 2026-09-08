@@ -851,7 +851,9 @@ test('Clear empties the trail and the cloud, and leaves the settings alone',
       send(5);
       const full = { lit: read(), grains: visGl.grainShapeNames().length };
 
-      // The settings, before and after, so "clear" can be told from "reset".
+      // The settings, before and after. Clear is the whole room back to
+      // default, so one is moved first and expected to come back.
+      roomEdit.ringDrive = 3;
       const before = JSON.stringify([roomOrder(), roomOcclude(), roomEdit.ringDrive,
         roomEdit.grainDensity, roomCamera()]);
 
@@ -885,8 +887,8 @@ test('Clear empties the trail and the cloud, and leaves the settings alone',
     // what has to go is everything that was poured into it.
     expect(out.empty.lit, `${out.full.lit} lit before, ${out.empty.lit} after — the `
       + 'trail is still there').toBeLessThan(out.full.lit * 0.4);
-    expect(out.kept, 'Clear moved a setting, which is Reset\'s job and not its own')
-      .toBe(true);
+    expect(out.kept, 'Clear left the settings where they were; it puts every one back')
+      .toBe(false);
     expect(out.again.grains, 'the room would not fill again after being cleared')
       .toBeGreaterThan(50);
   });
