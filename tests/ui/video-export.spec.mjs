@@ -760,3 +760,39 @@ test('the film is shot without the ground grid, whatever the room is showing', a
   expect(got.grid, 'the grid went into the film').toBe(false);
   expect(got.floor, 'the terrain was dropped with it').toBe(true);
 });
+
+// The film draws its frames over the minutes an encode takes, and it reads
+// the room's settings on every frame. It was handed the live objects: the
+// path was the very array the beads write into, so a waypoint added or moved
+// while encoding was drawn into the film at the moment it happened — which
+// looked, from the chair, like a recording being played back. The film is the
+// room as posed when Export was pressed.
+test('the film is the room as it was when Export was pressed, not as it is edited after', async ({ page }) => {
+  await openFile(page);
+  const got = await page.evaluate(async () => {
+    const keep = roomEdit.solidPath;
+    roomEdit.solidPath = [{ x: 0, y: 0.4, z: -1.2 }, { x: 0, y: 0.4, z: -2.8 }];
+    let seen = null;
+    const realExport = videoExport, realSupport = videoExportSupport;
+    // Stand in for the exporter, and edit the room while it is 'encoding' —
+    // the same array and the same point objects the beads work on.
+    videoExport = async (opts) => {
+      seen = opts;
+      roomEdit.solidPath.splice(1, 0, { x: 3, y: 3, z: -9 });
+      Object.assign(roomEdit.solidPath[0], { x: 42 });
+      return new Blob([]);
+    };
+    videoExportSupport = () => null;
+    try {
+      await runVideoExport();
+    } finally {
+      videoExport = realExport;
+      videoExportSupport = realSupport;
+      roomEdit.solidPath = keep;
+    }
+    return seen && { points: seen.room.solidPath.length, frontX: seen.room.solidPath[0].x };
+  });
+  expect(got, 'the exporter was never asked').not.toBeNull();
+  expect(got.points, 'a waypoint added during the encode reached the film').toBe(2);
+  expect(got.frontX, 'a point moved during the encode reached the film').toBe(0);
+});
