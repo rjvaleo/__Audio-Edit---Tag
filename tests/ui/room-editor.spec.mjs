@@ -64,48 +64,38 @@ const cam = () => roomWorldNow();
 /// What the source ships: the box's tilt, as a pitch.
 const VG_WORLD_DEFAULT_PITCH = 6.843;
 
-test('dragging the lower room tilts the camera and keeps the room its own height',
+test('dragging the room orbits: the pitch changes, the eye rises, the pivot and the lens hold',
   async ({ page }) => {
     await openRoom(page);
-    const before = await page.evaluate(cam);
+    const before = await page.evaluate(() => ({ ...roomWorldNow(), pivot: camPivot(roomWorldNow()) }));
 
-    // Down the middle of the room: the camera zone, straight down.
+    // Down the middle of the room, straight down.
     await dragRoom(page, [0.5, 0.6], [0.5, 0.85]);
-    const after = await page.evaluate(cam);
+    const after = await page.evaluate(() => ({ ...roomWorldNow(), pivot: camPivot(roomWorldNow()) }));
 
-    // A tilt is a pitch: the camera is a point with a direction, and a drag
-    // turns it. The field of view and the eye's height are untouched.
+    // Drag down and the world's top tips toward you: you are higher, looking
+    // down, at the same pivot, through the same lens.
     expect(after.pitch, 'the camera did not pitch').not.toBeCloseTo(before.pitch, 4);
-    expect(after.height, 'the eye moved instead of pitching').toBeCloseTo(before.height, 6);
-    // The whole point: the height is held and the asymmetry moves. Two fields
-    // would let these drift apart; one gesture cannot.
-    const h0 = before.fov;
-    const h1 = after.fov;
-    expect(h1, `the room changed height (${h0} to ${h1}) instead of tilting`)
-      .toBeCloseTo(h0, 6);
-    // Dragging down looks further up, so the floor takes less of the frame.
-    // Drag down and the horizon comes down with it, which is looking up.
-    expect(after.pitch, 'the pitch went the wrong way').toBeGreaterThan(before.pitch);
+    expect(after.pitch, 'the pitch went the wrong way').toBeLessThan(before.pitch);
+    expect(after.height, 'the eye did not rise over the pivot').toBeGreaterThan(before.height);
+    expect(after.fov, 'the lens changed on an orbit').toBeCloseTo(before.fov, 6);
+    for (let i = 0; i < 3; i++) expect(after.pivot[i], 'the pivot moved').toBeCloseTo(before.pivot[i], 4);
   });
 
-test('dragging sideways slides the frustum and never turns the camera',
+test('dragging sideways orbits round the pivot and never changes the lens',
   async ({ page }) => {
     await openRoom(page);
-    const before = await page.evaluate(cam);
+    const before = await page.evaluate(() => ({ ...roomWorldNow(), pivot: camPivot(roomWorldNow()) }));
 
     await dragRoom(page, [0.5, 0.6], [0.8, 0.6]);
-    const after = await page.evaluate(cam);
+    const after = await page.evaluate(() => ({ ...roomWorldNow(), pivot: camPivot(roomWorldNow()) }));
 
-    // Against the drag, because shifting the frustum right swings the view
-    // right, which carries the vanishing point left. The hand and the vanishing
-    // point go the same way; the number goes the other.
-    // Sideways is a turn: the vanishing point follows the hand, which is the
-    // camera turning the other way.
-    expect(after.yaw, 'the camera did not turn')
-      .toBeLessThan(before.yaw);
-    // A sideways drag is not a tilt.
-    expect(after.fov, 'the view resized on a sideways drag')
-      .toBeCloseTo(before.fov, 6);
+    // The world follows the hand: drag right and it turns right under you,
+    // which is the camera going round to the left.
+    expect(after.yaw, 'the camera did not turn').toBeLessThan(before.yaw);
+    expect(after.x, 'the eye did not go round').not.toBeCloseTo(before.x, 4);
+    expect(after.fov, 'the view resized on a sideways drag').toBeCloseTo(before.fov, 6);
+    for (let i = 0; i < 3; i++) expect(after.pivot[i], 'the pivot moved').toBeCloseTo(before.pivot[i], 4);
   });
 
 test('the ring is dragged by its bead, and the camera stays put', async ({ page }) => {

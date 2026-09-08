@@ -427,3 +427,21 @@ The flag lives on the audio thread's shared state, which is rebuilt whenever a
 sound is opened, so the interface re-sends it on every load. Without that it
 would lapse on the next file and the layers would start disappearing again with
 nothing having been changed.
+
+## The room's camera
+
+The same gestures as Maya, Blender, Unity and Unreal, on the picture while
+the room editor is open. See `docs/OPEN-WORLD.md`, step five.
+
+| gesture | does |
+|---|---|
+| drag · alt+drag | orbit round the pivot |
+| shift+drag · middle-drag | track across the view |
+| wheel · pinch · ctrl+drag · alt+right-drag | dolly toward the pivot |
+| right-drag | look round from where you stand |
+| W A S D · Q E | fly: forward, sideways, down, up |
+| double-click the ground | look there, and pivot there |
+| F | frame the picked point, or the ring |
+| Home | this frame's camera back to the source's |
+| click a point · pull an arrow | pick it · move it along that axis |
+| Delete · Escape | remove the picked waypoint · let go |

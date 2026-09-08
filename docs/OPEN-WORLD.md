@@ -200,3 +200,61 @@ eye stands, so walking never finds an edge of it.
 - `ui/index.html` — the camera rows; `ui/room-paint.js` — **REACH**.
 - `tests/ui/open-world.spec.mjs` — everything goes anywhere; the camera
   walks, sidesteps, pans, tilts and rises; the old records come up to date.
+
+## Step five: the camera the way every 3D program has it
+
+The first camera in the open world was a first-person one: drag to tilt and
+pan, wheel to walk, shift and wheel to sidestep, a tab at the left edge for
+the eye's height, and five sliders. Nobody who has used a 3D program could
+find their way round it, because it is not what any of them do. They all do
+the same thing, and now so does this.
+
+**An eye and a pivot.** The camera looks at a point ahead of it, and the
+gestures are about that point. The record is unchanged — the eye's place and
+direction — with one field added, `focus`: how far ahead the pivot sits. It is
+kept once a gesture has set it; until then it is the ring's distance along the
+look, since the ring is what the room is about. `camPivot`, `camFocus`,
+`camOrbit`, `camDolly`, `camTrack`, `camLook`, `camFly`, `camAim`, `camView`
+are the whole vocabulary, in `ui/app.js` after `roomWorldNow`.
+
+**The gestures**, shared by Maya, Blender, Unity and Unreal:
+
+| | on the picture |
+|---|---|
+| orbit (tumble) | drag · alt+drag |
+| track (pan) | shift+drag · middle-drag · alt+middle-drag · shift+wheel · sideways scroll |
+| dolly (zoom) | wheel · pinch · ctrl+drag · alt+right-drag · ctrl+middle-drag |
+| look (fly) | right-drag |
+| fly | W A S D forward, sideways · Q E down, up |
+| focus | double-click the ground: look there, and pivot there |
+| frame | F, or the Frame button: the picked point, or the ring, at the pivot |
+| home | Home: the frame's camera back to the source's |
+
+The world follows the hand: orbit right and it turns right under you, orbit
+down and its top tips toward you; track keeps the point under the hand under
+it; dolly right or up is in. Look turns the eye in place. The right button is
+a gesture, so the menu it would open is suppressed while the editor is on —
+which is also what stops the release being lost.
+
+**The panel** has ORBIT, TILT, DOLLY and FOV, the same moves as numbers, and
+Front, Side, Top and Frame. The eye-line tab is gone; the reach grip stays,
+since it is the terrain's length and not the camera's.
+
+**Objects have a gizmo.** Click a bead to pick it. Three arrows appear — X
+red, Y green, Z blue — each a unit of the world along its axis scaled to a
+hand's length on screen, so it points the way that axis goes from there
+however the camera stands; an axis seen end-on is not offered. Pull an arrow
+and the point moves along that axis alone. Drag the bead itself and it moves
+freely in the plane facing the camera, staying under the hand; the terrain,
+which lies on the ground, moves on it. Delete removes a picked waypoint,
+Escape lets go, and a click on the bare room lets go too. The floor bead is
+gone; the point's shadow on the ground is still drawn, but only to read its
+height by. The waypoint list picks too, and shows what is picked.
+
+**Sizes.** Orbit at 0.4° per pixel, look at 0.25°, a fly step at six
+hundredths of the focus distance, so every step scales with the scene.
+
+Tests: `open-world.spec.mjs` — orbits, tracks, dollies, looks and flies by
+hand, wheel, key and slider (the pivot checked at every step); a picked point
+moved along one axis by its arrow, and removed by Delete. `room-editor.spec.mjs`
+— the two drag tests are orbits now. `room-geometry.spec.mjs` — one grip.

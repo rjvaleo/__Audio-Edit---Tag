@@ -3289,11 +3289,19 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* The ends are square, the waypoints round — so which is the front and which
    is a stop on the way is legible without a label. */
 .room-path .rp-end { rx: 1; }
-/* The floor bead: smaller and hollow, because it is the shadow of the point
-   rather than the point. Same drag, different plane. */
-.room-path .rp-foot { fill: none; stroke-opacity: .8; cursor: ns-resize; }
-.room-path .rp-foot:hover, .room-path .rp-foot.dragging {
-  fill: var(--accent); stroke: var(--text); stroke-opacity: 1;
+/* The point's shadow on the ground: shown, never grabbed. */
+.room-path .rp-shadow { fill: none; stroke: var(--accent); stroke-width: 1; stroke-opacity: .5; pointer-events: none; }
+/* The picked point, and its move gizmo: one arrow per axis in the colours
+   every 3D program gives them — X red, Y green, Z blue. A tip is grabbed;
+   the line only points. */
+.room-path .rp-pt.picked { fill: var(--accent); stroke: var(--text); }
+.room-path .rp-ax { stroke-width: 2; pointer-events: none; }
+.room-path .rp-tip { stroke: var(--bg); stroke-width: 1; pointer-events: all; cursor: move; }
+.room-path .rp-ax-x { stroke: #e5484d; } .room-path .rp-tip-x { fill: #e5484d; }
+.room-path .rp-ax-y { stroke: #46a758; } .room-path .rp-tip-y { fill: #46a758; }
+.room-path .rp-ax-z { stroke: #3e63dd; } .room-path .rp-tip-z { fill: #3e63dd; }
+.room-path .rp-tip:hover, .room-path .rp-tip.dragging {
+  stroke: var(--text); filter: drop-shadow(0 0 5px currentColor);
 }
 .room-path .rp-lb {
   fill: var(--text-dim); font-size: 9px; font-family: inherit;
@@ -3346,7 +3354,8 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    goes quiet until the pointer is back on the bare room. */
 .room-handles:has(.rh:hover) .rh-zone-tip,
 .room-handles:has(.rh:hover) .rh-zone,
-.room-handles:has(.rp-pt:hover) .rh-zone-tip { opacity: 0 !important; }
+.room-handles:has(.rp-pt:hover) .rh-zone-tip,
+.room-handles:has(.rp-tip:hover) .rh-zone-tip { opacity: 0 !important; }
 
 /* Sized and shaped by what they do: a grip that stretches the wall sideways is
    a tall thin bar on its edge, and one that stretches it up and down is a wide
@@ -3355,29 +3364,6 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rh-h { width: 22px; height: 5px; cursor: ns-resize; }
 .rh-depth { width: 11px; height: 11px; border-radius: 50%; cursor: move; }
 .rh-ring { width: 11px; height: 11px; border-radius: 50%; cursor: move; }
-
-/* The eye line: a **short tab at the left edge**, not a band across the frame.
-   A full-width grip was the first version and it took the whole middle of the
-   room with it — which is exactly where you reach to swing the view, so the
-   oldest gesture in this panel stopped working along the one line people
-   naturally grab. This program has already learned that once, for the grain
-   centre line: "a short tab at the left edge rather than a full-width band,
-   because the rest of that line has to stay available for selecting."
-
-   The hairline is drawn as a marker so the eye line is still *visible* the
-   whole way across, and it takes no pointer — only the tab does. */
-.rh-horizon {
-  left: 0; width: 26px; height: 9px;
-  transform: translate(0, -50%);
-  border-radius: 0 3px 3px 0;
-  cursor: ns-resize;
-}
-.rh-horizon::after {
-  /* The line itself, shown and not grabbable. */
-  content: ''; position: absolute; left: 26px; top: 50%;
-  width: 100vw; height: 1px; margin-top: -0.5px;
-  background: var(--accent); opacity: .28; pointer-events: none;
-}
 
 /* A word on what it does, on the way past. */
 .rh-tip {
@@ -3857,3 +3843,6 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .re-wp-name { flex: 0 0 34px; color: var(--text-2); }
 .re-wp-at { flex: 1 1 auto; color: var(--text-dimmer); white-space: pre; }
 .re-wp-x { flex: 0 0 auto; padding: 0 6px; line-height: 1.2; }
+.re-wp { cursor: pointer; }
+.re-wp.picked .re-wp-name { color: var(--accent); }
+.re-legend .fx-note { white-space: normal; }

@@ -21,26 +21,40 @@ async function openRoom(page) {
 
 const cam = () => roomCamNow();
 
-test('a secondary press does not start a drag, and the room does not follow the pointer after it', async ({ page }) => {
+// The right button is a gesture now — look round — so the menu it would
+// open is suppressed while the editor is on. That is also what used to lose
+// the release: the menu took it, and the room followed the pointer with
+// nothing pressed. The guard against that stays, and is checked here.
+test('a right press looks round, opens no menu, and lets go when the button is up', async ({ page }) => {
   await openRoom(page);
   const got = await page.evaluate(() => {
     const gl = $('visGl');
     const r = gl.getBoundingClientRect();
     const before = roomWorldNow();
-    const at = (x, y, extra) => new PointerEvent('pointerdown', {
+    const at = (type, x, y, extra) => new PointerEvent(type, {
       clientX: r.left + r.width * x, clientY: r.top + r.height * y, pointerId: 1,
       bubbles: true, ...extra,
     });
-    gl.dispatchEvent(at(0.5, 0.6, { button: 2, buttons: 2 }));
-    const started = !!roomEdit.drag;
-    // The menu took the release. The pointer moves on with nothing pressed.
-    gl.dispatchEvent(new PointerEvent('pointermove', {
-      clientX: r.left + r.width * 0.5, clientY: r.top + r.height * 0.9, pointerId: 1, buttons: 0, bubbles: true,
-    }));
+    gl.dispatchEvent(at('pointerdown', 0.5, 0.6, { button: 2, buttons: 2 }));
+    const mode = roomEdit.drag?.mode;
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    gl.dispatchEvent(menu);
+    gl.dispatchEvent(at('pointermove', 0.6, 0.6, { buttons: 2 }));
+    const looked = roomWorldNow();
+    // The pointer moves on with nothing pressed: the drag ends, nothing moves.
+    gl.dispatchEvent(at('pointermove', 0.5, 0.9, { buttons: 0 }));
     const after = roomWorldNow();
-    return { started, moved: after.pitch !== before.pitch };
+    return {
+      mode, menu: menu.defaultPrevented,
+      turned: looked.yaw !== before.yaw, stood: looked.x === before.x && looked.z === before.z,
+      ended: !roomEdit.drag, moved: after.pitch !== looked.pitch || after.yaw !== looked.yaw,
+    };
   });
-  expect(got.started, 'a secondary press started a drag').toBe(false);
+  expect(got.mode, 'a right press is a look').toBe('look');
+  expect(got.menu, 'the menu opened on a right press').toBe(true);
+  expect(got.turned, 'the look did not turn').toBe(true);
+  expect(got.stood, 'a look moved the eye').toBe(true);
+  expect(got.ended, 'the drag outlived the button').toBe(true);
   expect(got.moved, 'the room followed a pointer with nothing pressed').toBe(false);
 });
 
@@ -82,7 +96,7 @@ test('the whole picture is the camera, and the word under the hand says so', asy
       cursor: $('visGl').style.cursor,
     }));
     expect(got.zone).toBe('camera');
-    expect(got.tip).toMatch(/^CAMERA/);
+    expect(got.tip).toMatch(/^ORBIT/);
     expect(got.band, 'there is no sky zone to band').toBe('0');
     expect(got.cursor).toBe('grab');
   }

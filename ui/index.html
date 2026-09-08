@@ -826,34 +826,40 @@
                       min="0" max="800" step="1"
                       title="How hard the sound pushes the ring out of round. Well past 1× at the top — a breath becomes a crown.">
                   </div>
-                  <!-- The camera: where you stand and where you look. The same
-                       pose a drag on the picture makes, as numbers, for a
-                       precise one. Room view only — the dock's overlay has no
-                       room for five more rows, and the drags are there. -->
+                  <!-- The camera, as every 3D program has it: orbit, tilt
+                       and dolly about a pivot, and the lens. The same moves
+                       the gestures on the picture make, as numbers. Room
+                       view only — the dock's overlay has no room for them,
+                       and the gestures are there. -->
                   <div class="re-row re-cam">
-                    <span class="re-tag">PAN</span>
-                    <input class="re-slider" id="reCamPan" type="range" min="-180" max="180" step="1"
-                      title="Which way the camera looks, in degrees. Dragging the picture sideways is the same.">
+                    <span class="re-tag">ORBIT</span>
+                    <input class="re-slider" id="reCamOrbit" type="range" min="-180" max="180" step="1"
+                      title="Round the pivot, in degrees. Dragging the picture sideways is the same.">
                   </div>
                   <div class="re-row re-cam">
                     <span class="re-tag">TILT</span>
-                    <input class="re-slider" id="reCamTilt" type="range" min="-80" max="80" step="1"
-                      title="Up and down, in degrees. Dragging the picture up and down is the same.">
+                    <input class="re-slider" id="reCamTilt" type="range" min="-89" max="89" step="1"
+                      title="Over the pivot, in degrees: down is from above. Dragging the picture up and down is the same.">
                   </div>
                   <div class="re-row re-cam">
-                    <span class="re-tag">HEIGHT</span>
-                    <input class="re-slider" id="reCamHeight" type="range" min="2" max="600" step="1"
-                      title="The eye above the ground, in hundredths of a unit. Dragging the eye line is the same.">
+                    <span class="re-tag">DOLLY</span>
+                    <input class="re-slider" id="reCamDolly" type="range" min="5" max="2000" step="1"
+                      title="How far from the pivot, in hundredths of a unit. The wheel is the same.">
                   </div>
                   <div class="re-row re-cam">
-                    <span class="re-tag">SIDE</span>
-                    <input class="re-slider" id="reCamX" type="range" min="-2000" max="2000" step="1"
-                      title="Where you stand, across, in hundredths of a unit. Shift and scroll on the picture is the same.">
+                    <span class="re-tag">FOV</span>
+                    <input class="re-slider" id="reCamFov" type="range" min="15" max="120" step="1"
+                      title="The lens, in degrees top to bottom. Narrow is a long lens.">
                   </div>
                   <div class="re-row re-cam">
-                    <span class="re-tag">WALK</span>
-                    <input class="re-slider" id="reCamZ" type="range" min="-2000" max="2000" step="1"
-                      title="Where you stand, along — negative is further in. Scrolling on the picture is the same.">
+                    <span class="re-tag">VIEW</span>
+                    <button class="re-btn" id="reCamFront" title="Level, from the front, at the same pivot and distance.">Front</button>
+                    <button class="re-btn" id="reCamSide" title="Level, from the side.">Side</button>
+                    <button class="re-btn" id="reCamTop" title="Straight down.">Top</button>
+                    <button class="re-btn" id="reCamFrame" title="Put the picked point — or the ring — at the pivot, filling the view. F does the same.">Frame</button>
+                  </div>
+                  <div class="re-row re-cam re-legend">
+                    <span class="fx-note">drag orbit · shift+drag track · ctrl+drag dolly · right-drag look · wheel dolly · shift+wheel track · double-click focus · WASD QE fly · F frame · Home reset · click a point, pull an arrow · Delete removes it</span>
                   </div>
                   <!-- The four-dimensional solid. Under the ring's controls,
                        because it hangs in the same room and is read against it.
