@@ -112,8 +112,9 @@ const VG_DEG = 180 / Math.PI;
 // ── the solid: one shape, any dimension, every control ─────────────────────
 //
 // Both catalogues come through here. A four-dimensional (or higher) solid
-// carries a `w` and turns in every plane it has; a grain shape is three
-// dimensional and turns in three. **Every control reaches every shape.** The
+// carries a `w` and turns in every plane it has; a grain shape is lifted
+// into four as a prism, so it does too. **Every control reaches every
+// shape.** The
 // sound's turn — `zw`, `xw` — used to touch only the four-dimensional ones,
 // and the eye only their projection, so the grain shapes sat there ignoring
 // TURN and EYE. Now a three-dimensional shape takes the sound's turn in the
@@ -134,14 +135,33 @@ function vgSolidShape(key) {
   if (!g) return null;
   let built = VG_SOLID_CACHE.get(key);
   if (!built) {
+    // **Lifted into four dimensions as a prism.** Two copies of the shape,
+    // one at w = -1 and one at w = +1, every vertex joined to its twin — the
+    // same construction that makes a tesseract out of a cube. So a turn
+    // through ZW swings the two copies through each other and the shape
+    // turns inside out, which a three-dimensional wireframe never could.
+    // The height in w is the shape's own radius, so the prism is as deep as
+    // it is wide, as the tesseract is.
+    const n = g.verts;
+    let r = 0;
+    for (let i = 0; i < n; i++) r = Math.max(r, Math.hypot(g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]));
+    const h = r > 0 ? r : 1;
     const verts = [];
-    for (let i = 0; i < g.verts; i++) verts.push([g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]]);
+    for (const w of [-h, h]) {
+      for (let i = 0; i < n; i++) verts.push([g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2], w]);
+    }
     const edges = [];
-    for (let i = 0; i < g.lines; i++) edges.push([g.idx[i * 2], g.idx[i * 2 + 1]]);
-    built = { dim: 3, verts, edges };
+    for (let i = 0; i < g.lines; i++) {
+      const a = g.idx[i * 2], b = g.idx[i * 2 + 1];
+      edges.push([a, b], [a + n, b + n]);
+    }
+    for (let i = 0; i < n; i++) edges.push([i, i + n]);
+    // Unit radius, as the catalogue's solids are, so SIZE means the same.
+    const far = Math.hypot(h, h) || 1;
+    built = { dim: 4, verts: verts.map((v) => v.map((x) => x / far)), edges, prism: true };
     VG_SOLID_CACHE.set(key, built);
   }
-  return { shape: built, is4d: false };
+  return { shape: built, is4d: true };
 }
 
 /// The angles for a shape of `dim` dimensions from the solid's four drives:

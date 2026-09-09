@@ -8757,7 +8757,7 @@ function buildRoomChunks() {
         ? GRAIN_SHAPES.map((m) => ({
           value: m.name,
           label: m.name.replace(/^./, (c) => c.toUpperCase()),
-          hint: `${m.verts} vertices · ${m.lines} edges`,
+          hint: `${m.verts} vertices · ${m.lines} edges — lifted into four dimensions as a prism, two copies joined vertex to vertex, so it turns inside out like the rest`,
         }))
         : []);
     }
