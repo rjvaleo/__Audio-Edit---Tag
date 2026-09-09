@@ -209,7 +209,44 @@ test('every shape in both catalogues answers the sound\'s turn and the eye', asy
     expect(r.three, `${key} did not come out three-dimensional`).toBe(true);
   }
   expect(got.cell8.is4d).toBe(true);
-  expect(Object.values(got).some((r) => !r.is4d), 'no grain shape was tested').toBe(true);
+  expect(Object.values(got).every((r) => r.is4d && r.dim === 4 || r.dim > 4), 'a shape is still three-dimensional').toBe(true);
+});
+
+// A grain shape is lifted into four dimensions as a prism — two copies joined
+// vertex to vertex, the way a cube becomes a tesseract — so a turn through ZW
+// swings the copies through each other and it turns inside out too.
+test('a grain shape is a four-dimensional prism, and turns inside out through ZW', async ({ page }) => {
+  await ready(page);
+  const got = await page.evaluate(() => {
+    const g = GRAIN_SHAPES[0];
+    const { shape, is4d } = vgSolidShape(g.name);
+    const radii = (angles) => {
+      const flat = Shapes4D.project(Shapes4D.rotate(shape.verts, angles), { eye: 2.5 });
+      return flat.map((v) => Math.hypot(...v)).sort((a, b) => a - b);
+    };
+    const spread = (r) => r[r.length - 1] - r[0];
+    const rest = radii({});
+    const twins = shape.edges.filter(([a, b]) => Math.abs(a - b) === g.verts).length;
+    return {
+      name: g.name, is4d, dim: shape.verts[0].length,
+      verts: shape.verts.length, wantVerts: 2 * g.verts,
+      edges: shape.edges.length, wantEdges: 2 * g.lines + g.verts, twins,
+      unit: Math.max(...shape.verts.map((v) => Math.hypot(...v))),
+      atRest: spread(rest), quarterWay: spread(radii({ zw: Math.PI / 4 })), halfTurn: spread(radii({ zw: Math.PI })),
+    };
+  });
+  expect(got.is4d).toBe(true);
+  expect(got.dim).toBe(4);
+  expect(got.verts).toBe(got.wantVerts);
+  expect(got.edges).toBe(got.wantEdges);
+  expect(got.twins, 'not every vertex is joined to its twin').toBe(got.wantVerts / 2);
+  expect(got.unit).toBeCloseTo(1, 6);
+  // Part way through ZW the shadow is a different shape; at a half turn the
+  // two copies have swapped places and it matches again. (The tesseract
+  // matches at a quarter turn as well, being the same in z as in w; a prism
+  // over an arbitrary polyhedron is not, so only the half turn is promised.)
+  expect(Math.abs(got.quarterWay - got.atRest), `${got.name} did not turn inside out`).toBeGreaterThan(0.02);
+  expect(Math.abs(got.halfTurn - got.atRest), 'the copies did not swap back at a half turn').toBeLessThan(1e-6);
 });
 
 test('the projection never divides by nothing, however close the eye is put', async ({ page }) => {

@@ -155,3 +155,21 @@ twenty-one of its planes and no two of them together.
 Tests in `shapes-4d.spec.mjs`: a higher simplex turns through its extra axes
 while a tesseract ignores those keys; every shape in both catalogues answers
 the sound's turn and the eye.
+
+## The grain shapes are four-dimensional too
+
+Asked for after the above: the grain shapes turned, but not inside out, and
+inside out is the good part. So `vgSolidShape` lifts each one into four
+dimensions as a **prism** — two copies of the shape, one at w = −1 and one at
+w = +1, every vertex joined to its twin. It is the construction that makes a
+tesseract out of a cube, and it does for any polyhedron what it does for the
+cube: a turn through ZW swings the two copies through each other. The height
+in w is the shape's own radius, so the prism is as deep as it is wide, and
+the whole is scaled to unit radius so SIZE means the same as it does for the
+catalogue's solids. Twice the vertices, twice the edges plus one per vertex.
+The three-dimensional pose in `vgSolidPose` stays for anything that arrives
+without a `w`, but nothing in the list does now.
+
+Test: a grain shape is a four-dimensional prism with the right counts, and
+the tesseract's own inside-out test — a different shadow part way through
+ZW, the same one again at a quarter turn — passes on it.
