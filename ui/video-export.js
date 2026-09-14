@@ -157,7 +157,7 @@ function dataRgb(hex) {
 async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   layers, occlude, order, room, background, data, schedule, fetchSchedule, padSeconds,
   loopOut, signal, onStage, module, ridge, ridgePaint, room3d, room3dPaint,
-  stage, stagePaint, text, textPaint, sequencer, seqAt0 }) {
+  stage, stagePaint, text, textPaint, sequencer, seqAt0, grain = true }) {
   const why = videoExportSupport();
   if (why) throw new Error(why);
 
@@ -206,6 +206,10 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   const channels = status.channels;
   const rate = status.rate;
   const audioFrames = audio.length / channels;
+  // GRAIN off: the engine's sound is out of the film, and so is its picture
+  // — the reel's spectra are floored and its figures zeroed where they are
+  // read, below — so what is left is the sequencer's, or nothing.
+  if (!grain) audio.fill(0);
 
   // ── the sequencer, if it is in the film ──
   //
@@ -431,6 +435,7 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
       const base = pushed * per;
       frame.set(reel.subarray(base, base + status.bands));
       liss.set(reel.subarray(base + status.bands, base + per));
+      if (!grain) { frame.fill(-100); liss.fill(0); }
       if (seqReel && pushed < seqReel.frames) {
         seqMixSpectrum(frame, seqReel.spectra.subarray(pushed * status.bands, (pushed + 1) * status.bands));
         const lw = seqReel.lissN * 2;

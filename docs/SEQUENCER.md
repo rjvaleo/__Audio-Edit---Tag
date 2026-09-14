@@ -152,3 +152,33 @@ while playing. That should be built as one thing:
 
 Embedded with `include_str!`. **Rebuild the binary after editing any of
 them** or the browser is served the old file.
+
+## The recorder arms, and the transport starts the take
+
+The sequencer's REC PERF used to start its clock on the button, whatever the
+transport was doing. It arms now (`perfArmed`), and the take begins when the
+transport starts — the page's own Play, or the engine's through the bridge's
+`playAt` — and ends when it stops (`stopSeq`, or a pause). `perfArmedBegin`
+is the hook both Plays call; `perfRecStop` on an armed-but-unbegun recorder
+just disarms.
+
+## The SEQ switch
+
+SEQ on the transport is whether the sequencer plays at all. Off, `seqSync`
+tells it to stop whatever the engine does and stops clocking it, `seqMix`
+leaves the engine's feed alone, and an export or a film leaves it out unless
+the export dialog says otherwise for one export. Switching it on loads the
+frame if it is not loaded. Kept in `audiolab.sources.v1`.
+
+## The sequencer in a sound export
+
+The plain Export renders on the server, which never hears the sequencer. So
+once the file is written, the page renders the sequencer offline for the
+export's length from where the export starts (`exportAddStem`, through the
+same `seq:render` the film uses), and posts it as interleaved little-endian
+f32 to `POST /api/export/stem`. The server reads the export back, sums the
+stem in, and writes the file again — clamped at the rails and under the same
+soft ceiling every export gets. Rendering after the export means nothing has
+to predict how long a loop with a tail comes out. `GRAIN` off goes with it as
+`grain=0`, which silences the export's own sound first, so an export of one
+source is what it says. `mix_stem_into` is unit-tested in `routes.rs`.

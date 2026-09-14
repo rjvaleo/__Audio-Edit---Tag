@@ -232,3 +232,34 @@ test('a film mixes the two spectra as power and the two figures as samples, per 
   expect(got.a[2]).toBeCloseTo(-20, 1);
   expect(got.l).toEqual([1, -1, 0.2]);
 });
+
+// The sequencer's recorder arms the same way: REC PERF waits, the engine's
+// Play begins the take, its stop ends it.
+test('the sequencer\'s REC PERF arms, and the engine\'s transport starts and ends the take', async ({ page }) => {
+  const frame = await enterSeq(page);
+  await frame.evaluate(() => { if (isPlaying) stopSeq(); perfToggleRec(); });
+  const armed = await frame.evaluate(() => ({
+    armed: perfArmed, rec: !!perfRec, playing: isPlaying,
+    btn: document.getElementById('perfRecBtn').textContent.trim(),
+  }));
+  expect(armed.armed, 'REC PERF did not arm').toBe(true);
+  expect(armed.rec, 'the take began before Play').toBe(false);
+  expect(armed.playing, 'arming started the sequencer').toBe(false);
+  expect(armed.btn).toBe('⏺ ARMED');
+  await page.evaluate(() => { playbackTime = () => 0; seqSync(true); });
+  await page.waitForTimeout(300);
+  const taking = await frame.evaluate(() => ({ armed: perfArmed, rec: !!perfRec, playing: isPlaying, btn: document.getElementById('perfRecBtn').textContent.trim() }));
+  expect(taking.playing).toBe(true);
+  expect(taking.rec, 'the engine\'s Play did not begin the take').toBe(true);
+  expect(taking.armed).toBe(false);
+  expect(taking.btn).toBe('⏺ CAPTURING');
+  await page.evaluate(() => seqSync(false));
+  await page.waitForTimeout(300);
+  const ended = await frame.evaluate(() => ({ rec: !!perfRec, playing: isPlaying, btn: document.getElementById('perfRecBtn').textContent.trim() }));
+  expect(ended.playing).toBe(false);
+  expect(ended.rec, 'the stop did not end the take').toBe(false);
+  expect(ended.btn).toBe('⏺ REC PERF');
+  // Armed and pressed again: disarmed, nothing kept.
+  await frame.evaluate(() => { perfToggleRec(); perfToggleRec(); });
+  expect(await frame.evaluate(() => perfArmed)).toBe(false);
+});

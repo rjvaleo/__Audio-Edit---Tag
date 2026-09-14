@@ -646,6 +646,50 @@ $('volume').oninput = (e) => {
   enginePost({ gain: engine.gain });
 };
 
+// ── the two sound generators, and which of them play ──────────────────────
+//
+// GRAIN is the granular engine; SEQ is the sequencer. Each is a switch on the
+// transport — so it is in the room's foot as well — and a source switched
+// off is silent, out of the picture, and out of an export. Before this the
+// sequencer played on every Play once it had ever been opened, and there was
+// no way to hear one without the other. The engine keeps running with GRAIN
+// off: the transport, the clock and the sequencer's sync come from it.
+const SOURCES_KEY = 'audiolab.sources.v1';
+state.sources = { grain: true, seq: true };
+try {
+  const v = JSON.parse(localStorage.getItem(SOURCES_KEY) || 'null');
+  if (v && typeof v === 'object') state.sources = { grain: v.grain !== false, seq: v.seq !== false };
+} catch { /* private mode */ }
+
+function sourceOn(key) {
+  return state.sources[key] !== false;
+}
+
+function setSource(key, on) {
+  state.sources[key] = !!on;
+  try { localStorage.setItem(SOURCES_KEY, JSON.stringify(state.sources)); } catch {}
+  paintSources();
+  if (key === 'grain') enginePost({ mute: !on });
+  if (key === 'seq') {
+    if (on) { seqEnsureFrame(); if (engine.playing) seqSync(true); }
+    else { seqSync(false); seq.feed = null; }
+  }
+}
+
+function paintSources() {
+  for (const [id, key, what] of [['srcGrain', 'grain', 'The granular engine'], ['srcSeq', 'seq', 'The sequencer']]) {
+    const b = $(id);
+    if (!b) continue;
+    const on = sourceOn(key);
+    b.classList.toggle('on', on);
+    b.title = `${what}: ${on ? 'plays, is drawn, and is exported' : 'off — silent, out of the picture, out of an export'}. Click to switch.`;
+  }
+}
+for (const [id, key] of [['srcGrain', 'grain'], ['srcSeq', 'seq']]) {
+  $(id)?.addEventListener('click', () => setSource(key, !sourceOn(key)));
+}
+paintSources();
+
 /// Is there anything to play through?
 const noAudio = () => engine.device === false;
 
@@ -875,7 +919,8 @@ function startPlayback() {
   captureFollow(true);
   engine.heard = performance.now();
   reflectTransport();
-  enginePost({ play: true });
+  enginePost({ play: true, mute: !sourceOn('grain') });
+  captureTransport(true);
   startTransportLoop();
   startPolling();
   startSwarm();
@@ -895,7 +940,7 @@ function pausePlayback() {
   paintTime();
   stopSwarm();
   seqSync(false);
-  if (state.captureArmed) endCapture();
+  captureTransport(false);
 }
 
 function reflectTransport() {
@@ -2821,9 +2866,29 @@ function exportLoopRange() {
 /// `/api/export`, which is also where the progress comes from. A four-minute
 /// file takes twenty-five seconds and the old call simply blocked for all of
 /// it with nothing on screen.
+/// What is added to the export once the server has written it: the
+/// sequencer's stem, and the GRAIN switch. Set by `runExport`, read by
+/// `pollExport` when the file is there. `null` when nothing is to be added.
+let exportAfter = null;
+
+/// Whether the sequencer goes into this export: the dialog's switch while it
+/// is open, the SEQ source switch otherwise — a whole-file export has no
+/// dialog, and the switch on the transport is where you already said.
+function exportWithSeq() {
+  if (!seqLoaded()) return false;
+  const dlg = $('exportLoop');
+  if (dlg && !dlg.classList.contains('hidden')) return !!$('elSeq')?.classList.contains('on');
+  return sourceOn('seq');
+}
+
 async function runExport(range, repeats, tail) {
   if (!state.selectedFile) return;
   const body = { p: state.selectedFile.path, bits: state.exportBits };
+  const withSeq = exportWithSeq();
+  const grain = sourceOn('grain');
+  exportAfter = (withSeq || !grain)
+    ? { withSeq, grain, at0: ((range ? range.from : 0) / (state.view?.sampleRate || 48000)) * timeRatio(), bits: state.exportBits }
+    : null;
   if (range) {
     body.from = Math.round(range.from);
     body.to = Math.round(range.to);
@@ -2894,7 +2959,49 @@ async function pollExport() {
   if (s.path) {
     const name = s.path.split('/').pop();
     const secs = state.view?.sampleRate ? (s.frames / state.view.sampleRate) : 0;
-    toast(`Exported ${secs.toFixed(2)}s, ${state.exportBits}-bit AIFF beside the original — ${name}`);
+    const after = exportAfter;
+    exportAfter = null;
+    if (after) {
+      try {
+        await exportAddStem(s, after);
+      } catch (e) {
+        toast('Exported, but the sequencer could not be added: ' + e.message);
+        return;
+      }
+    }
+    const what = after && after.withSeq ? (after.grain ? ' with the sequencer' : ', the sequencer alone') : after && !after.grain ? ', silent — GRAIN is off' : '';
+    toast(`Exported ${secs.toFixed(2)}s, ${state.exportBits}-bit AIFF beside the original${what} — ${name}`);
+  }
+}
+
+/// The sequencer, rendered for the export's length from where it starts,
+/// posted to the server, and summed into the file — after the export, so
+/// nothing here has to know how long a loop with a tail comes out.
+async function exportAddStem(s, after) {
+  const rate = state.view?.sampleRate || 48000;
+  const seconds = Math.max(0.1, (s.frames || 0) / rate);
+  let body = new ArrayBuffer(0);
+  if (after.withSeq) {
+    showExportProgress(true);
+    $('epPhase').textContent = 'Rendering the sequencer';
+    const r = await seqRenderForFilm({
+      at0: after.at0, seconds, rate, fps: 1, bands: 8, liss: 16,
+      onProgress: (f) => { $('epFill').style.width = `${Math.round(f * 100)}%`; $('epPct').textContent = `${Math.round(f * 100)}%`; },
+    });
+    if (r && r.left) {
+      const n = r.left.length;
+      const inter = new Float32Array(n * 2);
+      for (let i = 0; i < n; i++) { inter[i * 2] = r.left[i]; inter[i * 2 + 1] = (r.right || r.left)[i]; }
+      body = inter.buffer;
+    }
+    $('epPhase').textContent = 'Adding the sequencer';
+  }
+  try {
+    const q = `rate=${rate}&channels=2&grain=${after.grain ? 1 : 0}&bits=${after.bits}`;
+    const res = await fetch(`/api/export/stem?${q}`, { method: 'POST', body });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  } finally {
+    showExportProgress(false);
   }
 }
 
@@ -2961,6 +3068,9 @@ function videoSizeForFrame(current) {
 function openExportLoop(range) {
   exportRange = range;
   buildVideoPickers();
+  // The sequencer switch starts from the SEQ source switch; the dialog is
+  // where one export can say otherwise.
+  $('elSeq')?.classList.toggle('on', seqLoaded() && sourceOn('seq'));
   // Set on every open rather than once when the pickers are built: the frame
   // can change between one export and the next, and the box is the last place
   // that choice is visible before it is filmed.
@@ -3202,6 +3312,7 @@ async function runVideoExport() {
       fps,
       sequencer: seqInFilm() ? seqRenderForFilm : null,
       seqAt0,
+      grain: sourceOn('grain'),
       // The room as it is posed right now, at the frame being filmed. The
       // camera is the pose; the aspect comes from the canvas, which is why a
       // wide room in a tall frame is a narrower room and not a squashed one.
@@ -6182,6 +6293,8 @@ $('automationBypass').onchange = (e) => {
 
 $('automationRecord').onchange = (e) => setAutomationRecord(e.target.value);
 $('automationCapture')?.addEventListener('click', () => {
+  // Arm; pressed again while armed, disarm — or, mid-take, end the take by
+  // stopping the transport, which is what ends it.
   if (!state.captureArmed) { startCapture(); return; }
   if (engine.playing) pausePlayback(); else endCapture();
 });
@@ -9852,6 +9965,9 @@ function seqPost(m) {
 /// the engine is*; stop stops it. The position is the engine's output time in
 /// seconds — `playbackTime` — which is the one clock both run on.
 function seqSync(playing) {
+  // The SEQ switch: off, the sequencer is told to stop whatever the engine
+  // does, and is not clocked.
+  playing = playing && sourceOn('seq');
   seqPost({ type: 'seq:transport', playing, at: playing ? playbackTime() : 0 });
   clearInterval(seq.clock);
   seq.clock = null;
@@ -9909,7 +10025,7 @@ function seqPlaying() {
 /// engine silent the sequencer's feed stands in whole, so the room still has
 /// something to draw.
 function seqMix(data, bands) {
-  if (!seqPlaying()) return data;
+  if (!sourceOn('seq') || !seqPlaying()) return data;
   const f = seq.feed;
   seqAsk(bands, data?.lo || 20, data?.hi || 20000);
   const spec = f.spectrum || [];
@@ -9989,20 +10105,46 @@ function seqRenderForFilm(spec) {
 
 state.captureArmed = false;
 
+/// REC PERF arms. The take starts when Play does, and ends when the
+/// transport stops. It used to start playback itself the instant the button
+/// was pressed, which meant the take always began with you reaching for the
+/// controls; arming and pressing Play is how every recorder works.
 async function startCapture() {
   if (!state.selectedFile) { toast('Open a sound first'); return; }
   await setAutomationRecord('latch');
   state.captureArmed = true;
+  captureShow(engine.playing ? 'taking' : 'armed');
+}
+
+/// The capture's state, on the button, the status line and the transport.
+function captureShow(how) {
   const b = $('automationCapture');
-  if (b) { b.classList.add('recording'); b.textContent = '⏺ CAPTURING'; }
-  perfSetStatus('CAPTURING — EVERY CONTROL MOVE IS BEING RECORDED');
-  if (!engine.playing) startPlayback();
+  const l = $('recLabel');
+  if (how === 'armed') {
+    if (b) { b.classList.add('armed'); b.classList.remove('recording'); b.textContent = '⏺ ARMED'; }
+    perfSetStatus('ARMED — PRESS PLAY TO START THE TAKE · STOP ENDS IT');
+    if (l) l.textContent = 'PERF ARMED';
+  } else if (how === 'taking') {
+    if (b) { b.classList.remove('armed'); b.classList.add('recording'); b.textContent = '⏺ CAPTURING'; }
+    perfSetStatus('CAPTURING — EVERY CONTROL MOVE IS BEING RECORDED · STOP ENDS THE TAKE');
+    if (l) l.textContent = 'PERF ● REC';
+  } else {
+    if (b) { b.classList.remove('armed', 'recording'); b.textContent = '⏺ REC PERF'; }
+    if (l && /^PERF/.test(l.textContent)) l.textContent = '';
+  }
+}
+
+/// The transport, as the capture hears it: Play starts an armed take, and
+/// a stop ends one.
+function captureTransport(playing) {
+  if (!state.captureArmed) return;
+  if (playing) captureShow('taking');
+  else endCapture();
 }
 
 async function endCapture() {
   state.captureArmed = false;
-  const b = $('automationCapture');
-  if (b) { b.classList.remove('recording'); b.textContent = '⏺ REC PERF'; }
+  captureShow('off');
   await setAutomationRecord('off');
   await loadAutomation();
   const lanes = state.automation.lanes || [];
@@ -15093,7 +15235,9 @@ async function mbTick() {
     const el = $('visGl');
     const want = Math.max(64, Math.min(2048, Math.round(el?.clientWidth || 256)));
     const r = await api(`/api/engine/master?fft=${masterBus.fft}&bands=${want}`);
-    masterBus.data = seqMix(r && r.live ? r : null, want);
+    // GRAIN off: the engine's own feed is not drawn, so the picture is the
+    // sequencer's alone, or nothing.
+    masterBus.data = seqMix(sourceOn('grain') && r && r.live ? r : null, want);
   } catch {
     // A meter that cannot reach the server shows nothing rather than the last
     // thing it saw. Freezing on a stale reading is the one behaviour a meter is

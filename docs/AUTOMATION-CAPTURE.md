@@ -141,3 +141,18 @@ shows what it is told; if the recorder was left armed the status line says so.
 And `pagehide` sends a beacon setting the mode to off, because a recording is
 something you are doing, and you are not doing it once the page is gone. One
 consequence: closing one window disarms a capture running in another.
+
+## Arm, then Play
+
+REC PERF used to start playback itself the instant it was pressed, so every
+take began with you reaching for the controls. It arms now: the button says
+ARMED, the transport's label says PERF ARMED, and nothing is written until
+Play. Play begins the take at the playhead — the server already only records
+while the transport runs, so this is the interface's part — and a stop ends
+it, saves it and disarms. Pressed again while armed, it disarms. Pressed
+mid-take, it stops the transport, which is what ends a take.
+
+`startCapture` arms; `captureTransport(playing)` is what `startPlayback` and
+`pausePlayback` call; `captureShow` paints the three states on the button,
+the status line and the transport. The sequencer's recorder follows the same
+rule — see `docs/SEQUENCER.md`.
