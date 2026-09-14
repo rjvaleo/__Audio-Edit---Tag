@@ -3869,3 +3869,10 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .room-gnomon .gx { stroke: #e5484d; fill: #e5484d; }
 .room-gnomon .gy { stroke: #46a758; fill: #46a758; }
 .room-gnomon .gz { stroke: #3e63dd; fill: #3e63dd; }
+
+/* The source switches on the transport: lit while the source plays. */
+.tbtn.src { font-size: 8px; letter-spacing: .08em; padding: 0 6px; opacity: .45; }
+.tbtn.src.on { opacity: 1; color: var(--accent); border-color: var(--accent); }
+/* REC PERF, armed and waiting for Play. */
+.perf-rec-btn.armed { color: var(--accent); border-color: var(--accent); animation: perf-armed 1.2s ease-in-out infinite; }
+@keyframes perf-armed { 50% { opacity: .45; } }

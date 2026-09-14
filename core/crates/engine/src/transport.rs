@@ -113,6 +113,9 @@ pub struct Shared {
     latency: AtomicU64,
     /// Output gain, as f32 bits.
     gain: AtomicU32,
+    /// Silent, whatever the gain: the GRAIN source switch. The engine keeps
+    /// running, so the transport and everything clocked from it carry on.
+    mute: AtomicBool,
     /// Grains dropped because the voice pool was full.
     pub overflows: AtomicU64,
 
@@ -334,6 +337,7 @@ impl Shared {
             heard_b: AtomicU64::new(0),
             latency: AtomicU64::new(0),
             gain: AtomicU32::new(1.0f32.to_bits()),
+            mute: AtomicBool::new(false),
             overflows: AtomicU64::new(0),
             load_now: AtomicU32::new(0),
             load_mean: AtomicU32::new(0),
@@ -747,6 +751,14 @@ impl Shared {
 
     pub fn set_gain(&self, g: f32) {
         self.gain.store(g.clamp(0.0, 4.0).to_bits(), Ordering::Release);
+    }
+
+    pub fn set_mute(&self, m: bool) {
+        self.mute.store(m, Ordering::Release);
+    }
+
+    pub fn muted(&self) -> bool {
+        self.mute.load(Ordering::Acquire)
     }
 
     /// The master bus in time order, oldest first, with the rate it came out at.
@@ -1375,7 +1387,11 @@ impl Core {
         self.process_rack(out, channels);
 
 
-        let gain = f32::from_bits(shared.gain.load(Ordering::Acquire));
+        let gain = if shared.mute.load(Ordering::Acquire) {
+            0.0
+        } else {
+            f32::from_bits(shared.gain.load(Ordering::Acquire))
+        };
         if (gain - 1.0).abs() > 1e-6 {
             for s in out.iter_mut() {
                 *s *= gain;

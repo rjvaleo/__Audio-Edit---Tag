@@ -1076,6 +1076,8 @@ function togglePlay() {
     clearTimeout(schedulerTimer);
     document.getElementById("playBtn").textContent = "▶ PLAY";
     document.getElementById("playBtn").classList.remove("active");
+    // A pause ends a take, as a stop does.
+    if (typeof perfRec !== "undefined" && perfRec && typeof perfRecStop === "function") perfRecStop();
   } else {
     isPlaying = true;
     currentStep = 0;
@@ -1083,12 +1085,15 @@ function togglePlay() {
     scheduler();
     document.getElementById("playBtn").textContent = "⏸ PAUSE";
     document.getElementById("playBtn").classList.add("active");
+    // Play starts an armed take.
+    if (typeof perfArmedBegin === "function") perfArmedBegin();
   }
 }
 
 function stopSeq() {
   isPlaying = false;
   clearTimeout(schedulerTimer);
+  if (typeof perfRec !== "undefined" && perfRec && typeof perfRecStop === "function") perfRecStop();
   currentStep = 0;
   document.getElementById("playBtn").textContent = "▶ PLAY";
   document.getElementById("playBtn").classList.remove("active");

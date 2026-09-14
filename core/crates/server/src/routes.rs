@@ -324,6 +324,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/measure") => api_measure(app, req),
         ("POST", "/api/export") => api_export(app, req),
         ("GET", "/api/export") => api_export_status(app),
+        ("POST", "/api/export/stem") => api_export_stem(app, req),
         ("POST", "/api/export/stop") => api_export_stop(app),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
         ("POST", "/api/video") => api_video(app, req),
@@ -2492,6 +2493,106 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
 }
 
 /// Render the edited result to a new file. Never writes over the source.
+/// The sequencer's part of a sound export, summed into the file just written.
+///
+/// The sequencer is Web Audio in the page and the server never hears it, so
+/// the page renders it offline for the export's length and posts it here as
+/// little-endian f32, interleaved. The export is read back, the stem summed
+/// in — clamped at the rails, then under the same soft ceiling every export
+/// gets, since the writer applies it — and the file written again.
+/// `grain=0` zeroes the export's own sound first — the GRAIN source switch
+/// off — so a stem alone, or silence, is what an export of one source is.
+/// With no path given it is the export that last finished.
+fn api_export_stem(app: &Arc<App>, req: &Request) -> Response {
+    let Some(lib) = app.library_path() else {
+        return Response::error(400, "no library chosen");
+    };
+    let path: PathBuf = match req.param("p") {
+        Some(rel) => match resolve_within(&lib, rel) {
+            Some(p) => p,
+            None => return Response::error(404, "no such file in the library"),
+        },
+        None => {
+            let last = app.export.path.lock().map(|x| x.clone()).unwrap_or_default();
+            if last.is_empty() {
+                return Response::error(400, "nothing has been exported");
+            }
+            PathBuf::from(last)
+        }
+    };
+    let bits = req.param("bits").and_then(|b| b.parse::<u16>().ok()).unwrap_or(24);
+    let grain = req.param("grain").map_or(true, |g| g != "0");
+    let stem_rate = req.param("rate").and_then(|r| r.parse::<u32>().ok()).unwrap_or(0);
+    let stem_channels = req.param("channels").and_then(|c| c.parse::<u16>().ok()).unwrap_or(2);
+    if req.body.len() % 4 != 0 {
+        return Response::error(400, "the stem is not whole samples");
+    }
+    let stem: Vec<f32> = req
+        .body
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    match mix_stem_into(&path, &stem, stem_rate, stem_channels, grain, bits) {
+        Ok(frames) => Response::json(Value::obj().set("frames", frames).to_string()),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
+/// Read an exported AIFF back, silence it if asked, sum a stem in, write it
+/// again. The stem is read at its own rate against the file's, nearest
+/// frame; a mono stem is put on every channel.
+fn mix_stem_into(
+    path: &Path,
+    stem: &[f32],
+    stem_rate: u32,
+    stem_channels: u16,
+    grain: bool,
+    bits: u16,
+) -> std::io::Result<u64> {
+    let mut reader = audio_core::open(path)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+    let info = *reader.info();
+    let channels = info.channels.max(1) as usize;
+    let rate = info.sample_rate;
+    let frames = info.frames();
+    let mut audio = reader.read_frames(0, frames)?;
+    if !grain {
+        for s in audio.iter_mut() {
+            *s = 0.0;
+        }
+    }
+    if !stem.is_empty() {
+        let sc = stem_channels.max(1) as usize;
+        let ratio = if stem_rate > 0 && stem_rate != rate { stem_rate as f64 / rate as f64 } else { 1.0 };
+        let stem_frames = stem.len() / sc;
+        for i in 0..frames as usize {
+            let sf = (i as f64 * ratio) as usize;
+            if sf >= stem_frames {
+                break;
+            }
+            for c in 0..channels {
+                let s = stem[sf * sc + c.min(sc - 1)];
+                let o = &mut audio[i * channels + c];
+                *o = (*o + s).clamp(-1.0, 1.0);
+            }
+        }
+    }
+    let meta = audio_core::aiff::Meta {
+        annotation: Some(if grain {
+            "with the sequencer".to_string()
+        } else {
+            "the sequencer alone".to_string()
+        }),
+        ..Default::default()
+    };
+    let mut rack = crate::rack::RackSpec::empty().build(rate, channels);
+    let file = std::fs::File::create(path)?;
+    let mut out = std::io::BufWriter::new(file);
+    edit::render::write_aiff_controlled(
+        audio, channels as u16, rate, &mut rack, &mut out, bits, &meta, |_, _| {},
+    )
+}
+
 fn api_export_status(app: &Arc<App>) -> Response {
     let e = &app.export;
     let done = e.done.load(Ordering::Relaxed);
@@ -3613,6 +3714,9 @@ fn api_engine_transport(app: &Arc<App>, req: &Request) -> Response {
         }
         if let Some(g) = num("gain") {
             h.shared.set_gain(g as f32);
+        }
+        if let Some(Value::Bool(m)) = v.get("mute") {
+            h.shared.set_mute(*m);
         }
         match v.get("loop") {
             Some(l) => {
@@ -4862,5 +4966,77 @@ mod tag_tests {
         assert!(body.contains("level1:      Sample"));
         assert!(!body.contains("elsewhere"), "another folder's file leaked in");
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod stem_tests {
+    use super::*;
+
+    fn write_test_aiff(path: &Path, audio: Vec<f32>, channels: u16, rate: u32) {
+        let mut rack = crate::rack::RackSpec::empty().build(rate, channels as usize);
+        let file = std::fs::File::create(path).unwrap();
+        let mut out = std::io::BufWriter::new(file);
+        edit::render::write_aiff_controlled(
+            audio, channels, rate, &mut rack, &mut out, 24,
+            &audio_core::aiff::Meta::default(), |_, _| {},
+        )
+        .unwrap();
+    }
+
+    fn read_back(path: &Path) -> Vec<f32> {
+        let mut r = audio_core::open(path).unwrap();
+        let n = r.info().frames();
+        r.read_frames(0, n).unwrap()
+    }
+
+    #[test]
+    fn a_stem_is_summed_in_and_the_rails_hold() {
+        let dir = std::env::temp_dir().join(format!("stem-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("take.aif");
+        // Four stereo frames at 0.5, then one at 0.9 to be pushed past the rail.
+        write_test_aiff(&path, vec![0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.9, 0.9], 2, 48000);
+        // A stereo stem: 0.25 left, -0.25 right, and 0.5 on the last frame.
+        let stem = vec![0.25, -0.25, 0.25, -0.25, 0.25, -0.25, 0.25, -0.25, 0.5, 0.5];
+        let n = mix_stem_into(&path, &stem, 48000, 2, true, 24).unwrap();
+        assert_eq!(n, 5);
+        let got = read_back(&path);
+        assert!((got[0] - 0.75).abs() < 1e-3, "left did not sum: {}", got[0]);
+        assert!((got[1] - 0.25).abs() < 1e-3, "right did not sum: {}", got[1]);
+        // 0.9 + 0.5 clamps to the rail and then takes the same soft ceiling
+        // every export gets, so it lands just under it rather than on it.
+        assert!(got[8] > 0.9 && got[8] <= 1.0, "the rail did not hold: {}", got[8]);
+    }
+
+    #[test]
+    fn grain_off_silences_the_export_and_a_mono_stem_goes_on_every_channel() {
+        let dir = std::env::temp_dir().join(format!("stem-mono-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("take.aif");
+        write_test_aiff(&path, vec![0.5; 8], 2, 48000);
+        let stem = vec![0.1, 0.2, 0.3, 0.4];
+        mix_stem_into(&path, &stem, 48000, 1, false, 24).unwrap();
+        let got = read_back(&path);
+        for f in 0..4 {
+            let want = stem[f];
+            assert!((got[f * 2] - want).abs() < 1e-3, "frame {f} left: {}", got[f * 2]);
+            assert!((got[f * 2 + 1] - want).abs() < 1e-3, "frame {f} right: {}", got[f * 2 + 1]);
+        }
+    }
+
+    #[test]
+    fn a_stem_at_another_rate_is_read_against_the_file_s() {
+        let dir = std::env::temp_dir().join(format!("stem-rate-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("take.aif");
+        write_test_aiff(&path, vec![0.0; 8], 1, 24000);
+        // A 48k stem: every other sample lands on a 24k frame.
+        let stem = vec![0.1, 0.9, 0.2, 0.9, 0.3, 0.9, 0.4, 0.9];
+        mix_stem_into(&path, &stem, 48000, 1, true, 24).unwrap();
+        let got = read_back(&path);
+        for (f, want) in [0.1f32, 0.2, 0.3, 0.4].iter().enumerate() {
+            assert!((got[f] - want).abs() < 1e-3, "frame {f}: {}", got[f]);
+        }
     }
 }

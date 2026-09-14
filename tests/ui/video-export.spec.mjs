@@ -796,3 +796,54 @@ test('the film is the room as it was when Export was pressed, not as it is edite
   expect(got.points, 'a waypoint added during the encode reached the film').toBe(2);
   expect(got.frontX, 'a point moved during the encode reached the film').toBe(0);
 });
+
+// The sequencer's part of a sound export: rendered in the page for the
+// export's length, posted as a stem, summed in by the server. And GRAIN off
+// goes with it as a flag, so an export of one source is what it says.
+test('a finished export gets the sequencer posted as a stem, with the GRAIN switch', async ({ page }) => {
+  await openFile(page);
+  let seen = null;
+  await page.route('**/api/export/stem**', async (route) => {
+    const req = route.request();
+    seen = { url: req.url(), bytes: req.postDataBuffer()?.length ?? 0 };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"frames":1}' });
+  });
+  const got = await page.evaluate(async () => {
+    const realRender = seqRenderForFilm;
+    let asked = null;
+    seqRenderForFilm = async (spec) => {
+      asked = spec;
+      const n = Math.round(spec.seconds * spec.rate);
+      return { left: new Float32Array(n).fill(0.25), right: new Float32Array(n).fill(-0.25) };
+    };
+    try {
+      await exportAddStem({ frames: 4800, path: '/x/y.aif' }, { withSeq: true, grain: false, at0: 1.5, bits: 16 });
+    } finally { seqRenderForFilm = realRender; }
+    return { asked };
+  });
+  expect(got.asked, 'the sequencer was not rendered').not.toBeNull();
+  expect(got.asked.at0).toBe(1.5);
+  expect(got.asked.seconds).toBeCloseTo(4800 / got.asked.rate, 6);
+  expect(seen, 'no stem was posted').not.toBeNull();
+  expect(seen.url).toMatch(/grain=0/);
+  expect(seen.url).toMatch(/bits=16/);
+  expect(seen.url).toMatch(/channels=2/);
+  expect(seen.bytes, 'the stem is not the render, interleaved').toBe(4800 * 2 * 4);
+});
+
+test('the film carries the GRAIN switch', async ({ page }) => {
+  await openFile(page);
+  const got = await page.evaluate(async () => {
+    let seen = null;
+    const realExport = videoExport, realSupport = videoExportSupport;
+    videoExport = async (opts) => { seen = opts; return new Blob([]); };
+    videoExportSupport = () => null;
+    try {
+      setSource('grain', false);
+      await runVideoExport();
+    } finally { videoExport = realExport; videoExportSupport = realSupport; setSource('grain', true); }
+    return seen && { grain: seen.grain };
+  });
+  expect(got).not.toBeNull();
+  expect(got.grain, 'GRAIN off did not reach the film').toBe(false);
+});

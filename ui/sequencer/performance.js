@@ -172,17 +172,45 @@ function perfNow() {
   return audioCtx ? audioCtx.currentTime : performance.now() / 1000;
 }
 
+/// Armed: REC PERF pressed, the take not yet begun. It begins when the
+/// transport starts — this page's own Play, or the engine's, through the
+/// bridge — and ends when it stops. Pressed again while armed, it disarms.
+let perfArmed = false;
+
 function perfToggleRec() {
   if (perfReplay) perfStop();
-  if (perfRec) {
+  if (perfRec || perfArmed) {
     perfRecStop();
   } else {
     perfRecStart();
   }
 }
 
+/// REC PERF: arm, or — if the transport is already running — begin now.
 function perfRecStart() {
   initAudio();
+  if (!isPlaying) {
+    perfArmed = true;
+    const btn = document.getElementById("perfRecBtn");
+    btn.textContent = "⏺ ARMED";
+    btn.classList.add("armed");
+    perfSetStatus("ARMED — PRESS PLAY TO START THE TAKE · STOP ENDS IT");
+    return;
+  }
+  perfRecBegin();
+}
+
+/// The transport started: an armed take begins here. Called by this page's
+/// Play and by the bridge's.
+function perfArmedBegin() {
+  if (!perfArmed) return;
+  perfRecBegin();
+}
+
+function perfRecBegin() {
+  perfArmed = false;
+  const armedBtn = document.getElementById("perfRecBtn");
+  if (armedBtn) armedBtn.classList.remove("armed");
   perfSelectedGesture = null;
   perfSelRange = null;
   perfRec = {
@@ -205,7 +233,14 @@ function perfRecStop() {
   perfRec = null;
   const btn = document.getElementById("perfRecBtn");
   btn.textContent = "⏺ REC PERF";
-  btn.classList.remove("recording");
+  btn.classList.remove("recording", "armed");
+  if (!rec) {
+    // Armed and never begun: disarmed, nothing to keep.
+    perfArmed = false;
+    perfSetStatus("DISARMED");
+    perfDrawTimeline();
+    return;
+  }
   perfStopDrawLoop();
   const duration = perfNow() - rec.t0;
   if (duration < 1 || (rec.events.length === 0 && rec.discretes.length === 0)) {

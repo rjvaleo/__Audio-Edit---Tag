@@ -96,6 +96,8 @@
     isPlaying = true;
     locate(at);
     scheduler();
+    // The engine's Play starts an armed take here, as this page's own does.
+    if (typeof perfArmedBegin === 'function') perfArmedBegin();
     const btn = document.getElementById('playBtn');
     if (btn) { btn.textContent = '⏸ PAUSE'; btn.classList.add('active'); }
   }

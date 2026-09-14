@@ -39,38 +39,60 @@ test('every engine control is a target, and the ones that rebuild the file are n
   expect(targets.filter((t) => t.startsWith('stretch.')).length).toBeGreaterThanOrEqual(48);
 });
 
-test('Capture arms latch, and ending it disarms and refetches the take', async ({ page }) => {
+// REC PERF arms; the take starts when Play does, and ends when the transport
+// stops. It used to start playback itself the instant the button was pressed.
+test('REC PERF arms, Play starts the take, and a stop ends and disarms it', async ({ page }) => {
   await open(page);
-  const before = await page.evaluate(() => state.automationRecord || 'off');
-  expect(before).toBe('off');
-  // Armed through the button, but without the transport: the scratch server
-  // has no sound card to play through, and arming is the interface's part.
-  await page.evaluate(async () => {
-    startPlayback = () => { engine.playing = true; };
-    await startCapture();
-  });
+  expect(await page.evaluate(() => state.automationRecord || 'off')).toBe('off');
+  // Arm, with the transport stopped: nothing starts.
+  let played = 0;
+  await page.evaluate(() => { window.__played = 0; startPlayback = () => { window.__played++; engine.playing = true; }; });
+  await page.evaluate(() => startCapture());
   const armed = await page.evaluate(async () => ({
     mode: state.automationRecord,
     server: (await api('/api/automation/record')).mode,
     armed: state.captureArmed,
-    button: $('automationCapture').classList.contains('recording'),
+    button: $('automationCapture').textContent.trim(),
+    cls: $('automationCapture').className,
+    label: $('recLabel').textContent,
+    status: $('perfStatus').textContent,
+    played: window.__played,
   }));
   expect(armed.mode).toBe('latch');
   expect(armed.server, 'the server was not armed').toBe('latch');
   expect(armed.armed).toBe(true);
-  expect(armed.button).toBe(true);
+  expect(armed.button).toBe('⏺ ARMED');
+  expect(armed.cls).toContain('armed');
+  expect(armed.cls).not.toContain('recording');
+  expect(armed.label).toBe('PERF ARMED');
+  expect(armed.status).toMatch(/PRESS PLAY/);
+  expect(armed.played, 'arming started playback by itself').toBe(0);
 
-  await page.evaluate(async () => { engine.playing = false; await endCapture(); });
+  // Play: the take begins.
+  await page.evaluate(() => { engine.playing = true; captureTransport(true); });
+  const taking = await page.evaluate(() => ({
+    button: $('automationCapture').textContent.trim(), cls: $('automationCapture').className,
+    label: $('recLabel').textContent, armed: state.captureArmed,
+  }));
+  expect(taking.button).toBe('⏺ CAPTURING');
+  expect(taking.cls).toContain('recording');
+  expect(taking.label).toBe('PERF ● REC');
+  expect(taking.armed).toBe(true);
+
+  // Stop: the take ends, and the recorder is off.
+  await page.evaluate(async () => { engine.playing = false; captureTransport(false); await new Promise((r) => setTimeout(r, 300)); });
   const after = await page.evaluate(async () => ({
     mode: state.automationRecord,
     server: (await api('/api/automation/record')).mode,
     armed: state.captureArmed,
-    button: $('automationCapture').classList.contains('recording'),
+    button: $('automationCapture').textContent.trim(),
+    label: $('recLabel').textContent,
   }));
   expect(after.mode).toBe('off');
   expect(after.server).toBe('off');
   expect(after.armed).toBe(false);
-  expect(after.button).toBe(false);
+  expect(after.button).toBe('⏺ REC PERF');
+  expect(after.label).toBe('');
 });
 
 test('the take is drawn as the sequencer draws one, and a click on a lane opens it', async ({ page }) => {

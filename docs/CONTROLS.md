@@ -446,3 +446,10 @@ the room editor is open. See `docs/OPEN-WORLD.md`, step five.
 | click a point · pull an arrow | pick it · move it along that axis |
 | Delete · Escape | remove the picked waypoint · let go |
 | drag across a channel · click it · arrows | scrub it · type it · step it |
+
+## The transport's sources and the recorder
+
+| control | does |
+|---|---|
+| GRAIN · SEQ | which of the two sound generators play; off is silent, undrawn, unexported |
+| REC PERF | arms; Play starts the take, a stop ends it; again while armed disarms |

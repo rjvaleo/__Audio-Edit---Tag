@@ -222,3 +222,15 @@ work on a much larger design.
   of thing — user-created audio — so probably yes, but they may want their own
   setting rather than sharing one.
 - **Browse wants rethinking.** Flagged, not yet specified. Its own conversation.
+
+## The source switches
+
+GRAIN and SEQ, on the transport bar — so in the room's foot too. A source
+switched off is silent, out of the picture, and out of an export. GRAIN off
+mutes the engine at its output (`mute` on `/api/engine/transport`, beside
+`gain`); the engine keeps running, since the transport, the clock and the
+sequencer's sync come from it, and the room drops its feed so the picture is
+the sequencer's alone, or nothing. SEQ off stops and unsyncs the sequencer.
+Both are kept across reloads. Before this the sequencer played on every Play
+once it had ever been opened, and there was no way to hear one without the
+other.
