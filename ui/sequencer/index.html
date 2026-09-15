@@ -75,6 +75,12 @@
           <option value="2">1/2</option>
         </select>
       </div>
+      <!-- The scale, as a menu, for the compact layout: the library column it is
+           chosen from in the full page is not there. -->
+      <div class="knob-group compact-only">
+        <span class="knob-label">SCALE</span>
+        <select id="compactScale" onchange="selectScale(+this.value)" title="Which scale the steps are read in"></select>
+      </div>
       <div class="divider"></div>
       <!-- PRESETS -->
       <div class="preset-group">
@@ -181,7 +187,7 @@
       <!-- RIGHT PANEL -->
       <div class="right-panel">
         <!-- SYNTH / ADSR + FILTER ROW -->
-        <div class="synth-row">
+        <div class="synth-row synth-voice">
           <span class="row-label">SYNTH</span>
           <!-- ADSR canvas + knobs sub-block -->
           <div class="adsr-block">
@@ -547,7 +553,7 @@
         </div>
 
         <!-- LFO ROW (all 4 LFOs) -->
-        <div class="synth-row" style="gap: 12px">
+        <div class="synth-row synth-lfo" style="gap: 12px">
           <div class="lfo-unit">
             <div class="lfo-label-col">
               <span class="row-label" style="color: #ff6b35">LFO 1</span>

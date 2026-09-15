@@ -5592,7 +5592,8 @@ function renderGrainParams() {
   // once per file by the same call the automation lanes use.
   loadLaneWave();
   wireCloudPad();
-  drawCloudPad();
+  drawCloudPads();
+  if (typeof composeGrainSync === 'function') composeGrainSync();
 }
 
 let grainBuiltFor = null;
@@ -5602,7 +5603,8 @@ function syncGrainSliders() {
   if (!g || !state.grainRows) return;
   state.grainDraft = { ...g };
   for (const [k, el] of Object.entries(state.grainRows)) el.sync(g[k]);
-  drawCloudPad();
+  drawCloudPads();
+  if (typeof composeGrainSync === 'function') composeGrainSync();
 }
 
 /// Push values into the sliders — used by Reset and Undo, which change the
@@ -5637,6 +5639,7 @@ function showStretchOut() {
     + 'The length follows the Stretch slider alone — pitch does not change it. '
     + 'It dims while the waveform is still catching up with the controls.';
   paintLoad();
+  if (typeof composeGrainSync === 'function') composeGrainSync();
 }
 
 /// What the engine is costing, beside the controls that cost it.
@@ -9249,6 +9252,19 @@ function buildVisModulePicker() {
   const sel = rpEl('select', 'field mini vis-pick-sel');
   sel.id = 'rgVisual';
   sel.title = 'Which visualiser is on the stage.';
+  fillVisPicker(sel);
+  sel.onchange = () => setVisual(sel.value);
+  box.appendChild(sel);
+  // The Compose picture bar reads the same menu.
+  const cp = $('cpVisual');
+  if (cp) fillVisPicker(cp);
+  paintVisModulePicker();
+}
+
+/// Fill a visuals picker from the menu.
+function fillVisPicker(sel) {
+  if (!sel) return;
+  sel.innerHTML = '';
   // Grouped by family, but in the order the menu was put in — so a family with
   // everything hidden leaves no empty heading behind, and a reordered menu is
   // read in the order it was arranged.
@@ -9269,14 +9285,17 @@ function buildVisModulePicker() {
     }
     sel.appendChild(group);
   }
-  sel.onchange = () => setVisual(sel.value);
-  box.appendChild(sel);
-  paintVisModulePicker();
 }
 
 function paintVisModulePicker() {
-  const sel = $('rgVisual');
-  if (!sel) return;
+  // The stage bar's picker and the Compose picture bar's, told the same thing.
+  for (const sel of [$('rgVisual'), $('cpVisual')]) {
+    if (sel) paintVisPicker(sel);
+  }
+}
+
+/// One picker, told what is showing.
+function paintVisPicker(sel) {
   const on = visualKey();
   // **A hidden visual that is showing stays in the menu.** Otherwise the menu
   // says one thing and the stage says another, and there is no way back to what
@@ -9833,8 +9852,16 @@ function paintSectionPicker(sel, kind, select) {
   sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
 }
 
-function paintVisualPresets(select) { paintSectionPicker($('vpPick'), 'visual', select); }
-function paintGrainPresets(select) { paintSectionPicker($('gpPick'), 'grain', select); }
+function paintVisualPresets(select) {
+  paintSectionPicker($('vpPick'), 'visual', select);
+  // The Compose picture bar's copy of the same list.
+  paintSectionPicker($('cpLook'), 'visual', select);
+}
+function paintGrainPresets(select) {
+  paintSectionPicker($('gpPick'), 'grain', select);
+  // The compact grain panel's copy of the same list.
+  paintSectionPicker($('cgCloud'), 'grain', select);
+}
 
 $('vpPick')?.addEventListener('change', () => {
   const name = $('vpPick').value;
@@ -9945,7 +9972,7 @@ paintGrainPresets('');
 // voice — means feeding the sequencer into the engine, which is the next step
 // and is not this one. See `docs/SEQUENCER.md`.
 
-const seq = { feed: null, feedAt: 0, ready: false, clock: null, want: { bands: 0, lo: 0, hi: 0 } };
+const seq = { feed: null, feedAt: 0, ready: false, clock: null, want: { bands: 0, lo: 0, hi: 0 }, compact: false };
 
 function seqFrame() { return $('seqFrame'); }
 
@@ -9959,6 +9986,14 @@ function seqEnsureFrame() {
 function seqPost(m) {
   const f = seqFrame();
   if (f && f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage(m, location.origin);
+}
+
+/// The sequencer's compact layout: its own, inside its page, for a cell of the
+/// Compose workspace. Remembered here, because a frame that reloads comes back
+/// in its full layout and has to be told again — see the `seq:ready` handler.
+function seqCompact(on) {
+  seq.compact = !!on;
+  seqPost({ type: 'seq:compact', on: seq.compact });
 }
 
 /// The engine's transport, told to the sequencer. Play plays it *from where
@@ -9997,6 +10032,8 @@ window.addEventListener('message', (e) => {
   if (m.type === 'seq:ready') {
     seq.ready = true;
     seqSync(engine.playing);
+    // A frame that reloaded comes up in its full layout; say compact again.
+    if (seq.compact) seqPost({ type: 'seq:compact', on: true });
   } else if (m.type === 'seq:feed') {
     seq.feed = m.playing ? m : null;
     seq.feedAt = performance.now();
@@ -12444,8 +12481,13 @@ function cloudPadGeometry(canvas) {
   };
 }
 
-function drawCloudPad() {
-  const canvas = $('cloudPad');
+/// Every cloud pad on the page — the Time & Pitch panel's, and the compact
+/// grain panel's in Compose. Each draws only if it is on screen.
+function drawCloudPads() {
+  for (const c of document.querySelectorAll('canvas.cloud-pad')) drawCloudPad(c);
+}
+
+function drawCloudPad(canvas = $('cloudPad')) {
   if (!canvas || canvas.offsetParent === null) return;
   const geo = cloudPadGeometry(canvas);
   const dpr = window.devicePixelRatio || 1;
@@ -12490,7 +12532,8 @@ function drawCloudPad() {
 
   // The grains themselves, from the renderer's own enumeration.
   const g = state.grains;
-  const readout = $('cloudPadRead');
+  // Each pad names its own readout; the Time & Pitch pad's is the default.
+  const readout = $(canvas.dataset.read || 'cloudPadRead');
   if (!g || !g.grains?.length) {
     if (readout) readout.textContent = 'no cloud — raise Density or Layers';
     return;
@@ -12539,8 +12582,7 @@ function drawCloudPad() {
 /// Inside the box moves it; outside spreads it. No corner handles and no modes:
 /// a handle a few pixels wide is a thing to miss, and the distinction between
 /// "grab the thing" and "grab the air around it" is one nobody has to be told.
-function wireCloudPad() {
-  const canvas = $('cloudPad');
+function wireCloudPad(canvas = $('cloudPad')) {
   if (!canvas || canvas._wired) return;
   canvas._wired = true;
 
@@ -12572,7 +12614,8 @@ function wireCloudPad() {
       state.grainRows?.positionJitterMs?.sync(d.positionJitterMs);
       state.grainRows?.pitchJitterSemis?.sync(d.pitchJitterSemis);
     }
-    drawCloudPad();
+    drawCloudPads();
+    if (typeof composeGrainSync === 'function') composeGrainSync();
     state.grainSend?.preview();
   };
 
@@ -12600,7 +12643,7 @@ function wireCloudPad() {
 function drawGrains() {
   // Drawn whether or not the swarm is: the pad is a control as well as a
   // picture, and a control that goes blank when the transport stops is no use.
-  drawCloudPad();
+  drawCloudPads();
 
   // Only the view that is showing does any work. The swarm was redrawing its
   // whole canvas every frame while a 3D view was up and it was not even on
@@ -12728,7 +12771,9 @@ function grainLoop() {
   // check named after `#dockStretch` said "hidden" in the room and stopped the
   // pad animating there — while the controls were on screen and being used.
   const pad = $('cloudPad');
-  if (!pad || pad.offsetParent === null) return;
+  // Any pad on screen: the compact panel's in Compose counts as much as this.
+  const anyPad = [...document.querySelectorAll('canvas.cloud-pad')].some((c) => c.offsetParent !== null);
+  if (!pad || !anyPad) return;
   drawGrains();
 }
 /// The swarm animates only while the engine is playing, so an idle editor
@@ -12761,7 +12806,7 @@ if (window.ResizeObserver) {
   // the stale bitmap to fit. Which is why it came out squashed, with the end
   // of the file looking folded over.
   const pad = $('cloudPad');
-  if (pad) new ResizeObserver(() => drawCloudPad()).observe(pad);
+  if (pad) new ResizeObserver(() => drawCloudPad(pad)).observe(pad);
 }
 
 // ------------------------------------------------------- which view of the grains

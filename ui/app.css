@@ -3876,3 +3876,29 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 /* REC PERF, armed and waiting for Play. */
 .perf-rec-btn.armed { color: var(--accent); border-color: var(--accent); animation: perf-armed 1.2s ease-in-out infinite; }
 @keyframes perf-armed { 50% { opacity: .45; } }
+
+/* ── COMPOSE: the compact panels ──────────────────────────────────────────────
+   Built for a cell of the Compose workspace, not the full panels squeezed.
+   See `ui/compose.js` and `docs/COMPOSE.md`. */
+.cg { display: flex; flex-direction: column; gap: 6px; min-height: 0; height: 100%; padding: 6px; box-sizing: border-box; }
+.cg-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cg-title { font-size: 9px; letter-spacing: .14em; color: var(--accent); font-weight: 650; }
+.cg-out { flex: 1 1 auto; min-width: 0; font-size: 8.5px; color: var(--text-dimmer); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cg-cloud { max-width: 120px; }
+.cg-engine { flex: 0 0 auto; display: flex; }
+.cg-engine .seg-btn { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: 8.5px; }
+.cg-pad-wrap { position: relative; flex: 1 1 60px; min-height: 48px; }
+.cg-pad { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: var(--well); border-radius: 3px; cursor: crosshair; }
+.cg-pad-read { position: absolute; right: 4px; bottom: 2px; font-size: 8px; pointer-events: none; }
+.cg-knobs { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 2px; justify-items: center; }
+.cg-knobs .knob { width: 100%; max-width: 62px; }
+.cg-knobs .knob svg { width: 40px; height: 40px; }
+.cg-knobs .knob .v { min-width: 0; width: 100%; box-sizing: border-box; }
+.cg-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-dimmer); text-align: center; }
+
+.cp { display: flex; flex-direction: column; gap: 4px; min-height: 0; height: 100%; padding: 6px; box-sizing: border-box; }
+.cp-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.cp-bar .re-tag { width: auto; }
+.cp-bar select { max-width: 130px; }
+.cp-sep { flex: 1 1 auto; }
+.cp-room { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; container-type: size; }
