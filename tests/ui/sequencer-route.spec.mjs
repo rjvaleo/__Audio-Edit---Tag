@@ -255,8 +255,12 @@ test('Play starts the sequencer first and the engine a lead later, and a seek is
     }
     let routedAt = null;
     const watch = setInterval(() => { if (seq.routed && routedAt === null) routedAt = performance.now(); }, 1);
+    const told = [];
+    const realSeqPost = seqPost;
+    seqPost = (m) => { told.push(m); return realSeqPost(m); };
     const t0 = performance.now();
     startPlayback();
+    const transportAt = told.find((m) => m.type === 'seq:transport' && m.playing)?.at;
     const held = [enginePosition(true)];
     const rolled = engine.rolling;
     const early = posts.some((p) => p.play === true);
@@ -270,8 +274,9 @@ test('Play starts the sequencer first and the engine a lead later, and a seek is
     const seek = posts.find((p) => p.seek !== undefined);
     const afterSeek = seq.epoch;
     pausePlayback();
+    seqPost = realSeqPost;
     return {
-      held, rolled, early, started, afterSeek,
+      held, rolled, early, started, afterSeek, transportAt,
       routedAt: routedAt === null ? null : routedAt - t0,
       play: play ? { epoch: play.seqEpoch, waited: play.t - routedAt } : null,
       seek: seek ? seek.seqEpoch : null,
@@ -282,6 +287,7 @@ test('Play starts the sequencer first and the engine a lead later, and a seek is
   expect(got.rolled).toBe(true);
   expect(got.early, 'the engine started before the sequencer').toBe(false);
   expect(got.held, 'the playhead ran on before the engine started').toEqual([96000, 96000]);
+  expect(got.transportAt, 'the sequencer did not start exactly where the engine is').toBe(2);
   expect(got.play, 'the engine never started').not.toBeNull();
   expect(got.play.epoch, 'the engine was not given the epoch it starts under').toBe(got.started);
   expect(got.play.waited, 'the engine did not wait the lead').toBeGreaterThanOrEqual(105);

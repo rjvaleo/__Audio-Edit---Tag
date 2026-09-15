@@ -100,25 +100,29 @@
   function locate(at) {
     if (!audioCtx) return;
     const d = stepDur();
+    // The context's clock, read once. It moves on a render quantum at a time
+    // while this runs, and read twice the grid and the wait reported for it
+    // could come out a quantum or two apart.
+    const now = audioCtx.currentTime;
     if (route.on) {
       // Routed, the grid is laid two render quanta on, so no sample already
       // rendered is claimed for it; on whole frames, so every stamp is exact;
       // and a step that falls on `at` itself sounds, since the engine has not
       // reached it yet.
       const sr = audioCtx.sampleRate;
-      const c = Math.round(audioCtx.currentTime * sr) + 256;
+      const c = Math.round(now * sr) + 256;
       const f = Math.round(Math.max(0, at) * sr);
       routeSegment(c, f);
       layGrid(c / sr, f / sr, Math.ceil(f / sr / d - 1e-9));
     } else {
-      layGrid(audioCtx.currentTime, at, Math.floor(Math.max(0, at) / d) + 1);
+      layGrid(now, at, Math.floor(Math.max(0, at) / d) + 1);
     }
     // Carried forward on the wall clock rather than the audio clock: a
     // context the browser has kept asleep — no gesture yet, or no device at
     // all — has a `currentTime` that does not move, and a clock that does not
     // move would read every message as a seek.
     anchor = { perf: performance.now(), at };
-    last = { at, step: currentStep, wait: nextNoteTime - audioCtx.currentTime };
+    last = { at, step: currentStep, wait: nextNoteTime - now };
   }
 
   /// Called by the scheduler before it lays each step. A step at or past the

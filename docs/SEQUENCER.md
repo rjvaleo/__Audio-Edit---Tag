@@ -197,6 +197,10 @@ The same first run through the speakers showed three more things, fixed:
   and after a few plays the engine was sent several times what it could use.
   There is one tap for the life of a context now, switched on and off, and the
   sender hears only the newest.
+- **The first step could be lost.** The sequencer was started from the
+  playhead carried forward on the milliseconds since Play was pressed, so it
+  began just past where the engine was, and a note on the very first frame never
+  sounded. Started with the engine, it starts exactly where the engine is.
 - **A second window locked the first out.** Epochs were counted from nought in
   each window, so the window used longer held the higher number and the engine
   refused the other's sound as stale. They are the wall clock's now

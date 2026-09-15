@@ -10417,10 +10417,12 @@ function seqSync(playing, { preroll = false } = {}) {
   let at = playing ? playbackTime() : 0;
   if (routed) {
     // Frames made rather than heard: those are what the sound is stamped
-    // against. Joining an engine already playing, the sequencer starts a lead
-    // ahead of it so that its sound is on time; starting with it, the engine
-    // waits instead.
-    at = enginePosition(true) / rate + (preroll ? 0 : SEQ_ROUTE_LEAD);
+    // against. **Starting with the engine, exactly where it is** — it has not
+    // moved, and carried forward on the few milliseconds since Play was pressed
+    // the sequencer began past its first step, so a note on the first frame was
+    // never played. Joining an engine already playing, a lead ahead of it, so
+    // its sound is on time.
+    at = preroll ? engine.position / rate : enginePosition(true) / rate + SEQ_ROUTE_LEAD;
   }
   const msg = { type: 'seq:transport', playing, at, loop: seqLoopSeconds() };
   if (routed) {
