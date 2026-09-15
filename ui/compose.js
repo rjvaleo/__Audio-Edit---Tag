@@ -705,6 +705,16 @@ function compositionFolder() {
 /// the same piece of the document. Resolves to where each went.
 async function composeExportAll() {
   if (!state.selectedFile) { toast('Open a sound first'); return null; }
+  // The sequencer is rendered once, by the sound, and the film is handed it.
+  seqShared = {};
+  try {
+    return await composeExportBoth();
+  } finally {
+    seqShared = null;
+  }
+}
+
+async function composeExportBoth() {
   const folder = compositionFolder();
   const range = exportRange;
   const repeats = Math.max(1, Math.min(512, +$('elRepeats').value || 1));

@@ -3016,14 +3016,26 @@ async function pollExport() {
 /// posted to the server, and summed into the file — after the export, so
 /// nothing here has to know how long a loop with a tail comes out.
 async function exportAddStem(s, after) {
-  const rate = state.view?.sampleRate || 48000;
+  // The file's rate, as the server wrote it, so the stem needs no resampling.
+  const rate = s.sampleRate || state.view?.sampleRate || 48000;
   const seconds = Math.max(0.1, (s.frames || 0) / rate);
   let body = new ArrayBuffer(0);
   if (after.withSeq) {
     showExportProgress(true);
     $('epPhase').textContent = 'Rendering the sequencer';
+    // **Round the loop, as the sound goes.** The server says where the loop it
+    // tiled starts, how long it is and how many times it went round, and the
+    // sequencer is laid on the same loop — its steps again from the loop's
+    // start on every repeat, nothing new through the tail.
+    const loop = s.loop && s.loop.frames > 0 ? { span: s.loop.frames / rate, repeats: s.loop.repeats } : null;
     const r = await seqRenderForFilm({
-      at0: after.at0, seconds, rate, fps: 1, bands: 8, liss: 16,
+      at0: loop ? s.loop.from / rate : after.at0, seconds, rate, loop,
+      // A knob is set once a frame of the render. Once a second is plenty for a
+      // pattern and far too coarse for a take, whose moves would step.
+      fps: seq.take ? 30 : 1, bands: 8, liss: 16,
+      // In a composition's export the film is next, and it is handed this same
+      // render — so it is made in the film's shape. See `seqShared`.
+      ...seqShareSpec(seconds),
       onProgress: (f) => { $('epFill').style.width = `${Math.round(f * 100)}%`; $('epPct').textContent = `${Math.round(f * 100)}%`; },
     });
     if (r && r.left) {
@@ -10312,13 +10324,55 @@ function seqInFilm() {
 /// Ask the frame for its part of the film. Resolves to the render, or null if
 /// the sequencer is not there to ask.
 function seqRenderForFilm(spec) {
+  if (seqShareFits(spec)) {
+    spec.onProgress?.(1);
+    return Promise.resolve(seqShared.result);
+  }
   if (!seqLoaded()) return Promise.resolve(null);
   const id = ++seqRenderId;
   const { onProgress, ...ask } = spec;
+  const share = seqShared;
   return new Promise((resolve, reject) => {
-    seqRenders.set(id, { resolve, reject, onProgress });
+    const kept = (r) => {
+      // The first render of a composition's export is kept for the film.
+      if (share && share === seqShared && !share.result && r) { share.result = r; share.spec = ask; }
+      resolve(r);
+    };
+    seqRenders.set(id, { resolve: kept, reject, onProgress });
     seqPost({ type: 'seq:render', id, ...ask });
   });
+}
+
+/// **One render for the sound and the film.** A composition's export writes
+/// the sound and then films it, and both carry the sequencer over the same
+/// range — so rendering it twice was the same minutes of work done twice. While
+/// the export runs this holds the render the sound asked for, made in the
+/// film's shape and long enough for the film's outro, and the film is handed
+/// it. `null` outside a composition's export.
+let seqShared = null;
+
+/// The film's shape, while a composition is being exported; nothing otherwise.
+function seqShareSpec(seconds) {
+  if (!seqShared || typeof videoPollHz !== 'function') return {};
+  const fps = videoPollHz();
+  return {
+    fps, bands: VG_FLOOR_BANDS, liss: VG_LISS_POINTS, lo: 20, hi: 20000,
+    seconds: seconds + videoOutroSeconds() + 2 / fps,
+  };
+}
+
+/// Whether the render kept for the film is the one this asks for: the same
+/// place, rate, loop and shape, and at least as long.
+function seqShareFits(spec) {
+  const s = seqShared?.spec;
+  if (!s || !seqShared.result) return false;
+  const same = (a, b) => Math.abs((+a || 0) - (+b || 0)) < 1e-6;
+  const loops = (!s.loop && !spec.loop)
+    || (!!s.loop && !!spec.loop && same(s.loop.span, spec.loop.span) && s.loop.repeats === spec.loop.repeats);
+  return loops && same(s.at0, spec.at0) && s.rate === spec.rate && s.fps === spec.fps
+    && s.bands === spec.bands && s.liss === spec.liss
+    && same(s.lo || 20, spec.lo || 20) && same(s.hi || 20000, spec.hi || 20000)
+    && s.seconds >= spec.seconds - 1e-6;
 }
 
 // ───────────────────────────────────────────── capturing a performance ──

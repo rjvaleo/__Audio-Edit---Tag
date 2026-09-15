@@ -112,6 +112,13 @@ are put back where they were. The export mixes the sound into the film's
 track sample by sample, clipped at the rails, and the spectrum and figure
 into every frame of the reel by the same two rules as live.
 
+*(14 Sep 2026.)* A looped film or export goes round its loop: the render lays
+the same steps again on every pass of the server's own loop and plays nothing
+new through the tail. The take is read on the engine's clock from where it
+began (`takeValuesAt`), and notes are laid two render quanta ahead of the frame
+that reaches them, so none starts late. See `docs/COMPOSE.md`, "the sequencer
+round the loop".
+
 It is a switch on the export dialog — **Sequencer** — and it is only for a
 film. It needs the Seq page to have been opened, because a frame that was
 never loaded has nothing to render. An audio bounce is still the engine

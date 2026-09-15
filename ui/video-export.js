@@ -220,8 +220,14 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   let seqReel = null;
   if (sequencer) {
     onStage('Rendering the sequencer', 0.23);
+    // A loop goes round, and the sequencer with it: laid from the loop's start
+    // again on every repeat, as the server tiled the sound. The loop is the
+    // server's own numbers, so the two cannot come out a frame a repeat apart.
+    const seqLoop = status.loop && status.loop.frames > 0
+      ? { span: status.loop.frames / rate, repeats: status.loop.repeats } : null;
     seqReel = await sequencer({
-      at0: seqAt0 || 0,
+      at0: seqLoop ? status.loop.from / rate : (seqAt0 || 0),
+      loop: seqLoop,
       seconds: status.frames / pollHz,
       rate,
       fps: pollHz,

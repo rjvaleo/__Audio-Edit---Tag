@@ -400,6 +400,15 @@ pub struct ExportProgress {
     /// Bumped when a run finishes, so the browser can tell a fresh result from
     /// the one it already reported without comparing paths.
     pub serial: AtomicU64,
+    /// The document's rate, which is the file's.
+    pub rate: AtomicU64,
+    /// The loop as the render resolved it, in output frames at `rate`, and how
+    /// many times it goes round — nought when the export is not a loop. The
+    /// sequencer's part is laid round the same loop, so it is handed the
+    /// server's numbers rather than working them out again a frame apart.
+    pub loop_from: AtomicU64,
+    pub loop_frames: AtomicU64,
+    pub loop_repeats: AtomicU64,
 }
 
 impl ExportProgress {
@@ -408,6 +417,7 @@ impl ExportProgress {
         self.done.store(0, Ordering::Relaxed);
         self.total.store(total.max(1), Ordering::Relaxed);
         self.frames.store(0, Ordering::Relaxed);
+        self.set_loop(0, None);
         if let Ok(mut x) = self.path.lock() {
             x.clear();
         }
@@ -422,6 +432,15 @@ impl ExportProgress {
             x.clear();
             x.push_str(what);
         }
+    }
+
+    /// The rate, and the loop as `(from, frames, repeats)`, or none.
+    pub fn set_loop(&self, rate: u32, plan: Option<(u64, u64, u32)>) {
+        let (from, frames, repeats) = plan.unwrap_or((0, 0, 0));
+        self.rate.store(rate as u64, Ordering::Relaxed);
+        self.loop_from.store(from, Ordering::Relaxed);
+        self.loop_frames.store(frames, Ordering::Relaxed);
+        self.loop_repeats.store(repeats as u64, Ordering::Relaxed);
     }
 
     pub fn step(&self, n: u64) {
