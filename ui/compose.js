@@ -742,3 +742,10 @@ async function composeExportBoth() {
 }
 
 $('elAll')?.addEventListener('click', () => { composeExportAll(); });
+
+// ── unlisted ──
+//
+// Compose is out of the app, not deleted: the rail does not list it and the
+// export dialog does not offer its Composition button. Everything above is kept
+// as it was. `COMPOSE_LISTED` in `rail.js` puts both back.
+if (typeof COMPOSE_LISTED === 'undefined' || !COMPOSE_LISTED) $('elAll')?.classList.add('hidden');
