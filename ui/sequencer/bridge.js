@@ -97,7 +97,7 @@
     locate(at);
     scheduler();
     // The engine's Play starts an armed take here, as this page's own does.
-    if (typeof perfArmedBegin === 'function') perfArmedBegin();
+    if (typeof perfArmedBegin === 'function') perfArmedBegin(at);
     const btn = document.getElementById('playBtn');
     if (btn) { btn.textContent = '⏸ PAUSE'; btn.classList.add('active'); }
   }
@@ -118,13 +118,17 @@
     if (typeof perfLoaded === 'undefined' || !perfLoaded || typeof perfReplayTick !== 'function') return;
     if (typeof perfRec !== 'undefined' && perfRec) return; // recording a new one: leave it be
     const p = perfLoaded;
+    // The take's own time. It began at `startAt` on the engine's clock, so the
+    // engine at `at` is `rel` into it — negative while the engine is still
+    // before where the take was played, and the replay simply waits.
+    const rel = at - (+p.startAt || 0);
     if (!perfReplay) {
       if (typeof applyPresetState === 'function' && p.snapshot) applyPresetState(p.snapshot);
       p.gestures.forEach((g) => delete g._fired);
       // Fast-forward: what the take had already done by `at`.
       for (const g of p.gestures) {
         if (g.kind === 'slider') {
-          if (g.t1 <= at) {
+          if (g.t1 <= rel) {
             const el = document.getElementById(g.id);
             if (el) {
               el.value = g.points[g.points.length - 1][1];
@@ -133,22 +137,22 @@
             }
             g._fired = true;
           }
-        } else if (g.t <= at) {
+        } else if (g.t <= rel) {
           // Play and pause events are the transport's, and the transport is
           // the engine's now.
           if (g.type !== 'play' && g.type !== 'pause' && g.type !== 'stop') perfApplyDiscrete(g);
           g._fired = true;
         }
       }
-      perfReplay = { t0: perfNow() - at, playheadT: at };
+      perfReplay = { t0: perfNow() - rel, playheadT: rel };
       perfReplay.timer = setInterval(perfReplayTick, 25);
       const btn = document.getElementById('perfPlayBtn');
       if (btn) { btn.textContent = '⏸ PLAYING'; btn.classList.add('active'); }
       if (typeof perfSetStatus === 'function') perfSetStatus('REPLAY — ON THE ENGINE\'S TRANSPORT');
       if (typeof perfStartDrawLoop === 'function') perfStartDrawLoop();
     } else {
-      perfReplay.t0 = perfNow() - at;
-      perfReplay.playheadT = at;
+      perfReplay.t0 = perfNow() - rel;
+      perfReplay.playheadT = rel;
     }
   }
 
@@ -431,6 +435,15 @@
       }, (err) => {
         post({ type: 'seq:rendered', id: m.id, error: String(err && err.message || err) });
       });
+    } else if (m.type === 'seq:arm') {
+      // The host's REC PERF: one arm for every recorder. Armed here, the take
+      // begins when the engine's Play reaches `playAt`; disarmed before it
+      // began, nothing is kept. A take already running is ended by the stop.
+      if (m.on) {
+        if (!perfRec && !perfArmed && typeof perfRecStart === 'function') perfRecStart();
+      } else if (perfArmed && !perfRec && typeof perfRecStop === 'function') {
+        perfRecStop();
+      }
     } else if (m.type === 'seq:compact') {
       // The host's Compose workspace: this page in a cell. The layout is the
       // page's own — see the COMPACT block at the end of style.css.
@@ -444,11 +457,85 @@
     }
   });
 
+  // ── the take, for the host's timeline ────────────────────────────────────
+  //
+  // The host draws the take on its own timeline, beside the grain's lanes, in
+  // the engine's output seconds. So the take is sent as lanes: for each control
+  // a gesture moved, one run of points — the value it started the take at, then
+  // every gesture, held at its last value until the next — with the value put
+  // on nought to one by the control's own range. The discrete events go as
+  // labels for the STRUCT lane, and the tempo for the ruler's bars. Sent when it
+  // changes, checked three times a second.
+  function takeMessage() {
+    const tempo = {
+      bpm: typeof bpm !== 'undefined' ? +bpm : 0,
+      stepBeats: typeof stepBeats !== 'undefined' ? +stepBeats : 0,
+    };
+    const p = typeof perfLoaded !== 'undefined' ? perfLoaded : null;
+    if (!p) return { type: 'seq:take', take: null, tempo };
+    const start = +p.startAt || 0;
+    const byId = new Map();
+    for (const g of p.gestures || []) {
+      if (g.kind !== 'slider' || !g.points || !g.points.length) continue;
+      if (!byId.has(g.id)) byId.set(g.id, []);
+      byId.get(g.id).push(g);
+    }
+    const lanes = [];
+    for (const [id, gs] of byId) {
+      const el = document.getElementById(id);
+      const lo = el ? +el.min : 0;
+      const hi = el ? +el.max : 100;
+      const unit = (v) => (hi > lo ? Math.max(0, Math.min(1, (v - lo) / (hi - lo))) : 0.5);
+      gs.sort((a, b) => a.t0 - b.t0);
+      const pts = [];
+      const snap = p.snapshot && p.snapshot.sliders ? parseFloat(p.snapshot.sliders[id]) : NaN;
+      if (Number.isFinite(snap)) pts.push([start, unit(snap)]);
+      let held = null;
+      for (const g of gs) {
+        if (held !== null) pts.push([start + g.t0, held]);
+        for (const [t, v] of g.points) pts.push([start + t, unit(v)]);
+        held = unit(g.points[g.points.length - 1][1]);
+      }
+      lanes.push({
+        id: `seq:${id}`, target: `seq.${id}`,
+        label: typeof perfLaneLabel === 'function' ? perfLaneLabel(id) : id,
+        color: typeof perfLaneColor === 'function' ? perfLaneColor(id) : '#ff60b8',
+        points: pts,
+      });
+    }
+    const name = (g) => {
+      if (g.type === 'scale') return `SCALE ${typeof SCALES !== 'undefined' && SCALES[g.v] ? SCALES[g.v].name.toUpperCase() : g.v}`;
+      if (g.type === 'step') return `STEP ${g.i + 1}`;
+      if (g.type === 'select') return (typeof perfLaneLabel === 'function' ? perfLaneLabel(g.id) : g.id).replace(' SELECT', '');
+      return null;
+    };
+    const discretes = [];
+    for (const g of p.gestures || []) {
+      if (g.kind !== 'discrete') continue;
+      const label = name(g);
+      if (label) discretes.push({ t: start + g.t, label });
+    }
+    return {
+      type: 'seq:take', tempo,
+      take: { id: p.id, name: p.name, startAt: start, duration: +p.duration || 0, lanes, discretes },
+    };
+  }
+  let lastTake = '';
+  function postTake() {
+    let m;
+    try { m = takeMessage(); } catch { return; }
+    const text = JSON.stringify(m);
+    if (text === lastTake) return;
+    lastTake = text;
+    post(m);
+  }
+
   // For the tests, and for anyone reading the frame: where this clock thinks
   // the engine is.
-  window.seqBridge = { predicted, stepDur, locate, renderFilm, get last() { return last; } };
+  window.seqBridge = { predicted, stepDur, locate, renderFilm, takeMessage, takePlayAt, get last() { return last; } };
 
   // Thirty times a second, which is what the engine's meter is polled at.
   setInterval(tick, 33);
+  setInterval(postTake, 300);
   post({ type: 'seq:ready' });
 })();

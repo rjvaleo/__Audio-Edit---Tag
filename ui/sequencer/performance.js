@@ -202,12 +202,19 @@ function perfRecStart() {
 
 /// The transport started: an armed take begins here. Called by this page's
 /// Play and by the bridge's.
-function perfArmedBegin() {
+function perfArmedBegin(at) {
   if (!perfArmed) return;
-  perfRecBegin();
+  perfRecBegin(at);
 }
 
-function perfRecBegin() {
+/// Begin a take. `at` is where the engine's transport is — the host's output
+/// time, in seconds — so the take can be laid on the host's timeline and
+/// replayed where it was played. Begun from this page's own Play, the bridge's
+/// own reckoning of the engine is used, or nought.
+function perfRecBegin(at) {
+  const bridge = window.seqBridge;
+  const from = Number.isFinite(at) ? at
+    : bridge && typeof bridge.predicted === "function" ? bridge.predicted() : null;
   perfArmed = false;
   const armedBtn = document.getElementById("perfRecBtn");
   if (armedBtn) armedBtn.classList.remove("armed");
@@ -215,6 +222,7 @@ function perfRecBegin() {
   perfSelRange = null;
   perfRec = {
     t0: perfNow(),
+    startAt: Number.isFinite(from) ? Math.max(0, from) : 0,
     events: [],
     discretes: [],
     raw: {},
@@ -258,6 +266,7 @@ function perfRecStop() {
     created: Date.now(),
     generated: false,
     duration,
+    startAt: rec.startAt || 0,
     wasPlaying: rec.wasPlaying,
     snapshot: rec.snapshot,
     gestures,

@@ -128,3 +128,68 @@ workspace; the sequencer is laid over its cell, compact, and is the same page
 after leaving for the Seq workspace and coming back; the grips resize the cells,
 the frame follows, the sizes survive a reload and reset; the small picture
 dollies on the wheel, shows its beads, and the timeline spans the arrangement.
+
+---
+
+## Phase two: one timeline
+
+The grain's lanes and the sequencer's take on one ruler, with one arm for both
+recorders. `ui/perf-panel.js` draws it; the sequencer's side is in
+`ui/sequencer/performance.js` and `bridge.js`.
+
+**One time base: the engine's output seconds.** A grain lane's frames are
+output frames at the file's rate (the server records them through
+`engine_to_document`), and the sequencer runs on the engine's output time, so
+both land on the ruler where they sound. The timeline's playhead now reads
+`playbackTime()`. It read the source frame before, which is a different clock
+whenever the sound is stretched — at four times the head crawled across a
+quarter of the ruler while the lanes ran the whole way.
+
+**A take knows where it began.** `perfRecBegin(at)` notes `startAt`, the
+engine's position when the take began — handed over by the bridge's `playAt`
+when the engine's Play starts an armed take, or the bridge's own reckoning of
+the engine when a take begins some other way. The bridge replays relative to
+it (`takePlayAt`): at `at` on the engine the take is `at − startAt` in, waiting
+while that is negative and fast-forwarding from it. Before this every take
+replayed as though it had begun at nought, so one recorded from the middle of
+a document played somewhere else.
+
+**The take reaches the host as lanes.** Three times a second the bridge builds
+`seq:take` (`takeMessage`) and posts it when it has changed: one lane per
+control a gesture moved — the value it started the take at, then each gesture,
+held at its last value until the next — in engine seconds, with values put on
+nought to one by the control's own range; the scale changes, step edits and
+switches as STRUCT labels; and the tempo. The host keeps it in `seq.take` and
+`seq.tempo`. A take deleted in the sequencer leaves the host's timeline.
+
+**Groups.** GRAIN, SEQ and a place for VISUAL (phase three). A group's heading
+is drawn only when more than one group has lanes, so the Grain workspace's
+timeline is as it was; a click on a heading folds the group, kept in
+`audiolab.perfGroups`. The lanes menu is grouped the same way. A sequencer lane
+can be chosen and is outlined on the timeline, but it is edited in Seq, where
+it was recorded: the editor shows a note instead, and Delete says so rather
+than removing anything. The sequencer's lanes are drawn in its own colours.
+
+**One arm.** REC PERF arms the sequencer's recorder with the grain's while SEQ
+is on and the sequencer is loaded (`seqArm`, `seq:arm`); the engine's Play
+begins both takes, a stop ends both, and disarming before Play disarms both.
+
+**The ruler.** While the sequencer is playing a part, its bars are ticked along
+the ruler's foot at four beats to a bar, numbered every few as room allows
+(`perfBars`). In the Compose arrangement a SOUND row sits under the ruler — the
+document's envelope across its own length, and the loop marked while looping
+is on. A take running past the document's end lengthens the ruler.
+
+**Sampled curves are cached** (`perfGrainPath`), per lane, until an edit —
+`saveAutomation` bumps the version — since a recorded take holds thousands of
+breakpoints and the playhead redraws the timeline while playing.
+
+Tests: `tests/ui/compose-timeline.spec.mjs` — a take notes where the engine was
+when it began, replays half a second in at half a second past it, and waits
+before it; the take arrives as a SEQ lane in engine seconds with its scale
+change and tempo, grouped beside a grain lane, in the menu and the header, and
+leaves when deleted; REC PERF arms and disarms the sequencer's recorder, and
+leaves it alone with SEQ off; the playhead is output time; a group folds and
+opens with a click, and a sequencer lane opens a note rather than the editor
+and survives Delete; the bars are four beats apart at the tempo and go with SEQ
+off.

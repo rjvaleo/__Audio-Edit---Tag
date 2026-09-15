@@ -182,3 +182,10 @@ soft ceiling every export gets. Rendering after the export means nothing has
 to predict how long a loop with a tail comes out. `GRAIN` off goes with it as
 `grain=0`, which silences the export's own sound first, so an export of one
 source is what it says. `mix_stem_into` is unit-tested in `routes.rs`.
+
+## A take on the host's timeline
+
+A take notes where on the engine's clock it began (`startAt`), replays relative
+to it, and is sent to the host as lanes in engine seconds (`seq:take`) whenever
+it changes. The host's REC PERF arms this recorder too (`seq:arm`). See
+`docs/COMPOSE.md`, phase two.
