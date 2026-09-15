@@ -193,3 +193,69 @@ leaves it alone with SEQ off; the playhead is output time; a group folds and
 opens with a click, and a sequencer lane opens a note rather than the editor
 and survives Delete; the bars are four beats apart at the tempo and go with SEQ
 off.
+
+---
+
+## Phase three: visual automation
+
+The picture gets what the grain and the sequencer already had: lanes that move
+it over the document's time, recorded by the same REC PERF, drawn on the same
+timeline, and read by the film. `ui/visual-lanes.js`.
+
+**A visual lane is the grain's lane shape** — `{ id, target, label, enabled,
+points: [{ frame, value, curve, tension }] }`, frames in output frames at the
+file's rate, values nought to one — with a `visual.` target and an id beginning
+`vis:`. Being the same shape is what lets the timeline sample and draw it and
+the lane editor edit it with the code the grain's lanes use; `laneSave` sends an
+edit to the store the lane came from, and undo keeps both kinds of lane.
+
+**The targets** (`VIS_TARGETS`): the camera's seven channel-box attributes,
+written through the channel box's own functions so a lane moves the camera
+exactly as typing into it does; the ring's size, drive, stroke and smoothness;
+the solid's turn, swell, eye, size and shape; the cloud and its burn; fog and
+mist, on and by amount; the data block's opacity; and every layer's switch. A
+slider's range is the slider's own. A switch, and the solid's shape, are
+stepped: rounded to a whole value.
+
+**Recording listens rather than intercepts.** The picture has many hands on it —
+sliders, the channel box, the camera's gestures, the beads, the wheel, the
+keys — and routing every one through a setter would rewrite each of them. So
+once a frame while the transport runs (`visualLanesTick`, from the transport's
+tick) every target is read and compared with what it was last: a value that
+moved, and was not moved by a lane, is the hand. The server records the grain's
+controls the same way, comparing the panel before and after. While REC PERF is
+armed and playing, the hand's value is written into its lane — thinned to a
+point every thirty milliseconds unless the value moved, and over whatever this
+take has covered — and in latch it is written until the transport stops. The
+take is saved when it stops.
+
+**The hand wins.** A target the hand has just moved is left alone by its lane
+for four hundred milliseconds (`VIS_HAND_HOLD_MS`), and in latch until the
+transport stops. Bypass stops the picture's lanes with the grain's.
+
+**Kept per document on the server**, beside the grain's lanes, in
+`VISUAL-AUTOMATION.json`: `GET` and `POST /api/visual-automation?p=`. The store
+(`DocJsonStore` in `docs.rs`) keeps the JSON as the page sends it, drops a record
+with no lanes, and has a unit test. The lanes are loaded when a document opens.
+
+**The film reads them at every frame's own time.** `runVideoExport` hands the
+export `visual`, and for each frame `video-export.js` asks it for the camera, the
+layers and the room's own values at that frame's place in the document.
+`visualFilmFrame` borrows the live room for the length of one call — writes
+every lane in, reads the film's settings out through the same functions the
+export uses, and puts everything back — so what is filmed is what the room
+would be, and the room on screen is left as it was. Nothing is painted in
+between. Camera lanes move the camera posed for the film's shape.
+
+**On the timeline** they are the VISUAL group, in their own colour, under short
+names (CAM TURN, RING SIZE, LAYER GROUND …), in the lanes menu under VISUAL, and
+Delete removes one from its own store.
+
+Tests: `tests/ui/visual-lanes.spec.mjs` — a camera move while armed and playing
+is written in output time and nothing else is, is saved, and comes back after a
+reload; a lane replays the camera, a stepped lane switches a layer, the hand
+takes the camera from its lane and the lane takes it back; the film is handed
+the lane's camera at a frame and the room on screen is unchanged, and the export
+hands the film that function; visual lanes are their own group, open in the
+editor with the picture's targets, and Delete removes one without touching the
+grain's. `docs.rs` — the store round-trips and drops an empty record.

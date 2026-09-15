@@ -520,6 +520,9 @@ pub struct App {
     /// Automation lanes, one set per file. Unlike the racks these outlive the
     /// process: a curve is work, in the way a slider position is not.
     pub automation: crate::automation::AutomationStore,
+    /// The picture's automation lanes, one set per document. See
+    /// `docs/COMPOSE.md`, phase three.
+    pub visual_lanes: RwLock<crate::docs::DocJsonStore>,
     /// The open input device, when one is armed.
     ///
     /// Held here rather than beside the output engine because the two are
@@ -577,6 +580,7 @@ impl App {
         let labels = yamnet::store::Store::load(&data_dir.join("LABELS.tsv"));
         let user_tags = crate::usertags::Store::load(&data_dir.join("USER-TAGS.tsv"));
         let automation = crate::automation::AutomationStore::load(&data_dir.join("AUTOMATION.json"));
+        let visual_lanes = crate::docs::DocJsonStore::load(&data_dir.join("VISUAL-AUTOMATION.json"));
         let overrides = std::fs::read_to_string(data_dir.join("TAG-OVERRIDES.json"))
             .ok()
             .and_then(|s| crate::json::parse(&s))
@@ -616,6 +620,7 @@ impl App {
             edits: crate::docs::EditStore::default(),
             racks: crate::rack::RackStore::default(),
             automation,
+            visual_lanes: RwLock::new(visual_lanes),
             recorder: Mutex::new(None),
             presets: RwLock::new(presets),
             saved: RwLock::new(saved),
@@ -667,6 +672,10 @@ impl App {
 
     pub fn automation_path(&self) -> PathBuf {
         self.data_dir.join("AUTOMATION.json")
+    }
+
+    pub fn visual_lanes_path(&self) -> PathBuf {
+        self.data_dir.join("VISUAL-AUTOMATION.json")
     }
 
     /// Write every open document to disk.

@@ -58,7 +58,7 @@ pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SETTINGS_JS, SECTION_PRESETS_JS,
                  SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
-                 PERF_PANEL_JS, COMPOSE_JS,
+                 PERF_PANEL_JS, COMPOSE_JS, VISUAL_LANES_JS,
                  SHAPES_4D_JS, PANEL_4D_JS,
                  STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
                  VIS_GL_JS, RIDGE_JS, ROOM3D_JS, ROOM_PAINT_JS, VIDEO_EXPORT_JS] {
@@ -132,6 +132,8 @@ pub const SEQ_BRIDGE_JS: &str = include_str!("../../../../ui/sequencer/bridge.js
 pub const PERF_PANEL_JS: &str = include_str!("../../../../ui/perf-panel.js");
 /// The Compose workspace and its compact panels. See `docs/COMPOSE.md`.
 pub const COMPOSE_JS: &str = include_str!("../../../../ui/compose.js");
+/// The picture's automation lanes. See `docs/COMPOSE.md`, phase three.
+pub const VISUAL_LANES_JS: &str = include_str!("../../../../ui/visual-lanes.js");
 /// The left rail, and its own stylesheet. Ported from the edge build; it emits
 /// its own markup and depends on no rule in `app.css`. See `docs/RAIL.md`.
 pub const RAIL_JS: &str = include_str!("../../../../ui/rail.js");
@@ -196,6 +198,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET" | "HEAD", "/section-presets.js") => {
             Response::ok("text/javascript; charset=utf-8", SECTION_PRESETS_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/visual-lanes.js") => {
+            Response::ok("text/javascript; charset=utf-8", VISUAL_LANES_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/compose.js") => {
             Response::ok("text/javascript; charset=utf-8", COMPOSE_JS.as_bytes().to_vec())
@@ -306,6 +311,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/stats") => api_stats(app, req),
         ("GET", "/api/markers") => api_markers_get(app, req),
         ("POST", "/api/markers") => api_markers_set(app, req),
+        ("GET", "/api/visual-automation") => api_visual_lanes_get(app, req),
+        ("POST", "/api/visual-automation") => api_visual_lanes_set(app, req),
         ("POST", "/api/annot") => api_annot(app, req),
         ("GET", "/api/fx") => api_fx_catalogue(),
         ("GET", "/api/scales") => api_scales(),
@@ -812,6 +819,41 @@ fn api_markers_get(app: &Arc<App>, req: &Request) -> Response {
     };
     let store = app.markers.read().unwrap();
     Response::json(store.get(key).to_json().to_string())
+}
+
+/// The picture's automation lanes for one document.
+///
+/// Kept as they arrive: their shape is the page's — the grain's lane shape,
+/// with `visual.` targets — and the server keeps them beside the document and
+/// hands them back. See `docs/COMPOSE.md`, phase three.
+fn api_visual_lanes_get(app: &Arc<App>, req: &Request) -> Response {
+    let Some(key) = req.param("p") else {
+        return Response::error(400, "no path given");
+    };
+    let store = app.visual_lanes.read().unwrap();
+    Response::json(store.get(key).to_string())
+}
+
+fn api_visual_lanes_set(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(key) = v.get("p").and_then(|p| p.as_str()).map(str::to_string) else {
+        return Response::error(400, "no path given");
+    };
+    let lanes = match v.get("lanes") {
+        Some(Value::Arr(a)) => Value::Arr(a.clone()),
+        _ => return Response::error(400, "lanes must be a list"),
+    };
+    {
+        let mut store = app.visual_lanes.write().unwrap();
+        store.set(&key, Value::obj().set("lanes", lanes));
+        if let Err(e) = store.save(&app.visual_lanes_path()) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    let store = app.visual_lanes.read().unwrap();
+    Response::json(store.get(&key).to_string())
 }
 
 fn api_markers_set(app: &Arc<App>, req: &Request) -> Response {
