@@ -59,6 +59,11 @@ pub struct Job {
     pub phase: Mutex<String>,
     pub error: Mutex<String>,
     pub reel: Mutex<Option<Reel>>,
+    /// The loop as the render resolved it, in output frames, and its repeats —
+    /// nought when the film is not a loop. See `ExportProgress::loop_from`.
+    pub loop_from: AtomicU64,
+    pub loop_frames: AtomicU64,
+    pub loop_repeats: AtomicU64,
 }
 
 impl Job {
@@ -80,6 +85,9 @@ impl Job {
         if let Ok(mut x) = self.reel.lock() {
             *x = None;
         }
+        self.loop_from.store(0, Ordering::Relaxed);
+        self.loop_frames.store(0, Ordering::Relaxed);
+        self.loop_repeats.store(0, Ordering::Relaxed);
         self.say("analysing");
     }
 }

@@ -122,6 +122,14 @@
     // engine at `at` is `rel` into it — negative while the engine is still
     // before where the take was played, and the replay simply waits.
     const rel = at - (+p.startAt || 0);
+    // Back past where the replay has got to — a seek, or the loop coming round:
+    // the take starts again from there, so it stands where it stood then and
+    // throws its switches again as it reaches them. Moving its clock back alone
+    // left every switch it had already thrown thrown.
+    if (perfReplay && rel < perfReplay.playheadT - 0.05) {
+      clearInterval(perfReplay.timer);
+      perfReplay = null;
+    }
     if (!perfReplay) {
       if (typeof applyPresetState === 'function' && p.snapshot) applyPresetState(p.snapshot);
       p.gestures.forEach((g) => delete g._fired);
@@ -159,6 +167,33 @@
   function takeStop() {
     if (typeof perfReplay !== 'undefined' && perfReplay && typeof perfStop === 'function') perfStop();
   }
+
+  /// What a take has done by `at` on the engine's clock: every control it
+  /// moves, at its value then, and the switches it has thrown by then, by their
+  /// place in its gestures. The take began at `startAt`, so its own time is `at`
+  /// less that — a take played ten seconds into the sound makes its first move
+  /// ten seconds in, in the film as it does live.
+  function takeValuesAt(take, at) {
+    const t = at - (+take.startAt || 0);
+    const sliders = {};
+    const snap = (take.snapshot && take.snapshot.sliders) || {};
+    for (const id of PERF_SLIDERS) {
+      const moved = take.gestures.some((x) => x.kind === 'slider' && x.id === id);
+      if (!moved && snap[id] === undefined) continue;
+      const g = take.gestures.find((x) => x.kind === 'slider' && x.id === id && x.t0 <= t && t <= x.t1);
+      sliders[id] = g ? perfInterp(g.points, t) : perfValueAtTime(take, id, t);
+    }
+    const thrown = [];
+    take.gestures.forEach((g, i) => {
+      // Play and pause are the transport's, and the transport is the engine's.
+      if (g.kind === 'discrete' && g.t <= t && g.type !== 'play' && g.type !== 'pause' && g.type !== 'stop') thrown.push(i);
+    });
+    return { t, sliders, thrown };
+  }
+
+  /// Whether the engine's transport has the take playing — so a jump, which
+  /// may come after the take has run out, starts it again.
+  let takeOn = false;
 
   // ── the feed ─────────────────────────────────────────────────────────────
 
@@ -313,35 +348,61 @@
     const spectra = new Float32Array(nFrames * bands);
     const liss = new Float32Array(nFrames * lissN * 2);
 
-    // The take, if one is loaded: the knobs it moves, at any moment.
+    // The take, if one is loaded: the knobs it moves, at any moment. It starts
+    // from where it stood when it was recorded, as it does when the engine's
+    // Play starts it.
     const take = (typeof perfLoaded !== 'undefined' && perfLoaded) || null;
+    if (take && take.snapshot && typeof applyPresetState === 'function') applyPresetState(take.snapshot);
     const applied = new Set();
-    const applyTakeAt = (t) => {
+    const applyTakeAt = (at) => {
       if (!take) return;
-      for (const id of PERF_SLIDERS) {
+      const now = takeValuesAt(take, at);
+      for (const [id, v] of Object.entries(now.sliders)) {
         const el = document.getElementById(id);
-        if (!el) continue;
-        const g = take.gestures.find((x) => x.kind === 'slider' && x.id === id && x.t0 <= t && t <= x.t1);
-        const v = g ? perfInterp(g.points, t) : perfValueAtTime(take, id, t);
-        if (String(el.value) === String(v)) continue;
+        if (!el || String(el.value) === String(v)) continue;
         el.value = v;
         el.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      take.gestures.forEach((g, i) => {
-        if (g.kind !== 'discrete' || applied.has(i) || g.t > t) return;
+      for (const i of now.thrown) {
+        if (applied.has(i)) continue;
         applied.add(i);
-        if (g.type !== 'play' && g.type !== 'pause' && g.type !== 'stop') perfApplyDiscrete(g);
-      });
+        perfApplyDiscrete(take.gestures[i]);
+      }
+    };
+
+    // **A loop goes round.** `span` seconds of the document from `at0`,
+    // `repeats` times — the sound was tiled that way by the server — and then
+    // the tail, where nothing new is played and the take holds where the loop
+    // ended, which is the rule the server's render keeps for its own lanes.
+    // Without it the sequencer ran straight on through every repeat.
+    const span = o.loop && o.loop.span > 0 ? +o.loop.span : 0;
+    const repeats = span ? Math.max(1, Math.round(+o.loop.repeats) || 1) : 0;
+    const musical = span * repeats;
+    /// Which pass a moment of the render is in, and where in the document.
+    const placeAt = (t) => {
+      if (!span) return { pass: 0, at: at0 + t };
+      if (t >= musical - 1e-9) return { pass: repeats - 1, at: at0 + span };
+      const pass = Math.floor(t / span + 1e-9);
+      return { pass, at: at0 + Math.max(0, t - pass * span) };
     };
 
     // The grid, laid from the document's zero. The notes of each film frame
     // are scheduled when the render reaches it, so a knob the take moved by
-    // then is what they sound through.
+    // then is what they sound through. Round a loop, each pass lays the same
+    // steps again at the same places in it.
     const d = stepDur();
-    let k = Math.max(0, Math.ceil((at0 - 1e-9) / d));
+    const kFirst = Math.max(0, Math.ceil((at0 - 1e-9) / d));
+    let k = kFirst;
+    let pass = 0;
     const scheduleUntil = (tEnd) => {
-      while (k * d - at0 < tEnd) {
-        const time = k * d - at0;
+      for (;;) {
+        let time = k * d - at0;
+        if (span) {
+          if (pass >= repeats) return;
+          if (time >= span - 1e-9) { pass++; k = kFirst; continue; }
+          time += pass * span;
+        }
+        if (time >= tEnd) return;
         const step = steps[stepAtBoundary(k)];
         let pwMod = 0;
         lfos.forEach((lfo) => {
@@ -356,10 +417,26 @@
       }
     };
 
+    // **Notes are laid a little ahead of the frame that reaches them.** The
+    // render stops for a frame on a render quantum's edge, which can fall just
+    // past the frame's own time, and a note scheduled for a moment already
+    // rendered starts at the next edge instead — up to a quantum late, and
+    // whether it is late or not came down to how a float rounded. Two quanta
+    // ahead, every note is laid before its moment and starts on its sample.
+    const ahead = 256 / rate;
+    let takePass = 0;
     const frameWork = (i) => {
       const t = i / fps;
-      applyTakeAt(at0 + t);
-      scheduleUntil(t + 1 / fps);
+      const here = placeAt(t);
+      // Round the loop, the take is put back to where it stood at the loop's
+      // start and throws its switches again as the pass reaches them.
+      if (take && here.pass > takePass) {
+        takePass = here.pass;
+        if (take.snapshot) applyPresetState(take.snapshot);
+        applied.clear();
+      }
+      applyTakeAt(here.at);
+      scheduleUntil(t + 1 / fps + ahead);
       spectrumInto(an, fbuf, rate, w, spectra, i * bands);
       lissajousInto(aL, aR, bL, bR, lissN, liss, i * lissN * 2);
       if (i % 30 === 0) post({ type: 'seq:render-progress', fraction: i / nFrames });
@@ -416,7 +493,7 @@
     const m = e.data || {};
     if (m.type === 'seq:transport') {
       const at = Number.isFinite(m.at) ? m.at : 0;
-      if (m.playing) { playAt(at); takePlayAt(at); } else { stop(); takeStop(); }
+      if (m.playing) { playAt(at); takeOn = true; takePlayAt(at); } else { takeOn = false; stop(); takeStop(); }
     } else if (m.type === 'seq:clock') {
       // The engine's position, while it plays. A seek or a loop wrap shows up
       // as a jump; drift shows up as a creep. Both are answered the same way,
@@ -426,7 +503,7 @@
       const p = predicted();
       if (p === null || Math.abs(p - m.at) > RELOCATE_S) {
         locate(m.at);
-        if (typeof perfReplay !== 'undefined' && perfReplay) takePlayAt(m.at);
+        if (takeOn) takePlayAt(m.at);
       }
     } else if (m.type === 'seq:render') {
       renderFilm(m).then((r) => {
@@ -555,7 +632,7 @@
 
   // For the tests, and for anyone reading the frame: where this clock thinks
   // the engine is.
-  window.seqBridge = { predicted, stepDur, locate, renderFilm, takeMessage, takePlayAt, get last() { return last; } };
+  window.seqBridge = { predicted, stepDur, locate, renderFilm, takeMessage, takePlayAt, takeValuesAt, get last() { return last; } };
 
   // Thirty times a second, which is what the engine's meter is polled at.
   setInterval(tick, 33);

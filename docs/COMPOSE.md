@@ -329,3 +329,66 @@ sound and the film side by side in the composition's folder. Unit tests:
 cannot climb out; `docs.rs` — a safe name keeps its words and loses its way out;
 `http.rs` — a settings body over its cap is refused, and a stem or a film may
 carry more than eight megabytes.
+
+## After the phases: the sequencer round the loop
+
+*14 Sep 2026.* A looped export tiles the loop — the server renders the
+selection, repeats it as many times as asked, and lets the rack ring out after.
+The sequencer's part ran straight on through all of it, so after the first pass
+it was playing a different part of its pattern from the sound it was summed
+into. It goes round the loop now, in the sound's export and in the film.
+
+**The server's loop, handed over.** The loop the render went round is reported
+where the render's progress is: `GET /api/export` carries `sampleRate` and
+`loop: { from, frames, repeats }` in output frames, and `GET /api/video` carries
+the same `loop` for the film's sound. `exportAddStem` and `videoExport` lay the
+sequencer on exactly those numbers rather than working them out again. The film
+used to map the selection through a rounded float ratio where the sound divided
+exactly, so one could come out a frame longer than the other — a frame a repeat,
+a sequencer drifting off its loop over a few hundred repeats. Both use
+`routes::loop_plan` now.
+
+**Round the loop in the render** (`renderFilm` in `bridge.js`). With a `loop` of
+`{ span, repeats }`, each pass lays the same steps again at the same places in
+it — the first boundary after the loop's start, then every step to its end —
+and nothing new is played in the tail, where the take holds where the loop
+ended, the rule the server keeps for its own lanes. At every pass the take is put
+back where it stood at the loop's start and throws its switches again as the
+pass reaches them.
+
+**Three faults fixed in the same render.**
+
+- **A take was read from zero.** The live replay learned in phase two that a
+  take began at `startAt`; the render did not, so a take recorded ten seconds
+  in moved its knobs ten seconds early in every film and export. The take is
+  read through `takeValuesAt(take, at)` now, on the engine's clock, and the
+  render starts from the take's snapshot, as the engine's Play does.
+- **Notes could start a quantum late.** The render stops for a film frame on a
+  render quantum's edge, which can fall just past the frame's own time; a note
+  due on that edge was scheduled after its moment had rendered and started at
+  the next edge, up to 2.7 ms late — and whether it did came down to how a float
+  rounded. Notes are laid two quanta ahead of the frame that reaches them.
+- **A take in a sound export stepped once a second.** The stem was rendered at
+  one frame a second, and a knob is set once a frame. It is thirty while a take
+  is loaded.
+
+**Live, the take comes round too.** A jump back — a seek, or the loop wrapping
+— used to move the take's clock back and leave every switch it had already
+thrown thrown, and a take that had run out before the loop came round stayed
+stopped. A jump back now starts the take again from there, and a take the
+transport started is started again by a jump even after it ran out.
+
+**One render for the sound and the film.** The plan said the stem after the
+export and the film's sequencer were the same render, done once; they were done
+twice. While a composition is exported (`seqShared`), the sound asks for the
+sequencer in the film's shape — its frame rate, bands and figure — long enough
+for the film's outro, and the film is handed that render.
+
+Tests: `tests/ui/sequencer-loop.spec.mjs` — a looped render puts all twelve
+notes of three passes where they belong, every pass the same to the sample and
+nothing new in the tail, where a straight render moves on; a take is read from
+where it began; the sound's export lays the sequencer on the server's loop; a
+composition's export renders the sequencer once; live, a jump back puts the take
+back and a take that ran out comes round again. Unit tests: `routes.rs` — a
+selection maps to output frames by exact division, and a loop is reported
+clamped to the document.

@@ -249,7 +249,9 @@ Open:
   at sample accuracy would need the sequencer rendered through the server,
   which is a different sequencer. Not in this plan.
 - The loop: the sequencer runs straight through a looped export today. A
-  composition's loop should wrap the sequencer too. Phase four.
+  composition's loop should wrap the sequencer too. Phase four. *Built after
+  the phases, 14 Sep 2026 — see `docs/COMPOSE.md`, "the sequencer round the
+  loop".*
 
 ---
 

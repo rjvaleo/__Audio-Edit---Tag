@@ -2760,6 +2760,16 @@ fn api_export_status(app: &Arc<App>) -> Response {
             .set("frames", e.frames.load(Ordering::Relaxed))
             .set("serial", e.serial.load(Ordering::Relaxed))
             .set("cancelled", e.cancelled())
+            .set("sampleRate", e.rate.load(Ordering::Relaxed))
+            // The loop the render went round, for the sequencer's part to go
+            // round the same one. Null when the export is not a loop.
+            .set("loop", match e.loop_frames.load(Ordering::Relaxed) {
+                0 => Value::Null,
+                frames => Value::obj()
+                    .set("from", e.loop_from.load(Ordering::Relaxed))
+                    .set("frames", frames)
+                    .set("repeats", e.loop_repeats.load(Ordering::Relaxed)),
+            })
             .to_string(),
     )
 }
@@ -2818,22 +2828,7 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         .automation
         .get_for(rel, list.frames(), list.channels, list.sample_rate);
 
-    // Source frames to output frames. `list.frames()` is the document after the
-    // stretch and `base_frames()` before it, so their ratio is the mapping —
-    // and it is exactly the one the renderer's own output was built at, which
-    // asking `Stretch::output_frames` again would only approximate.
-    let base = list.base_frames().max(1);
-    let to_out = |f: u64| ((f as u128 * list.frames() as u128) / base as u128) as u64;
-    let plan = if repeats >= 1 && loop_to > loop_from {
-        Some(edit::render::LoopPlan {
-            from: to_out(loop_from),
-            to: to_out(loop_to),
-            repeats,
-            tail: want_tail,
-        })
-    } else {
-        None
-    };
+    let plan = loop_plan(&list, loop_from, loop_to, repeats, want_tail);
 
     // Beside the original, named for the engine and the three settings that
     // decide what you hear. Everything else goes *inside* the file.
@@ -2880,6 +2875,7 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, "an export is already running");
     }
     app.export.begin(total_work);
+    app.export.set_loop(list.sample_rate, loop_report(&list, plan.as_ref()));
 
     // Off the request thread. The server is a thread per connection
     // (`serve.rs:37`) with no lock held across a render, so the status route
@@ -2993,25 +2989,18 @@ fn api_video(app: &Arc<App>, req: &Request) -> Response {
     let automation = app
         .automation
         .get_for(rel, list.frames(), list.channels, list.sample_rate);
-    let plan = if repeats > 0 && loop_to > loop_from {
-        let base = list.base_frames().max(1);
-        let ratio = list.frames() as f64 / base as f64;
-        let to_out = |f: u64| (f as f64 * ratio).round() as u64;
-        Some(edit::render::LoopPlan {
-            from: to_out(loop_from),
-            to: to_out(loop_to),
-            repeats,
-            tail: want_tail,
-        })
-    } else {
-        None
-    };
+    let plan = loop_plan(&list, loop_from, loop_to, repeats, want_tail);
 
     let job = crate::video::job();
     if job.running.swap(true, Ordering::SeqCst) {
         return Response::error(400, "a video analysis is already running");
     }
     job.begin(1);
+    if let Some((from, frames, repeats)) = loop_report(&list, plan.as_ref()) {
+        job.loop_from.store(from, Ordering::Relaxed);
+        job.loop_frames.store(frames, Ordering::Relaxed);
+        job.loop_repeats.store(repeats as u64, Ordering::Relaxed);
+    }
 
     // The render ahead is the same one an audio export makes, and it reports
     // itself through `app.export`. Started here so that it has a total to count
@@ -3127,6 +3116,17 @@ fn api_video_status(app: &Arc<App>) -> Response {
         })
         .set("error", job.error.lock().map(|x| x.clone()).unwrap_or_default())
         .set("serial", job.serial.load(Ordering::Relaxed) as f64);
+    // The loop the film's sound went round, as the export reports its own.
+    let loop_frames = job.loop_frames.load(Ordering::Relaxed);
+    if loop_frames > 0 {
+        v = v.set(
+            "loop",
+            Value::obj()
+                .set("from", job.loop_from.load(Ordering::Relaxed) as f64)
+                .set("frames", loop_frames as f64)
+                .set("repeats", job.loop_repeats.load(Ordering::Relaxed) as f64),
+        );
+    }
     if let Ok(g) = job.reel.lock() {
         if let Some(r) = g.as_ref() {
             v = v
@@ -3241,6 +3241,42 @@ fn render_channels(list: &edit::EditList) -> u16 {
 /// nothing at all — the numbers went into `app.export` while the video's status
 /// route read the video job, so a stretch that takes minutes sat at a hard zero
 /// and read as a hang. One total, counted once, for the one render.
+/// The selection, in source frames, as a loop plan in output frames — or none
+/// when there is no loop.
+///
+/// Source frames to output frames. `list.frames()` is the document after the
+/// stretch and `base_frames()` before it, so their ratio is the mapping — and it
+/// is exactly the one the renderer's own output was built at, which asking
+/// `Stretch::output_frames` again would only approximate.
+///
+/// **One mapping for the sound and the film.** The film used to round a float
+/// ratio where the sound divided exactly, so the same selection could come out a
+/// frame longer in one than the other — a frame a repeat, which over a few
+/// hundred repeats is a sequencer part drifting off the loop it was laid on.
+pub fn loop_plan(
+    list: &edit::EditList,
+    from: u64,
+    to: u64,
+    repeats: u32,
+    tail: bool,
+) -> Option<edit::render::LoopPlan> {
+    if repeats < 1 || to <= from {
+        return None;
+    }
+    let base = list.base_frames().max(1);
+    let to_out = |f: u64| ((f as u128 * list.frames() as u128) / base as u128) as u64;
+    Some(edit::render::LoopPlan { from: to_out(from), to: to_out(to), repeats, tail })
+}
+
+/// What a loop plan is reported as: where it starts, how long it is, and how
+/// many times round, clamped to the document the way the renderer clamps it.
+fn loop_report(list: &edit::EditList, plan: Option<&edit::render::LoopPlan>) -> Option<(u64, u64, u32)> {
+    let p = plan?;
+    let end = list.frames();
+    let (from, to) = (p.from.min(end), p.to.min(end));
+    (to > from).then(|| (from, to - from, p.repeats.max(1)))
+}
+
 pub fn export_total_work(list: &edit::EditList, plan: Option<&edit::render::LoopPlan>) -> u64 {
     let base_frames = list.base_frames();
     let stretched = list.is_stretched();
@@ -5127,6 +5163,37 @@ mod tag_tests {
         assert!(body.contains("level1:      Sample"));
         assert!(!body.contains("elsewhere"), "another folder's file leaked in");
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod loop_plan_tests {
+    use super::*;
+
+    /// The film used to round a float ratio where the sound divided exactly.
+    /// At two and a half times, source frame 9001 lands on output frame 22502.5:
+    /// the sound took 22502 and the film 22503 — a frame a repeat between the two.
+    #[test]
+    fn a_selection_maps_to_output_frames_by_exact_division() {
+        let mut list = edit::EditList::identity(44_100, 2, 44_100);
+        list.stretch.ratio = 2.5;
+        let frames = list.frames() as u128;
+        let p = loop_plan(&list, 1_000, 9_001, 3, true).expect("a loop");
+        assert_eq!(p.from, (1_000u128 * frames / 44_100) as u64);
+        assert_eq!(p.to, (9_001u128 * frames / 44_100) as u64);
+        assert_eq!((p.repeats, p.tail), (3, true));
+        assert!(loop_plan(&list, 5, 5, 3, false).is_none(), "an empty selection is not a loop");
+        assert!(loop_plan(&list, 0, 10, 0, false).is_none(), "no repeats is not a loop");
+    }
+
+    #[test]
+    fn a_loop_is_reported_clamped_to_the_document() {
+        let list = edit::EditList::identity(1_000, 1, 48_000);
+        let over = edit::render::LoopPlan { from: 900, to: 5_000, repeats: 0, tail: false };
+        assert_eq!(loop_report(&list, Some(&over)), Some((900, 100, 1)));
+        let past = edit::render::LoopPlan { from: 2_000, to: 5_000, repeats: 2, tail: false };
+        assert_eq!(loop_report(&list, Some(&past)), None);
+        assert_eq!(loop_report(&list, None), None);
     }
 }
 
