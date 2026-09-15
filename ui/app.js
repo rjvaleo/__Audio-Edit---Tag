@@ -891,7 +891,7 @@ function seekSource(srcFrame) {
   engine.heard = performance.now();
   // A new epoch: whatever of the sequencer's sound the engine holds from before
   // the seek is let go, and anything still on its way is refused.
-  seq.epoch++;
+  seqNextEpoch();
   enginePost({ seek: p, seqEpoch: seq.epoch });
   // Straight away, not at the next clock tick: a seek is a discontinuity and
   // the sequencer should land with it.
@@ -10319,6 +10319,15 @@ const SEQ_ROUTE_LEAD = 0.12;
 /// engine starts regardless.
 const SEQ_ROUTE_WAIT_MS = 1500;
 
+/// A new epoch. **Counted on the wall clock, not from nought**, so two windows
+/// on one engine agree which of them spoke last. Counted from nought, the window
+/// used longer held the higher number, and the engine refused every other
+/// window's sound as having come from before a seek it never made.
+function seqNextEpoch() {
+  seq.epoch = Math.max(seq.epoch + 1, Date.now());
+  return seq.epoch;
+}
+
 /// Whether the sequencer's sound goes through the engine: the setting, a
 /// device known to be there, and the sequencer loaded and switched on.
 function seqRouting() {
@@ -10401,7 +10410,7 @@ function seqSync(playing, { preroll = false } = {}) {
   playing = playing && sourceOn('seq');
   const routed = playing && seqRouting() && (preroll || engine.playing);
   const wasRouted = seq.routed;
-  seq.epoch++;
+  seqNextEpoch();
   seq.routed = false;
   seq.rolling?.done(false);
   const rate = engine.deviceRate || 48000;

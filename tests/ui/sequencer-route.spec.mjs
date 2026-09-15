@@ -15,6 +15,9 @@
 //     at the second clock in a row that says so, not on one busy moment;
 //   - the host is told the sound is going to the engine only once the engine
 //     has taken some, and the end of the sound stops the sequencer;
+//   - played and stopped again and again, the page sends the engine one stream,
+//     not one for every Play — and an epoch is the wall clock's, so two windows
+//     agree which spoke last;
 //   - the host's Play starts the sequencer first and the engine a lead after it
 //     says it is under way, holding the playhead meanwhile; a seek is a new
 //     epoch for both;
@@ -118,6 +121,52 @@ test('routed and playing, every note is stamped on the engine frame of its step'
   got.onsets.forEach((f, i) => {
     expect(Math.abs(f - (first + i * step)), `note ${i + 1} at frame ${f}, not ${first + i * step}`).toBeLessThanOrEqual(2);
   });
+});
+
+test('played and stopped again and again, the page sends the engine one stream, not one a Play', async ({ page }) => {
+  const frame = await enterSeq(page);
+  const rate = await frame.evaluate(TONE);
+  await page.evaluate((r) => {
+    engine.device = true;
+    engine.deviceRate = r;
+    engine.position = 0;
+    seq.routeSink = true;
+  }, rate);
+  // Three plays and three stops, as a person trying it out would.
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => { seqSync(true, { preroll: true }); });
+    await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => seqSync(false));
+    await page.waitForTimeout(400);
+  }
+  await page.evaluate(() => { seqSync(true, { preroll: true }); });
+  await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
+  await frame.evaluate(() => seqBridge.routeSent());
+  const t0 = Date.now();
+  await page.waitForTimeout(1_000);
+  const got = await frame.evaluate(() => {
+    const runs = seqBridge.routeSent();
+    let frames = 0;
+    const overlaps = [];
+    const seen = [];
+    for (const s of runs) {
+      const n = s.data.length / 2;
+      frames += n;
+      for (const [a, b] of seen) if (s.at < b && s.at + n > a) overlaps.push([s.at, a]);
+      seen.push([s.at, s.at + n]);
+    }
+    return { frames, overlaps: overlaps.slice(0, 4) };
+  });
+  const seconds = (Date.now() - t0) / 1000;
+  await page.evaluate(() => seqSync(false));
+  expect(got.overlaps, 'the same frames were sent twice').toEqual([]);
+  expect(got.frames / (seconds * rate), 'the page sent more than one stream\'s worth').toBeLessThan(1.4);
+  expect(got.frames / (seconds * rate), 'the page sent too little').toBeGreaterThan(0.6);
+  // Epochs on the wall clock, and still one more each time.
+  const epochs = await page.evaluate(() => { const a = seqNextEpoch(); const b = seqNextEpoch(); return { a, b, now: Date.now() }; });
+  expect(epochs.b).toBe(epochs.a + 1);
+  expect(Math.abs(epochs.a - epochs.now)).toBeLessThan(5_000);
 });
 
 test('round the engine\'s loop the grid wraps where the engine will, and the stamps go straight back', async ({ page }) => {
