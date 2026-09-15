@@ -249,7 +249,9 @@ Open:
 - Two audio outputs — the server's device and the page's Web Audio — are
   aligned by the bridge's relocate threshold today. A composition of the two
   at sample accuracy would need the sequencer rendered through the server,
-  which is a different sequencer. Not in this plan.
+  which is a different sequencer. Not in this plan. *Built after the phases, 14
+  Sep 2026, without a second sequencer: the page's own sound is handed to the
+  engine, stamped by the frame — see `docs/SEQUENCER.md`, "one output".*
 - The loop: the sequencer runs straight through a looped export today. A
   composition's loop should wrap the sequencer too. Phase four. *Built after
   the phases, 14 Sep 2026 — see `docs/COMPOSE.md`, "the sequencer round the

@@ -1002,6 +1002,9 @@ function getNextStep() {
 function scheduler() {
   const lookAhead = 0.1;
   while (nextNoteTime < audioCtx.currentTime + lookAhead) {
+    // Inside the granular app, the engine's loop: a step at or past its end is
+    // laid again from its start (bridge.js). On its own there is no bridge.
+    if (window.seqBridge && window.seqBridge.wrapBefore(nextNoteTime)) continue;
     const step = steps[currentStep];
     const stepDur = (60 / bpm) * stepBeats;
     // Advance phases for PW-targeting LFOs and compute combined PWM modulation
@@ -1027,7 +1030,7 @@ function scheduler() {
         () => {
           updatePlayingUI(si, f, deg);
         },
-        Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000),
+        Math.max(0, (nextNoteTime - audioCtx.currentTime + (window.seqBridge ? window.seqBridge.uiDelay() : 0)) * 1000),
       );
     }
     nextNoteTime += stepDur;

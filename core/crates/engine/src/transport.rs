@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::render::Source;
+use crate::seqbus::{SeqBus, SEQ_BUS_FRAMES, SEQ_STOP_FADE_FRAMES};
 use crate::stretcher::Stretcher;
 
 /// Frames of fade either side of a loop wrap. A jump lands mid-waveform and
@@ -116,6 +117,9 @@ pub struct Shared {
     /// Silent, whatever the gain: the GRAIN source switch. The engine keeps
     /// running, so the transport and everything clocked from it carry on.
     mute: AtomicBool,
+    /// The sequencer's sound, waiting for the frames it belongs at. See
+    /// [`crate::seqbus`].
+    pub seq: SeqBus,
     /// Grains dropped because the voice pool was full.
     pub overflows: AtomicU64,
 
@@ -338,6 +342,7 @@ impl Shared {
             latency: AtomicU64::new(0),
             gain: AtomicU32::new(1.0f32.to_bits()),
             mute: AtomicBool::new(false),
+            seq: SeqBus::new(SEQ_BUS_FRAMES),
             overflows: AtomicU64::new(0),
             load_now: AtomicU32::new(0),
             load_mean: AtomicU32::new(0),
@@ -890,6 +895,15 @@ pub struct Core {
     /// Where each driven control currently *is*, as opposed to where it has
     /// been asked to go. See [`Smoothed`].
     smoothing: Vec<Smoothed>,
+    /// Where in the block each run of grain was rendered from: offset, output
+    /// frame, frames. The sequencer's sound is taken at the same output frames,
+    /// so a loop's wrap inside a block puts it on the same side of the seam as
+    /// the grain. Sized once, in `new`.
+    seq_runs: Vec<(usize, u64, usize)>,
+    /// How much of the sequencer's fade is left after a stop, and the output
+    /// frame it has reached.
+    seq_fade: usize,
+    seq_fade_at: u64,
 }
 
 /// One control on its way to a new value.
@@ -1144,6 +1158,10 @@ impl Core {
             // Capacity up front: `aim` runs in the callback and must never
             // grow this.
             smoothing: Vec::with_capacity(MAX_SMOOTHED),
+            // A run is at least a frame, so a block has at most one per frame.
+            seq_runs: Vec::with_capacity(max_block.max(1) + 1),
+            seq_fade: 0,
+            seq_fade_at: 0,
             scratch: vec![
                 GrainEvent {
                     index: 0,
@@ -1288,6 +1306,22 @@ impl Core {
             // ring so the meters fall the way a meter should. It is a four
             // kilobyte copy per block — the "burning a core" this branch avoids
             // was a rack full of reverbs, not a memcpy.
+            // The sequencer fades out from where the transport stopped, over a
+            // few milliseconds of what it had already sent, rather than stopping
+            // dead mid-note.
+            if self.seq_fade > 0 && shared.seq.is_active() {
+                let ch = channels.max(1);
+                let n = (out.len() / ch).min(self.seq_fade);
+                for i in 0..n {
+                    if let Some((l, r)) = shared.seq.take(self.seq_fade_at + i as u64) {
+                        let g = (self.seq_fade - i) as f32 / SEQ_STOP_FADE_FRAMES as f32;
+                        add_frame(out, i * ch, ch, l * g, r * g);
+                    }
+                }
+                self.seq_fade -= n;
+                self.seq_fade_at += n as u64;
+                fx::soften(out);
+            }
             shared.push_scope(out, channels, self.params.sample_rate);
             shared
                 .position
@@ -1342,6 +1376,7 @@ impl Core {
         let mut filled = 0usize;
         // Where in this block fresh post-wrap material begins, if it does.
         let mut wrapped_at: Option<usize> = None;
+        self.seq_runs.clear();
         while filled < frames {
             let want = frames - filled;
             // Never render past the loop end in one go: the wrap has to land on
@@ -1354,6 +1389,9 @@ impl Core {
                 None => want,
             };
 
+            if self.seq_runs.len() < self.seq_runs.capacity() {
+                self.seq_runs.push((filled, self.renderer.position(), chunk));
+            }
             let slice = &mut out[filled * channels..(filled + chunk) * channels];
             let n = self
                 .renderer
@@ -1397,6 +1435,12 @@ impl Core {
                 *s *= gain;
             }
         }
+
+        // The sequencer, on the frames the grain was just rendered at. After the
+        // grain's own gain, so GRAIN off silences the grain and not it, and
+        // before the ceiling, the capture and the meters, so what is recorded
+        // and drawn is both voices.
+        self.mix_seq(out, channels, shared);
 
         // The last thing before it leaves: round the peaks rather than let the
         // converter slice them.
@@ -1444,6 +1488,34 @@ impl Core {
         shared
             .overflows
             .store(self.renderer.overflows(), Ordering::Release);
+    }
+
+    /// Add the sequencer's sound for this block's runs, taking each frame off
+    /// the bus at the output frame it was stamped for.
+    fn mix_seq(&mut self, out: &mut [f32], channels: usize, shared: &Shared) {
+        let bus = &shared.seq;
+        if !bus.is_active() {
+            self.seq_fade = 0;
+            return;
+        }
+        let ch = channels.max(1);
+        let (mut found, mut lost) = (0u64, 0u64);
+        for &(offset, at, frames) in self.seq_runs.iter() {
+            for i in 0..frames {
+                match bus.take(at + i as u64) {
+                    Some((l, r)) => {
+                        add_frame(out, (offset + i) * ch, ch, l, r);
+                        found += 1;
+                    }
+                    None => lost += 1,
+                }
+            }
+        }
+        bus.mixed.fetch_add(found, Ordering::Relaxed);
+        bus.missing.fetch_add(lost, Ordering::Relaxed);
+        // Where a stop would fade from.
+        self.seq_fade = SEQ_STOP_FADE_FRAMES;
+        self.seq_fade_at = self.renderer.position();
     }
 
     /// Feed the block into the spectrum window and publish a frame each time it
@@ -1501,6 +1573,18 @@ impl Core {
                 }
             }
         }
+    }
+}
+
+/// One stereo frame added into an interleaved block at `base`: left and right on
+/// the first two channels, or their mean on a mono device.
+#[inline]
+fn add_frame(out: &mut [f32], base: usize, channels: usize, l: f32, r: f32) {
+    if channels == 1 {
+        out[base] += 0.5 * (l + r);
+    } else {
+        out[base] += l;
+        out[base + 1] += r;
     }
 }
 
@@ -1597,6 +1681,91 @@ mod tests {
             samples: vec![0.5; frames * channels],
             channels,
         })
+    }
+
+    /// A playing engine with nothing in it to hear, so what comes out is the
+    /// sequencer's alone.
+    fn silent_core(channels: usize) -> (Core, Shared) {
+        let src = Arc::new(Source { samples: vec![0.0; 96_000 * channels], channels });
+        let sp = StreamParams::new(96_000, 48_000);
+        let shared = Shared::new(sp, Arc::clone(&src));
+        let core = Core::new(1024, channels, sp, src);
+        shared.play();
+        (core, shared)
+    }
+
+    #[test]
+    fn the_sequencer_is_added_on_the_output_frames_the_engine_renders() {
+        let (mut core, shared) = silent_core(2);
+        shared.request_seek(1_000);
+        let run: Vec<f32> = (0..512)
+            .flat_map(|i| {
+                let v = (1_000 + i) as f32 * 1e-4;
+                [v, -v]
+            })
+            .collect();
+        assert_eq!(shared.seq.write(1, 1_000, &run, 2, 0, None), 512);
+        let mut buf = vec![0.0; 512 * 2];
+        core.fill(&mut buf, 2, &shared);
+        for i in 0..512 {
+            let v = (1_000 + i) as f32 * 1e-4;
+            assert_eq!((buf[i * 2], buf[i * 2 + 1]), (v, -v), "output frame {} is not the sequencer's", 1_000 + i);
+        }
+        assert_eq!(shared.seq.mixed.load(Ordering::Relaxed), 512);
+        assert_eq!(shared.seq.missing.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn round_a_loop_the_sequencer_wraps_on_the_same_frame_as_the_grain() {
+        let (mut core, shared) = silent_core(2);
+        shared.set_loop(true, 1_000, 1_200);
+        shared.request_seek(1_100);
+        // The last hundred frames of one pass, and the first hundred of the next.
+        shared.seq.write(1, 1_100, &[0.25f32; 100 * 2], 2, 0, None);
+        shared.seq.write(1, 1_000, &[-0.125f32; 100 * 2], 2, 0, None);
+        let mut buf = vec![0.0; 200 * 2];
+        core.fill(&mut buf, 2, &shared);
+        assert!(buf[..200].iter().all(|s| *s == 0.25), "before the wrap: {:?}", &buf[..8]);
+        assert!(buf[200..].iter().all(|s| *s == -0.125), "after the wrap: {:?}", &buf[200..208]);
+    }
+
+    #[test]
+    fn grain_off_silences_the_grain_and_not_the_sequencer() {
+        let (mut core, shared) = playing_core(2);
+        shared.set_mute(true);
+        shared.seq.write(1, 0, &[0.125f32; 512 * 2], 2, 0, None);
+        let mut buf = vec![0.0; 512 * 2];
+        core.fill(&mut buf, 2, &shared);
+        assert!(buf.iter().all(|s| *s == 0.125), "{:?}", &buf[..8]);
+    }
+
+    #[test]
+    fn a_stop_fades_the_sequencer_out_rather_than_cutting_it() {
+        let (mut core, shared) = silent_core(1);
+        shared.seq.write(1, 0, &[0.5f32; 4_000], 1, 0, None);
+        let mut buf = vec![0.0; 256];
+        core.fill(&mut buf, 1, &shared);
+        assert!(buf.iter().all(|s| *s == 0.5));
+        shared.pause();
+        let mut after = vec![0.0; 1_024];
+        core.fill(&mut after, 1, &shared);
+        let n = SEQ_STOP_FADE_FRAMES;
+        assert!(after[0] > 0.45 && after[0] <= 0.5, "the fade did not begin where the sound was: {}", after[0]);
+        assert!(after[n / 2] > 0.2 && after[n / 2] < 0.3, "halfway: {}", after[n / 2]);
+        assert!(after.windows(2).take(n - 1).all(|w| w[1] <= w[0]), "the fade is not a fade");
+        assert!(after[n..].iter().all(|s| *s == 0.0), "the sequencer went on after its fade");
+    }
+
+    #[test]
+    fn sound_that_did_not_come_is_counted_only_while_the_bus_is_in_use() {
+        let (mut core, shared) = silent_core(2);
+        let mut buf = vec![0.0; 256 * 2];
+        core.fill(&mut buf, 2, &shared);
+        assert_eq!(shared.seq.missing.load(Ordering::Relaxed), 0, "a bus nobody sends to counted as missing");
+        shared.seq.write(1, 256, &[0.1f32; 100 * 2], 2, 0, None);
+        core.fill(&mut buf, 2, &shared);
+        assert_eq!(shared.seq.mixed.load(Ordering::Relaxed), 100);
+        assert_eq!(shared.seq.missing.load(Ordering::Relaxed), 156);
     }
 
     fn playing_core(channels: usize) -> (Core, Shared) {

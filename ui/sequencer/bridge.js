@@ -49,35 +49,123 @@
 
   function stepDur() { return (60 / bpm) * stepBeats; }
 
-  /// Lay the grid along the engine's time and point the scheduler at the next
-  /// step boundary after `at`. Sets the sequencer's own variables — they are
-  /// bindings in this frame's global scope, which this script shares.
-  function locate(at) {
-    if (!audioCtx) return;
-    const d = stepDur();
-    const total = Math.max(0, at) / d;
-    const idx = Math.floor(total);
-    const frac = total - idx;
-    const next = idx + 1;
+  /// The grid as the context lays it: context time `ctx` is engine time `at`.
+  /// Laid by `locate`, and laid again by the loop's wrap. Oldest first.
+  let grid = [];
+  /// The engine's loop, in its seconds, as the host last said — or none.
+  let loopSec = null;
+  /// Whether the engine's transport is driving the step clock. The loop is the
+  /// engine's; this page's own Play knows nothing of it.
+  let driven = false;
+
+  /// Point the step counter at boundary `k`, in the pattern's direction. Sets
+  /// the sequencer's own variables — they are bindings in this frame's global
+  /// scope, which this script shares.
+  function setStep(k) {
     const n = Math.max(1, numSteps);
     if (direction === 'fwd') {
-      currentStep = next % n;
+      currentStep = k % n;
     } else if (direction === 'rev') {
-      currentStep = (n - 1 - (next % n) + n) % n;
+      currentStep = (n - 1 - (k % n) + n) % n;
     } else if (direction === 'ping') {
       // Up then back without repeating the ends: a period of 2n-2.
       const period = Math.max(1, 2 * n - 2);
-      const r = next % period;
+      const r = k % period;
       if (r < n) { currentStep = r; pingDir = 1; } else { currentStep = period - r; pingDir = -1; }
     }
     // Random keeps its own counsel; only its phase is aligned.
-    nextNoteTime = audioCtx.currentTime + (1 - frac) * d;
+  }
+
+  /// Lay the grid so that context time `ctx` is engine time `at`, and point the
+  /// scheduler at step boundary `k`. A grid still waiting ahead is replaced.
+  function layGrid(ctx, at, k) {
+    setStep(k);
+    nextNoteTime = ctx + (k * stepDur() - at);
+    grid = grid.filter((g) => g.ctx < ctx);
+    grid.push({ ctx, at });
+    if (grid.length > 8) grid.splice(0, grid.length - 8);
+  }
+
+  /// Where the grid has got to in engine time, at the context's now.
+  function gridNow() {
+    if (!audioCtx || !grid.length) return null;
+    const now = audioCtx.currentTime;
+    let g = grid[0];
+    for (const x of grid) if (x.ctx <= now) g = x;
+    return g.at + (now - g.ctx);
+  }
+
+  /// Lay the grid along the engine's time and point the scheduler at the next
+  /// step boundary after `at`.
+  function locate(at) {
+    if (!audioCtx) return;
+    const d = stepDur();
+    if (route.on) {
+      // Routed, the grid is laid two render quanta on, so no sample already
+      // rendered is claimed for it; on whole frames, so every stamp is exact;
+      // and a step that falls on `at` itself sounds, since the engine has not
+      // reached it yet.
+      const sr = audioCtx.sampleRate;
+      const c = Math.round(audioCtx.currentTime * sr) + 256;
+      const f = Math.round(Math.max(0, at) * sr);
+      routeSegment(c, f);
+      layGrid(c / sr, f / sr, Math.ceil(f / sr / d - 1e-9));
+    } else {
+      layGrid(audioCtx.currentTime, at, Math.floor(Math.max(0, at) / d) + 1);
+    }
     // Carried forward on the wall clock rather than the audio clock: a
     // context the browser has kept asleep — no gesture yet, or no device at
     // all — has a `currentTime` that does not move, and a clock that does not
     // move would read every message as a seek.
     anchor = { perf: performance.now(), at };
-    last = { at, step: currentStep, wait: (1 - frac) * d };
+    last = { at, step: currentStep, wait: nextNoteTime - audioCtx.currentTime };
+  }
+
+  /// Called by the scheduler before it lays each step. A step at or past the
+  /// end of the engine's loop is not played: the grid is laid again from the
+  /// loop's start at the moment the old grid reaches its end, and the scheduler
+  /// looks again. The take and the clock go round at that same moment. It used
+  /// to wait to be told the engine had wrapped, a quarter of a second or so
+  /// after it had. Returns whether it wrapped.
+  function wrapBefore(t) {
+    if (!driven || !loopSec || !grid.length || !audioCtx) return false;
+    const g = grid[grid.length - 1];
+    if (g.at + (t - g.ctx) < loopSec.b - 1e-9) return false;
+    const d = stepDur();
+    let ctxB = Math.max(audioCtx.currentTime, g.ctx + (loopSec.b - g.at));
+    let a = loopSec.a;
+    if (route.on) {
+      // On whole frames, carried on from the grid being left, so the stamps
+      // after the wrap follow the ones before it with no gap and no overlap.
+      const sr = audioCtx.sampleRate;
+      const s = route.segs[route.segs.length - 1];
+      const aF = Math.round(loopSec.a * sr);
+      const bF = Math.round(loopSec.b * sr);
+      const soonest = Math.round(audioCtx.currentTime * sr) + 256;
+      const c = Math.max(soonest, s ? s.c + (bF - s.d) : Math.round(ctxB * sr));
+      routeSegment(c, aF);
+      ctxB = c / sr;
+      a = aF / sr;
+    }
+    layGrid(ctxB, a, Math.ceil(a / d - 1e-9));
+    setTimeout(() => {
+      if (!driven || !audioCtx) return;
+      const into = a + Math.max(0, audioCtx.currentTime - ctxB);
+      anchor = { perf: performance.now(), at: into };
+      if (takeOn) takePlayAt(into);
+    }, Math.max(0, (ctxB - audioCtx.currentTime) * 1000));
+    return true;
+  }
+
+  /// The loop the host says the engine is going round, in engine seconds.
+  function loopTo(l) {
+    loopSec = l && Number.isFinite(l.a) && Number.isFinite(l.b) && l.b > l.a ? { a: +l.a, b: +l.b } : null;
+  }
+
+  /// A time taken round the loop, if it has gone past the end of it.
+  function wrapInto(at) {
+    if (!loopSec || at < loopSec.b) return at;
+    return loopSec.a + ((at - loopSec.a) % (loopSec.b - loopSec.a));
   }
 
   /// The engine's position as this clock predicts it now.
@@ -92,6 +180,7 @@
   function playAt(at) {
     if (typeof initAudio === 'function') initAudio();
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    driven = true;
     if (isPlaying) { locate(at); return; }
     isPlaying = true;
     locate(at);
@@ -105,6 +194,9 @@
   function stop() {
     if (isPlaying && typeof stopSeq === 'function') stopSeq();
     anchor = null;
+    driven = false;
+    grid = [];
+    loopSec = null;
   }
 
   // ── the take ─────────────────────────────────────────────────────────────
@@ -194,6 +286,311 @@
   /// Whether the engine's transport has the take playing — so a jump, which
   /// may come after the take has run out, starts it again.
   let takeOn = false;
+
+  // ── one output ───────────────────────────────────────────────────────────
+  //
+  // Played here, the sequencer meets the engine in the air: the browser's
+  // sound card and the engine's each start when they get round to it, so the
+  // two are close and never to the sample. **Routed, the page does not play
+  // it.** Its master is tapped by a worklet, each block of samples is stamped
+  // with the engine output frame it belongs at, and a worker posts the blocks
+  // to the engine (`POST /api/engine/seq`), which adds them in on exactly those
+  // frames — so both voices leave through one device together.
+  //
+  // **The stamps come from the grid.** A step on boundary k is laid at the
+  // context time the grid says is engine time k × the step, and a sample the
+  // context renders at frame x is stamped with engine frame x plus the same
+  // offset — so a note lands on the frame of its step whenever the context
+  // happened to render it. Routed, the grid is kept on whole frames, so the
+  // two sides of that sum never round apart.
+  //
+  // **It runs ahead.** The host starts this page where the engine is and the
+  // engine a lead later, so the sound is waiting when the engine reaches it;
+  // the page's own output is silent meanwhile, and comes back when it stops.
+  // An engine that will not take the sound (no engine running, a request that
+  // fails) puts the page back to playing it, and the host is told.
+  //
+  // See `docs/SEQUENCER.md`, "one output".
+
+  const route = {
+    want: null, on: false, epoch: 0, segs: [], serial: 0, leadAt: null,
+    ctx: null, gain: null, node: null, hush: null, door: null,
+    worker: null, module: null, sent: [],
+  };
+
+  /// The tap: a block of the master's samples at a time, with the context
+  /// frame the block began at, handed to whoever holds the port.
+  const TAP_SOURCE = `
+class SeqTap extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.out = this.port;
+    this.size = 512;
+    this.buf = new Float32Array(this.size * 2);
+    this.n = 0;
+    this.start = 0;
+    this.port.onmessage = (e) => { if (e.data && e.data.port) this.out = e.data.port; };
+  }
+  process(inputs) {
+    const input = inputs[0] || [];
+    const frames = input.length ? input[0].length : 128;
+    const L = input[0];
+    const R = input[1] || input[0];
+    for (let i = 0; i < frames; i++) {
+      if (this.n === 0) this.start = currentFrame + i;
+      this.buf[this.n * 2] = L ? L[i] : 0;
+      this.buf[this.n * 2 + 1] = R ? R[i] : 0;
+      if (++this.n === this.size) {
+        this.out.postMessage({ frame: this.start, data: this.buf }, [this.buf.buffer]);
+        this.buf = new Float32Array(this.size * 2);
+        this.n = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('seq-tap', SeqTap);
+`;
+
+  /// The sender, on a thread of its own so the page's work never holds it up:
+  /// blocks stamped by the segments of the grid, runs that follow on from each
+  /// other joined, and posted every forty milliseconds or so.
+  const SEND_SOURCE = `
+let segs = [];
+let epoch = 0;
+let url = '';
+let sink = false;
+let open = false;
+let busy = false;
+let timer = 0;
+const queue = [];
+onmessage = (e) => {
+  const m = e.data || {};
+  if (m.port) m.port.onmessage = (ev) => take(ev.data);
+  if (m.url) url = m.url;
+  if (m.sink !== undefined) sink = !!m.sink;
+  if (m.epoch !== undefined && m.epoch !== epoch) { epoch = m.epoch; queue.length = 0; }
+  if (m.segs) segs = m.segs;
+  if (m.open !== undefined) { open = !!m.open; if (!open) queue.length = 0; }
+};
+function take(b) {
+  if (!open || !segs.length || !b || !b.data) return;
+  const n = b.data.length / 2;
+  let i = 0;
+  while (i < n) {
+    const frame = b.frame + i;
+    let s = null;
+    let next = null;
+    for (const x of segs) { if (x.c <= frame) s = x; else { next = x; break; } }
+    const end = next ? Math.min(n, next.c - b.frame) : n;
+    if (s) queue.push({ at: s.d + (frame - s.c), epoch, data: b.data.subarray(i * 2, end * 2) });
+    i = end;
+  }
+  if (!timer) timer = setTimeout(() => { timer = 0; flush(); }, 40);
+}
+async function flush() {
+  if (busy) return;
+  busy = true;
+  while (queue.length) {
+    const first = queue[0];
+    const parts = [];
+    let frames = 0;
+    while (queue.length && queue[0].epoch === first.epoch && queue[0].at === first.at + frames && frames < 24000) {
+      const q = queue.shift();
+      parts.push(q.data);
+      frames += q.data.length / 2;
+    }
+    const body = new Float32Array(frames * 2);
+    let o = 0;
+    for (const p of parts) { body.set(p, o); o += p.length; }
+    try {
+      if (sink) {
+        postMessage({ sent: { at: first.at, epoch: first.epoch, data: body } }, [body.buffer]);
+      } else {
+        const r = await fetch(url + '?at=' + first.at + '&epoch=' + first.epoch + '&channels=2', { method: 'POST', body });
+        if (!r.ok) postMessage({ failed: r.status });
+      }
+    } catch (err) {
+      postMessage({ failed: String(err) });
+    }
+  }
+  busy = false;
+}
+`;
+
+  let tapUrl = null;
+  let sendUrl = null;
+
+  // A context built while routing is wanted is built at the engine's rate, or
+  // no frame of it would line up with a frame of the engine's.
+  const NativeContext = window.AudioContext || window.webkitAudioContext;
+  let wantRate = 0;
+  if (NativeContext) {
+    const Rated = function (options) {
+      const o = Object.assign({}, options || {});
+      if (wantRate && !o.sampleRate) o.sampleRate = wantRate;
+      return new NativeContext(o);
+    };
+    Rated.prototype = NativeContext.prototype;
+    window.AudioContext = Rated;
+  }
+
+  /// Build the page's context again at the engine's rate, its knobs where they
+  /// stood. Never while it plays.
+  function rebuildAt(rate) {
+    wantRate = rate;
+    if (!audioCtx || audioCtx.sampleRate === rate || isPlaying) return;
+    const knobs = typeof getPresetState === 'function' ? getPresetState() : null;
+    const old = audioCtx;
+    audioCtx = null;
+    tapM = null; tapL = null; tapR = null;
+    initAudio();
+    if (old.close) old.close().catch(() => {});
+    if (knobs && typeof applyPresetState === 'function') applyPresetState(knobs);
+  }
+
+  /// A new piece of the grid for the sender: context frame `c` is engine frame
+  /// `d`. One still waiting ahead of it is replaced.
+  function routeSegment(c, d) {
+    route.segs = route.segs.filter((x) => x.c < c);
+    route.segs.push({ c, d });
+    if (route.segs.length > 16) route.segs.splice(0, route.segs.length - 16);
+    if (route.worker) route.worker.postMessage({ segs: route.segs, epoch: route.epoch });
+  }
+
+  /// Hang the tap on the sequencer's master and silence the page's own output.
+  /// Resolves to whether it is sending.
+  function routeUp(w) {
+    if (typeof initAudio === 'function') initAudio();
+    if (!audioCtx || !NativeContext || typeof Worker === 'undefined' || typeof AudioWorkletNode === 'undefined') {
+      return Promise.resolve(false);
+    }
+    rebuildAt(w.rate);
+    const ctx = audioCtx;
+    if (ctx.sampleRate !== w.rate || !ctx.audioWorklet) return Promise.resolve(false);
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (route.on && route.ctx === ctx && route.gain === masterGain) {
+      route.worker.postMessage({ sink: !!w.sink, url: ORIGIN + (w.url || '/api/engine/seq') });
+      return Promise.resolve(true);
+    }
+    if (!route.module || route.module.ctx !== ctx) {
+      tapUrl = tapUrl || URL.createObjectURL(new Blob([TAP_SOURCE], { type: 'application/javascript' }));
+      route.module = { ctx, ready: ctx.audioWorklet.addModule(tapUrl) };
+    }
+    return route.module.ready.then(() => {
+      if (audioCtx !== ctx || !masterGain) return false;
+      if (!route.worker) {
+        sendUrl = sendUrl || URL.createObjectURL(new Blob([SEND_SOURCE], { type: 'application/javascript' }));
+        route.worker = new Worker(sendUrl);
+        route.worker.onmessage = (e) => routeHeard(e.data || {});
+      }
+      const node = new AudioWorkletNode(ctx, 'seq-tap', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+        channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+      });
+      const pipe = new MessageChannel();
+      node.port.postMessage({ port: pipe.port1 }, [pipe.port1]);
+      route.worker.postMessage({ port: pipe.port2 }, [pipe.port2]);
+      // Pulled by the context through a silent gain: a worklet no one listens
+      // to is not run.
+      const hush = ctx.createGain();
+      hush.gain.value = 0;
+      node.connect(hush);
+      hush.connect(ctx.destination);
+      masterGain.connect(node);
+      try { masterGain.disconnect(ctx.destination); } catch { /* not connected */ }
+      if (route.door && route.door.context === ctx) {
+        try { masterGain.disconnect(route.door); } catch { /* not connected */ }
+      }
+      Object.assign(route, { on: true, ctx, gain: masterGain, node, hush, sent: [], leadAt: null });
+      route.worker.postMessage({
+        open: true, url: ORIGIN + (w.url || '/api/engine/seq'), sink: !!w.sink, epoch: route.epoch, segs: [],
+      });
+      return true;
+    }, () => false);
+  }
+
+  /// Take the tap off, and give the page its own output back a moment later,
+  /// faded up — the engine fades the sequencer out on what it already has.
+  function routeDown() {
+    if (!route.on) return;
+    route.on = false;
+    if (route.worker) route.worker.postMessage({ open: false });
+    const { ctx, gain, node, hush } = route;
+    Object.assign(route, { ctx: null, gain: null, node: null, hush: null, segs: [], leadAt: null });
+    try { gain.disconnect(node); } catch { /* gone */ }
+    try { node.disconnect(); hush.disconnect(); } catch { /* gone */ }
+    setTimeout(() => {
+      if (route.on || audioCtx !== ctx || masterGain !== gain) return;
+      if (!route.door || route.door.context !== ctx) {
+        route.door = ctx.createGain();
+        route.door.connect(ctx.destination);
+      }
+      const now = ctx.currentTime;
+      route.door.gain.cancelScheduledValues(now);
+      route.door.gain.setValueAtTime(0, now);
+      route.door.gain.linearRampToValueAtTime(1, now + 0.08);
+      gain.connect(route.door);
+    }, 300);
+  }
+
+  /// What the sender says: a run it was asked to keep, for the tests; or that
+  /// the engine would not take one.
+  function routeHeard(m) {
+    if (m.sent) {
+      route.sent.push(m.sent);
+      if (route.sent.length > 4000) route.sent.shift();
+    }
+    if (m.failed !== undefined && route.on) {
+      // The page plays the sequencer again, its grid brought back from a lead
+      // ahead of the engine to the engine itself.
+      const epoch = route.epoch;
+      const lead = route.want ? route.want.lead : 0;
+      const at = gridNow();
+      routeDown();
+      route.want = null;
+      if (isPlaying && at !== null) {
+        locate(wrapInto(Math.max(0, at - lead)));
+        if (takeOn) takePlayAt(last.at);
+      }
+      post({ type: 'seq:route', on: false, epoch, why: String(m.failed) });
+    }
+  }
+
+  /// The engine's clock, while routed. A seek arrives as a new epoch: what was
+  /// sent before it is let go, and the grid laid again a lead ahead of where
+  /// the engine now is. Otherwise the first reading after a start is the lead
+  /// to keep, and the grid is laid again only when the clocks have parted by
+  /// enough to matter, or the sound would come too late to be placed.
+  function routedClock(m) {
+    const lead = route.want ? route.want.lead : 0.12;
+    const jump = (at) => {
+      locate(at);
+      if (takeOn) takePlayAt(at);
+      route.leadAt = null;
+    };
+    if (Number.isFinite(m.epoch) && m.epoch > route.epoch) {
+      route.epoch = m.epoch;
+      route.segs = [];
+      if (route.worker) route.worker.postMessage({ segs: [], epoch: route.epoch });
+      jump(wrapInto(m.at + lead));
+      return;
+    }
+    const pageAt = gridNow();
+    if (pageAt === null) return;
+    let ahead = pageAt - m.at;
+    if (loopSec) {
+      // Round a loop the page goes round a lead before the engine does.
+      const span = loopSec.b - loopSec.a;
+      if (ahead < -span / 2) ahead += span;
+      else if (ahead > span / 2) ahead -= span;
+    }
+    // Behind already — the engine started without waiting, or the page stalled —
+    // and its sound is being refused as late: laid again now, not a clock later.
+    if (ahead < 0.02) { jump(wrapInto(m.at + lead)); return; }
+    if (route.leadAt === null) { route.leadAt = ahead; return; }
+    if (Math.abs(ahead - route.leadAt) > 0.1) jump(wrapInto(m.at + lead));
+  }
 
   // ── the feed ─────────────────────────────────────────────────────────────
 
@@ -318,6 +715,7 @@
 
     stop();
     takeStop();
+    routeDown();
     const knobs = typeof getPresetState === 'function' ? getPresetState() : null;
     const live = audioCtx;
 
@@ -493,15 +891,54 @@
     const m = e.data || {};
     if (m.type === 'seq:transport') {
       const at = Number.isFinite(m.at) ? m.at : 0;
-      if (m.playing) { playAt(at); takeOn = true; takePlayAt(at); } else { takeOn = false; stop(); takeStop(); }
+      const serial = ++route.serial;
+      if (m.playing) {
+        const start = () => {
+          if ('loop' in m) loopTo(m.loop);
+          playAt(at);
+          takeOn = true;
+          takePlayAt(at);
+        };
+        if (m.route && Number.isFinite(m.route.rate)) {
+          // Through the engine: the tap up first, then the grid laid on it,
+          // then the host told, which starts the engine a lead later.
+          route.want = m.route;
+          route.epoch = m.route.epoch || 0;
+          route.segs = [];
+          routeUp(m.route).then((on) => {
+            if (serial !== route.serial) {
+              if (!route.want) routeDown();
+              return;
+            }
+            if (!on) route.want = null;
+            start();
+            post({ type: 'seq:route', on, epoch: m.route.epoch, at });
+          });
+        } else {
+          routeDown();
+          route.want = null;
+          start();
+        }
+      } else {
+        takeOn = false;
+        stop();
+        takeStop();
+        routeDown();
+        route.want = null;
+      }
     } else if (m.type === 'seq:clock') {
-      // The engine's position, while it plays. A seek or a loop wrap shows up
-      // as a jump; drift shows up as a creep. Both are answered the same way,
-      // by laying the grid again — but only past the threshold, so a clock
-      // that is merely a few milliseconds out is not forever being nudged.
+      // The engine's position, while it plays. A seek shows up as a jump and
+      // drift as a creep. Both are answered the same way, by laying the grid
+      // again — but only past the threshold, so a clock that is merely a few
+      // milliseconds out is not forever being nudged. Round a loop, the page
+      // wraps on its own; a clock just the other side of the wrap is not a jump.
+      if ('loop' in m) loopTo(m.loop);
       if (!m.playing || !isPlaying || !Number.isFinite(m.at)) return;
+      if (route.on) { routedClock(m); return; }
       const p = predicted();
-      if (p === null || Math.abs(p - m.at) > RELOCATE_S) {
+      let off = p === null ? Infinity : Math.abs(p - m.at);
+      if (loopSec && Number.isFinite(off)) off = Math.min(off, Math.abs(loopSec.b - loopSec.a - off));
+      if (off > RELOCATE_S) {
         locate(m.at);
         if (takeOn) takePlayAt(m.at);
       }
@@ -713,7 +1150,16 @@
 
   // For the tests, and for anyone reading the frame: where this clock thinks
   // the engine is.
-  window.seqBridge = { predicted, stepDur, locate, renderFilm, takeMessage, takePlayAt, takeValuesAt, takeEdit, get last() { return last; } };
+  window.seqBridge = {
+    predicted, stepDur, locate, renderFilm, takeMessage, takePlayAt, takeValuesAt, takeEdit, wrapBefore,
+    /// How far behind the sound a step's light comes on: routed, the page runs
+    /// a lead ahead of what is heard.
+    uiDelay: () => (route.on && route.want ? route.want.lead : 0),
+    routeState: () => ({ on: route.on, epoch: route.epoch, segs: route.segs.slice(), loop: loopSec, grid: grid.slice() }),
+    /// The runs the sender kept rather than posted, taken — for the tests.
+    routeSent: () => route.sent.splice(0),
+    get last() { return last; },
+  };
 
   // Thirty times a second, which is what the engine's meter is polled at.
   setInterval(tick, 33);
