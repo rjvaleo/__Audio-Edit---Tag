@@ -3944,3 +3944,6 @@ body.composeview #mbRes, body.composeview #mbPeakHz { display: none !important; 
   aspect-ratio: var(--rv-ratio, 1); outline: 1px solid var(--line-2);
 }
 .cp-room .mb-cell-3d:not(.re-framed) { flex: 1 1 auto; }
+
+/* A sequencer lane chosen on the timeline: it is edited in Seq. */
+.automation-body .perf-seq-note { padding: 10px 20px; font-size: 10px; letter-spacing: 1px; color: #ff60b8; }

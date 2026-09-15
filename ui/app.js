@@ -5848,6 +5848,8 @@ async function loadAutomation() {
 }
 
 function saveAutomation() {
+  // The timeline keeps sampled curves; an edit makes them stale.
+  if (typeof perfBumpLanes === 'function') perfBumpLanes();
   clearTimeout(automationTimer);
   automationTimer = setTimeout(async () => {
     if (!state.selectedFile) return;
@@ -5908,6 +5910,22 @@ function renderAutomation() {
   // The take, in the sequencer's own panel: `perf-panel.js` draws every lane
   // on the one timeline above; this builds the editor for the lane that is
   // open, chosen on the timeline or in the lanes menu.
+  // A sequencer lane is the sequencer's: shown on the timeline and chosen
+  // there, and edited in Seq, where it was recorded.
+  if (String(state.automationSel || '').startsWith('seq:')) {
+    const lane = perfSeqLanes().find((l) => l.id === state.automationSel);
+    const note = document.createElement('div');
+    note.className = 'perf-seq-note';
+    note.textContent = lane
+      ? `${lane.label} — A SEQUENCER LANE · RECORDED AND EDITED IN SEQ`
+      : 'THAT SEQUENCER LANE IS GONE — PICK ANOTHER';
+    box.appendChild(note);
+    automationNote();
+    perfFillLaneSelect();
+    perfUpdateHeader();
+    perfDrawTimeline();
+    return;
+  }
   const lanes = state.automation.lanes || [];
   const chosen = lanes.find((l) => l.id === state.automationSel) || lanes[0] || null;
   state.automationSel = chosen ? chosen.id : null;
@@ -6005,11 +6023,30 @@ function perfFillLaneSelect() {
   blank.value = '';
   blank.textContent = '— lanes —';
   sel.appendChild(blank);
+  // Grouped once the sequencer has lanes too, the way the timeline groups them.
+  const seqLanes = perfSeqLanes();
+  let grainHost = sel;
+  if (seqLanes.length) {
+    grainHost = document.createElement('optgroup');
+    grainHost.label = 'GRAIN';
+    sel.appendChild(grainHost);
+  }
   for (const l of state.automation.lanes || []) {
     const o = document.createElement('option');
     o.value = l.id;
     o.textContent = perfLaneLabel(l);
-    sel.appendChild(o);
+    grainHost.appendChild(o);
+  }
+  if (seqLanes.length) {
+    const g = document.createElement('optgroup');
+    g.label = 'SEQ';
+    for (const l of seqLanes) {
+      const o = document.createElement('option');
+      o.value = l.id;
+      o.textContent = l.label;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
   }
   sel.value = state.automationSel || '';
 }
@@ -6328,6 +6365,10 @@ $('perfLaneSelect')?.addEventListener('change', (e) => {
   renderAutomation();
 });
 $('perfLaneDel')?.addEventListener('click', () => {
+  if (String(state.automationSel || '').startsWith('seq:')) {
+    toast('A sequencer lane is deleted in Seq, where it was recorded');
+    return;
+  }
   const lane = (state.automation.lanes || []).find((l) => l.id === state.automationSel);
   if (!lane) { toast('Pick a lane first'); return; }
   automationCheckpoint();
@@ -6337,8 +6378,12 @@ $('perfLaneDel')?.addEventListener('click', () => {
   renderAutomation();
 });
 $('perfCanvas')?.addEventListener('click', (e) => {
-  const id = perfLaneAt(e.currentTarget, e.clientX, e.clientY);
-  if (id) { state.automationSel = id; renderAutomation(); }
+  const hit = perfHitAt(e.currentTarget, e.clientX, e.clientY);
+  if (!hit) return;
+  // A group's heading folds the group; a lane opens it.
+  if (hit.group && !hit.id) { perfToggleGroup(hit.group); return; }
+  state.automationSel = hit.id;
+  renderAutomation();
 });
 $('perfHeader')?.addEventListener('click', perfToggleCollapse);
 $('perfResize')?.addEventListener('mousedown', perfResizeStart);
@@ -9988,7 +10033,12 @@ paintGrainPresets('');
 // voice — means feeding the sequencer into the engine, which is the next step
 // and is not this one. See `docs/SEQUENCER.md`.
 
-const seq = { feed: null, feedAt: 0, ready: false, clock: null, want: { bands: 0, lo: 0, hi: 0 }, compact: false };
+const seq = {
+  feed: null, feedAt: 0, ready: false, clock: null, want: { bands: 0, lo: 0, hi: 0 }, compact: false,
+  /// The sequencer's take and tempo, as its bridge last sent them — drawn on
+  /// the timeline beside the grain's lanes. See `perf-panel.js`.
+  take: null, tempo: null,
+};
 
 function seqFrame() { return $('seqFrame'); }
 
@@ -10010,6 +10060,11 @@ function seqPost(m) {
 function seqCompact(on) {
   seq.compact = !!on;
   seqPost({ type: 'seq:compact', on: seq.compact });
+}
+
+/// The sequencer's recorder, armed with the grain's: one REC PERF for both.
+function seqArm(on) {
+  seqPost({ type: 'seq:arm', on: !!on });
 }
 
 /// The engine's transport, told to the sequencer. Play plays it *from where
@@ -10050,6 +10105,14 @@ window.addEventListener('message', (e) => {
     seqSync(engine.playing);
     // A frame that reloaded comes up in its full layout; say compact again.
     if (seq.compact) seqPost({ type: 'seq:compact', on: true });
+  } else if (m.type === 'seq:take') {
+    seq.take = m.take || null;
+    seq.tempo = m.tempo || null;
+    if ($('perfCanvas')) {
+      perfFillLaneSelect();
+      perfUpdateHeader();
+      perfDrawTimeline();
+    }
   } else if (m.type === 'seq:feed') {
     seq.feed = m.playing ? m : null;
     seq.feedAt = performance.now();
@@ -10166,6 +10229,8 @@ async function startCapture() {
   if (!state.selectedFile) { toast('Open a sound first'); return; }
   await setAutomationRecord('latch');
   state.captureArmed = true;
+  // One arm: the sequencer's recorder with the grain's, while it plays a part.
+  if (sourceOn('seq') && seqLoaded()) seqArm(true);
   captureShow(engine.playing ? 'taking' : 'armed');
 }
 
@@ -10198,6 +10263,7 @@ function captureTransport(playing) {
 async function endCapture() {
   state.captureArmed = false;
   captureShow('off');
+  seqArm(false);
   await setAutomationRecord('off');
   await loadAutomation();
   const lanes = state.automation.lanes || [];
