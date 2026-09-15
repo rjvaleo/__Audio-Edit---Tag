@@ -57,6 +57,10 @@
       title: 'The room, full size, and everything that draws it',
     },
     {
+      icon: 'compose', label: 'Compose', mode: 'compose',
+      title: 'The whole piece at once — grain, sequencer and picture over one timeline',
+    },
+    {
       icon: 'seq', label: 'Seq', mode: 'seq',
       title: 'The scale sequencer — a second voice, run from the same transport',
     },
@@ -137,6 +141,8 @@
     // Four steps of a sequence, at four heights.
     seq:
       '<rect x="3.5" y="12.5" width="3.4" height="8"/><rect x="8.7" y="7.5" width="3.4" height="13"/><rect x="13.9" y="10" width="3.4" height="10.5"/><rect x="19.1" y="4" width="3.4" height="16.5"/>',
+    compose:
+      '<rect x="3.5" y="4" width="4.6" height="7" rx=".8"/><rect x="9.7" y="4" width="4.6" height="7" rx=".8"/><rect x="15.9" y="4" width="4.6" height="7" rx=".8"/><path d="M3.5 14.5h17"/><path d="M3.5 17.5h11"/><path d="M3.5 20.5h14"/>',
     theme:
       '<path d="M12 3.6c-4.8 0-8.6 3.5-8.6 7.8s3.8 7.8 8.6 7.8c1 0 1.75-.8 1.75-1.75 0-.45-.18-.86-.46-1.16-.28-.3-.46-.7-.46-1.15 0-.96.78-1.74 1.74-1.74h2.05 c2.85 0 5.16-2.3 5.16-5.15 0-2.9-4.2-4.65-9.82-4.65z"/><circle cx="7.6" cy="10.6" r="1.15" fill="currentColor" stroke="none"/><circle cx="10.4" cy="7.3" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.6" cy="7.1" r="1.15" fill="currentColor" stroke="none"/><circle cx="17.6" cy="9.6" r="1.15" fill="currentColor" stroke="none"/>',
     browse:

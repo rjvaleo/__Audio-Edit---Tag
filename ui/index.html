@@ -441,6 +441,24 @@
       <iframe id="seqFrame" class="seq-frame" title="Scale sequencer"></iframe>
     </div>
 
+    <!-- Compose: the whole piece at once — the granular player, the sequencer and
+         the picture side by side, over one timeline. The cells are filled by
+         `ui/compose.js`, and the room, the transport, the export buttons and the
+         PERFORMANCE panel are moved in while it is open. The sequencer's frame
+         is laid over its cell rather than moved. See docs/COMPOSE.md. -->
+    <div class="composeview hidden" id="composeView">
+      <div class="cv-top" id="cvTop">
+        <section class="cv-cell cv-grain" id="cvGrain" aria-label="Granular player"></section>
+        <div class="cv-vgrip" data-grip="0" title="Drag to resize · double-click to reset"></div>
+        <section class="cv-cell cv-seq" id="cvSeq" aria-label="Sequencer"></section>
+        <div class="cv-vgrip" data-grip="1" title="Drag to resize · double-click to reset"></div>
+        <section class="cv-cell cv-picture" id="cvPicture" aria-label="Picture"></section>
+      </div>
+      <div class="cv-split" id="cvSplit" title="Drag to resize · double-click to reset"></div>
+      <section class="cv-arrange automation-body" id="cvArrange" aria-label="Arrangement"></section>
+      <div class="cv-foot" id="cvFoot"></div>
+    </div>
+
     <div class="transportbar hidden" id="transportBar">
   <span class="mono current-file" id="titleFile">no file selected</span>
   <span class="mode-label" id="modeLabel">Browse</span>
@@ -1107,7 +1125,7 @@
            lanes have always been wired by are kept, so the machinery under it
            is unchanged. -->
       <div class="dock-body automation-body hidden" id="dockAutomation">
-        <div class="perf-panel">
+        <div class="perf-panel" id="perfPanel">
           <div class="perf-header" id="perfHeader">
             <span><span id="perfCollapseIcon">&#9662;</span> PERFORMANCE &mdash;
               <span id="perfName">NO TAKE</span></span>
