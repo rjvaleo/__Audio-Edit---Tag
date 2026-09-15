@@ -5882,6 +5882,8 @@ function automationSnapshot() {
     lanes: state.automation.lanes,
     bypassed: state.automation.bypassed,
     visual: typeof visualLanes !== 'undefined' ? visualLanes.lanes : undefined,
+    // And the take's, which the same editor edits too.
+    seq: seq.take ? seq.take.lanes : undefined,
   });
 }
 
@@ -5892,6 +5894,12 @@ function automationRestore(text) {
   if (Array.isArray(v.visual) && typeof visualLanes !== 'undefined') {
     visualLanes.lanes = v.visual;
     saveVisualLanes();
+  }
+  // The take's lanes, sent back whole — only when they differ, since every
+  // undo of a grain edit carries them too.
+  if (Array.isArray(v.seq) && seq.take && JSON.stringify(v.seq) !== JSON.stringify(seq.take.lanes || [])) {
+    seqPost({ type: 'seq:take-edit', lanes: v.seq.map((l) => ({ id: l.id, points: l.points })) });
+    seq.take.lanes = v.seq;
   }
 }
 
@@ -5976,15 +5984,14 @@ function renderAutomation() {
   // The take, in the sequencer's own panel: `perf-panel.js` draws every lane
   // on the one timeline above; this builds the editor for the lane that is
   // open, chosen on the timeline or in the lanes menu.
-  // A sequencer lane is the sequencer's: shown on the timeline and chosen
-  // there, and edited in Seq, where it was recorded.
-  if (String(state.automationSel || '').startsWith('seq:')) {
-    const lane = perfSeqLanes().find((l) => l.id === state.automationSel);
+  // A sequencer lane opens here too. Its points are the take's, edited in the
+  // same editor and sent back to the take — see `seqLaneSave`. One the take no
+  // longer has says so rather than opening something else.
+  const seqLane = String(state.automationSel || '').startsWith('seq:') ? seqEditLane(state.automationSel) : null;
+  if (String(state.automationSel || '').startsWith('seq:') && !seqLane) {
     const note = document.createElement('div');
     note.className = 'perf-seq-note';
-    note.textContent = lane
-      ? `${lane.label} — A SEQUENCER LANE · RECORDED AND EDITED IN SEQ`
-      : 'THAT SEQUENCER LANE IS GONE — PICK ANOTHER';
+    note.textContent = 'THAT SEQUENCER LANE IS GONE — PICK ANOTHER';
     box.appendChild(note);
     automationNote();
     perfFillLaneSelect();
@@ -5995,13 +6002,14 @@ function renderAutomation() {
   // The picture's lanes open in the same editor, and save to their own store.
   const visualPool = typeof visualLanes !== 'undefined' ? visualLanes.lanes : [];
   const lanes = state.automation.lanes || [];
-  const chosen = lanes.find((l) => l.id === state.automationSel)
+  const chosen = seqLane
+    || lanes.find((l) => l.id === state.automationSel)
     || visualPool.find((l) => l.id === state.automationSel)
     || lanes[0] || null;
-  const visualLane = !!chosen && String(chosen.id).startsWith('vis:');
+  const visualLane = !seqLane && !!chosen && String(chosen.id).startsWith('vis:');
   const pool = visualLane ? visualLanes : state.automation;
-  const save = visualLane ? saveVisualLanes : saveAutomation;
-  const offered = visualLane ? visualTargetOptions() : targets;
+  const save = seqLane ? () => seqLaneSave(seqLane) : visualLane ? saveVisualLanes : saveAutomation;
+  const offered = seqLane ? seqTargetOptions() : visualLane ? visualTargetOptions() : targets;
   state.automationSel = chosen ? chosen.id : null;
   for (const lane of chosen ? [chosen] : []) {
     const row = document.createElement('article');
@@ -6018,6 +6026,8 @@ function renderAutomation() {
     on.checked = lane.enabled !== false;
     on.title = 'Whether this lane is in the signal path';
     on.onchange = () => { automationCheckpoint(); lane.enabled = on.checked; save(); automationNote(); };
+    // A take has no switch per lane: it plays what it has.
+    if (seqLane) on.style.display = 'none';
 
     const pick = document.createElement('select');
     pick.title = 'Which control this lane moves';
@@ -6036,6 +6046,14 @@ function renderAutomation() {
     pick.value = lane.target;
     pick.onchange = () => {
       automationCheckpoint();
+      // A sequencer lane moved onto another control takes its moves with it.
+      if (seqLane) {
+        const to = pick.value.replace(/^seq\./, '');
+        seqLaneSave(lane, to);
+        state.automationSel = `seq:${to}`;
+        renderAutomation();
+        return;
+      }
       lane.target = pick.value;
       lane.label = pick.selectedOptions[0]?.textContent || pick.value;
       save();
@@ -6048,6 +6066,12 @@ function renderAutomation() {
     del.title = 'Delete this lane';
     del.onclick = () => {
       automationCheckpoint();
+      if (seqLane) {
+        seqLaneSave({ ...lane, points: [] });
+        state.automationSel = null;
+        renderAutomation();
+        return;
+      }
       pool.lanes = pool.lanes.filter((x) => x !== lane);
       save();
       renderAutomation();
@@ -6072,6 +6096,13 @@ function renderAutomation() {
       drawLane(canvas, lane);
     };
     tools.appendChild(curve);
+    // A take moves in straight lines between its points, so that is the one
+    // curve a sequencer lane has.
+    if (seqLane) {
+      curve.value = 'linear';
+      curve.disabled = true;
+      curve.title = 'A take moves in straight lines between its points';
+    }
     controls.appendChild(tools);
 
     const canvas = document.createElement('canvas');
@@ -6140,8 +6171,7 @@ function perfFillLaneSelect() {
 /// The document's length, which is what a lane's frames are measured against.
 const laneFrames = () => state.edit?.frames || state.view?.frames || 1;
 
-function snapLaneFrame(frame) {
-  const frames = laneFrames();
+function snapLaneFrame(frame, frames = laneFrames()) {
   const candidates = [];
   if (state.sel) candidates.push(state.sel.start, state.sel.end);
   for (const m of state.annotations?.markers || []) candidates.push(m.frame);
@@ -6154,10 +6184,72 @@ function snapLaneFrame(frame) {
   return Math.round(Math.max(0, Math.min(frames, best)));
 }
 
-/// A lane is saved to the store it came from: the picture's lanes are kept per
-/// document in their own store, the grain's in the server's automation.
+// ── the sequencer's lanes, edited here ──
+//
+// A sequencer lane is its take's: `seq.take` holds the lanes as the bridge sent
+// them, points of `[output seconds, 0..1]`. One opens in the same editor as the
+// grain's and the picture's, in their shape, and every edit goes back to the
+// take as `seq:take-edit`, where the bridge makes it the control's gesture again
+// (`takeEdit` in `ui/sequencer/bridge.js`) and the take sends itself back.
+
+/// A sequencer lane in the editor's shape: points in output frames at the
+/// file's rate, joined by straight lines, which is how a take plays them.
+function seqEditLane(id) {
+  const l = perfSeqLanes().find((x) => x.id === id);
+  if (!l) return null;
+  const sr = perfRate();
+  return {
+    id: l.id, target: l.target, label: l.label, enabled: true, seq: true,
+    points: (l.points || []).map(([t, v]) => ({ frame: Math.round(t * sr), value: v, curve: 'linear', tension: 0 })),
+  };
+}
+
+/// The controls a sequencer lane can move, as the take names them.
+function seqTargetOptions() {
+  return (seq.take?.controls || []).map(([id, label]) => [`seq.${id}`, label]);
+}
+
+/// Send a sequencer lane back to its take — onto another control when `to`
+/// names one, and removed when it has no points. Drawn here at once, rather
+/// than when the take comes back a moment later.
+function seqLaneSave(lane, to) {
+  const sr = perfRate();
+  const from = String(lane.id).replace(/^seq:/, '');
+  const onto = to || from;
+  const points = (lane.points || []).slice().sort((a, b) => a.frame - b.frame).map((p) => [p.frame / sr, p.value]);
+  seqPost({ type: 'seq:take-edit', id: from, to: onto, points });
+  const take = seq.take;
+  if (!take) return;
+  const list = take.lanes || [];
+  const at = list.findIndex((l) => l.id === `seq:${from}`);
+  const rest = list.filter((l) => l.id !== `seq:${from}` && l.id !== `seq:${onto}`);
+  if (points.length) {
+    const label = (take.controls || []).find(([id]) => id === onto)?.[1] || onto;
+    rest.splice(at < 0 ? rest.length : Math.min(at, rest.length), 0,
+      { id: `seq:${onto}`, target: `seq.${onto}`, label, color: perfSeqColor(onto), points });
+  }
+  take.lanes = rest;
+  perfFillLaneSelect();
+  perfUpdateHeader();
+  perfDrawTimeline();
+}
+
+/// How many frames a lane's editor spans: the document, or — for a sequencer
+/// lane — the take as well, which can run past the document's end, as the
+/// timeline above already allows.
+function laneSpanFrames(lane) {
+  const frames = laneFrames();
+  if (!lane?.seq || !seq.take) return frames;
+  const end = ((+seq.take.startAt || 0) + (+seq.take.duration || 0)) * perfRate();
+  return Math.max(frames, Math.ceil(end));
+}
+
+/// A lane is saved to the store it came from: the sequencer's to its take, the
+/// picture's to their own store per document, the grain's to the server's
+/// automation.
 function laneSave(lane) {
-  if (String(lane?.id || '').startsWith('vis:') && typeof saveVisualLanes === 'function') saveVisualLanes();
+  if (String(lane?.id || '').startsWith('seq:')) seqLaneSave(lane);
+  else if (String(lane?.id || '').startsWith('vis:') && typeof saveVisualLanes === 'function') saveVisualLanes();
   else saveAutomation();
 }
 
@@ -6165,7 +6257,7 @@ function wireLane(canvas, lane) {
   let drag = null;
   const nearest = (e) => {
     const r = canvas.getBoundingClientRect();
-    const frames = laneFrames();
+    const frames = laneSpanFrames(lane);
     let best = null;
     let d = 12;
     for (const p of lane.points || []) {
@@ -6200,7 +6292,8 @@ function wireLane(canvas, lane) {
         : 'Click to add a breakpoint · drag one to move it · double-click to remove';
       return;
     }
-    drag.frame = snapLaneFrame(((e.clientX - r.left) / r.width) * laneFrames());
+    const span = laneSpanFrames(lane);
+    drag.frame = snapLaneFrame(((e.clientX - r.left) / r.width) * span, span);
     drag.value = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
     lane.points.sort((a, b) => a.frame - b.frame);
     drawLane(canvas, lane);
@@ -6315,11 +6408,13 @@ function drawLane(canvas, lane) {
   if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
   const c = canvas.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const frames = laneFrames();
+  const frames = laneSpanFrames(lane);
   const sr = state.view?.sampleRate || 44100;
   c.clearRect(0, 0, w, h);
 
-  drawLaneWave(c, w, h, frames);
+  // The sound across its own length, which is the whole lane unless a take
+  // runs past its end.
+  drawLaneWave(c, (laneFrames() / frames) * w, h, frames);
 
   c.strokeStyle = '#1e2830';
   c.fillStyle = '#4a6070';
@@ -6336,7 +6431,8 @@ function drawLane(canvas, lane) {
   }
 
   const p = (lane.points || []).slice().sort((a, b) => a.frame - b.frame);
-  const dim = lane.enabled === false || state.automation.bypassed;
+  // Bypass stops the grain's lanes and the picture's; a take plays regardless.
+  const dim = lane.enabled === false || (!lane.seq && state.automation.bypassed);
   // The lane's own colour, the one the timeline above draws it in.
   c.strokeStyle = dim ? '#3d5162' : perfLaneColor(lane.target);
   c.fillStyle = c.strokeStyle;
@@ -6413,6 +6509,23 @@ function simplifyLane(lane, tol = 0.012) {
 
 $('automationAdd').onclick = () => {
   if (!state.selectedFile) { toast('Open a sound first'); return; }
+  // With a sequencer lane open, the new lane is the sequencer's: the first of
+  // its controls with none, flat where the take found it, across the take.
+  if (String(state.automationSel || '').startsWith('seq:') && seq.take) {
+    const used = new Set((seq.take.lanes || []).map((l) => String(l.id).replace(/^seq:/, '')));
+    const free = (seq.take.controls || []).find(([id]) => !used.has(id));
+    if (!free) { toast('Every sequencer control has a lane already'); return; }
+    automationCheckpoint();
+    const sr = perfRate();
+    const start = +seq.take.startAt || 0;
+    const end = start + Math.max(1, +seq.take.duration || 0);
+    const v = Number.isFinite(free[2]) ? free[2] : 0.5;
+    const added = { id: `seq:${free[0]}`, points: [{ frame: Math.round(start * sr), value: v }, { frame: Math.round(end * sr), value: v }] };
+    seqLaneSave(added);
+    state.automationSel = added.id;
+    renderAutomation();
+    return;
+  }
   const targets = automationTargets();
   if (!targets.length) { toast('Nothing to automate yet'); return; }
   automationCheckpoint();
@@ -6459,7 +6572,12 @@ $('perfLaneSelect')?.addEventListener('change', (e) => {
 });
 $('perfLaneDel')?.addEventListener('click', () => {
   if (String(state.automationSel || '').startsWith('seq:')) {
-    toast('A sequencer lane is deleted in Seq, where it was recorded');
+    const slane = seqEditLane(state.automationSel);
+    if (!slane) { toast('Pick a lane first'); return; }
+    automationCheckpoint();
+    seqLaneSave({ ...slane, points: [] });
+    state.automationSel = null;
+    renderAutomation();
     return;
   }
   if (String(state.automationSel || '').startsWith('vis:') && typeof visualLanes !== 'undefined') {

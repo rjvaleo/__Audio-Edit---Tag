@@ -240,7 +240,9 @@ Taken:
 Open:
 
 - The sequencer's lanes edited in the host, or only shown there. Shown
-  first; edited when the bridge has a take-edit message.
+  first; edited when the bridge has a take-edit message. *Built after the
+  phases, 14 Sep 2026: `seq:take-edit` — see `docs/COMPOSE.md`, "the
+  sequencer's lanes, edited here".*
 - A gesture on the picture during replay: does the hand win for the touch
   and the lane resume after (touch), or does the hand's value hold (latch)?
   Both, as the server does; default touch.

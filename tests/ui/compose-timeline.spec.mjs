@@ -9,8 +9,10 @@
 //     grain's, with its discrete events and its tempo;
 //   - REC PERF arms the sequencer's recorder too, and the playhead is drawn on
 //     output time;
-//   - a group folds with one click, and a sequencer lane is shown here but
-//     edited in Seq;
+//   - a group folds with one click, and a sequencer lane opens in the editor
+//     here and is deleted from its take;
+//   - a sequencer lane edited here is the take's: a point dragged, a lane added,
+//     moved onto another control and undone all reach the sequencer and stay;
 //   - the bars follow the sequencer's tempo.
 
 import { test, expect } from '@playwright/test';
@@ -122,8 +124,11 @@ test('the take reaches the timeline as a SEQ group, in engine seconds, with its 
   const pts = got.lanes[0].points;
   expect(pts[0][0], 'the lane does not start where the take began').toBeCloseTo(10, 6);
   expect(pts[0][1]).toBeCloseTo(unit(want.snap), 6);
-  expect(pts[1][0], 'the gesture is not in engine seconds').toBeCloseTo(11, 6);
-  expect(pts[1][1]).toBeCloseTo(unit(20), 6);
+  // Held where the take found it until the gesture takes it, as the take plays.
+  expect(pts[1][0]).toBeCloseTo(11, 6);
+  expect(pts[1][1], 'the knob was drawn moving before the gesture began').toBeCloseTo(unit(want.snap), 6);
+  expect(pts[2][0], 'the gesture is not in engine seconds').toBeCloseTo(11, 6);
+  expect(pts[2][1]).toBeCloseTo(unit(20), 6);
   expect(pts[pts.length - 1][0]).toBeCloseTo(12, 6);
   expect(pts[pts.length - 1][1]).toBeCloseTo(unit(80), 6);
   expect(got.discretes).toEqual([{ t: 13, label: `SCALE ${want.scale}` }]);
@@ -168,7 +173,7 @@ test('REC PERF arms the sequencer too, and the playhead is on output time', asyn
   expect(head).toBe(6.25);
 });
 
-test('a group folds with one click, and a sequencer lane is shown here but edited in Seq', async ({ page }) => {
+test('a group folds with one click, and a sequencer lane opens in the editor and is deleted from its take', async ({ page }) => {
   await openFile(page);
   const frame = await enterCompose(page);
   await frame.evaluate(TAKE_AT_TEN);
@@ -198,21 +203,119 @@ test('a group folds with one click, and a sequencer lane is shown here but edite
     const sel = $('perfLaneSelect');
     sel.value = 'seq:cutoffSlider';
     sel.dispatchEvent(new Event('change'));
+    const open = {
+      editors: document.querySelectorAll('#automationLanes .automation-canvas').length,
+      lane: document.querySelector('#automationLanes .automation-lane')?.dataset.lane,
+      target: document.querySelector('#automationLanes .automation-lane select')?.value,
+      curveFixed: [...document.querySelectorAll('#automationLanes .automation-lane select')].some((s) => s.disabled),
+    };
     const lanesBefore = state.automation.lanes.length;
     $('perfLaneDel').click();
-    return {
-      folded, reopened,
-      note: document.querySelector('#automationLanes .perf-seq-note')?.textContent || '',
-      editors: document.querySelectorAll('#automationLanes .automation-canvas').length,
-      kept: state.automation.lanes.length === lanesBefore,
-    };
+    return { folded, reopened, open, kept: state.automation.lanes.length === lanesBefore, sel: state.automationSel };
   });
   expect(got.folded.stored, 'the fold was not kept').toBe(true);
   expect(got.folded.laneShown, 'a folded group still drew its lanes').toBe(false);
   expect(got.reopened).toBe(true);
-  expect(got.note).toMatch(/SEQUENCER LANE/);
-  expect(got.editors, 'a sequencer lane opened the grain lane editor').toBe(0);
+  expect(got.open.editors, 'a sequencer lane did not open in the editor').toBe(1);
+  expect(got.open.lane).toBe('seq:cutoffSlider');
+  expect(got.open.target).toBe('seq.cutoffSlider');
+  expect(got.open.curveFixed, 'a sequencer lane offered curves a take cannot play').toBe(true);
   expect(got.kept, 'delete on a sequencer lane removed a grain lane').toBe(true);
+  // The editor moves on to the lane that is left, as it does for a grain lane.
+  expect(got.sel).not.toBe('seq:cutoffSlider');
+  // Deleted from the take itself, and gone from the timeline when it comes back.
+  await frame.waitForFunction(() => !perfLoaded.gestures.some((g) => g.kind === 'slider'), null, { timeout: 5_000 });
+  await page.waitForFunction(() => seq.take && seq.take.lanes.length === 0, null, { timeout: 5_000 });
+});
+
+test('a sequencer lane edited here is the take\'s: a point dragged, a lane added, moved and undone', async ({ page }) => {
+  await openFile(page);
+  const frame = await enterCompose(page);
+  const want = await frame.evaluate(TAKE_AT_TEN);
+  // Kept in the sequencer's list, so an edit is seen to be kept too.
+  await frame.evaluate(() => perfSaveAll([perfLoaded, ...perfLoadAll().filter((t) => t.id !== perfLoaded.id)]));
+  await page.waitForFunction(() => seq.take && seq.take.id === 'take-at-ten', null, { timeout: 5_000 });
+
+  // It opens across the take, which runs well past this one-second sound.
+  const at = await page.evaluate(() => {
+    state.automationSel = 'seq:cutoffSlider';
+    renderAutomation();
+    const c = document.querySelector('#automationLanes .automation-canvas');
+    c.scrollIntoView({ block: 'center' });
+    const r = c.getBoundingClientRect();
+    const lane = seqEditLane('seq:cutoffSlider');
+    const span = laneSpanFrames(lane);
+    const last = lane.points[lane.points.length - 1];
+    return {
+      span: span / perfRate(),
+      x: r.left + (last.frame / span) * r.width,
+      y: r.top + (1 - last.value) * r.height,
+      toX: r.left + ((13 * perfRate()) / span) * r.width,
+      toY: r.bottom - 1,
+    };
+  });
+  expect(at.span, 'the editor does not reach the end of the take').toBeCloseTo(14, 1);
+
+  // The last point — twelve seconds, the cutoff at 80 — dragged to thirteen,
+  // and to the bottom of the range.
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.toX, at.toY, { steps: 8 });
+  await page.mouse.up();
+  await frame.waitForFunction(() => {
+    const g = perfLoaded.gestures.find((x) => x.kind === 'slider' && x.id === 'cutoffSlider');
+    return g && Math.abs(g.t1 - 3) < 0.05;
+  }, null, { timeout: 5_000 });
+  const dragged = await frame.evaluate(() => {
+    const g = perfLoaded.gestures.find((x) => x.kind === 'slider' && x.id === 'cutoffSlider');
+    const kept = perfLoadAll().find((t) => t.id === 'take-at-ten');
+    return {
+      last: g.points[g.points.length - 1], first: g.points[0], startAt: perfLoaded.startAt,
+      snap: +perfLoaded.snapshot.sliders.cutoffSlider, duration: perfLoaded.duration,
+      kept: kept.gestures.find((x) => x.kind === 'slider' && x.id === 'cutoffSlider').t1,
+      scale: perfLoaded.gestures.find((x) => x.kind === 'discrete').t,
+    };
+  });
+  expect(dragged.startAt, 'the take moved').toBe(10);
+  expect(dragged.last[0]).toBeCloseTo(3, 1);
+  // The canvas's last pixel, which is within a hundredth of the range's foot.
+  expect(dragged.last[1], 'the point did not go to the bottom of the control\'s range')
+    .toBeLessThan(want.lo + (want.hi - want.lo) * 0.02);
+  expect(dragged.first[0]).toBe(0);
+  expect(dragged.snap, 'where the take finds the knob changed').toBeCloseTo(want.snap, 0);
+  expect(dragged.kept, 'the edit was not kept in the sequencer\'s list of takes').toBeCloseTo(3, 1);
+  expect(dragged.scale, 'the scale change moved').toBe(3);
+  expect(dragged.duration).toBeGreaterThanOrEqual(4);
+
+  // + LANE with a sequencer lane open adds the sequencer's first free control,
+  // flat where the take found it.
+  await page.evaluate(() => $('automationAdd').click());
+  expect(await page.evaluate(() => state.automationSel)).toBe('seq:bpmSlider');
+  await frame.waitForFunction(() => perfLoaded.gestures.some((g) => g.kind === 'slider' && g.id === 'bpmSlider'), null, { timeout: 5_000 });
+  const tempo = await frame.evaluate(() => {
+    const g = perfLoaded.gestures.find((x) => x.kind === 'slider' && x.id === 'bpmSlider');
+    return { pts: g.points, bpm: +perfLoaded.snapshot.sliders.bpmSlider };
+  });
+  expect(tempo.pts.map(([t]) => t)).toEqual([0, 4]);
+  for (const [, v] of tempo.pts) expect(v).toBeCloseTo(tempo.bpm, 0);
+
+  // Moved onto the resonance: its moves go with it.
+  await page.evaluate(() => {
+    const pick = document.querySelector('#automationLanes .automation-lane select');
+    pick.value = 'seq.resSlider';
+    pick.dispatchEvent(new Event('change'));
+  });
+  await frame.waitForFunction(() => perfLoaded.gestures.some((g) => g.id === 'resSlider')
+    && !perfLoaded.gestures.some((g) => g.id === 'bpmSlider'), null, { timeout: 5_000 });
+  expect(await page.evaluate(() => state.automationSel)).toBe('seq:resSlider');
+
+  // Undone: back on the tempo, and the dragged point still where it was put.
+  await page.evaluate(() => $('automationUndo').click());
+  await frame.waitForFunction(() => perfLoaded.gestures.some((g) => g.id === 'bpmSlider')
+    && !perfLoaded.gestures.some((g) => g.id === 'resSlider'), null, { timeout: 5_000 });
+  const undone = await frame.evaluate(() => perfLoaded.gestures.find((x) => x.kind === 'slider' && x.id === 'cutoffSlider').t1);
+  expect(undone).toBeCloseTo(3, 1);
+  await page.waitForFunction(() => seq.take && seq.take.lanes.some((l) => l.id === 'seq:bpmSlider'), null, { timeout: 5_000 });
 });
 
 test('the bars follow the sequencer\'s tempo, and go when SEQ is off', async ({ page }) => {
