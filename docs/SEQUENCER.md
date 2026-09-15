@@ -190,7 +190,18 @@ The same first run through the speakers showed three more things, fixed:
   like drift. The clock carries when it was read (`sentAt`) now, and the grid is
   laid again only when two readings in a row say so. The bridge counts what it
   does — `routeState()` reports the jumps, the lead it kept, and its posts'
-  count, slowest time and failures. The price: a
+  count, slowest time and failures.
+- **Every Play left a tap running.** A tap was made on the sequencer's master
+  for every Play, and one taken off by a stop went on running, posting silence
+  stamped with the frames the live one was sending: the sequencer came and went,
+  and after a few plays the engine was sent several times what it could use.
+  There is one tap for the life of a context now, switched on and off, and the
+  sender hears only the newest.
+- **A second window locked the first out.** Epochs were counted from nought in
+  each window, so the window used longer held the higher number and the engine
+  refused the other's sound as stale. They are the wall clock's now
+  (`seqNextEpoch`), so windows agree which spoke last. Two windows on one engine
+  still take the transport from each other, as they always have. The price: a
 sequencer knob turned by hand is heard that much after it is turned, and its
 steps light that much before they sound, so the lights are held back by it too.
 

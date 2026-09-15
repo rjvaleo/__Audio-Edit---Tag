@@ -329,14 +329,23 @@
 class SeqTap extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.out = this.port;
+    this.out = null;
+    this.on = false;
+    this.done = false;
     this.size = 512;
     this.buf = new Float32Array(this.size * 2);
     this.n = 0;
     this.start = 0;
-    this.port.onmessage = (e) => { if (e.data && e.data.port) this.out = e.data.port; };
+    this.port.onmessage = (e) => {
+      const m = e.data || {};
+      if (m.port) { if (this.out) this.out.close(); this.out = m.port; }
+      if (m.on !== undefined) { this.on = !!m.on; this.n = 0; }
+      if (m.done) { this.done = true; if (this.out) this.out.close(); this.out = null; }
+    };
   }
   process(inputs) {
+    if (this.done) return false;
+    if (!this.on || !this.out) return true;
     const input = inputs[0] || [];
     const frames = input.length ? input[0].length : 128;
     const L = input[0];
@@ -369,13 +378,15 @@ let open = false;
 let busy = false;
 let timer = 0;
 let told = false;
+let tap = null;
 let posts = 0;
 let slowest = 0;
 let failures = 0;
 const queue = [];
 onmessage = (e) => {
   const m = e.data || {};
-  if (m.port) m.port.onmessage = (ev) => take(ev.data);
+  // Only the newest tap is heard. An older one — a context built again — is let go.
+  if (m.port) { if (tap) tap.close(); tap = m.port; tap.onmessage = (ev) => take(ev.data); }
   if (m.url) url = m.url;
   if (m.sink !== undefined) sink = !!m.sink;
   if (m.epoch !== undefined && m.epoch !== epoch) { epoch = m.epoch; queue.length = 0; }
@@ -504,25 +515,38 @@ async function flush() {
         route.worker = new Worker(sendUrl);
         route.worker.onmessage = (e) => routeHeard(e.data || {});
       }
-      const node = new AudioWorkletNode(ctx, 'seq-tap', {
-        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
-        channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers',
-      });
-      const pipe = new MessageChannel();
-      node.port.postMessage({ port: pipe.port1 }, [pipe.port1]);
-      route.worker.postMessage({ port: pipe.port2 }, [pipe.port2]);
-      // Pulled by the context through a silent gain: a worklet no one listens
-      // to is not run.
-      const hush = ctx.createGain();
-      hush.gain.value = 0;
-      node.connect(hush);
-      hush.connect(ctx.destination);
-      masterGain.connect(node);
+      // **One tap for the life of a context**, switched on and off. A tap was
+      // made for every Play, and one taken off by a stop went on running,
+      // posting silence stamped with the frames the new one was sending — on
+      // the speakers, the sequencer came and went, and the engine was sent
+      // several times as much as it could use.
+      if (!route.node || route.node.context !== ctx) {
+        if (route.node) {
+          try { route.node.port.postMessage({ done: true }); route.node.disconnect(); } catch { /* gone */ }
+        }
+        const node = new AudioWorkletNode(ctx, 'seq-tap', {
+          numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+          channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+        });
+        const pipe = new MessageChannel();
+        node.port.postMessage({ port: pipe.port1 }, [pipe.port1]);
+        route.worker.postMessage({ port: pipe.port2 }, [pipe.port2]);
+        // Pulled by the context through a silent gain: a worklet no one
+        // listens to is not run.
+        const hush = ctx.createGain();
+        hush.gain.value = 0;
+        node.connect(hush);
+        hush.connect(ctx.destination);
+        route.node = node;
+        route.hush = hush;
+      }
+      masterGain.connect(route.node);
+      route.node.port.postMessage({ on: true });
       try { masterGain.disconnect(ctx.destination); } catch { /* not connected */ }
       if (route.door && route.door.context === ctx) {
         try { masterGain.disconnect(route.door); } catch { /* not connected */ }
       }
-      Object.assign(route, { on: true, ctx, gain: masterGain, node, hush, sent: [], leadAt: null });
+      Object.assign(route, { on: true, ctx, gain: masterGain, sent: [], leadAt: null });
       route.worker.postMessage({
         open: true, url: ORIGIN + (w.url || '/api/engine/seq'), sink: !!w.sink, epoch: route.epoch, segs: [],
       });
@@ -536,10 +560,11 @@ async function flush() {
     if (!route.on) return;
     route.on = false;
     if (route.worker) route.worker.postMessage({ open: false });
-    const { ctx, gain, node, hush } = route;
-    Object.assign(route, { ctx: null, gain: null, node: null, hush: null, segs: [], leadAt: null });
+    const { ctx, gain, node } = route;
+    Object.assign(route, { ctx: null, gain: null, segs: [], leadAt: null });
+    // The tap is kept, switched off: made again on every Play, the old ones ran on.
+    if (node) node.port.postMessage({ on: false });
     try { gain.disconnect(node); } catch { /* gone */ }
-    try { node.disconnect(); hush.disconnect(); } catch { /* gone */ }
     setTimeout(() => {
       if (route.on || audioCtx !== ctx || masterGain !== gain) return;
       if (!route.door || route.door.context !== ctx) {
