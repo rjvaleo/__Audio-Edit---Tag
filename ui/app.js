@@ -933,7 +933,10 @@ function startPlayback() {
   const go = () => {
     engine.rolling = false;
     engine.heard = performance.now();
-    enginePost({ play: true, mute: !sourceOn('grain'), seqEpoch: seq.epoch });
+    // Not told, as far as a poll can know, until the engine has answered.
+    engine.toldAt = Infinity;
+    Promise.resolve(enginePost({ play: true, mute: !sourceOn('grain'), seqEpoch: seq.epoch }))
+      .finally(() => { engine.toldAt = performance.now(); });
   };
   // **The sequencer first, when it plays through the engine**: started where
   // the engine is and the engine a lead later, so the sequencer's sound is
@@ -1010,6 +1013,7 @@ function startPolling() {
   pollTimer = setInterval(async () => {
     if (!engine.playing || noAudio()) { stopPolling(); return; }
     try {
+      const asked = performance.now();
       const r = await api('/api/engine/grains');
       engine.deviceRate = r.sampleRate || engine.deviceRate;
       lockClock(r.position);
@@ -1039,7 +1043,13 @@ function startPolling() {
       }
       repaintVisualChamberlins();
       repaintAutomationLanes();
-      if (!r.playing && engine.playing) {
+      // **Only an answer asked for after the engine had its Play can say it
+      // stopped.** While the sequencer is started ahead of it the engine has not
+      // been told to play yet, and an answer already on its way when it was
+      // told still describes it stopped. Both read as the sound having ended:
+      // the transport dropped back to the cue before a note was heard, and the
+      // engine was never started at all.
+      if (!r.playing && engine.playing && !engine.rolling && asked > (engine.toldAt ?? 0)) {
         // The engine stopped itself at the end of the document. Drop back to
         // the cue so pressing play again auditions the same moment.
         engine.playing = false;

@@ -164,7 +164,15 @@ that sum never round apart.
 reaches it, so the host starts the sequencer where the engine is and the engine
 a lead later — 120 ms after the sequencer says it is under way
 (`SEQ_ROUTE_LEAD`), with the playhead held meanwhile. Joining an engine that is
-already playing, the sequencer starts a lead ahead of it instead. The price: a
+already playing, the sequencer starts a lead ahead of it instead.
+
+*Found on the speakers, 15 Sep 2026:* the first Play through a real device never
+started the engine. The transport's poll saw the engine not yet playing during
+the lead, took it for the sound having reached its end, and dropped back to the
+cue — which, being a seek, began a new epoch the sequencer never heard, so the
+engine refused everything it sent. Only an answer the poll asked for after the
+engine had its Play can say it stopped now (`engine.toldAt`), which also closes
+an older, narrower race: a poll already on its way when Play was pressed. The price: a
 sequencer knob turned by hand is heard that much after it is turned, and its
 steps light that much before they sound, so the lights are held back by it too.
 
@@ -198,7 +206,8 @@ end to its start, and the notes after the wrap are the loop's; an engine that
 refuses the sound leaves the page playing; a page that finds itself behind the
 engine is laid a lead ahead again at the first clock; Play starts the sequencer first,
 holds the playhead, and starts the engine a lead after with its epoch, and a
-seek is a new epoch for both; routed, the room is drawn from the engine's feed
+seek is a new epoch for both; a poll that finds the engine not yet playing does
+not end that Play; routed, the room is drawn from the engine's feed
 as it is. Unit tests: `engine::seqbus` — a frame is held until it is taken, and
 taken once; a frame a ring away is another frame; an older epoch is refused and
 a newer one drops what was held; sound behind the engine is refused; round a
