@@ -316,6 +316,11 @@
     want: null, on: false, epoch: 0, segs: [], serial: 0, leadAt: null,
     ctx: null, gain: null, node: null, hush: null, door: null,
     worker: null, module: null, sent: [],
+    /// Said-when-flowing: the host is told the sound is going to the engine
+    /// once the engine has taken some. `batches`, `stats`, `jumps` and
+    /// `aheadNow` are for anyone asking how it is going — the tests, and a
+    /// person at the speakers.
+    pending: null, batches: 0, stats: null, jumps: 0, strays: 0, aheadNow: null,
   };
 
   /// The tap: a block of the master's samples at a time, with the context
@@ -363,6 +368,10 @@ let sink = false;
 let open = false;
 let busy = false;
 let timer = 0;
+let told = false;
+let posts = 0;
+let slowest = 0;
+let failures = 0;
 const queue = [];
 onmessage = (e) => {
   const m = e.data || {};
@@ -371,8 +380,10 @@ onmessage = (e) => {
   if (m.sink !== undefined) sink = !!m.sink;
   if (m.epoch !== undefined && m.epoch !== epoch) { epoch = m.epoch; queue.length = 0; }
   if (m.segs) segs = m.segs;
-  if (m.open !== undefined) { open = !!m.open; if (!open) queue.length = 0; }
+  if (m.open !== undefined) { open = !!m.open; if (!open) queue.length = 0; told = false; }
+  if (m.again) told = false;
 };
+setInterval(() => { if (open) postMessage({ stats: { posts, slowest: Math.round(slowest), failures } }); }, 1000);
 function take(b) {
   if (!open || !segs.length || !b || !b.data) return;
   const n = b.data.length / 2;
@@ -403,16 +414,25 @@ async function flush() {
     const body = new Float32Array(frames * 2);
     let o = 0;
     for (const p of parts) { body.set(p, o); o += p.length; }
+    let ok = false;
     try {
       if (sink) {
         postMessage({ sent: { at: first.at, epoch: first.epoch, data: body } }, [body.buffer]);
+        ok = true;
       } else {
+        const t0 = performance.now();
         const r = await fetch(url + '?at=' + first.at + '&epoch=' + first.epoch + '&channels=2', { method: 'POST', body });
-        if (!r.ok) postMessage({ failed: r.status });
+        const took = performance.now() - t0;
+        posts++;
+        if (took > slowest) slowest = took;
+        if (r.ok) ok = true;
+        else { failures++; postMessage({ failed: r.status }); }
       }
     } catch (err) {
+      failures++;
       postMessage({ failed: String(err) });
     }
+    if (ok && !told) { told = true; postMessage({ flowing: true }); }
   }
   busy = false;
 }
@@ -470,7 +490,7 @@ async function flush() {
     if (ctx.sampleRate !== w.rate || !ctx.audioWorklet) return Promise.resolve(false);
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     if (route.on && route.ctx === ctx && route.gain === masterGain) {
-      route.worker.postMessage({ sink: !!w.sink, url: ORIGIN + (w.url || '/api/engine/seq') });
+      route.worker.postMessage({ sink: !!w.sink, url: ORIGIN + (w.url || '/api/engine/seq'), again: true });
       return Promise.resolve(true);
     }
     if (!route.module || route.module.ctx !== ctx) {
@@ -538,10 +558,14 @@ async function flush() {
   /// the engine would not take one.
   function routeHeard(m) {
     if (m.sent) {
+      route.batches++;
       route.sent.push(m.sent);
       if (route.sent.length > 4000) route.sent.shift();
     }
+    if (m.stats) route.stats = m.stats;
+    if (m.flowing && route.pending) route.pending.say();
     if (m.failed !== undefined && route.on) {
+      route.pending = null;
       // The page plays the sequencer again, its grid brought back from a lead
       // ahead of the engine to the engine itself.
       const epoch = route.epoch;
@@ -568,28 +592,40 @@ async function flush() {
       locate(at);
       if (takeOn) takePlayAt(at);
       route.leadAt = null;
+      route.strays = 0;
+      route.jumps++;
     };
+    // Where the engine is now. The host read its clock when it sent this, and
+    // a busy page can be a good while getting round to the message — every
+    // millisecond of that looked like the page running further ahead.
+    const since = Number.isFinite(m.sentAt)
+      ? Math.max(0, (performance.timeOrigin + performance.now() - m.sentAt) / 1000) : 0;
+    const engineAt = m.at + since;
     if (Number.isFinite(m.epoch) && m.epoch > route.epoch) {
       route.epoch = m.epoch;
       route.segs = [];
       if (route.worker) route.worker.postMessage({ segs: [], epoch: route.epoch });
-      jump(wrapInto(m.at + lead));
+      jump(wrapInto(engineAt + lead));
       return;
     }
     const pageAt = gridNow();
     if (pageAt === null) return;
-    let ahead = pageAt - m.at;
+    let ahead = pageAt - engineAt;
     if (loopSec) {
       // Round a loop the page goes round a lead before the engine does.
       const span = loopSec.b - loopSec.a;
       if (ahead < -span / 2) ahead += span;
       else if (ahead > span / 2) ahead -= span;
     }
-    // Behind already — the engine started without waiting, or the page stalled —
-    // and its sound is being refused as late: laid again now, not a clock later.
-    if (ahead < 0.02) { jump(wrapInto(m.at + lead)); return; }
-    if (route.leadAt === null) { route.leadAt = ahead; return; }
-    if (Math.abs(ahead - route.leadAt) > 0.1) jump(wrapInto(m.at + lead));
+    route.aheadNow = ahead;
+    // Behind, so its sound is refused as late, or parted from the lead it
+    // started with. **Two readings in a row, not one**: laying the grid again
+    // is itself a gap or a repeat in the sound, and one reading out of line is
+    // far more often a page that was busy than clocks that have parted.
+    const out = ahead < 0.02 || (route.leadAt !== null && Math.abs(ahead - route.leadAt) > 0.1);
+    route.strays = out ? route.strays + 1 : 0;
+    if (route.strays >= 2) { jump(wrapInto(engineAt + lead)); return; }
+    if (route.leadAt === null && !out) route.leadAt = ahead;
   }
 
   // ── the feed ─────────────────────────────────────────────────────────────
@@ -912,7 +948,23 @@ async function flush() {
             }
             if (!on) route.want = null;
             start();
-            post({ type: 'seq:route', on, epoch: m.route.epoch, at });
+            if (!on) {
+              post({ type: 'seq:route', on: false, epoch: m.route.epoch, at });
+              return;
+            }
+            // **Said once the engine has taken the first of the sound**, not the
+            // moment the tap is up: a sender just started can take longer than
+            // the lead to post anything, and an engine started without it lost
+            // the first notes. A second at most, then said regardless.
+            const pending = {
+              say: () => {
+                if (route.pending !== pending) return;
+                route.pending = null;
+                post({ type: 'seq:route', on: route.on, epoch: m.route.epoch, at });
+              },
+            };
+            route.pending = pending;
+            setTimeout(pending.say, 1000);
           });
         } else {
           routeDown();
@@ -1154,8 +1206,11 @@ async function flush() {
     predicted, stepDur, locate, renderFilm, takeMessage, takePlayAt, takeValuesAt, takeEdit, wrapBefore,
     /// How far behind the sound a step's light comes on: routed, the page runs
     /// a lead ahead of what is heard.
-    uiDelay: () => (route.on && route.want ? route.want.lead : 0),
-    routeState: () => ({ on: route.on, epoch: route.epoch, segs: route.segs.slice(), loop: loopSec, grid: grid.slice() }),
+    uiDelay: () => (route.on && route.want ? (route.leadAt ?? route.want.lead) : 0),
+    routeState: () => ({
+      on: route.on, epoch: route.epoch, segs: route.segs.slice(), loop: loopSec, grid: grid.slice(),
+      batches: route.batches, stats: route.stats, jumps: route.jumps, leadAt: route.leadAt, aheadNow: route.aheadNow,
+    }),
     /// The runs the sender kept rather than posted, taken — for the tests.
     routeSent: () => route.sent.splice(0),
     get last() { return last; },

@@ -11,8 +11,10 @@
 //     stamps go straight from the loop's end to its start;
 //   - an engine that will not take the sound leaves the page playing the
 //     sequencer, and the host told;
-//   - a page that finds itself behind the engine is laid a lead ahead again at
-//     the first clock, rather than keeping a lead that is late;
+//   - a page that finds itself behind the engine is laid a lead ahead again —
+//     at the second clock in a row that says so, not on one busy moment;
+//   - the host is told the sound is going to the engine only once the engine
+//     has taken some, and the end of the sound stops the sequencer;
 //   - the host's Play starts the sequencer first and the engine a lead after it
 //     says it is under way, holding the playhead meanwhile; a seek is a new
 //     epoch for both;
@@ -91,10 +93,18 @@ test('routed and playing, every note is stamped on the engine frame of its step'
     engine.deviceRate = r;
     engine.position = Math.round(3.6 * r);
     seq.routeSink = true;
+    // How much the page had sent at the moment the host was told it was routed.
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'seq:route' && e.data.on) {
+        seq.routedAfterBatches = seqFrame().contentWindow.seqBridge.routeState().batches;
+      }
+    });
     seqSync(true, { preroll: true });
   }, rate);
   await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
   expect(await frame.evaluate(() => seqBridge.routeState().on)).toBe(true);
+  expect(await page.evaluate(() => seq.routedAfterBatches),
+    'the host was told the sound was going to the engine before any of it had gone').toBeGreaterThan(0);
   await page.waitForTimeout(1_400);
   await page.evaluate(() => seqSync(false));
   await page.waitForTimeout(150);
@@ -160,7 +170,7 @@ test('an engine that will not take the sound leaves the page playing the sequenc
   await page.evaluate(() => { seq.routeUrl = null; seqSync(false); });
 });
 
-test('a routed page that finds itself behind the engine is laid a lead ahead again at the first clock', async ({ page }) => {
+test('a routed page that finds itself behind the engine is laid a lead ahead again, at the second clock that says so', async ({ page }) => {
   const frame = await enterSeq(page);
   const rate = await frame.evaluate(TONE);
   await page.evaluate((r) => {
@@ -169,9 +179,14 @@ test('a routed page that finds itself behind the engine is laid a lead ahead aga
   }, rate);
   await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
   // The engine is already at five seconds, so every block the page sends is late.
-  await page.evaluate(() => seqPost({ type: 'seq:clock', playing: true, at: 5, epoch: 7 }));
+  // Once could be a page that was busy; twice in a row, it is laid again.
+  await page.evaluate(() => seqPost({ type: 'seq:clock', playing: true, at: 5, epoch: 7, sentAt: performance.timeOrigin + performance.now() }));
+  await page.waitForTimeout(60);
+  expect(await frame.evaluate(() => seqBridge.last.at), 'one reading out of line laid the grid again').toBeLessThan(5);
+  await page.evaluate(() => seqPost({ type: 'seq:clock', playing: true, at: 5.06, epoch: 7, sentAt: performance.timeOrigin + performance.now() }));
   await frame.waitForFunction(() => seqBridge.last && seqBridge.last.at > 5, null, { timeout: 2_000 });
-  expect(await frame.evaluate(() => seqBridge.last.at)).toBeCloseTo(5.12, 3);
+  expect(await frame.evaluate(() => seqBridge.last.at)).toBeCloseTo(5.18, 1);
+  expect(await frame.evaluate(() => seqBridge.routeState().jumps)).toBe(1);
   expect(await frame.evaluate(() => seqBridge.routeState().on), 'a late page stopped sending').toBe(true);
   await page.evaluate(() => seqPost({ type: 'seq:transport', playing: false }));
 });
@@ -268,6 +283,55 @@ test('a poll that finds the engine not yet playing does not end the Play it is w
   expect(got.started, 'the engine was never told to play').toBe(true);
   expect(got.playing, 'a poll from before the engine started ended the Play').toBe(true);
   expect(got.seeks, 'the transport dropped back to the cue').toBe(0);
+});
+
+test('the end of the sound stops the sequencer, as a stop does', async ({ page }) => {
+  const frame = await enterSeq(page);
+  await frame.evaluate(TONE);
+  const got = await page.evaluate(async () => {
+    engine.device = true;
+    engine.deviceRate = 48000;
+    engine.position = 0;
+    engine.latency = 0;
+    seq.routeSink = true;
+    for (const f of ['startTransportLoop', 'startSwarm', 'stopSwarm', 'captureFollow', 'grainsFollowView']) {
+      window[f] = () => {};
+    }
+    const posts = [];
+    let told = false;
+    let ended = false;
+    enginePost = async (b) => { posts.push(b); if (b.play === true) told = true; return null; };
+    const realFetch = window.fetch;
+    window.fetch = async (url, opts) => {
+      if (!String(url).startsWith('/api/engine/grains')) return realFetch(url, opts);
+      return new Response(JSON.stringify({
+        playing: told && !ended, position: 4800, sampleRate: 48000, latency: 0, spectrum: [], waveform: [], rackLevels: [],
+      }), { status: 200 });
+    };
+    try {
+      startPlayback();
+      for (let i = 0; i < 400 && !posts.some((p) => p.play === true); i++) await new Promise((r) => setTimeout(r, 5));
+      await new Promise((r) => setTimeout(r, 300));
+      const playing = { host: engine.playing, page: seqFrame().contentWindow.eval('isPlaying') };
+      // The engine reaches the end of the sound and stops itself.
+      ended = true;
+      await new Promise((r) => setTimeout(r, 400));
+      return {
+        playing,
+        host: engine.playing,
+        page: seqFrame().contentWindow.eval('isPlaying'),
+        routed: seqFrame().contentWindow.seqBridge.routeState().on,
+        cue: posts.some((p) => p.seek !== undefined),
+      };
+    } finally {
+      window.fetch = realFetch;
+    }
+  });
+  expect(got.playing, 'it never got going').toEqual({ host: true, page: true });
+  expect(got.host).toBe(false);
+  expect(got.page, 'the sequencer played on past the end of the sound').toBe(false);
+  expect(got.routed, 'the page went on sending to the engine').toBe(false);
+  expect(got.cue, 'the transport did not go back to the cue').toBe(true);
 });
 
 test('routed, the room is drawn from the engine\'s feed as it is', async ({ page }) => {
