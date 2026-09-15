@@ -97,6 +97,12 @@ const SETTINGS_SPEC = {
     },
   },
   masterFft: stOneOf(4096, [1024, 2048, 4096, 8192, 16384]),
+
+  // ── the sequencer ──
+  //
+  // Through the engine's output, to the sample, or through the browser's. See
+  // `docs/SEQUENCER.md`, "one output".
+  seqRoute: stBool(true),
 };
 
 const SETTINGS_STORE = 'audiolab.settings.v1';

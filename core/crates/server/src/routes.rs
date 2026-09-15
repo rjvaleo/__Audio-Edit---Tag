@@ -358,6 +358,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/engine/load") => api_engine_load(app, req),
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
+        ("POST", "/api/engine/seq") => api_engine_seq(app, req),
         ("GET", "/api/engine/grains") => api_engine_grains(app),
         ("GET", "/api/engine/master") => api_engine_master(app, req),
         // Forget the worst block. It is only meaningful next to a change you
@@ -3906,6 +3907,11 @@ fn api_engine_transport(app: &Arc<App>, req: &Request) -> Response {
     };
 
     let r = crate::live::with(app, |h| {
+        // A new epoch for the sequencer's sound first, so a seek in the same
+        // request lands on a bus that has let go of what came before it.
+        if let Some(e) = num("seqEpoch") {
+            h.shared.seq.advance(e.max(0.0) as u64);
+        }
         if let Some(f) = num("seek") {
             h.shared.request_seek(f.max(0.0) as u64);
         }
@@ -3945,6 +3951,40 @@ fn api_engine_transport(app: &Arc<App>, req: &Request) -> Response {
     }
 }
 
+/// The sequencer's sound, for the engine's output — see `engine::seqbus`.
+///
+/// `at` is the output frame the first of it belongs at, `epoch` the transport's
+/// epoch it was stamped under, and the body little-endian floats, interleaved.
+/// Never opens the device: sound for an engine that is not running has nowhere
+/// to go, and a sound card opened because a page posted samples at it is the
+/// side effect `docs/NO-AUDIO-DEVICE.md` is about. The page is told 503 and
+/// plays the sequencer itself.
+fn api_engine_seq(app: &Arc<App>, req: &Request) -> Response {
+    let at = req.number::<u64>("at", 0);
+    let epoch = req.number::<u64>("epoch", 0);
+    let channels = req.number::<usize>("channels", 2).clamp(1, 8);
+    if req.body.len() % (4 * channels) != 0 {
+        return Response::error(400, "the sound is not whole frames");
+    }
+    let samples: Vec<f32> = req
+        .body
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    match crate::live::peek(app, |h| {
+        let bounds = if h.shared.is_playing() { h.shared.heard_loop() } else { None };
+        let kept = h.shared.seq.write(epoch, at, &samples, channels, h.shared.position(), bounds);
+        Value::obj()
+            .set("kept", kept as u64)
+            .set("epoch", h.shared.seq.epoch())
+            .set("sampleRate", h.sample_rate)
+            .to_string()
+    }) {
+        Some(s) => Response::json(s),
+        None => Response::error(503, "no engine is running"),
+    }
+}
+
 /// Grains that have actually sounded since the last ask.
 ///
 /// The swarm is fed from here rather than from a second enumeration, so it
@@ -3977,6 +4017,17 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
             // How far ahead of the speaker the counter is. A playhead drawn
             // straight from `position` leads the sound by this much.
             .set("latency", h.shared.latency_frames() as f64)
+            // The sequencer's sound on this output: whether it is coming, and how
+            // much of it arrived in time. See `engine::seqbus`.
+            .set(
+                "seq",
+                Value::obj()
+                    .set("active", h.shared.seq.is_active())
+                    .set("epoch", h.shared.seq.epoch())
+                    .set("mixed", h.shared.seq.mixed.load(Ordering::Relaxed))
+                    .set("missing", h.shared.seq.missing.load(Ordering::Relaxed))
+                    .set("refused", h.shared.seq.refused.load(Ordering::Relaxed)),
+            )
             .set("grains", Value::Arr(arr))
             .set("spectrum", Value::Arr(spectrum))
             .set(

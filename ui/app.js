@@ -805,10 +805,17 @@ const engineFromSrc = (f) => (f / rateScale()) * timeRatio();
 /// **The output latency.** The counter is frames produced, not frames heard.
 /// Subtracting what the device reports puts the line on the sound rather than
 /// a buffer ahead of it.
-function enginePosition() {
-  if (!engine.playing || !engine.heard) return Math.max(0, engine.position - engine.latency);
+///
+/// **`produced`** leaves the latency on: the frames the engine has made rather
+/// than the ones heard, which is what the sequencer's sound is stamped against
+/// when it plays through the engine. And while the sequencer is being started
+/// ahead of the engine (`engine.rolling`) the position holds — the engine has
+/// not moved yet, and a playhead carried forward would run ahead of it.
+function enginePosition(produced = false) {
+  const latency = produced ? 0 : engine.latency;
+  if (!engine.playing || !engine.heard || engine.rolling) return Math.max(0, engine.position - latency);
   const dt = (performance.now() - engine.heard) / 1000;
-  let p = engine.position + dt * engine.deviceRate - engine.latency;
+  let p = engine.position + dt * engine.deviceRate - latency;
 
   const lp = engine.loop;
   if (lp && lp.b > lp.a) {
@@ -855,7 +862,7 @@ const CLOCK_GAIN = 0.12;
 function lockClock(reported) {
   const now = performance.now();
   const rate = engine.deviceRate || 48000;
-  if (!engine.playing || !engine.heard) {
+  if (!engine.playing || !engine.heard || engine.rolling) {
     engine.position = reported;
     engine.heard = now;
     return;
@@ -882,7 +889,10 @@ function seekSource(srcFrame) {
   const p = Math.max(0, engineFromSrc(srcFrame));
   engine.position = p;
   engine.heard = performance.now();
-  enginePost({ seek: p });
+  // A new epoch: whatever of the sequencer's sound the engine holds from before
+  // the seek is let go, and anything still on its way is refused.
+  seq.epoch++;
+  enginePost({ seek: p, seqEpoch: seq.epoch });
   // Straight away, not at the next clock tick: a seek is a discontinuity and
   // the sequencer should land with it.
   if (engine.playing) seqClock();
@@ -919,17 +929,33 @@ function startPlayback() {
   captureFollow(true);
   engine.heard = performance.now();
   reflectTransport();
-  enginePost({ play: true, mute: !sourceOn('grain') });
+  const serial = engine.startSerial = (engine.startSerial || 0) + 1;
+  const go = () => {
+    engine.rolling = false;
+    engine.heard = performance.now();
+    enginePost({ play: true, mute: !sourceOn('grain'), seqEpoch: seq.epoch });
+  };
+  // **The sequencer first, when it plays through the engine**: started where
+  // the engine is and the engine a lead later, so the sequencer's sound is
+  // already waiting when the engine reaches the frames it belongs at.
+  // Otherwise the two start together, as they always have.
+  const roll = seqSync(true, { preroll: true });
+  if (roll) {
+    engine.rolling = true;
+    roll.then(() => { if (engine.playing && engine.rolling && engine.startSerial === serial) go(); });
+  } else {
+    go();
+  }
   captureTransport(true);
   if (typeof visualLanesStart === 'function') visualLanesStart();
   startTransportLoop();
   startPolling();
   startSwarm();
-  seqSync(true);
 }
 
 function pausePlayback() {
   engine.playing = false;
+  engine.rolling = false;
   // After the poll loop has stopped, not before: a request already in flight
   // lands with the last levels that were heard and paints them back on.
   setTimeout(resetRackMeters, 120);
@@ -10258,7 +10284,48 @@ const seq = {
   /// The sequencer's take and tempo, as its bridge last sent them — drawn on
   /// the timeline beside the grain's lanes. See `perf-panel.js`.
   take: null, tempo: null,
+  /// **Playing through the engine.** `epoch` is the transport's, bumped by
+  /// every start, stop and seek and told to both the bridge and the engine;
+  /// `routed` is whether the bridge has said its sound is going to the engine;
+  /// `rolling` is a Play waiting for the sequencer to be under way. `routeSink`
+  /// and `routeUrl` are for the tests: keep the sound in the page, or post it
+  /// somewhere else. See `docs/SEQUENCER.md`, "one output".
+  epoch: 0, routed: false, rolling: null, routeSink: false, routeUrl: null,
 };
+
+/// How far ahead of the engine the sequencer runs when it plays through the
+/// engine, in seconds: time for its sound to be made, posted and waiting before
+/// the engine reaches the frames it belongs at. What it costs: a sequencer knob
+/// is heard this much after it is turned.
+const SEQ_ROUTE_LEAD = 0.12;
+/// How long a Play waits for the sequencer to say it is under way before the
+/// engine starts regardless.
+const SEQ_ROUTE_WAIT_MS = 1500;
+
+/// Whether the sequencer's sound goes through the engine: the setting, a
+/// device known to be there, and the sequencer loaded and switched on.
+function seqRouting() {
+  return !!prefs.seqRoute && engine.device === true && seqLoaded() && sourceOn('seq') && engine.deviceRate > 0;
+}
+
+/// The engine's loop, in its output seconds, for the sequencer to go round:
+/// the loop the engine reports while it plays, and otherwise the one the
+/// transport is about to ask it for — worked out the way `applyLoop` asks.
+function seqLoopSeconds() {
+  if (!state.loopOn) return null;
+  const rate = engine.deviceRate || 48000;
+  let lp = engine.playing && !engine.rolling && engine.loop && engine.loop.b > engine.loop.a ? engine.loop : null;
+  if (!lp) {
+    const hasSel = !!state.sel && state.sel.end > state.sel.start;
+    const end = Math.round((state.edit?.frames || state.view?.frames || 0) / rateScale());
+    const a = hasSel ? Math.max(0, Math.round(engineFromSrc(state.sel.start))) : 0;
+    let b = hasSel ? Math.max(0, Math.round(engineFromSrc(state.sel.end))) : 0;
+    b = b === 0 ? end : Math.min(b, Math.max(1, end));
+    if (!(b > a + 64)) return null;
+    lp = { a, b };
+  }
+  return { a: lp.a / rate, b: lp.b / rate };
+}
 
 function seqFrame() { return $('seqFrame'); }
 
@@ -10304,11 +10371,39 @@ function seqRequestState() {
 /// The engine's transport, told to the sequencer. Play plays it *from where
 /// the engine is*; stop stops it. The position is the engine's output time in
 /// seconds — `playbackTime` — which is the one clock both run on.
-function seqSync(playing) {
+///
+/// **Through the engine** (`seqRouting`), with the engine's transport under it
+/// — started by Play (`preroll`), or joining an engine already playing — the
+/// sequencer is told the engine's rate, the lead, the epoch and the loop, and
+/// sends its sound to the engine instead of playing it. Started by Play, this
+/// resolves when the engine should start: a lead after the sequencer says it is
+/// under way, or once it has waited long enough. Otherwise it returns null.
+function seqSync(playing, { preroll = false } = {}) {
   // The SEQ switch: off, the sequencer is told to stop whatever the engine
   // does, and is not clocked.
   playing = playing && sourceOn('seq');
-  seqPost({ type: 'seq:transport', playing, at: playing ? playbackTime() : 0 });
+  const routed = playing && seqRouting() && (preroll || engine.playing);
+  const wasRouted = seq.routed;
+  seq.epoch++;
+  seq.routed = false;
+  seq.rolling?.done(false);
+  const rate = engine.deviceRate || 48000;
+  let at = playing ? playbackTime() : 0;
+  if (routed) {
+    // Frames made rather than heard: those are what the sound is stamped
+    // against. Joining an engine already playing, the sequencer starts a lead
+    // ahead of it so that its sound is on time; starting with it, the engine
+    // waits instead.
+    at = enginePosition(true) / rate + (preroll ? 0 : SEQ_ROUTE_LEAD);
+  }
+  const msg = { type: 'seq:transport', playing, at, loop: seqLoopSeconds() };
+  if (routed) {
+    msg.route = {
+      rate, lead: SEQ_ROUTE_LEAD, epoch: seq.epoch,
+      sink: !!seq.routeSink, url: seq.routeUrl || undefined,
+    };
+  }
+  seqPost(msg);
   clearInterval(seq.clock);
   seq.clock = null;
   if (playing) {
@@ -10317,11 +10412,26 @@ function seqSync(playing) {
     // decides whether the difference is worth acting on.
     seq.clock = setInterval(seqClock, 250);
   }
+  // No longer through the engine while it plays on: what it holds is let go.
+  if (!routed && wasRouted && engine.playing) enginePost({ seqEpoch: seq.epoch });
+  if (!routed || !preroll) return null;
+  const epoch = seq.epoch;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => done(false), SEQ_ROUTE_WAIT_MS);
+    function done(on) {
+      if (!seq.rolling || seq.rolling.epoch !== epoch) return;
+      seq.rolling = null;
+      clearTimeout(timer);
+      resolve(on);
+    }
+    seq.rolling = { epoch, done };
+  });
 }
 
 function seqClock() {
-  if (!engine.playing) return;
-  seqPost({ type: 'seq:clock', playing: true, at: playbackTime() });
+  if (!engine.playing || engine.rolling) return;
+  const at = seq.routed ? enginePosition(true) / (engine.deviceRate || 48000) : playbackTime();
+  seqPost({ type: 'seq:clock', playing: true, at, epoch: seq.epoch, loop: seqLoopSeconds() });
 }
 
 /// Ask for the spectrum in the shape the room is about to draw.
@@ -10339,6 +10449,16 @@ window.addEventListener('message', (e) => {
     seqSync(engine.playing);
     // A frame that reloaded comes up in its full layout; say compact again.
     if (seq.compact) seqPost({ type: 'seq:compact', on: true });
+  } else if (m.type === 'seq:route') {
+    // Whether the sequencer's sound is going to the engine. An answer for an
+    // epoch that has since passed is not true of anything now.
+    if (m.epoch !== seq.epoch) return;
+    seq.routed = !!m.on;
+    const rolling = seq.rolling;
+    if (rolling && rolling.epoch === m.epoch) {
+      if (m.on) setTimeout(() => rolling.done(true), SEQ_ROUTE_LEAD * 1000);
+      else rolling.done(false);
+    }
   } else if (m.type === 'seq:state') {
     const done = seqStateWaiting.get(m.id);
     if (done) {
@@ -10402,6 +10522,16 @@ function seqMix(data, bands) {
     out.lissajous = seqMixLiss(data.lissajous.slice(), f.lissajous);
   }
   return out;
+}
+
+/// What the room is drawn from. The engine's master feed with the sequencer's
+/// folded into the picture — or, when the sequencer plays through the engine,
+/// the engine's feed as it is, since the sequencer is in the sound already.
+/// GRAIN off, the engine's feed is left out unless the sequencer is in it.
+function masterFeed(r, bands) {
+  const live = r && r.live ? r : null;
+  if (seq.routed) return live;
+  return seqMix(sourceOn('grain') ? live : null, bands);
 }
 
 /// Two spectra, in decibels, added as power — in place into `a`.
@@ -13766,6 +13896,15 @@ const SETTINGS_PANEL = [
         set: (v) => { masterBus.fft = setPref('masterFft', Number(v)); wireMasterRes(); } },
     ],
   },
+  {
+    group: 'The sequencer',
+    rows: [
+      { key: 'seqRoute', label: 'Play it through the engine',
+        why: 'Its sound goes out of the engine’s device on the same frames as the grain, so the two line up to the sample, and are recorded, metered and drawn as one. It runs a tenth of a second ahead to do it, so a sequencer knob is heard that much after you turn it. Off, the browser plays it: no delay, and close rather than exact.',
+        when: 'From the next Play.',
+        type: 'check', get: () => prefs.seqRoute, set: (v) => setPref('seqRoute', v) },
+    ],
+  },
 ];
 
 function buildSettingsPanel() {
@@ -15646,7 +15785,7 @@ async function mbTick() {
     const r = await api(`/api/engine/master?fft=${masterBus.fft}&bands=${want}`);
     // GRAIN off: the engine's own feed is not drawn, so the picture is the
     // sequencer's alone, or nothing.
-    masterBus.data = seqMix(sourceOn('grain') && r && r.live ? r : null, want);
+    masterBus.data = masterFeed(r, want);
   } catch {
     // A meter that cannot reach the server shows nothing rather than the last
     // thing it saw. Freezing on a stale reading is the one behaviour a meter is

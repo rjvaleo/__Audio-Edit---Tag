@@ -86,7 +86,9 @@ a fourth source with bars arrives, the tempo becomes the arrangement's.
 ## Live, the mix is a picture; in the film it is the sound too
 
 **Live**, the engine plays through the sound card and the sequencer through
-the browser. They meet in the air. What is mixed is what the room is drawn
+the browser. They meet in the air. *(Until 14 Sep 2026: the sequencer now plays
+through the engine's output — see "one output" below. What follows is what
+happens when that setting is off, or cannot be kept.)* What is mixed is what the room is drawn
 from: `seqMix` folds the sequencer's feed into the engine's master feed
 before it is handed to the visualiser, so the terrain, the ring, the skin and
 the solid are all drawn from both voices at once.
@@ -129,6 +131,82 @@ film. It needs the Seq page to have been opened, because a frame that was
 never loaded has nothing to render. An audio bounce is still the engine
 alone; that render is the server's, and the browser is not in it.
 
+## One output
+
+*14 Sep 2026.* The two voices used to leave through two sound cards — the
+engine's through its device, the sequencer's through the browser's — each
+started when it got round to it, so they were close, never to the sample, and
+never twice alike. Now the sequencer plays through the engine, and both leave
+through the engine's device together. It is the setting **Play it through the
+engine**, under *The sequencer* in Settings, on by default.
+
+**The page does not play it.** When the engine's transport starts the
+sequencer, `bridge.js` hangs a worklet on the sequencer's master, silences the
+page's own output, and hands each block of samples to a worker, which stamps it
+with the engine output frame it belongs at and posts it — `POST
+/api/engine/seq?at=&epoch=`, little-endian floats, about every forty
+milliseconds. The engine holds it (`engine::seqbus`) until its callback renders
+that frame and adds it in: after the grain's own gain and before the ceiling,
+the recorder and the meters. So GRAIN off still silences only the grain, and
+what is recorded and drawn is both voices. The room is drawn from the engine's
+feed as it is (`masterFeed`), rather than with a picture of the sequencer mixed
+into it.
+
+**The stamps come from the grid, so they are exact.** A step on boundary *k*
+is laid at the context time the grid says is engine time *k* × the step, and a
+sample the context renders at frame *x* is stamped *x* plus the grid's offset —
+so a note lands on the frame of its step however late the context happened to
+render it. While routed the grid is kept on whole frames, and a context at a
+rate other than the engine's is built again at the engine's, so the two sides of
+that sum never round apart.
+
+**It runs ahead.** Its sound has to be made and posted before the engine
+reaches it, so the host starts the sequencer where the engine is and the engine
+a lead later — 120 ms after the sequencer says it is under way
+(`SEQ_ROUTE_LEAD`), with the playhead held meanwhile. Joining an engine that is
+already playing, the sequencer starts a lead ahead of it instead. The price: a
+sequencer knob turned by hand is heard that much after it is turned, and its
+steps light that much before they sound, so the lights are held back by it too.
+
+**Epochs.** Every Play and every seek is a new epoch, told to the bridge and to
+the engine (`seqEpoch` on `/api/engine/transport`). Sound from an older epoch is
+refused, so a block still on its way from before a seek cannot land after it,
+and a newer epoch drops what the engine holds. A stop is not an epoch: the
+engine fades the sequencer out over ten milliseconds of what it already holds,
+rather than cutting it mid-note.
+
+**The loop.** The host tells the bridge the engine's loop, and the scheduler
+wraps the grid itself at the loop's end (`wrapBefore`) — on the frame the engine
+will wrap on, not a quarter of a second after being told it has. The stamps go
+straight from the loop's end to its start, and the engine takes each frame off
+its bus as it plays it, so a frame played again round a loop needs fresh sound
+and can never play the pass before. Played through the browser, the sequencer
+wraps the same way now.
+
+**When it cannot.** No engine running, a rate the browser will not build a
+context at, or a request the engine refuses: the page plays the sequencer
+itself, its grid brought back from the lead to the engine, and the host is told
+(`seq:route`). `/api/engine/seq` never opens the device (`live::peek`). `GET
+/api/engine/grains` reports `seq: { active, epoch, mixed, missing, refused }` —
+whether the sound is coming, and how much of it came in time.
+
+Tests: `tests/ui/sequencer-route.spec.mjs`, run with Chromium's fake audio
+output, since a headless page's context otherwise says it is running and never
+renders — routed, every note is stamped within two frames of its step's engine
+frame, in one unbroken run; round a loop the stamps go straight from the loop's
+end to its start, and the notes after the wrap are the loop's; an engine that
+refuses the sound leaves the page playing; a page that finds itself behind the
+engine is laid a lead ahead again at the first clock; Play starts the sequencer first,
+holds the playhead, and starts the engine a lead after with its epoch, and a
+seek is a new epoch for both; routed, the room is drawn from the engine's feed
+as it is. Unit tests: `engine::seqbus` — a frame is held until it is taken, and
+taken once; a frame a ring away is another frame; an older epoch is refused and
+a newer one drops what was held; sound behind the engine is refused; round a
+loop, the next pass is ahead. `engine::transport` — the sequencer is added on
+the output frames the engine renders; round a loop it wraps on the same frame
+as the grain; GRAIN off silences only the grain; a stop fades it out; sound that
+did not come is counted only while the bus is in use.
+
 ## What this is not, yet
 
 A third and a fourth source, and the audio of all of them mixed for real
@@ -138,10 +216,21 @@ while playing. That should be built as one thing:
   the sequencer and whatever comes next are three of them;
 - **the live mix happens in the engine**, which means the browser's sound has
   to reach it — a loopback device, or the sequencer's stream handed over;
+  *(the stream is handed over now — see "one output")*
 - **a tempo the sources share**, so a fourth voice that has bars can line them
   up with the sequencer's. The position is already shared; the tempo is not.
 
 ## Where it lives
+
+*One output (14 Sep 2026):* `core/crates/engine/src/seqbus.rs` — the bus;
+`transport.rs` — `Shared::seq`, `Core::mix_seq` and the stop's fade;
+`routes.rs` — `api_engine_seq`, `seqEpoch` on the transport, `seq` on the engine
+poll; `ui/sequencer/bridge.js` — the grid (`layGrid`, `wrapBefore`), the tap and
+the sender (`TAP_SOURCE`, `SEND_SOURCE`), `routeUp`, `routeDown`,
+`routedClock`; `ui/sequencer/app.js` — the scheduler asks `wrapBefore` before
+each step and holds a step's light back by `uiDelay`; `ui/app.js` —
+`seqRouting`, `seqLoopSeconds`, `seqSync`'s pre-roll, `startPlayback`,
+`seekSource`, `masterFeed`; `ui/settings.js` — `seqRoute`.
 
 - `ui/sequencer/` — the vendored page and `bridge.js`.
 - `ui/app.js` — `playsDocument` (Seq plays the document), `setMode` (the

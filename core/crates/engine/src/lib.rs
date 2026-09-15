@@ -15,10 +15,12 @@
 pub mod device;
 pub mod input;
 pub mod render;
+pub mod seqbus;
 pub mod stretcher;
 pub mod transport;
 
 pub use device::{conform_channels, resample, spawn, Engine, Handle};
 pub use render::{BlockRenderer, Source};
+pub use seqbus::SeqBus;
 pub use stretcher::Stretcher;
 pub use transport::{Core, Shared};

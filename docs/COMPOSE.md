@@ -440,3 +440,24 @@ with the take's start, its first value and its scale change left where they
 were; + LANE adds the first free control flat at its value; the lane moved onto
 another control takes its moves with it; and an undo puts it back, with the
 dragged point still where it was put.
+
+## After the phases: one output
+
+*14 Sep 2026.* The plan left the two audio outputs aligned by the bridge's
+relocate threshold, and said that sample accuracy would need the sequencer
+rendered through the server — a different sequencer. It did not need one. The
+page's own sequencer is handed to the engine instead: tapped at its master,
+every sample stamped with the engine output frame it belongs at, posted, and
+added in by the engine's callback on exactly that frame. The grain and the
+sequencer leave through one device together, and the engine's recorder, meters
+and room have both voices in them.
+
+The sequencer runs a lead ahead of the engine (120 ms) so that its sound is
+waiting; Play starts it first and the engine after, and a sequencer knob moved
+by hand is heard that much later. Every Play and seek is an epoch both sides
+know, so sound from before a seek never lands after it. Round a loop the
+sequencer wraps on its own, on the frame the engine will. It is a setting — *The
+sequencer · Play it through the engine* — on by default, and when the engine
+cannot take the sound the page plays the sequencer as before.
+
+The whole account is in `docs/SEQUENCER.md`, "one output".
