@@ -172,7 +172,25 @@ the lead, took it for the sound having reached its end, and dropped back to the
 cue — which, being a seek, began a new epoch the sequencer never heard, so the
 engine refused everything it sent. Only an answer the poll asked for after the
 engine had its Play can say it stopped now (`engine.toldAt`), which also closes
-an older, narrower race: a poll already on its way when Play was pressed. The price: a
+an older, narrower race: a poll already on its way when Play was pressed.
+
+The same first run through the speakers showed three more things, fixed:
+
+- **The end of the sound did not stop the sequencer.** The engine stopping
+  itself at the end ran a shorter stop than the Stop button's, and left the
+  sequencer playing — through the engine, which refused it all, or through the
+  browser before routing existed — with the picture's lanes and a take running
+  on. It stops everything a stop stops now.
+- **The first tenth of a second was missing.** A sender just started took
+  longer than the lead to post anything. The bridge tells the host it is routed
+  once the engine has taken the first of the sound (`flowing`), not when the tap
+  is up, and the lead is counted from there.
+- **A busy page laid the grid again for nothing.** The clock was read when the
+  host sent it and compared when the page got to it, and the time between looked
+  like drift. The clock carries when it was read (`sentAt`) now, and the grid is
+  laid again only when two readings in a row say so. The bridge counts what it
+  does — `routeState()` reports the jumps, the lead it kept, and its posts'
+  count, slowest time and failures. The price: a
 sequencer knob turned by hand is heard that much after it is turned, and its
 steps light that much before they sound, so the lights are held back by it too.
 

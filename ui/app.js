@@ -1057,6 +1057,13 @@ function startPolling() {
         reflectTransport();
         stopSwarm();
         resetRackMeters();
+        // **Everything a stop stops.** This stopped the engine's own things and
+        // left the sequencer playing on past the end of the sound — through the
+        // browser, or through the engine, which refused it all as having no
+        // sound to go with — and the picture's lanes and a take running with it.
+        seqSync(false);
+        if (typeof visualLanesStop === 'function') visualLanesStop();
+        captureTransport(false);
         returnToCue();
         paintTime();
         updatePlayhead();
@@ -10441,7 +10448,12 @@ function seqSync(playing, { preroll = false } = {}) {
 function seqClock() {
   if (!engine.playing || engine.rolling) return;
   const at = seq.routed ? enginePosition(true) / (engine.deviceRate || 48000) : playbackTime();
-  seqPost({ type: 'seq:clock', playing: true, at, epoch: seq.epoch, loop: seqLoopSeconds() });
+  seqPost({
+    type: 'seq:clock', playing: true, at, epoch: seq.epoch, loop: seqLoopSeconds(),
+    // When the clock was read, on the clock both pages share — so the bridge
+    // can take out however long it was before it got to the message.
+    sentAt: performance.timeOrigin + performance.now(),
+  });
 }
 
 /// Ask for the spectrum in the shape the room is about to draw.
