@@ -16,6 +16,8 @@
 //   - the host's Play starts the sequencer first and the engine a lead after it
 //     says it is under way, holding the playhead meanwhile; a seek is a new
 //     epoch for both;
+//   - a poll that finds the engine not yet playing does not end that Play — on
+//     the real device it did, and the engine was never started;
 //   - routed, the room is drawn from the engine's feed as it is.
 //
 // Run with Chromium's fake audio output. Headless, a page's audio context
@@ -222,6 +224,50 @@ test('Play starts the sequencer first and the engine a lead later, and a seek is
   expect(got.afterSeek).toBeGreaterThan(got.started);
   expect(got.seek, 'the seek did not carry its epoch to the engine').toBe(got.afterSeek);
   expect(got.rolling).toBe(false);
+});
+
+test('a poll that finds the engine not yet playing does not end the Play it is waiting for', async ({ page }) => {
+  await enterSeq(page);
+  const got = await page.evaluate(async () => {
+    engine.device = true;
+    engine.deviceRate = 48000;
+    engine.position = 96000;
+    engine.latency = 0;
+    seq.routeSink = true;
+    for (const f of ['startTransportLoop', 'startSwarm', 'stopSwarm', 'captureTransport', 'captureFollow', 'grainsFollowView']) {
+      window[f] = () => {};
+    }
+    // The engine as the server reports it: stopped until it is told to play —
+    // and every answer slow, so one asked for before it was told arrives after.
+    const posts = [];
+    let told = false;
+    enginePost = async (b) => { posts.push(b); if (b.play === true) told = true; return null; };
+    const realFetch = window.fetch;
+    window.fetch = async (url, opts) => {
+      if (!String(url).startsWith('/api/engine/grains')) return realFetch(url, opts);
+      const playing = told;
+      await new Promise((r) => setTimeout(r, 80));
+      return new Response(JSON.stringify({
+        playing, position: 96000, sampleRate: 48000, latency: 0, spectrum: [], waveform: [], rackLevels: [],
+      }), { status: 200 });
+    };
+    try {
+      startPlayback();
+      for (let i = 0; i < 400 && !posts.some((p) => p.play === true); i++) await new Promise((r) => setTimeout(r, 5));
+      await new Promise((r) => setTimeout(r, 400));
+      return {
+        started: posts.some((p) => p.play === true),
+        playing: engine.playing,
+        seeks: posts.filter((p) => p.seek !== undefined).length,
+      };
+    } finally {
+      pausePlayback();
+      window.fetch = realFetch;
+    }
+  });
+  expect(got.started, 'the engine was never told to play').toBe(true);
+  expect(got.playing, 'a poll from before the engine started ended the Play').toBe(true);
+  expect(got.seeks, 'the transport dropped back to the cue').toBe(0);
 });
 
 test('routed, the room is drawn from the engine\'s feed as it is', async ({ page }) => {
