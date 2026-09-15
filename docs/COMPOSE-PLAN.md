@@ -272,4 +272,4 @@ in `docs/COMPOSE.md`, as the open-world work was done.
 - [ ] phase two — one timeline
 - [ ] phase three — visual automation
 - [ ] phase four — the composition
-- [ ] phase five — compact panels
+- [x] phase five — compact panels *(built first, 14 Sep 2026 — see `docs/COMPOSE.md`)*

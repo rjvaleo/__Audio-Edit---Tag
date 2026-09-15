@@ -431,6 +431,10 @@
       }, (err) => {
         post({ type: 'seq:rendered', id: m.id, error: String(err && err.message || err) });
       });
+    } else if (m.type === 'seq:compact') {
+      // The host's Compose workspace: this page in a cell. The layout is the
+      // page's own — see the COMPACT block at the end of style.css.
+      document.body.classList.toggle('compact', !!m.on);
     } else if (m.type === 'seq:want') {
       want = {
         bands: Math.max(8, Math.min(4096, m.bands | 0) || want.bands),

@@ -950,3 +950,44 @@ canvas.env-canvas {
   letter-spacing: 1px;
   min-width: 36px;
 }
+
+/* ── COMPACT ─────────────────────────────────────────────────────────────────
+   This page in a cell of the host's Compose workspace: the step grid, the
+   tempo, the scale, and the voice with its filter. Everything else — the
+   presets, the scale library, the envelopes, the LFOs, the effects, the
+   performance panel, the keyboard and the status — is in the full page and
+   hidden here. The host's transport runs it, so its own play and stop go too.
+   Switched on by the host with `seq:compact`; see `bridge.js`. */
+.compact-only { display: none; }
+body.compact .compact-only { display: flex; }
+body.compact .header,
+body.compact .transport #playBtn,
+body.compact .transport .stop-btn,
+body.compact .transport .divider,
+body.compact .preset-group,
+body.compact .capture-group,
+body.compact .scale-panel,
+body.compact .adsr-block,
+body.compact .synth-voice > .divider,
+body.compact .synth-lfo,
+body.compact .synth-row-scroll,
+body.compact .seq-resize,
+body.compact .perf-panel,
+body.compact .keyboard-panel,
+body.compact .status-bar { display: none !important; }
+body.compact .main { grid-template-columns: 1fr; }
+body.compact .transport { padding: 4px 8px; gap: 10px; flex-wrap: wrap; border-bottom-width: 1px; }
+body.compact .synth-row { padding: 4px 8px; gap: 10px; }
+body.compact .row-label { font-size: 9px; }
+body.compact .knob-group { gap: 2px; }
+body.compact .knob { width: 24px; height: 24px; }
+body.compact .knob::after { width: 2px; height: 7px; top: 2px; }
+body.compact .knob-val { font-size: 10px; min-width: 32px; }
+body.compact select { font-size: 10px; padding: 2px 4px; }
+body.compact .pos-display { font-size: 14px; min-width: 44px; }
+body.compact .seq-panel { flex: 1 1 auto !important; min-height: 0; padding: 6px 8px; gap: 6px; }
+body.compact .step-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; }
+body.compact .step { min-height: 0; padding: 3px 2px; gap: 1px; }
+body.compact .step-note { font-size: 13px; }
+body.compact .step-hz { display: none; }
+body.compact .step-mini-btn { font-size: 7px; padding: 1px 0; }

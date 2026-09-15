@@ -58,7 +58,7 @@ pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SETTINGS_JS, SECTION_PRESETS_JS,
                  SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
-                 PERF_PANEL_JS,
+                 PERF_PANEL_JS, COMPOSE_JS,
                  SHAPES_4D_JS, PANEL_4D_JS,
                  STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
                  VIS_GL_JS, RIDGE_JS, ROOM3D_JS, ROOM_PAINT_JS, VIDEO_EXPORT_JS] {
@@ -130,6 +130,8 @@ pub const SEQ_BRIDGE_JS: &str = include_str!("../../../../ui/sequencer/bridge.js
 /// The sequencer's performance panel, carried over to the grain page's
 /// Automation tab. See `docs/AUTOMATION-CAPTURE.md`.
 pub const PERF_PANEL_JS: &str = include_str!("../../../../ui/perf-panel.js");
+/// The Compose workspace and its compact panels. See `docs/COMPOSE.md`.
+pub const COMPOSE_JS: &str = include_str!("../../../../ui/compose.js");
 /// The left rail, and its own stylesheet. Ported from the edge build; it emits
 /// its own markup and depends on no rule in `app.css`. See `docs/RAIL.md`.
 pub const RAIL_JS: &str = include_str!("../../../../ui/rail.js");
@@ -194,6 +196,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET" | "HEAD", "/section-presets.js") => {
             Response::ok("text/javascript; charset=utf-8", SECTION_PRESETS_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/compose.js") => {
+            Response::ok("text/javascript; charset=utf-8", COMPOSE_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/perf-panel.js") => {
             Response::ok("text/javascript; charset=utf-8", PERF_PANEL_JS.as_bytes().to_vec())

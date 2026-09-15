@@ -1817,6 +1817,8 @@ function selectScale(idx) {
     scale.name.toUpperCase();
   document.getElementById("activeScaleInfo").textContent = scale.info;
   document.getElementById("statusScale").textContent = scale.name.toUpperCase();
+  const compact = document.getElementById("compactScale");
+  if (compact) compact.value = String(idx);
   renderScaleDegrees();
   renderKeyboard();
   renderStepGrid();
@@ -1959,6 +1961,27 @@ function renderScaleList() {
     item.onclick = () => selectScale(idx);
     list.appendChild(item);
   });
+
+  // The same library as a menu, for the compact layout.
+  const compact = document.getElementById("compactScale");
+  if (compact) {
+    compact.innerHTML = "";
+    let group = null;
+    let cat = null;
+    SCALES.forEach((scale, idx) => {
+      if (scale.cat !== cat) {
+        cat = scale.cat;
+        group = document.createElement("optgroup");
+        group.label = scale.cat;
+        compact.appendChild(group);
+      }
+      const o = document.createElement("option");
+      o.value = String(idx);
+      o.textContent = scale.name;
+      group.appendChild(o);
+    });
+    compact.value = String(selectedScaleIdx);
+  }
 }
 
 // ─── ROTARY KNOB DRAG SYSTEM ─────────────────────────────────────────────────
