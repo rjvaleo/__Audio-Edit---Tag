@@ -3,6 +3,7 @@
 pub mod annot;
 pub mod automation;
 pub mod capture;
+pub mod compose;
 pub mod docs;
 pub mod http;
 pub mod live;

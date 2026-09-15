@@ -113,3 +113,9 @@ exactly the configuration that least needs it. Beside-the-executable stays as a
 The picture's automation lanes, one set per library-relative path, beside
 `AUTOMATION.json`. Written by `POST /api/visual-automation`; a document with no
 lanes has no entry. See `docs/COMPOSE.md`, phase three.
+
+## compositions/
+
+One JSON file per composition kept in the Compose workspace, named for it with
+the name made safe; the name itself is inside the file. See `docs/COMPOSE.md`,
+phase four.

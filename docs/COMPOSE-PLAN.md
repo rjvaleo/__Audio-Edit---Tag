@@ -271,5 +271,5 @@ in `docs/COMPOSE.md`, as the open-world work was done.
 - [x] phase one — the view *(14 Sep 2026)*
 - [x] phase two — one timeline *(14 Sep 2026)*
 - [x] phase three — visual automation *(14 Sep 2026)*
-- [ ] phase four — the composition
+- [x] phase four — the composition *(14 Sep 2026)*
 - [x] phase five — compact panels *(built first, 14 Sep 2026 — see `docs/COMPOSE.md`)*

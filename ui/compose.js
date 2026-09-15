@@ -207,6 +207,30 @@ function composeGrainSync() {
   if (cloud && gp && document.activeElement !== cloud && cloud.value !== gp.value) cloud.value = gp.value;
 }
 
+// ─── the copies of the full panels' pickers ──────────────────────────────────
+//
+// The compact panels show the CLOUD, VIEW and LOOK pickers the full panels
+// have. `app.js` repaints its own and calls these, so the ids the compact panels
+// build are only ever looked up in the file that builds them.
+
+/// A section's presets were repainted: repaint this view's copy.
+function composePresetsPainted(kind, select) {
+  if (kind === 'visual') paintSectionPicker($('cpLook'), 'visual', select);
+  if (kind === 'grain') paintSectionPicker($('cgCloud'), 'grain', select);
+}
+
+/// The visuals menu was rebuilt: refill this view's copy of it.
+function composeVisPickerBuilt() {
+  const cp = $('cpVisual');
+  if (cp) fillVisPicker(cp);
+}
+
+/// What is showing changed: say so in this view's copy.
+function composeVisPickerPainted() {
+  const cp = $('cpVisual');
+  if (cp) paintVisPicker(cp);
+}
+
 // ─── the picture bar ─────────────────────────────────────────────────────────
 
 /// Build the compact picture bar into a cell, with the room's place under it.
@@ -416,6 +440,7 @@ function cvWatch() {
 function composeEnter() {
   composeGrainMount($('cvGrain'));
   composePictureMount($('cvPicture'));
+  composeCompositionBar($('cvArrange'));
   cvWireGrips();
   cvApplySizes();
   for (const [id, host] of CV_PARTS) cvAdopt(id, host);
@@ -467,3 +492,243 @@ function composeLeave() {
   $('masterBus')?.classList.remove('room-editing');
   applyRoomFrame();
 }
+
+// ─── the composition ─────────────────────────────────────────────────────────
+//
+// Everything the view shows, kept under a name on the server
+// (`data/compositions/<name>.json`) and put back as one thing: the sound, the
+// engine's settings with its cloud and tuning, the rack, the sequencer's state
+// and its take, the look, the grain's lanes and the picture's, the source
+// switches, the film's frame and the view's own sizes. The section presets stay
+// what they are; a composition gathers what each of them would keep.
+// `docs/COMPOSE.md`, phase four.
+
+async function compositionSnapshot() {
+  const f = state.selectedFile;
+  if (!f || !state.edit) throw new Error('Open a sound first');
+  let rack = null;
+  try { rack = await api(`/api/rack?p=${encodeURIComponent(f.path)}`); } catch { rack = null; }
+  return {
+    v: 1,
+    saved: Date.now(),
+    sound: { path: f.path, name: f.name || f.path.split('/').pop() },
+    engine: { stretch: state.edit.stretch, rack },
+    sequencer: await seqRequestState(),
+    look: visualSnapshot(),
+    lanes: {
+      grain: { lanes: state.automation?.lanes || [], bypassed: !!state.automation?.bypassed },
+      visual: visualLanes.lanes,
+    },
+    sources: { ...state.sources },
+    frame: roomEdit.frame,
+    sizes: { ...cvSizes },
+  };
+}
+
+async function compositionList() {
+  try { return (await api('/api/compositions')).names || []; } catch { return []; }
+}
+
+async function compositionSave(name) {
+  const clean = String(name || '').trim();
+  if (!clean) throw new Error('A composition needs a name');
+  const composition = await compositionSnapshot();
+  const r = await postJSON('/api/compositions', { name: clean, composition });
+  await compositionPaint(clean, r.names);
+  return clean;
+}
+
+async function compositionDelete(name) {
+  const r = await postJSON('/api/compositions/delete', { name });
+  await compositionPaint('', r.names);
+}
+
+/// Put a composition back, part by part, in the order that lets each land on
+/// what the one before it set up: the sound first, then its engine, its rack and
+/// its lanes, then the picture, the switches, the sequencer and the view.
+async function compositionApply(c) {
+  if (!c || typeof c !== 'object' || !c.sound?.path) throw new Error('That is not a composition');
+  if (state.selectedFile?.path !== c.sound.path) {
+    await selectFile(await resolveFile(c.sound.path));
+  }
+  const p = state.selectedFile.path;
+
+  if (c.engine?.stretch) {
+    await editOp({ op: 'stretch', ...c.engine.stretch });
+    stretchBuiltFor = null;
+    grainBuiltFor = null;
+    renderStretch();
+    renderGrainParams();
+    syncStretchSliders();
+  }
+  if (c.engine?.rack) {
+    await postJSON('/api/rack', { ...c.engine.rack, p, sr: state.view?.sampleRate || 48000 });
+    loadRack();
+  }
+  if (c.lanes?.grain) {
+    await postJSON('/api/automation', { p, lanes: c.lanes.grain.lanes || [], bypassed: !!c.lanes.grain.bypassed });
+    await loadAutomation();
+  }
+  if (Array.isArray(c.lanes?.visual)) {
+    visualLanes.path = p;
+    visualLanes.lanes = c.lanes.visual;
+    saveVisualLanes();
+  }
+  if (c.look) applyVisual(c.look);
+  if (c.frame) {
+    roomEdit.frame = c.frame;
+    applyRoomFrame();
+    paintRoomNums();
+  }
+  if (c.sources) {
+    for (const k of ['grain', 'seq']) {
+      if (typeof c.sources[k] === 'boolean' && sourceOn(k) !== c.sources[k]) setSource(k, c.sources[k]);
+    }
+  }
+  if (c.sequencer) {
+    seqEnsureFrame();
+    await compositionSeqReady();
+    seqPost({ type: 'seq:load', state: c.sequencer.state || null, take: c.sequencer.take || null });
+  }
+  if (c.sizes) {
+    Object.assign(cvSizes, c.sizes);
+    cvApplySizes();
+    cvSaveSizes();
+  }
+  renderAutomation();
+  afterLayout(cvRedraw);
+}
+
+/// The sequencer's frame, answering. A frame loaded for the first time takes a
+/// moment.
+function compositionSeqReady() {
+  if (seq.ready) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const began = performance.now();
+    const t = setInterval(() => {
+      if (seq.ready || performance.now() - began > 8000) { clearInterval(t); resolve(seq.ready); }
+    }, 100);
+  });
+}
+
+async function compositionLoad(name) {
+  const c = await api(`/api/compositions/get?name=${encodeURIComponent(name)}`);
+  await compositionApply(c);
+  await compositionPaint(name);
+  return c;
+}
+
+/// The picker, refilled — from `names` when the answer to a save or a delete is
+/// already in hand.
+async function compositionPaint(select, names) {
+  const sel = $('cvCompPick');
+  if (!sel) return;
+  const list = names || await compositionList();
+  const keep = select === undefined ? sel.value : select;
+  sel.innerHTML = '<option value="">— none —</option>';
+  for (const n of list) {
+    const o = document.createElement('option');
+    o.value = n;
+    o.textContent = n;
+    sel.appendChild(o);
+  }
+  sel.value = list.includes(keep) ? keep : '';
+}
+
+/// The bar over the arrangement: which composition, and keeping, opening,
+/// deleting and exporting one. First in its cell, so the timeline moved in after
+/// it sits under it.
+function composeCompositionBar(host) {
+  if (!host || host.querySelector('.cv-comp')) return;
+  const bar = document.createElement('div');
+  bar.className = 'cv-comp';
+  bar.innerHTML = `
+    <span class="cv-comp-tag">COMPOSITION</span>
+    <select class="preset-select cv-comp-pick" id="cvCompPick"
+      title="Open a composition: the sound, the engine, the sequencer, the look and every lane, as they were kept"></select>
+    <button class="btn" id="cvCompSave" title="Keep everything the view shows under a name">SAVE AS…</button>
+    <button class="btn preset-del-btn" id="cvCompDelete" title="Delete this composition. The sound and its settings are left as they are.">DEL</button>
+    <button class="btn" id="cvCompExport" title="The export dialog, where Composition exports the sound and the film together">EXPORT…</button>`;
+  host.prepend(bar);
+  $('cvCompPick').onchange = async (e) => {
+    const name = e.target.value;
+    if (!name) return;
+    try {
+      await compositionLoad(name);
+      toast(`Composition: ${name}`);
+    } catch (err) {
+      toast(`Could not open “${name}”: ${err.message}`);
+    }
+  };
+  $('cvCompSave').onclick = async () => {
+    if (!state.selectedFile) { toast('Open a sound first'); return; }
+    const suggested = $('cvCompPick').value || (state.selectedFile.name || 'Composition').replace(/\.[^.]+$/, '');
+    const name = prompt('Save this composition as:', suggested);
+    if (name === null) return;
+    try {
+      const kept = await compositionSave(name);
+      toast(`Saved “${kept}”`);
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  $('cvCompDelete').onclick = async () => {
+    const name = $('cvCompPick').value;
+    if (!name) { toast('Pick a composition first'); return; }
+    if (!confirm(`Delete the composition “${name}”? The sound and its settings are left as they are.`)) return;
+    try {
+      await compositionDelete(name);
+      toast(`Deleted “${name}”`);
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  $('cvCompExport').onclick = () => {
+    if (!state.selectedFile) { toast('Open a sound first'); return; }
+    openExportLoop(exportLoopRange());
+  };
+  compositionPaint('');
+}
+
+// ─── one export ──────────────────────────────────────────────────────────────
+
+/// The composition's folder: its name, or the sound's when none is chosen.
+function compositionFolder() {
+  const picked = $('cvCompPick')?.value;
+  if (picked) return picked;
+  return `${(state.selectedFile?.name || 'Untitled').replace(/\.[^.]+$/, '')} composition`;
+}
+
+/// The sound — with the sequencer as the dialog's switch says — and then the
+/// film, into one folder beside the document named for the composition. The
+/// dialog's range, repeats, tail and film size are used for both, so the two are
+/// the same piece of the document. Resolves to where each went.
+async function composeExportAll() {
+  if (!state.selectedFile) { toast('Open a sound first'); return null; }
+  const folder = compositionFolder();
+  const range = exportRange;
+  const repeats = Math.max(1, Math.min(512, +$('elRepeats').value || 1));
+  const tail = $('elTail').classList.contains('on');
+  $('elStatus').textContent = `the sound, into “${folder}”…`;
+  const finished = exportFinished();
+  await runExport(range, repeats, tail, { folder });
+  const sound = await finished;
+  if (!sound || sound.error || sound.cancelled || !sound.path) {
+    $('elStatus').textContent = sound?.cancelled ? 'stopped' : `the sound failed — ${sound?.error || 'nothing was written'}`;
+    return { sound, film: null };
+  }
+  $('elStatus').textContent = 'the film…';
+  const p = state.selectedFile.path;
+  const film = await runVideoExport({
+    save: async (blob, file) => {
+      const q = `p=${encodeURIComponent(p)}&folder=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`;
+      const res = await fetch(`/api/export/film?${q}`, { method: 'POST', body: blob });
+      if (!res.ok) throw new Error((await res.text()) || res.statusText);
+      return (await res.json()).path;
+    },
+  });
+  if (typeof film === 'string') toast(`Composition exported — the sound and the film, in “${folder}”`);
+  return { sound, film: typeof film === 'string' ? film : null };
+}
+
+$('elAll')?.addEventListener('click', () => { composeExportAll(); });

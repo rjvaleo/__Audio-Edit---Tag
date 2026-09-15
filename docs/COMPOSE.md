@@ -65,10 +65,15 @@ remembers it; a frame that reloads comes back in its full layout, so the
 
 VIEW, LOOK, Front, Side, Top, Frame and ⤢, over a place for the room
 (`#cpRoom`). VIEW is filled from the same menu as the stage bar's picker —
-`fillVisPicker` is that loop, moved out so both use it — and
-`paintVisModulePicker` paints both. LOOK is painted with the stage bar's list
-and recalls through its picker. The camera buttons are the Room tab's set
-views. ⤢ goes to the Visual workspace.
+`fillVisPicker` is that loop, moved out so both use it. LOOK is painted from the
+stage bar's list and recalls through its picker, and the grain panel's CLOUD the
+same way. `app.js` repaints its own pickers and then calls
+`composePresetsPainted`, `composeVisPickerBuilt` and `composeVisPickerPainted`,
+so the ids the compact panels build are looked up only in `compose.js`, which
+builds them. They were first painted from `app.js` directly; the interface check,
+which requires every id `app.js` looks up to be in `index.html` or made by
+`app.js`, caught it. The camera buttons are the Room tab's set views. ⤢ goes to
+the Visual workspace.
 
 ---
 
@@ -259,3 +264,68 @@ the lane's camera at a frame and the room on screen is unchanged, and the export
 hands the film that function; visual lanes are their own group, open in the
 editor with the picture's targets, and Delete removes one without touching the
 grain's. `docs.rs` — the store round-trips and drops an empty record.
+
+---
+
+## Phase four: the composition
+
+Everything the view shows, kept under a name and put back as one thing; and
+one export that writes the sound and the film of it into one folder.
+`ui/compose.js` on the page, `core/crates/server/src/compose.rs` on the server.
+
+**What a composition keeps** (`compositionSnapshot`): the sound's path; the
+engine's settings as the server holds them — the stretch with its grain cloud,
+its tuning and every engine's own values — and the rack; the sequencer's state
+and its take, asked of the frame with `seq:state-get`; the look
+(`visualSnapshot`); the grain's lanes with their bypass, and the picture's
+lanes; the GRAIN and SEQ switches; the film's frame; and the view's own sizes.
+The section presets stay what they are — a composition gathers what each of
+them would keep.
+
+**Kept on the server**, one file per composition in `data/compositions/`,
+named for it: `GET /api/compositions` lists them by the name they were saved
+under, `GET /api/compositions/get?name=` reads one, `POST /api/compositions`
+keeps one, `POST /api/compositions/delete` deletes one. The name is kept inside
+the file, because the file name is the name made safe (`docs::safe_name`): a
+slash becomes a hyphen and leading dots go, so no name climbs out of the folder
+or hides in it.
+
+**Opening one** (`compositionApply`) puts the parts back in the order that lets
+each land on what the one before set up: the sound, if it is not the one open;
+its stretch through `/api/edit` and its rack through `/api/rack`, with the
+panels rebuilt; the grain's lanes through `/api/automation`; the picture's
+lanes; the look; the frame; the switches; the sequencer's state and take, posted
+as `seq:load` once the frame answers — the take made the loaded one and put at
+the head of its list of takes; and the view's sizes.
+
+**The bar** sits over the arrangement: COMPOSITION, a picker that opens one,
+SAVE AS…, DEL, and EXPORT…, which opens the export dialog.
+
+**One export.** The export dialog has a **Composition** button. It exports the
+sound — with the sequencer as the dialog's switch says — into a folder beside
+the document named for the composition (or for the sound, when none is picked),
+waits for it to finish, stem and all, and then makes the film with the same
+range, repeats and tail and saves it into the same folder. Three changes let it:
+`/api/export` takes a `folder`; `runExport` can be waited on (`exportFinished`,
+settled on every way an export can end); and `runVideoExport` takes `save`, so
+the film goes to `POST /api/export/film` — which writes it beside the document,
+in the folder — instead of downloading.
+
+**A fault found on the way.** The server capped every request body at eight
+megabytes and cut a longer one short without saying so. The sequencer's stem is
+floats, twenty-three megabytes a minute in stereo, so a sound export of more
+than about twenty seconds had only its first twenty seconds of sequencer summed
+in. The cap is per route now (`http::body_cap`): the stem and the film may carry
+up to two gigabytes, everything else keeps eight megabytes, and a body over its
+cap is refused rather than cut.
+
+Tests: `tests/ui/compose-file.spec.mjs` — a composition keeps the engine, both
+kinds of lane, the look, the switches, the frame and the sequencer's state and
+take, and opening it after all of them were changed puts every one back;
+compositions are listed by the names they were saved under, in order, and a name
+full of `../` is kept under its own name inside the folder; one export puts the
+sound and the film side by side in the composition's folder. Unit tests:
+`compose.rs` — a composition is kept, listed, read back and deleted, and a name
+cannot climb out; `docs.rs` — a safe name keeps its words and loses its way out;
+`http.rs` — a settings body over its cap is refused, and a stem or a film may
+carry more than eight megabytes.
