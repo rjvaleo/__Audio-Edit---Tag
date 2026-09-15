@@ -128,6 +128,52 @@ impl MarkerStore {
     }
 }
 
+/// Something the page keeps per document, stored as it arrives.
+///
+/// The picture's automation lanes live here, in `VISUAL-AUTOMATION.json`. Their
+/// shape is the page's, so the store holds the JSON rather than a type of its
+/// own. A record whose `lanes` is empty is dropped on save, as an empty
+/// annotation is, rather than accumulating one for every file ever opened.
+#[derive(Default)]
+pub struct DocJsonStore {
+    by_path: BTreeMap<String, Value>,
+}
+
+impl DocJsonStore {
+    pub fn load(path: &Path) -> Self {
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            return Self::default();
+        };
+        let Some(Value::Obj(map)) = json::parse(&raw) else {
+            return Self::default();
+        };
+        DocJsonStore { by_path: map }
+    }
+
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        let mut root = BTreeMap::new();
+        for (k, v) in &self.by_path {
+            let kept = matches!(v.get("lanes"), Some(Value::Arr(a)) if !a.is_empty());
+            if kept {
+                root.insert(k.clone(), v.clone());
+            }
+        }
+        std::fs::write(path, Value::Obj(root).to_string())
+    }
+
+    /// What is kept for `key`, or an empty record with no lanes.
+    pub fn get(&self, key: &str) -> Value {
+        self.by_path
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| Value::obj().set("lanes", Value::Arr(Vec::new())))
+    }
+
+    pub fn set(&mut self, key: &str, v: Value) {
+        self.by_path.insert(key.to_string(), v);
+    }
+}
+
 /// Open edit sessions, one per file, held for the life of the process.
 #[derive(Default)]
 pub struct EditStore {
@@ -529,5 +575,33 @@ mod tests {
         assert!(st.get("grain").is_some(), "the grain cloud is missing");
         assert!(st.get("vocoder").is_some(), "the vocoder's controls are missing");
         assert!(v.get("rack").is_some(), "the effect rack is missing");
+    }
+}
+
+#[cfg(test)]
+mod doc_json_tests {
+    use super::*;
+
+    #[test]
+    fn a_document_s_lanes_round_trip_and_an_empty_record_is_dropped() {
+        let dir = std::env::temp_dir().join(format!("doc-json-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("VISUAL-AUTOMATION.json");
+        let mut store = DocJsonStore::default();
+        let lanes = json::parse(
+            r#"{"lanes":[{"id":"vis:camera.yaw","target":"visual.camera.yaw","points":[{"frame":0,"value":0.5}]}]}"#,
+        )
+        .unwrap();
+        store.set("a.aif", lanes.clone());
+        store.set("b.aif", Value::obj().set("lanes", Value::Arr(Vec::new())));
+        store.save(&path).unwrap();
+        let back = DocJsonStore::load(&path);
+        assert_eq!(back.get("a.aif").to_string(), lanes.to_string());
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("b.aif"), "an empty record was kept: {raw}");
+        assert!(
+            matches!(back.get("never.aif").get("lanes"), Some(Value::Arr(a)) if a.is_empty()),
+            "a document with nothing stored did not come back empty"
+        );
     }
 }

@@ -157,7 +157,7 @@ function dataRgb(hex) {
 async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   layers, occlude, order, room, background, data, schedule, fetchSchedule, padSeconds,
   loopOut, signal, onStage, module, ridge, ridgePaint, room3d, room3dPaint,
-  stage, stagePaint, text, textPaint, sequencer, seqAt0, grain = true }) {
+  stage, stagePaint, text, textPaint, sequencer, seqAt0, grain = true, visual = null }) {
   const why = videoExportSupport();
   if (why) throw new Error(why);
 
@@ -465,8 +465,12 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
         // rather than more schedule. Hold at the end so nothing new is born.
         : loopOut.to;
     }
+    // The picture's lanes at this frame's place in the document: the camera,
+    // the layers and the room's own values, as `visualFilmFrame` reads them.
+    const vis = visual ? visual(at / rate) : null;
     gl.frame({
       ...room,
+      ...(vis ? vis.room : null),
       // What the ridgeline reads. The room ignores them and it ignores the
       // room's — a module takes what it understands out of the frame.
       ridge,
@@ -479,8 +483,8 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
       // Full detail, for the same reason.
       stage: stage ? { ...stage, detail: 1 } : stage,
       stagePaint,
-      cam: camera,
-      layers,
+      cam: vis ? vis.cam : camera,
+      layers: vis ? vis.layers : layers,
       occlude,
       order,
       // **The film's clock, not the machine's.** Everything in the room that
@@ -511,7 +515,7 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
     // terrain, the ring and the leading edge lie over the text the way they
     // would lie over anything painted on the far wall. Drawn after the room it
     // would be type on the glass instead, in front of everything.
-    if (data && data.on) drawRoomData(ctx, size, camera, data, sched, at);
+    if (data && data.on) drawRoomData(ctx, size, vis ? vis.cam : camera, data, sched, at);
     ctx.drawImage(canvas, 0, 0);
     // **After the room, because the card is in front of everything.** Unlike the
     // data block, which is painted on the far wall and is meant to be occluded

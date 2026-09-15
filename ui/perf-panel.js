@@ -227,7 +227,14 @@ function perfTimelineData() {
     group, lane, id: lane.id, label: lane.label || lane.id,
     color: lane.color || perfLaneColor(lane.target || ''), dim: false,
   }));
-  const byGroup = { grain, seq: other('seq', perfSeqLanes()), visual: other('visual', perfVisualLanes()) };
+  // The picture's lanes are the grain's shape — frames and breakpoints — so
+  // they are sampled the same way.
+  const visual = perfVisualLanes().map((lane) => ({
+    group: 'visual', grain: true, lane, id: lane.id,
+    label: typeof visualLaneShort === 'function' ? visualLaneShort(lane) : perfLaneLabel(lane),
+    color: '#ffd166', dim: lane.enabled === false || bypassed,
+  }));
+  const byGroup = { grain, seq: other('seq', perfSeqLanes()), visual };
   const groups = PERF_GROUPS
     .map((g) => ({ ...g, lanes: byGroup[g.key] }))
     .filter((g) => g.lanes.length);
@@ -518,14 +525,16 @@ function perfUpdateHeader() {
   if (!name || !info) return;
   const lanes = perfLanes();
   const seqN = perfSeqLanes().length;
+  const visN = perfVisualLanes().length;
   const file = state.selectedFile?.name || state.selectedFile?.path?.split('/').pop() || '';
-  if (lanes.length || seqN) {
+  if (lanes.length || seqN || visN) {
     name.textContent = file.replace(/\.[^.]+$/, '').toUpperCase() || 'TAKE';
     const points = lanes.reduce((n, l) => n + (l.points || []).length, 0);
     const live = lanes.filter((l) => l.enabled !== false && (l.points || []).length).length;
     info.textContent = `${perfDuration().toFixed(0)}s · ${lanes.length} LANES · ${live} LIVE · ${points} POINTS`
       + (state.automation?.bypassed ? ' · BYPASSED' : '')
-      + (seqN ? ` · SEQ ${seqN}` : '');
+      + (seqN ? ` · SEQ ${seqN}` : '')
+      + (visN ? ` · VISUAL ${visN}` : '');
   } else {
     name.textContent = 'NO TAKE';
     info.textContent = '—';

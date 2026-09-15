@@ -107,3 +107,9 @@ exactly the configuration that least needs it. Beside-the-executable stays as a
 - Tests: migration runs once, is idempotent, refuses to overwrite a populated
   destination, survives a partial copy, and honours `AUDIOLAB_DATA` over
   everything else.
+
+## VISUAL-AUTOMATION.json
+
+The picture's automation lanes, one set per library-relative path, beside
+`AUTOMATION.json`. Written by `POST /api/visual-automation`; a document with no
+lanes has no entry. See `docs/COMPOSE.md`, phase three.

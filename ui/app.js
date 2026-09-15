@@ -921,6 +921,7 @@ function startPlayback() {
   reflectTransport();
   enginePost({ play: true, mute: !sourceOn('grain') });
   captureTransport(true);
+  if (typeof visualLanesStart === 'function') visualLanesStart();
   startTransportLoop();
   startPolling();
   startSwarm();
@@ -940,6 +941,7 @@ function pausePlayback() {
   paintTime();
   stopSwarm();
   seqSync(false);
+  if (typeof visualLanesStop === 'function') visualLanesStop();
   captureTransport(false);
   if ($('perfCanvas')?.offsetParent) perfDrawTimeline();
 }
@@ -1045,6 +1047,8 @@ function startTransportLoop() {
     // The timeline's playhead, where the timeline is on screen — the dock's
     // Automation tab, or Compose's arrangement. Fifteen times a second: a take
     // can hold thousands of breakpoints, and the head does not need sixty.
+    // The picture's lanes, and the hand on the picture.
+    if (typeof visualLanesTick === 'function') visualLanesTick();
     const now = performance.now();
     if (now - perfTickAt > 66 && $('perfCanvas')?.offsetParent) {
       perfTickAt = now;
@@ -1809,6 +1813,7 @@ async function selectFile(file, { keepTab = false } = {}) {
   loadRack();
   loadAutomation();
   syncAutomationRecord();
+  if (typeof loadVisualLanes === 'function') loadVisualLanes();
   loadOverview();
   renderGrainParams();
   loadGrains();
@@ -3329,6 +3334,10 @@ async function runVideoExport() {
       sequencer: seqInFilm() ? seqRenderForFilm : null,
       seqAt0,
       grain: sourceOn('grain'),
+      // The picture's lanes, read by the film at each frame's own time.
+      visual: typeof visualLanes !== 'undefined'
+        && visualLanes.lanes.some((l) => l.enabled !== false && l.points?.length)
+        ? (seconds) => visualFilmFrame(seconds, size.w / size.h) : null,
       // The room as it is posed right now, at the frame being filmed. The
       // camera is the pose; the aspect comes from the canvas, which is why a
       // wide room in a tall frame is a narrower room and not a squashed one.
@@ -5829,8 +5838,28 @@ window.addEventListener('pagehide', () => {
 });
 let recordPoll = null;
 
+/// What undo keeps: the grain's lanes and the picture's, since one editor edits
+/// both.
+function automationSnapshot() {
+  return JSON.stringify({
+    lanes: state.automation.lanes,
+    bypassed: state.automation.bypassed,
+    visual: typeof visualLanes !== 'undefined' ? visualLanes.lanes : undefined,
+  });
+}
+
+function automationRestore(text) {
+  const v = JSON.parse(text);
+  state.automation.lanes = v.lanes || [];
+  state.automation.bypassed = !!v.bypassed;
+  if (Array.isArray(v.visual) && typeof visualLanes !== 'undefined') {
+    visualLanes.lanes = v.visual;
+    saveVisualLanes();
+  }
+}
+
 function automationCheckpoint() {
-  automationUndo.push(JSON.stringify({ lanes: state.automation.lanes, bypassed: state.automation.bypassed }));
+  automationUndo.push(automationSnapshot());
   if (automationUndo.length > 100) automationUndo.shift();
   automationRedo = [];
 }
@@ -5926,8 +5955,16 @@ function renderAutomation() {
     perfDrawTimeline();
     return;
   }
+  // The picture's lanes open in the same editor, and save to their own store.
+  const visualPool = typeof visualLanes !== 'undefined' ? visualLanes.lanes : [];
   const lanes = state.automation.lanes || [];
-  const chosen = lanes.find((l) => l.id === state.automationSel) || lanes[0] || null;
+  const chosen = lanes.find((l) => l.id === state.automationSel)
+    || visualPool.find((l) => l.id === state.automationSel)
+    || lanes[0] || null;
+  const visualLane = !!chosen && String(chosen.id).startsWith('vis:');
+  const pool = visualLane ? visualLanes : state.automation;
+  const save = visualLane ? saveVisualLanes : saveAutomation;
+  const offered = visualLane ? visualTargetOptions() : targets;
   state.automationSel = chosen ? chosen.id : null;
   for (const lane of chosen ? [chosen] : []) {
     const row = document.createElement('article');
@@ -5943,18 +5980,18 @@ function renderAutomation() {
     on.type = 'checkbox';
     on.checked = lane.enabled !== false;
     on.title = 'Whether this lane is in the signal path';
-    on.onchange = () => { automationCheckpoint(); lane.enabled = on.checked; saveAutomation(); automationNote(); };
+    on.onchange = () => { automationCheckpoint(); lane.enabled = on.checked; save(); automationNote(); };
 
     const pick = document.createElement('select');
     pick.title = 'Which control this lane moves';
-    for (const [value, label] of targets) {
+    for (const [value, label] of offered) {
       const o = document.createElement('option');
       o.value = value; o.textContent = label;
       pick.appendChild(o);
     }
     // A lane naming something that no longer exists keeps its curve and says
     // so, rather than being silently repointed at whatever is first in the list.
-    if (!targets.some(([v]) => v === lane.target)) {
+    if (!offered.some(([v]) => v === lane.target)) {
       const o = document.createElement('option');
       o.value = lane.target; o.textContent = `Missing — ${lane.target}`;
       pick.appendChild(o);
@@ -5964,7 +6001,7 @@ function renderAutomation() {
       automationCheckpoint();
       lane.target = pick.value;
       lane.label = pick.selectedOptions[0]?.textContent || pick.value;
-      saveAutomation();
+      save();
       automationNote();
     };
 
@@ -5974,8 +6011,8 @@ function renderAutomation() {
     del.title = 'Delete this lane';
     del.onclick = () => {
       automationCheckpoint();
-      state.automation.lanes = state.automation.lanes.filter((x) => x !== lane);
-      saveAutomation();
+      pool.lanes = pool.lanes.filter((x) => x !== lane);
+      save();
       renderAutomation();
     };
     top.append(on, pick, del);
@@ -5994,7 +6031,7 @@ function renderAutomation() {
     curve.onchange = () => {
       automationCheckpoint();
       for (const p of lane.points || []) p.curve = curve.value;
-      saveAutomation();
+      save();
       drawLane(canvas, lane);
     };
     tools.appendChild(curve);
@@ -6025,8 +6062,9 @@ function perfFillLaneSelect() {
   sel.appendChild(blank);
   // Grouped once the sequencer has lanes too, the way the timeline groups them.
   const seqLanes = perfSeqLanes();
+  const visLanes = perfVisualLanes();
   let grainHost = sel;
-  if (seqLanes.length) {
+  if (seqLanes.length || visLanes.length) {
     grainHost = document.createElement('optgroup');
     grainHost.label = 'GRAIN';
     sel.appendChild(grainHost);
@@ -6044,6 +6082,17 @@ function perfFillLaneSelect() {
       const o = document.createElement('option');
       o.value = l.id;
       o.textContent = l.label;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  if (visLanes.length) {
+    const g = document.createElement('optgroup');
+    g.label = 'VISUAL';
+    for (const l of visLanes) {
+      const o = document.createElement('option');
+      o.value = l.id;
+      o.textContent = typeof visualLaneShort === 'function' ? visualLaneShort(l) : l.label;
       g.appendChild(o);
     }
     sel.appendChild(g);
@@ -6066,6 +6115,13 @@ function snapLaneFrame(frame) {
     if (Math.abs(x - frame) < near) { best = x; near = Math.abs(x - frame); }
   }
   return Math.round(Math.max(0, Math.min(frames, best)));
+}
+
+/// A lane is saved to the store it came from: the picture's lanes are kept per
+/// document in their own store, the grain's in the server's automation.
+function laneSave(lane) {
+  if (String(lane?.id || '').startsWith('vis:') && typeof saveVisualLanes === 'function') saveVisualLanes();
+  else saveAutomation();
 }
 
 function wireLane(canvas, lane) {
@@ -6119,7 +6175,7 @@ function wireLane(canvas, lane) {
     // Deliberately not simplified here. A release used to run the simplifier,
     // which reduces a smooth drag to its two end points — so the breakpoints
     // you had just drawn vanished the instant you let go. Simplify is a button.
-    saveAutomation();
+    laneSave(lane);
     automationNote();
   };
 
@@ -6128,7 +6184,7 @@ function wireLane(canvas, lane) {
     if (!p) return;
     automationCheckpoint();
     lane.points = lane.points.filter((x) => x !== p);
-    saveAutomation();
+    laneSave(lane);
     drawLane(canvas, lane);
   };
 }
@@ -6369,6 +6425,16 @@ $('perfLaneDel')?.addEventListener('click', () => {
     toast('A sequencer lane is deleted in Seq, where it was recorded');
     return;
   }
+  if (String(state.automationSel || '').startsWith('vis:') && typeof visualLanes !== 'undefined') {
+    const vlane = visualLanes.lanes.find((l) => l.id === state.automationSel);
+    if (!vlane) { toast('Pick a lane first'); return; }
+    automationCheckpoint();
+    visualLanes.lanes = visualLanes.lanes.filter((x) => x !== vlane);
+    state.automationSel = null;
+    saveVisualLanes();
+    renderAutomation();
+    return;
+  }
   const lane = (state.automation.lanes || []).find((l) => l.id === state.automationSel);
   if (!lane) { toast('Pick a lane first'); return; }
   automationCheckpoint();
@@ -6415,8 +6481,8 @@ $('automationLoop').onclick = () => {
 $('automationUndo').onclick = () => {
   const s = automationUndo.pop();
   if (!s) return;
-  automationRedo.push(JSON.stringify({ lanes: state.automation.lanes, bypassed: state.automation.bypassed }));
-  Object.assign(state.automation, JSON.parse(s));
+  automationRedo.push(automationSnapshot());
+  automationRestore(s);
   saveAutomation();
   renderAutomation();
 };
@@ -6424,8 +6490,8 @@ $('automationUndo').onclick = () => {
 $('automationRedo').onclick = () => {
   const s = automationRedo.pop();
   if (!s) return;
-  automationUndo.push(JSON.stringify({ lanes: state.automation.lanes, bypassed: state.automation.bypassed }));
-  Object.assign(state.automation, JSON.parse(s));
+  automationUndo.push(automationSnapshot());
+  automationRestore(s);
   saveAutomation();
   renderAutomation();
 };
