@@ -1,5 +1,11 @@
 # Compose
 
+> **Unlisted, 15 Sep 2026.** Compose is out of the app at the owner's direction:
+> its compact panels left too few of the controls in reach to perform with.
+> Nothing is deleted — the code, the server routes, the tests and this document
+> are kept as they were. The rail item and the export dialog's Composition button
+> are behind `COMPOSE_LISTED` in `ui/rail.js`; `true` puts both back.
+
 What is built of `docs/COMPOSE-PLAN.md`, in the order it was built. The plan's
 fifth phase came first, at the owner's direction, so the view places panels
 made for its cells rather than full panels squeezed into them; then the view,

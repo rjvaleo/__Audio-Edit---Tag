@@ -10,6 +10,9 @@
 //     moving an iframe reloads it — so it must still be the same page after
 //     going in and out;
 //   - the cells can be resized, and the frame has to follow its cell.
+//
+// Compose is unlisted since 15 Sep 2026 (`COMPOSE_LISTED` in rail.js): these
+// open it the way its rail button would, and check nothing of it shows.
 
 import { test, expect } from '@playwright/test';
 
@@ -29,7 +32,11 @@ async function openFile(page) {
 }
 
 async function enterCompose(page) {
-  await page.locator('#leftRail [data-mode="compose"]').click();
+  // Unlisted, there is no rail button to press; it is opened the way the button
+  // would open it.
+  const listed = await page.evaluate(() => COMPOSE_LISTED);
+  if (listed) await page.locator('#leftRail [data-mode="compose"]').click();
+  else await page.evaluate(() => setMode('compose'));
   await expect.poll(() => page.evaluate(() => state.mode)).toBe('compose');
   await page.waitForFunction(() => seq.ready === true, { timeout: 20_000 });
   await page.waitForTimeout(300);
@@ -48,13 +55,19 @@ const PLACES = `(${(ids) => {
   return out;
 }})(${JSON.stringify(MOVED)})`;
 
-test('Compose is a workspace on the rail, and the three panels and the timeline are in it', async ({ page }) => {
+test('Compose is on the rail only while it is listed, and the three panels and the timeline are in it', async ({ page }) => {
   await openFile(page);
   const btn = page.locator('#leftRail [data-mode="compose"]');
-  await expect(btn).toBeVisible();
+  // Listed, it is on the rail and its Composition button is in the export
+  // dialog; unlisted, neither is anywhere to be seen.
+  const listed = await page.evaluate(() => COMPOSE_LISTED);
+  if (listed) await expect(btn).toBeVisible();
+  else await expect(btn, 'Compose is unlisted and still on the rail').toHaveCount(0);
+  expect(await page.evaluate(() => $('elAll').classList.contains('hidden')),
+    'the Composition export button does not follow the flag').toBe(!listed);
   await enterCompose(page);
   await expect(page.locator('#composeView')).toBeVisible();
-  await expect(btn).toHaveClass(/active/);
+  if (listed) await expect(btn).toHaveClass(/active/);
   const got = await page.evaluate(() => {
     const inside = (id, host) => !!document.getElementById(host)?.contains(document.getElementById(id));
     const gl = document.getElementById('visGl');

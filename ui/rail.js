@@ -31,6 +31,13 @@
 // already looks for, *as well as* the rail's own. The old markup's behaviour is
 // unchanged; only its arrangement and its clothes are new.
 
+/// **Compose is unlisted** (15 Sep 2026), at the owner's direction: its compact
+/// panels left too few controls in reach to perform with. Taken out of the rail,
+/// and its Composition button out of the export dialog — not deleted. `ui/compose.js`,
+/// its server routes, its tests and its docs are kept exactly as they were, and
+/// `true` here puts both back. Read by `compose.js` too, which loads after this.
+const COMPOSE_LISTED = false;
+
 (() => {
   /// Open or closed, remembered. A rail you have to re-open every time is one
   /// you leave open, and then it is not a collapsible rail.
@@ -188,6 +195,7 @@
     width(open);
 
     for (const item of ITEMS) {
+      if (item.mode === 'compose' && !COMPOSE_LISTED) continue;
       // The classes and data attributes `app.js` looks for. A workspace is a
       // `.mode-btn`; a panel is a `.rail-btn`. Both also carry `.rl-item`,
       // which is what this file's stylesheet dresses.
