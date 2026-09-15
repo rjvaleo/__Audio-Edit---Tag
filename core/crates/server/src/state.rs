@@ -678,6 +678,11 @@ impl App {
         self.data_dir.join("VISUAL-AUTOMATION.json")
     }
 
+    /// The folder of compositions, one file for each. See `compose.rs`.
+    pub fn compositions_path(&self) -> PathBuf {
+        self.data_dir.join("compositions")
+    }
+
     /// Write every open document to disk.
     ///
     /// Called after each edit. The whole map is rewritten rather than patched:

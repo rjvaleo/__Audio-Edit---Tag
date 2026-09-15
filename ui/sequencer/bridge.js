@@ -435,6 +435,29 @@
       }, (err) => {
         post({ type: 'seq:rendered', id: m.id, error: String(err && err.message || err) });
       });
+    } else if (m.type === 'seq:state-get') {
+      // A composition being kept: everything the sequencer is, and its take.
+      post({
+        type: 'seq:state', id: m.id,
+        state: typeof getPresetState === 'function' ? getPresetState() : null,
+        take: typeof perfLoaded !== 'undefined' ? perfLoaded : null,
+      });
+    } else if (m.type === 'seq:load') {
+      // A composition being opened: its state put back, and its take made the
+      // loaded one and kept at the head of the list of takes.
+      if (m.state && typeof applyPresetState === 'function') applyPresetState(m.state);
+      if (typeof perfLoaded !== 'undefined') {
+        if (typeof perfReplay !== 'undefined' && perfReplay && typeof perfStop === 'function') perfStop();
+        perfLoaded = m.take || null;
+        if (m.take && typeof perfLoadAll === 'function' && typeof perfSaveAll === 'function') {
+          const list = perfLoadAll().filter((t) => t.id !== m.take.id);
+          list.unshift(m.take);
+          perfSaveAll(list);
+        }
+        if (typeof perfRenderList === 'function') perfRenderList();
+        if (typeof perfUpdateHeader === 'function') perfUpdateHeader();
+        if (typeof perfDrawTimeline === 'function') perfDrawTimeline();
+      }
     } else if (m.type === 'seq:arm') {
       // The host's REC PERF: one arm for every recorder. Armed here, the take
       // begins when the engine's Play reaches `playAt`; disarmed before it

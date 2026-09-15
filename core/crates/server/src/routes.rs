@@ -313,6 +313,11 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/markers") => api_markers_set(app, req),
         ("GET", "/api/visual-automation") => api_visual_lanes_get(app, req),
         ("POST", "/api/visual-automation") => api_visual_lanes_set(app, req),
+        ("GET", "/api/compositions") => api_compositions_list(app),
+        ("GET", "/api/compositions/get") => api_composition_get(app, req),
+        ("POST", "/api/compositions") => api_composition_save(app, req),
+        ("POST", "/api/compositions/delete") => api_composition_delete(app, req),
+        ("POST", "/api/export/film") => api_export_film(app, req),
         ("POST", "/api/annot") => api_annot(app, req),
         ("GET", "/api/fx") => api_fx_catalogue(),
         ("GET", "/api/scales") => api_scales(),
@@ -854,6 +859,103 @@ fn api_visual_lanes_set(app: &Arc<App>, req: &Request) -> Response {
     }
     let store = app.visual_lanes.read().unwrap();
     Response::json(store.get(&key).to_string())
+}
+
+/// Every composition, by name. See `compose.rs`.
+fn api_compositions_list(app: &Arc<App>) -> Response {
+    let names = crate::compose::list(&app.compositions_path());
+    Response::json(
+        Value::obj()
+            .set("names", Value::Arr(names.into_iter().map(Value::Str).collect()))
+            .to_string(),
+    )
+}
+
+fn api_composition_get(app: &Arc<App>, req: &Request) -> Response {
+    let Some(name) = req.param("name") else {
+        return Response::error(400, "no name given");
+    };
+    match crate::compose::get(&app.compositions_path(), name) {
+        Some(v) => Response::json(v.to_string()),
+        None => Response::error(404, "no such composition"),
+    }
+}
+
+fn api_composition_save(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(name) = v.get("name").and_then(|n| n.as_str()).map(str::to_string) else {
+        return Response::error(400, "a composition needs a name");
+    };
+    let Some(composition) = v.get("composition").cloned() else {
+        return Response::error(400, "there is nothing to keep");
+    };
+    if let Err(e) = crate::compose::save(&app.compositions_path(), &name, composition) {
+        return Response::error(400, &e.to_string());
+    }
+    api_compositions_list(app)
+}
+
+fn api_composition_delete(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(name) = v.get("name").and_then(|n| n.as_str()) else {
+        return Response::error(400, "no name given");
+    };
+    if let Err(e) = crate::compose::delete(&app.compositions_path(), name) {
+        return Response::error(500, &e.to_string());
+    }
+    api_compositions_list(app)
+}
+
+/// A film, saved beside the document it was made from — in a folder of its own
+/// when one is named, which is how the Compose export puts the sound and the
+/// film of a composition together. The film is made in the page, so it arrives
+/// here as bytes.
+fn api_export_film(app: &Arc<App>, req: &Request) -> Response {
+    let Some(lib) = app.library_path() else {
+        return Response::error(400, "no library chosen");
+    };
+    let Some(rel) = req.param("p") else {
+        return Response::error(400, "no path given");
+    };
+    if resolve_within(&lib, rel).is_none() {
+        return Response::error(404, "no such file in the library");
+    }
+    if req.body.is_empty() {
+        return Response::error(400, "no film");
+    }
+    // Beside the document the way the sound's export is placed — the library
+    // joined to the document's own folder — so the two report the same folder.
+    // Built from the canonical path instead, the film came back under
+    // `/private/var/…` while the sound beside it said `/var/…`.
+    let mut dir = Path::new(rel).parent().map(|p| lib.join(p)).unwrap_or_else(|| lib.clone());
+    if let Some(folder) = req.param("folder").map(crate::docs::safe_name).filter(|f| !f.is_empty()) {
+        dir = dir.join(folder);
+    }
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return Response::error(500, &e.to_string());
+    }
+    let mut file = req
+        .param("file")
+        .map(crate::docs::safe_name)
+        .filter(|f| !f.is_empty())
+        .unwrap_or_else(|| "film".to_string());
+    if !file.to_lowercase().ends_with(".mp4") {
+        file.push_str(".mp4");
+    }
+    let target = crate::docs::unique(dir.join(file));
+    match std::fs::write(&target, &req.body) {
+        Ok(()) => Response::json(
+            Value::obj()
+                .set("path", target.to_string_lossy().to_string())
+                .set("bytes", Value::Num(req.body.len() as f64))
+                .to_string(),
+        ),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
 }
 
 fn api_markers_set(app: &Arc<App>, req: &Request) -> Response {
@@ -2735,12 +2837,24 @@ fn api_export(app: &Arc<App>, req: &Request) -> Response {
 
     // Beside the original, named for the engine and the three settings that
     // decide what you hear. Everything else goes *inside* the file.
-    let target = crate::docs::export_target_looped(
+    let mut target = crate::docs::export_target_looped(
         &lib,
         rel,
         &list.stretch,
         plan.as_ref().map(|p| (p.repeats, p.tail)),
     );
+    // Into a folder of its own beside the document, when one is named — the
+    // Compose export puts the sound and the film of a composition together.
+    if let Some(folder) = v
+        .get("folder")
+        .and_then(|f| f.as_str())
+        .map(crate::docs::safe_name)
+        .filter(|f| !f.is_empty())
+    {
+        if let (Some(parent), Some(name)) = (target.parent().map(Path::to_path_buf), target.file_name().map(|n| n.to_os_string())) {
+            target = crate::docs::unique(parent.join(folder).join(name));
+        }
+    }
     if let Some(parent) = target.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
             return Response::error(500, &e.to_string());

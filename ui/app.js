@@ -2887,6 +2887,16 @@ function exportLoopRange() {
 /// `/api/export`, which is also where the progress comes from. A four-minute
 /// file takes twenty-five seconds and the old call simply blocked for all of
 /// it with nothing on screen.
+/// Whoever is waiting for the export under way to finish — the Compose export,
+/// which films once the sound is written. Each is handed how it ended.
+let exportWaiters = [];
+function exportFinished() {
+  return new Promise((resolve) => exportWaiters.push(resolve));
+}
+function exportSettle(outcome) {
+  for (const w of exportWaiters.splice(0)) w(outcome);
+}
+
 /// What is added to the export once the server has written it: the
 /// sequencer's stem, and the GRAIN switch. Set by `runExport`, read by
 /// `pollExport` when the file is there. `null` when nothing is to be added.
@@ -2902,9 +2912,11 @@ function exportWithSeq() {
   return sourceOn('seq');
 }
 
-async function runExport(range, repeats, tail) {
+async function runExport(range, repeats, tail, opts = {}) {
   if (!state.selectedFile) return;
   const body = { p: state.selectedFile.path, bits: state.exportBits };
+  // Into a folder of its own beside the document — the Compose export's.
+  if (opts.folder) body.folder = opts.folder;
   const withSeq = exportWithSeq();
   const grain = sourceOn('grain');
   exportAfter = (withSeq || !grain)
@@ -2920,6 +2932,7 @@ async function runExport(range, repeats, tail) {
     await postJSON('/api/export', body);
   } catch (e) {
     toast('Export failed: ' + e.message);
+    exportSettle({ error: e.message });
     return;
   }
   showExportProgress(true);
@@ -2960,7 +2973,7 @@ let exportSerial = null;
 
 async function pollExport() {
   let s;
-  try { s = await api('/api/export'); } catch { showExportProgress(false); return; }
+  try { s = await api('/api/export'); } catch { showExportProgress(false); exportSettle({ error: 'the export could not be asked about' }); return; }
 
   const pct = Math.round((s.fraction || 0) * 100);
   $('epFill').style.width = pct + '%';
@@ -2975,8 +2988,8 @@ async function pollExport() {
   if (s.serial === exportSerial) return;
   exportSerial = s.serial;
 
-  if (s.error) { toast('Export failed: ' + s.error); return; }
-  if (s.cancelled || s.phase === 'cancelled') { toast('Export stopped — nothing written'); return; }
+  if (s.error) { toast('Export failed: ' + s.error); exportSettle({ error: s.error }); return; }
+  if (s.cancelled || s.phase === 'cancelled') { toast('Export stopped — nothing written'); exportSettle({ cancelled: true }); return; }
   if (s.path) {
     const name = s.path.split('/').pop();
     const secs = state.view?.sampleRate ? (s.frames / state.view.sampleRate) : 0;
@@ -2987,12 +3000,16 @@ async function pollExport() {
         await exportAddStem(s, after);
       } catch (e) {
         toast('Exported, but the sequencer could not be added: ' + e.message);
+        exportSettle({ path: s.path, error: e.message });
         return;
       }
     }
     const what = after && after.withSeq ? (after.grain ? ' with the sequencer' : ', the sequencer alone') : after && !after.grain ? ', silent — GRAIN is off' : '';
     toast(`Exported ${secs.toFixed(2)}s, ${state.exportBits}-bit AIFF beside the original${what} — ${name}`);
+    exportSettle({ path: s.path, frames: s.frames });
+    return;
   }
+  exportSettle({ error: 'nothing was written' });
 }
 
 /// The sequencer, rendered for the export's length from where it starts,
@@ -3237,7 +3254,7 @@ function videoWhen(seconds) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-async function runVideoExport() {
+async function runVideoExport({ save = null } = {}) {
   if (videoRun) {
     videoRun.abort();
     return;
@@ -3453,9 +3470,17 @@ async function runVideoExport() {
       onStage: say,
     });
     const name = (state.selectedFile.name || 'room').replace(/\.[^.]+$/, '');
+    const filmName = `${name} — room ${size.w}x${size.h} ${fps}fps.mp4`;
+    if (save) {
+      // Handed to whoever asked for the film — the Compose export saves it
+      // beside the sound, on the server, rather than as a download.
+      const where = await save(blob, filmName);
+      $('elStatus').textContent = `saved · ${(blob.size / 1e6).toFixed(1)} MB`;
+      return where || true;
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${name} — room ${size.w}x${size.h} ${fps}fps.mp4`;
+    a.download = filmName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
     $('elStatus').textContent = `saved · ${(blob.size / 1e6).toFixed(1)} MB`;
@@ -9382,9 +9407,8 @@ function buildVisModulePicker() {
   fillVisPicker(sel);
   sel.onchange = () => setVisual(sel.value);
   box.appendChild(sel);
-  // The Compose picture bar reads the same menu.
-  const cp = $('cpVisual');
-  if (cp) fillVisPicker(cp);
+  // The Compose picture bar reads the same menu, and refills its copy itself.
+  if (typeof composeVisPickerBuilt === 'function') composeVisPickerBuilt();
   paintVisModulePicker();
 }
 
@@ -9415,10 +9439,10 @@ function fillVisPicker(sel) {
 }
 
 function paintVisModulePicker() {
-  // The stage bar's picker and the Compose picture bar's, told the same thing.
-  for (const sel of [$('rgVisual'), $('cpVisual')]) {
-    if (sel) paintVisPicker(sel);
-  }
+  const sel = $('rgVisual');
+  if (sel) paintVisPicker(sel);
+  // The Compose picture bar's copy, told the same thing.
+  if (typeof composeVisPickerPainted === 'function') composeVisPickerPainted();
 }
 
 /// One picker, told what is showing.
@@ -9981,13 +10005,13 @@ function paintSectionPicker(sel, kind, select) {
 
 function paintVisualPresets(select) {
   paintSectionPicker($('vpPick'), 'visual', select);
-  // The Compose picture bar's copy of the same list.
-  paintSectionPicker($('cpLook'), 'visual', select);
+  // The Compose picture bar keeps a copy of this list, and repaints it itself.
+  if (typeof composePresetsPainted === 'function') composePresetsPainted('visual', select);
 }
 function paintGrainPresets(select) {
   paintSectionPicker($('gpPick'), 'grain', select);
-  // The compact grain panel's copy of the same list.
-  paintSectionPicker($('cgCloud'), 'grain', select);
+  // The compact grain panel keeps a copy of this list, and repaints it itself.
+  if (typeof composePresetsPainted === 'function') composePresetsPainted('grain', select);
 }
 
 $('vpPick')?.addEventListener('change', () => {
@@ -10133,6 +10157,20 @@ function seqArm(on) {
   seqPost({ type: 'seq:arm', on: !!on });
 }
 
+/// Ask the sequencer for its state and its take, for a composition. Resolves
+/// to `{ state, take }`, or null if it is not loaded or does not answer.
+let seqStateId = 0;
+const seqStateWaiting = new Map();
+function seqRequestState() {
+  if (!seqLoaded()) return Promise.resolve(null);
+  const id = ++seqStateId;
+  return new Promise((resolve) => {
+    seqStateWaiting.set(id, resolve);
+    seqPost({ type: 'seq:state-get', id });
+    setTimeout(() => { if (seqStateWaiting.delete(id)) resolve(null); }, 3000);
+  });
+}
+
 /// The engine's transport, told to the sequencer. Play plays it *from where
 /// the engine is*; stop stops it. The position is the engine's output time in
 /// seconds — `playbackTime` — which is the one clock both run on.
@@ -10171,6 +10209,12 @@ window.addEventListener('message', (e) => {
     seqSync(engine.playing);
     // A frame that reloaded comes up in its full layout; say compact again.
     if (seq.compact) seqPost({ type: 'seq:compact', on: true });
+  } else if (m.type === 'seq:state') {
+    const done = seqStateWaiting.get(m.id);
+    if (done) {
+      seqStateWaiting.delete(m.id);
+      done({ state: m.state || null, take: m.take || null });
+    }
   } else if (m.type === 'seq:take') {
     seq.take = m.take || null;
     seq.tempo = m.tempo || null;

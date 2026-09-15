@@ -3947,3 +3947,8 @@ body.composeview #mbRes, body.composeview #mbPeakHz { display: none !important; 
 
 /* A sequencer lane chosen on the timeline: it is edited in Seq. */
 .automation-body .perf-seq-note { padding: 10px 20px; font-size: 10px; letter-spacing: 1px; color: #ff60b8; }
+
+/* The composition bar, over the arrangement. */
+.cv-comp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 20px; background: var(--bg3); border-bottom: 1px solid var(--border); }
+.cv-comp-tag { font-size: 10px; letter-spacing: 2px; color: var(--accent); }
+.cv-comp-pick { max-width: 240px; }

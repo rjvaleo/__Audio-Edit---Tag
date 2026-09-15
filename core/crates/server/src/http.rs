@@ -35,6 +35,19 @@ impl Request {
 /// Cap on request size. A tag-edit payload is a few kilobytes; anything vastly
 /// larger is a mistake or an attack, and refusing it keeps memory bounded.
 const MAX_BODY: usize = 8 * 1024 * 1024;
+/// The two routes that carry media rather than settings: the sequencer's stem,
+/// summed into a finished export, and a film saved beside it. A minute of stereo
+/// as floats is twenty-three megabytes and a film can be hundreds, so these may
+/// carry far more; everything else keeps the small cap.
+const MAX_MEDIA_BODY: usize = 2 * 1024 * 1024 * 1024;
+
+/// How much body a request to `path` may carry.
+pub fn body_cap(path: &str) -> usize {
+    match path {
+        "/api/export/stem" | "/api/export/film" => MAX_MEDIA_BODY,
+        _ => MAX_BODY,
+    }
+}
 const MAX_HEADER_LINES: usize = 100;
 
 pub fn parse_request<R: Read>(stream: R) -> io::Result<Request> {
@@ -68,15 +81,22 @@ pub fn parse_request<R: Read>(stream: R) -> io::Result<Request> {
         .get("content-length")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    let mut body = vec![0u8; len.min(MAX_BODY)];
+    let (raw_path, raw_query) = target.split_once('?').unwrap_or((target.as_str(), ""));
+    let path = percent_decode(raw_path);
+    // Refused rather than cut short. A body cut to the cap is still a body: a
+    // stem cut to eight megabytes was summed into an export as the first twenty
+    // seconds of the sequencer, with nothing said.
+    if len > body_cap(&path) {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "request body too large"));
+    }
+    let mut body = vec![0u8; len];
     if !body.is_empty() {
         r.read_exact(&mut body)?;
     }
 
-    let (raw_path, raw_query) = target.split_once('?').unwrap_or((target.as_str(), ""));
     Ok(Request {
         method,
-        path: percent_decode(raw_path),
+        path,
         query: parse_query(raw_query),
         headers,
         body,
@@ -415,5 +435,32 @@ mod tests {
         let s = String::from_utf8_lossy(&r.body).into_owned();
         assert_eq!(s, r#"{"error":"no such \"file\""}"#);
         assert_eq!(r.status, 404);
+    }
+}
+
+#[cfg(test)]
+mod body_cap_tests {
+    use super::*;
+
+    fn request(path: &str, len: usize) -> Vec<u8> {
+        let mut raw = format!("POST {path} HTTP/1.1\r\nContent-Length: {len}\r\n\r\n").into_bytes();
+        raw.extend(std::iter::repeat(b'a').take(len));
+        raw
+    }
+
+    #[test]
+    fn a_settings_body_over_its_cap_is_refused_not_cut_short() {
+        let raw = request("/api/save", MAX_BODY + 1);
+        assert!(parse_request(&raw[..]).is_err(), "an oversized settings body was accepted");
+    }
+
+    #[test]
+    fn a_stem_or_a_film_may_carry_more_than_a_settings_body() {
+        for path in ["/api/export/stem", "/api/export/film"] {
+            let raw = request(path, MAX_BODY + 1);
+            let req = parse_request(&raw[..]).expect("a media body over eight megabytes was refused");
+            assert_eq!(req.body.len(), MAX_BODY + 1, "{path} was cut short");
+        }
+        assert_eq!(body_cap("/api/tags"), MAX_BODY);
     }
 }

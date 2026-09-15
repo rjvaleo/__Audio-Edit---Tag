@@ -324,6 +324,19 @@ pub fn export_target_looped(
     unique(dir.join(export_name_looped(rel, stretch, looped)))
 }
 
+/// A file or folder name made from something a person typed.
+///
+/// Letters, digits and a few marks are kept; anything else — a slash above all —
+/// becomes a hyphen, and leading and trailing dots and spaces go, so a name can
+/// never climb out of the folder it is put in, or hide itself there.
+pub fn safe_name(s: &str) -> String {
+    let kept: String = s
+        .chars()
+        .map(|c| if c.is_alphanumeric() || " -_.()&,+'".contains(c) { c } else { '-' })
+        .collect();
+    kept.trim_matches(|c: char| c == '.' || c.is_whitespace()).chars().take(96).collect()
+}
+
 /// A name nothing is using yet.
 ///
 /// Exporting the same settings twice is a normal thing to do — a second take
@@ -603,5 +616,14 @@ mod doc_json_tests {
             matches!(back.get("never.aif").get("lanes"), Some(Value::Arr(a)) if a.is_empty()),
             "a document with nothing stored did not come back empty"
         );
+    }
+
+    #[test]
+    fn a_safe_name_keeps_its_words_and_loses_its_way_out() {
+        assert_eq!(safe_name("Night piece (take 2)"), "Night piece (take 2)");
+        assert_eq!(safe_name("../../etc/passwd"), "-..-etc-passwd");
+        assert_eq!(safe_name("  .hidden.  "), "hidden");
+        assert!(!safe_name("a/b\\c").contains('/') && !safe_name("a/b\\c").contains('\\'));
+        assert_eq!(safe_name(" ... "), "");
     }
 }
