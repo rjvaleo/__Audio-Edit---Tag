@@ -535,6 +535,8 @@
         if (typeof perfUpdateHeader === 'function') perfUpdateHeader();
         if (typeof perfDrawTimeline === 'function') perfDrawTimeline();
       }
+    } else if (m.type === 'seq:take-edit') {
+      takeEdit(m);
     } else if (m.type === 'seq:arm') {
       // The host's REC PERF: one arm for every recorder. Armed here, the take
       // begins when the engine's Play reaches `playAt`; disarmed before it
@@ -589,7 +591,14 @@
       gs.sort((a, b) => a.t0 - b.t0);
       const pts = [];
       const snap = p.snapshot && p.snapshot.sliders ? parseFloat(p.snapshot.sliders[id]) : NaN;
-      if (Number.isFinite(snap)) pts.push([start, unit(snap)]);
+      // Where the take found the control, from its start, held until the first
+      // gesture takes it — which is how the take plays it: the knob stays put,
+      // then moves. It used to be drawn as a slope into the first gesture. Left
+      // out when the first gesture starts from that same value, which says it.
+      if (Number.isFinite(snap) && Math.abs(gs[0].points[0][1] - snap) > 1e-9) {
+        pts.push([start, unit(snap)]);
+        if (gs[0].t0 > 1e-6) pts.push([start + gs[0].t0, unit(snap)]);
+      }
       let held = null;
       for (const g of gs) {
         if (held !== null) pts.push([start + g.t0, held]);
@@ -615,10 +624,82 @@
       const label = name(g);
       if (label) discretes.push({ t: start + g.t, label });
     }
+    // Every control a lane can move, with where the take found it on nought to
+    // one — what the host's editor offers, and where a new lane starts.
+    const controls = PERF_SLIDERS.map((id) => {
+      const el = document.getElementById(id);
+      const lo = el ? +el.min : 0;
+      const hi = el ? +el.max : 100;
+      const snap = p.snapshot && p.snapshot.sliders ? parseFloat(p.snapshot.sliders[id]) : NaN;
+      const v = Number.isFinite(snap) ? snap : el ? +el.value : lo;
+      return [id, typeof perfLaneLabel === 'function' ? perfLaneLabel(id) : id,
+        hi > lo ? Math.max(0, Math.min(1, (v - lo) / (hi - lo))) : 0.5];
+    });
     return {
       type: 'seq:take', tempo,
-      take: { id: p.id, name: p.name, startAt: start, duration: +p.duration || 0, lanes, discretes },
+      take: { id: p.id, name: p.name, startAt: start, duration: +p.duration || 0, lanes, discretes, controls },
     };
+  }
+
+  /// **The host's timeline, editing the take.** A lane arrives as `takeMessage`
+  /// sends one — points in the engine's output seconds, on nought to one — and
+  /// goes back into the take as one gesture on its control: the points in the
+  /// take's own time and the control's own units, and the first of them the
+  /// value the take finds the control at. `to` moves the lane onto another
+  /// control; no points removes it; `lanes`, a whole set, replaces every lane
+  /// the take has, which is what an undo sends. A point before the take began
+  /// moves its start back, and one after it ended moves its end on. Nothing is
+  /// done while a take is being recorded.
+  function takeEdit(m) {
+    const p = typeof perfLoaded !== 'undefined' ? perfLoaded : null;
+    if (!p || (typeof perfRec !== 'undefined' && perfRec)) return false;
+    const whole = Array.isArray(m.lanes);
+    const edits = whole ? m.lanes : [{ id: m.id, to: m.to, points: m.points }];
+    if (whole) p.gestures = p.gestures.filter((g) => g.kind !== 'slider');
+    for (const e of edits) {
+      const from = String(e.id || '').replace(/^seq:/, '');
+      const to = String(e.to || from).replace(/^seq:/, '');
+      if (!PERF_SLIDER_SET.has(from) || !PERF_SLIDER_SET.has(to)) continue;
+      const pts = (Array.isArray(e.points) ? e.points : [])
+        .filter((q) => Array.isArray(q) && Number.isFinite(+q[0]) && Number.isFinite(+q[1]))
+        .map(([t, v]) => [+t, Math.max(0, Math.min(1, +v))])
+        .sort((a, b) => a[0] - b[0]);
+      p.gestures = p.gestures.filter((g) => !(g.kind === 'slider' && (g.id === from || g.id === to)));
+      if (!pts.length) continue;
+      const began = +p.startAt || 0;
+      if (pts[0][0] < began) {
+        const back = began - pts[0][0];
+        for (const g of p.gestures) {
+          if (g.kind === 'slider') {
+            g.t0 += back;
+            g.t1 += back;
+            g.points = g.points.map(([t, v]) => [t + back, v]);
+          } else {
+            g.t += back;
+          }
+        }
+        p.startAt = pts[0][0];
+        p.duration = (+p.duration || 0) + back;
+      }
+      const start = +p.startAt || 0;
+      const el = document.getElementById(to);
+      const lo = el ? +el.min : 0;
+      const hi = el ? +el.max : 100;
+      const raw = (v) => +(lo + v * (hi - lo)).toFixed(2);
+      const points = pts.map(([t, v]) => [+(t - start).toFixed(3), raw(v)]);
+      p.gestures.push({ kind: 'slider', id: to, t0: points[0][0], t1: points[points.length - 1][0], points, gen: false });
+      p.snapshot = p.snapshot || {};
+      p.snapshot.sliders = { ...(p.snapshot.sliders || {}), [to]: String(raw(pts[0][1])) };
+      p.duration = Math.max(+p.duration || 0, pts[pts.length - 1][0] - start);
+    }
+    p.gestures.sort((a, b) => (a.t0 ?? a.t) - (b.t0 ?? b.t));
+    if (typeof perfSelectedGesture !== 'undefined') perfSelectedGesture = null;
+    if (typeof perfPersistLoaded === 'function') perfPersistLoaded();
+    if (typeof perfUpdateSelInfo === 'function') perfUpdateSelInfo();
+    if (typeof perfUpdateHeader === 'function') perfUpdateHeader();
+    if (typeof perfDrawTimeline === 'function') perfDrawTimeline();
+    postTake();
+    return true;
   }
   let lastTake = '';
   function postTake() {
@@ -632,7 +713,7 @@
 
   // For the tests, and for anyone reading the frame: where this clock thinks
   // the engine is.
-  window.seqBridge = { predicted, stepDur, locate, renderFilm, takeMessage, takePlayAt, takeValuesAt, get last() { return last; } };
+  window.seqBridge = { predicted, stepDur, locate, renderFilm, takeMessage, takePlayAt, takeValuesAt, takeEdit, get last() { return last; } };
 
   // Thirty times a second, which is what the engine's meter is polled at.
   setInterval(tick, 33);

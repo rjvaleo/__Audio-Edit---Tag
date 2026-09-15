@@ -173,7 +173,8 @@ timeline is as it was; a click on a heading folds the group, kept in
 `audiolab.perfGroups`. The lanes menu is grouped the same way. A sequencer lane
 can be chosen and is outlined on the timeline, but it is edited in Seq, where
 it was recorded: the editor shows a note instead, and Delete says so rather
-than removing anything. The sequencer's lanes are drawn in its own colours.
+than removing anything. *(Until 14 Sep 2026: a sequencer lane now opens in the
+editor here — see "the sequencer's lanes, edited here" below.)* The sequencer's lanes are drawn in its own colours.
 
 **One arm.** REC PERF arms the sequencer's recorder with the grain's while SEQ
 is on and the sequencer is loaded (`seqArm`, `seq:arm`); the engine's Play
@@ -195,8 +196,8 @@ before it; the take arrives as a SEQ lane in engine seconds with its scale
 change and tempo, grouped beside a grain lane, in the menu and the header, and
 leaves when deleted; REC PERF arms and disarms the sequencer's recorder, and
 leaves it alone with SEQ off; the playhead is output time; a group folds and
-opens with a click, and a sequencer lane opens a note rather than the editor
-and survives Delete; the bars are four beats apart at the tempo and go with SEQ
+opens with a click, and a sequencer lane opens in the editor and Delete removes
+it from its take; the bars are four beats apart at the tempo and go with SEQ
 off.
 
 ---
@@ -392,3 +393,50 @@ composition's export renders the sequencer once; live, a jump back puts the take
 back and a take that ran out comes round again. Unit tests: `routes.rs` — a
 selection maps to output frames by exact division, and a loop is reported
 clamped to the document.
+
+## After the phases: the sequencer's lanes, edited here
+
+*14 Sep 2026.* Phase two showed the sequencer's lanes on the timeline and left
+them to be edited in Seq, until the bridge had a message for it. It has one now,
+and a sequencer lane opens in the same editor as the grain's and the picture's.
+
+**In the editor's shape.** `seqEditLane` turns a lane of the take — points of
+`[output seconds, 0..1]`, as `takeMessage` sends them — into breakpoints in
+output frames at the file's rate, joined by straight lines, since a take moves
+in straight lines between its points; the curve menu is fixed at linear and the
+on switch is hidden, because a take has no switch per lane. The editor spans
+the take as well as the sound (`laneSpanFrames`), since a take can run past the
+sound's end, as the timeline above already allowed.
+
+**Every edit goes back to the take.** `laneSave` sends a sequencer lane as
+`seq:take-edit` (`seqLaneSave`), and draws the change at once rather than when
+the take comes back. In the frame, `takeEdit` makes the lane the control's
+gesture again: its points in the take's own time and the control's own units,
+and the first of them the value the take finds the control at. A point before
+the take began moves the take's start back, one after it ended moves its end
+on, and the take is kept in the sequencer's list and sent back to the host.
+Nothing is edited while a take is being recorded.
+
+- **Moved onto another control** from the lane's menu — the sequencer's
+  controls, named as the take names them — the lane's moves go with it.
+- **Deleted**, from the × or DEL, the control's gestures are removed from the
+  take.
+- **+ LANE**, with a sequencer lane open, adds the sequencer's first control
+  that has none, flat across the take at where the take found it.
+- **Undo** keeps the take's lanes with the grain's and the picture's; undone,
+  they are sent back whole (`lanes`), and only when they differ.
+
+**The lane is drawn as the take plays it.** A control a take moves stays where
+the take found it until its first gesture, then moves. The lane used to be drawn
+as a slope from the take's start into that gesture; it is held flat and stepped
+now, and the grain's bypass no longer dims a sequencer lane, since a take plays
+regardless of it.
+
+Tests: `tests/ui/compose-timeline.spec.mjs` — a sequencer lane opens in the
+editor on its own control, with straight lines only, and Delete removes it from
+the take; a lane's last point dragged in the editor reaches the take in the
+take's own time and the control's own units and is kept in the sequencer's list,
+with the take's start, its first value and its scale change left where they
+were; + LANE adds the first free control flat at its value; the lane moved onto
+another control takes its moves with it; and an undo puts it back, with the
+dragged point still where it was put.

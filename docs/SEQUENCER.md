@@ -73,6 +73,11 @@ once, so the knobs stand where the take had them, and the rest runs on the
 clock. Play and pause events inside the take are ignored — the transport is
 the engine's now. Stop stops it. Its own ▶ PLAY PERF still works alone.
 
+*(14 Sep 2026.)* The take is edited from the host too: its lanes open in the
+host's lane editor, and each edit comes back as `seq:take-edit`, which the
+bridge turns into the control's gesture in the take — see `docs/COMPOSE.md`,
+"the sequencer's lanes, edited here".
+
 The sequencer's own play button still works on its own, for auditioning a
 pattern. There is no tempo on the engine's side — a stretch has a ratio, not
 a BPM — so the tempo is the sequencer's, and the document has no bars. When
