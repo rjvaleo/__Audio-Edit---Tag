@@ -178,6 +178,9 @@ test('the controls can be clicked, not just dispatched at', async ({ page }) => 
   await openApp(page);
   await page.evaluate(() => setMode('room'));
   await page.waitForSelector('#roomAdminBody #roomEdit', { state: 'visible' });
+  // The picked point's channels are only there while a point is picked. Pick
+  // one, so they are asked about as well, rather than reported as zero-size.
+  await page.evaluate(() => { roomEdit.layers.solid = true; paintRoomBeads(); roomPick('path:0'); });
 
   // The panel is asked what is in it rather than working from a written list of
   // ids. A list somebody has to remember to extend has already failed twice in

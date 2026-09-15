@@ -221,7 +221,7 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
 /// `state.mode !== 'edit'` in the play path, and adding a third mode quietly
 /// turned that into "the room plays raw" — which is the granular engine not
 /// running when you press play in the room.
-const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq';
+const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq' || m === 'compose';
 
 /// The modes where the library is an overlay drawer rather than a docked
 /// column. Both of them give the whole width to something else — the editor's
@@ -941,6 +941,7 @@ function pausePlayback() {
   stopSwarm();
   seqSync(false);
   captureTransport(false);
+  if ($('perfCanvas')?.offsetParent) perfDrawTimeline();
 }
 
 function reflectTransport() {
@@ -1041,9 +1042,18 @@ function startTransportLoop() {
     followPlayhead();
     updatePlayhead();
     updateOverviewPlayhead();
+    // The timeline's playhead, where the timeline is on screen — the dock's
+    // Automation tab, or Compose's arrangement. Fifteen times a second: a take
+    // can hold thousands of breakpoints, and the head does not need sixty.
+    const now = performance.now();
+    if (now - perfTickAt > 66 && $('perfCanvas')?.offsetParent) {
+      perfTickAt = now;
+      perfDrawTimeline();
+    }
   };
   tick();
 }
+let perfTickAt = 0;
 
 function paintTime() {
   $('timeNow').textContent = fmtTime(playbackTime());
@@ -1517,15 +1527,18 @@ function setMode(mode) {
   if (engine.playing && engine.raw !== !docMode) pausePlayback();
 
   const wasRoom = state.mode === 'room';
+  const wasCompose = state.mode === 'compose';
   state.mode = mode;
   const editing = mode === 'edit';
   const room = mode === 'room';
   const seq = mode === 'seq';
+  const compose = mode === 'compose';
 
   // Borrowed elements go home before anything is measured or toggled. Leaving
   // this until later would have the mode's own show/hide rules applied to
   // elements still sitting inside a hidden view.
   if (wasRoom && !room) leaveRoomView();
+  if (wasCompose && !compose) composeLeave();
 
   // The spectrogram is not an option in edit mode, it is what edit mode is for.
   state.showSpec = editing;
@@ -1553,15 +1566,17 @@ function setMode(mode) {
   // The lane is the sound as a document — the thing you cut. The room is the
   // sound as a picture, and it takes the whole middle; the overview strip along
   // the top is what stays, because that is the one that says *where you are*.
-  $('lane').classList.toggle('hidden', room || seq);
-  $('seqView')?.classList.toggle('hidden', !seq);
-  if (seq) seqEnsureFrame();
+  $('lane').classList.toggle('hidden', room || seq || compose);
+  // Compose lays the same frame over its SEQ cell — see `composeEnter`.
+  $('seqView')?.classList.toggle('hidden', !(seq || compose));
+  if (seq || compose) seqEnsureFrame();
   document.querySelectorAll('#leftRail .mode-btn').forEach((b) =>
     b.classList.toggle('active', b.dataset.mode === mode));
-  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : 'Browse';
+  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : compose ? 'Compose' : 'Browse';
   document.body.classList.toggle('editing', editing);
   document.body.classList.toggle('roomview', room);
   document.body.classList.toggle('seqview', seq);
+  document.body.classList.toggle('composeview', compose);
   // The modes that give the whole width to the middle, so the library becomes
   // a floating drawer rather than a docked column. Its own class rather than
   // `.editing, .roomview` repeated down the stylesheet: the drawer's geometry
@@ -1572,6 +1587,7 @@ function setMode(mode) {
   // After the toggles, so the parts it borrows are in the state this mode gave
   // them before they are moved.
   if (room) enterRoomView();
+  if (compose) composeEnter();
 
   // Edit has nothing to say about folder tags, and the rail's Browse tools
   // only make sense in Browse — but the library button still opens the drawer.
@@ -10407,7 +10423,7 @@ function paintRoomBeads() {
     svg.setAttribute('class', 'room-path');
     host.appendChild(svg);
   }
-  const show = roomEdit.on && state.mode === 'room'
+  const show = roomEdit.on && (state.mode === 'room' || state.mode === 'compose')
     && typeof visModuleKey === 'function' && visModuleKey() === 'room';
   svg.classList.toggle('hidden', !show);
   if (!show) return;

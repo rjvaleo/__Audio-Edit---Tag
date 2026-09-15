@@ -3902,3 +3902,45 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .cp-bar select { max-width: 130px; }
 .cp-sep { flex: 1 1 auto; }
 .cp-room { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; container-type: size; }
+
+/* ── COMPOSE: the view ────────────────────────────────────────────────────────
+   Three cells across the top, the arrangement under them, the transport at the
+   foot. Sizes are custom properties set from `cvSizes`. */
+.composeview { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+.composeview.hidden { display: none; }
+.cv-top {
+  flex: 0 0 var(--cv-top, 56%); min-height: 0; min-width: 0;
+  display: grid;
+  grid-template-columns: var(--cv-c0, 30%) 5px var(--cv-c1, 34%) 5px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.cv-cell { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--surface); }
+.cv-seq { background: #0a0c0e; }
+.cv-vgrip { cursor: ew-resize; background: var(--line); touch-action: none; }
+.cv-split { flex: 0 0 5px; cursor: ns-resize; background: var(--line); touch-action: none; }
+.cv-vgrip:hover, .cv-vgrip.dragging, .cv-split:hover, .cv-split.dragging { background: var(--accent); }
+.cv-arrange { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.cv-arrange > .perf-panel { border-top: 0; }
+.cv-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding-right: 8px; background: var(--surface); border-top: 1px solid var(--line); }
+.cv-foot > .transportbar { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; }
+.cv-foot > #exportBtn, .cv-foot > #videoBtn { flex: 0 0 auto; }
+
+/* The sequencer's frame is not moved — moving an iframe reloads it — so its
+   view is laid over the SEQ cell, at the cell's place, by `cvDockSeq`. Under
+   the scrim and every overlay. */
+.seqview.seq-docked { position: fixed; z-index: 4; flex: none; }
+
+/* The room in the picture cell: the picture, without the meter column or the
+   editor's furniture, which are the other workspaces'. */
+.cp-room > .master-bus { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.cp-room > .master-bus > .mb-side { display: none; }
+.cp-room > .master-bus > .mb-main { flex: 1 1 auto; min-width: 0; }
+body.composeview #roomEdit, body.composeview #ridgeEdit, body.composeview #room3dEdit,
+body.composeview #stageEdit, body.composeview #textEdit, body.composeview #roomEditOpen,
+body.composeview #mbRes, body.composeview #mbPeakHz { display: none !important; }
+.cp-room .mb-cell-3d.re-framed {
+  flex: 0 0 auto; margin: auto;
+  width: min(100%, calc(100cqh * var(--rv-ratio, 1))); height: auto;
+  aspect-ratio: var(--rv-ratio, 1); outline: 1px solid var(--line-2);
+}
+.cp-room .mb-cell-3d:not(.re-framed) { flex: 1 1 auto; }

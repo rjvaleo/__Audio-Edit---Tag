@@ -69,3 +69,62 @@ VIEW, LOOK, Front, Side, Top, Frame and ⤢, over a place for the room
 `paintVisModulePicker` paints both. LOOK is painted with the stage bar's list
 and recalls through its picker. The camera buttons are the Room tab's set
 views. ⤢ goes to the Visual workspace.
+
+---
+
+## Phase one: the view
+
+A sixth workspace on the rail, **Compose**, between Visual and Seq.
+
+```
+┌ GRAIN ──────────┬ SEQ ───────────────┬ picture ────────────┐
+│ compact panel   │ the sequencer,     │ VIEW · LOOK · camera │
+│                 │ compact, laid over │ the room             │
+│                 │ this cell          │                      │
+├─────────────────┴────────────────────┴──────────────────────┤
+│ the arrangement — the PERFORMANCE panel, full width          │
+├──────────────────────────────────────────────────────────────┤
+│ transport · GRAIN · SEQ · Export · Video                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Moved in, not copied.** The room (`#masterBus`) goes into the picture cell,
+the transport and both export buttons into the foot, and the PERFORMANCE panel
+(`#perfPanel`) into the arrangement. Each is put back exactly where it came
+from when the view is left — `CV_PARTS`, `cvAdopt`, `cvReleaseAll` — the same
+contract the Visual workspace keeps with `roomAdopt`. The arrangement carries
+the `automation-body` class, since the panel's colours are scoped to it.
+
+**The sequencer's frame is laid over its cell, not moved.** Taking an iframe
+out of the page and putting it back reloads it, and a reload loses its audio,
+its pattern and its take. So `#seqView` stays where it is in the page, is
+shown, and is fixed over `#cvSeq` at the cell's rectangle. A watch that runs
+only while the view is open keeps it there whatever moves the cell — a grip,
+the rail opening, the window (`cvDockSeq`, `cvWatch`: one measurement a frame,
+a write only on a change). Leaving takes the position off and puts the
+sequencer back in its full layout; the Seq workspace shows it as it always
+has. The frame sits under the scrim and every overlay.
+
+**The room in its cell** answers the camera and shows its beads —
+`roomEdit.on` is set, and the bead painter admits Compose as well as the
+Visual workspace — without the Room tab's editor panel, the meter column, the
+resolution buttons or the peak readout, which belong to the other workspaces.
+⤢ on its bar goes to the Visual workspace.
+
+**Sizes.** Three grips: two between the cells, one under the top row. Dragged
+with the usual lost-release guard, remembered in `audiolab.compose.sizes.v1`,
+reset with a double-click. The frame, the pad, the timeline and the room are
+redrawn at the new size.
+
+**The timeline's playhead moves while playing** now, fifteen times a second,
+wherever the timeline is on screen — the dock's Automation tab or the
+arrangement. It used to be redrawn only when the lanes changed. Fifteen rather
+than sixty because a recorded take can hold thousands of breakpoints.
+
+Tests: `tests/ui/compose-view.spec.mjs` — the workspace is on the rail with the
+three panels, the room, the transport, the exports and the timeline in it;
+everything moved in goes home exactly, through Edit and through the Visual
+workspace; the sequencer is laid over its cell, compact, and is the same page
+after leaving for the Seq workspace and coming back; the grips resize the cells,
+the frame follows, the sizes survive a reload and reset; the small picture
+dollies on the wheel, shows its beads, and the timeline spans the arrangement.

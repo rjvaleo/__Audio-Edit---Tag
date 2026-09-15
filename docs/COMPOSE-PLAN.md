@@ -268,7 +268,7 @@ in `docs/COMPOSE.md`, as the open-world work was done.
 
 ## Checklist
 
-- [ ] phase one — the view
+- [x] phase one — the view *(14 Sep 2026)*
 - [ ] phase two — one timeline
 - [ ] phase three — visual automation
 - [ ] phase four — the composition

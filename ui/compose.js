@@ -4,7 +4,9 @@
 // the sequencer and the picture side by side, over one timeline. The plan is
 // `docs/COMPOSE-PLAN.md`; what is built is written up in `docs/COMPOSE.md`.
 //
-// This file starts with the compact panels. They are the plan's fifth phase and
+// The file is in two parts: the compact panels, then the view that places them.
+//
+// The compact panels come first. They are the plan's fifth phase and
 // were built first, so that the view places panels made for its cells rather
 // than full panels squeezed into them:
 //
@@ -254,4 +256,214 @@ function composePictureMount(host) {
     };
   }
   $('cpFull').onclick = () => setMode('room');
+}
+
+// ─── the view ────────────────────────────────────────────────────────────────
+//
+// Three cells across the top — GRAIN, SEQ, the picture — the arrangement under
+// them, and the transport at the foot. The compact panels are built into their
+// cells once; what is shared with the other workspaces is **moved in, not
+// copied**, and put back exactly where it came from when the view is left, the
+// same contract the Visual workspace keeps with `roomAdopt`:
+//
+//   - the room (`#masterBus`), into the picture cell under its bar;
+//   - the transport, and the two export buttons, into the foot;
+//   - the PERFORMANCE panel, into the arrangement.
+//
+// **The sequencer's frame is the exception, and is not moved.** Taking an
+// iframe out of the page and putting it back reloads it — its audio, its
+// pattern, its take, gone. So its view stays where it is and is laid over the
+// SEQ cell instead: fixed, at the cell's place and size, kept there by a watch
+// that runs while the view is open. The sequencer lays itself out compact
+// inside its own page (`seqCompact`).
+
+const CV_PARTS = [
+  ['masterBus', 'cpRoom'],
+  ['transportBar', 'cvFoot'],
+  ['exportBtn', 'cvFoot'],
+  ['videoBtn', 'cvFoot'],
+  ['perfPanel', 'cvArrange'],
+];
+const cvBorrowed = new Map();
+
+function cvAdopt(id, hostId) {
+  const el = $(id), host = $(hostId);
+  if (!el || !host || el.parentNode === host) return;
+  if (!cvBorrowed.has(id)) cvBorrowed.set(id, { parent: el.parentNode, next: el.nextSibling });
+  host.appendChild(el);
+}
+
+function cvReleaseAll() {
+  // In reverse, so an element whose home was next to another borrowed one is
+  // put back after its neighbour is.
+  for (const [id, home] of [...cvBorrowed].reverse()) {
+    const el = $(id);
+    if (el && home.parent) home.parent.insertBefore(el, home.next);
+  }
+  cvBorrowed.clear();
+}
+
+// ── sizes ──
+
+const CV_SIZES_KEY = 'audiolab.compose.sizes.v1';
+/// The top row's share of the view's height, and the first two cells' shares
+/// of its width; the picture takes what is left.
+const CV_DEFAULTS = { top: 0.56, c0: 0.3, c1: 0.34 };
+const CV_MIN = { top: 0.22, topMax: 0.82, cell: 0.16 };
+let cvSizes = { ...CV_DEFAULTS };
+try {
+  const v = JSON.parse(localStorage.getItem(CV_SIZES_KEY) || 'null');
+  if (v && typeof v === 'object') {
+    for (const k of Object.keys(CV_DEFAULTS)) if (Number.isFinite(v[k])) cvSizes[k] = v[k];
+  }
+} catch { /* private mode */ }
+
+function cvSaveSizes() {
+  try { localStorage.setItem(CV_SIZES_KEY, JSON.stringify(cvSizes)); } catch { /* private mode */ }
+}
+
+function cvApplySizes() {
+  const view = $('composeView');
+  if (!view) return;
+  view.style.setProperty('--cv-top', `${(cvSizes.top * 100).toFixed(3)}%`);
+  view.style.setProperty('--cv-c0', `${(cvSizes.c0 * 100).toFixed(3)}%`);
+  view.style.setProperty('--cv-c1', `${(cvSizes.c1 * 100).toFixed(3)}%`);
+  cvDockSeq();
+}
+
+/// Everything drawn at a size, drawn again at the new one.
+function cvRedraw() {
+  cvDockSeq();
+  drawCloudPads();
+  if ($('perfCanvas')?.offsetParent) perfDrawTimeline();
+  applyRoomFrame();
+}
+
+function cvWireGrips() {
+  const view = $('composeView');
+  if (!view || view.dataset.wired) return;
+  view.dataset.wired = '1';
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  // A drag with the lost-release guard every grip here has: a move with no
+  // button down ends it.
+  const grip = (el, apply, reset) => {
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch { /* the guard covers it */ }
+      el.classList.add('dragging');
+      const up = (ev) => {
+        el.classList.remove('dragging');
+        try { el.releasePointerCapture(ev.pointerId); } catch { /* gone */ }
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+        cvSaveSizes();
+        afterLayout(cvRedraw);
+      };
+      const move = (ev) => {
+        if (ev.buttons === 0) { up(ev); return; }
+        apply(ev);
+        cvApplySizes();
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+    });
+    el.addEventListener('dblclick', () => { reset(); cvApplySizes(); cvSaveSizes(); afterLayout(cvRedraw); });
+  };
+  grip($('cvSplit'), (ev) => {
+    const r = view.getBoundingClientRect();
+    cvSizes.top = clamp((ev.clientY - r.top) / Math.max(1, r.height), CV_MIN.top, CV_MIN.topMax);
+  }, () => { cvSizes.top = CV_DEFAULTS.top; });
+  for (const g of view.querySelectorAll('.cv-vgrip')) {
+    grip(g, (ev) => {
+      const r = $('cvTop').getBoundingClientRect();
+      const x = (ev.clientX - r.left) / Math.max(1, r.width);
+      if (g.dataset.grip === '0') cvSizes.c0 = clamp(x, CV_MIN.cell, 1 - cvSizes.c1 - CV_MIN.cell);
+      else cvSizes.c1 = clamp(x - cvSizes.c0, CV_MIN.cell, 1 - cvSizes.c0 - CV_MIN.cell);
+    }, () => { cvSizes.c0 = CV_DEFAULTS.c0; cvSizes.c1 = CV_DEFAULTS.c1; });
+  }
+}
+
+// ── the sequencer's frame, over its cell ──
+
+let cvWatchRaf = null;
+let cvLastSeqRect = '';
+
+function cvDockSeq() {
+  const sv = $('seqView'), cell = $('cvSeq');
+  if (!sv || !cell || !sv.classList.contains('seq-docked')) return;
+  const r = cell.getBoundingClientRect();
+  const key = `${r.left},${r.top},${r.width},${r.height}`;
+  if (key === cvLastSeqRect) return;
+  cvLastSeqRect = key;
+  sv.style.left = `${r.left}px`;
+  sv.style.top = `${r.top}px`;
+  sv.style.width = `${r.width}px`;
+  sv.style.height = `${r.height}px`;
+}
+
+/// Kept over its cell whatever moves the cell — a grip, the rail opening, the
+/// window. One measurement a frame, and a write only when something changed.
+function cvWatch() {
+  cvWatchRaf = requestAnimationFrame(cvWatch);
+  cvDockSeq();
+}
+
+// ── entering and leaving ──
+
+function composeEnter() {
+  composeGrainMount($('cvGrain'));
+  composePictureMount($('cvPicture'));
+  cvWireGrips();
+  cvApplySizes();
+  for (const [id, host] of CV_PARTS) cvAdopt(id, host);
+  $('composeView')?.classList.remove('hidden');
+  $('transportBar')?.classList.remove('hidden');
+  for (const id of ['exportBtn', 'videoBtn']) $(id)?.classList.remove('hidden');
+
+  // The room: the camera's gestures and the beads, without the editor's panel,
+  // which is the Visual workspace's.
+  roomEdit.on = true;
+  buildRoomLayers();
+  buildRoomStreams();
+  buildRoomChunks();
+  buildRoomFrames();
+  $('masterBus')?.classList.add('room-editing');
+  setVisModule(roomEdit.module);
+  paintVisModulePicker();
+
+  // The sequencer: loaded if it never was, compact, over its cell.
+  seqEnsureFrame();
+  seqCompact(true);
+  const sv = $('seqView');
+  if (sv) { sv.classList.remove('hidden'); sv.classList.add('seq-docked'); }
+  cvLastSeqRect = '';
+  if (!cvWatchRaf) cvWatch();
+
+  composeGrainSync();
+  afterLayout(() => {
+    cvRedraw();
+    paintRoomNums();
+    paintSolidPath();
+    renderAutomation();
+  });
+}
+
+function composeLeave() {
+  if (cvWatchRaf) { cancelAnimationFrame(cvWatchRaf); cvWatchRaf = null; }
+  const sv = $('seqView');
+  if (sv) {
+    sv.classList.remove('seq-docked');
+    for (const k of ['left', 'top', 'width', 'height']) sv.style[k] = '';
+  }
+  cvLastSeqRect = '';
+  seqCompact(false);
+  $('composeView')?.classList.add('hidden');
+  cvReleaseAll();
+  roomEdit.on = false;
+  if (typeof roomPick === 'function' && roomEdit.pick) roomPick(null);
+  $('masterBus')?.classList.remove('room-editing');
+  applyRoomFrame();
 }

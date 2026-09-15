@@ -32,6 +32,7 @@ it cannot carry it.
 |---|---|---|
 | 1 | **Grain** | the granular engine — where a sound is worked on |
 | 2 | **Visual** | the room, and what it draws |
+| — | **Compose** | the whole piece at once — grain, sequencer and picture over one timeline *(added 14 Sep 2026; see [`COMPOSE.md`](COMPOSE.md))* |
 | — | **Seq** | the scale sequencer, a second voice on the same transport *(added 6 Sep 2026; see [`SEQUENCER.md`](SEQUENCER.md))* |
 | 3 | **Theme** | how it all looks |
 | 4 | **Browse** | every file, and everything to do with the library |
