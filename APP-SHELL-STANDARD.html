@@ -1,0 +1,1422 @@
+<title>App Shell Standard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* ── tokens ──────────────────────────────────────────────────────────────
+   Light is the complete set. The two blocks after it redefine tokens only,
+   never components — the same rule this document argues for. */
+:root {
+  --paper:  #f4f6f8;
+  --card:   #ffffff;
+  --ink:    #151922;
+  --ink-2:  #4a5261;
+  --ink-3:  #767f8f;
+  --line:   #dfe3e9;
+  --line-2: #eceff3;
+  --rail:   #1b2333;
+  --rail-ink: #e9ecf2;
+  --rail-mute: #8b93a4;
+  --rule:   #0e5f56;
+  --rule-bg:#e6f2f0;
+  --trap:   #98371d;
+  --trap-bg:#fbeae4;
+  --code-bg:#f7f9fb;
+  --code-ink:#28303d;
+  --focus:  #1c6fd6;
+  --rail-w: 244px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:  #0e1117;
+    --card:   #161a22;
+    --ink:    #e7e9ee;
+    --ink-2:  #a8b0be;
+    --ink-3:  #7c8496;
+    --line:   #262d3a;
+    --line-2: #1d2430;
+    --rail:   #10151f;
+    --rail-ink: #e7e9ee;
+    --rail-mute: #6e7688;
+    --rule:   #6fd2c3;
+    --rule-bg:#0f2a28;
+    --trap:   #f0a48b;
+    --trap-bg:#2b1610;
+    --code-bg:#11151d;
+    --code-ink:#c9d1de;
+    --focus:  #6ea8f0;
+  }
+}
+:root[data-theme="dark"] {
+  --paper:  #0e1117;
+  --card:   #161a22;
+  --ink:    #e7e9ee;
+  --ink-2:  #a8b0be;
+  --ink-3:  #7c8496;
+  --line:   #262d3a;
+  --line-2: #1d2430;
+  --rail:   #10151f;
+  --rail-ink: #e7e9ee;
+  --rail-mute: #6e7688;
+  --rule:   #6fd2c3;
+  --rule-bg:#0f2a28;
+  --trap:   #f0a48b;
+  --trap-bg:#2b1610;
+  --code-bg:#11151d;
+  --code-ink:#c9d1de;
+  --focus:  #6ea8f0;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 16.5px/1.68 "IBM Plex Serif", Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+
+/* ── the rail, which is also the subject ────────────────────────────────── */
+.shell { display: flex; align-items: flex-start; min-height: 100vh; }
+
+.rail {
+  position: sticky; top: 0;
+  flex: 0 0 var(--rail-w); width: var(--rail-w);
+  height: 100vh; overflow-y: auto;
+  background: var(--rail); color: var(--rail-ink);
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 14px 10px 20px;
+  transition: flex-basis .16s ease, width .16s ease;
+}
+@media (prefers-reduced-motion: reduce) { .rail { transition: none; } }
+
+.railhead { display: flex; align-items: center; gap: 8px; padding: 0 4px 12px; }
+.railtitle { min-width: 0; }
+.railtitle b {
+  display: block; font: 600 12.5px/1.25 "IBM Plex Sans", system-ui, sans-serif;
+  color: var(--rail-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.railtitle span {
+  display: block; font: 400 10px/1.3 "IBM Plex Mono", monospace;
+  color: var(--rail-mute); white-space: nowrap;
+}
+.collapse {
+  flex: none; display: grid; place-items: center;
+  width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 6px; cursor: pointer;
+  background: transparent; color: var(--rail-mute);
+}
+.collapse:hover { background: rgb(255 255 255 / .08); color: var(--rail-ink); }
+.collapse svg { width: 15px; height: 15px; }
+
+.rail a {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 8px; border-radius: 6px;
+  text-decoration: none; color: var(--rail-mute);
+  font: 500 12px/1.35 "IBM Plex Sans", system-ui, sans-serif;
+}
+.rail a:hover { background: rgb(255 255 255 / .07); color: var(--rail-ink); }
+.rail a[aria-current="true"] { background: rgb(255 255 255 / .13); color: #fff; }
+.tocnum {
+  flex: none; width: 17px; text-align: center;
+  font: 500 10.5px/1 "IBM Plex Mono", monospace; color: var(--rail-mute);
+  font-variant-numeric: tabular-nums;
+}
+.rail a[aria-current="true"] .tocnum { color: #fff; }
+.toclabel { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+body.railed-in { --rail-w: 48px; }
+body.railed-in .railtitle,
+body.railed-in .toclabel { display: none; }
+body.railed-in .railhead { justify-content: center; padding-bottom: 10px; }
+body.railed-in .rail a { justify-content: center; padding-inline: 0; }
+
+/* ── the measure ────────────────────────────────────────────────────────── */
+.page { flex: 1 1 auto; min-width: 0; padding: 0 clamp(20px, 5vw, 72px) 120px; }
+.wrap { max-width: 760px; margin: 0 auto; }
+
+h1 {
+  margin: 64px 0 6px;
+  font: 700 clamp(30px, 4.6vw, 41px)/1.1 "IBM Plex Sans", system-ui, sans-serif;
+  letter-spacing: -.022em; text-wrap: balance;
+}
+.standfirst {
+  margin: 0 0 8px; max-width: 60ch;
+  font: 400 18px/1.6 "IBM Plex Serif", Georgia, serif; color: var(--ink-2);
+}
+.meta {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 8px;
+  font: 500 10.5px/1 "IBM Plex Mono", monospace; letter-spacing: .06em; text-transform: uppercase;
+}
+.meta span {
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 5px 9px; color: var(--ink-3); background: var(--card);
+}
+
+h2 {
+  display: flex; align-items: baseline; gap: 14px;
+  margin: 76px 0 18px; padding-top: 22px;
+  border-top: 1px solid var(--line);
+  font: 600 25px/1.2 "IBM Plex Sans", system-ui, sans-serif;
+  letter-spacing: -.014em; text-wrap: balance;
+}
+h2 .num {
+  flex: none; width: 30px;
+  font: 600 13px/1.6 "IBM Plex Mono", monospace;
+  color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+h3 {
+  margin: 44px 0 10px;
+  font: 600 17.5px/1.35 "IBM Plex Sans", system-ui, sans-serif;
+  letter-spacing: -.008em; text-wrap: balance;
+}
+h4 { margin: 30px 0 8px; font: 600 14.5px/1.4 "IBM Plex Sans", system-ui, sans-serif; }
+
+p { margin: 0 0 15px; }
+p, li { max-width: 68ch; }
+strong { font-weight: 600; color: var(--ink); }
+em { font-style: italic; }
+a { color: var(--focus); }
+
+ul, ol { margin: 0 0 18px; padding-left: 22px; display: flex; flex-direction: column; gap: 7px; }
+li::marker { color: var(--ink-3); font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+
+hr { height: 0; border: 0; margin: 0; }
+
+code {
+  font: 500 .86em/1.5 "IBM Plex Mono", ui-monospace, monospace;
+  background: var(--code-bg); border: 1px solid var(--line-2);
+  border-radius: 4px; padding: .08em .34em; color: var(--code-ink);
+  overflow-wrap: anywhere;
+}
+
+/* Code breaks the measure — that is the point of the gutter. */
+figure.code {
+  margin: 20px 0 24px; max-width: 900px;
+  background: var(--code-bg); border: 1px solid var(--line);
+  border-radius: 9px; overflow: hidden;
+}
+figure.code figcaption {
+  padding: 7px 13px; border-bottom: 1px solid var(--line-2);
+  font: 500 9.5px/1 "IBM Plex Mono", monospace;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+}
+figure.code pre { margin: 0; padding: 14px 16px; overflow-x: auto; }
+figure.code code {
+  display: block; background: none; border: 0; padding: 0;
+  font-size: 12.9px; line-height: 1.62; color: var(--code-ink);
+  white-space: pre; overflow-wrap: normal;
+}
+
+blockquote {
+  margin: 22px 0; padding: 15px 18px;
+  background: var(--rule-bg); border-left: 3px solid var(--rule);
+  border-radius: 0 8px 8px 0;
+  font: 600 16.5px/1.55 "IBM Plex Sans", system-ui, sans-serif;
+  color: var(--ink);
+}
+
+.scroll { overflow-x: auto; margin: 20px 0 24px; max-width: 900px; }
+table {
+  border-collapse: collapse; width: 100%;
+  font: 400 14px/1.5 "IBM Plex Sans", system-ui, sans-serif;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+}
+th {
+  text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line);
+  font: 600 9.5px/1.3 "IBM Plex Mono", monospace;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3);
+  white-space: nowrap;
+}
+td { padding: 9px 13px; border-top: 1px solid var(--line-2); vertical-align: top; color: var(--ink-2); }
+td:first-child { color: var(--ink); font-weight: 500; }
+td code, th code { font-size: 12px; }
+
+/* The traps are the one place the second signal colour is spent. */
+ol.traps { counter-reset: trap; padding-left: 0; list-style: none; gap: 10px; }
+ol.traps li {
+  counter-increment: trap; position: relative;
+  padding: 11px 14px 11px 44px; max-width: 78ch;
+  background: var(--trap-bg); border-radius: 8px;
+}
+ol.traps li::before {
+  content: counter(trap); position: absolute; left: 14px; top: 12px;
+  font: 600 12px/1.5 "IBM Plex Mono", monospace; color: var(--trap);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 860px) {
+  .rail { position: static; height: auto; flex-basis: 100%; width: 100%; flex-direction: row;
+          flex-wrap: wrap; align-items: center; padding: 10px; }
+  .shell { flex-direction: column; }
+  .collapse { display: none; }
+  .railhead { width: 100%; padding-bottom: 6px; }
+  .page { padding-inline: 18px; }
+  body { font-size: 16px; }
+}
+</style>
+
+<div class="shell">
+  <nav class="rail" aria-label="Sections">
+    <div class="railhead">
+      <button class="collapse" type="button" id="collapse"
+              title="Collapse the rail to numbers" aria-label="Collapse the rail">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+          <path d="M9 3v18"></path>
+        </svg>
+      </button>
+      <div class="railtitle">
+        <b>App Shell Standard</b>
+        <span>8 sections</span>
+      </div>
+    </div>
+    <a href="#0-the-one-idea" data-target="0-the-one-idea"><span class="tocnum">0</span><span class="toclabel">The one idea</span></a><a href="#1-the-left-rail" data-target="1-the-left-rail"><span class="tocnum">1</span><span class="toclabel">The left rail</span></a><a href="#2-the-top-right-cluster-and-the-guide-at-the-bottom-left" data-target="2-the-top-right-cluster-and-the-guide-at-the-bottom-left"><span class="tocnum">2</span><span class="toclabel">The top-right cluster, and the guide at the bottom left</span></a><a href="#3-feature-flags" data-target="3-feature-flags"><span class="tocnum">3</span><span class="toclabel">Feature flags</span></a><a href="#4-theming" data-target="4-theming"><span class="tocnum">4</span><span class="toclabel">Theming</span></a><a href="#5-publishing-a-setup-so-an-arrangement-travels" data-target="5-publishing-a-setup-so-an-arrangement-travels"><span class="tocnum">5</span><span class="toclabel">Publishing a setup, so an arrangement travels</span></a><a href="#6-porting-checklist" data-target="6-porting-checklist"><span class="tocnum">6</span><span class="toclabel">Porting checklist</span></a><a href="#7-the-traps-collected" data-target="7-the-traps-collected"><span class="tocnum">7</span><span class="toclabel">The traps, collected</span></a><a href="#8-file-map" data-target="8-file-map"><span class="tocnum">8</span><span class="toclabel">File map</span></a>
+  </nav>
+
+  <main class="page">
+    <div class="wrap">
+      <h1>App shell standard — rail, header, guide, flags, themes</h1>
+<div class="meta"><span>Reference implementation</span><span>React &middot; TypeScript &middot; Tailwind &middot; zustand</span><span>Portable contracts per section</span></div>
+<p class="standfirst">A reference implementation, taken out of the CTIO COMBO PI Dashboard and written so a second application can be brought to the same shape. Every code block below is real code from that app, not a sketch.</p>
+<p>Written for two readers:</p>
+<ul><li><strong>the same stack</strong> — React + TypeScript + Tailwind + zustand + react-router. Copy the modules; they have no dependency on this app&#x27;s domain.</li><li><strong>any other stack</strong> — each section ends with a <strong>Contract</strong> giving the data model and the rules with the React and the Tailwind taken out.</li></ul>
+<hr>
+<h2 id="0-the-one-idea"><span class="num">0</span><span class="h2-text">The one idea</span></h2>
+<blockquote><strong>Anything the reader arranges is data, held per browser, and normalised against what the application actually offers today.</strong></blockquote>
+<p>Every subsystem here is that sentence applied to a different surface:</p>
+<div class="scroll"><table><thead><tr><th>surface</th><th>the arrangement</th><th>normalised against</th></tr></thead><tbody><tr><td>Left rail</td><td>sections, order, what is hidden</td><td>the routes the app serves now</td></tr><tr><td>Nav icons</td><td>route → icon name</td><td>the icon catalogue</td></tr><tr><td>Favourites</td><td>a list of routes</td><td>the routes that resolve</td></tr><tr><td>Feature flags</td><td>booleans</td><td>the flag keys that exist</td></tr><tr><td>Theme</td><td>one id + a token block</td><td>the themes registered now</td></tr><tr><td>Published setup</td><td>a file of the above</td><td>an allow-list, applied at both ends</td></tr></tbody></table></div>
+<p>The failure this prevents is specific and it is the reason for the whole pattern: <strong>a stored arrangement outlives the application it describes.</strong> A page gets renamed, a route retires, a filter value stops matching anything — and a naive <code>JSON.parse(localStorage)</code> hands the UI a shape that no longer means anything. In this app that produced a blank Architecture page with no control lit to explain it, because a stored filter selected a workstream that had been renamed. Everything below treats stored state as <em>a preference, not a schema</em>.</p>
+<p><strong>The precedence, everywhere, in this order:</strong></p>
+<figure class="code"><pre><code>stored (this browser)  &gt;  published (the shared preset)  &gt;  built-in (the code)</code></pre></figure>
+<hr>
+<h2 id="1-the-left-rail"><span class="num">1</span><span class="h2-text">The left rail</span></h2>
+<h3 id="1-1-the-data-model">1.1 The data model</h3>
+<p>The nav is not a list written in JSX. It is a document:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export interface NavSection {
+  id: string;
+  label: string;
+  /** Routes, in the order they are drawn. */
+  items: string[];
+}
+
+export interface NavLayout {
+  sections: NavSection[];
+  /** Routes deliberately switched off. Kept so they can come back. */
+  hidden: string[];
+}
+
+/** The section that holds items belonging to no heading — the top of the nav. */
+export const UNSECTIONED = &#x27;top&#x27;;
+
+let seq = 0;
+export const sectionId = () =&gt; `nav-${Date.now().toString(36)}-${(seq += 1).toString(36)}`;</code></pre></figure>
+<p><strong>Items are routes, not page objects.</strong> That is the decision that makes the rest work: the layout can hold a page without knowing what the page is, a route the app stops serving simply drops out, and the same list can hold a board, an admin tool and a tree without a discriminated union.</p>
+<p>The section with an empty label is the top of the rail — its items are drawn bare, with no heading.</p>
+<h3 id="1-2-normalise-the-function-everything-else-depends-on">1.2 <code>normalise</code> — the function everything else depends on</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/** A section&#x27;s items, with anything unknown or already placed removed. */
+const clean = (items: string[] | undefined, known: Set&lt;string&gt;, seen: Set&lt;string&gt;) =&gt;
+  (items ?? []).filter((to) =&gt; {
+    if (!known.has(to) || seen.has(to)) return false;
+    seen.add(to);
+    return true;
+  });
+
+/**
+ * Make a stored nav safe to render against the routes that exist now.
+ *
+ * A route the app no longer serves is dropped; one it serves that the layout
+ * never mentioned is appended to the last section — visible, and out of the
+ * way — because a new page silently missing from the nav is how a feature
+ * ships and nobody finds it.
+ *
+ * An empty section is kept. Unlike a roll-up block, a nav heading with nothing
+ * under it is somewhere to drag things *to*, and deleting it out from under a
+ * reader mid-arrangement would be the tool fighting them.
+ */
+export function normalise(layout: NavLayout | null, known: string[], fallback: NavLayout): NavLayout {
+  const routes = new Set(known);
+
+  // With no arrangement of its own, the built-in one is the arrangement — but
+  // anything already switched off is carried over rather than dropped with it.
+  const source = layout?.sections?.length
+    ? layout
+    : { sections: fallback.sections, hidden: [...(fallback.hidden ?? []), ...(layout?.hidden ?? [])] };
+
+  const seen = new Set&lt;string&gt;();
+
+  // Hidden is claimed **first**. Being switched off is something somebody said
+  // about a page; sitting in a section is only where it happens to be, and the
+  // built-in sections list every page by definition — so letting sections win
+  // would mean nothing could ever be hidden from a default layout.
+  const hidden = [...new Set(source.hidden ?? [])].filter((to) =&gt; routes.has(to));
+  for (const to of hidden) seen.add(to);
+
+  const sections = source.sections.map((section) =&gt; ({
+    id: section.id || sectionId(),
+    label: section.label ?? &#x27;&#x27;,
+    items: clean(section.items, routes, seen),
+  }));
+
+  const missing = known.filter((to) =&gt; !seen.has(to));
+  if (missing.length) {
+    const last = sections[sections.length - 1];
+    if (last) last.items = [...last.items, ...missing];
+    else sections.push({ id: sectionId(), label: &#x27;&#x27;, items: missing });
+  }
+  return { sections, hidden };
+}</code></pre></figure>
+<p>Four rules are load-bearing, and each one is a bug that was actually hit:</p>
+<ol><li><strong>Unknown routes are dropped.</strong> A retired page cannot leave a dead row.</li><li><strong>New routes are appended, never discarded.</strong> A page that ships and never appears in anyone&#x27;s nav is a page nobody finds.</li><li><strong><code>hidden</code> is claimed before sections.</strong> Otherwise a default layout — which lists every page by construction — makes hiding impossible.</li><li><strong>Empty sections survive.</strong> They are drop targets.</li></ol>
+<h3 id="1-3-moving-things">1.3 Moving things</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>const withoutItem = (layout: NavLayout, to: string): NavLayout =&gt; ({
+  sections: layout.sections.map((s) =&gt; ({ ...s, items: s.items.filter((x) =&gt; x !== to) })),
+  hidden: layout.hidden.filter((x) =&gt; x !== to),
+});
+
+/**
+ * Put an item in a section, at a position. Never leaves a copy behind.
+ *
+ * `index` counts against the section **as it looks now**, which is what the
+ * drop indicator between two chips is pointing at. That needs saying because
+ * the item is lifted out before it is put back: dragging the first chip to the
+ * gap before the third would otherwise land it after the third. Omit `index`
+ * to append.
+ */
+export function placeItem(layout: NavLayout, to: string, section: number, index?: number): NavLayout {
+  if (!layout.sections[section]) return layout;
+  const from = layout.sections[section].items.indexOf(to);
+  const next = withoutItem(layout, to);
+  const items = [...next.sections[section].items];
+  const at = index === undefined ? items.length : from &gt;= 0 &amp;&amp; from &lt; index ? index - 1 : index;
+  items.splice(Math.max(0, Math.min(at, items.length)), 0, to);
+  return { ...next, sections: next.sections.map((s, i) =&gt; (i === section ? { ...s, items } : s)) };
+}
+
+/**
+ * Move an item one step up or down the nav, as it is drawn.
+ *
+ * The nav reads as one column, so the arrows follow the column rather than the
+ * section: an item at the bottom of a group moves into the top of the group
+ * below, not nowhere. Empty sections are stepped **into**, one click at a time.
+ * Only the two true ends are no-ops.
+ */
+export function moveItem(layout: NavLayout, to: string, by: -1 | 1): NavLayout {
+  const si = layout.sections.findIndex((s) =&gt; s.items.includes(to));
+  if (si &lt; 0) return layout;
+  const index = layout.sections[si].items.indexOf(to);
+  const target = index + by;
+
+  if (target &gt;= 0 &amp;&amp; target &lt; layout.sections[si].items.length) {
+    const items = [...layout.sections[si].items];
+    [items[index], items[target]] = [items[target], items[index]];
+    return { ...layout, sections: layout.sections.map((s, i) =&gt; (i === si ? { ...s, items } : s)) };
+  }
+
+  const into = si + by;
+  if (into &lt; 0 || into &gt;= layout.sections.length) return layout;
+  return placeItem(layout, to, into, by === 1 ? 0 : layout.sections[into].items.length);
+}
+
+export function hideItem(layout: NavLayout, to: string): NavLayout {
+  const next = withoutItem(layout, to);
+  return { ...next, hidden: [...next.hidden, to] };
+}
+
+export function addSection(layout: NavLayout, label = &#x27;New section&#x27;): NavLayout {
+  return { ...layout, sections: [...layout.sections, { id: sectionId(), label, items: [] }] };
+}
+
+export function renameSection(layout: NavLayout, index: number, label: string): NavLayout {
+  return { ...layout, sections: layout.sections.map((s, i) =&gt; (i === index ? { ...s, label } : s)) };
+}
+
+/**
+ * Remove a section. What was in it moves to the section above, or below.
+ *
+ * Not hidden, and not deleted. Removing a heading is a statement about the
+ * heading; the pages under it are still pages, and making somebody re-find them
+ * in a switched-off tray to undo one click is a tool that punishes a mistake.
+ */
+export function removeSection(layout: NavLayout, index: number): NavLayout {
+  const target = layout.sections[index];
+  if (!target || layout.sections.length &lt;= 1) return layout;
+  const into = index &gt; 0 ? index - 1 : 1;
+  const sections = layout.sections
+    .map((s, i) =&gt; (i === into ? { ...s, items: [...s.items, ...target.items] } : s))
+    .filter((_, i) =&gt; i !== index);
+  return { ...layout, sections };
+}</code></pre></figure>
+<p><strong>The drag index rule is the one that costs an afternoon if you get it wrong.</strong> <code>placeItem</code> reads the item&#x27;s current position <em>before</em> removing it, so a drop indicator sitting between two rows means the same thing whether the drag came from above or below. Without the <code>from &lt; index ? index - 1 : index</code> correction, dragging downward within one section lands one slot too far, and only in that direction — which reads as a flaky UI rather than an off-by-one.</p>
+<h3 id="1-4-migrations-so-a-rearrangement-is-never-undone">1.4 Migrations, so a rearrangement is never undone</h3>
+<p>Three helpers exist for the specific case of <em>changing the app under an arrangement somebody already made</em>. They are no-ops once the item has a place — including a place in the hidden tray — so they are safe to run on every render.</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/** Fold a set of routes into `hidden` — e.g. retiring per-page nav switches. */
+export function hideRoutes(layout: NavLayout, routes: string[]): NavLayout {
+  return routes.reduce((l, to) =&gt; (l.hidden.includes(to) ? l : hideItem(l, to)), layout);
+}
+
+/**
+ * Put an item into the section whose heading best matches, or append it.
+ *
+ * For introducing an entry that is **replacing something that was already
+ * there**, where the plain rule — append anything new to the last section — puts
+ * it somewhere absurd. Matching on the heading rather than on a route, because
+ * by the time this runs the route it used to hang from is already gone.
+ */
+export function seedItem(layout: NavLayout, to: string, matches: RegExp): NavLayout { /* … */ }
+
+/** The same, but giving the new entry a section of its own after an anchor. */
+export function seedSection(layout: NavLayout, to: string, label: string, after: RegExp): NavLayout { /* … */ }</code></pre></figure>
+<p>Pair them with a recorded version number in the store, so a one-time repair happens once and then never argues with what the reader did afterwards:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/** Which round of one-time nav repairs this layout has had. */
+navRepairVersion: number;</code></pre></figure>
+<h3 id="1-5-the-catalogue-how-the-settings-panel-knows-what-exists">1.5 The catalogue — how the settings panel knows what exists</h3>
+<p>The shell is the only place that knows which pages survive the feature flags. The panel that arranges the nav is rendered from a different branch of the tree. A module-level store with subscribers is enough; a context provider for two values is more machinery than the problem.</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export interface NavCatalogueEntry {
+  label: string;
+  /** The icon the page ships with, by name — what &quot;Built-in&quot; puts back. */
+  builtInIcon: string | null;
+}
+
+export interface NavCatalogue {
+  /** Route → label and built-in icon, for every page the nav can list. */
+  routes: Map&lt;string, NavCatalogueEntry&gt;;
+  /** The arrangement the app ships with, for Reset. */
+  builtIn: NavLayout;
+}
+
+let current: NavCatalogue = { routes: new Map(), builtIn: { sections: [], hidden: [] } };
+const listeners = new Set&lt;() =&gt; void&gt;();
+
+/** Called by the shell each time the listed pages change. */
+export function usePublishNavCatalogue(
+  routes: Map&lt;string, { label: string; Icon?: IconComponent }&gt;,
+  builtIn: NavLayout,
+): void {
+  useEffect(() =&gt; {
+    current = {
+      routes: new Map([...routes].map(([to, t]) =&gt; [to, { label: t.label, builtInIcon: nameOfIcon(t.Icon) }])),
+      builtIn,
+    };
+    for (const listener of listeners) listener();
+  }, [routes, builtIn]);
+}</code></pre></figure>
+<p>Name the reader <code>useNavCatalogue</code>, not <code>navCatalogue</code> — a hook that does not start with <code>use</code> is a hook the linter cannot see, and <code>rules-of-hooks</code> will not protect it.</p>
+<h3 id="1-6-icons-as-part-of-the-arrangement">1.6 Icons as part of the arrangement</h3>
+<p>Once the reader arranges the nav, the icon becomes part of the arrangement — and the failure that follows is <strong>duplication</strong>, because a collapsed rail is icons and nothing else. Two entries wearing the same glyph are two rows you cannot tell apart.</p>
+<p>So the picker&#x27;s job is not &quot;choose a pretty icon&quot;, it is <em>show me what is taken and by whom</em>. Store <strong>names</strong>, never components: a name is comparable, storable and testable.</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/** A route&#x27;s icon, by name, as somebody chose it. */
+export type NavIcons = Record&lt;string, string&gt;;
+
+export interface IconTarget { to: string; label: string; builtIn: string }
+
+/**
+ * The icon each page should draw, chosen over built-in.
+ *
+ * A stored name for a route the app no longer serves is dropped, and a name the
+ * catalogue no longer offers falls back to the built-in rather than to nothing
+ * — an icon that fails to resolve must never leave a hole in the nav.
+ */
+export function resolveIcons(stored: NavIcons | null, targets: IconTarget[], catalogue: string[]): NavIcons {
+  const known = new Set(catalogue);
+  const out: NavIcons = {};
+  for (const target of targets) {
+    const chosen = clean(stored?.[target.to]);
+    out[target.to] = chosen &amp;&amp; known.has(chosen) ? chosen : target.builtIn;
+  }
+  return out;
+}</code></pre></figure>
+<p>The catalogue is <strong>hand-picked, not the whole icon set</strong>. A picker of fifteen hundred glyphs is a search box with no answer in it, and the point is telling entries apart — which needs icons that are <em>unlike each other at 13px</em>, not more of them.</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export type IconComponent = ComponentType&lt;{ size?: number | string; className?: string }&gt;;
+
+export const ICON_CATALOGUE: Record&lt;string, IconComponent&gt; = {
+  Activity, AlertTriangle, Archive, BarChart3, Bookmark, BookOpen, Boxes, Bug, Building2,
+  CalendarClock, CalendarRange, ChartPie, CheckCheck, ClipboardList, CloudDownload, Columns3,
+  /* … about sixty, all legible at 13px … */
+};</code></pre></figure>
+<h3 id="1-7-rendering-the-rail">1.7 Rendering the rail</h3>
+<p>Three components and one pure function. Nothing here knows what a page is.</p>
+<p><strong>Width, collapse and the drag handle.</strong> The width is dragged rather than chosen from preset sizes, because the labels are the constraint and only the reader can see them.</p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>export const NAV_RAIL_WIDTH = 48;   // collapsed: icons only
+const NAV_MIN_WIDTH = 176;
+const NAV_MAX_WIDTH = 420;
+
+function Sidebar({ children }: { children: React.ReactNode }) {
+  const width = useSettings((s) =&gt; s.navWidth);
+  const collapsed = useSettings((s) =&gt; s.navCollapsed);
+  const setWidth = useSettings((s) =&gt; s.setNavWidth);
+  const setCollapsed = useSettings((s) =&gt; s.setNavCollapsed);
+  const [dragging, setDragging] = useState(false);
+
+  const applied = collapsed ? NAV_RAIL_WIDTH : width;
+
+  // Drag on the window, not on the divider: the pointer routinely leaves a
+  // 4px strip mid-drag, and a handler bound to the strip would drop the drag
+  // the moment it did. Pointer capture keeps the events coming here.
+  function startDrag(event: React.PointerEvent&lt;HTMLDivElement&gt;) {
+    event.preventDefault();
+    (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    setDragging(true);
+  }
+  function onDrag(event: React.PointerEvent&lt;HTMLDivElement&gt;) {
+    if (!dragging) return;
+    const next = event.clientX;
+    // Dragging well below the minimum collapses rather than fighting the clamp
+    // — the gesture reads as &quot;make this go away&quot;, and the alternative is a
+    // divider that sticks at 176px however hard it is pushed.
+    if (next &lt; NAV_MIN_WIDTH - 32) {
+      setCollapsed(true);
+      setDragging(false);
+      return;
+    }
+    if (collapsed &amp;&amp; next &gt; NAV_RAIL_WIDTH + 24) setCollapsed(false);
+    setWidth(next);
+  }
+
+  return (
+    &lt;&gt;
+      &lt;aside
+        style={{ width: applied }}
+        className={`sticky top-0 z-40 flex h-screen shrink-0 flex-col border-r border-black/20 bg-navy ${
+          dragging ? &#x27;&#x27; : &#x27;transition-[width] duration-150&#x27;
+        }`}
+      &gt;
+        {children}
+      &lt;/aside&gt;
+
+      &lt;div
+        role=&quot;separator&quot;
+        aria-orientation=&quot;vertical&quot;
+        aria-label=&quot;Resize the navigation&quot;
+        aria-valuenow={applied}
+        aria-valuemin={NAV_MIN_WIDTH}
+        aria-valuemax={NAV_MAX_WIDTH}
+        tabIndex={0}
+        onPointerDown={startDrag}
+        onPointerMove={onDrag}
+        onPointerUp={() =&gt; setDragging(false)}
+        onDoubleClick={() =&gt; setCollapsed(!collapsed)}
+        onKeyDown={(e) =&gt; {
+          if (e.key === &#x27;ArrowLeft&#x27;) setWidth((collapsed ? NAV_RAIL_WIDTH : width) - 16);
+          if (e.key === &#x27;ArrowRight&#x27;) {
+            if (collapsed) setCollapsed(false);
+            else setWidth(width + 16);
+          }
+        }}
+        title=&quot;Drag to resize · double-click to collapse&quot;
+        className={`sticky top-0 z-40 h-screen w-1 shrink-0 cursor-col-resize transition ${
+          dragging ? &#x27;bg-sky-400&#x27; : &#x27;bg-transparent hover:bg-sky-400/50&#x27;
+        } focus:bg-sky-400 focus:outline-none`}
+      /&gt;
+    &lt;/&gt;
+  );
+}</code></pre></figure>
+<p>Four details worth keeping:</p>
+<ul><li><strong>Pointer capture, not a handler on the 4px strip.</strong> Without it the drag drops the first time the pointer leaves the divider, which is immediately.</li><li><strong>Under-drag collapses.</strong> Fighting a clamp feels broken; collapsing is what the gesture meant.</li><li><strong>The separator is focusable and takes arrow keys.</strong> It is a real control.</li><li><strong>The width transition is suppressed while dragging</strong>, or the rail lags the pointer by 150ms.</li></ul>
+<p><strong>A folding section.</strong></p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>function SidebarSection({ label, collapsed, foldable = true, children }: {
+  label: string; collapsed: boolean; foldable?: boolean; children: React.ReactNode;
+}) {
+  const closed = useSettings((state) =&gt; state.navSectionsClosed[label] === true) &amp;&amp; foldable;
+  const toggle = useSettings((state) =&gt; state.toggleNavSection);
+
+  // Collapsed, the rail is a column of icons with no headings to sit under, so
+  // there is nothing to indent *from*.
+  if (collapsed) {
+    return (&lt;&gt;&lt;SidebarHeading label={label} collapsed /&gt;{children}&lt;/&gt;);
+  }
+
+  return (
+    &lt;&gt;
+      &lt;button
+        type=&quot;button&quot;
+        onClick={() =&gt; toggle(label)}
+        aria-expanded={!closed}
+        title={closed ? `Show ${label}` : `Hide ${label}`}
+        className=&quot;mt-2.5 mb-0.5 flex w-full items-center gap-1 rounded px-2 py-0.5 text-left transition hover:bg-white/5&quot;
+      &gt;
+        &lt;ChevronRight size={10}
+          className={`shrink-0 text-white/30 transition-transform ${closed ? &#x27;&#x27; : &#x27;rotate-90&#x27;}`} /&gt;
+        &lt;span className=&quot;text-[9px] font-bold uppercase tracking-wider text-white/35&quot;&gt;{label}&lt;/span&gt;
+      &lt;/button&gt;
+      {!closed &amp;&amp; &lt;Indented&gt;{children}&lt;/Indented&gt;}
+    &lt;/&gt;
+  );
+}
+
+/** One wrapper rather than padding on each row, so everything a section holds
+ *  lines up without each row having to know it is inside a section. */
+function Indented({ children }: { children: React.ReactNode }) {
+  return &lt;div className=&quot;pl-3.5&quot;&gt;{children}&lt;/div&gt;;
+}</code></pre></figure>
+<p>Fold state is keyed <strong>by heading</strong>, and <em>absent means open</em> — a section nobody has touched should be showing.</p>
+<p><strong>Which tab is current — <code>tabOwnsPath</code>.</strong></p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/**
+ * `NavLink` marks a tab active for any path beneath it, which is right until two
+ * tabs are nested: `/pi` claimed `/pi/overview` as well, so opening PI Overview
+ * lit up PI Board beside it and the nav showed two current pages. Rather than
+ * hard-coding the exception, the rule is **longest match wins**.
+ */
+export function tabOwnsPath(to: string, path: string, all: string[] = navRoutes()): boolean {
+  const under = (route: string) =&gt; path === route || path.startsWith(`${route}/`);
+  if (!under(to)) return false;
+  return !all.some((other) =&gt; other !== to &amp;&amp; other.length &gt; to.length &amp;&amp; under(other));
+}</code></pre></figure>
+<p><strong>A row.</strong> Note that the chosen icon is read <em>inside</em> the row, so no caller has to know the feature exists.</p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>function SidebarLink({ tab, collapsed }: { tab: NavTab; collapsed: boolean }) {
+  const { label, why } = tab;
+  const chosen = useSettings((s) =&gt; s.navIcons[tab.to]);
+  const Icon = iconByName(chosen) ?? tab.Icon;
+  const active = tabOwnsPath(tab.to, useLocation().pathname);
+  return (
+    &lt;NavLink
+      to={tab.to}
+      // The title carries the label when collapsed, because the rail shows only
+      // an icon and an unlabelled icon is a guess. Expanded, it carries the
+      // one-line &quot;why&quot; instead — the label is already on screen.
+      title={collapsed ? label : why}
+      className={() =&gt;
+        `flex items-center rounded-md text-[11.5px] font-medium transition ${
+          collapsed ? &#x27;justify-center px-0 py-1.5&#x27; : &#x27;gap-2 px-2 py-1&#x27;
+        } ${active ? &#x27;bg-white/15 text-white&#x27; : &#x27;text-white/60 hover:bg-white/10 hover:text-white/90&#x27;}`
+      }
+    &gt;
+      &lt;Icon size={13} className=&quot;shrink-0&quot; /&gt;
+      {!collapsed &amp;&amp; &lt;span className=&quot;truncate&quot;&gt;{label}&lt;/span&gt;}
+    &lt;/NavLink&gt;
+  );
+}</code></pre></figure>
+<p>Give every page a one-line <strong><code>why</code></strong>. It is the expanded tooltip, and writing it is a good test of whether the page should exist.</p>
+<h3 id="1-8-assembling-it-in-the-shell">1.8 Assembling it in the shell</h3>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>// Nav entries the flags leave listed.
+const listedTabs  = useListed(LEGACY_TABS);
+const listedAdmin = useListed(ADMIN_GROUPS.flatMap((g) =&gt; g.items));
+
+/**
+ * Every page the nav can list, by route.
+ *
+ * Feature flags decide what is *available*: a page switched off there is not in
+ * `byRoute` at all, so the layout drops it and gets it back if the flag returns.
+ */
+const byRoute = useMemo(() =&gt; {
+  const all: NavTab[] = [
+    ...PRIMARY_TABS, ...JIRA_NAV, ...TREE_TABS, ...listedTabs,
+    ...listedAdmin.map((i) =&gt; ({ to: i.to, label: i.label, Icon: i.icon, why: i.blurb })),
+  ];
+  return new Map(all.map((t) =&gt; [t.to, t]));
+}, [listedTabs, listedAdmin]);
+
+// Handed to the settings panel so it arranges the pages that actually exist.
+usePublishNavCatalogue(byRoute, BUILT_IN_NAV);
+
+const storedNav = useSettings((state) =&gt; state.navLayout);
+const navLayout = useMemo(
+  () =&gt; normaliseNav(storedNav, [...byRoute.keys()], BUILT_IN_NAV),
+  [storedNav, byRoute],
+);</code></pre></figure>
+<p>and the render:</p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>{navLayout.sections.map((section) =&gt; {
+  const items = section.items.map((to) =&gt; byRoute.get(to)).filter(Boolean) as NavTab[];
+  if (!items.length &amp;&amp; !section.label) return null;
+  const body = items.map((t) =&gt; &lt;SidebarLink key={t.to} tab={t} collapsed={collapsed} /&gt;);
+  // A section with no heading is the top of the nav: its pages are drawn bare.
+  return section.label
+    ? &lt;SidebarSection key={section.id} label={section.label} collapsed={collapsed}&gt;{body}&lt;/SidebarSection&gt;
+    : &lt;Fragment key={section.id}&gt;{body}&lt;/Fragment&gt;;
+})}</code></pre></figure>
+<p>The built-in arrangement is a plain constant, and it is also what <strong>Reset</strong> restores:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>const BUILT_IN_NAV = {
+  sections: [
+    { id: &#x27;top&#x27;,  label: &#x27;&#x27;,              items: [&#x27;/pi&#x27;, &#x27;/pi/overview&#x27;, &#x27;/ref&#x27;, &#x27;/timeline&#x27;, &#x27;/model&#x27;] },
+    { id: &#x27;jira&#x27;, label: &#x27;Jira Sources&#x27;,  items: [&#x27;/jira/overview&#x27;, &#x27;#projects/jira&#x27;] },
+    { id: &#x27;data&#x27;, label: &#x27;Data Sources&#x27;,  items: [&#x27;/issues&#x27;, &#x27;/viewer&#x27;, &#x27;/data&#x27;, &#x27;/docs&#x27;, &#x27;/log&#x27;, &#x27;/tests&#x27;] },
+    { id: &#x27;look&#x27;, label: &#x27;Look &amp; Feel&#x27;,   items: [&#x27;/admin/sources&#x27;, &#x27;/admin/tags&#x27;, &#x27;/admin/appearance&#x27;] },
+  ],
+  hidden: [],
+};</code></pre></figure>
+<p>A <code>#</code>-prefixed item is a deliberate non-route — it draws a tree in place rather than navigating. Keeping them in the same list means the reader can move them between sections like anything else.</p>
+<h3 id="1-9-favourites">1.9 Favourites</h3>
+<p>Favourites are the same idea one level up: the nav below is a complete map, which is right for finding something once and wrong for the three places somebody goes back to all day.</p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>{favorites.length &gt; 0 &amp;&amp; (
+  &lt;SidebarSection label=&quot;Favorites&quot; collapsed={collapsed}&gt;
+    {favorites.map((f) =&gt; &lt;FavoriteLink key={f.to} favorite={f} collapsed={collapsed} /&gt;)}
+  &lt;/SidebarSection&gt;
+)}</code></pre></figure>
+<p>Two rules: it is <strong>absent entirely</strong> until something is starred — an empty &quot;Favorites&quot; heading is a promise the app is not keeping — and the star control lives at the bottom of the rail as <strong>&quot;Add this page to Favorites&quot;</strong>, so starring is a thing you do to where you are rather than a thing you configure.</p>
+<h3 id="contract-the-rail-without-react">Contract — the rail without React</h3>
+<ul><li><strong>State:</strong> <code>{ sections: [{ id, label, items: string[] }], hidden: string[] }</code>, plus <code>navWidth: number</code>, <code>navCollapsed: boolean</code>, <code>navSectionsClosed: Record&lt;label, boolean&gt;</code>, <code>navIcons: Record&lt;route, name&gt;</code>, <code>favorites: route[]</code>. All per browser.</li><li><strong>Input from the app:</strong> a <code>Map&lt;route, { label, icon, why }&gt;</code> of the pages that exist <em>after</em> flags are applied, and the built-in layout.</li><li><strong>The one required function:</strong> <code>normalise(stored, known, fallback)</code> with the four rules in §1.2. Without it the rest is unsafe.</li><li><strong>Active-route rule:</strong> longest matching prefix wins.</li><li><strong>Drag rule:</strong> read the item&#x27;s current index before removing it.</li><li><strong>Persist</strong> on every mutation; never on render.</li></ul>
+<hr>
+<h2 id="2-the-top-right-cluster-and-the-guide-at-the-bottom-left"><span class="num">2</span><span class="h2-text">The top-right cluster, and the guide at the bottom left</span></h2>
+<h3 id="2-1-the-placement-rule">2.1 The placement rule</h3>
+<p>This is the part most shells get arbitrary. One rule decides it:</p>
+<blockquote><strong>A control belongs where the thing it produces will appear.</strong></blockquote>
+<div class="scroll"><table><thead><tr><th>the control does this</th><th>it lives</th></tr></thead><tbody><tr><td>navigates, and fills the content area</td><td>in the <strong>left rail</strong>, as an ordinary row</td></tr><tr><td>changes how the page you are looking at behaves</td><td>in the <strong>top-right cluster</strong></td></tr><tr><td>needs the page still visible behind it while you decide</td><td>a <strong>modal</strong> from the cluster</td></tr><tr><td>is a document about the app</td><td>an <strong>overlay</strong>, opened from the rail</td></tr></tbody></table></div>
+<p>Applied here, it explains three moves that otherwise look like taste:</p>
+<ul><li><strong>Admin tools are rail rows, not a gear menu.</strong> They open in the content area like any other page, so they belong with the other things that do that — and ordinary routes stay linkable, which a pop-up&#x27;s contents are not.</li><li><strong>Settings is a modal from the header, not a rail row.</strong> The flags decide what the rail lists, and a control inside that rail could switch itself off from under you. A modal also leaves the page you are checking the flag against on screen behind it.</li><li><strong>The guide is an overlay, not a route.</strong> As a page it read as another section of the app — you could not tell whether you were looking at a window or a page.</li></ul>
+<h3 id="2-2-the-header">2.2 The header</h3>
+<p>One sticky bar. Everything utility is pushed right with <code>ml-auto</code>, and every button shares one class function so the cluster reads as a set.</p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>const tab = ({ isActive }: { isActive: boolean }) =&gt;
+  `flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition ${
+    isActive ? &#x27;bg-white/15 text-white&#x27; : &#x27;text-white/60 hover:bg-white/10 hover:text-white/90&#x27;
+  }`;
+
+&lt;header className=&quot;sticky top-0 z-30 border-b border-black/10 bg-navy&quot;&gt;
+  &lt;div className=&quot;flex items-center gap-3 px-4 py-1.5&quot;&gt;
+    {/* Left: what this build is. Stated on the board itself, not only in the
+        room — a screenshot travels further than the conversation that framed it. */}
+    &lt;span className=&quot;rounded bg-amber-400/20 px-1.5 py-px text-[8.5px] font-bold uppercase
+                     tracking-wide text-amber-200&quot;&gt;
+      internal · snapshot data
+    &lt;/span&gt;
+
+    {/* And how old each source is. &quot;Snapshot data&quot; says something is a
+        snapshot; these say which, and when. */}
+    &lt;SourceBadges /&gt;
+
+    &lt;div className=&quot;ml-auto flex items-center gap-2&quot;&gt;
+      &lt;DataVersionSwitch buttonClassName={tab({ isActive: false })} /&gt;
+
+      {/* An &lt;a href=&quot;mailto:&quot;&gt; rather than a button with a handler: the browser
+          and the OS already know how to do this, and a click that has to go
+          through JavaScript is one that can fail silently. */}
+      &lt;a href={FEEDBACK_MAILTO} aria-label=&quot;Report feedback or a bug&quot;
+         className={tab({ isActive: false })}&gt;&lt;Mail size={15} /&gt;&lt;/a&gt;
+
+      &lt;CoveragePicker buttonClassName={tab({ isActive: false })} /&gt;
+
+      &lt;button type=&quot;button&quot; onClick={() =&gt; setFlagsOpen(true)}
+              title=&quot;Settings — per-browser switches for what this app shows and how it is arranged&quot;
+              aria-label=&quot;Settings&quot; aria-haspopup=&quot;dialog&quot;
+              className={tab({ isActive: flagsOpen })}&gt;
+        &lt;Settings size={15} /&gt;
+      &lt;/button&gt;
+
+      &lt;ThemePicker theme={theme} navThemes={navThemes} onSelect={setTheme}
+                   buttonClassName={tab({ isActive: false })} /&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/header&gt;</code></pre></figure>
+<p>Two transferable habits:</p>
+<ul><li><strong><code>buttonClassName</code> as a prop.</strong> Each picker is its own component but wears the shell&#x27;s class, so the cluster stays visually one thing and the components stay portable.</li><li><strong>State badges live left, controls live right.</strong> The left of the bar says what you are looking at; the right changes it. Never mix the two.</li></ul>
+<p><strong>Do not put filters here.</strong> Three rows of filter chips made this header 248px tall on every page, including the ones the filters did nothing for. Filters render inside the pages they act on.</p>
+<h3 id="2-3-the-guide-overlay-and-the-corner-target">2.3 The guide overlay, and the corner target</h3>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>const [aboutOpen, setAboutOpen] = useState(false);
+const toggleAbout = () =&gt; setAboutOpen((open) =&gt; !open);
+
+// The bookmarked route still resolves: it opens the overlay over the board and
+// replaces itself in history, so the guide has exactly one presentation.
+useEffect(() =&gt; {
+  if (location.pathname !== &#x27;/about&#x27;) return;
+  setAboutOpen(true);
+  navigate(aboutReturnTo, { replace: true, state: routeState?.aboutReturnState });
+}, [location.pathname, aboutReturnTo, navigate]);
+
+// Escape closes it, like every other overlay in the app.
+useEffect(() =&gt; {
+  if (!aboutOpen) return;
+  const onKey = (e: KeyboardEvent) =&gt; { if (e.key === &#x27;Escape&#x27;) setAboutOpen(false); };
+  window.addEventListener(&#x27;keydown&#x27;, onKey);
+  return () =&gt; window.removeEventListener(&#x27;keydown&#x27;, onKey);
+}, [aboutOpen]);</code></pre></figure>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>{aboutOpen &amp;&amp; (
+  &lt;div role=&quot;dialog&quot; aria-modal=&quot;true&quot; aria-label=&quot;User guide&quot;
+       className=&quot;fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-[2px]&quot;
+       onClick={() =&gt; setAboutOpen(false)}&gt;
+    &lt;div
+      // The sheet swallows its own clicks, so only the dark edge closes.
+      onClick={(e) =&gt; e.stopPropagation()}
+      // Positioned by inset rather than sized with w-full inside a padded
+      // parent: that left the sheet its parent&#x27;s full width and pushed the gap
+      // off the right and bottom edges entirely.
+      className=&quot;absolute inset-3 flex flex-col overflow-hidden rounded-xl bg-white
+                 shadow-2xl ring-1 ring-black/10 sm:inset-5&quot;&gt;
+
+      &lt;button type=&quot;button&quot; onClick={() =&gt; setAboutOpen(false)} aria-label=&quot;Close the guide&quot;
+              className=&quot;absolute right-2 top-2 z-10 rounded-md bg-white/90 p-1 text-slate-400
+                         shadow-sm transition hover:bg-slate-100 hover:text-slate-700&quot;&gt;
+        &lt;X size={15} /&gt;
+      &lt;/button&gt;
+
+      {/*
+        A second close, under the cursor rather than across the screen.
+
+        The Guide button in the rail is a toggle — but the sheet covers it, so
+        the click that would close it lands on the overlay instead. This sits at
+        the sheet&#x27;s bottom-left corner, which is where the pointer already is
+        when the guide opens: open it and close it without moving the mouse.
+
+        The **whole corner** is the target, not the glyph. A 15px icon is a
+        target you have to aim at, and the point of putting it here was that no
+        aiming should be needed. The gradient says so without drawing a box.
+
+        The one at top right stays, because that is where a reader who has
+        scrolled through a long page looks for it.
+      */}
+      &lt;button type=&quot;button&quot; onClick={() =&gt; setAboutOpen(false)} aria-label=&quot;Close the guide&quot;
+              className=&quot;group absolute bottom-0 left-0 z-10 flex h-28 w-28 items-center
+                         justify-center rounded-bl-xl rounded-tr-2xl bg-gradient-to-tr
+                         from-slate-100 to-transparent text-slate-400 transition
+                         hover:from-slate-200 hover:text-slate-700&quot;&gt;
+        &lt;X size={22} className=&quot;transition group-hover:scale-110&quot; /&gt;
+      &lt;/button&gt;
+
+      &lt;div className=&quot;min-h-0 flex-1 overflow-y-auto&quot;&gt;&lt;About /&gt;&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+)}</code></pre></figure>
+<p>The generalisable pieces:</p>
+<ol><li><strong>Open and close on the same spot.</strong> The opener is at the rail&#x27;s bottom left; the closer is a 112×112 corner of the sheet at the same place. Zero pointer travel for the round trip.</li><li><strong>The target is the corner, not the icon.</strong> A gradient marks it without drawing a box around it.</li><li><strong>Two closes, not one.</strong> The corner for someone who just opened it, the top right for someone who has scrolled a long document.</li><li><strong>Three ways out:</strong> the edge, Escape, and the button. Every overlay in the app behaves the same way, so none of them need to be learned.</li><li><strong><code>inset-3</code> on the sheet, not <code>w-full</code> inside padding</strong> — otherwise the gap lands on two edges out of four.</li></ol>
+<h3 id="contract-cluster-and-overlay">Contract — cluster and overlay</h3>
+<ul><li>One class function shared by every header control; pass it into each as a prop.</li><li>Left of the bar = state; right = controls. Filters belong to pages.</li><li>An overlay dialog closes on: backdrop click, <code>Escape</code>, and at least one explicit control. If it covers its own opener, put a second close where the opener was.</li><li>A route that used to be a page keeps resolving, and redirects into the overlay with <code>replace: true</code>.</li></ul>
+<hr>
+<h2 id="3-feature-flags"><span class="num">3</span><span class="h2-text">Feature flags</span></h2>
+<h3 id="3-1-what-a-flag-is-here">3.1 What a flag is here</h3>
+<p><strong>A flag is local to this browser.</strong> That is the whole distinction, and it is stated on the panel rather than implied by where the panel lives — everything else in Admin is shared with everyone reading the board.</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export interface FeatureFlags {
+  whitePageSurfaces: boolean;
+  dataGridExpandedByDefault: boolean;
+  piGroupByFeatureByDefault: boolean;
+  scrumEpicsCollapsedByDefault: boolean;
+  showBuildSpec: boolean;
+  showNonPIItems: boolean;
+  showNotTestableItems: boolean;
+  bypassHiddenFilters: boolean;
+  ignoreRtmReqStatus: boolean;
+  aboutSmoothScroll: boolean;
+  dataGridManualEditLocked: boolean;
+}</code></pre></figure>
+<p>They are plain booleans on the same settings store as everything else — not a separate system, not a provider, not a remote service. A flag that needs a network call to resolve is a flag that can fail.</p>
+<h3 id="3-2-the-listing-rule">3.2 The listing rule</h3>
+<blockquote><strong>A flag decides what is _listed_. The route always resolves.</strong></blockquote>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>function useListed&lt;T extends { flag?: keyof FeatureFlags }&gt;(items: T[]): T[] {
+  const settings = useSettings();
+  return items.filter((item) =&gt; !item.flag || settings[item.flag]);
+}</code></pre></figure>
+<p>Attach the flag to the nav entry, not to the router:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export interface AdminEntry {
+  to: string;
+  label: string;
+  blurb: string;
+  icon: React.ComponentType&lt;{ size?: number | string; className?: string }&gt;;
+  /** The flag that decides whether this entry is listed. The route always stays. */
+  flag?: keyof FeatureFlags;
+}</code></pre></figure>
+<p>Why: deep links from other pages keep working, and a page taken off the menu is still reachable by anyone who bookmarked it. In this app four sections are reachable and unlisted on purpose, each with the reason written at the constant:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/** Sections that stay reachable by route but are not listed. */
+const UNLISTED = new Set([&#x27;gates&#x27;, &#x27;flags&#x27;, &#x27;appearance&#x27;, &#x27;theme-maintenance&#x27;]);</code></pre></figure>
+<p>The <strong>one</strong> case where a flag removes the entry <em>and</em> blanks the page is where the page itself is the thing being hidden — listing an entry that opens a notice saying it is hidden is the wrong half.</p>
+<h3 id="3-3-flags-that-state-their-own-reach">3.3 Flags that state their own reach</h3>
+<p>A switch that could do nothing looks like a switch that is broken. Where a flag reveals data, count what it would actually reveal <strong>in the dataset loaded right now</strong>, and put that number on the switch:</p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>function useRevealCounts(): { nonPI: number; notTestable: number; excluded: number; total: number } {
+  const requirements = useApp((s) =&gt; s.requirements);
+  return useMemo(() =&gt; {
+    const records = requirements?.records ?? [];
+    /* …count the rows each switch would bring back… */
+  }, [requirements]);
+}</code></pre></figure>
+<p>These used to quote fixed numbers in their descriptions. A dataset ingested before the test matrix existed carries no status at all, so the switch had nothing to reveal and no total moved when it was flipped — while the description still said 859. Counting the loaded records means an inert switch says so.</p>
+<h3 id="3-4-what-each-flag-entry-carries">3.4 What each flag entry carries</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>const FLAGS: {
+  key: keyof Flags;
+  label: string;
+  detail: string;
+  /** When the change is not immediate, say when it lands. */
+  restart?: string;
+  /** Which live count to show beside it, where the flag reveals data. */
+  counts?: &#x27;nonPI&#x27; | &#x27;notTestable&#x27; | &#x27;excluded&#x27;;
+}[] = [
+  { key: &#x27;dataGridExpandedByDefault&#x27;,
+    label: &#x27;Expand Data Grid tree by default&#x27;,
+    detail: &#x27;Open every Requirement ID hierarchy level on the first visit to Data Grid.&#x27;,
+    restart: &#x27;Applies on the next Data Grid visit.&#x27; },
+  …
+];</code></pre></figure>
+<p><code>restart</code> matters more than it looks. A switch whose effect appears two navigations later is indistinguishable from a switch that does nothing.</p>
+<h3 id="3-5-session-locks-are-not-preferences">3.5 Session locks are not preferences</h3>
+<p>One flag in that list is deliberately <strong>not</strong> persisted across a reload:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>// Manual editing is a session safety lock, not a durable unlocked preference.
+// A reload or fresh app session must always return the grid to protected mode.
+dataGridManualEditLocked: true,</code></pre></figure>
+<p>It is forced back to its safe value on load, and it is excluded from the publishable set. Anything that protects data belongs in this category.</p>
+<h3 id="contract-flags">Contract — flags</h3>
+<ul><li>Booleans on the same per-browser store as every other preference.</li><li><code>flag?: keyof Flags</code> on the <strong>nav entry</strong>; routes never gate on flags.</li><li>Each flag ships with: label, one-line detail, optional &quot;applies when&quot;, optional live count of what it would reveal.</li><li>Session locks re-arm on load and never publish.</li></ul>
+<hr>
+<h2 id="4-theming"><span class="num">4</span><span class="h2-text">Theming</span></h2>
+<h3 id="4-1-the-idea-that-makes-it-cheap">4.1 The idea that makes it cheap</h3>
+<blockquote><strong>Write the remap once, against custom properties. A theme is then data.</strong></blockquote>
+<p>The app uses a small, consistent Tailwind surface vocabulary — <code>bg-white</code>, <code>bg-slate-50/100/200</code>, one accent ramp. A theme is expressed by <strong>remapping that vocabulary</strong>, not by writing parallel markup. Every board, drawer, grid, popover and settings module follows automatically, and a new theme is a token block rather than another 120 rules.</p>
+<p><code>index.css</code>, in full shape:</p>
+<figure class="code"><figcaption>CSS</figcaption><pre><code>/*
+ * THEMES
+ *
+ * A theme supplies only a token block, and applying one means writing those
+ * tokens onto &lt;html&gt;. Light is the `:root` values below, so it needs no tokens
+ * and no class; every other theme adds `.themed`, which switches these rules on.
+ */
+
+:root {
+  --color-navy: #1f3864;
+  --color-brand: #2e5496;
+  --color-ink: #20293a;
+  --color-mute: #6b7686;
+
+  --chart-track: #e2e8f0;
+  --metric-warn: #b4231c;
+
+  --status-done-text: #1b7a3d;   --status-done-bg: #dcf0df;
+  --status-progress-text: #1f5fa8; --status-progress-bg: #dde8f8;
+  --status-risk-text: #9a6b00;   --status-risk-bg: #fff1c9;
+  --status-blocked-text: #b4231c; --status-blocked-bg: #fbe0dc;
+  --status-todo-text: #5a6472;   --status-todo-bg: #edf0f4;
+
+  /* The selection pair. `--sel-fill` is the selected lane in the rail;
+     `--sel-fill-2` is the content that lane produced — the same hue, one step
+     apart, so the two read as related without reading as identical. */
+  --sel: #2e5496;
+  --sel-ink: #16233d;
+  --sel-fill: #dbe6f7;
+  --sel-fill-2: #eff4fc;
+  --sel-edge: rgba(46, 84, 150, .45);
+  --sel-soft: rgba(46, 84, 150, .16);
+}
+
+/* ---- surface vocabulary, shared by every non-light theme ---------------- */
+
+.themed body            { background-color: rgb(var(--s-body)); color: var(--tx-800); }
+.themed .bg-white       { background-color: var(--s-card); }
+.themed .bg-slate-50    { background-color: rgb(var(--s-page)); }
+.themed .bg-slate-100   { background-color: rgb(var(--s-raised)); }
+.themed .bg-slate-200   { background-color: var(--s-200); }
+.themed .bg-navy        { background-color: var(--s-nav); }
+.themed .bg-brand       { background-color: var(--s-brand); }
+
+.themed .text-ink       { color: var(--color-ink); }
+.themed .text-slate-900 { color: var(--tx-max); }
+.themed .text-slate-800 { color: var(--tx-800); }
+.themed .text-slate-700 { color: var(--tx-700); }
+.themed .text-slate-600 { color: var(--tx-600); }
+
+/* Opacity variants need their own line — `bg-slate-50/95` is a different class
+   from `bg-slate-50`, and Tailwind will not derive one from the other. */
+.themed .bg-slate-50\/95 { background-color: rgb(var(--s-page) / .95); }
+.themed .bg-slate-100\/70{ background-color: rgb(var(--s-raised) / .70); }</code></pre></figure>
+<p>Two things about that:</p>
+<ul><li><strong>The <code>rgb(var(--token) / .95)</code> form</strong> is why the surface tokens are stored as bare channel triples (<code>248 250 252</code>) rather than hex — it is the only way one token serves both the solid and the translucent class.</li><li><strong>Enumerate the opacity variants you actually use.</strong> There is no wildcard. Grep the markup once and write those lines; a missed one shows as an unthemed patch on exactly one panel.</li></ul>
+<h3 id="4-2-a-theme-is-a-small-record">4.2 A theme is a small record</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export type ThemeId = string;
+
+export interface ThemeMeta {
+  id: ThemeId;
+  label: string;
+  blurb: string;
+  /** Extra class on &lt;html&gt;; only the built-in dark theme needs one. */
+  className: string;
+  /** What the browser should assume for form controls and scrollbars. */
+  colorScheme: &#x27;light&#x27; | &#x27;dark&#x27;;
+  icon: LucideIcon;
+  swatch: { surface: string; accent: string; ink: string };
+  /** Custom properties written onto &lt;html&gt;; empty for light. */
+  tokens: Tokens;
+  /** Light palette themes only: the same theme on white rather than tinted surfaces. */
+  plainTokens?: Tokens;
+  /** Built-ins come first in the picker; palettes are grouped after them. */
+  group: &#x27;base&#x27; | &#x27;palette&#x27; | &#x27;custom&#x27;;
+  /** The palette card&#x27;s colours, shown as a strip in the picker. */
+  source?: string[];
+}</code></pre></figure>
+<h3 id="4-3-applying-one">4.3 Applying one</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/**
+ * Put a theme on the document: the shared `themed` class turns the remapping
+ * rules on, the theme&#x27;s own class carries Tailwind&#x27;s `dark:` variants where it
+ * has them, and the tokens are written as inline custom properties.
+ */
+export function applyTheme(
+  id: ThemeId,
+  { whitePage = false, root = document.documentElement }: { whitePage?: boolean; root?: HTMLElement } = {},
+): void {
+  const meta = themeMeta(id);
+  const tokens = whitePage &amp;&amp; meta.plainTokens ? meta.plainTokens : meta.tokens;
+
+  for (const t of allThemes()) if (t.className) root.classList.remove(t.className);
+  root.classList.toggle(&#x27;themed&#x27;, meta.id !== &#x27;light&#x27;);
+  if (meta.className) root.classList.add(meta.className);
+
+  // Clear every custom property first, or a token that one theme sets and the
+  // next does not survives the switch.
+  for (const key of [...root.style].filter((k) =&gt; k.startsWith(&#x27;--&#x27;))) {
+    root.style.removeProperty(key);
+  }
+  for (const [key, value] of Object.entries(tokens)) root.style.setProperty(key, value);
+  root.style.colorScheme = meta.colorScheme;
+}</code></pre></figure>
+<p>Driven from one effect in the shell:</p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>useEffect(() =&gt; {
+  applyTheme(theme, { whitePage: whitePageSurfaces });
+}, [theme, whitePageSurfaces]);</code></pre></figure>
+<p><code>root</code> is a parameter so this is testable against a detached element, and <code>colorScheme</code> is set so native scrollbars and form controls follow.</p>
+<p><strong>The clearing loop is not optional.</strong> Without it, switching from a theme that defines <code>--sel-edge</code> to one that does not leaves the first theme&#x27;s value in place, and you get one wrong-coloured border in a corner of the app that nobody can reproduce.</p>
+<h3 id="4-4-the-dark-class-caveat">4.4 The <code>dark</code> class caveat</h3>
+<p>If the markup contains Tailwind <code>dark:</code> variants, exactly one theme may carry the literal <code>dark</code> class. Other themes fall through to the light branch — which is what a light palette theme wants anyway.</p>
+<p>A specificity trap comes with it. Tailwind emits <code>dark:</code> utilities as <code>.dark\:x:is(.themed *)</code>, which outranks a plain <code>.dark</code> rule, so overrides have to be written against <code>html.dark</code>:</p>
+<figure class="code"><figcaption>CSS</figcaption><pre><code>html.dark .dark\:bg-slate-200      { background-color: #d2d2d6; }
+html.dark .dark\:border-slate-700  { border-color: #4a4a4f; }</code></pre></figure>
+<p>Cleanest advice for a new app: <strong>do not use <code>dark:</code> variants at all.</strong> Express dark as another token block. The variants exist here only because they predate the token system.</p>
+<h3 id="4-5-themes-derived-from-a-palette">4.5 Themes derived from a palette</h3>
+<p>Themes beyond the built-ins are generated: give a list of hex values, get a token ladder. That engine has no dependency on the app and lives in its own folder, already packaged to be lifted:</p>
+<figure class="code"><pre><code>src/lib/theme-studio/
+  README.md
+  ThemeStudio.tsx   the editor component
+  derive.ts         hex list -&gt; token ladder
+  styles.ts         injected at runtime, scoped under .ts-studio
+  types.ts
+  index.ts</code></pre></figure>
+<p>Its README states the boundary, and this is the boundary to copy:</p>
+<blockquote>It depends on <strong>React and nothing else</strong> — no CSS framework, no icon library, no state manager, and no import from the application it happens to be sitting in. Styles are injected at runtime from a string, scoped under <code>.ts-studio</code>, so there is no stylesheet to wire into a bundler and no class names that can collide with the host&#x27;s. The component is fully controlled: it owns no palettes and persists nothing. Where palettes are stored — localStorage, a file, an API — is the host&#x27;s decision, which is what makes the component portable.</blockquote>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>import { ThemeStudio, type StudioPalette } from &#x27;./lib/theme-studio&#x27;;
+
+&lt;ThemeStudio
+  palettes={palettes}
+  onChange={setPalettes}
+  activeId={currentThemeId}
+  applyLabel=&quot;Apply to app&quot;
+  onApply={(palette, derived) =&gt; {
+    for (const [key, value] of Object.entries(derived.tokens)) {
+      document.documentElement.style.setProperty(key, value);
+    }
+  }}
+/&gt;</code></pre></figure>
+<p>Custom themes are held in a module variable rather than a store, because <code>applyTheme</code> runs outside React:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>let customThemes: ThemeMeta[] = [];
+
+export function setCustomThemes(palettes: readonly { id: string; name: string; colors: string[] }[]): void {
+  customThemes = orderPalettes(palettes).filter((p) =&gt; p.colors.length &gt;= 2).map((p) =&gt; paletteTheme(p, &#x27;custom&#x27;));
+}
+
+export function allThemes(): ThemeMeta[] { return [...THEMES, ...customThemes]; }
+export function themeMeta(id: ThemeId): ThemeMeta { return allThemes().find((t) =&gt; t.id === id) ?? THEMES[0]; }</code></pre></figure>
+<p><code>themeMeta</code> <strong>falls back to the first theme</strong> rather than throwing. A stored theme id that no longer exists is the same class of problem as a stored route that no longer resolves, and the answer is the same: degrade, do not fail.</p>
+<h3 id="4-6-a-shortlist-not-a-list-of-thirty">4.6 A shortlist, not a list of thirty</h3>
+<p>Once themes are generated there are too many for a header menu, so the store keeps a promoted subset:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/**
+ * Palette themes promoted into the header menu. The built-in themes are always
+ * there; without this the menu would be a 30-plus item list where choosing a
+ * theme means hunting, so the palettes stay in Appearance until someone puts
+ * one on the shortlist.
+ */
+navThemes: ThemeId[];</code></pre></figure>
+<h3 id="contract-theming">Contract — theming</h3>
+<ul><li>One CSS file maps your framework&#x27;s surface vocabulary to custom properties, gated on a single <code>.themed</code> class. Enumerate the opacity variants you use.</li><li>Surface tokens are channel triples so <code>rgb(var(--t) / .5)</code> works.</li><li>A theme = <code>{ id, label, className, colorScheme, tokens }</code>. Applying it = clear all custom properties, set the class, write the tokens, set <code>color-scheme</code>.</li><li>Unknown theme id → first theme, never an exception.</li><li>Keep the derivation engine dependency-free and fully controlled.</li></ul>
+<hr>
+<h2 id="5-publishing-a-setup-so-an-arrangement-travels"><span class="num">5</span><span class="h2-text">Publishing a setup, so an arrangement travels</span></h2>
+<p>Everything above is per browser, which is right for a preference and wrong for a <strong>setup</strong>. An arrangement somebody spent a week getting right does not survive opening the app on a second machine, and no amount of pulling the repo fixes it — git carries the code, never the browser.</p>
+<h3 id="5-1-two-mechanisms-because-there-are-two-shapes-of-state">5.1 Two mechanisms, because there are two shapes of state</h3>
+<figure class="code"><pre><code>settings store   -&gt;  `values`, merged per setting   (appDefaults.ts)
+everything else  -&gt;  `stores`, replaced per key     (portableState.ts)</code></pre></figure>
+<p>The settings store is a bag of independent keys, so it merges one setting at a time. A grid view or a palette set is a whole document with no per-key merge logic, so it travels whole, keyed by its storage name.</p>
+<p>The published file:</p>
+<figure class="code"><figcaption>JSON</figcaption><pre><code>{
+  &quot;savedAt&quot;: &quot;2026-08-26T16:50:28.628Z&quot;,
+  &quot;values&quot;: { &quot;theme&quot;: &quot;light&quot;, &quot;navWidth&quot;: 201, &quot;navLayout&quot;: { &quot;sections&quot;: [ … ] } },
+  &quot;stores&quot;: { &quot;ctio.grid.views&quot;: &quot;…&quot;, &quot;ctio.export.rowOrder&quot;: &quot;…&quot; }
+}</code></pre></figure>
+<h3 id="5-2-the-allow-list-for-settings">5.2 The allow-list for settings</h3>
+<p><strong>An allow-list, not a deny-list</strong> — so a setting added later is excluded until somebody decides it should travel.</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/** The settings that may be published as app defaults. */
+export const SHAREABLE_KEYS = [
+  &#x27;theme&#x27;, &#x27;navThemes&#x27;, &#x27;whitePageSurfaces&#x27;,
+  &#x27;navWidth&#x27;, &#x27;refTreeWidth&#x27;, &#x27;navCollapsed&#x27;, &#x27;navSectionsClosed&#x27;,
+  &#x27;favorites&#x27;, &#x27;navLayout&#x27;, &#x27;navIcons&#x27;,
+  &#x27;rtmHidden&#x27;, &#x27;rtmOrder&#x27;, &#x27;rtmLabelWidth&#x27;, &#x27;rtmFieldOrder&#x27;,
+  &#x27;overviewLayout&#x27;, &#x27;overviewStats&#x27;,
+  &#x27;dataGridExpandedByDefault&#x27;, &#x27;piGroupByFeatureByDefault&#x27;,
+  &#x27;scrumEpicsCollapsedByDefault&#x27;, &#x27;showBuildSpec&#x27;,
+  &#x27;showNonPIItems&#x27;, &#x27;showNotTestableItems&#x27;,
+  &#x27;aboutSmoothScroll&#x27;, &#x27;aboutScrollDurationMs&#x27;,
+] as const;
+
+export type ShareableKey = (typeof SHAREABLE_KEYS)[number];
+export type AppDefaults = Partial&lt;Record&lt;ShareableKey, unknown&gt;&gt;;
+
+const ALLOWED = new Set&lt;string&gt;(SHAREABLE_KEYS);
+
+/**
+ * Take only the settings that may travel, from whatever is handed over.
+ *
+ * Used on both sides — the browser publishing and the server storing it — so
+ * that a key added to the app cannot start leaking into a shared file just
+ * because one of the two forgot to filter. `undefined` is dropped rather than
+ * written, because a key present with no value would publish &quot;unset&quot; as an
+ * answer and override nothing while looking like it did.
+ */
+export function shareable(values: Record&lt;string, unknown&gt;): AppDefaults {
+  const out: AppDefaults = {};
+  for (const [key, value] of Object.entries(values ?? {})) {
+    if (ALLOWED.has(key) &amp;&amp; value !== undefined) out[key as ShareableKey] = value;
+  }
+  return out;
+}
+
+/** Built-ins with anything published laid over them. A stored preference wins
+ *  over both — that happens where settings are loaded, not here. */
+export function withPublished&lt;T extends object&gt;(builtIn: T, published: AppDefaults | null): T {
+  return { ...builtIn, ...shareable(published as Record&lt;string, unknown&gt;) } as T;
+}</code></pre></figure>
+<p>Two categories are excluded on purpose, and the reasons generalise:</p>
+<ul><li><strong>Session locks.</strong> A value that re-arms on every load would be published as a default that is overwritten a line later.</li><li><strong>Migration markers.</strong> A repair-version number records what has been done to <em>one</em> stored layout. Shipping it would tell a fresh browser that repairs had already run against an arrangement it has never seen.</li></ul>
+<p>A third is worth calling out because it is a judgement, not a mechanism: <strong>the coverage-package selection is deliberately not shareable.</strong> Which data a reader is measuring against is a question they are asking right now, and a published preset that pinned it would decide for everyone whose browser loaded the file, silently, on the one number people quote.</p>
+<h3 id="5-3-the-allow-list-for-whole-stores">5.3 The allow-list for whole stores</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>/** Storage keys carried whole between machines. */
+export const PORTABLE_KEYS: readonly string[] = [
+  &#x27;ctio-rtm-view&#x27;, &#x27;ctio.architecture.view&#x27;, &#x27;ctio.model.view&#x27;, &#x27;ctio.viewer.view&#x27;,
+  &#x27;ctio.filters.v1&#x27;, &#x27;ctio.jira.pinnedFields&#x27;, &#x27;ctio:project-colors&#x27;,
+  &#x27;ctio-pi-board.custom-palettes.v1&#x27;, &#x27;ctio-pi-board.tags.v1&#x27;,
+  &#x27;ctio.grid.views&#x27;,
+  &#x27;ctio.export.rowOrder&#x27;,
+];
+
+/** Prefixes carried too, for the keys that are one-per-source. */
+export const PORTABLE_PREFIXES: readonly string[] = [&#x27;ctio.grid.views:&#x27;];
+
+/** Named so the settings panel can say what stays, rather than leaving somebody
+ *  to wonder why their pending edits did not follow them. */
+export const LOCAL_ONLY: readonly { key: string; why: string }[] = [
+  { key: &#x27;ctio-pi-board.settings.v1&#x27;, why: &#x27;travels per setting instead, so one choice does not block the rest&#x27; },
+  { key: &#x27;ctio.edits.pending&#x27;,        why: &#x27;unsaved edits — work in flight, not a preference&#x27; },
+  { key: &#x27;ctio.scrum.status-journal&#x27;, why: &#x27;a journal is content; a reset must not be able to erase it&#x27; },
+  { key: &#x27;ctio-pi-board.recovery.log&#x27;, why: &#x27;describes this machine’s crashes&#x27; },
+];
+
+export function isPortable(key: string): boolean {
+  return PORTABLE_KEYS.includes(key) || PORTABLE_PREFIXES.some((p) =&gt; key.startsWith(p));
+}
+
+export function collectPortable(storage: StorageLike): Record&lt;string, string&gt; {
+  const out: Record&lt;string, string&gt; = {};
+  for (let i = 0; i &lt; storage.length; i += 1) {
+    const key = storage.key(i);
+    if (key === null || !isPortable(key)) continue;
+    const value = storage.getItem(key);
+    if (value !== null) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Fill in where this browser has nothing. Returns what was written.
+ *
+ * The allow-list is re-checked here and not only at collection time: the file
+ * is data, and a published file naming `edits.pending` must not be able to
+ * write one.
+ */
+export function seedPortable(storage: StorageLike, doc: Record&lt;string, string&gt;): string[] {
+  const written: string[] = [];
+  for (const [key, value] of Object.entries(doc)) {
+    if (!isPortable(key) || storage.getItem(key) !== null) continue;
+    storage.setItem(key, value);
+    written.push(key);
+  }
+  return written;
+}</code></pre></figure>
+<p>Three categories must <strong>never</strong> travel, and each would do real damage:</p>
+<ul><li><strong>Work in flight</strong> — unsaved edits. Replaying one machine&#x27;s half-finished edits onto another is data loss wearing a feature&#x27;s clothes.</li><li><strong>Content</strong> — a journal is a record of what happened, not a preference. A &quot;reset to defaults&quot; that can erase a journal is a bug.</li><li><strong>This machine&#x27;s diagnostics</strong> — a recovery log would make a fresh machine believe it had been crashing all week.</li></ul>
+<p><code>LOCAL_ONLY</code> carries a <code>why</code> per key so the settings panel can <em>say</em> what stays.</p>
+<p><strong>The allow-list is applied at both ends</strong>, because the file is data and may be hand-edited. Filter on collect <em>and</em> on seed.</p>
+<p><code>StorageLike</code> is passed in rather than reached for, which keeps the module free of the DOM and testable against a plain map:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export interface StorageLike {
+  readonly length: number;
+  key(index: number): string | null;
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}</code></pre></figure>
+<h3 id="5-4-reading-it-api-first-static-file-second">5.4 Reading it — API first, static file second</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export const APP_DEFAULTS_URL = &#x27;api/app-defaults&#x27;;        // dev-server middleware
+export const APP_DEFAULTS_STATIC_URL = &#x27;config/app-defaults.json&#x27;; // shipped in the build
+
+export async function fetchPublished(base: string, get: typeof fetch = fetch): Promise&lt;PublishedDoc | null&gt; {
+  for (const path of [APP_DEFAULTS_URL, APP_DEFAULTS_STATIC_URL]) {
+    try {
+      const response = await get(`${base}${path}`);
+      // A 404 from the API is the static build; a 404 from the file is nothing
+      // published. Either way, try the next source and then give up quietly.
+      if (!response.ok) continue;
+      const doc = await response.json();
+      const values = shareable((doc?.values ?? {}) as Record&lt;string, unknown&gt;);
+      // Both ends filter. The API already screened its copy, but the static file
+      // has had no such pass and is editable by hand.
+      const stores = Object.fromEntries(
+        Object.entries((doc?.stores ?? {}) as Record&lt;string, unknown&gt;)
+          .filter(([key, value]) =&gt; typeof value === &#x27;string&#x27; &amp;&amp; isPortable(key)),
+      ) as Record&lt;string, string&gt;;
+      if (!Object.keys(values).length &amp;&amp; !Object.keys(stores).length) continue;
+      return { values, stores };
+    } catch {
+      // Nothing listening, or a file that is not JSON. Try the next source.
+    }
+  }
+  return null;
+}</code></pre></figure>
+<p>That two-source fallback is what lets the same preset work in a dev server, a static build and a single-file offline build. Nothing published is the <strong>ordinary state</strong>, not an error.</p>
+<h3 id="5-5-boot-order-the-part-that-is-easy-to-get-wrong">5.5 Boot order — the part that is easy to get wrong</h3>
+<p>A store that reads <code>localStorage</code> at import time builds its initial state the moment it is imported. So anything meant to change what &quot;no preference&quot; looks like has to be installed <strong>before that import</strong> — which means a dynamic import of the app.</p>
+<figure class="code"><figcaption>TSX</figcaption><pre><code>async function boot() {
+  // The dev server&#x27;s API first, then the static file for a build with no
+  // server behind it. Failure of both is ordinary — nothing published yet.
+  const published = await fetchPublished(import.meta.env.BASE_URL);
+  if (published) {
+    installPublishedDefaults(published.values);
+    // The layouts that travel whole. Seeded into storage rather than handed to
+    // each store, because there are fourteen of them and they read
+    // `localStorage` directly at import. One write here reaches all of them.
+    seedPortable(localStorage, published.stores);
+  }
+
+  const { default: App } = await import(&#x27;./App&#x27;);   // &lt;- after, deliberately
+
+  createRoot(document.getElementById(&#x27;root&#x27;)!).render(
+    &lt;StrictMode&gt;&lt;Router&gt;&lt;App /&gt;&lt;/Router&gt;&lt;/StrictMode&gt;,
+  );
+}
+
+void boot();</code></pre></figure>
+<p>The holder is a module of its own, for the same ordering reason — it cannot live in the store, since importing the store to install into it is what triggers the thing being installed into:</p>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>let published: AppDefaults | null = null;
+export function installPublishedDefaults(values: AppDefaults | null): void { published = values; }
+export const publishedDefaults = (): AppDefaults | null =&gt; published;</code></pre></figure>
+<h3 id="5-6-where-precedence-is-actually-enforced">5.6 Where precedence is actually enforced</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>const defaults = (): SettingsValues =&gt; withPublished(BUILT_IN_DEFAULTS, publishedDefaults());
+
+function load(): SettingsValues {
+  const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? &#x27;{}&#x27;) as Record&lt;string, unknown&gt;;
+  const base = defaults();
+  const stored = { ...base, ...raw };
+  return {
+    ...stored,
+    // Each of these overrides `stored` from `raw` alone, to validate or migrate
+    // what a browser saved. That is right — and it must still fall back to
+    // `base` rather than to a hardcoded empty, or a published value is
+    // discarded on exactly the browsers it exists for: the ones with nothing
+    // stored.
+    theme: migrateTheme(raw, base.theme),
+    navThemes: Array.isArray(raw.navThemes)
+      ? (raw.navThemes as ThemeId[]).filter((id) =&gt; typeof id === &#x27;string&#x27; &amp;&amp; id)
+      : base.navThemes,
+    coverageLayers: normaliseLayers(stored.coverageLayers as string[] | undefined),
+    navWidth: Math.min(NAV_MAX_WIDTH, Math.max(NAV_MIN_WIDTH, Number(stored.navWidth) || base.navWidth)),
+    // Session lock: always back to safe on load.
+    dataGridManualEditLocked: true,
+  };
+}</code></pre></figure>
+<p><strong>The trap in that block, spelled out.</strong> Every validated key must fall back to <code>base</code>, not to a literal <code>[]</code>, <code>{}</code> or <code>null</code>. Falling back to a literal silently discards the published value on precisely the browsers the preset exists for — the fresh ones. It is invisible in testing, because the developer&#x27;s own browser has something stored.</p>
+<h3 id="5-7-publishing">5.7 Publishing</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>export async function publishSetup(settings: Record&lt;string, unknown&gt;): Promise&lt;PublishedSetup&gt; {
+  const res = await fetch(`${import.meta.env.BASE_URL}${APP_DEFAULTS_URL}`, {
+    method: &#x27;PUT&#x27;,
+    headers: { &#x27;Content-Type&#x27;: &#x27;application/json&#x27; },
+    // `settings` is passed in from the store rather than read from localStorage:
+    // what is published should be what is on screen, including a change made a
+    // moment ago and not yet written back.
+    body: JSON.stringify({ values: shareable(settings), stores: collectPortable(localStorage) }),
+  });
+  const doc = await res.json();
+  if (!res.ok) throw new Error(doc?.error ?? &#x27;Save failed&#x27;);
+  return { savedAt: doc.savedAt, values: doc.values ?? {}, stores: doc.stores ?? {} };
+}</code></pre></figure>
+<p>One definition, two callers: the <strong>App defaults</strong> panel where publishing is the deliberate act, and the <strong>standalone build</strong>, which publishes first so the file it cuts opens into the current arrangement. That second caller is the reason the function exists — asking people to remember the order made the correctness of the artifact depend on a habit.</p>
+<h3 id="5-8-saving-must-never-take-the-app-down">5.8 Saving must never take the app down</h3>
+<figure class="code"><figcaption>TypeScript</figcaption><pre><code>let warnedAboutStorage = false;
+
+export function persistSettings(values: unknown): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(values));
+  } catch (error) {
+    if (!warnedAboutStorage) {
+      warnedAboutStorage = true;
+      console.warn(&#x27;[settings] could not be saved — they will apply for this session but not survive a reload.&#x27;, error);
+    }
+  }
+}</code></pre></figure>
+<p>The quota is about 5 MB and this blob carries the nav layout, its icons, favourites, the roll-up layout and the field order. A private window can refuse writes outright. A throw inside a store setter travels up through the React event handler — which, before an error boundary existed, meant a white screen from adjusting a setting.</p>
+<h3 id="contract-publishing">Contract — publishing</h3>
+<ul><li>Two allow-lists: per-setting keys, and whole storage keys. Both filtered on write <strong>and</strong> on read.</li><li>Never publish: work in flight, content, machine diagnostics, session locks, migration markers.</li><li>Seeding fills in only where the browser has nothing. A deliberate reset may overwrite.</li><li>Install published defaults <strong>before</strong> importing anything that reads storage.</li><li>Every validated key falls back to the published base, never to a literal.</li><li>Storage writes are wrapped and warned once.</li></ul>
+<hr>
+<h2 id="6-porting-checklist"><span class="num">6</span><span class="h2-text">Porting checklist</span></h2>
+<p>Roughly a day for the first four, in this order. Each step leaves the app working.</p>
+<ol><li><strong>Token pass.</strong> Pick your surface vocabulary, define <code>:root</code>, write the <code>.themed</code> remap, add a <code>light</code> and a <code>dark</code> theme. Nothing else changes yet.</li><li><strong>Settings store.</strong> One store, one storage key, <code>persistSettings</code> with the try/catch, built-in defaults as a plain constant.</li><li><strong>Rail as data.</strong> Add <code>NavLayout</code> + <code>normalise</code>, write your <code>BUILT_IN_NAV</code>, render sections from it. The rail should look identical when you finish.</li><li><strong>Arrange it.</strong> Width drag, collapse, fold state, then the settings panel with <code>placeItem</code> / <code>moveItem</code> / <code>hideItem</code>.</li><li><strong>Flags.</strong> Booleans on the store, <code>useListed</code>, <code>flag?</code> on nav entries only.</li><li><strong>Header cluster.</strong> One shared class function, state left, controls right.</li><li><strong>Guide overlay.</strong> Backdrop + Escape + two closes, one under the opener.</li><li><strong>Icons and favourites</strong>, if the rail is long enough to need them.</li><li><strong>Publishing</strong>, last — it is the only step that needs a server endpoint.</li></ol>
+<h3 id="what-to-keep-tests-on">What to keep tests on</h3>
+<p>The pure modules carry the whole risk, and they are pure precisely so they can be tested without a DOM:</p>
+<ul><li><code>normalise</code> — dropped, appended, hidden-wins, empty-section-kept.</li><li><code>placeItem</code> — same-section drag in both directions.</li><li><code>moveItem</code> — crossing a section boundary, stepping into an empty section.</li><li><code>shareable</code> / <code>isPortable</code> — an excluded key cannot get through either end.</li><li><code>resolveIcons</code> — unknown name falls back rather than leaving a hole.</li><li><code>tabOwnsPath</code> — nested routes.</li></ul>
+<hr>
+<h2 id="7-the-traps-collected"><span class="num">7</span><span class="h2-text">The traps, collected</span></h2>
+<p>Each of these cost real time here.</p>
+<ol class="traps"><li><strong>An ElementTree/DOM-ish object that is falsy.</strong> Not JS-specific, but the general form is: <code>a || b</code> where <code>a</code> is a valid-but-falsy value silently takes <code>b</code>. Use <code>!= null</code> checks for anything that can legitimately be empty.</li><li><strong>A stored value that no longer matches anything</strong> narrows a view to zero with no control lit to explain it. This is why <code>normalise</code> exists, and why the filter state needed the same treatment as the nav.</li><li><strong><code>[hidden]</code> loses to an inline <code>display</code>.</strong> A UA rule cannot beat a style attribute. If you toggle <code>hidden</code>, do not also set <code>display</code> inline.</li><li><strong>A drag index read after the item is removed</strong> shifts every list by one, and only in one direction.</li><li><strong>Two nav entries both marked active</strong>, because a prefix match claims a nested route. Longest match wins.</li><li><strong><code>window.innerWidth</code> is 0 before the first layout.</strong> A default computed at module scope silently takes the fallback. Read it lazily, and ask <code>document.documentElement.clientWidth</code> as a second question.</li><li><strong>A validated setting falling back to a literal</strong> instead of the published base — invisible on any machine that already has settings stored.</li><li><strong>A theme switch leaving the previous theme&#x27;s tokens behind.</strong> Clear all custom properties before writing the new ones.</li><li><strong>A <code>localStorage</code> write throwing</strong> on quota or in a private window, taking a render down with it.</li><li><strong>A flag whose effect is deferred</strong>, with nothing on screen saying so — it reads as broken. Say when it applies.</li><li><strong>A switch that reveals nothing in this dataset</strong> while its description quotes a fixed number. Count what is loaded.</li><li><strong>Tailwind opacity variants are separate classes.</strong> <code>bg-slate-50/95</code> needs its own remap line; it does not inherit from <code>bg-slate-50</code>.</li></ol>
+<hr>
+<h2 id="8-file-map"><span class="num">8</span><span class="h2-text">File map</span></h2>
+<p>If you are copying, these are the files, in dependency order. Everything in the first group is pure and has no import from the app it sits in.</p>
+<figure class="code"><pre><code>domain/navLayout.ts        NavLayout, normalise, placeItem, moveItem, hide/seed, sections
+domain/navIcons.ts         NavIcons, resolveIcons, iconUsage
+domain/favorites.ts        Favorite, normaliseFavorites, toggle, move
+domain/appDefaults.ts      SHAREABLE_KEYS, shareable, withPublished, isEmpty
+domain/portableState.ts    PORTABLE_KEYS, LOCAL_ONLY, isPortable, collect, seed
+
+lib/theme-studio/          palette editor + derivation engine (React only, no other deps)
+
+features/settings/settingsStore.ts     the one store: values, actions, persist, load
+features/settings/publishedDefaults.ts install/read + fetchPublished (API then static)
+features/settings/publishSetup.ts      PUT the current setup
+features/settings/themes.ts            ThemeMeta, THEMES, applyTheme, allThemes
+features/settings/iconCatalogue.ts     the hand-picked icon set
+features/settings/navCatalogue.ts      usePublishNavCatalogue / useNavCatalogue
+features/settings/NavigationPanel.tsx  the arrange-the-nav UI
+features/settings/FeatureFlags.tsx     the settings modal and its panels
+
+index.css                  :root tokens + the .themed remap
+main.tsx                   boot order: fetch published -&gt; install -&gt; seed -&gt; import App
+App.tsx                    Sidebar, SidebarSection, SidebarLink, header, guide overlay</code></pre></figure>
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  var KEY = 'shell-standard.rail';
+  var button = document.getElementById('collapse');
+
+  function set(railedIn, remember) {
+    document.body.classList.toggle('railed-in', railedIn);
+    button.setAttribute('aria-label', railedIn ? 'Expand the rail' : 'Collapse the rail');
+    button.title = railedIn ? 'Expand the rail' : 'Collapse the rail to numbers';
+    if (remember) { try { localStorage.setItem(KEY, railedIn ? '1' : '0'); } catch (e) {} }
+  }
+
+  // Storage can throw outright — a private window, a thumbnail pass, blocked
+  // site data. A page that cannot remember a preference must still render.
+  var stored = null;
+  try { stored = localStorage.getItem(KEY); } catch (e) {}
+  set(stored === '1', false);
+  button.addEventListener('click', function () {
+    set(!document.body.classList.contains('railed-in'), true);
+  });
+
+  // Which section you are in, marked the way the rail in the app marks it.
+  var links = {};
+  Array.prototype.forEach.call(document.querySelectorAll('.rail a'), function (a) {
+    links[a.dataset.target] = a;
+  });
+  var seen = [];
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      var id = entry.target.id;
+      var at = seen.indexOf(id);
+      if (entry.isIntersecting && at < 0) seen.push(id);
+      if (!entry.isIntersecting && at >= 0) seen.splice(at, 1);
+    });
+    var current = seen[0];
+    for (var id in links) links[id].setAttribute('aria-current', String(id === current));
+  }, { rootMargin: '-8% 0px -70% 0px' });
+  Array.prototype.forEach.call(document.querySelectorAll('main h2[id]'), function (h) {
+    observer.observe(h);
+  });
+}());
+</script>
