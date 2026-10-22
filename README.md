@@ -23,7 +23,7 @@
 [![Chromium](https://img.shields.io/badge/Chromium-headless-4285F4?logo=googlechrome&logoColor=white)](#testing)
 [![Static check](https://img.shields.io/badge/interface-statically%20checked-2ea44f)](#testing)
 [![Docs](https://img.shields.io/badge/docs-36%20documents-informational)](docs/)
-[![Screenshots](https://img.shields.io/badge/screenshots-generated%20from%20the%20app-6aa84f)](docs/screenshots/)
+[![Screenshots](https://img.shields.io/badge/screenshots-generated%20from%20the%20app-6aa84f)](Reference%20Docs/screenshots/)
 
 **What it does**
 
@@ -52,7 +52,7 @@ renaming a single audio file. Tags and edits are sidecar data; **the original
 audio is never written to**. Audio reaches disk only when you explicitly export,
 and export writes a new file.
 
-![The editor](docs/screenshots/02-editor.png)
+![The editor](Reference%20Docs/screenshots/02-editor.png)
 
 ## Start here
 
@@ -71,7 +71,7 @@ Library tab.
 
 ## What it does
 
-![The library](docs/screenshots/01-library.png)
+![The library](Reference%20Docs/screenshots/01-library.png)
 
 | | |
 |---|---|
@@ -245,7 +245,7 @@ turned down without touching its tone.
 same streaming engines the callback drives — one implementation, not two kept in
 step — and that is asserted to 1e-6 rather than claimed.
 
-![The granular engine](docs/screenshots/03-stretch-granular.png)
+![The granular engine](Reference%20Docs/screenshots/03-stretch-granular.png)
 
 *The granular engine's controls. Every engine gets the same set — see below.*
 
@@ -295,7 +295,7 @@ delays make regular notches. Sixteen layers took the spectrum's ripple from
 7.8 dB to 11.9 dB and made the sound *thinner*. Scatter and Range fix that;
 after, sixteen layers sit at or below the ripple of one.
 
-![PVSOLA](docs/screenshots/04-stretch-pvsola.png)
+![PVSOLA](Reference%20Docs/screenshots/04-stretch-pvsola.png)
 
 *PVSOLA, with its own three controls on the right of the same table.*
 
@@ -355,7 +355,7 @@ Välimäki (2023).
 
 ## Playing it from the keyboard
 
-![The note keyboard](docs/screenshots/08-keyboard.png)
+![The note keyboard](Reference%20Docs/screenshots/08-keyboard.png)
 
 **Window ▸ Keys**, or the button on the stretch row. The home row is the white
 notes from C and the row above holds the black ones — which is why a QWERTY
@@ -395,7 +395,7 @@ than they ever were offline — *Boomerang* offline needs to know where the
 selection ends, but live it is a rolling buffer read backwards, so the reversal
 chases the playhead and the throw length becomes a control it never had.
 
-![The effects rack](docs/screenshots/07-effects.png)
+![The effects rack](Reference%20Docs/screenshots/07-effects.png)
 
 The interface draws every one of them from `/api/fx`; nothing in the JavaScript
 knows what any shaper does. An effect gains a control by declaring one in
@@ -403,7 +403,7 @@ knows what any shaper does. An effect gains a control by declaring one in
 
 ## Editing
 
-![Grains on the sound they read from](docs/screenshots/05-grains-on-the-waveform.png)
+![Grains on the sound they read from](Reference%20Docs/screenshots/05-grains-on-the-waveform.png)
 
 *Zoomed in: the grain schedule drawn on the sound it reads from, the selection,
 and the spectrogram sharing the lane.*
@@ -449,7 +449,7 @@ is AIFC.
 Reading those settings back in is **not built yet** — but every file written
 carries them, so nothing exported now will need exporting again for it.
 
-![Exporting a loop](docs/screenshots/10-export-loop.png)
+![Exporting a loop](Reference%20Docs/screenshots/10-export-loop.png)
 
 ### Exporting a loop
 
@@ -507,7 +507,7 @@ from itself.
 
 | | |
 |---|---|
-| ![Braid](docs/screenshots/06-grain-views-braid.png) | ![Lattice](docs/screenshots/06-grain-views-lattice.png) |
+| ![Braid](Reference%20Docs/screenshots/06-grain-views-braid.png) | ![Lattice](Reference%20Docs/screenshots/06-grain-views-lattice.png) |
 | **Braid** — time wound into a helix; the strands are the overlap | **Lattice** — the hop grid as a crystal, melted by the jitters |
 
 Ten views in two suites, at `/grains3d` — standalone, in a pop-over, or through
@@ -549,7 +549,7 @@ thing being looked at, and it should be the loudest colour on screen rather than
 a consequence of the surfaces behind it. `Theme.apply` only clears tokens in its
 own map, so `--wave` survives every palette change and every "No theme".
 
-![The theme panel](docs/screenshots/09-themes.png)
+![The theme panel](Reference%20Docs/screenshots/09-themes.png)
 
 **Derived** — twenty palettes ported from Emovis, each giving four to six
 colours from which the engine works out a hundred-odd tokens. That is the right
