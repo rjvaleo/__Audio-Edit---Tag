@@ -439,6 +439,7 @@ name = "fx"
 version = "0.1.0"
 dependencies = [
  "audio-core",
+ "prism-fx",
 ]
 
 [[package]]
@@ -980,6 +981,10 @@ checksum = "dc0d895b311e3af9902528fbb8f928688abbd95872819320517cc24ca6b2bd08"
 dependencies = [
  "num-integer",
 ]
+
+[[package]]
+name = "prism-fx"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro-crate"

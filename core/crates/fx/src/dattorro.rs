@@ -1026,6 +1026,9 @@ pub(crate) const ECHO_SPECS: &[ParamSpec] = &[
     // delay times happen to line up and is a click otherwise.
     ParamSpec::new("glideMs", "Glide", 0.0, 4000.0, 220.0).unit("ms"),
 ];
+/// Retired from the rack: Echo now comes from `prism-fx` (see `crate::prism`),
+/// and documents that name `dattorro_echo` open on that one. This stays as the
+/// reference `tests/prism.rs` holds the prism Echo to, bit for bit.
 pub struct Echo {
     p: [f32; 6],
     d: Vec<Delay>,

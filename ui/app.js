@@ -3571,7 +3571,7 @@ $('elGo').onclick = () => {
 document.querySelectorAll('.dock-tab').forEach((t) => {
   t.onclick = () => {
     document.querySelectorAll('.dock-tab').forEach((x) => x.classList.toggle('active', x === t));
-    const panes = { effects: 'dockEffects', stretch: 'dockStretch',
+    const panes = { effects: 'dockEffects', prism: 'dockPrism', stretch: 'dockStretch',
                     visuals: 'dockVisuals', automation: 'dockAutomation',
                     regions: 'dockRegions' };
     for (const [k, id] of Object.entries(panes)) $(id).classList.toggle('hidden', k !== t.dataset.dock);
@@ -3584,6 +3584,8 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
       repaintVisualCompressors();
     } else if (t.dataset.dock === 'stretch') {
       drawGrains();
+    } else if (t.dataset.dock === 'prism') {
+      prismPadOpen();
     }
   };
 });
@@ -3771,10 +3773,17 @@ function renderFxPicker() {
   const box = $('fxPickerGroups');
   if (!box) return;
   box.innerHTML = '';
+  // A prism effect says what it is, so it is filed by that rather than by a
+  // list of names here.
+  const PRISM_GROUPS = { delay: 'Reverb & Delay', reverb: 'Reverb & Delay',
+    modulation: 'Chorus & Phasing', pitch: 'Pitch & Motion', granular: 'Pitch & Motion',
+    filter: 'EQ & Compression', dynamics: 'EQ & Compression', spectral: 'Spectral' };
   const groupFor = (kind) => {
+    const prism = state.shapers[kind]?.category;
+    if (prism) return PRISM_GROUPS[prism] || 'Utility & Shaping';
     if (['gain', 'eq', 'comp', 'gate', 'dattorro_notch', 'dattorro_resonator',
       'regalia_mitra', 'chamberlin', 'damping_filter', 'dc'].includes(kind)) return 'EQ & Compression';
-    if (['dattorro_plate', 'allpass_diffuser', 'dattorro_echo', 'schroeder_reverb', 'moorer_reverb'].includes(kind)) return 'Reverb & Delay';
+    if (['dattorro_plate', 'allpass_diffuser', 'schroeder_reverb', 'moorer_reverb'].includes(kind)) return 'Reverb & Delay';
     if (['white_chorus', 'dattorro_flanger', 'dattorro_vibrato', 'leslie', 'phaser'].includes(kind)) return 'Chorus & Phasing';
     if (['harmonizer', 'detune', 'doubler', 'doppler', 'boomerang'].includes(kind)) return 'Pitch & Motion';
     if (['pn_noise', 'pn_noise_eq', 'single_bit_pn', 'ring'].includes(kind)) return 'Noise & Generators';
@@ -3877,6 +3886,7 @@ async function commitRack() {
       sr: state.view.sampleRate || 48000,
       slots: state.rack.slots,
       master: state.rack.master,
+      pads: state.rack.pads || {},
       // The engine is already where it needs to be; asking for a rebuild here
       // is what used to cut the reverb tail every time a control was released.
       keepLive: true,
@@ -3928,6 +3938,8 @@ function adoptRack(fresh) {
   for (let i = 0; i < fresh.slots.length; i++) Object.assign(cur.slots[i], fresh.slots[i]);
   if (fresh.master) Object.assign(cur.master, fresh.master);
   if (fresh.slotIds) cur.slotIds = fresh.slotIds;
+  // The Prism pad's setups, as the server checked them against the slots.
+  if (fresh.pads) cur.pads = fresh.pads;
   return false;
 }
 
@@ -3942,6 +3954,7 @@ function pushRack({ immediate = false } = {}) {
         sr: state.view.sampleRate || 48000,
         slots: state.rack.slots,
         master: state.rack.master,
+        pads: state.rack.pads || {},
       }));
     } catch (e) { toast(e.message); return; }
     renderRack();
@@ -4153,6 +4166,7 @@ function renderFxModuleControls(box, slot, shaper, slotIndex) {
   if (shaper) {
     if (slot.kind === 'dattorro_filter_bank') { renderDattorroFilterBank(box, slot, shaper); return; }
     if (slot.kind === 'chamberlin') { renderVisualChamberlin(box, slot, shaper); return; }
+    if (shaper.panel) { renderPrismControls(box, slot, shaper); return; }
     slot.params = slot.params || {};
     const fitRows = [];
     if (!shaper.params.length) {
@@ -4165,14 +4179,7 @@ function renderFxModuleControls(box, slot, shaper, slotIndex) {
     if(wetSpec&&drySpec){
       if(slot.params.wet===undefined)slot.params.wet=wetSpec.default;
       if(slot.params.dry===undefined)slot.params.dry=drySpec.default;
-      const linkedPosition=()=>slot.params.wet>=.999?1-slot.params.dry/2:slot.params.wet/2;
-      add('Dry / Wet',linkedPosition(),0,1,.001,v=>{const wet=Math.min(1,v*2),dry=Math.min(1,(1-v)*2);return `D ${Math.round(dry*100)} · W ${Math.round(wet*100)}`;},v=>{
-        slot.params.wet=Math.min(1,v*2);slot.params.dry=Math.min(1,(1-v)*2);
-        // One control, two writes: the linked position is an interface idea and
-        // the effect only knows wet and dry.
-        liveParam(slot.id,'wet',slot.params.wet);
-        liveParam(slot.id,'dry',slot.params.dry);
-      }, false, null, undefined, true);
+      box.appendChild(linkedDryWet(slot));
     }
     for (const p of shaper.params) {
       if(p.key==='wet'||p.key==='dry')continue;
@@ -4206,6 +4213,203 @@ function renderFxModuleControls(box, slot, shaper, slotIndex) {
   } else if (slot.kind === 'comp') {
     renderVisualCompressor(box, slot);
   }
+}
+
+/// Wet and dry as one control, for any effect that has both.
+///
+/// Left of centre is all dry and less wet, right of centre all wet and less
+/// dry. One control, two writes: the linked position is an interface idea and
+/// the effect only knows wet and dry.
+function linkedDryWet(slot) {
+  const position = slot.params.wet >= .999 ? 1 - slot.params.dry / 2 : slot.params.wet / 2;
+  return param('Dry / Wet', position, 0, 1, .001,
+    (v) => { const wet = Math.min(1, v * 2), dry = Math.min(1, (1 - v) * 2);
+      return `D ${Math.round(dry * 100)} · W ${Math.round(wet * 100)}`; },
+    (v) => {
+      slot.params.wet = Math.min(1, v * 2); slot.params.dry = Math.min(1, (1 - v) * 2);
+      liveParam(slot.id, 'wet', slot.params.wet);
+      liveParam(slot.id, 'dry', slot.params.dry);
+    },
+    () => { commitRack(); }, false, undefined);
+}
+
+/// An effect from prism-fx, drawn from the panel it declares.
+///
+/// The crate carries each effect's layout as well as its controls — the
+/// groups and order the original used, and the Prism pad's default pair — so
+/// this draws what it is given and knows nothing about any one effect. A new
+/// prism effect needs no work here, as a new shaper needs none above.
+function renderPrismControls(box, slot, shaper) {
+  slot.params = slot.params || {};
+  for (const p of shaper.params) if (slot.params[p.key] === undefined) slot.params[p.key] = p.default;
+  const byKey = Object.fromEntries(shaper.params.map((p) => [p.key, p]));
+  // Each control's row, so the pad can move the sliders it moves.
+  const rows = {};
+  // A control that only means something in one setting of another — the
+  // gate's reduction, while the type is Gate-Duck — is dimmed otherwise, as
+  // SoundHack swapped that box's label with the type.
+  const refresh = () => {
+    for (const p of shaper.params) {
+      if (p.when && rows[p.key]) rows[p.key].classList.toggle('inactive', Math.round(slot.params[p.when.key]) !== p.when.value);
+    }
+  };
+  if (shaper.sound) box.appendChild(prismSoundRow(slot, shaper.sound));
+  const pad = shaper.panel.pad;
+  if (pad && byKey[pad.x] && byKey[pad.y]) box.appendChild(prismModulePad(slot, byKey[pad.x], byKey[pad.y], pad, rows));
+  const groups = shaper.panel.groups?.length ? shaper.panel.groups
+    : [{ label: '', keys: shaper.params.map((p) => p.key) }];
+  for (const group of groups) {
+    const section = document.createElement('div');
+    section.className = 'prism-group';
+    if (group.label) {
+      const label = document.createElement('span');
+      label.className = 'prism-group-label';
+      label.textContent = group.label;
+      section.appendChild(label);
+    }
+    // Wet and dry in one group are one linked control, as on every other
+    // effect that has both.
+    const linked = group.keys.includes('wet') && group.keys.includes('dry');
+    for (const key of group.keys) {
+      const p = byKey[key];
+      if (!p || (linked && key === 'dry')) continue;
+      section.appendChild(linked && key === 'wet' ? linkedDryWet(slot) : prismModuleControl(slot, p, rows, refresh));
+    }
+    box.appendChild(section);
+  }
+  refresh();
+}
+
+/// The sound an effect takes as well as its input — a convolution's impulse —
+/// chosen from the library. Changing it rebuilds the chain: the effect is
+/// handed a new sound, which is not something done mid-stream.
+function prismSoundRow(slot, input) {
+  const row = document.createElement('div');
+  row.className = 'param prism-sound';
+  const name = (path) => (path ? path.split('/').pop() : 'none');
+  row.innerHTML = `<span class="k"></span><span class="prism-sound-name"></span><button class="ghost prism-sound-pick">Pick…</button>`;
+  row.querySelector('.k').textContent = input.label;
+  const shown = row.querySelector('.prism-sound-name');
+  shown.textContent = name(slot.sound);
+  shown.title = slot.sound || `No ${input.label.toLowerCase()} yet: the sound passes through`;
+  const choose = document.createElement('div');
+  choose.className = 'prism-sound-chooser hidden';
+  choose.innerHTML = `<select class="mini prism-sound-folder" aria-label="Folder"></select>
+    <select class="mini prism-sound-file" aria-label="${input.label}"></select>
+    <button class="ghost prism-sound-use">Use</button><button class="ghost prism-sound-none">None</button>`;
+  const folders = choose.querySelector('.prism-sound-folder');
+  const files = choose.querySelector('.prism-sound-file');
+  const fill = async () => {
+    files.innerHTML = '';
+    try {
+      const list = await api(`/api/files?folder=${encodeURIComponent(folders.value)}`);
+      for (const f of list) files.add(choiceOption(f.filename || name(f.path), f.path, f.path === slot.sound));
+    } catch { /* an empty list says it */ }
+  };
+  for (const f of state.folders || []) folders.add(choiceOption(f.name, f.name, (slot.sound || '').startsWith(f.name + '/')));
+  folders.onchange = fill;
+  const use = (path) => {
+    slot.sound = path || undefined;
+    pushRack({ immediate: true });
+    renderRack();
+  };
+  choose.querySelector('.prism-sound-use').onclick = () => use(files.value);
+  choose.querySelector('.prism-sound-none').onclick = () => use(null);
+  row.querySelector('.prism-sound-pick').onclick = async () => {
+    choose.classList.toggle('hidden');
+    if (!choose.classList.contains('hidden')) await fill();
+  };
+  const wrap = document.createElement('div');
+  wrap.className = 'prism-sound-wrap';
+  wrap.append(row, choose);
+  return wrap;
+}
+
+/// One prism control: a slider, stepping through whole values for a count and
+/// reading as a name for a choice, or a switch.
+function prismModuleControl(slot, p, rows, moved = () => {}) {
+  // A switch, or a choice of two or three, as named buttons beside its full
+  // label — the shared panel's radio buttons, as SoundHack drew "Below Thresh."
+  // and "Above Thresh." — rather than a slider or a squeezed switch label.
+  const few = p.choices && p.choices.length <= 3;
+  if (p.toggle || few) {
+    const options = p.toggle ? [[p.min, 'Off'], [p.max, 'On']] : p.choices.map((c, i) => [p.min + i, c]);
+    const now = p.toggle ? (slot.params[p.key] >= (p.min + p.max) / 2 ? p.max : p.min) : Math.round(slot.params[p.key]);
+    const row = seg(p.label, options, now, (v) => {
+      slot.params[p.key] = v;
+      liveParam(slot.id, p.key, v);
+      commitRack();
+      moved();
+    });
+    rows[p.key] = row;
+    return row;
+  }
+  const stepped = p.step === 1;
+  const format = p.choices ? (v) => p.choices[Math.round(v - p.min)] ?? String(Math.round(v))
+    : stepped ? (v) => String(Math.round(v)) : (v) => fxValueFormat(p, v);
+  const row = param(p.label, slot.params[p.key], p.min, p.max, stepped ? 1 : (p.max - p.min) / 400, format,
+    (v) => {
+      const value = stepped ? Math.round(v) : v;
+      slot.params[p.key] = value;
+      liveParam(slot.id, p.key, value);
+      moved();
+    },
+    () => { commitRack(); }, p.log && !stepped, p.default);
+  rows[p.key] = row;
+  return row;
+}
+
+/// A value from a place along a control's travel: the inverse of `automationUnit`.
+function unitValue(unit, min, max, log = false) {
+  const u = Math.max(0, Math.min(1, unit));
+  return log && min > 0 ? min * Math.pow(max / min, u) : min + (max - min) * u;
+}
+
+/// The Prism pad: two controls on one surface, across and up.
+///
+/// Hyperprism's whole interface, in miniature. Each axis covers the part of its
+/// control's range the effect declares, which may be narrower than the
+/// slider's: the useful part, rather than everything the control can reach.
+function prismModulePad(slot, px, py, pad, rows) {
+  const el = document.createElement('div');
+  el.className = 'prism-pad';
+  el.setAttribute('role', 'group');
+  el.setAttribute('aria-label', `${px.label} across, ${py.label} up`);
+  el.title = `${px.label} across · ${py.label} up`;
+  const dot = document.createElement('i');
+  dot.className = 'prism-pad-dot';
+  el.appendChild(dot);
+  const axes = [[px, pad.xMin, pad.xMax], [py, pad.yMin, pad.yMax]];
+  const place = () => {
+    const [u, w] = axes.map(([p, lo, hi]) => automationUnit(slot.params[p.key], lo, hi, p.log));
+    dot.style.left = `${u * 100}%`;
+    dot.style.top = `${(1 - w) * 100}%`;
+  };
+  const move = (event) => {
+    const r = el.getBoundingClientRect();
+    const units = [(event.clientX - r.left) / r.width, 1 - (event.clientY - r.top) / r.height];
+    axes.forEach(([p, lo, hi], i) => {
+      let v = unitValue(units[i], lo, hi, p.log);
+      if (p.step === 1) v = Math.round(v);
+      slot.params[p.key] = v;
+      liveParam(slot.id, p.key, v);
+      rows[p.key]?.sync(v);
+    });
+    place();
+  };
+  el.onpointerdown = (event) => {
+    event.preventDefault();
+    el.setPointerCapture?.(event.pointerId);
+    move(event);
+    el.onpointermove = move;
+  };
+  el.onpointerup = el.onpointercancel = () => {
+    if (!el.onpointermove) return;
+    el.onpointermove = null;
+    commitRack();
+  };
+  place();
+  return el;
 }
 
 function renderDattorroFilterBank(box,slot,shaper){

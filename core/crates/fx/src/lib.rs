@@ -19,6 +19,7 @@ pub mod master;
 pub mod noise;
 pub mod params;
 pub mod phaser;
+pub mod prism;
 pub mod nstream;
 pub mod pstream;
 pub mod pvsola;

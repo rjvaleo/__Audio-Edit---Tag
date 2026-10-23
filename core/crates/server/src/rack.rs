@@ -27,6 +27,10 @@ pub struct RackSpec {
     /// it is not something you add and cannot be reordered, because the end of
     /// the chain is the only place it means anything.
     pub master: MasterSettings,
+    /// The Prism pad's setup for each source that has one: a slot id, or
+    /// `pad::STRETCH` for Time & Pitch. A preference of the slot, so it
+    /// travels with the rack.
+    pub pads: BTreeMap<String, crate::pad::PadSetup>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +50,10 @@ pub enum SlotSpec {
     /// automation will address, and because the order the interface shows them
     /// in is the order the effect declares.
     Shape { kind: ShapeKind, params: Vec<(String, f32)>, bypassed: bool },
+    /// An effect from `prism-fx`, shared with idMLab. Like a shaper it
+    /// describes its own parameters; its kind in JSON is `prism:<id>`, and the
+    /// id and keys are the crate's descriptor's.
+    Prism { id: &'static str, params: Vec<(String, f32)>, sound: Option<String>, bypassed: bool },
 }
 
 impl SlotSpec {
@@ -54,7 +62,8 @@ impl SlotSpec {
             SlotSpec::Gain { bypassed, .. }
             | SlotSpec::Eq { bypassed, .. }
             | SlotSpec::Comp { bypassed, .. }
-            | SlotSpec::Shape { bypassed, .. } => *bypassed,
+            | SlotSpec::Shape { bypassed, .. }
+            | SlotSpec::Prism { bypassed, .. } => *bypassed,
         }
     }
 
@@ -64,6 +73,7 @@ impl SlotSpec {
             SlotSpec::Eq { .. } => "eq",
             SlotSpec::Comp { .. } => "comp",
             SlotSpec::Shape { kind, .. } => kind.as_str(),
+            SlotSpec::Prism { id, .. } => fx::prism::kind(id).unwrap_or("prism:"),
         }
     }
 
@@ -96,6 +106,15 @@ impl SlotSpec {
                 }
                 *params = pr.clone();
             }
+            (SlotSpec::Prism { id, params, sound, .. }, SlotSpec::Prism { id: i, params: pr, sound: so, .. }) => {
+                // As for shapers: the effect decides which controls exist. The
+                // impulse is part of the sound being dropped on, so it comes too.
+                if id != i {
+                    return false;
+                }
+                *params = pr.clone();
+                *sound = so.clone();
+            }
             _ => return false,
         }
         true
@@ -107,6 +126,7 @@ impl SlotSpec {
             SlotSpec::Eq { .. } => "EQ",
             SlotSpec::Comp { .. } => "Compressor",
             SlotSpec::Shape { kind, .. } => kind.label(),
+            SlotSpec::Prism { id, .. } => fx::prism::descriptor(id).map_or("Effect", |d| d.label),
         }
     }
 }
@@ -162,9 +182,24 @@ fn band_json(b: &Band) -> Value {
         .set("gainDb", b.gain_db as f64)
 }
 
+/// The pads that still have something to drive: Time & Pitch, or a slot in
+/// this rack, with controls it still has.
+fn pads_from_json(v: Option<&Value>, spec: &RackSpec) -> BTreeMap<String, crate::pad::PadSetup> {
+    let mut out = BTreeMap::new();
+    let Some(Value::Obj(map)) = v else { return out };
+    let sources = crate::pad::sources(spec);
+    for (id, setup) in map {
+        let Some(source) = sources.iter().find(|s| &s.id == id) else { continue };
+        if let Some(pad) = crate::pad::PadSetup::from_json(setup, source) {
+            out.insert(id.clone(), pad);
+        }
+    }
+    out
+}
+
 impl RackSpec {
     pub fn empty() -> Self {
-        RackSpec { slots: Vec::new(), slot_ids: Vec::new(), master: MasterSettings::default() }
+        RackSpec { slots: Vec::new(), slot_ids: Vec::new(), master: MasterSettings::default(), pads: BTreeMap::new() }
     }
 
     /// The rack a file starts with: an EQ and a compressor, both **on**.
@@ -191,6 +226,7 @@ impl RackSpec {
             ],
             slot_ids: vec!["factory-eq".into(), "factory-comp".into()],
             master: MasterSettings::default(),
+            pads: BTreeMap::new(),
         }
     }
 
@@ -272,6 +308,23 @@ impl RackSpec {
                         bypassed,
                     })
                 }
+                other if fx::prism::id_for_kind(other).is_some() => {
+                    // A prism effect, or a kind that has moved into one — the
+                    // old Echo's `dattorro_echo` among them — with its values
+                    // read by the same keys.
+                    let id = fx::prism::id_for_kind(other).unwrap_or_default();
+                    let mut params = Vec::new();
+                    for spec in fx::prism::specs(id).unwrap_or_default() {
+                        let v = num(it.get("params").and_then(|p| p.get(spec.key)), spec.default);
+                        params.push((spec.key.to_string(), fx::prism::clamp(id, spec.key, v).unwrap_or(v)));
+                    }
+                    // The sound it takes, by library path, where it takes one.
+                    let sound = fx::prism::sound_input(id)
+                        .and(it.get("sound").and_then(Value::as_str))
+                        .filter(|p| !p.is_empty())
+                        .map(str::to_string);
+                    slots.push(SlotSpec::Prism { id, params, sound, bypassed });
+                }
                 other => {
                     // Anything else is a shaper, or nothing. An unknown kind is
                     // dropped rather than guessed at: a slot whose name we do
@@ -296,7 +349,9 @@ impl RackSpec {
                 slot_ids.push(id);
             }
         }
-        RackSpec { slots, slot_ids, master }
+        let mut spec = RackSpec { slots, slot_ids, master, pads: BTreeMap::new() };
+        spec.pads = pads_from_json(v.get("pads"), &spec);
+        spec
     }
 
     pub fn to_json(&self) -> Value {
@@ -342,18 +397,27 @@ impl RackSpec {
                         .set("releaseMs", settings.release_ms as f64)
                         .set("kneeDb", settings.knee_db as f64)
                         .set("makeupDb", settings.makeup_db as f64),
-                    SlotSpec::Shape { params, .. } => {
+                    SlotSpec::Shape { params, .. } | SlotSpec::Prism { params, .. } => {
                         let mut p = Value::obj();
                         for (k, v) in params {
                             p = p.set(k, *v as f64);
                         }
+                        let base = match s {
+                            SlotSpec::Prism { sound: Some(path), .. } => base.set("sound", path.as_str()),
+                            _ => base,
+                        };
                         base.set("params", p)
                     }
                 }
             })
             .collect();
+        let mut pads = Value::obj();
+        for (id, pad) in &self.pads {
+            pads = pads.set(id, pad.to_json());
+        }
         Value::obj()
             .set("slots", Value::Arr(slots))
+            .set("pads", pads)
             .set("master", master_to_json(&self.master))
             .set("active", self.is_active())
     }
@@ -378,7 +442,7 @@ impl RackSpec {
             // inert — a gain of zero, an EQ that is flat — but a ring modulator
             // at any setting is audible, and asking each kind whether its own
             // values happen to be inert is nine more things to keep true.
-            SlotSpec::Shape { bypassed, .. } => !bypassed,
+            SlotSpec::Shape { bypassed, .. } | SlotSpec::Prism { bypassed, .. } => !bypassed,
         })
     }
 
@@ -398,6 +462,13 @@ impl RackSpec {
                 SlotSpec::Comp { settings, .. } => Box::new(Compressor::new(*settings)),
                 SlotSpec::Shape { kind, params, .. } => {
                     fx::shape::make(*kind, sample_rate, channels, params)
+                }
+                // The id came from the catalogue when the slot was read, so
+                // this cannot miss; a gain of nothing keeps slot *n* at *n* if
+                // it somehow did.
+                SlotSpec::Prism { id, params, sound, .. } => {
+                    fx::prism::make_with_sound(id, sample_rate, channels, params, sound.as_deref())
+                        .unwrap_or_else(|| Box::new(Gain { db: 0.0 }))
                 }
             };
             // A bypassed slot is built and switched off rather than skipped, so
@@ -444,6 +515,16 @@ impl RackSpec {
                 }
                 true
             }
+            SlotSpec::Prism { id, params, .. } => {
+                let Some(v) = fx::prism::clamp(id, key, value) else {
+                    return false;
+                };
+                match params.iter_mut().find(|(k, _)| k == key) {
+                    Some(entry) => entry.1 = v,
+                    None => params.push((key.to_string(), v)),
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -454,7 +535,7 @@ impl RackSpec {
             SlotSpec::Gain { db, .. } if key == "db" => Some(*db),
             SlotSpec::Eq { settings, .. } => get_eq_param(settings, key),
             SlotSpec::Comp { settings, .. } => get_comp_param(settings, key),
-            SlotSpec::Shape { params, .. } => {
+            SlotSpec::Shape { params, .. } | SlotSpec::Prism { params, .. } => {
                 params.iter().find(|(k, _)| k == key).map(|(_, v)| *v)
             }
             _ => None,
@@ -579,10 +660,146 @@ mod tests {
                 .collect();
             slots.push(SlotSpec::Shape { kind, params, bypassed: false });
         }
-        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default() };
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new() };
         let back = RackSpec::from_json(&spec.to_json());
         assert_eq!(back, spec, "a shaper lost something on the way through JSON");
         assert!(!back.build(48_000, 2).is_empty(), "none of them built");
+    }
+
+    /// Every effect from `prism-fx` is a slot, named `prism:<id>`, and goes out
+    /// to JSON and back with its parameters, like the shapers.
+    #[test]
+    fn every_prism_effect_survives_a_round_trip_with_its_parameters() {
+        let mut slots = Vec::new();
+        for entry in fx::prism::catalogue() {
+            let d = entry.descriptor;
+            let params = d
+                .params
+                .iter()
+                .map(|p| (p.key.to_string(), fx::prism::clamp(d.id, p.key, p.from_unit(0.3)).unwrap()))
+                .collect();
+            slots.push(SlotSpec::Prism { id: d.id, params, sound: None, bypassed: false });
+        }
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new() };
+        let json = spec.to_json();
+        let Some(Value::Arr(items)) = json.get("slots") else { panic!("no slots") };
+        for (item, entry) in items.iter().zip(fx::prism::catalogue()) {
+            assert_eq!(
+                item.get("kind").and_then(Value::as_str),
+                Some(format!("prism:{}", entry.descriptor.id).as_str())
+            );
+        }
+        let back = RackSpec::from_json(&json);
+        assert_eq!(back, spec, "a prism effect lost something on the way through JSON");
+        // Built in place, slot for slot, and answering by the crate's keys.
+        let rack = back.build(48_000, 2);
+        for (i, entry) in fx::prism::catalogue().iter().enumerate() {
+            let key = entry.descriptor.params[0].key;
+            assert_eq!(rack.get_param(i, key), back.get_param(i, key), "slot {i} is not {}", entry.descriptor.id);
+        }
+    }
+
+    /// A pad setup is kept with the rack, under the slot it drives — or under
+    /// `stretch` for Time & Pitch — and read back checked against what that
+    /// source has now.
+    #[test]
+    fn pad_setups_are_kept_with_the_rack_and_checked_on_the_way_back() {
+        use crate::pad::{PadSetup, STRETCH};
+        let v = crate::json::parse(
+            r#"{"slots":[{"kind":"ring","id":"r","params":{"hz":220,"mix":1}}],
+                "pads":{"r":{"x":"mix","xLo":0.1,"xHi":0.9,"y":"hz","yLo":50,"yHi":2000},
+                        "stretch":{"x":"ratio","xLo":2,"xHi":0.5,"y":"semitones","yLo":-7,"yHi":7},
+                        "ghost":{"x":"mix","xLo":0,"xHi":1,"y":"hz","yLo":1,"yHi":2},
+                        "r2":{"x":"nope","xLo":0,"xHi":1,"y":"hz","yLo":1,"yHi":2}}}"#,
+        )
+        .unwrap();
+        let spec = RackSpec::from_json(&v);
+        assert_eq!(spec.pads.len(), 2, "a pad for a slot that is not here, or a bad one, is dropped");
+        assert_eq!(
+            spec.pads.get("r"),
+            Some(&PadSetup { x: "mix".into(), x_lo: 0.1, x_hi: 0.9, y: "hz".into(), y_lo: 50.0, y_hi: 2000.0 })
+        );
+        assert_eq!(spec.pads.get(STRETCH).map(|p| (p.x_lo, p.x_hi)), Some((2.0, 0.5)));
+        assert_eq!(RackSpec::from_json(&spec.to_json()), spec, "pads lost something through JSON");
+    }
+
+    /// Documents saved before the Echo moved name `dattorro_echo`. They open
+    /// on the prism Echo with every value they stored, and save as the new kind.
+    #[test]
+    fn an_old_echo_opens_as_the_prism_echo_with_its_settings() {
+        let v = crate::json::parse(
+            r#"{"slots":[{"kind":"dattorro_echo","id":"e1","bypassed":true,
+                "params":{"delayMs":125,"feedback":-0.4,"damping":0.6,"wet":0.8,"dry":0.3,"glideMs":40}}]}"#,
+        )
+        .unwrap();
+        let spec = RackSpec::from_json(&v);
+        assert_eq!(spec.slot_ids, ["e1"]);
+        match &spec.slots[0] {
+            SlotSpec::Prism { id, params, bypassed, .. } => {
+                assert_eq!(*id, "echo");
+                assert!(*bypassed);
+                let want = [("delayMs", 125.0), ("feedback", -0.4), ("damping", 0.6), ("wet", 0.8), ("dry", 0.3), ("glideMs", 40.0)];
+                for (k, v) in want {
+                    assert_eq!(params.iter().find(|(key, _)| key == k).map(|(_, v)| *v), Some(v), "{k}");
+                }
+            }
+            other => panic!("the old Echo opened as {other:?}"),
+        }
+        let out = spec.to_json();
+        let Some(Value::Arr(items)) = out.get("slots") else { panic!("no slots") };
+        assert_eq!(items[0].get("kind").and_then(Value::as_str), Some("prism:echo"));
+    }
+
+    /// The sound a prism effect takes is kept with its slot, by library path;
+    /// an effect that takes none keeps none.
+    #[test]
+    fn a_slots_sound_is_kept_by_name_and_only_where_it_means_something() {
+        let v = crate::json::parse(
+            r#"{"slots":[{"kind":"prism:convolution","id":"c","sound":"rooms/hall.wav","params":{}},
+                         {"kind":"prism:tremolo","id":"t","sound":"rooms/hall.wav","params":{}}]}"#,
+        )
+        .unwrap();
+        let spec = RackSpec::from_json(&v);
+        let sound = |i: usize| match &spec.slots[i] {
+            SlotSpec::Prism { sound, .. } => sound.clone(),
+            _ => panic!("not a prism slot"),
+        };
+        assert_eq!(sound(0).as_deref(), Some("rooms/hall.wav"));
+        assert_eq!(sound(1), None, "a tremolo takes no sound");
+        assert_eq!(RackSpec::from_json(&spec.to_json()), spec);
+    }
+
+    #[test]
+    fn a_prism_effect_this_version_does_not_have_is_left_out() {
+        let v = crate::json::parse(r#"{"slots":[{"kind":"prism:telepathy","params":{"x":1}},{"kind":"gain","db":1}]}"#)
+            .unwrap();
+        let spec = RackSpec::from_json(&v);
+        assert_eq!(spec.slots.len(), 1);
+        assert_eq!(spec.slot_ids.len(), 1);
+    }
+
+    #[test]
+    fn a_prism_slots_controls_are_clamped_by_the_crates_table() {
+        let mut spec = RackSpec::empty();
+        spec.slots.push(SlotSpec::Prism { id: "tremolo", params: Vec::new(), sound: None, bypassed: false });
+        spec.slot_ids.push("t".into());
+        assert!(spec.set_param(0, "rateHz", 9_999.0));
+        assert_eq!(spec.get_param(0, "rateHz"), Some(20.0));
+        assert!(spec.set_param(0, "shape", 1.4), "a choice moves");
+        assert_eq!(spec.get_param(0, "shape"), Some(1.0), "and lands on a whole value");
+        assert!(!spec.set_param(0, "nonsense", 1.0));
+        assert!(spec.is_active(), "a prism effect switched in is doing something");
+    }
+
+    #[test]
+    fn settings_pass_between_prism_slots_of_the_same_effect_only() {
+        let mut a = SlotSpec::Prism { id: "tremolo", params: vec![("depth".into(), 0.1)], sound: None, bypassed: false };
+        let b = SlotSpec::Prism { id: "tremolo", params: vec![("depth".into(), 0.9)], sound: None, bypassed: true };
+        let c = SlotSpec::Prism { id: "decimator", params: vec![("bits".into(), 4.0)], sound: None, bypassed: false };
+        assert!(a.take_settings_from(&b));
+        assert_eq!(a, SlotSpec::Prism { id: "tremolo", params: vec![("depth".into(), 0.9)], sound: None, bypassed: false });
+        assert!(!a.take_settings_from(&c));
+        assert_eq!(a.kind_label(), "Tremolo");
     }
 
     /// An unknown kind is dropped rather than guessed at. A slot from a newer
@@ -624,6 +841,7 @@ mod tests {
                 bypassed: false,
             }],
             master: MasterSettings::default(),
+            pads: BTreeMap::new(),
         };
         assert!(spec.is_active());
         assert!(!spec.build(48_000, 2).is_empty());
@@ -636,6 +854,7 @@ mod tests {
             slot_ids: named(&vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }]),
             slots: vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }],
             master: MasterSettings::default(),
+            pads: BTreeMap::new(),
         };
         assert!(!spec.is_active());
     }
@@ -646,6 +865,7 @@ mod tests {
             slot_ids: named(&vec![SlotSpec::Gain { db: 12.0, bypassed: true }]),
             slots: vec![SlotSpec::Gain { db: 12.0, bypassed: true }],
             master: MasterSettings::default(),
+            pads: BTreeMap::new(),
         };
         assert!(spec.build(48_000, 2).is_empty());
         assert!(!spec.is_active());
@@ -692,6 +912,7 @@ mod tests {
             slot_ids: named(&vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }]),
             slots: vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }],
             master: MasterSettings::default(),
+            pads: BTreeMap::new(),
         };
         for (f, db) in spec.eq_curve(48000, 64) {
             assert!(db.abs() < 0.1, "flat EQ curved by {db} dB at {f} Hz");
@@ -710,6 +931,7 @@ mod tests {
                 bypassed: false,
             }],
             master: MasterSettings::default(),
+            pads: BTreeMap::new(),
         };
         let curve = spec.eq_curve(48000, 200);
         let (peak_f, peak_db) = curve
@@ -731,7 +953,7 @@ mod tests {
     #[test]
     fn the_store_remembers_what_was_set() {
         let store = RackStore::default();
-        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default() });
+        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new() });
         assert!(store.is_active("a.wav"));
         assert_eq!(store.get("a.wav").slots.len(), 1);
     }

@@ -391,6 +391,11 @@ pub fn resolve(slot: &crate::rack::SlotSpec, key: &str, unit: f32) -> Option<f32
         }
         // The shapers describe themselves, so there is nothing to write down.
         SlotSpec::Shape { kind, .. } => kind.specs().iter().find(|p| p.key == key)?.from_unit(unit),
+        // Through the crate's own clamp too, so a choice lands on a choice.
+        SlotSpec::Prism { id, .. } => {
+            let v = fx::prism::specs(id)?.iter().find(|p| p.key == key)?.from_unit(unit);
+            fx::prism::clamp(id, key, v)?
+        }
         _ => return None,
     })
 }
@@ -620,14 +625,50 @@ pub fn stretch_field(s: &fx::Stretch, target: &str) -> Option<f32> {
     })
 }
 
+/// A pad's take as one list: `(frame, x, y)` at every frame either lane has a
+/// point at, each lane's value there from `curve_value`. Empty unless both
+/// targets have a lane with points.
+pub fn path(a: &Automation, x: &str, y: &str) -> Vec<(u64, f32, f32)> {
+    let lane = |t: &str| a.lanes.iter().find(|l| l.target == t && !l.points.is_empty());
+    let (Some(lx), Some(ly)) = (lane(x), lane(y)) else {
+        return Vec::new();
+    };
+    let mut frames: Vec<u64> = lx.points.iter().chain(&ly.points).map(|p| p.frame).collect();
+    frames.sort_unstable();
+    frames.dedup();
+    frames
+        .into_iter()
+        .filter_map(|f| Some((f, curve_value(&lx.points, f)?, curve_value(&ly.points, f)?)))
+        .collect()
+}
+
+/// Loop the pad's two lanes over the span of the take, or stop looping them.
+/// `false` if either has no lane with points.
+pub fn loop_path(a: &mut Automation, x: &str, y: &str, on: bool) -> bool {
+    let span = path(a, x, y);
+    let (Some(first), Some(last)) = (span.first(), span.last()) else {
+        return false;
+    };
+    let range = (on && last.0 > first.0).then_some((first.0, last.0));
+    for l in a.lanes.iter_mut().filter(|l| l.target == x || l.target == y) {
+        l.loop_range = range;
+    }
+    true
+}
+
 /// The lane value that would produce `value`, by searching the forward map.
 ///
 /// For the rack's controls, whose ranges live in `resolve`. Every mapping there
 /// is monotonic in the unit — a straight line or a logarithmic one — so
 /// bisection finds the answer to more precision than a lane can hold, in a
 /// fixed forty steps. The document's own controls do not come through here:
-/// their table knows its inverse, and some of them are steps, on which a search
-/// lands on an edge.
+/// their table knows its inverse.
+///
+/// A rack control can be a step too — a prism effect's count or choice — and
+/// on a step the search closes in on the edge between two values, where the
+/// middle of the bracket may still read as the lower one. So the answer is
+/// whichever of the middle and the two ends gives the value back closest, the
+/// middle first: on a smooth control they all agree.
 ///
 /// Returns `None` for a target the forward function does not know, which is
 /// the same answer everything else here gives to a name it cannot resolve.
@@ -646,7 +687,12 @@ pub fn unit_for(forward: impl Fn(f32) -> Option<f32>, value: f32) -> Option<f32>
             hi = mid;
         }
     }
-    Some((0.5 * (lo + hi)).clamp(0.0, 1.0))
+    let miss = |u: f32| forward(u).map_or(f32::INFINITY, |v| (v - value).abs());
+    let best = [0.5 * (lo + hi), hi, lo]
+        .into_iter()
+        .fold((f32::INFINITY, 0.5 * (lo + hi)), |(m, b), u| if miss(u) < m { (miss(u), u) } else { (m, b) })
+        .1;
+    Some(best.clamp(0.0, 1.0))
 }
 
 /// Apply the stretch and grain lanes to a set of stream parameters.
@@ -785,6 +831,11 @@ pub fn targets(spec: &crate::rack::RackSpec) -> Vec<(String, String)> {
             }
             crate::rack::SlotSpec::Shape { kind, .. } => {
                 for p in kind.specs() {
+                    add(p.key, p.label);
+                }
+            }
+            crate::rack::SlotSpec::Prism { id, .. } => {
+                for p in fx::prism::specs(id).unwrap_or_default() {
                     add(p.key, p.label);
                 }
             }
@@ -1597,6 +1648,50 @@ mod tests {
         assert_eq!(a.lanes[0].id, "b");
     }
 
+    /// The pad draws a take as one list of points: every frame either lane has
+    /// a point at, with both lanes' values there.
+    #[test]
+    fn a_path_is_both_lanes_at_every_frame_either_has_a_point() {
+        let a = automation(vec![
+            lane("fx.r.hz", vec![(0, 0.1), (100, 0.5), (300, 0.9)]),
+            lane("fx.r.mix", vec![(0, 0.2), (200, 0.6)]),
+        ]);
+        let p = path(&a, "fx.r.hz", "fx.r.mix");
+        let frames: Vec<u64> = p.iter().map(|(f, _, _)| *f).collect();
+        assert_eq!(frames, [0, 100, 200, 300]);
+        for &(f, x, y) in &p {
+            let hz = a.lanes.iter().find(|l| l.target == "fx.r.hz").unwrap();
+            let mix = a.lanes.iter().find(|l| l.target == "fx.r.mix").unwrap();
+            assert_eq!(x, curve_value(&hz.points, f).unwrap());
+            assert_eq!(y, curve_value(&mix.points, f).unwrap());
+        }
+        assert!(path(&a, "fx.r.hz", "fx.r.nothing").is_empty(), "a path needs both lanes");
+    }
+
+    /// LOOP puts both lanes on the take's span, so they wrap together.
+    #[test]
+    fn looping_a_path_wraps_both_lanes_over_the_same_span() {
+        let mut a = automation(vec![
+            lane("stretch.ratio", vec![(1_000, 0.1), (5_000, 0.9)]),
+            lane("stretch.semitones", vec![(1_200, 0.3), (6_000, 0.7)]),
+            lane("stretch.windowMs", vec![(0, 0.5)]),
+        ]);
+        assert!(loop_path(&mut a, "stretch.ratio", "stretch.semitones", true));
+        for l in &a.lanes[..2] {
+            assert_eq!(l.loop_range, Some((1_000, 6_000)), "{}", l.target);
+        }
+        assert_eq!(a.lanes[2].loop_range, None, "only the pad's two lanes");
+        for f in [1_500u64, 3_333, 5_999] {
+            let later = f + 5_000;
+            for l in &a.lanes[..2] {
+                assert_eq!(l.value_at(f, 0.0), l.value_at(later, 0.0), "{} at {f}", l.target);
+            }
+        }
+        assert!(loop_path(&mut a, "stretch.ratio", "stretch.semitones", false));
+        assert!(a.lanes.iter().all(|l| l.loop_range.is_none()));
+        assert!(!loop_path(&mut a, "stretch.ratio", "stretch.nothing", true));
+    }
+
     #[test]
     fn every_offered_target_actually_resolves() {
         let mut spec = RackSpec::empty();
@@ -1609,6 +1704,13 @@ mod tests {
             params: Vec::new(),
             bypassed: false,
         });
+        // One of every effect from `prism-fx`, named so the round trip below
+        // can find them. The three before them stay unnamed, as they were.
+        spec.slot_ids.resize(spec.slots.len(), String::new());
+        for entry in fx::prism::catalogue() {
+            spec.slots.push(SlotSpec::Prism { id: entry.descriptor.id, params: Vec::new(), sound: None, bypassed: false });
+            spec.slot_ids.push(format!("prism-{}", entry.descriptor.id));
+        }
         spec.master.on = true;
 
         let mut out = Vec::new();
@@ -1681,6 +1783,15 @@ mod tests {
             }
         }
         assert!(stretched >= 6, "the document's own targets went missing");
+        let offered: Vec<String> = targets(&spec).into_iter().map(|(t, _)| t).collect();
+        for (i, slot) in spec.slots.iter().enumerate() {
+            if let SlotSpec::Prism { id, .. } = slot {
+                for p in fx::prism::specs(id).unwrap() {
+                    let target = format!("fx.{}.{}", spec.slot_ids[i], p.key);
+                    assert!(offered.contains(&target), "{target} is not offered");
+                }
+            }
+        }
     }
 
     /// A switch lane throws the switch, a count lane sets the count, and a move

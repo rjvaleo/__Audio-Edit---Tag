@@ -58,7 +58,7 @@ pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SETTINGS_JS, SECTION_PRESETS_JS,
                  SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
-                 PERF_PANEL_JS, COMPOSE_JS, VISUAL_LANES_JS,
+                 PERF_PANEL_JS, PRISM_PAD_JS, COMPOSE_JS, VISUAL_LANES_JS,
                  SHAPES_4D_JS, PANEL_4D_JS,
                  STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
                  VIS_GL_JS, RIDGE_JS, ROOM3D_JS, ROOM_PAINT_JS, VIDEO_EXPORT_JS] {
@@ -130,6 +130,7 @@ pub const SEQ_BRIDGE_JS: &str = include_str!("../../../../ui/sequencer/bridge.js
 /// The sequencer's performance panel, carried over to the grain page's
 /// Automation tab. See `docs/AUTOMATION-CAPTURE.md`.
 pub const PERF_PANEL_JS: &str = include_str!("../../../../ui/perf-panel.js");
+pub const PRISM_PAD_JS: &str = include_str!("../../../../ui/prism-pad.js");
 /// The Compose workspace and its compact panels. See `docs/COMPOSE.md`.
 pub const COMPOSE_JS: &str = include_str!("../../../../ui/compose.js");
 /// The picture's automation lanes. See `docs/COMPOSE.md`, phase three.
@@ -204,6 +205,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/compose.js") => {
             Response::ok("text/javascript; charset=utf-8", COMPOSE_JS.as_bytes().to_vec())
+        }
+        ("GET" | "HEAD", "/prism-pad.js") => {
+            Response::ok("text/javascript; charset=utf-8", PRISM_PAD_JS.as_bytes().to_vec())
         }
         ("GET" | "HEAD", "/perf-panel.js") => {
             Response::ok("text/javascript; charset=utf-8", PERF_PANEL_JS.as_bytes().to_vec())
@@ -327,6 +331,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/automation") => api_automation_get(app, req),
         ("POST", "/api/automation") => api_automation_set(app, req),
         ("GET" | "POST", "/api/automation/record") => api_automation_record(app, req),
+        ("GET", "/api/automation/path") => api_automation_path(app, req),
+        ("POST", "/api/automation/loop") => api_automation_loop(app, req),
+        ("GET", "/api/pad") => api_pad(app, req),
         ("GET" | "POST", "/api/audio/buffer") => api_audio_buffer(app, req),
         ("GET" | "POST", "/api/grains/cap") => api_grain_cap(app, req),
         ("GET", "/api/presets") => api_presets_list(app),
@@ -1146,8 +1153,101 @@ fn api_fx_catalogue() -> Response {
                 .set("label", k.label())
                 .set("params", Value::Arr(params))
         })
+        .chain(fx::prism::catalogue().iter().map(|e| prism_entry(e.descriptor)))
         .collect();
     Response::json(Value::obj().set("shapers", Value::Arr(kinds)).to_string())
+}
+
+/// A prism effect, shaped like a shaper so the interface draws it the same
+/// way, plus what only prism effects carry: the choices a control steps
+/// through, and the panel — the original's groups, the controls shown first,
+/// and the Prism pad's default pair.
+fn prism_entry(d: &'static fx::prism::prism_fx::Descriptor) -> Value {
+    use fx::prism::prism_fx::{Category, Display, ParamKind};
+    let strs = |xs: &[&str]| Value::Arr(xs.iter().map(|x| Value::from(*x)).collect());
+    let params: Vec<Value> = d
+        .params
+        .iter()
+        .map(|p| {
+            let v = Value::obj()
+                .set("key", p.key)
+                .set("label", p.label)
+                .set("min", p.min as f64)
+                .set("max", p.max as f64)
+                .set("default", p.default as f64)
+                .set("log", p.log)
+                .set("unit", p.unit);
+            // A control that only means something in one setting of another.
+            let v = match p.when {
+                Some((key, value)) => v.set("when", Value::obj().set("key", key).set("value", value as f64)),
+                None => v,
+            };
+            match p.kind {
+                ParamKind::Continuous => v,
+                ParamKind::Int => v.set("step", 1.0),
+                ParamKind::Toggle => v.set("toggle", true),
+                ParamKind::Choice(labels) => v.set("step", 1.0).set("choices", strs(labels)),
+            }
+        })
+        .collect();
+    let groups: Vec<Value> = d
+        .panel
+        .groups
+        .iter()
+        .map(|g| Value::obj().set("label", g.label).set("keys", strs(g.keys)))
+        .collect();
+    let displays: Vec<&str> = d
+        .panel
+        .displays
+        .iter()
+        .map(|x| match x {
+            Display::Meter => "meter",
+            Display::Curve => "curve",
+            Display::Scope => "scope",
+            Display::Spectrum => "spectrum",
+            Display::Diagram => "diagram",
+        })
+        .collect();
+    let mut panel = Value::obj()
+        .set("groups", Value::Arr(groups))
+        .set("primary", strs(d.panel.primary))
+        .set("displays", strs(&displays));
+    if let Some(pad) = d.panel.pad {
+        panel = panel.set(
+            "pad",
+            Value::obj()
+                .set("x", pad.x)
+                .set("xMin", pad.x_range.0 as f64)
+                .set("xMax", pad.x_range.1 as f64)
+                .set("y", pad.y)
+                .set("yMin", pad.y_range.0 as f64)
+                .set("yMax", pad.y_range.1 as f64),
+        );
+    }
+    let category = match d.category {
+        Category::Delay => "delay",
+        Category::Reverb => "reverb",
+        Category::Modulation => "modulation",
+        Category::Stereo => "stereo",
+        Category::Filter => "filter",
+        Category::Spectral => "spectral",
+        Category::Pitch => "pitch",
+        Category::Distortion => "distortion",
+        Category::Dynamics => "dynamics",
+        Category::Granular => "granular",
+        Category::Utility => "utility",
+    };
+    let entry = match d.sound {
+        Some(input) => Value::obj().set("sound", Value::obj().set("key", input.key).set("label", input.label)),
+        None => Value::obj(),
+    };
+    entry
+        .set("kind", fx::prism::kind(d.id).unwrap_or_default())
+        .set("label", d.label)
+        .set("category", category)
+        .set("source", d.source)
+        .set("params", Value::Arr(params))
+        .set("panel", panel)
 }
 
 /// A document's automation, and the menu of what it may address.
@@ -1203,7 +1303,7 @@ fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
         let applied = value.clamp(0.0, 1.0);
         spec.master.amount = applied;
         let at = spec.slots.len();
-        app.racks.set(rel, spec);
+        app.set_rack(rel, spec);
         app.save_sessions();
         if crate::live::holding(app, rel) {
             let _ = crate::live::with(app, |h| h.shared.set_manual_param(at, key, applied));
@@ -1228,7 +1328,7 @@ fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
     let applied = spec.get_param(slot, key).unwrap_or(value);
     // Kept for the range lookup below; `set` takes the spec by value.
     let spec2 = spec.clone();
-    app.racks.set(rel, spec);
+    app.set_rack(rel, spec);
 
     // Only while this document is the one being heard.
     if crate::live::holding(app, rel) {
@@ -1419,6 +1519,58 @@ fn api_automation_record(app: &Arc<App>, req: &Request) -> Response {
     )
 }
 
+/// What the Prism pad can drive on this file, each with its controls and its
+/// pair: the one saved with the rack, or the default from Hyperprism's table.
+fn api_pad(app: &Arc<App>, req: &Request) -> Response {
+    let Some(rel) = req.param("p") else {
+        return Response::error(400, "no path given");
+    };
+    let spec = app.racks.get(rel);
+    let sources: Vec<Value> = crate::pad::sources(&spec)
+        .iter()
+        .map(|s| s.to_json(spec.pads.get(&s.id)))
+        .collect();
+    Response::json(Value::obj().set("sources", Value::Arr(sources)).to_string())
+}
+
+/// A take on the pad as one list of `[frame, x, y]`, the two lanes' values at
+/// every frame either has a point — so the pad draws the path without
+/// working out a curve itself.
+fn api_automation_path(app: &Arc<App>, req: &Request) -> Response {
+    let (Some(rel), Some(x), Some(y)) = (req.param("p"), req.param("x"), req.param("y")) else {
+        return Response::error(400, "give p, x and y");
+    };
+    let points: Vec<Value> = crate::automation::path(&app.automation.get(rel), x, y)
+        .into_iter()
+        .map(|(f, a, b)| Value::Arr(vec![Value::Num(f as f64), Value::Num(a as f64), Value::Num(b as f64)]))
+        .collect();
+    Response::json(Value::obj().set("points", Value::Arr(points)).to_string())
+}
+
+/// LOOP on the pad: both of its lanes wrap over the take's span, together.
+fn api_automation_loop(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let (Some(rel), Some(x), Some(y)) = (
+        v.get("p").and_then(Value::as_str),
+        v.get("x").and_then(Value::as_str),
+        v.get("y").and_then(Value::as_str),
+    ) else {
+        return Response::error(400, "give p, x and y");
+    };
+    let on = !matches!(v.get("on"), Some(Value::Bool(false)));
+    let mut automation = app.automation.get(rel);
+    if !crate::automation::loop_path(&mut automation, x, y, on) {
+        return Response::error(400, "both controls need a lane with points to loop");
+    }
+    app.automation.set(rel, automation.clone());
+    if let Err(e) = app.automation.save(&app.automation_path()) {
+        return Response::error(500, &e.to_string());
+    }
+    Response::json(automation.to_json().to_string())
+}
+
 fn api_automation_get(app: &Arc<App>, req: &Request) -> Response {
     let Some(rel) = req.param("p") else {
         return Response::error(400, "no path given");
@@ -1492,7 +1644,7 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, "no path given");
     };
     let spec = crate::rack::RackSpec::from_json(&v);
-    app.racks.set(rel, spec.clone());
+    app.set_rack(rel, spec.clone());
     app.save_sessions();
     // Effects are live: a freshly built rack replaces the one the audio thread
     // holds, on its next block.
@@ -1918,7 +2070,7 @@ fn api_preset_apply(app: &Arc<App>, req: &Request) -> Response {
         // still here — a preset holding a factory rack should not wipe the one
         // you have — it now just asks about the whole rack.
         if preset.rack != crate::rack::RackSpec::empty() {
-            app.racks.set(rel, preset.rack.clone());
+            app.set_rack(rel, preset.rack.clone());
         }
     } else {
         // Settings only. Nothing is added, nothing removed, nothing reordered:
@@ -1942,7 +2094,7 @@ fn api_preset_apply(app: &Arc<App>, req: &Request) -> Response {
         // carried across by hand or a preset that is only a maximiser setting
         // would do nothing at all.
         mine.master = preset.rack.master;
-        app.racks.set(rel, mine);
+        app.set_rack(rel, mine);
     }
     let stretch = preset.stretch;
     // Applied as an ordinary edit, so it lands on the undo stack like anything

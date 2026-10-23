@@ -919,7 +919,6 @@ pub enum ShapeKind {
     DattorroPlate,
     AllpassDiffuser,
     DampingFilter,
-    Echo,
     Leslie,
     SingleBitPn,
     Harmonizer,
@@ -934,7 +933,7 @@ pub enum ShapeKind {
 }
 
 impl ShapeKind {
-    pub const ALL: [ShapeKind; 34] = [
+    pub const ALL: [ShapeKind; 33] = [
         ShapeKind::Invert,
         ShapeKind::Swap,
         ShapeKind::Width,
@@ -957,7 +956,6 @@ impl ShapeKind {
         ShapeKind::DattorroPlate,
         ShapeKind::AllpassDiffuser,
         ShapeKind::DampingFilter,
-        ShapeKind::Echo,
         ShapeKind::Leslie,
         ShapeKind::SingleBitPn,
         ShapeKind::Harmonizer,
@@ -995,7 +993,6 @@ impl ShapeKind {
             ShapeKind::DattorroPlate => "dattorro_plate",
             ShapeKind::AllpassDiffuser => "allpass_diffuser",
             ShapeKind::DampingFilter => "damping_filter",
-            ShapeKind::Echo => "dattorro_echo",
             ShapeKind::Leslie => "leslie",
             ShapeKind::SingleBitPn => "single_bit_pn",
             ShapeKind::Harmonizer => "harmonizer",
@@ -1012,6 +1009,32 @@ impl ShapeKind {
 
     pub fn from_str(s: &str) -> Option<Self> {
         ShapeKind::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+
+    /// The Prism pad's default pair, where Hyperprism had this process: which
+    /// control goes across and which up, over what part of each range.
+    ///
+    /// The ranges are Hyperprism's where it gave one and the control can reach
+    /// it — a chorus's 100 samples of depth is too little for this one's
+    /// default, so it gets the control's own useful span instead.
+    pub fn pad(self) -> Option<prism_fx::PadPair> {
+        let pair = |x, x_range, y, y_range| Some(prism_fx::PadPair { x, x_range, y, y_range });
+        match self {
+            // Low pass; its band and high siblings are the same module's other
+            // filters, a different pair chosen on the pad.
+            ShapeKind::Chamberlin => pair("lowFreq", (20.0, 18_000.0), "lowQ", (0.2, 10.0)),
+            ShapeKind::DattorroNotch => pair("frequency", (20.0, 2_000.0), "bandwidth", (10.0, 2_000.0)),
+            ShapeKind::Phaser => pair("rateHz", (0.0, 10.0), "depth", (0.0, 1.0)),
+            ShapeKind::Flanger => pair("rateHz", (0.01, 10.0), "depthMs", (0.0, 2.0)),
+            ShapeKind::WhiteChorus => pair("rateHz", (0.01, 10.0), "depthMs", (0.0, 20.0)),
+            ShapeKind::Ring => pair("hz", (0.1, 4_000.0), "mix", (0.0, 1.0)),
+            ShapeKind::Vibrato => pair("rateHz", (0.01, 20.0), "depthMs", (0.0, 10.0)),
+            ShapeKind::SchroederReverb | ShapeKind::MoorerReverb => {
+                pair("wet", (0.0, 1.0), "decay", (0.0, 0.9995))
+            }
+            ShapeKind::Gate => pair("attackMs", (0.1, 200.0), "thresholdDb", (-80.0, 0.0)),
+            _ => None,
+        }
     }
 
     /// What a person should see.
@@ -1039,7 +1062,6 @@ impl ShapeKind {
             ShapeKind::DattorroPlate => "Dattorro plate",
             ShapeKind::AllpassDiffuser => "All-pass diffuser",
             ShapeKind::DampingFilter => "Damping filter",
-            ShapeKind::Echo => "Echo",
             ShapeKind::Leslie => "Leslie speaker",
             ShapeKind::SingleBitPn => "Single-bit PN noise",
             ShapeKind::Harmonizer => "Harmonizer",
@@ -1071,7 +1093,6 @@ impl ShapeKind {
             | ShapeKind::Flanger
             | ShapeKind::Vibrato
             | ShapeKind::Boomerang
-            | ShapeKind::Echo
             | ShapeKind::Leslie
             | ShapeKind::Harmonizer
             | ShapeKind::Detune
@@ -1119,7 +1140,6 @@ impl ShapeKind {
             ShapeKind::DattorroPlate => crate::dattorro::PLATE_SPECS,
             ShapeKind::AllpassDiffuser => crate::dattorro::DIFFUSER_SPECS,
             ShapeKind::DampingFilter => crate::dattorro::DAMPING_SPECS,
-            ShapeKind::Echo => crate::dattorro::ECHO_SPECS,
             ShapeKind::Leslie => crate::dattorro::LESLIE_SPECS,
             ShapeKind::SingleBitPn => crate::dattorro::SINGLE_PN_SPECS,
             ShapeKind::Harmonizer => crate::dattorro::PITCH_SPECS,
@@ -1222,7 +1242,6 @@ pub fn make(
             params,
         ),
         ShapeKind::DampingFilter => apply(crate::dattorro::DampingFilter::default(), params),
-        ShapeKind::Echo => apply(crate::dattorro::Echo::new(sample_rate, channels), params),
         ShapeKind::Leslie => apply(crate::dattorro::Leslie::new(sample_rate, channels), params),
         ShapeKind::SingleBitPn => apply(crate::dattorro::SingleBitPn::default(), params),
         ShapeKind::Harmonizer => apply(

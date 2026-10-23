@@ -512,6 +512,9 @@
         <button class="dock-tab" data-dock="effects" title="Effect chain">
           <span class="ic">⚙</span><span class="lb">FX</span>
         </button>
+        <button class="dock-tab" data-dock="prism" title="Prism pad: two controls on one square, after Hyperprism">
+          <span class="ic">◩</span><span class="lb">Prism</span>
+        </button>
         <button class="dock-tab" data-dock="visuals" title="Spectrogram and meters">
           <span class="ic">◍</span><span class="lb">Visuals</span>
         </button>
@@ -690,6 +693,39 @@
         <div class="fx-picker hidden" id="fxPicker">
           <div class="fx-picker-head"><span>Add module</span><button class="ghost" id="fxPickerClose">Close</button></div>
           <div class="fx-picker-groups" id="fxPickerGroups"></div>
+        </div>
+      </div>
+
+      <!-- The Prism pad: Hyperprism's blue window. Two controls on one square —
+           Time & Pitch, or any slot in the rack — with the limits typed into its
+           corners, as Hyperprism had them. `ui/prism-pad.js`. -->
+      <div class="dock-body prism-body hidden" id="dockPrism">
+        <div class="prism-bar">
+          <label>Drive <select class="mini" id="prismSource" aria-label="What the pad drives"></select></label>
+          <label>Across <select class="mini" id="prismX" aria-label="Across the pad"></select></label>
+          <label>Up <select class="mini" id="prismY" aria-label="Up the pad"></select></label>
+          <span class="prism-gap"></span>
+          <button class="ghost" id="prismRec" title="Arm the recorder and play: the pad's moves become two lanes. Again to stop.">⏺ REC</button>
+          <button class="ghost" id="prismLoop" title="Loop the take: both of its lanes wrap over its span, together">⟲ LOOP</button>
+        </div>
+        <div class="prism-stage">
+          <div class="prism-y-axis">
+            <input class="mini prism-limit" id="prismYHi" type="number" step="any" title="Top of the sweep" aria-label="Top of the sweep">
+            <span class="prism-read" id="prismYRead"></span>
+            <input class="mini prism-limit" id="prismYLo" type="number" step="any" title="Bottom of the sweep" aria-label="Bottom of the sweep">
+          </div>
+          <div class="prism-square-wrap">
+            <div class="prism-square" id="prismPad" role="group" aria-label="Prism pad"
+                 title="Drag to move both controls · double-click to centre">
+              <svg class="prism-path" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"><polyline points=""></polyline></svg>
+              <i class="prism-pad-dot"></i>
+            </div>
+            <div class="prism-x-axis">
+              <input class="mini prism-limit" id="prismXLo" type="number" step="any" title="Left end of the sweep" aria-label="Left end of the sweep">
+              <span class="prism-read" id="prismXRead"></span>
+              <input class="mini prism-limit" id="prismXHi" type="number" step="any" title="Right end of the sweep" aria-label="Right end of the sweep">
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1301,6 +1337,8 @@
 <!-- The scale sequencer's performance panel, carried over. Nothing runs at
      load; app.js draws it. -->
 <script src="/perf-panel.js"></script>
+<!-- The Prism pad. Nothing runs at load; the dock's Prism tab opens it. -->
+<script src="/prism-pad.js"></script>
 <!-- The four-dimensional solids, and the panel that drives them. The geometry
      knows nothing about the DOM; the panel is loaded after it. -->
 <script src="/shapes-4d.js"></script>

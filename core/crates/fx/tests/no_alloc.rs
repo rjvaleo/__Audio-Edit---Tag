@@ -65,6 +65,35 @@ fn the_streaming_engines_never_allocate_once_they_are_built() {
     the_vocoder();
     pvsola();
     hybrid();
+    prism_effects();
+}
+
+/// Effects from `prism-fx`, through the adapter, with every control moving.
+/// Blocks bigger than the adapter's own buffers are split, not grown.
+fn prism_effects() {
+    use fx::params::Params;
+    use fx::Effect;
+    let channels = 2;
+    let src = source(channels);
+    for entry in fx::prism::catalogue() {
+        let mut e = fx::prism::PrismEffect::new(entry.descriptor.id, RATE).unwrap();
+        // The parameter table is converted once, on first use: warm it here.
+        let keys: Vec<&str> = Params::specs(&e).iter().map(|s| s.key).collect();
+        let mut out = src.clone();
+        let before = ALLOCS.load(Ordering::Relaxed);
+        for (i, block) in out.chunks_mut(20_000 * channels).enumerate() {
+            for (j, key) in keys.iter().enumerate() {
+                let spec = Params::spec(&e, key).unwrap();
+                let v = if (i + j) % 2 == 0 { spec.min } else { spec.max };
+                Effect::set_param(&mut e, key, v);
+            }
+            e.process(block, channels, RATE);
+        }
+        Effect::reset(&mut e);
+        e.process(&mut out, channels, RATE);
+        let after = ALLOCS.load(Ordering::Relaxed);
+        assert_eq!(after, before, "{} allocated {} times while running", entry.descriptor.id, after - before);
+    }
 }
 
 /// The hybrid runs three engines at once over three separated sources. The
