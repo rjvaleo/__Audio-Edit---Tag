@@ -1,0 +1,4093 @@
+{
+ "dialogs": [
+  {
+   "id": 128,
+   "name": "ABOUT_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 20,
+    "bottom": 238,
+    "right": 478
+   },
+   "procID": 1,
+   "title": "",
+   "ditl": 128,
+   "items": [
+    {
+     "n": 1,
+     "kind": "picture",
+     "enabled": true,
+     "top": 0,
+     "left": 1,
+     "bottom": 198,
+     "right": 458,
+     "res": 129
+    },
+    {
+     "n": 2,
+     "kind": "picture",
+     "enabled": true,
+     "top": 2,
+     "left": 2,
+     "bottom": 196,
+     "right": 456,
+     "res": 137
+    }
+   ]
+  },
+  {
+   "id": 129,
+   "name": "HEADER_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 160,
+    "right": 495
+   },
+   "procID": 4,
+   "title": "Change Header",
+   "ditl": 129,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 95,
+     "left": 160,
+     "bottom": 115,
+     "right": 240,
+     "text": "Save Info"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 95,
+     "left": 5,
+     "bottom": 115,
+     "right": 75,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "static",
+     "enabled": true,
+     "top": 25,
+     "left": 5,
+     "bottom": 41,
+     "right": 95,
+     "text": "Sample Rate:"
+    },
+    {
+     "n": 4,
+     "kind": "edit",
+     "enabled": true,
+     "top": 25,
+     "left": 105,
+     "bottom": 41,
+     "right": 235,
+     "text": ""
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": true,
+     "top": 50,
+     "left": 5,
+     "bottom": 66,
+     "right": 75,
+     "text": "Channels:"
+    },
+    {
+     "n": 6,
+     "kind": "radio",
+     "enabled": true,
+     "top": 50,
+     "left": 75,
+     "bottom": 66,
+     "right": 105,
+     "text": "1"
+    },
+    {
+     "n": 7,
+     "kind": "radio",
+     "enabled": true,
+     "top": 50,
+     "left": 105,
+     "bottom": 66,
+     "right": 135,
+     "text": "2"
+    },
+    {
+     "n": 8,
+     "kind": "radio",
+     "enabled": true,
+     "top": 50,
+     "left": 135,
+     "bottom": 66,
+     "right": 165,
+     "text": "4"
+    },
+    {
+     "n": 9,
+     "kind": "static",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 20,
+     "right": 63,
+     "text": "Length:"
+    },
+    {
+     "n": 10,
+     "kind": "static",
+     "enabled": true,
+     "top": 5,
+     "left": 65,
+     "bottom": 21,
+     "right": 235,
+     "text": ""
+    },
+    {
+     "n": 11,
+     "kind": "control",
+     "enabled": true,
+     "top": 70,
+     "left": 5,
+     "bottom": 89,
+     "right": 240,
+     "res": 137,
+     "control": "File Format Popup",
+     "title": "Encoding:",
+     "menu": 137
+    },
+    {
+     "n": 12,
+     "kind": "button",
+     "enabled": true,
+     "top": 95,
+     "left": 90,
+     "bottom": 115,
+     "right": 148,
+     "text": "Apply"
+    }
+   ]
+  },
+  {
+   "id": 130,
+   "name": "ERROR_DLOG",
+   "bounds": {
+    "top": 120,
+    "left": 80,
+    "bottom": 200,
+    "right": 420
+   },
+   "procID": 4,
+   "title": "A Message From SoundHack",
+   "ditl": 130,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 55,
+     "left": 295,
+     "bottom": 75,
+     "right": 335,
+     "text": "OK"
+    },
+    {
+     "n": 2,
+     "kind": "static",
+     "enabled": false,
+     "top": 0,
+     "left": 80,
+     "bottom": 80,
+     "right": 290,
+     "text": ""
+    },
+    {
+     "n": 3,
+     "kind": "picture",
+     "enabled": true,
+     "top": 0,
+     "left": 0,
+     "bottom": 80,
+     "right": 75,
+     "res": 128
+    }
+   ]
+  },
+  {
+   "id": 132,
+   "name": "CONVOLVE_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 255,
+    "bottom": 205,
+    "right": 530
+   },
+   "procID": 4,
+   "title": "Convolve with Impulse Response",
+   "ditl": 132,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 140,
+     "left": 200,
+     "bottom": 160,
+     "right": 270,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 140,
+     "left": 5,
+     "bottom": 160,
+     "right": 75,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "static",
+     "enabled": true,
+     "top": 7,
+     "left": 5,
+     "bottom": 23,
+     "right": 95,
+     "text": "Length Used:"
+    },
+    {
+     "n": 4,
+     "kind": "edit",
+     "enabled": true,
+     "top": 5,
+     "left": 110,
+     "bottom": 24,
+     "right": 255,
+     "text": ""
+    },
+    {
+     "n": 5,
+     "kind": "button",
+     "enabled": true,
+     "top": 140,
+     "left": 85,
+     "bottom": 160,
+     "right": 190,
+     "text": "Pick Impulse "
+    },
+    {
+     "n": 6,
+     "kind": "static",
+     "enabled": false,
+     "top": 30,
+     "left": 5,
+     "bottom": 46,
+     "right": 115,
+     "text": "kBytes Needed:"
+    },
+    {
+     "n": 7,
+     "kind": "static",
+     "enabled": true,
+     "top": 30,
+     "left": 120,
+     "bottom": 46,
+     "right": 235,
+     "text": ""
+    },
+    {
+     "n": 8,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 115,
+     "left": 155,
+     "bottom": 133,
+     "right": 240,
+     "text": "Normalize"
+    },
+    {
+     "n": 9,
+     "kind": "radio",
+     "enabled": true,
+     "top": 50,
+     "left": 70,
+     "bottom": 66,
+     "right": 120,
+     "text": "0 dB"
+    },
+    {
+     "n": 10,
+     "kind": "static",
+     "enabled": false,
+     "top": 50,
+     "left": 5,
+     "bottom": 66,
+     "right": 65,
+     "text": "Gain:"
+    },
+    {
+     "n": 11,
+     "kind": "radio",
+     "enabled": true,
+     "top": 50,
+     "left": 125,
+     "bottom": 66,
+     "right": 185,
+     "text": "24 dB"
+    },
+    {
+     "n": 12,
+     "kind": "radio",
+     "enabled": true,
+     "top": 50,
+     "left": 190,
+     "bottom": 66,
+     "right": 255,
+     "text": "42 dB"
+    },
+    {
+     "n": 13,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 115,
+     "left": 5,
+     "bottom": 133,
+     "right": 75,
+     "text": "Moving"
+    },
+    {
+     "n": 14,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 95,
+     "left": 5,
+     "bottom": 113,
+     "right": 123,
+     "text": "Ring Modulate"
+    },
+    {
+     "n": 15,
+     "kind": "control",
+     "enabled": true,
+     "top": 70,
+     "left": 5,
+     "bottom": 90,
+     "right": 165,
+     "res": 138,
+     "control": "Window Popup",
+     "title": "Window:",
+     "menu": 138
+    },
+    {
+     "n": 16,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 95,
+     "left": 155,
+     "bottom": 113,
+     "right": 261,
+     "text": "Brighten"
+    }
+   ]
+  },
+  {
+   "id": 133,
+   "name": "PVOC_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 345,
+    "right": 505
+   },
+   "procID": 4,
+   "title": "Phase Vocoder",
+   "ditl": 133,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 280,
+     "left": 180,
+     "bottom": 300,
+     "right": 250,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 280,
+     "left": 95,
+     "bottom": 300,
+     "right": 165,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "control",
+     "enabled": true,
+     "top": 4,
+     "left": 4,
+     "bottom": 23,
+     "right": 119,
+     "res": 133,
+     "control": "Bands Popup",
+     "title": "Bands:",
+     "menu": 133
+    },
+    {
+     "n": 4,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 140,
+     "bottom": 24,
+     "right": 250,
+     "res": 148,
+     "control": "Overlap Popup",
+     "title": "Overlap:",
+     "menu": 148
+    },
+    {
+     "n": 5,
+     "kind": "control",
+     "enabled": true,
+     "top": 76,
+     "left": 4,
+     "bottom": 96,
+     "right": 139,
+     "res": 134,
+     "control": "Time Scale Popup",
+     "title": " ",
+     "menu": 134
+    },
+    {
+     "n": 6,
+     "kind": "edit",
+     "enabled": true,
+     "top": 75,
+     "left": 160,
+     "bottom": 91,
+     "right": 245,
+     "text": "1.000000"
+    },
+    {
+     "n": 7,
+     "kind": "radio",
+     "enabled": true,
+     "top": 100,
+     "left": 4,
+     "bottom": 118,
+     "right": 94,
+     "text": "Time Scale"
+    },
+    {
+     "n": 8,
+     "kind": "radio",
+     "enabled": true,
+     "top": 100,
+     "left": 155,
+     "bottom": 118,
+     "right": 245,
+     "text": "Pitch Scale"
+    },
+    {
+     "n": 9,
+     "kind": "static",
+     "enabled": false,
+     "top": 28,
+     "left": 4,
+     "bottom": 44,
+     "right": 139,
+     "text": "Band Freq. Spacing:"
+    },
+    {
+     "n": 10,
+     "kind": "static",
+     "enabled": false,
+     "top": 28,
+     "left": 144,
+     "bottom": 44,
+     "right": 237,
+     "text": "20.000000"
+    },
+    {
+     "n": 11,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 185,
+     "left": 5,
+     "bottom": 203,
+     "right": 131,
+     "text": "Scaling Function"
+    },
+    {
+     "n": 12,
+     "kind": "button",
+     "enabled": true,
+     "top": 185,
+     "left": 135,
+     "bottom": 205,
+     "right": 250,
+     "text": "Edit Function..."
+    },
+    {
+     "n": 13,
+     "kind": "control",
+     "enabled": true,
+     "top": 48,
+     "left": 4,
+     "bottom": 68,
+     "right": 164,
+     "res": 138,
+     "control": "Window Popup",
+     "title": "Window:",
+     "menu": 138
+    },
+    {
+     "n": 14,
+     "kind": "static",
+     "enabled": false,
+     "top": 230,
+     "left": 5,
+     "bottom": 246,
+     "right": 175,
+     "text": "Minimum Amplitude (dB):"
+    },
+    {
+     "n": 15,
+     "kind": "static",
+     "enabled": false,
+     "top": 255,
+     "left": 5,
+     "bottom": 271,
+     "right": 180,
+     "text": "Threshold Under Max.(dB):"
+    },
+    {
+     "n": 16,
+     "kind": "edit",
+     "enabled": true,
+     "top": 230,
+     "left": 200,
+     "bottom": 246,
+     "right": 245,
+     "text": "-96"
+    },
+    {
+     "n": 17,
+     "kind": "edit",
+     "enabled": true,
+     "top": 255,
+     "left": 200,
+     "bottom": 271,
+     "right": 245,
+     "text": "-40"
+    },
+    {
+     "n": 18,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 210,
+     "left": 5,
+     "bottom": 226,
+     "right": 165,
+     "text": "Resynthesis Gating"
+    },
+    {
+     "n": 19,
+     "kind": "static",
+     "enabled": false,
+     "top": 135,
+     "left": 5,
+     "bottom": 151,
+     "right": 190,
+     "text": "Analysis Rate (samps/FFT):"
+    },
+    {
+     "n": 20,
+     "kind": "static",
+     "enabled": false,
+     "top": 160,
+     "left": 5,
+     "bottom": 175,
+     "right": 190,
+     "text": "Synthesis Rate (samps/FFT):"
+    },
+    {
+     "n": 21,
+     "kind": "edit",
+     "enabled": true,
+     "top": 135,
+     "left": 210,
+     "bottom": 151,
+     "right": 245,
+     "text": "128"
+    },
+    {
+     "n": 22,
+     "kind": "edit",
+     "enabled": true,
+     "top": 160,
+     "left": 210,
+     "bottom": 176,
+     "right": 245,
+     "text": "128"
+    }
+   ]
+  },
+  {
+   "id": 134,
+   "name": "DYNAMICS_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 345,
+    "right": 500
+   },
+   "procID": 4,
+   "title": "Spectral Dynamics Processor",
+   "ditl": 134,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 280,
+     "left": 175,
+     "bottom": 300,
+     "right": 245,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 280,
+     "left": 95,
+     "bottom": 300,
+     "right": 160,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 25,
+     "right": 125,
+     "res": 140,
+     "control": "Dynamics Type Popup",
+     "title": " ",
+     "menu": 140
+    },
+    {
+     "n": 4,
+     "kind": "static",
+     "enabled": false,
+     "top": 220,
+     "left": 5,
+     "bottom": 236,
+     "right": 175,
+     "text": "Threshold Above File (dB):"
+    },
+    {
+     "n": 5,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 130,
+     "bottom": 24,
+     "right": 245,
+     "res": 133,
+     "control": "Bands Popup",
+     "title": "Bands:",
+     "menu": 133
+    },
+    {
+     "n": 6,
+     "kind": "edit",
+     "enabled": true,
+     "top": 220,
+     "left": 180,
+     "bottom": 236,
+     "right": 245,
+     "text": "00.000000"
+    },
+    {
+     "n": 7,
+     "kind": "static",
+     "enabled": false,
+     "top": 100,
+     "left": 5,
+     "bottom": 115,
+     "right": 170,
+     "text": "Compress/Expand Ratio:"
+    },
+    {
+     "n": 8,
+     "kind": "edit",
+     "enabled": true,
+     "top": 100,
+     "left": 180,
+     "bottom": 116,
+     "right": 245,
+     "text": "00.000000"
+    },
+    {
+     "n": 9,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 240,
+     "left": 5,
+     "bottom": 258,
+     "right": 246,
+     "text": "Use Soundfile for Thresholds"
+    },
+    {
+     "n": 10,
+     "kind": "static",
+     "enabled": true,
+     "top": 260,
+     "left": 5,
+     "bottom": 276,
+     "right": 100,
+     "text": "Threshold File:"
+    },
+    {
+     "n": 11,
+     "kind": "static",
+     "enabled": true,
+     "top": 260,
+     "left": 105,
+     "bottom": 276,
+     "right": 245,
+     "text": ""
+    },
+    {
+     "n": 12,
+     "kind": "button",
+     "enabled": true,
+     "top": 280,
+     "left": 5,
+     "bottom": 300,
+     "right": 80,
+     "text": "Pick File"
+    },
+    {
+     "n": 13,
+     "kind": "static",
+     "enabled": false,
+     "top": 165,
+     "left": 5,
+     "bottom": 181,
+     "right": 105,
+     "text": "Affect Sounds:"
+    },
+    {
+     "n": 14,
+     "kind": "radio",
+     "enabled": true,
+     "top": 180,
+     "left": 5,
+     "bottom": 198,
+     "right": 120,
+     "text": "Below Thresh."
+    },
+    {
+     "n": 15,
+     "kind": "radio",
+     "enabled": true,
+     "top": 180,
+     "left": 130,
+     "bottom": 198,
+     "right": 245,
+     "text": "Above Thresh."
+    },
+    {
+     "n": 16,
+     "kind": "static",
+     "enabled": false,
+     "top": 30,
+     "left": 5,
+     "bottom": 46,
+     "right": 99,
+     "text": "Lowest Band:"
+    },
+    {
+     "n": 17,
+     "kind": "edit",
+     "enabled": true,
+     "top": 30,
+     "left": 105,
+     "bottom": 46,
+     "right": 141,
+     "text": "8888"
+    },
+    {
+     "n": 18,
+     "kind": "static",
+     "enabled": false,
+     "top": 30,
+     "left": 170,
+     "bottom": 46,
+     "right": 245,
+     "text": "0 Hz"
+    },
+    {
+     "n": 19,
+     "kind": "static",
+     "enabled": false,
+     "top": 55,
+     "left": 5,
+     "bottom": 71,
+     "right": 99,
+     "text": "Highest Band:"
+    },
+    {
+     "n": 20,
+     "kind": "edit",
+     "enabled": true,
+     "top": 55,
+     "left": 105,
+     "bottom": 71,
+     "right": 141,
+     "text": "8888"
+    },
+    {
+     "n": 21,
+     "kind": "static",
+     "enabled": false,
+     "top": 55,
+     "left": 170,
+     "bottom": 71,
+     "right": 245,
+     "text": "22050 Hz"
+    },
+    {
+     "n": 22,
+     "kind": "edit",
+     "enabled": true,
+     "top": 145,
+     "left": 180,
+     "bottom": 161,
+     "right": 245,
+     "text": "0.000000"
+    },
+    {
+     "n": 23,
+     "kind": "static",
+     "enabled": false,
+     "top": 145,
+     "left": 5,
+     "bottom": 161,
+     "right": 175,
+     "text": "Attack/Decay Time (sec):"
+    },
+    {
+     "n": 24,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 200,
+     "left": 5,
+     "bottom": 216,
+     "right": 240,
+     "text": "Threshold Relative to Peak Amp."
+    },
+    {
+     "n": 25,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 120,
+     "left": 5,
+     "bottom": 138,
+     "right": 220,
+     "text": "Use Smoothed Amplitude"
+    },
+    {
+     "n": 26,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 75,
+     "left": 5,
+     "bottom": 93,
+     "right": 197,
+     "text": "3rd Octave Band Grouping"
+    }
+   ]
+  },
+  {
+   "id": 135,
+   "name": "TIME_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 105,
+    "right": 480
+   },
+   "procID": 4,
+   "title": "Seconds of Sound Processed",
+   "ditl": 135,
+   "items": [
+    {
+     "n": 1,
+     "kind": "static",
+     "enabled": true,
+     "top": 25,
+     "left": 45,
+     "bottom": 41,
+     "right": 200,
+     "text": "0.000000"
+    },
+    {
+     "n": 2,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 10,
+     "bottom": 62,
+     "right": 220,
+     "text": ""
+    },
+    {
+     "n": 3,
+     "kind": "picture",
+     "enabled": true,
+     "top": 6,
+     "left": 206,
+     "bottom": 19,
+     "right": 219,
+     "res": 400
+    },
+    {
+     "n": 4,
+     "kind": "static",
+     "enabled": true,
+     "top": 5,
+     "left": 10,
+     "bottom": 21,
+     "right": 40,
+     "text": "In:"
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": true,
+     "top": 5,
+     "left": 45,
+     "bottom": 21,
+     "right": 200,
+     "text": "0.000000"
+    },
+    {
+     "n": 6,
+     "kind": "static",
+     "enabled": true,
+     "top": 25,
+     "left": 10,
+     "bottom": 41,
+     "right": 40,
+     "text": "Out:"
+    }
+   ]
+  },
+  {
+   "id": 136,
+   "name": "PREF_DLOG",
+   "bounds": {
+    "top": 120,
+    "left": 120,
+    "bottom": 280,
+    "right": 400
+   },
+   "procID": 4,
+   "title": "Preferences",
+   "ditl": 136,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 135,
+     "left": 215,
+     "bottom": 155,
+     "right": 273,
+     "text": "Set"
+    },
+    {
+     "n": 2,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 60,
+     "left": 5,
+     "bottom": 78,
+     "right": 191,
+     "text": "Default Soundfile Type"
+    },
+    {
+     "n": 3,
+     "kind": "control",
+     "enabled": true,
+     "top": 85,
+     "left": 10,
+     "bottom": 104,
+     "right": 245,
+     "res": 136,
+     "control": "File Type Popup",
+     "title": "Format:",
+     "menu": 136
+    },
+    {
+     "n": 4,
+     "kind": "control",
+     "enabled": true,
+     "top": 110,
+     "left": 10,
+     "bottom": 129,
+     "right": 245,
+     "res": 137,
+     "control": "File Format Popup",
+     "title": "Encoding:",
+     "menu": 137
+    },
+    {
+     "n": 5,
+     "kind": "button",
+     "enabled": true,
+     "top": 30,
+     "left": 5,
+     "bottom": 50,
+     "right": 103,
+     "text": "Select Editor"
+    },
+    {
+     "n": 6,
+     "kind": "static",
+     "enabled": false,
+     "top": 35,
+     "left": 105,
+     "bottom": 51,
+     "right": 280,
+     "text": "Static Text"
+    },
+    {
+     "n": 7,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 23,
+     "right": 111,
+     "text": "Play On Open"
+    },
+    {
+     "n": 8,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 5,
+     "left": 115,
+     "bottom": 23,
+     "right": 281,
+     "text": "Play After Processing"
+    }
+   ]
+  },
+  {
+   "id": 137,
+   "name": "BINAURAL_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 340,
+    "right": 500
+   },
+   "procID": 4,
+   "title": "Binaural Position Filter",
+   "ditl": 137,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 275,
+     "left": 185,
+     "bottom": 295,
+     "right": 245,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 275,
+     "left": 120,
+     "bottom": 295,
+     "right": 180,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "radio",
+     "enabled": true,
+     "top": 0,
+     "left": 116,
+     "bottom": 20,
+     "right": 136,
+     "text": ""
+    },
+    {
+     "n": 4,
+     "kind": "radio",
+     "enabled": true,
+     "top": 13,
+     "left": 167,
+     "bottom": 33,
+     "right": 187,
+     "text": ""
+    },
+    {
+     "n": 5,
+     "kind": "radio",
+     "enabled": true,
+     "top": 50,
+     "left": 204,
+     "bottom": 70,
+     "right": 224,
+     "text": ""
+    },
+    {
+     "n": 6,
+     "kind": "radio",
+     "enabled": true,
+     "top": 101,
+     "left": 218,
+     "bottom": 121,
+     "right": 238,
+     "text": ""
+    },
+    {
+     "n": 7,
+     "kind": "radio",
+     "enabled": true,
+     "top": 154,
+     "left": 204,
+     "bottom": 174,
+     "right": 224,
+     "text": ""
+    },
+    {
+     "n": 8,
+     "kind": "radio",
+     "enabled": true,
+     "top": 189,
+     "left": 169,
+     "bottom": 209,
+     "right": 189,
+     "text": ""
+    },
+    {
+     "n": 9,
+     "kind": "radio",
+     "enabled": true,
+     "top": 203,
+     "left": 116,
+     "bottom": 223,
+     "right": 136,
+     "text": ""
+    },
+    {
+     "n": 10,
+     "kind": "radio",
+     "enabled": true,
+     "top": 190,
+     "left": 66,
+     "bottom": 210,
+     "right": 86,
+     "text": "150 L"
+    },
+    {
+     "n": 11,
+     "kind": "radio",
+     "enabled": true,
+     "top": 154,
+     "left": 29,
+     "bottom": 174,
+     "right": 49,
+     "text": ""
+    },
+    {
+     "n": 12,
+     "kind": "radio",
+     "enabled": true,
+     "top": 101,
+     "left": 15,
+     "bottom": 121,
+     "right": 35,
+     "text": ""
+    },
+    {
+     "n": 13,
+     "kind": "radio",
+     "enabled": true,
+     "top": 50,
+     "left": 28,
+     "bottom": 70,
+     "right": 48,
+     "text": ""
+    },
+    {
+     "n": 14,
+     "kind": "radio",
+     "enabled": true,
+     "top": 13,
+     "left": 67,
+     "bottom": 33,
+     "right": 87,
+     "text": ""
+    },
+    {
+     "n": 15,
+     "kind": "picture",
+     "enabled": false,
+     "top": 15,
+     "left": 28,
+     "bottom": 208,
+     "right": 221,
+     "res": 130
+    },
+    {
+     "n": 16,
+     "kind": "edit",
+     "enabled": true,
+     "top": 230,
+     "left": 55,
+     "bottom": 245,
+     "right": 87,
+     "text": "777"
+    },
+    {
+     "n": 17,
+     "kind": "static",
+     "enabled": false,
+     "top": 230,
+     "left": 5,
+     "bottom": 246,
+     "right": 51,
+     "text": "Angle:"
+    },
+    {
+     "n": 18,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 255,
+     "left": 5,
+     "bottom": 273,
+     "right": 125,
+     "text": "Moving Angle"
+    },
+    {
+     "n": 19,
+     "kind": "button",
+     "enabled": true,
+     "top": 275,
+     "left": 5,
+     "bottom": 295,
+     "right": 115,
+     "text": "Angle Function"
+    },
+    {
+     "n": 20,
+     "kind": "control",
+     "enabled": true,
+     "top": 230,
+     "left": 95,
+     "bottom": 249,
+     "right": 245,
+     "res": 128,
+     "control": "Height Popup",
+     "title": "Height:",
+     "menu": 151
+    }
+   ]
+  },
+  {
+   "id": 139,
+   "name": "GAIN_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 225,
+    "right": 515
+   },
+   "procID": 4,
+   "title": "Gain Change",
+   "ditl": 139,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 160,
+     "left": 160,
+     "bottom": 180,
+     "right": 260,
+     "text": "Change Gain"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 160,
+     "left": 85,
+     "bottom": 180,
+     "right": 150,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "static",
+     "enabled": false,
+     "top": 25,
+     "left": 5,
+     "bottom": 41,
+     "right": 90,
+     "text": "Peak Value:"
+    },
+    {
+     "n": 4,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 5,
+     "bottom": 61,
+     "right": 100,
+     "text": "Peak Position:"
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": false,
+     "top": 65,
+     "left": 5,
+     "bottom": 81,
+     "right": 80,
+     "text": "RMS Value:"
+    },
+    {
+     "n": 6,
+     "kind": "static",
+     "enabled": false,
+     "top": 25,
+     "left": 110,
+     "bottom": 41,
+     "right": 175,
+     "text": "0.000000"
+    },
+    {
+     "n": 7,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 110,
+     "bottom": 61,
+     "right": 175,
+     "text": "0"
+    },
+    {
+     "n": 8,
+     "kind": "static",
+     "enabled": false,
+     "top": 65,
+     "left": 110,
+     "bottom": 81,
+     "right": 175,
+     "text": "0.000000"
+    },
+    {
+     "n": 9,
+     "kind": "static",
+     "enabled": false,
+     "top": 25,
+     "left": 195,
+     "bottom": 41,
+     "right": 260,
+     "text": "0.000000"
+    },
+    {
+     "n": 10,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 195,
+     "bottom": 61,
+     "right": 260,
+     "text": "0"
+    },
+    {
+     "n": 11,
+     "kind": "static",
+     "enabled": false,
+     "top": 65,
+     "left": 195,
+     "bottom": 81,
+     "right": 260,
+     "text": "0.000000"
+    },
+    {
+     "n": 12,
+     "kind": "button",
+     "enabled": true,
+     "top": 160,
+     "left": 5,
+     "bottom": 180,
+     "right": 75,
+     "text": "Analyze"
+    },
+    {
+     "n": 13,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 110,
+     "bottom": 21,
+     "right": 175,
+     "text": "Channel 1"
+    },
+    {
+     "n": 14,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 195,
+     "bottom": 21,
+     "right": 260,
+     "text": "Channel 2"
+    },
+    {
+     "n": 15,
+     "kind": "static",
+     "enabled": false,
+     "top": 135,
+     "left": 5,
+     "bottom": 151,
+     "right": 100,
+     "text": "Gain Factor:"
+    },
+    {
+     "n": 16,
+     "kind": "edit",
+     "enabled": true,
+     "top": 135,
+     "left": 110,
+     "bottom": 151,
+     "right": 170,
+     "text": "1.000000"
+    },
+    {
+     "n": 17,
+     "kind": "edit",
+     "enabled": true,
+     "top": 135,
+     "left": 195,
+     "bottom": 151,
+     "right": 255,
+     "text": "1.000000"
+    },
+    {
+     "n": 18,
+     "kind": "radio",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 21,
+     "right": 42,
+     "text": "dB"
+    },
+    {
+     "n": 19,
+     "kind": "radio",
+     "enabled": true,
+     "top": 5,
+     "left": 42,
+     "bottom": 21,
+     "right": 98,
+     "text": "Fixed"
+    },
+    {
+     "n": 20,
+     "kind": "static",
+     "enabled": false,
+     "top": 85,
+     "left": 5,
+     "bottom": 101,
+     "right": 80,
+     "text": "DC Offset:"
+    },
+    {
+     "n": 21,
+     "kind": "static",
+     "enabled": false,
+     "top": 85,
+     "left": 110,
+     "bottom": 101,
+     "right": 175,
+     "text": "0.000000"
+    },
+    {
+     "n": 22,
+     "kind": "static",
+     "enabled": false,
+     "top": 85,
+     "left": 195,
+     "bottom": 101,
+     "right": 260,
+     "text": "0.000000"
+    },
+    {
+     "n": 23,
+     "kind": "static",
+     "enabled": false,
+     "top": 110,
+     "left": 5,
+     "bottom": 126,
+     "right": 100,
+     "text": "Added Offset:"
+    },
+    {
+     "n": 24,
+     "kind": "edit",
+     "enabled": true,
+     "top": 110,
+     "left": 110,
+     "bottom": 126,
+     "right": 170,
+     "text": "0.000000"
+    },
+    {
+     "n": 25,
+     "kind": "edit",
+     "enabled": true,
+     "top": 110,
+     "left": 195,
+     "bottom": 126,
+     "right": 255,
+     "text": "0.000000"
+    }
+   ]
+  },
+  {
+   "id": 140,
+   "name": "DRAW_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 5,
+    "bottom": 370,
+    "right": 505
+   },
+   "procID": 4,
+   "title": "Function Window",
+   "ditl": 140,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 304,
+     "left": 436,
+     "bottom": 324,
+     "right": 496,
+     "text": "Done"
+    },
+    {
+     "n": 2,
+     "kind": "user",
+     "enabled": true,
+     "top": 0,
+     "left": 0,
+     "bottom": 274,
+     "right": 400
+    },
+    {
+     "n": 3,
+     "kind": "edit",
+     "enabled": true,
+     "top": 3,
+     "left": 437,
+     "bottom": 19,
+     "right": 492,
+     "text": "100.000"
+    },
+    {
+     "n": 4,
+     "kind": "edit",
+     "enabled": true,
+     "top": 280,
+     "left": 440,
+     "bottom": 296,
+     "right": 495,
+     "text": "0.000000"
+    },
+    {
+     "n": 5,
+     "kind": "button",
+     "enabled": true,
+     "top": 216,
+     "left": 412,
+     "bottom": 232,
+     "right": 492,
+     "text": "Read"
+    },
+    {
+     "n": 6,
+     "kind": "picture",
+     "enabled": true,
+     "top": 280,
+     "left": 164,
+     "bottom": 305,
+     "right": 189,
+     "res": 143
+    },
+    {
+     "n": 7,
+     "kind": "picture",
+     "enabled": true,
+     "top": 280,
+     "left": 132,
+     "bottom": 305,
+     "right": 157,
+     "res": 145
+    },
+    {
+     "n": 8,
+     "kind": "picture",
+     "enabled": true,
+     "top": 280,
+     "left": 4,
+     "bottom": 305,
+     "right": 29,
+     "res": 140
+    },
+    {
+     "n": 9,
+     "kind": "static",
+     "enabled": false,
+     "top": 256,
+     "left": 424,
+     "bottom": 272,
+     "right": 495,
+     "text": "000.000000"
+    },
+    {
+     "n": 10,
+     "kind": "static",
+     "enabled": false,
+     "top": 240,
+     "left": 400,
+     "bottom": 256,
+     "right": 510,
+     "text": "Scale:"
+    },
+    {
+     "n": 11,
+     "kind": "static",
+     "enabled": false,
+     "top": 304,
+     "left": 320,
+     "bottom": 320,
+     "right": 390,
+     "text": "000.000000"
+    },
+    {
+     "n": 12,
+     "kind": "static",
+     "enabled": false,
+     "top": 280,
+     "left": 320,
+     "bottom": 296,
+     "right": 355,
+     "text": "Time:"
+    },
+    {
+     "n": 13,
+     "kind": "button",
+     "enabled": true,
+     "top": 72,
+     "left": 412,
+     "bottom": 88,
+     "right": 492,
+     "text": "Invert"
+    },
+    {
+     "n": 14,
+     "kind": "button",
+     "enabled": true,
+     "top": 120,
+     "left": 412,
+     "bottom": 136,
+     "right": 492,
+     "text": "Smooth"
+    },
+    {
+     "n": 15,
+     "kind": "edit",
+     "enabled": true,
+     "top": 304,
+     "left": 248,
+     "bottom": 320,
+     "right": 273,
+     "text": "888"
+    },
+    {
+     "n": 16,
+     "kind": "static",
+     "enabled": false,
+     "top": 280,
+     "left": 244,
+     "bottom": 296,
+     "right": 290,
+     "text": "Cycles:"
+    },
+    {
+     "n": 17,
+     "kind": "button",
+     "enabled": true,
+     "top": 48,
+     "left": 412,
+     "bottom": 64,
+     "right": 492,
+     "text": "Reverse"
+    },
+    {
+     "n": 18,
+     "kind": "button",
+     "enabled": true,
+     "top": 24,
+     "left": 412,
+     "bottom": 40,
+     "right": 492,
+     "text": "Set"
+    },
+    {
+     "n": 19,
+     "kind": "button",
+     "enabled": true,
+     "top": 96,
+     "left": 412,
+     "bottom": 112,
+     "right": 492,
+     "text": "Shift"
+    },
+    {
+     "n": 20,
+     "kind": "button",
+     "enabled": true,
+     "top": 192,
+     "left": 412,
+     "bottom": 208,
+     "right": 492,
+     "text": "Write"
+    },
+    {
+     "n": 21,
+     "kind": "picture",
+     "enabled": true,
+     "top": 280,
+     "left": 100,
+     "bottom": 305,
+     "right": 125,
+     "res": 144
+    },
+    {
+     "n": 22,
+     "kind": "picture",
+     "enabled": true,
+     "top": 280,
+     "left": 68,
+     "bottom": 305,
+     "right": 93,
+     "res": 142
+    },
+    {
+     "n": 23,
+     "kind": "picture",
+     "enabled": true,
+     "top": 280,
+     "left": 36,
+     "bottom": 305,
+     "right": 61,
+     "res": 141
+    },
+    {
+     "n": 24,
+     "kind": "button",
+     "enabled": true,
+     "top": 144,
+     "left": 412,
+     "bottom": 160,
+     "right": 492,
+     "text": "Normalize"
+    },
+    {
+     "n": 25,
+     "kind": "button",
+     "enabled": true,
+     "top": 168,
+     "left": 412,
+     "bottom": 184,
+     "right": 492,
+     "text": "Set Mean"
+    },
+    {
+     "n": 26,
+     "kind": "static",
+     "enabled": false,
+     "top": 3,
+     "left": 401,
+     "bottom": 19,
+     "right": 431,
+     "text": "Top:"
+    },
+    {
+     "n": 27,
+     "kind": "static",
+     "enabled": false,
+     "top": 280,
+     "left": 400,
+     "bottom": 296,
+     "right": 430,
+     "text": "Bot:"
+    },
+    {
+     "n": 28,
+     "kind": "picture",
+     "enabled": true,
+     "top": 280,
+     "left": 196,
+     "bottom": 305,
+     "right": 221,
+     "res": 139
+    }
+   ]
+  },
+  {
+   "id": 141,
+   "name": "MUTATE_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 310,
+    "right": 520
+   },
+   "procID": 4,
+   "title": "Spectral Mutation Function",
+   "ditl": 141,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 245,
+     "left": 195,
+     "bottom": 265,
+     "right": 265,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 245,
+     "left": 110,
+     "bottom": 265,
+     "right": 180,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "static",
+     "enabled": true,
+     "top": 225,
+     "left": 135,
+     "bottom": 241,
+     "right": 265,
+     "text": "filename"
+    },
+    {
+     "n": 4,
+     "kind": "static",
+     "enabled": true,
+     "top": 225,
+     "left": 8,
+     "bottom": 241,
+     "right": 123,
+     "text": "Mutation Target:"
+    },
+    {
+     "n": 5,
+     "kind": "button",
+     "enabled": true,
+     "top": 200,
+     "left": 170,
+     "bottom": 220,
+     "right": 265,
+     "text": "Pick Target"
+    },
+    {
+     "n": 6,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 200,
+     "left": 8,
+     "bottom": 218,
+     "right": 148,
+     "text": "Time Scale Target"
+    },
+    {
+     "n": 7,
+     "kind": "static",
+     "enabled": false,
+     "top": 30,
+     "left": 8,
+     "bottom": 46,
+     "right": 143,
+     "text": "Mutation Index (Ω):"
+    },
+    {
+     "n": 8,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 24,
+     "right": 120,
+     "res": 133,
+     "control": "Bands Popup",
+     "title": "Bands:",
+     "menu": 133
+    },
+    {
+     "n": 9,
+     "kind": "edit",
+     "enabled": true,
+     "top": 30,
+     "left": 160,
+     "bottom": 46,
+     "right": 260,
+     "text": "0.500000"
+    },
+    {
+     "n": 10,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 55,
+     "left": 8,
+     "bottom": 73,
+     "right": 133,
+     "text": "Ω Function"
+    },
+    {
+     "n": 11,
+     "kind": "button",
+     "enabled": true,
+     "top": 55,
+     "left": 155,
+     "bottom": 75,
+     "right": 265,
+     "text": "Edit Function..."
+    },
+    {
+     "n": 12,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 130,
+     "bottom": 24,
+     "right": 265,
+     "res": 139,
+     "control": "Mutation Type Popup",
+     "title": "Type:",
+     "menu": 139
+    },
+    {
+     "n": 13,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 105,
+     "left": 8,
+     "bottom": 123,
+     "right": 158,
+     "text": "Absolute Interval"
+    },
+    {
+     "n": 14,
+     "kind": "static",
+     "enabled": false,
+     "top": 125,
+     "left": 8,
+     "bottom": 141,
+     "right": 183,
+     "text": "Source Abs. Value (0 -> 1):"
+    },
+    {
+     "n": 15,
+     "kind": "edit",
+     "enabled": true,
+     "top": 125,
+     "left": 205,
+     "bottom": 141,
+     "right": 260,
+     "text": "0.5"
+    },
+    {
+     "n": 16,
+     "kind": "static",
+     "enabled": false,
+     "top": 175,
+     "left": 8,
+     "bottom": 191,
+     "right": 178,
+     "text": "Delta Emphasis (-1 -> 1):"
+    },
+    {
+     "n": 17,
+     "kind": "edit",
+     "enabled": true,
+     "top": 175,
+     "left": 205,
+     "bottom": 191,
+     "right": 260,
+     "text": "0.5"
+    },
+    {
+     "n": 18,
+     "kind": "static",
+     "enabled": false,
+     "top": 85,
+     "left": 8,
+     "bottom": 101,
+     "right": 158,
+     "text": "Band Persist. (0 -> 1):"
+    },
+    {
+     "n": 19,
+     "kind": "edit",
+     "enabled": true,
+     "top": 85,
+     "left": 205,
+     "bottom": 101,
+     "right": 260,
+     "text": "0.95"
+    },
+    {
+     "n": 20,
+     "kind": "edit",
+     "enabled": true,
+     "top": 150,
+     "left": 205,
+     "bottom": 166,
+     "right": 260,
+     "text": "0.5"
+    },
+    {
+     "n": 21,
+     "kind": "static",
+     "enabled": false,
+     "top": 150,
+     "left": 8,
+     "bottom": 166,
+     "right": 183,
+     "text": "Target Abs. Value (0 -> 1):"
+    }
+   ]
+  },
+  {
+   "id": 142,
+   "name": "MARKER_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 315,
+    "right": 495
+   },
+   "procID": 4,
+   "title": "Markers, Loop Points, Etc.",
+   "ditl": 142,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 250,
+     "left": 170,
+     "bottom": 270,
+     "right": 240,
+     "text": "Change"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 250,
+     "left": 90,
+     "bottom": 270,
+     "right": 160,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "button",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 21,
+     "right": 35,
+     "text": "-"
+    },
+    {
+     "n": 4,
+     "kind": "button",
+     "enabled": true,
+     "top": 5,
+     "left": 40,
+     "bottom": 21,
+     "right": 70,
+     "text": "+"
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 145,
+     "bottom": 21,
+     "right": 240,
+     "text": "88"
+    },
+    {
+     "n": 6,
+     "kind": "edit",
+     "enabled": true,
+     "top": 25,
+     "left": 120,
+     "bottom": 41,
+     "right": 215,
+     "text": "Edit Text"
+    },
+    {
+     "n": 7,
+     "kind": "button",
+     "enabled": true,
+     "top": 45,
+     "left": 5,
+     "bottom": 61,
+     "right": 35,
+     "text": "-"
+    },
+    {
+     "n": 8,
+     "kind": "button",
+     "enabled": true,
+     "top": 45,
+     "left": 40,
+     "bottom": 61,
+     "right": 70,
+     "text": "+"
+    },
+    {
+     "n": 9,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 135,
+     "bottom": 61,
+     "right": 230,
+     "text": "88"
+    },
+    {
+     "n": 10,
+     "kind": "edit",
+     "enabled": true,
+     "top": 65,
+     "left": 140,
+     "bottom": 81,
+     "right": 235,
+     "text": "0.000000"
+    },
+    {
+     "n": 11,
+     "kind": "edit",
+     "enabled": true,
+     "top": 90,
+     "left": 140,
+     "bottom": 106,
+     "right": 235,
+     "text": "0.000000"
+    },
+    {
+     "n": 12,
+     "kind": "edit",
+     "enabled": true,
+     "top": 145,
+     "left": 10,
+     "bottom": 161,
+     "right": 70,
+     "text": "C2"
+    },
+    {
+     "n": 13,
+     "kind": "edit",
+     "enabled": true,
+     "top": 145,
+     "left": 90,
+     "bottom": 161,
+     "right": 150,
+     "text": "C3"
+    },
+    {
+     "n": 14,
+     "kind": "edit",
+     "enabled": true,
+     "top": 145,
+     "left": 175,
+     "bottom": 161,
+     "right": 235,
+     "text": "C5"
+    },
+    {
+     "n": 15,
+     "kind": "edit",
+     "enabled": true,
+     "top": 185,
+     "left": 10,
+     "bottom": 201,
+     "right": 85,
+     "text": "Edit Text"
+    },
+    {
+     "n": 16,
+     "kind": "edit",
+     "enabled": true,
+     "top": 185,
+     "left": 160,
+     "bottom": 201,
+     "right": 235,
+     "text": "Edit Text"
+    },
+    {
+     "n": 17,
+     "kind": "edit",
+     "enabled": true,
+     "top": 225,
+     "left": 10,
+     "bottom": 241,
+     "right": 85,
+     "text": "Edit Text"
+    },
+    {
+     "n": 18,
+     "kind": "edit",
+     "enabled": true,
+     "top": 225,
+     "left": 160,
+     "bottom": 241,
+     "right": 235,
+     "text": "Edit Text"
+    },
+    {
+     "n": 19,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 75,
+     "bottom": 21,
+     "right": 145,
+     "text": "Marker #:"
+    },
+    {
+     "n": 20,
+     "kind": "static",
+     "enabled": false,
+     "top": 25,
+     "left": 10,
+     "bottom": 41,
+     "right": 115,
+     "text": "Marker Sample:"
+    },
+    {
+     "n": 21,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 80,
+     "bottom": 61,
+     "right": 135,
+     "text": "Loop #:"
+    },
+    {
+     "n": 22,
+     "kind": "static",
+     "enabled": false,
+     "top": 65,
+     "left": 10,
+     "bottom": 81,
+     "right": 135,
+     "text": "Loop Start Sample:"
+    },
+    {
+     "n": 23,
+     "kind": "static",
+     "enabled": false,
+     "top": 90,
+     "left": 20,
+     "bottom": 106,
+     "right": 135,
+     "text": "Loop End Sample:"
+    },
+    {
+     "n": 24,
+     "kind": "static",
+     "enabled": false,
+     "top": 125,
+     "left": 0,
+     "bottom": 141,
+     "right": 81,
+     "text": "Low note #:"
+    },
+    {
+     "n": 25,
+     "kind": "static",
+     "enabled": false,
+     "top": 125,
+     "left": 81,
+     "bottom": 141,
+     "right": 165,
+     "text": "Base note #:"
+    },
+    {
+     "n": 26,
+     "kind": "static",
+     "enabled": false,
+     "top": 125,
+     "left": 165,
+     "bottom": 141,
+     "right": 250,
+     "text": "High note #:"
+    },
+    {
+     "n": 27,
+     "kind": "static",
+     "enabled": false,
+     "top": 165,
+     "left": 5,
+     "bottom": 181,
+     "right": 60,
+     "text": "Detune:"
+    },
+    {
+     "n": 28,
+     "kind": "static",
+     "enabled": false,
+     "top": 165,
+     "left": 160,
+     "bottom": 181,
+     "right": 235,
+     "text": "Gain:"
+    },
+    {
+     "n": 29,
+     "kind": "static",
+     "enabled": false,
+     "top": 205,
+     "left": 5,
+     "bottom": 221,
+     "right": 100,
+     "text": "High Velocity:"
+    },
+    {
+     "n": 30,
+     "kind": "static",
+     "enabled": false,
+     "top": 205,
+     "left": 145,
+     "bottom": 221,
+     "right": 240,
+     "text": "Low Velocity:"
+    },
+    {
+     "n": 31,
+     "kind": "static",
+     "enabled": false,
+     "top": 110,
+     "left": 5,
+     "bottom": 126,
+     "right": 240,
+     "text": "Below values for AIFF & AIFC only."
+    }
+   ]
+  },
+  {
+   "id": 143,
+   "name": "SRATE_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 165,
+    "right": 510
+   },
+   "procID": 4,
+   "title": "Varispeed or Sample Rate Convert",
+   "ditl": 143,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 100,
+     "left": 185,
+     "bottom": 120,
+     "right": 255,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 100,
+     "left": 95,
+     "bottom": 120,
+     "right": 165,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 5,
+     "bottom": 21,
+     "right": 59,
+     "text": "Quality:"
+    },
+    {
+     "n": 4,
+     "kind": "radio",
+     "enabled": true,
+     "top": 5,
+     "left": 60,
+     "bottom": 21,
+     "right": 109,
+     "text": "Best"
+    },
+    {
+     "n": 5,
+     "kind": "radio",
+     "enabled": true,
+     "top": 5,
+     "left": 110,
+     "bottom": 21,
+     "right": 183,
+     "text": "Medium"
+    },
+    {
+     "n": 6,
+     "kind": "radio",
+     "enabled": true,
+     "top": 5,
+     "left": 190,
+     "bottom": 21,
+     "right": 238,
+     "text": "Fast"
+    },
+    {
+     "n": 7,
+     "kind": "static",
+     "enabled": true,
+     "top": 25,
+     "left": 5,
+     "bottom": 41,
+     "right": 85,
+     "text": "New Rate:"
+    },
+    {
+     "n": 8,
+     "kind": "edit",
+     "enabled": true,
+     "top": 25,
+     "left": 115,
+     "bottom": 41,
+     "right": 248,
+     "text": "1.000000"
+    },
+    {
+     "n": 9,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 51,
+     "left": 5,
+     "bottom": 69,
+     "right": 90,
+     "text": "Varispeed"
+    },
+    {
+     "n": 10,
+     "kind": "button",
+     "enabled": true,
+     "top": 50,
+     "left": 100,
+     "bottom": 70,
+     "right": 255,
+     "text": "Varispeed Function..."
+    },
+    {
+     "n": 11,
+     "kind": "radio",
+     "enabled": true,
+     "top": 75,
+     "left": 5,
+     "bottom": 93,
+     "right": 111,
+     "text": "Vary by Pitch"
+    },
+    {
+     "n": 12,
+     "kind": "radio",
+     "enabled": true,
+     "top": 75,
+     "left": 145,
+     "bottom": 93,
+     "right": 254,
+     "text": "Vary by Scale"
+    }
+   ]
+  },
+  {
+   "id": 144,
+   "name": "PHASE_DLOG",
+   "bounds": {
+    "top": 140,
+    "left": 40,
+    "bottom": 205,
+    "right": 300
+   },
+   "procID": 1,
+   "title": "",
+   "ditl": 144,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 40,
+     "left": 200,
+     "bottom": 60,
+     "right": 258,
+     "text": "OK"
+    },
+    {
+     "n": 2,
+     "kind": "static",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 37,
+     "right": 174,
+     "text": "Amount of Phase Shift (0- 399):"
+    },
+    {
+     "n": 3,
+     "kind": "edit",
+     "enabled": true,
+     "top": 10,
+     "left": 180,
+     "bottom": 26,
+     "right": 255,
+     "text": "0"
+    },
+    {
+     "n": 4,
+     "kind": "button",
+     "enabled": true,
+     "top": 40,
+     "left": 135,
+     "bottom": 60,
+     "right": 193,
+     "text": "Cancel"
+    }
+   ]
+  },
+  {
+   "id": 146,
+   "name": "EXTRACT_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 240,
+    "right": 500
+   },
+   "procID": 4,
+   "title": "Spectral Rate Extractor",
+   "ditl": 146,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 175,
+     "left": 175,
+     "bottom": 195,
+     "right": 245,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 175,
+     "left": 95,
+     "bottom": 195,
+     "right": 165,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 24,
+     "right": 120,
+     "res": 133,
+     "control": "Bands Popup",
+     "title": "Bands:",
+     "menu": 133
+    },
+    {
+     "n": 4,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 125,
+     "bottom": 25,
+     "right": 245,
+     "res": 141,
+     "control": "Frames Popup",
+     "title": "Frames:",
+     "menu": 141
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": false,
+     "top": 25,
+     "left": 5,
+     "bottom": 41,
+     "right": 1180,
+     "text": "Analysis frame size (sec.):"
+    },
+    {
+     "n": 6,
+     "kind": "static",
+     "enabled": false,
+     "top": 25,
+     "left": 180,
+     "bottom": 41,
+     "right": 245,
+     "text": "0.000000"
+    },
+    {
+     "n": 7,
+     "kind": "edit",
+     "enabled": true,
+     "top": 80,
+     "left": 10,
+     "bottom": 96,
+     "right": 75,
+     "text": "5.000000"
+    },
+    {
+     "n": 8,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 5,
+     "bottom": 61,
+     "right": 245,
+     "text": "Transients are partials that have an"
+    },
+    {
+     "n": 9,
+     "kind": "static",
+     "enabled": false,
+     "top": 60,
+     "left": 5,
+     "bottom": 76,
+     "right": 240,
+     "text": "average change greater than"
+    },
+    {
+     "n": 10,
+     "kind": "static",
+     "enabled": false,
+     "top": 80,
+     "left": 80,
+     "bottom": 96,
+     "right": 245,
+     "text": "hertz per analysis frame"
+    },
+    {
+     "n": 11,
+     "kind": "static",
+     "enabled": false,
+     "top": 110,
+     "left": 5,
+     "bottom": 126,
+     "right": 245,
+     "text": "Stable sounds are partials that"
+    },
+    {
+     "n": 12,
+     "kind": "static",
+     "enabled": false,
+     "top": 125,
+     "left": 5,
+     "bottom": 141,
+     "right": 240,
+     "text": "have an average change less than"
+    },
+    {
+     "n": 13,
+     "kind": "static",
+     "enabled": false,
+     "top": 145,
+     "left": 80,
+     "bottom": 161,
+     "right": 245,
+     "text": "hertz per analysis frame"
+    },
+    {
+     "n": 14,
+     "kind": "edit",
+     "enabled": true,
+     "top": 145,
+     "left": 10,
+     "bottom": 161,
+     "right": 75,
+     "text": "2.000000"
+    }
+   ]
+  },
+  {
+   "id": 147,
+   "name": "EXPORT_DLOG",
+   "bounds": {
+    "top": 190,
+    "left": 10,
+    "bottom": 270,
+    "right": 240
+   },
+   "procID": 4,
+   "title": "Export Section To Resource File",
+   "ditl": 147,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 56,
+     "left": 164,
+     "bottom": 76,
+     "right": 222,
+     "text": "OK"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 29,
+     "left": 164,
+     "bottom": 49,
+     "right": 222,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "static",
+     "enabled": false,
+     "top": 29,
+     "left": 5,
+     "bottom": 45,
+     "right": 49,
+     "text": "Start:"
+    },
+    {
+     "n": 4,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 5,
+     "bottom": 21,
+     "right": 124,
+     "text": "Maximum Length:"
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 128,
+     "bottom": 21,
+     "right": 225,
+     "text": "0.000000"
+    },
+    {
+     "n": 6,
+     "kind": "edit",
+     "enabled": true,
+     "top": 29,
+     "left": 50,
+     "bottom": 45,
+     "right": 150,
+     "text": "000.000000"
+    },
+    {
+     "n": 7,
+     "kind": "static",
+     "enabled": false,
+     "top": 56,
+     "left": 5,
+     "bottom": 72,
+     "right": 43,
+     "text": "End:"
+    },
+    {
+     "n": 8,
+     "kind": "edit",
+     "enabled": true,
+     "top": 56,
+     "left": 50,
+     "bottom": 72,
+     "right": 150,
+     "text": "000.000000"
+    }
+   ]
+  },
+  {
+   "id": 148,
+   "name": "IMPORT_DLOG",
+   "bounds": {
+    "top": 56,
+    "left": 50,
+    "bottom": 191,
+    "right": 280
+   },
+   "procID": 4,
+   "title": "Select a 'snd ' resource",
+   "ditl": 148,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 110,
+     "left": 165,
+     "bottom": 130,
+     "right": 223,
+     "text": "OK"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 110,
+     "left": 100,
+     "bottom": 130,
+     "right": 158,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "button",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 21,
+     "right": 21,
+     "text": "-"
+    },
+    {
+     "n": 4,
+     "kind": "button",
+     "enabled": true,
+     "top": 5,
+     "left": 25,
+     "bottom": 21,
+     "right": 41,
+     "text": "+"
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": false,
+     "top": 25,
+     "left": 55,
+     "bottom": 41,
+     "right": 225,
+     "text": ""
+    },
+    {
+     "n": 6,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 110,
+     "bottom": 21,
+     "right": 165,
+     "text": "99999"
+    },
+    {
+     "n": 7,
+     "kind": "static",
+     "enabled": false,
+     "top": 5,
+     "left": 50,
+     "bottom": 21,
+     "right": 110,
+     "text": "Number:"
+    },
+    {
+     "n": 8,
+     "kind": "static",
+     "enabled": false,
+     "top": 25,
+     "left": 5,
+     "bottom": 41,
+     "right": 50,
+     "text": "Name:"
+    },
+    {
+     "n": 9,
+     "kind": "button",
+     "enabled": true,
+     "top": 110,
+     "left": 5,
+     "bottom": 130,
+     "right": 63,
+     "text": "Play"
+    },
+    {
+     "n": 10,
+     "kind": "static",
+     "enabled": false,
+     "top": 65,
+     "left": 5,
+     "bottom": 81,
+     "right": 95,
+     "text": "Sample Rate:"
+    },
+    {
+     "n": 11,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 5,
+     "bottom": 61,
+     "right": 75,
+     "text": "Channels:"
+    },
+    {
+     "n": 12,
+     "kind": "static",
+     "enabled": false,
+     "top": 65,
+     "left": 100,
+     "bottom": 81,
+     "right": 225,
+     "text": "000000.000000"
+    },
+    {
+     "n": 13,
+     "kind": "static",
+     "enabled": false,
+     "top": 45,
+     "left": 80,
+     "bottom": 61,
+     "right": 155,
+     "text": "Monaural"
+    },
+    {
+     "n": 14,
+     "kind": "static",
+     "enabled": false,
+     "top": 85,
+     "left": 5,
+     "bottom": 101,
+     "right": 90,
+     "text": "Header Type:"
+    },
+    {
+     "n": 15,
+     "kind": "static",
+     "enabled": false,
+     "top": 85,
+     "left": 95,
+     "bottom": 101,
+     "right": 225,
+     "text": "Standard"
+    }
+   ]
+  },
+  {
+   "id": 149,
+   "name": "RECORD_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 10,
+    "bottom": 235,
+    "right": 230
+   },
+   "procID": 4,
+   "title": "Record",
+   "ditl": 149,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 140,
+     "left": 5,
+     "bottom": 160,
+     "right": 105,
+     "text": "Create File..."
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 170,
+     "left": 5,
+     "bottom": 190,
+     "right": 70,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "button",
+     "enabled": true,
+     "top": 170,
+     "left": 85,
+     "bottom": 190,
+     "right": 150,
+     "text": "Record"
+    },
+    {
+     "n": 4,
+     "kind": "button",
+     "enabled": true,
+     "top": 170,
+     "left": 165,
+     "bottom": 190,
+     "right": 215,
+     "text": "Stop"
+    },
+    {
+     "n": 5,
+     "kind": "user",
+     "enabled": false,
+     "top": 120,
+     "left": 5,
+     "bottom": 135,
+     "right": 215
+    },
+    {
+     "n": 6,
+     "kind": "control",
+     "enabled": true,
+     "top": 35,
+     "left": 5,
+     "bottom": 54,
+     "right": 215,
+     "res": 143,
+     "control": "Sample Rate Popup",
+     "title": "Sample Rate:",
+     "menu": 143
+    },
+    {
+     "n": 7,
+     "kind": "control",
+     "enabled": true,
+     "top": 65,
+     "left": 5,
+     "bottom": 84,
+     "right": 215,
+     "res": 144,
+     "control": "Sample Size Popup",
+     "title": "Sample Size:",
+     "menu": 144
+    },
+    {
+     "n": 8,
+     "kind": "control",
+     "enabled": true,
+     "top": 95,
+     "left": 5,
+     "bottom": 114,
+     "right": 215,
+     "res": 142,
+     "control": "Channels Popup",
+     "title": "Channels:",
+     "menu": 142
+    },
+    {
+     "n": 9,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 24,
+     "right": 215,
+     "res": 132,
+     "control": "Input Popup",
+     "title": "Input:",
+     "menu": 150
+    }
+   ]
+  },
+  {
+   "id": 150,
+   "name": "ANAL_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 180,
+    "right": 490
+   },
+   "procID": 4,
+   "title": "Spectral Analysis",
+   "ditl": 150,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 115,
+     "left": 165,
+     "bottom": 135,
+     "right": 235,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 115,
+     "left": 85,
+     "bottom": 135,
+     "right": 155,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 24,
+     "right": 125,
+     "res": 133,
+     "control": "Bands Popup",
+     "title": "Bands:",
+     "menu": 133
+    },
+    {
+     "n": 4,
+     "kind": "static",
+     "enabled": false,
+     "top": 35,
+     "left": 5,
+     "bottom": 51,
+     "right": 140,
+     "text": "Band Freq. Spacing:"
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": false,
+     "top": 35,
+     "left": 140,
+     "bottom": 51,
+     "right": 233,
+     "text": "20.000000"
+    },
+    {
+     "n": 6,
+     "kind": "control",
+     "enabled": true,
+     "top": 60,
+     "left": 5,
+     "bottom": 80,
+     "right": 165,
+     "res": 138,
+     "control": "Window Popup",
+     "title": "Window:",
+     "menu": 138
+    },
+    {
+     "n": 7,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 125,
+     "bottom": 24,
+     "right": 235,
+     "res": 148,
+     "control": "Overlap Popup",
+     "title": "Overlap:",
+     "menu": 148
+    },
+    {
+     "n": 8,
+     "kind": "control",
+     "enabled": true,
+     "top": 85,
+     "left": 5,
+     "bottom": 104,
+     "right": 155,
+     "res": 129,
+     "control": "Spect Popup",
+     "title": "Type:",
+     "menu": 154
+    }
+   ]
+  },
+  {
+   "id": 151,
+   "name": "TRANSPORT_DLOG",
+   "bounds": {
+    "top": 312,
+    "left": 44,
+    "bottom": 330,
+    "right": 466
+   },
+   "procID": 24,
+   "title": "Playback Transport",
+   "ditl": 151,
+   "items": [
+    {
+     "n": 1,
+     "kind": "control",
+     "enabled": true,
+     "top": 0,
+     "left": 0,
+     "bottom": 16,
+     "right": 340,
+     "res": 149,
+     "control": "Transport Slider",
+     "title": "",
+     "menu": 0
+    },
+    {
+     "n": 2,
+     "kind": "static",
+     "enabled": true,
+     "top": 0,
+     "left": 342,
+     "bottom": 16,
+     "right": 422,
+     "text": "0.000000"
+    }
+   ]
+  },
+  {
+   "id": 152,
+   "name": "MY_OPEN_DLOG",
+   "bounds": {
+    "top": 60,
+    "left": 60,
+    "bottom": 276,
+    "right": 404
+   },
+   "procID": 1,
+   "title": "",
+   "ditl": 152,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 188,
+     "left": 252,
+     "bottom": 208,
+     "right": 332,
+     "text": "Open"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 104,
+     "left": 252,
+     "bottom": 124,
+     "right": 332,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "type1",
+     "enabled": false,
+     "top": 0,
+     "left": 0,
+     "bottom": 0,
+     "right": 0
+    },
+    {
+     "n": 4,
+     "kind": "user",
+     "enabled": true,
+     "top": 8,
+     "left": 235,
+     "bottom": 24,
+     "right": 337
+    },
+    {
+     "n": 5,
+     "kind": "button",
+     "enabled": true,
+     "top": 32,
+     "left": 252,
+     "bottom": 52,
+     "right": 332,
+     "text": "Eject"
+    },
+    {
+     "n": 6,
+     "kind": "button",
+     "enabled": true,
+     "top": 60,
+     "left": 252,
+     "bottom": 80,
+     "right": 332,
+     "text": "Desktop"
+    },
+    {
+     "n": 7,
+     "kind": "user",
+     "enabled": true,
+     "top": 29,
+     "left": 12,
+     "bottom": 159,
+     "right": 230
+    },
+    {
+     "n": 8,
+     "kind": "user",
+     "enabled": true,
+     "top": 6,
+     "left": 12,
+     "bottom": 25,
+     "right": 230
+    },
+    {
+     "n": 9,
+     "kind": "picture",
+     "enabled": false,
+     "top": 91,
+     "left": 251,
+     "bottom": 92,
+     "right": 333,
+     "res": 11
+    },
+    {
+     "n": 10,
+     "kind": "button",
+     "enabled": true,
+     "top": 160,
+     "left": 252,
+     "bottom": 180,
+     "right": 332,
+     "text": "Open All"
+    },
+    {
+     "n": 11,
+     "kind": "button",
+     "enabled": true,
+     "top": 132,
+     "left": 252,
+     "bottom": 152,
+     "right": 332,
+     "text": "Play"
+    },
+    {
+     "n": 12,
+     "kind": "static",
+     "enabled": false,
+     "top": 160,
+     "left": 12,
+     "bottom": 214,
+     "right": 230,
+     "text": ""
+    }
+   ]
+  },
+  {
+   "id": 153,
+   "name": "MY_SAVE_DLOG",
+   "bounds": {
+    "top": 60,
+    "left": 60,
+    "bottom": 270,
+    "right": 405
+   },
+   "procID": 1,
+   "title": "",
+   "ditl": 153,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 180,
+     "left": 260,
+     "bottom": 200,
+     "right": 340,
+     "text": "Save"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 150,
+     "left": 260,
+     "bottom": 170,
+     "right": 340,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "type1",
+     "enabled": false,
+     "top": 0,
+     "left": 0,
+     "bottom": 0,
+     "right": 0
+    },
+    {
+     "n": 4,
+     "kind": "user",
+     "enabled": true,
+     "top": 25,
+     "left": 245,
+     "bottom": 41,
+     "right": 347
+    },
+    {
+     "n": 5,
+     "kind": "button",
+     "enabled": true,
+     "top": 50,
+     "left": 260,
+     "bottom": 70,
+     "right": 340,
+     "text": "Eject"
+    },
+    {
+     "n": 6,
+     "kind": "button",
+     "enabled": true,
+     "top": 80,
+     "left": 260,
+     "bottom": 100,
+     "right": 340,
+     "text": "Desktop"
+    },
+    {
+     "n": 7,
+     "kind": "user",
+     "enabled": true,
+     "top": 25,
+     "left": 5,
+     "bottom": 125,
+     "right": 240
+    },
+    {
+     "n": 8,
+     "kind": "user",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 25,
+     "right": 240
+    },
+    {
+     "n": 9,
+     "kind": "picture",
+     "enabled": false,
+     "top": 140,
+     "left": 260,
+     "bottom": 142,
+     "right": 339,
+     "res": 146
+    },
+    {
+     "n": 10,
+     "kind": "edit",
+     "enabled": true,
+     "top": 145,
+     "left": 5,
+     "bottom": 161,
+     "right": 240,
+     "text": ""
+    },
+    {
+     "n": 11,
+     "kind": "static",
+     "enabled": false,
+     "top": 125,
+     "left": 5,
+     "bottom": 141,
+     "right": 240,
+     "text": "Save as:"
+    },
+    {
+     "n": 12,
+     "kind": "user",
+     "enabled": false,
+     "top": 110,
+     "left": 260,
+     "bottom": 130,
+     "right": 340
+    },
+    {
+     "n": 13,
+     "kind": "control",
+     "enabled": true,
+     "top": 165,
+     "left": 5,
+     "bottom": 184,
+     "right": 240,
+     "res": 136,
+     "control": "File Type Popup",
+     "title": "Format:",
+     "menu": 136
+    },
+    {
+     "n": 14,
+     "kind": "control",
+     "enabled": true,
+     "top": 185,
+     "left": 5,
+     "bottom": 204,
+     "right": 240,
+     "res": 137,
+     "control": "File Format Popup",
+     "title": "Encoding:",
+     "menu": 137
+    }
+   ]
+  },
+  {
+   "id": 154,
+   "name": "PICT_DLOG",
+   "bounds": {
+    "top": 40,
+    "left": 250,
+    "bottom": 305,
+    "right": 490
+   },
+   "procID": 4,
+   "title": "QuickTime Sonogram",
+   "ditl": 154,
+   "items": [
+    {
+     "n": 1,
+     "kind": "button",
+     "enabled": true,
+     "top": 240,
+     "left": 165,
+     "bottom": 260,
+     "right": 235,
+     "text": "Process"
+    },
+    {
+     "n": 2,
+     "kind": "button",
+     "enabled": true,
+     "top": 240,
+     "left": 85,
+     "bottom": 260,
+     "right": 155,
+     "text": "Cancel"
+    },
+    {
+     "n": 3,
+     "kind": "control",
+     "enabled": true,
+     "top": 5,
+     "left": 5,
+     "bottom": 24,
+     "right": 120,
+     "res": 133,
+     "control": "Bands Popup",
+     "title": "Bands:",
+     "menu": 133
+    },
+    {
+     "n": 4,
+     "kind": "static",
+     "enabled": false,
+     "top": 30,
+     "left": 5,
+     "bottom": 46,
+     "right": 135,
+     "text": "Band Freq. Spacing:"
+    },
+    {
+     "n": 5,
+     "kind": "static",
+     "enabled": false,
+     "top": 30,
+     "left": 140,
+     "bottom": 46,
+     "right": 235,
+     "text": "20.000000"
+    },
+    {
+     "n": 6,
+     "kind": "control",
+     "enabled": true,
+     "top": 50,
+     "left": 5,
+     "bottom": 70,
+     "right": 165,
+     "res": 138,
+     "control": "Window Popup",
+     "title": "Window:",
+     "menu": 138
+    },
+    {
+     "n": 7,
+     "kind": "static",
+     "enabled": false,
+     "top": 100,
+     "left": 5,
+     "bottom": 116,
+     "right": 155,
+     "text": "Amplitude Range (dB):"
+    },
+    {
+     "n": 8,
+     "kind": "edit",
+     "enabled": true,
+     "top": 100,
+     "left": 160,
+     "bottom": 116,
+     "right": 230,
+     "text": "96.00"
+    },
+    {
+     "n": 9,
+     "kind": "control",
+     "enabled": true,
+     "top": 75,
+     "left": 5,
+     "bottom": 94,
+     "right": 210,
+     "res": 130,
+     "control": "Phase Color Popup",
+     "title": "∆Phase Center Color:",
+     "menu": 149
+    },
+    {
+     "n": 10,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 145,
+     "left": 5,
+     "bottom": 163,
+     "right": 135,
+     "text": "Color Inversion"
+    },
+    {
+     "n": 11,
+     "kind": "control",
+     "enabled": true,
+     "top": 215,
+     "left": 5,
+     "bottom": 231,
+     "right": 235,
+     "res": 131,
+     "control": "Frames Per FFT",
+     "title": "Lines per FFT:",
+     "menu": 1
+    },
+    {
+     "n": 12,
+     "kind": "static",
+     "enabled": true,
+     "top": 195,
+     "left": 105,
+     "bottom": 211,
+     "right": 235,
+     "text": "1"
+    },
+    {
+     "n": 13,
+     "kind": "static",
+     "enabled": false,
+     "top": 195,
+     "left": 5,
+     "bottom": 211,
+     "right": 100,
+     "text": "Lines Per FFT:"
+    },
+    {
+     "n": 14,
+     "kind": "checkbox",
+     "enabled": true,
+     "top": 170,
+     "left": 5,
+     "bottom": 188,
+     "right": 141,
+     "text": "Moving Sonogram"
+    },
+    {
+     "n": 15,
+     "kind": "radio",
+     "enabled": true,
+     "top": 125,
+     "left": 5,
+     "bottom": 143,
+     "right": 120,
+     "text": "Amp To Hue"
+    },
+    {
+     "n": 16,
+     "kind": "radio",
+     "enabled": true,
+     "top": 125,
+     "left": 125,
+     "bottom": 143,
+     "right": 240,
+     "text": "Phase To Hue"
+    }
+   ]
+  }
+ ],
+ "menus": {
+  "128": {
+   "name": "",
+   "title": "\u0014",
+   "items": [
+    "About SoundHack...",
+    "-"
+   ]
+  },
+  "129": {
+   "name": "",
+   "title": "File",
+   "items": [
+    "Record New...",
+    "Open...",
+    "Open Any...",
+    "Close",
+    "Close & Edit",
+    "Save A Copy...",
+    "Split Into Mono Files...",
+    "-",
+    "Play File (space bar)",
+    "Import",
+    "Export",
+    "-",
+    "Quit"
+   ]
+  },
+  "130": {
+   "name": "",
+   "title": "Edit",
+   "items": [
+    "Undo",
+    "-",
+    "Cut",
+    "Copy",
+    "Paste"
+   ]
+  },
+  "131": {
+   "name": "",
+   "title": "Hack",
+   "items": [
+    "Header Change...",
+    "Loops & Markers...",
+    "-",
+    "Binaural Filter...",
+    "Convolution...",
+    "Spectral Dynamics...",
+    "Gain Change...",
+    "Mutation...",
+    "Phase Vocoder...",
+    "Varispeed...",
+    "Spectral Extractor...",
+    "Spectral Analysis...",
+    "QT Coder...",
+    "Normalize"
+   ]
+  },
+  "132": {
+   "name": "",
+   "title": "Control",
+   "items": [
+    "Show Signal",
+    "Show Spectrum",
+    "Show Sonogram",
+    "-",
+    "Pause Process",
+    "Continue Process",
+    "Stop Process",
+    "-",
+    "Load Settings...",
+    "Save Settings...",
+    "Default Settings",
+    "-",
+    "Preferences..."
+   ]
+  },
+  "133": {
+   "name": "",
+   "title": "Bands",
+   "items": [
+    "4096",
+    "2048",
+    "1024",
+    "512",
+    "256",
+    "128",
+    "64",
+    "32",
+    "16",
+    "8"
+   ]
+  },
+  "134": {
+   "name": "",
+   "title": "Time Menu",
+   "items": [
+    "Scaling:",
+    "Length Desired:"
+   ]
+  },
+  "136": {
+   "name": "",
+   "title": "File Type",
+   "items": [
+    "Audio IFF",
+    "Audio IFC",
+    "Audiomedia™",
+    "BICSF (IRCAM)",
+    "DSP Designer™",
+    "MacMix™",
+    "Microsoft Wave",
+    "NeXT (.snd)",
+    "QuickTime™",
+    "Sound Designer II™",
+    "Sun (.au)",
+    "Text",
+    "Headerless Data"
+   ]
+  },
+  "137": {
+   "name": "",
+   "title": "File Format",
+   "items": [
+    "4 Bit 4:1 DVI ADPCM",
+    "4 Bit 4:1 IMA ADPCM",
+    "8 Bit Linear",
+    "8 Bit Unsigned",
+    "8 Bit aLaw",
+    "8 Bit µLaw",
+    "16 Bit Linear",
+    "16 Bit Byte Swap",
+    "24 Bit Linear",
+    "24 Bit Byte Swap",
+    "32 Bit Linear",
+    "32 Bit Byte Swap",
+    "32 Bit Floating Point",
+    "Text",
+    "3:1 MACE",
+    "6:1 MACE"
+   ]
+  },
+  "138": {
+   "name": "",
+   "title": "Windows",
+   "items": [
+    "Hamming",
+    "Kaiser",
+    "Ramp",
+    "Rectangle",
+    "Sinc",
+    "Triangle",
+    "von Hann"
+   ]
+  },
+  "139": {
+   "name": "",
+   "title": "Mutation Type",
+   "items": [
+    "USIM",
+    "ISIM",
+    "IUIM",
+    "UUIM",
+    "LCM",
+    "LCM/IUIM",
+    "LCM/UUIM"
+   ]
+  },
+  "140": {
+   "name": "",
+   "title": "Dynamic Options",
+   "items": [
+    "Gate-Duck",
+    "Expand",
+    "Compress"
+   ]
+  },
+  "141": {
+   "name": "",
+   "title": "NumberFrames",
+   "items": [
+    "4",
+    "5",
+    "6",
+    "7",
+    "8"
+   ]
+  },
+  "142": {
+   "name": "",
+   "title": "Channels",
+   "items": [
+    "Mono",
+    "Stereo"
+   ]
+  },
+  "143": {
+   "name": "",
+   "title": "Sample Rate",
+   "items": [
+    "48000",
+    "44100",
+    "32000",
+    "22254",
+    "22050",
+    "11127",
+    "11025"
+   ]
+  },
+  "144": {
+   "name": "",
+   "title": "Size",
+   "items": [
+    "16 Bit Linear",
+    "24 Bit Linear"
+   ]
+  },
+  "145": {
+   "name": "",
+   "title": "Signal",
+   "items": [
+    "Input",
+    "Aux",
+    "Output"
+   ]
+  },
+  "146": {
+   "name": "",
+   "title": "Spect",
+   "items": [
+    "Input",
+    "Aux",
+    "Output"
+   ]
+  },
+  "147": {
+   "name": "",
+   "title": "Sono",
+   "items": [
+    "Input",
+    "Aux",
+    "Output"
+   ]
+  },
+  "135": {
+   "name": "",
+   "title": "Soundfiles",
+   "items": []
+  },
+  "148": {
+   "name": "",
+   "title": "Overlap",
+   "items": [
+    "4x",
+    "2x",
+    "1x",
+    ".5x"
+   ]
+  },
+  "151": {
+   "name": "",
+   "title": "Height",
+   "items": [
+    "Elevated",
+    "Ear Level",
+    "Lowered"
+   ]
+  },
+  "152": {
+   "name": "",
+   "title": "Import",
+   "items": [
+    "SND Resource...",
+    "CD Track..."
+   ]
+  },
+  "153": {
+   "name": "",
+   "title": "Export",
+   "items": [
+    "SND Resource..."
+   ]
+  },
+  "154": {
+   "name": "",
+   "title": "Spect Type",
+   "items": [
+    "Csound",
+    "SoundHack",
+    "SDIF 1STF"
+   ]
+  },
+  "149": {
+   "name": "",
+   "title": "Center Color",
+   "items": [
+    "Red",
+    "Green",
+    "Blue"
+   ]
+  },
+  "150": {
+   "name": "",
+   "title": "Input",
+   "items": [
+    "None Selected"
+   ]
+  }
+ }
+}

@@ -739,7 +739,7 @@ impl App {
         };
         let rack = crate::rack::RackSpec::from_json(&saved.rack);
         if !rack.slots.is_empty() {
-            self.racks.set(rel, rack);
+            self.set_rack(rel, rack);
         }
         crate::persist::edit_from_json(&saved.edit, &fresh).unwrap_or(fresh)
     }
@@ -848,6 +848,40 @@ impl App {
 
     pub fn library_path(&self) -> Option<PathBuf> {
         self.library.read().unwrap().clone()
+    }
+
+    /// Store a file's rack, first loading any sound its effects take — a
+    /// convolution's impulse — so the chain has it when it is built, without
+    /// decoding a file while playback waits.
+    pub fn set_rack(&self, rel: &str, spec: crate::rack::RackSpec) {
+        for slot in &spec.slots {
+            if let crate::rack::SlotSpec::Prism { sound: Some(name), .. } = slot {
+                self.load_effect_sound(name);
+            }
+        }
+        self.racks.set(rel, spec);
+    }
+
+    /// A library sound, decoded once and kept for the effects that use it.
+    /// Only a path inside the library is followed; the longest an effect uses
+    /// is a few seconds, so no more than eight are read.
+    fn load_effect_sound(&self, name: &str) {
+        if fx::prism::sound(name).is_some() {
+            return;
+        }
+        let Some(path) = self.library_path().and_then(|lib| crate::safety::resolve_within(&lib, name)) else {
+            return;
+        };
+        let Ok(mut reader) = audio_core::open(&path) else { return };
+        let info = reader.info();
+        let rate = info.sample_rate.max(1);
+        let channels = info.channels.max(1) as usize;
+        let frames = info.frames().min(rate as u64 * 8);
+        let Ok(samples) = reader.read_frames(0, frames) else { return };
+        fx::prism::remember_sound(
+            name,
+            fx::prism::Sound { samples: std::sync::Arc::new(samples), channels, rate: rate as f32 },
+        );
     }
 }
 

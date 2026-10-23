@@ -1,0 +1,411 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SoundHack windows</title>
+<style>
+body{margin:0;padding:24px;background:#d8d8d8;font:12px Chicago,"Charcoal","Geneva",system-ui,sans-serif;color:#000}
+h1{font-size:16px;margin:0 0 4px} p.note{margin:0 0 20px;max-width:760px;line-height:1.4}
+.grid{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+figure{margin:0} figcaption{font:11px Monaco,monospace;margin-top:6px;color:#333}
+.win{position:relative;background:#fff;border:1px solid #000;box-shadow:2px 2px 0 #000}
+.bar{height:18px;border-bottom:1px solid #000;text-align:center;font-weight:bold;line-height:18px;
+ background:repeating-linear-gradient(#fff 0 1px,#000 1px 2px) 0 3px/100% 12px no-repeat}
+.bar span{background:#fff;padding:0 6px}
+.body{position:relative}
+.it{position:absolute;box-sizing:border-box;white-space:nowrap;overflow:hidden;font-size:12px}
+.button{border:1px solid #000;border-radius:8px;display:flex;align-items:center;justify-content:center}
+.button.default{outline:3px solid #000;outline-offset:1px}
+.checkbox::before{content:"";display:inline-block;width:11px;height:11px;border:1px solid #000;margin:0 5px -2px 0}
+.radio::before{content:"";display:inline-block;width:11px;height:11px;border:1px solid #000;border-radius:50%;margin:0 5px -2px 0}
+.edit{border:1px solid #000;padding:1px 3px}
+.control{display:flex;align-items:center;gap:6px}
+.control .pop{border:1px solid #000;box-shadow:1px 1px 0 #000;padding:0 16px 0 4px;position:relative;flex:1;min-width:0}
+.control .pop::after{content:"▼";position:absolute;right:3px;font-size:9px;top:2px}
+.user{border:1px dashed #666;color:#666;display:flex;align-items:center;justify-content:center}
+.picture{border:1px dotted #888}
+.n{position:absolute;top:-1px;left:-1px;font:8px Monaco,monospace;background:#ff0;color:#000;padding:0 1px;opacity:.85}
+.menus{margin-top:6px;font:10px Monaco,monospace;color:#333;max-width:520px;white-space:normal}
+</style>
+<h1>SoundHack 0.896 — every dialog, at 1:1</h1>
+<p class="note">Redrawn from the binary's own DLOG, DITL, CNTL and MENU resources: each window's size and title, and every item's rectangle, kind and text, exactly. Yellow numbers are item numbers. A pop-up shows its first choice, and every pop-up's full list is under its window. The Function Window's preset icons are PICTs, shown as dotted boxes. The look is a plain stand-in for System 7; the geometry is the binary's.</p>
+<div class="grid">
+<figure><div class="win" style="width:458px"><div class="bar"><span>ABOUT_DLOG</span></div><div class="body" style="height:198px">
+<div class="it picture" style="left:1px;top:0px;width:457px;height:198px" title="picture 1"><span class="n">1</span></div>
+<div class="it picture" style="left:2px;top:2px;width:454px;height:194px" title="picture 2"><span class="n">2</span></div>
+</div></div><figcaption>ABOUT_DLOG · DLOG 128 · 458×198<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:245px"><div class="bar"><span>Change Header</span></div><div class="body" style="height:120px">
+<div class="it button default" style="left:160px;top:95px;width:80px;height:20px" title="button 1">Save Info<span class="n">1</span></div>
+<div class="it button" style="left:5px;top:95px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it static" style="left:5px;top:25px;width:90px;height:16px" title="static 3">Sample Rate:<span class="n">3</span></div>
+<div class="it edit" style="left:105px;top:25px;width:130px;height:16px" title="edit 4"><span class="n">4</span></div>
+<div class="it static" style="left:5px;top:50px;width:70px;height:16px" title="static 5">Channels:<span class="n">5</span></div>
+<div class="it radio" style="left:75px;top:50px;width:30px;height:16px" title="radio 6">1<span class="n">6</span></div>
+<div class="it radio" style="left:105px;top:50px;width:30px;height:16px" title="radio 7">2<span class="n">7</span></div>
+<div class="it radio" style="left:135px;top:50px;width:30px;height:16px" title="radio 8">4<span class="n">8</span></div>
+<div class="it static" style="left:5px;top:5px;width:58px;height:15px" title="static 9">Length:<span class="n">9</span></div>
+<div class="it static" style="left:65px;top:5px;width:170px;height:16px" title="static 10"><span class="n">10</span></div>
+<div class="it control" style="left:5px;top:70px;width:235px;height:19px" title="control 11"><span>Encoding:</span><span class='pop'>4 Bit 4:1 DVI ADPCM</span><span class="n">11</span></div>
+<div class="it button" style="left:90px;top:95px;width:58px;height:20px" title="button 12">Apply<span class="n">12</span></div>
+</div></div><figcaption>HEADER_DLOG · DLOG 129 · 245×120<div class="menus"><div>11 Encoding: 4 Bit 4:1 DVI ADPCM · 4 Bit 4:1 IMA ADPCM · 8 Bit Linear · 8 Bit Unsigned · 8 Bit aLaw · 8 Bit µLaw · 16 Bit Linear · 16 Bit Byte Swap · 24 Bit Linear · 24 Bit Byte Swap · 32 Bit Linear · 32 Bit Byte Swap · 32 Bit Floating Point · Text · 3:1 MACE · 6:1 MACE</div></div></figcaption></figure>
+<figure><div class="win" style="width:340px"><div class="bar"><span>A Message From SoundHack</span></div><div class="body" style="height:80px">
+<div class="it button default" style="left:295px;top:55px;width:40px;height:20px" title="button 1">OK<span class="n">1</span></div>
+<div class="it static" style="left:80px;top:0px;width:210px;height:80px" title="static 2"><span class="n">2</span></div>
+<div class="it picture" style="left:0px;top:0px;width:75px;height:80px" title="picture 3"><span class="n">3</span></div>
+</div></div><figcaption>ERROR_DLOG · DLOG 130 · 340×80<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:275px"><div class="bar"><span>Convolve with Impulse Response</span></div><div class="body" style="height:165px">
+<div class="it button default" style="left:200px;top:140px;width:70px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:5px;top:140px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it static" style="left:5px;top:7px;width:90px;height:16px" title="static 3">Length Used:<span class="n">3</span></div>
+<div class="it edit" style="left:110px;top:5px;width:145px;height:19px" title="edit 4"><span class="n">4</span></div>
+<div class="it button" style="left:85px;top:140px;width:105px;height:20px" title="button 5">Pick Impulse <span class="n">5</span></div>
+<div class="it static" style="left:5px;top:30px;width:110px;height:16px" title="static 6">kBytes Needed:<span class="n">6</span></div>
+<div class="it static" style="left:120px;top:30px;width:115px;height:16px" title="static 7"><span class="n">7</span></div>
+<div class="it checkbox" style="left:155px;top:115px;width:85px;height:18px" title="checkbox 8">Normalize<span class="n">8</span></div>
+<div class="it radio" style="left:70px;top:50px;width:50px;height:16px" title="radio 9">0 dB<span class="n">9</span></div>
+<div class="it static" style="left:5px;top:50px;width:60px;height:16px" title="static 10">Gain:<span class="n">10</span></div>
+<div class="it radio" style="left:125px;top:50px;width:60px;height:16px" title="radio 11">24 dB<span class="n">11</span></div>
+<div class="it radio" style="left:190px;top:50px;width:65px;height:16px" title="radio 12">42 dB<span class="n">12</span></div>
+<div class="it checkbox" style="left:5px;top:115px;width:70px;height:18px" title="checkbox 13">Moving<span class="n">13</span></div>
+<div class="it checkbox" style="left:5px;top:95px;width:118px;height:18px" title="checkbox 14">Ring Modulate<span class="n">14</span></div>
+<div class="it control" style="left:5px;top:70px;width:160px;height:20px" title="control 15"><span>Window:</span><span class='pop'>Hamming</span><span class="n">15</span></div>
+<div class="it checkbox" style="left:155px;top:95px;width:106px;height:18px" title="checkbox 16">Brighten<span class="n">16</span></div>
+</div></div><figcaption>CONVOLVE_DLOG · DLOG 132 · 275×165<div class="menus"><div>15 Window: Hamming · Kaiser · Ramp · Rectangle · Sinc · Triangle · von Hann</div></div></figcaption></figure>
+<figure><div class="win" style="width:255px"><div class="bar"><span>Phase Vocoder</span></div><div class="body" style="height:305px">
+<div class="it button default" style="left:180px;top:280px;width:70px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:95px;top:280px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it control" style="left:4px;top:4px;width:115px;height:19px" title="control 3"><span>Bands:</span><span class='pop'>4096</span><span class="n">3</span></div>
+<div class="it control" style="left:140px;top:5px;width:110px;height:19px" title="control 4"><span>Overlap:</span><span class='pop'>4x</span><span class="n">4</span></div>
+<div class="it control" style="left:4px;top:76px;width:135px;height:20px" title="control 5"><span></span><span class='pop'>Scaling:</span><span class="n">5</span></div>
+<div class="it edit" style="left:160px;top:75px;width:85px;height:16px" title="edit 6">1.000000<span class="n">6</span></div>
+<div class="it radio" style="left:4px;top:100px;width:90px;height:18px" title="radio 7">Time Scale<span class="n">7</span></div>
+<div class="it radio" style="left:155px;top:100px;width:90px;height:18px" title="radio 8">Pitch Scale<span class="n">8</span></div>
+<div class="it static" style="left:4px;top:28px;width:135px;height:16px" title="static 9">Band Freq. Spacing:<span class="n">9</span></div>
+<div class="it static" style="left:144px;top:28px;width:93px;height:16px" title="static 10">20.000000<span class="n">10</span></div>
+<div class="it checkbox" style="left:5px;top:185px;width:126px;height:18px" title="checkbox 11">Scaling Function<span class="n">11</span></div>
+<div class="it button" style="left:135px;top:185px;width:115px;height:20px" title="button 12">Edit Function...<span class="n">12</span></div>
+<div class="it control" style="left:4px;top:48px;width:160px;height:20px" title="control 13"><span>Window:</span><span class='pop'>Hamming</span><span class="n">13</span></div>
+<div class="it static" style="left:5px;top:230px;width:170px;height:16px" title="static 14">Minimum Amplitude (dB):<span class="n">14</span></div>
+<div class="it static" style="left:5px;top:255px;width:175px;height:16px" title="static 15">Threshold Under Max.(dB):<span class="n">15</span></div>
+<div class="it edit" style="left:200px;top:230px;width:45px;height:16px" title="edit 16">-96<span class="n">16</span></div>
+<div class="it edit" style="left:200px;top:255px;width:45px;height:16px" title="edit 17">-40<span class="n">17</span></div>
+<div class="it checkbox" style="left:5px;top:210px;width:160px;height:16px" title="checkbox 18">Resynthesis Gating<span class="n">18</span></div>
+<div class="it static" style="left:5px;top:135px;width:185px;height:16px" title="static 19">Analysis Rate (samps/FFT):<span class="n">19</span></div>
+<div class="it static" style="left:5px;top:160px;width:185px;height:15px" title="static 20">Synthesis Rate (samps/FFT):<span class="n">20</span></div>
+<div class="it edit" style="left:210px;top:135px;width:35px;height:16px" title="edit 21">128<span class="n">21</span></div>
+<div class="it edit" style="left:210px;top:160px;width:35px;height:16px" title="edit 22">128<span class="n">22</span></div>
+</div></div><figcaption>PVOC_DLOG · DLOG 133 · 255×305<div class="menus"><div>3 Bands: 4096 · 2048 · 1024 · 512 · 256 · 128 · 64 · 32 · 16 · 8</div><div>4 Overlap: 4x · 2x · 1x · .5x</div><div>5 (untitled) Scaling: · Length Desired:</div><div>13 Window: Hamming · Kaiser · Ramp · Rectangle · Sinc · Triangle · von Hann</div></div></figcaption></figure>
+<figure><div class="win" style="width:250px"><div class="bar"><span>Spectral Dynamics Processor</span></div><div class="body" style="height:305px">
+<div class="it button default" style="left:175px;top:280px;width:70px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:95px;top:280px;width:65px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it control" style="left:5px;top:5px;width:120px;height:20px" title="control 3"><span></span><span class='pop'>Gate-Duck</span><span class="n">3</span></div>
+<div class="it static" style="left:5px;top:220px;width:170px;height:16px" title="static 4">Threshold Above File (dB):<span class="n">4</span></div>
+<div class="it control" style="left:130px;top:5px;width:115px;height:19px" title="control 5"><span>Bands:</span><span class='pop'>4096</span><span class="n">5</span></div>
+<div class="it edit" style="left:180px;top:220px;width:65px;height:16px" title="edit 6">00.000000<span class="n">6</span></div>
+<div class="it static" style="left:5px;top:100px;width:165px;height:15px" title="static 7">Compress/Expand Ratio:<span class="n">7</span></div>
+<div class="it edit" style="left:180px;top:100px;width:65px;height:16px" title="edit 8">00.000000<span class="n">8</span></div>
+<div class="it checkbox" style="left:5px;top:240px;width:241px;height:18px" title="checkbox 9">Use Soundfile for Thresholds<span class="n">9</span></div>
+<div class="it static" style="left:5px;top:260px;width:95px;height:16px" title="static 10">Threshold File:<span class="n">10</span></div>
+<div class="it static" style="left:105px;top:260px;width:140px;height:16px" title="static 11"><span class="n">11</span></div>
+<div class="it button" style="left:5px;top:280px;width:75px;height:20px" title="button 12">Pick File<span class="n">12</span></div>
+<div class="it static" style="left:5px;top:165px;width:100px;height:16px" title="static 13">Affect Sounds:<span class="n">13</span></div>
+<div class="it radio" style="left:5px;top:180px;width:115px;height:18px" title="radio 14">Below Thresh.<span class="n">14</span></div>
+<div class="it radio" style="left:130px;top:180px;width:115px;height:18px" title="radio 15">Above Thresh.<span class="n">15</span></div>
+<div class="it static" style="left:5px;top:30px;width:94px;height:16px" title="static 16">Lowest Band:<span class="n">16</span></div>
+<div class="it edit" style="left:105px;top:30px;width:36px;height:16px" title="edit 17">8888<span class="n">17</span></div>
+<div class="it static" style="left:170px;top:30px;width:75px;height:16px" title="static 18">0 Hz<span class="n">18</span></div>
+<div class="it static" style="left:5px;top:55px;width:94px;height:16px" title="static 19">Highest Band:<span class="n">19</span></div>
+<div class="it edit" style="left:105px;top:55px;width:36px;height:16px" title="edit 20">8888<span class="n">20</span></div>
+<div class="it static" style="left:170px;top:55px;width:75px;height:16px" title="static 21">22050 Hz<span class="n">21</span></div>
+<div class="it edit" style="left:180px;top:145px;width:65px;height:16px" title="edit 22">0.000000<span class="n">22</span></div>
+<div class="it static" style="left:5px;top:145px;width:170px;height:16px" title="static 23">Attack/Decay Time (sec):<span class="n">23</span></div>
+<div class="it checkbox" style="left:5px;top:200px;width:235px;height:16px" title="checkbox 24">Threshold Relative to Peak Amp.<span class="n">24</span></div>
+<div class="it checkbox" style="left:5px;top:120px;width:215px;height:18px" title="checkbox 25">Use Smoothed Amplitude<span class="n">25</span></div>
+<div class="it checkbox" style="left:5px;top:75px;width:192px;height:18px" title="checkbox 26">3rd Octave Band Grouping<span class="n">26</span></div>
+</div></div><figcaption>DYNAMICS_DLOG · DLOG 134 · 250×305<div class="menus"><div>3 (untitled) Gate-Duck · Expand · Compress</div><div>5 Bands: 4096 · 2048 · 1024 · 512 · 256 · 128 · 64 · 32 · 16 · 8</div></div></figcaption></figure>
+<figure><div class="win" style="width:230px"><div class="bar"><span>Seconds of Sound Processed</span></div><div class="body" style="height:65px">
+<div class="it static" style="left:45px;top:25px;width:155px;height:16px" title="static 1">0.000000<span class="n">1</span></div>
+<div class="it static" style="left:10px;top:45px;width:210px;height:17px" title="static 2"><span class="n">2</span></div>
+<div class="it picture" style="left:206px;top:6px;width:13px;height:13px" title="picture 3"><span class="n">3</span></div>
+<div class="it static" style="left:10px;top:5px;width:30px;height:16px" title="static 4">In:<span class="n">4</span></div>
+<div class="it static" style="left:45px;top:5px;width:155px;height:16px" title="static 5">0.000000<span class="n">5</span></div>
+<div class="it static" style="left:10px;top:25px;width:30px;height:16px" title="static 6">Out:<span class="n">6</span></div>
+</div></div><figcaption>TIME_DLOG · DLOG 135 · 230×65<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:280px"><div class="bar"><span>Preferences</span></div><div class="body" style="height:160px">
+<div class="it button default" style="left:215px;top:135px;width:58px;height:20px" title="button 1">Set<span class="n">1</span></div>
+<div class="it checkbox" style="left:5px;top:60px;width:186px;height:18px" title="checkbox 2">Default Soundfile Type<span class="n">2</span></div>
+<div class="it control" style="left:10px;top:85px;width:235px;height:19px" title="control 3"><span>Format:</span><span class='pop'>Audio IFF</span><span class="n">3</span></div>
+<div class="it control" style="left:10px;top:110px;width:235px;height:19px" title="control 4"><span>Encoding:</span><span class='pop'>4 Bit 4:1 DVI ADPCM</span><span class="n">4</span></div>
+<div class="it button" style="left:5px;top:30px;width:98px;height:20px" title="button 5">Select Editor<span class="n">5</span></div>
+<div class="it static" style="left:105px;top:35px;width:175px;height:16px" title="static 6">Static Text<span class="n">6</span></div>
+<div class="it checkbox" style="left:5px;top:5px;width:106px;height:18px" title="checkbox 7">Play On Open<span class="n">7</span></div>
+<div class="it checkbox" style="left:115px;top:5px;width:166px;height:18px" title="checkbox 8">Play After Processing<span class="n">8</span></div>
+</div></div><figcaption>PREF_DLOG · DLOG 136 · 280×160<div class="menus"><div>3 Format: Audio IFF · Audio IFC · Audiomedia™ · BICSF (IRCAM) · DSP Designer™ · MacMix™ · Microsoft Wave · NeXT (.snd) · QuickTime™ · Sound Designer II™ · Sun (.au) · Text · Headerless Data</div><div>4 Encoding: 4 Bit 4:1 DVI ADPCM · 4 Bit 4:1 IMA ADPCM · 8 Bit Linear · 8 Bit Unsigned · 8 Bit aLaw · 8 Bit µLaw · 16 Bit Linear · 16 Bit Byte Swap · 24 Bit Linear · 24 Bit Byte Swap · 32 Bit Linear · 32 Bit Byte Swap · 32 Bit Floating Point · Text · 3:1 MACE · 6:1 MACE</div></div></figcaption></figure>
+<figure><div class="win" style="width:250px"><div class="bar"><span>Binaural Position Filter</span></div><div class="body" style="height:300px">
+<div class="it button default" style="left:185px;top:275px;width:60px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:120px;top:275px;width:60px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it radio" style="left:116px;top:0px;width:20px;height:20px" title="radio 3"><span class="n">3</span></div>
+<div class="it radio" style="left:167px;top:13px;width:20px;height:20px" title="radio 4"><span class="n">4</span></div>
+<div class="it radio" style="left:204px;top:50px;width:20px;height:20px" title="radio 5"><span class="n">5</span></div>
+<div class="it radio" style="left:218px;top:101px;width:20px;height:20px" title="radio 6"><span class="n">6</span></div>
+<div class="it radio" style="left:204px;top:154px;width:20px;height:20px" title="radio 7"><span class="n">7</span></div>
+<div class="it radio" style="left:169px;top:189px;width:20px;height:20px" title="radio 8"><span class="n">8</span></div>
+<div class="it radio" style="left:116px;top:203px;width:20px;height:20px" title="radio 9"><span class="n">9</span></div>
+<div class="it radio" style="left:66px;top:190px;width:20px;height:20px" title="radio 10">150 L<span class="n">10</span></div>
+<div class="it radio" style="left:29px;top:154px;width:20px;height:20px" title="radio 11"><span class="n">11</span></div>
+<div class="it radio" style="left:15px;top:101px;width:20px;height:20px" title="radio 12"><span class="n">12</span></div>
+<div class="it radio" style="left:28px;top:50px;width:20px;height:20px" title="radio 13"><span class="n">13</span></div>
+<div class="it radio" style="left:67px;top:13px;width:20px;height:20px" title="radio 14"><span class="n">14</span></div>
+<div class="it picture" style="left:28px;top:15px;width:193px;height:193px" title="picture 15"><span class="n">15</span></div>
+<div class="it edit" style="left:55px;top:230px;width:32px;height:15px" title="edit 16">777<span class="n">16</span></div>
+<div class="it static" style="left:5px;top:230px;width:46px;height:16px" title="static 17">Angle:<span class="n">17</span></div>
+<div class="it checkbox" style="left:5px;top:255px;width:120px;height:18px" title="checkbox 18">Moving Angle<span class="n">18</span></div>
+<div class="it button" style="left:5px;top:275px;width:110px;height:20px" title="button 19">Angle Function<span class="n">19</span></div>
+<div class="it control" style="left:95px;top:230px;width:150px;height:19px" title="control 20"><span>Height:</span><span class='pop'>Elevated</span><span class="n">20</span></div>
+</div></div><figcaption>BINAURAL_DLOG · DLOG 137 · 250×300<div class="menus"><div>20 Height: Elevated · Ear Level · Lowered</div></div></figcaption></figure>
+<figure><div class="win" style="width:265px"><div class="bar"><span>Gain Change</span></div><div class="body" style="height:185px">
+<div class="it button default" style="left:160px;top:160px;width:100px;height:20px" title="button 1">Change Gain<span class="n">1</span></div>
+<div class="it button" style="left:85px;top:160px;width:65px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it static" style="left:5px;top:25px;width:85px;height:16px" title="static 3">Peak Value:<span class="n">3</span></div>
+<div class="it static" style="left:5px;top:45px;width:95px;height:16px" title="static 4">Peak Position:<span class="n">4</span></div>
+<div class="it static" style="left:5px;top:65px;width:75px;height:16px" title="static 5">RMS Value:<span class="n">5</span></div>
+<div class="it static" style="left:110px;top:25px;width:65px;height:16px" title="static 6">0.000000<span class="n">6</span></div>
+<div class="it static" style="left:110px;top:45px;width:65px;height:16px" title="static 7">0<span class="n">7</span></div>
+<div class="it static" style="left:110px;top:65px;width:65px;height:16px" title="static 8">0.000000<span class="n">8</span></div>
+<div class="it static" style="left:195px;top:25px;width:65px;height:16px" title="static 9">0.000000<span class="n">9</span></div>
+<div class="it static" style="left:195px;top:45px;width:65px;height:16px" title="static 10">0<span class="n">10</span></div>
+<div class="it static" style="left:195px;top:65px;width:65px;height:16px" title="static 11">0.000000<span class="n">11</span></div>
+<div class="it button" style="left:5px;top:160px;width:70px;height:20px" title="button 12">Analyze<span class="n">12</span></div>
+<div class="it static" style="left:110px;top:5px;width:65px;height:16px" title="static 13">Channel 1<span class="n">13</span></div>
+<div class="it static" style="left:195px;top:5px;width:65px;height:16px" title="static 14">Channel 2<span class="n">14</span></div>
+<div class="it static" style="left:5px;top:135px;width:95px;height:16px" title="static 15">Gain Factor:<span class="n">15</span></div>
+<div class="it edit" style="left:110px;top:135px;width:60px;height:16px" title="edit 16">1.000000<span class="n">16</span></div>
+<div class="it edit" style="left:195px;top:135px;width:60px;height:16px" title="edit 17">1.000000<span class="n">17</span></div>
+<div class="it radio" style="left:5px;top:5px;width:37px;height:16px" title="radio 18">dB<span class="n">18</span></div>
+<div class="it radio" style="left:42px;top:5px;width:56px;height:16px" title="radio 19">Fixed<span class="n">19</span></div>
+<div class="it static" style="left:5px;top:85px;width:75px;height:16px" title="static 20">DC Offset:<span class="n">20</span></div>
+<div class="it static" style="left:110px;top:85px;width:65px;height:16px" title="static 21">0.000000<span class="n">21</span></div>
+<div class="it static" style="left:195px;top:85px;width:65px;height:16px" title="static 22">0.000000<span class="n">22</span></div>
+<div class="it static" style="left:5px;top:110px;width:95px;height:16px" title="static 23">Added Offset:<span class="n">23</span></div>
+<div class="it edit" style="left:110px;top:110px;width:60px;height:16px" title="edit 24">0.000000<span class="n">24</span></div>
+<div class="it edit" style="left:195px;top:110px;width:60px;height:16px" title="edit 25">0.000000<span class="n">25</span></div>
+</div></div><figcaption>GAIN_DLOG · DLOG 139 · 265×185<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:500px"><div class="bar"><span>Function Window</span></div><div class="body" style="height:330px">
+<div class="it button default" style="left:436px;top:304px;width:60px;height:20px" title="button 1">Done<span class="n">1</span></div>
+<div class="it user" style="left:0px;top:0px;width:400px;height:274px" title="user 2">drawing area<span class="n">2</span></div>
+<div class="it edit" style="left:437px;top:3px;width:55px;height:16px" title="edit 3">100.000<span class="n">3</span></div>
+<div class="it edit" style="left:440px;top:280px;width:55px;height:16px" title="edit 4">0.000000<span class="n">4</span></div>
+<div class="it button" style="left:412px;top:216px;width:80px;height:16px" title="button 5">Read<span class="n">5</span></div>
+<div class="it picture" style="left:164px;top:280px;width:25px;height:25px" title="picture 6"><span class="n">6</span></div>
+<div class="it picture" style="left:132px;top:280px;width:25px;height:25px" title="picture 7"><span class="n">7</span></div>
+<div class="it picture" style="left:4px;top:280px;width:25px;height:25px" title="picture 8"><span class="n">8</span></div>
+<div class="it static" style="left:424px;top:256px;width:71px;height:16px" title="static 9">000.000000<span class="n">9</span></div>
+<div class="it static" style="left:400px;top:240px;width:110px;height:16px" title="static 10">Scale:<span class="n">10</span></div>
+<div class="it static" style="left:320px;top:304px;width:70px;height:16px" title="static 11">000.000000<span class="n">11</span></div>
+<div class="it static" style="left:320px;top:280px;width:35px;height:16px" title="static 12">Time:<span class="n">12</span></div>
+<div class="it button" style="left:412px;top:72px;width:80px;height:16px" title="button 13">Invert<span class="n">13</span></div>
+<div class="it button" style="left:412px;top:120px;width:80px;height:16px" title="button 14">Smooth<span class="n">14</span></div>
+<div class="it edit" style="left:248px;top:304px;width:25px;height:16px" title="edit 15">888<span class="n">15</span></div>
+<div class="it static" style="left:244px;top:280px;width:46px;height:16px" title="static 16">Cycles:<span class="n">16</span></div>
+<div class="it button" style="left:412px;top:48px;width:80px;height:16px" title="button 17">Reverse<span class="n">17</span></div>
+<div class="it button" style="left:412px;top:24px;width:80px;height:16px" title="button 18">Set<span class="n">18</span></div>
+<div class="it button" style="left:412px;top:96px;width:80px;height:16px" title="button 19">Shift<span class="n">19</span></div>
+<div class="it button" style="left:412px;top:192px;width:80px;height:16px" title="button 20">Write<span class="n">20</span></div>
+<div class="it picture" style="left:100px;top:280px;width:25px;height:25px" title="picture 21"><span class="n">21</span></div>
+<div class="it picture" style="left:68px;top:280px;width:25px;height:25px" title="picture 22"><span class="n">22</span></div>
+<div class="it picture" style="left:36px;top:280px;width:25px;height:25px" title="picture 23"><span class="n">23</span></div>
+<div class="it button" style="left:412px;top:144px;width:80px;height:16px" title="button 24">Normalize<span class="n">24</span></div>
+<div class="it button" style="left:412px;top:168px;width:80px;height:16px" title="button 25">Set Mean<span class="n">25</span></div>
+<div class="it static" style="left:401px;top:3px;width:30px;height:16px" title="static 26">Top:<span class="n">26</span></div>
+<div class="it static" style="left:400px;top:280px;width:30px;height:16px" title="static 27">Bot:<span class="n">27</span></div>
+<div class="it picture" style="left:196px;top:280px;width:25px;height:25px" title="picture 28"><span class="n">28</span></div>
+</div></div><figcaption>DRAW_DLOG · DLOG 140 · 500×330<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:270px"><div class="bar"><span>Spectral Mutation Function</span></div><div class="body" style="height:270px">
+<div class="it button default" style="left:195px;top:245px;width:70px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:110px;top:245px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it static" style="left:135px;top:225px;width:130px;height:16px" title="static 3">filename<span class="n">3</span></div>
+<div class="it static" style="left:8px;top:225px;width:115px;height:16px" title="static 4">Mutation Target:<span class="n">4</span></div>
+<div class="it button" style="left:170px;top:200px;width:95px;height:20px" title="button 5">Pick Target<span class="n">5</span></div>
+<div class="it checkbox" style="left:8px;top:200px;width:140px;height:18px" title="checkbox 6">Time Scale Target<span class="n">6</span></div>
+<div class="it static" style="left:8px;top:30px;width:135px;height:16px" title="static 7">Mutation Index (Ω):<span class="n">7</span></div>
+<div class="it control" style="left:5px;top:5px;width:115px;height:19px" title="control 8"><span>Bands:</span><span class='pop'>4096</span><span class="n">8</span></div>
+<div class="it edit" style="left:160px;top:30px;width:100px;height:16px" title="edit 9">0.500000<span class="n">9</span></div>
+<div class="it checkbox" style="left:8px;top:55px;width:125px;height:18px" title="checkbox 10">Ω Function<span class="n">10</span></div>
+<div class="it button" style="left:155px;top:55px;width:110px;height:20px" title="button 11">Edit Function...<span class="n">11</span></div>
+<div class="it control" style="left:130px;top:5px;width:135px;height:19px" title="control 12"><span>Type:</span><span class='pop'>USIM</span><span class="n">12</span></div>
+<div class="it checkbox" style="left:8px;top:105px;width:150px;height:18px" title="checkbox 13">Absolute Interval<span class="n">13</span></div>
+<div class="it static" style="left:8px;top:125px;width:175px;height:16px" title="static 14">Source Abs. Value (0 -&gt; 1):<span class="n">14</span></div>
+<div class="it edit" style="left:205px;top:125px;width:55px;height:16px" title="edit 15">0.5<span class="n">15</span></div>
+<div class="it static" style="left:8px;top:175px;width:170px;height:16px" title="static 16">Delta Emphasis (-1 -&gt; 1):<span class="n">16</span></div>
+<div class="it edit" style="left:205px;top:175px;width:55px;height:16px" title="edit 17">0.5<span class="n">17</span></div>
+<div class="it static" style="left:8px;top:85px;width:150px;height:16px" title="static 18">Band Persist. (0 -&gt; 1):<span class="n">18</span></div>
+<div class="it edit" style="left:205px;top:85px;width:55px;height:16px" title="edit 19">0.95<span class="n">19</span></div>
+<div class="it edit" style="left:205px;top:150px;width:55px;height:16px" title="edit 20">0.5<span class="n">20</span></div>
+<div class="it static" style="left:8px;top:150px;width:175px;height:16px" title="static 21">Target Abs. Value (0 -&gt; 1):<span class="n">21</span></div>
+</div></div><figcaption>MUTATE_DLOG · DLOG 141 · 270×270<div class="menus"><div>8 Bands: 4096 · 2048 · 1024 · 512 · 256 · 128 · 64 · 32 · 16 · 8</div><div>12 Type: USIM · ISIM · IUIM · UUIM · LCM · LCM/IUIM · LCM/UUIM</div></div></figcaption></figure>
+<figure><div class="win" style="width:245px"><div class="bar"><span>Markers, Loop Points, Etc.</span></div><div class="body" style="height:275px">
+<div class="it button default" style="left:170px;top:250px;width:70px;height:20px" title="button 1">Change<span class="n">1</span></div>
+<div class="it button" style="left:90px;top:250px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it button" style="left:5px;top:5px;width:30px;height:16px" title="button 3">-<span class="n">3</span></div>
+<div class="it button" style="left:40px;top:5px;width:30px;height:16px" title="button 4">+<span class="n">4</span></div>
+<div class="it static" style="left:145px;top:5px;width:95px;height:16px" title="static 5">88<span class="n">5</span></div>
+<div class="it edit" style="left:120px;top:25px;width:95px;height:16px" title="edit 6">Edit Text<span class="n">6</span></div>
+<div class="it button" style="left:5px;top:45px;width:30px;height:16px" title="button 7">-<span class="n">7</span></div>
+<div class="it button" style="left:40px;top:45px;width:30px;height:16px" title="button 8">+<span class="n">8</span></div>
+<div class="it static" style="left:135px;top:45px;width:95px;height:16px" title="static 9">88<span class="n">9</span></div>
+<div class="it edit" style="left:140px;top:65px;width:95px;height:16px" title="edit 10">0.000000<span class="n">10</span></div>
+<div class="it edit" style="left:140px;top:90px;width:95px;height:16px" title="edit 11">0.000000<span class="n">11</span></div>
+<div class="it edit" style="left:10px;top:145px;width:60px;height:16px" title="edit 12">C2<span class="n">12</span></div>
+<div class="it edit" style="left:90px;top:145px;width:60px;height:16px" title="edit 13">C3<span class="n">13</span></div>
+<div class="it edit" style="left:175px;top:145px;width:60px;height:16px" title="edit 14">C5<span class="n">14</span></div>
+<div class="it edit" style="left:10px;top:185px;width:75px;height:16px" title="edit 15">Edit Text<span class="n">15</span></div>
+<div class="it edit" style="left:160px;top:185px;width:75px;height:16px" title="edit 16">Edit Text<span class="n">16</span></div>
+<div class="it edit" style="left:10px;top:225px;width:75px;height:16px" title="edit 17">Edit Text<span class="n">17</span></div>
+<div class="it edit" style="left:160px;top:225px;width:75px;height:16px" title="edit 18">Edit Text<span class="n">18</span></div>
+<div class="it static" style="left:75px;top:5px;width:70px;height:16px" title="static 19">Marker #:<span class="n">19</span></div>
+<div class="it static" style="left:10px;top:25px;width:105px;height:16px" title="static 20">Marker Sample:<span class="n">20</span></div>
+<div class="it static" style="left:80px;top:45px;width:55px;height:16px" title="static 21">Loop #:<span class="n">21</span></div>
+<div class="it static" style="left:10px;top:65px;width:125px;height:16px" title="static 22">Loop Start Sample:<span class="n">22</span></div>
+<div class="it static" style="left:20px;top:90px;width:115px;height:16px" title="static 23">Loop End Sample:<span class="n">23</span></div>
+<div class="it static" style="left:0px;top:125px;width:81px;height:16px" title="static 24">Low note #:<span class="n">24</span></div>
+<div class="it static" style="left:81px;top:125px;width:84px;height:16px" title="static 25">Base note #:<span class="n">25</span></div>
+<div class="it static" style="left:165px;top:125px;width:85px;height:16px" title="static 26">High note #:<span class="n">26</span></div>
+<div class="it static" style="left:5px;top:165px;width:55px;height:16px" title="static 27">Detune:<span class="n">27</span></div>
+<div class="it static" style="left:160px;top:165px;width:75px;height:16px" title="static 28">Gain:<span class="n">28</span></div>
+<div class="it static" style="left:5px;top:205px;width:95px;height:16px" title="static 29">High Velocity:<span class="n">29</span></div>
+<div class="it static" style="left:145px;top:205px;width:95px;height:16px" title="static 30">Low Velocity:<span class="n">30</span></div>
+<div class="it static" style="left:5px;top:110px;width:235px;height:16px" title="static 31">Below values for AIFF &amp; AIFC only.<span class="n">31</span></div>
+</div></div><figcaption>MARKER_DLOG · DLOG 142 · 245×275<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:260px"><div class="bar"><span>Varispeed or Sample Rate Convert</span></div><div class="body" style="height:125px">
+<div class="it button default" style="left:185px;top:100px;width:70px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:95px;top:100px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it static" style="left:5px;top:5px;width:54px;height:16px" title="static 3">Quality:<span class="n">3</span></div>
+<div class="it radio" style="left:60px;top:5px;width:49px;height:16px" title="radio 4">Best<span class="n">4</span></div>
+<div class="it radio" style="left:110px;top:5px;width:73px;height:16px" title="radio 5">Medium<span class="n">5</span></div>
+<div class="it radio" style="left:190px;top:5px;width:48px;height:16px" title="radio 6">Fast<span class="n">6</span></div>
+<div class="it static" style="left:5px;top:25px;width:80px;height:16px" title="static 7">New Rate:<span class="n">7</span></div>
+<div class="it edit" style="left:115px;top:25px;width:133px;height:16px" title="edit 8">1.000000<span class="n">8</span></div>
+<div class="it checkbox" style="left:5px;top:51px;width:85px;height:18px" title="checkbox 9">Varispeed<span class="n">9</span></div>
+<div class="it button" style="left:100px;top:50px;width:155px;height:20px" title="button 10">Varispeed Function...<span class="n">10</span></div>
+<div class="it radio" style="left:5px;top:75px;width:106px;height:18px" title="radio 11">Vary by Pitch<span class="n">11</span></div>
+<div class="it radio" style="left:145px;top:75px;width:109px;height:18px" title="radio 12">Vary by Scale<span class="n">12</span></div>
+</div></div><figcaption>SRATE_DLOG · DLOG 143 · 260×125<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:260px"><div class="bar"><span>PHASE_DLOG</span></div><div class="body" style="height:65px">
+<div class="it button default" style="left:200px;top:40px;width:58px;height:20px" title="button 1">OK<span class="n">1</span></div>
+<div class="it static" style="left:5px;top:5px;width:169px;height:32px" title="static 2">Amount of Phase Shift (0- 399):<span class="n">2</span></div>
+<div class="it edit" style="left:180px;top:10px;width:75px;height:16px" title="edit 3">0<span class="n">3</span></div>
+<div class="it button" style="left:135px;top:40px;width:58px;height:20px" title="button 4">Cancel<span class="n">4</span></div>
+</div></div><figcaption>PHASE_DLOG · DLOG 144 · 260×65<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:250px"><div class="bar"><span>Spectral Rate Extractor</span></div><div class="body" style="height:200px">
+<div class="it button default" style="left:175px;top:175px;width:70px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:95px;top:175px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it control" style="left:5px;top:5px;width:115px;height:19px" title="control 3"><span>Bands:</span><span class='pop'>4096</span><span class="n">3</span></div>
+<div class="it control" style="left:125px;top:5px;width:120px;height:20px" title="control 4"><span>Frames:</span><span class='pop'>4</span><span class="n">4</span></div>
+<div class="it static" style="left:5px;top:25px;width:1175px;height:16px" title="static 5">Analysis frame size (sec.):<span class="n">5</span></div>
+<div class="it static" style="left:180px;top:25px;width:65px;height:16px" title="static 6">0.000000<span class="n">6</span></div>
+<div class="it edit" style="left:10px;top:80px;width:65px;height:16px" title="edit 7">5.000000<span class="n">7</span></div>
+<div class="it static" style="left:5px;top:45px;width:240px;height:16px" title="static 8">Transients are partials that have an<span class="n">8</span></div>
+<div class="it static" style="left:5px;top:60px;width:235px;height:16px" title="static 9">average change greater than<span class="n">9</span></div>
+<div class="it static" style="left:80px;top:80px;width:165px;height:16px" title="static 10">hertz per analysis frame<span class="n">10</span></div>
+<div class="it static" style="left:5px;top:110px;width:240px;height:16px" title="static 11">Stable sounds are partials that<span class="n">11</span></div>
+<div class="it static" style="left:5px;top:125px;width:235px;height:16px" title="static 12">have an average change less than<span class="n">12</span></div>
+<div class="it static" style="left:80px;top:145px;width:165px;height:16px" title="static 13">hertz per analysis frame<span class="n">13</span></div>
+<div class="it edit" style="left:10px;top:145px;width:65px;height:16px" title="edit 14">2.000000<span class="n">14</span></div>
+</div></div><figcaption>EXTRACT_DLOG · DLOG 146 · 250×200<div class="menus"><div>3 Bands: 4096 · 2048 · 1024 · 512 · 256 · 128 · 64 · 32 · 16 · 8</div><div>4 Frames: 4 · 5 · 6 · 7 · 8</div></div></figcaption></figure>
+<figure><div class="win" style="width:230px"><div class="bar"><span>Export Section To Resource File</span></div><div class="body" style="height:80px">
+<div class="it button default" style="left:164px;top:56px;width:58px;height:20px" title="button 1">OK<span class="n">1</span></div>
+<div class="it button" style="left:164px;top:29px;width:58px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it static" style="left:5px;top:29px;width:44px;height:16px" title="static 3">Start:<span class="n">3</span></div>
+<div class="it static" style="left:5px;top:5px;width:119px;height:16px" title="static 4">Maximum Length:<span class="n">4</span></div>
+<div class="it static" style="left:128px;top:5px;width:97px;height:16px" title="static 5">0.000000<span class="n">5</span></div>
+<div class="it edit" style="left:50px;top:29px;width:100px;height:16px" title="edit 6">000.000000<span class="n">6</span></div>
+<div class="it static" style="left:5px;top:56px;width:38px;height:16px" title="static 7">End:<span class="n">7</span></div>
+<div class="it edit" style="left:50px;top:56px;width:100px;height:16px" title="edit 8">000.000000<span class="n">8</span></div>
+</div></div><figcaption>EXPORT_DLOG · DLOG 147 · 230×80<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:230px"><div class="bar"><span>Select a &#x27;snd &#x27; resource</span></div><div class="body" style="height:135px">
+<div class="it button default" style="left:165px;top:110px;width:58px;height:20px" title="button 1">OK<span class="n">1</span></div>
+<div class="it button" style="left:100px;top:110px;width:58px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it button" style="left:5px;top:5px;width:16px;height:16px" title="button 3">-<span class="n">3</span></div>
+<div class="it button" style="left:25px;top:5px;width:16px;height:16px" title="button 4">+<span class="n">4</span></div>
+<div class="it static" style="left:55px;top:25px;width:170px;height:16px" title="static 5"><span class="n">5</span></div>
+<div class="it static" style="left:110px;top:5px;width:55px;height:16px" title="static 6">99999<span class="n">6</span></div>
+<div class="it static" style="left:50px;top:5px;width:60px;height:16px" title="static 7">Number:<span class="n">7</span></div>
+<div class="it static" style="left:5px;top:25px;width:45px;height:16px" title="static 8">Name:<span class="n">8</span></div>
+<div class="it button" style="left:5px;top:110px;width:58px;height:20px" title="button 9">Play<span class="n">9</span></div>
+<div class="it static" style="left:5px;top:65px;width:90px;height:16px" title="static 10">Sample Rate:<span class="n">10</span></div>
+<div class="it static" style="left:5px;top:45px;width:70px;height:16px" title="static 11">Channels:<span class="n">11</span></div>
+<div class="it static" style="left:100px;top:65px;width:125px;height:16px" title="static 12">000000.000000<span class="n">12</span></div>
+<div class="it static" style="left:80px;top:45px;width:75px;height:16px" title="static 13">Monaural<span class="n">13</span></div>
+<div class="it static" style="left:5px;top:85px;width:85px;height:16px" title="static 14">Header Type:<span class="n">14</span></div>
+<div class="it static" style="left:95px;top:85px;width:130px;height:16px" title="static 15">Standard<span class="n">15</span></div>
+</div></div><figcaption>IMPORT_DLOG · DLOG 148 · 230×135<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:220px"><div class="bar"><span>Record</span></div><div class="body" style="height:195px">
+<div class="it button default" style="left:5px;top:140px;width:100px;height:20px" title="button 1">Create File...<span class="n">1</span></div>
+<div class="it button" style="left:5px;top:170px;width:65px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it button" style="left:85px;top:170px;width:65px;height:20px" title="button 3">Record<span class="n">3</span></div>
+<div class="it button" style="left:165px;top:170px;width:50px;height:20px" title="button 4">Stop<span class="n">4</span></div>
+<div class="it user" style="left:5px;top:120px;width:210px;height:15px" title="user 5">drawing area<span class="n">5</span></div>
+<div class="it control" style="left:5px;top:35px;width:210px;height:19px" title="control 6"><span>Sample Rate:</span><span class='pop'>48000</span><span class="n">6</span></div>
+<div class="it control" style="left:5px;top:65px;width:210px;height:19px" title="control 7"><span>Sample Size:</span><span class='pop'>16 Bit Linear</span><span class="n">7</span></div>
+<div class="it control" style="left:5px;top:95px;width:210px;height:19px" title="control 8"><span>Channels:</span><span class='pop'>Mono</span><span class="n">8</span></div>
+<div class="it control" style="left:5px;top:5px;width:210px;height:19px" title="control 9"><span>Input:</span><span class='pop'>None Selected</span><span class="n">9</span></div>
+</div></div><figcaption>RECORD_DLOG · DLOG 149 · 220×195<div class="menus"><div>6 Sample Rate: 48000 · 44100 · 32000 · 22254 · 22050 · 11127 · 11025</div><div>7 Sample Size: 16 Bit Linear · 24 Bit Linear</div><div>8 Channels: Mono · Stereo</div><div>9 Input: None Selected</div></div></figcaption></figure>
+<figure><div class="win" style="width:240px"><div class="bar"><span>Spectral Analysis</span></div><div class="body" style="height:140px">
+<div class="it button default" style="left:165px;top:115px;width:70px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:85px;top:115px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it control" style="left:5px;top:5px;width:120px;height:19px" title="control 3"><span>Bands:</span><span class='pop'>4096</span><span class="n">3</span></div>
+<div class="it static" style="left:5px;top:35px;width:135px;height:16px" title="static 4">Band Freq. Spacing:<span class="n">4</span></div>
+<div class="it static" style="left:140px;top:35px;width:93px;height:16px" title="static 5">20.000000<span class="n">5</span></div>
+<div class="it control" style="left:5px;top:60px;width:160px;height:20px" title="control 6"><span>Window:</span><span class='pop'>Hamming</span><span class="n">6</span></div>
+<div class="it control" style="left:125px;top:5px;width:110px;height:19px" title="control 7"><span>Overlap:</span><span class='pop'>4x</span><span class="n">7</span></div>
+<div class="it control" style="left:5px;top:85px;width:150px;height:19px" title="control 8"><span>Type:</span><span class='pop'>Csound</span><span class="n">8</span></div>
+</div></div><figcaption>ANAL_DLOG · DLOG 150 · 240×140<div class="menus"><div>3 Bands: 4096 · 2048 · 1024 · 512 · 256 · 128 · 64 · 32 · 16 · 8</div><div>6 Window: Hamming · Kaiser · Ramp · Rectangle · Sinc · Triangle · von Hann</div><div>7 Overlap: 4x · 2x · 1x · .5x</div><div>8 Type: Csound · SoundHack · SDIF 1STF</div></div></figcaption></figure>
+<figure><div class="win" style="width:422px"><div class="bar"><span>Playback Transport</span></div><div class="body" style="height:18px">
+<div class="it control" style="left:0px;top:0px;width:340px;height:16px" title="control 1"><span></span><span class='pop'></span><span class="n">1</span></div>
+<div class="it static" style="left:342px;top:0px;width:80px;height:16px" title="static 2">0.000000<span class="n">2</span></div>
+</div></div><figcaption>TRANSPORT_DLOG · DLOG 151 · 422×18<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:344px"><div class="bar"><span>MY_OPEN_DLOG</span></div><div class="body" style="height:216px">
+<div class="it button default" style="left:252px;top:188px;width:80px;height:20px" title="button 1">Open<span class="n">1</span></div>
+<div class="it button" style="left:252px;top:104px;width:80px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it type1" style="left:0px;top:0px;width:0px;height:0px" title="type1 3"><span class="n">3</span></div>
+<div class="it user" style="left:235px;top:8px;width:102px;height:16px" title="user 4">drawing area<span class="n">4</span></div>
+<div class="it button" style="left:252px;top:32px;width:80px;height:20px" title="button 5">Eject<span class="n">5</span></div>
+<div class="it button" style="left:252px;top:60px;width:80px;height:20px" title="button 6">Desktop<span class="n">6</span></div>
+<div class="it user" style="left:12px;top:29px;width:218px;height:130px" title="user 7">drawing area<span class="n">7</span></div>
+<div class="it user" style="left:12px;top:6px;width:218px;height:19px" title="user 8">drawing area<span class="n">8</span></div>
+<div class="it picture" style="left:251px;top:91px;width:82px;height:1px" title="picture 9"><span class="n">9</span></div>
+<div class="it button" style="left:252px;top:160px;width:80px;height:20px" title="button 10">Open All<span class="n">10</span></div>
+<div class="it button" style="left:252px;top:132px;width:80px;height:20px" title="button 11">Play<span class="n">11</span></div>
+<div class="it static" style="left:12px;top:160px;width:218px;height:54px" title="static 12"><span class="n">12</span></div>
+</div></div><figcaption>MY_OPEN_DLOG · DLOG 152 · 344×216<div class="menus"></div></figcaption></figure>
+<figure><div class="win" style="width:345px"><div class="bar"><span>MY_SAVE_DLOG</span></div><div class="body" style="height:210px">
+<div class="it button default" style="left:260px;top:180px;width:80px;height:20px" title="button 1">Save<span class="n">1</span></div>
+<div class="it button" style="left:260px;top:150px;width:80px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it type1" style="left:0px;top:0px;width:0px;height:0px" title="type1 3"><span class="n">3</span></div>
+<div class="it user" style="left:245px;top:25px;width:102px;height:16px" title="user 4">drawing area<span class="n">4</span></div>
+<div class="it button" style="left:260px;top:50px;width:80px;height:20px" title="button 5">Eject<span class="n">5</span></div>
+<div class="it button" style="left:260px;top:80px;width:80px;height:20px" title="button 6">Desktop<span class="n">6</span></div>
+<div class="it user" style="left:5px;top:25px;width:235px;height:100px" title="user 7">drawing area<span class="n">7</span></div>
+<div class="it user" style="left:5px;top:5px;width:235px;height:20px" title="user 8">drawing area<span class="n">8</span></div>
+<div class="it picture" style="left:260px;top:140px;width:79px;height:2px" title="picture 9"><span class="n">9</span></div>
+<div class="it edit" style="left:5px;top:145px;width:235px;height:16px" title="edit 10"><span class="n">10</span></div>
+<div class="it static" style="left:5px;top:125px;width:235px;height:16px" title="static 11">Save as:<span class="n">11</span></div>
+<div class="it user" style="left:260px;top:110px;width:80px;height:20px" title="user 12">drawing area<span class="n">12</span></div>
+<div class="it control" style="left:5px;top:165px;width:235px;height:19px" title="control 13"><span>Format:</span><span class='pop'>Audio IFF</span><span class="n">13</span></div>
+<div class="it control" style="left:5px;top:185px;width:235px;height:19px" title="control 14"><span>Encoding:</span><span class='pop'>4 Bit 4:1 DVI ADPCM</span><span class="n">14</span></div>
+</div></div><figcaption>MY_SAVE_DLOG · DLOG 153 · 345×210<div class="menus"><div>13 Format: Audio IFF · Audio IFC · Audiomedia™ · BICSF (IRCAM) · DSP Designer™ · MacMix™ · Microsoft Wave · NeXT (.snd) · QuickTime™ · Sound Designer II™ · Sun (.au) · Text · Headerless Data</div><div>14 Encoding: 4 Bit 4:1 DVI ADPCM · 4 Bit 4:1 IMA ADPCM · 8 Bit Linear · 8 Bit Unsigned · 8 Bit aLaw · 8 Bit µLaw · 16 Bit Linear · 16 Bit Byte Swap · 24 Bit Linear · 24 Bit Byte Swap · 32 Bit Linear · 32 Bit Byte Swap · 32 Bit Floating Point · Text · 3:1 MACE · 6:1 MACE</div></div></figcaption></figure>
+<figure><div class="win" style="width:240px"><div class="bar"><span>QuickTime Sonogram</span></div><div class="body" style="height:265px">
+<div class="it button default" style="left:165px;top:240px;width:70px;height:20px" title="button 1">Process<span class="n">1</span></div>
+<div class="it button" style="left:85px;top:240px;width:70px;height:20px" title="button 2">Cancel<span class="n">2</span></div>
+<div class="it control" style="left:5px;top:5px;width:115px;height:19px" title="control 3"><span>Bands:</span><span class='pop'>4096</span><span class="n">3</span></div>
+<div class="it static" style="left:5px;top:30px;width:130px;height:16px" title="static 4">Band Freq. Spacing:<span class="n">4</span></div>
+<div class="it static" style="left:140px;top:30px;width:95px;height:16px" title="static 5">20.000000<span class="n">5</span></div>
+<div class="it control" style="left:5px;top:50px;width:160px;height:20px" title="control 6"><span>Window:</span><span class='pop'>Hamming</span><span class="n">6</span></div>
+<div class="it static" style="left:5px;top:100px;width:150px;height:16px" title="static 7">Amplitude Range (dB):<span class="n">7</span></div>
+<div class="it edit" style="left:160px;top:100px;width:70px;height:16px" title="edit 8">96.00<span class="n">8</span></div>
+<div class="it control" style="left:5px;top:75px;width:205px;height:19px" title="control 9"><span>∆Phase Center Color:</span><span class='pop'>Red</span><span class="n">9</span></div>
+<div class="it checkbox" style="left:5px;top:145px;width:130px;height:18px" title="checkbox 10">Color Inversion<span class="n">10</span></div>
+<div class="it control" style="left:5px;top:215px;width:230px;height:16px" title="control 11"><span>Lines per FFT:</span><span class='pop'></span><span class="n">11</span></div>
+<div class="it static" style="left:105px;top:195px;width:130px;height:16px" title="static 12">1<span class="n">12</span></div>
+<div class="it static" style="left:5px;top:195px;width:95px;height:16px" title="static 13">Lines Per FFT:<span class="n">13</span></div>
+<div class="it checkbox" style="left:5px;top:170px;width:136px;height:18px" title="checkbox 14">Moving Sonogram<span class="n">14</span></div>
+<div class="it radio" style="left:5px;top:125px;width:115px;height:18px" title="radio 15">Amp To Hue<span class="n">15</span></div>
+<div class="it radio" style="left:125px;top:125px;width:115px;height:18px" title="radio 16">Phase To Hue<span class="n">16</span></div>
+</div></div><figcaption>PICT_DLOG · DLOG 154 · 240×265<div class="menus"><div>3 Bands: 4096 · 2048 · 1024 · 512 · 256 · 128 · 64 · 32 · 16 · 8</div><div>6 Window: Hamming · Kaiser · Ramp · Rectangle · Sinc · Triangle · von Hann</div><div>9 ∆Phase Center Color: Red · Green · Blue</div></div></figcaption></figure>
+</div>

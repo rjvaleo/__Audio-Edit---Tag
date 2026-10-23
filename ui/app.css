@@ -975,6 +975,72 @@ body.editing .transport { background: var(--surface); }
   box-shadow: 0 0 3px rgba(48,200,120,.35); transition: height 70ms linear;
 }
 .fx-module-controls .param { padding: 1px 0; }
+/* Named choices inside an effect module: tighter, so three fit the column. */
+.fx-module-controls .seg-btn { padding-left: 4px; padding-right: 4px; font-size: 10px; }
+
+/* A sound an effect takes, from the library. */
+.prism-sound-wrap { display: flex; flex-direction: column; gap: 3px; padding-bottom: 3px; border-bottom: 1px solid var(--line-2); }
+.prism-sound { grid-template-columns: auto 1fr auto; display: grid; align-items: center; gap: 6px; }
+.prism-sound-name { font-family: var(--mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prism-sound-chooser { display: flex; flex-wrap: wrap; gap: 4px; }
+.prism-sound-chooser select { min-width: 0; max-width: 100%; }
+
+/* The Prism tab: Hyperprism's blue window. One square, the source and the two
+   axes above it, the limits typed into its corners, the readouts on its edges. */
+.prism-body { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; min-height: 0; }
+.prism-body.hidden { display: none; }
+.prism-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 11px; color: var(--text-dim); }
+.prism-bar label { display: flex; align-items: center; gap: 5px; }
+.prism-gap { flex: 1; }
+.prism-bar button.armed { color: #e3bf3d; border-color: #e3bf3d; }
+.prism-bar button.recording { color: #fff; background: #c83a3a; border-color: #c83a3a; }
+.prism-bar button.on { color: var(--accent); border-color: var(--accent); }
+/* Square, as Hyperprism's was: the height the dock gives it decides its size,
+   and it sits in the middle of the width rather than stretching across it. */
+.prism-stage { flex: 1; min-height: 0; display: flex; justify-content: center; gap: 6px; }
+.prism-y-axis {
+  display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end;
+  gap: 4px; padding-bottom: 26px;
+}
+.prism-y-axis .prism-read { max-width: 120px; white-space: normal; text-align: right; }
+.prism-square-wrap { flex: 0 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.prism-square {
+  position: relative; flex: none; width: var(--prism-side, 220px); height: var(--prism-side, 220px);
+  border-radius: 4px; cursor: crosshair; touch-action: none;
+  border: 1px solid oklch(55% 0.13 250);
+  background:
+    linear-gradient(oklch(60% 0.12 250 / .22) 1px, transparent 1px) 0 0 / 10% 10%,
+    linear-gradient(90deg, oklch(60% 0.12 250 / .22) 1px, transparent 1px) 0 0 / 10% 10%,
+    radial-gradient(ellipse at 30% 25%, oklch(42% 0.15 255), oklch(24% 0.11 262));
+  box-shadow: inset 0 0 24px oklch(15% 0.08 262 / .8);
+}
+.prism-square .prism-pad-dot { width: 13px; height: 13px; margin: -7px 0 0 -7px; background: #fff; box-shadow: 0 0 0 2px oklch(70% 0.16 230), 0 0 14px oklch(80% 0.14 220); }
+.prism-path { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.prism-path polyline { fill: none; stroke: oklch(85% 0.12 200 / .75); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.prism-x-axis { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: var(--prism-side, 220px); }
+.prism-read { font-family: var(--mono); font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+.prism-limit { width: 72px; font-family: var(--mono); font-size: 10px; }
+
+/* A prism effect: its controls in the original's groups, and the Prism pad. */
+.prism-group { display: flex; flex-direction: column; gap: 1px; padding-top: 3px; }
+.prism-group + .prism-group { border-top: 1px solid var(--line-2); margin-top: 2px; }
+.prism-group-label {
+  font-family: var(--mono); font-size: 8px; letter-spacing: .6px; text-transform: uppercase;
+  color: var(--text-dimmer);
+}
+.prism-pad {
+  position: relative; flex: 0 0 auto; width: 100%; aspect-ratio: 1.6; max-height: 92px;
+  border: 1px solid var(--line-2); border-radius: 3px; cursor: crosshair; touch-action: none;
+  background:
+    linear-gradient(var(--line-2) 1px, transparent 1px) 0 0 / 25% 25%,
+    linear-gradient(90deg, var(--line-2) 1px, transparent 1px) 0 0 / 25% 25%,
+    var(--surface);
+}
+.prism-pad-dot {
+  position: absolute; width: 9px; height: 9px; margin: -5px 0 0 -5px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--surface), 0 0 6px var(--accent);
+  pointer-events: none;
+}
 .fx-module-controls .param .k, .fx-module-controls .param .v { font-size: 10px; }
 .fx-module-controls .param input[type=range] { height: 14px; }
 .fx-module.eq-visual { width: 390px; min-width: 390px; height: min(350px, 100%); }

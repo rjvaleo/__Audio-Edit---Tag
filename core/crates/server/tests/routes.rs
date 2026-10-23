@@ -1735,7 +1735,11 @@ fn every_module_the_picker_offers_declares_itself_fully() {
         Some(server::json::Value::Arr(a)) => a.clone(),
         _ => panic!("no shapers came back"),
     };
-    assert_eq!(kinds.len(), fx::shape::ShapeKind::ALL.len(), "the list and the enum disagree");
+    assert_eq!(
+        kinds.len(),
+        fx::shape::ShapeKind::ALL.len() + fx::prism::catalogue().len(),
+        "the list disagrees with the shapers and the prism catalogue"
+    );
 
     for k in &kinds {
         let kind = match k.get("kind") {
@@ -1743,7 +1747,7 @@ fn every_module_the_picker_offers_declares_itself_fully() {
             _ => panic!("a module with no kind"),
         };
         assert!(
-            fx::shape::ShapeKind::from_str(&kind).is_some(),
+            fx::shape::ShapeKind::from_str(&kind).is_some() || fx::prism::id_for_kind(&kind).is_some(),
             "{kind} is offered but cannot be built"
         );
         assert!(
@@ -1755,6 +1759,217 @@ fn every_module_the_picker_offers_declares_itself_fully() {
         kinds.iter().any(|k| matches!(k.get("kind"), Some(server::json::Value::Str(s)) if s == "maximizer")),
         "the maximiser is not offered"
     );
+}
+
+/// A prism effect describes its panel as well as its controls: the groups the
+/// original laid them out in, the ones shown first, and the Prism pad's pair.
+#[test]
+fn prism_effects_are_offered_with_their_panels() {
+    use server::json::Value;
+    let s = Scratch::new("fx-prism");
+    let app = s.app();
+    let v = json(&server::routes::route(&app, &get("/api/fx", &[])));
+    let Some(Value::Arr(kinds)) = v.get("shapers") else { panic!("no shapers came back") };
+    let str_of = |v: Option<&Value>| v.and_then(Value::as_str).map(str::to_string);
+    for entry in fx::prism::catalogue() {
+        let d = entry.descriptor;
+        let kind = format!("prism:{}", d.id);
+        let k = kinds
+            .iter()
+            .find(|k| str_of(k.get("kind")).as_deref() == Some(kind.as_str()))
+            .unwrap_or_else(|| panic!("{kind} is not offered"));
+        assert_eq!(str_of(k.get("label")).as_deref(), Some(d.label));
+        let Some(Value::Arr(params)) = k.get("params") else { panic!("{kind} has no params") };
+        assert_eq!(params.len(), d.params.len());
+        let panel = k.get("panel").unwrap_or_else(|| panic!("{kind} has no panel"));
+        let Some(Value::Arr(groups)) = panel.get("groups") else { panic!("{kind} has no groups") };
+        assert_eq!(groups.len(), d.panel.groups.len());
+        for (g, want) in groups.iter().zip(d.panel.groups) {
+            assert_eq!(str_of(g.get("label")).as_deref(), Some(want.label));
+            let Some(Value::Arr(keys)) = g.get("keys") else { panic!("a group with no keys") };
+            let keys: Vec<String> = keys.iter().filter_map(|k| k.as_str().map(str::to_string)).collect();
+            assert_eq!(keys, want.keys);
+        }
+        match (panel.get("pad"), d.panel.pad) {
+            (Some(pad), Some(want)) => {
+                assert_eq!(str_of(pad.get("x")).as_deref(), Some(want.x));
+                assert_eq!(str_of(pad.get("y")).as_deref(), Some(want.y));
+                assert_eq!(num(pad, &["xMin"]), want.x_range.0 as f64);
+                assert_eq!(num(pad, &["xMax"]), want.x_range.1 as f64);
+                assert_eq!(num(pad, &["yMin"]), want.y_range.0 as f64);
+                assert_eq!(num(pad, &["yMax"]), want.y_range.1 as f64);
+            }
+            (None, None) => {}
+            (got, want) => panic!("{kind}: pad {got:?}, wanted {want:?}"),
+        }
+    }
+    // A choice says what its values are called.
+    let tremolo = kinds.iter().find(|k| str_of(k.get("kind")).as_deref() == Some("prism:tremolo")).unwrap();
+    let Some(Value::Arr(params)) = tremolo.get("params") else { panic!() };
+    let shape = params.iter().find(|p| str_of(p.get("key")).as_deref() == Some("shape")).unwrap();
+    let Some(Value::Arr(choices)) = shape.get("choices") else { panic!("the shape has no choices") };
+    assert_eq!(choices.len(), 3);
+    // An effect that takes a sound says so.
+    let conv = kinds.iter().find(|k| str_of(k.get("kind")).as_deref() == Some("prism:convolution")).unwrap();
+    assert_eq!(conv.get("sound").and_then(|s| s.get("label")).and_then(Value::as_str), Some("Impulse"));
+    // And the old Echo is not offered beside the new one.
+    assert!(!kinds.iter().any(|k| str_of(k.get("kind")).as_deref() == Some("dattorro_echo")));
+}
+
+#[test]
+fn a_live_parameter_reaches_a_prism_slot() {
+    let s = Scratch::new("live-prism");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+    let r = server::routes::route(
+        &app,
+        &post(
+            "/api/rack",
+            r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"t1","kind":"prism:tremolo","bypassed":false,
+                "params":{"rateHz":4,"depth":0.5,"shape":0,"stereo":0}}]}"#,
+        ),
+    );
+    assert_eq!(status(&r), 200, "the rack was refused: {}", String::from_utf8_lossy(&r.body));
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack/param", r#"{"p":"kit/tone.wav","id":"t1","key":"depth","value":0.9}"#),
+    );
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+    let back = json(&server::routes::route(&app, &get("/api/rack", &[("p", "kit/tone.wav")])));
+    let slots = match back.get("slots") {
+        Some(server::json::Value::Arr(a)) => a.clone(),
+        _ => panic!("no slots came back"),
+    };
+    assert_eq!(slots[0].get("kind").and_then(server::json::Value::as_str), Some("prism:tremolo"));
+    assert!((num(&slots[0], &["params", "depth"]) - 0.9).abs() < 1e-6);
+}
+
+// ==================================================== the Prism pad
+
+/// What the pad can drive: Time & Pitch, then the rack's slots, each with its
+/// controls and its pair — the saved one if there is one, else the default.
+#[test]
+fn the_pad_lists_its_sources_with_their_pairs() {
+    use server::json::Value;
+    let s = Scratch::new("pad-sources");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+    let r = server::routes::route(
+        &app,
+        &post(
+            "/api/rack",
+            r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"r1","kind":"ring","bypassed":false,"params":{}},
+                {"id":"e1","kind":"eq","bypassed":false}],
+               "pads":{"r1":{"x":"mix","xLo":0.2,"xHi":0.8,"y":"hz","yLo":100,"yHi":900}}}"#,
+        ),
+    );
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+    let v = json(&server::routes::route(&app, &get("/api/pad", &[("p", "kit/tone.wav")])));
+    let Some(Value::Arr(sources)) = v.get("sources") else { panic!("no sources: {}", v.to_string()) };
+    let ids: Vec<&str> = sources.iter().filter_map(|s| s.get("id").and_then(Value::as_str)).collect();
+    assert_eq!(ids, ["stretch", "r1"], "the EQ is not a pad source");
+    let ring = &sources[1];
+    assert_eq!(ring.get("label").and_then(Value::as_str), Some("Ring mod"));
+    let Some(Value::Arr(controls)) = ring.get("controls") else { panic!("no controls") };
+    assert!(controls.iter().any(|c| c.get("key").and_then(Value::as_str) == Some("hz")));
+    // The saved pair, not the default one.
+    assert_eq!(ring.get("pad").and_then(|p| p.get("x")).and_then(Value::as_str), Some("mix"));
+    assert_eq!(num(ring, &["pad", "yHi"]), 900.0);
+    // Time & Pitch has no saved pair, so its default comes back.
+    assert_eq!(sources[0].get("pad").and_then(|p| p.get("x")).and_then(Value::as_str), Some("ratio"));
+    // And a pad setup survives the rack's own round trip.
+    let back = json(&server::routes::route(&app, &get("/api/rack", &[("p", "kit/tone.wav")])));
+    assert!((num(&back, &["pads", "r1", "xLo"]) - 0.2).abs() < 1e-6);
+}
+
+/// The `i`th number of an array.
+fn nth(v: &server::json::Value, i: usize) -> f64 {
+    match v {
+        server::json::Value::Arr(a) => match a.get(i) {
+            Some(server::json::Value::Num(n)) => *n,
+            other => panic!("item {i} is {other:?}"),
+        },
+        other => panic!("not an array: {}", other.to_string()),
+    }
+}
+
+/// A convolution's impulse is a sound from the library: naming it in the rack
+/// loads it, so the effect has it when the chain is built.
+#[test]
+fn a_rack_naming_an_impulse_loads_it_from_the_library() {
+    let s = Scratch::new("impulse");
+    s.sound("kit/tone.wav", 4_410);
+    s.sound("kit/room.wav", 2_000);
+    let app = s.app();
+    let r = server::routes::route(
+        &app,
+        &post(
+            "/api/rack",
+            r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"c1","kind":"prism:convolution","bypassed":false,
+                "sound":"kit/room.wav","params":{"lengthMs":50}}]}"#,
+        ),
+    );
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+    let back = json(&server::routes::route(&app, &get("/api/rack", &[("p", "kit/tone.wav")])));
+    let slots = match back.get("slots") {
+        Some(server::json::Value::Arr(a)) => a.clone(),
+        _ => panic!("no slots"),
+    };
+    assert_eq!(slots[0].get("sound").and_then(server::json::Value::as_str), Some("kit/room.wav"));
+    let loaded = fx::prism::sound("kit/room.wav").expect("the impulse was not loaded");
+    assert_eq!(loaded.samples.len() / loaded.channels, 2_000);
+    // A path outside the library is not followed.
+    server::routes::route(
+        &app,
+        &post(
+            "/api/rack",
+            r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"c1","kind":"prism:convolution","bypassed":false,
+                "sound":"../../etc/hosts","params":{}}]}"#,
+        ),
+    );
+    assert!(fx::prism::sound("../../etc/hosts").is_none());
+}
+
+/// A take as the pad draws it, and LOOP on both of its lanes at once.
+#[test]
+fn the_pad_reads_a_take_as_one_path_and_loops_both_lanes() {
+    use server::json::Value;
+    let s = Scratch::new("pad-path");
+    s.sound("kit/tone.wav", 44_100);
+    let app = s.app();
+    let body = r#"{"p":"kit/tone.wav","bypassed":false,"lanes":[
+        {"id":"a","target":"stretch.ratio","label":"S","enabled":true,"trim":0,"loop":null,"modulators":[],
+         "points":[{"frame":1000,"value":0.2,"curve":"linear","tension":0},{"frame":9000,"value":0.8,"curve":"linear","tension":0}]},
+        {"id":"b","target":"stretch.semitones","label":"P","enabled":true,"trim":0,"loop":null,"modulators":[],
+         "points":[{"frame":1000,"value":0.5,"curve":"linear","tension":0},{"frame":5000,"value":0.9,"curve":"linear","tension":0}]}]}"#;
+    assert_eq!(status(&server::routes::route(&app, &post("/api/automation", body))), 200);
+
+    let v = json(&server::routes::route(
+        &app,
+        &get("/api/automation/path", &[("p", "kit/tone.wav"), ("x", "stretch.ratio"), ("y", "stretch.semitones")]),
+    ));
+    let Some(Value::Arr(points)) = v.get("points") else { panic!("no points: {}", v.to_string()) };
+    let frames: Vec<f64> = points.iter().map(|p| nth(p, 0)).collect();
+    assert_eq!(frames, [1000.0, 5000.0, 9000.0]);
+    assert!((nth(&points[1], 1) - 0.5).abs() < 1e-6, "ratio halfway along its line");
+    assert!((nth(&points[2], 2) - 0.9).abs() < 1e-6, "pitch holding after its last point");
+
+    let r = server::routes::route(
+        &app,
+        &post("/api/automation/loop", r#"{"p":"kit/tone.wav","x":"stretch.ratio","y":"stretch.semitones","on":true}"#),
+    );
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+    let back = json(&server::routes::route(&app, &get("/api/automation", &[("p", "kit/tone.wav")])));
+    let Some(Value::Arr(lanes)) = back.get("lanes") else { panic!("no lanes") };
+    for l in lanes {
+        let span = l.get("loop").expect("no loop");
+        assert_eq!((nth(span, 0), nth(span, 1)), (1000.0, 9000.0));
+    }
+    let r = server::routes::route(
+        &app,
+        &post("/api/automation/loop", r#"{"p":"kit/tone.wav","x":"stretch.ratio","y":"stretch.nothing","on":true}"#),
+    );
+    assert_eq!(status(&r), 400, "a loop needs both lanes");
 }
 
 // ==================================================== the invariants, named
