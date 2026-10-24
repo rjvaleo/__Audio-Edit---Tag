@@ -232,3 +232,36 @@ test('SoundHack\'s nine plug-ins arrive with the originals\' panels, filed by wh
   await bubbler.locator('.param', { hasText: /^5th/ }).locator('.seg-btn', { hasText: 'On' }).click();
   expect((await storedSlot(page, 'prism:sh-bubbler')).params.key7).toBe(1);
 });
+
+test('Lexicon\'s four LXP reverbs arrive with their edit pages, filed with the reverbs', async ({ page }) => {
+  await openRack(page);
+  await page.locator('#fxAdd').click();
+  const items = page.locator('#fxPickerGroups .fx-picker-item');
+  for (const label of ['LXP Chamber', 'LXP Hall', 'LXP Plate', 'LXP Room']) {
+    await expect(items.filter({ hasText: new RegExp(`^${label}$`) })).toHaveCount(1);
+    const group = page.locator('.fx-picker-group', {
+      has: page.locator('.fx-picker-item', { hasText: new RegExp(`^${label}$`) }),
+    });
+    await expect(group.locator('h3')).toHaveText('Reverb & Delay');
+  }
+  await page.locator('#fxPickerClose').click();
+
+  // The Hall and the Room have four reflections that cross sides, and no echoes.
+  const hall = await addFromPicker(page, 'LXP Hall');
+  await expect(hall.locator('.prism-group-label')).toHaveText(['Reverb', 'Modulation', 'Reflections', 'Levels, Mix and EQ']);
+  await expect(hall.locator('.param .k')).toContainText(['Reverb Time', 'Tap Slope', 'L-R Rfl Dly', 'R-L Rfl Gain', 'Early Level']);
+  await expect(hall.locator('.prism-pad')).toHaveAttribute('aria-label', /Size.*Reverb Time/);
+  const size = hall.locator('.param', { hasText: /^Size/ });
+  await slide(size, 40);
+  expect((await storedSlot(page, 'prism:lxp-hall')).params.sizeM).toBeCloseTo(40, 0);
+
+  // The Chamber and the Plate have two reflections, and echoes with a polarity.
+  const chamber = await addFromPicker(page, 'LXP Chamber');
+  await expect(chamber.locator('.prism-group-label')).toHaveText(['Reverb', 'Modulation', 'Reflections', 'Echoes', 'Levels, Mix and EQ']);
+  const polarity = chamber.locator('.param', { hasText: /^L Eko FBack Polarity/ });
+  await expect(polarity.locator('.seg-btn')).toHaveText(['Normal', 'Inverted']);
+  // "Medium Honey Vocal 2" inverts the left echo's feedback.
+  await expect(polarity.locator('.seg-btn.active')).toHaveText('Inverted');
+  await polarity.locator('.seg-btn', { hasText: 'Normal' }).click();
+  expect((await storedSlot(page, 'prism:lxp-chamber')).params.lEkoPolarity).toBe(0);
+});

@@ -45,6 +45,11 @@ Nothing was run. Every source is a static file in `~/re-targets`.
 - **SoundHack** plug-ins draw their interfaces in code. Freesound's manual has
   screenshots; the Delay Trio's has none, so its layouts are inferred from
   parameter order and labelled that way.
+- **Lexicon LXP Native Reverb** (added 23 October) is encrypted throughout by
+  its copy protection (PACE Fusion with iLok), and that was left alone. Its
+  presets, strings, panel art and manual are readable. The four reverbs were
+  built from those on an engine of prism-fx's own, and their spec says
+  plainly which parts are Lexicon's and which are not.
 - **AmbientReverb and BizzareDelay** carry their panel art inside the DLL.
   **Aux Saturation** ships its SynthEdit panel art and layout files loose.
 
@@ -62,19 +67,20 @@ text are facts and appear as found.
 | [Pluggo: distortion, dynamics, stereo, glitch](effects/pluggo-glitch-stereo.md) | 24 | 2 | 6 | 16 | — |
 | [Pluggo: odd names and modulators](effects/pluggo-misc-modulators.md) | 18 | 1 | 7 | 10 | — |
 | [Pluggo: instruments, analysis, utilities](effects/pluggo-instruments.md) | 30 | 1 | 7 | 18 | 4 |
-| **Total** | **119** | **6** | **33** | **76** | **4** |
+| [Lexicon LXP Native Reverb](effects/lexicon.md) — Chamber, Hall, Plate, Room (built, own engine) | 4 | — | — | 4 | — |
+| **Total** | **123** | **6** | **33** | **80** | **4** |
 
 Each file opens with its own table: every plug-in, where it lands, and its
 pad pair.
 
 ## What is new
 
-### Rack effects (51)
+### Rack effects (55)
 
 | Family | New effects (plug-ins they serve) |
 | --- | --- |
 | Delay | `DelayPlus` (++delay), `FeedbackNetwork`, `LongDelay` (LongStereoDelay, Very Long Delay), `TapeEcho` (Space Echo), `TapNet`, `TappedDelay` |
-| Reverb | `AmbientReverb`, `Chamberverb` |
+| Reverb | `AmbientReverb`, `Chamberverb`, `LXP Chamber`, `LXP Hall`, `LXP Plate`, `LXP Room` (built) |
 | Modulation | `ChorusX2`, `StepFlanger` (Flange-o-tron), `Pendulum`, `Warpoon`, `AverageInjector` |
 | Stereo | `Swirl`, `Nebula`, `OneByEight` (a one-in, eight-out panner; the program is stereo, so its spec says what eight outputs become) |
 | Filter | `Comber`, `FilterTaps`, `Harmonic Filter`, `Mangle Filter`, `Moving Filters`, `Multi-Filter` (Multi-Filter, Multi-Filter[S]), `Phone Filter`, `Resonation`, `Resosweep`, `StepFilter` (Cyclotron), `Swish`, `WasteBand` |
