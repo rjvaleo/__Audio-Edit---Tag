@@ -265,3 +265,21 @@ test('Lexicon\'s four LXP reverbs arrive with their edit pages, filed with the r
   await polarity.locator('.seg-btn', { hasText: 'Normal' }).click();
   expect((await storedSlot(page, 'prism:lxp-chamber')).params.lEkoPolarity).toBe(0);
 });
+
+test('Hyperprism\'s processes are in the picker, each built from its code', async ({ page }) => {
+  await openRack(page);
+  await page.locator('#fxAdd').click();
+  const items = page.locator('#fxPickerGroups .fx-picker-item');
+  for (const name of ['Low Pass', 'High Pass', 'Band Pass', 'Band Reject', 'Phaser', 'Flanger', 'Chorus',
+    'Ring Modulator', 'Tremolo', 'Vibrato', 'Single Delay', 'Multi Delay', 'Echo', 'EchoTranz',
+    'Medium Room Reverb', 'Hall Reverb', 'Pan', 'Auto-Pan', 'Quasi Stereo', 'Stereo Dynamics', 'More Stereo',
+    'Noise Gate', 'Compressor', 'MS Matrix', 'Sonic Decimator', 'Pitch Shifter', 'Comb Filter', 'Doppler',
+    'Frequency Modulator', 'Hyper Stereo']) {
+    await expect(items.filter({ hasText: new RegExp(`^Hyperprism ${name}$`) })).toHaveCount(1);
+  }
+  await page.locator('#fxPickerClose').click();
+  // Its pad is Hyperprism's own window: Frequency across, Q up.
+  const filter = await addFromPicker(page, 'Hyperprism Low Pass');
+  await expect(filter.locator('.prism-pad')).toHaveAttribute('aria-label', /Frequency.*Q/);
+  expect((await storedSlot(page, 'prism:hp-low-pass')).params.freqHz).toBe(20000);
+});
