@@ -354,3 +354,75 @@ with its build order.*
 - **Checked in a browser, not by ear.** The UI tests run on the scratch server,
   which has no audio device, so recording is tested in Rust and the pad's
   feel is still to be judged on a real session.
+
+## Built from the code
+
+*23 October 2026. This overrides "The processes" table and "The four new
+effects" above, which were written from the interface resources alone.*
+
+Hyperprism-PPC 1.2.1 keeps its function names in its PowerPC traceback
+tables, so its DSP could be read exactly: 312 functions across fifteen effect
+classes, decompiled with Ghidra and read for behaviour only (nothing was run,
+and the copy-protection routines were left unread). 1.05 has no process
+routine that 1.2.1 lacks.
+
+**Every process is now its own prism effect, built to match the code**, as
+`prism:hp-*` with the label "Hyperprism <name>", in prism-fx, codes 32–64.
+Its pad is Hyperprism's own window: linear on both axes, X the first
+parameter, Y the second. Every one keeps the original's Smoothing control
+(a one-pole stepped every 45 samples) where the original had one. Numbers are
+exact at 44.1 kHz; at other rates sample counts scale with the rate.
+
+| Menu | Effect | What the code showed |
+| --- | --- | --- |
+| Low Pass, High Pass | `hp-low-pass`, `hp-high-pass` | Biquads with +6 dB of passband; the second axis is Q (0–10). Low Pass holds its resonant peak at +6 dB, so Q lowers the rest. High Pass rises to +43 dB near Nyquist at Q 0 — kept, as the original does it. |
+| Band Pass | `hp-band-pass` | The low- and high-pass sections in parallel, summed; Q 1–10. |
+| Band Reject | `hp-band-reject` | A Chamberlin notch (low + high), not EFilter's own unused one. |
+| Phaser | `hp-phaser` | Four first-order allpasses, a triangle sweep in log frequency from the base to base·depth², dry at −0.5. |
+| Flanger | `hp-flanger` | Delay sweeps 0 to depth samples, feedback 0.25, 0.5/0.5 mix. |
+| Chorus | `hp-chorus` | A 0–100-sample modulated delay, right LFO 90° ahead, plus fixed cross taps near 22 and 23 ms. |
+| Ring Modulator, Tremolo | `hp-ring-modulator`, `hp-tremolo` | One routine; Tremolo reads a raised-cosine table. |
+| Vibrato | `hp-vibrato` | Depth is a pitch deviation independent of rate; the delay reaches 371 ms. |
+| Single Delay, Echo | `hp-single-delay`, `hp-echo` | No glide and no pitch change: a new time is reached by equal-power crossfades between two whole-sample taps, each max(4096, distance) samples long. Single Delay's Y is the mix. |
+| EchoTranz | `hp-echotranz` | The old Echo: the tap glides by a one-pole applied twice a sample (≈11 s at the default speed), linearly interpolated, so moving the time transposes the repeats. The open question above is answered. |
+| Multi Delay | `hp-multi-delay` | Three whole-sample taps at d1, d2 and d1 + d2, each attenuated 0–36 dB, no feedback. |
+| Medium Room, Hall Reverb | `hp-medium-room`, `hp-hall` | One 65,536-sample buffer with series and nested allpasses in a single loop and several output taps per side; Hall's loop is 12,419 samples. |
+| Pitch Time Changer | engine, and `hp-pitch-shifter` | The original varispeeds the file and corrects with a two-tap delay-line shifter (163.84 × grain % samples, equal-power crossfade). The pad keeps the engine's Time & Pitch; the shifter is a rack effect of its own. |
+| Pan | `hp-pan` | Constant-power balance, −3 dB at the centre. |
+| Auto-Pan | `hp-auto-pan` | Sums to mono and pans it by a sine LFO about a Position (25 % at opening). |
+| Stereo Dynamics | `hp-stereo-dynamics` | Independent right (X) and left (Y) gains; the "Right±Left" captions do not match the code. |
+| More Stereo | `hp-more-stereo` | Scales the side above the low cut only; below it the side is left alone. |
+| Quasi Stereo | `hp-quasi-stereo` | A delayed, 12 dB/oct high-passed mid added to the left and taken from the right. |
+| MS Matrix | `hp-ms-matrix` | Takes the inputs as M and S, constant-power output balance. |
+| Noise Gate | `hp-noise-gate` | A power detector on the mid; the attack and release roles are swapped, consistently, so kept. |
+| Compressor | `hp-compressor` | A 1024-frame look-ahead over overlapping windowed blocks; reported as latency. |
+| Sonic Decimator | `hp-sonic-decimator` | A floor quantiser with a fractional-bit crossfade, capped at 16 bits. |
+
+Also built, from 1.05's menu: `hp-comb-filter`, `hp-doppler`,
+`hp-frequency-modulator`, and `hp-hyper-stereo` (in the code, never on 1.2.1's
+menu). Stereo Tremolo, Crossing Pan and Hyper Pan are empty routines in the
+code; there is nothing to build.
+
+**Bugs fixed**, each noted in its module and tested:
+- **Echo and Single Delay:**
+  - A missing `break` let the delay overwrite mix or feedback.
+  - 0 ms couldn't be reached.
+  - Crossfades between nearly equal taps swelled by up to 3 dB.
+  - Walks stalled a step short.
+- **Feedback limits:** Echo's feedback runs away above 100 %, and the reverbs' up to 2047 %, so all are limited.
+- **Medium Room** goes unstable at 150 % Diffusion.
+- **Ring Modulator and Tremolo:**
+  - The stereo path flips the sign of the dry term.
+  - The LFO reads one value past its table.
+- **Chorus:** the tap switches channel, and a cross-feedback coefficient is overwritten with zero.
+- **Vibrato** gives NaN at rate 0.
+- **Phaser:**
+  - It runs away below depth 1.
+  - Its initialisers disagree with the routine.
+- **Sonic Decimator:** the word wraps at full scale.
+- **Compressor:** a level dip on mono input.
+
+**The earlier four** (`prism:tremolo`, `prism:multi-delay`, `prism:stereo-matrix`,
+`prism:decimator`) stay: they were written from the resources, they serve
+other plug-ins in the intake, and documents use them. The Hyperprism
+processes are the `hp-*` ones.
