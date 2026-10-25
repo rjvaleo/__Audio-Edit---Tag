@@ -9,6 +9,7 @@ pub mod http;
 pub mod live;
 pub mod offline;
 pub mod pad;
+pub mod padpresets;
 pub mod json;
 pub mod routes;
 pub mod persist;

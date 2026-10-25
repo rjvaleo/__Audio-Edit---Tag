@@ -543,6 +543,14 @@ pub const STRETCH_TARGETS: &[(&str, &str, Range)] = &[
     ("stretch.hybrid.harmonicLevel", "Hybrid — Tone", Range::Lin(0.0, 4.0)),
     ("stretch.hybrid.percussiveLevel", "Hybrid — Hits", Range::Lin(0.0, 4.0)),
     ("stretch.hybrid.residualLevel", "Hybrid — Air", Range::Lin(0.0, 4.0)),
+    // Hyperprism's Pitch Time Changer, a document setting like the stretch:
+    // its window's two axes and four settings, linear, in percent.
+    ("ptc.speed", "Pitch Time Changer — Speed", Range::Lin(1.0, 200.0)),
+    ("ptc.pitch", "Pitch Time Changer — Pitch", Range::Lin(0.0, 200.0)),
+    ("ptc.feedback", "Pitch Time Changer — Feedback", Range::Lin(0.0, 100.0)),
+    ("ptc.grain", "Pitch Time Changer — Grain size", Range::Lin(1.0, 100.0)),
+    ("ptc.xfade", "Pitch Time Changer — X-fade size", Range::Lin(0.0, 100.0)),
+    ("ptc.smoothing", "Pitch Time Changer — Smoothing", Range::Lin(0.0, 100.0)),
 ];
 
 /// A target's range, if it is one of the document's.
@@ -697,6 +705,30 @@ pub fn unit_for(forward: impl Fn(f32) -> Option<f32>, value: f32) -> Option<f32>
 
 /// Apply the stretch and grain lanes to a set of stream parameters.
 ///
+/// Hyperprism's Pitch Time Changer under its lanes, at `frame`. Playback and
+/// export both call it, as they do [`apply_stretch`].
+pub fn apply_pitch_time(a: &Automation, p: &mut engine::transport::PitchTime, frame: u64, sample_rate: u32) {
+    if a.bypassed {
+        return;
+    }
+    let seconds = frame as f64 / sample_rate.max(1) as f64;
+    for l in a.lanes.iter().filter(|l| l.enabled && l.target.starts_with("ptc.")) {
+        let (Some(u), Some(field)) = (l.value_at(frame, seconds), l.target.strip_prefix("ptc.")) else {
+            continue;
+        };
+        let Some(v) = stretch_value(&l.target, u) else { continue };
+        match field {
+            "speed" => p.speed = v,
+            "pitch" => p.pitch = v,
+            "feedback" => p.feedback = v,
+            "grain" => p.grain = v,
+            "xfade" => p.xfade = v,
+            "smoothing" => p.smoothing = v,
+            _ => {}
+        }
+    }
+}
+
 /// Kept apart from [`rack_controls`] because these are properties of the
 /// document, not of a rack slot — and because both playback *and* export have
 /// to call it. The export used not to, so a pitch or ratio lane was audible and
@@ -1095,6 +1127,11 @@ pub fn start_runner(app: std::sync::Arc<crate::state::App>) {
                     if let Some(mut p) = h.shared.params() {
                         apply_stretch(&automation, &mut p, frame, file_rate);
                         h.shared.set_params(p);
+                    }
+                    if automation.lanes.iter().any(|l| l.enabled && l.target.starts_with("ptc.")) {
+                        let mut pt = spec.pitch_time;
+                        apply_pitch_time(&automation, &mut pt, frame, file_rate);
+                        h.shared.set_pitch_time(pt);
                     }
                 });
                 wrote = true;
@@ -1753,6 +1790,18 @@ mod tests {
                         (again - v).abs() <= 1e-3 * v.abs().max(1.0),
                         "{target}: unit {u} is {v}, which reads back as unit {back} = {again}"
                     );
+                }
+                continue;
+            }
+            // The Pitch Time Changer's lanes are the document's too, and play
+            // back through `apply_pitch_time`.
+            if target.starts_with("ptc.") {
+                let mut p = engine::transport::PitchTime::default();
+                apply_pitch_time(&automation(vec![lane(&target, vec![(0, 0.37)])]), &mut p, 0, 48_000);
+                assert_ne!(p, engine::transport::PitchTime::default(), "{target} plays back as nothing");
+                for u in [0.0f32, 0.5, 1.0] {
+                    let v = stretch_value(&target, u).expect("forward");
+                    assert!((stretch_unit(&target, v).expect("inverse") - u).abs() < 1e-5, "{target} at {u}");
                 }
                 continue;
             }

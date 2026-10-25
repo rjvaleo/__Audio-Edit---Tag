@@ -31,6 +31,12 @@ pub struct RackSpec {
     /// `pad::STRETCH` for Time & Pitch. A preference of the slot, so it
     /// travels with the rack.
     pub pads: BTreeMap<String, crate::pad::PadSetup>,
+    /// Hyperprism's Pitch Time Changer, which runs between the engine and the
+    /// rack when it is on. The document's, so it travels with the rack.
+    pub pitch_time: engine::transport::PitchTime,
+    /// Hyperprism's Post-Roll for each pad source that has one, in ms: a slot
+    /// id, `stretch` or `ptc`. The longest is what plays.
+    pub post_roll: BTreeMap<String, f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -199,7 +205,14 @@ fn pads_from_json(v: Option<&Value>, spec: &RackSpec) -> BTreeMap<String, crate:
 
 impl RackSpec {
     pub fn empty() -> Self {
-        RackSpec { slots: Vec::new(), slot_ids: Vec::new(), master: MasterSettings::default(), pads: BTreeMap::new() }
+        RackSpec {
+            slots: Vec::new(),
+            slot_ids: Vec::new(),
+            master: MasterSettings::default(),
+            pads: BTreeMap::new(),
+            pitch_time: Default::default(),
+            post_roll: BTreeMap::new(),
+        }
     }
 
     /// The rack a file starts with: an EQ and a compressor, both **on**.
@@ -227,6 +240,8 @@ impl RackSpec {
             slot_ids: vec!["factory-eq".into(), "factory-comp".into()],
             master: MasterSettings::default(),
             pads: BTreeMap::new(),
+            pitch_time: Default::default(),
+            post_roll: BTreeMap::new(),
         }
     }
 
@@ -349,8 +364,25 @@ impl RackSpec {
                 slot_ids.push(id);
             }
         }
-        let mut spec = RackSpec { slots, slot_ids, master, pads: BTreeMap::new() };
+        let mut spec = RackSpec {
+            slots,
+            slot_ids,
+            master,
+            pads: BTreeMap::new(),
+            pitch_time: pitch_time_from_json(v.get("pitchTime")),
+            post_roll: BTreeMap::new(),
+        };
         spec.pads = pads_from_json(v.get("pads"), &spec);
+        if let Some(Value::Obj(m)) = v.get("postRoll") {
+            for (id, ms) in m {
+                let known = id == crate::pad::STRETCH || id == crate::pad::PITCH_TIME || spec.slot_ids.contains(id);
+                if let (true, Value::Num(n)) = (known, ms) {
+                    if n.is_finite() {
+                        spec.post_roll.insert(id.clone(), (*n as f32).max(0.0));
+                    }
+                }
+            }
+        }
         spec
     }
 
@@ -418,8 +450,21 @@ impl RackSpec {
         Value::obj()
             .set("slots", Value::Arr(slots))
             .set("pads", pads)
+            .set("pitchTime", pitch_time_to_json(&self.pitch_time))
+            .set("postRoll", {
+                let mut m = Value::obj();
+                for (id, ms) in &self.post_roll {
+                    m = m.set(id, *ms as f64);
+                }
+                m
+            })
             .set("master", master_to_json(&self.master))
             .set("active", self.is_active())
+    }
+
+    /// The post-roll that plays: the longest any source has, in ms.
+    pub fn post_roll_ms(&self) -> f32 {
+        self.post_roll.values().fold(0.0f32, |m, v| m.max(*v))
     }
 
     /// Is anything actually going to change the audio?
@@ -599,6 +644,46 @@ impl RackStore {
     }
 }
 
+/// The Pitch Time Changer from a rack's JSON, each value held to its window's
+/// range; anything missing is the window's own starting value.
+fn pitch_time_from_json(v: Option<&Value>) -> engine::transport::PitchTime {
+    merge_pitch_time(engine::transport::PitchTime::default(), v)
+}
+
+/// `base` with whatever `v` says over it, each value held to its range — what
+/// a pad move or a switch posts is only the part that changed.
+pub fn merge_pitch_time(base: engine::transport::PitchTime, v: Option<&Value>) -> engine::transport::PitchTime {
+    let d = base;
+    let Some(v) = v else { return d };
+    let n = |k: &str, def: f32, lo: f32, hi: f32| match v.get(k) {
+        Some(Value::Num(x)) if x.is_finite() => (*x as f32).clamp(lo, hi),
+        _ => def,
+    };
+    engine::transport::PitchTime {
+        on: match v.get("on") {
+            Some(Value::Bool(b)) => *b,
+            _ => d.on,
+        },
+        speed: n("speed", d.speed, 1.0, 200.0),
+        pitch: n("pitch", d.pitch, 0.0, 200.0),
+        feedback: n("feedback", d.feedback, 0.0, 100.0),
+        grain: n("grain", d.grain, 1.0, 100.0),
+        xfade: n("xfade", d.xfade, 0.0, 100.0),
+        smoothing: n("smoothing", d.smoothing, 0.0, 100.0),
+    }
+}
+
+pub fn pitch_time_to_json(p: &engine::transport::PitchTime) -> Value {
+    Value::obj()
+        .set("on", p.on)
+        .set("speed", p.speed as f64)
+        .set("pitch", p.pitch as f64)
+        .set("feedback", p.feedback as f64)
+        .set("grain", p.grain as f64)
+        .set("xfade", p.xfade as f64)
+        .set("smoothing", p.smoothing as f64)
+}
+
 #[cfg(test)]
 mod tests {
     /// Stable names for a hand-built rack, so a test spec round-trips like a
@@ -660,7 +745,7 @@ mod tests {
                 .collect();
             slots.push(SlotSpec::Shape { kind, params, bypassed: false });
         }
-        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new() };
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new() };
         let back = RackSpec::from_json(&spec.to_json());
         assert_eq!(back, spec, "a shaper lost something on the way through JSON");
         assert!(!back.build(48_000, 2).is_empty(), "none of them built");
@@ -680,7 +765,7 @@ mod tests {
                 .collect();
             slots.push(SlotSpec::Prism { id: d.id, params, sound: None, bypassed: false });
         }
-        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new() };
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new() };
         let json = spec.to_json();
         let Some(Value::Arr(items)) = json.get("slots") else { panic!("no slots") };
         for (item, entry) in items.iter().zip(fx::prism::catalogue()) {
@@ -721,6 +806,40 @@ mod tests {
         );
         assert_eq!(spec.pads.get(STRETCH).map(|p| (p.x_lo, p.x_hi)), Some((2.0, 0.5)));
         assert_eq!(RackSpec::from_json(&spec.to_json()), spec, "pads lost something through JSON");
+    }
+
+    /// Hyperprism's Pitch Time Changer is the document's, like the stretch: on
+    /// or off, its window's two axes and four settings, held to their ranges.
+    #[test]
+    fn the_pitch_time_changer_is_kept_with_the_rack() {
+        let v = crate::json::parse(
+            r#"{"slots":[],"pitchTime":{"on":true,"speed":150,"pitch":250,"feedback":10,"grain":30,"xfade":60,"smoothing":20}}"#,
+        )
+        .unwrap();
+        let spec = RackSpec::from_json(&v);
+        let p = spec.pitch_time;
+        assert!(p.on);
+        assert_eq!((p.speed, p.pitch, p.feedback, p.grain, p.xfade, p.smoothing), (150.0, 200.0, 10.0, 30.0, 60.0, 20.0));
+        assert_eq!(RackSpec::from_json(&spec.to_json()), spec, "lost through JSON");
+        assert_eq!(RackSpec::from_json(&crate::json::parse(r#"{"slots":[]}"#).unwrap()).pitch_time, engine::transport::PitchTime::default());
+    }
+
+    /// Hyperprism's Post-Roll is kept per source, like the pad's limits: in
+    /// milliseconds, never negative, and only for a source that is there.
+    #[test]
+    fn post_roll_is_kept_per_source() {
+        let v = crate::json::parse(
+            r#"{"slots":[{"kind":"ring","id":"r","params":{}}],
+                "postRoll":{"r":250,"ptc":-5,"stretch":100,"ghost":40}}"#,
+        )
+        .unwrap();
+        let spec = RackSpec::from_json(&v);
+        assert_eq!(spec.post_roll.get("r"), Some(&250.0));
+        assert_eq!(spec.post_roll.get("ptc"), Some(&0.0));
+        assert_eq!(spec.post_roll.get("stretch"), Some(&100.0));
+        assert!(!spec.post_roll.contains_key("ghost"), "a source that is not here is dropped");
+        assert_eq!(spec.post_roll_ms(), 250.0, "the longest one is what plays");
+        assert_eq!(RackSpec::from_json(&spec.to_json()), spec);
     }
 
     /// Documents saved before the Echo moved name `dattorro_echo`. They open
@@ -842,6 +961,8 @@ mod tests {
             }],
             master: MasterSettings::default(),
             pads: BTreeMap::new(),
+            pitch_time: Default::default(),
+            post_roll: BTreeMap::new(),
         };
         assert!(spec.is_active());
         assert!(!spec.build(48_000, 2).is_empty());
@@ -855,6 +976,8 @@ mod tests {
             slots: vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }],
             master: MasterSettings::default(),
             pads: BTreeMap::new(),
+            pitch_time: Default::default(),
+            post_roll: BTreeMap::new(),
         };
         assert!(!spec.is_active());
     }
@@ -866,6 +989,8 @@ mod tests {
             slots: vec![SlotSpec::Gain { db: 12.0, bypassed: true }],
             master: MasterSettings::default(),
             pads: BTreeMap::new(),
+            pitch_time: Default::default(),
+            post_roll: BTreeMap::new(),
         };
         assert!(spec.build(48_000, 2).is_empty());
         assert!(!spec.is_active());
@@ -913,6 +1038,8 @@ mod tests {
             slots: vec![SlotSpec::Eq { settings: EqSettings::default(), bypassed: false }],
             master: MasterSettings::default(),
             pads: BTreeMap::new(),
+            pitch_time: Default::default(),
+            post_roll: BTreeMap::new(),
         };
         for (f, db) in spec.eq_curve(48000, 64) {
             assert!(db.abs() < 0.1, "flat EQ curved by {db} dB at {f} Hz");
@@ -932,6 +1059,8 @@ mod tests {
             }],
             master: MasterSettings::default(),
             pads: BTreeMap::new(),
+            pitch_time: Default::default(),
+            post_roll: BTreeMap::new(),
         };
         let curve = spec.eq_curve(48000, 200);
         let (peak_f, peak_db) = curve
@@ -953,7 +1082,7 @@ mod tests {
     #[test]
     fn the_store_remembers_what_was_set() {
         let store = RackStore::default();
-        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new() });
+        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new() });
         assert!(store.is_active("a.wav"));
         assert_eq!(store.get("a.wav").slots.len(), 1);
     }

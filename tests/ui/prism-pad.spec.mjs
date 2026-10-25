@@ -49,7 +49,7 @@ async function stored(page, id) {
 
 test('the pad offers Time & Pitch first, then the rack\'s slots', async ({ page }) => {
   await openPad(page, [RING, { id: 'e1', kind: 'eq', bypassed: false }]);
-  await expect(page.locator('#prismSource option')).toHaveText(['Time & Pitch', 'Ring mod']);
+  await expect(page.locator('#prismSource option')).toHaveText(['Time & Pitch', 'Pitch Time Changer', 'Ring mod']);
   await expect(page.locator('#prismX')).toHaveValue('ratio');
   await expect(page.locator('#prismY')).toHaveValue('semitones');
 });
@@ -152,7 +152,7 @@ test('the new stereo and delay effects come to the pad with Hyperprism\'s pairs'
     { id: 'm1', kind: 'prism:multi-delay', bypassed: false, params: {} },
     { id: 's1', kind: 'prism:stereo-matrix', bypassed: false, params: {} },
   ]);
-  await expect(page.locator('#prismSource option')).toHaveText(['Time & Pitch', 'Multi Delay', 'Stereo Matrix']);
+  await expect(page.locator('#prismSource option')).toHaveText(['Time & Pitch', 'Pitch Time Changer', 'Multi Delay', 'Stereo Matrix']);
   await page.locator('#prismSource').selectOption({ label: 'Multi Delay' });
   await expect(page.locator('#prismX')).toHaveValue('delay1Ms');
   await expect(page.locator('#prismY')).toHaveValue('delay2Ms');
@@ -176,4 +176,101 @@ test('the SoundHack effects come to the pad with their pairs', async ({ page }) 
   await page.locator('#prismSource').selectOption({ label: 'Convolution' });
   await expect(page.locator('#prismX')).toHaveValue('lengthMs');
   await expect(page.locator('#prismY')).toHaveValue('gainDb');
+});
+
+
+// ─────────────────────────────────────────── Hyperprism's own controls
+
+test('the Pitch Time Changer is on the pad with Hyperprism\'s window and settings', async ({ page }) => {
+  await openPad(page);
+  await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
+  await expect(page.locator('#prismX')).toHaveValue('speed');
+  await expect(page.locator('#prismY')).toHaveValue('pitch');
+  await expect(page.locator('#prismXLo')).toHaveValue('1');
+  await expect(page.locator('#prismXHi')).toHaveValue('200');
+  await expect(page.locator('#prismYLo')).toHaveValue('0');
+  await expect(page.locator('#prismYHi')).toHaveValue('200');
+  // Its window's four settings, under the pad.
+  const settings = page.locator('#prismSettings');
+  await expect(settings.locator('.param .k')).toHaveText(['Feedback', 'Grain Size', 'X-Fade Size', 'Smoothing']);
+  // Playing it is hearing it: a move turns it on.
+  await drag(page, 0.75, 0.25);
+  const pt = await page.evaluate(async () =>
+    (await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`)).pitchTime);
+  expect(pt.on).toBe(true);
+  expect(pt.speed).toBeGreaterThan(140);
+  expect(pt.speed).toBeLessThan(160);
+  expect(pt.pitch).toBeGreaterThan(40);
+  expect(pt.pitch).toBeLessThan(60);
+  await expect(page.locator('#prismPtcOn')).toHaveClass(/\bon\b/);
+  // And the switch turns it off again.
+  await page.locator('#prismPtcOn').click();
+  await page.waitForTimeout(300);
+  const off = await page.evaluate(async () =>
+    (await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`)).pitchTime);
+  expect(off.on).toBe(false);
+});
+
+test('Playback Speed and the L, LR and R faders go to the engine', async ({ page }) => {
+  await openPad(page);
+  const sent = [];
+  page.on('request', (r) => { if (r.url().endsWith('/api/engine/transport')) sent.push(r.postDataJSON()); });
+  // Hyperprism's slider: 0–255, the rate a 128th of it.
+  const speed = page.locator('#prismSpeed');
+  await expect(speed).toHaveAttribute('max', '255');
+  await speed.evaluate((el) => { el.value = '192'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await expect(page.locator('#prismSpeedRead')).toHaveText('150 %');
+  // Hyperprism's faders: 0–255, gain 10^((36v/255 − 18)/20). LR sets both
+  // sides to its own value.
+  const lr = page.locator('#prismFaderLR');
+  await expect(lr).toHaveAttribute('max', '255');
+  await lr.evaluate((el) => { el.value = '85'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.waitForTimeout(400);
+  expect(sent.some((b) => Math.abs(b.speed - 1.5) < 1e-9)).toBe(true);
+  const last = sent.filter((b) => b.gainL !== undefined).at(-1);
+  expect(last.gainL).toBeCloseTo(Math.pow(10, -6 / 20), 6);
+  expect(last.gainR).toBeCloseTo(Math.pow(10, -6 / 20), 6);
+  await expect(page.locator('#prismFaderL')).toHaveValue('85');
+  await expect(page.locator('#prismFaderR')).toHaveValue('85');
+  await expect(page.locator('#prismFaderLRRead')).toHaveText('−6.0 dB');
+  // Return to zero is the slider's 128, as the original's buttons set it.
+  await page.locator('#prismFaderZeroLR').click();
+  await expect(lr).toHaveValue('128');
+});
+
+test('Post-Roll is kept per process and reaches the rack', async ({ page }) => {
+  await openPad(page, [RING]);
+  await page.locator('#prismSource').selectOption({ label: 'Ring mod' });
+  await page.locator('#prismPostRoll').fill('750');
+  await page.locator('#prismPostRoll').dispatchEvent('change');
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(async () => api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`));
+  expect(r.postRoll.r1).toBe(750);
+  await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
+  await expect(page.locator('#prismPostRoll')).toHaveValue('0');
+});
+
+test('Hyperprism\'s presets set the pad window and the settings, not the position', async ({ page }) => {
+  await openPad(page);
+  await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
+  const presets = page.locator('#prismPreset');
+  await expect(presets.locator('option')).toHaveCount(1 + 10);
+  const first = await presets.locator('option').nth(1).textContent();
+  const want = await page.evaluate(async () => (await api('/api/pad/presets?kind=ptc')).factory[0]);
+  await presets.selectOption({ label: first });
+  await page.waitForTimeout(400);
+  await expect(page.locator('#prismXLo')).toHaveValue(String(want.xLo));
+  await expect(page.locator('#prismXHi')).toHaveValue(String(want.xHi));
+  const pt = await page.evaluate(async () =>
+    (await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`)).pitchTime);
+  expect(pt.grain).toBe(want.settings.grain);
+  // A preset of the user's own, saved, and offered next time.
+  await page.locator('#prismPresetName').fill('Slow drift');
+  await page.locator('#prismPresetSave').click();
+  await page.waitForTimeout(300);
+  await expect(presets.locator('option', { hasText: 'Slow drift' })).toHaveCount(1);
+  await presets.selectOption({ label: 'Slow drift' });
+  await page.locator('#prismPresetDelete').click();
+  await page.waitForTimeout(300);
+  await expect(presets.locator('option', { hasText: 'Slow drift' })).toHaveCount(0);
 });

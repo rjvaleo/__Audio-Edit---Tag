@@ -328,6 +328,11 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/rack") => api_rack_get(app, req),
         ("POST", "/api/rack") => api_rack_set(app, req),
         ("POST", "/api/rack/param") => api_rack_param(app, req),
+        ("POST", "/api/pitchtime") => api_pitch_time(app, req),
+        ("GET", "/api/pad/presets") => api_pad_presets(app, req),
+        ("POST", "/api/pad/presets") => api_pad_preset_save(app, req),
+        ("POST", "/api/pad/presets/rename") => api_pad_preset_rename(app, req),
+        ("POST", "/api/pad/presets/delete") => api_pad_preset_delete(app, req),
         ("GET", "/api/automation") => api_automation_get(app, req),
         ("POST", "/api/automation") => api_automation_set(app, req),
         ("GET" | "POST", "/api/automation/record") => api_automation_record(app, req),
@@ -1352,6 +1357,110 @@ fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
 /// to be worked out by comparing rather than read off the message. Only the
 /// targets the automation menu offers are considered — the rest of the panel
 /// has no lane to be written into.
+/// Hyperprism's Pitch Time Changer: on or off, and any of its window's
+/// settings. Kept with the document's rack, sent to the engine while the
+/// document is heard, and recorded into its lanes while REC is armed — the
+/// way a pad move on a slot is.
+fn api_pitch_time(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(rel) = v.get("p").and_then(Value::as_str) else {
+        return Response::error(400, "no path given");
+    };
+    let mut spec = app.racks.get(rel);
+    let was = spec.pitch_time;
+    let now = crate::rack::merge_pitch_time(was, Some(&v));
+    spec.pitch_time = now;
+    app.set_rack(rel, spec);
+    app.save_sessions();
+    if crate::live::holding(app, rel) {
+        let _ = crate::live::with(app, |h| h.shared.set_pitch_time(now));
+        for (field, a, b) in [
+            ("speed", was.speed, now.speed),
+            ("pitch", was.pitch, now.pitch),
+            ("feedback", was.feedback, now.feedback),
+            ("grain", was.grain, now.grain),
+            ("xfade", was.xfade, now.xfade),
+            ("smoothing", was.smoothing, now.smoothing),
+        ] {
+            if (a - b).abs() < 1e-9 {
+                continue;
+            }
+            let target = format!("ptc.{field}");
+            let Some(unit) = crate::automation::stretch_unit(&target, b) else { continue };
+            let label = crate::automation::STRETCH_TARGETS
+                .iter()
+                .find(|(t, _, _)| *t == target)
+                .map(|(_, l, _)| l.to_string())
+                .unwrap_or_else(|| target.clone());
+            record_unit(app, rel, &target, &label, unit);
+        }
+    }
+    Response::json(crate::rack::pitch_time_to_json(&now).to_string())
+}
+
+/// A pad source's presets: Hyperprism's factory set for its process, and the
+/// user's own. See `padpresets.rs`.
+fn api_pad_presets(app: &Arc<App>, req: &Request) -> Response {
+    let Some(kind) = req.param("kind") else { return Response::error(400, "no kind given") };
+    Response::json(
+        Value::obj()
+            .set("factory", Value::Arr(crate::padpresets::factory(kind)))
+            .set("user", Value::Arr(crate::padpresets::user(&app.data_dir, kind)))
+            .to_string(),
+    )
+}
+
+fn api_pad_preset_save(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let (Some(kind), Some(name), Some(preset)) =
+        (v.get("kind").and_then(Value::as_str), v.get("name").and_then(Value::as_str), v.get("preset"))
+    else {
+        return Response::error(400, "a preset needs a kind, a name and its settings");
+    };
+    let name = name.trim();
+    if name.is_empty() {
+        return Response::error(400, "a preset needs a name");
+    }
+    match crate::padpresets::save(&app.data_dir, kind, name, preset) {
+        Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
+fn api_pad_preset_rename(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let (Some(kind), Some(from), Some(to)) = (
+        v.get("kind").and_then(Value::as_str),
+        v.get("from").and_then(Value::as_str),
+        v.get("to").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()),
+    ) else {
+        return Response::error(400, "a rename needs a kind, a name and a new name");
+    };
+    match crate::padpresets::rename(&app.data_dir, kind, from, to) {
+        Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
+fn api_pad_preset_delete(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let (Some(kind), Some(name)) = (v.get("kind").and_then(Value::as_str), v.get("name").and_then(Value::as_str)) else {
+        return Response::error(400, "a delete needs a kind and a name");
+    };
+    match crate::padpresets::delete(&app.data_dir, kind, name) {
+        Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
 fn record_stretch_moves(app: &Arc<App>, rel: &str, was: &fx::Stretch, now: &fx::Stretch) {
     if app.automation.record_mode() == crate::automation::Record::Off {
         return;
@@ -1643,7 +1752,21 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     let Some(rel) = v.get("p").and_then(|p| p.as_str()) else {
         return Response::error(400, "no path given");
     };
-    let spec = crate::rack::RackSpec::from_json(&v);
+    let mut spec = crate::rack::RackSpec::from_json(&v);
+    // A post that does not mention the Pitch Time Changer or the post-roll
+    // keeps what the document has: most of the interface posts a rack for a
+    // slot or a pad window and knows nothing of either.
+    let had = app.racks.get(rel);
+    if v.get("pitchTime").is_none() {
+        spec.pitch_time = had.pitch_time;
+    }
+    if v.get("postRoll").is_none() {
+        spec.post_roll = had
+            .post_roll
+            .into_iter()
+            .filter(|(id, _)| id == crate::pad::STRETCH || id == crate::pad::PITCH_TIME || spec.slot_ids.contains(id))
+            .collect();
+    }
     app.set_rack(rel, spec.clone());
     app.save_sessions();
     // Effects are live: a freshly built rack replaces the one the audio thread
@@ -1658,6 +1781,15 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
         let _ = crate::live::with(app, |h| {
             h.shared
                 .set_rack(crate::live::rack_for(app, rel, h.sample_rate, h.channels))
+        });
+    }
+    // The Pitch Time Changer is the rack's too, and it is two numbers rather
+    // than a chain, so it goes over whether or not the chain was rebuilt.
+    if crate::live::holding(app, rel) {
+        let spec = app.racks.get(rel);
+        let _ = crate::live::with(app, |h| {
+            h.shared.set_pitch_time(spec.pitch_time);
+            h.shared.set_post_roll_frames((spec.post_roll_ms() as f64 * 0.001 * h.sample_rate as f64) as u64);
         });
     }
 
@@ -3494,6 +3626,13 @@ fn run_export(
     // there is no reason to allocate a vector per kilo-frame either.
     let mut writes = Vec::new();
     let sample_rate = list.sample_rate;
+    // Hyperprism's Pitch Time Changer, if the document has it on: varispeed and
+    // its shifter between the stretch and the rack, as the audio thread runs it.
+    let pitch_time = spec.pitch_time;
+    // Hyperprism's Post-Roll: the effects run on silence past the end, so the
+    // file holds their tails.
+    let post_roll_frames = (spec.post_roll_ms() as f64 * 0.001 * list.sample_rate as f64) as usize;
+    let ptc_lanes = automation.lanes.iter().any(|l| l.enabled && l.target.starts_with("ptc."));
     let control = |rack: &mut fx::Rack, frame: u64| {
         crate::automation::rack_controls(&automation, &spec, frame, sample_rate, &mut writes);
         for (slot, key, value) in writes.iter() {
@@ -3513,19 +3652,43 @@ fn run_export(
         edit::render::render_loop_to_aiff_watched(
             list, &mut reader, &mut rack, &mut out, bits, &meta, plan, control, Some(&watch),
         )
-    } else if crate::offline::needs_streaming(automation) {
+    } else if crate::offline::needs_streaming(automation) || pitch_time.on || post_roll_frames > 0 {
         app.export.say(edit::render::phase::READING);
         match edit::render::render(list, &mut reader, 0, list.base_frames()) {
             Ok(base) => {
                 app.export.step(list.base_frames());
                 app.export.say(edit::render::phase::STRETCHING);
-                let audio = crate::offline::stretch_with_automation(
-                    &base,
-                    list.channels as usize,
-                    list.sample_rate,
-                    &list.stretch,
-                    automation,
-                );
+                // Lanes on the stretch need the streaming engine; without them
+                // the one-pass stretch gives the document its exact length.
+                let mut audio = if crate::offline::needs_streaming(automation) {
+                    crate::offline::stretch_with_automation(
+                        &base,
+                        list.channels as usize,
+                        list.sample_rate,
+                        &list.stretch,
+                        automation,
+                    )
+                } else if list.is_stretched() {
+                    list.stretch.process(&base, list.channels as usize, list.sample_rate)
+                } else {
+                    base
+                };
+                if pitch_time.on {
+                    audio = engine::transport::pitch_time_offline(
+                        &audio,
+                        list.channels as usize,
+                        list.sample_rate,
+                        1024,
+                        |frame| {
+                            let mut pt = pitch_time;
+                            if ptc_lanes {
+                                crate::automation::apply_pitch_time(automation, &mut pt, frame, sample_rate);
+                            }
+                            pt
+                        },
+                    );
+                }
+                audio.resize(audio.len() + post_roll_frames * list.channels as usize, 0.0);
                 app.export.say(edit::render::phase::WRITING);
                 edit::render::write_aiff_controlled(
                     audio, list.channels, list.sample_rate, &mut rack, &mut out, bits, &meta,
@@ -4072,6 +4235,16 @@ fn api_engine_transport(app: &Arc<App>, req: &Request) -> Response {
         }
         if let Some(Value::Bool(m)) = v.get("mute") {
             h.shared.set_mute(*m);
+        }
+        // Hyperprism's Playback Speed: varispeed before the rack, 0 to 2.
+        if let Some(r) = num("speed") {
+            h.shared.set_speed(r as f32);
+        }
+        // Hyperprism's L and R faders, as linear gains; either alone keeps the
+        // other where it was.
+        if num("gainL").is_some() || num("gainR").is_some() {
+            let (l, r) = h.shared.side_gains();
+            h.shared.set_side_gains(num("gainL").map_or(l, |g| g as f32), num("gainR").map_or(r, |g| g as f32));
         }
         match v.get("loop") {
             Some(l) => {

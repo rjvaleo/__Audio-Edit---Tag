@@ -3887,6 +3887,7 @@ async function commitRack() {
       slots: state.rack.slots,
       master: state.rack.master,
       pads: state.rack.pads || {},
+      postRoll: state.rack.postRoll || {},
       // The engine is already where it needs to be; asking for a rebuild here
       // is what used to cut the reverb tail every time a control was released.
       keepLive: true,
@@ -3955,6 +3956,7 @@ function pushRack({ immediate = false } = {}) {
         slots: state.rack.slots,
         master: state.rack.master,
         pads: state.rack.pads || {},
+        postRoll: state.rack.postRoll || {},
       }));
     } catch (e) { toast(e.message); return; }
     renderRack();
