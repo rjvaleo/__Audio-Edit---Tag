@@ -997,6 +997,14 @@ body.editing .transport { background: var(--surface); }
 .prism-bar button.on { color: var(--accent); border-color: var(--accent); }
 /* Square, as Hyperprism's was: the height the dock gives it decides its size,
    and it sits in the middle of the width rather than stretching across it. */
+.prism-hp { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 11px; color: var(--text-dim); }
+.prism-hp label { display: flex; align-items: center; gap: 5px; }
+.prism-hp input[type=range] { width: 110px; }
+.prism-hp-read { min-width: 44px; font-variant-numeric: tabular-nums; color: var(--text); }
+.prism-hp-faders { display: flex; align-items: center; gap: 4px; }
+.prism-hp-faders input[type=range] { width: 70px; }
+.prism-settings { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; }
+.prism-settings.hidden { display: none; }
 .prism-stage { flex: 1; min-height: 0; display: flex; justify-content: center; gap: 6px; }
 .prism-y-axis {
   display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end;

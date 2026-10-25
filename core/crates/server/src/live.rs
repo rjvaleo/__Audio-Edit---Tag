@@ -238,6 +238,16 @@ pub fn load(
             Playing::Raw => None,
             Playing::Document => rack_for(app, rel, h.sample_rate, h.channels),
         });
+        // Hyperprism's Pitch Time Changer belongs to the document as well; an
+        // audition is the bare sound.
+        h.shared.set_pitch_time(match how {
+            Playing::Raw => engine::transport::PitchTime::default(),
+            Playing::Document => app.racks.get(rel).pitch_time,
+        });
+        h.shared.set_post_roll_frames(match how {
+            Playing::Raw => 0,
+            Playing::Document => (app.racks.get(rel).post_roll_ms() as f64 * 0.001 * h.sample_rate as f64) as u64,
+        });
     })?;
 
     if list.stretch.algorithm == fx::stretch::Algorithm::Hybrid {

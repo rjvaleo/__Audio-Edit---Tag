@@ -19,6 +19,9 @@ use fx::prism::prism_fx;
 /// The id the engine's Time & Pitch goes by, beside the rack's slot ids.
 pub const STRETCH: &str = "stretch";
 
+/// The id Hyperprism's Pitch Time Changer goes by.
+pub const PITCH_TIME: &str = "ptc";
+
 /// One control the pad can put on an axis.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PadControl {
@@ -111,6 +114,24 @@ fn time_and_pitch() -> PadSource {
     PadSource { id: STRETCH.into(), label: "Time & Pitch".into(), controls, default }
 }
 
+/// Hyperprism's Pitch Time Changer: varispeed at Speed, then Hyperprism's own
+/// shifter at Pitch/Speed. Its window's controls, ranges and pad, exactly:
+/// Speed 1–200 % across, Pitch 0–200 % up, linear; then Feedback, Grain Size,
+/// X-Fade Size and Smoothing.
+fn pitch_time() -> PadSource {
+    let pct = |key: &str, label: &str, min: f32, max: f32| control(key, label, min, max, false, "%");
+    let controls = vec![
+        pct("speed", "Speed", 1.0, 200.0),
+        pct("pitch", "Pitch", 0.0, 200.0),
+        pct("feedback", "Feedback", 0.0, 100.0),
+        pct("grain", "Grain Size", 1.0, 100.0),
+        pct("xfade", "X-Fade Size", 0.0, 100.0),
+        pct("smoothing", "Smoothing", 0.0, 100.0),
+    ];
+    let default = setup(&controls[0], (1.0, 200.0), &controls[1], (0.0, 200.0));
+    PadSource { id: PITCH_TIME.into(), label: "Pitch Time Changer".into(), controls, default }
+}
+
 /// A slot as a source, if it has two or more controls to sweep. The EQ's bands
 /// are drawn on its own curve, and the gain has one control.
 fn slot_source(id: &str, slot: &SlotSpec) -> Option<PadSource> {
@@ -177,7 +198,7 @@ fn slot_source(id: &str, slot: &SlotSpec) -> Option<PadSource> {
 /// Everything the pad can drive in this rack: Time & Pitch first, then each
 /// slot with two or more controls, in rack order.
 pub fn sources(spec: &RackSpec) -> Vec<PadSource> {
-    let mut out = vec![time_and_pitch()];
+    let mut out = vec![time_and_pitch(), pitch_time()];
     for (i, slot) in spec.slots.iter().enumerate() {
         let Some(id) = spec.slot_ids.get(i).filter(|id| !id.is_empty()) else { continue };
         out.extend(slot_source(id, slot));
@@ -265,7 +286,7 @@ mod tests {
 
     fn rack(slots: Vec<SlotSpec>) -> RackSpec {
         let slot_ids = (0..slots.len()).map(|i| format!("s{i}")).collect();
-        RackSpec { slots, slot_ids, master: MasterSettings::default(), pads: Default::default() }
+        RackSpec { slots, slot_ids, master: MasterSettings::default(), pads: Default::default(), pitch_time: Default::default(), post_roll: Default::default() }
     }
 
     fn every_kind() -> RackSpec {
@@ -284,9 +305,26 @@ mod tests {
     }
 
     #[test]
+    fn hyperprisms_pitch_time_changer_follows_with_its_own_window() {
+        let s = sources(&RackSpec::empty());
+        let p = &s[1];
+        assert_eq!((p.id.as_str(), p.label.as_str()), (PITCH_TIME, "Pitch Time Changer"));
+        let keys: Vec<&str> = p.controls.iter().map(|c| c.key.as_str()).collect();
+        assert_eq!(keys, ["speed", "pitch", "feedback", "grain", "xfade", "smoothing"]);
+        // Linear, in percent, as the original's window: Speed 1–200 across,
+        // Pitch 0–200 up.
+        assert!(p.controls.iter().all(|c| !c.log && c.unit == "%"));
+        assert_eq!((p.controls[0].min, p.controls[0].max), (1.0, 200.0));
+        assert_eq!((p.controls[1].min, p.controls[1].max), (0.0, 200.0));
+        let d = &p.default;
+        assert_eq!((d.x.as_str(), d.x_lo, d.x_hi), ("speed", 1.0, 200.0));
+        assert_eq!((d.y.as_str(), d.y_lo, d.y_hi), ("pitch", 0.0, 200.0));
+    }
+
+    #[test]
     fn time_and_pitch_comes_first_with_speed_across_and_pitch_up() {
         let s = sources(&RackSpec::empty());
-        assert_eq!(s.len(), 1);
+        assert_eq!(s.len(), 2, "Time & Pitch, then the Pitch Time Changer");
         let t = &s[0];
         assert_eq!((t.id.as_str(), t.label.as_str()), (STRETCH, "Time & Pitch"));
         let keys: Vec<&str> = t.controls.iter().map(|c| c.key.as_str()).collect();
@@ -307,9 +345,10 @@ mod tests {
         // neither is a pad source.
         let ids: Vec<&str> = s.iter().map(|x| x.id.as_str()).collect();
         assert_eq!(ids[0], STRETCH);
-        assert_eq!(ids[1], "s0", "the compressor");
+        assert_eq!(ids[1], PITCH_TIME);
+        assert_eq!(ids[2], "s0", "the compressor");
         assert!(!ids.contains(&"s1") && !ids.contains(&"s2"));
-        for src in &s[1..] {
+        for src in &s[2..] {
             let i = spec.slot_ids.iter().position(|x| *x == src.id).unwrap();
             assert_eq!(src.label, spec.slots[i].kind_label());
             assert!(src.controls.len() >= 2, "{} has {} controls", src.label, src.controls.len());
@@ -355,6 +394,8 @@ mod tests {
                     let mine = value(c, u);
                     let theirs = if src.id == STRETCH {
                         crate::automation::stretch_value(&format!("stretch.{}", c.key), u)
+                    } else if src.id == PITCH_TIME {
+                        crate::automation::stretch_value(&format!("ptc.{}", c.key), u)
                     } else {
                         let i = spec.slot_ids.iter().position(|x| *x == src.id).unwrap();
                         crate::automation::resolve(&spec.slots[i], &c.key, u)
@@ -388,7 +429,7 @@ mod tests {
     #[test]
     fn a_setup_is_read_back_checked_against_its_source() {
         let s = sources(&rack(vec![SlotSpec::Shape { kind: ShapeKind::Ring, params: Vec::new(), bypassed: false }]));
-        let ring = &s[1];
+        let ring = &s[2];
         let good = PadSetup { x: "mix".into(), x_lo: 0.2, x_hi: 0.8, y: "hz".into(), y_lo: 4_000.0, y_hi: 100.0 };
         assert_eq!(PadSetup::from_json(&good.to_json(), ring), Some(good));
         // Limits past the control's range are brought inside it.

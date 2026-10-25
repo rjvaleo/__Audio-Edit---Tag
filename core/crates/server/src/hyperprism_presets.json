@@ -1,0 +1,2596 @@
+{
+ "hp-low-pass": [
+  {
+   "name": "Low Resonance",
+   "x": "freqHz",
+   "xLo": 0,
+   "xHi": 200,
+   "y": "q",
+   "yLo": 20,
+   "yHi": 40,
+   "settings": {
+    "smoothing": 55
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Pillow Talk",
+   "x": "freqHz",
+   "xLo": 0,
+   "xHi": 200,
+   "y": "q",
+   "yLo": 0,
+   "yHi": 4,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Warmth",
+   "x": "freqHz",
+   "xLo": 5000,
+   "xHi": 15000,
+   "y": "q",
+   "yLo": 1,
+   "yHi": 2,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Sizzle",
+   "x": "freqHz",
+   "xLo": 10000,
+   "xHi": 20000,
+   "y": "q",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 30
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Anti-alias 10k",
+   "x": "freqHz",
+   "xLo": 10000,
+   "xHi": 11025,
+   "y": "q",
+   "yLo": 0,
+   "yHi": 15,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-high-pass": [
+  {
+   "name": "first",
+   "x": "freqHz",
+   "xLo": 2000,
+   "xHi": 4000,
+   "y": "q",
+   "yLo": 4,
+   "yHi": 8,
+   "settings": {
+    "smoothing": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Mega Bass",
+   "x": "freqHz",
+   "xLo": 20,
+   "xHi": 120,
+   "y": "q",
+   "yLo": 0,
+   "yHi": 18,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Low End Punch",
+   "x": "freqHz",
+   "xLo": 20,
+   "xHi": 200,
+   "y": "q",
+   "yLo": 0,
+   "yHi": 20,
+   "settings": {
+    "smoothing": 30
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Teeny Speakers",
+   "x": "freqHz",
+   "xLo": 2000,
+   "xHi": 4000,
+   "y": "q",
+   "yLo": 0,
+   "yHi": 4,
+   "settings": {
+    "smoothing": 30
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Distant Telephone Voice",
+   "x": "freqHz",
+   "xLo": 2000,
+   "xHi": 4000,
+   "y": "q",
+   "yLo": 4,
+   "yHi": 8,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "temp1",
+   "x": "freqHz",
+   "xLo": 2000,
+   "xHi": 4000,
+   "y": "q",
+   "yLo": 4,
+   "yHi": 8,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "temp3",
+   "x": "freqHz",
+   "xLo": 0,
+   "xHi": 20000,
+   "y": "q",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 0
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-band-pass": [
+  {
+   "name": "Heavy Kick",
+   "x": "freqHz",
+   "xLo": 1,
+   "xHi": 120,
+   "y": "q",
+   "yLo": 0,
+   "yHi": 20,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Low End Ring",
+   "x": "freqHz",
+   "xLo": 10,
+   "xHi": 500,
+   "y": "q",
+   "yLo": 75,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "High End Ring",
+   "x": "freqHz",
+   "xLo": 500,
+   "xHi": 5000,
+   "y": "q",
+   "yLo": 75,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Dog Catcher",
+   "x": "freqHz",
+   "xLo": 10000,
+   "xHi": 20000,
+   "y": "q",
+   "yLo": 75,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-band-reject": [
+  {
+   "name": "60 Hz Cut",
+   "x": "freqHz",
+   "xLo": 0,
+   "xHi": 120,
+   "y": "q",
+   "yLo": 1,
+   "yHi": 4,
+   "settings": {
+    "smoothing": 30
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 Hz Cut",
+   "x": "freqHz",
+   "xLo": 60,
+   "xHi": 180,
+   "y": "q",
+   "yLo": 1,
+   "yHi": 4,
+   "settings": {
+    "smoothing": 30
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "180 Hz Cut",
+   "x": "freqHz",
+   "xLo": 120,
+   "xHi": 240,
+   "y": "q",
+   "yLo": 1,
+   "yHi": 4,
+   "settings": {
+    "smoothing": 30
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "240 Hz Cut",
+   "x": "freqHz",
+   "xLo": 180,
+   "xHi": 300,
+   "y": "q",
+   "yLo": 1,
+   "yHi": 4,
+   "settings": {
+    "smoothing": 30
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-phaser": [
+  {
+   "name": "Slow and easy",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 4,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50,
+    "feedback": 0,
+    "baseHz": 166
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Tremo-phase",
+   "x": "rateHz",
+   "xLo": 2,
+   "xHi": 8,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50,
+    "feedback": 30,
+    "baseHz": 10
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Phase-Ringer",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 4000,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50,
+    "feedback": 68,
+    "baseHz": 55
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Talking Drum",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 4,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50,
+    "feedback": 86,
+    "baseHz": 10
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Yowie",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 10,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50,
+    "feedback": 86,
+    "baseHz": 1016
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Cheesey 70s Phaser",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 2,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50,
+    "feedback": 15,
+    "baseHz": 222
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Underwater",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 30,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50,
+    "feedback": 11,
+    "baseHz": 222
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-flanger": [
+  {
+   "name": "Slow",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 2,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Flange Ringer",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 2000,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Classic",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 10,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Slow Resonant",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 2,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 1024,
+   "settings": {
+    "smoothing": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Slow and Drastic",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 4,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 1024,
+   "settings": {
+    "smoothing": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Scratchin",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 20,
+   "y": "depth",
+   "yLo": 500,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Trem Flange",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 5,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Getting Weird",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 100,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Watery Loop",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 1,
+   "y": "depth",
+   "yLo": 50,
+   "yHi": 500,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-chorus": [
+  {
+   "name": "Stereo Expander",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 2,
+   "y": "depth",
+   "yLo": 50,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Slow Warble",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 1,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 20
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Chorus Ringer",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 1000,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 20
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Smooth",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 10,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Bubbles",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 30,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Vibrato Chorus",
+   "x": "rateHz",
+   "xLo": 4,
+   "xHi": 8,
+   "y": "depth",
+   "yLo": 400,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 20
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Slow Warble",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 1,
+   "y": "depth",
+   "yLo": 500,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 20
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-single-delay": [
+  {
+   "name": "Tight Slapback",
+   "x": "delayMs",
+   "xLo": 0,
+   "xHi": 500,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Comb Filter",
+   "x": "delayMs",
+   "xLo": 0,
+   "xHi": 20,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm1",
+   "x": "delayMs",
+   "xLo": 120,
+   "xHi": 130,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm2",
+   "x": "delayMs",
+   "xLo": 255,
+   "xHi": 265,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm3",
+   "x": "delayMs",
+   "xLo": 381,
+   "xHi": 391,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm4",
+   "x": "delayMs",
+   "xLo": 495,
+   "xHi": 505,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm5",
+   "x": "delayMs",
+   "xLo": 610,
+   "xHi": 630,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm1",
+   "x": "delayMs",
+   "xLo": 372,
+   "xHi": 382,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm2",
+   "x": "delayMs",
+   "xLo": 428,
+   "xHi": 438,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm3",
+   "x": "delayMs",
+   "xLo": 142,
+   "xHi": 152,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm4",
+   "x": "delayMs",
+   "xLo": 281,
+   "xHi": 291,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm5",
+   "x": "delayMs",
+   "xLo": 476,
+   "xHi": 486,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70  bpm1",
+   "x": "delayMs",
+   "xLo": 840,
+   "xHi": 860,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm2",
+   "x": "delayMs",
+   "xLo": 203,
+   "xHi": 213,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm3",
+   "x": "delayMs",
+   "xLo": 316,
+   "xHi": 326,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm4",
+   "x": "delayMs",
+   "xLo": 415,
+   "xHi": 425,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm5",
+   "x": "delayMs",
+   "xLo": 627,
+   "xHi": 647,
+   "y": "mix",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 0
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-multi-delay": [
+  {
+   "name": "Tripple Comb",
+   "x": "delay1Ms",
+   "xLo": 0,
+   "xHi": 10,
+   "y": "delay2Ms",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 0,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Comb delay",
+   "x": "delay1Ms",
+   "xLo": 0,
+   "xHi": 500,
+   "y": "delay2Ms",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 0,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Cheeseverb",
+   "x": "delay1Ms",
+   "xLo": 0,
+   "xHi": 125,
+   "y": "delay2Ms",
+   "yLo": 0,
+   "yHi": 250,
+   "settings": {
+    "speed": 100,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 3,
+    "att3Db": 6
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm1",
+   "x": "delay1Ms",
+   "xLo": 120,
+   "xHi": 130,
+   "y": "delay2Ms",
+   "yLo": 255,
+   "yHi": 265,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 0,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm2",
+   "x": "delay1Ms",
+   "xLo": 255,
+   "xHi": 265,
+   "y": "delay2Ms",
+   "yLo": 381,
+   "yHi": 391,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 3,
+    "att3Db": 9
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm3",
+   "x": "delay1Ms",
+   "xLo": 381,
+   "xHi": 391,
+   "y": "delay2Ms",
+   "yLo": 495,
+   "yHi": 505,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 3,
+    "att3Db": 6
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm4",
+   "x": "delay1Ms",
+   "xLo": 495,
+   "xHi": 505,
+   "y": "delay2Ms",
+   "yLo": 610,
+   "yHi": 630,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 6,
+    "att2Db": 3,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm5",
+   "x": "delay1Ms",
+   "xLo": 610,
+   "xHi": 630,
+   "y": "delay2Ms",
+   "yLo": 120,
+   "yHi": 130,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 6,
+    "att2Db": 3,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm1",
+   "x": "delay1Ms",
+   "xLo": 428,
+   "xHi": 438,
+   "y": "delay2Ms",
+   "yLo": 142,
+   "yHi": 152,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 6,
+    "att2Db": 0,
+    "att3Db": 3
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm2",
+   "x": "delay1Ms",
+   "xLo": 142,
+   "xHi": 152,
+   "y": "delay2Ms",
+   "yLo": 281,
+   "yHi": 291,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 3,
+    "att2Db": 0,
+    "att3Db": 3
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm3",
+   "x": "delay1Ms",
+   "xLo": 281,
+   "xHi": 291,
+   "y": "delay2Ms",
+   "yLo": 476,
+   "yHi": 486,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 3,
+    "att2Db": 6,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm4",
+   "x": "delay1Ms",
+   "xLo": 476,
+   "xHi": 486,
+   "y": "delay2Ms",
+   "yLo": 372,
+   "yHi": 382,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 3,
+    "att3Db": 6
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm5",
+   "x": "delay1Ms",
+   "xLo": 476,
+   "xHi": 486,
+   "y": "delay2Ms",
+   "yLo": 428,
+   "yHi": 438,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 6,
+    "att3Db": 3
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm1",
+   "x": "delay1Ms",
+   "xLo": 840,
+   "xHi": 860,
+   "y": "delay2Ms",
+   "yLo": 203,
+   "yHi": 213,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 0,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm2",
+   "x": "delay1Ms",
+   "xLo": 203,
+   "xHi": 213,
+   "y": "delay2Ms",
+   "yLo": 316,
+   "yHi": 326,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 6,
+    "att2Db": 3,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm3",
+   "x": "delay1Ms",
+   "xLo": 316,
+   "xHi": 326,
+   "y": "delay2Ms",
+   "yLo": 415,
+   "yHi": 425,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 3,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm4",
+   "x": "delay1Ms",
+   "xLo": 415,
+   "xHi": 425,
+   "y": "delay2Ms",
+   "yLo": 632,
+   "yHi": 642,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 0,
+    "att2Db": 3,
+    "att3Db": 6
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm5",
+   "x": "delay1Ms",
+   "xLo": 632,
+   "xHi": 642,
+   "y": "delay2Ms",
+   "yLo": 840,
+   "yHi": 860,
+   "settings": {
+    "speed": 50,
+    "mix": 50,
+    "att1Db": 6,
+    "att2Db": 6,
+    "att3Db": 0
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-echo": [
+  {
+   "name": "120 bpm 1",
+   "x": "delayMs",
+   "xLo": 120,
+   "xHi": 130,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm2",
+   "x": "delayMs",
+   "xLo": 372,
+   "xHi": 382,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm3",
+   "x": "delayMs",
+   "xLo": 255,
+   "xHi": 265,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm4",
+   "x": "delayMs",
+   "xLo": 381,
+   "xHi": 391,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm5",
+   "x": "delayMs",
+   "xLo": 615,
+   "xHi": 625,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm1",
+   "x": "delayMs",
+   "xLo": 428,
+   "xHi": 438,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm2",
+   "x": "delayMs",
+   "xLo": 142,
+   "xHi": 152,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm3",
+   "x": "delayMs",
+   "xLo": 281,
+   "xHi": 291,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm4",
+   "x": "delayMs",
+   "xLo": 823,
+   "xHi": 833,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm5",
+   "x": "delayMs",
+   "xLo": 476,
+   "xHi": 486,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm1",
+   "x": "delayMs",
+   "xLo": 840,
+   "xHi": 860,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm2",
+   "x": "delayMs",
+   "xLo": 203,
+   "xHi": 213,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm3",
+   "x": "delayMs",
+   "xLo": 316,
+   "xHi": 326,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm4",
+   "x": "delayMs",
+   "xLo": 632,
+   "xHi": 642,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm5",
+   "x": "delayMs",
+   "xLo": 415,
+   "xHi": 425,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Comb Filter",
+   "x": "delayMs",
+   "xLo": 0,
+   "xHi": 25,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 40
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-ring-modulator": [
+  {
+   "name": "Chunky Ring",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 100,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 60
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Tremolo",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 10,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 10
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Tin Drum",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 1000,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 10
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Vox Dirtifier",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 70,
+   "y": "depth",
+   "yLo": 95,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Dirtifier 2",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 1000,
+   "y": "depth",
+   "yLo": 50,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 25
+   },
+   "postRollMs": 0
+  }
+ ],
+ "ptc": [
+  {
+   "name": "Sonic Grinder",
+   "x": "speed",
+   "xLo": 1,
+   "xHi": 5,
+   "y": "pitch",
+   "yLo": 0,
+   "yHi": -50,
+   "settings": {
+    "smoothing": 78,
+    "grain": 3,
+    "xfade": 100,
+    "feedback": 53
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Subtle",
+   "x": "speed",
+   "xLo": 95,
+   "xHi": 105,
+   "y": "pitch",
+   "yLo": 95,
+   "yHi": 105,
+   "settings": {
+    "smoothing": 35,
+    "grain": 20,
+    "xfade": 100,
+    "feedback": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Inverse Showers",
+   "x": "speed",
+   "xLo": 1,
+   "xHi": 150,
+   "y": "pitch",
+   "yLo": -50,
+   "yHi": -150,
+   "settings": {
+    "smoothing": 43,
+    "grain": 77,
+    "xfade": 100,
+    "feedback": 38
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Chopper",
+   "x": "speed",
+   "xLo": 80,
+   "xHi": 120,
+   "y": "pitch",
+   "yLo": 80,
+   "yHi": 120,
+   "settings": {
+    "smoothing": 50,
+    "grain": 13,
+    "xfade": 6,
+    "feedback": 72
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Slow Growl",
+   "x": "speed",
+   "xLo": 1,
+   "xHi": 20,
+   "y": "pitch",
+   "yLo": 0,
+   "yHi": 50,
+   "settings": {
+    "smoothing": 0,
+    "grain": 3,
+    "xfade": 56,
+    "feedback": 2
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Upward Spiral",
+   "x": "speed",
+   "xLo": 90,
+   "xHi": 110,
+   "y": "pitch",
+   "yLo": 90,
+   "yHi": 110,
+   "settings": {
+    "smoothing": 50,
+    "grain": 35,
+    "xfade": 91,
+    "feedback": 60
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Moderate",
+   "x": "speed",
+   "xLo": 75,
+   "xHi": 150,
+   "y": "pitch",
+   "yLo": 75,
+   "yHi": 125,
+   "settings": {
+    "smoothing": 20,
+    "grain": 100,
+    "xfade": 54,
+    "feedback": 45
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Pitch Only 50 - 150",
+   "x": "speed",
+   "xLo": 100,
+   "xHi": 100,
+   "y": "pitch",
+   "yLo": 50,
+   "yHi": 150,
+   "settings": {
+    "smoothing": 33,
+    "grain": 18,
+    "xfade": 100,
+    "feedback": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Pitch Only 80 - 120",
+   "x": "speed",
+   "xLo": 100,
+   "xHi": 100,
+   "y": "pitch",
+   "yLo": 80,
+   "yHi": 120,
+   "settings": {
+    "smoothing": 33,
+    "grain": 18,
+    "xfade": 100,
+    "feedback": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Speed Only 75 - 200",
+   "x": "speed",
+   "xLo": 75,
+   "xHi": 200,
+   "y": "pitch",
+   "yLo": 100,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 1,
+    "grain": 2,
+    "xfade": 31,
+    "feedback": 0
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-tremolo": [
+  {
+   "name": "Standard",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 20,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Ring Mod",
+   "x": "rateHz",
+   "xLo": 100,
+   "xHi": 1000,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Slow Swells",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 1,
+   "y": "depth",
+   "yLo": 75,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Inverse Tremolo",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 10,
+   "y": "depth",
+   "yLo": 75,
+   "yHi": 200,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-vibrato": [
+  {
+   "name": "Slightly Warped",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 4,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Extreme",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 4,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Subtle",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 4,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 10,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Vibrato Ringer",
+   "x": "rateHz",
+   "xLo": 100,
+   "xHi": 500,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-stereo-dynamics": [
+  {
+   "name": "Hard Left",
+   "x": "rightGain",
+   "xLo": 0,
+   "xHi": 25,
+   "y": "leftGain",
+   "yLo": 75,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Hard Right",
+   "x": "rightGain",
+   "xLo": 75,
+   "xHi": 100,
+   "y": "leftGain",
+   "yLo": 0,
+   "yHi": 25,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Center",
+   "x": "rightGain",
+   "xLo": 75,
+   "xHi": 100,
+   "y": "leftGain",
+   "yLo": 75,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Silence",
+   "x": "rightGain",
+   "xLo": 0,
+   "xHi": 25,
+   "y": "leftGain",
+   "yLo": 0,
+   "yHi": 25,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-pan": [
+  {
+   "name": "Hard Left",
+   "x": "balance",
+   "xLo": -100,
+   "xHi": 0,
+   "y": "gainDb",
+   "yLo": -96,
+   "yHi": 0,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Hard Right",
+   "x": "balance",
+   "xLo": 0,
+   "xHi": 100,
+   "y": "gainDb",
+   "yLo": -96,
+   "yHi": 0,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Constant Gain",
+   "x": "balance",
+   "xLo": -100,
+   "xHi": 100,
+   "y": "gainDb",
+   "yLo": 0,
+   "yHi": 0,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Volume Control",
+   "x": "balance",
+   "xLo": 0,
+   "xHi": 0,
+   "y": "gainDb",
+   "yLo": -96,
+   "yHi": 20,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Gain Ride plus minus 20db",
+   "x": "balance",
+   "xLo": 0,
+   "xHi": 0,
+   "y": "gainDb",
+   "yLo": -20,
+   "yHi": 20,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-more-stereo": [
+  {
+   "name": "Extreme Width",
+   "x": "level",
+   "xLo": 500,
+   "xHi": 1000,
+   "y": "lowCutHz",
+   "yLo": 1,
+   "yHi": 10000,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Mono",
+   "x": "level",
+   "xLo": 0,
+   "xHi": 10,
+   "y": "lowCutHz",
+   "yLo": 1,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "High End Spread",
+   "x": "level",
+   "xLo": 250,
+   "xHi": 300,
+   "y": "lowCutHz",
+   "yLo": 1000,
+   "yHi": 10000,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Extra Width",
+   "x": "level",
+   "xLo": 100,
+   "xHi": 300,
+   "y": "lowCutHz",
+   "yLo": 1,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "High End Spread",
+   "x": "level",
+   "xLo": 200,
+   "xHi": 500,
+   "y": "lowCutHz",
+   "yLo": 1000,
+   "yHi": 10000,
+   "settings": {
+    "smoothing": 50
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-quasi-stereo": [
+  {
+   "name": "Extreme Width",
+   "x": "depth",
+   "xLo": 90,
+   "xHi": 100,
+   "y": "lowCutHz",
+   "yLo": 0,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 50,
+    "delayMs": 20
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Subtle",
+   "x": "depth",
+   "xLo": 0,
+   "xHi": 25,
+   "y": "lowCutHz",
+   "yLo": 1000,
+   "yHi": 6000,
+   "settings": {
+    "smoothing": 50,
+    "delayMs": 20
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Width Plus Echo",
+   "x": "depth",
+   "xLo": 0,
+   "xHi": 100,
+   "y": "lowCutHz",
+   "yLo": 0,
+   "yHi": 1000,
+   "settings": {
+    "smoothing": 50,
+    "delayMs": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "High End Stereo",
+   "x": "depth",
+   "xLo": 0,
+   "xHi": 100,
+   "y": "lowCutHz",
+   "yLo": 1000,
+   "yHi": 10000,
+   "settings": {
+    "smoothing": 50,
+    "delayMs": 20
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-ms-matrix": [
+  {
+   "name": "Wide Stereo",
+   "x": "position",
+   "xLo": -90,
+   "xHi": 90,
+   "y": "sideVolume",
+   "yLo": 75,
+   "yHi": 100,
+   "settings": {
+    "input": 0,
+    "output": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Mono",
+   "x": "position",
+   "xLo": -90,
+   "xHi": 90,
+   "y": "sideVolume",
+   "yLo": 0,
+   "yHi": 25,
+   "settings": {
+    "input": 0,
+    "output": 0
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-auto-pan": [
+  {
+   "name": "Slow and Easy",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 1,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 50,
+   "settings": {
+    "smoothing": 30,
+    "position": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Left Side",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 20,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 30,
+    "position": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Right Side",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 20,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 30,
+    "position": 100
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Ring Swing",
+   "x": "rateHz",
+   "xLo": 0,
+   "xHi": 5000,
+   "y": "depth",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 30,
+    "position": 48
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-hall": [
+  {
+   "name": "Dark Slapback Hall",
+   "x": "mix",
+   "xLo": 20,
+   "xHi": 100,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 50,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 10,
+    "brightness": 27
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Large Dark Airy Hall",
+   "x": "mix",
+   "xLo": 50,
+   "xHi": 100,
+   "y": "feedback",
+   "yLo": 40,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 56,
+    "diffusion": 105,
+    "brightness": 27
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Bright Diffuse Medium Hall",
+   "x": "mix",
+   "xLo": 30,
+   "xHi": 100,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 50,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 137,
+    "brightness": 84
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Cheap Sci-Fi",
+   "x": "mix",
+   "xLo": 50,
+   "xHi": 100,
+   "y": "feedback",
+   "yLo": 50,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 0,
+    "brightness": 46
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Dark And Diffuse Hall",
+   "x": "mix",
+   "xLo": 40,
+   "xHi": 80,
+   "y": "feedback",
+   "yLo": 20,
+   "yHi": 50,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 150,
+    "brightness": 25
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Noisy Neighbor",
+   "x": "mix",
+   "xLo": 95,
+   "xHi": 100,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 150,
+    "brightness": 1
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-medium-room": [
+  {
+   "name": "Echos",
+   "x": "mix",
+   "xLo": 0,
+   "xHi": 100,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 0,
+    "brightness": 100
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Big Bathroom",
+   "x": "mix",
+   "xLo": 80,
+   "xHi": 100,
+   "y": "feedback",
+   "yLo": 50,
+   "yHi": 100,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 98,
+    "brightness": 45
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Dark Room",
+   "x": "mix",
+   "xLo": 0,
+   "xHi": 80,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 40,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 112,
+    "brightness": 17
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Just a Touch",
+   "x": "mix",
+   "xLo": 0,
+   "xHi": 30,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 50,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 115,
+    "brightness": 34
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Bright Room",
+   "x": "mix",
+   "xLo": 20,
+   "xHi": 70,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 40,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 107,
+    "brightness": 80
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Tight Ambient Room",
+   "x": "mix",
+   "xLo": 20,
+   "xHi": 80,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 25,
+   "settings": {
+    "smoothing": 50,
+    "diffusion": 40,
+    "brightness": 85
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-echotranz": [
+  {
+   "name": "120 bpm1",
+   "x": "delayMs",
+   "xLo": 120,
+   "xHi": 130,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm2",
+   "x": "delayMs",
+   "xLo": 372,
+   "xHi": 382,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm3",
+   "x": "delayMs",
+   "xLo": 255,
+   "xHi": 265,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm4",
+   "x": "delayMs",
+   "xLo": 381,
+   "xHi": 391,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "120 bpm5",
+   "x": "delayMs",
+   "xLo": 615,
+   "xHi": 625,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm1",
+   "x": "delayMs",
+   "xLo": 428,
+   "xHi": 438,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 50,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm2",
+   "x": "delayMs",
+   "xLo": 142,
+   "xHi": 152,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm3",
+   "x": "delayMs",
+   "xLo": 281,
+   "xHi": 291,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm4",
+   "x": "delayMs",
+   "xLo": 823,
+   "xHi": 833,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "100 bpm5",
+   "x": "delayMs",
+   "xLo": 476,
+   "xHi": 486,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 100,
+    "mix": 50
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm1",
+   "x": "delayMs",
+   "xLo": 840,
+   "xHi": 860,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm2",
+   "x": "delayMs",
+   "xLo": 203,
+   "xHi": 213,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm3",
+   "x": "delayMs",
+   "xLo": 316,
+   "xHi": 326,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm4",
+   "x": "delayMs",
+   "xLo": 632,
+   "xHi": 642,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "70 bpm5",
+   "x": "delayMs",
+   "xLo": 415,
+   "xHi": 425,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Comb Filter",
+   "x": "delayMs",
+   "xLo": 0,
+   "xHi": 25,
+   "y": "feedback",
+   "yLo": 0,
+   "yHi": 100,
+   "settings": {
+    "speed": 98,
+    "mix": 40
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-compressor": [
+  {
+   "name": "Crunch",
+   "x": "volumeDb",
+   "xLo": 0,
+   "xHi": -24,
+   "y": "compressionDb",
+   "yLo": -96,
+   "yHi": 0,
+   "settings": {
+    "attackMs": 100,
+    "releaseMs": 250
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Subtle",
+   "x": "volumeDb",
+   "xLo": 0,
+   "xHi": -18,
+   "y": "compressionDb",
+   "yLo": -12,
+   "yHi": 0,
+   "settings": {
+    "attackMs": 250,
+    "releaseMs": 250
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Punch",
+   "x": "volumeDb",
+   "xLo": 0,
+   "xHi": -18,
+   "y": "compressionDb",
+   "yLo": -18,
+   "yHi": 0,
+   "settings": {
+    "attackMs": 205,
+    "releaseMs": 150
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-noise-gate": [
+  {
+   "name": "Simple Gate",
+   "x": "attackMs",
+   "xLo": 0,
+   "xHi": 500,
+   "y": "thresholdDb",
+   "yLo": -24,
+   "yHi": 0,
+   "settings": {
+    "releaseMs": 216
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Buzz Gate",
+   "x": "attackMs",
+   "xLo": 0,
+   "xHi": 50,
+   "y": "thresholdDb",
+   "yLo": -24,
+   "yHi": 0,
+   "settings": {
+    "releaseMs": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Low Gate",
+   "x": "attackMs",
+   "xLo": 0,
+   "xHi": 500,
+   "y": "thresholdDb",
+   "yLo": -96,
+   "yHi": 0,
+   "settings": {
+    "releaseMs": 216
+   },
+   "postRollMs": 0
+  }
+ ],
+ "hp-sonic-decimator": [
+  {
+   "name": "MultiMedia",
+   "x": "rate",
+   "xLo": 1,
+   "xHi": 100,
+   "y": "bits",
+   "yLo": 1,
+   "yHi": 16,
+   "settings": {
+    "smoothing": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "DoomsDay",
+   "x": "rate",
+   "xLo": 50,
+   "xHi": 100,
+   "y": "bits",
+   "yLo": 1,
+   "yHi": 4,
+   "settings": {
+    "smoothing": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "LoFi",
+   "x": "rate",
+   "xLo": 1,
+   "xHi": 50,
+   "y": "bits",
+   "yLo": 4,
+   "yHi": 8,
+   "settings": {
+    "smoothing": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Alias o Rama",
+   "x": "rate",
+   "xLo": 1,
+   "xHi": 25,
+   "y": "bits",
+   "yLo": 4,
+   "yHi": 16,
+   "settings": {
+    "smoothing": 0
+   },
+   "postRollMs": 0
+  },
+  {
+   "name": "Crunch Machine",
+   "x": "rate",
+   "xLo": 1,
+   "xHi": 50,
+   "y": "bits",
+   "yLo": 3,
+   "yHi": 6,
+   "settings": {
+    "smoothing": 30
+   },
+   "postRollMs": 0
+  }
+ ]
+}

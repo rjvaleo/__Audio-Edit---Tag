@@ -426,3 +426,50 @@ code; there is nothing to build.
 `prism:decimator`) stay: they were written from the resources, they serve
 other plug-ins in the intake, and documents use them. The Hyperprism
 processes are the `hp-*` ones.
+
+## Hyperprism's own controls on the Prism tab
+
+*24 October 2026. Read from 1.2.1's window resources and the code behind
+them.*
+
+- **Playback Speed.** Hyperprism's speed window is one 0–255 slider whose rate
+  is the value ÷ 128: 128 is normal speed, 255 just under double, and 0
+  stopped. It is true varispeed: pitch and time move together, as tape does.
+  The engine reads its own output at that rate, interpolating in straight
+  lines between frames, before the rack. At 128 the engine plays exactly as
+  it did before (`at_unit_speed_the_engine_plays_as_it_always_has`).
+  1.2.1 itself never opened this window from its menus; its layout and its
+  message are in the code, and it is here because the pad wants it.
+- **Pitch Time Changer** is the second pad source, with its window exactly:
+  - Speed 1–200 % across and Pitch 0–200 % up, linear;
+  - Feedback, Grain Size, X-Fade Size and Smoothing under the pad;
+  - a PTC switch, and moving its pad turns it on, as playing the process did.
+
+  The engine reads at Speed and runs Hyperprism's own shifter
+  (`prism:hp-pitch-shifter`'s kernel) at Pitch ÷ Speed, all wet. Time goes as
+  1/Speed and pitch as Pitch. Playback Speed multiplies on top, as the
+  original's reader did. The settings are the document's, kept with the rack
+  (`pitchTime`). Its moves record as `ptc.*` lanes and play back. The export
+  runs the same stages (`pitch_time_offline`), so the file is what was heard.
+- **The L, LR and R faders.** 0–255 each, gain 10^((36v/255 − 18)/20), ±18 dB.
+  - LR is not a master: it sets L and R to its own value.
+  - The 0 buttons put a fader back at 128 (+0.07 dB, as the original's did).
+  - A new gain ramps in a straight line over 1024 frames, after the rack.
+- **Post-Roll (ms)**, per process (per pad source). Past the end of the
+  document the transport plays on for that long, with the rack running on
+  silence, so tails are in a take. The longest any source has is what plays.
+  A loop has none, and Stop still cuts. An export appends the same silence
+  through the rack. Kept with the rack (`postRoll`).
+- **Presets**, per process. A Hyperprism preset is the pad's window, the
+  process's other settings and its post-roll. Loading one never moves the
+  pad, and here neither does it.
+  - Each process offers its factory presets, decoded from 1.2.1's own
+    `H-PPC-Presets`: 180 across the 26 processes, in
+    `server/src/hyperprism_presets.json`. 1.2.1's Echo pins their speed at
+    100.
+  - It also offers `<Default Settings>` and the user's own presets (Save,
+    Rename, Delete), kept in `PAD-PRESETS.json` in the data folder.
+  - Any pad source can hold user presets.
+
+Not carried over: Play Thru (live input), MIDI mapping of the pad, and the
+per-side Mute / Bypass / Effect switches of the original's transport.

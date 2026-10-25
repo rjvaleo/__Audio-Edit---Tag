@@ -114,6 +114,19 @@ pub struct Shared {
     latency: AtomicU64,
     /// Output gain, as f32 bits.
     gain: AtomicU32,
+    /// Hyperprism's Playback Speed, as f32 bits: the rate the engine's output
+    /// is read at before the rack, so pitch and time move together, as tape
+    /// does. 1 is as it is.
+    speed: AtomicU32,
+    /// Hyperprism's left and right faders, as f32 bits, after the rack and the
+    /// grain fader.
+    gain_l: AtomicU32,
+    gain_r: AtomicU32,
+    /// Hyperprism's Pitch Time Changer, when it is on.
+    pitch_time: Mutex<PitchTime>,
+    /// Hyperprism's Post-Roll, in frames: how long the transport plays on past
+    /// the end of the document, the rack running on silence.
+    post_roll: AtomicU64,
     /// Silent, whatever the gain: the GRAIN source switch. The engine keeps
     /// running, so the transport and everything clocked from it carry on.
     mute: AtomicBool,
@@ -341,6 +354,11 @@ impl Shared {
             heard_b: AtomicU64::new(0),
             latency: AtomicU64::new(0),
             gain: AtomicU32::new(1.0f32.to_bits()),
+            speed: AtomicU32::new(1.0f32.to_bits()),
+            gain_l: AtomicU32::new(1.0f32.to_bits()),
+            gain_r: AtomicU32::new(1.0f32.to_bits()),
+            pitch_time: Mutex::new(PitchTime::default()),
+            post_roll: AtomicU64::new(0),
             mute: AtomicBool::new(false),
             seq: SeqBus::new(SEQ_BUS_FRAMES),
             overflows: AtomicU64::new(0),
@@ -758,6 +776,51 @@ impl Shared {
         self.gain.store(g.clamp(0.0, 4.0).to_bits(), Ordering::Release);
     }
 
+    /// The varispeed rate, 0 to 2. Out-of-range and non-finite values are held
+    /// to the range rather than refused, so a slider can never stop the engine.
+    pub fn set_speed(&self, rate: f32) {
+        let rate = if rate.is_finite() { rate.clamp(0.0, MAX_SPEED) } else { 1.0 };
+        self.speed.store(rate.to_bits(), Ordering::Release);
+    }
+
+    /// The left and right faders as linear gains. Non-finite or negative is
+    /// unity, so a bad value can never silence a side.
+    pub fn set_side_gains(&self, left: f32, right: f32) {
+        let ok = |g: f32| if g.is_finite() && g >= 0.0 { g } else { 1.0 };
+        self.gain_l.store(ok(left).to_bits(), Ordering::Release);
+        self.gain_r.store(ok(right).to_bits(), Ordering::Release);
+    }
+
+    pub fn set_post_roll_frames(&self, frames: u64) {
+        self.post_roll.store(frames, Ordering::Release);
+    }
+
+    pub fn post_roll_frames(&self) -> u64 {
+        self.post_roll.load(Ordering::Acquire)
+    }
+
+    pub fn set_pitch_time(&self, p: PitchTime) {
+        if let Ok(mut g) = self.pitch_time.lock() {
+            *g = PitchTime {
+                speed: if p.speed.is_finite() { p.speed.clamp(1.0, 200.0) } else { 100.0 },
+                pitch: if p.pitch.is_finite() { p.pitch.clamp(0.0, 200.0) } else { 100.0 },
+                ..p
+            };
+        }
+    }
+
+    pub fn pitch_time(&self) -> PitchTime {
+        self.pitch_time.lock().map(|g| *g).unwrap_or_default()
+    }
+
+    pub fn side_gains(&self) -> (f32, f32) {
+        (f32::from_bits(self.gain_l.load(Ordering::Acquire)), f32::from_bits(self.gain_r.load(Ordering::Acquire)))
+    }
+
+    pub fn speed(&self) -> f32 {
+        f32::from_bits(self.speed.load(Ordering::Acquire))
+    }
+
     pub fn set_mute(&self, m: bool) {
         self.mute.store(m, Ordering::Release);
     }
@@ -904,6 +967,116 @@ pub struct Core {
     /// frame it has reached.
     seq_fade: usize,
     seq_fade_at: u64,
+    /// Rendered frames the varispeed has not read past yet, interleaved, and
+    /// how many there are. Sized once for the fastest speed.
+    vs: Vec<f32>,
+    vs_frames: usize,
+    /// Where the read sits between `vs[0]` and `vs[1]`.
+    vs_frac: f64,
+    /// Hyperprism's shifter for the Pitch Time Changer, built once, and the
+    /// settings it was last given.
+    ptc: Option<Box<dyn fx::Effect>>,
+    ptc_now: PitchTime,
+    /// Frames of post-roll left, once the end has been passed.
+    post_left: Option<u64>,
+    /// The L and R faders where they are, where they are going, where the
+    /// ramp began, and how far into its 1024 frames it is.
+    fader_now: [f32; 2],
+    fader_to: [f32; 2],
+    fader_from: [f32; 2],
+    fader_step: usize,
+}
+
+/// Hyperprism ramped a fader to a new gain in a straight line over this many
+/// frames.
+const FADER_RAMP: usize = 1024;
+
+/// The fastest Playback Speed: Hyperprism's slider tops out at 255/128.
+pub const MAX_SPEED: f32 = 2.0;
+
+/// Hyperprism's Pitch Time Changer: the engine's output read at `speed` %
+/// (varispeed), then Hyperprism's own two-tap shifter at `pitch / speed`, all
+/// wet — so time goes as 1/speed and pitch as pitch. The other four are the
+/// window's additional settings, passed to the shifter as they are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PitchTime {
+    pub on: bool,
+    /// 1 – 200 %.
+    pub speed: f32,
+    /// 0 – 200 %.
+    pub pitch: f32,
+    pub feedback: f32,
+    pub grain: f32,
+    pub xfade: f32,
+    pub smoothing: f32,
+}
+
+impl Default for PitchTime {
+    /// The window's own starting values.
+    fn default() -> Self {
+        PitchTime { on: false, speed: 100.0, pitch: 100.0, feedback: 0.0, grain: 15.0, xfade: 100.0, smoothing: 50.0 }
+    }
+}
+
+/// Hyperprism's Pitch Time Changer over a whole piece of audio, for an export:
+/// the same varispeed read and the same shifter the audio thread runs, block
+/// by block, with `at` giving the settings at each output frame (the
+/// document's, under its lanes). The result is as long as reading `audio` at
+/// the speed makes it.
+pub fn pitch_time_offline(
+    audio: &[f32],
+    channels: usize,
+    sample_rate: u32,
+    block: usize,
+    at: impl Fn(u64) -> PitchTime,
+) -> Vec<f32> {
+    let ch = channels.max(1);
+    let frames = audio.len() / ch;
+    let block = block.max(1);
+    let mut out = Vec::with_capacity(audio.len());
+    let Some(mut shifter) = fx::prism::make("hp-pitch-shifter", sample_rate, ch, &[]) else {
+        return audio.to_vec();
+    };
+    let mut now: Option<PitchTime> = None;
+    let mut pos = 0.0f64;
+    let mut buf = vec![0.0f32; block * ch];
+    'blocks: loop {
+        let pt = at((out.len() / ch) as u64);
+        let speed = pt.speed.clamp(1.0, 200.0) as f64 / 100.0;
+        let mut n = 0;
+        while n < block {
+            let x = pos + n as f64 * speed;
+            let i = x.floor() as usize;
+            let t = (x - x.floor()) as f32;
+            if i >= frames || (t > 0.0 && i + 1 >= frames) {
+                break;
+            }
+            for c in 0..ch {
+                let a = audio[i * ch + c];
+                buf[n * ch + c] = if t == 0.0 { a } else { a + (audio[(i + 1) * ch + c] - a) * t };
+            }
+            n += 1;
+        }
+        if n == 0 {
+            break 'blocks;
+        }
+        if now != Some(pt) {
+            shifter.set_param("pitch", (100.0 * pt.pitch / pt.speed.max(1.0)).clamp(0.0, 200.0));
+            shifter.set_param("mix", 100.0);
+            shifter.set_param("feedback", pt.feedback);
+            shifter.set_param("grain", pt.grain);
+            shifter.set_param("xfade", pt.xfade);
+            shifter.set_param("smoothing", pt.smoothing);
+            now = Some(pt);
+        }
+        shifter.process(&mut buf[..n * ch], ch, sample_rate);
+        out.extend_from_slice(&buf[..n * ch]);
+        pos += n as f64 * speed;
+        if n < block {
+            break;
+        }
+    }
+    out
 }
 
 /// One control on its way to a new value.
@@ -1162,6 +1335,18 @@ impl Core {
             seq_runs: Vec::with_capacity(max_block.max(1) + 1),
             seq_fade: 0,
             seq_fade_at: 0,
+            // A block at the top speed reads two frames for each one out, plus
+            // the one either side the interpolation needs.
+            vs: vec![0.0; (max_block.max(1) * MAX_SPEED as usize + 4) * channels.max(1)],
+            vs_frames: 0,
+            vs_frac: 0.0,
+            ptc: fx::prism::make("hp-pitch-shifter", params.sample_rate, channels.max(1), &[]),
+            ptc_now: PitchTime::default(),
+            post_left: None,
+            fader_now: [1.0; 2],
+            fader_to: [1.0; 2],
+            fader_from: [1.0; 2],
+            fader_step: FADER_RAMP,
             scratch: vec![
                 GrainEvent {
                     index: 0,
@@ -1273,6 +1458,9 @@ impl Core {
         let seek = shared.seek.swap(-1, Ordering::AcqRel);
         if seek >= 0 {
             self.renderer.seek(seek as u64, &self.params);
+            // What was read ahead belongs to where the playhead was.
+            self.vs_frames = 0;
+            self.vs_frac = 0.0;
         }
 
         if !shared.is_playing() {
@@ -1349,8 +1537,15 @@ impl Core {
         // — a grain stream is happy to run forever, reading the clamped last
         // sample — so the end has to come from the schedule, which knows how
         // long the current ratio makes the document.
-        if bounds.is_none() {
-            if end > 0 && self.renderer.position() >= end {
+        //
+        // Hyperprism's Post-Roll first: past the end, the transport plays on for
+        // that long with the rack running on silence, so tails reach the end
+        // of a take. Looping has none, as in the original.
+        let mut post = false;
+        if bounds.is_none() && end > 0 && self.renderer.position() >= end {
+            let left = *self.post_left.get_or_insert(shared.post_roll_frames());
+            if left == 0 {
+                self.post_left = None;
                 shared.pause();
                 out.fill(0.0);
                 shared
@@ -1358,6 +1553,10 @@ impl Core {
                     .store(self.renderer.position(), Ordering::Release);
                 return;
             }
+            post = true;
+            self.post_left = Some(left.saturating_sub(frames as u64));
+        } else {
+            self.post_left = None;
         }
 
         // Wrap first if we are already at or past the loop end, so a loop set
@@ -1373,51 +1572,123 @@ impl Core {
         // the ramp up are always the same length.
         let seam = bounds.map_or(LOOP_FADE_FRAMES, |(a, b)| loop_fade(a, b));
 
-        let mut filled = 0usize;
-        // Where in this block fresh post-wrap material begins, if it does.
-        let mut wrapped_at: Option<usize> = None;
-        self.seq_runs.clear();
-        while filled < frames {
-            let want = frames - filled;
-            // Never render past the loop end in one go: the wrap has to land on
-            // an exact frame or the loop drifts.
-            let chunk = match bounds {
-                Some((_, b)) => {
-                    let room = b.saturating_sub(self.renderer.position()) as usize;
-                    want.min(room.max(1))
-                }
-                None => want,
+        if post {
+            out.fill(0.0);
+            self.seq_runs.clear();
+        } else {
+            // Hyperprism's Playback Speed: the engine's output is read at `speed`
+            // frames a frame, in straight lines between frames, before the rack —
+            // varispeed, so pitch and time move together. The frames it reads are
+            // rendered into `vs` first, as many as this block reaches into; what it
+            // has not read past yet stays there for the next block. At speed 1 with
+            // nothing held over, that is exactly the block the engine renders.
+            // The Pitch Time Changer sets the read rate itself, as the original's
+            // shifter set its file reader's.
+            let pt = match shared.pitch_time.try_lock() {
+                Ok(g) => *g,
+                Err(_) => self.ptc_now,
             };
-
-            if self.seq_runs.len() < self.seq_runs.capacity() {
-                self.seq_runs.push((filled, self.renderer.position(), chunk));
+            let speed = if pt.on { pt.speed as f64 / 100.0 } else { 1.0 } * shared.speed() as f64;
+            let ch = channels;
+            let reach = self.vs_frac + (frames.saturating_sub(1)) as f64 * speed;
+            let mut need = reach.floor() as usize + 1;
+            if reach.fract() > 0.0 {
+                need += 1;
             }
-            let slice = &mut out[filled * channels..(filled + chunk) * channels];
-            let n = self
-                .renderer
-                .render(slice, channels, &self.source, &self.params, &mut self.scratch);
-            report(shared, &self.scratch[..n]);
+            let consumed = (self.vs_frac + frames as f64 * speed).floor() as usize;
+            let need = need.max(consumed).min(self.vs.len() / ch);
+            let fresh = need.saturating_sub(self.vs_frames);
+            let base = self.vs_frames;
 
-            if let Some((a, b)) = bounds {
-                if self.renderer.position() >= b {
-                    // Fade the tail of what we just wrote, then jump. One
-                    // source, so this is a fade across the seam rather than an
-                    // overlap of two copies.
-                    fade_out(slice, channels, seam);
-                    self.renderer.seek(a, &self.params);
-                    wrapped_at = Some(filled + chunk);
+            let mut filled = 0usize;
+            // Where in this block fresh post-wrap material begins, if it does.
+            let mut wrapped_at: Option<usize> = None;
+            self.seq_runs.clear();
+            while filled < fresh {
+                let want = fresh - filled;
+                // Never render past the loop end in one go: the wrap has to land on
+                // an exact frame or the loop drifts.
+                let chunk = match bounds {
+                    Some((_, b)) => {
+                        let room = b.saturating_sub(self.renderer.position()) as usize;
+                        want.min(room.max(1))
+                    }
+                    None => want,
+                };
+
+                if self.seq_runs.len() < self.seq_runs.capacity() {
+                    // The sequencer is stamped by output frame; under a speed other
+                    // than 1 its runs land where the read reaches them.
+                    let at = (((base + filled) as f64 - self.vs_frac) / speed.max(1e-9)).max(0.0) as usize;
+                    self.seq_runs.push((at.min(frames), self.renderer.position(), chunk));
+                }
+                let slice = &mut self.vs[(base + filled) * ch..(base + filled + chunk) * ch];
+                let n = self
+                    .renderer
+                    .render(slice, ch, &self.source, &self.params, &mut self.scratch);
+                report(shared, &self.scratch[..n]);
+
+                if let Some((a, b)) = bounds {
+                    if self.renderer.position() >= b {
+                        // Fade the tail of what we just wrote, then jump. One
+                        // source, so this is a fade across the seam rather than an
+                        // overlap of two copies.
+                        fade_out(slice, ch, seam);
+                        self.renderer.seek(a, &self.params);
+                        wrapped_at = Some(base + filled + chunk);
+                    }
+                }
+                filled += chunk;
+            }
+            self.vs_frames = base + fresh;
+
+            // Ramp the material that came after the jump — and only that. Ramping
+            // every block would put an amplitude wobble at the block rate on
+            // everything.
+            if let Some(start) = wrapped_at {
+                if start < self.vs_frames {
+                    fade_in(&mut self.vs[start * ch..self.vs_frames * ch], ch, seam);
                 }
             }
-            filled += chunk;
-        }
 
-        // Ramp the material that came after the jump — and only that. Ramping
-        // every block would put an amplitude wobble at the block rate on
-        // everything.
-        if let Some(start) = wrapped_at {
-            if start < frames {
-                fade_in(&mut out[start * channels..], channels, seam);
+            // Read the block out of what was rendered.
+            let last = self.vs_frames.saturating_sub(1);
+            for f in 0..frames {
+                let x = self.vs_frac + f as f64 * speed;
+                let i = (x.floor() as usize).min(last);
+                let t = (x - x.floor()) as f32;
+                let j = (i + 1).min(last);
+                for c in 0..ch {
+                    let a = self.vs[i * ch + c];
+                    out[f * ch + c] = if t == 0.0 { a } else { a + (self.vs[j * ch + c] - a) * t };
+                }
             }
+            // The Pitch Time Changer's shifter, on what the read produced, at the
+            // ratio that puts the pitch back where its Pitch says.
+            if pt.on {
+                if let Some(shifter) = self.ptc.as_mut() {
+                    if !self.ptc_now.on {
+                        shifter.reset();
+                    }
+                    if pt != self.ptc_now || !self.ptc_now.on {
+                        shifter.set_param("pitch", (100.0 * pt.pitch / pt.speed).clamp(0.0, 200.0));
+                        shifter.set_param("mix", 100.0);
+                        shifter.set_param("feedback", pt.feedback);
+                        shifter.set_param("grain", pt.grain);
+                        shifter.set_param("xfade", pt.xfade);
+                        shifter.set_param("smoothing", pt.smoothing);
+                    }
+                    shifter.process(out, ch, self.params.sample_rate);
+                }
+            }
+            self.ptc_now = pt;
+
+            // Drop what the read has passed; keep the rest for the next block.
+            let after = self.vs_frac + frames as f64 * speed;
+            let drop = (after.floor() as usize).min(self.vs_frames);
+            self.vs.copy_within(drop * ch..self.vs_frames * ch, 0);
+            self.vs_frames -= drop;
+            self.vs_frac = after - drop as f64;
         }
 
         // The rack runs on the block, after the grains and before the fader,
@@ -1433,6 +1704,32 @@ impl Core {
         if (gain - 1.0).abs() > 1e-6 {
             for s in out.iter_mut() {
                 *s *= gain;
+            }
+        }
+        // Hyperprism's L and R faders, on the two sides of a stereo bus. A mono
+        // bus takes the left one.
+        // A new setting starts a straight ramp from where the fader is, over
+        // Hyperprism's 1024 frames.
+        let (gl, gr) = shared.side_gains();
+        if [gl, gr] != self.fader_to {
+            self.fader_from = self.fader_now;
+            self.fader_to = [gl, gr];
+            self.fader_step = 0;
+        }
+        let still = self.fader_step >= FADER_RAMP;
+        if !(still && (self.fader_now[0] - 1.0).abs() < 1e-7 && (self.fader_now[1] - 1.0).abs() < 1e-7) {
+            for frame in out.chunks_mut(channels) {
+                if self.fader_step < FADER_RAMP {
+                    self.fader_step += 1;
+                    let t = self.fader_step as f32 / FADER_RAMP as f32;
+                    for side in 0..2 {
+                        self.fader_now[side] = self.fader_from[side] + (self.fader_to[side] - self.fader_from[side]) * t;
+                    }
+                }
+                frame[0] *= self.fader_now[0];
+                if let Some(r) = frame.get_mut(1) {
+                    *r *= self.fader_now[1];
+                }
             }
         }
 
@@ -1915,5 +2212,241 @@ mod tests {
         assert_eq!(loop_fade(0, 400), 100);
         assert_eq!(loop_fade(0, 100), 25);
         assert!(loop_fade(0, 65) >= 1, "a loop above the floor must still fade");
+    }
+
+
+    // ─────────────────────────────────────────────── Hyperprism's Playback Speed
+
+    /// A source with something in every sample, so a frame read from the wrong
+    /// place shows: a 220 Hz sine, two seconds long.
+    fn tone_core(channels: usize, block: usize) -> (Core, Shared) {
+        let frames = 96_000;
+        let samples = (0..frames * channels)
+            .map(|i| 0.5 * (std::f32::consts::TAU * 220.0 * (i / channels) as f32 / 48_000.0).sin())
+            .collect();
+        let src = Arc::new(Source { samples, channels });
+        let sp = StreamParams::new(frames, 48_000);
+        let shared = Shared::new(sp, Arc::clone(&src));
+        let core = Core::new(block, channels, sp, src);
+        shared.play();
+        (core, shared)
+    }
+
+    fn render(core: &mut Core, shared: &Shared, frames: usize, block: usize, channels: usize) -> Vec<f32> {
+        let mut out = Vec::with_capacity(frames * channels);
+        let mut buf = vec![0.0; block * channels];
+        while out.len() < frames * channels {
+            core.fill(&mut buf, channels, shared);
+            out.extend_from_slice(&buf);
+        }
+        out.truncate(frames * channels);
+        out
+    }
+
+    #[test]
+    fn at_unit_speed_the_engine_plays_as_it_always_has() {
+        let (mut plain, a) = tone_core(2, 256);
+        let (mut unit, b) = tone_core(2, 256);
+        b.set_speed(1.0);
+        assert_eq!(render(&mut plain, &a, 4_096, 256, 2), render(&mut unit, &b, 4_096, 256, 2));
+        assert_eq!(a.position(), b.position());
+    }
+
+    #[test]
+    fn twice_the_speed_reads_every_other_frame() {
+        let (mut reference, a) = tone_core(1, 512);
+        let (mut fast, b) = tone_core(1, 256);
+        b.set_speed(2.0);
+        let slow = render(&mut reference, &a, 8_192, 512, 1);
+        let quick = render(&mut fast, &b, 4_096, 256, 1);
+        for i in 0..quick.len() {
+            assert!((quick[i] - slow[2 * i]).abs() < 1e-6, "frame {i}: {} against {}", quick[i], slow[2 * i]);
+        }
+        assert_eq!(a.position(), b.position(), "both have read the same stretch of the document");
+    }
+
+    #[test]
+    fn half_speed_reads_between_frames_in_straight_lines() {
+        let (mut reference, a) = tone_core(1, 256);
+        let (mut slow, b) = tone_core(1, 512);
+        b.set_speed(0.5);
+        let plain = render(&mut reference, &a, 4_097, 256, 1);
+        let half = render(&mut slow, &b, 8_192, 512, 1);
+        for i in 0..4_096 {
+            assert!((half[2 * i] - plain[i]).abs() < 1e-6, "frame {}", 2 * i);
+            let between = 0.5 * (plain[i] + plain[i + 1]);
+            assert!((half[2 * i + 1] - between).abs() < 1e-6, "frame {}", 2 * i + 1);
+        }
+    }
+
+    #[test]
+    fn a_change_of_speed_keeps_the_read_continuous() {
+        let (mut core, shared) = tone_core(1, 300);
+        let mut out = render(&mut core, &shared, 3_000, 300, 1);
+        shared.set_speed(1.37);
+        out.extend(render(&mut core, &shared, 3_000, 300, 1));
+        shared.set_speed(0.61);
+        out.extend(render(&mut core, &shared, 3_000, 300, 1));
+        // A 220 Hz sine at half scale moves at most 0.5·2π·220·1.37/48 000 per
+        // frame; a skipped or repeated read would jump further.
+        let step = out.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+        assert!(step < 0.5 * std::f32::consts::TAU * 220.0 * 1.4 / 48_000.0, "{step}");
+    }
+
+
+    // ───────────────────────────────────────────── Hyperprism's L and R faders
+
+    #[test]
+    fn the_side_faders_scale_their_own_channel_after_the_rack() {
+        let (mut plain, a) = tone_core(2, 256);
+        let (mut faded, b) = tone_core(2, 256);
+        b.set_side_gains(0.5, 1.2);
+        let x = render(&mut plain, &a, 2_048, 256, 2);
+        let y = render(&mut faded, &b, 2_048, 256, 2);
+        // After Hyperprism's 1024-frame ramp, each side sits at its gain.
+        for f in 1_024..2_048 {
+            assert!((y[2 * f] - 0.5 * x[2 * f]).abs() < 1e-6, "left, frame {f}");
+            // Before the soft ceiling, which leaves this tone well alone.
+            assert!((y[2 * f + 1] - 1.2 * x[2 * f + 1]).abs() < 1e-5, "right, frame {f}");
+        }
+    }
+
+    #[test]
+    fn unity_side_faders_change_nothing() {
+        let (mut plain, a) = tone_core(2, 256);
+        let (mut unity, b) = tone_core(2, 256);
+        b.set_side_gains(1.0, 1.0);
+        assert_eq!(render(&mut plain, &a, 1_024, 256, 2), render(&mut unity, &b, 1_024, 256, 2));
+    }
+
+
+    // ──────────────────────────────────────── Hyperprism's Pitch Time Changer
+
+    #[test]
+    fn the_pitch_time_changer_off_changes_nothing() {
+        let (mut plain, a) = tone_core(2, 256);
+        let (mut off, b) = tone_core(2, 256);
+        b.set_pitch_time(PitchTime { on: false, speed: 150.0, pitch: 50.0, ..PitchTime::default() });
+        assert_eq!(render(&mut plain, &a, 2_048, 256, 2), render(&mut off, &b, 2_048, 256, 2));
+    }
+
+    #[test]
+    fn the_pitch_time_changer_is_varispeed_then_hyperprisms_shifter() {
+        // Speed 150 %, pitch 80 %: the read runs at 1.5 and the shifter takes
+        // pitch/speed, all wet, with the window's other settings.
+        let settings = PitchTime { on: true, speed: 150.0, pitch: 80.0, feedback: 10.0, grain: 30.0, xfade: 60.0, smoothing: 0.0 };
+        let (mut changer, b) = tone_core(2, 256);
+        b.set_pitch_time(settings);
+        let got = render(&mut changer, &b, 8_192, 256, 2);
+
+        let (mut fast, a) = tone_core(2, 256);
+        a.set_speed(1.5);
+        let mut want = render(&mut fast, &a, 8_192, 256, 2);
+        let mut shifter = fx::prism::make(
+            "hp-pitch-shifter",
+            48_000,
+            2,
+            &[
+                ("pitch".into(), 100.0 * 80.0 / 150.0),
+                ("mix".into(), 100.0),
+                ("feedback".into(), 10.0),
+                ("grain".into(), 30.0),
+                ("xfade".into(), 60.0),
+                ("smoothing".into(), 0.0),
+            ],
+        )
+        .unwrap();
+        for block in want.chunks_mut(256 * 2) {
+            shifter.process(block, 2, 48_000);
+        }
+        for i in 0..got.len() {
+            assert!((got[i] - want[i]).abs() < 1e-5, "sample {i}: {} against {}", got[i], want[i]);
+        }
+    }
+
+    #[test]
+    fn the_pitch_time_changer_runs_time_at_its_speed() {
+        let (mut core, shared) = tone_core(1, 256);
+        shared.set_pitch_time(PitchTime { on: true, speed: 50.0, pitch: 100.0, ..PitchTime::default() });
+        render(&mut core, &shared, 4_096, 256, 1);
+        // Half of what was played, plus the one frame the read looks ahead.
+        assert!((2_048..=2_049).contains(&shared.position()), "{}", shared.position());
+    }
+
+
+    // ───────────────────────── the Pitch Time Changer, offline, for an export
+
+    #[test]
+    fn offline_the_pitch_time_changer_is_what_the_engine_plays() {
+        // The export's version against the audio thread's: the same varispeed
+        // and the same shifter, so the file is what was heard.
+        let settings = PitchTime { on: true, speed: 125.0, pitch: 90.0, feedback: 5.0, grain: 20.0, xfade: 80.0, smoothing: 0.0 };
+        let (mut plain, a) = tone_core(2, 256);
+        let dry = render(&mut plain, &a, 16_384, 256, 2);
+        let (mut live, b) = tone_core(2, 256);
+        b.set_pitch_time(settings);
+        let heard = render(&mut live, &b, 8_192, 256, 2);
+        let file = pitch_time_offline(&dry, 2, 48_000, 256, |_| settings);
+        for i in 0..heard.len() {
+            assert!((file[i] - heard[i]).abs() < 1e-5, "sample {i}: {} against {}", file[i], heard[i]);
+        }
+        // Time goes as 1/speed: 16 384 frames read at 1.25 make 13 107.
+        assert_eq!(file.len() / 2, (16_384.0f64 / 1.25).floor() as usize);
+    }
+
+
+    #[test]
+    fn a_fader_moves_in_a_straight_line_over_1024_frames() {
+        // Hyperprism ramped a new gain linearly over 1024 frames.
+        let (mut plain, a) = tone_core(2, 256);
+        let (mut faded, b) = tone_core(2, 256);
+        b.set_side_gains(0.5, 1.0);
+        let x = render(&mut plain, &a, 2_048, 256, 2);
+        let y = render(&mut faded, &b, 2_048, 256, 2);
+        for f in [1usize, 256, 512, 1_000] {
+            if x[2 * f].abs() < 1e-3 {
+                continue;
+            }
+            let g = y[2 * f] / x[2 * f];
+            let want = 1.0 - 0.5 * (f + 1) as f32 / 1_024.0;
+            assert!((g - want).abs() < 2e-3, "frame {f}: gain {g}, a straight line says {want}");
+        }
+    }
+
+    // ───────────────────────────────────────────── Hyperprism's Post-Roll
+
+    #[test]
+    fn post_roll_runs_the_rack_on_silence_past_the_end() {
+        // A 0.5 s document with 0.25 s of post-roll: the transport plays on for
+        // that long after the end, then stops.
+        let src = Arc::new(Source { samples: vec![0.25; 24_000], channels: 1 });
+        let sp = StreamParams::new(24_000, 48_000);
+        let shared = Shared::new(sp, Arc::clone(&src));
+        let mut core = Core::new(256, 1, sp, src);
+        shared.set_post_roll_frames(12_000);
+        shared.play();
+        let mut buf = vec![0.0; 256];
+        let mut played = 0usize;
+        while shared.is_playing() && played < 96_000 {
+            core.fill(&mut buf, 1, &shared);
+            played += 256;
+        }
+        assert!((36_000..36_000 + 512).contains(&played), "played {played} frames");
+    }
+
+    #[test]
+    fn no_post_roll_stops_at_the_end() {
+        let src = Arc::new(Source { samples: vec![0.25; 24_000], channels: 1 });
+        let sp = StreamParams::new(24_000, 48_000);
+        let shared = Shared::new(sp, Arc::clone(&src));
+        let mut core = Core::new(256, 1, sp, src);
+        shared.play();
+        let mut buf = vec![0.0; 256];
+        let mut played = 0usize;
+        while shared.is_playing() && played < 96_000 {
+            core.fill(&mut buf, 1, &shared);
+            played += 256;
+        }
+        assert!((24_000..24_000 + 512).contains(&played), "played {played} frames");
     }
 }

@@ -1419,6 +1419,35 @@ fn a_stretch_lane_reaches_the_exported_file() {
     assert_eq!(reader.info().frames(), stretched_frames as u64);
 }
 
+/// Hyperprism's Pitch Time Changer reaches the export: at 200 % speed the file
+/// is read twice as fast, so it comes out half as long.
+#[test]
+fn the_pitch_time_changer_reaches_the_exported_file() {
+    let s = Scratch::new("export-pitch-time");
+    s.sound("kit/tone.wav", 8000);
+    let app = s.app();
+    let plain = num(&export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#), &["frames"]);
+    server::routes::route(&app, &post("/api/pitchtime", r#"{"p":"kit/tone.wav","on":true,"speed":200,"pitch":100}"#));
+    let fast = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
+    let frames = num(&fast, &["frames"]);
+    assert!((frames - plain / 2.0).abs() <= 2.0, "{plain} frames at 200 % became {frames}");
+}
+
+/// Hyperprism's Post-Roll lengthens the export by exactly its time, so the
+/// effects' tails are in the file.
+#[test]
+fn post_roll_lengthens_the_export_by_its_time() {
+    let s = Scratch::new("export-post-roll");
+    s.sound("kit/tone.wav", 8000);
+    let app = s.app();
+    let plain = num(&export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#), &["frames"]);
+    let r = server::routes::route(&app, &post("/api/rack", r#"{"p":"kit/tone.wav","sr":44100,"slots":[],"postRoll":{"stretch":500}}"#));
+    assert_eq!(status(&r), 200);
+    let longer = export_and_wait(&app, r#"{"p":"kit/tone.wav","bits":24}"#);
+    let rate = num(&longer, &["sampleRate"]);
+    assert_eq!(num(&longer, &["frames"]), plain + (0.5 * rate).floor(), "at {rate} Hz");
+}
+
 #[test]
 fn a_rack_lane_reaches_the_exported_file() {
     let s = Scratch::new("automation-export-rack");
@@ -1844,6 +1873,68 @@ fn a_live_parameter_reaches_a_prism_slot() {
     assert!((num(&slots[0], &["params", "depth"]) - 0.9).abs() < 1e-6);
 }
 
+/// Hyperprism's Pitch Time Changer is kept with the document's rack: a post
+/// carries only what changed, out-of-range values are held to the window's,
+/// and the pad offers it second, with its own window.
+#[test]
+fn the_pitch_time_changer_is_kept_with_the_document() {
+    let s = Scratch::new("pitch-time");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+    let r = server::routes::route(&app, &post("/api/pitchtime", r#"{"p":"kit/tone.wav","on":true,"speed":150}"#));
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+    let r = server::routes::route(&app, &post("/api/pitchtime", r#"{"p":"kit/tone.wav","pitch":999,"grain":30}"#));
+    assert_eq!(status(&r), 200);
+    let back = json(&server::routes::route(&app, &get("/api/rack", &[("p", "kit/tone.wav")])));
+    let pt = back.get("pitchTime").expect("the rack carries it");
+    assert_eq!(pt.get("on"), Some(&server::json::Value::Bool(true)), "a later post kept it on");
+    assert_eq!((num(pt, &["speed"]), num(pt, &["pitch"]), num(pt, &["grain"])), (150.0, 200.0, 30.0));
+    // A rack posted by something that knows nothing of it leaves it alone.
+    server::routes::route(&app, &post("/api/rack", r#"{"p":"kit/tone.wav","sr":44100,"slots":[]}"#));
+    let kept = json(&server::routes::route(&app, &get("/api/rack", &[("p", "kit/tone.wav")])));
+    assert_eq!(kept.get("pitchTime").and_then(|p| p.get("on")), Some(&server::json::Value::Bool(true)));
+    let pad = json(&server::routes::route(&app, &get("/api/pad", &[("p", "kit/tone.wav")])));
+    let sources = match pad.get("sources") {
+        Some(server::json::Value::Arr(a)) => a.clone(),
+        _ => panic!("no sources"),
+    };
+    assert_eq!(sources[1].get("id").and_then(server::json::Value::as_str), Some("ptc"));
+}
+
+/// Hyperprism's presets, per process: its factory set, and the user's own,
+/// saved, renamed and deleted. A preset is the pad's window, the process's
+/// other settings and its post-roll — never the pad's position.
+#[test]
+fn pad_presets_come_from_hyperprism_and_from_the_user() {
+    let s = Scratch::new("pad-presets");
+    let app = s.app();
+    let list = |kind: &str| json(&server::routes::route(&app, &get("/api/pad/presets", &[("kind", kind)])));
+    let arr = |v: &server::json::Value, k: &str| match v.get(k) {
+        Some(server::json::Value::Arr(a)) => a.clone(),
+        _ => Vec::new(),
+    };
+    let low = list("hp-low-pass");
+    let factory = arr(&low, "factory");
+    assert_eq!(factory.len(), 5, "Hyperprism's five Low Pass presets");
+    assert_eq!(factory[0].get("name").and_then(server::json::Value::as_str), Some("Low Resonance"));
+    assert_eq!(factory[0].get("x").and_then(server::json::Value::as_str), Some("freqHz"));
+    assert_eq!(arr(&list("ptc"), "factory").len(), 10, "and the Pitch Time Changer's ten");
+
+    let save = r#"{"kind":"hp-low-pass","name":"Mine","preset":{"x":"freqHz","xLo":100,"xHi":900,"y":"q","yLo":1,"yHi":4,"settings":{"smoothing":30},"postRollMs":200}}"#;
+    assert_eq!(status(&server::routes::route(&app, &post("/api/pad/presets", save))), 200);
+    let user = arr(&list("hp-low-pass"), "user");
+    assert_eq!(user.len(), 1);
+    assert_eq!(num(&user[0], &["postRollMs"]), 200.0);
+    server::routes::route(&app, &post("/api/pad/presets/rename", r#"{"kind":"hp-low-pass","from":"Mine","to":"Yours"}"#));
+    assert_eq!(arr(&list("hp-low-pass"), "user")[0].get("name").and_then(server::json::Value::as_str), Some("Yours"));
+    // Kept on disk, for the next time the app opens.
+    let again = s.app();
+    let kept = json(&server::routes::route(&again, &get("/api/pad/presets", &[("kind", "hp-low-pass")])));
+    assert_eq!(arr(&kept, "user").len(), 1);
+    server::routes::route(&app, &post("/api/pad/presets/delete", r#"{"kind":"hp-low-pass","name":"Yours"}"#));
+    assert!(arr(&list("hp-low-pass"), "user").is_empty());
+}
+
 // ==================================================== the Prism pad
 
 /// What the pad can drive: Time & Pitch, then the rack's slots, each with its
@@ -1867,8 +1958,8 @@ fn the_pad_lists_its_sources_with_their_pairs() {
     let v = json(&server::routes::route(&app, &get("/api/pad", &[("p", "kit/tone.wav")])));
     let Some(Value::Arr(sources)) = v.get("sources") else { panic!("no sources: {}", v.to_string()) };
     let ids: Vec<&str> = sources.iter().filter_map(|s| s.get("id").and_then(Value::as_str)).collect();
-    assert_eq!(ids, ["stretch", "r1"], "the EQ is not a pad source");
-    let ring = &sources[1];
+    assert_eq!(ids, ["stretch", "ptc", "r1"], "the EQ is not a pad source");
+    let ring = &sources[2];
     assert_eq!(ring.get("label").and_then(Value::as_str), Some("Ring mod"));
     let Some(Value::Arr(controls)) = ring.get("controls") else { panic!("no controls") };
     assert!(controls.iter().any(|c| c.get("key").and_then(Value::as_str) == Some("hz")));
