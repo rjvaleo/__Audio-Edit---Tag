@@ -337,6 +337,7 @@ dependencies = [
  "audio-core",
  "cpal",
  "fx",
+ "prism-grain",
 ]
 
 [[package]]
@@ -440,6 +441,7 @@ version = "0.1.0"
 dependencies = [
  "audio-core",
  "prism-fx",
+ "prism-grain",
 ]
 
 [[package]]
@@ -984,6 +986,10 @@ dependencies = [
 
 [[package]]
 name = "prism-fx"
+version = "0.1.0"
+
+[[package]]
+name = "prism-grain"
 version = "0.1.0"
 
 [[package]]

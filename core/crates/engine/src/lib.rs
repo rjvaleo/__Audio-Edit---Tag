@@ -14,10 +14,12 @@
 
 pub mod device;
 pub mod input;
-pub mod render;
 pub mod seqbus;
-pub mod stretcher;
 pub mod transport;
+
+// The renderer and the stretcher live in prism-grain, shared with idMLab, and
+// keep their old paths here.
+pub use prism_grain::{render, stretcher};
 
 pub use device::{conform_channels, resample, spawn, Engine, Handle};
 pub use render::{BlockRenderer, Source};
