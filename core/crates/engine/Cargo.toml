@@ -6,6 +6,7 @@ license.workspace = true
 description = "Real-time audio engine: owns the output device and renders the grain stream block by block."
 
 [dependencies]
+prism-grain = { path = "../../../../GitHub/prism-fx/crates/prism-grain" }
 fx = { path = "../fx" }
 audio-core = { path = "../audio-core" }
 cpal = "0.18"

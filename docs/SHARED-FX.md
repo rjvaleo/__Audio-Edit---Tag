@@ -183,6 +183,12 @@ generated descriptor cannot drift that way.
 
 ### idMLab
 
+*Built 23 October 2026 on idMLab's `sound-port` branch; see its
+`docs/SOUND-PORT-PLAN.md`. Where it differs from the plan below: `Prism` is
+19, idMLab's effects became stereo first so a prism module runs in true
+stereo rather than mono-summed, and the generator is `rust/prism-gen` in
+idMLab's workspace.*
+
 - `dsp-core` takes a dependency on `prism-fx`.
 - `ModuleKind` gains `Prism = 16`, the next free number, and the variant is the
   descriptor's `code`. Both are wire protocol, so both only ever grow.
