@@ -171,7 +171,16 @@ pub struct PrismEffect {
 
 impl PrismEffect {
     pub fn new(id: &str, sample_rate: u32) -> Option<Self> {
-        let kernel = prism_fx::make(id, sample_rate as f32)?;
+        let mut kernel = prism_fx::make(id, sample_rate as f32)?;
+        // Every control at its declared default, as the rack sets them. A few
+        // kernels start elsewhere, as their originals did (the Dattorro
+        // flanger and vibrato at 0.55 Hz against a declared 0.3); only those
+        // controls are told, as telling one is not always a no-op.
+        for (i, spec) in kernel.descriptor().params.iter().enumerate() {
+            if kernel.param(i) != spec.default {
+                kernel.set_param(i, spec.default);
+            }
+        }
         Some(PrismEffect { kernel, specs: specs(id)?, left: vec![0.0; PIECE], right: vec![0.0; PIECE] })
     }
 

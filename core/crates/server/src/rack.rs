@@ -779,7 +779,9 @@ mod tests {
         // Built in place, slot for slot, and answering by the crate's keys.
         let rack = back.build(48_000, 2);
         for (i, entry) in fx::prism::catalogue().iter().enumerate() {
-            let key = entry.descriptor.params[0].key;
+            // Invert and Swap have no controls to ask.
+            let Some(first) = entry.descriptor.params.first() else { continue };
+            let key = first.key;
             assert_eq!(rack.get_param(i, key), back.get_param(i, key), "slot {i} is not {}", entry.descriptor.id);
         }
     }
