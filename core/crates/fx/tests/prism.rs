@@ -231,7 +231,8 @@ fn parameters_are_read_written_and_bounded_by_the_crates_table() {
                 (theirs.key, theirs.label, theirs.min, theirs.max, theirs.default, theirs.log, theirs.unit)
             );
             assert_eq!(Params::get(&e, mine.key), Some(mine.default), "{}.{}", e.id(), mine.key);
-            assert!(Params::set(&mut e, mine.key, mine.max * 10.0 + 1.0));
+            // Past the top by ten ranges: `max * 10` is below a negative top.
+            assert!(Params::set(&mut e, mine.key, mine.max + (mine.max - mine.min) * 10.0 + 1.0));
             assert_eq!(Params::get(&e, mine.key), Some(mine.max), "{}.{} unbounded", e.id(), mine.key);
             // The live route goes through `Effect`, and reads the same value.
             assert!(Effect::set_param(&mut e, mine.key, mine.min));
