@@ -250,6 +250,9 @@ function closeDrawer() {
 }
 
 $('scrim').onclick = () => closeDrawer();
+// The empty lane points at the library; with the library put away it opens it
+// rather than pointing at nothing (C9, `docs/DESIGN-CRITIQUE.md`).
+$('laneEmptyOpen').onclick = () => showPane('left', 'browse');
 $('closeLeft').onclick = () => closeDrawer();
 $('closeRight').onclick = () => $('rightPanel').classList.add('collapsed');
 
@@ -376,7 +379,7 @@ function fileRow(file) {
     (engine.path === file.path && engine.playing ? ' playing' : '');
   el.dataset.path = file.path;
   el.innerHTML = `
-    <button class="pb" title="Play">▶</button>
+    <button class="pb" title="Play" aria-label="Play">▶</button>
     <canvas class="thumb" width="54" height="24"></canvas>
     <div class="info">
       <div class="fname"></div>
@@ -1794,7 +1797,7 @@ function renderTabs() {
     el.className = 'tab' + (i === state.activeTab ? ' active' : '');
     const dirty = t.edit?.edited || t.rack?.active;
     el.innerHTML = `${dirty ? '<span class="dirty-dot"></span>' : ''}
-      <span class="nm"></span><button class="close">×</button>`;
+      <span class="nm"></span><button class="close" aria-label="Close this sound">×</button>`;
     el.querySelector('.nm').textContent = t.file.name;
     el.title = t.file.path;
     el.onclick = () => switchTab(i);
@@ -1805,6 +1808,7 @@ function renderTabs() {
   const add = document.createElement('button');
   add.className = 'newtab';
   add.title = 'Open another sound';
+  add.setAttribute('aria-label', 'Open another sound');   // C7
   add.textContent = '+';
   add.onclick = () => openDrawer();
   bar.appendChild(add);
@@ -2715,6 +2719,15 @@ function renderMetaStrip(f) {
   sel.title = 'the range currently selected';
   strip.appendChild(sel);
   updateSelLabel();
+  // Fuller than its box: fade its end rather than let the volume cut a word
+  // in half (C6, `docs/DESIGN-CRITIQUE.md`). Watched, because the box changes
+  // with the window and with the workspace the bar is moved into.
+  const fits = () => strip.classList.toggle('overflowing', strip.scrollWidth > strip.clientWidth + 1);
+  if (!strip.dataset.watched && window.ResizeObserver) {
+    strip.dataset.watched = '1';
+    new ResizeObserver(fits).observe(strip);
+  }
+  fits();
 }
 
 // ======================================================= overview: the stats
@@ -3570,7 +3583,12 @@ $('elGo').onclick = () => {
 
 document.querySelectorAll('.dock-tab').forEach((t) => {
   t.onclick = () => {
-    document.querySelectorAll('.dock-tab').forEach((x) => x.classList.toggle('active', x === t));
+    // `.active` for the eye, `aria-selected` for anything else reading the page
+    // (C5, `docs/DESIGN-CRITIQUE.md`). Moved together, in one place.
+    document.querySelectorAll('.dock-tab').forEach((x) => {
+      x.classList.toggle('active', x === t);
+      x.setAttribute('aria-selected', String(x === t));
+    });
     const panes = { effects: 'dockEffects', prism: 'dockPrism', stretch: 'dockStretch',
                     visuals: 'dockVisuals', automation: 'dockAutomation',
                     regions: 'dockRegions' };
@@ -3586,6 +3604,11 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
       drawGrains();
     } else if (t.dataset.dock === 'prism') {
       prismPadOpen();
+    } else if (t.dataset.dock === 'automation') {
+      // Drawn while hidden, the timeline took the canvas's default 300 px as
+      // its width and the page stretched it across the dock — every word in it
+      // three times as wide (C8).
+      perfDrawTimeline();
     }
   };
 });
@@ -4436,7 +4459,7 @@ function drawVisualChamberlin(canvas,p){
   c.fillStyle='#090b0d';c.fillRect(0,0,w,h);c.strokeStyle='rgba(255,255,255,.1)';for(const hz of [20,100,1000,10000,20000]){const x=xf(hz);c.beginPath();c.moveTo(x,0);c.lineTo(x,h);c.stroke();}c.beginPath();c.moveTo(0,yf(0));c.lineTo(w,yf(0));c.stroke();
   if(engine.spectrum?.length){const bins=engine.spectrum,nyquist=(engine.deviceRate||48000)/2;c.beginPath();c.moveTo(0,h);for(let i=1;i<bins.length;i++){const hz=i/(bins.length-1)*nyquist;if(hz>=20&&hz<=20000)c.lineTo(xf(hz),h-bins[i]/255*h*.9);}c.lineTo(w,h);c.closePath();c.fillStyle='rgba(52,137,202,.18)';c.fill();}
   const filters=['low','band','high','notch'];for(const [index,key] of filters.entries()){const freq=p[key+'Freq'],q=p[key+'Q'],amp=p[key+'Amp'];if(amp<=.001)continue;const response=hz=>key==='low'?-10*Math.log10(1+Math.pow(hz/freq,4)):key==='high'?-10*Math.log10(1+Math.pow(freq/hz,4)):key==='band'?-18*Math.pow(Math.log(hz/freq)*q,2):-18*Math.exp(-Math.pow(Math.log(hz/freq)*q,2)*4);const pts=[];for(let x=0;x<=w;x+=2){const hz=20*Math.pow(1000,x/w);pts.push([x,yf(response(hz)*amp)]);}c.beginPath();c.moveTo(0,yf(0));pts.forEach(([x,y])=>c.lineTo(x,y));c.lineTo(w,yf(0));c.closePath();c.globalAlpha=.2;c.fillStyle=CHAMBERLIN_COLORS[key];c.fill();c.globalAlpha=1;c.beginPath();pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.strokeStyle=CHAMBERLIN_COLORS[key];c.stroke();const nx=xf(freq),ny=h*(.84-Math.min(1,q/10)*.66);c.beginPath();c.arc(nx,ny,8,0,Math.PI*2);c.fillStyle=CHAMBERLIN_COLORS[key];c.fill();c.fillStyle='#20252a';c.textAlign='center';c.textBaseline='middle';c.font='bold 9px sans-serif';c.fillText(String(index+1),nx,ny);}
-  c.textAlign='right';c.textBaseline='alphabetic';c.fillStyle='rgba(93,184,245,.7)';c.font='8px ui-monospace';c.fillText('POST FILTER',w-4,10);
+  c.textAlign='right';c.textBaseline='alphabetic';c.fillStyle='rgba(93,184,245,.7)';c.font='8px ui-monospace, Menlo, monospace';c.fillText('POST FILTER',w-4,10);
 }
 function repaintVisualChamberlins(){document.querySelectorAll('.fx-module.chamberlin-visual').forEach(module=>{const slot=state.rack?.slots[+module.dataset.slot],canvas=module.querySelector('.chamberlin-graph canvas');if(slot&&canvas)drawVisualChamberlin(canvas,slot.params);});}
 function renderVisualChamberlin(box,slot,shaper){
@@ -4461,7 +4484,7 @@ function drawVisualCompressor(canvas, slot, slotIndex) {
   ctx.strokeStyle = 'rgba(255,255,255,.11)'; ctx.lineWidth = 1;
   for (const db of [-60, -40, -20, 0]) {
     const y=signalY(db);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,.38)';ctx.font='8px ui-monospace';ctx.textAlign='left';ctx.fillText(`${db}`,3,y-2);
+    ctx.fillStyle='rgba(255,255,255,.38)';ctx.font='8px ui-monospace, Menlo, monospace';ctx.textAlign='left';ctx.fillText(`${db}`,3,y-2);
   }
   if(samples.length){
     const mid=(signalTop+signalBottom)/2,amp=(signalBottom-signalTop)*.46;
@@ -4473,9 +4496,9 @@ function drawVisualCompressor(canvas, slot, slotIndex) {
   const kneeTop=signalY(slot.thresholdDb+slot.kneeDb/2),kneeBottom=signalY(slot.thresholdDb-slot.kneeDb/2);
   if(slot.kneeDb>0){ctx.fillStyle='rgba(73,174,232,.13)';ctx.fillRect(0,kneeTop,w,kneeBottom-kneeTop);ctx.setLineDash([3,3]);ctx.strokeStyle='rgba(73,174,232,.42)';ctx.beginPath();ctx.moveTo(0,kneeTop);ctx.lineTo(w,kneeTop);ctx.moveTo(0,kneeBottom);ctx.lineTo(w,kneeBottom);ctx.stroke();ctx.setLineDash([]);}
   const thresholdY=signalY(slot.thresholdDb);ctx.beginPath();ctx.moveTo(0,thresholdY);ctx.lineTo(w,thresholdY);ctx.strokeStyle='#49aee8';ctx.lineWidth=1.5;ctx.stroke();
-  ctx.font='8px ui-monospace';ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillStyle='#e6c83f';ctx.fillText('GAIN REDUCTION',4,10);
+  ctx.font='8px ui-monospace, Menlo, monospace';ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillStyle='#e6c83f';ctx.fillText('GAIN REDUCTION',4,10);
   ctx.textAlign='right';ctx.fillStyle='#49aee8';ctx.fillText(`THRESH ${slot.thresholdDb.toFixed(1)} dB`,w-4,thresholdY-3);
-  if(slot.kneeDb>0)ctx.fillText(`KNEE ${slot.kneeDb.toFixed(1)} dB`,w-4,kneeTop+10);
+  if(slot.kneeDb>0)ctx.fillText(`KNEE ${slot.kneeDb.toFixed(1)} dB`,w-4,Math.max(kneeTop+10,thresholdY+10)); // C10: never printed over THRESH
   ctx.fillStyle='rgba(190,197,203,.65)';ctx.fillText('LIVE SIGNAL',w-4,h-4);
 }
 
@@ -4566,7 +4589,7 @@ function drawVisualEq(canvas, slot, selected) {
   ctx.fillStyle='rgba(94,190,52,.25)';ctx.fill(); ctx.beginPath();
   points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.strokeStyle='#78dd42';ctx.lineWidth=1.8;ctx.stroke();
   bands.forEach((b,i)=>{const x=xFor(b.freq),y=yFor(['highpass','lowpass','notch'].includes(b.type)?0:b.gainDb);ctx.beginPath();ctx.arc(x,y,i===selected?9:7,0,Math.PI*2);ctx.fillStyle=!b.enabled?'#454a50':i===selected?'#f4f7f9':EQ_COLORS[i];ctx.fill();ctx.fillStyle='#20252a';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(String(i+1),x,y);});
-  ctx.fillStyle='rgba(255,255,255,.45)';ctx.font='8px ui-monospace';ctx.textAlign='left';ctx.fillText('20',3,h-4);ctx.fillText('100',xFor(100)+2,h-4);ctx.fillText('1k',xFor(1000)+2,h-4);ctx.fillText('10k',xFor(10000)+2,h-4);
+  ctx.fillStyle='rgba(255,255,255,.45)';ctx.font='8px ui-monospace, Menlo, monospace';ctx.textAlign='left';ctx.fillText('20',3,h-4);ctx.fillText('100',xFor(100)+2,h-4);ctx.fillText('1k',xFor(1000)+2,h-4);ctx.fillText('10k',xFor(10000)+2,h-4);
   ctx.textAlign='right';ctx.fillStyle='rgba(93,184,245,.7)';ctx.fillText('POST FILTER',w-4,10);
 }
 
@@ -4836,7 +4859,10 @@ function knob(label, value, min, max, step, format, onChange, onCommit, log, def
 /// qualifiers rather than the name. Only if it is still too long do the vowels
 /// come out, and never the first letter of a word: "preserve transients" reads
 /// as "prsrv trnsnts" but "rsrv rnsnts" reads as nothing.
-const LABEL_MAX = 11;
+/// Long enough for every switch in the tray to keep its words: the bank layout
+/// gives a switch the width of its label, and "prsrv trnsnts" had to be decoded
+/// (`docs/DESIGN-CRITIQUE.md`, "The granular engine").
+const LABEL_MAX = 24;
 
 /// Number words become numbers — on the button only, never in the tooltip.
 /// Cardinals and ordinals both, because "fifth" is as long as "five" and half
@@ -9599,6 +9625,8 @@ function syncCamRows() {
     const el = $(id);
     if (el && el.show && document.activeElement !== el) el.show();
   }
+  // The camera pads, which read the same camera (`rkBuild`).
+  if (typeof rkPadsSync === 'function') rkPadsSync();
   // The picked point's row: shown while something is picked, named for it.
   const row = $('reObjRow');
   if (row) {
@@ -10229,6 +10257,7 @@ function wireRoomTabs() {
       const want = b.dataset.rvtab;
       for (const o of document.querySelectorAll('#roomAdmin .rv-tab')) {
         o.classList.toggle('active', o === b);
+        o.setAttribute('aria-selected', String(o === b));   // C5
       }
       $('roomAdminBody')?.classList.toggle('hidden', want !== 'controls');
       $('roomSoundBody')?.classList.toggle('hidden', want !== 'sound');
@@ -10301,6 +10330,349 @@ function syncRoomSliders() {
   if (fogCol) fogCol.value = roomEdit.fogColour;
   const fillCol = $('reGrainFillColour');
   if (fillCol) fillCol.value = roomEdit.grainFillColour;
+}
+
+// ───────────────────────────────────────── the Room tab as an instrument ──
+//
+// `docs/DESIGN-CRITIQUE.md`, "The Visual column". The tab used to be a form —
+// a tag over a hairline slider, row after row, in the order things were added.
+// In the Visual column it is now grouped by subject (layers, camera, ring,
+// solid, grains, air, data) and each value gets the control that suits it:
+//
+//   - an amount is a **knob**, four to a row, its reading printed under it;
+//   - a pair that is one decision — where the eye turns, where it stands — is
+//     a **pad**, as the Prism tab and Stage have;
+//   - an exact number stays a **scrub field**, the channel box as it was;
+//   - a choice is a **segment row** of fixed places, lit quietly when on.
+//
+// **Nothing is rebuilt.** A knob is the same `<input type=range>`, with a face
+// drawn behind it and a vertical drag laid over its own: every handler, every
+// preset, every look and every test that moves `#reRing` moves it still, and a
+// pointer aimed at the knob lands on the input. The pads write the camera
+// through `ROOM_CAM_CHANNELS`, the channel box's own read and apply. Outside
+// the Visual column — the overlay on the master bus — none of this is drawn
+// and the inputs are the sliders they always were.
+
+/// Which group each row belongs to, by the control it holds, and where in it.
+const RK_ORDER = [
+  ['reLayers', 11],
+  ['reCamTx', 22], ['reCamTy', 22], ['reCamTz', 22], ['reCamRx', 22], ['reCamRy', 22],
+  ['reCamFocal', 22], ['reCamCoi', 22], ['reCamFront', 23], ['reObjRow', 24], ['re-legend', 25],
+  ['reRing', 31], ['reRingDrive', 31], ['reRingPoints', 31], ['reRingEdge', 31],
+  ['reSolidShape', 41], ['reSolidSpin', 42], ['reSolidSwell', 42], ['reSolidEye', 42],
+  ['reSolidSize', 42], ['reSolidPathAdd', 43], ['reSolidPath', 44],
+  ['reGrainDensity', 51], ['reGrainBright', 51], ['reGrainFill', 52], ['reLeadThick', 53],
+  ['reFog', 61], ['reMist', 62],
+  ['reStreams', 71], ['reChunks', 72],
+  ['reFrameRow', 80], ['re-foot', 90], ['reNums', 91],
+];
+const RK_HEADS = [[10, 'Layers'], [20, 'Camera'], [30, 'Ring'], [40, 'Solid'],
+  [50, 'Grains'], [60, 'Air'], [70, 'Data']];
+/// The knobs, and the word under each. The reading is the setting itself —
+/// the element's count divided back by the scale `ROOM_SLIDERS` gives it.
+const RK_KNOBS = {
+  reRing: 'Size', reRingDrive: 'Drive', reRingPoints: 'Smooth', reRingEdge: 'Stroke',
+  reSolidSpin: 'Turn', reSolidSwell: 'Swell', reSolidEye: 'Eye', reSolidSize: 'Size',
+  reGrainDensity: 'Cloud', reGrainBright: 'Burn', reFogDensity: 'Density',
+  reMistAmount: 'Amount', reMistLength: 'Length', reOpacity: 'Opacity',
+};
+
+/// The rows that hold one knob and nothing else: a cell of the grid each.
+const RK_CELLS = ['reRing', 'reRingDrive', 'reRingPoints', 'reRingEdge', 'reSolidSpin',
+  'reSolidSwell', 'reSolidEye', 'reSolidSize', 'reGrainDensity', 'reGrainBright'];
+
+const RK_VALUE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+
+/// The face of a knob: a 270° track and the arc to the value, with a pointer.
+function rkFace(frac) {
+  const r = 11, c = 14, a0 = -135, a1 = a0 + 270 * frac;
+  const at = (a) => `${(c + r * Math.sin(a * Math.PI / 180)).toFixed(2)} ${(c - r * Math.cos(a * Math.PI / 180)).toFixed(2)}`;
+  const big = frac * 270 > 180 ? 1 : 0;
+  return `<svg viewBox="0 0 28 28" aria-hidden="true">`
+    + `<path class="rk-track" d="M${at(a0)} A${r} ${r} 0 1 1 ${at(135)}"/>`
+    + (frac > 0.002 ? `<path class="rk-arc" d="M${at(a0)} A${r} ${r} 0 ${big} 1 ${at(a1)}"/>` : '')
+    + `<line class="rk-hand" x1="${c}" y1="${c}" x2="${at(a1).split(' ')[0]}" y2="${at(a1).split(' ')[1]}"/></svg>`;
+}
+
+/// Make a range input a knob. `own` is a reading the panel already keeps up
+/// to date (`.rg-read`); it is moved under the knob and left to its panel.
+/// Without one, the knob prints the setting from `ROOM_SLIDERS`' scale.
+function rkKnob(input, label, own) {
+  if (!input || input.dataset.rk) return;
+  input.dataset.rk = 'knob';
+  const scale = (ROOM_SLIDERS.find(([id]) => id === input.id) || [0, 0, 1])[2];
+  const digits = scale >= 1000 ? 3 : scale >= 100 ? 2 : 0;
+  const wrap = document.createElement('span');
+  wrap.className = 'rk-k';
+  input.before(wrap);
+  const face = document.createElement('span');
+  face.className = 'rk-face';
+  const read = own || document.createElement('b');
+  read.classList.add('rk-v');
+  const name = document.createElement('i');
+  name.className = 'rk-l';
+  name.textContent = label;
+  wrap.append(face, input, read, name);
+  const draw = () => {
+    const min = +input.min, max = +input.max, v = +RK_VALUE.get.call(input);
+    face.innerHTML = rkFace(max > min ? (v - min) / (max - min) : 0);
+    if (!own) read.textContent = (v / scale).toFixed(digits);
+  };
+  // Every way a value arrives — a drag, a recalled look, Clear — goes through
+  // `value`, so the face is redrawn there rather than on a list of events.
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get() { return RK_VALUE.get.call(this); },
+    set(v) { RK_VALUE.set.call(this, v); draw(); },
+  });
+  input.addEventListener('input', draw);
+  // Only in the Visual column — in the overlay it is a slider and drags as one.
+  rkDrag(input, () => !!input.closest('.rv-admin'));
+  draw();
+}
+
+/// Up and down, as a knob turns; shift for fine. `when` says whether the input
+/// is a knob where it is now.
+function rkDrag(input, when = () => true) {
+  input.style.touchAction = 'none';
+  input.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !when()) return;
+    e.preventDefault();
+    input.focus({ preventScroll: true });
+    try { input.setPointerCapture(e.pointerId); } catch { /* released below */ }
+    const y0 = e.clientY, v0 = +input.value, min = +input.min, max = +input.max;
+    const step = +input.step || 1;
+    const move = (ev) => {
+      let v = v0 + (y0 - ev.clientY) * (max - min) / (ev.shiftKey ? 600 : 160);
+      v = Math.max(min, Math.min(max, Math.round((v - min) / step) * step + min));
+      if (v !== +input.value) {
+        input.value = String(v);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    };
+    const up = () => {
+      input.removeEventListener('pointermove', move);
+      input.removeEventListener('pointerup', up);
+      input.removeEventListener('pointercancel', up);
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    input.addEventListener('pointermove', move);
+    input.addEventListener('pointerup', up);
+    input.addEventListener('pointercancel', up);
+  });
+}
+
+/// The two camera pads. Across and up are two channels of the channel box,
+/// each with the range the pad spans; the numbers below stay exact and typed.
+const RK_PADS = [
+  { name: 'Turn', title: 'Where the eye turns: across is the turn (Rotate Y), up is the tilt (Rotate X). The numbers below are the exact values.',
+    x: ['reCamRy', -180, 180], y: ['reCamRx', -CAM_PITCH_MAX, CAM_PITCH_MAX], fmt: (x, y) => `${x.toFixed(1)}° · ${y.toFixed(1)}°` },
+  { name: 'Stand', title: 'Where the eye stands on the floor: across is Translate X, up is into the picture (Translate Z). The numbers below are the exact values.',
+    x: ['reCamTx', -3, 3], y: ['reCamTz', 3, -3], fmt: (x, y) => `${x.toFixed(2)} · ${y.toFixed(2)}` },
+];
+
+function rkChannel(id) {
+  const ch = ROOM_CAM_CHANNELS.find(([i]) => i === id);
+  return { read: ch[1], apply: ch[2] };
+}
+
+/// The pads are kept on the function rather than in a `const` beside it:
+/// `syncCamRows` calls this from code that runs before this part of the file
+/// has, and a `const` read then throws (STATE.md §10, the temporal dead zone).
+function rkPadsSync() {
+  const pads = rkPadsSync.pads;
+  if (!pads || !pads.length) return;
+  const c = roomWorldNow();
+  for (const p of pads) {
+    const vx = p.cx.read(c), vy = p.cy.read(c);
+    const fx = Math.max(0, Math.min(1, (vx - p.def.x[1]) / (p.def.x[2] - p.def.x[1])));
+    const fy = Math.max(0, Math.min(1, (vy - p.def.y[1]) / (p.def.y[2] - p.def.y[1])));
+    p.dot.style.left = `${fx * 100}%`;
+    p.dot.style.top = `${(1 - fy) * 100}%`;
+    p.read.textContent = p.def.fmt(vx, vy);
+  }
+}
+
+function rkBuildPads(host) {
+  rkPadsSync.pads = [];
+  const box = document.createElement('div');
+  box.className = 'rk-pads';
+  box.style.setProperty('--rk', 21);
+  for (const def of RK_PADS) {
+    const cell = document.createElement('div');
+    cell.className = 'rk-pad-cell';
+    const pad = document.createElement('div');
+    pad.className = 'rk-pad';
+    pad.title = def.title;
+    pad.setAttribute('role', 'group');
+    pad.setAttribute('aria-label', `Camera: ${def.name.toLowerCase()}`);
+    const dot = document.createElement('i');
+    pad.appendChild(dot);
+    const foot = document.createElement('div');
+    foot.className = 'rk-pad-foot';
+    foot.innerHTML = `<span>${def.name}</span><span class="rk-pad-read"></span>`;
+    cell.append(pad, foot);
+    box.appendChild(cell);
+    const p = { def, dot, read: foot.querySelector('.rk-pad-read'), cx: rkChannel(def.x[0]), cy: rkChannel(def.y[0]) };
+    rkPadsSync.pads.push(p);
+    pad.onpointerdown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      try { pad.setPointerCapture(e.pointerId); } catch { /* released below */ }
+      const to = (ev) => {
+        const b = pad.getBoundingClientRect();
+        const fx = Math.max(0, Math.min(1, (ev.clientX - b.left) / b.width));
+        const fy = Math.max(0, Math.min(1, 1 - (ev.clientY - b.top) / b.height));
+        const c = roomWorldNow();
+        p.cx.apply(c, def.x[1] + fx * (def.x[2] - def.x[1]));
+        p.cy.apply(c, def.y[1] + fy * (def.y[2] - def.y[1]));
+        roomSetWorld(c);
+        paintRoomNums();
+        syncCamRows();
+      };
+      to(e);
+      pad.onpointermove = (ev) => { if (ev.buttons) to(ev); };
+      pad.onpointerup = () => { pad.onpointermove = null; saveRoomCameras(); };
+    };
+  }
+  host.appendChild(box);
+}
+
+function rkBuild() {
+  const host = $('roomEdit');
+  if (!host || host.dataset.rk) return;
+  host.dataset.rk = 'built';
+  for (const [id, label] of Object.entries(RK_KNOBS)) rkKnob($(id), label);
+  // Each row takes its group's place. By the control it holds, so a row added
+  // later without a place lands at the end rather than in somebody's group.
+  for (const [key, order] of RK_ORDER) {
+    const el = $(key) || host.querySelector(`.${key}`);
+    const row = el && (el.parentElement === host ? el : el.closest('#roomEdit > *'));
+    if (row) row.style.setProperty('--rk', order);
+  }
+  // The rows that are one knob and nothing else, named rather than found: a
+  // row can still be filling when this runs — Block's sizes arrive later — and
+  // a row counted as a lone knob then loses its tag and its width.
+  for (const id of RK_CELLS) $(id)?.closest('.re-row')?.classList.add('rk-cell');
+  for (const [order, text] of RK_HEADS) {
+    const h = document.createElement('div');
+    h.className = 'rk-head';
+    h.textContent = text;
+    h.style.setProperty('--rk', order);
+    host.appendChild(h);
+  }
+  rkBuildPads(host);
+  rkPadsSync();
+}
+rkBuild();
+
+// ───────────────────────────────────── the granular tray as an instrument ──
+//
+// `docs/DESIGN-CRITIQUE.md`, "The granular engine". The tray was two tall
+// columns of hairline sliders, a third of it on screen at the dock's height,
+// with the cloud pad boxed into a corner. Now:
+//
+//   - the cloud pad leads, in a column of its own with its readout and the
+//     Cloud presets (`gkLayout`, once: those three are static markup);
+//   - every slider row is a knob, its reading and its name under it
+//     (`gkKnob`, on every rebuild — the rows are built per engine and file);
+//   - every group is a bank, and the banks wrap across the dock's width, so
+//     the whole engine is in view (the stylesheet, under "the granular tray").
+//
+// The `.param` rows are the same elements with the same handlers, values and
+// double-click resets; a face is drawn behind each input and the input is laid
+// over it, so a pointer on the knob is a pointer on the slider. Random, the
+// presets, the automation and the tests reach every one of them as before.
+
+/// A slider row of the tray, made a knob.
+function gkKnob(row) {
+  const input = row.querySelector(':scope > input[type=range]');
+  if (!input || input.dataset.rk) return;
+  input.dataset.rk = 'knob';
+  row.classList.add('gk-k');
+  const face = document.createElement('span');
+  face.className = 'rk-face';
+  input.before(face);
+  const draw = () => {
+    const min = +input.min, max = +input.max, v = +RK_VALUE.get.call(input);
+    face.innerHTML = rkFace(max > min ? (v - min) / (max - min) : 0);
+  };
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get() { return RK_VALUE.get.call(this); },
+    set(v) { RK_VALUE.set.call(this, v); draw(); },
+  });
+  input.addEventListener('input', draw);
+  rkDrag(input);
+  draw();
+}
+
+/// The cloud pad's column: the pad, what it is reading, and the presets of
+/// the cloud. Moved once, ahead of the banks.
+function gkLayout() {
+  const host = $('grainControls');
+  if (!host || host.querySelector(':scope > .gk-left')) return;
+  const left = document.createElement('div');
+  left.className = 'gk-left';
+  for (const el of [host.querySelector('.cloud-pad-wrap'), host.querySelector('.stretch-readout'), $('grainPresetRow')]) {
+    if (el) left.appendChild(el);
+  }
+  host.prepend(left);
+}
+
+function gkAdopt() {
+  const host = $('grainControls');
+  if (!host) return;
+  for (const row of host.querySelectorAll('.param')) gkKnob(row);
+}
+{
+  gkLayout();
+  const host = $('grainControls');
+  let queued = false;
+  if (host) {
+    new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      setTimeout(() => { queued = false; gkAdopt(); }, 0);
+    }).observe(host, { childList: true, subtree: true });
+  }
+  gkAdopt();
+}
+
+/// The other panels of the Visual column — Shape, Ridgeline, Surfaces, Stage,
+/// the type card — build their rows the same way: a tag, a slider and a
+/// reading. Every such row becomes a knob cell, with the panel's own reading
+/// under it and the tag in sentence case as its word. They are rebuilt often
+/// (a module chosen, a look recalled), so they are watched rather than done
+/// once.
+const RK_PANELS = '#roomGeomBody, #ridgeEdit, #room3dEdit, #stageEdit, #textEdit';
+function rkAdopt() {
+  for (const panel of document.querySelectorAll(`#roomAdmin :is(${RK_PANELS})`)) {
+    for (const row of panel.querySelectorAll('.re-row, .rp-row')) {
+      const tag = row.querySelector(':scope > .re-tag');
+      const sl = row.querySelectorAll(':scope > input.re-slider');
+      if (!tag || sl.length !== 1 || sl[0].dataset.rk) continue;
+      const read = row.querySelector(':scope > .rg-read');
+      if (row.children.length !== (read ? 3 : 2)) continue;
+      const words = tag.textContent.trim().toLowerCase();
+      rkKnob(sl[0], words.charAt(0).toUpperCase() + words.slice(1), read);
+      row.classList.add('rk-cell');
+      row.parentElement.classList.add('rk-grid');
+    }
+  }
+}
+{
+  const admin = $('roomAdmin');
+  let queued = false;
+  if (admin) {
+    new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      // Not a frame: the automation browser never draws one (STATE.md §7).
+      setTimeout(() => { queued = false; rkAdopt(); }, 0);
+    }).observe(admin, { childList: true, subtree: true });
+  }
+  rkAdopt();
 }
 
 /// Put a look back: state, storage, renderer and every panel, in that order.

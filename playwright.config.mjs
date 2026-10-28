@@ -39,6 +39,13 @@ export default defineConfig({
     // The panels are laid out for a real window; at a phone's width the docks
     // collapse and the tests would be measuring the wrong thing.
     viewport: { width: 1600, height: 1000 },
+    // **On the GPU.** Playwright's default headless browser is the headless
+    // shell, which draws WebGL with SwiftShader — on the CPU. Every room, film
+    // and Stage test then burnt five cores and ran into its timeout (measured
+    // 27 Oct 2026: "SwiftShader Device" against "ANGLE Metal Renderer: Apple
+    // M3"). The full Chromium build, headless, draws on the Metal GPU. On a
+    // Linux CI runner with no GPU it falls back to software as before.
+    channel: 'chromium',
     trace: 'retain-on-failure',
   },
   // Not started when pointed at an instance that is already up — killing the

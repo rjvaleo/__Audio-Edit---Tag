@@ -62,6 +62,19 @@
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
+  /* The type scale (C1, `docs/DESIGN-CRITIQUE.md`). Five steps and nothing
+     between them. There were nineteen sizes from 7 px to 17 px in half-pixel
+     steps; each now lands on the nearest of these. 9 px is the floor, because
+     below it a dark panel stops being readable at arm's length.
+     Two things keep sizes of their own: the room's data block, which is part of
+     the picture on the wall rather than interface, and the theme editor's
+     miniature, which is a model of the interface at a smaller scale. */
+  --fs-xs: 9px;   /* tags, small capitals, units */
+  --fs-s: 10px;   /* dense readouts, the control table */
+  --fs-m: 11px;   /* buttons, labels, the body of a panel */
+  --fs-l: 13px;   /* the page's base, headings, the clock */
+  --fs-xl: 16px;  /* display figures and the largest glyphs */
+
   --rail: 44px;
 
   /* The control table. Every slider, choice and checkbox in the app rules up
@@ -79,7 +92,7 @@
 html, body {
   height: 100%; margin: 0;
   background: var(--bg); color: var(--text);
-  font-family: var(--sans); font-size: 13px;
+  font-family: var(--sans); font-size: var(--fs-l);
   overflow: hidden;
 }
 body { display: flex; flex-direction: column; }
@@ -114,9 +127,9 @@ button { font-family: inherit; cursor: pointer; }
   width: 19px; height: 19px; border-radius: 5px;
   background: linear-gradient(135deg, var(--accent), oklch(45% 0.14 250));
 }
-.app-name { font-size: 13px; font-weight: 600; letter-spacing: -0.1px; }
+.app-name { font-size: var(--fs-l); font-weight: 600; letter-spacing: -0.1px; }
 .sep { color: var(--text-dimmer); }
-.current-file { font-size: 12px; color: oklch(66% 0.01 250); }
+.current-file { font-size: var(--fs-l); color: oklch(66% 0.01 250); }
 
 /* ------------------------------------------------------------------ layout */
 
@@ -131,7 +144,7 @@ button { font-family: inherit; cursor: pointer; }
 .rail-btn {
   width: 30px; height: 30px; border-radius: 7px;
   border: 1px solid transparent; background: transparent;
-  color: var(--text-dim); font-size: 15px;
+  color: var(--text-dim); font-size: var(--fs-xl);
   display: flex; align-items: center; justify-content: center;
 }
 .rail-btn:hover { background: var(--surface-3); color: var(--text-2); }
@@ -171,7 +184,7 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
   height: 40px; flex-shrink: 0;
   display: flex; align-items: center; gap: 8px; padding: 0 10px;
   border-bottom: 1px solid var(--line);
-  font-size: 12px; font-weight: 600; color: oklch(88% 0.006 250);
+  font-size: var(--fs-l); font-weight: 600; color: oklch(88% 0.006 250);
 }
 .panel-head > span { flex-shrink: 0; }
 .panel-body { flex: 1; overflow-y: auto; padding: 8px; }
@@ -184,7 +197,7 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
   flex: 1; min-width: 0; height: 24px; padding: 0 8px;
   border-radius: 5px; border: 1px solid var(--line-2);
   background: var(--bg); color: var(--text);
-  font: inherit; font-size: 11px; font-weight: 400;
+  font: inherit; font-size: var(--fs-m); font-weight: 400;
 }
 .filter-box:focus { outline: none; border-color: var(--accent); }
 
@@ -194,14 +207,14 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
 
 .x {
   width: 20px; height: 20px; border-radius: 5px; border: none; flex-shrink: 0;
-  background: transparent; color: var(--text-dim); font-size: 15px; line-height: 1;
+  background: transparent; color: var(--text-dim); font-size: var(--fs-xl); line-height: 1;
 }
 .x:hover { background: var(--surface-3); color: var(--text); }
 
 .primary {
   height: 28px; padding: 0 12px; border-radius: 6px; border: none;
   background: var(--accent); color: var(--surface);
-  font-size: 11px; font-weight: 600;
+  font-size: var(--fs-m); font-weight: 600;
 }
 .primary:hover { filter: brightness(1.08); }
 .primary:disabled { opacity: .35; cursor: not-allowed; filter: none; }
@@ -209,7 +222,7 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
 .ghost {
   height: 26px; padding: 0 10px; border-radius: 6px;
   border: 1px solid var(--line-2); background: transparent;
-  color: var(--text-2); font-size: 11px;
+  color: var(--text-2); font-size: var(--fs-m);
 }
 .ghost:hover { border-color: var(--accent); color: var(--text); }
 .ghost:disabled { opacity: .35; cursor: not-allowed; border-color: var(--line); }
@@ -218,12 +231,12 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
   width: 100%; height: 30px; padding: 0 9px;
   border-radius: 6px; border: 1px solid var(--line-2);
   background: var(--bg); color: var(--text);
-  font: inherit; font-size: 12px;
+  font: inherit; font-size: var(--fs-l);
 }
 textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 1.45; }
 .field:focus { outline: none; border-color: var(--accent); }
 .field-label {
-  font-size: 9px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
   color: var(--text-dimmer); margin-bottom: 6px;
 }
 
@@ -237,7 +250,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .seg-btn {
   display: inline-block; vertical-align: middle;
   height: 22px; padding: 0 9px; border: none; border-radius: 4px;
-  background: transparent; color: var(--text-dim); font-size: 10.5px;
+  background: transparent; color: var(--text-dim); font-size: var(--fs-m);
   margin-right: 2px;
 }
 /* Always a gap. Buttons that touch read as one bar with lines drawn on it, and
@@ -263,7 +276,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .wave-seg .seg-btn.active { background: var(--surface-3); color: var(--text); }
 .wave-own { align-items: center; gap: 8px; margin-top: 7px; }
-.wave-own-label { font-size: 11px; color: var(--text-dim); }
+.wave-own-label { font-size: var(--fs-m); color: var(--text-dim); }
 /* The native swatch, trimmed to the height of everything else on the row. */
 #waveOwn {
   width: 46px; height: 22px; padding: 0; border: 1px solid var(--line);
@@ -272,9 +285,9 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 #waveOwn::-webkit-color-swatch-wrapper { padding: 2px; }
 #waveOwn::-webkit-color-swatch { border: none; border-radius: 3px; }
 #waveOwn::-moz-color-swatch { border: none; border-radius: 3px; }
-.wave-own #waveReset { height: 22px; padding: 0 9px; font-size: 10.5px; }
+.wave-own #waveReset { height: 22px; padding: 0 9px; font-size: var(--fs-m); }
 
-.check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); }
+.check { display: flex; align-items: center; gap: 6px; font-size: var(--fs-m); color: var(--text-2); }
 .check input { accent-color: var(--accent); }
 
 /* -------------------------------------------------- left panel: the library */
@@ -287,11 +300,11 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   display: flex; align-items: center; gap: 6px;
   margin: -8px -8px 6px; padding: 8px 10px;
   background: var(--surface-2); border-bottom: 1px solid var(--line);
-  font-size: 11px; color: var(--text-2); cursor: pointer;
+  font-size: var(--fs-m); color: var(--text-2); cursor: pointer;
   user-select: none;
 }
 .tree-opt input { accent-color: var(--accent); margin: 0; }
-.tree-opt .hint { margin-left: auto; font-size: 10px; color: var(--text-dimmer); }
+.tree-opt .hint { margin-left: auto; font-size: var(--fs-s); color: var(--text-dimmer); }
 
 .tree { display: flex; flex-direction: column; gap: 1px; }
 
@@ -299,7 +312,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   display: flex; align-items: center; gap: 6px;
   height: 28px; padding: 0 6px; border-radius: 6px;
   cursor: pointer; white-space: nowrap; overflow: hidden;
-  font-size: 11.5px; color: var(--text-2);
+  font-size: var(--fs-m); color: var(--text-2);
 }
 .folder-row:hover { background: var(--surface-3); }
 .folder-row.selected {
@@ -307,15 +320,15 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .folder-row .label { flex: 1; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-.folder-row .count { font-family: var(--mono); font-size: 9.5px; color: var(--text-dimmer); }
+.folder-row .count { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-dimmer); }
 .folder-row .grip {
-  color: var(--text-dimmer); font-size: 9px; letter-spacing: -2px;
+  color: var(--text-dimmer); font-size: var(--fs-xs); letter-spacing: -2px;
   cursor: grab; opacity: 0; transition: opacity .12s;
 }
 .folder-row:hover .grip { opacity: 1; }
 .folder-row.dragging { opacity: .4; }
 .folder-row.drop-target { box-shadow: inset 0 2px 0 var(--accent); }
-.twisty { width: 10px; color: var(--text-dimmer); font-size: 9px; transition: transform .12s; }
+.twisty { width: 10px; color: var(--text-dimmer); font-size: var(--fs-xs); transition: transform .12s; }
 .twisty.open { transform: rotate(90deg); }
 
 .dot { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
@@ -337,7 +350,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .file-row .pb {
   width: 20px; height: 20px; flex-shrink: 0; padding: 0;
   border-radius: 4px; border: 1px solid var(--line-2);
-  background: transparent; color: var(--text-dim); font-size: 8px;
+  background: transparent; color: var(--text-dim); font-size: var(--fs-xs);
   display: flex; align-items: center; justify-content: center;
 }
 .file-row .pb:hover { border-color: var(--accent); color: var(--accent); }
@@ -349,16 +362,16 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .file-row .info { min-width: 0; flex: 1; }
 .file-row .fname {
-  font-size: 11px; color: var(--text-2);
+  font-size: var(--fs-m); color: var(--text-2);
   white-space: nowrap;
 }
 .file-row.selected .fname { color: var(--text); }
 .file-row .fmeta {
   display: flex; align-items: center; gap: 5px;
-  font-family: var(--mono); font-size: 9px; color: var(--text-dimmer);
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dimmer);
 }
 .file-row .fmeta .cat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.loading { font-size: 10px; padding: 6px 16px; color: var(--text-dimmer); }
+.loading { font-size: var(--fs-s); padding: 6px 16px; color: var(--text-dimmer); }
 
 /* --------------------------------------------------------------- transport */
 
@@ -371,20 +384,20 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .tbtn {
   width: 28px; height: 28px; flex-shrink: 0; border-radius: 6px;
   border: 1px solid var(--line-2); background: var(--surface-3);
-  color: var(--text); font-size: 11px;
+  color: var(--text); font-size: var(--fs-m);
   display: flex; align-items: center; justify-content: center;
 }
 .tbtn:hover { border-color: var(--accent); }
 .tbtn.small { width: 22px; height: 22px; border-color: var(--line); background: transparent; color: var(--text-dim); }
 .tbtn.play.on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
 .vsep { width: 1px; height: 20px; background: var(--line-2); flex-shrink: 0; }
-.time { font-size: 13px; letter-spacing: .3px; white-space: nowrap; }
-#rateLabel { font-size: 10.5px; white-space: nowrap; }
+.time { font-size: var(--fs-l); letter-spacing: .3px; white-space: nowrap; }
+#rateLabel { font-size: var(--fs-m); white-space: nowrap; }
 .zoom { display: flex; align-items: center; gap: 4px; }
-.zoom .mono { font-size: 10.5px; min-width: 34px; text-align: center; }
+.zoom .mono { font-size: var(--fs-m); min-width: 34px; text-align: center; }
 #volume { width: 84px; flex-shrink: 0; accent-color: var(--accent); }
 .mode-tag {
-  font-size: 9px; text-transform: uppercase; letter-spacing: .6px;
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .6px;
   color: var(--text-dimmer); border: 1px solid var(--line-2);
   border-radius: 4px; padding: 2px 7px; white-space: nowrap;
 }
@@ -397,11 +410,11 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   background: var(--surface); border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
-.edittools .ghost { height: 24px; padding: 0 8px; font-size: 10.5px; }
-.edittools .primary { height: 24px; padding: 0 10px; font-size: 10.5px; }
+.edittools .ghost { height: 24px; padding: 0 8px; font-size: var(--fs-m); }
+.edittools .primary { height: 24px; padding: 0 10px; font-size: var(--fs-m); }
 .meta-item.sel .v { min-width: 0; white-space: nowrap; }
 .sel-label {
-  font-size: 10.5px; color: var(--text-dim);
+  font-size: var(--fs-m); color: var(--text-dim);
   min-width: 90px; max-width: 230px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
@@ -409,7 +422,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
    rail was moved to reclaim. */
 .edittools { flex-wrap: nowrap; overflow-x: auto; }
 .edited-flag {
-  font-size: 9.5px; color: var(--warn);
+  font-size: var(--fs-s); color: var(--warn);
   border: 1px solid var(--warn); border-radius: 4px; padding: 2px 6px;
 }
 
@@ -433,7 +446,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .marker .stem { position: absolute; top: 9px; bottom: 0; width: 1px; background: var(--warn); opacity: .5; }
 .marker .name {
   position: absolute; top: 2px; left: 5px;
-  font-family: var(--mono); font-size: 9px; color: var(--text-dim); white-space: nowrap;
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap;
 }
 
 /* Presets, in the row under the transport. Horizontal, because a dropdown and
@@ -444,11 +457,11 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   background: var(--surface); border-bottom: 1px solid var(--line);
 }
 .presetbar .pb-label {
-  font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
   color: var(--text-dim);
 }
 .presetbar select { max-width: 240px; }
-.presetbar .ghost { height: 21px; font-size: 10px; }
+.presetbar .ghost { height: 21px; font-size: var(--fs-s); }
 
 .regions {
   height: 24px; flex-shrink: 0; position: relative;
@@ -465,7 +478,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   border-radius: 3px; display: flex; align-items: center; padding: 0 6px;
   overflow: hidden; cursor: pointer;
 }
-.region span { font-family: var(--mono); font-size: 9.5px; color: var(--text-2); white-space: nowrap; }
+.region span { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-2); white-space: nowrap; }
 .region:hover { background: rgba(125,190,255,0.26); }
 
 /* ------------------------------------------------- the tray's vertical rhythm
@@ -490,7 +503,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
    for, the other what it costs, and they are read together or not at all. */
 .stretch-readout { display: flex; align-items: baseline; gap: 10px; }
 .stretch-readout #stretchOut { flex: 1 1 auto; min-width: 0; }
-.engine-load { flex: 0 0 auto; cursor: pointer; font-size: 11px; }
+.engine-load { flex: 0 0 auto; cursor: pointer; font-size: var(--fs-m); }
 /* Three states, because the number alone is not a judgement. Under three
    quarters is fine and stays quiet; past that it is worth knowing; past one the
    engine cannot keep up and that is what a dropout is. */
@@ -531,14 +544,14 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .knob .arc   { fill: none; stroke: oklch(70% .18 235); stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 2px rgba(45,157,255,.5)); }
 .knob .ptr   { stroke: #eef7ff; stroke-width: 1.7; stroke-linecap: round; }
 .knob .k {
-  font-size: 8.5px; font-weight: 650; letter-spacing: .35px; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 650; letter-spacing: .35px; text-transform: uppercase;
   color: oklch(76% .012 250); max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .knob .v {
   min-width: 54px; padding: 2px 4px; border: 1px solid rgba(95,157,214,.28);
   border-radius: 2px; background: #101c2b; text-align: center;
-  font-family: var(--mono); font-size: 8.5px; color: #a9d7ff;
+  font-family: var(--mono); font-size: var(--fs-xs); color: #a9d7ff;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   box-shadow: inset 0 1px 4px var(--shadow-hard);
 }
@@ -666,7 +679,7 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 .lane-empty {
   position: absolute; inset: 0; z-index: 5;
   display: flex; align-items: center; justify-content: center;
-  color: var(--text-dimmer); font-size: 12px;
+  color: var(--text-dimmer); font-size: var(--fs-l);
 }
 
 /* --------------------------------------------------------------- metastrip */
@@ -678,8 +691,8 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 }
 .metastrip::-webkit-scrollbar { height: 0; }
 .meta-item { display: flex; align-items: center; gap: 5px; }
-.meta-item .k { font-size: 10px; color: var(--text-dimmer); }
-.meta-item .v { font-family: var(--mono); font-size: 11px; color: var(--text-2); }
+.meta-item .k { font-size: var(--fs-s); color: var(--text-dimmer); }
+.meta-item .v { font-family: var(--mono); font-size: var(--fs-m); color: var(--text-2); }
 .prov { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .prov.measured { background: var(--good); }
 .prov.inferred { background: var(--warn); }
@@ -695,16 +708,16 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 8px; padding: 9px 11px;
 }
-.stat-card .v { font-size: 17px; font-weight: 650; font-family: var(--mono); }
+.stat-card .v { font-size: var(--fs-xl); font-weight: 650; font-family: var(--mono); }
 .stat-card .l {
-  font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .5px;
   color: var(--text-dimmer); margin-top: 2px;
 }
-.stat-card.wide .v { font-size: 12px; font-weight: 500; }
+.stat-card.wide .v { font-size: var(--fs-l); font-weight: 500; }
 .why {
   margin-top: 12px; padding: 9px 12px; border-radius: 6px;
   background: var(--surface-0); border-left: 2px solid var(--line-2);
-  font-size: 11px; line-height: 1.5; color: var(--text-dim);
+  font-size: var(--fs-m); line-height: 1.5; color: var(--text-dim);
 }
 .why b { color: var(--text-2); font-weight: 600; }
 
@@ -727,8 +740,8 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
   border: 1px solid transparent; background: transparent; color: var(--text-dim);
   display: flex; flex-direction: row; align-items: center; gap: 5px;
 }
-.dock-tab .ic { font-size: 12px; line-height: 1; }
-.dock-tab .lb { font-size: 9.5px; font-weight: 600; letter-spacing: .2px; }
+.dock-tab .ic { font-size: var(--fs-l); line-height: 1; }
+.dock-tab .lb { font-size: var(--fs-s); font-weight: 600; letter-spacing: .2px; }
 .dock-tab:hover { background: var(--surface-3); color: var(--text-2); }
 .dock-tab.active {
   background: var(--surface); border-color: var(--line-2); color: var(--accent);
@@ -739,11 +752,11 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
   gap: 14px; align-content: start;
 }
 .fx { display: flex; flex-direction: column; gap: 7px; }
-.fx-head { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.fx-head { font-size: var(--fs-m); font-weight: 600; color: var(--text-2); }
 .fx-row { display: flex; align-items: center; gap: 10px; }
 .fx-row input[type=range] { flex: 1; accent-color: var(--accent); }
-.fx-row .val { font-size: 10.5px; color: var(--accent); min-width: 58px; text-align: right; }
-.fx-note { font-size: 9.5px; line-height: 1.45; color: var(--text-dimmer); }
+.fx-row .val { font-size: var(--fs-m); color: var(--accent); min-width: 58px; text-align: right; }
+.fx-note { font-size: var(--fs-s); line-height: 1.45; color: var(--text-dimmer); }
 .dim-block { opacity: .6; }
 
 .region-list { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; }
@@ -753,15 +766,15 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
   border-bottom: 1px solid var(--line);
 }
 .region-item:hover { background: var(--surface-3); }
-.region-item .rname { flex: 1; font-size: 11px; color: var(--text-2); }
-.region-item .rtime { font-family: var(--mono); font-size: 9.5px; color: var(--text-dimmer); }
+.region-item .rname { flex: 1; font-size: var(--fs-m); color: var(--text-2); }
+.region-item .rtime { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-dimmer); }
 
 .meter-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.meter-row .k { width: 46px; font-size: 9.5px; color: var(--text-dim); }
+.meter-row .k { width: 46px; font-size: var(--fs-s); color: var(--text-dim); }
 .meter-row .bar { flex: 1; height: 5px; border-radius: 3px; background: var(--bg); overflow: hidden; }
 .meter-row .fill { height: 100%; background: var(--accent); }
-.meter-row .v { width: 62px; text-align: right; font-family: var(--mono); font-size: 9.5px; color: var(--text-2); }
-.stat-row { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 4px; }
+.meter-row .v { width: 62px; text-align: right; font-family: var(--mono); font-size: var(--fs-s); color: var(--text-2); }
+.stat-row { display: flex; justify-content: space-between; font-size: var(--fs-m); margin-bottom: 4px; }
 .stat-row .k { color: var(--text-dim); }
 .stat-row .v { font-family: var(--mono); color: var(--text-2); }
 
@@ -770,15 +783,15 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 .edit-group { display: flex; flex-direction: column; gap: 9px; }
 .edit-group label {
   display: flex; flex-direction: column; gap: 4px;
-  font-size: 10px; color: var(--text-dim);
+  font-size: var(--fs-s); color: var(--text-dim);
 }
 .insp-field {
   display: flex; flex-direction: column; gap: 2px;
   padding: 6px 0; border-bottom: 1px solid var(--wash);
 }
-.insp-field .k { font-size: 9.5px; color: var(--text-dim); }
-.insp-field .v { font-family: var(--mono); font-size: 11px; color: var(--text-2); word-break: break-word; }
-.dirty { flex: 1; font-size: 10px; color: var(--warn); }
+.insp-field .k { font-size: var(--fs-s); color: var(--text-dim); }
+.insp-field .v { font-family: var(--mono); font-size: var(--fs-m); color: var(--text-2); word-break: break-word; }
+.dirty { flex: 1; font-size: var(--fs-s); color: var(--warn); }
 
 /* ------------------------------------------------------------- scan/search */
 
@@ -799,7 +812,7 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 /* Said once, where the transport is, because that is the thing it stops. The
    rest of the program — browsing, editing, tagging, exporting — works. */
 .no-audio {
-  font-size: 10px; color: var(--warn); border: 1px solid var(--warn);
+  font-size: var(--fs-s); color: var(--warn); border: 1px solid var(--warn);
   border-radius: 4px; padding: 2px 7px; white-space: nowrap; opacity: .85;
 }
 .no-audio.hidden { display: none; }
@@ -808,25 +821,25 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 /* The one fill in the app that should not glide: it is redrawn four times a
    second from a real measurement, and a 200ms ease makes it lag behind. */
 .export-progress .progress-fill { transition: width .1s linear; }
-.ep-phase { font-size: 10.5px; color: var(--text-2); width: 96px; }
-.ep-pct { font-size: 10.5px; color: var(--text-dim); width: 34px; text-align: right; }
+.ep-phase { font-size: var(--fs-m); color: var(--text-2); width: 96px; }
+.ep-pct { font-size: var(--fs-m); color: var(--text-dim); width: 34px; text-align: right; }
 #epStop { width: 48px; }
-.progress-label { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--text-dim); margin-bottom: 5px; }
+.progress-label { display: flex; justify-content: space-between; font-size: var(--fs-s); color: var(--text-dim); margin-bottom: 5px; }
 .scan-controls { display: flex; gap: 8px; }
 .note {
-  font-size: 10.5px; line-height: 1.5; color: var(--text-dimmer);
+  font-size: var(--fs-m); line-height: 1.5; color: var(--text-dimmer);
   border-left: 2px solid var(--line-2); padding-left: 9px; margin: 14px 0 0;
 }
 .path-display {
-  font-size: 10.5px; color: var(--text-2); word-break: break-all;
+  font-size: var(--fs-m); color: var(--text-2); word-break: break-all;
   background: var(--bg); border: 1px solid var(--line);
   border-radius: 6px; padding: 8px 9px; margin-bottom: 10px;
 }
 .results { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-.result { padding: 5px 7px; border-radius: 6px; cursor: pointer; font-size: 11px; color: var(--text-2); }
+.result { padding: 5px 7px; border-radius: 6px; cursor: pointer; font-size: var(--fs-m); color: var(--text-2); }
 .result:hover { background: var(--surface-3); }
-.result .sub { font-family: var(--mono); font-size: 9px; color: var(--text-dimmer); }
-.empty { padding: 40px 20px; text-align: center; color: var(--text-dimmer); font-size: 12px; }
+.result .sub { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dimmer); }
+.empty { padding: 40px 20px; text-align: center; color: var(--text-dimmer); font-size: var(--fs-l); }
 
 /* -------------------------------------------------------------------- modal */
 
@@ -842,7 +855,7 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 }
 .modal-head {
   height: 44px; flex-shrink: 0; display: flex; align-items: center; padding: 0 14px;
-  border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600;
+  border-bottom: 1px solid var(--line); font-size: var(--fs-l); font-weight: 600;
 }
 .modal-head span { flex: 1; }
 .modal-foot {
@@ -853,22 +866,22 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 .picker-places { width: 180px; flex-shrink: 0; border-right: 1px solid var(--line); overflow-y: auto; padding: 8px; }
 .picker-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .picker-path {
-  padding: 9px 14px; font-size: 10.5px; color: var(--text-dim);
+  padding: 9px 14px; font-size: var(--fs-m); color: var(--text-dim);
   border-bottom: 1px solid var(--line); word-break: break-all;
 }
 .picker-list { flex: 1; overflow-y: auto; padding: 8px; }
 .picker-item {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 9px; border-radius: 6px; cursor: pointer;
-  font-size: 12px; color: var(--text-2);
+  font-size: var(--fs-l); color: var(--text-2);
 }
 .picker-item:hover { background: var(--surface-3); }
-.picker-item::before { content: '▸'; color: var(--text-dimmer); font-size: 9px; }
+.picker-item::before { content: '▸'; color: var(--text-dimmer); font-size: var(--fs-xs); }
 
 .toast {
   position: fixed; right: 18px; bottom: 18px; z-index: 60;
   background: var(--surface-3); border: 1px solid var(--accent);
-  border-radius: 8px; padding: 10px 15px; font-size: 12px;
+  border-radius: 8px; padding: 10px 15px; font-size: var(--fs-l);
   box-shadow: 0 8px 30px var(--shadow);
 }
 
@@ -890,7 +903,7 @@ input, textarea, .path-display, .picker-path, .insp-field .v {
   max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   flex-shrink: 0;
 }
-.modeswitch .seg-btn { font-size: 11px; padding: 0 11px; }
+.modeswitch .seg-btn { font-size: var(--fs-m); padding: 0 11px; }
 .modeswitch .seg-btn.active { background: var(--accent); color: var(--surface); font-weight: 600; }
 body.editing .lane { box-shadow: inset 0 2px 0 var(--accent); }
 #rightRail { border-right: none; border-left: 1px solid var(--line); }
@@ -935,9 +948,9 @@ body.editing .transport { background: var(--surface); }
 }
 .fx-module-head:active { cursor: grabbing; }
 .fx-module.dragging { opacity: .42; }
-.fx-module-head h2 { margin: 1px 0 0; font-size: 11px; font-weight: 650; color: var(--text-2); }
+.fx-module-head h2 { margin: 1px 0 0; font-size: var(--fs-m); font-weight: 650; color: var(--text-2); }
 .fx-module-actions { display: flex; gap: 4px; }
-.fx-module-actions .ghost { height: 20px; padding: 0 6px; font-size: 9px; }
+.fx-module-actions .ghost { height: 20px; padding: 0 6px; font-size: var(--fs-xs); }
 /* The signal row fills the module so the two meter columns run its whole
    height. It used to be `flex: 0 0 auto`, which left them as tall as the first
    control row — on a one-control module that is a stub sitting in the same
@@ -960,7 +973,7 @@ body.editing .transport { background: var(--surface); }
 }
 #fxOutputMeter { border-left: 1px solid var(--line-2); border-right: 0; }
 .vu-label {
-  flex: 0 0 auto; font-family: var(--mono); font-size: 7px; letter-spacing: .2px;
+  flex: 0 0 auto; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .2px;
   color: var(--text-dimmer); writing-mode: vertical-rl; transform: rotate(180deg);
 }
 .vu-well {
@@ -976,12 +989,12 @@ body.editing .transport { background: var(--surface); }
 }
 .fx-module-controls .param { padding: 1px 0; }
 /* Named choices inside an effect module: tighter, so three fit the column. */
-.fx-module-controls .seg-btn { padding-left: 4px; padding-right: 4px; font-size: 10px; }
+.fx-module-controls .seg-btn { padding-left: 4px; padding-right: 4px; font-size: var(--fs-s); }
 
 /* A sound an effect takes, from the library. */
 .prism-sound-wrap { display: flex; flex-direction: column; gap: 3px; padding-bottom: 3px; border-bottom: 1px solid var(--line-2); }
 .prism-sound { grid-template-columns: auto 1fr auto; display: grid; align-items: center; gap: 6px; }
-.prism-sound-name { font-family: var(--mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prism-sound-name { font-family: var(--mono); font-size: var(--fs-s); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prism-sound-chooser { display: flex; flex-wrap: wrap; gap: 4px; }
 .prism-sound-chooser select { min-width: 0; max-width: 100%; }
 
@@ -989,7 +1002,7 @@ body.editing .transport { background: var(--surface); }
    axes above it, the limits typed into its corners, the readouts on its edges. */
 .prism-body { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; min-height: 0; }
 .prism-body.hidden { display: none; }
-.prism-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 11px; color: var(--text-dim); }
+.prism-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--fs-m); color: var(--text-dim); }
 .prism-bar label { display: flex; align-items: center; gap: 5px; }
 .prism-gap { flex: 1; }
 .prism-bar button.armed { color: #e3bf3d; border-color: #e3bf3d; }
@@ -997,13 +1010,13 @@ body.editing .transport { background: var(--surface); }
 .prism-bar button.on { color: var(--accent); border-color: var(--accent); }
 /* Square, as Hyperprism's was: the height the dock gives it decides its size,
    and it sits in the middle of the width rather than stretching across it. */
-.prism-hp { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 11px; color: var(--text-dim); }
+.prism-hp { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: var(--fs-m); color: var(--text-dim); }
 .prism-hp label { display: flex; align-items: center; gap: 5px; }
 .prism-hp input[type=range] { width: 110px; }
 .prism-hp-read { min-width: 44px; font-variant-numeric: tabular-nums; color: var(--text); }
 .prism-hp-faders { display: flex; align-items: center; gap: 4px; }
 .prism-hp-faders input[type=range] { width: 70px; }
-.prism-settings { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; }
+.prism-settings { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-m); }
 .prism-settings.hidden { display: none; }
 .prism-stage { flex: 1; min-height: 0; display: flex; justify-content: center; gap: 6px; }
 .prism-y-axis {
@@ -1026,14 +1039,14 @@ body.editing .transport { background: var(--surface); }
 .prism-path { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .prism-path polyline { fill: none; stroke: oklch(85% 0.12 200 / .75); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .prism-x-axis { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: var(--prism-side, 220px); }
-.prism-read { font-family: var(--mono); font-size: 10px; color: var(--text-dim); white-space: nowrap; }
-.prism-limit { width: 72px; font-family: var(--mono); font-size: 10px; }
+.prism-read { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-dim); white-space: nowrap; }
+.prism-limit { width: 72px; font-family: var(--mono); font-size: var(--fs-s); }
 
 /* A prism effect: its controls in the original's groups, and the Prism pad. */
 .prism-group { display: flex; flex-direction: column; gap: 1px; padding-top: 3px; }
 .prism-group + .prism-group { border-top: 1px solid var(--line-2); margin-top: 2px; }
 .prism-group-label {
-  font-family: var(--mono); font-size: 8px; letter-spacing: .6px; text-transform: uppercase;
+  font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .6px; text-transform: uppercase;
   color: var(--text-dimmer);
 }
 .prism-pad {
@@ -1049,7 +1062,7 @@ body.editing .transport { background: var(--surface); }
   background: var(--accent); box-shadow: 0 0 0 2px var(--surface), 0 0 6px var(--accent);
   pointer-events: none;
 }
-.fx-module-controls .param .k, .fx-module-controls .param .v { font-size: 10px; }
+.fx-module-controls .param .k, .fx-module-controls .param .v { font-size: var(--fs-s); }
 .fx-module-controls .param input[type=range] { height: 14px; }
 .fx-module.eq-visual { width: 390px; min-width: 390px; height: min(350px, 100%); }
 .fx-module.eq-visual .fx-module-controls.visual-eq-controls { display: block; }
@@ -1059,15 +1072,15 @@ body.editing .transport { background: var(--surface); }
   border: 1px solid var(--line-3); touch-action: none;
 }
 .eq-selected {
-  font-size: 8px; font-weight: 700; letter-spacing: .5px; color: #78dd42;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .5px; color: #78dd42;
   text-align: center;
 }
 .eq-slider-stack { display: flex; flex-direction: column; gap: 1px; }
 .eq-slider-stack .param { min-height: 18px; }
 .eq-band-toolbar { display:flex; gap:6px; align-items:center; margin-bottom:2px; }
-.eq-band-toolbar .ghost { min-width:42px; height:20px; font-size:9px; }
+.eq-band-toolbar .ghost { min-width:42px; height:20px; font-size:var(--fs-xs); }
 .eq-shape-icons { flex:1; display:flex; gap:2px; }
-.eq-shape-icon { flex:1; min-width:0; height:20px; padding:0; border:1px solid var(--line-2); border-radius:3px; background:#11161a; color:var(--text-dim); font:13px/1 var(--mono); cursor:pointer; }
+.eq-shape-icon { flex:1; min-width:0; height:20px; padding:0; border:1px solid var(--line-2); border-radius:3px; background:#11161a; color:var(--text-dim); font:var(--fs-l)/1 var(--mono); cursor:pointer; }
 .eq-shape-icon:hover { color:var(--text); border-color:var(--line-3); }
 .eq-shape-icon.selected { color:#78dd42; border-color:#78dd42; background:rgba(120,221,66,.10); }
 .fx-module.comp-visual { width: 390px; min-width: 390px; height: min(350px, 100%); }
@@ -1083,16 +1096,16 @@ body.editing .transport { background: var(--surface); }
 .fx-module.filter-bank-visual .fx-module-controls { display:block; }
 .filter-bank-canvas { width:100%; height:130px; display:block; border:1px solid var(--line-3); margin-bottom:5px; }
 .filter-bank-controls { padding:3px 0 4px; border-top:2px solid var(--filter-color); }
-.filter-bank-title { display:flex; justify-content:space-between; align-items:center; color:var(--filter-color); font-size:9px; font-weight:700; }
-.filter-bank-title .ghost { height:18px; font-size:8px; padding:0 5px; }
+.filter-bank-title { display:flex; justify-content:space-between; align-items:center; color:var(--filter-color); font-size:var(--fs-xs); font-weight:700; }
+.filter-bank-title .ghost { height:18px; font-size:var(--fs-xs); padding:0 5px; }
 .fx-module.chamberlin-visual { width:390px; min-width:390px; height:min(350px,100%); }
 .fx-module.chamberlin-visual .fx-module-controls { display:block; }
 .chamberlin-graph { height:282px; display:grid; grid-template-rows:minmax(110px,1fr) 14px auto; gap:3px; }
 .chamberlin-graph canvas { width:100%; height:100%; min-height:110px; border:1px solid var(--line-3); touch-action:none; cursor:crosshair; }
-.chamberlin-readout { text-align:center; font-size:8px; color:var(--text-dim); }
+.chamberlin-readout { text-align:center; font-size:var(--fs-xs); color:var(--text-dim); }
 .chamberlin-sliders { display:flex; flex-direction:column; gap:1px; }
 .chamberlin-sliders .param[style] .k { color:var(--mode-color); }
-.chamberlin-band { height:18px; margin-top:2px; border:0; border-left:3px solid var(--mode-color); background:#11161a; color:var(--mode-color); text-align:left; font-size:8px; cursor:pointer; }
+.chamberlin-band { height:18px; margin-top:2px; border:0; border-left:3px solid var(--mode-color); background:#11161a; color:var(--mode-color); text-align:left; font-size:var(--fs-xs); cursor:pointer; }
 .fx-add {
   position: sticky; right: 0; flex: 0 0 48px; width: 48px; height: 100%;
   border: 0; border-left: 1px solid var(--line-2); border-radius: 0;
@@ -1106,16 +1119,16 @@ body.editing .transport { background: var(--surface); }
   background: oklch(14% 0.014 250 / .98); box-shadow: 0 16px 44px var(--shadow);
 }
 .fx-picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.fx-picker-head span { font-size: 11px; font-weight: 650; color: var(--text-2); }
+.fx-picker-head span { font-size: var(--fs-m); font-weight: 650; color: var(--text-2); }
 .fx-picker-groups { display: flex; gap: 18px; align-items: flex-start; }
 .fx-picker-group { min-width: 170px; display: flex; flex-direction: column; gap: 3px; }
 .fx-picker-group h3 {
-  margin: 0 0 4px; font-size: 8.5px; letter-spacing: .45px;
+  margin: 0 0 4px; font-size: var(--fs-xs); letter-spacing: .45px;
   text-transform: uppercase; color: var(--text-dimmer);
 }
 .fx-picker-item {
   padding: 5px 7px; border: 1px solid transparent; border-radius: 4px;
-  background: transparent; color: var(--text-2); text-align: left; font: inherit; font-size: 10.5px;
+  background: transparent; color: var(--text-2); text-align: left; font: inherit; font-size: var(--fs-m);
 }
 .fx-picker-item:hover { border-color: var(--line-2); background: var(--surface-3); color: var(--accent); }
 
@@ -1127,7 +1140,7 @@ body.editing .transport { background: var(--surface); }
 }
 .master-title { margin-top: 14px; }
 .rack-title {
-  font-size: 9px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
   color: var(--text-dimmer); margin-bottom: 8px;
 }
 .rack-params {
@@ -1147,14 +1160,14 @@ body.editing .transport { background: var(--surface); }
   width: 24px; height: 24px; flex-shrink: 0; border-radius: 2px;
   background: #0d1722; border: 1px solid rgba(87,153,214,.35); color: #a8d7ff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 9px; font-weight: 700;
+  font-size: var(--fs-xs); font-weight: 700;
 }
 .rack-slot.selected .icon { background: #17304a; color: #d8efff; }
 .rack-slot .meta { min-width: 0; flex: 1; }
-.rack-slot .nm { font-size: 11px; color: var(--text-2); }
+.rack-slot .nm { font-size: var(--fs-m); color: var(--text-2); }
 .rack-slot.selected .nm { color: var(--text); }
 .rack-slot .sm {
-  font-family: var(--mono); font-size: 9px; color: var(--text-dimmer);
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dimmer);
   white-space: nowrap;
 }
 .rack-slot .power {
@@ -1179,9 +1192,9 @@ body.editing .transport { background: var(--surface); }
 .param .k, .param .v {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.param .k { font-size: 10.5px; color: var(--text-dim); }
+.param .k { font-size: var(--fs-m); color: var(--text-dim); }
 .param .v {
-  font-family: var(--mono); font-size: 10.5px; color: var(--accent);
+  font-family: var(--mono); font-size: var(--fs-m); color: var(--accent);
   text-align: right;
 }
 .param input[type=range] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent); }
@@ -1240,7 +1253,7 @@ input[type=range]::-moz-range-thumb { opacity: 0; border: 0; }
 .wild { display: flex; flex-direction: column; gap: var(--param-row); }
 .wild-head {
   display: flex; align-items: center; gap: 8px;
-  font-size: 10px; letter-spacing: 0.06em;
+  font-size: var(--fs-s); letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--warn);
   border-bottom: 1px solid var(--line); padding-bottom: 4px;
 }
@@ -1275,27 +1288,27 @@ input[type=range]::-moz-range-thumb { opacity: 0; border: 0; }
   box-shadow: inset 0 1px var(--line), 0 2px 8px rgba(0,0,0,.35);
 }
 .param-head .head-copy { display: grid; grid-template-columns: auto auto; align-items: end; gap: 2px 9px; }
-.param-head .eyebrow { grid-column: 1 / -1; font-size: 7.5px; font-weight: 750; letter-spacing: 1.25px; color: #6d91b3; }
-.param-head .t { font-size: 13px; font-weight: 650; letter-spacing: .2px; color: #f0f2f3; }
+.param-head .eyebrow { grid-column: 1 / -1; font-size: var(--fs-xs); font-weight: 750; letter-spacing: 1.25px; color: #6d91b3; }
+.param-head .t { font-size: var(--fs-l); font-weight: 650; letter-spacing: .2px; color: #f0f2f3; }
 .param-head .fx-display {
   min-width: 122px; padding: 4px 7px; border: 1px solid rgba(86,151,211,.34); border-radius: 2px;
-  background: #0e1926; color: #9fcdf4; font: 8px var(--mono); text-transform: uppercase;
+  background: #0e1926; color: #9fcdf4; font: var(--fs-xs) var(--mono); text-transform: uppercase;
   letter-spacing: .35px; box-shadow: inset 0 1px 5px var(--shadow-hard);
 }
 .param-head .head-actions { display: flex; gap: 6px; }
-.param-head .ghost { border-radius: 2px; text-transform: uppercase; letter-spacing: .4px; font-size: 8.5px; }
+.param-head .ghost { border-radius: 2px; text-transform: uppercase; letter-spacing: .4px; font-size: var(--fs-xs); }
 .eqcurve {
   width: 100%; height: 110px; display: block; margin-bottom: 12px;
   border-radius: 6px; background: var(--well); border: 1px solid var(--line);
 }
 .band-head {
-  font-size: 9px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
   color: var(--text-dimmer); grid-column: 1 / -1; margin-top: 4px;
 }
 .mini {
   height: 24px; padding: 0 6px; border-radius: 5px;
   border: 1px solid var(--line-2); background: var(--bg);
-  color: var(--text-2); font: inherit; font-size: 10.5px;
+  color: var(--text-2); font: inherit; font-size: var(--fs-m);
 }
 .mini:focus { outline: none; border-color: var(--accent); }
 
@@ -1344,7 +1357,7 @@ body.docmode .shell { position: relative; }
   border-radius: 5px; cursor: pointer;
   background: transparent; color: var(--text-dim);
   border: 1px solid transparent; border-bottom: none;
-  font-size: 11px; max-width: 210px;
+  font-size: var(--fs-m); max-width: 210px;
 }
 .tab:hover { background: var(--surface-3); color: var(--text-2); }
 .tab.active {
@@ -1358,13 +1371,13 @@ body.docmode .shell { position: relative; }
 .tab .close {
   width: 15px; height: 15px; flex-shrink: 0; padding: 0; border: none;
   border-radius: 3px; background: transparent; color: var(--text-dimmer);
-  font-size: 12px; line-height: 15px;
+  font-size: var(--fs-l); line-height: 15px;
 }
 .tab .close:hover { background: var(--line-2); color: var(--text); }
 .tabbar .newtab {
   width: 21px; height: 21px; margin-bottom: 0; flex-shrink: 0;
   border-radius: 5px; border: 1px solid var(--line-2);
-  background: transparent; color: var(--text-dim); font-size: 13px;
+  background: transparent; color: var(--text-dim); font-size: var(--fs-l);
 }
 .tabbar .newtab:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -1381,8 +1394,8 @@ body.docmode .shell { position: relative; }
   color: var(--text-dimmer);
   display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
-.mode-btn .ic { font-size: 15px; line-height: 1; }
-.mode-btn .lb { font-size: 8.5px; font-weight: 600; letter-spacing: .3px; }
+.mode-btn .ic { font-size: var(--fs-xl); line-height: 1; }
+.mode-btn .lb { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .3px; }
 .mode-btn:hover { background: var(--surface-3); color: var(--text-2); }
 .mode-btn.active {
   background: var(--accent); border-color: var(--accent);
@@ -1396,7 +1409,7 @@ body.docmode .shell { position: relative; }
 }
 
 .mode-label {
-  font-size: 9px; font-weight: 600; letter-spacing: .7px; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: .7px; text-transform: uppercase;
   color: var(--text-dimmer); border: 1px solid var(--line-2);
   border-radius: 4px; padding: 2px 7px; margin-left: 6px; white-space: nowrap;
 }
@@ -1427,7 +1440,7 @@ body.docmode .panel.left { left: var(--rail); }
 .vis-pick { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .vis-tab {
   background: var(--surface-2); border: 1px solid var(--line);
-  color: var(--text-dim); font: inherit; font-size: 10px;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-s);
   padding: 3px 9px; border-radius: 5px; cursor: pointer;
   transition: border-color .15s ease, color .15s ease;
 }
@@ -1436,7 +1449,7 @@ body.docmode .panel.left { left: var(--rail); }
 .vis-tab.suite { font-weight: 600; letter-spacing: .04em; }
 .vis-open {
   margin-left: auto; background: none; border: 1px solid var(--line);
-  color: var(--text-dim); font-size: 11px; line-height: 1;
+  color: var(--text-dim); font-size: var(--fs-m); line-height: 1;
   padding: 3px 8px; border-radius: 5px; cursor: pointer;
 }
 .vis-open:hover { border-color: var(--accent); color: var(--accent); }
@@ -1450,7 +1463,7 @@ body.docmode .panel.left { left: var(--rail); }
 
 .vis-legend {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  font-size: 9.5px; color: var(--text-dimmer);
+  font-size: var(--fs-s); color: var(--text-dimmer);
 }
 .vis-legend.hidden { display: none; }
 
@@ -1474,19 +1487,19 @@ body.docmode .panel.left { left: var(--rail); }
   border-bottom: 1px solid var(--line);
   cursor: move; user-select: none; flex-shrink: 0;
 }
-.vis-pop-title { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.vis-pop-title { font-size: var(--fs-m); font-weight: 600; color: var(--text-2); }
 .vis-pop-tab {
   background: var(--surface-3); border: 1px solid var(--line);
-  color: var(--text-dim); font: inherit; font-size: 10px;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-s);
   padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
 .vis-pop-tab:hover { border-color: var(--line-2); color: var(--text-2); }
 .vis-pop-tab.active { background: var(--accent); border-color: var(--accent); color: var(--surface); }
-.vis-pop-hint { font-size: 9.5px; color: var(--text-dimmer); margin-right: auto; }
+.vis-pop-hint { font-size: var(--fs-s); color: var(--text-dimmer); margin-right: auto; }
 .vis-pop-btn {
   background: none; border: 1px solid var(--line); color: var(--text-dim);
   width: 22px; height: 20px; border-radius: 4px; cursor: pointer;
-  font-size: 12px; line-height: 1; padding: 0;
+  font-size: var(--fs-l); line-height: 1; padding: 0;
 }
 .vis-pop-btn:hover { border-color: var(--accent); color: var(--accent); }
 .vis-pop iframe { flex: 1; width: 100%; border: 0; display: block; }
@@ -1504,17 +1517,17 @@ body.docmode .panel.left { left: var(--rail); }
 
 body.editing .dock { flex: 0 0 300px; }
 
-.tbtn.loop { font-size: 14px; }
+.tbtn.loop { font-size: var(--fs-xl); }
 /* Capture. Red only while it is actually keeping something, so the button is
    never claiming to be recording when it is not. */
-.tbtn.rec { font-size: 13px; color: var(--text-dim); }
+.tbtn.rec { font-size: var(--fs-l); color: var(--text-dim); }
 .tbtn.rec.on { background: var(--bad); border-color: var(--bad); color: white; }
 .tbtn.rec.armed { border-color: var(--bad); color: var(--bad); }
 .rec-label { white-space: nowrap; min-width: 0; }
 .tbtn.loop.on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
-.loop-label { font-size: 9.5px; white-space: nowrap; min-width: 52px; }
+.loop-label { font-size: var(--fs-s); white-space: nowrap; min-width: 52px; }
 .vis-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
-.vis-head .seg-btn { font-size: 10px; padding: 0 9px; }
+.vis-head .seg-btn { font-size: var(--fs-s); padding: 0 9px; }
 
 /* ------------------------------------------------ granular control panels
    Several compact panels rather than one tall scrolling column: twelve
@@ -1559,7 +1572,7 @@ body.editing .dock { flex: 0 0 300px; }
 .tiny {
   height: 18px; padding: 0 7px; border-radius: 4px;
   border: 1px solid var(--line-2); background: transparent;
-  color: var(--text-dim); font: inherit; font-size: 9.5px; font-weight: 500;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-s); font-weight: 500;
   letter-spacing: 0; text-transform: none;
   /* One line. `Reset all` is short enough never to have needed saying, but the
      switches carry names like "preserve transients", and wrapping turned an
@@ -1583,17 +1596,17 @@ body.editing .dock { flex: 0 0 300px; }
   display: flex; flex-direction: column; gap: var(--param-row); min-width: 0;
 }
 .cpanel-head {
-  font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
   color: var(--text-dim); margin-bottom: 2px;
 }
 /* Deliberately not touching `gap` any more: it used to separate a label row
    from the slider under it, and now it is the space between the table's
    columns. Overriding it here made the three columns close up. */
-.cpanel .param .k, .cpanel .param .v { font-size: 10px; }
+.cpanel .param .k, .cpanel .param .v { font-size: var(--fs-s); }
 .cpanel .param input[type=range] { height: 14px; }
-.cpanel .seg-btn { font-size: 9.5px; padding: 0 6px; }
-.cpanel .ghost { height: 20px; font-size: 10px; }
-#stretchOut { font-size: 9.5px; }
+.cpanel .seg-btn { font-size: var(--fs-s); padding: 0 6px; }
+.cpanel .ghost { height: 20px; font-size: var(--fs-s); }
+#stretchOut { font-size: var(--fs-s); }
 
 .grain-vis { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 #grainCanvas {
@@ -1640,7 +1653,7 @@ body.editing .dock { flex: 0 0 330px; }
    are deliberately styled apart from the folder's editable tag fields. */
 .sonic-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 10px; min-height: 18px; }
 .sonic-tag {
-  font: 10px ui-monospace, monospace;
+  font: var(--fs-s) ui-monospace, monospace;
   padding: 2px 6px;
   border-radius: 3px;
   background: rgba(125, 211, 160, 0.12);
@@ -1659,14 +1672,14 @@ body.editing .dock { flex: 0 0 330px; }
 /* Below about 15% the model is guessing. Say so by showing it, faded, rather
    than hiding it or dressing it up as certainty. */
 .heard-tag.faint { opacity: 0.45; }
-.borrowed { font: 10px ui-monospace, monospace; align-self: center; }
+.borrowed { font: var(--fs-s) ui-monospace, monospace; align-self: center; }
 
 /* A category that came from listening rather than from the filename. */
 .file-row .cat.heard { color: #9db4ff; }
 
 /* Where the values in the tag fields came from — your edit, an earlier save,
    or the machine's suggestion. Quiet, but never absent. */
-.tag-source { font: 10px var(--mono); color: var(--text-dimmer); margin-bottom: 8px; }
+.tag-source { font: var(--fs-s) var(--mono); color: var(--text-dimmer); margin-bottom: 8px; }
 
 /* Tags of your own invention. Warm rather than green or blue, because these are
    decisions rather than measurements, and nothing the app does overwrites one. */
@@ -1704,7 +1717,7 @@ body.editing .dock { flex: 0 0 330px; }
 .menu-title {
   display: flex; align-items: center; padding: 0 11px;
   border: none; background: none; color: var(--text-2);
-  font: inherit; font-size: 11.5px;
+  font: inherit; font-size: var(--fs-m);
 }
 .menu-title:hover, .menu-title.open { background: var(--surface-3); color: var(--text); }
 
@@ -1712,7 +1725,7 @@ body.editing .dock { flex: 0 0 330px; }
    bar however many menus there are. */
 .menubar-right { display: flex; align-items: stretch; margin-left: auto; }
 .menu-gear { gap: 5px; }
-.menu-gear .gear { font-size: 11px; opacity: .8; }
+.menu-gear .gear { font-size: var(--fs-m); opacity: .8; }
 
 /* ---- settings ---------------------------------------------------------- */
 
@@ -1721,7 +1734,7 @@ body.editing .dock { flex: 0 0 330px; }
   padding: 4px 0 2px; max-height: min(62vh, 560px); overflow-y: auto;
 }
 .set-group {
-  padding: 11px 16px 4px; font-size: 9.5px; font-weight: 700;
+  padding: 11px 16px 4px; font-size: var(--fs-s); font-weight: 700;
   text-transform: uppercase; letter-spacing: .08em; color: var(--text-dimmer);
 }
 .set-row {
@@ -1729,19 +1742,19 @@ body.editing .dock { flex: 0 0 330px; }
   align-items: center; padding: 8px 16px; border-top: 1px solid var(--line-2);
 }
 .set-row:first-of-type { border-top: none; }
-.set-row .set-label { font-size: 12.5px; color: var(--text); }
+.set-row .set-label { font-size: var(--fs-l); color: var(--text); }
 /* The reason it is a choice at all. Every setting here is a trade, and the
    sentence saying what you are trading used to live only in a source comment. */
 .set-row .set-why {
-  grid-column: 1 / -1; font-size: 11px; color: var(--text-dim);
+  grid-column: 1 / -1; font-size: var(--fs-m); color: var(--text-dim);
   line-height: 1.45; margin-top: -2px;
 }
 .set-row .field { min-width: 148px; }
-.set-row select.field { padding: 3px 6px; font-size: 11.5px; }
+.set-row select.field { padding: 3px 6px; font-size: var(--fs-m); }
 /* A setting whose effect is deferred says so, because a switch that appears to
    do nothing is indistinguishable from a broken one. */
 .set-when {
-  display: inline-block; margin-left: 7px; font-size: 10px;
+  display: inline-block; margin-left: 7px; font-size: var(--fs-s);
   color: var(--warn); text-transform: none; letter-spacing: 0;
 }
 .set-row.set-off .set-label, .set-row.set-off .set-why { opacity: .45; }
@@ -1765,26 +1778,26 @@ body.editing .dock { flex: 0 0 330px; }
   display: grid; grid-template-columns: 26px 1fr auto; gap: 7px;
   align-items: center; text-align: left; width: 100%;
   padding: 4px 7px; border: none; border-radius: 4px;
-  background: none; color: var(--text-dim); font: inherit; font-size: 11px;
+  background: none; color: var(--text-dim); font: inherit; font-size: var(--fs-m);
 }
 .p4-obj:hover { background: var(--surface-2h); color: var(--text-2); }
 .p4-obj.active { background: var(--surface-3); color: var(--text); }
 .p4-obj-dim {
-  font-size: 9px; font-weight: 700; letter-spacing: .04em;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em;
   color: var(--text-dimmer); font-variant-numeric: tabular-nums;
 }
 .p4-obj.active .p4-obj-dim { color: var(--accent); }
 .p4-obj-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .p4-obj-n {
-  font-size: 9.5px; color: var(--text-dimmer);
+  font-size: var(--fs-s); color: var(--text-dimmer);
   font-variant-numeric: tabular-nums; font-family: var(--mono, ui-monospace, monospace);
 }
 
 .p4-about { padding: 2px 2px 7px; }
-.p4-about-name { font-size: 12px; color: var(--text); margin-bottom: 2px; }
-.p4-about-hint { font-size: 10.5px; color: var(--text-dim); line-height: 1.45; }
+.p4-about-name { font-size: var(--fs-l); color: var(--text); margin-bottom: 2px; }
+.p4-about-hint { font-size: var(--fs-m); color: var(--text-dim); line-height: 1.45; }
 .p4-about-n {
-  font-size: 9.5px; color: var(--text-dimmer); margin-top: 4px;
+  font-size: var(--fs-s); color: var(--text-dimmer); margin-top: 4px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1794,17 +1807,17 @@ body.editing .dock { flex: 0 0 330px; }
 
 .p4-num { display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 5px; }
 .p4-num-lb {
-  font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  font-size: var(--fs-s); font-weight: 700; letter-spacing: .05em;
   color: var(--text-dimmer); text-align: right;
 }
 /* The three planes that reach into the fourth dimension. Marked rather than
    separated, so the six still read as one set. */
-.p4-w { font-style: normal; color: var(--accent); font-size: 8.5px; margin-left: 1px; }
+.p4-w { font-style: normal; color: var(--accent); font-size: var(--fs-xs); margin-left: 1px; }
 .p4-num-in {
   width: 100%; min-width: 0; padding: 2px 5px;
   border: 1px solid var(--line-2); border-radius: 3px;
   background: var(--surface); color: var(--text);
-  font: inherit; font-size: 10.5px; font-variant-numeric: tabular-nums;
+  font: inherit; font-size: var(--fs-m); font-variant-numeric: tabular-nums;
   /* The pointer says the number is draggable before you try it. */
   cursor: ew-resize;
 }
@@ -1823,16 +1836,16 @@ body.editing .dock { flex: 0 0 330px; }
 .menu-row {
   display: flex; align-items: center; gap: 14px; width: 100%;
   padding: 5px 9px; border: none; border-radius: 5px; background: none;
-  color: var(--text-2); font: inherit; font-size: 11.5px; text-align: left;
+  color: var(--text-2); font: inherit; font-size: var(--fs-m); text-align: left;
 }
 .menu-row:hover:not(:disabled) { background: var(--accent); color: var(--surface); }
 .menu-row:disabled { color: var(--text-dimmer); cursor: default; }
 .menu-row .sk {
-  margin-left: auto; font-family: var(--mono); font-size: 10px; opacity: .65;
+  margin-left: auto; font-family: var(--mono); font-size: var(--fs-s); opacity: .65;
 }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--line-2); }
 .menu-head {
-  padding: 5px 9px 3px; font-size: 9px; font-weight: 600;
+  padding: 5px 9px 3px; font-size: var(--fs-xs); font-weight: 600;
   letter-spacing: .4px; text-transform: uppercase; color: var(--text-dimmer);
 }
 
@@ -1862,7 +1875,7 @@ body.editing .dock { flex: 0 0 330px; }
   position: static; display: inline-block; vertical-align: top;
   box-sizing: border-box;
   height: 22px; width: auto; padding: 0 2px; margin: 0 0 0 6px;
-  font-size: 10px; font-weight: 500; letter-spacing: 0; text-transform: none;
+  font-size: var(--fs-s); font-weight: 500; letter-spacing: 0; text-transform: none;
   border: 1px solid var(--line-2); border-radius: 4px;
   background: transparent; color: var(--text-dim);
   line-height: 20px;
@@ -1881,7 +1894,7 @@ body.editing .dock { flex: 0 0 330px; }
    ten pixels of daylight between the two. */
 .engine-pick .seg-btn {
   box-sizing: border-box;
-  height: 22px; width: auto; padding: 0 2px; font-size: 10px;
+  height: 22px; width: auto; padding: 0 2px; font-size: var(--fs-s);
   border: 1px solid var(--line-2); border-radius: 4px;
   vertical-align: top; line-height: 20px;
 }
@@ -1889,7 +1902,7 @@ body.editing .dock { flex: 0 0 330px; }
 /* Selected takes a dark border, so the chosen one is outlined against the row
    rather than only tinted. */
 .engine-pick .seg-btn.active { border-color: var(--sink); }
-.engine-pick .check { font-size: 10px; transition: opacity .15s ease; }
+.engine-pick .check { font-size: var(--fs-s); transition: opacity .15s ease; }
 /* The chosen engine's own controls, under the picker. */
 /* No gap between the rows. Every other slider group in the tray — the stretch
    rows, the wild groups — puts its rows straight under one another at 16px, and
@@ -1918,7 +1931,7 @@ body.editing .dock { flex: 0 0 330px; }
 .export-card { width: 460px; max-width: 92vw; }
 .export-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .export-body .fx-row { align-items: center; gap: 10px; }
-.export-label { width: 56px; font-size: 11px; color: var(--text-dim); }
+.export-label { width: 56px; font-size: var(--fs-m); color: var(--text-dim); }
 #elRepeats { width: 64px; height: 22px; text-align: center; }
 /* The two video menus, sized to their own options.
    `.field` is `width: 100%`, which is right for a field on its own line and
@@ -1934,7 +1947,7 @@ body.editing .dock { flex: 0 0 330px; }
   flex: 0 0 auto;
   width: auto; min-width: 0;
   height: 22px; padding: 0 6px;
-  font-size: 11px;
+  font-size: var(--fs-m);
 }
 #elVideoSize { max-width: 200px; }
 #elVideoFps { max-width: 96px; }
@@ -1953,8 +1966,8 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .modal-head { height: 46px; border-bottom: 1px solid var(--line); }
 .modal-foot { height: 50px; border-top: 1px solid var(--line); }
-.modal-head h2 { font-size: 13px; font-weight: 600; letter-spacing: .02em; }
-.modal-sub { font-size: 11px; color: var(--text-dimmer); font-family: var(--mono); }
+.modal-head h2 { font-size: var(--fs-l); font-weight: 600; letter-spacing: .02em; }
+.modal-sub { font-size: var(--fs-m); color: var(--text-dimmer); font-family: var(--mono); }
 .modal-head #pmClose { margin-left: auto; }
 .ghost.danger:hover { border-color: var(--bad); color: var(--bad); }
 
@@ -1971,15 +1984,15 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .pm-item:hover { background: var(--surface-3); }
 .pm-item.active { background: var(--surface-3); box-shadow: inset 2px 0 0 var(--accent); }
-.pm-item .nm { display: block; font-size: 12px; color: var(--text); }
+.pm-item .nm { display: block; font-size: var(--fs-l); color: var(--text); }
 .pm-item .nt {
-  display: block; font-size: 10px; color: var(--text-dimmer);
+  display: block; font-size: var(--fs-s); color: var(--text-dimmer);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pm-item.dirty .nm::after { content: ' •'; color: var(--warn); }
 
 .pm-detail { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px; }
-.pm-empty { color: var(--text-dimmer); font-size: 12px; padding: 30px 4px; text-align: center; }
+.pm-empty { color: var(--text-dimmer); font-size: var(--fs-l); padding: 30px 4px; text-align: center; }
 
 /* Two columns of values side by side, because a preset is fifty of them and one
    column of fifty rows is a scroll rather than a picture — but only where two
@@ -1989,7 +2002,7 @@ body.editing .dock { flex: 0 0 330px; }
 .pm-groups { columns: 240px 2; column-gap: 22px; }
 .pm-group { break-inside: avoid; margin: 0 0 14px; }
 .pm-group h3 {
-  font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
+  font-size: var(--fs-s); letter-spacing: .09em; text-transform: uppercase;
   color: var(--warn); font-weight: 600;
   padding-bottom: 4px; margin-bottom: 5px; border-bottom: 1px solid var(--line);
 }
@@ -1998,7 +2011,7 @@ body.editing .dock { flex: 0 0 330px; }
   align-items: center; gap: 8px; padding: 2px 0;
 }
 .pm-row > label {
-  font-size: 11px; color: var(--text-dim);
+  font-size: var(--fs-m); color: var(--text-dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   /* The full path is on the title, so a clipped name is still identifiable —
      but it should take a genuinely narrow window to clip one. */
@@ -2008,7 +2021,7 @@ body.editing .dock { flex: 0 0 330px; }
   height: 22px; width: 100%; padding: 0 6px;
   border-radius: 4px; border: 1px solid var(--line-2);
   background: var(--well); color: var(--text);
-  font-family: var(--mono); font-size: 11px; text-align: right;
+  font-family: var(--mono); font-size: var(--fs-m); text-align: right;
 }
 .pm-row select { text-align: left; }
 .pm-row input:focus, .pm-row select:focus { outline: none; border-color: var(--accent); }
@@ -2018,35 +2031,35 @@ body.editing .dock { flex: 0 0 330px; }
 .pm-ident { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
 .pm-ident .f { flex: 1 1 auto; }
 .pm-ident label {
-  display: block; font-size: 10px; letter-spacing: .08em;
+  display: block; font-size: var(--fs-s); letter-spacing: .08em;
   text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 3px;
 }
 .pm-ident input {
   width: 100%; height: 28px; padding: 0 9px;
   border-radius: 6px; border: 1px solid var(--line-2);
-  background: var(--well); color: var(--text); font-size: 12px;
+  background: var(--well); color: var(--text); font-size: var(--fs-l);
 }
 .pm-ident input:focus { outline: none; border-color: var(--accent); }
-.pm-status { font-size: 11px; color: var(--text-dimmer); margin-right: auto; }
+.pm-status { font-size: var(--fs-m); color: var(--text-dimmer); margin-right: auto; }
 .pm-status.dirty { color: var(--warn); }
 .pm-fx { margin: 0 0 18px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .pm-fx-head { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
-.pm-fx-head h3 { font-size: 11px; color: var(--warn); text-transform: uppercase; letter-spacing: .08em; }
-.pm-fx-head span { font-size: 10px; color: var(--text-dimmer); }
+.pm-fx-head h3 { font-size: var(--fs-m); color: var(--warn); text-transform: uppercase; letter-spacing: .08em; }
+.pm-fx-head span { font-size: var(--fs-s); color: var(--text-dimmer); }
 .pm-fx-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 8px; padding: 8px; }
 .pm-fx-card { min-width: 0; border: 1px solid var(--line-2); border-radius: 5px; background: var(--surface-2); }
 .pm-fx-card > header { height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 7px; border-bottom: 1px solid var(--line); }
-.pm-fx-card > header strong { flex: 1; font-size: 11px; font-weight: 600; }
+.pm-fx-card > header strong { flex: 1; font-size: var(--fs-m); font-weight: 600; }
 .pm-fx-card > header .ghost { width: 24px; min-width: 24px; height: 22px; padding: 0; }
 .pm-fx-params { padding: 6px 8px; max-height: 330px; overflow-y: auto; }
 .pm-band { padding: 5px 0; border-bottom: 1px solid var(--line); }
-.pm-band-head { display: grid; grid-template-columns: 18px 1fr 100px; align-items: center; gap: 5px; margin-bottom: 3px; font-size: 10px; color: var(--text-dim); }
+.pm-band-head { display: grid; grid-template-columns: 18px 1fr 100px; align-items: center; gap: 5px; margin-bottom: 3px; font-size: var(--fs-s); color: var(--text-dim); }
 .pm-band-head select, .pm-fx-add select { height: 24px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--well); color: var(--text); }
 .pm-fx-add { padding: 0 8px 8px; }
 .pm-fx-add select { width: 100%; padding: 0 7px; }
 
 .engine-note {
-  font-size: 10px; line-height: 1.35; color: var(--warn);
+  font-size: var(--fs-s); line-height: 1.35; color: var(--warn);
   opacity: .85; margin: 2px 0 0;
 }
 
@@ -2060,21 +2073,21 @@ body.editing .dock { flex: 0 0 330px; }
   display: grid; grid-template-columns: 1fr 130px;
   align-items: center; gap: 10px; padding: 4px 0;
 }
-.ask-row > label { font-size: 11.5px; color: var(--text-dim); }
+.ask-row > label { font-size: var(--fs-m); color: var(--text-dim); }
 .ask-row input[type="number"], .ask-row input[type="text"], .ask-row select {
   height: 26px; width: 100%; padding: 0 7px;
   border-radius: 5px; border: 1px solid var(--line-2);
   background: var(--well); color: var(--text);
-  font-family: var(--mono); font-size: 11.5px;
+  font-family: var(--mono); font-size: var(--fs-m);
 }
 .ask-row select { font-family: var(--sans); }
 .ask-row input:focus, .ask-row select:focus { outline: none; border-color: var(--accent); }
 .ask-row input[type="checkbox"] { justify-self: end; width: 15px; height: 15px; accent-color: var(--accent); }
 .ask-hint {
-  font-size: 11px; color: var(--text-dimmer); line-height: 1.5;
+  font-size: var(--fs-m); color: var(--text-dimmer); line-height: 1.5;
   margin: 0 0 10px;
 }
-.ask-note { font-size: 11px; color: var(--text-dimmer); font-family: var(--mono); }
+.ask-note { font-size: var(--fs-m); color: var(--text-dimmer); font-family: var(--mono); }
 
 /* --------------------------------------------------- the automation panel
    Last, so these win over the rules the branch sheet carries for a panel
@@ -2086,9 +2099,9 @@ body.editing .dock { flex: 0 0 330px; }
 .automation-toolbar {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
-.automation-toolbar .check { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.automation-toolbar .check { display: flex; align-items: center; gap: 5px; font-size: var(--fs-m); }
 .automation-note {
-  margin-left: auto; font-size: 10px; color: var(--text-dimmer);
+  margin-left: auto; font-size: var(--fs-s); color: var(--text-dimmer);
   font-variant-numeric: tabular-nums;
 }
 .automation-lanes { display: flex; flex-direction: column; gap: 6px; }
@@ -2101,7 +2114,7 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .automation-lane-controls { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
 .automation-lane-controls .row { display: flex; align-items: center; gap: 5px; }
-.automation-lane-controls select { flex: 1; min-width: 0; font-size: 10.5px; }
+.automation-lane-controls select { flex: 1; min-width: 0; font-size: var(--fs-m); }
 .automation-lane-controls .danger { color: var(--danger, #e0685f); padding: 0 6px; }
 .automation-canvas {
   width: 100%; height: 110px; display: block;
@@ -2115,7 +2128,7 @@ body.editing .dock { flex: 0 0 330px; }
    between "I can see a level" and "this is being kept" is the whole thing. */
 #paneRecord { display: flex; flex-direction: column; gap: 10px; }
 .rec-device { display: flex; align-items: center; gap: 8px; }
-.rec-device .k { font-size: 10.5px; color: var(--text-2); flex: 0 0 auto; }
+.rec-device .k { font-size: var(--fs-m); color: var(--text-2); flex: 0 0 auto; }
 .rec-device select { flex: 1; min-width: 0; }
 .rec-meter {
   display: flex; gap: 3px; height: 74px; padding: 4px;
@@ -2133,13 +2146,13 @@ body.editing .dock { flex: 0 0 330px; }
 .rec-go {
   width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
   border: 1px solid #7d2b2b; background: #c23b3b; color: #fff;
-  font-size: 13px; line-height: 1; cursor: pointer;
+  font-size: var(--fs-l); line-height: 1; cursor: pointer;
 }
 .rec-go:hover { background: #d94848; }
-.rec-readout { font-size: 10.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.rec-readout { font-size: var(--fs-m); color: var(--text-2); font-variant-numeric: tabular-nums; }
 .rec-readout.warn { color: #e6c83f; }
 .rec-name { display: flex; align-items: center; gap: 8px; }
-.rec-name .k { font-size: 10.5px; color: var(--text-2); flex: 0 0 auto; }
+.rec-name .k { font-size: var(--fs-m); color: var(--text-2); flex: 0 0 auto; }
 .rec-name input { flex: 1; min-width: 0; }
 
 /* ------------------------------------------------------------------ tuning
@@ -2147,7 +2160,7 @@ body.editing .dock { flex: 0 0 330px; }
    level and one opens at a time. */
 .scale-btn {
   margin-left: 6px; height: 18px; padding: 0 7px; flex: 0 0 auto;
-  font-size: 9.5px; border-radius: 3px; cursor: pointer;
+  font-size: var(--fs-s); border-radius: 3px; cursor: pointer;
   border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text-2);
   max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -2163,7 +2176,7 @@ body.editing .dock { flex: 0 0 330px; }
   border-bottom: 1px solid var(--line);
 }
 .scale-count {
-  font-size: 9.5px; color: var(--text-dimmer); flex: 0 0 auto;
+  font-size: var(--fs-s); color: var(--text-dimmer); flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
 }
 .scale-head .filter-box { flex: 1; min-width: 0; }
@@ -2171,7 +2184,7 @@ body.editing .dock { flex: 0 0 330px; }
 .scale-cat-head {
   width: 100%; text-align: left; padding: 6px 7px 3px; cursor: pointer;
   position: sticky; top: 26px; z-index: 1; background: inherit;
-  font-size: 9.5px; font-weight: 650; letter-spacing: .4px;
+  font-size: var(--fs-s); font-weight: 650; letter-spacing: .4px;
   border: 0; border-radius: 3px; background: transparent; color: var(--text-2);
 }
 .scale-cat-head:hover { background: var(--surface-2); color: var(--accent); }
@@ -2183,8 +2196,8 @@ body.editing .dock { flex: 0 0 330px; }
 }
 .scale-item:hover { background: var(--surface-2); }
 .scale-item.selected { background: var(--surface-3); color: var(--accent); }
-.scale-item .sc-name { font-size: 11px; }
-.scale-item .sc-info { font-size: 9px; color: var(--text-dimmer); }
+.scale-item .sc-name { font-size: var(--fs-m); }
+.scale-item .sc-info { font-size: var(--fs-xs); color: var(--text-dimmer); }
 
 /* The engine's switches and its tuning, on one row: whatever this engine has
    on the left, the scale at the right-hand end. */
@@ -2242,12 +2255,12 @@ body.editing .dock { flex: 0 0 330px; }
   width: 71px; height: 18px; padding: 0 4px;
   border: 1px solid var(--line-3); border-radius: 4px;
   background: var(--surface-2h); color: var(--text-2);
-  font: inherit; font-size: 9.5px; font-weight: 500;
+  font: inherit; font-size: var(--fs-s); font-weight: 500;
   white-space: nowrap; cursor: pointer;
 }
 .popout-btn:hover { border-color: var(--accent); color: var(--accent); }
 .popout-btn.on { border-color: var(--accent); color: var(--accent); }
-.popout-mark { font-style: normal; opacity: 0.65; margin-left: 3px; font-size: 8.5px; }
+.popout-mark { font-style: normal; opacity: 0.65; margin-left: 3px; font-size: var(--fs-xs); }
 /* `vertical-align: top` on everything, so the inline-blocks sit on the row's
    top edge instead of on a text baseline — that baseline is what put the
    toggles four pixels below the tuning and Keys. */
@@ -2262,7 +2275,7 @@ body.editing .dock { flex: 0 0 330px; }
 /* The name takes what is left after the caret, which is always visible — a
    dropdown with its arrow cut off is just a button. */
 .scale-name { overflow: hidden; text-overflow: clip; }
-.menu-caret { font-style: normal; opacity: 0.6; font-size: 8px; margin-left: 2px; }
+.menu-caret { font-style: normal; opacity: 0.6; font-size: var(--fs-xs); margin-left: 2px; }
 /* Not inline-flex. The caret is an inline glyph after the name; centring is
    `text-align`, which is what it was for. */
 .scale-btn { text-align: center; }
@@ -2315,7 +2328,7 @@ body.editing .dock { flex: 0 0 330px; }
   position: absolute;
   right: 6px;
   top: 5px;
-  font-size: 10px;
+  font-size: var(--fs-s);
   pointer-events: none;
 }
 
@@ -2351,8 +2364,8 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   height: auto; padding: 6px 0 4px;
 }
-.rail-theme .ic { font-size: 13px; line-height: 1; }
-.rail-theme .lb { font-size: 8.5px; letter-spacing: .02em; }
+.rail-theme .ic { font-size: var(--fs-l); line-height: 1; }
+.rail-theme .lb { font-size: var(--fs-xs); letter-spacing: .02em; }
 .rail-theme.active { color: var(--accent); }
 
 /* --------------------------------------------------------------- theme pane
@@ -2373,12 +2386,12 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .theme-swatch { display: flex; flex: 0 0 auto; border-radius: 3px; overflow: hidden; }
 .theme-swatch i { width: 14px; height: 18px; display: block; flex: 0 0 auto; }
 .theme-name {
-  flex: 1; min-width: 0; font-size: 11px; color: var(--text-2);
+  flex: 1; min-width: 0; font-size: var(--fs-m); color: var(--text-2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .theme-del {
   background: none; border: 0; color: var(--text-dimmer);
-  font-size: 13px; line-height: 1; padding: 0 2px; cursor: pointer;
+  font-size: var(--fs-l); line-height: 1; padding: 0 2px; cursor: pointer;
 }
 .theme-del:hover { color: var(--bad); }
 #themePlain.on { border-color: var(--accent); color: var(--text); }
@@ -2407,13 +2420,13 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   display: flex; align-items: center; gap: 10px;
   height: 28px; padding: 0 8px;
   border-bottom: 1px solid var(--line);
-  font-size: 12px; font-weight: 600;
+  font-size: var(--fs-l); font-weight: 600;
   cursor: grab; user-select: none;
 }
 .kb-head.dragging { cursor: grabbing; }
-.kb-head h2 { margin: 0; font-size: 12px; }
-.kb-head .ghost { padding: 0 7px; height: 19px; font-size: 11px; }
-.kb-head .modal-sub { font-size: 10px; }
+.kb-head h2 { margin: 0; font-size: var(--fs-l); }
+.kb-head .ghost { padding: 0 7px; height: 19px; font-size: var(--fs-m); }
+.kb-head .modal-sub { font-size: var(--fs-s); }
 .kb-head .modal-sub { min-width: 0; overflow: hidden; white-space: nowrap; }
 .kb-body { padding: 7px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
 
@@ -2442,7 +2455,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .kb-key.white.on { background: var(--accent); color: var(--sink); }
 .kb-key.black.on { background: var(--accent); color: var(--sink); border-color: var(--accent); }
-.kb-letter { font-size: 11px; font-weight: 700; line-height: 1.1; flex: 0 0 auto; }
+.kb-letter { font-size: var(--fs-m); font-weight: 700; line-height: 1.1; flex: 0 0 auto; }
 /* The number runs down the key.
    A white key is about twenty-three pixels wide and "+11.00" is twenty-four, so
    laid across it either clipped or spilled onto its neighbour. Down the key it
@@ -2450,7 +2463,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    — which is the same reason the numbers on a real fretboard run along it. */
 .kb-semis {
   writing-mode: vertical-rl;
-  font-size: 8px; opacity: 0.7; line-height: 1;
+  font-size: var(--fs-xs); opacity: 0.7; line-height: 1;
   flex: 1 1 auto; min-height: 0;
   display: flex; align-items: flex-start; justify-content: center;
   letter-spacing: -0.2px;
@@ -2458,7 +2471,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 
 .kb-legend {
   display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
-  width: 100%; font-size: 10px; color: var(--text-dim); padding-top: 1px;
+  width: 100%; font-size: var(--fs-s); color: var(--text-dim); padding-top: 1px;
 }
 .kb-legend b { color: var(--text-2); font-family: var(--mono); }
 /* One line, cross-fading. `white-space: nowrap` is what keeps it one line —
@@ -2558,7 +2571,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   position: absolute; top: 5px; right: 6px; z-index: 5;
   height: 15px; padding: 0 7px;
   border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
-  color: var(--text-2); font: inherit; font-size: 8.5px; line-height: 1;
+  color: var(--text-2); font: inherit; font-size: var(--fs-xs); line-height: 1;
   letter-spacing: .05em; cursor: pointer;
 }
 /* Full strength, and a word rather than a glyph.
@@ -2598,10 +2611,10 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    camera's drag target. Capping the panel's height was the wrong answer (it
    clipped the lower rows and, with the rows made to take the pointer so the
    cap could scroll, covered the sky). The control is the width of its text. */
-.room-edit select.mini { width: auto; max-width: 150px; height: 16px; font-size: 9px; padding: 0 3px; }
+.room-edit select.mini { width: auto; max-width: 150px; height: 16px; font-size: var(--fs-xs); padding: 0 3px; }
 /* In the room view it is a column, not an overlay: no cap, no scroll of its
    own — `.rv-admin-body` already scrolls around it. */
-.rv-admin .room-edit select.mini { width: 100%; max-width: none; height: 24px; font-size: 10.5px; padding: 0 6px; }
+.rv-admin .room-edit select.mini { width: 100%; max-width: none; height: 24px; font-size: var(--fs-m); padding: 0 6px; }
 /* The solid's six rows, in the overlay, only while its layer is on. Six more
    rows are a third wrapped column, and that column ran off the right edge of
    the dock's room — controls a pointer could not reach. With the layer off
@@ -2620,7 +2633,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   accent-color: var(--accent); background: transparent; cursor: ew-resize;
 }
 .re-tag {
-  font-size: 7.5px; letter-spacing: .1em; color: var(--text-dim);
+  font-size: var(--fs-xs); letter-spacing: .1em; color: var(--text-dim);
   width: 38px; flex: 0 0 auto;
 }
 
@@ -2681,7 +2694,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   user-select: none; -webkit-user-select: none;
 }
 .re-layer .re-grip {
-  cursor: grab; opacity: .3; font-size: 9px; line-height: 1;
+  cursor: grab; opacity: .3; font-size: var(--fs-xs); line-height: 1;
   padding: 0 1px; letter-spacing: -1px;
 }
 .re-layer:hover .re-grip { opacity: .65; }
@@ -2759,7 +2772,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .re-btn {
   height: 15px; padding: 0 7px;
   border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
-  color: var(--text-dim); font: inherit; font-size: 8.5px; line-height: 1;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-xs); line-height: 1;
   cursor: pointer;
 }
 .re-btn:hover { color: var(--text-2); border-color: var(--line); }
@@ -2775,7 +2788,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    which the editor hides while it is up, because the room is being posed and
    not measured. */
 .re-nums {
-  font-size: 8.5px; line-height: 1.5; color: var(--text-dim);
+  font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim);
   pointer-events: auto; cursor: copy; align-self: flex-start;
   background: var(--bg); border-radius: 3px; padding: 3px 6px;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2847,17 +2860,17 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* Bottom right, out of the way of the frequency labels along the top. */
 .mb-note {
   position: absolute; bottom: 4px; right: 8px;
-  font-size: 9px; color: var(--text-dim); pointer-events: none;
+  font-size: var(--fs-xs); color: var(--text-dim); pointer-events: none;
   text-shadow: 0 1px 3px var(--shadow);
 }
-.mb-state { font-size: 9px; color: var(--text-dim); text-align: right; }
+.mb-state { font-size: var(--fs-xs); color: var(--text-dim); text-align: right; }
 
 /* How much detail the analyser is asked for. Fixed widths — never flex. */
 .mb-res { position: absolute; left: 26px; bottom: 4px; display: flex; gap: 3px; }
 .mb-res-btn {
   width: 30px; height: 15px; padding: 0;
   border: 1px solid var(--line-2); background: transparent; border-radius: 3px;
-  color: var(--text-dim); font: inherit; font-size: 8.5px; line-height: 1;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-xs); line-height: 1;
   cursor: pointer;
 }
 .mb-res-btn:hover { color: var(--text-2); border-color: var(--line); }
@@ -2868,10 +2881,10 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   display: grid; grid-template-columns: 30px repeat(2, minmax(0, 1fr));
   gap: 1px 5px; align-items: baseline;
 }
-.mb-k { font-size: 8px; letter-spacing: .05em; color: var(--text-dim); }
-.mb-h { font-size: 8px; letter-spacing: .07em; color: var(--text-dim); text-align: right; }
+.mb-k { font-size: var(--fs-xs); letter-spacing: .05em; color: var(--text-dim); }
+.mb-h { font-size: var(--fs-xs); letter-spacing: .07em; color: var(--text-dim); text-align: right; }
 .mb-v {
-  font-size: 10px; color: var(--text-2); text-align: right;
+  font-size: var(--fs-s); color: var(--text-2); text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .mb-v.hot { color: var(--warn); }
@@ -2883,7 +2896,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    Pinned to one line whatever it says. A word that wraps changes the row's
    height, and a row that changes height moves every reading under it. */
 .mb-word {
-  font-size: 8px; color: var(--text-dim); text-align: right;
+  font-size: var(--fs-xs); color: var(--text-dim); text-align: right;
   white-space: nowrap; overflow: hidden; line-height: 1.35;
 }
 .mb-word.warn { color: var(--bad); }
@@ -2944,11 +2957,11 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   background: var(--surface-0); border-bottom: 1px solid var(--line);
 }
 .tm-btn {
-  font-size: 7.5px; padding: 2px 5px; border-radius: 3px;
+  font-size: 7px; padding: 2px 5px; border-radius: 3px;
   border: 1px solid var(--line-2); color: var(--text-2); background: transparent;
 }
 .tm-btn.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
-.tm-title { margin-left: auto; font-size: 7.5px; color: var(--text-dim); }
+.tm-title { margin-left: auto; font-size: 7px; color: var(--text-dim); }
 
 .tm-lane {
   flex: 0 0 34px; background: var(--sink); position: relative;
@@ -2976,17 +2989,17 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   color: var(--text-dim);
 }
 .tm-row { display: flex; align-items: center; gap: 5px; }
-.tm-k { flex: 0 0 34px; font-size: 7.5px; color: var(--text-2); }
+.tm-k { flex: 0 0 34px; font-size: 7px; color: var(--text-2); }
 .tm-slider {
   flex: 1 1 auto; height: 5px; border-radius: 3px; background: var(--well);
   overflow: hidden;
 }
 .tm-slider > i { display: block; height: 100%; background: var(--accent); }
-.tm-v { flex: 0 0 34px; font-size: 7.5px; color: var(--text); text-align: right; }
+.tm-v { flex: 0 0 34px; font-size: 7px; color: var(--text); text-align: right; }
 
 /* All four text steps, because a ladder that collapses is the failure a theme
    most often has and the one hardest to see on a page full of other things. */
-.tm-steps { display: flex; gap: 6px; margin-top: auto; font-size: 7.5px; }
+.tm-steps { display: flex; gap: 6px; margin-top: auto; font-size: 7px; }
 .tm-t1 { color: var(--text); }
 .tm-t2 { color: var(--text-2); }
 .tm-t3 { color: var(--text-dim); }
@@ -3045,11 +3058,11 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   margin: 10px 0 7px;
 }
 .ts-ed-title {
-  font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  font-size: var(--fs-s); letter-spacing: .06em; text-transform: uppercase;
   color: var(--text-2);
 }
 .ts-tag {
-  font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
+  font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase;
   color: var(--text-dim); border: 1px solid var(--line-2);
   border-radius: 999px; padding: 1px 7px;
 }
@@ -3069,13 +3082,13 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .ts-swatch input[type="text"] {
   width: 68px; border: 0; background: transparent; color: var(--text-2);
-  font-family: var(--mono); font-size: 10px;
+  font-family: var(--mono); font-size: var(--fs-s);
 }
 .ts-swatch input[type="text"]:focus { outline: 1px solid var(--line); border-radius: 3px; }
 .ts-x {
   width: 16px; height: 16px; padding: 0; line-height: 1;
   border: 0; background: transparent; color: var(--text-dim);
-  cursor: pointer; font-size: 12px;
+  cursor: pointer; font-size: var(--fs-l);
 }
 .ts-x:hover { color: var(--bad); }
 .ts-add { width: 74px; }
@@ -3084,7 +3097,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 
 .ts-tokens {
   max-height: 190px; overflow: auto;
-  font-family: var(--mono); font-size: 9px;
+  font-family: var(--mono); font-size: var(--fs-xs);
   border: 1px solid var(--line-2); border-radius: 6px; padding: 5px;
 }
 .ts-tokens > div { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
@@ -3096,13 +3109,13 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .ts-tokens span { color: var(--text-dim); }
 
 .ts-error {
-  font-size: 9.5px; color: var(--bad);
+  font-size: var(--fs-s); color: var(--bad);
   border: 1px solid var(--bad); border-radius: 5px; padding: 5px 7px;
 }
-.ts-empty { font-size: 9.5px; color: var(--text-dim); padding: 8px 2px; }
+.ts-empty { font-size: var(--fs-s); color: var(--text-dim); padding: 8px 2px; }
 /* The one open in the editor, as distinct from the one being worn. */
 .theme-row.editing { outline: 1px solid var(--accent); outline-offset: -1px; }
-.theme-inline-note { color: var(--text-dim); font-style: normal; font-size: 9px; }
+.theme-inline-note { color: var(--text-dim); font-style: normal; font-size: var(--fs-xs); }
 
 /* ─────────────────────────────────────────────── the room, at full size ──
    A third workspace: the controls in a column on the left, the room taking
@@ -3127,7 +3140,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rv-admin-head {
   flex: 0 0 auto; padding: 7px 10px 6px;
   border-bottom: 1px solid var(--line);
-  font-size: 10px; font-weight: 600; letter-spacing: .5px;
+  font-size: var(--fs-s); font-weight: 600; letter-spacing: .5px;
   text-transform: uppercase; color: var(--text-dim);
 }
 /* The controls scroll rather than wrap. In the dock the panel wraps into
@@ -3147,23 +3160,35 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   flex-wrap: nowrap; max-height: none; padding: 0;
   gap: 0;
 }
-/* A settings row, not a strip of controls squeezed over a picture.
-   **The label goes on its own line.** In the dock a row is `TAG control` on one
-   line, which works because the dock's rows carry one control each and the ones
-   that do not simply run off into the room. Here the panel is 300px and the
-   busiest rows carry four things — FOG is a switch, a menu, a slider and a
-   swatch — so a label competing for that width leaves every control too small
-   to aim at. Above the controls it costs a line of height, which a scrolling
-   column has, and buys the full width for the things you actually touch. */
-.rv-admin .room-edit .re-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
-  margin: 0 0 8px; padding: 0 0 8px;
+/* A settings row: **tag · controls · reading, on one line** (C2,
+   `docs/DESIGN-CRITIQUE.md`), the grammar the Grain dock already speaks.
+   The tag has a column of its own down the left; the controls flow in what is
+   left, and a busy row (FOG is a switch, a menu, a slider and a swatch) wraps
+   *inside* that column, under its own controls, never under the tag.
+   This replaces "the label goes on its own line", which spent about 46 px on
+   every row so a four-control row could have the full 300 px. With the tag in
+   78 px a lone slider still gets about 200 px, more than the dock gives it, and
+   a one-slider row is 22 px: Shape's seven rows no longer end above a blank
+   column, and Stage's sixty are half the scroll. A long tag wraps to two short
+   lines in its column rather than losing its end to an ellipsis. */
+.rv-admin .room-edit .re-row,
+.rv-admin .rp-row {
+  --re-tag-w: 78px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px;
+  position: relative; min-height: 22px;
+  margin: 0; padding: 2px 0;
   border-bottom: 1px solid var(--line);
 }
+.rv-admin .room-edit .re-row:has(> .re-tag),
+.rv-admin .rp-row:has(> .re-tag) { padding-left: var(--re-tag-w); }
 .rv-admin .room-edit .re-row:last-of-type { border-bottom: 0; }
-.rv-admin .room-edit .re-tag {
-  flex: 0 0 100%; text-align: left;
-  font-size: 8.5px; letter-spacing: .6px; color: var(--text-dimmer);
+.rv-admin .room-edit .re-row > .re-tag,
+.rv-admin .rp-row > .re-tag {
+  position: absolute; left: 0; top: 0; bottom: 0; max-height: 34px; margin: auto 0;
+  width: calc(var(--re-tag-w) - 6px);
+  display: flex; align-items: center;
+  font-size: var(--fs-xs); line-height: 1.05; letter-spacing: .3px;
+  color: var(--text-dimmer); text-align: left;
 }
 /* Room to actually aim at. These are 54px in the dock because they are laid
    over a picture and every pixel of it counts; here the panel is the point. */
@@ -3275,7 +3300,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rv-tab {
   flex: 1 1 auto; height: 20px; border-radius: 4px;
   border: 1px solid var(--line-2); background: transparent;
-  color: var(--text-dim); font: inherit; font-size: 9px; letter-spacing: .4px;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-xs); letter-spacing: .4px;
   text-transform: uppercase; cursor: pointer;
 }
 .rv-tab:hover { background: var(--surface-3); color: var(--text-2); }
@@ -3284,10 +3309,11 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rp-head { padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
 .rp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
 .rp-row .re-tag {
-  flex: 0 0 100%; font-size: 8.5px; letter-spacing: .6px; color: var(--text-dimmer);
+  flex: 0 0 100%; font-size: var(--fs-xs); letter-spacing: .6px; color: var(--text-dimmer);
 }
+/* In the Visual column the rule above gives way to the one-line row (C2). */
 .rp-row .re-slider { flex: 1 1 80px; width: auto; }
-.rp-row > select.field, .rp-name { flex: 1 1 90px; min-width: 0; height: 18px; font-size: 10px; }
+.rp-row > select.field, .rp-name { flex: 1 1 90px; min-width: 0; height: 18px; font-size: var(--fs-s); }
 .rp-gens .re-btn { flex: 1 1 auto; }
 .rp-btns .re-btn { flex: 0 0 auto; }
 
@@ -3296,7 +3322,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rp-slot-head {
   display: flex; align-items: center; gap: 6px; width: 100%;
   padding: 4px 2px; background: transparent; border: 0;
-  color: var(--text-2); font: inherit; font-size: 10px; text-align: left;
+  color: var(--text-2); font: inherit; font-size: var(--fs-s); text-align: left;
   cursor: pointer;
 }
 .rp-slot-head:hover { background: var(--surface-3); }
@@ -3309,7 +3335,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .rp-slot-name { flex: 1 1 auto; min-width: 0; }
 .rp-slot-mode {
-  flex: 0 0 auto; font-size: 8.5px; color: var(--text-dimmer);
+  flex: 0 0 auto; font-size: var(--fs-xs); color: var(--text-dimmer);
   letter-spacing: .3px;
 }
 .rp-edit { padding: 5px 2px 7px; }
@@ -3320,12 +3346,12 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* The room's own shape. One row a number, with the number shown — unlike the
    camera, which is dragged on the room and whose numbers are an output. */
 .rg-note {
-  font-size: 9px; line-height: 1.4; color: var(--text-dimmer);
+  font-size: var(--fs-xs); line-height: 1.4; color: var(--text-dimmer);
   padding: 0 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line);
 }
 .rg-read {
   flex: 0 0 auto; min-width: 54px; text-align: right;
-  font-family: var(--mono); font-size: 9px; color: var(--text-dim);
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3378,7 +3404,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   stroke: var(--text); filter: drop-shadow(0 0 5px currentColor);
 }
 .room-path .rp-lb {
-  fill: var(--text-dim); font-size: 9px; font-family: inherit;
+  fill: var(--text-dim); font-size: var(--fs-xs); font-family: inherit;
   pointer-events: none; text-anchor: middle;
 }
 .room-path .rp-depth {
@@ -3443,7 +3469,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rh-tip {
   position: absolute; pointer-events: none;
   transform: translate(-50%, -160%);
-  font-size: 8.5px; letter-spacing: .3px; white-space: nowrap;
+  font-size: var(--fs-xs); letter-spacing: .3px; white-space: nowrap;
   color: var(--text-2); background: var(--surface-2);
   border: 1px solid var(--line-2); border-radius: 3px; padding: 1px 4px;
   opacity: 0; transition: opacity .12s ease;
@@ -3510,20 +3536,13 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rv-admin #ridgeEdit .rg-read,
 #ridgeEdit .rg-read {
   flex: 0 0 auto; min-width: 46px; text-align: right;
-  font-family: var(--mono); font-size: 9px; color: var(--text-dim);
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
-/* Laid out like the room's panel: label on its own line, control full width. */
+/* Laid out like the room's panel (C2): it is a `.room-edit`, so the rows
+   above are its rows too. */
 .rv-admin #ridgeEdit { position: static; inset: auto; pointer-events: auto;
   flex-wrap: nowrap; max-height: none; padding: 0; gap: 0; }
-.rv-admin #ridgeEdit .re-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
-  margin: 0 0 8px; padding: 0 0 8px; border-bottom: 1px solid var(--line);
-}
-.rv-admin #ridgeEdit .re-tag {
-  flex: 0 0 100%; text-align: left;
-  font-size: 8.5px; letter-spacing: .6px; color: var(--text-dimmer);
-}
 .rv-admin #ridgeEdit .re-slider { flex: 1 1 110px; width: auto; height: 14px; }
 .rv-admin #ridgeEdit .re-frames { flex: 1 1 100%; flex-wrap: wrap; }
 .rv-admin #ridgeEdit .re-btn.active {
@@ -3560,7 +3579,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   resize: none;
   background: rgba(6, 9, 12, 0.86);
   color: var(--text, #eceff2);
-  font: 600 13px/1.4 var(--mono, ui-monospace, SFMono-Regular, monospace);
+  font: 600 var(--fs-l)/1.4 var(--mono, ui-monospace, SFMono-Regular, monospace);
   text-align: center;
   padding: 6px;
 }
@@ -3569,7 +3588,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    by dragging it, and four sliders pretending otherwise would be worse. */
 .re-note {
   color: var(--muted, #8b93a1);
-  font-size: 11px;
+  font-size: var(--fs-m);
   line-height: 1.4;
   padding: 2px 0 6px;
 }
@@ -3592,7 +3611,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   padding-bottom: 3px;
   border-bottom: 1px solid var(--line, #223);
   color: var(--muted, #8b93a1);
-  font: 600 10px/1 var(--mono, ui-monospace, monospace);
+  font: 600 var(--fs-s)/1 var(--mono, ui-monospace, monospace);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -3625,7 +3644,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .st-pad-read {
   display: block;
   color: var(--muted, #8b93a1);
-  font: 500 10px/1.3 var(--mono, ui-monospace, monospace);
+  font: 500 var(--fs-s)/1.3 var(--mono, ui-monospace, monospace);
 }
 
 /* The stage takes the pointer: dragging it stands the camera somewhere else. */
@@ -3670,7 +3689,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .st-pads .re-btn {
   overflow: hidden;
   padding: 4px 2px;
-  font-size: 9px;
+  font-size: var(--fs-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3703,7 +3722,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .st-fold::after {
   content: '+';
   color: var(--muted, #8b93a1);
-  font: 600 12px/1 var(--mono, ui-monospace, monospace);
+  font: 600 var(--fs-l)/1 var(--mono, ui-monospace, monospace);
 }
 .st-fold.open { color: var(--text-1, #dfe6ef); border-bottom-color: var(--accent, #7fd0ff); }
 .st-fold.open::after { content: '\2212'; color: var(--accent, #7fd0ff); }
@@ -3714,7 +3733,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .st-note {
   margin: 4px 0 8px;
   color: var(--muted, #8b93a1);
-  font: 10px/1.5 var(--mono, ui-monospace, monospace);
+  font: var(--fs-s)/1.5 var(--mono, ui-monospace, monospace);
 }
 
 /* ── which visuals the menu offers ── */
@@ -3723,7 +3742,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    what order. Nothing here removes a visual: a hidden one is still in the
    registry, still reachable, still in a saved room — it is simply not listed.
 */
-.icon-btn { padding: 3px 7px; font-size: 13px; line-height: 1; }
+.icon-btn { padding: 3px 7px; font-size: var(--fs-l); line-height: 1; }
 .icon-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
 
 /* Anchored over the gear rather than floated in the middle of the screen: it
@@ -3756,7 +3775,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   flex: 1 1 auto;
   overflow: hidden;
   color: var(--text-1, #dfe6ef);
-  font: 11px/1.4 var(--mono, ui-monospace, monospace);
+  font: var(--fs-m)/1.4 var(--mono, ui-monospace, monospace);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3767,7 +3786,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   padding-bottom: 2px;
   border-bottom: 1px solid var(--line, #223);
   color: var(--muted, #8b93a1);
-  font: 600 9px/1 var(--mono, ui-monospace, monospace);
+  font: 600 var(--fs-xs)/1 var(--mono, ui-monospace, monospace);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -3779,7 +3798,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   border-radius: 4px;
   background: none;
   color: var(--text-2, #b6c0cd);
-  font: 10px/1 var(--mono, ui-monospace, monospace);
+  font: var(--fs-s)/1 var(--mono, ui-monospace, monospace);
   cursor: pointer;
 }
 .vma-eye:hover, .vma-move:hover:not(:disabled) { border-color: var(--accent, #7fd0ff); color: var(--accent, #7fd0ff); }
@@ -3789,7 +3808,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   padding-top: 6px;
   border-top: 1px solid var(--line, #223);
   color: var(--muted, #8b93a1);
-  font: 9px/1.5 var(--mono, ui-monospace, monospace);
+  font: var(--fs-xs)/1.5 var(--mono, ui-monospace, monospace);
 }
 
 /* The gear's panel is positioned against whichever row the gear is in — the edit
@@ -3802,14 +3821,14 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    A look on the stage bar, a cloud over the grain controls. Each is one line:
    a picker, Save as…, Delete. See `docs/SECTION-PRESETS.md`. */
 .sp-row { align-items: center; }
-.sp-row .sp-pick { width: auto; min-width: 96px; max-width: 160px; height: 18px; font-size: 10px; }
+.sp-row .sp-pick { width: auto; min-width: 96px; max-width: 160px; height: 18px; font-size: var(--fs-s); }
 .grain-preset-row {
   display: flex; align-items: center; gap: 6px; margin: 0 0 8px;
 }
 .grain-preset-row .re-tag { width: auto; }
 .grain-preset-row .mini { flex: 1 1 100px; min-width: 0; }
 .grain-preset-row .ghost {
-  height: 22px; padding: 0 8px; font-size: 10px; white-space: nowrap; flex: 0 0 auto;
+  height: 22px; padding: 0 8px; font-size: var(--fs-s); white-space: nowrap; flex: 0 0 auto;
 }
 
 /* ── the sequencer, in a frame ─────────────────────────────────────────────── */
@@ -3828,22 +3847,22 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   --text: #c8d8e0; --text-dim: #4a6070;
   display: block; gap: 0; padding: 0;
   background: var(--bg); color: var(--text);
-  font-family: "Share Tech Mono", monospace; font-size: 12px;
+  font-family: "Share Tech Mono", monospace; font-size: var(--fs-l);
 }
 .automation-body .btn {
   background: var(--bg3); border: 1px solid var(--border); color: var(--text);
-  font-family: "Share Tech Mono", monospace; font-size: 11px; padding: 5px 14px;
+  font-family: "Share Tech Mono", monospace; font-size: var(--fs-m); padding: 5px 14px;
   cursor: pointer; letter-spacing: 1px; text-transform: uppercase; transition: all 0.1s;
   border-radius: 0; height: auto; line-height: normal;
 }
 .automation-body .btn:hover { border-color: var(--accent); color: var(--accent); }
 .automation-body .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
 .automation-body .divider { width: 1px; height: 24px; background: var(--border); }
-.automation-body .knob-label { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
-.automation-body .preset-del-btn { border-color: var(--accent2); color: var(--accent2); font-size: 10px; padding: 4px 8px; }
+.automation-body .knob-label { font-size: var(--fs-xs); color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+.automation-body .preset-del-btn { border-color: var(--accent2); color: var(--accent2); font-size: var(--fs-s); padding: 4px 8px; }
 .automation-body .preset-del-btn:hover { background: var(--accent2); color: var(--bg); }
 .automation-body .preset-select {
-  flex: 1; font-size: 10px; max-width: 200px; background: var(--bg3);
+  flex: 1; font-size: var(--fs-s); max-width: 200px; background: var(--bg3);
   border: 1px solid var(--border); color: var(--text);
   font-family: "Share Tech Mono", monospace; padding: 3px 6px; cursor: pointer;
   border-radius: 0; height: auto;
@@ -3851,13 +3870,13 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .automation-body .preset-select:focus { border-color: var(--accent); outline: none; }
 .automation-body .perf-mode { flex: 0 0 auto; }
 .automation-body .perf-check {
-  display: flex; align-items: center; gap: 5px; font-size: 10px;
+  display: flex; align-items: center; gap: 5px; font-size: var(--fs-s);
   color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase;
 }
 .perf-panel { background: var(--bg2); border-top: 1px solid var(--border); }
 .perf-header {
   background: var(--bg3); border-bottom: 1px solid var(--border); padding: 6px 20px;
-  font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent);
+  font-size: var(--fs-s); letter-spacing: 2px; text-transform: uppercase; color: var(--accent);
   display: flex; justify-content: space-between; cursor: pointer; user-select: none;
 }
 .perf-header-info { color: var(--text-dim); letter-spacing: 1px; }
@@ -3871,7 +3890,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   animation: rec-pulse 1s ease-in-out infinite;
 }
 .perf-select { max-width: 220px; }
-.perf-sel-info { font-size: 9px; color: var(--accent); letter-spacing: 1px; margin-left: auto; }
+.perf-sel-info { font-size: var(--fs-xs); color: var(--accent); letter-spacing: 1px; margin-left: auto; }
 #perfCanvas {
   display: block; width: calc(100% - 40px); margin: 6px 20px 0;
   background: var(--bg); border: 1px solid var(--border); cursor: crosshair;
@@ -3884,9 +3903,9 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .perf-resize:hover::after { background: var(--accent); }
 .perf-status-row {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 3px 20px 6px; font-size: 9px; color: var(--text-dim); letter-spacing: 1px;
+  padding: 3px 20px 6px; font-size: var(--fs-xs); color: var(--text-dim); letter-spacing: 1px;
 }
-.perf-pos { font-family: "Teko", sans-serif; font-size: 16px; letter-spacing: 3px; color: var(--accent); }
+.perf-pos { font-family: "Teko", sans-serif; font-size: var(--fs-xl); letter-spacing: 3px; color: var(--accent); }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 /* The lane the editor is open on, under the timeline, in the same palette. */
@@ -3897,7 +3916,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .automation-body .automation-lane select {
   background: var(--bg3); border: 1px solid var(--border); color: var(--text);
-  font-family: "Share Tech Mono", monospace; font-size: 10px; border-radius: 0;
+  font-family: "Share Tech Mono", monospace; font-size: var(--fs-s); border-radius: 0;
 }
 .automation-body .automation-canvas { background: var(--bg); border-radius: 0; }
 
@@ -3913,7 +3932,7 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .room-path .rp-only { rx: 1; }
 
 /* The path's waypoints, listed: name, place, and a × on the ones that can go. */
-.re-wp { display: flex; align-items: center; gap: 6px; font-size: 9.5px; line-height: 1.6; }
+.re-wp { display: flex; align-items: center; gap: 6px; font-size: var(--fs-s); line-height: 1.6; }
 .re-wp-name { flex: 0 0 34px; color: var(--text-2); }
 .re-wp-at { flex: 1 1 auto; color: var(--text-dimmer); white-space: pre; }
 .re-wp-x { flex: 0 0 auto; padding: 0 6px; line-height: 1.2; }
@@ -3927,7 +3946,7 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .re-chan .re-tag { width: 74px; white-space: nowrap; }
 .re-chan .re-tag b { font-weight: 600; color: var(--accent); }
 .re-num {
-  width: 64px; flex: 0 0 auto; font-size: 9px; padding: 1px 4px;
+  width: 64px; flex: 0 0 auto; font-size: var(--fs-xs); padding: 1px 4px;
   background: var(--surface-2); color: var(--text);
   border: 1px solid var(--line-2); border-radius: 2px;
   cursor: ew-resize; text-align: right;
@@ -3945,7 +3964,7 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .room-gnomon .gz { stroke: #3e63dd; fill: #3e63dd; }
 
 /* The source switches on the transport: lit while the source plays. */
-.tbtn.src { font-size: 8px; letter-spacing: .08em; padding: 0 6px; opacity: .45; }
+.tbtn.src { font-size: var(--fs-xs); letter-spacing: .08em; padding: 0 6px; opacity: .45; }
 .tbtn.src.on { opacity: 1; color: var(--accent); border-color: var(--accent); }
 /* REC PERF, armed and waiting for Play. */
 .perf-rec-btn.armed { color: var(--accent); border-color: var(--accent); animation: perf-armed 1.2s ease-in-out infinite; }
@@ -3956,19 +3975,19 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
    See `ui/compose.js` and `docs/COMPOSE.md`. */
 .cg { display: flex; flex-direction: column; gap: 6px; min-height: 0; height: 100%; padding: 6px; box-sizing: border-box; }
 .cg-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.cg-title { font-size: 9px; letter-spacing: .14em; color: var(--accent); font-weight: 650; }
-.cg-out { flex: 1 1 auto; min-width: 0; font-size: 8.5px; color: var(--text-dimmer); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cg-title { font-size: var(--fs-xs); letter-spacing: .14em; color: var(--accent); font-weight: 650; }
+.cg-out { flex: 1 1 auto; min-width: 0; font-size: var(--fs-xs); color: var(--text-dimmer); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cg-cloud { max-width: 120px; }
 .cg-engine { flex: 0 0 auto; display: flex; }
-.cg-engine .seg-btn { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: 8.5px; }
+.cg-engine .seg-btn { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: var(--fs-xs); }
 .cg-pad-wrap { position: relative; flex: 1 1 60px; min-height: 48px; }
 .cg-pad { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: var(--well); border-radius: 3px; cursor: crosshair; }
-.cg-pad-read { position: absolute; right: 4px; bottom: 2px; font-size: 8px; pointer-events: none; }
+.cg-pad-read { position: absolute; right: 4px; bottom: 2px; font-size: var(--fs-xs); pointer-events: none; }
 .cg-knobs { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 2px; justify-items: center; }
 .cg-knobs .knob { width: 100%; max-width: 62px; }
 .cg-knobs .knob svg { width: 40px; height: 40px; }
 .cg-knobs .knob .v { min-width: 0; width: 100%; box-sizing: border-box; }
-.cg-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-dimmer); text-align: center; }
+.cg-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; font-size: var(--fs-s); color: var(--text-dimmer); text-align: center; }
 
 .cp { display: flex; flex-direction: column; gap: 4px; min-height: 0; height: 100%; padding: 6px; box-sizing: border-box; }
 .cp-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
@@ -4020,9 +4039,410 @@ body.composeview #mbRes, body.composeview #mbPeakHz { display: none !important; 
 .cp-room .mb-cell-3d:not(.re-framed) { flex: 1 1 auto; }
 
 /* A sequencer lane chosen on the timeline: it is edited in Seq. */
-.automation-body .perf-seq-note { padding: 10px 20px; font-size: 10px; letter-spacing: 1px; color: #ff60b8; }
+.automation-body .perf-seq-note { padding: 10px 20px; font-size: var(--fs-s); letter-spacing: 1px; color: #ff60b8; }
 
 /* The composition bar, over the arrangement. */
 .cv-comp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 20px; background: var(--bg3); border-bottom: 1px solid var(--border); }
-.cv-comp-tag { font-size: 10px; letter-spacing: 2px; color: var(--accent); }
+.cv-comp-tag { font-size: var(--fs-s); letter-spacing: 2px; color: var(--accent); }
 .cv-comp-pick { max-width: 240px; }
+
+/* ═══════════════════════════════════════════════════════ the design pass ══
+   27 Oct 2026. Each block is one item of `docs/DESIGN-CRITIQUE.md`, named by
+   its change ID, and held by `tests/ui/design-pass.spec.mjs`. Last in the file
+   on purpose: these settle disagreements between older rules rather than add
+   new ones beside them. */
+
+/* C3 · The Prism tab: a fixed-width control column, and the pad hard against
+   it. The square used to be centred in the whole dock, with about 560 px of
+   nothing on its left and its Y reading stranded beside it. Now the controls
+   read down a column of their own — the same width at every window size — and
+   the pad starts where the column ends, still sized from the dock's height by
+   `prism-pad.js`. A process's extra settings follow the controls down the
+   column. */
+#dockPrism.prism-body {
+  --prism-col: 384px;
+  display: grid; grid-template-columns: var(--prism-col) minmax(0, 1fr);
+  grid-template-rows: auto auto auto 1fr;
+  column-gap: 12px; row-gap: 5px; align-items: start;
+  padding: 8px 12px; height: 100%; min-height: 0;
+}
+#dockPrism.prism-body.hidden { display: none; }
+#dockPrism > .prism-bar, #dockPrism > .prism-hp, #dockPrism > .prism-settings {
+  grid-column: 1; min-width: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--line);
+}
+#dockPrism > .prism-settings { grid-row: 4; border-bottom: 0; }
+#dockPrism > .prism-settings.hidden { display: none; }
+#dockPrism > .prism-stage {
+  grid-column: 2; grid-row: 1 / -1; align-self: stretch;
+  justify-content: flex-start; height: 100%;
+}
+/* Every labelled control is a row of the control table: name, control,
+   reading — the name's column declared once, so the column reads down. */
+#dockPrism > .prism-bar > label, #dockPrism > .prism-hp > label,
+#dockPrism .prism-hp-faders > label {
+  display: grid; grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center; gap: 6px; flex: 1 1 100%; min-width: 0;
+}
+/* Across and Up are a pair: one line, half each. */
+#dockPrism > .prism-bar > label:nth-of-type(2),
+#dockPrism > .prism-bar > label:nth-of-type(3) { flex: 1 1 calc(50% - 4px); }
+#dockPrism .prism-bar select, #dockPrism .prism-hp select,
+#dockPrism .prism-hp input { width: 100%; min-width: 0; }
+#dockPrism .prism-gap { display: none; }
+#dockPrism .prism-bar > button { flex: 0 0 auto; }
+#dockPrism .prism-hp input[type=range] { width: 100%; }
+#dockPrism .prism-hp-read { min-width: 52px; text-align: right; }
+/* The three faders, one a line, each with its 0 beside it. */
+#dockPrism .prism-hp-faders {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; gap: 3px 6px; flex: 1 1 100%;
+}
+#dockPrism #prismPresetName { flex: 1 1 120px; width: auto; }
+#dockPrism .prism-hp > label[title^="How long"] { grid-template-columns: auto 72px; flex: 1 1 100%; }
+
+/* C4 · One focus ring for the whole interface. Keyboard focus only — a click
+   does not light it — and on every kind of control, text fields included,
+   which until now marked focus with a border that looked like hover.
+   Strong enough to win over the `:focus { outline: none }` rules. */
+:root :is(button, select, input, textarea, a[href], [tabindex]):focus-visible {
+  outline: 1.5px solid var(--accent); outline-offset: 1px;
+}
+
+/* C6 · The transport. The source buttons fit their words, and in the Visual
+   foot — where the bar shares its line with Video and the visuals menu — the
+   meta strip is left out rather than cut mid-word. The file it describes is
+   named at the start of the same bar, and Browse shows all of it. */
+.tbtn.src { width: auto; min-width: 34px; padding: 0 6px; letter-spacing: .04em; }
+.rv-foot #metaStrip { display: none; }
+/* Where it does show and runs out of room, it fades rather than being cut
+   through a word by the volume slider. Only the last 20 px, and only once the
+   strip is fuller than its box — `transport.js`-free: `app.js` sets the class. */
+.metastrip.overflowing {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+
+/* C9 · Browse's empty lane: a sentence while the library is open beside it, a
+   button that opens it when it has been put away. */
+.lane-empty { gap: 10px; }
+.lane-empty .lane-empty-open { display: none; pointer-events: auto; }
+body:has(#leftPanel.collapsed) .lane-empty .lane-empty-say { display: none; }
+body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-block; }
+
+/* C10 · Nothing hangs off the Visual column. The engine row keeps its four
+   fixed places — none moves when the engine changes — but in a 300 px column
+   four of them in a line meant either Keys off the edge or every word cut, so
+   here they are two lines of two, each place still fixed. */
+.rv-admin .engine-switches { height: 40px; }
+.rv-admin .engine-switches > [data-slot] { width: calc((100% - 6px) / 2); }
+.rv-admin .engine-switches > [data-slot] > * { width: 100%; max-width: 100%; box-sizing: border-box; }
+.rv-admin .engine-switches > [data-slot] button { width: 100%; }
+.rv-admin .engine-switches > [data-slot="1"] { left: 0; top: 0; }
+.rv-admin .engine-switches > [data-slot="2"] { left: calc(50% + 3px); top: 0; }
+.rv-admin .engine-switches > [data-slot="3"] { left: 0; top: 22px; }
+.rv-admin .engine-switches > [data-slot="4"] { left: calc(50% + 3px); top: 22px; }
+/* The words beside a switch are control text, at the control table's size —
+   they were inheriting the page's 13 px and stood out of every row (C1). */
+.rv-admin .room-edit .re-check { font-size: var(--fs-s); }
+.rv-admin .room-edit .re-row > select.field { height: 20px; font-size: var(--fs-s); }
+/* The Data layer has no occlusion switch, so its bar ran 21 px past the
+   others. It keeps the switch's place empty instead (the switch is 18 px and
+   the row's gap 3). */
+.rv-admin .re-layer:not(:has(.re-occ))::after { content: ''; flex: 0 0 18px; margin-left: 3px; }
+/* The 4D tab's headings: on one line, and clear of the list above them. */
+#room4dBody .re-tag { width: auto; display: block; margin: 9px 0 4px; }
+#room4dBody .p4-objects { margin-bottom: 0; }
+
+/* C12 · Reduced motion. The interface's own movement — the panel sliding, the
+   record button pulsing — goes to instant. The pictures are what the program
+   makes, drawn on canvases, and are not touched. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* C11 · One section heading. The stretch tray's is the house style — small
+   capitals at the control table's size, a rule under them — and Stage's
+   groups and folds had a voice of their own, bold monospace tracked twice as
+   wide. Colour still says which kind of group it is (orange for the stretch
+   tray's extended side, dim for the standard one); the letterform does not
+   change from panel to panel. Module titles ("Parametric EQ") are a level up and
+   keep theirs. The automation panel keeps the sequencer's voice on purpose:
+   it is the sequencer's panel, carried over so the two takes look like one. */
+.wild-head, .st-group, .st-fold {
+  font-family: var(--sans); font-size: var(--fs-s); font-weight: 600;
+  line-height: 1.2; letter-spacing: .06em; text-transform: uppercase;
+}
+/* The gesture notes read like every other note in the column. */
+.st-note { font: var(--fs-xs)/1.45 var(--sans); color: var(--text-dimmer); }
+
+/* ═══════════════════════════════════════ the Room tab as an instrument ══
+   `docs/DESIGN-CRITIQUE.md`, "The Visual column", and `rkBuild` in `app.js`.
+   Grouped by subject, a knob for each amount, two pads for the camera, the
+   channel box as scrub fields, and choices as rows of fixed places. All of it
+   only in the Visual column; on the master bus the panel is the overlay it
+   always was. */
+.room-edit .rk-pads, .room-edit .rk-head { display: none; }
+.rk-k { display: contents; }
+.rk-face, .rk-v, .rk-l { display: none; }
+
+.rv-admin #roomEdit:not(.hidden) {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: 4px; align-items: start;
+}
+.rv-admin #roomEdit > * { grid-column: 1 / -1; order: var(--rk, 99); }
+
+/* Group headings, in the house style (C11). */
+.rv-admin #roomEdit > .rk-head {
+  display: block; padding: 9px 0 3px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-dim);
+}
+.rv-admin #roomEdit > .rk-head[style*="--rk: 10"] { padding-top: 0; }
+
+/* A knob: the face drawn, the range input laid over it as the thing a pointer
+   and the keyboard actually reach, the reading and the word beneath. */
+.rv-admin .rk-k {
+  display: inline-flex; flex-direction: column; align-items: center;
+  position: relative; flex: 0 0 auto; width: 58px;
+}
+.rv-admin .rk-face { display: block; width: 28px; height: 28px; }
+.rv-admin .rk-face svg { display: block; width: 100%; height: 100%; }
+.rv-admin #roomEdit .rk-k > input.re-slider {
+  position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 30px; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+.rv-admin .rk-k:has(> input:focus-visible) .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+.rv-admin .rk-v {
+  display: block; font: var(--fs-s) var(--mono); font-weight: 400;
+  color: var(--text-2); font-variant-numeric: tabular-nums; line-height: 1.3;
+}
+.rv-admin .rk-l { display: block; font-style: normal; font-size: var(--fs-xs); color: var(--text-dimmer); line-height: 1.2; }
+.rk-track { fill: none; stroke: var(--line-3); stroke-width: 2.5; stroke-linecap: round; }
+.rk-arc { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
+.rk-hand { stroke: var(--text); stroke-width: 1.5; stroke-linecap: round; }
+
+/* A row that is only a knob is a cell of the grid, four to a line. */
+.rv-admin #roomEdit > .re-row.rk-cell {
+  grid-column: span 3; flex-direction: column; align-items: center;
+  padding: 2px 0 5px; min-height: 0; border-bottom: 0;
+}
+.rv-admin #roomEdit > .re-row.rk-cell > .re-tag { display: none; }
+/* Fill sits beside Cloud and Burn: two knobs and a half-row make one line. */
+.rv-admin #roomEdit > .re-row:has(#reGrainFill) { grid-column: span 6; align-self: center; border-bottom: 0; }
+
+/* The camera pads: where the eye turns, where it stands. */
+.rv-admin #roomEdit > .rk-pads { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 5px; }
+.rk-pad {
+  position: relative; height: 96px; cursor: crosshair; touch-action: none;
+  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 24px 24px; background-position: center;
+}
+.rk-pad > i {
+  position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; background: var(--text); pointer-events: none;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.rk-pad-foot { display: flex; justify-content: space-between; margin-top: 2px; font-size: var(--fs-xs); color: var(--text-dimmer); }
+.rk-pad-read { font-family: var(--mono); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+/* The channel box as scrub fields, three to a line: a word over a number. */
+.rv-admin #roomEdit > .re-row.re-chan,
+.rv-admin #roomEdit > #reObjRow > .re-row.re-chan {
+  grid-column: span 4; flex-direction: column; align-items: stretch; gap: 0;
+  min-height: 0; margin: 0 0 4px; padding: 2px 5px;
+  border: 1px solid var(--line); border-radius: 3px;
+}
+.rv-admin #roomEdit .re-row.re-chan > .re-tag {
+  position: static; width: auto; height: auto; display: block;
+  font-size: var(--fs-xs); color: var(--text-dimmer);
+}
+.rv-admin #roomEdit .re-row.re-chan > .re-num { width: 100%; border: 0; background: transparent; padding: 0; text-align: left; }
+.rv-admin #roomEdit > #reObjRow:not(.hidden) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 4px; }
+
+/* Choices: rows of fixed places that never wrap ragged. */
+.rv-admin #roomEdit > .re-row:has(#reCamFront) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+.rv-admin #roomEdit #reStreams { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+.rv-admin #roomEdit #reChunks { display: grid; grid-template-columns: repeat(3, 26px); gap: 3px; flex: 0 0 auto; }
+
+/* On is lit, not filled. A column of solid accent made everything shout and
+   so nothing stood out; on is now a tint with a lit edge, across the whole
+   Visual column. */
+.rv-admin :is(#roomEdit, #ridgeEdit, #room3dEdit, #stageEdit, #textEdit, #roomGeomBody, #roomPaintBody) .re-btn.active {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  color: var(--accent);
+}
+/* The layers: a list with an eye, not a stack of filled bars. */
+.rv-admin #reLayers .re-layer-name,
+.rv-admin #reLayers .re-layer-name.active {
+  background: transparent; border-color: transparent; color: var(--text-dimmer);
+  text-align: left;
+}
+.rv-admin #reLayers .re-layer-name.active { color: var(--text-2); }
+.rv-admin #reLayers .re-layer-name::before { content: '\25CB'; margin-right: 7px; color: var(--text-dimmer); }
+.rv-admin #reLayers .re-layer-name.active::before { content: '\25C9'; color: var(--accent); }
+.rv-admin #reLayers .re-layer:hover .re-layer-name { background: var(--surface-3); }
+/* Rows the group heading already names: the tag would say it twice. */
+.rv-admin #roomEdit > .re-row:has(#reLayers),
+.rv-admin #roomEdit > .re-row:has(#reSolidShape) { padding-left: 0; }
+.rv-admin #roomEdit > .re-row:has(#reLayers) > .re-tag,
+.rv-admin #roomEdit > .re-row:has(#reSolidShape) > .re-tag { display: none; }
+.rv-admin #roomEdit #reSolidShape { flex: 1 1 auto; }
+/* Fill shares its line with Cloud and Burn, so its word takes a short column. */
+.rv-admin #roomEdit > .re-row:has(#reGrainFill) { --re-tag-w: 30px; flex-wrap: nowrap; }
+/* Fog's menu is the width of its words, so the knob and the swatch keep the line. */
+.rv-admin #roomEdit #reFogType { flex: 0 1 68px; min-width: 0; }
+
+/* The other panels of the column (`rkAdopt`): the same knob cells, four to a
+   line, inside whatever holds their rows. */
+.rv-admin .rk-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 4px; align-items: start; align-content: start; }
+.rv-admin .rk-grid.hidden { display: none; }
+.rv-admin .rk-grid > * { grid-column: 1 / -1; }
+/* Under `#roomAdmin` so it outranks the one-line row's tag column, which these
+   cells no longer have. */
+#roomAdmin .rk-grid > .rk-cell {
+  grid-column: span 3; flex-direction: column; align-items: center;
+  padding: 2px 0 5px; min-height: 0; border-bottom: 0;
+}
+.rv-admin .rk-grid > .rk-cell > .re-tag { display: none; }
+/* Under `#roomAdmin`, to outrank each panel's own slider width (Ridgeline's
+   is 110 px and up): an input wider than its face reaches over the knob beside
+   it, and a pointer aimed at one turns the other. */
+#roomAdmin .rk-grid .rk-k > input.re-slider {
+  position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 30px; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+.rv-admin .rk-k > .rg-read.rk-v { min-width: 0; text-align: center; font-size: var(--fs-s); }
+
+/* ═══════════════════════════════════════ the granular tray as an instrument ══
+   `docs/DESIGN-CRITIQUE.md`, "The granular engine"; `gkLayout` and `gkKnob` in
+   `app.js`. In the dock: the cloud pad's column on the left, and every group a
+   bank of knobs, the banks wrapping across the rest of the width so the whole
+   engine is on screen at the dock's height. */
+#dockStretch .grain-controls {
+  position: relative; display: flex; flex-wrap: wrap; align-content: flex-start;
+  align-items: flex-start; gap: 4px 10px; padding-left: 240px; min-height: 236px;
+  /* The width the two columns had, and no more: the master bus beside it is
+     drawn to its cell, and the Room overlay over that picture wraps to it. */
+}
+#dockStretch :is(.grain-standard, #extPanel, #stretchParams, #grainShape, #grainPitch, #extEngine, #extGrain) { display: contents; }
+#dockStretch #extEngine.hidden { display: none; }
+#dockStretch .gk-left { position: absolute; left: 0; top: 28px; width: 228px; }
+/* The engine picker heads the pad's column, so the banks start with the
+   switches and lose a line. */
+#dockStretch .engine-pick { position: absolute; left: 0; top: 0; width: 228px; }
+#dockStretch .gk-left .cloud-pad-wrap { margin: 0 0 3px; }
+#dockStretch #cloudPad { height: 150px; }
+#dockStretch .gk-left .stretch-readout { margin-bottom: 6px; }
+
+/* The engine and its switches head the banks. Four fixed places still, the
+   same width each — wide enough now for the words, not their consonants. */
+#dockStretch .engine-switch-host { order: 0; flex: 0 0 434px; margin: 0; }
+#dockStretch .engine-switches > [data-slot] { width: 104px; }
+#dockStretch .engine-switches > [data-slot] button { width: 100%; }
+#dockStretch .engine-switches > [data-slot="2"] { left: 110px; }
+#dockStretch .engine-switches > [data-slot="3"] { left: 220px; }
+#dockStretch .engine-switches > [data-slot="4"] { left: 330px; }
+#grainControls .switch::first-letter { text-transform: uppercase; }
+
+/* Banks, in an order that packs: time and pitch beside pitch movement, the
+   grain on a line of its own, the extended side after. */
+#dockStretch .stretch-core { order: 1; }
+#dockStretch .engine-params { order: 1; }
+#grainControls .engine-params:not(:empty)::before { content: 'This engine'; }
+#dockStretch .engine-params:empty { display: none; }
+#dockStretch #grainPitch > .wild { order: 2; }
+#dockStretch #grainShape > .wild { order: 3; }
+#dockStretch #extEngine > .wild { order: 4; }
+#dockStretch #extGrain > .wild { order: 5; }
+
+/* A bank: its heading over a row of knobs. In the dock and in Visual › Sound. */
+#grainControls .wild { display: flex; flex-direction: column; margin-top: 0; min-width: 0; }
+#grainControls :is(.wild-body, .stretch-core, .engine-params) {
+  display: flex; flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 0 2px;
+}
+/* The engine's own controls carry a heading too, so a line holding both banks
+   starts its knobs at one height and Stretch, Pitch and Window read first. */
+/* Laid over the bank's top edge rather than in its row: as a flex item the
+   heading counted as width beside the knobs, and the bank grew past the room
+   that Pitch movement needed beside it. */
+#grainControls :is(.stretch-core, .engine-params:not(:empty)) { position: relative; padding-top: 16px; }
+#grainControls .stretch-core::before,
+#grainControls .engine-params:not(:empty)::before {
+  content: 'Time and pitch'; position: absolute; left: 0; right: 0; top: 0;
+  font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dim); border-bottom: 1px solid var(--line); padding-bottom: 3px;
+  white-space: nowrap;
+}
+#grainControls .wild-head { margin-bottom: 1px; padding-bottom: 2px; }
+/* The extended side's Reset rides on the first heading; small, so it does not
+   widen that bank past sharing its line. */
+#grainControls #extReset { height: 15px; padding: 0 6px; font-size: var(--fs-xs); }
+
+/* A knob: the face, the input laid over it, the reading, the name. */
+#grainControls .param.gk-k {
+  display: flex; flex-direction: column; align-items: center; position: relative;
+  gap: 0; min-width: 50px; padding: 0 2px 1px;
+}
+#grainControls .gk-k > .rk-face { display: block; width: 22px; height: 22px; order: 0; margin-bottom: 1px; }
+#grainControls .gk-k > .rk-face svg { display: block; width: 100%; height: 100%; }
+#grainControls .gk-k > input[type=range] {
+  position: absolute; top: 1px; left: 50%; transform: translateX(-50%);
+  width: 24px; height: 24px; margin: 0; opacity: 0; cursor: ns-resize;
+}
+#grainControls .gk-k:has(> input:focus-visible) > .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+#grainControls .gk-k > .v {
+  order: 1; width: auto; overflow: visible; text-align: center;
+  font-size: var(--fs-s); line-height: 1.15; color: var(--text-2);
+}
+#grainControls .gk-k > .k {
+  order: 2; width: auto; overflow: visible; text-align: center;
+  font-size: var(--fs-xs); line-height: 1.1; color: var(--text-dimmer);
+}
+/* The extended side is what breaks the algorithm, and its knobs say so in its
+   own colour, as its headings always have. */
+#grainControls .grain-extended .rk-arc { stroke: var(--warn); }
+
+/* Switches and choices inside a bank: a short column beside the knobs. */
+#grainControls .wild-body > .param-pair { display: flex; flex-direction: column; gap: 3px; align-self: center; }
+#grainControls .wild-body > .param-pair .toggle { margin: 0; }
+#grainControls .wild-body > .param:not(.gk-k):not(.toggle) {
+  display: flex; flex-direction: column; align-items: stretch; gap: 1px; width: auto; align-self: center;
+}
+#grainControls .wild-body > .param:not(.gk-k):not(.toggle) > .k { font-size: var(--fs-xs); color: var(--text-dimmer); }
+
+/* Visual › Sound: the same banks, down a 300 px column, the pad on top. */
+#roomSoundBody .gk-left { margin-bottom: 8px; }
+#roomSoundBody #cloudPad { aspect-ratio: 16 / 10; }
+/* The Cloud presets fit the pad's column: the menu keeps its words. */
+#dockStretch .gk-left .grain-preset-row { display: flex; align-items: center; gap: 4px; }
+#dockStretch .gk-left .grain-preset-row .mini { flex: 1 1 auto; min-width: 70px; }
+/* The seed reads as one line: its name, its number, its re-roll. */
+#grainControls .wild-body > .param.seed-row { flex-direction: row; align-items: center; gap: 6px; }
+/* Five engines across the pad's column, without running into the switches
+   beside it: the smallest step of the scale, and the column 228 px. */
+#dockStretch .engine-pick .seg { gap: 2px; }
+#dockStretch .engine-pick .seg-btn { font-size: var(--fs-xs); }
+/* The tray's line fills the dock, whatever the controls need. They used to
+   overflow it, which made it full height by accident; now that Granular fits,
+   the line would shrink to the knobs and take the master bus beside it down
+   with it — the picture drawn shorter and its Room overlay wrapped
+   differently. */
+#dockStretch.dock-body { align-content: stretch; }
+/* The streams' eight buttons set the overlay's first column. The type floor
+   (C1) made each a pixel wider, which moved the second column 8 px right and
+   put the Fill swatch under the edit-the-room button. Half a pixel of padding
+   a side gives it back. */
+#reStreams .re-btn { padding: 0 6.5px; }

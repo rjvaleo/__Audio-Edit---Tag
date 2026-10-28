@@ -800,6 +800,13 @@ having only had its engine tested in isolation.
 | `tools/scratch-server.mjs` | A throwaway instance on its own port with its own library, killed and cleaned up. `AUDIOLAB_PORT` exists so it cannot land on a working session. `--check` runs 13 API checks |
 | `tests/ui/*.spec.mjs` | Playwright, 10 specs against that scratch server. The only thing that catches a panel which builds without error and shows nothing |
 
+**The suite runs on the GPU** *(27 Oct 2026)*. Playwright's default headless
+browser, the headless shell, draws WebGL with SwiftShader on the CPU. Every
+room, film and Stage test then burnt about five cores and ran into its 30 s
+timeout. `channel: 'chromium'` in `playwright.config.mjs` runs the full
+Chromium headless, which draws on the Metal GPU. It was checked by asking the
+browser: "SwiftShader Device" before, "ANGLE Metal Renderer: Apple M3" after.
+
 **Two traps inside the harness itself**, both of which cost real time:
 
 - **`window.state` is undefined and always will be.** `state` is declared with
@@ -1658,6 +1665,11 @@ Project docs: **36 files in `docs/`**, chief among them
 `docs/ARCHITECTURE.md` (as-built), `docs/CONTROLS.md` (every gesture),
 `docs/MENUS.md` (every menu item and the settings panel), and
 `docs/SHAPES-4D.md` (the four-dimensional solids).
+`docs/DESIGN-CRITIQUE.md` (27 Oct 2026) is the design pass over the whole
+interface: the ranked critique, the type scale (`--fs-xs` to `--fs-xl`, five
+steps, nothing between them), the one-line rows of the Visual column and the
+Prism tab's layout. `tests/ui/design-pass.spec.mjs` holds each item by its
+change ID.
 
 ---
 
