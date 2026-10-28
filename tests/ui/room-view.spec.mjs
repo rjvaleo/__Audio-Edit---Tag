@@ -381,7 +381,10 @@ test('pressing play in the room plays the document', async ({ page }) => {
   await page.evaluate(async () => {
     const folder = state.folders[0].name;
     const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
-    await selectFile(files[0]);
+    // The tone, by name: the first file is the 0.1 s click, which stretched by
+    // twelve plays for 1.2 s — exactly as long as the wait below, so whether it
+    // was "still playing" was a race the machine's load decided.
+    await selectFile(files.find((f) => /tone\.wav$/.test(f.path)) || files[0]);
     const p = state.selectedFile.path;
     // A document with something to lose: a granular stretch is exactly what
     // raw playback drops on the floor.
