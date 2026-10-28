@@ -1146,6 +1146,15 @@ function vgAttach(canvas) {
     gl.bufferData(gl.ARRAY_BUFFER, wts, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(prog.aW);
     gl.vertexAttribPointer(prog.aW, 1, gl.FLOAT, false, 0, 0);
+    // **The second weight, put to a constant here too.** Left as the layer
+    // before had it, the slot is still an enabled array over that layer's
+    // buffer — shorter than these faces — and a GPU refuses the draw
+    // (INVALID_OPERATION) where SwiftShader let it through. The faces were then
+    // never written to depth, and occlusion hid nothing on any real screen.
+    if (prog.aW2 >= 0) {
+      gl.disableVertexAttribArray(prog.aW2);
+      gl.vertexAttrib1f(prog.aW2, 0);
+    }
     gl.drawArrays(mode, 0, count);
     gl.colorMask(true, true, true, true);
   };

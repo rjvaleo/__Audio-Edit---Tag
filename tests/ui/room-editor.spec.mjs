@@ -354,9 +354,13 @@ test('the data tiles across and down the back wall', async ({ page }) => {
     const hdr = el.querySelector('.rd-hdr')?.textContent || '';
     // How many times one tile's first label appears across a line.
     const count = (s, needle) => s.split(needle).length - 1;
+    // The last column the wall has room for. At dock size the wall is about 45
+    // characters, and whole columns only are printed — RMS no longer fits
+    // there — so the tile is counted by whichever label closes it.
+    const labels = hdr.trim().split(/\s+/);
     return {
       hdr,
-      across: count(hdr, 'RMS'),
+      across: labels.length ? count(hdr, labels[labels.length - 1]) : 0,
       // Nothing printed should be an empty line except the gaps between blocks,
       // which carry spaces on purpose.
       printed: rows.filter((r) => !r.classList.contains('rd-gap')).length,
@@ -446,8 +450,12 @@ test('a stream keeps its column when its neighbours are switched off',
 
     // And the numbers are under the labels, which is the point of all of it.
     // `fitCell` right-aligns every field, so a column's right edge is where its
-    // label's right edge is.
-    for (const label of ['OUT', 'SIZE', 'RMS']) {
+    // label's right edge is. Asked of the columns the wall has room for: whole
+    // columns only are printed, and at dock size RMS no longer fits.
+    const printed = ['OUT', 'SIZE', 'PIT', 'RMS'].filter((l) => some.hdr.includes(l));
+    expect(printed.length, `only ${printed} printed — too few columns to tell`)
+      .toBeGreaterThanOrEqual(2);
+    for (const label of printed) {
       const end = some.hdr.indexOf(label) + label.length;
       const under = some.row.slice(0, end).trimEnd();
       expect(under.length, `the ${label} column's numbers do not end where `

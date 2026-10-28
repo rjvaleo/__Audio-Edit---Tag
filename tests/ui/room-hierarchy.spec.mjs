@@ -1081,9 +1081,14 @@ test('the mist is visible, and off means off', async ({ page }) => {
     // A grain can only trail from a journey it has already made, so the cloud
     // is walked in against the wall clock rather than poured in.
     roomEdit.mist = false;
+    // **Paced by the clock, not by frames.** The trails are history in real
+    // time, and a frame is 16 ms on a GPU and anything up to a quarter of a
+    // second in a software renderer — so walking frame by frame gave the cloud
+    // 2.3 s of journey on one and 35 s on the other, and the amount measured
+    // was really the browser's frame rate.
     for (let t = 0; t <= 7.0001; t += 0.05) {
       send(t);
-      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => setTimeout(r, 30));
     }
     await new Promise((r) => setTimeout(r, 700));
     send(7); const off = read();

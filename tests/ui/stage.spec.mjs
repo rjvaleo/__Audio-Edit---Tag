@@ -36,6 +36,13 @@ async function openStage(page) {
   await page.evaluate(() => {
     if (typeof visGlRaf !== 'undefined' && visGlRaf) { cancelAnimationFrame(visGlRaf); visGlRaf = null; }
   });
+  // **One run thrown away, to let the shaders finish.** On a GPU Babylon
+  // compiles them in parallel, and a mesh whose material is not ready is skipped
+  // — so the first measurement in a fresh page could come out at half its
+  // brightness while the second was whole (measured in a full run: the lit room
+  // at 11.1 and the same room with its lamps out at 23.7). Every test measures
+  // against a warm scene instead.
+  await page.evaluate(`${RUN}({})`);
 }
 
 /// Drive the room over real frames.
