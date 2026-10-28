@@ -292,7 +292,8 @@ function perfDrawTimeline() {
 
   if (soundH) perfDrawSound(c, xOf, plotW, PERF_RULER_H, soundH, data);
   if (!data.groups.length && !data.live) {
-    c.fillStyle = '#2a3540';
+    // Readable: it was #2a3540 on #0a0c0e, about 1.4 : 1 (C8).
+    c.fillStyle = '#7d93a3';
     c.font = '10px "Share Tech Mono", monospace';
     c.textAlign = 'center';
     c.fillText('NO TAKE — ⏺ REC PERF WHILE THE SOUND PLAYS, THEN PERFORM', W / 2,

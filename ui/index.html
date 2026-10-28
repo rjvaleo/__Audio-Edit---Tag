@@ -55,8 +55,8 @@
     <div class="panel-head">
       <span id="leftPanelTitle">Browse</span>
       <input class="filter-box" id="treeFilter" placeholder="filter&hellip;">
-      <button class="x" id="rescanBtn" title="Re-read the library — for sounds added from outside the app">⟳</button>
-      <button class="x" id="closeLeft">×</button>
+      <button class="x" id="rescanBtn" aria-label="Re-read the library" title="Re-read the library — for sounds added from outside the app">⟳</button>
+      <button class="x" id="closeLeft" aria-label="Close the panel">×</button>
     </div>
 
     <div class="panel-body" id="paneBrowse">
@@ -300,7 +300,7 @@
               title="Film the room with the sound it is drawn from. Opens the export box, where the range, the size and the frame rate are chosen.">Video</button>
       <!-- The menu of visuals is twenty-five long and most sessions use four of
            them. This is where you say which four, and in what order. -->
-      <button class="ghost icon-btn" id="visMenuBtn"
+      <button class="ghost icon-btn" id="visMenuBtn" aria-label="Visuals menu"
               title="Which visuals are offered, and in what order.">&#9881;</button>
     </div>
     <!-- Anchored under the gear rather than floated in the middle of the screen:
@@ -353,7 +353,7 @@
            stylesheet, which owns the split and reads it from one custom
            property so the two canvases cannot disagree about where it is. -->
       <div class="lane-split" id="laneSplit" title="Drag to resize the spectrogram — double-click to put it back"></div>
-      <div class="lane-empty" id="laneEmpty">Select a sound on the left.</div>
+      <div class="lane-empty" id="laneEmpty"><span class="lane-empty-say">Select a sound on the left.</span><button class="ghost lane-empty-open" id="laneEmptyOpen">Open the library</button></div>
     </div>
 
     <!-- The room, full size, with its controls beside it.
@@ -371,16 +371,16 @@
              rows and the palette to fourteen things that each open an editor;
              stacked, everything below the fold is found by scrolling past
              something unrelated. -->
-        <div class="rv-admin-head">
-          <button class="rv-tab active" data-rvtab="controls">Room</button>
-          <button class="rv-tab" data-rvtab="sound">Sound</button>
-          <button class="rv-tab" data-rvtab="geom">Shape</button>
-          <button class="rv-tab" data-rvtab="paint">Colour</button>
+        <div class="rv-admin-head" role="tablist" aria-label="Visual panels">
+          <button class="rv-tab active" role="tab" aria-selected="true" data-rvtab="controls">Room</button>
+          <button class="rv-tab" role="tab" aria-selected="false" data-rvtab="sound">Sound</button>
+          <button class="rv-tab" role="tab" aria-selected="false" data-rvtab="geom">Shape</button>
+          <button class="rv-tab" role="tab" aria-selected="false" data-rvtab="paint">Colour</button>
           <!-- The four-dimensional solids. Its own tab rather than a section of
                Shape, because what is in it is a different kind of thing: Shape
                is the room's own geometry, this is a catalogue of objects with an
                attribute manager, in the idiom of a modelling package. -->
-          <button class="rv-tab" data-rvtab="dim4">4D</button>
+          <button class="rv-tab" role="tab" aria-selected="false" data-rvtab="dim4">4D</button>
         </div>
         <!-- `#roomEdit` is moved in here. The panel is laid out differently at
              this width — see `.rv-admin .room-edit` — but it is the same DOM
@@ -464,10 +464,10 @@
   <span class="mode-label" id="modeLabel">Browse</span>
 
   <div class="vsep"></div>
-  <button class="tbtn play" id="playBtn" title="Play/pause">▶</button>
-  <button class="tbtn" id="stopBtn" title="Stop — returns to the cue. Double-click to return to the beginning of the file; the cue stays where it is.">■</button>
-  <button class="tbtn loop" id="loopBtn" title="Loop: off">⟲</button>
-  <button class="tbtn rec" id="recBtn" title="Capture what is playing">●</button>
+  <button class="tbtn play" id="playBtn" aria-label="Play" title="Play/pause">▶</button>
+  <button class="tbtn" id="stopBtn" aria-label="Stop" title="Stop — returns to the cue. Double-click to return to the beginning of the file; the cue stays where it is.">■</button>
+  <button class="tbtn loop" id="loopBtn" aria-label="Loop" title="Loop: off">⟲</button>
+  <button class="tbtn rec" id="recBtn" aria-label="Capture what is playing" title="Capture what is playing">●</button>
   <!-- The two sound generators. A source switched off is silent, out of the
        picture, and out of an export. -->
   <button class="tbtn src on" id="srcGrain" title="The granular engine">GRAIN</button>
@@ -481,14 +481,14 @@
 
   <div class="vsep"></div>
   <div class="zoom">
-    <button class="tbtn small" id="zoomOut" title="Zoom out">–</button>
+    <button class="tbtn small" id="zoomOut" aria-label="Zoom out" title="Zoom out">–</button>
     <span class="mono dim" id="zoomLabel">fit</span>
-    <button class="tbtn small" id="zoomIn" title="Zoom in">+</button>
-    <button class="tbtn small" id="zoomFit" title="Fit">⤢</button>
+    <button class="tbtn small" id="zoomIn" aria-label="Zoom in" title="Zoom in">+</button>
+    <button class="tbtn small" id="zoomFit" aria-label="Fit the whole file" title="Fit">⤢</button>
   </div>
 
   <div class="zoom">
-    <button class="tbtn small on" id="followBtn" title="Follow playhead: keep it on screen">⇥</button>
+    <button class="tbtn small on" id="followBtn" aria-label="Follow the playhead" title="Follow playhead: keep it on screen">⇥</button>
     <select class="mini" id="followMode" title="How the view keeps up with the playhead">
       <option value="scroll">scroll</option>
       <option value="page">page</option>
@@ -505,23 +505,23 @@
          the dock's own tabs alongside them: as a column down the left they cost
          the granular controls 58px of every screen. -->
     <div class="presetbar hidden" id="presetBar">
-      <nav class="dock-rail">
-        <button class="dock-tab active" data-dock="stretch" title="Time, pitch and grains">
+      <nav class="dock-rail" role="tablist" aria-label="Dock">
+        <button class="dock-tab active" role="tab" aria-selected="true" data-dock="stretch" title="Time, pitch and grains">
           <span class="ic">⧗</span><span class="lb">Time &amp; Pitch</span>
         </button>
-        <button class="dock-tab" data-dock="effects" title="Effect chain">
+        <button class="dock-tab" role="tab" aria-selected="false" data-dock="effects" title="Effect chain">
           <span class="ic">⚙</span><span class="lb">FX</span>
         </button>
-        <button class="dock-tab" data-dock="prism" title="Prism pad: two controls on one square, after Hyperprism">
+        <button class="dock-tab" role="tab" aria-selected="false" data-dock="prism" title="Prism pad: two controls on one square, after Hyperprism">
           <span class="ic">◩</span><span class="lb">Prism</span>
         </button>
-        <button class="dock-tab" data-dock="visuals" title="Spectrogram and meters">
+        <button class="dock-tab" role="tab" aria-selected="false" data-dock="visuals" title="Spectrogram and meters">
           <span class="ic">◍</span><span class="lb">Visuals</span>
         </button>
-        <button class="dock-tab" data-dock="automation" title="Breakpoint automation">
+        <button class="dock-tab" role="tab" aria-selected="false" data-dock="automation" title="Breakpoint automation">
           <span class="ic">⌁</span><span class="lb">Automation</span>
         </button>
-        <button class="dock-tab" data-dock="regions" title="Regions">
+        <button class="dock-tab" role="tab" aria-selected="false" data-dock="regions" title="Regions">
           <span class="ic">⧉</span><span class="lb">Regions</span>
         </button>
       </nav>
