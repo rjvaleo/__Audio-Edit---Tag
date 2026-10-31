@@ -501,10 +501,21 @@ impl RackSpec {
     pub fn build(&self, sample_rate: u32, channels: usize) -> Rack {
         let mut rack = Rack::new();
         for s in &self.slots {
+            // Every effect is `prism-fx`'s, shared with idMLab, built as this
+            // program's own was and given the stored settings by key
+            // (`fx::prism::moved`); `fx/tests/prism_parity.rs` holds each to
+            // the render the old one made, bit for bit.
             let effect: Box<dyn fx::Effect> = match s {
+                // The prism Gain takes ±24 dB, every control's range; a
+                // document edited by hand past it keeps this program's own.
+                SlotSpec::Gain { db, .. } if db.abs() <= fx::GAIN_DB_MAX => {
+                    moved("gain", sample_rate, &[("db".to_string(), *db)], || Box::new(Gain { db: *db }))
+                }
                 SlotSpec::Gain { db, .. } => Box::new(Gain { db: *db }),
-                SlotSpec::Eq { settings, .. } => Box::new(Eq::new(*settings)),
-                SlotSpec::Comp { settings, .. } => Box::new(Compressor::new(*settings)),
+                SlotSpec::Eq { settings, .. } => moved("eq", sample_rate, &eq_params(settings), || Box::new(Eq::new(*settings))),
+                SlotSpec::Comp { settings, .. } => {
+                    moved("compressor", sample_rate, &comp_params(settings), || Box::new(Compressor::new(*settings)))
+                }
                 SlotSpec::Shape { kind, params, .. } => {
                     fx::shape::make(*kind, sample_rate, channels, params)
                 }
@@ -528,7 +539,8 @@ impl RackSpec {
         // Last, always. The channel compressor exists to hold whatever the
         // chain produced under the ceiling, which it can only do from the end.
         if self.master.is_active() {
-            rack.push(Box::new(Maximizer::new(self.master)));
+            let master = self.master;
+            rack.push(moved("maximizer", sample_rate, &master_params(&master), || Box::new(Maximizer::new(master))));
         }
         rack
     }
@@ -694,6 +706,159 @@ mod tests {
 
     use super::*;
     use crate::json;
+
+    /// The rack as this program built it before its effects moved to
+    /// prism-fx: its own EQ, compressor, gain, shapes and maximizer.
+    fn build_own(spec: &RackSpec, sample_rate: u32, channels: usize) -> Rack {
+        let mut rack = Rack::new();
+        for s in &spec.slots {
+            let effect: Box<dyn fx::Effect> = match s {
+                SlotSpec::Gain { db, .. } => Box::new(Gain { db: *db }),
+                SlotSpec::Eq { settings, .. } => Box::new(Eq::new(*settings)),
+                SlotSpec::Comp { settings, .. } => Box::new(Compressor::new(*settings)),
+                SlotSpec::Shape { kind, params, .. } => fx::shape::make_own(*kind, sample_rate, channels, params),
+                SlotSpec::Prism { id, params, sound, .. } => {
+                    fx::prism::make_with_sound(id, sample_rate, channels, params, sound.as_deref())
+                        .unwrap_or_else(|| Box::new(Gain { db: 0.0 }))
+                }
+            };
+            rack.push_slot(effect, s.bypassed());
+        }
+        if spec.master.is_active() {
+            rack.push(Box::new(Maximizer::new(spec.master)));
+        }
+        rack
+    }
+
+    fn loud_source(frames: usize, channels: usize) -> Vec<f32> {
+        let mut x = 0x9e37_79b9_u32;
+        (0..frames * channels)
+            .map(|i| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                let noise = (x as f32 / u32::MAX as f32) * 2.0 - 1.0;
+                let n = (i / channels) as f32;
+                (n / 9.0).sin() * 0.8 + (n / 170.0).sin() * 0.5 + noise * 0.3
+            })
+            .collect()
+    }
+
+    /// Built now and built before, through the rack, with a control moved
+    /// while it runs as the transport moves one: the same samples.
+    fn assert_builds_alike(spec: &RackSpec, what: &str) {
+        for channels in [2, 1] {
+            let input = loud_source(48_000, channels);
+            let mut now = spec.build(48_000, channels);
+            let mut was = build_own(spec, 48_000, channels);
+            let (mut a, mut b) = (input.clone(), input);
+            for (i, (x, y)) in a.chunks_mut(256 * channels).zip(b.chunks_mut(256 * channels)).enumerate() {
+                if i == 40 {
+                    for (slot, key) in [(0, "band.2.gainDb"), (0, "thresholdDb"), (0, "db")] {
+                        assert_eq!(now.get_param(slot, key), was.get_param(slot, key), "{what}: {key}");
+                        now.set_param(slot, key, -7.5);
+                        was.set_param(slot, key, -7.5);
+                    }
+                }
+                now.process(x, channels, 48_000);
+                was.process(y, channels, 48_000);
+            }
+            let at = a.iter().zip(&b).position(|(x, y)| x.to_bits() != y.to_bits());
+            assert_eq!(at, None, "{what}, {channels} ch");
+        }
+    }
+
+    fn eq_spec(moves: &[(&str, f32)]) -> RackSpec {
+        let mut settings = EqSettings::default();
+        for (k, v) in moves {
+            assert!(set_eq_param(&mut settings, k, *v), "{k}");
+        }
+        RackSpec { slots: vec![SlotSpec::Eq { settings, bypassed: false }], ..RackSpec::empty() }
+    }
+
+    fn comp_spec(moves: &[(&str, f32)]) -> RackSpec {
+        let mut settings = CompSettings::default();
+        for (k, v) in moves {
+            assert!(set_comp_param(&mut settings, k, *v), "{k}");
+        }
+        RackSpec { slots: vec![SlotSpec::Comp { settings, bypassed: false }], ..RackSpec::empty() }
+    }
+
+    /// Whether `build` gave a slot the prism effect: it is, once a value the
+    /// prism one keys differently is set on both.
+    fn takes_prism(spec: &RackSpec) -> bool {
+        match &spec.slots[0] {
+            SlotSpec::Eq { settings, .. } => fx::prism::moved("eq", 48_000, &eq_params(settings))
+                .is_some_and(|e| eq_params(settings).iter().all(|(k, v)| e.get_param(k) == Some(*v))),
+            SlotSpec::Comp { settings, .. } => fx::prism::moved("compressor", 48_000, &comp_params(settings))
+                .is_some_and(|e| comp_params(settings).iter().all(|(k, v)| e.get_param(k) == Some(*v))),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn the_rack_built_from_prism_fx_renders_what_its_own_effects_did() {
+        let mut specs: Vec<(String, RackSpec)> = vec![("the default chain".into(), RackSpec::default_chain())];
+        let eqs: &[&[(&str, f32)]] = &[
+            &[],
+            &[("band.0.freq", 80.0)],
+            &[("band.0.freq", 15.0), ("band.0.enabled", 1.0)],
+            &[("band.2.gainDb", 9.0), ("band.2.q", 4.0), ("band.6.gainDb", -12.0)],
+            &[("band.3.enabled", 1.0), ("band.3.mode", 2.0), ("band.3.gainDb", 6.0), ("band.7.enabled", 1.0), ("band.7.freq", 6_000.0)],
+            &[("band.1.mode", 0.0), ("band.1.freq", 300.0), ("band.5.enabled", 1.0), ("band.5.mode", 4.0), ("band.5.freq", 2_500.0)],
+            &[("band.0.freq", 1e9), ("band.4.q", -3.0), ("band.4.enabled", 1.0), ("band.4.gainDb", 99.0)],
+        ];
+        for moves in eqs {
+            specs.push((format!("eq {moves:?}"), eq_spec(moves)));
+        }
+        let comps: &[&[(&str, f32)]] = &[
+            &[],
+            &[("thresholdDb", -40.0), ("ratio", 20.0), ("attackMs", 0.05), ("releaseMs", 3_000.0)],
+            &[("thresholdDb", -18.0), ("ratio", 3.0), ("kneeDb", 12.0), ("makeupDb", 6.0)],
+            &[("thresholdDb", -99.0), ("ratio", 0.0), ("attackMs", 9e9), ("kneeDb", -1.0), ("makeupDb", -99.0)],
+        ];
+        for moves in comps {
+            specs.push((format!("comp {moves:?}"), comp_spec(moves)));
+        }
+        for db in [-24.0, -3.5, 0.0, 6.0, 24.0, 30.0, -48.0] {
+            let slots = vec![SlotSpec::Gain { db, bypassed: false }];
+            specs.push((format!("gain {db}"), RackSpec { slots, ..RackSpec::empty() }));
+        }
+        for (amount, auto_level, auto_comp, ceiling_db) in
+            [(1.0, false, false, -1.0), (0.4, true, false, -0.3), (0.75, false, true, -6.0), (0.05, true, true, -12.0)]
+        {
+            let mut spec = RackSpec::default_chain();
+            spec.master = MasterSettings { on: true, amount, auto_level, auto_comp, ceiling_db };
+            specs.push((format!("the default chain into the maximizer at {amount}"), spec));
+        }
+        // A rack read from a document, every kind of slot in it.
+        let doc = json::parse(
+            r#"{"slots":[
+                {"kind":"gain","db":3},
+                {"kind":"eq","bands":[{"freq":0},{"freq":120,"gainDb":4,"type":"lowShelf","enabled":true}]},
+                {"kind":"comp","thresholdDb":-30,"ratio":6},
+                {"kind":"chorus"},{"kind":"flanger","rateHz":2},{"kind":"detune"},{"kind":"utility"},
+                {"kind":"gain","db":-2,"bypassed":true}
+            ],"master":{"on":true,"amount":0.6}}"#,
+        )
+        .unwrap();
+        specs.push(("a document's rack".into(), RackSpec::from_json(&doc)));
+        for (what, spec) in &specs {
+            assert_builds_alike(spec, what);
+        }
+    }
+
+    #[test]
+    fn the_eq_and_compressor_move_to_prism_fx_wherever_their_values_carry_exactly() {
+        assert!(takes_prism(&comp_spec(&[])), "the default compressor");
+        assert!(takes_prism(&comp_spec(&[("thresholdDb", -30.0), ("ratio", 8.0)])));
+        assert!(takes_prism(&eq_spec(&[("band.0.freq", 80.0), ("band.2.gainDb", 4.0)])));
+        // A high-pass parked at 0 Hz, as every new EQ's is, sits below the
+        // prism EQ's 10 Hz floor: off in both, but the prism one would report
+        // 10 to the transport, which ramps a moved control from what the
+        // effect reports. This program's own EQ keeps it.
+        assert!(!takes_prism(&eq_spec(&[])));
+    }
 
     /// Invariant 9, for a chain that is switched **on**.
     ///
@@ -1124,6 +1289,40 @@ fn set_eq_param(s: &mut EqSettings, key: &str, v: f32) -> bool {
         _ => s.low_pass_hz = bands[7].freq,
     }
     true
+}
+
+/// A moved effect, given the stored settings, or this program's own should the
+/// prism one not hold every one of them exactly — a value a document keeps
+/// outside the control's range, such as a high-pass parked at 0 Hz, below the
+/// band's 10. Exact either way.
+fn moved(id: &str, sample_rate: u32, params: &[(String, f32)], own: impl FnOnce() -> Box<dyn fx::Effect>) -> Box<dyn fx::Effect> {
+    match fx::prism::moved(id, sample_rate, params) {
+        Some(e) if params.iter().all(|(k, v)| e.get_param(k).map(f32::to_bits) == Some(v.to_bits())) => e,
+        _ => own(),
+    }
+}
+
+/// Every control of the prism `id`, read out of stored settings by key.
+fn keyed(id: &str, get: impl Fn(&str) -> Option<f32>) -> Vec<(String, f32)> {
+    fx::prism::specs(id)
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|spec| get(spec.key).map(|v| (spec.key.to_string(), v)))
+        .collect()
+}
+
+fn eq_params(s: &EqSettings) -> Vec<(String, f32)> {
+    keyed("eq", |key| get_eq_param(s, key))
+}
+
+fn comp_params(s: &CompSettings) -> Vec<(String, f32)> {
+    keyed("compressor", |key| get_comp_param(s, key))
+}
+
+fn master_params(m: &MasterSettings) -> Vec<(String, f32)> {
+    use fx::params::Params;
+    let built = Maximizer::new(*m);
+    keyed("maximizer", |key| built.get(key))
 }
 
 fn get_eq_param(s: &EqSettings, key: &str) -> Option<f32> {

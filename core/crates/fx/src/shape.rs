@@ -1011,6 +1011,47 @@ impl ShapeKind {
         ShapeKind::ALL.into_iter().find(|k| k.as_str() == s)
     }
 
+    /// The `prism-fx` effect this kind is, shared with idMLab: the same
+    /// controls under the same keys, held there to golden renders of this
+    /// program's own and here by `tests/prism_parity.rs`.
+    pub fn prism_id(self) -> &'static str {
+        match self {
+            ShapeKind::Invert => "invert",
+            ShapeKind::Swap => "swap",
+            ShapeKind::Width => "width",
+            ShapeKind::Dc => "dc",
+            ShapeKind::Ring => "ring",
+            ShapeKind::Rappify => "rappify",
+            ShapeKind::Boomerang => "boomerang",
+            ShapeKind::Fit => "fit",
+            ShapeKind::Gate => "gate",
+            ShapeKind::Maximizer => "maximizer",
+            ShapeKind::DattorroNotch => "dattorro-notch",
+            ShapeKind::DattorroResonator => "dattorro-resonator",
+            ShapeKind::Regalia => "regalia",
+            ShapeKind::Chamberlin => "chamberlin",
+            ShapeKind::WhiteChorus => "white-chorus",
+            ShapeKind::Flanger => "flanger",
+            ShapeKind::Vibrato => "vibrato",
+            ShapeKind::PnNoise => "pn-noise",
+            ShapeKind::PnNoiseEq => "pn-noise-eq",
+            ShapeKind::DattorroPlate => "dattorro-plate",
+            ShapeKind::AllpassDiffuser => "allpass-diffuser",
+            ShapeKind::DampingFilter => "damping-filter",
+            ShapeKind::Leslie => "leslie",
+            ShapeKind::SingleBitPn => "single-bit-pn",
+            ShapeKind::Harmonizer => "harmonizer",
+            ShapeKind::Detune => "detune",
+            ShapeKind::Doubler => "doubler",
+            ShapeKind::Doppler => "doppler",
+            ShapeKind::Utility => "utility",
+            ShapeKind::DattorroFilterBank => "dattorro-filter-bank",
+            ShapeKind::SchroederReverb => "schroeder-reverb",
+            ShapeKind::MoorerReverb => "moorer-reverb",
+            ShapeKind::Phaser => "phaser",
+        }
+    }
+
     /// The Prism pad's default pair, where Hyperprism had this process: which
     /// control goes across and which up, over what part of each range.
     ///
@@ -1155,14 +1196,28 @@ impl ShapeKind {
     }
 }
 
-/// Build one and set it up.
-///
-/// Returns a plain `Effect`, but wrapped in [`crate::Driven`] so automation can
-/// still reach it by key. Editing a control in the interface rebuilds the rack
-/// from the spec, which is where filter state may safely be discarded; a lane
-/// moving the same control during playback cannot rebuild anything, so it needs
-/// a way through the boxing to the live effect.
+/// Build one and set it up: the `prism-fx` effect this kind is, shared with
+/// idMLab (`ShapeKind::prism_id`), as made and with only the controls given
+/// set, as this program's own was. Automation reaches it by key through
+/// `Effect::set_param`.
 pub fn make(
+    kind: ShapeKind,
+    sample_rate: u32,
+    channels: usize,
+    params: &[(String, f32)],
+) -> Box<dyn Effect> {
+    crate::prism::moved(kind.prism_id(), sample_rate, params)
+        // Every kind is in the catalogue (`tests/prism_parity.rs`); this
+        // program's own is the fallback should a build of prism-fx lack one.
+        .unwrap_or_else(|| make_own(kind, sample_rate, channels, params))
+}
+
+/// This program's own effect for a kind, as it built it before the kinds
+/// moved into `prism-fx`. Kept as the reference `tests/prism_parity.rs` holds
+/// each moved effect to, as `dattorro::Echo` was kept for Echo.
+///
+/// Wrapped in [`crate::Driven`] so automation can still reach it by key.
+pub fn make_own(
     kind: ShapeKind,
     sample_rate: u32,
     channels: usize,
