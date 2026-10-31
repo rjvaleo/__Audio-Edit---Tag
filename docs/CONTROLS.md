@@ -4,14 +4,17 @@ Mouse, keyboard and gesture, in one place. Menu items are in
 [MENUS.md](MENUS.md); this page is everything you can do by pointing at
 something.
 
-Four workspaces, on the left rail: **Browse** (the library), **Edit** (one open
-document), **Room** (the visualiser full size, with every control it has
-beside it) and **Seq** (the scale sequencer, a second voice on the same
-transport — see [`SEQUENCER.md`](SEQUENCER.md)). `Enter` swaps between the first two. Almost everything below only
-exists in Edit.
+Four workspaces, on the left rail: **Browse** (the library), **Grain** (one
+open document — called Edit in the View menu and below), **Visual** (the room
+full size, with every control it has beside it) and **Seq** (the scale
+sequencer, a second voice on the same transport — see
+[`SEQUENCER.md`](SEQUENCER.md)). A fifth, Compose, is built but off the rail
+(see [`COMPOSE.md`](COMPOSE.md)). `Enter` swaps between Browse and Edit. Almost
+everything below only exists in Edit.
 
 *The View menu lists only Browse and Edit — a known defect, recorded in
-[STATE.md](STATE.md) §12, not a statement that Room is something lesser.*
+[STATE.md](STATE.md) §12, not a statement that Visual or Seq is something
+lesser.*
 
 ---
 
@@ -93,9 +96,9 @@ from a previous run; presets are the deliberate way to put them back.
 | **Click the ▶ on a row** | Auditions that file without changing what is selected. |
 | **Hover a row** | The tooltip gives what was heard in it and the confidence reason. |
 
-**Play all files** — the checkbox at the top of the browser, mirrored in the
-View menu. Off, only files that announced themselves as audio are listed; on,
-everything the scan found. A folder hiding some says how many at the end of its
+**Play all files** — the checkbox at the top of the browser, mirrored in ⚙
+Settings as *Show files with no audio header*. Off, only files that announced
+themselves as audio are listed; on, everything the scan found. A folder hiding some says how many at the end of its
 list, and the folder count follows the switch.
 
 ---
@@ -309,7 +312,7 @@ Six start filled — Swarm, Trails, Kaleid, Ink, Ember, Still.
 
 ## The 4D solids
 
-In the Room, on the **4D** tab. Laid out as a modelling application is —
+In Visual, on the **4D** tab. Laid out as a modelling application is —
 viewport, object manager, attribute manager — because anyone who has used
 Cinema 4D, Blender or Maya already knows that shape, and half a convention is
 worse than none.
@@ -357,7 +360,7 @@ never triggers one.
 | `Enter` | Swap between Browse and Edit |
 | `M` | Add a marker at the playhead (Edit only) |
 | `Esc` | Closes the front window first — a menu, a dialog, the Keys panel, the Grains window — and only clears the selection and returns the cue when nothing is open |
-| `A` … `'` | **The note keyboard**, when Keys is open. The home row is the white notes from C; the row above holds the black ones, which is why a QWERTY keyboard fits a piano at all |
+| `A` … `'` | **The note keyboard**, whenever a sound is open in Edit — the Keys window need not be showing. The home row is the white notes from C; the row above holds the black ones, which is why a QWERTY keyboard fits a piano at all |
 | `Z` / `X` | Down / up an octave. It latches, so repeated presses keep going |
 | `⌘Z` / `Ctrl+Z` | Undo |
 | `⇧⌘Z` / `Ctrl+Shift+Z` | Redo |
@@ -420,19 +423,20 @@ Under the waveform, in Edit only. Browse has no open document to transport.
 ## The preset row
 
 Directly under the transport: the dock's own tabs (**Time & Pitch**, **FX**,
-**Visuals**, **Regions**), a rule, then the document preset controls —
-a dropdown, **Save as…** and **Delete**.
+**Prism**, **Visuals**, **Automation**, **Regions**), a rule, then the document
+preset controls — a dropdown, **with sound**, **Save as…**, **Manage…** and
+**Delete**.
 
 That preset is the document's: every engine at once, on the server, with the
 sound if asked. Two narrower ones sit in their own sections — a **look** on the
-Room view's stage bar, a **cloud** over the grain controls — and each is a
-picker, **Save as…** and **Delete** on one line. A look is everything the room
+Visual workspace's stage bar, a **cloud** over the grain controls — and each
+is a picker, **Save as…** and **Delete** on one line. A look is everything the room
 is and none of the sound; a cloud is the grain section and none of the look,
 the seed or the window. See [`SECTION-PRESETS.md`](SECTION-PRESETS.md).
 
-**⏺ Capture**, on the Automation tab, arms every engine control and rolls the
-transport; every move while it plays lands in a lane of its own, drawn on one
-stacked timeline in the scale sequencer's idiom. See
+**⏺ REC PERF**, on the Automation tab, arms every engine control, and Play
+starts the take; every move while it plays lands in a lane of its own, drawn on
+one stacked timeline in the scale sequencer's idiom. See
 [`AUTOMATION-CAPTURE.md`](AUTOMATION-CAPTURE.md).
 
 **Random**, on the same row, throws every control in the stretch tray somewhere

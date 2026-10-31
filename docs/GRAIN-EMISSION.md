@@ -1,6 +1,12 @@
 # Grains emitted, not grains fitted
 
-Written 18 Aug 2026, when it was worked out. Not built yet.
+Written 18 Aug 2026, when it was worked out. Steps 1 to 3 of the order below
+are built: the cloud has its own **Rate** (`Grain::rate_hz`, 0 to 500 on the
+panel; zero is the old rule, so a saved document sounds as it did), the render
+divides by `norm.max(1.0)`, and a full pool steals the oldest voice. The pool
+is still `MAX_VOICES` = 1024, and Overlap is still a control you set. The
+sound engine now lives in the shared crate prism-grain; `fx::grain` and
+`fx::stretch` are its modules, re-exported. The rest of this is as written.
 
 This is about the sound.
 

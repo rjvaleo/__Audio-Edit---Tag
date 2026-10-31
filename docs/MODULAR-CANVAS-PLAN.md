@@ -1,14 +1,16 @@
 # Modular canvas, players and breakpoint automation
 
-**Status:** approved architectural direction; implementation is staged on
-`codex/breakpoint-automation`. The current editor and post-granulator rack remain
-the working application until each replacement slice passes its tests.
+**Status:** approved architectural direction, not built. Implementation was
+staged on `codex/breakpoint-automation`, which was deleted on 18 Aug 2026; this
+document and its reference images were put back, its code was not. The current
+editor and post-granulator rack remain the working application.
 
-**First foundation slice implemented:** `ui-next/` now contains tested versioned
-graph primitives, scalable granular-player and four-channel sequencer-bank nodes,
-stable parameter targets, typed port validation, strict appearance/audio-state
-separation and complete semantic light/dark/high-contrast theme tokens. It is not
-yet served by the Rust application; `ui/` remains the production interface.
+**First foundation slice — no longer in the repository.** `ui-next/` held
+tested versioned graph primitives, scalable granular-player and four-channel
+sequencer-bank nodes, stable parameter targets, typed port validation, strict
+appearance/audio-state separation and complete semantic light/dark/high-contrast
+theme tokens. It was never served by the Rust application and went with the
+branch; `ui/` is the production interface.
 
 This document records the product decisions made on 12 August 2026. It is the
 target architecture for turning Audio Edit & Tag into a reusable, themed,
@@ -295,9 +297,9 @@ module lives on the canvas and patches a normalized or typed control signal to
 one or more parameters. It may be collapsed to a compact node or expanded into
 waveform-backed lanes.
 
-The current automation subsystem already provides stable FX targets, step,
-linear, smooth, exponential and Bézier curves, looping, trim, freehand writing,
-simplification, copy/paste, modulators and Read/Touch/Latch/Write/Trim modes.
+The current automation subsystem already provides stable FX and stretch
+targets, step, linear, smooth, exponential and Bézier curves, looping, a
+per-lane trim, simplification, modulators and Off/Touch/Latch recording.
 Those capabilities become the model layer for the canvas automation node.
 
 An expanded module shows:
@@ -318,19 +320,19 @@ changing the source edit list.
 
 Multiple parameter lanes with distinct colors and direct value labels:
 
-![Multiple automation parameters](assets/breakpoint-automation/multi-lane-parameters.png)
+![Multiple automation parameters](../Reference%20Docs/breakpoint-automation/multi-lane-parameters.png)
 
 Waveform context behind a breakpoint envelope:
 
-![Waveform with breakpoint envelope](assets/breakpoint-automation/waveform-breakpoints.png)
+![Waveform with breakpoint envelope](../Reference%20Docs/breakpoint-automation/waveform-breakpoints.png)
 
 Stacked lanes sharing a clock and waveform context:
 
-![Stacked waveform automation lanes](assets/breakpoint-automation/stacked-waveform-lanes.png)
+![Stacked waveform automation lanes](../Reference%20Docs/breakpoint-automation/stacked-waveform-lanes.png)
 
 Several independently automated sound-producing tracks:
 
-![Multiple automated tracks](assets/breakpoint-automation/multi-track-touch-automation.png)
+![Multiple automated tracks](../Reference%20Docs/breakpoint-automation/multi-track-touch-automation.png)
 
 These images are interaction references, not instructions to reproduce another
 application's chrome. The resulting interface follows this application's theme,

@@ -1,6 +1,10 @@
 # The master bus
 
-Written 17 Aug 2026, when it was designed.
+Written 17 Aug 2026, when it was designed. The ring and the meters were built
+(`Scope`, `SCOPE_FRAMES` in `engine/src/transport.rs`; 0 VU = −18 dBFS). The
+three panels have since become one surface, `#masterBus`, the room in
+[`VISUALISER.md`](VISUALISER.md). The callback's 1024-point transform was not
+removed: `measure` still runs it for the EQ fill and the compressor trace.
 
 Three panels in the right half of the Time & Pitch tray — the space the grain
 views left when they moved into a window. A VU meter with numbers, a Lissajous,

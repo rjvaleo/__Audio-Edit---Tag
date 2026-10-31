@@ -335,7 +335,7 @@ sliders, because the knob faces are drawn only in the Visual column.
   see "The UI queue", §2. 4D: done (`fourd-tab`, below).*
 - **Graph-first controls**, where a value has a shape you drag (fog's falloff
   curve, a ramp's range), are a second step. *A ramp's range and its stops:
-  done, in Colour's Modern view.*
+  done, in Colour's Modern view. Fog's falloff: done (`fog-curve`, below).*
 
 ## The granular engine — Time & Pitch, and Visual › Sound
 
@@ -602,6 +602,18 @@ Tests: `design-pass.spec.mjs` 4D-1 to 4D-4, and `shapes-4d.spec.mjs`'s
 field list. The control-parity baseline names the renamed controls (Pause
 is Still, the plane menu is the six places).
 
+**Prism settings beside the pad** (`prism-settings`, merged). The Pitch Time
+Changer's settings sat under the control column and ran off the foot of the
+dock. They are a bank of knobs to the right of the pad now (`#prismSettings`),
+built as the granular tray's are (`gkKnob`). A process with no settings of its
+own says where they are. Test: `design-pass.spec.mjs` C3, the second.
+
+**Fog as a curve** (`fog-curve`, merged). In the Visual column the fog's
+density is drawn as fog against distance, in the shape its type gives, and
+dragging up and down on it sets the density through `#reFogDensity`, which is
+laid over the drawing. On the master bus overlay the row is the slider it
+was. Tests: `design-pass.spec.mjs` F1 to F6.
+
 ## Raised, and deliberately not changed here
 
 Each of these is a decision, not a fix, so it is RJ's to make.
@@ -638,9 +650,8 @@ Each of these is a decision, not a fix, so it is RJ's to make.
 
 - **The Prism tab** is now a column and a pad, but the pad is sized from
   the dock's height, so on a wide window there is still space to its right.
-  When a slot process has settings of its own, they could take that space
-  rather than sit under the controls. That's a layout decision about the
-  Prism window, so it is RJ's call.
+  A process's own settings take that space now (`prism-settings`, above);
+  with none, it is still empty.
 - **The engine row's Keys button** and **the stray glyph at the foot of
   Browse** were fixed later, on `small-faults` (#2). "2–6. In cloud
   sessions" has the causes.

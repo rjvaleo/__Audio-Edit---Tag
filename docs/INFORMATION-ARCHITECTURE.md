@@ -35,20 +35,22 @@ Everything sits in one window with five fixed regions and a set of overlays.
 | menu | items |
 |---|---|
 | File | Choose library, Re-scan library, Open in editor, Close document, Export, Save tags |
-| Edit | Undo, Redo, Cut, Silence, Fade in, Fade out, Reverse, Add marker, Add region, Select all, Deselect, Revert document |
+| Edit | Undo, Redo, Cut, Crop, Duplicate, Insert silence, Silence, Fade in, Fade out, Reverse, Add marker, Add region, Select all, Deselect, Revert document |
 | Action | Set selection, Select all, Fit selection, Zoom at sample level (start/end), Zoom out all the way, Snap to zero crossings / CD frames / off, New marker, New region, New region split, Markers to regions, Nudge markers, Rename, Delete markers in selection, Go to |
-| DSP | Normalize, Normalize (RMS), Find peak, Fade in, Fade out, Reverse, Strip silence, Repair click, Crop, Duplicate, Insert silence |
+| DSP | Normalize, Normalize (RMS), Find peak, Fade in, Fade out, Reverse, Strip silence, Repair click; a dimmed row saying the live shapers are in the Effects tray |
 | Audio | Play / pause, Stop, Loop, Capture what is playing, Reset time, pitch and grains |
 | Window | Grains (floating), Master bus full screen, Edit the room, Keys |
 | View | Browse, Edit, Zoom in, Zoom out, Fit, Grain views in a panel |
-| ⚙ (right end) | Settings modal: how edits land (snap), what the library lists (play all), watching it play (follow on/mode), the shape of the window (lane split, panel widths), what is drawn (grain centre, master FFT). "Put everything back". |
+| ⚙ (right end) | Settings modal: how edits land (snap), what the library lists (files with no audio header), watching it play (follow on/mode), what things cost (audio buffer, grain detail, analyser resolution), the sequencer (play it through the engine). "Put everything back". |
 
 Every menu item presses a control that exists somewhere else. The menus are a
 second route, never the only one.
 
 ### 1.2 Left rail (`ui/rail.js`; `docs/RAIL.md`)
 
-Five workspaces, one library group, and Record at the foot.
+Four workspaces, Theme, one library group, and Record at the foot. A fifth
+workspace, Compose (`mode = 'compose'`), is built but kept off the rail by
+`COMPOSE_LISTED` (`docs/COMPOSE.md`).
 
 | button | what it switches | kind |
 |---|---|---|
@@ -119,15 +121,16 @@ Top to bottom:
 4. **Ruler and lane** — waveform, spectrogram, grain marks, the grain centre
    line, selection, cue, read band, playhead, the lane split.
 5. **Regions strip.**
-6. **Preset bar** — the five dock tabs on the left (Time & Pitch, Effects,
+6. **Preset bar** — the six dock tabs on the left (Time & Pitch, FX, Prism,
    Visuals, Automation, Regions), then the engine preset picker, "with sound",
    Save as, Manage, Delete, Random.
 7. **The dock** — one tab at a time, resizable:
 
 | dock tab | contents |
 |---|---|
-| Time & Pitch | left: the engine picker (granular, WSOLA, vocoder, PVSOLA, hybrid) and every stretch and grain control (`stretchParams`, readout, engine load, the cloud pad, the **CLOUD** section-preset row, grain shape, grain pitch; the extended panel). Right: the **grain views** (Swarm 2D, Shear, Braid, Swarm 3D, Shells, Lattice; suite V1/V2; pop-out) and, beneath them, the **master bus** — the room in miniature with its resolution buttons, the VU, the readouts and the "edit the room" button. |
-| Effects | the rack: input meter, module rail, output meter, + (the picker: Utility & Shaping, Reverb & Delay, Chorus & Phasing, Pitch & Motion, Noise & Generators — about thirty modules) |
+| Time & Pitch | left: the engine picker (granular, WSOLA, vocoder, PVSOLA, hybrid) and every stretch and grain control (`stretchParams`, readout, engine load, the cloud pad, the **CLOUD** section-preset row, grain shape, grain pitch; the extended panel). Right: the **master bus** — the room in miniature with its resolution buttons, the VU, the readouts and the "edit the room" button. |
+| FX | the rack: input meter, module rail, output meter, + (the picker: EQ & Compression, Reverb & Delay, Chorus & Phasing, Pitch & Motion, Noise & Generators, Spectral, Utility & Shaping — 111 modules: EQ, Compressor, and the 119 effects `/api/fx` lists less ten kept off it) |
+| Prism | the Prism pad: Drive, Across and Up pickers, PTC, ⏺ REC, ⟲ LOOP; Hyperprism's Playback Speed and its L / LR / R faders |
 | Visuals | Spectrogram (show, FFT), Live spectrum, Levels, Stereo field |
 | Automation | the PERFORMANCE panel: REC PERF, PLAY PERF, stop; + LANE, lane picker, DEL; record mode, BYPASS; SIMPLIFY, LOOP SEL, INVERT, UNDO, REDO; the timeline; the open lane's breakpoints; status and position |
 | Regions | the region list |
@@ -402,7 +405,7 @@ Whichever is chosen, four things are worth fixing in any of them:
 |---|---|
 | frame | `menuBar` `settingsOpen` `leftRail` `leftPanel` `rightPanel` `rightRail` `transportBar` |
 | left panes | `paneBrowse` `paneSearch` `paneRecord` `paneScan` `paneTheme` `paneImport` |
-| Grain | `editTools` `overview` `lane` `regions` `presetBar` `dock` (`dockStretch` `dockEffects` `dockVisuals` `dockAutomation` `dockRegions`) `grainVis` `visPick` `masterBus` |
+| Grain | `editTools` `overview` `lane` `regions` `presetBar` `dock` (`dockStretch` `dockEffects` `dockPrism` `dockVisuals` `dockAutomation` `dockRegions`) `grainVis` `visPick` `masterBus` |
 | Visual | `roomView` `roomAdmin` (`roomAdminBody` `roomSoundBody` `roomGeomBody` `roomPaintBody` `room4dBody`) `roomStage` `roomStageBar` (`rgModules` `visualPresetRow` `reFrameRow`) `roomStageRoom` `roomFoot` |
 | the picture | `visGl` `visRidge` `visRoom3d` `visStage` `roomHandles` `roomData` `roomEditOpen` `mbRes` |
 | module panels | `roomEdit` `ridgeEdit` `room3dEdit` `stageEdit` `textEdit` |
