@@ -18,7 +18,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'docs', 'screenshots');
+const OUT = join(ROOT, 'Reference Docs', 'screenshots');
 
 const argPort = process.argv.indexOf('--port');
 const PORT = argPort > -1 ? process.argv[argPort + 1] : '8737';
@@ -182,5 +182,26 @@ await page.evaluate(() => {
 await settle(page, 900);
 await shot(page, '10-export-loop', '.export-card');
 
-console.log(`\n${shots.length} screenshots in docs/screenshots/`);
+await page.keyboard.press('Escape');
+await page.evaluate(() => document.querySelector('.export-card button')?.closest('.modal')?.classList.add('hidden'));
+
+// ------------------------------------------------------------ a prism effect
+// Every rack effect is prism-fx's; this one has its pad.
+await page.evaluate(() => {
+  const rail = [...document.querySelectorAll('.rail *')]
+    .find((e) => e.textContent.trim() === 'Grain');
+  rail?.click();
+  addFxModule('prism:hp-chorus');
+  document.querySelector('.dock-tab[data-dock="effects"]')?.click();
+});
+await settle(page, 1200);
+await shot(page, '11-prism-effect', '.dock');
+
+// ------------------------------------------------------------------ the room
+await page.evaluate(() => setMode('room'));
+await settle(page, 5000);
+await shot(page, '12-room');
+
+
+console.log(`\n${shots.length} screenshots in Reference Docs/screenshots/`);
 await browser.close();
