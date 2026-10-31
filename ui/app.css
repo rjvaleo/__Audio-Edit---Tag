@@ -4446,3 +4446,33 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    put the Fill swatch under the edit-the-room button. Half a pixel of padding
    a side gives it back. */
 #reStreams .re-btn { padding: 0 6.5px; }
+
+/* ═══════════════════════════════════════════ Visual › Room · Air · fog curve ══
+   `rkFog` in `app.js`. Fog drawn against distance in the shape its type gives,
+   the density input laid over the drawing and dragged as a knob is. Only in
+   the Visual column; on the master bus the row is the slider it always was. */
+.rk-fog, .rk-fog-graph { display: contents; }
+.rk-fog-graph > svg, .rk-fog-foot { display: none; }
+
+.rv-admin #roomEdit > .re-row:has(#reFogDensity) { flex-wrap: wrap; row-gap: 4px; }
+.rv-admin #roomEdit > .re-row:has(#reFogDensity) > .re-tag { bottom: auto; height: 22px; margin: 2px 0 0; }
+.rv-admin .rk-fog { display: block; flex: 1 0 100%; order: 9; }
+.rv-admin .rk-fog-graph {
+  display: block; position: relative; height: 56px;
+  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+  background-image: linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 25% 100%; background-position: -1px 0;
+}
+.rv-admin .rk-fog-graph > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.rv-admin #roomEdit .rk-fog-graph > input.re-slider {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+.rv-admin .rk-fog-graph:has(> input:focus-visible) { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+.rk-fog-curve { fill: none; stroke: var(--accent); stroke-width: 1.75; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.rk-fog-fill { fill: color-mix(in oklch, var(--accent) 14%, transparent); stroke: none; }
+.rk-fog-high { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; vector-effect: non-scaling-stroke; }
+.rk-fog.off .rk-fog-curve, .rk-fog.off .rk-fog-high { stroke: var(--text-dimmer); }
+.rk-fog.off .rk-fog-fill { fill: color-mix(in oklch, var(--text-dimmer) 10%, transparent); }
+.rv-admin .rk-fog-foot { display: flex; }
+.rv-admin .rk-fog-foot b { font-weight: 400; }
