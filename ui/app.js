@@ -10380,7 +10380,7 @@ const RK_HEADS = [[10, 'Layers'], [20, 'Camera'], [30, 'Ring'], [40, 'Solid'],
 const RK_KNOBS = {
   reRing: 'Size', reRingDrive: 'Drive', reRingPoints: 'Smooth', reRingEdge: 'Stroke',
   reSolidSpin: 'Turn', reSolidSwell: 'Swell', reSolidEye: 'Eye', reSolidSize: 'Size',
-  reGrainDensity: 'Cloud', reGrainBright: 'Burn', reFogDensity: 'Density',
+  reGrainDensity: 'Cloud', reGrainBright: 'Burn',
   reMistAmount: 'Amount', reMistLength: 'Length', reOpacity: 'Opacity',
 };
 
@@ -10545,6 +10545,93 @@ function rkBuildPads(host) {
   host.appendChild(box);
 }
 
+/// Fog as what it does: how much of the room's own colour it has taken, from
+/// the front of the room to the back wall. The same sums `fogSurvives` does in
+/// `vis-gl.js`, so the curve is the fog rather than a picture of a setting.
+/// `t` runs nought to one across the room's depth; `h` is the height above the
+/// ground, which only Height fog cares about.
+function rkFogAmount(type, density, t, h = 0) {
+  const d = t * roomEdit.geomReach;
+  if (type === 0) return t;
+  if (type === 2) return 1 - Math.exp(-((density * d) ** 2));
+  if (type === 3) return 1 - Math.exp(-density * d * Math.exp(-h * 2.2));
+  return 1 - Math.exp(-density * d);
+}
+
+const RK_FOG_W = 200, RK_FOG_H = 56;
+
+function rkFogPath(type, density, h = 0) {
+  let d = '';
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48;
+    const y = RK_FOG_H - 2 - rkFogAmount(type, density, t, h) * (RK_FOG_H - 4);
+    d += `${i ? 'L' : 'M'}${(t * RK_FOG_W).toFixed(1)} ${y.toFixed(1)}`;
+  }
+  return d;
+}
+
+/// The fog row's density, drawn as its falloff and dragged as a knob is: the
+/// range input is laid over the drawing, so a pointer, the keyboard, a preset
+/// and every test that moves `#reFogDensity` move it still, through its own
+/// handlers. The type stays its menu; the curve is redrawn whenever either
+/// value is set, from anywhere — a drag, the menu, a recalled look.
+function rkFog() {
+  const input = $('reFogDensity'), type = $('reFogType'), on = $('reFog');
+  if (!input || !type || input.dataset.rk) return;
+  input.dataset.rk = 'fog';
+  const box = document.createElement('span');
+  box.className = 'rk-fog';
+  input.before(box);
+  const graph = document.createElement('span');
+  graph.className = 'rk-fog-graph';
+  graph.title = 'The fog against distance: how much of the room it has taken, from the front to the back wall. Drag up for thicker, shift for fine.';
+  graph.innerHTML = `<svg viewBox="0 0 ${RK_FOG_W} ${RK_FOG_H}" preserveAspectRatio="none" aria-hidden="true">`
+    + `<path class="rk-fog-fill"/><path class="rk-fog-high"/><path class="rk-fog-curve"/></svg>`;
+  const foot = document.createElement('span');
+  foot.className = 'rk-pad-foot rk-fog-foot';
+  foot.innerHTML = '<span>Near</span><span>Density <b class="rk-pad-read rk-fog-read"></b></span><span>Back wall</span>';
+  graph.appendChild(input);
+  box.append(graph, foot);
+  const [fill, high, curve] = graph.querySelectorAll('path');
+  const read = foot.querySelector('.rk-fog-read');
+  const draw = () => {
+    const t = Math.max(0, Math.min(3, +RK_SELECT.get.call(type) | 0));
+    const den = +RK_VALUE.get.call(input) / 100;
+    const d = rkFogPath(t, den);
+    curve.setAttribute('d', d);
+    fill.setAttribute('d', `${d}L${RK_FOG_W} ${RK_FOG_H}L0 ${RK_FOG_H}Z`);
+    // Height fog thins as it rises: the same fog a metre up, drawn faint.
+    high.setAttribute('d', t === 3 ? rkFogPath(t, den, 0.5) : '');
+    box.dataset.type = String(t);
+    box.classList.toggle('off', !!on && !on.checked);
+    read.textContent = den.toFixed(2);
+  };
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get() { return RK_VALUE.get.call(this); },
+    set(v) { RK_VALUE.set.call(this, v); draw(); },
+  });
+  Object.defineProperty(type, 'value', {
+    configurable: true,
+    get() { return RK_SELECT.get.call(this); },
+    set(v) { RK_SELECT.set.call(this, v); draw(); },
+  });
+  if (on) {
+    Object.defineProperty(on, 'checked', {
+      configurable: true,
+      get() { return RK_CHECKED.get.call(this); },
+      set(v) { RK_CHECKED.set.call(this, v); draw(); },
+    });
+    on.addEventListener('change', draw);
+  }
+  input.addEventListener('input', draw);
+  type.addEventListener('change', draw);
+  rkDrag(input, () => !!input.closest('.rv-admin'));
+  draw();
+}
+const RK_SELECT = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+const RK_CHECKED = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
+
 function rkBuild() {
   const host = $('roomEdit');
   if (!host || host.dataset.rk) return;
@@ -10570,6 +10657,7 @@ function rkBuild() {
   }
   rkBuildPads(host);
   rkPadsSync();
+  rkFog();
 }
 rkBuild();
 
