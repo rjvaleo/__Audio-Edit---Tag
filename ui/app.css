@@ -4687,3 +4687,49 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 }
 #room4dBody .p4-knobs > .re-reset { grid-column: span 2; justify-self: stretch; height: 20px; }
 #room4dBody .p4-knobs + .fx-note { margin-top: 3px; }
+
+/* The fog's menu, whole now the knob has moved under it: "Height" was cut. */
+.rv-admin #roomEdit #reFogType { flex: 0 0 84px; width: 84px; min-width: 0; }
+/* Linear fog does not read the density: the number stays, said to be idle. */
+.rk-fog[data-type="0"] .rk-fog-read { color: var(--text-dimmer); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* ════════════════════════════════════════ Visual › Room · Air · mist drips ══
+   `rkMist` in `app.js`. The length is the drawing (its input laid over it,
+   dragged as a knob is); the amount is the knob beside it. */
+.rk-mist, .rk-mist-col, .rk-mist-graph { display: contents; }
+.rk-mist-graph > svg, .rk-mist-foot { display: none; }
+.rv-admin #roomEdit > .re-row:has(#reMistLength) { flex-wrap: wrap; row-gap: 4px; }
+.rv-admin #roomEdit > .re-row:has(#reMistLength) > .re-tag { bottom: auto; height: 22px; margin: 2px 0 0; }
+.rv-admin .rk-mist { display: flex; flex: 1 0 100%; order: 9; gap: 8px; align-items: flex-start; }
+.rv-admin .rk-mist-col { display: block; flex: 1 1 auto; order: 0; min-width: 0; }
+.rv-admin .rk-mist > .rk-k { order: 1; }
+.rv-admin .rk-mist-graph {
+  display: block; position: relative; height: 44px;
+  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+}
+.rv-admin .rk-mist-graph > svg { display: block; width: 100%; height: 100%; }
+.rv-admin #roomEdit .rk-mist-graph > input.re-slider {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+.rv-admin .rk-mist-graph:has(> input:focus-visible) { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+.rv-admin .rk-mist-foot { display: flex; }
+.rv-admin .rk-mist-foot b { font-weight: 400; }
+.rk-mist-grain { fill: var(--text-2); }
+.rk-mist-drop { fill: var(--accent); }
+.rk-mist.off .rk-mist-drop, .rk-mist.off .rk-mist-grain { fill: var(--text-dimmer); }
+
+/* ═════════════════════════════════ Visual › Room · Camera, folded to use ══
+   `rkCamWords`, `rkKeys` and the pads' keys in `app.js`. The channel box four
+   to a line in the pads' words; the legend and the pose behind one switch;
+   the pads take the keyboard. */
+.rk-short, .rk-keys { display: none; }
+.rv-admin #roomEdit .re-chan .rk-long { display: none; }
+.rv-admin #roomEdit .re-chan .rk-short { display: inline; }
+.rv-admin #roomEdit > .re-row.re-chan { grid-column: span 3; }
+.rv-admin #roomEdit > .rk-keys { display: block; justify-self: start; grid-column: 1 / -1; margin: 2px 0 4px; }
+.rv-admin #roomEdit > .rk-keys::after { content: ' \25B8'; }
+.rv-admin #roomEdit > .rk-keys[aria-expanded="true"]::after { content: ' \25BE'; }
+.rv-admin #roomEdit:not(.rk-keys-open) > .re-legend,
+.rv-admin #roomEdit:not(.rk-keys-open) > #reNums { display: none; }
+.rk-pad:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
