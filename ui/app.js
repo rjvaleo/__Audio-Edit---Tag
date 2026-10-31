@@ -3633,6 +3633,10 @@ function dockLimits() {
   return { min: DOCK_MIN, max: Math.max(DOCK_MIN, window.innerHeight - top - LANE_MIN) };
 }
 
+/// The height you chose — dragged, or the stylesheet's — which the tray's fit
+/// (`gkFit`) grows from and never goes under. Null until first measured.
+let dockBase = null;
+
 function setDockHeight(px, remember = true) {
   const dock = $('dock');
   if (!dock) return;
@@ -3640,6 +3644,7 @@ function setDockHeight(px, remember = true) {
   const h = Math.round(Math.max(min, Math.min(max, px)));
   dock.style.flex = `0 0 ${h}px`;
   if (remember) {
+    dockBase = h;
     try { localStorage.setItem('dockHeight', String(h)); } catch { /* private mode */ }
   }
   // The canvases in here size themselves from their box, and their observers
@@ -3655,6 +3660,7 @@ function resetDockHeight() {
   const dock = $('dock');
   if (!dock) return;
   dock.style.flex = '';
+  dockBase = Math.round(dock.getBoundingClientRect().height);
   try { localStorage.removeItem('dockHeight'); } catch { /* private mode */ }
   requestAnimationFrame(() => { drawGrains(); drawWave(); });
 }
@@ -3669,6 +3675,7 @@ function resetDockHeight() {
     catch { return NaN; }
   })();
   if (Number.isFinite(stored)) setDockHeight(stored, false);
+  dockBase = Number.isFinite(stored) ? Math.round(dock.getBoundingClientRect().height) : null;
 
   let from = null;
   grip.onpointerdown = (e) => {
@@ -10373,7 +10380,7 @@ const RK_HEADS = [[10, 'Layers'], [20, 'Camera'], [30, 'Ring'], [40, 'Solid'],
 const RK_KNOBS = {
   reRing: 'Size', reRingDrive: 'Drive', reRingPoints: 'Smooth', reRingEdge: 'Stroke',
   reSolidSpin: 'Turn', reSolidSwell: 'Swell', reSolidEye: 'Eye', reSolidSize: 'Size',
-  reGrainDensity: 'Cloud', reGrainBright: 'Burn', reFogDensity: 'Density',
+  reGrainDensity: 'Cloud', reGrainBright: 'Burn',
   reMistAmount: 'Amount', reMistLength: 'Length', reOpacity: 'Opacity',
 };
 
@@ -10538,6 +10545,93 @@ function rkBuildPads(host) {
   host.appendChild(box);
 }
 
+/// Fog as what it does: how much of the room's own colour it has taken, from
+/// the front of the room to the back wall. The same sums `fogSurvives` does in
+/// `vis-gl.js`, so the curve is the fog rather than a picture of a setting.
+/// `t` runs nought to one across the room's depth; `h` is the height above the
+/// ground, which only Height fog cares about.
+function rkFogAmount(type, density, t, h = 0) {
+  const d = t * roomEdit.geomReach;
+  if (type === 0) return t;
+  if (type === 2) return 1 - Math.exp(-((density * d) ** 2));
+  if (type === 3) return 1 - Math.exp(-density * d * Math.exp(-h * 2.2));
+  return 1 - Math.exp(-density * d);
+}
+
+const RK_FOG_W = 200, RK_FOG_H = 56;
+
+function rkFogPath(type, density, h = 0) {
+  let d = '';
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48;
+    const y = RK_FOG_H - 2 - rkFogAmount(type, density, t, h) * (RK_FOG_H - 4);
+    d += `${i ? 'L' : 'M'}${(t * RK_FOG_W).toFixed(1)} ${y.toFixed(1)}`;
+  }
+  return d;
+}
+
+/// The fog row's density, drawn as its falloff and dragged as a knob is: the
+/// range input is laid over the drawing, so a pointer, the keyboard, a preset
+/// and every test that moves `#reFogDensity` move it still, through its own
+/// handlers. The type stays its menu; the curve is redrawn whenever either
+/// value is set, from anywhere — a drag, the menu, a recalled look.
+function rkFog() {
+  const input = $('reFogDensity'), type = $('reFogType'), on = $('reFog');
+  if (!input || !type || input.dataset.rk) return;
+  input.dataset.rk = 'fog';
+  const box = document.createElement('span');
+  box.className = 'rk-fog';
+  input.before(box);
+  const graph = document.createElement('span');
+  graph.className = 'rk-fog-graph';
+  graph.title = 'The fog against distance: how much of the room it has taken, from the front to the back wall. Drag up for thicker, shift for fine.';
+  graph.innerHTML = `<svg viewBox="0 0 ${RK_FOG_W} ${RK_FOG_H}" preserveAspectRatio="none" aria-hidden="true">`
+    + `<path class="rk-fog-fill"/><path class="rk-fog-high"/><path class="rk-fog-curve"/></svg>`;
+  const foot = document.createElement('span');
+  foot.className = 'rk-pad-foot rk-fog-foot';
+  foot.innerHTML = '<span>Near</span><span>Density <b class="rk-pad-read rk-fog-read"></b></span><span>Back wall</span>';
+  graph.appendChild(input);
+  box.append(graph, foot);
+  const [fill, high, curve] = graph.querySelectorAll('path');
+  const read = foot.querySelector('.rk-fog-read');
+  const draw = () => {
+    const t = Math.max(0, Math.min(3, +RK_SELECT.get.call(type) | 0));
+    const den = +RK_VALUE.get.call(input) / 100;
+    const d = rkFogPath(t, den);
+    curve.setAttribute('d', d);
+    fill.setAttribute('d', `${d}L${RK_FOG_W} ${RK_FOG_H}L0 ${RK_FOG_H}Z`);
+    // Height fog thins as it rises: the same fog a metre up, drawn faint.
+    high.setAttribute('d', t === 3 ? rkFogPath(t, den, 0.5) : '');
+    box.dataset.type = String(t);
+    box.classList.toggle('off', !!on && !on.checked);
+    read.textContent = den.toFixed(2);
+  };
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get() { return RK_VALUE.get.call(this); },
+    set(v) { RK_VALUE.set.call(this, v); draw(); },
+  });
+  Object.defineProperty(type, 'value', {
+    configurable: true,
+    get() { return RK_SELECT.get.call(this); },
+    set(v) { RK_SELECT.set.call(this, v); draw(); },
+  });
+  if (on) {
+    Object.defineProperty(on, 'checked', {
+      configurable: true,
+      get() { return RK_CHECKED.get.call(this); },
+      set(v) { RK_CHECKED.set.call(this, v); draw(); },
+    });
+    on.addEventListener('change', draw);
+  }
+  input.addEventListener('input', draw);
+  type.addEventListener('change', draw);
+  rkDrag(input, () => !!input.closest('.rv-admin'));
+  draw();
+}
+const RK_SELECT = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+const RK_CHECKED = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
+
 function rkBuild() {
   const host = $('roomEdit');
   if (!host || host.dataset.rk) return;
@@ -10563,6 +10657,7 @@ function rkBuild() {
   }
   rkBuildPads(host);
   rkPadsSync();
+  rkFog();
 }
 rkBuild();
 
@@ -10625,18 +10720,130 @@ function gkAdopt() {
   if (!host) return;
   for (const row of host.querySelectorAll('.param')) gkKnob(row);
 }
+
+/// Pack the banks into the dock's lines (UI queue, item 1).
+///
+/// They wrapped in a fixed order, so a line was left half empty whenever the
+/// next bank did not fit: Scan alone, Shape on the line below. Packed largest
+/// first into the lines they fit, the same banks take a line or two fewer, and
+/// WSOLA and Vocoder come on screen whole. Reading order holds what matters:
+/// Time and pitch leads, the engine's own controls beside it, every standard
+/// bank before every extended one. Only `order` is set — nothing moves in the
+/// DOM and nothing is hidden. In the dock only; the Sound tab is one column.
+function gkPack() {
+  const host = $('grainControls');
+  if (!host || !host.closest('#dockStretch')) return;
+  const cs = getComputedStyle(host);
+  const room = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const gap = parseFloat(cs.columnGap) || 0;
+  if (room <= 0) return;
+  const banks = [...host.querySelectorAll('.stretch-core, .engine-params, .wild')]
+    .filter((b) => b.getBoundingClientRect().width > 0);
+  const wide = (b) => b.getBoundingClientRect().width;
+  const lead = banks.filter((b) => b.matches('.stretch-core, .engine-params'));
+  const std = banks.filter((b) => !lead.includes(b) && !b.closest('#extPanel'));
+  const ext = banks.filter((b) => b.closest('#extPanel'));
+  const lines = [];
+  const place = (group, first) => {
+    const start = lines.length;
+    if (first) lines.push({ used: first.reduce((w, b) => w + wide(b) + gap, -gap), banks: [...first] });
+    for (const b of [...group].sort((x, y) => wide(y) - wide(x))) {
+      const w = wide(b);
+      const line = lines.slice(start).find((l) => l.used + gap + w <= room);
+      if (line) { line.used += gap + w; line.banks.push(b); } else lines.push({ used: w, banks: [b] });
+    }
+  };
+  place(std, lead);
+  place(ext, null);
+  let n = 10;
+  for (const line of lines) for (const b of line.banks) b.style.order = String(n++);
+}
+/// Both views (`docs/DESIGN-CRITIQUE.md`, "Both views, as an option"): All,
+/// or one side at a time. A page hides the other side's banks by a class on
+/// the tray — their inputs stay in the document for presets, Random,
+/// automation and the resets. The engine picker and its switches are on both.
+const GK_VIEWS = [['all', 'All', 'Every bank; the dock grows to show them'],
+  ['std', 'Standard', 'Time and pitch, the engine, grain shape and pitch movement'],
+  ['ext', 'Extended', 'The constants inside the algorithm']];
+let gkView = (() => {
+  try { const v = localStorage.getItem('gkView'); return GK_VIEWS.some(([k]) => k === v) ? v : 'all'; }
+  catch { return 'all'; }
+})();
+
+function gkViewRow() {
+  const left = $('grainControls')?.querySelector(':scope > .gk-left');
+  if (!left || $('gkView')) return;
+  const row = document.createElement('div');
+  row.className = 'gk-view';
+  row.innerHTML = '<span class="re-tag">SHOW</span><div class="seg" id="gkView"></div>';
+  const seg = row.querySelector('.seg');
+  for (const [key, text, title] of GK_VIEWS) {
+    const btn = document.createElement('button');
+    btn.className = 'seg-btn';
+    btn.dataset.view = key;
+    btn.textContent = text;
+    btn.title = title;
+    btn.onclick = () => gkSetView(key);
+    seg.appendChild(btn);
+  }
+  left.appendChild(row);
+}
+
+function gkSetView(key) {
+  gkView = key;
+  try { localStorage.setItem('gkView', key); } catch { /* private mode */ }
+  const host = $('grainControls');
+  if (!host) return;
+  host.classList.toggle('gk-page-std', key === 'std');
+  host.classList.toggle('gk-page-ext', key === 'ext');
+  for (const b of host.querySelectorAll('#gkView .seg-btn')) b.classList.toggle('active', b.dataset.view === key);
+  gkPack();
+  gkFit();
+}
+
+/// Grow the dock to what the tray shows, from the height you chose and never
+/// under it, never past the room the waveform needs (`setDockHeight` clamps).
+/// Called when the engine, the file or the view changes — not on every
+/// resize, so a dock dragged shorter afterwards stays where it was put.
+function gkFit() {
+  const host = $('grainControls');
+  const dock = $('dock');
+  if (!host || !dock || !host.closest('#dockStretch') || !host.clientHeight) return;
+  const top = host.getBoundingClientRect().top - host.scrollTop;
+  let bottom = 0;
+  for (const el of host.querySelectorAll(':scope > .gk-left, :scope .stretch-core, :scope .engine-params, :scope .wild, :scope .engine-pick, :scope .engine-switch-host')) {
+    const r = el.getBoundingClientRect();
+    if (r.width) bottom = Math.max(bottom, r.bottom - top);
+  }
+  const content = bottom + parseFloat(getComputedStyle(host).paddingBottom || 0);
+  const now = dock.getBoundingClientRect().height;
+  if (dockBase === null) dockBase = Math.round(now);
+  const want = Math.max(dockBase, Math.ceil(now - host.clientHeight + content));
+  if (Math.abs(want - now) > 1) setDockHeight(want, false);
+}
 {
   gkLayout();
+  gkViewRow();
   const host = $('grainControls');
   let queued = false;
   if (host) {
     new MutationObserver(() => {
       if (queued) return;
       queued = true;
-      setTimeout(() => { queued = false; gkAdopt(); }, 0);
+      setTimeout(() => { queued = false; gkAdopt(); gkPack(); gkFit(); }, 0);
     }).observe(host, { childList: true, subtree: true });
+    // Packed on every width change; fitted only when the tray comes into view
+    // (the Stretch tab chosen again), so a drag is never fought.
+    let shown = false;
+    if (window.ResizeObserver) new ResizeObserver(() => {
+      gkPack();
+      const now = host.clientHeight > 0;
+      if (now && !shown) gkFit();
+      shown = now;
+    }).observe(host);
   }
   gkAdopt();
+  gkSetView(gkView);
 }
 
 /// The other panels of the Visual column — Shape, Ridgeline, Surfaces, Stage,

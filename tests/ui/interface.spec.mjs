@@ -224,3 +224,48 @@ test('every engine can be selected and builds its own controls', async ({ page }
   expect(errors, `switching engines reported errors`).toEqual([]);
 });
 
+
+/// Nothing at the foot of the Browse centre is an empty box.
+///
+/// The classification note under the stats is a filled strip with a rule down
+/// its left edge, and it is only written once a sound is chosen. Before that it
+/// was drawn anyway: a bare bar under the lane, a mark that said nothing. A box
+/// with a border or a fill and nothing in it is that mark, wherever it comes
+/// from — so this checks every one below the lane, with no sound and with one.
+const emptyBoxesBelowLane = () => {
+  const lane = document.getElementById('lane').getBoundingClientRect();
+  const centre = document.querySelector('main.centre');
+  const drawn = (el) => {
+    const cs = getComputedStyle(el);
+    const ruled = ['Top', 'Right', 'Bottom', 'Left'].some((s) =>
+      parseFloat(cs[`border${s}Width`]) > 0 && cs[`border${s}Style`] !== 'none'
+      && !/rgba\(.*,\s*0\)$|transparent/.test(cs[`border${s}Color`]));
+    const filled = !/rgba\(.*,\s*0\)$|transparent/.test(cs.backgroundColor) || cs.backgroundImage !== 'none';
+    return ruled || filled;
+  };
+  const bad = [];
+  for (const el of centre.querySelectorAll('*')) {
+    if (el.matches('canvas, img, svg, svg *, input, select, textarea, video')) continue;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height || r.top < lane.bottom - 0.5) continue;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue;
+    const content = el.textContent.trim()
+      || [...el.children].some((c) => { const b = c.getBoundingClientRect(); return b.width && b.height; });
+    if (!content && drawn(el)) {
+      bad.push(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${[...el.classList].join('.')} ${Math.round(r.width)}×${Math.round(r.height)}`);
+    }
+  }
+  return bad;
+};
+
+test('nothing at the foot of the Browse centre is an empty bordered box', async ({ page }) => {
+  await ready(page);
+  expect(await page.evaluate(() => state.mode)).toBe('overview');
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(emptyBoxesBelowLane), 'with no sound chosen').toEqual([]);
+
+  await openFirstSound(page);
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(emptyBoxesBelowLane), 'with a sound chosen').toEqual([]);
+});

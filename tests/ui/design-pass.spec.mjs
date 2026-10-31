@@ -185,6 +185,73 @@ test('C3 · the Prism pad sits hard against a fixed-width control column', async
   expect(narrow.colW).toBe(wide.colW);
 });
 
+test('C3 · a process\'s extra settings are a bank of knobs to the right of the pad', async ({ page }) => {
+  const measure = () => page.evaluate(() => {
+    const box = document.getElementById('prismSettings').getBoundingClientRect();
+    const pad = document.getElementById('prismPad').getBoundingClientRect();
+    const dock = document.getElementById('dockPrism').getBoundingClientRect();
+    const knobs = [...document.querySelectorAll('#prismSettings .param')].map((row) => {
+      const face = row.querySelector(':scope > .rk-face')?.getBoundingClientRect();
+      const input = row.querySelector(':scope > input[type=range]').getBoundingClientRect();
+      return {
+        knob: row.classList.contains('gk-k'),
+        face: face ? Math.round(face.width) : 0,
+        over: !!face && Math.abs((input.left + input.right) / 2 - (face.left + face.right) / 2) <= 2
+          && Math.abs((input.top + input.bottom) / 2 - (face.top + face.bottom) / 2) <= 3,
+      };
+    });
+    return {
+      shown: box.width > 0 && box.height > 0,
+      gap: Math.round(box.left - pad.right), top: Math.round(box.top - pad.top),
+      width: Math.round(box.width), inDock: box.right <= dock.right + 1,
+      note: document.querySelector('#prismSettings .prism-settings-note')?.textContent.trim() || '',
+      knobs,
+    };
+  });
+  await openFile(page);
+  await dockTab(page, 'prism');
+  await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
+  // Time & Pitch keeps its other settings on its own tab: a note says so,
+  // where the knobs would be, and nothing reads as missing.
+  const none = await measure();
+  expect(none.shown).toBe(true);
+  expect(none.knobs).toHaveLength(0);
+  expect(none.note).toMatch(/Time & Pitch tab/);
+  expect(none.gap).toBeGreaterThanOrEqual(0);
+  expect(none.gap).toBeLessThanOrEqual(24);
+  // The Pitch Time Changer has four: knobs, each face under its input.
+  await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
+  await page.waitForTimeout(300);
+  const wide = await measure();
+  expect(wide.note).toBe('');
+  expect(wide.knobs).toHaveLength(4);
+  for (const k of wide.knobs) {
+    expect(k.knob).toBe(true);
+    expect(k.face).toBeGreaterThanOrEqual(20);
+    expect(k.over).toBe(true);
+  }
+  // Hard against the pad, level with its top, inside the dock.
+  expect(wide.gap).toBeGreaterThanOrEqual(0);
+  expect(wide.gap).toBeLessThanOrEqual(24);
+  expect(Math.abs(wide.top)).toBeLessThanOrEqual(24);
+  expect(wide.inDock).toBe(true);
+  // One width, whatever the process and whatever the window.
+  expect(wide.width).toBe(none.width);
+  // A knob turned up sets what its slider set: the Pitch Time Changer's value.
+  const before = await page.evaluate(() => prismPtc().feedback);
+  const face = await page.locator('#prismSettings .param').first().locator('input[type=range]').boundingBox();
+  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2 - 40, { steps: 5 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => prismPtc().feedback)).toBeGreaterThan(before);
+  await page.setViewportSize({ width: 1300, height: 1000 });
+  await page.waitForTimeout(300);
+  const narrow = await measure();
+  expect(narrow.width).toBe(wide.width);
+  expect(narrow.inDock).toBe(true);
+});
+
 test('C4 · keyboard focus is visible on every kind of control', async ({ page }) => {
   await openFile(page);
   for (const sel of ['#playBtn', '.dock-tab[data-dock="effects"]', '#leftRail .mode-btn', '#presetPick', '#dockStretch input[type=range]']) {
@@ -339,14 +406,93 @@ async function engine(page, alg) {
   await page.waitForTimeout(500);
 }
 
-test('G1 · the whole granular tray is on screen without a scroll', async ({ page }) => {
+/// Both views (`docs/DESIGN-CRITIQUE.md`, "Both views, as an option"): All
+/// shows every bank and the dock grows to them; Standard and Extended page.
+const ENGINES = ['granular', 'wsola', 'vocoder', 'pvsola', 'hybrid'];
+
+async function view(page, which) {
+  await page.locator(`#gkView .seg-btn[data-view="${which}"]`).click();
+  await page.waitForTimeout(300);
+}
+
+/// What the tray shows: whether it scrolls, and which sides' banks are visible.
+const TRAY = () => {
+  const g = document.getElementById('grainControls');
+  const banks = [...g.querySelectorAll(':is(.stretch-core, .engine-params:not(:empty), .wild)')]
+    .filter((b) => b.getBoundingClientRect().width > 0);
+  return {
+    scroll: g.scrollHeight, client: g.clientHeight,
+    std: banks.filter((b) => !b.closest('#extPanel')).length,
+    ext: banks.filter((b) => b.closest('#extPanel')).length,
+    picker: document.getElementById('stretchEngine').getBoundingClientRect().width > 0,
+  };
+};
+
+test('G1 · the view switch: All, Standard, Extended, All by default', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.removeItem('gkView'); } catch {} });
   await openFile(page);
-  await engine(page, 'granular');
-  const box = await page.evaluate(() => {
-    const g = document.getElementById('grainControls');
-    return { scroll: g.scrollHeight, client: g.clientHeight };
+  await dockTab(page, 'stretch');
+  const btns = await page.$$eval('#gkView .seg-btn', (bs) => bs.map((b) => [b.dataset.view, b.textContent.trim(), b.classList.contains('active')]));
+  expect(btns).toEqual([['all', 'All', true], ['std', 'Standard', false], ['ext', 'Extended', false]]);
+});
+
+for (const alg of ENGINES) {
+  test(`G1 · All: the whole ${alg} tray is on screen without a scroll`, async ({ page }) => {
+    await page.addInitScript(() => { try { localStorage.removeItem('gkView'); localStorage.removeItem('dockHeight'); } catch {} });
+    await openFile(page);
+    await engine(page, alg);
+    const t = await page.evaluate(TRAY);
+    expect(t.scroll, `${t.scroll - t.client} px under the fold`).toBeLessThanOrEqual(t.client + 1);
+    expect(t.ext, 'All shows the extended side').toBeGreaterThan(0);
   });
-  expect(box.scroll).toBeLessThanOrEqual(box.client + 1);
+}
+
+test('G1 · Standard and Extended each show only their side, and fit', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.removeItem('gkView'); localStorage.removeItem('dockHeight'); } catch {} });
+  await openFile(page);
+  for (const alg of ENGINES) {
+    await engine(page, alg);
+    await view(page, 'std');
+    let t = await page.evaluate(TRAY);
+    expect([t.std > 0, t.ext, t.picker], `${alg} Standard`).toEqual([true, 0, true]);
+    expect(t.scroll, `${alg} Standard scrolls`).toBeLessThanOrEqual(t.client + 1);
+    await view(page, 'ext');
+    t = await page.evaluate(TRAY);
+    expect([t.std, t.ext > 0, t.picker], `${alg} Extended`).toEqual([0, true, true]);
+    expect(t.scroll, `${alg} Extended scrolls`).toBeLessThanOrEqual(t.client + 1);
+    await view(page, 'all');
+  }
+});
+
+test('G1 · a page hides banks, never controls, and the choice is remembered', async ({ page }) => {
+  await page.addInitScript(() => { try { if (!sessionStorage.getItem('seeded')) { localStorage.removeItem('gkView'); sessionStorage.setItem('seeded', '1'); } } catch {} });
+  await openFile(page);
+  await engine(page, 'hybrid');
+  const count = () => page.evaluate(() => document.querySelectorAll('#grainControls input, #grainControls select, #grainControls button').length);
+  const all = await count();
+  await view(page, 'ext');
+  expect(await count()).toBe(all);
+  await page.reload();
+  await openFile(page);
+  await dockTab(page, 'stretch');
+  expect(await page.$eval('#gkView .seg-btn.active', (b) => b.dataset.view)).toBe('ext');
+});
+
+test('G1 · the tray reads standard first, Time and pitch leading', async ({ page }) => {
+  await openFile(page);
+  for (const alg of ['granular', 'wsola', 'vocoder', 'pvsola', 'hybrid']) {
+    await engine(page, alg);
+    const order = await page.evaluate(() => {
+      const banks = [...document.querySelectorAll('#grainControls :is(.stretch-core, .engine-params:not(:empty), .wild)')]
+        .filter((b) => b.getBoundingClientRect().width)
+        .map((b) => ({ ext: !!b.closest('#extPanel'), core: b.matches('.stretch-core'),
+          top: Math.round(b.getBoundingClientRect().top), left: Math.round(b.getBoundingClientRect().left) }))
+        .sort((a, b) => a.top - b.top || a.left - b.left);
+      return { first: banks[0], lastStd: banks.map((b) => b.ext).lastIndexOf(false), firstExt: banks.findIndex((b) => b.ext) };
+    });
+    expect(order.first.core, `${alg}: Time and pitch is not first`).toBe(true);
+    expect(order.lastStd, `${alg}: a standard bank comes after an extended one`).toBeLessThan(order.firstExt);
+  }
 });
 
 test('G2 · every control in the tray that is an amount is a knob a pointer reaches', async ({ page }) => {
@@ -407,6 +553,96 @@ test('G5 · the extended side\'s knobs are drawn in its own colour', async ({ pa
   expect(c.std).toBeTruthy();
   expect(c.ext).toBeTruthy();
   expect(c.ext).not.toBe(c.std);
+});
+
+// ── Visual › Room · Air · fog ───────────────────────────────────────────────
+// `docs/DESIGN-CRITIQUE.md`, graph-first controls. Fog is drawn as what it
+// does — how much of the room's colour it takes, against distance — and the
+// drawing is the control: dragged up, it thickens.
+
+/// The curve as drawn: its path, the type it was drawn for, and its reading.
+const fogCurve = (page) => page.evaluate(() => {
+  const g = document.querySelector('#roomEdit .rk-fog');
+  const curve = g && g.querySelector('.rk-fog-curve');
+  // Height fog at the ground is exponential fog; what it is, it is above the
+  // ground, so the drawing is both lines.
+  const high = g && g.querySelector('.rk-fog-high');
+  return g && {
+    d: (curve ? curve.getAttribute('d') : '') + (high?.getAttribute('d') || ''),
+    type: g.dataset.type,
+    read: g.querySelector('.rk-fog-read')?.textContent.trim(),
+    w: g.querySelector('.rk-fog-graph')?.getBoundingClientRect().width || 0,
+  };
+});
+
+test('F1 · fog is drawn as a curve, in the shape its type gives', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const shapes = {};
+  for (const type of ['1', '2', '0', '3']) {
+    await page.selectOption('#reFogType', type);
+    const c = await fogCurve(page);
+    expect(c, 'no fog curve in the Air group').toBeTruthy();
+    expect(c.w).toBeGreaterThan(100);
+    expect(c.type).toBe(type);
+    shapes[type] = c.d;
+  }
+  expect(new Set(Object.values(shapes)).size).toBe(4);
+  // The setting it drew is the one the room has.
+  expect(await page.evaluate(() => roomEdit.fogType)).toBe(3);
+});
+
+test('F2 · dragging up on the fog curve thickens the fog, through its own input', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  await page.selectOption('#reFogType', '1');
+  await page.evaluate(() => { const i = document.getElementById('reFogDensity'); i.value = '40'; i.dispatchEvent(new Event('input')); });
+  const before = await page.evaluate(() => roomEdit.fogDensity);
+  const drawn = await fogCurve(page);
+  const graph = page.locator('#roomEdit .rk-fog-graph');
+  await graph.scrollIntoViewIfNeeded();
+  const box = await graph.boundingBox();
+  // The pointer lands on the input itself, not on a picture of one.
+  const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(hit).toBe('reFogDensity');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 40, { steps: 5 });
+  await page.mouse.up();
+  const after = await page.evaluate(() => roomEdit.fogDensity);
+  expect(after).toBeGreaterThan(before);
+  const now = await fogCurve(page);
+  expect(now.d).not.toBe(drawn.d);
+  expect(+now.read).toBeCloseTo(after, 2);
+});
+
+test('F3 · the fog curve redraws when a recalled look sets the fog', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  await page.selectOption('#reFogType', '1');
+  const drawn = await fogCurve(page);
+  await page.evaluate(() => {
+    const look = visualSnapshot();
+    look.room.fogDensity = 1.5;
+    look.room.fogType = 2;
+    applyVisual(look);
+  });
+  const now = await fogCurve(page);
+  expect(now.type).toBe('2');
+  expect(now.read).toBe('1.50');
+  expect(now.d).not.toBe(drawn.d);
+});
+
+test('F4 · on the master bus the fog stays the slider it was', async ({ page }) => {
+  await openFile(page);
+  const overlay = await page.evaluate(() => {
+    const i = document.getElementById('reFogDensity');
+    const g = document.querySelector('#roomEdit .rk-fog-graph');
+    return { inAdmin: !!i.closest('.rv-admin'), graph: g ? g.getBoundingClientRect().width : 0, opacity: getComputedStyle(i).opacity };
+  });
+  expect(overlay.inAdmin).toBe(false);
+  expect(overlay.graph).toBe(0);
+  expect(overlay.opacity).toBe('1');
 });
 
 // ── Visual › Colour ─────────────────────────────────────────────────────────
@@ -869,4 +1105,146 @@ test('P16 · each stop is a tick on the gradient, dragged where it sits, in step
   // Classic keeps its sliders and has no bar.
   await page.evaluate(() => { rpView = 'classic'; rpPanel(); });
   await expect(page.locator('#roomPaintBody .rp-stopbar')).toHaveCount(0);
+});
+
+// ── Visual › 4D ─────────────────────────────────────────────────────────────
+// The lighter pass the critique promised the 4D tab ("Not yet done"): its
+// choices as rows of fixed places, its two amounts as knobs, the six plane
+// angles kept as scrub fields, and nothing left blank.
+
+async function dim4(page) {
+  await openFile(page);
+  await roomTab(page, 'dim4');
+  await page.evaluate(() => {
+    p4.spinning = false; p4.spin = 'zw'; p4.mode = 'perspective'; p4.eye = 2.5; p4.rate = 0.35;
+    p4BuildPanel(); p4Draw();
+  });
+}
+
+/// The places of one segment row: where each is, and whether it is lit.
+const p4Places = (name) => `[...document.querySelectorAll('#p4Panel .p4-seg[data-p4seg="${name}"] > .re-btn')]
+  .map((b) => { const r = b.getBoundingClientRect(); const cs = getComputedStyle(b);
+    return { text: b.textContent.trim(), on: b.classList.contains('active'), x: Math.round(r.left), w: Math.round(r.width), top: Math.round(r.top),
+      bg: cs.backgroundColor, edge: cs.borderTopColor }; })`;
+
+test('4D-1 · projection and turning are rows of fixed places, lit and never filled', async ({ page }) => {
+  await dim4(page);
+  const proj = await page.evaluate(p4Places('projection'));
+  const turn = await page.evaluate(p4Places('turning'));
+  expect(proj.map((p) => p.text)).toEqual(['Perspective', 'Parallel']);
+  expect(turn.map((p) => p.text.replace(/\s/g, ''))).toEqual(['Still', 'XY', 'XZ', 'YZ', 'XW·w', 'YW·w', 'ZW·w']);
+  // No dropdown is left to choose the plane.
+  expect(await page.locator('#p4Panel select').count()).toBe(0);
+  for (const row of [proj, turn]) {
+    // One line, every place the same width.
+    expect(new Set(row.map((p) => p.top)).size).toBe(1);
+    expect(Math.max(...row.map((p) => p.w)) - Math.min(...row.map((p) => p.w))).toBeLessThanOrEqual(1);
+    expect(row.filter((p) => p.on).length).toBe(1);
+    // Lit: a tint behind it, an edge that is not the resting one — never a fill.
+    const on = row.find((p) => p.on), off = row.find((p) => !p.on);
+    const alpha = (c) => { const m = c.match(/[\d.]+/g).map(Number); return m.length > 3 ? m[3] : 1; };
+    expect(alpha(on.bg)).toBeLessThan(0.5);
+    expect(on.edge).not.toBe(off.edge);
+  }
+  // Still is lit while the clock is stopped; a plane lights, and turns, when chosen.
+  expect(turn.find((p) => p.on).text).toBe('Still');
+  await page.locator('#p4Panel .p4-seg[data-p4seg="turning"] > .re-btn', { hasText: 'XW' }).click();
+  expect(await page.evaluate(() => ({ spin: p4.spin, spinning: p4.spinning }))).toEqual({ spin: 'xw', spinning: true });
+  await page.locator('#p4Panel .p4-seg[data-p4seg="projection"] > .re-btn', { hasText: 'Parallel' }).click();
+  expect(await page.evaluate(() => p4.mode)).toBe('orthographic');
+  // Fixed places: choosing moved nothing.
+  const proj2 = await page.evaluate(p4Places('projection'));
+  const turn2 = await page.evaluate(p4Places('turning'));
+  expect(proj2.map((p) => [p.x, p.w])).toEqual(proj.map((p) => [p.x, p.w]));
+  expect(turn2.map((p) => [p.x, p.w])).toEqual(turn.map((p) => [p.x, p.w]));
+  expect(turn2.find((p) => p.on).text.replace(/\s/g, '')).toBe('XW·w');
+});
+
+test('4D-2 · Eye and Rate are knobs: the input kept, a face behind it, the input over the face', async ({ page }) => {
+  await dim4(page);
+  const knobs = await page.evaluate(() => ['Eye', 'Rate'].map((name) => {
+    const input = document.querySelector(`#p4Panel input[type=range][data-p4k="${name}"]`);
+    if (!input) return { name, why: 'no range input' };
+    const wrap = input.closest('.rk-k');
+    const face = wrap?.querySelector('.rk-face');
+    if (!face) return { name, why: 'no knob face' };
+    const f = face.getBoundingClientRect();
+    return {
+      name,
+      label: wrap.querySelector('.rk-l')?.textContent,
+      read: wrap.querySelector('.rk-v')?.value,
+      drawn: !!face.querySelector('svg .rk-track'),
+      reached: document.elementFromPoint(f.x + f.width / 2, f.y + f.height / 2) === input,
+    };
+  }));
+  expect(knobs).toEqual([
+    { name: 'Eye', label: 'Eye', read: '2.50', drawn: true, reached: true },
+    { name: 'Rate', label: 'Rate', read: '0.350', drawn: true, reached: true },
+  ]);
+  // Turned as a knob turns: up is more.
+  const face = await page.locator('#p4Panel input[data-p4k="Eye"]').boundingBox();
+  const cx = face.x + face.width / 2, cy = face.y + face.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy - 30, { steps: 5 });
+  await page.mouse.up();
+  const after = await page.evaluate(() => ({ eye: p4.eye,
+    read: document.querySelector('#p4Panel input[data-p4k="Eye"]').closest('.rk-k').querySelector('.rk-v').value }));
+  expect(after.eye).toBeGreaterThan(2.5);
+  expect(after.read).toBe(after.eye.toFixed(2));
+  // A double-click puts it back, as every control in this program does.
+  await page.locator('#p4Panel input[data-p4k="Eye"]').dblclick();
+  expect(await page.evaluate(() => p4.eye)).toBe(2.5);
+  // The reading is a number field, as the field it replaced was: an exact value is typed in.
+  for (const [name, typed, want] of [['Eye', '4.25', 4.25], ['Rate', '0.125', 0.125]]) {
+    const field = page.locator(`#p4Panel .p4-knob-read[data-p4="${name}"]`);
+    await field.fill(typed);
+    await field.press('Enter');
+    expect(await page.evaluate((n) => (n === 'Eye' ? p4.eye : p4.rate), name)).toBe(want);
+    expect(+(await page.locator(`#p4Panel input[data-p4k="${name}"]`).inputValue())).toBe(want);
+  }
+});
+
+test('4D-3 · the six plane angles stay scrub fields', async ({ page }) => {
+  await dim4(page);
+  const fields = await page.evaluate(() => [...document.querySelectorAll('#p4Panel .p4-num-in:not(.p4-knob-read)')]
+    .map((i) => ({ name: i.dataset.p4, type: i.type, cursor: getComputedStyle(i).cursor })));
+  expect(fields.map((f) => f.name)).toEqual(['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW']);
+  expect(fields.every((f) => f.type === 'text' && f.cursor === 'ew-resize')).toBe(true);
+});
+
+test('4D-4 · the tab is dense: one width, no blank space, the notes kept, all of it on screen', async ({ page }) => {
+  await dim4(page);
+  const m = await page.evaluate(() => {
+    const body = document.getElementById('room4dBody');
+    const b = body.getBoundingClientRect();
+    const cs = getComputedStyle(body);
+    const left = b.left + parseFloat(cs.paddingLeft), right = b.right - parseFloat(cs.paddingRight);
+    const kids = [body.querySelector('.p4-view'), ...document.getElementById('p4Panel').children]
+      .filter((e) => e.getBoundingClientRect().height);
+    const rects = kids.map((e) => ({ what: e.className || e.tagName, r: e.getBoundingClientRect() }));
+    const gaps = [];
+    for (let i = 1; i < rects.length; i++) {
+      const g = Math.round(rects[i].r.top - rects[i - 1].r.bottom);
+      if (g > 10) gaps.push(`${rects[i - 1].what} → ${rects[i].what}: ${g}px`);
+    }
+    return {
+      // Every module of the tab spans the one width, edge to edge.
+      ragged: rects.filter((x) => Math.abs(x.r.left - left) > 1 || Math.abs(x.r.right - right) > 1).map((x) => x.what),
+      gaps,
+      notes: [...document.querySelectorAll('#p4Panel .fx-note')].map((n) => n.textContent),
+      // Nothing below the fold: the whole tab is on screen without scrolling.
+      scrolls: body.scrollHeight > body.clientHeight + 1,
+      bottom: Math.round(rects[rects.length - 1].r.bottom), floor: Math.round(b.bottom),
+    };
+  });
+  expect(m.ragged).toEqual([]);
+  expect(m.gaps).toEqual([]);
+  // The explanations stay, on purpose (STATE.md §7).
+  expect(m.notes.some((t) => /fourth dimension/.test(t))).toBe(true);
+  expect(m.notes.some((t) => /w axis/.test(t))).toBe(true);
+  expect(m.scrolls).toBe(false);
+  expect(m.bottom).toBeLessThanOrEqual(m.floor);
+  // …and nothing blank under it: what the controls leave over goes to the viewport.
+  expect(m.floor - m.bottom).toBeLessThanOrEqual(12);
 });
