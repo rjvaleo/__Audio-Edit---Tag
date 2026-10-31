@@ -135,6 +135,17 @@ was, laid over a drawn face, so the keyboard and every reset still reach it.
 The reading under each knob is the value itself, and the word under that is its
 name.
 
+**In the Grain tray, a picture above the knob** (`ui/grain-glyphs.js`). Each of
+the twenty grain and time-and-pitch amounts has a glyph drawn from its value, so
+a turn shows what it did before it is heard: more Density draws more grains,
+Envelope leans the bell, Scan at nothing is a parked dot. One language runs
+through all of them — a bell is one grain, across is time, up is pitch, what the
+control moves is in its group's colour (time and pitch in the text colour, grain
+shape orange, pitch movement blue, scan, shape and layers green) and dashed
+means the engine decides. The sheet they were drawn on, with a slider under
+each, is `docs/design/grain-icons.html`. The engines' own controls (WSOLA's
+Search and Stride, the vocoder's) have none yet.
+
 *Corrected 30 Oct 2026:* this section used to describe a "stroke across
 several" gesture for the stretch tray (drag across a column of sliders to set
 each where the line crossed it). No code ever implemented it, so it is gone
