@@ -48,6 +48,13 @@ Each slot is therefore three things:
 - the **window** of that quantity to spend the ramp across, and the curve of the
   spending.
 
+A new ramp's window is the whole of its quantity, 0 to 1, with one exception:
+**Fog read against Level starts on 0.05–0.27**, because the fog's weight never
+leaves that band and a window of 0 to 1 spends most of the gradient on values
+it never has. The band is the slot's own (`range` on its `RP_SLOTS` entry),
+applies when a ramp is made — switching to Ramp, or a generator — and never
+replaces a window already set.
+
 ### What can drive a ramp
 
 Five were already varyings and cost nothing:
@@ -180,15 +187,61 @@ its stop by index and the order must not move under it; a stop dragged past
 its neighbour is sorted on the next rebuild. `editing one stop does not put the
 other back` in `tests/ui/room-paint.spec.mjs` is the case.
 
+## The panel: Classic and Modern  *(31 Oct 2026)*
+
+A **VIEW** switch at the top of the Colour tab chooses between two panels over
+the same palette. Switching changes the controls and nothing about the room.
+The choice is kept in the browser (`roomPaintView`); Modern is the default.
+
+**Classic** is the panel as it was before the design pass, kept whole as the
+`…Classic` functions: a row of buttons for the mode, a slider per stop, a menu
+for what the ramp is read against, From, To and Curve as sliders, and *Back to
+theme*.
+
+**Modern** gives the tab what the rest of the Visual column has
+(`docs/DESIGN-CRITIQUE.md`, "The UI queue", §2):
+
+- **Choices are rows of fixed places**, lit by a tint and an edge: the mode
+  (Theme · Colour · Ramp) and what the ramp is read against (six places, the
+  sixth named for the layer's own quantity — Stereo width, Pan, Frequency,
+  Depth in w). **A choice a slot does not have keeps its place, empty** — the
+  background's Ramp, Fog's own — so every word is where it is on every slot.
+- **The stops sit on the gradient.** A bar shows the ramp with a tick where
+  each stop is, capped in its colour; drag a tick along it, or use the arrow
+  keys. Under the bar each stop is a cell: its colour, a knob for where it
+  sits (built as `rkKnob` builds them, the range input laid over a drawn
+  face), and × to take it out. The tick and the knob follow each other. The
+  last place adds a stop, in the widest gap.
+- **The window is drawn on the ramp it shapes.** The strip is the ramp as the
+  room reads it across the whole quantity — the first colour below the
+  window, the gradient through the curve across it, the last colour above —
+  sampled through the shader's own arithmetic (`rpSpanCss`). Drag the window
+  to move it, an edge to move that end; each end is a keyboard slider and
+  prints its number under itself. The two ends stay at least 0.01 apart: an
+  inverted window is a hard step in the shader, not a reversed ramp. Curve is
+  a knob beside it, and the strip shows what it does.
+- **Undo.** A generator, a load, or *Theme — as shipped* (first in the load
+  menu, in place of the button) keeps the scheme from before it. Undo puts it
+  back; a second Undo flips again. Any edit by hand ends it (`rpPrev`, cleared
+  in `rpSetSlot`).
+- **The list** names what each slot is set to in the word on its button —
+  theme, colour, or the quantity a ramp reads — and marks the open slot, its
+  editor hanging off an accent rule.
+
+Its CSS is one block at the end of `ui/app.css`, scoped to
+`#roomPaintBody.rp-modern`, so Classic draws by the rules it always had.
+
 ## Where it lives
 
 - `ui/room-paint.js` — the slots, the scheme, the atlas, the generators, storage
-  and the panel.
+  and the panel, in both views.
+- `ui/app.css` — "Visual › Colour as an instrument", the Modern view's block.
 - `ui/vis-gl.js` — `aW2`, the ramp uniforms, the atlas texture, and `slot` on
   `draw`.
 - `ui/app.js` — `roomGroundColour`, `applyRoomPaintCss`, and `paint:` on both
   frame callers.
-- `tests/ui/room-paint.spec.mjs`.
+- `tests/ui/room-paint.spec.mjs`, and P1–P16 in `tests/ui/design-pass.spec.mjs`
+  for the Modern panel and the switch.
 
 Embedded with `include_str!` in `core/crates/server/src/routes.rs`. **Rebuild
 the binary after editing any of them** or the browser is served the old file.

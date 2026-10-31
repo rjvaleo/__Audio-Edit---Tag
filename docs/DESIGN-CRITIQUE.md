@@ -331,9 +331,11 @@ sliders, because the knob faces are drawn only in the Visual column.
 - **The Sound tab** is the granular engine's own panel, borrowed from Grain ›
   Time & Pitch. It is redesigned with the granular engine, next.
 - **Colour** (a list of painted things, each with a ramp) and **4D** (exact
-  numbers, already scrub fields) get a lighter pass after that.
+  numbers, already scrub fields) get a lighter pass after that. *Colour: done,
+  see "The UI queue", §2.*
 - **Graph-first controls**, where a value has a shape you drag (fog's falloff
-  curve, a ramp's range), are a second step.
+  curve, a ramp's range), are a second step. *A ramp's range and its stops:
+  done, in Colour's Modern view.*
 
 ## The granular engine — Time & Pitch, and Visual › Sound
 
@@ -517,6 +519,53 @@ dock's 71 px, because the dock's width rule outranked the column's, so
 edge. They now fill their slots; the dock is unchanged. `buttons.spec.mjs`
 checks that every button on the row fills its slot and holds its words, on
 every engine, in both places.
+
+### 2. The Colour tab — `colour-tab`, #4 and #8
+
+**The first pass (#4)** gave the tab the Visual column's grammar:
+
+- the mode and what a ramp is read against as **rows of fixed places**, an
+  absent choice keeping its place, empty;
+- the stops and the curve as **knobs**, built as `rkKnob` builds them;
+- From and To replaced by **one window dragged on the ramp**, the strip drawn
+  as the room reads it;
+- the generators in six places of one width, on GENERATE's own line.
+
+**The masters, on the result** (31 Oct):
+
+| lens | score | in one line |
+|---|---|---|
+| Ive — material truth | 4 / 5 | The range strip is the ramp, not a picture of a slider. |
+| Rams — economy | 3 / 5 | *Back to theme* alone on a line; doubled rules. |
+| Hadid — flow | 3 / 5 | The open editor had no edge and no owner. |
+| Ingels — delight | 4 / 5 | The strip previews range and curve as you drag. |
+| Norman — clarity | 3 / 5 | Numbers at the strip's ends, not the window's; *flat* against *Colour*; one click wiped the palette. |
+
+The ranked list it gave, and what became of it:
+
+| | wrong | severity | done |
+|---|---|---|---|
+| K1 | a generator or *Back to theme* replaced the palette with no way back | 3 | **Undo**, one step, again to flip |
+| K2 | the window's numbers printed at the strip's ends | 2 | under their own handles |
+| K3 | nothing showed which slot the editor belonged to | 2 | the open row lit, ▾, the editor on an accent rule |
+| K4 | the list said *flat* for the state its button calls *Colour* | 2 | "colour" |
+| K5 | Fog's hint said to leave the range alone — the opposite of right | 2 | the hint fixed, and Fog's ramp **starts on 0.05–0.27** (RJ) |
+| K6 | a stop's place was a number, seen nowhere on the gradient | 2 | **ticks on the gradient**, dragged; the knobs kept (RJ) |
+| K7 | the head's left edge ragged, *Back to theme* alone on a line | 1 | the head in the control column; *Theme — as shipped* first in the load menu |
+| K8 | doubled rules, a trailing blank under a short editor | 1 | one rule each |
+| K9 | the × 13 px, the window's ends 4 px | 1 | larger targets, the look unchanged |
+| K10 | "Stop 1/2/3" under the knobs | 0–1 | kept, for the knobs' grammar |
+
+**Classic and Modern** (RJ: *"a switch to change between classic and modern
+view"*). A **VIEW** switch at the top of the tab: Classic is the tab as it was
+before #4, kept whole; Modern is all of the above. One palette, two panels;
+the choice is remembered. See `ROOM-PAINT.md`, "The panel: Classic and
+Modern".
+
+- **Held by:** P1–P16 in `design-pass.spec.mjs`, with
+  `room-paint.spec.mjs` reading the drive choices from the segment row.
+- **Open for RJ:** the window's ends cannot cross in Modern (an inverted
+  window is a hard step in the shader); Classic still allows it.
 
 ## Raised, and deliberately not changed here
 

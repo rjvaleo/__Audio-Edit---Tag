@@ -656,6 +656,9 @@ async function paintTab(page, key, patch) {
   await roomTab(page, 'paint');
   await page.evaluate(([k, p]) => {
     localStorage.removeItem('roomPaintCurrent');
+    localStorage.removeItem('roomPaintView');
+    rpView = 'modern';
+    rpPrev = null;
     roomPaint.scheme = rpDefaultScheme();
     if (p) rpSetSlot(k, p);
     rpTouch();
@@ -853,6 +856,255 @@ test('P6 · a slot names what it is read against in its own word', async ({ page
     .find((s) => s.querySelector('.rp-slot-name').textContent === 'Ring')
     .querySelector('.rp-slot-mode').textContent);
   expect(mode).toBe('stereo width');
+});
+
+// ── Visual › Colour: classic and modern ─────────────────────────────────────
+// A switch at the top of the tab. Classic is the tab as it was before this
+// pass; Modern is the instrument above, with the council's fixes (K1–K9).
+
+test('P7 · a switch at the top of the tab moves between classic and modern, and is remembered', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const view = page.locator('#roomPaintBody .rp-view');
+  await expect(view.locator('.re-btn')).toHaveText(['Classic', 'Modern']);
+  await expect(view.locator('.re-btn.active')).toHaveText('Modern');
+  await expect(page.locator('#roomPaintBody .rp-span')).toHaveCount(1);
+
+  await view.locator('.re-btn', { hasText: 'Classic' }).click();
+  // Classic is the tab as it was: a menu for the drive, From and To as
+  // sliders, and Back to theme.
+  const classic = await page.evaluate(() => {
+    const b = document.getElementById('roomPaintBody');
+    return { menu: b.querySelectorAll('.rp-edit select.field').length,
+      tags: [...b.querySelectorAll('.rp-edit .re-tag')].map((e) => e.textContent),
+      span: b.querySelectorAll('.rp-span').length, knobs: b.querySelectorAll('.rk-k').length,
+      reset: [...b.querySelectorAll('.re-btn')].some((e) => e.textContent === 'Back to theme') };
+  });
+  expect(classic).toEqual({ menu: 1, tags: expect.arrayContaining(['FROM', 'TO', 'CURVE']), span: 0, knobs: 0, reset: true });
+
+  await page.reload();
+  await page.waitForFunction(() => typeof rpPanel === 'function');
+  await roomTab(page, 'paint');
+  await expect(page.locator('#roomPaintBody .rp-view .re-btn.active')).toHaveText('Classic');
+
+  await page.locator('#roomPaintBody .rp-view .re-btn', { hasText: 'Modern' }).click();
+  await page.evaluate(() => { rpOpen = 'ring'; rpPanel(); });
+  await expect(page.locator('#roomPaintBody .rp-span')).toHaveCount(1);
+  expect(await page.evaluate(() => localStorage.getItem('roomPaintView'))).toBe('modern');
+});
+
+test('P8 · a generator can be undone, and a hand edit ends the undo', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const undo = page.locator('#roomPaintBody .rp-undo');
+  await expect(undo).toHaveCount(0);
+  await page.locator('#roomPaintBody .rp-gens .re-btn', { hasText: 'RGB' }).click();
+  const first = await page.evaluate(() => JSON.stringify(roomPaint.scheme.slots));
+  await page.locator('#roomPaintBody .rp-gens .re-btn', { hasText: 'Vibrant' }).click();
+  await page.locator('#roomPaintBody .rp-undo').click();
+  expect(await page.evaluate(() => JSON.stringify(roomPaint.scheme.slots)), 'back to the first roll').toBe(first);
+  // Undo twice is a redo: two rolls to flip between.
+  await page.locator('#roomPaintBody .rp-undo').click();
+  expect(await page.evaluate(() => JSON.stringify(roomPaint.scheme.slots))).not.toBe(first);
+  await page.evaluate(() => { rpSetSlot('ring', { mode: 'flat', colour: '#123456' }); rpPanel(); });
+  await expect(undo).toHaveCount(0);
+});
+
+test('P9 · each end of the range prints its number under its own handle', async ({ page }) => {
+  await paintTab(page, 'fog', { ...RAMP, lo: 0.05, hi: 0.27 });
+  const at = async () => page.evaluate(() => {
+    const c = (e) => { const r = e.getBoundingClientRect(); return { mid: r.left + r.width / 2, l: r.left, r: r.right }; };
+    const [lo, hi] = [...document.querySelectorAll('#roomPaintBody .rp-span-read > span')].map(c);
+    const [hlo, hhi] = [...document.querySelectorAll('#roomPaintBody .rp-span-end')].map(c);
+    const s = c(document.querySelector('#roomPaintBody .rp-span'));
+    return { lo, hi, hlo, hhi, s };
+  });
+  let g = await at();
+  expect(Math.abs(g.hi.mid - g.hhi.mid), '0.27 under its handle').toBeLessThan(14);
+  expect(g.lo.l).toBeGreaterThanOrEqual(g.s.l - 1);
+  expect(g.lo.r, 'the two never print over each other').toBeLessThanOrEqual(g.hi.l);
+
+  await page.evaluate(() => { rpSetSlot('fog', { lo: 0.5, hi: 0.51 }); rpPanel(); });
+  g = await at();
+  expect(g.lo.r).toBeLessThanOrEqual(g.hi.l);
+  await page.evaluate(() => { rpSetSlot('fog', { lo: 0.6, hi: 1 }); rpPanel(); });
+  g = await at();
+  expect(Math.abs(g.lo.mid - g.hlo.mid)).toBeLessThan(14);
+  expect(g.hi.r, 'and never past the strip').toBeLessThanOrEqual(g.s.r + 1);
+});
+
+test('P10 · the open slot is marked, and its editor reads as its own', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const heads = await page.evaluate(() => [...document.querySelectorAll('#roomPaintBody .rp-slot-head')].map((h) => ({
+    name: h.querySelector('.rp-slot-name').textContent, open: h.getAttribute('aria-expanded'),
+    bg: getComputedStyle(h).backgroundColor })));
+  expect(heads.filter((h) => h.open === 'true').map((h) => h.name)).toEqual(['Ring']);
+  expect(heads.every((h) => h.open === 'true' || h.open === 'false')).toBe(true);
+  const ring = heads.find((h) => h.name === 'Ring'), other = heads.find((h) => h.name === 'Solid');
+  expect(ring.bg, 'the open head is lit').not.toBe(other.bg);
+  const edge = await page.evaluate(() => {
+    const cs = getComputedStyle(document.querySelector('#roomPaintBody .rp-edit'));
+    return { w: parseFloat(cs.borderLeftWidth), style: cs.borderLeftStyle };
+  });
+  expect(edge.style).toBe('solid');
+  expect(edge.w).toBeGreaterThanOrEqual(2);
+});
+
+test('P11 · one word per state, and Fog says what to do with its range', async ({ page }) => {
+  await paintTab(page, 'grainCore', { mode: 'flat', colour: '#ff8800' });
+  const word = await page.evaluate(() => [...document.querySelectorAll('#roomPaintBody .rp-slot')]
+    .find((s) => s.querySelector('.rp-slot-name').textContent === 'Grain core')
+    .querySelector('.rp-slot-mode').textContent);
+  expect(word).toBe('colour');
+  const hint = await page.evaluate(() => RP_SLOTS.find((s) => s.key === 'fog').hint);
+  expect(hint).not.toMatch(/leave the range alone/);
+  expect(hint).toMatch(/0\.05 to 0\.27/);
+});
+
+test('P12 · the head keeps to the control column, and Theme is a scheme in the menu', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const g = await page.evaluate(() => {
+    const head = document.querySelector('#roomPaintBody .rp-head');
+    const tagEdge = head.querySelector('.rp-name').getBoundingClientRect().left;
+    const early = [...head.querySelectorAll('input, select, button')]
+      .filter((e) => e.getBoundingClientRect().left < tagEdge - 1).map((e) => e.textContent || e.className);
+    const reset = [...head.querySelectorAll('.re-btn')].some((e) => e.textContent === 'Back to theme');
+    const options = [...head.querySelectorAll('select option')].map((o) => o.text);
+    return { early, reset, options };
+  });
+  expect(g.early).toEqual([]);
+  expect(g.reset).toBe(false);
+  expect(g.options).toContain('Theme — as shipped');
+
+  const before = await page.evaluate(() => JSON.stringify(roomPaint.scheme.slots));
+  await page.locator('#roomPaintBody .rp-head select').selectOption({ label: 'Theme — as shipped' });
+  expect(await page.evaluate(() => Object.keys(roomPaint.scheme.slots).length)).toBe(0);
+  await page.locator('#roomPaintBody .rp-undo').click();
+  expect(await page.evaluate(() => JSON.stringify(roomPaint.scheme.slots))).toBe(before);
+});
+
+test('P13 · no doubled rules and no trailing blank', async ({ page }) => {
+  await paintTab(page, 'background');
+  const g = await page.evaluate(() => {
+    const body = document.getElementById('roomPaintBody');
+    const mode = body.querySelector('.rp-edit .rp-row').getBoundingClientRect();
+    const slots = [...body.querySelectorAll('.rp-slot')];
+    const open = slots.findIndex((s) => s.querySelector('.rp-edit'));
+    const next = slots[open + 1];
+    const editBottom = slots[open].getBoundingClientRect().bottom;
+    const ruled = (e) => parseFloat(getComputedStyle(e).borderBottomWidth) > 0;
+    const headLast = body.querySelector('.rp-head > .rp-row:last-child');
+    return { gap: editBottom - mode.bottom, next: !!next, modeRuled: ruled(body.querySelector('.rp-edit .rp-row:last-child')),
+      headRuled: ruled(body.querySelector('.rp-head')) && ruled(headLast) };
+  });
+  expect(g.gap).toBeLessThanOrEqual(4);
+  expect(g.modeRuled, 'the editor\'s last row does not rule over the slot\'s own rule').toBe(false);
+  expect(g.headRuled, 'one rule between the head and the list').toBe(false);
+});
+
+test('P14 · the stop\'s remove and the range\'s ends are easy to hit', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  // 9 px left of the ×'s centre: outside its 13 px face, inside its target.
+  const x = await page.locator('#roomPaintBody .rp-stop-del').nth(1).boundingBox();
+  await page.mouse.click(x.x + x.width / 2 - 9, x.y + x.height / 2);
+  expect(await page.evaluate(() => rpSlot('ring').stops.length)).toBe(2);
+
+  const s = await page.locator('#roomPaintBody .rp-span').boundingBox();
+  const hi = s.x + s.width * 0.6;
+  await page.mouse.move(hi + 7, s.y + s.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(s.x + s.width * 0.9, s.y + s.height / 2, { steps: 4 });
+  await page.mouse.up();
+  const r = await page.evaluate(() => ({ lo: rpSlot('ring').lo, hi: rpSlot('ring').hi }));
+  expect(r.lo, 'grabbed 7 px out, the end moves and the window does not').toBeCloseTo(0.2, 2);
+  expect(r.hi).toBeCloseTo(0.9, 1);
+});
+
+test('P15 · Fog starts its ramp on the band its weight actually reaches, 0.05–0.27', async ({ page }) => {
+  await paintTab(page, 'fog');
+  const pick = async () => {
+    await page.locator('#roomPaintBody .rp-edit .re-btn', { hasText: 'Ramp' }).click();
+    return page.evaluate(() => ({ lo: rpSlot('fog').lo, hi: rpSlot('fog').hi, ring: rpSlot('ring') }));
+  };
+  // Modern.
+  let got = await pick();
+  expect([got.lo, got.hi]).toEqual([0.05, 0.27]);
+  // Classic, the same.
+  await page.evaluate(() => { roomPaint.scheme = rpDefaultScheme(); rpTouch(); rpView = 'classic'; rpOpen = 'fog'; rpPanel(); });
+  got = await pick();
+  expect([got.lo, got.hi]).toEqual([0.05, 0.27]);
+  // Only Fog: another slot still starts on the whole of its quantity.
+  await page.evaluate(() => { rpOpen = 'ring'; rpPanel(); });
+  await page.locator('#roomPaintBody .rp-edit .re-btn', { hasText: 'Ramp' }).click();
+  expect(await page.evaluate(() => [rpSlot('ring').lo ?? 0, rpSlot('ring').hi ?? 1])).toEqual([0, 1]);
+  // A range already set is kept: back to Theme and to Ramp again.
+  await page.evaluate(() => { rpSetSlot('fog', { lo: 0.1, hi: 0.2 }); rpOpen = 'fog'; rpPanel(); });
+  await page.locator('#roomPaintBody .rp-edit .re-btn', { hasText: 'Theme' }).click();
+  await page.locator('#roomPaintBody .rp-edit .re-btn', { hasText: 'Ramp' }).click();
+  expect(await page.evaluate(() => [rpSlot('fog').lo, rpSlot('fog').hi])).toEqual([0.1, 0.2]);
+  // And every generator that reads Fog against its level gives it the band.
+  const gen = await page.evaluate(() => ['mono', 'rgb', 'spectrum', 'vibrant', 'muted', 'bw']
+    .map((k) => rpGenerate(k, 0).slots.fog).filter((f) => f.mode === 'ramp' && (f.drive | 0) === 0)
+    .map((f) => [f.lo, f.hi]));
+  expect(gen.length).toBeGreaterThan(0);
+  expect(gen.every(([lo, hi]) => lo === 0.05 && hi === 0.27)).toBe(true);
+});
+
+test('P16 · each stop is a tick on the gradient, dragged where it sits, in step with its knob', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const geo = () => page.evaluate(() => {
+    const bar = document.querySelector('#roomPaintBody .rp-stopbar');
+    if (!bar) return null;
+    const o = bar.getBoundingClientRect();
+    // Inside the border, where the ticks are placed.
+    const b = { left: o.left + bar.clientLeft, width: bar.clientWidth, top: o.top, height: o.height };
+    // The browser rewrites a gradient into its own notation; the wanted one is
+    // put through the same setter so the two are compared as written.
+    const norm = document.createElement('i');
+    norm.style.background = rpGradientCss('ring');
+    return { bar: { x: b.left, w: b.width, y: b.top, h: b.height }, bg: bar.style.background, want: norm.style.background,
+      ticks: [...bar.querySelectorAll('.rp-tick')].map((t) => {
+        const r = t.getBoundingClientRect();
+        return { at: (r.left + r.width / 2 - b.left) / b.width, cap: getComputedStyle(t.querySelector('i')).backgroundColor,
+          role: t.getAttribute('role'), now: +t.getAttribute('aria-valuenow') };
+      }),
+      stops: rpSlot('ring').stops.map((s) => s.at),
+      reads: [...document.querySelectorAll('#roomPaintBody .rp-stop .rk-v')].map((e) => e.textContent) };
+  });
+  let g = await geo();
+  expect(g, 'the stops have a bar').not.toBeNull();
+  expect(g.bg, 'the bar is the gradient').toBe(g.want);
+  expect(g.ticks.map((t) => +t.at.toFixed(2))).toEqual([0, 0.5, 1]);
+  expect(g.ticks.map((t) => t.cap)).toEqual(['rgb(32, 64, 255)', 'rgb(32, 224, 160)', 'rgb(255, 224, 64)']);
+  expect(g.ticks.every((t) => t.role === 'slider')).toBe(true);
+
+  // Dragged, the stop moves, and its knob's reading follows.
+  const y = g.bar.y + g.bar.h / 2;
+  await page.mouse.move(g.bar.x + g.bar.w * 0.5, y);
+  await page.mouse.down();
+  await page.mouse.move(g.bar.x + g.bar.w * 0.25, y, { steps: 5 });
+  await page.mouse.up();
+  g = await geo();
+  expect(g.stops[1]).toBeCloseTo(0.25, 1);
+  expect(g.reads[1]).toBe(g.stops[1].toFixed(2));
+  expect(g.ticks[1].at).toBeCloseTo(g.stops[1], 1);
+  expect(g.bg).toBe(g.want);
+
+  // Turned on its knob, the tick moves with it.
+  await page.evaluate(() => {
+    const k = document.querySelectorAll('#roomPaintBody .rp-stop input[type=range]')[1];
+    k.value = '70'; k.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  g = await geo();
+  expect(g.ticks[1].at).toBeCloseTo(0.7, 1);
+  expect(g.ticks[1].now).toBeCloseTo(0.7, 2);
+
+  // And to the keyboard it is a slider.
+  await page.locator('#roomPaintBody .rp-tick').nth(1).focus();
+  await page.keyboard.press('ArrowLeft');
+  expect(await page.evaluate(() => rpSlot('ring').stops[1].at)).toBeCloseTo(0.69, 3);
+
+  // Classic keeps its sliders and has no bar.
+  await page.evaluate(() => { rpView = 'classic'; rpPanel(); });
+  await expect(page.locator('#roomPaintBody .rp-stopbar')).toHaveCount(0);
 });
 
 // ── Visual › 4D ─────────────────────────────────────────────────────────────
