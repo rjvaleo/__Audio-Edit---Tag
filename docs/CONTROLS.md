@@ -114,13 +114,44 @@ specific than the row's and win where the two overlap.
 Four kinds of control, one contract. Every one of them can be pushed back to a
 value by Reset or Undo without knowing which kind it is.
 
-### Sliders — the stretch tray
+### Knobs — the stretch tray and the Visual column
+
+Since the design pass (`docs/DESIGN-CRITIQUE.md`), the amounts in Grain ›
+Time & Pitch, Visual › Sound and every Visual panel (Room, Shape, Ridgeline,
+Surfaces, Stage, the type card) are knobs. Each knob is the same range input it
+was, laid over a drawn face, so the keyboard and every reset still reach it.
 
 | Gesture | What it does |
 |---|---|
-| **Drag** | Changes the value, previewing continuously as you move rather than on release. |
+| **Drag up / down** | Turns it, previewing as you move. The full range is 160 pixels. |
+| **⇧ Shift-drag** | Fine: the full range is 600 pixels. |
 | **Release** | Commits at full quality and re-points the audio. |
-| **Stroke across several** | Press *outside* any control, drag across a column of them, release. Each bar takes the value at the point the line crossed it. Both axes are tested, so a stroke down one column does not set the panel next to it. |
+| **Double-click** | In the stretch tray: back to the control's default (the name and the reading do the same). |
+| **Arrow keys** (focused) | Steps it, as the slider did. |
+
+The reading under each knob is the value itself, and the word under that is its
+name.
+
+*Corrected 30 Oct 2026:* this section used to describe a "stroke across
+several" gesture for the stretch tray (drag across a column of sliders to set
+each where the line crossed it). No code ever implemented it, so it is gone
+from here rather than from the program.
+
+### Pads — the camera and the cloud
+
+| Pad | Across | Up |
+|---|---|---|
+| **Turn** (Visual › Room › Camera) | Rotate Y, −180° to 180° | Rotate X (tilt) |
+| **Stand** (Visual › Room › Camera) | Translate X | Into the picture (Translate Z) |
+| **Cloud** (Grain › Time & Pitch) | Drag inside the box: the read head. Drag outside it: spray in time | Outside the box: spray in pitch |
+
+The exact numbers stay below the camera pads as scrub fields: drag a number
+sideways, or type it.
+
+### Segment rows
+
+A choice is a row of fixed places, such as the camera's Front, Side, Top and
+Frame. Which one is on shows as a tint with a lit edge, not a filled block.
 
 ### Knobs — the effect rack
 

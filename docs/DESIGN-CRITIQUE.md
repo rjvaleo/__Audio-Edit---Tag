@@ -396,6 +396,78 @@ presets, the automation and the existing tests all reach the same elements.
 - The tuning and Keys buttons print their words a few pixels high in their
   slots. That was already so, in the dock and in the Visual column.
 
+## The UI queue — 30 Oct 2026, branch `ui-queue`
+
+The non-audio follow-ups. Item 1 and the docs were done here; items 2–6
+went to parallel cloud sessions, each opening its own PR into `open-world`.
+
+### 1. The engine tray fits the dock
+
+- **Wrong:** the banks wrapped in a fixed order, so a line was left half
+  empty whenever the next bank did not fit (Scan alone, Shape on the line
+  below). **Hadid:** a false floor. **Rams:** space nothing earned.
+- **Changed:** `gkPack` fills each line largest-first, keeping the reading
+  order that matters: Time and pitch first, the engine's own bank beside it,
+  standard before extended. Each knob line lost a few pixels. The engine's
+  own bank now reads "This engine"; it had been printing "Time and pitch"
+  over Pitch movement.
+- **Measured** at 1600×1000, content over the dock's height:
+
+  | engine | before | after |
+  |---|---|---|
+  | Granular | 0 | 0 |
+  | WSOLA | 46 | 0 |
+  | Vocoder | 113 | 41 |
+  | PVSOLA | 178 | 97 |
+  | Hybrid | 355 | 235 |
+
+- **Held by:** G1 in `design-pass.spec.mjs`, per engine that fits, plus the
+  reading order for all five.
+
+**For RJ: Vocoder, PVSOLA and Hybrid.** They carry about twice the banks the
+strip holds without taking width from the master bus, which the brief ruled
+out. The ways to fit them:
+
+1. **A taller default dock.** About 45 px brings in Vocoder, 100 px PVSOLA,
+   240 px Hybrid. It comes out of the waveform lane above.
+2. **A wider tray for those engines only.** The master bus gets narrower
+   while one of them is chosen. Last time that moved the Room overlay; it
+   would need its own fix.
+3. **The extended side as a second page** of the tray (Standard | Extended)
+   for the engines that do not fit. Nothing scrolls; one click shows the
+   rest.
+4. **Leave it.** The remainder is a short scroll.
+
+### Control parity
+
+RJ: *"make sure the new layouts have all of the controls that the old layouts
+had."* Checked, not assumed:
+
+- the pre-redesign build (2a0647a) and this branch were inventoried
+  control by control in 21 views (each engine's tray, every dock tab, the
+  transport, the edit toolbar, every Visual tab and module, the stage bar);
+- every view has the same count, 3,135 in all;
+- the only differences are five switches renamed from their stripped forms
+  ("rvrs grns", "wrp pstns", "stp th drft", "prsrv trnsnts", "rmk ns") to
+  whole words.
+
+`tests/ui/controls-parity.spec.mjs` now holds that inventory, so a later
+layout that drops a control fails, naming it. Each cloud PR is to be run
+against it before it is merged.
+
+### 2–6. In cloud sessions
+
+| item | branch |
+|---|---|
+| the Colour tab | `colour-tab` |
+| the 4D tab | `fourd-tab` |
+| Prism settings beside the pad | `prism-settings` |
+| fog as a curve | `fog-curve` |
+| the two old faults | `small-faults` |
+
+Each opens a PR into `open-world`, and their results are to be recorded
+here when they land.
+
 ## Raised, and deliberately not changed here
 
 Each of these is a decision, not a fix, so it is RJ's to make.
