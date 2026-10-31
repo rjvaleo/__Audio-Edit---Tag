@@ -55,8 +55,10 @@ const RP_SLOTS = [
     hint: 'The skin inside the solid. Only drawn with FILL on and not filling with the background.' },
   { key: 'mist', label: 'Mist', row: 11, own: 'pan',
     hint: 'The smoke dripping off the grains.' },
-  { key: 'fog', label: 'Fog', row: 12, own: null,
-    hint: 'The air itself. Its weight only ever runs 0.05 to 0.27, so bring the range in to about that, or most of the ramp is never reached.' },
+  // `range` is where a new ramp's window starts when it is read against level:
+  // the band the fog's weight actually reaches, so the whole gradient is spent.
+  { key: 'fog', label: 'Fog', row: 12, own: null, range: [0.05, 0.27],
+    hint: 'The air itself. Its weight only ever runs 0.05 to 0.27, so a ramp read against level starts its range there; widen it and most of the ramp is never reached.' },
   { key: 'data', label: 'Data block', row: -1, own: null, css: true,
     hint: 'The schedule printed on the back wall. Type, not geometry — one colour, faded down the wall.' },
   { key: 'background', label: 'Background', row: -1, own: null, css: true, flat: true,
@@ -356,8 +358,15 @@ const RP_FAMILY = {
   stageGrains: 2, stageMist: 2, stageType: 2,
 };
 
+/// Where a new ramp's window starts. The whole of the quantity, except where a
+/// slot says its level only ever reaches part of it (`range`, the fog).
+function rpStartRange(key, drive) {
+  const r = (drive | 0) === 0 && RP_BY_KEY[key] && RP_BY_KEY[key].range;
+  return r ? { lo: r[0], hi: r[1] } : { lo: 0, hi: 1 };
+}
+
 function rpRamp(key, drive, a, b, extra) {
-  return { mode: 'ramp', drive, lo: 0, hi: 1, curve: 1,
+  return { mode: 'ramp', drive, ...rpStartRange(key, drive), curve: 1,
     stops: [{ at: 0, c: a }, { at: 1, c: b }], ...(extra || {}) };
 }
 
@@ -743,6 +752,8 @@ function rpSlotEditor(s) {
     // nothing until something else is moved.
     if (key === 'flat' && !cfg.colour) patch.colour = rpInheritedPair(s.key)[1];
     if (key === 'ramp' && !cfg.stops) patch.stops = rpStops(s.key);
+    // A ramp's first window, unless it already has one of its own.
+    if (key === 'ramp' && cfg.lo == null && cfg.hi == null) Object.assign(patch, rpStartRange(s.key, cfg.drive));
     rpSetSlot(s.key, patch); rpApply(); rpPanel();
   };
   modes.appendChild(rpSeg('mode', [
@@ -1151,6 +1162,7 @@ function rpSlotEditorClassic(s) {
       // nothing until something else is moved.
       if (key === 'flat' && !cfg.colour) patch.colour = rpInheritedPair(s.key)[1];
       if (key === 'ramp' && !cfg.stops) patch.stops = rpStops(s.key);
+      if (key === 'ramp' && cfg.lo == null && cfg.hi == null) Object.assign(patch, rpStartRange(s.key, cfg.drive));
       rpSetSlot(s.key, patch); rpApply(); rpPanel();
     };
     modes.appendChild(b);
