@@ -103,6 +103,13 @@ const SETTINGS_SPEC = {
   // Through the engine's output, to the sample, or through the browser's. See
   // `docs/SEQUENCER.md`, "one output".
   seqRoute: stBool(true),
+
+  // ── the Grain view ──
+  //
+  // Classic is the view as it was; Modern is the design-council pass over it.
+  // The Grain view's own switch, not an application theme: nothing outside
+  // the Grain view reads it.
+  grainUi: stOneOf('classic', ['classic', 'modern']),
 };
 
 const SETTINGS_STORE = 'audiolab.settings.v1';

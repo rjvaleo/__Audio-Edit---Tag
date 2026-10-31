@@ -1460,3 +1460,175 @@ test('U4 · the block row names both of its settings', async ({ page }) => {
   const words = await page.evaluate(() => [...document.getElementById('reChunks').closest('.re-row').querySelectorAll('.rk-l')].map((e) => e.textContent.trim()));
   expect(words).toEqual(['Size', 'Opacity']);
 });
+
+// ── the Grain view, Classic and Modern ──────────────────────────────────────
+// A switch in the Grain view's tab strip. Classic is the view as it was and
+// stays the default; Modern is the design-council pass over the Grain view
+// only — nothing outside it changes either way.
+
+async function grainUi(page, which) {
+  await page.locator(`#grainUiSwitch [data-ui="${which}"]`).click();
+  await page.waitForTimeout(200);
+}
+
+test('GM0 · the Grain view has a Classic/Modern switch, Classic by default, remembered', async ({ page }) => {
+  await openFile(page);
+  const sw = page.locator('#grainUiSwitch');
+  await expect(sw).toBeVisible();
+  await expect(sw.locator('[data-ui="classic"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => document.body.dataset.grainUi)).toBe('classic');
+  await grainUi(page, 'modern');
+  await expect(sw.locator('[data-ui="modern"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => document.body.dataset.grainUi)).toBe('modern');
+  await openFile(page);
+  expect(await page.evaluate(() => document.body.dataset.grainUi), 'not remembered').toBe('modern');
+  // Only the Grain view: the Visual view's Sound tab borrows the grain tray,
+  // and keeps its own look there.
+  await roomTab(page, 'sound');
+  const inRoom = await page.evaluate(() => ({
+    switchShown: !!document.getElementById('grainUiSwitch').getBoundingClientRect().width,
+    marks: [...document.querySelectorAll('#grainControls .rk-mark')].filter((m) => { const r = m.getBoundingClientRect(); return r.width || r.height; }).length,
+  }));
+  expect(inRoom).toEqual({ switchShown: false, marks: 0 });
+});
+
+test('GM1 · Modern marks a knob\'s named point, and Envelope says its amount', async ({ page }) => {
+  await openFile(page);
+  const read = () => page.evaluate(() => {
+    const row = state.grainRows.envelope;
+    return {
+      marks: ['envelope', 'layerSpread', 'panSpread', 'layerScatter']
+        .filter((k) => { const m = state.grainRows[k]?.querySelector('.rk-mark'); const r = m?.getBoundingClientRect(); return r && (r.width || r.height); }).length,
+      env: row.querySelector('.v').textContent.trim(),
+    };
+  });
+  await page.evaluate(() => { const r = state.grainRows.envelope; r.sync(0.3); });
+  const classic = await read();
+  expect(classic.marks).toBe(0);
+  expect(classic.env).toBe('percussive');
+  await grainUi(page, 'modern');
+  const modern = await read();
+  expect(modern.marks).toBe(4);
+  expect(modern.env).toMatch(/0\.30.*percussive/);
+});
+
+test('GM2 · Modern shows the preset controls only on the tabs a preset changes', async ({ page }) => {
+  await openFile(page);
+  const shownOn = async () => {
+    const out = {};
+    for (const tab of ['stretch', 'effects', 'prism', 'visuals', 'automation', 'regions']) {
+      await dockTab(page, tab);
+      out[tab] = await page.locator('#presetPick').isVisible();
+    }
+    return out;
+  };
+  const all = { stretch: true, effects: true, prism: true, visuals: true, automation: true, regions: true };
+  expect(await shownOn()).toEqual(all);
+  await grainUi(page, 'modern');
+  expect(await shownOn()).toEqual({ ...all, prism: false, visuals: false, automation: false, regions: false });
+  await dockTab(page, 'stretch');
+  expect(await page.locator('label.preset-with-sound').innerText()).toMatch(/sound & chain/i);
+});
+
+test('GM3 · in Modern, Delete, DEL and Revert ask once before they act', async ({ page }) => {
+  await openFile(page);
+  // A listener after the button's own: it hears exactly the clicks that the
+  // button's handler hears.
+  const clicks = (id) => page.evaluate((i) => {
+    const b = document.getElementById(i);
+    window.__heard = window.__heard || {};
+    window.__ear = window.__ear || {};
+    window.__heard[i] = 0;
+    if (window.__ear[i]) b.removeEventListener('click', window.__ear[i]);
+    window.__ear[i] = () => { window.__heard[i]++; };
+    b.addEventListener('click', window.__ear[i]);
+    b.click();
+    const once = { heard: window.__heard[i], armed: b.classList.contains('gm-armed'), text: b.textContent.trim() };
+    b.click();
+    return { once, twice: window.__heard[i] };
+  }, id);
+  await page.evaluate(() => { document.getElementById('revertBtn').disabled = false; document.getElementById('presetDelete').disabled = false; });
+  expect((await clicks('revertBtn')).once.heard, 'classic changed').toBe(1);
+  await grainUi(page, 'modern');
+  await dockTab(page, 'automation');
+  for (const id of ['presetDelete', 'perfLaneDel', 'revertBtn']) {
+    await page.evaluate((i) => { document.getElementById(i).disabled = false; }, id);
+    if (id === 'presetDelete') await dockTab(page, 'stretch');
+    const r = await clicks(id);
+    expect(r.once.heard, `${id} acted on the first click`).toBe(0);
+    expect(r.once.armed, id).toBe(true);
+    expect(r.once.text, id).toMatch(/\?$/);
+    expect(r.twice, `${id} did not act on the second click`).toBe(1);
+  }
+});
+
+test('GM4 · in Modern, Automation and Prism speak the dock\'s language', async ({ page }) => {
+  await openFile(page);
+  const look = async () => {
+    await dockTab(page, 'automation');
+    const perf = await page.evaluate(() => {
+      const el = document.getElementById('automationSimplify');
+      const b = getComputedStyle(el);
+      const h = getComputedStyle(document.querySelector('.perf-header'));
+      // What is drawn, after text-transform: the source says SIMPLIFY.
+      return { caps: el.innerText === el.innerText.toUpperCase(), font: b.fontFamily, spacing: h.letterSpacing };
+    });
+    await dockTab(page, 'prism');
+    const prism = await page.evaluate(() => getComputedStyle(document.querySelector('.prism-square')).backgroundImage);
+    return { ...perf, radial: /radial/.test(prism) };
+  };
+  const classic = await look();
+  expect(classic.caps).toBe(true);
+  expect(classic.radial).toBe(true);
+  await grainUi(page, 'modern');
+  const modern = await look();
+  expect(modern.caps).toBe(false);
+  expect(modern.font).not.toMatch(/Share Tech Mono/);
+  expect(modern.spacing).toBe('normal');
+  expect(modern.radial).toBe(false);
+});
+
+test('GM5 · in Modern every control in the Grain view\'s bars is at least 24 px, and says what it is', async ({ page }) => {
+  await openFile(page);
+  await grainUi(page, 'modern');
+  const small = await page.evaluate(() => {
+    const out = [];
+    const bars = '#leftPanel .panel-head, #tabBar, #editTools, #transportBar, #presetBar';
+    for (const el of document.querySelectorAll(`:is(${bars}) :is(button, select, input[type=checkbox])`)) {
+      const hit = el.type === 'checkbox' ? (el.closest('label') || el) : el;
+      const r = hit.getBoundingClientRect();
+      if (!r.width) continue;
+      if (r.width < 24 || r.height < 24) out.push(`${el.id || el.className} ${Math.round(r.width)}x${Math.round(r.height)}`);
+    }
+    return out;
+  });
+  expect(small).toEqual([]);
+  // The words Modern adds are drawn by CSS, so the buttons' markup is
+  // Classic's: what is read is the generated word and the button's own.
+  const words = await page.evaluate(() => {
+    const said = (el) => getComputedStyle(el, '::before').content.replace(/^"|"$/g, '').replace(/^none$/, '') + el.innerText;
+    return {
+      tuning: said(document.querySelector('#grainControls .scale-btn')),
+      keys: said(document.querySelector('#grainControls .popout-btn')),
+      room: said(document.getElementById('roomEditOpen')),
+    };
+  });
+  expect(words.tuning).toMatch(/tuning/i);
+  expect(words.keys).toMatch(/play keys/i);
+  expect(words.room).toMatch(/edit room/i);
+});
+
+test('GM6 · in Modern, Time & Pitch gives its width to the controls, the engine leading', async ({ page }) => {
+  await openFile(page);
+  const measure = () => page.evaluate(() => ({
+    controls: document.getElementById('grainControls').getBoundingClientRect().width,
+    scope: document.getElementById('masterBus').getBoundingClientRect().width,
+    engineWord: document.querySelector('#grainControls .engine-pick')?.getAttribute('data-gm-label') || '',
+  }));
+  const classic = await measure();
+  await grainUi(page, 'modern');
+  const modern = await measure();
+  expect(modern.controls).toBeGreaterThan(classic.controls + 150);
+  expect(modern.scope).toBeLessThanOrEqual(420);
+  expect(modern.engineWord).toBe('Engine');
+});

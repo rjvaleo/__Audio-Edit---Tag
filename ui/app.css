@@ -4870,3 +4870,107 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 @media (prefers-reduced-motion: reduce) {
   .rv-admin #roomEdit .re-check input[type=checkbox]::before { transition: none; }
 }
+/* ═══════════════════════════════════════════ Grain view · Classic and Modern ══
+   `grainUiBuild` in `app.js`. The switch sits at the end of the Grain view's
+   tab strip. Everything Modern draws is under one selector,
+   `body.editing[data-grain-ui="modern"]`, so it reaches nothing outside the
+   Grain view; Classic is the view as it was. */
+.gm-switch { display: inline-flex; margin-left: auto; flex: 0 0 auto; border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
+.gm-switch button {
+  height: 21px; padding: 0 9px; border: 0; background: transparent;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-s); cursor: pointer;
+}
+.gm-switch button + button { border-left: 1px solid var(--line-2); }
+.gm-switch button[aria-pressed="true"] { background: color-mix(in oklch, var(--accent) 16%, transparent); color: var(--accent); }
+.gm-switch button:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -2px; }
+/* Words only Modern says, and the marks only Modern draws. */
+.gm-word { display: none; }
+.rk-mark { display: none; stroke: var(--text-2); stroke-width: 1.5; stroke-linecap: round; }
+body.editing[data-grain-ui="modern"] .gm-word { display: inline; }
+body.editing[data-grain-ui="modern"] .gm-classic { display: none; }
+
+/* 1 · A knob's named point — Envelope's symmetric, a spread's nothing. */
+body.editing[data-grain-ui="modern"] #grainControls .rk-mark { display: inline; }
+
+/* 2 · The preset is the stretch and the rack: its controls on Time & Pitch
+   and FX, right-aligned with the switch, and nowhere a preset changes nothing. */
+body.editing[data-grain-ui="modern"] #presetBar > .vsep.gm-preset { margin-left: auto; }
+body.editing[data-grain-ui="modern"] #presetBar > .gm-switch { margin-left: 12px; }
+body.editing[data-grain-ui="modern"] #presetBar:is([data-tab="prism"], [data-tab="visuals"], [data-tab="automation"], [data-tab="regions"]) > .gm-preset { display: none; }
+body.editing[data-grain-ui="modern"] #presetBar:is([data-tab="prism"], [data-tab="visuals"], [data-tab="automation"], [data-tab="regions"]) > .gm-switch { margin-left: auto; }
+
+/* 3 · What cannot be taken back reads so, and asks once (`gmArm`). */
+body.editing[data-grain-ui="modern"] :is(#presetDelete, #perfLaneDel, #revertBtn) {
+  color: var(--bad); border-color: color-mix(in oklch, var(--bad) 55%, transparent);
+}
+body.editing[data-grain-ui="modern"] :is(#presetDelete, #perfLaneDel, #revertBtn).gm-armed {
+  background: color-mix(in oklch, var(--bad) 22%, transparent); border-color: var(--bad);
+}
+
+/* 4 · Automation and Prism in the dock's own hand: the column's type, its
+   buttons, sentence case (the source is in capitals, so it is drawn lower
+   with a capital first), red kept for recording only; Prism's square a well
+   with hairlines and the accent, its sliders thin. */
+body.editing[data-grain-ui="modern"] .perf-panel,
+body.editing[data-grain-ui="modern"] .perf-panel :is(*, select, button) {
+  font-family: var(--sans); letter-spacing: normal;
+}
+body.editing[data-grain-ui="modern"] .perf-panel :is(.btn, .perf-header, .perf-header-info, .perf-sel-info, .perf-check, .knob-label, #perfStatus) {
+  text-transform: lowercase;
+}
+body.editing[data-grain-ui="modern"] .perf-panel :is(.btn, .perf-header, .perf-header-info, .perf-sel-info, .perf-check, .knob-label, #perfStatus)::first-letter { text-transform: uppercase; }
+body.editing[data-grain-ui="modern"] .perf-panel .btn {
+  height: 24px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 3px;
+  background: var(--bg); color: var(--text-2); font-size: var(--fs-s);
+}
+body.editing[data-grain-ui="modern"] .perf-panel .btn:hover { border-color: var(--text-dimmer); }
+body.editing[data-grain-ui="modern"] .perf-panel .perf-rec-btn:not(.recording) { border-color: var(--line-2) !important; color: var(--text-2) !important; }
+body.editing[data-grain-ui="modern"] .perf-panel .perf-header { color: var(--text-dim); font-size: var(--fs-s); }
+body.editing[data-grain-ui="modern"] .perf-panel #perfStatus { color: var(--text-dim); font-size: var(--fs-s); }
+body.editing[data-grain-ui="modern"] .perf-panel :is(select, .preset-select) { border-radius: 3px; }
+body.editing[data-grain-ui="modern"] .perf-pos { font-family: var(--mono); letter-spacing: normal; }
+body.editing[data-grain-ui="modern"] .prism-square {
+  border: 1px solid var(--line-2); border-radius: 3px; box-shadow: none;
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 10% 10%,
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 10% 10%,
+    var(--well);
+}
+body.editing[data-grain-ui="modern"] .prism-square .prism-pad-dot { background: var(--text); box-shadow: 0 0 0 2px var(--accent); }
+body.editing[data-grain-ui="modern"] .prism-path polyline { stroke: color-mix(in oklch, var(--accent) 70%, transparent); }
+body.editing[data-grain-ui="modern"] #dockPrism input[type=range] {
+  appearance: none; height: 16px; background: transparent; accent-color: var(--accent);
+}
+body.editing[data-grain-ui="modern"] #dockPrism input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line-3); border-radius: 1px; }
+body.editing[data-grain-ui="modern"] #dockPrism input[type=range]::-webkit-slider-thumb {
+  appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%;
+  background: var(--text); box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* 5 · Every control in the view's bars a 24 px target (WCAG 2.2, 2.5.8). */
+body.editing[data-grain-ui="modern"] :is(.panel-head .x, .tab .close, .tabbar .newtab, .tbtn.small) {
+  min-width: 24px; min-height: 24px; width: auto; height: 24px;
+  display: inline-grid; place-items: center;
+}
+body.editing[data-grain-ui="modern"] :is(#editTools, #transportBar, #presetBar, #tabBar) :is(button, select) { min-height: 24px; }
+body.editing[data-grain-ui="modern"] :is(#editTools, #transportBar, #presetBar, #tabBar) button { min-width: 24px; }
+body.editing[data-grain-ui="modern"] .gm-switch button { height: 24px; }
+body.editing[data-grain-ui="modern"] #grainControls .scale-btn::before { content: 'Tuning: '; }
+body.editing[data-grain-ui="modern"] #grainControls .popout-btn::before { content: 'Play '; }
+body.editing[data-grain-ui="modern"] #roomEditOpen::before { content: 'Edit '; }
+body.editing[data-grain-ui="modern"] :is(#presetBar, #transportBar, #editTools) label:has(> input[type=checkbox]) {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 0 4px;
+}
+body.editing[data-grain-ui="modern"] #transportBar input[type=range] { min-height: 24px; }
+
+/* 6 · Time & Pitch: the controls take the width, the scope a column of its
+   own, and the engine choice leads with its name. */
+body.editing[data-grain-ui="modern"] #dockStretch .grain-split > .grain-controls { flex: 1 1 auto; max-width: none; }
+body.editing[data-grain-ui="modern"] #dockStretch .grain-split > .tray-right { flex: 0 0 380px; max-width: 380px; }
+body.editing[data-grain-ui="modern"] #grainControls .engine-pick::before {
+  content: attr(data-gm-label); display: block; margin-bottom: 3px;
+  font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim);
+}
+/* The engine's name takes a line above its switches; the cloud pad's column,
+   placed absolutely under them, moves down by the same. */
+body.editing[data-grain-ui="modern"] #dockStretch .gk-left { top: 44px; }
