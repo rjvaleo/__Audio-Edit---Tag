@@ -1803,7 +1803,7 @@ argued in the same session as §7g:
 
 - The Windows binary has never been *run* on Windows.
 - Menus are populated from what the app exposes, not from Peak Chapter 12.
-- The **3D sonic space** view. `/api/sounds` and `/api/space` already serve
+- The **3D sonic space** view, planned in [SOUND-MAP.md](SOUND-MAP.md). `/api/sounds` and `/api/space` already serve
   everything it needs.
 - The **120-cell**, the sixth regular 4-polytope. §8b.
 
