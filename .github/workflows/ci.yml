@@ -29,6 +29,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # prism-fx (rjvaleo/hyper-efx) is a path dependency at `../GitHub/prism-fx`
+      # beside this checkout, the way the two sit on the Mac. The repository is
+      # private, so its clone needs `PRISM_FX_TOKEN`, a token that can read it;
+      # the workflow's own token is enough only if it is ever made public.
+      # Checkout will not write outside the workspace, hence the move.
+      - name: Check out prism-fx
+        uses: actions/checkout@v4
+        with:
+          repository: rjvaleo/hyper-efx
+          token: ${{ secrets.PRISM_FX_TOKEN || github.token }}
+          path: prism-fx
+
+      - name: Put prism-fx where the manifests look
+        run: mkdir -p ../GitHub && mv prism-fx ../GitHub/prism-fx
+
       # `engine` links cpal, which on Linux is ALSA. Build-time only: cpal is in
       # `engine/src/{device,input}.rs` and in no test, so a runner with no sound
       # card is fine.
