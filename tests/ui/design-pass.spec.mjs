@@ -554,3 +554,93 @@ test('G5 · the extended side\'s knobs are drawn in its own colour', async ({ pa
   expect(c.ext).toBeTruthy();
   expect(c.ext).not.toBe(c.std);
 });
+
+// ── Visual › Room · Air · fog ───────────────────────────────────────────────
+// `docs/DESIGN-CRITIQUE.md`, graph-first controls. Fog is drawn as what it
+// does — how much of the room's colour it takes, against distance — and the
+// drawing is the control: dragged up, it thickens.
+
+/// The curve as drawn: its path, the type it was drawn for, and its reading.
+const fogCurve = (page) => page.evaluate(() => {
+  const g = document.querySelector('#roomEdit .rk-fog');
+  const curve = g && g.querySelector('.rk-fog-curve');
+  // Height fog at the ground is exponential fog; what it is, it is above the
+  // ground, so the drawing is both lines.
+  const high = g && g.querySelector('.rk-fog-high');
+  return g && {
+    d: (curve ? curve.getAttribute('d') : '') + (high?.getAttribute('d') || ''),
+    type: g.dataset.type,
+    read: g.querySelector('.rk-fog-read')?.textContent.trim(),
+    w: g.querySelector('.rk-fog-graph')?.getBoundingClientRect().width || 0,
+  };
+});
+
+test('F1 · fog is drawn as a curve, in the shape its type gives', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const shapes = {};
+  for (const type of ['1', '2', '0', '3']) {
+    await page.selectOption('#reFogType', type);
+    const c = await fogCurve(page);
+    expect(c, 'no fog curve in the Air group').toBeTruthy();
+    expect(c.w).toBeGreaterThan(100);
+    expect(c.type).toBe(type);
+    shapes[type] = c.d;
+  }
+  expect(new Set(Object.values(shapes)).size).toBe(4);
+  // The setting it drew is the one the room has.
+  expect(await page.evaluate(() => roomEdit.fogType)).toBe(3);
+});
+
+test('F2 · dragging up on the fog curve thickens the fog, through its own input', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  await page.selectOption('#reFogType', '1');
+  await page.evaluate(() => { const i = document.getElementById('reFogDensity'); i.value = '40'; i.dispatchEvent(new Event('input')); });
+  const before = await page.evaluate(() => roomEdit.fogDensity);
+  const drawn = await fogCurve(page);
+  const graph = page.locator('#roomEdit .rk-fog-graph');
+  await graph.scrollIntoViewIfNeeded();
+  const box = await graph.boundingBox();
+  // The pointer lands on the input itself, not on a picture of one.
+  const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(hit).toBe('reFogDensity');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 40, { steps: 5 });
+  await page.mouse.up();
+  const after = await page.evaluate(() => roomEdit.fogDensity);
+  expect(after).toBeGreaterThan(before);
+  const now = await fogCurve(page);
+  expect(now.d).not.toBe(drawn.d);
+  expect(+now.read).toBeCloseTo(after, 2);
+});
+
+test('F3 · the fog curve redraws when a recalled look sets the fog', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  await page.selectOption('#reFogType', '1');
+  const drawn = await fogCurve(page);
+  await page.evaluate(() => {
+    const look = visualSnapshot();
+    look.room.fogDensity = 1.5;
+    look.room.fogType = 2;
+    applyVisual(look);
+  });
+  const now = await fogCurve(page);
+  expect(now.type).toBe('2');
+  expect(now.read).toBe('1.50');
+  expect(now.d).not.toBe(drawn.d);
+});
+
+test('F4 · on the master bus the fog stays the slider it was', async ({ page }) => {
+  await openFile(page);
+  const overlay = await page.evaluate(() => {
+    const i = document.getElementById('reFogDensity');
+    const g = document.querySelector('#roomEdit .rk-fog-graph');
+    return { inAdmin: !!i.closest('.rv-admin'), graph: g ? g.getBoundingClientRect().width : 0, opacity: getComputedStyle(i).opacity };
+  });
+  expect(overlay.inAdmin).toBe(false);
+  expect(overlay.graph).toBe(0);
+  expect(overlay.opacity).toBe('1');
+});
