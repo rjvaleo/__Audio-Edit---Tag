@@ -4447,6 +4447,39 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    a side gives it back. */
 #reStreams .re-btn { padding: 0 6.5px; }
 
+/* UI queue, item 1 · the tray's lines, tighter. `gkPack` fills each line;
+   these take a few pixels off every bank so a line more fits under the fold. */
+#dockStretch .grain-controls { row-gap: 2px; }
+#grainControls .gk-k > .rk-face { width: 20px; height: 20px; margin-bottom: 0; }
+#grainControls .gk-k > input[type=range] { width: 22px; height: 22px; }
+#grainControls .gk-k > .v { line-height: 1.05; }
+#grainControls .gk-k > .k { line-height: 1.05; }
+#grainControls .wild-head { padding-bottom: 1px; margin-bottom: 1px; }
+#grainControls :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 14px; }
+#grainControls .stretch-core::before,
+#grainControls .engine-params:not(:empty)::before { padding-bottom: 1px; }
+#grainControls .param.gk-k { padding: 0 2px; }
+#grainControls .gk-k > .rk-face { width: 18px; height: 18px; }
+#grainControls .wild-head { font-size: var(--fs-xs); line-height: 1.1; }
+#grainControls .stretch-core::before { font-size: var(--fs-xs); line-height: 1.1; }
+/* The engine's own controls are its own bank, and say so: they share a line
+   with Time and pitch and were printing its name over Pitch movement. Last in
+   the file, so the shared heading rule above cannot win it back. */
+#grainControls .engine-params:not(:empty)::before { content: 'This engine'; font-size: var(--fs-xs); line-height: 1.1; }
+#dockStretch .grain-controls { row-gap: 1px; }
+#grainControls .gk-k > .v, #grainControls .gk-k > .k { line-height: 1; }
+/* Time and pitch's heading is exactly a bank heading's height, so on a line
+   it shares its knobs stand level with the next bank's and are read first. */
+#grainControls :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 12px; }
+
+/* Both views (DESIGN-CRITIQUE, "Both views, as an option"): a page hides the
+   other side's banks. In the dock only: the Sound tab shows the tray whole. */
+#grainControls .gk-view { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+#grainControls .gk-view .seg { flex: 1; display: flex; }
+#grainControls .gk-view .seg-btn { flex: 1; }
+#dockStretch #grainControls.gk-page-std #extPanel .wild,
+#dockStretch #grainControls.gk-page-ext :is(.stretch-core, .engine-params, #grainShape .wild, #grainPitch .wild) { display: none; }
+
 /* ═══════════════════════════════════════════════════ Visual › 4D ══
    `docs/DESIGN-CRITIQUE.md`, "Not yet done", and `p4BuildPanel` in
    `panel-4d.js`. The lighter pass: projection and turning as rows of fixed
