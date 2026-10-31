@@ -297,13 +297,16 @@ test('the panel lists every solid and shows the six planes', async ({ page }) =>
     selected: document.querySelectorAll('#p4Panel .p4-obj.active').length,
     // Six planes, not three axes. There is no axis to name in four dimensions.
     fields: [...document.querySelectorAll('#p4Panel .p4-num-in')].map((i) => i.dataset.p4),
+    knobs: [...document.querySelectorAll('#p4Panel input[data-p4k]')].map((i) => i.dataset.p4k),
     // The three that reach into w are marked.
     marked: document.querySelectorAll('#p4Panel .p4-w').length,
     canvas: !!document.querySelector('#p4Canvas')?.width,
   }));
   expect(got.objects).toBe(8);
   expect(got.selected, 'exactly one object should be selected').toBe(1);
-  expect(got.fields).toEqual(['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW', 'Eye', 'Rate']);
+  expect(got.fields).toEqual(['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW']);
+  // Eye and Rate are amounts, so they are knobs (design-pass 4D-2).
+  expect(got.knobs).toEqual(['Eye', 'Rate']);
   expect(got.marked, 'the three planes reaching into w should be marked').toBe(3);
   expect(got.canvas, 'the preview canvas was never sized').toBe(true);
 });
