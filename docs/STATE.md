@@ -1686,7 +1686,8 @@ Project docs: **36 files in `docs/`**, chief among them
 interface: the ranked critique, the type scale (`--fs-xs` to `--fs-xl`, five
 steps, nothing between them), the one-line rows of the Visual column and the
 Prism tab's layout. `tests/ui/design-pass.spec.mjs` holds each item by its
-change ID.
+change ID. `docs/ROOM-PAINT.md` covers the Colour tab's two panels, Classic
+and Modern, behind the VIEW switch at its top.
 
 ---
 

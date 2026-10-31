@@ -118,7 +118,7 @@ value by Reset or Undo without knowing which kind it is.
 
 Since the design pass (`docs/DESIGN-CRITIQUE.md`), the amounts in Grain ›
 Time & Pitch, Visual › Sound and every Visual panel (Room, Shape, Ridgeline,
-Surfaces, Stage, the type card) are knobs. Each knob is the same range input it
+Surfaces, Stage, the type card, and Colour in its Modern view) are knobs. Each knob is the same range input it
 was, laid over a drawn face, so the keyboard and every reset still reach it.
 
 | Gesture | What it does |
@@ -152,6 +152,21 @@ sideways, or type it.
 
 A choice is a row of fixed places, such as the camera's Front, Side, Top and
 Frame. Which one is on shows as a tint with a lit edge, not a filled block.
+
+### A ramp's window and stops — Visual › Colour, Modern view
+
+| Gesture | What it does |
+|---|---|
+| **Drag the window** on the range strip | Moves the window, keeping its width. |
+| **Drag an edge** (within 8 px) | Moves that end only. The ends stay 0.01 apart. |
+| **Click outside the window** | The nearer end jumps there and follows the pointer. |
+| **Drag a stop's tick** on the gradient bar | Moves that stop; its knob follows. |
+| **Arrow keys** on an end or a tick (focused) | 0.01 a press; **⇧ Shift** for 0.1; **Home** / **End** for 0 and 1. |
+| **Undo**, beside Delete | Puts back the palette from before the last generator, load or *Theme — as shipped*. Again to flip back. Gone after any edit by hand. |
+
+The **VIEW** switch at the top of the tab (Classic · Modern) changes the
+panel, never the palette. Classic is the old panel: sliders and a menu. See
+[`ROOM-PAINT.md`](ROOM-PAINT.md).
 
 ### Knobs — the effect rack
 
@@ -419,7 +434,8 @@ stacked timeline in the scale sequencer's idiom. See
 
 **Random**, on the same row, throws every control in the stretch tray somewhere
 at random and reports its seed. It is the only randomiser: the room has none,
-though the Colour tab's generators give a different palette every click.
+though the Colour tab's generators give a different palette every click, and
+in its Modern view Undo takes the last one back.
 
 ## Layers, and the governor
 
