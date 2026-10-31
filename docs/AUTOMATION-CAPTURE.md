@@ -13,19 +13,20 @@ engine control that can be changed while the engine runs.
 ## Capture
 
 **⏺ REC PERF** on the Automation tab — the sequencer's button, on the
-sequencer's panel. It arms the recorder in Latch and rolls
-the transport; every control that moves while it plays is written into a lane
-of its own, and a control keeps laying its value down after the hand comes
-off, which is what a performance is. Stopping the transport ends the take, as
-does pressing the button again. The lanes appear on the timeline as they are
+sequencer's panel. It arms the recorder in Latch, and Play starts the take
+(see *Arm, then Play* below); every control that moves while it plays is
+written into a lane of its own, and a control keeps laying its value down
+after the hand comes off, which is what a performance is. Stopping the
+transport ends the take; pressing the button mid-take stops the transport. The lanes appear on the timeline as they are
 drawn, because the tab refetches them while armed.
 
 Record's own three-way switch is still there. Touch and Latch do what they
-did; REC PERF is Latch with the transport, in one press.
+did; REC PERF is Latch armed against the transport, in one press.
 
 ## What records
 
-Forty-eight of the document's controls, up from eight. One table in
+Fifty-four of the document's controls, up from eight: forty-eight when this
+was written, and the Pitch Time Changer's six since. One table in
 `automation.rs` — `STRETCH_TARGETS` — names each one, labels it for the menu,
 and gives its range: the same range `persist::stretch_from_json` clamps to,
 so a lane can never ask for a value the document would refuse.
@@ -40,6 +41,7 @@ so a lane can never ask for a value the document would refuse.
 | Vocoder | Analysis window, Phase lock, Freq trust, Phase spread, Peak width, Lock width, Freeze, Blur, Gate, Link stereo |
 | PVSOLA | Re-anchor, Search, Blend |
 | Hybrid | Margin, Remake noise, Tone, Hits, Air |
+| Pitch Time Changer | Speed, Pitch, Feedback, Grain size, X-fade size, Smoothing |
 
 The rack's controls — every effect's, and the maximiser's — were already on
 the list and still are.

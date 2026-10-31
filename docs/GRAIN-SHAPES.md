@@ -10,8 +10,8 @@ how they are built and how one is chosen.
 
 ## Where they came from
 
-Seven reference sheets, in `Gran Shapes/`. Everything named on them is in the
-catalogue:
+Seven reference sheets, in `Reference Docs/Gran Shapes/`. Everything named on
+them is in the catalogue:
 
 | Sheet | What is on it |
 |---|---|

@@ -2,7 +2,9 @@
 
 Written 14 Sep 2026, on the `open-world` branch. A plan, not a build: what
 the Compose view is, what has to exist for it, and the order to build it in.
-Nothing here is done unless the checklist at the end says so.
+Nothing here is done unless the checklist at the end says so. All five phases
+were built on 14 Sep 2026; on 15 Sep the view was taken off the rail, and is
+behind `COMPOSE_LISTED` in `ui/rail.js` (see `docs/COMPOSE.md`).
 
 Read with `docs/INFORMATION-ARCHITECTURE.md`, which inventories what is
 there today, and whose third option — *one arrangement* — this is.

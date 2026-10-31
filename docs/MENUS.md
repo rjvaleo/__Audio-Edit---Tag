@@ -130,12 +130,15 @@ trades fits beside it.
 
 ## Window
 
-The panels that are not part of the editor's own layout. Both are floating, both
-are closed by default, and **Escape closes the front one**.
+The panels that are not part of the editor's own layout, and two ways of
+looking at the master bus. Grains and Keys are floating, both are closed by
+default, and **Escape closes the front one**.
 
 | Item | Shortcut | Needs | What it does |
 |---|---|---|---|
 | Grains | | an open document | Opens the grain views — the 2D swarm and both 3D suites, with the picker and the legend. They used to take half the stretch tray and redraw beside the controls whether or not anyone was looking; as a window they cost nothing until opened. The panel holds the *same* elements, moved, not copies. |
+| Master bus full screen | ✓ when on | an open document | Puts `#masterBus` — the room — over the whole screen, and back. |
+| Edit the room | ✓ when on | an open document | Turns the room editor on and off. See [`ROOM-EDITOR.md`](ROOM-EDITOR.md). |
 | Keys | | an open document | The note keyboard. Plays the pitch from the computer keyboard, bound to whatever tuning is selected. |
 
 ## View
@@ -154,8 +157,9 @@ how you like to watch, and what the library lists — and they are in ⚙ Settin
 now. Neither survived a reload while it lived in this menu, which is most of the
 argument: a preference that forgets itself every session is not a preference.
 
-This menu still lists two of the rail's three modes. Room is missing from it,
-and that is a defect rather than a decision.
+This menu still lists two of the rail's four workspaces (Compose is unlisted).
+Visual and Seq are missing from it, and that is a defect rather than a
+decision.
 
 ---
 
@@ -176,6 +180,7 @@ to that table is the whole job of adding a setting; there is no second list.
 | What the library lists | Files with no audio header |
 | Watching it play | Keep the playhead on screen; and do it by scrolling or paging |
 | What things cost | Audio buffer, grain detail, analyser resolution |
+| The sequencer | Play it through the engine |
 
 Every row carries the sentence saying what it trades, because every one of these
 is a trade and the reasoning used to live only in a source comment. A row whose

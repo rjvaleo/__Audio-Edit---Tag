@@ -13,13 +13,13 @@ be rebuilding the entire effect rack.*
 > | 4. Tails were cut dead on stop | `return` before `process_rack` | the paused branch runs the chain on silence, with a four-second countdown |
 >
 > The guard in 1 became a value rather than a flag — `Rebuilds::decide` in
-> [`live.rs:332`](../core/crates/server/src/live.rs:332) returns what must be
+> [`live.rs:359`](../core/crates/server/src/live.rs:359) returns what must be
 > rebuilt given the parameters that moved, which is testable in a way three
 > booleans scattered through a function were not.
 >
 > Read [`transport.rs`](../core/crates/engine/src/transport.rs) for the tail
-> decay: `TAIL_SILENCE` at `1e-4`, budget reset to four seconds whenever the peak
-> is above it, so a stopped transport rings out and then stops burning a core.
+> decay: `TAIL_SILENCE` (from `fx`) at `1e-4`, budget reset to four seconds
+> whenever the peak is above it, so a stopped transport rings out and then stops burning a core.
 
 ---
 
@@ -129,13 +129,14 @@ reverb vanishes on the same sample.
 
 ## What is already correct — do not "fix" these
 
-Checked, and each is right for its own reason:
+Checked, and each is right for its own reason (line numbers as the code
+stands on 31 Oct 2026):
 
-- **`routes.rs:1063`** — guarded by `keepLive`.
+- **`routes.rs:1780`** — guarded by `keepLive`.
 - **`commitRack()`** — passes `keepLive: true`, and its comment explains why.
-- **`live.rs:220`** (inside `load`) — the file changed, so the rack *should* be
+- **`live.rs:237`** (inside `load`) — the file changed, so the rack *should* be
   rebuilt.
-- **`routes.rs:2045`** — a structural edit reloads the source. Deliberate: you
+- **`routes.rs:2923`** — a structural edit reloads the source. Deliberate: you
   do not hold a cut while listening.
 - **`want_map` / `want_parts` / `want_bank`** — properly conditional. These are
   the model the rack should have followed.
