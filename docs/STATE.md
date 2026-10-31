@@ -656,12 +656,29 @@ title.
 
 ### The stretch tray
 
-Two half-width modules side by side, equal widths:
+*Rebuilt 27–30 Oct 2026 (`docs/DESIGN-CRITIQUE.md`, "The granular engine" and
+"The UI queue").*
 
-- **Standard** — the engine picker with *Reset all* right-aligned on it, then
-  Time & pitch, Grain shape, Pitch movement.
-- **Extended** — everything that used to be a constant inside an algorithm, with
-  its own *Reset* on the first group's rule.
+- **The cloud column, on the left:** the engine picker, the cloud pad, its
+  readout and the Cloud presets (`gkLayout` moves those once).
+- **The rest is banks of knobs:** Time and pitch, the engine's own ("This
+  engine"), Grain shape, Pitch movement, then the extended side in amber. Each
+  slider row is made a knob in place (`gkKnob`). The banks are packed into the
+  dock's lines largest-first (`gkPack`): Time and pitch leads, and every
+  standard bank comes before every extended one. Only `order` is set, never the
+  DOM.
+- **Fit:** at 1600×1000 Granular and WSOLA fit the dock's height. Vocoder,
+  PVSOLA and Hybrid still scroll; the options are in the critique.
+
+`tests/ui/controls-parity.spec.mjs` holds every control of every view against a
+baseline, so a layout change cannot drop one silently.
+
+What the two halves are has not changed:
+
+- **Standard:** the engine picker with *Reset all* on it, then Time & pitch,
+  Grain shape and Pitch movement.
+- **Extended:** everything that used to be a constant inside an algorithm, with
+  its own *Reset* on the first group's heading.
 
 The picker holds **five** engines and decides what both columns contain. Neither
 panel has a heading; the sub-nav says *Time & Pitch*. The dock's tabs sit on the
