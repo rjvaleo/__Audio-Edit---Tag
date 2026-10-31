@@ -808,10 +808,72 @@ function rpStopsEditor(s) {
     const slot = box.closest('.rp-slot');
     const strip = slot?.querySelector('.rp-strip');
     if (strip) strip.style.background = rpGradientCss(s.key);
+    bar.style.background = rpGradientCss(s.key);
     slot?.querySelector('.rp-span')?.rpRedraw?.();
   };
 
   box.appendChild(rpEl('span', 're-tag', 'STOPS'));
+
+  // ── the gradient, with a tick where each stop sits ──
+  // The direct way to move a stop: along the line it is a point on. The knob
+  // under each colour stays as the exact one, and the two follow each other.
+  const bar = rpEl('div', 'rp-stopbar');
+  bar.style.background = rpGradientCss(s.key);
+  const ticks = [], knobs = [], reads = [];
+  /// Move stop `i` to `v`, from whichever control moved it.
+  const setAt = (i, v, from) => {
+    v = Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
+    live[i] = { ...live[i], at: v };
+    if (from !== 'knob' && knobs[i]) knobs[i].value = String(Math.round(v * 100));
+    if (reads[i]) reads[i].textContent = v.toFixed(2);
+    const tk = ticks[i];
+    tk.style.left = `${v * 100}%`;
+    tk.setAttribute('aria-valuenow', v.toFixed(2));
+    push();
+  };
+  live.forEach((st, i) => {
+    const tk = rpEl('span', 'rp-tick');
+    tk.appendChild(rpEl('i'));
+    tk.querySelector('i').style.background = st.c;
+    tk.style.left = `${st.at * 100}%`;
+    tk.tabIndex = 0;
+    tk.title = 'Where this colour sits. Drag along the gradient; arrow keys, shift for coarse.';
+    tk.setAttribute('role', 'slider');
+    tk.setAttribute('aria-label', `Stop ${i + 1}: where it sits`);
+    tk.setAttribute('aria-valuemin', '0');
+    tk.setAttribute('aria-valuemax', '1');
+    tk.setAttribute('aria-valuenow', st.at.toFixed(2));
+    tk.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      tk.focus({ preventScroll: true });
+      try { tk.setPointerCapture(e.pointerId); } catch { /* released below */ }
+      // Inside the border, where the ticks are placed.
+      const x0 = bar.getBoundingClientRect().left + bar.clientLeft, w = bar.clientWidth;
+      const move = (ev) => setAt(i, (ev.clientX - x0) / w, 'tick');
+      const up = () => {
+        tk.removeEventListener('pointermove', move);
+        tk.removeEventListener('pointerup', up);
+        tk.removeEventListener('pointercancel', up);
+      };
+      tk.addEventListener('pointermove', move);
+      tk.addEventListener('pointerup', up);
+      tk.addEventListener('pointercancel', up);
+    });
+    tk.addEventListener('keydown', (e) => {
+      const step = e.shiftKey ? 0.1 : 0.01;
+      const cur = live[i].at;
+      const to = { ArrowRight: cur + step, ArrowUp: cur + step, ArrowLeft: cur - step, ArrowDown: cur - step,
+        Home: 0, End: 1 }[e.key];
+      if (to === undefined) return;
+      e.preventDefault();
+      setAt(i, to, 'tick');
+    });
+    ticks.push(tk);
+    bar.appendChild(tk);
+  });
+  box.appendChild(bar);
   // A cell a stop: its colour on top, where it sits in the gradient as a knob
   // under it, and a way to take it out in the corner.
   const grid = rpEl('div', 'rp-stop-grid');
@@ -821,7 +883,11 @@ function rpStopsEditor(s) {
     well.type = 'color';
     well.value = st.c;
     well.title = 'This colour.';
-    well.oninput = () => { live[i] = { ...live[i], c: well.value }; push(); };
+    well.oninput = () => {
+      live[i] = { ...live[i], c: well.value };
+      ticks[i].querySelector('i').style.background = well.value;
+      push();
+    };
     cell.appendChild(well);
 
     const at = rpEl('input', 're-slider');
@@ -830,11 +896,9 @@ function rpStopsEditor(s) {
     at.title = 'Where in the gradient this colour sits. Drag up or down; shift for fine.';
     at.setAttribute('aria-label', `Stop ${i + 1}: where it sits`);
     const read = rpEl('b', null, st.at.toFixed(2));
-    at.oninput = () => {
-      live[i] = { ...live[i], at: +at.value / 100 };
-      read.textContent = live[i].at.toFixed(2);
-      push();
-    };
+    at.oninput = () => setAt(i, +at.value / 100, 'knob');
+    knobs.push(at);
+    reads.push(read);
     cell.appendChild(rpKnob(at, `Stop ${i + 1}`, read));
 
     if (live.length > 2) {

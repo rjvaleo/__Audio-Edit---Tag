@@ -4525,6 +4525,27 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 /* Each end's number rides under its handle (K2); `rpPlaceReads` sets where. */
 #roomPaintBody.rp-modern .rp-span-read > span { position: absolute; top: 0; left: 0; }
 
+/* The stops on their gradient: a tick where each sits, capped in its colour,
+   dragged along the line it is a point on (K6). Above the cells, across the
+   control column; the knobs below stay as the exact way in. */
+#roomPaintBody.rp-modern .rp-stopbar {
+  flex: 1 1 100%; position: relative; height: 14px; margin: 6px 0 4px;
+  border: 1px solid var(--line-2); border-radius: 2px;
+}
+#roomPaintBody.rp-modern .rp-tick {
+  position: absolute; top: -6px; bottom: -3px; width: 12px; margin-left: -6px;
+  cursor: ew-resize; touch-action: none;
+}
+#roomPaintBody.rp-modern .rp-tick::before {
+  content: ''; position: absolute; left: 5px; top: 4px; bottom: 0; width: 2px;
+  background: var(--text); box-shadow: 0 0 0 1px var(--bg);
+}
+#roomPaintBody.rp-modern .rp-tick > i {
+  position: absolute; left: 1px; top: 0; width: 10px; height: 7px; border-radius: 2px;
+  border: 1px solid var(--text); box-shadow: 0 0 0 1px var(--bg);
+}
+#roomPaintBody.rp-modern .rp-tick:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+
 /* The VIEW switch, in both views: two fixed places at the top of the tab. */
 #roomPaintBody .rp-view {
   flex: 1 1 100%; min-width: 0;
