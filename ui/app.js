@@ -3633,6 +3633,10 @@ function dockLimits() {
   return { min: DOCK_MIN, max: Math.max(DOCK_MIN, window.innerHeight - top - LANE_MIN) };
 }
 
+/// The height you chose — dragged, or the stylesheet's — which the tray's fit
+/// (`gkFit`) grows from and never goes under. Null until first measured.
+let dockBase = null;
+
 function setDockHeight(px, remember = true) {
   const dock = $('dock');
   if (!dock) return;
@@ -3640,6 +3644,7 @@ function setDockHeight(px, remember = true) {
   const h = Math.round(Math.max(min, Math.min(max, px)));
   dock.style.flex = `0 0 ${h}px`;
   if (remember) {
+    dockBase = h;
     try { localStorage.setItem('dockHeight', String(h)); } catch { /* private mode */ }
   }
   // The canvases in here size themselves from their box, and their observers
@@ -3655,6 +3660,7 @@ function resetDockHeight() {
   const dock = $('dock');
   if (!dock) return;
   dock.style.flex = '';
+  dockBase = Math.round(dock.getBoundingClientRect().height);
   try { localStorage.removeItem('dockHeight'); } catch { /* private mode */ }
   requestAnimationFrame(() => { drawGrains(); drawWave(); });
 }
@@ -3669,6 +3675,7 @@ function resetDockHeight() {
     catch { return NaN; }
   })();
   if (Number.isFinite(stored)) setDockHeight(stored, false);
+  dockBase = Number.isFinite(stored) ? Math.round(dock.getBoundingClientRect().height) : null;
 
   let from = null;
   grip.onpointerdown = (e) => {
@@ -10663,20 +10670,92 @@ function gkPack() {
   let n = 10;
   for (const line of lines) for (const b of line.banks) b.style.order = String(n++);
 }
+/// Both views (`docs/DESIGN-CRITIQUE.md`, "Both views, as an option"): All,
+/// or one side at a time. A page hides the other side's banks by a class on
+/// the tray — their inputs stay in the document for presets, Random,
+/// automation and the resets. The engine picker and its switches are on both.
+const GK_VIEWS = [['all', 'All', 'Every bank; the dock grows to show them'],
+  ['std', 'Standard', 'Time and pitch, the engine, grain shape and pitch movement'],
+  ['ext', 'Extended', 'The constants inside the algorithm']];
+let gkView = (() => {
+  try { const v = localStorage.getItem('gkView'); return GK_VIEWS.some(([k]) => k === v) ? v : 'all'; }
+  catch { return 'all'; }
+})();
+
+function gkViewRow() {
+  const left = $('grainControls')?.querySelector(':scope > .gk-left');
+  if (!left || $('gkView')) return;
+  const row = document.createElement('div');
+  row.className = 'gk-view';
+  row.innerHTML = '<span class="re-tag">SHOW</span><div class="seg" id="gkView"></div>';
+  const seg = row.querySelector('.seg');
+  for (const [key, text, title] of GK_VIEWS) {
+    const btn = document.createElement('button');
+    btn.className = 'seg-btn';
+    btn.dataset.view = key;
+    btn.textContent = text;
+    btn.title = title;
+    btn.onclick = () => gkSetView(key);
+    seg.appendChild(btn);
+  }
+  left.appendChild(row);
+}
+
+function gkSetView(key) {
+  gkView = key;
+  try { localStorage.setItem('gkView', key); } catch { /* private mode */ }
+  const host = $('grainControls');
+  if (!host) return;
+  host.classList.toggle('gk-page-std', key === 'std');
+  host.classList.toggle('gk-page-ext', key === 'ext');
+  for (const b of host.querySelectorAll('#gkView .seg-btn')) b.classList.toggle('active', b.dataset.view === key);
+  gkPack();
+  gkFit();
+}
+
+/// Grow the dock to what the tray shows, from the height you chose and never
+/// under it, never past the room the waveform needs (`setDockHeight` clamps).
+/// Called when the engine, the file or the view changes — not on every
+/// resize, so a dock dragged shorter afterwards stays where it was put.
+function gkFit() {
+  const host = $('grainControls');
+  const dock = $('dock');
+  if (!host || !dock || !host.closest('#dockStretch') || !host.clientHeight) return;
+  const top = host.getBoundingClientRect().top - host.scrollTop;
+  let bottom = 0;
+  for (const el of host.querySelectorAll(':scope > .gk-left, :scope .stretch-core, :scope .engine-params, :scope .wild, :scope .engine-pick, :scope .engine-switch-host')) {
+    const r = el.getBoundingClientRect();
+    if (r.width) bottom = Math.max(bottom, r.bottom - top);
+  }
+  const content = bottom + parseFloat(getComputedStyle(host).paddingBottom || 0);
+  const now = dock.getBoundingClientRect().height;
+  if (dockBase === null) dockBase = Math.round(now);
+  const want = Math.max(dockBase, Math.ceil(now - host.clientHeight + content));
+  if (Math.abs(want - now) > 1) setDockHeight(want, false);
+}
 {
   gkLayout();
+  gkViewRow();
   const host = $('grainControls');
   let queued = false;
   if (host) {
     new MutationObserver(() => {
       if (queued) return;
       queued = true;
-      setTimeout(() => { queued = false; gkAdopt(); gkPack(); }, 0);
+      setTimeout(() => { queued = false; gkAdopt(); gkPack(); gkFit(); }, 0);
     }).observe(host, { childList: true, subtree: true });
-    if (window.ResizeObserver) new ResizeObserver(() => gkPack()).observe(host);
+    // Packed on every width change; fitted only when the tray comes into view
+    // (the Stretch tab chosen again), so a drag is never fought.
+    let shown = false;
+    if (window.ResizeObserver) new ResizeObserver(() => {
+      gkPack();
+      const now = host.clientHeight > 0;
+      if (now && !shown) gkFit();
+      shown = now;
+    }).observe(host);
   }
   gkAdopt();
-  gkPack();
+  gkSetView(gkView);
 }
 
 /// The other panels of the Visual column — Shape, Ridgeline, Surfaces, Stage,

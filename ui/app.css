@@ -4471,3 +4471,11 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 /* Time and pitch's heading is exactly a bank heading's height, so on a line
    it shares its knobs stand level with the next bank's and are read first. */
 #grainControls :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 12px; }
+
+/* Both views (DESIGN-CRITIQUE, "Both views, as an option"): a page hides the
+   other side's banks. In the dock only: the Sound tab shows the tray whole. */
+#grainControls .gk-view { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+#grainControls .gk-view .seg { flex: 1; display: flex; }
+#grainControls .gk-view .seg-btn { flex: 1; }
+#dockStretch #grainControls.gk-page-std #extPanel .wild,
+#dockStretch #grainControls.gk-page-ext :is(.stretch-core, .engine-params, #grainShape .wild, #grainPitch .wild) { display: none; }

@@ -438,6 +438,27 @@ out. The ways to fit them:
    rest.
 4. **Leave it.** The remainder is a short scroll.
 
+### 1b. Both views, as an option
+
+RJ, on the options for Vocoder, PVSOLA and Hybrid: *"option for both views"*.
+So the tray has both, and you choose:
+
+- **The switch:** a segment row, **Show: All · Standard · Extended**, at the
+  foot of the cloud column. Fixed places, never wraps. The choice is
+  remembered.
+- **All:** every bank, as before. The dock grows to what the tray shows when
+  the engine, the file or the view changes. It never shrinks below the height
+  you dragged it to, and never past the room the waveform needs. Drag it
+  shorter afterwards and it stays where you put it until the next change.
+- **Standard / Extended:** one page at a time. The engine picker and its
+  switches stay on both pages, so changing engine never needs a page turn.
+  The dock fits the page the same way, so a paged tray stays short.
+- **Nothing is removed:** a page hides the other side's banks; their inputs
+  are still in the document, so presets, Random, automation, resets and the
+  parity test reach them.
+- **Held by:** `design-pass.spec.mjs` G1 (all five engines on screen whole in
+  All, each page showing only its own side, the choice surviving a reload).
+
 ### Control parity
 
 RJ: *"make sure the new layouts have all of the controls that the old layouts
