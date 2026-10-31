@@ -173,12 +173,28 @@ unchanged.
 
 1. **Done:** pitch, the attack fix and the tie rank, tested, with the
    library re-measured.
-2. The placement endpoint: the layout rules above as tested Rust, returning
-   ready-to-draw objects.
-3. The view: objects, fly controls and the info card, reached from Browse.
-4. Pass-to-play, with the fade.
-5. The neighbourhoods layout and the glide between layouts.
-6. Find.
+2. **Done:** the placement rules, `search::map::place` (14 tests in
+   `search/tests/map.rs`), served ready to draw by `GET /api/map` (2 route
+   tests).
+3. **Done:** the view, `ui/sound-map.js`, opened from **Browse › Map**. Objects,
+   fly controls, the axis names placed in the world, and the info card with its
+   five nearest sounds.
+4. **Done, without the fade:** a sound plays when the pointer rests on it or the
+   camera passes within reach. The engine plays one file at a time, so moving to
+   the next sound cuts the last one rather than fading it. A fade needs a
+   second voice in the engine, which is its own piece of work.
+5. **Done:** the islands layout, as the 3D projection refined by stress
+   majorisation, and the glide between layouts (L).
+6. **Done:** find, which dims everything that does not match its name,
+   folder, label, family, note or words. Enter flies to the first match.
+
+Covered by `tests/ui/sound-map.spec.mjs` (5 tests).
+
+### What the islands needed that the plan did not say
+
+Scaled to the furthest sound, one odd file squeezed the rest of the library
+into a sixth of the world. The islands are now centred on the median and sized
+by where nine sounds in ten fall, with the outliers held at the edge.
 
 ## To listen to
 

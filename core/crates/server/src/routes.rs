@@ -56,7 +56,8 @@ pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 /// has fallen behind can say so instead of being argued with.
 pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
-    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SETTINGS_JS, SECTION_PRESETS_JS,
+    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SOUND_MAP_JS, SOUND_MAP_CSS,
+                 SETTINGS_JS, SECTION_PRESETS_JS,
                  SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
                  PERF_PANEL_JS, PRISM_PAD_JS, COMPOSE_JS, VISUAL_LANES_JS,
                  SHAPES_4D_JS, PANEL_4D_JS,
@@ -139,6 +140,9 @@ pub const VISUAL_LANES_JS: &str = include_str!("../../../../ui/visual-lanes.js")
 /// its own markup and depends on no rule in `app.css`. See `docs/RAIL.md`.
 pub const RAIL_JS: &str = include_str!("../../../../ui/rail.js");
 pub const RAIL_CSS: &str = include_str!("../../../../ui/rail.css");
+/// The 3D sound map. See `docs/SOUND-MAP.md`.
+pub const SOUND_MAP_JS: &str = include_str!("../../../../ui/sound-map.js");
+pub const SOUND_MAP_CSS: &str = include_str!("../../../../ui/sound-map.css");
 /// The regular 4-polytopes and the projection that brings them into three
 /// dimensions. Pure geometry — see `docs/SHAPES-4D.md`.
 pub const SHAPES_4D_JS: &str = include_str!("../../../../ui/shapes-4d.js");
@@ -186,6 +190,14 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/rail.js") => {
             Response::ok("text/javascript; charset=utf-8", RAIL_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sound-map.js") => {
+            Response::ok("text/javascript; charset=utf-8", SOUND_MAP_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sound-map.css") => {
+            Response::ok("text/css; charset=utf-8", SOUND_MAP_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/rail.css") => {
@@ -364,6 +376,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/similar") => api_similar(app, req),
         ("GET", "/api/labels") => api_labels(app, req),
         ("GET", "/api/space") => api_space(app),
+        ("GET", "/api/map") => api_map(app),
         ("GET", "/api/sounds") => api_sounds(app),
         ("POST", "/api/usertags") => api_user_tags_set(app, req),
         ("GET", "/api/usertag") => api_user_tag_members(app, req),
@@ -5460,6 +5473,93 @@ fn api_space(app: &Arc<App>) -> Response {
                 Value::Str("dark → bright".into()),
                 Value::Str("sustained → rhythmic".into()),
                 Value::Str("tonal → noisy".into()),
+            ]))
+            .set("points", Value::Arr(points))
+            .to_string(),
+    )
+}
+
+/// The sound map: every measured sound placed and styled, ready to draw.
+///
+/// The rules live in `search::map` and are tested there; this only gathers
+/// what they need and names the result. `waiting` counts the indexed sounds
+/// not yet measured — the measuring happens a batch per request, so the
+/// interface asks again until it reaches nought and the map fills in as it
+/// does. See `docs/SOUND-MAP.md`.
+fn api_map(app: &Arc<App>) -> Response {
+    ensure_prints(app);
+    ensure_labels(app);
+
+    let prints = app.prints.read().unwrap();
+    let idx = app.index.read().unwrap();
+    let heard = app.heard.read().unwrap();
+    let cal = search::Calibration::build(prints.by_path.values().copied());
+
+    let files: std::collections::HashMap<String, &crate::state::FileRow> = idx
+        .files
+        .iter()
+        .map(|f| (format!("{}/{}", f.folder, f.rel_path), f))
+        .collect();
+    let waiting = files
+        .iter()
+        .filter(|(p, f)| f.duration > 0.0 && prints.get(p).is_none())
+        .count();
+
+    // Only sounds still in the index: a fingerprint outlives a file that has
+    // since been moved, and a point that cannot be played is a lie.
+    let entries: Vec<(&String, search::Fingerprint, &crate::state::FileRow)> = prints
+        .by_path
+        .iter()
+        .filter_map(|(p, fp)| files.get(p).map(|f| (p, *fp, *f)))
+        .collect();
+    let placed = search::map::place(&entries.iter().map(|e| e.1).collect::<Vec<_>>());
+
+    let triple = |c: [f32; 3]| Value::Arr(c.iter().map(|v| Value::Num(*v as f64)).collect());
+    let points: Vec<Value> = entries
+        .iter()
+        .zip(&placed)
+        .map(|((path, fp, f), at)| {
+            let top = heard.get(path.as_str()).and_then(|l| l.words.first().map(|w| (w.label.clone(), l.from.clone())));
+            let (label, from) = top.unwrap_or_default();
+            Value::obj()
+                .set("path", path.to_string())
+                .set("name", f.filename.clone())
+                .set("folder", f.folder.clone())
+                .set("seconds", f.duration)
+                .set("axes", triple(at.axes))
+                .set("islands", triple(at.islands))
+                .set("size", at.size as f64)
+                .set("rough", at.rough as f64)
+                .set("crisp", at.crisp as f64)
+                .set("pulseHz", at.pulse_hz as f64)
+                .set("pitched", at.pitched)
+                .set("hz", fp.pitch.hz as f64)
+                .set("note", fp.pitch.note().map(Value::Str).unwrap_or(Value::Null))
+                // The twelve, in `dimensions` order, for the info card.
+                .set("v", Value::Arr(fp.v.iter().map(|x| Value::Num(*x as f64)).collect()))
+                .set("family", search::map::family(&label))
+                .set("label", label)
+                // Set when the label was lent by a neighbour rather than heard.
+                .set("from", from.unwrap_or_default())
+                .set(
+                    "words",
+                    Value::Arr(fp.descriptors(&cal).into_iter().map(|w| Value::Str(w.to_string())).collect()),
+                )
+        })
+        .collect();
+
+    Response::json(
+        Value::obj()
+            .set("count", points.len() as f64)
+            .set("waiting", waiting as f64)
+            .set(
+                "dimensions",
+                Value::Arr(search::NAMES.iter().map(|n| Value::Str(n.to_string())).collect()),
+            )
+            .set("axes", Value::Arr(vec![
+                Value::Str("tonal → noisy".into()),
+                Value::Str("low → high".into()),
+                Value::Str("short → long".into()),
             ]))
             .set("points", Value::Arr(points))
             .to_string(),

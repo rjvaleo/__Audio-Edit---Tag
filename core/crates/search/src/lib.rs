@@ -18,6 +18,7 @@
 //! else and "similar" would collapse to "about as long".
 
 pub mod learn;
+pub mod map;
 pub mod pitch;
 pub mod store;
 
