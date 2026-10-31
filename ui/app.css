@@ -4493,6 +4493,12 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    strip at the foot of the centre, under the lane. Not drawn until it says
    something. */
 .why:empty { display: none; }
+
+/* The Visual column widens the switches row's slots to two a row, and the
+   tuning and Keys grow with them. The switches did not: the dock's 71px on
+   `.engine-switches .param.toggle .tiny` outranked the column's `width: 100%`,
+   so "preserve transients" printed past its own edge. They fill the slot too. */
+.rv-admin .engine-switches .param.toggle .tiny { width: 100%; }
 /* ───────────────────────── Grain › Prism: the process's settings beside the pad
    On a wide window the pad, sized from the dock's height, left the dock's
    right-hand side empty while the process's extra settings sat under the
