@@ -1,18 +1,21 @@
 # Audio Edit & Tag — complete state
 
-Written 11 August 2026 as a handoff, and kept up to date since. **1029 Rust
-tests and 241 browser tests passing, CI green.** Everything an agent picking
+Written 11 August 2026 as a handoff, and kept up to date since. **1005 Rust
+tests and about 420 browser tests**, counted 31 Oct 2026. CI cannot build the
+workspace while `prism-fx` is a path dependency outside the repository — see
+[`CI.md`](CI.md). Everything an agent picking
 this up needs to know, in one file, because the per-topic notes live in
 `~/.claude/projects/…` on one machine and this repo travels.
 
-**Branch `main`, HEAD `0039563`.** 347 commits, ~53.4k lines of Rust across ten
-crates. The work formerly on `feedback-engine` is merged; that branch name was
+**Branch `open-world`, HEAD `fb38823`**, which `main` matches at present. 447
+commits, ~48.6k lines of Rust across ten crates. The work formerly on `feedback-engine` is merged; that branch name was
 already just a name, since the feedback engine it was opened for was built and
 pulled on the same day (§5b).
 
-**One branch is open: `shell-hierarchy`**, two commits ahead of `main` and
-pushed. It holds the preference store and the settings panel (§7g) and the
-four-dimensional solids (§8b). Both are finished and tested; neither is merged.
+**`shell-hierarchy` is merged**: the preference store and the settings panel
+(§7g) and the four-dimensional solids (§8b) are on `open-world`. Branches with
+commits not on it: `fog-curve` (6), `small-faults` (2), `fourd-tab` (1) and
+`prism-switch`, whose history is separate.
 
 **Three things about this repo's history:**
 
@@ -27,8 +30,14 @@ four-dimensional solids (§8b). Both are finished and tested; neither is merged.
   add one.
 - **`main` was force-pushed** on 5 Sep. Any clone taken before that needs a
   fresh one.
+- **The hashes have moved again since.** The commits quoted in this file
+  (§13, and `c2a4e54` in §5b) are not on `origin/open-world`; the same commits
+  are there under new hashes — `c5f740a` is `2e4aa5b`, with the same tree, and
+  "Pull the feedback engine" is `b364874`. A local `open-world` older than the
+  remote holds the old history.
 
-**Everything runs on every push** — `.github/workflows/ci.yml`, see
+**Everything runs on every push to `main` and every pull request** —
+`.github/workflows/ci.yml`, see
 [`CI.md`](CI.md). It found two long-standing bugs on its first two runs, both
 because it is a machine unlike this one.
 
@@ -47,15 +56,16 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     StartHere.bat            # Windows
 
     cargo build --release --manifest-path core/Cargo.toml
-    cargo test  --release --manifest-path core/Cargo.toml     # 1029 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 1005 tests
     npm run check                                             # the interface, statically
     npm run test:ui                                           # the interface, in a browser
 
-**The interface is embedded in the binary** with `include_str!` — twenty-four
-assets: `ui/index.html`, `ui/app.css`, eighteen scripts in `ui/` (among them
+**The interface is embedded in the binary** with `include_str!` — thirty-six
+assets: `ui/index.html`, `ui/app.css`, `ui/rail.css`, twenty-three scripts in
+`ui/` (among them
 `app.js`, `settings.js`, `section-presets.js`, `perf-panel.js`, `shapes-4d.js`, `panel-4d.js`, `theme-derive.js`,
 `theme-palettes.js`), `ui/vendor/babylon.js`, `visualiser/grain-views.html`,
-p5.js and both fonts — and, since 6 Sep 2026, the six files of the scale
+p5.js and the fonts stylesheet with both fonts — and, since 6 Sep 2026, the six files of the scale
 sequencer under `ui/sequencer/`, served at `/sequencer/`.
 **Rebuild after any interface edit or the browser is served the old file.** This
 has cost more time than anything else in this project.
@@ -119,19 +129,23 @@ rebuild.
 
 ## 3. Architecture
 
-Rewritten from Python into Rust starting 8 Aug 2026. The old Python app still
-sits in `app/`, untouched and **not deleted**.
+Rewritten from Python into Rust starting 8 Aug 2026. The old Python app was
+retired from the repository (`ba1f2f8`, "retire the Python app"); git history
+still has it.
 
-Ten crates in `core/crates/`, ~53.4k lines.
+Ten crates in `core/crates/`, ~48.6k lines. The effects and the sound engine are
+shared with idMLab in two crates of this project's own, `prism-fx` and
+`prism-grain`, taken by path from `../GitHub/prism-fx` (repo
+`rjvaleo/hyper-efx`).
 
 | crate | what it is |
 |---|---|
 | `audio-core` | container probe/decode (WAV, AIFF, AIFC, headerless PCM), peak tiles, FFT, spectrogram, stats, WAV writer |
 | `catalog` | classification taxonomy, ported from `ingest_index_v2.py` |
 | `indexer` | library walk, classify, write the TSV index |
-| `fx` | biquads, EQ, compressor, channel maximiser, **five stretchers**, **nine live shapers** (`shape.rs`) and the parameter layer (`params.rs`) — `stretch.rs` (WSOLA + dispatch), `vocoder.rs`, `grain.rs`, `pvsola.rs`, `hybrid.rs` on `decompose.rs` + `noise.rs`, plus `stream.rs`, `transient.rs`, `master.rs` |
+| `fx` | biquads, EQ, compressor, channel maximiser (`master.rs`), **33 shape kinds** (`shape.rs`), the parameter layer (`params.rs`) and the adapter to `prism-fx` (`prism.rs`), which builds every rack effect; the program's own DSP (`shape::make_own`, `dattorro.rs`, `reverb.rs`, `phaser.rs`, `eq.rs`, `comp.rs`, `master.rs`) stays as the parity reference. The **five stretchers** — `stretch.rs` (WSOLA + dispatch), `vocoder.rs`, `grain.rs`, `pvsola.rs`, `hybrid.rs` on `decompose.rs` + `noise.rs`, plus `stream.rs`, `transient.rs` — are `prism-grain`'s, re-exported under their old paths |
 | `edit` | non-destructive edit list (clips), windowed render, export, **zero-crossing snap** (`snap.rs`) and **measurement** (`analyse.rs`) |
-| `engine` | real-time: `render` (blocks), `transport` (play/seek/loop), `device` (cpal) |
+| `engine` | real-time: `transport` (play/seek/loop), `device` (cpal), `input`, `seqbus`; `render` (blocks) and `stretcher` are `prism-grain`'s, re-exported |
 | `search` | acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | ONNX inference via tract, band-limited resampling, label policy |
 | `server` | hand-rolled HTTP/1.1 on `std::net`, routes, JSON, persistence, **marker and region commands** (`annot.rs`) |
@@ -139,14 +153,15 @@ Ten crates in `core/crates/`, ~53.4k lines.
 
 ### Dependencies
 
-Two direct crates, 136 in the tree. **`cpal` 0.18** (audio device) and
-**`tract-onnx` 0.23** (YAMNet). Both pure Rust, which preserves what the
+Two direct crates from crates.io, 190 in the tree. **`cpal` 0.18** (audio
+device) and **`tract-onnx` 0.23** (YAMNet). Plus `prism-fx` and `prism-grain`,
+this project's own, by path; they have no outside crates. Both pure Rust, which preserves what the
 original zero-dependency rule was protecting: the Windows cross-build is one
 command with nothing but the mingw linker. **That is the test for a third
 dependency** — not "is it a dependency" but "does it break the cross-build".
 
-Written here rather than pulled in: the HTTP server, the JSON parser, the FFT,
-every filter and stretcher, the TSV store.
+Written here or in the prism crates rather than pulled in: the HTTP server, the
+JSON parser, the FFT, every filter and stretcher, the TSV store.
 
 **Not WebAssembly.** All DSP runs natively. `audio-core`, `fx` and `catalog`
 compile cleanly to `wasm32-unknown-unknown` — that door is open on purpose, but
@@ -241,6 +256,8 @@ in different directions.
 
 They are built *out of* the first three rather than beside them.
 
+The files are in `prism-grain/src/`.
+
 - **PVSOLA** (`pvsola.rs`) runs the vocoder for `anchor_frames` frames, then
   restarts it on a fresh segment whose phase comes from the input, splicing the
   two with WSOLA's correlation search. Nothing carries across an anchor, so
@@ -313,7 +330,8 @@ panel shows moves the audio, and what a panel does not show provably does not.
 audio callback.** They were told it is weeks of work and chose it over
 pre-rendering.
 
-Done: **`fx/src/stream.rs` — `Streamer` trait and `WsolaStream`.**
+Done: **`fx/src/stream.rs` (now `prism-grain/src/stream.rs`) — `Streamer` trait
+and `WsolaStream`.**
 
 - Keeps state between blocks: read position, write position, and the stretch of
   waveform it expects to follow what it just laid down.
@@ -455,7 +473,7 @@ with the engine. See [ROADMAP.md](ROADMAP.md).
 
 Three layers, deliberately separable (`crates/engine`):
 
-- **`render.rs`** — `BlockRenderer`. Grains become *voices*: a grain that
+- **`render.rs`** — `prism-grain`'s now, re-exported as `engine::render`. `BlockRenderer`. Grains become *voices*: a grain that
   outlives its block stays active into the next carrying its position. Fixed
   `[Voice; 1024]` and `[GrainStream; 16]`, so it never allocates — a full pool
   drops the newest grain and bumps a counter.
@@ -526,9 +544,10 @@ window and the hop, by laying frames until the overlap is complete and taking
 that peak, which is what the maximum was converging to and is the more honest
 quantity besides.
 
-`is_live()` in `engine/src/stretcher.rs` is the authority; `LIVE_ENGINES` in
-`app.js` mirrors it. The three that fall back are marked with a dot on the
-picker and a line of text in the panel, because a control that quietly does
+`is_live()` in `prism-grain/src/stretcher.rs` (`engine::stretcher`) is the
+authority; `LIVE_ENGINES` in `app.js` mirrors it. All five are live; one that
+fell back would be marked with a dot on the picker and a line of text in the
+panel, because a control that quietly does
 something else is worse than one that admits it.
 
 **Switching engines cross-fades.** Switching outright put a step of 0.63 into a
@@ -709,7 +728,7 @@ Four routes: `/api/presets` captures from a file; `/api/presets/update` and
 
 ### The server
 
-Roughly thirty endpoints. Every path from the interface is resolved inside the
+Sixty-six API paths. Every path from the interface is resolved inside the
 library with `resolve_within`, which rejects absolute paths, parent components
 and Windows prefixes, then canonicalises both sides so a symlink pointing
 outside is caught too.
@@ -815,7 +834,7 @@ having only had its engine tested in isolation.
 |---|---|
 | `tools/ui-check.mjs` | Static checks over `ui/`: a control with no default, a pane with no entry in `showPane`'s map, a function nothing calls. **Found two dead functions on its first run** — `renderMaster` and `renderRackParams`, one of which had quietly removed the channel maximiser from the product for three days. Also runs under `cargo test`, via `server/tests/interface.rs` |
 | `tools/scratch-server.mjs` | A throwaway instance on its own port with its own library, killed and cleaned up. `AUDIOLAB_PORT` exists so it cannot land on a working session. `--check` runs 13 API checks |
-| `tests/ui/*.spec.mjs` | Playwright, 10 specs against that scratch server. The only thing that catches a panel which builds without error and shows nothing |
+| `tests/ui/*.spec.mjs` | Playwright, 45 specs against that scratch server. The only thing that catches a panel which builds without error and shows nothing |
 
 **The suite runs on the GPU** *(27 Oct 2026)*. Playwright's default headless
 browser, the headless shell, draws WebGL with SwiftShader on the CPU. Every
@@ -897,7 +916,8 @@ was not. It correlates at 0.97.
 
 ### How they are wired
 
-**One `SlotSpec::Shape` variant for all nine**, not nine variants. The older
+**One `SlotSpec::Shape` variant for every shape kind** (33 now), not a variant
+each. The older
 three (gain, EQ, comp) each carry a settings struct and hand-written JSON; a
 shaper describes its own parameters instead, so one pair of conversions serves
 all of them and the next one added needs no rack work at all. Parameters are a
@@ -909,9 +929,11 @@ effect sizes its buffer once and may not resize while running.
 An unknown kind is **dropped rather than guessed at** — a slot this version does
 not recognise is one from a newer version.
 
-**`/api/fx` serves the catalogue** and the interface draws every module from it.
-Nothing in `app.js` knows what any shaper does. An effect gains a control by
-declaring one in `fx::shape` and neither the rack nor the interface is touched.
+**`/api/fx` serves the catalogue** — the 33 shape kinds and the 86 `prism-fx`
+effects — and the interface draws every module from it. Nothing in `app.js`
+knows what any shaper does. An effect gains a control by declaring one in its
+`prism-fx` descriptor (a shape kind's also in `fx::shape`) and neither the rack
+nor the interface is touched.
 It is also what automation will read to know what it may address.
 
 Two interface bugs found by driving it: `slotSummary` fell through to the
@@ -930,8 +952,8 @@ the gate's −40 dB threshold into −4000%.
   positions, so a stateful filter cannot be applied per-read. Near-live for
   time-domain effects, but not per-block live the way post is.
 - **Phase 2, spectral:** Harmonic rotate (rotate the spectrum around a
-  horizontal axis) and Convolve (multiply the spectrum of a captured impulse
-  with the target). Both fit an STFT rack effect.
+  horizontal axis) is not built. Convolve (multiply the spectrum of a captured
+  impulse with the target) is, as `prism-fx`'s Convolution.
 - ~~**Phase 3, the edits.**~~ **Built** — see §7c.
 - ~~**Automation and modulation.**~~ **Built** — see §7f. Curve automation is
   in, in playback and in the export. The followers (envelope, transient,
@@ -948,7 +970,7 @@ Ported onto `main` on 12 Aug 2026 from the discarded `codex/breakpoint-automatio
 branch, rewritten rather than copied. `core/crates/server/src/automation.rs`.
 
 **6 Sep 2026 — every engine control records.** The eight stretch targets
-became one table, `STRETCH_TARGETS`, of forty-eight: the grain section whole,
+became one table, `STRETCH_TARGETS`, of forty-eight (fifty-four now): the grain section whole,
 pitch movement, scan and shape, and the WSOLA, vocoder, PVSOLA and hybrid
 controls the engine takes live. Switches and counts are steps, with an exact
 inverse rather than a search. Controls whose change rebuilds the file — the
@@ -1286,7 +1308,7 @@ Cancel rides back on the progress tick's return value, so it reaches inside the
 stretch: 1.3 s from Stop to clear on a ×8 six-layer export, against the entire
 remaining render before.
 
-## 7g. The preference store and the settings panel  *(27 Aug 2026, branch `shell-hierarchy`)*
+## 7g. The preference store and the settings panel  *(27 Aug 2026, branch `shell-hierarchy`, since merged)*
 
 **Twenty-one of the menu bar's seventy-eight rows were not commands.** Seven
 buffer sizes and five grain-detail levels sat in Audio among five actual
@@ -1381,7 +1403,7 @@ slot would briefly recall what you were replacing.
 
 ---
 
-## 8b. The four-dimensional solids  *(27 Aug 2026, branch `shell-hierarchy`)*
+## 8b. The four-dimensional solids  *(27 Aug 2026, branch `shell-hierarchy`, since merged)*
 
 `grain-shapes.js` carries three shapes called `simplex 5`, `simplex 7` and
 `simplex 9`, and its own comment is honest that they are points spread by the
@@ -1678,7 +1700,7 @@ Every PDF in `Reference Docs/` is extracted to markdown in `Reference Docs/md/`.
   horizontal axis, Convolve multiplies two spectra.
 - `md/peak/peak-editing.md`, `peak-dsp.md`, `peak-shortcuts-and-actions.md`.
 
-Project docs: **36 files in `docs/`**, chief among them
+Project docs: **49 files in `docs/`**, chief among them
 `docs/ARCHITECTURE.md` (as-built), `docs/CONTROLS.md` (every gesture),
 `docs/MENUS.md` (every menu item and the settings panel), and
 `docs/SHAPES-4D.md` (the four-dimensional solids).
@@ -1751,8 +1773,10 @@ down:**
    was built — see §7e. Every file written from today already carries them.
 3. **Pre/post rack split** — shapers before *or* after the stretcher. §7b says
    why the pre side has to be a handover rather than a per-block chain.
-4. **Phase 2 spectral shapers** — harmonic rotate, convolve.
-5. **Automation and modulation** on the parameter layer.
+4. **Phase 2 spectral shapers** — harmonic rotate. Convolve is built, as
+   `prism-fx`'s Convolution.
+5. ~~**Automation and modulation** on the parameter layer.~~ **Built** — §7f;
+   the followers are not.
 6. **The third view** — granulate.
 
 **Earlier, and done — the streaming work the user chose:**
@@ -1763,7 +1787,7 @@ down:**
 4. **Streaming hybrid** — bounded lookahead (~93 ms at defaults); replace the
    whole-file normalisation floor with a fixed one.
 
-**On `shell-hierarchy`, done but not merged** *(27 Aug 2026)*:
+**On `shell-hierarchy`, done and since merged** *(27 Aug 2026)*:
 
 1. **The preference store and the settings panel.** §7g. Nine tests.
 2. **The four-dimensional solids and their panel.** §8b. Ten tests.
@@ -1813,8 +1837,8 @@ argued in the same session as §7g:
   `Rebuilds::decide` was extracted specifically so the "what must be rebuilt"
   question is a value that can be tested without a device. The handover itself
   still is not.
-- **The interface.** No longer untested — a static check and 28 Playwright spec
-  files, 241 tests, as of 5 Sep (§7). Still a floor rather than coverage: the
+- **The interface.** No longer untested — a static check and 45 Playwright spec
+  files, about 420 tests, as of 31 Oct (§7). Still a floor rather than coverage: the
   specs reach only what is on screen when they run, and the whole library and
   Browse half has none.
 - **Invariants 2, 3, 4, 5 and 7 are not named by any test.** They hold, and
@@ -1840,7 +1864,8 @@ argued in the same session as §7g:
 post-rewrite; the ones quoted in older documents, and in the 17 Aug version of
 this section, no longer resolve.*
 
-*The first two are on `shell-hierarchy`; the rest are `main`.*
+*The first two were on `shell-hierarchy`; the rest were `main`. None of these
+hashes is on `origin/open-world` now — see the history notes at the top.*
 
     bd2f80e  Four-dimensional solids, and a modelling panel to turn them
     4bc2076  Settings leave the menus, and every preference gets one home

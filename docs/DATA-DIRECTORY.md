@@ -14,15 +14,17 @@ index, presets, sessions and tags.
 
 ## What moves
 
-Twelve things, all joined off one `data_dir` in
-[state.rs](../core/crates/server/src/state.rs), plus `Captures` from
-`capture.rs` and `record.rs`. The code surface is genuinely small — the risk is
+Sixteen things, all joined off one `data_dir` in
+[state.rs](../core/crates/server/src/state.rs) — `PAD-PRESETS.json` in
+`padpresets.rs` — plus `Captures` from `capture.rs` and `record.rs`. `exports/`
+is legacy: nothing writes it now, since exports go beside the original. The code surface is genuinely small — the risk is
 entirely in the data, not the plumbing.
 
 ```
 config.json        AUDIO-INDEX.tsv    FINGERPRINTS.tsv   LABELS.tsv
 USER-TAGS.tsv      TAG-OVERRIDES.json SESSIONS.json      PRESETS.json
-AUTOMATION.json    MARKERS.json       FOLDER-ORDER.json
+AUTOMATION.json    MARKERS.json       FOLDER-ORDER.json  PAD-PRESETS.json
+VISUAL-AUTOMATION.json                compositions/
 exports/           Captures/
 ```
 
@@ -113,6 +115,11 @@ exactly the configuration that least needs it. Beside-the-executable stays as a
 The picture's automation lanes, one set per library-relative path, beside
 `AUTOMATION.json`. Written by `POST /api/visual-automation`; a document with no
 lanes has no entry. See `docs/COMPOSE.md`, phase three.
+
+## PAD-PRESETS.json
+
+The user's own Prism pad presets, per process. The factory ones are compiled
+into the binary from `hyperprism_presets.json`. See `padpresets.rs`.
 
 ## compositions/
 

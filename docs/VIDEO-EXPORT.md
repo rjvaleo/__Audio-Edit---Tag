@@ -229,12 +229,13 @@ dimensions. That is the assertion; the box walk was a way of feeling good.
 
 ## Known, and not yet done
 
-- **The grain cloud is not in the video.** The room draws it from the schedule
-  around the playhead, which the offline path does not fetch. The terrain, the
-  ring, the skin and the box are all there.
-- **Vertical still has the composition problem** written down above. It renders;
-  it renders a narrow room with a ring most of the way across it. The camera it
-  wants is not designed yet.
+- ~~**The grain cloud is not in the video.**~~ *Done:* the film fetches the
+  schedule; see "No schedule, so no cloud" and "The cloud is asked for in
+  windows" below.
+- ~~**Vertical still has the composition problem** written down above.~~
+  *Done:* a camera is posed per frame shape in the room editor
+  ([ROOM-EDITOR.md](ROOM-EDITOR.md)), and the film uses the one for its aspect
+  (`roomCameraForAspect`).
 
 ## The film has to be the room, not *a* room
 

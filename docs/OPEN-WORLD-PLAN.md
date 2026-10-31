@@ -1,6 +1,7 @@
 # The open world: from a room to a horizon
 
-*7 September 2026. A plan, on the `open-world` branch. `main` keeps the room.*
+*7 September 2026. A plan, on the `open-world` branch. `main` was to keep the
+room; on 31 October 2026 `main` and `open-world` are the same commit.*
 
 The visualiser is a room: a box whose four edges run back to a far wall,
 narrowing with perspective. Everything in it is placed *by the box* — the
@@ -284,6 +285,7 @@ machine in.
 ## Where this is
 
 The `open-world` branch, from `main` at the sequencer-in-the-film commit.
-`main` keeps the room exactly as it is. **Steps one to three are built, and the
+`main` was to keep the room exactly as it was; on 31 October 2026 the two
+are the same commit, so `main` has the open world too. **Steps one to three are built, and the
 freedom phase two promised — every object and the camera moving anywhere —
 is built ahead of it** — see [`OPEN-WORLD.md`](OPEN-WORLD.md).

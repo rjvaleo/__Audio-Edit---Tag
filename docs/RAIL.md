@@ -1,7 +1,9 @@
 # The left rail
 
-`ui/port/rail.js` and `rail.css` are the four buttons described below, and they
-are what the page shows.
+`ui/rail.js` and `ui/rail.css` are the four buttons described below, and they
+are what the page shows. *(Written for the edge build's `ui/port/rail.js`;
+ported here 5 Sep 2026. This build has a disk, so Scan and Folder show too, and
+Record keeps a row of its own under a rule rather than moving inside Browse.)*
 
 ## What is wrong with it
 

@@ -8,6 +8,10 @@ interface in the Room workspace.
 Fourteen visualisers, three engines, two documents, and two places to control
 them from.
 
+*As this was written. Since then `ui/vis-registry.js` lists every one (Phase 0)
+— twenty-five on 31 October 2026: the fourteen below, the Stage, and the ten
+grain views ported onto it.*
+
 | | what | where it runs | controls | films |
 | --- | --- | --- | --- | --- |
 | Swarm 2D | the original grain swarm | 2D canvas, `app.js` | grain panel | no |
@@ -28,7 +32,7 @@ same page.
 **Only the three bus visualisers film.** The eleven grain views have no export at
 all — there is no encoder in that document.
 
-**The Room is the biggest single thing here.** 2184 lines, 33 raw shader calls,
+**The Room is the biggest single thing here.** 2834 lines, 33 raw shader calls,
 seven palette slots of its own, plus terrain, ring, skin, grain cloud, fog, mist
 and the data block printed on the back wall.
 
@@ -188,9 +192,10 @@ Nine objects in one scene, every one with a switch and a solo: walls, terrain,
 grains, ring, sleeve, type, mist, fog, and three lamps. Real lighting, real
 exponential fog, a particle system, shadows, ACES tone mapping and bloom.
 
-Controls: fourteen pads for the pairs that are one gesture, sliders for what is
-genuinely one number, all of it generated from a description rather than written
-out by hand — and the picture itself is draggable, which is better than either.
+Controls: one section per object, every control a labelled slider with its
+value showing — the pads came out (see [STAGE.md](STAGE.md#the-controls)) — all
+of it generated from a description rather than written out by hand, and the
+picture itself is draggable.
 
 DETAIL is the preview's proxy; the film always draws all of it.
 

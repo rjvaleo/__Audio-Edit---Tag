@@ -1,7 +1,9 @@
 # The transport, and where recordings go
 
-*A design. Nothing here is built. It settles the open question in
-[DATA-DIRECTORY.md](DATA-DIRECTORY.md) and raises a larger one about projects.*
+*A design. It settles the open question in
+[DATA-DIRECTORY.md](DATA-DIRECTORY.md) and raises a larger one about projects.
+Built since: the keyboard's one dispatcher (15 Aug 2026) and the source
+switches. Not built: Record in Edit, the three record destinations, projects.*
 
 ---
 
@@ -38,6 +40,10 @@ a mode, and it is the right one — you are about to create material, which is
 what Edit is for.
 
 ## The keyboard: a live bug, not a tidy-up
+
+*Built 15 Aug 2026: one `keydown` listener on `document` in `app.js` runs the
+three tiers below. The room's fly keys and the ask dialog keep listeners of
+their own, in the capture phase. The line numbers here are the old `app.js`'s.*
 
 There are **six** `keydown` listeners on `document` in [app.js](../ui/app.js) —
 five permanent (5499, 6542, 7211, 7499, 8029) and one the ask dialog installs

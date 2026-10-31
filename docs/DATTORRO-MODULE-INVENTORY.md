@@ -116,10 +116,16 @@ assumption merely to reuse this serial rack UI.
 
 The current post-granulator rack implements the plate, all-pass diffuser,
 damping filter, notch, resonator, Regalia-Mitra EQ, Chamberlin filter, chorus,
-flanger, vibrato, echo, Leslie, harmonizer, detune, doubler, and all three PN
-noise variants. Each module exposes its parameters through the shared effect
-schema, so playback, export, preset persistence, and the control panel use one
-definition.
+flanger, vibrato, Doppler, echo, Leslie, harmonizer, detune, doubler, and all
+three PN noise variants, plus a Dattorro filter bank. Each module exposes its
+parameters through the shared effect schema, so playback, export, preset
+persistence, and the control panel use one definition.
+
+Since 31 October 2026 the rack builds all of them from `prism-fx`, the crate
+shared with idMLab (see [SHARED-FX.md](SHARED-FX.md#the-rack-moved)). Echo is
+`prism:echo`; the rest keep their shape kinds, each mapped to a prism effect
+by `ShapeKind::prism_id`. This program's own code in `fx/src/dattorro.rs`
+stays as the reference `fx/tests/prism_parity.rs` holds them to, bit for bit.
 
 The five oscillator realizations remain to be added to this serial rack.
 Constant pitch change and the polyphase resampler change

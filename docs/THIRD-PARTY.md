@@ -10,6 +10,10 @@ obligation rather than a courtesy — and it has to reach the user, in an About 
 or a bundled NOTICES file or both. Shipping the binary without it is the actual
 violation, not omitting the file from the repo.
 
+Not counted: `prism-fx` and `prism-grain`, this project's own effects and sound
+engine, shared with idMLab and taken by path from `../GitHub/prism-fx`. Their
+licence is MIT and they have no outside crates.
+
 ## Status
 
 **No GPL. No AGPL. Nothing here prevents selling a closed-source product.**
@@ -45,9 +49,10 @@ These ship inside the binary via `include_str!` and are invisible to
 | **p5.js 1.7.0** (`visualiser/p5.min.js`) | LGPL-2.1 | The vendored copy carries only a version banner, no licence text — that is a compliance gap today. LGPL permits use in a closed product, but the notice must ship and the user must be able to replace the library. Served as a standalone `/p5.min.js`, which helps. **Moot if the visuals go native** — one more thing the wgpu decision deletes. |
 | **Poppins** (`visualiser/fonts.css`, base64) | SIL OFL 1.1 | Embedding and redistribution in a commercial product are expressly permitted. The OFL text and copyright must accompany it. No blocker. |
 | **Lora** (same) | SIL OFL 1.1 | As above. |
+| **Babylon.js 9.22.0** (`ui/vendor/babylon.js`, `include_bytes!`) | Apache-2.0 | Attribution and the licence text must ship with it. No blocker. |
 | **YAMNet weights** (`models/yamnet.onnx`, 15 MB) | believed Apache-2.0 via `tensorflow/models` | **Verify before shipping.** The weights go inside a product being sold, and "believed" is not a standard to ship on. Note that AudioSet's own terms cover the *dataset*, not the trained model — do not confuse the two when checking. |
 
-None of these blocks a sale. All four need a notice, and one — p5's missing
+None of these blocks a sale. All five need a notice, and one — p5's missing
 licence text — is a gap that exists right now.
 
 ## Not in the table — the development tooling
@@ -58,7 +63,7 @@ to know why a program with no runtime has one.
 
 | tool | licence | what it is for | ships? |
 |---|---|---|---|
-| **`@playwright/test` ^1.49** (1.62.1 installed) | Apache-2.0 | The 241 browser tests, and `tools/screenshots.mjs`, which takes the README's pictures from the running program | **No** |
+| **`@playwright/test` ^1.49** (1.62.1 installed) | Apache-2.0 | The browser tests, about 420, and `tools/screenshots.mjs`, which takes the README's pictures from the running program | **No** |
 | **Chromium**, via `playwright install` | BSD-3-Clause and others | The browser those tests drive. Downloaded to a cache outside the repo | **No** |
 
 `package.json` exists for these alone. The application is one Rust binary with

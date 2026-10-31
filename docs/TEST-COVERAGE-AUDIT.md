@@ -14,6 +14,11 @@ differed they are noted rather than quietly replaced.
 > unlike this one, and that a test which cannot fail in any environment you have
 > is not yet a test.
 
+> **Counted 31 Oct 2026, not run: 1005 `#[test]` functions in the workspace and
+> about 420 browser tests in 45 spec files.** `fx` has 255; the stretchers and
+> their tests moved to `prism-grain`, outside this repository. The route and
+> invariant figures below are not re-counted.
+
 ---
 
 ## The headline
@@ -216,7 +221,8 @@ were at zero, and that is where every fault of the day was found.
 
 *Added 17 Aug 2026.*
 
-`.github/workflows/ci.yml` now builds and runs everything on every push. Its
+`.github/workflows/ci.yml` now builds and runs everything on every push to
+`main` and every pull request. Its
 first two runs found two bugs that had been in the program for months, and both
 were invisible here for the same reason: **the development machine is not a
 representative machine.**
@@ -261,11 +267,11 @@ of the theme engine can see the cause.
 
 ### The count
 
-| | 15 Aug | 17 Aug | 5 Sep |
-|---|---|---|---|
-| Rust tests | 934 | 965 | **1029** |
-| Browser tests | 10 | 24 | **241** |
-| Spec files | 2 | 5 | **28** |
+| | 15 Aug | 17 Aug | 5 Sep | 31 Oct, counted |
+|---|---|---|---|---|
+| Rust tests | 934 | 965 | **1029** | 1005 |
+| Browser tests | 10 | 24 | **241** | about 420 |
+| Spec files | 2 | 5 | **28** | 45 |
 
 The 5 Sep re-count also found `cargo test` **red**, and red since whenever
 `VIS_WAS_HIDDEN = new WeakSet()` was written: `tools/ui-check.mjs` had `Set` and
@@ -275,7 +281,8 @@ suite was reported as green throughout, here and in the README. Two lessons
 already in this file — *a test that cannot fail is not a test yet*, and *verify
 against the running thing* — have a third beside them now: **a number in a
 document is not a measurement.** Every figure in this table was re-measured by
-running the suites, not by reading the last document that quoted them.
+running the suites, not by reading the last document that quoted them —
+except the 31 Oct column, which counts `#[test]` and `test(` in the source.
 
 New: `tests/ui/globals.spec.mjs` (global-scope collisions, the derived palettes
 are real colours, applying a theme is instant), `tests/ui/no-audio.spec.mjs`

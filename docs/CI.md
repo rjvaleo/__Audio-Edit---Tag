@@ -11,10 +11,15 @@ One job on `ubuntu-latest`:
 
 1. `libasound2-dev` — `engine` links cpal, which on Linux is ALSA
 2. `cargo build --release`
-3. `cargo test --release` — 1029 tests
+3. `cargo test --release` — 1005 tests
 4. `npm ci`, `npm run check` — the static interface check
 5. `npx playwright install --with-deps chromium`
-6. `npx playwright test` — 241 browser tests
+6. `npx playwright test` — about 420 browser tests
+
+It checks out this repository only. `fx` takes `prism-fx` and `prism-grain` by
+path from `../GitHub/prism-fx`, outside it, so a runner has no copy of them and
+the build cannot resolve them. `fx/Cargo.toml` says so: they become a git
+dependency on a tag once the crate has a remote CI can fetch.
 
 ## One job, not two
 

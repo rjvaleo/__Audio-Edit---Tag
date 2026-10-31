@@ -1,6 +1,8 @@
 # Shared effects
 
-*22 October 2026. Steps 1–4 built; see the end.*
+*22 October 2026. Steps 1–5 built (step 5 in idMLab); see the end. Since 31
+October every effect in this program's rack comes from prism-fx; see
+[The rack moved](#the-rack-moved).*
 
 The effects in [HYPERPRISM.md](HYPERPRISM.md) and
 [EFFECT-INTAKE.md](EFFECT-INTAKE.md) are written once, in a Rust crate of
@@ -285,28 +287,34 @@ Tests come first at every step, as both programs' rules ask.
 
 ## Later
 
-- **The other effects**, family by family, in the order EFFECT-INTAKE.md
-  gives.
-- **The grain engines.** This program's five stretch engines already live in
-  `fx`, which its docs say builds for wasm32 (docs/STATE.md); no one has
-  tried it. They are not rack effects — they read a file and
-  play it — so they move into a sibling crate, `prism-grain`, with an
-  engine-shaped trait, not `Kernel`. That gives idMLab this program's grain
-  engines through the same road.
+- **The other effects.** This program's own have all moved (see
+  [The rack moved](#the-rack-moved)). What is left is the intake's effects not
+  yet written, family by family, in the order EFFECT-INTAKE.md gives.
+- **The grain engines.** *Built.* The five stretch engines, the `Stretcher`
+  and the `BlockRenderer` moved unchanged into `prism-grain`, a sibling crate
+  in the prism-fx repository, with no dependencies. `fx` re-exports its modules
+  under their old paths (`fx::grain`, `fx::stretch` and the rest), and `engine`
+  re-exports `render` and `stretcher`. They are not rack effects and have no
+  `Kernel`. idMLab's `dsp-core` depends on it too and wraps the `Stretcher` as
+  a rack module.
 - **A native idMLab**, if it comes, links the same crates and drops the wasm
   adapter.
 
 ## Open questions
 
-- **The name.** `prism-fx` is a working name.
-- **Where the repository lives remotely**, and whether it is public. Nothing
-  is pushed until that is decided.
-- **Stereo in idMLab before P1.** Mono-summed prism effects work, but a stereo
-  effect loses its point. P1 could come first instead.
-- **Mono files in this program.** Feed both sides, or skip as `Width` does.
-- **Retiring this program's own effects.** Once the prism Echo matches, the
-  others could move the same way. That is a large, careful change; this plan
-  moves only Echo.
+- **The name.** The crates are still `prism-fx` and `prism-grain`; the
+  repository is `rjvaleo/hyper-efx`.
+- **Where the repository lives remotely.** *Answered:* GitHub,
+  `rjvaleo/hyper-efx`. Both crates are still named by path here, so CI cannot
+  build them yet; see [The rack moved](#the-rack-moved).
+- **Stereo in idMLab before P1.** *Answered:* idMLab's effects became stereo
+  first, and it runs prism modules in true stereo.
+- **Mono files in this program.** *Answered:* the one channel is fed to both
+  sides and the left kept, unless the effect has its own mono path
+  (`Kernel::has_mono`), which it then runs (`tick_mono`).
+- **Retiring this program's own effects.** *Done in the rack, 31 October:* the
+  rack builds every effect from prism-fx. The old code stays as the parity
+  reference; when to delete it is open.
 
 ## Corrected during the build
 
@@ -358,3 +366,40 @@ Tests come first at every step, as both programs' rules ask.
 - **`automation::unit_for`** now picks whichever end of its final bracket gives
   the value back, because a prism count or choice is a step, and bisection on a
   step lands on its edge.
+
+## The rack moved
+
+*31 October 2026. Built and merged: this program's PR #13, prism-fx's PR #1.*
+
+- **Every effect the rack builds is prism-fx's.** The 33 shape kinds go
+  through `fx::shape::make`, which builds `ShapeKind::prism_id` with
+  `fx::prism::moved`. `RackSpec::build` (`server/src/rack.rs`) does the same
+  for the EQ, the compressor, the gain and the channel maximizer. Each is built
+  as this program's own was (`PrismEffect::as_built`: the kernel as made, with
+  only the stored controls set) and given the stored settings by key. Documents
+  keep their kinds and keys.
+- **Held bit for bit.** `fx/tests/prism_parity.rs` renders all 37 against the
+  old ones: at the defaults, with each control moved across its range, and with
+  controls moved while running; mono and stereo; blocks of 512 and 61. It also
+  holds the keys and ranges the same, and the compressor's gain-reduction
+  telemetry. Tests in `rack.rs` hold the built rack to the old build.
+- **prism-fx gained `Kernel::has_mono` and `tick_mono`**, for an effect whose
+  original treated one channel its own way: the detune averages its voices
+  into mono, and the utility skips swap and mid-side. `PrismEffect` uses
+  `tick_mono` for one channel. **`Kernel::telemetry`** carries the compressor's
+  gain reduction to its meter.
+- **Where this program's own is still built.** `moved` in `rack.rs` keeps the
+  old effect when the prism control cannot hold a stored value exactly: a gain
+  past ±24 dB, and an EQ whose high-pass is below prism's 10 Hz floor. Every new
+  EQ starts at 0 Hz, so it stays this program's own until its high-pass is set
+  to 10 Hz or more. `shape::make` falls back to `make_own` should a build of
+  prism-fx lack a kind.
+- **The old DSP stays** as the parity reference, as the old Echo did:
+  `shape::make_own`, `dattorro.rs`, `reverb.rs`, `phaser.rs`, `eq.rs`,
+  `comp.rs` and `master.rs`.
+- **Channels past the second** pass through untouched.
+- **Still a path.** prism-fx now has a remote, but `fx/Cargo.toml` and
+  `engine/Cargo.toml` name `prism-fx` and `prism-grain` by path
+  (`../../../../GitHub/prism-fx/crates/…`). CI checks out this repository
+  alone (`.github/workflows/ci.yml`), so it cannot build the workspace until
+  they become git dependencies.

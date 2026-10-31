@@ -1,6 +1,6 @@
 # Architecture — as built
 
-What exists, as of 11 August 2026. 785 tests passing.
+What exists. Counts re-measured 31 October 2026: 1005 Rust tests.
 
 The original design brief is
 [`Waveform display interface/uploads/AudioLab-ARCHITECTURE.md`](../Waveform%20display%20interface/uploads/AudioLab-ARCHITECTURE.md) —
@@ -28,31 +28,40 @@ instant and fetching them separately would let them disagree.
 
 ## The workspace
 
-Ten crates, ~53k lines. Dependencies point one way only — `audio-core` depends
+Ten crates, ~49k lines. Dependencies point one way only — `audio-core` depends
 on nothing, `server` depends on everything.
 
-*Counts re-measured 17 Aug 2026.*
+*Counts re-measured 31 Oct 2026: lines are every `.rs` file in the crate, tests
+are `#[test]` functions.*
 
 | Crate | Lines | Tests | Responsibility |
 |---|---:|---:|---|
 | `audio-core` | 3501 | 97 | Container probe and decode, **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 19910 | 344 | Biquads, EQ, compressor, channel maximiser, five stretchers, **34 shapers**, the parameter layer, sines/transients/noise separation, the tail constants and the progress tick |
+| `fx` | 12219 | 255 | Biquads, EQ, compressor, channel maximiser, **33 shape kinds**, the parameter layer, the tail constants and the adapter to `prism-fx`, which builds every rack effect. The program's own DSP stays as the parity reference. The five stretchers, the sines/transients/noise separation and the progress tick are `prism-grain`'s, re-exported |
 | `edit` | 4293 | 130 | Non-destructive edit list, **zero-crossing snap**, **measurement**, windowed render, WAV and AIFF export, **the looped export and its tail** |
-| `engine` | 6277 | 89 | Block renderer, **all five streaming engines**, transport, cpal device |
+| `engine` | 6169 | 113 | Transport, cpal device, input, the sequencer bus. The block renderer and the stretcher that runs **all five streaming engines** are `prism-grain`'s, re-exported |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1453 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 14908 | 252 | HTTP/1.1, 52 API routes, JSON, persistence, **marker and region commands**, the live bridge, **the export thread and its progress** |
+| `server` | 17907 | 293 | HTTP/1.1, 66 API routes, JSON, persistence, **marker and region commands**, the live bridge, **the export thread and its progress** |
 | `audiolab` | 76 | — | The binary |
-| | **53365** | **1029** | |
+| | **48565** | **1005** | |
 
-Plus **241 browser tests** across 28 spec files, which are not counted above —
+Plus **about 420 browser tests** across 45 spec files, which are not counted above —
 they run under Playwright rather than `cargo test`. See [`CI.md`](CI.md).
 
 ### Dependencies
 
-Two direct crates; 136 in the tree once theirs are counted.
+Two direct crates from crates.io; 190 in the tree once theirs are counted.
+Two more are this project's own, taken by path from a checkout beside this one
+(`../GitHub/prism-fx`, repo `rjvaleo/hyper-efx`) and shared with idMLab:
+
+- **`prism-fx`** — the effects. The rack builds every effect from it.
+- **`prism-grain`** — the sound engine: grains, the five stretchers, the
+  `Stretcher` and the `BlockRenderer`. `fx` and `engine` re-export its modules
+  under their old paths.
+
 
 - **`cpal` 0.18** — the audio device. Chosen over WASM/AudioWorklet because
   performing with this is a goal and only native gives device choice and a
@@ -67,8 +76,8 @@ cross-build is still one command with nothing installed but the mingw linker.
 **That is the test for a third dependency** — not "is it a dependency" but
 "does it break the cross-build".
 
-Written here rather than pulled in: the HTTP server on `std::net`, the JSON
-parser, the FFT, every filter and stretcher, the TSV store.
+Written here or in the prism crates rather than pulled in: the HTTP server on
+`std::net`, the JSON parser, the FFT, every filter and stretcher, the TSV store.
 
 ---
 
@@ -148,8 +157,11 @@ need to differ again, the *writer* is the place to change.
 ## DSP
 
 `fx` holds RBJ biquads, a three-band parametric EQ with high-pass, a
-feed-forward compressor with a soft knee, a one-knob channel maximiser, five
-time stretchers, and nine live shapers.
+feed-forward compressor with a soft knee, a one-knob channel maximiser and 33
+shape kinds. The rack builds all of them from `prism-fx`; these stay as the
+reference it is held to. The five time stretchers are `prism-grain`'s, and `fx`
+re-exports them under their old paths (`fx::stretch`, `fx::vocoder` and so
+on).
 
 The stretchers all answer the same controls — density, overlap, layers, the
 jitters, drift, scan, envelope, pan — each in its own terms, because every one
@@ -158,7 +170,8 @@ reads from and a speed it reads at. A window is a splice for WSOLA and an
 analysis frame for the vocoder. Each keeps a small *extended* set that reaches
 the constants it was tuned around; those exist to break it on purpose.
 
-Three are primitives and two are built out of them:
+Three are primitives and two are built out of them. The files are in
+`prism-grain/src/`:
 
 | Engine | What it is |
 |---|---|
@@ -253,8 +266,9 @@ through one function for the same reason.
 
 ### The live shapers
 
-Nine effects that run under the fingers rather than being applied and waited
-for: invert, swap channels, width, DC offset, ring modulator, rappify, reverse
+Thirty-three shape kinds (`ShapeKind::ALL` in `fx/src/shape.rs`). The first nine
+are Peak's DSP menu as effects that run under the fingers rather than being
+applied and waited for: invert, swap channels, width, DC offset, ring modulator, rappify, reverse
 boomerang, amplitude fit and gate. Built from the reference documents rather
 than from the names — **rappify** is extreme dynamic filtering, not distortion,
 and **amplitude fit** is per-grain normalisation, not compression.
@@ -265,7 +279,7 @@ reversal chases the playhead and the throw length becomes a control it never
 had. *Amplitude fit* offline normalises a file grain by grain; live it is the
 same idea on the last thirty milliseconds with the waiting removed.
 
-**One rack slot variant serves all nine.** The older three effects each carry a
+**One rack slot variant serves all 33.** The older three effects each carry a
 settings struct and hand-written JSON; a shaper describes its own parameters
 instead, so one pair of conversions serves all of them and the next one added
 needs no rack work at all. An unknown kind is dropped rather than guessed at —
@@ -276,8 +290,8 @@ a slot this version does not recognise is one from a newer version.
 `fx::params` gives every parameter a stable key, a range, a default, a sweep
 and a unit, readable and writable by name. Automation and modulation then become
 one small thing that writes keys rather than a change to every effect. It went
-in first because it is the expensive thing to retrofit; nothing is built on it
-yet.
+in first because it is the expensive thing to retrofit; automation is built on
+it (`server/src/automation.rs`).
 
 **The key is the contract.** It will live in saved automation, so renaming one
 silently detaches whatever drives it.
@@ -286,7 +300,7 @@ silently detaches whatever drives it.
 
 Three layers, deliberately separable:
 
-- **`render`** — blocks, no device. Grains become voices; a grain that outlives
+- **`render`** — `prism-grain`'s, re-exported as `engine::render`. Blocks, no device. Grains become voices; a grain that outlives
   its block stays active into the next. The voice pool is a fixed array, so
   running out drops the newest grain rather than allocating in a callback.
 - **`transport`** — play, seek, loop, live parameters. The callback minus the
@@ -355,7 +369,7 @@ inside the library with `resolve_within`, which rejects absolute paths, parent
 components and Windows prefixes before touching the filesystem, then
 canonicalises both sides so a symlink pointing outside is caught too.
 
-Thirty-seven API endpoints, in groups: library (`/api/folders`,
+Sixty-six API paths. The main groups: library (`/api/folders`,
 `/api/files`, `/api/scan`), display (`/api/peaks`, `/api/spectrogram`,
 `/api/thumbs`), document (`/api/edit`, `/api/measure`, `/api/rack`, `/api/fx`,
 `/api/export`), annotations (`/api/markers`, `/api/annot`), engine
@@ -363,9 +377,10 @@ Thirty-seven API endpoints, in groups: library (`/api/folders`,
 (`/api/similar`, `/api/labels`, `/api/usertags`), plus `/audio` for rendered
 playback and `/grains3d` for the visualiser.
 
-`/api/fx` serves the shaper catalogue and the interface draws every module from
-it, so an effect gains a control by declaring one in `fx::shape` and neither the
-rack nor the interface is touched.
+`/api/fx` serves the catalogue — the 33 shape kinds and the 86 `prism-fx`
+effects — and the interface draws every module from it, so an effect gains a
+control by declaring one in its `prism-fx` descriptor (a shape kind's also in
+`fx::shape`) and neither the rack nor the interface is touched.
 
 Absent means unchanged. A control that posts one field does not reset the
 twenty it did not mention.
@@ -403,9 +418,9 @@ cross-compiled binary.
 ## The interface
 
 Plain HTML, CSS and JavaScript. No bundler, no framework, no build step.
-`ui/index.html`, `ui/app.css`, `ui/app.js`, `ui/theme-derive.js`,
-`ui/theme-palettes.js` and `visualiser/grain-views.html` are embedded into the
-binary with `include_str!` — **which means the binary must be rebuilt after any
+Every file in `ui/`, and `visualiser/grain-views.html`, `p5.min.js` and
+`fonts.css`, are embedded into the binary with `include_str!` (Babylon with
+`include_bytes!`) — **which means the binary must be rebuilt after any
 interface edit**.
 
 Controls follow one table: name, control, reading, in three columns whose
@@ -418,8 +433,8 @@ served from the binary rather than from a CDN, as are the two fonts, so the app
 reaches the internet at no point at all.
 
 **Themes** derive the whole interface from a handful of colours.
-`theme-derive.js` is the engine, `theme-palettes.js` the 47-palette library, and
-`THEME_TOKEN_MAP` joins the engine's token names to this stylesheet's. Twenty
+`theme-derive.js` is the engine, `theme-palettes.js` the 48-palette library, and
+`THEME_TOKEN_MAP` joins the engine's token names to this stylesheet's. Twenty-one
 palettes are offered: the chrome reads depth as lightness, which is a dark-theme
 assumption, so the light palettes are withheld rather than shown broken.
 **Waveform colours sit outside the theme** — `--wave` and `--wave-2`, green and
@@ -451,7 +466,7 @@ neither of which ships:
   exists because a `toHex` added to `app.js` replaced the theme engine's, and
   every derived palette rendered black for an afternoon.
 
-And all of it runs on every push — see [`CI.md`](CI.md), which also records the
+And all of it runs on every push to `main` and every pull request — see [`CI.md`](CI.md), which also records the
 two bugs the first two runs found. Both needed a machine unlike this one: a
 Linux box, and a box with no sound card.
 
@@ -471,5 +486,5 @@ Linux box, and a box with no sound card.
 | UCS as the metadata spine | Not adopted; the taxonomy in `catalog` is used instead |
 | Destructive mode | Not built, and no longer wanted |
 | Plugins | Not built |
-| Automation | Not built — but `fx::params` is the layer it needs, and every effect implements it |
+| Automation | Built — breakpoint lanes over `fx::params` keys (`server/src/automation.rs`) |
 | Multi-file / timeline | Not built; the app is single-document by design |

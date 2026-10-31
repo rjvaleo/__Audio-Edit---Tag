@@ -79,7 +79,7 @@ reason not to start today.
 - **A `THIRD-PARTY.md` and attribution in the shipped binary.** MIT and Apache
   both *require* attribution in distributed products — this is an obligation,
   not politeness. Recording each licence as a dependency is added takes seconds;
-  reconstructing it across 136 crates later is a day of misery.
+  reconstructing it across 190 crates later is a day of misery.
 - **Verify the YAMNet model's licence.** The weights ship inside the product.
   They are believed to be Apache-2.0 via `tensorflow/models`, which would be
   fine commercially — but "believed" is not good enough for something being
@@ -129,6 +129,8 @@ exist yet:
   [ Browse ]                     [ Browse ]    ← unchanged
 ```
 
+*Since done: the rail's button reads **Grain** (`ui/rail.js`).*
+
 Granular is a rename of something that already works. Browse stays. Edit is the
 one that gets built — and on the new ordering it gets built *after* the move,
 not before, because building it twice is exactly what this plan avoids.
@@ -163,6 +165,10 @@ shared and refcounted, many instances reading it. The likely resolution is that
 files and running inference is something you do once, at a desk.
 
 ## What is in here now
+
+*As of 15 Aug 2026. The rail has changed since: Grain, Visual, Compose (unlisted
+for now), Seq, Theme and Browse, with All sounds, Search, Scan and Folder under
+Browse (`ui/rail.js`).*
 
 187 identified elements, so trimming happens against a list rather than from
 memory.
@@ -233,7 +239,7 @@ What it means concretely:
 - **WSOLA reads `grain.wrap`.** Known, reproduced, unresolved. Three options
   written up in the outstanding notes; none chosen.
 - **One seam — but only if the controls stay HTML.** Everything through `api()`
-  at [app.js:13](../ui/app.js:13); today `grain-views.html` fetches
+  at [app.js:45](../ui/app.js:45); today `grain-views.html` fetches
   `/api/engine/state` on its own and the iframe is loaded by URL. If the
   interface goes all-native this work is void, because the seam it protects
   stops existing. **So the compositing prototype comes first and this waits on
@@ -242,14 +248,15 @@ What it means concretely:
   rack, automation) is per-instance; the library (index, fingerprints, labels,
   model) is process-shared and refcounted. Both live on one `App` today.
 - **Windows and Linux actually run.** Windows has a verified PE32+ that has
-  never been executed. Linux has never been built. Both should be known-good
+  never been executed. Linux has been built and tested only by CI, since 17 Aug
+  ([CI.md](CI.md)). Both should be known-good
   *before* the platform changes underneath them, or the first Windows bug will
   be blamed on the port.
 - **`data/` moves to the per-user OS directory.** It sits beside the executable,
   which is read-only in a signed bundle and replaced by any updater.
 - **Coverage where it is thin**, so the port has something to be checked
-  against. The 1029 tests are the only thing that will tell you the DSP survived.
-  The interface now has its own — a static check and ten Playwright specs — and
+  against. The 1005 Rust tests are the only thing that will tell you the DSP survived.
+  The interface now has its own — a static check and 45 Playwright specs — and
   those are what will tell you the *program* survived, which is a different
   question and was unanswerable until 15 Aug.
 
@@ -293,10 +300,10 @@ beside `fx` rather than across a language boundary.
 
 | area | today | better, and why |
 |---|---|---|
-| **FFT** | hand-rolled radix-2 `f32`, in-place, ~1,900 lines of `audio-core` | **rustfft** / **realfft** — SIMD, mixed-radix, planned transforms. Real-input FFT roughly halves it again. The clearest win in the table, and it makes the vocoder, PVSOLA, the hybrid *and* the spectrogram faster at once. |
+| **FFT** | hand-rolled radix-2 `f32`, in-place, in `audio-core` (`fft.rs`, 285 lines) and again in `prism-grain` | **rustfft** / **realfft** — SIMD, mixed-radix, planned transforms. Real-input FFT roughly halves it again. The clearest win in the table, and it makes the vocoder, PVSOLA, the hybrid *and* the spectrogram faster at once. |
 | **Resampling** | hand-rolled band-limited, in `yamnet` | **rubato** — sinc-based, high quality, sync and async |
 | **Similarity** | six hand-designed features: length, loudness, brightness, noisiness, attack, spectral spread | proper MFCC and chroma, or Essentia-class extraction. The current vector is honest about being basic and it is the weakest link in Browse. |
-| **Convolution** | none | `juce::dsp::Convolution`, post-migration |
+| **Convolution** | `prism-fx`'s Convolution, in the rack | `juce::dsp::Convolution`, post-migration |
 | **Transparent stretch** | five own engines | a **sixth** engine — see below |
 
 ## PaulStretch — worth having, and worth being careful about
@@ -529,7 +536,7 @@ visual editor is also far easier in HTML and SVG than in a native toolkit.
 
 **Going all-native** deletes more than it costs. No compositing problem at all.
 No webview divergence. No iframe. And — the big one — **no seam**: no HTTP, no
-44 routes, no JSON marshalling, no `api()`. The interface would call Rust
+66 API routes, no JSON marshalling, no `api()`. The interface would call Rust
 directly. Stage two's "one seam" work stops being necessary because the thing it
 was protecting stops existing. It is also how every professional audio product
 is built; none of Kontakt, Serum, Omnisphere or Arcade is a webview.
@@ -545,7 +552,7 @@ anything is ported, because both roads are viable and the prototype picks one.
 | | |
 |---|---|
 | **Survives untouched** | All DSP: `audio-core`, `fx`, `edit`, `engine::render`, `engine::stretcher`, `engine::transport`. The library half: `catalog`, `indexer`, `search`, `yamnet`. The HTML control interface. |
-| **Replaced** | `engine/device.rs` → JUCE `AudioDeviceManager`. `audiolab/main.rs`, all fifty lines. |
+| **Replaced** | `engine/device.rs` → JUCE `AudioDeviceManager`. `audiolab/main.rs`, all 76 lines. |
 | **Depends on the graphics decision** | The ten p5 sketches and the iframe that hosts them. |
 | **Deferred** | The HTTP layer. The standalone's webview can keep talking to loopback, so `server` ships unchanged at first. It only has to go when the plugin arrives and eight instances would mean eight ports. |
 
@@ -556,9 +563,9 @@ anything is ported, because both roads are viable and the prototype picks one.
 On the new foundation, in roughly this order:
 
 **The Edit section.** The engines are further along than the interface suggests:
-[edit](../core/crates/edit/src/lib.rs) is 2,136 lines — clips, fade shapes,
+[edit](../core/crates/edit/src/lib.rs) is 2,561 lines — clips, fade shapes,
 ranges, snapping, zero-crossing, undo/redo/revert — and
-[automation.rs](../core/crates/server/src/automation.rs) is 1,467 lines of
+[automation.rs](../core/crates/server/src/automation.rs) is 1,871 lines of
 curves, modulators, lanes, a runner and Touch/Latch record modes. Both are
 missing interface, not engine.
 
@@ -574,7 +581,7 @@ offline rendering needs. Frame 40,000 at any quality, matching what was heard.
 That fell out of a decision made for a completely different reason.
 
 **Plugin hosting in the rack.** `SlotSpec` at
-[rack.rs:33](../core/crates/server/src/rack.rs:33) is already the right shape,
+[rack.rs:43](../core/crates/server/src/rack.rs:43) is already the right shape,
 and `slot_ids` already gives automation stable addressing across reorders.
 Hosting is a subsystem — out-of-process scanning, parameter bridging, delay
 compensation, crash isolation — and a hosted plugin's editor is a native window.
