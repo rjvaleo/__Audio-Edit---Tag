@@ -314,3 +314,38 @@ test('the switches row prints every word on the same baseline', async ({ page })
 
   expect(failures, `words printed on different baselines:\n${failures.join('\n')}`).toEqual([]);
 });
+
+/// Every button on the switches row fills its slot, and its words fit inside it.
+///
+/// The Visual column widens the slots to two a row. The tuning and Keys grew
+/// with them, but the switches kept the dock's fixed width, so in Visual › Sound
+/// "preserve transients" printed past its own edge into the gap.
+test('every switch fills its slot and holds its words, in the dock and in Visual', async ({ page }) => {
+  await openStretchPanel(page);
+  const read = (host) => [...document.querySelectorAll(`${host} .engine-switches > [data-slot]`)].map((s) => {
+    const b = s.matches('button') ? s : s.querySelector('button');
+    return { t: b.textContent.trim(), slotW: Math.round(s.getBoundingClientRect().width),
+      btnW: Math.round(b.getBoundingClientRect().width), sw: b.scrollWidth, cw: b.clientWidth };
+  });
+  const failures = [];
+  const check = (where, row) => {
+    for (const b of row) {
+      if (b.btnW !== b.slotW) failures.push(`${where}: "${b.t}" is ${b.btnW} wide in a ${b.slotW} slot`);
+      if (b.sw > b.cw) failures.push(`${where}: "${b.t}" needs ${b.sw} for its words and has ${b.cw}`);
+    }
+  };
+
+  for (const alg of ENGINES) {
+    await chooseEngine(page, alg);
+    check(`dock ${alg}`, await page.evaluate(read, '#dockStretch'));
+  }
+  await page.evaluate(() => setMode('room'));
+  await page.locator('#roomAdmin .rv-tab[data-rvtab="sound"]').click();
+  await page.waitForTimeout(300);
+  for (const alg of ENGINES) {
+    await chooseEngine(page, alg);
+    check(`Visual ${alg}`, await page.evaluate(read, '#roomSoundBody'));
+  }
+
+  expect(failures, failures.join('\n')).toEqual([]);
+});
