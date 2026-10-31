@@ -94,6 +94,9 @@ const COMPOSE_LISTED = false;
     { icon: '⌕', label: 'Search', panel: 'search' },
     { icon: '◴', label: 'Scan', panel: 'scan', disk: true },
     { icon: '⌂', label: 'Folder', panel: 'import', disk: true },
+    // Not a pane: the map takes the whole window, so it is opened rather
+    // than shown in the left panel. See `ui/sound-map.js`.
+    { icon: '◍', label: 'Map', action: () => window.SoundMap && window.SoundMap.open() },
   ];
 
   /// **There is no disk in a browser.** Scanning a library, choosing its folder
@@ -216,6 +219,15 @@ const COMPOSE_LISTED = false;
         // `.rail-btn` again, because these are the same panel buttons the app
         // has always had — moved, not rewritten. `app.js` attaches their
         // click handlers itself.
+        if (child.action) {
+          const a = el('button', 'rl-child');
+          a.type = 'button';
+          a.title = child.label;
+          a.onclick = child.action;
+          a.append(icon(child.icon), label(child.label));
+          sub.append(a);
+          continue;
+        }
         const c = el('button', 'rl-child rail-btn');
         c.dataset.panel = child.panel;
         c.title = child.label;

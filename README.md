@@ -416,6 +416,8 @@ knows what any shaper does. An effect gains a control by declaring one in its
 `prism-fx` descriptor — a shape kind's also in `fx::shape` — and neither the
 rack nor the interface is touched.
 
+![A prism effect in the rack: Hyperprism Chorus beside the EQ and compressor, with its pad](Reference%20Docs/screenshots/11-prism-effect.png)
+
 ## Editing
 
 ![Grains on the sound they read from](Reference%20Docs/screenshots/05-grains-on-the-waveform.png)
@@ -547,6 +549,16 @@ mirrors, palette — and sixteen slots to store your own. Look and slots go to
 `sessionStorage`, because an empty store *is* the signal that this is the
 session's first look, which is what makes every view open zoomed in on the
 playhead.
+
+### The room
+
+![The room, under Visual: layers, camera, ring, solid, grains and air on the left, the picture on the right](Reference%20Docs/screenshots/12-room.png)
+
+**Visual ▸ Room** draws the open sound as a place: ground, terrain, the ring,
+a four-dimensional solid, the grains and the air, with the camera, frame shape
+and colours on five tabs (Room, Sound, Shape, Colour, 4D). It plays from the
+same transport as the editor. [`docs/ROOM-VIEW.md`](docs/ROOM-VIEW.md) has the
+rest.
 
 ## Themes
 

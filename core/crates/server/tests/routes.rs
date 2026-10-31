@@ -2297,3 +2297,67 @@ fn a_pass_can_be_run_again_once_the_last_one_has_finished() {
     // shut. A wedged flag would mean the library never got measured again.
     assert!(pass.enter().is_some(), "the flag was not released");
 }
+
+// ------------------------------------------------------------------ the map
+
+fn scan(app: &Arc<App>) {
+    assert_eq!(status(&server::routes::route(app, &post("/api/scan", "{}"))), 200);
+    for _ in 0..500 {
+        let s = json(&server::routes::route(app, &get("/api/scan", &[])));
+        if !flag(&s, &["running"]) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("the scan never finished");
+}
+
+/// Ask until every indexed sound is measured: the map fills in batches, the
+/// way the interface sees it, so a large library never holds one request.
+fn whole_map(app: &Arc<App>) -> server::json::Value {
+    for _ in 0..50 {
+        let m = json(&server::routes::route(app, &get("/api/map", &[])));
+        if num(&m, &["waiting"]) == 0.0 {
+            return m;
+        }
+    }
+    panic!("the map never finished measuring");
+}
+
+#[test]
+fn the_map_places_every_measured_sound_inside_the_cube() {
+    let s = Scratch::new("map");
+    for i in 0..3 {
+        s.sound(&format!("kit/tone{i}.wav"), 8_000 + i * 6_000);
+    }
+    let app = s.app();
+    scan(&app);
+    let m = whole_map(&app);
+
+    let Some(server::json::Value::Arr(points)) = m.get("points") else { panic!("no points: {}", m.to_string()) };
+    assert_eq!(points.len(), 3, "{}", m.to_string());
+    for p in points {
+        assert!(p.get("path").and_then(|x| x.as_str()).unwrap().starts_with("kit/"));
+        for layout in ["axes", "islands"] {
+            let Some(server::json::Value::Arr(c)) = p.get(layout) else { panic!("no {layout}") };
+            assert_eq!(c.len(), 3);
+            for v in c {
+                let server::json::Value::Num(v) = v else { panic!("{layout} not numbers") };
+                assert!((0.0..=1.0).contains(v), "{layout} outside the cube: {v}");
+            }
+        }
+        for key in ["size", "rough", "crisp", "pulseHz", "hz", "seconds"] {
+            num(p, &[key]);
+        }
+        assert!(p.get("family").and_then(|x| x.as_str()).is_some());
+    }
+}
+
+#[test]
+fn an_empty_library_has_an_empty_map() {
+    let s = Scratch::new("map-empty");
+    let app = s.app();
+    let m = json(&server::routes::route(&app, &get("/api/map", &[])));
+    assert_eq!(num(&m, &["waiting"]), 0.0);
+    assert!(matches!(m.get("points"), Some(server::json::Value::Arr(p)) if p.is_empty()));
+}

@@ -6,6 +6,7 @@
 <title>Audio Library</title>
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/rail.css">
+<link rel="stylesheet" href="/sound-map.css">
 </head>
 <body>
 
@@ -633,7 +634,7 @@
           <div class="fx-row">
             <label class="export-label" for="elSeq">Sequencer</label>
             <button class="tiny switch" id="elSeq"
-              title="Only for a film. The sequencer renders itself for the film's span, on the same clock, and its sound and its picture go in with the engine's.">Seq</button>
+              title="Put the sequencer in this export: it renders itself for the export's span, on the same clock, and its sound goes in with the engine's — and, in a film, its picture.">Seq</button>
             <span class="fx-note">Put the sequencer in the film too: its pattern,
             its loaded take, its sound and its picture. Open Seq first.</span>
           </div>
@@ -1398,6 +1399,7 @@
 <script src="/video-export.js"></script>
 <script src="/panel-4d.js"></script>
 <script src="/app.js"></script>
+<script src="/sound-map.js"></script>
 <!-- The picture's automation lanes. After app.js, whose state they use. -->
 <script src="/visual-lanes.js"></script>
 <!-- The Compose workspace and its compact panels. After app.js, whose state it

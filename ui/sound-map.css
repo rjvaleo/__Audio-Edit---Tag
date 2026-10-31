@@ -1,0 +1,137 @@
+/* The sound map. See ui/sound-map.js and docs/SOUND-MAP.md.
+ *
+ * The whole window, over everything: a world is not a panel. The chrome is a
+ * thin strip at the top and a card at the right, both translucent so the
+ * world stays the subject. */
+
+.smap {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: var(--sink);
+  color: var(--text);
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.smap.hidden { display: none; }
+
+.smap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  touch-action: none;
+}
+.smap-stage { position: relative; min-height: 0; overflow: hidden; }
+
+/* ── the strip ─────────────────────────────────────────────────────── */
+
+.smap-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  min-width: 0;
+}
+.smap-title { font-weight: 600; letter-spacing: 0.02em; }
+.smap-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.smap-seg button {
+  background: none; border: 0; color: var(--text-dim);
+  padding: 4px 10px; font: inherit; cursor: pointer;
+}
+.smap-seg button.on { background: var(--well); color: var(--accent); }
+.smap-find {
+  background: var(--well); border: 1px solid var(--line); border-radius: 6px;
+  color: var(--text); font: inherit; padding: 4px 8px; width: 190px;
+}
+.smap-found { color: var(--text-dimmer); min-width: 7ch; }
+.smap-status { color: var(--text-dimmer); margin-left: auto; white-space: nowrap; }
+.smap-close {
+  background: none; border: 1px solid var(--line); border-radius: 6px;
+  color: var(--text-dim); font: inherit; padding: 3px 9px; cursor: pointer;
+}
+.smap-close:hover, .smap-seg button:hover { color: var(--text); }
+
+/* ── what the colours and the directions mean ──────────────────────── */
+
+.smap-legend {
+  position: absolute; left: 12px; bottom: 12px;
+  display: grid; gap: 6px;
+  padding: 9px 11px;
+  background: color-mix(in oklch, var(--surface) 82%, transparent);
+  border: 1px solid var(--line); border-radius: 8px;
+  font-size: 11px; color: var(--text-dim);
+  pointer-events: none;
+}
+.smap-fams { display: flex; flex-wrap: wrap; gap: 4px 10px; max-width: 360px; }
+.smap-fam { display: inline-flex; align-items: center; gap: 5px; }
+.smap-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.smap-dot.grain { border-radius: 2px; transform: rotate(45deg); }
+.smap-keys { color: var(--text-dimmer); }
+
+/* Axis ends, placed in the world each frame. */
+.smap-axis {
+  position: absolute; transform: translate(-50%, -50%);
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-dimmer); pointer-events: none; white-space: nowrap;
+}
+
+/* The name under the pointer. */
+.smap-tip {
+  position: absolute; pointer-events: none;
+  padding: 3px 7px; border-radius: 5px;
+  background: color-mix(in oklch, var(--surface) 90%, transparent);
+  border: 1px solid var(--line);
+  font-size: 11px; white-space: nowrap;
+  transform: translate(12px, 12px);
+}
+.smap-tip .dim { color: var(--text-dim); }
+
+/* ── the card ──────────────────────────────────────────────────────── */
+
+.smap-card {
+  position: absolute; top: 12px; right: 12px; bottom: 12px;
+  width: 300px; max-width: calc(100% - 24px);
+  overflow: auto;
+  padding: 12px 14px;
+  background: color-mix(in oklch, var(--surface) 92%, transparent);
+  border: 1px solid var(--line); border-radius: 10px;
+  font-size: 12px;
+  display: grid; align-content: start; gap: 10px;
+}
+.smap-card.hidden { display: none; }
+.smap-card h3 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.smap-card .where { color: var(--text-dimmer); overflow-wrap: anywhere; }
+.smap-card .row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.smap-card .note { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.smap-card .dim { color: var(--text-dim); }
+.smap-card .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.smap-card .chip {
+  padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line);
+  color: var(--text-dim); font-size: 11px;
+}
+.smap-card .bars { display: grid; grid-template-columns: 74px 1fr; gap: 3px 8px; align-items: center; }
+.smap-card .bars span { color: var(--text-dim); font-size: 11px; }
+.smap-card .bar { height: 5px; border-radius: 3px; background: var(--well); overflow: hidden; }
+.smap-card .bar i { display: block; height: 100%; background: var(--accent); }
+.smap-card .sim { display: grid; gap: 2px; }
+.smap-card .sim button {
+  text-align: left; background: none; border: 0; padding: 3px 4px; border-radius: 5px;
+  color: var(--text); font: inherit; cursor: pointer;
+  display: flex; justify-content: space-between; gap: 8px;
+}
+.smap-card .sim button:hover { background: var(--well); }
+.smap-card .sim .score { color: var(--text-dimmer); font-variant-numeric: tabular-nums; }
+.smap-card .x {
+  position: absolute; top: 8px; right: 8px;
+  background: none; border: 0; color: var(--text-dim); cursor: pointer; font-size: 14px;
+}
+.smap-card .lbl { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dimmer); }
+
+.smap-empty {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--text-dim); pointer-events: none; font-size: 13px;
+}
