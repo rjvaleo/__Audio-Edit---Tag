@@ -3593,6 +3593,7 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
                     visuals: 'dockVisuals', automation: 'dockAutomation',
                     regions: 'dockRegions' };
     for (const [k, id] of Object.entries(panes)) $(id).classList.toggle('hidden', k !== t.dataset.dock);
+    $('presetBar').dataset.tab = t.dataset.dock;
     // Everything in these panels is skipped while its panel is hidden, so a
     // panel being opened is showing whatever was on it when it was last
     // closed. Paint it once here; the polls take it from there.
@@ -5321,6 +5322,7 @@ function renderStretch() {
   // about how hard to work.
   const eng = document.createElement('div');
   eng.className = 'engine-pick';
+  eng.dataset.gmLabel = 'Engine';
   eng.innerHTML = `
     <div class="seg" id="stretchEngine">
       <button class="seg-btn" data-alg="wsola" title="WSOLA — time domain. Keeps transients intact: drums, percussion, one-shots.">WSOLA</button>
@@ -5865,7 +5867,11 @@ function renderGrainParams() {
   extGrain.appendChild(wild('Shape',
     'The grain envelope, how far sizes may reach, and where the layers sit.').add(
     tip(gp('Envelope', 'envelope', 0, 1, 0.01,
-      (v) => (Math.abs(v - 0.5) < 0.005 ? 'symmetric' : v < 0.5 ? 'percussive' : 'swelling'),
+      (v) => {
+        const word = Math.abs(v - 0.5) < 0.005 ? 'symmetric' : v < 0.5 ? 'percussive' : 'swelling';
+        // The word alone hides how far from symmetric it is; Modern says both.
+        return grainUiModern() && word !== 'symmetric' ? `${v.toFixed(2)} ${word}` : word;
+      },
       false, 0.5),
         'The shape each window is laid down under. Symmetric is a bell; percussive is a sharp attack and a long tail; swelling is the reverse.'),
     tip(gp('Size range', 'sizeRange', 1, 8, 0.05, (v) => `${v.toFixed(2)}×`),
@@ -7005,7 +7011,7 @@ function keysButton() {
   // window, and a button that opens a window should not look like a button that
   // changes a setting.
   b.className = 'popout-btn';
-  b.innerHTML = 'Keys <i class="popout-mark">⧉</i>';
+  b.innerHTML = '<span class="gm-word">Play </span>Keys <i class="popout-mark">⧉</i>';
   b.title = 'Play the pitch from the computer keyboard. A is the tonic, the row '
     + 'above plays the notes between, Z and X shift an octave and latch. '
     + 'The notes follow whichever tuning is chosen.';
@@ -7022,7 +7028,7 @@ function scaleButton() {
   // one says "a list is coming", the other says "a window is coming", and they
   // are not the same promise.
   const name = fitLabel(currentScale() || (currentStep() > 0 ? `${currentStep()} st grid` : 'free'));
-  b.innerHTML = `<span class="scale-name"></span><i class="menu-caret">▾</i>`;
+  b.innerHTML = `<span class="gm-word">Tuning: </span><span class="scale-name"></span><i class="menu-caret">▾</i>`;
   b.querySelector('.scale-name').textContent = name;
   b.title = currentScale()
     ? `${currentScale()} — snap the pitch shift to a tuning`
@@ -10391,14 +10397,22 @@ const RK_CELLS = ['reRing', 'reRingDrive', 'reRingPoints', 'reRingEdge', 'reSoli
 const RK_VALUE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
 
 /// The face of a knob: a 270° track and the arc to the value, with a pointer.
-function rkFace(frac) {
+function rkFace(frac, mark) {
   const r = 11, c = 14, a0 = -135, a1 = a0 + 270 * frac;
   const at = (a) => `${(c + r * Math.sin(a * Math.PI / 180)).toFixed(2)} ${(c - r * Math.cos(a * Math.PI / 180)).toFixed(2)}`;
+  // A value the control has a name for — Envelope's symmetric, a spread's
+  // nothing — marked just outside the ring. Drawn only where a style asks.
+  const tick = (am) => {
+    const pt = (rr) => [c + rr * Math.sin(am * Math.PI / 180), c - rr * Math.cos(am * Math.PI / 180)].map((n) => n.toFixed(2));
+    const [x1, y1] = pt(12.6), [x2, y2] = pt(14);
+    return `<line class="rk-mark" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  };
   const big = frac * 270 > 180 ? 1 : 0;
   return `<svg viewBox="0 0 28 28" aria-hidden="true">`
     + `<path class="rk-track" d="M${at(a0)} A${r} ${r} 0 1 1 ${at(135)}"/>`
     + (frac > 0.002 ? `<path class="rk-arc" d="M${at(a0)} A${r} ${r} 0 ${big} 1 ${at(a1)}"/>` : '')
-    + `<line class="rk-hand" x1="${c}" y1="${c}" x2="${at(a1).split(' ')[0]}" y2="${at(a1).split(' ')[1]}"/></svg>`;
+    + `<line class="rk-hand" x1="${c}" y1="${c}" x2="${at(a1).split(' ')[0]}" y2="${at(a1).split(' ')[1]}"/>`
+    + (mark === undefined ? '' : tick(a0 + 270 * mark)) + '</svg>';
 }
 
 /// Make a range input a knob. `own` is a reading the panel already keeps up
@@ -10690,7 +10704,8 @@ function gkKnob(row) {
   input.before(face);
   const draw = () => {
     const min = +input.min, max = +input.max, v = +RK_VALUE.get.call(input);
-    face.innerHTML = rkFace(max > min ? (v - min) / (max - min) : 0);
+    const mark = row.dataset.mark === undefined ? undefined : +row.dataset.mark;
+    face.innerHTML = rkFace(max > min ? (v - min) / (max - min) : 0, mark);
   };
   Object.defineProperty(input, 'value', {
     configurable: true,
@@ -10718,6 +10733,13 @@ function gkLayout() {
 function gkAdopt() {
   const host = $('grainControls');
   if (!host) return;
+  // The named points, as a fraction of each knob's turn. Set before the face
+  // is first drawn; the mark is shown only in the Grain view's Modern style.
+  for (const [key, at] of Object.entries(gmMarks())) {
+    const row = state.grainRows?.[key];
+    const input = row?.querySelector(':scope > input[type=range]');
+    if (input && row.dataset.mark === undefined) row.dataset.mark = String((at - +input.min) / (+input.max - +input.min));
+  }
   for (const row of host.querySelectorAll('.param')) gkKnob(row);
 }
 
@@ -10845,6 +10867,120 @@ function gkFit() {
   gkAdopt();
   gkSetView(gkView);
 }
+
+// ─────────────────────────────────────── the Grain view: Classic and Modern ──
+//
+// The design-council pass over the Grain view, behind a switch in its tab
+// strip. Classic is the view as it was. Modern is drawn by one block at the
+// end of `app.css`, scoped to `body.editing[data-grain-ui="modern"]`, so it
+// reaches nothing outside the Grain view — the Visual view's Sound tab, which
+// borrows the grain tray, keeps its own look. Nothing here moves an element;
+// the words Modern adds are spans Classic does not show.
+
+/// The knobs whose named point is marked: the value each has a word for.
+/// A function rather than a `const`: `gkAdopt` asks for it from code that runs
+/// before this part of the file has (STATE.md §10, the temporal dead zone).
+function gmMarks() {
+  return { envelope: 0.5, layerSpread: 0, panSpread: 0, layerScatter: 0 };
+}
+
+function grainUiModern() {
+  return document.body.dataset.grainUi === 'modern' && document.body.classList.contains('editing');
+}
+
+/// A word only Modern shows, and the word Classic had in its place.
+function gmWords(classic, modern) {
+  const was = document.createElement('span');
+  was.className = 'gm-classic';
+  was.textContent = classic;
+  const now = document.createElement('span');
+  now.className = 'gm-word';
+  now.textContent = modern;
+  return [was, now];
+}
+
+/// Delete, DEL and Revert ask once in Modern: the first click arms the button
+/// and says so, the second within three seconds acts. In capture, so the
+/// button's own handler never hears the first.
+function gmArm(btn) {
+  if (!btn || btn.dataset.gmArm) return;
+  btn.dataset.gmArm = '1';
+  let timer = 0, text = '';
+  const disarm = () => {
+    clearTimeout(timer);
+    if (!btn.classList.contains('gm-armed')) return;
+    btn.classList.remove('gm-armed');
+    btn.textContent = text;
+  };
+  btn.addEventListener('click', (e) => {
+    if (!grainUiModern()) return;
+    if (btn.classList.contains('gm-armed')) { disarm(); return; }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    text = btn.textContent;
+    btn.textContent = `${text.trim()}?`;
+    btn.classList.add('gm-armed');
+    timer = setTimeout(disarm, 3000);
+  }, true);
+  btn.addEventListener('blur', disarm);
+}
+
+function setGrainUi(v) {
+  const ui = setPref('grainUi', v);
+  document.body.dataset.grainUi = ui;
+  for (const b of document.querySelectorAll('#grainUiSwitch button')) {
+    b.setAttribute('aria-pressed', String(b.dataset.ui === ui));
+  }
+  // Readings that are worded differently in Modern, told to write again.
+  const env = state.grainRows?.envelope;
+  const input = env?.querySelector(':scope > input[type=range]');
+  if (env?.sync && input) env.sync(+input.value);
+  gkPack();
+}
+
+function grainUiBuild() {
+  const bar = $('presetBar');
+  if (!bar || $('grainUiSwitch')) return;
+  // The preset's own controls, named so Modern can show them only on the tabs
+  // a preset changes: Time & Pitch and FX (a preset is the stretch and the rack).
+  const first = bar.querySelector(':scope > .vsep');
+  for (let el = first; el; el = el.nextElementSibling) el.classList.add('gm-preset');
+  const withSound = bar.querySelector('label.preset-with-sound');
+  if (withSound) {
+    const text = [...withSound.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+    const words = text && gmWords(text.textContent, ' + sound & chain');
+    if (words) text.replaceWith(...words);
+  }
+  bar.dataset.tab = document.querySelector('.dock-tab.active')?.dataset.dock || 'stretch';
+
+  const sw = document.createElement('div');
+  sw.id = 'grainUiSwitch';
+  sw.className = 'gm-switch';
+  sw.setAttribute('role', 'group');
+  sw.setAttribute('aria-label', 'Grain view style');
+  sw.title = 'Classic is the Grain view as it was; Modern is the redesign. Only this view changes.';
+  for (const [ui, word] of [['classic', 'Classic'], ['modern', 'Modern']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.ui = ui;
+    b.textContent = word;
+    b.onclick = () => setGrainUi(ui);
+    sw.appendChild(b);
+  }
+  bar.appendChild(sw);
+
+  // Words that say what a control is, shown in Modern.
+  const room = $('roomEditOpen');
+  if (room && !room.querySelector('.gm-word')) {
+    const w = document.createElement('span');
+    w.className = 'gm-word';
+    w.textContent = 'Edit ';
+    room.prepend(w);
+  }
+  for (const id of ['presetDelete', 'perfLaneDel', 'revertBtn']) gmArm($(id));
+  setGrainUi(prefs.grainUi);
+}
+grainUiBuild();
 
 /// The other panels of the Visual column — Shape, Ridgeline, Surfaces, Stage,
 /// the type card — build their rows the same way: a tag, a slider and a
