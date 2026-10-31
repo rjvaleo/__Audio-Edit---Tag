@@ -811,3 +811,62 @@ test('P15 · Fog starts its ramp on the band its weight actually reaches, 0.05�
   expect(gen.length).toBeGreaterThan(0);
   expect(gen.every(([lo, hi]) => lo === 0.05 && hi === 0.27)).toBe(true);
 });
+
+test('P16 · each stop is a tick on the gradient, dragged where it sits, in step with its knob', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const geo = () => page.evaluate(() => {
+    const bar = document.querySelector('#roomPaintBody .rp-stopbar');
+    if (!bar) return null;
+    const o = bar.getBoundingClientRect();
+    // Inside the border, where the ticks are placed.
+    const b = { left: o.left + bar.clientLeft, width: bar.clientWidth, top: o.top, height: o.height };
+    // The browser rewrites a gradient into its own notation; the wanted one is
+    // put through the same setter so the two are compared as written.
+    const norm = document.createElement('i');
+    norm.style.background = rpGradientCss('ring');
+    return { bar: { x: b.left, w: b.width, y: b.top, h: b.height }, bg: bar.style.background, want: norm.style.background,
+      ticks: [...bar.querySelectorAll('.rp-tick')].map((t) => {
+        const r = t.getBoundingClientRect();
+        return { at: (r.left + r.width / 2 - b.left) / b.width, cap: getComputedStyle(t.querySelector('i')).backgroundColor,
+          role: t.getAttribute('role'), now: +t.getAttribute('aria-valuenow') };
+      }),
+      stops: rpSlot('ring').stops.map((s) => s.at),
+      reads: [...document.querySelectorAll('#roomPaintBody .rp-stop .rk-v')].map((e) => e.textContent) };
+  });
+  let g = await geo();
+  expect(g, 'the stops have a bar').not.toBeNull();
+  expect(g.bg, 'the bar is the gradient').toBe(g.want);
+  expect(g.ticks.map((t) => +t.at.toFixed(2))).toEqual([0, 0.5, 1]);
+  expect(g.ticks.map((t) => t.cap)).toEqual(['rgb(32, 64, 255)', 'rgb(32, 224, 160)', 'rgb(255, 224, 64)']);
+  expect(g.ticks.every((t) => t.role === 'slider')).toBe(true);
+
+  // Dragged, the stop moves, and its knob's reading follows.
+  const y = g.bar.y + g.bar.h / 2;
+  await page.mouse.move(g.bar.x + g.bar.w * 0.5, y);
+  await page.mouse.down();
+  await page.mouse.move(g.bar.x + g.bar.w * 0.25, y, { steps: 5 });
+  await page.mouse.up();
+  g = await geo();
+  expect(g.stops[1]).toBeCloseTo(0.25, 1);
+  expect(g.reads[1]).toBe(g.stops[1].toFixed(2));
+  expect(g.ticks[1].at).toBeCloseTo(g.stops[1], 1);
+  expect(g.bg).toBe(g.want);
+
+  // Turned on its knob, the tick moves with it.
+  await page.evaluate(() => {
+    const k = document.querySelectorAll('#roomPaintBody .rp-stop input[type=range]')[1];
+    k.value = '70'; k.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  g = await geo();
+  expect(g.ticks[1].at).toBeCloseTo(0.7, 1);
+  expect(g.ticks[1].now).toBeCloseTo(0.7, 2);
+
+  // And to the keyboard it is a slider.
+  await page.locator('#roomPaintBody .rp-tick').nth(1).focus();
+  await page.keyboard.press('ArrowLeft');
+  expect(await page.evaluate(() => rpSlot('ring').stops[1].at)).toBeCloseTo(0.69, 3);
+
+  // Classic keeps its sliders and has no bar.
+  await page.evaluate(() => { rpView = 'classic'; rpPanel(); });
+  await expect(page.locator('#roomPaintBody .rp-stopbar')).toHaveCount(0);
+});
