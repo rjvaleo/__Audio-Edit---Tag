@@ -339,14 +339,39 @@ async function engine(page, alg) {
   await page.waitForTimeout(500);
 }
 
-test('G1 · the whole granular tray is on screen without a scroll', async ({ page }) => {
-  await openFile(page);
-  await engine(page, 'granular');
-  const box = await page.evaluate(() => {
-    const g = document.getElementById('grainControls');
-    return { scroll: g.scrollHeight, client: g.clientHeight };
+/// The engines whose whole tray fits the dock at its default height. PVSOLA
+/// and Hybrid carry about twice the banks and do not, inside the rule that
+/// the tray keeps its width; `docs/DESIGN-CRITIQUE.md`, "The UI queue", has the
+/// options for them.
+const FITS = ['granular', 'wsola'];
+
+for (const alg of FITS) {
+  test(`G1 · the whole ${alg} tray is on screen without a scroll`, async ({ page }) => {
+    await openFile(page);
+    await engine(page, alg);
+    const box = await page.evaluate(() => {
+      const g = document.getElementById('grainControls');
+      return { scroll: g.scrollHeight, client: g.clientHeight };
+    });
+    expect(box.scroll, `${box.scroll - box.client} px under the fold`).toBeLessThanOrEqual(box.client + 1);
   });
-  expect(box.scroll).toBeLessThanOrEqual(box.client + 1);
+}
+
+test('G1 · the tray reads standard first, Time and pitch leading', async ({ page }) => {
+  await openFile(page);
+  for (const alg of ['granular', 'wsola', 'vocoder', 'pvsola', 'hybrid']) {
+    await engine(page, alg);
+    const order = await page.evaluate(() => {
+      const banks = [...document.querySelectorAll('#grainControls :is(.stretch-core, .engine-params:not(:empty), .wild)')]
+        .filter((b) => b.getBoundingClientRect().width)
+        .map((b) => ({ ext: !!b.closest('#extPanel'), core: b.matches('.stretch-core'),
+          top: Math.round(b.getBoundingClientRect().top), left: Math.round(b.getBoundingClientRect().left) }))
+        .sort((a, b) => a.top - b.top || a.left - b.left);
+      return { first: banks[0], lastStd: banks.map((b) => b.ext).lastIndexOf(false), firstExt: banks.findIndex((b) => b.ext) };
+    });
+    expect(order.first.core, `${alg}: Time and pitch is not first`).toBe(true);
+    expect(order.lastStd, `${alg}: a standard bank comes after an extended one`).toBeLessThan(order.firstExt);
+  }
 });
 
 test('G2 · every control in the tray that is an amount is a knob a pointer reaches', async ({ page }) => {
