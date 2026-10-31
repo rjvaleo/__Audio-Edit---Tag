@@ -24,7 +24,9 @@ jobs:
   build-and-test:
     name: Build and test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The browser suite alone is past half an hour on a runner, which draws
+    # WebGL in software; 30 cancelled it two thirds of the way through.
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -94,7 +96,7 @@ jobs:
         run: npx playwright test
 
       - name: Keep the report if it failed
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
