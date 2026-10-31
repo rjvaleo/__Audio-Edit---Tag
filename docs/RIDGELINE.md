@@ -323,9 +323,9 @@ What means something is the **difference**. With the fill it is 45; without it,
 
 ## Still to do
 
-- The **export** does not film it yet. `videoExport` still calls `vgAttach`
-  directly; it needs the chosen module, alongside `camera` and `paint`. Until
-  then a film of the ridgeline is a film of the room.
+- ~~The **export** does not film it yet.~~ *Done 22 Aug 2026:* `videoExport`
+  is told the `module` on screen, beside `camera` and `paint`, and attaches
+  that module's renderer (`vgAttach` only when none is named).
 - **Ramps** for its three slots. They take a flat colour; the palette's modes,
   drives and generators are not wired to them.
 - The frame selector letterboxes the room's cell and the ridgeline shares it, so

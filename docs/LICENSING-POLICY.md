@@ -84,6 +84,7 @@ bad trade.
 - **Attribution has to reach the user** — an About box, a bundled NOTICES file,
   or both. A file in the source tree does not discharge the obligation.
 - **Non-Rust bundled assets are tracked by hand**, because `cargo metadata`
-  cannot see them: p5.js, the two fonts, the YAMNet weights. See THIRD-PARTY.md.
+  cannot see them: p5.js, Babylon.js, the two fonts, the YAMNet weights. See
+  THIRD-PARTY.md.
 - **JUCE's terms get read before JUCE is underneath all three products**, not
   after.

@@ -6,33 +6,33 @@
 [![Edition](https://img.shields.io/badge/edition-2021-000000?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
 [![Cargo](https://img.shields.io/badge/Cargo-workspace-000000?logo=rust&logoColor=white)](#the-workspace)
 [![Crates](https://img.shields.io/badge/workspace-10%20crates-dea584?logo=rust&logoColor=white)](#the-workspace)
-[![Lines](https://img.shields.io/badge/Rust-53k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
-[![Dependencies](https://img.shields.io/badge/direct%20deps-2-4c9a2a)](#the-stack)
+[![Lines](https://img.shields.io/badge/Rust-49k%20lines-dea584?logo=rust&logoColor=white)](#the-workspace)
+[![Dependencies](https://img.shields.io/badge/crates.io%20deps-2-4c9a2a)](#the-stack)
 [![Unsafe](https://img.shields.io/badge/unsafe-none%20in%20the%20program-2ea44f?logo=rust&logoColor=white)](#the-stack)
 [![Build step](https://img.shields.io/badge/interface%20build%20step-none-2ea44f)](#the-stack)
 
 **How it is built and proved**
 
-[![CI](https://img.shields.io/badge/CI-build%20%2B%201270%20tests%20on%20every%20push-2088FF?logo=githubactions&logoColor=white)](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-build%20%2B%20about%201425%20tests%20on%20push%20to%20main-2088FF?logo=githubactions&logoColor=white)](https://github.com/rjvaleo/__Audio-Edit---Tag/actions/workflows/ci.yml)
 [![Runner](https://img.shields.io/badge/runner-ubuntu--latest-E95420?logo=ubuntu&logoColor=white)](docs/CI.md)
 [![Method](https://img.shields.io/badge/method-talk%20%E2%86%92%20document%20%E2%86%92%20build-8957e5)](#how-this-is-built)
 [![TDD](https://img.shields.io/badge/TDD-tests%20first-2ea44f)](#how-this-is-built)
-[![Tests](https://img.shields.io/badge/Rust%20tests-1029%20passing-2ea44f?logo=rust&logoColor=white)](#testing)
-[![Browser tests](https://img.shields.io/badge/browser%20tests-241%20passing-2ea44f?logo=playwright&logoColor=white)](#testing)
+[![Tests](https://img.shields.io/badge/Rust%20tests-1005-2ea44f?logo=rust&logoColor=white)](#testing)
+[![Browser tests](https://img.shields.io/badge/browser%20tests-about%20420-2ea44f?logo=playwright&logoColor=white)](#testing)
 [![Playwright](https://img.shields.io/badge/Playwright-1.62-2EAD33?logo=playwright&logoColor=white)](#testing)
 [![Chromium](https://img.shields.io/badge/Chromium-headless-4285F4?logo=googlechrome&logoColor=white)](#testing)
 [![Static check](https://img.shields.io/badge/interface-statically%20checked-2ea44f)](#testing)
-[![Docs](https://img.shields.io/badge/docs-36%20documents-informational)](docs/)
+[![Docs](https://img.shields.io/badge/docs-49%20documents-informational)](docs/)
 [![Screenshots](https://img.shields.io/badge/screenshots-generated%20from%20the%20app-6aa84f)](Reference%20Docs/screenshots/)
 
 **What it does**
 
 [![Engines](https://img.shields.io/badge/stretch%20engines-5%20live-8957e5)](#time-stretching)
-[![Rack](https://img.shields.io/badge/rack%20effects-34-8957e5)](#live-shaping)
+[![Rack](https://img.shields.io/badge/rack%20effects-119%20in%20%2Fapi%2Ffx-8957e5)](#live-shaping)
 [![Shapers](https://img.shields.io/badge/Peak%20DSP%20live-9-8957e5)](#live-shaping)
 [![Views](https://img.shields.io/badge/grain%20views-10-8957e5)](#watching-the-grains)
 [![Themes](https://img.shields.io/badge/themes-21-8957e5)](#themes)
-[![Routes](https://img.shields.io/badge/HTTP%20API-52%20routes-6aa84f)](#the-stack)
+[![Routes](https://img.shields.io/badge/HTTP%20API-66%20routes-6aa84f)](#the-stack)
 [![Formats](https://img.shields.io/badge/WAV%20%C2%B7%20AIFF%20%C2%B7%20AIFC%20%C2%B7%20raw%20PCM-read%20%2B%20write-6aa84f)](#the-stack)
 [![Export](https://img.shields.io/badge/export-AIFF%20%2B%20embedded%20settings-6aa84f)](#export)
 [![Non-destructive](https://img.shields.io/badge/originals-never%20written%20to-2ea44f)](#editing)
@@ -79,7 +79,7 @@ Library tab.
 | **Tag** | Three separate systems, deliberately not mixed: what it *is*, what it is *like*, and what *you* call it |
 | **Edit** | A non-destructive clip list — cut, crop, duplicate, fade, reverse, insert silence — with snap to zero crossings so edits do not click |
 | **Stretch** | Five engines, **all five running live in the audio callback**, answering one shared set of controls |
-| **Shape** | Nine effects that run under your fingers while the sound plays, rather than being applied and waited for |
+| **Shape** | 119 effects in the rack's list — the program's 33 shape kinds and the 86 of `prism-fx` — that run under your fingers while the sound plays, rather than being applied and waited for |
 | **Watch** | Ten grain visualisers drawn from the same schedule the renderer is working through |
 | **Theme** | Twenty palettes, each deriving the whole interface from a handful of colours. Waveforms stay green or blue in every one of them |
 | **Export** | AIFF beside the original, named for what was done to it, with every setting written inside the file |
@@ -152,12 +152,12 @@ everything else does.
 
 ![HTTP/1.1](https://img.shields.io/badge/HTTP%2F1.1-hand--rolled%20on%20std%3A%3Anet-000000)
 ![Threads](https://img.shields.io/badge/concurrency-thread%20per%20connection-000000)
-![Routes](https://img.shields.io/badge/routes-46-6aa84f)
+![Routes](https://img.shields.io/badge/routes-66-6aa84f)
 
 </td></tr>
 <tr><td>Tests</td><td>
 
-![Rust tests](https://img.shields.io/badge/cargo%20test-1029-2ea44f?logo=rust&logoColor=white)
+![Rust tests](https://img.shields.io/badge/cargo%20test-1005-2ea44f?logo=rust&logoColor=white)
 ![Playwright](https://img.shields.io/badge/Playwright-1.62-2EAD33?logo=playwright&logoColor=white)
 ![Chromium](https://img.shields.io/badge/Chromium-headless-4285F4?logo=googlechrome&logoColor=white)
 ![Static](https://img.shields.io/badge/ui--check-static%20analysis-2ea44f)
@@ -172,7 +172,7 @@ everything else does.
 </td></tr>
 <tr><td>Delivery</td><td>
 
-![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-every%20push-2088FF?logo=githubactions&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-push%20to%20main-2088FF?logo=githubactions&logoColor=white)
 ![Ubuntu](https://img.shields.io/badge/runner-ubuntu--latest-E95420?logo=ubuntu&logoColor=white)
 ![Git](https://img.shields.io/badge/Git-000000?logo=git&logoColor=white)
 
@@ -185,9 +185,12 @@ else. The application is one Rust binary with no JavaScript runtime in it
 anywhere, which is why "no runtime to install" is a badge and not a boast.
 
 **Two external crates, on purpose.** `cpal` for the audio device and
-`tract-onnx` for the classifier — 136 crates in the tree once their own
-dependencies are counted. Everything else is written here: the HTTP/1.1 server
-on `std::net`, the JSON parser, the FFT, every filter and stretcher, the AIFF
+`tract-onnx` for the classifier — 190 crates in the tree once their own
+dependencies are counted. Everything else is written here or in `prism-fx`
+and `prism-grain`, the effects and sound engine this program shares with
+idMLab, taken by path from a checkout beside this one
+(`../GitHub/prism-fx`, repo `rjvaleo/hyper-efx`): the HTTP/1.1 server on
+`std::net`, the JSON parser, the FFT, every filter and stretcher, the AIFF
 writer, the TSV store. Both dependencies are pure Rust, which is what keeps the
 Windows cross-build a single command with nothing but a linker installed. That
 is the test for a third: not "is it a dependency" but "does it break the
@@ -200,17 +203,18 @@ cross-build".
 | `audio-core` | 3501 | 97 | Container probe and decode (WAV, AIFF, AIFC, headerless PCM), **AIFF writer**, peak tiles, FFT, spectrogram, statistics, WAV writer |
 | `catalog` | 1103 | 26 | The classification taxonomy — categories, machines, instruments, confidence |
 | `indexer` | 785 | 20 | Library walk, classify, write the TSV index |
-| `fx` | 19910 | 344 | RBJ biquads, parametric EQ, compressor, channel maximiser, **five stretchers**, **34 shapers**, the parameter layer, and the sines/transients/noise separation |
+| `fx` | 12219 | 255 | RBJ biquads, parametric EQ, compressor, channel maximiser, **33 shape kinds**, the parameter layer, and the adapter to `prism-fx`, which builds every rack effect. The program's own DSP stays as the parity reference. The five stretchers and the sines/transients/noise separation are `prism-grain`'s, re-exported under their old paths |
 | `edit` | 4293 | 130 | Non-destructive edit list, **zero-crossing snap**, **measurement** (peak, RMS, silence, clicks), windowed render, WAV and AIFF export, **the looped export and its tail** |
-| `engine` | 6277 | 89 | Real-time block renderer, all five streaming engines, transport, cpal device |
+| `engine` | 6169 | 113 | Transport, cpal device, input, the sequencer bus. The block renderer and the stretcher that runs all five streaming engines are `prism-grain`'s |
 | `search` | 1059 | 20 | Acoustic fingerprints, similarity ranking, learned tags |
 | `yamnet` | 1453 | 51 | ONNX inference, band-limited resampling, label policy |
-| `server` | 14908 | 252 | HTTP/1.1 on `std::net`, a thread per connection, 52 API routes, JSON, persistence, **marker and region commands**, the live bridge to the audio thread |
+| `server` | 17907 | 293 | HTTP/1.1 on `std::net`, a thread per connection, 66 API routes, JSON, persistence, **marker and region commands**, the live bridge to the audio thread |
 | `audiolab` | 76 | — | The binary |
-| | **53365** | **1029** | |
+| | **48565** | **1005** | |
 
-Plus **241 browser tests** across 28 spec files, which run under Playwright
-rather than `cargo test`. Counts re-measured 5 Sep 2026.
+Plus **about 420 browser tests** across 45 spec files, which run under Playwright
+rather than `cargo test`. Lines are every `.rs` file in the crate, tests are
+`#[test]` functions; counted 31 Oct 2026.
 
 ## Time stretching
 
@@ -397,9 +401,20 @@ chases the playhead and the throw length becomes a control it never had.
 
 ![The effects rack](Reference%20Docs/screenshots/07-effects.png)
 
+They are nine of the 33 shape kinds in `fx::shape`. `/api/fx` lists those 33
+and the 86 effects of `prism-fx` — 37 of which are this program's own shape
+kinds, EQ, compressor, gain and maximiser again under `prism:` kinds. The rack
+builds every shape kind, the EQ, the compressor, the gain and the channel
+maximiser from `prism-fx` (`fx::shape::make` → `fx::prism::moved`, and
+`RackSpec::build` in `server/src/rack.rs`), held bit for bit to the program's
+own renders by `fx/tests/prism_parity.rs`. Two keep the program's own effect: a
+gain past ±24 dB, and an EQ whose high-pass is below 10 Hz — which is every new
+EQ, since one starts at 0 Hz. Channels past the second pass through untouched.
+
 The interface draws every one of them from `/api/fx`; nothing in the JavaScript
-knows what any shaper does. An effect gains a control by declaring one in
-`fx::shape` and neither the rack nor the interface is touched.
+knows what any shaper does. An effect gains a control by declaring one in its
+`prism-fx` descriptor — a shape kind's also in `fx::shape` — and neither the
+rack nor the interface is touched.
 
 ## Editing
 
@@ -600,13 +615,13 @@ algorithm turned out to be wrong on a dry chain. That correction is worth more
 than the original design, and deleting it to make the document look tidy would
 throw away the only record of why the code is the shape it is.
 
-Skipping to the end means building the wrong thing confidently. Thirty-six
+Skipping to the end means building the wrong thing confidently. Forty-nine
 documents in `docs/` are the evidence that this is a real rule rather than an
 aspiration.
 
 ### Tests first, and tests that can actually fail
 
-**1029 Rust tests and 241 browser tests.** Written first where the shape is known,
+**1005 Rust tests and about 420 browser tests.** Written first where the shape is known,
 and always before a fix is called done.
 
 Two lessons are burned into how they are written now, both expensive:
@@ -641,9 +656,9 @@ recording.
 
 | Layer | What only it can catch |
 |---|---|
-| `cargo test` — 1029 | The arithmetic. Every filter, stretcher and shaper pinned frame by frame |
+| `cargo test` — 1005 | The arithmetic. Every filter, stretcher and shaper pinned frame by frame |
 | `tools/ui-check.mjs` | References that do not resolve, controls with no default, panes missing from the map. Found two dead functions on its first run, one of which had removed the channel maximiser from the product for three days |
-| `tests/ui/*.spec.mjs` — 241 | A panel that builds without error and renders nothing. Has happened more than once |
+| `tests/ui/*.spec.mjs` — about 420 | A panel that builds without error and renders nothing. Has happened more than once |
 | `tests/ui/globals.spec.mjs` | Two scripts declaring the same global. Caught **by name**, because what breaks is in whichever file lost — somewhere else entirely, where no behavioural test would look |
 
 ### Measure, do not reason
@@ -659,17 +674,19 @@ vocoder cost was measured, found to improve one case and make an eight-layer
 case **3.7× worse**, and reverted the same hour. `docs/GLITCH-SWEEP.md` records
 a fix that did not work and says so.
 
-### Everything runs on every push
+### Everything runs on every push to main
 
 See [`docs/CI.md`](docs/CI.md). Its value is not that it runs the tests again —
 it is that it runs them **somewhere else**, on a Linux box with no sound card.
-That found two bugs of months' standing on its first two runs.
+That found two bugs of months' standing on its first two runs. While
+`prism-fx` is a path dependency outside the repository, the runner cannot build
+it — see CI.md.
 
 ## Testing
 
-    cargo test --release --manifest-path core/Cargo.toml     # 1029
+    cargo test --release --manifest-path core/Cargo.toml     # 1005
     npm run check                                            # the interface, statically
-    npm run test:ui                                          # the interface, in a browser  # 241
+    npm run test:ui                                          # the interface, in a browser  # about 420
 
 The Rust tests are the bulk of it and need nothing installed. The other two are
 development tooling — `package.json` exists for them alone; the application is
@@ -687,7 +704,7 @@ correct and zero pixels tall.
 
 **Why each layer exists, and what only it can catch**, is in
 [How this is built](#how-this-is-built) above. `.github/workflows/ci.yml` runs
-every one of them on every push — [`docs/CI.md`](docs/CI.md).
+every one of them on every push to `main` and every pull request — [`docs/CI.md`](docs/CI.md).
 
 ## Documentation
 
@@ -712,7 +729,7 @@ every one of them on every push — [`docs/CI.md`](docs/CI.md).
 | [`docs/OUTPUT-SAMPLED-GRAINS.md`](docs/OUTPUT-SAMPLED-GRAINS.md) | Sampling the schedule along the output rather than the source |
 | [`docs/LIVE-STATE-AUDIT.md`](docs/LIVE-STATE-AUDIT.md) | Every place a value change used to rebuild the object holding the state — the reverb-tail bug and its siblings |
 | [`docs/TEST-COVERAGE-AUDIT.md`](docs/TEST-COVERAGE-AUDIT.md) | What is tested, what is not, and which invariants no test has yet named |
-| [`docs/CI.md`](docs/CI.md) | What runs on every push, what it costs, and the two bugs it found on its first two runs |
+| [`docs/CI.md`](docs/CI.md) | What runs on push to `main` and on pull requests, what it costs, and the two bugs it found on its first two runs |
 | [`docs/NO-AUDIO-DEVICE.md`](docs/NO-AUDIO-DEVICE.md) | What works without a sound card, what does not, and why no test caught it for months |
 | [`docs/EXPORT-LOOP.md`](docs/EXPORT-LOOP.md) | Exporting the loop with repeats and a tail, and watching an export run |
 | [`docs/SHAPES-4D.md`](docs/SHAPES-4D.md) | The regular 4-polytopes, why a 4D solid is not a model, and the six planes of rotation |
@@ -741,11 +758,13 @@ every one of them on every push — [`docs/CI.md`](docs/CI.md).
     Audio Library/    sample audio to try it on
     Reference Docs/   papers, the stretch roadmap, and the classification taxonomy
 
-Everything in `ui/` and `visualiser/` is compiled *into* the binary —
-**twenty-three embedded assets**: the page, the stylesheet, seventeen of the
+Everything in `ui/`, and the grain views, p5.js and fonts in `visualiser/`, is
+compiled *into* the binary — **thirty-six embedded assets**: three pages (the
+interface, the sequencer, the grain views), three stylesheets, twenty-six of the
 interface's own scripts (the preference store, the theme engine, the palette
-library, the four-dimensional solids, the visualisers), Babylon, p5.js and both
-fonts. `tools/` and `tests/` are not; they never ship.
+library, the four-dimensional solids, the visualisers, the sequencer's three),
+the sequencer's presets, Babylon, p5.js and the fonts stylesheet that carries
+both fonts. `tools/` and `tests/` are not; they never ship.
 
 **Adding a file to `ui/` is three edits, not one.** A `<script>` tag in
 `ui/index.html`, an `include_str!` constant *and* a route in
@@ -782,7 +801,7 @@ between the Mac and the PC.
 ## Building from source
 
     cargo build --release --manifest-path core/Cargo.toml     # this machine
-    cargo test  --release --manifest-path core/Cargo.toml     # 1029 tests
+    cargo test  --release --manifest-path core/Cargo.toml     # 1005 tests
 
 For the Windows build from a Mac, once per machine:
 

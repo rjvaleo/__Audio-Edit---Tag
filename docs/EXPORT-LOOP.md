@@ -26,7 +26,7 @@ It is live-transport state and nothing else:
 
     state.sel {start, end}  +  state.loopOn
       → POST /api/engine/transport  {loop: {on, a, b}}
-      → Shared::set_loop  (transport.rs:503)
+      → Shared::set_loop  (transport.rs:675)
       → atomics read in the audio callback
 
 `b == 0` is the wire encoding for "to the end of the document", so the browser
@@ -53,11 +53,11 @@ both numbers.
 Matching the engine exactly, because the file should sound like what was
 auditioned.
 
-`loop_fade(a, b)` (transport.rs:60) is a quarter of the loop capped at 512
+`loop_fade(a, b)` (transport.rs:50) is a quarter of the loop capped at 512
 frames, so ordinary loops get the full ~11 ms and a short loop is not eaten by
 its own seam. The engine then does **not** overlap two copies — one source, so
 it fades the outgoing material to zero and fades the incoming material up from
-zero across the jump (`fade_out`/`fade_in`, transport.rs:1268/1282, linear).
+zero across the jump (`fade_out`/`fade_in`, transport.rs:1902/1916, linear).
 
 Reproduced on tiling as:
 
@@ -122,12 +122,12 @@ The constants move to `fx` so the engine and the renderer cannot drift apart.
 
 ## The one structural obstacle
 
-`render_to_aiff_controlled` (render.rs:521) writes the AIFF header from
+`render_to_aiff_controlled` (render.rs:866) writes the AIFF header from
 `list.frames()` *before* producing a sample, so the output length is committed
 up front. A tail's length is not knowable until the rack has been run.
 
 So the loop path goes buffer-first, the shape `write_aiff_controlled`
-(render.rs:474) already uses: materialise, process, measure, trim, then write a
+(render.rs:515) already uses: materialise, process, measure, trim, then write a
 header from the length that resulted. The existing whole-file path is untouched.
 
 ## What the request becomes
@@ -140,7 +140,7 @@ absent means today's behaviour exactly. The server takes the loop path only when
 `repeats >= 1` and `to > from`.
 
 The filename gains a marker so a loop export is not mistaken for a whole-file
-one — `export_name` (docs.rs:231) already encodes algorithm, ratio, semitones
+one — `export_name` (docs.rs:277) already encodes algorithm, ratio, semitones
 and window.
 
 ## What is deliberately not in this
@@ -180,7 +180,7 @@ call sites did not move.
 
 `ExportProgress` on `App` mirrors `ScanProgress`, which was already exactly this
 pattern. The server is a thread per connection with no lock held across a render
-(`serve.rs:37`), so the status route stays answerable while the export runs.
+(`serve.rs:35`), so the status route stays answerable while the export runs.
 
 ## Work frames, not output frames
 

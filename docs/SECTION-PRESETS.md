@@ -50,8 +50,8 @@ menus would be a look that reached outside the room.
 ### Putting it back
 
 `applyVisual` sets the state, writes every store the room reads at load
-(`roomData`, `roomLayers`, `roomHierarchy`, `roomStreams`, `roomCameras`, the
-palette), and then walks the same list `enterRoomView` walks so every control
+(`roomData`, `roomLayers`, `roomHierarchy`, `roomStreams`, `roomCamerasWorld`,
+the palette), and then walks the same list `enterRoomView` walks so every control
 catches up: the module is re-selected, the layer stack is rebuilt in the new
 order, every slider is pushed (`syncRoomSliders` — they are built once and
 never re-read `roomEdit` on their own), the two module renderers that hold a

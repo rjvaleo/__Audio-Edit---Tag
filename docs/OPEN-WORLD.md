@@ -1,7 +1,8 @@
 # The open world
 
 *Begun 7 September 2026, on the `open-world` branch. The plan is
-[`OPEN-WORLD-PLAN.md`](OPEN-WORLD-PLAN.md); this is what has been built of it.*
+[`OPEN-WORLD-PLAN.md`](OPEN-WORLD-PLAN.md); this is what has been built of it.
+On 31 October 2026 `main` and `open-world` are the same commit.*
 
 ## Step one: the camera is a place you stand
 
@@ -31,7 +32,7 @@ the same for anything that arrives from outside — the film's camera per
 aspect, a look recalled from a preset, a test that writes a box straight
 into `roomEdit.cams` — so a camera in either shape draws.
 
-**A room posed on `main` opens here looking the same.** `main` writes box
+**A room posed on `main` opens here looking the same.** `main` wrote box
 cameras under `roomCameras`. The branch reads them once, turns each into a
 world camera at its frame's own aspect, and keeps the result under
 `roomCamerasWorld`. The old key is not touched, so switching branches loses
@@ -50,7 +51,8 @@ picture moves then, and not before.
 - `ui/vis-gl.js` — `VG_WORLD_DEFAULT`, `vgIsWorld`, `vgWorldFromBox`,
   `vgBoxFromWorld`, `vgBoxOf`, `vgWorldView`.
 - `ui/app.js` — `ROOM_CAMERAS_KEY`, `roomCamerasMigrate` and the load;
-  `roomAspectNow`, `roomSetCam`, `roomWorldNow`; `roomCamNow`,
+  `roomAspectNow`, `roomSetCam` (`roomSetWorld` since step three),
+  `roomWorldNow`; `roomCamNow`,
   `roomCameraDrawn`, `roomFog` and the projection helpers read through
   `vgBoxOf`; the readout in `paintRoomNums`.
 - `tests/ui/open-world.spec.mjs`.
@@ -195,7 +197,8 @@ eye stands, so walking never finds an edge of it.
   absolute, the grid around the eye.
 - `ui/app.js` — `roomBeads`, `paintRoomBeads`, `wireRoomBeads`;
   `roomProjectAt`, `roomUnprojectZ`, `roomGroundAt`; walking on the wheel;
-  `ROOM_CAM_ROWS` and `syncCamRows`; the path in units and its migration;
+  `syncCamRows` (and `ROOM_CAM_ROWS`, gone with the sliders in step five);
+  the path in units and its migration;
   `geomReach` and `geomAt`.
 - `ui/index.html` — the camera rows; `ui/room-paint.js` — **REACH**.
 - `tests/ui/open-world.spec.mjs` — everything goes anywhere; the camera

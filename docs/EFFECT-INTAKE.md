@@ -1,6 +1,7 @@
 # Effect intake
 
-*22 October 2026. Spec — not built.*
+*22 October 2026. Spec. Built since, in prism-fx: the nine SoundHack plug-ins
+(23 October) and the four Lexicon reverbs. The other families are not built.*
 
 Every plug-in in `~/re-targets` that [HYPERPRISM.md](HYPERPRISM.md) does not
 already cover now has a spec: 119 of them. Six already exist in the rack, 33

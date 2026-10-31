@@ -129,7 +129,9 @@ round the loop".
 It is a switch on the export dialog — **Sequencer** — and it is only for a
 film. It needs the Seq page to have been opened, because a frame that was
 never loaded has nothing to render. An audio bounce is still the engine
-alone; that render is the server's, and the browser is not in it.
+alone; that render is the server's, and the browser is not in it. *(Since
+14 Sep 2026 the switch puts it in a sound export too; see "The sequencer in a
+sound export". Its tooltip still says "Only for a film".)*
 
 ## One output
 

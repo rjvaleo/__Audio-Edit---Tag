@@ -34,7 +34,7 @@ needs no sound card, which is what makes 300 trials possible at all.
 *not* the real-time budget: it includes an HTTP round trip and renders whole
 files rather than blocks, so it overstates cost on very short outputs. It is
 comparable *between engines and between settings*, which is all the ranking
-below needs. `fx/tests/pv_cost.rs` remains the honest per-block measure.
+below needs. `engine/tests/pv_cost.rs` remains the honest per-block measure.
 
 ### Honest limits
 

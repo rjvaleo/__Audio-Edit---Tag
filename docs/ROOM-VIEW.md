@@ -171,7 +171,7 @@ given. Nothing was ignoring the settings; there had been no way to set them.
 
 They are borrowed like everything else here — `#grainControls` moves into a
 **Sound** tab and goes home on the way out. Four tabs now: Room, Sound, Shape,
-Colour.
+Colour. *(Five since 27 Aug 2026: 4D, from [SHAPES-4D.md](SHAPES-4D.md).)*
 
 ### Present is not the same as usable
 

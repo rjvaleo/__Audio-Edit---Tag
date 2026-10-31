@@ -1,6 +1,7 @@
 # Hyperprism and SoundHack
 
-*22 October 2026. Plan — not built.*
+*22 October 2026. Plan; built 22–24 October. "Corrected during the build" and
+"Built from the code", at the end, override it.*
 
 Hyperprism played every effect from one control: drag through a square and
 two of the effect's settings follow your hand, and the drag can be recorded,
@@ -426,6 +427,12 @@ code; there is nothing to build.
 `prism:decimator`) stay: they were written from the resources, they serve
 other plug-ins in the intake, and documents use them. The Hyperprism
 processes are the `hp-*` ones.
+
+*31 October 2026.* The effects the processes table's "Here" column names (the
+Chamberlin, the Phaser, the Schroeder and Moorer reverbs, the compressor and
+the rest) are prism-fx effects too now: the rack builds every effect from
+prism-fx, as this program's own were built. See
+[SHARED-FX.md](SHARED-FX.md#the-rack-moved).
 
 ## Hyperprism's own controls on the Prism tab
 

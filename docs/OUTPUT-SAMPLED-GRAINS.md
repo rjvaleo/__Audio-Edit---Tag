@@ -1,8 +1,9 @@
 # Grains sampled from the output
 
-*A design. Nothing here is built. It is the same idea as
-[WAVETABLE-MODE.md](WAVETABLE-MODE.md) at a different time scale, and together
-they make one instrument rather than two features.*
+*A design. Nothing here is built: the feedback engine built from it on 15 Aug
+2026 was pulled the same day (see [SIXTH-ENGINE.md](SIXTH-ENGINE.md)). It is
+the same idea as [WAVETABLE-MODE.md](WAVETABLE-MODE.md) at a different time
+scale, and together they make one instrument rather than two features.*
 
 ---
 
