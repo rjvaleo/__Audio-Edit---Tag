@@ -199,6 +199,12 @@ fn no_prism_effect_depends_on_the_block_size() {
 #[test]
 fn a_mono_file_goes_through_the_left_side() {
     for mut e in every_prism_effect() {
+        // An effect with its own mono path (the detune averages its two
+        // voices) plays one channel as this program's own did, which
+        // prism_parity.rs holds it to; it is not the left of a stereo file.
+        if prism_fx::make(e.id(), SR as f32).unwrap().has_mono() {
+            continue;
+        }
         let mono = source(12_000, 1);
         let out = render(&mut e, &mono, 1, 512, &[]);
         // The same as the left of a stereo file with the mono signal on both sides.
