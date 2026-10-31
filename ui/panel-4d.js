@@ -322,71 +322,102 @@ function p4BuildPanel() {
     + 'the shape of the shadow rather than just its pose.');
   host.appendChild(note);
 
-  // ── projection ──
+  // ── projection and turning ──
+  //
+  // Each is a choice, so each is a row of fixed places, lit when on — the
+  // grammar of every other choice in the Visual column. Turning used to be a
+  // Turn/Pause button beside a menu of planes; it is one choice, what the clock
+  // is doing: standing still, or turning one plane.
   host.appendChild(p4El('div', 're-tag', 'PROJECTION'));
-  const proj = p4El('div', 'p4-row');
+  host.appendChild(p4Seg('projection', [
+    ['perspective', 'Perspective',
+      'A vertex further away in w is drawn smaller — which is what puts one cube of a tesseract inside the other.'],
+    ['orthographic', 'Parallel',
+      'w is dropped rather than divided by. Every cell the same size, and the solid reads as a flat cage.'],
+  ], (key) => p4.mode === key, (key) => { p4.mode = key; }));
 
-  const modes = p4El('div', 're-frames');
-  for (const [key, label] of [['perspective', 'Perspective'], ['orthographic', 'Parallel']]) {
-    const b = p4El('button', 're-btn', label);
-    b.classList.toggle('active', p4.mode === key);
-    b.title = key === 'perspective'
-      ? 'A vertex further away in w is drawn smaller — which is what puts one cube of a tesseract inside the other.'
-      : 'w is dropped rather than divided by. Every cell the same size, and the solid reads as a flat cage.';
-    b.onclick = () => { p4.mode = key; p4Save(); p4BuildPanel(); p4Draw(); };
-    modes.appendChild(b);
-  }
-  proj.appendChild(modes);
-  host.appendChild(proj);
-
-  const eyeRow = p4El('div', 'p4-grid');
-  p4Field(eyeRow, {
-    label: 'Eye', get: () => p4.eye,
-    set: (v) => { p4.eye = Math.min(12, Math.max(1.2, v)); },
-    step: 0.02, fine: 0.004, def: 2.5, digits: 2,
-  });
-  host.appendChild(eyeRow);
-  host.appendChild(p4El('div', 'fx-note',
-    'How far down the w axis you are standing. Far off is nearly parallel; close in exaggerates '
-    + 'the depth, and the panel holds you clear of the solid rather than dividing by nothing.'));
-
-  // ── the clock ──
   host.appendChild(p4El('div', 're-tag', 'TURNING'));
-  const spinRow = p4El('div', 'p4-row');
-  const play = p4El('button', 're-btn', p4.spinning ? 'Pause' : 'Turn');
-  play.classList.toggle('active', p4.spinning);
-  play.onclick = () => { p4.spinning = !p4.spinning; p4Save(); p4BuildPanel(); };
-  spinRow.appendChild(play);
+  host.appendChild(p4Seg('turning', [
+    ['still', 'Still', 'Stop the clock. The angles stay where they are.'],
+    ...Shapes4D.PLANES.map((p) => [p.key, p.label, `Turn the ${p.label} plane.`, !p.familiar]),
+  ], (key) => (key === 'still' ? !p4.spinning : p4.spinning && p4.spin === key), (key) => {
+    if (key === 'still') p4.spinning = false;
+    else { p4.spin = key; p4.spinning = true; }
+  }));
 
-  const sel = document.createElement('select');
-  sel.className = 'field mini';
-  for (const p of Shapes4D.PLANES) {
-    const o = document.createElement('option');
-    o.value = p.key;
-    o.textContent = `${p.label}${p.familiar ? '' : ' ·w'}`;
-    sel.appendChild(o);
-  }
-  sel.value = p4.spin;
-  sel.title = 'Which plane the clock turns.';
-  sel.onchange = () => { p4.spin = sel.value; p4Save(); };
-  spinRow.appendChild(sel);
-  host.appendChild(spinRow);
-
-  const rateRow = p4El('div', 'p4-grid');
-  p4Field(rateRow, {
-    label: 'Rate', get: () => p4.rate,
-    set: (v) => { p4.rate = Math.min(2, Math.max(0, v)); },
-    step: 0.004, fine: 0.001, def: 0.35, digits: 3,
+  // ── the two amounts, as knobs, with the way back beside them ──
+  const knobs = p4El('div', 'p4-knobs');
+  p4Knob(knobs, {
+    label: 'Eye', min: 1.2, max: 12, step: 0.01, digits: 2, def: 2.5, scrub: 0.02, fine: 0.004,
+    get: () => p4.eye, set: (v) => { p4.eye = Math.min(12, Math.max(1.2, v)); },
   });
-  host.appendChild(rateRow);
-
+  p4Knob(knobs, {
+    label: 'Rate', min: 0, max: 2, step: 0.001, digits: 3, def: 0.35, scrub: 0.004, fine: 0.001,
+    get: () => p4.rate, set: (v) => { p4.rate = Math.min(2, Math.max(0, v)); },
+  });
   const reset = p4El('button', 're-btn re-reset', 'Put every plane back');
   reset.onclick = () => {
     for (const p of Shapes4D.PLANES) p4.angles[p.key] = 0;
     p4.eye = 2.5; p4.mode = 'perspective';
     p4Save(); p4BuildPanel(); p4Draw();
   };
-  host.appendChild(reset);
+  knobs.appendChild(reset);
+  host.appendChild(knobs);
+  host.appendChild(p4El('div', 'fx-note',
+    'Eye is how far down the w axis you are standing. Far off is nearly parallel; close in exaggerates '
+    + 'the depth, and the panel holds you clear of the solid rather than dividing by nothing.'));
+}
+
+/// A row of fixed places. `places` are [key, label, title, marked]; one is lit.
+function p4Seg(name, places, isOn, pick) {
+  const row = p4El('div', 'p4-seg');
+  row.dataset.p4seg = name;
+  row.style.setProperty('--n', places.length);
+  for (const [key, label, title, marked] of places) {
+    const b = p4El('button', 're-btn', label);
+    if (marked) b.appendChild(p4El('i', 'p4-seg-w', '·w'));
+    b.title = title;
+    b.classList.toggle('active', isOn(key));
+    b.onclick = () => { pick(key); p4Save(); p4BuildPanel(); p4Draw(); };
+    row.appendChild(b);
+  }
+  return row;
+}
+
+/// An amount, as a knob. Built as the Room tab's are (`rkKnob` in `app.js`):
+/// the range input stays, with a face drawn behind it and the input laid over
+/// the face, so a pointer aimed at the knob lands on the input and the keyboard
+/// still reaches it. The reading under the face is a number field, as the camera
+/// pads keep one: an exact value can still be typed, or dragged sideways by
+/// `scrub` (`fine` with shift), as the field it replaced was.
+function p4Knob(row, { label, min, max, step, digits, def, scrub, fine, get, set }) {
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.className = 'p4-knob-in';
+  input.dataset.p4k = label;
+  Object.assign(input, { min, max, step });
+  input.value = String(get());
+  input.setAttribute('aria-label', label);
+  const read = document.createElement('input');
+  read.type = 'text';
+  read.className = 'p4-num-in p4-knob-read';
+  read.dataset.p4 = label;
+  read.value = get().toFixed(digits);
+  row.appendChild(input);
+  rkKnob(input, label, read);
+  const apply = (v) => {
+    set(v);
+    read.value = get().toFixed(digits);
+    p4Draw(); p4Save();
+  };
+  input.addEventListener('input', () => apply(+input.value));
+  input.addEventListener('dblclick', () => { input.value = String(def); apply(def); });
+  // Typed or dragged in the field: the knob's face follows through its `value`.
+  p4Scrub(read, {
+    get, def, step: scrub, fine,
+    set: (v) => { apply(v); input.value = String(get()); },
+  });
+  return input;
 }
 
 function p4Panel() {

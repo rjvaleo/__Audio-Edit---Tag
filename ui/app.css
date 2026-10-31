@@ -4494,3 +4494,197 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    strip at the foot of the centre, under the lane. Not drawn until it says
    something. */
 .why:empty { display: none; }
+/* ───────────────────────── Grain › Prism: the process's settings beside the pad
+   On a wide window the pad, sized from the dock's height, left the dock's
+   right-hand side empty while the process's extra settings sat under the
+   control column. They now take that space: one bank, hard against the pad
+   and level with its top, its knobs drawn as the granular tray's are (`gkKnob`)
+   — the face, the range input laid over it, the reading, the name. One width,
+   whatever the process; a process with no settings of its own says where they
+   are instead. `prismRenderSettings` and the pad's fit in `prism-pad.js`. */
+#dockPrism .prism-stage > .prism-settings {
+  --prism-set: 232px;
+  flex: none; width: var(--prism-set); margin-left: 6px; align-self: flex-start;
+  display: block; font-size: var(--fs-m);
+}
+#dockPrism .prism-settings-note {
+  margin: 0; padding: 6px 8px; border: 1px dashed var(--line);
+  font-size: var(--fs-s); line-height: 1.3; color: var(--text-dimmer);
+}
+#dockPrism .prism-bank-head {
+  font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dim); border-bottom: 1px solid var(--line);
+  padding-bottom: 3px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#dockPrism .prism-bank-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px 2px; }
+#dockPrism .prism-settings .param.gk-k {
+  display: flex; flex-direction: column; align-items: center; position: relative;
+  gap: 0; width: 56px; min-width: 0; padding: 0 1px 1px; margin: 0;
+}
+#dockPrism .prism-settings .gk-k > .rk-face { display: block; width: 22px; height: 22px; order: 0; margin-bottom: 1px; }
+#dockPrism .prism-settings .gk-k > .rk-face svg { display: block; width: 100%; height: 100%; }
+#dockPrism .prism-settings .gk-k > input[type=range] {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 24px; height: 24px; margin: -1px 0 0; opacity: 0; cursor: ns-resize;
+}
+#dockPrism .prism-settings .gk-k:has(> input:focus-visible) > .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+#dockPrism .prism-settings .gk-k > .v {
+  order: 1; width: auto; overflow: visible; text-align: center;
+  font-size: var(--fs-s); line-height: 1.15; color: var(--text-2);
+}
+#dockPrism .prism-settings .gk-k > .k {
+  order: 2; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
+  font-size: var(--fs-xs); line-height: 1.1; color: var(--text-dimmer);
+}
+/* ═══════════════════════════════════════════ Visual › Room · Air · fog curve ══
+   `rkFog` in `app.js`. Fog drawn against distance in the shape its type gives,
+   the density input laid over the drawing and dragged as a knob is. Only in
+   the Visual column; on the master bus the row is the slider it always was. */
+.rk-fog, .rk-fog-graph { display: contents; }
+.rk-fog-graph > svg, .rk-fog-foot { display: none; }
+
+.rv-admin #roomEdit > .re-row:has(#reFogDensity) { flex-wrap: wrap; row-gap: 4px; }
+.rv-admin #roomEdit > .re-row:has(#reFogDensity) > .re-tag { bottom: auto; height: 22px; margin: 2px 0 0; }
+.rv-admin .rk-fog { display: block; flex: 1 0 100%; order: 9; }
+.rv-admin .rk-fog-graph {
+  display: block; position: relative; height: 56px;
+  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+  background-image: linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 25% 100%; background-position: -1px 0;
+}
+.rv-admin .rk-fog-graph > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.rv-admin #roomEdit .rk-fog-graph > input.re-slider {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+.rv-admin .rk-fog-graph:has(> input:focus-visible) { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+.rk-fog-curve { fill: none; stroke: var(--accent); stroke-width: 1.75; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.rk-fog-fill { fill: color-mix(in oklch, var(--accent) 14%, transparent); stroke: none; }
+.rk-fog-high { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; vector-effect: non-scaling-stroke; }
+.rk-fog.off .rk-fog-curve, .rk-fog.off .rk-fog-high { stroke: var(--text-dimmer); }
+.rk-fog.off .rk-fog-fill { fill: color-mix(in oklch, var(--text-dimmer) 10%, transparent); }
+.rv-admin .rk-fog-foot { display: flex; }
+.rv-admin .rk-fog-foot b { font-weight: 400; }
+/* ═══════════════════════════════════════════ Visual › Colour as an instrument ══
+   The pass `docs/DESIGN-CRITIQUE.md` lists under "Not yet done" for Colour;
+   `rpSlotEditor` in `room-paint.js`. The tab given what the rest of the column has: each choice a
+   row of fixed places, lit by a tint and an edge (the rule above, which already
+   names `#roomPaintBody`); each amount a knob, built as `rkKnob` builds them;
+   and a ramp's range a window dragged on the ramp itself, with the curve as a
+   knob beside it. The column is 300 px and every row keeps to it. */
+
+/* Rows of fixed places. An absent choice keeps its place, empty. */
+#roomPaintBody .rp-seg,
+#roomPaintBody .rp-gens {
+  flex: 1 1 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px;
+}
+#roomPaintBody .rp-seg > .re-btn,
+#roomPaintBody .rp-gens > .re-btn {
+  min-width: 0; height: 18px; padding: 0 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#roomPaintBody .rp-seg-gap { min-height: 18px; }
+
+/* A knob, as in the Room tab: the face drawn, the range input laid over it. */
+#roomPaintBody .rp-knob { display: flex; justify-content: center; position: relative; }
+#roomPaintBody .rk-k { width: 100%; }
+#roomPaintBody .rk-k > input.re-slider {
+  position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 30px; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+#roomPaintBody .rk-k > .rk-v { font-size: var(--fs-s); }
+
+/* The stops: a cell each, four to a line. The colour on top, where it sits as
+   a knob beneath it, and the way out in the colour's corner. The last place
+   adds one. */
+#roomPaintBody .rp-stop-grid {
+  flex: 1 1 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+}
+#roomPaintBody .rp-stop { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+#roomPaintBody .rp-stop > .re-colour { flex: none; width: 100%; height: 16px; }
+#roomPaintBody .rp-stop-del {
+  position: absolute; top: 1px; right: 1px; width: 13px; height: 13px; padding: 0;
+  background: var(--surface-2); border-color: var(--line-2); line-height: 11px;
+}
+#roomPaintBody .rp-add { align-self: start; height: 16px; padding: 0; font-size: var(--fs-s); }
+
+/* The range: the ramp as the room reads it across the whole quantity, the
+   window lit on it, an end at each side. The curve's knob stands beside it. */
+#roomPaintBody .rp-range { flex-wrap: nowrap; align-items: flex-start; margin: 0; }
+#roomPaintBody .rp-span-col { flex: 1 1 auto; min-width: 0; padding-top: 6px; }
+#roomPaintBody .rp-span {
+  position: relative; height: 18px; cursor: pointer; touch-action: none;
+  border: 1px solid var(--line-2); border-radius: 2px;
+}
+#roomPaintBody .rp-span-win {
+  position: absolute; top: -3px; bottom: -3px; cursor: grab;
+  border-top: 1.5px solid var(--accent); border-bottom: 1.5px solid var(--accent);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+#roomPaintBody .rp-span-end {
+  position: absolute; top: -2px; bottom: -2px; width: 4px;
+  background: var(--text); border-radius: 1px; cursor: ew-resize;
+  box-shadow: 0 0 0 1px var(--bg);
+}
+#roomPaintBody .rp-span-lo { left: -2px; }
+#roomPaintBody .rp-span-hi { right: -2px; }
+#roomPaintBody .rp-span-end:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+#roomPaintBody .rp-span-read {
+  display: flex; justify-content: space-between; margin-top: 4px;
+  font: var(--fs-xs) var(--mono); color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+#roomPaintBody .rp-range > .rp-knob { flex: 0 0 52px; }
+/* ═══════════════════════════════════════════════════ Visual › 4D ══
+   `docs/DESIGN-CRITIQUE.md`, "Not yet done", and `p4BuildPanel` in
+   `panel-4d.js`. The lighter pass: projection and turning as rows of fixed
+   places, lit and never filled; Eye and Rate as knobs; the six plane angles
+   kept as scrub fields. One width, edge to edge, and the whole tab on screen
+   at 1000 px without scrolling — the notes kept, set tight. */
+/* The viewport takes whatever height the controls leave, so the column ends
+   with the tab rather than with blank space under it. */
+.rv-admin #room4dBody:not(.hidden) { display: flex; flex-direction: column; }
+#room4dBody .p4-view { flex: 1 1 auto; height: auto; min-height: 186px; margin-bottom: 0; }
+#room4dBody #p4Panel { flex: none; }
+#room4dBody .re-tag { margin: 7px 0 3px; }
+#room4dBody .p4-objects { max-height: none; overflow: visible; }
+#room4dBody .p4-obj { padding: 2px 7px; }
+#room4dBody .p4-about { padding: 1px 2px 0; }
+#room4dBody .p4-about-name { margin-bottom: 1px; }
+#room4dBody .p4-about-hint { font-size: var(--fs-s); line-height: 1.35; }
+#room4dBody .p4-about-n { margin-top: 2px; }
+#room4dBody .p4-grid { margin-bottom: 3px; }
+#room4dBody .fx-note { font-size: var(--fs-xs); line-height: 1.35; }
+
+/* A row of fixed places: the same width each, one line, never ragged. */
+#room4dBody .p4-seg {
+  display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 3px;
+}
+#room4dBody .p4-seg > .re-btn { height: 20px; padding: 0 2px; white-space: nowrap; overflow: hidden; }
+#room4dBody .p4-seg-w { font-style: normal; color: var(--accent); }
+/* Lit, not filled: a tint and an edge, as across the rest of the column. */
+.rv-admin #room4dBody .re-btn.active {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  color: var(--accent);
+}
+
+/* The knobs, four places to a line: Eye, Rate, and the way back across two. */
+#room4dBody .p4-knobs {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center; justify-items: center; margin-top: 6px;
+}
+#room4dBody .p4-knobs > .rk-k { width: 100%; }
+#room4dBody .rk-k > input.p4-knob-in {
+  position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 30px; margin: 0;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+/* Eye's and Rate's readings are number fields (`p4Knob`): typed, or dragged sideways. */
+#room4dBody .rk-k > input.p4-knob-read {
+  width: 52px; padding: 0 3px; text-align: center; font: var(--fs-s) var(--mono); line-height: 1.3;
+}
+#room4dBody .p4-knobs > .re-reset { grid-column: span 2; justify-self: stretch; height: 20px; }
+#room4dBody .p4-knobs + .fx-note { margin-top: 3px; }
