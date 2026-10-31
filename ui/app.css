@@ -4446,3 +4446,76 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    put the Fill swatch under the edit-the-room button. Half a pixel of padding
    a side gives it back. */
 #reStreams .re-btn { padding: 0 6.5px; }
+
+/* ═══════════════════════════════════════════ Visual › Colour as an instrument ══
+   The pass `docs/DESIGN-CRITIQUE.md` lists under "Not yet done" for Colour;
+   `rpSlotEditor` in `room-paint.js`. The tab given what the rest of the column has: each choice a
+   row of fixed places, lit by a tint and an edge (the rule above, which already
+   names `#roomPaintBody`); each amount a knob, built as `rkKnob` builds them;
+   and a ramp's range a window dragged on the ramp itself, with the curve as a
+   knob beside it. The column is 300 px and every row keeps to it. */
+
+/* Rows of fixed places. An absent choice keeps its place, empty. */
+#roomPaintBody .rp-seg,
+#roomPaintBody .rp-gens {
+  flex: 1 1 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px;
+}
+#roomPaintBody .rp-seg > .re-btn,
+#roomPaintBody .rp-gens > .re-btn {
+  min-width: 0; height: 18px; padding: 0 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#roomPaintBody .rp-seg-gap { min-height: 18px; }
+
+/* A knob, as in the Room tab: the face drawn, the range input laid over it. */
+#roomPaintBody .rp-knob { display: flex; justify-content: center; position: relative; }
+#roomPaintBody .rk-k { width: 100%; }
+#roomPaintBody .rk-k > input.re-slider {
+  position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 30px; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+#roomPaintBody .rk-k > .rk-v { font-size: var(--fs-s); }
+
+/* The stops: a cell each, four to a line. The colour on top, where it sits as
+   a knob beneath it, and the way out in the colour's corner. The last place
+   adds one. */
+#roomPaintBody .rp-stop-grid {
+  flex: 1 1 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+}
+#roomPaintBody .rp-stop { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+#roomPaintBody .rp-stop > .re-colour { flex: none; width: 100%; height: 16px; }
+#roomPaintBody .rp-stop-del {
+  position: absolute; top: 1px; right: 1px; width: 13px; height: 13px; padding: 0;
+  background: var(--surface-2); border-color: var(--line-2); line-height: 11px;
+}
+#roomPaintBody .rp-add { align-self: start; height: 16px; padding: 0; font-size: var(--fs-s); }
+
+/* The range: the ramp as the room reads it across the whole quantity, the
+   window lit on it, an end at each side. The curve's knob stands beside it. */
+#roomPaintBody .rp-range { flex-wrap: nowrap; align-items: flex-start; margin: 0; }
+#roomPaintBody .rp-span-col { flex: 1 1 auto; min-width: 0; padding-top: 6px; }
+#roomPaintBody .rp-span {
+  position: relative; height: 18px; cursor: pointer; touch-action: none;
+  border: 1px solid var(--line-2); border-radius: 2px;
+}
+#roomPaintBody .rp-span-win {
+  position: absolute; top: -3px; bottom: -3px; cursor: grab;
+  border-top: 1.5px solid var(--accent); border-bottom: 1.5px solid var(--accent);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+#roomPaintBody .rp-span-end {
+  position: absolute; top: -2px; bottom: -2px; width: 4px;
+  background: var(--text); border-radius: 1px; cursor: ew-resize;
+  box-shadow: 0 0 0 1px var(--bg);
+}
+#roomPaintBody .rp-span-lo { left: -2px; }
+#roomPaintBody .rp-span-hi { right: -2px; }
+#roomPaintBody .rp-span-end:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+#roomPaintBody .rp-span-read {
+  display: flex; justify-content: space-between; margin-top: 4px;
+  font: var(--fs-xs) var(--mono); color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+#roomPaintBody .rp-range > .rp-knob { flex: 0 0 52px; }
