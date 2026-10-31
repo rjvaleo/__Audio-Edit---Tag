@@ -567,11 +567,11 @@ function rpHeadRow() {
   box.appendChild(btns);
 
   // ── the generators ──
-  const genTag = rpEl('div', 'rp-row');
-  genTag.appendChild(rpEl('span', 're-tag', 'GENERATE'));
-  box.appendChild(genTag);
-
-  const gens = rpEl('div', 'rp-row rp-gens');
+  // On the tag's own line, in six fixed places: two full lines of three, where
+  // they used to wrap to whatever the words left over.
+  const genRow = rpEl('div', 'rp-row');
+  genRow.appendChild(rpEl('span', 're-tag', 'GENERATE'));
+  const gens = rpEl('div', 'rp-gens');
   for (const g of RP_GENERATORS) {
     const b = rpEl('button', 're-btn', g.label);
     b.title = `Paint every object at once. Click again for another ${g.label.toLowerCase()}.`;
@@ -581,7 +581,8 @@ function rpHeadRow() {
     };
     gens.appendChild(b);
   }
-  box.appendChild(gens);
+  genRow.appendChild(gens);
+  box.appendChild(genRow);
 
   const foot = rpEl('div', 'rp-row rp-btns');
   const reset = rpEl('button', 're-btn', 'Back to theme');
@@ -608,7 +609,7 @@ function rpSlotRow(s) {
   // What it is set to, in a word — so a scheme can be read down the list
   // without opening fourteen editors.
   const mode = cfg.mode === 'inherit' ? 'theme' : cfg.mode === 'flat' ? 'flat'
-    : (RP_DRIVES[cfg.drive | 0] || RP_DRIVES[0]).label.toLowerCase();
+    : rpDriveLabel(s, cfg.drive | 0).toLowerCase();
   head.appendChild(rpEl('span', 'rp-slot-mode', mode));
   head.onclick = () => { rpOpen = rpOpen === s.key ? null : s.key; rpPanel(); };
   wrap.appendChild(head);
@@ -617,33 +618,71 @@ function rpSlotRow(s) {
   return wrap;
 }
 
+/// What a drive is called for this slot. `Own` is the one quantity the layer
+/// alone knows, so it goes by that quantity's name.
+function rpDriveLabel(s, i) {
+  const d = RP_DRIVES[i] || RP_DRIVES[0];
+  return d.key === 'own' ? (RP_OWN_LABEL[s.own] || d.label) : d.label;
+}
+
+/// A row of fixed places: one per choice, lit by a tint and an edge when on.
+///
+/// `places` is `[label, on, title, pick]`, or `null` for a place this slot does
+/// not have. **An absent choice keeps its place, empty.** The row never closes
+/// up, so a word is where it was on every slot and the hand learns it once —
+/// the rule the engine row and the Data layer's missing switch already follow.
+function rpSeg(name, places) {
+  const row = rpEl('div', 'rp-seg');
+  row.dataset.seg = name;
+  for (const p of places) {
+    if (!p) { row.appendChild(rpEl('span', 'rp-seg-gap')); continue; }
+    const [label, on, title, pick] = p;
+    const b = rpEl('button', 're-btn' + (on ? ' active' : ''), label);
+    b.title = title || '';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.onclick = pick;
+    row.appendChild(b);
+  }
+  return row;
+}
+
+/// A knob over a range input, as the rest of the Visual column draws them
+/// (`rkKnob` in `app.js`). The input stays: the face is drawn behind it and it
+/// is laid over the face, so a pointer or the keyboard on the knob is on it.
+/// `read` is the reading under the face, kept up to date here.
+function rpKnob(input, label, read) {
+  const cell = rpEl('span', 'rp-knob');
+  cell.appendChild(input);
+  if (typeof rkKnob === 'function') rkKnob(input, label, read);
+  return cell;
+}
+
 function rpSlotEditor(s) {
   const box = rpEl('div', 'rp-edit');
   const cfg = rpSlot(s.key);
 
   // ── the mode ──
   const modes = rpEl('div', 'rp-row');
+  modes.appendChild(rpEl('span', 're-tag', 'PAINT'));
   // The background is one colour by definition: the room adds light to it, and
-  // a ground that varied per fragment is not a ground.
-  const choices = s.flat
-    ? [['inherit', 'Theme'], ['flat', 'Colour']]
-    : [['inherit', 'Theme'], ['flat', 'Colour'], ['ramp', 'Ramp']];
-  for (const [key, label] of choices) {
-    const b = rpEl('button', 're-btn' + (cfg.mode === key ? ' active' : ''), label);
-    b.title = key === 'inherit'
-      ? 'Leave it to the theme. Nothing about this object is sent to the renderer at all, so it draws exactly as it always has.'
-      : key === 'flat' ? 'One colour, whatever the sound is doing.'
-        : 'A gradient, read against a quantity of your choosing.';
-    b.onclick = () => {
-      const patch = { mode: key };
-      // Starting from what it is already drawn with, so switching mode changes
-      // nothing until something else is moved.
-      if (key === 'flat' && !cfg.colour) patch.colour = rpInheritedPair(s.key)[1];
-      if (key === 'ramp' && !cfg.stops) patch.stops = rpStops(s.key);
-      rpSetSlot(s.key, patch); rpApply(); rpPanel();
-    };
-    modes.appendChild(b);
-  }
+  // a ground that varied per fragment is not a ground. Its Ramp place is kept,
+  // empty.
+  const pick = (key) => () => {
+    const patch = { mode: key };
+    // Starting from what it is already drawn with, so switching mode changes
+    // nothing until something else is moved.
+    if (key === 'flat' && !cfg.colour) patch.colour = rpInheritedPair(s.key)[1];
+    if (key === 'ramp' && !cfg.stops) patch.stops = rpStops(s.key);
+    rpSetSlot(s.key, patch); rpApply(); rpPanel();
+  };
+  modes.appendChild(rpSeg('mode', [
+    ['Theme', cfg.mode === 'inherit',
+      'Leave it to the theme. Nothing about this object is sent to the renderer at all, so it draws exactly as it always has.',
+      pick('inherit')],
+    ['Colour', cfg.mode === 'flat', 'One colour, whatever the sound is doing.', pick('flat')],
+    s.flat ? null
+      : ['Ramp', cfg.mode === 'ramp', 'A gradient, read against a quantity of your choosing.', pick('ramp')],
+  ]));
   box.appendChild(modes);
 
   if (cfg.mode === 'flat') {
@@ -672,27 +711,67 @@ function rpSlotEditor(s) {
 }
 
 function rpStopsEditor(s) {
-  const box = rpEl('div', 'rp-stops');
+  const box = rpEl('div', 'rp-row rp-stops');
   // **One list, shared by every control in the editor, and written in place.**
   // Each handler used to rebuild the stops from a copy taken when the editor
   // opened, so the second stop you touched put the first one back to what it
   // was — the well still showed the colour you picked, the strip and the room
-  // did not. Sorted once, here: the rows are built in this order and each
-  // handler addresses its own row by index, so the order must not move under
-  // them while the editor is open. A stop dragged past its neighbour is sorted
+  // did not. Sorted once, here: the cells are built in this order and each
+  // handler addresses its own cell by index, so the order must not move under
+  // them while the editor is open. A stop turned past its neighbour is sorted
   // on the next rebuild.
   const live = [...rpStops(s.key)].sort((a, b) => a.at - b.at);
   const push = () => {
     rpSetSlot(s.key, { stops: live.map((x) => ({ ...x })) });
     rpApply();
-    const strip = box.closest('.rp-slot')?.querySelector('.rp-strip');
+    const slot = box.closest('.rp-slot');
+    const strip = slot?.querySelector('.rp-strip');
     if (strip) strip.style.background = rpGradientCss(s.key);
+    slot?.querySelector('.rp-span')?.rpRedraw?.();
   };
 
-  const tag = rpEl('div', 'rp-row');
-  tag.appendChild(rpEl('span', 're-tag', 'STOPS'));
-  const add = rpEl('button', 're-btn', '+');
+  box.appendChild(rpEl('span', 're-tag', 'STOPS'));
+  // A cell a stop: its colour on top, where it sits in the gradient as a knob
+  // under it, and a way to take it out in the corner.
+  const grid = rpEl('div', 'rp-stop-grid');
+  live.forEach((st, i) => {
+    const cell = rpEl('div', 'rp-stop');
+    const well = rpEl('input', 're-colour');
+    well.type = 'color';
+    well.value = st.c;
+    well.title = 'This colour.';
+    well.oninput = () => { live[i] = { ...live[i], c: well.value }; push(); };
+    cell.appendChild(well);
+
+    const at = rpEl('input', 're-slider');
+    at.type = 'range'; at.min = '0'; at.max = '100'; at.step = '1';
+    at.value = String(Math.round(st.at * 100));
+    at.title = 'Where in the gradient this colour sits. Drag up or down; shift for fine.';
+    at.setAttribute('aria-label', `Stop ${i + 1}: where it sits`);
+    const read = rpEl('b', null, st.at.toFixed(2));
+    at.oninput = () => {
+      live[i] = { ...live[i], at: +at.value / 100 };
+      read.textContent = live[i].at.toFixed(2);
+      push();
+    };
+    cell.appendChild(rpKnob(at, `Stop ${i + 1}`, read));
+
+    if (live.length > 2) {
+      const del = rpEl('button', 're-btn rp-stop-del', '×');
+      del.title = 'Take this colour out. Two is the fewest a gradient can have.';
+      del.setAttribute('aria-label', `Remove stop ${i + 1}`);
+      del.onclick = () => {
+        live.splice(i, 1);
+        push(); rpPanel();
+      };
+      cell.appendChild(del);
+    }
+    grid.appendChild(cell);
+  });
+
+  const add = rpEl('button', 're-btn rp-add', '+');
   add.title = 'Another colour in the gradient, dropped in the largest gap.';
+  add.setAttribute('aria-label', 'Add a stop');
   add.onclick = () => {
     // Into the widest gap rather than at the end: a stop added at 1.0 lands on
     // top of the one already there and appears to do nothing.
@@ -704,35 +783,8 @@ function rpStopsEditor(s) {
     live.push({ at: bestAt, c: '#ffffff' });
     push(); rpPanel();
   };
-  tag.appendChild(add);
-  box.appendChild(tag);
-
-  live.forEach((st, i) => {
-    const row = rpEl('div', 'rp-row rp-stop');
-    const well = rpEl('input', 're-colour');
-    well.type = 'color';
-    well.value = st.c;
-    well.oninput = () => { live[i] = { ...live[i], c: well.value }; push(); };
-    row.appendChild(well);
-
-    const at = rpEl('input', 're-slider');
-    at.type = 'range'; at.min = '0'; at.max = '100'; at.step = '1';
-    at.value = String(Math.round(st.at * 100));
-    at.title = 'Where in the gradient this colour sits.';
-    at.oninput = () => { live[i] = { ...live[i], at: +at.value / 100 }; push(); };
-    row.appendChild(at);
-
-    if (live.length > 2) {
-      const del = rpEl('button', 're-btn', '−');
-      del.title = 'Take this colour out. Two is the fewest a gradient can have.';
-      del.onclick = () => {
-        live.splice(i, 1);
-        push(); rpPanel();
-      };
-      row.appendChild(del);
-    }
-    box.appendChild(row);
-  });
+  grid.appendChild(add);
+  box.appendChild(grid);
   return box;
 }
 
@@ -740,54 +792,152 @@ function rpDriveRow(s) {
   const cfg = rpSlot(s.key);
   const row = rpEl('div', 'rp-row');
   row.appendChild(rpEl('span', 're-tag', 'READ AGAINST'));
-  const sel = rpEl('select', 'field');
-  RP_DRIVES.forEach((d, i) => {
-    // A layer with nothing of its own to offer does not get the option. The
+  row.appendChild(rpSeg('drive', RP_DRIVES.map((d, i) => {
+    // A layer with nothing of its own to offer does not get the choice. The
     // attribute is nought there, so the ramp would collapse to its first colour
     // and read as the control being broken.
-    if (d.key === 'own' && !s.own) return;
-    const label = d.key === 'own' ? rpOwnLabel(s.key) : d.label;
-    const o = new Option(label, String(i));
-    o.title = d.hint;
-    sel.appendChild(o);
-  });
-  sel.value = String(cfg.drive | 0);
-  sel.onchange = () => { rpSetSlot(s.key, { drive: +sel.value }); rpApply(); rpPanel(); };
-  row.appendChild(sel);
+    if (d.key === 'own' && !s.own) return null;
+    return [rpDriveLabel(s, i), (cfg.drive | 0) === i, d.hint,
+      () => { rpSetSlot(s.key, { drive: i }); rpApply(); rpPanel(); }];
+  })));
   return row;
 }
 
+/// The ramp as the room reads it, across the whole of the quantity: the first
+/// colour below the window, the gradient spent across it through the curve,
+/// the last colour above it. The same row the atlas holds, sampled through the
+/// shader's own arithmetic (`pow(clamp((d - lo) / (hi - lo)), curve)`).
+function rpSpanCss(key) {
+  const cfg = rpSlot(key);
+  const row = new Uint8Array(RP_RAMP_W * 4);
+  rpFillRow(row, 0, rpStops(key));
+  const lo = cfg.lo ?? 0, hi = cfg.hi ?? 1, curve = cfg.curve ?? 1;
+  const n = 48, parts = [];
+  for (let i = 0; i <= n; i++) {
+    const x = i / n;
+    const t = Math.max(0, Math.min(1, (x - lo) / Math.max(1e-4, hi - lo)));
+    const o = Math.round(Math.pow(t, curve) * (RP_RAMP_W - 1)) * 4;
+    parts.push(`rgb(${row[o]}, ${row[o + 1]}, ${row[o + 2]}) ${(x * 100).toFixed(1)}%`);
+  }
+  return `linear-gradient(90deg, ${parts.join(', ')})`;
+}
+
+/// The smallest window a range can close to. The two ends cannot cross: a
+/// window turned inside out is a hard step in the shader, not a reversed ramp.
+const RP_SPAN_GAP = 0.01;
+
 function rpRangeRow(s) {
   const cfg = rpSlot(s.key);
-  const box = rpEl('div', 'rp-range');
-  const mk = (label, key, def, hint) => {
-    const row = rpEl('div', 'rp-row');
-    row.appendChild(rpEl('span', 're-tag', label));
-    const sl = rpEl('input', 're-slider');
-    sl.type = 'range'; sl.min = '0'; sl.max = '100'; sl.step = '1';
-    sl.value = String(Math.round((cfg[key] ?? def) * 100));
-    sl.title = hint;
-    sl.oninput = () => { rpSetSlot(s.key, { [key]: +sl.value / 100 }); rpApply(); };
-    row.appendChild(sl);
-    return row;
-  };
-  box.appendChild(mk('FROM', 'lo', 0,
-    'Where the gradient starts. Anything below this takes the first colour.'));
-  box.appendChild(mk('TO', 'hi', 1,
-    'Where it ends. Bring this down and the whole gradient is spent on the quiet part.'));
+  const row = rpEl('div', 'rp-row rp-range');
+  row.appendChild(rpEl('span', 're-tag', 'RANGE'));
 
-  const row = rpEl('div', 'rp-row');
-  row.appendChild(rpEl('span', 're-tag', 'CURVE'));
-  const sl = rpEl('input', 're-slider');
-  sl.type = 'range'; sl.min = '20'; sl.max = '400'; sl.step = '1';
-  sl.value = String(Math.round((cfg.curve ?? 1) * 100));
-  sl.title = 'How the gradient is spent across that range. Left of the middle '
-    + 'favours the top end, right of it favours the bottom. Level is '
+  // ── the window, drawn on the strip ──
+  const col = rpEl('div', 'rp-span-col');
+  const span = rpEl('div', 'rp-span');
+  span.title = 'The window of the quantity the gradient is spent across. Drag the window to move it, '
+    + 'an edge to move that end. Below it everything takes the first colour, above it the last.';
+  const win = rpEl('div', 'rp-span-win');
+  const ends = ['lo', 'hi'].map((key) => {
+    const h = rpEl('span', `rp-span-end rp-span-${key}`);
+    h.tabIndex = 0;
+    h.setAttribute('role', 'slider');
+    h.setAttribute('aria-label', key === 'lo' ? 'Where the gradient starts' : 'Where the gradient ends');
+    h.setAttribute('aria-valuemin', '0');
+    h.setAttribute('aria-valuemax', '1');
+    h.dataset.end = key;
+    win.appendChild(h);
+    return h;
+  });
+  span.appendChild(win);
+  const read = rpEl('div', 'rp-span-read');
+  col.append(span, read);
+  row.appendChild(col);
+
+  const now = () => { const c = rpSlot(s.key); return { lo: c.lo ?? 0, hi: c.hi ?? 1 }; };
+  const draw = () => {
+    const { lo, hi } = now();
+    win.style.left = `${lo * 100}%`;
+    win.style.width = `${(hi - lo) * 100}%`;
+    ends[0].setAttribute('aria-valuenow', lo.toFixed(2));
+    ends[1].setAttribute('aria-valuenow', hi.toFixed(2));
+    read.innerHTML = `<span>${lo.toFixed(2)}</span><span>${hi.toFixed(2)}</span>`;
+    span.style.background = rpSpanCss(s.key);
+  };
+  span.rpRedraw = draw;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const set = (lo, hi) => {
+    rpSetSlot(s.key, { lo: r2(lo), hi: r2(hi) });
+    rpApply();
+    draw();
+  };
+  // One end moved, held clear of the other.
+  const setEnd = (key, v) => {
+    const { lo, hi } = now();
+    if (key === 'lo') set(Math.max(0, Math.min(v, hi - RP_SPAN_GAP)), hi);
+    else set(lo, Math.min(1, Math.max(v, lo + RP_SPAN_GAP)));
+  };
+
+  span.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const b = span.getBoundingClientRect();
+    const at = (ev) => Math.max(0, Math.min(1, (ev.clientX - b.left) / b.width));
+    const x0 = at(e), { lo, hi } = now();
+    // An edge within a few pixels is that edge; inside the window is the
+    // window; outside it, the nearer end jumps to the pointer and follows it.
+    const near = 5 / b.width;
+    const dLo = Math.abs(x0 - lo), dHi = Math.abs(x0 - hi);
+    let grab;
+    if (Math.min(dLo, dHi) <= near) grab = dHi < dLo || (dHi === dLo && x0 > hi) ? 'hi' : 'lo';
+    else if (x0 > lo && x0 < hi) grab = 'move';
+    else { grab = x0 < lo ? 'lo' : 'hi'; setEnd(grab, x0); }
+    if (grab !== 'move') ends[grab === 'lo' ? 0 : 1].focus({ preventScroll: true });
+    try { span.setPointerCapture(e.pointerId); } catch { /* released below */ }
+    const move = (ev) => {
+      if (grab !== 'move') { setEnd(grab, at(ev)); return; }
+      const w = hi - lo;
+      const nlo = Math.max(0, Math.min(1 - w, lo + at(ev) - x0));
+      set(nlo, nlo + w);
+    };
+    const up = () => {
+      span.removeEventListener('pointermove', move);
+      span.removeEventListener('pointerup', up);
+      span.removeEventListener('pointercancel', up);
+    };
+    span.addEventListener('pointermove', move);
+    span.addEventListener('pointerup', up);
+    span.addEventListener('pointercancel', up);
+  });
+  for (const h of ends) {
+    h.addEventListener('keydown', (e) => {
+      const step = e.shiftKey ? 0.1 : 0.01;
+      const cur = now()[h.dataset.end];
+      const to = { ArrowRight: cur + step, ArrowUp: cur + step, ArrowLeft: cur - step, ArrowDown: cur - step,
+        Home: 0, End: 1 }[e.key];
+      if (to === undefined) return;
+      e.preventDefault();
+      setEnd(h.dataset.end, to);
+    });
+  }
+
+  // ── the curve, a knob beside the window it shapes ──
+  const curve = rpEl('input', 're-slider rp-curve');
+  curve.type = 'range'; curve.min = '20'; curve.max = '400'; curve.step = '1';
+  curve.value = String(Math.round((cfg.curve ?? 1) * 100));
+  curve.title = 'How the gradient is spent across that range. Below 1 '
+    + 'favours the top end, above it favours the bottom. Level is '
     + 'perceptual, so a straight ramp spends most of itself on quiet.';
-  sl.oninput = () => { rpSetSlot(s.key, { curve: +sl.value / 100 }); rpApply(); };
-  row.appendChild(sl);
-  box.appendChild(row);
-  return box;
+  curve.setAttribute('aria-label', 'Curve');
+  const curveRead = rpEl('b', null, (+curve.value / 100).toFixed(2));
+  curve.oninput = () => {
+    rpSetSlot(s.key, { curve: +curve.value / 100 });
+    curveRead.textContent = (+curve.value / 100).toFixed(2);
+    rpApply();
+    draw();
+  };
+  row.appendChild(rpKnob(curve, 'Curve', curveRead));
+  draw();
+  return row;
 }
 
 /// Everything a change has to reach. The renderer picks the atlas up on its own
