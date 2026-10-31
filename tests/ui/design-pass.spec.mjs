@@ -920,7 +920,7 @@ test('4D-2 · Eye and Rate are knobs: the input kept, a face behind it, the inpu
     return {
       name,
       label: wrap.querySelector('.rk-l')?.textContent,
-      read: wrap.querySelector('.rk-v')?.textContent.trim(),
+      read: wrap.querySelector('.rk-v')?.value,
       drawn: !!face.querySelector('svg .rk-track'),
       reached: document.elementFromPoint(f.x + f.width / 2, f.y + f.height / 2) === input,
     };
@@ -937,17 +937,25 @@ test('4D-2 · Eye and Rate are knobs: the input kept, a face behind it, the inpu
   await page.mouse.move(cx, cy - 30, { steps: 5 });
   await page.mouse.up();
   const after = await page.evaluate(() => ({ eye: p4.eye,
-    read: document.querySelector('#p4Panel input[data-p4k="Eye"]').closest('.rk-k').querySelector('.rk-v').textContent }));
+    read: document.querySelector('#p4Panel input[data-p4k="Eye"]').closest('.rk-k').querySelector('.rk-v').value }));
   expect(after.eye).toBeGreaterThan(2.5);
   expect(after.read).toBe(after.eye.toFixed(2));
   // A double-click puts it back, as every control in this program does.
   await page.locator('#p4Panel input[data-p4k="Eye"]').dblclick();
   expect(await page.evaluate(() => p4.eye)).toBe(2.5);
+  // The reading is a number field, as the field it replaced was: an exact value is typed in.
+  for (const [name, typed, want] of [['Eye', '4.25', 4.25], ['Rate', '0.125', 0.125]]) {
+    const field = page.locator(`#p4Panel .p4-knob-read[data-p4="${name}"]`);
+    await field.fill(typed);
+    await field.press('Enter');
+    expect(await page.evaluate((n) => (n === 'Eye' ? p4.eye : p4.rate), name)).toBe(want);
+    expect(+(await page.locator(`#p4Panel input[data-p4k="${name}"]`).inputValue())).toBe(want);
+  }
 });
 
 test('4D-3 · the six plane angles stay scrub fields', async ({ page }) => {
   await dim4(page);
-  const fields = await page.evaluate(() => [...document.querySelectorAll('#p4Panel .p4-num-in')]
+  const fields = await page.evaluate(() => [...document.querySelectorAll('#p4Panel .p4-num-in:not(.p4-knob-read)')]
     .map((i) => ({ name: i.dataset.p4, type: i.type, cursor: getComputedStyle(i).cursor })));
   expect(fields.map((f) => f.name)).toEqual(['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW']);
   expect(fields.every((f) => f.type === 'text' && f.cursor === 'ew-resize')).toBe(true);
