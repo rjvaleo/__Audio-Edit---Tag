@@ -23,17 +23,32 @@ env:
 jobs:
   build-and-test:
     name: Build and test
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # macOS, where the app is made and used. On Linux the suite measured the
+    # runner more than the app: no AAC encoder in its Chromium, WebGL in
+    # software, and the server going quiet through the prism tests (31 Oct
+    # 2026: 54 failures, every one of which passes on the Mac).
+    runs-on: macos-latest
+    # The browser suite alone is past half an hour on a runner, which draws
+    # WebGL in software; 30 cancelled it two thirds of the way through.
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
 
-      # `engine` links cpal, which on Linux is ALSA. Build-time only: cpal is in
-      # `engine/src/{device,input}.rs` and in no test, so a runner with no sound
-      # card is fine.
-      - name: ALSA headers
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      # prism-fx (rjvaleo/hyper-efx) is a path dependency at `../GitHub/prism-fx`
+      # beside this checkout, the way the two sit on the Mac. The repository is
+      # private, so its clone needs `PRISM_FX_TOKEN`, a token that can read it;
+      # the workflow's own token is enough only if it is ever made public.
+      # Checkout will not write outside the workspace, hence the move.
+      - name: Check out prism-fx
+        uses: actions/checkout@v4
+        with:
+          repository: rjvaleo/hyper-efx
+          token: ${{ secrets.PRISM_FX_TOKEN || github.token }}
+          path: prism-fx
+
+      - name: Put prism-fx where the manifests look
+        run: mkdir -p ../GitHub && mv prism-fx ../GitHub/prism-fx
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -79,7 +94,7 @@ jobs:
         run: npx playwright test
 
       - name: Keep the report if it failed
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
