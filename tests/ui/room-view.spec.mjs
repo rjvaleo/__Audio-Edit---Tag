@@ -181,6 +181,13 @@ test('the controls can be clicked, not just dispatched at', async ({ page }) => 
   // The picked point's channels are only there while a point is picked. Pick
   // one, so they are asked about as well, rather than reported as zero-size.
   await page.evaluate(() => { roomEdit.layers.solid = true; paintRoomBeads(); roomPick('path:0'); });
+  // The library drawer slides shut over 0.18 s as the room opens; asked while
+  // it is still sliding, every control under it reads as covered by it.
+  await page.waitForFunction(() => {
+    const pane = document.getElementById('paneBrowse');
+    const body = document.getElementById('roomAdminBody').getBoundingClientRect();
+    return !pane || (!pane.getAnimations().length && pane.getBoundingClientRect().right <= body.left + 1);
+  });
 
   // The panel is asked what is in it rather than working from a written list of
   // ids. A list somebody has to remember to extend has already failed twice in
