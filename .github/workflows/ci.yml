@@ -23,7 +23,11 @@ env:
 jobs:
   build-and-test:
     name: Build and test
-    runs-on: ubuntu-latest
+    # macOS, where the app is made and used. On Linux the suite measured the
+    # runner more than the app: no AAC encoder in its Chromium, WebGL in
+    # software, and the server going quiet through the prism tests (31 Oct
+    # 2026: 54 failures, every one of which passes on the Mac).
+    runs-on: macos-latest
     # The browser suite alone is past half an hour on a runner, which draws
     # WebGL in software; 30 cancelled it two thirds of the way through.
     timeout-minutes: 60
@@ -45,12 +49,6 @@ jobs:
 
       - name: Put prism-fx where the manifests look
         run: mkdir -p ../GitHub && mv prism-fx ../GitHub/prism-fx
-
-      # `engine` links cpal, which on Linux is ALSA. Build-time only: cpal is in
-      # `engine/src/{device,input}.rs` and in no test, so a runner with no sound
-      # card is fine.
-      - name: ALSA headers
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
