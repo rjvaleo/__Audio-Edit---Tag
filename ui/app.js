@@ -10374,7 +10374,7 @@ const RK_KNOBS = {
   reRing: 'Size', reRingDrive: 'Drive', reRingPoints: 'Smooth', reRingEdge: 'Stroke',
   reSolidSpin: 'Turn', reSolidSwell: 'Swell', reSolidEye: 'Eye', reSolidSize: 'Size',
   reGrainDensity: 'Cloud', reGrainBright: 'Burn',
-  reMistAmount: 'Amount', reMistLength: 'Length', reOpacity: 'Opacity',
+  reMistAmount: 'Amount', reOpacity: 'Opacity',
 };
 
 /// The rows that hold one knob and nothing else: a cell of the grid each.
@@ -10490,6 +10490,7 @@ function rkPadsSync() {
     p.dot.style.left = `${fx * 100}%`;
     p.dot.style.top = `${(1 - fy) * 100}%`;
     p.read.textContent = p.def.fmt(vx, vy);
+    p.pad.setAttribute('aria-label', `Camera: ${p.def.name.toLowerCase()}, ${p.def.fmt(vx, vy)}`);
   }
 }
 
@@ -10513,8 +10514,25 @@ function rkBuildPads(host) {
     foot.innerHTML = `<span>${def.name}</span><span class="rk-pad-read"></span>`;
     cell.append(pad, foot);
     box.appendChild(cell);
-    const p = { def, dot, read: foot.querySelector('.rk-pad-read'), cx: rkChannel(def.x[0]), cy: rkChannel(def.y[0]) };
+    const p = { def, pad, dot, read: foot.querySelector('.rk-pad-read'), cx: rkChannel(def.x[0]), cy: rkChannel(def.y[0]) };
     rkPadsSync.pads.push(p);
+    // The keyboard moves the dot as the pointer does: arrows a hundredth of
+    // the pad, shift a tenth, written when the key comes up.
+    pad.tabIndex = 0;
+    pad.onkeydown = (e) => {
+      const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+      if (!dir) return;
+      e.preventDefault();
+      const k = e.shiftKey ? 0.1 : 0.01;
+      const c = roomWorldNow();
+      const clampTo = (v, lo, hi) => Math.max(Math.min(lo, hi), Math.min(Math.max(lo, hi), v));
+      p.cx.apply(c, clampTo(p.cx.read(c) + dir[0] * k * (def.x[2] - def.x[1]), def.x[1], def.x[2]));
+      p.cy.apply(c, clampTo(p.cy.read(c) + dir[1] * k * (def.y[2] - def.y[1]), def.y[1], def.y[2]));
+      roomSetWorld(c);
+      paintRoomNums();
+      syncCamRows();
+    };
+    pad.onkeyup = (e) => { if (e.key.startsWith('Arrow')) saveRoomCameras(); };
     pad.onpointerdown = (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
@@ -10572,6 +10590,7 @@ function rkFog() {
   const input = $('reFogDensity'), type = $('reFogType'), on = $('reFog');
   if (!input || !type || input.dataset.rk) return;
   input.dataset.rk = 'fog';
+  input.setAttribute('aria-label', 'Fog density');
   const box = document.createElement('span');
   box.className = 'rk-fog';
   input.before(box);
@@ -10598,6 +10617,10 @@ function rkFog() {
     box.dataset.type = String(t);
     box.classList.toggle('off', !!on && !on.checked);
     read.textContent = den.toFixed(2);
+    // Linear runs from the front of the room to the back wall whatever the
+    // density is (`fogSurvives`), so the number is kept but said to be idle.
+    read.title = t === 0 ? 'Linear fog runs from the front of the room to the back wall: density is not used.' : '';
+    input.setAttribute('aria-valuetext', t === 0 ? `${den.toFixed(2)}, not used by linear fog` : den.toFixed(2));
   };
   Object.defineProperty(input, 'value', {
     configurable: true,
@@ -10623,6 +10646,124 @@ function rkFog() {
   draw();
 }
 const RK_SELECT = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+
+/// Redraw on every way a value arrives, keeping whatever setter is already
+/// there — a knob's face draws on the same property.
+function rkOnValue(input, draw) {
+  const own = Object.getOwnPropertyDescriptor(input, 'value') || RK_VALUE;
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get() { return own.get.call(this); },
+    set(v) { own.set.call(this, v); draw(); },
+  });
+  input.addEventListener('input', draw);
+}
+
+/// Mist as what it is: drips falling from a row of grains. The length is how
+/// far they fall and is the drawing's own input, dragged as a knob is; the
+/// amount — how many points each grain sheds — stays a knob beside it, and the
+/// drawing counts it.
+const RK_MIST_W = 160, RK_MIST_H = 44;
+function rkMist() {
+  const len = $('reMistLength'), amt = $('reMistAmount'), on = $('reMist');
+  if (!len || !amt || len.dataset.rk) return;
+  len.dataset.rk = 'mist';
+  len.setAttribute('aria-label', 'Mist length');
+  const box = document.createElement('span');
+  box.className = 'rk-mist';
+  (amt.closest('.rk-k') || len).before(box);
+  const graph = document.createElement('span');
+  graph.className = 'rk-mist-graph';
+  graph.title = 'The drips each grain sheds: how far they fall is the length. Drag up for longer, shift for fine.';
+  graph.innerHTML = `<svg viewBox="0 0 ${RK_MIST_W} ${RK_MIST_H}" aria-hidden="true"></svg>`;
+  const svg = graph.firstChild;
+  const foot = document.createElement('span');
+  foot.className = 'rk-pad-foot rk-mist-foot';
+  foot.innerHTML = '<span>Length <b class="rk-pad-read rk-mist-read"></b></span>';
+  graph.appendChild(len);
+  // Amount, then length, as the overlay has always had them; the Visual
+  // column draws the length first (CSS `order`).
+  const knob = amt.closest('.rk-k');
+  const col = document.createElement('span');
+  col.className = 'rk-mist-col';
+  col.append(graph, foot);
+  if (knob) box.append(knob);
+  box.append(col);
+  const read = foot.querySelector('.rk-mist-read');
+  const draw = () => {
+    const l = +RK_VALUE.get.call(len), a = +RK_VALUE.get.call(amt);
+    const fall = (l - +len.min) / (+len.max - +len.min);
+    const n = Math.round(3 + 15 * (a - +amt.min) / (+amt.max - +amt.min));
+    const top = 6, reach = 4 + fall * (RK_MIST_H - top - 6);
+    let out = '';
+    for (let g = 0; g < 5; g++) {
+      const x0 = 16 + g * (RK_MIST_W - 32) / 4;
+      out += `<circle class="rk-mist-grain" cx="${x0}" cy="${top}" r="3"/>`;
+      for (let i = 1; i <= n; i++) {
+        const f = i / n;
+        out += `<circle class="rk-mist-drop" cx="${(x0 + Math.sin(g * 1.7 + f * 3) * 3 * f).toFixed(1)}" cy="${(top + 3 + f * reach).toFixed(1)}" r="${(1.4 - 0.6 * f).toFixed(2)}" opacity="${(1 - 0.8 * f).toFixed(2)}"/>`;
+      }
+    }
+    svg.innerHTML = out;
+    box.classList.toggle('off', !!on && !on.checked);
+    read.textContent = (l / 1000).toFixed(3);
+  };
+  rkOnValue(len, draw);
+  rkOnValue(amt, draw);
+  if (on) {
+    const own = Object.getOwnPropertyDescriptor(on, 'checked') || RK_CHECKED;
+    Object.defineProperty(on, 'checked', {
+      configurable: true,
+      get() { return own.get.call(this); },
+      set(v) { own.set.call(this, v); draw(); },
+    });
+    on.addEventListener('change', draw);
+  }
+  rkDrag(len, () => !!len.closest('.rv-admin'));
+  draw();
+}
+
+/// The channel box in the pads' words, four to a line. The long names stay
+/// for the overlay on the master bus, where they always were.
+const RK_CAM_WORDS = { reCamTx: 'MOVE X', reCamTy: 'MOVE Y', reCamTz: 'MOVE Z', reCamRx: 'TILT',
+  reCamRy: 'TURN', reCamFocal: 'FOCAL', reCamCoi: 'CENTRE' };
+function rkCamWords() {
+  for (const [id, word] of Object.entries(RK_CAM_WORDS)) {
+    const tag = $(id)?.closest('.re-row')?.querySelector('.re-tag');
+    if (!tag || tag.querySelector('.rk-short')) continue;
+    const long = document.createElement('span');
+    long.className = 'rk-long';
+    long.textContent = tag.textContent;
+    const short = document.createElement('span');
+    short.className = 'rk-short';
+    short.textContent = word;
+    tag.replaceChildren(long, short);
+  }
+}
+
+/// The mouse-and-key legend and the pose readout: what a person learns once
+/// and a developer copies once. Folded behind one switch, remembered.
+function rkKeys(host) {
+  const btn = document.createElement('button');
+  btn.id = 'rkKeys';
+  btn.className = 're-btn rk-keys';
+  btn.type = 'button';
+  btn.textContent = 'Keys & pose';
+  btn.title = 'How the room is moved with the mouse and keys, and the pose the dragging has made (click it to copy).';
+  btn.setAttribute('aria-controls', 'reNums');
+  btn.style.setProperty('--rk', 23);
+  let open = false;
+  try { open = localStorage.getItem('roomKeysOpen') === '1'; } catch { /* folded */ }
+  const set = (v) => {
+    open = v;
+    host.classList.toggle('rk-keys-open', v);
+    btn.setAttribute('aria-expanded', String(v));
+    try { localStorage.setItem('roomKeysOpen', v ? '1' : '0'); } catch { /* not remembered */ }
+  };
+  btn.onclick = () => set(!open);
+  set(open);
+  host.appendChild(btn);
+}
 const RK_CHECKED = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
 
 function rkBuild() {
@@ -10651,6 +10792,9 @@ function rkBuild() {
   rkBuildPads(host);
   rkPadsSync();
   rkFog();
+  rkMist();
+  rkCamWords();
+  rkKeys(host);
 }
 rkBuild();
 
