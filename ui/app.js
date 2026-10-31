@@ -9118,9 +9118,11 @@ function paintRoomNums() {
   }
   for (const b of document.querySelectorAll('#reStreams .re-btn')) {
     b.classList.toggle('active', roomStreamOn(b.dataset.stream));
+    b.setAttribute('aria-pressed', String(b.classList.contains('active')));
   }
   for (const b of document.querySelectorAll('#reChunks .re-btn')) {
     b.classList.toggle('active', +b.dataset.chunk === roomEdit.chunk);
+    b.setAttribute('aria-pressed', String(b.classList.contains('active')));
   }
 }
 
@@ -10741,6 +10743,51 @@ function rkCamWords() {
   }
 }
 
+/// Clear is the whole room back to default in one click, and stays one click —
+/// presets and tests rely on it. What makes it safe is taking it back: the
+/// look as it was is kept, and offered for a few seconds as Undo.
+function rkUndoClear() {
+  const clear = $('reClear');
+  if (!clear || clear.dataset.rk) return;
+  clear.dataset.rk = 'undo';
+  const undo = document.createElement('button');
+  undo.id = 'rkUndoClear';
+  undo.type = 'button';
+  undo.className = 're-btn rk-undo on';
+  undo.textContent = 'Undo clear';
+  undo.title = 'Put the room back as it was before Clear.';
+  // In the panel only while it is on offer: a control nobody can see is one
+  // the panel's own walk (`room-view.spec`) rightly calls unreachable.
+  let kept = null, timer = 0;
+  const hide = () => { undo.remove(); kept = null; clearTimeout(timer); };
+  // Capture, so the look is kept before `roomClear` runs on the same click.
+  clear.addEventListener('click', () => {
+    kept = visualSnapshot();
+    if (clear.closest('.rv-admin')) clear.before(undo);
+    clearTimeout(timer);
+    timer = setTimeout(hide, 10000);
+  }, true);
+  undo.onclick = () => {
+    if (kept) applyVisual(kept);
+    hide();
+  };
+}
+
+/// Block is the data's own square on the wall: how many lines it holds and
+/// how strongly it sits there. The two are named alike, so the row reads as
+/// one thing with two settings.
+function rkBlockWords() {
+  const chunks = $('reChunks');
+  if (!chunks || chunks.parentElement.classList.contains('rk-chunk')) return;
+  const box = document.createElement('span');
+  box.className = 'rk-chunk';
+  chunks.before(box);
+  const word = document.createElement('i');
+  word.className = 'rk-l';
+  word.textContent = 'Size';
+  box.append(chunks, word);
+}
+
 /// The mouse-and-key legend and the pose readout: what a person learns once
 /// and a developer copies once. Folded behind one switch, remembered.
 function rkKeys(host) {
@@ -10795,6 +10842,8 @@ function rkBuild() {
   rkMist();
   rkCamWords();
   rkKeys(host);
+  rkUndoClear();
+  rkBlockWords();
 }
 rkBuild();
 
