@@ -408,3 +408,137 @@ test('G5 · the extended side\'s knobs are drawn in its own colour', async ({ pa
   expect(c.ext).toBeTruthy();
   expect(c.ext).not.toBe(c.std);
 });
+
+// ── Visual › 4D ─────────────────────────────────────────────────────────────
+// The lighter pass the critique promised the 4D tab ("Not yet done"): its
+// choices as rows of fixed places, its two amounts as knobs, the six plane
+// angles kept as scrub fields, and nothing left blank.
+
+async function dim4(page) {
+  await openFile(page);
+  await roomTab(page, 'dim4');
+  await page.evaluate(() => {
+    p4.spinning = false; p4.spin = 'zw'; p4.mode = 'perspective'; p4.eye = 2.5; p4.rate = 0.35;
+    p4BuildPanel(); p4Draw();
+  });
+}
+
+/// The places of one segment row: where each is, and whether it is lit.
+const p4Places = (name) => `[...document.querySelectorAll('#p4Panel .p4-seg[data-p4seg="${name}"] > .re-btn')]
+  .map((b) => { const r = b.getBoundingClientRect(); const cs = getComputedStyle(b);
+    return { text: b.textContent.trim(), on: b.classList.contains('active'), x: Math.round(r.left), w: Math.round(r.width), top: Math.round(r.top),
+      bg: cs.backgroundColor, edge: cs.borderTopColor }; })`;
+
+test('4D-1 · projection and turning are rows of fixed places, lit and never filled', async ({ page }) => {
+  await dim4(page);
+  const proj = await page.evaluate(p4Places('projection'));
+  const turn = await page.evaluate(p4Places('turning'));
+  expect(proj.map((p) => p.text)).toEqual(['Perspective', 'Parallel']);
+  expect(turn.map((p) => p.text.replace(/\s/g, ''))).toEqual(['Still', 'XY', 'XZ', 'YZ', 'XW·w', 'YW·w', 'ZW·w']);
+  // No dropdown is left to choose the plane.
+  expect(await page.locator('#p4Panel select').count()).toBe(0);
+  for (const row of [proj, turn]) {
+    // One line, every place the same width.
+    expect(new Set(row.map((p) => p.top)).size).toBe(1);
+    expect(Math.max(...row.map((p) => p.w)) - Math.min(...row.map((p) => p.w))).toBeLessThanOrEqual(1);
+    expect(row.filter((p) => p.on).length).toBe(1);
+    // Lit: a tint behind it, an edge that is not the resting one — never a fill.
+    const on = row.find((p) => p.on), off = row.find((p) => !p.on);
+    const alpha = (c) => { const m = c.match(/[\d.]+/g).map(Number); return m.length > 3 ? m[3] : 1; };
+    expect(alpha(on.bg)).toBeLessThan(0.5);
+    expect(on.edge).not.toBe(off.edge);
+  }
+  // Still is lit while the clock is stopped; a plane lights, and turns, when chosen.
+  expect(turn.find((p) => p.on).text).toBe('Still');
+  await page.locator('#p4Panel .p4-seg[data-p4seg="turning"] > .re-btn', { hasText: 'XW' }).click();
+  expect(await page.evaluate(() => ({ spin: p4.spin, spinning: p4.spinning }))).toEqual({ spin: 'xw', spinning: true });
+  await page.locator('#p4Panel .p4-seg[data-p4seg="projection"] > .re-btn', { hasText: 'Parallel' }).click();
+  expect(await page.evaluate(() => p4.mode)).toBe('orthographic');
+  // Fixed places: choosing moved nothing.
+  const proj2 = await page.evaluate(p4Places('projection'));
+  const turn2 = await page.evaluate(p4Places('turning'));
+  expect(proj2.map((p) => [p.x, p.w])).toEqual(proj.map((p) => [p.x, p.w]));
+  expect(turn2.map((p) => [p.x, p.w])).toEqual(turn.map((p) => [p.x, p.w]));
+  expect(turn2.find((p) => p.on).text.replace(/\s/g, '')).toBe('XW·w');
+});
+
+test('4D-2 · Eye and Rate are knobs: the input kept, a face behind it, the input over the face', async ({ page }) => {
+  await dim4(page);
+  const knobs = await page.evaluate(() => ['Eye', 'Rate'].map((name) => {
+    const input = document.querySelector(`#p4Panel input[type=range][data-p4k="${name}"]`);
+    if (!input) return { name, why: 'no range input' };
+    const wrap = input.closest('.rk-k');
+    const face = wrap?.querySelector('.rk-face');
+    if (!face) return { name, why: 'no knob face' };
+    const f = face.getBoundingClientRect();
+    return {
+      name,
+      label: wrap.querySelector('.rk-l')?.textContent,
+      read: wrap.querySelector('.rk-v')?.textContent.trim(),
+      drawn: !!face.querySelector('svg .rk-track'),
+      reached: document.elementFromPoint(f.x + f.width / 2, f.y + f.height / 2) === input,
+    };
+  }));
+  expect(knobs).toEqual([
+    { name: 'Eye', label: 'Eye', read: '2.50', drawn: true, reached: true },
+    { name: 'Rate', label: 'Rate', read: '0.350', drawn: true, reached: true },
+  ]);
+  // Turned as a knob turns: up is more.
+  const face = await page.locator('#p4Panel input[data-p4k="Eye"]').boundingBox();
+  const cx = face.x + face.width / 2, cy = face.y + face.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy - 30, { steps: 5 });
+  await page.mouse.up();
+  const after = await page.evaluate(() => ({ eye: p4.eye,
+    read: document.querySelector('#p4Panel input[data-p4k="Eye"]').closest('.rk-k').querySelector('.rk-v').textContent }));
+  expect(after.eye).toBeGreaterThan(2.5);
+  expect(after.read).toBe(after.eye.toFixed(2));
+  // A double-click puts it back, as every control in this program does.
+  await page.locator('#p4Panel input[data-p4k="Eye"]').dblclick();
+  expect(await page.evaluate(() => p4.eye)).toBe(2.5);
+});
+
+test('4D-3 · the six plane angles stay scrub fields', async ({ page }) => {
+  await dim4(page);
+  const fields = await page.evaluate(() => [...document.querySelectorAll('#p4Panel .p4-num-in')]
+    .map((i) => ({ name: i.dataset.p4, type: i.type, cursor: getComputedStyle(i).cursor })));
+  expect(fields.map((f) => f.name)).toEqual(['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW']);
+  expect(fields.every((f) => f.type === 'text' && f.cursor === 'ew-resize')).toBe(true);
+});
+
+test('4D-4 · the tab is dense: one width, no blank space, the notes kept, all of it on screen', async ({ page }) => {
+  await dim4(page);
+  const m = await page.evaluate(() => {
+    const body = document.getElementById('room4dBody');
+    const b = body.getBoundingClientRect();
+    const cs = getComputedStyle(body);
+    const left = b.left + parseFloat(cs.paddingLeft), right = b.right - parseFloat(cs.paddingRight);
+    const kids = [body.querySelector('.p4-view'), ...document.getElementById('p4Panel').children]
+      .filter((e) => e.getBoundingClientRect().height);
+    const rects = kids.map((e) => ({ what: e.className || e.tagName, r: e.getBoundingClientRect() }));
+    const gaps = [];
+    for (let i = 1; i < rects.length; i++) {
+      const g = Math.round(rects[i].r.top - rects[i - 1].r.bottom);
+      if (g > 10) gaps.push(`${rects[i - 1].what} → ${rects[i].what}: ${g}px`);
+    }
+    return {
+      // Every module of the tab spans the one width, edge to edge.
+      ragged: rects.filter((x) => Math.abs(x.r.left - left) > 1 || Math.abs(x.r.right - right) > 1).map((x) => x.what),
+      gaps,
+      notes: [...document.querySelectorAll('#p4Panel .fx-note')].map((n) => n.textContent),
+      // Nothing below the fold: the whole tab is on screen without scrolling.
+      scrolls: body.scrollHeight > body.clientHeight + 1,
+      bottom: Math.round(rects[rects.length - 1].r.bottom), floor: Math.round(b.bottom),
+    };
+  });
+  expect(m.ragged).toEqual([]);
+  expect(m.gaps).toEqual([]);
+  // The explanations stay, on purpose (STATE.md §7).
+  expect(m.notes.some((t) => /fourth dimension/.test(t))).toBe(true);
+  expect(m.notes.some((t) => /w axis/.test(t))).toBe(true);
+  expect(m.scrolls).toBe(false);
+  expect(m.bottom).toBeLessThanOrEqual(m.floor);
+  // …and nothing blank under it: what the controls leave over goes to the viewport.
+  expect(m.floor - m.bottom).toBeLessThanOrEqual(12);
+});
