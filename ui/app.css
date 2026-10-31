@@ -4773,6 +4773,9 @@ body.editing[data-grain-ui="modern"] :is(.panel-head .x, .tab .close, .tabbar .n
 body.editing[data-grain-ui="modern"] :is(#editTools, #transportBar, #presetBar, #tabBar) :is(button, select) { min-height: 24px; }
 body.editing[data-grain-ui="modern"] :is(#editTools, #transportBar, #presetBar, #tabBar) button { min-width: 24px; }
 body.editing[data-grain-ui="modern"] .gm-switch button { height: 24px; }
+body.editing[data-grain-ui="modern"] #grainControls .scale-btn::before { content: 'Tuning: '; }
+body.editing[data-grain-ui="modern"] #grainControls .popout-btn::before { content: 'Play '; }
+body.editing[data-grain-ui="modern"] #roomEditOpen::before { content: 'Edit '; }
 body.editing[data-grain-ui="modern"] :is(#presetBar, #transportBar, #editTools) label:has(> input[type=checkbox]) {
   display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 0 4px;
 }

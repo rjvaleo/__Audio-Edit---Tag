@@ -1139,11 +1139,16 @@ test('GM5 · in Modern every control in the Grain view\'s bars is at least 24 px
     return out;
   });
   expect(small).toEqual([]);
-  const words = await page.evaluate(() => ({
-    tuning: document.querySelector('#grainControls .scale-btn').innerText,
-    keys: document.querySelector('#grainControls .popout-btn').innerText,
-    room: document.getElementById('roomEditOpen').innerText,
-  }));
+  // The words Modern adds are drawn by CSS, so the buttons' markup is
+  // Classic's: what is read is the generated word and the button's own.
+  const words = await page.evaluate(() => {
+    const said = (el) => getComputedStyle(el, '::before').content.replace(/^"|"$/g, '').replace(/^none$/, '') + el.innerText;
+    return {
+      tuning: said(document.querySelector('#grainControls .scale-btn')),
+      keys: said(document.querySelector('#grainControls .popout-btn')),
+      room: said(document.getElementById('roomEditOpen')),
+    };
+  });
   expect(words.tuning).toMatch(/tuning/i);
   expect(words.keys).toMatch(/play keys/i);
   expect(words.room).toMatch(/edit room/i);

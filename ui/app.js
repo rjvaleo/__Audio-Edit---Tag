@@ -7011,7 +7011,7 @@ function keysButton() {
   // window, and a button that opens a window should not look like a button that
   // changes a setting.
   b.className = 'popout-btn';
-  b.innerHTML = '<span class="gm-word">Play </span>Keys <i class="popout-mark">⧉</i>';
+  b.innerHTML = 'Keys <i class="popout-mark">⧉</i>';
   b.title = 'Play the pitch from the computer keyboard. A is the tonic, the row '
     + 'above plays the notes between, Z and X shift an octave and latch. '
     + 'The notes follow whichever tuning is chosen.';
@@ -7028,7 +7028,7 @@ function scaleButton() {
   // one says "a list is coming", the other says "a window is coming", and they
   // are not the same promise.
   const name = fitLabel(currentScale() || (currentStep() > 0 ? `${currentStep()} st grid` : 'free'));
-  b.innerHTML = `<span class="gm-word">Tuning: </span><span class="scale-name"></span><i class="menu-caret">▾</i>`;
+  b.innerHTML = `<span class="scale-name"></span><i class="menu-caret">▾</i>`;
   b.querySelector('.scale-name').textContent = name;
   b.title = currentScale()
     ? `${currentScale()} — snap the pitch shift to a tuning`
@@ -10969,14 +10969,9 @@ function grainUiBuild() {
   }
   bar.appendChild(sw);
 
-  // Words that say what a control is, shown in Modern.
-  const room = $('roomEditOpen');
-  if (room && !room.querySelector('.gm-word')) {
-    const w = document.createElement('span');
-    w.className = 'gm-word';
-    w.textContent = 'Edit ';
-    room.prepend(w);
-  }
+  // Tuning, Play keys and Edit room are named in CSS (`::before`), not in the
+  // buttons' markup: the switches row is measured by its first word
+  // (`buttons.spec`), and a word Classic hides would be that word.
   for (const id of ['presetDelete', 'perfLaneDel', 'revertBtn']) gmArm($(id));
   setGrainUi(prefs.grainUi);
 }
