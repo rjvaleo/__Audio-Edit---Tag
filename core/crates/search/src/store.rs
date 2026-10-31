@@ -3,9 +3,14 @@
 //! A TSV beside the index, for the same reason the index is one: it is
 //! greppable, diffable, survives a half-written write, and needs no database.
 
+use crate::pitch::Pitch;
 use crate::{Fingerprint, DIMS};
 use std::collections::BTreeMap;
 use std::path::Path;
+
+/// After the twelve dimensions: the note in Hz (0 for none) and how clearly
+/// pitched the sound is. Not dimensions, because similarity does not use them.
+const PITCH_COLUMNS: [&str; 2] = ["pitch_hz", "pitch_clarity"];
 
 #[derive(Default)]
 pub struct Store {
@@ -25,7 +30,8 @@ impl Store {
         // in it is meaningless — silently padding short rows with zeros would
         // put wrong numbers into the ranking rather than obviously wrong ones.
         // Returning empty makes the next search rebuild from the audio.
-        let expected: Vec<&str> = std::iter::once("path").chain(crate::NAMES).collect();
+        let expected: Vec<&str> =
+            std::iter::once("path").chain(crate::NAMES).chain(PITCH_COLUMNS).collect();
         match lines.next() {
             Some(h) if h.split('\t').collect::<Vec<_>>() == expected => {}
             _ => return store,
@@ -35,16 +41,19 @@ impl Store {
             let mut cols = line.split('\t');
             let Some(p) = cols.next() else { continue };
             let mut v = [0f32; DIMS];
+            let mut extra = [0f32; PITCH_COLUMNS.len()];
             let mut n = 0;
-            for (i, c) in cols.enumerate().take(DIMS) {
-                v[i] = c.parse().unwrap_or(0.0);
+            for (i, c) in cols.enumerate().take(DIMS + extra.len()) {
+                let x = c.parse().unwrap_or(0.0);
+                if i < DIMS { v[i] = x } else { extra[i - DIMS] = x }
                 n += 1;
             }
             // A truncated final row is padded rather than dropped, matching how
             // the audio index treats one: a half-written line is still mostly
             // information.
             if n > 0 {
-                store.by_path.insert(p.to_string(), Fingerprint { v });
+                let pitch = Pitch { hz: extra[0], clarity: extra[1] };
+                store.by_path.insert(p.to_string(), Fingerprint { v, pitch });
             }
         }
         store
@@ -52,7 +61,7 @@ impl Store {
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let mut out = String::from("path");
-        for n in crate::NAMES {
+        for n in crate::NAMES.into_iter().chain(PITCH_COLUMNS) {
             out.push('\t');
             out.push_str(n);
         }
@@ -63,6 +72,7 @@ impl Store {
                 out.push('\t');
                 out.push_str(&format!("{x:.5}"));
             }
+            out.push_str(&format!("\t{:.3}\t{:.4}", fp.pitch.hz, fp.pitch.clarity));
             out.push('\n');
         }
         // Temp file then rename, so an interrupted write cannot leave a

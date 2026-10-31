@@ -122,11 +122,11 @@ mod tests {
     fn near_to(base: f32, d: f32) -> Fingerprint {
         let mut v = [base; DIMS];
         v[0] += d;
-        Fingerprint { v }
+        Fingerprint { v, pitch: Default::default() }
     }
 
     fn fp(base: f32) -> Fingerprint {
-        Fingerprint { v: [base; DIMS] }
+        Fingerprint { v: [base; DIMS], pitch: Default::default() }
     }
 
     #[test]
