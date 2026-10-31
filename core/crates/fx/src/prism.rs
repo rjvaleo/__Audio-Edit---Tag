@@ -94,6 +94,18 @@ pub fn make_with_sound(
     Some(Box::new(e))
 }
 
+/// An effect this program used to build itself, now built here: as its
+/// kernel was made, with only the controls given set (`PrismEffect::as_built`).
+/// `tests/prism_parity.rs` holds each one to the render this program's own
+/// made, bit for bit.
+pub fn moved(id: &str, sample_rate: u32, params: &[(String, f32)]) -> Option<Box<dyn Effect>> {
+    let mut e = PrismEffect::as_built(id, sample_rate)?;
+    for (k, v) in params {
+        e.set(k, *v);
+    }
+    Some(Box::new(e))
+}
+
 /// What sound, if any, this effect takes as well as its input.
 pub fn sound_input(id: &str) -> Option<SoundInput> {
     descriptor(id)?.sound
@@ -184,6 +196,17 @@ impl PrismEffect {
         Some(PrismEffect { kernel, specs: specs(id)?, left: vec![0.0; PIECE], right: vec![0.0; PIECE] })
     }
 
+    /// One left as its kernel was made, without its controls told their
+    /// declared defaults. For an effect that has moved here from this
+    /// program's own: those built it and set only the controls a document
+    /// stored, so a control nobody stored stayed where the effect started —
+    /// the Dattorro flanger and vibrato at the chorus's 0.55 Hz, 0.12 feedback
+    /// and linear reads, as the kernels reproduce.
+    pub fn as_built(id: &str, sample_rate: u32) -> Option<Self> {
+        let kernel = prism_fx::make(id, sample_rate as f32)?;
+        Some(PrismEffect { kernel, specs: specs(id)?, left: vec![0.0; PIECE], right: vec![0.0; PIECE] })
+    }
+
     pub fn id(&self) -> &'static str {
         self.kernel.descriptor().id
     }
@@ -197,6 +220,13 @@ impl PrismEffect {
 impl Effect for PrismEffect {
     fn process(&mut self, buf: &mut [f32], channels: usize, _sample_rate: u32) {
         let width = channels.max(1);
+        // One channel, where the effect does something of its own with it.
+        if width == 1 && self.kernel.has_mono() {
+            for sample in buf.iter_mut() {
+                self.kernel.tick_mono(sample);
+            }
+            return;
+        }
         for piece in buf.chunks_mut(PIECE * width) {
             let frames = piece.len() / width;
             for (i, frame) in piece.chunks_exact(width).enumerate() {
@@ -227,6 +257,10 @@ impl Effect for PrismEffect {
 
     fn get_param(&self, key: &str) -> Option<f32> {
         self.get(key)
+    }
+
+    fn telemetry(&self) -> f32 {
+        self.kernel.telemetry()
     }
 }
 
