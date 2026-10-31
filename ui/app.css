@@ -4733,3 +4733,75 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 .rv-admin #roomEdit:not(.rk-keys-open) > .re-legend,
 .rv-admin #roomEdit:not(.rk-keys-open) > #reNums { display: none; }
 .rk-pad:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+
+/* ═══════════════════════════════ Visual › Room · controls in the column's hand ══
+   The rest of the design-council review (`rkUndoClear`, `rkBlockWords`).
+   Visual column only; the overlay keeps the browser's own controls. */
+
+/* Clear is the room back to default: it reads as that, stands apart from
+   Reset, and is followed for a few seconds by Undo. */
+.rk-undo { display: none; }
+.rv-admin #roomEdit .re-foot { display: flex; width: 100%; }
+.rv-admin #roomEdit #reReset { order: 0; }
+.rv-admin #roomEdit .rk-undo { order: 1; }
+.rv-admin #roomEdit #reClear { order: 2; }
+.rv-admin #roomEdit #reClear {
+  margin-left: auto; color: var(--bad);
+  border-color: color-mix(in oklch, var(--bad) 60%, transparent);
+}
+.rv-admin #roomEdit #reClear:hover { background: color-mix(in oklch, var(--bad) 14%, transparent); }
+.rv-admin #roomEdit .rk-undo.on {
+  display: inline-block; margin-left: auto; color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+}
+.rv-admin #roomEdit .rk-undo.on + #reClear { margin-left: 4px; }
+
+/* A switch that is off is still a switch: an edge at 3:1 (WCAG 1.4.11). */
+.rv-admin #roomEdit .re-btn:not(.active) { border-color: var(--text-dimmer); }
+
+/* Block: its two settings named alike — Size under the chunk buttons. */
+.rk-chunk { display: contents; }
+.rv-admin #roomEdit .rk-chunk { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+
+/* Checkboxes: a square in the column's line, filled with the accent when on. */
+.rv-admin #roomEdit .re-check input[type=checkbox] {
+  appearance: none; display: inline-grid; place-content: center;
+  width: 12px; height: 12px; margin: 0;
+  border: 1px solid var(--text-dimmer); border-radius: 2px; background: var(--well);
+}
+.rv-admin #roomEdit .re-check input[type=checkbox]::before {
+  content: ''; width: 6px; height: 6px; border-radius: 1px; background: var(--accent);
+  transform: scale(0); transition: transform .08s;
+}
+.rv-admin #roomEdit .re-check input[type=checkbox]:checked { border-color: var(--accent); }
+.rv-admin #roomEdit .re-check input[type=checkbox]:checked::before { transform: scale(1); }
+.rv-admin #roomEdit .re-check input[type=checkbox]:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+
+/* A chevron drawn in the control's own colour, so it follows the theme. */
+.rv-admin #roomEdit select,
+.rv-admin #roomEdit input[type=color] {
+  --rk-chev: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-image: var(--rk-chev);
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+  background-position: right 9px center, right 5px center;
+}
+.rv-admin #roomEdit select {
+  appearance: none; height: 22px; padding: 0 20px 0 7px;
+  border: 1px solid var(--line-2); border-radius: 3px;
+  background-color: var(--well); color: var(--text-2); font-size: var(--fs-s);
+}
+.rv-admin #roomEdit select:hover { border-color: var(--text-dimmer); }
+.rv-admin #roomEdit select:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+.rv-admin #roomEdit #reFogType { flex: 0 0 92px; width: 92px; }
+/* Swatches: the colour, and beside it the mark that says a picker opens. */
+.rv-admin #roomEdit input[type=color] {
+  flex: 0 0 38px; width: 38px; height: 20px; padding: 2px 14px 2px 2px;
+  border: 1px solid var(--line-2); border-radius: 3px;
+  background-color: var(--well); color: var(--text-dim); cursor: pointer;
+}
+.rv-admin #roomEdit input[type=color]:hover { border-color: var(--text-dimmer); }
+.rv-admin #roomEdit input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.rv-admin #roomEdit input[type=color]::-webkit-color-swatch { border: 0; border-radius: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .rv-admin #roomEdit .re-check input[type=checkbox]::before { transition: none; }
+}
