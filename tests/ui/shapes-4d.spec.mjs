@@ -296,7 +296,7 @@ test('the panel lists every solid and shows the six planes', async ({ page }) =>
     objects: document.querySelectorAll('#p4Panel .p4-obj').length,
     selected: document.querySelectorAll('#p4Panel .p4-obj.active').length,
     // Six planes, not three axes. There is no axis to name in four dimensions.
-    fields: [...document.querySelectorAll('#p4Panel .p4-num-in')].map((i) => i.dataset.p4),
+    fields: [...document.querySelectorAll('#p4Panel .p4-num-in:not(.p4-knob-read)')].map((i) => i.dataset.p4),
     knobs: [...document.querySelectorAll('#p4Panel input[data-p4k]')].map((i) => i.dataset.p4k),
     // The three that reach into w are marked.
     marked: document.querySelectorAll('#p4Panel .p4-w').length,
