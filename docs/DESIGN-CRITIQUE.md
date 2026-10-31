@@ -395,8 +395,10 @@ presets, the automation and the existing tests all reach the same elements.
   Before this pass, every engine scrolled; Granular had 595 px of content
   in 305. Fitting the rest means more width (which the master bus would
   have to give) or a taller dock. That trade is RJ's.
-- The tuning and Keys buttons print their words a few pixels high in their
-  slots. That was already so, in the dock and in the Visual column.
+
+Fixed since, on `small-faults` (#2): the Keys button printed its word 6 px
+above the switches' words, in the dock and in the Visual column. The tuning
+was already level. See "2–6. In cloud sessions" below.
 
 ## The UI queue — 30 Oct 2026, branch `ui-queue`
 
@@ -487,9 +489,36 @@ against it before it is merged.
 | Prism settings beside the pad | `prism-settings` |
 | fog as a curve | `fog-curve` |
 | the two old faults | `small-faults` |
+| Visual › Sound's switch widths | `visual-switch-width` |
 
 Each opens a PR into `open-world`, and their results are to be recorded
 here when they land.
+
+**The two old faults** (`small-faults`, #2, merged). The CSS is in the
+"small faults" block of `app.css`.
+- **Keys' word sat 6 px high.** The tuning and Keys buttons are their own
+  slot, so the slot's `line-height: 0`, meant for the `.param` wrapper round
+  each switch, fell on the button itself. Keys' word is a bare text node and
+  was laid on a line of no height. The tuning's word is inside a span that
+  restores the line height, so it was already level. Any slot that is the
+  button now gets its line height back. `buttons.spec.mjs` holds every word
+  on the row to one baseline, measured from its own button's top, on every
+  engine, in the dock and in Visual › Sound.
+- **The stray glyph at the foot of Browse** was `#whyBox`, the note saying
+  why a sound was classified as it was. It has a fill and a left rule, and is
+  only written once a sound is chosen, so with nothing chosen it drew an
+  empty 606 × 18 strip under the lane. It is not drawn while empty.
+  `interface.spec.mjs` fails on any empty box with a border or fill below the
+  lane, with no sound chosen and with one.
+
+**Visual › Sound's switch widths** (`visual-switch-width`, #7). Found while
+fixing the above. The Visual column widens the switches row to two 122 px
+slots a row, and the tuning and Keys grew to fill them. The switches kept the
+dock's 71 px, because the dock's width rule outranked the column's, so
+"preserve transients" had 69 px for 97 px of words and printed past its
+edge. They now fill their slots; the dock is unchanged. `buttons.spec.mjs`
+checks that every button on the row fills its slot and holds its words, on
+every engine, in both places.
 
 ### 2. The Colour tab — `colour-tab`, #4 and #8
 
@@ -577,11 +606,9 @@ Each of these is a decision, not a fix, so it is RJ's to make.
   When a slot process has settings of its own, they could take that space
   rather than sit under the controls. That's a layout decision about the
   Prism window, so it is RJ's call.
-- **The engine row's Keys button** prints its word higher than the buttons
-  beside it, in the dock as well as in the Visual column. This was already
-  there and is not touched here.
-- **A stray glyph** sits at the foot of the Browse centre, from an empty
-  element under the lane. It was already there.
+- **The engine row's Keys button** and **the stray glyph at the foot of
+  Browse** were fixed later, on `small-faults` (#2). "2–6. In cloud
+  sessions" has the causes.
 
 ## Before and after
 
