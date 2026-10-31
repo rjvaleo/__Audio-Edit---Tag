@@ -339,14 +339,93 @@ async function engine(page, alg) {
   await page.waitForTimeout(500);
 }
 
-test('G1 · the whole granular tray is on screen without a scroll', async ({ page }) => {
+/// Both views (`docs/DESIGN-CRITIQUE.md`, "Both views, as an option"): All
+/// shows every bank and the dock grows to them; Standard and Extended page.
+const ENGINES = ['granular', 'wsola', 'vocoder', 'pvsola', 'hybrid'];
+
+async function view(page, which) {
+  await page.locator(`#gkView .seg-btn[data-view="${which}"]`).click();
+  await page.waitForTimeout(300);
+}
+
+/// What the tray shows: whether it scrolls, and which sides' banks are visible.
+const TRAY = () => {
+  const g = document.getElementById('grainControls');
+  const banks = [...g.querySelectorAll(':is(.stretch-core, .engine-params:not(:empty), .wild)')]
+    .filter((b) => b.getBoundingClientRect().width > 0);
+  return {
+    scroll: g.scrollHeight, client: g.clientHeight,
+    std: banks.filter((b) => !b.closest('#extPanel')).length,
+    ext: banks.filter((b) => b.closest('#extPanel')).length,
+    picker: document.getElementById('stretchEngine').getBoundingClientRect().width > 0,
+  };
+};
+
+test('G1 · the view switch: All, Standard, Extended, All by default', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.removeItem('gkView'); } catch {} });
   await openFile(page);
-  await engine(page, 'granular');
-  const box = await page.evaluate(() => {
-    const g = document.getElementById('grainControls');
-    return { scroll: g.scrollHeight, client: g.clientHeight };
+  await dockTab(page, 'stretch');
+  const btns = await page.$$eval('#gkView .seg-btn', (bs) => bs.map((b) => [b.dataset.view, b.textContent.trim(), b.classList.contains('active')]));
+  expect(btns).toEqual([['all', 'All', true], ['std', 'Standard', false], ['ext', 'Extended', false]]);
+});
+
+for (const alg of ENGINES) {
+  test(`G1 · All: the whole ${alg} tray is on screen without a scroll`, async ({ page }) => {
+    await page.addInitScript(() => { try { localStorage.removeItem('gkView'); localStorage.removeItem('dockHeight'); } catch {} });
+    await openFile(page);
+    await engine(page, alg);
+    const t = await page.evaluate(TRAY);
+    expect(t.scroll, `${t.scroll - t.client} px under the fold`).toBeLessThanOrEqual(t.client + 1);
+    expect(t.ext, 'All shows the extended side').toBeGreaterThan(0);
   });
-  expect(box.scroll).toBeLessThanOrEqual(box.client + 1);
+}
+
+test('G1 · Standard and Extended each show only their side, and fit', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.removeItem('gkView'); localStorage.removeItem('dockHeight'); } catch {} });
+  await openFile(page);
+  for (const alg of ENGINES) {
+    await engine(page, alg);
+    await view(page, 'std');
+    let t = await page.evaluate(TRAY);
+    expect([t.std > 0, t.ext, t.picker], `${alg} Standard`).toEqual([true, 0, true]);
+    expect(t.scroll, `${alg} Standard scrolls`).toBeLessThanOrEqual(t.client + 1);
+    await view(page, 'ext');
+    t = await page.evaluate(TRAY);
+    expect([t.std, t.ext > 0, t.picker], `${alg} Extended`).toEqual([0, true, true]);
+    expect(t.scroll, `${alg} Extended scrolls`).toBeLessThanOrEqual(t.client + 1);
+    await view(page, 'all');
+  }
+});
+
+test('G1 · a page hides banks, never controls, and the choice is remembered', async ({ page }) => {
+  await page.addInitScript(() => { try { if (!sessionStorage.getItem('seeded')) { localStorage.removeItem('gkView'); sessionStorage.setItem('seeded', '1'); } } catch {} });
+  await openFile(page);
+  await engine(page, 'hybrid');
+  const count = () => page.evaluate(() => document.querySelectorAll('#grainControls input, #grainControls select, #grainControls button').length);
+  const all = await count();
+  await view(page, 'ext');
+  expect(await count()).toBe(all);
+  await page.reload();
+  await openFile(page);
+  await dockTab(page, 'stretch');
+  expect(await page.$eval('#gkView .seg-btn.active', (b) => b.dataset.view)).toBe('ext');
+});
+
+test('G1 · the tray reads standard first, Time and pitch leading', async ({ page }) => {
+  await openFile(page);
+  for (const alg of ['granular', 'wsola', 'vocoder', 'pvsola', 'hybrid']) {
+    await engine(page, alg);
+    const order = await page.evaluate(() => {
+      const banks = [...document.querySelectorAll('#grainControls :is(.stretch-core, .engine-params:not(:empty), .wild)')]
+        .filter((b) => b.getBoundingClientRect().width)
+        .map((b) => ({ ext: !!b.closest('#extPanel'), core: b.matches('.stretch-core'),
+          top: Math.round(b.getBoundingClientRect().top), left: Math.round(b.getBoundingClientRect().left) }))
+        .sort((a, b) => a.top - b.top || a.left - b.left);
+      return { first: banks[0], lastStd: banks.map((b) => b.ext).lastIndexOf(false), firstExt: banks.findIndex((b) => b.ext) };
+    });
+    expect(order.first.core, `${alg}: Time and pitch is not first`).toBe(true);
+    expect(order.lastStd, `${alg}: a standard bank comes after an extended one`).toBeLessThan(order.firstExt);
+  }
 });
 
 test('G2 · every control in the tray that is an amount is a knob a pointer reaches', async ({ page }) => {
