@@ -10625,6 +10625,44 @@ function gkAdopt() {
   if (!host) return;
   for (const row of host.querySelectorAll('.param')) gkKnob(row);
 }
+
+/// Pack the banks into the dock's lines (UI queue, item 1).
+///
+/// They wrapped in a fixed order, so a line was left half empty whenever the
+/// next bank did not fit: Scan alone, Shape on the line below. Packed largest
+/// first into the lines they fit, the same banks take a line or two fewer, and
+/// WSOLA and Vocoder come on screen whole. Reading order holds what matters:
+/// Time and pitch leads, the engine's own controls beside it, every standard
+/// bank before every extended one. Only `order` is set — nothing moves in the
+/// DOM and nothing is hidden. In the dock only; the Sound tab is one column.
+function gkPack() {
+  const host = $('grainControls');
+  if (!host || !host.closest('#dockStretch')) return;
+  const cs = getComputedStyle(host);
+  const room = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const gap = parseFloat(cs.columnGap) || 0;
+  if (room <= 0) return;
+  const banks = [...host.querySelectorAll('.stretch-core, .engine-params, .wild')]
+    .filter((b) => b.getBoundingClientRect().width > 0);
+  const wide = (b) => b.getBoundingClientRect().width;
+  const lead = banks.filter((b) => b.matches('.stretch-core, .engine-params'));
+  const std = banks.filter((b) => !lead.includes(b) && !b.closest('#extPanel'));
+  const ext = banks.filter((b) => b.closest('#extPanel'));
+  const lines = [];
+  const place = (group, first) => {
+    const start = lines.length;
+    if (first) lines.push({ used: first.reduce((w, b) => w + wide(b) + gap, -gap), banks: [...first] });
+    for (const b of [...group].sort((x, y) => wide(y) - wide(x))) {
+      const w = wide(b);
+      const line = lines.slice(start).find((l) => l.used + gap + w <= room);
+      if (line) { line.used += gap + w; line.banks.push(b); } else lines.push({ used: w, banks: [b] });
+    }
+  };
+  place(std, lead);
+  place(ext, null);
+  let n = 10;
+  for (const line of lines) for (const b of line.banks) b.style.order = String(n++);
+}
 {
   gkLayout();
   const host = $('grainControls');
@@ -10633,10 +10671,12 @@ function gkAdopt() {
     new MutationObserver(() => {
       if (queued) return;
       queued = true;
-      setTimeout(() => { queued = false; gkAdopt(); }, 0);
+      setTimeout(() => { queued = false; gkAdopt(); gkPack(); }, 0);
     }).observe(host, { childList: true, subtree: true });
+    if (window.ResizeObserver) new ResizeObserver(() => gkPack()).observe(host);
   }
   gkAdopt();
+  gkPack();
 }
 
 /// The other panels of the Visual column — Shape, Ridgeline, Surfaces, Stage,
