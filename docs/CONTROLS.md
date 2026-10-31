@@ -321,6 +321,9 @@ worse than none.
 | **⇧ Shift while scrubbing** | Fine. Roughly an eighth of the step. |
 | **Double-click a number** | Puts it back to its default — zero for a rotation plane, 2.5 for the eye. The same convention every other control here keeps. |
 | **Click into a number** | Places a caret and selects, so a value can still be typed exactly. A press that never moves is a click, not a scrub. |
+| **Click Perspective or Parallel** | The projection. A row of two fixed places; the one in use is lit. |
+| **Click a plane in TURNING** | The clock turns that plane. **Still** stops it, and the angles stay where they are. |
+| **Drag up or down on the Eye or Rate knob** | Turns it; ⇧ Shift for fine, double-click puts it back. The number under each knob is a field like the ones above: type into it, or scrub it sideways. |
 
 **Six rotation planes, not three axes.** In three dimensions "about z" is really
 "in the xy plane" — the axis works only because the orthogonal complement of a

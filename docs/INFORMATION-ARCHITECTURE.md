@@ -278,8 +278,9 @@ room. The Stage module has a third, its own light and look rows.
 ### 3.8 Tab: 4D (`panel-4d.js`, `docs/SHAPES-4D.md`)
 
 A preview canvas and an attribute manager for the four-dimensional solids:
-the shape, the six planes' angles, which plane spins and the rate, the eye,
-the projection mode. It is a study of the solid on its own, black background,
+the shape (a list), the six planes' angles (scrub fields), the projection
+mode and which plane spins (rows of fixed places, the latter with Still),
+and the eye and the rate (knobs). It is a study of the solid on its own, black background,
 no sound. The solid the Room draws is chosen on the Room tab's SOLID row,
 separately.
 

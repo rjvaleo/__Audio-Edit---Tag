@@ -332,7 +332,7 @@ sliders, because the knob faces are drawn only in the Visual column.
   Time & Pitch. It is redesigned with the granular engine, next.
 - **Colour** (a list of painted things, each with a ramp) and **4D** (exact
   numbers, already scrub fields) get a lighter pass after that. *Colour: done,
-  see "The UI queue", §2.*
+  see "The UI queue", §2. 4D: done (`fourd-tab`, below).*
 - **Graph-first controls**, where a value has a shape you drag (fog's falloff
   curve, a ramp's range), are a second step. *A ramp's range and its stops:
   done, in Colour's Modern view.*
@@ -566,6 +566,41 @@ Modern".
   `room-paint.spec.mjs` reading the drive choices from the segment row.
 - **Open for RJ:** the window's ends cannot cross in Modern (an inverted
   window is a hard step in the shader); Classic still allows it.
+
+**The 4D tab** (`fourd-tab`, merged 31 Oct 2026). The lighter pass the
+Visual column section promised:
+
+- **Projection** is a row of two fixed places, Perspective and Parallel.
+- **Turning** is a row of seven: **Still**, then the six planes, the three
+  that reach into w marked ·w. It replaces the Turn/Pause button and the
+  menu of planes, because what the clock is doing is one choice: standing
+  still, or turning one plane.
+- Both rows are lit by a tint and an edge, never filled, as across the rest
+  of the column.
+- **Eye and Rate are knobs**, built with `rkKnob`: the range input kept,
+  the face drawn behind it, the input laid over the face. The reading under
+  each face is a number field, so an exact value can still be typed or
+  scrubbed. "Put every plane back" shares their line.
+- **The six plane angles stay scrub fields**, as they were.
+- **Dense.** The object list is no longer scrolled, the two notes are kept
+  at `--fs-xs`, every module spans the one width, and the viewport takes
+  whatever height the controls leave. At 1000 px the tab ends at the
+  column's foot, with nothing blank and nothing below the fold.
+
+RJ kept all three of the PR's open decisions as built:
+
+1. **Still is a place in the turning row**, rather than a separate on/off
+   switch. While the clock is still, the plane it last turned is
+   remembered but not lit.
+2. **The viewport grows** into the space the denser controls freed (about
+   280 px at 1000 px, never under 186 px) rather than leaving it blank.
+3. **Eye keeps its linear range**, 1.2 to 12. The knob is coarse around
+   the useful 2 to 4; Shift-drag and the typed field under it cover the
+   fine settings, so no log taper.
+
+Tests: `design-pass.spec.mjs` 4D-1 to 4D-4, and `shapes-4d.spec.mjs`'s
+field list. The control-parity baseline names the renamed controls (Pause
+is Still, the plane menu is the six places).
 
 ## Raised, and deliberately not changed here
 
