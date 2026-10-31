@@ -4493,3 +4493,45 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    strip at the foot of the centre, under the lane. Not drawn until it says
    something. */
 .why:empty { display: none; }
+/* ───────────────────────── Grain › Prism: the process's settings beside the pad
+   On a wide window the pad, sized from the dock's height, left the dock's
+   right-hand side empty while the process's extra settings sat under the
+   control column. They now take that space: one bank, hard against the pad
+   and level with its top, its knobs drawn as the granular tray's are (`gkKnob`)
+   — the face, the range input laid over it, the reading, the name. One width,
+   whatever the process; a process with no settings of its own says where they
+   are instead. `prismRenderSettings` and the pad's fit in `prism-pad.js`. */
+#dockPrism .prism-stage > .prism-settings {
+  --prism-set: 232px;
+  flex: none; width: var(--prism-set); margin-left: 6px; align-self: flex-start;
+  display: block; font-size: var(--fs-m);
+}
+#dockPrism .prism-settings-note {
+  margin: 0; padding: 6px 8px; border: 1px dashed var(--line);
+  font-size: var(--fs-s); line-height: 1.3; color: var(--text-dimmer);
+}
+#dockPrism .prism-bank-head {
+  font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dim); border-bottom: 1px solid var(--line);
+  padding-bottom: 3px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#dockPrism .prism-bank-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px 2px; }
+#dockPrism .prism-settings .param.gk-k {
+  display: flex; flex-direction: column; align-items: center; position: relative;
+  gap: 0; width: 56px; min-width: 0; padding: 0 1px 1px; margin: 0;
+}
+#dockPrism .prism-settings .gk-k > .rk-face { display: block; width: 22px; height: 22px; order: 0; margin-bottom: 1px; }
+#dockPrism .prism-settings .gk-k > .rk-face svg { display: block; width: 100%; height: 100%; }
+#dockPrism .prism-settings .gk-k > input[type=range] {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 24px; height: 24px; margin: -1px 0 0; opacity: 0; cursor: ns-resize;
+}
+#dockPrism .prism-settings .gk-k:has(> input:focus-visible) > .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+#dockPrism .prism-settings .gk-k > .v {
+  order: 1; width: auto; overflow: visible; text-align: center;
+  font-size: var(--fs-s); line-height: 1.15; color: var(--text-2);
+}
+#dockPrism .prism-settings .gk-k > .k {
+  order: 2; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
+  font-size: var(--fs-xs); line-height: 1.1; color: var(--text-dimmer);
+}
