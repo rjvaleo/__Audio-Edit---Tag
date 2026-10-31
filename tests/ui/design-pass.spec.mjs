@@ -781,3 +781,33 @@ test('P14 · the stop\'s remove and the range\'s ends are easy to hit', async ({
   expect(r.lo, 'grabbed 7 px out, the end moves and the window does not').toBeCloseTo(0.2, 2);
   expect(r.hi).toBeCloseTo(0.9, 1);
 });
+
+test('P15 · Fog starts its ramp on the band its weight actually reaches, 0.05–0.27', async ({ page }) => {
+  await paintTab(page, 'fog');
+  const pick = async () => {
+    await page.locator('#roomPaintBody .rp-edit .re-btn', { hasText: 'Ramp' }).click();
+    return page.evaluate(() => ({ lo: rpSlot('fog').lo, hi: rpSlot('fog').hi, ring: rpSlot('ring') }));
+  };
+  // Modern.
+  let got = await pick();
+  expect([got.lo, got.hi]).toEqual([0.05, 0.27]);
+  // Classic, the same.
+  await page.evaluate(() => { roomPaint.scheme = rpDefaultScheme(); rpTouch(); rpView = 'classic'; rpOpen = 'fog'; rpPanel(); });
+  got = await pick();
+  expect([got.lo, got.hi]).toEqual([0.05, 0.27]);
+  // Only Fog: another slot still starts on the whole of its quantity.
+  await page.evaluate(() => { rpOpen = 'ring'; rpPanel(); });
+  await page.locator('#roomPaintBody .rp-edit .re-btn', { hasText: 'Ramp' }).click();
+  expect(await page.evaluate(() => [rpSlot('ring').lo ?? 0, rpSlot('ring').hi ?? 1])).toEqual([0, 1]);
+  // A range already set is kept: back to Theme and to Ramp again.
+  await page.evaluate(() => { rpSetSlot('fog', { lo: 0.1, hi: 0.2 }); rpOpen = 'fog'; rpPanel(); });
+  await page.locator('#roomPaintBody .rp-edit .re-btn', { hasText: 'Theme' }).click();
+  await page.locator('#roomPaintBody .rp-edit .re-btn', { hasText: 'Ramp' }).click();
+  expect(await page.evaluate(() => [rpSlot('fog').lo, rpSlot('fog').hi])).toEqual([0.1, 0.2]);
+  // And every generator that reads Fog against its level gives it the band.
+  const gen = await page.evaluate(() => ['mono', 'rgb', 'spectrum', 'vibrant', 'muted', 'bw']
+    .map((k) => rpGenerate(k, 0).slots.fog).filter((f) => f.mode === 'ramp' && (f.drive | 0) === 0)
+    .map((f) => [f.lo, f.hi]));
+  expect(gen.length).toBeGreaterThan(0);
+  expect(gen.every(([lo, hi]) => lo === 0.05 && hi === 0.27)).toBe(true);
+});
