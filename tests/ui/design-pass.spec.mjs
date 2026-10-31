@@ -1248,3 +1248,215 @@ test('4D-4 · the tab is dense: one width, no blank space, the notes kept, all o
   // …and nothing blank under it: what the controls leave over goes to the viewport.
   expect(m.floor - m.bottom).toBeLessThanOrEqual(12);
 });
+
+test('F5 · every fog type reads whole in its menu, and the curve says its value aloud', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const fit = await page.evaluate(() => {
+    const sel = document.getElementById('reFogType');
+    const probe = document.createElement('span');
+    probe.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font:${getComputedStyle(sel).font}`;
+    document.body.appendChild(probe);
+    const widest = Math.max(...[...sel.options].map((o) => { probe.textContent = o.textContent; return probe.getBoundingClientRect().width; }));
+    probe.remove();
+    // The text, the menu's own padding and border either side, and its arrow.
+    const cs = getComputedStyle(sel);
+    const sides = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth'].reduce((n, k) => n + parseFloat(cs[k]), 0);
+    return { need: Math.ceil(widest + sides) + 20, have: sel.getBoundingClientRect().width };
+  });
+  expect(fit.have).toBeGreaterThanOrEqual(fit.need);
+  await page.selectOption('#reFogType', '1');
+  await page.evaluate(() => { const i = document.getElementById('reFogDensity'); i.value = '75'; i.dispatchEvent(new Event('input')); });
+  const a11y = await page.evaluate(() => {
+    const i = document.getElementById('reFogDensity');
+    return { name: i.getAttribute('aria-label'), value: i.getAttribute('aria-valuetext') };
+  });
+  expect(a11y.name).toBe('Fog density');
+  expect(a11y.value).toBe('0.75');
+});
+
+test('F6 · on Linear the fog says its density does nothing', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const read = () => page.evaluate(() => ({
+    colour: getComputedStyle(document.querySelector('#roomEdit .rk-fog-read')).color,
+    spoken: document.getElementById('reFogDensity').getAttribute('aria-valuetext'),
+  }));
+  await page.selectOption('#reFogType', '1');
+  const exp = await read();
+  await page.selectOption('#reFogType', '0');
+  const lin = await read();
+  expect(lin.colour).not.toBe(exp.colour);
+  expect(lin.spoken).toMatch(/not used/i);
+  expect(exp.spoken).not.toMatch(/not used/i);
+});
+
+// ── Visual › Room · the camera, folded to what is used ──────────────────────
+
+test('R1 · the camera\'s keys and pose are folded away until asked for', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const shown = () => page.evaluate(() => ({
+    legend: document.querySelector('#roomEdit .re-legend').getBoundingClientRect().height,
+    nums: document.getElementById('reNums').getBoundingClientRect().height,
+    text: document.getElementById('reNums').textContent.length,
+  }));
+  const closed = await shown();
+  expect(closed.legend).toBe(0);
+  expect(closed.nums).toBe(0);
+  // Still kept up to date while folded: it is what gets copied.
+  expect(closed.text).toBeGreaterThan(10);
+  const btn = page.locator('#rkKeys');
+  await expect(btn).toHaveAttribute('aria-expanded', 'false');
+  await btn.click();
+  await expect(btn).toHaveAttribute('aria-expanded', 'true');
+  const open = await shown();
+  expect(open.legend).toBeGreaterThan(10);
+  expect(open.nums).toBeGreaterThan(10);
+});
+
+test('R2 · the channel box is two lines, in the pads\' own words', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const box = await page.evaluate(() => {
+    const ids = ['reCamTx', 'reCamTy', 'reCamTz', 'reCamRx', 'reCamRy', 'reCamFocal', 'reCamCoi'];
+    const rows = ids.map((id) => document.getElementById(id).closest('.re-row'));
+    return {
+      lines: new Set(rows.map((r) => Math.round(r.getBoundingClientRect().top))).size,
+      words: rows.map((r) => r.querySelector('.re-tag').innerText.trim()),
+    };
+  });
+  expect(box.lines).toBe(2);
+  expect(box.words).toEqual(['MOVE X', 'MOVE Y', 'MOVE Z', 'TILT', 'TURN', 'FOCAL', 'CENTRE']);
+});
+
+test('R3 · a camera pad is moved from the keyboard', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const pad = page.locator('#roomEdit .rk-pad').first();
+  await pad.focus();
+  expect(await pad.evaluate((e) => e === document.activeElement && e.matches(':focus-visible') !== undefined)).toBe(true);
+  const before = await page.evaluate(() => roomWorldNow().yaw);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowRight');
+  const after = await page.evaluate(() => roomWorldNow().yaw);
+  expect(after).toBeGreaterThan(before);
+  expect(await pad.getAttribute('aria-label')).toMatch(/turn.*°/i);
+  expect(+(await page.locator('#reCamRy').inputValue())).toBeCloseTo(after, 1);
+});
+
+// ── Visual › Room · Air · mist ──────────────────────────────────────────────
+
+test('M1 · mist is drawn as its drips, and dragging up lengthens them', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const drawn = () => page.evaluate(() => {
+    const g = document.querySelector('#roomEdit .rk-mist-graph');
+    return g && { dots: g.querySelectorAll('circle').length, sig: g.querySelector('svg').innerHTML.length + ':' + [...g.querySelectorAll('circle')].map((c) => c.getAttribute('cy')).join(),
+      read: document.querySelector('#roomEdit .rk-mist-read')?.textContent.trim() };
+  });
+  const first = await drawn();
+  expect(first, 'no mist drawing in the Air group').toBeTruthy();
+  const graph = page.locator('#roomEdit .rk-mist-graph');
+  await graph.scrollIntoViewIfNeeded();
+  const box = await graph.boundingBox();
+  const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(hit).toBe('reMistLength');
+  const before = await page.evaluate(() => roomEdit.mistLength);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 30, { steps: 5 });
+  await page.mouse.up();
+  const after = await page.evaluate(() => roomEdit.mistLength);
+  expect(after).toBeGreaterThan(before);
+  const longer = await drawn();
+  expect(longer.sig).not.toBe(first.sig);
+  expect(+longer.read).toBeCloseTo(after, 3);
+  // The amount is its knob beside it, and the drawing counts it.
+  await page.evaluate(() => { const i = document.getElementById('reMistAmount'); i.value = '100'; i.dispatchEvent(new Event('input')); });
+  const more = await drawn();
+  expect(more.dots).toBeGreaterThan(longer.dots);
+  // A recalled look redraws it too.
+  await page.evaluate(() => { const look = visualSnapshot(); look.room.mistLength = 0.004; applyVisual(look); });
+  expect((await drawn()).read).toBe('0.004');
+});
+
+// ── Visual › Room · the rest of the review ─────────────────────────────────
+
+/// Contrast of two colours as the browser resolves them, oklch and all.
+const contrastFn = `(a, b) => {
+  const cv = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const rgb = (c) => { cv.clearRect(0, 0, 1, 1); cv.fillStyle = '#000'; cv.fillRect(0, 0, 1, 1); cv.fillStyle = c; cv.fillRect(0, 0, 1, 1); return [...cv.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+  const lum = (c) => rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const x = lum(a), y = lum(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}`;
+
+test('U1 · Clear looks like what it does, and can be taken back', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const look = await page.evaluate(() => {
+    const c = getComputedStyle(document.getElementById('reClear'));
+    const r = getComputedStyle(document.getElementById('reReset'));
+    return { clear: c.color + c.borderColor, reset: r.color + r.borderColor };
+  });
+  expect(look.clear).not.toBe(look.reset);
+  await page.evaluate(() => { roomEdit.ringDrive = 3; });
+  await page.locator('#reClear').click();
+  expect(await page.evaluate(() => roomEdit.ringDrive)).not.toBe(3);
+  const undo = page.locator('#rkUndoClear');
+  await expect(undo).toBeVisible();
+  await undo.click();
+  expect(await page.evaluate(() => roomEdit.ringDrive)).toBe(3);
+  await expect(undo).toBeHidden();
+});
+
+test('U2 · a stream that is off still looks like a switch, and says whether it is on', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const s = await page.evaluate(`(() => {
+    const contrast = ${contrastFn};
+    const btns = [...document.querySelectorAll('#reStreams .re-btn')];
+    const off = btns.find((b) => !b.classList.contains('active'));
+    let bg = off.parentElement; while (bg && /rgba\\(0, 0, 0, 0\\)|transparent/.test(getComputedStyle(bg).backgroundColor)) bg = bg.parentElement;
+    return {
+      edge: contrast(getComputedStyle(off).borderTopColor, getComputedStyle(bg).backgroundColor),
+      pressed: btns.map((b) => b.getAttribute('aria-pressed') === String(b.classList.contains('active'))),
+    };
+  })()`);
+  // WCAG 1.4.11: the edge that says "this is a control" at 3:1.
+  expect(s.edge).toBeGreaterThanOrEqual(3);
+  expect(s.pressed.every(Boolean)).toBe(true);
+});
+
+test('U3 · the switches, menus and swatches are drawn in the column\'s own hand', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const c = await page.evaluate(() => {
+    const vis = (e) => e.getBoundingClientRect().width > 0;
+    const boxes = [...document.querySelectorAll('#roomEdit .re-check input[type=checkbox]')].filter(vis);
+    const menus = [...document.querySelectorAll('#roomEdit select')].filter(vis);
+    const swatches = [...document.querySelectorAll('#roomEdit input[type=color]')].filter(vis);
+    return {
+      n: [boxes.length, menus.length, swatches.length],
+      native: [...boxes, ...menus].filter((e) => getComputedStyle(e).appearance !== 'none').map((e) => e.id),
+      plainSwatch: swatches.filter((e) => getComputedStyle(e).backgroundImage === 'none').map((e) => e.id),
+    };
+  });
+  expect(c.n.every((n) => n > 0)).toBe(true);
+  expect(c.native).toEqual([]);
+  // A swatch carries a mark that says it opens a picker.
+  expect(c.plainSwatch).toEqual([]);
+  // …and on the master bus nothing changed.
+  await page.evaluate(() => setMode('edit'));
+  await page.waitForTimeout(300);
+  const overlay = await page.evaluate(() => getComputedStyle(document.getElementById('reFog')).appearance);
+  expect(overlay).not.toBe('none');
+});
+
+test('U4 · the block row names both of its settings', async ({ page }) => {
+  await openFile(page);
+  await roomTab(page, 'controls');
+  const words = await page.evaluate(() => [...document.getElementById('reChunks').closest('.re-row').querySelectorAll('.rk-l')].map((e) => e.textContent.trim()));
+  expect(words).toEqual(['Size', 'Opacity']);
+});
