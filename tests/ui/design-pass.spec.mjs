@@ -408,3 +408,213 @@ test('G5 · the extended side\'s knobs are drawn in its own colour', async ({ pa
   expect(c.ext).toBeTruthy();
   expect(c.ext).not.toBe(c.std);
 });
+
+// ── Visual › Colour ─────────────────────────────────────────────────────────
+// The pass `docs/DESIGN-CRITIQUE.md` lists under "Not yet done". The tab given the instrument
+// the rest of the column has: choices as rows of fixed places, amounts as
+// knobs, and a ramp's range a span you drag on its own strip.
+
+/// The Colour tab, on a fresh palette, with `key` open in `mode`.
+async function paintTab(page, key, patch) {
+  await ready(page);
+  await roomTab(page, 'paint');
+  await page.evaluate(([k, p]) => {
+    localStorage.removeItem('roomPaintCurrent');
+    roomPaint.scheme = rpDefaultScheme();
+    if (p) rpSetSlot(k, p);
+    rpTouch();
+    rpOpen = k;
+    rpApply();
+    rpPanel();
+  }, [key, patch || null]);
+}
+
+const RAMP = { mode: 'ramp', drive: 0, lo: 0.2, hi: 0.6, curve: 1,
+  stops: [{ at: 0, c: '#2040ff' }, { at: 0.5, c: '#20e0a0' }, { at: 1, c: '#ffe040' }] };
+
+/// A segment row: each place's word, its box, and whether it is lit.
+const segIn = (name) => `(() => {
+  const row = document.querySelector('#roomPaintBody .rp-edit .rp-seg[data-seg="${name}"]');
+  if (!row) return null;
+  return [...row.children].map((el) => {
+    const b = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    return { word: el.textContent.trim(), button: el.tagName === 'BUTTON',
+      lit: el.classList.contains('active'), x: Math.round(b.left), y: Math.round(b.top),
+      w: Math.round(b.width), bg: cs.backgroundColor, edge: cs.borderTopColor };
+  });
+})()`;
+
+/// Whether a computed colour is solid. `color-mix` computes to `color(srgb …)`
+/// or `oklch(…)` with a `/ alpha`, the legacy syntax to `rgba(…, alpha)`.
+const opaque = (c) => {
+  const m = /\/\s*([\d.]+)\s*\)$/.exec(c) || /rgba\([^)]*,\s*([\d.]+)\)$/.exec(c);
+  return m ? +m[1] >= 0.99 : c !== 'transparent';
+};
+
+test('P1 · a slot\'s mode is a row of fixed places, lit and never filled', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const ring = await page.evaluate(segIn('mode'));
+  expect(ring, 'the mode is a segment row').not.toBeNull();
+  expect(ring.map((p) => p.word)).toEqual(['Theme', 'Colour', 'Ramp']);
+  expect(new Set(ring.map((p) => p.y)).size, 'on one line').toBe(1);
+  expect(new Set(ring.map((p) => p.w)).size, 'the places are one width').toBe(1);
+  const lit = ring.filter((p) => p.lit);
+  expect(lit.map((p) => p.word)).toEqual(['Ramp']);
+  expect(opaque(lit[0].bg), 'lit by a tint, not filled').toBe(false);
+  expect(lit[0].edge, 'and an edge').not.toBe(ring.find((p) => !p.lit).edge);
+
+  // The background is one colour by definition. Its Ramp place stays empty
+  // rather than the row closing up, so Theme and Colour sit where they always do.
+  await page.evaluate(() => { rpOpen = 'background'; rpPanel(); });
+  const ground = await page.evaluate(segIn('mode'));
+  expect(ground.length).toBe(3);
+  expect(ground[2].button, 'the third place is empty').toBe(false);
+  expect(ground.slice(0, 2).map((p) => [p.word, p.x, p.w]))
+    .toEqual(ring.slice(0, 2).map((p) => [p.word, p.x, p.w]));
+});
+
+test('P2 · what a ramp is read against is a row of fixed places', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  expect(await page.locator('#roomPaintBody .rp-edit select').count(), 'no menu').toBe(0);
+  const ring = await page.evaluate(segIn('drive'));
+  expect(ring.map((p) => p.word)).toEqual(['Level', 'Depth', 'Distance', 'Height', 'Random', 'Stereo width']);
+  expect(new Set(ring.map((p) => p.w)).size, 'the places are one width').toBe(1);
+  expect(ring.filter((p) => p.lit).map((p) => p.word)).toEqual(['Level']);
+
+  await page.locator('#roomPaintBody .rp-seg[data-seg="drive"] .re-btn', { hasText: 'Depth' }).click();
+  expect(await page.evaluate(() => rpSlot('ring').drive)).toBe(1);
+  const after = await page.evaluate(segIn('drive'));
+  expect(after.filter((p) => p.lit).map((p) => p.word)).toEqual(['Depth']);
+  expect(opaque(after.find((p) => p.lit).bg)).toBe(false);
+
+  // Fog has nothing of its own: the sixth place is kept, and left empty.
+  await page.evaluate((r) => { rpSetSlot('fog', r); rpOpen = 'fog'; rpPanel(); }, RAMP);
+  const fog = await page.evaluate(segIn('drive'));
+  expect(fog.length).toBe(6);
+  expect(fog[5].button).toBe(false);
+  // Fog is further down the list, so its places are compared within their row.
+  const within = (row) => row.slice(0, 5).map((p) => [p.x, p.y - row[0].y]);
+  expect(within(fog)).toEqual(within(ring));
+});
+
+test('P3 · every amount on the Colour tab is a knob a pointer reaches', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const knobs = await page.evaluate(() => [...document.querySelectorAll('#roomPaintBody input[type=range]')].map((i) => {
+    const k = i.closest('.rk-k');
+    if (!k) return { why: 'not a knob', title: i.title };
+    k.scrollIntoView({ block: 'center' });
+    const f = k.querySelector('.rk-face').getBoundingClientRect();
+    const hit = document.elementFromPoint(f.x + f.width / 2, f.y + f.height / 2);
+    return { word: k.querySelector('.rk-l').textContent, read: k.querySelector('.rk-v').textContent.trim(), reached: hit === i };
+  }));
+  // Three stops and the curve. The range is not a pair of sliders any more.
+  expect(knobs.length).toBe(4);
+  expect(knobs.filter((k) => k.why || !k.read || !k.reached)).toEqual([]);
+
+  // The curve turns up when it is dragged up, and its reading follows.
+  const face = await page.locator('#roomPaintBody .rk-k:has(.rp-curve) .rk-face').boundingBox();
+  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2 - 30, { steps: 5 });
+  await page.mouse.up();
+  const curve = await page.evaluate(() => rpSlot('ring').curve);
+  expect(curve).toBeGreaterThan(1);
+  expect(+(await page.locator('#roomPaintBody .rk-k:has(.rp-curve) .rk-v').textContent())).toBeCloseTo(curve, 2);
+
+  // A stop's knob moves that stop and only that one.
+  const stop = await page.locator('#roomPaintBody .rp-stop').nth(1).locator('.rk-face').boundingBox();
+  await page.mouse.move(stop.x + stop.width / 2, stop.y + stop.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(stop.x + stop.width / 2, stop.y + stop.height / 2 + 20, { steps: 4 });
+  await page.mouse.up();
+  const at = await page.evaluate(() => rpSlot('ring').stops.map((s) => s.at));
+  expect(at[0]).toBe(0);
+  expect(at[1]).toBeLessThan(0.5);
+  expect(at[2]).toBe(1);
+});
+
+test('P4 · a ramp\'s range is a span dragged on its own strip', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const strip = page.locator('#roomPaintBody .rp-span');
+  await expect(strip).toHaveCount(1);
+  const geo = async () => page.evaluate(() => {
+    const s = document.querySelector('#roomPaintBody .rp-span').getBoundingClientRect();
+    const w = document.querySelector('#roomPaintBody .rp-span-win').getBoundingClientRect();
+    return { s: { x: s.left, w: s.width, y: s.top, h: s.height },
+      lo: (w.left - s.left) / s.width, hi: (w.right - s.left) / s.width,
+      slot: { lo: rpSlot('ring').lo, hi: rpSlot('ring').hi } };
+  });
+  let g = await geo();
+  expect(g.lo, 'the span starts where the range does').toBeCloseTo(0.2, 1);
+  expect(g.hi, 'and ends where it does').toBeCloseTo(0.6, 1);
+
+  // Dragged by its middle, the whole window moves and keeps its width.
+  const midY = g.s.y + g.s.h / 2;
+  await page.mouse.move(g.s.x + g.s.w * 0.4, midY);
+  await page.mouse.down();
+  await page.mouse.move(g.s.x + g.s.w * 0.6, midY, { steps: 5 });
+  await page.mouse.up();
+  g = await geo();
+  expect(g.slot.lo).toBeCloseTo(0.4, 1);
+  expect(g.slot.hi).toBeCloseTo(0.8, 1);
+  expect(g.slot.hi - g.slot.lo).toBeCloseTo(0.4, 2);
+  expect(g.lo).toBeCloseTo(g.slot.lo, 1);
+
+  // Dragged by an edge, only that end moves.
+  await page.mouse.move(g.s.x + g.s.w * g.slot.hi - 1, midY);
+  await page.mouse.down();
+  await page.mouse.move(g.s.x + g.s.w * 0.95, midY, { steps: 5 });
+  await page.mouse.up();
+  const end = await geo();
+  expect(end.slot.lo).toBeCloseTo(g.slot.lo, 2);
+  expect(end.slot.hi).toBeGreaterThan(0.9);
+
+  // Each end is a slider to the keyboard too.
+  const lo = page.locator('#roomPaintBody .rp-span [role=slider]').first();
+  await lo.focus();
+  const before = await page.evaluate(() => rpSlot('ring').lo);
+  await page.keyboard.press('ArrowRight');
+  expect(await page.evaluate(() => rpSlot('ring').lo)).toBeCloseTo(before + 0.01, 3);
+  expect(+(await lo.getAttribute('aria-valuenow'))).toBeCloseTo(before + 0.01, 2);
+
+  // The strip is the ramp as the room reads it: below the window the first
+  // colour, above it the last.
+  const ends = await page.evaluate(() => {
+    const bg = document.querySelector('#roomPaintBody .rp-span').style.background;
+    return (bg.match(/rgb\([^)]*\)/g) || []);
+  });
+  expect(ends[0]).toBe('rgb(32, 64, 255)');
+  expect(ends[ends.length - 1]).toBe('rgb(255, 224, 64)');
+});
+
+test('P5 · the Colour tab is dense, in fixed places, inside its column', async ({ page }) => {
+  await paintTab(page, 'ring', RAMP);
+  const got = await page.evaluate(() => {
+    const body = document.getElementById('roomPaintBody');
+    const col = document.getElementById('roomAdmin').getBoundingClientRect();
+    // A row holding nothing but its tag is a line of blank space.
+    const bare = [...body.querySelectorAll('.rp-row')]
+      .filter((r) => r.children.length === 1 && r.firstElementChild.classList.contains('re-tag'))
+      .map((r) => r.textContent.trim());
+    const over = [...body.querySelectorAll('*')].filter((e) => {
+      const b = e.getBoundingClientRect();
+      return b.width && (b.right > col.right + 0.5 || b.left < col.left - 0.5);
+    }).map((e) => e.className || e.tagName);
+    const gens = [...body.querySelectorAll('.rp-gens .re-btn')].map((b) => b.getBoundingClientRect());
+    return { bare, over, gensW: new Set(gens.map((b) => Math.round(b.width))).size,
+      gensRows: new Set(gens.map((b) => Math.round(b.top))).size, gens: gens.length };
+  });
+  expect(got.bare).toEqual([]);
+  expect(got.over).toEqual([]);
+  expect(got.gens).toBe(6);
+  expect(got.gensW, 'the generators are places of one width').toBe(1);
+  expect(got.gensRows, 'two full lines, nothing left over').toBe(2);
+});
+
+test('P6 · a slot names what it is read against in its own word', async ({ page }) => {
+  await paintTab(page, 'ring', { ...RAMP, drive: 5 });
+  const mode = await page.evaluate(() => [...document.querySelectorAll('#roomPaintBody .rp-slot')]
+    .find((s) => s.querySelector('.rp-slot-name').textContent === 'Ring')
+    .querySelector('.rp-slot-mode').textContent);
+  expect(mode).toBe('stereo width');
+});

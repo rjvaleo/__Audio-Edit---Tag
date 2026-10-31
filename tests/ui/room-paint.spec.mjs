@@ -256,7 +256,8 @@ test('a layer is only offered a drive it actually carries', async ({ page }) => 
       [...again.querySelectorAll('.rp-edit .re-btn')].find((b) => b.textContent === 'Ramp')?.click();
       const now = [...document.querySelectorAll('#roomPaintBody .rp-slot')]
         .find((el) => el.querySelector('.rp-slot-name').textContent === name);
-      return [...now.querySelectorAll('.rp-edit select.field option')].map((o) => o.text);
+      // The places of "read against" that hold a choice; an empty place is a gap.
+      return [...now.querySelectorAll('.rp-edit .rp-seg[data-seg="drive"] .re-btn')].map((b) => b.textContent);
     };
     return { terrain: open('Terrain ridges'), ring: open('Ring'), grains: open('Grain wires'), fog: open('Fog') };
   });
