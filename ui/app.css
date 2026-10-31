@@ -4455,3 +4455,9 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    no height and printed six pixels above the switches' words. The line height
    comes back on any slot that is the button. */
 .engine-switches > button[data-slot] { line-height: normal; }
+
+/* The classification note under Browse's stats is only written once a sound is
+   chosen. Before that its fill and left rule were drawn round nothing: a bare
+   strip at the foot of the centre, under the lane. Not drawn until it says
+   something. */
+.why:empty { display: none; }
