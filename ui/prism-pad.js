@@ -185,20 +185,41 @@ function prismShowPtc() {
   b.setAttribute('aria-pressed', prismPtc().on ? 'true' : 'false');
 }
 
-/// The process's additional settings under the pad: for the Pitch Time
-/// Changer, its window's four sliders. Its two axes are on the pad.
+/// The process's additional settings, to the right of the pad: for the Pitch
+/// Time Changer, its window's four settings, as a bank of knobs drawn the way
+/// the granular tray's are (`gkKnob`). Its two axes are on the pad. A process
+/// with none says where the rest of it is, so the space does not read as empty.
 function prismRenderSettings() {
   const box = $('prismSettings');
   if (!box) return;
   box.innerHTML = '';
   const src = prismCurrent();
   const extra = src?.id === PRISM_PTC ? src.controls.filter((c) => c.key !== 'speed' && c.key !== 'pitch') : [];
-  box.classList.toggle('hidden', extra.length === 0);
+  if (extra.length === 0) {
+    const note = document.createElement('p');
+    note.className = 'prism-settings-note';
+    note.textContent = src?.id === PRISM_STRETCH || !src
+      ? 'Its other settings are on the Time & Pitch tab.'
+      : 'Its other settings are in the FX tab.';
+    box.appendChild(note);
+    return;
+  }
+  const bank = document.createElement('div');
+  bank.className = 'prism-bank';
+  const head = document.createElement('div');
+  head.className = 'prism-bank-head';
+  head.textContent = src.label;
+  const body = document.createElement('div');
+  body.className = 'prism-bank-body';
+  bank.append(head, body);
+  box.appendChild(bank);
   const pt = prismPtc();
   for (const c of extra) {
     const def = PTC_DEFAULTS[c.key];
-    box.appendChild(param(c.label, pt[c.key] ?? def, c.min, c.max, 1, (v) => `${Math.round(v)} %`,
-      (v) => prismPtcSet({ [c.key]: Math.round(v) }), () => {}, false, def));
+    const row = param(c.label, pt[c.key] ?? def, c.min, c.max, 1, (v) => `${Math.round(v)} %`,
+      (v) => prismPtcSet({ [c.key]: Math.round(v) }), () => {}, false, def);
+    body.appendChild(row);
+    gkKnob(row);
   }
 }
 
@@ -620,13 +641,16 @@ function prismShowRecord() {
     input.onchange = () => prismLimitChanged(field, input);
   }
   // Square, the largest the dock leaves room for: its height less the limits
-  // row under it, or its width less the limits beside it, whichever is less.
+  // row under it, or its width less the limits and the settings beside it,
+  // whichever is less.
   const stage = pad.closest('.prism-stage');
   const fit = () => {
     const yAxis = stage.querySelector('.prism-y-axis');
     const below = stage.querySelector('.prism-x-axis').offsetHeight + 4;
+    // The settings' bank, to the right, keeps its width; the pad gives way.
+    const beside = stage.querySelector('.prism-settings')?.offsetWidth || 0;
     const side = Math.max(140, Math.floor(Math.min(stage.clientHeight - below,
-      stage.clientWidth - yAxis.offsetWidth - 12)));
+      stage.clientWidth - yAxis.offsetWidth - 12 - (beside && beside + 12))));
     stage.style.setProperty('--prism-side', `${side}px`);
   };
   if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
