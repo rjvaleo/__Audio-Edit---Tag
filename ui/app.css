@@ -4446,3 +4446,12 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    put the Fill swatch under the edit-the-room button. Half a pixel of padding
    a side gives it back. */
 #reStreams .re-btn { padding: 0 6.5px; }
+
+/* ---------------------------------------------------------------- small faults
+
+   The tuning and Keys are buttons that are their own slot, so the slot's
+   `line-height: 0` (there for the `.param` wrapper round each switch) landed on
+   the button itself. Keys' word is a bare text node, so it was laid on a line of
+   no height and printed six pixels above the switches' words. The line height
+   comes back on any slot that is the button. */
+.engine-switches > button[data-slot] { line-height: normal; }

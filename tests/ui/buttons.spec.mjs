@@ -266,3 +266,51 @@ test('Stretch, Pitch and Window are the first three sliders on every engine', as
   expect(failures, `Stretch/Pitch/Window were not the first three:\n${failures.join('\n')}`)
     .toEqual([]);
 });
+
+/// Where each button prints its word, measured from the button's own top edge.
+///
+/// The baseline is found with a probe: an empty, zero-sized inline-block put in
+/// beside the button's first word sits on that word's line with its bottom on
+/// the baseline. Measured from each button's own top rather than from the page,
+/// so the Visual column's two rows of two are held to it too.
+const readBaselines = (host) => {
+  const box = document.querySelector(`${host} .engine-switches`);
+  return [...box.querySelectorAll('[data-slot]')].map((el) => {
+    const b = el.matches('button') ? el : el.querySelector('button');
+    const walk = document.createTreeWalker(b, NodeFilter.SHOW_TEXT,
+      { acceptNode: (n) => (n.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+    const word = walk.nextNode();
+    const probe = document.createElement('span');
+    probe.style.cssText = 'display:inline-block;vertical-align:baseline;width:0;height:0;margin:0;padding:0;border:0';
+    word.parentNode.insertBefore(probe, word);
+    const line = probe.getBoundingClientRect().bottom - b.getBoundingClientRect().top;
+    probe.remove();
+    return { t: b.textContent.trim(), slot: el.dataset.slot, line: Math.round(line * 10) / 10 };
+  });
+};
+
+test('the switches row prints every word on the same baseline', async ({ page }) => {
+  await openStretchPanel(page);
+  const failures = [];
+  const check = (where, row) => {
+    const lines = [...new Set(row.map((b) => b.line))];
+    if (lines.length !== 1) {
+      failures.push(`${where}: ${row.map((b) => `${b.t}@${b.line}`).join(', ')}`);
+    }
+  };
+
+  for (const alg of ENGINES) {
+    await chooseEngine(page, alg);
+    check(`dock ${alg}`, await page.evaluate(readBaselines, '#dockStretch'));
+  }
+
+  await page.evaluate(() => setMode('room'));
+  await page.locator('#roomAdmin .rv-tab[data-rvtab="sound"]').click();
+  await page.waitForTimeout(300);
+  for (const alg of ENGINES) {
+    await chooseEngine(page, alg);
+    check(`Visual ${alg}`, await page.evaluate(readBaselines, '#roomSoundBody'));
+  }
+
+  expect(failures, `words printed on different baselines:\n${failures.join('\n')}`).toEqual([]);
+});
