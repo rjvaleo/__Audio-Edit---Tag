@@ -112,8 +112,18 @@ none, because it invites the muscle memory and then breaks it.
   fine; double-click puts it back. This is the interaction that makes a
   modelling package feel like one, and the one people miss first when it is
   absent. Pointer capture, because the pointer leaves a 60px field immediately.
-- **A clock**, because a 4D solid at rest is a still picture of a shadow. Pick a
-  plane and a rate; `zw` is the default, being the one worth watching.
+- **A clock**, because a 4D solid at rest is a still picture of a shadow.
+  TURNING is one row of fixed places, **Still** and the six planes: pick a
+  plane and it turns, at the **Rate** knob's speed. `zw` is the default,
+  being the one worth watching.
+- **Projection and the eye.** Perspective or Parallel, as a row of two
+  places; the **Eye** knob is how far down the w axis you stand. Each knob
+  keeps a number field under it, typed or scrubbed like the angles.
+
+The choices are lit places and the two amounts are knobs, as everywhere else
+in the Visual column (`docs/DESIGN-CRITIQUE.md`, "The UI queue"). The
+viewport takes whatever height the controls leave, so the tab fills the
+column without scrolling.
 
 The panel is built from `SHAPES_4D`, so adding a solid to that table is what puts
 it on screen. Its state is validated on load like everything else here — a
