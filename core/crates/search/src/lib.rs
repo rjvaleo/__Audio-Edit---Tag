@@ -18,6 +18,7 @@
 //! else and "similar" would collapse to "about as long".
 
 pub mod learn;
+pub mod pitch;
 pub mod store;
 
 use audio_core::{fft, RandomAccessSource, Reader};
@@ -48,6 +49,9 @@ pub const NAMES: [&str; DIMS] = [
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Fingerprint {
     pub v: [f32; DIMS],
+    /// The note, kept beside the twelve rather than among them: similarity is
+    /// about texture, and two snares tuned a fifth apart are still alike.
+    pub pitch: pitch::Pitch,
 }
 
 impl Fingerprint {
@@ -81,6 +85,7 @@ impl Fingerprint {
         let rms = stats.rms.max(1e-6);
 
         let sp = spectral(&mono, sr);
+        let pitch = pitch::Pitch::of(&mono, sr);
         let rhythm = rhythm(&mono, sr);
 
         Ok(Fingerprint {
@@ -101,6 +106,7 @@ impl Fingerprint {
                 rhythm.pulse,
                 norm(rhythm.onsets_per_sec, 0.0, 12.0),
             ],
+            pitch,
         })
     }
 
@@ -246,17 +252,47 @@ fn zero_crossings(mono: &[f32]) -> f32 {
 
 /// Seconds from the start to the loudest point — a kick and a swell differ here
 /// more than anywhere else.
+///
+/// Of the first event, from where it rises out of the silence to where it is
+/// nearly as loud as it gets. Not the loudest point of the whole excerpt: in a
+/// loop the loudest hit can land anywhere, and a file that opens with half a
+/// second of nothing does not have a half-second attack. Both read as slow
+/// swells before, which is most of the long files in a real library.
 fn attack(mono: &[f32], sr: f32) -> f32 {
-    let mut peak = 0.0;
-    let mut at = 0usize;
-    for (i, s) in mono.iter().enumerate() {
-        let a = s.abs();
-        if a > peak {
-            peak = a;
-            at = i;
+    // Peak level in 1 ms steps, each looking 30 ms ahead: long enough to span
+    // a period of the lowest note, so a held tone reads as steady rather than
+    // dipping at every zero crossing. Looking ahead moves the start and the
+    // top of a rise by the same amount, so their distance apart is unchanged.
+    let hop = (sr / 1000.0).max(1.0) as usize;
+    let bins: Vec<f32> = mono.chunks(hop).map(|c| c.iter().fold(0.0, |m: f32, s| m.max(s.abs()))).collect();
+    let env: Vec<f32> = (0..bins.len())
+        .map(|i| bins[i..(i + 30).min(bins.len())].iter().cloned().fold(0.0, f32::max))
+        .collect();
+    let loudest = env.iter().cloned().fold(0.0, f32::max);
+    if loudest <= 0.0 {
+        return 0.0;
+    }
+
+    // Where the sound begins: the first step past a tenth of its loudest.
+    let Some(start) = env.iter().position(|e| *e >= loudest * 0.1) else { return 0.0 };
+
+    // Where the first event ends: it has fallen to half of what it reached, or
+    // two seconds have passed, which is longer than any attack is measured.
+    let limit = (start + 2_000).min(env.len());
+    let mut top = 0.0;
+    let mut end = limit;
+    for (k, e) in env.iter().enumerate().take(limit).skip(start) {
+        if *e > top {
+            top = *e;
+        } else if *e < top * 0.5 {
+            end = k;
+            break;
         }
     }
-    at as f32 / sr.max(1.0)
+
+    // The rise is done at nine tenths of that event's own top.
+    let peak = (start..end).find(|k| env[*k] >= top * 0.9).unwrap_or(start);
+    (peak - start) as f32 / 1000.0
 }
 
 struct Rhythm {
@@ -376,8 +412,14 @@ impl Calibration {
         };
         // Divided by the count, not the count minus one: with the latter a
         // value above everything ranks 1.1, which is not a percentile.
+        //
+        // A tie sits in the middle of its run, not at the bottom of it. Many
+        // sounds share an attack of nothing — every file that starts at full
+        // level — and ranked at the bottom of their run they all counted as
+        // the sharpest fifth of the library at once.
         let below = col.partition_point(|x| *x < v);
-        below as f32 / col.len() as f32
+        let equal = col[below..].partition_point(|x| *x <= v);
+        (below as f32 + equal as f32 * 0.5) / col.len() as f32
     }
 }
 

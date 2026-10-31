@@ -5310,6 +5310,11 @@ fn api_sounds(app: &Arc<App>) -> Response {
                 for (i, name) in search::NAMES.iter().enumerate() {
                     measured = measured.set(*name, p.v[i] as f64);
                 }
+                // The note is not a dimension, so it is named beside them.
+                measured = measured
+                    .set("pitchHz", p.pitch.hz as f64)
+                    .set("pitchClarity", p.pitch.clarity as f64)
+                    .set("note", p.pitch.note().map(Value::Str).unwrap_or(Value::Null));
             }
 
             let place = fp.map(|p| {
@@ -5440,6 +5445,10 @@ fn api_space(app: &Arc<App>) -> Response {
                 .set("z", (fp.v[flat] * 0.5 + fp.v[noisy] * 0.5) as f64)
                 .set("length", fp.v[dur] as f64)
                 .set("seconds", meta.map(|m| m.duration).unwrap_or(0.0))
+                // Hz, 0 when the sound has no steady note.
+                .set("pitchHz", fp.pitch.hz as f64)
+                .set("pitchClarity", fp.pitch.clarity as f64)
+                .set("note", fp.pitch.note().map(Value::Str).unwrap_or(Value::Null))
                 .set("tags", Value::Arr(words))
         })
         .collect();
