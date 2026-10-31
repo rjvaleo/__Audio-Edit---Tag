@@ -185,6 +185,73 @@ test('C3 · the Prism pad sits hard against a fixed-width control column', async
   expect(narrow.colW).toBe(wide.colW);
 });
 
+test('C3 · a process\'s extra settings are a bank of knobs to the right of the pad', async ({ page }) => {
+  const measure = () => page.evaluate(() => {
+    const box = document.getElementById('prismSettings').getBoundingClientRect();
+    const pad = document.getElementById('prismPad').getBoundingClientRect();
+    const dock = document.getElementById('dockPrism').getBoundingClientRect();
+    const knobs = [...document.querySelectorAll('#prismSettings .param')].map((row) => {
+      const face = row.querySelector(':scope > .rk-face')?.getBoundingClientRect();
+      const input = row.querySelector(':scope > input[type=range]').getBoundingClientRect();
+      return {
+        knob: row.classList.contains('gk-k'),
+        face: face ? Math.round(face.width) : 0,
+        over: !!face && Math.abs((input.left + input.right) / 2 - (face.left + face.right) / 2) <= 2
+          && Math.abs((input.top + input.bottom) / 2 - (face.top + face.bottom) / 2) <= 3,
+      };
+    });
+    return {
+      shown: box.width > 0 && box.height > 0,
+      gap: Math.round(box.left - pad.right), top: Math.round(box.top - pad.top),
+      width: Math.round(box.width), inDock: box.right <= dock.right + 1,
+      note: document.querySelector('#prismSettings .prism-settings-note')?.textContent.trim() || '',
+      knobs,
+    };
+  });
+  await openFile(page);
+  await dockTab(page, 'prism');
+  await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
+  // Time & Pitch keeps its other settings on its own tab: a note says so,
+  // where the knobs would be, and nothing reads as missing.
+  const none = await measure();
+  expect(none.shown).toBe(true);
+  expect(none.knobs).toHaveLength(0);
+  expect(none.note).toMatch(/Time & Pitch tab/);
+  expect(none.gap).toBeGreaterThanOrEqual(0);
+  expect(none.gap).toBeLessThanOrEqual(24);
+  // The Pitch Time Changer has four: knobs, each face under its input.
+  await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
+  await page.waitForTimeout(300);
+  const wide = await measure();
+  expect(wide.note).toBe('');
+  expect(wide.knobs).toHaveLength(4);
+  for (const k of wide.knobs) {
+    expect(k.knob).toBe(true);
+    expect(k.face).toBeGreaterThanOrEqual(20);
+    expect(k.over).toBe(true);
+  }
+  // Hard against the pad, level with its top, inside the dock.
+  expect(wide.gap).toBeGreaterThanOrEqual(0);
+  expect(wide.gap).toBeLessThanOrEqual(24);
+  expect(Math.abs(wide.top)).toBeLessThanOrEqual(24);
+  expect(wide.inDock).toBe(true);
+  // One width, whatever the process and whatever the window.
+  expect(wide.width).toBe(none.width);
+  // A knob turned up sets what its slider set: the Pitch Time Changer's value.
+  const before = await page.evaluate(() => prismPtc().feedback);
+  const face = await page.locator('#prismSettings .param').first().locator('input[type=range]').boundingBox();
+  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2 - 40, { steps: 5 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => prismPtc().feedback)).toBeGreaterThan(before);
+  await page.setViewportSize({ width: 1300, height: 1000 });
+  await page.waitForTimeout(300);
+  const narrow = await measure();
+  expect(narrow.width).toBe(wide.width);
+  expect(narrow.inDock).toBe(true);
+});
+
 test('C4 · keyboard focus is visible on every kind of control', async ({ page }) => {
   await openFile(page);
   for (const sel of ['#playBtn', '.dock-tab[data-dock="effects"]', '#leftRail .mode-btn', '#presetPick', '#dockStretch input[type=range]']) {
