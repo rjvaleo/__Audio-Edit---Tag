@@ -7,7 +7,7 @@
 // draws, and still looks like a knot — which is exactly why it needs a test
 // rather than a look.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function ready(page) {
   await page.goto('/');

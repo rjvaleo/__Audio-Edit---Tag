@@ -12,7 +12,7 @@
 // checks them against signals with known answers; what is left to check here is
 // that the panel is wired to them.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 /// A payload shaped exactly like `/api/engine/master`.
 const FEED = `(() => {

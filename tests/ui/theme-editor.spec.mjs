@@ -12,7 +12,7 @@
 //
 // See `docs/THEME-EDITOR.md`.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function studio(page) {
   await page.goto('/');

@@ -10,7 +10,7 @@
 // The scratch server has no audio device, so a take is not recorded here by
 // playing; the path and LOOP are checked on lanes posted directly.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openPad(page, slots = []) {
   await page.goto('/');

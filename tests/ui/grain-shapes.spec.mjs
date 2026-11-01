@@ -13,7 +13,7 @@
 // The second is that the room actually draws them, which no amount of checking
 // the catalogue can tell you.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRoom(page) {
   await page.goto('/');

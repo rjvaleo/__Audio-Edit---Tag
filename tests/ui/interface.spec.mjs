@@ -14,7 +14,7 @@
 // So: watch the console, open things, and assert on the DOM rather than on the
 // source that produced it.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 /// Every console error and page exception, in the order they happened.
 ///

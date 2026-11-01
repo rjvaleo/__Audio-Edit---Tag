@@ -10,7 +10,7 @@
 // snap-to-width. Same line means the same `top` to the pixel. Same size means
 // the same `height` to the pixel.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 const ENGINES = ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular'];
 

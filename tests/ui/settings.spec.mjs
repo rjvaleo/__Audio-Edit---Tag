@@ -5,7 +5,7 @@
 // against a running interface. What cannot is whether the app actually reads
 // through it, which is the last two tests.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function ready(page) {
   await page.goto('/');

@@ -5,7 +5,7 @@
 // either program: the map from its 86 tokens onto this app's 22, and whether
 // applying one actually changes what is on screen.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function ready(page) {
   await page.goto('/');

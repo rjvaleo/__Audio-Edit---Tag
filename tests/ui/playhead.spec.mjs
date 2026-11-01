@@ -24,7 +24,7 @@
 // discontinuity. Same simulated network: 742 to 855 frames, ten ticks over a
 // millisecond.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 /// Drive the clock by hand and count how evenly the playhead advances.
 ///

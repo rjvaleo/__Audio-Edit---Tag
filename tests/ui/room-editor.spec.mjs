@@ -10,7 +10,7 @@
 // that matters most — that `floorY` and `ceilY` move as one asymmetry rather
 // than as two independent numbers, because that asymmetry is the tilt.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRoom(page) {
   await page.goto('/');

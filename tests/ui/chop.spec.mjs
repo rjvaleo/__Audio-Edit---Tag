@@ -7,7 +7,7 @@
 // produces on the same signal: the numbers below were taken by running the
 // original's own functions on it.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 /// The signal the expectations were taken from: five decaying 220 Hz bursts in
 /// two seconds of silence, the last one only 15 ms long.

@@ -14,7 +14,7 @@
 // almost certainly has one. That is the point — the real case is unreachable
 // here and was therefore never tested.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function ready(page) {
   await page.goto('/');

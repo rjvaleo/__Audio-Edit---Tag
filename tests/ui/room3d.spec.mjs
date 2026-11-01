@@ -14,7 +14,7 @@
 //   - and that it is **deterministic**: the same pushes and the same clock give
 //     the same frame, twice.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openSurfaces(page) {
   await page.goto('/');

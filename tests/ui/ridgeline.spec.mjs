@@ -13,7 +13,7 @@
 // however many rows it has, and three separate area measurements reported a
 // working control doing nothing.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRidge(page) {
   await page.goto('/');

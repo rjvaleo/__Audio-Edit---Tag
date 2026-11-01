@@ -63,7 +63,7 @@ writeFileSync(join(data, 'config.json'), JSON.stringify({ library }));
 
 // Build first, always.
 //
-// The interface is `include_str!`-embedded in the binary, so editing `ui/app.js`
+// The interface is `include_str!`-embedded in the binary, so editing `ui/app/*.js`
 // and running the suite without a rebuild tests **the previous interface** —
 // and passes, which is the worst possible outcome: a green run that proves
 // nothing about the change that was just made. Checking the file merely exists,

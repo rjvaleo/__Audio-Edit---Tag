@@ -8,7 +8,7 @@
 //   - and **the editor comes back exactly as it was**, which is the half that
 //     was missed and the half that blanked the visual panel.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function open(page) {
   await page.goto('/');

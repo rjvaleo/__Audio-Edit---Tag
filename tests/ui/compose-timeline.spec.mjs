@@ -15,7 +15,7 @@
 //     moved onto another control and undone all reach the sequencer and stay;
 //   - the bars follow the sequencer's tempo.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openFile(page) {
   await page.goto('/');

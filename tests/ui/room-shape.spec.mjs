@@ -9,7 +9,7 @@
 // constants in `vis-gl.js` that decided what the room *is* rather than where
 // you look at it from.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRoom(page) {
   await page.goto('/');

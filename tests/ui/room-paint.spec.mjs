@@ -11,7 +11,7 @@
 // reconstruction of the old two-colour behaviour that is a shade off would look
 // fine and be wrong in every screenshot ever taken afterwards.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRoom(page) {
   await page.goto('/');

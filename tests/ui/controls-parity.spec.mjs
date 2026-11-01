@@ -15,7 +15,7 @@
 // Adding a control is free. Losing one fails here, naming it and the view.
 // Renaming one on purpose means updating the fixture in the same commit.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -7,7 +7,7 @@
 // moving its two controls at once — and that what is moved on screen is what
 // the server stores.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRack(page) {
   await page.goto('/');

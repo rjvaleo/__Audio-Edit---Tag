@@ -14,7 +14,7 @@
 // Compose is unlisted since 15 Sep 2026 (`COMPOSE_LISTED` in rail.js): these
 // open it the way its rail button would, and check nothing of it shows.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openFile(page) {
   await page.goto('/');

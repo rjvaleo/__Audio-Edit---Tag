@@ -3,7 +3,7 @@
 // See `docs/PORT-PLAN.md`. What is worth testing is what the old renderers could
 // not do, and the two faults that made this hard to see.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openStage(page) {
   await page.goto('/');

@@ -10,7 +10,7 @@
 // cue as well would pass any test that only looked at where the playhead ended
 // up.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openFile(page) {
   await page.goto('/');

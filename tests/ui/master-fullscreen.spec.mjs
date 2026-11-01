@@ -14,7 +14,7 @@
 // handler — `visGlTick` reconciles the backing store with the client size every
 // frame — so the proof is that the backing store is bigger afterwards.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openEditor(page) {
   await page.goto('/');

@@ -12,7 +12,7 @@
 //     grips feel like handles rather than like the card sliding about.
 //   - and the film draws the same card, from the same routine.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 /// A room with the ridgeline up and sound in it, so there is a picture for the
 /// card to interrupt. Silence would be flat lines and a card over flat lines

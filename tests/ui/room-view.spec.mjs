@@ -16,7 +16,7 @@
 // dispatched events straight at the elements — which is the one way of driving
 // a control that cannot tell whether the control can be reached.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openApp(page) {
   await page.goto('/');

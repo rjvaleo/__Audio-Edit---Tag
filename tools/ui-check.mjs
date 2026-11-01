@@ -18,11 +18,12 @@
 // that overstates its reach is worse than no check.
 
 import { readFileSync } from 'node:fs';
+import { appSource, whereIs } from './app-source.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const app = readFileSync(join(root, 'ui/app.js'), 'utf8');
+const app = appSource();
 const html = readFileSync(join(root, 'ui/index.html'), 'utf8');
 
 const failures = [];
@@ -116,7 +117,7 @@ function callsTo(name) {
 const controls = [...callsTo('param'), ...callsTo('knob')];
 const noDefault = controls.filter((c) => c.args.length < 10 || !c.args[9]);
 for (const c of noDefault) {
-  fail(`app.js:${c.line}  control ${c.args[0] || '(unnamed)'} has no default — double-click will not reset it`);
+  fail(`${whereIs(c.line)}  control ${c.args[0] || '(unnamed)'} has no default — double-click will not reset it`);
 }
 notes.push(`${controls.length} controls, ${controls.length - noDefault.length} with a reset`);
 
@@ -140,9 +141,9 @@ for (const c of controls) {
   if (!def) continue;
   const m = /^(\w+_DEFAULTS)\.(\w+)$/.exec(def);
   if (!m) continue;
-  if (!tables[m[1]]) fail(`app.js:${c.line}  no such defaults table ${m[1]}`);
+  if (!tables[m[1]]) fail(`${whereIs(c.line)}  no such defaults table ${m[1]}`);
   else if (!tables[m[1]].has(m[2])) {
-    fail(`app.js:${c.line}  ${m[1]} has no key "${m[2]}" — the reset will silently do nothing`);
+    fail(`${whereIs(c.line)}  ${m[1]} has no key "${m[2]}" — the reset will silently do nothing`);
   }
 }
 notes.push(`${Object.keys(tables).length} defaults tables`);
@@ -160,7 +161,7 @@ let idRefs = 0;
 for (const m of app.matchAll(/\$\(\s*['"]([\w-]+)['"]\s*\)/g)) {
   idRefs++;
   if (!ids.has(m[1]) && !dynamic.has(m[1])) {
-    fail(`app.js:${lineOf(m.index)}  $('${m[1]}') — no such id in index.html`);
+    fail(`${whereIs(lineOf(m.index))}  $('${m[1]}') — no such id in index.html`);
   }
 }
 notes.push(`${idRefs} element lookups against ${ids.size} ids`);
@@ -274,7 +275,7 @@ for (const m of bare.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
   if (!missing.has(name)) missing.set(name, lineOf(m.index));
 }
 for (const [name, line] of missing) {
-  fail(`app.js:${line}  ${name}() is called but never declared`);
+  fail(`${whereIs(line)}  ${name}() is called but never declared`);
 }
 notes.push(`${calls} calls checked against ${declared.size} declarations`);
 
@@ -288,7 +289,7 @@ if (!liveList) fail('app.js  LIVE_ENGINES has gone');
 else {
   const known = new Set([...liveList[1].matchAll(/'([\w]+)'/g)].map((m) => m[1]));
   for (const m of app.matchAll(/data-alg="(\w+)"/g)) {
-    if (!known.has(m[1])) fail(`app.js:${lineOf(m.index)}  engine button "${m[1]}" is not in LIVE_ENGINES`);
+    if (!known.has(m[1])) fail(`${whereIs(lineOf(m.index))}  engine button "${m[1]}" is not in LIVE_ENGINES`);
   }
   notes.push(`${known.size} engines in the picker`);
 }

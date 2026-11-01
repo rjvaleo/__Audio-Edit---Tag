@@ -6,7 +6,7 @@
 // left is what is still true of any grip in any world: it is drawn where the
 // thing it moves is drawn, by the same projection the room is drawn with.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRoom(page) {
   await page.goto('/');

@@ -5,7 +5,7 @@
 // a host the size a cell will be, so what is checked is the panel and not yet
 // the view that places it.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function ready(page) {
   await page.goto('/');

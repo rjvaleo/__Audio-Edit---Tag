@@ -5,7 +5,7 @@
 // interface adds — that every engine control is on offer, that Capture arms
 // the recorder and rolls, and that the take is drawn as a stacked timeline.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function open(page) {
   await page.goto('/');

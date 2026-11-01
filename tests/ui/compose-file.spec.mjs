@@ -12,7 +12,7 @@
 //   - one export puts the sound and the film beside each other in a folder
 //     named for the composition.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openCompose(page) {
   await page.goto('/');

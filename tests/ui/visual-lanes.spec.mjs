@@ -15,7 +15,7 @@
 // There is no sound card in the test server, so the transport is stood in for:
 // `engine.playing` and `playbackTime` are set, and the frame tick is called.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openFile(page) {
   await page.goto('/');

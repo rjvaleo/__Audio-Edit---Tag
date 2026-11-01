@@ -62,7 +62,7 @@ fn every_embedded_interface_file_is_where_the_binary_expects_it() {
     for rel in [
         "ui/index.html",
         "ui/app.css",
-        "ui/app.js",
+        "ui/app/000-core.js",
         "visualiser/grain-views.html",
         "visualiser/p5.min.js",
         "visualiser/fonts.css",

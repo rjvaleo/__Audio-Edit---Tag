@@ -11,7 +11,7 @@
 // at top level before that declaration is reached. The console named it; no
 // amount of staring at the function did.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function ready(page) {
   await page.goto('/');

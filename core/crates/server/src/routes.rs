@@ -81,7 +81,8 @@ pub fn ui_build_id() -> u64 {
 /// and changes with it; there is nothing here worth caching.
 pub const UI_HTML: &str = include_str!("../../../../ui/index.html");
 pub const UI_CSS: &str = include_str!("../../../../ui/app.css");
-pub const UI_JS: &str = include_str!("../../../../ui/app.js");
+/// `ui/app/*.js`, joined in name order by `build.rs`.
+pub const UI_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
 /// The palette-to-theme engine and the palettes it works on.
 ///
 /// Separate files rather than more of `app.js` because the engine is a port and

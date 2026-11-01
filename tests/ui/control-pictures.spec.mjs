@@ -8,7 +8,7 @@
 // colour lands, the generators show the palette they make, and the 4D tab shows
 // each solid and each plane's angle.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openVisual(page) {
   await page.goto('/');

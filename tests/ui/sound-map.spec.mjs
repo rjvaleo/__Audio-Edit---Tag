@@ -5,7 +5,7 @@
 // library, names a sound under the pointer, opens its card on a click, switches
 // layout, finds by name, and gives the window back on Escape.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openMap(page) {
   await page.goto('/');

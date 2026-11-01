@@ -6,7 +6,7 @@
 // itself is its own program with its own repository — nothing here tests a
 // knob.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function ready(page) {
   await page.goto('/');

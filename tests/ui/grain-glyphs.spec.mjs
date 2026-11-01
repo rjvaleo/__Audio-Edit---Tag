@@ -6,7 +6,7 @@
 // drawing changes. Nothing else about the knob may move — it is still the same
 // range input, read by presets, Random, automation and the resets.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 /// Every key with a glyph. Stretch, Pitch and Window are Time and pitch's; the
 /// rest are `state.grainRows`.

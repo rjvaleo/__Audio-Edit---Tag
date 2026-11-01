@@ -8,7 +8,7 @@
 // one. Every drag in the room now refuses a secondary press and ends itself
 // on the first move with no button down.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRoom(page) {
   await page.goto('/');

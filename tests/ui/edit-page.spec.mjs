@@ -5,7 +5,7 @@
 // The icons run the same commands as the menus, dim when there is nothing for
 // them to act on, and Copy / Paste / Delete are real edits on the document.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openEdit(page) {
   await page.addInitScript(() => {

@@ -5,7 +5,7 @@
 // played on every Play once it had ever been opened, and there was no way to
 // hear one without the other.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openFile(page) {
   await page.goto('/');

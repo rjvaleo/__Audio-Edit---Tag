@@ -4,7 +4,7 @@
 // "where is the room", which is the line between this and `room-editor`: the
 // camera is a pose and these are not.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 /// Push a few dozen frames of made-up sound into the room.
 ///

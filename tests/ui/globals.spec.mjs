@@ -17,10 +17,11 @@
 // breaks is in whichever file lost — somewhere else entirely. So it is caught
 // here, by name.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { appSource } from '../../tools/app-source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -30,7 +31,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /// anything nested is somebody's local. Crude, and exactly right for two files
 /// that are written this way throughout.
 function topLevelNames(file) {
-  const src = readFileSync(join(ROOT, file), 'utf8');
+  // `ui/app.js` is served joined from its parts (`tools/app-source.mjs`).
+  const src = file === 'ui/app.js' ? appSource() : readFileSync(join(ROOT, file), 'utf8');
   const names = new Map();
   const patterns = [
     /^function\s+([A-Za-z_$][\w$]*)/,

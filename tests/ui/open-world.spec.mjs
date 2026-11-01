@@ -7,7 +7,7 @@
 // room posed on `main` opens here looking the same, and a drag still lands
 // where it landed — and about the matrix that step two will draw with.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function openRoom(page) {
   await page.goto('/');

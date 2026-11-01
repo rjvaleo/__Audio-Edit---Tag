@@ -7,7 +7,7 @@
 // signed 32-bit shift, so the audio sample entry was nonsense and the whole
 // thing failed silently. See `docs/VIDEO-EXPORT.md`.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 test.setTimeout(180_000);
 

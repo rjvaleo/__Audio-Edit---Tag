@@ -11,7 +11,7 @@
 // sound lived in an unexpanded folder opened with a zero-length view, never
 // fetched peaks, and `updatePlayhead` hid the playhead because there were none.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function ready(page) {
   await page.goto('/');

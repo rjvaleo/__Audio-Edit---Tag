@@ -28,7 +28,7 @@
 // Run with Chromium's fake audio output. Headless, a page's audio context
 // otherwise says it is running and never renders a frame.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 test.use({ launchOptions: { args: ['--disable-audio-output'] } });
 

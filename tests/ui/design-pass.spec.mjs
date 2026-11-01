@@ -6,7 +6,7 @@
 // where the fault can only be seen in the source (a canvas font that one
 // browser can draw and another cannot).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

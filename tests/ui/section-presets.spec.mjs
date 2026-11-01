@@ -5,7 +5,7 @@
 // back actually reaches the room and its controls, and that a cloud put back
 // actually reaches the document — and neither touches the other.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 const FAKE = `(() => {
   const map = new Map();

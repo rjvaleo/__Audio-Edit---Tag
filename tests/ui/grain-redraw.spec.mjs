@@ -15,7 +15,7 @@
 //
 // Each test below is one of those, driven the way it actually happens.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function editing(page) {
   await page.goto('/');

@@ -15,7 +15,7 @@
 //   - live, a jump back puts a take back where it stood, and a take that has
 //     run out comes round again.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test.mjs';
 
 async function enterSeq(page) {
   await page.goto('/');
