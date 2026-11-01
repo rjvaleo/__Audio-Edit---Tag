@@ -534,6 +534,10 @@ pub struct App {
     pub markers: RwLock<crate::docs::MarkerStore>,
     /// Open edit sessions, one per file, held for the life of the process.
     pub edits: crate::docs::EditStore,
+    /// What Copy and Cut last took: the document it came from and its clips.
+    /// Clips index their own file's audio, so a paste goes back into that
+    /// document only.
+    pub clipboard: Mutex<Option<(String, Vec<edit::Clip>)>>,
     /// Effect racks, one per file, held for the life of the process.
     pub racks: crate::rack::RackStore,
     /// Automation lanes, one set per file. Unlike the racks these outlive the
@@ -637,6 +641,7 @@ impl App {
             print_pass: Pass::default(),
             label_pass: Pass::default(),
             edits: crate::docs::EditStore::default(),
+            clipboard: Mutex::new(None),
             racks: crate::rack::RackStore::default(),
             automation,
             visual_lanes: RwLock::new(visual_lanes),

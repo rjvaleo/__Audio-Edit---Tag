@@ -124,6 +124,53 @@ impl EditList {
         }
     }
 
+    /// The clips that play `range`, as they are heard — gain, fades, reversal
+    /// and all. The document is left exactly as it was: the splits are made on
+    /// a copy.
+    pub fn copy(&self, range: Range) -> Vec<Clip> {
+        if range.is_empty() {
+            return Vec::new();
+        }
+        let total = self.base_frames();
+        if range.start >= total {
+            return Vec::new();
+        }
+        let end = range.end.min(total);
+        let mut work = self.clone();
+        work.split_at(range.start);
+        work.split_at(end);
+        match work.clip_span(Range::new(range.start, end)) {
+            Some((first, last)) => work.clips[first..=last].to_vec(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Lay `clips` in at `pos`, pushing everything after it later; or, given a
+    /// selection, in place of it. Past the end lands at the end.
+    ///
+    /// The clips index this document's source, so they must have come from
+    /// [`copy`](Self::copy) on a list of the same file.
+    pub fn paste(&mut self, pos: u64, replace: Option<Range>, clips: &[Clip]) {
+        if clips.is_empty() {
+            return;
+        }
+        let pos = match replace {
+            Some(r) if !r.is_empty() => {
+                self.cut(r);
+                r.start
+            }
+            _ => pos,
+        };
+        let at = if pos >= self.base_frames() {
+            self.clips.len()
+        } else {
+            self.split_at(pos).unwrap_or(self.clips.len())
+        };
+        for (k, c) in clips.iter().enumerate() {
+            self.clips.insert(at + k, *c);
+        }
+    }
+
     /// Insert `frames` of silence at `pos`, pushing everything after it later.
     ///
     /// Peak's Insert Silence. Ours had no equivalent — [`silence`](Self::silence)

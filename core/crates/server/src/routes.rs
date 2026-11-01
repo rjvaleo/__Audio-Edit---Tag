@@ -2647,10 +2647,33 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
         None
     };
 
+    // Paste goes back only into the document the clips were copied from: they
+    // index that file's audio.
+    let pasting = if op == "paste" {
+        match app.clipboard.lock().unwrap().as_ref() {
+            Some((from, clips)) if from == rel => Some(clips.clone()),
+            Some(_) => return Response::error(409, "paste goes into the sound it was copied from"),
+            None => return Response::error(409, "nothing has been copied"),
+        }
+    } else {
+        None
+    };
+    let mut copied: Option<Vec<edit::Clip>> = None;
+
     let mut unknown = false;
     let out = app.edits.with(rel, || identity, |s| {
         match op {
-            "cut" => { s.apply(|l| l.cut(range)); }
+            "copy" => { copied = Some(s.list().copy(range)); }
+            "cut" => {
+                copied = Some(s.list().copy(range));
+                s.apply(|l| l.cut(range));
+            }
+            "delete" => { s.apply(|l| l.cut(range)); }
+            "paste" => {
+                if let Some(clips) = pasting.as_ref() {
+                    s.apply(|l| l.paste(start, Some(range), clips));
+                }
+            }
             "silence" => { s.apply(|l| l.silence(range)); }
             "gain" => { let db = float("db", 0.0); s.apply(|l| l.gain_db(range, db)); }
             "fadeIn" => { let n = num("frames"); s.apply(|l| l.fade_in(range, n, shape)); }
@@ -2943,6 +2966,15 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
     if unknown {
         return Response::error(400, &format!("unknown edit operation: {op}"));
     }
+    if let Some(clips) = copied.filter(|c| !c.is_empty()) {
+        *app.clipboard.lock().unwrap() = Some((rel.to_string(), clips));
+    }
+    // How long the clipboard is, for this document; nothing for any other.
+    let held = match app.clipboard.lock().unwrap().as_ref() {
+        Some((from, clips)) if from == rel => clips.iter().map(|c| c.len).sum::<u64>(),
+        _ => 0,
+    };
+    let out = out.set("clipboard", held);
     app.save_sessions();
 
     // Performance controls go straight at the audio thread — that is the whole
@@ -2956,6 +2988,8 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 record_stretch_moves(app, rel, &was, &list.stretch);
             }
         }
+    } else if op == "copy" {
+        // Nothing changed; the engine keeps what it is playing.
     } else if let Some(path) = app.library_path().and_then(|l| resolve_within(&l, rel)) {
         let _ = crate::live::load(app, rel, &path, crate::live::Playing::Document);
     }

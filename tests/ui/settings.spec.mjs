@@ -158,7 +158,9 @@ test('the settings the menus used to hold are on the panel, and gone from the me
   expect(got.panel).toContain('buffer');
   expect(got.panel).toContain('grainCap');
   expect(got.panel).toContain('followMode');
-  expect(got.rows, 'the menu bar should be well under its old 78 rows').toBeLessThan(65);
+  // Under 70: Copy, Paste, Delete and Gain (1 Nov 2026, the Edit page) are
+  // commands, not settings, and took it from 62 to 66.
+  expect(got.rows, 'the menu bar should be well under its old 78 rows').toBeLessThan(70);
 });
 
 test('the panel opens, draws every row in the table, and closes three ways', async ({ page }) => {

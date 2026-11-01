@@ -55,8 +55,14 @@ const COMPOSE_LISTED = false;
   /// `panel` instead — the difference is real and it is the app's, not the
   /// rail's.
   const ITEMS = [
+    // Edit and Grain are two pages of one mode, `edit`: the same open sound,
+    // with the edit toolbar or with the granular dock. `page` says which.
     {
-      icon: 'grain', label: 'Grain', mode: 'edit',
+      icon: 'edit', label: 'Edit', mode: 'edit', page: 'wave',
+      title: 'Editing only — cut, copy, paste, fades and every edit command as icons',
+    },
+    {
+      icon: 'grain', label: 'Grain', mode: 'edit', page: 'grain',
       title: 'The granular engine — the sound you are working on',
     },
     {
@@ -144,6 +150,9 @@ const COMPOSE_LISTED = false;
     // is not a record button.
     record:
       '<circle cx="12" cy="12" r="6.5" fill="currentColor" stroke="none"/>',
+    // A waveform and the edit cursor through it.
+    edit:
+      '<path d="M3 12h1.8l1.6-5.5 2.2 11 2-7.5 1.6 4.5H14"/><path d="M17.5 4v16M15.5 4h4M15.5 20h4"/>',
     grain:
       '<path d="M7.6 18.5h9.2a3.4 3.4 0 0 0 .35-6.78 5.35 5.35 0 0 0-10.03-2.3 4.1 4.1 0 0 0 .48 9.08z"/><circle cx="9.6" cy="13.4" r=".85" fill="currentColor" stroke="none"/><circle cx="13" cy="11.9" r=".85" fill="currentColor" stroke="none"/><circle cx="15.4" cy="14.6" r=".85" fill="currentColor" stroke="none"/><circle cx="11.7" cy="15.6" r=".85" fill="currentColor" stroke="none"/>',
     visual:
@@ -204,6 +213,7 @@ const COMPOSE_LISTED = false;
       // which is what this file's stylesheet dresses.
       const b = el('button', item.mode ? 'rl-item mode-btn' : 'rl-item rail-btn');
       if (item.mode) b.dataset.mode = item.mode;
+      if (item.page) b.dataset.page = item.page;
       if (item.panel) b.dataset.panel = item.panel;
       b.title = item.title;
       b.append(icon(item.icon), label(item.label));
@@ -330,6 +340,10 @@ const COMPOSE_LISTED = false;
       // has to shut the pane it opened, so `whereFor` answers for it even
       // though `current()`, which drives the light, does not.
       const mode = (typeof state !== 'undefined' && state.mode) || 'overview';
+      if (mode === 'edit') {
+        const page = document.body.classList.contains('wavepage') ? 'wave' : 'grain';
+        return rail.querySelector(`.rl-item[data-mode="edit"][data-page="${page}"]`);
+      }
       return rail.querySelector(`.rl-item[data-mode="${mode}"]`);
     };
 
@@ -447,6 +461,7 @@ const COMPOSE_LISTED = false;
         if (pane === 'record' && state.mode !== 'overview') setMode('overview');
         showPane('left', pane);
       } else {
+        if (item.dataset.page) setEditPage(item.dataset.page, false);
         setMode(mode);
         // **Reset the pane on every mode, not only on Browse.**
         //

@@ -2361,3 +2361,95 @@ fn an_empty_library_has_an_empty_map() {
     assert_eq!(num(&m, &["waiting"]), 0.0);
     assert!(matches!(m.get("points"), Some(server::json::Value::Arr(p)) if p.is_empty()));
 }
+
+// ── the clipboard ────────────────────────────────────────────────────────────
+
+#[test]
+fn copy_then_paste_lengthens_the_document_and_copy_alone_changes_nothing() {
+    let s = Scratch::new("copypaste");
+    s.sound("kit/a.wav", 4000);
+    let app = s.app();
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"copy","start":0,"end":1000}"#),
+    );
+    assert_eq!(status(&r), 200);
+    assert_eq!(num(&json(&r), &["frames"]), 4000.0);
+    assert!(!flag(&json(&r), &["canUndo"]), "a copy is not an edit");
+    assert_eq!(num(&json(&r), &["clipboard"]), 1000.0);
+
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"paste","start":2000,"end":2000}"#),
+    );
+    assert_eq!(status(&r), 200);
+    assert_eq!(num(&json(&r), &["frames"]), 5000.0);
+}
+
+#[test]
+fn cut_fills_the_clipboard_and_delete_does_not() {
+    let s = Scratch::new("cutdelete");
+    s.sound("kit/a.wav", 4000);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"cut","start":0,"end":500}"#),
+    );
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"delete","start":0,"end":1000}"#),
+    );
+    assert_eq!(num(&json(&r), &["frames"]), 2500.0);
+    // The clipboard still holds the cut, not the delete.
+    assert_eq!(num(&json(&r), &["clipboard"]), 500.0);
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"paste","start":0,"end":0}"#),
+    );
+    assert_eq!(num(&json(&r), &["frames"]), 3000.0);
+}
+
+#[test]
+fn paste_over_a_selection_replaces_it() {
+    let s = Scratch::new("pasteover");
+    s.sound("kit/a.wav", 4000);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"copy","start":0,"end":100}"#),
+    );
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"paste","start":1000,"end":2000}"#),
+    );
+    assert_eq!(num(&json(&r), &["frames"]), 3100.0);
+}
+
+#[test]
+fn paste_into_another_sound_is_refused_and_says_why() {
+    let s = Scratch::new("pasteother");
+    s.sound("kit/a.wav", 4000);
+    s.sound("kit/b.wav", 4000);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"copy","start":0,"end":100}"#),
+    );
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/b.wav","op":"paste","start":0,"end":0}"#),
+    );
+    assert_eq!(status(&r), 409);
+}
+
+#[test]
+fn paste_with_nothing_copied_is_refused() {
+    let s = Scratch::new("pasteempty");
+    s.sound("kit/a.wav", 4000);
+    let app = s.app();
+    let r = server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"paste","start":0,"end":0}"#),
+    );
+    assert_eq!(status(&r), 409);
+}

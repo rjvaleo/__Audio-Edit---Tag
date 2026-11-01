@@ -1402,3 +1402,67 @@ fn an_odd_number_of_bytes_still_leaves_a_well_formed_file() {
     let info = audio_core::probe(&mut src).unwrap();
     assert_eq!(info.frames(), 333);
 }
+
+// ── copy and paste ───────────────────────────────────────────────────────────
+
+#[test]
+fn copying_leaves_the_document_as_it_was() {
+    let list = identity(100);
+    let clips = list.copy(Range::new(20, 30));
+    assert_eq!(clips.iter().map(|c| c.len).sum::<u64>(), 10);
+    assert!(list.is_identity(), "copy changed the document");
+}
+
+#[test]
+fn pasting_at_a_point_inserts_the_copy_there() {
+    let mut r = ramp_reader(100, 1);
+    let mut list = identity(100);
+    let clips = list.copy(Range::new(20, 30));
+    list.paste(50, None, &clips);
+
+    assert_eq!(list.frames(), 110);
+    let out = rendered(&list, &mut r);
+    // Frame 49, then the copy of 20..30, then frame 50 again.
+    assert!((out[49] - 0.049).abs() < 1e-6);
+    assert!((out[50] - 0.020).abs() < 1e-6);
+    assert!((out[59] - 0.029).abs() < 1e-6);
+    assert!((out[60] - 0.050).abs() < 1e-6);
+}
+
+#[test]
+fn pasting_over_a_selection_replaces_it() {
+    let mut r = ramp_reader(100, 1);
+    let mut list = identity(100);
+    let clips = list.copy(Range::new(0, 5));
+    list.paste(40, Some(Range::new(40, 60)), &clips);
+
+    assert_eq!(list.frames(), 85);
+    let out = rendered(&list, &mut r);
+    assert!((out[39] - 0.039).abs() < 1e-6);
+    assert!((out[40] - 0.000).abs() < 1e-6);
+    assert!((out[44] - 0.004).abs() < 1e-6);
+    assert!((out[45] - 0.060).abs() < 1e-6);
+}
+
+#[test]
+fn a_copy_keeps_what_was_done_to_it() {
+    // Reversed material pastes reversed: the copy is of what you hear.
+    let mut r = ramp_reader(100, 1);
+    let mut list = identity(100);
+    list.reverse(Range::new(10, 20));
+    let clips = list.copy(Range::new(10, 20));
+    list.paste(100, None, &clips);
+
+    assert_eq!(list.frames(), 110);
+    let out = rendered(&list, &mut r);
+    assert!((out[100] - 0.019).abs() < 1e-6);
+    assert!((out[109] - 0.010).abs() < 1e-6);
+}
+
+#[test]
+fn pasting_past_the_end_lands_at_the_end() {
+    let mut list = identity(100);
+    let clips = list.copy(Range::new(0, 10));
+    list.paste(5000, None, &clips);
+    assert_eq!(list.frames(), 110);
+}
