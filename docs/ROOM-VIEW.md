@@ -188,3 +188,9 @@ freezes transitions at their first frame, so the drawer sat over the panel
 forever. The same thing had already been diagnosed once in this file's history.
 Finishing the animation before measuring is what makes the reading mean
 anything.
+
+## Every control is drawn
+
+Each knob in the column has a picture of the part of the room it moves, in that
+part's colour; the layers and the palette's slots show where in the room each is;
+the generators show the palette they make. See `docs/CONTROL-PICTURES.md`.

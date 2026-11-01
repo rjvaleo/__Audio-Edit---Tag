@@ -265,6 +265,8 @@ function p4SyncFields() {
       el.value = (p4.angles[p.key] * P4_DEG).toFixed(1);
     }
   }
+  // Each plane's dial follows its number, even the one being typed in.
+  if (typeof cpDials4d === 'function') cpDials4d();
 }
 
 function p4BuildPanel() {
@@ -366,6 +368,8 @@ function p4BuildPanel() {
   host.appendChild(p4El('div', 'fx-note',
     'Eye is how far down the w axis you are standing. Far off is nearly parallel; close in exaggerates '
     + 'the depth, and the panel holds you clear of the solid rather than dividing by nothing.'));
+  // A thumbnail on every solid, a dial on every plane (`control-pictures.js`).
+  if (typeof cpPaint4d === 'function') cpPaint4d();
 }
 
 /// A row of fixed places. `places` are [key, label, title, marked]; one is lit.
@@ -404,6 +408,8 @@ function p4Knob(row, { label, min, max, step, digits, def, scrub, fine, get, set
   read.dataset.p4 = label;
   read.value = get().toFixed(digits);
   row.appendChild(input);
+  // The row is not in the panel yet, so the picture is told whose it is.
+  input.dataset.cp = `p4Panel:${label.toUpperCase()}`;
   rkKnob(input, label, read);
   const apply = (v) => {
     set(v);

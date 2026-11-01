@@ -4974,3 +4974,49 @@ body.editing[data-grain-ui="modern"] #grainControls .engine-pick::before {
 /* The engine's name takes a line above its switches; the cloud pad's column,
    placed absolutely under them, moves down by the same. */
 body.editing[data-grain-ui="modern"] #dockStretch .gk-left { top: 44px; }
+
+/* ═════════════════════════════════════════ the Visual column's pictures ══
+   `ui/control-pictures.js`. A picture over every knob of what it moves, in the
+   colour the palette gives that part (`--cp`, set on each picture); the context
+   around it in the dim text colour. The knob's input is laid over the face, so
+   it moves down by the picture's height. */
+.rv-admin .rk-k > svg.pic { display: block; width: 52px; height: 39px; margin-bottom: 2px; overflow: hidden; }
+#roomAdmin .rk-k:has(> svg.pic) > input:is(.re-slider, .p4-knob-in) { top: 40px; }
+svg.pic .a { fill: none; stroke: var(--cp, var(--accent)); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg.pic .a.thin { stroke-width: 1.2; }
+svg.pic .af { fill: var(--cp, var(--accent)); stroke: none; }
+svg.pic .h { fill: none; stroke: var(--cp, var(--accent)); stroke-linecap: round; stroke-linejoin: round; opacity: .28; }
+svg.pic .hf { fill: var(--cp, var(--accent)); stroke: none; }
+svg.pic .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; opacity: .75; }
+svg.pic .ff { fill: var(--text-dimmer); stroke: none; opacity: .5; }
+/* Under a stacked line: the fill that hides the lines behind it. */
+svg.pic .bg, svg.pic-where .bg { fill: var(--sink); stroke: none; }
+
+/* Where in the room: a small room with one part lit. */
+svg.pic-where { flex: 0 0 auto; width: 32px; height: 20px; }
+svg.pic-where .dim { fill: none; stroke: var(--text-dimmer); stroke-width: 1; stroke-linecap: round; opacity: .45; }
+svg.pic-where .lit { fill: none; stroke: var(--cp, var(--accent)); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.pic-where .lit.thick { stroke-width: 2.8; }
+svg.pic-where .lit.fill { fill: var(--cp, var(--accent)); stroke: none; opacity: .55; }
+svg.pic-where .none { display: none; }
+.rv-admin #reLayers .re-layer-name { display: flex; align-items: center; gap: 6px; }
+.rv-admin #reLayers .re-layer-name > svg.pic-where { width: 26px; height: 16px; }
+.rv-admin #reLayers .re-layer-name:not(.active) > svg.pic-where { opacity: .45; }
+
+/* A generator's strip: the palette it makes, before it is pressed. */
+.rp-gens .re-btn:has(> .pic-strip) { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+.pic-strip { display: flex; height: 5px; border-radius: 2px; overflow: hidden; }
+.pic-swatch { flex: 1 1 0; display: block; }
+#roomPaintBody.rp-modern .rp-gens > .re-btn:has(> .pic-strip) { height: auto; padding: 3px 3px 2px; }
+
+/* The 4D tab: each solid's thumbnail, each plane's dial, each projection. */
+.p4-obj:has(> svg.pic-solid) { grid-template-columns: 30px 26px 1fr auto; }
+svg.pic-solid { width: 30px; height: 22px; }
+svg.pic-solid .a { stroke-width: .8; opacity: .85; }
+.p4-obj:not(.active) > svg.pic-solid { opacity: .55; }
+.p4-num:has(> svg.pic-dial) { grid-template-columns: 18px 30px 1fr; }
+svg.pic-dial { width: 18px; height: 18px; }
+svg.pic-dial .a { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+svg.pic-dial .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.2; stroke-linecap: round; }
+[data-p4seg="projection"] .re-btn:has(> svg.pic) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+svg.pic-proj { width: 28px; height: 17px; }

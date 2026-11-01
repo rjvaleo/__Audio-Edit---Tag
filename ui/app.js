@@ -8818,6 +8818,8 @@ function applyRoomPaintCss() {
   // `--wave-2`. Overriding that one token inside the block keeps every step and
   // changes what they are steps *of*.
   if (data) data.style.setProperty('--wave-2', d.mode === 'flat' && d.colour ? d.colour : '');
+  // Every control's picture is drawn in the colour of the part it moves.
+  if (typeof cpRepaint === 'function') cpRepaint();
 }
 
 function vgHexRgb(hex) {
@@ -9193,6 +9195,8 @@ function buildRoomLayers() {
       paintRoomNums();
       paintRoomData();
     };
+    // Which part of the room it is, lit in a small room (`control-pictures.js`).
+    if (typeof cpLayer === 'function') cpLayer(b, l.key);
     row.appendChild(b);
 
     // Its own switch, per layer, because "does this hide things" is a different
@@ -10436,10 +10440,14 @@ function rkKnob(input, label, own) {
   name.className = 'rk-l';
   name.textContent = label;
   wrap.append(face, input, read, name);
+  // The picture of what it does, above it (`control-pictures.js`), redrawn
+  // wherever the face is.
+  const picture = typeof cpKnob === 'function' ? cpKnob(input, label, wrap) : null;
   const draw = () => {
     const min = +input.min, max = +input.max, v = +RK_VALUE.get.call(input);
     face.innerHTML = rkFace(max > min ? (v - min) / (max - min) : 0);
     if (!own) read.textContent = (v / scale).toFixed(digits);
+    if (picture) picture();
   };
   // Every way a value arrives — a drag, a recalled look, Clear — goes through
   // `value`, so the face is redrawn there rather than on a list of events.
