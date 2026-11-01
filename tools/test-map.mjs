@@ -10,11 +10,11 @@
 // The map is of the code as committed: it names the commit, and the runner
 // diffs against that commit, so the line numbers mean the same thing to both.
 // So the suite runs in a clean copy of the commit (a temporary git worktree,
-// built into `core/target/map/`), never in this folder: what is on disk here
+// `../.mgl-test-map`, built into `core/target/map/`), never in this folder: what is on disk here
 // may have uncommitted changes, or another session's edits arriving while the
 // suite runs, and the map must not see either.
 
-import { readFileSync, writeFileSync, rmSync, existsSync, symlinkSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -38,7 +38,11 @@ const atCommit = (path) => {
 
 if (!process.argv.includes('--from-raw')) {
   rmSync(raw, { force: true });
-  const copy = join(mkdtempSync(join(tmpdir(), 'mgl-map-')), 'tree');
+  // Beside this folder, not in /tmp: the crates reach `prism-fx` by a relative
+  // path (`../../../../GitHub/prism-fx`), which holds only at the same depth.
+  const copy = join(dirname(root), '.mgl-test-map');
+  rmSync(copy, { recursive: true, force: true });
+  git('worktree', 'prune');
   git('worktree', 'add', '--detach', copy, commit);
   try {
     symlinkSync(join(root, 'node_modules'), join(copy, 'node_modules'));
