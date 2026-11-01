@@ -117,13 +117,12 @@ switched in; the data is the same.
 
 | Visual | Facet |
 |---|---|
+| Picture | the sound's own waveform, on a tile |
 | Size | loudness |
 | Colour | YAMNet family: percussion, voice, music, synth and keys, machine and vehicle, nature, unknown |
-| Form | pitched sounds are smooth solids; unpitched are grainy point clouds |
-| Surface | rough to the degree it is noisy |
 | Motion | pulses at its own onset rate when it repeats (pulse and density); still when it does not |
-| Edge | crisp for a fast attack and high crest; soft and hazy for a swell |
-| Label | its note, when it has one |
+| Brightness | the waveform is bright for a fast attack, dimmer for a swell |
+| Label | its note, in the tile's corner, when it has one |
 
 ### A second layout: neighbourhoods
 
@@ -188,7 +187,29 @@ unchanged.
 6. **Done:** find, which dims everything that does not match its name,
    folder, label, family, note or words. Enter flies to the first match.
 
-Covered by `tests/ui/sound-map.spec.mjs` (5 tests).
+7. **Done (31 Oct 2026, RJ: the sounds were dots in a little room in the
+   middle of the screen):**
+   - **Each sound is its waveform.** A tile with the library's own overview
+     (`/api/thumbs`, the one Browse draws), in its family's colour, with its
+     note in the corner when it has one. All the tiles are sprites from one
+     atlas, so the library is one draw call and a tile always faces you. This
+     replaces the spheres and facets: the note on the tile says "pitched" more
+     plainly than a smooth surface did.
+   - **No box.** The frame and floor are gone. The camera starts straight on,
+     back just far enough that the front of the world is the window's width,
+     and the world's height follows the window's shape, so the library fills
+     the window both ways. The axis names sit at the window's edges.
+   - **The sound in hand, large.** The tile under the pointer (else the one
+     clicked, else the one playing) is shown over itself at 260 px: its
+     waveform, its name, its family, note and length, and a playhead while it
+     plays.
+   - **Moving:** the wheel flies along the line through the pointer, so what
+     you point at stays under the pointer and comes toward you; a click flies
+     to a sound and opens its card; **Tab** hops to the nearest sound not yet
+     visited and **Shift+Tab** goes back along the walk; **T** (or Tour) does
+     Tab every 2.2 s, playing each; **Home** (or Whole library) flies back.
+
+Covered by `tests/ui/sound-map.spec.mjs` (13 tests).
 
 ### What the islands needed that the plan did not say
 
