@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grain Control Glyphs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter+Tight:wght@500;700&display=swap">
+<style>
+:root {
+  --bg: #e9e8e4; --card: #f6f5f1; --ink: #121212; --faint: rgba(18,18,18,.28); --rule: rgba(18,18,18,.12);
+  --orange: #ff5a1f; --blue: #2c63ff; --green: #13a865; --white: #121212;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f0f0f; --card: #1a1a1a; --ink: #ededea; --faint: rgba(237,237,234,.3); --rule: rgba(237,237,234,.12);
+  --white: #ededea; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #0f0f0f; --card: #1a1a1a; --ink: #ededea; --faint: rgba(237,237,234,.3);
+  --rule: rgba(237,237,234,.12); --white: #ededea; color-scheme: dark }
+* { box-sizing: border-box }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 "Inter Tight", system-ui, sans-serif;
+  padding: 28px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)) }
+main { max-width: 1180px; margin: 0 auto }
+h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.01em; text-wrap: balance }
+.lede { max-width: 68ch; margin: 0 0 22px; color: var(--ink); opacity: .75 }
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin: 0 0 30px }
+.rule { background: var(--card); border-radius: 6px; padding: 10px 12px; display: flex; gap: 10px; align-items: center }
+.rule svg { flex: none }
+.rule b { font: 500 11px "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .06em; display: block }
+.rule span { opacity: .7; font-size: 12px }
+h2 { font: 500 11px "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .1em; margin: 26px 0 10px;
+  display: flex; align-items: center; gap: 8px }
+h2 i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); display: inline-block }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px }
+.card { background: var(--card); border-radius: 6px; padding: 8px 8px 10px; display: flex; flex-direction: column; gap: 4px }
+.card svg { width: 100%; height: auto; display: block }
+.name { font: 500 10.5px "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .07em;
+  display: flex; justify-content: space-between; gap: 6px }
+.name output { opacity: .6; white-space: nowrap }
+input[type=range] { width: 100%; margin: 2px 0 0; accent-color: var(--c); height: 14px }
+.card button { font: 500 10.5px "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .07em;
+  border: 1px solid var(--rule); background: transparent; color: var(--ink); border-radius: 4px; padding: 3px 0; cursor: pointer }
+.card button[aria-pressed=true] { background: var(--c); color: var(--card); border-color: var(--c) }
+svg .a { fill: none; stroke: var(--c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+svg .af { fill: var(--c); stroke: none }
+svg .f { fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round }
+svg .t { font: 7px "IBM Plex Mono", monospace; fill: var(--faint) }
+footer { margin-top: 30px; opacity: .6; font-size: 12px; max-width: 70ch }
+</style>
+</head>
+<body>
+<main>
+<h1>Grain control glyphs</h1>
+<p class="lede">One drawing language for every control in MultiGrainLive's grain engine, in the spirit of Teenage Engineering's panels: a glyph instead of a label, drawn on the same small grid, and redrawn live as the control moves. Move any slider to see its picture change.</p>
+
+<div class="rules" id="rules"></div>
+<div id="groups"></div>
+
+<footer>Proposal, not yet in the app. In the app each glyph would sit above its knob or slider and redraw as you turn it. The words stay in the hover help and for screen readers.</footer>
+</main>
+
+<script>
+const W = 64, H = 48, BASE = 40;
+const rnd = (i, s = 7) => { let x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return x - Math.floor(x); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const logN = (v, a, b) => Math.log(v / a) / Math.log(b / a);
+
+// The atom: one grain, a Hann bell. `peak` skews it (0.5 = symmetric).
+function bell(cx, w, h, base = BASE, peak = 0.5) {
+  const n = 16; let d = '';
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = t < peak ? 0.5 * t / peak : 0.5 + 0.5 * (t - peak) / (1 - peak);
+    const y = base - h * 0.5 * (1 - Math.cos(2 * Math.PI * u));
+    d += (i ? 'L' : 'M') + (cx - w / 2 + w * t).toFixed(2) + ' ' + y.toFixed(2);
+  }
+  return d;
+}
+const P = (d, cls = 'a', extra = '') => `<path d="${d}" class="${cls}" ${extra}/>`;
+const L = (x1, y1, x2, y2, cls = 'f', extra = '') => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${cls}" ${extra}/>`;
+const C = (x, y, r, cls = 'a') => `<circle cx="${x}" cy="${y}" r="${r}" class="${cls}"/>`;
+const ground = () => L(4, BASE, 60, BASE, 'f');
+const wave = (x0, x1, y, amp, cycles, cls = 'a') => {
+  let d = ''; const n = 64;
+  for (let i = 0; i <= n; i++) { const t = i / n; d += (i ? 'L' : 'M') + lerp(x0, x1, t).toFixed(2) + ' ' + (y - amp * Math.sin(t * cycles * 2 * Math.PI)).toFixed(2); }
+  return P(d, cls);
+};
+const arrow = (x1, y1, x2, y2, cls = 'a') => {
+  const a = Math.atan2(y2 - y1, x2 - x1), s = 4;
+  return L(x1, y1, x2, y2, cls) + P(`M${x2 - s * Math.cos(a - .5)} ${y2 - s * Math.sin(a - .5)}L${x2} ${y2}L${x2 - s * Math.cos(a + .5)} ${y2 - s * Math.sin(a + .5)}`, cls);
+};
+const sourceBar = (y = 14) => { let s = ''; for (let i = 0; i < 27; i++) { const x = 6 + i * 2, h = 1 + 5 * rnd(i, 3); s += L(x, y - h / 2, x, y + h / 2, 'f'); } return s; };
+
+// Every control: [label, key, min, max, step, default, log, fmt, draw(v)].
+const GROUPS = [
+ { name: 'Time & pitch', c: 'var(--white)', items: [
+  ['Stretch', 'ratio', .01, 100, .01, 1, true, v => `${v.toFixed(2)}×`, v => {
+    const w = clamp(lerp(4, 56, logN(v, .01, 100)), 4, 56);
+    return L(22, 12, 42, 12, 'f') + L(22, 9, 22, 15, 'f') + L(42, 9, 42, 15, 'f')
+      + wave(32 - w / 2, 32 + w / 2, 32, 5, 3) + L(32 - w / 2, 26, 32 - w / 2, 38, 'a') + L(32 + w / 2, 26, 32 + w / 2, 38, 'a'); }],
+  ['Pitch', 'semitones', -48, 48, .1, 0, false, v => `${v > 0 ? '+' : ''}${v.toFixed(1)} st`, v => {
+    const cyc = 2 * Math.pow(2, v / 24);
+    return wave(6, 46, 26, 9, 2, 'f') + wave(6, 46, 26, 9, cyc) + arrow(55, 26, 55, 26 - v / 48 * 16); }],
+  ['Window', 'windowMs', 5, 2000, 1, 80, true, v => `${Math.round(v)} ms`, v => {
+    const w = lerp(6, 56, logN(v, 5, 2000));
+    return ground() + P(bell(32, w, 26)) + L(32 - w / 2, 44, 32 + w / 2, 44, 'f'); }],
+ ]},
+ { name: 'Grain shape', c: 'var(--orange)', items: [
+  ['Position', 'position', -1, 1, .001, 0, false, v => `${(v * 100).toFixed(1)}%`, v => {
+    const x = lerp(6, 58, (v + 1) / 2);
+    return sourceBar(16) + L(x, 6, x, 30, 'a') + P(`M${x - 3} 6L${x + 3} 6L${x} 10Z`, 'af') + ground() + P(bell(x, 12, 8)); }],
+  ['Rate', 'rateHz', 0, 500, 1, 0, false, v => v <= 0 ? 'off' : `${Math.round(v)}/s`, v => {
+    if (v <= 0) return L(4, BASE, 60, BASE, 'f', 'stroke-dasharray="2 3"');
+    const n = Math.round(lerp(2, 24, v / 500)); let s = ground();
+    for (let i = 0; i < n; i++) s += C(6 + 52 * (i + .5) / n, BASE - 6, 1.6, 'af');
+    return s + P(bell(6 + 52 * .5 / n, 6, 12)); }],
+  ['Density', 'densityHz', 0, 500, 1, 0, false, v => v <= 0 ? 'auto' : `${Math.round(v)}/s`, v => {
+    if (v <= 0) return ground() + P(bell(22, 18, 20), 'f', 'stroke-dasharray="2 3"') + P(bell(42, 18, 20), 'f', 'stroke-dasharray="2 3"');
+    const n = Math.round(lerp(2, 14, v / 500)); let s = ground();
+    for (let i = 0; i < n; i++) s += P(bell(10 + 44 * i / Math.max(1, n - 1), 16, 22));
+    return s; }],
+  ['Layers', 'layers', 1, 64, 1, 1, false, v => `${Math.round(v)}×`, v => {
+    const n = Math.min(Math.round(v), 8); let s = '';
+    for (let i = 0; i < n; i++) s += P(bell(32, 30, 6, 40 - i * 4.4));
+    return s + (v > 8 ? `<text x="50" y="8" class="t">+${Math.round(v) - 8}</text>` : ''); }],
+  ['Overlap', 'overlap', 1, 8, .1, 2, false, v => `${v.toFixed(1)}×`, v => {
+    const w = 24, hop = w / v; let s = ground() + L(32, 8, 32, 44, 'f', 'stroke-dasharray="1 2"');
+    for (let x = 4 + w / 2; x <= 60 - w / 2 + .01; x += hop) s += P(bell(x, w, 24), Math.abs(x - 32) < w / 2 ? 'a' : 'f');
+    return s; }],
+  ['Size jitter', 'sizeJitter', 0, 1, .01, 0, false, v => `${Math.round(v * 100)}%`, v => {
+    let s = ground();
+    for (let i = 0; i < 5; i++) { const w = 10 * (1 + v * (rnd(i, 11) - .5) * 1.6); s += P(bell(8 + i * 12, w, 20)); }
+    return s; }],
+  ['Position jitter', 'positionJitterMs', 0, 500, 1, 0, false, v => `${Math.round(v)} ms`, v => {
+    let s = ground();
+    for (let i = 0; i < 5; i++) { const x0 = 8 + i * 12, x = x0 + (rnd(i, 5) - .5) * 2 * 10 * (v / 500) * 1.4;
+      s += L(x0, 42, x0, 46, 'f') + P(bell(clamp(x, 5, 59), 8, 18)); }
+    return s; }],
+ ]},
+ { name: 'Pitch movement', c: 'var(--blue)', items: [
+  ['Pitch jitter', 'pitchJitterSemis', 0, 24, .1, 0, false, v => `±${v.toFixed(1)} st`, v => {
+    let s = L(4, 24, 60, 24, 'f', 'stroke-dasharray="1 2"');
+    for (let i = 0; i < 9; i++) { const x = 6 + i * 6.5, y = 24 + (rnd(i, 9) - .5) * 2 * (v / 24) * 18; s += L(x, y, x + 4, y, 'a'); }
+    return s; }],
+  ['Pitch drift', 'pitchDriftSemis', 0, 24, .1, 0, false, v => `±${v.toFixed(1)} st`, v => {
+    const amp = v / 24 * 16; let s = wave(4, 60, 24, amp, 1, 'f');
+    for (let i = 0; i < 9; i++) { const t = (i + .3) / 9, x = 4 + 56 * t, y = 24 - amp * Math.sin(t * 2 * Math.PI); s += L(x, y, x + 4, y, 'a'); }
+    return s; }],
+  ['Drift rate', 'driftRateHz', .01, 10, .01, .5, true, v => `${v.toFixed(2)} Hz`, v => {
+    const cyc = lerp(.5, 6, logN(v, .01, 10));
+    return wave(4, 60, 24, 10, cyc) + L(4, 24, 60, 24, 'f', 'stroke-dasharray="1 2"'); }],
+ ]},
+ { name: 'Scan, shape & layers', c: 'var(--green)', items: [
+  ['Scan', 'scan', -2, 2, .01, 1, false, v => Math.abs(v) < .005 ? 'frozen' : `${v.toFixed(2)}×`, v => {
+    if (Math.abs(v) < .005) return sourceBar(14) + C(32, 32, 3, 'af') + C(32, 32, 7, 'a');
+    const len = Math.abs(v) / 2 * 24;
+    return sourceBar(14) + arrow(32 - Math.sign(v) * len, 32, 32 + Math.sign(v) * len, 32); }],
+  ['Envelope', 'envelope', 0, 1, .01, .5, false, v => Math.abs(v - .5) < .005 ? 'symmetric' : v < .5 ? 'percussive' : 'swelling', v =>
+    ground() + P(bell(32, 48, 30, BASE, lerp(.06, .94, v))) ],
+  ['Size range', 'sizeRange', 1, 8, .05, 2, false, v => `${v.toFixed(2)}×`, v => {
+    const w = 7, W2 = Math.min(56, w * v);
+    return ground() + P(bell(32, W2, 26), 'a', 'stroke-dasharray="2 2"') + P(bell(32, w, 26), 'f'); }],
+  ['Layer spread', 'layerSpread', 0, 4, .01, 0, false, v => v <= .005 ? 'stacked' : `${v.toFixed(2)}×`, v => {
+    let s = '';
+    for (let i = 0; i < 5; i++) s += P(bell(14 + i * v / 4 * 9, 14, 6, 40 - i * 7));
+    return s; }],
+  ['Pan spread', 'panSpread', 0, 1, .01, 0, false, v => v <= 0 ? 'centred' : `${Math.round(v * 100)}%`, v => {
+    let s = P('M18 40A14 14 0 0 1 46 40', 'f') + L(26, 40, 38, 40, 'f') + C(32, 40, 2, 'f');
+    for (let i = 0; i < 7; i++) { const a = (rnd(i, 4) - .5) * 2 * v * 1.3, r = 26; s += C(32 + r * Math.sin(a), 40 - r * Math.cos(a), 2, 'af'); }
+    return s + `<text x="6" y="44" class="t">L</text><text x="54" y="44" class="t">R</text>`; }],
+  ['Scatter', 'layerScatter', 0, 1, .01, 0, false, v => v <= 0 ? 'stacked' : `${Math.round(v * 100)}%`, v => {
+    let s = L(32, 6, 32, 44, 'f', 'stroke-dasharray="1 2"');
+    for (let i = 0; i < 6; i++) { const x = 32 + (rnd(i, 13) - .5) * 2 * v * 22; s += P(bell(x, 12, 5, 42 - i * 6.5)); }
+    return s; }],
+  ['Scatter range', 'layerScatterMs', 1, 2000, 1, 30, true, v => v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`, v => {
+    const w = lerp(4, 54, logN(v, 1, 2000));
+    let s = ground() + P(bell(32, 10, 20), 'f') + L(32 - w / 2, 14, 32 + w / 2, 14, 'a') + L(32 - w / 2, 11, 32 - w / 2, 17, 'a') + L(32 + w / 2, 11, 32 + w / 2, 17, 'a');
+    for (let i = 0; i < 4; i++) s += C(32 + (rnd(i, 2) - .5) * w, 24, 1.6, 'af');
+    return s; }],
+ ]},
+];
+const SWITCHES = [
+  ['Reverse grains', 'var(--green)', on => ground() + P(bell(30, 30, 22), on ? 'a' : 'f') + arrow(44, 12, on ? 18 : 44, 12, on ? 'a' : 'f')],
+  ['Wrap positions', 'var(--green)', on => sourceBar(24) + P('M58 30C58 42 6 42 6 30', on ? 'a' : 'f') + P('M3 33L6 29L9 33', on ? 'a' : 'f')],
+  ['Link jitter', 'var(--blue)', on => [0, 1, 2].map(i => C(16 + i * 16, 24, 6, on ? 'a' : 'f')).join('') + (on ? L(10, 24, 54, 24, 'a') : '')],
+  ['Step the drift', 'var(--blue)', on => on
+      ? P('M4 32H14V18H24V30H34V14H44V26H54V20H60', 'a')
+      : wave(4, 60, 24, 9, 1.5, 'f')],
+];
+
+const svg = (inner, c) => `<svg viewBox="0 0 ${W} ${H}" style="--c:${c}" role="img">${inner}</svg>`;
+
+// The rules of the language, each drawn in it.
+const RULES = [
+  ['The grain', 'One bell is one grain, everywhere.', ground() + P(bell(32, 30, 26))],
+  ['Time runs right', 'Across is always time.', arrow(8, 24, 56, 24)],
+  ['Pitch runs up', 'Up is always pitch.', arrow(32, 42, 32, 6)],
+  ['Colour is the change', 'What the control moves is in colour; context is grey.', sourceBar(14) + L(40, 6, 40, 30, 'a')],
+  ['Dashed is auto', 'Dashed means the engine decides.', ground() + P(bell(32, 30, 22), 'f', 'stroke-dasharray="2 3"')],
+];
+document.getElementById('rules').innerHTML = RULES.map(([b, s, d]) =>
+  `<div class="rule">${svg(d, 'var(--orange)').replace('<svg', '<svg width="64" height="48"')}<div><b>${b}</b><span>${s}</span></div></div>`).join('');
+
+const host = document.getElementById('groups');
+for (const g of GROUPS) {
+  const sec = document.createElement('section');
+  sec.innerHTML = `<h2 style="--c:${g.c}"><i></i>${g.name}</h2><div class="grid"></div>`;
+  const grid = sec.querySelector('.grid');
+  for (const [label, key, min, max, step, def, log, fmt, draw] of g.items) {
+    const card = document.createElement('div'); card.className = 'card'; card.style.setProperty('--c', g.c);
+    card.innerHTML = `<div class="ic"></div><div class="name"><span>${label}</span><output></output></div>
+      <input type="range" aria-label="${label}" ${log ? 'min="0" max="1000" step="1"' : `min="${min}" max="${max}" step="${step}"`}>`;
+    const inp = card.querySelector('input'), ic = card.querySelector('.ic'), out = card.querySelector('output');
+    const toV = r => log ? min * Math.pow(max / min, r / 1000) : +r;
+    const toR = v => log ? 1000 * logN(v, min, max) : v;
+    const show = () => { const v = toV(inp.value); ic.innerHTML = svg(draw(v), g.c); out.textContent = fmt(v); };
+    const start = (def === min && !log) ? lerp(min, max, .4) : def;
+    inp.value = toR(start); inp.oninput = show; inp.ondblclick = () => { inp.value = toR(def); show(); };
+    show(); grid.appendChild(card);
+  }
+  host.appendChild(sec);
+}
+// Switches and the seed.
+const sw = document.createElement('section');
+sw.innerHTML = `<h2 style="--c:var(--ink)"><i></i>Switches &amp; seed</h2><div class="grid"></div>`;
+const swGrid = sw.querySelector('.grid');
+for (const [label, c, draw] of SWITCHES) {
+  const card = document.createElement('div'); card.className = 'card'; card.style.setProperty('--c', c);
+  card.innerHTML = `<div class="ic"></div><button aria-pressed="false">${label}</button>`;
+  const b = card.querySelector('button'), ic = card.querySelector('.ic');
+  const show = () => { ic.innerHTML = svg(draw(b.getAttribute('aria-pressed') === 'true'), c); };
+  b.onclick = () => { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); show(); };
+  show(); swGrid.appendChild(card);
+}
+{
+  let seed = 12345;
+  const card = document.createElement('div'); card.className = 'card'; card.style.setProperty('--c', 'var(--orange)');
+  card.innerHTML = `<div class="ic"></div><button>Re-roll seed</button>`;
+  const ic = card.querySelector('.ic');
+  const pips = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]],
+    5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] };
+  const show = () => { const n = seed % 6 + 1;
+    ic.innerHTML = svg(`<rect x="18" y="10" width="28" height="28" rx="5" class="a"/>` + pips[n].map(([x, y]) => C(32 + x * 8, 24 + y * 8, 2.4, 'af')).join(''), 'var(--orange)'); };
+  card.querySelector('button').onclick = () => { seed = (seed * 1664525 + 1013904223) % 2147483647; show(); };
+  show(); swGrid.appendChild(card);
+}
+host.appendChild(sw);
+</script>
+</body>
+</html>

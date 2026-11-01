@@ -4974,3 +4974,18 @@ body.editing[data-grain-ui="modern"] #grainControls .engine-pick::before {
 /* The engine's name takes a line above its switches; the cloud pad's column,
    placed absolutely under them, moves down by the same. */
 body.editing[data-grain-ui="modern"] #dockStretch .gk-left { top: 44px; }
+
+/* The grain controls' glyphs (`grain-glyphs.js`, `docs/design/grain-icons.html`):
+   a picture of the value above each knob. The group's colour is what the
+   control moves; the dim text colour is the context around it. The knob's
+   input is laid over the face, so it moves down by the glyph's height. */
+#grainControls .gk-k > .gg { display: block; order: -1; width: 36px; height: 27px; margin-bottom: 1px; overflow: visible; }
+#grainControls .gk-k:has(> .gg) > input[type=range] { top: 28px; }
+.gg-time { --gg: var(--text); }
+.gg-shape { --gg: var(--warn); }
+.gg-pitch { --gg: var(--accent); }
+.gg-scan { --gg: var(--good); }
+.gg .a { fill: none; stroke: var(--gg); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.gg .af { fill: var(--gg); stroke: none; }
+.gg .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: 0.7; }
+.gg .t { font: 8px var(--font-mono, monospace); fill: var(--text-dimmer); }

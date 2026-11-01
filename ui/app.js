@@ -4685,6 +4685,9 @@ function param(label, value, min, max, step, format, onChange, onCommit, log, de
     out.title = t;
   };
   el.sync = (v) => { input.value = toPos(v); show(v); };
+  // The value itself, for a picture drawn from it (`grain-glyphs.js`) — the
+  // element holds a position, which on a log control is not the value.
+  el.read = () => toVal(+input.value);
 
   input.oninput = () => {
     const v = toVal(+input.value);
@@ -10895,10 +10898,16 @@ function gkKnob(row) {
   const face = document.createElement('span');
   face.className = 'rk-face';
   input.before(face);
+  // The picture of what the knob does, above it (`grain-glyphs.js`). Drawn
+  // wherever the face is, so a drag, a reset, a preset and an undo all reach it.
+  const key = row.dataset.glyph;
+  const glyph = key && ggHas(key) ? ggMake(key) : null;
+  if (glyph) face.before(glyph);
   const draw = () => {
     const min = +input.min, max = +input.max, v = +RK_VALUE.get.call(input);
     const mark = row.dataset.mark === undefined ? undefined : +row.dataset.mark;
     face.innerHTML = rkFace(max > min ? (v - min) / (max - min) : 0, mark);
+    if (glyph) ggPaint(glyph, key, row.read ? row.read() : v);
   };
   Object.defineProperty(input, 'value', {
     configurable: true,
@@ -10932,6 +10941,10 @@ function gkAdopt() {
     const row = state.grainRows?.[key];
     const input = row?.querySelector(':scope > input[type=range]');
     if (input && row.dataset.mark === undefined) row.dataset.mark = String((at - +input.min) / (+input.max - +input.min));
+  }
+  // The controls that have a picture say which, before they become knobs.
+  for (const [key, row] of Object.entries({ ...state.stretchRows, ...state.grainRows })) {
+    if (row && ggHas(key)) row.dataset.glyph = key;
   }
   for (const row of host.querySelectorAll('.param')) gkKnob(row);
 }
