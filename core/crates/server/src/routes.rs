@@ -56,7 +56,7 @@ pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 /// has fallen behind can say so instead of being argued with.
 pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
-    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SOUND_MAP_JS, SOUND_MAP_CSS,
+    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, SOUND_MAP_JS, SOUND_MAP_CSS, CHOP_JS, CHOP_CSS,
                  SETTINGS_JS, SECTION_PRESETS_JS,
                  SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
                  PERF_PANEL_JS, PRISM_PAD_JS, COMPOSE_JS, VISUAL_LANES_JS,
@@ -145,6 +145,8 @@ pub const RAIL_CSS: &str = include_str!("../../../../ui/rail.css");
 /// The 3D sound map. See `docs/SOUND-MAP.md`.
 pub const SOUND_MAP_JS: &str = include_str!("../../../../ui/sound-map.js");
 pub const SOUND_MAP_CSS: &str = include_str!("../../../../ui/sound-map.css");
+pub const CHOP_JS: &str = include_str!("../../../../ui/chop.js");
+pub const CHOP_CSS: &str = include_str!("../../../../ui/chop.css");
 /// The regular 4-polytopes and the projection that brings them into three
 /// dimensions. Pure geometry — see `docs/SHAPES-4D.md`.
 pub const SHAPES_4D_JS: &str = include_str!("../../../../ui/shapes-4d.js");
@@ -200,6 +202,14 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/sound-map.css") => {
             Response::ok("text/css; charset=utf-8", SOUND_MAP_CSS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/chop.js") => {
+            Response::ok("text/javascript; charset=utf-8", CHOP_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/chop.css") => {
+            Response::ok("text/css; charset=utf-8", CHOP_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/rail.css") => {
@@ -403,6 +413,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             }
         }
         ("POST", "/api/capture") => api_capture(app, req),
+        ("POST", "/api/chop/save") => api_chop_save(app, req),
         ("GET", "/api/record") => api_record_state(app),
         ("POST", "/api/record") => api_record(app, req),
         ("GET" | "HEAD", "/audio") => api_audio(app, req),
@@ -4673,6 +4684,54 @@ fn api_capture(app: &Arc<App>, req: &Request) -> Response {
         }
         Err(e) => Response::error(500, &e.to_string()),
     }
+}
+
+/// One slice from the Chop panel, written beside the sound it was cut from.
+///
+/// The panel cuts and encodes the slices in the browser, exactly as Recycle
+/// Reborn did, and sends each here as a WAV. It goes into `<stem> slices/`
+/// next to the source, so a chopped break lands in the library as a folder of
+/// hits. Never over an existing file: chopping again with other settings adds
+/// beside the last pass rather than quietly replacing it.
+fn api_chop_save(app: &Arc<App>, req: &Request) -> Response {
+    let Some(lib) = app.library_path() else {
+        return Response::error(400, "no library chosen");
+    };
+    let rel = req.param("p").unwrap_or("");
+    if resolve_within(&lib, rel).map_or(true, |p| !p.is_file()) {
+        return Response::error(404, "no such file in the library");
+    }
+    // Only a name: whatever path it carries is flattened into the folder.
+    let name = crate::capture::safe(req.param("name").unwrap_or(""));
+    if !name.to_ascii_lowercase().ends_with(".wav") || name.len() <= 4 {
+        return Response::error(400, "a slice is named for a .wav file");
+    }
+    let b = &req.body;
+    if b.len() < 44 || &b[0..4] != b"RIFF" || &b[8..12] != b"WAVE" {
+        return Response::error(400, "a slice is a WAV file");
+    }
+
+    let source = Path::new(rel);
+    let stem = source.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "slices".into());
+    let folder = source.parent().unwrap_or(Path::new("")).join(crate::capture::safe(&format!("{stem} slices")));
+    let Some(dir) = resolve_for_write(&lib, &folder.to_string_lossy()) else {
+        return Response::error(400, "the slices cannot go there");
+    };
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return Response::error(500, &e.to_string());
+    }
+    let path = crate::capture::unique(dir.join(&name));
+    if let Err(e) = std::fs::write(&path, b) {
+        return Response::error(500, &e.to_string());
+    }
+    reindex_for(app, rel);
+    let written = folder.join(path.file_name().unwrap_or_default());
+    Response::json(
+        Value::obj()
+            .set("path", written.to_string_lossy().replace('\\', "/"))
+            .set("name", path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())
+            .to_string(),
+    )
 }
 
 /// Re-read one folder and fold it back into the index.

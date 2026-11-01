@@ -1817,6 +1817,7 @@ function renderTabs() {
 async function selectFile(file, { keepTab = false } = {}) {
   releaseEngineFor(file);
   state.selectedFile = file;
+  if (typeof chopSelected === 'function') chopSelected(file);
   state.sel = null;
   state.cue = 0;
   state.spec = null;
@@ -3591,7 +3592,7 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
     });
     const panes = { effects: 'dockEffects', prism: 'dockPrism', stretch: 'dockStretch',
                     visuals: 'dockVisuals', automation: 'dockAutomation',
-                    regions: 'dockRegions' };
+                    regions: 'dockRegions', chop: 'dockChop' };
     for (const [k, id] of Object.entries(panes)) $(id).classList.toggle('hidden', k !== t.dataset.dock);
     $('presetBar').dataset.tab = t.dataset.dock;
     // Everything in these panels is skipped while its panel is hidden, so a
@@ -3601,6 +3602,9 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
       paintRackMeters(engine.rackLevels || []);
       repaintVisualEqs();
       repaintVisualCompressors();
+    } else if (t.dataset.dock === 'chop') {
+      chopSelected(state.selectedFile);
+      chopDraw();
     } else if (t.dataset.dock === 'stretch') {
       drawGrains();
     } else if (t.dataset.dock === 'prism') {

@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/rail.css">
 <link rel="stylesheet" href="/sound-map.css">
+<link rel="stylesheet" href="/chop.css">
 </head>
 <body>
 
@@ -524,6 +525,9 @@
         </button>
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="regions" title="Regions">
           <span class="ic">⧉</span><span class="lb">Regions</span>
+        </button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-dock="chop" title="Chop: cut the sound at its silences into slices, after Recycle Reborn">
+          <span class="ic">✂</span><span class="lb">Chop</span>
         </button>
       </nav>
       <div class="vsep"></div>
@@ -1246,6 +1250,38 @@
       <div class="dock-body hidden" id="dockRegions">
         <div class="region-list" id="regionList"></div>
       </div>
+      <!-- Chop: Recycle Reborn, on the selected sound. See ui/chop.js. -->
+      <div class="dock-body chop-body hidden" id="dockChop">
+        <div class="chop-bar">
+          <label class="chop-ctl" title="How far below the loudest moment counts as silence. Higher finds quieter sounds.">
+            <span>Threshold</span><input type="range" id="chopTopDb" min="15" max="65" value="40" step="1"><output id="chopTopDbV">40 dB</output>
+          </label>
+          <label class="chop-ctl" title="Shorter than this, a sound is not a slice">
+            <span>Min length</span><input type="range" id="chopMinDur" min="10" max="400" value="40" step="5"><output id="chopMinDurV">40 ms</output>
+          </label>
+          <label class="chop-ctl" title="Room kept before and after each slice">
+            <span>Pad</span><input type="range" id="chopPad" min="0" max="50" value="12" step="1"><output id="chopPadV">12 ms</output>
+          </label>
+          <span class="vsep"></span>
+          <label class="chop-ctl chop-tail" title="A ReCycle-style ping-pong loop tail on each slice as it is written: its last moments, back and forth, fading out">
+            <input type="checkbox" id="chopTail"><span>Tail</span>
+            <input type="range" id="chopTailMs" min="20" max="200" value="80" step="5"><output id="chopTailMsV">80 ms</output>
+            <span class="chop-cycles" id="chopTailCycles"></span>
+          </label>
+          <span class="vsep"></span>
+          <span class="chop-stat" data-k="clips" title="Slices found"><b>0</b> slices</span>
+          <span class="chop-stat" data-k="ratio" title="How much of the sound is in a slice"><b>0%</b> sound</span>
+          <span class="chop-stat" data-k="avg" title="Average slice length"><b>0 ms</b> avg</span>
+          <span class="chop-stat" data-k="dur" title="The whole sound"><b>0 s</b> long</span>
+          <button class="primary chop-write" id="chopWrite" disabled
+            title="Write every slice as a WAV beside the sound, in a folder named for it. Nothing is overwritten.">Write slices</button>
+          <span class="chop-said"></span>
+        </div>
+        <div class="chop-main">
+          <canvas class="chop-wave" title="Click a slice to play it"></canvas>
+          <div class="chop-list" id="chopList"></div>
+        </div>
+      </div>
       </div>
     </div>
   </main>
@@ -1402,6 +1438,7 @@
 <script src="/panel-4d.js"></script>
 <script src="/app.js"></script>
 <script src="/sound-map.js"></script>
+<script src="/chop.js"></script>
 <!-- The picture's automation lanes. After app.js, whose state they use. -->
 <script src="/visual-lanes.js"></script>
 <!-- The Compose workspace and its compact panels. After app.js, whose state it
