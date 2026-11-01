@@ -1,0 +1,59 @@
+/* The Chop panel. See ui/chop.js.
+ *
+ * Tight: one strip of controls across the top, the waveform under it taking
+ * what width there is, and the slice list beside it at a fixed width. */
+
+.chop-body {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 12px;
+}
+
+.chop-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+  font-size: var(--fs-s, 11px); color: var(--text-dim);
+}
+.chop-ctl { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chop-ctl input[type=range] { width: 96px; }
+.chop-ctl output { min-width: 5ch; color: var(--text); font-variant-numeric: tabular-nums; }
+.chop-tail input[type=range]:disabled + output { color: var(--text-dimmer); }
+.chop-cycles { color: var(--text-dimmer); min-width: 9ch; }
+.chop-stat { white-space: nowrap; }
+.chop-stat b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.chop-said { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+.chop-main {
+  flex: 1; min-height: 140px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 10px;
+}
+.chop-wave {
+  width: 100%; height: 100%; min-height: 140px; display: block;
+  background: var(--sink); border: 1px solid var(--line); border-radius: 6px;
+}
+
+.chop-list {
+  overflow-y: auto; min-height: 0;
+  border: 1px solid var(--line); border-radius: 6px;
+  font-size: var(--fs-s, 11px);
+}
+.chop-row {
+  display: grid; grid-template-columns: 2.6ch 8px minmax(0, 1fr) 7ch 6ch 6.5ch 9ch 22px;
+  align-items: center; gap: 6px;
+  padding: 3px 6px; cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+.chop-row:hover { background: var(--surface-3); }
+.chop-row.current { background: var(--well); }
+.chop-idx { color: var(--text-dimmer); text-align: right; font-variant-numeric: tabular-nums; }
+.chop-dot { width: 8px; height: 8px; border-radius: 50%; display: block; }
+.chop-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chop-num { color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+.chop-play {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--text-dim); font: inherit;
+}
+.chop-play:hover { color: var(--accent); }
+
+.chop-row .tail-badge { font-size: 10px; white-space: nowrap; }
+.chop-row .tail-badge.ok { color: var(--good); }
+.chop-row .tail-badge.clamped { color: var(--warn); }
+.chop-row .tail-badge.skip { color: var(--text-dimmer); }

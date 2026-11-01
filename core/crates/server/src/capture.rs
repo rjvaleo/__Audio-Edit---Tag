@@ -119,7 +119,7 @@ pub fn target(lib: &Path, data_dir: &Path, rel: &str, module: &str) -> (PathBuf,
 
 /// Never overwrite. A recording is not reproducible, so the one thing that must
 /// not happen is a second take quietly replacing the first.
-fn unique(path: PathBuf) -> PathBuf {
+pub fn unique(path: PathBuf) -> PathBuf {
     if !path.exists() {
         return path;
     }
