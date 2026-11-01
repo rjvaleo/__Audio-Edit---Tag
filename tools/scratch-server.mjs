@@ -23,7 +23,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.SCRATCH_PORT || 8791);
-const binary = join(root, 'core/target/release/audiolab');
+// `CARGO_TARGET_DIR` when set, as cargo itself does: `npm run test:map` builds
+// a clean copy of the commit into a build folder of its own.
+const binary = join(process.env.CARGO_TARGET_DIR || join(root, 'core/target'), 'release/audiolab');
 
 // ------------------------------------------------------------- a library
 

@@ -83,7 +83,8 @@ function reach(url, lines, why) {
 for (const f of changed) {
   if (f.startsWith('docs/') || f.endsWith('.md')) continue;
   if (f.startsWith('tests/ui/') && f.endsWith('.spec.mjs')) { if (existsSync(join(root, f))) add(basename(f), 'the spec changed'); continue; }
-  if (f === 'tests/ui/test-map.json') continue;
+  // The map and the two tools that make and read it test nothing themselves.
+  if (['tests/ui/test-map.json', 'tools/test-map.mjs', 'tools/test-changed.mjs'].includes(f)) continue;
   const crate = f.match(/^core\/crates\/([^/]+)\//);
   if (crate) {
     crates.add(crate[1]);

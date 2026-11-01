@@ -9,42 +9,65 @@
 //
 // The map is of the code as committed: it names the commit, and the runner
 // diffs against that commit, so the line numbers mean the same thing to both.
-// Make it from a clean tree.
+// So the suite runs in a clean copy of the commit (a temporary git worktree,
+// built into `core/target/map/`), never in this folder: what is on disk here
+// may have uncommitted changes, or another session's edits arriving while the
+// suite runs, and the map must not see either.
 
-import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, existsSync, symlinkSync, mkdtempSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { appParts } from './app-source.mjs';
+import { tmpdir } from 'node:os';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const raw = join(root, 'test-results/test-map.jsonl');
+// Outside `test-results/`, which Playwright empties at the start of every run.
+const raw = join(tmpdir(), 'mgl-test-map.jsonl');
 const out = join(root, 'tests/ui/test-map.json');
 const git = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8' }).stdout.trim();
 
 if (git('status', '--porcelain', '--', 'ui', 'tests/ui')) {
-  console.error('ui/ or tests/ui/ has uncommitted changes — commit first, so the map matches a commit');
-  process.exit(1);
+  console.error('note: ui/ or tests/ui/ has uncommitted changes; the map is of the last commit, without them');
 }
+// Every source below is read from the commit, never from the disk.
+const commit = git('rev-parse', 'HEAD');
+const atCommit = (path) => {
+  const r = spawnSync('git', ['show', `${commit}:${path}`], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
+  return r.status === 0 ? r.stdout : null;
+};
 
 if (!process.argv.includes('--from-raw')) {
   rmSync(raw, { force: true });
-  // One worker, low priority, as every full run is.
-  const r = spawnSync('nice', ['-n', '10', 'npx', 'playwright', 'test', '--reporter=line'], {
-    cwd: root, stdio: 'inherit', env: { ...process.env, TEST_MAP_OUT: raw },
-  });
-  if (r.status !== 0) console.error('some tests failed; the map is still made from what ran');
+  const copy = join(mkdtempSync(join(tmpdir(), 'mgl-map-')), 'tree');
+  git('worktree', 'add', '--detach', copy, commit);
+  try {
+    symlinkSync(join(root, 'node_modules'), join(copy, 'node_modules'));
+    // One worker, low priority, as every full run is.
+    const r = spawnSync('nice', ['-n', '10', 'npx', 'playwright', 'test', '--reporter=line'], {
+      cwd: copy, stdio: 'inherit',
+      env: { ...process.env, TEST_MAP_OUT: raw, CARGO_TARGET_DIR: join(root, 'core/target/map') },
+    });
+    if (r.status !== 0) console.error('some tests failed; the map is still made from what ran');
+  } finally {
+    git('worktree', 'remove', '--force', copy);
+  }
 }
 if (!existsSync(raw)) { console.error(`nothing recorded at ${raw}`); process.exit(1); }
 
-// The text each served script is made from, by the URL it is served at.
-const parts = appParts();
+// The text each served script is made from, by the URL it is served at, as
+// committed. `/app.js` is the parts joined in name order, as `build.rs` does.
+const parts = [];
+{
+  let line = 1;
+  for (const name of git('ls-tree', '--name-only', commit, 'ui/app/').split('\n').filter((f) => f.endsWith('.js')).sort()) {
+    const text = atCommit(name);
+    parts.push({ name: name.replace('ui/app/', ''), text, line });
+    line += text.split('\n').length - 1;
+  }
+}
 const sources = { '/app.js': parts.map((p) => p.text).join('') };
 const textOf = (url) => {
-  if (!(url in sources)) {
-    const f = join(root, 'ui', url);
-    sources[url] = existsSync(f) ? readFileSync(f, 'utf8') : null;
-  }
+  if (!(url in sources)) sources[url] = atCommit(`ui${url}`);
   return sources[url];
 };
 // Offset → line, by the starts of every line.
@@ -68,7 +91,7 @@ for (const line of readFileSync(raw, 'utf8').split('\n')) {
   }
 }
 const map = {
-  commit: git('rev-parse', 'HEAD'),
+  commit,
   made: new Date().toISOString(),
   // Where each part starts in the joined `/app.js`, so a part's line can be
   // found in it.
