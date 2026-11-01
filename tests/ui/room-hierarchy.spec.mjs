@@ -735,6 +735,9 @@ test('the room editor\'s controls can be clicked, not just dispatched at',
     for (const id of ids) {
       const el = page.locator(`#${id}`);
       if (!await el.isVisible()) continue;   // a chip inside a collapsed row
+      // The column scrolls, and a knob with its picture above it can sit below
+      // the fold: a pointer reaches it as a person does, after scrolling to it.
+      await el.scrollIntoViewIfNeeded();
       const box = await el.boundingBox();
       if (!box || box.width < 2 || box.height < 2) continue;
       // A real pointer landing on it must find the slider and not the overlay.

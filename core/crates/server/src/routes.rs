@@ -60,7 +60,7 @@ pub fn ui_build_id() -> u64 {
                  SETTINGS_JS, SECTION_PRESETS_JS,
                  SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
                  PERF_PANEL_JS, PRISM_PAD_JS, COMPOSE_JS, VISUAL_LANES_JS,
-                 SHAPES_4D_JS, PANEL_4D_JS,
+                 SHAPES_4D_JS, PANEL_4D_JS, CONTROL_PICTURES_JS,
                  STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
                  VIS_GL_JS, RIDGE_JS, ROOM3D_JS, ROOM_PAINT_JS, VIDEO_EXPORT_JS] {
         for b in part.as_bytes() {
@@ -151,6 +151,9 @@ pub const SHAPES_4D_JS: &str = include_str!("../../../../ui/shapes-4d.js");
 /// The modelling-package panel that drives them: object manager, attribute
 /// manager, and six planes of rotation.
 pub const PANEL_4D_JS: &str = include_str!("../../../../ui/panel-4d.js");
+/// The Visual column's controls drawn as what they do: a picture over every
+/// knob, where each colour lands, the palette each generator makes.
+pub const CONTROL_PICTURES_JS: &str = include_str!("../../../../ui/control-pictures.js");
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
     match (req.method.as_str(), req.path.as_str()) {
@@ -188,6 +191,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/panel-4d.js") => {
             Response::ok("text/javascript; charset=utf-8", PANEL_4D_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/control-pictures.js") => {
+            Response::ok("text/javascript; charset=utf-8", CONTROL_PICTURES_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/rail.js") => {

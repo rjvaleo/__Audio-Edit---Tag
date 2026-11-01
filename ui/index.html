@@ -1400,6 +1400,9 @@
 <script src="/vis-gl.js"></script>
 <script src="/video-export.js"></script>
 <script src="/panel-4d.js"></script>
+<!-- Before app.js: the room's knobs are built as it loads, and each asks for its
+     picture then. See `ui/control-pictures.js`. -->
+<script src="/control-pictures.js"></script>
 <script src="/app.js"></script>
 <script src="/sound-map.js"></script>
 <!-- The picture's automation lanes. After app.js, whose state they use. -->

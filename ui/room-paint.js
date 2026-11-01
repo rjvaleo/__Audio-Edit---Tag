@@ -661,6 +661,8 @@ function rpHeadRow() {
   for (const g of RP_GENERATORS) {
     const b = rpEl('button', 're-btn', g.label);
     b.title = `Paint every object at once. Click again for another ${g.label.toLowerCase()}.`;
+    // What it makes, before it is pressed.
+    if (typeof cpGenStrip === 'function') b.prepend(cpGenStrip(g.key));
     b.onclick = () => rpReplace(rpGenerate(g.key));
     gens.appendChild(b);
   }
@@ -680,6 +682,8 @@ function rpSlotRow(s) {
   const cfg = rpSlot(s.key);
 
   head.appendChild(rpEl('span', 'rp-chev', open ? '\u25BE' : '\u25B8'));
+  // Where in the room this colour lands (`control-pictures.js`).
+  if (typeof cpWhere === 'function') head.appendChild(cpWhere(s.key));
   const strip = rpEl('span', 'rp-strip');
   strip.style.background = rpGradientCss(s.key);
   head.appendChild(strip);
@@ -1161,6 +1165,8 @@ function rpHeadRowClassic() {
   for (const g of RP_GENERATORS) {
     const b = rpEl('button', 're-btn', g.label);
     b.title = `Paint every object at once. Click again for another ${g.label.toLowerCase()}.`;
+    // What it makes, before it is pressed.
+    if (typeof cpGenStrip === 'function') b.prepend(cpGenStrip(g.key));
     b.onclick = () => {
       roomPaint.scheme = rpGenerate(g.key);
       rpTouch(); rpRemember(); rpApply(); rpPanel();
