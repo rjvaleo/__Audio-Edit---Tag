@@ -46,10 +46,15 @@ if (!process.argv.includes('--from-raw')) {
   git('worktree', 'add', '--detach', copy, commit);
   try {
     symlinkSync(join(root, 'node_modules'), join(copy, 'node_modules'));
+    const env = { ...process.env, TEST_MAP_OUT: raw, CARGO_TARGET_DIR: join(root, 'core/target/map') };
+    // Built here first, with no time limit: from nothing it takes minutes, and
+    // the suite gives its server thirty seconds to answer.
+    const b = spawnSync('nice', ['-n', '10', 'cargo', 'build', '--release', '--manifest-path', join(copy, 'core/Cargo.toml')],
+      { cwd: copy, stdio: 'inherit', env });
+    if (b.status !== 0) throw new Error('the clean copy did not build');
     // One worker, low priority, as every full run is.
     const r = spawnSync('nice', ['-n', '10', 'npx', 'playwright', 'test', '--reporter=line'], {
-      cwd: copy, stdio: 'inherit',
-      env: { ...process.env, TEST_MAP_OUT: raw, CARGO_TARGET_DIR: join(root, 'core/target/map') },
+      cwd: copy, stdio: 'inherit', env,
     });
     if (r.status !== 0) console.error('some tests failed; the map is still made from what ran');
   } finally {
