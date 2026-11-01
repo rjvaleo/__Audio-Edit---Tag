@@ -226,11 +226,13 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
 /// turned that into "the room plays raw" — which is the granular engine not
 /// running when you press play in the room.
 /// Which page of the open document is out: 'grain', the granular engine and
-/// its dock, or 'wave', the Edit page — the waveform and the edit toolbar and
-/// nothing else. One mode, `edit`, either way: the same document, the same
-/// transport. Remembered. Set by the rail (`setEditPage`).
+/// its dock; 'wave', the Edit page — the waveform and the edit toolbar and
+/// nothing else; or 'chop', the waveform and Chop. One mode, `edit`, every
+/// way: the same document, the same transport. Remembered. Set by the rail
+/// (`setEditPage`).
+const EDIT_PAGES = ['grain', 'wave', 'chop'];
 let editPage = (() => {
-  try { return localStorage.getItem('editPage') === 'wave' ? 'wave' : 'grain'; } catch { return 'grain'; }
+  try { const p = localStorage.getItem('editPage'); return EDIT_PAGES.includes(p) ? p : 'grain'; } catch { return 'grain'; }
 })();
 
 const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq' || m === 'compose';

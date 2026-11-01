@@ -60,6 +60,27 @@ test('Grain is still Grain: its dock, and no edit icons', async ({ page }) => {
   expect(got.tools).toBe('none');
 });
 
+test('Chop is its own page in the rail: the dock with only Chop, and Grain gets its tab back', async ({ page }) => {
+  await openEdit(page);
+  await page.click('#leftRail .rl-item[data-page="grain"]');
+  await page.click('.dock-tab[data-dock="effects"]');
+  await page.click('#leftRail .rl-item[data-page="chop"]');
+  await page.waitForFunction(() => document.body.classList.contains('choppage'));
+  const got = await page.evaluate(() => ({
+    lit: document.querySelector('#leftRail .rl-item.rl-on')?.dataset.page,
+    dock: getComputedStyle(document.getElementById('dock')).display,
+    chop: !document.getElementById('dockChop').classList.contains('hidden'),
+    tools: getComputedStyle(document.getElementById('waveTools')).display,
+    presets: getComputedStyle(document.getElementById('presetBar')).display,
+    remembered: localStorage.getItem('editPage'),
+  }));
+  expect(got).toEqual({ lit: 'chop', dock: 'flex', chop: true, tools: 'none', presets: 'none', remembered: 'chop' });
+
+  await page.click('#leftRail .rl-item[data-page="grain"]');
+  await page.waitForFunction(() => !document.body.classList.contains('choppage'));
+  expect(await page.evaluate(() => document.querySelector('.dock-tab.active')?.dataset.dock)).toBe('effects');
+});
+
 test('every icon is drawn, named, and says its key', async ({ page }) => {
   await openEdit(page);
   const bad = await page.$$eval('#waveTools .wt-btn', (bs) => bs

@@ -6,9 +6,24 @@
 // when it has nothing to act on, and names itself and its key on hover.
 
 function setEditPage(page, apply = true) {
-  editPage = page === 'wave' ? 'wave' : 'grain';
+  editPage = EDIT_PAGES.includes(page) ? page : 'grain';
   try { localStorage.setItem('editPage', editPage); } catch { /* private mode */ }
   if (apply && state.mode === 'edit') setMode('edit');
+}
+
+/// The Chop page is Grain's dock with only its Chop panel out: the same panel,
+/// not a second one. Going there opens the Chop tab; coming back to Grain puts
+/// back whichever tab was open before.
+let chopPageFrom = null;
+function chopPageSync(editing) {
+  const active = document.querySelector('.dock-tab.active')?.dataset.dock;
+  const tab = (name) => document.querySelector(`.dock-tab[data-dock="${name}"]`);
+  if (editing && editPage === 'chop') {
+    if (active !== 'chop') { chopPageFrom = active || null; tab('chop')?.click(); }
+  } else if (editing && editPage === 'grain' && active === 'chop' && chopPageFrom) {
+    tab(chopPageFrom)?.click();
+    chopPageFrom = null;
+  }
 }
 
 /// A function, not a `const`: the Edit menu, built further up, names it.

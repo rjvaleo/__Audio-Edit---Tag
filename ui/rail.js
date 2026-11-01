@@ -66,6 +66,10 @@ const COMPOSE_LISTED = false;
       title: 'The granular engine — the sound you are working on',
     },
     {
+      icon: 'chop', label: 'Chop', mode: 'edit', page: 'chop',
+      title: 'Chop — cut the sound at its silences into slices, after Recycle Reborn',
+    },
+    {
       icon: 'visual', label: 'Visual', mode: 'room',
       title: 'The room, full size, and everything that draws it',
     },
@@ -153,6 +157,9 @@ const COMPOSE_LISTED = false;
     // A waveform and the edit cursor through it.
     edit:
       '<path d="M3 12h1.8l1.6-5.5 2.2 11 2-7.5 1.6 4.5H14"/><path d="M17.5 4v16M15.5 4h4M15.5 20h4"/>',
+    // Scissors, the Chop tab's own ✂, drawn.
+    chop:
+      '<circle cx="6.5" cy="6.5" r="2.6"/><circle cx="6.5" cy="17.5" r="2.6"/><path d="M8.6 8.1 20 17.2M8.6 15.9 20 6.8"/>',
     grain:
       '<path d="M7.6 18.5h9.2a3.4 3.4 0 0 0 .35-6.78 5.35 5.35 0 0 0-10.03-2.3 4.1 4.1 0 0 0 .48 9.08z"/><circle cx="9.6" cy="13.4" r=".85" fill="currentColor" stroke="none"/><circle cx="13" cy="11.9" r=".85" fill="currentColor" stroke="none"/><circle cx="15.4" cy="14.6" r=".85" fill="currentColor" stroke="none"/><circle cx="11.7" cy="15.6" r=".85" fill="currentColor" stroke="none"/>',
     visual:
@@ -341,7 +348,8 @@ const COMPOSE_LISTED = false;
       // though `current()`, which drives the light, does not.
       const mode = (typeof state !== 'undefined' && state.mode) || 'overview';
       if (mode === 'edit') {
-        const page = document.body.classList.contains('wavepage') ? 'wave' : 'grain';
+        const page = document.body.classList.contains('wavepage') ? 'wave'
+          : document.body.classList.contains('choppage') ? 'chop' : 'grain';
         return rail.querySelector(`.rl-item[data-mode="edit"][data-page="${page}"]`);
       }
       return rail.querySelector(`.rl-item[data-mode="${mode}"]`);

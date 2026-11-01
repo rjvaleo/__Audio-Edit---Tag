@@ -5059,6 +5059,13 @@ body.wavepage #editTools:has(> #tabBar.hidden) { display: none; }
 /* Grain's dock and its resize handle are gone, so the lane takes the height. */
 body.wavepage #dock + .dock-resize, body.wavepage #dockResize { display: none; }
 
+/* `body.choppage`: the same open sound again, with Grain's dock showing only
+   its Chop panel (`chopPageSync` opens that tab). The dock's tab rail, the
+   presets and the worded edit bar are Grain's. */
+body.choppage #presetBar { display: none !important; }
+body.choppage #editTools > :not(#tabBar) { display: none !important; }
+body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
+
 /* A section: its title over a row of icons, each with its word under it. */
 .wt-group { position: relative; display: flex; flex-direction: column; gap: 1px; padding: 0 6px; }
 .wt-group + .wt-group { border-left: 1px solid var(--line); }
