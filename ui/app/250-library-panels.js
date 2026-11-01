@@ -19,6 +19,9 @@ async function showSonicTags(file) {
   // A slower earlier request must not overwrite a newer selection.
   if (seq !== sonicSeq) return;
   const tags = r.tags || [];
+  // Kept for the Advanced view, which offers them as suggestions.
+  state.sonicWords[file.path] = tags;
+  state.suggested[file.path] = r.suggest || null;
   box.innerHTML = tags.length
     ? tags.map((t) => `<span class="sonic-tag">${t}</span>`).join('')
     : '<span class="dim">not measured</span>';
@@ -137,6 +140,7 @@ function showHeard(file, words) {
 /// moment you click a file the fields follow the file.
 function fillTagPanel(folder) {
   if (state.selectedFile) return;
+  tagLabels('folder');
   const e = state.tagEdits[folder.name] || {};
   $('editLevel1').value = e.level1 ?? folder.level1;
   $('editLevel2').value = e.level2 ?? folder.level2;
@@ -154,6 +158,7 @@ function fillTagPanel(folder) {
 function fillFileTags(file, suggest, saved) {
   const e = state.tagEdits[file.path] || {};
   const pick = (k) => e[k] ?? saved?.[k] ?? suggest?.[k] ?? '';
+  tagLabels('file');
   $('editLevel1').value = pick('level1');
   $('editLevel2').value = pick('level2');
   $('editTags').value = pick('tags');
@@ -161,9 +166,52 @@ function fillFileTags(file, suggest, saved) {
 
   // Say where the values came from, so nobody has to guess whether they are
   // looking at their own work or the machine's.
-  $('tagSource').textContent = Object.keys(e).length
-    ? 'edited, not yet committed'
-    : saved ? 'saved earlier' : 'suggested from the audio and the filename';
+  tagSourceSay(Object.keys(e).length ? 'edited' : saved ? 'saved' : 'suggested');
+}
+
+/// What each field is for, said where it is filled in.
+///
+/// `level1` and `level2` mean different things for a sound and a folder, and
+/// the labels used to say neither. For a sound the suggestion puts the name the
+/// listening model gave it in the first (the source: "Snare drum", "Sine wave")
+/// and the audio descriptors in the second (the character: "repetitive",
+/// "bright"). For a folder they are the two levels of the library tree: the
+/// family ("Drum", "Sample") and the kind within it ("Machine", "Loops") — see
+/// `levels` in `core/crates/server/src/state.rs`. The stored names are
+/// unchanged; only what the fields are called.
+function tagLabels(kind) {
+  const file = kind === 'file';
+  const say = {
+    Level1: file
+      ? ['What it is', 'The source: what made the sound. Snare, sine wave, voice, rain.', 'snare, sine wave, voice…']
+      : ['Family', 'The top of the library tree: Drum, Sample, Synth, Vocal, Session, Song.', 'Drum, Sample, Synth…'],
+    Level2: file
+      ? ["What it's like", 'Its character: how it sounds. Bright, repetitive, gritty, swelling.', 'bright, repetitive, gritty…']
+      : ['Kind', 'The kind within the family: Machine, Kit, Loops, Pads, Oneshots, Takes.', 'Machine, Kit, Loops…'],
+    Tags: ['Tags', "Anything you'd search for, comma separated: words from the name, the machine, the instrument, the style.", "words you'd search for…"],
+    Notes: ['Notes', "What can't be heard: where it came from, what it's for, how it was made.", "where it came from, what it's for…"],
+  };
+  for (const [key, [word, tip, hint]] of Object.entries(say)) {
+    const label = $('lbl' + key);
+    const field = $('edit' + key);
+    if (label) { label.textContent = word; label.title = tip; }
+    if (field) { field.placeholder = hint; field.title = tip; }
+  }
+}
+
+/// Where the tag values came from: one word on the line, the whole of it in
+/// the tooltip, so the column heads with a word rather than a sentence.
+/// The words are inside the function, not a `const` beside it: this can run
+/// during load, before a `const` further down the file exists.
+function tagSourceSay(kind) {
+  const [word, full] = {
+    suggested: ['Suggested', 'Suggested from the audio and the filename'],
+    saved: ['Saved', 'Saved earlier'],
+    edited: ['Edited', 'Edited, not yet committed'],
+  }[kind];
+  const el = $('tagSource');
+  el.textContent = word;
+  el.title = full;
 }
 
 for (const [id, key] of [['editLevel1', 'level1'], ['editLevel2', 'level2'],
@@ -174,7 +222,7 @@ for (const [id, key] of [['editLevel1', 'level1'], ['editLevel2', 'level2'],
     if (!name) return;
     (state.tagEdits[name] ??= {})[key] = e.target.value.trim();
     updateDirty();
-    if (state.selectedFile) $('tagSource').textContent = 'edited, not yet committed';
+    if (state.selectedFile) tagSourceSay('edited');
   };
 }
 

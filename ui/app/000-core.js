@@ -65,6 +65,10 @@ const state = {
   /// listing, because the first call has to put the library through the model
   /// and the file names should not wait on that.
   heard: {},
+  // Per sound: the measured words, and the classifier's suggestion, as
+  // `/api/similar` last gave them. Read by the Advanced view.
+  sonicWords: {},
+  suggested: {},
   /// Hand-applied tags by path, so a chip can be removed without refetching.
   userTags: {},
   thumbs: {},

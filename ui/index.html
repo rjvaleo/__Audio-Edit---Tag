@@ -58,6 +58,9 @@
       <span id="leftPanelTitle">Browse</span>
       <input class="filter-box" id="treeFilter" placeholder="filter&hellip;">
       <button class="x" id="rescanBtn" aria-label="Re-read the library" title="Re-read the library — for sounds added from outside the app">⟳</button>
+      <!-- The Tags panel's switch. It was the only thing in a column of its own
+           down the right edge of Browse (`#rightRail`, 1 Nov 2026: gone). -->
+      <button class="x tags-toggle active" id="tagsToggle" hidden aria-label="Show or hide the Tags panel" title="Tags panel">✎</button>
       <button class="x" id="closeLeft" aria-label="Close the panel">×</button>
     </div>
 
@@ -675,6 +678,41 @@
     <div class="statsview" id="statsView">
       <div class="stats-grid" id="statsGrid"></div>
       <div class="why" id="whyBox"></div>
+      <!-- The sound's tags, under its details (1 Nov 2026). They were a column
+           of their own down the right of Browse, the only page it was on. -->
+      <div class="stats-tags" id="paneInspect">
+        <div class="edit-group st-col">
+          <div class="st-head"><div class="tag-source" id="tagSource"></div>
+            <button class="x av-open" id="avOpen" title="Every tag field for this sound in one place: add, remove, reorder, move between fields">Advanced view…</button></div>
+          <label><span id="lblLevel1">Level 1</span><input class="field" id="editLevel1"></label>
+          <label><span id="lblLevel2">Level 2</span><input class="field" id="editLevel2"></label>
+          <label><span id="lblTags">Tags</span><input class="field" id="editTags"></label>
+        </div>
+        <div class="edit-group st-col">
+          <label><span id="lblNotes">Notes</span><textarea class="field" id="editNotes" rows="5"
+            placeholder="context the classifier cannot infer&hellip;"></textarea></label>
+        </div>
+        <div class="st-col">
+          <div class="field-label">Your tags</div>
+          <div id="yourTags" class="sonic-tags"></div>
+          <input class="field" id="addUserTag" placeholder="add a tag of your own&hellip;"
+                 list="userTagVocab" autocomplete="off">
+          <datalist id="userTagVocab"></datalist>
+          <div id="learnedTags" class="sonic-tags"></div>
+        </div>
+        <div class="st-col">
+          <div class="field-label">Heard as</div>
+          <div id="heardTags" class="sonic-tags"></div>
+          <div class="field-label">Sounds like</div>
+          <div id="sonicTags" class="sonic-tags"></div>
+          <!-- Saved where they are edited: at the foot of the last column. -->
+          <div class="stats-tags-foot">
+            <span class="dirty" id="dirtyLabel"></span>
+            <button class="ghost" id="discardBtn">Discard</button>
+            <button class="primary" id="commitBtn">Commit</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- edit window: effects and visuals -->
@@ -1292,37 +1330,8 @@
       <span id="rightPanelTitle">Tags</span>
       <button class="x" id="closeRight">×</button>
     </div>
-    <div class="panel-body" id="paneInspect">
-      <div class="edit-group">
-        <div class="tag-source" id="tagSource"></div>
-        <label>Level 1<input class="field" id="editLevel1"></label>
-        <label>Level 2<input class="field" id="editLevel2"></label>
-        <label>Tags<input class="field" id="editTags"></label>
-        <label>Notes<textarea class="field" id="editNotes" rows="3"
-          placeholder="context the classifier cannot infer&hellip;"></textarea></label>
-      </div>
-      <div class="divider"></div>
-      <div class="field-label">Your tags</div>
-      <div id="yourTags" class="sonic-tags"></div>
-      <input class="field" id="addUserTag" placeholder="add a tag of your own&hellip;"
-             list="userTagVocab" autocomplete="off">
-      <datalist id="userTagVocab"></datalist>
-      <div id="learnedTags" class="sonic-tags"></div>
-      <div class="field-label">Heard as</div>
-      <div id="heardTags" class="sonic-tags"></div>
-      <div class="field-label">Sounds like</div>
-      <div id="sonicTags" class="sonic-tags"></div>
-    </div>
-    <div class="panel-foot">
-      <span class="dirty" id="dirtyLabel"></span>
-      <button class="ghost" id="discardBtn">Discard</button>
-      <button class="primary" id="commitBtn">Commit</button>
-    </div>
   </aside>
 
-  <nav class="rail" id="rightRail">
-    <button class="rail-btn active" id="tagsToggle" title="Tags panel">✎</button>
-  </nav>
 
 </div>
 

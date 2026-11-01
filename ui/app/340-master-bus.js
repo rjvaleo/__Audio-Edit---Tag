@@ -143,7 +143,9 @@ function drawMasterVu() {
   const refDb = d?.vuRef ?? -18;
   const kneeDb = d?.knee ? 20 * Math.log10(d.knee) : -3;
 
-  const barW = 20, gap = 4, foot = 10, top = 4;
+  // The bars 16 apart, so each one's readings can stand over it (the readings
+  // above the meter are laid out on these same two centres: `.mb-reads`).
+  const barW = 20, gap = 16, foot = 10, top = 4;
   const plotH = h - foot - top;
   const mid = w / 2;
   const xs = [mid - barW - gap / 2, mid + gap / 2];

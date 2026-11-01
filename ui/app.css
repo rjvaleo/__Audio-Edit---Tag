@@ -5103,3 +5103,121 @@ body.wavepage #dock + .dock-resize, body.wavepage #dockResize { display: none; }
 .wt-secx { top: 0; right: 2px; }
 .wt-x:hover, .wt-secx:hover { background: var(--bad); color: white; }
 .wt-btn.wt-hidden { opacity: .6; }
+
+/* The Tags panel's switch, in the Browse panel's head now that the right-hand
+   column it stood alone in is gone. Lit while the panel is open. */
+.panel-head .tags-toggle.active { color: var(--accent); }
+
+/* ═══════════════════════════════════════════ the tags, under the sound's details
+   1 Nov 2026: the right-hand Tags column is gone; its fields are part of the
+   middle of Browse. The column's own head stays in the markup, never shown.
+
+   The Design Council's pass on this area: the facts are a glance, so one strip
+   of readings with hairlines between, not ten boxed cards (Rams, Ive); the
+   classifier's reason is one quiet line under them; the tags are the work, in
+   four columns; Commit and Discard sit with the fields they save (Norman). */
+#rightPanel { display: none !important; }
+
+#statsView .stats-grid {
+  display: flex; flex-wrap: wrap; gap: 0;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+#statsView .stat-card {
+  flex: 1 1 auto; background: none; border: 0; border-radius: 0;
+  border-left: 1px solid var(--line); padding: 5px 12px;
+}
+#statsView .stat-card:first-child { border-left: 0; padding-left: 0; }
+#statsView .stat-card .v { font-size: var(--fs-l); }
+#statsView .why {
+  margin-top: 5px; padding: 0; background: none; border: 0; border-radius: 0;
+  font-size: var(--fs-s); line-height: 1.4;
+}
+
+.stats-tags {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
+}
+.stats-tags.hidden { display: grid; }
+.stats-tags > .st-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.stats-tags > .st-col > .field-label { margin: 0; }
+.stats-tags .edit-group { gap: 5px; }
+/* The notes fill their column to the height of the first. */
+.stats-tags label:has(textarea) { flex: 1; }
+.stats-tags textarea { flex: 1; min-height: 60px; height: auto; resize: none; }
+.stats-tags-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: auto; padding-top: 6px; }
+.stats-tags-foot .dirty { margin-right: auto; }
+#statsView:has(.stats-tags) { max-height: 46%; padding: 10px 14px; }
+/* Where the values came from, as one word heading the first column, styled as
+   the other columns' heads; the whole of it is in its tooltip. */
+.stats-tags .tag-source {
+  font-family: var(--sans); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--text-dimmer); cursor: help;
+}
+
+/* The readings over the meter, each value standing over the bar it reads
+   (1 Nov 2026). Two centred columns 36 px wide either side of the middle,
+   which is where `drawMasterVu` puts the two bars (20 wide, 16 apart). */
+.mb-side .mb-reads {
+  order: -1;
+  grid-template-columns: minmax(0, 1fr) 36px 36px minmax(0, 1fr);
+  column-gap: 0;
+}
+.mb-side .mb-reads > .mb-k { grid-column: 1; }
+.mb-side .mb-reads > :is(.mb-h, .mb-v) { text-align: center; }
+.mb-side .mb-reads > .mb-word { text-align: center; }
+/* The row names in the same type as the readings beside them: one weight
+   across the row, so the eye reads VU −14.2 as one thing. */
+.mb-side .mb-reads > :is(.mb-k, .mb-h) {
+  font-family: var(--mono); font-size: var(--fs-s); letter-spacing: 0;
+  font-weight: 400; color: var(--text-2);
+}
+
+/* ═════════════════════════════════════════════════════════════ advanced view
+   `ui/app/255-advanced-view.js`. One pop-up for one sound: its four tag fields
+   side by side, each value a row to drag, remove or move, a text field to add,
+   suggestions one click away. As tall as what is in it. */
+.st-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.av-open { width: auto; height: auto; padding: 0; font: 500 var(--fs-s) var(--sans); color: var(--accent); background: none; border: 0; cursor: pointer; }
+.av-open:hover { text-decoration: underline; }
+.av-modal.hidden { display: none; }
+.av-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 900; }
+.av-box {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 901;
+  width: min(784px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--line-3); border-radius: 8px;
+  box-shadow: 0 24px 60px var(--shadow-hard);
+}
+.av-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.av-head b { font-size: var(--fs-l); color: var(--text); }
+.av-name { font: var(--fs-s) var(--mono); color: var(--text-dim); }
+.av-hint { margin-left: auto; font-size: var(--fs-s); color: var(--text-dim); }
+.av-cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.av-col { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid var(--line); min-width: 0; }
+.av-col:first-child { border-left: 0; }
+.av-t { font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .4px; text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 2px; }
+.av-list { display: flex; flex-direction: column; gap: 3px; min-height: 28px; }
+.av-item {
+  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; align-items: center; gap: 6px;
+  height: 28px; padding: 0 6px; background: var(--surface-3); border-radius: 4px;
+  font: var(--fs-m) var(--mono); color: var(--text); cursor: grab;
+}
+.av-item.av-dragging { opacity: .4; }
+.av-h { color: var(--text-dimmer); font-size: var(--fs-s); letter-spacing: -2px; }
+.av-w { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.av-o { font-size: var(--fs-xs); color: var(--text-dimmer); }
+.av-x { background: none; border: 0; color: var(--text-dimmer); font-size: var(--fs-l); padding: 0 2px; cursor: pointer; line-height: 1; }
+.av-x:hover { color: var(--bad); }
+.av-line { height: 3px; border-radius: 2px; background: var(--accent); }
+.av-new { width: 100%; height: 28px; box-sizing: border-box; padding: 0 8px; font: var(--fs-m) var(--mono); }
+.av-sug-t { font-size: var(--fs-xs); color: var(--text-dimmer); margin-top: 4px; }
+.av-sug-t:empty { display: none; }
+.av-sug { display: flex; flex-wrap: wrap; gap: 3px; }
+.av-chip { font: var(--fs-s) var(--mono); color: var(--text-2); background: none; border: 1px solid var(--line-3); border-radius: 3px; padding: 2px 6px; cursor: pointer; }
+.av-chip:hover { color: var(--text); border-color: var(--text-dim); }
+.av-chip.av-m { border-color: var(--accent); }
+.av-notes { width: 100%; box-sizing: border-box; flex: 1; min-height: 120px; resize: none; }
+.av-foot { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.av-say { margin-right: auto; font: var(--fs-s) var(--mono); color: var(--text-dim); }
+/* With no sound chosen the strip has nothing in it; its hairlines are not drawn
+   round nothing (`interface.spec.mjs`, the empty-box check). */
+#statsView .stats-grid:empty { display: none; }
