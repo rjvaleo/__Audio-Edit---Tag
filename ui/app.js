@@ -4874,10 +4874,9 @@ function knob(label, value, min, max, step, format, onChange, onCommit, log, def
 /// qualifiers rather than the name. Only if it is still too long do the vowels
 /// come out, and never the first letter of a word: "preserve transients" reads
 /// as "prsrv trnsnts" but "rsrv rnsnts" reads as nothing.
-/// Long enough for every switch in the tray to keep its words: the bank layout
-/// gives a switch the width of its label, and "prsrv trnsnts" had to be decoded
-/// (`docs/DESIGN-CRITIQUE.md`, "The granular engine").
-const LABEL_MAX = 24;
+/// The switches' fixed slots in the slider-column tray, as before the 27 Oct
+/// pass: at 24 the full words ran into the next switch.
+const LABEL_MAX = 11;
 
 /// Number words become numbers — on the button only, never in the tooltip.
 /// Cardinals and ordinals both, because "fifth" is as long as "five" and half
@@ -4921,6 +4920,7 @@ function check(label, title, value, onChange) {
   const b = el.querySelector('.switch');
   const short = fitLabel(label);
   b.textContent = short;
+  b.dataset.name = label;
   // The full name always survives in the tooltip, so shortening never loses it.
   b.title = short === label ? (title || label) : `${label} — ${title || ''}`.replace(/ — $/, '');
   el.title = b.title;
@@ -10958,7 +10958,30 @@ function gkAdopt() {
   for (const [key, row] of Object.entries({ ...state.stretchRows, ...state.grainRows })) {
     if (row && ggHas(key)) row.dataset.glyph = key;
   }
-  for (const row of host.querySelectorAll('.param')) gkKnob(row);
+  for (const row of host.querySelectorAll('.param')) gkGlyphRow(row);
+}
+
+/// A slider row of the tray with its picture at the front. The tray is the
+/// columns of slider rows it was before the knobs (27 Oct); the knobs, the
+/// pad's own column and the packed banks (`gkKnob`, `gkLayout`, `gkPack`,
+/// `gkFit`, `gkViewRow`) are kept but no longer used here. They act only on a
+/// tray marked `gk-banks`, and nothing marks it.
+function gkGlyphRow(row) {
+  const input = row.querySelector(':scope > input[type=range]');
+  const key = row.dataset.glyph;
+  if (!input || !key || row.querySelector(':scope > .gg')) return;
+  const glyph = ggMake(key);
+  if (!glyph) return;
+  row.classList.add('gk-row');
+  row.prepend(glyph);
+  const draw = () => ggPaint(glyph, key, row.read ? row.read() : +RK_VALUE.get.call(input));
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get() { return RK_VALUE.get.call(this); },
+    set(v) { RK_VALUE.set.call(this, v); draw(); },
+  });
+  input.addEventListener('input', draw);
+  draw();
 }
 
 /// Pack the banks into the dock's lines (UI queue, item 1).
@@ -10972,7 +10995,7 @@ function gkAdopt() {
 /// DOM and nothing is hidden. In the dock only; the Sound tab is one column.
 function gkPack() {
   const host = $('grainControls');
-  if (!host || !host.closest('#dockStretch')) return;
+  if (!host || !host.closest('#dockStretch') || !host.classList.contains('gk-banks')) return;
   const cs = getComputedStyle(host);
   const room = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const gap = parseFloat(cs.columnGap) || 0;
@@ -11048,7 +11071,7 @@ function gkSetView(key) {
 function gkFit() {
   const host = $('grainControls');
   const dock = $('dock');
-  if (!host || !dock || !host.closest('#dockStretch') || !host.clientHeight) return;
+  if (!host || !dock || !host.closest('#dockStretch') || !host.classList.contains('gk-banks') || !host.clientHeight) return;
   const top = host.getBoundingClientRect().top - host.scrollTop;
   let bottom = 0;
   for (const el of host.querySelectorAll(':scope > .gk-left, :scope .stretch-core, :scope .engine-params, :scope .wild, :scope .engine-pick, :scope .engine-switch-host')) {
@@ -11062,8 +11085,6 @@ function gkFit() {
   if (Math.abs(want - now) > 1) setDockHeight(want, false);
 }
 {
-  gkLayout();
-  gkViewRow();
   const host = $('grainControls');
   let queued = false;
   if (host) {
@@ -11083,7 +11104,6 @@ function gkFit() {
     }).observe(host);
   }
   gkAdopt();
-  gkSetView(gkView);
 }
 
 // ─────────────────────────────────────── the Grain view: Classic and Modern ──

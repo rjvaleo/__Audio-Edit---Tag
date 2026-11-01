@@ -4326,51 +4326,55 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 }
 .rv-admin .rk-k > .rg-read.rk-v { min-width: 0; text-align: center; font-size: var(--fs-s); }
 
+/* Not in use: the tray is the columns of slider rows again, as it was before
+   the 27 Oct pass, with each control's picture at the front of its row
+   (`gkGlyphRow`). The knob banks below act only on a tray marked `gk-banks`,
+   which nothing sets. */
 /* ═══════════════════════════════════════ the granular tray as an instrument ══
    `docs/DESIGN-CRITIQUE.md`, "The granular engine"; `gkLayout` and `gkKnob` in
    `app.js`. In the dock: the cloud pad's column on the left, and every group a
    bank of knobs, the banks wrapping across the rest of the width so the whole
    engine is on screen at the dock's height. */
-#dockStretch .grain-controls {
+#dockStretch .grain-controls.gk-banks {
   position: relative; display: flex; flex-wrap: wrap; align-content: flex-start;
   align-items: flex-start; gap: 4px 10px; padding-left: 240px; min-height: 236px;
   /* The width the two columns had, and no more: the master bus beside it is
      drawn to its cell, and the Room overlay over that picture wraps to it. */
 }
-#dockStretch :is(.grain-standard, #extPanel, #stretchParams, #grainShape, #grainPitch, #extEngine, #extGrain) { display: contents; }
-#dockStretch #extEngine.hidden { display: none; }
-#dockStretch .gk-left { position: absolute; left: 0; top: 28px; width: 228px; }
+#dockStretch .gk-banks :is(.grain-standard, #extPanel, #stretchParams, #grainShape, #grainPitch, #extEngine, #extGrain) { display: contents; }
+#dockStretch .gk-banks #extEngine.hidden { display: none; }
+#dockStretch .gk-banks .gk-left { position: absolute; left: 0; top: 28px; width: 228px; }
 /* The engine picker heads the pad's column, so the banks start with the
    switches and lose a line. */
-#dockStretch .engine-pick { position: absolute; left: 0; top: 0; width: 228px; }
-#dockStretch .gk-left .cloud-pad-wrap { margin: 0 0 3px; }
-#dockStretch #cloudPad { height: 150px; }
-#dockStretch .gk-left .stretch-readout { margin-bottom: 6px; }
+#dockStretch .gk-banks .engine-pick { position: absolute; left: 0; top: 0; width: 228px; }
+#dockStretch .gk-banks .gk-left .cloud-pad-wrap { margin: 0 0 3px; }
+#dockStretch .gk-banks #cloudPad { height: 150px; }
+#dockStretch .gk-banks .gk-left .stretch-readout { margin-bottom: 6px; }
 
 /* The engine and its switches head the banks. Four fixed places still, the
    same width each — wide enough now for the words, not their consonants. */
-#dockStretch .engine-switch-host { order: 0; flex: 0 0 434px; margin: 0; }
-#dockStretch .engine-switches > [data-slot] { width: 104px; }
-#dockStretch .engine-switches > [data-slot] button { width: 100%; }
-#dockStretch .engine-switches > [data-slot="2"] { left: 110px; }
-#dockStretch .engine-switches > [data-slot="3"] { left: 220px; }
-#dockStretch .engine-switches > [data-slot="4"] { left: 330px; }
-#grainControls .switch::first-letter { text-transform: uppercase; }
+#dockStretch .gk-banks .engine-switch-host { order: 0; flex: 0 0 434px; margin: 0; }
+#dockStretch .gk-banks .engine-switches > [data-slot] { width: 104px; }
+#dockStretch .gk-banks .engine-switches > [data-slot] button { width: 100%; }
+#dockStretch .gk-banks .engine-switches > [data-slot="2"] { left: 110px; }
+#dockStretch .gk-banks .engine-switches > [data-slot="3"] { left: 220px; }
+#dockStretch .gk-banks .engine-switches > [data-slot="4"] { left: 330px; }
+#grainControls.gk-banks .switch::first-letter { text-transform: uppercase; }
 
 /* Banks, in an order that packs: time and pitch beside pitch movement, the
    grain on a line of its own, the extended side after. */
-#dockStretch .stretch-core { order: 1; }
-#dockStretch .engine-params { order: 1; }
-#grainControls .engine-params:not(:empty)::before { content: 'This engine'; }
-#dockStretch .engine-params:empty { display: none; }
-#dockStretch #grainPitch > .wild { order: 2; }
-#dockStretch #grainShape > .wild { order: 3; }
-#dockStretch #extEngine > .wild { order: 4; }
-#dockStretch #extGrain > .wild { order: 5; }
+#dockStretch .gk-banks .stretch-core { order: 1; }
+#dockStretch .gk-banks .engine-params { order: 1; }
+#grainControls.gk-banks .engine-params:not(:empty)::before { content: 'This engine'; }
+#dockStretch .gk-banks .engine-params:empty { display: none; }
+#dockStretch .gk-banks #grainPitch > .wild { order: 2; }
+#dockStretch .gk-banks #grainShape > .wild { order: 3; }
+#dockStretch .gk-banks #extEngine > .wild { order: 4; }
+#dockStretch .gk-banks #extGrain > .wild { order: 5; }
 
 /* A bank: its heading over a row of knobs. In the dock and in Visual › Sound. */
-#grainControls .wild { display: flex; flex-direction: column; margin-top: 0; min-width: 0; }
-#grainControls :is(.wild-body, .stretch-core, .engine-params) {
+#grainControls.gk-banks .wild { display: flex; flex-direction: column; margin-top: 0; min-width: 0; }
+#grainControls.gk-banks :is(.wild-body, .stretch-core, .engine-params) {
   display: flex; flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 0 2px;
 }
 /* The engine's own controls carry a heading too, so a line holding both banks
@@ -4378,63 +4382,63 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 /* Laid over the bank's top edge rather than in its row: as a flex item the
    heading counted as width beside the knobs, and the bank grew past the room
    that Pitch movement needed beside it. */
-#grainControls :is(.stretch-core, .engine-params:not(:empty)) { position: relative; padding-top: 16px; }
-#grainControls .stretch-core::before,
-#grainControls .engine-params:not(:empty)::before {
+#grainControls.gk-banks :is(.stretch-core, .engine-params:not(:empty)) { position: relative; padding-top: 16px; }
+#grainControls.gk-banks .stretch-core::before,
+#grainControls.gk-banks .engine-params:not(:empty)::before {
   content: 'Time and pitch'; position: absolute; left: 0; right: 0; top: 0;
   font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase;
   color: var(--text-dim); border-bottom: 1px solid var(--line); padding-bottom: 3px;
   white-space: nowrap;
 }
-#grainControls .wild-head { margin-bottom: 1px; padding-bottom: 2px; }
+#grainControls.gk-banks .wild-head { margin-bottom: 1px; padding-bottom: 2px; }
 /* The extended side's Reset rides on the first heading; small, so it does not
    widen that bank past sharing its line. */
-#grainControls #extReset { height: 15px; padding: 0 6px; font-size: var(--fs-xs); }
+#grainControls.gk-banks #extReset { height: 15px; padding: 0 6px; font-size: var(--fs-xs); }
 
 /* A knob: the face, the input laid over it, the reading, the name. */
-#grainControls .param.gk-k {
+#grainControls.gk-banks .param.gk-k {
   display: flex; flex-direction: column; align-items: center; position: relative;
   gap: 0; min-width: 50px; padding: 0 2px 1px;
 }
-#grainControls .gk-k > .rk-face { display: block; width: 22px; height: 22px; order: 0; margin-bottom: 1px; }
-#grainControls .gk-k > .rk-face svg { display: block; width: 100%; height: 100%; }
-#grainControls .gk-k > input[type=range] {
+#grainControls.gk-banks .gk-k > .rk-face { display: block; width: 22px; height: 22px; order: 0; margin-bottom: 1px; }
+#grainControls.gk-banks .gk-k > .rk-face svg { display: block; width: 100%; height: 100%; }
+#grainControls.gk-banks .gk-k > input[type=range] {
   position: absolute; top: 1px; left: 50%; transform: translateX(-50%);
   width: 24px; height: 24px; margin: 0; opacity: 0; cursor: ns-resize;
 }
-#grainControls .gk-k:has(> input:focus-visible) > .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
-#grainControls .gk-k > .v {
+#grainControls.gk-banks .gk-k:has(> input:focus-visible) > .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+#grainControls.gk-banks .gk-k > .v {
   order: 1; width: auto; overflow: visible; text-align: center;
   font-size: var(--fs-s); line-height: 1.15; color: var(--text-2);
 }
-#grainControls .gk-k > .k {
+#grainControls.gk-banks .gk-k > .k {
   order: 2; width: auto; overflow: visible; text-align: center;
   font-size: var(--fs-xs); line-height: 1.1; color: var(--text-dimmer);
 }
 /* The extended side is what breaks the algorithm, and its knobs say so in its
    own colour, as its headings always have. */
-#grainControls .grain-extended .rk-arc { stroke: var(--warn); }
+#grainControls.gk-banks .grain-extended .rk-arc { stroke: var(--warn); }
 
 /* Switches and choices inside a bank: a short column beside the knobs. */
-#grainControls .wild-body > .param-pair { display: flex; flex-direction: column; gap: 3px; align-self: center; }
-#grainControls .wild-body > .param-pair .toggle { margin: 0; }
-#grainControls .wild-body > .param:not(.gk-k):not(.toggle) {
+#grainControls.gk-banks .wild-body > .param-pair { display: flex; flex-direction: column; gap: 3px; align-self: center; }
+#grainControls.gk-banks .wild-body > .param-pair .toggle { margin: 0; }
+#grainControls.gk-banks .wild-body > .param:not(.gk-k):not(.toggle) {
   display: flex; flex-direction: column; align-items: stretch; gap: 1px; width: auto; align-self: center;
 }
-#grainControls .wild-body > .param:not(.gk-k):not(.toggle) > .k { font-size: var(--fs-xs); color: var(--text-dimmer); }
+#grainControls.gk-banks .wild-body > .param:not(.gk-k):not(.toggle) > .k { font-size: var(--fs-xs); color: var(--text-dimmer); }
 
 /* Visual › Sound: the same banks, down a 300 px column, the pad on top. */
 #roomSoundBody .gk-left { margin-bottom: 8px; }
 #roomSoundBody #cloudPad { aspect-ratio: 16 / 10; }
 /* The Cloud presets fit the pad's column: the menu keeps its words. */
-#dockStretch .gk-left .grain-preset-row { display: flex; align-items: center; gap: 4px; }
-#dockStretch .gk-left .grain-preset-row .mini { flex: 1 1 auto; min-width: 70px; }
+#dockStretch .gk-banks .gk-left .grain-preset-row { display: flex; align-items: center; gap: 4px; }
+#dockStretch .gk-banks .gk-left .grain-preset-row .mini { flex: 1 1 auto; min-width: 70px; }
 /* The seed reads as one line: its name, its number, its re-roll. */
-#grainControls .wild-body > .param.seed-row { flex-direction: row; align-items: center; gap: 6px; }
+#grainControls.gk-banks .wild-body > .param.seed-row { flex-direction: row; align-items: center; gap: 6px; }
 /* Five engines across the pad's column, without running into the switches
    beside it: the smallest step of the scale, and the column 228 px. */
-#dockStretch .engine-pick .seg { gap: 2px; }
-#dockStretch .engine-pick .seg-btn { font-size: var(--fs-xs); }
+#dockStretch .gk-banks .engine-pick .seg { gap: 2px; }
+#dockStretch .gk-banks .engine-pick .seg-btn { font-size: var(--fs-xs); }
 /* The tray's line fills the dock, whatever the controls need. They used to
    overflow it, which made it full height by accident; now that Granular fits,
    the line would shrink to the knobs and take the master bus beside it down
@@ -4449,36 +4453,36 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 
 /* UI queue, item 1 · the tray's lines, tighter. `gkPack` fills each line;
    these take a few pixels off every bank so a line more fits under the fold. */
-#dockStretch .grain-controls { row-gap: 2px; }
-#grainControls .gk-k > .rk-face { width: 20px; height: 20px; margin-bottom: 0; }
-#grainControls .gk-k > input[type=range] { width: 22px; height: 22px; }
-#grainControls .gk-k > .v { line-height: 1.05; }
-#grainControls .gk-k > .k { line-height: 1.05; }
-#grainControls .wild-head { padding-bottom: 1px; margin-bottom: 1px; }
-#grainControls :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 14px; }
-#grainControls .stretch-core::before,
-#grainControls .engine-params:not(:empty)::before { padding-bottom: 1px; }
-#grainControls .param.gk-k { padding: 0 2px; }
-#grainControls .gk-k > .rk-face { width: 18px; height: 18px; }
-#grainControls .wild-head { font-size: var(--fs-xs); line-height: 1.1; }
-#grainControls .stretch-core::before { font-size: var(--fs-xs); line-height: 1.1; }
+#dockStretch .grain-controls.gk-banks { row-gap: 2px; }
+#grainControls.gk-banks .gk-k > .rk-face { width: 20px; height: 20px; margin-bottom: 0; }
+#grainControls.gk-banks .gk-k > input[type=range] { width: 22px; height: 22px; }
+#grainControls.gk-banks .gk-k > .v { line-height: 1.05; }
+#grainControls.gk-banks .gk-k > .k { line-height: 1.05; }
+#grainControls.gk-banks .wild-head { padding-bottom: 1px; margin-bottom: 1px; }
+#grainControls.gk-banks :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 14px; }
+#grainControls.gk-banks .stretch-core::before,
+#grainControls.gk-banks .engine-params:not(:empty)::before { padding-bottom: 1px; }
+#grainControls.gk-banks .param.gk-k { padding: 0 2px; }
+#grainControls.gk-banks .gk-k > .rk-face { width: 18px; height: 18px; }
+#grainControls.gk-banks .wild-head { font-size: var(--fs-xs); line-height: 1.1; }
+#grainControls.gk-banks .stretch-core::before { font-size: var(--fs-xs); line-height: 1.1; }
 /* The engine's own controls are its own bank, and say so: they share a line
    with Time and pitch and were printing its name over Pitch movement. Last in
    the file, so the shared heading rule above cannot win it back. */
-#grainControls .engine-params:not(:empty)::before { content: 'This engine'; font-size: var(--fs-xs); line-height: 1.1; }
-#dockStretch .grain-controls { row-gap: 1px; }
-#grainControls .gk-k > .v, #grainControls .gk-k > .k { line-height: 1; }
+#grainControls.gk-banks .engine-params:not(:empty)::before { content: 'This engine'; font-size: var(--fs-xs); line-height: 1.1; }
+#dockStretch .grain-controls.gk-banks { row-gap: 1px; }
+#grainControls.gk-banks .gk-k > .v, #grainControls.gk-banks .gk-k > .k { line-height: 1; }
 /* Time and pitch's heading is exactly a bank heading's height, so on a line
    it shares its knobs stand level with the next bank's and are read first. */
-#grainControls :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 12px; }
+#grainControls.gk-banks :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 12px; }
 
 /* Both views (DESIGN-CRITIQUE, "Both views, as an option"): a page hides the
    other side's banks. In the dock only: the Sound tab shows the tray whole. */
-#grainControls .gk-view { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
-#grainControls .gk-view .seg { flex: 1; display: flex; }
-#grainControls .gk-view .seg-btn { flex: 1; }
-#dockStretch #grainControls.gk-page-std #extPanel .wild,
-#dockStretch #grainControls.gk-page-ext :is(.stretch-core, .engine-params, #grainShape .wild, #grainPitch .wild) { display: none; }
+#grainControls.gk-banks .gk-view { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+#grainControls.gk-banks .gk-view .seg { flex: 1; display: flex; }
+#grainControls.gk-banks .gk-view .seg-btn { flex: 1; }
+#dockStretch .gk-banks #grainControls.gk-banks.gk-page-std #extPanel .wild,
+#dockStretch .gk-banks #grainControls.gk-banks.gk-page-ext :is(.stretch-core, .engine-params, #grainShape .wild, #grainPitch .wild) { display: none; }
 /* ---------------------------------------------------------------- small faults
 
    The tuning and Keys are buttons that are their own slot, so the slot's
@@ -5025,6 +5029,9 @@ svg.pic-proj { width: 28px; height: 17px; }
    a picture of the value above each knob. The group's colour is what the
    control moves; the dim text colour is the context around it. The knob's
    input is laid over the face, so it moves down by the glyph's height. */
+/* In the slider rows: the picture at the front, no taller than the row. */
+#grainControls .param.gk-row { grid-template-columns: 22px var(--param-k) minmax(0, 1fr) var(--param-v); }
+#grainControls .gk-row > .gg { display: block; width: 22px; height: 16px; overflow: visible; }
 #grainControls .gk-k > .gg { display: block; order: -1; width: 36px; height: 27px; margin-bottom: 1px; overflow: visible; }
 #grainControls .gk-k:has(> .gg) > input[type=range] { top: 28px; }
 .gg-time { --gg: var(--text); }

@@ -428,7 +428,10 @@ const TRAY = () => {
   };
 };
 
-test('G1 · the view switch: All, Standard, Extended, All by default', async ({ page }) => {
+// G1–G5 are the knob-bank tray of the 27 Oct pass. The tray is the columns of
+// slider rows it was before that pass (1 Nov 2026), so they are skipped, not
+// deleted: they come back if the banks ever do.
+test.skip('G1 · the view switch: All, Standard, Extended, All by default', async ({ page }) => {
   await page.addInitScript(() => { try { localStorage.removeItem('gkView'); } catch {} });
   await openFile(page);
   await dockTab(page, 'stretch');
@@ -437,7 +440,7 @@ test('G1 · the view switch: All, Standard, Extended, All by default', async ({ 
 });
 
 for (const alg of ENGINES) {
-  test(`G1 · All: the whole ${alg} tray is on screen without a scroll`, async ({ page }) => {
+  test.skip(`G1 · All: the whole ${alg} tray is on screen without a scroll`, async ({ page }) => {
     await page.addInitScript(() => { try { localStorage.removeItem('gkView'); localStorage.removeItem('dockHeight'); } catch {} });
     await openFile(page);
     await engine(page, alg);
@@ -447,7 +450,7 @@ for (const alg of ENGINES) {
   });
 }
 
-test('G1 · Standard and Extended each show only their side, and fit', async ({ page }) => {
+test.skip('G1 · Standard and Extended each show only their side, and fit', async ({ page }) => {
   await page.addInitScript(() => { try { localStorage.removeItem('gkView'); localStorage.removeItem('dockHeight'); } catch {} });
   await openFile(page);
   for (const alg of ENGINES) {
@@ -464,7 +467,7 @@ test('G1 · Standard and Extended each show only their side, and fit', async ({ 
   }
 });
 
-test('G1 · a page hides banks, never controls, and the choice is remembered', async ({ page }) => {
+test.skip('G1 · a page hides banks, never controls, and the choice is remembered', async ({ page }) => {
   await page.addInitScript(() => { try { if (!sessionStorage.getItem('seeded')) { localStorage.removeItem('gkView'); sessionStorage.setItem('seeded', '1'); } } catch {} });
   await openFile(page);
   await engine(page, 'hybrid');
@@ -478,7 +481,7 @@ test('G1 · a page hides banks, never controls, and the choice is remembered', a
   expect(await page.$eval('#gkView .seg-btn.active', (b) => b.dataset.view)).toBe('ext');
 });
 
-test('G1 · the tray reads standard first, Time and pitch leading', async ({ page }) => {
+test.skip('G1 · the tray reads standard first, Time and pitch leading', async ({ page }) => {
   await openFile(page);
   for (const alg of ['granular', 'wsola', 'vocoder', 'pvsola', 'hybrid']) {
     await engine(page, alg);
@@ -495,7 +498,7 @@ test('G1 · the tray reads standard first, Time and pitch leading', async ({ pag
   }
 });
 
-test('G2 · every control in the tray that is an amount is a knob a pointer reaches', async ({ page }) => {
+test.skip('G2 · every control in the tray that is an amount is a knob a pointer reaches', async ({ page }) => {
   await openFile(page);
   for (const alg of ['granular', 'wsola']) {
     await engine(page, alg);
@@ -516,7 +519,7 @@ test('G2 · every control in the tray that is an amount is a knob a pointer reac
   }
 });
 
-test('G3 · no switch in the tray has had its vowels taken out', async ({ page }) => {
+test.skip('G3 · no switch in the tray has had its vowels taken out', async ({ page }) => {
   await openFile(page);
   const bad = [];
   for (const alg of ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular']) {
@@ -528,7 +531,7 @@ test('G3 · no switch in the tray has had its vowels taken out', async ({ page }
   expect([...new Set(bad)]).toEqual([]);
 });
 
-test('G4 · the cloud pad leads the tray and is drawn large', async ({ page }) => {
+test.skip('G4 · the cloud pad leads the tray and is drawn large', async ({ page }) => {
   await openFile(page);
   await engine(page, 'granular');
   const g = await page.evaluate(() => {
@@ -543,7 +546,7 @@ test('G4 · the cloud pad leads the tray and is drawn large', async ({ page }) =
   expect(g.left).toBeLessThan(g.knobsFrom);
 });
 
-test('G5 · the extended side\'s knobs are drawn in its own colour', async ({ page }) => {
+test.skip('G5 · the extended side\'s knobs are drawn in its own colour', async ({ page }) => {
   await openFile(page);
   await engine(page, 'granular');
   const c = await page.evaluate(() => {
@@ -1492,7 +1495,9 @@ test('GM0 · the Grain view has a Classic/Modern switch, Classic by default, rem
   expect(inRoom).toEqual({ switchShown: false, marks: 0 });
 });
 
-test('GM1 · Modern marks a knob\'s named point, and Envelope says its amount', async ({ page }) => {
+// GM1 reads the marks on the tray's knobs, and the tray is slider rows again
+// (see G1–G5 above).
+test.skip('GM1 · Modern marks a knob\'s named point, and Envelope says its amount', async ({ page }) => {
   await openFile(page);
   const read = () => page.evaluate(() => {
     const row = state.grainRows.envelope;

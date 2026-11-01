@@ -35,7 +35,7 @@ const KEYS = `(sel) => {
     if (k && words(k.textContent)) return 'param:' + words(k.textContent);
     const row = el.closest('.re-row, .rp-row');
     const tag = row && row.querySelector('.re-tag');
-    const own = words(el.matches('button') ? el.textContent : '') || words(el.getAttribute('aria-label')) || words(el.title).slice(0, 40);
+    const own = words(el.dataset.name || '') || words(el.matches('button') ? el.textContent : '') || words(el.getAttribute('aria-label')) || words(el.title).slice(0, 40);
     if (tag && words(tag.textContent)) return 'row:' + words(tag.textContent) + (own ? '/' + own : '');
     return own || '(unlabelled)';
   };
