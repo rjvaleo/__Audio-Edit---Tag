@@ -23,6 +23,14 @@ const GG_W = 64, GG_H = 48, GG_BASE = 40;
 const ggRnd = (i, s = 7) => { const x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return x - Math.floor(x); };
 const ggLerp = (a, b, t) => a + (b - a) * t;
 const ggClamp = (v, a, b) => Math.max(a, Math.min(b, v));
+/// The jitter itself, for a glyph that moves: grain `i`'s offset at time `t`
+/// seconds, in −0.5…0.5, gliding from one draw of the scatter to the next.
+/// At `t` 0 it is the still picture's offset.
+function ggJ(i, s, t) {
+  const u = t * 3 + ggRnd(i, 99), k = Math.floor(u), f = u - k, e = f * f * (3 - 2 * f);
+  const a = t ? ggRnd(i, s + k) : ggRnd(i, s), b = ggRnd(i, s + k + 1);
+  return ggLerp(a, t ? b : a, e) - 0.5;
+}
 const ggLog = (v, a, b) => ggClamp(Math.log(Math.max(v, a) / a) / Math.log(b / a), 0, 1);
 
 /// One grain: a Hann bell. `peak` leans it — 0.5 is the symmetric one.
@@ -69,7 +77,19 @@ const GG_GROUP = {
   pitchJitterSemis: 'pitch', pitchDriftSemis: 'pitch', driftRateHz: 'pitch',
   scan: 'scan', envelope: 'scan', sizeRange: 'scan', layerSpread: 'scan', panSpread: 'scan',
   layerScatter: 'scan', layerScatterMs: 'scan',
+  searchMs: 'shape', splicePick: 'shape', spliceShape: 'shape', stride: 'shape', seed: 'shape',
 };
+
+/// The splice's choices, as the number its glyph is drawn from.
+const GG_PICK = ['similar', 'different', 'loudest'];
+const GG_SHAPE = ['hann', 'triangle', 'rect'];
+/// One spliced segment under the window it is laid down with: 0 hann, 1 tri, 2 rect.
+function ggSeg(cx, w, h, shape) {
+  const x0 = cx - w / 2, x1 = cx + w / 2, top = GG_BASE - h;
+  if (shape === 2) return `M${x0} ${GG_BASE}L${x0} ${top}L${x1} ${top}L${x1} ${GG_BASE}`;
+  if (shape === 1) return `M${x0} ${GG_BASE}L${cx} ${top}L${x1} ${GG_BASE}`;
+  return ggBell(cx, w, h);
+}
 
 /// The drawings, by control key, each from the control's own value and range.
 const GG_DRAW = {
@@ -116,38 +136,54 @@ const GG_DRAW = {
     for (let x = 4 + w / 2; x <= 60 - w / 2 + 0.01; x += hop) s += ggP(ggBell(x, w, 24), Math.abs(x - 32) < w / 2 ? 'a' : 'f');
     return s;
   },
-  sizeJitter: (v) => {
-    let s = ggGround();
-    for (let i = 0; i < 5; i++) s += ggP(ggBell(8 + i * 12, 10 * (1 + v * (ggRnd(i, 11) - 0.5) * 1.6), 20));
-    return s;
-  },
-  positionJitterMs: (v) => {
+  sizeJitter: (v, t = 0) => {
     let s = ggGround();
     for (let i = 0; i < 5; i++) {
-      const x0 = 8 + i * 12, x = x0 + (ggRnd(i, 5) - 0.5) * 28 * ggClamp(v / 500, 0, 1);
+      const k = 1 + ggClamp(v, 0, 1) * ggJ(i, 11, t) * 1.8;
+      s += ggP(ggBell(8 + i * 12, 10 * k, 18 * k));
+    }
+    return s;
+  },
+  positionJitterMs: (v, t = 0) => {
+    let s = ggGround();
+    for (let i = 0; i < 5; i++) {
+      const x0 = 8 + i * 12, x = x0 + ggJ(i, 5, t) * 28 * ggClamp(v / 500, 0, 1);
       s += ggL(x0, 42, x0, 46) + ggP(ggBell(ggClamp(x, 5, 59), 8, 18));
     }
     return s;
   },
-  pitchJitterSemis: (v) => {
+  pitchJitterSemis: (v, t = 0) => {
     let s = ggL(4, 24, 60, 24, 'f', 'stroke-dasharray="1 2"');
     for (let i = 0; i < 9; i++) {
-      const x = 6 + i * 6.5, y = 24 + (ggRnd(i, 9) - 0.5) * 36 * ggClamp(v / 24, 0, 1);
+      const x = 6 + i * 6.5, y = 24 + ggJ(i, 9, t) * 36 * ggClamp(v / 24, 0, 1);
       s += ggL(x, y, x + 4, y, 'a');
     }
     return s;
   },
-  pitchDriftSemis: (v) => {
-    const amp = ggClamp(v / 24, 0, 1) * 16;
-    let s = ggWave(4, 60, 24, amp, 1, 'f');
+  pitchDriftSemis: (v, t = 0) => {
+    const amp = ggClamp(v / 24, 0, 1) * 16, ph = t * 0.4;
+    let d = '';
+    for (let i = 0; i <= 64; i++) {
+      const u = i / 64;
+      d += (i ? 'L' : 'M') + (4 + 56 * u).toFixed(2) + ' ' + (24 - amp * Math.sin((u + ph) * 2 * Math.PI)).toFixed(2);
+    }
+    let s = ggP(d, 'f');
     for (let i = 0; i < 9; i++) {
-      const t = (i + 0.3) / 9, x = 4 + 56 * t, y = 24 - amp * Math.sin(t * 2 * Math.PI);
+      const u = (i + 0.3) / 9, x = 4 + 56 * u, y = 24 - amp * Math.sin((u + ph) * 2 * Math.PI);
       s += ggL(x, y, x + 4, y, 'a');
     }
     return s;
   },
-  driftRateHz: (v) => ggWave(4, 60, 24, 10, ggLerp(0.5, 6, ggLog(v, 0.01, 10)))
-    + ggL(4, 24, 60, 24, 'f', 'stroke-dasharray="1 2"'),
+  // The drift's own speed: the wave slides past at the rate it is set to.
+  driftRateHz: (v, t = 0) => {
+    const cyc = ggLerp(0.5, 6, ggLog(v, 0.01, 10)), ph = t * ggClamp(v, 0, 4);
+    let d = '';
+    for (let i = 0; i <= 64; i++) {
+      const u = i / 64;
+      d += (i ? 'L' : 'M') + (4 + 56 * u).toFixed(2) + ' ' + (24 - 10 * Math.sin((u * cyc + ph) * 2 * Math.PI)).toFixed(2);
+    }
+    return ggP(d) + ggL(4, 24, 60, 24, 'f', 'stroke-dasharray="1 2"');
+  },
   scan: (v) => {
     if (Math.abs(v) < 0.005) return ggSource(14) + ggC(32, 32, 3, 'af') + ggC(32, 32, 7);
     const len = Math.min(Math.abs(v), 2) / 2 * 24, d = Math.sign(v);
@@ -181,7 +217,52 @@ const GG_DRAW = {
     for (let i = 0; i < 4; i++) s += ggC(32 + (ggRnd(i, 2) - 0.5) * w, 24, 1.6, 'af');
     return s;
   },
+  // The splice (WSOLA): the segment laid down so far, the next one, and the
+  // span either side of the ideal join the search may move it within.
+  searchMs: (v) => {
+    const base = ggGround() + ggP(ggBell(20, 28, 24), 'f');
+    if (v <= 0) return base + ggP(ggBell(38, 28, 24), 'a', ggDash);
+    const w = ggLerp(4, 40, ggLog(v, 0.5, 200));
+    return base + ggP(ggBell(38, 28, 24))
+      + ggL(38 - w / 2, 8, 38 + w / 2, 8, 'a') + ggL(38 - w / 2, 5, 38 - w / 2, 11, 'a') + ggL(38 + w / 2, 5, 38 + w / 2, 11, 'a');
+  },
+  // What the search goes looking for: the wave that continues it, the one that
+  // fights it, or the loudest one near.
+  splicePick: (v) => {
+    const k = Math.round(v);
+    const next = k === 2 ? ggWave(32, 60, 24, 14, 2) : ggWave(32, 60, 24, k === 1 ? -7 : 7, 2);
+    return ggWave(4, 32, 24, 7, 2, 'f') + ggL(32, 8, 32, 40, 'f', 'stroke-dasharray="1 2"') + next;
+  },
+  spliceShape: (v) => {
+    const k = Math.round(v);
+    return ggGround() + ggP(ggSeg(20, 28, 24, k), 'f') + ggP(ggSeg(44, 28, 24, k));
+  },
+  // The steps the search takes across its span: the further apart, the
+  // coarser the join it can land on.
+  stride: (v) => {
+    const gap = ggLerp(2.5, 24, ggLog(v, 1, 128));
+    let s = ggGround() + ggP(ggBell(32, 30, 22), 'f') + ggL(8, 10, 56, 10, 'f');
+    for (let x = 8; x <= 56.01; x += gap) s += ggL(x, 7, x, 13, 'a');
+    return s;
+  },
+  // The cloud the seed deals: another number, the same grains somewhere else.
+  seed: (v) => {
+    let s = ggGround();
+    for (let i = 0; i < 7; i++) {
+      const x = 9 + i * 7.6 + (ggRnd(i, v % 9973) - 0.5) * 6, h = 8 + 22 * ggRnd(i + 7, v % 9973);
+      s += ggP(ggBell(x, 8, h));
+    }
+    return s;
+  },
 };
+
+/// Mark a row as having glyph `key`, drawn from `read()` where the row is not
+/// a slider. The tray draws it (`gkGlyphRow`).
+function ggTag(row, key, read) {
+  row.dataset.glyph = key;
+  if (read) row.read = read;
+  return row;
+}
 
 /// Whether a control has a glyph.
 function ggHas(key) { return Object.prototype.hasOwnProperty.call(GG_DRAW, key); }
@@ -198,5 +279,34 @@ function ggMake(key) {
 
 /// Draw `key`'s glyph for value `v` into `el`.
 function ggPaint(el, key, v) {
-  el.innerHTML = Number.isFinite(v) ? GG_DRAW[key](v) : '';
+  el.innerHTML = Number.isFinite(v) ? GG_DRAW[key](v, GG_MOVES.has(key) ? ggNow() : 0) : '';
+  if (GG_MOVES.has(key)) { el._gg = [key, v]; ggLive.add(el); ggRun(); }
+}
+
+// ── the glyphs that move ─────────────────────────────────────────────────────
+//
+// A jitter is a movement, so its picture moves: Size jitter's grains breathe
+// by as much as they vary, Position jitter's slide about their places, Pitch
+// jitter's dashes hop, and the drift glides at its own rate. At zero there is
+// nothing to move and the picture is still. Redrawn a dozen times a second,
+// only while the glyph is on screen, and never under reduced motion.
+
+const GG_MOVES = new Set(['sizeJitter', 'positionJitterMs', 'pitchJitterSemis', 'pitchDriftSemis', 'driftRateHz']);
+const ggLive = new Set();
+let ggTimer = 0;
+const ggNow = () => (ggStill() ? 0 : performance.now() / 1000);
+const ggStill = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function ggRun() {
+  if (ggTimer || ggStill()) return;
+  ggTimer = setInterval(() => {
+    const t = ggNow();
+    for (const el of ggLive) {
+      if (!el.isConnected) { ggLive.delete(el); continue; }
+      if (!el.getClientRects().length) continue;
+      const [key, v] = el._gg;
+      el.innerHTML = GG_DRAW[key](v, t);
+    }
+    if (!ggLive.size) { clearInterval(ggTimer); ggTimer = 0; }
+  }, 80);
 }

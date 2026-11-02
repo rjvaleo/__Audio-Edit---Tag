@@ -37,6 +37,20 @@ pub struct RackSpec {
     /// Hyperprism's Post-Roll for each pad source that has one, in ms: a slot
     /// id, `stretch` or `ptc`. The longest is what plays.
     pub post_roll: BTreeMap<String, f32>,
+    /// Each knob's own range, per slot id: the Advanced page of a built-in
+    /// effect. A preference of the slot, like its pad, so it travels with the
+    /// rack. The engine still clamps every value to the effect's own limits;
+    /// this only says what part of them a knob sweeps.
+    pub ranges: BTreeMap<String, BTreeMap<String, KnobRange>>,
+}
+
+/// One knob's sweep: where its travel starts and ends, and whether it is
+/// logarithmic.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KnobRange {
+    pub min: f32,
+    pub max: f32,
+    pub log: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -212,6 +226,7 @@ impl RackSpec {
             pads: BTreeMap::new(),
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
+            ranges: BTreeMap::new(),
         }
     }
 
@@ -242,6 +257,7 @@ impl RackSpec {
             pads: BTreeMap::new(),
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
+            ranges: BTreeMap::new(),
         }
     }
 
@@ -371,8 +387,27 @@ impl RackSpec {
             pads: BTreeMap::new(),
             pitch_time: pitch_time_from_json(v.get("pitchTime")),
             post_roll: BTreeMap::new(),
+            ranges: BTreeMap::new(),
         };
         spec.pads = pads_from_json(v.get("pads"), &spec);
+        if let Some(Value::Obj(m)) = v.get("ranges") {
+            for (id, keys) in m {
+                // Only for a slot that is here, as for the pads and post-roll.
+                let (true, Value::Obj(keys)) = (spec.slot_ids.contains(id), keys) else { continue };
+                let mut out = BTreeMap::new();
+                for (key, r) in keys {
+                    let (Some(Value::Num(lo)), Some(Value::Num(hi))) = (r.get("min"), r.get("max")) else { continue };
+                    if !lo.is_finite() || !hi.is_finite() || hi <= lo {
+                        continue;
+                    }
+                    let log = matches!(r.get("log"), Some(Value::Bool(true)));
+                    out.insert(key.clone(), KnobRange { min: *lo as f32, max: *hi as f32, log });
+                }
+                if !out.is_empty() {
+                    spec.ranges.insert(id.clone(), out);
+                }
+            }
+        }
         if let Some(Value::Obj(m)) = v.get("postRoll") {
             for (id, ms) in m {
                 let known = id == crate::pad::STRETCH || id == crate::pad::PITCH_TIME || spec.slot_ids.contains(id);
@@ -455,6 +490,17 @@ impl RackSpec {
                 let mut m = Value::obj();
                 for (id, ms) in &self.post_roll {
                     m = m.set(id, *ms as f64);
+                }
+                m
+            })
+            .set("ranges", {
+                let mut m = Value::obj();
+                for (id, keys) in &self.ranges {
+                    let mut k = Value::obj();
+                    for (key, r) in keys {
+                        k = k.set(key, Value::obj().set("min", r.min as f64).set("max", r.max as f64).set("log", r.log));
+                    }
+                    m = m.set(id, k);
                 }
                 m
             })
@@ -910,7 +956,7 @@ mod tests {
                 .collect();
             slots.push(SlotSpec::Shape { kind, params, bypassed: false });
         }
-        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new() };
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new() };
         let back = RackSpec::from_json(&spec.to_json());
         assert_eq!(back, spec, "a shaper lost something on the way through JSON");
         assert!(!back.build(48_000, 2).is_empty(), "none of them built");
@@ -930,7 +976,7 @@ mod tests {
                 .collect();
             slots.push(SlotSpec::Prism { id: d.id, params, sound: None, bypassed: false });
         }
-        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new() };
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new() };
         let json = spec.to_json();
         let Some(Value::Arr(items)) = json.get("slots") else { panic!("no slots") };
         for (item, entry) in items.iter().zip(fx::prism::catalogue()) {
@@ -993,6 +1039,20 @@ mod tests {
 
     /// Hyperprism's Post-Roll is kept per source, like the pad's limits: in
     /// milliseconds, never negative, and only for a source that is there.
+    #[test]
+    fn knob_ranges_are_kept_per_slot() {
+        let spec = RackSpec::from_json(&crate::json::parse(
+            r#"{"slots":[{"kind":"gain","id":"g","db":0}],
+                "ranges":{"g":{"db":{"min":-6,"max":6,"log":false},"bad":{"min":3,"max":1}},"ghost":{"db":{"min":0,"max":1}}}}"#,
+        ).unwrap());
+        let g = spec.ranges.get("g").expect("the slot's ranges");
+        assert_eq!(g.get("db"), Some(&KnobRange { min: -6.0, max: 6.0, log: false }));
+        assert!(!g.contains_key("bad"), "a range that runs backwards is dropped");
+        assert!(!spec.ranges.contains_key("ghost"), "a slot that is not here is dropped");
+        let back = RackSpec::from_json(&spec.to_json());
+        assert_eq!(back.ranges, spec.ranges, "it survives the round trip");
+    }
+
     #[test]
     fn post_roll_is_kept_per_source() {
         let v = crate::json::parse(
@@ -1130,6 +1190,7 @@ mod tests {
             pads: BTreeMap::new(),
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
+            ranges: BTreeMap::new(),
         };
         assert!(spec.is_active());
         assert!(!spec.build(48_000, 2).is_empty());
@@ -1145,6 +1206,7 @@ mod tests {
             pads: BTreeMap::new(),
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
+            ranges: BTreeMap::new(),
         };
         assert!(!spec.is_active());
     }
@@ -1158,6 +1220,7 @@ mod tests {
             pads: BTreeMap::new(),
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
+            ranges: BTreeMap::new(),
         };
         assert!(spec.build(48_000, 2).is_empty());
         assert!(!spec.is_active());
@@ -1207,6 +1270,7 @@ mod tests {
             pads: BTreeMap::new(),
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
+            ranges: BTreeMap::new(),
         };
         for (f, db) in spec.eq_curve(48000, 64) {
             assert!(db.abs() < 0.1, "flat EQ curved by {db} dB at {f} Hz");
@@ -1228,6 +1292,7 @@ mod tests {
             pads: BTreeMap::new(),
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
+            ranges: BTreeMap::new(),
         };
         let curve = spec.eq_curve(48000, 200);
         let (peak_f, peak_db) = curve
@@ -1249,7 +1314,7 @@ mod tests {
     #[test]
     fn the_store_remembers_what_was_set() {
         let store = RackStore::default();
-        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new() });
+        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new() });
         assert!(store.is_active("a.wav"));
         assert_eq!(store.get("a.wav").slots.len(), 1);
     }

@@ -209,6 +209,7 @@ async function commitRack() {
       master: state.rack.master,
       pads: state.rack.pads || {},
       postRoll: state.rack.postRoll || {},
+      ranges: state.rack.ranges || {},
       // The engine is already where it needs to be; asking for a rebuild here
       // is what used to cut the reverb tail every time a control was released.
       keepLive: true,
@@ -262,6 +263,8 @@ function adoptRack(fresh) {
   if (fresh.slotIds) cur.slotIds = fresh.slotIds;
   // The Prism pad's setups, as the server checked them against the slots.
   if (fresh.pads) cur.pads = fresh.pads;
+  // Each knob's own range, likewise (the Advanced page, `075-fx-faces.js`).
+  if (fresh.ranges) cur.ranges = fresh.ranges;
   return false;
 }
 
@@ -278,6 +281,7 @@ function pushRack({ immediate = false } = {}) {
         master: state.rack.master,
         pads: state.rack.pads || {},
         postRoll: state.rack.postRoll || {},
+        ranges: state.rack.ranges || {},
       }));
     } catch (e) { toast(e.message); return; }
     renderRack();
@@ -344,10 +348,14 @@ function renderRack() {
       || { icon: '?', name: slot.kind };
     const el = document.createElement('section');
     el.className = 'fx-module' + (slot.bypassed ? ' off' : '');
-    if (slot.kind === 'eq') el.classList.add('eq-visual');
-    if (slot.kind === 'comp') el.classList.add('comp-visual');
-    if (slot.kind === 'dattorro_filter_bank') el.classList.add('filter-bank-visual');
-    if (slot.kind === 'chamberlin') el.classList.add('chamberlin-visual');
+    // The built-in effects draw a face of their own (`075-fx-faces.js`); the
+    // classes below are the panels they replaced, kept for anything not built in.
+    if (!fxIsBuiltin(slot.kind)) {
+      if (slot.kind === 'eq') el.classList.add('eq-visual');
+      if (slot.kind === 'comp') el.classList.add('comp-visual');
+      if (slot.kind === 'dattorro_filter_bank') el.classList.add('filter-bank-visual');
+      if (slot.kind === 'chamberlin') el.classList.add('chamberlin-visual');
+    }
     el.dataset.kind = slot.kind;
     el.dataset.slot = i;
     el.innerHTML = `<header class="fx-module-head">
@@ -376,6 +384,8 @@ function renderRack() {
     };
     const power = el.querySelector('.fx-power');
     power.textContent = slot.bypassed ? 'Off' : 'On';
+    power.classList.toggle('on', !slot.bypassed);
+    power.setAttribute('aria-pressed', String(!slot.bypassed));
     power.onclick = () => {
       slot.bypassed = !slot.bypassed;
       pushRack({ immediate: true });
@@ -423,6 +433,7 @@ function paintRackMeters(levels) {
   modules.forEach((module, i) => {
     paint(module.querySelector('.fx-vu-in'), levels[i]);
     paint(module.querySelector('.fx-vu-out'), levels[i + 1]);
+    fxFaceLevels(+module.dataset.slot, levels[i]);
     if (module.dataset.kind === 'comp') recordCompressorLevel(+module.dataset.slot, levels[i]);
   });
   paint($('fxOutputMeter'), levels[modules.length]);
@@ -442,6 +453,7 @@ function resetRackMeters() {
   // showing the moment playback stopped.
   engine.waveform = null;
   compressorLevels.clear();
+  fxInputDb.clear();
   repaintVisualCompressors();
 }
 
@@ -459,6 +471,7 @@ function automationUnit(value,min,max,log=false){
 }
 
 function renderFxModuleControls(box, slot, shaper, slotIndex) {
+  if (fxIsBuiltin(slot.kind)) { renderFxFace(box, slot, slotIndex, box.closest('.fx-module')); return; }
   // `key` names the one control this row writes, so the value can be moved on
   // the effect that is already running. Without one there is nothing to address
   // and the whole rack has to be posted instead — which *rebuilds the chain*,
@@ -563,6 +576,9 @@ function linkedDryWet(slot) {
 /// this draws what it is given and knows nothing about any one effect. A new
 /// prism effect needs no work here, as a new shaper needs none above.
 function renderPrismControls(box, slot, shaper) {
+  // Hyperprism, SoundHack and Lexicon draw their originals' faces (`076-fx-suites.js`).
+  const suite = fxSuiteOf(shaper);
+  if (suite) { renderSuiteFace(box, slot, shaper, suite); return; }
   slot.params = slot.params || {};
   for (const p of shaper.params) if (slot.params[p.key] === undefined) slot.params[p.key] = p.default;
   const byKey = Object.fromEntries(shaper.params.map((p) => [p.key, p]));
@@ -596,7 +612,11 @@ function renderPrismControls(box, slot, shaper) {
     for (const key of group.keys) {
       const p = byKey[key];
       if (!p || (linked && key === 'dry')) continue;
-      section.appendChild(linked && key === 'wet' ? linkedDryWet(slot) : prismModuleControl(slot, p, rows, refresh));
+      const row = linked && key === 'wet' ? linkedDryWet(slot) : prismModuleControl(slot, p, rows, refresh);
+      // Each control with the picture of what its value does (`fxDecorateRow`).
+      if (linked && key === 'wet') fxDecorateRow(row, { key: 'mix', label: 'Dry / Wet', min: 0, max: 1 }, () => slot.params.wet >= .999 ? 1 - slot.params.dry / 2 : slot.params.wet / 2);
+      else fxDecorateRow(row, p, () => slot.params[p.key]);
+      section.appendChild(row);
     }
     box.appendChild(section);
   }
@@ -801,6 +821,7 @@ function drawVisualCompressor(canvas, slot, slotIndex) {
 }
 
 function repaintVisualCompressors() {
+  fxFaceLiveRepaint();
   document.querySelectorAll('.fx-module.comp-visual').forEach((module) => {
     const slot=state.rack?.slots[+module.dataset.slot],canvas=module.querySelector('.comp-graph canvas');
     if(slot&&canvas)drawVisualCompressor(canvas,slot,+module.dataset.slot);

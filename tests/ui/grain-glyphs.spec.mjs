@@ -101,3 +101,38 @@ test('the glyph is decoration: the slider keeps its name for a screen reader', a
     [...document.querySelectorAll('#grainControls .gk-row > .gg')].every((g) => g.getAttribute('aria-hidden') === 'true'));
   expect(hidden).toBe(true);
 });
+
+test('the splice and the seed have pictures too, and a choice redraws its own', async ({ page }) => {
+  await openGrain(page);
+  const keys = ['searchMs', 'splicePick', 'spliceShape', 'stride', 'seed'];
+  const drawn = await page.evaluate((keys) => keys.map((key) =>
+    document.querySelector(`#grainControls .gk-row[data-glyph="${key}"] > .gg`)?.querySelectorAll('path, line, circle').length || 0), keys);
+  drawn.forEach((n, i) => expect(n, `${keys[i]} draws something`).toBeGreaterThan(0));
+
+  const shape = page.locator('#grainControls .gk-row[data-glyph="spliceShape"]');
+  const before = await shape.locator('.gg').innerHTML();
+  await shape.locator('.seg-btn', { hasText: 'rect' }).click();
+  await expect.poll(() => shape.locator('.gg').innerHTML()).not.toBe(before);
+  await shape.locator('.seg-btn', { hasText: 'hann' }).click();
+  await expect.poll(() => shape.locator('.gg').innerHTML()).toBe(before);
+});
+
+test('a jitter moves in its picture, and at zero it is still', async ({ page }) => {
+  await openGrain(page);
+  const frames = (key) => page.evaluate(async (key) => {
+    const g = state.grainRows[key].querySelector(':scope > .gg');
+    const seen = new Set();
+    for (let i = 0; i < 5; i++) { seen.add(g.innerHTML); await new Promise((r) => setTimeout(r, 120)); }
+    return seen.size;
+  }, key);
+  const set = (key, at) => page.evaluate(([key, at]) => {
+    const input = state.grainRows[key].querySelector(':scope > input[type=range]');
+    input.value = +input.min + (+input.max - +input.min) * at;
+  }, [key, at]);
+  for (const key of ['sizeJitter', 'positionJitterMs', 'pitchJitterSemis', 'pitchDriftSemis']) {
+    await set(key, 0.6);
+    expect(await frames(key), `${key} moves`).toBeGreaterThan(1);
+    await set(key, 0);
+    expect(await frames(key), `${key} is still at zero`).toBe(1);
+  }
+});

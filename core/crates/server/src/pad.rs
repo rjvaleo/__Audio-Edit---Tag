@@ -286,7 +286,7 @@ mod tests {
 
     fn rack(slots: Vec<SlotSpec>) -> RackSpec {
         let slot_ids = (0..slots.len()).map(|i| format!("s{i}")).collect();
-        RackSpec { slots, slot_ids, master: MasterSettings::default(), pads: Default::default(), pitch_time: Default::default(), post_roll: Default::default() }
+        RackSpec { slots, slot_ids, master: MasterSettings::default(), pads: Default::default(), pitch_time: Default::default(), post_roll: Default::default(), ranges: Default::default() }
     }
 
     fn every_kind() -> RackSpec {

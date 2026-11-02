@@ -81,15 +81,25 @@ function gkAdopt() {
 /// pad's own column and the packed banks (`gkKnob`, `gkLayout`, `gkPack`,
 /// `gkFit`, `gkViewRow`) are kept but no longer used here. They act only on a
 /// tray marked `gk-banks`, and nothing marks it.
+///
+/// A row that is not a slider — a choice, the seed — draws from its own
+/// `read`, again after a click on it and whenever Reset or Undo syncs it.
 function gkGlyphRow(row) {
   const input = row.querySelector(':scope > input[type=range]');
   const key = row.dataset.glyph;
-  if (!input || !key || row.querySelector(':scope > .gg')) return;
+  if (!key || (!input && !row.read) || row.querySelector(':scope > .gg')) return;
   const glyph = ggMake(key);
   if (!glyph) return;
   row.classList.add('gk-row');
   row.prepend(glyph);
   const draw = () => ggPaint(glyph, key, row.read ? row.read() : +RK_VALUE.get.call(input));
+  if (!input) {
+    row.addEventListener('click', () => requestAnimationFrame(draw));
+    const sync = row.sync;
+    if (sync) row.sync = (...a) => { sync(...a); draw(); };
+    draw();
+    return;
+  }
   Object.defineProperty(input, 'value', {
     configurable: true,
     get() { return RK_VALUE.get.call(this); },

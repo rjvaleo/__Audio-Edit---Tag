@@ -482,24 +482,24 @@ function renderStretch() {
 
       ext.appendChild(wild('Splice',
         `How far the similarity search looks, what it goes looking for, and what the result is laid down under.${what}`).add(
-        tip(param('Search', w.searchMs, 0, 200, 0.5,
+        tip(ggTag(param('Search', w.searchMs, 0, 200, 0.5,
           (x) => (x <= 0 ? 'plain OLA' : `${x.toFixed(1)} ms`),
-          (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.searchMs),
+          (x) => { w.searchMs = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.searchMs), 'searchMs'),
         'How far either side of the ideal splice point the similarity search may look for a better join. At zero there is no search at all and this becomes plain overlap-add, which is where the flanging comes from.'),
-        tip(seg('Pick', [
+        tip(ggTag(seg('Pick', [
           ['similar', 'best', 'The segment that best continues what came before. What WSOLA is for.'],
           ['different', 'worst', 'The least similar segment the search can find, every time.'],
           ['loudest', 'loud', 'Un-normalised, so the search walks toward whatever is loudest nearby.'],
-        ], w.splice, (x) => { w.splice = x; commitStretch(); }),
+        ], w.splice, (x) => { w.splice = x; commitStretch(); }), 'splicePick', () => GG_PICK.indexOf(state.stretchDraft.wsola.splice)),
         'What the similarity search goes looking for. Only the first is trying to be transparent; the other two are the engine used as an instrument.'),
-        tip(seg('Window', [
+        tip(ggTag(seg('Window', [
           ['hann', 'hann', 'Sums flat at 50% overlap, which is why it is the default.'],
           ['triangle', 'tri', 'Sums flat too, with a corner on every splice.'],
           ['rect', 'rect', 'No envelope. Every splice is a step, so the seams become a rhythm.'],
-        ], w.shape, (x) => { w.shape = x; commitStretch(); }),
+        ], w.shape, (x) => { w.shape = x; commitStretch(); }), 'spliceShape', () => GG_SHAPE.indexOf(state.stretchDraft.wsola.shape)),
         'The envelope each spliced segment is laid down under. Hann and triangle both sum flat at the usual overlap; rect does not, which is the point of it.'),
-        tip(param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} fr`,
-          (x) => { w.stride = Math.round(x); previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.stride),
+        tip(ggTag(param('Stride', w.stride, 1, 128, 1, (x) => `${Math.round(x)} fr`,
+          (x) => { w.stride = Math.round(x); previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.stride), 'stride'),
         'How many frames the similarity search steps by as it looks. Bigger is cheaper and coarser - the join lands near the best place rather than on it.'),
       ));
 
@@ -885,6 +885,7 @@ function renderGrainParams() {
   };
   showSeed();
   seedRow.sync = showSeed;
+  seedRow.read = () => state.grainDraft.seed;
   state.grainRows.seed = seedRow;
 
   extGrain.appendChild(wild('Randomness',

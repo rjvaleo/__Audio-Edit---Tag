@@ -136,8 +136,9 @@ test('a document made with the old Echo opens on the prism one', async ({ page }
   await page.waitForFunction(() => state.rack?.slots?.[0]?.kind === 'prism:echo');
   const module = page.locator('.fx-module').first();
   await expect(module.locator('h2')).toHaveText('Echo');
-  await expect(module.locator('.prism-group-label')).toHaveText(['Time', 'Repeats', 'Levels']);
-  await expect(module.locator('.param', { hasText: /^Delay/ }).locator('.v')).toHaveText('125 ms');
+  // Echo is one of the program's own, so it opens on its face (`fx-faces.spec`).
+  await expect(module.locator('.fx-sect > b')).toHaveText(['Time', 'Repeats', 'Levels']);
+  await expect(module.locator('.fxk', { hasText: /Delay$/ }).locator('.fxk-v')).toHaveText('125 ms');
 });
 
 test('Multi Delay and Stereo Matrix arrive in the rack with their groups', async ({ page }) => {
@@ -221,15 +222,17 @@ test('SoundHack\'s nine plug-ins arrive with the originals\' panels, filed by wh
 
   // The response is the RMS window: dimmed while the detector reads peaks.
   const compand = await addFromPicker(page, '\\+\\+compand');
-  const response = compand.locator('.param', { hasText: /^Response/ });
+  // A dial reads its value over its name, so it is found by the name.
+  const response = compand.locator('.param', { has: page.locator('.k', { hasText: /^Response$/ }) });
   await expect(response).toHaveClass(/\binactive\b/);
-  await compand.locator('.param', { hasText: /^RMS detect/ }).locator('.seg-btn', { hasText: 'On' }).click();
+  // SoundHack's switches are keys on its grid (`076-fx-suites.js`).
+  await compand.locator('.sh-key[aria-label="RMS detect"]').click();
   await expect(response).not.toHaveClass(/\binactive\b/);
   expect((await storedSlot(page, 'prism:sh-compand')).params.rms).toBe(1);
 
   const bubbler = await addFromPicker(page, '\\+\\+bubbler');
   await expect(bubbler.locator('.prism-group-label')).toHaveText(['Delay', 'Grains', 'Keys', 'Level']);
-  await bubbler.locator('.param', { hasText: /^5th/ }).locator('.seg-btn', { hasText: 'On' }).click();
+  await bubbler.locator('.sh-key[aria-label="5th"]').click();
   expect((await storedSlot(page, 'prism:sh-bubbler')).params.key7).toBe(1);
 });
 
@@ -248,16 +251,24 @@ test('Lexicon\'s four LXP reverbs arrive with their edit pages, filed with the r
 
   // The Hall and the Room have four reflections that cross sides, and no echoes.
   const hall = await addFromPicker(page, 'LXP Hall');
-  await expect(hall.locator('.prism-group-label')).toHaveText(['Reverb', 'Modulation', 'Reflections', 'Levels, Mix and EQ']);
+  // The LXP's own pages, after its Soft Row (`076-fx-suites.js`).
+  await expect(hall.locator('.prism-group-label')).toHaveText(['Soft Row', 'Reverb', 'Modulation', 'Reflections', 'Levels, Mix and EQ']);
   await expect(hall.locator('.param .k')).toContainText(['Reverb Time', 'Tap Slope', 'L-R Rfl Dly', 'R-L Rfl Gain', 'Early Level']);
   await expect(hall.locator('.prism-pad')).toHaveAttribute('aria-label', /Size.*Reverb Time/);
-  const size = hall.locator('.param', { hasText: /^Size/ });
-  await slide(size, 40);
-  expect((await storedSlot(page, 'prism:lxp-hall')).params.sizeM).toBeCloseTo(40, 0);
+  // Size is a knob on the Reverb page: ten steps down reach the stored rack.
+  await hall.locator('.lex-tab', { hasText: /^Reverb$/ }).click();
+  const size = hall.locator('.lex-page:not([hidden]) .lex-knob', { has: page.locator('.k', { hasText: /^Size$/ }) });
+  const before = await page.evaluate(() => state.rack.slots.at(-1).params.sizeM);
+  await size.locator('.lex-ring').focus();
+  for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
+  const stored = (await storedSlot(page, 'prism:lxp-hall')).params.sizeM;
+  expect(stored).toBeLessThan(before);
+  expect(stored).toBeCloseTo(await page.evaluate(() => state.rack.slots.at(-1).params.sizeM), 2);
 
   // The Chamber and the Plate have two reflections, and echoes with a polarity.
   const chamber = await addFromPicker(page, 'LXP Chamber');
-  await expect(chamber.locator('.prism-group-label')).toHaveText(['Reverb', 'Modulation', 'Reflections', 'Echoes', 'Levels, Mix and EQ']);
+  await expect(chamber.locator('.prism-group-label')).toHaveText(['Soft Row', 'Reverb', 'Modulation', 'Reflections', 'Echoes', 'Levels, Mix and EQ']);
+  await chamber.locator('.lex-tab', { hasText: /^Echoes$/ }).click();
   const polarity = chamber.locator('.param', { hasText: /^L Eko FBack Polarity/ });
   await expect(polarity.locator('.seg-btn')).toHaveText(['Normal', 'Inverted']);
   // "Medium Honey Vocal 2" inverts the left echo's feedback.

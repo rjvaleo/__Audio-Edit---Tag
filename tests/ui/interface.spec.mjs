@@ -113,6 +113,25 @@ test('double-clicking any control returns it to its default', async ({ page }) =
 
       checked.push({ name, started, before, after, reset: after !== before });
     }
+    // The effect faces' knobs (`075-fx-faces.js`, `076-fx-suites.js`) are not
+    // range inputs: each is a ring that says its value. Turn one, double-click
+    // it, and it must move back.
+    for (const ring of document.querySelectorAll('.fxk-ring, .sh-ring, .lex-ring')) {
+      const name = ring.getAttribute('aria-label') || '(unnamed)';
+      const started = ring.getAttribute('aria-valuetext');
+      // Up, or down for one already at the top of its travel.
+      for (const key of ['ArrowUp', 'ArrowDown']) {
+        for (let i = 0; i < 20; i++) ring.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        if (ring.getAttribute('aria-valuetext') !== started) break;
+      }
+      const before = ring.getAttribute('aria-valuetext');
+      if (before === started) continue;
+      ring.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      const after = ring.getAttribute('aria-valuetext');
+      // Back to the default a fresh module is born with, which need not be
+      // where this sound had it — so, as for a slider, it has to have moved.
+      checked.push({ name, started, before, after, reset: after !== before });
+    }
     return checked;
   });
 
@@ -121,7 +140,8 @@ test('double-clicking any control returns it to its default', async ({ page }) =
   // is a floor rather than full coverage, and `tools/ui-check.mjs` is what says
   // *every* control has a default. This says the ones you can see actually move.
   test.info().annotations.push({ type: 'controls checked', description: String(report.length) });
-  expect(report.length, 'no resettable controls were found to test').toBeGreaterThan(8);
+  // Whatever rack the sound has, it is at least the EQ and compressor's eight.
+  expect(report.length, 'no resettable controls were found to test').toBeGreaterThanOrEqual(8);
   const dead = report.filter((r) => !r.reset);
   expect(
     dead,
