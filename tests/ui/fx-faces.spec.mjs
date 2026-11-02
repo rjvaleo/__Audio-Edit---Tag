@@ -163,3 +163,17 @@ test('Hyperprism, SoundHack and Lexicon draw their originals\' faces, a picture 
     expect(bare, `${kind}: controls without a picture`).toEqual([]);
   }
 });
+
+test('Hyperprism Multi Delay has Feedback, and it stores', async ({ page }) => {
+  await openRack(page);
+  const module = await add(page, 'prism:hp-multi-delay');
+  const row = module.locator('.hp-face .param', { hasText: 'Feedback' });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator('svg.pic, .fx-pic svg')).not.toHaveCount(0);
+  await row.locator('input[type=range]').evaluate((el) => {
+    el.value = '40';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect.poll(async () => (await stored(page)).slot?.params?.feedback).toBe(40);
+});
