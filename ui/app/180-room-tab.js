@@ -68,6 +68,13 @@ function rkFace(frac, mark) {
     + (mark === undefined ? '' : tick(a0 + 270 * mark)) + '</svg>';
 }
 
+/// **Sliders again** (RJ, 2 Nov 2026: the knobs were hard to read). Every
+/// "knob" below is built as before — the picture, the reading, the word, the
+/// same input — but drawn as a slider row: the picture at the front, then the
+/// word, the slider and its reading. The face is still made, unshown, so the
+/// knobs come back by setting this false.
+const RK_SLIDERS = true;
+
 /// Make a range input a knob. `own` is a reading the panel already keeps up
 /// to date (`.rg-read`); it is moved under the knob and left to its panel.
 /// Without one, the knob prints the setting from `ROOM_SLIDERS`' scale.
@@ -77,7 +84,7 @@ function rkKnob(input, label, own) {
   const scale = (ROOM_SLIDERS.find(([id]) => id === input.id) || [0, 0, 1])[2];
   const digits = scale >= 1000 ? 3 : scale >= 100 ? 2 : 0;
   const wrap = document.createElement('span');
-  wrap.className = 'rk-k';
+  wrap.className = RK_SLIDERS ? 'rk-k rk-sl' : 'rk-k';
   input.before(wrap);
   const face = document.createElement('span');
   face.className = 'rk-face';
@@ -105,7 +112,7 @@ function rkKnob(input, label, own) {
   });
   input.addEventListener('input', draw);
   // Only in the Visual column — in the overlay it is a slider and drags as one.
-  rkDrag(input, () => !!input.closest('.rv-admin'));
+  rkDrag(input, () => !RK_SLIDERS && !!input.closest('.rv-admin'));
   draw();
 }
 

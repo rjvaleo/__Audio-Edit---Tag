@@ -159,25 +159,25 @@ test('perspective and parallel are drawn as what they do', async ({ page }) => {
   expect(n).toBe(2);
 });
 
-test('a pointer on a knob face still turns the knob, picture or not', async ({ page }) => {
+test('a pointer on a control\'s slider reaches it, picture or not', async ({ page }) => {
   await openVisual(page);
   const missed = [];
   for (const [tabKey, mod] of [['controls', 'room'], ['controls', 'ridge'], ['controls', 'room3d'], ['controls', 'stage'], ['geom', null], ['dim4', null]]) {
     await tab(page, tabKey);
     if (mod) await page.evaluate((m) => { setVisModule(m); rkAdopt(); }, mod);
     await page.waitForTimeout(150);
-    const faces = await page.locator('#roomAdmin .rk-k:has(> svg.pic) > .rk-face').all();
+    // Sliders again (`RK_SLIDERS`): the input itself is what is drawn.
+    const faces = await page.locator('#roomAdmin .rk-k:has(> svg.pic) > input[type=range]').all();
     for (const face of faces) {
       if (!await face.isVisible()) continue;
       await face.scrollIntoViewIfNeeded();
       const hit = await face.evaluate((f) => {
         const r = f.getBoundingClientRect();
         const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-        const input = f.parentElement.querySelector(':scope > input[type=range]');
-        return at === input ? null : `${f.closest('[id]')?.id}: ${f.parentElement.querySelector('.rk-l')?.textContent}`;
+        return at === f ? null : `${f.closest('[id]')?.id}: ${f.parentElement.querySelector('.rk-l')?.textContent}`;
       });
       if (hit) missed.push(hit);
     }
   }
-  expect(missed, 'knob faces a pointer does not reach').toEqual([]);
+  expect(missed, 'sliders a pointer does not reach').toEqual([]);
 });

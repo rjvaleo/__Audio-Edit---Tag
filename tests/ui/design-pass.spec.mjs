@@ -108,45 +108,43 @@ test('C1 · a canvas label never names only a family the browser may not have', 
   expect(bad).toEqual([]);
 });
 
-/// The knobs of a panel in the Visual column: each has a face, a reading, and
-/// the input itself under the pointer where the face is drawn.
-const knobsIn = (root) => `(() => {
+/// The amounts of a panel in the Visual column, which are sliders again
+/// (`RK_SLIDERS`): each shows its slider at a usable width, its reading, and is
+/// the thing under the pointer where it is drawn. The knob face is not shown.
+const slidersIn = (root) => `(() => {
   const out = [];
   for (const k of document.querySelectorAll(${JSON.stringify(root)} + ' .rk-k')) {
     const input = k.querySelector('input[type=range]');
-    const face = k.querySelector('.rk-face').getBoundingClientRect();
-    if (!face.width) continue;
+    if (!input.getBoundingClientRect().width) continue;
     k.scrollIntoView({ block: 'center' });
-    const f = k.querySelector('.rk-face').getBoundingClientRect();
-    const hit = document.elementFromPoint(f.x + f.width / 2, f.y + f.height / 2);
+    const r = input.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     out.push({ id: input.id || k.querySelector('.rk-l').textContent,
-      read: k.querySelector('.rk-v').textContent.trim(), reached: hit === input });
+      read: k.querySelector('.rk-v').textContent.trim(), reached: hit === input,
+      wide: r.width >= 60, face: getComputedStyle(k.querySelector('.rk-face')).display !== 'none' });
   }
   return out;
 })()`;
 
-test('C2 · an amount in the Visual column is a knob that shows its reading', async ({ page }) => {
+test('C2 · an amount in the Visual column is a slider that shows its reading', async ({ page }) => {
   await openFile(page);
-  const knobs = [];
+  const sliders = [];
   await roomTab(page, 'controls');
-  knobs.push(...await page.evaluate(knobsIn('#roomEdit')));
+  sliders.push(...await page.evaluate(slidersIn('#roomEdit')));
   await roomTab(page, 'geom');
-  knobs.push(...await page.evaluate(knobsIn('#roomGeomBody')));
-  expect(knobs.length).toBeGreaterThan(18);
-  expect(knobs.filter((k) => !k.read || !k.reached)).toEqual([]);
+  sliders.push(...await page.evaluate(slidersIn('#roomGeomBody')));
+  expect(sliders.length).toBeGreaterThan(18);
+  expect(sliders.filter((k) => !k.read || !k.reached || !k.wide || k.face)).toEqual([]);
 });
 
-test('C2 · a knob turns up when it is dragged up, and the setting follows', async ({ page }) => {
+test('C2 · a slider moves right when it is clicked to the right, and the setting follows', async ({ page }) => {
   await openFile(page);
   await roomTab(page, 'controls');
-  const knob = page.locator('#reRing');
-  await knob.scrollIntoViewIfNeeded();
+  const slider = page.locator('#reRing');
+  await slider.scrollIntoViewIfNeeded();
   const before = await page.evaluate(() => roomEdit.ringScale);
-  const box = await page.locator('#roomEdit .rk-k:has(#reRing) .rk-face').boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 40, { steps: 5 });
-  await page.mouse.up();
+  const box = await slider.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.9, box.y + box.height / 2);
   const after = await page.evaluate(() => roomEdit.ringScale);
   expect(after).toBeGreaterThan(before);
   const read = await page.locator('#roomEdit .rk-k:has(#reRing) .rk-v').textContent();
@@ -739,36 +737,30 @@ test('P2 · what a ramp is read against is a row of fixed places', async ({ page
   expect(within(fog)).toEqual(within(ring));
 });
 
-test('P3 · every amount on the Colour tab is a knob a pointer reaches', async ({ page }) => {
+test('P3 · every amount on the Colour tab is a slider a pointer reaches', async ({ page }) => {
   await paintTab(page, 'ring', RAMP);
-  const knobs = await page.evaluate(() => [...document.querySelectorAll('#roomPaintBody input[type=range]')].map((i) => {
+  const sliders = await page.evaluate(() => [...document.querySelectorAll('#roomPaintBody input[type=range]')].map((i) => {
     const k = i.closest('.rk-k');
-    if (!k) return { why: 'not a knob', title: i.title };
+    if (!k) return { why: 'not one of the column\'s amounts', title: i.title };
     k.scrollIntoView({ block: 'center' });
-    const f = k.querySelector('.rk-face').getBoundingClientRect();
-    const hit = document.elementFromPoint(f.x + f.width / 2, f.y + f.height / 2);
+    const r = i.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     return { word: k.querySelector('.rk-l').textContent, read: k.querySelector('.rk-v').textContent.trim(), reached: hit === i };
   }));
   // Three stops and the curve. The range is not a pair of sliders any more.
-  expect(knobs.length).toBe(4);
-  expect(knobs.filter((k) => k.why || !k.read || !k.reached)).toEqual([]);
+  expect(sliders.length).toBe(4);
+  expect(sliders.filter((k) => k.why || !k.read || !k.reached)).toEqual([]);
 
-  // The curve turns up when it is dragged up, and its reading follows.
-  const face = await page.locator('#roomPaintBody .rk-k:has(.rp-curve) .rk-face').boundingBox();
-  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2 - 30, { steps: 5 });
-  await page.mouse.up();
+  // The curve goes up when its slider is clicked to the right, and its reading follows.
+  const curveBox = await page.locator('#roomPaintBody .rp-curve').boundingBox();
+  await page.mouse.click(curveBox.x + curveBox.width * 0.9, curveBox.y + curveBox.height / 2);
   const curve = await page.evaluate(() => rpSlot('ring').curve);
   expect(curve).toBeGreaterThan(1);
   expect(+(await page.locator('#roomPaintBody .rk-k:has(.rp-curve) .rk-v').textContent())).toBeCloseTo(curve, 2);
 
-  // A stop's knob moves that stop and only that one.
-  const stop = await page.locator('#roomPaintBody .rp-stop').nth(1).locator('.rk-face').boundingBox();
-  await page.mouse.move(stop.x + stop.width / 2, stop.y + stop.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(stop.x + stop.width / 2, stop.y + stop.height / 2 + 20, { steps: 4 });
-  await page.mouse.up();
+  // A stop's slider moves that stop and only that one.
+  const stop = await page.locator('#roomPaintBody .rp-stop').nth(1).locator('input[type=range]').boundingBox();
+  await page.mouse.click(stop.x + stop.width * 0.2, stop.y + stop.height / 2);
   const at = await page.evaluate(() => rpSlot('ring').stops.map((s) => s.at));
   expect(at[0]).toBe(0);
   expect(at[1]).toBeLessThan(0.5);
@@ -1163,34 +1155,28 @@ test('4D-1 · projection and turning are rows of fixed places, lit and never fil
   expect(turn2.find((p) => p.on).text.replace(/\s/g, '')).toBe('XW·w');
 });
 
-test('4D-2 · Eye and Rate are knobs: the input kept, a face behind it, the input over the face', async ({ page }) => {
+test('4D-2 · Eye and Rate are sliders, each with its word and its reading', async ({ page }) => {
   await dim4(page);
-  const knobs = await page.evaluate(() => ['Eye', 'Rate'].map((name) => {
+  const sliders = await page.evaluate(() => ['Eye', 'Rate'].map((name) => {
     const input = document.querySelector(`#p4Panel input[type=range][data-p4k="${name}"]`);
     if (!input) return { name, why: 'no range input' };
     const wrap = input.closest('.rk-k');
-    const face = wrap?.querySelector('.rk-face');
-    if (!face) return { name, why: 'no knob face' };
-    const f = face.getBoundingClientRect();
+    const r = input.getBoundingClientRect();
     return {
       name,
       label: wrap.querySelector('.rk-l')?.textContent,
       read: wrap.querySelector('.rk-v')?.value,
-      drawn: !!face.querySelector('svg .rk-track'),
-      reached: document.elementFromPoint(f.x + f.width / 2, f.y + f.height / 2) === input,
+      wide: r.width >= 60,
+      reached: document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === input,
     };
   }));
-  expect(knobs).toEqual([
-    { name: 'Eye', label: 'Eye', read: '2.50', drawn: true, reached: true },
-    { name: 'Rate', label: 'Rate', read: '0.350', drawn: true, reached: true },
+  expect(sliders).toEqual([
+    { name: 'Eye', label: 'Eye', read: '2.50', wide: true, reached: true },
+    { name: 'Rate', label: 'Rate', read: '0.350', wide: true, reached: true },
   ]);
-  // Turned as a knob turns: up is more.
-  const face = await page.locator('#p4Panel input[data-p4k="Eye"]').boundingBox();
-  const cx = face.x + face.width / 2, cy = face.y + face.height / 2;
-  await page.mouse.move(cx, cy);
-  await page.mouse.down();
-  await page.mouse.move(cx, cy - 30, { steps: 5 });
-  await page.mouse.up();
+  // Clicked to the right is more.
+  const box = await page.locator('#p4Panel input[data-p4k="Eye"]').boundingBox();
+  await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2);
   const after = await page.evaluate(() => ({ eye: p4.eye,
     read: document.querySelector('#p4Panel input[data-p4k="Eye"]').closest('.rk-k').querySelector('.rk-v').value }));
   expect(after.eye).toBeGreaterThan(2.5);
