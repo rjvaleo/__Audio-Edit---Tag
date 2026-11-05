@@ -140,6 +140,20 @@ test('Insert clipboard puts the copy in at the selection and replaces nothing', 
   expect(laid).toEqual({ srcStart: 500, len: 1000 });
 });
 
+test('⇧⌘V inserts the clipboard at the selection; ⌘V replaces it', async ({ page }) => {
+  await openEdit(page);
+  const was = await frames(page);
+  await select(page, 0, 1000);
+  await page.keyboard.press('Meta+c');
+  await page.waitForFunction(() => (state.edit.clipboard || 0) === 1000);
+  await select(page, 2000, 2400);
+  await page.keyboard.press('Meta+Shift+v');
+  await page.waitForFunction((w) => state.edit.frames === w + 1000, was);
+  await select(page, 2000, 2400);
+  await page.keyboard.press('Meta+v');
+  await page.waitForFunction((w) => state.edit.frames === w + 1600, was);
+});
+
 test('the Edit menu has Insert clipboard, next to Paste', async ({ page }) => {
   await openEdit(page);
   const labels = await page.evaluate(() => MENUS.find((m) => m.title === 'Edit').items.map((i) => i.label));

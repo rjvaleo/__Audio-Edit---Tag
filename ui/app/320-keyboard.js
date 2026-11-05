@@ -406,6 +406,8 @@ document.addEventListener('keydown', (e) => {
   else if (mod && !e.shiftKey && e.key.toLowerCase() === 'x' && state.mode === 'edit') { e.preventDefault(); op('cut')(); }
   else if (mod && !e.shiftKey && e.key.toLowerCase() === 'c' && state.mode === 'edit' && state.sel) { e.preventDefault(); copyCmd(); }
   else if (mod && !e.shiftKey && e.key.toLowerCase() === 'v' && state.mode === 'edit') { e.preventDefault(); pasteCmd(); }
+  // ⇧⌘V inserts: the clipboard goes in at the selection and nothing is replaced.
+  else if (mod && e.shiftKey && e.key.toLowerCase() === 'v' && state.mode === 'edit') { e.preventDefault(); insertClipCmd(); }
   else if (!mod && (e.key === 'Delete' || e.key === 'Backspace') && state.mode === 'edit' && state.sel) { e.preventDefault(); deleteCmd(); }
   else if (mod && !e.shiftKey && e.key.toLowerCase() === 'g') { e.preventDefault(); goTo(); }
   else if (mod && e.shiftKey && e.key === ']') { e.preventDefault(); fitSelection(); }

@@ -146,7 +146,7 @@ const WT_GROUPS = [
     { id: 'cut', name: 'Cut', key: '⌘X', need: 'sel', run: op('cut') },
     { id: 'copy', name: 'Copy', key: '⌘C', need: 'sel', run: copyCmd },
     { id: 'paste', name: 'Paste', key: '⌘V', on: canPaste, run: pasteCmd },
-    { id: 'insertClip', name: 'Insert clipboard', on: canPaste, run: insertClipCmd },
+    { id: 'insertClip', name: 'Insert clipboard', key: '⇧⌘V', on: canPaste, run: insertClipCmd },
     { id: 'delete', name: 'Delete', key: '⌫', need: 'sel', run: deleteCmd },
     { id: 'crop', name: 'Crop', key: '⌘`', need: 'sel', run: op('crop') },
     { id: 'duplicate', name: 'Duplicate…', need: 'sel', run: duplicateCmd },
