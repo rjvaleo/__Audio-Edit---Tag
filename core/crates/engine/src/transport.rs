@@ -1387,7 +1387,27 @@ impl Core {
         // Pick up changes if they are free to take, otherwise carry on with
         // what we have. Never block the audio thread.
         if let Ok(g) = shared.params.try_lock() {
+            let before = self.params.ratio;
             self.params = *g;
+            // A new stretch keeps the playhead on the same moment of the file
+            // (RJ, 4 Nov 2026): the position is counted in output frames, so
+            // under a new ratio the same count is somewhere else in the sound
+            // and playback jumped. Rescaled about where it is, the file goes on
+            // from the same place, faster or slower, like a record changing
+            // speed without its pitch. Skipped when a seek is already on its
+            // way, which says where to be outright.
+            // The grains already sounding are carried across rather than
+            // dropped (`Stretcher::rescale`), so a drag does not flutter.
+            let after = self.params.ratio;
+            if before > 0.0 && after > 0.0 && (after - before).abs() > 1e-6
+                && shared.seek.load(Ordering::Acquire) < 0
+            {
+                let here = self.renderer.position() as f64;
+                let there = (here * after as f64 / before as f64).round().max(0.0) as u64;
+                self.renderer.rescale(there, &self.params);
+                self.vs_frames = 0;
+                self.vs_frac = 0.0;
+            }
         }
         // Read, never written into `self.params`. See `record_block_cost`.
         self.renderer.set_layer_cap(shared.layer_cap());

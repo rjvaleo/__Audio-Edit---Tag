@@ -343,6 +343,43 @@ fn every_grain_control_is_bounded() {
 /// from a delay line into a cloud, so a document that loses them sounds
 /// hollower rather than merely different.
 #[test]
+fn the_grain_feedback_controls_survive_the_round_trip() {
+    let s = Scratch::new("feedback");
+    s.sound("kit/tone.wav", 20_000);
+    let app = s.app();
+
+    let v = apply(&app, r#""grain":{"fbAmount":0.6,"fbTimeMs":420,"fbSmear":0.8,"fbDamp":0.2,"fbShift":-5,"fbHold":true}"#);
+    assert_eq!(num(&v, &["stretch", "grain", "fbAmount"]), 0.6f32 as f64);
+    assert_eq!(num(&v, &["stretch", "grain", "fbTimeMs"]), 420.0);
+    assert_eq!(num(&v, &["stretch", "grain", "fbSmear"]), 0.8f32 as f64);
+    assert_eq!(num(&v, &["stretch", "grain", "fbShift"]), -5.0);
+    assert_eq!(v.get("stretch").and_then(|x| x.get("grain")).and_then(|x| x.get("fbHold")), Some(&server::json::Value::Bool(true)));
+
+    // Absent means unchanged.
+    let v = apply(&app, r#""ratio":1.5"#);
+    assert_eq!(num(&v, &["stretch", "grain", "fbTimeMs"]), 420.0);
+
+    // And bounded: the loop can never be asked to grow.
+    let v = apply(&app, r#""grain":{"fbAmount":5,"fbTimeMs":1e9,"fbShift":99}"#);
+    assert!(num(&v, &["stretch", "grain", "fbAmount"]) <= 0.95);
+    assert!(num(&v, &["stretch", "grain", "fbTimeMs"]) <= 2000.0);
+    assert!(num(&v, &["stretch", "grain", "fbShift"]) <= 12.0);
+}
+
+#[test]
+fn feedback_shift_lands_on_a_degree_of_the_chosen_scale() {
+    let s = Scratch::new("fbshift");
+    s.sound("kit/tone.wav", 20_000);
+    let app = s.app();
+    // Ionian: 0, 2, 4, 5, 7, 9, 11. Three and a half semitones lands on four.
+    let v = apply(&app, r#""scale":"Ionian (Major)","grain":{"fbShift":3.6}"#);
+    assert_eq!(num(&v, &["stretch", "grain", "fbShift"]), 4.0);
+    // Free, with no grid, it is taken as it is.
+    let v = apply(&app, r#""scale":"","pitchStep":0,"grain":{"fbShift":3.6}"#);
+    assert!((num(&v, &["stretch", "grain", "fbShift"]) - 3.6).abs() < 1e-4);
+}
+
+#[test]
 fn the_layer_scatter_controls_survive_the_round_trip() {
     let s = Scratch::new("scatter");
     s.sound("kit/tone.wav", 20_000);

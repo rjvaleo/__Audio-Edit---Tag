@@ -2874,6 +2874,15 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                         _ => cur.drift_step,
                     },
                     pan_spread: gf("panSpread", cur.pan_spread).clamp(0.0, 1.0),
+                    fb_amount: gf("fbAmount", cur.fb_amount).clamp(0.0, 0.95),
+                    fb_time_ms: gf("fbTimeMs", cur.fb_time_ms).clamp(20.0, 2000.0),
+                    fb_smear: gf("fbSmear", cur.fb_smear).clamp(0.0, 1.0),
+                    fb_damp: gf("fbDamp", cur.fb_damp).clamp(0.0, 1.0),
+                    fb_shift: gf("fbShift", cur.fb_shift).clamp(-12.0, 12.0),
+                    fb_hold: match gv.and_then(|x| x.get("fbHold")) {
+                        Some(Value::Bool(b)) => *b,
+                        _ => cur.fb_hold,
+                    },
                 };
                 // Absent leaves the scale alone, so moving the pitch does not
                 // silently clear the tuning it is snapping to.
@@ -2891,6 +2900,10 @@ fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                     _ => s.list().stretch.pitch_step,
                 };
                 let semis = fx::tuning::quantise(semis, scale.map(|x| x.name), pitch_step);
+                // Feedback's Shift is in the same tuning as Pitch: a return
+                // lands on a degree of the scale chosen, as the pitch does.
+                let mut grain = grain;
+                grain.fb_shift = fx::tuning::quantise(grain.fb_shift, scale.map(|x| x.name), pitch_step).clamp(-12.0, 12.0);
                 // Absent leaves what the document already has, so a client that
                 // does not know about the cloud cannot switch it off by not
                 // mentioning it. Every other field here works the same way.
@@ -4421,6 +4434,10 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
             .collect();
         let mut v = Value::obj()
             .set("position", h.shared.position() as f64)
+            // The ratio that position is counted at. The interface turns it
+            // into a place in the file with this, not with the document's
+            // ratio, which runs ahead of the engine while a slider is dragged.
+            .set("ratio", h.shared.params().map(|p| p.ratio as f64).unwrap_or(1.0))
             .set("sampleRate", sr)
             .set("playing", h.shared.is_playing())
             // How far ahead of the speaker the counter is. A playhead drawn

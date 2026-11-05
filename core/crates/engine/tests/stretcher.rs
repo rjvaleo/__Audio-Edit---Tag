@@ -729,3 +729,34 @@ fn a_cloud_over_the_cloud_is_still_just_the_cloud() {
     let doubled = StreamParams { cloud: true, cloud_mix: 0.5, ..plain };
     assert_eq!(run(&src, &plain, 512, want), run(&src, &doubled, 512, want));
 }
+
+/// Feedback runs at the end of the Stretcher and of the offline render, on
+/// every engine (RJ, 4 Nov 2026: "I don't hear any feedback at all in the
+/// stretching"), and the two are still one sound.
+#[test]
+fn feedback_reaches_every_engine_and_live_is_still_the_file() {
+    let channels = 2;
+    let src = Source { samples: busy(SR as usize / 2, channels), channels };
+    let n = src.frames();
+    let ratio = 2.0f32;
+    let want = ((n as f32) * ratio) as usize;
+    let mut grain = fx::grain::Grain::default();
+    grain.fb_amount = 0.7;
+    grain.fb_time_ms = 120.0;
+    grain.fb_smear = 0.6;
+    grain.fb_damp = 0.3;
+    grain.fb_shift = 5.0;
+
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+        let mut sp = params(n, alg, ratio, 0.0);
+        sp.grain = grain;
+        let live = run(&src, &sp, 512, want);
+        let offline = fx::Stretch { ratio, algorithm: alg, grain, ..Default::default() }
+            .process(&src.samples, channels, SR);
+        let worst = live.iter().zip(&offline).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
+        assert!(worst < 1e-5, "{alg:?}: live and export differ by {worst:.2e}");
+        let plain = fx::Stretch { ratio, algorithm: alg, ..Default::default() }.process(&src.samples, channels, SR);
+        let moved = plain.iter().zip(&offline).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
+        assert!(moved > 1e-2, "{alg:?}: feedback changed nothing");
+    }
+}

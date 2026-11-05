@@ -136,7 +136,13 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("layerScatterMs", s.grain.layer_scatter_ms as f64)
                 .set("linkJitter", s.grain.link_jitter)
                 .set("driftStep", s.grain.drift_step)
-                .set("panSpread", s.grain.pan_spread as f64),
+                .set("panSpread", s.grain.pan_spread as f64)
+                .set("fbAmount", s.grain.fb_amount as f64)
+                .set("fbTimeMs", s.grain.fb_time_ms as f64)
+                .set("fbSmear", s.grain.fb_smear as f64)
+                .set("fbDamp", s.grain.fb_damp as f64)
+                .set("fbShift", s.grain.fb_shift as f64)
+                .set("fbHold", s.grain.fb_hold),
         )
 }
 
@@ -309,6 +315,12 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
             link_jitter: matches!(g.and_then(|x| x.get("linkJitter")), Some(Value::Bool(true))),
             drift_step: matches!(g.and_then(|x| x.get("driftStep")), Some(Value::Bool(true))),
             pan_spread: gf("panSpread", d.grain.pan_spread).clamp(0.0, 1.0),
+            fb_amount: gf("fbAmount", d.grain.fb_amount).clamp(0.0, 0.95),
+            fb_time_ms: gf("fbTimeMs", d.grain.fb_time_ms).clamp(20.0, 2000.0),
+            fb_smear: gf("fbSmear", d.grain.fb_smear).clamp(0.0, 1.0),
+            fb_damp: gf("fbDamp", d.grain.fb_damp).clamp(0.0, 1.0),
+            fb_shift: gf("fbShift", d.grain.fb_shift).clamp(-12.0, 12.0),
+            fb_hold: matches!(g.and_then(|x| x.get("fbHold")), Some(Value::Bool(true))),
         },
     }
 }
@@ -589,6 +601,12 @@ mod tests {
                 link_jitter: true,
                 drift_step: true,
                 pan_spread: 0.65,
+                fb_amount: 0.75,
+                fb_time_ms: 640.0,
+                fb_smear: 0.5,
+                fb_damp: 0.25,
+                fb_shift: -7.0,
+                fb_hold: true,
             },
             cloud: false,
             cloud_mix: 0.5,
