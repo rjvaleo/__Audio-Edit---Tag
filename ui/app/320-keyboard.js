@@ -25,10 +25,15 @@
 /// `SELECT` is in here because a dropdown takes arrow keys and type-ahead, and
 /// it was the gap that let space start playback with a menu focused. Two of
 /// the old handlers guarded it and three did not.
+/// Only fields you type into. A slider or a checkbox keeps focus after you
+/// touch it, and counting those as text fields silently swallowed ⌘X ⌘C ⌘V
+/// and Delete until you clicked somewhere else.
+const NOT_TYPED = ['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image'];
 function inTextField(t) {
   if (!t) return false;
   if (t.isContentEditable) return true;
-  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
+  if (t.tagName === 'INPUT') return !NOT_TYPED.includes((t.type || 'text').toLowerCase());
+  return t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
 }
 
 /// What Escape should close, most transient first, or null if nothing is open.

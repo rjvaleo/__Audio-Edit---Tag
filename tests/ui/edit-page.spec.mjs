@@ -198,6 +198,38 @@ test('the keys: ⌘C and ⌘V copy and paste, Delete deletes', async ({ page }) 
   await page.waitForFunction((w) => state.edit.frames === w + 600, was);
 });
 
+test('the keys still work after a slider or checkbox was the last thing touched', async ({ page }) => {
+  await openEdit(page);
+  const was = await frames(page);
+  // A slider keeps focus after a drag; it is not a text field, so ⌘X ⌘C ⌘V
+  // and Delete are still the sound's. A typing field keeps them, as before.
+  const focusA = (type) => page.evaluate((t) => {
+    const el = document.createElement('input');
+    el.type = t;
+    el.id = 'probeInput';
+    document.getElementById('probeInput')?.remove();
+    document.body.appendChild(el);
+    el.focus();
+  }, type);
+  await focusA('range');
+  await select(page, 0, 1000);
+  await page.keyboard.press('Meta+c');
+  await page.waitForFunction(() => (state.edit.clipboard || 0) === 1000);
+  await focusA('checkbox');
+  await page.evaluate(() => { state.sel = null; drawSelection(); });
+  await page.keyboard.press('Meta+v');
+  await page.waitForFunction((w) => state.edit.frames === w + 1000, was);
+  await focusA('range');
+  await select(page, 0, 400);
+  await page.keyboard.press('Meta+x');
+  await page.waitForFunction((w) => state.edit.frames === w + 600, was);
+  await focusA('text');
+  await select(page, 0, 100);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(300);
+  expect(await frames(page)).toBe(was + 600);
+});
+
 test('the Edit menu has Copy, Paste and Delete', async ({ page }) => {
   await openEdit(page);
   const labels = await page.evaluate(() => MENUS.find((m) => m.title === 'Edit').items.map((i) => i.label));
