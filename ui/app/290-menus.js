@@ -161,6 +161,13 @@ const MENUS = [
       { label: 'Grain views in a panel', on: editing, run: () => openVisPop() },
     ],
   },
+  {
+    // Help: what the interface means, as against what it does.
+    title: 'Help',
+    items: [
+      { label: 'What the colours mean', run: () => openColourKey() },
+    ],
+  },
 ];
 
 /// Run one of the edit operations, by pressing the button that owns it.
@@ -451,9 +458,18 @@ function solidPathPanel() {
   box.appendChild(note);
 }
 
+/// **The menu bar is unlisted** (RJ, 4 Nov 2026: "we can lose the file edit
+/// action DSP audio window view help menus … get rid of that whole thing").
+/// Every command in it has its own button, shortcut or right-click; Settings
+/// and Help moved to the foot of the left rail as a cog and a book. The menus
+/// are kept, not deleted — the right-click on the sound is the Edit menu, and
+/// the book opens Help — and `true` here puts the bar back.
+const MENUBAR_LISTED = false;
+
 function buildMenuBar() {
   const bar = $('menuBar');
   if (!bar) return;
+  bar.closest('.menubar')?.classList.toggle('hidden', !MENUBAR_LISTED);
   bar.innerHTML = '';
   for (const m of MENUS) {
     const b = document.createElement('button');

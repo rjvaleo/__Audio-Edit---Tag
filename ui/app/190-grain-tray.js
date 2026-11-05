@@ -46,6 +46,103 @@ function gkKnob(row) {
   draw();
 }
 
+/// The tray's two styles (RJ, 4 Nov 2026). **Bars**, the default: each slider
+/// row is one bar, its name and reading inside it and its picture in front,
+/// and the groups go two to a line — the same controls in a little over half
+/// the height. **Sliders**: the rows as they were. Only the drawing changes;
+/// every row is the same range input either way.
+const GC_STYLES = [['bars', 'Bars', 'Each control a bar, two to a line'], ['sliders', 'Sliders', 'One slider to a line, as before']];
+let gcStyle = (() => {
+  try { const v = localStorage.getItem('gcStyle'); return GC_STYLES.some(([k]) => k === v) ? v : 'bars'; }
+  catch { return 'bars'; }
+})();
+
+function gcSetStyle(key) {
+  gcStyle = key;
+  try { localStorage.setItem('gcStyle', key); } catch { /* private mode */ }
+  $('grainControls')?.classList.toggle('gc-bars', key === 'bars');
+  requestAnimationFrame(gcWiden);
+  for (const b of document.querySelectorAll('#gcStyle .seg-btn')) b.classList.toggle('active', b.dataset.style === key);
+}
+
+/// **Unlisted** (RJ, 4 Nov 2026: "drop this selector"): the tray is bars. The
+/// slider style and this switch are kept, not deleted; `true` puts the switch
+/// back at the end of the readout line.
+const GC_STYLE_LISTED = false;
+
+/// The switch between them, at the end of the readout line under the picker.
+function gcStyleRow() {
+  if (!GC_STYLE_LISTED) { gcSetStyle('bars'); return; }
+  const line = document.querySelector('#grainControls .stretch-readout');
+  if (!line || $('gcStyle')) return;
+  const seg = document.createElement('div');
+  seg.className = 'seg gc-style';
+  seg.id = 'gcStyle';
+  for (const [key, text, title] of GC_STYLES) {
+    const btn = document.createElement('button');
+    btn.className = 'seg-btn';
+    btn.dataset.style = key;
+    btn.textContent = text;
+    btn.title = title;
+    btn.onclick = () => gcSetStyle(key);
+    seg.appendChild(btn);
+  }
+  line.appendChild(seg);
+  gcSetStyle(gcStyle);
+}
+
+/// A bar whose name and reading do not both fit at half width takes the whole
+/// line rather than cutting its name short.
+/// Each section's own width, watched: a section that changes width re-measures
+/// its bars, so a bar is wide exactly when it needs to be at the width it has.
+const gcWatch = window.ResizeObserver ? new ResizeObserver(() => gcWidenSoon()) : null;
+let gcWidenQueued = false;
+function gcWidenSoon() {
+  if (gcWidenQueued) return;
+  gcWidenQueued = true;
+  requestAnimationFrame(() => { gcWidenQueued = false; gcWiden(); });
+}
+
+function gcWiden() {
+  const host = $('grainControls');
+  if (!host) return;
+  for (const body of host.querySelectorAll('.engine-params, .wild-body')) {
+    if (!body.gcWatched && gcWatch) { gcWatch.observe(body); body.gcWatched = true; }
+  }
+  if (!host.classList.contains('gc-bars')) {
+    for (const row of host.querySelectorAll('.gc-wide')) row.classList.remove('gc-wide');
+    return;
+  }
+  // Measured afresh each time: a row widened while the tray was still
+  // settling would otherwise stay wide when it fits at half.
+  // Bars, by their name; switches, by their button — a switch whose name
+  // does not fit at half width spills past its own border otherwise.
+  const rows = [...host.querySelectorAll(':is(.engine-params, .wild-body) > .gk-row')]
+    .filter((r) => (r.querySelector(':scope > input[type=range]') || r.matches('.toggle')) && r.getClientRects().length);
+  for (const row of rows) row.classList.remove('gc-wide');
+  const tight = rows.filter((row) => {
+    const k = row.querySelector(':scope > .k') || row.querySelector(':scope > .switch');
+    return k && k.scrollWidth > k.clientWidth;
+  });
+  for (const row of tight) row.classList.add('gc-wide');
+  // A group's last bar, when it would sit alone in its line, takes the whole
+  // line: no half line left empty. Worked out from the layout itself, since a
+  // group already holding full-width rows cannot be counted by position.
+  for (const body of host.querySelectorAll('.engine-params, .wild-body')) {
+    // In the order they are laid out: a choice is moved after its group's bars.
+    const kids = [...body.children].filter((k) => k.getClientRects().length)
+      .map((k, i) => [k, +getComputedStyle(k).order || 0, i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(([k]) => k);
+    const last = kids[kids.length - 1];
+    if (!last?.matches('.gk-row') || last.classList.contains('gc-wide')) continue;
+    let col = 0;
+    for (const k of kids.slice(0, -1)) {
+      const full = getComputedStyle(k).gridColumnStart === '1' && getComputedStyle(k).gridColumnEnd === '-1';
+      col = full ? 0 : (col + 1) % 2;
+    }
+    if (col === 0) last.classList.add('gc-wide');
+  }
+}
+
 /// The cloud pad's column: the pad, what it is reading, and the presets of
 /// the cloud. Moved once, ahead of the banks.
 function gkLayout() {
@@ -91,8 +188,16 @@ function gkGlyphRow(row) {
   const glyph = ggMake(key);
   if (!glyph) return;
   row.classList.add('gk-row');
+  // What the control does to the sound, as a colour (`GG_FACET`).
+  row.style.setProperty('--fc', `var(--f-${GG_FACET[key] || 'time'})`);
   row.prepend(glyph);
-  const draw = () => ggPaint(glyph, key, row.read ? row.read() : +RK_VALUE.get.call(input));
+  // A bar's fill (`gc-bars`): where the handle is, as a share of the track.
+  const fill = () => {
+    if (!input) return;
+    const min = +input.min, max = +input.max, p = +RK_VALUE.get.call(input);
+    row.style.setProperty('--f', String(max > min ? (p - min) / (max - min) : 0));
+  };
+  const draw = () => { fill(); ggPaint(glyph, key, row.read ? row.read() : +RK_VALUE.get.call(input)); };
   if (!input) {
     row.addEventListener('click', () => requestAnimationFrame(draw));
     const sync = row.sync;
@@ -106,7 +211,81 @@ function gkGlyphRow(row) {
     set(v) { RK_VALUE.set.call(this, v); draw(); },
   });
   input.addEventListener('input', draw);
+  gcRelative(input);
+  // Double-clicking the picture resets the value, as double-clicking the bar
+  // does (RJ, 4 Nov 2026); a single click on it does nothing.
+  glyph.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    input.ondblclick?.(e);
+  });
+  glyph.classList.add('gc-reset');
   draw();
+}
+
+/// A bar goes where you click it (RJ, 4 Nov 2026: "clicking in a slider
+/// should set the slider to the clicked on value"), and a drag follows the
+/// pointer from there. Holding Shift drags ten times finer, from wherever the
+/// bar is when it is pressed. The same `input` and `change` events a hand on
+/// the native slider sends, so presets, automation and the resets see no
+/// difference.
+function gcRelative(input) {
+  input.addEventListener('pointerdown', (e) => {
+    if (!$('grainControls')?.classList.contains('gc-bars') || e.button !== 0) return;
+    e.preventDefault();
+    input.focus();
+    const min = +input.min, max = +input.max;
+    const box = input.getBoundingClientRect();
+    const at = (x) => min + Math.max(0, Math.min(1, (x - box.left) / (box.width || 1))) * (max - min);
+    let last = e.clientX;
+    const put = (v) => {
+      input.value = String(Math.max(min, Math.min(max, v)));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    put(at(e.clientX));
+    input.classList.add('gc-dragging');
+    const move = (m) => {
+      if (m.shiftKey) put(+input.value + (m.clientX - last) / (box.width || 1) / 10 * (max - min));
+      else put(at(m.clientX));
+      last = m.clientX;
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      input.classList.remove('gc-dragging');
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+}
+
+/// The tray's sections as bands (RJ, 4 Nov 2026): alternating backgrounds down
+/// each column, and a dot in each heading for every kind of control the
+/// section holds. The key that names the kinds is in Help (`openColourKey`).
+function gcBands() {
+  const host = $('grainControls');
+  if (!host) return;
+  host.querySelector(':scope > .gc-key')?.remove();
+  for (const col of host.querySelectorAll(':scope > .cpanel')) {
+    const bands = [...col.querySelectorAll('.gc-band, .wild')].filter((b) => !b.parentElement.closest('.gc-band, .wild') && b.getClientRects().length);
+    bands.forEach((b, i) => {
+      b.classList.toggle('gc-alt', i % 2 === 1);
+      const head = b.querySelector(':scope > .wild-head');
+      if (!head) return;
+      const kinds = new Set([...b.querySelectorAll('.gk-row')].filter((r) => r.getClientRects().length).map((r) => GG_FACET[r.dataset.glyph]).filter(Boolean));
+      const sig = GG_FACETS.filter(([id]) => kinds.has(id)).map(([id]) => id).join(' ');
+      let dots = head.querySelector(':scope > .gc-dots');
+      if (dots?.dataset.sig === sig) return;
+      if (!dots) {
+        // Right after the heading's name, ahead of anything else on its line.
+        dots = document.createElement('span');
+        dots.className = 'gc-dots';
+        head.insertBefore(dots, head.firstChild ? head.firstChild.nextSibling : null);
+      }
+      dots.dataset.sig = sig;
+      dots.innerHTML = sig ? sig.split(' ').map((id) => `<b style="background: var(--f-${id})"></b>`).join('') : '';
+    });
+  }
 }
 
 /// Pack the banks into the dock's lines (UI queue, item 1).
@@ -216,18 +395,52 @@ function gkFit() {
     new MutationObserver(() => {
       if (queued) return;
       queued = true;
-      setTimeout(() => { queued = false; gkAdopt(); gkPack(); gkFit(); }, 0);
+      setTimeout(() => { queued = false; gkAdopt(); gcBands(); gcWiden(); gkPack(); gkFit(); }, 0);
     }).observe(host, { childList: true, subtree: true });
+
     // Packed on every width change; fitted only when the tray comes into view
     // (the Stretch tab chosen again), so a drag is never fought.
     let shown = false;
     if (window.ResizeObserver) new ResizeObserver(() => {
       gkPack();
+      gcWiden();
       const now = host.clientHeight > 0;
       if (now && !shown) gkFit();
       shown = now;
     }).observe(host);
   }
   gkAdopt();
+  gcStyleRow();
+  gcBands();
+  // A label's width changes once the face loads; measure again then.
+  document.fonts?.ready?.then(() => gcWidenSoon());
 }
 
+/// What each colour means, for Help › What the colours mean.
+const GG_FACET_WORDS = {
+  time: 'When and for how long: the stretch, the grains\u2019 length, rate and timing, where they read.',
+  pitch: 'How high: transposition, pitch jitter and drift, partials pulled on or off their frequency.',
+  tone: 'The colour of the sound: the spectrum, how it is split, smeared, frozen or thinned.',
+  attack: 'The edges: transients, the grain envelope, how joins are made.',
+  space: 'Width and thickness: stereo spread, layers, how far they scatter, and the feedback that keeps them sounding.',
+  level: 'How loud: the mix between the cloud and the engine, and the hybrid\u2019s three parts.',
+};
+
+function openColourKey() {
+  const list = $('colourKeyList');
+  list.innerHTML = '';
+  for (const [id, name] of GG_FACETS) {
+    const row = document.createElement('div');
+    row.className = 'ck-row';
+    row.innerHTML = `<b class="ck-sw" style="background: var(--f-${id})"></b><span class="ck-name" style="color: var(--f-${id})"></span><span class="ck-what"></span>`;
+    row.querySelector('.ck-name').textContent = name;
+    row.querySelector('.ck-what').textContent = GG_FACET_WORDS[id];
+    list.appendChild(row);
+  }
+  $('colourKey').classList.remove('hidden');
+  $('colourKeyClose').focus();
+}
+function closeColourKey() { $('colourKey').classList.add('hidden'); }
+$('colourKeyClose').onclick = closeColourKey;
+$('colourKey').onclick = (e) => { if (e.target === $('colourKey')) closeColourKey(); };
+$('colourKey').addEventListener('keydown', (e) => { if (e.key === 'Escape') closeColourKey(); });

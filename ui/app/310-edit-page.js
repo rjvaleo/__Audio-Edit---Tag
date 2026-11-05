@@ -11,17 +11,24 @@ function setEditPage(page, apply = true) {
   if (apply && state.mode === 'edit') setMode('edit');
 }
 
-/// The Chop page is Grain's dock with only its Chop panel out: the same panel,
-/// not a second one. Going there opens the Chop tab; coming back to Grain puts
-/// back whichever tab was open before.
+/// The Chop and Prism pages are Grain's dock with only their own panel out:
+/// the same panel, not a second one. Going there opens that tab; coming back to
+/// Grain puts back whichever tab was open before. Prism is a page of its own
+/// since 4 Nov 2026 (RJ: "move the Prism functionality to a left-nav item,
+/// below grain"), so Grain's dock no longer offers it as a tab.
+const PAGE_DOCKS = { chop: 'chop', prism: 'prism' };
 let chopPageFrom = null;
 function chopPageSync(editing) {
   const active = document.querySelector('.dock-tab.active')?.dataset.dock;
   const tab = (name) => document.querySelector(`.dock-tab[data-dock="${name}"]`);
-  if (editing && editPage === 'chop') {
-    if (active !== 'chop') { chopPageFrom = active || null; tab('chop')?.click(); }
-  } else if (editing && editPage === 'grain' && active === 'chop' && chopPageFrom) {
-    tab(chopPageFrom)?.click();
+  const own = editing ? PAGE_DOCKS[editPage] : null;
+  if (own) {
+    if (active !== own) {
+      if (!Object.values(PAGE_DOCKS).includes(active)) chopPageFrom = active || null;
+      tab(own)?.click();
+    }
+  } else if (editing && editPage === 'grain' && Object.values(PAGE_DOCKS).includes(active)) {
+    tab(chopPageFrom || 'stretch')?.click();
     chopPageFrom = null;
   }
 }

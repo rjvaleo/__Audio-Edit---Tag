@@ -18,6 +18,8 @@ const engine = {
   /// or pressing play in the editor would resume the audition.
   raw: false,
   playing: false,
+  /// The ratio the engine's position is counted at, from its own reports.
+  ratio: 0,
   /// Engine output frames, at the device's rate. Authoritative.
   position: 0,
   deviceRate: 48000,
@@ -182,6 +184,11 @@ async function engineLoad(file, { raw = false } = {}) {
 
 /// Time ratio between what is playing and the source the overview shows.
 const timeRatio = () => {
+  // The engine's own, while it is playing this sound: its position is counted
+  // at that ratio, and the document's runs ahead of it during a drag — which
+  // is what made the readout jump about when the stretch moved.
+  const live = engine.ratio;
+  if (engine.playing && engine.path === state.selectedFile?.path && live > 0 && isFinite(live)) return live;
   const r = state.edit?.stretch?.ratio;
   return r && isFinite(r) && r > 0 ? r : 1;
 };
@@ -427,6 +434,13 @@ function startPolling() {
       const asked = performance.now();
       const r = await api('/api/engine/grains');
       engine.deviceRate = r.sampleRate || engine.deviceRate;
+      // A new stretch moves the engine's count to keep the same moment of the
+      // file (`Stretcher::rescale`). The clock here does the same, so the
+      // playhead stays put instead of being smoothed across the jump.
+      if (r.ratio > 0 && engine.ratio > 0 && r.ratio !== engine.ratio) {
+        engine.position *= r.ratio / engine.ratio;
+      }
+      if (r.ratio > 0) engine.ratio = r.ratio;
       lockClock(r.position);
       engine.loop = r.loop || null;
       engine.latency = r.latency || 0;

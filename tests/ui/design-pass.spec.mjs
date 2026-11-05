@@ -37,7 +37,16 @@ async function openFile(page) {
 }
 
 async function dockTab(page, name) {
-  await page.locator(`.dock-tab[data-dock="${name}"]`).click();
+  // Prism is a page of its own in the left rail since 4 Nov 2026; every other
+  // tab belongs to the Grain page.
+  if (name === 'prism') {
+    await page.locator('#leftRail .rl-item[data-page="prism"]').click();
+  } else {
+    if (await page.evaluate(() => document.body.classList.contains('prismpage'))) {
+      await page.locator('#leftRail .rl-item[data-page="grain"]').click();
+    }
+    await page.locator(`.dock-tab[data-dock="${name}"]`).click();
+  }
   await page.waitForTimeout(300);
 }
 

@@ -85,15 +85,14 @@ function addFxModule(kind) {
   if (!slot) return;
   state.rack.slots.push(slot);
   state.rackSelected = state.rack.slots.length - 1;
-  $('fxPicker')?.classList.add('hidden');
+  closeFxPicker();
   pushRack({ immediate: true });
   renderRack();
 }
 
-function renderFxPicker() {
-  const box = $('fxPickerGroups');
-  if (!box) return;
-  box.innerHTML = '';
+/// The picker's catalogue: every effect that can be added, filed by kind, in
+/// the order the kinds first appear.
+function fxPickerCatalogue() {
   // A prism effect says what it is, so it is filed by that rather than by a
   // list of names here.
   const PRISM_GROUPS = { delay: 'Reverb & Delay', reverb: 'Reverb & Delay',
@@ -123,25 +122,107 @@ function renderFxPicker() {
     if (!groups.has(category)) groups.set(category, []);
     groups.get(category).push(module);
   }
-  for (const [category, shapers] of groups) {
-    const group = document.createElement('section');
-    group.className = 'fx-picker-group';
-    const heading = document.createElement('h3');
-    heading.textContent = category;
-    group.appendChild(heading);
-    for (const shaper of shapers) {
-      const button = document.createElement('button');
-      button.className = 'fx-picker-item';
-      button.textContent = shaper.label;
-      button.onclick = () => addFxModule(shaper.kind);
-      group.appendChild(button);
-    }
-    box.appendChild(group);
-  }
+  return [...groups].map(([group, items]) => ({ group, items }));
 }
 
-$('fxAdd').onclick = () => $('fxPicker')?.classList.toggle('hidden');
-$('fxPickerClose').onclick = () => $('fxPicker')?.classList.add('hidden');
+/// A module drawn as it would arrive in the rack, for the picker to show:
+/// its real face on its defaults, inert, so it is seen and never played.
+function fxPreviewModule(kind) {
+  const slot = defaultFxSlot(kind);
+  if (!slot) return null;
+  const shaper = state.shapers[kind];
+  const el = document.createElement('section');
+  el.className = 'fx-module fx-preview';
+  el.dataset.kind = kind;
+  el.inert = true;
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `<header class="fx-module-head"><h2></h2>
+    <div class="fx-module-actions"><button class="ghost fx-power on">On</button>
+    <button class="ghost danger fx-remove">Remove</button></div>
+    </header><div class="fx-module-signal">
+      <div class="fx-vu fx-vu-in"></div><div class="fx-module-controls"></div><div class="fx-vu fx-vu-out"></div>
+    </div>`;
+  el.querySelector('h2').textContent = SLOT_META[kind]?.name || shaper?.label || kind;
+  renderVuMeter(el.querySelector('.fx-vu-in'), 'IN');
+  renderVuMeter(el.querySelector('.fx-vu-out'), 'OUT');
+  renderFxModuleControls(el.querySelector('.fx-module-controls'), slot, shaper, -1);
+  return el;
+}
+
+/// A face shrunk into a frame of its own; the frame crops what runs below it.
+function fxPickerThumb(kind, scale) {
+  const frame = document.createElement('span');
+  frame.className = 'fx-picker-thumb';
+  frame.style.setProperty('--thumb-scale', scale);
+  const face = fxPreviewModule(kind);
+  if (face) frame.appendChild(face);
+  return frame;
+}
+
+/// The picker shows the kinds first, each with a few of its faces; a kind
+/// opened shows every effect in it as its face, and a face picked is added.
+/// Nothing is drawn while the picker is shut.
+function renderFxPicker(open) {
+  const box = $('fxPickerGroups');
+  if (!box) return;
+  box.innerHTML = '';
+  const title = $('fxPickerTitle');
+  const back = $('fxPickerBack');
+  if ($('fxPicker')?.classList.contains('hidden')) return;
+  const catalogue = fxPickerCatalogue();
+  const group = catalogue.find((g) => g.group === open);
+  if (title) title.textContent = group ? group.group : 'Add module';
+  if (back) back.hidden = !group;
+  box.className = 'fx-picker-groups' + (group ? ' in-group' : '');
+  if (!group) {
+    for (const { group: name, items } of catalogue) {
+      const tile = document.createElement('button');
+      tile.className = 'fx-picker-cat';
+      tile.dataset.group = name;
+      tile.setAttribute('aria-label', `${name}, ${items.length} effects`);
+      const faces = document.createElement('span');
+      faces.className = 'fx-picker-cat-faces';
+      for (const item of items.slice(0, 3)) faces.appendChild(fxPickerThumb(item.kind, 0.25));
+      const label = document.createElement('span');
+      label.className = 'fx-picker-cat-name';
+      label.innerHTML = '<b></b><i></i>';
+      label.querySelector('b').textContent = name;
+      label.querySelector('i').textContent = String(items.length);
+      tile.append(faces, label);
+      tile.onclick = () => renderFxPicker(name);
+      box.appendChild(tile);
+    }
+    return;
+  }
+  const section = document.createElement('section');
+  section.className = 'fx-picker-group';
+  section.dataset.group = group.group;
+  for (const item of group.items) {
+    const button = document.createElement('button');
+    button.className = 'fx-picker-item';
+    button.dataset.kind = item.kind;
+    button.setAttribute('aria-label', item.label);
+    const name = document.createElement('span');
+    name.className = 'fx-picker-name';
+    name.textContent = item.label;
+    button.append(fxPickerThumb(item.kind, 0.25), name);
+    button.onclick = () => addFxModule(item.kind);
+    section.appendChild(button);
+  }
+  box.appendChild(section);
+}
+
+function closeFxPicker() {
+  $('fxPicker')?.classList.add('hidden');
+  renderFxPicker();
+}
+
+$('fxAdd').onclick = () => {
+  $('fxPicker')?.classList.toggle('hidden');
+  renderFxPicker();
+};
+$('fxPickerClose').onclick = closeFxPicker;
+$('fxPickerBack').onclick = () => renderFxPicker();
 
 async function loadRack() {
   await loadShapers();
@@ -1225,11 +1306,12 @@ function check(label, title, value, onChange) {
   el.className = 'param toggle';
   el.innerHTML = `<button class="tiny switch" role="switch"></button>`;
   const b = el.querySelector('.switch');
-  const short = fitLabel(label);
-  b.textContent = short;
+  // Spelled out (RJ, 4 Nov 2026: "stop truncating words in buttons"). The
+  // shortening is kept only where a name has to fit a fixed place, the scale
+  // on the tuning button (`fitLabel`).
+  b.textContent = label;
   b.dataset.name = label;
-  // The full name always survives in the tooltip, so shortening never loses it.
-  b.title = short === label ? (title || label) : `${label} — ${title || ''}`.replace(/ — $/, '');
+  b.title = title || label;
   el.title = b.title;
 
   let on = !!value;
@@ -1239,6 +1321,8 @@ function check(label, title, value, onChange) {
   };
   paint();
   b.onclick = () => { on = !on; paint(); onChange(on); };
+  // Its state as a number, for a picture drawn from it (`grain-glyphs.js`).
+  el.read = () => (on ? 1 : 0);
   // Same contract as `param` and `seg`, so Reset can push a value in.
   el.sync = (v) => { on = !!v; paint(); };
   return el;

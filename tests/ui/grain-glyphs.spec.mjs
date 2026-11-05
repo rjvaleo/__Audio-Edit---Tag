@@ -84,15 +84,16 @@ test('a value pushed in from outside — reset, preset, undo — redraws the gly
   expect(same).toBe(false);
 });
 
-test('the glyph is drawn in its group\'s colour, from the theme', async ({ page }) => {
+test('every glyph and every heading in the tray is drawn in the one colour', async ({ page }) => {
   await openGrain(page);
   const colours = await page.evaluate(() => {
     const c = (key) => getComputedStyle(document.querySelector(`.gk-row[data-glyph="${key}"] > .gg`)).getPropertyValue('--gg').trim();
-    return { time: c('ratio'), shape: c('densityHz'), pitch: c('pitchJitterSemis'), scan: c('scan') };
+    const heads = [...document.querySelectorAll('#grainControls .wild-head')].filter((h) => h.getClientRects().length).map((h) => getComputedStyle(h).color);
+    return { glyphs: ['ratio', 'densityHz', 'pitchJitterSemis', 'scan'].map(c), heads };
   });
-  // Four groups, four colours.
-  expect(new Set(Object.values(colours)).size).toBe(4);
-  for (const v of Object.values(colours)) expect(v).not.toBe('');
+  expect(new Set(colours.glyphs).size).toBe(1);
+  expect(colours.glyphs[0]).not.toBe('');
+  expect(new Set(colours.heads).size).toBe(1);
 });
 
 test('the glyph is decoration: the slider keeps its name for a screen reader', async ({ page }) => {
@@ -135,4 +136,80 @@ test('a jitter moves in its picture, and at zero it is still', async ({ page }) 
     await set(key, 0);
     expect(await frames(key), `${key} is still at zero`).toBe(1);
   }
+});
+
+test('every engine\'s own sliders have pictures, with the grain cloud and the transient detector on', async ({ page }) => {
+  await openGrain(page);
+  const host = page.locator('#grainControls');
+  const bare = async () => page.evaluate(() => [...document.querySelectorAll('#grainControls .param, #extEngine .param')]
+    .filter((r) => r.offsetParent && r.querySelector(':scope > input[type=range]') && !r.querySelector(':scope > .gg'))
+    .map((r) => r.textContent.trim().slice(0, 24)));
+  const on = async (label) => {
+    const sw = host.locator(`.gc-switch[data-for="${label}"]`);
+    if (!(await sw.count())) return;
+    if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click();
+  };
+  for (const alg of ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular']) {
+    await host.locator(`.seg-btn[data-alg="${alg}"]`).click();
+    await page.waitForTimeout(200);
+    await on('grain cloud');
+    await on('preserve transients');
+    await page.waitForTimeout(200);
+    expect(await bare(), `${alg}: sliders without a picture`).toEqual([]);
+    // The two switches really did bring their sliders out, pictured.
+    if (alg !== 'granular') await expect(page.locator('.gk-row[data-glyph="cloudMix"] > .gg')).toHaveCount(1);
+    if (alg === 'wsola' || alg === 'hybrid') await expect(page.locator('.gk-row[data-glyph="sensitivity"] > .gg')).toHaveCount(1);
+  }
+});
+
+test('the colour key is in Help, not across the tray', async ({ page }) => {
+  await openGrain(page);
+  await expect(page.locator('#grainControls .gc-key')).toHaveCount(0);
+  // Help is the book at the foot of the left rail; the menu bar is unlisted.
+  await page.locator('#leftRail .rl-foot-btn[aria-label="Help"]').click();
+  await page.locator('#menuPop', { hasText: 'What the colours mean' }).getByText('What the colours mean').click();
+  await expect(page.locator('#colourKey')).toBeVisible();
+  await expect(page.locator('#colourKeyList .ck-name')).toHaveText(['Time', 'Pitch', 'Timbre', 'Attack', 'Space', 'Level']);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#colourKey')).toBeHidden();
+});
+
+test('a bar keeps its width whatever its value', async ({ page }) => {
+  await openGrain(page);
+  const widths = () => page.evaluate(() => [...document.querySelectorAll('#grainControls .gk-row')]
+    .filter((r) => r.getClientRects().length).map((r) => Math.round(r.getBoundingClientRect().width)));
+  const before = await widths();
+  await page.evaluate(() => {
+    for (const key of ['positionJitterMs', 'densityHz', 'rateHz', 'overlap']) {
+      const input = state.grainRows[key].querySelector('input[type=range]');
+      input.value = input.max;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+  await page.waitForTimeout(300);
+  expect(await widths()).toEqual(before);
+});
+
+
+test('the menu bar is gone, and Settings and Help sit at the foot of the left rail', async ({ page }) => {
+  await openGrain(page);
+  await expect(page.locator('header.menubar')).toBeHidden();
+  const foot = page.locator('#leftRail .rl-foot');
+  await expect(foot.locator('.rl-foot-btn')).toHaveCount(2);
+  await foot.locator('.rl-foot-btn[aria-label="Settings"]').click();
+  await expect(page.locator('#settingsModal')).toBeVisible();
+});
+
+test('a click on a bar sets it there, and a double-click on its picture puts it back', async ({ page }) => {
+  await openGrain(page);
+  const row = page.locator('.gk-row[data-glyph="overlap"]');
+  const input = row.locator('input[type=range]');
+  const box = await input.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.9, box.y + box.height / 2);
+  const set = Number(await input.inputValue());
+  expect(set).toBeGreaterThan(6);
+  await row.locator('svg.gg').click();
+  expect(Number(await input.inputValue())).toBe(set);
+  await row.locator('svg.gg').dblclick();
+  await expect(input).toHaveValue('2');
 });

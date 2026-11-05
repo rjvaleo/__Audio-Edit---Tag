@@ -230,7 +230,7 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
 /// nothing else; or 'chop', the waveform and Chop. One mode, `edit`, every
 /// way: the same document, the same transport. Remembered. Set by the rail
 /// (`setEditPage`).
-const EDIT_PAGES = ['grain', 'wave', 'chop'];
+const EDIT_PAGES = ['grain', 'prism', 'wave', 'chop'];
 let editPage = (() => {
   try { const p = localStorage.getItem('editPage'); return EDIT_PAGES.includes(p) ? p : 'grain'; } catch { return 'grain'; }
 })();

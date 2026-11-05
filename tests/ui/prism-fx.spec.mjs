@@ -41,9 +41,15 @@ async function storedSlot(page, kind) {
 
 /// Add a module, and wait until the server has it: a control moved before then
 /// is addressed to a slot the server does not know yet.
+///
+/// The picker shows the kinds first: the kind the effect is filed under is
+/// opened, then its face is picked.
 async function addFromPicker(page, label) {
   await page.locator('#fxAdd').click();
-  await page.locator('#fxPickerGroups .fx-picker-item', { hasText: new RegExp(`^${label}$`) }).click();
+  const group = await page.evaluate((pattern) => fxPickerCatalogue()
+    .find((g) => g.items.some((i) => new RegExp(`^${pattern}$`).test(i.label)))?.group, label);
+  await page.locator(`.fx-picker-cat[data-group="${group}"]`).click();
+  await page.locator('.fx-picker-item', { has: page.locator('.fx-picker-name', { hasText: new RegExp(`^${label}$`) }) }).click();
   await page.waitForFunction(async () => {
     const id = state.rack.slots.at(-1)?.id;
     const r = await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`);
@@ -61,19 +67,57 @@ async function slide(row, value) {
   }, value);
 }
 
-test('the picker offers the prism effects, and Echo only once', async ({ page }) => {
+/// Every effect the picker offers, as [label, kind it is filed under], read by
+/// opening each kind in turn. Leaves the picker shut.
+async function pickerEntries(page) {
+  await page.locator('#fxAdd').click();
+  const entries = [];
+  const kinds = await page.locator('.fx-picker-cat').evaluateAll((tiles) => tiles.map((t) => t.dataset.group));
+  for (const kind of kinds) {
+    await page.locator(`.fx-picker-cat[data-group="${kind}"]`).click();
+    await expect(page.locator('#fxPickerTitle')).toHaveText(kind);
+    for (const label of await page.locator('.fx-picker-name').allTextContents()) entries.push([label, kind]);
+    await page.locator('#fxPickerBack').click();
+  }
+  await page.locator('#fxPickerClose').click();
+  return entries;
+}
+
+const count = (entries, label) => entries.filter(([l]) => l === label).length;
+const kindOf = (entries, label) => entries.find(([l]) => l === label)?.[1];
+
+test('the picker shows the kinds first, each with its faces, and a kind opened shows its effects\' faces', async ({ page }) => {
   await openRack(page);
   await page.locator('#fxAdd').click();
-  const items = page.locator('#fxPickerGroups .fx-picker-item');
+  const tiles = page.locator('.fx-picker-cat');
+  expect(await tiles.count()).toBeGreaterThan(4);
+  await expect(page.locator('.fx-picker-item')).toHaveCount(0);
+  await expect(tiles.first().locator('.fx-picker-thumb .fx-face')).not.toHaveCount(0);
+  await page.locator('.fx-picker-cat[data-group="Reverb & Delay"]').click();
+  await expect(page.locator('.fx-picker-cat')).toHaveCount(0);
+  const items = page.locator('.fx-picker-item');
+  expect(await items.count()).toBeGreaterThan(4);
+  // Each is the rack's own face, inert: it is seen, not played.
+  for (const item of await items.all()) await expect(item.locator('.fx-picker-thumb .fx-module')).toHaveCount(1);
+  expect(await page.locator('.fx-picker-thumb .fx-module').evaluateAll((m) => m.every((e) => e.inert))).toBe(true);
+  await page.locator('#fxPickerBack').click();
+  await expect(page.locator('.fx-picker-cat')).toHaveCount(await tiles.count());
+  await page.locator('#fxPickerClose').click();
+  // Shut, it holds nothing.
+  await expect(page.locator('#fxPicker .fx-module')).toHaveCount(0);
+});
+
+test('the picker offers the prism effects, and Echo only once', async ({ page }) => {
+  await openRack(page);
+  const entries = await pickerEntries(page);
   for (const label of ['Tremolo', 'Decimator', 'Echo', 'Multi Delay', 'Stereo Matrix', 'Spectral Dynamics', 'Convolution']) {
-    await expect(items.filter({ hasText: new RegExp(`^${label}$`) })).toHaveCount(1);
+    expect(count(entries, label), label).toBe(1);
   }
   const kinds = await page.evaluate(() => Object.keys(state.shapers));
   expect(kinds).toContain('prism:echo');
   expect(kinds).not.toContain('dattorro_echo');
   // Filed where the old Echo was.
-  const group = page.locator('.fx-picker-group', { has: page.locator('.fx-picker-item', { hasText: /^Echo$/ }) });
-  await expect(group.locator('h3')).toHaveText('Reverb & Delay');
+  expect(kindOf(entries, 'Echo')).toBe('Reverb & Delay');
 });
 
 test('a prism effect lays its controls out in the original\'s groups', async ({ page }) => {
@@ -200,21 +244,16 @@ test('Spectral Dynamics takes a threshold sound from the library, as SoundHack\'
 
 test('SoundHack\'s nine plug-ins arrive with the originals\' panels, filed by what they do', async ({ page }) => {
   await openRack(page);
-  await page.locator('#fxAdd').click();
-  const items = page.locator('#fxPickerGroups .fx-picker-item');
+  const entries = await pickerEntries(page);
   for (const label of ['++decimate', '++matrix', '++phasor', '++delay', '++pitchdelay', '++flipper',
     '++bubbler', '++chebyshev', '++compand']) {
-    await expect(items.filter({ hasText: new RegExp(`^\\+\\+${label.slice(2)}$`) })).toHaveCount(1);
+    expect(count(entries, label), label).toBe(1);
   }
-  const groupOf = (label) => page.locator('.fx-picker-group', {
-    has: page.locator('.fx-picker-item', { hasText: new RegExp(`^\\+\\+${label}$`) }),
-  }).locator('h3');
-  await expect(groupOf('delay')).toHaveText('Reverb & Delay');
-  await expect(groupOf('pitchdelay')).toHaveText('Pitch & Motion');
+  expect(kindOf(entries, '++delay')).toBe('Reverb & Delay');
+  expect(kindOf(entries, '++pitchdelay')).toBe('Pitch & Motion');
   // A granular delay that pitches its grains sits with the pitch effects.
-  await expect(groupOf('bubbler')).toHaveText('Pitch & Motion');
-  await expect(groupOf('compand')).toHaveText('EQ & Compression');
-  await page.locator('#fxPickerClose').click();
+  expect(kindOf(entries, '++bubbler')).toBe('Pitch & Motion');
+  expect(kindOf(entries, '++compand')).toBe('EQ & Compression');
 
   const delay = await addFromPicker(page, '\\+\\+delay');
   await expect(delay.locator('.prism-group-label')).toHaveText(['Delay', 'LFO', 'Filter', 'Level']);
@@ -238,16 +277,11 @@ test('SoundHack\'s nine plug-ins arrive with the originals\' panels, filed by wh
 
 test('Lexicon\'s four LXP reverbs arrive with their edit pages, filed with the reverbs', async ({ page }) => {
   await openRack(page);
-  await page.locator('#fxAdd').click();
-  const items = page.locator('#fxPickerGroups .fx-picker-item');
+  const entries = await pickerEntries(page);
   for (const label of ['LXP Chamber', 'LXP Hall', 'LXP Plate', 'LXP Room']) {
-    await expect(items.filter({ hasText: new RegExp(`^${label}$`) })).toHaveCount(1);
-    const group = page.locator('.fx-picker-group', {
-      has: page.locator('.fx-picker-item', { hasText: new RegExp(`^${label}$`) }),
-    });
-    await expect(group.locator('h3')).toHaveText('Reverb & Delay');
+    expect(count(entries, label), label).toBe(1);
+    expect(kindOf(entries, label)).toBe('Reverb & Delay');
   }
-  await page.locator('#fxPickerClose').click();
 
   // The Hall and the Room have four reflections that cross sides, and no echoes.
   const hall = await addFromPicker(page, 'LXP Hall');
@@ -279,16 +313,14 @@ test('Lexicon\'s four LXP reverbs arrive with their edit pages, filed with the r
 
 test('Hyperprism\'s processes are in the picker, each built from its code', async ({ page }) => {
   await openRack(page);
-  await page.locator('#fxAdd').click();
-  const items = page.locator('#fxPickerGroups .fx-picker-item');
+  const entries = await pickerEntries(page);
   for (const name of ['Low Pass', 'High Pass', 'Band Pass', 'Band Reject', 'Phaser', 'Flanger', 'Chorus',
     'Ring Modulator', 'Tremolo', 'Vibrato', 'Single Delay', 'Multi Delay', 'Echo', 'EchoTranz',
     'Medium Room Reverb', 'Hall Reverb', 'Pan', 'Auto-Pan', 'Quasi Stereo', 'Stereo Dynamics', 'More Stereo',
     'Noise Gate', 'Compressor', 'MS Matrix', 'Sonic Decimator', 'Pitch Shifter', 'Comb Filter', 'Doppler',
     'Frequency Modulator', 'Hyper Stereo']) {
-    await expect(items.filter({ hasText: new RegExp(`^Hyperprism ${name}$`) })).toHaveCount(1);
+    expect(count(entries, `Hyperprism ${name}`), name).toBe(1);
   }
-  await page.locator('#fxPickerClose').click();
   // Its pad is Hyperprism's own window: Frequency across, Q up.
   const filter = await addFromPicker(page, 'Hyperprism Low Pass');
   await expect(filter.locator('.prism-pad')).toHaveAttribute('aria-label', /Frequency.*Q/);

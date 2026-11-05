@@ -58,6 +58,13 @@
   --warn:      oklch(78% 0.14 55);
   --bad:       oklch(65% 0.19 25);
   --good:      oklch(72% 0.15 155);
+  /* What a grain control does to the sound (the Facets theme sets these too). */
+  --f-time:   oklch(80% 0.14 75);
+  --f-pitch:  oklch(72% 0.16 300);
+  --f-tone:   oklch(78% 0.12 195);
+  --f-attack: oklch(70% 0.18 25);
+  --f-space:  oklch(76% 0.15 150);
+  --f-level:  oklch(88% 0.02 250);
 
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -1114,23 +1121,52 @@ body.editing .transport { background: var(--surface); }
 }
 .fx-add:hover { background: var(--surface-3); color: var(--accent); }
 .fx-picker {
-  position: absolute; inset: 8px 58px 8px 8px; z-index: 20; overflow: auto;
-  padding: 10px; border: 1px solid var(--line-2); border-radius: 8px;
+  /* Over the window, not inside the dock: the dock is often too short to show
+     a face, and the picker is about seeing what you are choosing. */
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 60;
+  width: min(1140px, calc(100vw - 32px)); max-height: 82vh; overflow: auto;
+  padding: 12px; border: 1px solid var(--line-2); border-radius: 8px;
   background: oklch(14% 0.014 250 / .98); box-shadow: 0 16px 44px var(--shadow);
 }
-.fx-picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.fx-picker-head span { font-size: var(--fs-m); font-weight: 650; color: var(--text-2); }
-.fx-picker-groups { display: flex; gap: 18px; align-items: flex-start; }
-.fx-picker-group { min-width: 170px; display: flex; flex-direction: column; gap: 3px; }
-.fx-picker-group h3 {
-  margin: 0 0 4px; font-size: var(--fs-xs); letter-spacing: .45px;
-  text-transform: uppercase; color: var(--text-dimmer);
+.fx-picker-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.fx-picker-head span { flex: 1; font-size: var(--fs-m); font-weight: 650; color: var(--text-2); }
+/* Kinds first, each a tile with a few of its faces; a kind opened is a grid
+   of its effects' faces. The faces are the rack's own, shrunk and inert. */
+.fx-picker-groups { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.fx-picker-groups.in-group { display: block; }
+.fx-picker-cat {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface-2);
+  color: var(--text-2); font: inherit; text-align: left; cursor: pointer;
 }
+.fx-picker-cat:hover, .fx-picker-cat:focus-visible { border-color: var(--accent); background: var(--surface-3); }
+.fx-picker-cat-faces { display: flex; gap: 6px; }
+.fx-picker-cat-name { display: flex; justify-content: space-between; align-items: baseline; }
+.fx-picker-cat-name b { font-size: var(--fs-m); font-weight: 650; }
+.fx-picker-cat-name i { font-style: normal; font-size: var(--fs-xs); color: var(--text-dimmer); }
+.fx-picker-group { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, 99px); }
 .fx-picker-item {
-  padding: 5px 7px; border: 1px solid transparent; border-radius: 4px;
-  background: transparent; color: var(--text-2); text-align: left; font: inherit; font-size: var(--fs-m);
+  display: flex; flex-direction: column; gap: 3px; padding: 5px;
+  border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface-2);
+  color: var(--text-2); text-align: left; font: inherit; cursor: pointer;
 }
-.fx-picker-item:hover { border-color: var(--line-2); background: var(--surface-3); color: var(--accent); }
+.fx-picker-item:hover, .fx-picker-item:focus-visible { border-color: var(--accent); background: var(--surface-3); color: var(--accent); }
+/* Two lines at most: the names are long and the faces small. */
+.fx-picker-name {
+  font-size: var(--fs-s); font-weight: 600; line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.fx-picker-thumb {
+  --thumb-scale: .25;
+  position: relative; display: block; flex: none; overflow: hidden; pointer-events: none;
+  width: calc(348px * var(--thumb-scale)); height: calc(300px * var(--thumb-scale));
+  border-radius: 4px; background: #101215;
+}
+.fx-picker-thumb > .fx-module {
+  position: absolute; top: 0; left: 0; transform: scale(var(--thumb-scale)); transform-origin: 0 0;
+  /* Its own height, not the rail's. */
+  height: auto; min-height: 0; max-height: none;
+}
 
 .rack-body { display: flex; gap: 0; padding: 0; background: #101215; }
 .rack-chain {
@@ -5065,6 +5101,12 @@ body.wavepage #dock + .dock-resize, body.wavepage #dockResize { display: none; }
    its Chop panel (`chopPageSync` opens that tab). The dock's tab rail, the
    presets and the worded edit bar are Grain's. */
 body.choppage #presetBar { display: none !important; }
+/* `body.prismpage`: the same again, for the Prism pad. Its tab is the page's
+   own, so the Grain page's dock no longer shows it. */
+body:not(.prismpage) .dock-tab[data-dock="prism"] { display: none; }
+body.prismpage #presetBar { display: none !important; }
+body.prismpage #editTools > :not(#tabBar) { display: none !important; }
+body.prismpage #editTools:has(> #tabBar.hidden) { display: none; }
 body.choppage #editTools > :not(#tabBar) { display: none !important; }
 body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 
@@ -5574,3 +5616,148 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
    and the slider keeps a usable width. */
 #roomAdmin .rk-mist > .rk-k.rk-sl,
 #roomAdmin #roomEdit > .re-row:not(.rk-cell) > .rk-k.rk-sl { grid-template-columns: auto auto minmax(60px, 1fr) auto; }
+
+/* ───────────────── the grain tray (`190-grain-tray.js`, RJ 4 Nov 2026) ──
+   Sections are bands down each column, alternating in shade, each with a plain
+   heading and a dot for every kind of control it holds. A control's picture
+   and its bar are drawn in the colour of what it does to the sound (`--fc`,
+   one of the six `--f-*`), named by the key across the top. Blue is kept for
+   the engine you have chosen. */
+.gc-dots b { display: inline-block; }
+.gc-dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 1px; }
+.gc-dots b { width: 6px; height: 6px; border-radius: 50%; }
+#grainControls .wild-head { color: var(--text-dim); letter-spacing: .1em; }
+#grainControls :is(.gc-band, .wild) { background: var(--surface); padding: 6px 10px 8px; margin: 0; }
+#grainControls :is(.gc-band, .wild).gc-alt { background: var(--surface-2h); }
+#grainControls :is(.gc-band, .wild) + :is(.gc-band, .wild) { border-top: 1px solid var(--line); }
+/* The row's colour wins over the picture's own group class. */
+#grainControls .gk-row, #grainControls .gk-row > .gg { --gg: var(--fc, var(--warn)); }
+
+/* The engines, as tiles: a picture of what each does above its name. */
+#grainControls .engine-pick .seg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; background: none; padding: 0; }
+#grainControls .engine-pick .seg-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; height: auto; padding: 4px 2px 3px;
+  border: 1px solid var(--line-2); border-radius: 5px; background: transparent; color: var(--text-2); --gg: var(--text-dim);
+}
+#grainControls .engine-pick .seg-btn svg.gg { width: 44px; height: 33px; overflow: visible; }
+#grainControls .engine-pick .seg-btn.active {
+  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); --gg: var(--accent);
+}
+/* The tuning and Keys ride on Time & pitch's heading. */
+#grainControls .gc-tp > .wild-head { display: flex; align-items: center; justify-content: space-between; }
+#grainControls .gc-tp .engine-switch-host { margin: 0; }
+#grainControls .engine-switches { width: 148px; }
+#grainControls .engine-switches > [data-slot="3"] { left: 0; }
+#grainControls .engine-switches > [data-slot="4"] { left: 77px; }
+#grainControls .engine-params:empty { display: none; }
+
+/* ── bars (`gc-bars`): each slider row is one bar, the picture in front, the
+   name and reading inside it, bordered in its colour, the filled part outlined
+   too. The fill comes from `--f` (the handle's share of the track). Groups go
+   two to a line; Stretch, Pitch and Window keep a line each. 24 px targets. */
+#grainControls.gc-bars .stretch-core { display: flex; flex-direction: column; gap: 4px; }
+#grainControls.gc-bars :is(.engine-params, .wild-body) {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; align-items: center;
+}
+#grainControls.gc-bars :is(.engine-params, .wild-body) > :not(.gk-row) { grid-column: 1 / -1; }
+#grainControls.gc-bars .param.gk-row:has(> input[type=range]) {
+  grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 0; min-height: 0; height: 28px;
+}
+#grainControls.gc-bars .gk-row > .gg { width: 28px; height: 21px; }
+#grainControls.gc-bars .gk-row:has(> input[type=range]) > :is(.k, input, .v) { grid-row: 1; }
+#grainControls.gc-bars .gk-row:has(> input[type=range]) > input { grid-column: 2 / 4; margin-left: 4px; width: calc(100% - 4px); }
+#grainControls.gc-bars .gk-row:has(> input[type=range]) > .k { grid-column: 2; margin-left: 4px; }
+#grainControls.gc-bars .gk-row:has(> input[type=range]) > .v { grid-column: 3; }
+#grainControls.gc-bars .gk-row > input[type=range] {
+  -webkit-appearance: none; appearance: none; height: 24px; border-radius: 4px; cursor: ew-resize;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc) 70%, transparent);
+  background:
+    linear-gradient(90deg, transparent calc(var(--f, 0) * 100% - 2px), var(--fc) 0, var(--fc) calc(var(--f, 0) * 100%), transparent 0),
+    linear-gradient(var(--fc), var(--fc)) 0 0 / calc(var(--f, 0) * 100%) 1px no-repeat,
+    linear-gradient(var(--fc), var(--fc)) 0 100% / calc(var(--f, 0) * 100%) 1px no-repeat,
+    linear-gradient(90deg, color-mix(in srgb, var(--fc) 34%, var(--sink)) calc(var(--f, 0) * 100%), var(--surface-3) 0);
+}
+#grainControls.gc-bars .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px var(--fc); }
+#grainControls.gc-bars .gk-row > input[type=range].gc-dragging { filter: brightness(1.2); }
+#grainControls.gc-bars .gk-row > input[type=range]::-webkit-slider-runnable-track { background: transparent; height: 24px; }
+#grainControls.gc-bars .gk-row > input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 24px; }
+#grainControls.gc-bars .gk-row > input[type=range]::-moz-range-track { background: transparent; }
+#grainControls.gc-bars .gk-row > input[type=range]::-moz-range-progress { background: transparent; }
+#grainControls.gc-bars .gk-row > input[type=range]:focus-visible { outline: 2px solid var(--fc); outline-offset: 1px; }
+#grainControls.gc-bars .gk-row:has(> input[type=range]) > :is(.k, .v) {
+  z-index: 1; pointer-events: none; padding: 0 4px; color: var(--text);
+  text-shadow: 0 0 3px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg);
+}
+#grainControls.gc-bars .gk-row:has(> input[type=range]) > .k { justify-self: start; min-width: 0; max-width: 100%; }
+/* A fixed width for the reading, so a bar's width never depends on its value:
+   otherwise "155 ms" squeezes the name where "0 ms" did not, and the bar
+   jumps between half and full width as it is dragged. */
+#grainControls.gc-bars .gk-row:has(> input[type=range]) > .v { justify-self: end; width: 56px; box-sizing: border-box; text-align: right; overflow: visible; padding-left: 2px; }
+/* A full-width bar has room for a long reading ("−15.00 st · −1500¢"), and its
+   width cannot change with its value, so its reading takes what it needs. */
+#grainControls.gc-bars :is(.stretch-core > .gk-row, .gk-row.gc-wide):has(> input[type=range]) > .v { width: auto; min-width: 56px; }
+#grainControls.gc-bars .gk-row.gc-wide { grid-column: 1 / -1; }
+
+/* A switch is a bar too: its picture, then a toggle the bar's width with a
+   sliding knob, bordered in its colour and filled when on. */
+#grainControls.gc-bars .param.toggle.gk-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px; height: 28px; align-items: center; }
+#grainControls.gc-bars .param.toggle.gk-row > .switch {
+  position: relative; width: 100%; height: 24px; margin: 0; padding: 0 7px 0 30px; text-align: left;
+  border: 1px solid color-mix(in srgb, var(--fc) 70%, transparent); border-radius: 4px;
+  background: var(--surface-3); color: var(--text-2); font-size: var(--fs-m); white-space: nowrap;
+  overflow: hidden; min-width: 0;
+}
+#grainControls.gc-bars .param.toggle.gk-row > .switch::before {
+  content: ''; position: absolute; left: 7px; top: 7px; width: 16px; height: 9px; border-radius: 5px; border: 1px solid var(--fc); box-sizing: border-box;
+}
+#grainControls.gc-bars .param.toggle.gk-row > .switch::after {
+  content: ''; position: absolute; left: 9px; top: 9px; width: 5px; height: 5px; border-radius: 50%; background: var(--text-dimmer); transition: left .12s, background .12s;
+}
+#grainControls.gc-bars .param.toggle.gk-row > .switch.on {
+  background: color-mix(in srgb, var(--fc) 34%, var(--sink)); border-color: var(--fc); color: var(--text);
+}
+#grainControls.gc-bars .param.toggle.gk-row > .switch.on::after { left: 16px; background: var(--fc); }
+#grainControls.gc-bars .param.toggle.gk-row > .switch:hover { border-color: var(--fc); }
+#grainControls.gc-bars .param.toggle.gk-row > .switch:focus-visible { outline: 2px solid var(--fc); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { #grainControls .param.toggle > .switch::after { transition: none; } }
+
+/* A choice: its name inside the same border as its options. */
+#grainControls.gc-bars .param.seg-param.gk-row { grid-template-columns: 28px max-content minmax(0, 1fr); gap: 0 0; height: 28px; grid-column: 1 / -1; order: 1; }
+#grainControls.gc-bars .param.seg-param.gk-row > .gg { margin-right: 4px; }
+#grainControls.gc-bars .param.seg-param.gk-row > .k {
+  overflow: visible; min-width: 56px; height: 24px; line-height: 22px; padding: 0 8px; margin-left: 4px; color: var(--text-2); box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--fc) 70%, transparent); border-right: 0; border-radius: 4px 0 0 4px;
+}
+#grainControls.gc-bars .param.seg-param.gk-row > .seg {
+  height: 24px; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--fc) 70%, transparent); border-left: 0; border-radius: 0 4px 4px 0;
+}
+#grainControls.gc-bars .param.seg-param.gk-row .seg-btn.active { box-shadow: inset 0 -2px 0 var(--fc); color: var(--text); }
+
+/* The seed: one box like a bar, its name, the number and the re-roll, on one
+   line however long the number gets. */
+#grainControls.gc-bars .param.seed-row.gk-row {
+  display: grid; grid-template-columns: 28px auto minmax(0, 1fr) auto; gap: 0; height: 28px; align-items: center;
+}
+#grainControls.gc-bars .seed-row > :is(.k, .v, button) {
+  height: 24px; box-sizing: border-box; display: flex; align-items: center; background: var(--surface-3);
+  border: 1px solid color-mix(in srgb, var(--fc) 70%, transparent); border-left: 0; border-right: 0; white-space: nowrap;
+}
+#grainControls.gc-bars .seed-row > .k { grid-column: 2; grid-row: 1; margin-left: 4px; padding: 0 8px; border-left-width: 1px; border-left-style: solid; border-radius: 4px 0 0 4px; color: var(--text); }
+#grainControls.gc-bars .seed-row > .v { grid-column: 3; grid-row: 1; justify-content: flex-end; padding: 0 6px; font-family: var(--mono); color: var(--text); }
+#grainControls.gc-bars .seed-row > button { grid-column: 4; grid-row: 1; padding: 0 8px; border-right-width: 1px; border-right-style: solid; border-radius: 0 4px 4px 0; color: var(--fc); }
+#grainControls.gc-bars .seed-row > button:hover { background: color-mix(in srgb, var(--fc) 25%, var(--surface-3)); }
+
+.gc-style { margin-left: auto; flex: none; }
+.gc-style .seg-btn { font-size: var(--fs-xs); padding: 1px 7px; }
+
+/* Help › What the colours mean. */
+.ck-card { width: min(520px, calc(100vw - 32px)); }
+.ck-lede { margin: 0 16px 10px; font-size: var(--fs-m); color: var(--text-dim); line-height: 1.45; }
+.ck-list { display: grid; grid-template-columns: 10px auto 1fr; gap: 8px 10px; align-items: baseline; padding: 0 16px 16px; }
+.ck-row { display: contents; }
+.ck-sw { width: 10px; height: 10px; border-radius: 2px; align-self: center; }
+.ck-name { font-weight: 600; font-size: var(--fs-m); }
+.ck-what { font-size: var(--fs-m); color: var(--text-2); line-height: 1.4; }
+
+/* A picture resets its control on a double-click. */
+#grainControls .gk-row > .gg.gc-reset { cursor: pointer; }
