@@ -318,10 +318,11 @@ async function loadPeaks() {
   // now, because in scroll mode the visible window moves during the await.
   const padded = !!win && (win.from !== state.view.from || win.to !== state.view.to);
 
-  // Deliberately NOT the edited stream. The overview is the original file, so
-  // it stays put while you work; the grain swarm shows what is being pulled
-  // from it, and the playhead shows where in the source you are.
-  let url = `/api/peaks?p=${encodeURIComponent(f.path)}&cols=${cols}`;
+  // The edited clips, without the stretch (`clips=1`): the timeline the
+  // selection, the cursor and the playhead are counted on, so an insert, a
+  // paste or a cut is in the picture where it is in the sound. The stretch
+  // stays out, because the playhead is mapped back through it.
+  let url = `/api/peaks?p=${encodeURIComponent(f.path)}&cols=${cols}&clips=1`;
   if (win) {
     url += `&from=${Math.floor(win.from)}&to=${Math.ceil(win.to)}`;
   }
@@ -529,10 +530,11 @@ async function loadOverview() {
   const f = state.selectedFile;
   if (!f) { state.overview = null; drawOverview(); return; }
   try {
-    // Deliberately coarse and deliberately the whole file: this is a map, not
-    // a working view, and it must never change as you zoom.
+    // Deliberately coarse and deliberately the whole sound: this is a map, not
+    // a working view, and it must never change as you zoom. It is redrawn
+    // after an edit, though, so what was inserted is on the map too.
     state.overview = await api(
-      `/api/peaks?p=${encodeURIComponent(f.path)}&cols=1400`);
+      `/api/peaks?p=${encodeURIComponent(f.path)}&cols=1400&clips=1`);
   } catch { state.overview = null; }
   drawOverview();
 }

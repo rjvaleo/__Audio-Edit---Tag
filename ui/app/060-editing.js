@@ -43,13 +43,14 @@ async function editOp(body, { live = false } = {}) {
   }
   drawSelection();
 
-  // The overview is of the source and does not change when a value does, so
-  // it is left alone — redrawing it was what made the playhead jump about.
-  // Structural edits do change the source mapping, so those still refit.
+  // The overview does not change when a value does, so it is left alone —
+  // redrawing it was what made the playhead jump about. Structural edits
+  // change the sound itself, so those refit and redraw both views.
   if (STRUCTURAL.includes(body.op)) {
     state.view.from = 0;
     state.view.to = 0;
     await loadPeaks();
+    loadOverview();
     if (state.showSpec) loadSpectrogram();
   }
   reloadAudioSource();

@@ -872,6 +872,26 @@ fn silence_can_be_inserted_in_milliseconds() {
 }
 
 #[test]
+fn the_picture_follows_an_insert_but_not_the_stretch() {
+    // `clips=1` draws the edited clips on the timeline the selection and the
+    // playhead are counted on: an insert lengthens it, a stretch does not.
+    let s = Scratch::new("clipspeaks");
+    s.sound("kit/a.wav", 4000);
+    let app = s.app();
+    let peaks = |q: &[(&str, &str)]| num(&json(&server::routes::route(&app, &get("/api/peaks", q))), &["frames"]);
+    let q = [("p", "kit/a.wav"), ("cols", "100"), ("clips", "1")];
+    assert_eq!(peaks(&q), 4000.0, "unedited is the file");
+    server::routes::route(
+        &app,
+        &post("/api/edit", r#"{"p":"kit/a.wav","op":"insertSilence","start":100,"frames":9000}"#),
+    );
+    assert_eq!(peaks(&q), 13_000.0, "the insert is in the picture");
+    assert_eq!(peaks(&[("p", "kit/a.wav"), ("cols", "100")]), 4000.0, "without clips=1 it is still the file");
+    server::routes::route(&app, &post("/api/edit", r#"{"p":"kit/a.wav","op":"stretch","ratio":2}"#));
+    assert_eq!(peaks(&q), 13_000.0, "the stretch is not");
+}
+
+#[test]
 fn inserted_silence_survives_being_written_out_and_read_back() {
     // The reader used to refuse any clip reaching past the end of the source,
     // which is every silent clip, so a saved pause came back missing.

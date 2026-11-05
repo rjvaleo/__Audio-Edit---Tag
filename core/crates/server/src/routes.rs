@@ -705,7 +705,19 @@ fn api_peaks(app: &Arc<App>, req: &Request) -> Response {
     // When the file has edits and the caller asks for them, the waveform shows
     // the edited timeline — otherwise the display would not match playback.
     let edited = req.param("edited") == Some("1");
-    let list = if edited { app.edits.snapshot(req.param("p").unwrap_or("")) } else { None };
+    // `clips=1` is the edited clips without the stretch: the timeline the
+    // selection, the cursor and the playhead are counted on, so an insert or a
+    // cut shows in the picture where it is heard. A document whose clips are
+    // still the whole file takes the cached path, as though it were unedited.
+    let clips_only = !edited && req.param("clips") == Some("1");
+    let list = if edited || clips_only { app.edits.snapshot(req.param("p").unwrap_or("")) } else { None };
+    let list = match list {
+        Some(mut l) if clips_only => {
+            let whole = l.clips.len() == 1 && l.clips[0] == edit::Clip::new(0, l.source_frames);
+            if whole { None } else { l.stretch = fx::Stretch::default(); Some(l) }
+        }
+        other => other,
+    };
     let frames = list.as_ref().map_or(info.frames(), |l| l.frames());
 
     // Zoom range, in frames. Defaults to the whole file.

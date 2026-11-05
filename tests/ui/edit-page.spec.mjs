@@ -154,6 +154,22 @@ test('⇧⌘V inserts the clipboard at the selection; ⌘V replaces it', async (
   await page.waitForFunction((w) => state.edit.frames === w + 1600, was);
 });
 
+test('an insert is in the picture too: the waveform and the overview grow with the sound', async ({ page }) => {
+  await openEdit(page);
+  await page.evaluate(() => editOp({ op: 'revert' }));
+  const was = await frames(page);
+  await select(page, 0, 1000);
+  await page.keyboard.press('Meta+c');
+  await page.waitForFunction(() => (state.edit.clipboard || 0) === 1000);
+  await select(page, 2000, 2400);
+  await page.keyboard.press('Meta+Shift+v');
+  await page.waitForFunction((w) => state.edit.frames === w + 1000, was);
+  await page.waitForFunction((w) => state.peaks?.frames === w + 1000 && state.overview?.frames === w + 1000, was);
+  // Undo takes it out of the picture again.
+  await cmd(page, 'undo');
+  await page.waitForFunction((w) => state.peaks?.frames === w && state.overview?.frames === w, was);
+});
+
 test('the Edit menu has Insert clipboard, next to Paste', async ({ page }) => {
   await openEdit(page);
   const labels = await page.evaluate(() => MENUS.find((m) => m.title === 'Edit').items.map((i) => i.label));
