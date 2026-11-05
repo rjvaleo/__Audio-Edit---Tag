@@ -572,6 +572,39 @@ function hyperStretchShown(on) {
   }
 }
 
+// The Prism page's own switch, HyperStretch or the rack pad: the dock's tabs
+// sit in the preset bar, which the page hides. It presses the hidden tab, so
+// the dock's own code does the showing.
+(() => {
+  const dock = document.getElementById('dock');
+  if (!dock) return;
+  const bar = document.createElement('div');
+  bar.className = 'prism-views';
+  bar.id = 'prismViews';
+  bar.setAttribute('role', 'tablist');
+  bar.setAttribute('aria-label', 'Prism');
+  bar.innerHTML = '<button type="button" role="tab" data-prismview="hyper">HyperStretch</button>'
+    + '<button type="button" role="tab" data-prismview="prism">Rack pad</button>';
+  dock.prepend(bar);
+  const sync = () => {
+    for (const b of bar.querySelectorAll('button')) {
+      const on = !document.getElementById(b.dataset.prismview === 'hyper' ? 'dockHyper' : 'dockPrism')?.classList.contains('hidden');
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', String(on));
+    }
+  };
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-prismview]');
+    if (b) document.querySelector(`.dock-tab[data-dock="${b.dataset.prismview}"]`)?.click();
+    sync();
+  });
+  for (const id of ['dockHyper', 'dockPrism']) {
+    const el = document.getElementById(id);
+    if (el) new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class'] });
+  }
+  sync();
+})();
+
 // The dock panel is shown and hidden by the dock's own tab code; this follows it.
 (() => {
   const host = document.getElementById('dockHyper');

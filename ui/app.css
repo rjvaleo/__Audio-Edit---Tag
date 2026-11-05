@@ -5966,3 +5966,10 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hs-seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
 .hs-shapes { display: flex; gap: 4px; }
 .hs-shapes .hs-btn { flex: 1; }
+
+/* The Prism page's own switch between HyperStretch and the rack pad. */
+/* `.dock` is a row: the switch is a narrow column at its left edge. */
+.prism-views { display: flex; flex-direction: column; gap: 3px; padding: 6px 4px; flex: none; border-right: 1px solid var(--line); background: var(--surface-0); }
+body:not(.prismpage) .prism-views { display: none; }
+.prism-views button { height: 20px; padding: 0 10px; font-size: 10px; border: 1px solid var(--line-2); border-radius: 3px; background: var(--well); color: var(--text-2); cursor: pointer; }
+.prism-views button.on { background: var(--surface-3); color: var(--text); border-color: var(--accent); font-weight: 600; }

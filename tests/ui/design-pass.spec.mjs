@@ -41,8 +41,8 @@ async function dockTab(page, name) {
   // tab belongs to the Grain page.
   if (name === 'prism') {
     await page.locator('#leftRail .rl-item[data-page="prism"]').click();
-    // The page opens on HyperStretch; the rack pad is its second tab.
-    await page.locator('.dock-tab[data-dock="prism"]').click();
+    // The page opens on HyperStretch; the rack pad is the page's other view.
+    await page.locator('#prismViews [data-prismview="prism"]').click();
   } else {
     if (await page.evaluate(() => document.body.classList.contains('prismpage'))) {
       await page.locator('#leftRail .rl-item[data-page="grain"]').click();

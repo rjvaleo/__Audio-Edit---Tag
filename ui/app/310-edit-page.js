@@ -25,12 +25,16 @@ function chopPageSync(editing) {
   const active = document.querySelector('.dock-tab.active')?.dataset.dock;
   const tab = (name) => document.querySelector(`.dock-tab[data-dock="${name}"]`);
   const own = editing ? PAGE_DOCKS[editPage] : null;
+  // The tabs a page of its own may show: Prism's are HyperStretch and the
+  // rack pad, switched on the page itself.
+  const mine = own && (editPage === 'prism' ? ['hyper', 'prism'] : [own]);
+  const pages = ['chop', 'hyper', 'prism'];
   if (own) {
-    if (active !== own) {
-      if (!Object.values(PAGE_DOCKS).includes(active)) chopPageFrom = active || null;
+    if (!mine.includes(active)) {
+      if (!pages.includes(active)) chopPageFrom = active || null;
       tab(own)?.click();
     }
-  } else if (editing && editPage === 'grain' && Object.values(PAGE_DOCKS).includes(active)) {
+  } else if (editing && editPage === 'grain' && pages.includes(active)) {
     tab(chopPageFrom || 'stretch')?.click();
     chopPageFrom = null;
   }

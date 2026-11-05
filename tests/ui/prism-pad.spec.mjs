@@ -26,8 +26,8 @@ async function openPad(page, slots = []) {
   }, slots);
   // Prism is a page of its own in the left rail, below Grain.
   await page.locator('#leftRail .rl-item[data-page="prism"]').click();
-  // The page opens on HyperStretch; the rack pad is its second tab.
-  await page.locator('.dock-tab[data-dock="prism"]').click();
+  // The page opens on HyperStretch; the rack pad is the page's other view.
+  await page.locator('#prismViews [data-prismview="prism"]').click();
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
 }
 
@@ -104,6 +104,7 @@ test('limits typed into the corners narrow the sweep, and stay with the rack', a
   });
   // Prism is a page of its own in the left rail, below Grain.
   await page.locator('#leftRail .rl-item[data-page="prism"]').click();
+  await page.locator('#prismViews [data-prismview="prism"]').click();
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 1);
   await page.locator('#prismSource').selectOption({ label: 'Ring mod' });
   await expect(page.locator('#prismXHi')).toHaveValue('1000');

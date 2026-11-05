@@ -3,7 +3,7 @@
 *4 November 2026.* Hyperprism's XY pad rebuilt from its code, playing the granular engine's own Stretch and Pitch.
 
 **Where it is:**
-- Opened from the rail as **Prism**. Like the Chop page, the Prism page is the Grain dock with one panel out, its **Prism** tab.
+- Opened from the rail as **Prism**. The Prism page opens on HyperStretch. A two-button switch at the dock's left edge, **HyperStretch** or **Rack pad**, shows the Prism tab's rack pad instead. The page hides the dock's own tab bar, so the switch is the page's own.
 - The panel: `ui/app/385-hyperstretch.js`.
 - The glide: `core/crates/engine/src/glide.rs`.
 
