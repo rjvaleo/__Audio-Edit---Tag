@@ -100,6 +100,7 @@ const MENUS = [
       { label: 'Cut', key: '⌘X', on: hasSel, run: op('cut') },
       { label: 'Copy', key: '⌘C', on: hasSel, run: copyCmd },
       { label: 'Paste', key: '⌘V', on: canPaste, run: pasteCmd },
+      { label: 'Insert clipboard', on: canPaste, run: insertClipCmd },
       { label: 'Delete', key: '⌫', on: hasSel, run: deleteCmd },
       { label: 'Silence', on: hasSel, run: op('silence') },
       { sep: true },

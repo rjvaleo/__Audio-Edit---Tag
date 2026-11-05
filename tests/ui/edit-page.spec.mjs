@@ -119,6 +119,33 @@ test('copy then paste at the cursor lengthens the sound by the copy', async ({ p
   await page.waitForFunction((w) => state.edit.frames === w + 2000, was);
 });
 
+test('Insert clipboard puts the copy in at the selection and replaces nothing', async ({ page }) => {
+  await openEdit(page);
+  // The earlier tests' edits stay on the server's document; this one reads
+  // source positions, so it starts from the sound as it is on disk.
+  await page.evaluate(() => editOp({ op: 'revert' }));
+  const was = await frames(page);
+  await select(page, 500, 1500);
+  await cmd(page, 'copy');
+  await page.waitForFunction(() => (state.edit.clipboard || 0) === 1000);
+  await select(page, 2500, 3000);
+  await cmd(page, 'insertClip');
+  // Paste would have swapped the selected 500 for the 1000; Insert adds them.
+  await page.waitForFunction((w) => state.edit.frames === w + 1000, was);
+  const laid = await page.evaluate(() => {
+    let at = 0;
+    for (const c of state.edit.clips) { if (at === 2500) return { srcStart: c.srcStart, len: c.len }; at += c.len; }
+    return null;
+  });
+  expect(laid).toEqual({ srcStart: 500, len: 1000 });
+});
+
+test('the Edit menu has Insert clipboard, next to Paste', async ({ page }) => {
+  await openEdit(page);
+  const labels = await page.evaluate(() => MENUS.find((m) => m.title === 'Edit').items.map((i) => i.label));
+  expect(labels[labels.indexOf('Paste') + 1]).toBe('Insert clipboard');
+});
+
 test('cut fills the clipboard, delete does not, and undo puts it back', async ({ page }) => {
   await openEdit(page);
   const was = await frames(page);
@@ -243,7 +270,7 @@ test('customizing: hide an icon, then drag it back from Hidden; Reset restores a
   await page.locator('#waveTools .wt-custom [data-cmd="crop"]').dragTo(page.locator('#waveTools [data-cmd="silence"]'));
   expect((await ids(page, 2))[0]).toBe('crop');
   await page.click('#waveTools .wtReset');
-  expect(await ids(page, 1)).toEqual(['cut', 'copy', 'paste', 'delete', 'crop', 'duplicate']);
+  expect(await ids(page, 1)).toEqual(['cut', 'copy', 'paste', 'insertClip', 'delete', 'crop', 'duplicate']);
   await page.click('#waveTools .wtDone');
   await expect(page.locator('#waveTools .wtEdit')).toBeVisible();
 });

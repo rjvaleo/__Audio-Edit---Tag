@@ -49,6 +49,18 @@ async function pasteCmd() {
   await editCmd({ op: 'paste', ...selOrCue() });
 }
 
+/// Insert clipboard: the clipboard goes in at the start of the selection, or at
+/// the cursor, and everything after it moves later. Unlike Paste, nothing that
+/// is selected is replaced: the range sent is empty, so the server inserts.
+async function insertClipCmd() {
+  if (!state.selectedFile) { toast('Open a sound first'); return; }
+  if (!canPaste()) { toast('Copy or cut something in this sound first'); return; }
+  const at = selOrCue().start;
+  await editCmd({ op: 'paste', start: at, end: at });
+  const sr = state.view.sampleRate || 44100;
+  toast(`Inserted ${fmtTime(state.edit.clipboard / sr)} at ${fmtTime(at / sr)}`);
+}
+
 async function deleteCmd() {
   if (!needSel()) return;
   await editCmd({ op: 'delete', start: state.sel.start, end: state.sel.end });
@@ -82,6 +94,7 @@ const WT_SVG = {
   cut: '<circle cx="6.5" cy="17.5" r="2.6"/><circle cx="17.5" cy="17.5" r="2.6"/><path d="M8.2 15.6 18 3.5M15.8 15.6 6 3.5"/>',
   copy: '<rect x="8.5" y="8.5" width="11.5" height="11.5" rx="1.5"/><path d="M15.5 8.5V5.5A1.5 1.5 0 0 0 14 4H5.5A1.5 1.5 0 0 0 4 5.5V14a1.5 1.5 0 0 0 1.5 1.5h3"/>',
   paste: '<rect x="5" y="5" width="14" height="16" rx="1.5"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M7.5 14h2l1-3 2 6 1-3h3"/>',
+  insertClip: '<rect x="5" y="5" width="14" height="16" rx="1.5"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M12 10v8M8.5 14.5 12 18l3.5-3.5"/>',
   delete: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/><path d="M10 11v5.5M14 11v5.5"/>',
   crop: '<path d="M7 3v14h14"/><path d="M3 7h14v14"/>',
   duplicate: '<rect x="2.5" y="7" width="8.5" height="10" rx="1"/><rect x="13" y="7" width="8.5" height="10" rx="1"/><path d="M4.5 12h1l1-2.5 1.5 5 1-2.5h.5M15 12h1l1-2.5 1.5 5 1-2.5h.5"/>',
@@ -133,6 +146,7 @@ const WT_GROUPS = [
     { id: 'cut', name: 'Cut', key: '⌘X', need: 'sel', run: op('cut') },
     { id: 'copy', name: 'Copy', key: '⌘C', need: 'sel', run: copyCmd },
     { id: 'paste', name: 'Paste', key: '⌘V', on: canPaste, run: pasteCmd },
+    { id: 'insertClip', name: 'Insert clipboard', on: canPaste, run: insertClipCmd },
     { id: 'delete', name: 'Delete', key: '⌫', need: 'sel', run: deleteCmd },
     { id: 'crop', name: 'Crop', key: '⌘`', need: 'sel', run: op('crop') },
     { id: 'duplicate', name: 'Duplicate…', need: 'sel', run: duplicateCmd },
@@ -190,7 +204,7 @@ const WT_GROUPS = [
 /// The word under each icon: short, the command's own name where it fits.
 const WT_WORDS = {
   undo: 'Undo', redo: 'Redo', revert: 'Revert',
-  cut: 'Cut', copy: 'Copy', paste: 'Paste', delete: 'Delete', crop: 'Crop', duplicate: 'Duplicate',
+  cut: 'Cut', copy: 'Copy', paste: 'Paste', insertClip: 'Insert', delete: 'Delete', crop: 'Crop', duplicate: 'Duplicate',
   silence: 'Silence', insertSilence: 'Insert', stripSilence: 'Strip',
   fadeIn: 'Fade in', fadeOut: 'Fade out', curveEq: 'Smooth', curveLin: 'Linear',
   gain: 'Gain', normalize: 'Normalize', normalizeRms: 'RMS', findPeak: 'Peak',
