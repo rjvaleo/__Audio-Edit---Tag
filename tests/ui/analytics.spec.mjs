@@ -310,7 +310,9 @@ test('a long frame in the interface is recorded with where it happened', async (
     setTimeout(done, 300);
   })));
   await expect.poll(async () => (await stored(page)).events.filter((e) => e.k === 'lof').length).toBeGreaterThan(0);
-  const e = (await stored(page)).events.find((x) => x.k === 'lof');
+  // The longest: on a busy machine the app's own start-up can leave a shorter
+  // long frame ahead of the one held here.
+  const e = (await stored(page)).events.filter((x) => x.k === 'lof').sort((a, b) => b.ms - a.ms)[0];
   expect(e.ms).toBeGreaterThanOrEqual(100);
   expect(e.m).toBe('overview');
 });

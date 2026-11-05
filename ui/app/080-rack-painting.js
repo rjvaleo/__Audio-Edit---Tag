@@ -140,7 +140,9 @@ function enablePainting(scope) {
     // Pressing on a control is that control's own drag, and stealing it would
     // fight the gesture already under way. A stroke begins on the background
     // between them.
-    if (e.target.closest('input, button, select, textarea, a, label')) {
+    // A control's picture is its own too: a double-click on it resets the
+    // value, and a press on it must not paint the bar to where it sits.
+    if (e.target.closest('input, button, select, textarea, a, label, svg.gg')) {
       painting = false;
       return;
     }

@@ -84,16 +84,22 @@ test('a value pushed in from outside — reset, preset, undo — redraws the gly
   expect(same).toBe(false);
 });
 
-test('every glyph and every heading in the tray is drawn in the one colour', async ({ page }) => {
+test('each picture is drawn in the colour of what it changes, and every heading in one colour', async ({ page }) => {
   await openGrain(page);
-  const colours = await page.evaluate(() => {
-    const c = (key) => getComputedStyle(document.querySelector(`.gk-row[data-glyph="${key}"] > .gg`)).getPropertyValue('--gg').trim();
+  const got = await page.evaluate(() => {
+    const css = getComputedStyle(document.documentElement);
+    const wrong = [];
+    for (const g of document.querySelectorAll('#grainControls .gk-row > .gg')) {
+      const key = g.parentElement.dataset.glyph;
+      const want = css.getPropertyValue(`--f-${GG_FACET[key] || 'time'}`).trim();
+      const has = getComputedStyle(g).getPropertyValue('--gg').trim();
+      if (!want || has !== want) wrong.push(`${key}: ${has} not ${want}`);
+    }
     const heads = [...document.querySelectorAll('#grainControls .wild-head')].filter((h) => h.getClientRects().length).map((h) => getComputedStyle(h).color);
-    return { glyphs: ['ratio', 'densityHz', 'pitchJitterSemis', 'scan'].map(c), heads };
+    return { wrong, heads: new Set(heads).size };
   });
-  expect(new Set(colours.glyphs).size).toBe(1);
-  expect(colours.glyphs[0]).not.toBe('');
-  expect(new Set(colours.heads).size).toBe(1);
+  expect(got.wrong).toEqual([]);
+  expect(got.heads).toBe(1);
 });
 
 test('the glyph is decoration: the slider keeps its name for a screen reader', async ({ page }) => {
@@ -145,7 +151,7 @@ test('every engine\'s own sliders have pictures, with the grain cloud and the tr
     .filter((r) => r.offsetParent && r.querySelector(':scope > input[type=range]') && !r.querySelector(':scope > .gg'))
     .map((r) => r.textContent.trim().slice(0, 24)));
   const on = async (label) => {
-    const sw = host.locator(`.gc-switch[data-for="${label}"]`);
+    const sw = host.locator(`.switch[data-name="${label}"]`);
     if (!(await sw.count())) return;
     if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click();
   };
@@ -191,11 +197,11 @@ test('a bar keeps its width whatever its value', async ({ page }) => {
 });
 
 
-test('the menu bar is gone, and Settings and Help sit at the foot of the left rail', async ({ page }) => {
+test('the menu bar is gone, and Settings, Analytics and Help sit at the foot of the left rail', async ({ page }) => {
   await openGrain(page);
   await expect(page.locator('header.menubar')).toBeHidden();
   const foot = page.locator('#leftRail .rl-foot');
-  await expect(foot.locator('.rl-foot-btn')).toHaveCount(2);
+  expect(await foot.locator('.rl-foot-btn').evaluateAll((b) => b.map((x) => x.getAttribute('aria-label')))).toEqual(['Settings', 'Analytics', 'Help']);
   await foot.locator('.rl-foot-btn[aria-label="Settings"]').click();
   await expect(page.locator('#settingsModal')).toBeVisible();
 });
