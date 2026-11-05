@@ -1290,37 +1290,78 @@
       <div class="dock-body hidden" id="dockRegions">
         <div class="region-list" id="regionList"></div>
       </div>
-      <!-- Chop: Recycle Reborn, on the selected sound. See ui/chop.js. -->
+      <!-- Chop: Recycle Reborn, ReCycle's editing and Ratchet's grid, on the
+           selected sound. The slices are drawn and edited on the main waveform;
+           this panel is only the controls and the list. See ui/chop.js. -->
       <div class="dock-body chop-body hidden" id="dockChop">
-        <div class="chop-bar">
-          <label class="chop-ctl" title="How far below the loudest moment counts as silence. Higher finds quieter sounds.">
-            <span>Threshold</span><input type="range" id="chopTopDb" min="15" max="65" value="40" step="1"><output id="chopTopDbV">40 dB</output>
-          </label>
-          <label class="chop-ctl" title="Shorter than this, a sound is not a slice">
-            <span>Min length</span><input type="range" id="chopMinDur" min="10" max="400" value="40" step="5"><output id="chopMinDurV">40 ms</output>
-          </label>
-          <label class="chop-ctl" title="Room kept before and after each slice">
-            <span>Pad</span><input type="range" id="chopPad" min="0" max="50" value="12" step="1"><output id="chopPadV">12 ms</output>
-          </label>
-          <span class="vsep"></span>
-          <label class="chop-ctl chop-tail" title="A ReCycle-style ping-pong loop tail on each slice as it is written: its last moments, back and forth, fading out">
-            <input type="checkbox" id="chopTail"><span>Tail</span>
-            <input type="range" id="chopTailMs" min="20" max="200" value="80" step="5"><output id="chopTailMsV">80 ms</output>
-            <span class="chop-cycles" id="chopTailCycles"></span>
-          </label>
-          <span class="vsep"></span>
+        <div class="chop-hdr">
+          <b class="chop-title">Chops</b>
+          <span class="chop-pills" id="chopMode" title="How the cuts are found">
+            <button type="button" data-v="transient" title="A cut at every hit, as ReCycle does: each slice runs to the next">Transient</button>
+            <button type="button" data-v="silence" title="The sounds between the silences, as Recycle Reborn does">Silence</button>
+            <button type="button" data-v="grid" title="A cut on every grid line at the tempo, as Ratchet does">Grid</button>
+          </span>
+          <span class="chop-pills" id="chopDiv" title="The grid">
+            <button type="button" data-v="bar">1 bar</button><button type="button" data-v="2">1/2</button><button type="button" data-v="4">1/4</button><button type="button" data-v="8">1/8</button><button type="button" data-v="16">1/16</button><button type="button" data-v="32">1/32</button>
+          </span>
+          <span class="chop-pills" id="chopFeel" title="Straight, dotted or triplet">
+            <button type="button" data-v="straight">Straight</button><button type="button" data-v="dot">Dot</button><button type="button" data-v="trip">Trip</button>
+          </span>
+          <span class="chop-pills chop-tools" id="chopTools" title="What a click on the waveform does">
+            <button type="button" data-v="pointer" title="Pointer: click a slice to pick and hear it, drag a cut to move it, drag it off the ruler to delete it (shift-click picks more)">↖</button>
+            <button type="button" data-v="audition" title="Audition: click a slice to hear it">🔈</button>
+            <button type="button" data-v="lock" title="Lock: click a cut to lock it. A locked cut stays when the sound is cut again">🔒</button>
+            <button type="button" data-v="pencil" title="Pencil: click to add a cut">✎</button>
+          </span>
+          <span class="chop-pills">
+            <button type="button" id="chopRev" title="Reverse the picked slices">◄ Rev</button>
+            <button type="button" id="chopMute" title="Silence the picked slices: left out of Preview and Write">Mute sel</button>
+          </span>
+          <span class="chop-grow"></span>
+          <span class="chop-pills">
+            <button type="button" id="chopPreview" title="Play every slice that is not muted, S to E, at the tempo, with everything on">▶ Preview</button>
+            <button type="button" id="chopRatchet" title="Ratchet: the chop from S fires on every grid line, round and round, until pressed again">Ratchet</button>
+          </span>
+          <span class="chop-pills" id="chopSync" title="Free: the tempo here. Lock: the sequencer's tempo">
+            <button type="button" data-v="free">Free</button><button type="button" data-v="lock">Lock</button>
+          </span>
+          <span class="chop-pills chop-presets">
+            <button type="button" id="chopA" title="Settings A">A</button><button type="button" id="chopB" title="Settings B: flip between the two to compare">B</button>
+            <button type="button" id="chopPrevPreset" title="Previous preset">‹</button>
+            <select id="chopPreset" title="Chop presets"></select>
+            <button type="button" id="chopNextPreset" title="Next preset">›</button>
+            <button type="button" id="chopSave" title="Save these settings as a preset">Save</button>
+            <button type="button" id="chopInit" title="Every setting back to where it starts">Init</button>
+            <button type="button" id="chopDice" title="Roll the dice: new settings for the cutting and the sound">⚄</button>
+          </span>
+          <button type="button" class="chop-capture" id="chopCapture" title="Capture: chop the newest take in Recordings">Take</button>
+        </div>
+        <div class="chop-knobs" id="chopKnobs"></div>
+        <div class="chop-fx">
+          <span class="chop-pills" id="chopFxTab" title="The processing every slice gets, in Preview and as it is written">
+            <button type="button" data-v="env">Envelope</button><button type="button" data-v="trans">Transient</button><button type="button" data-v="eq">EQ</button><button type="button" data-v="filter">Filter</button>
+          </span>
+          <button type="button" class="chop-on" id="chopFxOn" title="This processing on or off">Off</button>
+          <div class="chop-knobs chop-fx-knobs" id="chopFxKnobs"></div>
+        </div>
+        <div class="chop-foot">
           <span class="chop-stat" data-k="clips" title="Slices found"><b>0</b> slices</span>
           <span class="chop-stat" data-k="ratio" title="How much of the sound is in a slice"><b>0%</b> sound</span>
           <span class="chop-stat" data-k="avg" title="Average slice length"><b>0 ms</b> avg</span>
           <span class="chop-stat" data-k="dur" title="The whole sound"><b>0 s</b> long</span>
-          <button class="primary chop-write" id="chopWrite" disabled
-            title="Write every slice as a WAV beside the sound, in a folder named for it. Nothing is overwritten.">Write slices</button>
+          <span class="chop-edited" id="chopEdited"></span>
+          <button type="button" class="chop-on" id="chopRedetect" title="Cut it again from the settings. Locked and moved cuts stay">Re-detect</button>
           <span class="chop-said"></span>
+          <span class="chop-grow"></span>
+          <span class="chop-status" id="chopStatus"></span>
+          <button class="primary chop-write" id="chopWrite" disabled
+            title="Write every slice that is not muted as a WAV beside the sound, in a folder named for it. Nothing is overwritten.">Write slices</button>
+          <span class="chop-pills" title="What Write makes besides the WAVs">
+            <button type="button" id="chopOutMidi" title="Also a MIDI file: one note a slice, from C1, where each slice falls">+ MIDI</button>
+            <button type="button" id="chopOutSfz" title="Also an SFZ: the slices mapped to keys from C1">+ SFZ</button>
+          </span>
         </div>
-        <div class="chop-main">
-          <canvas class="chop-wave" title="Click a slice to play it"></canvas>
-          <div class="chop-list" id="chopList"></div>
-        </div>
+        <div class="chop-list" id="chopList"></div>
       </div>
       </div>
     </div>

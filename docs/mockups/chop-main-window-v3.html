@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chop, Ratchet style</title>
+<style>
+  :root {
+    --bg: #0b0e12; --surface: #10141a; --surface-3: #1a2028; --well: #080b0e; --sink: #06080b;
+    --line: rgba(255,255,255,0.06); --line-2: rgba(255,255,255,0.10);
+    --text: #eef1f4; --text-dim: #a3acb6; --text-dimmer: #868f99;
+    --accent: #1ea7e8; --good: #3ccf8e; --warn: #f2a65a; --wave: #39ff5a;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 11px -apple-system, system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: 150px 1fr; height: 100vh; min-height: 640px; }
+  .rail { background: var(--surface); border-right: 1px solid var(--line); padding: 10px 0; }
+  .rail div { padding: 9px 16px; font-size: 13px; color: var(--text-dim); }
+  .rail .on { color: var(--accent); background: var(--surface-3); }
+  .main { display: grid; grid-template-rows: 22px 38px 18px 1fr 34px auto; min-width: 0; }
+  .tabs { border-bottom: 1px solid var(--line); padding: 3px 10px; color: var(--text-dim); }
+  .overview { position: relative; border-bottom: 1px solid var(--accent); background: var(--sink); }
+  .lane { position: relative; background: #000; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  /* the slices, on the main waveform */
+  .slice { position: absolute; top: 0; bottom: 0; cursor: pointer; }
+  .slice .wash { position: absolute; inset: 0; opacity: .13; }
+  .slice.current .wash { opacity: .28; }
+  .slice .tag { position: absolute; top: 4px; left: 4px; font: 600 10px var(--mono); padding: 1px 4px; border-radius: 3px; color: #000; }
+  .slice .edge { position: absolute; top: 0; bottom: 0; width: 7px; margin-left: -3px; cursor: ew-resize; }
+  .slice .edge::after { content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px; background: currentColor; opacity: .75; }
+  .slice .edge.end::after { opacity: .35; }
+  .slice .edge.hot::after { width: 2px; left: 2px; opacity: 1; }
+  .slice .edge .grip { position: absolute; left: -1px; top: 50%; width: 9px; height: 18px; margin-top: -9px; border-radius: 2px; background: currentColor; display: none; }
+  .slice .edge.hot .grip { display: block; }
+  .slice .readout { position: absolute; top: 22px; font: 10px var(--mono); background: var(--surface-3); padding: 2px 5px; border-radius: 3px; color: var(--text); white-space: nowrap; }
+  .thresh { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(255,255,255,.28); pointer-events: none; }
+  .thresh span { position: absolute; right: 6px; top: -14px; font: 10px var(--mono); color: var(--text-dimmer); }
+  .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b3b; }
+  .transport { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text-dim); font-family: var(--mono); }
+  .transport b { color: var(--text); font-size: 13px; }
+  /* the dock: controls and the list only */
+  .dock { background: var(--surface); padding: 6px 10px 8px; display: grid; gap: 6px; }
+  .bar { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; color: var(--text-dim); }
+  .ctl { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .rng { width: 96px; height: 4px; border-radius: 2px; background: var(--surface-3); position: relative; }
+  .rng i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+  .ctl output { color: var(--text); min-width: 5ch; font-variant-numeric: tabular-nums; }
+  .stat b { color: var(--text); }
+  .sep { width: 1px; height: 14px; background: var(--line-2); }
+  button { font: inherit; border-radius: 4px; border: 1px solid var(--line-2); background: var(--surface-3); color: var(--text); padding: 3px 8px; }
+  button.primary { background: var(--accent); color: #001018; border: 0; font-weight: 600; }
+  .edited { color: var(--warn); }
+  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); max-height: 92px; overflow-y: auto;
+          border: 1px solid var(--line); border-radius: 6px; }
+  .row { display: grid; grid-template-columns: 2.6ch 8px minmax(0,1fr) 7ch 6ch 6.5ch 8ch 16px; gap: 6px; align-items: center;
+         padding: 3px 6px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .row.current { background: var(--well); }
+  .row .i { color: var(--text-dimmer); text-align: right; }
+  .row .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .num { color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+  .row .badge { font-size: 10px; color: var(--good); }
+  .row .badge.cl { color: var(--warn); }
+  .row .p { color: var(--text-dim); }
+  .tools { display:flex; gap:4px; align-items:center; }
+  .tools button { padding:2px 6px; }
+  .tools button.on { background: var(--accent); color:#001018; border:0; }
+  .seg { display:inline-flex; border:1px solid var(--line-2); border-radius:4px; overflow:hidden; }
+  .seg span { padding:2px 7px; color:var(--text-dim); }
+  .seg span.on { background:var(--surface-3); color:var(--text); }
+  .ruler { position:relative; height:18px; background:var(--surface); border-bottom:1px solid var(--line); font:10px var(--mono); color:var(--text-dimmer); }
+  .ruler .bar { position:absolute; top:0; bottom:0; border-left:1px solid var(--line-2); padding-left:3px; }
+  .ruler .tri { position:absolute; bottom:1px; width:0; height:0; margin-left:-5px; border-left:5px solid transparent; border-right:5px solid transparent; border-top:8px solid currentColor; cursor:ew-resize; }
+  .ruler .tri.lock::after { content:"🔒"; position:absolute; top:-17px; left:-5px; font-size:9px; }
+  .ruler .lr { position:absolute; top:1px; font:600 10px var(--mono); color:#001018; background:var(--text-dim); padding:0 3px; border-radius:2px; }
+  .slice.muted .wash { background: repeating-linear-gradient(45deg, rgba(255,255,255,.10) 0 4px, transparent 4px 8px) !important; opacity:1; }
+  .slice.muted .tag { background: var(--text-dimmer) !important; }
+  .outside { position:absolute; top:0; bottom:0; background:rgba(0,0,0,.55); pointer-events:none; }
+  .hdr,.foot { display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--text-dim); font-size:10px; }
+  .hdr b { letter-spacing:.14em; color:#b9a6ff; font-size:10px; }
+  .grow { flex:1; }
+  .pills { display:inline-flex; gap:3px; }
+  .pills span { font:600 9px var(--mono); letter-spacing:.06em; padding:3px 8px; border-radius:10px; border:1px solid var(--line-2); color:var(--text-dim); }
+  .pills span.on { border-color:#9b87f5; color:#d9d0ff; background:rgba(155,135,245,.18); }
+  .knobs { display:flex; gap:10px; padding:4px 0; }
+  .kn { display:grid; justify-items:center; gap:2px; width:64px; }
+  .kn .l { font:600 9px var(--mono); letter-spacing:.1em; color:var(--text-dimmer); }
+  .kn .v { font:10px var(--mono); color:var(--text); }
+  .kn.off { opacity:.4; }
+  .kgroup { display:flex; gap:6px; padding:0 8px; border-left:1px solid var(--line-2); }
+  .flag { position:absolute; top:1px; font:700 9px var(--mono); color:#000; padding:0 4px; border-radius:2px; }
+  .ticks { position:absolute; left:0; right:0; bottom:0; height:6px; pointer-events:none; }
+  .ticks i { position:absolute; bottom:0; width:1px; height:6px; background:#2ec4b6; }
+  .hint { position:absolute; left:8px; bottom:8px; font:10px var(--mono); color:var(--text-dimmer); }
+  /* the notes for RJ, not part of the design */
+  .note { position: absolute; background: #fffbe0; color: #222; font-size: 11px; line-height: 1.35; padding: 5px 8px; border-radius: 4px;
+          box-shadow: 0 2px 8px rgba(0,0,0,.5); max-width: 230px; z-index: 5; }
+  .note b { display: block; }
+  .note.n-dock { right: 14px; bottom: 210px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail"><div>Edit</div><div>Grain</div><div class="on">✂ Chop</div><div>Visual</div><div>Seq</div><div>Theme</div><div>Browse</div></nav>
+  <div class="main">
+    <div class="tabs">break.aif ×</div>
+    <div class="overview"><canvas id="ov"></canvas></div>
+    <div class="ruler" id="ruler"></div>
+    <div class="lane" id="lane">
+      <canvas id="wave"></canvas>
+      <div class="thresh" style="top:28%"><span>−40 dB</span></div>
+      <div class="thresh" style="top:72%"></div>
+    </div>
+    <div class="transport">nothing that can so effec… ▶ ■ ⟲ ● <b>00:01.023</b> − fit + · scroll</div>
+    <div class="dock">
+      <div class="hdr"><b>CHOPS</b>
+        <span class="pills"><span class="on">TRANSIENT</span><span>SILENCE</span><span>GRID</span></span>
+        <span class="pills dim"><span>1 BAR</span><span>1/2</span><span>1/4</span><span class="on">1/8</span><span>1/16</span><span>1/32</span></span>
+        <span class="pills dim"><span class="on">STRAIGHT</span><span>DOT</span><span>TRIP</span></span>
+        <span class="tools"><button class="on">↖</button><button>🔈</button><button>🔒</button><button>✎</button></span>
+        <span class="pills"><span>◄ REV</span><span>MUTE SEL</span></span>
+        <span class="grow"></span>
+        <span class="pills"><span class="on">▶ PREVIEW</span><span>RATCHET</span></span>
+        <span class="pills"><span class="on">FREE</span><span>LOCK</span></span>
+      </div>
+      <div class="knobs" id="knobs"></div>
+      <div class="foot">
+        <span><b>5</b> slices · <b>41%</b> sound · <b>160 ms</b> avg · <b>2.00 s</b></span>
+        <span class="edited">2 moved · 1 locked</span><button>Re-detect</button>
+        <span class="grow"></span>
+        <span>1/8 · 120.0 BPM · chop every 0.250 s</span>
+        <button class="primary">Write slices</button><span class="pills"><span class="on">WAVs</span><span>+ MIDI</span><span>+ SFZ</span></span>
+      </div>
+      <div class="list" id="list"></div>
+    </div>
+  </div>
+</div>
+<div class="note" style="left:180px;top:70px"><b>Slices on the main waveform</b>Coloured wash + numbered tag per slice. Zooms and scrolls with the waveform, like markers do.</div>
+<div class="note" id="nEdge"><b>Drag a slice edge</b>Edges widen to a grip on hover; drag shows the new start/length. Snaps to zero-crossings unless ⌥ is held.</div>
+<div class="note" id="nPlay"><b>Click inside a slice</b>Auditions it through the engine (main playhead runs). Clicks in the gaps still seek / select as normal.</div>
+<div class="note" id="nRuler"><b>S / E flags (Ratchet) + ▽ cuts (ReCycle)</b>S/E bound what plays and is written; drag between them to move the region, double-click for the whole sound. Teal ticks = grid lines.</div>
+<div class="note n-dock"><b>Dock, Ratchet style</b>Pill row for mode / grid / feel, one knob row grouped Detect · Grid · Slice (Grid knobs dim unless GRID mode), status footer, list in columns. Knobs are the app’s own knob().</div>
+<script>
+const SR = 44100, N = SR * 2, mono = new Float32Array(N);
+const burst = (at, len) => { const s = Math.round(at*SR), m = Math.round(len*SR);
+  for (let i = 0; i < m; i++) mono[s+i] = 0.8*Math.exp(-i/(m/4))*Math.sin(i*2*Math.PI*220/SR); };
+burst(0.1,.15); burst(0.5,.15); burst(0.9,.3); burst(1.4,.12); burst(1.8,.015);
+const SEGS = [[3584,21504],[21504,38912],[38912,60928],[60928,78848],[78848,86000]];
+const COL = ['#00e5ff','#ff2d6b','#00ff99','#ffaa00','#c084fc'];
+function wave(c, color) {
+  const r = c.getBoundingClientRect(), d = devicePixelRatio || 1;
+  c.width = r.width*d; c.height = r.height*d; const g = c.getContext('2d'); g.scale(d,d);
+  const W = r.width, H = r.height, step = N / W; g.fillStyle = color;
+  for (let x = 0; x < W; x++) { let mn=0,mx=0; for (let j=Math.floor(x*step); j<(x+1)*step; j++){ if(mono[j]<mn)mn=mono[j]; if(mono[j]>mx)mx=mono[j]; }
+    g.fillRect(x, H/2 - mx*H*0.55, 1, Math.max(1,(mx-mn)*H*0.55)); }
+}
+function draw() {
+  wave(document.getElementById('ov'), '#2db84a');
+  wave(document.getElementById('wave'), '#39ff5a');
+  const lane = document.getElementById('lane');
+  lane.querySelectorAll('.slice,.playhead').forEach(e => e.remove());
+  const W = lane.clientWidth;
+  SEGS.forEach(([s,e], i) => {
+    const el = document.createElement('div');
+    el.className = 'slice' + (i === 2 ? ' current' : '') + (i === 3 ? ' muted' : '');
+    el.style.left = (s/N*100)+'%'; el.style.width = ((e-s)/N*100)+'%'; el.style.color = COL[i];
+    el.innerHTML = `<div class="wash" style="background:${COL[i]}"></div><span class="tag" style="background:${COL[i]}">${i+1}</span>
+      <div class="edge start${i===1?' hot':''}" style="left:0"><span class="grip"></span></div>
+      <div class="edge end" style="left:100%"></div>`;
+    if (i === 1) el.insertAdjacentHTML('beforeend', `<span class="readout" style="left:8px">start 0.488 s · 174 ms</span>`);
+    lane.append(el);
+  });
+  lane.insertAdjacentHTML('beforeend', `<div class="outside" style="left:0;width:${3000/N*100}%"></div><div class="outside" style="left:${86000/N*100}%;right:0"></div>`);
+  const ru = document.getElementById('ruler'); ru.innerHTML = '';
+  for (let b = 0; b < 4; b++) ru.insertAdjacentHTML('beforeend', `<span class="bar" style="left:${(3000 + b*20750)/N*100}%">${b+1}.${'1'}</span>`);
+  SEGS.forEach(([s0], i) => ru.insertAdjacentHTML('beforeend', `<span class="tri${i===2?' lock':''}" style="left:${s0/N*100}%;color:${COL[i]}"></span>`));
+  ru.insertAdjacentHTML('beforeend', `<span class="flag" style="left:${3000/N*100}%;background:#9b87f5">S</span><span class="flag" style="left:calc(${86000/N*100}% - 12px);background:#e05bb5">E</span>`);
+  let t = '<div class="ticks">'; for (let k = 3000; k < 86000; k += 5512) t += `<i style="left:${k/N*100}%"></i>`; lane.insertAdjacentHTML('beforeend', t + '</div><div class="hint">drag S / E — chop region · drag between = move · double-click = whole sound · drag ▽ = move a cut</div>');
+  const K = [['DETECT',[['SENS','60',.6,'#9b87f5'],['GATE','off',0,'#f39a3b'],['MIN','40 ms',.1,'#9b87f5'],['PAD','12 ms',.25,'#9b87f5']]],
+             ['GRID',[['NUDGE','0%',.5,'#e05bb5'],['SHUFFLE','55%',.55,'#f39a3b'],['SMOOTH','3 ms',.12,'#2ec4b6']]],
+             ['SLICE',[['TAIL','80 ms',.33,'#2ec4b6'],['PITCH','0.0 st',.5,'#9b87f5'],['GAIN','+0.0 dB',.5,'#9b87f5']]]];
+  const arc = (f,c) => { const r=18, a0=Math.PI*0.75, a1=a0+Math.PI*1.5*f, x=(a)=>24+r*Math.cos(a), y=(a)=>24+r*Math.sin(a), big=(a1-a0)>Math.PI?1:0;
+    return `<svg width="48" height="44" viewBox="0 0 48 44"><path d="M${x(a0)} ${y(a0)} A${r} ${r} 0 1 1 ${x(Math.PI*2.25)} ${y(Math.PI*2.25)}" stroke="rgba(255,255,255,.12)" stroke-width="3" fill="none" stroke-linecap="round"/>`+
+      (f>0?`<path d="M${x(a0)} ${y(a0)} A${r} ${r} 0 ${big} 1 ${x(a1)} ${y(a1)}" stroke="${c}" stroke-width="3" fill="none" stroke-linecap="round"/>`:'')+
+      `<circle cx="24" cy="24" r="13" fill="#0e1116" stroke="rgba(255,255,255,.08)"/><line x1="24" y1="24" x2="${24+11*Math.cos(a1)}" y2="${24+11*Math.sin(a1)}" stroke="#eef" stroke-width="1.7" stroke-linecap="round"/></svg>`; };
+  document.getElementById('knobs').innerHTML = K.map(([g,ks],gi) => `<div class="kgroup"${gi?'':' style="border:0;padding-left:0"'}>` + ks.map(([l,v,f,c]) => `<div class="kn${g==='GRID'?' off':''}"><span class="l">${l}</span>${arc(f,c)}<span class="v">${v}</span></div>`).join('') + '</div>').join('');
+  const ph = document.createElement('div'); ph.className = 'playhead'; ph.style.left = (46000/N*100)+'%'; lane.append(ph);
+  const lr = lane.getBoundingClientRect();
+  const nE = document.getElementById('nEdge'); nE.style.left = (lr.left + SEGS[1][0]/N*W - 120)+'px'; nE.style.top = (lr.top + lr.height*0.62)+'px';
+  const nR = document.getElementById('nRuler'); nR.style.left = (lr.left + SEGS[2][0]/N*W + 30)+'px'; nR.style.top = (lr.top + lr.height*0.55)+'px';
+  const nP = document.getElementById('nPlay'); nP.style.left = (lr.left + SEGS[3][0]/N*W + 12)+'px'; nP.style.top = (lr.top + 40)+'px';
+  const list = document.getElementById('list'); list.innerHTML = '';
+  const badges = [['tail ↓53ms',1],['tail ↓50ms',1],['tail 80ms',0],['tail ↓43ms',1],['tail ↓13ms',1]];
+  SEGS.forEach(([s,e],i) => list.insertAdjacentHTML('beforeend',
+    `<div class="row${i===2?' current':''}"><span class="i">${i+1}</span><i class="dot" style="background:${COL[i]}"></i><span class="n">break_000${i+1}.wav</span>
+     <span class="num">${(s/SR).toFixed(3)}s</span><span class="num">${((e-s)/SR*1000).toFixed(0)}ms</span><span class="num">${i===2?'0.0':'-1.2'}dB</span>
+     <span class="badge${badges[i][1]?' cl':''}">${badges[i][0]}</span><span class="p">▶</span></div>`));
+}
+addEventListener('resize', draw); draw();
+</script>
+</body>
+</html>

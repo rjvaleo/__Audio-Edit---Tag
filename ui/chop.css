@@ -1,51 +1,160 @@
-/* The Chop panel. See ui/chop.js.
+/* Chop. See ui/chop.js.
  *
- * Tight: one strip of controls across the top, the waveform under it taking
- * what width there is, and the slice list beside it at a fixed width. */
+ * The slices are on the main waveform: `.chop-layer` sits on the lane, above
+ * the waveform and the grain marks, below the playhead. The panel is only the
+ * controls and the list, laid out the way Ratchet lays its panel out: a row of
+ * pills, a row of knobs in named groups, a footer that says what the grid is,
+ * and the slice list running in columns. Tight: nothing has room to spare. */
 
-.chop-body {
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 8px 12px;
+/* ------------------------------------------------------------ on the lane */
+
+.chop-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
+.chop-layer.hidden { display: none; }
+.lane.chop-pencil { cursor: crosshair; }
+
+.chop-out { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, .55); }
+
+.chop-slice { position: absolute; top: 16px; bottom: 0; pointer-events: auto; cursor: pointer; }
+.lane.chop-pencil .chop-slice { cursor: crosshair; }
+.chop-wash { position: absolute; inset: 0; background: currentColor; opacity: .1; }
+.chop-slice:hover .chop-wash { opacity: .16; }
+.chop-slice.picked .chop-wash { opacity: .2; }
+.chop-slice.current .chop-wash { opacity: .26; }
+.chop-slice.muted .chop-wash {
+  opacity: 1;
+  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .09) 0 4px, transparent 4px 8px);
+}
+.chop-slice.muted .chop-tag { background: var(--text-dimmer) !important; }
+.chop-tag {
+  position: absolute; top: 3px; left: 3px; padding: 0 4px; border-radius: 2px;
+  font: 600 10px/14px var(--mono); color: #000; white-space: nowrap;
 }
 
-.chop-bar {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+.chop-edge {
+  position: absolute; top: -16px; bottom: 0; left: 0; width: 7px; margin-left: -3px;
+  cursor: ew-resize; pointer-events: auto;
+}
+.chop-edge.end { left: 100%; }
+.chop-edge::after {
+  content: ''; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px;
+  background: currentColor; opacity: .75;
+}
+.chop-edge.end::after { opacity: .4; }
+.chop-edge:hover::after { left: 2px; width: 2px; opacity: 1; }
+
+.chop-thr { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(255, 255, 255, .28); }
+
+.chop-ticks { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; }
+.chop-ticks i { position: absolute; bottom: 0; width: 1px; height: 6px; background: #2ec4b6; }
+
+.chop-ruler {
+  position: absolute; left: 0; right: 0; top: 0; height: 16px; pointer-events: auto;
+  background: rgba(10, 12, 16, .82); border-bottom: 1px solid var(--line-2);
+  cursor: grab; font: 9px/16px var(--mono); color: var(--text-dimmer);
+}
+.chop-bar { position: absolute; top: 0; bottom: 0; padding-left: 3px; border-left: 1px solid var(--line-2); pointer-events: none; }
+.chop-cut {
+  position: absolute; bottom: 1px; width: 0; height: 0; margin-left: -5px; cursor: ew-resize;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid currentColor;
+}
+.chop-cut::before { content: ''; position: absolute; left: -6px; top: -12px; width: 12px; height: 14px; }
+.chop-cut.locked::after { content: '🔒'; position: absolute; left: 4px; top: -15px; font-size: 8px; line-height: 1; }
+.chop-cut.going { opacity: .3; }
+.chop-flag {
+  position: absolute; top: 2px; padding: 0 4px; border-radius: 2px; cursor: ew-resize;
+  font: 700 9px/12px var(--mono); color: #000;
+}
+.chop-flag.s { background: #9b87f5; }
+.chop-flag.e { background: #e05bb5; transform: translateX(-100%); }
+
+.chop-hint {
+  position: absolute; left: 6px; bottom: 8px; font: 10px var(--mono); color: var(--text-dimmer);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 12px);
+}
+.chop-ph {
+  position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+  background: var(--text); box-shadow: 0 0 6px rgba(255, 255, 255, .6);
+}
+.chop-ph.hidden, .chop-readout.hidden { display: none; }
+.chop-readout {
+  position: absolute; top: 20px; margin-left: 8px; padding: 1px 5px; border-radius: 2px;
+  font: 10px var(--mono); color: var(--text); background: var(--surface-3); white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ the panel */
+
+.chop-body { display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; }
+
+.chop-hdr, .chop-foot, .chop-fx {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
   font-size: var(--fs-s, 11px); color: var(--text-dim);
 }
-.chop-ctl { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.chop-ctl input[type=range] { width: 96px; }
-.chop-ctl output { min-width: 5ch; color: var(--text); font-variant-numeric: tabular-nums; }
-.chop-tail input[type=range]:disabled + output { color: var(--text-dimmer); }
-.chop-cycles { color: var(--text-dimmer); min-width: 9ch; }
+.chop-title { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #b9a6ff; }
+.chop-grow { flex: 1; }
+
+.chop-pills { display: inline-flex; align-items: center; gap: 2px; }
+.chop-pills button, .chop-on, .chop-capture {
+  font: 600 9px/14px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  padding: 1px 7px; border-radius: 9px; border: 1px solid var(--line-2);
+  background: none; color: var(--text-dim); cursor: pointer; white-space: nowrap;
+}
+.chop-pills button:hover, .chop-on:hover, .chop-capture:hover { color: var(--text); border-color: var(--line-3); }
+.chop-pills button.on, .chop-on.on { border-color: #9b87f5; color: #e0d8ff; background: rgba(155, 135, 245, .2); }
+.chop-pills button.lit:not(.on) { border-color: rgba(46, 196, 182, .55); color: #8ee6dc; }
+.chop-pills.dim { opacity: .4; }
+.chop-tools button { font-size: 10px; text-transform: none; letter-spacing: 0; }
+.chop-presets select {
+  font: 600 9px var(--mono); height: 16px; max-width: 110px; padding: 0 2px;
+  background: var(--well); color: var(--text-dim); border: 1px solid var(--line-2); border-radius: 3px;
+}
+
+.chop-knobs { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 0; }
+.chop-group { display: flex; align-items: flex-start; gap: 2px; padding: 0 8px; border-left: 1px solid var(--line-2); position: relative; }
+.chop-group:first-child { border-left: 0; padding-left: 0; }
+.chop-group.hidden { display: none; }
+.chop-gname {
+  writing-mode: vertical-rl; transform: rotate(180deg); align-self: center;
+  font: 600 9px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-dimmer);
+}
+.chop-knobs .knob { width: 52px; }
+.chop-knobs .knob svg { width: 40px; height: 40px; }
+.chop-knobs .knob .v { min-width: 48px; }
+.chop-knobs .knob.hidden { display: none; }
+.chop-knobs .knob.off { opacity: .4; }
+.chop-group[data-g="slice"] .chop-on { align-self: center; }
+.chop-cycles { align-self: center; color: var(--text-dimmer); font-size: 10px; min-width: 8ch; }
+.chop-fx { padding-top: 2px; border-top: 1px solid var(--line); }
+.chop-fx-knobs { flex: 1; align-items: center; gap: 2px; }
+.chop-fx-knobs .chop-pills { margin-right: 6px; }
+
 .chop-stat { white-space: nowrap; }
 .chop-stat b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.chop-edited { color: var(--warn); white-space: nowrap; }
+.chop-edited:empty { display: none; }
+.chop-status { font: 10px var(--mono); color: var(--text-dim); white-space: nowrap; }
 .chop-said { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-
-.chop-main {
-  flex: 1; min-height: 140px;
-  display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 10px;
-}
-.chop-wave {
-  width: 100%; height: 100%; min-height: 140px; display: block;
-  background: var(--sink); border: 1px solid var(--line); border-radius: 6px;
-}
+.chop-foot > .primary { padding: 2px 10px; font-size: var(--fs-s, 11px); }
 
 .chop-list {
-  overflow-y: auto; min-height: 0;
+  flex: 1; min-height: 40px; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); align-content: start;
   border: 1px solid var(--line); border-radius: 6px;
   font-size: var(--fs-s, 11px);
 }
 .chop-row {
-  display: grid; grid-template-columns: 2.6ch 8px minmax(0, 1fr) 7ch 6ch 6.5ch 9ch 22px;
+  display: grid; grid-template-columns: 2.6ch 8px minmax(0, 1fr) 3ch 7ch 6ch 6.5ch 9ch 16px;
   align-items: center; gap: 6px;
-  padding: 3px 6px; cursor: pointer;
-  border-bottom: 1px solid var(--line);
+  padding: 2px 6px; cursor: pointer;
+  border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
 }
 .chop-row:hover { background: var(--surface-3); }
+.chop-row.picked { background: var(--surface-2); }
 .chop-row.current { background: var(--well); }
+.chop-row.muted .chop-name { color: var(--text-dimmer); text-decoration: line-through; }
 .chop-idx { color: var(--text-dimmer); text-align: right; font-variant-numeric: tabular-nums; }
 .chop-dot { width: 8px; height: 8px; border-radius: 50%; display: block; }
 .chop-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chop-flags { font-size: 9px; color: var(--warn); white-space: nowrap; }
 .chop-num { color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
 .chop-play {
   background: none; border: 0; padding: 0; cursor: pointer;

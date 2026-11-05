@@ -4756,13 +4756,25 @@ fn api_chop_save(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(404, "no such file in the library");
     }
     // Only a name: whatever path it carries is flattened into the folder.
+    // A slice is a WAV. Beside the slices can go the MIDI file that plays them
+    // in their places and the SFZ that maps them to keys; nothing else.
     let name = crate::capture::safe(req.param("name").unwrap_or(""));
-    if !name.to_ascii_lowercase().ends_with(".wav") || name.len() <= 4 {
-        return Response::error(400, "a slice is named for a .wav file");
-    }
+    let lower = name.to_ascii_lowercase();
     let b = &req.body;
-    if b.len() < 44 || &b[0..4] != b"RIFF" || &b[8..12] != b"WAVE" {
-        return Response::error(400, "a slice is a WAV file");
+    if lower.ends_with(".wav") && name.len() > 4 {
+        if b.len() < 44 || &b[0..4] != b"RIFF" || &b[8..12] != b"WAVE" {
+            return Response::error(400, "a slice is a WAV file");
+        }
+    } else if lower.ends_with(".mid") && name.len() > 4 {
+        if b.len() < 14 || &b[0..4] != b"MThd" {
+            return Response::error(400, "a .mid is a MIDI file");
+        }
+    } else if lower.ends_with(".sfz") && name.len() > 4 {
+        if b.len() > 1 << 20 || std::str::from_utf8(b).is_err() {
+            return Response::error(400, "an .sfz is a text file");
+        }
+    } else {
+        return Response::error(400, "a slice is named for a .wav, .mid or .sfz file");
     }
 
     let source = Path::new(rel);
