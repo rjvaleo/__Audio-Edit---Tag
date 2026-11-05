@@ -35,6 +35,85 @@ pub fn month_file(t_ms: f64) -> String {
     format!("events-{y:04}-{m:02}.jsonl")
 }
 
+/// `YYYY-MM-DD` for a time in epoch milliseconds, by UTC.
+pub fn day(t_ms: f64) -> String {
+    let (y, m, d) = civil(t_ms.div_euclid(86_400_000.0) as i64);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Epoch milliseconds at the start of a `YYYY-MM-DD` (UTC), or None.
+pub fn day_start(day: &str) -> Option<f64> {
+    let mut it = day.splitn(3, '-').map(|p| p.parse::<i64>().ok());
+    let (y, m, d) = (it.next()??, it.next()??, it.next()??);
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    // Hinnant's days_from_civil.
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some((era * 146_097 + doe - 719_468) as f64 * 86_400_000.0)
+}
+
+/// Append one line to a file in the folder. For the sampler's rows, which
+/// arrive one at a time and must not interleave with a batch.
+pub fn append_line(data_dir: &Path, name: &str, line: &str) -> Result<(), String> {
+    let _guard = WRITE.lock().unwrap_or_else(|p| p.into_inner());
+    let d = dir(data_dir);
+    std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(d.join(name)).map_err(|e| e.to_string())?;
+    f.write_all(format!("{line}\n").as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Hold the folder's write lock for a rewrite. For `retention`.
+pub fn lock() -> std::sync::MutexGuard<'static, ()> {
+    WRITE.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Lines with `from <= t < to` from every file whose name starts with
+/// `prefix` and lies in the range by its name, as one JSON array text.
+pub fn read_kind(data_dir: &Path, prefix: &str, from: f64, to: f64) -> String {
+    let d = dir(data_dir);
+    let lo = day(from.max(0.0));
+    let hi = day(to.clamp(0.0, 1e15) - 1.0);
+    let mut names: Vec<String> = std::fs::read_dir(&d)
+        .map(|it| it.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+        .unwrap_or_default();
+    names.retain(|n| n.starts_with(prefix) && n.ends_with(".jsonl"));
+    names.sort();
+    let mut rows: Vec<(f64, String)> = Vec::new();
+    for n in names {
+        // `perf-2026-11-04.jsonl` or `spikes-2026-11.jsonl`: compare by the
+        // date part, as far as the name goes.
+        let stamp = &n[prefix.len()..n.len() - 6];
+        if stamp > hi.as_str() || (stamp.len() == 10 && stamp < lo.as_str()) || (stamp.len() == 7 && stamp < &lo[..7]) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(d.join(&n)) else { continue };
+        for line in text.lines() {
+            let Some(v) = json::parse(line) else { continue };
+            if let Some(t) = time_of(&v) {
+                if t >= from && t < to {
+                    rows.push((t, line.to_string()));
+                }
+            }
+        }
+    }
+    rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = String::from("[");
+    for (i, (_, l)) in rows.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(l);
+    }
+    out.push(']');
+    out
+}
+
 /// Days since 1970-01-01 to a calendar date (Hinnant's algorithm).
 fn civil(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
@@ -184,11 +263,18 @@ pub fn merge_catalogue(data_dir: &Path, body: &str) -> Result<usize, String> {
 pub fn clear(data_dir: &Path) -> Result<(), String> {
     let _guard = WRITE.lock().unwrap_or_else(|p| p.into_inner());
     let d = dir(data_dir);
+    // The retention settings are a choice, not a record: they survive.
+    let keep = std::fs::read(d.join("RETENTION.json")).ok();
     match std::fs::remove_dir_all(&d) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
     }
+    if let Some(bytes) = keep {
+        std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+        std::fs::write(d.join("RETENTION.json"), bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -205,6 +291,27 @@ mod tests {
     // 2026-11-04T12:00:00Z and 2026-10-31T23:59:59Z.
     const NOV: f64 = 1_793_793_600_000.0;
     const OCT: f64 = 1_793_491_199_000.0;
+
+    #[test]
+    fn days_go_both_ways() {
+        assert_eq!(day(NOV), "2026-11-04");
+        assert_eq!(day_start("2026-11-04"), Some(1_793_750_400_000.0));
+        assert_eq!(day_start("2000-02-29").map(day), Some("2000-02-29".into()));
+        assert_eq!(day_start("1970-01-01"), Some(0.0));
+        assert_eq!(day_start("nonsense"), None);
+    }
+
+    #[test]
+    fn a_kind_is_read_by_its_dated_file_names() {
+        let d = scratch("kind");
+        append_line(&d, "perf-2026-11-04.jsonl", &format!(r#"{{"t":{NOV},"k":"perf"}}"#)).unwrap();
+        append_line(&d, "perf-2026-10-31.jsonl", &format!(r#"{{"t":{OCT},"k":"perf"}}"#)).unwrap();
+        append_line(&d, "spikes-2026-11.jsonl", &format!(r#"{{"t":{NOV},"k":"spike"}}"#)).unwrap();
+        let day_ms = day_start("2026-11-04").unwrap();
+        assert_eq!(json::parse(&read_kind(&d, "perf-", day_ms, 1e15)).unwrap().arr().unwrap().len(), 1);
+        assert_eq!(json::parse(&read_kind(&d, "perf-", 0.0, 1e15)).unwrap().arr().unwrap().len(), 2);
+        assert_eq!(json::parse(&read_kind(&d, "spikes-", day_ms, 1e15)).unwrap().arr().unwrap().len(), 1);
+    }
 
     #[test]
     fn a_time_lands_in_its_utc_month() {

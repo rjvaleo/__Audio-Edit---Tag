@@ -255,7 +255,10 @@ test('the tab draws real data: controls, never touched, paths, sessions, date ra
   await expect(view.locator('.an-srow')).toHaveCount(all - 1);
 
   await view.locator('[data-antab="mouse"]').click();
-  await expect(view.locator('#anMouseNote')).toContainText('15 samples');
+  // The fifteen seeded, plus whatever this page's own pointer added meanwhile.
+  await expect(view.locator('#anMouseNote')).toContainText('samples');
+  const samples = Number((await view.locator('#anMouseNote').textContent()).match(/([\d,]+) samples/)[1].replace(/,/g, ''));
+  expect(samples).toBeGreaterThanOrEqual(15);
   const lit = await page.evaluate(() => {
     const c = document.getElementById('anMouseCanvas');
     const ctx = c.getContext('2d');
@@ -270,4 +273,125 @@ test('the tab draws real data: controls, never touched, paths, sessions, date ra
   const { events } = await stored(page);
   const modes = events.filter((e) => e.k === 'mode').map((e) => e.m);
   expect(modes).toEqual(['analytics', 'overview']);
+});
+
+// ----------------------------------------------------------- performance
+
+test('the sampler writes rows of CPU and memory, and times an export', async ({ page, request }) => {
+  await ready(page);
+  await request.post('/api/analytics/perf/sample');
+  let perf = await (await request.get('/api/analytics/perf')).json();
+  const row = perf.perf[perf.perf.length - 1];
+  expect(row.k).toBe('perf');
+  expect(row.act).toBe('quiet');
+  expect(typeof row.cpu).toBe('number');
+  expect(row.rss).toBeGreaterThan(1);
+  // An export, however short, is one timed row.
+  await page.evaluate(async () => {
+    await postJSON('/api/export', { p: 'kit/tone.wav', bits: 16 });
+    for (let i = 0; i < 100 && (await api('/api/export')).running; i++) await new Promise((r) => setTimeout(r, 50));
+  });
+  await expect.poll(async () => (await (await request.get('/api/analytics/perf')).json()).exports.length, { timeout: 5000 }).toBe(1);
+  perf = await (await request.get('/api/analytics/perf')).json();
+  const x = perf.exports[0];
+  expect(x.kind).toBe('mix');
+  expect(x.ok).toBe(true);
+  expect(x.file).toContain('tone');
+  expect(x.file).not.toContain('/private');
+});
+
+test('a long frame in the interface is recorded with where it happened', async ({ page }) => {
+  await ready(page);
+  const supported = await page.evaluate(() => (PerformanceObserver.supportedEntryTypes || []).some((t) => t === 'long-animation-frame' || t === 'longtask'));
+  test.skip(!supported, 'this browser reports no long frames');
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => {
+    const t = performance.now();
+    while (performance.now() - t < 140) { /* hold the frame */ }
+    setTimeout(done, 300);
+  })));
+  await expect.poll(async () => (await stored(page)).events.filter((e) => e.k === 'lof').length).toBeGreaterThan(0);
+  const e = (await stored(page)).events.find((x) => x.k === 'lof');
+  expect(e.ms).toBeGreaterThanOrEqual(100);
+  expect(e.m).toBe('overview');
+});
+
+test('retention: settings stick, a purge rolls old days into summaries, and the tab still counts them', async ({ page, request }) => {
+  await ready(page);
+  const old = Date.now() - 20 * 86_400_000;
+  await request.post('/api/analytics', { data: [
+    { t: old, s: 's-gone', k: 'session', m: 'edit' },
+    { t: old + 5_000, s: 's-gone', k: 'ctl', m: 'edit', dk: 'stretch', c: 'purgedSlider', ck: 'slider', p: 'grainControls', l: 'Purged slider', min: 1, max: 4, to: 2, lo: 0, hi: 10 },
+    { t: old + 9_000, s: 's-gone', k: 'click', m: 'edit', c: 'purgedButton', ck: 'button', p: 'transportBar', l: 'Purged button' },
+  ] });
+  const st = await (await request.post('/api/analytics/retention', { data: { events: 7, capMB: 1 } })).json();
+  expect(st.retention.events).toBe(7);
+  expect(st.retention.capMB).toBe(5);   // clamped: never below 5 MB
+  const report = await (await request.post('/api/analytics/purge')).json();
+  expect(report.summarised).toBeGreaterThanOrEqual(1);
+  const after = await (await request.get('/api/analytics')).json();
+  expect(after.events.find((e) => e.s === 's-gone')).toBeFalsy();
+  const day = after.daily.find((d) => d.controls?.purgedSlider);
+  expect(day.controls.purgedSlider.n).toBe(1);
+  expect(day.controls.purgedSlider.max).toBe(4);
+
+  await page.evaluate(() => openAnalytics());
+  const view = page.locator('#analyticsView');
+  await view.locator('[data-anrange="30d"]').click();
+  await expect(view.locator('#anCtlRows')).toContainText('Purged slider');
+  await expect(view.locator('#anCtlRows .an-row', { hasText: 'Purged slider' })).toContainText('1–4');
+
+  // The Storage page shows it and changes it.
+  await view.locator('[data-antab="storage"]').click();
+  await expect(view.locator('#anStoreTotal')).toContainText('of a 5.0 MB cap');
+  await expect(view.locator('#anStoreLast')).toContainText('days summarised');
+  await view.locator('select[data-ret="events"]').selectOption('90');
+  await expect.poll(async () => (await (await request.get('/api/analytics/storage')).json()).retention.events).toBe(90);
+  await request.post('/api/analytics/retention', { data: { capMB: 100 } });
+});
+
+test('the Performance page draws the sampler rows, the exports and the frames', async ({ page, request }) => {
+  await ready(page);
+  await request.post('/api/analytics/perf/sample');
+  await page.evaluate(async () => {
+    await postJSON('/api/export', { p: 'kit/tone.wav', bits: 16 });
+    for (let i = 0; i < 100 && (await api('/api/export')).running; i++) await new Promise((r) => setTimeout(r, 50));
+  });
+  await expect.poll(async () => (await (await request.get('/api/analytics/perf')).json()).exports.length, { timeout: 5000 }).toBeGreaterThan(0);
+  await page.evaluate(() => openAnalytics());
+  const view = page.locator('#analyticsView');
+  await view.locator('[data-antab="perf"]').click();
+  await expect(view.locator('#anPerf')).toBeVisible();
+  await expect(view.locator('#anPerfKpis')).toContainText('SERVER CPU');
+  await expect(view.locator('#anPerfKpis')).toContainText('MB');
+  await expect(view.locator('#anExports')).toContainText('mix');
+  await expect(view.locator('#anExports')).toContainText('tone');
+  await expect(view.locator('#anDoing i').first()).toBeAttached();
+});
+
+// ----------------------------------------------------------- what it costs
+
+test('measured: one scan of the controls on screen, and a heavy month summarised', async ({ page }, info) => {
+  await ready(page);
+  await openFirstSound(page);
+  const scan = await page.evaluate(() => {
+    analytics.state.catalogued.clear();
+    const t = performance.now();
+    analytics.catalogue();
+    return performance.now() - t;
+  });
+  // A month of heavy use: 150,000 events over 60 sessions.
+  const sum = await page.evaluate(() => {
+    const ev = [], t0 = Date.now() - 30 * 86_400_000, kinds = ['ctl', 'click', 'key', 'menu', 'dock', 'mode'];
+    for (let i = 0; i < 150_000; i++) {
+      const k = kinds[i % kinds.length];
+      ev.push({ t: t0 + i * 1500, s: `s${Math.floor(i / 2500)}`, k, m: i % 7 ? 'edit' : 'room', dk: 'stretch', c: `c${i % 300}`, ck: 'slider', p: 'grainControls', l: `C ${i % 300}`, min: 1, max: 9, to: 5, d: k === 'mode' ? { from: 'overview' } : undefined });
+    }
+    const t = performance.now();
+    anSummarise(ev, {}, {});
+    return performance.now() - t;
+  });
+  info.annotations.push({ type: 'measured', description: `control scan ${scan.toFixed(1)} ms; 150k events summarised in ${sum.toFixed(0)} ms` });
+  console.log(`measured: control scan ${scan.toFixed(1)} ms; 150k events summarised in ${sum.toFixed(0)} ms`);
+  expect(scan).toBeLessThan(50);
+  expect(sum).toBeLessThan(2000);
 });

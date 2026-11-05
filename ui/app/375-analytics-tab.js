@@ -48,6 +48,8 @@ function anBuild() {
       <div class="an-tabs" role="tablist">
         <button type="button" role="tab" data-antab="overview" aria-selected="true">Overview</button>
         <button type="button" role="tab" data-antab="mouse" aria-selected="false">Mouse heat map</button>
+        <button type="button" role="tab" data-antab="perf" aria-selected="false">Performance</button>
+        <button type="button" role="tab" data-antab="storage" aria-selected="false">Storage</button>
       </div>
       <span class="an-vsep"></span>
       <span class="an-ranges"></span>
@@ -109,6 +111,59 @@ function anBuild() {
         <span class="mono an-span" id="anMouseNote"></span>
       </div>
       <div class="an-mousebox" id="anMouseBox"><canvas id="anMouseCanvas" aria-label="Mouse heat map" role="img"></canvas></div>
+    </div>
+    <div class="an-body hidden" id="anPerf">
+      <div class="an-kpis" id="anPerfKpis"></div>
+      <div class="an-pupper">
+        <section class="an-cell" aria-label="Audio engine load">
+          <div class="an-h">AUDIO ENGINE LOAD <span id="anLoadNote"></span></div>
+          <div class="an-load" id="anLoad"></div>
+          <div class="an-strips">
+            <span>doing</span><div class="an-strip" id="anDoing"></div>
+            <span>server CPU</span><div class="an-strip tall" id="anCpu"></div>
+            <span>UI long frames</span><div class="an-strip" id="anLof"></div>
+          </div>
+          <div class="an-legend an-acts"><span><i class="act-play"></i>playing</span><span><i class="act-export"></i>exporting audio</span><span><i class="act-video"></i>exporting video</span><span><i class="act-quiet"></i>quiet (every 60 s)</span><span><i class="err"></i>late blocks</span></div>
+        </section>
+        <section class="an-cell" aria-label="When it spiked">
+          <div class="an-h">WHEN IT SPIKED <span>blocks over 90%, with what was running</span></div>
+          <div class="an-prow an-rowhead"><span>TIME</span><span>WORST</span><span>LAYERS</span><span>WINDOW</span><span>RACK · PAGE</span></div>
+          <div id="anSpikes" class="an-rows"></div>
+        </section>
+      </div>
+      <div class="an-plower">
+        <section class="an-cell" aria-label="What costs the most">
+          <div class="an-h">WHAT COSTS THE MOST <span>average load while playing</span></div>
+          <div id="anCosts"></div>
+          <div class="an-empty">With against without, over the samples where something was playing. Per-effect timing in the engine itself is not built yet.</div>
+        </section>
+        <section class="an-cell" aria-label="Exports">
+          <div class="an-h">EXPORTS <span>render speed against real time</span></div>
+          <div class="an-xrow an-rowhead"><span>KIND</span><span>LENGTH</span><span>TOOK</span><span>SPEED</span><span>PEAK CPU · FILE</span></div>
+          <div id="anExports" class="an-rows"></div>
+        </section>
+        <section class="an-cell" aria-label="Interface frames">
+          <div class="an-h">INTERFACE <span>frames over 50 ms, reported by the browser</span></div>
+          <div id="anFrames"></div>
+        </section>
+      </div>
+    </div>
+    <div class="an-body hidden" id="anStorage">
+      <section class="an-cell an-store">
+        <div class="an-h">ON DISK <span id="anStoreTotal"></span><span class="an-fill"></span><span id="anStoreLast"></span></div>
+        <div class="an-stack" id="anStoreBar"></div>
+        <div class="an-legend" id="anStoreLegend"></div>
+        <div class="an-ret">
+          <span class="an-sub">WHAT</span><span class="an-sub">KEEP</span><span class="an-sub">THEN</span>
+          <span>Usage events and mouse grids</span><select data-ret="events"></select><span class="d">rolled into daily summaries, then deleted</span>
+          <span>Performance samples</span><select data-ret="perf"></select><span class="d">percentiles kept in the summaries, then deleted</span>
+          <span>Spikes and export timings</span><select data-ret="spikes"></select><span class="d">deleted</span>
+          <span>Daily summaries</span><select data-ret="daily"></select><span class="d">deleted</span>
+          <span>Folder cap</span><select data-ret="capMB"></select><span class="d">over it, the oldest detail goes first and summaries last</span>
+        </div>
+        <div class="an-h"><span class="an-fill"></span><button type="button" class="an-btn" id="anPurge">Purge now</button></div>
+        <div class="an-empty">The server checks when it starts and then once a day, on its own thread, never during an export. A day's detail is summarised before it is deleted.</div>
+      </section>
     </div>`;
   document.body.appendChild(el);
   el.querySelector('.an-ranges').innerHTML = anSeg('anrange', AN_RANGES, anv.range);
@@ -127,7 +182,9 @@ function anBuild() {
     if (b.id === 'anPause') { anSetRecording(!an.on); anRenderPause(); }
     if (b.id === 'anExport') anExport();
     if (b.id === 'anClear') anClear();
+    if (b.id === 'anPurge') anPurge();
   });
+  for (const sel of el.querySelectorAll('[data-ret]')) sel.addEventListener('change', () => anSetRetention(sel.dataset.ret, +sel.value));
   el.querySelector('#anPage').addEventListener('change', (e) => { anv.page = e.target.value; anSummariseNow(); });
   el.querySelector('#anSession').addEventListener('change', (e) => { anv.session = e.target.value; anSummariseNow(); });
   el.querySelector('#anKind').addEventListener('change', () => anRenderControls());
@@ -168,10 +225,17 @@ async function anLoad() {
   const from = anRangeFrom(anv.range);
   await analytics.flush();
   try {
-    const r = await an.fetch(`/api/analytics?from=${from}&to=${to}`);
+    const [r, p, st] = await Promise.all([
+      an.fetch(`/api/analytics?from=${from}&to=${to}`),
+      an.fetch(`/api/analytics/perf?from=${from}&to=${to}`),
+      an.fetch('/api/analytics/storage'),
+    ]);
     anv.data = await r.json();
+    anv.perf = await p.json();
+    anv.storage = await st.json();
   } catch {
-    anv.data = { events: [], catalogue: {} };
+    anv.data = { events: [], catalogue: {}, daily: [] };
+    anv.perf = { perf: [], spikes: [], exports: [] };
   }
   anv.from = from;
   anSummariseNow();
@@ -181,7 +245,14 @@ function anSummariseNow() {
   const d = anv.data || { events: [], catalogue: {} };
   const events = anv.session ? d.events.filter((e) => e.s === anv.session) : d.events;
   anv.sum = anSummarise(events, d.catalogue || {}, { page: anv.page });
+  // Days already purged to summaries count too, unless one session is chosen.
+  if (!anv.session && !anv.page) anMergeDaily(anv.sum, d.daily, new Set(d.events.map((e) => analyticsDay(e.t))));
   anv.all = anv.session ? anSummarise(d.events, {}, {}) : anv.sum;
+  const pf = anv.perf || { perf: [], spikes: [], exports: [] };
+  const sess = anv.session && anv.all.sessions.find((s) => s.id === anv.session);
+  const inS = (r) => !sess || (r.t >= sess.start && r.t <= sess.end + 10_000);
+  anv.psum = anPerfSummarise(pf.perf.filter(inS), pf.spikes.filter(inS), pf.exports.filter(inS), events);
+  anv.span = sess ? [sess.start, sess.end] : anv.all.sessions[0] ? [anv.all.sessions[0].start, anv.all.sessions[0].end] : null;
   anRender();
 }
 
@@ -199,6 +270,8 @@ function anRender() {
   for (const b of el.querySelectorAll('[data-anrange]')) { b.classList.toggle('on', b.dataset.anrange === anv.range); b.setAttribute('aria-pressed', String(b.dataset.anrange === anv.range)); }
   el.querySelector('#anOverview').classList.toggle('hidden', anv.tab !== 'overview');
   el.querySelector('#anMouse').classList.toggle('hidden', anv.tab !== 'mouse');
+  el.querySelector('#anPerf').classList.toggle('hidden', anv.tab !== 'perf');
+  el.querySelector('#anStorage').classList.toggle('hidden', anv.tab !== 'storage');
   const fmt = (t) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   el.querySelector('#anSpan').textContent = `${anv.from ? fmt(anv.from) : 'all time'} – ${fmt(Date.now())}`;
 
@@ -211,6 +284,8 @@ function anRender() {
     `<option value="${anEsc(s.id)}" ${s.id === anv.session ? 'selected' : ''}>${anEsc(anWhen(s.start))} · ${anDuration(s.ms)}</option>`).join('')}`;
 
   if (anv.tab === 'mouse') { anRenderMouse(); return; }
+  if (anv.tab === 'perf') { anRenderPerf(); return; }
+  if (anv.tab === 'storage') { anRenderStorage(); return; }
   anRenderKpis();
   anRenderPages();
   anRenderControls();
@@ -427,10 +502,108 @@ function anRenderMouse() {
   ctx.drawImage(small, 0, 0, w, h);
 }
 
+// ------------------------------------------------------------- performance
+
+function analyticsDay(t) {
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+const anPct = (v) => (v == null ? '—' : `${Math.round(v * 100)}%`);
+
+function anRenderPerf() {
+  const p = anv.psum;
+  const clock = (t) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const k = [
+    ['AUDIO LOAD', anPct(p.load), 'avg while playing', p.load > 0.7 ? 'warn' : ''],
+    ['WORST BLOCK', anPct(p.worst?.worst), p.worst ? `${clock(p.worst.t)}${p.worst.layers != null ? ` · ${p.worst.layers} layers` : ''}` : 'no samples', (p.worst?.worst || 0) > 1 ? 'bad' : (p.worst?.worst || 0) > 0.9 ? 'warn' : ''],
+    ['LATE BLOCKS', p.late, p.latePerHour != null ? `${p.latePerHour.toFixed(1)} / hour played` : '—', p.late ? 'bad' : ''],
+    ['LOWEST LAYER CAP', Number.isFinite(p.minCap) ? p.minCap : '—', 'while playing', ''],
+    ['SERVER CPU', p.cpu == null ? '—' : `${Math.round(p.cpu)}%`, `peak ${Math.round(p.cpuMax)}% (100% = one core)`, ''],
+    ['MEMORY', p.rss ? `${Math.round(p.rss)} MB` : '—', 'peak resident', ''],
+    ['UI LONG FRAMES', p.lof, p.lof ? `worst ${p.lofWorst} ms` : 'none', p.lofWorst > 150 ? 'warn' : ''],
+    ['VIDEO EXPORT', p.videoSpeed ? `×${p.videoSpeed.toFixed(1)}` : '—', 'median speed against real time', ''],
+  ];
+  anv.el.querySelector('#anPerfKpis').innerHTML = k.map(([l, v, s, c]) =>
+    `<div class="an-kpi"><span class="l">${l}</span><span class="v mono ${c}">${anEsc(v)}</span><span class="s">${anEsc(s)}</span></div>`).join('');
+
+  // The timeline: the chosen session, or the latest.
+  const span = anv.span;
+  const rows = span ? p.rows.filter((r) => r.t >= span[0] - 60_000 && r.t <= span[1] + 60_000) : p.rows;
+  const t0 = span ? span[0] : rows[0]?.t || 0, t1 = span ? span[1] : rows[rows.length - 1]?.t || 1;
+  const w = Math.max(1, t1 - t0), x = (t) => Math.min(100, Math.max(0, (t - t0) / w * 100));
+  const step = Math.max(0.2, 100 / Math.max(1, rows.length));
+  const y = (v) => Math.min(100, v / 1.3 * 100);
+  anv.el.querySelector('#anLoadNote').textContent = span ? `${anWhen(span[0])} · share of the real-time budget per sample · band = average, mark = worst block` : 'no session in range';
+  anv.el.querySelector('#anLoad').innerHTML = `<div class="an-budget" style="bottom:${y(1)}%"><span>100% budget</span></div><div class="an-half" style="bottom:${y(0.5)}%"><span>50%</span></div>`
+    + rows.filter((r) => r.mean != null).map((r) => `<i style="left:${x(r.t).toFixed(2)}%;width:${step.toFixed(2)}%;height:${y(r.mean).toFixed(1)}%"></i><b class="${r.worst > 1 ? 'bad' : ''}" style="left:${x(r.t).toFixed(2)}%;width:${step.toFixed(2)}%;bottom:${y(r.worst || 0).toFixed(1)}%"></b>`).join('')
+    + rows.filter((r) => r.late).map((r) => `<u style="left:${x(r.t).toFixed(2)}%" title="${r.late} late"></u>`).join('');
+  anv.el.querySelector('#anDoing').innerHTML = rows.map((r) => `<i class="act-${anEsc(r.act)}" style="left:${x(r.t).toFixed(2)}%;width:${step.toFixed(2)}%"></i>`).join('');
+  const cmax = Math.max(100, ...rows.map((r) => r.cpu || 0));
+  anv.el.querySelector('#anCpu').innerHTML = rows.map((r) => `<i style="left:${x(r.t).toFixed(2)}%;width:${step.toFixed(2)}%;height:${((r.cpu || 0) / cmax * 100).toFixed(0)}%"></i>`).join('');
+  const lof = (anv.data?.events || []).filter((e) => e.k === 'lof' && (!span || (e.t >= t0 && e.t <= t1)));
+  anv.el.querySelector('#anLof').innerHTML = lof.map((e) => `<b style="left:${x(e.t).toFixed(2)}%" title="${e.ms} ms"></b>`).join('');
+
+  anv.el.querySelector('#anSpikes').innerHTML = p.spikes.map((r) => `<div class="an-prow">
+    <span class="mono d">${clock(r.t)}</span><span class="mono ${r.worst > 1 ? 'bad' : 'warn'}">${anPct(r.worst)}</span><span class="mono">${r.layers ?? '—'}</span>
+    <span class="mono">${r.win != null ? `${Math.round(r.win)} ms` : '—'}</span><span class="d">${anEsc([(r.fx || []).join(', ') || '—', r.page].filter(Boolean).join(' · '))}</span></div>`).join('')
+    || '<div class="an-empty">No block has passed 90% in this range.</div>';
+  const cm = Math.max(0.01, ...p.costs.map((c) => Math.abs(c.v)));
+  anv.el.querySelector('#anCosts').innerHTML = p.costs.map((c) => anBarRow(c.n, c.abs ? anPct(c.v) : `${c.v >= 0 ? '+' : '−'}${Math.round(Math.abs(c.v) * 100)}%`, Math.abs(c.v) / cm * 100)).join('')
+    || '<div class="an-empty">Not enough playing time yet to compare.</div>';
+  const secs = (v) => (v >= 60 ? `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, '0')}` : `${v.toFixed(1)} s`);
+  anv.el.querySelector('#anExports').innerHTML = p.exports.map((x) => `<div class="an-xrow">
+    <span>${anEsc(x.kind)}</span><span class="mono">${x.len != null ? secs(x.len) : '—'}</span><span class="mono">${secs(x.took || 0)}</span>
+    <span class="mono ${x.speed != null && x.speed < 3 ? 'warn' : ''}">${x.speed != null ? `×${x.speed.toFixed(1)}` : '—'}</span>
+    <span class="d">${Math.round(x.cpuMax || 0)}% · ${anEsc(x.file || '')}${x.ok === false ? ' · failed' : ''}</span></div>`).join('')
+    || '<div class="an-empty">No exports in this range.</div>';
+  const fm = Math.max(1, ...p.lofWhere.map((g) => g.n));
+  anv.el.querySelector('#anFrames').innerHTML = p.lofWhere.map((g) => anBarRow(g.where, `${g.n} · ${g.worst} ms`, g.n / fm * 100)
+    + (g.top ? `<div class="an-src d">mostly ${anEsc(g.top)}</div>` : '')).join('') || '<div class="an-empty">No long frames.</div>';
+}
+
+// ------------------------------------------------------------- storage
+
+const AN_RET_OPTIONS = {
+  events: [7, 30, 60, 90, 180, 365], perf: [7, 14, 30, 60, 90], spikes: [30, 90, 180, 365],
+  daily: [180, 365, 730, 1825], capMB: [25, 50, 100, 250, 500, 1000],
+};
+
+function anBytes(b) {
+  return b >= 1_048_576 ? `${(b / 1_048_576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`;
+}
+
+function anRenderStorage() {
+  const st = anv.storage || { bytes: 0, kinds: {}, retention: {}, last: null };
+  const cap = (st.retention.capMB || 100) * 1_048_576;
+  anv.el.querySelector('#anStoreTotal').textContent = `${anBytes(st.bytes)} of a ${anBytes(cap)} cap`;
+  anv.el.querySelector('#anStoreLast').textContent = st.last
+    ? `last purge ${anWhen(st.last.at)} · removed ${anBytes(st.last.removed || 0)} · ${st.last.summarised || 0} days summarised` : 'not purged yet';
+  const kinds = [['events', 'usage events'], ['perf', 'performance'], ['spikes', 'spikes and exports'], ['daily', 'daily summaries'], ['other', 'catalogue and settings']];
+  anv.el.querySelector('#anStoreBar').innerHTML = kinds.map(([k]) => `<i class="st-${k}" style="width:${((st.kinds[k] || 0) / cap * 100).toFixed(2)}%"></i>`).join('');
+  anv.el.querySelector('#anStoreLegend').innerHTML = kinds.map(([k, l]) => `<span><i class="st-${k}"></i>${l} ${anBytes(st.kinds[k] || 0)}</span>`).join('');
+  for (const sel of anv.el.querySelectorAll('[data-ret]')) {
+    const key = sel.dataset.ret, cur = st.retention[key];
+    const opts = [...new Set([...AN_RET_OPTIONS[key], cur].filter((v) => v != null))].sort((a, b) => a - b);
+    sel.innerHTML = opts.map((v) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${key === 'capMB' ? (v >= 1000 ? `${v / 1000} GB` : `${v} MB`) : v >= 365 && v % 365 === 0 ? `${v / 365} year${v === 365 ? '' : 's'}` : `${v} days`}</option>`).join('');
+  }
+}
+
+async function anSetRetention(key, value) {
+  const r = await an.fetch('/api/analytics/retention', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [key]: value }) });
+  anv.storage = await r.json();
+  anRenderStorage();
+}
+
+async function anPurge() {
+  await an.fetch('/api/analytics/purge', { method: 'POST' });
+  anv.storage = await (await an.fetch('/api/analytics/storage')).json();
+  anRenderStorage();
+}
+
 // ------------------------------------------------------------- export and clear
 
 function anExport() {
-  const blob = new Blob([JSON.stringify(anv.data || {}, null, 1)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ ...(anv.data || {}), ...(anv.perf || {}) }, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `multigrainlive-analytics-${new Date().toISOString().slice(0, 10)}.json`;

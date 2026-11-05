@@ -161,6 +161,13 @@ pub struct Shared {
     load_worst: AtomicU32,
     /// Blocks that took longer to make than to play.
     pub late_blocks: AtomicU64,
+    /// The worst block since the analytics sampler last looked. Kept apart
+    /// from `load_worst`, which the interface resets by hand, so neither
+    /// reader disturbs the other. See `take_load_window`.
+    load_window: AtomicU32,
+    /// Late blocks since the engine started, never reset — the sampler counts
+    /// the difference between two readings.
+    late_total: AtomicU64,
 
     // ───────────────────────────────────────────────────────────── the governor
     //
@@ -365,6 +372,8 @@ impl Shared {
             load_now: AtomicU32::new(0),
             load_mean: AtomicU32::new(0),
             load_worst: AtomicU32::new(0),
+            load_window: AtomicU32::new(0),
+            late_total: AtomicU64::new(0),
             late_blocks: AtomicU64::new(0),
             layer_cap: AtomicU32::new(crate::render::MAX_LAYERS as u32),
             shed_layers: AtomicBool::new(false),
@@ -524,8 +533,10 @@ impl Shared {
         // The worst since the last reset. `fetch_max` rather than a load, a
         // compare and a store, which two callbacks could interleave.
         self.load_worst.fetch_max(ppm, Ordering::Relaxed);
+        self.load_window.fetch_max(ppm, Ordering::Relaxed);
         if ppm > 1_000_000 {
             self.late_blocks.fetch_add(1, Ordering::Relaxed);
+            self.late_total.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -661,6 +672,17 @@ impl Shared {
             f(self.load_now.load(Ordering::Relaxed)),
             f(self.load_mean.load(Ordering::Relaxed)),
             f(self.load_worst.load(Ordering::Relaxed)),
+        )
+    }
+
+    /// The worst block since the last call, as a fraction of the budget, and
+    /// late blocks since the engine started. For the analytics sampler, which
+    /// calls it every few seconds from its own thread: a swap and a load, so
+    /// the audio thread is never kept waiting.
+    pub fn take_load_window(&self) -> (f32, u64) {
+        (
+            self.load_window.swap(0, Ordering::Relaxed) as f32 / 1_000_000.0,
+            self.late_total.load(Ordering::Relaxed),
         )
     }
 
@@ -1937,6 +1959,25 @@ mod tests {
             StreamParams::new(48_000, 48_000),
             Arc::new(Source { samples: Vec::new(), channels: 2 }),
         )
+    }
+
+    /// The analytics window is its own: taking it empties it, and resetting
+    /// the meter's worst (which the interface does by hand) leaves it alone.
+    #[test]
+    fn the_analytics_window_takes_the_worst_and_counts_late_blocks_for_good() {
+        use std::time::Duration;
+        let s = shared();
+        let ms = Duration::from_millis;
+        s.record_block_cost(ms(5), ms(10));
+        s.record_block_cost(ms(12), ms(10));
+        s.record_block_cost(ms(3), ms(10));
+        s.reset_load();
+        let (worst, late) = s.take_load_window();
+        assert!((worst - 1.2).abs() < 1e-3, "{worst}");
+        assert_eq!(late, 1);
+        let (worst, late) = s.take_load_window();
+        assert_eq!(worst, 0.0);
+        assert_eq!(late, 1, "the total is never reset");
     }
 
     /// The bug this replaced: a loop of 1000 output frames is shorter than the

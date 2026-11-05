@@ -472,6 +472,31 @@ window.fetch = function (input, init) {
 window.addEventListener('error', (e) => track('error', { d: { msg: anText(e.message).slice(0, 200), at: `${(e.filename || '').split('/').pop()}:${e.lineno}` } }));
 window.addEventListener('unhandledrejection', (e) => track('error', { d: { msg: anText(String(e.reason?.message || e.reason)).slice(0, 200) } }));
 
+// ------------------------------------------------------------- long frames
+
+/* Frames the browser itself reports as long (50 ms or more), with the script
+   that held them where it says. A PerformanceObserver: the browser does the
+   measuring whether anyone listens or not, so this adds no timing loop. At most
+   thirty a minute are kept — a page that is janking says so in the first few. */
+
+let anLofMinute = 0, anLofCount = 0;
+
+function anLongFrame(entry) {
+  const minute = Math.floor(Date.now() / 60_000);
+  if (minute !== anLofMinute) { anLofMinute = minute; anLofCount = 0; }
+  if (++anLofCount > 30) return;
+  const script = (entry.scripts || []).slice().sort((a, b) => b.duration - a.duration)[0];
+  const src = script ? anText(script.sourceFunctionName || script.invoker || (script.sourceURL || '').split('/').pop()) : '';
+  track('lof', { ms: Math.round(entry.duration), block: Math.round(entry.blockingDuration || 0), ...(src ? { src } : {}) });
+}
+
+try {
+  const Observer = window.PerformanceObserver;
+  const types = Observer?.supportedEntryTypes || [];
+  const type = types.includes('long-animation-frame') ? 'long-animation-frame' : types.includes('longtask') ? 'longtask' : null;
+  if (type) new Observer((list) => { if (an.on) for (const e of list.getEntries()) anLongFrame(e); }).observe({ type, buffered: false });
+} catch { /* a browser without it simply reports none */ }
+
 // ------------------------------------------------------------- what is on screen
 
 let anCatTimer = 0;

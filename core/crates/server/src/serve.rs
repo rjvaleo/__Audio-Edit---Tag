@@ -28,6 +28,10 @@ pub fn run(listener: TcpListener, app: Arc<App>) -> std::io::Result<()> {
     // Automation runs on its own clock, not on requests: a lane has to keep
     // moving while the browser is idle.
     crate::automation::start_runner(Arc::clone(&app));
+    // Analytics: the performance sampler and the daily purge, each on its own
+    // thread and never on the audio one. See `docs/ANALYTICS.md`.
+    crate::perf::start(Arc::clone(&app));
+    crate::retention::start(Arc::clone(&app));
 
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
