@@ -1284,6 +1284,7 @@ dependencies = [
  "engine",
  "fx",
  "indexer",
+ "libc",
  "search",
  "yamnet",
 ]

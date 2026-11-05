@@ -1,5 +1,6 @@
 //! The local server behind the browser UI.
 
+pub mod analytics;
 pub mod annot;
 pub mod automation;
 pub mod capture;
@@ -9,6 +10,7 @@ pub mod http;
 pub mod live;
 pub mod offline;
 pub mod pad;
+pub mod perf;
 pub mod padpresets;
 pub mod json;
 pub mod routes;
@@ -16,6 +18,7 @@ pub mod persist;
 pub mod rack;
 pub mod record;
 pub mod rendercache;
+pub mod retention;
 pub mod safety;
 pub mod serve;
 pub mod state;

@@ -167,6 +167,9 @@ const COMPOSE_LISTED = false;
     // A cog, for Settings.
     settings:
       '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.2"/>',
+    // Three bars, for Analytics.
+    analytics:
+      '<path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="6" rx=".6"/><rect x="10.5" y="7" width="3" height="11" rx=".6"/><rect x="15.5" y="10" width="3" height="8" rx=".6"/>',
     // An open book, for Help.
     help:
       '<path d="M12 6.5C10 5 7 4.6 3.8 5.2v13c3.2-.6 6.2-.2 8.2 1.3 2-1.5 5-1.9 8.2-1.3v-13C17 4.6 14 5 12 6.5z"/><path d="M12 6.5v13"/>',
@@ -321,6 +324,10 @@ const COMPOSE_LISTED = false;
     foot.append(
       footBtn('settings', 'Settings', 'Settings — how this browser behaves, and what things cost',
         () => document.getElementById('settingsOpen')?.click()),
+      // Analytics was View › Analytics; with the menu bar unlisted it sits
+      // here with the other two things that are about the app, not the sound.
+      footBtn('analytics', 'Analytics', 'Analytics — how the app is being used',
+        () => { if (typeof toggleAnalytics === 'function') toggleAnalytics(); }),
       footBtn('help', 'Help', 'Help', (e) => {
         e.stopPropagation();
         const help = (typeof MENUS !== 'undefined') && MENUS.find((m) => m.title === 'Help');
