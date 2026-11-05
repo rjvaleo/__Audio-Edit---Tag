@@ -365,3 +365,54 @@ test('Write slices sends each one that is not muted, named for the sound, with t
   expect(sent[5].text).toContain('<region> sample=break_0004.wav key=39');
   await expect(page.locator('#dockChop .chop-said')).toContainText('4 slices and the MIDI and SFZ');
 });
+
+test('the slices show on the Edit page too, softened by the switch, and leave its selecting alone', async ({ page }) => {
+  await openChop(page);
+  await loadSignal(page, { mode: 'silence' });
+  await page.evaluate(() => setEditPage('wave'));
+  const layer = page.locator('#lane .chop-layer');
+  await expect(layer).toBeVisible();
+  await expect(layer).toHaveClass(/passive/);
+  await expect(page.locator('#lane .chop-slice')).toHaveCount(5);
+  // A drag across a slice selects, as it always has on the Edit page.
+  const [x0, y] = await laneAt(page, 40000);
+  const [x1] = await laneAt(page, 50000);
+  await page.mouse.move(x0, y);
+  await page.mouse.down();
+  await page.mouse.move(x1, y, { steps: 5 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => !!state.sel && state.sel.end > state.sel.start)).toBe(true);
+  // The switch softens them, and its wheel sets how much.
+  await page.locator('#lane .chop-soft').click();
+  await expect(layer).toHaveClass(/soft/);
+  const op = () => page.locator('#lane .chop-slice').first().evaluate((el) => +getComputedStyle(el).opacity);
+  expect(await op()).toBeCloseTo(0.3, 2);
+  await page.locator('#lane .chop-soft').dispatchEvent('wheel', { deltaY: 100 });
+  expect(await op()).toBeCloseTo(0.25, 2);
+  await page.reload();
+  await page.waitForFunction(() => window.Chop);
+  expect(await page.evaluate(() => window.Chop.soft)).toEqual({ on: true, alpha: 0.25 });
+  await page.evaluate(() => localStorage.removeItem('chopSoft'));
+});
+
+test('→ Regions puts every slice that is not muted into the Region manager, once', async ({ page }) => {
+  await openChop(page);
+  await loadSignal(page, { mode: 'silence' });
+  const posted = [];
+  await page.route('**/api/markers', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const body = JSON.parse(route.request().postData());
+    posted.push(body);
+    await route.fulfill({ json: { markers: body.markers, regions: body.regions } });
+  });
+  await page.evaluate(() => { state.annotations = { markers: [], regions: [] }; window.Chop.pick(1); window.Chop.toggle('muted'); });
+  await page.locator('#chopToRegions').click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0].regions.map((r) => [r.start, r.end, r.label])).toEqual(
+    RECYCLE['40/40/12'].filter((_, i) => i !== 1).map(([s, e], j) => [s, e, `break ${[1, 3, 4, 5][j]}`]));
+  await expect(page.locator('#dockChop .chop-said')).toContainText('4 slices added to Regions');
+  await page.locator('#chopToRegions').click();
+  await expect(page.locator('#dockChop .chop-said')).toContainText('already');
+  expect(posted.length).toBe(1);
+  await expect(page.locator('#regionList .region-item')).toHaveCount(4);
+});

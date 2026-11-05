@@ -10,6 +10,21 @@
 
 .chop-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
 .chop-layer.hidden { display: none; }
+/* On the pages that only show the slices, the lane's own selecting gets
+   every press; only the soften switch answers. */
+.chop-layer.passive *, .chop-layer.passive .chop-ruler { pointer-events: none !important; cursor: default; }
+.chop-layer.passive .chop-soft { pointer-events: auto !important; cursor: pointer; }
+/* Softened: everything but the switch see-through by `--chop-soft`. */
+.chop-layer.soft > *:not(.chop-ruler):not(.chop-ph):not(.chop-soft),
+.chop-layer.soft .chop-ruler > * { opacity: var(--chop-soft, .3); }
+.chop-layer.soft .chop-ruler { background: rgba(10, 12, 16, .35); }
+.chop-soft {
+  position: absolute; right: 4px; top: 19px; z-index: 1; height: 16px; pointer-events: auto; padding: 0 5px; border-radius: 7px;
+  font: 10px/12px var(--mono); color: var(--text-dim); background: var(--surface-3);
+  border: 1px solid var(--line-2); cursor: pointer;
+}
+.chop-soft:hover { color: var(--text); }
+.chop-soft.on { color: #e0d8ff; border-color: #9b87f5; background: rgba(155, 135, 245, .25); }
 .lane.chop-pencil { cursor: crosshair; }
 
 .chop-out { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, .55); }

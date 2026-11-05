@@ -40,6 +40,8 @@
 // - the Envelope, Transient, EQ and Filter rows are ours: textbook filters and
 //   envelopes, not a decoding of ReCycle's or Ratchet's DSP (RJ agreed, 4 Nov
 //   2026).
+// - the slices show on every page with the waveform, softened or not (the ◐
+//   on the ruler), and go into the Region manager with To regions.
 
 const CHOP_COLORS = ['#00e5ff', '#ff2d6b', '#00ff99', '#ffaa00', '#c084fc', '#f97316', '#38bdf8', '#a3e635', '#fb7185', '#fde047', '#67e8f9', '#d946ef', '#4ade80', '#fb923c'];
 const CHOP_FRAME = 512;
@@ -290,7 +292,28 @@ function chopPresets() {
 // ------------------------------------------------------------- the sound
 
 const chopActive = () => typeof state !== 'undefined' && state.mode === 'edit'
-  && !$('dockChop').classList.contains('hidden');
+  && !$('dockChop').classList.contains('hidden') && $('dockChop').getClientRects().length > 0;
+
+/// The slices are shown on every page with the waveform, not only Chop's: on
+/// the others they are a picture to work by, not something to edit, so the
+/// lane's own selecting is untouched there. Only ever over the sound they were
+/// cut from.
+const chopShown = () => typeof state !== 'undefined' && state.mode === 'edit' && !!chop.mono
+  && (!state.selectedFile || !chop.path || chop.path === state.selectedFile.path);
+
+/// Softened: the whole overlay see-through, so the waveform comes forward. The
+/// switch is on the ruler; its wheel sets how see-through. Kept between sessions.
+const chopSoft = { on: false, alpha: 0.3 };
+try {
+  const got = JSON.parse(localStorage.getItem('chopSoft') || 'null');
+  if (got) { chopSoft.on = !!got.on; chopSoft.alpha = Math.min(0.9, Math.max(0.05, +got.alpha || 0.3)); }
+} catch { /* private mode */ }
+function chopSetSoft(change) {
+  Object.assign(chopSoft, change);
+  chopSoft.alpha = Math.min(0.9, Math.max(0.05, chopSoft.alpha));
+  try { localStorage.setItem('chopSoft', JSON.stringify(chopSoft)); } catch { /* private mode */ }
+  chopPaintLane();
+}
 
 /// Called when a sound is selected, and when the panel is opened. Only does
 /// the work while the panel is showing: decoding a long file nobody is
@@ -592,9 +615,12 @@ function chopLaneFrame(clientX) {
 
 function chopPaintLane() {
   if (!chopLayer) return;
-  const on = chopActive() && !!chop.mono;
+  const on = chopShown();
   chopLayer.classList.toggle('hidden', !on);
-  document.body.classList.toggle('chopping', on);
+  chopLayer.classList.toggle('passive', !chopActive());
+  chopLayer.classList.toggle('soft', chopSoft.on);
+  chopLayer.style.setProperty('--chop-soft', String(chopSoft.alpha));
+  document.body.classList.toggle('chopping', on && chopActive());
   if (!on) return;
   chopSeen = chopLaneKey();
   const pct = (f) => `${(framesToX(f) * 100).toFixed(3)}%`;
@@ -654,9 +680,11 @@ function chopPaintLane() {
     if (x.s < from || x.s > to) return;
     ruler += `<i class="chop-cut${x.locked ? ' locked' : ''}" data-i="${i}" style="left:${pct(x.s)};color:${CHOP_COLORS[i % CHOP_COLORS.length]}" title="Cut ${i + 1}${x.locked ? ' (locked)' : ''}: drag to move, drag off the ruler to delete"></i>`;
   });
-  ruler += `<span class="chop-flag s" data-flag="s" style="left:${pct(S)}">S</span><span class="chop-flag e" data-flag="e" style="left:${pct(E)}">E</span></div>`;
+  ruler += `<span class="chop-flag s" data-flag="s" style="left:${pct(S)}">S</span><span class="chop-flag e" data-flag="e" style="left:${pct(E)}">E</span>`;
+  ruler += '</div>';
   parts.push(ruler);
-  parts.push('<div class="chop-hint">drag S / E — chop region · drag between = move · double-click = whole sound · drag ▽ = move a cut, off the ruler = delete</div>');
+  parts.push(`<button type="button" class="chop-soft${chopSoft.on ? ' on' : ''}" title="Soften the slices: see-through, so the waveform comes forward (${Math.round(chopSoft.alpha * 100)}%). The wheel over it sets how much">◐ ${chopSoft.on ? `${Math.round(chopSoft.alpha * 100)}%` : 'soften'}</button>`);
+  if (chopActive()) parts.push('<div class="chop-hint">drag S / E — chop region · drag between = move · double-click = whole sound · drag ▽ = move a cut, off the ruler = delete</div>');
   parts.push('<div class="chop-ph hidden"></div><div class="chop-readout hidden"></div>');
   chopLayer.innerHTML = parts.join('');
   chopPaintPlay();
@@ -697,6 +725,8 @@ function chopWireLane() {
 
   chopLayer.addEventListener('mousedown', (e) => {
     if (!chop.mono || e.button !== 0) return;
+    if (e.target.closest('.chop-soft')) { e.stopPropagation(); e.preventDefault(); chopSetSoft({ on: !chopSoft.on }); return; }
+    if (!chopActive()) return;
     const edge = e.target.closest('.chop-edge, .chop-cut');
     const flag = e.target.closest('.chop-flag');
     const slice = e.target.closest('.chop-slice');
@@ -718,8 +748,14 @@ function chopWireLane() {
     if (!e.shiftKey) chopPlay(i);
   });
 
+  chopLayer.addEventListener('wheel', (e) => {
+    if (!e.target.closest('.chop-soft')) return;
+    e.preventDefault();
+    chopSetSoft({ on: true, alpha: chopSoft.alpha - Math.sign(e.deltaY) * 0.05 });
+  }, { passive: false });
+
   chopLayer.addEventListener('dblclick', (e) => {
-    if (!e.target.closest('.chop-ruler')) return;
+    if (!chopActive() || !e.target.closest('.chop-ruler')) return;
     e.stopPropagation();
     chop.region = { s: 0, e: chop.len };
     chopRecut();
@@ -740,10 +776,11 @@ function chopWireLane() {
   // remembering to.
   const watch = () => {
     requestAnimationFrame(watch);
-    if (!chopActive() || !chop.mono) {
+    if (!chopShown()) {
       if (!chopLayer.classList.contains('hidden')) chopPaintLane();
       return;
     }
+    if (chopLayer.classList.contains('passive') === chopActive()) chopPaintLane();
     if (chopLaneKey() !== chopSeen || chopLayer.classList.contains('hidden')) chopPaintLane();
     if (chop.playing) chopPaintPlay();
   };
@@ -1507,6 +1544,26 @@ async function chopWriteAll() {
   }
 }
 
+/// The slices into the Region manager: one region a slice that is not muted,
+/// named for the sound and its number, beside whatever regions are there.
+/// One already there with the same ends is not added twice.
+function chopToRegions() {
+  const f = state.selectedFile;
+  if (!f || !chop.mono || chop.path !== f.path) { chopSay('Chop the selected sound first'); return 0; }
+  const regions = state.annotations.regions;
+  const have = new Set(regions.map((r) => `${r.start}|${r.end}`));
+  let added = 0;
+  chop.slices.forEach((x, i) => {
+    if (x.muted || have.has(`${x.s}|${x.e}`)) return;
+    regions.push({ start: x.s, end: x.e, label: `${chop.stem} ${i + 1}` });
+    added++;
+  });
+  regions.sort((a, b) => a.start - b.start);
+  if (added) saveAnnotations();
+  chopSay(added ? `${added} slices added to Regions` : 'Every slice is in Regions already');
+  return added;
+}
+
 /// Capture: the newest take in Recordings, selected and chopped.
 async function chopCapture() {
   try {
@@ -1582,6 +1639,7 @@ async function chopCapture() {
   $('chopDice').addEventListener('click', chopDice);
   $('chopCapture').addEventListener('click', chopCapture);
   $('chopRedetect').addEventListener('click', () => chopRecut());
+  $('chopToRegions').addEventListener('click', chopToRegions);
   $('chopOutMidi').addEventListener('click', () => chopSetting('outMidi', !cp.outMidi));
   $('chopOutSfz').addEventListener('click', () => chopSetting('outSfz', !cp.outSfz));
   $('chopWrite').addEventListener('click', chopWriteAll);
@@ -1618,6 +1676,8 @@ window.Chop = {
   midi: chopMidi,
   sfz: chopSfz,
   repaint: chopPaintLane,
+  toRegions: chopToRegions,
+  get soft() { return { ...chopSoft }; },
   stop: chopStop,
   get playing() { return chop.playing?.kind || ''; },
   get state() { return { path: chop.path, slices: chop.slices.length, current: chop.current }; },
