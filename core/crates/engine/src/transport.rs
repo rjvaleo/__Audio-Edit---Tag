@@ -118,6 +118,8 @@ pub struct Shared {
     /// is read at before the rack, so pitch and time move together, as tape
     /// does. 1 is as it is.
     speed: AtomicU32,
+    /// See `set_glide`. f32 bits.
+    glide: AtomicU32,
     /// Hyperprism's left and right faders, as f32 bits, after the rack and the
     /// grain fader.
     gain_l: AtomicU32,
@@ -355,6 +357,7 @@ impl Shared {
             latency: AtomicU64::new(0),
             gain: AtomicU32::new(1.0f32.to_bits()),
             speed: AtomicU32::new(1.0f32.to_bits()),
+            glide: AtomicU32::new(0),
             gain_l: AtomicU32::new(1.0f32.to_bits()),
             gain_r: AtomicU32::new(1.0f32.to_bits()),
             pitch_time: Mutex::new(PitchTime::default()),
@@ -821,6 +824,18 @@ impl Shared {
         f32::from_bits(self.speed.load(Ordering::Acquire))
     }
 
+    /// Hyperprism's Smoothing (%) for Stretch and Pitch, from the HyperStretch
+    /// pad. Zero, the default, is instant: every control behaves as it always
+    /// has. See `glide.rs`.
+    pub fn set_glide(&self, smoothing: f32) {
+        let s = if smoothing.is_finite() { smoothing.clamp(0.0, 100.0) } else { 0.0 };
+        self.glide.store(s.to_bits(), Ordering::Release);
+    }
+
+    pub fn glide(&self) -> f32 {
+        f32::from_bits(self.glide.load(Ordering::Acquire))
+    }
+
     pub fn set_mute(&self, m: bool) {
         self.mute.store(m, Ordering::Release);
     }
@@ -977,6 +992,12 @@ pub struct Core {
     /// settings it was last given.
     ptc: Option<Box<dyn fx::Effect>>,
     ptc_now: PitchTime,
+    /// Speed and Pitch as Hyperprism's smoothing has them now. See `ptc_glided`.
+    ptc_glide: crate::glide::Glide<2>,
+    /// What the document asks for, before the glide: `params` is what plays.
+    target: StreamParams,
+    /// Stretch and Pitch, glided. See `glide.rs`.
+    glide: crate::glide::Glide<2>,
     /// Frames of post-roll left, once the end has been passed.
     post_left: Option<u64>,
     /// The L and R faders where they are, where they are going, where the
@@ -1018,6 +1039,28 @@ impl Default for PitchTime {
     }
 }
 
+/// The Pitch Time Changer's Speed and Pitch for one block, smoothed as the
+/// original smoothed them: each on its own, every 512 samples, by the window's
+/// Smoothing. The first block of a run takes them as they are. Speed is held at
+/// 1 % or more, as `EPitchShift::SetParameter` holds it.
+pub fn ptc_glided(glide: &mut crate::glide::Glide<2>, pt: &PitchTime, running: bool, frames: usize, sample_rate: u32) -> (f32, f32) {
+    let target = [pt.speed.clamp(1.0, 200.0), pt.pitch];
+    if !running {
+        glide.snap(target);
+        return (target[0], target[1]);
+    }
+    let [s, p] = glide.advance(target, frames, sample_rate, pt.smoothing);
+    (s.max(1.0), p)
+}
+
+/// The shifter's setting for a Speed and a Pitch: the correction that puts the
+/// varispeed's pitch back where Pitch says. Held to the shifter's own 0–200 %,
+/// which the original's Pitch Time Changer did not do — see
+/// `docs/HYPERSTRETCH.md`, "Not yet exact".
+pub fn ptc_ratio(speed: f32, pitch: f32) -> f32 {
+    (100.0 * pitch / speed.max(1.0)).clamp(0.0, 200.0)
+}
+
 /// Hyperprism's Pitch Time Changer over a whole piece of audio, for an export:
 /// the same varispeed read and the same shifter the audio thread runs, block
 /// by block, with `at` giving the settings at each output frame (the
@@ -1038,11 +1081,13 @@ pub fn pitch_time_offline(
         return audio.to_vec();
     };
     let mut now: Option<PitchTime> = None;
+    let mut glide = crate::glide::Glide::<2>::default();
     let mut pos = 0.0f64;
     let mut buf = vec![0.0f32; block * ch];
     'blocks: loop {
         let pt = at((out.len() / ch) as u64);
-        let speed = pt.speed.clamp(1.0, 200.0) as f64 / 100.0;
+        let (g_speed, g_pitch) = ptc_glided(&mut glide, &pt, now.is_some(), block, sample_rate);
+        let speed = g_speed as f64 / 100.0;
         let mut n = 0;
         while n < block {
             let x = pos + n as f64 * speed;
@@ -1060,13 +1105,13 @@ pub fn pitch_time_offline(
         if n == 0 {
             break 'blocks;
         }
+        shifter.set_param("pitch", ptc_ratio(g_speed, g_pitch));
         if now != Some(pt) {
-            shifter.set_param("pitch", (100.0 * pt.pitch / pt.speed.max(1.0)).clamp(0.0, 200.0));
             shifter.set_param("mix", 100.0);
             shifter.set_param("feedback", pt.feedback);
             shifter.set_param("grain", pt.grain);
             shifter.set_param("xfade", pt.xfade);
-            shifter.set_param("smoothing", pt.smoothing);
+            shifter.set_param("smoothing", 0.0);
             now = Some(pt);
         }
         shifter.process(&mut buf[..n * ch], ch, sample_rate);
@@ -1342,6 +1387,9 @@ impl Core {
             vs_frac: 0.0,
             ptc: fx::prism::make("hp-pitch-shifter", params.sample_rate, channels.max(1), &[]),
             ptc_now: PitchTime::default(),
+            ptc_glide: crate::glide::Glide::default(),
+            target: params,
+            glide: crate::glide::Glide::default(),
             post_left: None,
             fader_now: [1.0; 2],
             fader_to: [1.0; 2],
@@ -1387,7 +1435,23 @@ impl Core {
         // Pick up changes if they are free to take, otherwise carry on with
         // what we have. Never block the audio thread.
         if let Ok(g) = shared.params.try_lock() {
-            self.params = *g;
+            self.target = *g;
+        }
+        // Stretch and Pitch move towards what was asked by Hyperprism's
+        // smoothing, while playing; stopped, they are simply there.
+        self.params = self.target;
+        let block_frames = out.len() / channels;
+        if shared.is_playing() {
+            let [r, st] = self.glide.advance(
+                [self.target.ratio, self.target.semitones],
+                block_frames,
+                self.params.sample_rate,
+                shared.glide(),
+            );
+            self.params.ratio = r;
+            self.params.semitones = st;
+        } else {
+            self.glide.snap([self.target.ratio, self.target.semitones]);
         }
         // Read, never written into `self.params`. See `record_block_cost`.
         self.renderer.set_layer_cap(shared.layer_cap());
@@ -1588,7 +1652,11 @@ impl Core {
                 Ok(g) => *g,
                 Err(_) => self.ptc_now,
             };
-            let speed = if pt.on { pt.speed as f64 / 100.0 } else { 1.0 } * shared.speed() as f64;
+            // Speed and Pitch glide separately, as the original's did: the
+            // reader takes the smoothed Speed, and the shifter corrects by the
+            // smoothed Pitch over it, so the two never come apart.
+            let (ptc_speed, ptc_pitch) = ptc_glided(&mut self.ptc_glide, &pt, self.ptc_now.on, frames, self.params.sample_rate);
+            let speed = if pt.on { ptc_speed as f64 / 100.0 } else { 1.0 } * shared.speed() as f64;
             let ch = channels;
             let reach = self.vs_frac + (frames.saturating_sub(1)) as f64 * speed;
             let mut need = reach.floor() as usize + 1;
@@ -1670,13 +1738,15 @@ impl Core {
                     if !self.ptc_now.on {
                         shifter.reset();
                     }
+                    // The smoothing is done here, on Speed and Pitch; the
+                    // shifter takes the ratio between them as it stands.
+                    shifter.set_param("pitch", ptc_ratio(ptc_speed, ptc_pitch));
                     if pt != self.ptc_now || !self.ptc_now.on {
-                        shifter.set_param("pitch", (100.0 * pt.pitch / pt.speed).clamp(0.0, 200.0));
                         shifter.set_param("mix", 100.0);
                         shifter.set_param("feedback", pt.feedback);
                         shifter.set_param("grain", pt.grain);
                         shifter.set_param("xfade", pt.xfade);
-                        shifter.set_param("smoothing", pt.smoothing);
+                        shifter.set_param("smoothing", 0.0);
                     }
                     shifter.process(out, ch, self.params.sample_rate);
                 }
@@ -2241,6 +2311,68 @@ mod tests {
         }
         out.truncate(frames * channels);
         out
+    }
+
+    // ───────────────────────── HyperStretch's glide (see `glide.rs`)
+
+    fn with_ratio(shared: &Shared, ratio: f32, semitones: f32) {
+        let mut p = shared.params().unwrap();
+        p.ratio = ratio;
+        p.semitones = semitones;
+        shared.set_params(p);
+    }
+
+    #[test]
+    fn without_a_glide_a_new_stretch_plays_at_once() {
+        let (mut core, shared) = tone_core(1, 512);
+        with_ratio(&shared, 2.0, 5.0);
+        render(&mut core, &shared, 512, 512, 1);
+        assert_eq!((core.params.ratio, core.params.semitones), (2.0, 5.0));
+    }
+
+    #[test]
+    fn with_a_glide_stretch_and_pitch_move_by_hyperprisms_steps() {
+        let (mut core, shared) = tone_core(1, 512);
+        render(&mut core, &shared, 512, 512, 1);
+        let (r0, s0) = (core.params.ratio, core.params.semitones);
+        shared.set_glide(50.0);
+        with_ratio(&shared, r0 + 1.0, s0 + 12.0);
+        // 512 frames at 48 kHz holds one step (every 557 samples here), the
+        // first on the block's first sample: a hundredth of the way.
+        render(&mut core, &shared, 512, 512, 1);
+        assert!((core.params.ratio - (r0 + 0.01)).abs() < 1e-4, "{}", core.params.ratio);
+        assert!((core.params.semitones - (s0 + 0.12)).abs() < 1e-4, "{}", core.params.semitones);
+        // The document's own value is untouched: only what plays glides.
+        assert_eq!(shared.params().unwrap().ratio, r0 + 1.0);
+    }
+
+    #[test]
+    fn stopped_the_glide_is_already_there() {
+        let (mut core, shared) = tone_core(1, 512);
+        shared.set_glide(80.0);
+        render(&mut core, &shared, 512, 512, 1);
+        shared.pause();
+        with_ratio(&shared, 3.0, -7.0);
+        render(&mut core, &shared, 512, 512, 1);
+        shared.play();
+        render(&mut core, &shared, 512, 512, 1);
+        assert_eq!((core.params.ratio, core.params.semitones), (3.0, -7.0));
+    }
+
+    #[test]
+    fn the_pitch_time_changer_glides_speed_and_pitch_each_on_its_own() {
+        let mut g = crate::glide::Glide::<2>::default();
+        let mut pt = PitchTime { on: true, speed: 100.0, pitch: 100.0, smoothing: 50.0, ..PitchTime::default() };
+        assert_eq!(ptc_glided(&mut g, &pt, false, 512, 44_100), (100.0, 100.0));
+        pt.speed = 50.0;
+        pt.pitch = 200.0;
+        let (s, p) = ptc_glided(&mut g, &pt, true, 512, 44_100);
+        assert!((s - 99.5).abs() < 1e-3 && (p - 101.0).abs() < 1e-3, "{s} {p}");
+        // The shifter corrects by the ratio of the two as they stand.
+        assert!((ptc_ratio(s, p) - 100.0 * 101.0 / 99.5).abs() < 1e-3);
+        // Speed never reaches below the original's 1 %.
+        pt.speed = 0.0;
+        assert_eq!(ptc_glided(&mut g, &pt, false, 512, 44_100).0, 1.0);
     }
 
     #[test]

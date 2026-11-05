@@ -68,6 +68,7 @@ function setMode(mode) {
   // furniture is out (`body.wavepage`, the Edit page's toolbar).
   document.body.classList.toggle('wavepage', editing && editPage === 'wave');
   document.body.classList.toggle('choppage', editing && editPage === 'chop');
+  document.body.classList.toggle('prismpage', editing && editPage === 'prism');
   chopPageSync(editing);
   document.body.classList.toggle('roomview', room);
   document.body.classList.toggle('seqview', seq);

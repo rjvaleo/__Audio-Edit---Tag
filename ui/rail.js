@@ -70,6 +70,10 @@ const COMPOSE_LISTED = false;
       title: 'Chop — cut the sound at its silences into slices, after Recycle Reborn',
     },
     {
+      icon: 'prism', label: 'Prism', mode: 'edit', page: 'prism',
+      title: 'HyperStretch — Hyperprism\'s XY pad, playing Stretch and Pitch',
+    },
+    {
       icon: 'visual', label: 'Visual', mode: 'room',
       title: 'The room, full size, and everything that draws it',
     },
@@ -160,6 +164,9 @@ const COMPOSE_LISTED = false;
     // Scissors, the Chop tab's own ✂, drawn.
     chop:
       '<circle cx="6.5" cy="6.5" r="2.6"/><circle cx="6.5" cy="17.5" r="2.6"/><path d="M8.6 8.1 20 17.2M8.6 15.9 20 6.8"/>',
+    // A prism, and the one ray it splits.
+    prism:
+      '<path d="M12 4 20 19H4z"/><path d="M2.5 13.5 10 12.2M14.2 12.6l7.3-2.4M14.6 13.6l6.9.9"/>',
     grain:
       '<path d="M7.6 18.5h9.2a3.4 3.4 0 0 0 .35-6.78 5.35 5.35 0 0 0-10.03-2.3 4.1 4.1 0 0 0 .48 9.08z"/><circle cx="9.6" cy="13.4" r=".85" fill="currentColor" stroke="none"/><circle cx="13" cy="11.9" r=".85" fill="currentColor" stroke="none"/><circle cx="15.4" cy="14.6" r=".85" fill="currentColor" stroke="none"/><circle cx="11.7" cy="15.6" r=".85" fill="currentColor" stroke="none"/>',
     visual:
@@ -349,7 +356,8 @@ const COMPOSE_LISTED = false;
       const mode = (typeof state !== 'undefined' && state.mode) || 'overview';
       if (mode === 'edit') {
         const page = document.body.classList.contains('wavepage') ? 'wave'
-          : document.body.classList.contains('choppage') ? 'chop' : 'grain';
+          : document.body.classList.contains('choppage') ? 'chop'
+          : document.body.classList.contains('prismpage') ? 'prism' : 'grain';
         return rail.querySelector(`.rl-item[data-mode="edit"][data-page="${page}"]`);
       }
       return rail.querySelector(`.rl-item[data-mode="${mode}"]`);

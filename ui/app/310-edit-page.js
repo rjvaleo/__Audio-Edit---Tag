@@ -11,17 +11,24 @@ function setEditPage(page, apply = true) {
   if (apply && state.mode === 'edit') setMode('edit');
 }
 
-/// The Chop page is Grain's dock with only its Chop panel out: the same panel,
-/// not a second one. Going there opens the Chop tab; coming back to Grain puts
-/// back whichever tab was open before.
+/// The Chop and Prism pages are Grain's dock with one panel out — Chop, or
+/// HyperStretch: the same panel, not a second one. Going there opens its tab;
+/// coming back to Grain puts back whichever tab was open before.
+/// A function rather than a table: `setMode` runs this at startup, before this
+/// file's own `const`s exist.
+function pageTab(page) { return page === 'chop' ? 'chop' : page === 'prism' ? 'hyper' : null; }
 let chopPageFrom = null;
 function chopPageSync(editing) {
   const active = document.querySelector('.dock-tab.active')?.dataset.dock;
   const tab = (name) => document.querySelector(`.dock-tab[data-dock="${name}"]`);
-  if (editing && editPage === 'chop') {
-    if (active !== 'chop') { chopPageFrom = active || null; tab('chop')?.click(); }
-  } else if (editing && editPage === 'grain' && active === 'chop' && chopPageFrom) {
-    tab(chopPageFrom)?.click();
+  const want = pageTab(editPage);
+  if (editing && want) {
+    if (active !== want) {
+      if (active !== 'chop' && active !== 'hyper') chopPageFrom = active || null;
+      tab(want)?.click();
+    }
+  } else if (editing && editPage === 'grain' && (active === 'chop' || active === 'hyper')) {
+    tab(chopPageFrom || 'stretch')?.click();
     chopPageFrom = null;
   }
 }

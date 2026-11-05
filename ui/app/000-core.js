@@ -227,10 +227,11 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
 /// running when you press play in the room.
 /// Which page of the open document is out: 'grain', the granular engine and
 /// its dock; 'wave', the Edit page — the waveform and the edit toolbar and
-/// nothing else; or 'chop', the waveform and Chop. One mode, `edit`, every
+/// nothing else; 'chop', the waveform and Chop; or 'prism', the waveform and
+/// HyperStretch (`ui/app/385-hyperstretch.js`). One mode, `edit`, every
 /// way: the same document, the same transport. Remembered. Set by the rail
 /// (`setEditPage`).
-const EDIT_PAGES = ['grain', 'wave', 'chop'];
+const EDIT_PAGES = ['grain', 'wave', 'chop', 'prism'];
 let editPage = (() => {
   try { const p = localStorage.getItem('editPage'); return EDIT_PAGES.includes(p) ? p : 'grain'; } catch { return 'grain'; }
 })();

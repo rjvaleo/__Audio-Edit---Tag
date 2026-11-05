@@ -414,6 +414,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         // just made — a peak from ten minutes ago says nothing about the
         // settings in front of you.
         ("POST", "/api/engine/shed") => api_engine_shed(app, req),
+        // HyperStretch: Hyperprism's smoothing, and the pad's two controls
+        // straight to the engine. See `docs/HYPERSTRETCH.md`.
+        ("POST", "/api/engine/glide") => api_engine_glide(app, req),
+        ("POST", "/api/engine/pad") => api_engine_pad(app, req),
         ("POST", "/api/engine/load/reset") => {
             match crate::live::with(app, |h| h.shared.reset_load()) {
                 Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
@@ -5883,4 +5887,53 @@ mod stem_tests {
             assert!((got[f] - want).abs() < 1e-3, "frame {f}: {}", got[f]);
         }
     }
+}
+
+// ------------------------------------------------------------- HyperStretch
+
+fn json_num(v: &Value, k: &str) -> Option<f32> {
+    match v.get(k) {
+        Some(Value::Num(n)) if n.is_finite() => Some(*n as f32),
+        _ => None,
+    }
+}
+
+/// `{smoothing}`, Hyperprism's Smoothing (%), for Stretch and Pitch. Never opens
+/// the device: with no engine it is simply not applied, and the pad sends it
+/// again when it is next used.
+fn api_engine_glide(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let Some(s) = json_num(&v, "smoothing") else {
+        return Response::error(400, "no smoothing given");
+    };
+    let s = s.clamp(0.0, 100.0);
+    let applied = crate::live::peek(app, |h| h.shared.set_glide(s)).is_some();
+    Response::json(Value::obj().set("ok", true).set("applied", applied).set("smoothing", s as f64).to_string())
+}
+
+/// `{ratio?, semitones?}` into what the engine plays, now, and nothing else:
+/// not the document, which the pad commits when a drag or a take ends. Light
+/// enough for a gesture to send sixty times a second.
+fn api_engine_pad(app: &Arc<App>, req: &Request) -> Response {
+    use crate::automation::{RATIO_MAX, RATIO_MIN, SEMITONE_MAX, SEMITONE_MIN};
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let ratio = json_num(&v, "ratio").map(|r| r.clamp(RATIO_MIN, RATIO_MAX));
+    let semis = json_num(&v, "semitones").map(|r| r.clamp(SEMITONE_MIN, SEMITONE_MAX));
+    let applied = crate::live::peek(app, |h| {
+        let Some(mut p) = h.shared.params() else { return false };
+        if let Some(r) = ratio {
+            p.ratio = r;
+        }
+        if let Some(s) = semis {
+            p.semitones = s;
+        }
+        h.shared.set_params(p);
+        true
+    })
+    .unwrap_or(false);
+    Response::json(Value::obj().set("ok", true).set("applied", applied).to_string())
 }

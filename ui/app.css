@@ -5574,3 +5574,69 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
    and the slider keeps a usable width. */
 #roomAdmin .rk-mist > .rk-k.rk-sl,
 #roomAdmin #roomEdit > .re-row:not(.rk-cell) > .rk-k.rk-sl { grid-template-columns: auto auto minmax(60px, 1fr) auto; }
+
+/* ================================================================ HyperStretch
+   Hyperprism's XY pad on Stretch and Pitch: the dock's Prism tab, and the
+   rail's Prism page. `ui/app/385-hyperstretch.js`, docs/HYPERSTRETCH.md. */
+body.prismpage #presetBar { display: none !important; }
+body.prismpage #editTools > :not(#tabBar) { display: none !important; }
+body.prismpage #editTools:has(> #tabBar.hidden) { display: none; }
+.hyper-body { display: flex; flex-direction: column; min-height: 0; overflow: auto; font-size: 11px; }
+.hyper-body.hidden { display: none; }
+.hs-head { flex: none; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--surface-0); border-bottom: 1px solid var(--line); }
+.hs-title { font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.hs-lbl { display: flex; gap: 4px; align-items: center; font-size: 10px; color: var(--text-dim); }
+.hs-vsep { width: 1px; height: 16px; background: var(--line-2); }
+.hs-fill { flex: 1 1 auto; }
+.hs-dim { font-size: 9px; color: var(--text-dim); }
+.hs-transport { display: flex; gap: 2px; }
+.hs-btn { height: 20px; min-width: 24px; padding: 0 6px; font-size: 10px; border-radius: 3px; border: 1px solid var(--line-2); background: var(--surface-3); color: var(--text); cursor: pointer; }
+.hs-btn.on, #hsRec.on { color: var(--bad); }
+.hs-chip { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--well); color: var(--text-dim); }
+.hs-chip[data-mode="rec"] { color: var(--bad); }
+.hs-chip[data-mode="play"] { color: var(--good); }
+#hsNow { font-size: 11px; }
+.hs-body { flex: 1 1 auto; display: flex; gap: 10px; padding: 8px; min-height: 0; }
+.hs-stage { flex: none; display: flex; flex-direction: column; gap: 3px; }
+.hs-top { display: flex; align-items: center; gap: 4px; height: 21px; margin-left: 41px; width: 461px; }
+.hs-mid { display: flex; }
+.hs-left { width: 41px; height: 241px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.hs-lim { width: 38px; height: 16px; box-sizing: border-box; font-size: 10px; text-align: center; background: var(--well); color: var(--text); border: 1px solid var(--line-2); border-radius: 2px; }
+.hs-axis { flex: 1 1 auto; text-align: center; font-size: 10px; color: var(--text-2); }
+.hs-vert { writing-mode: vertical-rl; transform: rotate(180deg); flex: none; }
+/* The blue window, at Hyperprism's own size. */
+.hs-pad { position: relative; display: block; width: 461px; height: 241px; padding: 0; margin: 0; border: 1px solid #000; border-radius: 0; overflow: hidden; cursor: crosshair; touch-action: none; background: oklch(28% 0.09 255); }
+.hyper-body[data-mode="rec"] .hs-pad { background: oklch(30% 0.10 258); }
+.hs-pad:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hs-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.hs-grid { stroke: rgba(255,255,255,0.08); fill: none; }
+.hs-path { fill: none; stroke: oklch(72% 0.17 235); stroke-width: 1.5; stroke-linejoin: round; }
+.hs-ghost { fill: none; stroke: oklch(95% 0.005 250 / 0.55); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.hs-cross { stroke: #000; stroke-width: 2; fill: none; }
+/* cicn 1100 and 1101: a yellow ball on a black crosshair, orange-red recording. */
+.hs-ball { fill: #ffff00; stroke: #000; stroke-width: 1; }
+.hyper-body[data-mode="rec"] .hs-ball { fill: #ff6633; }
+.hs-read { position: absolute; padding: 1px 4px; font-size: 10px; background: rgba(0,0,0,0.65); color: var(--text); border-radius: 2px; white-space: nowrap; pointer-events: none; }
+.hs-read.hidden { display: none; }
+.hs-foot { display: flex; gap: 10px; align-items: center; height: 16px; padding-left: 41px; font-size: 9px; color: var(--text-dim); }
+#hsInfo { color: var(--text-2); }
+.hs-banks { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); align-self: start; }
+.hs-bank { background: var(--surface-2); padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; min-height: 241px; }
+.hs-h { font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+.hs-h span { font-size: 9px; font-weight: 400; letter-spacing: 0; color: var(--text-dim); margin-left: 4px; }
+.hs-row { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-2); }
+.hs-row input[type="range"] { flex: 1 1 auto; }
+.hs-kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 10px; }
+.hs-kv > span:nth-child(odd) { color: var(--text-dim); }
+.hs-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.hs-slot { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border-radius: 3px; cursor: pointer; color: var(--text); background: var(--surface-0); border: 1px solid var(--line-2); }
+.hs-slot.on { border-color: var(--accent); }
+.hs-slot-top { display: flex; justify-content: space-between; width: 100%; font-size: 10px; }
+.hs-slot svg { background: oklch(26% 0.08 255); border-radius: 2px; }
+.hs-slot polyline { fill: none; stroke: oklch(80% 0.14 235); stroke-width: 14; }
+.hs-seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
+.hs-seg button { height: 20px; padding: 0 8px; font-size: 10px; border: 0; background: var(--well); color: var(--text-2); cursor: pointer; }
+.hs-seg button + button { border-left: 1px solid var(--line-2); }
+.hs-seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
+.hs-shapes { display: flex; gap: 4px; }
+.hs-shapes .hs-btn { flex: 1; }

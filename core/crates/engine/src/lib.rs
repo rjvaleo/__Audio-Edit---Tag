@@ -13,6 +13,7 @@
 //!   because it is the only part a test cannot reach.
 
 pub mod device;
+pub mod glide;
 pub mod input;
 pub mod seqbus;
 pub mod transport;

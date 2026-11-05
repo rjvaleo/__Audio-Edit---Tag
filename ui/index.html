@@ -534,6 +534,11 @@
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="chop" title="Chop: cut the sound at its silences into slices, after Recycle Reborn">
           <span class="ic">✂</span><span class="lb">Chop</span>
         </button>
+        <!-- HyperStretch: Hyperprism's XY pad on Stretch and Pitch. The rail's
+             Prism page opens it. See docs/HYPERSTRETCH.md. -->
+        <button class="dock-tab" role="tab" aria-selected="false" data-dock="hyper" title="HyperStretch: Hyperprism's XY pad, on the granular engine">
+          <span class="ic">◭</span><span class="lb">Prism</span>
+        </button>
       </nav>
       <div class="vsep"></div>
       <span class="pb-label">Preset</span>
@@ -1293,6 +1298,7 @@
       <!-- Chop: Recycle Reborn, ReCycle's editing and Ratchet's grid, on the
            selected sound. The slices are drawn and edited on the main waveform;
            this panel is only the controls and the list. See ui/chop.js. -->
+      <div class="dock-body hyper-body hidden" id="dockHyper"></div>
       <div class="dock-body chop-body hidden" id="dockChop">
         <div class="chop-hdr">
           <b class="chop-title">Chops</b>

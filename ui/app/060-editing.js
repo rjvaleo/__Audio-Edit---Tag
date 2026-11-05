@@ -786,7 +786,7 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
     });
     const panes = { effects: 'dockEffects', prism: 'dockPrism', stretch: 'dockStretch',
                     visuals: 'dockVisuals', automation: 'dockAutomation',
-                    regions: 'dockRegions', chop: 'dockChop' };
+                    regions: 'dockRegions', chop: 'dockChop', hyper: 'dockHyper' };
     for (const [k, id] of Object.entries(panes)) $(id).classList.toggle('hidden', k !== t.dataset.dock);
     $('presetBar').dataset.tab = t.dataset.dock;
     // Everything in these panels is skipped while its panel is hidden, so a
