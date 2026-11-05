@@ -66,12 +66,12 @@ const COMPOSE_LISTED = false;
       title: 'The granular engine — the sound you are working on',
     },
     {
-      icon: 'chop', label: 'Chop', mode: 'edit', page: 'chop',
-      title: 'Chop — cut the sound at its silences into slices, after Recycle Reborn',
+      icon: 'prism', label: 'Prism', mode: 'edit', page: 'prism',
+      title: 'HyperStretch — Hyperprism\'s XY pad on Stretch and Pitch, and the rack pad beside it',
     },
     {
-      icon: 'prism', label: 'Prism', mode: 'edit', page: 'prism',
-      title: 'HyperStretch — Hyperprism\'s XY pad, playing Stretch and Pitch',
+      icon: 'chop', label: 'Chop', mode: 'edit', page: 'chop',
+      title: 'Chop — cut the sound at its silences into slices, after Recycle Reborn',
     },
     {
       icon: 'visual', label: 'Visual', mode: 'room',
@@ -161,12 +161,21 @@ const COMPOSE_LISTED = false;
     // A waveform and the edit cursor through it.
     edit:
       '<path d="M3 12h1.8l1.6-5.5 2.2 11 2-7.5 1.6 4.5H14"/><path d="M17.5 4v16M15.5 4h4M15.5 20h4"/>',
+    // The Prism pad: a square, and the dot that moves two controls at once.
+    prism:
+      '<rect x="3.5" y="3.5" width="17" height="17" rx="1.6"/><path d="M3.5 12h17M12 3.5v17" stroke-dasharray="1.5 2"/><circle cx="15" cy="9" r="2.2" fill="currentColor" stroke="none"/>',
+    // A cog, for Settings.
+    settings:
+      '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.2"/>',
+    // Three bars, for Analytics.
+    analytics:
+      '<path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="6" rx=".6"/><rect x="10.5" y="7" width="3" height="11" rx=".6"/><rect x="15.5" y="10" width="3" height="8" rx=".6"/>',
+    // An open book, for Help.
+    help:
+      '<path d="M12 6.5C10 5 7 4.6 3.8 5.2v13c3.2-.6 6.2-.2 8.2 1.3 2-1.5 5-1.9 8.2-1.3v-13C17 4.6 14 5 12 6.5z"/><path d="M12 6.5v13"/>',
     // Scissors, the Chop tab's own ✂, drawn.
     chop:
       '<circle cx="6.5" cy="6.5" r="2.6"/><circle cx="6.5" cy="17.5" r="2.6"/><path d="M8.6 8.1 20 17.2M8.6 15.9 20 6.8"/>',
-    // A prism, and the one ray it splits.
-    prism:
-      '<path d="M12 4 20 19H4z"/><path d="M2.5 13.5 10 12.2M14.2 12.6l7.3-2.4M14.6 13.6l6.9.9"/>',
     grain:
       '<path d="M7.6 18.5h9.2a3.4 3.4 0 0 0 .35-6.78 5.35 5.35 0 0 0-10.03-2.3 4.1 4.1 0 0 0 .48 9.08z"/><circle cx="9.6" cy="13.4" r=".85" fill="currentColor" stroke="none"/><circle cx="13" cy="11.9" r=".85" fill="currentColor" stroke="none"/><circle cx="15.4" cy="14.6" r=".85" fill="currentColor" stroke="none"/><circle cx="11.7" cy="15.6" r=".85" fill="currentColor" stroke="none"/>',
     visual:
@@ -298,6 +307,36 @@ const COMPOSE_LISTED = false;
     rail.append(recRow);
 
     rail.append(el('div', 'rl-spacer'));
+
+    // Settings and Help, at the foot (RJ, 4 Nov 2026): a cog and a book, where
+    // the menu bar used to hold them. The cog presses the same Settings button
+    // the bar had; the book opens the Help menu beside itself.
+    const foot = el('div', 'rl-foot');
+    const footBtn = (glyph, name, title, run) => {
+      const b = el('button', 'rl-foot-btn');
+      b.type = 'button';
+      b.title = title;
+      b.setAttribute('aria-label', name);
+      b.append(icon(glyph));
+      b.onclick = run;
+      return b;
+    };
+    foot.append(
+      footBtn('settings', 'Settings', 'Settings — how this browser behaves, and what things cost',
+        () => document.getElementById('settingsOpen')?.click()),
+      // Analytics was View › Analytics; with the menu bar unlisted it sits
+      // here with the other two things that are about the app, not the sound.
+      footBtn('analytics', 'Analytics', 'Analytics — how the app is being used',
+        () => { if (typeof toggleAnalytics === 'function') toggleAnalytics(); }),
+      footBtn('help', 'Help', 'Help', (e) => {
+        e.stopPropagation();
+        const help = (typeof MENUS !== 'undefined') && MENUS.find((m) => m.title === 'Help');
+        if (!help) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        showMenu(help.items, r.right + 6, r.top - 4, 'Help');
+      }),
+    );
+    rail.append(foot);
 
     // The handle. At the bottom and under a rule, because it is the one control
     // here that changes the rail rather than the app.

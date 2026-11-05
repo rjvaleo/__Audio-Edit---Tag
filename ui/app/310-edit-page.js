@@ -11,23 +11,26 @@ function setEditPage(page, apply = true) {
   if (apply && state.mode === 'edit') setMode('edit');
 }
 
-/// The Chop and Prism pages are Grain's dock with one panel out — Chop, or
-/// HyperStretch: the same panel, not a second one. Going there opens its tab;
-/// coming back to Grain puts back whichever tab was open before.
-/// A function rather than a table: `setMode` runs this at startup, before this
-/// file's own `const`s exist.
-function pageTab(page) { return page === 'chop' ? 'chop' : page === 'prism' ? 'hyper' : null; }
+/// The Chop and Prism pages are Grain's dock with only their own panel out:
+/// the same panel, not a second one. Going there opens that tab; coming back to
+/// Grain puts back whichever tab was open before. Prism is a page of its own
+/// since 4 Nov 2026 (RJ: "move the Prism functionality to a left-nav item,
+/// below grain"), so Grain's dock no longer offers it as a tab.
+/// The Prism page opens HyperStretch (`385-hyperstretch.js`); the rack pad it
+/// opened before is the page's second tab. Read only while editing, which is
+/// never at startup, before this `const` exists.
+const PAGE_DOCKS = { chop: 'chop', prism: 'hyper' };
 let chopPageFrom = null;
 function chopPageSync(editing) {
   const active = document.querySelector('.dock-tab.active')?.dataset.dock;
   const tab = (name) => document.querySelector(`.dock-tab[data-dock="${name}"]`);
-  const want = pageTab(editPage);
-  if (editing && want) {
-    if (active !== want) {
-      if (active !== 'chop' && active !== 'hyper') chopPageFrom = active || null;
-      tab(want)?.click();
+  const own = editing ? PAGE_DOCKS[editPage] : null;
+  if (own) {
+    if (active !== own) {
+      if (!Object.values(PAGE_DOCKS).includes(active)) chopPageFrom = active || null;
+      tab(own)?.click();
     }
-  } else if (editing && editPage === 'grain' && (active === 'chop' || active === 'hyper')) {
+  } else if (editing && editPage === 'grain' && Object.values(PAGE_DOCKS).includes(active)) {
     tab(chopPageFrom || 'stretch')?.click();
     chopPageFrom = null;
   }

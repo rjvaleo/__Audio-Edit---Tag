@@ -63,7 +63,18 @@ async function inventory(page) {
     await take(`grain/stretch/${alg}`, '#dockStretch');
   }
   for (const tab of ['effects', 'prism', 'visuals', 'automation', 'regions']) {
-    await page.locator(`.dock-tab[data-dock="${tab}"]`).click();
+    // Prism is its own page in the left rail; the others are Grain's tabs.
+    if (tab === 'prism') {
+      await page.locator('#leftRail .rl-item[data-page="prism"]').click();
+      // The page opens on HyperStretch; the rack pad is its second tab.
+      await page.locator('.dock-tab[data-dock="prism"]').click();
+    }
+    else {
+      if (await page.evaluate(() => document.body.classList.contains('prismpage'))) {
+        await page.locator('#leftRail .rl-item[data-page="grain"]').click();
+      }
+      await page.locator(`.dock-tab[data-dock="${tab}"]`).click();
+    }
     await page.waitForTimeout(400);
     await take(`grain/${tab}`, `#dock${tab[0].toUpperCase()}${tab.slice(1)}`);
   }

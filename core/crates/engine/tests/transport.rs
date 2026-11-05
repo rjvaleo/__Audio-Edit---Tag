@@ -626,3 +626,61 @@ fn a_late_block_is_counted() {
 //
 // The buffer size did the work anyway -- 113% of budget to 49% on the same
 // settings -- so nothing replaced it.
+
+/// A new stretch keeps the playhead on the same moment of the file and carries
+/// on from there, faster or slower — never a jump back to somewhere else.
+#[test]
+fn changing_the_stretch_keeps_the_playhead_on_the_same_moment_of_the_file() {
+    let src = source(96_000, 1);
+    let mut sp = params(96_000);
+    sp.ratio = 2.0;
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, src.channels, sp, src);
+    shared.play();
+    pump(&mut core, &shared, 1, 512, 40);
+    let out_before = shared.position() as f64;
+    let file_before = out_before / 2.0;
+
+    let mut slower = sp;
+    slower.ratio = 4.0;
+    shared.set_params(slower);
+    pump(&mut core, &shared, 1, 512, 1);
+    // One block on, at the new ratio, from the same place in the file.
+    let file_after = shared.position() as f64 / 4.0;
+    assert!((file_after - file_before).abs() <= 512.0 / 4.0 + 1.0,
+        "the file moved from {file_before} to {file_after} when the stretch changed");
+
+    let mut faster = slower;
+    faster.ratio = 0.5;
+    shared.set_params(faster);
+    let file_then = shared.position() as f64 / 4.0;
+    let out = pump(&mut core, &shared, 1, 512, 2);
+    let file_now = shared.position() as f64 / 0.5;
+    assert!((file_now - file_then).abs() <= 2.0 * 512.0 / 0.5 + 1.0, "{file_then} -> {file_now}");
+    assert!(out.iter().any(|s| s.abs() > 0.05), "it kept playing");
+}
+
+/// The grains sounding when the stretch changes play on: no gap while a
+/// slider is dragged. A seek would silence them and fade fresh ones in.
+#[test]
+fn changing_the_stretch_carries_the_sounding_grains() {
+    let src = source(96_000, 1);
+    let mut sp = params(96_000);
+    sp.ratio = 2.0;
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(256, src.channels, sp, src);
+    shared.play();
+    pump(&mut core, &shared, 1, 256, 40);
+    let rms = |v: &[f32]| (v.iter().map(|s| s * s).sum::<f32>() / v.len().max(1) as f32).sqrt();
+    let before = rms(&pump(&mut core, &shared, 1, 256, 4));
+    // A drag: a new ratio every block.
+    let mut quietest = f32::MAX;
+    for i in 0..12 {
+        let mut p = sp;
+        p.ratio = 2.0 + 0.15 * (i + 1) as f32;
+        shared.set_params(p);
+        let block = pump(&mut core, &shared, 1, 256, 1);
+        quietest = quietest.min(rms(&block));
+    }
+    assert!(quietest > before * 0.6, "the cloud dipped to {quietest} (was {before}) while the stretch moved");
+}

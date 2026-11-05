@@ -125,6 +125,16 @@ pub fn with<T>(app: &Arc<App>, f: impl FnOnce(&Handle) -> T) -> Result<T, String
     Ok(f(handle))
 }
 
+/// [`peek`], but without waiting either.
+///
+/// For readers that must never cause anything: the analytics sampler asks
+/// every few seconds, and a moment when a request holds the slot is simply a
+/// reading not taken.
+pub fn try_peek<T>(app: &Arc<App>, f: impl FnOnce(&Handle) -> T) -> Option<T> {
+    let slot = app.audio.try_lock().ok()?;
+    slot.as_ref().map(f)
+}
+
 /// What the engine is currently playing.
 pub struct Loaded {
     /// Frames of source, at the device's rate.

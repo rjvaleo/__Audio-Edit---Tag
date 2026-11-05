@@ -263,3 +263,18 @@ test('waveform colours do not move when a theme is applied', async ({ page }) =>
   }
   await page.evaluate(() => { themeState.chosen = null; applyChosenTheme(); });
 });
+
+test('Facets is the grain tray’s colours, applied verbatim, with the six sound colours', async ({ page }) => {
+  await ready(page);
+  const got = await page.evaluate(() => {
+    const p = THEME_PALETTES.find((x) => x.id === 'facets');
+    themeState.chosen = 'facets'; applyChosenTheme();
+    const cs = getComputedStyle(document.documentElement);
+    const keys = ['--bg', '--accent', '--f-time', '--f-pitch', '--f-tone', '--f-attack', '--f-space', '--f-level'];
+    return { direct: p?.direct, dark: p?.dark, applied: keys.map((k) => [k, cs.getPropertyValue(k).trim(), p?.tokens[k]]) };
+  });
+  expect(got.direct).toBe(true);
+  expect(got.dark).toBe(true);
+  for (const [k, now, want] of got.applied) expect(now, k).toBe(want);
+  expect(new Set(got.applied.slice(2).map(([, v]) => v)).size).toBe(6);
+});

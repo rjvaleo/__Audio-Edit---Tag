@@ -221,3 +221,16 @@
 /* It never lights the way a destination does — it opens a window and gives it
    back, so there is nothing for it to be "current" for. */
 #leftRail .rl-item.rl-rec.rl-on { background: none; }
+
+/* ── Settings and Help, at the foot ── a cog and a book side by side when the
+   rail is open, one above the other when it is shut. */
+#leftRail .rl-foot { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+#leftRail.rl.open .rl-foot { flex-direction: row; }
+#leftRail .rl-foot-btn {
+  display: grid; place-items: center; width: var(--rail-icon); height: 34px; padding: 0;
+  border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
+}
+#leftRail .rl-foot-btn .rl-ic { display: grid; place-items: center; }
+#leftRail .rl-foot-btn svg { width: 18px; height: 18px; }
+#leftRail .rl-foot-btn:hover { background: var(--surface-3); color: var(--text-2); }
+#leftRail .rl-foot-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

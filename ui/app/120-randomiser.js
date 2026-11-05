@@ -71,7 +71,8 @@ function randomizeStretch({ seed = null, commit = true } = {}) {
 
     // Switches. Clicked only when the roll disagrees with where it already is,
     // because the handler toggles rather than sets.
-    for (const b of box.querySelectorAll('.switch')) {
+    // The board's buttons only press these, so they are left out.
+    for (const b of box.querySelectorAll('.switch:not(.gc-switch)')) {
       const want = rnd() < 0.5;
       if (b.classList.contains('on') !== want) b.click();
     }

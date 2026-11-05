@@ -37,7 +37,18 @@ async function openFile(page) {
 }
 
 async function dockTab(page, name) {
-  await page.locator(`.dock-tab[data-dock="${name}"]`).click();
+  // Prism is a page of its own in the left rail since 4 Nov 2026; every other
+  // tab belongs to the Grain page.
+  if (name === 'prism') {
+    await page.locator('#leftRail .rl-item[data-page="prism"]').click();
+    // The page opens on HyperStretch; the rack pad is its second tab.
+    await page.locator('.dock-tab[data-dock="prism"]').click();
+  } else {
+    if (await page.evaluate(() => document.body.classList.contains('prismpage'))) {
+      await page.locator('#leftRail .rl-item[data-page="grain"]').click();
+    }
+    await page.locator(`.dock-tab[data-dock="${name}"]`).click();
+  }
   await page.waitForTimeout(300);
 }
 
@@ -1456,6 +1467,10 @@ test('U4 · the block row names both of its settings', async ({ page }) => {
 // only — nothing outside it changes either way.
 
 async function grainUi(page, which) {
+  // The switch is the Grain page's; Prism is a page of its own.
+  if (await page.evaluate(() => document.body.classList.contains('prismpage'))) {
+    await page.locator('#leftRail .rl-item[data-page="grain"]').click();
+  }
   await page.locator(`#grainUiSwitch [data-ui="${which}"]`).click();
   await page.waitForTimeout(200);
 }
@@ -1513,7 +1528,8 @@ test('GM2 · Modern shows the preset controls only on the tabs a preset changes'
     }
     return out;
   };
-  const all = { stretch: true, effects: true, prism: true, visuals: true, automation: true, regions: true };
+  // Prism is a page of its own, with the dock's presets hidden as on Chop.
+  const all = { stretch: true, effects: true, prism: false, visuals: true, automation: true, regions: true };
   expect(await shownOn()).toEqual(all);
   await grainUi(page, 'modern');
   expect(await shownOn()).toEqual({ ...all, prism: false, visuals: false, automation: false, regions: false });

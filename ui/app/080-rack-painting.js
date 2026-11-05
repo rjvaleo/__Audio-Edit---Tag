@@ -140,7 +140,9 @@ function enablePainting(scope) {
     // Pressing on a control is that control's own drag, and stealing it would
     // fight the gesture already under way. A stroke begins on the background
     // between them.
-    if (e.target.closest('input, button, select, textarea, a, label')) {
+    // A control's picture is its own too: a double-click on it resets the
+    // value, and a press on it must not paint the bar to where it sits.
+    if (e.target.closest('input, button, select, textarea, a, label, svg.gg')) {
       painting = false;
       return;
     }
@@ -230,6 +232,18 @@ const HYBRID_DEFAULTS = {
   fftSize: 2048, timeSpan: 17, freqSpan: 17, margin: 2, morphNoise: true,
   harmonicLevel: 1, percussiveLevel: 1, residualLevel: 1,
 };
+/// Only what can change the sound is shown (RJ, 4 Nov 2026). Position and Rate
+/// are read by the grain cloud alone — no other engine looks at them (see
+/// `fx/tests/routing.rs`, where every other grain control reaches all five) —
+/// so they are hidden unless the cloud is playing: the Granular engine, or
+/// another with grain cloud on.
+const CLOUD_ONLY = ['position', 'rateHz'];
+function syncCloudOnly() {
+  const d = state.stretchDraft;
+  const cloud = !!d && (d.algorithm === 'granular' || !!d.cloud);
+  for (const key of CLOUD_ONLY) state.grainRows?.[key]?.classList.toggle('hidden', !cloud);
+}
+
 const GRAIN_DEFAULTS = {
   rateHz: 0, densityHz: 0, overlap: 2, sizeJitter: 0, positionJitterMs: 0,
   pitchJitterSemis: 0, pitchDriftSemis: 0, driftRateHz: 0.5, layers: 1,
@@ -241,6 +255,9 @@ const GRAIN_DEFAULTS = {
   // when it is given a default and says nothing when it is not.
   position: 0,
   layerScatter: 0, layerScatterMs: 120,
+  // Grain feedback, matching `Grain::default` in `prism-grain`. Feedback at zero
+  // is the cloud as it was; the others are where the loop sounds best once on.
+  fbAmount: 0, fbTimeMs: 250, fbSmear: 0.3, fbDamp: 0.4, fbShift: 0, fbHold: false,
 };
 
 /// Continuous preview while dragging, at draft quality so it keeps up.
@@ -293,6 +310,15 @@ function renderStretch() {
       <button class="seg-btn" data-alg="hybrid" title="Splits the sound into tone, hits and air, and stretches each its own way. The slow one, and the only one that will not repeat noise.">Hybrid</button>
       <button class="seg-btn" data-alg="granular" title="A cloud of grains. Not trying to be transparent - this is the one you hear.">Granular</button>
     </div>`;
+  // Each engine as a tile: a picture of what it does above its name.
+  for (const b of eng.querySelectorAll('.seg-btn')) {
+    const name = document.createElement('span');
+    name.textContent = b.textContent;
+    b.textContent = '';
+    b.append(ggEngine(b.dataset.alg), name);
+  }
+  eng.insertAdjacentHTML('afterbegin', '<div class="wild-head">Engine</div>');
+  eng.classList.add('gc-band');
   // No reset button on this row any more.
   //
   // It was the sixth thing on a row that already lost its engine labels the
@@ -312,20 +338,26 @@ function renderStretch() {
   // slider under the buttons was `Re-anchor` on PVSOLA, `Analysis window` on
   // the vocoder and `Tone` on the hybrid. Three separate containers rather than
   // one, so the order cannot depend on what happens to be appended when.
+  // Time and pitch: its heading carries the tuning and Keys, which are the
+  // pitch's own; the three sliders sit under it.
+  const tp = document.createElement('div');
+  tp.className = 'gc-band gc-tp';
+  tp.innerHTML = '<div class="wild-head"><span>Time &amp; pitch</span></div>';
+  eng.after(tp);
   const switchHost = document.createElement('div');
   switchHost.className = 'engine-switch-host';
-  eng.after(switchHost);
+  tp.querySelector('.wild-head').appendChild(switchHost);
 
   const coreHost = document.createElement('div');
   coreHost.className = 'stretch-core';
-  switchHost.after(coreHost);
+  tp.appendChild(coreHost);
 
   // Each engine gets its own controls. They mean different things by a
   // "window" — a splice for WSOLA, an analysis frame for the vocoder, a grain
   // for the cloud — so one shared slider was three half-explained ones.
   const own = document.createElement('div');
   own.className = 'engine-params';
-  coreHost.after(own);
+  tp.after(own);
 
   const reflectEngine = () => {
     const alg = state.stretchDraft.algorithm;
@@ -367,18 +399,21 @@ function renderStretch() {
     // without being noticed; the cloud is an instrument. So it can now run
     // beside them on the same source. Nothing to offer when the cloud already
     // *is* the engine.
+    // The cloud's own switch, its level and the hybrid's three parts live in
+    // the Cloud section, by the pad (RJ, 4 Nov 2026).
+    const mix = $('cloudMix') || own;
+    if (mix !== own) mix.innerHTML = '';
     if (alg !== 'granular') {
       const d = state.stretchDraft;
       const cloudRow = check('grain cloud',
         'Run the grain cloud over this engine, reading the same source at the same stretch',
         d.cloud,
         (on) => { d.cloud = on; reflectEngine(); commitStretch(); });
-      cloudRow.dataset.slot = '2';
-      switches.prepend(cloudRow);
+      mix.appendChild(ggTag(cloudRow, 'cloud'));
       if (d.cloud) {
-        own.appendChild(tip(param('Cloud', d.cloudMix, 0, 1, 0.01,
+        mix.appendChild(tip(ggTag(param('Cloud', d.cloudMix, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
-          (x) => { d.cloudMix = x; previewStretch(); }, () => commitStretch(), false, 0.5),
+          (x) => { d.cloudMix = x; previewStretch(); }, () => commitStretch(), false, 0.5), 'cloudMix'),
           'How much cloud against the engine underneath. Equal power, so the middle is not a dip — the two are decorrelated and a straight crossfade would sag there.'));
       }
     }
@@ -397,62 +432,54 @@ function renderStretch() {
     // hybrid it is only shaping one third of the sound.
     const vocoderControls = (what) => {
       const v = state.stretchDraft.vocoder;
-      own.appendChild(tip(param('Analysis window', v.windowMs, 5, 500, 1,
+      const vocWin = (tip(ggTag(param('Analysis window', v.windowMs, 5, 500, 1,
         (x) => `${Math.round(x)} ms`,
-        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true, VOCODER_DEFAULTS.windowMs),
+        (x) => { v.windowMs = x; previewStretch(); }, () => commitStretch(), true, VOCODER_DEFAULTS.windowMs), 'vocWindowMs'),
         "The length of one transform, rounded to a power of two. Long resolves partials that sit close together and smears transients; short does the opposite. This is the vocoder's own window and means something different from the one above."));
       const phaseRow = check('phase lock',
         'Holds each partial together instead of letting it dissolve into neighbouring bins',
         v.phaseLock, (on) => { v.phaseLock = on; commitStretch(); });
       const alg = state.stretchDraft.algorithm;
-      if (alg === 'pvsola' || alg === 'vocoder') {
-        // Neither has a switch of its own, so slot 1 on the row is empty and
-        // this sits there — beside the grain cloud rather than loose among the
-        // sliders. Slot 1 packs from the left and the grain cloud follows it,
-        // so the tuning and Keys keep the two places they always have.
-        //
-        // Hybrid keeps it in the panel: it already has `remake noise` on the
-        // row, and two of its own switches plus the cloud, the tuning and Keys
-        // is five buttons where the row holds four.
-        phaseRow.dataset.slot = '1';
-        engineSwitches().prepend(phaseRow);
-      } else {
-        own.appendChild(phaseRow);
-      }
+      // In Phase, with the other phase controls (RJ, 4 Nov 2026).
+      ggTag(phaseRow, 'phaseLock');
 
       ext.appendChild(wild('Spectrum',
         `The vocoder normally copies magnitudes through untouched and rewrites only phase. These do not.${what}`).add(
-        tip(param('Freeze', v.magFreeze, 0, 1, 0.01,
+        // The vocoder's frame sets the spectrum's resolution, as Resolution
+        // does the separation's, so it leads this group.
+        vocWin,
+        tip(ggTag(param('Freeze', v.magFreeze, 0, 1, 0.01,
           (x) => (x >= 0.999 ? 'held' : `${Math.round(x * 100)}%`),
-          (x) => { v.magFreeze = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magFreeze),
+          (x) => { v.magFreeze = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magFreeze), 'magFreeze'),
         'Hold the magnitude spectrum where it is instead of following the source. At 100% the sound stops changing timbre and only its phase keeps moving.'),
-        tip(param('Blur', v.magBlur, 0, 1, 0.01, (x) => `${Math.round(x * 100)}%`,
-          (x) => { v.magBlur = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magBlur),
+        tip(ggTag(param('Blur', v.magBlur, 0, 1, 0.01, (x) => `${Math.round(x * 100)}%`,
+          (x) => { v.magBlur = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magBlur), 'magBlur'),
         "Smear each frame's magnitudes into neighbouring bins. Softens the edges between partials and turns a pitched sound toward noise."),
-        tip(param('Gate', v.magGate, 0, 1, 0.01,
+        tip(ggTag(param('Gate', v.magGate, 0, 1, 0.01,
           (x) => (x <= 0 ? 'off' : `${Math.round(x * 100)}%`),
-          (x) => { v.magGate = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magGate),
+          (x) => { v.magGate = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.magGate), 'magGate'),
         "Drop every bin below this share of the frame's loudest. Thins the sound to its strongest partials, and at high settings leaves a sparse, bell-like residue."),
       ));
 
       ext.appendChild(wild('Phase',
         `How the frequency estimate is believed and how far a peak imposes its phase on its neighbours.${what}`).add(
-        tip(param('Freq trust', v.freqTrust, 0, 4, 0.01,
+        tip(ggTag(param('Freq trust', v.freqTrust, 0, 4, 0.01,
           (x) => (x <= 0.001 ? 'to bins' : `${x.toFixed(2)}×`),
-          (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.freqTrust),
+          (x) => { v.freqTrust = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.freqTrust), 'freqTrust'),
         "How far the frequency measured from the phase difference is believed over the bin's nominal centre. At zero every partial is forced onto its bin, which detunes the sound into a metallic grid."),
-        tip(param('Phase spread', v.phaseSpread, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
-          (x) => { v.phaseSpread = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.phaseSpread),
+        tip(ggTag(param('Phase spread', v.phaseSpread, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
+          (x) => { v.phaseSpread = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.phaseSpread), 'phaseSpread'),
         "How far a peak's phase correction reaches into the bins around it. This is what stops a partial dissolving into its neighbours as the stretch gets long."),
-        tip(param('Peak width', v.peakWidth, 1, 16, 1, (x) => `${Math.round(x)} bin`,
-          (x) => { v.peakWidth = Math.round(x); previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.peakWidth),
+        tip(ggTag(param('Peak width', v.peakWidth, 1, 16, 1, (x) => `${Math.round(x)} bin`,
+          (x) => { v.peakWidth = Math.round(x); previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.peakWidth), 'peakWidth'),
         'How many bins either side of a maximum count as belonging to it. Wider claims more of the spectrum for each peak, which holds thick tone together and blurs closely spaced partials.'),
-        tip(param('Lock width', v.lockWidth, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
-          (x) => { v.lockWidth = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.lockWidth),
+        tip(ggTag(param('Lock width', v.lockWidth, 0, 4, 0.01, (x) => `${x.toFixed(2)}×`,
+          (x) => { v.lockWidth = x; previewStretch(); }, () => commitStretch(), false, VOCODER_DEFAULTS.lockWidth), 'lockWidth'),
         'How strongly a peak imposes its phase on the bins it owns. Zero leaves each bin to itself, which is the classic phase vocoder and the classic phasiness.'),
-        check('link stereo',
+        phaseRow,
+        ggTag(check('link stereo',
           'Move both channels by one shared correction, so the image survives the stretch instead of drifting apart',
-          v.stereoLink, (on) => { v.stereoLink = on; commitStretch(); }),
+          v.stereoLink, (on) => { v.stereoLink = on; commitStretch(); }), 'stereoLink'),
       ));
     };
 
@@ -465,18 +492,19 @@ function renderStretch() {
     const wsolaControls = ({ forced = false, what = '' } = {}) => {
       const w = state.stretchDraft.wsola;
       const detecting = forced || w.preserveTransients;
+      let ptRow = null;
+      let detRow = null;
       if (!forced) {
-        const ptRow = check('preserve transients',
+        ptRow = check('preserve transients',
           'Hold drum hits at their original rate so they are not laid down twice',
           w.preserveTransients,
           (on) => { w.preserveTransients = on; reflectEngine(); commitStretch(); });
-        ptRow.dataset.slot = '1';
-        engineSwitches().prepend(ptRow);
+        ggTag(ptRow, 'preserveTransients');
       }
       if (detecting) {
-        own.appendChild(tip(param('Detector', w.sensitivity, 0, 1, 0.01,
+        detRow = (tip(ggTag(param('Detector', w.sensitivity, 0, 1, 0.01,
           (x) => `${Math.round(x * 100)}%`,
-          (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.sensitivity),
+          (x) => { w.sensitivity = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.sensitivity), 'sensitivity'),
         'How eager the onset detector is. Higher finds more hits to protect, including ones that are not really hits; lower protects only the clearest attacks.'));
       }
 
@@ -507,14 +535,25 @@ function renderStretch() {
       if (detecting) {
         ext.appendChild(wild('Transients',
           'What the detector counts as a hit, and how much either side of one is held at its original rate.').add(
-          tip(param('Floor', w.floor, 0, 2, 0.01,
+          tip(ggTag(param('Floor', w.floor, 0, 2, 0.01,
             (x) => (x <= 0 ? 'none' : `${x.toFixed(2)}×`),
-            (x) => { w.floor = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.floor),
+            (x) => { w.floor = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.floor), 'floor'),
         'How far above the local average a peak has to rise before it counts as a hit. Low finds hits everywhere, which protects so much of the sound that the stretch stops happening.'),
-          tip(param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hop`,
-            (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.guardHops),
+          tip(ggTag(param('Guard', w.guardHops, 1, 16, 0.1, (x) => `${x.toFixed(1)} hop`,
+            (x) => { w.guardHops = x; previewStretch(); }, () => commitStretch(), false, WSOLA_DEFAULTS.guardHops), 'guardHops'),
         'How many hops either side of a detected hit are held at the original rate, so the attack is not laid down twice or cut in half.'),
         ));
+      }
+      // The switch and the detector join the settings they govern, in one
+      // Transients section (RJ, 4 Nov 2026).
+      if (ptRow || detRow) {
+        let trans = [...ext.children].find((el) => el.querySelector(':scope > .wild-head')?.textContent === 'Transients');
+        if (!trans) {
+          trans = wild('Transients', 'What the detector counts as a hit, and how much either side of one is held at its original rate.');
+          ext.appendChild(trans);
+        }
+        if (detRow) trans.body.prepend(detRow);
+        if (ptRow) trans.body.prepend(ptRow);
       }
     };
 
@@ -537,21 +576,22 @@ function renderStretch() {
       // vocoder is allowed to run on its own guesses before being put back on
       // the ground. Everything else about this engine is the vocoder's, and
       // the vocoder's own panel is shown below it for that reason.
-      own.appendChild(tip(param('Re-anchor', p.anchorFrames, 1, 64, 1,
+      const reanchor = (tip(ggTag(param('Re-anchor', p.anchorFrames, 1, 64, 1,
         (x) => `${Math.round(x)} fr`,
         (x) => { p.anchorFrames = Math.round(x); previewStretch(); },
-        () => commitStretch(), false, PVSOLA_DEFAULTS.anchorFrames),
+        () => commitStretch(), false, PVSOLA_DEFAULTS.anchorFrames), 'anchorFrames'),
         'How many analysis frames the vocoder is allowed to run on its own guesses before being spliced back onto the real waveform. Short kills phasiness and costs splices; long is the plain vocoder again.'));
 
       ext.appendChild(wild('Anchor',
         'How the splice back to the waveform is found and how it is joined. Both off is a hard cut every few frames, which you can hear as a rhythm.').add(
-        tip(param('Search', p.searchMs, 0, 200, 0.5,
+        reanchor,
+        tip(ggTag(param('Search', p.searchMs, 0, 200, 0.5,
           (x) => (x <= 0 ? 'no search' : `${x.toFixed(1)} ms`),
-          (x) => { p.searchMs = x; previewStretch(); }, () => commitStretch(), false, PVSOLA_DEFAULTS.searchMs),
+          (x) => { p.searchMs = x; previewStretch(); }, () => commitStretch(), false, PVSOLA_DEFAULTS.searchMs), 'anchorSearchMs'),
         'How far the anchor search looks for the best place to splice back onto the waveform. At zero it joins wherever it lands, which you hear as a click every few frames.'),
-        tip(param('Blend', p.blend, 0, 1, 0.01,
+        tip(ggTag(param('Blend', p.blend, 0, 1, 0.01,
           (x) => (x <= 0 ? 'butt join' : `${Math.round(x * 100)}%`),
-          (x) => { p.blend = x; previewStretch(); }, () => commitStretch(), false, PVSOLA_DEFAULTS.blend),
+          (x) => { p.blend = x; previewStretch(); }, () => commitStretch(), false, PVSOLA_DEFAULTS.blend), 'blend'),
         'How much of the anchor is crossfaded rather than butt-joined. The fade is linear here, not equal power, because the search has just spent its whole effort making both sides correlated.'),
       ));
 
@@ -570,36 +610,36 @@ function renderStretch() {
       // The three levels are the reason to be in this engine rather than the
       // vocoder: nothing else here will turn a sound's air down without
       // touching its tone.
-      own.appendChild(tip(param('Tone', h.harmonicLevel, 0, 2, 0.01,
+      mix.appendChild(tip(ggTag(param('Tone', h.harmonicLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.harmonicLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.harmonicLevel),
+        (x) => { h.harmonicLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.harmonicLevel), 'harmonicLevel'),
         "The level of the harmonic part - the ridges that run along time. This is the reason to be in this engine: nothing else here will turn a sound's air down without touching its tone."));
-      own.appendChild(tip(param('Hits', h.percussiveLevel, 0, 2, 0.01,
+      mix.appendChild(tip(ggTag(param('Hits', h.percussiveLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.percussiveLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.percussiveLevel),
+        (x) => { h.percussiveLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.percussiveLevel), 'percussiveLevel'),
         'The level of the percussive part - the ridges that run across frequency. Attacks, clicks and transients, stretched by WSOLA with preservation held on.'));
-      own.appendChild(tip(param('Air', h.residualLevel, 0, 2, 0.01,
+      mix.appendChild(tip(ggTag(param('Air', h.residualLevel, 0, 2, 0.01,
         (x) => (x <= 0 ? 'out' : `${x.toFixed(2)}×`),
-        (x) => { h.residualLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.residualLevel),
+        (x) => { h.residualLevel = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.residualLevel), 'residualLevel'),
         'The level of the residual - everything that is neither a partial nor a hit. Breath, hiss, room. This is the part Margin decides the existence of.'));
-      own.appendChild(check('remake noise',
+      mix.appendChild(ggTag(check('remake noise',
         'Rebuild the air as fresh noise shaped like the old, instead of stretching it. Off, it repeats at long ratios like every other engine here does',
-        h.morphNoise, (on) => { h.morphNoise = on; commitStretch(); }));
+        h.morphNoise, (on) => { h.morphNoise = on; commitStretch(); }), 'morphNoise'));
 
       ext.appendChild(wild('Separation',
         'How the sound is cut into three. A partial is a ridge along time and a hit is a ridge across frequency; these decide how long and how broad each has to be to count.').add(
-        tip(param('Hold', h.timeSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} fr`,
-          (x) => { h.timeSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.timeSpan),
+        tip(ggTag(param('Hold', h.timeSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} fr`,
+          (x) => { h.timeSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.timeSpan), 'timeSpan'),
         'How many frames long a ridge has to hold steady before it counts as a partial. Longer is stricter and sends more of the sound to the other two parts.'),
-        tip(param('Spread', h.freqSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} bin`,
-          (x) => { h.freqSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.freqSpan),
+        tip(ggTag(param('Spread', h.freqSpan, 3, 101, 2, (x) => `${Math.round(x) | 1} bin`,
+          (x) => { h.freqSpan = Math.round(x) | 1; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.freqSpan), 'freqSpan'),
         'How many bins wide a ridge has to be before it counts as a hit. Wider is stricter about what an attack is.'),
-        tip(param('Margin', h.margin, 1, 8, 0.05,
+        tip(ggTag(param('Margin', h.margin, 1, 8, 0.05,
           (x) => (x <= 1.001 ? 'no air' : `${x.toFixed(2)}×`),
-          (x) => { h.margin = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.margin),
+          (x) => { h.margin = x; previewStretch(); }, () => commitStretch(), false, HYBRID_DEFAULTS.margin), 'margin'),
         'How much louder one part has to be than the other before it may claim a bin outright. At 1x nothing is left over and there is no Air at all - which is why the noise remaker then has nothing to work on.'),
-        tip(param('Resolution', h.fftSize, 256, 8192, 256, (x) => `${Math.round(x)}`,
-          (x) => { h.fftSize = Math.round(x); previewStretch(); }, () => commitStretch(), true, HYBRID_DEFAULTS.fftSize),
+        tip(ggTag(param('Resolution', h.fftSize, 256, 8192, 256, (x) => `${Math.round(x)}`,
+          (x) => { h.fftSize = Math.round(x); previewStretch(); }, () => commitStretch(), true, HYBRID_DEFAULTS.fftSize), 'fftSize'),
         'The transform size the separation runs at. Bigger tells partials apart more finely and blurs the timing of hits; the separation is a property of the sound, not of the stretch.'),
       ));
 
@@ -630,6 +670,7 @@ function renderStretch() {
     // showed as a band of nothing above the first heading.
     ext.classList.toggle('hidden', !ext.children.length);
     placeExtendedReset();
+    syncCloudOnly();
   };
   for (const b of eng.querySelectorAll('.seg-btn')) {
     b.onclick = () => {
@@ -725,7 +766,7 @@ function renderGrainParams() {
 
   // Grouped by what they do, so each panel stays short enough to read at once.
   const groups = [
-    [shape, 'Grain shape',
+    [shape, 'Grains',
      'How often something is laid down, how long it is, how many of them, and how much any of that varies. Every engine answers these — a window is a splice for WSOLA and an analysis frame for the vocoder.', [
       ['Position', 'position', -1, 1, 0.001, (v) => `${(v * 100).toFixed(1)}%`,
        'Where in the source the cloud reads from, as a fraction of the file. Measured from where the sweep begins — the start going forwards, the end going backwards — so zero is the ordinary sweep. Turn Scan down to nothing and this is the whole instrument: the read head parks wherever you put it and the cloud is made from that one place. Automate it and the head skips around under its own hand.'],
@@ -733,8 +774,6 @@ function renderGrainParams() {
        'Grains per second, for the cloud alone — how often a grain is thrown, with nothing to do with how long it lasts. A grain is an event: it is spawned, it sounds for as long as it sounds, and it ends, and none of that waits on the one before it. So the same number are laid down every second whether they are five milliseconds long or two. Off, the old rule applies and the rate comes from the window instead, which is why lengthening a grain used to thin the cloud. This control is the cloud’s own and does not touch WSOLA, the vocoder, PVSOLA or the hybrid — Density does, and reaching into them is what it costs.'],
       ['Density', 'densityHz', 0, 500, 1, (v) => (v <= 0 ? 'auto' : `${Math.round(v)}/s`),
        'How often a window is laid down, in windows per second. Read by every engine, so it is the *window* engines’ control as much as the cloud’s; for the cloud alone use Rate above. On “auto” the rate comes from the window length divided by Overlap instead, which is what keeps the sound even as the window changes.'],
-      ['Layers', 'layers', 1, 64, 1, (v) => `${Math.round(v)}×`,
-       'How many copies of the whole engine run at once, each reading its own place in the source. Level is compensated by the square root of the count, which is exact once Scatter or the jitters have decorrelated them. The ceiling is sixty-four; what stops you before that is the machine, and the load line says so — if it reads fewer running than asked for, the engine is shedding layers to keep the sound whole rather than refusing them.'],
       ['Overlap', 'overlap', 1, 8, 0.1, (v) => `${v.toFixed(1)}×`,
        'How many windows cover any one moment. Only read while Density is on “auto”. More overlap is smoother and more expensive; at 1x the windows are laid end to end.'],
       ['Size jitter', 'sizeJitter', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`,
@@ -899,6 +938,59 @@ function renderGrainParams() {
     seedRow,
   ));
 
+  // Where each control lives (RJ, 4 Nov 2026): the rows above are built in
+  // the groups they always were, and moved here into the sections they belong
+  // to. The whole of this panel is rebuilt together, so nothing is left behind.
+  //
+  //   Grains          gains the grain's own shape — Envelope, Size range — and
+  //                   how it reads: Scan, reverse grains, wrap positions.
+  //   Pitch movement  gains step the drift.
+  //   Feedback        is new: the cloud re-reading what it just played.
+  //   Layers          is every control about the layers and where they sit.
+  //   Randomness      keeps the seed and link jitter.
+  {
+    const R = state.grainRows;
+    const grains = shape.querySelector('.wild');
+    R.position.after(R.positionJitterMs);
+    R.sizeJitter.before(R.envelope);
+    R.sizeJitter.after(R.sizeRange);
+    grains.add(R.scan, R.reverse, R.wrap);
+    pitchBox.querySelector('.wild').add(R.driftStep);
+
+    const feedback = wild('Feedback',
+      'The cloud re-reads what it has just played: each new grain takes in some of the last few moments of the cloud as well as the sound, so grains are made of earlier grains and the cloud keeps sounding after the source moves on. Every pass is quieter, so it fades.').add(
+      tip(gp('Feedback', 'fbAmount', 0, 0.95, 0.01, (v) => (v <= 0 ? 'off' : `${Math.round(v * 100)}%`)),
+        'How much of each pass comes round again. Off is the cloud as it was; near the top the returns pile up into a texture that outlasts the sound.'),
+      tip(gp('Time', 'fbTimeMs', 20, 2000, 1, (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`), true),
+        'How far back the loop reaches. Short is a shimmer on every grain; long is separate returns.'),
+      tip(gp('Smear', 'fbSmear', 0, 1, 0.01, (v) => (v <= 0 ? 'clear' : `${Math.round(v * 100)}%`)),
+        'Diffusion inside the loop. Clear repeats at nothing; turned up, each pass blurs into the next until the returns run together into a smear.'),
+      tip(gp('Damp', 'fbDamp', 0, 1, 0.01, (v) => (v <= 0 ? 'bright' : `${Math.round(v * 100)}%`)),
+        'A high cut inside the loop, so each pass is darker than the last and the tail fades into mist rather than hiss.'),
+      // In the tuning chosen on Time & pitch, as Pitch is (RJ, 4 Nov 2026):
+      // it steps through that scale's degrees, and the server snaps it there.
+      tip(gp('Shift', 'fbShift', -12, 12, scaleStep(), (v) => (Math.abs(v) < 0.005 ? 'none' : `${v > 0 ? '+' : ''}${v.toFixed(2)} st`)),
+        'Moves each pass in pitch, so the returns climb (a shimmer) or fall — by degrees of the tuning chosen on Time & pitch.'),
+      ggTag(gc('hold the loop', 'fbHold',
+        'Nothing new goes in, and what is in the loop goes round at full level: an endless pad from the last few moments.'), 'fbHold'),
+    );
+    const layers = wild('Layers',
+      'How many copies of the cloud run at once, how they sit in time, how far each is thrown from the others, and where they sit across the stereo field.').add(
+      tip(gp('Layers', 'layers', 1, 64, 1, (v) => `${Math.round(v)}×`),
+        'How many copies of the whole engine run at once, each reading its own place in the source. Level is compensated by the square root of the count, which is exact once Scatter or the jitters have decorrelated them. The ceiling is sixty-four; what stops you before that is the machine, and the load line says so.'),
+      R.layerSpread, R.layerScatter, R.layerScatterMs, R.panSpread,
+    );
+    const randomness = [...extGrain.children].find((el) => el.querySelector(':scope > .wild-head')?.textContent === 'Randomness');
+    randomness.before(feedback, layers);
+    // The seed first, link jitter beside it.
+    randomness.body.prepend(R.seed);
+    randomness.body.appendChild(R.linkJitter);
+    // The groups the rows came from are empty now.
+    for (const el of extGrain.querySelectorAll('.param-pair')) if (!el.children.length) el.remove();
+    for (const el of [...extGrain.children]) if (el.matches('.wild') && !el.querySelector('.param')) el.remove();
+  }
+
+  syncCloudOnly();
   // This rebuild replaced whatever the reset was sitting on.
   placeExtendedReset();
   // The pad draws the source behind the cloud, and that envelope is fetched

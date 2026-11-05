@@ -537,7 +537,7 @@
         <!-- HyperStretch: Hyperprism's XY pad on Stretch and Pitch. The rail's
              Prism page opens it. See docs/HYPERSTRETCH.md. -->
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="hyper" title="HyperStretch: Hyperprism's XY pad, on the granular engine">
-          <span class="ic">◭</span><span class="lb">Prism</span>
+          <span class="ic">◭</span><span class="lb">HyperStretch</span>
         </button>
       </nav>
       <div class="vsep"></div>
@@ -600,6 +600,20 @@
             <span class="kb-now" id="kbNow"></span>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Help › What the colours mean: the grain tray's six colours, named. It
+         was a strip across the top of the tray (RJ, 4 Nov 2026: "move this to
+         the help section"). Filled by `openColourKey` from `GG_FACETS`. -->
+    <div class="modal hidden" id="colourKey" role="dialog" aria-modal="true" aria-labelledby="colourKeyTitle">
+      <div class="modal-card ck-card">
+        <header class="modal-head">
+          <h2 id="colourKeyTitle">What the colours mean</h2>
+          <button class="ghost" id="colourKeyClose" title="Close">Close</button>
+        </header>
+        <p class="ck-lede">In the Grain tray, a control's picture and its bar take the colour of what you hear change when you move it. A control that changes more than one thing gets the one you notice first. A section's heading carries a dot for each colour inside it.</p>
+        <div class="ck-list" id="colourKeyList"></div>
       </div>
     </div>
 
@@ -741,7 +755,7 @@
           <button class="fx-add" id="fxAdd" title="Add an effect module" aria-label="Add an effect module">+</button>
         </div>
         <div class="fx-picker hidden" id="fxPicker">
-          <div class="fx-picker-head"><span>Add module</span><button class="ghost" id="fxPickerClose">Close</button></div>
+          <div class="fx-picker-head"><button class="ghost fx-picker-back" id="fxPickerBack" hidden>‹ Kinds</button><span id="fxPickerTitle">Add module</span><button class="ghost" id="fxPickerClose">Close</button></div>
           <div class="fx-picker-groups" id="fxPickerGroups"></div>
         </div>
       </div>
@@ -831,19 +845,24 @@
                      broke up. See `paintLoad`. -->
                 <span class="mono dim engine-load" id="engineLoad"></span>
               </div>
-              <!-- The cloud, drawn where it actually is, and draggable. See
+              <!-- The cloud: the pad, its presets, and the mix it is heard in —
+                   the grain cloud switch, its level and the hybrid's three
+                   parts, which `reflectEngine` puts in #cloudMix. -->
+              <section class="gc-band" id="cloudBand">
+                <div class="wild-head">Cloud</div>
+                <!-- The cloud, drawn where it actually is, and draggable. See
                    `drawCloudPad`: this is the read head and its spread, over
                    the real grains and the real waveform. -->
-              <div class="cloud-pad-wrap">
+                <div class="cloud-pad-wrap">
                 <canvas id="cloudPad" class="cloud-pad"
                   title="The grain cloud over the source. Drag the box to move the read head; drag an edge to widen the spray or the pitch scatter."></canvas>
                 <span class="mono dim cloud-pad-read" id="cloudPadRead"></span>
-              </div>
-              <!-- A cloud: the grain section on its own, without the sound
+                </div>
+                <!-- A cloud: the grain section on its own, without the sound
                    and without the rest of the engine. Static markup rather
                    than a row inside `#grainShape`, which is rebuilt for every
                    file. See `docs/SECTION-PRESETS.md`. -->
-              <div class="grain-preset-row" id="grainPresetRow">
+                <div class="grain-preset-row" id="grainPresetRow">
                 <span class="re-tag">CLOUD</span>
                 <select class="mini" id="gpPick"
                   title="A saved cloud: every grain control, and nothing else. The sound and the seed stay as they are."></select>
@@ -851,7 +870,9 @@
                   title="Keep the grain controls as they are now, under a name.">Save as&hellip;</button>
                 <button class="ghost" id="gpDelete"
                   title="Forget the cloud named in the picker. The sound is not touched.">Delete</button>
-              </div>
+                </div>
+                <div class="engine-params gc-mix" id="cloudMix"></div>
+              </section>
               <div id="grainShape"></div>
               <div id="grainPitch"></div>
             </div>

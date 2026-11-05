@@ -24,6 +24,9 @@ async function openPad(page, slots = []) {
     await selectFile(files[0]);
     setMode('edit');
   }, slots);
+  // Prism is a page of its own in the left rail, below Grain.
+  await page.locator('#leftRail .rl-item[data-page="prism"]').click();
+  // The page opens on HyperStretch; the rack pad is its second tab.
   await page.locator('.dock-tab[data-dock="prism"]').click();
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
 }
@@ -99,7 +102,8 @@ test('limits typed into the corners narrow the sweep, and stay with the rack', a
     await selectFile(files[0]);
     setMode('edit');
   });
-  await page.locator('.dock-tab[data-dock="prism"]').click();
+  // Prism is a page of its own in the left rail, below Grain.
+  await page.locator('#leftRail .rl-item[data-page="prism"]').click();
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 1);
   await page.locator('#prismSource').selectOption({ label: 'Ring mod' });
   await expect(page.locator('#prismXHi')).toHaveValue('1000');
@@ -273,4 +277,16 @@ test('Hyperprism\'s presets set the pad window and the settings, not the positio
   await page.locator('#prismPresetDelete').click();
   await page.waitForTimeout(300);
   await expect(presets.locator('option', { hasText: 'Slow drift' })).toHaveCount(0);
+});
+
+
+test('Prism is a page in the left rail below Grain, and Grain\'s dock no longer has its tab', async ({ page }) => {
+  await openPad(page);
+  const order = await page.locator('#leftRail .rl-item[data-mode="edit"]').evaluateAll((els) => els.map((e) => e.dataset.page));
+  expect(order.indexOf('prism')).toBe(order.indexOf('grain') + 1);
+  await expect(page.locator('body')).toHaveClass(/prismpage/);
+  await expect(page.locator('#dockPrism')).toBeVisible();
+  await page.locator('#leftRail .rl-item[data-page="grain"]').click();
+  await expect(page.locator('.dock-tab[data-dock="prism"]')).toBeHidden();
+  await expect(page.locator('#dockPrism')).toBeHidden();
 });

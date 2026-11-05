@@ -231,7 +231,7 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
 /// HyperStretch (`ui/app/385-hyperstretch.js`). One mode, `edit`, every
 /// way: the same document, the same transport. Remembered. Set by the rail
 /// (`setEditPage`).
-const EDIT_PAGES = ['grain', 'wave', 'chop', 'prism'];
+const EDIT_PAGES = ['grain', 'prism', 'wave', 'chop'];
 let editPage = (() => {
   try { const p = localStorage.getItem('editPage'); return EDIT_PAGES.includes(p) ? p : 'grain'; } catch { return 'grain'; }
 })();

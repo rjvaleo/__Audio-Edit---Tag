@@ -130,7 +130,7 @@ test('the switches row is one line of identical buttons on every engine', async 
     await chooseEngine(page, alg);
     const row = await page.evaluate(() => {
       const box = document.querySelector('.engine-switches');
-      return [...box.querySelectorAll('[data-slot]')].map((el) => {
+      return [...box.querySelectorAll('[data-slot]')].filter((el) => el.getClientRects().length).map((el) => {
         const b = el.matches('button') ? el : el.querySelector('button');
         const r = b.getBoundingClientRect();
         return { t: b.textContent.trim(), slot: el.dataset.slot,
@@ -275,7 +275,7 @@ test('Stretch, Pitch and Window are the first three sliders on every engine', as
 /// so the Visual column's two rows of two are held to it too.
 const readBaselines = (host) => {
   const box = document.querySelector(`${host} .engine-switches`);
-  return [...box.querySelectorAll('[data-slot]')].map((el) => {
+  return [...box.querySelectorAll('[data-slot]')].filter((el) => el.getClientRects().length).map((el) => {
     const b = el.matches('button') ? el : el.querySelector('button');
     const walk = document.createTreeWalker(b, NodeFilter.SHOW_TEXT,
       { acceptNode: (n) => (n.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
@@ -322,7 +322,7 @@ test('the switches row prints every word on the same baseline', async ({ page })
 /// "preserve transients" printed past its own edge into the gap.
 test('every switch fills its slot and holds its words, in the dock and in Visual', async ({ page }) => {
   await openStretchPanel(page);
-  const read = (host) => [...document.querySelectorAll(`${host} .engine-switches > [data-slot]`)].map((s) => {
+  const read = (host) => [...document.querySelectorAll(`${host} .engine-switches > [data-slot]`)].filter((el) => el.getClientRects().length).map((s) => {
     const b = s.matches('button') ? s : s.querySelector('button');
     return { t: b.textContent.trim(), slotW: Math.round(s.getBoundingClientRect().width),
       btnW: Math.round(b.getBoundingClientRect().width), sw: b.scrollWidth, cw: b.clientWidth };
@@ -348,4 +348,28 @@ test('every switch fills its slot and holds its words, in the dock and in Visual
   }
 
   expect(failures, failures.join('\n')).toEqual([]);
+});
+
+
+/// Every switch sits in the section it acts on (RJ, 4 Nov 2026), spelled out.
+test('each switch is in the section it acts on, spelled out', async ({ page }) => {
+  await openStretchPanel(page);
+  const home = { 'grain cloud': 'Cloud', 'remake noise': 'Cloud', 'phase lock': 'Phase', 'link stereo': 'Phase',
+    'preserve transients': 'Transients', 'reverse grains': 'Grains', 'wrap positions': 'Grains',
+    'step the drift': 'Pitch movement', 'link jitter': 'Randomness', 'hold the loop': 'Feedback' };
+  const seen = new Set();
+  for (const alg of ENGINES) {
+    await chooseEngine(page, alg);
+    const where = await page.evaluate(() => [...document.querySelectorAll('#grainControls .switch[data-name]')]
+      .filter((b) => b.getClientRects().length)
+      .map((b) => [b.dataset.name, b.textContent.trim(),
+        (b.closest('.wild, .gc-band')?.querySelector(':scope > .wild-head')?.firstChild?.textContent || '').trim()]));
+    for (const [name, text, section] of where) {
+      if (!(name in home)) continue;
+      seen.add(name);
+      expect(text, `${alg}: ${name} is spelled out`).toBe(name);
+      expect(section, `${alg}: ${name} is in ${home[name]}`).toBe(home[name]);
+    }
+  }
+  expect([...seen].sort()).toEqual(Object.keys(home).sort());
 });

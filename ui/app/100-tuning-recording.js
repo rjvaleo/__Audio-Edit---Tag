@@ -248,6 +248,9 @@ async function pickScale(name, step) {
                { live: false });
   stretchBuiltFor = null;
   renderStretch();
+  // Feedback's Shift steps through the same scale, so it is rebuilt too.
+  grainBuiltFor = null;
+  renderGrainParams();
 }
 
 // ------------------------------------------------------------- recording

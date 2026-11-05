@@ -79,8 +79,45 @@ const CONIFER = {
   },
 };
 
+/// The grain tray's colours (RJ, 4 Nov 2026: "create a theme that has these
+/// colors"). A slate ground, a little cooler and deeper than the blue original,
+/// with the six colours that say what a control does to the sound: Time amber,
+/// Pitch violet, Timbre teal, Attack red, Space green, Level near-white. Those
+/// six are tokens of their own (`--f-*`), so the tray draws with them whichever
+/// theme sets them, and falls back to `app.css`'s where one does not.
+const FACETS = {
+  id: 'facets',
+  name: 'Facets',
+  direct: true,
+  dark: true,
+  colors: ['#020508', '#0a0f14', '#13191f', '#00aeee', '#f2af48', '#b58bf9', '#3bcfcf', '#fa6863', '#61cb7c'],
+  tokens: {
+    '--sink':       '#010103', // oklch(7.5%  0.012 250)
+    '--well':       '#010305', // oklch(9%    0.012 250)
+    '--bg':         '#020508', // oklch(11%   0.012 250)
+    '--surface-0':  '#04070b', // oklch(12.5% 0.013 250)
+    '--surface':    '#050a0f', // oklch(14%   0.014 250)
+    '--surface-2':  '#0a0f14', // oklch(16.5% 0.014 250)
+    '--surface-2h': '#0d1218', // oklch(18%   0.014 250)
+    '--surface-3':  '#13191f', // oklch(21%   0.014 250)
+    '--text':        '#eceff2', // oklch(95% 0.005 250)
+    '--text-2':      '#c7cbd0', // oklch(84% 0.008 250)
+    '--text-dim':    '#9a9fa5', // oklch(70% 0.010 250)
+    '--text-dimmer': '#757b81', // oklch(58% 0.012 250)
+    '--accent':      '#00aeee', // oklch(70% 0.160 230)
+    // What a control does to the sound.
+    '--f-time':   '#f2af48', // oklch(80% 0.140 75)
+    '--f-pitch':  '#b58bf9', // oklch(72% 0.160 300)
+    '--f-tone':   '#3bcfcf', // oklch(78% 0.120 195)
+    '--f-attack': '#fa6863', // oklch(70% 0.180 25)
+    '--f-space':  '#61cb7c', // oklch(76% 0.150 150)
+    '--f-level':  '#ced9e5', // oklch(88% 0.020 250)
+  },
+};
+
 const THEME_PALETTES = [
   CONIFER,
+  FACETS,
   { id: 'cocoa-topaz-noonday', name: 'Cocoa topaz noonday', colors: ['#742f14', '#5a84ac', '#c7ac9f', '#fc9c44', '#5c3c2c'] },
   { id: 'amber-walnut-morning', name: 'Amber walnut morning', colors: ['#ebefee', '#ccb499', '#c8906d', '#bb6c43', '#4a413c'] },
   { id: 'driftwood-pearl-morning', name: 'Driftwood pearl morning', colors: ['#bc7b6f', '#5a322a', '#e4a499', '#718a9e', '#cccdc7'] },
