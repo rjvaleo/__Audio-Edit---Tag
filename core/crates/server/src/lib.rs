@@ -1,5 +1,6 @@
 //! The local server behind the browser UI.
 
+pub mod analytics;
 pub mod annot;
 pub mod automation;
 pub mod capture;

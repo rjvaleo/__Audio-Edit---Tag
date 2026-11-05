@@ -377,6 +377,11 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/pad") => api_pad(app, req),
         ("GET" | "POST", "/api/audio/buffer") => api_audio_buffer(app, req),
         ("GET" | "POST", "/api/grains/cap") => api_grain_cap(app, req),
+        // How the app is used, on this machine only. See `analytics.rs`.
+        ("POST", "/api/analytics") => api_analytics_append(app, req),
+        ("GET", "/api/analytics") => api_analytics_read(app, req),
+        ("POST", "/api/analytics/catalogue") => api_analytics_catalogue(app, req),
+        ("POST", "/api/analytics/clear") => api_analytics_clear(app),
         ("GET", "/api/presets") => api_presets_list(app),
         ("POST", "/api/presets") => api_preset_save(app, req),
         ("POST", "/api/presets/apply") => api_preset_apply(app, req),
@@ -5870,5 +5875,37 @@ mod stem_tests {
         for (f, want) in [0.1f32, 0.2, 0.3, 0.4].iter().enumerate() {
             assert!((got[f] - want).abs() < 1e-3, "frame {f}: {}", got[f]);
         }
+    }
+}
+
+// ------------------------------------------------------------- analytics
+
+fn api_analytics_append(app: &Arc<App>, req: &Request) -> Response {
+    match crate::analytics::append(&app.data_dir, &String::from_utf8_lossy(&req.body)) {
+        Ok(n) => Response::json(Value::obj().set("ok", true).set("kept", n).to_string()),
+        Err(e) => Response::error(400, &e),
+    }
+}
+
+/// `?from=&to=` in epoch milliseconds; either may be left out.
+fn api_analytics_read(app: &Arc<App>, req: &Request) -> Response {
+    let from: f64 = req.number("from", 0.0);
+    let to: f64 = req.number("to", 1e15);
+    let events = crate::analytics::read(&app.data_dir, from, to);
+    let cat = crate::analytics::catalogue(&app.data_dir).to_string();
+    Response::json(format!(r#"{{"events":{events},"catalogue":{cat}}}"#))
+}
+
+fn api_analytics_catalogue(app: &Arc<App>, req: &Request) -> Response {
+    match crate::analytics::merge_catalogue(&app.data_dir, &String::from_utf8_lossy(&req.body)) {
+        Ok(n) => Response::json(Value::obj().set("ok", true).set("added", n).to_string()),
+        Err(e) => Response::error(400, &e),
+    }
+}
+
+fn api_analytics_clear(app: &Arc<App>) -> Response {
+    match crate::analytics::clear(&app.data_dir) {
+        Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
+        Err(e) => Response::error(500, &e),
     }
 }
