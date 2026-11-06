@@ -293,11 +293,9 @@ function chopPresets() {
 const chopActive = () => typeof state !== 'undefined' && state.mode === 'edit'
   && !$('dockChop').classList.contains('hidden') && $('dockChop').getClientRects().length > 0;
 
-/// The slices are shown on every page with the waveform, not only Chop's: on
-/// the others they are a picture to work by, not something to edit, so the
-/// lane's own selecting is untouched there. Only ever over the sound they were
-/// cut from.
-const chopShown = () => typeof state !== 'undefined' && state.mode === 'edit' && !!chop.mono
+/// The slices are shown on the Chop page only, and only over the sound they
+/// were cut from.
+const chopShown = () => chopActive() && !!chop.mono
   && (!state.selectedFile || !chop.path || chop.path === state.selectedFile.path);
 
 /// Softened: the whole overlay see-through, so the waveform comes forward. The
@@ -603,6 +601,8 @@ function chopToggle(flag) {
 // while something rendered here is playing.
 
 let chopLayer = null;
+const CHOP_MIN_PX = 4;    // the closest two drawn cuts may sit on the lane
+const CHOP_TAG_PX = 22;   // the narrowest slice that shows its number
 let chopSeen = '';   // the lane's place and size when it was last painted
 const chopLaneKey = () => `${state.view.from}|${state.view.to}|${$('lane').clientWidth}|${$('lane').clientHeight}`;
 
@@ -654,12 +654,23 @@ function chopPaintLane() {
     }
   }
 
+  // Zoomed out on many slices they would be several to a pixel and bury the
+  // waveform, so a slice is drawn only CHOP_MIN_PX clear of the last one drawn
+  // (the current and picked ones always), and its number only where it fits.
+  const laneW = $('lane').clientWidth || 1;
+  const px = (f) => framesToX(f) * laneW;
+  let lastPx = -Infinity;
   chop.slices.forEach((x, i) => {
     const col = CHOP_COLORS[i % CHOP_COLORS.length];
     if (x.e < state.view.from || x.s > state.view.to) return;
+    const keep = i === chop.current || chop.sel.has(i);
+    const at = px(x.s);
+    if (!keep && at - lastPx < CHOP_MIN_PX) return;
+    lastPx = at;
     const cls = ['chop-slice', i === chop.current && 'current', chop.sel.has(i) && 'picked', x.muted && 'muted', x.rev && 'rev'].filter(Boolean).join(' ');
+    const tag = px(x.e) - at >= CHOP_TAG_PX ? `<span class="chop-tag" style="background:${col}">${i + 1}${x.rev ? ' ◄' : ''}</span>` : '';
     parts.push(`<div class="${cls}" data-i="${i}" style="left:${pct(x.s)};width:calc(${pct(x.e)} - ${pct(x.s)});color:${col}">`
-      + `<i class="chop-wash"></i><span class="chop-tag" style="background:${col}">${i + 1}${x.rev ? ' ◄' : ''}</span>`
+      + `<i class="chop-wash"></i>${tag}`
       + `<i class="chop-edge" data-i="${i}" data-side="s"></i>`
       + (chopContig() ? '' : `<i class="chop-edge end" data-i="${i}" data-side="e"></i>`)
       + '</div>');
@@ -675,8 +686,12 @@ function chopPaintLane() {
       if (at >= from && at <= to) ruler += `<span class="chop-bar" style="left:${pct(at)}">${b + 1}</span>`;
     }
   }
+  let lastCut = -Infinity;
   chop.slices.forEach((x, i) => {
     if (x.s < from || x.s > to) return;
+    const at = px(x.s);
+    if (i !== chop.current && !chop.sel.has(i) && at - lastCut < CHOP_MIN_PX) return;
+    lastCut = at;
     ruler += `<i class="chop-cut${x.locked ? ' locked' : ''}" data-i="${i}" style="left:${pct(x.s)};color:${CHOP_COLORS[i % CHOP_COLORS.length]}" title="Cut ${i + 1}${x.locked ? ' (locked)' : ''}: drag to move, drag off the ruler to delete"></i>`;
   });
   ruler += `<span class="chop-flag s" data-flag="s" style="left:${pct(S)}">S</span><span class="chop-flag e" data-flag="e" style="left:${pct(E)}">E</span>`;

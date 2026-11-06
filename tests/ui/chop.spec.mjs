@@ -417,22 +417,18 @@ test('Write slices sends each one that is not muted, named for the sound, with t
   await expect(page.locator('#dockChop .chop-said')).toContainText('4 slices and the MIDI and SFZ');
 });
 
-test('the slices show on the Edit page too, softened by the switch, and leave its selecting alone', async ({ page }) => {
+test('the slices show on the Chop page only, softened by the switch', async ({ page }) => {
   await openChop(page);
   await loadSignal(page, { mode: 'silence' });
-  await page.evaluate(() => setEditPage('wave'));
   const layer = page.locator('#lane .chop-layer');
-  await expect(layer).toBeVisible();
-  await expect(layer).toHaveClass(/passive/);
   await expect(page.locator('#lane .chop-slice')).toHaveCount(5);
-  // A drag across a slice selects, as it always has on the Edit page.
-  const [x0, y] = await laneAt(page, 40000);
-  const [x1] = await laneAt(page, 50000);
-  await page.mouse.move(x0, y);
-  await page.mouse.down();
-  await page.mouse.move(x1, y, { steps: 5 });
-  await page.mouse.up();
-  expect(await page.evaluate(() => !!state.sel && state.sel.end > state.sel.start)).toBe(true);
+  // Off the Chop page the lane is the sound alone.
+  for (const p of ['wave', 'prism']) {
+    await page.evaluate((p) => setEditPage(p), p);
+    await expect(layer).toBeHidden();
+  }
+  await page.evaluate(() => setEditPage('chop'));
+  await expect(layer).toBeVisible();
   // The switch softens them, and its wheel sets how much.
   await page.locator('#lane .chop-soft').click();
   await expect(layer).toHaveClass(/soft/);
