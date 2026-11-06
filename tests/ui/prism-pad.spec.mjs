@@ -1,4 +1,6 @@
-// The Prism pad: Hyperprism's blue window, on the Effects dock.
+// The Prism pad: Hyperprism's blue window, the rail's Prism page. Since
+// 5 Nov 2026 one panel with HyperStretch (`prism-merged.spec.mjs`): what it
+// drives and how is this file's; the lanes are its Lanes mode.
 //
 // One square, two controls — Time & Pitch, or any rack slot — with limits
 // typed into its corners. Dragging moves both through the same live paths as
@@ -26,16 +28,17 @@ async function openPad(page, slots = []) {
   }, slots);
   // Prism is a page of its own in the left rail, below Grain.
   await page.locator('#leftRail .rl-item[data-page="prism"]').click();
-  // The page opens on HyperStretch; the rack pad is the page's other view.
-  await page.locator('#prismViews [data-prismview="prism"]').click();
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
+  await page.evaluate(() => window.hyperStretch.reset());
 }
 
 const RING = { id: 'r1', kind: 'ring', bypassed: false, params: { hz: 220, mix: 1, sweep: 0 } };
 
 /// Drag on the pad from its centre to a point given as fractions across and up.
 async function drag(page, across, up) {
-  const box = await page.locator('#prismPad').boundingBox();
+  // The pad is sized to what the header leaves (`hsFit`): let it settle.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const box = await page.locator('#hsPad').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + across * box.width, box.y + (1 - up) * box.height, { steps: 5 });
@@ -57,20 +60,21 @@ test('the pad offers Time & Pitch first, then the rack\'s slots', async ({ page 
   await expect(page.locator('#prismY')).toHaveValue('semitones');
 });
 
-test('Time & Pitch: speed across, pitch up', async ({ page }) => {
+test('Time & Pitch: speed across, pitch up, linear between the limits', async ({ page }) => {
   await openPad(page);
   await drag(page, 0.5, 0.5);
   let d = await page.evaluate(() => state.stretchDraft);
-  // The middle of a sweep from four times as long to a quarter is untouched.
-  expect(d.ratio).toBeGreaterThan(0.93);
-  expect(d.ratio).toBeLessThan(1.07);
+  // Linear, as Hyperprism's pad was: halfway from four times as long to a
+  // quarter is 2.125.
+  expect(d.ratio).toBeGreaterThan(2.05);
+  expect(d.ratio).toBeLessThan(2.2);
   expect(Math.abs(d.semitones)).toBeLessThan(0.6);
   await drag(page, 0.999, 0.999);
   d = await page.evaluate(() => state.stretchDraft);
   expect(d.ratio).toBeLessThan(0.27);
   expect(d.semitones).toBeGreaterThan(11.5);
-  await expect(page.locator('#prismXRead')).toContainText('Stretch');
-  await expect(page.locator('#prismYRead')).toContainText('Pitch');
+  await expect(page.locator('#hsXName')).toContainText('Stretch');
+  await expect(page.locator('#hsYName')).toContainText('Pitch');
 });
 
 test('a rack slot on the pad moves both of its controls', async ({ page }) => {
@@ -104,25 +108,24 @@ test('limits typed into the corners narrow the sweep, and stay with the rack', a
   });
   // Prism is a page of its own in the left rail, below Grain.
   await page.locator('#leftRail .rl-item[data-page="prism"]').click();
-  await page.locator('#prismViews [data-prismview="prism"]').click();
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 1);
   await page.locator('#prismSource').selectOption({ label: 'Ring mod' });
   await expect(page.locator('#prismXHi')).toHaveValue('1000');
 });
 
-test('double-click puts the dot back in the middle', async ({ page }) => {
+test('double-click puts the point back in the middle', async ({ page }) => {
   await openPad(page);
   await drag(page, 0.9, 0.9);
-  await page.locator('#prismPad').dblclick();
+  await page.locator('#hsPad').dblclick();
   await page.waitForTimeout(200);
   const d = await page.evaluate(() => state.stretchDraft);
-  expect(d.ratio).toBeGreaterThan(0.93);
-  expect(d.ratio).toBeLessThan(1.07);
+  expect(d.ratio).toBeCloseTo(2.125, 2);
   expect(Math.abs(d.semitones)).toBeLessThan(0.6);
 });
 
-test('a take is drawn as a path, and LOOP wraps both of its lanes', async ({ page }) => {
+test('in Lanes a take is drawn as a path, and LOOP wraps both of its lanes', async ({ page }) => {
   await openPad(page);
+  await page.locator('[data-hswhere="lanes"]').click();
   await page.evaluate(async () => {
     const lane = (id, target, points) => ({ id, target, label: target, enabled: true, trim: 0, loop: null,
       modulators: [], points: points.map(([frame, value]) => ({ frame, value, curve: 'linear', tension: 0 })) });
@@ -133,7 +136,7 @@ test('a take is drawn as a path, and LOOP wraps both of its lanes', async ({ pag
     await loadAutomation();
     await prismLoadPath();
   });
-  await expect(page.locator('#prismPad .prism-path polyline')).toHaveAttribute('points', /^(\S+ ){2}\S+$/);
+  await expect(page.locator('#hsPath')).toHaveAttribute('points', /^(\S+ ){2}\S+$/);
   await page.locator('#prismLoop').click();
   await expect(page.locator('#prismLoop')).toHaveClass(/\bon\b/);
   const loops = await page.evaluate(async () => {
@@ -143,12 +146,13 @@ test('a take is drawn as a path, and LOOP wraps both of its lanes', async ({ pag
   expect(loops).toEqual([[1000, 9000], [1000, 9000]]);
 });
 
-test('REC arms the recorder for a take on the pad, and pressing it again disarms', async ({ page }) => {
+test('in Lanes ● arms the recorder for a take on the pad, and pressing it again disarms', async ({ page }) => {
   await openPad(page);
-  await page.locator('#prismRec').click();
+  await page.locator('[data-hswhere="lanes"]').click();
+  await page.locator('#hsRec').click();
   await expect.poll(() => page.evaluate(async () => (await api('/api/automation/record')).mode)).toBe('latch');
-  await expect(page.locator('#prismRec')).toHaveClass(/\barmed\b|\brecording\b/);
-  await page.locator('#prismRec').click();
+  await expect(page.locator('#hsChip')).toContainText(/ARMED|REC/);
+  await page.locator('#hsRec').click();
   await expect.poll(() => page.evaluate(async () => (await api('/api/automation/record')).mode)).toBe('off');
 });
 
@@ -286,8 +290,8 @@ test('Prism is a page in the left rail below Grain, and Grain\'s dock no longer 
   const order = await page.locator('#leftRail .rl-item[data-mode="edit"]').evaluateAll((els) => els.map((e) => e.dataset.page));
   expect(order.indexOf('prism')).toBe(order.indexOf('grain') + 1);
   await expect(page.locator('body')).toHaveClass(/prismpage/);
-  await expect(page.locator('#dockPrism')).toBeVisible();
+  await expect(page.locator('#dockHyper')).toBeVisible();
   await page.locator('#leftRail .rl-item[data-page="grain"]').click();
-  await expect(page.locator('.dock-tab[data-dock="prism"]')).toBeHidden();
-  await expect(page.locator('#dockPrism')).toBeHidden();
+  await expect(page.locator('.dock-tab[data-dock="hyper"]')).toBeHidden();
+  await expect(page.locator('#dockHyper')).toBeHidden();
 });

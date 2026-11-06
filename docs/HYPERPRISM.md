@@ -41,8 +41,11 @@ Time Changer.
 
 ### What it is here
 
-A **Prism** tab on the Effects dock, in a new `ui/prism-pad.js`. It works on
-one rack slot at a time:
+The rail's **Prism** page. Since 5 November 2026 its pad is one panel with
+HyperStretch (`app/385-hyperstretch.js`, [HYPERSTRETCH.md](HYPERSTRETCH.md)):
+HyperStretch's look and takes, this pad's sources, lanes, presets and faders.
+What the pad drives, and how, is still `ui/prism-pad.js`. It works on one
+source at a time:
 
 1. **Pick a slot.** The pad lists the slots of the current file's rack.
 2. **Pick the axes.** X and Y each choose one of that slot's controls. Each
@@ -55,10 +58,11 @@ one rack slot at a time:
    same path every rack control takes (`routes.rs` `api_rack_param`). Nothing
    about the effect needs to know a pad exists.
 
-Positions are units, 0–1, like every automation lane. The pad's x becomes
-`low + x × (high − low)` in unit space, and `automation::resolve` turns the
-unit into the control's real value. That keeps the log sweep a control
-declares (`ParamSpec::log`) without the pad computing it a second time.
+The pad is linear between its limits, as Hyperprism's was: x becomes
+`low + x × (high − low)` in the control's own values. (Before the merge it
+swept a log control logarithmically.) A take in Lanes is two ordinary lanes,
+in units, 0–1, which `automation::resolve` turns into the control's real
+value.
 
 Double-click centres the pad's dot, as double-click resets every control
 here. The pad shows the two real values with their units at the edges, the

@@ -41,8 +41,6 @@ async function dockTab(page, name) {
   // tab belongs to the Grain page.
   if (name === 'prism') {
     await page.locator('#leftRail .rl-item[data-page="prism"]').click();
-    // The page opens on HyperStretch; the rack pad is the page's other view.
-    await page.locator('#prismViews [data-prismview="prism"]').click();
   } else {
     if (await page.evaluate(() => document.body.classList.contains('prismpage'))) {
       await page.locator('#leftRail .rl-item[data-page="grain"]').click();
@@ -173,79 +171,66 @@ test('C2 · the camera pads move the camera, and the channel box follows', async
   expect(+(await page.locator('#reCamRy').inputValue())).toBeCloseTo(90, 0);
 });
 
-test('C3 · the Prism pad sits hard against a fixed-width control column', async ({ page }) => {
+test('C3 · the Prism pad is square, as large as the dock leaves, its banks hard against it', async ({ page }) => {
+  // HyperStretch and the rack pad merged (5 Nov 2026): the rack pad's square
+  // box, sized to the dock, with HyperStretch's banks beside it.
   const measure = () => page.evaluate(() => {
-    const cols = ['.prism-bar', '.prism-hp'].flatMap((s) => [...document.querySelectorAll(`#dockPrism ${s}`)]);
-    const right = Math.max(...cols.map((e) => e.getBoundingClientRect().right));
-    const left = Math.min(...cols.map((e) => e.getBoundingClientRect().left));
-    const pad = document.getElementById('prismPad').getBoundingClientRect();
-    const yAxis = document.querySelector('#dockPrism .prism-y-axis').getBoundingClientRect();
-    return { colW: Math.round(right - left), gap: Math.round(Math.min(pad.left, yAxis.left) - right), padSide: Math.round(pad.width) };
+    const pad = document.getElementById('hsPad').getBoundingClientRect();
+    const banks = document.querySelector('#dockHyper .hs-banks').getBoundingClientRect();
+    const dock = document.getElementById('dockHyper').getBoundingClientRect();
+    return { w: Math.round(pad.width), h: Math.round(pad.height), gap: Math.round(banks.left - pad.right),
+      inDock: banks.right <= dock.right + 1 && pad.bottom <= dock.bottom + 1 };
   });
   await openFile(page);
   await dockTab(page, 'prism');
+  await page.waitForTimeout(300);
   const wide = await measure();
+  expect(Math.abs(wide.w - wide.h)).toBeLessThanOrEqual(1);
+  expect(wide.w).toBeGreaterThanOrEqual(140);
   expect(wide.gap).toBeGreaterThanOrEqual(0);
   expect(wide.gap).toBeLessThanOrEqual(24);
-  expect(wide.padSide).toBeGreaterThanOrEqual(140);
+  expect(wide.inDock).toBe(true);
   await page.setViewportSize({ width: 1300, height: 1000 });
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
   const narrow = await measure();
-  expect(narrow.colW).toBe(wide.colW);
+  expect(Math.abs(narrow.w - narrow.h)).toBeLessThanOrEqual(1);
+  expect(narrow.inDock).toBe(true);
 });
 
-test('C3 · a process\'s extra settings are a bank of knobs to the right of the pad', async ({ page }) => {
+test('C3 · a process\'s settings are a bank of knobs beside the pad, all of them', async ({ page }) => {
   const measure = () => page.evaluate(() => {
-    const box = document.getElementById('prismSettings').getBoundingClientRect();
-    const pad = document.getElementById('prismPad').getBoundingClientRect();
-    const dock = document.getElementById('dockPrism').getBoundingClientRect();
     const knobs = [...document.querySelectorAll('#prismSettings .param')].map((row) => {
       const face = row.querySelector(':scope > .rk-face')?.getBoundingClientRect();
       const input = row.querySelector(':scope > input[type=range]').getBoundingClientRect();
       return {
+        label: row.querySelector('.k')?.textContent.trim(),
         knob: row.classList.contains('gk-k'),
         face: face ? Math.round(face.width) : 0,
         over: !!face && Math.abs((input.left + input.right) / 2 - (face.left + face.right) / 2) <= 2
           && Math.abs((input.top + input.bottom) / 2 - (face.top + face.bottom) / 2) <= 3,
       };
     });
-    return {
-      shown: box.width > 0 && box.height > 0,
-      gap: Math.round(box.left - pad.right), top: Math.round(box.top - pad.top),
-      width: Math.round(box.width), inDock: box.right <= dock.right + 1,
-      note: document.querySelector('#prismSettings .prism-settings-note')?.textContent.trim() || '',
-      knobs,
-    };
+    return { knobs, text: document.getElementById('prismSettings').textContent };
   });
   await openFile(page);
   await dockTab(page, 'prism');
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
-  // Time & Pitch keeps its other settings on its own tab: a note says so,
-  // where the knobs would be, and nothing reads as missing.
-  const none = await measure();
-  expect(none.shown).toBe(true);
-  expect(none.knobs).toHaveLength(0);
-  expect(none.note).toMatch(/Time & Pitch tab/);
-  expect(none.gap).toBeGreaterThanOrEqual(0);
-  expect(none.gap).toBeLessThanOrEqual(24);
+  // Time & Pitch: its glide, and its two settings not on the pad.
+  const tp = await measure();
+  expect(tp.knobs.map((k) => k.label)).toEqual(['Window', 'Cloud over engine']);
+  await expect(page.locator('#hsGlide')).toBeVisible();
+  expect(tp.text).not.toMatch(/tab/i);
   // The Pitch Time Changer has four: knobs, each face under its input.
   await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
   await page.waitForTimeout(300);
-  const wide = await measure();
-  expect(wide.note).toBe('');
-  expect(wide.knobs).toHaveLength(4);
-  for (const k of wide.knobs) {
+  const ptc = await measure();
+  expect(ptc.knobs).toHaveLength(4);
+  for (const k of ptc.knobs) {
     expect(k.knob).toBe(true);
     expect(k.face).toBeGreaterThanOrEqual(20);
     expect(k.over).toBe(true);
   }
-  // Hard against the pad, level with its top, inside the dock.
-  expect(wide.gap).toBeGreaterThanOrEqual(0);
-  expect(wide.gap).toBeLessThanOrEqual(24);
-  expect(Math.abs(wide.top)).toBeLessThanOrEqual(24);
-  expect(wide.inDock).toBe(true);
-  // One width, whatever the process and whatever the window.
-  expect(wide.width).toBe(none.width);
+  await expect(page.locator('#hsGlide')).toBeHidden();
   // A knob turned up sets what its slider set: the Pitch Time Changer's value.
   const before = await page.evaluate(() => prismPtc().feedback);
   const face = await page.locator('#prismSettings .param').first().locator('input[type=range]').boundingBox();
@@ -254,11 +239,6 @@ test('C3 · a process\'s extra settings are a bank of knobs to the right of the 
   await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2 - 40, { steps: 5 });
   await page.mouse.up();
   expect(await page.evaluate(() => prismPtc().feedback)).toBeGreaterThan(before);
-  await page.setViewportSize({ width: 1300, height: 1000 });
-  await page.waitForTimeout(300);
-  const narrow = await measure();
-  expect(narrow.width).toBe(wide.width);
-  expect(narrow.inDock).toBe(true);
 });
 
 test('C4 · keyboard focus is visible on every kind of control', async ({ page }) => {
@@ -1581,18 +1561,19 @@ test('GM4 · in Modern, Automation and Prism speak the dock\'s language', async 
       return { caps: el.innerText === el.innerText.toUpperCase(), font: b.fontFamily, spacing: h.letterSpacing };
     });
     await dockTab(page, 'prism');
-    const prism = await page.evaluate(() => getComputedStyle(document.querySelector('.prism-square')).backgroundImage);
-    return { ...perf, radial: /radial/.test(prism) };
+    // The Prism pad is HyperStretch's blue window in either look (merged with
+    // the rack pad, 5 Nov 2026: "the look of the HyperStretch").
+    const prism = await page.evaluate(() => getComputedStyle(document.getElementById('hsPad')).backgroundColor);
+    return { ...perf, pad: prism };
   };
   const classic = await look();
   expect(classic.caps).toBe(true);
-  expect(classic.radial).toBe(true);
   await grainUi(page, 'modern');
   const modern = await look();
   expect(modern.caps).toBe(false);
   expect(modern.font).not.toMatch(/Share Tech Mono/);
   expect(modern.spacing).toBe('normal');
-  expect(modern.radial).toBe(false);
+  expect(modern.pad).toBe(classic.pad);
 });
 
 test('GM5 · in Modern every control in the Grain view\'s bars is at least 24 px, and says what it is', async ({ page }) => {

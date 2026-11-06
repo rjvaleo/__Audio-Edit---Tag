@@ -23,7 +23,7 @@ const AN_PANELS = {
   grainControls: 'Stretch › Grains', stretchParams: 'Stretch › Time', grainShape: 'Stretch › Shape',
   grainPitch: 'Stretch › Pitch', extPanel: 'Stretch › Extended', dockStretch: 'Stretch',
   fxPicker: 'Effect picker', fxModuleRail: 'Effects rack', dockEffects: 'Effects',
-  prismPad: 'Prism pad', prismSettings: 'Prism settings', dockPrism: 'Prism',
+  hsPad: 'Prism pad', prismSettings: 'Prism settings', dockHyper: 'Prism',
   masterBus: 'Master bus', dockVisuals: 'Visuals', perfPanel: 'Performance',
   dockAutomation: 'Automation', dockRegions: 'Regions', dockChop: 'Chop', dock: 'Dock',
   menuBar: 'Menubar', menuPop: 'Menu', leftRail: 'Left rail', paneBrowse: 'Library',

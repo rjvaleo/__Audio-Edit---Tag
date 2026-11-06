@@ -4088,55 +4088,6 @@ body.composeview #mbRes, body.composeview #mbPeakHz { display: none !important; 
    on purpose: these settle disagreements between older rules rather than add
    new ones beside them. */
 
-/* C3 · The Prism tab: a fixed-width control column, and the pad hard against
-   it. The square used to be centred in the whole dock, with about 560 px of
-   nothing on its left and its Y reading stranded beside it. Now the controls
-   read down a column of their own — the same width at every window size — and
-   the pad starts where the column ends, still sized from the dock's height by
-   `prism-pad.js`. A process's extra settings follow the controls down the
-   column. */
-#dockPrism.prism-body {
-  --prism-col: 384px;
-  display: grid; grid-template-columns: var(--prism-col) minmax(0, 1fr);
-  grid-template-rows: auto auto auto 1fr;
-  column-gap: 12px; row-gap: 5px; align-items: start;
-  padding: 8px 12px; height: 100%; min-height: 0;
-}
-#dockPrism.prism-body.hidden { display: none; }
-#dockPrism > .prism-bar, #dockPrism > .prism-hp, #dockPrism > .prism-settings {
-  grid-column: 1; min-width: 0;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
-  padding-bottom: 5px; border-bottom: 1px solid var(--line);
-}
-#dockPrism > .prism-settings { grid-row: 4; border-bottom: 0; }
-#dockPrism > .prism-settings.hidden { display: none; }
-#dockPrism > .prism-stage {
-  grid-column: 2; grid-row: 1 / -1; align-self: stretch;
-  justify-content: flex-start; height: 100%;
-}
-/* Every labelled control is a row of the control table: name, control,
-   reading — the name's column declared once, so the column reads down. */
-#dockPrism > .prism-bar > label, #dockPrism > .prism-hp > label,
-#dockPrism .prism-hp-faders > label {
-  display: grid; grid-template-columns: 46px minmax(0, 1fr) auto;
-  align-items: center; gap: 6px; flex: 1 1 100%; min-width: 0;
-}
-/* Across and Up are a pair: one line, half each. */
-#dockPrism > .prism-bar > label:nth-of-type(2),
-#dockPrism > .prism-bar > label:nth-of-type(3) { flex: 1 1 calc(50% - 4px); }
-#dockPrism .prism-bar select, #dockPrism .prism-hp select,
-#dockPrism .prism-hp input { width: 100%; min-width: 0; }
-#dockPrism .prism-gap { display: none; }
-#dockPrism .prism-bar > button { flex: 0 0 auto; }
-#dockPrism .prism-hp input[type=range] { width: 100%; }
-#dockPrism .prism-hp-read { min-width: 52px; text-align: right; }
-/* The three faders, one a line, each with its 0 beside it. */
-#dockPrism .prism-hp-faders {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center; gap: 3px 6px; flex: 1 1 100%;
-}
-#dockPrism #prismPresetName { flex: 1 1 120px; width: auto; }
-#dockPrism .prism-hp > label[title^="How long"] { grid-template-columns: auto 72px; flex: 1 1 100%; }
 
 /* C4 · One focus ring for the whole interface. Keyboard focus only — a click
    does not light it — and on every kind of control, text fields included,
@@ -4540,44 +4491,37 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    so "preserve transients" printed past its own edge. They fill the slot too. */
 .rv-admin .engine-switches .param.toggle .tiny { width: 100%; }
 /* ───────────────────────── Grain › Prism: the process's settings beside the pad
-   On a wide window the pad, sized from the dock's height, left the dock's
-   right-hand side empty while the process's extra settings sat under the
-   control column. They now take that space: one bank, hard against the pad
-   and level with its top, its knobs drawn as the granular tray's are (`gkKnob`)
-   — the face, the range input laid over it, the reading, the name. One width,
-   whatever the process; a process with no settings of its own says where they
-   are instead. `prismRenderSettings` and the pad's fit in `prism-pad.js`. */
-#dockPrism .prism-stage > .prism-settings {
-  --prism-set: 232px;
-  flex: none; width: var(--prism-set); margin-left: 6px; align-self: flex-start;
-  display: block; font-size: var(--fs-m);
-}
-#dockPrism .prism-settings-note {
+   The Prism page's Settings bank: every control of the process but the two on
+   the pad, its knobs drawn as the granular tray's are (`gkKnob`) — the face,
+   the range input laid over it, the reading, the name. `prismRenderSettings`
+   in `prism-pad.js`. */
+#dockHyper .prism-settings { display: block; font-size: var(--fs-m); }
+#dockHyper .prism-settings-note {
   margin: 0; padding: 6px 8px; border: 1px dashed var(--line);
   font-size: var(--fs-s); line-height: 1.3; color: var(--text-dimmer);
 }
-#dockPrism .prism-bank-head {
+#dockHyper .prism-bank-head {
   font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase;
   color: var(--text-dim); border-bottom: 1px solid var(--line);
   padding-bottom: 3px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-#dockPrism .prism-bank-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px 2px; }
-#dockPrism .prism-settings .param.gk-k {
+#dockHyper .prism-bank-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px 2px; }
+#dockHyper .prism-settings .param.gk-k {
   display: flex; flex-direction: column; align-items: center; position: relative;
   gap: 0; width: 56px; min-width: 0; padding: 0 1px 1px; margin: 0;
 }
-#dockPrism .prism-settings .gk-k > .rk-face { display: block; width: 22px; height: 22px; order: 0; margin-bottom: 1px; }
-#dockPrism .prism-settings .gk-k > .rk-face svg { display: block; width: 100%; height: 100%; }
-#dockPrism .prism-settings .gk-k > input[type=range] {
+#dockHyper .prism-settings .gk-k > .rk-face { display: block; width: 22px; height: 22px; order: 0; margin-bottom: 1px; }
+#dockHyper .prism-settings .gk-k > .rk-face svg { display: block; width: 100%; height: 100%; }
+#dockHyper .prism-settings .gk-k > input[type=range] {
   position: absolute; top: 0; left: 50%; transform: translateX(-50%);
   width: 24px; height: 24px; margin: -1px 0 0; opacity: 0; cursor: ns-resize;
 }
-#dockPrism .prism-settings .gk-k:has(> input:focus-visible) > .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
-#dockPrism .prism-settings .gk-k > .v {
+#dockHyper .prism-settings .gk-k:has(> input:focus-visible) > .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+#dockHyper .prism-settings .gk-k > .v {
   order: 1; width: auto; overflow: visible; text-align: center;
   font-size: var(--fs-s); line-height: 1.15; color: var(--text-2);
 }
-#dockPrism .prism-settings .gk-k > .k {
+#dockHyper .prism-settings .gk-k > .k {
   order: 2; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
   font-size: var(--fs-xs); line-height: 1.1; color: var(--text-dimmer);
 }
@@ -4978,11 +4922,11 @@ body.editing[data-grain-ui="modern"] .prism-square {
 }
 body.editing[data-grain-ui="modern"] .prism-square .prism-pad-dot { background: var(--text); box-shadow: 0 0 0 2px var(--accent); }
 body.editing[data-grain-ui="modern"] .prism-path polyline { stroke: color-mix(in oklch, var(--accent) 70%, transparent); }
-body.editing[data-grain-ui="modern"] #dockPrism input[type=range] {
+body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range] {
   appearance: none; height: 16px; background: transparent; accent-color: var(--accent);
 }
-body.editing[data-grain-ui="modern"] #dockPrism input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line-3); border-radius: 1px; }
-body.editing[data-grain-ui="modern"] #dockPrism input[type=range]::-webkit-slider-thumb {
+body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line-3); border-radius: 1px; }
+body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range]::-webkit-slider-thumb {
   appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%;
   background: var(--text); box-shadow: 0 0 0 2px var(--accent);
 }
@@ -5103,7 +5047,6 @@ body.wavepage #dock + .dock-resize, body.wavepage #dockResize { display: none; }
 body.choppage #presetBar { display: none !important; }
 /* `body.prismpage`: the same again, for the Prism pad. Its tab is the page's
    own, so the Grain page's dock no longer shows it. */
-body:not(.prismpage) .dock-tab[data-dock="prism"] { display: none; }
 body.prismpage #presetBar { display: none !important; }
 body.prismpage #editTools > :not(#tabBar) { display: none !important; }
 body.prismpage #editTools:has(> #tabBar.hidden) { display: none; }
@@ -5902,14 +5845,22 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 /* With the menu bar unlisted there is nothing above the analytics view. */
 body:has(header.menubar.hidden) .an-view { top: 0; }
 
-/* ================================================================ HyperStretch
-   Hyperprism's XY pad on Stretch and Pitch: the dock's Prism tab, and the
-   rail's Prism page. `ui/app/385-hyperstretch.js`, docs/HYPERSTRETCH.md. */
-/* The tab is the Prism page's own, beside the rack pad's, as main has it. */
+/* ================================================================ Prism
+   Hyperprism's XY pad, HyperStretch and the rack pad merged: the rail's Prism
+   page. HyperStretch's look, the rack pad's square box sized to the dock
+   (`hsFit`, `--hs-side`). `ui/app/385-hyperstretch.js`, docs/HYPERSTRETCH.md. */
+/* The tab is the Prism page's own. */
 body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
-.hyper-body { display: flex; flex-direction: column; min-height: 0; overflow: auto; font-size: 11px; }
+.hyper-body { --hs-side: 220px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; font-size: 11px; }
 .hyper-body.hidden { display: none; }
-.hs-head { flex: none; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--surface-0); border-bottom: 1px solid var(--line); }
+.hs-head { flex: none; min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 7px; padding: 3px 8px; background: var(--surface-0); border-bottom: 1px solid var(--line); }
+.hs-head .hidden { display: none; }
+.hs-head select.mini { width: 110px; min-width: 0; }
+/* Fixed widths, so the header wraps the same whatever the source is called
+   and the pad, sized from what is left, keeps its size. */
+.hs-head #prismSource, .hs-head #prismPreset { width: 140px; }
+.hs-name { width: 86px; }
+.hs-ms { width: 44px; text-align: right; }
 .hs-title { font-size: 13px; font-weight: 600; letter-spacing: .04em; }
 .hs-lbl { display: flex; gap: 4px; align-items: center; font-size: 10px; color: var(--text-dim); }
 .hs-vsep { width: 1px; height: 16px; background: var(--line-2); }
@@ -5918,20 +5869,23 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hs-transport { display: flex; gap: 2px; }
 .hs-btn { height: 20px; min-width: 24px; padding: 0 6px; font-size: 10px; border-radius: 3px; border: 1px solid var(--line-2); background: var(--surface-3); color: var(--text); cursor: pointer; }
 .hs-btn.on, #hsRec.on { color: var(--bad); }
+#prismLoop.on, #prismPtcOn.on { color: var(--accent); border-color: var(--accent); }
 .hs-chip { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--well); color: var(--text-dim); }
 .hs-chip[data-mode="rec"] { color: var(--bad); }
 .hs-chip[data-mode="play"] { color: var(--good); }
-#hsNow { font-size: 11px; }
-.hs-body { flex: 1 1 auto; display: flex; gap: 10px; padding: 8px; min-height: 0; }
+#hsNow { font-size: 10px; }
+.hs-body { flex: 1 1 0; display: flex; gap: 10px; padding: 8px; min-height: 0; overflow: hidden; }
 .hs-stage { flex: none; display: flex; flex-direction: column; gap: 3px; }
-.hs-top { display: flex; align-items: center; gap: 4px; height: 21px; margin-left: 41px; width: 461px; }
+.hs-top { display: flex; align-items: center; gap: 4px; height: 21px; margin-left: 41px; width: var(--hs-side); }
 .hs-mid { display: flex; }
-.hs-left { width: 41px; height: 241px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.hs-left { width: 41px; height: var(--hs-side); display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
 .hs-lim { width: 38px; height: 16px; box-sizing: border-box; font-size: 10px; text-align: center; background: var(--well); color: var(--text); border: 1px solid var(--line-2); border-radius: 2px; }
-.hs-axis { flex: 1 1 auto; text-align: center; font-size: 10px; color: var(--text-2); }
-.hs-vert { writing-mode: vertical-rl; transform: rotate(180deg); flex: none; }
-/* The blue window, at Hyperprism's own size. */
-.hs-pad { position: relative; display: block; width: 461px; height: 241px; padding: 0; margin: 0; border: 1px solid #000; border-radius: 0; overflow: hidden; cursor: crosshair; touch-action: none; background: oklch(28% 0.09 255); }
+.hs-lim { appearance: textfield; }
+.hs-lim::-webkit-inner-spin-button, .hs-lim::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.hs-axis { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 10px; color: var(--text-2); }
+.hs-vert { writing-mode: vertical-rl; transform: rotate(180deg); flex: 0 1 auto; min-height: 0; }
+/* The blue window, square, as large as the dock leaves room for. */
+.hs-pad { position: relative; display: block; width: var(--hs-side); height: var(--hs-side); box-sizing: content-box; padding: 0; margin: 0; border: 1px solid #000; border-radius: 0; overflow: hidden; cursor: crosshair; touch-action: none; background: oklch(28% 0.09 255); }
 .hyper-body[data-mode="rec"] .hs-pad { background: oklch(30% 0.10 258); }
 .hs-pad:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .hs-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
@@ -5944,32 +5898,32 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hyper-body[data-mode="rec"] .hs-ball { fill: #ff6633; }
 .hs-read { position: absolute; padding: 1px 4px; font-size: 10px; background: rgba(0,0,0,0.65); color: var(--text); border-radius: 2px; white-space: nowrap; pointer-events: none; }
 .hs-read.hidden { display: none; }
-.hs-foot { display: flex; gap: 10px; align-items: center; height: 16px; padding-left: 41px; font-size: 9px; color: var(--text-dim); }
-#hsInfo { color: var(--text-2); }
-.hs-banks { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); align-self: start; }
-.hs-bank { background: var(--surface-2); padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; min-height: 241px; }
+.hs-foot { display: flex; gap: 10px; align-items: center; height: 16px; padding-left: 41px; width: var(--hs-side); font-size: 9px; color: var(--text-dim); white-space: nowrap; overflow: hidden; }
+#hsInfo { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
+.hs-banks { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.15fr) minmax(0, 0.9fr) minmax(0, 0.9fr); gap: 1px; background: var(--line); border: 1px solid var(--line); align-self: stretch; }
+.hs-bank { background: var(--surface-2); padding: 5px 8px; display: flex; flex-direction: column; gap: 5px; min-height: 0; overflow: auto; }
+.hs-bank.hs-off > :not(.hs-h) { opacity: .45; pointer-events: none; }
 .hs-h { font-size: 10px; font-weight: 600; letter-spacing: .06em; }
 .hs-h span { font-size: 9px; font-weight: 400; letter-spacing: 0; color: var(--text-dim); margin-left: 4px; }
 .hs-row { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-2); }
-.hs-row input[type="range"] { flex: 1 1 auto; }
+.hs-row input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.hs-col { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--text-2); }
+.hs-glide.hidden { display: none; }
 .hs-kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 10px; }
 .hs-kv > span:nth-child(odd) { color: var(--text-dim); }
 .hs-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
-.hs-slot { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border-radius: 3px; cursor: pointer; color: var(--text); background: var(--surface-0); border: 1px solid var(--line-2); }
+.hs-slot { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; border-radius: 3px; cursor: pointer; color: var(--text); background: var(--surface-0); border: 1px solid var(--line-2); }
 .hs-slot.on { border-color: var(--accent); }
 .hs-slot-top { display: flex; justify-content: space-between; width: 100%; font-size: 10px; }
 .hs-slot svg { background: oklch(26% 0.08 255); border-radius: 2px; }
-.hs-slot polyline { fill: none; stroke: oklch(80% 0.14 235); stroke-width: 14; }
+.hs-slot polyline { fill: none; stroke: oklch(80% 0.14 235); stroke-width: 3; }
 .hs-seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
 .hs-seg button { height: 20px; padding: 0 8px; font-size: 10px; border: 0; background: var(--well); color: var(--text-2); cursor: pointer; }
 .hs-seg button + button { border-left: 1px solid var(--line-2); }
 .hs-seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
-.hs-shapes { display: flex; gap: 4px; }
-.hs-shapes .hs-btn { flex: 1; }
-
-/* The Prism page's own switch between HyperStretch and the rack pad. */
-/* `.dock` is a row: the switch is a narrow column at its left edge. */
-.prism-views { display: flex; flex-direction: column; gap: 3px; padding: 6px 4px; flex: none; border-right: 1px solid var(--line); background: var(--surface-0); }
-body:not(.prismpage) .prism-views { display: none; }
-.prism-views button { height: 20px; padding: 0 10px; font-size: 10px; border: 1px solid var(--line-2); border-radius: 3px; background: var(--well); color: var(--text-2); cursor: pointer; }
-.prism-views button.on { background: var(--surface-3); color: var(--text); border-color: var(--accent); font-weight: 600; }
+.hs-shapes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
+/* Hyperprism's L, LR and R faders, upright, each with its 0. */
+.hs-faders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; flex: 1 1 auto; min-height: 0; }
+.hs-fader { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 0; }
+.hs-fader input[type="range"] { writing-mode: vertical-lr; direction: rtl; flex: 1 1 auto; min-height: 50px; width: 18px; }
+.hs-fader .mono { font-size: 9px; }

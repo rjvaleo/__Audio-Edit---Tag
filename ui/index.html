@@ -519,9 +519,6 @@
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="effects" title="Effect chain">
           <span class="ic">⚙</span><span class="lb">FX</span>
         </button>
-        <button class="dock-tab" role="tab" aria-selected="false" data-dock="prism" title="Prism pad: two controls on one square, after Hyperprism">
-          <span class="ic">◩</span><span class="lb">Prism</span>
-        </button>
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="visuals" title="Spectrogram and meters">
           <span class="ic">◍</span><span class="lb">Visuals</span>
         </button>
@@ -534,10 +531,10 @@
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="chop" title="Chop: cut the sound at its silences into slices, after Recycle Reborn">
           <span class="ic">✂</span><span class="lb">Chop</span>
         </button>
-        <!-- HyperStretch: Hyperprism's XY pad on Stretch and Pitch. The rail's
-             Prism page opens it. See docs/HYPERSTRETCH.md. -->
-        <button class="dock-tab" role="tab" aria-selected="false" data-dock="hyper" title="HyperStretch: Hyperprism's XY pad, on the granular engine">
-          <span class="ic">◭</span><span class="lb">HyperStretch</span>
+        <!-- Prism: Hyperprism's XY pad, HyperStretch and the rack pad merged.
+             The rail's Prism page opens it. See docs/HYPERSTRETCH.md. -->
+        <button class="dock-tab" role="tab" aria-selected="false" data-dock="hyper" title="Prism: Hyperprism's XY pad">
+          <span class="ic">◭</span><span class="lb">Prism</span>
         </button>
       </nav>
       <div class="vsep"></div>
@@ -757,72 +754,6 @@
         <div class="fx-picker hidden" id="fxPicker">
           <div class="fx-picker-head"><button class="ghost fx-picker-back" id="fxPickerBack" hidden>‹ Kinds</button><span id="fxPickerTitle">Add module</span><button class="ghost" id="fxPickerClose">Close</button></div>
           <div class="fx-picker-groups" id="fxPickerGroups"></div>
-        </div>
-      </div>
-
-      <!-- The Prism pad: Hyperprism's blue window. Two controls on one square —
-           Time & Pitch, or any slot in the rack — with the limits typed into its
-           corners, as Hyperprism had them. `ui/prism-pad.js`. -->
-      <div class="dock-body prism-body hidden" id="dockPrism">
-        <div class="prism-bar">
-          <label>Drive <select class="mini" id="prismSource" aria-label="What the pad drives"></select></label>
-          <label>Across <select class="mini" id="prismX" aria-label="Across the pad"></select></label>
-          <label>Up <select class="mini" id="prismY" aria-label="Up the pad"></select></label>
-          <button class="ghost hidden" id="prismPtcOn" title="Hyperprism's Pitch Time Changer: on or off. Moving its pad turns it on.">PTC</button>
-          <span class="prism-gap"></span>
-          <button class="ghost" id="prismRec" title="Arm the recorder and play: the pad's moves become two lanes. Again to stop.">⏺ REC</button>
-          <button class="ghost" id="prismLoop" title="Loop the take: both of its lanes wrap over its span, together">⟲ LOOP</button>
-        </div>
-        <!-- Hyperprism's Playback Speed window and its L / LR / R faders. -->
-        <div class="prism-hp">
-          <label title="Hyperprism's Playback Speed: tape speed before the rack, pitch and time together · double-click for 100 %">Speed
-            <input type="range" id="prismSpeed" min="0" max="255" step="1" value="128" aria-label="Playback speed">
-            <span class="prism-hp-read" id="prismSpeedRead">100 %</span></label>
-          <!-- Hyperprism's faders: 0–255 each, ±18 dB. LR sets both sides to its
-               own value; the 0 buttons put a fader back at 128. -->
-          <span class="prism-hp-faders">
-            <label title="Left fader, −18 to +18 dB">L <input type="range" id="prismFaderL" min="0" max="255" step="1" value="128" aria-label="Left fader">
-              <span class="prism-hp-read" id="prismFaderLRead"></span></label>
-            <button class="ghost mini" id="prismFaderZeroL" title="Left fader back to the middle">0</button>
-            <label title="Both faders, set together">LR <input type="range" id="prismFaderLR" min="0" max="255" step="1" value="128" aria-label="Both faders">
-              <span class="prism-hp-read" id="prismFaderLRRead"></span></label>
-            <button class="ghost mini" id="prismFaderZeroLR" title="Both faders back to the middle">0</button>
-            <label title="Right fader, −18 to +18 dB">R <input type="range" id="prismFaderR" min="0" max="255" step="1" value="128" aria-label="Right fader">
-              <span class="prism-hp-read" id="prismFaderRRead"></span></label>
-            <button class="ghost mini" id="prismFaderZeroR" title="Right fader back to the middle">0</button>
-          </span>
-        </div>
-        <!-- The process window's own row: its presets and its post-roll. -->
-        <div class="prism-hp">
-          <label>Presets <select class="mini" id="prismPreset" aria-label="Presets for this process"></select></label>
-          <input class="mini" id="prismPresetName" type="text" placeholder="Preset name" aria-label="Preset name">
-          <button class="ghost mini" id="prismPresetSave" title="Save the pad's window, this process's settings and its post-roll under this name">Save</button>
-          <button class="ghost mini" id="prismPresetRename" title="Rename the chosen preset of your own to this name">Rename</button>
-          <button class="ghost mini" id="prismPresetDelete" title="Delete the chosen preset of your own">Delete</button>
-          <label title="How long this process runs on silence past the end, so its tail is heard">Post-Roll (ms)
-            <input class="mini" id="prismPostRoll" type="number" min="0" step="1" value="0" aria-label="Post-roll in milliseconds"></label>
-        </div>
-        <div class="prism-stage">
-          <div class="prism-y-axis">
-            <input class="mini prism-limit" id="prismYHi" type="number" step="any" title="Top of the sweep" aria-label="Top of the sweep">
-            <span class="prism-read" id="prismYRead"></span>
-            <input class="mini prism-limit" id="prismYLo" type="number" step="any" title="Bottom of the sweep" aria-label="Bottom of the sweep">
-          </div>
-          <div class="prism-square-wrap">
-            <div class="prism-square" id="prismPad" role="group" aria-label="Prism pad"
-                 title="Drag to move both controls · double-click to centre">
-              <svg class="prism-path" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"><polyline points=""></polyline></svg>
-              <i class="prism-pad-dot"></i>
-            </div>
-            <div class="prism-x-axis">
-              <input class="mini prism-limit" id="prismXLo" type="number" step="any" title="Left end of the sweep" aria-label="Left end of the sweep">
-              <span class="prism-read" id="prismXRead"></span>
-              <input class="mini prism-limit" id="prismXHi" type="number" step="any" title="Right end of the sweep" aria-label="Right end of the sweep">
-            </div>
-          </div>
-          <!-- The process's additional settings, as its window had them: a
-               bank of knobs to the right of the pad. -->
-          <div class="prism-settings" id="prismSettings"></div>
         </div>
       </div>
 

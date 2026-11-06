@@ -65,9 +65,8 @@ async function inventory(page) {
   for (const tab of ['effects', 'prism', 'visuals', 'automation', 'regions']) {
     // Prism is its own page in the left rail; the others are Grain's tabs.
     if (tab === 'prism') {
+      // Its panel is HyperStretch and the rack pad merged (5 Nov 2026).
       await page.locator('#leftRail .rl-item[data-page="prism"]').click();
-      // The page opens on HyperStretch; the rack pad is the page's other view.
-      await page.locator('#prismViews [data-prismview="prism"]').click();
     }
     else {
       if (await page.evaluate(() => document.body.classList.contains('prismpage'))) {
@@ -76,7 +75,7 @@ async function inventory(page) {
       await page.locator(`.dock-tab[data-dock="${tab}"]`).click();
     }
     await page.waitForTimeout(400);
-    await take(`grain/${tab}`, `#dock${tab[0].toUpperCase()}${tab.slice(1)}`);
+    await take(`grain/${tab}`, tab === 'prism' ? '#dockHyper' : `#dock${tab[0].toUpperCase()}${tab.slice(1)}`);
   }
   await take('transport', '#transportBar');
   await take('edit-toolbar', '#editTools');

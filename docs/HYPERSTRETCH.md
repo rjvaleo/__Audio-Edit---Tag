@@ -3,11 +3,20 @@
 *4 November 2026.* Hyperprism's XY pad rebuilt from its code, playing the granular engine's own Stretch and Pitch.
 
 **Where it is:**
-- Opened from the rail as **Prism**. The Prism page opens on HyperStretch. A two-button switch at the dock's left edge, **HyperStretch** or **Rack pad**, shows the Prism tab's rack pad instead. The page hides the dock's own tab bar, so the switch is the page's own.
-- The panel: `ui/app/385-hyperstretch.js`.
+- Opened from the rail as **Prism**. Since 5 November 2026 it is one panel with the Prism tab's rack pad (RJ: "Merge the HyperStretch and Rack Pad together, use all of the functionality from both, the look of the HyperStretch and the box size from Rack Pad"). The switch between the two, and the rack pad's own panel, are gone.
+- The panel: `ui/app/385-hyperstretch.js`. What it drives, and how: `ui/prism-pad.js`, whose functions fill the panel's menus, limits, settings, presets and faders by the rack pad's own ids.
 - The glide: `core/crates/engine/src/glide.rs`.
 
-It is a separate thing from the Prism tab's pad in [HYPERPRISM.md](HYPERPRISM.md), which drives rack slots through automation lanes.
+## The merged panel
+
+- **The header:** the source (Time & Pitch, the Pitch Time Changer, or any rack slot), the two axes, the transport, the chip, **Loop | Lanes**, LOOP (in Lanes), the PTC switch (for the Pitch Time Changer), the presets with Save, Rename and Delete, and the post-roll.
+- **The pad:** HyperStretch's look, square, as large as the dock leaves room for beside the banks, as the rack pad's was. Linear between its limits, as Hyperprism's was, whatever the control. The rack pad swept a log control logarithmically; it no longer does.
+- **Settings:** every control of the source but the two on the pad. They move the same values their controls elsewhere move: Time & Pitch's Glide plus Window and Cloud; the Pitch Time Changer's Feedback, Grain Size, X-Fade Size and Smoothing; for a slot, every parameter in its own groups, "Added (not in the original)" among them, as the FX tab has them. No note sends you elsewhere for the rest.
+- **Gestures** and **Motion:** HyperStretch's takes A–D, rate, direction, throw, loop on release and shapes. Kept per sound and per source.
+- **Output:** Hyperprism's Playback Speed, and its L, LR and R faders with their 0 buttons.
+- **Where a take goes:**
+  - **Loop**, HyperStretch's: grab to record, stepped, looping at its own length. Live only.
+  - **Lanes**, the rack pad's: ● arms the recorder and plays; the pad's two controls become two automation lanes in the document, which LOOP wraps together and the export plays. The pad shows the take and rides along it as it plays.
 
 ## Where the behaviour comes from
 
@@ -32,7 +41,7 @@ Hyperprism-PPC 1.2.1 was decompiled with Ghidra:
 
 ### The pad
 
-- **Size and layout:** 461 × 241. X low and high sit at the ends of the top bar; Y high and low at the top and bottom of the left bar.
+- **Layout:** X low and high sit at the ends of the top bar; Y high and low at the top and bottom of the left bar. The original's size, 461 × 241, is not kept: the merged pad is square, sized to the dock.
 - **Mapping:** linear.
   - `X = xLo + x·(xHi − xLo)`
   - `Y = yLo + (1 − y)·(yHi − yLo)`
@@ -99,7 +108,7 @@ Takes, limits and axes are kept per sound, in the browser.
 ## Not yet exact
 
 - **The Pitch Time Changer's ratio is still held to 0–200 %.** That is the shifter's range as a rack effect. The original drove the same shifter at Pitch ÷ Speed with no limit, so Pitch 200 % at Speed 1 % is a ratio of 200. Fixing it needs a ratio entry on `hp-pitch-shifter` in prism-fx.
-- **Takes are not in an export.** Hyperprism rendered its paths offline (`GetNextParameters`). Here a take is live only, until it can be written into the stretch automation lanes.
+- **Loop takes are not in an export.** Hyperprism rendered its paths offline (`GetNextParameters`). A Loop take is live only; a Lanes take is in the document and the export, but on the file's timeline, not looping at its own length.
 - **The glide steps once per block,** not every 512 samples within a block. A block is the engine's 256–1024 frames.
 - **Not carried over:** the Path Edit Table, Path Info (name, comments), and undo of a take.
 

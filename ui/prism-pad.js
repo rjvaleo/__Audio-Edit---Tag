@@ -18,6 +18,12 @@
 // which two controls, and their limits — is kept with the rack, under the
 // slot's id or `stretch`.
 //
+// **Its panel is the Prism page's** (`app/385-hyperstretch.js`), HyperStretch
+// and this pad merged (RJ, 5 Nov 2026). That panel has the elements this file
+// fills by id — the source and axis menus, the limits, the settings, the
+// presets, the post-roll, the PTC switch, Playback Speed and the faders — and
+// moves the pad; this file is what the pad drives and how.
+//
 // Loaded after app.js's globals exist and before anything calls it; nothing
 // runs at load.
 
@@ -28,9 +34,7 @@ const prismPad = {
   source: 'stretch',
   /// The current take for the pad's two controls: `[frame, xUnit, yUnit]`.
   path: [],
-  dragging: false,
-  timer: null,
-};
+  };
 window.prismPad = prismPad;
 
 const PRISM_STRETCH = 'stretch';
@@ -63,26 +67,6 @@ function prismPtcSet(changes) {
   Object.assign(prismPtc(), changes);
   Object.assign(prismPtcPending, changes);
   prismPtcSend();
-}
-
-/// The pad tab was opened: fetch what it can drive, and draw it.
-async function prismPadOpen() {
-  const f = state.selectedFile;
-  if (!f) return;
-  try {
-    const r = await api(`/api/pad?p=${encodeURIComponent(f.path)}`);
-    prismPad.sources = r.sources || [];
-  } catch { prismPad.sources = []; }
-  if (!prismPad.sources.some((s) => s.id === prismPad.source)) prismPad.source = PRISM_STRETCH;
-  prismRenderBar();
-  prismPlace();
-  prismShowHp();
-  prismLoadPresets();
-  await prismLoadPath();
-  prismShowRecord();
-  // While the tab is open and the transport runs, the dot follows the take.
-  clearInterval(prismPad.timer);
-  prismPad.timer = setInterval(prismFollow, 60);
 }
 
 function prismCurrent() {
@@ -157,17 +141,6 @@ function prismWrite(key, v) {
   liveParam(slot.id, key, v);
 }
 
-/// What the pad was moved to, as two fractions across and up.
-function prismMoveTo(across, up) {
-  const p = prismSetup();
-  const cx = prismControl(p?.x), cy = prismControl(p?.y);
-  if (!cx || !cy) return;
-  prismWrite(cx.key, prismBetween(cx, p.xLo, p.xHi, across));
-  prismWrite(cy.key, prismBetween(cy, p.yLo, p.yHi, up));
-  if (prismCurrent().id === PRISM_STRETCH) previewStretch();
-  prismPlace();
-}
-
 /// A drag is over: commit it properly, as a released slider does.
 function prismRelease() {
   const id = prismCurrent()?.id;
@@ -185,42 +158,83 @@ function prismShowPtc() {
   b.setAttribute('aria-pressed', prismPtc().on ? 'true' : 'false');
 }
 
-/// The process's additional settings, to the right of the pad: for the Pitch
-/// Time Changer, its window's four settings, as a bank of knobs drawn the way
-/// the granular tray's are (`gkKnob`). Its two axes are on the pad. A process
-/// with none says where the rest of it is, so the space does not read as empty.
+/// The process's settings other than its two axes, in the Prism page's
+/// Settings bank, all of them (RJ: "Move all the extra setting to the Prism
+/// stand-alone"), as knobs drawn the way the granular tray's are (`gkKnob`).
+/// Each moves the value its own control elsewhere moves: Time & Pitch's
+/// through `stretchDraft`, the Pitch Time Changer's through `/api/pitchtime`,
+/// a slot's through `liveParam`, as the FX tab's do (`prismModuleControl`).
+const PRISM_STRETCH_DEFAULTS = { ratio: 1, semitones: 0, windowMs: 46, cloudMix: 0.5 };
 function prismRenderSettings() {
   const box = $('prismSettings');
   if (!box) return;
   box.innerHTML = '';
   const src = prismCurrent();
-  const extra = src?.id === PRISM_PTC ? src.controls.filter((c) => c.key !== 'speed' && c.key !== 'pitch') : [];
-  if (extra.length === 0) {
-    const note = document.createElement('p');
-    note.className = 'prism-settings-note';
-    note.textContent = src?.id === PRISM_STRETCH || !src
-      ? 'Its other settings are on the Time & Pitch tab.'
-      : 'Its other settings are in the FX tab.';
-    box.appendChild(note);
+  if (!src) return;
+  const p = prismSetup();
+  const onPad = (key) => key === p?.x || key === p?.y;
+  const knob = (row) => { if (row.querySelector(':scope > input[type=range]')) gkKnob(row); return row; };
+  const group = (label) => {
+    const g = document.createElement('div');
+    g.className = 'prism-group';
+    if (label) {
+      const l = document.createElement('span');
+      l.className = 'prism-group-label';
+      l.textContent = label;
+      g.appendChild(l);
+    }
+    const body = document.createElement('div');
+    body.className = 'prism-bank-body';
+    g.appendChild(body);
+    box.appendChild(g);
+    return body;
+  };
+  const step = (c) => (c.step === 1 ? 1 : (c.max - c.min) / 400);
+  if (src.id === PRISM_STRETCH || src.id === PRISM_PTC) {
+    const body = group('');
+    const pt = src.id === PRISM_PTC ? prismPtc() : null;
+    for (const c of src.controls) {
+      if (onPad(c.key)) continue;
+      const v = pt ? pt[c.key] ?? PTC_DEFAULTS[c.key] : prismRead(c.key);
+      const def = pt ? PTC_DEFAULTS[c.key] : PRISM_STRETCH_DEFAULTS[c.key];
+      const row = pt
+        ? param(c.label, v, c.min, c.max, 1, (x) => `${Math.round(x)} %`, (x) => prismPtcSet({ [c.key]: Math.round(x) }), () => {}, false, def)
+        : param(c.label, v, c.min, c.max, step(c), (x) => prismFormat(c, x),
+          (x) => { prismWrite(c.key, x); previewStretch(); }, () => commitStretch(), c.log, def);
+      body.appendChild(knob(row));
+    }
     return;
   }
-  const bank = document.createElement('div');
-  bank.className = 'prism-bank';
-  const head = document.createElement('div');
-  head.className = 'prism-bank-head';
-  head.textContent = src.label;
-  const body = document.createElement('div');
-  body.className = 'prism-bank-body';
-  bank.append(head, body);
-  box.appendChild(bank);
-  const pt = prismPtc();
-  for (const c of extra) {
-    const def = PTC_DEFAULTS[c.key];
-    const row = param(c.label, pt[c.key] ?? def, c.min, c.max, 1, (v) => `${Math.round(v)} %`,
-      (v) => prismPtcSet({ [c.key]: Math.round(v) }), () => {}, false, def);
-    body.appendChild(row);
-    gkKnob(row);
+  const slot = state.rack?.slots.find((s) => s.id === src.id);
+  if (!slot) return;
+  const shaper = state.shapers?.[slot.kind];
+  if (!shaper?.params?.length || slot.kind === 'comp') {
+    // No shaper to ask (the compressor, the built-ins): the source's controls.
+    const body = group('');
+    for (const c of src.controls) {
+      if (onPad(c.key)) continue;
+      const fmt = c.choices ? (x) => c.choices[Math.round(x - c.min)] ?? String(Math.round(x)) : (x) => prismFormat(c, x);
+      body.appendChild(knob(param(c.label, prismRead(c.key), c.min, c.max, step(c), fmt,
+        (x) => prismWrite(c.key, c.step === 1 ? Math.round(x) : x), () => commitRack(), c.log && c.step !== 1, undefined)));
+    }
+    return;
   }
+  // Every parameter the effect has, switches and choices too, in its own
+  // groups ("Added (not in the original)" among them), as the FX tab has them.
+  slot.params = slot.params || {};
+  for (const sp of shaper.params) if (slot.params[sp.key] === undefined) slot.params[sp.key] = sp.default;
+  const byKey = Object.fromEntries(shaper.params.map((sp) => [sp.key, sp]));
+  const groups = shaper.panel?.groups?.length ? shaper.panel.groups : [{ label: '', keys: shaper.params.map((sp) => sp.key) }];
+  const seen = new Set();
+  const rows = {};
+  const add = (label, keys) => {
+    const mine = keys.filter((k) => byKey[k] && !onPad(k) && !seen.has(k));
+    if (!mine.length) return;
+    const body = group(label);
+    for (const k of mine) { seen.add(k); body.appendChild(knob(prismModuleControl(slot, byKey[k], rows))); }
+  };
+  for (const g of groups) add(g.label, g.keys);
+  add('', shaper.params.map((sp) => sp.key));
 }
 
 /// Two numbers with their units, the way Hyperprism printed them on its edges.
@@ -446,7 +460,6 @@ function prismKeep(next) {
   state.rack.pads = { ...(state.rack.pads || {}), [prismCurrent().id]: next };
   pushRack({ immediate: true });
   prismRenderBar();
-  prismPlace();
   prismLoadPath();
 }
 
@@ -479,21 +492,6 @@ function prismLimitChanged(field, input) {
   prismKeep(p);
 }
 
-/// The dot where the two controls are, and the readouts on the edges.
-function prismPlace(values) {
-  const pad = $('prismPad');
-  const p = prismSetup();
-  const cx = prismControl(p?.x), cy = prismControl(p?.y);
-  if (!pad || !cx || !cy) return;
-  const vx = values ? values[0] : prismRead(cx.key);
-  const vy = values ? values[1] : prismRead(cy.key);
-  const dot = pad.querySelector('.prism-pad-dot');
-  dot.style.left = `${prismAlong(cx, p.xLo, p.xHi, vx) * 100}%`;
-  dot.style.top = `${(1 - prismAlong(cy, p.yLo, p.yHi, vy)) * 100}%`;
-  $('prismXRead').textContent = `${cx.label} ${prismFormat(cx, vx)}`;
-  $('prismYRead').textContent = `${cy.label} ${prismFormat(cy, vy)}`;
-}
-
 /// The lane names the pad's two controls record into.
 function prismTargets() {
   const p = prismSetup();
@@ -515,42 +513,7 @@ async function prismLoadPath() {
       prismPad.path = r.points || [];
     } catch { /* no take is a fine answer */ }
   }
-  prismDrawPath();
   prismShowLoop();
-}
-
-function prismDrawPath() {
-  const line = document.querySelector('#prismPad .prism-path polyline');
-  if (!line) return;
-  const p = prismSetup();
-  const cx = prismControl(p?.x), cy = prismControl(p?.y);
-  if (!cx || !cy) { line.setAttribute('points', ''); return; }
-  line.setAttribute('points', prismPad.path.map(([, ux, uy]) => {
-    const x = prismAlong(cx, p.xLo, p.xHi, prismUnitValue(cx, ux));
-    const y = 1 - prismAlong(cy, p.yLo, p.yHi, prismUnitValue(cy, uy));
-    return `${x.toFixed(4)},${y.toFixed(4)}`;
-  }).join(' '));
-}
-
-/// While the take plays back, the dot rides along it.
-function prismFollow() {
-  if ($('dockPrism')?.classList.contains('hidden')) { clearInterval(prismPad.timer); prismPad.timer = null; return; }
-  if (prismPad.dragging || !engine.playing || prismPad.path.length < 2 || state.captureArmed) return;
-  const frame = playbackTime() * (state.view.sampleRate || 48000);
-  const lanes = state.automation?.lanes || [];
-  const t = prismTargets();
-  const span = lanes.find((l) => l.target === t?.[0])?.loop;
-  let at = frame;
-  if (Array.isArray(span) && span[1] > span[0] && at >= span[0]) at = span[0] + ((at - span[0]) % (span[1] - span[0]));
-  const path = prismPad.path;
-  let i = path.findIndex(([f]) => f >= at);
-  if (i < 0) i = path.length - 1;
-  const [f1, x1, y1] = path[i];
-  const [f0, x0, y0] = path[Math.max(0, i - 1)];
-  const k = f1 > f0 ? Math.max(0, Math.min(1, (at - f0) / (f1 - f0))) : 1;
-  const p = prismSetup();
-  const cx = prismControl(p.x), cy = prismControl(p.y);
-  prismPlace([prismUnitValue(cx, x0 + (x1 - x0) * k), prismUnitValue(cy, y0 + (y1 - y0) * k)]);
 }
 
 /// LOOP: both of the take's lanes wrap over its span, together.
@@ -583,98 +546,4 @@ async function prismToggleRecord() {
     await startCapture();
     if (state.captureArmed && !engine.playing) startPlayback();
   }
-  prismShowRecord();
 }
-
-function prismShowRecord() {
-  const b = $('prismRec');
-  if (!b) return;
-  const taking = state.captureArmed && engine.playing;
-  b.classList.toggle('armed', state.captureArmed && !taking);
-  b.classList.toggle('recording', taking);
-  b.textContent = taking ? '⏺ REC ●' : state.captureArmed ? '⏺ ARMED' : '⏺ REC';
-  // A take just ended: draw it.
-  if (!state.captureArmed && prismPad.wasArmed) prismLoadPath();
-  prismPad.wasArmed = state.captureArmed;
-}
-
-// ------------------------------------------------------------------ wiring
-
-// Wired at load, which is before app.js has run: so by id, not through `$`.
-(() => {
-  const byId = (id) => document.getElementById(id);
-  const pad = byId('prismPad');
-  if (!pad) return;
-  const where = (event) => {
-    const r = pad.getBoundingClientRect();
-    return [(event.clientX - r.left) / r.width, 1 - (event.clientY - r.top) / r.height];
-  };
-  pad.onpointerdown = (event) => {
-    event.preventDefault();
-    pad.setPointerCapture?.(event.pointerId);
-    prismPad.dragging = true;
-    prismMoveTo(...where(event));
-  };
-  pad.onpointermove = (event) => { if (prismPad.dragging) prismMoveTo(...where(event)); };
-  pad.onpointerup = pad.onpointercancel = () => {
-    if (!prismPad.dragging) return;
-    prismPad.dragging = false;
-    prismRelease();
-  };
-  // Double-click centres the dot, as double-click resets every control here.
-  pad.ondblclick = (event) => {
-    event.preventDefault();
-    prismMoveTo(0.5, 0.5);
-    prismRelease();
-  };
-  byId('prismSource').onchange = (e) => {
-    prismPad.source = e.target.value;
-    prismRenderBar();
-    prismPlace();
-    prismLoadPath();
-    prismLoadPresets();
-  };
-  byId('prismX').onchange = (e) => prismAxisChanged('x', e.target.value);
-  byId('prismY').onchange = (e) => prismAxisChanged('y', e.target.value);
-  for (const field of ['xLo', 'xHi', 'yLo', 'yHi']) {
-    const input = byId(`prism${field[0].toUpperCase()}${field.slice(1)}`);
-    input.onchange = () => prismLimitChanged(field, input);
-  }
-  // Square, the largest the dock leaves room for: its height less the limits
-  // row under it, or its width less the limits and the settings beside it,
-  // whichever is less.
-  const stage = pad.closest('.prism-stage');
-  const fit = () => {
-    const yAxis = stage.querySelector('.prism-y-axis');
-    const below = stage.querySelector('.prism-x-axis').offsetHeight + 4;
-    // The settings' bank, to the right, keeps its width; the pad gives way.
-    const beside = stage.querySelector('.prism-settings')?.offsetWidth || 0;
-    const side = Math.max(140, Math.floor(Math.min(stage.clientHeight - below,
-      stage.clientWidth - yAxis.offsetWidth - 12 - (beside && beside + 12))));
-    stage.style.setProperty('--prism-side', `${side}px`);
-  };
-  if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
-  byId('prismPtcOn').onclick = () => {
-    prismPtcSet({ on: !prismPtc().on });
-    prismShowPtc();
-  };
-  // Playback Speed and the faders: live, as Hyperprism's windows were.
-  for (const [id, key] of [['prismSpeed', 'speed'], ['prismFaderL', 'l'], ['prismFaderLR', 'lr'], ['prismFaderR', 'r']]) {
-    const el = byId(id);
-    el.oninput = () => prismFaderSet(key, +el.value);
-    // Double-click puts it back to the middle, as every control here does.
-    el.ondblclick = () => prismFaderSet(key, 128);
-  }
-  for (const [id, key] of [['prismFaderZeroL', 'l'], ['prismFaderZeroLR', 'lr'], ['prismFaderZeroR', 'r']]) {
-    byId(id).onclick = () => prismFaderSet(key, 128);
-  }
-  byId('prismPreset').onchange = (e) => prismPresetChosen(e.target.value);
-  byId('prismPresetSave').onclick = () => prismPresetSave();
-  byId('prismPresetRename').onclick = () => prismPresetRename();
-  byId('prismPresetDelete').onclick = () => prismPresetDelete();
-  byId('prismPostRoll').onchange = (e) => prismPostRollChanged(e.target);
-  byId('prismRec').onclick = () => prismToggleRecord();
-  byId('prismLoop').onclick = () => prismToggleLoop();
-  // The transport's state reaches the button however it was changed.
-  setInterval(() => { if (!byId('dockPrism')?.classList.contains('hidden')) prismShowRecord(); }, 250);
-})();

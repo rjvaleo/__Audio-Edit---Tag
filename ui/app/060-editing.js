@@ -784,7 +784,7 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
       x.classList.toggle('active', x === t);
       x.setAttribute('aria-selected', String(x === t));
     });
-    const panes = { effects: 'dockEffects', prism: 'dockPrism', stretch: 'dockStretch',
+    const panes = { effects: 'dockEffects', stretch: 'dockStretch',
                     visuals: 'dockVisuals', automation: 'dockAutomation',
                     regions: 'dockRegions', chop: 'dockChop', hyper: 'dockHyper' };
     for (const [k, id] of Object.entries(panes)) $(id).classList.toggle('hidden', k !== t.dataset.dock);
@@ -801,8 +801,6 @@ document.querySelectorAll('.dock-tab').forEach((t) => {
       chopDraw();
     } else if (t.dataset.dock === 'stretch') {
       drawGrains();
-    } else if (t.dataset.dock === 'prism') {
-      prismPadOpen();
     } else if (t.dataset.dock === 'automation') {
       // Drawn while hidden, the timeline took the canvas's default 300 px as
       // its width and the page stretched it across the dock — every word in it

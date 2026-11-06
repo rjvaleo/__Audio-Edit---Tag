@@ -16,19 +16,18 @@ function setEditPage(page, apply = true) {
 /// Grain puts back whichever tab was open before. Prism is a page of its own
 /// since 4 Nov 2026 (RJ: "move the Prism functionality to a left-nav item,
 /// below grain"), so Grain's dock no longer offers it as a tab.
-/// The Prism page opens HyperStretch (`385-hyperstretch.js`); the rack pad it
-/// opened before is the page's second tab. Read only while editing, which is
-/// never at startup, before this `const` exists.
+/// The Prism page opens its pad (`385-hyperstretch.js`): HyperStretch and the
+/// rack pad, merged into one panel on 5 Nov 2026. Read only while editing,
+/// which is never at startup, before this `const` exists.
 const PAGE_DOCKS = { chop: 'chop', prism: 'hyper' };
 let chopPageFrom = null;
 function chopPageSync(editing) {
   const active = document.querySelector('.dock-tab.active')?.dataset.dock;
   const tab = (name) => document.querySelector(`.dock-tab[data-dock="${name}"]`);
   const own = editing ? PAGE_DOCKS[editPage] : null;
-  // The tabs a page of its own may show: Prism's are HyperStretch and the
-  // rack pad, switched on the page itself.
-  const mine = own && (editPage === 'prism' ? ['hyper', 'prism'] : [own]);
-  const pages = ['chop', 'hyper', 'prism'];
+  // The tab a page of its own shows.
+  const mine = own && [own];
+  const pages = ['chop', 'hyper'];
   if (own) {
     if (!mine.includes(active)) {
       if (!pages.includes(active)) chopPageFrom = active || null;

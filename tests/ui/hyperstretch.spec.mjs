@@ -1,10 +1,11 @@
 // HyperStretch: Hyperprism's XY pad, read from its code, on the granular
-// engine's Stretch and Pitch. Opened from the rail as Prism. See
-// `docs/HYPERSTRETCH.md`.
+// engine's Stretch and Pitch. Opened from the rail as Prism, where it is merged
+// with the rack pad (`prism-merged.spec.mjs`). See `docs/HYPERSTRETCH.md`.
 //
-// What this pins, each from the decompiled original:
-//   - the pad is 461 × 241, and maps linearly: X low at the left, Y low at
-//     the bottom;
+// What this pins, each from the decompiled original unless said:
+//   - the pad maps linearly: X low at the left, Y low at the bottom; it is
+//     square and sized to the dock, as the rack pad's was (not the original's
+//     461 × 241);
 //   - grabbing the pad is the record button, and a take runs until Stop or Play;
 //   - a path is a point per tick at most, played back stepped, looping at its
 //     own length;
@@ -45,14 +46,15 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => { try { for (const k of Object.keys(localStorage)) if (k.startsWith('hyperstretch')) localStorage.removeItem(k); } catch {} });
 });
 
-test('Prism on the rail opens the open sound on the HyperStretch pad, at 461 × 241', async ({ page }) => {
+test('Prism on the rail opens the open sound on its pad, square and sized to the dock', async ({ page }) => {
   await expect(page.locator('#leftRail .rl-item[data-page="prism"]')).toHaveCount(1);
   await openPrism(page);
   expect(await page.evaluate(() => document.body.classList.contains('prismpage'))).toBe(true);
   await expect(page.locator('.dock-tab[data-dock="hyper"]')).toHaveClass(/active/);
   const b = await page.locator('#hsPad').boundingBox();
-  expect(Math.round(b.width)).toBe(461);
-  expect(Math.round(b.height)).toBe(241);
+  expect(Math.abs(b.width - b.height)).toBeLessThanOrEqual(1);
+  expect(b.width).toBeGreaterThanOrEqual(140);
+  expect(Math.round(b.width) - 2).toBe(await page.evaluate(() => window.hyperStretch.side()));
   await expect(page.locator('#hsChip')).toContainText('READY');
 });
 
@@ -145,7 +147,8 @@ test('arrow keys draw while recording, ten pixels with Option', async ({ page })
   for (let i = 0; i < 3; i++) { await page.keyboard.press('Alt+ArrowRight'); await page.waitForTimeout(30); }
   await page.keyboard.press('ArrowUp');
   const h = await page.evaluate(() => window.hyperStretch.hand());
-  expect((h.x - x0) * 461).toBeCloseTo(30, 0);
+  const side = await page.evaluate(() => window.hyperStretch.side());
+  expect((h.x - x0) * side).toBeCloseTo(30, 0);
   await page.locator('#hsStop').click();
   expect((await page.evaluate(() => window.hyperStretch.take(0))).pts.length).toBeGreaterThanOrEqual(4);
 });
@@ -159,10 +162,10 @@ test('a new limit rescales the take so every point keeps its value', async ({ pa
   await page.mouse.up();
   await page.locator('#hsStop').click();
   const before = await page.evaluate(() => window.hyperStretch.values(0));
-  await page.locator('#hsXLo').fill('8');
-  await page.locator('#hsXLo').press('Enter');
-  await page.locator('#hsYHi').fill('24');
-  await page.locator('#hsYHi').press('Enter');
+  await page.locator('#prismXLo').fill('8');
+  await page.locator('#prismXLo').press('Enter');
+  await page.locator('#prismYHi').fill('24');
+  await page.locator('#prismYHi').press('Enter');
   expect(await page.evaluate(() => window.hyperStretch.limits())).toEqual({ xLo: 8, xHi: 0.25, yLo: -12, yHi: 24 });
   const after = await page.evaluate(() => window.hyperStretch.values(0));
   after.forEach((v, i) => {
