@@ -5854,7 +5854,9 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hyper-body { --hs-side: 220px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; font-size: 11px; }
 .hyper-body.hidden { display: none; }
 .hs-head { flex: none; min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 7px; padding: 3px 8px; background: var(--surface-0); border-bottom: 1px solid var(--line); }
-.hs-head .hidden { display: none; }
+.hs-head .hidden, .hs-h .hidden { display: none; }
+#prismPtcOn { margin-left: 6px; height: 16px; }
+#prismLoop:disabled { opacity: .4; cursor: default; }
 .hs-head select.mini { width: 110px; min-width: 0; }
 /* Fixed widths, so the header wraps the same whatever the source is called
    and the pad, sized from what is left, keeps its size. */
@@ -5870,7 +5872,9 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hs-btn { height: 20px; min-width: 24px; padding: 0 6px; font-size: 10px; border-radius: 3px; border: 1px solid var(--line-2); background: var(--surface-3); color: var(--text); cursor: pointer; }
 .hs-btn.on, #hsRec.on { color: var(--bad); }
 #prismLoop.on, #prismPtcOn.on { color: var(--accent); border-color: var(--accent); }
-.hs-chip { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--well); color: var(--text-dim); }
+/* One width whatever it says: a header that re-wrapped as the chip changed
+   would resize the pad under the hand. */
+.hs-chip { box-sizing: border-box; width: 196px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--well); color: var(--text-dim); }
 .hs-chip[data-mode="rec"] { color: var(--bad); }
 .hs-chip[data-mode="play"] { color: var(--good); }
 #hsNow { font-size: 10px; }

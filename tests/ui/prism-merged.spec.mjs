@@ -111,12 +111,12 @@ test('Settings has every control of a slot but the two on the pad, and they move
   expect(moved.stored).toBeCloseTo(moved.now, 3);
 });
 
-test('Loop or Lanes: Lanes shows LOOP and sets the gestures aside, Loop brings them back', async ({ page }) => {
+test('Loop or Lanes: Lanes enables LOOP and sets the gestures aside, Loop brings them back', async ({ page }) => {
   await openPrism(page);
   await expect(page.locator('[data-hswhere="loop"]')).toHaveClass(/\bon\b/);
-  await expect(page.locator('#prismLoop')).toBeHidden();
+  await expect(page.locator('#prismLoop')).toBeDisabled();
   await page.locator('[data-hswhere="lanes"]').click();
-  await expect(page.locator('#prismLoop')).toBeVisible();
+  await expect(page.locator('#prismLoop')).toBeEnabled();
   await expect(page.locator('.hs-bank[aria-label="Gestures"]')).toHaveClass(/hs-off/);
   await expect(page.locator('#hsInfo')).toContainText('stretch.ratio / stretch.semitones');
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -127,6 +127,6 @@ test('Loop or Lanes: Lanes shows LOOP and sets the gestures aside, Loop brings t
   const ratio = await page.evaluate(() => state.stretchDraft.ratio);
   expect(ratio).toBeCloseTo(4 + 0.75 * (0.25 - 4), 1);
   await page.locator('[data-hswhere="loop"]').click();
-  await expect(page.locator('#prismLoop')).toBeHidden();
+  await expect(page.locator('#prismLoop')).toBeDisabled();
   await expect(page.locator('.hs-bank[aria-label="Gestures"]')).not.toHaveClass(/hs-off/);
 });

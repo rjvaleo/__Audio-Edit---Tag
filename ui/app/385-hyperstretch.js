@@ -127,7 +127,6 @@ function hsBuild() {
         <button type="button" data-hswhere="lanes" title="The rack pad's take: two automation lanes in the document, in the export">Lanes</button>
       </span>
       <button type="button" class="hs-btn" id="prismLoop" title="Loop the take: both of its lanes wrap over its span, together">⟲ LOOP</button>
-      <button type="button" class="hs-btn hidden" id="prismPtcOn" title="Hyperprism's Pitch Time Changer: on or off. Moving its pad turns it on.">PTC</button>
       <span class="hs-fill"></span>
       <label class="hs-lbl">Presets <select id="prismPreset" class="mini" aria-label="Presets for this process"></select></label>
       <input id="prismPresetName" class="mini hs-name" type="text" placeholder="Preset name" aria-label="Preset name">
@@ -157,7 +156,8 @@ function hsBuild() {
       </div>
       <div class="hs-banks">
         <section class="hs-bank" aria-label="Settings">
-          <div class="hs-h">SETTINGS <span id="hsSetSub"></span></div>
+          <div class="hs-h">SETTINGS <span id="hsSetSub"></span>
+            <button type="button" class="hs-btn hidden" id="prismPtcOn" title="Hyperprism's Pitch Time Changer: on or off. Moving its pad turns it on.">PTC</button></div>
           <div id="hsGlideBox" class="hs-glide">
             <label class="hs-row">Glide <input type="range" id="hsGlide" min="0" max="100" step="1" aria-label="Glide: Hyperprism's Smoothing"></label>
             <div class="hs-kv"><span>setting</span><span class="mono" id="hsGlideV"></span><span>coefficient</span><span class="mono" id="hsCoef"></span>
@@ -202,8 +202,9 @@ function hsFit() {
   const host = $('dockHyper');
   const body = host?.querySelector('.hs-body');
   if (!body || !body.clientHeight) return;
-  const h = body.clientHeight - 16 - 21 - 2 * 16 - 9;
-  const w = body.clientWidth - 16 - 41 - 10 - HS_BANKS_MIN;
+  // Padding, the top limits, the two lines under the pad, the gaps, the border.
+  const h = body.clientHeight - 16 - 21 - 2 * 16 - 9 - 2;
+  const w = body.clientWidth - 16 - 41 - 2 - 10 - HS_BANKS_MIN;
   const side = Math.max(140, Math.floor(Math.min(h, w)));
   if (side === hs.side && host.style.getPropertyValue('--hs-side')) return;
   hs.side = side;
@@ -229,7 +230,8 @@ function hsWire() {
     if (hs.mode === 'pause' || e.button > 0) return;
     e.preventDefault();
     pad.setPointerCapture?.(e.pointerId);
-    pad.focus();
+    // Without scrolling: the panel must not move under the hand.
+    pad.focus({ preventScroll: true });
     const p = frac(e), t = performance.now();
     hs.anchor = null;
     hs.prev = { p, t };
@@ -778,7 +780,8 @@ function hsPaint() {
     b.classList.toggle('on', b.dataset.hswhere === hs.where);
     b.setAttribute('aria-pressed', String(b.dataset.hswhere === hs.where));
   });
-  $('prismLoop').classList.toggle('hidden', !lanes);
+  // Always there, so the header never re-wraps and resizes the pad: a Lanes control.
+  $('prismLoop').disabled = !lanes;
 
   const cx = hsControl('x'), cy = hsControl('y');
   $('hsXName').textContent = cx?.label || '';
