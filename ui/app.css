@@ -5898,7 +5898,7 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hyper-body[data-mode="rec"] .hs-ball { fill: #ff6633; }
 .hs-read { position: absolute; padding: 1px 4px; font-size: 10px; background: rgba(0,0,0,0.65); color: var(--text); border-radius: 2px; white-space: nowrap; pointer-events: none; }
 .hs-read.hidden { display: none; }
-.hs-foot { display: flex; gap: 10px; align-items: center; height: 16px; padding-left: 41px; width: var(--hs-side); font-size: 9px; color: var(--text-dim); white-space: nowrap; overflow: hidden; }
+.hs-foot { display: flex; gap: 6px; align-items: center; height: 16px; width: calc(var(--hs-side) + 43px); font-size: 9px; color: var(--text-dim); white-space: nowrap; overflow: hidden; }
 #hsInfo { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
 .hs-banks { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.15fr) minmax(0, 0.9fr) minmax(0, 0.9fr); gap: 1px; background: var(--line); border: 1px solid var(--line); align-self: stretch; }
 .hs-bank { background: var(--surface-2); padding: 5px 8px; display: flex; flex-direction: column; gap: 5px; min-height: 0; overflow: auto; }

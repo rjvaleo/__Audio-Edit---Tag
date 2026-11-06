@@ -134,15 +134,14 @@ function hsBuild() {
       <button type="button" class="hs-btn" id="prismPresetSave" title="Save the pad's window, this process's settings and its post-roll under this name">Save</button>
       <button type="button" class="hs-btn" id="prismPresetRename" title="Rename the chosen preset of your own to this name">Rename</button>
       <button type="button" class="hs-btn" id="prismPresetDelete" title="Delete the chosen preset of your own">Delete</button>
-      <label class="hs-lbl" title="How long this process runs on silence past the end, so its tail is heard">Post-roll
-        <input id="prismPostRoll" class="mini mono hs-ms" type="number" min="0" step="1" value="0" aria-label="Post-roll in milliseconds"> ms</label>
     </div>
     <div class="hs-body">
       <div class="hs-stage">
         <div class="hs-top"><input id="prismXLo" type="number" step="any" class="hs-lim mono" aria-label="X low limit" title="Left end of the sweep"><span id="hsXName" class="hs-axis"></span><input id="prismXHi" type="number" step="any" class="hs-lim mono" aria-label="X high limit" title="Right end of the sweep"></div>
         <div class="hs-mid">
           <div class="hs-left"><input id="prismYHi" type="number" step="any" class="hs-lim mono" aria-label="Y high limit" title="Top of the sweep"><span id="hsYName" class="hs-axis hs-vert"></span><input id="prismYLo" type="number" step="any" class="hs-lim mono" aria-label="Y low limit" title="Bottom of the sweep"></div>
-          <button type="button" class="hs-pad" id="hsPad" aria-label="Prism pad: grab to record, Shift to lock, arrows to draw while recording, double-click to centre">
+          <button type="button" class="hs-pad" id="hsPad" aria-label="Prism pad: grab to record, Shift to lock, arrows to draw while recording, double-click to centre"
+            title="Grab to record · Shift locks H, V or 45° · ←↑→↓ draw while recording, ⌥ ×10 · double-click to centre">
             <svg class="hs-svg" id="hsSvg" aria-hidden="true">
               <path id="hsGrid" class="hs-grid" d=""/>
               <polyline id="hsPath" class="hs-path" points=""/>
@@ -154,7 +153,7 @@ function hsBuild() {
           </button>
         </div>
         <div class="hs-foot"><span class="mono" id="hsInfo"></span></div>
-        <div class="hs-foot"><span class="hs-dim">engine now</span><span class="mono" id="hsNow"></span><span class="hs-fill"></span><span>Shift: lock H · V · 45°</span><span>←↑→↓ draw, ⌥ ×10</span></div>
+        <div class="hs-foot"><span class="hs-dim">engine now</span><span class="mono" id="hsNow"></span></div>
       </div>
       <div class="hs-banks">
         <section class="hs-bank" aria-label="Settings">
@@ -185,6 +184,8 @@ function hsBuild() {
           <div class="hs-h">OUTPUT <span>Hyperprism's own</span></div>
           <label class="hs-col" title="Hyperprism's Playback Speed: tape speed before the rack, pitch and time together · double-click for 100 %">Playback speed <span class="mono hs-dim" id="prismSpeedRead">100 %</span>
             <input type="range" id="prismSpeed" min="0" max="255" step="1" value="128" aria-label="Playback speed"></label>
+          <label class="hs-row" title="How long this process runs on silence past the end, so its tail is heard">Post-roll
+            <input id="prismPostRoll" class="mini mono hs-ms" type="number" min="0" step="1" value="0" aria-label="Post-roll in milliseconds"> ms</label>
           <div class="hs-faders">${fader('prismFaderL', 'L', 'Left fader')}${fader('prismFaderLR', 'LR', 'Both faders')}${fader('prismFaderR', 'R', 'Right fader')}</div>
         </section>
       </div>
