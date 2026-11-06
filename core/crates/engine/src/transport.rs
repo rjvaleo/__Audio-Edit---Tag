@@ -2378,6 +2378,149 @@ mod tests {
         out
     }
 
+    // ───────────────────────── clicks under a moving stretch (diagnostic)
+
+    /// Samples where the output jumps further than the 220 Hz tone can move in
+    /// one sample, with some room: a click, a chop or a splice gone wrong.
+    fn clicks(out: &[f32]) -> usize {
+        out.windows(2).filter(|w| (w[1] - w[0]).abs() > 0.08).count()
+    }
+
+    /// How a moving stretch sounds on each engine: steady, gliding, and stepped
+    /// sixty times a second as the pad sends it. Printed, for diagnosis.
+    #[test]
+    #[ignore]
+    fn diagnose_clicks_under_a_moving_stretch() {
+        use fx::stretch::Algorithm;
+        for (alg, layers) in [(Algorithm::Granular, 1), (Algorithm::Wsola, 1), (Algorithm::Vocoder, 1), (Algorithm::Pvsola, 1),
+                              (Algorithm::Granular, 4), (Algorithm::Wsola, 4), (Algorithm::Vocoder, 4), (Algorithm::Pvsola, 4)] {
+            let mut row = Vec::new();
+            for case in ["steady", "glide", "steps"] {
+                let (mut core, shared) = tone_core(1, 512);
+                let mut p = shared.params().unwrap();
+                p.algorithm = alg;
+                p.grain.layers = layers;
+                p.ratio = 1.0;
+                shared.set_params(p);
+                if layers > 1 { core.renderer.set_bank(crate::stretcher::LayerBank::build(alg, layers, 512, 1, 48_000)); }
+                render(&mut core, &shared, 48_000, 512, 1);
+                if case == "glide" {
+                    shared.set_glide(50.0);
+                    with_ratio(&shared, 2.0, 0.0);
+                }
+                let mut out = Vec::new();
+                for b in 0..188 {
+                    if case == "steps" {
+                        // Up to 2 over two seconds, a new value every 735 frames.
+                        if b % 2 == 0 { with_ratio(&shared, 1.0 + b as f32 / 188.0, 0.0); }
+                    }
+                    out.extend(render(&mut core, &shared, 512, 512, 1));
+                }
+                row.push(format!("{case}: {}", clicks(&out)));
+            }
+            eprintln!("{alg:?} x{layers}: {}", row.join(", "));
+        }
+    }
+
+    /// A chirp, 200 Hz rising 400 Hz a second: every engine keeps pitch, so the
+    /// frequency coming out says where in the file it is reading.
+    fn chirp_core(block: usize) -> (Core, Shared) {
+        let frames = 480_000;
+        let mut phase = 0.0f64;
+        let samples = (0..frames)
+            .map(|i| {
+                let t = i as f64 / 48_000.0;
+                phase += std::f64::consts::TAU * (200.0 + 400.0 * t) / 48_000.0;
+                (0.5 * phase.sin()) as f32
+            })
+            .collect();
+        let src = Arc::new(Source { samples, channels: 1 });
+        let sp = StreamParams::new(frames, 48_000);
+        let shared = Shared::new(sp, Arc::clone(&src));
+        let core = Core::new(block, 1, sp, src);
+        shared.play();
+        (core, shared)
+    }
+
+    /// Where in the chirp each 50 ms of output reads from, in seconds.
+    fn chirp_seconds(out: &[f32]) -> Vec<f32> {
+        out.chunks_exact(2_400)
+            .map(|c| {
+                let zc = c.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count() as f32;
+                let hz = zc / 2.0 / 0.05;
+                (hz - 200.0) / 400.0
+            })
+            .collect()
+    }
+
+    /// The moving stretch the pad makes: a glide from ×1 to ×2, or the pad's
+    /// own steps, up to ×2 a new value every 735 frames. Two seconds of it,
+    /// a second into the sound.
+    fn moving(alg: fx::stretch::Algorithm, layers: u32, case: &str, chirp: bool) -> (Vec<f32>, Vec<GrainEvent>) {
+        let (mut core, shared) = if chirp { chirp_core(512) } else { tone_core(1, 512) };
+        let mut p = shared.params().unwrap();
+        p.algorithm = alg;
+        p.grain.layers = layers;
+        shared.set_params(p);
+        if layers > 1 {
+            core.renderer.set_bank(crate::stretcher::LayerBank::build(alg, layers, 512, 1, 48_000));
+        }
+        render(&mut core, &shared, 48_000, 512, 1);
+        shared.events.lock().unwrap().clear();
+        if case == "glide" {
+            shared.set_glide(50.0);
+            with_ratio(&shared, 2.0, 0.0);
+        }
+        let (mut out, mut ev) = (Vec::new(), Vec::new());
+        for b in 0..188 {
+            if case == "steps" && b % 2 == 0 {
+                with_ratio(&shared, 1.0 + b as f32 / 188.0, 0.0);
+            }
+            out.extend(render(&mut core, &shared, 512, 512, 1));
+            ev.extend(shared.events.lock().unwrap().drain(..));
+        }
+        (out, ev)
+    }
+
+    /// Every block of a moving stretch was a seek and a fade in from silence on
+    /// the splice and spectral engines, and on every extra layer: heard as
+    /// chopping and clicks while the pad was dragged. Now they read on.
+    #[test]
+    fn a_moving_stretch_does_not_click_on_any_live_engine_or_layer() {
+        use fx::stretch::Algorithm;
+        for alg in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+            for layers in [1, 4] {
+                for case in ["glide", "steps"] {
+                    let n = clicks(&moving(alg, layers, case, false).0);
+                    assert!(n <= 2, "{alg:?} ×{layers} {case}: {n} clicks");
+                }
+            }
+        }
+    }
+
+    /// And without the seek, the read still goes on from where it was, rather
+    /// than jumping through the file by `frame · Δ(1/ratio)`.
+    #[test]
+    fn a_moving_stretch_reads_on_through_the_file_without_jumping() {
+        use fx::stretch::Algorithm;
+        for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+            for case in ["glide", "steps"] {
+                let at = chirp_seconds(&moving(alg, 1, case, true).0);
+                let worst = at.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max);
+                assert!(worst < 0.15, "{alg:?} {case}: a step of {:.0} ms through the file", worst * 1000.0);
+                assert!(at[0] > 0.9 && at[0] < 1.2, "{alg:?} {case}: started at {:.2} s", at[0]);
+            }
+        }
+        // The cloud, by its grains: in order, and never far apart.
+        for case in ["glide", "steps"] {
+            let (_, mut ev) = moving(Algorithm::Granular, 1, case, true);
+            ev.sort_by_key(|e| e.out_frame);
+            let back = ev.windows(2).map(|w| w[0].src_frame - w[1].src_frame).fold(0.0f32, f32::max);
+            let fwd = ev.windows(2).map(|w| w[1].src_frame - w[0].src_frame).fold(0.0f32, f32::max);
+            assert!(back <= 0.0 && fwd < 0.1 * 48_000.0, "granular {case}: back {back}, forward {fwd}");
+        }
+    }
+
     // ───────────────────────── HyperStretch's glide (see `glide.rs`)
 
     fn with_ratio(shared: &Shared, ratio: f32, semitones: f32) {

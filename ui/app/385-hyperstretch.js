@@ -156,7 +156,7 @@ function hsWire() {
   pad.addEventListener('pointermove', (e) => {
     const raw = frac(e);
     hs.hover = raw;
-    if (!hs.down) { hsPaint(); return; }
+    if (!hs.down) { hsPaintSoon(); return; }
     const p = hsLock(raw, e.shiftKey), t = performance.now();
     const dt = Math.max(1, t - hs.prev.t);
     hs.vel = { x: (p.x - hs.prev.p.x) / dt, y: (p.y - hs.prev.p.y) / dt };
@@ -245,7 +245,27 @@ function hsMoveTo(p, t, { record = true } = {}) {
   hs.hand = { x: p.x, y: p.y };
   if (record && hs.mode === 'rec') hsAddPoint(p, t);
   hsApply();
-  hsPaint();
+  hsPaintSoon();
+}
+
+/// One paint a frame, however many moves the pointer sends in it.
+function hsPaintSoon() {
+  if (hs.paintQueued) return;
+  hs.paintQueued = true;
+  requestAnimationFrame(() => { hs.paintQueued = false; hsPaint(); });
+}
+
+/// The path's points as an attribute, grown by what was added rather than
+/// rebuilt from the whole take on every move.
+function hsPathPoints(pts) {
+  const c = hs.pathCache;
+  if (!c || c.pts !== pts || c.n > pts.length) hs.pathCache = { pts, n: 0, text: '' };
+  const k = hs.pathCache;
+  for (; k.n < pts.length; k.n++) {
+    const q = pts[k.n];
+    k.text += `${k.n ? ' ' : ''}${(q.x * HS_W).toFixed(1)},${(q.y * HS_H).toFixed(1)}`;
+  }
+  return k.text;
 }
 
 /// Both controls to where the pad is, the way their own sliders would move
@@ -513,7 +533,7 @@ function hsPaint() {
   $('hsCross').setAttribute('d', `M${(hx - 7).toFixed(1)} ${hy.toFixed(1)}H${(hx + 7).toFixed(1)}M${hx.toFixed(1)} ${(hy - 7).toFixed(1)}V${(hy + 7).toFixed(1)}`);
 
   const pts = hs.mode === 'rec' && hs.rec ? hs.rec : hs.slots[hs.slot]?.pts || [];
-  $('hsPath').setAttribute('points', pts.map((q) => `${(q.x * HS_W).toFixed(1)},${(q.y * HS_H).toFixed(1)}`).join(' '));
+  $('hsPath').setAttribute('points', hsPathPoints(pts));
 
   // The readout: under the hand while it moves, under the pointer while it hovers.
   const shown = hs.down || hs.mode === 'play' ? hs.hand : hs.hover;

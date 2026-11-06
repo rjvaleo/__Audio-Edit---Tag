@@ -102,3 +102,35 @@ Takes, limits and axes are kept per sound, in the browser.
 - **Takes are not in an export.** Hyperprism rendered its paths offline (`GetNextParameters`). Here a take is live only, until it can be written into the stretch automation lanes.
 - **The glide steps once per block,** not every 512 samples within a block. A block is the engine's 256–1024 frames.
 - **Not carried over:** the Path Edit Table, Path Info (name, comments), and undo of a take.
+
+## Fixed: clicks and chopping while dragging
+
+*5 November 2026.* RJ, on first playing it: "really clicky and glitchy, and the audio is really choppy".
+
+**Cause.** A stretch change keeps the playhead on the same moment of the file by rescaling it (`fill_inner`). While the pad is dragged, and above all under the glide, the stretch changes on every block, so every block was a rescale:
+- **WSOLA, the vocoder, PV-SOLA and hybrid** were sought on every rescale, and faded in from silence. That's a seek and a fade every few milliseconds, heard as chopping.
+- **Each extra layer** lost its place and was sought too.
+- **The granular cloud** re-derived its grain schedule from the new playhead and skipped forward. Under a glide that could leave it a quarter of a second ahead of the playhead, with no new grains until the playhead caught up.
+
+**Fix,** in prism-grain:
+- **A rescale relabels the playhead and nothing else.** The engines carry on.
+- **WSOLA and the noise stream** keep their read continuous with an anchor (`anchor.rs`). When the ratio changes they take up the difference where it changed, instead of letting `frame / ratio` jump.
+- **The vocoder and PV-SOLA** already read incrementally.
+- **Extra layers** move with the playhead.
+- **The grain schedule** shifts with it (`GrainStream::shift`).
+- **The exception:** a WSOLA reading through a transient map still seeks, because the map says where it reads.
+
+**Measured** over two seconds of a 220 Hz tone, counting clicks while the stretch glides ×1 to ×2:
+
+| Engine | Before | After |
+|---|---|---|
+| WSOLA | 105 | 1 (as steady) |
+| Vocoder | 93 | 0 |
+| PV-SOLA | 105 | 0 |
+| Granular | — | 0, and no gap in its grains |
+
+The same holds with four layers. A chirp, whose pitch says where in the file it is, shows the read going on without a jump.
+
+Tested in `a_moving_stretch_does_not_click_on_any_live_engine_or_layer` and `a_moving_stretch_reads_on_through_the_file_without_jumping` (engine), and in `anchor.rs` and `grain::rescale` (prism-grain).
+
+**The pad itself** now repaints at most once a frame, and grows its drawn path instead of rebuilding it on every move.
