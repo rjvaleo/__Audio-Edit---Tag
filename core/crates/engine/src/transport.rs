@@ -1075,12 +1075,18 @@ pub fn ptc_glided(glide: &mut crate::glide::Glide<2>, pt: &PitchTime, running: b
     (s.max(1.0), p)
 }
 
-/// The shifter's setting for a Speed and a Pitch: the correction that puts the
-/// varispeed's pitch back where Pitch says. Held to the shifter's own 0–200 %,
-/// which the original's Pitch Time Changer did not do — see
-/// `docs/HYPERSTRETCH.md`, "Not yet exact".
+/// The shifter's ratio for a Speed and a Pitch, in percent: the correction
+/// that puts the varispeed's pitch back where Pitch says. No limit, as in the
+/// original: Pitch 200 % at Speed 1 % is 20 000 %.
 pub fn ptc_ratio(speed: f32, pitch: f32) -> f32 {
-    (100.0 * pitch / speed.max(1.0)).clamp(0.0, 200.0)
+    (100.0 * pitch / speed.max(1.0)).max(0.0)
+}
+
+/// Sets the shifter to a ratio past its Pitch control's 0–200 %: Pitch at
+/// 100 % and the ratio as its Pitch scale.
+fn ptc_set_ratio(shifter: &mut dyn fx::Effect, ratio: f32) {
+    shifter.set_param("pitch", 100.0);
+    shifter.set_param("pitchScale", 0.01 * ratio);
 }
 
 /// Hyperprism's Pitch Time Changer over a whole piece of audio, for an export:
@@ -1127,7 +1133,7 @@ pub fn pitch_time_offline(
         if n == 0 {
             break 'blocks;
         }
-        shifter.set_param("pitch", ptc_ratio(g_speed, g_pitch));
+        ptc_set_ratio(shifter.as_mut(), ptc_ratio(g_speed, g_pitch));
         if now != Some(pt) {
             shifter.set_param("mix", 100.0);
             shifter.set_param("feedback", pt.feedback);
@@ -1786,7 +1792,7 @@ impl Core {
                     }
                     // The smoothing is done here, on Speed and Pitch; the
                     // shifter takes the ratio between them as it stands.
-                    shifter.set_param("pitch", ptc_ratio(ptc_speed, ptc_pitch));
+                    ptc_set_ratio(shifter.as_mut(), ptc_ratio(ptc_speed, ptc_pitch));
                     if pt != self.ptc_now || !self.ptc_now.on {
                         shifter.set_param("mix", 100.0);
                         shifter.set_param("feedback", pt.feedback);
@@ -2581,6 +2587,22 @@ mod tests {
         // Speed never reaches below the original's 1 %.
         pt.speed = 0.0;
         assert_eq!(ptc_glided(&mut g, &pt, false, 512, 44_100).0, 1.0);
+        // And the ratio has no limit: Pitch 200 % at Speed 1 % is 200 ×.
+        assert_eq!(ptc_ratio(1.0, 200.0), 20_000.0);
+    }
+
+    #[test]
+    fn the_pitch_time_changer_keeps_the_pitch_past_a_ratio_of_two() {
+        // Speed 25 %, Pitch 100 %: four times as long at the same pitch, so
+        // the shifter corrects by 400 %, past its Pitch control's 200 %.
+        let sr = 44_100u32;
+        let tone: Vec<f32> = (0..sr as usize).map(|i| (std::f32::consts::TAU * 200.0 * i as f32 / sr as f32).sin()).collect();
+        let pt = PitchTime { on: true, speed: 25.0, pitch: 100.0, ..PitchTime::default() };
+        let out = pitch_time_offline(&tone, 1, sr, 512, |_| pt);
+        assert!(out.len() > 3 * tone.len(), "{} frames", out.len());
+        let mid = &out[sr as usize..3 * sr as usize];
+        let hz = mid.windows(2).filter(|w| w[0] < 0.0 && w[1] >= 0.0).count() as f32 / 2.0;
+        assert!((hz - 200.0).abs() < 8.0, "{hz} Hz, want 200");
     }
 
     #[test]

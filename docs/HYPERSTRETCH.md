@@ -107,10 +107,17 @@ Takes, limits and axes are kept per sound, in the browser.
 
 ## Not yet exact
 
-- **The Pitch Time Changer's ratio is still held to 0–200 %.** That is the shifter's range as a rack effect. The original drove the same shifter at Pitch ÷ Speed with no limit, so Pitch 200 % at Speed 1 % is a ratio of 200. Fixing it needs a ratio entry on `hp-pitch-shifter` in prism-fx.
 - **Loop takes are not in an export.** Hyperprism rendered its paths offline (`GetNextParameters`). A Loop take is live only; a Lanes take is in the document and the export, but on the file's timeline, not looping at its own length.
 - **The glide steps once per block,** not every 512 samples within a block. A block is the engine's 256–1024 frames.
 - **Not carried over:** the Path Edit Table, Path Info (name, comments), and undo of a take.
+
+## Fixed: the Pitch Time Changer's ratio
+
+*6 November 2026.* The shifter corrects the varispeed by Pitch ÷ Speed. It used to be handed that as its Pitch control, which is 0–200 % as a rack effect. So anything past 2× was cut off: Speed 25 % at Pitch 100 % played an octave low. The original had no limit, so Pitch 200 % at Speed 1 % is a ratio of 200.
+
+`hp-pitch-shifter` now has **Pitch scale** (0–200 ×, default 1), in its "Added (not in the original)" group. It multiplies the ratio. The Pitch Time Changer sets Pitch to 100 % and the whole ratio as the scale (`ptc_set_ratio`), live and in an export. At the default the rack effect renders bit for bit as before.
+
+Tested in `the_pitch_time_changer_keeps_the_pitch_past_a_ratio_of_two` (engine: 200 Hz stays at 200 Hz at Speed 25 %; with the old cap it came out at 104 Hz) and `the_pitch_scale_takes_the_ratio_past_200_percent` (prism-fx).
 
 ## Fixed: clicks and chopping while dragging
 
