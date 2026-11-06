@@ -119,12 +119,21 @@ function gcWiden() {
   // does not fit at half width spills past its own border otherwise.
   const rows = [...host.querySelectorAll(':is(.engine-params, .wild-body) > .gk-row')]
     .filter((r) => (r.querySelector(':scope > input[type=range]') || r.matches('.toggle')) && r.getClientRects().length);
-  for (const row of rows) row.classList.remove('gc-wide');
-  const tight = rows.filter((row) => {
+  for (const row of rows) row.classList.remove('gc-wide', 'gc-stack');
+  const cut = (row) => {
     const k = row.querySelector(':scope > .k') || row.querySelector(':scope > .switch');
     return k && k.scrollWidth > k.clientWidth;
-  });
-  for (const row of tight) row.classList.add('gc-wide');
+  };
+  // A bar whose name and reading do not fit side by side puts its reading
+  // under its name and stays half width (RJ, 5 Nov 2026: "½ width controls
+  // not full width"). Only a name cut short even then takes the whole line.
+  const tight = rows.filter(cut);
+  for (const row of tight) if (row.querySelector(':scope > input[type=range]')) row.classList.add('gc-stack');
+  for (const row of tight) {
+    if (row.classList.contains('gc-stack') && !cut(row)) continue;
+    row.classList.remove('gc-stack');
+    row.classList.add('gc-wide');
+  }
   // A group's last bar, when it would sit alone in its line, takes the whole
   // line: no half line left empty. Worked out from the layout itself, since a
   // group already holding full-width rows cannot be counted by position.

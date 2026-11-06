@@ -281,21 +281,72 @@ test('the processing rows shape the sound, and each has its own on switch', asyn
   await loadSignal(page, { mode: 'silence' });
   const energy = () => page.evaluate(() => { const c = window.Chop.sliceAudio(2)[0]; let s = 0; for (const v of c) s += v * v; return s; });
   const dry = await energy();
-  for (const [tab, on, settings] of [
+  for (const [fx, on, settings] of [
     ['env', 'envOn', { decay: 50 }],
     ['filter', 'fltOn', { fltType: 'hp', fltFreq: 5000 }],
     ['eq', 'eqOn', { loCut: 800 }],
     ['trans', 'trOn', { trAmount: -100, trThresh: -60, trGain: -6 }],
   ]) {
-    await page.locator(`#chopFxTab button[data-v="${tab}"]`).click();
-    await expect(page.locator('#chopFxKnobs .knob').first()).toBeVisible();
+    const sw = page.locator(`.chop-fxs[data-fx="${fx}"] .chop-fxs-on`);
     await page.evaluate((s) => window.Chop.set(s), settings);
-    await page.locator('#chopFxOn').click();
+    await sw.click();
     expect((await page.evaluate(() => window.Chop.settings))[on]).toBe(true);
+    await expect(sw).toHaveClass(/\bon\b/);
     expect(await energy()).toBeLessThan(dry * 0.9);
-    await page.locator('#chopFxOn').click();
+    await sw.click();
     expect(await energy()).toBeCloseTo(dry, 6);
   }
+});
+
+// RJ, 5 Nov 2026: "instead of having all of those behind a button … display
+// each one of those right in line there … that title as the headline", in
+// "the visual icon style developed for the grain modules".
+test('Envelope, Transient, EQ and Filter are all in line at once, each headed, as grain-style bars', async ({ page }) => {
+  await openChop(page);
+  await expect(page.locator('#chopFxTab')).toHaveCount(0);
+  const got = await page.evaluate(() => [...document.querySelectorAll('#dockChop .chop-fxs')].map((s) => ({
+    fx: s.dataset.fx,
+    head: s.querySelector('.chop-fxs-name')?.textContent,
+    dots: s.querySelectorAll('.chop-fxs-head .gc-dots b').length,
+    top: Math.round(s.getBoundingClientRect().top),
+    shown: s.getClientRects().length > 0,
+    bars: [...s.querySelectorAll('.gk-row')].map((r) => ({
+      k: r.dataset.k, pic: !!r.querySelector(':scope > svg.gg path, :scope > svg.gg line, :scope > svg.gg circle, :scope > svg.gg rect'),
+      fc: r.style.getPropertyValue('--fc'), range: !!r.querySelector(':scope > input[type=range]'),
+      cut: (() => { const k = r.querySelector(':scope > .k'); return k.scrollWidth > k.clientWidth; })(),
+    })),
+  })));
+  expect(got.map((s) => [s.fx, s.head])).toEqual([['env', 'Envelope'], ['trans', 'Transient'], ['eq', 'EQ'], ['filter', 'Filter']]);
+  expect(got.map((s) => s.bars.length)).toEqual([2, 5, 8, 5]);
+  for (const s of got) {
+    expect(s.shown, `${s.fx} is shown`).toBe(true);
+    expect(s.top, `${s.fx} is on the same line as Envelope`).toBe(got[0].top);
+    expect(s.dots, `${s.fx}'s heading has its colour dots`).toBeGreaterThan(0);
+    for (const b of s.bars) {
+      expect(b.pic, `${b.k} has a picture`).toBe(true);
+      expect(b.range, `${b.k} is a bar`).toBe(true);
+      expect(b.fc, `${b.k} has a function colour`).toMatch(/--f-(attack|level|pitch|space|time|tone)/);
+      expect(b.cut, `${b.k}'s name is whole`).toBe(false);
+    }
+  }
+});
+
+test('a processing bar sets its setting, and follows a setting made elsewhere', async ({ page }) => {
+  await openChop(page);
+  const got = await page.evaluate(async () => {
+    const row = document.querySelector('.chop-fxs[data-fx="trans"] .gk-row[data-k="trThresh"]');
+    const input = row.querySelector('input[type=range]');
+    input.value = -30;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    const set = window.Chop.settings.trThresh;
+    const pic = row.querySelector('svg.gg').innerHTML;
+    window.Chop.set({ trThresh: -6 });
+    return { set, after: row.querySelector('.v').textContent, picMoved: row.querySelector('svg.gg').innerHTML !== pic };
+  });
+  expect(got.set).toBe(-30);
+  expect(got.after).toContain('-6');
+  expect(got.picMoved, 'the picture follows the value').toBe(true);
 });
 
 test('Preview lays the slices out at the play tempo; Ratchet fires the chop on every grid line', async ({ page }) => {

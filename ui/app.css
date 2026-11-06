@@ -5024,6 +5024,9 @@ svg.pic-proj { width: 28px; height: 17px; }
 .gg .af { fill: var(--gg); stroke: none; }
 .gg .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: 0.7; }
 .gg .t { font: 8px var(--font-mono, monospace); fill: var(--text-dimmer); }
+/* The FX pictures' own two classes (`075-fx-faces.js`), drawn as a glyph. */
+.gg .ff { fill: var(--text-dimmer); opacity: .55; stroke: none; }
+.gg .ta { font: 8px var(--font-mono, monospace); fill: var(--gg); }
 
 /* ═══════════════════════════════════════════════════════════ the Edit page ══
    `body.wavepage`: the same open sound as Grain, editing only. The granular
@@ -5574,7 +5577,7 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 #grainControls :is(.gc-band, .wild).gc-alt { background: var(--surface-2h); }
 #grainControls :is(.gc-band, .wild) + :is(.gc-band, .wild) { border-top: 1px solid var(--line); }
 /* The row's colour wins over the picture's own group class. */
-#grainControls .gk-row, #grainControls .gk-row > .gg { --gg: var(--fc, var(--warn)); }
+#grainControls .gk-row, #grainControls .gk-row > .gg, .chop-fx .gk-row, .chop-fx .gk-row > .gg { --gg: var(--fc, var(--warn)); }
 
 /* The engines, as tiles: a picture of what each does above its name. */
 #grainControls .engine-pick .seg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; background: none; padding: 0; }
@@ -5603,15 +5606,15 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; align-items: center;
 }
 #grainControls.gc-bars :is(.engine-params, .wild-body) > :not(.gk-row) { grid-column: 1 / -1; }
-#grainControls.gc-bars .param.gk-row:has(> input[type=range]) {
+:is(#grainControls.gc-bars, .chop-fx) .param.gk-row:has(> input[type=range]) {
   grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 0; min-height: 0; height: 28px;
 }
-#grainControls.gc-bars .gk-row > .gg { width: 28px; height: 21px; }
-#grainControls.gc-bars .gk-row:has(> input[type=range]) > :is(.k, input, .v) { grid-row: 1; }
-#grainControls.gc-bars .gk-row:has(> input[type=range]) > input { grid-column: 2 / 4; margin-left: 4px; width: calc(100% - 4px); }
-#grainControls.gc-bars .gk-row:has(> input[type=range]) > .k { grid-column: 2; margin-left: 4px; }
-#grainControls.gc-bars .gk-row:has(> input[type=range]) > .v { grid-column: 3; }
-#grainControls.gc-bars .gk-row > input[type=range] {
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > .gg { width: 28px; height: 21px; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > :is(.k, input, .v) { grid-row: 1; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > input { grid-column: 2 / 4; margin-left: 4px; width: calc(100% - 4px); }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > .k { grid-column: 2; margin-left: 4px; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > .v { grid-column: 3; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range] {
   -webkit-appearance: none; appearance: none; height: 24px; border-radius: 4px; cursor: ew-resize;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc) 70%, transparent);
   background:
@@ -5620,26 +5623,31 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
     linear-gradient(var(--fc), var(--fc)) 0 100% / calc(var(--f, 0) * 100%) 1px no-repeat,
     linear-gradient(90deg, color-mix(in srgb, var(--fc) 34%, var(--sink)) calc(var(--f, 0) * 100%), var(--surface-3) 0);
 }
-#grainControls.gc-bars .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px var(--fc); }
-#grainControls.gc-bars .gk-row > input[type=range].gc-dragging { filter: brightness(1.2); }
-#grainControls.gc-bars .gk-row > input[type=range]::-webkit-slider-runnable-track { background: transparent; height: 24px; }
-#grainControls.gc-bars .gk-row > input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 24px; }
-#grainControls.gc-bars .gk-row > input[type=range]::-moz-range-track { background: transparent; }
-#grainControls.gc-bars .gk-row > input[type=range]::-moz-range-progress { background: transparent; }
-#grainControls.gc-bars .gk-row > input[type=range]:focus-visible { outline: 2px solid var(--fc); outline-offset: 1px; }
-#grainControls.gc-bars .gk-row:has(> input[type=range]) > :is(.k, .v) {
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px var(--fc); }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range].gc-dragging { filter: brightness(1.2); }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]::-webkit-slider-runnable-track { background: transparent; height: 24px; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 24px; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]::-moz-range-track { background: transparent; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]::-moz-range-progress { background: transparent; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]:focus-visible { outline: 2px solid var(--fc); outline-offset: 1px; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > :is(.k, .v) {
   z-index: 1; pointer-events: none; padding: 0 4px; color: var(--text);
   text-shadow: 0 0 3px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg);
 }
-#grainControls.gc-bars .gk-row:has(> input[type=range]) > .k { justify-self: start; min-width: 0; max-width: 100%; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > .k { justify-self: start; min-width: 0; max-width: 100%; }
 /* A fixed width for the reading, so a bar's width never depends on its value:
    otherwise "155 ms" squeezes the name where "0 ms" did not, and the bar
    jumps between half and full width as it is dragged. */
-#grainControls.gc-bars .gk-row:has(> input[type=range]) > .v { justify-self: end; width: 56px; box-sizing: border-box; text-align: right; overflow: visible; padding-left: 2px; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > .v { justify-self: end; width: 56px; box-sizing: border-box; text-align: right; overflow: visible; padding-left: 2px; }
 /* A full-width bar has room for a long reading ("−15.00 st · −1500¢"), and its
    width cannot change with its value, so its reading takes what it needs. */
 #grainControls.gc-bars :is(.stretch-core > .gk-row, .gk-row.gc-wide):has(> input[type=range]) > .v { width: auto; min-width: 56px; }
-#grainControls.gc-bars .gk-row.gc-wide { grid-column: 1 / -1; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row.gc-wide { grid-column: 1 / -1; }
+/* A half bar too narrow for its name and reading side by side: the name on
+   top, the reading under it, both inside the bar (`gcWiden`). */
+:is(#grainControls.gc-bars, .chop-fx) .gk-row.gc-stack:has(> input[type=range]) > :is(.k, .v) { grid-column: 2 / 4; font-size: 9px; line-height: 10px; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row.gc-stack:has(> input[type=range]) > .k { align-self: start; margin-top: 3px; }
+:is(#grainControls.gc-bars, .chop-fx) .gk-row.gc-stack:has(> input[type=range]) > .v { align-self: end; justify-self: start; text-align: left; width: auto; margin: 0 0 3px 4px; padding: 0 4px; }
 
 /* A switch is a bar too: its picture, then a toggle the bar's width with a
    sliding knob, bordered in its colour and filled when on. */
