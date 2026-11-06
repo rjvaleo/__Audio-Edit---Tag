@@ -267,7 +267,6 @@ const CHOP_RECUT = new Set(['mode', 'sens', 'topDb', 'minDur', 'pad', 'div', 'fe
 
 const chopSlots = { a: { ...CHOP_DEF }, b: { ...CHOP_DEF }, which: 'a' };
 let cp = chopSlots.a;
-let chopFxTab = 'env';
 
 function chopLoadSettings() {
   try {
@@ -1057,37 +1056,115 @@ function chopBuildKnobs() {
   chopBuildFx();
 }
 
+/// The processing every slice gets, each kind in line with the others under
+/// its own heading and On (RJ, 5 Nov 2026: "display each one of those right in
+/// line there … that title as the headline"). Its controls are the grain
+/// tray's bars (`190-grain-tray.js`): a picture of what the control does, its
+/// name and reading inside the bar, in the colour of what it does to the
+/// sound (`GG_FACETS`); the pictures are the FX rack's (`FXP.PIC`).
+const CHOP_FX_NAMES = { env: 'Envelope', trans: 'Transient', eq: 'EQ', filter: 'Filter' };
+
+/// Each control's picture and colour.
+const CHOP_FX_LOOK = {
+  attack: ['attack', 'attack'], decay: ['release', 'attack'],
+  trThresh: ['threshold', 'attack'], trAmount: ['depth', 'attack'], trAttack: ['attack', 'attack'],
+  trRelease: ['release', 'attack'], trGain: ['level', 'level'],
+  loCut: ['highpass', 'tone'], lowF: ['freq', 'tone'], lowG: ['level', 'level'], lowQ: ['q', 'tone'],
+  highF: ['freq', 'tone'], highG: ['level', 'level'], highQ: ['q', 'tone'], hiCut: ['lowpass', 'tone'],
+  fltFreq: ['lowpass', 'tone'], fltQ: ['q', 'tone'], drive: ['drive', 'tone'], gain: ['level', 'level'], mix: ['mix', 'level'],
+};
+
+/// The filter's frequency is drawn as the filter it is.
+const chopFxPic = (key) => (key === 'fltFreq' ? { lp: 'lowpass', bp: 'freq', hp: 'highpass' }[cp.fltType] || 'lowpass' : CHOP_FX_LOOK[key][0]);
+
+function chopBar([key, label, min, max, step, fmt, log, , title]) {
+  let paint = () => {};
+  const el = param(label, cp[key], min, max, step, fmt,
+    (v) => { chopSetting(key, v, { live: true }); paint(); },
+    (v) => chopSetting(key, v),
+    log, CHOP_DEF[key]);
+  const input = el.querySelector(':scope > input[type=range]');
+  el.dataset.k = key;
+  el.classList.add('gk-row', 'chop-fx-bar');
+  el.title = `${title} — double-click to reset to ${fmt(CHOP_DEF[key])}`;
+  el.style.setProperty('--fc', `var(--f-${CHOP_FX_LOOK[key][1]})`);
+  el.insertAdjacentHTML('afterbegin', FXP.svg('', 'gg'));
+  const glyph = el.firstElementChild;
+  const p = { key, label, min, max, log };
+  paint = () => {
+    const v = el.read(), lo = +input.min, hi = +input.max;
+    el.style.setProperty('--f', String(hi > lo ? (+input.value - lo) / (hi - lo) : 0));
+    const n = log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
+    glyph.innerHTML = FXP.noText(FXP.PIC[chopFxPic(key)](Math.min(1, Math.max(0, n)), v, p));
+  };
+  const sync = el.sync;
+  el.sync = (v) => { sync(v); paint(); };
+  gcRelative(input);
+  glyph.addEventListener('dblclick', (e) => { e.preventDefault(); input.ondblclick?.(e); });
+  chopKnobEls.set(key, el);
+  paint();
+  return el;
+}
+
 function chopBuildFx() {
-  const box = $('chopFxKnobs');
+  const box = $('chopFx');
   box.replaceChildren();
-  const [onKey, specs] = CHOP_FX[chopFxTab];
-  if (chopFxTab === 'filter') {
-    const pills = document.createElement('span');
-    pills.className = 'chop-pills';
-    for (const [v, t] of [['lp', 'LP'], ['bp', 'BP'], ['hp', 'HP']]) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.dataset.v = v;
-      b.textContent = t;
-      b.classList.toggle('on', cp.fltType === v);
-      b.onclick = () => chopSetting('fltType', v);
-      pills.append(b);
+  for (const [fx, [onKey, specs]] of Object.entries(CHOP_FX)) {
+    const sec = document.createElement('section');
+    sec.className = 'chop-fxs';
+    sec.dataset.fx = fx;
+    const facets = new Set(specs.map(([k]) => CHOP_FX_LOOK[k][1]));
+    const dots = GG_FACETS.filter(([id]) => facets.has(id)).map(([id]) => `<b style="background: var(--f-${id})"></b>`).join('');
+    sec.innerHTML = `<div class="chop-fxs-head"><span class="chop-fxs-name">${CHOP_FX_NAMES[fx]}</span><span class="gc-dots">${dots}</span>`
+      + '<span class="chop-grow"></span><button type="button" class="chop-on chop-fxs-on">Off</button></div><div class="chop-fxs-body"></div>';
+    const on = sec.querySelector('.chop-fxs-on');
+    on.title = `${CHOP_FX_NAMES[fx]} on or off`;
+    on.onclick = () => chopSetting(onKey, !cp[onKey]);
+    const body = sec.querySelector('.chop-fxs-body');
+    if (fx === 'filter') {
+      const pills = document.createElement('span');
+      pills.className = 'chop-pills chop-flt-type';
+      for (const [v, t] of [['lp', 'LP'], ['bp', 'BP'], ['hp', 'HP']]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.v = v;
+        b.textContent = t;
+        b.onclick = () => chopSetting('fltType', v);
+        pills.append(b);
+      }
+      body.append(pills);
     }
-    box.append(pills);
+    for (const spec of specs) body.append(chopBar(spec));
+    box.append(sec);
   }
-  for (const spec of specs) box.append(chopKnob(spec));
-  $('chopFxOn').textContent = cp[onKey] ? 'On' : 'Off';
-  $('chopFxOn').classList.toggle('on', !!cp[onKey]);
+  chopFxFit();
+}
+
+/// A bar whose name and reading do not fit side by side puts its reading under
+/// its name, as in the grain tray (`gcWiden`).
+function chopFxFit() {
+  for (const row of document.querySelectorAll('#chopFx .chop-fx-bar')) {
+    row.classList.remove('gc-stack');
+    const k = row.querySelector(':scope > .k');
+    if (k.scrollWidth > k.clientWidth) row.classList.add('gc-stack');
+  }
 }
 
 /// Every pill and knob from `cp`, after A/B, a preset, Init or the dice.
 function chopReflect() {
-  for (const [id, key] of [['chopMode', 'mode'], ['chopDiv', 'div'], ['chopFeel', 'feel'], ['chopSync', 'sync'], ['chopFxTab', null], ['chopTools', null]]) {
-    const v = key ? cp[key] : id === 'chopFxTab' ? chopFxTab : chop.tool;
+  for (const [id, key] of [['chopMode', 'mode'], ['chopDiv', 'div'], ['chopFeel', 'feel'], ['chopSync', 'sync'], ['chopTools', null]]) {
+    const v = key ? cp[key] : chop.tool;
     $(id).querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
   }
-  const fxOn = { env: cp.envOn, trans: cp.trOn, eq: cp.eqOn, filter: cp.fltOn };
-  $('chopFxTab').querySelectorAll('button').forEach((b) => b.classList.toggle('lit', !!fxOn[b.dataset.v]));
+  for (const [fx, [onKey]] of Object.entries(CHOP_FX)) {
+    const sec = document.querySelector(`#chopFx .chop-fxs[data-fx="${fx}"]`);
+    if (!sec) continue;
+    sec.classList.toggle('on', !!cp[onKey]);
+    const b = sec.querySelector('.chop-fxs-on');
+    b.textContent = cp[onKey] ? 'On' : 'Off';
+    b.classList.toggle('on', !!cp[onKey]);
+  }
+  document.querySelectorAll('#chopFx .chop-flt-type button').forEach((b) => b.classList.toggle('on', b.dataset.v === cp.fltType));
   for (const [key, el] of chopKnobEls) if (el.isConnected) el.sync(cp[key]);
   for (const [, specs] of CHOP_KNOBS) for (const s of specs) {
     const el = chopKnobEls.get(s[0]);
@@ -1100,9 +1177,6 @@ function chopReflect() {
   $('chopFeel').classList.toggle('dim', cp.mode !== 'grid');
   document.querySelector('#chopKnobs .chop-tail-on')?.classList.toggle('on', cp.tail);
   chopKnobEls.get('tailMs')?.classList.toggle('off', !cp.tail);
-  const [onKey] = CHOP_FX[chopFxTab];
-  $('chopFxOn').textContent = cp[onKey] ? 'On' : 'Off';
-  $('chopFxOn').classList.toggle('on', !!cp[onKey]);
   $('chopA').classList.toggle('on', chopSlots.which === 'a');
   $('chopB').classList.toggle('on', chopSlots.which === 'b');
   $('chopOutMidi').classList.toggle('on', cp.outMidi);
@@ -1596,14 +1670,7 @@ async function chopCapture() {
     $('lane').classList.toggle('chop-pencil', chop.tool === 'pencil');
     chopReflect();
   });
-  $('chopFxTab').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-v]');
-    if (!b) return;
-    chopFxTab = b.dataset.v;
-    chopBuildFx();
-    chopReflect();
-  });
-  $('chopFxOn').addEventListener('click', () => { const k = CHOP_FX[chopFxTab][0]; chopSetting(k, !cp[k]); });
+  if (window.ResizeObserver) new ResizeObserver(() => requestAnimationFrame(chopFxFit)).observe($('chopFx'));
   $('chopRev').addEventListener('click', () => chopToggle('rev'));
   $('chopMute').addEventListener('click', () => chopToggle('muted'));
   $('chopPreview').addEventListener('click', () => {

@@ -138,9 +138,26 @@
 .chop-knobs .knob.off { opacity: .4; }
 .chop-group[data-g="slice"] .chop-on { align-self: center; }
 .chop-cycles { align-self: center; color: var(--text-dimmer); font-size: 10px; min-width: 8ch; }
-.chop-fx { padding-top: 2px; border-top: 1px solid var(--line); }
-.chop-fx-knobs { flex: 1; align-items: center; gap: 2px; }
-.chop-fx-knobs .chop-pills { margin-right: 6px; }
+/* The processing: Envelope, Transient, EQ and Filter side by side, each under
+   its own heading with its On, its controls the grain tray's bars (app.css,
+   "the grain tray"). Four to a line, wrapping two and two when narrow. */
+.chop-fx {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: stretch; gap: 0;
+  border-top: 1px solid var(--line); margin: 0 -10px;
+}
+.chop-fxs { padding: 6px 10px 8px; background: var(--surface); border-left: 1px solid var(--line); min-width: 0; }
+.chop-fxs:first-child { border-left: 0; }
+.chop-fxs:nth-child(even) { background: var(--surface-2h); }
+.chop-fxs-head {
+  display: flex; align-items: center; gap: 0; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--line);
+  font-size: var(--fs-s, 11px); letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim);
+}
+.chop-fxs.on .chop-fxs-name { color: var(--text); }
+.chop-fxs-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; align-items: center; }
+/* EQ reads down: the low side in one column, the high side in the other. */
+.chop-fxs[data-fx="eq"] .chop-fxs-body { grid-auto-flow: column; grid-template-rows: repeat(4, auto); }
+.chop-fxs-body > .chop-pills { grid-column: 1 / -1; }
+.chop-fx .gk-row > .gg { display: block; overflow: visible; }
 
 .chop-stat { white-space: nowrap; }
 .chop-stat b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
