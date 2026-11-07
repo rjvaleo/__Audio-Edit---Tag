@@ -754,9 +754,9 @@ function prismTargets() {
 
 /// The take for the pad's two controls, drawn on the pad as a line.
 async function prismLoadPath() {
-  // The lanes are the grain document's; the Prism deck's takes are its Loop
-  // takes (`385-hyperstretch.js`).
-  const f = null;
+  // The lanes are the grain document's: listed only when the Prism page plays
+  // the grain deck (`HS_LANES_LISTED`), which it does not now.
+  const f = HS_LANES_LISTED ? state.selectedFile : null;
   const t = prismTargets();
   prismPad.path = [];
   if (f && t) {
