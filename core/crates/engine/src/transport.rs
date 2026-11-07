@@ -1443,12 +1443,25 @@ impl Core {
     /// seeking and stopping are exactly the things that are miserable to debug
     /// through a pair of speakers.
     pub fn fill(&mut self, out: &mut [f32], channels: usize, shared: &Shared) {
+        self.fill_with(out, channels, shared, None);
+    }
+
+    /// [`fill`](Core::fill), with another deck's block added before the master
+    /// ceiling.
+    ///
+    /// This is how the synth deck (`synth.rs`) reaches the output: summed in
+    /// after this deck's own fader and the sequencer, and before the soft
+    /// ceiling, the capture, the scope and the spectrum, so what is recorded
+    /// and metered is everything that left. It is added on the stopped path as
+    /// well, because the synth has no transport and plays whether or not this
+    /// deck does. `extra` is interleaved at `channels`, block for block.
+    pub fn fill_with(&mut self, out: &mut [f32], channels: usize, shared: &Shared, extra: Option<&[f32]>) {
         // What this block cost, against what it is worth. Two clock reads, both
         // from the vDSO on every platform this runs on — cheap next to a block
         // of DSP, and the only honest answer to "can this engine keep up",
         // which no test on another machine can give.
         let started = std::time::Instant::now();
-        self.fill_inner(out, channels, shared);
+        self.fill_inner(out, channels, shared, extra);
         let frames = out.len() / channels.max(1);
         if frames > 0 && self.params.sample_rate > 0 {
             let budget =
@@ -1457,7 +1470,7 @@ impl Core {
         }
     }
 
-    fn fill_inner(&mut self, out: &mut [f32], channels: usize, shared: &Shared) {
+    fn fill_inner(&mut self, out: &mut [f32], channels: usize, shared: &Shared, extra: Option<&[f32]>) {
         let channels = channels.max(1);
 
         // Pick up changes if they are free to take, otherwise carry on with
@@ -1613,6 +1626,7 @@ impl Core {
             // The sequencer fades out from where the transport stopped, over a
             // few milliseconds of what it had already sent, rather than stopping
             // dead mid-note.
+            let mut sounding = false;
             if self.seq_fade > 0 && shared.seq.is_active() {
                 let ch = channels.max(1);
                 let n = (out.len() / ch).min(self.seq_fade);
@@ -1624,9 +1638,20 @@ impl Core {
                 }
                 self.seq_fade -= n;
                 self.seq_fade_at += n as u64;
-                fx::soften(out);
+                sounding = true;
             }
-            shared.push_scope(out, channels, self.params.sample_rate);
+            // The synth deck has no transport, so a stopped grain deck is no
+            // reason for it to be silent. It goes through the same ceiling,
+            // capture, scope and spectrum here as on the playing path below.
+            match extra {
+                Some(x) => self.finish_with(out, channels, shared, x),
+                None => {
+                    if sounding {
+                        fx::soften(out);
+                    }
+                    shared.push_scope(out, channels, self.params.sample_rate);
+                }
+            }
             shared
                 .position
                 .store(self.renderer.position(), Ordering::Release);
@@ -1664,6 +1689,10 @@ impl Core {
                 self.post_left = None;
                 shared.pause();
                 out.fill(0.0);
+                // The block the transport stops on still carries the synth.
+                if let Some(x) = extra {
+                    self.finish_with(out, channels, shared, x);
+                }
                 shared
                     .position
                     .store(self.renderer.position(), Ordering::Release);
@@ -1861,6 +1890,13 @@ impl Core {
         // and drawn is both voices.
         self.mix_seq(out, channels, shared);
 
+        // The synth deck, beside the sequencer and for the same reason: before
+        // the ceiling, the capture and the meters. After this deck's fader, so
+        // GRAIN's volume is the grain's and not the synth's.
+        if let Some(x) = extra {
+            add_block(out, x);
+        }
+
         // The last thing before it leaves: round the peaks rather than let the
         // converter slice them.
         //
@@ -1878,22 +1914,7 @@ impl Core {
 
         // Keep a copy, if anyone asked. Last, so what lands on disk is what
         // came out of the speakers rather than some earlier stage of it.
-        if shared.capturing.load(Ordering::Acquire) {
-            if let Ok(mut g) = shared.capture.try_lock() {
-                if let Some(c) = g.as_mut() {
-                    let room = c.samples.capacity() - c.samples.len();
-                    let n = room.min(out.len());
-                    if n > 0 {
-                        // Within the capacity reserved before recording began,
-                        // so this cannot allocate.
-                        c.samples.extend_from_slice(&out[..n]);
-                    }
-                    if n < out.len() {
-                        c.full = true;
-                    }
-                }
-            }
-        }
+        capture_block(out, shared);
 
         // The master bus, kept in stereo. A copy and nothing more — see
         // [`Scope`] for why the analysis is not done here.
@@ -1907,6 +1928,21 @@ impl Core {
         shared
             .overflows
             .store(self.renderer.overflows(), Ordering::Release);
+    }
+
+    /// The end of a block the grain deck did not play: the synth deck's block
+    /// added, then the ceiling, the capture, the scope and the spectrum, in
+    /// the playing path's order.
+    ///
+    /// The capture runs here too, so a capture armed while the transport is
+    /// stopped keeps time with the clock on the wall: the synth's notes and
+    /// the silences between them, as they were heard.
+    fn finish_with(&mut self, out: &mut [f32], channels: usize, shared: &Shared, extra: &[f32]) {
+        add_block(out, extra);
+        fx::soften(out);
+        capture_block(out, shared);
+        shared.push_scope(out, channels, self.params.sample_rate);
+        self.measure(out, channels, shared);
     }
 
     /// Add the sequencer's sound for this block's runs, taking each frame off
@@ -1989,6 +2025,35 @@ impl Core {
                         }
                     }
                     g.push((peak.clamp(-1.0, 1.0) * 127.0) as i8);
+                }
+            }
+        }
+    }
+}
+
+/// Another deck's block added into this one, sample for sample.
+#[inline]
+fn add_block(out: &mut [f32], extra: &[f32]) {
+    for (o, x) in out.iter_mut().zip(extra) {
+        *o += *x;
+    }
+}
+
+/// Keep a copy of the block, if anyone asked. Last, so what lands on disk is
+/// what came out of the speakers rather than some earlier stage of it.
+fn capture_block(out: &[f32], shared: &Shared) {
+    if shared.capturing.load(Ordering::Acquire) {
+        if let Ok(mut g) = shared.capture.try_lock() {
+            if let Some(c) = g.as_mut() {
+                let room = c.samples.capacity() - c.samples.len();
+                let n = room.min(out.len());
+                if n > 0 {
+                    // Within the capacity reserved before recording began,
+                    // so this cannot allocate.
+                    c.samples.extend_from_slice(&out[..n]);
+                }
+                if n < out.len() {
+                    c.full = true;
                 }
             }
         }

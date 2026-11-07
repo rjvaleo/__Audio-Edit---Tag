@@ -381,6 +381,10 @@ document.addEventListener('keydown', (e) => {
   // used to confirm a dialog and change section in the same keystroke.
   if (!$('askModal').classList.contains('hidden')) return;
 
+  // The Wave page's own keys — notes, its octave, its undo, its menus — while
+  // it is showing, and nothing otherwise. See `wvKeyDown`.
+  if (wvKeyDown(e)) return;
+
   // The note keyboard. Before the overlay tier so the Keys window can stay open
   // while you play, and after the text-field guard so typing a name is typing a
   // name. Escape is never a note.
@@ -429,6 +433,13 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') {
     state.sel = null; setCue(0); drawSelection(); applyLoop();
   }
+});
+
+/// Key-up, for the one thing that needs it: a note on the Wave page stops when
+/// its key is let go. It claims nothing and answers to no other page, so it
+/// cannot disagree with the dispatcher above.
+document.addEventListener('keyup', (e) => {
+  if (!inTextField(e.target)) wvKeyUp(e);
 });
 
 

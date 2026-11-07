@@ -8,6 +8,8 @@ pub mod compose;
 pub mod docs;
 pub mod http;
 pub mod live;
+/// MIDI in for the Wave synth. See `docs/WAVE-SYNTH.md`.
+pub mod midi;
 pub mod offline;
 pub mod pad;
 pub mod perf;
@@ -23,5 +25,7 @@ pub mod safety;
 pub mod serve;
 pub mod state;
 pub mod usertags;
+/// The Wave page's synth: `/api/wave/*`. See `docs/WAVE-SYNTH.md`.
+pub mod wave_synth;
 /// The picture for a video export. See `docs/VIDEO-EXPORT.md`.
 pub mod video;

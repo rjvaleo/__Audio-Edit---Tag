@@ -242,7 +242,10 @@ const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 
 /// column. Both of them give the whole width to something else — the editor's
 /// lane, the room — so the library arrives over the top and goes away again,
 /// instead of squeezing what you came here to look at.
-const drawerMode = () => playsDocument();
+///
+/// The Wave page too: it plays no document, but it is a page of its own at
+/// full width, and the library slides over it rather than squeezing it.
+const drawerMode = () => playsDocument() || state.mode === 'synth';
 
 function openDrawer() {
   state.drawerOpen = true;

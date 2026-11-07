@@ -9,6 +9,8 @@
 //! - [`transport`] adds play, seek, looping and live parameter exchange. Still
 //!   no device — this is the audio callback minus the sound card, so it can be
 //!   tested frame by frame.
+//! - [`synth`] is the Wave page's synth deck, which has no transport and is
+//!   mixed in before the master ceiling (`decks.rs`).
 //! - [`device`] opens the output and pumps the other two. As thin as possible,
 //!   because it is the only part a test cannot reach.
 
@@ -17,6 +19,7 @@ pub mod device;
 pub mod glide;
 pub mod input;
 pub mod seqbus;
+pub mod synth;
 pub mod transport;
 
 // The renderer and the stretcher live in prism-grain, shared with idMLab, and
@@ -24,8 +27,9 @@ pub mod transport;
 pub use prism_grain::{render, stretcher};
 
 pub use decks::Decks;
-pub use device::{conform_channels, resample, spawn, Engine, Handle};
+pub use device::{conform_channels, resample, spawn, spawn_with, Engine, Handle};
 pub use render::{BlockRenderer, Source};
 pub use seqbus::SeqBus;
+pub use synth::{SynthDeck, WaveEvent, WaveShared, WAVE_POINTS};
 pub use stretcher::Stretcher;
 pub use transport::{Core, Shared};

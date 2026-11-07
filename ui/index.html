@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/sound-map.css">
 <link rel="stylesheet" href="/library-graph.css">
 <link rel="stylesheet" href="/chop.css">
+<link rel="stylesheet" href="/wave.css">
 </head>
 <body>
 
@@ -448,6 +449,11 @@
     <div class="seqview hidden" id="seqView">
       <iframe id="seqFrame" class="seq-frame" title="Scale sequencer"></iframe>
     </div>
+
+    <!-- Wave: the wavetable synth. Built by `ui/app/394-wave-page.js` the first
+         time it is shown; its sound is the engine's synth deck. See
+         `docs/WAVE-SYNTH.md`. -->
+    <div class="hidden" id="waveView"></div>
 
     <!-- Compose: the whole piece at once — the granular player, the sequencer and
          the picture side by side, over one timeline. The cells are filled by
