@@ -1,87 +1,79 @@
-// The sound map: Browse › Map.
+// The sound map: Browse › Map, in 3D.
 //
-// Every dot is one sound in the library. Sounds the model hears as alike sit
-// together, so the map falls into clusters, and each cluster is named for what
-// its sounds were heard as. Move across the dots and each one plays; click one
-// to keep it and see the sounds most like it; from there it opens in Edit or
-// on the Grain page.
+// Every node is one sound in the library — move onto it and it plays, and the
+// panel at the bottom shows which sound it is: its waveform, with a playhead
+// running while it sounds. Three ways to see the same sounds, picked from the
+// strip (or 1, 2, 3):
 //
-// **Where each sound goes is decided in Rust** (`search::soundmap`, served by
-// `/api/soundmap`), from YAMNet's fingerprint of the audio — the same kind of
-// map XO, Atlas and the Infinite Drum Machine are built on. This file nudges
-// dots apart so none hides another, draws them and handles the mouse. When the
-// program moves to a native window this file is what gets replaced, and no
-// rule moves with it. The 3D world (`ui/sound-map.js`) is the 3D button.
+//   Cloud           the sound space itself, as the Embedding Projector shows
+//                   one: sounds the model hears as alike sit together, in three
+//                   dimensions you turn and fly into.
+//   Constellations  a 3D force graph: each group of alike sounds a glowing hub,
+//                   its sounds round it, neighbouring groups joined.
+//   Tag web         what the sounds were heard as, linked by how often the
+//                   labels go together, with the sounds hanging off them.
 //
-// Playback goes through the engine's own audition path, the one a click in
-// Browse uses. See `docs/SOUND-MAP.md`.
+// Click a hub — or a group's name in the cloud — to go into it: every sound in
+// that group, each tied to the sounds most like it. The breadcrumb, or Escape,
+// comes back out. Click a sound to keep it: its card, the sounds most like it,
+// and Edit or Grain.
+//
+// Where each sound sits, and which group it is in, is decided in Rust
+// (`search::soundmap`, `/api/soundmap`), from YAMNet's fingerprint of the
+// audio. The drawing is 3d-force-graph (three.js underneath), vendored in
+// `ui/vendor/`. A library of eighty thousand sounds is more than any 3D graph
+// can draw at once, so the top level shows a fair sample of each group, and
+// going in shows all of it. See `docs/SOUND-MAP.md`.
 
 (() => {
   'use strict';
 
-  /// How long the pointer rests on a dot before it plays: short enough to
-  /// sweep across a cluster and hear it, long enough not to load every file
-  /// the pointer crosses on its way somewhere else.
+  /// How long the pointer rests on a sound before it plays.
   const DWELL_MS = 80;
-  const FLY_MS = 600;
-  /// The map's size in world units; positions arrive in a unit square.
-  const WORLD = 1000;
-  /// While sounds are still being listened to, how often to ask for more.
+  /// The sound space's size in the scene.
+  const SPACE = 700;
+  /// Most sounds drawn at once. Past a few thousand a 3D graph stops turning
+  /// smoothly; going into a group shows all of its sounds, up to this.
+  const CAP = 3000;
   const POLL_MS = 2500;
-  /// The most sounds still to be heard that are shown, in rows under the map.
-  const WAITING_SHOWN = 400;
 
-  /// Family colours, as in the 3D world (`FAMILIES` in `ui/sound-map.js`).
+  /// Twelve colours that sit together on the dark: soft, never neon, each
+  /// clearly its own. A group takes one by its number.
+  const PALETTE = ['#7fd1c8', '#f2b880', '#e89aa8', '#a9a3f0', '#9fd38a', '#f0d77d',
+    '#7fb4f0', '#d6a5e0', '#f29e7d', '#8fd3f0', '#c9d98a', '#e0b0a0'];
   const FAMILIES = {
-    percussion: { name: 'Percussion', hex: '#f2a33a' },
-    voice:      { name: 'Voice',      hex: '#ef6f8e' },
-    instrument: { name: 'Instrument', hex: '#4fc3e8' },
-    music:      { name: 'Music',      hex: '#a98bf0' },
-    machine:    { name: 'Machine',    hex: '#9aa7b8' },
-    nature:     { name: 'Nature',     hex: '#6fd08c' },
-    other:      { name: 'Other',      hex: '#d9c38f' },
-    unknown:    { name: 'Not heard',  hex: '#6c7480' },
+    percussion: ['Percussion', '#f2b880'], voice: ['Voice', '#e89aa8'], instrument: ['Instrument', '#7fb4f0'],
+    music: ['Music', '#a9a3f0'], machine: ['Machine', '#a8b2c0'], nature: ['Nature', '#9fd38a'],
+    other: ['Other', '#e0cfa0'], unknown: ['Not heard', '#6c7480'],
   };
-  const TONE = [[70, 52, 190], [40, 140, 220], [40, 190, 160], [200, 210, 80], [255, 190, 70]];
-  const LENGTH = [[120, 220, 255], [150, 140, 255], [220, 90, 200], [255, 110, 90]];
-  const HIT = '#ff4b4b';
-  const HEARD = 'rgba(111,208,140,';
-  const ALIKE = 'rgba(130,195,255,';
+  const LOOSE = '#5d6470';
+  const HIT = '#ff5a5a';
+  const ALIKE = '#8fc7ff';
+  const HEARD = '#6fd08c';
 
-  const COLOURS = [
-    ['cluster', 'Cluster', 'One colour per cluster'],
-    ['family', 'Family', 'What kind of sound it is'],
-    ['tone', 'Dark → bright', 'Deep blue for a dark sound, yellow for a bright one'],
-    ['length', 'Short → long', 'Pale for a hit, red for a long sound'],
+  const VIEWS = [
+    ['cloud', 'Cloud', 'The sound space in 3D: alike sounds together (1)'],
+    ['stars', 'Constellations', 'Each group of alike sounds a hub, its sounds round it (2)'],
+    ['tags', 'Tag web', 'What the sounds were heard as, linked, with the sounds on them (3)'],
   ];
+  const TINTS = [['group', 'Group'], ['family', 'Family'], ['tone', 'Dark → bright']];
 
-  let root = null;
-  let ui = {};
+  let root = null, ui = {}, graph = null;
   let data = null;
-  let dots = [];
-  let tint = remembered('mapTint', 'cluster');
+  let view = remembered('mapView', 'cloud');
+  let tint = remembered('mapTint3', 'group');
   let hoverPlays = remembered('mapHoverPlays', 'on') === 'on';
-  let cam = { x: WORLD / 2, y: WORLD / 2, k: 1 };
-  let fly = null, userMoved = false;
-  let homeK = 1; // the zoom at which the whole map fits
-  let VW = 0, VH = 0, DPR = 1, raf = 0, pollTimer = 0;
-  let hits = null, hover = null, selected = null, focus = null;
-  let playing = -1, wantTimer = 0, startedPlayback = false;
+  /// The group gone into: { kind: 'cluster' | 'tag', key, label }, or null.
+  let inside = null;
+  let nodes = [], links = [], nodeOf = new Map();
+  let hover = null, selected = null, hits = null;
+  let playing = -1, playStart = 0, wantTimer = 0, startedPlayback = false;
   let trail = [];
-  const colours = {};
-  /// How many more frames the dots are nudged apart for after they arrive.
-  let settling = 0;
-  /// The dots drawn once and kept, until the view or what they show changes.
-  let layer = null, layerKey = '';
-  /// Bumped whenever what the dots show changes without the camera moving.
-  let look = 0;
+  let pollTimer = 0, raf = 0;
+  const peaks = new Map();
 
-  function remembered(key, fallback) {
-    try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
-  }
-  function remember(key, v) {
-    try { localStorage.setItem(key, v); } catch { /* private window */ }
-  }
+  function remembered(k, fallback) { try { return localStorage.getItem(k) || fallback; } catch { return fallback; } }
+  function remember(k, v) { try { localStorage.setItem(k, v); } catch { /* private window */ } }
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -96,30 +88,18 @@
     return b;
   };
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const fam = (f) => FAMILIES[f] || FAMILIES.other;
   const secs = (s) => (s < 1 ? `${Math.round(s * 1000)} ms` : s < 60 ? `${s.toFixed(s < 10 ? 2 : 1)} s`
     : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`);
-  const ramp = (t, stops) => {
-    t = Math.max(0, Math.min(1, t));
-    const k = Math.min(stops.length - 2, Math.floor(t * (stops.length - 1)));
-    const f = t * (stops.length - 1) - k;
-    const a = stops[k], b = stops[k + 1];
-    return `rgb(${[0, 1, 2].map((q) => Math.round(a[q] + (b[q] - a[q]) * f)).join(',')})`;
+  const groupColour = (c) => (c == null ? LOOSE : PALETTE[c % PALETTE.length]);
+  const famColour = (f) => (FAMILIES[f] || FAMILIES.other)[1];
+  const tone = (b) => {
+    if (b == null) return LOOSE;
+    const stops = [[70, 80, 190], [60, 150, 210], [90, 200, 170], [220, 210, 110], [250, 180, 90]];
+    const t = Math.max(0, Math.min(1, b)) * (stops.length - 1), k = Math.min(stops.length - 2, Math.floor(t)), f = t - k;
+    return `rgb(${[0, 1, 2].map((q) => Math.round(stops[k][q] + (stops[k + 1][q] - stops[k][q]) * f)).join(',')})`;
   };
-  /// A colour per cluster, a golden angle apart round the wheel, so
-  /// neighbouring numbers never look alike.
-  const clusterColour = (c) => (c == null ? '#5a606b' : `hsl(${Math.round((c * 137.508 + 25) % 360)},68%,62%)`);
-
-  function canvasColour(css, fallback) {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(css).trim() || fallback;
-    const c = document.createElement('canvas');
-    c.width = c.height = 1;
-    const g = c.getContext('2d');
-    g.fillStyle = v;
-    g.fillRect(0, 0, 1, 1);
-    const d = g.getImageData(0, 0, 1, 1).data;
-    return `rgb(${d[0]},${d[1]},${d[2]})`;
-  }
+  /// A fixed shuffle: the same sounds are picked as a group's sample each time.
+  const mix = (i) => { let z = (i + 0x9e3779b9) >>> 0; z = Math.imul(z ^ (z >>> 16), 0x85ebca6b) >>> 0; z = Math.imul(z ^ (z >>> 13), 0xc2b2ae35) >>> 0; return (z ^ (z >>> 16)) >>> 0; };
 
   // ------------------------------------------------------------- the overlay
 
@@ -127,13 +107,21 @@
     root = el('div', 'lgraph hidden');
     root.id = 'libraryGraph';
     root.tabIndex = -1;
-
     const bar = el('div', 'lg-bar');
     bar.append(el('span', 'lg-title', 'Sound map'));
+    const views = el('div', 'lg-seg lg-views');
+    VIEWS.forEach(([key, label, tip], n) => {
+      const b = button('', `${n + 1} ${label}`, tip, () => setView(key));
+      b.dataset.view = key;
+      views.append(b);
+    });
+    bar.append(views);
+    const crumb = el('span', 'lg-crumb');
+    bar.append(crumb);
     bar.append(el('span', 'lg-lbl', 'Colour'));
     const tints = el('div', 'lg-seg lg-tints');
-    for (const [key, label, tip] of COLOURS) {
-      const b = button('', label, tip, () => setTint(key));
+    for (const [key, label] of TINTS) {
+      const b = button('', label, `Colour by ${label.toLowerCase()}`, () => setTint(key));
       b.dataset.tint = key;
       tints.append(b);
     }
@@ -144,7 +132,7 @@
     find.oninput = () => setFind(find.value);
     find.onkeydown = (e) => {
       e.stopPropagation();
-      if (e.key === 'Enter' && hits && hits.size) goTo([...hits][0]);
+      if (e.key === 'Enter' && hits && hits.size) goTo([...hits].find((i) => nodeOf.has(i)) ?? [...hits][0]);
       if (e.key === 'Escape') { find.value = ''; setFind(''); root.focus(); }
     };
     bar.append(find, el('span', 'lg-found'));
@@ -156,42 +144,36 @@
       plays.append(b);
     }
     bar.append(plays);
-    bar.append(button('lg-home', 'Whole map', 'Back to every sound in view (Home)', home));
     bar.append(el('span', 'lg-status'));
-    bar.append(button('lg-3d', '3D', 'The library as a 3D world you fly through', open3d));
+    bar.append(button('lg-3d', 'Fly-through', 'The older 3D world you fly through with the keys', openWorld));
     bar.append(button('lg-close', 'Close', 'Back to the library (Esc)', close));
 
     const stage = el('div', 'lg-stage');
-    const canvas = el('canvas', 'lg-canvas');
-    const now = el('div', 'lg-now');
+    const scene = el('div', 'lg-scene');
+    const over = el('canvas', 'lg-over');
+    const panel = el('div', 'lg-panel');
+    panel.innerHTML = '<canvas class="lg-wave"></canvas><div class="lg-pname"></div><div class="lg-pmeta"></div>';
     const legend = el('div', 'lg-legend');
-    const key = el('div', 'lg-key');
-    legend.append(key,
-      el('div', 'lg-keys', 'Every dot is one sound · size = length · ring = it loops · names float where a kind of sound gathers'),
-      el('div', 'lg-keys', 'Move across the dots to hear them · click one to keep it · scroll to zoom · drag to pan · space stop · / find · Esc back'));
+    legend.append(el('div', 'lg-key'), el('div', 'lg-keys',
+      'Every node is a sound · rest on one to hear it · click to keep it · click a hub or a name to go in · drag to turn · scroll to fly · right-drag to slide · / find · Esc back'));
     const card = el('div', 'lg-card');
     const empty = el('div', 'lg-empty');
-    stage.append(canvas, now, legend, card, empty);
+    stage.append(scene, over, panel, legend, card, empty);
     root.append(bar, stage);
     document.body.append(root);
     ui = {
-      canvas, g: canvas.getContext('2d'), now, key, card, empty, find,
+      scene, over, og: over.getContext('2d'), panel, wave: panel.querySelector('.lg-wave'),
+      pname: panel.querySelector('.lg-pname'), pmeta: panel.querySelector('.lg-pmeta'),
+      key: legend.querySelector('.lg-key'), card, empty, find, crumb,
       found: bar.querySelector('.lg-found'), status: bar.querySelector('.lg-status'),
     };
-
-    canvas.addEventListener('pointerdown', onDown);
-    canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointerleave', () => setHover(null));
-    canvas.addEventListener('dblclick', (e) => { if (!pick(e.offsetX, e.offsetY)) home(); });
-    canvas.addEventListener('wheel', onWheel, { passive: false });
 
     root.addEventListener('keydown', (e) => {
       if (e.target === ui.find) return;
       if (e.key === 'Escape') back();
       else if (e.key === '/') ui.find.focus();
-      else if (e.key === 'Home') home();
-      else if (e.key === ' ') { if (playing >= 0) silence(); else if (selected) audition(selected.i); }
+      else if (e.key === '1' || e.key === '2' || e.key === '3') setView(VIEWS[+e.key - 1][0]);
+      else if (e.key === ' ') { if (playing >= 0) silence(); else if (selected) audition(selected.si, true); }
       else return;
       e.preventDefault();
       // While the map is up the keys are its own, not the window's beneath.
@@ -199,474 +181,502 @@
     });
   }
 
-  // --------------------------------------------------------------- the dots
-
-  /// Lay the dots where Rust put them. A sound not listened to yet waits in
-  /// rows under the map, still playable.
-  function place() {
-    const S = data.sounds;
-    const before = new Map(dots.map((d) => [d.i, d]));
-    const lens = S.map((s) => s.seconds).sort((a, b) => a - b);
-    const lenRank = (x) => {
-      let lo = 0, hi = lens.length;
-      while (lo < hi) { const m = (lo + hi) >> 1; if (lens[m] < x) lo = m + 1; else hi = m; }
-      return lo / Math.max(1, lens.length);
-    };
-    let waiting = 0;
-    const cols = 80;
-    // A few sounds still to be heard wait in rows under the map, playable. A
-    // whole library's worth would dwarf it, so past a few hundred they stay
-    // off the map, counted, and appear as they are heard.
-    const unplaced = S.filter((s) => !s.at).length;
-    const showWaiting = unplaced <= WAITING_SHOWN;
-    dots = S.map((s, i) => {
-      const was = before.get(i);
-      const d = { i, r: 2 + lenRank(s.seconds) * 3.6, len: lenRank(s.seconds) };
-      if (s.at) { d.tx = s.at[0] * WORLD; d.ty = s.at[1] * WORLD; }
-      else {
-        d.tx = WORLD / 2 - cols * 5 + (waiting % cols) * 10;
-        d.ty = WORLD + 60 + Math.floor(waiting / cols) * 10;
-        d.waiting = true;
-        d.hidden = !showWaiting;
-        waiting++;
-      }
-      d.x = was ? was.x : d.tx;
-      d.y = was ? was.y : d.ty;
-      return d;
-    });
-    // Nudged apart while they settle — not for a whole library of tens of
-    // thousands, where Rust's own spacing has to do.
-    settling = dots.length <= 6000 ? 90 : 0;
-    for (let i = 0; i < (settling ? 40 : 0); i++) relax(1);
-    look++;
+  function makeGraph() {
+    graph = ForceGraph3D({ controlType: 'orbit' })(ui.scene)
+      .backgroundColor('#06080c')
+      .showNavInfo(false)
+      .nodeRelSize(2.2)
+      .nodeResolution(8)
+      .nodeOpacity(0.95)
+      .nodeLabel(() => '')
+      .nodeVal((n) => n.val)
+      .nodeColor((n) => colourOf(n))
+      .linkColor((l) => (l.kind === 'tie' ? 'rgba(170,200,240,0.35)' : l.kind === 'hub' ? 'rgba(200,215,235,0.35)' : 'rgba(200,215,235,0.16)'))
+      .linkWidth((l) => (l.kind === 'hub' ? 0.6 : 0))
+      .linkOpacity(0.5)
+      .linkDirectionalParticles((l) => (hover && (l.source === hover || l.target === hover) ? 3 : 0))
+      .linkDirectionalParticleWidth(1.4)
+      .linkDirectionalParticleSpeed(0.012)
+      .enableNodeDrag(true)
+      .onNodeHover(onHover)
+      .onNodeClick(onClick)
+      .onBackgroundClick((e) => { if (!onNameClick(e)) { selected = null; hideCard(); showPanel(); } });
+    graph.controls().autoRotate = false;
   }
 
-  /// Towards where each dot belongs, and apart where two would touch: a dot
-  /// you cannot point at is a sound you cannot hear.
-  function relax(pull) {
-    for (const d of dots) { d.x += (d.tx - d.x) * 0.2 * pull; d.y += (d.ty - d.y) * 0.2 * pull; }
-    // Hidden dots take no part.
-    const C = 16, grid = new Map(), key = (x, y) => `${x},${y}`;
-    for (const d of dots) {
-      if (d.hidden) continue;
-      const k = key(Math.floor(d.x / C), Math.floor(d.y / C));
-      if (!grid.has(k)) grid.set(k, []);
-      grid.get(k).push(d);
-    }
-    for (const d of dots) {
-      const gx = Math.floor(d.x / C), gy = Math.floor(d.y / C);
-      for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
-        const cell = grid.get(key(gx + ox, gy + oy));
-        if (!cell) continue;
-        for (const e of cell) {
-          if (e.i <= d.i) continue;
-          const dx = e.x - d.x, dy = e.y - d.y, dd = Math.hypot(dx, dy) || 0.01, m = d.r + e.r + 1.2;
-          if (dd < m) {
-            const p = (m - dd) / dd * 0.5;
-            d.x -= dx * p; d.y -= dy * p; e.x += dx * p; e.y += dy * p;
-          }
+  // ------------------------------------------------------------------ views
+
+  /// The sounds shown: a fair sample of every group at the top level, all of
+  /// the group gone into, and always whatever was found.
+  function pick(members) {
+    if (members.length <= CAP) return members;
+    return [...members].sort((a, b) => mix(a) - mix(b)).slice(0, CAP);
+  }
+
+  function placed() { return data.sounds.map((s, i) => (s.at ? i : -1)).filter((i) => i >= 0); }
+
+  const at = (s) => ({ x: (s.at[0] - 0.5) * SPACE, y: (s.at[1] - 0.5) * SPACE, z: (s.at[2] - 0.5) * SPACE });
+
+  function soundNode(i, extra) {
+    const s = data.sounds[i];
+    // A long sound is a little bigger; never so much that it hides its
+    // neighbours.
+    return Object.assign({ id: `s${i}`, si: i, kind: 'sound', val: 0.6 + Math.min(2.2, Math.log1p(s.seconds) * 0.6) }, extra);
+  }
+
+  /// Each sound tied to its `k` nearest among `list`, in the sound space:
+  /// the inside of a group is a web of alike sounds.
+  function ties(list, k) {
+    const out = [], seen = new Set();
+    const P = list.map((i) => data.sounds[i].at);
+    for (let a = 0; a < list.length; a++) {
+      const best = [];
+      for (let b = 0; b < list.length; b++) {
+        if (a === b) continue;
+        const d = (P[a][0] - P[b][0]) ** 2 + (P[a][1] - P[b][1]) ** 2 + (P[a][2] - P[b][2]) ** 2;
+        if (best.length < k || d < best[best.length - 1][0]) {
+          best.push([d, b]); best.sort((x, y) => x[0] - y[0]); if (best.length > k) best.pop();
         }
       }
-    }
-  }
-
-  /// How big a dot is drawn. Not its full size in the world once you zoom
-  /// in, or a dot would swell to a coin; the gaps between dots open instead.
-  const size = (d) => d.r * Math.min(1, Math.pow(homeK / cam.k, 0.8));
-
-  function colourOf(s, d) {
-    if (tint === 'family') return fam(s.family).hex;
-    if (tint === 'tone') return s.bright == null ? '#4a505a' : ramp(s.bright, TONE);
-    if (tint === 'length') return ramp(d.len, LENGTH);
-    return clusterColour(s.cluster);
-  }
-
-  // ----------------------------------------------------------------- camera
-
-  const toWorld = (sx, sy) => [(sx - VW / 2) / cam.k + cam.x, (sy - VH / 2) / cam.k + cam.y];
-  const toScreen = (x, y) => [(x - cam.x) * cam.k + VW / 2, (y - cam.y) * cam.k + VH / 2];
-  const cardOpen = () => ui.card.classList.contains('on');
-
-  function resize() {
-    DPR = window.devicePixelRatio || 1;
-    const r = ui.canvas.getBoundingClientRect();
-    VW = r.width;
-    VH = r.height;
-    ui.canvas.width = Math.round(VW * DPR);
-    ui.canvas.height = Math.round(VH * DPR);
-  }
-
-  function fit(list, animate, maxK = 6) {
-    const all = list === dots;
-    list = list.filter((d) => !d.hidden);
-    if (!list.length || VW < 50 || VH < 50) return;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const d of list) {
-      x0 = Math.min(x0, d.x - d.r); y0 = Math.min(y0, d.y - d.r);
-      x1 = Math.max(x1, d.x + d.r); y1 = Math.max(y1, d.y + d.r);
-    }
-    const right = cardOpen() ? 270 : 0, top = 30, bottom = 64;
-    const k = Math.min(maxK, (VW - 40 - right) / Math.max(1, x1 - x0), (VH - top - bottom) / Math.max(1, y1 - y0));
-    const to = { x: (x0 + x1) / 2 + right / 2 / k, y: (y0 + y1) / 2 + (bottom - top) / 2 / k, k };
-    if (all) homeK = k;
-    if (animate) fly = { from: { ...cam }, to, t0: performance.now() };
-    else cam = to;
-  }
-
-  function flyTo(d, k) {
-    const kk = Math.max(cam.k, k);
-    fly = { from: { ...cam }, to: { x: d.x + (cardOpen() ? 135 / kk : 0), y: d.y, k: kk }, t0: performance.now() };
-  }
-
-  // ------------------------------------------------------------------- draw
-
-  function draw(now) {
-    const g = ui.g, k = cam.k;
-    g.setTransform(DPR, 0, 0, DPR, 0, 0);
-    g.fillStyle = colours.ground;
-    g.fillRect(0, 0, VW, VH);
-    if (!data) return;
-    const S = data.sounds;
-    const lit = hover || selected;
-    const near = new Set();
-    if (lit) { near.add(lit.i); nearOf(lit.i).forEach((j) => near.add(j)); }
-
-    // The dots: drawn again only when the view or what they show has changed,
-    // and otherwise copied from the last time. Eighty thousand of them every
-    // frame would leave nothing for the pointer.
-    const key = [cam.x, cam.y, k, VW, VH, tint, look, focus, lit ? lit.i : -1, near.size, hits ? hits.size : -1, ui.find.value].join('|');
-    if (key !== layerKey || !layer) {
-      layerKey = key;
-      if (!layer) layer = document.createElement('canvas');
-      if (layer.width !== ui.canvas.width || layer.height !== ui.canvas.height) {
-        layer.width = ui.canvas.width;
-        layer.height = ui.canvas.height;
+      for (const [, b] of best) {
+        const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ source: `s${list[a]}`, target: `s${list[b]}`, kind: 'tie' });
       }
-      paintDots(layer.getContext('2d'), near, lit);
     }
-    g.drawImage(layer, 0, 0, VW, VH);
-
-    g.setTransform(DPR * k, 0, 0, DPR * k, DPR * (VW / 2 - cam.x * k), DPR * (VH / 2 - cam.y * k));
-    g.lineCap = 'round';
-    // What you just heard, as a fading path.
-    for (let q = 1; q < trail.length; q++) {
-      const age = (now - trail[q].t) / 5000;
-      if (age > 1) continue;
-      const a = dots[trail[q - 1].i], b = dots[trail[q].i];
-      if (!a || !b) continue;
-      g.strokeStyle = `${HEARD}${(0.55 * (1 - age)).toFixed(3)})`;
-      g.lineWidth = 1.3 / k;
-      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
-    }
-    if (lit) {
-      nearOf(lit.i).forEach((j, q) => {
-        const b = dots[j];
-        if (!b) return;
-        g.strokeStyle = `${ALIKE}0.7)`;
-        g.lineWidth = (2 - q * 0.22) / k;
-        g.beginPath(); g.moveTo(lit.x, lit.y); g.lineTo(b.x, b.y); g.stroke();
-      });
-    }
-    if (playing >= 0 && dots[playing]) {
-      const d = dots[playing], t = (now % 800) / 800;
-      g.strokeStyle = `${HEARD}${(1 - t).toFixed(3)})`;
-      g.lineWidth = 1.6 / k;
-      g.beginPath(); g.arc(d.x, d.y, size(d) + 2 / k + t * 14 / k, 0, 7); g.stroke();
-    }
-    if (selected) {
-      g.strokeStyle = '#fff';
-      g.lineWidth = 1.5 / k;
-      g.beginPath(); g.arc(selected.x, selected.y, size(selected) + 2.5 / k, 0, 7); g.stroke();
-    }
-    labels(lit);
+    return out;
   }
 
-  /// Every dot onto `g`, one fill per colour and shade rather than one per
-  /// dot, and only those on screen.
-  function paintDots(g, near, lit) {
-    const k = cam.k, S = data.sounds;
-    g.setTransform(DPR, 0, 0, DPR, 0, 0);
-    g.clearRect(0, 0, VW, VH);
-    g.setTransform(DPR * k, 0, 0, DPR * k, DPR * (VW / 2 - cam.x * k), DPR * (VH / 2 - cam.y * k));
-    const [x0, y0] = toWorld(-10, -10), [x1, y1] = toWorld(VW + 10, VH + 10);
-    const fills = new Map(), rings = new Map();
-    const add = (m, key, fn) => { let p = m.get(key); if (!p) m.set(key, p = new Path2D()); fn(p); };
-    for (const d of dots) {
-      if (d.hidden || d.x < x0 || d.x > x1 || d.y < y0 || d.y > y1) continue;
-      const s = S[d.i];
-      const hit = hits && hits.has(d.i);
-      let a = 1;
-      if (hits && !hit) a = 0.15;
-      else if (focus != null && s.cluster !== focus) a = 0.15;
-      else if (lit && !near.has(d.i)) a = 0.6;
-      if (d.waiting && !hit) a *= 0.7;
-      const c = hit ? HIT : colourOf(s, d);
-      const r = size(d);
-      if (hit) add(fills, `${HIT}|0.25`, (p) => { p.moveTo(d.x + r * 1.8, d.y); p.arc(d.x, d.y, r * 1.8, 0, 7); });
-      add(fills, `${c}|${a}`, (p) => { p.moveTo(d.x + r, d.y); p.arc(d.x, d.y, r, 0, 7); });
-      if (s.loops) add(rings, `${c}|${a}|${Math.min(1, r * 0.35)}`, (p) => { p.moveTo(d.x + r * 1.45, d.y); p.arc(d.x, d.y, r * 1.45, 0, 7); });
-    }
-    for (const [key, p] of fills) {
-      const [c, a] = key.split('|');
-      g.globalAlpha = +a;
-      g.fillStyle = c;
-      g.fill(p);
-    }
-    for (const [key, p] of rings) {
-      const [c, a, w] = key.split('|');
-      g.globalAlpha = +a;
-      g.strokeStyle = c;
-      g.lineWidth = +w;
-      g.stroke(p);
-    }
-    g.globalAlpha = 1;
-  }
-
-  /// A sound's closest matches: sent with the map for a small library, asked
-  /// for the first time it is pointed at for a large one.
-  const asked = new Set();
-  function nearOf(i) {
-    const s = data.sounds[i];
-    if (s.near.length || asked.has(i)) return s.near;
-    asked.add(i);
-    fetch(`/api/soundmap/near?i=${i}`).then((r) => (r.ok ? r.json() : null)).then((r) => {
-      if (!r || !data || data.sounds[i] !== s) return;
-      s.near = r.near;
-      look++;
-      if (selected && selected.i === i) showSound(i);
-    }).catch(() => {});
-    return s.near;
-  }
-
-  /// Names: the sound in hand and the ones most like it, the cluster names
-  /// over their clusters, then — close up — every sound in view. Never one on
-  /// top of another.
-  function labels(lit) {
-    const g = ui.g, S = data.sounds;
-    g.setTransform(DPR, 0, 0, DPR, 0, 0);
-    g.textBaseline = 'middle';
-    const taken = [];
-    const fits = (x, y, w, h) => {
-      for (const t of taken) if (x < t[0] + t[2] && x + w > t[0] && y < t[1] + t[3] && y + h > t[1]) return false;
-      taken.push([x, y, w, h]);
-      return true;
-    };
-    const say = (d, text, font, colour, always) => {
-      const [sx, sy] = toScreen(d.x, d.y);
-      if (sx < -60 || sy < -12 || sx > VW + 60 || sy > VH + 12) return;
-      g.font = font;
-      g.textAlign = 'left';
-      const w = g.measureText(text).width, x = sx + size(d) * cam.k + 4;
-      if (!fits(x, sy - 6, w, 12) && !always) return;
-      g.fillStyle = 'rgba(0,0,0,0.65)';
-      g.fillText(text, x + 0.6, sy + 0.8);
-      g.fillStyle = colour;
-      g.fillText(text, x, sy);
-    };
-    if (lit) {
-      say(lit, S[lit.i].name, `600 11px ${colours.sans}`, '#fff', true);
-      nearOf(lit.i).forEach((j) => { if (dots[j]) say(dots[j], S[j].name, `10px ${colours.sans}`, `${ALIKE}0.95)`); });
-    }
-    g.textAlign = 'center';
-    // From afar only the bigger clusters are named; closer in, all of them.
-    const close = cam.k >= homeK * 1.6;
-    data.clusters.forEach((c, n) => {
-      c.box = null;
-      if (focus != null && focus !== n) return;
-      if (!close && focus == null && c.size < 8) return;
-      const [sx, sy] = toScreen(c.centre[0] * WORLD, c.centre[1] * WORLD);
-      const size = Math.min(14, 9.5 + Math.sqrt(c.size) * 0.45);
-      g.font = `600 ${size}px ${colours.sans}`;
-      const w = g.measureText(c.name).width;
-      const box = [sx - w / 2 - 3, sy - size / 2 - 2, w + 6, size + 4];
-      if (!fits(...box)) return;
-      c.box = box;
-      g.fillStyle = 'rgba(0,0,0,0.6)';
-      g.fillText(c.name, sx + 1, sy + 1);
-      g.fillStyle = tint === 'cluster' ? clusterColour(n) : 'rgba(240,244,250,0.92)';
-      g.fillText(c.name, sx, sy);
+  /// Inside a group: every one of its sounds where it sits in the sound space,
+  /// that corner of the space stretched to fill the view, each sound tied to
+  /// the two most like it. Held still, so what is near is what is alike.
+  function insideOf(list) {
+    list = pick(list);
+    const P = list.map((i) => data.sounds[i].at);
+    const lo = [0, 1, 2].map((k) => Math.min(...P.map((p) => p[k])));
+    const hi = [0, 1, 2].map((k) => Math.max(...P.map((p) => p[k])));
+    const span = Math.max(1e-6, ...[0, 1, 2].map((k) => hi[k] - lo[k]));
+    const ns = list.map((i, a) => {
+      const q = [0, 1, 2].map((k) => ((P[a][k] - (lo[k] + hi[k]) / 2) / span) * SPACE);
+      return soundNode(i, { fx: q[0], fy: q[1], fz: q[2], val: soundNode(i).val * 2.2 });
     });
-    const waiting = dots.filter((d) => d.waiting && !d.hidden).length;
-    if (waiting) {
-      const [sx, sy] = toScreen(WORLD / 2, WORLD + 42);
-      g.font = `600 11px ${colours.sans}`;
-      g.fillStyle = 'rgba(200,210,225,0.65)';
-      g.fillText(data.listening ? `Still listening — ${waiting} sound${waiting === 1 ? '' : 's'}, playable already`
-        : `Not placed — ${waiting} sound${waiting === 1 ? '' : 's'}, still playable`, sx, sy);
-    }
-    // Close enough in, every sound in view is named; the whole map's zoom is
-    // the yardstick, since a library of eighty thousand starts far further out
-    // than one of eight hundred.
-    const named = cam.k >= homeK * 2.5;
-    if (named || hits) {
-      let budget = 260;
-      for (const d of dots) {
-        if (!budget) break;
-        const hit = hits && hits.has(d.i);
-        if (d.hidden || (!named && !hit) || d === lit) continue;
-        say(d, S[d.i].name, `9.5px ${colours.sans}`, hit ? '#ff6b6b' : 'rgba(200,210,225,0.72)');
-        budget--;
+    return { nodes: ns, links: ties(list, 2), fixed: true };
+  }
+
+  function buildCloud() {
+    if (inside) return insideOf(placed().filter((i) => data.sounds[i].cluster === inside.key));
+    const list = pick(placed());
+    const ns = list.map((i) => { const p = at(data.sounds[i]); return soundNode(i, { fx: p.x, fy: p.y, fz: p.z }); });
+    return { nodes: ns, links: [], fixed: true };
+  }
+
+  function buildStars() {
+    const S = data.sounds;
+    if (inside) return insideOf(placed().filter((i) => S[i].cluster === inside.key));
+    const groups = data.clusters.map((c, n) => ({ n, c, members: [] }));
+    const loose = [];
+    for (const i of placed()) (S[i].cluster != null ? groups[S[i].cluster].members : loose).push(i);
+    const per = Math.max(6, Math.floor(CAP / Math.max(1, groups.length)));
+    const ns = [], ls = [];
+    for (const g of groups) {
+      const c = g.c.centre;
+      const hub = { id: `c${g.n}`, kind: 'hub', group: g.n, label: g.c.name, size: g.c.size, val: 6 + Math.sqrt(g.c.size) * 0.9,
+        x: (c[0] - 0.5) * SPACE, y: (c[1] - 0.5) * SPACE, z: (c[2] - 0.5) * SPACE };
+      ns.push(hub);
+      const shown = [...g.members].sort((a, b) => mix(a) - mix(b)).slice(0, per);
+      hub.more = g.members.length - shown.length;
+      for (const i of shown) {
+        ns.push(soundNode(i, { x: hub.x + (Math.random() - 0.5) * 30, y: hub.y + (Math.random() - 0.5) * 30, z: hub.z + (Math.random() - 0.5) * 30 }));
+        ls.push({ source: hub.id, target: `s${i}`, kind: 'spoke' });
       }
     }
+    // Each group joined to the two whose middles are nearest its own.
+    const seen = new Set();
+    for (const a of groups) {
+      const near = groups.filter((b) => b !== a)
+        .map((b) => [b, a.c.centre.reduce((t, v, k) => t + (v - b.c.centre[k]) ** 2, 0)])
+        .sort((x, y) => x[1] - y[1]).slice(0, 2);
+      for (const [b] of near) {
+        const key = a.n < b.n ? `${a.n}:${b.n}` : `${b.n}:${a.n}`;
+        if (!seen.has(key)) { seen.add(key); ls.push({ source: `c${a.n}`, target: `c${b.n}`, kind: 'hub' }); }
+      }
+    }
+    for (const i of loose.slice(0, 200)) ns.push(soundNode(i, at(S[i])));
+    return { nodes: ns, links: ls };
+  }
+
+  function buildTags() {
+    const S = data.sounds;
+    const tagOf = new Map();
+    placed().forEach((i) => {
+      for (const l of S[i].heard) {
+        if (!tagOf.has(l)) tagOf.set(l, []);
+        tagOf.get(l).push(i);
+      }
+    });
+    if (inside) return insideOf((tagOf.get(inside.key) || []).filter((i) => S[i].at));
+    const tags = [...tagOf.entries()].filter(([, m]) => m.length >= 3).sort((a, b) => b[1].length - a[1].length).slice(0, 90);
+    const index = new Map(tags.map(([l], n) => [l, n]));
+    const ns = [], ls = [];
+    const fam = (m) => { const c = {}; m.forEach((i) => { c[S[i].family] = (c[S[i].family] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0]; };
+    tags.forEach(([l, m], n) => ns.push({ id: `t${n}`, kind: 'tag', tag: l, label: l, size: m.length, family: fam(m), val: 5 + Math.sqrt(m.length) * 0.8 }));
+    // Each sound hangs off the first of its labels that is drawn.
+    const per = Math.max(5, Math.floor(CAP / Math.max(1, tags.length)));
+    const hung = new Map();
+    for (const i of placed()) {
+      const l = S[i].heard.find((x) => index.has(x));
+      if (l == null) continue;
+      if (!hung.has(l)) hung.set(l, []);
+      hung.get(l).push(i);
+    }
+    for (const [l, m] of hung) {
+      const n = index.get(l);
+      const shown = [...m].sort((a, b) => mix(a) - mix(b)).slice(0, per);
+      ns[n].more = m.length - shown.length;
+      for (const i of shown) { ns.push(soundNode(i)); ls.push({ source: `t${n}`, target: `s${i}`, kind: 'spoke' }); }
+    }
+    // Labels joined by how often they are heard together, more than chance.
+    const together = new Map();
+    for (const i of placed()) {
+      const ts = S[i].heard.filter((x) => index.has(x)).map((x) => index.get(x));
+      for (let a = 0; a < ts.length; a++) for (let b = a + 1; b < ts.length; b++) {
+        const key = ts[a] < ts[b] ? `${ts[a]}:${ts[b]}` : `${ts[b]}:${ts[a]}`;
+        together.set(key, (together.get(key) || 0) + 1);
+      }
+    }
+    const total = placed().length;
+    const best = new Map();
+    for (const [key, c] of together) {
+      const [a, b] = key.split(':').map(Number);
+      const lift = c * total / (tags[a][1].length * tags[b][1].length);
+      if (c < 2 || lift < 1.15) continue;
+      for (const t of [a, b]) { if (!best.has(t)) best.set(t, []); best.get(t).push([c * Math.log1p(lift), key]); }
+    }
+    const kept = new Set();
+    for (const list of best.values()) list.sort((x, y) => y[0] - x[0]).slice(0, 3).forEach(([, k]) => kept.add(k));
+    for (const key of kept) { const [a, b] = key.split(':'); ls.push({ source: `t${a}`, target: `t${b}`, kind: 'hub' }); }
+    return { nodes: ns, links: ls };
+  }
+
+  function show() {
+    if (!data || !graph) return;
+    const g = view === 'stars' ? buildStars() : view === 'tags' ? buildTags() : buildCloud();
+    // What was found but is not among the sounds shown is added, so a find
+    // always has something to show.
+    if (hits) {
+      const have = new Set(g.nodes.filter((n) => n.kind === 'sound').map((n) => n.si));
+      for (const i of [...hits].slice(0, 300)) {
+        if (have.has(i) || !data.sounds[i].at) continue;
+        if (inside && view === 'cloud' && data.sounds[i].cluster !== inside.key) continue;
+        const p = at(data.sounds[i]);
+        g.nodes.push(soundNode(i, g.fixed ? { fx: p.x, fy: p.y, fz: p.z } : p));
+      }
+    }
+    nodes = g.nodes;
+    links = g.links;
+    nodeOf = new Map(nodes.filter((n) => n.kind === 'sound').map((n) => [n.si, n]));
+    graph.d3Force('charge').strength(g.fixed ? 0 : view === 'tags' ? -40 : -18);
+    graph.d3Force('link').distance((l) => (l.kind === 'hub' ? 140 : l.kind === 'spoke' ? 26 : 14)).strength((l) => (l.kind === 'hub' ? 0.08 : l.kind === 'spoke' ? 0.6 : 0.4));
+    graph.cooldownTicks(g.fixed ? 0 : 400);
+    graph.graphData({ nodes, links });
+    hover = null;
+    if (selected) selected = nodeOf.get(selected.si) || null;
+    setTimeout(() => graph.zoomToFit(900, 30), g.fixed ? 60 : 1600);
+    drawKey();
+    sayWhere();
+  }
+
+  function colourOf(n) {
+    if (n.kind === 'hub') return groupColour(n.group);
+    if (n.kind === 'tag') return famColour(n.family);
+    const s = data.sounds[n.si];
+    if (hits && hits.has(n.si)) return HIT;
+    const c = tint === 'family' ? famColour(s.family) : tint === 'tone' ? tone(s.bright) : groupColour(s.cluster);
+    return hits ? dim(c) : c;
+  }
+  /// The same colour, sunk most of the way into the dark.
+  function dim(c) {
+    const m = c.startsWith('#') ? [1, 3, 5].map((k) => parseInt(c.slice(k, k + 2), 16)) : c.match(/\d+/g).map(Number);
+    return `rgb(${m.map((v) => Math.round(v * 0.22 + 6)).join(',')})`;
+  }
+
+  function recolour() { if (graph) graph.nodeColor(graph.nodeColor()); }
+
+  // ---------------------------------------------------------------- going in
+
+  function enter(kind, key, label) {
+    inside = { kind, key, label };
+    selected = null;
+    hideCard();
+    show();
+  }
+
+  function leave() {
+    inside = null;
+    show();
+  }
+
+  function sayWhere() {
+    ui.crumb.innerHTML = inside
+      ? `<span class="lg-up">Library</span> › <b>${esc(inside.label)}</b>`
+      : '';
+    const up = ui.crumb.querySelector('.lg-up');
+    if (up) up.onclick = leave;
+    root.querySelectorAll('.lg-views [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
   }
 
   // ------------------------------------------------------------------ mouse
 
-  function pick(sx, sy) {
-    const [wx, wy] = toWorld(sx, sy);
-    let best = null, bd = Infinity;
-    const reach = 6 / cam.k;
-    for (const d of dots) {
-      if (d.hidden || (hits && !hits.has(d.i))) continue;
-      if (focus != null && data.sounds[d.i].cluster !== focus) continue;
-      const e = Math.hypot(d.x - wx, d.y - wy) - size(d);
-      if (e < reach && e < bd) { bd = e; best = d; }
-    }
-    return best;
-  }
-
-  /// A cluster's name under the pointer, or -1.
-  function pickName(sx, sy) {
-    if (!data) return -1;
-    return data.clusters.findIndex((c) => c.box && sx >= c.box[0] && sx <= c.box[0] + c.box[2] && sy >= c.box[1] && sy <= c.box[1] + c.box[3]);
-  }
-
-  let down = null;
-  function onDown(e) {
-    root.focus({ preventScroll: true });
-    down = { x: e.offsetX, y: e.offsetY, cam: { ...cam }, d: pick(e.offsetX, e.offsetY), name: pickName(e.offsetX, e.offsetY), moved: false };
-    ui.canvas.setPointerCapture(e.pointerId);
-  }
-  function onMove(e) {
-    if (!down) {
-      setHover(pick(e.offsetX, e.offsetY));
-      ui.canvas.classList.toggle('point', !!hover || pickName(e.offsetX, e.offsetY) >= 0);
-      return;
-    }
-    const dx = e.offsetX - down.x, dy = e.offsetY - down.y;
-    if (Math.abs(dx) + Math.abs(dy) > 3) down.moved = true;
-    if (!down.moved) return;
-    ui.canvas.classList.add('drag');
-    userMoved = true;
-    fly = null;
-    cam = { ...down.cam, x: down.cam.x - dx / cam.k, y: down.cam.y - dy / cam.k };
-  }
-  function onUp() {
-    const d = down;
-    down = null;
-    ui.canvas.classList.remove('drag');
-    if (!d || d.moved) return;
-    if (d.d) choose(d.d);
-    else if (d.name >= 0) gather(d.name);
-    else { selected = null; hideCard(); showNow(); }
-  }
-  function onWheel(e) {
-    e.preventDefault();
-    userMoved = true;
-    fly = null;
-    const [wx, wy] = toWorld(e.offsetX, e.offsetY);
-    cam.k = Math.min(30, Math.max(0.2, cam.k * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0018))));
-    cam.x = wx - (e.offsetX - VW / 2) / cam.k;
-    cam.y = wy - (e.offsetY - VH / 2) / cam.k;
-  }
-
-  function setHover(d) {
-    if (d === hover) return;
-    hover = d;
+  function onHover(n) {
+    ui.scene.style.cursor = n ? 'pointer' : '';
+    if (n === hover) return;
+    hover = n;
     clearTimeout(wantTimer);
-    if (d && hoverPlays) wantTimer = setTimeout(() => { if (hover === d) audition(d.i); }, DWELL_MS);
-    showNow();
+    if (n && n.kind === 'sound' && hoverPlays) wantTimer = setTimeout(() => { if (hover === n) audition(n.si); }, DWELL_MS);
+    if (n && n.kind === 'sound') nearOf(n.si);
+    // Particles run along whatever touches what is under the pointer.
+    graph.linkDirectionalParticles(graph.linkDirectionalParticles());
+    showPanel();
   }
 
-  function choose(d) {
-    selected = d;
-    showSound(d.i);
-    audition(d.i);
-    showNow();
+  function onClick(n) {
+    if (n.kind === 'hub') { enter('cluster', n.group, n.label); return; }
+    if (n.kind === 'tag') { enter('tag', n.tag, n.label); return; }
+    selected = n;
+    showSound(n.si);
+    audition(n.si, true);
+    showPanel();
   }
 
-  /// One cluster in view, the rest faded, its sounds listed.
-  function gather(c) {
-    focus = c;
-    selected = null;
-    showCluster(c);
-    fit(dots.filter((d) => data.sounds[d.i].cluster === c), true, 10);
+  /// A click on a group's name floating in the cloud goes into that group.
+  function onNameClick(e) {
+    const r = ui.over.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const hit = (ui.names || []).find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+    if (hit) enter('cluster', hit.group, hit.label);
+    return !!hit;
   }
 
   function goTo(i) {
-    const d = dots[i];
-    if (!d) return;
-    if (focus != null && data.sounds[i].cluster !== focus) focus = null;
+    let n = nodeOf.get(i);
+    if (!n) {
+      const s = data.sounds[i];
+      if (s.at && view !== 'tags' && s.cluster != null) { enter('cluster', s.cluster, data.clusters[s.cluster].name); n = nodeOf.get(i); }
+    }
     showSound(i);
-    audition(i);
-    // Not heard yet, so not on the map: its card, and it plays, but there is
-    // nowhere to fly to.
-    if (d.hidden) { selected = null; return; }
-    selected = d;
-    flyTo(d, 3.2);
-    userMoved = true;
+    audition(i, true);
+    if (!n) return;
+    selected = n;
+    const p = { x: n.x ?? n.fx, y: n.y ?? n.fy, z: n.z ?? n.fz };
+    const len = Math.hypot(p.x, p.y, p.z) || 1;
+    graph.cameraPosition({ x: p.x * (1 + 80 / len), y: p.y * (1 + 80 / len), z: p.z * (1 + 80 / len) + 40 }, p, 900);
+    showPanel();
   }
 
-  function home() {
-    focus = null;
-    selected = null;
-    hideCard();
-    showNow();
-    fit(dots, true);
-    userMoved = false;
-  }
-
-  /// Escape steps back one thing at a time: the search, the card, the
-  /// gathered cluster, the sound playing, then the map itself.
+  /// Escape steps back one thing at a time: the search, the card, the group
+  /// gone into, the sound playing, then the map itself.
   function back() {
     if (hits) { ui.find.value = ''; setFind(''); }
-    else if (cardOpen()) { selected = null; hideCard(); showNow(); }
-    else if (focus != null) home();
+    else if (ui.card.classList.contains('on')) { selected = null; hideCard(); showPanel(); }
+    else if (inside) leave();
     else if (playing >= 0) silence();
     else close();
   }
 
-  // ------------------------------------------------------------------- card
+  // ------------------------------------------------- what is under the pointer
 
-  function showNow() {
-    const d = hover || selected;
-    if (!d || !data) { ui.now.innerHTML = ''; return; }
-    const s = data.sounds[d.i];
+  /// The panel: the waveform of the sound under the pointer (or the one kept),
+  /// its name and where it belongs, and a playhead while it sounds.
+  function showPanel() {
+    const n = hover && hover.kind === 'sound' ? hover : selected;
+    if (!n) {
+      const h = hover;
+      if (h && (h.kind === 'hub' || h.kind === 'tag')) {
+        ui.panel.classList.add('on');
+        ui.pname.textContent = h.label;
+        ui.pmeta.textContent = `${h.size} sound${h.size === 1 ? '' : 's'}${h.more ? ` · ${h.more} not shown here` : ''} · click to go in`;
+        ui.panel.dataset.i = '';
+        clearWave();
+      } else ui.panel.classList.remove('on');
+      return;
+    }
+    const s = data.sounds[n.si];
+    ui.panel.classList.add('on');
+    ui.panel.dataset.i = n.si;
+    ui.pname.textContent = s.name;
     const c = s.cluster != null ? data.clusters[s.cluster] : null;
-    ui.now.innerHTML = `<b>${esc(s.name)}</b> · ${secs(s.seconds)}${c ? ` · <span style="color:${clusterColour(s.cluster)}">${esc(c.name)}</span>` : ''}` +
-      `${s.words.length ? ` · <span class="d">${esc(s.words.slice(0, 4).join(', '))}</span>` : ''}` +
-      (playing === d.i ? ' <span class="p">▶ playing</span>' : '');
+    ui.pmeta.innerHTML = `${c ? `<span style="color:${groupColour(s.cluster)}">${esc(c.name)}</span> · ` : ''}${secs(s.seconds)}` +
+      `${s.heard[0] ? ` · ${esc(s.heard[0])}` : ''}${s.words.length ? ` · <span class="d">${esc(s.words.slice(0, 3).join(', '))}</span>` : ''}`;
+    loadWave(n.si);
   }
+
+  function clearWave() {
+    const g = ui.wave.getContext('2d');
+    g.clearRect(0, 0, ui.wave.width, ui.wave.height);
+  }
+
+  function loadWave(i) {
+    if (peaks.has(i)) return;
+    peaks.set(i, null);
+    const p = data.sounds[i].path;
+    fetch(`/api/peaks?p=${encodeURIComponent(p)}&cols=300`).then((r) => (r.ok ? r.json() : null)).then((w) => {
+      const ch = w && w.channels && w.channels[0];
+      peaks.set(i, ch ? { min: ch.min, max: ch.max } : false);
+    }).catch(() => peaks.set(i, false));
+  }
+
+  function drawWave(now) {
+    const i = !data || !ui.panel.dataset.i ? -1 : +ui.panel.dataset.i;
+    const c = ui.wave, g = c.getContext('2d');
+    const w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    if (i < 0 || !data.sounds[i]) return;
+    const s = data.sounds[i];
+    const colour = s.cluster != null ? groupColour(s.cluster) : '#c9d3e6';
+    const pk = peaks.get(i);
+    if (pk) {
+      const cols = pk.max.length;
+      g.fillStyle = colour;
+      for (let x = 0; x < cols; x++) {
+        const top = (1 - pk.max[x]) * h / 2, bot = (1 - pk.min[x]) * h / 2;
+        g.fillRect(x * w / cols, top, Math.max(1, w / cols - 0.3), Math.max(1, bot - top));
+      }
+    } else {
+      g.fillStyle = 'rgba(255,255,255,0.15)';
+      g.fillRect(0, h / 2 - 0.5, w, 1);
+    }
+    if (playing === i) {
+      const t = ((now - playStart) / 1000) / Math.max(0.05, s.seconds);
+      if (t <= 1) {
+        g.fillStyle = 'rgba(6,8,12,0.45)';
+        g.fillRect(t * w, 0, w - t * w, h);
+        g.fillStyle = HEARD;
+        g.fillRect(t * w - 1, 0, 2, h);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- overlay
+
+  /// Names over the scene — groups and labels, the sound in hand and the ones
+  /// most like it — and rings round what is under the pointer and playing.
+  function drawOver(now) {
+    const c = ui.over, g = ui.og;
+    const w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    if (!graph || !data) return;
+    const scr = (p) => graph.graph2ScreenCoords(p.x ?? p.fx, p.y ?? p.fy, p.z ?? p.fz);
+    const taken = [];
+    const fits = (x, y, ww, hh) => {
+      for (const t of taken) if (x < t[0] + t[2] && x + ww > t[0] && y < t[1] + t[3] && y + hh > t[1]) return false;
+      taken.push([x, y, ww, hh]);
+      return true;
+    };
+    const say = (x, y, text, font, colour, always) => {
+      g.font = font;
+      const tw = g.measureText(text).width;
+      if (x < -tw || x > w || y < -10 || y > h + 10) return null;
+      if (!fits(x - 2, y - 8, tw + 4, 16) && !always) return null;
+      g.fillStyle = 'rgba(0,0,0,0.6)';
+      g.fillText(text, x + 1, y + 1);
+      g.fillStyle = colour;
+      g.fillText(text, x, y);
+      return { x: x - 2, y: y - 8, w: tw + 4, h: 16 };
+    };
+    g.textBaseline = 'middle';
+    const sans = getComputedStyle(document.documentElement).getPropertyValue('--sans').trim() || 'sans-serif';
+    const lit = hover && hover.kind === 'sound' ? hover : selected;
+
+    // The sounds most like the one in hand, joined to it.
+    if (lit) {
+      const a = scr(lit);
+      for (const j of data.sounds[lit.si].near) {
+        const n = nodeOf.get(j);
+        if (!n) continue;
+        const b = scr(n);
+        g.strokeStyle = 'rgba(143,199,255,0.65)';
+        g.lineWidth = 1.2;
+        g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+        say(b.x + 6, b.y, data.sounds[j].name, `10px ${sans}`, ALIKE);
+      }
+      say(a.x + 9, a.y, data.sounds[lit.si].name, `600 12px ${sans}`, '#fff', true);
+      g.strokeStyle = '#fff';
+      g.lineWidth = 1.5;
+      g.beginPath(); g.arc(a.x, a.y, 9, 0, 7); g.stroke();
+    }
+    // What was just heard, as a fading path.
+    for (let q = 1; q < trail.length; q++) {
+      const age = (now - trail[q].t) / 5000;
+      const na = nodeOf.get(trail[q - 1].i), nb = nodeOf.get(trail[q].i);
+      if (age > 1 || !na || !nb) continue;
+      const a = scr(na), b = scr(nb);
+      g.strokeStyle = `rgba(111,208,140,${(0.6 * (1 - age)).toFixed(3)})`;
+      g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+    }
+    if (playing >= 0 && nodeOf.get(playing)) {
+      const p = scr(nodeOf.get(playing)), t = (now % 900) / 900;
+      g.strokeStyle = `rgba(111,208,140,${(1 - t).toFixed(3)})`;
+      g.lineWidth = 2;
+      g.beginPath(); g.arc(p.x, p.y, 7 + t * 18, 0, 7); g.stroke();
+    }
+    // Names of the hubs, or in the cloud of the groups where they gather.
+    ui.names = [];
+    if (view === 'cloud' && !inside) {
+      // The forty biggest groups are named; going in names the rest.
+      const named = new Set(data.clusters.map((c, n) => [c.size, n]).sort((a, b) => b[0] - a[0]).slice(0, 40).map((x) => x[1]));
+      data.clusters.forEach((c, n) => {
+        if (!named.has(n)) return;
+        const p = graph.graph2ScreenCoords(...c.centre.map((v) => (v - 0.5) * SPACE));
+        const size = Math.min(15, 10 + Math.sqrt(c.size) * 0.3);
+        g.textAlign = 'center';
+        const box = say(p.x, p.y, c.name, `600 ${size}px ${sans}`, groupColour(n));
+        g.textAlign = 'left';
+        if (box) ui.names.push({ ...box, x: box.x - box.w / 2, group: n, label: c.name });
+      });
+    } else if (!inside) {
+      for (const n of nodes) {
+        if (n.kind !== 'hub' && n.kind !== 'tag') continue;
+        const p = scr(n);
+        say(p.x + 8, p.y, n.label, `600 ${Math.min(14, 10 + Math.sqrt(n.size) * 0.25)}px ${sans}`, n.kind === 'hub' ? groupColour(n.group) : famColour(n.family));
+      }
+    }
+    if (hits) {
+      let budget = 60;
+      for (const i of hits) {
+        const n = nodeOf.get(i);
+        if (!n || !budget--) continue;
+        const p = scr(n);
+        say(p.x + 7, p.y, data.sounds[i].name, `10px ${sans}`, HIT);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------- card
 
   function hideCard() { ui.card.classList.remove('on'); }
 
   function rows(list) {
     return `<div class="lg-list">${list.map((i) => {
       const s = data.sounds[i];
-      return `<div data-i="${i}"><i style="background:${colourOf(s, dots[i] || { len: 0 })}"></i><span class="nm">${esc(s.name)}</span><span class="sub">${secs(s.seconds)}</span></div>`;
+      return `<div data-i="${i}"><i style="background:${groupColour(s.cluster)}"></i><span class="nm">${esc(s.name)}</span><span class="sub">${secs(s.seconds)}</span></div>`;
     }).join('')}</div>`;
-  }
-
-  function wireCard() {
-    ui.card.querySelectorAll('.lg-list div').forEach((row) => {
-      const i = +row.dataset.i;
-      row.onclick = () => goTo(i);
-      row.onmouseenter = () => { if (dots[i]) setHover(dots[i]); };
-      row.onmouseleave = () => setHover(null);
-    });
-    ui.card.querySelectorAll('.lg-chip[data-find]').forEach((c) => {
-      c.onclick = () => { ui.find.value = c.dataset.find; setFind(c.dataset.find); };
-    });
   }
 
   function showSound(i) {
     const s = data.sounds[i];
     const c = s.cluster != null ? data.clusters[s.cluster] : null;
-    const chips = (list) => list.map((w) => `<span class="lg-chip" data-find="${esc(w)}">${esc(w)}</span>`).join('') || '<span class="sub">—</span>';
+    const chips = (list) => list.map((x) => `<span class="lg-chip" data-find="${esc(x)}">${esc(x)}</span>`).join('') || '<span class="sub">—</span>';
+    const parts = s.path.split('/');
     ui.card.innerHTML = `
       <h3>${esc(s.name)}</h3>
-      <div class="lg-where">${esc(s.folder ? `${s.folder} · ${s.collection}` : s.collection)}</div>
-      ${c ? `<div class="lg-row"><span>Cluster</span><span class="lg-link" data-cluster="${s.cluster}" style="color:${clusterColour(s.cluster)}">${esc(c.name)}</span></div>` : ''}
+      <div class="lg-where">${esc(parts.slice(0, -1).join(' › '))}</div>
+      ${c ? `<div class="lg-row"><span>Group</span><span class="lg-link" style="color:${groupColour(s.cluster)}">${esc(c.name)}</span></div>` : ''}
       <div class="lg-row"><span>Heard as</span><div class="lg-chips">${chips(s.heard)}</div></div>
       <div class="lg-row"><span>Sounds</span><div class="lg-chips">${chips(s.words)}</div></div>
       <div class="lg-row"><span>Length</span><span>${secs(s.seconds)}${s.note ? ` · note ${esc(s.note)}` : ''}${s.kind ? ` · ${esc(s.kind)}` : ''}</span></div>
@@ -680,21 +690,32 @@
     ui.card.querySelector('[data-do="play"]').onclick = () => audition(i, true);
     ui.card.querySelector('[data-do="edit"]').onclick = () => openIn(s, 'edit');
     ui.card.querySelector('[data-do="grain"]').onclick = () => openIn(s, 'grain');
-    const link = ui.card.querySelector('[data-cluster]');
-    if (link) link.onclick = () => gather(+link.dataset.cluster);
+    const link = ui.card.querySelector('.lg-link');
+    if (link && c) link.onclick = () => enter('cluster', s.cluster, c.name);
+    ui.card.querySelectorAll('.lg-list div').forEach((row) => {
+      const j = +row.dataset.i;
+      row.onclick = () => goTo(j);
+      row.onmouseenter = () => { if (hoverPlays) audition(j); ui.panel.dataset.i = j; loadWave(j); };
+    });
+    ui.card.querySelectorAll('.lg-chip[data-find]').forEach((x) => {
+      x.onclick = () => { ui.find.value = x.dataset.find; setFind(x.dataset.find); };
+    });
     ui.card.classList.add('on');
-    wireCard();
   }
 
-  function showCluster(c) {
-    const members = data.sounds.map((s, i) => (s.cluster === c ? i : -1)).filter((i) => i >= 0)
-      .sort((a, b) => data.sounds[a].name.localeCompare(data.sounds[b].name));
-    const cl = data.clusters[c];
-    ui.card.innerHTML = `<h3 style="color:${clusterColour(c)}">${esc(cl.name)}</h3>
-      <div class="lg-where">Cluster · ${members.length} sound${members.length === 1 ? '' : 's'} · mostly ${fam(cl.family).name.toLowerCase()}</div>
-      <div class="lg-sec">Its sounds — rest on one to hear it, click to go</div>${rows(members)}`;
-    ui.card.classList.add('on');
-    wireCard();
+  /// A sound's closest matches: sent with the map for a small library, asked
+  /// for the first time it is pointed at for a large one.
+  const asked = new Set();
+  function nearOf(i) {
+    const s = data.sounds[i];
+    if (s.near.length || asked.has(i)) return s.near;
+    asked.add(i);
+    fetch(`/api/soundmap/near?i=${i}`).then((r) => (r.ok ? r.json() : null)).then((r) => {
+      if (!r || !data || data.sounds[i] !== s) return;
+      s.near = r.near;
+      if (selected && selected.si === i) showSound(i);
+    }).catch(() => {});
+    return s.near;
   }
 
   async function openIn(s, page) {
@@ -712,13 +733,14 @@
     if (!s) return;
     if (playing === i && !again && typeof engine !== 'undefined' && engine.playing) return;
     playing = i;
-    trail.push({ i, t: performance.now() });
+    playStart = performance.now();
+    trail.push({ i, t: playStart });
     if (trail.length > 16) trail.shift();
-    showNow();
     if (typeof engineLoad !== 'function') return;
     if (!(await engineLoad({ path: s.path }, { raw: true }))) return;
     // Another sound may have been asked for while this one loaded.
     if (playing !== i) return;
+    playStart = performance.now();
     seekSource(0);
     startPlayback();
     startedPlayback = true;
@@ -729,29 +751,40 @@
     playing = -1;
     if (startedPlayback && typeof pausePlayback === 'function' && engine.playing) pausePlayback();
     startedPlayback = false;
-    showNow();
   }
 
   // ------------------------------------------------------------------- find
 
   function setFind(q) {
     const t = q.trim().toLowerCase();
-    if (!t || !data) { hits = null; ui.found.textContent = ''; return; }
-    hits = new Set();
-    data.sounds.forEach((s, i) => { if (s.text.includes(t)) hits.add(i); });
-    ui.found.textContent = `${hits.size} found`;
+    if (!t || !data) { hits = null; ui.found.textContent = ''; }
+    else {
+      hits = new Set();
+      data.sounds.forEach((s, i) => { if (s.text.includes(t)) hits.add(i); });
+      ui.found.textContent = `${hits.size} found`;
+    }
+    if (graph && data) show();
   }
 
   // ---------------------------------------------------------------- choices
 
+  function setView(v) {
+    if (!VIEWS.some((x) => x[0] === v)) v = 'cloud';
+    if (inside && inside.kind === 'tag' && v !== 'tags') inside = null;
+    if (inside && inside.kind === 'cluster' && v === 'tags') inside = null;
+    view = v;
+    remember('mapView', v);
+    show();
+    sayWhere();
+  }
+
   function setTint(t) {
-    if (!COLOURS.some((c) => c[0] === t)) t = 'cluster';
+    if (!TINTS.some((x) => x[0] === t)) t = 'group';
     tint = t;
-    remember('mapTint', t);
-    look++;
+    remember('mapTint3', t);
     root.querySelectorAll('.lg-tints [data-tint]').forEach((b) => b.classList.toggle('on', b.dataset.tint === t));
+    recolour();
     drawKey();
-    if (selected && data) showSound(selected.i);
   }
 
   function setHoverPlays(on) {
@@ -764,15 +797,11 @@
   function drawKey() {
     if (!data) { ui.key.innerHTML = ''; return; }
     if (tint === 'family') {
-      const c = {};
-      data.sounds.forEach((s) => { c[s.family] = (c[s.family] || 0) + 1; });
-      ui.key.innerHTML = Object.entries(FAMILIES).filter(([k]) => c[k])
-        .map(([k, f]) => `<span><i style="background:${f.hex}"></i>${f.name} ${c[k]}</span>`).join('');
-    } else if (tint === 'cluster') {
-      ui.key.innerHTML = `<span>${data.clusters.length} clusters — click a name to gather it</span>`;
+      ui.key.innerHTML = Object.values(FAMILIES).map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
+    } else if (tint === 'tone') {
+      ui.key.innerHTML = `<span>dark<b class="lg-ramp" style="background:linear-gradient(90deg,${tone(0)},${tone(0.25)},${tone(0.5)},${tone(0.75)},${tone(1)})"></b>bright</span>`;
     } else {
-      const [lo, hi, st] = tint === 'tone' ? ['dark', 'bright', TONE] : ['short', 'long', LENGTH];
-      ui.key.innerHTML = `<span>${lo}<b class="lg-ramp" style="background:linear-gradient(90deg,${st.map((c) => `rgb(${c})`).join(',')})"></b>${hi}</span>`;
+      ui.key.innerHTML = `<span>${data.clusters.length} groups of alike sounds, a colour each</span>`;
     }
   }
 
@@ -780,15 +809,8 @@
 
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    if (settling > 0) { relax(0.5); settling--; look++; }
-    if (!userMoved && !fly && focus == null && dots.length) fit(dots, false);
-    if (fly) {
-      const t = Math.min(1, (now - fly.t0) / FLY_MS), e = t * t * (3 - 2 * t);
-      const k = Math.exp(Math.log(fly.from.k) + (Math.log(fly.to.k) - Math.log(fly.from.k)) * e);
-      cam = { x: fly.from.x + (fly.to.x - fly.from.x) * e, y: fly.from.y + (fly.to.y - fly.from.y) * e, k };
-      if (t >= 1) fly = null;
-    }
-    draw(now);
+    drawOver(now);
+    drawWave(now);
   }
 
   async function load() {
@@ -805,41 +827,39 @@
     }
     if (!root || root.classList.contains('hidden')) return;
     for (const s of next.sounds) {
-      const parts = s.path.split('/');
-      s.collection = parts[0];
-      s.folder = parts.length > 2 ? parts[1] : '';
       const c = s.cluster != null ? next.clusters[s.cluster] : null;
-      s.text = [s.name, s.folder, s.collection, s.kind, c ? c.name : '', ...s.heard, ...s.words].join(' ').toLowerCase();
+      s.text = [s.path, c ? c.name : '', s.kind, ...s.heard, ...s.words].join(' ').toLowerCase();
     }
+    // Shown again only when the layout itself changed, so the scene does not
+    // jump every few seconds while the library is being listened to.
+    const changed = !data || next.current || data.sounds.length !== next.sounds.length ||
+      next.clusters.length !== data.clusters.length || placedCount(next) !== placedCount(data);
     data = next;
-    place();
-    ui.empty.textContent = data.count ? '' : 'Nothing in the library yet.';
-    ui.status.textContent = `${data.count} sound${data.count === 1 ? '' : 's'} · ${data.clusters.length} cluster${data.clusters.length === 1 ? '' : 's'}` +
-      (data.listening ? ` · ${dots.filter((d) => !d.waiting).length} on the map, listening to ${data.listening} more…` : '');
-    drawKey();
-    setFind(ui.find.value);
-    if (selected) selected = dots[selected.i] || null;
-    if (hover) hover = dots[hover.i] || null;
-    if (data.listening) pollTimer = setTimeout(load, POLL_MS);
+    const on = placedCount(data);
+    ui.empty.textContent = data.count ? (on ? '' : 'Listening to the library… the first sounds appear in a moment.') : 'Nothing in the library yet.';
+    ui.status.textContent = `${on} of ${data.count} sounds placed · ${data.clusters.length} groups` +
+      (data.listening ? ` · listening to ${data.listening} more…` : '');
+    if (changed) { setFind(ui.find.value); if (!hits) show(); }
+    if (data.listening) pollTimer = setTimeout(load, Math.max(POLL_MS, on > 20000 ? 15000 : POLL_MS));
   }
+  const placedCount = (d) => d.sounds.reduce((t, s) => t + (s.at ? 1 : 0), 0);
 
   function onResize() {
-    resize();
-    if (!userMoved && focus == null) fit(dots, false);
+    if (graph) graph.width(ui.scene.clientWidth).height(ui.scene.clientHeight);
   }
 
   function open() {
     if (!root) build();
-    colours.ground = canvasColour('--sink', '#0b0d10');
-    colours.sans = getComputedStyle(document.documentElement).getPropertyValue('--sans').trim() || 'sans-serif';
     root.classList.remove('hidden');
+    if (!graph && typeof ForceGraph3D === 'function') makeGraph();
+    onResize();
+    if (graph) graph.resumeAnimation();
     setTint(tint);
     setHoverPlays(hoverPlays);
-    resize();
+    sayWhere();
     window.addEventListener('resize', onResize);
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(frame);
-    userMoved = false;
     root.focus({ preventScroll: true });
     load();
   }
@@ -850,42 +870,56 @@
     silence();
     hideCard();
     hover = null;
+    if (graph) graph.pauseAnimation();
     cancelAnimationFrame(raf);
     window.removeEventListener('resize', onResize);
     root.classList.add('hidden');
   }
 
-  function open3d() {
+  function openWorld() {
     close();
     if (window.SoundMap) window.SoundMap.open();
   }
 
-  /// Where sound `i` is on screen, in page pixels. For the tests, which have
-  /// to point at a dot to hover or click it.
+  /// Where sound `i` is on screen, in page pixels; null if it is not shown.
+  /// For the tests, which have to point at a sound to hover or click it.
   function screenOf(i) {
-    const d = dots[i];
-    if (!d) return null;
-    const [x, y] = toScreen(d.x, d.y);
-    const r = ui.canvas.getBoundingClientRect();
-    return { x: r.left + x, y: r.top + y, name: data.sounds[i].name };
+    const n = nodeOf.get(i);
+    if (!n || !graph) return null;
+    const p = graph.graph2ScreenCoords(n.x ?? n.fx, n.y ?? n.fy, n.z ?? n.fz);
+    const r = ui.scene.getBoundingClientRect();
+    return { x: r.left + p.x, y: r.top + p.y, name: data.sounds[i].name };
+  }
+
+  /// The same, for the hub or label called `label`.
+  function screenOfHub(label) {
+    const n = nodes.find((x) => x.kind !== 'sound' && x.label === label);
+    if (!n || !graph) return null;
+    const p = graph.graph2ScreenCoords(n.x, n.y, n.z);
+    const r = ui.scene.getBoundingClientRect();
+    return { x: r.left + p.x, y: r.top + p.y, label };
   }
 
   window.LibraryGraph = {
     open,
     close,
     screenOf,
+    screenOfHub,
+    hubs: () => nodes.filter((n) => n.kind !== 'sound').map((n) => n.label),
+    shownSounds: () => [...nodeOf.keys()],
     get state() {
       return {
         open: !!root && !root.classList.contains('hidden'),
-        tint, hoverPlays,
+        view, tint, hoverPlays,
+        inside: inside ? inside.label : null,
         count: data ? data.count : 0,
-        dots: dots.length,
-        placed: dots.filter((d) => !d.waiting).length,
+        shown: nodeOf.size,
+        hubs: nodes.filter((n) => n.kind !== 'sound').length,
         clusters: data ? data.clusters.length : 0,
         listening: data ? data.listening : null,
-        selected: selected ? selected.i : null,
+        selected: selected ? selected.si : null,
+        hovered: hover && hover.kind === 'sound' ? hover.si : null,
         playing,
-        focus,
         found: hits ? hits.size : null,
       };
     },

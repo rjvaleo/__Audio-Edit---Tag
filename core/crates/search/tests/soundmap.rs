@@ -30,17 +30,17 @@ fn library() -> Vec<Input> {
     v
 }
 
-fn d(a: [f32; 2], b: [f32; 2]) -> f32 {
-    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()
+fn d(a: [f32; 3], b: [f32; 3]) -> f32 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 
 #[test]
-fn every_heard_sound_is_placed_inside_the_unit_square() {
+fn every_heard_sound_is_placed_inside_the_unit_cube() {
     let m = build(&library());
     assert_eq!(m.points.len(), 36);
     for p in &m.points {
         let at = p.at.expect("placed");
-        assert!((0.0..=1.0).contains(&at[0]) && (0.0..=1.0).contains(&at[1]), "{at:?}");
+        assert!(at.iter().all(|v| (0.0..=1.0).contains(v)), "{at:?}");
     }
 }
 
@@ -48,7 +48,7 @@ fn every_heard_sound_is_placed_inside_the_unit_square() {
 fn the_dots_next_to_a_sound_are_its_own_kind() {
     // What a map is for: the sounds beside the one under the pointer are like it.
     let m = build(&library());
-    let at: Vec<[f32; 2]> = m.points.iter().map(|p| p.at.unwrap()).collect();
+    let at: Vec<[f32; 3]> = m.points.iter().map(|p| p.at.unwrap()).collect();
     let mut right = 0;
     for i in 0..at.len() {
         let mut by: Vec<usize> = (0..at.len()).filter(|&j| j != i).collect();
@@ -148,11 +148,14 @@ fn a_shared_name_falls_back_to_how_the_sounds_sound() {
 }
 
 #[test]
-fn the_map_lies_wider_than_it_is_tall() {
+fn the_space_has_depth() {
+    // A cloud you can fly into, not a sheet seen edge on.
     let m = build(&library());
-    let at: Vec<[f32; 2]> = m.points.iter().map(|p| p.at.unwrap()).collect();
+    let at: Vec<[f32; 3]> = m.points.iter().map(|p| p.at.unwrap()).collect();
     let span = |k: usize| at.iter().map(|a| a[k]).fold(f32::NEG_INFINITY, f32::max) - at.iter().map(|a| a[k]).fold(f32::INFINITY, f32::min);
-    assert!(span(0) >= span(1), "across {} up {}", span(0), span(1));
+    for k in 0..3 {
+        assert!(span(k) > 0.2, "axis {k} spans {}", span(k));
+    }
 }
 
 #[test]
@@ -163,7 +166,7 @@ fn a_large_library_is_laid_out_through_landmarks_and_still_keeps_kinds_together(
     let m = build_with(&lib, 12);
     assert!(m.points.iter().all(|p| p.at.is_some()));
     assert!(m.points.iter().all(|p| p.near.is_empty()), "matches are found when asked for");
-    let at: Vec<[f32; 2]> = m.points.iter().map(|p| p.at.unwrap()).collect();
+    let at: Vec<[f32; 3]> = m.points.iter().map(|p| p.at.unwrap()).collect();
     let mut right = 0;
     for i in 0..at.len() {
         let mut by: Vec<usize> = (0..at.len()).filter(|&j| j != i).collect();

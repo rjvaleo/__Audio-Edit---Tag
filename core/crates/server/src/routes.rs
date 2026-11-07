@@ -107,6 +107,9 @@ pub const RIDGE_DATA_JS: &str = include_str!("../../../../ui/ridge-data.js");
 /// `include_str` because nothing here needs it as text and validating eight
 /// megabytes as UTF-8 at compile time buys nothing.
 pub const BABYLON_JS: &[u8] = include_bytes!("../../../../ui/vendor/babylon.js");
+/// 3d-force-graph 1.73.4 (MIT, Vasco Asturiano), three.js inside: the sound
+/// map's 3D views. See `docs/THIRD-PARTY.md`.
+pub const FORCE_GRAPH_JS: &[u8] = include_bytes!("../../../../ui/vendor/3d-force-graph.min.js");
 pub const ROOM3D_JS: &str = include_str!("../../../../ui/room3d.js");
 pub const STAGE_JS: &str = include_str!("../../../../ui/stage.js");
 pub const VIS_REGISTRY_JS: &str = include_str!("../../../../ui/vis-registry.js");
@@ -313,6 +316,11 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET" | "HEAD", "/vendor/babylon.js") => Response::ok(
             "text/javascript; charset=utf-8",
             BABYLON_JS.to_vec(),
+        )
+        .with("Cache-Control", "public, max-age=31536000, immutable"),
+        ("GET" | "HEAD", "/vendor/3d-force-graph.min.js") => Response::ok(
+            "text/javascript; charset=utf-8",
+            FORCE_GRAPH_JS.to_vec(),
         )
         .with("Cache-Control", "public, max-age=31536000, immutable"),
         ("GET" | "HEAD", "/vis-registry.js") => {
@@ -5920,7 +5928,7 @@ fn api_soundmap(app: &Arc<App>) -> Response {
         .enumerate()
         .map(|(i, o)| {
             let p = map.points.get(i).filter(|_| fits);
-            o.set("at", p.and_then(|p| p.at).map(|a| Value::Arr(vec![Value::Num(a[0] as f64), Value::Num(a[1] as f64)])).unwrap_or(Value::Null))
+            o.set("at", p.and_then(|p| p.at).map(|a| Value::Arr(a.iter().map(|v| Value::Num(*v as f64)).collect())).unwrap_or(Value::Null))
                 .set("cluster", p.and_then(|p| p.cluster).map(|c| Value::Num(c as f64)).unwrap_or(Value::Null))
                 .set("near", Value::Arr(p.map(|p| p.near.iter().map(|n| Value::Num(*n as f64)).collect()).unwrap_or_default()))
         })
@@ -5933,7 +5941,7 @@ fn api_soundmap(app: &Arc<App>) -> Response {
                 .set("name", c.name.clone())
                 .set("family", c.family.clone())
                 .set("size", c.members.len() as f64)
-                .set("centre", Value::Arr(vec![Value::Num(c.centre[0] as f64), Value::Num(c.centre[1] as f64)]))
+                .set("centre", Value::Arr(c.centre.iter().map(|v| Value::Num(*v as f64)).collect()))
         })
         .collect();
     Response::json(
