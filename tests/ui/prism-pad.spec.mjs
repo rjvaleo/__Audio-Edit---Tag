@@ -185,9 +185,10 @@ test('the Pitch Time Changer is on the pad with Hyperprism\'s window and setting
   await expect(page.locator('#prismXHi')).toHaveValue('200');
   await expect(page.locator('#prismYLo')).toHaveValue('0');
   await expect(page.locator('#prismYHi')).toHaveValue('200');
-  // Its window's four settings, under the pad.
+  // Its window's settings beside the pad, the pad's two first (v7).
   const settings = page.locator('#prismSettings');
-  await expect(settings.locator('.param .k')).toHaveText(['Feedback', 'Grain Size', 'X-Fade Size', 'Smoothing']);
+  await expect(settings.locator('.param .k')).toHaveText(['Speed', 'Pitch', 'Feedback', 'Grain Size', 'X-Fade Size', 'Smoothing']);
+  await expect(settings.locator('.prism-onpad .k')).toHaveText(['Speed', 'Pitch']);
   // Playing it is hearing it: a move turns it on.
   await drag(page, 0.75, 0.25);
   const pt = await page.evaluate(async () =>

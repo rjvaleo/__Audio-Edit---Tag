@@ -14,10 +14,10 @@
    **What an LFO moves is the sound, not the setting.** The setting a control
    holds is its base, and stays what the hand, the pad, a preset or an undo set
    it to; the LFO swings the value the deck hears around that base, by Depth's
-   share of the control's whole range, sending it the way the pad's own moves
-   go (`prismLiveParam`, `/api/prism/stretch`, `/api/pitchtime`). Unmapped or
-   with no depth, the base is sent back, so nothing is left where the swing
-   happened to stop.
+   share of the control's whole range, marked `live` so the deck hears it and
+   the document does not keep it (`/api/rack/param`, `/api/pitchtime`; Time &
+   Pitch through `/api/prism/stretch`, which is the deck's alone). Unmapped,
+   the base is sent back, so nothing is left where the swing happened to stop.
 
    Mappings are kept per sound in this browser (`prism.lfos:<path>`): the Prism
    document has nowhere for them yet. */
@@ -124,11 +124,13 @@ function prismLfoSend(t, v) {
     prismLfoStretchOut[t.key] = v;
     return;
   }
+  if (!prismDeck.path) return;
+  // `live`: the deck hears it and the document does not keep it (`api_rack_param`).
   if (t.src === PRISM_PTC) {
-    if (prismDeck.path) postJSON('/api/pitchtime', { p: prismKey(), [t.key]: v }).catch(() => {});
+    postJSON('/api/pitchtime', { p: prismKey(), [t.key]: v, live: true }).catch(() => {});
     return;
   }
-  prismLiveParam(t.src, t.key, v);
+  postJSON('/api/rack/param', { p: prismKey(), id: t.src, key: t.key, value: v, live: true }).catch(() => {});
 }
 function prismLfoFlushStretch() {
   const keys = Object.keys(prismLfoStretchOut);
@@ -238,6 +240,7 @@ function prismLfoRender() {
   box.querySelectorAll('[data-unmap]').forEach((b) => { b.onclick = () => prismLfoToggle(l.targets[+b.dataset.unmap]); });
   $('prismLfoMap').onclick = () => { prismLfo.mapping = !prismLfo.mapping; prismLfoRender(); };
   prismLfoMark();
+  prismFit();
 }
 
 /// Map or unmap a control on the selected LFO; the mapping ends either way.

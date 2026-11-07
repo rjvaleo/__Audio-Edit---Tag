@@ -479,7 +479,9 @@ function prismRenderSettings() {
       const ax = k === p?.x ? 'X' : k === p?.y ? 'Y' : '';
       if (ax) {
         row.classList.add('prism-onpad');
-        row.querySelector(':scope > .k')?.insertAdjacentHTML('beforeend', `<b class="prism-ax">${ax}</b>`);
+        // In the style, not the text: the control's name stays its name.
+        const name = row.querySelector(':scope > .k');
+        if (name) name.dataset.ax = ax;
       }
       row.base = () => read(k);
       box.appendChild(row);
@@ -560,6 +562,7 @@ function prismRenderBar() {
   prismShowPtc();
   prismRenderSettings();
   if (typeof prismPickerRender === 'function') prismPickerRender();
+  if (typeof prismFit === 'function') prismFit();
 }
 
 // ───────────────────────────── Hyperprism's Playback Speed and its faders

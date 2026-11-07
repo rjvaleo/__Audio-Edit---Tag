@@ -5982,12 +5982,12 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 #dockHyper .prism-bars .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc) 60%, var(--line-2)); }
 #dockHyper .prism-bars .gk-row > input[type=range]::-webkit-slider-runnable-track { height: 20px; }
 #dockHyper .prism-bars .gk-row > input[type=range]::-webkit-slider-thumb { height: 20px; width: 1.5px; background: color-mix(in srgb, var(--fc) 70%, var(--text)); }
-#dockHyper .prism-bars .gk-row:has(> input[type=range]) > :is(.k, .v) { text-shadow: none; font-size: 10.5px; }
+#dockHyper .prism-bars .gk-row:has(> input[type=range]) > :is(.k, .v) { text-shadow: none; font-size: var(--fs-s); }
 #dockHyper .prism-bars .gk-row:has(> input[type=range]) > .v { width: auto; min-width: 0; font-family: var(--mono); font-size: 10px; }
 #dockHyper .prism-bars .gg .a { stroke-width: 2.2; }
 #dockHyper .prism-settings .prism-group-label { grid-column: 1 / -1; font: 600 9px/12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); margin-top: 1px; }
 #dockHyper .prism-onpad > input[type=range] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, var(--line-2)) !important; }
-#dockHyper .prism-ax { font: 700 9px var(--mono); color: var(--accent); margin-left: 4px; }
+#dockHyper .prism-onpad > .k::after { content: attr(data-ax); font: 700 9px var(--mono); color: var(--accent); margin-left: 4px; }
 /* An LFO on a bar: a thin ring in its colour and a marker where it is. */
 #dockHyper .prism-bar { position: relative; }
 #dockHyper .plfo-mark { display: none; position: absolute; top: 1px; bottom: 1px; width: 1.5px; margin-left: -.75px; background: var(--lc); pointer-events: none; z-index: 2; }
@@ -6026,10 +6026,11 @@ body.prism-mapping #dockHyper #prismSettings .prism-bar > input[type=range] { cu
 #dockHyper .prism-takes .hs-slot { justify-content: flex-start; min-height: 0; padding: 2px; }
 #dockHyper .prism-takes .hs-slot svg { flex: 1 1 auto; width: 100%; min-height: 0; height: auto; }
 #dockHyper .prism-rateplay { justify-content: space-between; }
-#dockHyper .prism-glide-kv { grid-template-columns: auto auto auto auto; justify-content: start; font-size: 9px; gap: 0 6px; }
-#dockHyper .prism-motion { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
-#dockHyper .prism-motion .hs-btn { padding: 0 2px; min-width: 0; font-size: 9.5px; }
-#dockHyper .hs-tog { display: flex; align-items: center; justify-content: center; gap: 3px; height: 20px; font-size: 9.5px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-3); cursor: pointer; white-space: nowrap; }
+#dockHyper .prism-glide-kv { grid-template-columns: auto auto auto auto; justify-content: start; font-size: 9px; gap: 0 5px; white-space: nowrap; overflow: hidden; }
+#dockHyper .prism-motion { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
+#dockHyper .prism-motion .hs-tog { grid-column: span 2; }
+#dockHyper .prism-motion .hs-btn { padding: 0 2px; min-width: 0; font-size: var(--fs-xs); }
+#dockHyper .hs-tog { display: flex; align-items: center; justify-content: center; gap: 3px; height: 20px; font-size: var(--fs-xs); color: var(--text-2); border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-3); cursor: pointer; white-space: nowrap; }
 #dockHyper .hs-tog:has(input:checked) { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface-3)); }
 #dockHyper .hs-tog input { margin: 0; width: 11px; height: 11px; }
 #dockHyper .prism-out .hs-faders { flex: 1 1 auto; }
@@ -6046,7 +6047,7 @@ body.prism-mapping #dockHyper #prismSettings .prism-bar > input[type=range] { cu
 .ppick-btn::after { content: "▾"; margin-left: auto; color: var(--text-dim); }
 .ppick-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ppick .pic { flex: none; width: 24px; height: 18px; overflow: visible; }
-.ppick-menu { position: absolute; z-index: 40; top: 25px; left: 0; display: grid; grid-template-columns: repeat(5, 152px); gap: 0 8px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 8px 20px rgba(0,0,0,.45); }
+.ppick-menu { position: fixed; z-index: 40; display: grid; grid-template-columns: repeat(5, 152px); gap: 0 8px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 8px 20px rgba(0,0,0,.45); }
 .ppick-menu[hidden] { display: none; }
 .ppick-g { display: flex; flex-direction: column; margin-bottom: 4px; }
 .ppick-g > i { font: 600 9px/13px var(--mono); font-style: normal; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }

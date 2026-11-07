@@ -1408,6 +1408,28 @@ fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
     let Some(slot) = spec.slot_ids.iter().position(|x| x == id) else {
         return Response::error(404, "no such module in the rack");
     };
+    // `live`: heard and nothing else (a Prism LFO's swing, `387-prism-lfo.js`).
+    // The setting stays the hand's, so it is neither written into the spec nor
+    // recorded; only clamped, by the same code, and sent to the engine.
+    let live_only = matches!(v.get("live"), Some(Value::Bool(true)));
+    if live_only {
+        let mut probe = spec.clone();
+        if !probe.set_param(slot, key, value) {
+            return Response::error(400, "no such control on that module");
+        }
+        let applied = probe.get_param(slot, key).unwrap_or(value);
+        if crate::live::holding(app, rel) {
+            let _ = crate::live::with(app, |h| crate::live::deck(h, rel).set_manual_param(slot, key, applied));
+        }
+        return Response::json(
+            Value::obj()
+                .set("id", id.to_string())
+                .set("key", key.to_string())
+                .set("value", applied as f64)
+                .set("live", true)
+                .to_string(),
+        );
+    }
     // Written into the spec as well as sent to the engine, and clamped by the
     // same code that clamps everything else, so the two cannot drift.
     if !spec.set_param(slot, key, value) {
@@ -1454,6 +1476,14 @@ fn api_pitch_time(app: &Arc<App>, req: &Request) -> Response {
     let mut spec = app.racks.get(rel);
     let was = spec.pitch_time;
     let now = crate::rack::merge_pitch_time(was, Some(&v));
+    // `live`: heard and nothing else, as on `/api/rack/param` (a Prism LFO's
+    // swing). Not kept, not saved, not recorded.
+    if matches!(v.get("live"), Some(Value::Bool(true))) {
+        if crate::live::holding(app, rel) {
+            let _ = crate::live::with(app, |h| crate::live::deck(h, rel).set_pitch_time(now));
+        }
+        return Response::json(Value::obj().set("ok", true).set("live", true).to_string());
+    }
     spec.pitch_time = now;
     app.set_rack(rel, spec);
     app.save_sessions();

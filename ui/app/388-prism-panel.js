@@ -15,8 +15,7 @@
 /// `min`, `max`, `step`, `log`, `unit`, `choices`, `default`).
 function prismBar(spec, value, { facet, colour, kind = '', onInput, onCommit, format } = {}) {
   const stepped = spec.step === 1 || !!spec.choices;
-  const fmt = format || (spec.choices ? (v) => spec.choices[Math.round(v - spec.min)] ?? String(Math.round(v))
-    : (v) => (typeof prismFormat === 'function' ? prismFormat(spec, v) : String(v)));
+  const fmt = format || ((v) => prismBarFormat(spec, v));
   let paint = () => {};
   const row = param(spec.label, value, spec.min, spec.max, stepped ? 1 : (spec.max - spec.min) / 400, fmt,
     (v) => { onInput?.(stepped ? Math.round(v) : v); paint(); },
@@ -62,6 +61,16 @@ function prismBar(spec, value, { facet, colour, kind = '', onInput, onCommit, fo
   return row;
 }
 
+/// A bar's reading, short enough to sit beside its name in half a column:
+/// whole numbers from 10 up and on a stepped control, two places below.
+function prismBarFormat(spec, v) {
+  if (!Number.isFinite(v)) return '';
+  if (spec.choices) return spec.choices[Math.round(v - spec.min)] ?? String(Math.round(v));
+  if (spec.key === 'ratio' || spec.key === 'semitones') return prismFormat(spec, v);
+  const n = spec.step === 1 || Math.abs(v) >= 10 ? String(Math.round(v)) : v.toFixed(2);
+  return spec.unit ? `${n} ${spec.unit}` : n;
+}
+
 // ───────────────────────────────────────────── the Process menu
 
 /// Hyperprism's groups, in its order, and how they sit in the menu's columns:
@@ -100,6 +109,10 @@ function prismPickerRender() {
   btn.setAttribute('aria-expanded', String(prismPick.open));
   menu.hidden = !prismPick.open;
   if (!prismPick.open) return;
+  // Fixed to the screen under the button: the header clips what overflows it.
+  const r = btn.getBoundingClientRect();
+  menu.style.left = `${Math.round(r.left)}px`;
+  menu.style.top = `${Math.round(r.bottom + 3)}px`;
   const col = (cats) => cats.map((c) => {
     const items = all.filter((p) => p.cat === c);
     if (!items.length) return '';
@@ -154,4 +167,25 @@ function prismFollowAll() {
     const v = get();
     if (Number.isFinite(v) && Math.abs(v - (row.read ? row.read() : +input.value)) > 1e-6 * Math.max(1, Math.abs(v))) row.sync(v);
   }
+}
+
+// ───────────────────────────────────────────── the panel fits its process
+
+/// The dock grows to show all of the process on the pad, as the Grain tray's
+/// does (`gkFit`), and goes back to the height you chose for a smaller one:
+/// nothing is ever cut off at the foot of a bank (RJ: "shit's falling off the
+/// bottom"). Never under the height you dragged it to.
+function prismFit() {
+  const host = $('dockHyper'), dock = $('dock');
+  if (!host || !dock || !host.clientHeight || !document.body.classList.contains('prismpage')) return;
+  const now = dock.getBoundingClientRect().height;
+  if (dockBase === null) dockBase = Math.round(now);
+  // Back to the chosen height first, so a smaller process gives the room back;
+  // then grow by whatever still does not fit.
+  if (now > dockBase + 1) setDockHeight(dockBase, false);
+  requestAnimationFrame(() => {
+    let over = 0;
+    for (const bank of host.querySelectorAll('.hs-bank')) over = Math.max(over, bank.scrollHeight - bank.clientHeight);
+    if (over > 1) setDockHeight(Math.ceil(dock.getBoundingClientRect().height + over), false);
+  });
 }

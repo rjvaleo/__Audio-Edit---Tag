@@ -9,7 +9,8 @@
 //   - one panel on the page, no switch, and no second pad;
 //   - the source picker drives any slot from the HyperStretch pad, and a take
 //     on it in Loop mode moves the slot's two controls;
-//   - the Settings bank has every control of the source but the two on the
+//   - the Controls bank has every control of the source, the two on the pad
+//     first (v7); before v7 it had every control but the two on the
 //     pad, and moving one moves the value the FX tab moves;
 //   - since 6 Nov 2026 the pad drives the Prism deck (`prism-deck.spec.mjs`),
 //     whose document is `prism:<sound>`; the Lanes were the grain document's.
@@ -55,7 +56,7 @@ test('the page is one panel: HyperStretch\'s pad, the rack pad\'s menus, no swit
   await expect(page.locator('#dockHyper #prismSource')).toBeVisible();
   await expect(page.locator('#dockHyper #prismPreset')).toBeVisible();
   await expect(page.locator('#dockHyper #prismSpeed')).toBeVisible();
-  for (const bank of ['Settings', 'Gestures', 'Motion', 'Output']) {
+  for (const bank of ['Controls', 'Takes', 'Output']) {
     await expect(page.locator(`#dockHyper .hs-bank[aria-label="${bank}"]`)).toBeVisible();
   }
 });
@@ -90,13 +91,14 @@ test('a slot on the pad: grabbing it takes a Loop take of the slot\'s two contro
   expect(await page.evaluate(() => window.hyperStretch.take(0))).toBeNull();
 });
 
-test('Settings has every control of a slot but the two on the pad, and they move the Prism chain\'s values', async ({ page }) => {
+test('Controls has every control of a slot, the pad\'s two first, and they move the Prism chain\'s values', async ({ page }) => {
   await openPrism(page, [DELAY]);
   await page.locator('#prismSource').selectOption({ label: 'Multi Delay' });
   const want = await page.evaluate(() => {
     const p = prismSetup();
     const slot = prismDeck.rack.slots.find((s) => s.id === 'm1');
-    return (state.shapers[slot.kind]?.params || []).filter((sp) => sp.key !== p.x && sp.key !== p.y).map((sp) => sp.label);
+    // Every setting, the pad's two among them (v7: they lead, marked X and Y).
+    return (state.shapers[slot.kind]?.params || []).map((sp) => sp.label);
   });
   expect(want.length).toBeGreaterThan(0);
   const shown = await page.locator('#prismSettings .param .k').allTextContents();
@@ -104,7 +106,7 @@ test('Settings has every control of a slot but the two on the pad, and they move
   await expect(page.locator('#prismSettings')).not.toContainText(/FX tab/);
   // Turn the first knob: the slot's own value moves, and the rack keeps it.
   const moved = await page.evaluate(async () => {
-    const row = [...document.querySelectorAll('#prismSettings .param')].find((r) => r.querySelector(':scope > input[type=range]'));
+    const row = [...document.querySelectorAll('#prismSettings .param:not(.prism-onpad)')].find((r) => r.querySelector(':scope > input[type=range]'));
     const input = row.querySelector(':scope > input[type=range]');
     const p = prismSetup();
     const slot = prismDeck.rack.slots.find((s) => s.id === 'm1');

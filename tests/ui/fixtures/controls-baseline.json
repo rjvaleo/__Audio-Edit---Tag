@@ -63,7 +63,7 @@
   "button:button #prismPresetSave": 1,
   "button:button #prismPtcOn": 1,
   "button:button #hsRec": 1,
-  "input:number #prismPostRoll": 1,
+  "input:range #prismPostRoll": 1,
   "input:number #prismXHi": 1,
   "input:number #prismXLo": 1,
   "input:number #prismYHi": 1,

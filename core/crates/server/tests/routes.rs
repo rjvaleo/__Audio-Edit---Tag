@@ -2510,3 +2510,45 @@ fn paste_with_nothing_copied_is_refused() {
     );
     assert_eq!(status(&r), 409);
 }
+
+/// A Prism LFO's swing (`live: true`) is heard and nothing else: clamped as a
+/// hand's move is, but the document keeps the hand's setting — on a slot and on
+/// the Pitch Time Changer alike.
+#[test]
+fn a_live_only_move_leaves_the_setting_where_the_hand_put_it() {
+    let s = Scratch::new("live-only");
+    s.sound("kit/tone.wav", 4_410);
+    let app = s.app();
+    server::routes::route(
+        &app,
+        &post(
+            "/api/rack",
+            r#"{"p":"kit/tone.wav","sr":44100,"slots":[{"id":"g1","kind":"gain","bypassed":false,"db":-6}]}"#,
+        ),
+    );
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack/param", r#"{"p":"kit/tone.wav","id":"g1","key":"db","value":9999,"live":true}"#),
+    );
+    assert_eq!(status(&r), 200, "{}", String::from_utf8_lossy(&r.body));
+    assert!(num(&json(&r), &["value"]) < 9999.0, "a live-only move went through unclamped");
+    let back = json(&server::routes::route(&app, &get("/api/rack", &[("p", "kit/tone.wav")])));
+    let slots = match back.get("slots") {
+        Some(server::json::Value::Arr(a)) => a.clone(),
+        _ => panic!("no slots came back"),
+    };
+    assert_eq!(num(&slots[0], &["db"]), -6.0, "the swing was written into the document");
+    // Still refused for a control that is not there.
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack/param", r#"{"p":"kit/tone.wav","id":"g1","key":"nonsense","value":1,"live":true}"#),
+    );
+    assert_eq!(status(&r), 400);
+
+    // The Pitch Time Changer the same way.
+    server::routes::route(&app, &post("/api/pitchtime", r#"{"p":"kit/tone.wav","feedback":20}"#));
+    let r = server::routes::route(&app, &post("/api/pitchtime", r#"{"p":"kit/tone.wav","feedback":80,"live":true}"#));
+    assert_eq!(status(&r), 200);
+    let back = json(&server::routes::route(&app, &get("/api/rack", &[("p", "kit/tone.wav")])));
+    assert_eq!(num(back.get("pitchTime").expect("kept"), &["feedback"]), 20.0, "the swing was kept");
+}

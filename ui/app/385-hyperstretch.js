@@ -861,7 +861,7 @@ function hsPaint() {
       : take ? `Take ${L} · ${(take.dur / 1000).toFixed(2)} s · ${take.pts.length} points · loops at its own length`
         : `Take ${L} empty · grab the pad to record into it`;
   $('hsGestSub').textContent = lanes ? 'Loop only: the lanes hold one take' : 'each loops at its own length';
-  $('dockHyper').querySelector('[aria-label="Gestures"]').classList.toggle('hs-off', lanes);
+  $('dockHyper').querySelector('[aria-label="Takes"]').classList.toggle('hs-off', lanes);
 
   document.querySelectorAll('#dockHyper .hs-slot').forEach((b) => {
     const i = +b.dataset.slot, s = hs.slots[i];
@@ -877,6 +877,8 @@ function hsPaint() {
   const src = hsSource();
   const tp = !src || src.id === PRISM_STRETCH;
   $('hsGlideBox').classList.toggle('hidden', !tp);
+  // Glide is the engine's glide of Time & Pitch: nothing to hear on another process.
+  $('hsGlide').closest('.prism-bar')?.classList.toggle('hidden', !tp);
   $('hsSetSub').textContent = tp ? 'glide, window and cloud' : src.id === PRISM_PTC ? "the process's whole window" : 'every control of the slot';
   const a = hsCoef(hs.glide);
   $('hsGlide').value = hs.glide;

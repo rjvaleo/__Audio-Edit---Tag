@@ -197,47 +197,46 @@ test('C3 · the Prism pad is square, as large as the dock leaves, its banks hard
   expect(narrow.inDock).toBe(true);
 });
 
-test('C3 · a process\'s settings are a bank of knobs beside the pad, all of them', async ({ page }) => {
+test('C3 · a process\'s settings are bars with their pictures beside the pad, all of them', async ({ page }) => {
+  // The v7 Prism page (RJ, 6 Nov 2026): every setting a half-width bar with
+  // the picture of what it does, the pad's two first; knobs before that.
   const measure = () => page.evaluate(() => {
-    const knobs = [...document.querySelectorAll('#prismSettings .param')].map((row) => {
-      const face = row.querySelector(':scope > .rk-face')?.getBoundingClientRect();
+    const bars = [...document.querySelectorAll('#prismSettings .param')].map((row) => {
+      const pic = row.querySelector(':scope > svg.gg')?.getBoundingClientRect();
       const input = row.querySelector(':scope > input[type=range]').getBoundingClientRect();
       return {
         label: row.querySelector('.k')?.textContent.trim(),
-        knob: row.classList.contains('gk-k'),
-        face: face ? Math.round(face.width) : 0,
-        over: !!face && Math.abs((input.left + input.right) / 2 - (face.left + face.right) / 2) <= 2
-          && Math.abs((input.top + input.bottom) / 2 - (face.top + face.bottom) / 2) <= 3,
+        bar: row.classList.contains('prism-bar'),
+        pic: pic ? Math.round(pic.width) : 0,
+        beside: !!pic && pic.right <= input.left + 1 && Math.abs((input.top + input.bottom) / 2 - (pic.top + pic.bottom) / 2) <= 3,
       };
     });
-    return { knobs, text: document.getElementById('prismSettings').textContent };
+    return { bars, text: document.getElementById('prismSettings').textContent };
   });
   await openFile(page);
   await dockTab(page, 'prism');
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
-  // Time & Pitch: its glide, and its two settings not on the pad.
+  // Time & Pitch: its four, the pad's two first, and its glide.
   const tp = await measure();
-  expect(tp.knobs.map((k) => k.label)).toEqual(['Window', 'Cloud over engine']);
+  expect(tp.bars.map((k) => k.label)).toEqual(['Stretch', 'Pitch', 'Window', 'Cloud over engine']);
   await expect(page.locator('#hsGlide')).toBeVisible();
   expect(tp.text).not.toMatch(/tab/i);
-  // The Pitch Time Changer has four: knobs, each face under its input.
+  // The Pitch Time Changer has six: bars, each picture beside its bar.
   await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
   await page.waitForTimeout(300);
   const ptc = await measure();
-  expect(ptc.knobs).toHaveLength(4);
-  for (const k of ptc.knobs) {
-    expect(k.knob).toBe(true);
-    expect(k.face).toBeGreaterThanOrEqual(20);
-    expect(k.over).toBe(true);
+  expect(ptc.bars).toHaveLength(6);
+  for (const k of ptc.bars) {
+    expect(k.bar).toBe(true);
+    expect(k.pic).toBeGreaterThanOrEqual(20);
+    expect(k.beside).toBe(true);
   }
   await expect(page.locator('#hsGlide')).toBeHidden();
-  // A knob turned up sets what its slider set: the Pitch Time Changer's value.
+  // A click far along a bar sets what its slider set: the Pitch Time Changer's value.
   const before = await page.evaluate(() => prismPtc().feedback);
-  const face = await page.locator('#prismSettings .param').first().locator('input[type=range]').boundingBox();
-  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2 - 40, { steps: 5 });
-  await page.mouse.up();
+  const row = page.locator('#prismSettings .param').filter({ hasText: 'Feedback' }).locator('input[type=range]');
+  const b = await row.boundingBox();
+  await page.mouse.click(b.x + b.width * 0.8, b.y + b.height / 2);
   expect(await page.evaluate(() => prismPtc().feedback)).toBeGreaterThan(before);
 });
 
