@@ -5,3 +5,17 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
+
+# The audio crates are built optimised even in a debug or test build. The
+# engine's timing test (`engine/tests/pv_cost.rs`) asks whether a block is made
+# faster than it plays, which only means something of the code that ships:
+# unoptimised, WSOLA alone took 90-120% of a block on a loaded machine and the
+# test failed on load, not on the engine. It also keeps a debug build playable.
+[profile.dev.package.prism-grain]
+opt-level = 3
+[profile.dev.package.prism-fx]
+opt-level = 3
+[profile.dev.package.fx]
+opt-level = 3
+[profile.dev.package.engine]
+opt-level = 3
