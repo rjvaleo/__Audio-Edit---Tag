@@ -432,6 +432,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         // straight to the engine. See `docs/HYPERSTRETCH.md`.
         ("POST", "/api/engine/glide") => api_engine_glide(app, req),
         ("POST", "/api/engine/pad") => api_engine_pad(app, req),
+        ("POST", "/api/prism/load") => api_prism_load(app, req),
+        ("GET", "/api/prism/state") => api_prism_state(app),
+        ("POST", "/api/prism/stretch") => api_prism_stretch(app, req),
         ("POST", "/api/engine/load/reset") => {
             match crate::live::with(app, |h| h.shared.reset_load()) {
                 Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
@@ -1379,7 +1382,7 @@ fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
         app.set_rack(rel, spec);
         app.save_sessions();
         if crate::live::holding(app, rel) {
-            let _ = crate::live::with(app, |h| h.shared.set_manual_param(at, key, applied));
+            let _ = crate::live::with(app, |h| crate::live::deck(h, rel).set_manual_param(at, key, applied));
         }
         return Response::json(
             Value::obj()
@@ -1405,7 +1408,7 @@ fn api_rack_param(app: &Arc<App>, req: &Request) -> Response {
 
     // Only while this document is the one being heard.
     if crate::live::holding(app, rel) {
-        let _ = crate::live::with(app, |h| h.shared.set_manual_param(slot, key, applied));
+        let _ = crate::live::with(app, |h| crate::live::deck(h, rel).set_manual_param(slot, key, applied));
         record_move(app, rel, &format!("fx.{id}.{key}"), &format!("{id} — {key}"), |u| {
             spec2.slots.get(slot).and_then(|s| crate::automation::resolve(s, key, u))
         }, applied);
@@ -1443,7 +1446,7 @@ fn api_pitch_time(app: &Arc<App>, req: &Request) -> Response {
     app.set_rack(rel, spec);
     app.save_sessions();
     if crate::live::holding(app, rel) {
-        let _ = crate::live::with(app, |h| h.shared.set_pitch_time(now));
+        let _ = crate::live::with(app, |h| crate::live::deck(h, rel).set_pitch_time(now));
         for (field, a, b) in [
             ("speed", was.speed, now.speed),
             ("pitch", was.pitch, now.pitch),
@@ -1846,18 +1849,22 @@ fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     // for no reason, which is heard as the reverb tail stopping the instant a
     // slider is released.
     if !matches!(v.get("keepLive"), Some(Value::Bool(true))) {
-        let _ = crate::live::with(app, |h| {
-            h.shared
-                .set_rack(crate::live::rack_for(app, rel, h.sample_rate, h.channels))
-        });
+        // On the deck this document plays on, and only while it is the one
+        // that deck holds.
+        if crate::live::prism_sound(rel).is_none() || crate::live::holding(app, rel) {
+            let _ = crate::live::with(app, |h| {
+                crate::live::deck(h, rel)
+                    .set_rack(crate::live::rack_for(app, rel, h.sample_rate, h.channels))
+            });
+        }
     }
     // The Pitch Time Changer is the rack's too, and it is two numbers rather
     // than a chain, so it goes over whether or not the chain was rebuilt.
     if crate::live::holding(app, rel) {
         let spec = app.racks.get(rel);
         let _ = crate::live::with(app, |h| {
-            h.shared.set_pitch_time(spec.pitch_time);
-            h.shared.set_post_roll_frames((spec.post_roll_ms() as f64 * 0.001 * h.sample_rate as f64) as u64);
+            crate::live::deck(h, rel).set_pitch_time(spec.pitch_time);
+            crate::live::deck(h, rel).set_post_roll_frames((spec.post_roll_ms() as f64 * 0.001 * h.sample_rate as f64) as u64);
         });
     }
 
@@ -4336,12 +4343,17 @@ fn api_engine_transport(app: &Arc<App>, req: &Request) -> Response {
         _ => None,
     };
 
+    // `deck: "prism"` drives the Prism deck's transport and faders instead
+    // (`engine::decks`); the sequencer's sound is the grain deck's only.
+    let prism = is_prism_deck(&v);
     let r = crate::live::with(app, |h| {
         // A new epoch for the sequencer's sound first, so a seek in the same
         // request lands on a bus that has let go of what came before it.
         if let Some(e) = num("seqEpoch") {
             h.shared.seq.advance(e.max(0.0) as u64);
         }
+        struct Deck<'a> { shared: &'a std::sync::Arc<engine::Shared> }
+        let h = Deck { shared: if prism { &h.prism } else { &h.shared } };
         if let Some(f) = num("seek") {
             h.shared.request_seek(f.max(0.0) as u64);
         }
@@ -6019,7 +6031,8 @@ fn api_engine_glide(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, "no smoothing given");
     };
     let s = s.clamp(0.0, 100.0);
-    let applied = crate::live::peek(app, |h| h.shared.set_glide(s)).is_some();
+    let prism = is_prism_deck(&v);
+    let applied = crate::live::peek(app, |h| if prism { h.prism.set_glide(s) } else { h.shared.set_glide(s) }).is_some();
     Response::json(Value::obj().set("ok", true).set("applied", applied).set("smoothing", s as f64).to_string())
 }
 
@@ -6033,15 +6046,93 @@ fn api_engine_pad(app: &Arc<App>, req: &Request) -> Response {
     };
     let ratio = json_num(&v, "ratio").map(|r| r.clamp(RATIO_MIN, RATIO_MAX));
     let semis = json_num(&v, "semitones").map(|r| r.clamp(SEMITONE_MIN, SEMITONE_MAX));
+    let prism = is_prism_deck(&v);
     let applied = crate::live::peek(app, |h| {
-        let Some(mut p) = h.shared.params() else { return false };
+        let d = if prism { &h.prism } else { &h.shared };
+        let Some(mut p) = d.params() else { return false };
         if let Some(r) = ratio {
             p.ratio = r;
         }
         if let Some(s) = semis {
             p.semitones = s;
         }
-        h.shared.set_params(p);
+        d.set_params(p);
+        true
+    })
+    .unwrap_or(false);
+    Response::json(Value::obj().set("ok", true).set("applied", applied).to_string())
+}
+
+/// `deck: "prism"` on a request: the Prism deck rather than the grain engine.
+fn is_prism_deck(v: &Value) -> bool {
+    v.get("deck").and_then(Value::as_str) == Some("prism")
+}
+
+/// Load a sound into the Prism deck (`live::load_prism`): its own, apart from
+/// whatever the grain engine is playing.
+fn api_prism_load(app: &Arc<App>, req: &Request) -> Response {
+    let path = match library_file(app, req) {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    let rel = req.param("p").unwrap_or("").to_string();
+    match crate::live::load_prism(app, &rel, &path) {
+        Ok(l) => Response::json(
+            Value::obj()
+                .set("path", rel)
+                .set("frames", l.frames as f64)
+                .set("sampleRate", l.sample_rate as f64)
+                .to_string(),
+        ),
+        Err(e) => Response::error(500, &e),
+    }
+}
+
+/// The Prism deck as it is: its sound, transport and loop. Never opens the
+/// device.
+fn api_prism_state(app: &Arc<App>) -> Response {
+    let path = app.prism_playing.read().unwrap().clone();
+    let r = crate::live::peek(app, |h| {
+        let d = &h.prism;
+        let (lo, hi) = d.heard_loop().unwrap_or((0, 0));
+        Value::obj()
+            .set("path", path.clone().unwrap_or_default())
+            .set("playing", d.is_playing())
+            .set("position", d.position() as f64)
+            .set("inFrames", d.params().map(|p| p.in_frames as f64).unwrap_or(0.0))
+            .set("sampleRate", h.sample_rate as f64)
+            .set("latency", d.latency_frames() as f64)
+            .set("loopA", lo as f64)
+            .set("loopB", hi as f64)
+    });
+    match r {
+        Some(v) => Response::json(v.to_string()),
+        None => Response::json(Value::obj().set("path", path.unwrap_or_default()).set("playing", false).to_string()),
+    }
+}
+
+/// The Prism deck's stretch: the same body the grain panel posts for its own,
+/// into the Prism deck only.
+fn api_prism_stretch(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else {
+        return Response::error(400, "invalid JSON");
+    };
+    let s = crate::persist::stretch_from_json(&v);
+    let applied = crate::live::peek(app, |h| {
+        let d = &h.prism;
+        let Some(mut p) = d.params() else { return false };
+        let rebank = p.algorithm != s.algorithm || p.grain.layers != s.grain.layers;
+        crate::live::merge_stretch(&mut p, &s);
+        d.set_params(p);
+        if rebank {
+            d.set_bank(engine::stretcher::LayerBank::build(
+                s.algorithm,
+                s.grain.layers,
+                crate::live::MAX_BLOCK,
+                h.channels,
+                h.sample_rate,
+            ));
+        }
         true
     })
     .unwrap_or(false);

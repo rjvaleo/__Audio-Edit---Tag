@@ -12,6 +12,7 @@
 //! - [`device`] opens the output and pumps the other two. As thin as possible,
 //!   because it is the only part a test cannot reach.
 
+pub mod decks;
 pub mod device;
 pub mod glide;
 pub mod input;
@@ -22,6 +23,7 @@ pub mod transport;
 // keep their old paths here.
 pub use prism_grain::{render, stretcher};
 
+pub use decks::Decks;
 pub use device::{conform_channels, resample, spawn, Engine, Handle};
 pub use render::{BlockRenderer, Source};
 pub use seqbus::SeqBus;

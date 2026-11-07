@@ -587,6 +587,8 @@ pub struct App {
     /// document's parameters describe the cloud it is drawing.
     /// What the engine is holding, if anything.
     pub playing: RwLock<Option<NowPlaying>>,
+    /// The sound the Prism deck holds (`live::load_prism`).
+    pub prism_playing: RwLock<Option<String>>,
     /// Held while the fingerprint pass is running. See [`Pass`].
     pub print_pass: Pass,
     /// Held while the classifier pass is running. See [`Pass`].
@@ -638,6 +640,7 @@ impl App {
             overrides: RwLock::new(overrides),
             user_tags: RwLock::new(user_tags),
             playing: RwLock::new(None),
+            prism_playing: RwLock::new(None),
             print_pass: Pass::default(),
             label_pass: Pass::default(),
             edits: crate::docs::EditStore::default(),
