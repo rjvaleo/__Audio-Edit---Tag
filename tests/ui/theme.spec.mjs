@@ -136,16 +136,30 @@ test('every offered palette keeps the surface ladder in order', async ({ page })
       return 0.2126 * r + 0.7152 * g + 0.0722 * b;
     };
     const out = [];
-    // Only what the picker offers: light palettes are withheld precisely
-    // because this interface cannot wear them yet.
+    // Only what the picker offers: a palette derived to a light theme is still
+    // withheld; the light themes designed for this interface are offered and
+    // held to a ladder of their own.
     for (const p of allPalettes()) {
       // Through the same accessor the app uses, so a direct theme is checked on
       // the tokens it actually writes rather than on a derivation of the five
       // colours it happens to show in its swatch.
       const t = themeTokensFor(p);
       const ls = steps.map((k) => lum(t[k]));
-      for (let i = 1; i < ls.length; i++) {
-        if (ls[i] < ls[i - 1] - 1) { out.push(`${p.name} at ${steps[i]}`); break; }
+      if (p.direct && p.dark === false) {
+        // **A light theme reads depth the other way** (7 Nov 2026): the fields
+        // are the paper, the brightest thing on screen; the ground climbs
+        // through the panels to the brightest panel; and a panel's hover and
+        // pressed states go darker from there, as ink on paper does. The sink
+        // stays the darkest rung.
+        const [sink, well, bg, s0, s, s2, s3] = ls;
+        if (Math.min(...ls) !== sink) out.push(`${p.name}: the sink is not the darkest`);
+        if (Math.max(...ls) !== well) out.push(`${p.name}: the well is not the brightest`);
+        if (!(bg < s0 && s0 < s)) out.push(`${p.name}: the panels do not climb from the ground`);
+        if (!(s2 < s && s3 < s2)) out.push(`${p.name}: hover and pressed do not step down`);
+      } else {
+        for (let i = 1; i < ls.length; i++) {
+          if (ls[i] < ls[i - 1] - 1) { out.push(`${p.name} at ${steps[i]}`); break; }
+        }
       }
       // In order is not enough — a ladder of seven identical colours is in
       // order. It has to actually climb, and every rung has to be its own
@@ -156,7 +170,10 @@ test('every offered palette keeps the surface ladder in order', async ({ page })
       // hair below the one under it also allows a flat ladder of black. The
       // real palettes span 18 (Conifer, the tightest) to 64, with all seven
       // rungs distinct in every one of them.
-      const span = ls[ls.length - 1] - ls[0];
+      // Brightest to darkest: a light theme's top rung is not its brightest.
+      const span = p.direct && p.dark === false
+        ? Math.max(...ls) - Math.min(...ls)
+        : ls[ls.length - 1] - ls[0];
       if (span < 10) out.push(`${p.name}: the ladder spans only ${span.toFixed(1)}`);
       const rungs = new Set(ls.map((v) => v.toFixed(1)));
       if (rungs.size < steps.length) {
@@ -257,10 +274,28 @@ test('waveform colours do not move when a theme is applied', async ({ page }) =>
   expect(before.wave, '--wave is not defined').not.toBe('');
   expect(before.wave2, '--wave-2 is not defined').not.toBe('');
 
-  for (const p of (await page.evaluate(() => allPalettes().slice(0, 6).map((x) => x.id)))) {
-    await page.evaluate((id) => { themeState.chosen = id; applyChosenTheme(); }, p);
-    expect(await read(), `palette ${p} moved the waveform colour`).toEqual(before);
+  // **A light theme carries its own ink** (7 Nov 2026): the two colours are
+  // pitched for a near-black ground and vanish on paper, so a light theme states
+  // both, and the test holds it to exactly what it states. Every dark theme
+  // keeps the two colours untouched.
+  const offered = await page.evaluate(() => allPalettes().map((p) => ({
+    id: p.id, light: !!(p.direct && p.dark === false), wave: p.wave, wave2: p.tokens?.['--wave-2'],
+  })));
+  const darks = offered.filter((p) => !p.light).slice(0, 6);
+  const lights = offered.filter((p) => p.light);
+  expect(lights.length, 'no light theme is offered').toBeGreaterThan(0);
+  for (const p of darks) {
+    await page.evaluate((id) => { themeState.chosen = id; applyChosenTheme(); }, p.id);
+    expect(await read(), `palette ${p.id} moved the waveform colour`).toEqual(before);
   }
+  for (const p of lights) {
+    expect(p.wave && p.wave2, `light theme ${p.id} does not state both waveform colours`).toBeTruthy();
+    await page.evaluate((id) => { themeState.chosen = id; applyChosenTheme(); }, p.id);
+    expect(await read(), `light theme ${p.id} is not drawn in its own ink`).toEqual({ wave: p.wave, wave2: p.wave2 });
+  }
+  // And leaving a light theme gives the dark colours back.
+  await page.evaluate((id) => { themeState.chosen = id; applyChosenTheme(); }, darks[0].id);
+  expect(await read(), 'leaving a light theme kept its ink').toEqual(before);
   await page.evaluate(() => { themeState.chosen = null; applyChosenTheme(); });
 });
 

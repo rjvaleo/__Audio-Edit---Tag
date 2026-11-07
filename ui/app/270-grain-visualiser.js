@@ -430,8 +430,9 @@ function drawCloudPad(canvas = $('cloudPad')) {
   // automation lanes use — one fetch, already in hand.
   drawLaneWave(c, w, h, geo.base);
 
-  // The pitch centre line.
-  c.strokeStyle = 'rgba(255,255,255,.07)';
+  // The pitch centre line. The grid is the theme's faintest hairline, so it
+  // shows on a light pad too.
+  c.strokeStyle = ink('--line') || 'rgba(255,255,255,.07)';
   c.lineWidth = 1;
   c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
 

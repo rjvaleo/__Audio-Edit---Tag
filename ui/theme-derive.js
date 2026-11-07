@@ -584,9 +584,16 @@ Theme.appTokens = function appTokens(colors, { plain = false } = {}) {
 /// Set as inline custom properties on `:root`, which beats the stylesheet's
 /// `:root` block without touching it — so "no theme" is removing them rather
 /// than restoring a copy of the defaults that could drift from the real ones.
+/// What only a direct theme sets, besides the map: the lines, shadows and
+/// waveform ink a light theme has to state, and which way round form controls
+/// and scrollbars are drawn. Cleared with the rest, so the next theme starts
+/// from the stylesheet.
+const THEME_DIRECT_KEYS = ['color-scheme', '--line', '--line-2', '--line-3', '--line-4', '--wash',
+  '--shadow-soft', '--shadow', '--shadow-hard', '--wave', '--wave-2'];
+
 Theme.applyTo = function applyTo(el, tokens) {
   if (!el) return;
-  for (const key of Object.keys(THEME_TOKEN_MAP)) el.style.removeProperty(key);
+  for (const key of [...Object.keys(THEME_TOKEN_MAP), ...THEME_DIRECT_KEYS]) el.style.removeProperty(key);
   for (const [k, v] of Object.entries(tokens || {})) el.style.setProperty(k, v);
 };
 
