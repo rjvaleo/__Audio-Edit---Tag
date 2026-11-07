@@ -20,6 +20,7 @@
 pub mod learn;
 pub mod map;
 pub mod pitch;
+pub mod soundmap;
 pub mod store;
 
 use audio_core::{fft, RandomAccessSource, Reader};
