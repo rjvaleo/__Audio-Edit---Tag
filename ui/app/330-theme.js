@@ -45,7 +45,9 @@ let shippedPalettes = null;
 function allPalettes() {
   if (!shippedPalettes) {
     shippedPalettes = THEME_PALETTES
-      .filter((p) => (p.direct || !p.colors ? p.dark : Theme.deriveTheme(p.colors).mode === 'dark'))
+      // A theme designed for this interface is listed light or dark; one derived
+      // from a palette only when it comes out dark.
+      .filter((p) => (p.direct ? true : !p.colors ? p.dark : Theme.deriveTheme(p.colors).mode === 'dark'))
       .map((p) => ({ ...p, readOnly: true }));
   }
   // `mine` is not cached: it is what the Add button changes.

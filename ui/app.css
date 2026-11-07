@@ -2356,7 +2356,9 @@ body.editing .dock { flex: 0 0 330px; }
   height: 132px;
   border: 1px solid var(--line, #1b2a36);
   border-radius: 4px;
-  background: #0a141c;
+  /* A well, so it follows the theme: near-black on the dark ones, paper on the
+     light ones (it was #0a141c whatever the theme). */
+  background: var(--well, #0a141c);
   cursor: crosshair;
   touch-action: none;
 }

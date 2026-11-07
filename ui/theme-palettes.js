@@ -115,7 +115,135 @@ const FACETS = {
   },
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The three looks (1 Nov 2026), from the mockups of the Edit page without a
+// menu bar: Studio light, Mid grey and Layered dark.
+//
+// Two of them are light, and a light theme has to state what a dark one can
+// leave to `app.css`: the stylesheet's hairlines and shadows are translucent
+// white and black, which sit on any dark ground and vanish on a pale one, and
+// its status colours are pitched to be read on near-black. So these carry
+// their own lines, shadows and waveform ink, and the status colours keep their
+// hues — green safe, amber warning, red bad — only darker, to stay legible.
+// `Theme.applyTo` clears every one of these keys when the theme changes.
+
+/// Warm paper, the waveform in ink, one blue.
+const STUDIO_LIGHT = {
+  id: 'studio-light',
+  // The waveform's ink: worn with the theme (`waveChoice`), so it is set
+  // here rather than as a token, which `applyWaveColour` would overwrite.
+  wave: '#2b2925',
+  name: 'Studio light',
+  direct: true,
+  dark: false,
+  colors: ['#efebe3', '#f8f6f0', '#fcfbf7', '#2452c2', '#23201b'],
+  tokens: {
+    'color-scheme':  'light',
+    '--sink':        '#e2dccf',
+    '--well':        '#fcfbf7',
+    '--bg':          '#efebe3',
+    '--surface-0':   '#f2eee7',
+    '--surface':     '#f8f6f0',
+    '--surface-2':   '#f4f1ea',
+    '--surface-2h':  '#eeeae1',
+    '--surface-3':   '#e7e2d7',
+    '--text':        '#23201b',
+    '--text-2':      '#3a362f',
+    '--text-dim':    '#5a5347',
+    '--text-dimmer': '#6f685b',
+    '--accent':      '#2452c2',
+    '--line':        'rgba(35,32,27,0.10)',
+    '--line-2':      'rgba(35,32,27,0.16)',
+    '--line-3':      'rgba(35,32,27,0.24)',
+    '--line-4':      'rgba(35,32,27,0.50)',
+    '--wash':        'rgba(35,32,27,0.03)',
+    '--shadow-soft': 'rgba(35,32,27,0.10)',
+    '--shadow':      'rgba(35,32,27,0.18)',
+    '--shadow-hard': 'rgba(35,32,27,0.30)',
+    '--wave-2':      '#2452c2',
+    '--good':        '#1f7a45',
+    '--warn':        '#a85a00',
+    '--bad':         '#b42318',
+  },
+};
+
+/// The grey of a hardware desk, dark type, an orange you press.
+const MID_GREY = {
+  id: 'mid-grey',
+  // The waveform's ink: worn with the theme (`waveChoice`), so it is set
+  // here rather than as a token, which `applyWaveColour` would overwrite.
+  wave: '#1b1d20',
+  name: 'Mid grey',
+  direct: true,
+  dark: false,
+  colors: ['#9c9ea0', '#b2b4b6', '#c5c7c9', '#b8530b', '#111213'],
+  tokens: {
+    'color-scheme':  'light',
+    '--sink':        '#8e9092',
+    '--well':        '#c5c7c9',
+    '--bg':          '#9c9ea0',
+    '--surface-0':   '#a3a5a7',
+    '--surface':     '#b2b4b6',
+    '--surface-2':   '#abadaf',
+    '--surface-2h':  '#a4a6a8',
+    '--surface-3':   '#9a9c9e',
+    '--text':        '#111213',
+    '--text-2':      '#1e2023',
+    '--text-dim':    '#2a2c2f',
+    '--text-dimmer': '#3a3d40',
+    '--accent':      '#b8530b',
+    '--line':        'rgba(17,18,19,0.14)',
+    '--line-2':      'rgba(17,18,19,0.22)',
+    '--line-3':      'rgba(17,18,19,0.32)',
+    '--line-4':      'rgba(17,18,19,0.60)',
+    '--wash':        'rgba(17,18,19,0.04)',
+    '--shadow-soft': 'rgba(0,0,0,0.18)',
+    '--shadow':      'rgba(0,0,0,0.30)',
+    '--shadow-hard': 'rgba(0,0,0,0.45)',
+    '--wave-2':      '#b8530b',
+    '--good':        '#1d6b3c',
+    '--warn':        '#8a4a00',
+    '--bad':         '#9e1b12',
+  },
+};
+
+/// Dark, but in layers: a blue-grey ground, panels lighter than it.
+///
+/// It is a dark theme, so it keeps the waveform's own two colours (the mockup's
+/// sea-green and blue were dropped, 7 Nov 2026), and its well sits between the
+/// sink and the ground like every dark theme's.
+const LAYERED_DARK = {
+  id: 'layered-dark',
+  name: 'Layered dark',
+  direct: true,
+  dark: true,
+  colors: ['#161b22', '#212833', '#313b49', '#6cb8ff', '#e6eaf0'],
+  tokens: {
+    'color-scheme':  'dark',
+    '--sink':        '#11151b',
+    '--well':        '#13181e',
+    '--bg':          '#161b22',
+    '--surface-0':   '#1b2129',
+    '--surface':     '#212833',
+    '--surface-2':   '#262e3a',
+    '--surface-2h':  '#2b3441',
+    '--surface-3':   '#313b49',
+    '--text':        '#e6eaf0',
+    '--text-2':      '#c8cfd9',
+    '--text-dim':    '#a3adba',
+    '--text-dimmer': '#8590a0',
+    '--accent':      '#6cb8ff',
+    '--line':        'rgba(255,255,255,0.07)',
+    '--line-2':      'rgba(255,255,255,0.11)',
+    '--line-3':      'rgba(255,255,255,0.16)',
+    '--line-4':      'rgba(255,255,255,0.42)',
+  },
+};
+
 const THEME_PALETTES = [
+  STUDIO_LIGHT,
+  MID_GREY,
+  LAYERED_DARK,
   CONIFER,
   FACETS,
   { id: 'cocoa-topaz-noonday', name: 'Cocoa topaz noonday', colors: ['#742f14', '#5a84ac', '#c7ac9f', '#fc9c44', '#5c3c2c'] },
