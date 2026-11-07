@@ -1,5 +1,9 @@
 # The sound map
 
+**Browse › Map opens the sound map first** (below, "The sound map, every dot
+a sound"). The 3D world described after that is still there: it is the **3D**
+button in the map's strip.
+
 A 3D world made of the library. Every sound is an object placed by what it
 sounds like. You move through it with the mouse; a sound plays as you pass it;
 clicking one opens what is known about it. Nothing else for now. Using what you
@@ -229,3 +233,94 @@ listen to confirm the note is the one you hear:
 - `aug 95/beautius chirp.aif`: F#5, 749 Hz.
 - `Yonkers Piano/chord3T4000chord_01aiff.aif`: D#1, 39 Hz. A chord that came
   back pitched, very low, which is the likeliest to be wrong.
+
+## The sound map, every dot a sound (6 Nov 2026)
+
+RJ was not happy with how the world read as a way to find things, and asked
+for a 2D network instead, from four reference pictures (kept in
+`docs/mockups/library-graph-refs/`). Two tries came first, and he rejected both:
+
+1. **Folders and labels as hubs, sounds hanging off them.** He wanted a sound
+   explorer, where every dot is a sound to play, not a folder browser.
+2. **Every dot a sound, laid out from the twelve measurements.** It came out
+   as one undifferentiated blob, whichever layout was put on top.
+
+The research he asked for was clear about why.
+
+**What sample maps that work have in common.** Five tools were looked at:
+- XO (XLN): every one-shot is a dot coloured by type. Dragging across the map
+  plays everything passed over, and picking a sound fills a similarity list.
+- Atlas (Algonaut): drum samples on a map, clustered into kick, snare, hat
+  and the rest, and turned into kits from there.
+- AudioStellar: a folder becomes a map of coloured clusters.
+- Freesound Explorer: a timbre map with "cluster tags" naming each region.
+- The Infinite Drum Machine (Google): an audio fingerprint per sound,
+  flattened to two dimensions by t-SNE.
+
+All of them lay sounds out from a rich fingerprint of the audio: frame-level
+timbre, or a neural network's embedding. Twelve summary numbers say how long,
+loud and bright a sound is, not what it is.
+
+**What this map is built on.** YAMNet already ran over every sound to label
+it. Its last layer describes each patch of audio with 1,024 numbers, and the
+labeller threw them away. They are now kept:
+- `Model::listen` returns them with the labels, from the same run of the
+  model.
+- They are averaged over the same patches as the labels.
+- `yamnet::embed` stores them in `EMBEDDINGS.tsv`, one byte a number.
+
+A library labelled before this is fingerprinted by the same pass, a batch at
+a time while the map is open. Its labels are left as they were.
+
+**How it is laid out.** `search::soundmap` does it in four steps:
+1. **Fingerprints:** each is square-rooted and scaled to unit length, so
+   "alike" is the angle between two sounds.
+2. **Placing:** exact t-SNE, with perplexity 30 and a fixed seed, so the same
+   library makes the same map.
+3. **Clusters:** DBSCAN on the map as drawn, its reach set from the map
+   itself.
+4. **Names:** each cluster is named for what its sounds were most often heard
+   as. Two clusters that would share a name are told apart by the next most
+   common label.
+
+Each sound also keeps its six closest matches by fingerprint.
+
+**At the size of the real library.** The configured library is the 2TB one:
+about 80,000 playable files. Comparing every pair at that size would need
+tens of gigabytes, so above 2,000 sounds the layout changes:
+- **Landmarks:** 2,000 sounds, drawn by a fixed shuffle, are laid out exactly
+  as above. Not every n-th sound: a stride can fall in step with folder order
+  and pick one kind only.
+- **Shortening:** every fingerprint is cut to its 64 main directions,
+  found from the landmarks.
+- **Placing:** each other sound goes to the weighted middle of its three
+  nearest landmarks, and takes the nearest one's cluster.
+- **Matches:** a sound's closest matches are worked out when it is pointed at
+  (`/api/soundmap/near`), about 3 ms each.
+
+The per-pair work runs on every core. Fingerprints are kept as bytes in
+memory as well as on disk, about 80 MB for the whole library.
+
+**Listening.** `/api/soundmap` answers at once. While the map is open, a
+thread listens to the library a batch at a time, and stops 20 seconds after
+the map was last asked for. A large map is worked out again only once there
+are a quarter more sounds to place, or once what they were heard as becomes
+known. Until then, newly heard sounds wait in the rows underneath.
+`search/tests/soundmap.rs` tests the layout, and `yamnet/tests/known_sounds.rs`
+checks that two kicks are closer than a kick and a voice.
+
+**On the page** (`ui/library-graph.js`):
+- **Dots:** every dot is a sound. Size is length, and a ring means it loops.
+- **Colour:** by cluster, family, dark to bright, or short to long.
+- **Names:** each cluster's name floats over it. Click a name to gather that
+  cluster into view and list its sounds.
+- **Listening:** rest on a dot for 80 ms and it plays, through the engine's
+  audition path; there is a switch to turn this off. A fading green path
+  shows what you just heard.
+- **Clicking:** a dot opens its card, with the cluster, what it was heard as,
+  its words, its length, note and kind, and the sounds most like it. Rest on
+  one of those to hear it, click it to go there. Edit and Grain open the sound.
+- **Find:** lights matches red, and Enter goes to the first.
+- **Escape:** steps back one thing at a time.
+- **Not listened to yet:** sounds without a fingerprint wait in rows under
+  the map, still playable.

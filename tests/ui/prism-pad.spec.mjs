@@ -9,28 +9,52 @@
 // arithmetic to the lanes'. What is checked here is the pad itself, in the
 // real interface.
 //
-// The scratch server has no audio device, so a take is not recorded here by
-// playing; the path and LOOP are checked on lanes posted directly.
+// Since 6 Nov 2026 the page plays a sound of its own on the Prism deck
+// (`prism-deck.spec.mjs`), and the pad's document is `prism:<sound>`. Loading
+// that sound opens the audio device, which the scratch server must never do,
+// so `/api/prism/load` and `/api/prism/state` are answered here. The lanes
+// were the grain document's, and are not on the Prism deck.
 
 import { test, expect } from './test.mjs';
 
+async function stubDeck(page) {
+  await page.route('**/api/prism/load**', (route) => {
+    const p = new URL(route.request().url()).searchParams.get('p');
+    route.fulfill({ json: { path: p, frames: 96000, sampleRate: 48000 } });
+  });
+  await page.route('**/api/prism/state**', (route) => route.fulfill({ json: { playing: false, position: 0 } }));
+}
+
+/// Into the Prism page with the library's first sound on the Prism deck.
+async function intoPrism(page) {
+  await page.locator('#leftRail .rl-item[data-page="prism"]').click();
+  await page.evaluate(async () => {
+    const files = await api(`/api/files?folder=${encodeURIComponent(state.folders[0].name)}`);
+    await window.prismDeck.use(files[0].path);
+  });
+  await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
+}
+
 async function openPad(page, slots = []) {
+  await stubDeck(page);
   await page.goto('/');
   await page.waitForFunction(
     () => typeof state !== 'undefined' && (state.folders || []).length > 0, { timeout: 20_000 });
   await page.evaluate(async (slots) => {
+    try { for (const k of Object.keys(localStorage)) if (/^(hyperstretch|prism\.)/.test(k)) localStorage.removeItem(k); } catch {}
     const folder = state.folders[0].name;
     const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
-    await postJSON('/api/rack', { p: files[0].path, sr: 44100, slots });
-    await postJSON('/api/automation', { p: files[0].path, bypassed: false, lanes: [] });
+    await postJSON('/api/rack', { p: `prism:${files[0].path}`, sr: 44100, slots, pitchTime: { on: false } });
     await selectFile(files[0]);
     setMode('edit');
   }, slots);
   // Prism is a page of its own in the left rail, below Grain.
-  await page.locator('#leftRail .rl-item[data-page="prism"]').click();
-  await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
+  await intoPrism(page);
   await page.evaluate(() => window.hyperStretch.reset());
 }
+
+/// What the pad moved on the Prism deck's Time & Pitch.
+const deckStretch = (page) => page.evaluate(() => window.prismDeck.stretch());
 
 const RING = { id: 'r1', kind: 'ring', bypassed: false, params: { hz: 220, mix: 1, sweep: 0 } };
 
@@ -48,7 +72,7 @@ async function drag(page, across, up) {
 
 async function stored(page, id) {
   return page.evaluate(async (id) => {
-    const r = await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`);
+    const r = await api(`/api/rack?p=${encodeURIComponent(`prism:${window.prismDeck.path()}`)}`);
     return { slot: (r.slots || []).find((s) => s.id === id), pads: r.pads || {} };
   }, id);
 }
@@ -63,14 +87,14 @@ test('the pad offers Time & Pitch first, then the rack\'s slots', async ({ page 
 test('Time & Pitch: speed across, pitch up, linear between the limits', async ({ page }) => {
   await openPad(page);
   await drag(page, 0.5, 0.5);
-  let d = await page.evaluate(() => state.stretchDraft);
+  let d = await deckStretch(page);
   // Linear, as Hyperprism's pad was: halfway from four times as long to a
   // quarter is 2.125.
   expect(d.ratio).toBeGreaterThan(2.05);
   expect(d.ratio).toBeLessThan(2.2);
   expect(Math.abs(d.semitones)).toBeLessThan(0.6);
   await drag(page, 0.999, 0.999);
-  d = await page.evaluate(() => state.stretchDraft);
+  d = await deckStretch(page);
   expect(d.ratio).toBeLessThan(0.27);
   expect(d.semitones).toBeGreaterThan(11.5);
   await expect(page.locator('#hsXName')).toContainText('Stretch');
@@ -101,13 +125,8 @@ test('limits typed into the corners narrow the sweep, and stay with the rack', a
   // Back again later, the pad is set up as it was left.
   await page.reload();
   await page.waitForFunction(() => typeof state !== 'undefined' && (state.folders || []).length > 0);
-  await page.evaluate(async () => {
-    const files = await api(`/api/files?folder=${encodeURIComponent(state.folders[0].name)}`);
-    await selectFile(files[0]);
-    setMode('edit');
-  });
-  // Prism is a page of its own in the left rail, below Grain.
-  await page.locator('#leftRail .rl-item[data-page="prism"]').click();
+  await page.evaluate(() => setMode('edit'));
+  await intoPrism(page);
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 1);
   await page.locator('#prismSource').selectOption({ label: 'Ring mod' });
   await expect(page.locator('#prismXHi')).toHaveValue('1000');
@@ -118,42 +137,9 @@ test('double-click puts the point back in the middle', async ({ page }) => {
   await drag(page, 0.9, 0.9);
   await page.locator('#hsPad').dblclick();
   await page.waitForTimeout(200);
-  const d = await page.evaluate(() => state.stretchDraft);
+  const d = await deckStretch(page);
   expect(d.ratio).toBeCloseTo(2.125, 2);
   expect(Math.abs(d.semitones)).toBeLessThan(0.6);
-});
-
-test('in Lanes a take is drawn as a path, and LOOP wraps both of its lanes', async ({ page }) => {
-  await openPad(page);
-  await page.locator('[data-hswhere="lanes"]').click();
-  await page.evaluate(async () => {
-    const lane = (id, target, points) => ({ id, target, label: target, enabled: true, trim: 0, loop: null,
-      modulators: [], points: points.map(([frame, value]) => ({ frame, value, curve: 'linear', tension: 0 })) });
-    await postJSON('/api/automation', { p: state.selectedFile.path, bypassed: false, lanes: [
-      lane('a', 'stretch.ratio', [[1000, 0.2], [9000, 0.8]]),
-      lane('b', 'stretch.semitones', [[1000, 0.5], [5000, 0.9]]),
-    ] });
-    await loadAutomation();
-    await prismLoadPath();
-  });
-  await expect(page.locator('#hsPath')).toHaveAttribute('points', /^(\S+ ){2}\S+$/);
-  await page.locator('#prismLoop').click();
-  await expect(page.locator('#prismLoop')).toHaveClass(/\bon\b/);
-  const loops = await page.evaluate(async () => {
-    const a = await api(`/api/automation?p=${encodeURIComponent(state.selectedFile.path)}`);
-    return a.lanes.map((l) => l.loop);
-  });
-  expect(loops).toEqual([[1000, 9000], [1000, 9000]]);
-});
-
-test('in Lanes ● arms the recorder for a take on the pad, and pressing it again disarms', async ({ page }) => {
-  await openPad(page);
-  await page.locator('[data-hswhere="lanes"]').click();
-  await page.locator('#hsRec').click();
-  await expect.poll(() => page.evaluate(async () => (await api('/api/automation/record')).mode)).toBe('latch');
-  await expect(page.locator('#hsChip')).toContainText(/ARMED|REC/);
-  await page.locator('#hsRec').click();
-  await expect.poll(() => page.evaluate(async () => (await api('/api/automation/record')).mode)).toBe('off');
 });
 
 test('the new stereo and delay effects come to the pad with Hyperprism\'s pairs', async ({ page }) => {
@@ -205,7 +191,7 @@ test('the Pitch Time Changer is on the pad with Hyperprism\'s window and setting
   // Playing it is hearing it: a move turns it on.
   await drag(page, 0.75, 0.25);
   const pt = await page.evaluate(async () =>
-    (await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`)).pitchTime);
+    (await api(`/api/rack?p=${encodeURIComponent(`prism:${window.prismDeck.path()}`)}`)).pitchTime);
   expect(pt.on).toBe(true);
   expect(pt.speed).toBeGreaterThan(140);
   expect(pt.speed).toBeLessThan(160);
@@ -216,11 +202,11 @@ test('the Pitch Time Changer is on the pad with Hyperprism\'s window and setting
   await page.locator('#prismPtcOn').click();
   await page.waitForTimeout(300);
   const off = await page.evaluate(async () =>
-    (await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`)).pitchTime);
+    (await api(`/api/rack?p=${encodeURIComponent(`prism:${window.prismDeck.path()}`)}`)).pitchTime);
   expect(off.on).toBe(false);
 });
 
-test('Playback Speed and the L, LR and R faders go to the engine', async ({ page }) => {
+test('Playback Speed and the L, LR and R faders go to the Prism deck', async ({ page }) => {
   await openPad(page);
   const sent = [];
   page.on('request', (r) => { if (r.url().endsWith('/api/engine/transport')) sent.push(r.postDataJSON()); });
@@ -236,6 +222,7 @@ test('Playback Speed and the L, LR and R faders go to the engine', async ({ page
   await lr.evaluate((el) => { el.value = '85'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.waitForTimeout(400);
   expect(sent.some((b) => Math.abs(b.speed - 1.5) < 1e-9)).toBe(true);
+  expect(sent.every((b) => b.deck === 'prism')).toBe(true);
   const last = sent.filter((b) => b.gainL !== undefined).at(-1);
   expect(last.gainL).toBeCloseTo(Math.pow(10, -6 / 20), 6);
   expect(last.gainR).toBeCloseTo(Math.pow(10, -6 / 20), 6);
@@ -253,7 +240,7 @@ test('Post-Roll is kept per process and reaches the rack', async ({ page }) => {
   await page.locator('#prismPostRoll').fill('750');
   await page.locator('#prismPostRoll').dispatchEvent('change');
   await page.waitForTimeout(400);
-  const r = await page.evaluate(async () => api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`));
+  const r = await page.evaluate(async () => api(`/api/rack?p=${encodeURIComponent(`prism:${window.prismDeck.path()}`)}`));
   expect(r.postRoll.r1).toBe(750);
   await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
   await expect(page.locator('#prismPostRoll')).toHaveValue('0');
@@ -271,7 +258,7 @@ test('Hyperprism\'s presets set the pad window and the settings, not the positio
   await expect(page.locator('#prismXLo')).toHaveValue(String(want.xLo));
   await expect(page.locator('#prismXHi')).toHaveValue(String(want.xHi));
   const pt = await page.evaluate(async () =>
-    (await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`)).pitchTime);
+    (await api(`/api/rack?p=${encodeURIComponent(`prism:${window.prismDeck.path()}`)}`)).pitchTime);
   expect(pt.grain).toBe(want.settings.grain);
   // A preset of the user's own, saved, and offered next time.
   await page.locator('#prismPresetName').fill('Slow drift');

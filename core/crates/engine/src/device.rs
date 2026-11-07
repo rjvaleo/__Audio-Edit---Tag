@@ -8,11 +8,14 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::Arc;
 
 use crate::render::Source;
+use crate::decks::Decks;
 use crate::transport::{Core, Shared};
 use fx::grain::StreamParams;
 
 pub struct Engine {
     shared: Arc<Shared>,
+    /// The Prism deck: a sound, transport and chain of its own (`decks.rs`).
+    prism: Arc<Shared>,
     /// Dropping this closes the device, so it has to be held even though
     /// nothing reads it.
     _stream: cpal::Stream,
@@ -68,12 +71,22 @@ impl Engine {
 
         let shared = Arc::new(Shared::new(params, source.clone()));
         let core_shared = Arc::clone(&shared);
+        // The Prism deck starts empty and stopped, at the device's rate.
+        let silent = Arc::new(Source { samples: Vec::new(), channels });
+        let prism_params = StreamParams { in_frames: 0, sample_rate, ..params };
+        let prism = Arc::new(Shared::new(prism_params, Arc::clone(&silent)));
+        let prism_shared = Arc::clone(&prism);
         // Copied out for the callback, which may not touch `config`.
         let dev_rate = sample_rate;
 
         // Generous: the device may ask for more than its stated buffer size,
         // and growing inside the callback would allocate.
-        let mut core = Core::new(MAX_BLOCK, channels, params, source);
+        let mut decks = Decks::new(
+            Core::new(MAX_BLOCK, channels, params, source),
+            Core::new(MAX_BLOCK, channels, prism_params, silent),
+            MAX_BLOCK,
+            channels,
+        );
 
         let err = |e| eprintln!("audio stream error: {e}");
 
@@ -87,9 +100,10 @@ impl Engine {
                     // of the sound by exactly this much.
                     let ts = info.timestamp();
                     let ahead = ts.playback.duration_since(ts.callback);
-                    core_shared
-                        .set_latency_frames((ahead.as_secs_f64() * dev_rate as f64) as u64);
-                    core.fill(out, channels, &core_shared);
+                    let latency = (ahead.as_secs_f64() * dev_rate as f64) as u64;
+                    core_shared.set_latency_frames(latency);
+                    prism_shared.set_latency_frames(latency);
+                    decks.fill(out, channels, &core_shared, &prism_shared);
                 },
                 err,
                 None,
@@ -108,6 +122,7 @@ impl Engine {
 
         Ok(Engine {
             shared,
+            prism,
             _stream: stream,
             sample_rate,
             channels,
@@ -116,6 +131,10 @@ impl Engine {
 
     pub fn shared(&self) -> &Arc<Shared> {
         &self.shared
+    }
+
+    pub fn prism(&self) -> &Arc<Shared> {
+        &self.prism
     }
 }
 
@@ -128,6 +147,8 @@ impl Engine {
 /// construction.
 pub struct Handle {
     pub shared: Arc<Shared>,
+    /// The Prism deck (`decks.rs`).
+    pub prism: Arc<Shared>,
     pub sample_rate: u32,
     pub channels: usize,
     /// What was actually asked of the device, so the interface can show what is
@@ -175,6 +196,7 @@ pub fn spawn(
             Ok(engine) => {
                 let handle = Handle {
                     shared: Arc::clone(engine.shared()),
+                    prism: Arc::clone(engine.prism()),
                     sample_rate: engine.sample_rate,
                     channels: engine.channels,
                     buffer_frames,

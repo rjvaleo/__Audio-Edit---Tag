@@ -91,7 +91,9 @@ function hsFmt(axis, v) {
 }
 
 const hsSource = () => (typeof prismCurrent === 'function' ? prismCurrent() : null);
-const hsLanes = () => hs.where === 'lanes';
+/// The rack pad's Lanes were the grain document's automation; on the Prism deck
+/// a take is a Loop take (`engine/src/decks.rs`).
+const hsLanes = () => false;
 
 // ------------------------------------------------------------- the panel
 
@@ -101,7 +103,7 @@ function hsBuild() {
   hs.built = true;
   try {
     const kept = JSON.parse(localStorage.getItem('hyperstretch.settings') || '{}');
-    for (const k of ['glide', 'throwOn', 'loopOnRelease', 'rate', 'dir', 'where']) if (k in kept) hs[k] = kept[k];
+    for (const k of ['glide', 'throwOn', 'loopOnRelease', 'rate', 'dir']) if (k in kept) hs[k] = kept[k];
   } catch { /* first use */ }
   const fader = (id, label, aria) => `<div class="hs-fader">
       <input type="range" id="${id}" min="0" max="255" step="1" value="128" aria-label="${aria}" title="${aria}, −18 to +18 dB · double-click for the middle">
@@ -122,17 +124,25 @@ function hsBuild() {
         <button type="button" class="hs-btn" id="hsRewind" aria-label="Rewind" title="Back to the start">⏮</button>
       </div>
       <span class="hs-chip mono" id="hsChip"></span>
-      <span class="hs-seg" role="group" aria-label="Where a take goes">
-        <button type="button" data-hswhere="loop" title="Hyperprism's take: stepped, looping at its own length, live">Loop</button>
-        <button type="button" data-hswhere="lanes" title="The rack pad's take: two automation lanes in the document, in the export">Lanes</button>
-      </span>
-      <button type="button" class="hs-btn" id="prismLoop" title="Loop the take: both of its lanes wrap over its span, together">⟲ LOOP</button>
       <span class="hs-fill"></span>
       <label class="hs-lbl">Presets <select id="prismPreset" class="mini" aria-label="Presets for this process"></select></label>
       <input id="prismPresetName" class="mini hs-name" type="text" placeholder="Preset name" aria-label="Preset name">
       <button type="button" class="hs-btn" id="prismPresetSave" title="Save the pad's window, this process's settings and its post-roll under this name">Save</button>
       <button type="button" class="hs-btn" id="prismPresetRename" title="Rename the chosen preset of your own to this name">Rename</button>
       <button type="button" class="hs-btn" id="prismPresetDelete" title="Delete the chosen preset of your own">Delete</button>
+    </div>
+    <div class="hs-deck" role="group" aria-label="Prism's own sound">
+      <span class="hs-dim">SOUND</span>
+      <select id="prismSoundFolder" class="mini" aria-label="Folder"></select>
+      <select id="prismSoundFile" class="mini" aria-label="Prism's sound"></select>
+      <span class="mono hs-deck-name" id="prismSoundName"></span>
+      <canvas id="prismWave" class="hs-wave" aria-label="Prism's sound and where it is playing"></canvas>
+      <button type="button" class="hs-btn" id="prismDeckPlay" title="Play Prism's sound: its own transport, apart from the grain engine">▶</button>
+      <button type="button" class="hs-btn" id="prismDeckStop" title="Stop Prism's sound and go back to the start">■</button>
+      <button type="button" class="hs-btn" id="prismDeckLoop" title="Loop Prism's sound">⟲</button>
+      <span class="hs-dim">CHAIN</span>
+      <span id="prismChain" class="hs-chain"></span>
+      <select id="prismChainAdd" class="mini" aria-label="Add an effect to Prism's chain"><option value="">+ add effect</option></select>
     </div>
     <div class="hs-body">
       <div class="hs-stage">
@@ -285,32 +295,21 @@ function hsWire() {
   });
 
   $('hsRec').onclick = () => {
-    if (hsLanes()) { prismToggleRecord().then(hsPaint); return; }
     if (hs.mode !== 'rec') { hsStartRec(performance.now()); hsAddPoint(hs.hand, performance.now()); hsPaint(); }
   };
   $('hsPlay').onclick = () => {
-    if (hsLanes()) { if (!engine.playing) startPlayback(); hsPaint(); return; }
     const t = performance.now();
     if (hs.mode === 'pause') { hs.t0 += t - hs.pauseAt; hs.mode = 'play'; hsPaint(); return; }
     if (hs.mode === 'rec') hsStopRec(t);
     hsPlay(t);
   };
   $('hsPause').onclick = () => {
-    if (hsLanes()) { if (engine.playing) pausePlayback(); hsPaint(); return; }
     const t = performance.now();
     if (hs.mode === 'play') { hs.mode = 'pause'; hs.pauseAt = t; }
     else if (hs.mode === 'pause') { hs.t0 += t - hs.pauseAt; hs.mode = 'play'; }
     hsPaint();
   };
   $('hsStop').onclick = async () => {
-    if (hsLanes()) {
-      // A stop ends an armed take (`captureTransport`); armed and not yet
-      // playing, it disarms.
-      if (engine.playing) pausePlayback();
-      else if (state.captureArmed) await endCapture();
-      hsPaint();
-      return;
-    }
     const t = performance.now();
     if (hs.mode === 'rec') hsStopRec(t);
     hs.mode = 'ready';
@@ -319,7 +318,6 @@ function hsWire() {
     hsPaint();
   };
   $('hsRewind').onclick = () => {
-    if (hsLanes()) { seekSource(0); return; }
     hs.t0 = performance.now();
     const take = hs.slots[hs.slot];
     if (take?.pts.length) hsMoveTo({ x: take.pts[0].x, y: take.pts[0].y }, hs.t0, { record: false });
@@ -350,7 +348,12 @@ function hsWire() {
   $('prismPresetRename').onclick = () => prismPresetRename();
   $('prismPresetDelete').onclick = () => prismPresetDelete();
   $('prismPostRoll').onchange = (e) => prismPostRollChanged(e.target);
-  $('prismLoop').onclick = () => prismToggleLoop().then(hsPaint);
+  $('prismSoundFolder').onchange = () => prismSoundFill();
+  $('prismSoundFile').onchange = (e) => { if (e.target.value) prismDeckUse(e.target.value); };
+  $('prismDeckPlay').onclick = () => prismDeckPlay();
+  $('prismDeckStop').onclick = () => prismDeckStop();
+  $('prismDeckLoop').onclick = () => prismDeckLoop();
+  $('prismChainAdd').onchange = (e) => { const k = e.target.value; e.target.value = ''; prismChainAdd(k); };
 
   $('hsGlide').addEventListener('input', (e) => { hs.glide = +e.target.value; hsKeep(); hsSendGlide(); hsPaint(); });
   $('hsThrow').onchange = (e) => { hs.throwOn = e.target.checked; hsKeep(); };
@@ -362,38 +365,22 @@ function hsWire() {
     else if (b.dataset.hsrate) { hs.rate = +b.dataset.hsrate; hsKeep(); hsPaint(); }
     else if (b.dataset.hsdir) { hs.dir = b.dataset.hsdir; hsKeep(); hsPaint(); }
     else if (b.dataset.hsshape) hsShape(b.dataset.hsshape);
-    else if (b.dataset.hswhere) hsSetWhere(b.dataset.hswhere);
   });
   if (window.ResizeObserver) new ResizeObserver(hsFit).observe($('dockHyper').querySelector('.hs-body'));
 }
 
 function hsKeep() {
   try {
-    localStorage.setItem('hyperstretch.settings', JSON.stringify({ glide: hs.glide, throwOn: hs.throwOn, loopOnRelease: hs.loopOnRelease, rate: hs.rate, dir: hs.dir, where: hs.where }));
+    localStorage.setItem('hyperstretch.settings', JSON.stringify({ glide: hs.glide, throwOn: hs.throwOn, loopOnRelease: hs.loopOnRelease, rate: hs.rate, dir: hs.dir }));
   } catch { /* private mode */ }
-}
-
-/// Loop or Lanes. A Loop take in progress ends; the lanes' take is drawn.
-function hsSetWhere(where) {
-  if (where === hs.where) return;
-  const t = performance.now();
-  if (hs.mode === 'rec') hsStopRec(t);
-  hs.mode = 'ready';
-  hs.vel = { x: 0, y: 0 };
-  hs.where = where;
-  hsKeep();
-  if (where === 'lanes') prismLoadPath().then(hsPaint);
-  hsPaint();
 }
 
 // ------------------------------------------------------------- the source
 
 /// The panel is out: fetch what the pad can drive, as the rack pad's tab did.
 async function hsOpen() {
-  const f = state.selectedFile;
-  if (!f) return;
   try {
-    const r = await api(`/api/pad?p=${encodeURIComponent(f.path)}`);
+    const r = await api(`/api/pad?p=${encodeURIComponent(prismKey())}`);
     prismPad.sources = r.sources || [];
   } catch { prismPad.sources = []; }
   if (!prismPad.sources.some((s) => s.id === prismPad.source)) prismPad.source = PRISM_STRETCH;
@@ -495,17 +482,15 @@ function hsApply() {
     for (const [k, v] of Object.entries(vals)) prismWrite(k, v);
     return;
   }
-  const d = state.stretchDraft;
-  if (!d) return;
+  const d = prismDeck.stretch;
   let slow = false;
   const fast = {};
   for (const [k, v] of Object.entries(vals)) {
     d[k] = v;
-    state.stretchRows?.[k]?.sync?.(v);
-    if (HS_FAST.has(k) && !hsLanes()) fast[k] = v; else slow = true;
+    if (HS_FAST.has(k)) fast[k] = v; else slow = true;
   }
   if (Object.keys(fast).length) hsSendFast(fast);
-  if (slow) previewStretch();
+  if (slow) prismStretchSend();
 }
 
 /// At most one request in flight; the newest values win.
@@ -517,7 +502,7 @@ function hsSendFast(vals) {
     hs.pending = null;
     if (!body) { hs.inFlight = false; return; }
     hs.inFlight = true;
-    fetch('/api/engine/pad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    fetch('/api/engine/pad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deck: 'prism', ...body }) })
       .catch(() => {}).finally(go);
   };
   go();
@@ -531,7 +516,7 @@ function hsCommit() {
 function hsSendGlide(v = hs.glide) {
   if (hs.sent === v) return;
   hs.sent = v;
-  postJSON('/api/engine/glide', { smoothing: v }).catch(() => {});
+  postJSON('/api/engine/glide', { deck: 'prism', smoothing: v }).catch(() => {});
 }
 
 /// TrackHotSpot's Shift lock, in pad pixels: anchored where Shift went down;
@@ -554,7 +539,7 @@ function hsLock(p, shift) {
 
 /// Taking, either way: a Loop take, or the armed recorder rolling.
 function hsRecording() {
-  return hsLanes() ? !!(state.captureArmed && engine.playing) : hs.mode === 'rec';
+  return hs.mode === 'rec';
 }
 
 // ------------------------------------------------------------- takes
@@ -566,9 +551,7 @@ function hsStartRec(t) {
   hs.mode = 'rec';
   hsSendGlide();
   // Hyperprism's Record lit Play too: the sound plays while you draw.
-  if (typeof engine !== 'undefined' && !engine.playing && typeof startPlayback === 'function') {
-    try { startPlayback(); } catch { /* no device: the take is still a take */ }
-  }
+  if (prismDeck.path && !prismDeck.playing) prismDeckPlay();
 }
 
 /// AddPoint: at most one a tick, on the tick grid.
@@ -594,9 +577,7 @@ function hsPlay(t) {
   hs.mode = 'play';
   hs.t0 = t;
   hsSendGlide();
-  if (typeof engine !== 'undefined' && !engine.playing && typeof startPlayback === 'function') {
-    try { startPlayback(); } catch { /* no device */ }
-  }
+  if (prismDeck.path && !prismDeck.playing) prismDeckPlay();
   hsPaint();
 }
 
@@ -636,7 +617,7 @@ function hsShape(kind) {
 /// belonged to its file and its window. Time & Pitch keeps HyperStretch's key.
 function hsKey() {
   const src = prismPad?.source || PRISM_STRETCH;
-  return `hyperstretch:${state.selectedFile?.path || ''}${src === PRISM_STRETCH ? '' : `:${src}`}`;
+  return `hyperstretch:${prismDeck.path}${src === PRISM_STRETCH ? '' : `:${src}`}`;
 }
 
 function hsSaveTakes() {
@@ -682,8 +663,7 @@ function hsFrame(now) {
   if (!hs.shown) return;
   const dt = Math.min(100, now - (hs.last || now));
   hs.last = now;
-  if (hsLanes()) hsFollowLanes();
-  else if (hs.mode === 'play') {
+  if (hs.mode === 'play') {
     const take = hs.slots[hs.slot];
     if (take?.pts.length) {
       const e = (now - hs.t0) * hs.rate, d = take.dur;
@@ -705,9 +685,7 @@ function hsFrame(now) {
     hsMoveTo({ x, y }, now);
   }
   // A lanes' take just ended, or a new one arrived: draw it.
-  if (hs.wasArmed && !state.captureArmed) prismLoadPath();
-  hs.wasArmed = !!state.captureArmed;
-  if (prismPad.path !== hs.seenPath || (hsLanes() && hs.armedShown !== hsArmedState())) { hs.seenPath = prismPad.path; hsPaint(); }
+  prismDeckPoll(now);
   // The ring: where Hyperprism's smoothing has the engine now.
   const k = 1 - Math.pow(1 - hsCoef(hs.glide), dt * 44.1 / 512);
   hs.ghost = hs.ghost || { ...hs.hand };
@@ -715,32 +693,6 @@ function hsFrame(now) {
   hs.ghost.y += (hs.hand.y - hs.ghost.y) * k;
   hsPaintGhost();
   hs.raf = requestAnimationFrame(hsFrame);
-}
-
-/// While the lanes' take plays back, the point rides along it, as the rack
-/// pad's dot did. The engine plays the lanes; this only shows where.
-function hsFollowLanes() {
-  const path = prismPad.path || [];
-  if (hs.down || !engine.playing || path.length < 2 || state.captureArmed) return;
-  const frame = playbackTime() * (state.view.sampleRate || 48000);
-  const t = prismTargets();
-  const span = (state.automation?.lanes || []).find((l) => l.target === t?.[0])?.loop;
-  let at = frame;
-  if (Array.isArray(span) && span[1] > span[0] && at >= span[0]) at = span[0] + ((at - span[0]) % (span[1] - span[0]));
-  let i = path.findIndex(([f]) => f >= at);
-  if (i < 0) i = path.length - 1;
-  const [f1, x1, y1] = path[i];
-  const [f0, x0, y0] = path[Math.max(0, i - 1)];
-  const k = f1 > f0 ? Math.max(0, Math.min(1, (at - f0) / (f1 - f0))) : 1;
-  const cx = hsControl('x'), cy = hsControl('y');
-  if (!cx || !cy) return;
-  const x = hsClamp(hsFrac('x', prismUnitValue(cx, x0 + (x1 - x0) * k)));
-  const y = hsClamp(hsFrac('y', prismUnitValue(cy, y0 + (y1 - y0) * k)));
-  if (x !== hs.hand.x || y !== hs.hand.y) { hs.hand = { x, y }; hsPaintSoon(); }
-}
-
-function hsArmedState() {
-  return `${!!state.captureArmed}${typeof engine !== 'undefined' && !!engine.playing}`;
 }
 
 // ------------------------------------------------------------- drawing
@@ -757,13 +709,6 @@ function hsPaintGhost() {
 /// The chip: what the panel is doing, in Loop or in Lanes.
 function hsChipText() {
   const L = 'ABCD'[hs.slot];
-  if (hsLanes()) {
-    hs.armedShown = hsArmedState();
-    if (state.captureArmed && engine.playing) return ['rec', 'REC → lanes · ■ ends the take'];
-    if (state.captureArmed) return ['rec', 'ARMED · ▶ starts the take'];
-    if (engine.playing) return ['play', `PLAY · lanes${$('prismLoop')?.classList.contains('on') ? ' · LOOP' : ''}`];
-    return ['ready', 'READY · ● arms the lanes'];
-  }
   return [hs.mode, { ready: 'READY · grab the pad to record', rec: `REC · ${L} · ${hs.loopOnRelease ? 'release to loop' : 'until ▶ or ■'}`, play: `PLAY · ${L}`, pause: `PAUSE · ${L}` }[hs.mode]];
 }
 
@@ -776,12 +721,6 @@ function hsPaint() {
   chip.dataset.mode = mode;
   $('dockHyper').dataset.mode = mode;
   $('dockHyper').dataset.where = hs.where;
-  document.querySelectorAll('#dockHyper [data-hswhere]').forEach((b) => {
-    b.classList.toggle('on', b.dataset.hswhere === hs.where);
-    b.setAttribute('aria-pressed', String(b.dataset.hswhere === hs.where));
-  });
-  // Always there, so the header never re-wraps and resizes the pad: a Lanes control.
-  $('prismLoop').disabled = !lanes;
 
   const cx = hsControl('x'), cy = hsControl('y');
   $('hsXName').textContent = cx?.label || '';
@@ -851,7 +790,13 @@ function hyperStretchShown(on) {
   if (on === hs.shown) return;
   hs.shown = on;
   if (on) {
-    hsOpen();
+    prismSoundFill();
+    prismDeckShow();
+    if (!prismDeck.path) {
+      let last = '';
+      try { last = localStorage.getItem('prism.sound') || ''; } catch { /* private mode */ }
+      if (last) prismDeckUse(last); else hsOpen();
+    } else hsOpen();
     hsSendGlide();
     hs.last = 0;
     if (!hs.raf) hs.raf = requestAnimationFrame(hsFrame);
@@ -860,7 +805,6 @@ function hyperStretchShown(on) {
   } else {
     if (hs.mode === 'rec') hsStopRec(performance.now());
     if (hs.mode === 'play') hs.mode = 'ready';
-    hsSendGlide(0);
   }
 }
 
@@ -886,8 +830,8 @@ window.hyperStretch = {
   /// Time & Pitch with its own window, in Loop, and nothing taken.
   reset: () => {
     hs.slots = [null, null, null, null]; hs.rec = null; hs.mode = 'ready'; hs.slot = 0;
-    hs.loopOnRelease = false; hs.throwOn = false; hs.rate = 1; hs.dir = 'fwd'; hs.where = 'loop';
-    if (state.rack?.pads?.[PRISM_STRETCH]) { delete state.rack.pads[PRISM_STRETCH]; pushRack({ immediate: true }); }
+    hs.loopOnRelease = false; hs.throwOn = false; hs.rate = 1; hs.dir = 'fwd';
+    if (prismDeck.rack.pads?.[PRISM_STRETCH]) { delete prismDeck.rack.pads[PRISM_STRETCH]; prismPushRack(); }
     if (prismPad.source !== PRISM_STRETCH && prismPad.sources.length) { prismPad.source = PRISM_STRETCH; prismRenderBar(); }
     hs.axes = { x: null, y: null };
     hsSetupChanged();

@@ -74,7 +74,7 @@ pub fn restart(app: &Arc<App>, frames: Option<u32>) -> Result<(), String> {
 
 /// The largest block the device may ask for, which is what every engine here
 /// sizes its buffers from. Matches what `Engine::start` hands `Core`.
-const MAX_BLOCK: usize = 8192;
+pub const MAX_BLOCK: usize = 8192;
 
 fn idle_params() -> StreamParams {
     StreamParams {
@@ -336,11 +336,76 @@ pub fn merge_stretch(p: &mut StreamParams, s: &fx::Stretch) {
 /// out of the speakers has to be what is on the screen, and the two are only
 /// the same thing while the engine is holding the document being adjusted.
 pub fn holding(app: &Arc<App>, rel: &str) -> bool {
+    if let Some(sound) = prism_sound(rel) {
+        return app.prism_playing.read().unwrap().as_deref() == Some(sound);
+    }
     app.playing
         .read()
         .unwrap()
         .as_ref()
         .is_some_and(|n| n.rel == rel)
+}
+
+/// The Prism deck's documents (`engine::decks`): its chain, its Pitch Time
+/// Changer, its post-roll and its pad windows are kept under this prefix and
+/// the sound's path, apart from the grain document of the same sound, so the
+/// Prism panel never touches what the grain engine plays.
+pub const PRISM: &str = "prism:";
+
+/// The sound a Prism key is for, or `None` for a grain document.
+pub fn prism_sound(key: &str) -> Option<&str> {
+    key.strip_prefix(PRISM)
+}
+
+/// The deck a document plays on.
+pub fn deck<'a>(h: &'a Handle, key: &str) -> &'a Arc<engine::Shared> {
+    if prism_sound(key).is_some() { &h.prism } else { &h.shared }
+}
+
+/// Load a sound into the Prism deck, as it is in the library, with the Prism
+/// document's chain, Pitch Time Changer and post-roll. Its stretch starts at
+/// rest on the granular engine; the panel sends its own after.
+pub fn load_prism(app: &Arc<App>, rel: &str, path: &std::path::Path) -> Result<Loaded, String> {
+    ensure(app)?;
+    let mut reader = audio_core::open(path).map_err(|e| format!("could not open: {e}"))?;
+    let info = reader.info();
+    let (src_rate, channels) = (info.sample_rate, info.channels.max(1) as usize);
+    let list = edit::EditList::identity(info.frames(), info.channels, src_rate);
+    let samples = edit::render::render(&list, &mut reader, 0, list.base_frames())
+        .map_err(|e| format!("could not read the sound: {e}"))?;
+    let (dev_rate, dev_channels) = with(app, |h| (h.sample_rate, h.channels))?;
+    let samples = resample(&samples, channels, src_rate, dev_rate);
+    let samples = conform_channels(&samples, channels, dev_channels);
+    let channels = dev_channels.max(1);
+    let out_frames = samples.len() / channels;
+    let source = Arc::new(Source { samples, channels });
+    let key = format!("{PRISM}{rel}");
+    let spec = app.racks.get(&key);
+    with(app, |h| {
+        let d = &h.prism;
+        d.pause();
+        d.set_source(Arc::clone(&source));
+        d.set_params(StreamParams { in_frames: out_frames, sample_rate: dev_rate, ..idle_params() });
+        d.set_map(None);
+        d.set_parts(Arc::new(fx::hstream::Parts::default()));
+        d.request_seek(0);
+        d.set_loop(false, 0, 0);
+        d.reset_governor();
+        d.reset_load();
+        let rack = spec.build(h.sample_rate, h.channels);
+        d.set_rack(if rack.is_empty() { None } else { Some(rack) });
+        d.set_pitch_time(spec.pitch_time);
+        d.set_post_roll_frames((spec.post_roll_ms() as f64 * 0.001 * h.sample_rate as f64) as u64);
+        d.set_bank(engine::stretcher::LayerBank::build(
+            fx::stretch::Algorithm::Granular,
+            fx::Grain::default().layers,
+            MAX_BLOCK,
+            h.channels,
+            h.sample_rate,
+        ));
+    })?;
+    *app.prism_playing.write().unwrap() = Some(rel.to_string());
+    Ok(Loaded { frames: out_frames as u64, sample_rate: dev_rate })
 }
 
 /// What actually has to be rebuilt for a parameter change to be heard.

@@ -110,3 +110,26 @@ fn the_vague_label_is_kept_off_a_sound_that_has_a_real_one() {
         words(&top)
     );
 }
+
+/// The fingerprint the sound map is laid out by. Two kicks are more alike to
+/// the model than a kick and a voice, or the map is meaningless.
+#[test]
+fn the_fingerprint_puts_alike_sounds_together() {
+    let Ok(model) = yamnet::Model::load_default() else { return };
+    let files: Vec<String> = std::fs::read_dir(library(""))
+        .map(|d| d.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect())
+        .unwrap_or_default();
+    let pick = |w: &str| files.iter().filter(|f| f.to_lowercase().contains(w)).cloned().collect::<Vec<_>>();
+    let (kicks, others) = (pick("kick"), pick("vox"));
+    if kicks.len() < 2 || others.is_empty() {
+        return;
+    }
+    let fp = |n: &str| model.listen(&mono(n), 3).unwrap().1;
+    let (a, b, c) = (fp(&kicks[0]), fp(&kicks[1]), fp(&others[0]));
+    assert_eq!(a.len(), 1024, "YAMNet's embedding is 1,024 wide");
+    let cos = |x: &[f32], y: &[f32]| {
+        let d: f32 = x.iter().zip(y).map(|(p, q)| p * q).sum();
+        d / (x.iter().map(|p| p * p).sum::<f32>().sqrt() * y.iter().map(|q| q * q).sum::<f32>().sqrt())
+    };
+    assert!(cos(&a, &b) > cos(&a, &c), "{} and {} should be closer than {}", kicks[0], kicks[1], others[0]);
+}

@@ -15,6 +15,27 @@ use fx::grain::{GrainEvent, StreamParams};
 use fx::stretch::Algorithm;
 const SR: u32 = 48_000;
 
+/// Seconds of CPU this thread has used.
+///
+/// A block's cost is the work it takes, and the wall clock also counts the
+/// time the operating system gives the core to something else: with more jobs
+/// than cores (a test suite, a build, a browser), a wall-clock timing failed
+/// at a different engine every run, on old code and new alike. The thread's
+/// own CPU time leaves that out. Where there is no such clock, the wall clock.
+#[cfg(unix)]
+fn cpu_now() -> f64 {
+    let mut t = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: `t` is a valid timespec for the call to fill.
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut t) };
+    t.tv_sec as f64 + t.tv_nsec as f64 * 1e-9
+}
+#[cfg(not(unix))]
+fn cpu_now() -> f64 {
+    use std::sync::OnceLock;
+    static T0: OnceLock<std::time::Instant> = OnceLock::new();
+    T0.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+}
+
 #[test]
 fn no_engine_takes_longer_to_make_a_block_than_the_block_takes_to_play() {
     let ch = 2;
@@ -64,9 +85,9 @@ fn no_engine_takes_longer_to_make_a_block_than_the_block_takes_to_play() {
         let runs = 300;
         let mut times = Vec::with_capacity(runs);
         for _ in 0..runs {
-            let t = std::time::Instant::now();
+            let t = cpu_now();
             s.render(&mut buf, ch, &src, &sp, &mut evs);
-            times.push(t.elapsed().as_secs_f64());
+            times.push(cpu_now() - t);
         }
         let total: f64 = times.iter().sum();
         times.sort_by(f64::total_cmp);

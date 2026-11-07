@@ -26,6 +26,7 @@
 
 pub mod propagate;
 pub mod resample;
+pub mod embed;
 pub mod store;
 
 use std::path::{Path, PathBuf};
@@ -175,8 +176,19 @@ impl Model {
     /// away against several patches of nothing, and every short sound in the
     /// library would come back quietly labelled "Silence".
     pub fn scores(&self, mono16k: &[f32]) -> Result<Vec<f32>> {
+        Ok(self.run(mono16k)?.0)
+    }
+
+    /// The class scores and the model's own fingerprint of the sound — the
+    /// 1,024 numbers its last layer describes each patch with, before they are
+    /// turned into class names — both averaged over the same patches.
+    ///
+    /// The fingerprint is what the sound map is laid out by. Sounds the model
+    /// hears as alike have fingerprints that point the same way, whether or
+    /// not either of them gets a name.
+    fn run(&self, mono16k: &[f32]) -> Result<(Vec<f32>, Vec<f32>)> {
         let windows = mono16k.len().div_ceil(WINDOW).clamp(1, MAX_WINDOWS);
-        let mut kept: Vec<(f32, Vec<f32>)> = Vec::new();
+        let mut kept: Vec<(f32, Vec<f32>, Vec<f32>)> = Vec::new();
 
         for w in 0..windows {
             let start = w * WINDOW;
@@ -202,41 +214,53 @@ impl Model {
             let flat = scores.as_slice().ok_or_else(|| {
                 Error::Model("model output was not contiguous".into())
             })?;
+            // The second output is the embedding, one row per patch.
+            let emb = match out.get(1) {
+                Some(e) => {
+                    let v = e.to_plain_array_view::<f32>().map_err(|e| Error::Model(e.to_string()))?;
+                    let width = if v.shape().len() == 2 && v.shape()[0] == patches { v.shape()[1] } else { 0 };
+                    v.as_slice().map(|s| (width, s.to_vec())).unwrap_or((0, Vec::new()))
+                }
+                None => (0, Vec::new()),
+            };
 
             for p in 0..patches {
                 let from = p * PATCH_HOP;
                 let to = (from + PATCH).min(chunk.len());
                 let level = if from < to { rms(&chunk[from..to]) } else { 0.0 };
-                kept.push((level, flat[p * classes..(p + 1) * classes].to_vec()));
+                let e = if emb.0 > 0 { emb.1[p * emb.0..(p + 1) * emb.0].to_vec() } else { Vec::new() };
+                kept.push((level, flat[p * classes..(p + 1) * classes].to_vec(), e));
             }
         }
 
         if kept.is_empty() {
-            return Ok(vec![0.0; self.classes.len()]);
+            return Ok((vec![0.0; self.classes.len()], Vec::new()));
         }
 
         // A patch counts if it carries a reasonable share of the loudest
         // patch's level. A file that is silent throughout keeps everything, so
         // it still gets an answer rather than none.
-        let loudest = kept.iter().map(|(l, _)| *l).fold(0.0f32, f32::max);
+        let loudest = kept.iter().map(|(l, _, _)| *l).fold(0.0f32, f32::max);
         let floor = loudest * 0.15;
-        let active: Vec<&Vec<f32>> = kept
-            .iter()
-            .filter(|(l, _)| loudest <= 1e-6 || *l >= floor)
-            .map(|(_, s)| s)
-            .collect();
+        let active: Vec<&(f32, Vec<f32>, Vec<f32>)> =
+            kept.iter().filter(|(l, _, _)| loudest <= 1e-6 || *l >= floor).collect();
 
         let n = active.len().max(1) as f32;
         let mut mean = vec![0f32; self.classes.len()];
-        for s in &active {
+        let width = active.first().map(|a| a.2.len()).unwrap_or(0);
+        let mut emb = vec![0f32; width];
+        for (_, s, e) in &active {
             for (i, v) in s.iter().enumerate().take(mean.len()) {
                 mean[i] += v;
             }
+            for (i, v) in e.iter().enumerate().take(width) {
+                emb[i] += v;
+            }
         }
-        for v in &mut mean {
+        for v in mean.iter_mut().chain(emb.iter_mut()) {
             *v /= n;
         }
-        Ok(mean)
+        Ok((mean, emb))
     }
 
     /// The most likely labels for a sound, best first.
@@ -245,6 +269,14 @@ impl Model {
     /// callers cannot forget it.
     pub fn label(&self, mono16k: &[f32], limit: usize) -> Result<Vec<Detection>> {
         Ok(labels(&self.scores(&present(mono16k))?, &self.classes, limit))
+    }
+
+    /// The labels and the fingerprint together, from one run of the model.
+    /// Presented as [`label`](Self::label) is, so the two describe the same
+    /// thing. The fingerprint is empty if the model has no embedding output.
+    pub fn listen(&self, mono16k: &[f32], limit: usize) -> Result<(Vec<Detection>, Vec<f32>)> {
+        let (scores, embedding) = self.run(&present(mono16k))?;
+        Ok((labels(&scores, &self.classes, limit), embedding))
     }
 
     /// Labels without the presentation step. Only useful for showing what the

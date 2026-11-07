@@ -16,7 +16,16 @@
 
 import { test, expect } from './test.mjs';
 
+async function stubDeck(page) {
+  await page.route('**/api/prism/load**', (route) => {
+    const p = new URL(route.request().url()).searchParams.get('p');
+    route.fulfill({ json: { path: p, frames: 96000, sampleRate: 48000 } });
+  });
+  await page.route('**/api/prism/state**', (route) => route.fulfill({ json: { playing: false, position: 0 } }));
+}
+
 async function ready(page) {
+  await stubDeck(page);
   await page.goto('/');
   await page.waitForFunction(() => typeof state !== 'undefined' && (state.folders || []).length > 0, { timeout: 15_000 });
 }
@@ -30,6 +39,8 @@ async function openPrism(page) {
   await page.locator('#leftRail .rl-item[data-page="prism"]').click();
   await page.waitForFunction(() => state.mode === 'edit' && Object.keys(state.grainRows || {}).length > 0, { timeout: 20_000 });
   await expect(page.locator('#hsPad')).toBeVisible();
+  // Its own sound, on the Prism deck (`prism-deck.spec.mjs`).
+  await page.evaluate(() => window.prismDeck.use(state.selectedFile.path));
   await page.evaluate(() => window.hyperStretch.reset());
 }
 
@@ -39,11 +50,12 @@ async function at(page, fx, fy) {
   return { x: b.x + fx * b.width, y: b.y + fy * b.height, b };
 }
 
-const draft = (page) => page.evaluate(() => ({ ratio: state.stretchDraft.ratio, semitones: state.stretchDraft.semitones }));
+/// The Prism deck's Time & Pitch, which the pad moves.
+const draft = (page) => page.evaluate(() => { const s = window.prismDeck.stretch(); return { ratio: s.ratio, semitones: s.semitones }; });
 
 test.beforeEach(async ({ page }) => {
   await ready(page);
-  await page.evaluate(() => { try { for (const k of Object.keys(localStorage)) if (k.startsWith('hyperstretch')) localStorage.removeItem(k); } catch {} });
+  await page.evaluate(() => { try { for (const k of Object.keys(localStorage)) if (/^(hyperstretch|prism\.)/.test(k)) localStorage.removeItem(k); } catch {} });
 });
 
 test('Prism on the rail opens the open sound on its pad, square and sized to the dock', async ({ page }) => {
@@ -174,10 +186,10 @@ test('a new limit rescales the take so every point keeps its value', async ({ pa
   });
 });
 
-test('Smoothing is Hyperprism’s curve, and goes to the engine; leaving Prism puts it back to none', async ({ page }) => {
+test('Smoothing is Hyperprism’s curve, and goes to the Prism deck, which keeps it after leaving the page', async ({ page }) => {
   await openPrism(page);
   const sent = [];
-  page.on('request', (r) => { if (r.url().endsWith('/api/engine/glide')) sent.push(JSON.parse(r.postData()).smoothing); });
+  page.on('request', (r) => { if (r.url().endsWith('/api/engine/glide')) sent.push(JSON.parse(r.postData())); });
   await page.locator('#hsGlide').fill('25');
   await expect(page.locator('#hsCoef')).toHaveText('0.1000');
   await page.locator('#hsGlide').fill('50');
@@ -186,9 +198,13 @@ test('Smoothing is Hyperprism’s curve, and goes to the engine; leaving Prism p
   await page.locator('#hsGlide').fill('0');
   await expect(page.locator('#hsTau')).toHaveText('instant');
   await page.locator('#hsGlide').fill('40');
-  await expect.poll(() => sent.at(-1)).toBe(40);
+  await expect.poll(() => sent.at(-1)?.smoothing).toBe(40);
+  expect(sent.every((b) => b.deck === 'prism')).toBe(true);
+  // The grain engine was never glided, so leaving has nothing to put back.
+  const n = sent.length;
   await page.locator('#leftRail .rl-item[data-page="grain"]').click();
-  await expect.poll(() => sent.at(-1)).toBe(0);
+  await page.waitForTimeout(300);
+  expect(sent.length).toBe(n);
   const r = await page.evaluate(() => postJSON('/api/engine/glide', { smoothing: 30 }));
   expect(r.ok).toBe(true);
 });
