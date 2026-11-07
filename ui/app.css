@@ -5577,7 +5577,7 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 #grainControls :is(.gc-band, .wild).gc-alt { background: var(--surface-2h); }
 #grainControls :is(.gc-band, .wild) + :is(.gc-band, .wild) { border-top: 1px solid var(--line); }
 /* The row's colour wins over the picture's own group class. */
-#grainControls .gk-row, #grainControls .gk-row > .gg, .chop-fx .gk-row, .chop-fx .gk-row > .gg { --gg: var(--fc, var(--warn)); }
+#grainControls .gk-row, #grainControls .gk-row > .gg, :is(.chop-fx, .prism-bars) .gk-row, :is(.chop-fx, .prism-bars) .gk-row > .gg { --gg: var(--fc, var(--warn)); }
 
 /* The engines, as tiles: a picture of what each does above its name. */
 #grainControls .engine-pick .seg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; background: none; padding: 0; }
@@ -5606,15 +5606,15 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; align-items: center;
 }
 #grainControls.gc-bars :is(.engine-params, .wild-body) > :not(.gk-row) { grid-column: 1 / -1; }
-:is(#grainControls.gc-bars, .chop-fx) .param.gk-row:has(> input[type=range]) {
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .param.gk-row:has(> input[type=range]) {
   grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 0; min-height: 0; height: 28px;
 }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > .gg { width: 28px; height: 21px; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > :is(.k, input, .v) { grid-row: 1; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > input { grid-column: 2 / 4; margin-left: 4px; width: calc(100% - 4px); }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > .k { grid-column: 2; margin-left: 4px; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > .v { grid-column: 3; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range] {
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > .gg { width: 28px; height: 21px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > :is(.k, input, .v) { grid-row: 1; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > input { grid-column: 2 / 4; margin-left: 4px; width: calc(100% - 4px); }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > .k { grid-column: 2; margin-left: 4px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > .v { grid-column: 3; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range] {
   -webkit-appearance: none; appearance: none; height: 24px; border-radius: 4px; cursor: ew-resize;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc) 70%, transparent);
   background:
@@ -5623,31 +5623,31 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
     linear-gradient(var(--fc), var(--fc)) 0 100% / calc(var(--f, 0) * 100%) 1px no-repeat,
     linear-gradient(90deg, color-mix(in srgb, var(--fc) 34%, var(--sink)) calc(var(--f, 0) * 100%), var(--surface-3) 0);
 }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px var(--fc); }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range].gc-dragging { filter: brightness(1.2); }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]::-webkit-slider-runnable-track { background: transparent; height: 24px; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 24px; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]::-moz-range-track { background: transparent; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]::-moz-range-progress { background: transparent; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row > input[type=range]:focus-visible { outline: 2px solid var(--fc); outline-offset: 1px; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > :is(.k, .v) {
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px var(--fc); }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range].gc-dragging { filter: brightness(1.2); }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]::-webkit-slider-runnable-track { background: transparent; height: 24px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 24px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]::-moz-range-track { background: transparent; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]::-moz-range-progress { background: transparent; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]:focus-visible { outline: 2px solid var(--fc); outline-offset: 1px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > :is(.k, .v) {
   z-index: 1; pointer-events: none; padding: 0 4px; color: var(--text);
   text-shadow: 0 0 3px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg);
 }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > .k { justify-self: start; min-width: 0; max-width: 100%; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > .k { justify-self: start; min-width: 0; max-width: 100%; }
 /* A fixed width for the reading, so a bar's width never depends on its value:
    otherwise "155 ms" squeezes the name where "0 ms" did not, and the bar
    jumps between half and full width as it is dragged. */
-:is(#grainControls.gc-bars, .chop-fx) .gk-row:has(> input[type=range]) > .v { justify-self: end; width: 56px; box-sizing: border-box; text-align: right; overflow: visible; padding-left: 2px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > .v { justify-self: end; width: 56px; box-sizing: border-box; text-align: right; overflow: visible; padding-left: 2px; }
 /* A full-width bar has room for a long reading ("−15.00 st · −1500¢"), and its
    width cannot change with its value, so its reading takes what it needs. */
 #grainControls.gc-bars :is(.stretch-core > .gk-row, .gk-row.gc-wide):has(> input[type=range]) > .v { width: auto; min-width: 56px; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row.gc-wide { grid-column: 1 / -1; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row.gc-wide { grid-column: 1 / -1; }
 /* A half bar too narrow for its name and reading side by side: the name on
    top, the reading under it, both inside the bar (`gcWiden`). */
-:is(#grainControls.gc-bars, .chop-fx) .gk-row.gc-stack:has(> input[type=range]) > :is(.k, .v) { grid-column: 2 / 4; font-size: 9px; line-height: 10px; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row.gc-stack:has(> input[type=range]) > .k { align-self: start; margin-top: 3px; }
-:is(#grainControls.gc-bars, .chop-fx) .gk-row.gc-stack:has(> input[type=range]) > .v { align-self: end; justify-self: start; text-align: left; width: auto; margin: 0 0 3px 4px; padding: 0 4px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row.gc-stack:has(> input[type=range]) > :is(.k, .v) { grid-column: 2 / 4; font-size: 9px; line-height: 10px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row.gc-stack:has(> input[type=range]) > .k { align-self: start; margin-top: 3px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row.gc-stack:has(> input[type=range]) > .v { align-self: end; justify-self: start; text-align: left; width: auto; margin: 0 0 3px 4px; padding: 0 4px; }
 
 /* A switch is a bar too: its picture, then a toggle the bar's width with a
    sliding knob, bordered in its colour and filled when on. */
@@ -5949,3 +5949,110 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hs-fader { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 0; }
 .hs-fader input[type="range"] { writing-mode: vertical-lr; direction: rtl; flex: 1 1 auto; min-height: 50px; width: 18px; }
 .hs-fader .mono { font-size: 9px; }
+
+/* ── The Prism page, v7 (RJ, 6 Nov 2026, after the design council: "less
+   color, less chaos, less candy, more professional"). One row of fixed-width
+   banks: Controls (the process's settings as half-width bars with their
+   pictures, and the four LFOs under them), Takes, Output. One accent for
+   "on"; colour only where it means something, and muted: each picture is
+   tinted by what its control does to the sound, each LFO keeps its own hue on
+   its tab, its ring and its scope. No glows. */
+#dockHyper {
+  --plfo1: oklch(76% .06 200); --plfo2: oklch(73% .06 350); --plfo3: oklch(78% .06 130); --plfo4: oklch(78% .06 80);
+  --pv-f-time: oklch(74% .055 75); --pv-f-pitch: oklch(72% .055 300); --pv-f-tone: oklch(74% .045 170);
+  --pv-f-attack: oklch(72% .055 35); --pv-f-space: oklch(74% .045 245); --pv-f-level: oklch(74% .015 250);
+}
+#dockHyper .prism-bars { --f-time: var(--pv-f-time); --f-pitch: var(--pv-f-pitch); --f-tone: var(--pv-f-tone);
+  --f-attack: var(--pv-f-attack); --f-space: var(--pv-f-space); --f-level: var(--pv-f-level); }
+/* Fixed widths: Controls two units, Takes one, Output half. Nothing stretches. */
+#dockHyper .hs-banks { flex: none; display: flex; gap: 1px; }
+#dockHyper .hs-bank { flex: none; overflow: hidden; gap: 4px; padding: 5px 7px; }
+#dockHyper .prism-ctl { width: 409px; }
+#dockHyper .prism-takes { width: 204px; }
+#dockHyper .prism-out { width: 102px; }
+#dockHyper .hs-h { display: flex; align-items: center; gap: 4px; color: var(--text-2); white-space: nowrap; }
+/* The bars, a little shorter than the Grain tray's: 20 px, two to a line. */
+#dockHyper .prism-bars { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3px 6px; align-content: start; }
+#dockHyper .prism-takebars { grid-template-columns: minmax(0, 1fr); }
+#dockHyper .prism-bars .param.gk-row:has(> input[type=range]) { height: 22px; grid-template-columns: 26px minmax(0, 1fr) auto; }
+#dockHyper .prism-bars .gk-row > .gg { width: 26px; height: 19.5px; cursor: pointer; }
+#dockHyper .prism-bars .gk-row > input[type=range] { height: 20px; border-radius: 2px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--fc) 18%, var(--surface-3)) calc(var(--f, 0) * 100%), var(--surface-1, var(--surface-2)) 0); }
+#dockHyper .prism-bars .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc) 60%, var(--line-2)); }
+#dockHyper .prism-bars .gk-row > input[type=range]::-webkit-slider-runnable-track { height: 20px; }
+#dockHyper .prism-bars .gk-row > input[type=range]::-webkit-slider-thumb { height: 20px; width: 1.5px; background: color-mix(in srgb, var(--fc) 70%, var(--text)); }
+#dockHyper .prism-bars .gk-row:has(> input[type=range]) > :is(.k, .v) { text-shadow: none; font-size: 10.5px; }
+#dockHyper .prism-bars .gk-row:has(> input[type=range]) > .v { width: auto; min-width: 0; font-family: var(--mono); font-size: 10px; }
+#dockHyper .prism-bars .gg .a { stroke-width: 2.2; }
+#dockHyper .prism-settings .prism-group-label { grid-column: 1 / -1; font: 600 9px/12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); margin-top: 1px; }
+#dockHyper .prism-onpad > input[type=range] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, var(--line-2)) !important; }
+#dockHyper .prism-ax { font: 700 9px var(--mono); color: var(--accent); margin-left: 4px; }
+/* An LFO on a bar: a thin ring in its colour and a marker where it is. */
+#dockHyper .prism-bar { position: relative; }
+#dockHyper .plfo-mark { display: none; position: absolute; top: 1px; bottom: 1px; width: 1.5px; margin-left: -.75px; background: var(--lc); pointer-events: none; z-index: 2; }
+#dockHyper .prism-bar.plfo-on > input[type=range] { box-shadow: inset 0 0 0 1px var(--lc) !important; }
+#dockHyper .prism-bar.plfo-on > .plfo-mark { display: block; }
+body.prism-mapping #dockHyper #prismSettings .prism-bar > input[type=range] { cursor: copy; outline: 1px dashed var(--plfo-map); outline-offset: 1px; }
+/* The LFOs, under the controls they move. */
+#dockHyper .plfo { margin-top: auto; border-top: 1px solid var(--line); padding-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+#dockHyper .plfo-head { display: flex; align-items: center; gap: 6px; }
+#dockHyper .plfo-tabs { display: grid; grid-template-columns: repeat(4, 26px); gap: 2px; }
+#dockHyper .plfo-tab { position: relative; height: 20px; padding: 0 7px 0 0; border: 1px solid var(--line-2); border-radius: 2px; background: var(--surface-2); color: var(--text-dim); font: 600 10px var(--mono); cursor: pointer; }
+#dockHyper .plfo-tab.on { background: var(--surface-3); color: var(--text); border-color: var(--lc); }
+#dockHyper .plfo-tab i { position: absolute; right: 3px; top: 7px; width: 4px; height: 4px; border-radius: 50%; background: var(--lc); }
+#dockHyper .plfo-shapes { flex: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
+#dockHyper .plfo-shape { height: 20px; padding: 1px 2px; border: 1px solid var(--line-2); border-radius: 2px; background: var(--surface-2); cursor: pointer; }
+#dockHyper .plfo-shape svg { display: block; width: 100%; height: 100%; }
+#dockHyper .plfo-shape path { fill: none; stroke: var(--text-dim); stroke-width: 1.6; }
+#dockHyper .plfo-shape.on { border-color: var(--accent); }
+#dockHyper .plfo-shape.on path { stroke: var(--text); }
+#dockHyper .plfo-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+#dockHyper .plfo-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#dockHyper .plfo-col.prism-bars { display: grid; grid-template-columns: minmax(0, 1fr); }
+#dockHyper .plfo-scope { display: block; width: 100%; height: 30px; background: var(--surface-1, var(--surface-2)); border: 1px solid var(--line); }
+#dockHyper .plfo-axis { stroke: var(--line-2); }
+#dockHyper .plfo-trace { fill: none; stroke: var(--lc); stroke-width: 1.4; opacity: .7; vector-effect: non-scaling-stroke; }
+#dockHyper .plfo-head-line { stroke: var(--lc); opacity: .35; vector-effect: non-scaling-stroke; }
+#dockHyper .plfo-dot { fill: var(--lc); }
+#dockHyper .plfo-map { display: flex; align-items: center; gap: 5px; }
+#dockHyper .plfo-mapbtn.on { color: var(--text); border-color: var(--lc); background: color-mix(in srgb, var(--lc) 22%, var(--surface-3)); }
+#dockHyper .plfo-chips { display: flex; flex-wrap: wrap; gap: 3px; min-height: 16px; }
+#dockHyper .plfo-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 0 0 5px; height: 16px; font-size: 10px; color: var(--text-2); border: 1px solid color-mix(in srgb, var(--lc) 55%, var(--line-2)); border-radius: 2px; }
+#dockHyper .plfo-chip button { border: 0; background: none; color: var(--text-dim); cursor: pointer; padding: 0 4px; font-size: 11px; line-height: 14px; }
+#dockHyper .plfo-chip button:hover { color: var(--text); }
+/* Takes: the slots fill what the bank has left, so it has no gap at its foot. */
+#dockHyper .prism-takes .hs-slots { flex: 1 1 auto; min-height: 30px; }
+#dockHyper .prism-takes .hs-slot { justify-content: flex-start; min-height: 0; padding: 2px; }
+#dockHyper .prism-takes .hs-slot svg { flex: 1 1 auto; width: 100%; min-height: 0; height: auto; }
+#dockHyper .prism-rateplay { justify-content: space-between; }
+#dockHyper .prism-glide-kv { grid-template-columns: auto auto auto auto; justify-content: start; font-size: 9px; gap: 0 6px; }
+#dockHyper .prism-motion { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
+#dockHyper .prism-motion .hs-btn { padding: 0 2px; min-width: 0; font-size: 9.5px; }
+#dockHyper .hs-tog { display: flex; align-items: center; justify-content: center; gap: 3px; height: 20px; font-size: 9.5px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-3); cursor: pointer; white-space: nowrap; }
+#dockHyper .hs-tog:has(input:checked) { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface-3)); }
+#dockHyper .hs-tog input { margin: 0; width: 11px; height: 11px; }
+#dockHyper .prism-out .hs-faders { flex: 1 1 auto; }
+#dockHyper .hs-seg button.on { background: color-mix(in srgb, var(--accent) 24%, var(--surface-3)); color: var(--text); font-weight: 500; }
+/* The quieter pad: slate, a faint grid, a plain point. */
+#dockHyper .hs-pad { background: color-mix(in srgb, var(--accent) 9%, var(--surface-1, #161b22)); border-color: var(--line-2); }
+#dockHyper .hs-grid { stroke: rgba(255,255,255,0.06); }
+#dockHyper .hs-ball { fill: var(--text); stroke: var(--bg); }
+#dockHyper .hs-slot svg { background: color-mix(in srgb, var(--accent) 9%, var(--surface-1, #161b22)); }
+#dockHyper .hs-slot polyline { stroke: color-mix(in srgb, var(--accent) 70%, var(--text)); stroke-width: 2.5; }
+/* The Process menu, with its pictures: short and wide, inside the panel. */
+.ppick { position: relative; }
+.ppick-btn { display: flex; align-items: center; gap: 4px; width: 190px; height: 22px; padding: 0 6px 0 2px; border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-3); color: var(--text); font-size: 11px; cursor: pointer; --gg: var(--text-2); }
+.ppick-btn::after { content: "▾"; margin-left: auto; color: var(--text-dim); }
+.ppick-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ppick .pic { flex: none; width: 24px; height: 18px; overflow: visible; }
+.ppick-menu { position: absolute; z-index: 40; top: 25px; left: 0; display: grid; grid-template-columns: repeat(5, 152px); gap: 0 8px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 8px 20px rgba(0,0,0,.45); }
+.ppick-menu[hidden] { display: none; }
+.ppick-g { display: flex; flex-direction: column; margin-bottom: 4px; }
+.ppick-g > i { font: 600 9px/13px var(--mono); font-style: normal; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }
+.ppick-i { display: flex; align-items: center; gap: 5px; height: 20px; padding: 0 4px 0 1px; border: 0; border-left: 2px solid transparent; background: none; color: var(--text-2); font-size: 11px; text-align: left; white-space: nowrap; cursor: pointer; --gg: var(--text-2); }
+.ppick-i:hover, .ppick-i:focus-visible { background: var(--surface-3); color: var(--text); outline: none; }
+.ppick-i.on { border-left-color: var(--accent); background: var(--surface-3); color: var(--text); --gg: var(--text); }
+.ppick-i .pic { width: 22px; height: 16.5px; }
+/* The native menu stays for the paths that pick a source by value; unseen. */
+.ppick-mirror { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

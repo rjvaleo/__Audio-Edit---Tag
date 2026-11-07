@@ -37,7 +37,7 @@
 
 const HS_TICK = 1000 / 60.15;
 /// What the banks beside the pad need, at the least; the pad gives way first.
-const HS_BANKS_MIN = 560;
+const HS_BANKS_MIN = 724;
 /// The two the engine glides, sent straight to it as a Loop take plays.
 const HS_FAST = new Set(['ratio', 'semitones']);
 
@@ -112,7 +112,11 @@ function hsBuild() {
   host.innerHTML = `
     <div class="hs-head">
       <span class="hs-title">PRISM</span>
-      <label class="hs-lbl">Source <select id="prismSource" class="mini" aria-label="What the pad drives"></select></label>
+      <div class="ppick" id="prismPick">
+        <button type="button" class="ppick-btn" id="prismPickBtn" aria-haspopup="listbox" aria-expanded="false" title="The process on the pad: all of Hyperprism's, Time & Pitch and the Pitch Time Changer"></button>
+        <div class="ppick-menu" id="prismPickMenu" role="listbox" aria-label="Processes" hidden></div>
+        <select id="prismSource" class="ppick-mirror" tabindex="-1" aria-hidden="true"></select>
+      </div>
       <label class="hs-lbl">X <select id="prismX" class="mini" aria-label="Across the pad"></select></label>
       <label class="hs-lbl">Y <select id="prismY" class="mini" aria-label="Up the pad"></select></label>
       <span class="hs-vsep"></span>
@@ -165,44 +169,62 @@ function hsBuild() {
         <div class="hs-foot"><span class="hs-dim">engine now</span><span class="mono" id="hsNow"></span></div>
       </div>
       <div class="hs-banks">
-        <section class="hs-bank" aria-label="Settings">
-          <div class="hs-h">SETTINGS <span id="hsSetSub"></span>
-            <button type="button" class="hs-btn hidden" id="prismPtcOn" title="Hyperprism's Pitch Time Changer: on or off. Moving its pad turns it on.">PTC</button></div>
-          <div id="hsGlideBox" class="hs-glide">
-            <label class="hs-row">Glide <input type="range" id="hsGlide" min="0" max="100" step="1" aria-label="Glide: Hyperprism's Smoothing"></label>
-            <div class="hs-kv"><span>setting</span><span class="mono" id="hsGlideV"></span><span>coefficient</span><span class="mono" id="hsCoef"></span>
-              <span>catch-up</span><span class="mono" id="hsTau"></span></div>
-          </div>
-          <div class="prism-settings" id="prismSettings"></div>
+        <section class="hs-bank prism-ctl" aria-label="Controls">
+          <div class="hs-h">CONTROLS <span id="hsSetSub"></span>
+            <button type="button" class="hs-btn hidden" id="prismPtcOn" title="Hyperprism's Pitch Time Changer: on or off. Moving its pad turns it on.">PTC</button>
+            <span class="hs-fill"></span><span class="hs-dim">double-click a picture to reset</span></div>
+          <div class="prism-settings prism-bars" id="prismSettings"></div>
+          <div class="plfo" id="prismLfos"></div>
         </section>
-        <section class="hs-bank" aria-label="Gestures">
-          <div class="hs-h">GESTURES <span id="hsGestSub"></span></div>
+        <section class="hs-bank prism-takes" aria-label="Takes">
+          <div class="hs-h">TAKES <span id="hsGestSub"></span></div>
           <div class="hs-slots">${[0, 1, 2, 3].map((i) => `<button type="button" class="hs-slot" data-slot="${i}" aria-label="Take ${'ABCD'[i]}">
             <span class="hs-slot-top"><b>${'ABCD'[i]}</b><span class="mono hs-dim" data-len></span></span>
-            <svg width="40" height="40" viewBox="0 0 100 100" aria-hidden="true"><polyline data-thumb points=""/></svg></button>`).join('')}</div>
-          <div class="hs-row">rate <span class="hs-seg">${[[0.5, '×½'], [1, '×1'], [2, '×2']].map(([v, l]) => `<button type="button" data-hsrate="${v}">${l}</button>`).join('')}</span></div>
-          <div class="hs-row">play <span class="hs-seg">${[['fwd', '→', 'Forwards'], ['rev', '←', 'Backwards'], ['pp', '⇄', 'Back and forth']].map(([v, l, t]) => `<button type="button" data-hsdir="${v}" aria-label="${t}" title="${t}">${l}</button>`).join('')}</span></div>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline data-thumb points=""/></svg></button>`).join('')}</div>
+          <div class="hs-row prism-rateplay"><span class="hs-seg" aria-label="Rate">${[[0.5, '×½'], [1, '×1'], [2, '×2']].map(([v, l]) => `<button type="button" data-hsrate="${v}">${l}</button>`).join('')}</span>
+            <span class="hs-seg" aria-label="Direction">${[['fwd', '→', 'Forwards'], ['rev', '←', 'Backwards'], ['pp', '⇄', 'Back and forth']].map(([v, l, t]) => `<button type="button" data-hsdir="${v}" aria-label="${t}" title="${t}">${l}</button>`).join('')}</span></div>
+          <div class="prism-bars prism-takebars" id="prismTakeBars"></div>
+          <div class="hs-kv prism-glide-kv" id="hsGlideBox" title="Glide is Hyperprism's Smoothing: the pad steps, the sound glides"><span>coefficient</span><span class="mono" id="hsCoef"></span><span>catch-up</span><span class="mono" id="hsTau"></span><span class="hidden mono" id="hsGlideV"></span></div>
+          <div class="prism-motion" aria-label="Motion">
+            <label class="hs-tog" title="Let go while moving and the point keeps going"><input type="checkbox" id="hsThrow"> Throw</label>
+            <label class="hs-tog" title="A take plays as soon as you let go"><input type="checkbox" id="hsLoopRelease"> Loop on release</label>
+            ${[['circle', 'Circle'], ['eight', 'Figure 8'], ['liss', 'Lissajous'], ['drift', 'Drift']].map(([k, l]) => `<button type="button" class="hs-btn" data-hsshape="${k}" title="Draw a ${l.toLowerCase()} into the take">${l}</button>`).join('')}
+          </div>
         </section>
-        <section class="hs-bank" aria-label="Motion">
-          <div class="hs-h">MOTION</div>
-          <label class="hs-row"><input type="checkbox" id="hsThrow"> Throw</label>
-          <label class="hs-row"><input type="checkbox" id="hsLoopRelease"> Loop on release</label>
-          <div class="hs-dim">draw a gesture into the take</div>
-          <div class="hs-shapes">${[['circle', 'Circle'], ['eight', 'Figure 8'], ['liss', 'Lissajous'], ['drift', 'Drift']].map(([k, l]) => `<button type="button" class="hs-btn" data-hsshape="${k}">${l}</button>`).join('')}</div>
-        </section>
-        <section class="hs-bank" aria-label="Output">
-          <div class="hs-h">OUTPUT <span>Hyperprism's own</span></div>
-          <label class="hs-col" title="Hyperprism's Playback Speed: tape speed before the rack, pitch and time together · double-click for 100 %">Playback speed <span class="mono hs-dim" id="prismSpeedRead">100 %</span>
-            <input type="range" id="prismSpeed" min="0" max="255" step="1" value="128" aria-label="Playback speed"></label>
-          <label class="hs-row" title="How long this process runs on silence past the end, so its tail is heard">Post-roll
-            <input id="prismPostRoll" class="mini mono hs-ms" type="number" min="0" step="1" value="0" aria-label="Post-roll in milliseconds"> ms</label>
+        <section class="hs-bank prism-out" aria-label="Output">
+          <div class="hs-h">OUTPUT</div>
           <div class="hs-faders">${fader('prismFaderL', 'L', 'Left fader')}${fader('prismFaderLR', 'LR', 'Both faders')}${fader('prismFaderR', 'R', 'Right fader')}</div>
         </section>
       </div>
     </div>`;
+  prismTakeBarsBuild();
+  prismPickerWire();
   hsWire();
   hsFit();
   hsPaint();
+}
+
+/// Glide, Playback speed and Post-roll as bars with their pictures, on the
+/// elements the rest of the panel already drives by id.
+function prismTakeBarsBuild() {
+  const box = $('prismTakeBars');
+  if (!box) return;
+  const glide = prismBar({ key: 'smoothing', label: 'Glide', min: 0, max: 100, step: 1, default: 50, unit: '%' }, hs.glide,
+    { facet: 'time', format: (v) => `${Math.round(v)} %` });
+  glide.querySelector(':scope > input').id = 'hsGlide';
+  const speed = prismBar({ key: 'pbSpeed', label: 'Playback speed', min: 0, max: 255, step: 1, default: 128 }, prismHp.speed,
+    { facet: 'time', format: (v) => `${Math.round(prismSpeedRate(v) * 100)} %` });
+  speed.querySelector(':scope > input').id = 'prismSpeed';
+  speed.querySelector(':scope > .v').id = 'prismSpeedRead';
+  speed.title = "Hyperprism's Playback Speed: tape speed before the chain, pitch and time together · double-click the picture for 100 %";
+  const post = prismBar({ key: 'postRoll', label: 'Post-roll', min: 0, max: 10000, step: 10, default: 0, unit: 'ms' },
+    prismDeck.rack?.postRoll?.[prismPad.source] || 0, { facet: 'time', format: (v) => `${Math.round(v)} ms` });
+  post.querySelector(':scope > input').id = 'prismPostRoll';
+  post.title = 'How long this process runs on silence past the end, so its tail is heard';
+  box.append(glide, speed, post);
+  prismFollow(glide, () => hs.glide);
+  prismFollow(speed, () => prismHp.speed);
+  prismFollow(post, () => prismDeck.rack?.postRoll?.[prismPad.source] || 0);
 }
 
 /// Square, the largest the dock leaves room for beside the banks, as the rack
@@ -337,8 +359,10 @@ function hsWire() {
   };
   for (const [id, key] of [['prismSpeed', 'speed'], ['prismFaderL', 'l'], ['prismFaderLR', 'lr'], ['prismFaderR', 'r']]) {
     const el = $(id);
-    el.oninput = () => prismFaderSet(key, +el.value);
-    el.ondblclick = () => prismFaderSet(key, 128);
+    // The speed is a bar (`prismBar`), whose own handler draws it: beside it.
+    if (key === 'speed') el.addEventListener('input', () => prismFaderSet(key, +el.value));
+    else el.oninput = () => prismFaderSet(key, +el.value);
+    el.addEventListener('dblclick', () => prismFaderSet(key, 128));
   }
   for (const [id, key] of [['prismFaderZeroL', 'l'], ['prismFaderZeroLR', 'lr'], ['prismFaderZeroR', 'r']]) {
     $(id).onclick = () => prismFaderSet(key, 128);
@@ -384,7 +408,11 @@ async function hsOpen() {
     prismPad.sources = r.sources || [];
   } catch { prismPad.sources = []; }
   if (!prismPad.sources.some((s) => s.id === prismPad.source)) prismPad.source = PRISM_STRETCH;
+  // The LFOs are kept per sound: load this one's before the bars ask for rings.
+  prismLfoLoad();
   prismRenderBar();
+  prismLfoRender();
+  prismLfoStart();
   prismShowHp();
   prismLoadPresets();
   hsLoadTakes();

@@ -410,83 +410,118 @@ function prismShowPtc() {
   b.setAttribute('aria-pressed', prismPtc().on ? 'true' : 'false');
 }
 
-/// The process's settings other than its two axes, in the Prism page's
-/// Settings bank, all of them (RJ: "Move all the extra setting to the Prism
-/// stand-alone"), as knobs drawn the way the granular tray's are (`gkKnob`).
-/// Each moves the value its own control elsewhere moves: Time & Pitch's
-/// through `stretchDraft`, the Pitch Time Changer's through `/api/pitchtime`,
-/// a slot's through `liveParam`, as the FX tab's do (`prismModuleControl`).
+/// Every setting of the process on the pad, in the Controls column (RJ:
+/// "Move all the extra setting to the Prism stand-alone"), as half-width bars
+/// with their pictures (`prismBar`, the v7 panel): the two on the pad first,
+/// marked X and Y, then the rest in the effect's own groups ("Added (not in the
+/// original)" among them). Each moves the value its own control elsewhere
+/// moves: Time & Pitch's through the deck's stretch, the Pitch Time Changer's
+/// through `/api/pitchtime`, a slot's through `prismLiveParam`. An LFO
+/// (`387-prism-lfo.js`) shows on a bar as a ring and a moving marker.
 const PRISM_STRETCH_DEFAULTS = { ratio: 1, semitones: 0, windowMs: 46, cloudMix: 0.5 };
 function prismRenderSettings() {
   const box = $('prismSettings');
   if (!box) return;
   box.innerHTML = '';
+  if (typeof prismLfo === 'object') prismLfo.rows.clear();
   const src = prismCurrent();
   if (!src) return;
   const p = prismSetup();
-  const onPad = (key) => key === p?.x || key === p?.y;
-  const knob = (row) => { if (row.querySelector(':scope > input[type=range]')) gkKnob(row); return row; };
-  const group = (label) => {
-    const g = document.createElement('div');
-    g.className = 'prism-group';
-    if (label) {
-      const l = document.createElement('span');
-      l.className = 'prism-group-label';
-      l.textContent = label;
-      g.appendChild(l);
-    }
-    const body = document.createElement('div');
-    body.className = 'prism-bank-body';
-    g.appendChild(body);
-    box.appendChild(g);
-    return body;
+  const label = (text) => {
+    const l = document.createElement('div');
+    l.className = 'prism-group-label';
+    l.textContent = text;
+    box.appendChild(l);
   };
-  const step = (c) => (c.step === 1 ? 1 : (c.max - c.min) / 400);
+  let specs, read, write, commit, kind = '', groups;
   if (src.id === PRISM_STRETCH || src.id === PRISM_PTC) {
-    const body = group('');
-    const pt = src.id === PRISM_PTC ? prismPtc() : null;
-    for (const c of src.controls) {
-      if (onPad(c.key)) continue;
-      const v = pt ? pt[c.key] ?? PTC_DEFAULTS[c.key] : prismRead(c.key);
-      const def = pt ? PTC_DEFAULTS[c.key] : PRISM_STRETCH_DEFAULTS[c.key];
-      const row = pt
-        ? param(c.label, v, c.min, c.max, 1, (x) => `${Math.round(x)} %`, (x) => prismPtcSet({ [c.key]: Math.round(x) }), () => {}, false, def)
-        : param(c.label, v, c.min, c.max, step(c), (x) => prismFormat(c, x),
-          (x) => prismWrite(c.key, x), () => prismStretchSend(), c.log, def);
-      body.appendChild(knob(row));
+    const ptc = src.id === PRISM_PTC;
+    specs = src.controls.map((c) => ({ ...c, default: ptc ? PTC_DEFAULTS[c.key] : PRISM_STRETCH_DEFAULTS[c.key], step: ptc ? 1 : c.step }));
+    read = (k) => (ptc ? prismPtc()[k] ?? PTC_DEFAULTS[k] : prismRead(k));
+    write = ptc ? (k, v) => prismPtcSet({ [k]: Math.round(v) }) : (k, v) => prismWrite(k, v);
+    commit = ptc ? () => {} : () => prismStretchSend();
+  } else {
+    const slot = prismDeck.rack.slots?.find((s) => s.id === src.id);
+    if (!slot) return;
+    kind = slot.kind;
+    const shaper = state.shapers?.[slot.kind];
+    if (shaper?.params?.length && slot.kind !== 'comp') {
+      slot.params = slot.params || {};
+      for (const sp of shaper.params) if (slot.params[sp.key] === undefined) slot.params[sp.key] = sp.default;
+      specs = shaper.params;
+      groups = shaper.panel?.groups;
+      read = (k) => slot.params[k];
+      write = (k, v) => { slot.params[k] = v; prismLiveParam(slot.id, k, v); };
+    } else {
+      // No shaper to ask (the compressor, the built-ins): the source's controls.
+      specs = src.controls;
+      read = (k) => prismRead(k);
+      write = (k, v) => prismWrite(k, v);
     }
-    return;
+    commit = () => prismPushRack();
   }
-  const slot = prismDeck.rack.slots?.find((s) => s.id === src.id);
-  if (!slot) return;
-  const shaper = state.shapers?.[slot.kind];
-  if (!shaper?.params?.length || slot.kind === 'comp') {
-    // No shaper to ask (the compressor, the built-ins): the source's controls.
-    const body = group('');
-    for (const c of src.controls) {
-      if (onPad(c.key)) continue;
-      const fmt = c.choices ? (x) => c.choices[Math.round(x - c.min)] ?? String(Math.round(x)) : (x) => prismFormat(c, x);
-      body.appendChild(knob(param(c.label, prismRead(c.key), c.min, c.max, step(c), fmt,
-        (x) => prismWrite(c.key, c.step === 1 ? Math.round(x) : x), () => prismPushRack(), c.log && c.step !== 1, undefined)));
-    }
-    return;
-  }
-  // Every parameter the effect has, switches and choices too, in its own
-  // groups ("Added (not in the original)" among them), as the FX tab has them.
-  slot.params = slot.params || {};
-  for (const sp of shaper.params) if (slot.params[sp.key] === undefined) slot.params[sp.key] = sp.default;
-  const byKey = Object.fromEntries(shaper.params.map((sp) => [sp.key, sp]));
-  const groups = shaper.panel?.groups?.length ? shaper.panel.groups : [{ label: '', keys: shaper.params.map((sp) => sp.key) }];
+  const byKey = Object.fromEntries(specs.map((c) => [c.key, c]));
   const seen = new Set();
-  const rows = {};
-  const add = (label, keys) => {
-    const mine = keys.filter((k) => byKey[k] && !onPad(k) && !seen.has(k));
-    if (!mine.length) return;
-    const body = group(label);
-    for (const k of mine) { seen.add(k); body.appendChild(knob(prismModuleControl(slot, byKey[k], rows, undefined, PRISM_DECK_IO))); }
+  const add = (keys) => {
+    for (const k of keys) {
+      if (!byKey[k] || seen.has(k)) continue;
+      seen.add(k);
+      const c = byKey[k];
+      const row = prismBar(c, read(k), {
+        kind,
+        onInput: (v) => {
+          write(k, v);
+          if (k === p?.x || k === p?.y) { if (typeof hsHandFromValues === 'function') hsHandFromValues(); if (typeof hsPaint === 'function') hsPaint(); }
+        },
+        onCommit: () => commit(),
+      });
+      row.dataset.src = src.id;
+      const ax = k === p?.x ? 'X' : k === p?.y ? 'Y' : '';
+      if (ax) {
+        row.classList.add('prism-onpad');
+        row.querySelector(':scope > .k')?.insertAdjacentHTML('beforeend', `<b class="prism-ax">${ax}</b>`);
+      }
+      row.base = () => read(k);
+      box.appendChild(row);
+      if (typeof prismLfo === 'object') prismLfo.rows.set(`${src.id}\u0000${k}`, row);
+    }
   };
-  for (const g of groups) add(g.label, g.keys);
-  add('', shaper.params.map((sp) => sp.key));
+  // The pad's two first, then the effect's own groups, then anything left.
+  add([p?.x, p?.y].filter(Boolean));
+  for (const g of groups?.length ? groups : []) {
+    const rest = (g.keys || []).filter((k) => byKey[k] && !seen.has(k));
+    if (!rest.length) continue;
+    if (g.label && g.label !== 'Pad') label(g.label.replace('Added (not in the original)', 'Added · not in the original'));
+    add(rest);
+  }
+  add(specs.map((c) => c.key));
+  if (!box.dataset.wired) {
+    box.dataset.wired = '1';
+    // Mapping an LFO: a click on a bar maps it rather than moving it.
+    box.addEventListener('pointerdown', (e) => {
+      if (typeof prismLfo !== 'object' || !prismLfo.mapping) return;
+      const row = e.target.closest('.prism-bar');
+      if (!row) return;
+      e.preventDefault();
+      e.stopPropagation();
+      prismLfoToggle({ src: row.dataset.src, key: row.dataset.key });
+    }, true);
+  }
+  if (typeof prismLfoMark === 'function') prismLfoMark();
+}
+
+/// The bars follow what moves their settings elsewhere (the pad, a take, a
+/// preset), each frame the LFOs run, unless a hand is on them.
+function prismSettingsFollow() {
+  if (typeof prismFollowAll === 'function') prismFollowAll();
+  if (typeof prismLfo !== 'object') return;
+  for (const row of prismLfo.rows.values()) {
+    if (row.classList.contains('plfo-on')) continue;
+    const input = row.querySelector(':scope > input[type=range]');
+    if (!input || input.classList.contains('gc-dragging') || document.activeElement === input) continue;
+    const v = row.base?.();
+    if (Number.isFinite(v) && Math.abs(v - (row.read ? row.read() : +input.value)) > 1e-6 * Math.max(1, Math.abs(v))) row.sync?.(v);
+  }
 }
 
 /// Two numbers with their units, the way Hyperprism printed them on its edges.
@@ -524,6 +559,7 @@ function prismRenderBar() {
   $('prismYLo').value = shown(p?.yLo); $('prismYHi').value = shown(p?.yHi);
   prismShowPtc();
   prismRenderSettings();
+  if (typeof prismPickerRender === 'function') prismPickerRender();
 }
 
 // ───────────────────────────── Hyperprism's Playback Speed and its faders

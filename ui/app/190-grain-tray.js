@@ -239,7 +239,9 @@ function gkGlyphRow(row) {
 /// difference.
 function gcRelative(input) {
   input.addEventListener('pointerdown', (e) => {
-    if (!$('grainControls')?.classList.contains('gc-bars') || e.button !== 0) return;
+    // The Grain tray's bars, and those built from them on Chop and Prism.
+    const bars = input.closest('.chop-fx, .prism-bars') || $('grainControls')?.classList.contains('gc-bars');
+    if (!bars || e.button !== 0) return;
     e.preventDefault();
     input.focus();
     const min = +input.min, max = +input.max;

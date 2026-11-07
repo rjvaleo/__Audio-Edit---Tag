@@ -190,7 +190,10 @@ const PRISM_PIC = (() => {
   HP_DRAW.lfoRate = (v) => L(4, 24, 60, 24) + wave(6, 58, 24, 9, Math.max(0.5, Math.min(8, v)));
   HP_DRAW.lfoDepth = (v, n) => L(4, 24, 60, 24) + L(6, 10, 58, 10, 'f', dash) + L(6, 38, 58, 38, 'f', dash) + wave(6, 58, 24, 14 * n + 0.3, 2);
   HP_DRAW.lfoPw = (v) => { const w = v / 100 * 26; return P(`M6 36L6 12L${6 + w} 12L${6 + w} 36L32 36L32 12L${32 + w} 12L${32 + w} 36L58 36`); };
-  HP_FACET.time.push('lfoRate', 'lfoDepth', 'lfoPw');
+  // The Takes bank's own: Hyperprism's 0–255 Playback Speed, and Post-roll.
+  HP_DRAW.pbSpeed = (v) => HP_DRAW.speed(v / 128 * 100);
+  HP_DRAW.postRoll = (v, n) => ground() + P(bell(14, 12, 26), 'f') + P(`M20 ${B - 14}C${(26 + 30 * n).toFixed(1)} ${B - 6} ${(30 + 30 * n).toFixed(1)} ${B} ${(32 + 26 * n).toFixed(1)} ${B}`);
+  HP_FACET.time.push('lfoRate', 'lfoDepth', 'lfoPw', 'pbSpeed', 'postRoll');
 
   return { HP_DRAW, PROC_ICON, HP_FACET, facetOf, hpGlyph, procIcon, L, P, wave, dash };
 })();

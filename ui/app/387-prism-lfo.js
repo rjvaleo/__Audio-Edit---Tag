@@ -23,7 +23,7 @@
    document has nowhere for them yet. */
 
 /// Text for markup: a control's or a process's name.
-const prismEsc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const prismEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').split('"').join('&quot;');
 
 const PRISM_LFO_SHAPES = ['sine', 'triangle', 'square', 'saw', 'random', 'pulse'];
 /// How often the deck hears a swing, in ms: the pad's own pace.
@@ -37,7 +37,7 @@ const prismLfo = {
   sel: 0,
   mapping: false,
   raf: 0, last: 0, sent: 0,
-  /// The rows on screen, by source and key, for the marker to move.
+  /// The bars on screen (`prismBar`), by source and key, for the marker to move.
   rows: new Map(),
 };
 
@@ -162,6 +162,10 @@ function prismLfoStart() {
       l.phase += l.rate * dt;
       if (Math.floor(l.phase) !== before) l.held = Math.random();
     }
+    // Only while the Prism page is out: off it there is nothing to see, and
+    // nothing of the deck's is being played with.
+    if (!document.body.classList.contains('prismpage')) return;
+    prismSettingsFollow();
     prismLfoPaint();
     if (now - prismLfo.sent < PRISM_LFO_SEND_MS) return;
     prismLfo.sent = now;
@@ -251,11 +255,12 @@ function prismLfoToggle(t) {
 
 /// Put the rings on the controls the LFOs drive.
 function prismLfoMark() {
-  for (const [id, { row }] of prismLfo.rows) {
+  for (const [id, row] of prismLfo.rows) {
     const [src, key] = id.split('\u0000');
     const by = prismLfo.lfos.find((l) => l.targets.some((t) => t.src === src && t.key === key));
     row.classList.toggle('plfo-on', !!by);
     if (by) row.style.setProperty('--lc', `var(--plfo${by.i})`);
+    else row.rest?.();
   }
 }
 
@@ -279,17 +284,17 @@ function prismLfoPaint() {
     sc.innerHTML = `<line x1="0" y1="20" x2="188" y2="20" class="plfo-axis"/><path d="${d}" class="plfo-trace"/>`
       + `<line x1="${(ph * 188).toFixed(1)}" y1="0" x2="${(ph * 188).toFixed(1)}" y2="40" class="plfo-head-line"/><circle cx="${(ph * 188).toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" class="plfo-dot"/>`;
   }
-  for (const [id, r] of prismLfo.rows) {
+  for (const [id, row] of prismLfo.rows) {
     const [src, key] = id.split('\u0000');
     const t = { src, key };
     if (!prismLfo.lfos.some((l) => l.targets.some((x) => x.src === src && x.key === key))) continue;
     const got = prismLfoControl(t);
     if (!got) continue;
     const v = prismLfoValue(t, got.c, got.base);
-    r.show(v);
+    row.show(v);
   }
 }
 
-addEventListener('keydown', (e) => {
+window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && prismLfo.mapping) { prismLfo.mapping = false; prismLfoRender(); }
 });
