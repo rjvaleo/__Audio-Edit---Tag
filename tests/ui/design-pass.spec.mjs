@@ -90,7 +90,7 @@ test('C1 · every word on screen is set at a step of the type scale', async ({ p
 
 test('C1 · the stylesheets name no size between the steps', async () => {
   const bad = [];
-  for (const f of ['app.css', 'rail.css']) {
+  for (const f of ['app.css', 'rail.css', 'wave.css']) {
     const css = readFileSync(join(UI, f), 'utf8');
     for (const m of css.matchAll(/font(?:-size)?:[^;{}]*?(\d+(?:\.\d+)?)px/g)) {
       const px = +m[1];

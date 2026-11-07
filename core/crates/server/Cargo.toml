@@ -10,6 +10,10 @@ audio-core = { path = "../audio-core" }
 edit = { path = "../edit" }
 fx = { path = "../fx" }
 engine = { path = "../engine" }
+wave = { path = "../wave" }
+# MIDI in for the Wave synth: CoreMIDI on the Mac. Opened lazily on a
+# thread of its own (`midi.rs`).
+midir = "0.11"
 search = { path = "../search" }
 yamnet = { path = "../yamnet" }
 catalog = { path = "../catalog" }

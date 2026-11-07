@@ -18,17 +18,23 @@ function setMode(mode) {
 
   const wasRoom = state.mode === 'room';
   const wasCompose = state.mode === 'compose';
+  const wasSynth = state.mode === 'synth';
   state.mode = mode;
   const editing = mode === 'edit';
   const room = mode === 'room';
   const seq = mode === 'seq';
   const compose = mode === 'compose';
+  // The Wave page: the synth, which plays no sound file and needs none open.
+  // It takes the whole middle, as the sequencer does. See `docs/WAVE-SYNTH.md`.
+  const synth = mode === 'synth';
 
   // Borrowed elements go home before anything is measured or toggled. Leaving
   // this until later would have the mode's own show/hide rules applied to
   // elements still sitting inside a hidden view.
   if (wasRoom && !room) leaveRoomView();
   if (wasCompose && !compose) composeLeave();
+  // Its telemetry and its frame loop stop the moment it is not on screen.
+  if (wasSynth && !synth) wvLeave();
 
   // The spectrogram is not an option in edit mode, it is what edit mode is for.
   state.showSpec = editing;
@@ -56,13 +62,14 @@ function setMode(mode) {
   // The lane is the sound as a document — the thing you cut. The room is the
   // sound as a picture, and it takes the whole middle; the overview strip along
   // the top is what stays, because that is the one that says *where you are*.
-  $('lane').classList.toggle('hidden', room || seq || compose);
+  $('lane').classList.toggle('hidden', room || seq || compose || synth);
+  $('waveView').classList.toggle('hidden', !synth);
   // Compose lays the same frame over its SEQ cell — see `composeEnter`.
   $('seqView')?.classList.toggle('hidden', !(seq || compose));
   if (seq || compose) seqEnsureFrame();
   document.querySelectorAll('#leftRail .mode-btn').forEach((b) =>
     b.classList.toggle('active', b.dataset.mode === mode));
-  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : compose ? 'Compose' : 'Browse';
+  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : compose ? 'Compose' : synth ? 'Wave' : 'Browse';
   document.body.classList.toggle('editing', editing);
   // Edit and Grain are the same document, one mode; the page says which
   // furniture is out (`body.wavepage`, the Edit page's toolbar).
@@ -73,17 +80,19 @@ function setMode(mode) {
   document.body.classList.toggle('roomview', room);
   document.body.classList.toggle('seqview', seq);
   document.body.classList.toggle('composeview', compose);
+  document.body.classList.toggle('synthpage', synth);
   // The modes that give the whole width to the middle, so the library becomes
   // a floating drawer rather than a docked column. Its own class rather than
   // `.editing, .roomview` repeated down the stylesheet: the drawer's geometry
   // is one idea and it should have one name, or the next mode to want it will
   // be a third selector added to six rules.
-  document.body.classList.toggle('docmode', docMode);
+  document.body.classList.toggle('docmode', docMode || synth);
 
   // After the toggles, so the parts it borrows are in the state this mode gave
   // them before they are moved.
   if (room) enterRoomView();
   if (compose) composeEnter();
+  if (synth) wvEnter();
 
   // Edit has nothing to say about folder tags, and the rail's Browse tools
   // only make sense in Browse — but the library button still opens the drawer.
@@ -96,7 +105,7 @@ function setMode(mode) {
   }
 
   const panel = $('leftPanel');
-  if (docMode) {
+  if (docMode || synth) {
     // Docked column becomes an overlay drawer, shut by default: the editor and
     // the room each get the whole width until you go looking for something.
     panel.classList.remove('collapsed');
@@ -107,12 +116,14 @@ function setMode(mode) {
     // wants this as much as the editor does: it is drawn from the document's
     // own playback, so arriving with nothing open is arriving at a test card
     // and a space bar that does nothing.
-    if (state.selectedFile && !state.tabs.length) {
+    //
+    // Not the synth: it plays no document, so it opens none.
+    if (docMode && state.selectedFile && !state.tabs.length) {
       state.tabs.push(blankTab(state.selectedFile));
       state.activeTab = 0;
       stashActiveTab();
     }
-    renderTabs();
+    if (docMode) renderTabs();
   } else {
     panel.classList.remove('drawer-closed', 'collapsed');
     state.drawerOpen = true;

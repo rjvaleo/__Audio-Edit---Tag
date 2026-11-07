@@ -73,6 +73,11 @@ const COMPOSE_LISTED = false;
       icon: 'chop', label: 'Chop', mode: 'edit', page: 'chop',
       title: 'Chop — cut the sound at its silences into slices, after Recycle Reborn',
     },
+    // Its own mode, `synth`, never `page: 'wave'`: that is the Edit page's.
+    {
+      icon: 'synth', label: 'Wave', mode: 'synth',
+      title: 'Wave — the wavetable synth: draw, warp and play tables',
+    },
     {
       icon: 'visual', label: 'Visual', mode: 'room',
       title: 'The room, full size, and everything that draws it',
@@ -182,6 +187,9 @@ const COMPOSE_LISTED = false;
       '<path d="M7.6 18.5h9.2a3.4 3.4 0 0 0 .35-6.78 5.35 5.35 0 0 0-10.03-2.3 4.1 4.1 0 0 0 .48 9.08z"/><circle cx="9.6" cy="13.4" r=".85" fill="currentColor" stroke="none"/><circle cx="13" cy="11.9" r=".85" fill="currentColor" stroke="none"/><circle cx="15.4" cy="14.6" r=".85" fill="currentColor" stroke="none"/><circle cx="11.7" cy="15.6" r=".85" fill="currentColor" stroke="none"/>',
     visual:
       '<rect x="3.5" y="3.5" width="17" height="17" rx="1.6"/><path d="M5.5 7.2 Q12 5.4 18.5 7.2"/><path d="M5.5 9.4 Q12 5.8 18.5 9.4"/><path d="M5.5 11.6 Q12 6.2 18.5 11.6"/><path d="M5.5 13.8 Q12 8.4 18.5 13.8"/><path d="M5.5 16.0 Q12 12.4 18.5 16.0"/><path d="M5.5 18.2 Q12 16.4 18.5 18.2"/>',
+    // Three cycles of a wavetable, one behind another.
+    synth:
+      '<path d="M3 15c2-6 4-6 6 0s4 6 6 0"/><path d="M7 11.5c2-5 4-5 6 0s4 5 5.5 0" opacity=".65"/><path d="M11 8c1.6-4 3.2-4 4.8 0s3.2 4 4.2 0" opacity=".4"/>',
     // Four steps of a sequence, at four heights.
     seq:
       '<rect x="3.5" y="12.5" width="3.4" height="8"/><rect x="8.7" y="7.5" width="3.4" height="13"/><rect x="13.9" y="10" width="3.4" height="10.5"/><rect x="19.1" y="4" width="3.4" height="16.5"/>',

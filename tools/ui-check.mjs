@@ -246,6 +246,8 @@ const globals = new Set([
   'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array',
   'ArrayBuffer', 'DataView', 'TextDecoder',
   'TextEncoder', 'atob', 'btoa', 'CustomEvent', 'Event', 'Node', 'HTMLElement',
+  // Canvas paths, which the Wave page draws every control with.
+  'Path2D',
 ]);
 
 // The other scripts on the page.

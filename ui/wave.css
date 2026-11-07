@@ -1,0 +1,211 @@
+/* Wave: the wavetable synth page. See docs/WAVE-SYNTH.md.
+
+   The look is mock-up v6, Graphite + Acrylic, ported as it was approved. The
+   page keeps its own tokens (the mock-up's `body.AD`), set on #waveView so they
+   reach nothing else; the type is the app's: its scale (--fs-xs … --fs-xl) and
+   its faces (--sans, --mono).
+
+   The page is laid out at one fixed size, 1460 × 862, and scaled whole to fit
+   the centre (`wvFit`). Modules have fixed widths and nothing reflows, so a
+   smaller window is the same page smaller, never a cropped one. Every rule is
+   under #waveView or body.synthpage. */
+
+body.synthpage #overview { display: none; }
+
+#waveView {
+  --wv-chassis: #121316; --wv-panel: #1b1d21; --wv-panel-hi: #262a30; --wv-well: #06070a;
+  --wv-line: #2c3036; --wv-t: #e8eaee; --wv-t2: #b9bec6; --wv-t3: #858b94;
+  --wv-wave: #ffffff; --wv-bloom: 205,225,255; --wv-acc: #7cf0d0; --wv-mod: #8aa0c8;
+  --wv-arc: #d3d7de; --wv-track: #2a2e34; --wv-glow: 1.1;
+  --wv-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: hidden;
+  color: var(--wv-t); font: var(--fs-m)/1.3 var(--sans); user-select: none;
+  background: var(--wv-grain), radial-gradient(120% 80% at 30% 0%, var(--wv-panel), var(--wv-chassis) 60%);
+  background-blend-mode: soft-light, normal;
+}
+#waveView.hidden { display: none; }
+#waveView * { box-sizing: border-box; }
+#waveView canvas { display: block; touch-action: none; }
+#waveView [hidden] { display: none !important; }
+
+/* the page, at its own size, scaled into the centre */
+#waveView .wv-app {
+  position: absolute; left: 0; top: 0; width: 1460px; height: 862px; transform-origin: 0 0;
+  display: flex; flex-direction: column;
+}
+#waveView .wv-mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+#waveView .wv-sp { flex: 1; }
+
+/* materials */
+#waveView .wv-panel {
+  background: linear-gradient(180deg, var(--wv-panel-hi), var(--wv-panel) 30%, var(--wv-panel));
+  border: 1px solid var(--wv-line); border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(0,0,0,.45), 0 1px 1px rgba(0,0,0,.6), 0 6px 14px rgba(0,0,0,.45), 0 16px 34px rgba(0,0,0,.35);
+}
+#waveView .wv-well {
+  position: relative; border-radius: 7px;
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--wv-well) 70%, var(--wv-panel)), var(--wv-well) 70%);
+  box-shadow: inset 0 3px 6px rgba(0,0,0,.9), inset 0 0 0 1px rgba(0,0,0,.75), 0 1px 0 rgba(255,255,255,.06);
+}
+#waveView .wv-btn {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--wv-panel-hi) 80%, #fff 6%), var(--wv-panel));
+  border: 1px solid color-mix(in srgb, var(--wv-line) 80%, #fff 8%); border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.6); color: var(--wv-t2); cursor: pointer;
+}
+#waveView .wv-btn.on {
+  background: var(--wv-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.85); color: var(--wv-t);
+  border-color: color-mix(in srgb, var(--wv-acc) 55%, var(--wv-line));
+}
+#waveView .wv-cap {
+  position: absolute; border-radius: 50%;
+  background: radial-gradient(circle at 50% 115%, color-mix(in srgb, var(--wv-acc) calc(var(--v,0)*42%), transparent), transparent 62%),
+    repeating-conic-gradient(from 0deg, rgba(255,255,255,.03) 0deg 2deg, rgba(0,0,0,.03) 2deg 4deg),
+    radial-gradient(circle at calc(38% + var(--lx,0)*22%) calc(28% + var(--ly,0)*22%), color-mix(in srgb, var(--wv-panel-hi) 60%, #fff 14%) 0%, var(--wv-panel-hi) 50%, var(--wv-panel) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -2px 3px rgba(0,0,0,.55), 0 2px 3px rgba(0,0,0,.7), 0 6px 12px rgba(0,0,0,.5), 0 0 calc(var(--v,0)*14px) color-mix(in srgb, var(--wv-acc) calc(var(--v,0)*28%), transparent);
+}
+#waveView .wv-cap.face {
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--wv-well) 80%, #fff 4%), var(--wv-well) 70%);
+  box-shadow: inset 0 3px 6px rgba(0,0,0,.95), 0 0 0 2px var(--wv-line), 0 0 0 3px rgba(255,255,255,.04);
+}
+
+/* header */
+#waveView .wv-head { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; flex: none; }
+#waveView .wv-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--wv-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); }
+#waveView .wv-tab { height: 26px; width: 84px; justify-content: center; border-radius: 7px; display: flex; align-items: center; gap: 6px; color: var(--wv-t3); font-weight: 500; cursor: pointer; }
+#waveView .wv-tab svg { width: 16px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#waveView .wv-tab.on { color: var(--wv-t); background: linear-gradient(180deg, var(--wv-panel-hi), var(--wv-panel)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 1px 3px rgba(0,0,0,.6); }
+#waveView .wv-preset { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px; width: 300px; }
+#waveView .wv-preset .pn { flex: 1; font-weight: 600; color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-preset .pt { font-size: var(--fs-s); color: var(--wv-t3); white-space: nowrap; }
+#waveView .wv-ib { width: 24px; height: 24px; display: grid; place-items: center; color: var(--wv-t2); cursor: pointer; flex: none; }
+#waveView .wv-ib svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#waveView .wv-offline { font-size: var(--fs-s); color: var(--wv-t3); white-space: nowrap; display: flex; align-items: center; gap: 5px; }
+#waveView .wv-offline i { width: 6px; height: 6px; border-radius: 50%; background: var(--wv-track); box-shadow: inset 0 0 0 1px var(--wv-t3); }
+
+/* module chrome */
+#waveView .wv-mod { position: relative; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 7px; }
+#waveView .wv-mh { display: flex; align-items: center; gap: 8px; height: 22px; }
+#waveView .wv-nm { font: 600 var(--fs-m) var(--mono); letter-spacing: .14em; color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-led { width: 8px; height: 8px; border-radius: 50%; background: var(--wv-acc); box-shadow: 0 0 8px var(--wv-acc); cursor: pointer; flex: none; }
+#waveView .wv-led.off { background: var(--wv-track); box-shadow: none; }
+#waveView .wv-pick { display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px 0 4px; color: var(--wv-t); font-weight: 500; width: 170px; white-space: nowrap; }
+#waveView .wv-pick canvas { flex: none; }
+#waveView .wv-pick::after { content: "▾"; margin-left: auto; color: var(--wv-t3); }
+#waveView .wv-chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; font: 500 var(--fs-s) var(--sans); color: var(--wv-t2); white-space: nowrap; }
+#waveView .wv-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--wv-mod); flex: none; }
+#waveView .wv-chip svg { width: 14px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+#waveView .wv-ro { font: 400 var(--fs-s) var(--mono); color: var(--wv-t2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#waveView .wv-lab { display: flex; justify-content: space-between; gap: 4px; width: 100%; font: 500 var(--fs-s) var(--sans); color: var(--wv-t3); white-space: nowrap; }
+#waveView .wv-lab b { font: 400 var(--fs-s) var(--mono); color: var(--wv-t2); font-variant-numeric: tabular-nums; }
+#waveView .wv-col { flex-direction: column; align-items: flex-start; gap: 0; width: auto; }
+#waveView .wv-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+#waveView .wv-cell.c .wv-lab { flex-direction: column; align-items: center; gap: 0; }
+#waveView .wv-knob { position: relative; flex: none; }
+#waveView .wv-knob canvas { position: absolute; inset: 0; }
+#waveView .wv-glyphs { display: flex; gap: 3px; }
+#waveView .wv-g { width: 26px; height: 20px; display: grid; place-items: center; flex: none; }
+#waveView .wv-g svg { width: 16px; height: 12px; }
+#waveView .wv-g path { fill: none; stroke: var(--wv-t3); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#waveView .wv-g.on path { stroke: var(--wv-acc); }
+#waveView .wv-seg { display: flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--wv-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); flex: none; }
+#waveView .wv-seg > span { height: 20px; padding: 0 9px; white-space: nowrap; display: flex; align-items: center; gap: 4px; border-radius: 5px; color: var(--wv-t3); font-weight: 500; cursor: pointer; }
+#waveView .wv-seg > span.on { color: var(--wv-t); background: linear-gradient(180deg, var(--wv-panel-hi), var(--wv-panel)); box-shadow: 0 1px 2px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); }
+#waveView .wv-seg svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+#waveView .wv-hint { color: var(--wv-t3); font-size: var(--fs-s); white-space: nowrap; }
+
+/* views */
+#waveView .wv-view { flex: 1; min-height: 0; padding: 4px 14px 12px; display: none; }
+#waveView .wv-view.on { display: flex; gap: 12px; }
+
+/* Play */
+#waveView .wv-colL { width: 872px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+#waveView .wv-colR { width: 548px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+#waveView .wv-osc .wv-body { display: flex; gap: 8px; align-items: flex-start; }
+#waveView .wv-osc .wv-tbl { display: flex; flex-direction: column; gap: 4px; }
+#waveView .wv-warps { display: flex; gap: 6px; }
+#waveView .wv-warp { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 72px; }
+#waveView .wv-warp .wv-glyphs { display: grid; grid-template-columns: 24px 44px; gap: 0 4px; align-items: center; width: 72px; }
+#waveView .wv-warp .wv-g { width: 24px; }
+#waveView .wv-ofx .wv-lab { align-items: center; }
+#waveView .wv-ofx .wv-lab .wv-g { width: 36px; height: 28px; }
+#waveView .wv-ofx .wv-lab .wv-g svg { width: 26px; height: 20px; }
+#waveView .wv-ofx .wv-lab .wv-g path { stroke: var(--fxc); stroke-width: 1.8; }
+#waveView .wv-k4 { display: flex; gap: 6px; }
+#waveView .wv-k4 .wv-kc { display: flex; flex-direction: column; gap: 4px; width: 54px; }
+#waveView .wv-subrow { display: flex; gap: 10px; }
+#waveView .wv-subrow .wv-mod { flex: 1; flex-direction: row; align-items: center; gap: 10px; }
+#waveView .wv-voicing { flex-direction: row; align-items: center; gap: 8px; }
+#waveView .wv-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#waveView .wv-fcol { display: flex; flex-direction: column; gap: 4px; }
+#waveView .wv-frow { display: flex; align-items: center; gap: 6px; }
+#waveView .wv-tabs4 { display: flex; gap: 4px; }
+#waveView .wv-t4 { width: 70px; height: 34px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; position: relative; cursor: grab; }
+#waveView .wv-t4 b { font: 600 var(--fs-xs) var(--mono); letter-spacing: .08em; color: var(--wv-t3); white-space: nowrap; }
+#waveView .wv-t4.on b { color: var(--wv-t); }
+#waveView .wv-t4 canvas { opacity: .85; }
+#waveView .wv-t4 .act { position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--wv-mod); opacity: var(--o,0); }
+#waveView .wv-ed { display: flex; gap: 10px; }
+#waveView .wv-ed .dim { opacity: .4; pointer-events: none; }
+#waveView .wv-targets { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
+#waveView.wv-mapping canvas[data-tgt] { cursor: copy; outline: 1px dashed var(--wv-mod); outline-offset: 2px; border-radius: 50%; }
+
+/* Create */
+#waveView .wv-tools { width: 44px; display: flex; flex-direction: column; gap: 6px; padding: 8px 6px; flex: none; align-self: flex-start; }
+#waveView .wv-tool { width: 32px; height: 30px; display: grid; place-items: center; }
+#waveView .wv-tool svg { width: 18px; height: 16px; fill: none; stroke: var(--wv-t2); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#waveView .wv-tool.on svg { stroke: var(--wv-acc); }
+#waveView .wv-ccol { width: 874px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+#waveView .wv-rcol { width: 490px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+#waveView .wv-ops { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+#waveView .wv-ops.three { grid-template-columns: repeat(3, 1fr); }
+#waveView .wv-op { height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: 500 var(--fs-s) var(--sans); white-space: nowrap; }
+#waveView .wv-op svg { width: 44px; height: 24px; }
+#waveView .wv-op path { fill: none; stroke: var(--wv-wave); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
+#waveView .wv-op path.gh { stroke: var(--wv-t3); opacity: .6; }
+#waveView .wv-lib { display: flex; align-items: center; gap: 8px; padding: 6px; }
+#waveView .wv-lib .nm2 { font-weight: 600; color: var(--wv-t); }
+#waveView .wv-formula { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; font: 400 var(--fs-m) var(--mono); color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-formula span { color: var(--wv-t3); }
+
+/* dock: wheels, keys, morph puck, macros */
+#waveView .wv-dock { height: 120px; flex: none; border-top: 1px solid var(--wv-line); display: flex; gap: 10px; align-items: stretch; padding: 8px 14px 10px; background: rgba(0,0,0,.22); }
+#waveView .wv-wheels { display: flex; gap: 6px; }
+#waveView .wv-wheel { border-radius: 6px; cursor: ns-resize; }
+#waveView .wv-keys { position: relative; flex: none; }
+#waveView .wv-macrodock { display: grid; grid-template-columns: repeat(8, 56px); gap: 2px; align-content: center; }
+#waveView .wv-kbinfo { width: 96px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+#waveView .wv-kbinfo .wv-hint { white-space: normal; }
+
+/* menus: drawn inside the page, so they scale with it */
+#waveView .wv-menu {
+  position: absolute; z-index: 50; padding: 8px; display: grid; grid-template-columns: repeat(3, 96px); gap: 5px; border-radius: 12px;
+  background: color-mix(in srgb, var(--wv-panel) 82%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border: 1px solid var(--wv-line); box-shadow: 0 18px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
+}
+#waveView .wv-wt { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px 3px; border-radius: 7px; cursor: pointer; color: var(--wv-t2); font: 500 var(--fs-s) var(--sans); white-space: nowrap; }
+#waveView .wv-wt:hover { background: rgba(255,255,255,.05); color: var(--wv-t); }
+#waveView .wv-wt.on { color: var(--wv-t); box-shadow: inset 0 0 0 1px var(--wv-acc); }
+#waveView .wv-shelf { grid-template-columns: repeat(4, 156px); gap: 8px; padding: 10px; }
+#waveView .wv-pc { display: flex; flex-direction: column; gap: 3px; padding: 5px; border-radius: 9px; cursor: pointer; }
+#waveView .wv-pc:hover { background: rgba(255,255,255,.04); }
+#waveView .wv-pc.on { box-shadow: inset 0 0 0 1px var(--wv-acc); }
+#waveView .wv-pc b { font: 600 var(--fs-m) var(--sans); color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-pc span { font: 400 var(--fs-s) var(--sans); color: var(--wv-t3); white-space: nowrap; }
+
+/* Matrix */
+#waveView .wv-mxt { width: 952px; display: flex; flex-direction: column; flex: none; align-self: flex-start; }
+#waveView .wv-mxh, #waveView .wv-mxr { display: grid; grid-template-columns: 26px 150px 120px 100px 236px 1fr 24px; align-items: center; gap: 10px; height: 36px; padding: 0 6px; }
+#waveView .wv-mxh { height: 24px; color: var(--wv-t3); font: 500 var(--fs-s) var(--sans); text-transform: uppercase; letter-spacing: .08em; }
+#waveView .wv-mxr { border-top: 1px solid rgba(255,255,255,.04); }
+#waveView .wv-mxr .src { display: flex; align-items: center; gap: 6px; color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-mxr.empty { opacity: .35; }
+#waveView .wv-mxr .dst { color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-mxr .wv-chip { justify-content: flex-start; }
+
+/* FX */
+#waveView .wv-fxrow { display: flex; gap: 12px; }
+#waveView .wv-fxc { width: 276px; display: flex; flex-direction: column; gap: 7px; flex: none; }
+#waveView .wv-fxc.off { opacity: .55; }
+#waveView .wv-fxk { display: flex; justify-content: space-around; }
+/* Sixteen routes in view; past that the list scrolls rather than the page growing. */
+#waveView #wvMxRows { max-height: 576px; overflow-y: auto; }

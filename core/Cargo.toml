@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/audio-core", "crates/catalog", "crates/indexer", "crates/server", "crates/audiolab", "crates/edit", "crates/fx", "crates/engine", "crates/search", "crates/yamnet"]
+members = ["crates/audio-core", "crates/catalog", "crates/indexer", "crates/server", "crates/audiolab", "crates/edit", "crates/fx", "crates/engine", "crates/search", "crates/yamnet", "crates/wave"]
 resolver = "2"
 
 [workspace.package]
@@ -18,4 +18,6 @@ opt-level = 3
 [profile.dev.package.fx]
 opt-level = 3
 [profile.dev.package.engine]
+opt-level = 3
+[profile.dev.package.wave]
 opt-level = 3

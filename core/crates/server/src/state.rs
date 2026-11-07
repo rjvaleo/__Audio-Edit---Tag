@@ -600,6 +600,9 @@ pub struct App {
     /// a library out is seconds of work, and it only changes when a sound is
     /// added, removed or listened to.
     pub soundmap: RwLock<Option<MapCache>>,
+    /// The Wave page's synth: its patch, tables and presets, and the handle
+    /// every audio device's synth deck is given (`wave_synth.rs`).
+    pub wave: crate::wave_synth::WaveState,
 }
 
 /// The last sound map worked out, and what it was worked out from.
@@ -627,6 +630,7 @@ impl App {
         let user_tags = crate::usertags::Store::load(&data_dir.join("USER-TAGS.tsv"));
         let automation = crate::automation::AutomationStore::load(&data_dir.join("AUTOMATION.json"));
         let visual_lanes = crate::docs::DocJsonStore::load(&data_dir.join("VISUAL-AUTOMATION.json"));
+        let wave = crate::wave_synth::WaveState::load(&data_dir);
         let overrides = std::fs::read_to_string(data_dir.join("TAG-OVERRIDES.json"))
             .ok()
             .and_then(|s| crate::json::parse(&s))
@@ -674,6 +678,7 @@ impl App {
             recorder: Mutex::new(None),
             presets: RwLock::new(presets),
             saved: RwLock::new(saved),
+            wave,
         };
         app.load_config();
         let _ = app.load_index();

@@ -34,7 +34,9 @@ pub fn ensure(app: &Arc<App>) -> Result<(), String> {
         channels: 1,
     });
     let frames = *app.buffer_frames.read().unwrap();
-    *slot = Some(engine::spawn(idle_params(), silent, frames)?);
+    // The synth deck's handle outlives any one device, so a device reopened
+    // at a new buffer size keeps the Wave page's patch and tables.
+    *slot = Some(engine::spawn_with(idle_params(), silent, frames, Arc::clone(&app.wave.shared))?);
     Ok(())
 }
 
