@@ -750,8 +750,9 @@ function prismSoundRow(slot, input) {
 }
 
 /// One prism control: a slider, stepping through whole values for a count and
-/// reading as a name for a choice, or a switch.
-function prismModuleControl(slot, p, rows, moved = () => {}) {
+/// reading as a name for a choice, or a switch. `io` is where it sends: the FX
+/// tab's rack by default, the Prism deck's chain from the Prism page.
+function prismModuleControl(slot, p, rows, moved = () => {}, io = { live: liveParam, commit: commitRack }) {
   // A switch, or a choice of two or three, as named buttons beside its full
   // label — the shared panel's radio buttons, as SoundHack drew "Below Thresh."
   // and "Above Thresh." — rather than a slider or a squeezed switch label.
@@ -761,8 +762,8 @@ function prismModuleControl(slot, p, rows, moved = () => {}) {
     const now = p.toggle ? (slot.params[p.key] >= (p.min + p.max) / 2 ? p.max : p.min) : Math.round(slot.params[p.key]);
     const row = seg(p.label, options, now, (v) => {
       slot.params[p.key] = v;
-      liveParam(slot.id, p.key, v);
-      commitRack();
+      io.live(slot.id, p.key, v);
+      io.commit();
       moved();
     });
     rows[p.key] = row;
@@ -775,10 +776,10 @@ function prismModuleControl(slot, p, rows, moved = () => {}) {
     (v) => {
       const value = stepped ? Math.round(v) : v;
       slot.params[p.key] = value;
-      liveParam(slot.id, p.key, value);
+      io.live(slot.id, p.key, value);
       moved();
     },
-    () => { commitRack(); }, p.log && !stepped, p.default);
+    () => { io.commit(); }, p.log && !stepped, p.default);
   rows[p.key] = row;
   return row;
 }

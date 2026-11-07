@@ -5887,6 +5887,16 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hs-chip[data-mode="play"] { color: var(--good); }
 #hsNow { font-size: 10px; }
 .hs-body { flex: 1 1 0; display: flex; gap: 10px; padding: 8px; min-height: 0; overflow: hidden; }
+/* The Prism deck's strip (`engine/src/decks.rs`): Prism's own sound, its
+   waveform with the playhead, its transport and its chain. One line, so the
+   pad's size never depends on it. */
+.hs-deck { flex: none; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--surface-0); border-bottom: 1px solid var(--line); overflow: hidden; }
+.hs-deck select.mini { width: 120px; min-width: 0; }
+.hs-deck-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.hs-wave { flex: 1 1 120px; min-width: 80px; height: 22px; background: var(--sink); border: 1px solid var(--line); border-radius: 3px; }
+.hs-chain { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
+.prism-chain-slot { display: inline-flex; align-items: center; gap: 4px; padding: 0 2px 0 6px; height: 20px; border: 1px solid var(--line-2); border-radius: 4px; white-space: nowrap; }
+.prism-chain-slot .hs-btn { padding: 0 4px; min-width: 0; }
 .hs-stage { flex: none; display: flex; flex-direction: column; gap: 3px; }
 .hs-top { display: flex; align-items: center; gap: 4px; height: 21px; margin-left: 41px; width: var(--hs-side); }
 .hs-mid { display: flex; }

@@ -11,26 +11,36 @@
 //     on it in Loop mode moves the slot's two controls;
 //   - the Settings bank has every control of the source but the two on the
 //     pad, and moving one moves the value the FX tab moves;
-//   - Loop and Lanes: where a take goes.
+//   - since 6 Nov 2026 the pad drives the Prism deck (`prism-deck.spec.mjs`),
+//     whose document is `prism:<sound>`; the Lanes were the grain document's.
 // The rest is in `hyperstretch.spec.mjs` (the pad and its takes) and
 // `prism-pad.spec.mjs` (the sources, limits, lanes, presets and faders).
 
 import { test, expect } from './test.mjs';
 
+async function stubDeck(page) {
+  await page.route('**/api/prism/load**', (route) => {
+    const p = new URL(route.request().url()).searchParams.get('p');
+    route.fulfill({ json: { path: p, frames: 96000, sampleRate: 48000 } });
+  });
+  await page.route('**/api/prism/state**', (route) => route.fulfill({ json: { playing: false, position: 0 } }));
+}
+
 async function openPrism(page, slots = []) {
+  await stubDeck(page);
   await page.goto('/');
   await page.waitForFunction(
     () => typeof state !== 'undefined' && (state.folders || []).length > 0, { timeout: 20_000 });
   await page.evaluate(async (slots) => {
-    try { for (const k of Object.keys(localStorage)) if (k.startsWith('hyperstretch')) localStorage.removeItem(k); } catch {}
+    try { for (const k of Object.keys(localStorage)) if (/^(hyperstretch|prism\.)/.test(k)) localStorage.removeItem(k); } catch {}
     const folder = state.folders[0].name;
     const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);
-    await postJSON('/api/rack', { p: files[0].path, sr: 44100, slots });
-    await postJSON('/api/automation', { p: files[0].path, bypassed: false, lanes: [] });
+    await postJSON('/api/rack', { p: `prism:${files[0].path}`, sr: 44100, slots });
     await selectFile(files[0]);
     setMode('edit');
   }, slots);
   await page.locator('#leftRail .rl-item[data-page="prism"]').click();
+  await page.evaluate(() => window.prismDeck.use(state.selectedFile.path));
   await page.waitForFunction(() => (window.prismPad?.sources || []).length > 0);
   await page.evaluate(() => window.hyperStretch.reset());
 }
@@ -67,7 +77,7 @@ test('a slot on the pad: grabbing it takes a Loop take of the slot\'s two contro
   // The slot's two controls are where the pad left them, linear between the limits.
   const got = await page.evaluate(() => {
     const p = prismSetup();
-    const slot = state.rack.slots.find((s) => s.id === 'm1');
+    const slot = prismDeck.rack.slots.find((s) => s.id === 'm1');
     const h = window.hyperStretch.hand();
     return { x: slot.params[p.x], y: slot.params[p.y],
       wantX: p.xLo + h.x * (p.xHi - p.xLo), wantY: p.yLo + (1 - h.y) * (p.yHi - p.yLo) };
@@ -80,12 +90,12 @@ test('a slot on the pad: grabbing it takes a Loop take of the slot\'s two contro
   expect(await page.evaluate(() => window.hyperStretch.take(0))).toBeNull();
 });
 
-test('Settings has every control of a slot but the two on the pad, and they move the FX tab\'s values', async ({ page }) => {
+test('Settings has every control of a slot but the two on the pad, and they move the Prism chain\'s values', async ({ page }) => {
   await openPrism(page, [DELAY]);
   await page.locator('#prismSource').selectOption({ label: 'Multi Delay' });
   const want = await page.evaluate(() => {
     const p = prismSetup();
-    const slot = state.rack.slots.find((s) => s.id === 'm1');
+    const slot = prismDeck.rack.slots.find((s) => s.id === 'm1');
     return (state.shapers[slot.kind]?.params || []).filter((sp) => sp.key !== p.x && sp.key !== p.y).map((sp) => sp.label);
   });
   expect(want.length).toBeGreaterThan(0);
@@ -97,36 +107,16 @@ test('Settings has every control of a slot but the two on the pad, and they move
     const row = [...document.querySelectorAll('#prismSettings .param')].find((r) => r.querySelector(':scope > input[type=range]'));
     const input = row.querySelector(':scope > input[type=range]');
     const p = prismSetup();
-    const slot = state.rack.slots.find((s) => s.id === 'm1');
+    const slot = prismDeck.rack.slots.find((s) => s.id === 'm1');
     const sp = state.shapers[slot.kind].params.find((q) => q.label === row.querySelector('.k').textContent.trim() && q.key !== p.x && q.key !== p.y);
     const before = slot.params[sp.key];
     input.value = String(+input.min + (+input.max - +input.min) * (before > (+input.min + +input.max) / 2 ? 0.1 : 0.9));
     input.dispatchEvent(new Event('input'));
     input.dispatchEvent(new Event('change'));
     await new Promise((r) => setTimeout(r, 500));
-    const stored = await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`);
+    const stored = await api(`/api/rack?p=${encodeURIComponent(`prism:${window.prismDeck.path()}`)}`);
     return { key: sp.key, before, now: slot.params[sp.key], stored: stored.slots.find((s) => s.id === 'm1').params[sp.key] };
   });
   expect(moved.now).not.toBeCloseTo(moved.before, 3);
   expect(moved.stored).toBeCloseTo(moved.now, 3);
-});
-
-test('Loop or Lanes: Lanes enables LOOP and sets the gestures aside, Loop brings them back', async ({ page }) => {
-  await openPrism(page);
-  await expect(page.locator('[data-hswhere="loop"]')).toHaveClass(/\bon\b/);
-  await expect(page.locator('#prismLoop')).toBeDisabled();
-  await page.locator('[data-hswhere="lanes"]').click();
-  await expect(page.locator('#prismLoop')).toBeEnabled();
-  await expect(page.locator('.hs-bank[aria-label="Gestures"]')).toHaveClass(/hs-off/);
-  await expect(page.locator('#hsInfo')).toContainText('stretch.ratio / stretch.semitones');
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-  // In Lanes the pad moves the controls without starting a Loop take.
-  const b = await page.locator('#hsPad').boundingBox();
-  await page.mouse.click(b.x + 0.75 * b.width, b.y + 0.5 * b.height);
-  expect(await page.evaluate(() => window.hyperStretch.take(0))).toBeNull();
-  const ratio = await page.evaluate(() => state.stretchDraft.ratio);
-  expect(ratio).toBeCloseTo(4 + 0.75 * (0.25 - 4), 1);
-  await page.locator('[data-hswhere="loop"]').click();
-  await expect(page.locator('#prismLoop')).toBeDisabled();
-  await expect(page.locator('.hs-bank[aria-label="Gestures"]')).not.toHaveClass(/hs-off/);
 });
