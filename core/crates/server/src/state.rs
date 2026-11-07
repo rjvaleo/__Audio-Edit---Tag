@@ -593,6 +593,26 @@ pub struct App {
     pub print_pass: Pass,
     /// Held while the classifier pass is running. See [`Pass`].
     pub label_pass: Pass,
+    /// YAMNet's fingerprint of each sound, which the sound map is laid out
+    /// by. Filled by the classifier pass, in the same run of the model.
+    pub embeddings: RwLock<yamnet::embed::Embeddings>,
+    /// The last sound map worked out, and what it was worked out from: laying
+    /// a library out is seconds of work, and it only changes when a sound is
+    /// added, removed or listened to.
+    pub soundmap: RwLock<Option<MapCache>>,
+}
+
+/// The last sound map worked out, and what it was worked out from.
+#[derive(Clone)]
+pub struct MapCache {
+    /// Which sounds there were, and which had been listened to.
+    pub key: u64,
+    /// How many had been listened to.
+    pub heard: usize,
+    /// Whether what they were heard as was known yet; the clusters are named
+    /// from it.
+    pub named: bool,
+    pub map: std::sync::Arc<search::soundmap::SoundMap>,
 }
 
 impl App {
@@ -603,6 +623,7 @@ impl App {
         let saved = crate::persist::load_sessions(&data_dir.join("SESSIONS.json"));
         let prints = search::store::Store::load(&data_dir.join("FINGERPRINTS.tsv"));
         let labels = yamnet::store::Store::load(&data_dir.join("LABELS.tsv"));
+        let embeddings = yamnet::embed::Embeddings::load(&data_dir.join("EMBEDDINGS.tsv"));
         let user_tags = crate::usertags::Store::load(&data_dir.join("USER-TAGS.tsv"));
         let automation = crate::automation::AutomationStore::load(&data_dir.join("AUTOMATION.json"));
         let visual_lanes = crate::docs::DocJsonStore::load(&data_dir.join("VISUAL-AUTOMATION.json"));
@@ -643,6 +664,8 @@ impl App {
             prism_playing: RwLock::new(None),
             print_pass: Pass::default(),
             label_pass: Pass::default(),
+            embeddings: RwLock::new(embeddings),
+            soundmap: RwLock::new(None),
             edits: crate::docs::EditStore::default(),
             clipboard: Mutex::new(None),
             racks: crate::rack::RackStore::default(),
@@ -671,6 +694,10 @@ impl App {
 
     pub fn labels_path(&self) -> PathBuf {
         self.data_dir.join("LABELS.tsv")
+    }
+
+    pub fn embeddings_path(&self) -> PathBuf {
+        self.data_dir.join("EMBEDDINGS.tsv")
     }
 
     pub fn user_tags_path(&self) -> PathBuf {

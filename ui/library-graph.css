@@ -1,0 +1,117 @@
+/* The sound map: Browse › Map. See ui/library-graph.js and docs/SOUND-MAP.md.
+ *
+ * The whole window, over everything, like the 3D world. A thin strip at the
+ * top, the card at the right, and the dots are the subject. Tight: the strip
+ * is one line, the card's rows sit close. */
+
+.lgraph {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: var(--sink);
+  color: var(--text);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  font-size: var(--fs-m);
+  outline: none;
+}
+.lgraph.hidden { display: none; }
+
+.lg-stage { position: relative; min-height: 0; overflow: hidden; }
+.lg-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.lg-canvas.point { cursor: pointer; }
+.lg-canvas.drag { cursor: grabbing; }
+
+/* ── the strip ─────────────────────────────────────────────────────── */
+
+.lg-bar {
+  display: flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap; min-width: 0;
+}
+.lg-title { font-weight: 600; font-size: var(--fs-l); margin-right: 2px; }
+.lg-lbl { color: var(--text-dimmer); margin-left: 4px; }
+.lg-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; flex: none; }
+.lg-seg button {
+  background: none; border: 0; color: var(--text-dim);
+  padding: 3px 8px; font: inherit; cursor: pointer;
+}
+.lg-seg button + button { border-left: 1px solid var(--line); }
+.lg-seg button:hover { color: var(--text); }
+.lg-seg button.on { background: color-mix(in oklch, var(--accent) 20%, transparent); color: var(--text); }
+.lg-find {
+  background: var(--well); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--text); font: inherit; padding: 3px 7px; width: 200px; min-width: 90px; flex: 0 1 auto; outline: none;
+}
+.lg-find:focus { border-color: var(--accent); }
+.lg-found { color: #ff4b4b; min-width: 7ch; }
+.lg-status { color: var(--text-dimmer); margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
+.lg-home, .lg-close, .lg-3d {
+  background: none; border: 1px solid var(--line); border-radius: 4px;
+  color: var(--text-dim); font: inherit; padding: 2px 8px; cursor: pointer; flex: none;
+}
+.lg-home:hover, .lg-close:hover, .lg-3d:hover { color: var(--text); }
+
+/* ── over the graph ────────────────────────────────────────────────── */
+
+.lg-now {
+  position: absolute; left: 8px; top: 7px; max-width: 70%;
+  color: var(--text-dim); font-size: var(--fs-l); pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lg-now b { color: var(--text); font-weight: 600; }
+.lg-now .d { color: var(--text-dimmer); }
+.lg-now .p { color: #6fd08c; }
+.lg-link { cursor: pointer; text-decoration: underline dotted; }
+
+.lg-legend {
+  position: absolute; left: 8px; bottom: 7px;
+  color: var(--text-dimmer); line-height: 1.6; pointer-events: none;
+}
+.lg-key { display: flex; gap: 9px; flex-wrap: wrap; }
+.lg-key span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); }
+.lg-key i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.lg-ramp { display: inline-block; width: 110px; height: 7px; border-radius: 4px; margin: 0 4px; }
+
+.lg-empty {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--text-dim); pointer-events: none; font-size: var(--fs-l);
+}
+
+/* ── the card ──────────────────────────────────────────────────────── */
+
+.lg-card {
+  position: absolute; right: 8px; top: 8px; width: 252px;
+  max-height: calc(100% - 16px); overflow: auto;
+  background: color-mix(in oklch, var(--surface) 95%, transparent);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 9px; display: none;
+  box-shadow: 0 8px 30px var(--shadow);
+}
+.lg-card.on { display: block; }
+.lg-card h3 { margin: 0 0 1px; font-size: var(--fs-l); font-weight: 600; overflow-wrap: anywhere; }
+.lg-where { color: var(--text-dimmer); margin-bottom: 6px; overflow-wrap: anywhere; }
+.lg-row { display: flex; gap: 6px; margin: 3px 0; align-items: baseline; }
+.lg-row > span:first-child { color: var(--text-dimmer); width: 56px; flex: none; }
+.lg-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
+.lg-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.lg-chip { background: var(--wash); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; line-height: 16px; cursor: pointer; }
+.lg-chip:hover { border-color: var(--accent); }
+.lg-chip.still { cursor: default; }
+.lg-chip.still:hover { border-color: var(--line); }
+.lg-btns { display: flex; gap: 4px; margin: 7px 0 4px; }
+.lg-btns button {
+  flex: 1; background: var(--well); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--text); font: inherit; padding: 3px 0; cursor: pointer;
+}
+.lg-btns button:hover { border-color: var(--accent); }
+.lg-sec { color: var(--text-dimmer); margin-top: 7px; text-transform: uppercase; font-size: var(--fs-xs); letter-spacing: 0.06em; }
+.lg-card .sub { color: var(--text-dimmer); font-size: var(--fs-s); }
+.lg-list { margin-top: 3px; border-top: 1px solid var(--line); }
+.lg-list div { display: flex; gap: 6px; align-items: center; padding: 2px 0; cursor: pointer; border-bottom: 1px solid var(--line); }
+.lg-list div:hover { background: var(--wash); }
+.lg-list i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.lg-list .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lg-list .sub { flex: none; }

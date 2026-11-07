@@ -146,6 +146,8 @@ pub const RAIL_CSS: &str = include_str!("../../../../ui/rail.css");
 /// The 3D sound map. See `docs/SOUND-MAP.md`.
 pub const SOUND_MAP_JS: &str = include_str!("../../../../ui/sound-map.js");
 pub const SOUND_MAP_CSS: &str = include_str!("../../../../ui/sound-map.css");
+pub const LIBRARY_GRAPH_JS: &str = include_str!("../../../../ui/library-graph.js");
+pub const LIBRARY_GRAPH_CSS: &str = include_str!("../../../../ui/library-graph.css");
 pub const CHOP_JS: &str = include_str!("../../../../ui/chop.js");
 pub const CHOP_CSS: &str = include_str!("../../../../ui/chop.css");
 /// The regular 4-polytopes and the projection that brings them into three
@@ -210,6 +212,14 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/sound-map.css") => {
             Response::ok("text/css; charset=utf-8", SOUND_MAP_CSS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/library-graph.js") => {
+            Response::ok("text/javascript; charset=utf-8", LIBRARY_GRAPH_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/library-graph.css") => {
+            Response::ok("text/css; charset=utf-8", LIBRARY_GRAPH_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/chop.js") => {
@@ -415,6 +425,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/labels") => api_labels(app, req),
         ("GET", "/api/space") => api_space(app),
         ("GET", "/api/map") => api_map(app),
+        ("GET", "/api/soundmap") => api_soundmap(app),
+        ("GET", "/api/soundmap/near") => api_soundmap_near(app, req),
         ("GET", "/api/sounds") => api_sounds(app),
         ("POST", "/api/usertags") => api_user_tags_set(app, req),
         ("GET", "/api/usertag") => api_user_tag_members(app, req),
@@ -4990,6 +5002,54 @@ fn model(app: &Arc<App>) -> Option<Arc<yamnet::Model>> {
 
 /// Make sure every file has been through the classifier, then work out who is
 /// borrowing a name from whom.
+/// When the labels and fingerprints were last written to disk, in seconds.
+static LABELS_SAVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Files the classifier hears per pass: twice the fingerprint pass's batch,
+/// since several are heard at once.
+const LABEL_BATCH: usize = 64;
+/// Only the start of a file is decoded for the model: it listens to three
+/// windows of three seconds and no more, and decoding all of an hour-long
+/// take to hear nine seconds of it was most of what a pass spent its time on.
+const LABEL_LISTEN_SECS: u64 = 10;
+
+/// What the model hears in each of `rels`, and its fingerprint of each, on
+/// half the machine's cores at once: the rest stay free for the audio. A file
+/// that cannot be read or heard is left out, and asked about again next pass.
+fn listen_to(lib: &std::path::Path, model: &Arc<yamnet::Model>, rels: &[String]) -> Vec<(String, Vec<yamnet::Detection>, Vec<f32>)> {
+    let threads = std::thread::available_parallelism().map(|n| (n.get() / 2).max(1)).unwrap_or(2);
+    let chunk = rels.len().div_ceil(threads).max(1);
+    std::thread::scope(|s| {
+        let handles: Vec<_> = rels
+            .chunks(chunk)
+            .map(|part| {
+                s.spawn(move || {
+                    let mut out = Vec::new();
+                    for rel in part {
+                        let Some(path) = resolve_within(lib, rel) else { continue };
+                        let Ok(mut r) = audio_core::open(&path) else { continue };
+                        let info = *r.info();
+                        let frames = info.frames().min(info.sample_rate as u64 * LABEL_LISTEN_SECS);
+                        let Ok(samples) = r.read_frames(0, frames) else { continue };
+                        let mono = yamnet::to_mono_16k(&samples, info.channels as usize, info.sample_rate);
+                        // More than the panel shows. Storing the tail costs
+                        // almost nothing and means anything built later has
+                        // the model's fuller opinion without a second pass.
+                        match model.listen(&mono, 8) {
+                            // An empty list is a real answer — the model heard
+                            // nothing it could name — and storing it stops the
+                            // file being heard again on every request.
+                            Ok((words, fingerprint)) => out.push((rel.clone(), words, fingerprint)),
+                            Err(e) => eprintln!("labelling {rel}: {e}"),
+                        }
+                    }
+                    out
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+    })
+}
+
 fn ensure_labels(app: &Arc<App>) -> usize {
     let Some(lib) = app.library_path() else { return 0 };
     // One pass at a time. See `Pass`: this is the flag that stops a slider drag
@@ -4999,56 +5059,53 @@ fn ensure_labels(app: &Arc<App>) -> usize {
     let wanted: Vec<String> = {
         let idx = app.index.read().unwrap();
         let have = app.labels.read().unwrap();
+        let fingerprinted = app.embeddings.read().unwrap();
+        // A file is wanted until it has both: its labels, and the model's
+        // fingerprint of it for the sound map. One run of the model gives both.
         idx.files
             .iter()
             .filter(|f| f.duration > 0.0)
             .map(|f| format!("{}/{}", f.folder, f.rel_path))
-            .filter(|p| !have.measured(p))
+            .filter(|p| !have.measured(p) || !fingerprinted.has(p))
             .collect()
     };
 
     // A slice of the queue. Classifying one file is a whole decode, a resample
     // and a run of the model, and doing six hundred of them is minutes of work
     // that used to happen inside a single request.
-    let batch = wanted.len().min(PASS_BATCH);
+    let batch = wanted.len().min(LABEL_BATCH);
     let mut built = 0usize;
     if batch > 0 {
         let Some(model) = model(app) else { return 0 };
 
-        for rel in wanted.iter().take(batch) {
-            let Some(path) = resolve_within(&lib, rel) else { continue };
-            let Ok(mut r) = audio_core::open(&path) else { continue };
-            let info = *r.info();
-            let Ok(samples) = r.read_frames(0, info.frames()) else { continue };
-            let mono =
-                yamnet::to_mono_16k(&samples, info.channels as usize, info.sample_rate);
-            // More than the panel shows. Storing the tail costs almost nothing
-            // and means anything built later — a visualiser, an export — has
-            // the model's fuller opinion without a second pass over the audio.
-            let words = match model.label(&mono, 8) {
-                // An empty list is a real answer — the model heard nothing it
-                // could name — and storing it stops the file being re-analysed
-                // on every request for the rest of time.
-                Ok(words) => words,
-                Err(e) => { eprintln!("labelling {rel}: {e}"); continue }
-            };
-
-            // Written as it goes, not banked to the end.
-            //
-            // Holding the results until the pass finished meant that stopping
-            // the program — or losing patience with it — threw away every file
-            // it had measured, and the next run started from nothing. A file
-            // that has been through the model is a fact about that file; it
-            // should survive the process that learned it.
-            let mut store = app.labels.write().unwrap();
-            store.insert(rel, words);
+        for (rel, words, fingerprint) in listen_to(&lib, &model, &wanted[..batch]) {
+            // A file labelled before fingerprints were kept is only being
+            // fingerprinted: what it was heard as stays as it was.
+            app.embeddings.write().unwrap().insert(&rel, fingerprint);
             built += 1;
-            if built % LABEL_FLUSH == 0 {
-                let _ = store.save(&app.labels_path());
+            if !app.labels.read().unwrap().measured(&rel) {
+                app.labels.write().unwrap().insert(&rel, words);
             }
         }
 
-        if built % LABEL_FLUSH != 0 {
+        // Written every batch while the files are small, and at most every
+        // fifteen seconds once they are not. Writing both after every eighth
+        // sound was fine for a few thousand; for eighty thousand fingerprints
+        // it rewrote a hundred-odd megabytes eight sounds at a time, and the
+        // pass spent its time writing rather than listening. A crash loses at
+        // most the last fifteen seconds, which the next pass hears again.
+        let due = {
+            use std::sync::atomic::Ordering;
+            let last = LABELS_SAVED.load(Ordering::Relaxed);
+            let small = app.embeddings.read().unwrap().len() < 4000;
+            let due = small || wanted.len() <= batch || now_secs().saturating_sub(last) >= 15;
+            if due {
+                LABELS_SAVED.store(now_secs(), Ordering::Relaxed);
+            }
+            due
+        };
+        if built > 0 && due {
+            let _ = app.embeddings.read().unwrap().save(&app.embeddings_path());
             let store = app.labels.read().unwrap();
             let _ = store.save(&app.labels_path());
         }
@@ -5742,6 +5799,186 @@ fn api_map(app: &Arc<App>) -> Response {
             .set("points", Value::Arr(points))
             .to_string(),
     )
+}
+
+/// When the sound map was last asked for, in seconds since 1970, and whether
+/// the thread listening to the library on its behalf is running.
+static MAP_ASKED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static MAP_LISTENING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// How long after the map was last asked for the listening carries on.
+const MAP_IDLE_SECS: u64 = 20;
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Listen to the library, a batch at a time, for as long as the map is open.
+///
+/// Off the request: a batch is a decode and a run of the model for each of
+/// thirty-two files, seconds of work, and the map has to answer at once. In a
+/// library of eighty thousand sounds this is hours in all, so it only runs
+/// while someone is looking, and stops a little after they close the map.
+fn listen_while_the_map_is_open(app: &Arc<App>) {
+    use std::sync::atomic::Ordering;
+    MAP_ASKED.store(now_secs(), Ordering::Relaxed);
+    if MAP_LISTENING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        loop {
+            let measured = ensure_prints(&app);
+            let heard = ensure_labels(&app);
+            let idle = now_secs().saturating_sub(MAP_ASKED.load(Ordering::Relaxed)) > MAP_IDLE_SECS;
+            if (measured == 0 && heard == 0) || idle {
+                break;
+            }
+        }
+        MAP_LISTENING.store(false, Ordering::SeqCst);
+    });
+}
+
+/// The sound map: every sound in the library a dot, placed so that sounds the
+/// model hears as alike sit together, with the clusters that forms and their
+/// names. See `search::soundmap`.
+///
+/// `listening` says how many sounds are still to be heard; the page asks again
+/// until it is nought. Laying a large library out is seconds of work, so while
+/// sounds are still arriving the map is only worked out again once there are a
+/// quarter more of them, or once what they were heard as becomes known.
+fn api_soundmap(app: &Arc<App>) -> Response {
+    listen_while_the_map_is_open(app);
+
+    let (files, inputs, listening, key, fingerprinted, named) = {
+        let prints = app.prints.read().unwrap();
+        let idx = app.index.read().unwrap();
+        let loaned = app.heard.read().unwrap();
+        let measured = app.labels.read().unwrap();
+        // What each sound was heard as, loans included, is worked out by the
+        // listening pass a few seconds after the program starts. Until then,
+        // what was measured is used, so the clusters are named from the start
+        // rather than by their words alone.
+        let heard = if loaned.is_empty() { &measured.by_path } else { &*loaned };
+        let fingerprints = app.embeddings.read().unwrap();
+        let cal = search::Calibration::build(prints.by_path.values().copied());
+        let pulse = search::NAMES.iter().position(|n| *n == "pulse").unwrap();
+        let density = search::NAMES.iter().position(|n| *n == "density").unwrap();
+        let bright = search::NAMES.iter().position(|n| *n == "brightness").unwrap();
+
+        // Only what can be played. The index also lists what sits beside the
+        // audio — Ableton's `.asd` analysis files, a Mac's `Icon_` and
+        // `Desktop DB` — at no length at all, and a dot that plays nothing is
+        // a lie.
+        let mut files = Vec::new();
+        let mut inputs = Vec::new();
+        let mut key = std::collections::hash_map::DefaultHasher::new();
+        let mut fingerprinted = 0usize;
+        for f in idx.files.iter().filter(|f| f.duration > 0.0) {
+            use std::hash::Hash;
+            let path = format!("{}/{}", f.folder, f.rel_path);
+            let fp = prints.get(&path);
+            let labels: Vec<String> = heard
+                .get(path.as_str())
+                .map(|l| l.words.iter().take(3).map(|w| w.label.clone()).collect())
+                .unwrap_or_default();
+            let words: Vec<String> = fp.map(|p| p.descriptors(&cal).into_iter().map(|w| w.to_string()).collect()).unwrap_or_default();
+            let embedding = fingerprints.get(&path).map(|e| search::soundmap::Embedding { scale: e.scale, bytes: e.bytes.clone() });
+            path.hash(&mut key);
+            embedding.is_some().hash(&mut key);
+            fingerprinted += embedding.is_some() as usize;
+            let family = search::map::family(labels.first().map(String::as_str).unwrap_or("")).to_string();
+            files.push(
+                Value::obj()
+                    .set("path", path.clone())
+                    .set("name", f.filename.clone())
+                    .set("family", family.clone())
+                    .set("words", Value::Arr(words.iter().map(|w| Value::Str(w.clone())).collect()))
+                    .set("heard", Value::Arr(labels.iter().map(|w| Value::Str(w.clone())).collect()))
+                    .set("seconds", f.duration)
+                    .set("kind", f.category.clone())
+                    .set("note", fp.and_then(|p| p.pitch.note()).map(Value::Str).unwrap_or(Value::Null))
+                    // A sound that repeats steadily: drawn with a ring.
+                    .set("loops", fp.is_some_and(|p| p.v[pulse] > 0.62 && p.v[density] > 0.2))
+                    .set("bright", fp.map(|p| Value::Num(cal.rank(bright, p.v[bright]) as f64)).unwrap_or(Value::Null)),
+            );
+            inputs.push(search::soundmap::Input { embedding, heard: labels, family, words });
+        }
+        use std::hash::Hasher;
+        (files, inputs, files_listening(&idx, &fingerprints), key.finish(), fingerprinted, !loaned.is_empty())
+    };
+
+    // Locks let go before the work, so the listening thread is never held up
+    // by it.
+    let cached = app.soundmap.read().unwrap().clone();
+    let stale = match &cached {
+        None => true,
+        Some(c) if c.key == key => false,
+        Some(c) => listening == 0 || named != c.named || fingerprinted >= c.heard + c.heard / 4 + 16,
+    };
+    let (map, current) = if stale {
+        let m = std::sync::Arc::new(search::soundmap::build(&inputs));
+        *app.soundmap.write().unwrap() = Some(crate::state::MapCache { key, heard: fingerprinted, named, map: m.clone() });
+        (m, true)
+    } else {
+        let c = cached.unwrap();
+        (c.map.clone(), c.key == key)
+    };
+
+    // A sound added since the map was worked out is not on it yet, and waits
+    // with those still being listened to.
+    let fits = map.points.len() == files.len();
+    let sounds: Vec<Value> = files
+        .into_iter()
+        .enumerate()
+        .map(|(i, o)| {
+            let p = map.points.get(i).filter(|_| fits);
+            o.set("at", p.and_then(|p| p.at).map(|a| Value::Arr(vec![Value::Num(a[0] as f64), Value::Num(a[1] as f64)])).unwrap_or(Value::Null))
+                .set("cluster", p.and_then(|p| p.cluster).map(|c| Value::Num(c as f64)).unwrap_or(Value::Null))
+                .set("near", Value::Arr(p.map(|p| p.near.iter().map(|n| Value::Num(*n as f64)).collect()).unwrap_or_default()))
+        })
+        .collect();
+    let clusters: Vec<Value> = map
+        .clusters
+        .iter()
+        .map(|c| {
+            Value::obj()
+                .set("name", c.name.clone())
+                .set("family", c.family.clone())
+                .set("size", c.members.len() as f64)
+                .set("centre", Value::Arr(vec![Value::Num(c.centre[0] as f64), Value::Num(c.centre[1] as f64)]))
+        })
+        .collect();
+    Response::json(
+        Value::obj()
+            .set("count", sounds.len() as f64)
+            .set("listening", listening as f64)
+            // False while sounds heard since are waiting for the next layout.
+            .set("current", current)
+            .set("sounds", Value::Arr(sounds))
+            .set("clusters", Value::Arr(clusters))
+            .to_string(),
+    )
+}
+
+fn files_listening(idx: &crate::state::Index, fingerprints: &yamnet::embed::Embeddings) -> usize {
+    idx.files
+        .iter()
+        .filter(|f| f.duration > 0.0 && !fingerprints.has(&format!("{}/{}", f.folder, f.rel_path)))
+        .count()
+}
+
+/// A sound's closest matches on the map, best first: `?i=` is its place in the
+/// map's list. Asked for when a sound is pointed at, because for a large
+/// library working them out for every sound up front is minutes of work.
+fn api_soundmap_near(app: &Arc<App>, req: &Request) -> Response {
+    let Some(i) = req.param("i").and_then(|v| v.parse::<usize>().ok()) else {
+        return Response::error(400, "no sound given");
+    };
+    let Some(c) = app.soundmap.read().unwrap().clone() else {
+        return Response::error(404, "no map yet");
+    };
+    let near = c.map.nearest(i, search::soundmap::NEAR);
+    Response::json(Value::obj().set("i", i as f64).set("near", Value::Arr(near.into_iter().map(|n| Value::Num(n as f64)).collect())).to_string())
 }
 
 #[cfg(test)]
