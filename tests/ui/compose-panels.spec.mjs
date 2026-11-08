@@ -171,7 +171,9 @@ test('the sequencer lays itself out compact inside its own page, and again after
     menu: getComputedStyle(document.getElementById('compactScale').closest('.knob-group')).display,
   }));
   expect(full.compact).toBe(false);
-  expect(full.header).not.toBe('none');
+  // No title in the app, compact or not: the top bar says which workspace this
+  // is (`docs/TOP-BAR.md`). The compact-only parts are the test here.
+  expect(full.header).toBe('none');
   expect(full.menu, 'the compact scale menu shows in the full page').toBe('none');
 
   await page.evaluate(() => seqCompact(true));

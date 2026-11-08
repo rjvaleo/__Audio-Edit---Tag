@@ -77,7 +77,13 @@ async function inventory(page) {
     await page.waitForTimeout(400);
     await take(`grain/${tab}`, tab === 'prism' ? '#dockHyper' : `#dock${tab[0].toUpperCase()}${tab.slice(1)}`);
   }
+  // The transport is in two places since the top bar (`docs/TOP-BAR.md`): Play,
+  // Stop, Loop, capture, the sources, the clock and the level in the bar, the
+  // file, the zoom and the follow mode under the waveform. One view, both hosts.
   await take('transport', '#transportBar');
+  const strip = out.transport;
+  await take('transport', '.tb-transport');
+  out.transport = [...strip, ...out.transport];
   await take('edit-toolbar', '#editTools');
   await page.evaluate(() => setMode('room'));
   await page.waitForTimeout(600);

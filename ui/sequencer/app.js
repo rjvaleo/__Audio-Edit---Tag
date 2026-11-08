@@ -1873,6 +1873,9 @@ function renderStepGrid() {
   grid.innerHTML = "";
   const scale = SCALES[selectedScaleIdx];
   const maxDeg = scale.cents.length * 3; // 3 octaves of range
+  const sounding = steps.filter((s) => !s.rest).map((s) => s.degree);
+  const lo = sounding.length ? Math.min(...sounding) : 0;
+  const hi = sounding.length ? Math.max(...sounding) : maxDeg - 1;
 
   for (let i = 0; i < 16; i++) {
     const step = steps[i];
@@ -1883,7 +1886,15 @@ function renderStepGrid() {
     const el = document.createElement("div");
     el.className = `step${i < numSteps ? " active-step" : ""}${step.rest ? "" : ""}`;
     el.id = `step-${i}`;
+    // How high the step sits among the pattern's own notes, for the host's
+    // contour: each card filled from the bottom to its pitch (`style.css`,
+    // `in-app`). Across the pattern's range rather than the three octaves it
+    // could reach, or a tune inside one octave is a row of near-flat bars. The
+    // lowest note keeps a sliver, so it reads as low rather than as missing; a
+    // rest has no height.
+    el.style.setProperty("--pitch", step.rest ? "0" : (0.12 + 0.88 * (step.degree - lo) / Math.max(1, hi - lo)).toFixed(3));
     el.innerHTML = `
+<div class="step-pitch" aria-hidden="true"></div>
 <div class="step-num">${String(i + 1).padStart(2, "0")}</div>
 ${
   step.rest

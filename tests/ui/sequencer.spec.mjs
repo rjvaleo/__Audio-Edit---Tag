@@ -38,8 +38,10 @@ test('Seq is a workspace on the rail, and the frame loads when it is entered', a
   await btn.click();
   await expect(page.locator('#seqView')).toBeVisible();
   await expect(page.locator('#lane')).toBeHidden();
-  // The transport is the document's, and Seq plays the document.
-  await expect(page.locator('#transportBar')).toBeVisible();
+  // The transport is the document's, and Seq plays the document. It is in the
+  // top bar; the editor's strip under the waveform has nothing to do here.
+  await expect(page.locator('header.menubar .tb-transport')).toBeVisible();
+  await expect(page.locator('#transportBar')).toBeHidden();
   expect(await page.evaluate(() => $('modeLabel').textContent)).toBe('Seq');
   await page.waitForFunction(() => seq.ready === true, { timeout: 20_000 });
   const frame = page.frames().find((f) => f.url().includes('/sequencer/'));

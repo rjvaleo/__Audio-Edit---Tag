@@ -29,6 +29,40 @@
   const ORIGIN = location.origin;
   const post = (m) => window.parent.postMessage(m, ORIGIN);
 
+  // ── one look ─────────────────────────────────────────────────────────────
+  //
+  // **Inside the app, this page wears the app.** It had its own palette, two
+  // display faces and a title, and opening Seq looked like opening a second
+  // program. `in-app` (see `style.css`) drops the title and the transport the
+  // bar now owns; this copies the host's colours and faces onto this page's
+  // own tokens, and again whenever the host's theme changes, so the Theme
+  // drawer reaches in here too. Computed values, so a host token that is
+  // itself a `var()` arrives resolved.
+  const TOKENS = {
+    '--bg': '--bg', '--bg2': '--surface', '--bg3': '--surface-2',
+    '--border': '--line-2', '--dim': '--surface-3',
+    '--accent': '--accent', '--accent2': '--warn', '--accent3': '--good',
+    '--text': '--text', '--text-dim': '--text-dim',
+    '--step-on': '--accent', '--step-off': '--surface-3', '--playing': '--warn',
+    '--sans': '--sans', '--mono': '--mono',
+  };
+  function wear() {
+    let host;
+    try { host = window.parent.getComputedStyle(window.parent.document.documentElement); } catch { return; }
+    const root = document.documentElement.style;
+    for (const [mine, theirs] of Object.entries(TOKENS)) {
+      const v = host.getPropertyValue(theirs).trim();
+      if (v) root.setProperty(mine, v);
+    }
+    root.setProperty('--active', 'color-mix(in srgb, var(--accent) 14%, transparent)');
+  }
+  document.body.classList.add('in-app');
+  wear();
+  try {
+    new MutationObserver(wear).observe(window.parent.document.documentElement,
+      { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] });
+  } catch { /* not the same document after all */ }
+
   // ── the one clock ────────────────────────────────────────────────────────
   //
   // `at` is the engine's output time in seconds from the start of the
