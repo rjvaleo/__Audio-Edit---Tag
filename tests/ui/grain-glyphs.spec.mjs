@@ -171,8 +171,8 @@ test('every engine\'s own sliders have pictures, with the grain cloud and the tr
 test('the colour key is in Help, not across the tray', async ({ page }) => {
   await openGrain(page);
   await expect(page.locator('#grainControls .gc-key')).toHaveCount(0);
-  // Help is the book at the foot of the left rail; the menu bar is unlisted.
-  await page.locator('#leftRail .rl-foot-btn[aria-label="Help"]').click();
+  // Help, in the top bar.
+  await page.locator('header.menubar .menu-title', { hasText: 'Help' }).click();
   await page.locator('#menuPop', { hasText: 'What the colours mean' }).getByText('What the colours mean').click();
   await expect(page.locator('#colourKey')).toBeVisible();
   await expect(page.locator('#colourKeyList .ck-name')).toHaveText(['Time', 'Pitch', 'Timbre', 'Attack', 'Space', 'Level']);
@@ -197,12 +197,13 @@ test('a bar keeps its width whatever its value', async ({ page }) => {
 });
 
 
-test('the menu bar is gone, and Settings, Analytics and Help sit at the foot of the left rail', async ({ page }) => {
+test('Settings, Analytics and Help are the top bar\'s, and the rail has no foot', async ({ page }) => {
   await openGrain(page);
-  await expect(page.locator('header.menubar')).toBeHidden();
-  const foot = page.locator('#leftRail .rl-foot');
-  expect(await foot.locator('.rl-foot-btn').evaluateAll((b) => b.map((x) => x.getAttribute('aria-label')))).toEqual(['Settings', 'Analytics', 'Help']);
-  await foot.locator('.rl-foot-btn[aria-label="Settings"]').click();
+  const bar = page.locator('header.menubar');
+  await expect(bar).toBeVisible();
+  await expect(bar.locator('.menu-title', { hasText: 'Help' })).toBeVisible();
+  await expect(page.locator('#leftRail .rl-foot')).toBeHidden();
+  await page.locator('#settingsOpen').click();
   await expect(page.locator('#settingsModal')).toBeVisible();
 });
 

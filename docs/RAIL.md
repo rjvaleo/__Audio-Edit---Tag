@@ -1,5 +1,8 @@
 # The left rail
 
+> **Superseded 1 Nov 2026 by the top bar, `docs/TOP-BAR.md`.** The rail's markup and click handling below still run; they are laid out along the top now.
+
+
 `ui/rail.js` and `ui/rail.css` are the four buttons described below, and they
 are what the page shows. *(Written for the edge build's `ui/port/rail.js`;
 ported here 5 Sep 2026. This build has a disk, so Scan and Folder show too, and

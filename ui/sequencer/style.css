@@ -991,3 +991,73 @@ body.compact .step { min-height: 0; padding: 3px 2px; gap: 1px; }
 body.compact .step-note { font-size: 13px; }
 body.compact .step-hz { display: none; }
 body.compact .step-mini-btn { font-size: 7px; padding: 1px 0; }
+
+/* ─────────────────────────────────────────────────────────────── in the app
+   This page inside the granular app, which is the only place it ships. The
+   host's top bar owns the transport and says which workspace this is, so the
+   title, Play, Stop and the capture button go; what is left of the transport
+   is this sequencer's own toolbar, one row. The colours and faces are the
+   host's, copied onto this page's tokens by `bridge.js`. Every label is at
+   least the host's small size, 10px: 307 of them were 8 or 9. */
+body.in-app {
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+body.in-app :is(.logo, .scale-category, .panel-header, .row-label, .knob-label, .step-note,
+  .scale-display-name, .perf-title, .kb-label, .preset-name-display, .btn, select, .step-mini-btn, .status-bar) {
+  font-family: var(--sans, system-ui, sans-serif);
+}
+body.in-app :is(.knob-val, .pos-display, .capture-timer, .step-hz, .degree-hz, .degree-cents) {
+  font-family: var(--mono, ui-monospace, monospace);
+}
+body.in-app :is(.scale-category, .scale-info, .knob-label, .scale-display-info, .degree-chip,
+  .degree-num, .degree-hz, .degree-cents, .step-num, .step-hz, .step-rest, .step-mini-btn,
+  .kb-label, .status-bar, .row-label, .preset-name-display, .perf-sel-info, .perf-status-row) {
+  font-size: 10px;
+}
+body.in-app .knob-val { font-size: 11px !important; }
+
+body.in-app .header,
+body.in-app .transport #playBtn,
+body.in-app .transport .stop-btn,
+body.in-app .capture-group,
+body.in-app .preset-group > .knob-label { display: none !important; }
+
+/* The toolbar: one row, every group laid on its side — label, control,
+   value — instead of stacked three high. */
+body.in-app .transport {
+  padding: 4px 12px; gap: 12px; min-height: 0;
+  border-bottom-width: 1px;
+  overflow-x: auto; scrollbar-width: none;
+}
+body.in-app .transport > .divider:first-of-type { display: none; }
+body.in-app .transport .knob-group { flex-direction: row; gap: 6px; }
+body.in-app .transport .knob { width: 22px; height: 22px; }
+body.in-app .transport .knob::after { width: 2px; height: 6px; top: 2px; }
+body.in-app .transport .knob-val { min-width: 0; text-align: left; }
+body.in-app .pos-display { font-size: 13px; }
+body.in-app .preset-group { flex-direction: row; align-items: center; gap: 6px; min-width: 0; }
+body.in-app .preset-controls { flex-wrap: nowrap; }
+body.in-app .transport :is(.btn, select) { white-space: nowrap; }
+
+/* The step grid takes the height it is given. It used to keep its first row
+   at the top of a panel that flexed, which left a band of nothing under it. */
+body.in-app .seq-panel { padding: 10px 14px; gap: 8px; }
+body.in-app .step-grid { flex: 1 1 auto; min-height: 0; grid-auto-rows: 1fr; }
+body.in-app .step { min-height: 0; }
+/* The OCT line carries its own 9px in the markup. */
+body.in-app .step > div[style] { font-size: 10px !important; }
+
+/* Each card filled from the bottom to its pitch, so the row reads as the
+   melody's shape and the height the grid was given is spent on something. */
+.step-pitch { display: none; }
+body.in-app .step { position: relative; isolation: isolate; }
+body.in-app .step-pitch {
+  display: block; position: absolute; left: 0; right: 0; bottom: 0; z-index: -1;
+  height: calc(var(--pitch, 0) * 100%);
+  background: linear-gradient(to top, color-mix(in srgb, var(--accent) 22%, transparent), color-mix(in srgb, var(--accent) 6%, transparent));
+  border-top: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  pointer-events: none;
+}
+body.in-app .step:not(.active-step) .step-pitch { opacity: .35; }

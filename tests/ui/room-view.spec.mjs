@@ -404,7 +404,7 @@ test('pressing play in the room plays the document', async ({ page }) => {
       setMode(mode);
       await new Promise((r) => setTimeout(r, 200));
       // What `playFile` would decide, without having to start the engine.
-      out[mode] = { raw: !playsDocument(), inRoomFoot: !!document.getElementById('playBtn').closest('#roomFoot') };
+      out[mode] = { raw: !playsDocument(), inBar: !!document.getElementById('playBtn').closest('header.menubar') };
     }
     return out;
   });
@@ -415,8 +415,8 @@ test('pressing play in the room plays the document', async ({ page }) => {
   // Edit and Room are both looking at the document.
   expect(got.edit.raw, 'Edit should play the document').toBe(false);
   expect(got.room.raw, 'the room played the bare file instead of the document').toBe(false);
-  // And it really is the room's own transport being pressed.
-  expect(got.room.inRoomFoot).toBe(true);
+  // And it is the one transport, in the top bar, being pressed (`docs/TOP-BAR.md`).
+  expect(got.room.inBar).toBe(true);
 
   // End to end: the engine is loaded as the document when the room's transport
   // is used, not as an audition.
