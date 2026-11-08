@@ -19,7 +19,7 @@ function setEditPage(page, apply = true) {
 /// The Prism page opens its pad (`385-hyperstretch.js`): HyperStretch and the
 /// rack pad, merged into one panel on 5 Nov 2026. Read only while editing,
 /// which is never at startup, before this `const` exists.
-const PAGE_DOCKS = { chop: 'chop', prism: 'hyper' };
+const PAGE_DOCKS = { chop: 'chop', prism: 'hyper', visuals: 'visuals', automation: 'automation', regions: 'regions' };
 let chopPageFrom = null;
 function chopPageSync(editing) {
   const active = document.querySelector('.dock-tab.active')?.dataset.dock;
@@ -27,7 +27,9 @@ function chopPageSync(editing) {
   const own = editing ? PAGE_DOCKS[editPage] : null;
   // The tab a page of its own shows.
   const mine = own && [own];
-  const pages = ['chop', 'hyper'];
+  // Visuals, Automation and Regions are only pages with the Grain v12 page on;
+  // otherwise they are ordinary tabs of Grain's dock and are left where they are.
+  const pages = gsOn() ? Object.values(PAGE_DOCKS) : ['chop', 'hyper'];
   if (own) {
     if (!mine.includes(active)) {
       if (!pages.includes(active)) chopPageFrom = active || null;

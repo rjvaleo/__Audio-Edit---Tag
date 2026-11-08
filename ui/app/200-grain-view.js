@@ -56,8 +56,15 @@ function gmArm(btn) {
 }
 
 function setGrainUi(v) {
+  const was = document.body.dataset.grainUi;
   const ui = setPref('grainUi', v);
   document.body.dataset.grainUi = ui;
+  // The Grain v12 page is a different face, not a restyling: if the Grain page
+  // is what is showing, it has to be put up or taken down.
+  if (was !== ui && (was === 'synth' || ui === 'synth') && state.mode === 'edit') {
+    if (ui !== 'synth' && GS_SUBPAGES.includes(editPage)) setEditPage('grain', false);
+    setMode('edit');
+  }
   for (const b of document.querySelectorAll('#grainUiSwitch button')) {
     b.setAttribute('aria-pressed', String(b.dataset.ui === ui));
   }

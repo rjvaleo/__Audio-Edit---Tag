@@ -19,6 +19,7 @@ function setMode(mode) {
   const wasRoom = state.mode === 'room';
   const wasCompose = state.mode === 'compose';
   const wasSynth = state.mode === 'synth';
+  const wasGrainPage = document.body.classList.contains('grainpage');
   state.mode = mode;
   const editing = mode === 'edit';
   const room = mode === 'room';
@@ -27,6 +28,8 @@ function setMode(mode) {
   // The Wave page: the synth, which plays no sound file and needs none open.
   // It takes the whole middle, as the sequencer does. See `docs/WAVE-SYNTH.md`.
   const synth = mode === 'synth';
+  // The Grain v12 page, behind `prefs.grainUi`: the Grain page's new face.
+  const grainPage = editing && editPage === 'grain' && gsOn();
 
   // Borrowed elements go home before anything is measured or toggled. Leaving
   // this until later would have the mode's own show/hide rules applied to
@@ -35,6 +38,7 @@ function setMode(mode) {
   if (wasCompose && !compose) composeLeave();
   // Its telemetry and its frame loop stop the moment it is not on screen.
   if (wasSynth && !synth) wvLeave();
+  if (wasGrainPage && !grainPage) gsLeave();
 
   // The spectrogram is not an option in edit mode, it is what edit mode is for.
   state.showSpec = editing;
@@ -64,6 +68,7 @@ function setMode(mode) {
   // the top is what stays, because that is the one that says *where you are*.
   $('lane').classList.toggle('hidden', room || seq || compose || synth);
   $('waveView').classList.toggle('hidden', !synth);
+  $('grainView').classList.toggle('hidden', !grainPage);
   // Compose lays the same frame over its SEQ cell — see `composeEnter`.
   $('seqView')?.classList.toggle('hidden', !(seq || compose));
   if (seq || compose) seqEnsureFrame();
@@ -76,6 +81,8 @@ function setMode(mode) {
   document.body.classList.toggle('wavepage', editing && editPage === 'wave');
   document.body.classList.toggle('choppage', editing && editPage === 'chop');
   document.body.classList.toggle('prismpage', editing && editPage === 'prism');
+  document.body.classList.toggle('grainpage', grainPage);
+  document.body.classList.toggle('grainsub', editing && GS_SUBPAGES.includes(editPage));
   chopPageSync(editing);
   document.body.classList.toggle('roomview', room);
   document.body.classList.toggle('seqview', seq);
@@ -93,6 +100,7 @@ function setMode(mode) {
   if (room) enterRoomView();
   if (compose) composeEnter();
   if (synth) wvEnter();
+  if (grainPage) gsEnter();
 
   // Edit has nothing to say about folder tags, and the rail's Browse tools
   // only make sense in Browse — but the library button still opens the drawer.

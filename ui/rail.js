@@ -62,7 +62,7 @@ const COMPOSE_LISTED = false;
       title: 'Editing only — cut, copy, paste, fades and every edit command as icons',
     },
     {
-      icon: 'grain', label: 'Grain', mode: 'edit', page: 'grain',
+      icon: 'grain', label: 'Grain', mode: 'edit', page: 'grain', children: 'grain',
       title: 'The granular engine — the sound you are working on',
     },
     {
@@ -108,6 +108,13 @@ const COMPOSE_LISTED = false;
   ///
   /// `scan` and `import` need a disk. They are listed here because this is the
   /// rail's shape; whether a build shows them is decided by `HAS_DISK` below.
+  /// Grain's own parts, with the Grain v12 page on (`GS_SUBPAGES`).
+  const GRAIN_CHILDREN = [
+    { icon: '◐', label: 'Visuals', page: 'visuals' },
+    { icon: '∿', label: 'Automation', page: 'automation' },
+    { icon: '▭', label: 'Regions', page: 'regions' },
+  ];
+
   const LIBRARY = [
     { icon: '≡', label: 'All sounds', panel: 'browse' },
     { icon: '⌕', label: 'Search', panel: 'search' },
@@ -252,6 +259,23 @@ const COMPOSE_LISTED = false;
       b.append(icon(item.icon), label(item.label));
       rail.append(b);
 
+      // Grain's own parts, with the Grain v12 page on: the panels the page
+      // does not show, each a page of its own (`PAGE_DOCKS`).
+      if (item.children === 'grain') {
+        const sub = el('div', 'rl-sub');
+        sub.dataset.for = 'grain';
+        for (const child of GRAIN_CHILDREN) {
+          const a = el('button', 'rl-child');
+          a.type = 'button';
+          a.title = child.label;
+          a.dataset.subpage = child.page;
+          a.onclick = () => { setEditPage(child.page, false); setMode('edit'); follow(); };
+          a.append(icon(child.icon), label(child.label));
+          sub.append(a);
+        }
+        rail.append(sub);
+        continue;
+      }
       if (item.children !== 'library') continue;
 
       // Browse's own parts, indented beneath it.
@@ -565,7 +589,9 @@ const COMPOSE_LISTED = false;
       const recPane = document.getElementById('paneRecord');
       const isOpenRecord = item.classList.contains('rl-rec')
         && recPane && !recPane.classList.contains('hidden') && trayOpen(item);
-      if (isOpenRecord || (item === current() && trayOpen(item))) {
+      // From one of Grain's own pages, Grain itself is somewhere to go.
+      const fromGrainSub = item.dataset.page === 'grain' && document.body.classList.contains('grainsub');
+      if (isOpenRecord || (item === current() && trayOpen(item) && !fromGrainSub)) {
         shutTray(item);
         sync();
         return;
@@ -576,8 +602,16 @@ const COMPOSE_LISTED = false;
     // Browse's children follow Browse.
     const follow = () => {
       const browse = rail.querySelector('.rl-item[data-mode="overview"]');
-      const sub = rail.querySelector('.rl-sub');
+      const sub = rail.querySelector('.rl-sub[data-for="overview"]');
       if (browse && sub) sub.classList.toggle('shown', browse.classList.contains('rl-on'));
+      // Grain's follow Grain, and only with the Grain v12 page on.
+      const grain = rail.querySelector('.rl-item[data-page="grain"]');
+      const own = rail.querySelector('.rl-sub[data-for="grain"]');
+      if (grain && own) {
+        own.classList.toggle('shown', grain.classList.contains('rl-on') && document.body.dataset.grainUi === 'synth');
+        own.querySelectorAll('.rl-child').forEach((c) =>
+          c.classList.toggle('active', document.body.classList.contains('grainsub') && editPage === c.dataset.subpage));
+      }
     };
     new MutationObserver(follow).observe(rail, {
       subtree: true, attributes: true, attributeFilter: ['class'],

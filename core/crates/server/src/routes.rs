@@ -56,7 +56,7 @@ pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 /// has fallen behind can say so instead of being argued with.
 pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
-    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, WAVE_CSS, SOUND_MAP_JS, SOUND_MAP_CSS, CHOP_JS, CHOP_CSS,
+    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, WAVE_CSS, GRAIN_CSS, SOUND_MAP_JS, SOUND_MAP_CSS, CHOP_JS, CHOP_CSS,
                  SETTINGS_JS, SECTION_PRESETS_JS,
                  SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
                  PERF_PANEL_JS, PRISM_PAD_JS, COMPOSE_JS, VISUAL_LANES_JS,
@@ -145,6 +145,8 @@ pub const RAIL_JS: &str = include_str!("../../../../ui/rail.js");
 pub const RAIL_CSS: &str = include_str!("../../../../ui/rail.css");
 /// The Wave page's stylesheet. See `docs/WAVE-SYNTH.md`.
 pub const WAVE_CSS: &str = include_str!("../../../../ui/wave.css");
+/// The Grain page's own stylesheet (`ui/grain.css`), behind `prefs.grainUi`.
+pub const GRAIN_CSS: &str = include_str!("../../../../ui/grain.css");
 /// The 3D sound map. See `docs/SOUND-MAP.md`.
 pub const SOUND_MAP_JS: &str = include_str!("../../../../ui/sound-map.js");
 pub const SOUND_MAP_CSS: &str = include_str!("../../../../ui/sound-map.css");
@@ -238,6 +240,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/wave.css") => {
             Response::ok("text/css; charset=utf-8", WAVE_CSS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/grain.css") => {
+            Response::ok("text/css; charset=utf-8", GRAIN_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/settings.js") => {

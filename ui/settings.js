@@ -108,8 +108,9 @@ const SETTINGS_SPEC = {
   //
   // Classic is the view as it was; Modern is the design-council pass over it.
   // The Grain view's own switch, not an application theme: nothing outside
-  // the Grain view reads it.
-  grainUi: stOneOf('classic', ['classic', 'modern']),
+  // the Grain view reads it. Synth is the Grain v12 page (`ui/app/406-grain-page.js`):
+  // a new face on the same controls, off until it is cut over.
+  grainUi: stOneOf('classic', ['classic', 'modern', 'synth']),
 };
 
 const SETTINGS_STORE = 'audiolab.settings.v1';

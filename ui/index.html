@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/library-graph.css">
 <link rel="stylesheet" href="/chop.css">
 <link rel="stylesheet" href="/wave.css">
+<link rel="stylesheet" href="/grain.css">
 </head>
 <body>
 
@@ -454,6 +455,11 @@
          time it is shown; its sound is the engine's synth deck. See
          `docs/WAVE-SYNTH.md`. -->
     <div class="hidden" id="waveView"></div>
+
+    <!-- Grain v12: the synth face of the Grain page, behind prefs.grainUi. Built
+         by `ui/app/406-grain-page.js` the first time it is shown; a second face
+         on the same drafts as the tray, which stays built underneath. -->
+    <div class="hidden" id="grainView"></div>
 
     <!-- Compose: the whole piece at once — the granular player, the sequencer and
          the picture side by side, over one timeline. The cells are filled by
