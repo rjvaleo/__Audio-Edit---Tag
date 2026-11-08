@@ -353,19 +353,39 @@ function renderWaveColours() {
 /// tokens came out `#000000`, and each one built a canvas to do it. See
 /// `tests/ui/globals.spec.mjs`, which now fails if the two files declare the
 /// same name.
+///
+/// **Remembered, and read off one canvas.** The Stage asks for the ridge's
+/// colours on every frame (`ridgePaint` → `rpToken` → here), and each call built
+/// a canvas and read a pixel back off the GPU: a stall per call, "GPU stall due
+/// to ReadPixels" in the console, and frames of half a second wherever WebGL is
+/// drawn in software. The page stopped answering the pointer, and the browser
+/// tests that open the Stage timed out on every push. The answer for a given
+/// string never changes, so it is worked out once; the one canvas is kept, and
+/// asked to stay on the CPU.
 function cssHex(colour) {
   if (!colour) return null;
   if (/^#[0-9a-f]{6}$/i.test(colour)) return colour.toLowerCase();
+  const memo = cssHex.memo || (cssHex.memo = new Map());
+  if (memo.has(colour)) return memo.get(colour);
+  let hex = null;
   try {
-    const cv = document.createElement('canvas');
-    cv.width = 1; cv.height = 1;
-    const c = cv.getContext('2d');
+    if (!cssHex.ctx) {
+      const cv = document.createElement('canvas');
+      cv.width = 1; cv.height = 1;
+      cssHex.ctx = cv.getContext('2d', { willReadFrequently: true });
+    }
+    const c = cssHex.ctx;
+    c.clearRect(0, 0, 1, 1);
     c.fillStyle = '#000';
     c.fillStyle = colour;
     c.fillRect(0, 0, 1, 1);
     const [r, g, b] = c.getImageData(0, 0, 1, 1).data;
-    return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
-  } catch { return null; }
+    hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+  } catch { hex = null; }
+  // A theme being dragged through its colours mints a new string at every step.
+  if (memo.size > 512) memo.clear();
+  memo.set(colour, hex);
+  return hex;
 }
 
 function wireWaveColour() {

@@ -124,6 +124,11 @@ test('a composition keeps everything the view shows, and opening it puts every p
     saveAutomation();
     visualLanes.lanes = [];
     saveVisualLanes();
+    // Both saves wait 150 ms to gather edits, and the page closes before they
+    // fire: the lanes stayed on the server, and the timeline test that opens the
+    // same file next found a picture group it never made. Written now, and waited for.
+    await postJSON('/api/automation', { p: state.selectedFile.path, lanes: [], bypassed: state.automation.bypassed });
+    await postJSON('/api/visual-automation', { p: visualLanes.path, lanes: [] });
     roomEdit.frame = 'dock';
     await compositionDelete('Compose test piece');
   });

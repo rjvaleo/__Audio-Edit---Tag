@@ -160,6 +160,10 @@ test('perspective and parallel are drawn as what they do', async ({ page }) => {
 });
 
 test('a pointer on a control\'s slider reaches it, picture or not', async ({ page }) => {
+  // Every slider in six views, three round trips each: 29 s on the Mac against
+  // the default 30, and the runner is slower. The walk is the test, so it gets
+  // the time, the way the controls inventory does.
+  test.setTimeout(90_000);
   await openVisual(page);
   const missed = [];
   for (const [tabKey, mod] of [['controls', 'room'], ['controls', 'ridge'], ['controls', 'room3d'], ['controls', 'stage'], ['geom', null], ['dim4', null]]) {

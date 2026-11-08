@@ -109,6 +109,11 @@ test('pages, dock tabs, clicks and shortcuts are recorded with time spent', asyn
 
 test('effects added and removed, edits and failures are recorded from the requests', async ({ page }) => {
   await ready(page);
+  // The rack is kept on the server, which lives as long as the run: emptied and
+  // left empty, `kit/tone.wav` reached the controls inventory with no EQ and no
+  // compressor, and that test failed for this one's leftovers whenever the two
+  // ran in the same suite. Put back afterwards as it was found.
+  const was = await page.evaluate(() => api('/api/rack?p=kit%2Ftone.wav&sr=44100').then((r) => r.slots));
   await page.evaluate(async () => {
     const p = 'kit/tone.wav';
     await postJSON('/api/rack', { p, sr: 44100, slots: [] });
@@ -122,6 +127,7 @@ test('effects added and removed, edits and failures are recorded from the reques
   expect(events.find((e) => e.k === 'fx.remove')?.d.fx).toBe('gain');
   expect(events.find((e) => e.k === 'edit')?.d.op).toBe('nonsense-op');
   expect(events.find((e) => e.k === 'error')?.d.path).toBe('/api/edit');
+  await page.evaluate((slots) => postJSON('/api/rack', { p: 'kit/tone.wav', sr: 44100, slots }), was);
 });
 
 test('the pointer is kept as a coarse grid per page, clicks apart', async ({ page }) => {

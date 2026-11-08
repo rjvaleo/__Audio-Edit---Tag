@@ -72,8 +72,13 @@ test('a take begins where the engine was, and replays from there', async ({ page
   await frame.evaluate(TAKE_AT_TEN);
   const laid = await frame.evaluate(() => {
     if (perfReplay) perfStop();
+    // The clock is read either side of the laying, so the time the reading
+    // itself takes is not counted against it: read only after, a few
+    // milliseconds on a slow runner put it past the tolerance.
+    const n0 = perfNow();
     seqBridge.takePlayAt(10.5);
-    const at = { head: perfReplay.playheadT, clock: perfNow() - perfReplay.t0 };
+    const n1 = perfNow();
+    const at = { head: perfReplay.playheadT, early: n0 - perfReplay.t0, late: n1 - perfReplay.t0 };
     perfStop();
     seqBridge.takePlayAt(4);
     const before = perfReplay.playheadT;
@@ -81,7 +86,8 @@ test('a take begins where the engine was, and replays from there', async ({ page
     return { ...at, before };
   });
   expect(laid.head, 'the take replayed from its own start, not from where it was played').toBeCloseTo(0.5, 6);
-  expect(laid.clock).toBeCloseTo(0.5, 2);
+  expect(laid.early, 'the replay was laid more than half a second in').toBeLessThanOrEqual(0.5 + 1e-3);
+  expect(laid.late, 'the replay was laid less than half a second in').toBeGreaterThanOrEqual(0.5 - 1e-3);
   expect(laid.before, 'a take replayed before it began did not wait').toBeCloseTo(-6, 6);
 
   // Through the host's transport, which adds only the time since.
