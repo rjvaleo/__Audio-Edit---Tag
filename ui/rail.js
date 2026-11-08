@@ -161,12 +161,10 @@ const COMPOSE_LISTED = false;
   /// sub-items keep their glyphs; they are smaller and they are not
   /// destinations.
   const SVGS = {
-    // A microphone. The transport's ● is the one record button: it captures
-    // what is playing. This opens the pane that records the microphone into
-    // the library, and a second red circle beside the first said they were
-    // the same thing.
-    mic:
-      '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v2.5"/>',
+    // A record button is a filled circle. Nothing else, because anything else
+    // is not a record button.
+    record:
+      '<circle cx="12" cy="12" r="6.5" fill="currentColor" stroke="none"/>',
     // A waveform and the edit cursor through it.
     edit:
       '<path d="M3 12h1.8l1.6-5.5 2.2 11 2-7.5 1.6 4.5H14"/><path d="M17.5 4v16M15.5 4h4M15.5 20h4"/>',
@@ -313,8 +311,8 @@ const COMPOSE_LISTED = false;
     recBtn.type = 'button';
     recBtn.id = 'railRecord';
     recBtn.dataset.panel = 'record';
-    recBtn.title = 'Record from the microphone into the library';
-    recBtn.append(icon('mic'), label('Mic'));
+    recBtn.title = 'Record from the microphone';
+    recBtn.append(icon('record'), label('Record'));
     recRow.append(recBtn);
     rail.append(recRow);
 
@@ -595,76 +593,7 @@ const COMPOSE_LISTED = false;
     follow();
   }
 
-  /// **Along the top.** See `docs/TOP-BAR.md` and the head of `rail.css`.
-  ///
-  /// The rail is moved into the menu bar as it is — same element, same buttons,
-  /// same click handling above — and the transport's own controls are moved in
-  /// beside it, by id, so every handler `app.js` binds to them still finds
-  /// them. What stays in `#transportBar` is the editor's: the file's name, the
-  /// zoom and the follow mode, which only mean something under a waveform.
-  function toTop() {
-    const bar = document.querySelector('header.menubar');
-    const rail = document.getElementById('leftRail');
-    if (!bar || !rail) return;
-    bar.insertBefore(rail, bar.querySelector('.menubar-right'));
-
-    const tr = el('div', 'tb-transport');
-    tr.setAttribute('role', 'group');
-    tr.setAttribute('aria-label', 'Transport');
-    const sep = () => el('div', 'vsep');
-    const move = (id) => { const n = document.getElementById(id); if (n) tr.append(n); };
-    ['playBtn', 'stopBtn', 'loopBtn', 'recBtn'].forEach(move);
-    tr.append(sep());
-    ['srcGrain', 'srcSeq', 'noAudio', 'recLabel', 'loopLabel'].forEach(move);
-    tr.append(sep());
-    ['timeNow', 'volume'].forEach(move);
-    bar.insertBefore(tr, bar.querySelector('.menubar-right'));
-
-    // Settings' word on its own, so a narrow window can drop it and keep the gear.
-    const gear = document.getElementById('settingsOpen');
-    const word = gear && [...gear.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
-    if (word) {
-      const s = el('span', 'menu-gear-word');
-      s.textContent = word.textContent.trim();
-      word.replaceWith(s);
-    }
-
-    seqTransport();
-  }
-
-  /// **One Play for the sequencer too.** The engine's transport needs a sound
-  /// open (`app.js`: `if (!engine.path) return`), so with nothing open the
-  /// sequencer could only be started from its own Play — which is why the Seq
-  /// page carried a second transport. With no sound, in Seq, the bar's Play and
-  /// Stop run the sequencer's own clock instead; with a sound they are the
-  /// engine's as always, and the sequencer follows it (`bridge.js`).
-  ///
-  /// Capture-phase listeners on the buttons themselves run before the `onclick`
-  /// `app.js` gives them, so the engine's handler never sees these clicks.
-  function seqTransport() {
-    const frame = () => document.getElementById('seqFrame');
-    const alone = () => typeof state !== 'undefined' && state.mode === 'seq'
-      && typeof engine !== 'undefined' && !engine.path && frame()?.contentWindow?.togglePlay;
-    const lit = () => {
-      const on = !!frame()?.contentDocument?.getElementById('playBtn')?.classList.contains('active');
-      document.getElementById('playBtn')?.classList.toggle('on', on);
-    };
-    document.getElementById('playBtn')?.addEventListener('click', (e) => {
-      if (!alone()) return;
-      e.stopImmediatePropagation();
-      frame().contentWindow.togglePlay();
-      lit();
-    }, true);
-    document.getElementById('stopBtn')?.addEventListener('click', (e) => {
-      if (!alone()) return;
-      e.stopImmediatePropagation();
-      frame().contentWindow.stopSeq();
-      lit();
-    }, true);
-  }
-
   // Immediately: `app.js` reads the rail at parse time and this script is
   // loaded before it, so the DOM has to be there now rather than on ready.
   build();
-  toTop();
 })();

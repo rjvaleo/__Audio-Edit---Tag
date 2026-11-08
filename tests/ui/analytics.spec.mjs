@@ -224,9 +224,8 @@ test('the tab draws real data: controls, never touched, paths, sessions, date ra
   await request.post('/api/analytics/catalogue', { data: { controls: [{ c: 'neverKnob', ck: 'knob', p: 'grainControls', l: 'Never knob' }, { c: 'seedSlider', ck: 'slider', p: 'grainControls', l: 'Seeded slider' }] } });
 
   // Opened the way a person opens it.
-  // View › Analytics, in the top bar.
-  await page.locator('header.menubar .menu-title', { hasText: 'View' }).click();
-  await page.locator('#menuPop').getByText('Analytics', { exact: true }).click();
+  // The menu bar is unlisted; Analytics is the bars at the foot of the rail.
+  await page.locator('#leftRail .rl-foot-btn[aria-label="Analytics"]').click();
   const view = page.locator('#analyticsView');
   await expect(view).toBeVisible();
   await view.locator('[data-anrange="all"]').click();

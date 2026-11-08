@@ -464,12 +464,7 @@ function solidPathPanel() {
 /// and Help moved to the foot of the left rail as a cog and a book. The menus
 /// are kept, not deleted — the right-click on the sound is the Edit menu, and
 /// the book opens Help — and `true` here puts the bar back.
-///
-/// **Listed again** (RJ, 7 Nov 2026, "the whole top bar"): the bar is the top
-/// bar now (`docs/TOP-BAR.md`), the rail's workspaces and the transport moved
-/// into it, and Settings, Analytics and Help are its gear, View and Help menu
-/// again, so the rail's foot is not drawn.
-const MENUBAR_LISTED = true;
+const MENUBAR_LISTED = false;
 
 function buildMenuBar() {
   const bar = $('menuBar');

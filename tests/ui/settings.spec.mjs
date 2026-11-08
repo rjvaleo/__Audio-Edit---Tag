@@ -165,7 +165,7 @@ test('the settings the menus used to hold are on the panel, and gone from the me
 
 test('the panel opens, draws every row in the table, and closes three ways', async ({ page }) => {
   await ready(page);
-  await page.click('#settingsOpen');
+  await page.click('#leftRail .rl-foot-btn[aria-label="Settings"]');
   await expect(page.locator('#settingsModal')).toBeVisible();
 
   const drawn = await page.evaluate(() => ({
@@ -187,7 +187,7 @@ test('changing a setting on the panel reaches the application and survives a rel
   await ready(page);
   await page.evaluate(() => { setSnap('zero'); setPlayAll(false); });
 
-  await page.click('#settingsOpen');
+  await page.click('#leftRail .rl-foot-btn[aria-label="Settings"]');
   await page.selectOption('#set-snap', 'cd');
   await page.locator('#set-playAll').check();
 
@@ -207,7 +207,7 @@ test('changing a setting on the panel reaches the application and survives a rel
 test('the follow mode dims rather than vanishing when following is off', async ({ page }) => {
   await ready(page);
   await page.evaluate(() => setFollow({ on: false }));
-  await page.click('#settingsOpen');
+  await page.click('#leftRail .rl-foot-btn[aria-label="Settings"]');
   // Greyed out beats hidden, which is this program's own rule for a control
   // that cannot do anything right now — see `docs/MENUS.md`.
   await expect(page.locator('#set-followMode')).toBeVisible();
