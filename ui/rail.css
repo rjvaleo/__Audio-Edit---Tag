@@ -234,3 +234,61 @@
 #leftRail .rl-foot-btn svg { width: 18px; height: 18px; }
 #leftRail .rl-foot-btn:hover { background: var(--surface-3); color: var(--text-2); }
 #leftRail .rl-foot-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ── the rail in the Grain and Wave materials ── RJ, 8 Nov 2026 ─────────────────
+ *
+ * Graphite, and **orange means you are here**, as it does on the engines and the
+ * effects. The tokens are renamed for this column only, so every rule above
+ * keeps saying what it said and picks these up.
+ *
+ * The widths do not move: 62 shut, 168 open, and the icon column fixed, because
+ * `--rail` is what the rest of the layout is positioned from.
+ */
+#leftRail.rl {
+  --line: #2c3036;
+  --surface-3: rgba(255, 255, 255, .04);
+  --text-dim: #858b94;
+  --text-2: #e8eaee;
+  --accent: #ffb547;
+  background: linear-gradient(180deg, #181a1f, #121316);
+}
+#leftRail .rl-item { position: relative; isolation: isolate; height: 38px; }
+#leftRail .rl-item .rl-lb { font-weight: 500; }
+#leftRail .rl-item:hover { background: transparent; }
+
+/* The lit row is a raised amber pill, inset from the rail's edges. It is drawn
+   behind the row rather than being the row, because the row is 168 wide even
+   when the rail is 62: the first column is what keeps the icon from moving. */
+#leftRail .rl-item::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  right: calc(var(--rail-open) - var(--rail-icon) + 4px);
+  border-radius: 9px;
+}
+#leftRail.rl.open .rl-item::before { right: 6px; }
+#leftRail .rl-item:hover::before { background: var(--surface-3); }
+#leftRail .rl-item.rl-on {
+  background: transparent;
+  border-left-color: transparent;
+  color: var(--text-2);
+}
+#leftRail .rl-item.rl-on::before {
+  background: linear-gradient(180deg, rgba(255, 181, 71, .16), rgba(255, 181, 71, .05));
+  box-shadow: inset 0 0 0 1px rgba(255, 181, 71, .55);
+}
+#leftRail .rl-item.rl-on .rl-ic {
+  color: var(--accent);
+  filter: drop-shadow(0 0 4px rgba(255, 181, 71, .55));
+}
+/* Record is an action and never lights: it opens a window and gives it back. */
+#leftRail .rl-item.rl-rec.rl-on::before { background: none; box-shadow: none; }
+#leftRail .rl-item.rl-rec.rl-on { color: var(--rec-red, #e0503f); }
+#leftRail .rl-item.rl-rec.rl-on .rl-ic { color: inherit; filter: none; }
+#leftRail .rl-item.rl-rec:hover { background: transparent; }
+#leftRail .rl-item.rl-rec:hover::before { background: color-mix(in srgb, var(--rec-red, #e0503f) 12%, transparent); }
+#leftRail .rl-item:disabled:hover::before,
+#leftRail .rl-item.rl-off:hover::before { background: none; }
