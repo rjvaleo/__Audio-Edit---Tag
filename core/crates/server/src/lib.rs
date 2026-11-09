@@ -6,6 +6,8 @@ pub mod automation;
 pub mod capture;
 pub mod compose;
 pub mod docs;
+pub mod grain_lfos;
+pub mod grain_notes;
 pub mod http;
 pub mod live;
 /// MIDI in for the Wave synth. See `docs/WAVE-SYNTH.md`.

@@ -128,6 +128,11 @@ impl EventQueue {
     /// Add an event. False, and counted, if the ring is full: a lost note is
     /// bad, but a writer that waited on the audio thread would be worse.
     pub fn push(&self, e: WaveEvent) -> bool {
+        self.push_word(e.pack())
+    }
+
+    /// The same, for a word somebody else packed (`keys.rs`).
+    pub fn push_word(&self, word: u64) -> bool {
         let mut pos = self.tail.load(Ordering::Relaxed);
         loop {
             let (seq, data) = &self.slots[pos & self.mask];
@@ -136,7 +141,7 @@ impl EventQueue {
             if dif == 0 {
                 match self.tail.compare_exchange_weak(pos, pos + 1, Ordering::Relaxed, Ordering::Relaxed) {
                     Ok(_) => {
-                        data.store(e.pack(), Ordering::Relaxed);
+                        data.store(word, Ordering::Relaxed);
                         seq.store(pos + 1, Ordering::Release);
                         return true;
                     }
@@ -153,6 +158,16 @@ impl EventQueue {
 
     /// Take the oldest event, if there is one.
     pub fn pop(&self) -> Option<WaveEvent> {
+        loop {
+            // A word nobody could have written is skipped, not trusted.
+            if let Some(e) = WaveEvent::unpack(self.pop_word()?) {
+                return Some(e);
+            }
+        }
+    }
+
+    /// The oldest word, as it was pushed.
+    pub fn pop_word(&self) -> Option<u64> {
         let mut pos = self.head.load(Ordering::Relaxed);
         loop {
             let (seq, data) = &self.slots[pos & self.mask];
@@ -163,15 +178,7 @@ impl EventQueue {
                     Ok(_) => {
                         let w = data.load(Ordering::Relaxed);
                         seq.store(pos + self.mask + 1, Ordering::Release);
-                        // A word nobody could have written is skipped, not
-                        // trusted.
-                        match WaveEvent::unpack(w) {
-                            Some(e) => return Some(e),
-                            None => {
-                                pos = self.head.load(Ordering::Relaxed);
-                                continue;
-                            }
-                        }
+                        return Some(w);
                     }
                     Err(now) => pos = now,
                 }

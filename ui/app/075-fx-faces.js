@@ -455,6 +455,7 @@ function fxShort(label, group) {
 function fxKnob(m, p, onMove = () => {}, label = p.label) {
   const el = document.createElement('div');
   el.className = 'fxk';
+  el.dataset.key = p.key;
   el.innerHTML = '<svg class="fxk-ring" viewBox="0 0 60 60" role="slider" tabindex="0"></svg><span class="fxk-v"></span><span class="fxk-l"></span>';
   el.querySelector('.fxk-l').textContent = label;
   el.title = `${p.label} — drag up or down, double-click to reset`;
@@ -568,6 +569,8 @@ function fxTile(m, p, onMove = () => {}, label = p.label) {
 const FX_FADERS = new Set(['wet', 'dry', 'db']);
 const FX_TECH = new Set(['inputDiffusion1', 'inputDiffusion2', 'decayDiffusion1', 'decayDiffusion2', 'modDepth', 'coefficient', 'clockHz', 'level', 'seed', 'baseMs']);
 function fxIsTech(m, key) {
+  // On the Grain v12 page every effect control is a knob (`gsFxKnobs`).
+  if (gsFxKnobs()) return false;
   // Bandwidth is technical in the plate (a coefficient) and musical in a
   // filter (in Hz).
   if (key === 'bandwidth') return m.byKey[key]?.unit !== 'Hz';
@@ -575,7 +578,7 @@ function fxIsTech(m, key) {
 }
 function fxControl(m, p, onMove, label) {
   if (fxIsSwitch(p)) return fxTile(m, p, onMove, label);
-  if (FX_FADERS.has(p.key) || (p.key === 'gainDb' && /utility/.test(m.slot.kind))) return fxFader(m, p, onMove, label);
+  if (!gsFxKnobs() && (FX_FADERS.has(p.key) || (p.key === 'gainDb' && /utility/.test(m.slot.kind)))) return fxFader(m, p, onMove, label);
   return fxKnob(m, p, onMove, label);
 }
 

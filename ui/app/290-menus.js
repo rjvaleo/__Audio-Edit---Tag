@@ -307,6 +307,17 @@ const SETTINGS_PANEL = [
         set: (v) => { masterBus.fft = setPref('masterFft', Number(v)); wireMasterRes(); } },
     ],
   },
+  // Only the tests still choose between pages; for everyone else there is one.
+  ...(!navigator.webdriver ? [] : [{
+    group: 'The Grain page',
+    rows: [
+      { key: 'grainUi', label: 'Grain page',
+        why: 'Classic and Modern are the tray as it has been. Synth is the Grain v12 page, still being built: the same controls laid out as an instrument.',
+        when: 'Straight away.',
+        type: 'select', options: [['classic', 'Classic'], ['modern', 'Modern'], ['synth', 'Synth']],
+        get: () => prefs.grainUi, set: (v) => setGrainUi(v) },
+    ],
+  }]),
   {
     group: 'The sequencer',
     rows: [

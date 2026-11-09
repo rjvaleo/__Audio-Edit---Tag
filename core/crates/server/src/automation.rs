@@ -239,6 +239,17 @@ pub struct Automation {
     pub frames: u64,
     pub channels: u16,
     pub sample_rate: u32,
+    /// The notes a take played, in frame order (`grain_notes.rs`).
+    pub notes: Vec<TakeNote>,
+}
+
+/// A key down or up in a take, on the lanes' timeline.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TakeNote {
+    pub frame: u64,
+    pub on: bool,
+    pub key: u8,
+    pub vel: f32,
 }
 
 impl Automation {
@@ -276,7 +287,7 @@ impl Automation {
     }
 
     pub fn to_json(&self) -> Value {
-        Value::obj()
+        let v = Value::obj()
             .set("version", VERSION)
             .set("bypassed", self.bypassed)
             .set("frames", self.frames)
@@ -285,7 +296,25 @@ impl Automation {
             .set(
                 "lanes",
                 Value::Arr(self.lanes.iter().map(lane_json).collect()),
-            )
+            );
+        if self.notes.is_empty() {
+            return v;
+        }
+        v.set(
+            "notes",
+            Value::Arr(
+                self.notes
+                    .iter()
+                    .map(|n| {
+                        Value::obj()
+                            .set("frame", n.frame)
+                            .set("on", n.on)
+                            .set("key", n.key as f64)
+                            .set("vel", n.vel as f64)
+                    })
+                    .collect(),
+            ),
+        )
     }
 
     pub fn from_json(v: &Value) -> Self {
@@ -298,6 +327,20 @@ impl Automation {
             frames: number(v.get("frames"), 0.0).max(0.0) as u64,
             channels: number(v.get("channels"), 0.0).max(0.0) as u16,
             sample_rate: number(v.get("sampleRate"), 0.0).max(0.0) as u32,
+            notes: match v.get("notes") {
+                Some(Value::Arr(a)) => a
+                    .iter()
+                    .filter_map(|n| {
+                        Some(TakeNote {
+                            frame: number(n.get("frame"), -1.0).ge(&0.0).then(|| number(n.get("frame"), 0.0) as u64)?,
+                            on: matches!(n.get("on"), Some(Value::Bool(true))),
+                            key: number(n.get("key"), 60.0).clamp(0.0, 127.0) as u8,
+                            vel: number(n.get("vel"), 0.8).clamp(0.0, 1.0),
+                        })
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
         }
     }
 }
@@ -759,67 +802,76 @@ pub fn apply_stretch(a: &Automation, p: &mut fx::grain::StreamParams, frame: u64
         let Some(v) = stretch_value(&l.target, u) else {
             continue;
         };
-        let on = v >= 0.5;
-        let n = v.round().max(0.0) as u32;
-        let g = &mut p.grain;
-        match l.target.as_str() {
-            "stretch.ratio" => p.ratio = v,
-            "stretch.semitones" => p.semitones = v,
-            "stretch.windowMs" => p.window_ms = v,
-            "stretch.cloudMix" => p.cloud_mix = v,
-            "stretch.grain.position" => g.position = v,
-            "stretch.grain.rateHz" => g.rate_hz = v,
-            "stretch.grain.densityHz" => g.density_hz = v,
-            "stretch.grain.layers" => g.layers = n,
-            "stretch.grain.overlap" => g.overlap = v,
-            "stretch.grain.sizeJitter" => g.size_jitter = v,
-            "stretch.grain.positionJitterMs" => g.position_jitter_ms = v,
-            "stretch.grain.pitchJitterSemis" => g.pitch_jitter_semis = v,
-            "stretch.grain.pitchDriftSemis" => g.pitch_drift_semis = v,
-            "stretch.grain.driftRateHz" => g.drift_rate_hz = v,
-            "stretch.grain.driftStep" => g.drift_step = on,
-            "stretch.grain.linkJitter" => g.link_jitter = on,
-            "stretch.grain.scan" => g.scan = v,
-            "stretch.grain.reverse" => g.reverse = on,
-            "stretch.grain.wrap" => g.wrap = on,
-            "stretch.grain.envelope" => g.envelope = v,
-            "stretch.grain.sizeRange" => g.size_range = v,
-            "stretch.grain.layerSpread" => g.layer_spread = v,
-            "stretch.grain.layerScatter" => g.layer_scatter = v,
-            "stretch.grain.layerScatterMs" => g.layer_scatter_ms = v,
-            "stretch.grain.panSpread" => g.pan_spread = v,
-            "stretch.grain.fbAmount" => g.fb_amount = v,
-            "stretch.grain.fbTimeMs" => g.fb_time_ms = v,
-            "stretch.grain.fbSmear" => g.fb_smear = v,
-            "stretch.grain.fbDamp" => g.fb_damp = v,
-            "stretch.grain.fbShift" => g.fb_shift = v,
-            "stretch.grain.fbHold" => g.fb_hold = on,
-            "stretch.wsola.sensitivity" => p.wsola.sensitivity = v,
-            "stretch.wsola.searchMs" => p.wsola.search_ms = v,
-            "stretch.wsola.stride" => p.wsola.stride = n,
-            "stretch.wsola.guardHops" => p.wsola.guard_hops = v,
-            "stretch.wsola.floor" => p.wsola.floor = v,
-            "stretch.vocoder.windowMs" => p.vocoder.window_ms = v,
-            "stretch.vocoder.phaseLock" => p.vocoder.phase_lock = on,
-            "stretch.vocoder.freqTrust" => p.vocoder.freq_trust = v,
-            "stretch.vocoder.phaseSpread" => p.vocoder.phase_spread = v,
-            "stretch.vocoder.peakWidth" => p.vocoder.peak_width = n,
-            "stretch.vocoder.lockWidth" => p.vocoder.lock_width = v,
-            "stretch.vocoder.magFreeze" => p.vocoder.mag_freeze = v,
-            "stretch.vocoder.magBlur" => p.vocoder.mag_blur = v,
-            "stretch.vocoder.magGate" => p.vocoder.mag_gate = v,
-            "stretch.vocoder.stereoLink" => p.vocoder.stereo_link = on,
-            "stretch.pvsola.anchorFrames" => p.pvsola.anchor_frames = n,
-            "stretch.pvsola.searchMs" => p.pvsola.search_ms = v,
-            "stretch.pvsola.blend" => p.pvsola.blend = v,
-            "stretch.hybrid.margin" => p.hybrid.margin = v,
-            "stretch.hybrid.morphNoise" => p.hybrid.morph_noise = on,
-            "stretch.hybrid.harmonicLevel" => p.hybrid.harmonic_level = v,
-            "stretch.hybrid.percussiveLevel" => p.hybrid.percussive_level = v,
-            "stretch.hybrid.residualLevel" => p.hybrid.residual_level = v,
-            _ => {}
-        }
+        set_stream_field(p, &l.target, v);
     }
+}
+
+/// Put one number into the field of the stream parameters a target names.
+/// `false` for a name that is not one of them. The running LFOs write through
+/// this too (`grain_lfos`), so the two cannot disagree about which field is
+/// which.
+pub fn set_stream_field(p: &mut fx::grain::StreamParams, target: &str, v: f32) -> bool {
+    let on = v >= 0.5;
+    let n = v.round().max(0.0) as u32;
+    let g = &mut p.grain;
+    match target {
+        "stretch.ratio" => p.ratio = v,
+        "stretch.semitones" => p.semitones = v,
+        "stretch.windowMs" => p.window_ms = v,
+        "stretch.cloudMix" => p.cloud_mix = v,
+        "stretch.grain.position" => g.position = v,
+        "stretch.grain.rateHz" => g.rate_hz = v,
+        "stretch.grain.densityHz" => g.density_hz = v,
+        "stretch.grain.layers" => g.layers = n,
+        "stretch.grain.overlap" => g.overlap = v,
+        "stretch.grain.sizeJitter" => g.size_jitter = v,
+        "stretch.grain.positionJitterMs" => g.position_jitter_ms = v,
+        "stretch.grain.pitchJitterSemis" => g.pitch_jitter_semis = v,
+        "stretch.grain.pitchDriftSemis" => g.pitch_drift_semis = v,
+        "stretch.grain.driftRateHz" => g.drift_rate_hz = v,
+        "stretch.grain.driftStep" => g.drift_step = on,
+        "stretch.grain.linkJitter" => g.link_jitter = on,
+        "stretch.grain.scan" => g.scan = v,
+        "stretch.grain.reverse" => g.reverse = on,
+        "stretch.grain.wrap" => g.wrap = on,
+        "stretch.grain.envelope" => g.envelope = v,
+        "stretch.grain.sizeRange" => g.size_range = v,
+        "stretch.grain.layerSpread" => g.layer_spread = v,
+        "stretch.grain.layerScatter" => g.layer_scatter = v,
+        "stretch.grain.layerScatterMs" => g.layer_scatter_ms = v,
+        "stretch.grain.panSpread" => g.pan_spread = v,
+        "stretch.grain.fbAmount" => g.fb_amount = v,
+        "stretch.grain.fbTimeMs" => g.fb_time_ms = v,
+        "stretch.grain.fbSmear" => g.fb_smear = v,
+        "stretch.grain.fbDamp" => g.fb_damp = v,
+        "stretch.grain.fbShift" => g.fb_shift = v,
+        "stretch.grain.fbHold" => g.fb_hold = on,
+        "stretch.wsola.sensitivity" => p.wsola.sensitivity = v,
+        "stretch.wsola.searchMs" => p.wsola.search_ms = v,
+        "stretch.wsola.stride" => p.wsola.stride = n,
+        "stretch.wsola.guardHops" => p.wsola.guard_hops = v,
+        "stretch.wsola.floor" => p.wsola.floor = v,
+        "stretch.vocoder.windowMs" => p.vocoder.window_ms = v,
+        "stretch.vocoder.phaseLock" => p.vocoder.phase_lock = on,
+        "stretch.vocoder.freqTrust" => p.vocoder.freq_trust = v,
+        "stretch.vocoder.phaseSpread" => p.vocoder.phase_spread = v,
+        "stretch.vocoder.peakWidth" => p.vocoder.peak_width = n,
+        "stretch.vocoder.lockWidth" => p.vocoder.lock_width = v,
+        "stretch.vocoder.magFreeze" => p.vocoder.mag_freeze = v,
+        "stretch.vocoder.magBlur" => p.vocoder.mag_blur = v,
+        "stretch.vocoder.magGate" => p.vocoder.mag_gate = v,
+        "stretch.vocoder.stereoLink" => p.vocoder.stereo_link = on,
+        "stretch.pvsola.anchorFrames" => p.pvsola.anchor_frames = n,
+        "stretch.pvsola.searchMs" => p.pvsola.search_ms = v,
+        "stretch.pvsola.blend" => p.pvsola.blend = v,
+        "stretch.hybrid.margin" => p.hybrid.margin = v,
+        "stretch.hybrid.morphNoise" => p.hybrid.morph_noise = on,
+        "stretch.hybrid.harmonicLevel" => p.hybrid.harmonic_level = v,
+        "stretch.hybrid.percussiveLevel" => p.hybrid.percussive_level = v,
+        "stretch.hybrid.residualLevel" => p.hybrid.residual_level = v,
+        _ => return false,
+    }
+    true
 }
 
 // The document's own ranges. These match what `persist::stretch_from_json`
@@ -1079,10 +1131,14 @@ pub fn start_runner(app: std::sync::Arc<crate::state::App>) {
             // Whether the last tick left anything written into the rack, so the
             // clear on stop happens once rather than every 8 ms.
             let mut wrote = false;
+            let mut notes = crate::grain_notes::Cursor::default();
+            let mut lfos = crate::grain_lfos::Runner::default();
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(TICK_MS));
+                lfos.advance(&app);
                 let playing = app.playing.read().ok().and_then(|g| g.clone());
                 let Some(now) = playing else {
+                    lfos.idle(&app);
                     continue;
                 };
 
@@ -1123,7 +1179,16 @@ pub fn start_runner(app: std::sync::Arc<crate::state::App>) {
                     Automation::default()
                 };
 
-                if automation.is_silent() {
+                crate::grain_notes::tick(&app, &now, &automation, &mut notes);
+
+                // The LFOs run with no lanes at all, so nothing here may stop
+                // for want of a lane while one is holding the sound.
+                let held = lfos.holding(&app, &now);
+                if !held {
+                    lfos.idle(&app);
+                }
+
+                if automation.is_silent() && !held {
                     if wrote {
                         let _ = crate::live::with(&app, |h| {
                             h.shared.clear_automation();
@@ -1140,12 +1205,22 @@ pub fn start_runner(app: std::sync::Arc<crate::state::App>) {
                     let file_rate = now.doc_rate;
 
                     rack_controls(&automation, &spec, frame, file_rate, &mut writes);
+                    let swing = held.then(|| {
+                        let lanes = crate::grain_lfos::Lanes { automation: &automation, frame, sample_rate: file_rate };
+                        lfos.plan(&app, &spec, &lanes)
+                    });
+                    if let Some((outs, released)) = &swing {
+                        crate::grain_lfos::merge_rack(outs, &spec, &mut writes);
+                        crate::grain_lfos::release_rack(released, &spec, &h.shared);
+                    }
                     h.shared.set_automation(writes.clone());
 
-                    if let Some(mut p) = h.shared.params() {
-                        apply_stretch(&automation, &mut p, frame, file_rate);
-                        h.shared.set_params(p);
-                    }
+                    h.shared.update_params(|p| {
+                        apply_stretch(&automation, p, frame, file_rate);
+                        if let Some((outs, released)) = &swing {
+                            crate::grain_lfos::apply_stream(outs, released, p);
+                        }
+                    });
                     if automation.lanes.iter().any(|l| l.enabled && l.target.starts_with("ptc.")) {
                         let mut pt = spec.pitch_time;
                         apply_pitch_time(&automation, &mut pt, frame, file_rate);
@@ -1390,6 +1465,11 @@ impl AutomationStore {
 
     pub fn set(&self, key: &str, a: Automation) {
         self.by_path.lock().unwrap().insert(key.to_string(), a);
+    }
+
+    /// Change a file's automation in place, with nothing else writing to it.
+    pub fn update(&self, key: &str, f: impl FnOnce(&mut Automation)) {
+        f(self.by_path.lock().unwrap().entry(key.to_string()).or_default());
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
@@ -1667,6 +1747,7 @@ mod tests {
             frames: 176_228,
             channels: 2,
             sample_rate: 44_100,
+            notes: Vec::new(),
             lanes: vec![Lane {
                 id: "lane".into(),
                 target: "fx.g.mid.freq".into(),

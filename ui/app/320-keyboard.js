@@ -385,6 +385,9 @@ document.addEventListener('keydown', (e) => {
   // it is showing, and nothing otherwise. See `wvKeyDown`.
   if (wvKeyDown(e)) return;
 
+  // The Grain page's, the same way, ahead of the old note keys.
+  if (gsKeyDown(e)) return;
+
   // The note keyboard. Before the overlay tier so the Keys window can stay open
   // while you play, and after the text-field guard so typing a name is typing a
   // name. Escape is never a note.
@@ -439,7 +442,7 @@ document.addEventListener('keydown', (e) => {
 /// its key is let go. It claims nothing and answers to no other page, so it
 /// cannot disagree with the dispatcher above.
 document.addEventListener('keyup', (e) => {
-  if (!inTextField(e.target)) wvKeyUp(e);
+  if (!inTextField(e.target)) { wvKeyUp(e); gsKeyUp(e); }
 });
 
 

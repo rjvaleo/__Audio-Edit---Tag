@@ -35,8 +35,9 @@ pub fn ensure(app: &Arc<App>) -> Result<(), String> {
     });
     let frames = *app.buffer_frames.read().unwrap();
     // The synth deck's handle outlives any one device, so a device reopened
-    // at a new buffer size keeps the Wave page's patch and tables.
-    *slot = Some(engine::spawn_with(idle_params(), silent, frames, Arc::clone(&app.wave.shared))?);
+    // at a new buffer size keeps the Wave page's patch and tables. The Grain
+    // page's keys are kept the same way.
+    *slot = Some(engine::spawn_with(idle_params(), silent, frames, Arc::clone(&app.wave.shared), Arc::clone(&app.grain_keys))?);
     Ok(())
 }
 
@@ -490,8 +491,10 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
         // to compare. See `Rebuilds`.
         let r = match h.shared.params() {
             Some(mut p) => {
-                let r = Rebuilds::decide(&p, &list.stretch);
+                // Against the settings, not where an LFO has them this tick.
+                let r = Rebuilds::decide(&app.grain_lfos.unswung(&p), &list.stretch);
                 merge_stretch(&mut p, &list.stretch);
+                app.grain_lfos.reapply(&mut p);
                 h.shared.set_params(p);
                 r
             }

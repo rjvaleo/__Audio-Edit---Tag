@@ -55,8 +55,10 @@ async function endCapture() {
   await loadAutomation();
   const lanes = state.automation.lanes || [];
   const points = lanes.reduce((n, l) => n + (l.points || []).length, 0);
-  perfSetStatus(lanes.length
-    ? `SAVED — ${lanes.length} LANES · ${points} POINTS · ${perfDuration().toFixed(1)}s`
+  // A key down and its release are one note.
+  const notes = (state.automation.notes || []).filter((n) => n.on).length;
+  perfSetStatus(lanes.length || notes
+    ? `SAVED — ${lanes.length} LANES · ${points} POINTS${notes ? ` · ${notes} NOTES` : ''} · ${perfDuration().toFixed(1)}s`
     : 'CAPTURE ENDED — NOTHING MOVED, NOTHING RECORDED');
 }
 

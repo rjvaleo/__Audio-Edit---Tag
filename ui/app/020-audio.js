@@ -429,10 +429,12 @@ let pollTimer = null;
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(async () => {
-    if (!engine.playing || noAudio()) { stopPolling(); return; }
+    // A held note on the Grain page sounds with the transport stopped.
+    if ((!engine.playing && !gsPollWanted()) || noAudio()) { stopPolling(); return; }
     try {
       const asked = performance.now();
       const r = await api('/api/engine/grains');
+      gsPicFeed(r);
       engine.deviceRate = r.sampleRate || engine.deviceRate;
       // A new stretch moves the engine's count to keep the same moment of the
       // file (`Stretcher::rescale`). The clock here does the same, so the
@@ -441,7 +443,8 @@ function startPolling() {
         engine.position *= r.ratio / engine.ratio;
       }
       if (r.ratio > 0) engine.ratio = r.ratio;
-      lockClock(r.position);
+      // A note on a stopped transport is not the transport moving.
+      if (engine.playing || !gsPollWanted()) lockClock(r.position);
       engine.loop = r.loop || null;
       engine.latency = r.latency || 0;
       engine.spectrum = r.spectrum && r.spectrum.length ? r.spectrum : engine.spectrum;
@@ -494,7 +497,7 @@ function startPolling() {
         updatePlayhead();
         updateOverviewPlayhead();
       }
-    } catch { /* a dropped poll is a stale playhead, not a failure */ }
+    } catch { gsPicFeed(null); /* a dropped poll is a stale playhead, not a failure */ }
   }, 50);
 }
 

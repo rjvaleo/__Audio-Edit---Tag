@@ -42,6 +42,22 @@ pub struct RackSpec {
     /// rack. The engine still clamps every value to the effect's own limits;
     /// this only says what part of them a knob sweeps.
     pub ranges: BTreeMap<String, BTreeMap<String, KnobRange>>,
+    /// Each module's own Wet/dry and Level, per slot id, for the ones not at
+    /// full wet and nought dB. In JSON they are `wet` and `level` on the slot.
+    pub mixes: BTreeMap<String, SlotMix>,
+}
+
+/// A module's footer: 0..1, and dB.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SlotMix {
+    pub wet: f32,
+    pub level: f32,
+}
+
+impl Default for SlotMix {
+    fn default() -> Self {
+        SlotMix { wet: 1.0, level: 0.0 }
+    }
 }
 
 /// One knob's sweep: where its travel starts and ends, and whether it is
@@ -227,6 +243,7 @@ impl RackSpec {
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
+            mixes: BTreeMap::new(),
         }
     }
 
@@ -258,6 +275,7 @@ impl RackSpec {
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
+            mixes: BTreeMap::new(),
         }
     }
 
@@ -268,6 +286,7 @@ impl RackSpec {
         };
         let mut slots = Vec::new();
         let mut slot_ids = Vec::new();
+        let mut mixes = BTreeMap::new();
         for (index, it) in items.iter().enumerate() {
             let kind = it.get("kind").and_then(|k| k.as_str()).unwrap_or("");
             let bypassed = flag(it.get("bypassed"));
@@ -377,6 +396,13 @@ impl RackSpec {
             // Only if the slot survived: an unknown kind is dropped, and its
             // name has to go with it or the two lists come apart.
             if slots.len() > before {
+                let mix = SlotMix {
+                    wet: num(it.get("wet"), 1.0).clamp(0.0, 1.0),
+                    level: num(it.get("level"), 0.0).clamp(fx::SLOT_LEVEL_MIN, fx::SLOT_LEVEL_MAX),
+                };
+                if mix != SlotMix::default() {
+                    mixes.insert(id.clone(), mix);
+                }
                 slot_ids.push(id);
             }
         }
@@ -388,6 +414,7 @@ impl RackSpec {
             pitch_time: pitch_time_from_json(v.get("pitchTime")),
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
+            mixes,
         };
         spec.pads = pads_from_json(v.get("pads"), &spec);
         if let Some(Value::Obj(m)) = v.get("ranges") {
@@ -427,10 +454,13 @@ impl RackSpec {
             .iter()
             .enumerate()
             .map(|(i, s)| {
-                let base = Value::obj()
+                let mut base = Value::obj()
                     .set("kind", s.kind())
                     .set("id", self.slot_ids.get(i).cloned().unwrap_or_default())
                     .set("bypassed", s.bypassed());
+                if let Some(m) = self.slot_ids.get(i).and_then(|id| self.mixes.get(id)) {
+                    base = base.set("wet", m.wet as f64).set("level", m.level as f64);
+                }
                 match s {
                     SlotSpec::Gain { db, .. } => base.set("db", *db as f64),
                     SlotSpec::Eq { settings, .. } => {
@@ -518,6 +548,12 @@ impl RackSpec {
         if self.master.is_active() {
             return true;
         }
+        let trimmed = self.slots.iter().enumerate().any(|(i, s)| {
+            !s.bypassed() && self.slot_ids.get(i).is_some_and(|id| self.mixes.contains_key(id))
+        });
+        if trimmed {
+            return true;
+        }
         self.slots.iter().any(|s| match s {
             SlotSpec::Gain { db, bypassed } => !bypassed && db.abs() > 1e-6,
             SlotSpec::Eq { settings, bypassed } => {
@@ -582,6 +618,13 @@ impl RackSpec {
             // slots, so this costs one construction and no audio.
             rack.push_slot(effect, s.bypassed());
         }
+        // Slot *n* is spec slot *n*: the same reason a bypassed one is kept.
+        for (i, id) in self.slot_ids.iter().enumerate() {
+            if let (Some(m), Some(slot)) = (self.mixes.get(id), rack.slots.get_mut(i)) {
+                slot.set_mix(m.wet, m.level);
+            }
+        }
+        rack.reserve_mix(crate::live::MAX_BLOCK * channels.max(1));
         // Last, always. The channel compressor exists to hold whatever the
         // chain produced under the ceiling, which it can only do from the end.
         if self.master.is_active() {
@@ -597,6 +640,9 @@ impl RackSpec {
     /// lane driving it, and the value the export reads are all the same name
     /// and the same range. `false` for a slot or key that does not exist.
     pub fn set_param(&mut self, slot: usize, key: &str, value: f32) -> bool {
+        if key == fx::SLOT_WET || key == fx::SLOT_LEVEL {
+            return self.set_mix(slot, key, value);
+        }
         let Some(s) = self.slots.get_mut(slot) else {
             return false;
         };
@@ -632,8 +678,30 @@ impl RackSpec {
         }
     }
 
+    fn set_mix(&mut self, slot: usize, key: &str, value: f32) -> bool {
+        let Some(id) = self.slot_ids.get(slot).filter(|_| slot < self.slots.len()).cloned() else {
+            return false;
+        };
+        let mut m = self.mixes.get(&id).copied().unwrap_or_default();
+        if key == fx::SLOT_WET {
+            m.wet = value.clamp(0.0, 1.0);
+        } else {
+            m.level = value.clamp(fx::SLOT_LEVEL_MIN, fx::SLOT_LEVEL_MAX);
+        }
+        if m == SlotMix::default() {
+            self.mixes.remove(&id);
+        } else {
+            self.mixes.insert(id, m);
+        }
+        true
+    }
+
     /// Read one control back, after clamping.
     pub fn get_param(&self, slot: usize, key: &str) -> Option<f32> {
+        if key == fx::SLOT_WET || key == fx::SLOT_LEVEL {
+            let m = self.slot_ids.get(slot).and_then(|id| self.mixes.get(id)).copied().unwrap_or_default();
+            return Some(if key == fx::SLOT_WET { m.wet } else { m.level });
+        }
         match self.slots.get(slot)? {
             SlotSpec::Gain { db, .. } if key == "db" => Some(*db),
             SlotSpec::Eq { settings, .. } => get_eq_param(settings, key),
@@ -956,7 +1024,7 @@ mod tests {
                 .collect();
             slots.push(SlotSpec::Shape { kind, params, bypassed: false });
         }
-        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new() };
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new() };
         let back = RackSpec::from_json(&spec.to_json());
         assert_eq!(back, spec, "a shaper lost something on the way through JSON");
         assert!(!back.build(48_000, 2).is_empty(), "none of them built");
@@ -976,7 +1044,7 @@ mod tests {
                 .collect();
             slots.push(SlotSpec::Prism { id: d.id, params, sound: None, bypassed: false });
         }
-        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new() };
+        let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new() };
         let json = spec.to_json();
         let Some(Value::Arr(items)) = json.get("slots") else { panic!("no slots") };
         for (item, entry) in items.iter().zip(fx::prism::catalogue()) {
@@ -1191,6 +1259,7 @@ mod tests {
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
+            mixes: BTreeMap::new(),
         };
         assert!(spec.is_active());
         assert!(!spec.build(48_000, 2).is_empty());
@@ -1207,6 +1276,7 @@ mod tests {
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
+            mixes: BTreeMap::new(),
         };
         assert!(!spec.is_active());
     }
@@ -1221,6 +1291,7 @@ mod tests {
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
+            mixes: BTreeMap::new(),
         };
         assert!(spec.build(48_000, 2).is_empty());
         assert!(!spec.is_active());
@@ -1271,6 +1342,7 @@ mod tests {
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
+            mixes: BTreeMap::new(),
         };
         for (f, db) in spec.eq_curve(48000, 64) {
             assert!(db.abs() < 0.1, "flat EQ curved by {db} dB at {f} Hz");
@@ -1293,6 +1365,7 @@ mod tests {
             pitch_time: Default::default(),
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
+            mixes: BTreeMap::new(),
         };
         let curve = spec.eq_curve(48000, 200);
         let (peak_f, peak_db) = curve
@@ -1314,7 +1387,7 @@ mod tests {
     #[test]
     fn the_store_remembers_what_was_set() {
         let store = RackStore::default();
-        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new() });
+        store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new() });
         assert!(store.is_active("a.wav"));
         assert_eq!(store.get("a.wav").slots.len(), 1);
     }
@@ -1498,4 +1571,55 @@ fn get_comp_param(s: &CompSettings, key: &str) -> Option<f32> {
         "makeupDb" => s.makeup_db,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod mix_tests {
+    use super::*;
+
+    fn footed() -> RackSpec {
+        RackSpec::from_json(&crate::json::parse(
+            r#"{"slots":[{"kind":"gain","id":"a","db":0,"wet":0.25,"level":-6},{"kind":"gain","id":"b","db":0}]}"#,
+        ).unwrap())
+    }
+
+    #[test]
+    fn a_modules_wet_dry_and_level_survive_the_round_trip() {
+        let spec = footed();
+        let j = spec.to_json();
+        let Some(Value::Arr(slots)) = j.get("slots") else { panic!() };
+        assert_eq!(slots[0].get("wet"), Some(&Value::Num(0.25)));
+        assert_eq!(slots[0].get("level"), Some(&Value::Num(-6.0)));
+        assert_eq!(RackSpec::from_json(&j), spec);
+    }
+
+    #[test]
+    fn a_module_at_the_defaults_writes_nothing_new() {
+        let j = footed().to_json();
+        let Some(Value::Arr(slots)) = j.get("slots") else { panic!() };
+        assert!(slots[1].get("wet").is_none() && slots[1].get("level").is_none());
+    }
+
+    #[test]
+    fn wet_dry_and_level_are_controls_like_any_other() {
+        let mut spec = footed();
+        assert!(spec.set_param(1, fx::SLOT_WET, 7.0));
+        assert_eq!(spec.get_param(1, fx::SLOT_WET), Some(1.0), "clamped");
+        assert!(spec.set_param(1, fx::SLOT_LEVEL, -99.0));
+        assert_eq!(spec.get_param(1, fx::SLOT_LEVEL), Some(-24.0));
+        assert_eq!(spec.get_param(0, fx::SLOT_WET), Some(0.25));
+        assert!(!spec.set_param(9, fx::SLOT_WET, 0.5));
+    }
+
+    #[test]
+    fn the_built_rack_has_them_and_a_trim_counts_as_doing_something() {
+        let spec = footed();
+        let rack = spec.build(48_000, 2);
+        assert_eq!(rack.get_param(0, fx::SLOT_WET), Some(0.25));
+        assert_eq!(rack.get_param(0, fx::SLOT_LEVEL), Some(-6.0));
+        assert_eq!(rack.get_param(1, fx::SLOT_WET), Some(1.0));
+        assert!(spec.is_active(), "a level on an otherwise flat module changes the sound");
+        let plain = RackSpec::from_json(&crate::json::parse(r#"{"slots":[{"kind":"gain","id":"a","db":0}]}"#).unwrap());
+        assert!(!plain.is_active());
+    }
 }

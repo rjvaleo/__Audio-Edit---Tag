@@ -301,9 +301,79 @@ pub fn tail_budget(sample_rate: u32) -> u64 {
 /// playback needs no such cap because stopping is a thing the listener does.
 pub const TAIL_CAP_SECONDS: u64 = 30;
 
+/// The control a slot's own Wet/dry goes by, 0..1. Addressed like any other
+/// control (`/api/rack/param`, the smoothing in `transport.rs`).
+pub const SLOT_WET: &str = "slot.wet";
+/// The control a slot's own Level goes by, in dB.
+pub const SLOT_LEVEL: &str = "slot.level";
+pub const SLOT_LEVEL_MIN: f32 = -24.0;
+pub const SLOT_LEVEL_MAX: f32 = 12.0;
+
+/// How long a slot's Wet/dry and Level take to arrive, as a time constant.
+const SLOT_MIX_TAU: f32 = 0.01;
+
 pub struct Slot {
     pub effect: Box<dyn Effect>,
     pub bypassed: bool,
+    /// Where this module's footer is set: 0..1, and dB.
+    wet: f32,
+    level_db: f32,
+    /// As a straight gain, and where each actually is on the way there.
+    gain: f32,
+    wet_now: f32,
+    gain_now: f32,
+}
+
+impl Slot {
+    fn new(effect: Box<dyn Effect>, bypassed: bool) -> Slot {
+        Slot { effect, bypassed, wet: 1.0, level_db: 0.0, gain: 1.0, wet_now: 1.0, gain_now: 1.0 }
+    }
+
+    /// Put the footer somewhere at once: for a slot being built, not played.
+    pub fn set_mix(&mut self, wet: f32, level_db: f32) {
+        self.set_wet(wet);
+        self.set_level(level_db);
+        self.wet_now = self.wet;
+        self.gain_now = self.gain;
+    }
+
+    fn set_wet(&mut self, v: f32) {
+        if v.is_finite() {
+            self.wet = v.clamp(0.0, 1.0);
+        }
+    }
+
+    fn set_level(&mut self, db: f32) {
+        if db.is_finite() {
+            self.level_db = db.clamp(SLOT_LEVEL_MIN, SLOT_LEVEL_MAX);
+            self.gain = if self.level_db == 0.0 { 1.0 } else { 10f32.powf(self.level_db / 20.0) };
+        }
+    }
+
+    /// Nothing to do but run the effect, which is almost always.
+    fn plain(&self) -> bool {
+        self.wet == 1.0 && self.gain == 1.0 && self.wet_now == 1.0 && self.gain_now == 1.0
+    }
+
+    /// Mix what came out of the effect with what went in, and trim it.
+    fn blend(&mut self, wet: &mut [f32], dry: &[f32], channels: usize, sample_rate: u32) {
+        let ch = channels.max(1);
+        let k = 1.0 - (-1.0 / (SLOT_MIX_TAU * sample_rate.max(1) as f32)).exp();
+        for (w, d) in wet.chunks_mut(ch).zip(dry.chunks(ch)) {
+            self.wet_now += (self.wet - self.wet_now) * k;
+            self.gain_now += (self.gain - self.gain_now) * k;
+            for (w, d) in w.iter_mut().zip(d) {
+                *w = (*d + (*w - *d) * self.wet_now) * self.gain_now;
+            }
+        }
+        // Land, so a footer put back where it was costs nothing again.
+        if (self.wet - self.wet_now).abs() < 1e-5 {
+            self.wet_now = self.wet;
+        }
+        if (self.gain - self.gain_now).abs() < 1e-5 {
+            self.gain_now = self.gain;
+        }
+    }
 }
 
 /// An ordered chain of effects.
@@ -314,11 +384,13 @@ pub struct Slot {
 pub struct Rack {
     pub slots: Vec<Slot>,
     meters: Option<Arc<RackMeters>>,
+    /// What went into a module with a footer in use. See [`Rack::reserve_mix`].
+    dry: Vec<f32>,
 }
 
 impl Rack {
     pub fn new() -> Self {
-        Rack { slots: Vec::new(), meters: None }
+        Rack { slots: Vec::new(), meters: None, dry: Vec::new() }
     }
 
     /// Share a meter block with whoever is drawing it. The rack writes; the
@@ -337,7 +409,7 @@ impl Rack {
     }
 
     pub fn push(&mut self, effect: Box<dyn Effect>) {
-        self.slots.push(Slot { effect, bypassed: false });
+        self.slots.push(Slot::new(effect, false));
     }
 
     /// Push an effect that may already be switched out.
@@ -345,7 +417,7 @@ impl Rack {
     /// Callers that address slots by position need every slot present, bypassed
     /// or not — see `RackSpec::build`.
     pub fn push_slot(&mut self, effect: Box<dyn Effect>, bypassed: bool) {
-        self.slots.push(Slot { effect, bypassed });
+        self.slots.push(Slot::new(effect, bypassed));
     }
 
     pub fn is_empty(&self) -> bool {
@@ -358,13 +430,33 @@ impl Rack {
         }
     }
 
+    /// Room for a block of this many samples, so that a footer moved while
+    /// the audio thread is running the rack does not have to allocate there.
+    pub fn reserve_mix(&mut self, samples: usize) {
+        if self.dry.len() < samples {
+            self.dry.resize(samples, 0.0);
+        }
+    }
+
     pub fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
         if let Some(m) = &self.meters {
             m.write(0, buf, channels);
         }
         for (i, s) in self.slots.iter_mut().enumerate() {
             if !s.bypassed {
-                s.effect.process(buf, channels, sample_rate);
+                if s.plain() {
+                    s.effect.process(buf, channels, sample_rate);
+                } else {
+                    // Only ever grown off the audio thread: a rack built for
+                    // the device has `reserve_mix`ed its largest block.
+                    if self.dry.len() < buf.len() {
+                        self.dry.resize(buf.len(), 0.0);
+                    }
+                    let dry = &mut self.dry[..buf.len()];
+                    dry.copy_from_slice(buf);
+                    s.effect.process(buf, channels, sample_rate);
+                    s.blend(buf, dry, channels, sample_rate);
+                }
             }
             // Metered even when bypassed, so a switched-out slot reads as
             // passing its input through rather than as silence.
@@ -378,15 +470,29 @@ impl Rack {
     /// Write one control on one slot. Out-of-range slots and unknown keys are
     /// ignored, for the same reason [`Effect::set_param`] ignores them.
     pub fn set_param(&mut self, slot: usize, key: &str, value: f32) -> bool {
-        self.slots
-            .get_mut(slot)
-            .is_some_and(|s| s.effect.set_param(key, value))
+        let Some(s) = self.slots.get_mut(slot) else { return false };
+        match key {
+            SLOT_WET => {
+                s.set_wet(value);
+                true
+            }
+            SLOT_LEVEL => {
+                s.set_level(value);
+                true
+            }
+            _ => s.effect.set_param(key, value),
+        }
     }
 
     /// Where a control currently sits, for anything that has to move it from
     /// there rather than to it.
     pub fn get_param(&self, slot: usize, key: &str) -> Option<f32> {
-        self.slots.get(slot).and_then(|s| s.effect.get_param(key))
+        let s = self.slots.get(slot)?;
+        match key {
+            SLOT_WET => Some(s.wet),
+            SLOT_LEVEL => Some(s.level_db),
+            _ => s.effect.get_param(key),
+        }
     }
 
     /// How many frames of audio to run through the rack before the range the

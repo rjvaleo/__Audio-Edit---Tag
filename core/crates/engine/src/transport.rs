@@ -32,7 +32,7 @@ use fx::{tail_budget, TAIL_SILENCE};
 /// FFT state for the vocoder. The cost per second of audio climbs without
 /// bound as the loop shortens. Loops below this want a phase accumulator over
 /// the loop region rather than a smaller number here.
-const MIN_LOOP_FRAMES: u64 = 64;
+pub(crate) const MIN_LOOP_FRAMES: u64 = 64;
 
 /// How much fade the seam of a loop this long can afford.
 ///
@@ -285,6 +285,13 @@ pub struct Shared {
 
     /// The master bus, with the two channels kept apart. See [`Scope`].
     scope: Mutex<Scope>,
+
+    /// The block as it reaches the rack, for the "before" on the Grain page's
+    /// effects screen. Written only while `pre_rack_left` is above zero: frames
+    /// still owed since somebody last asked, counted down by the callback, so a
+    /// page that goes away stops the cost by itself.
+    pre_rack: Mutex<Scope>,
+    pre_rack_left: AtomicU32,
 }
 
 /// Frames of master output kept for the meters.
@@ -345,6 +352,29 @@ impl Scope {
             }
         }
     }
+
+    /// The ring, oldest first. `None` until something has been written.
+    fn snapshot(&self) -> Option<(Vec<f32>, Vec<f32>, u32)> {
+        if self.rate == 0 {
+            return None;
+        }
+        let (mut l, mut r) = (Vec::new(), Vec::new());
+        if self.filled {
+            l.reserve_exact(SCOPE_FRAMES);
+            r.reserve_exact(SCOPE_FRAMES);
+            l.extend_from_slice(&self.l[self.at..]);
+            l.extend_from_slice(&self.l[..self.at]);
+            r.extend_from_slice(&self.r[self.at..]);
+            r.extend_from_slice(&self.r[..self.at]);
+        } else {
+            if self.at == 0 {
+                return None;
+            }
+            l.extend_from_slice(&self.l[..self.at]);
+            r.extend_from_slice(&self.r[..self.at]);
+        }
+        Some((l, r, self.rate))
+    }
 }
 
 impl Shared {
@@ -393,6 +423,8 @@ impl Shared {
             spectrum: Mutex::new(Vec::new()),
             waveform: Mutex::new(Vec::new()),
             scope: Mutex::new(Scope::new()),
+            pre_rack: Mutex::new(Scope::new()),
+            pre_rack_left: AtomicU32::new(0),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
         }
@@ -443,6 +475,15 @@ impl Shared {
 
     pub fn params(&self) -> Option<StreamParams> {
         self.params.lock().ok().map(|g| *g)
+    }
+
+    /// Read, change and put back in one hold of the lock, for a thread that
+    /// does so a hundred times a second: a slider landing between its read and
+    /// its write would otherwise be lost.
+    pub fn update_params(&self, f: impl FnOnce(&mut StreamParams)) {
+        if let Ok(mut g) = self.params.lock() {
+            f(&mut g);
+        }
     }
 
     /// The audio currently loaded, for callers that need to derive something
@@ -885,26 +926,37 @@ impl Shared {
     }
 
     pub fn scope_snapshot(&self) -> Option<(Vec<f32>, Vec<f32>, u32)> {
-        let g = self.scope.lock().ok()?;
-        if g.rate == 0 {
-            return None;
+        self.scope.lock().ok()?.snapshot()
+    }
+
+    /// Ask for the block as it reaches the rack for this many more frames.
+    pub fn want_pre_rack(&self, frames: u32) {
+        self.pre_rack_left.store(frames, Ordering::Relaxed);
+    }
+
+    /// The last of what reached the rack, while it has been asked for. Oldest
+    /// first, and in step with [`scope_snapshot`](Self::scope_snapshot).
+    pub fn pre_rack_snapshot(&self) -> Option<(Vec<f32>, Vec<f32>, u32)> {
+        self.pre_rack.lock().ok()?.snapshot()
+    }
+
+    /// The callback's half. When nobody has asked this is one relaxed load.
+    fn push_pre_rack(&self, out: &[f32], channels: usize, rate: u32) {
+        let left = self.pre_rack_left.load(Ordering::Relaxed);
+        if left == 0 {
+            return;
         }
-        let (mut l, mut r) = (Vec::new(), Vec::new());
-        if g.filled {
-            l.reserve_exact(SCOPE_FRAMES);
-            r.reserve_exact(SCOPE_FRAMES);
-            l.extend_from_slice(&g.l[g.at..]);
-            l.extend_from_slice(&g.l[..g.at]);
-            r.extend_from_slice(&g.r[g.at..]);
-            r.extend_from_slice(&g.r[..g.at]);
-        } else {
-            if g.at == 0 {
-                return None;
-            }
-            l.extend_from_slice(&g.l[..g.at]);
-            r.extend_from_slice(&g.r[..g.at]);
+        let frames = (out.len() / channels.max(1)) as u32;
+        // A compare, not a store: an ask landing here keeps its whole allowance.
+        let _ = self.pre_rack_left.compare_exchange(left, left.saturating_sub(frames), Ordering::Relaxed, Ordering::Relaxed);
+        if let Ok(mut g) = self.pre_rack.try_lock() {
+            g.write(out, channels, rate);
         }
-        Some((l, r, g.rate))
+    }
+
+    /// The output fader, 0 to 4.
+    pub fn output_gain(&self) -> f32 {
+        f32::from_bits(self.gain.load(Ordering::Acquire))
     }
 
     /// Drop the master bus to silence, so the meters fall when playback stops
@@ -946,6 +998,11 @@ impl Shared {
         if !self.loop_on.load(Ordering::Acquire) {
             return None;
         }
+        self.region_bounds(end)
+    }
+
+    /// The loop region, lit or not: what a held note goes round.
+    fn region_bounds(&self, end: u64) -> Option<(u64, u64)> {
         let a = self.loop_a.load(Ordering::Acquire);
         let b = match self.loop_b.load(Ordering::Acquire) {
             0 => end,
@@ -1028,6 +1085,9 @@ pub struct Core {
     fader_to: [f32; 2],
     fader_from: [f32; 2],
     fader_step: usize,
+    /// The Grain page's keys: AMP, Glide, Bend and Run (`keys.rs`). Inert until
+    /// somebody plays one.
+    keys: crate::keys::KeyPlayer,
 }
 
 /// Hyperprism ramped a fader to a new gain in a straight line over this many
@@ -1279,7 +1339,10 @@ impl Core {
     /// In one piece when nothing is moving, which is almost always; in short
     /// pieces while something is, so a control arrives as a slope rather than
     /// as an edge. See [`CONTROL_CHUNK`].
-    fn process_rack(&mut self, out: &mut [f32], channels: usize) {
+    fn process_rack(&mut self, out: &mut [f32], channels: usize, shared: &Shared) {
+        // Before the chain, whether or not there is one: with no rack, before
+        // and after are the same sound and should be drawn as the same sound.
+        shared.push_pre_rack(out, channels, self.params.sample_rate);
         if self.rack.is_none() && self.leaving.is_none() {
             return;
         }
@@ -1423,6 +1486,7 @@ impl Core {
             fader_to: [1.0; 2],
             fader_from: [1.0; 2],
             fader_step: FADER_RAMP,
+            keys: crate::keys::KeyPlayer::new(Arc::new(crate::keys::GrainKeys::new())),
             scratch: vec![
                 GrainEvent {
                     index: 0,
@@ -1435,6 +1499,12 @@ impl Core {
                 128
             ],
         }
+    }
+
+    /// Have this deck played by `keys` (`keys.rs`).
+    pub fn with_keys(mut self, keys: Arc<crate::keys::GrainKeys>) -> Self {
+        self.keys = crate::keys::KeyPlayer::new(keys);
+        self
     }
 
     /// Fill one block. This is the whole audio callback, minus the device.
@@ -1495,6 +1565,12 @@ impl Core {
         } else {
             self.glide.snap([self.target.ratio, self.target.semitones]);
         }
+        // The keys, on top of what the document asks and never written back.
+        let keyed = self.keys.begin(block_frames, self.params.sample_rate, self.renderer.position(), shared.is_playing());
+        let detune = self.keys.detune(block_frames, self.params.sample_rate);
+        if detune != 0.0 {
+            self.params.semitones = (self.params.semitones + detune).clamp(-48.0, 48.0);
+        }
         {
             // A new stretch keeps the playhead on the same moment of the file
             // (RJ, 4 Nov 2026): the position is counted in output frames, so
@@ -1514,9 +1590,17 @@ impl Core {
                 let here = self.renderer.position() as f64;
                 let there = (here * after as f64 / before as f64).round().max(0.0) as u64;
                 self.renderer.rescale(there, &self.params);
+                self.keys.rescale_clock(after as f64 / before as f64);
                 self.vs_frames = 0;
                 self.vs_frac = 0.0;
             }
+        }
+        // A Scan moved under a held note keeps the read where it is, the same
+        // way (`brackets.rs`).
+        if let Some(there) = self.keys.scan_moved(self.renderer.position(), &self.params) {
+            self.renderer.rescale(there, &self.params);
+            self.vs_frames = 0;
+            self.vs_frac = 0.0;
         }
         // Read, never written into `self.params`. See `record_block_cost`.
         self.renderer.set_layer_cap(shared.layer_cap());
@@ -1586,20 +1670,37 @@ impl Core {
 
         let seek = shared.seek.swap(-1, Ordering::AcqRel);
         if seek >= 0 {
-            self.renderer.seek(seek as u64, &self.params);
-            // What was read ahead belongs to where the playhead was.
+            if self.keys.clocked() {
+                // The head is a note's; the transport is told where to be.
+                self.keys.set_clock(seek as u64);
+            } else {
+                self.renderer.seek(seek as u64, &self.params);
+                // What was read ahead belongs to where the playhead was.
+                self.vs_frames = 0;
+                self.vs_frac = 0.0;
+            }
+        }
+        let keyed_to = if keyed.resume {
+            Some(self.keys.clock())
+        } else if keyed.restart {
+            Some(crate::brackets::frame(self.keys.start_frame(self.params.plan().out_frames as u64), &self.params))
+        } else {
+            None
+        };
+        if let Some(frame) = keyed_to {
+            self.renderer.seek(frame, &self.params);
             self.vs_frames = 0;
             self.vs_frac = 0.0;
         }
 
-        if !shared.is_playing() {
+        if !shared.is_playing() && !self.keys.head_running() {
             // No *new* material — but the chain is not empty. A reverb that
             // stops dead on the same sample as the transport is the one thing
             // every listener notices, so the rack keeps running on silence and
             // its tails ring out.
             out.fill(0.0);
             if self.tail_left > 0 {
-                self.process_rack(out, channels);
+                self.process_rack(out, channels, shared);
                 let peak = out.iter().fold(0.0f32, |m, s| m.max(s.abs()));
                 // Counted down rather than stopped at the first quiet block:
                 // a delay with a long gap between repeats is silent in the
@@ -1650,11 +1751,18 @@ impl Core {
                         fx::soften(out);
                     }
                     shared.push_scope(out, channels, self.params.sample_rate);
+                    // The waveform and spectrum too, for as long as a tail can
+                    // ring: otherwise they hold the last block of a note or a
+                    // stop for good. Past that they have settled on silence.
+                    if self.tail_left > 0 {
+                        self.measure(out, channels, shared);
+                    }
                 }
             }
+            self.keys.end(self.renderer.position(), block_frames, false, None);
             shared
                 .position
-                .store(self.renderer.position(), Ordering::Release);
+                .store(self.keys.transport(self.renderer.position()), Ordering::Release);
             return;
         }
         // Playing again: whatever is in the chain is live material, so the tail
@@ -1663,7 +1771,7 @@ impl Core {
 
         let frames = out.len() / channels;
         let end = self.params.plan().out_frames as u64;
-        let bounds = shared.loop_bounds(end);
+        let bounds = self.keys.transport_bounds(shared.loop_bounds(end), &self.params);
         // Publish what was resolved, so a playhead somewhere else can wrap at
         // the same place rather than run past it and be dragged back.
         match bounds {
@@ -1682,8 +1790,16 @@ impl Core {
         // Hyperprism's Post-Roll first: past the end, the transport plays on for
         // that long with the rack running on silence, so tails reach the end
         // of a take. Looping has none, as in the original.
+        //
+        // With Run off the renderer is a note's head and loops the region, so
+        // the end only stops the transport's own count.
         let mut post = false;
-        if bounds.is_none() && end > 0 && self.renderer.position() >= end {
+        let clocked = self.keys.clocked();
+        if clocked {
+            if shared.is_playing() && bounds.is_none() && end > 0 && self.keys.clock() >= end {
+                shared.pause();
+            }
+        } else if bounds.is_none() && end > 0 && self.renderer.position() >= end {
             let left = *self.post_left.get_or_insert(shared.post_roll_frames());
             if left == 0 {
                 self.post_left = None;
@@ -1704,9 +1820,20 @@ impl Core {
             self.post_left = None;
         }
 
+        // A held note loops the region whether or not the loop light is on; a
+        // transport with no note under it renders nothing.
+        let transport_bounds = bounds;
+        let head_running = self.keys.head_running();
+        let bounds = if head_running {
+            shared.region_bounds(end).map(|x| crate::brackets::bounds(x, &self.params))
+        } else {
+            bounds
+        };
+        let gated = clocked && !head_running;
+
         // Wrap first if we are already at or past the loop end, so a loop set
         // behind the playhead takes effect immediately.
-        if let Some((a, b)) = bounds {
+        if let (Some((a, b)), false) = (bounds, gated) {
             if self.renderer.position() >= b || self.renderer.position() < a {
                 self.renderer.seek(a, &self.params);
             }
@@ -1717,7 +1844,7 @@ impl Core {
         // the ramp up are always the same length.
         let seam = bounds.map_or(LOOP_FADE_FRAMES, |(a, b)| loop_fade(a, b));
 
-        if post {
+        if post || gated {
             out.fill(0.0);
             self.seq_runs.clear();
         } else {
@@ -1842,9 +1969,30 @@ impl Core {
             self.vs_frac = after - drop as f64;
         }
 
+        // AMP, on what the engine made and before the rack, so the effects'
+        // tails ring on after a release.
+        self.keys.gate(out, channels, self.params.sample_rate);
+        if clocked {
+            // The sequencer plays on the transport, not on a note's head.
+            self.seq_runs.clear();
+            if shared.is_playing() {
+                let at = self.keys.clock();
+                let first = match transport_bounds {
+                    Some((_, b)) if b > at => frames.min((b - at) as usize),
+                    _ => frames,
+                };
+                self.seq_runs.push((0, at, first));
+                if first < frames {
+                    if let Some((a, _)) = transport_bounds {
+                        self.seq_runs.push((first, a, frames - first));
+                    }
+                }
+            }
+        }
+
         // The rack runs on the block, after the grains and before the fader,
         // exactly as the offline render orders it.
-        self.process_rack(out, channels);
+        self.process_rack(out, channels, shared);
 
 
         let gain = if shared.mute.load(Ordering::Acquire) {
@@ -1922,9 +2070,10 @@ impl Core {
 
         self.measure(out, channels, shared);
 
+        self.keys.end(self.renderer.position(), frames, shared.is_playing(), transport_bounds);
         shared
             .position
-            .store(self.renderer.position(), Ordering::Release);
+            .store(self.keys.transport(self.renderer.position()), Ordering::Release);
         shared
             .overflows
             .store(self.renderer.overflows(), Ordering::Release);
@@ -1970,7 +2119,7 @@ impl Core {
         bus.missing.fetch_add(lost, Ordering::Relaxed);
         // Where a stop would fade from.
         self.seq_fade = SEQ_STOP_FADE_FRAMES;
-        self.seq_fade_at = self.renderer.position();
+        self.seq_fade_at = self.keys.transport(self.renderer.position());
     }
 
     /// Feed the block into the spectrum window and publish a frame each time it

@@ -56,8 +56,16 @@ function gmArm(btn) {
 }
 
 function setGrainUi(v) {
+  if (!navigator.webdriver) v = 'synth';
+  const was = document.body.dataset.grainUi;
   const ui = setPref('grainUi', v);
   document.body.dataset.grainUi = ui;
+  // The Grain v12 page is a different face, not a restyling: if the Grain page
+  // is what is showing, it has to be put up or taken down.
+  if (was !== ui && (was === 'synth' || ui === 'synth') && state.mode === 'edit') {
+    if (ui !== 'synth' && GS_SUBPAGES.includes(editPage)) setEditPage('grain', false);
+    setMode('edit');
+  }
   for (const b of document.querySelectorAll('#grainUiSwitch button')) {
     b.setAttribute('aria-pressed', String(b.dataset.ui === ui));
   }
@@ -88,8 +96,8 @@ function grainUiBuild() {
   sw.className = 'gm-switch';
   sw.setAttribute('role', 'group');
   sw.setAttribute('aria-label', 'Grain view style');
-  sw.title = 'Classic is the Grain view as it was; Modern is the redesign. Only this view changes.';
-  for (const [ui, word] of [['classic', 'Classic'], ['modern', 'Modern']]) {
+  sw.title = 'Classic is the Grain view as it was; Modern is the redesign; New is the new Grain page. Only this view changes.';
+  for (const [ui, word] of [['classic', 'Classic'], ['modern', 'Modern'], ['synth', 'New']]) {
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.ui = ui;

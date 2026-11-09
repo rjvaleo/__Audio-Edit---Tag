@@ -18,6 +18,10 @@ const $ = (id) => document.getElementById(id);
 /// parse anything, and so a setting can be read during load without reaching
 /// for `localStorage` again.
 const prefs = Settings.load(localStorage);
+// The new Grain page is the Grain page (RJ, 8 Nov 2026). The old tray stays built,
+// hidden, because Visual › Sound borrows it, and its tests still drive it until
+// they are moved over, which is the only reason `webdriver` is asked.
+if (!navigator.webdriver) prefs.grainUi = 'synth';
 
 /// Change one, write them all, and tell whoever is listening.
 ///
@@ -231,9 +235,16 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
 /// HyperStretch (`ui/app/385-hyperstretch.js`). One mode, `edit`, every
 /// way: the same document, the same transport. Remembered. Set by the rail
 /// (`setEditPage`).
-const EDIT_PAGES = ['grain', 'prism', 'wave', 'chop'];
+/// With the Grain v12 page on, Visuals, Automation and Regions are pages too:
+/// Grain's dock with only that panel out, the way Chop is.
+const GS_SUBPAGES = ['visuals', 'automation', 'regions'];
+const EDIT_PAGES = ['grain', 'prism', 'wave', 'chop', ...GS_SUBPAGES];
 let editPage = (() => {
-  try { const p = localStorage.getItem('editPage'); return EDIT_PAGES.includes(p) ? p : 'grain'; } catch { return 'grain'; }
+  try {
+    const p = localStorage.getItem('editPage');
+    if (GS_SUBPAGES.includes(p) && prefs.grainUi !== 'synth') return 'grain';
+    return EDIT_PAGES.includes(p) ? p : 'grain';
+  } catch { return 'grain'; }
 })();
 
 const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq' || m === 'compose';

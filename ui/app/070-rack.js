@@ -769,6 +769,13 @@ function prismModuleControl(slot, p, rows, moved = () => {}, io = { live: livePa
     rows[p.key] = row;
     return row;
   }
+  // On the Grain v12 page, a knob: the same value by the same routes
+  // (`fxModel`), on its own face only (`gsFxKnobs`).
+  if (gsFxKnobs() && io.live === liveParam) {
+    const k = fxKnob(fxModel(slot), p, moved);
+    rows[p.key] = k;
+    return k;
+  }
   const stepped = p.step === 1;
   const format = p.choices ? (v) => p.choices[Math.round(v - p.min)] ?? String(Math.round(v))
     : stepped ? (v) => String(Math.round(v)) : (v) => fxValueFormat(p, v);
