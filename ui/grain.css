@@ -187,6 +187,25 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-mapb { width: 38px; flex: none; height: 18px; border-radius: 5px; font: 600 var(--fs-xs) var(--mono); letter-spacing: .1em; display: grid; place-items: center; color: var(--gs-t2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
 #grainView .gs-ltg { display: flex; flex-wrap: wrap; gap: 3px; flex: 1; min-width: 0; max-height: 36px; align-content: center; }
 #grainView .gs-ltg .gs-hint { white-space: normal; line-height: 12px; }
+#grainView .gs-tgc { display: inline-flex; align-items: center; gap: 4px; height: 17px; padding: 0 3px 0 6px; border-radius: 5px; font: 500 var(--fs-xs) var(--sans); color: var(--gs-t); background: color-mix(in srgb, var(--c) 16%, transparent); white-space: nowrap; }
+#grainView .gs-tgc i { font-style: normal; color: var(--gs-t3); cursor: pointer; padding: 0 3px; }
+#grainView .gs-tgc i:hover { color: var(--gs-t); }
+#grainView .gs-tgc.more { color: var(--gs-t3); padding-right: 6px; }
+#grainView .gs-mapb { cursor: pointer; }
+#grainView .gs-mapb:hover { color: var(--gs-t); }
+#grainView .gs-mapb.on { background: var(--c); color: #0b0d12; box-shadow: 0 0 10px var(--c); width: auto; padding: 0 6px; }
+/* what an LFO is on: the ring, its reach and the dot where the sound is now */
+#grainView .gs-bm, #grainView .gs-bd { position: absolute; display: none; pointer-events: none; background: var(--mc); }
+#grainView .gs-bm { bottom: 1px; height: 2px; border-radius: 1px; opacity: .9; }
+#grainView .gs-bd { bottom: 1px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; box-shadow: 0 0 6px var(--mc); }
+#grainView .gs-bc.mapped .gs-bm, #grainView .gs-bc.mapped .gs-bd { display: block; }
+#grainView .gs-bc.mapped .gs-bw { box-shadow: inset 0 0 0 1.5px var(--mc), inset 0 1px 3px rgba(0,0,0,.8); }
+#grainView .gs-mapped .fxk-ring, #grainView .gs-mapped .sh-ring, #grainView .gs-mapped .lex-ring { outline: 1.5px solid var(--mc); outline-offset: 1px; border-radius: 50%; }
+#grainView .gs-kd { fill: var(--mc); filter: drop-shadow(0 0 3px var(--mc)); }
+body.gs-mapping #grainView .gs-bc[data-k]:not(.sw):not(.sg):not(.gs-nomap) .gs-bw,
+body.gs-mapping #grainView .gs-bc[data-f] .gs-bw,
+body.gs-mapping #grainView .fxk, body.gs-mapping #grainView .sh-cell:not(.sh-switch):not(.sh-keycap), body.gs-mapping #grainView .lex-knob { outline: 1px dashed var(--gs-mapc); outline-offset: 1px; cursor: copy; }
+body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-nomap .gs-tg, body.gs-mapping #grainView .gs-nomap.fxt, body.gs-mapping #grainView .gs-nomap.sh-switch, body.gs-mapping #grainView .gs-nomap.lex-choice { opacity: .45; cursor: not-allowed; }
 #grainView .gs-eright { display: flex; flex-direction: column; gap: 3px; flex: none; }
 #grainView .gs-erow { display: flex; gap: 8px; align-items: center; height: 26px; }
 #grainView #gsREng { display: flex; flex-direction: column; gap: 7px; flex: none; }
@@ -385,3 +404,21 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #gsFxRow .gs-flat .sh-switch .sh-key.on { color: var(--gs-t); border-color: var(--gs-on); }
 #gsFxRow .gs-flat .sh-switch .k { margin-top: 2px; }
 
+
+/* Phase 3: the dock answers, and every module has its footer. */
+#grainView .gs-keys canvas { cursor: pointer; }
+#grainView .gs-wheel { cursor: ns-resize; }
+#grainView #gsGlide { cursor: ew-resize; }
+#grainView .gs-btnlab { cursor: pointer; }
+#grainView .gs-runb.on svg { stroke: var(--gs-on); }
+#grainView #gsAmp { cursor: grab; }
+#grainView .gs-fd canvas { cursor: ns-resize; }
+#gsFxRow .fx-module > .gs-fxfoot { flex: none; display: flex; gap: 4px; height: 26px; }
+#gsFxRow .gs-fxfoot .gs-bc { flex: 1 1 0; }
+
+/* The instrument's MIDI channel. */
+#grainView .gs-midi { flex: none; height: 22px; padding: 0 6px; border: 0; border-radius: 6px; background: var(--gs-well, #06070a); color: var(--gs-t2, #b9bec6); font: 500 var(--fs-xs) var(--mono); cursor: pointer; appearance: none; }
+#grainView .gs-midi:hover { color: var(--gs-t, #e8eaee); }
+#grainView .gs-midi:focus-visible { outline: 1px solid #ffb547; }
+#grainView .gs-kbr .gs-kbtune { min-width: 0; flex: 0 1 auto; max-width: 132px; }
+#grainView .gs-kbr .gs-kbtune span { overflow: hidden; text-overflow: ellipsis; }

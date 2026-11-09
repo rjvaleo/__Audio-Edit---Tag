@@ -117,19 +117,19 @@ function gsFxFit() {
 // ───────────────────────────────────────────────────────────── the page
 
 function gsFxPageHtml() {
-  const lfos = [0, 1, 2, 3].map((i) => `<span class="gs-mapb gs-inert" style="--c:${GS_LCOL[i]};width:auto;padding:0 8px" title="Not connected yet: the LFOs arrive after note input">LFO ${i + 1}</span>`).join('');
+  const lfos = [0, 1, 2, 3].map((i) => `<span class="gs-mapb" id="gsLmapF${i}" style="--c:${GS_LCOL[i]};width:auto;padding:0 8px">LFO ${i + 1}</span>`).join('');
   return `<section class="gs-view gs-fxview" id="gsFxView" hidden>
     <div class="gs-panel gs-chainmap"><span class="gs-nm">EFFECTS</span><span class="gs-hint">after every engine, before the output · drag a title to reorder</span><span class="gs-sp"></span><span class="gs-hint">Modulate</span>${lfos}<span class="gs-chip gs-btn" id="gsFxAddChip" title="Add an effect to the end of the chain">＋ Add effect</span><span class="gs-chip gs-btn" id="gsFxBack"></span></div>
     <div class="gs-fxrow" id="gsFxRow"></div>
     <div class="gs-fxbot">
      <div class="gs-fxcol">
-      <div class="gs-panel gs-mod"><div class="gs-mh"><span class="gs-nm">OUT</span><span class="gs-sp"></span><span class="gs-hint" id="gsFxOutRo"></span></div><div class="gs-well"><canvas id="gsFxOut" data-w="978" data-h="66" title="Out: what leaves the chain, as it plays"></canvas></div></div>
-      <div class="gs-panel gs-mod"><div class="gs-mh"><span class="gs-nm">SPECTRUM</span><span class="gs-sp"></span></div><div class="gs-well"><canvas id="gsFxSpec" data-w="978" data-h="66" title="Spectrum: after the chain, 20 Hz to 20 kHz"></canvas></div></div>
+      <div class="gs-panel gs-mod"><div class="gs-mh"><span class="gs-nm">OUT</span><span class="gs-sp"></span><span class="gs-hint" id="gsFxOutRo"></span></div><div class="gs-well"><canvas id="gsFxOut" data-w="978" data-h="66" title="Out: before the chain, thin, and after it, bright, as it plays"></canvas></div></div>
+      <div class="gs-panel gs-mod"><div class="gs-mh"><span class="gs-nm">SPECTRUM</span><span class="gs-sp"></span></div><div class="gs-well"><canvas id="gsFxSpec" data-w="978" data-h="66" title="Spectrum: before and after the chain, 20 Hz to 20 kHz"></canvas></div></div>
      </div>
      <div class="gs-panel gs-mod gs-fxfad"><div class="gs-mh"><span class="gs-nm">OUTPUT</span><span class="gs-sp"></span></div><div class="gs-faders">
-      <div class="gs-fd gs-inert" title="Not connected yet: the engine has one output level, so L alone cannot be set"><b>L</b><div class="gs-well"><canvas id="gsFdL" data-w="40" data-h="140"></canvas></div><span class="gs-ro" id="gsFdLRo"></span></div>
+      <div class="gs-fd" title="L: the left side's own level, after the effects. Drag up and down · double-click: back to the default"><b>L</b><div class="gs-well"><canvas id="gsFdL" data-w="40" data-h="140"></canvas></div><span class="gs-ro" id="gsFdLRo"></span></div>
       <div class="gs-fd" title="LR: the output level, the transport's own. Drag up and down · double-click: back to the default"><b>LR</b><div class="gs-well"><canvas id="gsFdLR" data-w="40" data-h="140"></canvas></div><span class="gs-ro" id="gsFdLRRo"></span></div>
-      <div class="gs-fd gs-inert" title="Not connected yet: the engine has one output level, so R alone cannot be set"><b>R</b><div class="gs-well"><canvas id="gsFdR" data-w="40" data-h="140"></canvas></div><span class="gs-ro" id="gsFdRRo"></span></div>
+      <div class="gs-fd" title="R: the right side's own level, after the effects. Drag up and down · double-click: back to the default"><b>R</b><div class="gs-well"><canvas id="gsFdR" data-w="40" data-h="140"></canvas></div><span class="gs-ro" id="gsFdRRo"></span></div>
      </div></div>
      <div class="gs-panel gs-mod gs-fxmet"><div class="gs-mh"><span class="gs-nm">METERS</span><span class="gs-sp"></span></div><div class="gs-well"><canvas id="gsFxMeters" data-w="148" data-h="170" title="Meters: VU and peak for L and R, and the correlation between them (−1 to +1)"></canvas></div></div>
     </div>
@@ -200,7 +200,8 @@ function gsFxSetView(v) {
   $('gsFxView').hidden = !fx;
   document.querySelector('#grainView .gs-view:not(.gs-fxview)').hidden = fx;
   if (fx) gsFxBorrow();
-  else { gsFxReturn(); }
+  // The engine may have changed while its panel could not be measured.
+  else { gsFxReturn(); gsSizeEngine(); }
   gsFxMarkRow();
   gsFxFit();
   gsMarkTune();
@@ -244,6 +245,97 @@ function gsFxWire() {
   };
   gsDrag(vol.el, (a, b, e) => setVol(e), setVol);
   vol.el.ondblclick = () => { const input = $('volume'); input.value = input.defaultValue; input.dispatchEvent(new Event('input', { bubbles: true })); };
+  for (const [id, side] of [['gsFdL', 'l'], ['gsFdR', 'r']]) {
+    const g = GS_CV[id];
+    const at = (e) => gsFxSetSide(side, 1 - (wvLocal(g.el, e)[1] - 8) / (g.h - 16));
+    gsDrag(g.el, (a, b, e) => at(e), at);
+    g.el.ondblclick = () => gsFxSetSide(side, GS_FX_UNITY);
+  }
+}
+
+// ──────────────────────────────────────────────────────── L and R, on their own
+
+/// Where a side fader sits for unity. The engine's gains start there.
+const GS_FX_UNITY = 0.8;
+GS.out = { l: GS_FX_UNITY, r: GS_FX_UNITY };
+const gsFxSideGain = (u) => (u / GS_FX_UNITY) ** 2;
+const GS_FX_SIDE = { l: 'gainL', r: 'gainR' };
+
+function gsFxSetSide(side, u) {
+  GS.out[side] = wvClamp(u);
+  enginePost({ [GS_FX_SIDE[side]]: gsFxSideGain(GS.out[side]) });
+}
+
+/// A device reopened starts its faders at unity.
+function gsFxSendSides() {
+  if (GS.out.l !== GS_FX_UNITY || GS.out.r !== GS_FX_UNITY) enginePost({ gainL: gsFxSideGain(GS.out.l), gainR: gsFxSideGain(GS.out.r) });
+}
+
+/// The page switched off: nothing of its faders stays behind.
+function gsFxResetSides() {
+  if (GS.out.l === GS_FX_UNITY && GS.out.r === GS_FX_UNITY) return;
+  GS.out.l = GS.out.r = GS_FX_UNITY;
+  enginePost({ gainL: 1, gainR: 1 });
+}
+
+function gsFxSideText(u) {
+  const db = 20 * Math.log10(gsFxSideGain(u) || 1e-9);
+  return db <= -60 ? '−∞' : (db > 0.04 ? '+' : db < -0.04 ? '−' : '') + Math.abs(db).toFixed(1);
+}
+
+// ────────────────────────────────────────────── each module's Wet/dry and Level
+
+/// The mock-up's two pictures: the wave gaining on its ghost, and a rising row of bars.
+const gsMixGlyph = (v) => ggWave(4, 60, 24, 9, 2, 'f') + ggWave(4, 60, 24, 9 * v, 3) + '<text x="2" y="46" class="t">dry</text><text x="46" y="46" class="ta">wet</text>';
+function gsLevelGlyph(v) {
+  const n = (v + 24) / 36;
+  let s = '';
+  for (let i = 0; i < 8; i++) s += `<rect x="${6 + i * 7}" y="${40 - i * 4.4}" width="5" height="${4 + i * 4.4}" rx="1" fill="${i / 8 < n ? 'var(--gg)' : 'rgba(255,255,255,.12)'}"/>`;
+  return s;
+}
+
+const GS_FXFOOT = [
+  { key: 'wet', param: 'slot.wet', label: 'Wet / dry', min: 0, max: 1, d: 1, glyph: gsMixGlyph, fmt: (v) => Math.round(v * 100) + '%', tip: 'Wet / dry: this module against what went into it' },
+  { key: 'level', param: 'slot.level', label: 'Level', min: -24, max: 12, d: 0, glyph: gsLevelGlyph, fmt: (v) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1) + ' dB', tip: 'Level: what this module sends on' },
+];
+
+function gsFxFootPaint(el, c, v) {
+  const n = (v - c.min) / (c.max - c.min), z = (c.d - c.min) / (c.max - c.min), bip = c.key === 'level';
+  const a = bip ? Math.min(n, z) : 0, b = bip ? Math.max(n, z) : n, f = el.querySelector('.gs-bf');
+  f.style.left = `calc(4px + (100% - 8px) * ${a.toFixed(4)})`;
+  f.style.width = `calc((100% - 8px) * ${(b - a).toFixed(4)})`;
+  f.classList.toggle('neg', bip && n < z);
+  el.querySelector('.gs-bv').textContent = c.fmt(v);
+  const g = el.querySelector('svg.gg'), s = c.glyph(v);
+  if (g._s !== s) { g.innerHTML = s; g._s = s; }
+}
+
+function gsFxFootWire(m, el, c) {
+  const w = el.querySelector('.gs-bw');
+  const put = (v) => {
+    const slot = gsFxOf(m);
+    if (!slot) return;
+    v = wvClamp(v, c.min, c.max);
+    if (c.key === 'level' && Math.abs(v) < 0.35) v = 0;
+    slot[c.key] = v;
+    gsFxFootPaint(el, c, v);
+    liveParam(slot.id, c.param, v);
+  };
+  gsDrag(w, (a, b, e) => put(c.min + wvClamp((wvLocal(w, e)[0] - 4) / (w.offsetWidth - 8)) * (c.max - c.min)),
+    (e) => put(c.min + wvClamp((wvLocal(w, e)[0] - 4) / (w.offsetWidth - 8)) * (c.max - c.min)), () => commitRack());
+  w.ondblclick = () => { put(c.d); commitRack(); };
+}
+
+/// The footer of a module: added when the rack draws one, and painted from the
+/// slot whatever drew it.
+function gsFxFoot(m, slot) {
+  let foot = m.querySelector(':scope > .gs-fxfoot');
+  if (!foot) {
+    foot = wvH(`<div class="gs-fxfoot">${GS_FXFOOT.map((c) => `<div class="gs-bc" data-f="${c.key}" style="--gg:var(--gs-f-level)" title="${c.tip}. Drag across · double-click: back to the default">${gsSvgG('')}<div class="gs-bw gs-well"><i class="gs-bf"></i><i class="gs-bm"></i><i class="gs-bd"></i><span class="gs-bn">${c.label}</span><b class="gs-bv"></b></div></div>`).join('')}</div>`);
+    m.appendChild(foot);
+    GS_FXFOOT.forEach((c) => gsFxFootWire(m, foot.querySelector(`[data-f="${c.key}"]`), c));
+  }
+  for (const c of GS_FXFOOT) gsFxFootPaint(foot.querySelector(`[data-f="${c.key}"]`), c, slot[c.key] ?? c.d);
 }
 
 // ─────────────────────────────────────────────── what the page adds to a module
@@ -330,6 +422,7 @@ function gsFxDress() {
       if (over > 0) m.style.width = (m.offsetWidth + over + 2) + 'px';
     }
     if (gsFxGroup(slot.kind) === 'Reverb & Delay') gsFxKnobIcons(m);
+    gsFxFoot(m, slot);
   });
 }
 
@@ -382,39 +475,18 @@ function gsFxDrawOutput() {
   const cl = gsCl(), m = GS.master;
   const o = GS_CV.gsFxOut;
   if (o) {
-    const { c, w, h } = o, xy = m?.lissajous;
-    c.clearRect(0, 0, w, h);
-    if (!xy || xy.length < 8) {
-      c.strokeStyle = `rgba(${cl.bloom},.15)`;
-      c.beginPath(); c.moveTo(8, h / 2); c.lineTo(w - 8, h / 2); c.stroke();
-    } else {
-      const n = xy.length / 2;
-      wvTrace(c, wvPath((u) => { const i = Math.min(n - 1, Math.floor(u * n)); return [8 + u * (w - 16), h / 2 - wvClamp((xy[i * 2] + xy[i * 2 + 1]) * 0.9, -1, 1) * (h / 2 - 6)]; }, 500), cl, 1.2, 0.6);
-    }
-    c.font = `9px ${cl.mono}`;
-    c.fillStyle = cl.t3; c.textAlign = 'right';
-    c.fillText('after the chain', w - 8, 11);
-    c.textAlign = 'left';
+    o.c.clearRect(0, 0, o.w, o.h);
+    gsDrawFxWave(o.c, o.w, o.h, cl, m);
   }
   const sp = GS_CV.gsFxSpec;
   if (sp) {
-    const { c, w, h } = sp, b = m?.spectrum;
-    c.clearRect(0, 0, w, h);
-    c.font = `9px ${cl.mono}`;
-    c.fillStyle = cl.t3;
-    for (const [f, label] of [[100, '100'], [1000, '1k'], [10000, '10k']]) {
-      const x = 8 + Math.log(f / 20) / Math.log(1000) * (w - 16);
-      c.fillStyle = 'rgba(255,255,255,.07)'; c.fillRect(x, 0, 1, h);
-      c.fillStyle = cl.t3; c.fillText(label, x + 3, h - 4);
-    }
-    if (b?.length) {
-      const L = b.length;
-      wvTrace(c, wvPath((u) => { const v = b[Math.min(L - 1, Math.floor(u * L))]; return [8 + u * (w - 16), h - 4 - wvClamp((v + 84) / 84) * (h - 10)]; }, 400), cl, 1.2, 0.6);
-    }
+    sp.c.clearRect(0, 0, sp.w, sp.h);
+    gsDrawFxSpectrum(sp.c, sp.w, sp.h, cl, m);
   }
   const v = gsFxVol(), l = m ? m.left : null, r = m ? m.right : null;
   gsFxFader('gsFdLR', 'gsFdLRRo', v, Math.round(v * 100) + '%', cl);
-  for (const [id, ro, ch] of [['gsFdL', 'gsFdLRo', l], ['gsFdR', 'gsFdRRo', r]]) gsFxFader(id, ro, 0, ch ? (ch.vuDb <= -119 ? '−∞' : ch.vuDb.toFixed(1)) : '—', cl);
+  gsFxFader('gsFdL', 'gsFdLRo', GS.out.l, gsFxSideText(GS.out.l), cl);
+  gsFxFader('gsFdR', 'gsFdRRo', GS.out.r, gsFxSideText(GS.out.r), cl);
   const g = GS_CV.gsFxMeters;
   if (g) {
     const { c, w, h } = g, top = 30, bot = h - 34, y = (db) => top + (Math.max(-60, Math.min(6, db)) / -66 + 6 / 66) * (bot - top);

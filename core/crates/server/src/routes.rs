@@ -455,6 +455,13 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         // HyperStretch: Hyperprism's smoothing, and the pad's two controls
         // straight to the engine. See `docs/HYPERSTRETCH.md`.
         ("POST", "/api/engine/glide") => api_engine_glide(app, req),
+        // The Grain page's keys (`grain_notes.rs`).
+        ("POST", "/api/engine/note") => crate::grain_notes::post_note(app, req),
+        ("POST", "/api/engine/voice") => crate::grain_notes::post_voice(app, req),
+        ("GET", "/api/engine/midi") => crate::grain_notes::get_midi(app),
+        ("POST", "/api/engine/midi") => crate::grain_notes::post_midi(app, req),
+        ("GET", "/api/engine/lfos") => crate::grain_lfos::get(app),
+        ("POST", "/api/engine/lfos") => crate::grain_lfos::post(app, req),
         ("POST", "/api/engine/pad") => api_engine_pad(app, req),
         ("POST", "/api/prism/load") => api_prism_load(app, req),
         ("GET", "/api/prism/state") => api_prism_state(app),
@@ -1748,6 +1755,9 @@ fn api_automation_record(app: &Arc<App>, req: &Request) -> Response {
             return Response::error(400, "mode must be off, touch or latch");
         };
         app.automation.set_record_mode(mode);
+        if mode == crate::automation::Record::Off {
+            crate::grain_notes::end_take(app);
+        }
     }
     Response::json(
         Value::obj()
@@ -1845,6 +1855,10 @@ fn api_automation_set(app: &Arc<App>, req: &Request) -> Response {
         return Response::error(400, "no path given");
     };
     let mut automation = crate::automation::Automation::from_json(&v);
+    // The interface edits lanes and knows nothing of a take's notes.
+    if v.get("notes").is_none() {
+        automation.notes = app.automation.get(rel).notes;
+    }
     // Stamped here, not by the browser: what the lanes were drawn against is a
     // fact about the file on disk, and the one place that knows it is here.
     if let Some(id) = identity_for(app, rel) {
@@ -2030,8 +2044,18 @@ fn api_engine_master(app: &Arc<App>, req: &Request) -> Response {
     // The snapshot is taken under the locks and the arithmetic is done outside
     // them. A 4096-point transform must never be holding something the audio
     // thread is about to want.
-    let snap = crate::live::peek(app, |h| h.shared.scope_snapshot()).flatten();
-    let Some((l, r, rate)) = snap else {
+    let want_pre = req.param("pre") == Some("1");
+    let snap = crate::live::peek(app, |h| {
+        if want_pre {
+            // Two seconds of the ring for each ask: the effects page polls far
+            // faster than that, and nothing need tell the engine when it shuts.
+            h.shared.want_pre_rack(h.sample_rate.saturating_mul(2));
+        }
+        let pre = if want_pre { h.shared.pre_rack_snapshot().map(|p| (p, h.shared.output_gain())) } else { None };
+        h.shared.scope_snapshot().map(|s| (s, pre))
+    })
+    .flatten();
+    let Some(((l, r, rate), pre)) = snap else {
         return Response::json(Value::obj().set("live", false).to_string());
     };
 
@@ -2059,13 +2083,27 @@ fn api_engine_master(app: &Arc<App>, req: &Request) -> Response {
 
     // Flat, and interleaved. A thousand `[l, r]` arrays is twice the JSON of a
     // thousand pairs of numbers and says exactly the same thing.
-    let mut xy = Vec::with_capacity(pts.len() * 2);
-    for (a, b) in &pts {
-        xy.push(Value::Num(round4(*a)));
-        xy.push(Value::Num(round4(*b)));
-    }
+    let flat = |pts: &[(f32, f32)]| {
+        let mut xy = Vec::with_capacity(pts.len() * 2);
+        for (a, b) in pts {
+            xy.push(Value::Num(round4(*a)));
+            xy.push(Value::Num(round4(*b)));
+        }
+        xy
+    };
+    let xy = flat(&pts);
 
-    Response::json(
+    // The same two pictures of what reached the rack. Brought to the output
+    // fader, which is after the chain, so the two differ only by the effects.
+    let pre = pre.map(|((mut pl, mut pr, prate), gain)| {
+        pl.iter_mut().chain(pr.iter_mut()).for_each(|v| *v *= gain);
+        let bands = audio_core::meter::spectrum(&pl, &pr, prate, fft, nbands, MASTER_LO_HZ, MASTER_HI_HZ);
+        Value::obj()
+            .set("spectrum", Value::Arr(bands.into_iter().map(|v| Value::Num(round4(v))).collect()))
+            .set("lissajous", Value::Arr(flat(&audio_core::meter::lissajous(&pl, &pr, LISSAJOUS_POINTS))))
+    });
+
+    let reply =
         Value::obj()
             .set("live", true)
             .set("rate", rate as f64)
@@ -2090,9 +2128,8 @@ fn api_engine_master(app: &Arc<App>, req: &Request) -> Response {
                 // has the same steps in it, they are just harder to see edge-on.
                 Value::Arr(bands.into_iter().map(|v| Value::Num(round4(v))).collect()),
             )
-            .set("lissajous", Value::Arr(xy))
-            .to_string(),
-    )
+            .set("lissajous", Value::Arr(xy));
+    Response::json(match pre { Some(p) => reply.set("pre", p), None => reply }.to_string())
 }
 
 /// The grain schedule for the visualiser.
@@ -3931,8 +3968,20 @@ fn api_audio(app: &Arc<App>, req: &Request) -> Response {
     // Playing the edited version renders on the fly. The length comes from the
     // clip list, so seeking works without rendering the whole thing first.
     let rel = req.param("p").unwrap_or("");
-    let rack_active = app.racks.is_active(rel);
-    if req.param("edited") == Some("1") || rack_active {
+    // `dry=1` is the material on the timeline the selection and the cue are
+    // counted on: the edited clips, no stretch and never the rack. It is what
+    // `/api/peaks?clips=1` draws, for a picture that needs the samples.
+    let dry = req.param("dry") == Some("1");
+    if dry {
+        if let Some(mut list) = app.edits.snapshot(rel) {
+            if !(list.clips.len() == 1 && list.clips[0] == edit::Clip::new(0, list.source_frames)) {
+                list.stretch = fx::Stretch::default();
+                return audio_edited(&path, &list, &mut fx::Rack::new(), req);
+            }
+        }
+    }
+    let rack_active = !dry && app.racks.is_active(rel);
+    if (req.param("edited") == Some("1") && !dry) || rack_active {
         let list = app.edits.snapshot(rel).or_else(|| {
             // A rack with no edits still needs the rendering path.
             audio_core::open(&path).ok().map(|r| {
@@ -4520,6 +4569,16 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
             .map(|b| Value::Num(b as f64))
             .collect();
         let mut v = Value::obj()
+            // The held note's head, in output frames, and what it is adding to
+            // the pitch: the Grain page draws them while the transport is stopped.
+            .set(
+                "keys",
+                Value::obj()
+                    .set("head", app.grain_keys.head() as f64)
+                    .set("sounding", app.grain_keys.sounding())
+                    .set("noteOns", app.grain_keys.note_ons() as f64)
+                    .set("pitch", app.grain_keys.pitch() as f64),
+            )
             .set("position", h.shared.position() as f64)
             // The ratio that position is counted at. The interface turns it
             // into a place in the file with this, not with the document's

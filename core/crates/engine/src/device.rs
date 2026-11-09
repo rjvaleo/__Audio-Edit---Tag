@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::render::Source;
 use crate::decks::Decks;
+use crate::keys::GrainKeys;
 use crate::synth::{SynthDeck, WaveShared};
 use crate::transport::{Core, Shared};
 use fx::grain::StreamParams;
@@ -47,13 +48,14 @@ impl Engine {
         source: Arc<Source>,
         buffer_frames: Option<u32>,
     ) -> Result<Engine, String> {
-        Engine::start_with(params, source, buffer_frames, Arc::new(WaveShared::new()))
+        Engine::start_with(params, source, buffer_frames, Arc::new(WaveShared::new()), Arc::new(GrainKeys::new()))
     }
 
-    /// [`start`](Engine::start), with the synth deck talking to `wave`.
+    /// [`start`](Engine::start), with the synth deck talking to `wave` and the
+    /// grain deck's keys to `keys`.
     ///
-    /// The server keeps one `WaveShared` for the life of the process and hands
-    /// it to every device it opens, so a device reopened at a new buffer size
+    /// The server keeps one of each for the life of the process and hands them
+    /// to every device it opens, so a device reopened at a new buffer size
     /// picks up the patch and tables where the last one left them, and a note
     /// sent while the device was being reopened is not lost to a handle that
     /// no longer exists.
@@ -62,6 +64,7 @@ impl Engine {
         source: Arc<Source>,
         buffer_frames: Option<u32>,
         wave: Arc<WaveShared>,
+        keys: Arc<GrainKeys>,
     ) -> Result<Engine, String> {
         // Build the FFT twiddle table here, on the thread that is opening the
         // device, rather than letting the first transform build it inside the
@@ -101,7 +104,7 @@ impl Engine {
         // Generous: the device may ask for more than its stated buffer size,
         // and growing inside the callback would allocate.
         let mut decks = Decks::new(
-            Core::new(MAX_BLOCK, channels, params, source),
+            Core::new(MAX_BLOCK, channels, params, source).with_keys(keys),
             Core::new(MAX_BLOCK, channels, prism_params, silent),
             MAX_BLOCK,
             channels,
@@ -213,15 +216,17 @@ pub fn spawn(
     source: Arc<Source>,
     buffer_frames: Option<u32>,
 ) -> Result<Handle, String> {
-    spawn_with(params, source, buffer_frames, Arc::new(WaveShared::new()))
+    spawn_with(params, source, buffer_frames, Arc::new(WaveShared::new()), Arc::new(GrainKeys::new()))
 }
 
-/// [`spawn`], with the synth deck talking to `wave` (see [`Engine::start_with`]).
+/// [`spawn`], with the synth deck talking to `wave` and the grain deck's keys
+/// to `keys` (see [`Engine::start_with`]).
 pub fn spawn_with(
     params: StreamParams,
     source: Arc<Source>,
     buffer_frames: Option<u32>,
     wave: Arc<WaveShared>,
+    keys: Arc<GrainKeys>,
 ) -> Result<Handle, String> {
     let (tx, rx) = std::sync::mpsc::channel();
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -229,7 +234,7 @@ pub fn spawn_with(
 
     std::thread::Builder::new()
         .name("audio-device".into())
-        .spawn(move || match Engine::start_with(params, source, buffer_frames, wave) {
+        .spawn(move || match Engine::start_with(params, source, buffer_frames, wave, keys) {
             Ok(engine) => {
                 let handle = Handle {
                     shared: Arc::clone(engine.shared()),

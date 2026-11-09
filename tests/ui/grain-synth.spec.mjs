@@ -439,7 +439,8 @@ test('the overview moves the loop and Start; the detail shows between the bracke
 
   // Its zoom stays inside the brackets.
   await page.click('#gsCzIn');
-  expect(await page.locator('#gsCzRo').textContent()).toMatch(/×/);
+  // Written on the next frame, so it is waited for rather than read at once.
+  await expect(page.locator('#gsCzRo')).toHaveText(/×/);
   const [ca, cb, a, b] = await page.evaluate(() => { const L = gsLoop(); return [...gsCloudView(), L.a, L.b]; });
   expect(ca).toBeGreaterThanOrEqual(a - 1e-6);
   expect(cb).toBeLessThanOrEqual(b + 1e-6);
@@ -531,4 +532,17 @@ test('the page draws no error', async ({ page }) => {
   await page.waitForTimeout(300);
   expect(errors).toEqual([]);
   expect(await page.evaluate(() => !!GS.failed)).toBe(false);
+});
+
+test('the app starts with the new page already chosen', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    const key = 'audiolab.settings.v1';
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    localStorage.setItem(key, JSON.stringify({ ...saved, grainUi: 'synth' }));
+  });
+  await page.goto('/');
+  await page.waitForFunction(() => typeof setMode === 'function' && (state.folders || []).length > 0, null, { timeout: 30_000 });
+  expect(errors).toEqual([]);
 });

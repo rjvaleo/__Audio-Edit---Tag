@@ -307,7 +307,8 @@ const SETTINGS_PANEL = [
         set: (v) => { masterBus.fft = setPref('masterFft', Number(v)); wireMasterRes(); } },
     ],
   },
-  {
+  // Only the tests still choose between pages; for everyone else there is one.
+  ...(!navigator.webdriver ? [] : [{
     group: 'The Grain page',
     rows: [
       { key: 'grainUi', label: 'Grain page',
@@ -316,7 +317,7 @@ const SETTINGS_PANEL = [
         type: 'select', options: [['classic', 'Classic'], ['modern', 'Modern'], ['synth', 'Synth']],
         get: () => prefs.grainUi, set: (v) => setGrainUi(v) },
     ],
-  },
+  }]),
   {
     group: 'The sequencer',
     rows: [

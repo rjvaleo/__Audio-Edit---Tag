@@ -22,6 +22,9 @@ function setEditPage(page, apply = true) {
 const PAGE_DOCKS = { chop: 'chop', prism: 'hyper', visuals: 'visuals', automation: 'automation', regions: 'regions' };
 let chopPageFrom = null;
 function chopPageSync(editing) {
+  // Startup calls this before this file has run, so `PAGE_DOCKS` does not exist
+  // yet; away from the edit pages there is nothing to do anyway.
+  if (!editing) return;
   const active = document.querySelector('.dock-tab.active')?.dataset.dock;
   const tab = (name) => document.querySelector(`.dock-tab[data-dock="${name}"]`);
   const own = editing ? PAGE_DOCKS[editPage] : null;

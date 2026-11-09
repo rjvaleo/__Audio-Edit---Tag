@@ -192,7 +192,8 @@ function gsDrawOverview() {
   c.fillStyle = GS_START; c.beginPath(); c.moveTo(sx, 22); c.lineTo(sx + 9, 26.5); c.lineTo(sx, 31); c.fill();
   c.font = `600 9px ${cl.mono}`;
   gsLbl(c, 'START ' + cue.toFixed(2), sx + 12, 30, GS_START);
-  if (engine.playing) {
+  if (gsNoteHead() != null) gsDrawNoteHead(c, X(gsHead()), 4, bot, bot - 16, cl);
+  else if (engine.playing) {
     const hx = X(gsHead());
     c.fillStyle = cl.t; c.fillRect(hx - 0.75, 4, 1.5, bot - 4);
     gsLbl(c, 'HEAD', hx + 4, bot - 4, cl.t);
@@ -256,7 +257,7 @@ function gsDrawTrace() {
   wvTrace(c, top, cl, 1.1, 0.6);
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(0, 0, X(a), h); c.fillRect(X(b), 0, w - X(b), h);
   c.fillStyle = cl.acc; c.fillRect(X(a) - 0.5, 2, 1, h - 4); c.fillRect(X(b) - 0.5, 2, 1, h - 4);
-  if (engine.playing) { c.fillStyle = cl.t; c.fillRect(X(gsHead()) - 0.75, 2, 1.5, h - 4); }
+  if (gsHeadLive()) { c.fillStyle = cl.t; c.fillRect(X(gsHead()) - 0.75, 2, 1.5, h - 4); }
 }
 
 function gsDrawMini() {
@@ -353,7 +354,7 @@ function gsDrawGrains(c, geo, cl) {
     const s = ev[1] / sr, life = ev[2] / sr;
     if (s < a || s > b) continue;
     // With no cloud these are the engine's own windows: lower, quieter, tan.
-    const u = (ev[0] - now) / span, al = (engine.playing ? 0.9 : 0.35) * (1 - u * 0.8) * (cloud ? 1 : 0.35);
+    const u = (ev[0] - now) / span, al = (gsHeadLive() ? 0.9 : 0.35) * (1 - u * 0.8) * (cloud ? 1 : 0.35);
     const x = X(s), w2 = Math.max(5, X(s + life / 2) - X(s - life / 2));
     const y = wvClamp(yc - wvClamp(ev[3] - base, -13, 13) * K, 10, h - 16), hh = (12 + A * 1.7 * wvClamp((ev[4] || 0) * 4)) * (cloud ? 1 : 0.6);
     const p = new Path2D();
@@ -420,6 +421,11 @@ function gsDrawCloud() {
   c.fillStyle = cl.t2;
   c.fillText(gsFms(ww * 1000), Math.min(bx + bw + 4, w - 60), h - 18);
   gsDrawMarks(c, geo, cl);
+  if (gsNoteHead() != null) {
+    const nh = gsHead();
+    if (nh >= a && nh <= b) gsDrawNoteHead(c, X(nh), 18, h - 18, 30, cl);
+  }
+  c.font = `9px ${cl.mono}`;
   gsZoomRo();
   gsTxt('gsCloudRo', `${Math.round(gsGrainsPerSec())} grains/s`);
 }
@@ -441,18 +447,29 @@ function gsDrawMarks(c, geo, cl) {
   c.font = `9px ${cl.mono}`;
   if (e === 'wsola' || e === 'hybrid') {
     const pres = e === 'hybrid' || !!gsRead('preserveTransients');
-    const thr = 0.3 + (1 - gsRead('sensitivity')) * 0.6, flv = gsRead('floor') * GS_DET.med * 0.8;
+    const src = gsPicOnsets(), thr = 0.3 + (1 - gsRead('sensitivity')) * 0.6, flv = gsRead('floor') * src.med * src.k;
     const gd = gsRead('guardHops') * (gsRead('windowMs') / 1000) / Math.max(1, gsRead('overlap'));
-    let n = 0;
-    for (const o of GS_DET.on) {
+    let n = 0, top = 0;
+    for (const o of src.on) {
       if (o.s < thr || o.t < a || o.t > b) continue;
       const ok = o.l >= flv, x = X(o.t);
       if (ok) n++;
+      if (o.l > top) top = o.l;
       if (pres && ok) { c.fillStyle = 'rgba(216,143,126,.07)'; c.fillRect(X(o.t - gd), 10, X(o.t + gd) - X(o.t - gd), h - 26); }
       c.strokeStyle = ok ? (pres ? 'rgba(240,170,150,.8)' : 'rgba(240,170,150,.35)') : 'rgba(255,255,255,.1)';
       c.setLineDash(pres ? [] : [2, 3]);
       c.beginPath(); c.moveTo(x, 12); c.lineTo(x, h - 16); c.stroke();
       c.setLineDash([]);
+    }
+    if (flv > 0 && top > 0) {
+      // Floor: a hit below this line is not kept. Read against the loudest hit
+      // in view.
+      const y = geo.yc - wvClamp(flv / top) * geo.A;
+      c.strokeStyle = 'rgba(232,164,147,.45)'; c.lineWidth = 1;
+      c.setLineDash([4, 4]);
+      c.beginPath(); c.moveTo(6, y); c.lineTo(w - 6, y); c.stroke();
+      c.setLineDash([]);
+      gsLbl(c, 'floor', w - 92, y - 3, '#e8a493');
     }
     gsLbl(c, `${n} transient${n === 1 ? '' : 's'}${pres ? ' kept' : ''}`, 10, h - 20, '#e8a493');
   }

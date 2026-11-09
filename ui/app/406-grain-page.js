@@ -60,9 +60,9 @@ function gsBuild() {
     <div class="gs-mod gs-panel" id="gsEngPanel">
      <div class="gs-mh"><span class="gs-nm" id="gsEngName"></span><span class="gs-sp"></span><span class="gs-chip gs-btn" id="gsEngReset" title="Reset: this engine's own controls back to their defaults">Reset</span></div>
      <div class="gs-well"><canvas id="gsTrace" data-w="616" data-h="60"></canvas></div>
-     <div class="gs-modblk gs-inert" id="gsPMod" title="Not connected yet: AMP arrives with note input, the LFOs after it">
-      <div class="gs-mh"><span class="gs-nm">MODULATE</span><span class="gs-sp"></span><span class="gs-hint">Drawn only for now: nothing here moves the sound yet</span></div>
-      <div class="gs-ampr"><span class="gs-lnm">AMP</span><div class="gs-well"><canvas id="gsAmp" data-w="404" data-h="28"></canvas></div><span class="gs-ro" id="gsAmpRo"></span></div>
+     <div class="gs-modblk" id="gsPMod">
+      <div class="gs-mh"><span class="gs-nm">MODULATE</span><span class="gs-sp"></span></div>
+      <div class="gs-ampr" title="AMP: the note envelope. Drag the attack, decay and release points. With Run on, the sound is not gated"><span class="gs-lnm">AMP</span><div class="gs-well"><canvas id="gsAmp" data-w="404" data-h="28"></canvas></div><span class="gs-ro" id="gsAmpRo"></span></div>
       <div id="gsRMod"></div>
      </div>
      <div class="gs-eright" id="gsERight"></div>
@@ -84,7 +84,10 @@ function gsBuild() {
   $('gsEngTabs').appendChild(trace);
   gsBuildShared();
   gsBuildModulate();
+  gsWireMap();
+  gsWireAmp();
   gsDrawDock();
+  gsWireDock();
   gsWireOverview();
   gsWireDetail();
   gsWirePage();
@@ -110,6 +113,7 @@ function gsWirePage() {
   $('gsCzFit').onclick = () => { GS.czA = GS.czB = 0; };
   $('gsEngReset').onclick = gsResetEngine;
   $('gsKbScale').onclick = (e) => gsTuneMenu(e.currentTarget);
+  gsWireMidiChannel($('gsMidiCh'), 'grain');
   $('gsPresetBtn').onclick = (e) => {
     const step = e.target.closest('[data-step]');
     if (step) gsStepPreset(+step.dataset.step);
@@ -238,6 +242,9 @@ async function gsRestore(o) {
   Object.assign(GS.amp, o.amp);
   GS.lfo = gsClone(o.lfo);
   gsBuildModulate();
+  gsLfoSend();
+  gsVoicePost(gsAmpSecs(GS.amp));
+  gsVoiceKeep();
   await gsPostAll({ scale: o.scale, pitchStep: o.pitchStep });
   if (o.rack && state.rack) {
     Object.assign(state.rack, gsClone(o.rack));
@@ -289,10 +296,15 @@ async function gsRandomizeUndo() {
 /// What comes out: the VU meter and the wave after the effects. Asked for only
 /// while the page shows and the transport runs.
 async function gsPollMaster() {
-  if (!GS.showing || !engine.playing || noAudio() || GS.pollBusy) { if (!engine.playing) GS.master = null; return; }
+  const live = gsMetersLive();
+  if (!GS.showing || !live || noAudio() || GS.pollBusy) { if (!live) GS.master = null; return; }
   GS.pollBusy = true;
-  try { GS.master = masterFeed(await api('/api/engine/master?fft=1024&bands=64'), 64); }
-  catch { GS.master = null; }
+  try {
+    // The ring before the chain is written only while the effects page asks.
+    const r = await api(`/api/engine/master?fft=1024&bands=64${GS_FX.view === 'fx' ? '&pre=1' : ''}`);
+    GS.master = masterFeed(r, 64);
+    if (GS.master) GS.master.pre = r.pre || null;
+  } catch { GS.master = null; }
   GS.pollBusy = false;
 }
 
@@ -325,7 +337,7 @@ function gsDrawMeters() {
   }
   const g = GS_CV.gsLoadM;
   if (g) {
-    const { c, w, h } = g, L = engine.load, l = wvClamp(engine.playing && L ? L.worst : 0, 0, 1.2), n = 10;
+    const { c, w, h } = g, L = engine.load, l = wvClamp(gsMetersLive() && L ? L.worst : 0, 0, 1.2), n = 10;
     c.clearRect(0, 0, w, h);
     c.font = `9px ${cl.mono}`;
     c.fillStyle = cl.t3;
@@ -345,43 +357,47 @@ function gsMarkTransport() {
   on('gsTRec', capture.running || capture.armed);
   on('gsTGrain', $('srcGrain').classList.contains('on'));
   on('gsTSeq', $('srcSeq').classList.contains('on'));
-  $('gsHead').classList.toggle('live', !!engine.playing);
+  $('gsHead').classList.toggle('live', gsMetersLive());
   gsTxt('gsClock', $('timeNow').textContent);
   gsTxt('gsSndName', state.selectedFile?.name || '');
   gsTxt('gsRegChip', gsRegLabel());
-  const L = Math.round(gsRead('layers')), run = engine.playing ? engine.load?.layersRunning : 0;
-  gsTxt('gsVoicesRo', `${run && run < L ? run + '/' + L : L} layer${L > 1 ? 's' : ''} · 0 voices`);
+  const L = Math.round(gsRead('layers')), run = gsMetersLive() ? engine.load?.layersRunning : 0;
+  const v = new Set([...GS_N.held.keys(), ...GS_N.midi]).size;
+  gsTxt('gsVoicesRo', `${run && run < L ? run + '/' + L : L} layer${L > 1 ? 's' : ''} · ${v} voice${v === 1 ? '' : 's'}`);
 }
 
-const GS_KEYS = { ov: '', tr: '', cl: '', box: '', mini: null, glyph: 0 };
+const GS_KEYS = { ov: '', tr: '', cl: '', mini: null, glyph: 0 };
 
 function gsTick(now) {
   const d = state.stretchDraft, path = state.selectedFile?.path || null;
   // A/B belong to the sound they were made on.
-  if (GS.abFor !== path) { GS.abFor = path; GS.abs = { A: null, B: null }; GS.ab = 'A'; GS.rndPrev = null; $('gsRndUndo').hidden = true; document.querySelectorAll('#gsAB span').forEach((x) => x.classList.toggle('on', x.dataset.ab === 'A')); GS.czA = GS.czB = 0; }
+  if (GS.abFor !== path) { GS.abFor = path; GS.abs = { A: null, B: null }; GS.ab = 'A'; GS.rndPrev = null; $('gsRndUndo').hidden = true; document.querySelectorAll('#gsAB span').forEach((x) => x.classList.toggle('on', x.dataset.ab === 'A')); GS.czA = GS.czB = 0; gsVoiceForSound(); }
   if (d && d.algorithm !== GS.engine) gsApplyEngine();
   if (d) { gsPaintAll(); gsApplyDims(); }
   gsPaintSeed();
   gsMarkTune();
   gsMarkPreset();
   gsMarkTransport();
+  gsKeysTick();
+  gsLfoTick();
+  gsPicKeep();
   gsFxTick(now);
   // The engine's pictures are behind the effects page: not drawn while it shows.
   if (GS_FX.view === 'fx') return;
   if (now - GS_KEYS.glyph > 80) { GS_KEYS.glyph = now; gsAnimateGlyphs(); }
   if (GS_KEYS.mini !== state.overview) { GS_KEYS.mini = state.overview; GS_KEYS.ov = GS_KEYS.tr = ''; GS_TR.key = ''; gsDrawMini(); }
   const sel = state.sel ? `${state.sel.start}|${state.sel.end}` : '';
-  const stamp = engine.playing ? now : 0, frames = state.overview?.frames || 0;
+  const stamp = gsHeadLive() ? now : 0, frames = state.overview?.frames || 0;
   const ovKey = `${frames}|${sel}|${state.cue}|${state.loopOn}|${stamp}`;
   if (ovKey !== GS_KEYS.ov) { GS_KEYS.ov = ovKey; gsDrawOverview(); }
   const trKey = `${frames}|${sel}|${stamp}`;
   if (trKey !== GS_KEYS.tr) { GS_KEYS.tr = trKey; gsDrawTrace(); }
-  const clKey = [ovKey, GS.czA, GS.czB, GS.engine, GS_DET.got, GS_DET.staticKey, state.grains?.total].concat(
+  const clKey = [ovKey, GS.czA, GS.czB, GS.engine, GS_DET.got, GS_DET.staticKey, state.grains?.total, GS_PIC.pcm ? GS_PIC.serial : 0].concat(
     ['position', 'positionJitterMs', 'windowMs', 'wrap', 'cloud', 'ratio', 'scan', 'preserveTransients', 'sensitivity', 'floor', 'guardHops', 'overlap', 'vocWindowMs', 'anchorFrames', 'rateHz', 'densityHz', 'layers', 'semitones', 'envelope'].map(gsRead)).join('|');
   if (clKey !== GS_KEYS.cl || GS_DET.want !== GS_DET.got) { GS_KEYS.cl = clKey; gsDrawCloud(); }
-  const boxKey = `${GS.engine}|${gsRead('anchorFrames')}`;
-  if (boxKey !== GS_KEYS.box) { GS_KEYS.box = boxKey; gsDrawBoxes(); }
+  gsPicTick(now);
   gsDrawMeters();
+  gsDrawLfos(now);
 }
 
 function gsFrame(now) {
@@ -404,10 +420,14 @@ function gsEnter() {
   GS_KEYS.ov = GS_KEYS.tr = GS_KEYS.cl = '';
   if (!GS.raf) GS.raf = requestAnimationFrame(gsFrame);
   if (!GS.poll) GS.poll = setInterval(gsPollMaster, 80);
+  gsKeysEnter();
+  gsLfoEnter();
 }
 
 function gsLeave() {
   GS.showing = false;
+  gsLfoLeave();
+  gsKeysLeave();
   gsCloseMenus();
   gsFxLeave();
   if (GS.raf) cancelAnimationFrame(GS.raf);
@@ -415,6 +435,7 @@ function gsLeave() {
   clearInterval(GS.poll);
   GS.poll = 0;
   GS.master = null;
+  gsPicLeave();
   // Anywhere else that shows the tray shows it as this page left things.
   if (GS.touched) gsRebuildTray();
 }

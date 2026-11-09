@@ -455,6 +455,7 @@ function fxShort(label, group) {
 function fxKnob(m, p, onMove = () => {}, label = p.label) {
   const el = document.createElement('div');
   el.className = 'fxk';
+  el.dataset.key = p.key;
   el.innerHTML = '<svg class="fxk-ring" viewBox="0 0 60 60" role="slider" tabindex="0"></svg><span class="fxk-v"></span><span class="fxk-l"></span>';
   el.querySelector('.fxk-l').textContent = label;
   el.title = `${p.label} — drag up or down, double-click to reset`;

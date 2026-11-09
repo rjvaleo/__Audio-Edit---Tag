@@ -67,7 +67,6 @@ pub struct WaveState {
     pub shared: Arc<WaveShared>,
     dir: PathBuf,
     inner: Arc<Mutex<Inner>>,
-    midi: AtomicBool,
     /// Whether the patch's tables have been asked for since start.
     synced: AtomicBool,
 }
@@ -116,7 +115,6 @@ impl WaveState {
                 building: HashMap::new(),
                 serial: 0,
             })),
-            midi: AtomicBool::new(false),
             synced: AtomicBool::new(false),
         }
     }
@@ -129,11 +127,9 @@ impl WaveState {
         self.dir.join("presets")
     }
 
-    /// On the way through any wave route: MIDI opened (once, on its own
-    /// thread), tables the callback let go of dropped here, and the patch's
-    /// tables asked for the first time.
+    /// On the way through any wave route: tables the callback let go of
+    /// dropped here, and the patch's tables asked for the first time.
     fn touch(&self) {
-        crate::midi::ensure(&self.shared, &self.midi);
         self.shared.collect();
         if !self.synced.swap(true, Ordering::AcqRel) {
             if let Ok(mut g) = self.inner.lock() {
@@ -219,6 +215,7 @@ impl WaveState {
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
     let w = &app.wave;
+    crate::midi::ensure(app);
     w.touch();
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/api/wave/patch") => Response::json(patch_json(&w.patch()).to_string()),

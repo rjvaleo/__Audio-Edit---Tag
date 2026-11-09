@@ -202,6 +202,12 @@ impl EditStore {
         map.get(key).map(|s| s.list().clone())
     }
 
+    /// The document's stretch settings, without copying the rest of it: the
+    /// LFOs read this a hundred times a second.
+    pub fn stretch_of(&self, key: &str) -> Option<fx::Stretch> {
+        self.sessions.lock().unwrap().get(key).map(|s| s.list().stretch)
+    }
+
     pub fn has_edits(&self, key: &str) -> bool {
         self.snapshot(key).map_or(false, |l| !l.is_identity())
     }

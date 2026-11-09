@@ -209,3 +209,8 @@ body.synthpage #overview { display: none; }
 #waveView .wv-fxk { display: flex; justify-content: space-around; }
 /* Sixteen routes in view; past that the list scrolls rather than the page growing. */
 #waveView #wvMxRows { max-height: 576px; overflow-y: auto; }
+
+/* The instrument's MIDI channel. */
+#waveView .wv-midi { flex: none; height: 22px; padding: 0 6px; border: 0; border-radius: 6px; background: var(--wv-well, #06070a); color: var(--wv-t2, #b9bec6); font: 500 var(--fs-xs) var(--mono); cursor: pointer; appearance: none; }
+#waveView .wv-midi:hover { color: var(--wv-t, #e8eaee); }
+#waveView .wv-midi:focus-visible { outline: 1px solid #ffb547; }

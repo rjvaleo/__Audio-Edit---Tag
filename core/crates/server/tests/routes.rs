@@ -2777,3 +2777,201 @@ fn wave_state_answers_with_no_device() {
     assert_eq!(status(&css), 200);
     assert!(css.content_type.starts_with("text/css"));
 }
+
+// ---------------------------------------------------------------- the Grain page's keys
+
+#[test]
+fn the_voice_route_sets_the_keys_and_needs_no_device() {
+    let s = Scratch::new("grain-voice");
+    let app = s.app();
+    assert!(app.grain_keys.run(), "Run is on until a page says otherwise");
+    let r = server::routes::route(&app, &post("/api/engine/voice", r#"{"mode":"legato","glide":0.2,"bend":1.5,"attack":0.1,"decay":0.2,"sustain":0.5,"release":0.3,"run":false,"start":0.25,"replay":true}"#));
+    assert_eq!(status(&r), 200);
+    let k = &app.grain_keys;
+    assert_eq!(k.mode(), engine::KeyMode::Legato);
+    assert!(!k.run());
+    assert!(k.replay());
+    assert_eq!(k.amp(), (0.1, 0.2, 0.5, 0.3));
+    assert_eq!((k.glide(), k.bend(), k.start()), (0.2, 1.5, 0.25));
+    // Any part of it, the rest left alone.
+    let r = server::routes::route(&app, &post("/api/engine/voice", r#"{"sustain":0.9}"#));
+    assert_eq!(status(&r), 200);
+    assert_eq!(k.amp(), (0.1, 0.2, 0.9, 0.3));
+}
+
+#[test]
+fn the_voice_route_takes_the_pages_tuning_and_leaving_puts_things_back() {
+    let s = Scratch::new("grain-tuning");
+    let app = s.app();
+    let table: Vec<String> = (0..128).map(|i| format!("{}", i as f32 * 0.5)).collect();
+    let body = format!(r#"{{"keys":[{}],"run":false}}"#, table.join(","));
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/voice", &body))), 200);
+    assert_eq!(app.grain_keys.key_semitones(10), 5.0);
+
+    let r = server::routes::route(&app, &post("/api/engine/voice", r#"{"keys":[1,2,3]}"#));
+    assert_eq!(status(&r), 400);
+    let r = server::routes::route(&app, &post("/api/engine/voice", r#"{"mode":"chord"}"#));
+    assert_eq!(status(&r), 400);
+
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/voice", r#"{"reset":true}"#))), 200);
+    assert!(app.grain_keys.run());
+    assert!(!app.grain_keys.replay());
+}
+
+#[test]
+fn the_grain_page_says_when_it_is_in_front_and_when_it_has_gone() {
+    let s = Scratch::new("grain-front");
+    let app = s.app();
+    assert!(!app.grain_keys.front());
+    let r = server::routes::route(&app, &post("/api/engine/voice", r#"{"front":true,"bendRange":7}"#));
+    assert_eq!(status(&r), 200);
+    assert!(app.grain_keys.front());
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/voice", r#"{"reset":true}"#))), 200);
+    assert!(!app.grain_keys.front());
+}
+
+#[test]
+fn the_midi_route_says_what_the_keyboard_is_holding() {
+    let s = Scratch::new("grain-midi");
+    let app = s.app();
+    app.midi.route(server::midi::parse(&[0x91, 60, 127]).unwrap(), 1);
+    let v = json(&server::routes::route(&app, &get("/api/engine/midi", &[])));
+    assert_eq!(v.get("notes").map(|n| n.to_string()), Some("[60]".to_string()));
+    assert_eq!(v.get("bend"), Some(&server::json::Value::Num(0.0)));
+}
+
+#[test]
+fn each_instrument_is_given_its_own_midi_channel() {
+    use server::midi::Instrument;
+    let s = Scratch::new("grain-midi-channels");
+    let app = s.app();
+    let v = json(&server::routes::route(&app, &post("/api/engine/midi", r#"{"wave":3,"grain":9}"#)));
+    assert_eq!(v.get("wave"), Some(&server::json::Value::Num(3.0)));
+    assert_eq!(v.get("grain"), Some(&server::json::Value::Num(9.0)));
+    assert_eq!(app.midi.channel(Instrument::Wave), 3);
+    assert_eq!(app.midi.channel(Instrument::Grain), 9);
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/midi", r#"{"grain":17}"#))), 400);
+    assert_eq!(app.midi.channel(Instrument::Grain), 9);
+}
+
+/// What `/api/engine/lfos` says a control is sounding at, after one runner tick.
+fn lfo_tick(app: &std::sync::Arc<App>, runner: &mut server::grain_lfos::Runner) -> server::json::Value {
+    runner.advance(app);
+    runner.idle(app);
+    json(&server::routes::route(app, &get("/api/engine/lfos", &[])))
+}
+
+#[test]
+fn an_lfo_is_heard_and_never_written_to_the_document() {
+    let s = Scratch::new("grain-lfos");
+    s.sound("kit/a.wav", 8000);
+    let app = s.app();
+    assert_eq!(status(&server::routes::route(&app, &post("/api/edit", r#"{"p":"kit/a.wav","op":"stretch","ratio":2.0,"semitones":0,"windowMs":40,"quality":"standard","grain":{"panSpread":0.5}}"#))), 200);
+    let before = app.edits.snapshot("kit/a.wav").unwrap();
+
+    let body = r#"{"p":"kit/a.wav","lfos":[{"shape":"square","hz":0.001,"depth":0.25,"targets":[{"t":"stretch.grain.panSpread"}]}]}"#;
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/lfos", body))), 200);
+
+    let mut runner = server::grain_lfos::Runner::default();
+    let v = lfo_tick(&app, &mut runner);
+    let heard = v.get("heard").and_then(|h| h.get("stretch.grain.panSpread").cloned());
+    assert!(matches!(heard, Some(server::json::Value::Num(n)) if (n - 0.75).abs() < 1e-3), "{heard:?}");
+
+    // Nothing about the document moved, undo included.
+    let after = app.edits.snapshot("kit/a.wav").unwrap();
+    assert_eq!(before.stretch, after.stretch, "the LFO wrote into the document");
+    assert_eq!(app.edits.with("kit/a.wav", || before.clone(), |s| s.can_redo()), false);
+
+    // Off: no longer heard, and still exactly what the document had.
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/lfos", r#"{"off":true}"#))), 200);
+    let v = lfo_tick(&app, &mut runner);
+    assert!(v.get("heard").unwrap().as_obj().unwrap().is_empty());
+    assert_eq!(app.edits.snapshot("kit/a.wav").unwrap().stretch, before.stretch);
+}
+
+#[test]
+fn an_each_note_lfo_restarts_when_a_key_goes_down() {
+    let s = Scratch::new("grain-lfo-note");
+    s.sound("kit/a.wav", 8000);
+    let app = s.app();
+    let body = r#"{"p":"kit/a.wav","lfos":[{"shape":"sine","hz":100,"mode":"trig","depth":0.5,"targets":[]},{"shape":"sine","hz":100,"depth":0.5,"targets":[]}]}"#;
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/lfos", body))), 200);
+    let mut runner = server::grain_lfos::Runner::default();
+    let phase = |v: &server::json::Value, i: usize| match v.get("lfos").unwrap().arr().unwrap()[i].get("phase") {
+        Some(server::json::Value::Num(n)) => *n,
+        _ => panic!("no phase"),
+    };
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    let v = lfo_tick(&app, &mut runner);
+    assert!(phase(&v, 0) > 0.5 && phase(&v, 1) > 0.5);
+    let free_was = phase(&v, 1);
+    app.grain_keys.note_on(60, 0.8);
+    let v = lfo_tick(&app, &mut runner);
+    assert_eq!(phase(&v, 0), 0.0, "Each note did not restart at the key");
+    assert!(phase(&v, 1) >= free_was, "Free was restarted by a key");
+}
+
+#[test]
+fn lfo_settings_are_checked_and_what_cannot_move_live_is_refused() {
+    let s = Scratch::new("grain-lfo-bad");
+    let app = s.app();
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/lfos", "nonsense"))), 400);
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/lfos", r#"{"lfos":[]}"#))), 400);
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/lfos", r#"{"p":"x","lfos":[{"shape":"zigzag"}]}"#))), 400);
+    let v = json(&server::routes::route(&app, &post("/api/engine/lfos", r#"{"p":"x","lfos":[{"shape":"sine","targets":[{"t":"stretch.hybrid.fftSize"},{"t":"stretch.wsola.floor"},{"t":"stretch.grain.scan"}]}]}"#)));
+    assert_eq!(v.get("refused").unwrap().arr().unwrap().len(), 2);
+    let got = json(&server::routes::route(&app, &get("/api/engine/lfos", &[])));
+    assert!(got.get("refuse").unwrap().get("stretch.hybrid.fftSize").is_some(), "the page reads why from here");
+}
+
+#[test]
+fn a_note_outside_the_keyboard_is_refused_before_any_device_is_opened() {
+    let s = Scratch::new("grain-note");
+    let app = s.app();
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/note", r#"{"key":128}"#))), 400);
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/note", r#"{"velocity":1}"#))), 400);
+    assert_eq!(status(&server::routes::route(&app, &post("/api/engine/note", "nonsense"))), 400);
+}
+
+/// `/audio?dry=1`: the Grain page's pictures are of the material, so an active
+/// rack must not reach them, and the plain route must go on rendering through it.
+#[test]
+fn dry_audio_is_the_material_and_the_plain_route_still_has_the_rack() {
+    let s = Scratch::new("dry-audio");
+    s.sound("kit/a.wav", 20_000);
+    let app = s.app();
+    let plain = server::routes::route(&app, &get("/audio", &[("p", "kit/a.wav")]));
+    let r = server::routes::route(
+        &app,
+        &post("/api/rack", r#"{"p":"kit/a.wav","sr":44100,"slots":[{"kind":"gain","id":"g1","db":-12}],"master":{"on":false}}"#),
+    );
+    assert_eq!(status(&r), 200);
+    let racked = server::routes::route(&app, &get("/audio", &[("p", "kit/a.wav")]));
+    let dry = server::routes::route(&app, &get("/audio", &[("p", "kit/a.wav"), ("dry", "1")]));
+    assert_eq!(status(&dry), 200);
+    assert_eq!(dry.body, plain.body, "the dry route played the rack");
+    assert_ne!(racked.body, plain.body, "the plain route stopped rendering through the rack");
+}
+
+/// With edits it is the clips, the timeline the cue and the loop are counted
+/// on: a cut shows, the stretch and the rack do not.
+#[test]
+fn dry_audio_follows_the_clips_and_ignores_the_stretch_and_the_rack() {
+    let s = Scratch::new("dry-clips");
+    s.sound("kit/a.wav", 20_000);
+    let app = s.app();
+    assert_eq!(status(&server::routes::route(&app, &post("/api/edit", r#"{"p":"kit/a.wav","op":"cut","start":0,"end":5000}"#))), 200);
+    server::routes::route(&app, &post("/api/edit", r#"{"p":"kit/a.wav","op":"stretch","ratio":2}"#));
+    server::routes::route(
+        &app,
+        &post("/api/rack", r#"{"p":"kit/a.wav","sr":44100,"slots":[{"kind":"gain","id":"g1","db":-12}],"master":{"on":false}}"#),
+    );
+    let dry = server::routes::route(&app, &get("/audio", &[("p", "kit/a.wav"), ("dry", "1")]));
+    assert_eq!(status(&dry), 200);
+    let header = audio_core::wav::HEADER_LEN as usize;
+    assert_eq!(dry.body.len() - header, 15_000 * 2, "not the cut timeline, unstretched");
+    // The rack would have taken this to a quarter of what the file holds.
+    let at = |b: &[u8], i: usize| i16::from_le_bytes([b[i * 2], b[i * 2 + 1]]) as i32;
+    let want = ((5_047f32 / 30.0).sin() * 9000.0) as i32;
+    assert!((at(&dry.body[header..], 47) - want).abs() <= 2, "the samples are not the file's");
+}

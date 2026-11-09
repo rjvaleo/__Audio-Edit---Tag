@@ -480,3 +480,100 @@ fn identity_coefficients_pass_audio_through_unchanged() {
     let c = Coeffs::identity();
     assert!((c.magnitude_at(1000.0, SR) - 1.0).abs() < 1e-6);
 }
+
+/// Every module's own Wet/dry and Level, from the Grain page's footer.
+fn silent_rack() -> fx::Rack {
+    let mut rack = fx::Rack::new();
+    rack.push(Box::new(fx::Gain { db: -120.0 }));
+    rack
+}
+
+fn settle(rack: &mut fx::Rack) {
+    let mut buf = vec![1.0f32; 4096];
+    for _ in 0..8 {
+        buf.fill(1.0);
+        rack.process(&mut buf, 1, 48_000);
+    }
+}
+
+#[test]
+fn a_slot_at_full_wet_and_nought_level_is_not_touched() {
+    let mut rack = fx::Rack::new();
+    rack.push(Box::new(fx::Gain { db: -6.0 }));
+    assert_eq!(rack.get_param(0, fx::SLOT_WET), Some(1.0));
+    assert_eq!(rack.get_param(0, fx::SLOT_LEVEL), Some(0.0));
+    let mut a = vec![0.5f32; 64];
+    rack.process(&mut a, 1, 48_000);
+    let mut plain = vec![0.5f32; 64];
+    fx::Gain { db: -6.0 }.process(&mut plain, 1, 48_000);
+    assert_eq!(a, plain);
+}
+
+#[test]
+fn wet_dry_mixes_the_module_with_what_went_in() {
+    let mut rack = silent_rack();
+    assert!(rack.set_param(0, fx::SLOT_WET, 0.0));
+    settle(&mut rack);
+    let mut b = vec![0.5f32; 64];
+    rack.process(&mut b, 1, 48_000);
+    assert!(b.iter().all(|s| (s - 0.5).abs() < 1e-4), "all dry: {}", b[0]);
+
+    rack.set_param(0, fx::SLOT_WET, 0.25);
+    settle(&mut rack);
+    let mut b = vec![0.8f32; 64];
+    rack.process(&mut b, 1, 48_000);
+    assert!(b.iter().all(|s| (s - 0.6).abs() < 1e-3), "a quarter wet of nothing: {}", b[0]);
+}
+
+#[test]
+fn level_scales_the_module_in_decibels() {
+    let mut rack = fx::Rack::new();
+    rack.push(Box::new(fx::Gain { db: 0.0 }));
+    rack.set_param(0, fx::SLOT_LEVEL, -6.0206);
+    settle(&mut rack);
+    let mut b = vec![0.8f32; 64];
+    rack.process(&mut b, 1, 48_000);
+    assert!(b.iter().all(|s| (s - 0.4).abs() < 1e-3), "{}", b[0]);
+    assert!(rack.set_param(0, fx::SLOT_LEVEL, 99.0));
+    assert_eq!(rack.get_param(0, fx::SLOT_LEVEL), Some(12.0), "held to the footer's range");
+}
+
+#[test]
+fn a_bypassed_slot_ignores_its_footer() {
+    let mut rack = silent_rack();
+    rack.set_param(0, fx::SLOT_LEVEL, -12.0);
+    rack.slots[0].bypassed = true;
+    settle(&mut rack);
+    let mut b = vec![0.5f32; 64];
+    rack.process(&mut b, 1, 48_000);
+    assert!(b.iter().all(|s| *s == 0.5));
+}
+
+#[test]
+fn moving_wet_dry_or_level_does_not_step() {
+    let mut rack = silent_rack();
+    rack.set_param(0, fx::SLOT_WET, 0.0);
+    settle(&mut rack);
+    // From all dry to all wet of nothing, in one write: a slope, not an edge.
+    rack.set_param(0, fx::SLOT_WET, 1.0);
+    let mut b = vec![1.0f32; 2048];
+    rack.process(&mut b, 1, 48_000);
+    let step = b.windows(2).fold(0f32, |m, w| m.max((w[1] - w[0]).abs()));
+    assert!(step < 0.01, "{step}");
+    assert!(b[2047] < 0.05, "and it gets there: {}", b[2047]);
+    let mut c = vec![1.0f32; 2048];
+    rack.set_param(0, fx::SLOT_LEVEL, -24.0);
+    rack.set_param(0, fx::SLOT_WET, 0.0);
+    rack.process(&mut c, 1, 48_000);
+    let step = c.windows(2).fold(0f32, |m, w| m.max((w[1] - w[0]).abs()));
+    assert!(step < 0.01, "{step}");
+}
+
+#[test]
+fn a_module_set_when_built_is_there_from_the_first_frame() {
+    let mut rack = silent_rack();
+    rack.slots[0].set_mix(0.0, -6.0206);
+    let mut b = vec![0.8f32; 8];
+    rack.process(&mut b, 1, 48_000);
+    assert!((b[0] - 0.4).abs() < 1e-3, "{}", b[0]);
+}

@@ -18,12 +18,13 @@ function gsBar(k, w, cls = '') {
   const tip = `${c.full || c.label}${c.how ? ': ' + c.how : ''}. Double-click its picture to put it back`;
   if (c.sw) return `<div class="gs-bc sw ${cls}" data-k="${k}" ${st} title="${tip}">${g}<div class="gs-tg gs-btn"><i></i><span>${c.label}</span></div></div>`;
   if (c.seg) return `<div class="gs-bc sg ${cls}" data-k="${k}" ${st} title="${tip}">${g}<span class="sl">${c.label}</span><div class="gs-seg">${c.seg.map((s, i) => `<span data-i="${i}">${s}</span>`).join('')}</div></div>`;
-  return `<div class="gs-bc ${cls}" data-k="${k}" ${st} title="${tip}. Drag across · ⇧ fine">${g}<div class="gs-bw gs-well"><i class="gs-bf"></i><span class="gs-bn">${c.label}</span><b class="gs-bv"></b></div></div>`;
+  return `<div class="gs-bc ${cls}" data-k="${k}" ${st} title="${tip}. Drag across · ⇧ fine">${g}<div class="gs-bw gs-well"><i class="gs-bf"></i><i class="gs-bm"></i><i class="gs-bd"></i><span class="gs-bn">${c.label}</span><b class="gs-bv"></b></div></div>`;
 }
 
 function gsMount(root) {
   root.querySelectorAll('.gs-bc[data-k]').forEach((el) => { if (!el._w) { el._w = 1; gsWireBar(el); } });
   gsCvs(root);
+  if (GS_L.got) gsLfoTitles();
 }
 
 function gsWireBar(el) {
@@ -266,7 +267,7 @@ function gsBuildSections() {
 
 /// The boxes for the close-up pictures take what the controls leave: the
 /// spectrum at the head and the time map when there is room, then the engine's
-/// own. The pictures themselves are Phase 8.
+/// own (`407-grain-pictures.js`).
 function gsSizeEngine() {
   const p = $('gsEngPanel'), re = $('gsREng'), es = $('gsESects');
   if (!p || !GS.showing) return;
@@ -276,36 +277,7 @@ function gsSizeEngine() {
   $('gsHeadRow').style.display = row ? '' : 'none';
   $('gsLensWell').style.display = lens ? '' : 'none';
   if (lens) gsSetH('gsLens', lens - 2);
-  gsDrawBoxes();
-}
-
-function gsLensLabel() {
-  const e = GS.engine;
-  if (e === 'granular') return 'GRAIN SCHEDULE · next 2 s';
-  if (e === 'wsola') return 'SPLICE · close-up at the head';
-  if (e === 'hybrid') return 'SEPARATION · tone, hits and air at the head';
-  if (e === 'pvsola') return `FRAME · re-anchored every ${Math.round(gsRead('anchorFrames'))} frames`;
-  return 'FRAME · the spectrum under the head';
-}
-
-/// Their titles only, for now.
-function gsDrawBoxes() {
-  const cl = gsCl();
-  const box = (id, left, right) => {
-    const g = GS_CV[id];
-    if (!g || !g.el.offsetParent) return;
-    const { c, w, h } = g;
-    c.clearRect(0, 0, w, h);
-    c.font = `9px ${cl.mono}`;
-    c.fillStyle = cl.t3;
-    c.fillText(left, 8, 12);
-    c.textAlign = 'right';
-    c.fillText(right, w - 8, 12);
-    c.textAlign = 'left';
-  };
-  box('gsHeadPic', 'AT THE HEAD', 'not drawn yet');
-  box('gsMapPic', 'TIME MAP', 'not drawn yet');
-  box('gsLens', gsLensLabel(), 'not drawn yet');
+  gsPicDirty();
 }
 
 function gsApplyEngine() {

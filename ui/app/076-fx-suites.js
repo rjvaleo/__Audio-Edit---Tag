@@ -133,6 +133,7 @@ function fxHyperprismFace(box, slot, shaper, byKey, groups, pad, rows, refresh) 
 function fxShDial(slot, p, hue, moved) {
   const el = document.createElement('div');
   el.className = 'param sh-cell';
+  el.dataset.key = p.key;
   el.innerHTML = '<svg class="sh-ring" viewBox="0 0 60 60" role="slider" tabindex="0"></svg><span class="v"></span><span class="k"></span>';
   el.querySelector('.k').textContent = p.label;
   el.title = `${p.label} — drag up or down, double-click to reset`;

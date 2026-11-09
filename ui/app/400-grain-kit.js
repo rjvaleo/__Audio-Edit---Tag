@@ -35,14 +35,14 @@ const GS = {
   czA: 0, czB: 0,
   // What the output stage is doing, polled while the page shows and plays.
   master: null, vol: 0.85,
-  // AMP and the LFOs: drawn, kept per A and B, and not connected to anything
-  // until Phases 3 and 6.
+  // AMP and the LFOs: the page's copy of what is sent, kept per A and B and
+  // per sound. A target is the name the server moves it by.
   amp: { a: 0.16, d: 0.4, s: 0.78, r: 0.5 },
   lfo: [
-    { shape: 'sine', rate: 0.33, sync: false, mode: 'free', depth: 0.45 },
-    { shape: 'smooth', rate: 0.26, sync: false, mode: 'free', depth: 0.4 },
-    { shape: 'tri', rate: 0.45, sync: false, mode: 'free', depth: 0.5 },
-    { shape: 'steps', rate: 0.5, sync: true, mode: 'trig', depth: 0.3 },
+    { shape: 'sine', rate: 0.33, sync: false, mode: 'free', depth: 0.45, targets: [] },
+    { shape: 'smooth', rate: 0.26, sync: false, mode: 'free', depth: 0.4, targets: [] },
+    { shape: 'tri', rate: 0.45, sync: false, mode: 'free', depth: 0.5, targets: [] },
+    { shape: 'steps', rate: 0.5, sync: true, mode: 'trig', depth: 0.3, targets: [] },
   ],
   mode: 'mono',
 };
@@ -368,11 +368,21 @@ function gsLoop() {
 
 const gsCue = () => { const f = gsFile(); return f ? (state.cue || 0) / f.sr : 0; };
 
+/// Where a stretch-only position really reads, with Run on: Scan moves it, and
+/// a negative Scan sweeps back from the end (`engine::brackets`).
+function gsScanned(t) {
+  const f = gsFile(), sc = gsRead('scan');
+  if (!f || !GS.voice?.run || sc === 1 || Math.abs(sc) < 1e-3 || GS.engine === 'pvsola') return t;
+  return sc > 0 ? t * sc : f.len + t * sc;
+}
+
 function gsHead() {
   const f = gsFile();
   if (!f) return 0;
+  const note = gsNoteHead();
+  if (note != null) return note;
   if (!engine.playing) return gsCue();
-  const h = sourceFrameNow() / f.sr;
+  const h = gsScanned(sourceFrameNow() / f.sr);
   return Number.isFinite(h) ? h : gsCue();
 }
 

@@ -26,6 +26,7 @@ function wvBuild() {
   const app = wvH(`<div class="wv-app">
    <div class="wv-head">
     <div class="wv-tabs" id="wvViews" role="tablist">${WV_VIEWS.map(([k, n, d]) => `<div class="wv-tab" data-v="${k}" role="tab" title="${n}"><svg viewBox="0 0 16 12"><path d="${d}"/></svg>${n}</div>`).join('')}</div>
+    <select class="wv-midi" id="wvMidiCh" title="MIDI channel: this instrument plays only what arrives on this channel. Grain has its own, on its page"></select>
     <div class="wv-preset wv-btn" id="wvPresetBtn" title="Presets: click for the shelf">
      <div class="wv-ib" data-step="-1" title="Previous preset"><svg viewBox="0 0 12 12"><path d="M8 2 L4 6 L8 10"/></svg></div>
      <span class="pn" id="wvPresetName"></span><span class="pt" id="wvPresetTags"></span>
@@ -169,6 +170,8 @@ function wvShiftOct(by) {
 
 function wvEnter() {
   if (!WV.built) wvBuild();
+  gsWireMidiChannel($('wvMidiCh'), 'wave');
+  gsMidiSend();
   WV.showing = true;
   wvFit();
   wvSyncCreate();

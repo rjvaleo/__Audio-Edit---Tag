@@ -11,13 +11,17 @@
 //!   tested frame by frame.
 //! - [`synth`] is the Wave page's synth deck, which has no transport and is
 //!   mixed in before the master ceiling (`decks.rs`).
+//! - [`keys`] is the Grain page's notes: AMP, Glide, Bend and Run, on the grain
+//!   deck.
 //! - [`device`] opens the output and pumps the other two. As thin as possible,
 //!   because it is the only part a test cannot reach.
 
+pub mod brackets;
 pub mod decks;
 pub mod device;
 pub mod glide;
 pub mod input;
+pub mod keys;
 pub mod seqbus;
 pub mod synth;
 pub mod transport;
@@ -27,6 +31,7 @@ pub mod transport;
 pub use prism_grain::{render, stretcher};
 
 pub use decks::Decks;
+pub use keys::{GrainKeys, KeyMode};
 pub use device::{conform_channels, resample, spawn, spawn_with, Engine, Handle};
 pub use render::{BlockRenderer, Source};
 pub use seqbus::SeqBus;

@@ -603,6 +603,15 @@ pub struct App {
     /// The Wave page's synth: its patch, tables and presets, and the handle
     /// every audio device's synth deck is given (`wave_synth.rs`).
     pub wave: crate::wave_synth::WaveState,
+    /// The Grain page's keys, given to every audio device opened so that one
+    /// reopened at a new buffer size keeps them (`grain_notes.rs`).
+    pub grain_keys: std::sync::Arc<engine::GrainKeys>,
+    /// The REC PERF pass in progress, as far as its notes go.
+    pub note_take: crate::grain_notes::NoteTake,
+    /// The Grain page's four LFOs (`grain_lfos.rs`).
+    pub grain_lfos: crate::grain_lfos::GrainLfos,
+    /// MIDI in, and which page it goes to (`midi.rs`).
+    pub midi: std::sync::Arc<crate::midi::Router>,
 }
 
 /// The last sound map worked out, and what it was worked out from.
@@ -631,6 +640,7 @@ impl App {
         let automation = crate::automation::AutomationStore::load(&data_dir.join("AUTOMATION.json"));
         let visual_lanes = crate::docs::DocJsonStore::load(&data_dir.join("VISUAL-AUTOMATION.json"));
         let wave = crate::wave_synth::WaveState::load(&data_dir);
+        let grain_keys = std::sync::Arc::new(engine::GrainKeys::new());
         let overrides = std::fs::read_to_string(data_dir.join("TAG-OVERRIDES.json"))
             .ok()
             .and_then(|s| crate::json::parse(&s))
@@ -678,7 +688,11 @@ impl App {
             recorder: Mutex::new(None),
             presets: RwLock::new(presets),
             saved: RwLock::new(saved),
+            midi: std::sync::Arc::new(crate::midi::Router::new(std::sync::Arc::clone(&wave.shared), std::sync::Arc::clone(&grain_keys))),
             wave,
+            grain_keys,
+            note_take: Default::default(),
+            grain_lfos: Default::default(),
         };
         app.load_config();
         let _ = app.load_index();

@@ -18,6 +18,10 @@ const $ = (id) => document.getElementById(id);
 /// parse anything, and so a setting can be read during load without reaching
 /// for `localStorage` again.
 const prefs = Settings.load(localStorage);
+// The new Grain page is the Grain page (RJ, 8 Nov 2026). The old tray stays built,
+// hidden, because Visual › Sound borrows it, and its tests still drive it until
+// they are moved over, which is the only reason `webdriver` is asked.
+if (!navigator.webdriver) prefs.grainUi = 'synth';
 
 /// Change one, write them all, and tell whoever is listening.
 ///

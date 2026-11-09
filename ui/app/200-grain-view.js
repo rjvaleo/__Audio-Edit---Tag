@@ -56,6 +56,7 @@ function gmArm(btn) {
 }
 
 function setGrainUi(v) {
+  if (!navigator.webdriver) v = 'synth';
   const was = document.body.dataset.grainUi;
   const ui = setPref('grainUi', v);
   document.body.dataset.grainUi = ui;
@@ -95,8 +96,8 @@ function grainUiBuild() {
   sw.className = 'gm-switch';
   sw.setAttribute('role', 'group');
   sw.setAttribute('aria-label', 'Grain view style');
-  sw.title = 'Classic is the Grain view as it was; Modern is the redesign. Only this view changes.';
-  for (const [ui, word] of [['classic', 'Classic'], ['modern', 'Modern']]) {
+  sw.title = 'Classic is the Grain view as it was; Modern is the redesign; New is the new Grain page. Only this view changes.';
+  for (const [ui, word] of [['classic', 'Classic'], ['modern', 'Modern'], ['synth', 'New']]) {
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.ui = ui;
