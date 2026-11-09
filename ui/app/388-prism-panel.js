@@ -133,6 +133,7 @@ async function prismPickChoose(kind, id) {
   prismPick.open = false;
   prismPickerRender();
   if (!id) {
+    if (!prismDeck.path && state.selectedFile?.path) await prismDeckUse(state.selectedFile.path, { chosen: false });
     if (!prismDeck.path) { toast('Choose a sound for Prism first'); return; }
     await prismChainAdd(kind);
     id = prismDeck.rack.slots.filter((s) => s.kind === kind).pop()?.id;

@@ -63,7 +63,7 @@ function prismKey() {
 }
 
 /// Load a sound into the Prism deck, and its document with it.
-async function prismDeckUse(path) {
+async function prismDeckUse(path, { chosen = true } = {}) {
   if (!path) return;
   try {
     const r = await postJSON(`/api/prism/load?p=${encodeURIComponent(path)}`, {});
@@ -73,7 +73,10 @@ async function prismDeckUse(path) {
   prismDeck.path = path;
   prismDeck.playing = false;
   prismDeck.pos = 0;
-  try { localStorage.setItem('prism.sound', path); } catch { /* private mode */ }
+  // Only a sound picked in the panel is Prism's own. The open file is what it
+  // falls back on, so the next file opened is the next one it plays.
+  prismDeck.borrowed = !chosen;
+  if (chosen) try { localStorage.setItem('prism.sound', path); } catch { /* private mode */ }
   try {
     const r = await api(`/api/rack?p=${encodeURIComponent(prismKey())}&sr=${prismDeck.rate}`);
     prismDeck.rack = { slots: [], pads: {}, postRoll: {}, ...r };

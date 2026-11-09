@@ -901,10 +901,15 @@ function hyperStretchShown(on) {
   if (on) {
     prismSoundFill();
     prismDeckShow();
-    if (!prismDeck.path) {
+    const open = state.selectedFile?.path;
+    if (!prismDeck.path || (prismDeck.borrowed && open && open !== prismDeck.path)) {
       let last = '';
       try { last = localStorage.getItem('prism.sound') || ''; } catch { /* private mode */ }
-      if (last) prismDeckUse(last); else hsOpen();
+      // Nothing chosen yet: the file that is open, so the Process menu and
+      // every effect's controls are there without a second trip to a picker.
+      if (last) prismDeckUse(last);
+      else if (open) prismDeckUse(open, { chosen: false });
+      else hsOpen();
     } else hsOpen();
     hsSendGlide();
     hs.last = 0;

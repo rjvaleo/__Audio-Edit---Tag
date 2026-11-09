@@ -45,20 +45,19 @@ async function openPrism(page) {
 const posted = (sent, path) => sent.filter((s) => new URL(s.url).pathname === path);
 
 test('the page has a sound, a waveform and a transport of its own', async ({ page }) => {
-  await openPrism(page);
+  const { files } = await openPrism(page);
   for (const id of ['prismSoundFolder', 'prismSoundFile', 'prismWave', 'prismDeckPlay', 'prismDeckStop', 'prismDeckLoop']) {
     await expect(page.locator(`#dockHyper #${id}`)).toBeVisible();
   }
-  await expect(page.locator('#prismSoundName')).toContainText('No sound');
+  await expect(page.locator('#prismSoundName')).toContainText(files[0].split('/').pop());
 });
 
 test('choosing a sound loads it into the Prism deck, not the grain engine', async ({ page }) => {
   const { sent, files } = await openPrism(page);
   await page.locator('#prismSoundFile').selectOption(files[1]);
   await expect(page.locator('#prismSoundName')).toContainText(files[1].split('/').pop());
-  const loads = sent.filter((s) => /\/api\/prism\/load/.test(s.url));
+  const loads = sent.filter((s) => /\/api\/prism\/load/.test(s.url) && new URL(s.url).searchParams.get('p') === files[1]);
   expect(loads.length).toBe(1);
-  expect(new URL(loads[0].url).searchParams.get('p')).toBe(files[1]);
   expect(sent.filter((s) => /\/api\/engine\/load/.test(s.url))).toHaveLength(0);
   expect(await page.evaluate(() => state.selectedFile.path)).toBe(files[0]);
   expect(await page.evaluate(() => window.prismDeck.path())).toBe(files[1]);
@@ -131,4 +130,13 @@ test('play, stop and loop are the Prism deck\'s', async ({ page }) => {
   expect(tr.some((b) => b.loop && b.loop.on === true)).toBe(true);
   expect(tr.some((b) => b.play === false && b.seek === 0)).toBe(true);
   expect(await page.evaluate(() => engine.playing)).toBe(false);
+});
+
+test('with nothing chosen Prism plays the open file, and a process opens its controls', async ({ page }) => {
+  const { files } = await openPrism(page);
+  await expect(page.locator('#prismSoundName')).toContainText(files[0].split('/').pop());
+  expect(await page.evaluate(() => localStorage.getItem('prism.sound'))).toBeNull();
+  await page.locator('#prismPickBtn').click();
+  await page.locator('#prismPick').getByText('Chorus', { exact: true }).first().click();
+  await expect(page.locator('#prismSettings')).toContainText('Stereo phase');
 });
