@@ -56,7 +56,7 @@ pub const FONTS_CSS: &str = include_str!("../../../../visualiser/fonts.css");
 /// has fallen behind can say so instead of being argued with.
 pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
-    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, WAVE_CSS, SOUND_MAP_JS, SOUND_MAP_CSS, CHOP_JS, CHOP_CSS,
+    for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, WAVE_CSS, SOUND_MAP_JS, SOUND_MAP_CSS, CHOP_CSS,
                  SETTINGS_JS, SECTION_PRESETS_JS,
                  SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS,
                  PERF_PANEL_JS, PRISM_PAD_JS, COMPOSE_JS, VISUAL_LANES_JS,
@@ -150,7 +150,6 @@ pub const SOUND_MAP_JS: &str = include_str!("../../../../ui/sound-map.js");
 pub const SOUND_MAP_CSS: &str = include_str!("../../../../ui/sound-map.css");
 pub const LIBRARY_GRAPH_JS: &str = include_str!("../../../../ui/library-graph.js");
 pub const LIBRARY_GRAPH_CSS: &str = include_str!("../../../../ui/library-graph.css");
-pub const CHOP_JS: &str = include_str!("../../../../ui/chop.js");
 pub const CHOP_CSS: &str = include_str!("../../../../ui/chop.css");
 /// The regular 4-polytopes and the projection that brings them into three
 /// dimensions. Pure geometry — see `docs/SHAPES-4D.md`.
@@ -222,10 +221,6 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         }
         ("GET" | "HEAD", "/library-graph.css") => {
             Response::ok("text/css; charset=utf-8", LIBRARY_GRAPH_CSS.as_bytes().to_vec())
-                .with("Cache-Control", "no-store, must-revalidate")
-        }
-        ("GET" | "HEAD", "/chop.js") => {
-            Response::ok("text/javascript; charset=utf-8", CHOP_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
         ("GET" | "HEAD", "/chop.css") => {

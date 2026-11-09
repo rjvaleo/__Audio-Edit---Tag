@@ -1,16 +1,42 @@
 # Chop
 
-Recycle Reborn ([rjvaleo/Recycle-Reborn](https://github.com/rjvaleo/Recycle-Reborn)), as a tab in the dock.
+Recycle Reborn ([rjvaleo/Recycle-Reborn](https://github.com/rjvaleo/Recycle-Reborn)), as a page of its own.
 
-It cuts the selected sound at its silences into slices, shows them as
-coloured regions on the waveform, plays each one, gives each an optional
+It cuts the selected sound into slices, shows them on the page's own waveform,
+plays each one, gives each an optional
 ReCycle-style ping-pong loop tail, and writes them out as 16-bit WAVs.
 
 ![The Chop panel on a run of snares](screenshots/chop/chop-panel.png)
 
+## The page (redesigned 8 Nov 2026)
+
+The design is `chop-redesign/ARCHITECTURE.md` in the work folder; the approved
+mock-up is `chop-v3.html` there. What matters for working on it:
+
+| File | What it does |
+|---|---|
+| `ui/app/400-chop-cut.js` | Finding the cuts and editing them; Recycle Reborn's code |
+| `ui/app/401-chop-sound.js` | What a slice sounds like, listening, writing |
+| `ui/app/402-chop-listen.js` | The measures, the tempo and the bars, what a slice is |
+| `ui/app/403-chop-view.js` | The overview, the detail and its overlay, the colours |
+| `ui/app/404-chop-pictures.js` | The picked slice, the pass, the processing curves |
+| `ui/app/405-chop-panel.js` | The list, the knobs, the processing modules |
+| `ui/app/406-chop-page.js` | Wiring, the Looks, the fit |
+| `ui/chop.css` | All of it, scoped under `.chop-app` |
+
+- **Fixed at 1432×1000 and scaled whole**, as Wave is (`chopFit`).
+- **The file tabs and transport are the app's own**, moved in while the page shows and put back after (`chopBorrow`). There is one set of them.
+- **The detail is the page's own** (`#chopLane`, `chopView`). The main waveform is hidden on this page.
+- **Nothing hides by mode.** A knob that makes no cuts dims and still works. Ratchet uses Nudge and Shuffle in every mode.
+- **The Colour row** says what the colour on the waveform means, from the library's own measures (`search/src/lib.rs`, `pitch.rs`), taken in a worker on every 11 ms. Every slice is measured too and given a Kind, which is an opinion and will sometimes be wrong.
+- **Detect** finds the tempo and counts the bars between S and E, and sets Bars and Beats. It runs when a sound opens. Whole bars win when they score nearly as well, so a loop loops even.
+- **Bars reaches 999** on a log knob, so a song can be counted. Ratchet's loop is capped at 64 bars.
+- **Looks** are Grain v12's five, kept under `mglLook` so Grain can read the same setting. Orange means "on" in all five.
+- **Processing controls are `param` sliders with a knob over them** (`chopBar`), so they stay what they were for keyboard, reset and `controls-parity`.
+
 ## What is Recycle Reborn's, unchanged
 
-These are copied line for line into `ui/chop.js`:
+These are copied line for line into `ui/app/400-chop-cut.js`:
 
 - the RMS frames;
 - the silence detection;
