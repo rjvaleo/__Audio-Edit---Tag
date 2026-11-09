@@ -58,6 +58,9 @@ async function loadSignal(page, settings = {}) {
     window.Chop.loadSamples([mono], rate, 'break');
     window.Chop.repaint();
   }, [SIGNAL, settings, N]);
+  // The measures arrive from a worker and redraw the overlay; wait, so a test
+  // never holds an element that is about to be replaced.
+  await page.evaluate(() => window.Chop.analysed());
 }
 
 /// Where frame `f` is on the lane, in page pixels.
