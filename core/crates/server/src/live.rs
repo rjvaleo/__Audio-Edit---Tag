@@ -500,7 +500,15 @@ pub fn push_params(app: &Arc<App>, rel: &str, list: &edit::EditList) -> Result<(
             }
             None => Rebuilds::default(),
         };
-        let (want_map, want_parts, want_bank) = (r.map, r.parts, r.bank);
+        let (want_map, want_parts, mut want_bank) = (r.map, r.parts, r.bank);
+        // The drag has already written the new count into the parameters, so
+        // comparing them on release found nothing to do: more layers showed on
+        // the page and the engine went on running the old bank until the next
+        // load. What matters is how many the bank was actually built for.
+        let settled = list.stretch.quality != fx::stretch::Quality::Draft;
+        if settled && h.shared.bank_layers() != list.stretch.grain.layers.max(1) {
+            want_bank = true;
+        }
         if want_parts {
             if let Some(src) = h.shared.source() {
                 separate_soon(app, rel, src, list.stretch.hybrid);

@@ -233,6 +233,8 @@ pub struct Shared {
     /// adopted. Handed over for the usual reason: sixteen of anything here is
     /// megabytes, and a callback may not allocate.
     pending_bank: Mutex<Option<crate::stretcher::LayerBank>>,
+    /// How many layers the last bank handed over was built for.
+    bank_layers: AtomicU32,
 
     /// Peak levels either side of every rack slot, and each slot's own scalar.
     ///
@@ -417,6 +419,7 @@ impl Shared {
             pending_map: Mutex::new(None),
             pending_parts: Mutex::new(None),
             pending_bank: Mutex::new(None),
+            bank_layers: AtomicU32::new(1),
             rack_meters: Arc::new(fx::RackMeters::new()),
             automation: Mutex::new(Vec::new()),
             manual: Mutex::new(Vec::new()),
@@ -748,9 +751,15 @@ impl Shared {
     /// one is fine: only the newest settings matter.
     /// Leave a bank of extra layers for the audio thread to pick up.
     pub fn set_bank(&self, bank: crate::stretcher::LayerBank) {
+        self.bank_layers.store(bank.layers.max(1), Ordering::Release);
         if let Ok(mut g) = self.pending_bank.lock() {
             *g = Some(bank);
         }
+    }
+
+    /// How many layers the bank the engine has been given was built for.
+    pub fn bank_layers(&self) -> u32 {
+        self.bank_layers.load(Ordering::Acquire)
     }
 
     /// Leave a freshly separated source for the audio thread to pick up.

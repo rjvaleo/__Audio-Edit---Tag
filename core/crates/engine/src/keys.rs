@@ -138,6 +138,9 @@ pub struct GrainKeys {
     /// Where a note starts, as a fraction of the document.
     start: AtomicU32,
     run: AtomicBool,
+    /// Whether the transport was started by ▶, which always sounds, as it always
+    /// has (RJ, 8 Nov 2026): Run is only for sounding with no transport and no key.
+    played: AtomicBool,
     /// Whether a take's notes should be played back through here.
     replay: AtomicBool,
     /// Whether the Grain page is in front (`brackets.rs`).
@@ -176,6 +179,7 @@ impl GrainKeys {
             release: AtomicU32::new(1.5f32.to_bits()),
             start: AtomicU32::new(0f32.to_bits()),
             run: AtomicBool::new(true),
+            played: AtomicBool::new(false),
             replay: AtomicBool::new(false),
             front: AtomicBool::new(false),
             table: (0..128).map(|n| AtomicU32::new((n as f32 - 60.0).to_bits())).collect(),
@@ -273,6 +277,11 @@ impl GrainKeys {
 
     pub fn set_run(&self, on: bool) {
         self.run.store(on, Ordering::Release);
+    }
+
+    /// ▶ was pressed, or stopped.
+    pub fn set_played(&self, on: bool) {
+        self.played.store(on, Ordering::Release);
     }
 
     pub fn run(&self) -> bool {
@@ -589,7 +598,7 @@ impl KeyPlayer {
         let sr = sample_rate.max(1) as f32;
         let mut plan = KeyBlock::default();
 
-        let run = self.keys.run();
+        let run = self.keys.run() || (playing && self.keys.played.load(Ordering::Acquire));
         if run != self.run {
             self.run = run;
             if run {

@@ -4496,8 +4496,18 @@ fn api_engine_transport(app: &Arc<App>, req: &Request) -> Response {
         }
         // Play last, so a seek in the same request lands before sound starts.
         match v.get("play") {
-            Some(Value::Bool(true)) => h.shared.play(),
-            Some(Value::Bool(false)) => h.shared.pause(),
+            Some(Value::Bool(true)) => {
+                if !prism {
+                    app.grain_keys.set_played(true);
+                }
+                h.shared.play()
+            }
+            Some(Value::Bool(false)) => {
+                if !prism {
+                    app.grain_keys.set_played(false);
+                }
+                h.shared.pause()
+            }
             _ => {}
         }
         h.shared.position() as f64
