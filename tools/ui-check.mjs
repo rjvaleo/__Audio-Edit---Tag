@@ -236,7 +236,7 @@ const globals = new Set([
   'cancelAnimationFrame', 'fetch', 'alert', 'confirm', 'prompt', 'console', 'document',
   'window', 'navigator', 'location', 'localStorage', 'performance', 'ResizeObserver',
   'IntersectionObserver', 'MutationObserver', 'AbortController', 'URL', 'URLSearchParams',
-  'Blob', 'FileReader', 'Image', 'Audio', 'AudioContext', 'structuredClone', 'queueMicrotask',
+  'Blob', 'FileReader', 'Image', 'Audio', 'AudioContext', 'OfflineAudioContext', 'Worker', 'Option', 'structuredClone', 'queueMicrotask',
   'Intl', 'WebSocket', 'EventSource', 'DOMParser', 'getComputedStyle', 'matchMedia',
   // The typed arrays, completed. `Uint16Array` was the only one missing, which
   // is the same gap in a different family — it is used for every edge list in

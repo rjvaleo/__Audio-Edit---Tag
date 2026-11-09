@@ -1,6 +1,6 @@
 //! Writing the chopper's slices into the library.
 //!
-//! The Chop panel (`ui/chop.js`, from Recycle Reborn) cuts a sound into the
+//! The Chop page (`ui/app/400-chop-cut.js`, from Recycle Reborn) cuts a sound into the
 //! pieces between its silences and encodes each as a WAV in the browser, exactly
 //! as Recycle Reborn did. Where Recycle Reborn downloaded them, this app puts
 //! them beside the sound they came from, in a folder of their own, so they are

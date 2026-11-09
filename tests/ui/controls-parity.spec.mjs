@@ -77,6 +77,13 @@ async function inventory(page) {
     await page.waitForTimeout(400);
     await take(`grain/${tab}`, tab === 'prism' ? '#dockHyper' : `#dock${tab[0].toUpperCase()}${tab.slice(1)}`);
   }
+  // Chop is a page of its own with a panel of its own (`ui/app/405-chop-panel.js`).
+  await page.locator('#leftRail .rl-item[data-page="chop"]').click();
+  await page.waitForFunction(() => window.Chop.state.slices > 0, null, { timeout: 20_000 });
+  await page.waitForTimeout(400);
+  await take('chop', '#dockChop');
+  await page.locator('#leftRail .rl-item[data-page="grain"]').click();
+  await page.waitForTimeout(400);
   await take('transport', '#transportBar');
   await take('edit-toolbar', '#editTools');
   await page.evaluate(() => setMode('room'));

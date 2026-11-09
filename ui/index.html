@@ -1260,74 +1260,88 @@
       <div class="dock-body hidden" id="dockRegions">
         <div class="region-list" id="regionList"></div>
       </div>
-      <!-- Chop: Recycle Reborn, ReCycle's editing and Ratchet's grid, on the
-           selected sound. The slices are drawn and edited on the main waveform;
-           this panel is only the controls and the list. See ui/chop.js. -->
       <div class="dock-body hyper-body hidden" id="dockHyper"></div>
+      <!-- Chop: Recycle Reborn, ReCycle's editing and Ratchet's grid, on the selected
+           sound. A page of its own, 1432×1000 and scaled whole. See `docs/CHOP.md`
+           and ui/app/400 to 406. -->
       <div class="dock-body chop-body hidden" id="dockChop">
-        <div class="chop-hdr">
-          <b class="chop-title">Chops</b>
-          <span class="chop-pills" id="chopMode" title="How the cuts are found">
-            <button type="button" data-v="transient" title="A cut at every hit, as ReCycle does: each slice runs to the next">Transient</button>
-            <button type="button" data-v="silence" title="The sounds between the silences, as Recycle Reborn does">Silence</button>
-            <button type="button" data-v="grid" title="A cut on every grid line at the tempo, as Ratchet does">Grid</button>
-          </span>
-          <span class="chop-pills" id="chopDiv" title="The grid">
-            <button type="button" data-v="bar">1 bar</button><button type="button" data-v="2">1/2</button><button type="button" data-v="4">1/4</button><button type="button" data-v="8">1/8</button><button type="button" data-v="16">1/16</button><button type="button" data-v="32">1/32</button>
-          </span>
-          <span class="chop-pills" id="chopFeel" title="Straight, dotted or triplet">
-            <button type="button" data-v="straight">Straight</button><button type="button" data-v="dot">Dot</button><button type="button" data-v="trip">Trip</button>
-          </span>
-          <span class="chop-pills chop-tools" id="chopTools" title="What a click on the waveform does">
-            <button type="button" data-v="pointer" title="Pointer: click a slice to pick and hear it, drag a cut to move it, drag it off the ruler to delete it (shift-click picks more)">↖</button>
-            <button type="button" data-v="audition" title="Audition: click a slice to hear it">🔈</button>
-            <button type="button" data-v="lock" title="Lock: click a cut to lock it. A locked cut stays when the sound is cut again">🔒</button>
-            <button type="button" data-v="pencil" title="Pencil: click to add a cut">✎</button>
-          </span>
-          <span class="chop-pills">
-            <button type="button" id="chopRev" title="Reverse the picked slices">◄ Rev</button>
-            <button type="button" id="chopMute" title="Silence the picked slices: left out of Preview and Write">Mute sel</button>
-          </span>
-          <span class="chop-grow"></span>
-          <span class="chop-pills">
-            <button type="button" id="chopPreview" title="Play every slice that is not muted, S to E, at the tempo, with everything on">▶ Preview</button>
-            <button type="button" id="chopRatchet" title="Ratchet: the chop from S fires on every grid line, round and round, until pressed again">Ratchet</button>
-          </span>
-          <span class="chop-pills" id="chopSync" title="Free: the tempo here. Lock: the sequencer's tempo">
-            <button type="button" data-v="free">Free</button><button type="button" data-v="lock">Lock</button>
-          </span>
-          <span class="chop-pills chop-presets">
-            <button type="button" id="chopA" title="Settings A">A</button><button type="button" id="chopB" title="Settings B: flip between the two to compare">B</button>
-            <button type="button" id="chopPrevPreset" title="Previous preset">‹</button>
-            <select id="chopPreset" title="Chop presets"></select>
-            <button type="button" id="chopNextPreset" title="Next preset">›</button>
-            <button type="button" id="chopSave" title="Save these settings as a preset">Save</button>
-            <button type="button" id="chopInit" title="Every setting back to where it starts">Init</button>
-            <button type="button" id="chopDice" title="Roll the dice: new settings for the cutting and the sound">⚄</button>
-          </span>
-          <button type="button" class="chop-capture" id="chopCapture" title="Capture: chop the newest take in Recordings">Take</button>
-        </div>
-        <div class="chop-knobs" id="chopKnobs"></div>
-        <div class="chop-fx" id="chopFx" title="The processing every slice gets, in Preview and as it is written"></div>
-        <div class="chop-foot">
+       <div class="chop-app" data-look="AD">
+        <header class="chop-band chop-top chop-panel">
+          <div id="chopTabs" class="chop-tabs-host"></div>
+          <div id="chopTransport" class="chop-transport"></div>
+          <div id="chopClock" class="chop-clock chop-well"></div>
+          <div class="chop-seg" title="Two settings to flip between"><button type="button" id="chopA" title="Settings A">A</button><button type="button" id="chopB" title="Settings B: flip between the two to compare">B</button></div>
+          <div class="chop-preset chop-well chop-presets"><button type="button" id="chopPrevPreset" title="Previous preset">‹</button><select id="chopPreset" title="Chop presets"></select><button type="button" id="chopNextPreset" title="Next preset">›</button></div>
+          <button type="button" class="chop-btn" id="chopSave" title="Save these settings as a preset"><svg viewBox="0 0 12 12"><path d="M2 2H8L10 4V10H2ZM4 2V5H7V2M4 10V7H8V10"/></svg>Save</button>
+          <button type="button" class="chop-btn" id="chopInit" title="Every setting back to where it starts"><svg viewBox="0 0 12 12"><path d="M3 3V6H6M3.2 6A3.6 3.6 0 1 0 4 3.4"/></svg>Init</button>
+          <button type="button" class="chop-btn" id="chopDice" title="Roll the dice: new settings for the cutting and the sound"><svg viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="1.6"/><circle cx="4.4" cy="4.4" r=".7" fill="currentColor"/><circle cx="7.6" cy="7.6" r=".7" fill="currentColor"/><circle cx="6" cy="6" r=".7" fill="currentColor"/></svg>Dice</button>
+          <button type="button" class="chop-btn chop-capture" id="chopCapture" title="Capture: chop the newest take in Recordings"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="4"/><circle cx="6" cy="6" r="1.6" fill="currentColor"/></svg>Take</button>
+          <div class="chop-look" id="chopLook" title="Look: the same five as Grain"></div>
+          <div id="chopLevel" class="chop-level"></div>
+        </header>
+        <section class="chop-band chop-cutrow">
+          <div class="chop-pills chop-tabs" id="chopMode" title="How the cuts are found"><button type="button" class="chop-tab" data-v="transient" title="A cut at every hit, as ReCycle does: each slice runs to the next"><svg viewBox="0 0 30 20"><path d="M1 18L6 2V18M11 18L16 6V18M21 18L26 3V18"/></svg>Transient</button><button type="button" class="chop-tab" data-v="silence" title="The sounds between the silences, as Recycle Reborn does"><svg viewBox="0 0 30 20"><path d="M2 10C3 2 8 2 9 10S3 18 2 10M13 10C14 4 19 4 20 10S14 16 13 10M24 10C24.5 7 27 7 28 10S24.5 13 24 10"/></svg>Silence</button><button type="button" class="chop-tab" data-v="grid" title="A cut on every grid line at the tempo, as Ratchet does"><svg viewBox="0 0 30 20"><path d="M2 2V18M9 2V18M16 2V18M23 2V18M28 2V18"/><path d="M1 10H29" opacity=".5"/></svg>Grid</button></div>
+          <div class="chop-lgrp"><span class="chop-cap">Grid</span><div class="chop-pills chop-seg" id="chopDiv" title="The grid"><button type="button" data-v="bar" title="A cut every 1 bar"><svg viewBox="0 0 16 12"><path d="M2.0 2V10"/></svg>1 bar</button><button type="button" data-v="2" title="A cut every 1/2"><svg viewBox="0 0 16 12"><path d="M2.0 2V10M14.0 2V10"/></svg>1/2</button><button type="button" data-v="4" title="A cut every 1/4"><svg viewBox="0 0 16 12"><path d="M2.0 2V10M8.0 2V10M14.0 2V10"/></svg>1/4</button><button type="button" data-v="8" title="A cut every 1/8"><svg viewBox="0 0 16 12"><path d="M2.0 2V10M5.0 2V10M8.0 2V10M11.0 2V10M14.0 2V10"/></svg>1/8</button><button type="button" data-v="16" title="A cut every 1/16"><svg viewBox="0 0 16 12"><path d="M2.0 2V10M3.7 2V10M5.4 2V10M7.1 2V10M8.9 2V10M10.6 2V10M12.3 2V10M14.0 2V10"/></svg>1/16</button><button type="button" data-v="32" title="A cut every 1/32"><svg viewBox="0 0 16 12"><path d="M2.0 2V10M3.1 2V10M4.2 2V10M5.3 2V10M6.4 2V10M7.5 2V10M8.5 2V10M9.6 2V10M10.7 2V10M11.8 2V10M12.9 2V10M14.0 2V10"/></svg>1/32</button></div></div>
+          <div class="chop-lgrp"><span class="chop-cap">Feel</span><div class="chop-pills chop-seg" id="chopFeel" title="Straight, dotted or triplet"><button type="button" data-v="straight" title="Straight"><svg viewBox="0 0 16 12"><path d="M2 2V10M6 2V10M10 2V10M14 2V10"/></svg>Straight</button><button type="button" data-v="dot" title="Dot"><svg viewBox="0 0 16 12"><path d="M2 2V10M8 2V10M14 2V10M10.5 5h.1"/></svg>Dot</button><button type="button" data-v="trip" title="Trip"><svg viewBox="0 0 16 12"><path d="M3 2V10M8 2V10M13 2V10M3 1.5H13"/></svg>Trip</button></div></div>
+          <div class="chop-lgrp"><span class="chop-cap">Click does</span><div class="chop-pills chop-seg chop-tools" id="chopTools" title="What a click on the waveform does"><button type="button" data-v="pointer" title="Click a slice to pick and hear it, drag a cut to move it, drag it off the ruler to delete it (shift-click picks more)"><svg viewBox="0 0 12 12"><path d="M3 1L3 10L5.6 7.8L7.2 11L9 10.2L7.4 7L10.5 6.8Z"/></svg>Pick</button><button type="button" data-v="audition" title="Click a slice to hear it"><svg viewBox="0 0 12 12"><path d="M2 5H4L7 2.5V9.5L4 7H2ZM9 3.5C10.5 5 10.5 7 9 8.5"/></svg>Hear</button><button type="button" data-v="lock" title="Click a cut to lock it. A locked cut stays when the sound is cut again"><svg viewBox="0 0 12 12"><path d="M3 6H9V10.5H3ZM4 6V4A2 2 0 0 1 8 4V6"/></svg>Lock</button><button type="button" data-v="pencil" title="Click to add a cut"><svg viewBox="0 0 12 12"><path d="M2 10L2.6 7.8L8 2.4L9.6 4L4.2 9.4Z"/></svg>Pencil</button></div></div>
+          <div class="chop-lgrp"><span class="chop-cap">Picked</span><div class="chop-hflex">
+            <button type="button" class="chop-btn" id="chopRev" title="Reverse the picked slices"><svg viewBox="0 0 12 12"><path d="M10 3L3 6L10 9Z"/><path d="M2 2V10"/></svg>Rev</button>
+            <button type="button" class="chop-btn" id="chopMute" title="Silence the picked slices: left out of Preview and Write"><svg viewBox="0 0 12 12"><path d="M2 5H4L7 2.5V9.5L4 7H2ZM9 4L11 8M11 4L9 8"/></svg>Mute</button>
+          </div></div>
+        </section>
+        <section class="chop-band chop-mid">
+          <div class="chop-panel chop-source">
+            <div class="chop-phead"><b class="chop-nm">SOURCE</b><span class="chop-meta" id="chopMeta"></span><span class="chop-grow"></span>
+              <div class="chop-well chop-outw" title="What you hear"><canvas id="chopOut" data-w="222" data-h="20"></canvas></div>
+              <button type="button" class="chop-soft" id="chopSoft" title="Soften the slices: see-through, so the waveform comes forward. The wheel over it sets how much"></button>
+              <span class="chop-meta" id="chopZoomRo"></span>
+              <button type="button" class="chop-btn chop-ib" id="chopZoomOut" title="Zoom out">−</button>
+              <button type="button" class="chop-btn chop-ib" id="chopZoomIn" title="Zoom in">＋</button>
+              <button type="button" class="chop-btn" id="chopZoomFit" title="The whole sound">Fit</button>
+              <button type="button" class="chop-btn chop-ib on" id="chopFollow" title="Follow the playhead"><svg viewBox="0 0 12 12"><path d="M2 6H8M6 3L9 6L6 9M10.5 2V10"/></svg></button>
+              <div class="chop-seg sm" id="chopFollowMode" title="While it plays: scroll or page"><button type="button" data-v="scroll" class="on">scroll</button><button type="button" data-v="page">page</button></div>
+            </div>
+            <div class="chop-well chop-overw"><canvas id="chopOverview" data-w="1006" data-h="42"></canvas><i class="chop-ovhead hidden" id="chopOverHead"></i></div>
+            <div class="chop-vrow"><span class="chop-cap">Colour</span><div class="chop-seg sm" id="chopColour" title="What the colour says"></div><div class="chop-legend" id="chopLegend"></div></div>
+            <div class="chop-well chop-lane" id="chopLane"><canvas id="chopWave" data-w="1006" data-h="334"></canvas></div>
+            <div class="chop-pics">
+              <div class="chop-well"><div class="chop-pl"><b>THE PICKED SLICE</b><span id="chopPickRo"></span></div><div class="chop-pl2" id="chopPickAn"></div><canvas id="chopSlicePic" data-w="500" data-h="119"></canvas></div>
+              <div class="chop-well"><div class="chop-pl"><b>THE PASS</b><span id="chopPassRo"></span></div><canvas id="chopPassPic" data-w="500" data-h="119"></canvas></div>
+            </div>
+          </div>
+          <div class="chop-panel chop-slices">
+            <div class="chop-phead"><b class="chop-nm">SLICES</b><span class="chop-meta" id="chopHeard" title="What the library's listener hears in this sound"></span><span class="chop-grow"></span><span class="chop-meta" id="chopPattern"></span></div>
+            <div class="chop-lh"><span>#</span><span></span><span>Kind</span><span></span><span class="r">Start</span><span class="r">Long</span><span class="r">Peak</span><span class="r">Tail</span><span></span></div>
+            <div class="chop-list" id="chopList"></div>
+          </div>
+        </section>
+        <section class="chop-band chop-ctl">
+          <div id="chopKnobs" class="chop-knobs"></div>
+          <div class="chop-mod chop-listen" style="width:300px"><div class="chop-mh"><b class="chop-gname">LISTEN</b><span class="chop-grow"></span><div class="chop-pills chop-seg sm" id="chopSync" title="Free: the tempo here. Lock: the sequencer's tempo"><button type="button" data-v="free">Free</button><button type="button" data-v="lock">Lock</button></div></div>
+            <div class="chop-ls"><div class="chop-lsr">
+              <button type="button" class="chop-btn chop-big" id="chopPreview" title="Play every slice that is not muted, S to E, at the tempo, with everything on"><svg viewBox="0 0 12 12"><path d="M3 2L10 6L3 10Z" fill="currentColor" stroke="none"/></svg>Preview</button>
+              <button type="button" class="chop-btn chop-big" id="chopRatchet" title="Ratchet: the chop from S fires on every grid line, round and round, until pressed again"><svg viewBox="0 0 12 12"><path d="M2 10V4M5 10V4M8 10V4M11 10V4M1 2H11"/></svg>Ratchet</button>
+            </div><div class="chop-status" id="chopStatus"></div><div class="chop-status chop-status2" id="chopStatus2"></div></div>
+          </div>
+        </section>
+        <section class="chop-band chop-pro"><div class="chop-fx" id="chopFx" title="The processing every slice gets, in Preview and as it is written"></div></section>
+        <footer class="chop-band chop-foot chop-panel">
           <span class="chop-stat" data-k="clips" title="Slices found"><b>0</b> slices</span>
           <span class="chop-stat" data-k="ratio" title="How much of the sound is in a slice"><b>0%</b> sound</span>
           <span class="chop-stat" data-k="avg" title="Average slice length"><b>0 ms</b> avg</span>
           <span class="chop-stat" data-k="dur" title="The whole sound"><b>0 s</b> long</span>
+          <span class="chop-stat" data-k="pulse" title="How strongly the loudness repeats"><b>–</b> pulse</span>
+          <span class="chop-stat" data-k="hits" title="Hits a second"><b>–</b> hits/s</span>
           <span class="chop-edited" id="chopEdited"></span>
-          <button type="button" class="chop-on" id="chopRedetect" title="Cut it again from the settings. Locked and moved cuts stay">Re-detect</button>
-          <button type="button" class="chop-on" id="chopToRegions" title="Every slice that is not muted into the Region manager, named for the sound">→ Regions</button>
           <span class="chop-said"></span>
           <span class="chop-grow"></span>
-          <span class="chop-status" id="chopStatus"></span>
-          <button class="primary chop-write" id="chopWrite" disabled
-            title="Write every slice that is not muted as a WAV beside the sound, in a folder named for it. Nothing is overwritten.">Write slices</button>
-          <span class="chop-pills" title="What Write makes besides the WAVs">
-            <button type="button" id="chopOutMidi" title="Also a MIDI file: one note a slice, from C1, where each slice falls">+ MIDI</button>
-            <button type="button" id="chopOutSfz" title="Also an SFZ: the slices mapped to keys from C1">+ SFZ</button>
-          </span>
-        </div>
-        <div class="chop-list" id="chopList"></div>
+          <button type="button" class="chop-btn" id="chopRedetect" title="Cut it again from the settings. Locked and moved cuts stay"><svg viewBox="0 0 12 12"><path d="M9.5 4A4 4 0 1 0 10 7M10 2V4.5H7.5"/></svg>Re-detect</button>
+          <button type="button" class="chop-btn" id="chopToRegions" title="Every slice that is not muted into the Region manager, named for the sound"><svg viewBox="0 0 12 12"><path d="M1 3H7V9H1ZM9 6H11.5M10 4.5L11.5 6L10 7.5"/></svg>To Regions</button>
+          <button class="primary chop-write" id="chopWrite" disabled title="Write every slice that is not muted as a WAV beside the sound, in a folder named for it. Nothing is overwritten."><svg viewBox="0 0 12 12"><path d="M6 1.5V8M3 5.5L6 8.5L9 5.5M2 10.5H10"/></svg>Write slices</button>
+          <button type="button" class="chop-btn tog" id="chopOutMidi" title="Also a MIDI file: one note a slice, from C1, where each slice falls"><svg viewBox="0 0 12 12"><path d="M2 4H5M5 8H9M7 2H10"/></svg>+ MIDI</button>
+          <button type="button" class="chop-btn tog" id="chopOutSfz" title="Also an SFZ: the slices mapped to keys from C1"><svg viewBox="0 0 12 12"><path d="M2 2V10H10V2ZM5 2V7M8 2V7"/></svg>+ SFZ</button>
+        </footer>
+       </div>
       </div>
       </div>
     </div>
@@ -1460,7 +1474,6 @@
 <script src="/app.js"></script>
 <script src="/sound-map.js"></script>
 <script src="/library-graph.js"></script>
-<script src="/chop.js"></script>
 <!-- The picture's automation lanes. After app.js, whose state they use. -->
 <script src="/visual-lanes.js"></script>
 <!-- The Compose workspace and its compact panels. After app.js, whose state it
