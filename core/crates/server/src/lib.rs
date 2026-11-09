@@ -6,6 +6,7 @@ pub mod automation;
 pub mod capture;
 pub mod compose;
 pub mod docs;
+pub mod grain_export;
 pub mod grain_lfos;
 pub mod grain_notes;
 pub mod http;

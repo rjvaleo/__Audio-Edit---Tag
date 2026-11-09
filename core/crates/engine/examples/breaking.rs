@@ -62,7 +62,7 @@ fn run(label: &str, sp: &StreamParams, src: &Source, block: usize, ch: usize) {
     st.seek(0, sp);
     let mut out = vec![0f32; block * ch];
     let mut ev = vec![fx::grain::GrainEvent {
-        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0 }; 4096];
+        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0, voice: 0 }; 4096];
     let mut rk = rack(SR, ch);
     for _ in 0..20 { st.render(&mut out, ch, src, sp, &mut ev); }
     let mut costs = Vec::new();
@@ -93,7 +93,7 @@ fn seek_cost(sp: &StreamParams, src: &Source, block: usize, ch: usize) {
         sp.algorithm, sp.grain.layers, block, ch, SR));
     let mut out = vec![0f32; block * ch];
     let mut ev = vec![fx::grain::GrainEvent {
-        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0 }; 4096];
+        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0, voice: 0 }; 4096];
     st.seek(0, sp);
     for _ in 0..10 { st.render(&mut out, ch, src, sp, &mut ev); }
 
@@ -187,7 +187,7 @@ fn main() {
         st.seek(0, &sp);
         let mut out = vec![0f32; block * ch];
         let mut ev = vec![fx::grain::GrainEvent {
-            index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0 }; 4096];
+            index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0, voice: 0 }; 4096];
         let mut rk = rack(SR, ch);
         let (mut dry_peak, mut wet_peak, mut over) = (0.0f32, 0.0f32, 0usize);
         let (mut soft_peak, mut soft_over) = (0.0f32, 0usize);

@@ -3860,7 +3860,9 @@ fn run_export(
     // applies the stretch whole, with one set of parameters. That path runs the
     // same streaming engine the audio thread runs, so the file follows the
     // curve for the same reason the speakers do.
-    let rendered = if let Some(plan) = plan {
+    let rendered = if plan.is_none() && crate::grain_export::wanted(app, rel, automation) {
+        crate::grain_export::write(app, rel, &mut reader, list, automation, &spec, &mut out, bits, &meta)
+    } else if let Some(plan) = plan {
         // The loop takes precedence over the streaming-stretch path: a lane on
         // the stretch and a looped export together would need the streaming
         // engine restarted per repeat, which is a different piece of work. The
@@ -4565,6 +4567,7 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
             .iter()
             .map(|e| {
                 Value::obj()
+                    .set("voice", e.voice as f64)
                     .set("t", e.out_frame as f64 / sr)
                     .set("src", e.src_frame as f64 / sr)
                     .set("size", e.size as f64 / sr)
@@ -4588,6 +4591,24 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
                     .set("sounding", app.grain_keys.sounding())
                     .set("noteOns", app.grain_keys.note_ons() as f64)
                     .set("pitch", app.grain_keys.pitch() as f64),
+            )
+            // Poly: one per note, in the order they were started.
+            .set(
+                "heads",
+                Value::Arr(
+                    h.shared
+                        .voices
+                        .heads()
+                        .iter()
+                        .map(|k| {
+                            Value::obj()
+                                .set("key", k.key as f64)
+                                .set("voice", k.voice as f64)
+                                .set("src", k.src as f64 / sr)
+                                .set("env", k.env as f64)
+                        })
+                        .collect(),
+                ),
             )
             .set("position", h.shared.position() as f64)
             // The ratio that position is counted at. The interface turns it
@@ -4647,6 +4668,8 @@ fn api_engine_grains(app: &Arc<App>) -> Response {
                             .layers_running
                             .load(std::sync::atomic::Ordering::Relaxed) as f64,
                     )
+                    .set("voices", h.shared.voices.running() as f64)
+                    .set("voiceCap", h.shared.voices.cap() as f64)
             })
             // Rides along with the playhead rather than on its own poll: the
             // meters and the position describe the same instant, and fetching

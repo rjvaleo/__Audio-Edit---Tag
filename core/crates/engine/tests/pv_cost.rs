@@ -78,7 +78,7 @@ fn no_engine_takes_longer_to_make_a_block_than_the_block_takes_to_play() {
         }
         s.seek(0, &sp);
         let mut buf = vec![0f32; block * ch];
-        let mut evs = vec![GrainEvent { index:0, out_frame:0, src_frame:0.0, size:0, rate:1.0, pitch_semis:0.0 }; 128];
+        let mut evs = vec![GrainEvent { index:0, out_frame:0, src_frame:0.0, size:0, rate:1.0, pitch_semis: 0.0, voice: 0 }; 128];
         // Warm, then measure the worst single block — a callback is judged by
         // its worst, not its average.
         for _ in 0..20 { s.render(&mut buf, ch, &src, &sp, &mut evs); }

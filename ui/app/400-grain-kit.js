@@ -376,6 +376,9 @@ function gsHead() {
   if (!f) return 0;
   const note = gsNoteHead();
   if (note != null) return note;
+  // In Poly, what the pictures follow is the note played last.
+  const voices = gsPolyHeads();
+  if (voices.length) return voices[voices.length - 1].src;
   if (!engine.playing) return gsCue();
   const h = gsScanned(sourceFrameNow() / f.sr);
   return Number.isFinite(h) ? h : gsCue();

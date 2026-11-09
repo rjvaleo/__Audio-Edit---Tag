@@ -18,17 +18,11 @@
 //!   ([`GrainKeys::front`](crate::GrainKeys::front)): off that page, today's
 //!   screen keeps today's loop.
 //!
-//! The engines read Scan differently, so this asks each one what it does:
-//! `Pvsola` ignores it, so its loop is left as the page set it. The vocoder's
-//! backward sweep starts a window short of the end of the file, not at it.
-//! Hybrid is the vocoder and WSOLA under a noise layer, and is treated as they
-//! are. Position is not corrected for: it is a deliberate offset on top of
-//! the sweep, drawn on the page as the head moved by Position.
-//!
-//! One limit that cannot be mended here: WSOLA's read is held at the end of
-//! the file's output frames (`prism-grain/src/stream.rs`, `nominal`), so a
-//! slow Scan cannot reach past `Scan × file`. Its bounds are correct, but the
-//! read stalls there.
+//! The engines read Scan alike, with one difference: the vocoder's backward
+//! sweep starts a window short of the end of the file, not at it. Hybrid is the
+//! vocoder and WSOLA under a noise layer, and is treated as they are. Position
+//! is not corrected for: it is a deliberate offset on top of the sweep, drawn
+//! on the page as the head moved by Position.
 
 use fx::grain::StreamParams;
 use fx::stretch::{fft_size_for, Algorithm};
@@ -40,7 +34,7 @@ const FROZEN: f32 = 1e-3;
 /// plain 1.
 fn scan_of(p: &StreamParams) -> Option<f64> {
     let s = p.grain.scan.clamp(-4.0, 4.0);
-    if s == 1.0 || s.abs() < FROZEN || p.algorithm == Algorithm::Pvsola {
+    if s == 1.0 || s.abs() < FROZEN {
         return None;
     }
     Some(s as f64)
@@ -66,6 +60,16 @@ pub fn frame(frame: u64, p: &StreamParams) -> u64 {
     let f = frame as f64;
     let at = if s > 0.0 { f / s } else { (back_home(p) - f).max(0.0) / -s };
     at.round() as u64
+}
+
+/// Where in the source, in frames, output frame `frame` reads at the Scan and
+/// Position in force: the same sweep as `frame`, the other way round.
+pub fn read_at(frame: u64, p: &StreamParams) -> f32 {
+    let s = p.grain.scan.clamp(-4.0, 4.0) as f64;
+    let f = frame as f64;
+    let ratio = (p.ratio as f64).max(1e-6);
+    let along = if s < 0.0 { (back_home(p) + f * s) / ratio } else { f * s / ratio };
+    (along + p.grain.position.clamp(-1.0, 1.0) as f64 * p.in_frames as f64) as f32
 }
 
 /// The same for a pair of loop bounds. Backward, the far bracket is the near
@@ -114,10 +118,20 @@ mod tests {
     }
 
     #[test]
-    fn pvsola_does_not_read_scan_and_is_left_alone() {
+    fn pvsola_reads_scan_like_the_rest() {
         let mut sp = p(2.0);
         sp.algorithm = Algorithm::Pvsola;
-        assert_eq!(bounds((48_000, 96_000), &sp), (48_000, 96_000));
+        assert_eq!(bounds((48_000, 96_000), &sp), (24_000, 48_000));
+        assert_eq!(read_at(24_000, &sp), 24_000.0);
+    }
+
+    #[test]
+    fn read_at_undoes_frame() {
+        for scan in [1.0f32, 0.5, 2.0, -1.0, -2.0] {
+            let sp = p(scan);
+            let at = frame(48_000, &sp);
+            assert!((read_at(at, &sp) - 24_000.0).abs() < 1.0, "Scan {scan}: {}", read_at(at, &sp));
+        }
     }
 
     #[test]

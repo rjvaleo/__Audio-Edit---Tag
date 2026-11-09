@@ -31,6 +31,8 @@ const GS_PIC = {
   want: '', serial: 0, pcm: null, note: '',
   // The last poll's word on the keys, when it came, and when the note began.
   keys: null, heard: 0, ons: null, t0: 0, wasPlaying: false, key: null, metersOn: false,
+  // Poly's: one per note, as the last poll said.
+  heads: [],
   // Grains that have sounded, each stamped with when, on this page's clock.
   ev: [],
   // The picture key, so a still page is not redrawn; how often each has drawn.
@@ -203,6 +205,7 @@ function gsPicFeed(r) {
   if (!GS.showing) { GS_PIC.keys = null; GS_PIC.ev.length = 0; return; }
   const now = performance.now(), k = r?.keys || null, was = !!GS_PIC.keys?.sounding;
   GS_PIC.keys = k;
+  GS_PIC.heads = r?.heads || [];
   GS_PIC.heard = now;
   if (k && k.noteOns !== GS_PIC.ons) {
     // A legato note goes on from where the head is: the same time since the key.
@@ -217,7 +220,7 @@ function gsPicFeed(r) {
   for (const e of list) if (e.t > newest) newest = e.t;
   for (const e of list) {
     const back = wvClamp(newest - e.t, 0, 0.25);
-    GS_PIC.ev.push({ at: now - back * 1000, src: e.src, size: e.size, semis: e.semis });
+    GS_PIC.ev.push({ at: now - back * 1000, src: e.src, size: e.size, semis: e.semis, voice: e.voice });
   }
   const old = now - 2000;
   let keep = 0;
@@ -231,7 +234,7 @@ function gsPicFeed(r) {
 /// and wrapped where the head wraps.
 function gsNoteHead() {
   const k = GS_PIC.keys, f = gsFile();
-  if (!k?.sounding || !f) return null;
+  if (!k?.sounding || !f || GS.voice.mode === 'poly') return null;
   const on = k.head + Math.min(0.25, (performance.now() - GS_PIC.heard) / 1000) * (engine.deviceRate || 48000);
   let s = srcFromEngine(on) / f.sr;
   const sc = gsRead('scan');
@@ -243,7 +246,9 @@ function gsNoteHead() {
   return L > 0 ? a + (((s - a) % L) + L) % L : s;
 }
 
-const gsHeadLive = () => engine.playing || gsNoteHead() != null;
+/// Where every note is reading, in Poly: one per voice, oldest first.
+const gsPolyHeads = () => (GS.showing ? GS_PIC.heads : null) || [];
+const gsHeadLive = () => engine.playing || gsNoteHead() != null || gsPolyHeads().length > 0;
 /// Whether the meters are reading sound: the transport, or a note on its own.
 const gsMetersLive = () => !!engine.playing || gsPollWanted();
 const gsKeyName = (n) => GS_NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
@@ -251,6 +256,38 @@ const gsKeyName = (n) => GS_NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 1
 function gsNoteName(f) {
   const m = 69 + 12 * Math.log2(f / 440), r = Math.round(m), c = Math.round((m - r) * 100);
   return gsKeyName(r) + (c ? (c > 0 ? ' +' : ' −') + Math.abs(c) + '¢' : '');
+}
+
+/// A voice's colour, by its key, as the mock-up has it.
+const gsVoiceHue = (key) => 200 + ((key || 0) * 47) % 150;
+const gsVoiceCol = (key, a = 1) => `hsla(${gsVoiceHue(key)},70%,68%,${a})`;
+
+/// Each voice's key, stepping down a row when two are too close to read.
+function gsHeadLabels(c, heads, y0, step) {
+  let last = -1e9, row = 0;
+  for (const h of heads.sort((p, q) => p.x - q.x)) {
+    row = h.x - last < 34 ? row + 1 : 0;
+    last = h.x;
+    gsLbl(c, h.t, h.x + 4, y0 + row * step, h.col);
+  }
+}
+
+/// One head per note, in that voice's colour, on the overview and the detail.
+function gsDrawVoiceHeads(c, X, top, bot, labelY, step, cl, within) {
+  const labels = [];
+  for (const h of gsPolyHeads()) {
+    if (within && !within(h.src)) continue;
+    const x = X(h.src), al = Math.max(0.2, Math.min(1, h.env * 1.4)), col = gsVoiceCol(h.key, al);
+    c.save();
+    c.fillStyle = col;
+    c.shadowBlur = 8;
+    c.shadowColor = gsVoiceCol(h.key, 0.8);
+    c.fillRect(x - 0.75, top, 1.5, bot - top);
+    c.restore();
+    labels.push({ x, t: gsKeyName(h.key), col });
+  }
+  c.font = `600 9px ${cl.mono}`;
+  gsHeadLabels(c, labels, labelY, step);
 }
 
 /// A held note's head on the overview and the detail: its line and its key.

@@ -52,7 +52,7 @@ const errors = (page) => {
 
 /// The engine, sounding: a held note whose head runs, and real-shaped grains.
 async function soundingEngine(page) {
-  const s = { head: 4800, sounding: true, ons: 1, asked: 0 };
+  const s = { head: 4800, sounding: true, ons: 1, asked: 0, heads: [] };
   await page.route(/\/api\/engine\/grains$/, (r) => {
     s.asked++;
     s.head += 2400;
@@ -64,6 +64,7 @@ async function soundingEngine(page) {
       rackLevels: s.sounding ? [[0.5, 0.5], [0.4, 0.4], [0.3, 0.3]] : [[0, 0], [0, 0], [0, 0]], rackTelemetry: [],
       load: { now: 0.5, mean: 0.5, worst: 0.7, late: 0, layerCap: 64, shedding: false, layersRunning: 2 },
       keys: { head: s.head, sounding: s.sounding, noteOns: s.ons, pitch: 12 },
+      heads: s.heads,
     } });
   });
   return s;
@@ -306,6 +307,51 @@ test('stopped, the effects page shows the loop as before and no after', async ({
   await page.waitForTimeout(200);
   expect(await page.evaluate(() => GS.master)).toBeNull();
   expect(await ink(page, 'gsFxOut')).toBeGreaterThan(0.01);
+});
+
+test('in Poly each note draws its own head, in its colour, and the labels step down', async ({ page }) => {
+  const errs = errors(page);
+  const s = await soundingEngine(page);
+  await openPage(page);
+  s.heads = [
+    { key: 60, voice: 5, src: 0.2, env: 0.9 },
+    { key: 67, voice: 6, src: 0.205, env: 0.7 },
+    { key: 72, voice: 7, src: 0.6, env: 0.4 },
+  ];
+  await page.evaluate(() => {
+    GS.voice.mode = 'poly';
+    gsMarkVoice();
+    window.__labels = [];
+    const was = gsLbl;
+    gsLbl = (c, tx, x, y, col, ...rest) => {
+      if (/^[A-G]#?\d$/.test(tx)) window.__labels.push([tx, Math.round(x), Math.round(y), col]);
+      return was(c, tx, x, y, col, ...rest);
+    };
+    gsNoteOn(60, 0.8);
+  });
+  await page.waitForFunction(() => GS_PIC.heads.length === 3, null, { timeout: 5000 });
+  await expect(page.locator('#gsVoicesRo')).toContainText('3 voices');
+  await page.waitForFunction(() => window.__labels.length >= 3, null, { timeout: 5000 });
+  const got = await page.evaluate(() => {
+    const seen = {};
+    for (const [t, x, y, col] of window.__labels) (seen[t] ||= []).push({ x, y, col });
+    return seen;
+  });
+  expect(Object.keys(got).sort()).toEqual(['C4', 'C5', 'G4']);
+  // Each in its own colour, as the mock-up draws them.
+  expect(got.C4[0].col).toContain('hsla(');
+  expect(got.C4[0].col).not.toEqual(got.G4[0].col);
+  // Two close together: the second steps down a row.
+  const [a, b] = [got.C4[0], got.G4[0]];
+  expect(Math.abs(a.x - b.x)).toBeLessThan(34);
+  expect(a.y).not.toBe(b.y);
+  expect(got.C5[0].y).toBe(Math.min(a.y, b.y));
+  await page.evaluate(() => { gsNoteOff(60); });
+  s.heads = [];
+  s.sounding = false;
+  await page.waitForFunction(() => GS_PIC.heads.length === 0, null, { timeout: 5000 });
+  await expect(page.locator('#gsVoicesRo')).toContainText('0 voices');
+  expect(errs).toEqual([]);
 });
 
 test('with the switch off, none of it runs', async ({ page }) => {

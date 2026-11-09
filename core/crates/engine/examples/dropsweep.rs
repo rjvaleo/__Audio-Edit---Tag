@@ -27,7 +27,7 @@ fn cost(sp: &StreamParams, src: &Source, ch: usize, block: usize) -> (f64, f64, 
     st.seek(0, sp);
     let mut out = vec![0f32; block * ch];
     let mut ev = vec![fx::grain::GrainEvent {
-        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0 }; 8192];
+        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0, voice: 0 }; 8192];
     for _ in 0..12 { st.render(&mut out, ch, src, sp, &mut ev); }
     let mut c = Vec::with_capacity(120);
     for _ in 0..120 {

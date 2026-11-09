@@ -38,7 +38,7 @@ fn params(in_frames: usize, alg: Algorithm, ratio: f32, semis: f32) -> StreamPar
 
 fn no_events() -> Vec<GrainEvent> {
     vec![
-        GrainEvent { index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0 };
+        GrainEvent { index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0, voice: 0 };
         128
     ]
 }

@@ -34,12 +34,12 @@
 //! here ([`KeyPlayer::transport`]) and is what `Shared::position` reports. A key
 //! on a stopped transport leaves the transport stopped.
 //!
-//! # Poly is Phase 7
+//! # Poly
 //!
-//! Poly behaves as Mono for now, one head, but every note already has a voice
-//! id on its way through here so that Phase 7 does not re-plumb it. The held
-//! list is one entry per key, which is what a keyboard can hold down, and says
-//! nothing about how many heads there may be.
+//! A key in Poly goes to [`crate::voices`], which is a full engine per note, and
+//! nothing here sounds. Run on keeps its old meaning there too: keys only
+//! re-pitch what is running. ▶ with Run off keeps sounding and the keys sound
+//! over it. The held list is still one entry per key.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -57,7 +57,7 @@ pub enum KeyMode {
     Mono,
     /// Glide between held keys without starting again.
     Legato,
-    /// Each key its own head, in Phase 7. Mono until then.
+    /// Each key its own read head (`voices.rs`).
     Poly,
 }
 
@@ -189,6 +189,23 @@ impl GrainKeys {
             head: AtomicU64::new(0),
             sounding: AtomicBool::new(false),
         }
+    }
+
+    /// A new set of keys with these settings and nothing held: an export
+    /// plays on its own (`server::grain_export`).
+    pub fn settings(&self) -> GrainKeys {
+        let k = GrainKeys::new();
+        k.set_mode(self.mode());
+        k.set_glide(self.glide());
+        k.set_bend(self.bend());
+        let (a, d, s, r) = self.amp();
+        k.set_amp(a, d, s, r);
+        k.set_start(self.start());
+        k.set_run(self.run());
+        for n in 0..128 {
+            k.set_key(n, self.key_semitones(n));
+        }
+        k
     }
 
     /// Press a key. Answers the note's voice id.
@@ -373,6 +390,8 @@ struct Held {
     key: u8,
     voice: u32,
     vel: f32,
+    /// It went to a voice of its own (`voices.rs`).
+    poly: bool,
 }
 
 /// What a block has to do to the renderer, decided before it runs.
@@ -407,6 +426,10 @@ pub struct KeyPlayer {
     fade_left: u32,
     /// A restart waiting for its notch to finish.
     waiting: bool,
+    /// A note from another mode being cut for Poly's first: the notch ends it.
+    cutting: bool,
+    /// Run was off last block.
+    poly_was_off: bool,
     /// The transport, while Run is off. See the module doc.
     clock: u64,
     /// The Scan of the last block, to tell when it moved (`brackets.rs`).
@@ -416,6 +439,7 @@ pub struct KeyPlayer {
 impl KeyPlayer {
     pub fn new(keys: Arc<GrainKeys>) -> KeyPlayer {
         let run = keys.run();
+        let keys_run = run;
         let mut glide = Glide::default();
         glide.snap([0.0]);
         KeyPlayer {
@@ -437,6 +461,8 @@ impl KeyPlayer {
             duck_left: 0,
             fade_left: 0,
             waiting: false,
+            cutting: false,
+            poly_was_off: !keys_run,
             clock: 0,
             scan: 1.0,
         }
@@ -547,14 +573,57 @@ impl KeyPlayer {
         self.fade_left = ((FADE_IN_SECONDS * sample_rate) as u32).max(1);
     }
 
-    fn apply(&mut self, e: KeyEvent, sample_rate: f32, plan: &mut KeyBlock) {
+    /// Whether a key would go to a voice of its own.
+    pub fn poly_selected(&self) -> bool {
+        self.keys.mode() == KeyMode::Poly && !self.keys.run()
+    }
+
+    /// The tuning, for the voices.
+    pub fn key_semitones(&self, key: u8) -> f32 {
+        self.keys.key_semitones(key as usize)
+    }
+
+    /// Bend as it stands, smoothed: a voice's pitch comes from it directly.
+    pub fn bend_now(&self) -> f32 {
+        self.bend
+    }
+
+    pub fn amp(&self) -> (f32, f32, f32, f32) {
+        self.keys.amp()
+    }
+
+    /// Cut a Mono or Legato note, for Poly's first, with the notch a restart
+    /// uses, so the voices are not gated by another mode's AMP.
+    fn cut_for_poly(&mut self, sample_rate: f32) {
+        if self.head_running() {
+            self.duck_left = ((DUCK_SECONDS * sample_rate) as u32).max(1);
+            self.fade_left = 0;
+            self.waiting = false;
+            self.cutting = true;
+        }
+    }
+
+    /// Whether any key held is one of the old mode's: what the Mono path still
+    /// has to answer to.
+    fn mono_held(&self) -> bool {
+        self.held[..self.n_held].iter().any(|h| !h.poly)
+    }
+
+    fn apply(&mut self, e: KeyEvent, sample_rate: f32, plan: &mut KeyBlock, poly: &mut crate::voices::Poly) {
         match e {
             KeyEvent::On { key, vel, voice } => {
                 if self.is_held(key) || self.n_held >= self.held.len() {
                     return;
                 }
+                if self.poly_selected() {
+                    self.held[self.n_held] = Held { key, voice, vel, poly: true };
+                    self.n_held += 1;
+                    self.cut_for_poly(sample_rate);
+                    poly.note_on(key, voice, vel);
+                    return;
+                }
                 let released = matches!(self.stage, Stage::Release | Stage::Idle);
-                self.held[self.n_held] = Held { key, voice, vel };
+                self.held[self.n_held] = Held { key, voice, vel, poly: false };
                 self.n_held += 1;
                 self.retune(key);
                 if self.run {
@@ -568,16 +637,23 @@ impl KeyPlayer {
             }
             KeyEvent::Off { key } => {
                 let Some(i) = self.held[..self.n_held].iter().position(|h| h.key == key) else { return };
+                let was_poly = self.held[i].poly;
                 self.held.copy_within(i + 1..self.n_held, i);
                 self.n_held -= 1;
-                if self.n_held > 0 {
-                    self.retune(self.held[self.n_held - 1].key);
+                if was_poly {
+                    poly.note_off(key, self.keys.amp().3);
+                    return;
+                }
+                if self.mono_held() {
+                    let last = self.held[..self.n_held].iter().rev().find(|h| !h.poly).map_or(key, |h| h.key);
+                    self.retune(last);
                 } else if !self.run {
                     self.release();
                 }
             }
             KeyEvent::AllOff => {
                 self.n_held = 0;
+                poly.all_off(self.keys.amp().3);
                 if !self.run {
                     self.release();
                 }
@@ -585,6 +661,7 @@ impl KeyPlayer {
             KeyEvent::Reset => {
                 self.n_held = 0;
                 self.target = 0.0;
+                poly.all_off(self.keys.amp().3);
                 if !self.run {
                     self.release();
                 }
@@ -594,11 +671,16 @@ impl KeyPlayer {
 
     /// The top of a block: take what has arrived, and say what it asks of the
     /// renderer. `renderer` is where the renderer is, `playing` the transport.
-    pub fn begin(&mut self, frames: usize, sample_rate: u32, renderer: u64, playing: bool) -> KeyBlock {
+    pub fn begin(&mut self, frames: usize, sample_rate: u32, renderer: u64, playing: bool, poly: &mut crate::voices::Poly) -> KeyBlock {
         let sr = sample_rate.max(1) as f32;
         let mut plan = KeyBlock::default();
 
         let run = self.keys.run() || (playing && self.keys.played.load(Ordering::Acquire));
+        if self.keys.run() && self.poly_was_off {
+            // Run came on: voices let go, the keys only re-pitch from here.
+            poly.all_off(self.keys.amp().3);
+        }
+        self.poly_was_off = !self.keys.run();
         if run != self.run {
             self.run = run;
             if run {
@@ -632,7 +714,7 @@ impl KeyPlayer {
         }
 
         if let Some(e) = self.deferred.take() {
-            self.apply(e, sr, &mut plan);
+            self.apply(e, sr, &mut plan, poly);
         }
         let mut pressed = false;
         while let Some(w) = self.keys.events.pop_word() {
@@ -645,7 +727,7 @@ impl KeyPlayer {
             if matches!(e, KeyEvent::On { .. }) {
                 pressed = true;
             }
-            self.apply(e, sr, &mut plan);
+            self.apply(e, sr, &mut plan, poly);
         }
 
         // Bend moves with the wheel, smoothed a little over the steps it
@@ -723,6 +805,12 @@ impl KeyPlayer {
                 self.duck_left -= 1;
                 if self.duck_left == 0 {
                     self.notch = 0.0;
+                    if self.cutting {
+                        self.cutting = false;
+                        self.stage = Stage::Idle;
+                        self.level = 0.0;
+                        self.notch = 1.0;
+                    }
                 }
             } else if self.fade_left > 0 {
                 self.notch = (self.notch + fade_step).min(1.0);
@@ -744,9 +832,9 @@ impl KeyPlayer {
     /// The bottom of a block: say where the head got to, and move the
     /// transport on while it is a count of its own. `bounds` is the transport's
     /// own loop.
-    pub fn end(&mut self, renderer: u64, frames: usize, playing: bool, bounds: Option<(u64, u64)>) {
+    pub fn end(&mut self, renderer: u64, frames: usize, playing: bool, bounds: Option<(u64, u64)>, poly: bool) {
         self.keys.head.store(renderer, Ordering::Release);
-        self.keys.sounding.store(self.head_running(), Ordering::Release);
+        self.keys.sounding.store(self.head_running() || poly, Ordering::Release);
         if self.run || !playing {
             return;
         }

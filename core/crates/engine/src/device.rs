@@ -92,6 +92,8 @@ impl Engine {
         }
 
         let shared = Arc::new(Shared::new(params, source.clone()));
+        // Poly's voices are built here and taken up in the callback.
+        crate::voices::spawn_feeder(Arc::downgrade(&shared), MAX_BLOCK, channels);
         let core_shared = Arc::clone(&shared);
         // The Prism deck starts empty and stopped, at the device's rate.
         let silent = Arc::new(Source { samples: Vec::new(), channels });

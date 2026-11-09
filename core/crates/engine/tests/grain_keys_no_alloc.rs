@@ -68,7 +68,7 @@ fn playing_the_keys_does_not_allocate() {
     keys.set_run(false);
     keys.set_amp(0.005, 0.01, 0.8, 0.02);
     keys.set_glide(0.05);
-    let mut core = Core::new(BLOCK, 1, sp, src).with_keys(Arc::clone(&keys));
+    let mut core = Core::new(BLOCK, 1, sp, Arc::clone(&src)).with_keys(Arc::clone(&keys));
 
     let mut rack = fx::Rack::new();
     rack.push(Box::new(fx::Gain { db: -3.0 }));
@@ -107,4 +107,58 @@ fn playing_the_keys_does_not_allocate() {
     COUNTING.store(false, Ordering::Relaxed);
 
     assert_eq!(ALLOCS.load(Ordering::Relaxed), 0, "the callback allocated");
+
+    // Poly: voices come and go, a note is let go, one is stolen.
+    for alg in [
+        fx::stretch::Algorithm::Granular,
+        fx::stretch::Algorithm::Wsola,
+        fx::stretch::Algorithm::Vocoder,
+        fx::stretch::Algorithm::Pvsola,
+        fx::stretch::Algorithm::Hybrid,
+    ] {
+        let sp = StreamParams { algorithm: alg, ..sp };
+        let shared = Shared::new(sp, Arc::clone(&src));
+        if alg == fx::stretch::Algorithm::Hybrid {
+            shared.set_parts(Arc::new(fx::hstream::Parts::separate(&src.samples, 1, sp.hybrid)));
+        }
+        let keys = Arc::new(GrainKeys::new());
+        keys.set_run(false);
+        keys.set_mode(KeyMode::Poly);
+        keys.set_amp(0.005, 0.01, 0.8, 0.02);
+        engine::voices::stock(&shared, 8, BLOCK, 1);
+        let mut core = Core::new(BLOCK, 1, sp, Arc::clone(&src)).with_keys(Arc::clone(&keys));
+        // Warm up: the grain report's list grows until it has filled once, and a
+        // seam and the page's read-back have each happened at least once.
+        keys.note_on(60, 0.8);
+        keys.note_on(64, 0.8);
+        for _ in 0..1600 {
+            core.fill(&mut buf, 1, &shared);
+        }
+        keys.all_off();
+        for _ in 0..400 {
+            core.fill(&mut buf, 1, &shared);
+        }
+        shared.voices.set_ceiling(2);
+        ALLOCS.store(0, Ordering::Relaxed);
+        COUNTING.store(true, Ordering::Relaxed);
+        for round in 0..6u8 {
+            keys.note_on(60 + round, 0.8);
+            keys.note_on(64 + round, 0.6);
+            for _ in 0..8 {
+                core.fill(&mut buf, 1, &shared);
+            }
+            keys.note_on(67 + round, 0.7);
+            for _ in 0..8 {
+                core.fill(&mut buf, 1, &shared);
+            }
+            keys.note_off(60 + round);
+            keys.note_off(64 + round);
+            keys.note_off(67 + round);
+            for _ in 0..12 {
+                core.fill(&mut buf, 1, &shared);
+            }
+        }
+        COUNTING.store(false, Ordering::Relaxed);
+        assert_eq!(ALLOCS.load(Ordering::Relaxed), 0, "{alg:?}: the callback allocated with voices running");
+    }
 }

@@ -193,6 +193,7 @@ function gsDrawOverview() {
   c.fillStyle = GS_START; c.beginPath(); c.moveTo(sx, 22); c.lineTo(sx + 9, 26.5); c.lineTo(sx, 31); c.fill();
   c.font = `600 9px ${cl.mono}`;
   gsLbl(c, 'START ' + cue.toFixed(2), sx + 12, 30, GS_START);
+  gsDrawVoiceHeads(c, X, 4, bot, bot - 16, 12, cl);
   if (gsNoteHead() != null) gsDrawNoteHead(c, X(gsHead()), 4, bot, bot - 16, cl);
   else if (engine.playing) {
     const hx = X(gsHead());
@@ -428,6 +429,7 @@ function gsDrawCloud() {
   c.fillStyle = cl.t2;
   c.fillText(gsFms(ww * 1000), Math.min(bx + bw + 4, w - 60), h - 18);
   gsDrawMarks(c, geo, cl);
+  gsDrawVoiceHeads(c, X, 18, h - 18, 30, 12, cl, (s) => s >= a && s <= b);
   if (gsNoteHead() != null) {
     const nh = gsHead();
     if (nh >= a && nh <= b) gsDrawNoteHead(c, X(nh), 18, h - 18, 30, cl);

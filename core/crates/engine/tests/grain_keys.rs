@@ -326,6 +326,20 @@ fn a_note_sounds_on_a_stopped_transport_and_the_transport_stays_stopped() {
     assert!(!r.shared.is_playing());
 }
 
+/// RJ: do exactly what the original did. Play sounds, whatever Run says.
+#[test]
+fn play_always_sounds_with_run_off() {
+    let mut r = rig();
+    r.keys.set_played(true);
+    r.shared.play();
+    pump(&mut r, 10);
+    assert!(peak(&pump(&mut r, 20)) > 0.1, "play made no sound with Run off");
+    r.keys.set_played(false);
+    r.shared.pause();
+    pump(&mut r, 40);
+    assert_eq!(peak(&pump(&mut r, 20)), 0.0, "stopped, with no key down, it should be silent");
+}
+
 #[test]
 fn with_run_off_a_rolling_transport_is_silent_until_a_key_and_keeps_its_own_time() {
     let mut r = rig();

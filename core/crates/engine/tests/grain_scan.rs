@@ -179,30 +179,104 @@ fn the_vocoder_stays_in_the_brackets_at_every_scan() {
 }
 
 #[test]
-fn wsola_stays_in_the_brackets_where_it_can_reach() {
-    // WSOLA's read is held at the end of the file's output (`stream.rs`), so a
-    // slow Scan cannot reach past `Scan x length`: the 0.5 brackets are in the
-    // first half.
-    for (scan, a, b) in [(0.5f32, 12_000.0, 24_000.0), (2.0, 24_000.0, 48_000.0), (-1.0, 24_000.0, 48_000.0)] {
+fn wsola_stays_in_the_brackets_at_every_scan() {
+    // Above Scan × file now too: the read does not stall at it any more.
+    let (a, b) = (24_000.0, 48_000.0);
+    for scan in [0.5f32, 2.0, -1.0] {
         let got = note_levels(Algorithm::Wsola, scan, a, b);
         assert_level_stays(&got, a, b, &format!("wsola, Scan {scan}"));
     }
 }
 
 #[test]
-fn pvsola_ignores_scan_so_its_loop_is_left_alone() {
+fn wsola_at_a_slow_scan_reaches_the_top_of_the_file() {
+    // At Scan 0.5 the read used to stall at half the file.
+    let (a, b) = (0.0, FILE as f32);
+    let got = note_levels(Algorithm::Wsola, 0.5, a, b);
+    let hi = got.iter().cloned().fold(0f32, f32::max);
+    assert!(hi > 80_000.0, "the read stalled: it reached {hi}");
+}
+
+#[test]
+fn pvsola_stays_in_the_brackets_at_every_scan() {
     let (a, b) = (24_000.0, 48_000.0);
-    // Compared by where the head went, not by sample: the output is a little
-    // different off Scan 1, and that difference has not been traced.
-    let trail = |scan: f32| {
-        let mut r = rig(Algorithm::Pvsola, 1.0, scan);
+    for scan in [0.5f32, 2.0, -1.0] {
+        let got = note_levels(Algorithm::Pvsola, scan, a, b);
+        assert_level_stays(&got, a, b, &format!("pvsola, Scan {scan}"));
+    }
+}
+
+#[test]
+fn hybrid_stays_in_the_brackets_at_every_scan() {
+    let (a, b) = (24_000.0, 48_000.0);
+    for scan in [0.5f32, 2.0, -1.0] {
+        let got = hybrid_levels(scan, a, b);
+        assert_level_stays(&got, a, b, &format!("hybrid, Scan {scan}"));
+    }
+}
+
+/// Just the hybrid's noise, the part that used to ignore Scan: a hiss getting
+/// steadily louder. Under the corrected brackets a Scan of 0.5 has to read what
+/// a Scan of 1 reads; ignoring it, it runs twice as far up the file.
+#[test]
+fn the_hybrid_noise_reads_scan() {
+    let (a, b) = (24_000.0, 48_000.0);
+    let run = |scan: f32| -> f32 {
+        let mut seed = 3u32;
+        let hiss: Vec<f32> = (0..FILE)
+            .map(|i| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                (((seed >> 16) as f32 / 32768.0) - 1.0) * i as f32 / FILE as f32
+            })
+            .collect();
+        let mut sp = params(Algorithm::Hybrid, 1.0, scan);
+        sp.hybrid.harmonic_level = 0.0;
+        sp.hybrid.percussive_level = 0.0;
+        let src = Arc::new(Source { samples: hiss, channels: 1 });
+        let shared = Shared::new(sp, Arc::clone(&src));
+        let parts = fx::hstream::Parts { harmonic: vec![0.0; FILE], percussive: vec![0.0; FILE], residual: src.samples.clone(), channels: 1, split: None };
+        shared.set_parts(Arc::new(parts));
+        let keys = Arc::new(GrainKeys::new());
+        keys.set_amp(0.002, 0.01, 1.0, 0.02);
+        keys.set_glide(0.0);
+        let core = Core::new(BLOCK, 1, sp, src).with_keys(Arc::clone(&keys));
+        let mut r = Rig { core, shared, keys };
         r.keys.set_run(false);
         set_brackets(&r, 1.0, a, b, false);
         r.keys.set_start(a / FILE as f32);
         r.keys.note_on(60, 1.0);
-        (0..200).map(|_| { pump(&mut r, 1); r.keys.head() }).collect::<Vec<_>>()
+        let got = pump(&mut r, blocks_for(1.0, scan, a, b, 2.5));
+        got.chunks_exact(BLOCK * 8).skip(2).map(|c| (c.iter().map(|s| s * s).sum::<f32>() / c.len() as f32).sqrt()).fold(0f32, f32::max)
     };
-    assert_eq!(trail(2.0), trail(1.0));
+    let (one, half) = (run(1.0), run(0.5));
+    let ratio = half / one.max(1e-9);
+    assert!((ratio - 1.0).abs() < 0.35, "the noise reached {half} at Scan 0.5, against {one} at Scan 1");
+}
+
+fn hybrid_levels(scan: f32, a: f32, b: f32) -> Vec<f32> {
+    let src = ramp_source();
+    let sp = params(Algorithm::Hybrid, 1.0, scan);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    shared.set_parts(Arc::new(fx::hstream::Parts::separate(&src.samples, 1, sp.hybrid)));
+    let keys = Arc::new(GrainKeys::new());
+    keys.set_amp(0.002, 0.01, 1.0, 0.02);
+    keys.set_glide(0.0);
+    let core = Core::new(BLOCK, 1, sp, src).with_keys(Arc::clone(&keys));
+    let mut r = Rig { core, shared, keys };
+    r.keys.set_run(false);
+    set_brackets(&r, 1.0, a, b, false);
+    r.keys.set_start(a / FILE as f32);
+    r.keys.note_on(60, 1.0);
+    levels(&pump(&mut r, blocks_for(1.0, scan, a, b, 2.5)))
+}
+
+/// A PVSOLA note runs its own head and its head is what the page draws.
+#[test]
+fn scan_one_is_unchanged_on_every_engine() {
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+        let got = note_levels(alg, 1.0, 24_000.0, 48_000.0);
+        assert_level_stays(&got, 24_000.0, 48_000.0, &format!("{alg:?}, Scan 1"));
+    }
 }
 
 fn transport_reads(front: bool, scan: f32, a: f32, b: f32) -> Vec<f32> {

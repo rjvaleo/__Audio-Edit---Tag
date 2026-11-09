@@ -63,7 +63,7 @@ fn main() {
             st.seek(0, &sp);
             let mut out = vec![0f32; block * ch];
             // warm up, then measure the worst block
-            let mut ev = vec![fx::grain::GrainEvent { index:0, out_frame:0, src_frame:0.0, size:0, rate:1.0, pitch_semis:0.0 }; 256];
+            let mut ev = vec![fx::grain::GrainEvent { index:0, out_frame:0, src_frame:0.0, size:0, rate:1.0, pitch_semis: 0.0, voice: 0 }; 256];
             for _ in 0..20 { st.render(&mut out, ch, &src, &sp, &mut ev); }
             let mut worst = 0f64;
             let mut total = 0f64;

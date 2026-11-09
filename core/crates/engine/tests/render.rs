@@ -57,6 +57,7 @@ fn render_blocks(src: &Source, sp: &StreamParams, block: usize, out_frames: usiz
         size: 0,
         rate: 1.0,
         pitch_semis: 0.0,
+        voice: 0,
     }; 64];
 
     while out.len() < out_frames * src.channels {
@@ -185,7 +186,7 @@ fn a_mono_source_feeds_every_output_channel() {
     let mut r = BlockRenderer::new(256);
     let mut buf = vec![0f32; 256 * 2]; // stereo device, mono file
     let mut evs = [GrainEvent {
-        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0,
+        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0, voice: 0,
     }; 64];
 
     for _ in 0..20 {
@@ -209,7 +210,7 @@ fn a_stereo_source_on_a_mono_output_stays_in_bounds() {
     let mut r = BlockRenderer::new(128);
     let mut buf = vec![0f32; 128];
     let mut evs = [GrainEvent {
-        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0,
+        index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0, voice: 0,
     }; 64];
 
     for _ in 0..40 {
@@ -335,7 +336,7 @@ fn a_control_moved_mid_flight_does_not_reach_into_sounding_grains() {
         let mut r = BlockRenderer::new(block);
         let mut buf = vec![0f32; block * channels];
         let mut evs = [GrainEvent {
-            index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0,
+            index: 0, out_frame: 0, src_frame: 0.0, size: 0, rate: 1.0, pitch_semis: 0.0, voice: 0,
         }; 64];
 
         // Settle, so grains are genuinely in the air at the boundary.

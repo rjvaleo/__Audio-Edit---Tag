@@ -13,6 +13,7 @@
 //!   mixed in before the master ceiling (`decks.rs`).
 //! - [`keys`] is the Grain page's notes: AMP, Glide, Bend and Run, on the grain
 //!   deck.
+//! - [`voices`] is Poly: a full engine per held key.
 //! - [`device`] opens the output and pumps the other two. As thin as possible,
 //!   because it is the only part a test cannot reach.
 
@@ -25,6 +26,7 @@ pub mod keys;
 pub mod seqbus;
 pub mod synth;
 pub mod transport;
+pub mod voices;
 
 // The renderer and the stretcher live in prism-grain, shared with idMLab, and
 // keep their old paths here.

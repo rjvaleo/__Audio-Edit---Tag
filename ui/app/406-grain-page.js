@@ -40,7 +40,7 @@ function gsBuild() {
     <span class="gs-outl">OUT</span>
     <div class="gs-well" title="What you hear: after the effects"><canvas id="gsOutWave" data-w="72" data-h="26"></canvas></div>
     <span class="gs-ro gs-meta" id="gsMeta"></span>
-    <span class="gs-ro" id="gsVoicesRo" title="Layers sounding, and voices held"></span>
+    <span class="gs-ro" id="gsVoicesRo" title="Layers sounding, and voices held; in Poly, the heads the engine is reading"></span>
     <canvas id="gsLoadM" data-w="64" data-h="22" class="gs-well" title="Load: the worst block as a share of the time it had. Click to forget it; ⇧-click sets whether layers are shed"></canvas>
     <canvas id="gsMaster" data-w="72" data-h="22" class="gs-well" title="The VU meter: what comes out. Drag across for the volume"></canvas>
    </div>
@@ -368,7 +368,7 @@ function gsMarkTransport() {
   gsTxt('gsSndName', state.selectedFile?.name || '');
   gsTxt('gsRegChip', gsRegLabel());
   const L = Math.round(gsRead('layers')), run = gsMetersLive() ? engine.load?.layersRunning : 0;
-  const v = new Set([...GS_N.held.keys(), ...GS_N.midi]).size;
+  const v = GS.voice.mode === 'poly' ? gsPolyHeads().length : new Set([...GS_N.held.keys(), ...GS_N.midi]).size;
   gsTxt('gsVoicesRo', `${run && run < L ? run + '/' + L : L} layer${L > 1 ? 's' : ''} · ${v} voice${v === 1 ? '' : 's'}`);
 }
 

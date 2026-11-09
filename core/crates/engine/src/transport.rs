@@ -47,7 +47,7 @@ pub(crate) const MIN_LOOP_FRAMES: u64 = 64;
 /// pauses. A short loop stopped playback instead of degrading it, and did so
 /// silently. Degrading is the whole point — the fade shrinks, the seam gets
 /// harder, and at the bottom of the range the fade *is* the waveform.
-fn loop_fade(a: u64, b: u64) -> usize {
+pub(crate) fn loop_fade(a: u64, b: u64) -> usize {
     let quarter = (b.saturating_sub(a) / 4) as usize;
     LOOP_FADE_FRAMES.min(quarter)
 }
@@ -71,6 +71,8 @@ pub struct Capture {
 
 /// Shared between the UI threads and the audio callback.
 pub struct Shared {
+    /// Poly's voices: what the feeder has built, and what the page reads back.
+    pub voices: crate::voices::VoiceFeed,
     params: Mutex<StreamParams>,
     source: Mutex<Arc<Source>>,
     /// Grains that started recently, for the swarm. Bounded: the visualiser
@@ -382,6 +384,7 @@ impl Scope {
 impl Shared {
     pub fn new(params: StreamParams, source: Arc<Source>) -> Self {
         Shared {
+            voices: crate::voices::VoiceFeed::new(),
             params: Mutex::new(params),
             source: Mutex::new(source),
             events: Mutex::new(Vec::new()),
@@ -1011,7 +1014,7 @@ impl Shared {
     }
 
     /// The loop region, lit or not: what a held note goes round.
-    fn region_bounds(&self, end: u64) -> Option<(u64, u64)> {
+    pub(crate) fn region_bounds(&self, end: u64) -> Option<(u64, u64)> {
         let a = self.loop_a.load(Ordering::Acquire);
         let b = match self.loop_b.load(Ordering::Acquire) {
             0 => end,
@@ -1097,6 +1100,8 @@ pub struct Core {
     /// The Grain page's keys: AMP, Glide, Bend and Run (`keys.rs`). Inert until
     /// somebody plays one.
     keys: crate::keys::KeyPlayer,
+    /// The same keys in Poly: a full engine per note (`voices.rs`).
+    poly: crate::voices::Poly,
 }
 
 /// Hyperprism ramped a fader to a new gain in a straight line over this many
@@ -1496,6 +1501,7 @@ impl Core {
             fader_from: [1.0; 2],
             fader_step: FADER_RAMP,
             keys: crate::keys::KeyPlayer::new(Arc::new(crate::keys::GrainKeys::new())),
+            poly: crate::voices::Poly::new(max_block, channels.max(1)),
             scratch: vec![
                 GrainEvent {
                     index: 0,
@@ -1504,6 +1510,7 @@ impl Core {
                     size: 0,
                     rate: 1.0,
                     pitch_semis: 0.0,
+                    voice: 0,
                 };
                 128
             ],
@@ -1575,8 +1582,10 @@ impl Core {
             self.glide.snap([self.target.ratio, self.target.semitones]);
         }
         // The keys, on top of what the document asks and never written back.
-        let keyed = self.keys.begin(block_frames, self.params.sample_rate, self.renderer.position(), shared.is_playing());
+        let keyed = self.keys.begin(block_frames, self.params.sample_rate, self.renderer.position(), shared.is_playing(), &mut self.poly);
         let detune = self.keys.detune(block_frames, self.params.sample_rate);
+        // What a voice is pitched from: the keys' own pitch is its own.
+        let voiced = self.params.semitones;
         if detune != 0.0 {
             self.params.semitones = (self.params.semitones + detune).clamp(-48.0, 48.0);
         }
@@ -1600,6 +1609,7 @@ impl Core {
                 let there = (here * after as f64 / before as f64).round().max(0.0) as u64;
                 self.renderer.rescale(there, &self.params);
                 self.keys.rescale_clock(after as f64 / before as f64);
+                self.poly.rescale(after as f64 / before as f64, &self.params);
                 self.vs_frames = 0;
                 self.vs_frac = 0.0;
             }
@@ -1611,6 +1621,7 @@ impl Core {
             self.vs_frames = 0;
             self.vs_frac = 0.0;
         }
+        self.poly.scan_moved(&self.params);
         // Read, never written into `self.params`. See `record_block_cost`.
         self.renderer.set_layer_cap(shared.layer_cap());
         // What is *actually* being rendered, which is the requested count under
@@ -1659,6 +1670,8 @@ impl Core {
                 self.renderer.set_bank(next);
             }
         }
+        self.poly.pickup(shared, &self.keys, &self.params);
+        self.poly.adopt(&self.renderer, shared);
         // Borrowed, never taken — see `Shared::automation`. A contended lock
         // means the writer is mid-update; the previous values are still
         // applied, so skipping a block loses nothing.
@@ -1702,7 +1715,8 @@ impl Core {
             self.vs_frac = 0.0;
         }
 
-        if !shared.is_playing() && !self.keys.head_running() {
+        let poly = self.poly.active();
+        if !shared.is_playing() && !self.keys.head_running() && !poly {
             // No *new* material — but the chain is not empty. A reverb that
             // stops dead on the same sample as the transport is the one thing
             // every listener notices, so the rack keeps running on silence and
@@ -1768,7 +1782,8 @@ impl Core {
                     }
                 }
             }
-            self.keys.end(self.renderer.position(), block_frames, false, None);
+            self.keys.end(self.renderer.position(), block_frames, false, None, false);
+            self.poly.end_block(shared, block_frames, self.params.sample_rate, &self.params);
             shared
                 .position
                 .store(self.keys.transport(self.renderer.position()), Ordering::Release);
@@ -1810,7 +1825,12 @@ impl Core {
             }
         } else if bounds.is_none() && end > 0 && self.renderer.position() >= end {
             let left = *self.post_left.get_or_insert(shared.post_roll_frames());
-            if left == 0 {
+            if left == 0 && poly {
+                // The transport has finished; the notes have not.
+                self.post_left = None;
+                shared.pause();
+                post = true;
+            } else if left == 0 {
                 self.post_left = None;
                 shared.pause();
                 out.fill(0.0);
@@ -1822,9 +1842,10 @@ impl Core {
                     .position
                     .store(self.renderer.position(), Ordering::Release);
                 return;
+            } else {
+                post = true;
+                self.post_left = Some(left.saturating_sub(frames as u64));
             }
-            post = true;
-            self.post_left = Some(left.saturating_sub(frames as u64));
         } else {
             self.post_left = None;
         }
@@ -1838,7 +1859,12 @@ impl Core {
         } else {
             bounds
         };
-        let gated = clocked && !head_running;
+        let gated = (clocked && !head_running) || (post && poly);
+        // Poly's own loop is the region, as a held note's is.
+        let voice_bounds = shared.region_bounds(end).map(|x| crate::brackets::bounds(x, &self.params));
+        let mut poly_doc = self.params;
+        poly_doc.semitones = voiced;
+        self.poly.begin(&self.keys, &poly_doc, voice_bounds, shared, head_running);
 
         // Wrap first if we are already at or past the loop end, so a loop set
         // behind the playhead takes effect immediately.
@@ -1853,7 +1879,7 @@ impl Core {
         // the ramp up are always the same length.
         let seam = bounds.map_or(LOOP_FADE_FRAMES, |(a, b)| loop_fade(a, b));
 
-        if post || gated {
+        if (post || gated) && !poly {
             out.fill(0.0);
             self.seq_runs.clear();
         } else {
@@ -1893,7 +1919,7 @@ impl Core {
                 let want = fresh - filled;
                 // Never render past the loop end in one go: the wrap has to land on
                 // an exact frame or the loop drifts.
-                let chunk = match bounds {
+                let chunk = match bounds.filter(|_| !gated) {
                     Some((_, b)) => {
                         let room = b.saturating_sub(self.renderer.position()) as usize;
                         want.min(room.max(1))
@@ -1908,12 +1934,24 @@ impl Core {
                     self.seq_runs.push((at.min(frames), self.renderer.position(), chunk));
                 }
                 let slice = &mut self.vs[(base + filled) * ch..(base + filled + chunk) * ch];
-                let n = self
-                    .renderer
-                    .render(slice, ch, &self.source, &self.params, &mut self.scratch);
+                let n = if poly {
+                    let span = speed as f32;
+                    self.poly.render(chunk, &self.source, &poly_doc, &self.keys, voice_bounds, shared, &mut self.scratch, span);
+                    if gated {
+                        // Nothing but the notes: the deck's feedback is all
+                        // that is left of its usual block.
+                        slice.copy_from_slice(self.poly.mix(chunk * ch));
+                        self.renderer.feedback_only(slice, ch, &self.params);
+                        0
+                    } else {
+                        self.renderer.render_with(slice, ch, &self.source, &self.params, &mut self.scratch, Some(self.poly.mix(chunk * ch)))
+                    }
+                } else {
+                    self.renderer.render(slice, ch, &self.source, &self.params, &mut self.scratch)
+                };
                 report(shared, &self.scratch[..n]);
 
-                if let Some((a, b)) = bounds {
+                if let Some((a, b)) = bounds.filter(|_| !gated) {
                     if self.renderer.position() >= b {
                         // Fade the tail of what we just wrote, then jump. One
                         // source, so this is a fade across the seam rather than an
@@ -1980,7 +2018,9 @@ impl Core {
 
         // AMP, on what the engine made and before the rack, so the effects'
         // tails ring on after a release.
-        self.keys.gate(out, channels, self.params.sample_rate);
+        if !(gated && poly) {
+            self.keys.gate(out, channels, self.params.sample_rate);
+        }
         if clocked {
             // The sequencer plays on the transport, not on a note's head.
             self.seq_runs.clear();
@@ -2079,7 +2119,8 @@ impl Core {
 
         self.measure(out, channels, shared);
 
-        self.keys.end(self.renderer.position(), frames, shared.is_playing(), transport_bounds);
+        self.keys.end(self.renderer.position(), frames, shared.is_playing(), transport_bounds, poly);
+        self.poly.end_block(shared, frames, self.params.sample_rate, &self.params);
         shared
             .position
             .store(self.keys.transport(self.renderer.position()), Ordering::Release);
@@ -2230,7 +2271,7 @@ fn add_frame(out: &mut [f32], base: usize, channels: usize, l: f32, r: f32) {
     }
 }
 
-fn report(shared: &Shared, events: &[GrainEvent]) {
+pub(crate) fn report(shared: &Shared, events: &[GrainEvent]) {
     if events.is_empty() {
         return;
     }

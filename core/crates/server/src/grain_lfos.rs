@@ -279,6 +279,14 @@ impl Bank {
         self.rel = rel;
     }
 
+    /// The same settings from the top of every cycle, for an export.
+    pub fn rewound(&self) -> Bank {
+        let mut b = self.clone();
+        b.lfos.iter_mut().for_each(|l| l.phase = 0.0);
+        b.seen_notes = 0;
+        b
+    }
+
     /// Every target anything is aimed at, once, with its travel.
     pub fn aims(&self) -> BTreeMap<&str, Option<Travel>> {
         let mut out = BTreeMap::new();
@@ -457,6 +465,12 @@ impl GrainLfos {
 
     fn sound(&self) -> String {
         self.lock().bank.rel.clone()
+    }
+
+    /// The bank, if it belongs to this sound and is moving anything.
+    pub fn bank_for(&self, rel: &str) -> Option<Bank> {
+        let g = self.lock();
+        (g.bank.rel == rel && g.bank.is_aimed()).then(|| g.bank.clone())
     }
 
     /// The stream parameters with every LFO's swing taken back out, so that
