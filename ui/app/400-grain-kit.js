@@ -68,8 +68,8 @@ const gsCloudActive = () => {
 //
 // `at` says which draft the value lives in: s the stretch itself, g the grain,
 // w, v, p, h the engines' own. `key` is its name there when that differs from
-// the control's own, which is the glyph's. The ranges are the tray's UI ranges;
-// the curves are the mock-up's.
+// the control's own, which is the glyph's. The ranges, sweeps and steps are the
+// tray's.
 
 const GS_C = {};
 function gsDef(k, label, min, max, d, at, o = {}) {
@@ -80,69 +80,70 @@ const gsFx2 = (v) => v.toFixed(2) + '×';
 const gsFms = (v) => (v < 10 ? v.toFixed(1) : Math.round(v)) + ' ms';
 const gsFpc = (v) => Math.round(v * 100) + '%';
 const gsFst = (v) => '±' + v.toFixed(1) + ' st';
-const gsFhz = (v) => (v < 10 ? v.toFixed(1) : Math.round(v)) + ' /s';
-const gsLvl = (v) => (v < 0.005 ? 'out' : gsFx2(v));
-function gsFPitch(v) {
-  const r = Math.round(v), c = Math.round((v - r) * 100);
-  return `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(2)} st · ${c < 0 ? '−' : '+'}${Math.abs(c)}¢`;
-}
+const gsLvl = (v) => (v <= 0 ? 'out' : gsFx2(v));
 
 // Time and pitch
-gsDef('ratio', 'Stretch', 0.01, 100, 1, 's', { log: 1, fmt: (v) => (v >= 10 ? v.toFixed(1) + '×' : gsFx2(v)), how: 'how long the sweep through the region takes' });
-gsDef('semitones', 'Pitch', -48, 48, 0, 's', { bip: 1, fmt: gsFPitch, how: 'transpose the cloud; snaps to the tuning' });
-gsDef('windowMs', 'Window', 5, 2000, 40, 's', { log: 1, fmt: gsFms, how: 'how long each grain is' });
+//
+// The ranges, the sweeps, the steps and the words are the tray's, row for row
+// (`renderStretch` and `renderGrainParams`): a control here moves what the tray's
+// did, by the amount the tray's did, and says so in the same words.
+const gsFs = (v) => (v >= 1000 ? (v / 1000).toFixed(2) + ' s' : Math.round(v) + ' ms');
+const gsFhz = (v, off) => (v <= 0 ? off : Math.round(v) + '/s');
+gsDef('ratio', 'Stretch', 0.01, 100, 1, 's', { log: 1, fmt: (v) => (v >= 10 ? v.toFixed(0) + '×' : v >= 1 ? gsFx2(v) : v.toFixed(3) + '×') });
+gsDef('semitones', 'Pitch', -48, 48, 0, 's', { bip: 1, step: () => scaleStep(), fmt: (v) => scaleLabel(v) });
+gsDef('windowMs', 'Window', 5, 2000, 40, 's', { log: 1, fmt: (v) => Math.round(v) + ' ms' });
 // Grains
-gsDef('rateHz', 'Rate', 0, 500, 0, 'g', { pow: 2, fmt: (v) => (v < 0.05 ? 'off' : gsFhz(v)), how: 'grains per second, for the cloud alone. Off follows Density' });
-gsDef('densityHz', 'Density', 0, 500, 0, 'g', { pow: 2, fmt: (v) => (v < 0.05 ? 'auto' : gsFhz(v)), how: 'grains per second. Auto is Window ÷ Overlap' });
-gsDef('overlap', 'Overlap', 1, 8, 2, 'g', { step: 0.1, fmt: (v) => v.toFixed(1) + '×', how: 'grains on top of each other. Read only while Density is auto' });
-gsDef('envelope', 'Envelope', 0, 1, 0.5, 'g', { detent: 0.5, fmt: (v) => v.toFixed(2) + ' ' + (v < 0.495 ? 'percussive' : v > 0.505 ? 'swelling' : 'symmetric'), how: "lean each grain's bell. Snaps to symmetric" });
-gsDef('sizeJitter', 'Size jitter', 0, 1, 0, 'g', { fmt: gsFpc });
+gsDef('rateHz', 'Rate', 0, 500, 0, 'g', { step: 1, fmt: (v) => gsFhz(v, 'off') });
+gsDef('densityHz', 'Density', 0, 500, 0, 'g', { step: 1, fmt: (v) => gsFhz(v, 'auto') });
+gsDef('overlap', 'Overlap', 1, 8, 2, 'g', { step: 0.1, fmt: (v) => v.toFixed(1) + '×' });
+gsDef('envelope', 'Envelope', 0, 1, 0.5, 'g', { step: 0.01, detent: 0.5, fmt: (v) => { const w = Math.abs(v - 0.5) < 0.005 ? 'symmetric' : v < 0.5 ? 'percussive' : 'swelling'; return w === 'symmetric' ? w : v.toFixed(2) + ' ' + w; } });
+gsDef('sizeJitter', 'Size jitter', 0, 1, 0, 'g', { step: 0.01, fmt: gsFpc });
 gsDef('sizeRange', 'Size range', 1, 8, 1, 'g', { step: 0.05, fmt: gsFx2 });
-gsDef('position', 'Position', -1, 1, 0, 'g', { bip: 1, step: 0.001, fmt: (v) => (v * 100).toFixed(1) + '%', how: "where the head reads, as % of the file; or drag inside the detail's box" });
-gsDef('scan', 'Scan', -2, 2, 1, 'g', { bip: 1, step: 0.01, fmt: (v) => (Math.abs(v) < 0.005 ? 'frozen' : (v < 0 ? '−' : '') + gsFx2(Math.abs(v))), how: 'how fast and which way the head moves. 0 freezes it' });
-gsDef('positionJitterMs', 'Spray', 0, 500, 0, 'g', { fmt: gsFms, full: 'Spray (position jitter)', how: "or drag across beside the detail's box" });
+gsDef('position', 'Position', -1, 1, 0, 'g', { bip: 1, step: 0.001, fmt: (v) => (v * 100).toFixed(1) + '%' });
+gsDef('scan', 'Scan', -2, 2, 1, 'g', { bip: 1, step: 0.01, fmt: (v) => (Math.abs(v) < 0.005 ? 'frozen' : v.toFixed(2) + '×') });
+gsDef('positionJitterMs', 'Position jitter', 0, 500, 0, 'g', { step: 1, fmt: (v) => Math.round(v) + ' ms' });
 // Pitch movement
-gsDef('pitchJitterSemis', 'Pitch jitter', 0, 24, 0, 'g', { step: 0.1, fmt: gsFst, how: "or drag up and down beside the detail's box" });
+gsDef('pitchJitterSemis', 'Pitch jitter', 0, 24, 0, 'g', { step: 0.1, fmt: gsFst });
 gsDef('pitchDriftSemis', 'Pitch drift', 0, 24, 0, 'g', { step: 0.1, fmt: gsFst });
-gsDef('driftRateHz', 'Drift rate', 0.01, 10, 0.5, 'g', { log: 1, fmt: (v) => v.toFixed(2) + ' Hz' });
+gsDef('driftRateHz', 'Drift rate', 0.01, 10, 0.5, 'g', { step: 0.01, fmt: (v) => v.toFixed(2) + ' Hz' });
 // Layers
-gsDef('layers', 'Layers', 1, 64, 1, 'g', { step: 1, pow: 2, fmt: (v) => Math.round(v) + '×' });
-gsDef('layerSpread', 'Spread', 0, 4, 1, 'g', { fmt: (v) => (v < 0.005 ? 'stacked' : gsFx2(v)), full: 'Layer spread' });
-gsDef('layerScatter', 'Scatter', 0, 1, 0, 'g', { fmt: (v) => (v < 0.005 ? 'stacked' : gsFpc(v)) });
-gsDef('layerScatterMs', 'Range', 1, 2000, 120, 'g', { log: 1, fmt: gsFms, full: 'Scatter range' });
-gsDef('panSpread', 'Pan spread', 0, 1, 0, 'g', { fmt: (v) => (v < 0.005 ? 'centred' : gsFpc(v)) });
+gsDef('layers', 'Layers', 1, 64, 1, 'g', { step: 1, fmt: (v) => Math.round(v) + '×' });
+gsDef('layerSpread', 'Layer spread', 0, 4, 1, 'g', { step: 0.01, fmt: (v) => (v <= 0.005 ? 'stacked' : gsFx2(v)) });
+gsDef('layerScatter', 'Scatter', 0, 1, 0, 'g', { step: 0.01, fmt: (v) => (v <= 0 ? 'stacked' : gsFpc(v)) });
+gsDef('layerScatterMs', 'Range', 1, 2000, 120, 'g', { log: 1, fmt: gsFs });
+gsDef('panSpread', 'Pan spread', 0, 1, 0, 'g', { step: 0.01, fmt: (v) => (v <= 0 ? 'centred' : gsFpc(v)) });
 // Feedback
-gsDef('fbAmount', 'Feedback', 0, 0.95, 0, 'g', { fmt: (v) => (v < 0.005 ? 'off' : gsFpc(v)) });
-gsDef('fbTimeMs', 'Time', 20, 2000, 250, 'g', { log: 1, fmt: gsFms, full: 'Feedback time' });
-gsDef('fbSmear', 'Smear', 0, 1, 0.3, 'g', { fmt: gsFpc });
-gsDef('fbDamp', 'Damp', 0, 1, 0.4, 'g', { fmt: gsFpc });
-gsDef('fbShift', 'Shift', -12, 12, 0, 'g', { bip: 1, fmt: (v) => (Math.abs(v) < 0.005 ? 'none' : (v > 0 ? '+' : '−') + Math.abs(v).toFixed(2) + ' st'), how: 'each return climbs or falls' });
+gsDef('fbAmount', 'Feedback', 0, 0.95, 0, 'g', { step: 0.01, fmt: (v) => (v <= 0 ? 'off' : gsFpc(v)) });
+gsDef('fbTimeMs', 'Time', 20, 2000, 250, 'g', { log: 1, fmt: gsFs });
+gsDef('fbSmear', 'Smear', 0, 1, 0.3, 'g', { step: 0.01, fmt: (v) => (v <= 0 ? 'clear' : gsFpc(v)) });
+gsDef('fbDamp', 'Damp', 0, 1, 0.4, 'g', { step: 0.01, fmt: (v) => (v <= 0 ? 'bright' : gsFpc(v)) });
+gsDef('fbShift', 'Shift', -12, 12, 0, 'g', { bip: 1, step: () => scaleStep(), fmt: (v) => (Math.abs(v) < 0.005 ? 'none' : (v > 0 ? '+' : '') + v.toFixed(2) + ' st') });
 // The cloud, and Hybrid's three parts
-gsDef('cloudMix', 'Cloud', 0, 1, 0.5, 's', { fmt: gsFpc, full: 'Cloud mix', how: 'the engine giving way to grains' });
-gsDef('harmonicLevel', 'Tone', 0, 2, 1, 'h', { fmt: gsLvl });
-gsDef('percussiveLevel', 'Hits', 0, 2, 1, 'h', { fmt: gsLvl });
-gsDef('residualLevel', 'Air', 0, 2, 1, 'h', { fmt: gsLvl });
+gsDef('cloudMix', 'Cloud', 0, 1, 0.5, 's', { step: 0.01, fmt: gsFpc });
+gsDef('harmonicLevel', 'Tone', 0, 2, 1, 'h', { step: 0.01, fmt: gsLvl });
+gsDef('percussiveLevel', 'Hits', 0, 2, 1, 'h', { step: 0.01, fmt: gsLvl });
+gsDef('residualLevel', 'Air', 0, 2, 1, 'h', { step: 0.01, fmt: gsLvl });
 // The engines' own sections
-gsDef('searchMs', 'Search', 0, 200, 10, 'w', { pow: 2, step: 0.5, fmt: (v) => (v < 0.25 ? 'plain OLA' : v.toFixed(1) + ' ms') });
-gsDef('stride', 'Stride', 1, 128, 4, 'w', { log: 1, step: 1, fmt: (v) => Math.round(v) + ' fr' });
-gsDef('sensitivity', 'Detector', 0, 1, 0.5, 'w', { fmt: gsFpc });
-gsDef('floor', 'Floor', 0, 2, 1, 'w', { fmt: (v) => (v < 0.005 ? 'none' : gsFx2(v)) });
+gsDef('searchMs', 'Search', 0, 200, 10, 'w', { step: 0.5, fmt: (v) => (v <= 0 ? 'plain OLA' : v.toFixed(1) + ' ms') });
+gsDef('stride', 'Stride', 1, 128, 4, 'w', { step: 1, fmt: (v) => Math.round(v) + ' fr' });
+gsDef('sensitivity', 'Detector', 0, 1, 0.5, 'w', { step: 0.01, fmt: gsFpc });
+gsDef('floor', 'Floor', 0, 2, 1, 'w', { step: 0.01, fmt: (v) => (v <= 0 ? 'none' : gsFx2(v)) });
 gsDef('guardHops', 'Guard', 1, 16, 3, 'w', { step: 0.1, fmt: (v) => v.toFixed(1) + ' hop' });
-gsDef('anchorFrames', 'Re-anchor', 1, 64, 6, 'p', { log: 1, step: 1, fmt: (v) => Math.round(v) + ' fr' });
-gsDef('anchorSearchMs', 'Search', 0, 200, 10, 'p', { key: 'searchMs', pow: 2, step: 0.5, fmt: (v) => (v < 0.25 ? 'no search' : v.toFixed(1) + ' ms') });
-gsDef('blend', 'Blend', 0, 1, 0.5, 'p', { fmt: (v) => (v < 0.005 ? 'butt join' : gsFpc(v)) });
+gsDef('anchorFrames', 'Re-anchor', 1, 64, 6, 'p', { step: 1, fmt: (v) => Math.round(v) + ' fr' });
+gsDef('anchorSearchMs', 'Search', 0, 200, 10, 'p', { key: 'searchMs', step: 0.5, fmt: (v) => (v <= 0 ? 'no search' : v.toFixed(1) + ' ms') });
+gsDef('blend', 'Blend', 0, 1, 0.5, 'p', { step: 0.01, fmt: (v) => (v <= 0 ? 'butt join' : gsFpc(v)) });
 gsDef('timeSpan', 'Hold', 3, 101, 17, 'h', { odd: 1, fmt: (v) => Math.round(v) + ' fr' });
-gsDef('freqSpan', 'Spread', 3, 101, 17, 'h', { odd: 1, fmt: (v) => Math.round(v) + ' bin', full: 'Frequency spread' });
-gsDef('margin', 'Margin', 1, 8, 2, 'h', { step: 0.05, fmt: (v) => (v < 1.005 ? 'no air' : gsFx2(v)) });
-gsDef('fftSize', 'Resolution', 256, 8192, 2048, 'h', { log: 1, p2: 1, fmt: (v) => String(Math.round(v)) });
-gsDef('vocWindowMs', 'Analysis window', 5, 500, 46, 'v', { key: 'windowMs', log: 1, fmt: gsFms });
-gsDef('magFreeze', 'Freeze', 0, 1, 0, 'v', { fmt: (v) => (v > 0.995 ? 'held' : gsFpc(v)) });
-gsDef('magBlur', 'Blur', 0, 1, 0, 'v', { fmt: gsFpc });
-gsDef('magGate', 'Gate', 0, 1, 0, 'v', { fmt: (v) => (v < 0.005 ? 'off' : gsFpc(v)) });
-gsDef('freqTrust', 'Freq trust', 0, 4, 1, 'v', { fmt: (v) => (v < 0.005 ? 'to bins' : gsFx2(v)) });
-gsDef('phaseSpread', 'Phase spread', 0, 4, 1, 'v', { fmt: gsFx2 });
+gsDef('freqSpan', 'Spread', 3, 101, 17, 'h', { odd: 1, fmt: (v) => Math.round(v) + ' bin' });
+gsDef('margin', 'Margin', 1, 8, 2, 'h', { step: 0.05, fmt: (v) => (v <= 1.001 ? 'no air' : gsFx2(v)) });
+gsDef('fftSize', 'Resolution', 256, 8192, 2048, 'h', { log: 1, step: 1, fmt: (v) => String(Math.round(v)) });
+gsDef('vocWindowMs', 'Analysis window', 5, 500, 46, 'v', { key: 'windowMs', log: 1, fmt: (v) => Math.round(v) + ' ms' });
+gsDef('magFreeze', 'Freeze', 0, 1, 0, 'v', { step: 0.01, fmt: (v) => (v >= 0.999 ? 'held' : gsFpc(v)) });
+gsDef('magBlur', 'Blur', 0, 1, 0, 'v', { step: 0.01, fmt: gsFpc });
+gsDef('magGate', 'Gate', 0, 1, 0, 'v', { step: 0.01, fmt: (v) => (v <= 0 ? 'off' : gsFpc(v)) });
+gsDef('freqTrust', 'Freq trust', 0, 4, 1, 'v', { step: 0.01, fmt: (v) => (v <= 0.001 ? 'to bins' : gsFx2(v)) });
+gsDef('phaseSpread', 'Phase spread', 0, 4, 1, 'v', { step: 0.01, fmt: gsFx2 });
 gsDef('peakWidth', 'Peak width', 1, 16, 2, 'v', { step: 1, fmt: (v) => Math.round(v) + ' bin' });
-gsDef('lockWidth', 'Lock width', 0, 4, 1, 'v', { fmt: gsFx2 });
+gsDef('lockWidth', 'Lock width', 0, 4, 1, 'v', { step: 0.01, fmt: gsFx2 });
 // Switches
 const gsSw = (k, label, d, at) => gsDef(k, label, 0, 1, d, at, { sw: 1 });
 gsSw('reverse', 'reverse grains', 0, 'g');
@@ -182,24 +183,18 @@ const GS_ENG_SECT = {
 function gsToN(c, v) {
   let n;
   if (c.log) n = Math.log(Math.max(v, c.min) / c.min) / Math.log(c.max / c.min);
-  else {
-    n = (v - c.min) / (c.max - c.min);
-    if (c.pow) n = Math.pow(wvClamp(n), 1 / c.pow);
-  }
+  else n = (v - c.min) / (c.max - c.min);
   return wvClamp(n);
 }
 
 function gsFromN(c, n) {
   n = wvClamp(n);
-  let v;
-  if (c.log) v = c.min * Math.pow(c.max / c.min, n);
-  else {
-    if (c.pow) n = Math.pow(n, c.pow);
-    v = c.min + n * (c.max - c.min);
-  }
-  if (c.step) v = Math.round(v / c.step) * c.step;
+  // A log bar is the tray's thousand ticks.
+  if (c.log) n = Math.round(n * 1000) / 1000;
+  let v = c.log ? c.min * Math.pow(c.max / c.min, n) : c.min + n * (c.max - c.min);
+  const step = typeof c.step === 'function' ? c.step() : c.step;
+  if (step) v = Math.round(v / step) * step;
   if (c.odd) v = Math.round((v - 1) / 2) * 2 + 1;
-  if (c.p2) v = Math.pow(2, Math.round(Math.log2(v)));
   return wvClamp(+v.toFixed(6), c.min, c.max);
 }
 

@@ -38,6 +38,12 @@ async function openPage(page, { flag = true } = {}) {
   if (flag) await page.waitForFunction(() => document.querySelector('#gsEngTabs .gs-tab.on') && state.overview, null, { timeout: 20_000 });
   else await page.waitForFunction(() => Object.keys(state.grainRows || {}).length > 0, null, { timeout: 20_000 });
   await page.waitForFunction(() => !!state.stretchDraft);
+  // What earlier specs left on this sound is not this spec's to inherit.
+  await page.evaluate(async () => {
+    if (currentScale() || currentStep()) await pickScale('', 0);
+    state.stretchDraft.algorithm = 'wsola';
+    await resetEverything();
+  });
   await page.waitForTimeout(200);
   return sent;
 }

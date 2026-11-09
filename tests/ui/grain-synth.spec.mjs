@@ -367,29 +367,29 @@ test('A/B keeps the drafts, the rack and AMP apart', async ({ page }) => {
   expect(await page.evaluate(() => [GS.amp.a, state.rack.master.amount])).toEqual([0.9, b.amount]);
 });
 
-test('Randomize is one commit and its Undo puts back exactly what was there', async ({ page }) => {
+test('Randomize is the tray\'s Random and its Undo puts back exactly what was there', async ({ page }) => {
   await openPage(page);
   await pickEngine(page, 'vocoder');
   await clickBar(page, 'semitones', 0.6);
   await page.waitForTimeout(300);
   const snap = () => page.evaluate(() => JSON.stringify([state.stretchDraft, state.grainDraft]));
-  const before = await snap(), pitch = await draft(page, 'semitones');
+  const before = await snap();
   expect(await page.locator('#gsRndUndo').isVisible()).toBe(false);
 
   const edits = [];
   page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/api/edit')) edits.push(r.postDataJSON()); });
   await page.click('#gsRndBtn');
   await page.waitForTimeout(500);
-  expect(edits.length, 'one edit, however many controls moved').toBe(1);
+  expect(edits.length, 'one commit per box of the tray').toBeGreaterThan(0);
   expect(edits[0].op).toBe('stretch');
+  edits.length = 0;
   expect(await snap()).not.toBe(before);
-  expect(await draft(page, 'semitones'), 'Pitch stays').toBe(pitch);
   expect(await page.evaluate(() => state.stretchDraft.algorithm), 'the engine stays').toBe('vocoder');
   expect(await page.locator('#gsRndUndo').isVisible()).toBe(true);
 
   await page.click('#gsRndUndo');
   await page.waitForTimeout(500);
-  expect(edits.length).toBe(2);
+  expect(edits.length).toBe(1);
   const after = JSON.parse(await snap()), was = JSON.parse(before);
   for (const k of ['ratio', 'windowMs', 'semitones']) expect(after[0][k]).toBeCloseTo(was[0][k], 2);
   for (const k of Object.keys(was[1])) if (typeof was[1][k] === 'number') expect(after[1][k], k).toBeCloseTo(was[1][k], 2);

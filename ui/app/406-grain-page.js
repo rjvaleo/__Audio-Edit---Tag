@@ -19,7 +19,7 @@ function gsBuild() {
      <div class="gs-ib" data-step="1" title="Next preset"><svg viewBox="0 0 12 12"><path d="M4 2 L8 6 L4 10"/></svg></div>
     </div>
     <div class="gs-seg" id="gsAB"><span class="on" data-ab="A" title="A: compare two settings">A</span><span data-ab="B" title="B: a second setting to compare against A">B</span></div>
-    <span class="gs-btn gs-chip gs-rndb" id="gsRndBtn" title="Randomize: deal new values to the grain controls and this engine's own, and a new seed. Pitch, tuning, levels and the effects stay. ⇧-click: nudge each a little instead"><svg viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="2.5"/><circle cx="4.6" cy="4.6" r="1"/><circle cx="9.4" cy="4.6" r="1"/><circle cx="7" cy="7" r="1"/><circle cx="4.6" cy="9.4" r="1"/><circle cx="9.4" cy="9.4" r="1"/></svg>Randomize</span>
+    <span class="gs-btn gs-chip gs-rndb" id="gsRndBtn" title="Throw every control in the tray somewhere at random. The engine stays where it is, and the seed is reported so a good accident can be found again. ⇧-click: nudge each a little instead"><svg viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="2.5"/><circle cx="4.6" cy="4.6" r="1"/><circle cx="9.4" cy="4.6" r="1"/><circle cx="7" cy="7" r="1"/><circle cx="4.6" cy="9.4" r="1"/><circle cx="9.4" cy="9.4" r="1"/></svg>Randomize</span>
     <span class="gs-btn gs-chip" id="gsRndUndo" hidden title="Undo the last randomize">↶ Undo</span>
     <div class="gs-tp">
      <span class="gs-btn gs-tb" id="gsTPlay" title="Play"><svg viewBox="0 0 12 12"><path d="M3 1.8 L10.4 6 L3 10.2 Z"/></svg></span>
@@ -27,8 +27,10 @@ function gsBuild() {
      <span class="gs-btn gs-tb" id="gsTLoop" title="Loop: the head wraps round the loop"><svg viewBox="0 0 12 12"><path d="M2.5 6.5 V5 A2 2 0 0 1 4.5 3 H9.5 M8 1.5 L9.6 3 L8 4.5 M9.5 5.5 V7 A2 2 0 0 1 7.5 9 H2.5 M4 10.5 L2.4 9 L4 7.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
      <span class="gs-btn gs-tb rec" id="gsTRec" title="Capture: record what you hear to a new file"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.4"/></svg></span>
      <span class="gs-btn gs-tchip" id="gsTGrain" title="GRAIN: the grain cloud sounds">GRAIN</span><span class="gs-btn gs-tchip" id="gsTSeq" title="SEQ: the step sequencer plays through the engine">SEQ</span>
+     <span class="gs-ro" id="gsRecRo"></span>
      <span class="gs-well gs-clock" id="gsClock">00:00.000</span>
     </div>
+    ${gsTrayHtml()}
    </div>
    <div class="gs-head" id="gsHead">
     <div class="gs-tabs gs-etabs" id="gsEngTabs" role="tablist"></div>
@@ -37,9 +39,9 @@ function gsBuild() {
     <svg class="gs-cable" viewBox="0 0 24 32" style="width:24px"><path d="M0 16 H24"/></svg>
     <span class="gs-outl">OUT</span>
     <div class="gs-well" title="What you hear: after the effects"><canvas id="gsOutWave" data-w="72" data-h="26"></canvas></div>
-    <span class="gs-sp"></span>
+    <span class="gs-ro gs-meta" id="gsMeta"></span>
     <span class="gs-ro" id="gsVoicesRo" title="Layers sounding, and voices held"></span>
-    <canvas id="gsLoadM" data-w="64" data-h="22" class="gs-well" title="Load: the worst block as a share of its time. Click to forget it; ⇧-click sets whether layers are shed"></canvas>
+    <canvas id="gsLoadM" data-w="64" data-h="22" class="gs-well" title="Load: the worst block as a share of the time it had. Click to forget it; ⇧-click sets whether layers are shed"></canvas>
     <canvas id="gsMaster" data-w="72" data-h="22" class="gs-well" title="The VU meter: what comes out. Drag across for the volume"></canvas>
    </div>
    <section class="gs-view">
@@ -49,16 +51,16 @@ function gsBuild() {
        <span class="gs-pick gs-btn" id="gsSndPick" style="width:150px" title="Sound: click to pick another from the library"><canvas id="gsSndMini" data-w="30" data-h="14"></canvas><span id="gsSndName"></span></span>
        <span class="gs-chip gs-btn" id="gsRegChip" title="Loop region: click to step to the next region"></span>
        <span class="gs-chip gs-btn" id="gsLoopChip" title="Loop: the head goes back to the loop start at its end">⟲ Loop</span>
-       <span class="gs-sp"></span><span class="gs-ro" id="gsCloudRo"></span>
-       <div class="gs-zb"><span class="gs-ro" id="gsCzRo"></span><span class="gs-ib" id="gsCzOut" title="Zoom out">−</span><span class="gs-ib" id="gsCzIn" title="Zoom in round the head (or scroll on the detail)">+</span><span class="gs-ib zt" id="gsCzFit" title="The whole loop (or double-click the detail)">Fit</span></div>
+       <span class="gs-sp"></span>
+       <div class="gs-zb"><span class="gs-ib" id="gsFollow" title="Follow the playhead: keep it on screen while the detail is zoomed in">⇥</span><select class="gs-midi" id="gsFollowMode" title="How the view keeps up with the playhead"><option value="scroll">scroll</option><option value="page">page</option></select><span class="gs-ro" id="gsCzRo"></span><span class="gs-ib" id="gsCzOut" title="Zoom out">−</span><span class="gs-ib" id="gsCzIn" title="Zoom in round the head (or scroll on the detail)">+</span><span class="gs-ib zt" id="gsCzFit" title="The whole loop (or double-click the detail)">Fit</span></div>
       </div>
-      <div class="gs-well"><canvas id="gsSrcPic" data-w="686" data-h="84" title="The whole file. Drag a bracket to move the loop, drag across for a new one; click or drag the green flag for Start"></canvas></div>
-      <div class="gs-well"><canvas id="gsCloud" data-w="686" data-h="172" title="Only what is between the brackets. Inside the box drags Position; beside it, across is Spray and up and down is Pitch jitter. Scroll to zoom, double-click for the whole loop"></canvas></div>
+      <div class="gs-well"><canvas id="gsSrcPic" data-w="686" data-h="84" title="The whole file. Drag a bracket to move the loop, drag across for a new one; click or drag the green flag for Start; ⌥-drag scrubs. A region's strip along the bottom selects it"></canvas></div>
+      <div class="gs-well"><canvas id="gsCloud" data-w="686" data-h="172" title="Only what is between the brackets. Inside the box moves the read head; beside it, across is Position jitter and up and down is Pitch jitter. Scroll to zoom, double-click for the whole loop"></canvas><span class="gs-ro gs-cloudro" id="gsCloudRo"></span></div>
      </div>
      <div class="gs-mod gs-panel" id="gsShared" style="flex:1;min-height:0"><div class="gs-g3"><div class="gs-gcol" id="gsSh1"></div><div class="gs-gcol" id="gsSh2"></div><div class="gs-gcol" id="gsSh3"></div></div></div>
     </div>
     <div class="gs-mod gs-panel" id="gsEngPanel">
-     <div class="gs-mh"><span class="gs-nm" id="gsEngName"></span><span class="gs-sp"></span><span class="gs-chip gs-btn" id="gsEngReset" title="Reset: this engine's own controls back to their defaults">Reset</span></div>
+     <div class="gs-mh"><span class="gs-nm" id="gsEngName"></span><span class="gs-sp"></span><span class="gs-chip gs-btn" id="gsEngReset" title="Reset only the extended controls: the standard ones are left alone">Reset</span></div>
      <div class="gs-well"><canvas id="gsTrace" data-w="616" data-h="60"></canvas></div>
      <div class="gs-modblk" id="gsPMod">
       <div class="gs-mh"><span class="gs-nm">MODULATE</span><span class="gs-sp"></span></div>
@@ -113,6 +115,7 @@ function gsWirePage() {
   $('gsCzFit').onclick = () => { GS.czA = GS.czB = 0; };
   $('gsEngReset').onclick = gsResetEngine;
   $('gsKbScale').onclick = (e) => gsTuneMenu(e.currentTarget);
+  gsWireTray();
   gsWireMidiChannel($('gsMidiCh'), 'grain');
   $('gsPresetBtn').onclick = (e) => {
     const step = e.target.closest('[data-step]');
@@ -150,11 +153,11 @@ function gsNextRegion() {
   applyLoop();
 }
 
-/// This engine's own controls back to their defaults, as one edit.
+/// The tray's Reset, on the extended controls: every engine's own and the
+/// grain's, the standard ones left alone.
 function gsResetEngine() {
-  for (const s of GS_ENG_SECT[GS.engine] || []) for (const k of GS_SECT[s][1]) { gsWrite(k, GS_C[k].d); gsPaint(k); }
-  gsApplyDims();
-  gsPostAll();
+  GS.touched = true;
+  return resetExtended();
 }
 
 /// Scale the page whole to fit the centre: the same page smaller, never a
@@ -262,23 +265,26 @@ async function gsSwitchAB(k) {
   if (GS.abs[k]) await gsRestore(GS.abs[k]);
 }
 
-/// New values for the grain controls and this engine's own, in one edit. Pitch,
-/// tuning, the levels and the effects stay, and so does which engine it is.
+/// The tray's Random, on the tray's own controls, reported the same way. Shift
+/// nudges what is there instead, and either can be undone.
 function gsRandomize(nudge) {
   if (!state.stretchDraft || !state.grainDraft) return;
   GS.rndPrev = gsSnapshot(false);
   const ks = [...new Set([...document.querySelectorAll('#gsShared .gs-bc[data-k], #gsESects .gs-bc[data-k]')].map((e) => e.dataset.k))].filter((k) => k !== 'semitones');
-  for (const k of ks) {
-    const c = GS_C[k];
-    if (c.sw) { if (!nudge) gsSetV(k, Math.random() < 0.3 ? 1 : 0); continue; }
-    if (c.seg) { if (!nudge) gsSetV(k, Math.floor(Math.random() * c.seg.length)); continue; }
-    const n = gsToN(c, gsRead(k));
-    gsSetV(k, gsFromN(c, nudge ? wvClamp(n + (Math.random() * 2 - 1) * 0.1) : 0.08 + 0.84 * Math.random()));
+  if (nudge) {
+    for (const k of ks) {
+      const c = GS_C[k];
+      if (!c.sw && !c.seg) gsSetV(k, gsFromN(c, wvClamp(gsToN(c, gsRead(k)) + (Math.random() * 2 - 1) * 0.1)));
+    }
+    gsApplyDims();
+    gsPostAll();
+  } else {
+    // The tray has to be showing what the page has done before it is thrown.
+    if (GS.touched) gsRebuildTray();
+    $('stretchRandom').click();
+    GS.touched = true;
+    gsApplyDims();
   }
-  state.grainDraft.seed = 1 + Math.floor(Math.random() * 99990);
-  state.grainRows?.seed?.sync?.();
-  gsApplyDims();
-  gsPostAll();
   $('gsRndUndo').hidden = false;
   for (const k of ks) for (const el of GS_BARS[k] || []) el.animate([{ filter: 'brightness(1.8)' }, { filter: 'none' }], { duration: 500 });
 }
@@ -341,7 +347,7 @@ function gsDrawMeters() {
     c.clearRect(0, 0, w, h);
     c.font = `9px ${cl.mono}`;
     c.fillStyle = cl.t3;
-    c.fillText('LOAD', 4, 14);
+    c.fillText(gsMetersLive() && L ? Math.round(L.worst * 100) + '%' : 'LOAD', 4, 14);
     for (let i = 0; i < n; i++) {
       c.fillStyle = i / n < l ? (i >= 8 ? (l > 1 ? '#ff6b5e' : cl.on) : `rgba(${cl.bloom},.8)`) : 'rgba(255,255,255,.06)';
       c.fillRect(30 + i * 3.2, 6, 2, 10);
@@ -378,6 +384,8 @@ function gsTick(now) {
   gsMarkTune();
   gsMarkPreset();
   gsMarkTransport();
+  gsMirrorTray();
+  gsFollowTick();
   gsKeysTick();
   gsLfoTick();
   gsPicKeep();
@@ -388,6 +396,7 @@ function gsTick(now) {
   if (GS_KEYS.mini !== state.overview) { GS_KEYS.mini = state.overview; GS_KEYS.ov = GS_KEYS.tr = ''; GS_TR.key = ''; gsDrawMini(); }
   const sel = state.sel ? `${state.sel.start}|${state.sel.end}` : '';
   const stamp = gsHeadLive() ? now : 0, frames = state.overview?.frames || 0;
+  if (GS_KEYS.ann !== state.annotations) { GS_KEYS.ann = state.annotations; GS_KEYS.ov = ''; }
   const ovKey = `${frames}|${sel}|${state.cue}|${state.loopOn}|${stamp}`;
   if (ovKey !== GS_KEYS.ov) { GS_KEYS.ov = ovKey; gsDrawOverview(); }
   const trKey = `${frames}|${sel}|${stamp}`;

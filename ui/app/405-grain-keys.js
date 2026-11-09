@@ -161,8 +161,12 @@ window.addEventListener('pagehide', () => {
   if (GS.showing && !noAudio()) navigator.sendBeacon('/api/engine/voice', JSON.stringify({ reset: true }));
 });
 
+/// As far as the Pitch can go, the old keys' limit; the Keys window shows it too.
 function gsSetOct(o) {
-  GS_N.oct = wvClamp(o, -2, 2);
+  const limit = Math.max(1, Math.floor(48 / Math.max(1, scaleDegrees().span / 100)));
+  GS_N.oct = wvClamp(o, -limit, limit);
+  keyboardState.octave = GS_N.oct;
+  if (keyboardOpen()) paintKeyboard();
   gsTxt('gsOctRo', 'C' + (2 + GS_N.oct));
   gsDrawKeys();
 }
@@ -216,7 +220,8 @@ function gsKeyUp(e) {
 
 /// Where each drawn key is, for this octave.
 function gsKeyLayout(g) {
-  const lo = GS_KB.lo + 12 * GS_N.oct, whites = [], pos = {};
+  // The drawn keys stop at the ends of MIDI; the row can go further than they can.
+  const lo = wvClamp(GS_KB.lo + 12 * GS_N.oct, 0, 127 - GS_KB.n + 1), whites = [], pos = {};
   for (let n = lo; n < lo + GS_KB.n; n++) if (!gsIsBlack(n)) whites.push(n);
   const ww = g.w / whites.length;
   whites.forEach((n, i) => { pos[n] = [i * ww, ww, false]; });

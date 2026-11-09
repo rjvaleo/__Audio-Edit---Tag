@@ -189,7 +189,7 @@ function gsLfoTarget(id) {
   const k = gsLfoKeyOf(id);
   if (!k) return { t: id };
   const c = GS_C[k];
-  return { t: id, lo: c.min, hi: c.max, curve: c.log ? 'log' : c.pow ? 'pow' : 'lin' };
+  return { t: id, lo: c.min, hi: c.max, curve: c.log ? 'log' : 'lin' };
 }
 
 function gsLfoPayload() {

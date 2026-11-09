@@ -173,6 +173,7 @@ function gsDrawOverview() {
     c.fillStyle = cl.t3; c.fillText(s.toFixed(st < 1 ? 1 : 0) + ' s', x + 3, h - 3);
   }
   c.textAlign = 'right'; c.fillText(f.len.toFixed(1) + ' s', w - 8, h - 3); c.textAlign = 'left';
+  gsDrawAnnotations(c, X, 4, bot, cl);
   // The loop: outside dimmed, the brackets to drag.
   const ra = X(a), rb = X(b);
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(4, 0, Math.max(0, ra - 4), h); c.fillRect(rb, 0, Math.max(0, w - 4 - rb), h);
@@ -207,10 +208,13 @@ function gsWireOverview() {
   const g = GS_CV.gsSrcPic, el = g.el;
   const toS = (x) => { const f = gsFile(); return f ? wvClamp((x - 6) / (g.w - 12) * f.len, 0, f.len) : 0; };
   let sm = null, s0 = 0, moved = 0, ends = null;
+  const scrub = (s) => { const f = gsFile(); if (f) gsSeekTo(Math.round(s * f.sr)); };
   gsDrag(el, (dx, dy, e) => {
     const s = toS(wvLocal(el, e)[0]), { a, b } = ends;
     moved += Math.abs(dx);
-    if (sm === 'a') gsSetLoop(Math.min(s, b - 0.05), b);
+    // Option runs over the file to hear it, and leaves the loop and Start alone.
+    if (sm === 'scrub' || (sm && e.altKey)) scrub(s);
+    else if (sm === 'a') gsSetLoop(Math.min(s, b - 0.05), b);
     else if (sm === 'b') gsSetLoop(a, Math.max(s, a + 0.05));
     else if (sm === 'cue') gsMoveCue(s);
     else if (sm === 'sel' && moved > 3) { gsSetLoop(Math.min(s0, s), Math.max(s0, s)); gsMoveCue(Math.min(s0, s)); }
@@ -221,10 +225,13 @@ function gsWireOverview() {
     ends = gsLoop();
     moved = 0;
     s0 = toS(x);
+    if (e.altKey) { sm = 'scrub'; scrub(s0); return; }
+    const bot = g.h - 13, r = gsRegionAt(x, wvLocal(el, e)[1], X, bot);
+    if (r && Math.abs(x - X(ends.a)) >= 6 && Math.abs(x - X(ends.b)) >= 6) { sm = null; state.sel = { start: r.start, end: r.end }; drawSelection(); applyLoop(); return; }
     sm = Math.abs(x - X(ends.a)) < 6 ? 'a' : Math.abs(x - X(ends.b)) < 6 ? 'b' : Math.abs(x - X(gsCue())) < 6 ? 'cue' : 'sel';
   }, () => {
     if (sm === 'sel' && moved <= 3) { gsMoveCue(s0); seekSource(state.cue); }
-    else if (state.loopOn && state.sel) seekSource(state.sel.start);
+    else if (sm && sm !== 'scrub' && state.loopOn && state.sel) seekSource(state.sel.start);
     sm = null;
   });
 }
@@ -427,16 +434,8 @@ function gsDrawCloud() {
   }
   c.font = `9px ${cl.mono}`;
   gsZoomRo();
-  gsTxt('gsCloudRo', `${Math.round(gsGrainsPerSec())} grains/s`);
-}
-
-/// How many grains a second this setting asks for, across its layers.
-function gsGrainsPerSec() {
-  const win = gsRead('windowMs') / 1000, r = gsRead('rateHz'), d = gsRead('densityHz'), L = Math.min(8, Math.round(gsRead('layers')));
-  const act = gsCloudActive(), isG = GS.engine === 'granular';
-  const rc = act ? (r > 0.05 ? r : d > 0.05 ? d : gsRead('overlap') / win) : 0;
-  const re = isG ? 0 : Math.min(160, d > 0.05 ? d : gsRead('overlap') / win);
-  return rc * L + re;
+  const gr = state.grains;
+  gsTxt('gsCloudRo', gr?.grains?.length ? `${gr.total.toLocaleString()} grains · head ${hp.toFixed(2)}s` : 'no cloud — raise Density or Layers');
 }
 
 /// What the engine does to the loop, drawn on it: transients, frames, anchors.
@@ -514,26 +513,30 @@ function gsWireDetail() {
     const f = gsFile();
     return gsReadWrap(gsHead() + (gsCloudActive() && f ? gsRead('position') * f.len : 0));
   };
-  gsDrag(el, (dx, dy, e) => {
+  // The pointer's place, at once and on every move: the head goes under it, or
+  // the spread reaches it. The tray's cloud pad.
+  const apply = (e) => {
     const f = gsFile();
     if (!f || !mode) return;
     const { X, yc, K, a, b, w } = gsCloudGeo(), [x, y] = wvLocal(el, e);
     touched = true;
     if (mode === 'pos') {
-      gsSetV('position', gsRead('position') + dx / GS.scale / (w - 12) * (b - a) / f.len);
+      gsSetV('position', (a + (x - 6) / (w - 12) * (b - a) - gsHead()) / f.len);
       gsSend(GS_C.position, true);
     } else {
       gsSetV('positionJitterMs', Math.abs(x - X(hp())) / (w - 12) * (b - a) * 1000);
       gsSetV('pitchJitterSemis', Math.abs(y - yc) / K);
       gsSend(GS_C.positionJitterMs, true);
     }
-  }, (e) => {
+  };
+  gsDrag(el, (dx, dy, e) => apply(e), (e) => {
     const f = gsFile();
-    if (!f || !gsCloudActive()) { mode = null; return; }
+    if (!f) { mode = null; return; }
     const { X } = gsCloudGeo(), [x] = wvLocal(el, e), w2 = gsRead('windowMs') / 2000;
     const bw = Math.max(6, X(hp() + w2) - X(hp() - w2));
     mode = Math.abs(x - X(hp())) <= bw / 2 + 5 ? 'pos' : 'spray';
     touched = false;
+    apply(e);
   }, () => {
     if (mode && touched) gsCommit(GS_C.positionJitterMs);
     mode = null;

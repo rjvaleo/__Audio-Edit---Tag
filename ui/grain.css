@@ -422,3 +422,15 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #grainView .gs-midi:focus-visible { outline: 1px solid #ffb547; }
 #grainView .gs-kbr .gs-kbtune { min-width: 0; flex: 0 1 auto; max-width: 132px; }
 #grainView .gs-kbr .gs-kbtune span { overflow: hidden; text-overflow: ellipsis; }
+
+/* The tray's readouts and small controls, in the row and the headers they sit in. */
+#grainView .gs-bw:focus { outline: none; }
+#grainView .gs-tb.dis { opacity: .4; cursor: default; }
+#grainView .gs-noaudio { color: var(--gs-on); }
+#grainView .gs-meta { flex: 1; min-width: 0; overflow: hidden; text-align: right; margin-right: 6px; color: var(--gs-t3); }
+#grainView .gs-cloudro { position: absolute; left: 300px; top: 5px; pointer-events: none; color: var(--gs-t3); }
+#grainView .gs-zb .gs-ib.on { color: var(--gs-on); }
+#grainView .gs-zb .gs-midi { height: 20px; margin-right: 4px; }
+#grainView .gs-bar .gs-midi { height: 22px; max-width: 170px; }
+#grainView .gs-ico { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+#grainView .gs-bar .gs-lab { align-items: center; }

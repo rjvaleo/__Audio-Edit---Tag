@@ -15,10 +15,10 @@ const GS_BARS = {};
 
 function gsBar(k, w, cls = '') {
   const c = GS_C[k], st = `style="${w ? `width:${w}px;` : ''}--gg:var(--gs-f-${gsFacet(k)})"`, g = gsSvgG('');
-  const tip = `${c.full || c.label}${c.how ? ': ' + c.how : ''}. Double-click its picture to put it back`;
+  const tip = gsAttr(GS_TIPS[k] || c.label);
   if (c.sw) return `<div class="gs-bc sw ${cls}" data-k="${k}" ${st} title="${tip}">${g}<div class="gs-tg gs-btn"><i></i><span>${c.label}</span></div></div>`;
   if (c.seg) return `<div class="gs-bc sg ${cls}" data-k="${k}" ${st} title="${tip}">${g}<span class="sl">${c.label}</span><div class="gs-seg">${c.seg.map((s, i) => `<span data-i="${i}">${s}</span>`).join('')}</div></div>`;
-  return `<div class="gs-bc ${cls}" data-k="${k}" ${st} title="${tip}. Drag across · ⇧ fine">${g}<div class="gs-bw gs-well"><i class="gs-bf"></i><i class="gs-bm"></i><i class="gs-bd"></i><span class="gs-bn">${c.label}</span><b class="gs-bv"></b></div></div>`;
+  return `<div class="gs-bc ${cls}" data-k="${k}" ${st} title="${tip}">${g}<div class="gs-bw gs-well"><i class="gs-bf"></i><i class="gs-bm"></i><i class="gs-bd"></i><span class="gs-bn">${c.label}</span><b class="gs-bv"></b></div></div>`;
 }
 
 function gsMount(root) {
@@ -42,9 +42,13 @@ function gsWireBar(el) {
     return;
   }
   const w = el.querySelector('.gs-bw');
+  // A slider keeps the arrow keys once it has been touched.
+  w.tabIndex = -1;
+  w.addEventListener('keydown', (e) => gsBarKey(e, k, el));
   w.addEventListener('pointerdown', (e) => {
     if (e.button || el.classList.contains('dim')) return;
     e.preventDefault();
+    w.focus({ preventScroll: true });
     w.setPointerCapture(e.pointerId);
     const W = w.offsetWidth, nx = (ev) => wvClamp((wvLocal(w, ev)[0] - 4) / (W - 8));
     let lx = wvLocal(w, e)[0], n = gsToN(c, gsRead(k));
@@ -139,13 +143,13 @@ function gsSetV(k, v) {
   if (!Number.isFinite(+v)) return;
   if (!c.sw && !c.seg) {
     v = wvClamp(v, c.min, c.max);
-    if (c.detent != null && Math.abs(v - c.detent) < (c.max - c.min) * 0.06) v = c.detent;
-    if (k === 'semitones') v = wvClamp(gsSnapPitch(v), c.min, c.max);
+    if (c.detent != null && Math.abs(v - c.detent) <= (c.max - c.min) * 0.06) v = c.detent;
+    if (k === 'semitones' || k === 'fbShift') v = wvClamp(gsSnapPitch(v), c.min, c.max);
   }
   gsWrite(k, v);
   gsPaint(k);
   if (k === 'cloud') gsApplyEngine();
-  if (['densityHz', 'rateHz', 'cloud', 'preserveTransients'].includes(k)) gsApplyDims();
+  if (k === 'cloud' || k === 'preserveTransients') gsApplyDims();
 }
 
 function gsSetN(k, n) { gsSetV(k, gsFromN(GS_C[k], n)); }
@@ -156,13 +160,12 @@ function gsUser(k, v) {
   gsCommit(GS_C[k]);
 }
 
-/// Only what can change the sound answers: Position and Rate are the cloud's,
-/// Overlap is read only while Density is auto, and so on. Dimmed, not removed,
-/// so nothing moves.
+/// What the tray hides, this page dims, so nothing moves: Position and Rate
+/// until the cloud is playing, the Cloud mix until there is a cloud, Detector,
+/// Floor and Guard until transients are preserved.
 function gsApplyDims() {
   const act = gsCloudActive(), toggle = (k, on) => { for (const el of GS_BARS[k] || []) el.classList.toggle('dim', on); };
   for (const k of ['position', 'rateHz']) toggle(k, !act);
-  toggle('overlap', gsRead('densityHz') > 0.05 || (act && gsRead('rateHz') > 0.05));
   toggle('cloudMix', !gsRead('cloud'));
   const off = GS.engine === 'wsola' && !gsRead('preserveTransients');
   for (const k of ['sensitivity', 'floor', 'guardHops']) toggle(k, off);
@@ -176,11 +179,11 @@ function gsBuildShared() {
   const W = 222, bars = (ks) => ks.map((k) => gsBar(k, W)).join('');
   $('gsSh1').innerHTML = gsSubHead('TIME & PITCH', ['ratio', 'semitones'])
     + bars(['ratio', 'semitones', 'windowMs'])
-    + `<div class="gs-bc" style="width:${W}px"><span class="gs-chip gs-btn gs-tunebtn" id="gsTuneBtn" style="height:22px"></span></div>`
+    + `<div class="gs-bc" style="width:${W}px"><span class="gs-chip gs-btn gs-tunebtn" id="gsTuneBtn" style="height:22px"></span><span class="gs-chip gs-btn" id="gsKeysBtn" style="height:22px" title="${gsAttr(GS_KEYS_TIP)}">${gsIcon(GS_ICON.keys)}Keys ⧉</span></div>`
     + gsSubHead('PITCH MOVEMENT', ['pitchJitterSemis'])
     + bars(['pitchJitterSemis', 'pitchDriftSemis', 'driftRateHz', 'driftStep'])
     + gsSubHead('RANDOMNESS', ['seed', 'linkJitter'])
-    + `<div class="gs-bc" id="gsSeedRow" style="width:${W}px;--gg:var(--gs-f-space)" title="Seed: every random choice is drawn from it"><svg class="gg" id="gsSeedG" viewBox="0 0 64 48"></svg><div class="gs-well gs-bw" style="cursor:default"><span class="gs-bn">Seed</span><b class="gs-bv" id="gsSeedRo">1</b></div><span class="gs-btn gs-chip" id="gsReroll" style="height:22px;flex:none" title="Re-roll: deal every jitter again from a new seed">⟳ Re-roll</span></div>`
+    + `<div class="gs-bc" id="gsSeedRow" style="width:${W}px;--gg:var(--gs-f-space)" title="${gsAttr(GS_TIPS.seed)}"><svg class="gg" id="gsSeedG" viewBox="0 0 64 48"></svg><div class="gs-well gs-bw" style="cursor:default"><span class="gs-bn">Seed</span><b class="gs-bv" id="gsSeedRo">1</b></div><span class="gs-btn gs-chip" id="gsReroll" style="height:22px;flex:none" title="Draw a new seed. Every jitter changes at once; no setting does.">⟳ Re-roll</span></div>`
     + bars(['linkJitter']);
   $('gsSh2').innerHTML = gsSubHead('GRAINS', ['position', 'rateHz', 'envelope'])
     + bars(['position', 'positionJitterMs', 'rateHz', 'densityHz', 'overlap', 'envelope', 'sizeJitter', 'sizeRange', 'scan', 'reverse', 'wrap']);
@@ -192,6 +195,8 @@ function gsBuildShared() {
   // The tray's own button: its formula, its commit, its readout.
   $('gsReroll').onclick = () => { GS.touched = true; state.grainRows?.seed?.querySelector('button')?.click(); };
   $('gsTuneBtn').onclick = (e) => gsTuneMenu(e.currentTarget);
+  $('gsKeysBtn').onclick = (e) => { e.stopPropagation(); (keyboardOpen() ? closeKeyboard : openKeyboard)(); };
+  gsEnablePainting($('gsShared'));
 }
 
 function gsPaintSeed() {
@@ -263,6 +268,7 @@ function gsBuildSections() {
   el.innerHTML = cols.map((col, i) => `<div class="gs-ecol">${html(col, i)}</div>`).join('');
   el.style.display = '';
   gsMount(el);
+  gsEnablePainting(el);
 }
 
 /// The boxes for the close-up pictures take what the controls leave: the
