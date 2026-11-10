@@ -122,7 +122,8 @@ function wvShowView(v) {
 }
 
 /// Scale the page whole to fit the centre: the same page smaller, never a
-/// cropped one. Measured against the centre, not the window.
+/// cropped one. Measured against the centre, not the window, and set against
+/// its left edge, beside the rail (RJ, 9 Nov 2026).
 function wvFit() {
   const host = $('waveView'), app = host && host.querySelector('.wv-app');
   if (!app) return;
@@ -130,7 +131,7 @@ function wvFit() {
   if (!cw || !ch) return;
   const s = Math.min(cw / WV_W, ch / WV_H, 1.3);
   WV.scale = s;
-  app.style.transform = `translate(${Math.floor((cw - WV_W * s) / 2)}px, 0px) scale(${s})`;
+  app.style.transform = `scale(${s})`;
 }
 
 function wvSyncSoon() {
