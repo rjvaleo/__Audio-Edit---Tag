@@ -138,7 +138,10 @@ test('play lands the sequencer on the engine\'s position, and a seek moves it', 
   expect(after.last.wait).toBeCloseTo(0.25, 5);
   expect(after.predicted).toBeCloseTo(10.2, 0);
   // A clock that is only a few milliseconds off is left alone.
-  await page.evaluate(() => seqPost({ type: 'seq:clock', playing: true, at: 10.21 }));
+  // Ten milliseconds from where the sequencer says it is, taken in the same
+  // instant: a fixed 10.21 assumed the wait above took exactly 200 ms, and on a
+  // slow runner it does not, so the clock really was out and the grid moved.
+  await frame.evaluate(() => parent.seqPost({ type: 'seq:clock', playing: true, at: seqBridge.predicted() + 0.01 }));
   await page.waitForTimeout(50);
   const left = await frame.evaluate(() => seqBridge.last.at);
   expect(left, 'a clock a few milliseconds out re-laid the grid').toBe(10.0);

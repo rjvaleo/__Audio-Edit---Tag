@@ -111,7 +111,8 @@ test('a grip lights under the hand and says what it does', async ({ page }) => {
   await expect(grip).toBeVisible();
   const before = await grip.evaluate((el) => getComputedStyle(el).opacity);
   await grip.hover();
-  await page.waitForTimeout(200);
+  // The light fades up; on a slow runner 200 ms caught it at 0.99.
+  await expect.poll(() => grip.evaluate((el) => getComputedStyle(el).opacity), { timeout: 3_000 }).toBe('1');
   const got = await grip.evaluate((el) => ({
     opacity: getComputedStyle(el).opacity,
     glow: getComputedStyle(el).boxShadow,
