@@ -67,12 +67,14 @@ $('volume').oninput = (e) => {
 // sequencer played on every Play once it had ever been opened, and there was
 // no way to hear one without the other. The engine keeps running with GRAIN
 // off: the transport, the clock and the sequencer's sync come from it.
+//
+// Neither switch is remembered between loads: GRAIN left off by an earlier
+// session is an app that plays nothing, with nothing on screen to say why
+// (RJ, 9 Nov 2026). Every load starts with both on; the key they were kept
+// under is cleared, so a switch saved off before this goes too.
 const SOURCES_KEY = 'audiolab.sources.v1';
 state.sources = { grain: true, seq: true };
-try {
-  const v = JSON.parse(localStorage.getItem(SOURCES_KEY) || 'null');
-  if (v && typeof v === 'object') state.sources = { grain: v.grain !== false, seq: v.seq !== false };
-} catch { /* private mode */ }
+try { localStorage.removeItem(SOURCES_KEY); } catch { /* private mode */ }
 
 function sourceOn(key) {
   return state.sources[key] !== false;
@@ -80,7 +82,6 @@ function sourceOn(key) {
 
 function setSource(key, on) {
   state.sources[key] = !!on;
-  try { localStorage.setItem(SOURCES_KEY, JSON.stringify(state.sources)); } catch {}
   paintSources();
   if (key === 'grain') enginePost({ mute: !on });
   if (key === 'seq') {

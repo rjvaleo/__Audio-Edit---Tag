@@ -70,6 +70,8 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-tb.rec.on { color: #ff5a4f; }
 #grainView .gs-tb.rec.on svg { filter: drop-shadow(0 0 4px #ff5a4f); }
 #grainView .gs-tchip { height: 24px; padding: 0 7px; font: 600 var(--fs-s) var(--mono); letter-spacing: .08em; display: flex; align-items: center; }
+/* A source switched off is silent: red and struck through, the width unchanged. */
+#grainView .gs-tchip.off { color: #ff5a4f; border-color: color-mix(in srgb, #ff5a4f 55%, var(--gs-line)); text-decoration: line-through 1.5px; }
 #grainView .gs-clock { height: 24px; width: 84px; justify-content: center; display: flex; align-items: center; font: 400 var(--fs-m) var(--mono); color: var(--gs-t); margin-left: 3px; }
 
 /* the tab row */

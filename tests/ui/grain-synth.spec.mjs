@@ -486,6 +486,24 @@ test('the transport buttons press the real ones', async ({ page }) => {
   expect(await page.evaluate(() => $('srcGrain').classList.contains('on'))).toBe(!grain);
 });
 
+test('a source switched off says so on the Grain page, at the same width', async ({ page }) => {
+  await openPage(page);
+  const chip = page.locator('#gsTGrain');
+  if (!(await page.evaluate(() => $('srcGrain').classList.contains('on')))) await chip.click();
+  await expect(chip).not.toHaveClass(/\boff\b/);
+  const width = await chip.evaluate((e) => e.getBoundingClientRect().width);
+  const colourOn = await chip.evaluate((e) => getComputedStyle(e).color);
+  await chip.click();
+  await expect(chip).toHaveClass(/\boff\b/);
+  expect(await chip.getAttribute('title')).toContain('silent');
+  expect(await chip.evaluate((e) => getComputedStyle(e).textDecorationLine)).toBe('line-through');
+  expect(await chip.evaluate((e) => getComputedStyle(e).color)).not.toBe(colourOn);
+  expect(await chip.evaluate((e) => e.getBoundingClientRect().width)).toBe(width);
+  await chip.click();
+  await expect(chip).not.toHaveClass(/\boff\b/);
+  expect(await chip.getAttribute('title')).toBe('GRAIN: the grain cloud sounds');
+});
+
 test('Automation, Visuals and Regions still open, from the rail under Grain', async ({ page }) => {
   await openPage(page);
   const sub = page.locator('#leftRail .rl-sub[data-for="grain"]');
