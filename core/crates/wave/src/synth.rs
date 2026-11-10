@@ -50,12 +50,21 @@
 //! chosen for the doubled rate, so the extra headroom goes to the warps and
 //! cycle effects, which are not band-limited by the tables.
 //!
-//! # The master chain
+//! # The board, and the master chain before it
 //!
 //! After `master` (and after the half-band, when oversampling), each block
-//! goes through the FX view's chain at the output rate (`master_fx.rs`). It
-//! reads the same smoothed values the voices do, so a live move or an adopted
-//! patch drives it with the same glide. Its tails ring on after the last voice.
+//! goes through the FX view's board at the output rate (`board.rs`), with the
+//! voices' mix as its `in:voice` and the sends it has cabled, which `master`
+//! scales too. A board is compiled off the audio thread and handed in with
+//! [`Synth::set_board`]; the one it replaces fades out over 10 ms while the new
+//! one fades in, and is then given back by [`Synth::take_retired`] to be
+//! dropped elsewhere. Its controls move live by [`Synth::set_board_param`] and
+//! by the patch's `board:` rows, with the shared sources (below).
+//!
+//! A synth never given a board runs the old fixed chain instead
+//! (`master_fx.rs`), from the patch's `fx*` keys. It reads the same smoothed
+//! values the voices do, so a live move or an adopted patch drives it with
+//! the same glide. Either way the tails ring on after the last voice.
 //!
 //! # Modulation that is not a voice's
 //!
@@ -77,6 +86,7 @@
 
 use std::sync::Arc;
 
+use crate::board::{BoardPlan, Stereo, MAX_NODES, SENDS};
 use crate::env::Stage;
 use crate::master_fx::MasterFx;
 use crate::patch::*;
@@ -121,6 +131,10 @@ pub struct Telemetry {
     pub mod_count: usize,
     /// Output peaks with a ~300 ms fall.
     pub peak: [f32; 2],
+    /// Each board node's output peaks, in the board's order, with the same
+    /// fall. Empty when no board is running.
+    pub board: [[f32; 2]; MAX_NODES],
+    pub board_count: usize,
 }
 
 impl Default for Telemetry {
@@ -134,6 +148,8 @@ impl Default for Telemetry {
             mods: [(ParamId(0), 0.0); MAX_MODS],
             mod_count: 0,
             peak: [0.0; 2],
+            board: [[0.0; 2]; MAX_NODES],
+            board_count: 0,
         }
     }
 }
@@ -144,6 +160,9 @@ impl Telemetry {
     }
     pub fn mods(&self) -> &[(ParamId, f32)] {
         &self.mods[..self.mod_count]
+    }
+    pub fn board(&self) -> &[[f32; 2]] {
+        &self.board[..self.board_count]
     }
 }
 
@@ -263,8 +282,20 @@ pub struct Synth {
     master: f32,
     peak: [f32; 2],
     half: [HalfBand; 2],
-    /// The master chain, at the output rate.
+    /// The master chain, at the output rate, for a synth with no board.
     chain: MasterFx,
+    /// The board, once one has been given.
+    board: Option<Box<BoardPlan>>,
+    /// The board it replaced: fading out while `xfade` < 1, then waiting to
+    /// be taken.
+    outgoing: Option<Box<BoardPlan>>,
+    xfade: f32,
+    /// The sends, at the voice rate and, when oversampling, the output rate.
+    sends: Box<[Stereo; SENDS]>,
+    sends_out: Box<[Stereo; SENDS]>,
+    send_half: Box<[HalfBand; 2 * SENDS]>,
+    /// The voices' block, for the outgoing board while it fades.
+    spare: Box<Stereo>,
 }
 
 impl Synth {
@@ -318,6 +349,13 @@ impl Synth {
             peak: [0.0; 2],
             half: [HalfBand::new(), HalfBand::new()],
             chain: MasterFx::new(out_sr, &state.values),
+            board: None,
+            outgoing: None,
+            xfade: 1.0,
+            sends: Box::new([[[0.0; BLOCK]; 2]; SENDS]),
+            sends_out: Box::new([[[0.0; BLOCK]; 2]; SENDS]),
+            send_half: Box::new(std::array::from_fn(|_| HalfBand::new())),
+            spare: Box::new([[0.0; BLOCK]; 2]),
         };
         synth.master = synth.cur[MASTER] * synth.cur[MASTER];
         synth
@@ -383,6 +421,48 @@ impl Synth {
             self.cur[i] = v;
         }
         true
+    }
+
+    /// Run this board from the next block. The board it replaces fades out
+    /// over 10 ms as this one fades in; a board still fading from an earlier
+    /// swap is cut short and comes straight back, for the caller to drop off
+    /// the audio thread. So does `plan` itself if it was built for another
+    /// sample rate. Call [`Synth::take_retired`] first, so there is never
+    /// more than one to give back.
+    pub fn set_board(&mut self, plan: Box<BoardPlan>) -> Option<Box<BoardPlan>> {
+        if plan.sample_rate() != self.out_sr {
+            return Some(plan);
+        }
+        let displaced = self.outgoing.take();
+        if let Some(old) = self.board.replace(plan) {
+            self.outgoing = Some(old);
+            self.xfade = 0.0;
+        }
+        displaced
+    }
+
+    /// The board a swap replaced, once it has faded out.
+    pub fn take_retired(&mut self) -> Option<Box<BoardPlan>> {
+        if self.xfade >= 1.0 {
+            self.outgoing.take()
+        } else {
+            None
+        }
+    }
+
+    /// The board running, if one has been given.
+    pub fn board(&self) -> Option<&BoardPlan> {
+        self.board.as_deref()
+    }
+
+    /// Set a board node's control live (see [`BoardPlan::set_param`]).
+    pub fn set_board_param(&mut self, node: usize, param: usize, value: f32) -> bool {
+        self.board.as_mut().is_some_and(|b| b.set_param(node, param, value))
+    }
+
+    /// Switch a board node in or out.
+    pub fn set_board_on(&mut self, node: usize, on: bool) -> bool {
+        self.board.as_mut().is_some_and(|b| b.set_on(node, on))
     }
 
     /// Hand a table to an oscillator. The table it had comes back, for the
@@ -538,6 +618,9 @@ impl Synth {
             v.kill();
         }
         self.chain.reset();
+        for b in [&mut self.board, &mut self.outgoing].into_iter().flatten() {
+            b.reset();
+        }
     }
 
     /// Voices sounding, including tails.
@@ -553,8 +636,9 @@ impl Synth {
         let mut pk = [0.0f32; 2];
         while done < n {
             let len = step.min(n - done);
+            let wanted = self.sends_wanted();
             if self.oversample {
-                self.block(len * 2);
+                self.block(len * 2, wanted);
                 for i in 0..len {
                     for ch in 0..2 {
                         let h = &mut self.half[ch];
@@ -564,13 +648,46 @@ impl Synth {
                     left[done + i] = self.half[0].out();
                     right[done + i] = self.half[1].out();
                 }
+                for s in (0..SENDS).filter(|s| wanted >> s & 1 == 1) {
+                    for ch in 0..2 {
+                        let h = &mut self.send_half[2 * s + ch];
+                        for i in 0..len {
+                            h.push(self.sends[s][ch][2 * i]);
+                            h.push(self.sends[s][ch][2 * i + 1]);
+                            self.sends_out[s][ch][i] = h.out();
+                        }
+                    }
+                }
             } else {
-                self.block(len);
+                self.block(len, wanted);
                 left[done..done + len].copy_from_slice(&self.mix[0][..len]);
                 right[done..done + len].copy_from_slice(&self.mix[1][..len]);
             }
-            // The knobs as this block's glide left them.
-            self.chain.process(&self.cur, &mut left[done..done + len], &mut right[done..done + len]);
+            let (l, r) = (&mut left[done..done + len], &mut right[done..done + len]);
+            match self.board.as_mut() {
+                Some(board) => {
+                    let sends = if self.oversample { &*self.sends_out } else { &*self.sends };
+                    let fading = self.outgoing.as_mut().filter(|_| self.xfade < 1.0);
+                    if let Some(old) = fading {
+                        let [sl, sr] = &mut *self.spare;
+                        sl[..len].copy_from_slice(l);
+                        sr[..len].copy_from_slice(r);
+                        old.block(&mut sl[..len], &mut sr[..len], sends);
+                    }
+                    board.block(l, r, sends);
+                    if self.xfade < 1.0 {
+                        let step = 1.0 / (0.010 * self.out_sr);
+                        for i in 0..len {
+                            self.xfade = (self.xfade + step).min(1.0);
+                            let t = self.xfade;
+                            l[i] = self.spare[0][i] * (1.0 - t) + l[i] * t;
+                            r[i] = self.spare[1][i] * (1.0 - t) + r[i] * t;
+                        }
+                    }
+                }
+                // The knobs as this block's glide left them.
+                None => self.chain.process(&self.cur, l, r),
+            }
             for i in done..done + len {
                 pk[0] = pk[0].max(left[i].abs());
                 pk[1] = pk[1].max(right[i].abs());
@@ -587,6 +704,12 @@ impl Synth {
         if n < right.len() {
             right[n..].iter_mut().for_each(|v| *v = 0.0);
         }
+    }
+
+    /// The sends the running boards have cabled.
+    fn sends_wanted(&self) -> u8 {
+        let fading = self.outgoing.as_ref().filter(|_| self.xfade < 1.0);
+        self.board.iter().chain(fading).fold(0, |m, b| m | b.sends())
     }
 
     /// Fill `gsrc`: this block's macros, mod wheel and aftertouch, each free
@@ -608,8 +731,9 @@ impl Synth {
         }
     }
 
-    /// One control block of `len` samples at the voice rate, into `mix`.
-    fn block(&mut self, len: usize) {
+    /// One control block of `len` samples at the voice rate, into `mix`, and
+    /// the `sends` asked for into `sends`.
+    fn block(&mut self, len: usize, sends: u8) {
         let sr = self.sr;
         let a = 1.0 - (-(len as f32) / (SMOOTH_SECONDS * sr)).exp();
         for (i, k) in KEYS.iter().enumerate() {
@@ -636,8 +760,22 @@ impl Synth {
             self.free_phase[l] = p - whole;
             self.global[SRC_LFO + l] = self.state.lfo_shapes[l].value(self.free_phase[l], self.free_cycle[l]) * 2.0 - 1.0;
         }
+        if let Some(b) = self.board.as_mut() {
+            // Rows compiled against another board (one still on its way, or
+            // one just replaced) are not this one's: its controls go back to
+            // where they were set.
+            let rows = if b.sig() == self.state.board_sig { self.state.board_mods() } else { &[] };
+            b.modulate(rows, &self.gsrc);
+        }
         for ch in self.mix.iter_mut() {
             ch[..len].iter_mut().for_each(|v| *v = 0.0);
+        }
+        for (s, send) in self.sends.iter_mut().enumerate() {
+            if sends >> s & 1 == 1 {
+                for ch in send.iter_mut() {
+                    ch[..len].iter_mut().for_each(|v| *v = 0.0);
+                }
+            }
         }
         let ctx = BlockCtx {
             sr,
@@ -648,10 +786,11 @@ impl Synth {
             tables: [self.tables[0].as_deref(), self.tables[1].as_deref(), self.tables[2].as_deref()],
             sub_tables: &self.sub_tables,
             bend: self.bend[0] * self.cur[BEND],
+            sends,
         };
         let [ml, mr] = &mut self.mix;
         for v in self.voices.iter_mut() {
-            v.block(&ctx, &mut self.scratch, &mut ml[..len], &mut mr[..len]);
+            v.block(&ctx, &mut self.scratch, &mut ml[..len], &mut mr[..len], &mut self.sends);
         }
         let g = self.cur[MASTER] * self.cur[MASTER];
         let dg = (g - self.master) / len as f32;
@@ -660,6 +799,18 @@ impl Synth {
             m += dg;
             ml[i] *= m;
             mr[i] *= m;
+        }
+        // `master` scales the sends as it does the voice.
+        for (s, send) in self.sends.iter_mut().enumerate() {
+            if sends >> s & 1 == 1 {
+                let mut m = self.master;
+                let [sl, sr] = send;
+                for (a, b) in sl[..len].iter_mut().zip(&mut sr[..len]) {
+                    m += dg;
+                    *a *= m;
+                    *b *= m;
+                }
+            }
         }
         self.master = g;
         if self.mono.is_some_and(|i| !self.voices[i].active) {
@@ -721,5 +872,6 @@ impl Synth {
             out.mod_count += 1;
         }
         out.peak = self.peak;
+        out.board_count = self.board.as_ref().map_or(0, |b| b.peaks(&mut out.board));
     }
 }

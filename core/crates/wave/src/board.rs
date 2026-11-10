@@ -62,6 +62,7 @@ mod plan;
 
 pub use migrate::input_nodes;
 pub use plan::BoardPlan;
+pub(crate) use plan::Stereo;
 
 /// Most nodes a board may have.
 pub const MAX_NODES: usize = 64;

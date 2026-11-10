@@ -34,6 +34,14 @@
 //!
 //! The sub and the noise have no route of their own; they go in at Filter 1.
 //!
+//! # Sends
+//!
+//! A board may take any source before the filters (`in:osc0` … `in:noise`).
+//! For the sends it has cabled (`BlockCtx::sends`), the voice keeps each
+//! source as it goes into its filter and adds it, after the amp envelope and
+//! velocity, to that send's bus. The filtered path is untouched; a board
+//! with no sends costs nothing here.
+//!
 //! # Glide
 //!
 //! Glide is for mono and legato: a new note slides from the pitch the voice is
@@ -41,6 +49,7 @@
 //! start on their note; a chord sliding in from the last note played is not
 //! what a poly patch wants.
 
+use crate::board::{Stereo, SENDS, SEND_NOISE, SEND_OSC0, SEND_SUB};
 use crate::env::{Adsr, Stage};
 use crate::filter::{cutoff_hz, Filter, FilterParams};
 use crate::fx::{OscFx, Shaper};
@@ -69,6 +78,8 @@ pub(crate) struct BlockCtx<'a> {
     pub sub_tables: &'a [Wavetable; 3],
     /// Pitch bend in semitones.
     pub bend: f32,
+    /// The sends the board takes, a bit each in `board::SENDS` order.
+    pub sends: u8,
 }
 
 /// Work space shared by every voice, so a voice holds no buffers it only
@@ -76,6 +87,8 @@ pub(crate) struct BlockCtx<'a> {
 pub(crate) struct Scratch {
     osc: [[f32; BLOCK]; 2],
     bus: [[[f32; BLOCK]; 2]; 4],
+    /// Each source before its filter, for the sends.
+    send: [Stereo; SENDS],
 }
 
 const BUS_F1: usize = 0;
@@ -85,7 +98,7 @@ const BUS_DIRECT: usize = 3;
 
 impl Scratch {
     pub fn new() -> Scratch {
-        Scratch { osc: [[0.0; BLOCK]; 2], bus: [[[0.0; BLOCK]; 2]; 4] }
+        Scratch { osc: [[0.0; BLOCK]; 2], bus: [[[0.0; BLOCK]; 2]; 4], send: [[[0.0; BLOCK]; 2]; SENDS] }
     }
 }
 
@@ -303,8 +316,9 @@ impl Voice {
         self.amp.stage()
     }
 
-    /// Render one block and add it to `out`.
-    pub fn block(&mut self, ctx: &BlockCtx, sc: &mut Scratch, out_l: &mut [f32], out_r: &mut [f32]) {
+    /// Render one block and add it to `out`, and the sends `ctx` asks for to
+    /// `sends`.
+    pub fn block(&mut self, ctx: &BlockCtx, sc: &mut Scratch, out_l: &mut [f32], out_r: &mut [f32], sends: &mut [Stereo; SENDS]) {
         if !self.active {
             return;
         }
@@ -382,6 +396,14 @@ impl Voice {
                 ch[..n].iter_mut().for_each(|x| *x = 0.0);
             }
         }
+        let tap = |s: usize| ctx.sends >> s & 1 == 1;
+        for (s, send) in sc.send.iter_mut().enumerate() {
+            if tap(s) {
+                for ch in send.iter_mut() {
+                    ch[..n].iter_mut().for_each(|x| *x = 0.0);
+                }
+            }
+        }
         for o in 0..3 {
             let k = |f: usize| v[osc_key(o, f)];
             let table = ctx.tables[o];
@@ -439,10 +461,16 @@ impl Voice {
             };
             let dg = (target - g0) / n as f32;
             let mut g = g0;
+            let send = tap(SEND_OSC0 + o);
             for i in 0..n {
                 g += dg;
-                sc.bus[bus][0][i] += ol[i] * g;
-                sc.bus[bus][1][i] += or[i] * g;
+                let (a, b) = (ol[i] * g, or[i] * g);
+                sc.bus[bus][0][i] += a;
+                sc.bus[bus][1][i] += b;
+                if send {
+                    sc.send[SEND_OSC0 + o][0][i] = a;
+                    sc.send[SEND_OSC0 + o][1][i] = b;
+                }
             }
         }
 
@@ -473,6 +501,8 @@ impl Voice {
                 let y = (x - self.dc_sub) * g * centre;
                 sc.bus[BUS_F1][0][i] += y;
                 sc.bus[BUS_F1][1][i] += y;
+                sc.send[SEND_SUB][0][i] = y;
+                sc.send[SEND_SUB][1][i] = y;
                 self.sub_phase = self.sub_phase.wrapping_add(inc);
             }
         }
@@ -490,6 +520,8 @@ impl Voice {
                 let y = self.noise.next(color, &mut self.rng) * g * centre;
                 sc.bus[BUS_F1][0][i] += y;
                 sc.bus[BUS_F1][1][i] += y;
+                sc.send[SEND_NOISE][0][i] = y;
+                sc.send[SEND_NOISE][1][i] = y;
             }
         }
         self.noise_gain = noise_target;
@@ -562,6 +594,14 @@ impl Voice {
             let g = e * self.steal_gain;
             out_l[i] += direct[0][i] * g;
             out_r[i] += direct[1][i] * g;
+            if ctx.sends != 0 {
+                for (s, bus) in sends.iter_mut().enumerate() {
+                    if tap(s) {
+                        bus[0][i] += sc.send[s][0][i] * g;
+                        bus[1][i] += sc.send[s][1][i] * g;
+                    }
+                }
+            }
         }
         self.fresh = false;
         if !self.amp.is_active() || (self.stealing && self.steal_gain <= 0.0) {

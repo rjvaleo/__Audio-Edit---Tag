@@ -2,6 +2,11 @@
 //! `master` and before it leaves [`Synth::render`](crate::Synth::render), in
 //! the page's order: Drive → Chorus → Delay → Reverb → EQ.
 //!
+//! Since v8 the board (`board.rs`) is the FX view, and a patch's chain
+//! becomes a board by migration (`board/migrate.rs`). This runs only for a
+//! synth that has never been given a board, and it stays as the reference
+//! the migration is held to, bit for bit.
+//!
 //! Four of the units are the shared effects in `prism-fx`, the ones the rack
 //! and idMLab run, each allocated once here and driven fully wet; the chain
 //! does the mixing itself, so every unit's mix and bypass glide the same way:
