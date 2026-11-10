@@ -61,7 +61,7 @@ fn every_embedded_interface_file_is_where_the_binary_expects_it() {
     let root = repo_root();
     for rel in [
         "ui/index.html",
-        "ui/app.css",
+        "ui/app-css/010-shell.css",
         "ui/app/000-core.js",
         "visualiser/grain-views.html",
         "visualiser/p5.min.js",

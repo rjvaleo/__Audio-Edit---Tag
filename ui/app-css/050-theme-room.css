@@ -1,0 +1,592 @@
+/* ────────────────────────────────────────────────────────── the theme editor ──
+   A miniature of the interface, built from real elements rather than drawn as a
+   picture — a screenshot goes stale the moment anything is restyled, and this
+   is repainted by the same stylesheet as the thing it stands for.
+
+   Its tokens are set on `#themeMini` itself, so it can show a theme the page is
+   not wearing. See `docs/THEME-EDITOR.md`. */
+.theme-mini {
+  display: flex; gap: 0; height: 176px; margin: 8px 0 10px;
+  border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  background: var(--bg);
+  /* Its own stacking context, so the page's theme cannot leak in over it. */
+  isolation: isolate;
+}
+.tm-rail {
+  flex: 0 0 22px; background: var(--surface-0);
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding-top: 6px; border-right: 1px solid var(--line);
+}
+.tm-icon { width: 12px; height: 12px; border-radius: 3px; background: var(--surface-2); }
+.tm-icon.on { background: var(--accent); }
+
+.tm-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.tm-bar {
+  display: flex; align-items: center; gap: 4px; padding: 5px 6px;
+  background: var(--surface-0); border-bottom: 1px solid var(--line);
+}
+.tm-btn {
+  font-size: 7px; padding: 2px 5px; border-radius: 3px;
+  border: 1px solid var(--line-2); color: var(--text-2); background: transparent;
+}
+.tm-btn.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.tm-title { margin-left: auto; font-size: 7px; color: var(--text-dim); }
+
+.tm-lane {
+  flex: 0 0 34px; background: var(--sink); position: relative;
+  border-bottom: 1px solid var(--line);
+}
+/* The waveform keeps its own colour — a theme has no business repainting the
+   sound, which is why `--wave` is not in the map. */
+.tm-lane > i {
+  position: absolute; left: 4px; right: 4px; top: 50%; height: 15px;
+  transform: translateY(-50%); border-radius: 1px;
+  background: repeating-linear-gradient(90deg,
+    var(--wave) 0 1px, transparent 1px 3px);
+  opacity: .85;
+}
+
+.tm-panels { flex: 1 1 auto; display: flex; gap: 5px; padding: 5px; min-height: 0; }
+.tm-panel {
+  flex: 1 1 auto; min-width: 0; background: var(--surface); border-radius: 4px;
+  border: 1px solid var(--line); padding: 5px 6px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.tm-panel-2 { flex: 0 0 46px; }
+.tm-head {
+  font-size: 7px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.tm-row { display: flex; align-items: center; gap: 5px; }
+.tm-k { flex: 0 0 34px; font-size: 7px; color: var(--text-2); }
+.tm-slider {
+  flex: 1 1 auto; height: 5px; border-radius: 3px; background: var(--well);
+  overflow: hidden;
+}
+.tm-slider > i { display: block; height: 100%; background: var(--accent); }
+.tm-v { flex: 0 0 34px; font-size: 7px; color: var(--text); text-align: right; }
+
+/* All four text steps, because a ladder that collapses is the failure a theme
+   most often has and the one hardest to see on a page full of other things. */
+.tm-steps { display: flex; gap: 6px; margin-top: auto; font-size: 7px; }
+.tm-t1 { color: var(--text); }
+.tm-t2 { color: var(--text-2); }
+.tm-t3 { color: var(--text-dim); }
+.tm-t4 { color: var(--text-dimmer); }
+
+.tm-meters { flex: 1 1 auto; display: flex; gap: 3px; align-items: flex-end; }
+.tm-meters > i {
+  flex: 1 1 auto; background: var(--accent); border-radius: 1px; min-height: 2px;
+}
+
+/* The controls. Strips you drag, not fields you type into — nobody chooses a
+   theme by pasting a colour code. Each one paints what it does, so the choice
+   is visible before it is made. */
+.tm-ctl { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.tm-ctl-k {
+  flex: 0 0 56px; font-size: 9px; letter-spacing: .04em; color: var(--text-dim);
+}
+.tm-strip {
+  flex: 1 1 auto; min-width: 0; height: 20px; display: block;
+  border-radius: 4px; border: 1px solid var(--line-2);
+  cursor: ew-resize; touch-action: none;
+}
+.tm-strip-sm { height: 14px; }
+
+.tm-vary-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 10px 0 5px;
+}
+.tm-contrast { font-size: 9px; }
+/* Below three to one, body text is not readable on that ground. */
+.tm-contrast.warn { color: var(--bad); }
+/* Six candidates from the current setting. Fixed widths — never flex. */
+.tm-vary { display: flex; gap: 5px; margin-bottom: 9px; }
+.tm-swatch-btn {
+  width: 46px; height: 30px; padding: 0; cursor: pointer;
+  border: 1px solid var(--line-2); border-radius: 4px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.tm-swatch-btn:hover { border-color: var(--text-dim); }
+.tm-swatch-btn i { display: block; flex: 1 1 auto; }
+.theme-edit-actions { gap: 6px; }
+.theme-edit-actions .ghost { width: 84px; }
+
+/* ─────────────────────────────────────────────────────────────── the studio ──
+   Ported from Emovis' theme studio, which scopes everything under `.ts-studio`
+   and injects its own stylesheet so it can be lifted whole. Here the host has a
+   stylesheet already, so the rules live in it — but the `ts-` prefix is kept,
+   because that is what makes the port traceable to what it came from. */
+.ts-head { display: flex; gap: 6px; align-items: center; margin-bottom: 7px; }
+.ts-filter { flex: 1 1 auto; min-width: 0; }
+/* Fixed width, never flex. */
+.ts-new { width: 62px; }
+
+.ts-ed-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 10px 0 7px;
+}
+.ts-ed-title {
+  font-size: var(--fs-s); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-2);
+}
+.ts-tag {
+  font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-dim); border: 1px solid var(--line-2);
+  border-radius: 999px; padding: 1px 7px;
+}
+
+.ts-editor { display: flex; flex-direction: column; gap: 9px; }
+.ts-field { display: flex; flex-direction: column; gap: 4px; }
+
+/* A colour well and its hex, side by side. Both, deliberately: the well is how
+   a colour is chosen, the hex is how one arrives from a style guide. */
+.ts-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.ts-swatch {
+  display: flex; align-items: center; gap: 4px;
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 4px;
+}
+.ts-swatch input[type="color"] {
+  width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.ts-swatch input[type="text"] {
+  width: 68px; border: 0; background: transparent; color: var(--text-2);
+  font-family: var(--mono); font-size: var(--fs-s);
+}
+.ts-swatch input[type="text"]:focus { outline: 1px solid var(--line); border-radius: 3px; }
+.ts-x {
+  width: 16px; height: 16px; padding: 0; line-height: 1;
+  border: 0; background: transparent; color: var(--text-dim);
+  cursor: pointer; font-size: var(--fs-l);
+}
+.ts-x:hover { color: var(--bad); }
+.ts-add { width: 74px; }
+.ts-actions { gap: 6px; }
+.ts-actions .ghost { width: 92px; }
+
+.ts-tokens {
+  max-height: 190px; overflow: auto;
+  font-family: var(--mono); font-size: var(--fs-xs);
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 5px;
+}
+.ts-tokens > div { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+.ts-tokens i {
+  width: 11px; height: 11px; border-radius: 3px; flex: 0 0 11px;
+  border: 1px solid var(--line-2);
+}
+.ts-tokens b { flex: 0 0 108px; color: var(--text-2); font-weight: 500; }
+.ts-tokens span { color: var(--text-dim); }
+
+.ts-error {
+  font-size: var(--fs-s); color: var(--bad);
+  border: 1px solid var(--bad); border-radius: 5px; padding: 5px 7px;
+}
+.ts-empty { font-size: var(--fs-s); color: var(--text-dim); padding: 8px 2px; }
+/* The one open in the editor, as distinct from the one being worn. */
+.theme-row.editing { outline: 1px solid var(--accent); outline-offset: -1px; }
+.theme-inline-note { color: var(--text-dim); font-style: normal; font-size: var(--fs-xs); }
+
+/* ─────────────────────────────────────────────── the room, at full size ──
+   A third workspace: the controls in a column on the left, the room taking
+   everything else. See `docs/ROOM-VIEW.md`.
+
+   The parts in here are borrowed from the dock rather than copied, so almost
+   all of this stylesheet's work is undoing the overlay geometry those parts
+   wear in their other home. */
+
+.roomview { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+.roomview.hidden { display: none; }
+
+.rv-admin {
+  /* Wide enough for a labelled row of controls and no wider. The room is what
+     the height and the width are for. */
+  width: var(--rv-admin-w, 300px);
+  flex: 0 0 auto; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--surface-2); border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+.rv-admin-head {
+  flex: 0 0 auto; padding: 7px 10px 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-s); font-weight: 600; letter-spacing: .5px;
+  text-transform: uppercase; color: var(--text-dim);
+}
+/* The controls scroll rather than wrap. In the dock the panel wraps into
+   columns because it is laid over a wide room and has nowhere else to go; here
+   it has a column of its own and wrapping would put half the controls off the
+   right-hand edge of a 300px panel. */
+.rv-admin-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
+
+/* The overlay, un-overlaid.
+   In the dock `.room-edit` is `position: absolute; inset: 0` with
+   `pointer-events: none`, because it lies over a canvas that is itself a
+   control — the room is posed by dragging it. In this panel there is no canvas
+   underneath, so it is an ordinary block that takes the pointer like any other
+   panel. The per-control `pointer-events: auto` rules stay harmlessly true. */
+.rv-admin .room-edit {
+  position: static; inset: auto; pointer-events: auto;
+  flex-wrap: nowrap; max-height: none; padding: 0;
+  gap: 0;
+}
+/* A settings row: **tag · controls · reading, on one line** (C2,
+   `docs/DESIGN-CRITIQUE.md`), the grammar the Grain dock already speaks.
+   The tag has a column of its own down the left; the controls flow in what is
+   left, and a busy row (FOG is a switch, a menu, a slider and a swatch) wraps
+   *inside* that column, under its own controls, never under the tag.
+   This replaces "the label goes on its own line", which spent about 46 px on
+   every row so a four-control row could have the full 300 px. With the tag in
+   78 px a lone slider still gets about 200 px, more than the dock gives it, and
+   a one-slider row is 22 px: Shape's seven rows no longer end above a blank
+   column, and Stage's sixty are half the scroll. A long tag wraps to two short
+   lines in its column rather than losing its end to an ellipsis. */
+.rv-admin .room-edit .re-row,
+.rv-admin .rp-row {
+  --re-tag-w: 78px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px;
+  position: relative; min-height: 22px;
+  margin: 0; padding: 2px 0;
+  border-bottom: 1px solid var(--line);
+}
+.rv-admin .room-edit .re-row:has(> .re-tag),
+.rv-admin .rp-row:has(> .re-tag) { padding-left: var(--re-tag-w); }
+.rv-admin .room-edit .re-row:last-of-type { border-bottom: 0; }
+.rv-admin .room-edit .re-row > .re-tag,
+.rv-admin .rp-row > .re-tag {
+  position: absolute; left: 0; top: 0; bottom: 0; max-height: 34px; margin: auto 0;
+  width: calc(var(--re-tag-w) - 6px);
+  display: flex; align-items: center;
+  font-size: var(--fs-xs); line-height: 1.05; letter-spacing: .3px;
+  color: var(--text-dimmer); text-align: left;
+}
+/* Room to actually aim at. These are 54px in the dock because they are laid
+   over a picture and every pixel of it counts; here the panel is the point. */
+.rv-admin .room-edit .re-slider { flex: 1 1 120px; width: auto; height: 14px; }
+/* The menus and swatches sit on the control line with the sliders. */
+.rv-admin .room-edit .re-row > select.field { flex: 1 1 90px; min-width: 0; }
+.rv-admin .room-edit .re-colour { flex: 0 0 26px; height: 18px; }
+.rv-admin .room-edit .re-frames { flex: 1 1 100%; flex-wrap: wrap; }
+/* The layer stack wants the full width — it is a hierarchy you drag, and a
+   row you cannot see the whole of is a row you cannot aim the grip at. */
+.rv-admin .room-edit #reLayers { flex: 1 1 100%; }
+.rv-admin .room-edit .re-nums { margin-top: 8px; white-space: pre-wrap; }
+.rv-admin .room-edit .re-foot { margin-top: 8px; }
+
+/* The divider. Its own element rather than a border on the panel, because a
+   border cannot be grabbed. */
+.rv-grip {
+  flex: 0 0 5px; cursor: col-resize; background: transparent;
+  border-right: 1px solid var(--line);
+}
+.rv-grip:hover, .rv-grip.dragging { background: var(--accent); border-right-color: var(--accent); }
+
+.rv-stage {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 6px; padding: 8px;
+}
+/* The frame selector, over the picture it shapes. */
+.rv-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.rv-bar .re-row { margin-bottom: 0; }
+
+/* The room takes everything that is left. `min-height: 0` is what actually
+   makes that true in a flex column — without it the canvas's own intrinsic
+   height wins and the stage grows past the window. */
+.rv-room { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+.rv-room > .master-bus { flex: 1 1 auto; min-width: 0; min-height: 0; }
+
+.rv-foot {
+  position: relative;
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+}
+/* The gear and its panel travel here with the video button. `position: relative`
+   above is what makes the panel open over the gear rather than over the window. */
+.rv-foot > #visMenuBtn { flex: 0 0 auto; }
+/* The transport is a bar with its own background in the editor, where it spans
+   the window. Here it sits in a row beside the export button and should read as
+   part of that row. */
+.rv-foot > .transportbar {
+  flex: 1 1 auto; min-width: 0; border: 0; background: transparent; padding: 0;
+}
+.rv-foot > #videoBtn { flex: 0 0 auto; }
+
+/* The meters stay in the dock. This stage is the picture being composed, and
+   the VU column is a mixing readout rather than part of it — at 128px fixed it
+   was taking two thirds of the room's width in a narrow window. Everything it
+   shows is still on the dock's master bus, which is where you go to mix. */
+.rv-room > .master-bus > .mb-side { display: none; }
+.rv-room > .master-bus > .mb-main { flex: 1 1 auto; min-width: 0; }
+
+/* ── the frame you are actually exporting ──
+   Picking 16:9 or 9:16 has to *show* that shape, not merely pose a camera for
+   it. The whole reason the frame selector exists is that a portrait
+   composition cannot be judged by looking at a landscape one and imagining —
+   which is the argument `docs/ROOM-EDITOR.md` makes for the selector in the
+   first place, and it is only half true until the box on screen is the box
+   that gets rendered.
+
+   So the stage becomes a viewport and the room is fitted inside it, letterboxed,
+   with the dead space around it left plainly empty. What is inside the outline
+   is what lands in the file.
+
+   `aspect-ratio` alone will not do this here. The cell is a flex item, and flex
+   resolves one axis from the container before the ratio gets a say — so the box
+   comes out right in whichever direction flex did not touch and overflows in
+   the other. Sizing against the container's own height (`cqh`) settles both at
+   once: the width is the smaller of what the stage has and what the height
+   allows, and the ratio derives the height back from it. */
+/* `align-items` is deliberately not touched here. Centring the row that way
+   replaces the default `stretch`, so every child sizes to its own content
+   instead of to the stage — and the master bus's height is entirely inherited,
+   so it collapses to nothing and takes the room with it. The framed cell
+   centres itself with auto margins instead, which centres without disturbing
+   how anything is sized. */
+.rv-room { container-type: size; }
+.rv-room .mb-cell-3d.re-framed {
+  flex: 0 0 auto;
+  margin: auto;
+  width: min(100%, calc(100cqh * var(--rv-ratio, 1)));
+  height: auto;
+  aspect-ratio: var(--rv-ratio, 1);
+  /* Bright enough to read as the edge of the picture rather than as another
+     line in the room. The room's own wires are drawn at a fraction of this. */
+  outline: 1px solid var(--line-2);
+}
+/* Unframed, the room is the stage — the dock's own shape, filling everything.
+   That is what `Dock` means. */
+.rv-room .mb-cell-3d:not(.re-framed) { flex: 1 1 auto; }
+
+/* The overlay's own open/close button. In this view the panel is always open
+   beside the room, so a button that toggles it is a control for a state that
+   cannot change — and it sits over the picture, which is the one place this
+   view has nothing to spare. */
+.rv-room #roomEditOpen { display: none; }
+
+/* ────────────────────────────────────────────────── the room's palette ──
+   A row per paintable thing, the row showing the gradient it is drawn with.
+   See `docs/ROOM-PAINT.md`. */
+
+.rv-admin-head { display: flex; gap: 4px; padding: 5px 6px; }
+.rv-tab {
+  flex: 1 1 auto; height: 20px; border-radius: 4px;
+  border: 1px solid var(--line-2); background: transparent;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-xs); letter-spacing: .4px;
+  text-transform: uppercase; cursor: pointer;
+}
+.rv-tab:hover { background: var(--surface-3); color: var(--text-2); }
+.rv-tab.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.rp-head { padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+.rp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
+.rp-row .re-tag {
+  flex: 0 0 100%; font-size: var(--fs-xs); letter-spacing: .6px; color: var(--text-dimmer);
+}
+/* In the Visual column the rule above gives way to the one-line row (C2). */
+.rp-row .re-slider { flex: 1 1 80px; width: auto; }
+.rp-row > select.field, .rp-name { flex: 1 1 90px; min-width: 0; height: 18px; font-size: var(--fs-s); }
+.rp-gens .re-btn { flex: 1 1 auto; }
+.rp-btns .re-btn { flex: 0 0 auto; }
+
+/* One thing in the room, and the gradient it is painted with. */
+.rp-slot { border-bottom: 1px solid var(--line); }
+.rp-slot-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 4px 2px; background: transparent; border: 0;
+  color: var(--text-2); font: inherit; font-size: var(--fs-s); text-align: left;
+  cursor: pointer;
+}
+.rp-slot-head:hover { background: var(--surface-3); }
+/* **The strip is the ramp, not a picture of it.** Built by `rpGradientCss` from
+   the same stops in the same order as the row uploaded to the shader, so it
+   cannot show one thing while the room draws another. */
+.rp-strip {
+  flex: 0 0 44px; height: 13px; border-radius: 2px;
+  border: 1px solid var(--line-2);
+}
+.rp-slot-name { flex: 1 1 auto; min-width: 0; }
+.rp-slot-mode {
+  flex: 0 0 auto; font-size: var(--fs-xs); color: var(--text-dimmer);
+  letter-spacing: .3px;
+}
+.rp-edit { padding: 5px 2px 7px; }
+.rp-edit .re-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.rp-stop .re-colour { flex: 0 0 24px; height: 17px; }
+.rp-stops, .rp-range { margin-top: 4px; }
+
+/* The room's own shape. One row a number, with the number shown — unlike the
+   camera, which is dragged on the room and whose numbers are an output. */
+.rg-note {
+  font-size: var(--fs-xs); line-height: 1.4; color: var(--text-dimmer);
+  padding: 0 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+.rg-read {
+  flex: 0 0 auto; min-width: 54px; text-align: right;
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─────────────────────────────────────────────── the room's handles ──
+   Visible grips for the things that can be moved in the room. Only while it is
+   being edited — they are furniture for the editing, not part of the picture,
+   and nothing here is ever in a filmed frame (the film draws the room to its
+   own canvas and never sees this element). */
+.room-handles { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.room-handles.hidden { display: none; }
+
+/* The solid's path, over the room. Pointer events only on the handles: the
+   line is there to be read, and a click on it that did nothing but eat the
+   drag would make the room feel broken. */
+.room-path {
+  position: absolute; inset: 0; z-index: 7;
+  pointer-events: none; overflow: visible;
+}
+.room-path.hidden { display: none; }
+.room-path .rp-line {
+  fill: none; stroke: var(--accent); stroke-width: 1.2;
+  stroke-opacity: .55; stroke-dasharray: 5 4;
+}
+.room-path .rp-pt {
+  fill: var(--surface); stroke: var(--accent); stroke-width: 1.6;
+  /* `all`, not `auto`: in SVG, `auto` hits only what is painted, and a bead
+     drawn hollow — the ring's, the feet — would take the pointer on its rim
+     alone and let the middle fall through to the room. */
+  pointer-events: all; cursor: move;
+}
+.room-path .rp-pt:hover, .room-path .rp-pt.dragging {
+  fill: var(--accent); stroke: var(--text);
+  filter: drop-shadow(0 0 5px var(--accent));
+}
+/* The ends are square, the waypoints round — so which is the front and which
+   is a stop on the way is legible without a label. */
+.room-path .rp-end { rx: 1; }
+/* The point's shadow on the ground: shown, never grabbed. */
+.room-path .rp-shadow { fill: none; stroke: var(--accent); stroke-width: 1; stroke-opacity: .5; pointer-events: none; }
+/* The picked point, and its move gizmo: one arrow per axis in the colours
+   every 3D program gives them — X red, Y green, Z blue. A tip is grabbed;
+   the line only points. */
+.room-path .rp-pt.picked { fill: var(--accent); stroke: var(--text); }
+.room-path .rp-ax { stroke-width: 2; pointer-events: none; }
+.room-path .rp-tip { stroke: var(--bg); stroke-width: 1; pointer-events: all; cursor: move; }
+.room-path .rp-ax-x { stroke: #e5484d; } .room-path .rp-tip-x { fill: #e5484d; }
+.room-path .rp-ax-y { stroke: #46a758; } .room-path .rp-tip-y { fill: #46a758; }
+.room-path .rp-ax-z { stroke: #3e63dd; } .room-path .rp-tip-z { fill: #3e63dd; }
+.room-path .rp-tip:hover, .room-path .rp-tip.dragging {
+  stroke: var(--text); filter: drop-shadow(0 0 5px currentColor);
+}
+.room-path .rp-lb {
+  fill: var(--text-dim); font-size: var(--fs-xs); font-family: inherit;
+  pointer-events: none; text-anchor: middle;
+}
+.room-path .rp-depth {
+  stroke: var(--accent); stroke-width: 1; stroke-opacity: .3;
+  stroke-dasharray: 2 3;
+}
+
+.rh {
+  position: absolute; pointer-events: auto;
+  background: var(--accent);
+  border: 1px solid var(--bg);
+  border-radius: 2px;
+  opacity: .55;
+  transform: translate(-50%, -50%);
+  transition: opacity .12s ease, box-shadow .12s ease;
+}
+/* Under the hand it lights. Bright enough to read against the room, and the
+   glow says which one — the grips are small and close, and a change of
+   opacity on a five-pixel bar was not a state anyone could see. */
+.rh:hover, .rh.dragging {
+  opacity: 1;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent),
+              0 0 12px 2px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.rh.dragging { background: var(--text); }
+/* A larger hand than the mark, for the bars only: five pixels wide is hard
+   to land on, so each reaches four past its long edges. The round grips get
+   none — the depth grip sits at the vanishing point, which is exactly where
+   a hand goes to swing the room, and padding it stole that gesture. */
+.rh-w::before { content: ''; position: absolute; inset: -2px -4px; }
+.rh-h::before { content: ''; position: absolute; inset: -4px -2px; }
+
+/* The room's own two gestures, shown. The band is the sky zone, drawn while
+   the pointer is over it; the word at the pointer names the zone and its two
+   axes. Neither takes the pointer. */
+.rh-zone {
+  position: absolute; left: 0; right: 0; top: 0; height: 34%;
+  pointer-events: none; opacity: 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  background: linear-gradient(color-mix(in srgb, var(--accent) 10%, transparent), transparent);
+  transition: opacity .12s ease;
+}
+.room-handles[data-zone="sky"] .rh-zone { opacity: 1; }
+.room-handles.zone-dragging[data-zone="sky"] .rh-zone { opacity: 1; }
+.rh-zone-tip { transform: translate(-50%, 0); transition: opacity .12s ease; }
+/* One word at a time: a grip under the hand says its own, and the zone's
+   goes quiet until the pointer is back on the bare room. */
+.room-handles:has(.rh:hover) .rh-zone-tip,
+.room-handles:has(.rh:hover) .rh-zone,
+.room-handles:has(.rp-pt:hover) .rh-zone-tip,
+.room-handles:has(.rp-tip:hover) .rh-zone-tip { opacity: 0 !important; }
+
+/* Sized and shaped by what they do: a grip that stretches the wall sideways is
+   a tall thin bar on its edge, and one that stretches it up and down is a wide
+   flat bar on its top. The shape says which way it moves before it is touched. */
+.rh-w { width: 5px; height: 22px; cursor: ew-resize; }
+.rh-h { width: 22px; height: 5px; cursor: ns-resize; }
+.rh-depth { width: 11px; height: 11px; border-radius: 50%; cursor: move; }
+.rh-ring { width: 11px; height: 11px; border-radius: 50%; cursor: move; }
+
+/* A word on what it does, on the way past. */
+.rh-tip {
+  position: absolute; pointer-events: none;
+  transform: translate(-50%, -160%);
+  font-size: var(--fs-xs); letter-spacing: .3px; white-space: nowrap;
+  color: var(--text-2); background: var(--surface-2);
+  border: 1px solid var(--line-2); border-radius: 3px; padding: 1px 4px;
+  opacity: 0; transition: opacity .12s ease;
+}
+.rh:hover + .rh-tip, .rh.dragging + .rh-tip { opacity: 1; }
+
+/* The stretch and grain controls, in the room's own panel.
+   They are laid out for a wide dock pane, where they sit beside the room; here
+   they are a column 300px across, so the two-across split and the fixed widths
+   have to give. Same DOM, same handlers — see `ROOM_VIEW_PARTS`. */
+#roomSoundBody > .grain-controls {
+  display: block; width: auto; max-width: none; min-width: 0;
+  overflow: visible;
+}
+#roomSoundBody .cpanel { width: auto; min-width: 0; margin-bottom: 8px; }
+#roomSoundBody .grain-extended { display: block; }
+/* The sliders are sized for the dock's row; give them the panel's width. */
+#roomSoundBody .p-row { display: flex; flex-wrap: wrap; align-items: center; }
+#roomSoundBody .p-row > input[type="range"] { flex: 1 1 110px; min-width: 0; width: auto; }
+#roomSoundBody .cloud-pad-wrap { width: auto; }
+#roomSoundBody #cloudPad { width: 100%; height: auto; aspect-ratio: 1; }
+
+/* ── a portrait room puts its controls beside it ──
+   `.room-edit` is `inset: 0` over the room, which is right when the room fills
+   the cell. Letterboxed to 9:16 in a wide dock the room is a narrow column and
+   the panel was inside *that* — a stack of controls in a two-hundred-pixel box.
+   There is empty cell either side of a portrait room and nothing in it, so the
+   panel is moved out of the cell and laid beside it. See `applyRoomFrame`. */
+.mb-main.re-beside { flex-direction: row; align-items: stretch; gap: 10px; }
+.mb-main.re-beside > .room-edit {
+  position: static; inset: auto;
+  /* It takes the pointer here: there is no canvas under it any more, so the
+     reason it refuses the pointer in the overlay does not apply. */
+  pointer-events: auto;
+  flex: 0 0 clamp(180px, 34%, 300px);
+  min-width: 0; max-height: none;
+  flex-wrap: nowrap; overflow: auto;
+  padding: 0;
+}
+.mb-main.re-beside > .room-edit .re-row { flex-wrap: wrap; margin-bottom: 5px; }
+.mb-main.re-beside > .room-edit .re-tag { flex: 0 0 100%; text-align: left; }
+.mb-main.re-beside > .room-edit .re-slider { flex: 1 1 90px; width: auto; }
+.mb-main.re-beside > .room-edit .re-frames { flex: 1 1 100%; flex-wrap: wrap; }
+/* The room takes what is left, still letterboxed to its own ratio.
+   **It must not re-assert `flex`.** `.mb-main.re-beside > .mb-cell-3d` is three
+   classes and `.mb-cell-3d.re-framed` is two, so a `flex: 1 1 auto` here
+   outranks the framed rule and grows the cell back to the full container —
+   which is a 9:16 room 882 px tall in a 125 px dock. Only the width floor
+   belongs here; the sizing belongs to the frame. */
+.mb-main.re-beside > .mb-cell-3d { min-width: 0; }
+

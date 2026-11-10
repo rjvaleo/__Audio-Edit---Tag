@@ -286,7 +286,7 @@ each step and holds a step's light back by `uiDelay`; `ui/app.js` —
   asked for after the reel, mixed into the track, and into each frame.
 - `ui/index.html` — the **Sequencer** switch on the export dialog (`#elSeq`).
 - `ui/rail.js` — the Seq item and its icon.
-- `ui/index.html` — `#seqView`; `ui/app.css` — `.seqview`, `.seq-frame`.
+- `ui/index.html` — `#seqView`; `ui/app-css/` — `.seqview`, `.seq-frame`.
 - `core/crates/server/src/routes.rs` — the six `SEQ_*` constants, their routes
   under `/sequencer/`, and their place in `ui_build_id`.
 - `tests/ui/sequencer.spec.mjs` — served whole; on the rail; play and stop

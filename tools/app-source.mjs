@@ -34,6 +34,28 @@ export function appSource() {
   return appParts().map((p) => p.text).join('');
 }
 
+/// The other files under `ui/` written as parts, and the folder each is joined
+/// from, in name order, as `core/crates/server/build.rs` joins them.
+export const JOINED = {
+  'app.css': 'app-css',
+  'room-paint.js': 'room-paint',
+  'vis-gl.js': 'vis-gl',
+  'stage.js': 'stage',
+};
+
+/// A file under `ui/` as the browser gets it: joined from its parts when it is
+/// written as parts, otherwise read as it is.
+export function servedSource(name) {
+  const dir = JOINED[name];
+  if (!dir) return readFileSync(join(root, 'ui', name), 'utf8');
+  const ext = name.slice(name.lastIndexOf('.'));
+  return readdirSync(join(root, 'ui', dir))
+    .filter((f) => f.endsWith(ext))
+    .sort()
+    .map((f) => readFileSync(join(root, 'ui', dir, f), 'utf8'))
+    .join('');
+}
+
 /// Where a line of the joined script is written: `ui/app/<part>.js:<line>`.
 export function whereIs(line, parts = appParts()) {
   let at = parts[0];

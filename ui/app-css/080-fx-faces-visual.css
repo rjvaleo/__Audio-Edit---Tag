@@ -1,0 +1,838 @@
+/* ------------------------------------------------- built-in effect faces */
+/* `075-fx-faces.js`. Every module one width so the rail stacks them in clean
+   columns; a built-in effect's module in its family's colour (`--accent`, set
+   per module), a live display at the top, its controls packed in rows that
+   each run the full width. Dense: 42 px knobs, a 70 px display, a one-line
+   header. */
+.fx-module { width: 348px; min-width: 348px; }
+.fx-module.fx-face { padding: 3px 5px 5px; border-top: 2px solid var(--accent); background: var(--surface-2); }
+.fx-face .fx-module-head { min-height: 20px; margin-bottom: 2px; gap: 5px; }
+.fx-face .fx-module-head h2 { font-size: var(--fs-s); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fx-face .fx-module-actions { align-items: center; gap: 4px; }
+.fx-face .fx-power { width: 13px; height: 13px; padding: 0; font-size: var(--fs-xs); color: transparent; overflow: hidden; border-radius: 2px; background: var(--well); border: 1px solid var(--line-2); }
+.fx-face .fx-power.on { background: var(--accent); border-color: var(--accent); }
+.fx-face .fx-remove { height: 16px; padding: 0 3px; font-size: 16px; line-height: 1; border: 0; color: var(--text-dimmer); }
+.fx-face .fx-module-signal { min-height: 0; gap: 4px; }
+.fx-face .fx-vu { width: 6px; min-width: 6px; padding: 0; }
+.fx-face .fx-vu .vu-label { display: none; }
+.fx-face .fx-vu .vu-well { width: 6px; padding: 0; border-radius: 1px; }
+.fx-face .fx-vu .vu-bar { width: 2px; }
+.fx-face.off .fx-face-body { opacity: .38; filter: grayscale(1); }
+.fx-adv-btn { background: var(--well); border: 1px solid var(--line-2); color: var(--text-dimmer); font-size: var(--fs-xs); padding: 0 5px; height: 16px; border-radius: 2px; cursor: pointer; }
+.fx-adv-btn.on { color: var(--accent); border-color: var(--accent); }
+
+.fx-face-body { display: grid !important; gap: 3px; align-content: start; }
+.fx-face-body.fx-side { grid-template-columns: minmax(0, 1fr) var(--side, 120px); align-items: stretch; }
+.fx-face-body.fx-side .fx-face-display, .fx-face-body.fx-side .fx-disp { height: 100%; }
+.fx-face-body.fx-side .fx-row { height: 100%; }
+.fx-face-display { min-width: 0; }
+.fx-face-display.is-pad { cursor: crosshair; touch-action: none; }
+.fx-disp { display: block; width: 100%; height: auto; min-height: 56px; background: var(--well); border: 1px solid var(--line-2); border-radius: 2px; }
+
+/* What the displays and pictures are drawn in: the module's colour for what
+   moves, the dim text colour for the context around it. */
+.fx-face { --pc: var(--accent); }
+.fx-disp .hg, .fx-grid { stroke: var(--line-2); stroke-width: 1; }
+.fx-disp .hc { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fx-disp .hc.thin { stroke-width: 1.2; }
+.fx-disp .hd { fill: none; stroke: var(--text-dimmer); stroke-width: 1.3; stroke-dasharray: 3 3; }
+.fx-disp .hf { fill: var(--accent); opacity: .14; stroke: none; }
+.fx-disp .hband { fill: var(--accent); opacity: .1; }
+.fx-disp .hr { stroke: var(--warn); stroke-width: 1.2; }
+.fx-disp .hdot { fill: var(--accent); stroke: var(--well); stroke-width: 1.5; }
+.fx-disp .ht { font: 10px var(--mono); fill: var(--text-dim); }
+.fx-disp .htd { font: 600 9px var(--mono); fill: var(--well); }
+.fx-pad-l { stroke: var(--accent); stroke-opacity: .35; }
+.fx-pad-dot { fill: var(--accent); stroke: var(--well); stroke-width: 2; }
+.fx-disp .fx-pad-ax { font-size: 9px; fill: var(--accent); opacity: .75; }
+.fx-face .pic .a, .fx-pic .pic .a, .fxs-pic .pic .a { fill: none; stroke: var(--pc, var(--accent)); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.fx-face .pic .af, .fx-pic .pic .af, .fxs-pic .pic .af { fill: var(--pc, var(--accent)); stroke: none; }
+.fx-face .pic .f, .fx-pic .pic .f, .fxs-pic .pic .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; opacity: .75; }
+.fx-face .pic .ff, .fx-pic .pic .ff, .fxs-pic .pic .ff { fill: var(--text-dimmer); opacity: .55; stroke: none; }
+.fx-face .pic .t, .fx-pic .pic .t, .fxs-pic .pic .t { font: 9px var(--mono); fill: var(--text-dimmer); }
+.fx-face .pic .ta, .fx-pic .pic .ta, .fxs-pic .pic .ta { font: 9px var(--mono); fill: var(--pc, var(--accent)); }
+.fx-face svg.pic, .fx-pic svg.pic, .fxs-pic svg.pic { display: block; overflow: visible; }
+
+/* The deck: sections packed into full-width rows. */
+.fx-deck { display: grid; gap: 2px; }
+.fx-row { display: flex; gap: 2px; }
+.fx-row > .fx-sect { flex: var(--n) 1 0; }
+.fx-sect { display: grid; min-width: 0; background: var(--well); border-radius: 2px; padding: 1px 2px 2px; }
+.fx-sect > b { display: flex; align-items: center; gap: 4px; font: 600 9px var(--sans, inherit); letter-spacing: .14em; text-transform: uppercase; color: var(--text-dimmer); padding: 1px 2px; white-space: nowrap; overflow: hidden; }
+.fx-sect > div { display: flex; }
+.fx-sect > div > * { flex: 1 1 0; min-width: 0; overflow: hidden; }
+.fx-sect.tech > div { display: grid; gap: 0; }
+.fx-sect.off > div { opacity: .35; }
+.fx-led { width: 9px; height: 9px; padding: 0; border-radius: 2px; background: var(--surface); border: 1px solid var(--line-2); cursor: pointer; }
+.fx-led.on { background: var(--accent); border-color: var(--accent); }
+.fx-twrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px; }
+.fx-twrap .fx-tcol { display: grid; gap: 2px; }
+.fx-twrap .fx-row { min-width: 96px; }
+
+/* Knob: the ring the value, the cap the picture. */
+.fxk, .fxf, .fxt { display: grid; justify-items: center; user-select: none; min-width: 0; }
+.fxk-ring { width: 42px; max-width: 100%; aspect-ratio: 1; height: auto; cursor: ns-resize; touch-action: none; display: block; }
+.fxk-ring:focus-visible, .fxf-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+.fxk-track { fill: none; stroke: var(--surface-3); stroke-width: 4; stroke-linecap: round; }
+.fxk-arc { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
+.fxk-tip { fill: var(--text); stroke: var(--well); stroke-width: 1.2; }
+.fxk-cap { fill: var(--surface); stroke: var(--line-2); }
+.fxk-v { font: 9px var(--mono); color: var(--accent); white-space: nowrap; max-width: 100%; overflow: hidden; letter-spacing: -.03em; line-height: 1.15; margin-top: -2px; }
+.fxk-l { font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
+.fxf-track { width: 18px; height: 42px; cursor: ns-resize; touch-action: none; display: block; }
+.fxf-bg { fill: var(--surface-3); }
+.fxf-fill { fill: var(--accent); }
+.fxf-cap { fill: var(--surface); stroke: var(--text-dimmer); }
+.fxf-line { stroke: var(--text); stroke-width: 1.5; }
+.fxt-b { display: grid; justify-items: center; align-content: center; width: 42px; height: 42px; padding: 0; background: var(--surface); border: 1px solid var(--line-2); border-radius: 2px; cursor: pointer; --pc: var(--text-dimmer); }
+.fxt-b svg.pic { width: 32px; height: 24px; }
+.fxt-b i { font: 9px var(--mono); font-style: normal; color: var(--text-dimmer); text-transform: uppercase; letter-spacing: .1em; }
+.fxt-b.on { border-color: var(--accent); --pc: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.fxt-b.on i { color: var(--accent); }
+.fxt .fxk-l { margin-top: 11px; }
+.fxs { display: grid; grid-template-columns: 24px 82px minmax(40px, 1fr) 52px; align-items: center; gap: 4px; min-height: 18px; }
+.fxs-pic svg.pic, .fx-pic svg.pic { width: 24px; height: 18px; }
+.fxs-l { font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fxs-v { font: 9px var(--mono); color: var(--accent); text-align: right; white-space: nowrap; }
+.fxs input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; margin: 0; border-radius: 3px; background: linear-gradient(90deg, var(--accent) 0 var(--fill, 50%), var(--surface-3) var(--fill, 50%)); }
+.fxs input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 4px; height: 14px; border-radius: 2px; background: var(--text); }
+.fxs input[type=range]::-moz-range-thumb { width: 4px; height: 14px; border: 0; border-radius: 2px; background: var(--text); }
+
+/* Compressor, gate, maximizer: the curve between its meters, then one row. */
+.fx-dyn-mid { display: grid; grid-template-columns: 20px minmax(0, 1fr) 12px 20px; gap: 4px; height: 112px; }
+.fx-dyn-curve { min-width: 0; cursor: ew-resize; touch-action: none; }
+.fx-dyn-curve svg, .fx-dyn-curve .fx-disp { width: 100%; height: 100%; display: block; background: var(--well); border: 1px solid var(--line-2); border-radius: 2px; }
+.fx-dyn-row { display: flex; background: var(--well); border-radius: 2px; padding: 2px; }
+.fx-dyn-row > * { flex: 1 1 0; min-width: 0; overflow: hidden; }
+.fx-fill { fill: var(--accent); opacity: .14; }
+.fx-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.fx-dim { stroke: var(--text-dimmer); stroke-dasharray: 3 3; }
+.fx-thr { stroke: var(--warn); stroke-dasharray: 3 3; }
+.fx-dot { fill: none; stroke: var(--warn); stroke-width: 2; }
+.fx-mtr { display: grid; grid-template-rows: auto 1fr auto; justify-items: center; gap: 1px; min-height: 0; font: 9px var(--mono); color: var(--text-dimmer); }
+.fx-mtr i { position: relative; width: 12px; background: var(--well); border: 1px solid var(--line-2); border-radius: 2px; }
+.fx-mtr i::after { content: ""; position: absolute; left: 1px; right: 1px; bottom: 1px; height: var(--h, 0%); background: var(--good); border-radius: 1px; }
+.fx-mtr.gr i::after { top: 1px; bottom: auto; background: var(--warn); }
+.fx-mtr em { font-style: normal; }
+.fx-caret { position: absolute; left: -12px; right: -3px; height: 0; border-top: 2px solid var(--warn); cursor: ns-resize; touch-action: none; }
+.fx-caret::before { content: ""; position: absolute; left: -1px; top: -8px; border: 7px solid transparent; border-left: 11px solid var(--warn); }
+.fx-caret::after { content: "THR"; position: absolute; left: -2px; top: -16px; font: 600 9px var(--mono); color: var(--warn); }
+.fx-caret.ceil { border-top-color: var(--bad); }
+.fx-caret.ceil::before { border-left-color: var(--bad); }
+.fx-caret.ceil::after { content: "CEIL"; color: var(--bad); }
+.fx-caret:hover { border-top-width: 3px; }
+
+/* EQ: band strip, the layered curve, the readouts, the selected band. */
+.fx-eq-types, .fx-eq-read { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1px; }
+.fx-eq-types button { display: grid; justify-items: center; background: var(--well); border: 1px solid var(--line-2); border-bottom: 2px solid var(--bc); color: var(--bc); padding: 1px 0; font: 9px var(--mono); opacity: .45; cursor: pointer; }
+.fx-eq-types button.on { opacity: 1; }
+.fx-eq-types button.sel { background: color-mix(in srgb, var(--bc) 16%, var(--well)); }
+.fx-eq-types svg { width: 22px; height: 10px; }
+.fx-eq-types svg path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.fx-eq-disp svg { display: block; width: 100%; height: auto; background: var(--well); border: 1px solid var(--line-2); border-radius: 2px; touch-action: none; }
+.fx-eq-disp .fx-spec { fill: var(--text-dimmer); opacity: .16; }
+.fx-eq-disp .fx-sum { fill: none; stroke: var(--text); stroke-width: 2; }
+.fx-eq-disp .fx-tx { font: 9px var(--mono); fill: var(--text-dimmer); }
+.fx-eq-disp .fx-node { cursor: grab; }
+.fx-eq-disp .fx-node.off { opacity: .35; }
+.fx-eq-disp .fx-node text { font: 700 9px var(--mono); fill: var(--well); text-anchor: middle; pointer-events: none; }
+.fx-eq-read div { color: var(--bc); text-align: center; font: 9px/1.25 var(--mono); opacity: .45; padding: 1px 0; border-radius: 2px; cursor: pointer; letter-spacing: -.02em; }
+.fx-eq-read div.on { opacity: 1; }
+.fx-eq-read div.sel { background: color-mix(in srgb, var(--bc) 16%, transparent); }
+.fx-eq-sel { display: flex; align-items: center; background: var(--well); border-radius: 2px; padding: 2px; }
+.fx-eq-sel > .fxk { flex: 1 1 0; }
+.fx-eq-on { align-self: center; background: var(--surface); border: 1px solid var(--line-2); color: var(--text-dim); font-size: var(--fs-xs); padding: 3px 5px; border-radius: 2px; cursor: pointer; }
+.fx-eq-on.on { color: var(--accent); border-color: var(--accent); }
+.fx-caret:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+.fx-eq-modes { flex: 1.6 1 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+.fx-eq-modes button { background: var(--surface); border: 1px solid var(--line-2); color: var(--text-dim); font-size: var(--fs-xs); padding: 2px 0; border-radius: 2px; cursor: pointer; }
+.fx-eq-modes button.on { color: var(--accent); border-color: var(--accent); }
+
+/* Advanced: each knob's own range. */
+.fx-adv { gap: 1px; }
+.fx-adv-head, .fx-adv-row { display: grid; grid-template-columns: 24px minmax(70px, 1fr) minmax(40px, 1fr) 54px 54px 52px; align-items: center; gap: 4px; }
+.fx-adv-head { font: 600 9px var(--sans, inherit); letter-spacing: .1em; text-transform: uppercase; color: var(--text-dimmer); }
+.fx-adv-row { min-height: 22px; }
+.fx-adv-row .k { font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fx-adv-row.own .k { color: var(--accent); }
+.fx-adv-row input { width: 100%; min-width: 0; background: var(--well); border: 1px solid var(--line-2); color: var(--text); font: 9px var(--mono); padding: 2px 3px; border-radius: 2px; }
+.fx-rbar { position: relative; height: 12px; }
+.fx-rbar .fac { position: absolute; top: 4px; height: 4px; background: var(--surface-3); border-radius: 2px; }
+.fx-rbar .you { position: absolute; top: 1px; height: 10px; border: 1.5px solid var(--accent); border-radius: 2px; }
+.fx-curve { display: flex; background: var(--well); border-radius: 2px; padding: 1px; }
+.fx-curve button { flex: 1; background: none; border: 0; color: var(--text-dim); font-size: 9px; padding: 1px 0; border-radius: 2px; cursor: pointer; }
+.fx-curve button.on { background: var(--surface-3); color: var(--accent); }
+.fx-adv-foot { display: flex; align-items: center; gap: 6px; padding-top: 3px; font-size: var(--fs-xs); color: var(--text-dimmer); }
+.fx-adv-foot span { flex: 1; }
+
+/* A picture beside each control of the Hyperprism, SoundHack and Lexicon panels. */
+.fx-module-controls .param.fx-pic-row { grid-template-columns: 26px var(--param-k) minmax(0, 1fr) var(--param-v); }
+.fx-module-controls .param.seg-param.fx-pic-row { grid-template-columns: 26px var(--param-k) minmax(0, 1fr); }
+.fx-pic { --pc: var(--accent); }
+
+/* ------------------------------------------- the three suites' faces */
+/* `076-fx-suites.js`: Lexicon, SoundHack and Hyperprism in their originals'
+   look, every control drawn in it, at the rack's one width. */
+.fx-module.fx-suite { padding: 3px 5px 5px; }
+.fx-suite .fx-module-head { min-height: 20px; margin-bottom: 2px; }
+.fx-suite .fx-module-head h2 { font-size: var(--fs-s); }
+.fx-suite .fx-power { height: 16px; padding: 0 5px; font-size: var(--fs-xs); }
+.fx-suite .fx-remove { height: 16px; padding: 0 3px; font-size: 16px; line-height: 1; border: 0; color: var(--text-dimmer); }
+.fx-suite .fx-module-signal { gap: 4px; min-height: 0; }
+.fx-suite .fx-vu { width: 6px; min-width: 6px; padding: 0; }
+.fx-suite .fx-vu .vu-label { display: none; }
+.fx-suite .fx-vu .vu-well { width: 6px; padding: 0; }
+.fx-suite .fx-vu .vu-bar { width: 2px; }
+.fx-suite .fx-module-controls { display: grid; gap: 4px; }
+.fx-suite .pic .a { fill: none; stroke: var(--pc); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.fx-suite .pic .af { fill: var(--pc); stroke: none; }
+.fx-suite .pic .f { fill: none; stroke: var(--pf, #8a8a85); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
+.fx-suite .pic .ff { fill: var(--pf, #8a8a85); opacity: .55; stroke: none; }
+.fx-suite svg.pic { display: block; overflow: visible; }
+.fx-suite .param.inactive { opacity: .35; }
+
+/* Lexicon: the LXP Native panel. */
+.lex-face { --pc: #74c9ff; --pf: #5b6672; background: linear-gradient(#34383f, #2a2e35); border: 1px solid #0d0f12; padding: 5px; border-radius: 3px; }
+.lex-top { display: flex; align-items: center; gap: 6px; }
+.lex-logo { font: 700 16px/1 Georgia, serif; color: #f2f2f2; letter-spacing: -.02em; }
+.lex-band { flex: 1; background: linear-gradient(90deg, #4aa8ff, #8fd0ff); color: #fff; text-align: right; font: italic 600 13px "Arial Narrow", sans-serif; padding: 1px 6px; }
+.lex-disp { background: #1b1e23; border: 1px solid #111; border-radius: 4px; overflow: hidden; }
+.lex-disp .prism-pad.lex-pad { position: relative; width: 100%; height: 64px; margin: 0; border: 0; border-radius: 0; background: none; cursor: crosshair; }
+.lex-impulse { position: absolute; inset: 0; display: block; }
+.lex-disp > .lex-impulse { position: relative; height: 64px; }
+.lex-impulse svg { width: 100%; height: 100%; display: block; }
+.lex-rt { position: absolute; right: 6px; top: 3px; font: var(--fs-xs) var(--mono); color: #74c9ff; }
+.lex-trend { fill: #9aa3ad; opacity: .22; }
+.lex-tap { stroke: #3d9eff; stroke-width: 1.5; }
+.lex-direct { stroke-width: 2; }
+.lex-pad .prism-pad-dot { background: #fff; }
+.lex-pages { background: #1b1e23; border: 1px solid #111; border-radius: 6px; padding: 3px 1px; }
+.lex-page { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); row-gap: 3px; }
+.lex-page > .prism-group-label { display: none; }
+.lex-page[hidden] { display: none; }
+.param.lex-knob { display: grid; grid-template-columns: none; justify-items: center; gap: 0; padding: 0; min-width: 0; }
+.lex-knob .v { font: italic 500 var(--fs-s) "Arial Narrow", sans-serif; color: #74c9ff; white-space: nowrap; max-width: 100%; overflow: hidden; text-align: center; }
+.lex-ring { width: 34px; height: 34px; cursor: ns-resize; touch-action: none; display: block; }
+.lex-track { fill: none; stroke: #0e1013; stroke-width: 6; stroke-linecap: round; }
+.lex-arc { fill: none; stroke: #3d9eff; stroke-width: 6; stroke-linecap: round; }
+.lex-cap { fill: #121417; }
+.lex-needle { stroke: #e9eef3; stroke-width: 3; stroke-linecap: round; }
+.lex-knob .k { font: italic 500 var(--fs-xs) "Arial Narrow", sans-serif; color: #3d9eff; text-transform: uppercase; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.lex-pic svg.pic { width: 32px; height: 22px; }
+.param.lex-choice { grid-column: span 2; display: grid; grid-template-columns: none; justify-items: center; align-content: center; gap: 2px; }
+.lex-choice .k { font: italic 500 var(--fs-xs) "Arial Narrow", sans-serif; color: #3d9eff; text-transform: uppercase; text-align: center; }
+.lex-choice .seg { width: 100%; }
+.fx-module-controls .lex-choice .seg-btn, .lex-choice .seg-btn { background: linear-gradient(#3a3f47, #23272d); border: 1px solid #0d0f12; color: #d8dde3; font-size: var(--fs-xs); }
+.lex-choice .seg-btn.active { box-shadow: inset 0 2px 0 #3d9eff; color: #fff; }
+.lex-tabs { display: flex; gap: 2px; border: 2px solid #3d9eff; padding: 2px; }
+.lex-tab { flex: 1; min-width: 0; background: linear-gradient(#3a3f47, #23272d); border: 1px solid #0d0f12; color: #d8dde3; font-size: var(--fs-xs); padding: 3px 0; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.lex-tab.on { box-shadow: inset 0 2px 0 #3d9eff; color: #fff; }
+
+/* SoundHack: one grid of six cells, every row full. */
+.sh-face { --pc: var(--hue); --pf: #8a8a85; background: #ecece8; color: #111; border: 1px solid #000; padding: 5px 6px 6px; border-radius: 3px; }
+.sh-top { display: flex; align-items: center; gap: 6px; }
+.sh-pill { display: inline-flex; border: 2px solid #111; border-radius: 16px; overflow: hidden; font: 800 13px/1 "Arial Rounded MT Bold", "Arial Black", sans-serif; }
+.sh-pill .a { background: var(--hue); color: #111; padding: 2px 6px 3px; }
+.sh-pill .b { background: #111; color: #fff; padding: 2px 7px 3px; }
+.sh-ver { margin-left: auto; font: 800 var(--fs-xs) "Arial Black", sans-serif; color: #555; }
+.sh-face .prism-sound-wrap { border-bottom-color: #111; }
+.sh-face .prism-sound .k, .sh-face .prism-sound-name { color: #111; }
+.sh-row { display: flex; gap: 4px; }
+.prism-group.sh-sec { flex: var(--n) 1 0; min-width: 0; display: grid; align-content: start; background: #fff; border: 1.5px solid #111; border-radius: 5px; padding: 0 2px 3px; }
+.sh-sec > .prism-group-label { font: 800 var(--fs-xs) "Arial Black", sans-serif; text-transform: lowercase; letter-spacing: 0; color: #fff; background: #111; margin: 0 -2px 3px; padding: 1px 6px 2px; border-radius: 3px 3px 0 0; }
+.sh-cells { display: flex; }
+.sh-cells > * { flex: var(--w, 1) 1 0; min-width: 0; }
+.param.sh-cell { display: grid; grid-template-columns: none; justify-items: center; align-content: start; gap: 0; padding: 0; min-width: 0; }
+.sh-ring { width: 42px; height: 42px; display: block; cursor: ns-resize; touch-action: none; }
+.sh-track { fill: none; stroke: #c8c8c3; stroke-width: 5; stroke-linecap: round; }
+.sh-arc { fill: none; stroke: var(--hue); stroke-width: 5; stroke-linecap: round; }
+.sh-tip { fill: #111; }
+.sh-cap { fill: #fff; stroke: #111; stroke-width: 1.5; }
+.sh-cell .v { font: 700 var(--fs-s) var(--mono); color: #111; white-space: nowrap; max-width: 100%; overflow: hidden; text-align: center; }
+.sh-cell .k { text-transform: lowercase; font: 800 var(--fs-xs) "Arial Black", sans-serif; color: #333; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.sh-key { width: 42px; height: 42px; display: grid; justify-items: center; align-content: center; background: #fff; border: 1.5px solid #111; border-radius: 6px; cursor: pointer; padding: 0; --pc: #999; }
+.sh-key svg.pic { width: 30px; height: 22px; }
+.sh-key i { font: 800 var(--fs-xs) "Arial Black", sans-serif; font-style: normal; color: #999; }
+.sh-key.on { background: var(--hue); --pc: #111; --pf: #111; }
+.sh-key.on i { color: #111; }
+.sh-switch .k { margin-top: 12px; }
+.param.sh-choice { display: grid; grid-template-columns: none; align-content: center; gap: 4px; padding: 0 2px; }
+.sh-choice .k { text-transform: lowercase; order: 2; font: 800 var(--fs-xs) "Arial Black", sans-serif; color: #333; text-align: center; }
+.sh-choice .seg { display: flex; width: 100%; margin-top: 10px; border: 1.5px solid #111; border-radius: 6px; overflow: hidden; background: #fff; padding: 0; }
+.fx-module-controls .sh-choice .seg-btn { flex: 1 1 0; width: auto; min-width: 0; overflow: hidden; text-overflow: clip; white-space: nowrap; letter-spacing: -.04em; background: #fff; border: 0; border-left: 1.5px solid #111; border-radius: 0; color: #111; font: 800 var(--fs-xs) "Arial Black", sans-serif; padding: 6px 0; margin: 0; text-transform: lowercase; }
+.fx-module-controls .sh-choice .seg-btn:first-child { border-left: 0; }
+.fx-module-controls .sh-choice .seg-btn { margin: 0; }
+.fx-module-controls .sh-choice .seg-btn.active { background: var(--hue); color: #111; }
+.sh-keys .sh-cells { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); border: 1.5px solid #111; border-radius: 4px; overflow: hidden; margin: 2px 2px 0; }
+.sh-keycap { padding: 0; }
+.sh-keycap .sh-key { width: 100%; height: 36px; border: 0; border-left: 1px solid #111; border-radius: 0; }
+.sh-keycap:first-child .sh-key { border-left: 0; }
+.sh-keycap .sh-key svg.pic, .sh-keycap .sh-key i { display: none; }
+.sh-keycap .sh-key::after { content: attr(aria-label); font: 800 var(--fs-xs) "Arial Black", sans-serif; color: #111; }
+.sh-keycap .k { display: none; }
+
+/* Hyperprism: the blue window, then System 7 controls. */
+.hp-face { --pc: #1f4fd8; --pf: #555; background: #c9c9c9; color: #000; border: 1px solid #000; padding: 0 0 5px; font-family: Charcoal, Chicago, Geneva, sans-serif; }
+.hp-title { background: repeating-linear-gradient(#fff 0 1px, #c9c9c9 1px 3px); text-align: center; font: 600 var(--fs-m, 11px) Charcoal, Chicago, Geneva, sans-serif; padding: 2px 0; border-bottom: 1px solid #000; }
+.hp-title span { background: #c9c9c9; padding: 0 8px; }
+.hp-top { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 6px; padding: 6px 6px 0; }
+.hp-face .prism-pad { position: relative; width: 132px; height: 132px; margin: 0; aspect-ratio: auto; background: linear-gradient(135deg, #1f4fd8, #0d2e8f); border: 1px solid #000; border-radius: 0; box-shadow: inset 2px 2px 0 rgba(255,255,255,.25); }
+.hp-face .prism-pad-dot { background: #fff; border-color: #000; }
+.hp-lim { position: absolute; font: var(--fs-xs) var(--mono); color: #000; background: #fff; border: 1px solid #000; padding: 0 3px; pointer-events: none; }
+.hp-lim.tl { top: 2px; left: 2px; } .hp-lim.tr { top: 2px; right: 2px; } .hp-lim.bl { bottom: 2px; left: 2px; } .hp-lim.tl2 { top: 18px; left: 2px; }
+.hp-axes { display: grid; align-content: start; gap: 4px; }
+.hp-axes > div { border: 1px solid #000; background: #e6e6e6; padding: 2px 4px; font-size: var(--fs-s); }
+.hp-axes b { display: block; font-size: var(--fs-xs); text-transform: uppercase; }
+.hp-controls { display: grid; gap: 2px; padding: 4px 6px 0; }
+.hp-face .prism-group { display: grid; gap: 2px; }
+.hp-face .prism-group-label { font: 600 var(--fs-s) Charcoal, Chicago, Geneva, sans-serif; color: #000; letter-spacing: 0; text-transform: none; border-bottom: 1px solid #888; padding-top: 2px; }
+.hp-face .param { color: #000; }
+.hp-face .param .k { color: #000; font: var(--fs-m, 11px) Charcoal, Chicago, Geneva, sans-serif; }
+.hp-face .param .v { background: #fff; border: 1px solid #000; box-shadow: inset 1px 1px 0 #888; font: var(--fs-s) Monaco, var(--mono); color: #000; padding: 0 3px; text-align: right; }
+.hp-face .param input[type=range] { -webkit-appearance: none; appearance: none; height: 12px; background: linear-gradient(#9a9a9a, #e8e8e8); border: 1px solid #000; border-radius: 2px; }
+.hp-face .param input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 16px; background: linear-gradient(90deg, #fff, #bbb); border: 1px solid #000; border-radius: 2px; }
+.hp-face .param input[type=range]::-moz-range-thumb { width: 11px; height: 16px; background: linear-gradient(90deg, #fff, #bbb); border: 1px solid #000; border-radius: 2px; }
+.hp-face .seg { background: none; gap: 3px; }
+.fx-module-controls .hp-face .seg-btn, .hp-face .seg-btn { background: linear-gradient(#fff, #ccc); border: 1px solid #000; border-radius: 3px; color: #000; font: var(--fs-s) Charcoal, Chicago, Geneva, sans-serif; }
+.hp-face .seg-btn.active { background: #000; color: #fff; }
+.hp-face .prism-sound .k, .hp-face .prism-sound-name { color: #000; }
+
+/* ═══════════════════════════════════════ the Visual column, as sliders ══
+   `RK_SLIDERS` in `app.js` (2 Nov 2026: the knobs were hard to read). Every
+   knob of the column is a slider row again: its picture at the front, its
+   word, the slider, its reading. One to a line, wherever the knobs were
+   four. Last in the file, so it outranks each panel's knob placement. */
+#roomAdmin .rk-k.rk-sl {
+  display: grid; grid-template-columns: 32px 58px minmax(0, 1fr) minmax(52px, auto);
+  align-items: center; column-gap: 6px; width: 100%; padding: 0;
+}
+#roomAdmin .rk-k.rk-sl > .rk-face { display: none; }
+#roomAdmin .rk-k.rk-sl > svg.pic { order: 0; width: 32px; height: 24px; margin: 0; }
+#roomAdmin .rk-k.rk-sl > .rk-l { order: 1; grid-column: 2; font-size: var(--fs-s); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#roomAdmin .rk-k.rk-sl > input:is(.re-slider, .p4-knob-in) {
+  order: 2; grid-column: 3; position: static; transform: none;
+  width: 100%; height: 16px; margin: 0; opacity: 1; cursor: pointer; touch-action: auto;
+}
+#roomAdmin .rk-k.rk-sl > .rk-v { order: 3; grid-column: 4; text-align: right; min-width: 0; max-width: 84px; white-space: nowrap; }
+/* A reading that is a field has a wide size of its own; held to the column. */
+#roomAdmin .rk-k.rk-sl > input.rk-v { width: 56px; text-align: right; }
+/* A row of its own, not a quarter of one. */
+.rv-admin #roomEdit > .re-row.rk-cell:has(.rk-sl),
+#roomAdmin .rk-grid > .rk-cell:has(.rk-sl) { grid-column: 1 / -1; align-items: stretch; padding: 1px 0; }
+.rv-admin #roomEdit:has(.rk-sl) > .re-row:has(#reGrainFill) { grid-column: 1 / -1; }
+#room4dBody .p4-knobs:has(.rk-sl) { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
+#room4dBody .p4-knobs:has(.rk-sl) > .re-reset { grid-column: 1 / -1; justify-self: start; }
+#roomPaintBody.rp-modern .rp-knob:has(.rk-sl) { display: block; }
+.rv-admin .rk-mist:has(.rk-sl) { flex-wrap: wrap; }
+.rv-admin .rk-mist > .rk-k.rk-sl { flex: 1 0 100%; }
+/* Colour › a ramp: a stop's cell is a quarter of the line, too narrow for a
+   slider row, so its slider takes the cell's width with its reading under
+   it. The curve gets a line of its own under the range's strip. */
+#roomPaintBody .rp-stop .rk-k.rk-sl { grid-template-columns: minmax(0, 1fr) auto; row-gap: 1px; }
+#roomPaintBody .rp-stop .rk-k.rk-sl > svg.pic { display: none; }
+#roomPaintBody .rp-stop .rk-k.rk-sl > input.re-slider { grid-column: 1 / -1; grid-row: 1; }
+/* The word goes: the stop is the colour above it. */
+#roomPaintBody .rp-stop .rk-k.rk-sl > .rk-l { display: none; }
+#roomPaintBody .rp-stop .rk-k.rk-sl > .rk-v { grid-column: 1 / -1; grid-row: 2; text-align: center; font-size: var(--fs-xs); }
+#roomPaintBody .rp-range:has(.rk-sl) { flex-wrap: wrap; }
+#roomPaintBody .rp-range > .rp-knob:has(.rk-sl) { flex: 1 0 100%; }
+/* Mist's amount and Block's opacity sit beside their row's own tag, so their
+   row is narrower: the word and the reading take only what they need there,
+   and the slider keeps a usable width. */
+#roomAdmin .rk-mist > .rk-k.rk-sl,
+#roomAdmin #roomEdit > .re-row:not(.rk-cell) > .rk-k.rk-sl { grid-template-columns: auto auto minmax(60px, 1fr) auto; }
+
+/* ───────────────── the grain tray (`190-grain-tray.js`, RJ 4 Nov 2026) ──
+   Sections are bands down each column, alternating in shade, each with a plain
+   heading and a dot for every kind of control it holds. A control's picture
+   and its bar are drawn in the colour of what it does to the sound (`--fc`,
+   one of the six `--f-*`), named by the key across the top. Blue is kept for
+   the engine you have chosen. */
+.gc-dots b { display: inline-block; }
+.gc-dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 1px; }
+.gc-dots b { width: 6px; height: 6px; border-radius: 50%; }
+#grainControls .wild-head { color: var(--text-dim); letter-spacing: .1em; }
+#grainControls :is(.gc-band, .wild) { background: var(--surface); padding: 6px 10px 8px; margin: 0; }
+#grainControls :is(.gc-band, .wild).gc-alt { background: var(--surface-2h); }
+#grainControls :is(.gc-band, .wild) + :is(.gc-band, .wild) { border-top: 1px solid var(--line); }
+/* The row's colour wins over the picture's own group class. */
+#grainControls .gk-row, #grainControls .gk-row > .gg, :is(.chop-fx, .prism-bars) .gk-row, :is(.chop-fx, .prism-bars) .gk-row > .gg { --gg: var(--fc, var(--warn)); }
+
+/* The engines, as tiles: a picture of what each does above its name. */
+#grainControls .engine-pick .seg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; background: none; padding: 0; }
+#grainControls .engine-pick .seg-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; height: auto; padding: 4px 2px 3px;
+  border: 1px solid var(--line-2); border-radius: 5px; background: transparent; color: var(--text-2); --gg: var(--text-dim);
+}
+#grainControls .engine-pick .seg-btn svg.gg { width: 44px; height: 33px; overflow: visible; }
+#grainControls .engine-pick .seg-btn.active {
+  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); --gg: var(--accent);
+}
+/* The tuning and Keys ride on Time & pitch's heading. */
+#grainControls .gc-tp > .wild-head { display: flex; align-items: center; justify-content: space-between; }
+#grainControls .gc-tp .engine-switch-host { margin: 0; }
+#grainControls .engine-switches { width: 148px; }
+#grainControls .engine-switches > [data-slot="3"] { left: 0; }
+#grainControls .engine-switches > [data-slot="4"] { left: 77px; }
+#grainControls .engine-params:empty { display: none; }
+
+/* ── bars (`gc-bars`): each slider row is one bar, the picture in front, the
+   name and reading inside it, bordered in its colour, the filled part outlined
+   too. The fill comes from `--f` (the handle's share of the track). Groups go
+   two to a line; Stretch, Pitch and Window keep a line each. 24 px targets. */
+#grainControls.gc-bars .stretch-core { display: flex; flex-direction: column; gap: 4px; }
+#grainControls.gc-bars :is(.engine-params, .wild-body) {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; align-items: center;
+}
+#grainControls.gc-bars :is(.engine-params, .wild-body) > :not(.gk-row) { grid-column: 1 / -1; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .param.gk-row:has(> input[type=range]) {
+  grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 0; min-height: 0; height: 28px;
+}
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > .gg { width: 28px; height: 21px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > :is(.k, input, .v) { grid-row: 1; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > input { grid-column: 2 / 4; margin-left: 4px; width: calc(100% - 4px); }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > .k { grid-column: 2; margin-left: 4px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > .v { grid-column: 3; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range] {
+  -webkit-appearance: none; appearance: none; height: 24px; border-radius: 4px; cursor: ew-resize;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc) 70%, transparent);
+  background:
+    linear-gradient(90deg, transparent calc(var(--f, 0) * 100% - 2px), var(--fc) 0, var(--fc) calc(var(--f, 0) * 100%), transparent 0),
+    linear-gradient(var(--fc), var(--fc)) 0 0 / calc(var(--f, 0) * 100%) 1px no-repeat,
+    linear-gradient(var(--fc), var(--fc)) 0 100% / calc(var(--f, 0) * 100%) 1px no-repeat,
+    linear-gradient(90deg, color-mix(in srgb, var(--fc) 34%, var(--sink)) calc(var(--f, 0) * 100%), var(--surface-3) 0);
+}
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px var(--fc); }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range].gc-dragging { filter: brightness(1.2); }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]::-webkit-slider-runnable-track { background: transparent; height: 24px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 24px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]::-moz-range-track { background: transparent; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]::-moz-range-progress { background: transparent; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row > input[type=range]:focus-visible { outline: 2px solid var(--fc); outline-offset: 1px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > :is(.k, .v) {
+  z-index: 1; pointer-events: none; padding: 0 4px; color: var(--text);
+  text-shadow: 0 0 3px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg);
+}
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > .k { justify-self: start; min-width: 0; max-width: 100%; }
+/* A fixed width for the reading, so a bar's width never depends on its value:
+   otherwise "155 ms" squeezes the name where "0 ms" did not, and the bar
+   jumps between half and full width as it is dragged. */
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row:has(> input[type=range]) > .v { justify-self: end; width: 56px; box-sizing: border-box; text-align: right; overflow: visible; padding-left: 2px; }
+/* A full-width bar has room for a long reading ("−15.00 st · −1500¢"), and its
+   width cannot change with its value, so its reading takes what it needs. */
+#grainControls.gc-bars :is(.stretch-core > .gk-row, .gk-row.gc-wide):has(> input[type=range]) > .v { width: auto; min-width: 56px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row.gc-wide { grid-column: 1 / -1; }
+/* A half bar too narrow for its name and reading side by side: the name on
+   top, the reading under it, both inside the bar (`gcWiden`). */
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row.gc-stack:has(> input[type=range]) > :is(.k, .v) { grid-column: 2 / 4; font-size: 9px; line-height: 10px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row.gc-stack:has(> input[type=range]) > .k { align-self: start; margin-top: 3px; }
+:is(#grainControls.gc-bars, .chop-fx, .prism-bars) .gk-row.gc-stack:has(> input[type=range]) > .v { align-self: end; justify-self: start; text-align: left; width: auto; margin: 0 0 3px 4px; padding: 0 4px; }
+
+/* A switch is a bar too: its picture, then a toggle the bar's width with a
+   sliding knob, bordered in its colour and filled when on. */
+#grainControls.gc-bars .param.toggle.gk-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px; height: 28px; align-items: center; }
+#grainControls.gc-bars .param.toggle.gk-row > .switch {
+  position: relative; width: 100%; height: 24px; margin: 0; padding: 0 7px 0 30px; text-align: left;
+  border: 1px solid color-mix(in srgb, var(--fc) 70%, transparent); border-radius: 4px;
+  background: var(--surface-3); color: var(--text-2); font-size: var(--fs-m); white-space: nowrap;
+  overflow: hidden; min-width: 0;
+}
+#grainControls.gc-bars .param.toggle.gk-row > .switch::before {
+  content: ''; position: absolute; left: 7px; top: 7px; width: 16px; height: 9px; border-radius: 5px; border: 1px solid var(--fc); box-sizing: border-box;
+}
+#grainControls.gc-bars .param.toggle.gk-row > .switch::after {
+  content: ''; position: absolute; left: 9px; top: 9px; width: 5px; height: 5px; border-radius: 50%; background: var(--text-dimmer); transition: left .12s, background .12s;
+}
+#grainControls.gc-bars .param.toggle.gk-row > .switch.on {
+  background: color-mix(in srgb, var(--fc) 34%, var(--sink)); border-color: var(--fc); color: var(--text);
+}
+#grainControls.gc-bars .param.toggle.gk-row > .switch.on::after { left: 16px; background: var(--fc); }
+#grainControls.gc-bars .param.toggle.gk-row > .switch:hover { border-color: var(--fc); }
+#grainControls.gc-bars .param.toggle.gk-row > .switch:focus-visible { outline: 2px solid var(--fc); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { #grainControls .param.toggle > .switch::after { transition: none; } }
+
+/* A choice: its name inside the same border as its options. */
+#grainControls.gc-bars .param.seg-param.gk-row { grid-template-columns: 28px max-content minmax(0, 1fr); gap: 0 0; height: 28px; grid-column: 1 / -1; order: 1; }
+#grainControls.gc-bars .param.seg-param.gk-row > .gg { margin-right: 4px; }
+#grainControls.gc-bars .param.seg-param.gk-row > .k {
+  overflow: visible; min-width: 56px; height: 24px; line-height: 22px; padding: 0 8px; margin-left: 4px; color: var(--text-2); box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--fc) 70%, transparent); border-right: 0; border-radius: 4px 0 0 4px;
+}
+#grainControls.gc-bars .param.seg-param.gk-row > .seg {
+  height: 24px; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--fc) 70%, transparent); border-left: 0; border-radius: 0 4px 4px 0;
+}
+#grainControls.gc-bars .param.seg-param.gk-row .seg-btn.active { box-shadow: inset 0 -2px 0 var(--fc); color: var(--text); }
+
+/* The seed: one box like a bar, its name, the number and the re-roll, on one
+   line however long the number gets. */
+#grainControls.gc-bars .param.seed-row.gk-row {
+  display: grid; grid-template-columns: 28px auto minmax(0, 1fr) auto; gap: 0; height: 28px; align-items: center;
+}
+#grainControls.gc-bars .seed-row > :is(.k, .v, button) {
+  height: 24px; box-sizing: border-box; display: flex; align-items: center; background: var(--surface-3);
+  border: 1px solid color-mix(in srgb, var(--fc) 70%, transparent); border-left: 0; border-right: 0; white-space: nowrap;
+}
+#grainControls.gc-bars .seed-row > .k { grid-column: 2; grid-row: 1; margin-left: 4px; padding: 0 8px; border-left-width: 1px; border-left-style: solid; border-radius: 4px 0 0 4px; color: var(--text); }
+#grainControls.gc-bars .seed-row > .v { grid-column: 3; grid-row: 1; justify-content: flex-end; padding: 0 6px; font-family: var(--mono); color: var(--text); }
+#grainControls.gc-bars .seed-row > button { grid-column: 4; grid-row: 1; padding: 0 8px; border-right-width: 1px; border-right-style: solid; border-radius: 0 4px 4px 0; color: var(--fc); }
+#grainControls.gc-bars .seed-row > button:hover { background: color-mix(in srgb, var(--fc) 25%, var(--surface-3)); }
+
+.gc-style { margin-left: auto; flex: none; }
+.gc-style .seg-btn { font-size: var(--fs-xs); padding: 1px 7px; }
+
+/* Help › What the colours mean. */
+.ck-card { width: min(520px, calc(100vw - 32px)); }
+.ck-lede { margin: 0 16px 10px; font-size: var(--fs-m); color: var(--text-dim); line-height: 1.45; }
+.ck-list { display: grid; grid-template-columns: 10px auto 1fr; gap: 8px 10px; align-items: baseline; padding: 0 16px 16px; }
+.ck-row { display: contents; }
+.ck-sw { width: 10px; height: 10px; border-radius: 2px; align-self: center; }
+.ck-name { font-weight: 600; font-size: var(--fs-m); }
+.ck-what { font-size: var(--fs-m); color: var(--text-2); line-height: 1.4; }
+
+/* A picture resets its control on a double-click. */
+#grainControls .gk-row > .gg.gc-reset { cursor: pointer; }
+
+/* ================================================================ analytics
+   View › Analytics. Laid over the app, below the menubar. See docs/ANALYTICS.md. */
+.an-view { position: fixed; left: 0; right: 0; bottom: 0; top: 24px; z-index: 900; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text); font-size: 11px; overflow: hidden; }
+.an-view.hidden, .an-view .hidden { display: none !important; }
+.an-view .mono { font-family: var(--mono, ui-monospace, Menlo, monospace); }
+.an-head { flex: none; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--surface-0); border-bottom: 1px solid var(--line); }
+.an-title { font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.an-vsep { width: 1px; height: 16px; background: var(--line-2); }
+.an-fill { flex: 1 1 auto; }
+.an-span, .an-local { font-size: 10px; color: var(--text-dim); }
+.an-lbl { display: flex; gap: 4px; align-items: center; font-size: 10px; color: var(--text-dim); }
+.an-view select { font-size: 10px; height: 20px; background: var(--well); color: var(--text); border: 1px solid var(--line-2); border-radius: 3px; }
+.an-btn { height: 22px; padding: 0 8px; font-size: 10px; border-radius: 3px; border: 1px solid var(--line-2); background: var(--surface-3); color: var(--text); cursor: pointer; }
+.an-btn.bad { color: var(--bad); }
+.an-btn.warn { color: var(--warn); }
+.an-tabs { display: flex; gap: 2px; }
+.an-tabs button, .an-seg button { height: 20px; padding: 0 9px; font-size: 10px; border: 0; background: var(--well); color: var(--text-2); cursor: pointer; }
+.an-tabs button { border-radius: 3px; }
+.an-tabs button[aria-selected="true"] { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.an-seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
+.an-seg button + button { border-left: 1px solid var(--line-2); }
+.an-seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
+.an-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.an-kpis { flex: none; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+.an-kpi { background: var(--surface); padding: 5px 10px; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.an-kpi .l, .an-kpi .s { font-size: 9px; color: var(--text-dim); letter-spacing: .06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-kpi .s { letter-spacing: 0; }
+.an-kpi .v { font-size: 16px; }
+.an-upper { flex: 1 1 58%; min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr) 400px; gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+.an-lower { flex: 1 1 42%; min-height: 0; display: grid; grid-template-columns: 440px minmax(0, 1fr); gap: 1px; background: var(--line); }
+.an-cell { background: var(--surface); padding: 7px 10px; display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow: auto; }
+.an-h { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; letter-spacing: .06em; flex: none; }
+.an-h > span:not(.an-fill):not(.an-ctlseg) { font-size: 9px; font-weight: 400; letter-spacing: 0; color: var(--text-dim); }
+.an-sub { font-size: 9px; letter-spacing: .06em; color: var(--text-dim); margin: 2px 0; }
+.an-rule { height: 1px; background: var(--line); margin: 3px 0; flex: none; }
+.an-empty { font-size: 10px; color: var(--text-dim); padding: 4px 0; }
+.an-bar { display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 6px; align-items: center; height: 16px; }
+.an-bar .n { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-bar .t { height: 6px; background: var(--well); border-radius: 2px; overflow: hidden; }
+.an-bar .t i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.an-bar .v { font-size: 10px; color: var(--text-dim); text-align: right; white-space: nowrap; }
+.pg-overview { --pg: oklch(62% 0.02 250); } .pg-edit { --pg: oklch(70% 0.16 230); } .pg-room { --pg: oklch(80% 0.14 60); }
+.pg-seq { --pg: oklch(74% 0.15 155); } .pg-compose { --pg: oklch(64% 0.17 310); } .pg-analytics { --pg: oklch(84% 0.008 250); }
+.an-bar[class*="pg-"] .t i { background: var(--pg); }
+.an-row { display: grid; grid-template-columns: 22px minmax(0, 1.6fr) minmax(0, 1fr) 54px 50px minmax(0, 1.4fr) 44px; gap: 6px; align-items: center; min-height: 20px; border-bottom: 1px solid var(--wash); cursor: pointer; }
+.an-row:hover { background: var(--wash); }
+.an-row.open { background: var(--surface-2h); }
+.an-rowhead { font-size: 9px; letter-spacing: .06em; color: var(--text-dim); border-bottom: 1px solid var(--line-2); cursor: default; flex: none; }
+.an-rows { min-height: 0; overflow: auto; }
+.an-row > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
+.an-row .nm { font-size: 11px; }
+.an-row .r { text-align: right; }
+.an-view .d { color: var(--text-dim); }
+.an-row .rng { display: flex; align-items: center; gap: 4px; }
+.an-row .trk { position: relative; flex: 1 1 auto; height: 6px; background: var(--well); border-radius: 2px; }
+.an-row .trk i { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+.an-row .rng .mono { width: 72px; font-size: 9px; flex: none; overflow: hidden; text-overflow: ellipsis; }
+.an-detail { display: flex; gap: 16px; padding: 6px 0 8px 28px; border-bottom: 1px solid var(--line); }
+.an-hist { display: flex; align-items: flex-end; gap: 1px; height: 40px; width: 200px; background: var(--well); }
+.an-hist i { flex: 1; background: var(--accent); min-height: 1px; }
+.an-days { display: flex; align-items: flex-end; gap: 3px; height: 52px; }
+.an-days .db { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; width: 26px; }
+.an-days .db i { width: 10px; background: var(--accent); min-height: 1px; }
+.an-days .db b { font-size: 9px; font-weight: 400; color: var(--text-dim); white-space: nowrap; }
+.an-heat { position: relative; flex: none; width: 380px; height: 260px; background: var(--well); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.an-hb { position: absolute; box-sizing: border-box; padding: 2px 4px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
+  border: 1px solid rgba(0,0,0,.35); border-radius: 2px; font-size: 9px;
+  background: oklch(calc(22% + var(--h) * 56%) calc(0.04 + var(--h) * 0.11) 230); color: var(--text); }
+.an-hb span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-heatlist { min-height: 0; }
+.an-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; min-height: 0; }
+.an-two .an-bar { grid-template-columns: 112px minmax(0, 1fr) 26px; }
+.an-seq { display: flex; justify-content: space-between; gap: 6px; height: 16px; align-items: center; font-size: 10px; color: var(--text-2); }
+.an-seq span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-legend { display: flex; gap: 8px; }
+.an-legend span { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; color: var(--text-2); }
+.an-legend i { width: 8px; height: 8px; border-radius: 2px; background: var(--pg); }
+.an-legend i.idle, .an-srow .tl i.idle { background: repeating-linear-gradient(45deg, rgba(255,255,255,.18) 0 2px, transparent 2px 4px); }
+.an-legend i.err { width: 2px; background: var(--bad); }
+.an-sessions { display: flex; flex-direction: column; gap: 2px; flex: none; }
+.an-srow { display: grid; grid-template-columns: 130px minmax(0, 1fr) 64px; gap: 8px; align-items: center; height: 26px; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.an-srow:hover .tl, .an-srow.open .tl { outline: 1px solid var(--line-3); }
+.an-srow .w { display: flex; flex-direction: column; font-size: 10px; }
+.an-srow .w .d { font-size: 9px; }
+.an-srow .tl { position: relative; height: 22px; background: var(--well); border-radius: 2px; overflow: hidden; }
+.an-srow .tl i { position: absolute; top: 0; bottom: 0; background: var(--pg); opacity: .38; }
+.an-srow .tl i.idle { opacity: 1; }
+.an-srow .tl b { position: absolute; bottom: 2px; width: 1px; height: 9px; background: var(--text); opacity: .6; }
+.an-srow .tl b.err { top: 0; bottom: 0; height: auto; width: 2px; background: var(--bad); opacity: 1; }
+.an-srow .n { font-size: 9px; text-align: right; }
+.an-log { flex: none; max-height: 220px; overflow: auto; border-top: 1px solid var(--line-2); padding-top: 4px; }
+.an-le { display: grid; grid-template-columns: 44px 70px 70px minmax(0, 1fr) 130px; gap: 6px; height: 16px; align-items: center; font-size: 10px; }
+.an-le > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-le .k { color: var(--warn); }
+.an-mousebar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.an-mousebox { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 10px; background: var(--surface); }
+.an-mousebox canvas { border: 1px solid var(--line-2); border-radius: 3px; }
+/* analytics: performance and storage */
+.an-view .warn { color: var(--warn); }
+.an-view .bad { color: var(--bad); }
+.an-pupper { flex: 1 1 56%; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+.an-plower { flex: 1 1 44%; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); }
+.an-load { position: relative; flex: 1 1 auto; min-height: 120px; background: var(--well); border-radius: 2px; overflow: hidden; }
+.an-load i { position: absolute; bottom: 0; background: var(--accent); opacity: .45; }
+.an-load b { position: absolute; height: 2px; background: var(--text-2); }
+.an-load b.bad { background: var(--bad); }
+.an-load u { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bad); text-decoration: none; }
+.an-budget, .an-half { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--bad); }
+.an-half { border-top-color: var(--line-2); }
+.an-budget span, .an-half span { position: absolute; right: 4px; bottom: 1px; font-size: 9px; color: var(--bad); }
+.an-half span { color: var(--text-dim); }
+.an-strips { flex: none; display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 4px 8px; align-items: center; font-size: 9px; color: var(--text-dim); }
+.an-strip { position: relative; height: 10px; background: var(--well); overflow: hidden; }
+.an-strip.tall { height: 16px; }
+.an-strip i { position: absolute; top: 0; bottom: 0; }
+.an-strip.tall i { top: auto; background: oklch(62% 0.02 250); }
+.an-strip b { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); }
+.act-play { background: oklch(74% 0.15 155); } .act-export { background: oklch(80% 0.14 60); }
+.act-video { background: oklch(64% 0.17 310); } .act-quiet { background: oklch(30% 0.01 250); }
+.an-acts i { background: none; }
+.an-acts i.act-play { background: oklch(74% 0.15 155); } .an-acts i.act-export { background: oklch(80% 0.14 60); }
+.an-acts i.act-video { background: oklch(64% 0.17 310); } .an-acts i.act-quiet { background: oklch(30% 0.01 250); }
+.an-prow, .an-xrow { display: grid; gap: 6px; align-items: center; min-height: 19px; border-bottom: 1px solid var(--wash); font-size: 10px; }
+.an-prow { grid-template-columns: 44px 44px 44px 54px minmax(0, 1fr); }
+.an-xrow { grid-template-columns: 40px 48px 52px 50px minmax(0, 1fr); }
+.an-prow > span, .an-xrow > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-prow.an-rowhead, .an-xrow.an-rowhead { font-size: 9px; letter-spacing: .06em; color: var(--text-dim); border-bottom: 1px solid var(--line-2); flex: none; }
+.an-src { font-size: 9px; padding-left: 4px; margin-top: -2px; }
+.an-store { flex: 1 1 auto; max-width: 900px; gap: 8px; }
+.an-stack { display: flex; height: 10px; border-radius: 2px; overflow: hidden; background: var(--well); flex: none; }
+.an-stack i, .an-legend i[class^="st-"] { background: var(--pg); }
+.st-events { --pg: oklch(70% 0.16 230); } .st-perf { --pg: oklch(80% 0.14 60); } .st-spikes { --pg: oklch(65% 0.19 25); }
+.st-daily { --pg: oklch(74% 0.15 155); } .st-other { --pg: oklch(64% 0.17 310); }
+.an-ret { display: grid; grid-template-columns: 220px 110px minmax(0, 1fr); gap: 6px 12px; align-items: center; font-size: 11px; border-top: 1px solid var(--line-2); padding-top: 8px; }
+.an-ret .d { font-size: 10px; }
+
+/* With the menu bar unlisted there is nothing above the analytics view. */
+body:has(header.menubar.hidden) .an-view { top: 0; }
+
+/* ================================================================ Prism
+   Hyperprism's XY pad, HyperStretch and the rack pad merged: the rail's Prism
+   page. HyperStretch's look, the rack pad's square box sized to the dock
+   (`hsFit`, `--hs-side`). `ui/app/385-hyperstretch.js`, docs/HYPERSTRETCH.md. */
+/* The tab is the Prism page's own. */
+body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
+.hyper-body { --hs-side: 220px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; font-size: 11px; }
+.hyper-body.hidden { display: none; }
+.hs-head { flex: none; min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 7px; padding: 3px 8px; background: var(--surface-0); border-bottom: 1px solid var(--line); }
+.hs-head .hidden, .hs-h .hidden { display: none; }
+#prismPtcOn { margin-left: 6px; height: 16px; }
+#prismLoop:disabled { opacity: .4; cursor: default; }
+.hs-head select.mini { width: 110px; min-width: 0; }
+/* Fixed widths, so the header wraps the same whatever the source is called
+   and the pad, sized from what is left, keeps its size. */
+.hs-head #prismSource, .hs-head #prismPreset { width: 140px; }
+.hs-name { width: 86px; }
+.hs-ms { width: 44px; text-align: right; }
+.hs-title { font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.hs-lbl { display: flex; gap: 4px; align-items: center; font-size: 10px; color: var(--text-dim); }
+.hs-vsep { width: 1px; height: 16px; background: var(--line-2); }
+.hs-fill { flex: 1 1 auto; }
+.hs-dim { font-size: 9px; color: var(--text-dim); }
+.hs-transport { display: flex; gap: 2px; }
+.hs-btn { height: 20px; min-width: 24px; padding: 0 6px; font-size: 10px; border-radius: 3px; border: 1px solid var(--line-2); background: var(--surface-3); color: var(--text); cursor: pointer; }
+.hs-btn.on, #hsRec.on { color: var(--bad); }
+#prismLoop.on, #prismPtcOn.on { color: var(--accent); border-color: var(--accent); }
+/* One width whatever it says: a header that re-wrapped as the chip changed
+   would resize the pad under the hand. */
+.hs-chip { box-sizing: border-box; width: 196px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--well); color: var(--text-dim); }
+.hs-chip[data-mode="rec"] { color: var(--bad); }
+.hs-chip[data-mode="play"] { color: var(--good); }
+#hsNow { font-size: 10px; }
+.hs-body { flex: 1 1 0; display: flex; gap: 10px; padding: 8px; min-height: 0; overflow: hidden; }
+/* The Prism deck's strip (`engine/src/decks.rs`): Prism's own sound, its
+   waveform with the playhead, its transport and its chain. One line, so the
+   pad's size never depends on it. */
+.hs-deck { flex: none; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--surface-0); border-bottom: 1px solid var(--line); overflow: hidden; }
+.hs-deck select.mini { width: 120px; min-width: 0; }
+.hs-deck-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.hs-wave { flex: 1 1 120px; min-width: 80px; height: 22px; background: var(--sink); border: 1px solid var(--line); border-radius: 3px; }
+.hs-chain { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
+.prism-chain-slot { display: inline-flex; align-items: center; gap: 4px; padding: 0 2px 0 6px; height: 20px; border: 1px solid var(--line-2); border-radius: 4px; white-space: nowrap; }
+.prism-chain-slot .hs-btn { padding: 0 4px; min-width: 0; }
+.hs-stage { flex: none; display: flex; flex-direction: column; gap: 3px; }
+.hs-top { display: flex; align-items: center; gap: 4px; height: 21px; margin-left: 41px; width: var(--hs-side); }
+.hs-mid { display: flex; }
+.hs-left { width: 41px; height: var(--hs-side); display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.hs-lim { width: 38px; height: 16px; box-sizing: border-box; font-size: 10px; text-align: center; background: var(--well); color: var(--text); border: 1px solid var(--line-2); border-radius: 2px; }
+.hs-lim { appearance: textfield; }
+.hs-lim::-webkit-inner-spin-button, .hs-lim::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.hs-axis { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 10px; color: var(--text-2); }
+.hs-vert { writing-mode: vertical-rl; transform: rotate(180deg); flex: 0 1 auto; min-height: 0; }
+/* The blue window, square, as large as the dock leaves room for. */
+.hs-pad { position: relative; display: block; width: var(--hs-side); height: var(--hs-side); box-sizing: content-box; padding: 0; margin: 0; border: 1px solid #000; border-radius: 0; overflow: hidden; cursor: crosshair; touch-action: none; background: oklch(28% 0.09 255); }
+.hyper-body[data-mode="rec"] .hs-pad { background: oklch(30% 0.10 258); }
+.hs-pad:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hs-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.hs-grid { stroke: rgba(255,255,255,0.08); fill: none; }
+.hs-path { fill: none; stroke: oklch(72% 0.17 235); stroke-width: 1.5; stroke-linejoin: round; }
+.hs-ghost { fill: none; stroke: oklch(95% 0.005 250 / 0.55); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.hs-cross { stroke: #000; stroke-width: 2; fill: none; }
+/* cicn 1100 and 1101: a yellow ball on a black crosshair, orange-red recording. */
+.hs-ball { fill: #ffff00; stroke: #000; stroke-width: 1; }
+.hyper-body[data-mode="rec"] .hs-ball { fill: #ff6633; }
+.hs-read { position: absolute; padding: 1px 4px; font-size: 10px; background: rgba(0,0,0,0.65); color: var(--text); border-radius: 2px; white-space: nowrap; pointer-events: none; }
+.hs-read.hidden { display: none; }
+.hs-foot { display: flex; gap: 6px; align-items: center; height: 16px; width: calc(var(--hs-side) + 43px); font-size: 9px; color: var(--text-dim); white-space: nowrap; overflow: hidden; }
+#hsInfo { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
+.hs-banks { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.15fr) minmax(0, 0.9fr) minmax(0, 0.9fr); gap: 1px; background: var(--line); border: 1px solid var(--line); align-self: stretch; }
+.hs-bank { background: var(--surface-2); padding: 5px 8px; display: flex; flex-direction: column; gap: 5px; min-height: 0; overflow: auto; }
+.hs-bank.hs-off > :not(.hs-h) { opacity: .45; pointer-events: none; }
+.hs-h { font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+.hs-h span { font-size: 9px; font-weight: 400; letter-spacing: 0; color: var(--text-dim); margin-left: 4px; }
+.hs-row { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-2); }
+.hs-row input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.hs-col { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--text-2); }
+.hs-glide.hidden { display: none; }
+.hs-kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 10px; }
+.hs-kv > span:nth-child(odd) { color: var(--text-dim); }
+.hs-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.hs-slot { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; border-radius: 3px; cursor: pointer; color: var(--text); background: var(--surface-0); border: 1px solid var(--line-2); }
+.hs-slot.on { border-color: var(--accent); }
+.hs-slot-top { display: flex; justify-content: space-between; width: 100%; font-size: 10px; }
+.hs-slot svg { background: oklch(26% 0.08 255); border-radius: 2px; }
+.hs-slot polyline { fill: none; stroke: oklch(80% 0.14 235); stroke-width: 3; }
+.hs-seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
+.hs-seg button { height: 20px; padding: 0 8px; font-size: 10px; border: 0; background: var(--well); color: var(--text-2); cursor: pointer; }
+.hs-seg button + button { border-left: 1px solid var(--line-2); }
+.hs-seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
+.hs-shapes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
+/* Hyperprism's L, LR and R faders, upright, each with its 0. */
+.hs-faders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; flex: 1 1 auto; min-height: 0; }
+.hs-fader { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 0; }
+.hs-fader input[type="range"] { writing-mode: vertical-lr; direction: rtl; flex: 1 1 auto; min-height: 50px; width: 18px; }
+.hs-fader .mono { font-size: 9px; }
+
+/* ── The Prism page, v7 (RJ, 6 Nov 2026, after the design council: "less
+   color, less chaos, less candy, more professional"). One row of fixed-width
+   banks: Controls (the process's settings as half-width bars with their
+   pictures, and the four LFOs under them), Takes, Output. One accent for
+   "on"; colour only where it means something, and muted: each picture is
+   tinted by what its control does to the sound, each LFO keeps its own hue on
+   its tab, its ring and its scope. No glows. */
+#dockHyper {
+  --plfo1: oklch(76% .06 200); --plfo2: oklch(73% .06 350); --plfo3: oklch(78% .06 130); --plfo4: oklch(78% .06 80);
+  --pv-f-time: oklch(74% .055 75); --pv-f-pitch: oklch(72% .055 300); --pv-f-tone: oklch(74% .045 170);
+  --pv-f-attack: oklch(72% .055 35); --pv-f-space: oklch(74% .045 245); --pv-f-level: oklch(74% .015 250);
+}
+#dockHyper .prism-bars { --f-time: var(--pv-f-time); --f-pitch: var(--pv-f-pitch); --f-tone: var(--pv-f-tone);
+  --f-attack: var(--pv-f-attack); --f-space: var(--pv-f-space); --f-level: var(--pv-f-level); }
+/* Fixed widths: Controls two units, Takes one, Output half. Nothing stretches. */
+#dockHyper .hs-banks { flex: none; display: flex; gap: 1px; }
+#dockHyper .hs-bank { flex: none; overflow: hidden; gap: 4px; padding: 5px 7px; }
+#dockHyper .prism-ctl { width: 409px; }
+#dockHyper .prism-takes { width: 204px; }
+#dockHyper .prism-out { width: 102px; }
+#dockHyper .hs-h { display: flex; align-items: center; gap: 4px; color: var(--text-2); white-space: nowrap; }
+/* The bars, a little shorter than the Grain tray's: 20 px, two to a line. */
+#dockHyper .prism-bars { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3px 6px; align-content: start; }
+#dockHyper .prism-takebars { grid-template-columns: minmax(0, 1fr); }
+#dockHyper .prism-bars .param.gk-row:has(> input[type=range]) { height: 22px; grid-template-columns: 26px minmax(0, 1fr) auto; }
+#dockHyper .prism-bars .gk-row > .gg { width: 26px; height: 19.5px; cursor: pointer; }
+#dockHyper .prism-bars .gk-row > input[type=range] { height: 20px; border-radius: 2px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--fc) 18%, var(--surface-3)) calc(var(--f, 0) * 100%), var(--surface-1, var(--surface-2)) 0); }
+#dockHyper .prism-bars .gk-row > input[type=range]:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc) 60%, var(--line-2)); }
+#dockHyper .prism-bars .gk-row > input[type=range]::-webkit-slider-runnable-track { height: 20px; }
+#dockHyper .prism-bars .gk-row > input[type=range]::-webkit-slider-thumb { height: 20px; width: 1.5px; background: color-mix(in srgb, var(--fc) 70%, var(--text)); }
+#dockHyper .prism-bars .gk-row:has(> input[type=range]) > :is(.k, .v) { text-shadow: none; font-size: var(--fs-s); }
+#dockHyper .prism-bars .gk-row:has(> input[type=range]) > .v { width: auto; min-width: 0; font-family: var(--mono); font-size: 10px; }
+#dockHyper .prism-bars .gg .a { stroke-width: 2.2; }
+#dockHyper .prism-settings .prism-group-label { grid-column: 1 / -1; font: 600 9px/12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); margin-top: 1px; }
+#dockHyper .prism-onpad > input[type=range] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, var(--line-2)) !important; }
+#dockHyper .prism-onpad > .k::after { content: attr(data-ax); font: 700 9px var(--mono); color: var(--accent); margin-left: 4px; }
+/* An LFO on a bar: a thin ring in its colour and a marker where it is. */
+#dockHyper .prism-bar { position: relative; }
+#dockHyper .plfo-mark { display: none; position: absolute; top: 1px; bottom: 1px; width: 1.5px; margin-left: -.75px; background: var(--lc); pointer-events: none; z-index: 2; }
+#dockHyper .prism-bar.plfo-on > input[type=range] { box-shadow: inset 0 0 0 1px var(--lc) !important; }
+#dockHyper .prism-bar.plfo-on > .plfo-mark { display: block; }
+body.prism-mapping #dockHyper #prismSettings .prism-bar > input[type=range] { cursor: copy; outline: 1px dashed var(--plfo-map); outline-offset: 1px; }
+/* The LFOs, under the controls they move. */
+#dockHyper .plfo { margin-top: auto; border-top: 1px solid var(--line); padding-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+#dockHyper .plfo-head { display: flex; align-items: center; gap: 6px; }
+#dockHyper .plfo-tabs { display: grid; grid-template-columns: repeat(4, 26px); gap: 2px; }
+#dockHyper .plfo-tab { position: relative; height: 20px; padding: 0 7px 0 0; border: 1px solid var(--line-2); border-radius: 2px; background: var(--surface-2); color: var(--text-dim); font: 600 10px var(--mono); cursor: pointer; }
+#dockHyper .plfo-tab.on { background: var(--surface-3); color: var(--text); border-color: var(--lc); }
+#dockHyper .plfo-tab i { position: absolute; right: 3px; top: 7px; width: 4px; height: 4px; border-radius: 50%; background: var(--lc); }
+#dockHyper .plfo-shapes { flex: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
+#dockHyper .plfo-shape { height: 20px; padding: 1px 2px; border: 1px solid var(--line-2); border-radius: 2px; background: var(--surface-2); cursor: pointer; }
+#dockHyper .plfo-shape svg { display: block; width: 100%; height: 100%; }
+#dockHyper .plfo-shape path { fill: none; stroke: var(--text-dim); stroke-width: 1.6; }
+#dockHyper .plfo-shape.on { border-color: var(--accent); }
+#dockHyper .plfo-shape.on path { stroke: var(--text); }
+#dockHyper .plfo-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+#dockHyper .plfo-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#dockHyper .plfo-col.prism-bars { display: grid; grid-template-columns: minmax(0, 1fr); }
+#dockHyper .plfo-scope { display: block; width: 100%; height: 30px; background: var(--surface-1, var(--surface-2)); border: 1px solid var(--line); }
+#dockHyper .plfo-axis { stroke: var(--line-2); }
+#dockHyper .plfo-trace { fill: none; stroke: var(--lc); stroke-width: 1.4; opacity: .7; vector-effect: non-scaling-stroke; }
+#dockHyper .plfo-head-line { stroke: var(--lc); opacity: .35; vector-effect: non-scaling-stroke; }
+#dockHyper .plfo-dot { fill: var(--lc); }
+#dockHyper .plfo-map { display: flex; align-items: center; gap: 5px; }
+#dockHyper .plfo-mapbtn.on { color: var(--text); border-color: var(--lc); background: color-mix(in srgb, var(--lc) 22%, var(--surface-3)); }
+#dockHyper .plfo-chips { display: flex; flex-wrap: wrap; gap: 3px; min-height: 16px; }
+#dockHyper .plfo-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 0 0 5px; height: 16px; font-size: 10px; color: var(--text-2); border: 1px solid color-mix(in srgb, var(--lc) 55%, var(--line-2)); border-radius: 2px; }
+#dockHyper .plfo-chip button { border: 0; background: none; color: var(--text-dim); cursor: pointer; padding: 0 4px; font-size: 11px; line-height: 14px; }
+#dockHyper .plfo-chip button:hover { color: var(--text); }
+/* Takes: the slots fill what the bank has left, so it has no gap at its foot. */
+#dockHyper .prism-takes .hs-slots { flex: 1 1 auto; min-height: 30px; }
+#dockHyper .prism-takes .hs-slot { justify-content: flex-start; min-height: 0; padding: 2px; }
+#dockHyper .prism-takes .hs-slot svg { flex: 1 1 auto; width: 100%; min-height: 0; height: auto; }
+#dockHyper .prism-rateplay { justify-content: space-between; }
+#dockHyper .prism-glide-kv { grid-template-columns: auto auto auto auto; justify-content: start; font-size: 9px; gap: 0 5px; white-space: nowrap; overflow: hidden; }
+#dockHyper .prism-motion { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
+#dockHyper .prism-motion .hs-tog { grid-column: span 2; }
+#dockHyper .prism-motion .hs-btn { padding: 0 2px; min-width: 0; font-size: var(--fs-xs); }
+#dockHyper .hs-tog { display: flex; align-items: center; justify-content: center; gap: 3px; height: 20px; font-size: var(--fs-xs); color: var(--text-2); border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-3); cursor: pointer; white-space: nowrap; }
+#dockHyper .hs-tog:has(input:checked) { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface-3)); }
+#dockHyper .hs-tog input { margin: 0; width: 11px; height: 11px; }
+#dockHyper .prism-out .hs-faders { flex: 1 1 auto; }
+#dockHyper .hs-seg button.on { background: color-mix(in srgb, var(--accent) 24%, var(--surface-3)); color: var(--text); font-weight: 500; }
+/* The quieter pad: slate, a faint grid, a plain point. */
+#dockHyper .hs-pad { background: color-mix(in srgb, var(--accent) 9%, var(--surface-1, #161b22)); border-color: var(--line-2); }
+#dockHyper .hs-grid { stroke: rgba(255,255,255,0.06); }
+#dockHyper .hs-ball { fill: var(--text); stroke: var(--bg); }
+#dockHyper .hs-slot svg { background: color-mix(in srgb, var(--accent) 9%, var(--surface-1, #161b22)); }
+#dockHyper .hs-slot polyline { stroke: color-mix(in srgb, var(--accent) 70%, var(--text)); stroke-width: 2.5; }
+/* The Process menu, with its pictures: short and wide, inside the panel. */
+.ppick { position: relative; }
+.ppick-btn { display: flex; align-items: center; gap: 4px; width: 190px; height: 22px; padding: 0 6px 0 2px; border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-3); color: var(--text); font-size: 11px; cursor: pointer; --gg: var(--text-2); }
+.ppick-btn::after { content: "▾"; margin-left: auto; color: var(--text-dim); }
+.ppick-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ppick .pic { flex: none; width: 24px; height: 18px; overflow: visible; }
+.ppick-menu { position: fixed; z-index: 40; display: grid; grid-template-columns: repeat(5, 152px); gap: 0 8px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 8px 20px rgba(0,0,0,.45); }
+.ppick-menu[hidden] { display: none; }
+.ppick-g { display: flex; flex-direction: column; margin-bottom: 4px; }
+.ppick-g > i { font: 600 9px/13px var(--mono); font-style: normal; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }
+.ppick-i { display: flex; align-items: center; gap: 5px; height: 20px; padding: 0 4px 0 1px; border: 0; border-left: 2px solid transparent; background: none; color: var(--text-2); font-size: 11px; text-align: left; white-space: nowrap; cursor: pointer; --gg: var(--text-2); }
+.ppick-i:hover, .ppick-i:focus-visible { background: var(--surface-3); color: var(--text); outline: none; }
+.ppick-i.on { border-left-color: var(--accent); background: var(--surface-3); color: var(--text); --gg: var(--text); }
+.ppick-i .pic { width: 22px; height: 16.5px; }
+/* The native menu stays for the paths that pick a source by value; unseen. */
+.ppick-mirror { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

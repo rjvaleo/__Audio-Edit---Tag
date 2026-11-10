@@ -18,7 +18,7 @@
 // that overstates its reach is worse than no check.
 
 import { readFileSync } from 'node:fs';
-import { appSource, whereIs } from './app-source.mjs';
+import { appSource, servedSource, whereIs } from './app-source.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -261,7 +261,7 @@ for (const src of [...html.matchAll(/<script src="\/([\w.-]+)"><\/script>/g)]) {
   const name = src[1];
   if (name === 'app.js') continue;
   let text;
-  try { text = readFileSync(join(root, 'ui', name), 'utf8'); } catch { continue; }
+  try { text = servedSource(name); } catch { continue; }
   const flat = code(text);
   for (const m of flat.matchAll(/\bfunction\s+(\w+)\s*\(/g)) declared.add(m[1]);
   for (const m of flat.matchAll(/^(?:const|let|var)\s+(\w+)/gm)) declared.add(m[1]);

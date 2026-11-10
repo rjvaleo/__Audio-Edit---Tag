@@ -144,7 +144,7 @@ outside and the test fails.
 - `ui/index.html` — the rail button, and `#roomView` in `.centre`.
 - `ui/app.js` — `roomAdopt`, `roomReleaseAll`, `enterRoomView`, `leaveRoomView`,
   the divider, and the third mode in `setMode`.
-- `ui/app.css` — `.roomview` and everything under `.rv-`, which is mostly
+- `ui/app-css/` — `.roomview` and everything under `.rv-`, which is mostly
   undoing the overlay geometry the borrowed parts wear in their other home.
 - `ui/section-presets.js` — the look picker on the stage bar; see
   [`SECTION-PRESETS.md`](SECTION-PRESETS.md).

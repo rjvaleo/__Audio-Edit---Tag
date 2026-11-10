@@ -1,0 +1,691 @@
+@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;400;600&display=swap");
+/* Ported from the AudioLab design: same oklch palette, type scale and panel
+   geometry, rebuilt as plain CSS so the app needs no build step and no CDN. */
+
+:root {
+  --bg:        oklch(11% 0.012 250);
+  --surface:   oklch(14% 0.014 250);
+  --surface-2: oklch(15.5% 0.013 250);
+  --surface-3: oklch(19% 0.014 250);
+  --well:      oklch(9.5% 0.01 250);
+  /* Three steps the stylesheet was already using as literals. Named rather than
+     invented: 8% under the well, 12.5% between the well and the surface, 17%
+     between the surface and the one above it. Every hardcoded surface in the
+     file now lands within half a percent of one of these eight. */
+  --sink:      oklch(8% 0.012 250);
+  --surface-0: oklch(12.5% 0.012 250);
+  --surface-2h: oklch(17% 0.013 250);
+
+  /* Blacks at alpha, which were twenty-three literals across thirteen values.
+     Three is enough: everything snapped within .08 of one of them. */
+  /* Audio is drawn in one of two colours and no theme may change them.
+     A waveform is a reading, not decoration: it is the thing you judge level
+     and shape by, and it has to look the same every time you look at it. Tie it
+     to the accent and a palette can turn every waveform in the program brown.
+     Deliberately absent from the theme map.
+
+     Green is the one drawn, blue the alternative — they swapped on 15 Aug 2026.
+     The green is Conifer's accent exactly, oklch(75% 0.19 145), which restores
+     the relationship the blue original had: there, the accent *was* the
+     waveform, both oklch(70% 0.16 230) to the digit. Matching is the design,
+     not a collision — what must never happen is a *palette* moving it, and that
+     is prevented by the token being outside the map rather than by it being an
+     unusual colour.
+
+     `--good` stays oklch(72% 0.15 155) and is deliberately not this: a meter
+     saying a level is safe must not be the same green as the level itself. */
+  --wave:      oklch(75% 0.19 145);
+  --wave-2:    oklch(70% 0.16 230);
+
+  --shadow-soft: rgba(0,0,0,0.25);
+  --shadow:      rgba(0,0,0,0.55);
+  --shadow-hard: rgba(0,0,0,0.75);
+
+  /* Whites at alpha — hairlines, washes and the brightest rules. `--line` and
+     `--line-2` already existed and keep their values. */
+  --wash:      rgba(255,255,255,0.025);
+  --line-3:    rgba(255,255,255,0.14);
+  --line-4:    rgba(255,255,255,0.42);
+  --line:      rgba(255,255,255,0.06);
+  --line-2:    rgba(255,255,255,0.10);
+
+  --text:      oklch(95% 0.005 250);
+  --text-2:    oklch(84% 0.008 250);
+  --text-dim:  oklch(70% 0.010 250);
+  --text-dimmer: oklch(60% 0.012 250);
+
+  --accent:    oklch(70% 0.16 230);
+  --warn:      oklch(78% 0.14 55);
+  --bad:       oklch(65% 0.19 25);
+  --good:      oklch(72% 0.15 155);
+  /* What a grain control does to the sound (the Facets theme sets these too). */
+  --f-time:   oklch(80% 0.14 75);
+  --f-pitch:  oklch(72% 0.16 300);
+  --f-tone:   oklch(78% 0.12 195);
+  --f-attack: oklch(70% 0.18 25);
+  --f-space:  oklch(76% 0.15 150);
+  --f-level:  oklch(88% 0.02 250);
+
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* The type scale (C1, `docs/DESIGN-CRITIQUE.md`). Five steps and nothing
+     between them. There were nineteen sizes from 7 px to 17 px in half-pixel
+     steps; each now lands on the nearest of these. 9 px is the floor, because
+     below it a dark panel stops being readable at arm's length.
+     Two things keep sizes of their own: the room's data block, which is part of
+     the picture on the wall rather than interface, and the theme editor's
+     miniature, which is a model of the interface at a smaller scale. */
+  --fs-xs: 9px;   /* tags, small capitals, units */
+  --fs-s: 10px;   /* dense readouts, the control table */
+  --fs-m: 11px;   /* buttons, labels, the body of a panel */
+  --fs-l: 13px;   /* the page's base, headings, the clock */
+  --fs-xl: 16px;  /* display figures and the largest glyphs */
+
+  --rail: 44px;
+
+  /* The control table. Every slider, choice and checkbox in the app rules up
+     to these, so a panel reads down its column instead of each row finding its
+     own width. Narrower than the longest label on purpose — the names ellipsis
+     and carry a title — because the slider is the part worth the room. */
+  --param-k: 82px;
+  --param-v: 62px;
+  --param-gap: 7px;
+  --param-row: 7px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%; margin: 0;
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans); font-size: var(--fs-l);
+  overflow: hidden;
+}
+body { display: flex; flex-direction: column; }
+
+.mono { font-family: var(--mono); }
+.dim { color: var(--text-dim); }
+.spacer { flex: 1; }
+.hidden { display: none !important; }
+.divider { height: 1px; background: var(--line); margin: 12px 0; }
+button { font-family: inherit; cursor: pointer; }
+
+/* ---------------------------------------------------------------- titlebar */
+
+/* The strip across the very top is now only the menus. Everything that used to
+   live up here — transport, clock, zoom, metadata, level — moved down under the
+   waveform, where it is next to the thing it acts on. */
+
+/* The transport, sitting under the waveform and spectrogram in the editor.
+   Absent in Browse, where there is nothing open to transport. */
+.transportbar {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 9px; padding: 7px 12px;
+  background: var(--surface); border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.transportbar .vsep { flex-shrink: 0; }
+.transportbar #volume { width: 76px; margin-left: auto; flex-shrink: 0; }
+.transportbar .ghost { flex-shrink: 0; padding: 0 9px; }
+.transportbar .mark { flex-shrink: 0; }
+.mark {
+  width: 19px; height: 19px; border-radius: 5px;
+  background: linear-gradient(135deg, var(--accent), oklch(45% 0.14 250));
+}
+.app-name { font-size: var(--fs-l); font-weight: 600; letter-spacing: -0.1px; }
+.sep { color: var(--text-dimmer); }
+.current-file { font-size: var(--fs-l); color: oklch(66% 0.01 250); }
+
+/* ------------------------------------------------------------------ layout */
+
+.shell { flex: 1; display: flex; min-height: 0; }
+
+.rail {
+  width: var(--rail); flex-shrink: 0;
+  background: var(--surface-2); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 6px;
+  position: relative; z-index: 35;
+}
+.rail-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 1px solid transparent; background: transparent;
+  color: var(--text-dim); font-size: var(--fs-xl);
+  display: flex; align-items: center; justify-content: center;
+}
+.rail-btn:hover { background: var(--surface-3); color: var(--text-2); }
+.rail-btn.active { background: var(--surface-3); border-color: var(--line-2); color: var(--accent); }
+
+.panel {
+  flex-shrink: 0; background: var(--surface-2);
+  display: flex; flex-direction: column; overflow: hidden;
+  transition: width .18s ease;
+  position: relative;
+}
+/* The width is a custom property so that `.panel.collapsed` can still win.
+   An inline `style.width` would beat the collapsed rule and the panel could
+   never be shut again. */
+.panel.left  { width: var(--left-w, 330px); border-right: 1px solid var(--line); }
+
+/* The resize grip: a few pixels on the inside of the panel's own edge.
+   Invisible until reached for, like the lane's splitter. */
+.panel-grip {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 6px;
+  cursor: col-resize; z-index: 6; touch-action: none;
+}
+.panel-grip::after {
+  content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 2px;
+  background: transparent; transition: background .12s;
+}
+.panel-grip:hover::after, .panel-grip.dragging::after { background: var(--accent); }
+/* A width transition is right when the panel is opened and shut by a button,
+   and completely wrong while a hand is dragging it — the edge lags the pointer
+   by a fifth of a second. Off for the duration. */
+body.resizing-panel .panel { transition: none; }
+body.resizing-panel { cursor: col-resize; user-select: none; }
+.panel.right { width: 300px; border-left: 1px solid var(--line); }
+.panel.collapsed { width: 0; border: none; }
+
+.panel-head {
+  height: 40px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-l); font-weight: 600; color: oklch(88% 0.006 250);
+}
+.panel-head > span { flex-shrink: 0; }
+.panel-body { flex: 1; overflow-y: auto; padding: 8px; }
+.panel-foot {
+  height: 44px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  border-top: 1px solid var(--line);
+}
+.filter-box {
+  flex: 1; min-width: 0; height: 24px; padding: 0 8px;
+  border-radius: 5px; border: 1px solid var(--line-2);
+  background: var(--bg); color: var(--text);
+  font: inherit; font-size: var(--fs-m); font-weight: 400;
+}
+.filter-box:focus { outline: none; border-color: var(--accent); }
+
+.centre { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ---------------------------------------------------------------- controls */
+
+.x {
+  width: 20px; height: 20px; border-radius: 5px; border: none; flex-shrink: 0;
+  background: transparent; color: var(--text-dim); font-size: var(--fs-xl); line-height: 1;
+}
+.x:hover { background: var(--surface-3); color: var(--text); }
+
+.primary {
+  height: 28px; padding: 0 12px; border-radius: 6px; border: none;
+  background: var(--accent); color: var(--surface);
+  font-size: var(--fs-m); font-weight: 600;
+}
+.primary:hover { filter: brightness(1.08); }
+.primary:disabled { opacity: .35; cursor: not-allowed; filter: none; }
+
+.ghost {
+  height: 26px; padding: 0 10px; border-radius: 6px;
+  border: 1px solid var(--line-2); background: transparent;
+  color: var(--text-2); font-size: var(--fs-m);
+}
+.ghost:hover { border-color: var(--accent); color: var(--text); }
+.ghost:disabled { opacity: .35; cursor: not-allowed; border-color: var(--line); }
+
+.field {
+  width: 100%; height: 30px; padding: 0 9px;
+  border-radius: 6px; border: 1px solid var(--line-2);
+  background: var(--bg); color: var(--text);
+  font: inherit; font-size: var(--fs-l);
+}
+textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 1.45; }
+.field:focus { outline: none; border-color: var(--accent); }
+.field-label {
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--text-dimmer); margin-bottom: 6px;
+}
+
+/* No flex. An inline row of inline-block buttons, spaced by margin rather than
+   by `gap`, so nothing about a button's width or position depends on how many
+   of them there are. */
+.seg {
+  display: inline-block; white-space: nowrap; vertical-align: middle;
+  background: var(--bg); border-radius: 6px; padding: 2px;
+}
+.seg-btn {
+  display: inline-block; vertical-align: middle;
+  height: 22px; padding: 0 9px; border: none; border-radius: 4px;
+  background: transparent; color: var(--text-dim); font-size: var(--fs-m);
+  margin-right: 2px;
+}
+/* Always a gap. Buttons that touch read as one bar with lines drawn on it, and
+   a selected one with a dark border needs the row's colour either side of it to
+   be seen at all. */
+.seg-btn:last-child { margin-right: 0; }
+.seg-param .seg-btn { margin-right: 2px; }
+.seg-param .seg-btn:last-child { margin-right: 0; }
+.seg-btn:hover { color: var(--text-2); }
+.seg-btn.active { background: var(--surface-3); color: var(--accent); }
+
+/* The waveform colours. Fixed widths, sized for the longest of the four —
+   a button is not allowed to change shape because of what is beside it. The
+   chip carries the colour; the word carries the name. */
+.wave-seg { display: block; }
+.wave-seg .seg-btn {
+  width: 66px; padding: 0; text-align: center; white-space: nowrap;
+}
+.wave-seg .seg-btn i {
+  display: inline-block; vertical-align: middle; width: 7px; height: 7px;
+  border-radius: 50%; margin: -1px 5px 0 0; background: var(--chip);
+  box-shadow: 0 0 5px var(--chip);
+}
+.wave-seg .seg-btn.active { background: var(--surface-3); color: var(--text); }
+.wave-own { align-items: center; gap: 8px; margin-top: 7px; }
+.wave-own-label { font-size: var(--fs-m); color: var(--text-dim); }
+/* The native swatch, trimmed to the height of everything else on the row. */
+#waveOwn {
+  width: 46px; height: 22px; padding: 0; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--bg); cursor: pointer;
+}
+#waveOwn::-webkit-color-swatch-wrapper { padding: 2px; }
+#waveOwn::-webkit-color-swatch { border: none; border-radius: 3px; }
+#waveOwn::-moz-color-swatch { border: none; border-radius: 3px; }
+.wave-own #waveReset { height: 22px; padding: 0 9px; font-size: var(--fs-m); }
+
+.check { display: flex; align-items: center; gap: 6px; font-size: var(--fs-m); color: var(--text-2); }
+.check input { accent-color: var(--accent); }
+
+/* -------------------------------------------------- left panel: the library */
+
+/* Sticky, because it is the answer to "where did my files go" and scrolling
+   the list must not take it off screen. The negative offset cancels the
+   panel body's own padding so nothing shows through above it. */
+.tree-opt {
+  position: sticky; top: -8px; z-index: 2;
+  display: flex; align-items: center; gap: 6px;
+  margin: -8px -8px 6px; padding: 8px 10px;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+  font-size: var(--fs-m); color: var(--text-2); cursor: pointer;
+  user-select: none;
+}
+.tree-opt input { accent-color: var(--accent); margin: 0; }
+.tree-opt .hint { margin-left: auto; font-size: var(--fs-s); color: var(--text-dimmer); }
+
+.tree { display: flex; flex-direction: column; gap: 1px; }
+
+.folder-row {
+  display: flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 6px; border-radius: 6px;
+  cursor: pointer; white-space: nowrap; overflow: hidden;
+  font-size: var(--fs-m); color: var(--text-2);
+}
+.folder-row:hover { background: var(--surface-3); }
+.folder-row.selected {
+  background: rgba(125,190,255,0.13); color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.folder-row .label { flex: 1; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.folder-row .count { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-dimmer); }
+.folder-row .grip {
+  color: var(--text-dimmer); font-size: var(--fs-xs); letter-spacing: -2px;
+  cursor: grab; opacity: 0; transition: opacity .12s;
+}
+.folder-row:hover .grip { opacity: 1; }
+.folder-row.dragging { opacity: .4; }
+.folder-row.drop-target { box-shadow: inset 0 2px 0 var(--accent); }
+.twisty { width: 10px; color: var(--text-dimmer); font-size: var(--fs-xs); transition: transform .12s; }
+.twisty.open { transform: rotate(90deg); }
+
+.dot { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
+.dot.high { background: var(--good); }
+.dot.medium { background: var(--warn); }
+.dot.low { background: var(--bad); }
+
+.folder-files { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 8px; }
+
+/* A file row: play, waveform overview, name, and what it is. */
+.file-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px 4px 16px; border-radius: 6px; cursor: pointer;
+}
+.file-row:hover { background: var(--surface-3); }
+.file-row.selected { background: rgba(125,190,255,0.14); }
+.file-row.playing { background: rgba(125,255,190,0.10); }
+
+.file-row .pb {
+  width: 20px; height: 20px; flex-shrink: 0; padding: 0;
+  border-radius: 4px; border: 1px solid var(--line-2);
+  background: transparent; color: var(--text-dim); font-size: var(--fs-xs);
+  display: flex; align-items: center; justify-content: center;
+}
+.file-row .pb:hover { border-color: var(--accent); color: var(--accent); }
+.file-row .pb.on { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+
+.file-row .thumb {
+  width: 54px; height: 24px; flex-shrink: 0;
+  background: var(--bg); border-radius: 4px; display: block;
+}
+.file-row .info { min-width: 0; flex: 1; }
+.file-row .fname {
+  font-size: var(--fs-m); color: var(--text-2);
+  white-space: nowrap;
+}
+.file-row.selected .fname { color: var(--text); }
+.file-row .fmeta {
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dimmer);
+}
+.file-row .fmeta .cat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loading { font-size: var(--fs-s); padding: 6px 16px; color: var(--text-dimmer); }
+
+/* --------------------------------------------------------------- transport */
+
+.transport {
+  height: 42px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px; padding: 0 14px;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.tbtn {
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 6px;
+  border: 1px solid var(--line-2); background: var(--surface-3);
+  color: var(--text); font-size: var(--fs-m);
+  display: flex; align-items: center; justify-content: center;
+}
+.tbtn:hover { border-color: var(--accent); }
+.tbtn.small { width: 22px; height: 22px; border-color: var(--line); background: transparent; color: var(--text-dim); }
+.tbtn.play.on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.vsep { width: 1px; height: 20px; background: var(--line-2); flex-shrink: 0; }
+.time { font-size: var(--fs-l); letter-spacing: .3px; white-space: nowrap; }
+#rateLabel { font-size: var(--fs-m); white-space: nowrap; }
+.zoom { display: flex; align-items: center; gap: 4px; }
+.zoom .mono { font-size: var(--fs-m); min-width: 34px; text-align: center; }
+#volume { width: 84px; flex-shrink: 0; accent-color: var(--accent); }
+.mode-tag {
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text-dimmer); border: 1px solid var(--line-2);
+  border-radius: 4px; padding: 2px 7px; white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ edit toolbar */
+
+.edittools {
+  min-height: 36px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 6px; padding: 5px 14px;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.edittools .ghost { height: 24px; padding: 0 8px; font-size: var(--fs-m); }
+.edittools .primary { height: 24px; padding: 0 10px; font-size: var(--fs-m); }
+.meta-item.sel .v { min-width: 0; white-space: nowrap; }
+.sel-label {
+  font-size: var(--fs-m); color: var(--text-dim);
+  min-width: 90px; max-width: 230px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+/* Keep the toolbar on one line; wrapping costs the vertical space the icon
+   rail was moved to reclaim. */
+.edittools { flex-wrap: nowrap; overflow-x: auto; }
+.edited-flag {
+  font-size: var(--fs-s); color: var(--warn);
+  border: 1px solid var(--warn); border-radius: 4px; padding: 2px 6px;
+}
+
+/* ------------------------------------------------------- ruler and regions */
+
+.ruler {
+  height: 20px; flex-shrink: 0; position: relative;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+/* Empty, it was a 20px grey bar between the overview and the waveform that read
+   as padding, because that is all it was. It gets its height back the moment
+   there is a marker to put in it — the same deal `.regions` already had. */
+.ruler.bare { height: 0; border-bottom: 0; }
+.marker { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+.marker .flag {
+  position: absolute; top: 3px; left: 0; width: 0; height: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 6px solid var(--warn); transform: translateX(-50%);
+}
+.marker .stem { position: absolute; top: 9px; bottom: 0; width: 1px; background: var(--warn); opacity: .5; }
+.marker .name {
+  position: absolute; top: 2px; left: 5px;
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap;
+}
+
+/* Presets, in the row under the transport. Horizontal, because a dropdown and
+   two buttons never needed a panel of their own in the tray. */
+.presetbar {
+  height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.presetbar .pb-label {
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.presetbar select { max-width: 240px; }
+.presetbar .ghost { height: 21px; font-size: var(--fs-s); }
+
+.regions {
+  height: 24px; flex-shrink: 0; position: relative;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+/* Nothing in it, so it does not get to keep a row of the window. Deliberately
+   not called `empty` — that class is already taken by the placeholder message
+   style, which carries 40px of padding and would make this strip taller. */
+.regions.bare { height: 0; border-bottom: 0; }
+.region {
+  position: absolute; top: 3px; bottom: 3px;
+  background: rgba(125,190,255,0.14); border: 1px solid var(--accent);
+  border-radius: 3px; display: flex; align-items: center; padding: 0 6px;
+  overflow: hidden; cursor: pointer;
+}
+.region span { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-2); white-space: nowrap; }
+.region:hover { background: rgba(125,190,255,0.26); }
+
+/* ------------------------------------------------- the tray's vertical rhythm
+   Every slider sits the same distance from the one above it. It did not before:
+   Time & pitch's three were plain block children with no gap at all, and every
+   other group was in a flex container with seven pixels between rows — so the
+   same control was tight in one panel and loose in the next depending only on
+   which container it had ended up in. The tight one won, plus a pixel above and
+   below, which is the whole of the difference now.
+
+   Scoped to the tray. The effect rack builds its params the same way and is not
+   laid out to the same rhythm. */
+#dockStretch .cpanel,
+#dockStretch .wild,
+#dockStretch .wild-body { gap: 0; }
+#dockStretch .param,
+#dockStretch .param-pair { padding: 1px 0; }
+/* What is not a slider still needs the room the container gap used to give it. */
+#dockStretch .toggle { margin: 3px 0; }
+#dockStretch .param-pair .toggle { margin: 0; }
+/* The length readout and the load meter share a line: one says what you asked
+   for, the other what it costs, and they are read together or not at all. */
+.stretch-readout { display: flex; align-items: baseline; gap: 10px; }
+.stretch-readout #stretchOut { flex: 1 1 auto; min-width: 0; }
+.engine-load { flex: 0 0 auto; cursor: pointer; font-size: var(--fs-m); }
+/* Three states, because the number alone is not a judgement. Under three
+   quarters is fine and stays quiet; past that it is worth knowing; past one the
+   engine cannot keep up and that is what a dropout is. */
+.engine-load.near { color: var(--warn); }
+.engine-load.over { color: var(--bad); font-weight: 600; }
+
+#dockStretch .engine-pick { margin-bottom: 6px; }
+#dockStretch .wild-head { margin-bottom: 4px; }
+#dockStretch #stretchOut { margin-top: 6px; }
+
+/* ------------------------------------------------------------ the rack knobs
+   An effect is a little module rather than a column of long sliders: eight
+   knobs fit where three sliders did, and a handful of controls reads as one
+   object instead of a list. Packed from the left and wrapping, so a rack with
+   four controls takes four knobs' worth of room and not the whole panel. */
+.knob-grid {
+  display: flex; flex-wrap: wrap; justify-content: flex-start;
+  align-items: flex-start; gap: 14px 14px; margin-top: 0;
+  padding: 16px 14px 14px;
+  border: 1px solid var(--line-2); border-top: 0;
+  background:
+    linear-gradient(180deg, var(--wash), transparent 22px),
+    var(--surface-0);
+  box-shadow: inset 0 1px var(--wash), 0 8px 20px var(--shadow-soft);
+}
+.knob {
+  width: 58px; flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.knob svg {
+  width: 48px; height: 48px; display: block;
+  cursor: ns-resize; touch-action: none;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.65));
+}
+.knob .bezel { fill: #090b0e; stroke: var(--line-3); stroke-width: 1; }
+.knob .cap { fill: #11151a; stroke: var(--line); stroke-width: 1; }
+.knob .track { fill: none; stroke: var(--line-3); stroke-width: 2.5; stroke-linecap: round; }
+.knob .arc   { fill: none; stroke: oklch(70% .18 235); stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 2px rgba(45,157,255,.5)); }
+.knob .ptr   { stroke: #eef7ff; stroke-width: 1.7; stroke-linecap: round; }
+.knob .k {
+  font-size: var(--fs-xs); font-weight: 650; letter-spacing: .35px; text-transform: uppercase;
+  color: oklch(76% .012 250); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.knob .v {
+  min-width: 54px; padding: 2px 4px; border: 1px solid rgba(95,157,214,.28);
+  border-radius: 2px; background: #101c2b; text-align: center;
+  font-family: var(--mono); font-size: var(--fs-xs); color: #a9d7ff;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  box-shadow: inset 0 1px 4px var(--shadow-hard);
+}
+.knob:hover .track { stroke: var(--line-3); }
+/* While it is being turned, so the one under the pointer is obvious even when
+   the pointer has been dragged off it. */
+.knob.turning .arc { filter: brightness(1.3); }
+.knob.turning .k, .knob.turning .v { color: var(--accent); }
+/* A band label breaks the row, so the three EQ bands read as three groups
+   rather than one run of nine knobs. */
+.knob-grid .band-head { flex: 0 0 100%; margin-top: 2px; }
+
+/* --------------------------------------------------------------------- lane */
+
+.lane {
+  flex: 1; min-height: 140px; position: relative;
+  background: var(--well); overflow: hidden;
+  border-bottom: 1px solid var(--line); cursor: text;
+}
+.lane canvas { position: absolute; left: 0; right: 0; width: 100%; display: block; }
+#waveCanvas { top: 0; height: 100%; z-index: 2; }
+/* Between the waveform and everything you can grab. */
+#grainLayer {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 3; pointer-events: none;
+}
+#grainLayer.hidden { display: none; }
+
+/* The grain centre grip. The line itself is drawn on the canvas with the marks
+   it belongs to; this is only the handle. It shows on hover and while dragging,
+   and the guide across the lane appears only while you are actually moving it —
+   a permanent rule through the middle of the waveform is one more line between
+   you and the sound. */
+.grain-centre {
+  position: absolute; left: 0; width: 34px; height: 13px; margin-top: -6px;
+  z-index: 4; cursor: ns-resize; touch-action: none;
+}
+.grain-centre.hidden { display: none; }
+.grain-centre i {
+  position: absolute; left: 4px; right: 4px; top: 5px; height: 3px;
+  border-radius: 2px; background: var(--text-dimmer); opacity: .5;
+  transition: opacity .12s, background .12s;
+}
+.grain-centre:hover i, .grain-centre.dragging i { background: var(--accent); opacity: 1; }
+/* The guide, while dragging only. */
+.grain-centre::after {
+  content: ''; position: absolute; left: 34px; top: 6px; width: 100vw; height: 1px;
+  background: var(--accent); opacity: 0; pointer-events: none;
+}
+.grain-centre.dragging::after { opacity: .55; }
+#specCanvas { display: none; z-index: 1; }
+
+/* With the spectrogram on, the two canvases split the lane. All geometry lives
+   here — the drawing code must not set it, or the two fight and one collapses. */
+/* The waveform is what you work against, so it keeps the larger share — but a
+   quarter left the spectrogram squashed to the point of being unreadable, which
+   is worse than not showing it. A third is the default; the boundary is
+   draggable and `--split` is where it is.
+
+   One property, read by three rules. The canvases and the handle all derive
+   from it, so there is no arithmetic to get out of step — which is the same
+   reason the geometry lives here rather than in the drawing code. */
+.lane.split { --split: 64%; }
+.lane.split #waveCanvas { height: var(--split); }
+.lane.split #specCanvas { display: block; top: var(--split); height: calc(100% - var(--split)); }
+
+/* The handle sits on the seam and is mostly invisible until you go near it.
+   Taller than it looks: a one-pixel target is a one-pixel target, so the hit
+   area straddles the line while the line itself stays hairline. */
+.lane-split { display: none; }
+.lane.split .lane-split {
+  display: block; position: absolute; left: 0; right: 0;
+  top: var(--split); height: 9px; margin-top: -4px;
+  z-index: 6; cursor: ns-resize;
+}
+.lane.split .lane-split::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 4px; height: 1px;
+  background: var(--line-2);
+}
+.lane.split .lane-split:hover::after,
+.lane.split .lane-split.dragging::after { background: var(--accent); height: 2px; }
+body.resizing-lane { cursor: ns-resize; user-select: none; }
+
+.selection {
+  position: absolute; top: 0; bottom: 0; z-index: 3;
+  background: rgba(125,190,255,0.16);
+  border-left: 1px solid var(--accent); border-right: 1px solid var(--accent);
+  pointer-events: none;
+}
+/* The read band: the span of the file the grain cloud is drawing from at this
+   instant. A playhead is a line because ordinary playback reads one sample at a
+   time; a cloud reads a whole region, and drawing it as a line said something
+   untrue about it. */
+.read-band {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 0; z-index: 4;
+  background: oklch(63% 0.24 26 / 0.12);
+  border-left: 1px solid oklch(63% 0.24 26 / 0.35);
+  border-right: 1px solid oklch(63% 0.24 26 / 0.35);
+  pointer-events: none; display: none;
+  will-change: transform, width;
+}
+
+.playhead {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 1.5px; z-index: 5;
+  background: oklch(63% 0.24 26);
+  box-shadow: 0 0 6px oklch(63% 0.24 26 / 0.85);
+  pointer-events: none; display: none;
+  /* Positioned by transform, so it never triggers layout while animating. */
+  will-change: transform;
+}
+
+/* The cue: where playback starts from and returns to, until it is moved or
+   cleared. Static, so it reads differently from the moving playhead. */
+.cue {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 1px; z-index: 4;
+  background: var(--line-4);
+  pointer-events: none; display: none;
+}
+.cue i {
+  position: absolute; top: 0; left: 0; width: 0; height: 0;
+  transform: translateX(-4px);
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 6px solid rgba(255,255,255,0.75);
+}
+.lane-empty {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-dimmer); font-size: var(--fs-l);
+}
+

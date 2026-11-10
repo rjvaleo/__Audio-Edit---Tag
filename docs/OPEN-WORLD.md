@@ -48,7 +48,7 @@ picture moves then, and not before.
 
 ### Where it lives
 
-- `ui/vis-gl.js` — `VG_WORLD_DEFAULT`, `vgIsWorld`, `vgWorldFromBox`,
+- `ui/vis-gl/` — `VG_WORLD_DEFAULT`, `vgIsWorld`, `vgWorldFromBox`,
   `vgBoxFromWorld`, `vgBoxOf`, `vgWorldView`.
 - `ui/app.js` — `ROOM_CAMERAS_KEY`, `roomCamerasMigrate` and the load;
   `roomAspectNow`, `roomSetCam` (`roomSetWorld` since step three),
@@ -98,14 +98,14 @@ own aspect, which is exactly what the helpers do, so the two agree.
 
 ### Where it lives, step two
 
-- `ui/vis-gl.js` — `VG_HORIZON`, `VG_GRID_STEP`, `vgProjectPoint`,
+- `ui/vis-gl/` — `VG_HORIZON`, `VG_GRID_STEP`, `vgProjectPoint`,
   `vgUnprojectAtZ`; the frame builds its view from the world camera and
   derives the box; `drawGrid` in place of `drawRoom`; `VG_LAYER_ORDER`;
   `project` and `unprojectAtZ` on the general matrix.
 - `ui/app.js` — `ROOM_LAYERS` (`grid`), `ROOM_HANDLES` without the back,
   `roomCameraDrawn` hands the world camera over, `roomView` and the four
   helpers on it.
-- `ui/room-paint.js` — the `grid` slot, its label, weight and family.
+- `ui/room-paint/` — the `grid` slot, its label, weight and family.
 - `tests/ui/open-world.spec.mjs`, `tests/ui/room-geometry.spec.mjs`,
   `tests/ui/room-hierarchy.spec.mjs` (`grid` for `room`).
 
@@ -153,13 +153,13 @@ next thing.
 
 ### Where it lives, step three
 
-- `ui/vis-gl.js` — `VG_WORLD_DEFAULT` with `fov` and a placed `ring`,
+- `ui/vis-gl/` — `VG_WORLD_DEFAULT` with `fov` and a placed `ring`,
   `VG_WORLD_H`, `VG_WORLD_W`, the frame's world sizes, the layers without
   the taper, `geomWidth`.
 - `ui/app.js` — `geomWidth` in the room's settings, `roomSetWorld`, the
   grips and the room drag editing the world camera, `roomView` and the
   helpers in world `y`, the readout.
-- `ui/room-paint.js` — the **WIDTH** row.
+- `ui/room-paint/` — the **WIDTH** row.
 - `tests/ui/room-editor.spec.mjs`, `room-grips.spec.mjs`,
   `room-geometry.spec.mjs`, `open-world.spec.mjs` — in world terms.
 
@@ -192,7 +192,7 @@ eye stands, so walking never finds an edge of it.
 
 ### Where it lives, step four
 
-- `ui/vis-gl.js` — `v: 2` world cameras with `x` and `z`, `vgWorldUpgrade`,
+- `ui/vis-gl/` — `v: 2` world cameras with `x` and `z`, `vgWorldUpgrade`,
   the eye in `vgWorldView`, `geomReach` and `geomAt`, the ring and the path
   absolute, the grid around the eye.
 - `ui/app.js` — `roomBeads`, `paintRoomBeads`, `wireRoomBeads`;
@@ -200,7 +200,7 @@ eye stands, so walking never finds an edge of it.
   `syncCamRows` (and `ROOM_CAM_ROWS`, gone with the sliders in step five);
   the path in units and its migration;
   `geomReach` and `geomAt`.
-- `ui/index.html` — the camera rows; `ui/room-paint.js` — **REACH**.
+- `ui/index.html` — the camera rows; `ui/room-paint/` — **REACH**.
 - `tests/ui/open-world.spec.mjs` — everything goes anywhere; the camera
   walks, sidesteps, pans, tilts and rises; the old records come up to date.
 

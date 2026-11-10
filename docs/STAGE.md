@@ -1,6 +1,6 @@
 # The stage
 
-One scene, with everything in it. `ui/stage.js` owns it; `docs/PORT-PLAN.md` is
+One scene, with everything in it. `ui/stage/` owns it; `docs/PORT-PLAN.md` is
 why it exists and what is still to move into it.
 
 ## What it is
