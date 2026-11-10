@@ -50,6 +50,7 @@
 //! `master`, then run through the master chain (Drive, Chorus, Delay, Reverb,
 //! EQ: `master_fx.rs`). The modules' own docs explain each decision.
 
+pub mod board;
 pub mod env;
 pub mod filter;
 mod fx;
@@ -61,6 +62,7 @@ pub mod table;
 mod voice;
 pub mod warp;
 
+pub use board::{Board, BoardError, BoardPlan, Cable, Node};
 pub use env::Stage;
 pub use patch::{
     lfo_hz, param_id, Curve, FilterRoute, FilterType, FxMode, LfoMode, LfoWave, Mod, ParamId, Patch, PatchState, Route, Value, VoiceMode,
