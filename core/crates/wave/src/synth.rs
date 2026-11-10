@@ -236,6 +236,8 @@ pub struct Synth {
     serial: u64,
     seed: u32,
     free_phase: [f32; 4],
+    /// Whole cycles each free LFO has run, for the random waves.
+    free_cycle: [u32; 4],
     global: [f32; SRC_COUNT],
     bend: [f32; 2],
     mw: [f32; 2],
@@ -287,6 +289,7 @@ impl Synth {
             serial: 0,
             seed: DEFAULT_SEED,
             free_phase: [0.0; 4],
+            free_cycle: [0; 4],
             global: [0.0; SRC_COUNT],
             bend: [0.0; 2],
             mw: [0.0; 2],
@@ -589,9 +592,11 @@ impl Synth {
         self.global[SRC_MW] = self.mw[0];
         self.global[SRC_AT] = self.at[0];
         for l in 0..4 {
-            let rate = 0.2 + self.cur[LFO_RATE + l] * 2.0;
-            self.free_phase[l] = (self.free_phase[l] + rate * len as f32 / sr).fract();
-            self.global[SRC_LFO + l] = self.state.lfo_shapes[l].at(self.free_phase[l]) * 2.0 - 1.0;
+            let p = self.free_phase[l] + lfo_hz(&self.cur, l) * len as f32 / sr;
+            let whole = p.floor();
+            self.free_cycle[l] = self.free_cycle[l].wrapping_add(whole as u32);
+            self.free_phase[l] = p - whole;
+            self.global[SRC_LFO + l] = self.state.lfo_shapes[l].value(self.free_phase[l], self.free_cycle[l]) * 2.0 - 1.0;
         }
         for ch in self.mix.iter_mut() {
             ch[..len].iter_mut().for_each(|v| *v = 0.0);

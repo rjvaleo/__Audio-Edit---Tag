@@ -522,8 +522,9 @@ fn an_oscillator_without_a_table_is_silent_and_harmless() {
 fn lfo_rise_fades_in_from_the_note_and_smooth_lags_it() {
     // A square LFO, so the lag has a step to round off.
     let mut p = clean_patch();
-    p.set_points("lfo0.points", &[(0.0, 1.0), (0.5, 1.0), (0.5, 0.0), (1.0, 0.0)]);
-    p.set_num("lfo0.rate", 1.0);
+    p.set_str("lfo0.shape", "square");
+    // 2.2 Hz on the v7 rate law (0.02 · 2000^v).
+    p.set_num("lfo0.rate", (110f32).ln() / (2000f32).ln());
     p.mods = vec![Mod::new("lfo0", "osc0.pos", 0.5)];
     let run = |rise: f32, smooth: f32, seconds: f32| {
         let mut p = p.clone();

@@ -2579,15 +2579,20 @@ fn wave_patch_round_trips_and_persists() {
     assert_eq!(num(&p, &["params", "osc0.pos"]), 0.34);
     assert_eq!(text(&p, &["params", "osc0.table"]), "Formant Sweep");
     assert_eq!(arr(p.get("macroNames").unwrap()).len(), 8);
-    assert_eq!(arr(p.get("mods").unwrap()).len(), 6);
+    assert_eq!(arr(p.get("mods").unwrap()).len(), 0, "Init moves nothing (v7)");
+    assert_eq!(text(&p, &["params", "lfo0.shape"]), "sine");
+    assert_eq!(num(&p, &["params", "tempo"]), 120.0);
 
     let body = r#"{"params":{"osc0.pos":0.7,"filt0.type":"hp","osc1.uni.n":7.6,"lfo2.points":[[0,0],[0.5,1],[1,0]],
-        "lfo0.smooth":0.5,"lfo3.rise":0.25,"voice.mpe":1,"fx2.k1":0.9,"fx4.on":0},
+        "lfo0.smooth":0.5,"lfo3.rise":0.25,"lfo1.shape":"steps","lfo1.sync":1,"tempo":96,"voice.mpe":1,"fx2.k1":0.9,"fx4.on":0},
         "mods":[{"src":"lfo1","dst":"osc0.pos","amt":0.4,"curve":"s","via":"mw"}],
         "macroNames":["A","B"],"name":"Test Pad","tags":"Pad · Warm"}"#;
     let back = wave_ok(&app, post("/api/wave/patch", body));
     assert_eq!(num(&back, &["params", "osc0.pos"]), 0.7);
     assert_eq!(num(&back, &["params", "osc1.uni.n"]), 8.0, "whole-number keys are rounded");
+    assert_eq!(text(&back, &["params", "lfo1.shape"]), "steps");
+    assert_eq!(num(&back, &["params", "lfo1.sync"]), 1.0);
+    assert_eq!(num(&back, &["params", "tempo"]), 96.0);
     assert_eq!(text(&back, &["params", "filt0.type"]), "hp");
     assert_eq!(num(&back, &["params", "fx2.k1"]), 0.9);
     assert_eq!(text(&back, &["name"]), "Test Pad");

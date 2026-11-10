@@ -1,6 +1,8 @@
 /* Wave: the wavetable synth page. See docs/WAVE-SYNTH.md.
 
-   The look is mock-up v6, Graphite + Acrylic, ported as it was approved. The
+   The look is mock-up v6, Graphite + Acrylic, ported as it was approved, with
+   v7's additions (wave-synth-v7.html: source colours, badges, LFO shapes, the
+   mixer, tooltips) at the end of the Play rules. The
    page keeps its own tokens (the mock-up's `body.AD`), set on #waveView so they
    reach nothing else; the type is the app's: its scale (--fs-xs … --fs-xl) and
    its faces (--sans, --mono).
@@ -126,14 +128,15 @@ body.synthpage #overview { display: none; }
 #waveView .wv-warp { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 72px; }
 #waveView .wv-warp .wv-glyphs { display: grid; grid-template-columns: 24px 44px; gap: 0 4px; align-items: center; width: 72px; }
 #waveView .wv-warp .wv-g { width: 24px; }
+/* One fixed width, its screen and its label: the widest label (Chorus at
+   4.1 Hz · 100 %) is 167 px, so the row never grows with the readout. */
+#waveView .wv-ofx { width: 168px; flex: none; }
 #waveView .wv-ofx .wv-lab { align-items: center; }
 #waveView .wv-ofx .wv-lab .wv-g { width: 36px; height: 28px; }
 #waveView .wv-ofx .wv-lab .wv-g svg { width: 26px; height: 20px; }
 #waveView .wv-ofx .wv-lab .wv-g path { stroke: var(--fxc); stroke-width: 1.8; }
 #waveView .wv-k4 { display: flex; gap: 6px; }
 #waveView .wv-k4 .wv-kc { display: flex; flex-direction: column; gap: 4px; width: 54px; }
-#waveView .wv-subrow { display: flex; gap: 10px; }
-#waveView .wv-subrow .wv-mod { flex: 1; flex-direction: row; align-items: center; gap: 10px; }
 #waveView .wv-voicing { flex-direction: row; align-items: center; gap: 8px; }
 #waveView .wv-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 #waveView .wv-fcol { display: flex; flex-direction: column; gap: 4px; }
@@ -148,6 +151,60 @@ body.synthpage #overview { display: none; }
 #waveView .wv-ed .dim { opacity: .4; pointer-events: none; }
 #waveView .wv-targets { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
 #waveView.wv-mapping canvas[data-tgt] { cursor: copy; outline: 1px dashed var(--wv-mod); outline-offset: 2px; border-radius: 50%; }
+
+/* v7: power buttons, source colours, badges, shapes, the mixer, tips */
+#waveView .wv-mh > :not(.wv-moved):not(.wv-sp) { flex-shrink: 0; }
+#waveView .wv-pwr { width: 22px; height: 20px; display: grid; place-items: center; flex: none; padding: 0; }
+#waveView .wv-pwr svg { width: 12px; height: 12px; fill: none; stroke: var(--wv-t3); stroke-width: 1.8; stroke-linecap: round; }
+#waveView .wv-pwr.on { background: var(--wv-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.85); border-color: color-mix(in srgb, var(--wv-acc) 55%, var(--wv-line)); }
+#waveView .wv-pwr.on svg { stroke: var(--wv-acc); filter: drop-shadow(0 0 3px var(--wv-acc)); }
+#waveView .wv-moved { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
+#waveView .wv-badge {
+  display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px 0 5px; border-radius: 9px; flex: none;
+  font: 600 var(--fs-xs)/1 var(--mono); letter-spacing: .04em; color: var(--c); white-space: nowrap; cursor: pointer;
+  background: color-mix(in srgb, var(--c) 12%, transparent); border: 1px solid color-mix(in srgb, var(--c) 42%, transparent);
+}
+#waveView .wv-badge svg { flex: none; }
+#waveView .wv-badge i { font: 500 var(--fs-s)/1 var(--sans); font-style: normal; color: var(--wv-t2); letter-spacing: 0; }
+#waveView .wv-badge:hover { background: color-mix(in srgb, var(--c) 26%, transparent); }
+#waveView .wv-badge.wv-more { padding: 0 7px; }
+#waveView .wv-t4 { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--c) 75%, transparent), inset 0 1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.6); }
+#waveView .wv-t4 b { color: color-mix(in srgb, var(--c) 70%, var(--wv-t3)); }
+#waveView .wv-t4.on b { color: var(--c); }
+#waveView .wv-t4 .act { background: var(--c); }
+#waveView .wv-t4.on, #waveView .wv-t4.wv-hl { box-shadow: inset 0 -2px 0 var(--c), 0 0 0 1px var(--c), 0 0 14px color-mix(in srgb, var(--c) 38%, transparent); }
+#waveView canvas[data-tgt].wv-hl { outline: 2px solid var(--c); outline-offset: 2px; border-radius: 8px; }
+#waveView .wv-shapes { display: flex; align-items: center; gap: 6px; height: 22px; }
+#waveView .wv-shapes .wv-glyphs { gap: 2px; }
+#waveView .wv-shapes .wv-g { width: 25px; }
+#waveView .wv-shapes .wv-g.on path { stroke: var(--c); }
+#waveView .wv-shapes .wv-g.on { border-color: color-mix(in srgb, var(--c) 60%, var(--wv-line)); }
+#waveView .wv-shapes.env .wv-glyphs, #waveView .wv-shapes.env #wvRateMode { opacity: .22; pointer-events: none; }
+#waveView .wv-tempo { width: 62px; height: 20px; display: flex; align-items: center; justify-content: center; flex: none; cursor: ns-resize; }
+#waveView .wv-tempo.off { visibility: hidden; }
+#waveView .wv-mix { flex-direction: row; align-items: stretch; gap: 10px; padding: 7px 10px 8px; }
+#waveView .wv-vlab { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 var(--fs-s) var(--mono); letter-spacing: .24em; color: var(--wv-t); width: 14px; text-align: center; align-self: center; flex: none; }
+#waveView .wv-strip { display: flex; flex-direction: column; gap: 5px; flex: none; }
+#waveView .wv-sh { display: flex; align-items: center; gap: 5px; height: 20px; }
+#waveView .wv-strip .wv-nm { letter-spacing: .12em; }
+#waveView .wv-strip.off .wv-nm { color: var(--wv-t3); }
+#waveView .wv-strip .wv-glyphs { gap: 2px; }
+#waveView .wv-strip .wv-g { width: 22px; height: 18px; }
+#waveView .wv-strip .wv-seg { padding: 1px; }
+#waveView .wv-strip .wv-seg > span { padding: 0 6px; height: 16px; gap: 3px; font-size: var(--fs-s); }
+#waveView .wv-nd { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex: none; }
+/* The tip hangs on #waveView, not inside the scaled page, so it is full size. */
+#waveView .wv-tip {
+  position: absolute; z-index: 90; max-width: 260px; padding: 7px 10px 8px; border-radius: 9px; pointer-events: none;
+  background: color-mix(in srgb, var(--wv-panel-hi) 94%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border: 1px solid var(--wv-line); box-shadow: 0 12px 26px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
+  display: flex; flex-direction: column; gap: 3px; font: 400 var(--fs-s)/1.4 var(--sans); color: var(--wv-t2); white-space: normal;
+}
+#waveView .wv-tip b { font: 600 var(--fs-m) var(--sans); color: var(--wv-t); }
+#waveView .wv-tip .v { font: 400 var(--fs-s) var(--mono); color: var(--wv-acc); }
+#waveView .wv-tip .h { color: var(--wv-t3); }
+#waveView .wv-tip .mv { display: flex; flex-wrap: wrap; gap: 4px; margin: 1px 0; }
+#waveView .wv-tip .wv-badge { cursor: default; }
 
 /* Create */
 #waveView .wv-tools { width: 44px; display: flex; flex-direction: column; gap: 6px; padding: 8px 6px; flex: none; align-self: flex-start; }

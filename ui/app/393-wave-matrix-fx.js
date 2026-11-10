@@ -57,7 +57,7 @@ function wvMiniTo(c, src, w, h) {
   const s = WV_SOURCES.find((x) => x.key === src);
   const cl = wvCl();
   let p;
-  if (s && s.kind === 'lfo') p = wvPath((u) => [u * w, h - wvLfoAt(wvG(`${src}.points`), u) * h], 40);
+  if (s && s.kind === 'lfo') p = wvPath((u) => [u * w, h - wvLfoVal(+src.slice(3), u) * h], 40);
   else if (s) {
     const E = wvEnv(src);
     p = new Path2D();

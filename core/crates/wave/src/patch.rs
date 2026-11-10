@@ -208,9 +208,17 @@ pub static KEYS: [KeyDef; NUM_PARAMS] = [
     k("fx4.k0", 0.0, 1.0, Smooth),
     k("fx4.k1", 0.0, 1.0, Smooth),
     k("fx4.k2", 0.0, 1.0, Smooth),
+    // ── v7 (7 Nov 2026) ────────────────────────────────────────────────────
+    // Sync: 0, `lfoL.rate` is Hz; 1, it picks a note length at `tempo`.
+    k("lfo0.sync", 0.0, 1.0, Int),
+    k("lfo1.sync", 0.0, 1.0, Int),
+    k("lfo2.sync", 0.0, 1.0, Int),
+    k("lfo3.sync", 0.0, 1.0, Int),
+    // The synth's own tempo, for synced LFOs.
+    k("tempo", 30.0, 300.0, Step),
 ];
 
-pub const NUM_PARAMS: usize = 120;
+pub const NUM_PARAMS: usize = 125;
 // The matrix marks the keys it touched in one `u128` (`voice::modulate`,
 // `Synth::telemetry`), so there may never be more than 128 numeric keys.
 const _: () = assert!(NUM_PARAMS <= 128);
@@ -259,6 +267,8 @@ pub const VOICE_MPE: usize = 99;
 /// The master chain: `fxI.on` at `FX_BASE + I·4`, `fxI.kJ` after it.
 pub const FX_BASE: usize = 100;
 pub const FX_STRIDE: usize = 4;
+pub const LFO_SYNC: usize = 120;
+pub const TEMPO: usize = 124;
 /// The FX view's chain, in its order: Drive, Chorus, Delay, Reverb, EQ.
 /// The mock-up starts with all five on at settings that make the default
 /// patch loud and muddy once they are heard, so the default is lighter:
@@ -312,7 +322,7 @@ pub fn clamp_value(id: usize, v: f32) -> Option<f32> {
 }
 
 /// Every string key.
-pub static STR_KEYS: [&str; 23] = [
+pub static STR_KEYS: [&str; 27] = [
     "osc0.table",
     "osc0.warp0.mode",
     "osc0.warp1.mode",
@@ -336,6 +346,10 @@ pub static STR_KEYS: [&str; 23] = [
     "lfo2.mode",
     "lfo3.mode",
     "voice.mode",
+    "lfo0.shape",
+    "lfo1.shape",
+    "lfo2.shape",
+    "lfo3.shape",
 ];
 
 /// The LFO shape keys.
@@ -382,6 +396,19 @@ named_enum!(
 named_enum!(
     /// `lfoL.mode`.
     LfoMode { Free = "free", Trig = "trig", Env = "env" }
+);
+named_enum!(
+    /// `lfoL.shape`: a standard wave, or `drawn` for `lfoL.points`.
+    LfoWave {
+        Sine = "sine",
+        Tri = "tri",
+        Up = "up",
+        Down = "down",
+        Square = "square",
+        Steps = "steps",
+        Smooth = "smooth",
+        Drawn = "drawn",
+    }
 );
 named_enum!(
     /// `voice.mode`.
@@ -495,6 +522,7 @@ pub struct Patch {
     pub filter_types: [FilterType; 2],
     pub filter_route: FilterRoute,
     pub lfo_modes: [LfoMode; 4],
+    pub lfo_waves: [LfoWave; 4],
     pub lfo_points: [Vec<(f32, f32)>; 4],
     pub voice_mode: VoiceMode,
     pub mods: Vec<Mod>,
@@ -526,9 +554,10 @@ impl Default for Patch {
             v[osc(n, O_LEVEL)] = [0.82, 0.6, 0.4][n];
         }
         v[SUB_ON] = 1.0;
-        v[SUB_SHAPE] = 0.0;
+        // A triangle carries on small speakers where a sine all but vanishes.
+        v[SUB_SHAPE] = 1.0;
         v[SUB_OCT] = 1.0;
-        v[SUB_LEVEL] = 0.35;
+        v[SUB_LEVEL] = 0.28;
         v[NOISE_ON] = 0.0;
         v[NOISE_COLOR] = 1.0;
         v[NOISE_LEVEL] = 0.12;
@@ -543,7 +572,8 @@ impl Default for Patch {
                 v[AMP_BASE + e * 4 + j] = *x;
             }
         }
-        for (l, r) in [0.4, 0.25, 0.6, 0.15].iter().enumerate() {
+        // 0.49, 0.20, 1.3 and 0.13 Hz on the v7 rate law.
+        for (l, r) in [0.42, 0.3, 0.55, 0.25].iter().enumerate() {
             v[LFO_RATE + l] = *r;
         }
         for (m, x) in [0.5, 0.35, 0.6, 0.2, 0.4, 0.5, 0.3, 0.25].iter().enumerate() {
@@ -552,6 +582,7 @@ impl Default for Patch {
         v[GLIDE] = 0.2;
         v[BEND] = 2.0;
         v[MASTER] = 0.8;
+        v[TEMPO] = 120.0;
         for (i, ks) in FX_DEFAULTS.iter().enumerate() {
             v[FX_BASE + i * FX_STRIDE] = FX_ON_DEFAULTS[i];
             for (j, x) in ks.iter().enumerate() {
@@ -573,6 +604,7 @@ impl Default for Patch {
             filter_types: [FilterType::Lp, FilterType::Bp],
             filter_route: FilterRoute::Parallel,
             lfo_modes: [LfoMode::Free; 4],
+            lfo_waves: [LfoWave::Sine, LfoWave::Drawn, LfoWave::Square, LfoWave::Smooth],
             lfo_points: [
                 pts(&[(0.0, 0.5), (0.25, 1.0), (0.5, 0.5), (0.75, 0.0), (1.0, 0.5)]),
                 pts(&[(0.0, 0.0), (0.1, 1.0), (0.5, 0.4), (1.0, 0.0)]),
@@ -580,16 +612,8 @@ impl Default for Patch {
                 pts(&[(0.0, 0.5), (0.2, 0.9), (0.4, 0.2), (0.6, 0.7), (0.8, 0.1), (1.0, 0.5)]),
             ],
             voice_mode: VoiceMode::Poly,
-            // The mock-up's six routings, with the matrix view's curves and its
-            // one via (row 2 through the mod wheel).
-            mods: vec![
-                Mod::new("lfo0", "osc0.pos", 0.2),
-                Mod::new("env1", "filt0.cut", 0.25).with_curve("exp").with_via("mw"),
-                Mod::new("lfo1", "osc1.warp0.amt", 0.3).with_curve("s"),
-                Mod::new("lfo3", "osc2.pos", 0.15).with_curve("log"),
-                Mod::new("lfo2", "osc1.pan", 0.35),
-                Mod::new("env3", "osc0.level", 0.12).with_curve("exp"),
-            ],
+            // Init moves nothing: every routing is one the player made.
+            mods: Vec::new(),
             macro_names: ["Brightness", "Movement", "Width", "Grit", "Space", "Morph", "Attack", "Air"]
                 .map(String::from),
             name: "Init".into(),
@@ -651,9 +675,10 @@ impl Patch {
             }
             "filt.route" => FilterRoute::parse(value).map(|m| self.filter_route = m).is_some(),
             "voice.mode" => VoiceMode::parse(value).map(|m| self.voice_mode = m).is_some(),
-            _ => match lfo_index(key, ".mode") {
-                Some(l) => LfoMode::parse(value).map(|m| self.lfo_modes[l] = m).is_some(),
-                None => false,
+            _ => match (lfo_index(key, ".mode"), lfo_index(key, ".shape")) {
+                (Some(l), _) => LfoMode::parse(value).map(|m| self.lfo_modes[l] = m).is_some(),
+                (_, Some(l)) => LfoWave::parse(value).map(|w| self.lfo_waves[l] = w).is_some(),
+                _ => false,
             },
         }
     }
@@ -674,7 +699,9 @@ impl Patch {
             "filt1.type" => Some(self.filter_types[1].as_str()),
             "filt.route" => Some(self.filter_route.as_str()),
             "voice.mode" => Some(self.voice_mode.as_str()),
-            _ => lfo_index(key, ".mode").map(|l| self.lfo_modes[l].as_str()),
+            _ => lfo_index(key, ".mode")
+                .map(|l| self.lfo_modes[l].as_str())
+                .or_else(|| lfo_index(key, ".shape").map(|l| self.lfo_waves[l].as_str())),
         }
     }
 
@@ -729,6 +756,36 @@ fn lfo_index(key: &str, suffix: &str) -> Option<usize> {
 pub struct LfoShape {
     pub points: [(f32, f32); MAX_LFO_POINTS],
     pub len: usize,
+    /// The wave; `Drawn` reads `points`.
+    pub wave: LfoWave,
+    /// Mixed into the random waves' draws, so two LFOs never wander alike.
+    pub salt: u32,
+}
+
+/// The v7 rate law: `0.02 · 2000^v` Hz free, or with sync a note length at
+/// the synth's tempo.
+#[inline]
+pub fn lfo_hz(vals: &[f32; NUM_PARAMS], l: usize) -> f32 {
+    const BEATS: [f32; 9] = [32.0, 16.0, 8.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.125];
+    let v = vals[LFO_RATE + l].clamp(0.0, 1.0);
+    if vals[LFO_SYNC + l] >= 0.5 {
+        let tempo = vals[TEMPO].clamp(30.0, 300.0);
+        tempo / 60.0 / BEATS[(v * 8.0).round() as usize]
+    } else {
+        0.02 * 2000f32.powf(v)
+    }
+}
+
+/// A hash of `n` to 0..1, the random waves' draws.
+#[inline]
+fn rnd01(n: u32) -> f32 {
+    let mut x = n.wrapping_mul(0x9E37_79B9) ^ 0x85EB_CA6B;
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7FEB_352D);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846C_A68B);
+    x ^= x >> 16;
+    (x >> 8) as f32 * (1.0 / 16_777_216.0)
 }
 
 impl LfoShape {
@@ -740,9 +797,56 @@ impl LfoShape {
             // A flat line at the centre: an LFO with no shape is no movement.
             points[0] = (0.0, 0.5);
             points[1] = (1.0, 0.5);
-            return LfoShape { points, len: 2 };
+            return LfoShape { points, len: 2, wave: LfoWave::Drawn, salt: 0 };
         }
-        LfoShape { points, len }
+        LfoShape { points, len, wave: LfoWave::Drawn, salt: 0 }
+    }
+
+    pub fn with_wave(mut self, wave: LfoWave, salt: u32) -> LfoShape {
+        self.wave = wave;
+        self.salt = salt;
+        self
+    }
+
+    /// The LFO's value, 0..1, at phase `u` of its `cycle`th cycle. Only the
+    /// random waves care which cycle it is.
+    #[inline]
+    pub fn value(&self, u: f32, cycle: u32) -> f32 {
+        let u = if u >= 1.0 { 1.0 } else { u.max(0.0) };
+        match self.wave {
+            LfoWave::Sine => 0.5 + 0.5 * (std::f32::consts::TAU * u).sin(),
+            LfoWave::Tri => {
+                if u < 0.25 {
+                    0.5 + 2.0 * u
+                } else if u < 0.75 {
+                    1.5 - 2.0 * u
+                } else {
+                    2.0 * u - 1.5
+                }
+            }
+            LfoWave::Up => u,
+            LfoWave::Down => 1.0 - u,
+            LfoWave::Square => {
+                if u < 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            LfoWave::Steps => {
+                let i = ((u * 8.0) as u32).min(7);
+                rnd01(self.salt ^ cycle.wrapping_mul(8).wrapping_add(i))
+            }
+            LfoWave::Smooth => {
+                let k = u * 4.0;
+                let i = (k as u32).min(3);
+                let f = k - i as f32;
+                let n = cycle.wrapping_mul(4).wrapping_add(i);
+                let (a, b) = (rnd01(self.salt ^ n), rnd01(self.salt ^ n.wrapping_add(1)));
+                a + (b - a) * (0.5 - 0.5 * (std::f32::consts::PI * f).cos())
+            }
+            LfoWave::Drawn => self.at(u),
+        }
     }
 
     /// The kit's `lfoAt`: cosine-eased between points, 0..1.
@@ -828,7 +932,9 @@ impl PatchState {
             filter_types: patch.filter_types,
             filter_route: patch.filter_route,
             lfo_modes: patch.lfo_modes,
-            lfo_shapes: [0, 1, 2, 3].map(|l| LfoShape::from_points(&patch.lfo_points[l])),
+            lfo_shapes: [0, 1, 2, 3].map(|l| {
+                LfoShape::from_points(&patch.lfo_points[l]).with_wave(patch.lfo_waves[l], (l as u32 + 1).wrapping_mul(0x2545_F491))
+            }),
             voice_mode: patch.voice_mode,
             mods,
             mod_count,
@@ -921,7 +1027,8 @@ mod tests {
         assert_eq!(p.get_num("filt1.cut"), Some(0.7));
         assert_eq!(p.get_num("filt1.res"), Some(0.5));
         assert_eq!([p.values[AMP_BASE], p.values[AMP_BASE + 1], p.values[AMP_BASE + 2], p.values[AMP_BASE + 3]], [0.06, 0.3, 0.6, 0.45]);
-        assert_eq!(PatchState::new(&p).mod_count, 6);
+        // v7: Init moves nothing.
+        assert_eq!(PatchState::new(&p).mod_count, 0);
     }
 
     #[test]
@@ -976,6 +1083,79 @@ mod tests {
         assert_eq!(s.mod_count, 2);
         assert_eq!(s.mods()[1].amt, 1.0);
         assert_eq!(s.mods()[1].via, Source::parse("at"));
+    }
+
+    #[test]
+    fn v7_keys_are_pinned() {
+        assert_eq!(KEYS[LFO_SYNC].key, "lfo0.sync");
+        assert_eq!(KEYS[LFO_SYNC + 3].key, "lfo3.sync");
+        assert_eq!(KEYS[TEMPO].key, "tempo");
+        assert_eq!(KEYS.len(), NUM_PARAMS);
+    }
+
+    #[test]
+    fn init_moves_nothing_and_its_sub_carries() {
+        let p = Patch::default();
+        assert!(p.mods.is_empty());
+        assert_eq!(p.values[SUB_SHAPE], 1.0);
+        assert_eq!(p.values[SUB_LEVEL], 0.28);
+        assert_eq!(p.values[TEMPO], 120.0);
+        assert_eq!(p.get_str("lfo0.shape"), Some("sine"));
+        assert_eq!(p.get_str("lfo1.shape"), Some("drawn"));
+        assert_eq!(p.get_str("lfo2.shape"), Some("square"));
+        assert_eq!(p.get_str("lfo3.shape"), Some("smooth"));
+    }
+
+    #[test]
+    fn lfo_shape_round_trips_and_rejects_nonsense() {
+        let mut p = Patch::default();
+        assert!(p.set_str("lfo2.shape", "tri"));
+        assert_eq!(p.get_str("lfo2.shape"), Some("tri"));
+        assert!(!p.set_str("lfo2.shape", "wobble"));
+        assert!(STR_KEYS.contains(&"lfo3.shape"));
+    }
+
+    #[test]
+    fn standard_waves_follow_the_contract() {
+        let w = |wave| LfoShape::from_points(&[]).with_wave(wave, 7);
+        let near = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        assert!(near(w(LfoWave::Sine).value(0.25, 0), 1.0));
+        assert!(near(w(LfoWave::Sine).value(0.75, 0), 0.0));
+        assert!(near(w(LfoWave::Tri).value(0.0, 0), 0.5));
+        assert!(near(w(LfoWave::Tri).value(0.25, 0), 1.0));
+        assert!(near(w(LfoWave::Tri).value(0.75, 0), 0.0));
+        assert!(near(w(LfoWave::Up).value(0.3, 0), 0.3));
+        assert!(near(w(LfoWave::Down).value(0.3, 0), 0.7));
+        assert_eq!(w(LfoWave::Square).value(0.49, 0), 1.0);
+        assert_eq!(w(LfoWave::Square).value(0.51, 0), 0.0);
+        // Steps hold for an eighth of a cycle and change between cycles.
+        let s = w(LfoWave::Steps);
+        assert_eq!(s.value(0.01, 3), s.value(0.12, 3));
+        assert_ne!(s.value(0.01, 3), s.value(0.01, 4));
+        // Smooth random runs on into the next cycle without a jump.
+        let m = w(LfoWave::Smooth);
+        assert!(near(m.value(1.0, 5), m.value(0.0, 6)));
+        for c in 0..50 {
+            for i in 0..=16 {
+                let v = m.value(i as f32 / 16.0, c);
+                assert!((0.0..=1.0).contains(&v));
+            }
+        }
+    }
+
+    #[test]
+    fn rate_law_spans_and_syncs() {
+        let mut v = Patch::default().values;
+        v[LFO_RATE] = 0.0;
+        assert!((lfo_hz(&v, 0) - 0.02).abs() < 1e-6);
+        v[LFO_RATE] = 1.0;
+        assert!((lfo_hz(&v, 0) - 40.0).abs() < 1e-3);
+        v[LFO_SYNC] = 1.0;
+        v[LFO_RATE] = 5.0 / 8.0; // a quarter note
+        assert!((lfo_hz(&v, 0) - 2.0).abs() < 1e-5);
+        v[TEMPO] = 90.0;
+        v[LFO_RATE] = 3.0 / 8.0; // one bar
+        assert!((lfo_hz(&v, 0) - 0.375).abs() < 1e-5);
     }
 
     #[test]

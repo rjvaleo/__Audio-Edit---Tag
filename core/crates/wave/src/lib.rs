@@ -63,7 +63,7 @@ pub mod warp;
 
 pub use env::Stage;
 pub use patch::{
-    param_id, Curve, FilterRoute, FilterType, FxMode, LfoMode, Mod, ParamId, Patch, PatchState, Route, Value, VoiceMode,
+    lfo_hz, param_id, Curve, FilterRoute, FilterType, FxMode, LfoMode, LfoWave, Mod, ParamId, Patch, PatchState, Route, Value, VoiceMode,
     KEYS, NUM_PARAMS, POINT_KEYS, STR_KEYS,
 };
 pub use synth::{Synth, Telemetry, VoiceInfo, MAX_VOICES, POLYPHONY};

@@ -1,9 +1,13 @@
 // ================================================================ Wave: Play
 //
-// The Play view of the synth page: three oscillators, Sub and Noise, the two
+// The Play view of the synth page: three oscillators, the mixer, the two
 // filters, the amp envelope, the modulators and the voicing. Every control is
 // a picture of what it does to the sound, and each one writes one patch key
 // (`docs/WAVE-SYNTH.md`). Built once, on the first visit.
+//
+// v7 adds what moves what, where you can see it: each source in its own
+// colour, a badge on every module a source moves, the LFOs' standard shapes,
+// and one MIX row for every sound source with a real on/off.
 
 /// The page's canvases, by id, each with its context and size.
 const WVW = {};
@@ -41,6 +45,9 @@ function wvChoice(root, sel, key, read = (el) => el.dataset.k) {
   });
 }
 
+/// The power glyph: on/off for an oscillator, the sub or the noise.
+const WV_PWR = '<svg viewBox="0 0 14 14"><path d="M7 1.5 V6.5 M3.9 3.7 A4.6 4.6 0 1 0 10.1 3.7"/></svg>';
+
 const WV_ROUTE_NAMES = { F1: 'Filter 1', F2: 'Filter 2', both: 'Both', direct: 'Direct' };
 const WV_FILTERS = [
   ['lp', 'M2 4 H9 C12 4,12 2,13 4 L16 12', 'Low pass'], ['bp', 'M2 12 C6 12,7 2,9 2 S12 12,16 12', 'Band pass'],
@@ -57,23 +64,23 @@ function wvBuildOsc(i) {
       + `<span class="wv-lab wv-col"><span id="wvWn${i}${j}"></span><b id="wvWv${i}${j}"></b></span></div></div>`;
   };
   return wvH(`<div class="wv-mod wv-panel wv-osc" id="wvOsc${i}">
-   <div class="wv-mh"><i class="wv-led" data-oscled="${i}" title="Oscillator ${L} on or off"></i><span class="wv-nm">OSC ${L}</span>
-    <span class="wv-pick wv-btn" data-pick="${i}" title="Choose this oscillator's table"><canvas id="wvPk${i}" data-w="30" data-h="14"></canvas><span id="wvPkName${i}"></span></span>
+   <div class="wv-mh"><span class="wv-pwr wv-btn" data-oscled="${i}" title="Osc ${L}: on or off">${WV_PWR}</span><span class="wv-nm">OSC ${L}</span>
+    <span class="wv-pick wv-btn" data-pick="${i}" title="Wavetable: click to pick another"><canvas id="wvPk${i}" data-w="30" data-h="14"></canvas><span id="wvPkName${i}"></span></span>
+    <span class="wv-moved" id="wvMoved${i}"></span>
     <span class="wv-sp"></span>
     <span class="wv-chip wv-btn" data-route="${i}" title="Where it goes: click for Filter 1, Filter 2, both, or straight out">${wvIc('M1 5 H11 M8 2 L11 5 L8 8')}<span id="wvRoute${i}"></span></span>
-    <span class="wv-seg" data-face="${i}" style="padding:1px"><span class="on" title="Waves" data-f="w">${wvIc('M1 7 C4 1,6 1,8 5 S12 9,15 3', 16, 10)}</span><span title="Spectrum" data-f="s">${wvIc('M2 9V2M5 9V4M8 9V3M11 9V6M14 9V7', 16, 10)}</span></span>
+    <span class="wv-seg" data-face="${i}" style="padding:1px"><span class="on" title="Waves: the table as its frames" data-f="w">${wvIc('M1 7 C4 1,6 1,8 5 S12 9,15 3', 16, 10)}</span><span title="Spectrum: the table as its harmonics" data-f="s">${wvIc('M2 9V2M5 9V4M8 9V3M11 9V6M14 9V7', 16, 10)}</span></span>
     <span class="wv-ro" id="wvFr${i}"></span></div>
    <div class="wv-body">
-    <div class="wv-tbl"><div class="wv-well"><canvas id="wvW3d${i}" data-w="276" data-h="116" data-tgt="${k}pos" title="Drag across for the frame, up and down to tilt"></canvas></div>
-     <div class="wv-well"><canvas id="wvSt${i}" data-w="276" data-h="24" title="Click or drag for the frame"></canvas></div></div>
+    <div class="wv-tbl"><div class="wv-well"><canvas id="wvW3d${i}" data-w="324" data-h="116" data-tgt="${k}pos"></canvas></div>
+     <div class="wv-well"><canvas id="wvSt${i}" data-w="324" data-h="24" title="Frames: click or drag to pick one"></canvas></div></div>
     <div class="wv-warps">${warp(0)}${warp(1)}
-     <div class="wv-warp">${wvKnobEl(`wvUn${i}`, 66, true, `${k}uni.det`)}<div class="wv-lab wv-col" style="align-items:center" title="Unison: drag for detune, Shift-drag for width, scroll for voices"><span>Unison</span><b id="wvUr${i}"></b></div></div></div>
-    <div class="wv-cell wv-ofx"><div class="wv-well"><canvas id="wvOfx${i}" data-w="150" data-h="94" data-tgt="${k}fx.a" title="Drag across for mix, up and down for its character"></canvas></div>
-     <div class="wv-lab"><div class="wv-g wv-btn on" data-ofx="${i}" title="Choose this oscillator's effect"><svg viewBox="0 0 18 14"><path d=""/></svg></div><span id="wvOfn${i}"></span><span class="wv-sp"></span><b id="wvOfr${i}"></b></div></div>
-    <div class="wv-k4"><div class="wv-cell"><div class="wv-well"><canvas id="wvPt${i}" data-w="46" data-h="124" data-tgt="${k}pitch" title="Drag for semitones, Shift-drag for cents"></canvas></div><div class="wv-lab" style="justify-content:center"><b id="wvPtr${i}"></b></div></div>
-     <div class="wv-kc"><div class="wv-cell c">${wvKnobEl(`wvPh${i}`, 40, 1, `${k}phase`)}<div class="wv-lab" title="Drag for the start phase, Alt-drag for its random spread"><span>Phase</span><b id="wvPhr${i}"></b></div></div>
+     <div class="wv-warp">${wvKnobEl(`wvUn${i}`, 66, true, `${k}uni.det`)}<div class="wv-lab wv-col" style="align-items:center"><span>Unison</span><b id="wvUr${i}"></b></div></div></div>
+    <div class="wv-cell wv-ofx"><div class="wv-well"><canvas id="wvOfx${i}" data-w="168" data-h="94" data-tgt="${k}fx.a"></canvas></div>
+     <div class="wv-lab"><div class="wv-g wv-btn on" data-ofx="${i}" title="Effect: click to pick this oscillator's own effect"><svg viewBox="0 0 18 14"><path d=""/></svg></div><span id="wvOfn${i}"></span><span class="wv-sp"></span><b id="wvOfr${i}"></b></div></div>
+    <div class="wv-k4"><div class="wv-cell"><div class="wv-well"><canvas id="wvPt${i}" data-w="46" data-h="124" data-tgt="${k}pitch"></canvas></div><div class="wv-lab" style="justify-content:center"><b id="wvPtr${i}"></b></div></div>
+     <div class="wv-kc"><div class="wv-cell c">${wvKnobEl(`wvPh${i}`, 40, 1, `${k}phase`)}<div class="wv-lab"><span>Phase</span><b id="wvPhr${i}"></b></div></div>
       <div class="wv-cell c">${wvKnobEl(`wvPn${i}`, 40, 0, `${k}pan`)}<div class="wv-lab"><span>Pan</span><b id="wvPnr${i}"></b></div></div></div></div>
-    <div class="wv-cell"><div class="wv-well"><canvas id="wvLv${i}" data-w="40" data-h="124" data-tgt="${k}level" title="Level"></canvas></div><div class="wv-lab" style="justify-content:center"><b id="wvLvr${i}"></b></div></div>
    </div></div>`);
 }
 
@@ -82,47 +89,44 @@ function wvBuildPlay(view) {
   const colR = wvH('<div class="wv-colR"></div>');
   view.append(colL, colR);
   for (let i = 0; i < 3; i++) colL.appendChild(wvBuildOsc(i));
-  colL.appendChild(wvH(`<div class="wv-subrow">
-   <div class="wv-mod wv-panel"><i class="wv-led" data-sub title="Sub on or off"></i><span class="wv-nm">SUB</span>
-    <div class="wv-glyphs" data-subshape>${wvGlyph('M2 7 C5 0,7 0,9 7 S13 14,16 7', 0, 'Sine', 'data-k="0"')}${wvGlyph('M2 7 L6 2 L12 12 L16 7', 0, 'Triangle', 'data-k="1"')}${wvGlyph('M2 3 H9 V11 H16', 0, 'Square', 'data-k="2"')}</div>
-    <div class="wv-seg" data-suboct><span data-k="2" title="Two octaves down">${wvIc('M2 2 V8 M5 5 L2 8 L-1 5 M9 2 V8 M12 5 L9 8 L6 5', 13, 10)}−2</span><span data-k="1" title="One octave down">${wvIc('M5 1 V9 M8 6 L5 9 L2 6', 10, 10)}−1</span></div>
-    <div class="wv-well"><canvas id="wvSubLv" data-w="150" data-h="26" data-tgt="sub.level" title="Sub level"></canvas></div></div>
-   <div class="wv-mod wv-panel"><i class="wv-led" data-noise title="Noise on or off"></i><span class="wv-nm">NOISE</span>
-    <div class="wv-glyphs" data-ncol>${wvGlyph('M2 4 H16', 0, 'White', 'data-k="0"')}${wvGlyph('M2 3 L16 9', 0, 'Pink', 'data-k="1"')}${wvGlyph('M2 2 L16 12', 0, 'Brown', 'data-k="2"')}</div>
-    <div class="wv-well"><canvas id="wvNoiseLv" data-w="246" data-h="26" data-tgt="noise.level" title="Noise level"></canvas></div></div></div>`));
+  colL.appendChild(wvBuildMix());
 
   colR.appendChild(wvH(`<div class="wv-mod wv-panel">
-   <div class="wv-mh"><span class="wv-nm">FILTERS</span><span class="wv-sp"></span><div class="wv-seg" id="wvFroute"><span data-k="serial" title="Serial">1 → 2</span><span data-k="parallel" title="Parallel">1 ‖ 2</span><span data-k="split" title="Split: A to 1, B to 2">${wvIc('M1 5 H5 L9 1 H13 M5 5 L9 9 H13')}Split</span></div></div>
+   <div class="wv-mh"><span class="wv-nm">FILTERS</span><span class="wv-moved" id="wvMovedF"></span><span class="wv-sp"></span><div class="wv-seg" id="wvFroute"><span data-k="serial" title="Serial: Filter 1, then Filter 2">1 → 2</span><span data-k="parallel" title="Parallel: both filters side by side, summed">1 ‖ 2</span><span data-k="split" title="Split: A goes to Filter 1, B to Filter 2">${wvIc('M1 5 H5 L9 1 H13 M5 5 L9 9 H13')}Split</span></div></div>
    <div class="wv-two" id="wvFilters"></div></div>`));
   const fl = colR.querySelector('#wvFilters');
   [0, 1].forEach((i) => fl.appendChild(wvH(`<div class="wv-fcol">
-   <div class="wv-frow"><span class="wv-ro" style="color:var(--wv-t)">${i + 1}</span><div class="wv-glyphs" data-ftype="${i}">${WV_FILTERS.map(([k, d, t]) => wvGlyph(d, false, t, `data-k="${k}"`)).join('')}</div></div>
-   <div class="wv-well"><canvas id="wvLens${i}" data-w="258" data-h="86" data-tgt="filt${i}.cut" title="Drag across for cutoff, up and down for resonance"></canvas></div>
+   <div class="wv-frow"><span class="wv-ro" style="color:var(--wv-t)">${i + 1}</span><div class="wv-glyphs" data-ftype="${i}">${WV_FILTERS.map(([k, d, t]) => wvGlyph(d, false, `${t}: Filter ${i + 1}'s type`, `data-k="${k}"`)).join('')}</div></div>
+   <div class="wv-well"><canvas id="wvLens${i}" data-w="258" data-h="86" data-tgt="filt${i}.cut"></canvas></div>
    <div class="wv-frow" style="justify-content:space-between">
     <div class="wv-cell c" style="flex-direction:row;gap:4px">${wvKnobEl(`wvDr${i}`, 34, 0, `filt${i}.drive`)}<div class="wv-lab wv-col"><span>Drive</span><b id="wvDrr${i}"></b></div></div>
     <div class="wv-cell c" style="flex-direction:row;gap:4px">${wvKnobEl(`wvKy${i}`, 34, 0, `filt${i}.key`)}<div class="wv-lab wv-col"><span>Key</span><b id="wvKyr${i}"></b></div></div></div></div>`)));
 
   colR.appendChild(wvH(`<div class="wv-mod wv-panel">
    <div class="wv-mh"><span class="wv-nm">AMP</span><span class="wv-sp"></span><span class="wv-ro" id="wvAmpRo"></span></div>
-   <div style="display:flex;gap:8px"><div class="wv-well"><canvas id="wvAmp" data-w="380" data-h="78" title="Drag a corner: attack, decay and sustain, release"></canvas></div><div class="wv-well" title="Voices sounding"><canvas id="wvVox" data-w="138" data-h="78"></canvas></div></div></div>`));
+   <div style="display:flex;gap:8px"><div class="wv-well"><canvas id="wvAmp" data-w="380" data-h="78" title="Amp envelope: drag a corner. Attack, decay and sustain, release"></canvas></div><div class="wv-well" title="Voices: one cell for each note sounding, filled to its level"><canvas id="wvVox" data-w="138" data-h="78"></canvas></div></div></div>`));
 
   colR.appendChild(wvH(`<div class="wv-mod wv-panel">
    <div class="wv-mh"><span class="wv-nm">MODULATE</span><span class="wv-sp"></span><span class="wv-hint">Drag a source onto any control</span></div>
-   <div class="wv-tabs4" id="wvSrcTabs">${WV_SOURCES.map((s, i) => `<div class="wv-t4 wv-btn" data-src="${i}" title="${s.label}: click to edit, drag onto a control to map it"><i class="act"></i><canvas id="wvT4c${i}" data-w="40" data-h="14"></canvas><b>${s.label}</b></div>`).join('')}</div>
+   <div class="wv-tabs4" id="wvSrcTabs">${WV_SOURCES.map((s, i) => `<div class="wv-t4 wv-btn" data-src="${i}" style="--c:${WV_SRC_COL[s.key]}" title="${s.label}: click to edit it, drag it onto any control to make it move that control"><i class="act"></i><canvas id="wvT4c${i}" data-w="40" data-h="14"></canvas><b>${s.label}</b></div>`).join('')}</div>
+   <div class="wv-shapes" id="wvShapes"><span class="wv-hint" id="wvShpLab">Shape</span>
+    <div class="wv-glyphs">${WV_LFO_SHAPES.map(([k, n, d]) => wvGlyph(d, false, n, `data-shape="${k}"`)).join('')}</div><span class="wv-sp"></span>
+    <div class="wv-seg" id="wvRateMode"><span data-k="0" title="Hz: the rate runs free of the tempo">Hz</span><span data-k="1" title="Sync: the rate locks to the tempo, in bars and notes">Sync</span></div>
+    <span class="wv-ro wv-tempo wv-btn" id="wvTempoRo" title="Tempo: drag up and down. Synced LFOs follow it; double-click for 120"></span></div>
    <div class="wv-ed">
-    <div class="wv-well"><canvas id="wvSrcEd" data-w="338" data-h="150" title="Drag the points; double-click to add one"></canvas></div>
+    <div class="wv-well"><canvas id="wvSrcEd" data-w="338" data-h="124" title="Shape: drag a point, double-click to add one. A standard shape becomes Drawn when you change it here"></canvas></div>
     <div style="display:flex;flex-direction:column;gap:8px;width:178px" id="wvSrcSide">
-     <div class="wv-seg" id="wvSrcMode"><span data-k="free" title="Free running">${wvIc('M1 5 C3 0,5 0,7 5 S11 10,13 5')}Free</span><span data-k="trig" title="Restarts on each note">${wvIc('M1 9 V1 M1 5 C4 0,6 0,8 5 S11 10,13 5')}Trig</span><span data-k="env" title="Runs once per note">${wvIc('M1 9 L4 1 L13 9')}Env</span></div>
+     <div class="wv-seg" id="wvSrcMode"><span data-k="free" title="Free: runs all the time, the same for every note">${wvIc('M1 5 C3 0,5 0,7 5 S11 10,13 5')}Free</span><span data-k="trig" title="Trig: starts again from the beginning on each note">${wvIc('M1 9 V1 M1 5 C4 0,6 0,8 5 S11 10,13 5')}Trig</span><span data-k="env" title="Env: plays once per note, then holds its last value">${wvIc('M1 9 L4 1 L13 9')}Env</span></div>
      <div style="display:flex;gap:8px;justify-content:space-between">
-      <div class="wv-cell c">${wvKnobEl('wvSrcRate', 46, 0)}<div class="wv-lab"><span>Rate</span><b id="wvSrcRateRo"></b></div></div>
-      <div class="wv-cell c">${wvKnobEl('wvSrcSmooth', 46, 0)}<div class="wv-lab"><span>Smooth</span><b id="wvSrcSmoothRo"></b></div></div>
-      <div class="wv-cell c">${wvKnobEl('wvSrcRise', 46, 0)}<div class="wv-lab"><span>Rise</span><b id="wvSrcRiseRo"></b></div></div></div></div></div>
+      <div class="wv-cell c" title="Rate: drag up and down. In Hz, or a note length with Sync">${wvKnobEl('wvSrcRate', 46, 0)}<div class="wv-lab"><span>Rate</span><b id="wvSrcRateRo"></b></div></div>
+      <div class="wv-cell c" title="Smooth: drag up and down. Rounds off the corners, up to 200 ms">${wvKnobEl('wvSrcSmooth', 46, 0)}<div class="wv-lab"><span>Smooth</span><b id="wvSrcSmoothRo"></b></div></div>
+      <div class="wv-cell c" title="Rise: drag up and down. Fades the LFO in from each note's start">${wvKnobEl('wvSrcRise', 46, 0)}<div class="wv-lab"><span>Rise</span><b id="wvSrcRiseRo"></b></div></div></div></div></div>
    <div class="wv-targets" id="wvSrcTargets"></div></div>`));
 
   colR.appendChild(wvH(`<div class="wv-mod wv-panel wv-voicing">
    <span class="wv-nm">VOICE</span>
-   <div class="wv-seg" id="wvVoiceMode"><span data-k="poly" title="Poly">${wvIc('M1 2 H13 M1 5 H13 M1 8 H13')}Poly</span><span data-k="mono" title="Mono">${wvIc('M1 5 H13')}Mono</span><span data-k="legato" title="Legato: notes glide into each other">${wvIc('M1 8 C4 1,10 1,13 8')}Legato</span></div>
-   <div class="wv-well" title="Glide"><canvas id="wvGlide" data-w="96" data-h="26" data-tgt="voice.glide"></canvas></div>
+   <div class="wv-seg" id="wvVoiceMode"><span data-k="poly" title="Poly: every note its own voice">${wvIc('M1 2 H13 M1 5 H13 M1 8 H13')}Poly</span><span data-k="mono" title="Mono: one note at a time">${wvIc('M1 5 H13')}Mono</span><span data-k="legato" title="Legato: notes glide into each other">${wvIc('M1 8 C4 1,10 1,13 8')}Legato</span></div>
+   <div class="wv-well"><canvas id="wvGlide" data-w="96" data-h="26" data-tgt="voice.glide"></canvas></div>
    <span class="wv-chip wv-btn" id="wvBendRange" title="Pitch-bend range: click for the next">${wvIc('M1 8 C5 8,7 2,13 2')}<span>Bend</span><b class="wv-mono" id="wvBendRo"></b></span>
    <div class="wv-seg" id="wvMpe"><span title="MPE: each note its own bend and pressure">${wvIc('M1 9 V3 M5 9 V1 M9 9 V4 M13 9 V2')}MPE</span></div></div>`));
 }
@@ -190,16 +194,10 @@ function wvWirePlay() {
       if (e.altKey) wvLive(k + 'rand', wvClamp(wvG(k + 'rand') - dy / 150));
       else wvLive(k + 'phase', ((wvG(k + 'phase') - dy / 150) % 1 + 1) % 1);
     });
-    wvV('wvLv' + i, k + 'level', 90);
   }
 
-  wvDrag(WVW.wvSubLv.el, (dx) => wvLive('sub.level', wvClamp(wvG('sub.level') + dx / 140)));
-  wvDrag(WVW.wvNoiseLv.el, (dx) => wvLive('noise.level', wvClamp(wvG('noise.level') + dx / 180)));
-  document.querySelector('[data-sub]').addEventListener('click', () => wvCommit('sub.on', wvG('sub.on') ? 0 : 1));
-  document.querySelector('[data-noise]').addEventListener('click', () => wvCommit('noise.on', wvG('noise.on') ? 0 : 1));
-  wvChoice(document, '[data-subshape] .wv-g', 'sub.shape', (el) => +el.dataset.k);
-  wvChoice(document, '[data-suboct] span', 'sub.oct', (el) => +el.dataset.k);
-  wvChoice(document, '[data-ncol] .wv-g', 'noise.color', (el) => +el.dataset.k);
+  wvWireMix();
+  wvWireShapes();
   wvChoice(document, '#wvFroute span', 'filt.route');
   wvChoice(document, '#wvVoiceMode span', 'voice.mode');
   $('wvMpe').addEventListener('click', () => wvCommit('voice.mpe', wvG('voice.mpe') ? 0 : 1));
@@ -261,12 +259,19 @@ function wvWirePlay() {
     });
   });
 
-  // The source editor: an LFO's points, or an envelope's corners.
+  // The source editor: an LFO's points, or an envelope's corners. A standard
+  // shape has no points to drag, so the first drag or double-click on one makes
+  // it Drawn, sampled from what is on screen, and goes on from there.
   const se = WVW.wvSrcEd;
-  let pi = -1;
+  let pi = -1, at0 = null;
   const px = (q) => 8 + q[0] * (se.w - 16), py = (q) => 8 + (1 - q[1]) * (se.h - 16);
+  const nearest = (pts, x, y) => pts.reduce((b, q, i) => (Math.hypot(px(q) - x, py(q) - y) < Math.hypot(px(pts[b]) - x, py(pts[b]) - y) ? i : b), 0);
   wvDrag(se.el, (dx, dy, e) => {
     const s = WV_SOURCES[WV.sel], [x, y] = wvLocal(se.el, e);
+    if (s.kind === 'lfo' && pi === -2) {
+      wvToDrawn(+s.key.slice(3));
+      pi = nearest(wvG(`${s.key}.points`), at0[0], at0[1]);
+    }
     if (s.kind === 'lfo' && pi >= 0) {
       const key = `${s.key}.points`, pts = wvG(key).map((q) => q.slice());
       const p = pts[pi];
@@ -276,10 +281,15 @@ function wvWirePlay() {
     } else if (s.kind === 'env' && eh) wvEnvDrag(s.key, eh, dx, dy, 120, 70);
   }, (e) => {
     const s = WV_SOURCES[WV.sel], [x, y] = wvLocal(se.el, e);
+    at0 = [x, y];
     if (s.kind === 'lfo') {
+      const L = +s.key.slice(3);
+      // Not yet: a plain click on a standard shape leaves it as it is.
+      if (wvLfoShape(L) !== 'drawn' && e.detail !== 2) { pi = -2; return; }
+      wvToDrawn(L);
       const pts = wvG(`${s.key}.points`);
       const near = (q) => Math.hypot(px(q) - x, py(q) - y);
-      pi = pts.reduce((b, q, i) => (near(q) < near(pts[b]) ? i : b), 0);
+      pi = nearest(pts, x, y);
       if (near(pts[pi]) > 14 && e.detail === 2) {
         const nx = wvClamp((x - 8) / (se.w - 16));
         const at = Math.max(1, pts.findIndex((q) => q[0] > nx));
@@ -305,6 +315,52 @@ function wvWirePlay() {
   srcKnob('wvSrcRise', 'rise');
 }
 
+// ─────────────────────────────────────────────────────────── v7: LFO shapes
+
+/// Make an LFO Drawn, keeping the shape it had: the points first, so the
+/// engine never plays the old points as Drawn, then the shape.
+function wvToDrawn(L) {
+  if (wvLfoShape(L) === 'drawn') return;
+  wvCommit(`lfo${L}.points`, wvShapePoints(L));
+  wvCommit(`lfo${L}.shape`, 'drawn');
+}
+
+function wvWireShapes() {
+  const lfo = () => { const s = WV_SOURCES[WV.sel]; return s.kind === 'lfo' ? +s.key.slice(3) : null; };
+  document.querySelectorAll('#wvShapes [data-shape]').forEach((b) => b.addEventListener('click', () => {
+    const L = lfo();
+    if (L == null) return;
+    if (b.dataset.shape === 'drawn') wvToDrawn(L);
+    else wvCommit(`lfo${L}.shape`, b.dataset.shape);
+  }));
+  document.querySelectorAll('#wvRateMode span').forEach((b) => b.addEventListener('click', () => {
+    const L = lfo();
+    if (L != null) wvCommit(`lfo${L}.sync`, +b.dataset.k);
+  }));
+  // The tempo: drag up or across, a beat per two pixels, whole BPM only.
+  const tp = $('wvTempoRo');
+  let acc = 0, from = 120;
+  wvDrag(tp, (dx, dy) => {
+    acc += (dx - dy) / 2;
+    wvLive('tempo', Math.round(wvClamp(from + acc, 30, 300)));
+    wvTxt('wvTempoRo', `${wvTempo()} BPM`);
+  }, () => { acc = 0; from = wvTempo(); });
+  tp.addEventListener('dblclick', () => wvCommit('tempo', 120));
+}
+
+/// The Shape row follows the chosen source; an envelope has no shape to pick.
+function wvSyncShapes() {
+  const s = WV_SOURCES[WV.sel], lfo = s.kind === 'lfo', L = lfo ? +s.key.slice(3) : 0, el = $('wvShapes');
+  el.style.setProperty('--c', WV_SRC_COL[s.key]);
+  el.classList.toggle('env', !lfo);
+  const shape = lfo ? wvLfoShape(L) : '', sync = lfo && !!wvG(`lfo${L}.sync`);
+  el.querySelectorAll('[data-shape]').forEach((b) => b.classList.toggle('on', b.dataset.shape === shape));
+  el.querySelectorAll('#wvRateMode span').forEach((b) => b.classList.toggle('on', lfo && (b.dataset.k === '1') === sync));
+  $('wvTempoRo').classList.toggle('off', !sync);
+  wvTxt('wvTempoRo', `${wvTempo()} BPM`);
+  wvTxt('wvShpLab', lfo ? 'Shape' : 'Envelope · drag its points');
+}
+
 /// Which corner of an envelope drawing is nearest the pointer.
 function wvEnvHandle(g, pre, x) {
   const P = wvEnvPts(g, wvEnv(pre));
@@ -328,7 +384,7 @@ function wvRenderTargets() {
   const src = WV_SOURCES[WV.sel].key;
   el.innerHTML = '';
   WV.mods.filter((m) => m.src === src).forEach((m) => {
-    const c = wvH(`<span class="wv-chip wv-btn" title="Drag across for the amount"><i></i>${wvDstName(m.dst)} <b class="wv-mono" style="font-weight:400;color:var(--wv-t3)"></b> <span style="color:var(--wv-t3);cursor:pointer" title="Remove">×</span></span>`);
+    const c = wvH(`<span class="wv-chip wv-btn" style="--wv-mod:${WV_SRC_COL[src] || 'var(--wv-mod)'}" title="${wvDstName(m.dst)}: drag across for how far ${WV_SOURCES[WV.sel].label} moves it"><i></i>${wvDstName(m.dst)} <b class="wv-mono" style="font-weight:400;color:var(--wv-t3)"></b> <span style="color:var(--wv-t3);cursor:pointer" title="Remove: this source stops moving it">×</span></span>`);
     const amt = c.querySelector('b');
     const show = () => { amt.textContent = (m.amt > 0 ? '+' : '') + Math.round(m.amt * 100); };
     show();
@@ -342,6 +398,7 @@ function wvRenderTargets() {
     el.appendChild(c);
   });
   if (!el.children.length) el.appendChild(wvH('<span class="wv-hint">No targets yet. Drag this source onto a control.</span>'));
+  wvRenderBadges();
 }
 
 /// The parts of Modulate that follow the chosen source.
@@ -352,6 +409,7 @@ function wvSyncSrc() {
   $('wvSrcSide').querySelectorAll('.wv-seg, .wv-cell').forEach((x) => x.classList.toggle('dim', !lfo));
   const mode = lfo ? wvG(`${s.key}.mode`) : '';
   document.querySelectorAll('#wvSrcMode span').forEach((x) => x.classList.toggle('on', x.dataset.k === mode));
+  wvSyncShapes();
   wvRenderTargets();
 }
 
@@ -360,7 +418,7 @@ function wvSyncSrc() {
 function wvSyncPlay() {
   for (let i = 0; i < 3; i++) {
     const k = `osc${i}.`;
-    document.querySelector(`[data-oscled="${i}"]`).classList.toggle('off', !wvG(k + 'on'));
+    document.querySelector(`[data-oscled="${i}"]`).classList.toggle('on', !!wvG(k + 'on'));
     document.getElementById('wvOsc' + i).style.opacity = wvG(k + 'on') ? 1 : 0.55;
     wvTxt('wvPkName' + i, wvG(k + 'table'));
     wvTxt('wvRoute' + i, WV_ROUTE_NAMES[wvG(k + 'route')] || wvG(k + 'route'));
@@ -374,18 +432,213 @@ function wvSyncPlay() {
     document.querySelector(`[data-ofx="${i}"] path`).setAttribute('d', (WV_OFX[fx] || WV_OFX.off).g);
     wvTxt('wvOfn' + i, (WV_OFX[fx] || WV_OFX.off).name);
   }
-  document.querySelector('[data-sub]').classList.toggle('off', !wvG('sub.on'));
-  document.querySelector('[data-noise]').classList.toggle('off', !wvG('noise.on'));
+  WV_MIX.forEach((ch, c) => {
+    const on = !!wvG(ch.on);
+    document.querySelector(`[data-mixon="${c}"]`).classList.toggle('on', on);
+    document.querySelector(`[data-strip="${c}"]`).classList.toggle('off', !on);
+  });
   const lit = (sel, v) => document.querySelectorAll(sel).forEach((x) => x.classList.toggle('on', x.dataset.k === String(v)));
   lit('[data-subshape] .wv-g', wvG('sub.shape'));
   lit('[data-suboct] span', wvG('sub.oct'));
-  lit('[data-ncol] .wv-g', wvG('noise.color'));
+  lit('[data-ncol] span', wvG('noise.color'));
   lit('#wvFroute span', wvG('filt.route'));
   lit('#wvVoiceMode span', wvG('voice.mode'));
   [0, 1].forEach((i) => lit(`[data-ftype="${i}"] .wv-g`, wvG(`filt${i}.type`)));
   $('wvMpe').firstElementChild.classList.toggle('on', !!wvG('voice.mpe'));
   wvTxt('wvBendRo', `±${wvG('voice.bend')}`);
   wvSyncSrc();
+}
+
+// ─────────────────────────────────────────────────────────── v7: badges
+//
+// A badge on each module for every route into it: the source's own shape in
+// its colour, then what it moves. Hovering one lights the source's tab and
+// rings the control; clicking one opens the source in Modulate.
+
+/// A badge on an oscillator names only the control, since it sits on that
+/// oscillator already. One on the filters keeps the filter's number.
+const WV_BADGE_SHORT = { pos: 'Position', 'warp0.amt': 'Warp 1', 'warp1.amt': 'Warp 2', 'uni.det': 'Unison', 'uni.spr': 'Width', pitch: 'Pitch', fine: 'Fine', phase: 'Phase', rand: 'Random', pan: 'Pan', level: 'Level', 'fx.a': 'Effect', 'fx.b': 'Effect' };
+
+const wvEsc = (t) => String(t).replace(/[&<>\u0022]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\u0022': '&quot;' })[c]);
+const wvSrcIndex = (src) => WV_SOURCES.findIndex((s) => s.key === src);
+const wvSrcColour = (src) => WV_SRC_COL[src] || 'var(--wv-mod)';
+
+/// A source drawn small: an LFO's own shape, an envelope's corners, and a
+/// plain ramp for the rest (macros, the wheel, velocity).
+function wvSrcGlyph(src, w = 14, h = 9) {
+  const i = wvSrcIndex(src);
+  let d = '';
+  if (i >= 0 && WV_SOURCES[i].kind === 'lfo') {
+    const L = +src.slice(3);
+    for (let k = 0; k <= 28; k++) {
+      const u = k / 28;
+      d += (k ? 'L' : 'M') + (1 + u * (w - 2)).toFixed(1) + ' ' + (h - 1 - wvLfoVal(L, u, 0) * (h - 2)).toFixed(1);
+    }
+  } else if (i >= 0) d = `M1 ${h - 1} L4 1 L7 ${h / 2} H${w - 4} L${w - 1} ${h - 1}`;
+  else d = `M1 ${h - 1} L${w - 1} 1`;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+}
+
+function wvBadge(m, short) {
+  const rest = m.dst.replace(/^osc\d\./, '');
+  const tn = short ? (WV_BADGE_SHORT[rest] || rest) : wvDstName(m.dst);
+  return `<span class="wv-badge" style="--c:${wvSrcColour(m.src)}" data-bs="${wvEsc(m.src)}" data-bt="${wvEsc(m.dst)}">${wvSrcGlyph(m.src)}${wvEsc(wvSrcName(m.src))}<i>→ ${wvEsc(tn)}</i></span>`;
+}
+
+/// Light a route: the source's tab, and the control it moves, in its colour.
+function wvHlMod(src, dst, on) {
+  const i = wvSrcIndex(src);
+  if (i >= 0) document.querySelector(`#wvSrcTabs [data-src="${i}"]`)?.classList.toggle('wv-hl', on);
+  document.querySelectorAll('#waveView canvas[data-tgt]').forEach((c) => {
+    if (c.dataset.tgt !== dst) return;
+    c.style.setProperty('--c', wvSrcColour(src));
+    c.classList.toggle('wv-hl', on);
+  });
+}
+
+/// Every module's badges, from the routes as they are now. Called whenever the
+/// routes change, and when Play comes on screen, since badges that do not fit
+/// can only be found once they are laid out.
+function wvRenderBadges() {
+  if (!WV.built) return;
+  document.querySelectorAll('#waveView .wv-hl').forEach((x) => x.classList.remove('wv-hl'));
+  const rows = [0, 1, 2].map((i) => [`wvMoved${i}`, (m) => m.dst.startsWith(`osc${i}.`), true])
+    .concat([['wvMovedF', (m) => /^filt\d\./.test(m.dst), false]]);
+  for (const [id, keep, short] of rows) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const list = WV.mods.filter(keep);
+    let n = list.length;
+    const fill = () => {
+      const more = list.slice(n);
+      el.innerHTML = list.slice(0, n).map((m) => wvBadge(m, short)).join('')
+        + (more.length ? `<span class="wv-badge wv-more" style="--c:var(--wv-t3)" title="${more.length} more: ${wvEsc(more.map((m) => `${wvSrcName(m.src)} → ${wvDstName(m.dst)}`).join(', '))}">+${more.length}</span>` : '');
+    };
+    fill();
+    // More routes than the header has room for: the last ones fold into "+N",
+    // so a badge is never cut off.
+    while (n > 0 && el.clientWidth && el.scrollWidth > el.clientWidth + 0.5) { n--; fill(); }
+    el.querySelectorAll('.wv-badge[data-bs]').forEach((b) => {
+      const src = b.dataset.bs, dst = b.dataset.bt;
+      b.addEventListener('mouseenter', () => wvHlMod(src, dst, true));
+      b.addEventListener('mouseleave', () => wvHlMod(src, dst, false));
+      b.addEventListener('click', () => {
+        const i = wvSrcIndex(src);
+        if (i < 0) return;
+        WV.sel = i;
+        wvSyncSrc();
+      });
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────── v7: the mixer
+//
+// Every sound source on one row, each with a real on/off and a level bar that
+// draws its own sound. The bar's right end holds its readout.
+
+const WV_MIX = [0, 1, 2].map((i) => ({ n: `OSC ${'ABC'[i]}`, who: `Osc ${'ABC'[i]}`, on: `osc${i}.on`, lv: `osc${i}.level` }))
+  .concat([{ n: 'SUB', who: 'Sub', on: 'sub.on', lv: 'sub.level' }, { n: 'NOISE', who: 'Noise', on: 'noise.on', lv: 'noise.level' }]);
+/// Fixed widths, the row's whole width between them; the last 40 px of each
+/// bar is its readout.
+const WV_MIX_W = [126, 126, 126, 214, 194];
+const WV_MIX_RO = 40;
+const WV_NOISE_COL = [['W', 'White: bright, even hiss', '#e9edf2'], ['P', 'Pink: softer, even in every octave', '#f2a3c0'], ['B', 'Brown: a deep rumble', '#c08f60']];
+const WV_SUB_SHAPES = [
+  ['M2 7 C5 0,7 0,9 7 S13 14,16 7', 'Sine: the purest, deepest sub'],
+  ['M2 7 L6 2 L12 12 L16 7', 'Triangle: a little edge, so it carries on small speakers'],
+  ['M2 3 H9 V11 H16', 'Square: hollow, cuts through a mix'],
+];
+
+function wvBuildMix() {
+  const head = (ch, c) => {
+    let x = `<span class="wv-pwr wv-btn" data-mixon="${c}" title="${ch.who}: on or off">${WV_PWR}</span><span class="wv-nm">${ch.n}</span>`;
+    if (c === 3) {
+      x += `<div class="wv-glyphs" data-subshape>${WV_SUB_SHAPES.map(([d, t], k) => wvGlyph(d, false, t, `data-k="${k}"`)).join('')}</div>`
+        + '<div class="wv-seg" data-suboct><span data-k="2" title="−2: two octaves below the note">−2</span><span data-k="1" title="−1: one octave below the note">−1</span></div>';
+    }
+    if (c === 4) x += `<div class="wv-seg" data-ncol>${WV_NOISE_COL.map(([l, t, col], k) => `<span data-k="${k}" title="${t}"><i class="wv-nd" style="background:${col}"></i>${l}</span>`).join('')}</div>`;
+    return x;
+  };
+  return wvH(`<div class="wv-mod wv-panel wv-mix"><span class="wv-vlab">MIX</span>${WV_MIX.map((ch, c) => `<div class="wv-strip" data-strip="${c}" style="width:${WV_MIX_W[c]}px">
+    <div class="wv-sh">${head(ch, c)}</div>
+    <div class="wv-well"><canvas id="wvMixL${c}" data-w="${WV_MIX_W[c]}" data-h="24" data-tgt="${ch.lv}"></canvas></div></div>`).join('')}</div>`);
+}
+
+function wvWireMix() {
+  WV_MIX.forEach((ch, c) => {
+    const g = WVW['wvMixL' + c], span = WV_MIX_W[c] - WV_MIX_RO - 12;
+    // Where you click is the level, and it follows the pointer from there.
+    const set = (e) => wvLive(ch.lv, wvClamp((wvLocal(g.el, e)[0] - 6) / span));
+    wvDrag(g.el, (dx, dy, e) => set(e), set);
+    document.querySelector(`[data-mixon="${c}"]`).addEventListener('click', () => wvCommit(ch.on, wvG(ch.on) ? 0 : 1));
+  });
+  wvChoice(document, '[data-subshape] .wv-g', 'sub.shape', (el) => +el.dataset.k);
+  wvChoice(document, '[data-suboct] span', 'sub.oct', (el) => +el.dataset.k);
+  wvChoice(document, '[data-ncol] span', 'noise.color', (el) => +el.dataset.k);
+}
+
+const wvDbTxt = (v) => (v < 0.01 ? '−∞' : ((d) => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(1))(20 * Math.log10(v * v + 1e-9)));
+
+/// `curs` are the oscillators' cycles this frame, already worked out.
+function wvDrawMix(t, curs) {
+  const cl = wvCl();
+  WV_MIX.forEach((ch, c) => {
+    const g = WVW['wvMixL' + c], x = g.c, W0 = g.w, h = g.h, w = W0 - WV_MIX_RO;
+    const v = wvClamp(wvG(ch.lv)), X = 6 + (w - 12) * v, a = 0.4 + 0.6 * v;
+    x.clearRect(0, 0, W0, h);
+    x.globalAlpha = wvG(ch.on) ? 1 : 0.35;
+    x.save();
+    x.beginPath(); x.rect(6, 2, X - 6, h - 4); x.clip();
+    const p = new Path2D();
+    let col = null;
+    const line = (n, y) => { for (let i = 0; i <= n; i++) { const u = i / n, yy = y(u, i); if (i) p.lineTo(6 + u * (w - 12), yy); else p.moveTo(6 + u * (w - 12), yy); } };
+    if (c < 3) line(140, (u) => h / 2 - wvRd(curs[c], u * 4) * (h * 0.36) * a);
+    else if (c === 3) {
+      const sh = [(q) => Math.sin(q * WV_TAU), (q) => 1 - 4 * Math.abs((((q + 0.25) % 1) + 1) % 1 - 0.5), (q) => ((q % 1) < 0.5 ? 1 : -1) * 0.8][wvG('sub.shape')] || ((q) => Math.sin(q * WV_TAU));
+      const cyc = 4 / 2 ** (wvG('sub.oct') || 1);
+      line(140, (u) => h / 2 - sh(u * cyc) * (h * 0.36) * a);
+    } else {
+      // Noise in its own colour, white, pink or brown, the steps reseeded
+      // fourteen times a second so it seethes.
+      let sd = 7 + Math.floor(t * 14) % 997, pr = 0;
+      const nc = wvG('noise.color') | 0;
+      col = (WV_NOISE_COL[nc] || WV_NOISE_COL[1])[2];
+      line(170, () => {
+        sd = (sd * 16807) % 2147483647;
+        const r = (sd / 2147483647) * 2 - 1;
+        pr = nc === 0 ? r : nc === 1 ? pr * 0.6 + r * 0.6 : pr * 0.9 + r * 0.35;
+        return h / 2 - wvClamp(pr, -1, 1) * (h * 0.4) * a;
+      });
+    }
+    if (col) {
+      x.strokeStyle = col;
+      x.lineWidth = 1.1;
+      x.shadowBlur = 6;
+      x.shadowColor = col;
+      x.stroke(p);
+      x.shadowBlur = 0;
+    } else wvTrace(x, p, cl, 1.1, 0.6);
+    x.restore();
+    x.strokeStyle = cl.track;
+    x.lineWidth = 1;
+    x.beginPath(); x.moveTo(X, h / 2); x.lineTo(w - 6, h / 2); x.stroke();
+    const m = wvModOf(ch.lv);
+    if (m.rng) {
+      const a0 = wvClamp(v - m.rng), a1 = wvClamp(v + m.rng);
+      x.fillStyle = m.col || cl.mod;
+      x.fillRect(6 + (w - 12) * a0, h - 3, (w - 12) * (a1 - a0), 2);
+      if (m.live != null) wvDot(x, 6 + (w - 12) * wvClamp(m.live), h - 2, 2, m.col || cl.acc);
+    }
+    x.fillStyle = cl.t;
+    x.beginPath(); x.roundRect(X - 2, 2, 4, h - 4, 2); x.fill();
+    x.font = `10px ${cl.mono}`;
+    x.textAlign = 'right';
+    x.fillStyle = cl.t2;
+    x.fillText(wvDbTxt(v), W0 - 6, h / 2 + 3.5);
+    x.textAlign = 'left';
+    x.globalAlpha = 1;
+  });
 }
 
 // ─────────────────────────────────────────────────────────────── drawing
@@ -510,8 +763,8 @@ function wvDrawSpec3D(g, T, name, p, warp0, opt = {}) {
   c.textAlign = 'left';
 }
 
-function wvDrawStrip(g, T, p, rng, n = 24) {
-  const { c, w, h } = g, cl = wvCl();
+function wvDrawStrip(g, T, p, m, n = 24) {
+  const { c, w, h } = g, cl = wvClFor(m), rng = m ? m.rng : 0;
   c.clearRect(0, 0, w, h);
   const pad = 6, cw = (w - pad * 2) / n;
   for (let i = 0; i < n; i++) {
@@ -549,7 +802,7 @@ function wvDrawFace(g, v, wave, ghost, o = {}) {
     c.beginPath(); c.moveTo(cx - 7, cy); c.lineTo(cx + 7, cy); c.moveTo(cx, cy - 7); c.lineTo(cx, cy + 7); c.stroke();
     return;
   }
-  wvRing(g, v, { cl, mod: o.mod, live: o.live, inset: 4 });
+  wvRing(g, v, { cl: o.col ? { ...cl, mod: o.col } : cl, mod: o.mod, live: o.live, inset: 4 });
   const r = w * 0.31;
   c.save();
   c.beginPath(); c.arc(cx, cy, r, 0, WV_TAU); c.clip();
@@ -571,14 +824,14 @@ function wvDrawKnob(id, key, bip) {
   c.clearRect(0, 0, w, h);
   k.el.previousElementSibling?.style.setProperty('--v', (bip ? Math.abs(v - 0.5) * 2 : v).toFixed(3));
   const m = wvModOf(key);
-  wvRing(k, v, { cl: wvCl(), bip, pointer: 1, mod: m.rng, live: m.live, inset: 4 });
+  wvRing(k, v, { cl: wvClFor(m), bip, pointer: 1, mod: m.rng, live: m.live, inset: 4 });
 }
 
 function wvDrawUniFace(g, cur, n, det, spr) {
   const { c, w, h } = g, cl = wvCl(), cx = w / 2, cy = h / 2, r = w * 0.3;
   c.clearRect(0, 0, w, h);
   const m = wvModOf(g.el.dataset.tgt);
-  wvRing(g, det, { cl, inset: 4, mod: m.rng, live: m.live });
+  wvRing(g, det, { cl: wvClFor(m), inset: 4, mod: m.rng, live: m.live });
   c.save();
   c.beginPath(); c.arc(cx, cy, r, 0, WV_TAU); c.clip();
   for (let i = 0; i < n; i++) {
@@ -597,67 +850,17 @@ function wvDrawUniFace(g, cur, n, det, spr) {
   c.textAlign = 'left';
 }
 
-/// A level fader, drawn as the wave's own silhouette rising to the cap.
-function wvDrawLevel(g, cur, lv, m) {
-  const { c, w, h } = g, cl = wvCl(), top = 8, bot = h - 8, y = bot - (bot - top) * lv, cx = w / 2;
-  c.clearRect(0, 0, w, h);
-  const sil = new Path2D();
-  sil.moveTo(cx, bot);
-  for (let i = 0; i <= 50; i++) sil.lineTo(cx + Math.abs(wvRd(cur, i / 50 * 3)) * (w * 0.34) * (0.35 + 0.65 * i / 50), bot - (bot - y) * i / 50);
-  for (let i = 50; i >= 0; i--) sil.lineTo(cx - Math.abs(wvRd(cur, i / 50 * 3)) * (w * 0.34) * (0.35 + 0.65 * i / 50), bot - (bot - y) * i / 50);
-  sil.closePath();
-  const gr = c.createLinearGradient(0, y, 0, bot);
-  gr.addColorStop(0, `rgba(${cl.bloom},.55)`);
-  gr.addColorStop(1, `rgba(${cl.bloom},.06)`);
-  c.fillStyle = gr;
-  c.fill(sil);
-  c.fillStyle = cl.t;
-  c.shadowBlur = 6;
-  c.shadowColor = 'rgba(0,0,0,.8)';
-  c.beginPath(); c.roundRect(4, y - 3, w - 8, 6, 3); c.fill();
-  c.shadowBlur = 0;
-  c.fillStyle = cl.acc;
-  c.fillRect(w / 2 - 5, y - 0.5, 10, 1);
-  if (m && m.rng) {
-    const y0 = bot - (bot - top) * wvClamp(lv - m.rng), y1 = bot - (bot - top) * wvClamp(lv + m.rng);
-    c.fillStyle = cl.mod;
-    c.fillRect(w - 4, y1, 2, y0 - y1);
-    if (m.live != null) wvDot(c, w - 3, bot - (bot - top) * wvClamp(m.live), 2.2, cl.acc);
-  }
-}
-
-/// A horizontal bar whose picture is its own effect: the sub's wave, the
-/// noise's colour, or the glide's curve.
-function wvDrawHBar(g, v, kind, cur) {
+/// The glide's bar: its curve, drawn as far as the glide goes. (The sub and the
+/// noise draw on the MIX row now.)
+function wvDrawHBar(g, v) {
   const { c, w, h } = g, cl = wvCl(), x = 6 + (w - 12) * v;
   c.clearRect(0, 0, w, h);
   c.save();
   c.beginPath(); c.rect(6, 3, x - 6, h - 6); c.clip();
   const p = new Path2D();
-  if (kind === 'sub') {
-    c.strokeStyle = `rgba(${cl.bloom},.18)`;
-    c.lineWidth = 1;
-    c.stroke(wvPath((u) => [6 + u * (w - 12), h / 2 - wvRd(cur, u * 4) * h * 0.3], 160));
-    const sh = [(q) => Math.sin(q * WV_TAU), (q) => 1 - 4 * Math.abs(((q + 0.25) % 1) - 0.5), (q) => ((q % 1) < 0.5 ? 1 : -1) * 0.8][wvG('sub.shape')] || ((q) => Math.sin(q * WV_TAU));
-    for (let i = 0; i <= 120; i++) {
-      const xx = 6 + i / 120 * (w - 12), yy = h / 2 - sh(i / 120 * 2 / wvG('sub.oct')) * (h * 0.34) * v;
-      if (i) p.lineTo(xx, yy); else p.moveTo(xx, yy);
-    }
-  } else if (kind === 'noise') {
-    let s = 7, pr = 0;
-    const col = wvG('noise.color');
-    for (let i = 0; i <= 160; i++) {
-      s = (s * 16807) % 2147483647;
-      const r = (s / 2147483647) * 2 - 1;
-      pr = col === 0 ? r : col === 1 ? pr * 0.6 + r * 0.6 : pr * 0.9 + r * 0.35;
-      const xx = 6 + i / 160 * (w - 12), yy = h / 2 - wvClamp(pr, -1, 1) * (h * 0.38) * v;
-      if (i) p.lineTo(xx, yy); else p.moveTo(xx, yy);
-    }
-  } else {
-    for (let i = 0; i <= 60; i++) {
-      const xx = 6 + i / 60 * (w - 12), u = i / 60, yy = h - 5 - (h - 10) * (1 - Math.exp(-u * 5 / (v * 3 + 0.05)));
-      if (i) p.lineTo(xx, yy); else p.moveTo(xx, yy);
-    }
+  for (let i = 0; i <= 60; i++) {
+    const xx = 6 + i / 60 * (w - 12), u = i / 60, yy = h - 5 - (h - 10) * (1 - Math.exp(-u * 5 / (v * 3 + 0.05)));
+    if (i) p.lineTo(xx, yy); else p.moveTo(xx, yy);
   }
   wvTrace(c, p, cl, 1.1, 0.6);
   c.restore();
@@ -668,8 +871,8 @@ function wvDrawHBar(g, v, kind, cur) {
   c.beginPath(); c.roundRect(x - 2, 2, 4, h - 4, 2); c.fill();
   const m = wvModOf(g.el.dataset.tgt || '');
   if (m.rng) {
-    c.fillStyle = cl.mod;
-    c.fillRect(6 + (w - 12) * wvClamp(v - m.rng), h - 3, (w - 12) * m.rng * 2, 2);
+    c.fillStyle = m.col || cl.mod;
+    c.fillRect(6 + (w - 12) * wvClamp(v - m.rng), h - 3, (w - 12) * (wvClamp(v + m.rng) - wvClamp(v - m.rng)), 2);
     if (m.live != null) wvDot(c, 6 + (w - 12) * wvClamp(m.live), h - 2, 2, cl.acc);
   }
 }
@@ -692,7 +895,7 @@ function wvDrawLadder(g, semi, cents, m) {
     }
   }
   if (m && m.rng) {
-    c.fillStyle = `color-mix(in srgb,${cl.mod} 30%,transparent)`;
+    c.fillStyle = `color-mix(in srgb,${m.col || cl.mod} 30%,transparent)`;
     c.fillRect(w - 5, h / 2 - m.rng * 48 * step, 2, m.rng * 96 * step);
   }
   c.fillStyle = cl.acc;
@@ -739,10 +942,10 @@ function wvDrawLens(g, cur, i) {
     c.fillStyle = `rgba(${cl.bloom},.7)`;
     c.fillRect(x - 1, h - 3 - fh, 2, fh);
   }
-  const r = wvModOf(f + 'cut').rng;
+  const mc = wvModOf(f + 'cut'), r = mc.rng;
   if (r) {
     const base = wvG(f + 'cut');
-    c.fillStyle = `color-mix(in srgb,${cl.mod} 14%,transparent)`;
+    c.fillStyle = `color-mix(in srgb,${mc.col || cl.mod} 14%,transparent)`;
     c.fillRect(fx(wvCutHz(wvClamp(base - r))), 3, fx(wvCutHz(wvClamp(base + r))) - fx(wvCutHz(wvClamp(base - r))), h - 6);
   }
   const pts = wvPath((u) => { const fr = 20 * Math.pow(1000, u); return [fx(fr), wvClamp(dbY(20 * Math.log10(Hm(fr) + 1e-6)), 3, h - 3)]; }, 140);
@@ -793,23 +996,24 @@ function wvDrawEnv(g, E, voices) {
   return P;
 }
 
-/// The LFO editor: its points, its curve, and the engine's phase on it.
+/// The LFO editor: its shape, the points when it is Drawn, and the engine's
+/// phase on it.
 function wvDrawLfo(g, L) {
-  const { c, w, h } = g, cl = wvCl(), pts = wvG(`lfo${L}.points`);
+  const { c, w, h } = g, cl = wvCl(), pts = wvG(`lfo${L}.points`), drawn = wvLfoShape(L) === 'drawn';
   const px = (q) => 8 + q[0] * (w - 16), py = (q) => 8 + (1 - q[1]) * (h - 16);
   c.clearRect(0, 0, w, h);
   c.strokeStyle = 'rgba(255,255,255,.05)';
   for (let i = 1; i < 8; i++) { c.beginPath(); c.moveTo(8 + i * (w - 16) / 8, 6); c.lineTo(8 + i * (w - 16) / 8, h - 6); c.stroke(); }
   c.beginPath(); c.moveTo(8, h / 2); c.lineTo(w - 8, h / 2); c.stroke();
-  const p = wvPath((u) => [8 + u * (w - 16), py([0, wvLfoAt(pts, u)])], 160);
+  const p = wvPath((u) => [8 + u * (w - 16), py([0, wvLfoVal(L, u)])], 160);
   wvUnder(c, p, 8, w - 8, h, 0, cl, 0.16);
   wvTrace(c, p, cl, 1.5);
-  for (const q of pts) { c.fillStyle = cl.t; c.beginPath(); c.arc(px(q), py(q), 3, 0, WV_TAU); c.fill(); }
+  if (drawn) for (const q of pts) { c.fillStyle = cl.t; c.beginPath(); c.arc(px(q), py(q), 3, 0, WV_TAU); c.fill(); }
   const ph = wvLfoPhase(L);
   if (ph != null) {
     c.strokeStyle = `color-mix(in srgb,${cl.acc} 50%,transparent)`;
     c.beginPath(); c.moveTo(8 + ph * (w - 16), 6); c.lineTo(8 + ph * (w - 16), h - 6); c.stroke();
-    wvDot(c, 8 + ph * (w - 16), py([0, wvLfoAt(pts, ph)]), 3.4, cl.acc);
+    wvDot(c, 8 + ph * (w - 16), py([0, wvLfoVal(L, ph)]), 3.4, cl.acc);
   }
 }
 
@@ -823,14 +1027,14 @@ function wvDrawMini(g, s) {
   const { c, w, h } = g, cl = wvCl();
   c.clearRect(0, 0, w, h);
   let p;
-  if (s.kind === 'lfo') p = wvPath((u) => [1 + u * (w - 2), h - 2 - wvLfoAt(wvG(`${s.key}.points`), u) * (h - 4)], 40);
+  if (s.kind === 'lfo') p = wvPath((u) => [1 + u * (w - 2), h - 2 - wvLfoVal(+s.key.slice(3), u) * (h - 4)], 40);
   else {
     const E = wvEnv(s.key);
     p = new Path2D();
     p.moveTo(1, h - 1); p.lineTo(2 + E.a * 8, 1); p.lineTo(6 + E.a * 8 + E.d * 10, h - 1 - E.s * (h - 2));
     p.lineTo(w - 6, h - 1 - E.s * (h - 2)); p.lineTo(w - 1, h - 1);
   }
-  c.strokeStyle = cl.wave;
+  c.strokeStyle = WV_SRC_COL[s.key] || cl.wave;
   c.lineWidth = 1.3;
   c.stroke(p);
 }
@@ -857,19 +1061,20 @@ function wvDrawVox(g) {
 const wvNoteName = (n) => ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
 
 function wvDrawPlay(t) {
-  const cl = wvCl(), vs = wvVoices();
+  const cl = wvCl(), vs = wvVoices(), curs = [];
   for (let i = 0; i < 3; i++) {
     const k = `osc${i}.`, name = wvG(k + 'table'), T = wvTable(name), p = wvPosNow(i);
     const cur = wvWaveFor(i), warp0 = [wvG(k + 'warp0.mode'), wvClamp(wvLiveOr(k + 'warp0.amt'))], tilt = WV.tilt[i];
     const opt = { rise: 0.3 + 0.38 * tilt, depth: 0.18 + 0.14 * tilt, floor: 1 };
     if (WV.face[i] === 's') wvDrawSpec3D(WVW['wvW3d' + i], T, name, p, warp0, opt);
     else wvDrawW3d(i, T, p, warp0, t, opt, wvG(k + 'on') ? vs : null);
-    wvDrawStrip(WVW['wvSt' + i], T, p, wvModOf(k + 'pos').rng);
+    curs.push(cur);
+    wvDrawStrip(WVW['wvSt' + i], T, p, wvModOf(k + 'pos'));
     const o = i === 1 ? 0 : 1, B = wvFrameAt(wvTable(wvG(`osc${o}.table`)), wvPosNow(o));
     [0, 1].forEach((j) => {
       const key = `${k}warp${j}.amt`, m = wvModOf(key), f = wvFrameAt(T, p), mode = wvG(`${k}warp${j}.mode`);
       const amt = wvClamp(m.live != null ? m.live : wvG(key));
-      wvDrawFace(WVW[`wvWp${i}${j}`], wvG(key), wvWarp(f, mode, amt, B), f, { mod: m.rng, live: m.live, empty: mode === 'off' });
+      wvDrawFace(WVW[`wvWp${i}${j}`], wvG(key), wvWarp(f, mode, amt, B), f, { col: m.col, mod: m.rng, live: m.live, empty: mode === 'off' });
       wvTxt(`wvWv${i}${j}`, mode === 'off' ? '—' : Math.round(wvG(key) * 100) + ' %');
     });
     wvDrawUniFace(WVW['wvUn' + i], cur, wvG(k + 'uni.n'), wvG(k + 'uni.det'), wvG(k + 'uni.spr'));
@@ -893,10 +1098,6 @@ function wvDrawPlay(t) {
     wvDrawKnob('wvPn' + i, k + 'pan', 1);
     const pn = Math.round((wvG(k + 'pan') - 0.5) * 200);
     wvTxt('wvPnr' + i, pn === 0 ? 'C' : (pn < 0 ? 'L' : 'R') + Math.abs(pn));
-    const lv = wvG(k + 'level');
-    wvDrawLevel(WVW['wvLv' + i], cur, lv, wvModOf(k + 'level'));
-    const db = 20 * Math.log10(lv ** 2 + 1e-9);
-    wvTxt('wvLvr' + i, lv < 0.01 ? '−∞' : (db < 0 ? '−' : '+') + Math.abs(db).toFixed(1));
     wvTxt('wvFr' + i, `${String(Math.round(p * (T.length - 1)) + 1).padStart(2, '0')} / ${T.length}`);
     const pk = WVW['wvPk' + i];
     pk.c.clearRect(0, 0, pk.w, pk.h);
@@ -904,10 +1105,9 @@ function wvDrawPlay(t) {
     pk.c.lineWidth = 1.2;
     pk.c.stroke(wvPath((u) => [1 + u * (pk.w - 2), pk.h / 2 - wvRd(wvFrameAt(T, u), (u * 3) % 1) * (pk.h * 0.4)], 60));
   }
-  const mix = wvWaveFor(0);
-  wvDrawHBar(WVW.wvSubLv, wvG('sub.level'), 'sub', mix);
-  wvDrawHBar(WVW.wvNoiseLv, wvG('noise.level'), 'noise', mix);
-  wvDrawHBar(WVW.wvGlide, wvG('voice.glide'), 'glide', mix);
+  const mix = curs[0];
+  wvDrawMix(t, curs);
+  wvDrawHBar(WVW.wvGlide, wvG('voice.glide'));
   [0, 1].forEach((i) => {
     wvDrawLens(WVW['wvLens' + i], mix, i);
     wvDrawKnob('wvDr' + i, `filt${i}.drive`, 0);
@@ -939,7 +1139,8 @@ function wvDrawPlay(t) {
   wvDrawKnob('wvSrcRate', `${L}.rate`, 0);
   wvDrawKnob('wvSrcSmooth', `${L}.smooth`, 0);
   wvDrawKnob('wvSrcRise', `${L}.rise`, 0);
-  wvTxt('wvSrcRateRo', s.kind === 'lfo' ? `${(0.2 + wvG(`${L}.rate`) * 2).toFixed(2)} Hz` : '—');
+  wvTxt('wvSrcRateRo', s.kind === 'lfo' ? wvLfoRateTxt(+L.slice(3)) : '—');
+  if (s.kind === 'lfo') wvTxt('wvTempoRo', `${wvTempo()} BPM`);
   wvTxt('wvSrcSmoothRo', s.kind === 'lfo' ? Math.round(wvG(`${L}.smooth`) * 100) + ' %' : '—');
   wvTxt('wvSrcRiseRo', s.kind === 'lfo' ? wvFmtMs(wvG(`${L}.rise`) ** 2 * 4) : '—');
   WV_SOURCES.forEach((x, i) => {
@@ -947,7 +1148,7 @@ function wvDrawPlay(t) {
     wvDrawMini(g, x);
     if (x.kind === 'lfo') {
       const ph = wvLfoPhase(+x.key.slice(3));
-      if (ph != null) wvDot(g.c, 1 + ph * (g.w - 2), g.h - 2 - wvLfoAt(wvG(`${x.key}.points`), ph) * (g.h - 4), 1.8, cl.acc);
+      if (ph != null) wvDot(g.c, 1 + ph * (g.w - 2), g.h - 2 - wvLfoVal(+x.key.slice(3), ph) * (g.h - 4), 1.8, cl.acc);
     }
     const used = WV.mods.some((m) => m.src === x.key);
     document.querySelector(`#wvSrcTabs [data-src="${i}"] .act`).style.setProperty('--o', used ? 0.3 + 0.7 * Math.abs(wvSrcVal(x.key)) : 0);

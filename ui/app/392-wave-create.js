@@ -102,7 +102,8 @@ function wvWireCreate() {
     const k = b.dataset.tool;
     if (['sine', 'saw', 'sq'].includes(k)) { wvStamp(k); return; }
     WV_ED.tool = k;
-    wvTxt('wvCTool', b.title);
+    // Its name, from the tooltip it now carries instead of a title.
+    wvTxt('wvCTool', b.dataset.tip || b.title);
     document.querySelectorAll('#wvTools [data-tool]').forEach((x) => x.classList.toggle('on', x === b));
   }));
   $('wvCTable').addEventListener('click', (e) => wvTableMenu(e.currentTarget, WV_ED.osc));
