@@ -66,6 +66,11 @@ impl Engine {
         wave: Arc<WaveShared>,
         keys: Arc<GrainKeys>,
     ) -> Result<Engine, String> {
+        // `AUDIOLAB_NO_AUDIO` is a machine with no output (`docs/NO-AUDIO-DEVICE.md`):
+        // tests and private copies set it, so nothing they do reaches the speakers.
+        if std::env::var_os("AUDIOLAB_NO_AUDIO").is_some() {
+            return Err("no audio output: AUDIOLAB_NO_AUDIO is set".into());
+        }
         // Build the FFT twiddle table here, on the thread that is opening the
         // device, rather than letting the first transform build it inside the
         // audio callback. It is 32 KB and once per process, but "once" inside a

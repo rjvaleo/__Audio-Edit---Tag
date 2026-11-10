@@ -77,3 +77,10 @@ warning is hidden" as the *before* state, which is only true on a machine that
 has audio. It passed on the developer's Mac and failed on CI, where the warning
 was correctly showing. It now reads the real state first. The mistake this file
 exists to document, made one level up, inside the file documenting it.
+
+## Silence on purpose
+
+`AUDIOLAB_NO_AUDIO=1` makes the engine refuse to open the output, exactly as a
+machine without one does. Test runs and private copies of the app set it, so a
+test that plays a note, or a click test on a private copy, never reaches the
+speakers of a machine someone is working at.
