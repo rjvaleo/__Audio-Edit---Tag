@@ -22,7 +22,7 @@ async function openFile(page) {
   await page.waitForSelector('#transportBar', { state: 'visible', timeout: 20_000 });
 }
 
-test('both sources are on the transport, on by default, and a switch is kept', async ({ page }) => {
+test('both sources are on the transport, on at every load, and a switch lasts only the session', async ({ page }) => {
   await openFile(page);
   const before = await page.evaluate(() => ({
     grain: $('srcGrain').classList.contains('on'), seq: $('srcSeq').classList.contains('on'),
@@ -31,17 +31,21 @@ test('both sources are on the transport, on by default, and a switch is kept', a
   expect(before.grain).toBe(true);
   expect(before.seq).toBe(true);
   await page.click('#srcSeq');
+  await page.click('#srcGrain');
   const off = await page.evaluate(() => ({
-    seq: $('srcSeq').classList.contains('on'), state: state.sources.seq,
-    saved: JSON.parse(localStorage.getItem('audiolab.sources.v1') || '{}').seq,
+    seq: $('srcSeq').classList.contains('on'), grain: $('srcGrain').classList.contains('on'),
+    state: { ...state.sources }, saved: localStorage.getItem('audiolab.sources.v1'),
   }));
   expect(off.seq).toBe(false);
-  expect(off.state).toBe(false);
-  expect(off.saved, 'the switch was not kept').toBe(false);
+  expect(off.grain).toBe(false);
+  expect(off.state).toEqual({ grain: false, seq: false });
+  expect(off.saved, 'a switch is not saved').toBeNull();
+  // A switch saved off by an older build is cleared too, and the next load plays.
+  await page.evaluate(() => localStorage.setItem('audiolab.sources.v1', JSON.stringify({ grain: false, seq: false })));
   await page.reload();
   await openFile(page);
-  expect(await page.evaluate(() => sourceOn('seq'))).toBe(false);
-  await page.evaluate(() => setSource('seq', true));
+  expect(await page.evaluate(() => ({ grain: sourceOn('grain'), seq: sourceOn('seq'), saved: localStorage.getItem('audiolab.sources.v1') })))
+    .toEqual({ grain: true, seq: true, saved: null });
 });
 
 test('SEQ off stops the sequencer being synced or mixed; GRAIN off mutes the engine and drops its feed', async ({ page }) => {

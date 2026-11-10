@@ -313,7 +313,9 @@ SEQ on the transport is whether the sequencer plays at all. Off, `seqSync`
 tells it to stop whatever the engine does and stops clocking it, `seqMix`
 leaves the engine's feed alone, and an export or a film leaves it out unless
 the export dialog says otherwise for one export. Switching it on loads the
-frame if it is not loaded. Kept in `audiolab.sources.v1`.
+frame if it is not loaded. It lasts the session: every load starts with
+GRAIN and SEQ both on, because a source left off from an earlier session is
+an app that plays nothing with nothing on screen to say why.
 
 ## The sequencer in a sound export
 

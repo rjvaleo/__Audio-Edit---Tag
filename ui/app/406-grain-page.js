@@ -355,6 +355,12 @@ function gsDrawMeters() {
   }
 }
 
+/// The two source chips: the switch each mirrors, and its title on and off.
+const GS_SOURCE_CHIPS = [
+  ['gsTGrain', 'srcGrain', 'GRAIN: the grain cloud sounds', 'GRAIN, the grain cloud,'],
+  ['gsTSeq', 'srcSeq', 'SEQ: the step sequencer plays through the engine', 'SEQ, the step sequencer,'],
+];
+
 function gsMarkTransport() {
   const on = (id, v) => $(id).classList.toggle('on', !!v);
   on('gsTPlay', engine.playing);
@@ -363,6 +369,13 @@ function gsMarkTransport() {
   on('gsTRec', capture.running || capture.armed);
   on('gsTGrain', $('srcGrain').classList.contains('on'));
   on('gsTSeq', $('srcSeq').classList.contains('on'));
+  // A source switched off is silent, and the page has to say so: a chip that
+  // is merely not pressed in reads as any other button.
+  for (const [id, src, on, what] of GS_SOURCE_CHIPS) {
+    const off = !$(src).classList.contains('on');
+    $(id).classList.toggle('off', off);
+    $(id).title = off ? `${what} is off, so it is silent. Click to turn it on` : on;
+  }
   $('gsHead').classList.toggle('live', gsMetersLive());
   gsTxt('gsClock', $('timeNow').textContent);
   gsTxt('gsSndName', state.selectedFile?.name || '');
