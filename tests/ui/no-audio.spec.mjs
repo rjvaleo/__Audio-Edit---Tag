@@ -118,6 +118,27 @@ test('with no audio device, the transport says why', async ({ page }) => {
   }
 });
 
+/// When the device comes back, so does the transport, without a reload.
+///
+/// It used to be asked about once, when the page loaded: a device missing at
+/// that moment left play, stop, loop and record switched off for good.
+test('when the device comes back, the transport comes back by itself', async ({ page }) => {
+  await ready(page);
+  await openFirstSound(page);
+  const real = await page.evaluate(() => engine.device);
+  test.skip(real === false, 'this machine really has no device');
+  const play = await page.getAttribute('#playBtn', 'title');
+  await pretendNoDevice(page);
+  expect(await page.evaluate(() => $('playBtn').disabled)).toBe(true);
+  // Clicking the note looks again, as coming back to the window does.
+  await page.evaluate(() => { $('noAudio').click(); });
+  await expect.poll(() => page.evaluate(() => [$('playBtn').disabled, $('noAudio').classList.contains('hidden')]))
+    .toEqual([false, true]);
+  expect(await page.getAttribute('#playBtn', 'title')).toBe(play);
+  // And with a device, nothing goes on asking.
+  expect(await page.evaluate(() => audioDeviceTimer)).toBe(null);
+});
+
 /// Everything that does not need a device still works.
 ///
 /// The failure mode to guard against is over-correcting: disabling the audio
