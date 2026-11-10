@@ -207,3 +207,123 @@ Defaults: LFO 1 `sine`, LFO 2 `drawn`, LFO 3 `square`, LFO 4 `smooth`.
 - **Mixer.** A MIX row holds A, B, C, Sub and Noise, each with a power button and a level bar. It replaces the per-oscillator level faders and the old Sub and Noise row.
 - **Tooltips.** Every control has a fast tooltip.
 - **Keyboard.** Dragging plays a glide; Shift-drag holds each key it crosses.
+
+## v8 (RJ, 10 Nov 2026): everything maps, and the FX view is a board
+
+The mock-up is `docs/mockups/wave-synth-v8.html` (Play and Matrix from F, FX from G). This section is the engine
+and server half (Phase 2 of the build plan); the page is Phase 3.
+
+### Modulation
+
+- **Every numeric key is a target**, the modulators' own included: LFO rate, sync, smooth and rise, envelope
+  times, tempo.
+- **Per voice.** ENV 2–4, the amp envelope and the per-note LFOs (Trig, Env) read the voice's modulated values
+  every control block (32 samples), so modulating an attack, a decay or a rate takes effect mid-note.
+- **Shared.** Free LFOs and board controls are the same for every voice. Once per block they hear the matrix with
+  the **shared sources**: this block's macros, mod wheel and aftertouch; each free LFO as the last block left it;
+  and the per-note sources (ENV 2–4, velocity, note, rand, per-note LFOs) of the **newest sounding voice**, or 0
+  when nothing sounds.
+- **Loops are one block late.** LFO 1 → LFO 2 Rate with LFO 2 → LFO 1 Rate is stable and never solved within a
+  block.
+- **Not yet:** choice-valued keys (table, warp mode, osc FX mode, filter type, routing, voice mode, LFO shape) are
+  not targets. A later step can give them stepped numeric forms.
+- The matrix marks what it touched in a `u128`, so there may be at most 128 numeric keys (125 today).
+
+### The board
+
+The patch's `board` replaces the fixed master chain. It is also what a board preset holds.
+
+```json
+{"name": "Glass Split",
+ "nodes": [{"id": "ch", "kind": "fx:hp-chorus", "x": 144, "y": 16, "on": true, "params": {"rateHz": 0.6, "depth": 38}}],
+ "cables": [{"from": ["invoice", "o"], "to": ["ch", "i"]}]}
+```
+
+| Kind | Ins | Outs | Controls (real units) |
+|---|---|---|---|
+| `in:voice` | | `o` | `level` 0..1 |
+| `in:osc0` `in:osc1` `in:osc2` `in:sub` `in:noise` | | `o` | `level` 0..1 |
+| `out` | `i` | | |
+| `fx:<id>` | `i` | `o` | the effect's own, as `GET /api/wave/fx` lists them |
+| `wave:drive` | `i` | `o` | `drive` `tone` `mix` 0..1: the old chain's Drive |
+| `split` | `i` | `o0` `o1` (`o2`) | `outs` 2..3 |
+| `mix` | `i0` `i1` (`i2` `i3`) | `o` | `ins` 2..4, `l0`…`l3` −60..6 dB |
+| `gain` | `i` | `o` | `db` −24..24 |
+| `pan` | `i` | `o` | `pan` −100..100 |
+| `drywet` | `i` `ret` | `send` `o` | `wet` 0..100 % |
+
+- **Inputs.** `in:voice` is everything after the filters. The others are sends: each source before its filter,
+  after the amp envelope and velocity, summed over the voices. `master` scales every input, as it scaled the old
+  chain's. A level is heard squared (the synth's level law).
+- **Effects.** `fx:<id>` is any of the 82 in FX-LIST: the `prism-fx` catalogue without `tremolo`, `decimator`,
+  `multi-delay` and `stereo-matrix`, which the exact Hyperprism ports replaced. Each effect does its own wet and
+  dry. Convolution and Spectral Dynamics take no sound on the board yet: Convolution then passes its input,
+  delayed by one partition. No effect's latency is compensated.
+- **Laws.** Mix: each in at its level, −60 dB is silence. Gain: `10^(db/20)`. Pan: a constant-power balance, left
+  `cos(max(p, 0)·π/2)`, right `cos(max(−p, 0)·π/2)`, `p = pan/100`; the centre is unity. Dry/wet: `send` is `i`;
+  `o` is `i·(1 − w) + ret·w`, `w = wet/100`. Gains ramp across each block.
+- **Cables.** An out feeds any number of ins; cables into one in are summed. A cable may not repeat another or
+  close a loop. Dry/wet is two stages, so `send` → branch → `ret` is allowed and `o` → `ret` is a loop.
+- **Switched off.** A node fades over 10 ms to its main input (`i`; `i0` for a mix) and is then skipped,
+  bit-exact; an effect is cleared when it comes back in. An input switched off is silent. Split and out ignore
+  the switch.
+- **Limits.** 64 nodes, 256 cables, one `out` (none is silence). An id is 1 to 64 characters without `:`.
+- **What is stored is complete.** Every node lists every control, in its kind's order, clamped. A control left
+  out of a posted board takes its default.
+
+### Real time
+
+- **Compiled off the audio thread.** `wave::BoardPlan::compile` orders the stages, builds every kernel and gives
+  every out port a block buffer.
+- **Swapped in like a table.** `WaveShared::set_board` compiles at the device's rate into a pending slot, and the
+  callback swaps it in.
+- **Crossfaded.** The new board fades in over 10 ms while the old one fades out. The old plan then goes back
+  through a return slot and is dropped on the server's thread.
+- **Controls stay live.** A board that differs from the running one only in its controls and switches is not
+  rebuilt, which would cut its tails. Each change is a live write through the event queue, tagged with the
+  board's signature (`Board::sig`, its node ids and kinds), so a write meant for another board is dropped.
+- **Board controls are mod targets.** A mod row's `dst` may be `board:<nodeId>:<key>`, in the same `mods` list
+  (the 64 rows are shared). It moves the control in the control's own normalised range (log where the descriptor
+  is log), with the shared sources. Rows naming a node or control the board lacks are kept and do nothing.
+  `outs` and `ins` are not targets.
+- **Tested.** `tests/no_alloc.rs` renders a ten-node board with a send, live writes, mod rows, a switch and a
+  swap, and counts no allocation.
+
+### Migration
+
+A patch with no `board` (every patch before v8) is given one as it is read. Its fixed chain becomes Voice → Drive
+→ Chorus → Delay → Reverb → EQ → Out, with all six inputs on the left edge:
+
+| Node | Kind | Set from |
+|---|---|---|
+| `drive` | `wave:drive` | `drive`, `tone`, `mix` = `fx0.k0..k2` |
+| `chorus` | `fx:white-chorus` | rate `0.1·40^k0` Hz, depth `k1·8` ms, delay 12 ms, feedback 0, wet `k2`, dry `1 − k2` |
+| `delay` | `fx:echo` | time `20 + k0·980` ms, feedback `0.15 + k1·0.8`, damping 0.2, wet `k2`, dry 1 |
+| `reverb` | `fx:dattorro-plate` | decay `0.2 + k0·0.7`, predelay `k0·30` ms, damping `k1·0.9`, wet `sin(k2·π/2)`, dry `cos(k2·π/2)` |
+| `eq` | `fx:eq` | bands 1, 2 and 6 at `(k − 0.5)·30` dB, band 2's Q 0.7, the high-pass off |
+
+- Each node is switched as its `fxI.on`.
+- The board renders the old chain **bit for bit** (`board/tests.rs`, `tests/board.rs`).
+- The `fx*` keys stay in the key table so ids keep their numbers. Once a patch has a board, nothing reads them.
+- A synth never given a board still runs `master_fx.rs`, which stays as the parity reference.
+- **Fixed on the way:** the old chain's switch stepped a fade's worth out and back every other sample while a
+  unit was fully in. That was a 0.2 % ripple of its mix at a quarter of the sample rate. The board and the chain
+  now both hold still.
+
+### Routes
+
+| Route | Body / reply |
+|---|---|
+| `GET /api/wave/board` | The patch's board, complete. |
+| `POST /api/wave/board` | A whole board. It is checked, stored in the patch, saved and handed to the engine, and the reply is the board as stored. A refusal is `400 {error, cable?}`: unknown kind, unknown control, bad port, repeated cable, loop. `cable` is the index of the cable at fault; for a loop, the first that closes it. |
+| `POST /api/wave/board/param` | `{node, key, value, live?}`, with `key: "on"` for the switch. The value is clamped and heard at once, and stored and saved unless `live:true`. A port count (`outs`, `ins`) is a structural change and is checked like a whole board. The reply is `{ok, node, key, value, live}`. |
+| `GET /api/wave/boards` | Board presets as boards, each with `factory` and its `mods` if it has any. The four factory boards come first in the mock-up's order (Glass Split, Dub Room, Grit Bus, Bubble Garden), then the saved ones by name. |
+| `POST /api/wave/boards` | `{name, board?, mods?}` saves a preset (the current board when `board` is left out) and overwrites one of that name. A saved board shadows a factory board of the same name. `mods` are kept for the page to lay into the matrix when the board is loaded. |
+| `DELETE /api/wave/boards?name=` | Unlists a preset. The file stays, marked hidden (remove means unlist, never delete). A factory board is hidden by a file of its name. Saving again lists it again. |
+| `GET /api/wave/fx` | The 82 board effects, as `[{kind, label, category, suite, params:[{key, label, min, max, default, unit, log, step?, toggle?, choices?}]}]`. `suite` is `Hyperprism`, `SoundHack`, `Lexicon` or empty. Controls kept only so old documents open (`inert`) are left out. |
+| `GET /api/wave/state` | Adds `board: {nodeId: [peakL, peakR]}`: each node's output with a 300 ms fall, zeros with no device. |
+
+- **The patch carries its board.** `GET /api/wave/patch` includes `board`, and a patch posted without one gets
+  the migrated chain. Wave presets carry their board the same way.
+- **Data.** Board presets are `<data>/wave/boards/<name>.json`. The factory boards are built into the server
+  (`core/crates/server/src/wave_board/factory.json`).
