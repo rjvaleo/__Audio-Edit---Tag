@@ -17,7 +17,7 @@ The evidence is 30 screenshots at 1600 × 1000: Browse, the six Grain dock
 tabs, the five Visual tabs, the Visual modules, Seq, Theme, Record and
 Settings. They come from a scratch server with three sounds from the
 library. There is also a probe of the live page and a count of what is in
-`ui/app.css`.
+`ui/app-css/`.
 
 **Posture.** This is a *sovereign* application: used for hours, with full
 attention, by one expert. The design should be dense, muted and quick from the

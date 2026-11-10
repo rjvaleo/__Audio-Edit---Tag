@@ -61,7 +61,7 @@ renaming a single file. One native Rust binary serving a local HTTP interface on
     npm run test:ui                                           # the interface, in a browser
 
 **The interface is embedded in the binary** with `include_str!` — thirty-six
-assets: `ui/index.html`, `ui/app.css`, `ui/rail.css`, twenty-three scripts in
+assets: `ui/index.html`, `ui/app-css/`, `ui/rail.css`, twenty-three scripts in
 `ui/` (among them
 `app.js`, `settings.js`, `section-presets.js`, `perf-panel.js`, `shapes-4d.js`, `panel-4d.js`, `theme-derive.js`,
 `theme-palettes.js`), `ui/vendor/babylon.js`, `visualiser/grain-views.html`,

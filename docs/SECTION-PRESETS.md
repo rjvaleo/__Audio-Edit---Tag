@@ -128,7 +128,7 @@ look without a second table to forget.
   two pickers.
 - `ui/index.html` — `#visualPresetRow` on the stage bar; `#grainPresetRow`
   over `#grainShape`.
-- `ui/app.css` — `.sp-row`, `.grain-preset-row`.
+- `ui/app-css/` — `.sp-row`, `.grain-preset-row`.
 - `core/crates/server/src/routes.rs` — `SECTION_PRESETS_JS`, its route, and
   its place in `ui_build_id`.
 - `tests/ui/section-presets.spec.mjs` — the store against a plain map; a look

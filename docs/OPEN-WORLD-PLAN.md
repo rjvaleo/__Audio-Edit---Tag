@@ -171,12 +171,12 @@ sequencer's part of the film does not touch geometry.
 
 | File | What changes |
 |---|---|
-| `ui/vis-gl.js` | `VG_CAMERA` → world fields; the frustum → look-at + perspective; `zAt`/`taperX`/`yTap` → world placement; `drawRoom` → `drawGrid`; `drawFloor`, `drawRings`, `drawGrains`, `drawSolid`, `drawLead`, mist and fog re-placed; `VG_LAYER_ORDER`; `project`/`unprojectAtZ`/`extents` on the new matrix |
+| `ui/vis-gl/` | `VG_CAMERA` → world fields; the frustum → look-at + perspective; `zAt`/`taperX`/`yTap` → world placement; `drawRoom` → `drawGrid`; `drawFloor`, `drawRings`, `drawGrains`, `drawSolid`, `drawLead`, mist and fog re-placed; `VG_LAYER_ORDER`; `project`/`unprojectAtZ`/`extents` on the new matrix |
 | `ui/app.js` | `ROOM_CAM_DEFAULT` → world; `ROOM_LAYERS` (`room` → `grid`); `roomProject`/`roomUnproject`/`roomHalfW`/`roomBackWall`/`clampBack`; `ROOM_HANDLES` and `wireRoomHandles`; `wireRoomDrag`, `roomZoneAt`, `ROOM_ZONE_TIPS`; `paintRoomNums` (the readout prints world fields); `paintSolidPath` and `wireSolidPath` (world beads); `paintRoomData` (a board); the camera migration on load; `readRoomData` and `roomDataSnapshot` (path in metres); `visualSnapshot`/`applyVisual`; the two frame builders that hand geometry to the renderer; `roomTestCard` unchanged |
-| `ui/room-paint.js` | `RP_SLOTS`: `box` → `grid` (own: distance); `RP_WEIGHT`, `RP_FAMILY`; `RG_ROWS`: `geomHistory`/`geomSpan` keep their meaning, a `reach` row joins them |
+| `ui/room-paint/` | `RP_SLOTS`: `box` → `grid` (own: distance); `RP_WEIGHT`, `RP_FAMILY`; `RG_ROWS`: `geomHistory`/`geomSpan` keep their meaning, a `reach` row joins them |
 | `ui/room-text.js` | the card's place: a board in the world, projected by the new `roomProject` |
 | `ui/index.html` | the room panel's rows: RING becomes the ring's beads; the DEPTH readout wording; the layer list is built from `ROOM_LAYERS` |
-| `ui/app.css` | `.rh-*` for the grips that remain; the board's CSS |
+| `ui/app-css/` | `.rh-*` for the grips that remain; the board's CSS |
 | `ui/video-export.js` | nothing in kind; `roomBackWall` → the board's projection |
 | `ui/section-presets.js` | nothing; the migration lives in `app.js` |
 | `docs/ROOM-EDITOR.md`, `ROOM-PAINT.md`, `ROOM-TEXT.md`, `ROOM-VIEW.md`, `VIDEO-EXPORT.md`, `SECTION-PRESETS.md`, `SHAPES-4D.md`, `STATE.md`, `README.md` | the box's vocabulary → the world's; a new `docs/OPEN-WORLD.md` for what was built |

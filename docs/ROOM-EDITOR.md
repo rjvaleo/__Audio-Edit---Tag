@@ -3,7 +3,7 @@
 Written 18 Aug 2026, before the work, as the design being built to.
 
 The master bus box has a shape and a camera, and both are currently five
-constants at the top of `ui/vis-gl.js`. They were chosen for one frame shape — a
+constants at the top of `ui/vis-gl/`. They were chosen for one frame shape — a
 wide panel in a dock — and they are about to be asked to work at 16:9, 1:1, 4:5
 and 9:16, because that is what the video export offers. See
 `docs/VIDEO-EXPORT.md`.

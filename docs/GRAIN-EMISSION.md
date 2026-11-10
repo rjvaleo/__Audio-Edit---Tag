@@ -193,7 +193,7 @@ before it dies is its window; how many are born a second is the rate.** Across i
 pan, up is pitch, the envelope is the brightness along the streak, and a grain
 the pool could not hold is a ghost. The floor, sky and ladders do not move.
 
-Detail in `docs/MASTER-BUS.md` and `ui/vis-gl.js`. It is a readout of the change,
+Detail in `docs/MASTER-BUS.md` and `ui/vis-gl/`. It is a readout of the change,
 not the change.
 
 ## Order

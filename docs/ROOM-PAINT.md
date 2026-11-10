@@ -228,15 +228,15 @@ theme*.
   theme, colour, or the quantity a ramp reads — and marks the open slot, its
   editor hanging off an accent rule.
 
-Its CSS is one block at the end of `ui/app.css`, scoped to
+Its CSS is one block at the end of `ui/app-css/080-fx-faces-visual.css`, scoped to
 `#roomPaintBody.rp-modern`, so Classic draws by the rules it always had.
 
 ## Where it lives
 
-- `ui/room-paint.js` — the slots, the scheme, the atlas, the generators, storage
+- `ui/room-paint/` — the slots, the scheme, the atlas, the generators, storage
   and the panel, in both views.
-- `ui/app.css` — "Visual › Colour as an instrument", the Modern view's block.
-- `ui/vis-gl.js` — `aW2`, the ramp uniforms, the atlas texture, and `slot` on
+- `ui/app-css/` — "Visual › Colour as an instrument", the Modern view's block.
+- `ui/vis-gl/` — `aW2`, the ramp uniforms, the atlas texture, and `slot` on
   `draw`.
 - `ui/app.js` — `roomGroundColour`, `applyRoomPaintCss`, and `paint:` on both
   frame callers.

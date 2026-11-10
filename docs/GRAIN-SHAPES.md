@@ -157,7 +157,7 @@ vertices — and grains are given wire until it is gone.
 
 - `ui/grain-shapes.js` — the catalogue and its constructors. Shares the global
   scope, like the other interface modules.
-- `ui/vis-gl.js` — `VG_GRAIN_BODY`, `VG_GRAIN_SPIN`, `VG_GRAIN_LINE_CAP`, and
+- `ui/vis-gl/` — `VG_GRAIN_BODY`, `VG_GRAIN_SPIN`, `VG_GRAIN_LINE_CAP`, and
   the drawing, inside the grain layer.
 - `tests/ui/grain-shapes.spec.mjs` — that every model is closed, unit and
   Euler-correct, and that the room really draws them.

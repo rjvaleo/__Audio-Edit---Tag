@@ -127,7 +127,7 @@ different face.
 - `ui/app.js` — `startCapture`, `endCapture`, `perfFillLaneSelect`;
   `renderAutomation` and `repaintAutomationLanes` draw through the panel.
 - `ui/index.html` — the panel's markup under `#dockAutomation`;
-  `ui/app.css` — the `.perf-*` rules and the palette on `.automation-body`.
+  `ui/app-css/` — the `.perf-*` rules and the palette on `.automation-body`.
 - `tests/ui/automation-capture.spec.mjs`.
 
 ## The record mode is the server's, and the page asks
