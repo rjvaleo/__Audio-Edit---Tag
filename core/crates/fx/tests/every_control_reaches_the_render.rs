@@ -98,7 +98,8 @@ fn expected_inert(alg: Algorithm, ratio: f32, name: &str) -> Option<&'static str
                 | "vocoder.freq_trust"
                 | "vocoder.phase_spread"
         );
-    if ratio == 1.0 && shapes_a_stretch {
+    // Not Granular, which is grains at unity as anywhere else.
+    if ratio == 1.0 && shapes_a_stretch && alg != Algorithm::Granular {
         return Some("at unity there is no stretch for this to shape");
     }
     // `window_ms` is the window for WSOLA, the granular engine and the hybrid's
@@ -113,8 +114,7 @@ fn expected_inert(alg: Algorithm, ratio: f32, name: &str) -> Option<&'static str
         return Some("this engine sizes its window from `vocoder.window_ms`");
     }
     // The cloud *is* the granular engine — `with_cloud` returns the dry signal
-    // rather than mixing it over itself. At unity it still registers, because
-    // switching it on is what stops the document being an identity at all.
+    // rather than mixing it over itself, at every ratio.
     // The hybrid's separation margin, with both halves summed back at full
     // level, still reconstructs the input — so at unity it has nothing to
     // change. Turn a level down and the separation becomes audible, which is
@@ -122,7 +122,7 @@ fn expected_inert(alg: Algorithm, ratio: f32, name: &str) -> Option<&'static str
     if name == "hybrid.margin" && ratio == 1.0 {
         return Some("at full levels the two halves sum back to the input");
     }
-    if name == "cloud" && alg == Algorithm::Granular && ratio != 1.0 {
+    if name == "cloud" && alg == Algorithm::Granular {
         return Some("the cloud is the granular engine; it is not mixed over itself");
     }
     None
@@ -239,6 +239,35 @@ fn granular_controls_reach_the_render() {
     let c = common();
     sweep(Algorithm::Granular, 2.0, &c);
     sweep(Algorithm::Granular, 1.0, &c);
+}
+
+/// Granular is grains, at any ratio. It is the one engine not trying to be
+/// transparent, so choosing it at unity is a choice to hear it, and an export
+/// has to carry what playback plays (RJ, 9 Nov 2026). It used to count as
+/// untouched, so the file came back dry unless the cloud switch had been left
+/// on under another engine.
+#[test]
+fn granular_at_unity_renders_grains_with_the_cloud_switch_on_or_off() {
+    let channels = 2;
+    let src = source(SR as usize / 2, channels);
+    let off = Stretch { algorithm: Algorithm::Granular, cloud: false, ..Default::default() };
+    let on = Stretch { algorithm: Algorithm::Granular, cloud: true, ..Default::default() };
+    assert!(!off.is_identity(), "Granular at unity counted as untouched");
+    let dry = off.process(&src, channels, SR);
+    assert!(moved(&src, &dry) > 1e-3, "Granular at unity handed back the source");
+    assert!(moved(&dry, &on.process(&src, channels, SR)) < 1e-6, "the cloud switch changed Granular's render");
+}
+
+/// The other engines at unity are still the file, bit for bit.
+#[test]
+fn the_other_engines_at_unity_are_still_the_file() {
+    let channels = 2;
+    let src = source(SR as usize / 2, channels);
+    for alg in [Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola, Algorithm::Hybrid] {
+        let s = Stretch { algorithm: alg, ..Default::default() };
+        assert!(s.is_identity(), "{alg:?}");
+        assert_eq!(s.process(&src, channels, SR), src, "{alg:?}");
+    }
 }
 
 /// A control that reaches the render must also make the document count as
