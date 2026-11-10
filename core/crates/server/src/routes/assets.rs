@@ -59,7 +59,7 @@ pub fn ui_build_id() -> u64 {
 /// once to the owner rather than to me. The interface is embedded in the binary
 /// and changes with it; there is nothing here worth caching.
 pub const UI_HTML: &str = include_str!("../../../../../ui/index.html");
-pub const UI_CSS: &str = include_str!("../../../../../ui/app.css");
+pub const UI_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
 /// `ui/app/*.js`, joined in name order by `build.rs`.
 pub const UI_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
 /// The palette-to-theme engine and the palettes it works on.
@@ -69,14 +69,14 @@ pub const UI_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
 /// should stay diffable against where it came from.
 pub const THEME_JS: &str = include_str!("../../../../../ui/theme-derive.js");
 /// The unified visualiser's renderer. See `docs/VISUALISER.md`.
-pub const VIS_GL_JS: &str = include_str!("../../../../../ui/vis-gl.js");
+pub const VIS_GL_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/vis-gl.js"));
 /// The solids the grain cloud draws its grains as. See `docs/GRAIN-SHAPES.md`.
 pub const GRAIN_SHAPES_JS: &str = include_str!("../../../../../ui/grain-shapes.js");
 /// The grain controls' glyphs (`ui/grain-glyphs.js`).
 pub const GRAIN_GLYPHS_JS: &str = include_str!("../../../../../ui/grain-glyphs.js");
 /// The room's palette: what each drawn thing is coloured with, and what that
 /// colour is read against. See `docs/ROOM-PAINT.md`.
-pub const ROOM_PAINT_JS: &str = include_str!("../../../../../ui/room-paint.js");
+pub const ROOM_PAINT_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/room-paint.js"));
 /// The ridgeline visualiser and the CP 1919 pulses it is measured against.
 /// See `docs/RIDGELINE.md`.
 pub const RIDGE_JS: &str = include_str!("../../../../../ui/ridge.js");
@@ -87,7 +87,7 @@ pub const RIDGE_DATA_JS: &str = include_str!("../../../../../ui/ridge-data.js");
 /// megabytes as UTF-8 at compile time buys nothing.
 pub const BABYLON_JS: &[u8] = include_bytes!("../../../../../ui/vendor/babylon.js");
 pub const ROOM3D_JS: &str = include_str!("../../../../../ui/room3d.js");
-pub const STAGE_JS: &str = include_str!("../../../../../ui/stage.js");
+pub const STAGE_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/stage.js"));
 pub const VIS_REGISTRY_JS: &str = include_str!("../../../../../ui/vis-registry.js");
 pub const ROOM_TEXT_JS: &str = include_str!("../../../../../ui/room-text.js");
 /// The MP4 muxer and the thing that drives it. See `docs/VIDEO-EXPORT.md`.

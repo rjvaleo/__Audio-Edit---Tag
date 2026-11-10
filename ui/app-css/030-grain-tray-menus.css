@@ -1,0 +1,660 @@
+/* ---------------------------------------------------- granular tray layout
+   The layout itself lives further down, with the control panels. There used to
+   be a second copy of it here, from when the tray was one column; the two
+   disagreed about the flex direction and the later one only won where it
+   happened to repeat a property. */
+
+/* Which way to look at the grains. The 2D swarm and the five 3D views are the
+   same data, so they share one spot rather than competing for room. */
+.vis-pick { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.vis-tab {
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--text-dim); font: inherit; font-size: var(--fs-s);
+  padding: 3px 9px; border-radius: 5px; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease;
+}
+.vis-tab:hover { border-color: var(--line-2); color: var(--text-2); }
+.vis-tab.active { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.vis-tab.suite { font-weight: 600; letter-spacing: .04em; }
+.vis-open {
+  margin-left: auto; background: none; border: 1px solid var(--line);
+  color: var(--text-dim); font-size: var(--fs-m); line-height: 1;
+  padding: 3px 8px; border-radius: 5px; cursor: pointer;
+}
+.vis-open:hover { border-color: var(--accent); color: var(--accent); }
+
+#grainFrame {
+  flex: 1; width: 100%; min-height: 150px; display: block; border: 0;
+  border-radius: 7px; background: var(--well);
+  border: 1px solid var(--line);
+}
+#grainFrame.hidden, #grainCanvas.hidden { display: none; }
+
+.vis-legend {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  font-size: var(--fs-s); color: var(--text-dimmer);
+}
+.vis-legend.hidden { display: none; }
+
+/* The floating grain-view panel. A window inside the page rather than a new
+   tab, because the reason to watch the grains is to watch them while moving a
+   slider, and a separate window puts the controls behind what you are watching. */
+.vis-pop {
+  position: fixed; z-index: 400;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  box-shadow: 0 24px 70px var(--shadow);
+  overflow: hidden;
+}
+.vis-pop.hidden { display: none; }
+.vis-pop-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  cursor: move; user-select: none; flex-shrink: 0;
+}
+.vis-pop-title { font-size: var(--fs-m); font-weight: 600; color: var(--text-2); }
+.vis-pop-tab {
+  background: var(--surface-3); border: 1px solid var(--line);
+  color: var(--text-dim); font: inherit; font-size: var(--fs-s);
+  padding: 2px 8px; border-radius: 4px; cursor: pointer;
+}
+.vis-pop-tab:hover { border-color: var(--line-2); color: var(--text-2); }
+.vis-pop-tab.active { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.vis-pop-hint { font-size: var(--fs-s); color: var(--text-dimmer); margin-right: auto; }
+.vis-pop-btn {
+  background: none; border: 1px solid var(--line); color: var(--text-dim);
+  width: 22px; height: 20px; border-radius: 4px; cursor: pointer;
+  font-size: var(--fs-l); line-height: 1; padding: 0;
+}
+.vis-pop-btn:hover { border-color: var(--accent); color: var(--accent); }
+.vis-pop iframe { flex: 1; width: 100%; border: 0; display: block; }
+.vis-pop-grip {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 50%, var(--line-2) 50%, var(--line-2) 60%,
+                    transparent 60%, transparent 75%, var(--line-2) 75%);
+}
+.vis-legend span { display: flex; align-items: center; gap: 5px; }
+.vis-legend .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.vis-legend .sw.hot { background: oklch(72% 0.19 25); }
+.vis-legend .sw.cold { background: oklch(72% 0.14 250); }
+
+body.editing .dock { flex: 0 0 300px; }
+
+.tbtn.loop { font-size: var(--fs-xl); }
+/* Capture. Red only while it is actually keeping something, so the button is
+   never claiming to be recording when it is not. */
+.tbtn.rec { font-size: var(--fs-l); color: var(--text-dim); }
+.tbtn.rec.on { background: var(--bad); border-color: var(--bad); color: white; }
+.tbtn.rec.armed { border-color: var(--bad); color: var(--bad); }
+.rec-label { white-space: nowrap; min-width: 0; }
+.tbtn.loop.on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.loop-label { font-size: var(--fs-s); white-space: nowrap; min-width: 52px; }
+.vis-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.vis-head .seg-btn { font-size: var(--fs-s); padding: 0 9px; }
+
+/* ------------------------------------------------ granular control panels
+   Several compact panels rather than one tall scrolling column: twelve
+   controls in a quarter-width strip ran off the bottom of the tray. */
+
+.grain-split { grid-column: 1 / -1; display: flex; gap: 14px; min-height: 0; }
+/* One grid across both sides, so every panel is exactly one column wide and
+   Extended matches Time & pitch rather than being a narrower afterthought.
+   The standard panels sit in a nested grid that spans the columns Extended
+   does not use, and it shares the outer gap — which is what makes the inner
+   columns come out the same width as the outer one. */
+.grain-controls {
+  /* 52% and 720 max are unchanged — the two sides share the room they already
+     had. The floor went up because two columns of the control table need about
+     240px each before the slider is squeezed to nothing; it only bites on a
+     window too small to work in anyway. */
+  width: 52%; min-width: 500px; max-width: 720px; flex-shrink: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px; align-content: start; overflow-y: auto;
+  /* Reserve the scrollbar whether or not it is there, so the columns do not
+     shift by its width when an engine with more controls is picked. */
+  scrollbar-gutter: stable;
+  padding-right: 10px; border-right: 1px solid var(--line);
+}
+/* Halves rather than thirds. A control is one line now, so the panels are short
+   enough to stack down a column, and half the width is a slider you can
+   actually aim at. */
+/* One panel with headed groups, the same as Extended: three boxes stacked in a
+   column were three sets of padding and three borders saying nothing. */
+.grain-standard { min-width: 0; }
+.grain-standard .param-grid { grid-template-columns: 1fr; gap: 8px; }
+/* Its own column, because everything in it is a value the algorithm was tuned
+   around. Kept beside the standard controls rather than under them, so it is
+   obvious which side of the line a control is on. */
+/* No scroller of its own: the grid's own is enough, and an inner scrollbar
+   took four pixels off this column's sliders and not the other's. */
+.grain-extended { align-self: start; min-width: 0; }
+
+/* A reset that sits in the panel's own header rather than under its controls,
+   where it was competing with them for the eye. */
+.cpanel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tiny {
+  height: 18px; padding: 0 7px; border-radius: 4px;
+  border: 1px solid var(--line-2); background: transparent;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-s); font-weight: 500;
+  letter-spacing: 0; text-transform: none;
+  /* One line. `Reset all` is short enough never to have needed saying, but the
+     switches carry names like "preserve transients", and wrapping turned an
+     18px button into a ragged 40px one. */
+  white-space: nowrap;
+}
+.tiny:hover { border-color: var(--accent); color: var(--accent); }
+
+/* A switch is the Reset button, with the selected state Pick and Window already
+   use. Off is `.tiny` untouched; on is `.seg-btn.active` — raised surface,
+   accent text — so "this one is chosen" looks the same everywhere in the tray
+   whether the control has two states or three. */
+.tiny.switch.on {
+  background: var(--accent); border-color: var(--sink); color: var(--sink);
+}
+.tiny.switch.on:hover { color: var(--sink); filter: brightness(1.08); }
+
+.cpanel {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px 10px;
+  display: flex; flex-direction: column; gap: var(--param-row); min-width: 0;
+}
+.cpanel-head {
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 2px;
+}
+/* Deliberately not touching `gap` any more: it used to separate a label row
+   from the slider under it, and now it is the space between the table's
+   columns. Overriding it here made the three columns close up. */
+.cpanel .param .k, .cpanel .param .v { font-size: var(--fs-s); }
+.cpanel .param input[type=range] { height: 14px; }
+.cpanel .seg-btn { font-size: var(--fs-s); padding: 0 6px; }
+.cpanel .ghost { height: 20px; font-size: var(--fs-s); }
+#stretchOut { font-size: var(--fs-s); }
+
+.grain-vis { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+#grainCanvas {
+  flex: 1; width: 100%; min-height: 170px; display: block;
+  border-radius: 7px; background: var(--sink); border: 1px solid var(--line);
+}
+body.editing .dock { flex: 0 0 330px; }
+
+/* --------------------------------------------------------------- overview
+   The whole file at a glance, with the zoomed window marked, so you can see
+   where you are and move it without leaving the zoom. */
+
+.overview {
+  height: 42px; flex-shrink: 0; position: relative; cursor: pointer;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+.overview canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ov-window {
+  position: absolute; top: 0; bottom: 0; z-index: 2;
+  border: 1px solid var(--accent);
+  background: rgba(125,190,255,0.14);
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.42);
+  pointer-events: none;
+}
+.ov-window.full { display: none; }
+
+/* The playhead on the overview: where you are in the whole file, which the
+   zoomed view cannot tell you once it no longer contains the playhead. Above
+   the window shading so it stays visible outside the zoomed range. */
+.ov-playhead {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 1.5px; z-index: 4;
+  background: oklch(63% 0.24 26);
+  box-shadow: 0 0 5px oklch(63% 0.24 26 / 0.9);
+  pointer-events: none; display: none; will-change: transform;
+}
+.ov-cue {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 1px; z-index: 3;
+  background: var(--line-4);
+  pointer-events: none; display: none;
+}
+
+/* Sonic descriptors for the selected sound — measured from the audio, so they
+   are deliberately styled apart from the folder's editable tag fields. */
+.sonic-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 10px; min-height: 18px; }
+.sonic-tag {
+  font: var(--fs-s) ui-monospace, monospace;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(125, 211, 160, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(125, 211, 160, 0.25);
+}
+
+/* A name the classifier put to the sound, as opposed to a description of it.
+   Coloured apart from the sonic descriptors because they answer different
+   questions: what it is, against what it is like. */
+.heard-tag {
+  background: rgba(150, 180, 255, 0.12);
+  color: #9db4ff;
+  border-color: rgba(150, 180, 255, 0.25);
+}
+/* Below about 15% the model is guessing. Say so by showing it, faded, rather
+   than hiding it or dressing it up as certainty. */
+.heard-tag.faint { opacity: 0.45; }
+.borrowed { font: var(--fs-s) ui-monospace, monospace; align-self: center; }
+
+/* A category that came from listening rather than from the filename. */
+.file-row .cat.heard { color: #9db4ff; }
+
+/* Where the values in the tag fields came from — your edit, an earlier save,
+   or the machine's suggestion. Quiet, but never absent. */
+.tag-source { font: var(--fs-s) var(--mono); color: var(--text-dimmer); margin-bottom: 8px; }
+
+/* Tags of your own invention. Warm rather than green or blue, because these are
+   decisions rather than measurements, and nothing the app does overwrites one. */
+.user-tag {
+  background: rgba(240, 190, 120, 0.12);
+  color: #f0be78;
+  border-color: rgba(240, 190, 120, 0.28);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.user-tag .x {
+  background: none; border: 0; padding: 0 0 0 2px; cursor: pointer;
+  color: inherit; opacity: .5; font: inherit; line-height: 1;
+}
+.user-tag .x:hover { opacity: 1; }
+
+/* A tag the system worked out for itself. Dashed because it is a proposal, not
+   a fact, and it does not exist until you click it. */
+.user-tag.learned {
+  background: none;
+  border-style: dashed;
+  opacity: .7;
+  cursor: pointer;
+}
+.user-tag.learned:hover { opacity: 1; background: rgba(240, 190, 120, 0.10); }
+
+#addUserTag { margin: 2px 0 6px; }
+
+/* ------------------------------------------------------------------- menus */
+
+.menubar {
+  height: 25px; flex-shrink: 0; display: flex; align-items: stretch;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
+.menus { display: flex; align-items: stretch; }
+.menu-title {
+  display: flex; align-items: center; padding: 0 11px;
+  border: none; background: none; color: var(--text-2);
+  font: inherit; font-size: var(--fs-m);
+}
+.menu-title:hover, .menu-title.open { background: var(--surface-3); color: var(--text); }
+
+/* Pushed right with `margin-left:auto`, so the cluster keeps the far end of the
+   bar however many menus there are. */
+.menubar-right { display: flex; align-items: stretch; margin-left: auto; }
+.menu-gear { gap: 5px; }
+.menu-gear .gear { font-size: var(--fs-m); opacity: .8; }
+
+/* ---- settings ---------------------------------------------------------- */
+
+.settings-box { width: min(560px, 94vw); }
+.settings-body {
+  padding: 4px 0 2px; max-height: min(62vh, 560px); overflow-y: auto;
+}
+.set-group {
+  padding: 11px 16px 4px; font-size: var(--fs-s); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--text-dimmer);
+}
+.set-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 16px;
+  align-items: center; padding: 8px 16px; border-top: 1px solid var(--line-2);
+}
+.set-row:first-of-type { border-top: none; }
+.set-row .set-label { font-size: var(--fs-l); color: var(--text); }
+/* The reason it is a choice at all. Every setting here is a trade, and the
+   sentence saying what you are trading used to live only in a source comment. */
+.set-row .set-why {
+  grid-column: 1 / -1; font-size: var(--fs-m); color: var(--text-dim);
+  line-height: 1.45; margin-top: -2px;
+}
+.set-row .field { min-width: 148px; }
+.set-row select.field { padding: 3px 6px; font-size: var(--fs-m); }
+/* A setting whose effect is deferred says so, because a switch that appears to
+   do nothing is indistinguishable from a broken one. */
+.set-when {
+  display: inline-block; margin-left: 7px; font-size: var(--fs-s);
+  color: var(--warn); text-transform: none; letter-spacing: 0;
+}
+.set-row.set-off .set-label, .set-row.set-off .set-why { opacity: .45; }
+
+/* ---- the 4D solids ------------------------------------------------------ */
+/* Laid out the way a modelling package is: the viewport on top, the object
+   manager under it, and the attribute manager under that. */
+
+.p4-view {
+  height: 210px; margin: 0 0 8px; border-radius: 6px;
+  background: var(--sink); border: 1px solid var(--line-2);
+  overflow: hidden;
+}
+.p4-view canvas { display: block; width: 100%; height: 100%; }
+
+.p4-objects {
+  display: flex; flex-direction: column; gap: 1px;
+  margin-bottom: 4px; max-height: 168px; overflow-y: auto;
+}
+.p4-obj {
+  display: grid; grid-template-columns: 26px 1fr auto; gap: 7px;
+  align-items: center; text-align: left; width: 100%;
+  padding: 4px 7px; border: none; border-radius: 4px;
+  background: none; color: var(--text-dim); font: inherit; font-size: var(--fs-m);
+}
+.p4-obj:hover { background: var(--surface-2h); color: var(--text-2); }
+.p4-obj.active { background: var(--surface-3); color: var(--text); }
+.p4-obj-dim {
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em;
+  color: var(--text-dimmer); font-variant-numeric: tabular-nums;
+}
+.p4-obj.active .p4-obj-dim { color: var(--accent); }
+.p4-obj-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p4-obj-n {
+  font-size: var(--fs-s); color: var(--text-dimmer);
+  font-variant-numeric: tabular-nums; font-family: var(--mono, ui-monospace, monospace);
+}
+
+.p4-about { padding: 2px 2px 7px; }
+.p4-about-name { font-size: var(--fs-l); color: var(--text); margin-bottom: 2px; }
+.p4-about-hint { font-size: var(--fs-m); color: var(--text-dim); line-height: 1.45; }
+.p4-about-n {
+  font-size: var(--fs-s); color: var(--text-dimmer); margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two columns of coordinate fields, as every coordinates manager has. */
+.p4-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 7px; margin-bottom: 5px; }
+.p4-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+
+.p4-num { display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 5px; }
+.p4-num-lb {
+  font-size: var(--fs-s); font-weight: 700; letter-spacing: .05em;
+  color: var(--text-dimmer); text-align: right;
+}
+/* The three planes that reach into the fourth dimension. Marked rather than
+   separated, so the six still read as one set. */
+.p4-w { font-style: normal; color: var(--accent); font-size: var(--fs-xs); margin-left: 1px; }
+.p4-num-in {
+  width: 100%; min-width: 0; padding: 2px 5px;
+  border: 1px solid var(--line-2); border-radius: 3px;
+  background: var(--surface); color: var(--text);
+  font: inherit; font-size: var(--fs-m); font-variant-numeric: tabular-nums;
+  /* The pointer says the number is draggable before you try it. */
+  cursor: ew-resize;
+}
+.p4-num-in:focus { outline: none; border-color: var(--accent); cursor: text; }
+.p4-num-in.p4-scrubbing { border-color: var(--accent); background: var(--surface-2h); }
+
+/* One popup element, reused by the menu bar and by right-click, so the two can
+   never drift apart in appearance or behaviour. */
+.menu-pop {
+  position: fixed; z-index: 500; min-width: 210px;
+  padding: 5px; border-radius: 8px;
+  background: var(--surface-2h); border: 1px solid var(--line-2);
+  box-shadow: 0 16px 44px var(--shadow);
+}
+.menu-pop.hidden { display: none; }
+.menu-row {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 5px 9px; border: none; border-radius: 5px; background: none;
+  color: var(--text-2); font: inherit; font-size: var(--fs-m); text-align: left;
+}
+.menu-row:hover:not(:disabled) { background: var(--accent); color: var(--surface); }
+.menu-row:disabled { color: var(--text-dimmer); cursor: default; }
+.menu-row .sk {
+  margin-left: auto; font-family: var(--mono); font-size: var(--fs-s); opacity: .65;
+}
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--line-2); }
+.menu-head {
+  padding: 5px 9px 3px; font-size: var(--fs-xs); font-weight: 600;
+  letter-spacing: .4px; text-transform: uppercase; color: var(--text-dimmer);
+}
+
+/* Which stretch engine. A choice about the material, not a quality ladder, so
+   it reads as two named options rather than a slider. */
+/* The row reserves RESET's place instead of letting it sit on top of the tabs.
+   RESET is absolutely positioned at the right-hand end, so without this the
+   five tabs ran straight under it — 53px of overlap at a narrow window, with
+   `Granular` underneath the button. */
+.engine-pick {
+  display: block; position: relative; white-space: nowrap;
+  min-height: 24px; margin-bottom: 2px;
+}
+/* Reset is the next button on the row. Not a different kind of button placed
+   near it — the same one, with a different word in it.
+   
+   It inherits nothing from `.tiny` here: every property that decides where a
+   button sits and how big it is is restated to match `.engine-pick .seg-btn`
+   exactly. That is why it lines up — same height, same font, same border, same
+   vertical-align, same box-sizing — rather than because a padding was tuned
+   until it looked close.
+   
+   It is in the flow, so it cannot overlap the tabs at any width or zoom. It was
+   `position: absolute; right: 0`, which let it land on top of "Granular"
+   whenever the tabs were wider than the space left over. */
+.engine-pick .tiny {
+  position: static; display: inline-block; vertical-align: top;
+  box-sizing: border-box;
+  height: 22px; width: auto; padding: 0 2px; margin: 0 0 0 6px;
+  font-size: var(--fs-s); font-weight: 500; letter-spacing: 0; text-transform: none;
+  border: 1px solid var(--line-2); border-radius: 4px;
+  background: transparent; color: var(--text-dim);
+  line-height: 20px;
+}
+.engine-pick .tiny:hover { border-color: var(--accent); color: var(--accent); }
+/* Five engines rather than three, so the padding comes off the buttons before
+   it comes off the reset — the row has to hold on the narrowest dock width. */
+/* The engines, as they were, with a border added.
+   Transparent and borderless, an unchosen engine read as a word printed on the
+   panel rather than something to click. A border is the whole change — the
+   size, the type and the chosen state are what they were. */
+.engine-pick .seg { padding: 0; background: transparent; gap: 2px; }
+/* 2px of padding. Measured: at 5px the tabs were 273 wide and RESET needs 71,
+   which is 344 in a 324px panel — RESET sat on `Granular`. At 3px they came to
+   exactly 253 and RESET starts at 253, touching with no gap at all. 2px leaves
+   ten pixels of daylight between the two. */
+.engine-pick .seg-btn {
+  box-sizing: border-box;
+  height: 22px; width: auto; padding: 0 2px; font-size: var(--fs-s);
+  border: 1px solid var(--line-2); border-radius: 4px;
+  vertical-align: top; line-height: 20px;
+}
+.engine-pick .seg-btn:hover { border-color: var(--line-3); }
+/* Selected takes a dark border, so the chosen one is outlined against the row
+   rather than only tinted. */
+.engine-pick .seg-btn.active { border-color: var(--sink); }
+.engine-pick .check { font-size: var(--fs-s); transition: opacity .15s ease; }
+/* The chosen engine's own controls, under the picker. */
+/* No gap between the rows. Every other slider group in the tray — the stretch
+   rows, the wild groups — puts its rows straight under one another at 16px, and
+   a 9px gap here made the engine's own sliders sit 25px apart. Measured, not
+   guessed: Re-anchor at 653 and Analysis window at 678 against Stretch/Pitch at
+   731/747. */
+/* The three containers under the picker, in order: the button row, the three
+   core sliders, then the engine's own. Same spacing in each, so a slider is
+   16px below the one above it wherever it lives. */
+.engine-switch-host { margin: 8px 0 2px; }
+.stretch-core { display: flex; flex-direction: column; gap: 0; }
+.engine-params { display: flex; flex-direction: column; gap: 0; margin: 0 0 2px; }
+
+/* ------------------------------------------------------------ the modal
+   One card over a dimmed page. Used by the preset manager, and built to be
+   used by anything else that needs the whole window's attention. */
+.modal {
+  position: fixed; inset: 0; z-index: 900;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--shadow);
+  backdrop-filter: blur(2px);
+}
+.modal.hidden { display: none; }
+
+/* The export-loop box. Narrow: it asks two questions. */
+.export-card { width: 460px; max-width: 92vw; }
+.export-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.export-body .fx-row { align-items: center; gap: 10px; }
+.export-label { width: 56px; font-size: var(--fs-m); color: var(--text-dim); }
+#elRepeats { width: 64px; height: 22px; text-align: center; }
+/* The two video menus, sized to their own options.
+   `.field` is `width: 100%`, which is right for a field on its own line and
+   wrong for two of them in a flex row: each asks for the whole row, so the pair
+   took 946 px of 1046 and squeezed the note beside them into a 40 px column
+   three hundred pixels tall — a stack of single letters, which is what
+   "the text isn't readable" was.
+   Sized to their content instead, with a ceiling so the longest option
+   ("Square large · 2048×2048") cannot push the note out again, and at the
+   height of the switches they sit beside rather than the 30 px a field gets
+   when it has a line to itself. */
+#elVideoSize, #elVideoFps {
+  flex: 0 0 auto;
+  width: auto; min-width: 0;
+  height: 22px; padding: 0 6px;
+  font-size: var(--fs-m);
+}
+#elVideoSize { max-width: 200px; }
+#elVideoFps { max-width: 96px; }
+.export-body .fx-note { margin: 0; flex: 1; }
+.modal-card {
+  width: min(1080px, 94vw); height: min(700px, 88vh);
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 10px; overflow: hidden;
+  box-shadow: 0 24px 70px var(--shadow);
+}
+.modal-head, .modal-foot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px; flex: 0 0 auto;
+  background: var(--surface-2);
+}
+.modal-head { height: 46px; border-bottom: 1px solid var(--line); }
+.modal-foot { height: 50px; border-top: 1px solid var(--line); }
+.modal-head h2 { font-size: var(--fs-l); font-weight: 600; letter-spacing: .02em; }
+.modal-sub { font-size: var(--fs-m); color: var(--text-dimmer); font-family: var(--mono); }
+.modal-head #pmClose { margin-left: auto; }
+.ghost.danger:hover { border-color: var(--bad); color: var(--bad); }
+
+/* ---------------------------------------------------------- preset manager */
+.pm-body { flex: 1 1 auto; display: flex; min-height: 0; }
+.pm-list {
+  width: 220px; flex: 0 0 auto; overflow-y: auto;
+  border-right: 1px solid var(--line); background: var(--surface-2);
+}
+.pm-item {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 12px; border: none; background: transparent;
+  border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.pm-item:hover { background: var(--surface-3); }
+.pm-item.active { background: var(--surface-3); box-shadow: inset 2px 0 0 var(--accent); }
+.pm-item .nm { display: block; font-size: var(--fs-l); color: var(--text); }
+.pm-item .nt {
+  display: block; font-size: var(--fs-s); color: var(--text-dimmer);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pm-item.dirty .nm::after { content: ' •'; color: var(--warn); }
+
+.pm-detail { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px; }
+.pm-empty { color: var(--text-dimmer); font-size: var(--fs-l); padding: 30px 4px; text-align: center; }
+
+/* Two columns of values side by side, because a preset is fifty of them and one
+   column of fifty rows is a scroll rather than a picture — but only where two
+   columns actually fit. `columns: <width> <count>` is a maximum of two, each at
+   least 240px wide, so a narrow window drops to one instead of squeezing the
+   names down to three letters and an ellipsis. */
+.pm-groups { columns: 240px 2; column-gap: 22px; }
+.pm-group { break-inside: avoid; margin: 0 0 14px; }
+.pm-group h3 {
+  font-size: var(--fs-s); letter-spacing: .09em; text-transform: uppercase;
+  color: var(--warn); font-weight: 600;
+  padding-bottom: 4px; margin-bottom: 5px; border-bottom: 1px solid var(--line);
+}
+.pm-row {
+  display: grid; grid-template-columns: 1fr 96px;
+  align-items: center; gap: 8px; padding: 2px 0;
+}
+.pm-row > label {
+  font-size: var(--fs-m); color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* The full path is on the title, so a clipped name is still identifiable —
+     but it should take a genuinely narrow window to clip one. */
+  min-width: 0;
+}
+.pm-row input[type="number"], .pm-row input[type="text"], .pm-row select {
+  height: 22px; width: 100%; padding: 0 6px;
+  border-radius: 4px; border: 1px solid var(--line-2);
+  background: var(--well); color: var(--text);
+  font-family: var(--mono); font-size: var(--fs-m); text-align: right;
+}
+.pm-row select { text-align: left; }
+.pm-row input:focus, .pm-row select:focus { outline: none; border-color: var(--accent); }
+.pm-row input.changed, .pm-row select.changed { border-color: var(--warn); color: var(--warn); }
+.pm-row input[type="checkbox"] { justify-self: end; width: 15px; height: 15px; accent-color: var(--accent); }
+
+.pm-ident { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
+.pm-ident .f { flex: 1 1 auto; }
+.pm-ident label {
+  display: block; font-size: var(--fs-s); letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 3px;
+}
+.pm-ident input {
+  width: 100%; height: 28px; padding: 0 9px;
+  border-radius: 6px; border: 1px solid var(--line-2);
+  background: var(--well); color: var(--text); font-size: var(--fs-l);
+}
+.pm-ident input:focus { outline: none; border-color: var(--accent); }
+.pm-status { font-size: var(--fs-m); color: var(--text-dimmer); margin-right: auto; }
+.pm-status.dirty { color: var(--warn); }
+.pm-fx { margin: 0 0 18px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.pm-fx-head { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.pm-fx-head h3 { font-size: var(--fs-m); color: var(--warn); text-transform: uppercase; letter-spacing: .08em; }
+.pm-fx-head span { font-size: var(--fs-s); color: var(--text-dimmer); }
+.pm-fx-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 8px; padding: 8px; }
+.pm-fx-card { min-width: 0; border: 1px solid var(--line-2); border-radius: 5px; background: var(--surface-2); }
+.pm-fx-card > header { height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 7px; border-bottom: 1px solid var(--line); }
+.pm-fx-card > header strong { flex: 1; font-size: var(--fs-m); font-weight: 600; }
+.pm-fx-card > header .ghost { width: 24px; min-width: 24px; height: 22px; padding: 0; }
+.pm-fx-params { padding: 6px 8px; max-height: 330px; overflow-y: auto; }
+.pm-band { padding: 5px 0; border-bottom: 1px solid var(--line); }
+.pm-band-head { display: grid; grid-template-columns: 18px 1fr 100px; align-items: center; gap: 5px; margin-bottom: 3px; font-size: var(--fs-s); color: var(--text-dim); }
+.pm-band-head select, .pm-fx-add select { height: 24px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--well); color: var(--text); }
+.pm-fx-add { padding: 0 8px 8px; }
+.pm-fx-add select { width: 100%; padding: 0 7px; }
+
+.engine-note {
+  font-size: var(--fs-s); line-height: 1.35; color: var(--warn);
+  opacity: .85; margin: 2px 0 0;
+}
+
+/* ------------------------------------------------------------- ask dialog */
+/* One dialog for every command that needs a value first. It sizes itself to
+   its fields rather than to a fixed box, because a dialog asking for one
+   number should not be the size of the library picker. */
+.ask-box { width: 380px; height: auto; max-height: 80vh; }
+.ask-body { padding: 14px 16px; overflow-y: auto; }
+.ask-row {
+  display: grid; grid-template-columns: 1fr 130px;
+  align-items: center; gap: 10px; padding: 4px 0;
+}
+.ask-row > label { font-size: var(--fs-m); color: var(--text-dim); }
+.ask-row input[type="number"], .ask-row input[type="text"], .ask-row select {
+  height: 26px; width: 100%; padding: 0 7px;
+  border-radius: 5px; border: 1px solid var(--line-2);
+  background: var(--well); color: var(--text);
+  font-family: var(--mono); font-size: var(--fs-m);
+}
+.ask-row select { font-family: var(--sans); }
+.ask-row input:focus, .ask-row select:focus { outline: none; border-color: var(--accent); }
+.ask-row input[type="checkbox"] { justify-self: end; width: 15px; height: 15px; accent-color: var(--accent); }
+.ask-hint {
+  font-size: var(--fs-m); color: var(--text-dimmer); line-height: 1.5;
+  margin: 0 0 10px;
+}
+.ask-note { font-size: var(--fs-m); color: var(--text-dimmer); font-family: var(--mono); }
+

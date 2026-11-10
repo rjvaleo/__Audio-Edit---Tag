@@ -1,0 +1,781 @@
+/* UI queue, item 1 · the tray's lines, tighter. `gkPack` fills each line;
+   these take a few pixels off every bank so a line more fits under the fold. */
+#dockStretch .grain-controls.gk-banks { row-gap: 2px; }
+#grainControls.gk-banks .gk-k > .rk-face { width: 20px; height: 20px; margin-bottom: 0; }
+#grainControls.gk-banks .gk-k > input[type=range] { width: 22px; height: 22px; }
+#grainControls.gk-banks .gk-k > .v { line-height: 1.05; }
+#grainControls.gk-banks .gk-k > .k { line-height: 1.05; }
+#grainControls.gk-banks .wild-head { padding-bottom: 1px; margin-bottom: 1px; }
+#grainControls.gk-banks :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 14px; }
+#grainControls.gk-banks .stretch-core::before,
+#grainControls.gk-banks .engine-params:not(:empty)::before { padding-bottom: 1px; }
+#grainControls.gk-banks .param.gk-k { padding: 0 2px; }
+#grainControls.gk-banks .gk-k > .rk-face { width: 18px; height: 18px; }
+#grainControls.gk-banks .wild-head { font-size: var(--fs-xs); line-height: 1.1; }
+#grainControls.gk-banks .stretch-core::before { font-size: var(--fs-xs); line-height: 1.1; }
+/* The engine's own controls are its own bank, and say so: they share a line
+   with Time and pitch and were printing its name over Pitch movement. Last in
+   the file, so the shared heading rule above cannot win it back. */
+#grainControls.gk-banks .engine-params:not(:empty)::before { content: 'This engine'; font-size: var(--fs-xs); line-height: 1.1; }
+#dockStretch .grain-controls.gk-banks { row-gap: 1px; }
+#grainControls.gk-banks .gk-k > .v, #grainControls.gk-banks .gk-k > .k { line-height: 1; }
+/* Time and pitch's heading is exactly a bank heading's height, so on a line
+   it shares its knobs stand level with the next bank's and are read first. */
+#grainControls.gk-banks :is(.stretch-core, .engine-params:not(:empty)) { padding-top: 12px; }
+
+/* Both views (DESIGN-CRITIQUE, "Both views, as an option"): a page hides the
+   other side's banks. In the dock only: the Sound tab shows the tray whole. */
+#grainControls.gk-banks .gk-view { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+#grainControls.gk-banks .gk-view .seg { flex: 1; display: flex; }
+#grainControls.gk-banks .gk-view .seg-btn { flex: 1; }
+#dockStretch .gk-banks #grainControls.gk-banks.gk-page-std #extPanel .wild,
+#dockStretch .gk-banks #grainControls.gk-banks.gk-page-ext :is(.stretch-core, .engine-params, #grainShape .wild, #grainPitch .wild) { display: none; }
+/* ---------------------------------------------------------------- small faults
+
+   The tuning and Keys are buttons that are their own slot, so the slot's
+   `line-height: 0` (there for the `.param` wrapper round each switch) landed on
+   the button itself. Keys' word is a bare text node, so it was laid on a line of
+   no height and printed six pixels above the switches' words. The line height
+   comes back on any slot that is the button. */
+.engine-switches > button[data-slot] { line-height: normal; }
+
+/* The classification note under Browse's stats is only written once a sound is
+   chosen. Before that its fill and left rule were drawn round nothing: a bare
+   strip at the foot of the centre, under the lane. Not drawn until it says
+   something. */
+.why:empty { display: none; }
+
+/* The Visual column widens the switches row's slots to two a row, and the
+   tuning and Keys grow with them. The switches did not: the dock's 71px on
+   `.engine-switches .param.toggle .tiny` outranked the column's `width: 100%`,
+   so "preserve transients" printed past its own edge. They fill the slot too. */
+.rv-admin .engine-switches .param.toggle .tiny { width: 100%; }
+/* ───────────────────────── Grain › Prism: the process's settings beside the pad
+   The Prism page's Settings bank: every control of the process but the two on
+   the pad, its knobs drawn as the granular tray's are (`gkKnob`) — the face,
+   the range input laid over it, the reading, the name. `prismRenderSettings`
+   in `prism-pad.js`. */
+#dockHyper .prism-settings { display: block; font-size: var(--fs-m); }
+#dockHyper .prism-settings-note {
+  margin: 0; padding: 6px 8px; border: 1px dashed var(--line);
+  font-size: var(--fs-s); line-height: 1.3; color: var(--text-dimmer);
+}
+#dockHyper .prism-bank-head {
+  font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dim); border-bottom: 1px solid var(--line);
+  padding-bottom: 3px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#dockHyper .prism-bank-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px 2px; }
+#dockHyper .prism-settings .param.gk-k {
+  display: flex; flex-direction: column; align-items: center; position: relative;
+  gap: 0; width: 56px; min-width: 0; padding: 0 1px 1px; margin: 0;
+}
+#dockHyper .prism-settings .gk-k > .rk-face { display: block; width: 22px; height: 22px; order: 0; margin-bottom: 1px; }
+#dockHyper .prism-settings .gk-k > .rk-face svg { display: block; width: 100%; height: 100%; }
+#dockHyper .prism-settings .gk-k > input[type=range] {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 24px; height: 24px; margin: -1px 0 0; opacity: 0; cursor: ns-resize;
+}
+#dockHyper .prism-settings .gk-k:has(> input:focus-visible) > .rk-face { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+#dockHyper .prism-settings .gk-k > .v {
+  order: 1; width: auto; overflow: visible; text-align: center;
+  font-size: var(--fs-s); line-height: 1.15; color: var(--text-2);
+}
+#dockHyper .prism-settings .gk-k > .k {
+  order: 2; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
+  font-size: var(--fs-xs); line-height: 1.1; color: var(--text-dimmer);
+}
+/* ═══════════════════════════════════════════ Visual › Room · Air · fog curve ══
+   `rkFog` in `app.js`. Fog drawn against distance in the shape its type gives,
+   the density input laid over the drawing and dragged as a knob is. Only in
+   the Visual column; on the master bus the row is the slider it always was. */
+.rk-fog, .rk-fog-graph { display: contents; }
+.rk-fog-graph > svg, .rk-fog-foot { display: none; }
+
+.rv-admin #roomEdit > .re-row:has(#reFogDensity) { flex-wrap: wrap; row-gap: 4px; }
+.rv-admin #roomEdit > .re-row:has(#reFogDensity) > .re-tag { bottom: auto; height: 22px; margin: 2px 0 0; }
+.rv-admin .rk-fog { display: block; flex: 1 0 100%; order: 9; }
+.rv-admin .rk-fog-graph {
+  display: block; position: relative; height: 56px;
+  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+  background-image: linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 25% 100%; background-position: -1px 0;
+}
+.rv-admin .rk-fog-graph > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.rv-admin #roomEdit .rk-fog-graph > input.re-slider {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+.rv-admin .rk-fog-graph:has(> input:focus-visible) { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+.rk-fog-curve { fill: none; stroke: var(--accent); stroke-width: 1.75; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.rk-fog-fill { fill: color-mix(in oklch, var(--accent) 14%, transparent); stroke: none; }
+.rk-fog-high { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; vector-effect: non-scaling-stroke; }
+.rk-fog.off .rk-fog-curve, .rk-fog.off .rk-fog-high { stroke: var(--text-dimmer); }
+.rk-fog.off .rk-fog-fill { fill: color-mix(in oklch, var(--text-dimmer) 10%, transparent); }
+.rv-admin .rk-fog-foot { display: flex; }
+.rv-admin .rk-fog-foot b { font-weight: 400; }
+/* ═══════════════════════════════════════════ Visual › Colour as an instrument ══
+   The pass `docs/DESIGN-CRITIQUE.md` lists under "Not yet done" for Colour;
+   `rpSlotEditor` in `room-paint.js`. The tab given what the rest of the column has: each choice a
+   row of fixed places, lit by a tint and an edge (the rule above, which already
+   names `#roomPaintBody`); each amount a knob, built as `rkKnob` builds them;
+   and a ramp's range a window dragged on the ramp itself, with the curve as a
+   knob beside it. The column is 300 px and every row keeps to it.
+   All of it under `.rp-modern`: the VIEW switch at the top of the tab puts the
+   classic view back, and that view is drawn by the rules it always had. */
+
+/* Rows of fixed places. An absent choice keeps its place, empty. */
+#roomPaintBody.rp-modern .rp-seg,
+#roomPaintBody.rp-modern .rp-gens {
+  flex: 1 1 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px;
+}
+#roomPaintBody.rp-modern .rp-seg > .re-btn,
+#roomPaintBody.rp-modern .rp-gens > .re-btn {
+  min-width: 0; height: 18px; padding: 0 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#roomPaintBody.rp-modern .rp-seg-gap { min-height: 18px; }
+
+/* A knob, as in the Room tab: the face drawn, the range input laid over it. */
+#roomPaintBody.rp-modern .rp-knob { display: flex; justify-content: center; position: relative; }
+#roomPaintBody.rp-modern .rk-k { width: 100%; }
+#roomPaintBody.rp-modern .rk-k > input.re-slider {
+  position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 30px; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+#roomPaintBody.rp-modern .rk-k > .rk-v { font-size: var(--fs-s); }
+
+/* The stops: a cell each, four to a line. The colour on top, where it sits as
+   a knob beneath it, and the way out in the colour's corner. The last place
+   adds one. */
+#roomPaintBody.rp-modern .rp-stop-grid {
+  flex: 1 1 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+}
+#roomPaintBody.rp-modern .rp-stop { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+#roomPaintBody.rp-modern .rp-stop > .re-colour { flex: none; width: 100%; height: 16px; }
+#roomPaintBody.rp-modern .rp-stop-del {
+  position: absolute; top: 1px; right: 1px; width: 13px; height: 13px; padding: 0;
+  background: var(--surface-2); border-color: var(--line-2); line-height: 11px;
+}
+#roomPaintBody.rp-modern .rp-add { align-self: start; height: 16px; padding: 0; font-size: var(--fs-s); }
+
+/* The range: the ramp as the room reads it across the whole quantity, the
+   window lit on it, an end at each side. The curve's knob stands beside it. */
+#roomPaintBody.rp-modern .rp-range { flex-wrap: nowrap; align-items: flex-start; margin: 0; }
+#roomPaintBody.rp-modern .rp-span-col { flex: 1 1 auto; min-width: 0; padding-top: 6px; }
+#roomPaintBody.rp-modern .rp-span {
+  position: relative; height: 18px; cursor: pointer; touch-action: none;
+  border: 1px solid var(--line-2); border-radius: 2px;
+}
+#roomPaintBody.rp-modern .rp-span-win {
+  position: absolute; top: -3px; bottom: -3px; cursor: grab;
+  border-top: 1.5px solid var(--accent); border-bottom: 1.5px solid var(--accent);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+#roomPaintBody.rp-modern .rp-span-end {
+  position: absolute; top: -2px; bottom: -2px; width: 4px;
+  background: var(--text); border-radius: 1px; cursor: ew-resize;
+  box-shadow: 0 0 0 1px var(--bg);
+}
+#roomPaintBody.rp-modern .rp-span-lo { left: -2px; }
+#roomPaintBody.rp-modern .rp-span-hi { right: -2px; }
+#roomPaintBody.rp-modern .rp-span-end:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+#roomPaintBody.rp-modern .rp-span-read {
+  position: relative; height: 12px; margin-top: 4px; white-space: nowrap;
+  font: var(--fs-xs) var(--mono); color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+#roomPaintBody.rp-modern .rp-range > .rp-knob { flex: 0 0 52px; }
+
+/* Each end's number rides under its handle (K2); `rpPlaceReads` sets where. */
+#roomPaintBody.rp-modern .rp-span-read > span { position: absolute; top: 0; left: 0; }
+
+/* The stops on their gradient: a tick where each sits, capped in its colour,
+   dragged along the line it is a point on (K6). Above the cells, across the
+   control column; the knobs below stay as the exact way in. */
+#roomPaintBody.rp-modern .rp-stopbar {
+  flex: 1 1 100%; position: relative; height: 14px; margin: 6px 0 4px;
+  border: 1px solid var(--line-2); border-radius: 2px;
+}
+#roomPaintBody.rp-modern .rp-tick {
+  position: absolute; top: -6px; bottom: -3px; width: 12px; margin-left: -6px;
+  cursor: ew-resize; touch-action: none;
+}
+#roomPaintBody.rp-modern .rp-tick::before {
+  content: ''; position: absolute; left: 5px; top: 4px; bottom: 0; width: 2px;
+  background: var(--text); box-shadow: 0 0 0 1px var(--bg);
+}
+#roomPaintBody.rp-modern .rp-tick > i {
+  position: absolute; left: 1px; top: 0; width: 10px; height: 7px; border-radius: 2px;
+  border: 1px solid var(--text); box-shadow: 0 0 0 1px var(--bg);
+}
+#roomPaintBody.rp-modern .rp-tick:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+
+/* The VIEW switch, in both views: two fixed places at the top of the tab. */
+#roomPaintBody .rp-view {
+  flex: 1 1 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
+}
+#roomPaintBody .rp-view > .re-btn { height: 18px; padding: 0 2px; }
+#roomPaintBody .rp-view-row { margin-bottom: 4px; }
+
+/* The head keeps to the control column, Undo in a place of its own (K1, K7). */
+#roomPaintBody.rp-modern .rp-under { padding-left: var(--re-tag-w); flex-wrap: nowrap; }
+#roomPaintBody.rp-modern .rp-under > .rp-load { flex: 1 1 auto; min-width: 0; }
+#roomPaintBody.rp-modern .rp-under > .rp-undo,
+#roomPaintBody.rp-modern .rp-under > .rp-undo-gap { flex: 0 0 38px; padding: 0; }
+
+/* The open slot is lit like a chosen place; its editor hangs off an accent
+   rule, so it reads as that slot's (K3). */
+#roomPaintBody.rp-modern .rp-chev { flex: 0 0 8px; font-size: var(--fs-xs); color: var(--text-dimmer); }
+#roomPaintBody.rp-modern .rp-slot-head.open {
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent);
+}
+#roomPaintBody.rp-modern .rp-slot-head.open .rp-chev { color: var(--accent); }
+#roomPaintBody.rp-modern .rp-edit { border-left: 2px solid color-mix(in oklch, var(--accent) 70%, transparent); padding: 2px 0 2px 6px; }
+
+/* One rule where two met: under the head, and under an open editor (K8). */
+#roomPaintBody.rp-modern .rp-head > .rp-row:last-child,
+#roomPaintBody.rp-modern .rp-edit > .rp-row:last-child { border-bottom: 0; }
+
+/* A stop's × keeps its size and gains a target around it (K9). */
+#roomPaintBody.rp-modern .rp-stop-del::after { content: ''; position: absolute; inset: -4px; }
+
+#roomPaintBody .rp-range > .rp-knob { flex: 0 0 52px; }
+/* ═══════════════════════════════════════════════════ Visual › 4D ══
+   `docs/DESIGN-CRITIQUE.md`, "Not yet done", and `p4BuildPanel` in
+   `panel-4d.js`. The lighter pass: projection and turning as rows of fixed
+   places, lit and never filled; Eye and Rate as knobs; the six plane angles
+   kept as scrub fields. One width, edge to edge, and the whole tab on screen
+   at 1000 px without scrolling — the notes kept, set tight. */
+/* The viewport takes whatever height the controls leave, so the column ends
+   with the tab rather than with blank space under it. */
+.rv-admin #room4dBody:not(.hidden) { display: flex; flex-direction: column; }
+#room4dBody .p4-view { flex: 1 1 auto; height: auto; min-height: 186px; margin-bottom: 0; }
+#room4dBody #p4Panel { flex: none; }
+#room4dBody .re-tag { margin: 7px 0 3px; }
+#room4dBody .p4-objects { max-height: none; overflow: visible; }
+#room4dBody .p4-obj { padding: 2px 7px; }
+#room4dBody .p4-about { padding: 1px 2px 0; }
+#room4dBody .p4-about-name { margin-bottom: 1px; }
+#room4dBody .p4-about-hint { font-size: var(--fs-s); line-height: 1.35; }
+#room4dBody .p4-about-n { margin-top: 2px; }
+#room4dBody .p4-grid { margin-bottom: 3px; }
+#room4dBody .fx-note { font-size: var(--fs-xs); line-height: 1.35; }
+
+/* A row of fixed places: the same width each, one line, never ragged. */
+#room4dBody .p4-seg {
+  display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 3px;
+}
+#room4dBody .p4-seg > .re-btn { height: 20px; padding: 0 2px; white-space: nowrap; overflow: hidden; }
+#room4dBody .p4-seg-w { font-style: normal; color: var(--accent); }
+/* Lit, not filled: a tint and an edge, as across the rest of the column. */
+.rv-admin #room4dBody .re-btn.active {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  color: var(--accent);
+}
+
+/* The knobs, four places to a line: Eye, Rate, and the way back across two. */
+#room4dBody .p4-knobs {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center; justify-items: center; margin-top: 6px;
+}
+#room4dBody .p4-knobs > .rk-k { width: 100%; }
+#room4dBody .rk-k > input.p4-knob-in {
+  position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 30px; margin: 0;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+/* Eye's and Rate's readings are number fields (`p4Knob`): typed, or dragged sideways. */
+#room4dBody .rk-k > input.p4-knob-read {
+  width: 52px; padding: 0 3px; text-align: center; font: var(--fs-s) var(--mono); line-height: 1.3;
+}
+#room4dBody .p4-knobs > .re-reset { grid-column: span 2; justify-self: stretch; height: 20px; }
+#room4dBody .p4-knobs + .fx-note { margin-top: 3px; }
+
+/* The fog's menu, whole now the knob has moved under it: "Height" was cut. */
+.rv-admin #roomEdit #reFogType { flex: 0 0 84px; width: 84px; min-width: 0; }
+/* Linear fog does not read the density: the number stays, said to be idle. */
+.rk-fog[data-type="0"] .rk-fog-read { color: var(--text-dimmer); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* ════════════════════════════════════════ Visual › Room · Air · mist drips ══
+   `rkMist` in `app.js`. The length is the drawing (its input laid over it,
+   dragged as a knob is); the amount is the knob beside it. */
+.rk-mist, .rk-mist-col, .rk-mist-graph { display: contents; }
+.rk-mist-graph > svg, .rk-mist-foot { display: none; }
+.rv-admin #roomEdit > .re-row:has(#reMistLength) { flex-wrap: wrap; row-gap: 4px; }
+.rv-admin #roomEdit > .re-row:has(#reMistLength) > .re-tag { bottom: auto; height: 22px; margin: 2px 0 0; }
+.rv-admin .rk-mist { display: flex; flex: 1 0 100%; order: 9; gap: 8px; align-items: flex-start; }
+.rv-admin .rk-mist-col { display: block; flex: 1 1 auto; order: 0; min-width: 0; }
+.rv-admin .rk-mist > .rk-k { order: 1; }
+.rv-admin .rk-mist-graph {
+  display: block; position: relative; height: 44px;
+  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+}
+.rv-admin .rk-mist-graph > svg { display: block; width: 100%; height: 100%; }
+.rv-admin #roomEdit .rk-mist-graph > input.re-slider {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; flex: none;
+  opacity: 0; cursor: ns-resize; touch-action: none;
+}
+.rv-admin .rk-mist-graph:has(> input:focus-visible) { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+.rv-admin .rk-mist-foot { display: flex; }
+.rv-admin .rk-mist-foot b { font-weight: 400; }
+.rk-mist-grain { fill: var(--text-2); }
+.rk-mist-drop { fill: var(--accent); }
+.rk-mist.off .rk-mist-drop, .rk-mist.off .rk-mist-grain { fill: var(--text-dimmer); }
+
+/* ═════════════════════════════════ Visual › Room · Camera, folded to use ══
+   `rkCamWords`, `rkKeys` and the pads' keys in `app.js`. The channel box four
+   to a line in the pads' words; the legend and the pose behind one switch;
+   the pads take the keyboard. */
+.rk-short, .rk-keys { display: none; }
+.rv-admin #roomEdit .re-chan .rk-long { display: none; }
+.rv-admin #roomEdit .re-chan .rk-short { display: inline; }
+.rv-admin #roomEdit > .re-row.re-chan { grid-column: span 3; }
+.rv-admin #roomEdit > .rk-keys { display: block; justify-self: start; grid-column: 1 / -1; margin: 2px 0 4px; }
+.rv-admin #roomEdit > .rk-keys::after { content: ' \25B8'; }
+.rv-admin #roomEdit > .rk-keys[aria-expanded="true"]::after { content: ' \25BE'; }
+.rv-admin #roomEdit:not(.rk-keys-open) > .re-legend,
+.rv-admin #roomEdit:not(.rk-keys-open) > #reNums { display: none; }
+.rk-pad:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+
+/* ═══════════════════════════════ Visual › Room · controls in the column's hand ══
+   The rest of the design-council review (`rkUndoClear`, `rkBlockWords`).
+   Visual column only; the overlay keeps the browser's own controls. */
+
+/* Clear is the room back to default: it reads as that, stands apart from
+   Reset, and is followed for a few seconds by Undo. */
+.rk-undo { display: none; }
+.rv-admin #roomEdit .re-foot { display: flex; width: 100%; }
+.rv-admin #roomEdit #reReset { order: 0; }
+.rv-admin #roomEdit .rk-undo { order: 1; }
+.rv-admin #roomEdit #reClear { order: 2; }
+.rv-admin #roomEdit #reClear {
+  margin-left: auto; color: var(--bad);
+  border-color: color-mix(in oklch, var(--bad) 60%, transparent);
+}
+.rv-admin #roomEdit #reClear:hover { background: color-mix(in oklch, var(--bad) 14%, transparent); }
+.rv-admin #roomEdit .rk-undo.on {
+  display: inline-block; margin-left: auto; color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+}
+.rv-admin #roomEdit .rk-undo.on + #reClear { margin-left: 4px; }
+
+/* A switch that is off is still a switch: an edge at 3:1 (WCAG 1.4.11). */
+.rv-admin #roomEdit .re-btn:not(.active) { border-color: var(--text-dimmer); }
+
+/* Block: its two settings named alike — Size under the chunk buttons. */
+.rk-chunk { display: contents; }
+.rv-admin #roomEdit .rk-chunk { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+
+/* Checkboxes: a square in the column's line, filled with the accent when on. */
+.rv-admin #roomEdit .re-check input[type=checkbox] {
+  appearance: none; display: inline-grid; place-content: center;
+  width: 12px; height: 12px; margin: 0;
+  border: 1px solid var(--text-dimmer); border-radius: 2px; background: var(--well);
+}
+.rv-admin #roomEdit .re-check input[type=checkbox]::before {
+  content: ''; width: 6px; height: 6px; border-radius: 1px; background: var(--accent);
+  transform: scale(0); transition: transform .08s;
+}
+.rv-admin #roomEdit .re-check input[type=checkbox]:checked { border-color: var(--accent); }
+.rv-admin #roomEdit .re-check input[type=checkbox]:checked::before { transform: scale(1); }
+.rv-admin #roomEdit .re-check input[type=checkbox]:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+
+/* A chevron drawn in the control's own colour, so it follows the theme. */
+.rv-admin #roomEdit select,
+.rv-admin #roomEdit input[type=color] {
+  --rk-chev: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-image: var(--rk-chev);
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+  background-position: right 9px center, right 5px center;
+}
+.rv-admin #roomEdit select {
+  appearance: none; height: 22px; padding: 0 20px 0 7px;
+  border: 1px solid var(--line-2); border-radius: 3px;
+  background-color: var(--well); color: var(--text-2); font-size: var(--fs-s);
+}
+.rv-admin #roomEdit select:hover { border-color: var(--text-dimmer); }
+.rv-admin #roomEdit select:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+.rv-admin #roomEdit #reFogType { flex: 0 0 92px; width: 92px; }
+/* Swatches: the colour, and beside it the mark that says a picker opens. */
+.rv-admin #roomEdit input[type=color] {
+  flex: 0 0 38px; width: 38px; height: 20px; padding: 2px 14px 2px 2px;
+  border: 1px solid var(--line-2); border-radius: 3px;
+  background-color: var(--well); color: var(--text-dim); cursor: pointer;
+}
+.rv-admin #roomEdit input[type=color]:hover { border-color: var(--text-dimmer); }
+.rv-admin #roomEdit input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.rv-admin #roomEdit input[type=color]::-webkit-color-swatch { border: 0; border-radius: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .rv-admin #roomEdit .re-check input[type=checkbox]::before { transition: none; }
+}
+/* ═══════════════════════════════════════════ Grain view · Classic and Modern ══
+   `grainUiBuild` in `app.js`. The switch sits at the end of the Grain view's
+   tab strip. Everything Modern draws is under one selector,
+   `body.editing[data-grain-ui="modern"]`, so it reaches nothing outside the
+   Grain view; Classic is the view as it was. */
+.gm-switch { display: inline-flex; margin-left: auto; flex: 0 0 auto; border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
+.gm-switch button {
+  height: 21px; padding: 0 9px; border: 0; background: transparent;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-s); cursor: pointer;
+}
+.gm-switch button + button { border-left: 1px solid var(--line-2); }
+.gm-switch button[aria-pressed="true"] { background: color-mix(in oklch, var(--accent) 16%, transparent); color: var(--accent); }
+.gm-switch button:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -2px; }
+/* Words only Modern says, and the marks only Modern draws. */
+.gm-word { display: none; }
+.rk-mark { display: none; stroke: var(--text-2); stroke-width: 1.5; stroke-linecap: round; }
+body.editing[data-grain-ui="modern"] .gm-word { display: inline; }
+body.editing[data-grain-ui="modern"] .gm-classic { display: none; }
+
+/* 1 · A knob's named point — Envelope's symmetric, a spread's nothing. */
+body.editing[data-grain-ui="modern"] #grainControls .rk-mark { display: inline; }
+
+/* 2 · The preset is the stretch and the rack: its controls on Time & Pitch
+   and FX, right-aligned with the switch, and nowhere a preset changes nothing. */
+body.editing[data-grain-ui="modern"] #presetBar > .vsep.gm-preset { margin-left: auto; }
+body.editing[data-grain-ui="modern"] #presetBar > .gm-switch { margin-left: 12px; }
+body.editing[data-grain-ui="modern"] #presetBar:is([data-tab="prism"], [data-tab="visuals"], [data-tab="automation"], [data-tab="regions"]) > .gm-preset { display: none; }
+body.editing[data-grain-ui="modern"] #presetBar:is([data-tab="prism"], [data-tab="visuals"], [data-tab="automation"], [data-tab="regions"]) > .gm-switch { margin-left: auto; }
+
+/* 3 · What cannot be taken back reads so, and asks once (`gmArm`). */
+body.editing[data-grain-ui="modern"] :is(#presetDelete, #perfLaneDel, #revertBtn) {
+  color: var(--bad); border-color: color-mix(in oklch, var(--bad) 55%, transparent);
+}
+body.editing[data-grain-ui="modern"] :is(#presetDelete, #perfLaneDel, #revertBtn).gm-armed {
+  background: color-mix(in oklch, var(--bad) 22%, transparent); border-color: var(--bad);
+}
+
+/* 4 · Automation and Prism in the dock's own hand: the column's type, its
+   buttons, sentence case (the source is in capitals, so it is drawn lower
+   with a capital first), red kept for recording only; Prism's square a well
+   with hairlines and the accent, its sliders thin. */
+body.editing[data-grain-ui="modern"] .perf-panel,
+body.editing[data-grain-ui="modern"] .perf-panel :is(*, select, button) {
+  font-family: var(--sans); letter-spacing: normal;
+}
+body.editing[data-grain-ui="modern"] .perf-panel :is(.btn, .perf-header, .perf-header-info, .perf-sel-info, .perf-check, .knob-label, #perfStatus) {
+  text-transform: lowercase;
+}
+body.editing[data-grain-ui="modern"] .perf-panel :is(.btn, .perf-header, .perf-header-info, .perf-sel-info, .perf-check, .knob-label, #perfStatus)::first-letter { text-transform: uppercase; }
+body.editing[data-grain-ui="modern"] .perf-panel .btn {
+  height: 24px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 3px;
+  background: var(--bg); color: var(--text-2); font-size: var(--fs-s);
+}
+body.editing[data-grain-ui="modern"] .perf-panel .btn:hover { border-color: var(--text-dimmer); }
+body.editing[data-grain-ui="modern"] .perf-panel .perf-rec-btn:not(.recording) { border-color: var(--line-2) !important; color: var(--text-2) !important; }
+body.editing[data-grain-ui="modern"] .perf-panel .perf-header { color: var(--text-dim); font-size: var(--fs-s); }
+body.editing[data-grain-ui="modern"] .perf-panel #perfStatus { color: var(--text-dim); font-size: var(--fs-s); }
+body.editing[data-grain-ui="modern"] .perf-panel :is(select, .preset-select) { border-radius: 3px; }
+body.editing[data-grain-ui="modern"] .perf-pos { font-family: var(--mono); letter-spacing: normal; }
+body.editing[data-grain-ui="modern"] .prism-square {
+  border: 1px solid var(--line-2); border-radius: 3px; box-shadow: none;
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 10% 10%,
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 10% 10%,
+    var(--well);
+}
+body.editing[data-grain-ui="modern"] .prism-square .prism-pad-dot { background: var(--text); box-shadow: 0 0 0 2px var(--accent); }
+body.editing[data-grain-ui="modern"] .prism-path polyline { stroke: color-mix(in oklch, var(--accent) 70%, transparent); }
+body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range] {
+  appearance: none; height: 16px; background: transparent; accent-color: var(--accent);
+}
+body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line-3); border-radius: 1px; }
+body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range]::-webkit-slider-thumb {
+  appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%;
+  background: var(--text); box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* 5 · Every control in the view's bars a 24 px target (WCAG 2.2, 2.5.8). */
+body.editing[data-grain-ui="modern"] :is(.panel-head .x, .tab .close, .tabbar .newtab, .tbtn.small) {
+  min-width: 24px; min-height: 24px; width: auto; height: 24px;
+  display: inline-grid; place-items: center;
+}
+body.editing[data-grain-ui="modern"] :is(#editTools, #transportBar, #presetBar, #tabBar) :is(button, select) { min-height: 24px; }
+body.editing[data-grain-ui="modern"] :is(#editTools, #transportBar, #presetBar, #tabBar) button { min-width: 24px; }
+body.editing[data-grain-ui="modern"] .gm-switch button { height: 24px; }
+body.editing[data-grain-ui="modern"] #grainControls .scale-btn::before { content: 'Tuning: '; }
+body.editing[data-grain-ui="modern"] #grainControls .popout-btn::before { content: 'Play '; }
+body.editing[data-grain-ui="modern"] #roomEditOpen::before { content: 'Edit '; }
+body.editing[data-grain-ui="modern"] :is(#presetBar, #transportBar, #editTools) label:has(> input[type=checkbox]) {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 0 4px;
+}
+body.editing[data-grain-ui="modern"] #transportBar input[type=range] { min-height: 24px; }
+
+/* 6 · Time & Pitch: the controls take the width, the scope a column of its
+   own, and the engine choice leads with its name. */
+body.editing[data-grain-ui="modern"] #dockStretch .grain-split > .grain-controls { flex: 1 1 auto; max-width: none; }
+body.editing[data-grain-ui="modern"] #dockStretch .grain-split > .tray-right { flex: 0 0 380px; max-width: 380px; }
+body.editing[data-grain-ui="modern"] #grainControls .engine-pick::before {
+  content: attr(data-gm-label); display: block; margin-bottom: 3px;
+  font: 600 var(--fs-s)/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim);
+}
+/* The engine's name takes a line above its switches; the cloud pad's column,
+   placed absolutely under them, moves down by the same. */
+body.editing[data-grain-ui="modern"] #dockStretch .gk-left { top: 44px; }
+
+/* ═════════════════════════════════════════ the Visual column's pictures ══
+   `ui/control-pictures.js`. A picture over every knob of what it moves, in the
+   colour the palette gives that part (`--cp`, set on each picture); the context
+   around it in the dim text colour. The knob's input is laid over the face, so
+   it moves down by the picture's height. */
+.rv-admin .rk-k > svg.pic { display: block; width: 52px; height: 39px; margin-bottom: 2px; overflow: hidden; }
+#roomAdmin .rk-k:has(> svg.pic) > input:is(.re-slider, .p4-knob-in) { top: 40px; }
+svg.pic .a { fill: none; stroke: var(--cp, var(--accent)); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg.pic .a.thin { stroke-width: 1.2; }
+svg.pic .af { fill: var(--cp, var(--accent)); stroke: none; }
+svg.pic .h { fill: none; stroke: var(--cp, var(--accent)); stroke-linecap: round; stroke-linejoin: round; opacity: .28; }
+svg.pic .hf { fill: var(--cp, var(--accent)); stroke: none; }
+svg.pic .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; opacity: .75; }
+svg.pic .ff { fill: var(--text-dimmer); stroke: none; opacity: .5; }
+/* Under a stacked line: the fill that hides the lines behind it. */
+svg.pic .bg, svg.pic-where .bg { fill: var(--sink); stroke: none; }
+
+/* Where in the room: a small room with one part lit. */
+svg.pic-where { flex: 0 0 auto; width: 32px; height: 20px; }
+svg.pic-where .dim { fill: none; stroke: var(--text-dimmer); stroke-width: 1; stroke-linecap: round; opacity: .45; }
+svg.pic-where .lit { fill: none; stroke: var(--cp, var(--accent)); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.pic-where .lit.thick { stroke-width: 2.8; }
+svg.pic-where .lit.fill { fill: var(--cp, var(--accent)); stroke: none; opacity: .55; }
+svg.pic-where .none { display: none; }
+.rv-admin #reLayers .re-layer-name { display: flex; align-items: center; gap: 6px; }
+.rv-admin #reLayers .re-layer-name > svg.pic-where { width: 26px; height: 16px; }
+.rv-admin #reLayers .re-layer-name:not(.active) > svg.pic-where { opacity: .45; }
+
+/* A generator's strip: the palette it makes, before it is pressed. */
+.rp-gens .re-btn:has(> .pic-strip) { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+.pic-strip { display: flex; height: 5px; border-radius: 2px; overflow: hidden; }
+.pic-swatch { flex: 1 1 0; display: block; }
+#roomPaintBody.rp-modern .rp-gens > .re-btn:has(> .pic-strip) { height: auto; padding: 3px 3px 2px; }
+
+/* The 4D tab: each solid's thumbnail, each plane's dial, each projection. */
+.p4-obj:has(> svg.pic-solid) { grid-template-columns: 30px 26px 1fr auto; }
+svg.pic-solid { width: 30px; height: 22px; }
+svg.pic-solid .a { stroke-width: .8; opacity: .85; }
+.p4-obj:not(.active) > svg.pic-solid { opacity: .55; }
+.p4-num:has(> svg.pic-dial) { grid-template-columns: 18px 30px 1fr; }
+svg.pic-dial { width: 18px; height: 18px; }
+svg.pic-dial .a { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+svg.pic-dial .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.2; stroke-linecap: round; }
+[data-p4seg="projection"] .re-btn:has(> svg.pic) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+svg.pic-proj { width: 28px; height: 17px; }
+
+/* The grain controls' glyphs (`grain-glyphs.js`, `docs/design/grain-icons.html`):
+   a picture of the value above each knob. The group's colour is what the
+   control moves; the dim text colour is the context around it. The knob's
+   input is laid over the face, so it moves down by the glyph's height. */
+/* In the slider rows: the picture at the front, no taller than the row. */
+#grainControls .param.gk-row { grid-template-columns: 44px var(--param-k) minmax(0, 1fr) var(--param-v); min-height: 34px; }
+#grainControls .param.seg-param.gk-row { grid-template-columns: 44px var(--param-k) minmax(0, 1fr); }
+#grainControls .gk-row > .gg { display: block; width: 44px; height: 33px; overflow: visible; }
+#grainControls .gk-row > .gg .a { stroke-width: 2.6; }
+#grainControls .gk-k > .gg { display: block; order: -1; width: 36px; height: 27px; margin-bottom: 1px; overflow: visible; }
+#grainControls .gk-k:has(> .gg) > input[type=range] { top: 28px; }
+.gg-time { --gg: var(--text); }
+.gg-shape { --gg: var(--warn); }
+.gg-pitch { --gg: var(--accent); }
+.gg-scan { --gg: var(--good); }
+.gg .a { fill: none; stroke: var(--gg); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.gg .af { fill: var(--gg); stroke: none; }
+.gg .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: 0.7; }
+.gg .t { font: 8px var(--font-mono, monospace); fill: var(--text-dimmer); }
+/* The FX pictures' own two classes (`075-fx-faces.js`), drawn as a glyph. */
+.gg .ff { fill: var(--text-dimmer); opacity: .55; stroke: none; }
+.gg .ta { font: 8px var(--font-mono, monospace); fill: var(--gg); }
+
+/* ═══════════════════════════════════════════════════════════ the Edit page ══
+   `body.wavepage`: the same open sound as Grain, editing only. The granular
+   dock, the presets and the worded edit bar are Grain's; here the edit
+   commands are one row of icons along the top (`wtBuild` in `app.js`). */
+.wave-tools { display: none; }
+body.wavepage .wave-tools {
+  display: flex; align-items: center; gap: 0; flex-wrap: wrap;
+  padding: 4px 8px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+body.wavepage :is(#dock, #presetBar) { display: none !important; }
+/* The worded bar goes too, but the open documents' tabs on it stay. */
+body.wavepage #editTools > :not(#tabBar) { display: none !important; }
+body.wavepage #editTools:has(> #tabBar.hidden) { display: none; }
+/* Grain's dock and its resize handle are gone, so the lane takes the height. */
+body.wavepage #dock + .dock-resize, body.wavepage #dockResize { display: none; }
+
+/* `body.choppage`: the same open sound again, with Grain's dock showing only
+   its Chop panel (`chopPageSync` opens that tab). The dock's tab rail, the
+   presets and the worded edit bar are Grain's. */
+body.choppage #presetBar { display: none !important; }
+/* `body.prismpage`: the same again, for the Prism pad. Its tab is the page's
+   own, so the Grain page's dock no longer shows it. */
+body.prismpage #presetBar { display: none !important; }
+body.prismpage #editTools > :not(#tabBar) { display: none !important; }
+body.prismpage #editTools:has(> #tabBar.hidden) { display: none; }
+body.choppage #editTools > :not(#tabBar) { display: none !important; }
+body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
+
+/* A section: its title over a row of icons, each with its word under it. */
+.wt-group { position: relative; display: flex; flex-direction: column; gap: 1px; padding: 0 6px; }
+.wt-group + .wt-group { border-left: 1px solid var(--line); }
+.wt-title {
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dimmer); line-height: 1.3; min-height: 1.3em; white-space: nowrap; padding: 0 2px;
+}
+.wt-row { display: flex; align-items: flex-end; gap: 1px; min-height: 42px; }
+.wt-btn {
+  min-width: 40px; height: 42px; padding: 3px 3px 2px; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: transparent; border: 1px solid transparent; border-radius: 5px;
+  color: var(--text-2); cursor: pointer;
+}
+.wt-btn svg { width: 20px; height: 20px; display: block; flex: none; }
+.wt-word { font-size: var(--fs-xs); line-height: 1; white-space: nowrap; color: var(--text-dim); }
+.wt-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--text); border-color: var(--line); }
+.wt-btn:hover:not(:disabled) .wt-word { color: var(--text-2); }
+.wt-btn:active:not(:disabled) { transform: translateY(1px); }
+.wt-btn:disabled { opacity: .3; cursor: default; }
+/* A choice that is the current one: lit, as the rail's workspace is. */
+.wt-btn[aria-pressed="true"] { color: var(--accent); background: var(--surface-3); border-color: var(--line-2); }
+.wt-btn[aria-pressed="true"] .wt-word { color: var(--accent); }
+.wt-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wt-row #wtBits { margin: 0 0 8px 4px; }
+.wt-custom { margin-left: auto; }
+
+/* Customizing: everything can be picked up; titles are written in place. */
+.wave-tools.wt-editing { background: var(--surface-2); }
+.wt-editing .wt-group[draggable="true"] { cursor: grab; border-radius: 6px; }
+.wt-editing .wt-btn { cursor: grab; border-color: var(--line); }
+.wt-editing .wt-title[contenteditable] { color: var(--text-2); cursor: text; outline: 1px dashed var(--line-2); border-radius: 3px; }
+.wt-editing .wt-title[contenteditable]:focus { outline: 1px solid var(--accent); }
+.wt-editing .wt-over { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--accent); }
+.wt-row.wt-empty { min-width: 60px; border: 1px dashed var(--line-2); border-radius: 5px; }
+.wt-x, .wt-secx {
+  position: absolute; top: -3px; right: -3px; width: 14px; height: 14px; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; border: 0;
+  background: var(--surface-3); color: var(--text-dim); font-size: var(--fs-s); line-height: 1; cursor: pointer;
+}
+.wt-x { right: auto; left: -3px; }
+.wt-secx { top: 0; right: 2px; }
+.wt-x:hover, .wt-secx:hover { background: var(--bad); color: white; }
+.wt-btn.wt-hidden { opacity: .6; }
+
+/* The Tags panel's switch, in the Browse panel's head now that the right-hand
+   column it stood alone in is gone. Lit while the panel is open. */
+.panel-head .tags-toggle.active { color: var(--accent); }
+
+/* ═══════════════════════════════════════════ the tags, under the sound's details
+   1 Nov 2026: the right-hand Tags column is gone; its fields are part of the
+   middle of Browse. The column's own head stays in the markup, never shown.
+
+   The Design Council's pass on this area: the facts are a glance, so one strip
+   of readings with hairlines between, not ten boxed cards (Rams, Ive); the
+   classifier's reason is one quiet line under them; the tags are the work, in
+   four columns; Commit and Discard sit with the fields they save (Norman). */
+#rightPanel { display: none !important; }
+
+#statsView .stats-grid {
+  display: flex; flex-wrap: wrap; gap: 0;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+#statsView .stat-card {
+  flex: 1 1 auto; background: none; border: 0; border-radius: 0;
+  border-left: 1px solid var(--line); padding: 5px 12px;
+}
+#statsView .stat-card:first-child { border-left: 0; padding-left: 0; }
+#statsView .stat-card .v { font-size: var(--fs-l); }
+#statsView .why {
+  margin-top: 5px; padding: 0; background: none; border: 0; border-radius: 0;
+  font-size: var(--fs-s); line-height: 1.4;
+}
+
+.stats-tags {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
+}
+.stats-tags.hidden { display: grid; }
+.stats-tags > .st-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.stats-tags > .st-col > .field-label { margin: 0; }
+.stats-tags .edit-group { gap: 5px; }
+/* The notes fill their column to the height of the first. */
+.stats-tags label:has(textarea) { flex: 1; }
+.stats-tags textarea { flex: 1; min-height: 60px; height: auto; resize: none; }
+.stats-tags-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: auto; padding-top: 6px; }
+.stats-tags-foot .dirty { margin-right: auto; }
+#statsView:has(.stats-tags) { max-height: 46%; padding: 10px 14px; }
+/* Where the values came from, as one word heading the first column, styled as
+   the other columns' heads; the whole of it is in its tooltip. */
+.stats-tags .tag-source {
+  font-family: var(--sans); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--text-dimmer); cursor: help;
+}
+
+/* The readings over the meter, each value standing over the bar it reads
+   (1 Nov 2026). Two centred columns 36 px wide either side of the middle,
+   which is where `drawMasterVu` puts the two bars (20 wide, 16 apart). */
+.mb-side .mb-reads {
+  order: -1;
+  grid-template-columns: minmax(0, 1fr) 36px 36px minmax(0, 1fr);
+  column-gap: 0;
+}
+.mb-side .mb-reads > .mb-k { grid-column: 1; }
+.mb-side .mb-reads > :is(.mb-h, .mb-v) { text-align: center; }
+.mb-side .mb-reads > .mb-word { text-align: center; }
+/* The row names in the same type as the readings beside them: one weight
+   across the row, so the eye reads VU −14.2 as one thing. */
+.mb-side .mb-reads > :is(.mb-k, .mb-h) {
+  font-family: var(--mono); font-size: var(--fs-s); letter-spacing: 0;
+  font-weight: 400; color: var(--text-2);
+}
+
+/* ═════════════════════════════════════════════════════════════ advanced view
+   `ui/app/255-advanced-view.js`. One pop-up for one sound: its four tag fields
+   side by side, each value a row to drag, remove or move, a text field to add,
+   suggestions one click away. As tall as what is in it. */
+.st-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.av-open { width: auto; height: auto; padding: 0; font: 500 var(--fs-s) var(--sans); color: var(--accent); background: none; border: 0; cursor: pointer; }
+.av-open:hover { text-decoration: underline; }
+.av-modal.hidden { display: none; }
+.av-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 900; }
+.av-box {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 901;
+  width: min(784px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--line-3); border-radius: 8px;
+  box-shadow: 0 24px 60px var(--shadow-hard);
+}
+.av-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.av-head b { font-size: var(--fs-l); color: var(--text); }
+.av-name { font: var(--fs-s) var(--mono); color: var(--text-dim); }
+.av-hint { margin-left: auto; font-size: var(--fs-s); color: var(--text-dim); }
+.av-cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.av-col { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid var(--line); min-width: 0; }
+.av-col:first-child { border-left: 0; }
+.av-t { font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .4px; text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 2px; }
+.av-list { display: flex; flex-direction: column; gap: 3px; min-height: 28px; }
+.av-item {
+  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; align-items: center; gap: 6px;
+  height: 28px; padding: 0 6px; background: var(--surface-3); border-radius: 4px;
+  font: var(--fs-m) var(--mono); color: var(--text); cursor: grab;
+}
+.av-item.av-dragging { opacity: .4; }
+.av-h { color: var(--text-dimmer); font-size: var(--fs-s); letter-spacing: -2px; }
+.av-w { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.av-o { font-size: var(--fs-xs); color: var(--text-dimmer); }
+.av-x { background: none; border: 0; color: var(--text-dimmer); font-size: var(--fs-l); padding: 0 2px; cursor: pointer; line-height: 1; }
+.av-x:hover { color: var(--bad); }
+.av-line { height: 3px; border-radius: 2px; background: var(--accent); }
+.av-new { width: 100%; height: 28px; box-sizing: border-box; padding: 0 8px; font: var(--fs-m) var(--mono); }
+.av-sug-t { font-size: var(--fs-xs); color: var(--text-dimmer); margin-top: 4px; }
+.av-sug-t:empty { display: none; }
+.av-sug { display: flex; flex-wrap: wrap; gap: 3px; }
+.av-chip { font: var(--fs-s) var(--mono); color: var(--text-2); background: none; border: 1px solid var(--line-3); border-radius: 3px; padding: 2px 6px; cursor: pointer; }
+.av-chip:hover { color: var(--text); border-color: var(--text-dim); }
+.av-chip.av-m { border-color: var(--accent); }
+.av-notes { width: 100%; box-sizing: border-box; flex: 1; min-height: 120px; resize: none; }
+.av-foot { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.av-say { margin-right: auto; font: var(--fs-s) var(--mono); color: var(--text-dim); }
+/* With no sound chosen the strip has nothing in it; its hairlines are not drawn
+   round nothing (`interface.spec.mjs`, the empty-box check). */
+#statsView .stats-grid:empty { display: none; }
+

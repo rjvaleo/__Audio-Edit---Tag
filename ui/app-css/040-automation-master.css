@@ -1,0 +1,842 @@
+/* --------------------------------------------------- the automation panel
+   Last, so these win over the rules the branch sheet carries for a panel
+   with modulator chips and record modes that this port does not have. */
+/* Automation. One column, not the dock's auto-fit grid: a lane is a timeline
+   and has to span the full width or its frames do not line up with the ruler
+   above it. */
+.automation-body { display: flex; flex-direction: column; gap: 8px; }
+.automation-toolbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.automation-toolbar .check { display: flex; align-items: center; gap: 5px; font-size: var(--fs-m); }
+.automation-note {
+  margin-left: auto; font-size: var(--fs-s); color: var(--text-dimmer);
+  font-variant-numeric: tabular-nums;
+}
+.automation-lanes { display: flex; flex-direction: column; gap: 6px; }
+.automation-lane {
+  display: grid; grid-template-columns: 190px 1fr; gap: 8px;
+  align-items: stretch;
+  background: var(--bg-2, #0d151c);
+  border: 1px solid var(--line, #1d2833);
+  border-radius: 4px; padding: 6px;
+}
+.automation-lane-controls { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.automation-lane-controls .row { display: flex; align-items: center; gap: 5px; }
+.automation-lane-controls select { flex: 1; min-width: 0; font-size: var(--fs-m); }
+.automation-lane-controls .danger { color: var(--danger, #e0685f); padding: 0 6px; }
+.automation-canvas {
+  width: 100%; height: 110px; display: block;
+  background: #070d13; border-radius: 3px; cursor: crosshair;
+  touch-action: none;
+}
+
+/* ------------------------------------------------------------- recording
+   The one panel that makes a file rather than reading one. Armed and
+   recording are drawn as clearly different states, because the difference
+   between "I can see a level" and "this is being kept" is the whole thing. */
+#paneRecord { display: flex; flex-direction: column; gap: 10px; }
+.rec-device { display: flex; align-items: center; gap: 8px; }
+.rec-device .k { font-size: var(--fs-m); color: var(--text-2); flex: 0 0 auto; }
+.rec-device select { flex: 1; min-width: 0; }
+.rec-meter {
+  display: flex; gap: 3px; height: 74px; padding: 4px;
+  border: 1px solid var(--line-2); border-radius: 4px; background: #070b0e;
+  box-shadow: inset 0 1px 5px var(--shadow-hard);
+}
+.rec-bar {
+  flex: 1; align-self: flex-end; height: var(--rec, 0%); border-radius: 1px;
+  background: linear-gradient(to top, #30c878 0 70%, #e3bf3d 70% 90%, #e64e4e 90%);
+  transition: height 60ms linear;
+}
+/* At or above full scale the meter itself reads as wrong, not just the bar. */
+.rec-meter.hot { border-color: #e64e4e; box-shadow: inset 0 1px 5px var(--shadow-hard), 0 0 0 1px rgba(230,78,78,.45); }
+.rec-transport { display: flex; align-items: center; gap: 8px; }
+.rec-go {
+  width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
+  border: 1px solid #7d2b2b; background: #c23b3b; color: #fff;
+  font-size: var(--fs-l); line-height: 1; cursor: pointer;
+}
+.rec-go:hover { background: #d94848; }
+.rec-readout { font-size: var(--fs-m); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.rec-readout.warn { color: #e6c83f; }
+.rec-name { display: flex; align-items: center; gap: 8px; }
+.rec-name .k { font-size: var(--fs-m); color: var(--text-2); flex: 0 0 auto; }
+.rec-name input { flex: 1; min-width: 0; }
+
+/* ------------------------------------------------------------------ tuning
+   Eighty-one scales is a list you cannot read; the categories are the first
+   level and one opens at a time. */
+.scale-btn {
+  margin-left: 6px; height: 18px; padding: 0 7px; flex: 0 0 auto;
+  font-size: var(--fs-s); border-radius: 3px; cursor: pointer;
+  border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text-2);
+  max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.scale-btn:hover { border-color: var(--accent); color: var(--accent); }
+.scale-btn.on { border-color: var(--accent); color: var(--accent); background: var(--surface-3); }
+.menu-pop.scale-pop {
+  width: 340px; max-height: 66vh; overflow: auto; padding: 4px;
+  display: flex; flex-direction: column;
+}
+.scale-head {
+  display: flex; align-items: center; gap: 8px; padding: 3px 5px 6px;
+  position: sticky; top: -4px; z-index: 2; background: inherit;
+  border-bottom: 1px solid var(--line);
+}
+.scale-count {
+  font-size: var(--fs-s); color: var(--text-dimmer); flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+.scale-head .filter-box { flex: 1; min-width: 0; }
+.scale-cats { display: flex; flex-direction: column; gap: 1px; }
+.scale-cat-head {
+  width: 100%; text-align: left; padding: 6px 7px 3px; cursor: pointer;
+  position: sticky; top: 26px; z-index: 1; background: inherit;
+  font-size: var(--fs-s); font-weight: 650; letter-spacing: .4px;
+  border: 0; border-radius: 3px; background: transparent; color: var(--text-2);
+}
+.scale-cat-head:hover { background: var(--surface-2); color: var(--accent); }
+.scale-cat-body { display: flex; flex-direction: column; gap: 1px; padding: 1px 0 4px 8px; }
+.scale-item {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left;
+  padding: 4px 7px; border: 0; border-radius: 3px; cursor: pointer;
+  background: transparent; color: var(--text);
+}
+.scale-item:hover { background: var(--surface-2); }
+.scale-item.selected { background: var(--surface-3); color: var(--accent); }
+.scale-item .sc-name { font-size: var(--fs-m); }
+.scale-item .sc-info { font-size: var(--fs-xs); color: var(--text-dimmer); }
+
+/* The engine's switches and its tuning, on one row: whatever this engine has
+   on the left, the scale at the right-hand end. */
+/* Every button the same fixed size, always.
+   Sharing the row between however many buttons happen to be there made them
+   change size with the engine: two buttons came out fat, three came out medium,
+   and the same control was a different shape depending on what was beside it.
+   A fixed width means a button is a button. */
+/* Four fixed slots on one line, and WSOLA is the master.
+   1 the engine's own switch · 2 the grain cloud · 3 the tuning · 4 Keys.
+   Every button is placed by its slot, so a control is in the same spot on every
+   engine and an engine with nothing for slot 1 leaves a hole instead of sliding
+   the rest along. Keys is slot 4 and slot 4 is the right-hand end of the row.
+   Equally spaced by construction: 71px wide, 77px apart. */
+.engine-switches {
+  display: block; position: relative; margin-bottom: 2px;
+  height: 18px; white-space: nowrap;
+}
+.engine-switches > [data-slot] {
+  position: absolute; top: 0; margin: 0; width: 71px;
+  /* Zero line-height on the slot, restored on the button inside it. Without
+     this the `.param` wrapper's line box pushed the toggles three pixels below
+     the tuning and Keys, which are buttons in their own right. */
+  line-height: 0;
+}
+.engine-switches > [data-slot] > * { line-height: normal; vertical-align: top; }
+/* The switches flow from the left in order; the tuning and Keys are always the
+   last two places on the row, whatever the engine put before them. Keys is the
+   final position on the panel and does not move. */
+.engine-switches > [data-slot] {
+  display: inline-block; vertical-align: top;
+}
+/* Four fixed places, 71 wide and 77 apart — so every gap is exactly 6, at every
+   width, on every engine.
+   
+   The two arrangements that came before each broke one half of this. Pinning
+   the tuning and Keys to the row's right edge kept them still but left the
+   middle gap to be whatever was left over: 28px at one width, zero at another,
+   with the grain cloud butting into the tuning as the panel narrowed. Letting
+   all four flow made the gaps even but moved the tuning and Keys every time an
+   engine had a different number of switches.
+   
+   Fixed offsets do both. An engine with nothing for a slot leaves it empty
+   rather than sliding the rest along. */
+.engine-switches > [data-slot="1"] { position: absolute; left: 0; margin: 0; }
+.engine-switches > [data-slot="2"] { position: absolute; left: 77px; margin: 0; }
+.engine-switches > [data-slot="3"] { position: absolute; left: 154px; margin: 0; }
+.engine-switches > [data-slot="4"] { position: absolute; left: 231px; margin: 0; }
+
+/* A pop-out, not a setting. Everything else on this row changes a value; this
+   opens a window, so it is a different shape: filled rather than outlined, with
+   the mark that says a window is coming. Always at the right-hand end. */
+.popout-btn {
+  display: inline-block; vertical-align: top; margin: 0;
+  width: 71px; height: 18px; padding: 0 4px;
+  border: 1px solid var(--line-3); border-radius: 4px;
+  background: var(--surface-2h); color: var(--text-2);
+  font: inherit; font-size: var(--fs-s); font-weight: 500;
+  white-space: nowrap; cursor: pointer;
+}
+.popout-btn:hover { border-color: var(--accent); color: var(--accent); }
+.popout-btn.on { border-color: var(--accent); color: var(--accent); }
+.popout-mark { font-style: normal; opacity: 0.65; margin-left: 3px; font-size: var(--fs-xs); }
+/* `vertical-align: top` on everything, so the inline-blocks sit on the row's
+   top edge instead of on a text baseline — that baseline is what put the
+   toggles four pixels below the tuning and Keys. */
+.engine-switches > * {
+  display: inline-block; vertical-align: top;
+  width: 71px; margin: 0 6px 0 0;
+}
+.engine-switches .scale-btn {
+  display: inline-block; vertical-align: top;
+  margin: 0 6px 0 0; max-width: none; width: 71px; height: 18px; padding: 0 3px;
+}
+/* The name takes what is left after the caret, which is always visible — a
+   dropdown with its arrow cut off is just a button. */
+.scale-name { overflow: hidden; text-overflow: clip; }
+.menu-caret { font-style: normal; opacity: 0.6; font-size: var(--fs-xs); margin-left: 2px; }
+/* Not inline-flex. The caret is an inline glyph after the name; centring is
+   `text-align`, which is what it was for. */
+.scale-btn { text-align: center; }
+/* Every `.tiny` in the tray is the same size wherever it sits, for the same
+   reason it is the same word: a button is recognised by its shape before it is
+   read, and a Reset that is one width here and another there is two buttons.
+
+   71px is measured, not chosen: the row is 304px, it has to hold four buttons
+   and three 6px gaps, and the widest collapsed label — "prsrv trnsnts" — is
+   61px of text. 71 minus 8px of padding leaves 63. It fits, and it does not
+   wrap. */
+.tiny { width: 71px; padding: 0 4px; }
+/* `check` returns a `.param` row — a three-column grid sized to the control
+   table — and on this row that grid is 158px of nothing before the button even
+   starts. Here the wrapper is just the button. */
+/* Not a `.param` grid on this row.
+   `check` returns a three-column control-table row, and inside a slot that grid
+   centred the button in a taller box — which is what put the toggles four
+   pixels below the tuning and Keys. Here the wrapper is the button's box and
+   nothing else. */
+.engine-switches .param.toggle {
+  display: inline-block; vertical-align: top;
+  width: 71px; height: 18px; margin: 0 6px 0 0; padding: 0;
+  grid-template-columns: none; align-items: initial;
+}
+.engine-switches .param.toggle .tiny { width: 71px; height: 18px; display: block; }
+/* `#dockStretch .toggle { margin: 3px 0 }` is an ID selector and outranks the
+   class rule above, which is where the toggles' three-pixel drop came from —
+   they sat below the tuning and Keys on what was meant to be one line. Matched
+   here at the same specificity rather than fought with `!important`. */
+#dockStretch .engine-switches > [data-slot] { margin: 0 6px 0 0; padding: 0; }
+
+
+
+/* The cloud pad: the grain cloud drawn where it actually is, with the read
+   head as a box you can move and resize. One gesture, three controls — see
+   `drawCloudPad` in app.js. */
+.cloud-pad-wrap { position: relative; margin: 6px 0 10px; }
+.cloud-pad {
+  display: block;
+  width: 100%;
+  height: 132px;
+  border: 1px solid var(--line, #1b2a36);
+  border-radius: 4px;
+  /* A well, so it follows the theme: near-black on the dark ones, paper on the
+     light ones (it was #0a141c whatever the theme). */
+  background: var(--well, #0a141c);
+  cursor: crosshair;
+  touch-action: none;
+}
+.cloud-pad-read {
+  position: absolute;
+  right: 6px;
+  top: 5px;
+  font-size: var(--fs-s);
+  pointer-events: none;
+}
+
+/* Sits with the preset picker it modifies, rather than off in a menu: it
+   changes what choosing a preset *does*, so it has to be visible at the moment
+   of choosing. */
+.preset-with-sound { white-space: nowrap; }
+
+
+/* The dock's top edge, as a grip. Sits over the border rather than taking a
+   row of its own: a resize handle that costs vertical space is working against
+   the thing it is for. */
+.dock-resize {
+  position: absolute; top: -3px; left: 0; right: 0; height: 7px;
+  cursor: ns-resize; z-index: 12;
+}
+.dock-resize::after {
+  content: ''; position: absolute; left: 50%; top: 2px;
+  width: 46px; height: 3px; margin-left: -23px; border-radius: 2px;
+  background: var(--line-2); opacity: 0; transition: opacity .12s ease;
+}
+.dock-resize:hover::after, body.dock-sizing .dock-resize::after { opacity: 1; }
+/* While dragging, nothing else should take the pointer or select. */
+body.dock-sizing { cursor: ns-resize; user-select: none; }
+body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
+
+/* Not a mode, but it is a destination, so it is labelled like one. Without the
+   label it was the sixth unnamed symbol in a column of five and could not be
+   found by anyone who had not been told where to look. */
+/// Keeps `rail-btn` — that is what the click handler binds to, and taking it
+/// away to make the button look different left it labelled and completely dead.
+.rail-theme {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  height: auto; padding: 6px 0 4px;
+}
+.rail-theme .ic { font-size: var(--fs-l); line-height: 1; }
+.rail-theme .lb { font-size: var(--fs-xs); letter-spacing: .02em; }
+.rail-theme.active { color: var(--accent); }
+
+/* --------------------------------------------------------------- theme pane
+   A palette is chosen by looking at it, so the swatch is the control and the
+   name is the caption — not the other way round. */
+/* No max-height and no flex growth. The pane is already the scroller — giving
+   the list its own bounded box inside a flex column collapsed it to zero and
+   nothing drew at all, which is how this shipped looking empty. */
+.theme-list { display: block; }
+.theme-list > * { margin-bottom: 2px; }
+.theme-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 6px; border-radius: 5px; cursor: pointer;
+  border: 1px solid transparent; min-height: 28px;
+}
+.theme-row:hover { background: var(--surface-2); }
+.theme-row.chosen { border-color: var(--accent); background: var(--surface-2); }
+.theme-swatch { display: flex; flex: 0 0 auto; border-radius: 3px; overflow: hidden; }
+.theme-swatch i { width: 14px; height: 18px; display: block; flex: 0 0 auto; }
+.theme-name {
+  flex: 1; min-width: 0; font-size: var(--fs-m); color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.theme-del {
+  background: none; border: 0; color: var(--text-dimmer);
+  font-size: var(--fs-l); line-height: 1; padding: 0 2px; cursor: pointer;
+}
+.theme-del:hover { color: var(--bad); }
+#themePlain.on { border-color: var(--accent); color: var(--text); }
+
+/* ------------------------------------------------------- the note keyboard */
+
+/* A reference card rather than a dialog: the keys play whether it is open or
+   not, so this is showing you the layout, not gating it. */
+/* A floating panel, not a shadowbox.
+   The keys play whether this is open or not, so it has no business dimming the
+   app or swallowing clicks — you want it up *while* you work, next to the
+   controls it is changing. Fixed to the bottom, draggable by its header, and
+   nothing behind it is blocked. */
+.kb-panel {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 40; pointer-events: none;
+}
+.kb-panel.hidden { display: none; }
+.kb-card {
+  max-width: 96vw; pointer-events: auto;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 10px; overflow: hidden;
+  box-shadow: 0 18px 44px var(--shadow);
+}
+.kb-head {
+  display: flex; align-items: center; gap: 10px;
+  height: 28px; padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-l); font-weight: 600;
+  cursor: grab; user-select: none;
+}
+.kb-head.dragging { cursor: grabbing; }
+.kb-head h2 { margin: 0; font-size: var(--fs-l); }
+.kb-head .ghost { padding: 0 7px; height: 19px; font-size: var(--fs-m); }
+.kb-head .modal-sub { font-size: var(--fs-s); }
+.kb-head .modal-sub { min-width: 0; overflow: hidden; white-space: nowrap; }
+.kb-body { padding: 7px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+
+/* A piano, not a row of buttons. The whites are one unbroken row — there are no
+   gaps in them — and the blacks are placed over the seams between them — the same relationship the two
+   keyboard rows have under a hand, which is the point of the letters working out
+   the way they do. Absolute inside a relative box, so both are positioned from
+   one measurement and cannot drift apart. */
+.kb-piano { position: relative; height: 84px; margin: 0; flex: 0 0 auto; }
+.kb-key {
+  position: absolute; top: 0;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+  gap: 2px; padding: 4px 1px 5px;
+  font-family: var(--mono); cursor: pointer; overflow: hidden;
+}
+.kb-key.white {
+  height: 84px; z-index: 1;
+  border: 1px solid var(--line-3); border-radius: 0 0 5px 5px;
+  background: var(--text-2); color: var(--sink);
+}
+.kb-key.black {
+  height: 51px; z-index: 2;
+  border: 1px solid #000; border-radius: 0 0 4px 4px;
+  background: var(--sink); color: var(--text-2);
+  box-shadow: 0 2px 5px var(--shadow);
+}
+.kb-key.white.on { background: var(--accent); color: var(--sink); }
+.kb-key.black.on { background: var(--accent); color: var(--sink); border-color: var(--accent); }
+.kb-letter { font-size: var(--fs-m); font-weight: 700; line-height: 1.1; flex: 0 0 auto; }
+/* The number runs down the key.
+   A white key is about twenty-three pixels wide and "+11.00" is twenty-four, so
+   laid across it either clipped or spilled onto its neighbour. Down the key it
+   has the whole height to use and the key can stay as narrow as a key should be
+   — which is the same reason the numbers on a real fretboard run along it. */
+.kb-semis {
+  writing-mode: vertical-rl;
+  font-size: var(--fs-xs); opacity: 0.7; line-height: 1;
+  flex: 1 1 auto; min-height: 0;
+  display: flex; align-items: flex-start; justify-content: center;
+  letter-spacing: -0.2px;
+}
+
+.kb-legend {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
+  width: 100%; font-size: var(--fs-s); color: var(--text-dim); padding-top: 1px;
+}
+.kb-legend b { color: var(--text-2); font-family: var(--mono); }
+/* One line, cross-fading. `white-space: nowrap` is what keeps it one line —
+   wrapping was what made the panel grow in the first place. */
+.kb-hint {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 1; transition: opacity 0.45s ease;
+  cursor: pointer; user-select: none;
+}
+.kb-hint:hover { color: var(--text-2); }
+.kb-hint.out { opacity: 0; }
+.kb-oct { font-family: var(--mono); margin-left: auto; }
+.kb-now { font-family: var(--mono); }
+.kb-oct.on { color: var(--accent); }
+.kb-now { color: var(--text-2); min-width: 46px; text-align: right; }
+
+
+/* The grain views, as a window rather than half the stretch tray. */
+.vis-window-card { width: min(760px, 92vw); }
+.vis-window-body { padding: 6px; }
+.vis-window-body .grain-vis {
+  display: flex; flex-direction: column; gap: 6px;
+  width: 100%; height: 420px; min-height: 0;
+}
+.vis-window-body #grainCanvas,
+.vis-window-body #grainFrame { flex: 1 1 auto; min-height: 0; width: 100%; }
+
+/* ─────────────────────────────────────────────────────────── the master bus ──
+   A meter bridge, not three little boxes. Big numbers across the top because
+   the whole reason a bridge carries numbers is that they can be read from
+   across the room; the field below them; the ladders hard right.
+
+   Every colour is a token, so a theme reaches this. */
+.master-bus {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; gap: 10px;
+  overflow: hidden;
+}
+.mb-main {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.mb-side {
+  flex: 0 0 128px; min-height: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+/* The canvases are placed rather than flowed. A canvas is a replaced element
+   with its own intrinsic size, so `height: 100%` on a flex item whose own
+   height is `auto` does not resolve. Absolute against a positioned cell does. */
+.mb-cell { position: relative; min-height: 0; }
+.mb-cell > canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  display: block; background: var(--sink); border-radius: 4px;
+}
+/* The room's front face lands exactly on this element's edges, so a border or
+   a rounded corner would be a frame drawn over the frame. The panel is the box. */
+#visGl { border: 0; border-radius: 0; background: transparent; }
+/* The stacking in this cell, stated in one place because it is the whole
+   illusion.
+   The data is *behind* the canvas, which is what puts the room in front of it:
+   the canvas clears to transparent and blends additively, so the terrain, the
+   ring and the leading edge lie over the text the way they would lie over
+   anything painted on the far wall. Everything that is furniture rather than
+   room — the peak readout, the FFT sizes, the editor — sits above the canvas,
+   because those are things on the glass and not things in the box. */
+.mb-cell-3d > #visGl { z-index: 1; }
+.mb-cell-3d > .mb-note, .mb-cell-3d > .mb-res { z-index: 2; }
+
+/* The panel filling the screen.
+   Normally it is a flex child with the page behind it, so it never needed a
+   background of its own. Fullscreen there is nothing behind it at all and the
+   browser paints its own black, which is not this theme's black — the room
+   would sit in a colour the palette never chose. Padding keeps the box off the
+   bezel; the front face still lands on the element's edges, which is now
+   almost the whole screen. */
+#masterBus:fullscreen {
+  background: var(--bg);
+  padding: 12px;
+  gap: 14px;
+}
+/* Full screen is the room and nothing else.
+   The meter column was kept at first, on the reasoning that the numbers stay
+   readable at that size. That was the wrong call: full screen is the state you
+   put this in to *look* at the room — it is what the video export films, and
+   that has no meter column either — so a strip of ladders down one side is a
+   strip of the room taken away for something you can read any other time. */
+#masterBus:fullscreen .mb-side { display: none; }
+#masterBus:fullscreen { gap: 0; }
+
+/* ── the room editor ──────────────────────────────────────────────────────────
+   An overlay that does not take the pointer. Everything that edits the room is
+   a drag on the room, so the only things here that can be clicked are the
+   frame shapes and the way back. */
+/* Top right, the one corner of the room with nothing in it. */
+.re-open {
+  position: absolute; top: 5px; right: 6px; z-index: 5;
+  height: 15px; padding: 0 7px;
+  border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
+  color: var(--text-2); font: inherit; font-size: var(--fs-xs); line-height: 1;
+  letter-spacing: .05em; cursor: pointer;
+}
+/* Full strength, and a word rather than a glyph.
+   The first version was a 17px mark at 55% opacity that came up to full only on
+   hover, which is a fine way to keep a corner tidy and a useless way to tell
+   anyone the room can be posed at all: on a dark box it simply was not there.
+   An affordance that has to be hovered to be seen has not been offered. */
+.re-open:hover { color: var(--text-2); border-color: var(--line); }
+.re-open.on { color: var(--bg); background: var(--accent); border-color: var(--accent); opacity: 1; }
+
+.room-edit {
+  position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  /* **Stacked from the top, not spread.** `space-between` spreads the children
+     over the height it has — and when the panel wants more height than the room
+     cell gives it, spreading pushes the last of them out through the bottom
+     edge. That is not a wrap or a clip: the buttons land outside the canvas,
+     over the dock beneath it, where a pointer aimed at them hits the dock
+     instead. Adding one more row of controls was enough to do it. Stacked from
+     the top, everything stays inside and the readout takes what is left. */
+  /* **Wrapped into columns, rather than trimmed row by row.**
+     Every control added here made the panel taller, and twice it grew past the
+     room cell and pushed `Clear` and `Reset` out through the bottom edge — not
+     clipped, but *outside* the canvas, over the dock beneath it, where a pointer
+     aimed at them hits the dock. Tightening the rhythm bought one row each time
+     and was never going to buy the next.
+     Wrapping is the structural answer: when the column runs out of height the
+     rest starts a new one beside it. The room is wide and the panel was using a
+     fifth of it. */
+  display: flex; flex-direction: column; flex-wrap: wrap;
+  justify-content: flex-start; align-content: flex-start;
+  max-height: 100%; column-gap: 14px;
+  padding: 6px 8px;
+}
+/* The one menu in the overlay. `.field` is full width, and a full-width
+   control in a panel that lies over the room is a bar the room cannot be
+   dragged through — which is how six rows for the solid came to cover the
+   camera's drag target. Capping the panel's height was the wrong answer (it
+   clipped the lower rows and, with the rows made to take the pointer so the
+   cap could scroll, covered the sky). The control is the width of its text. */
+.room-edit select.mini { width: auto; max-width: 150px; height: 16px; font-size: var(--fs-xs); padding: 0 3px; }
+/* In the room view it is a column, not an overlay: no cap, no scroll of its
+   own — `.rv-admin-body` already scrolls around it. */
+.rv-admin .room-edit select.mini { width: 100%; max-width: none; height: 24px; font-size: var(--fs-m); padding: 0 6px; }
+/* The solid's six rows, in the overlay, only while its layer is on. Six more
+   rows are a third wrapped column, and that column ran off the right edge of
+   the dock's room — controls a pointer could not reach. With the layer off
+   they move nothing. In the Room view they are always shown. */
+.room-edit.re-solid-off .re-row.re-solid { display: none; }
+.rv-admin .room-edit.re-solid-off .re-row.re-solid { display: flex; }
+
+.room-edit.hidden { display: none; }
+.re-frames { display: flex; gap: 3px; pointer-events: auto; }
+.re-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+/* The one control here that is a value rather than a choice, and it is still a
+   drag: how strongly the data sits on the wall is a thing you judge by looking
+   at it against the room, not a number anyone could name. */
+.re-slider {
+  pointer-events: auto; width: 54px; height: 11px; margin: 0;
+  accent-color: var(--accent); background: transparent; cursor: ew-resize;
+}
+.re-tag {
+  font-size: var(--fs-xs); letter-spacing: .1em; color: var(--text-dim);
+  width: 38px; flex: 0 0 auto;
+}
+
+/* ── the grain block ──────────────────────────────────────────────────────────
+   A readout in the corner of the room. Monospaced, tight, and lit from the
+   accent, because this is a glitch instrument and this is the part of it that
+   should look like the inside of one. It stays legible: every value is a real
+   number the engine is working to, so the styling gets the glow and the numbers
+   keep the contrast. */
+/* Down the right, under the Room button.
+   The left of the room belongs to the editor's rows and the bottom corners are
+   the FFT sizes and the peak readout, so the right column is the one edge with
+   nothing already on it. Put top-left, it sat straight on top of the layer
+   buttons the moment the editor was opened. */
+/* Printed on the room's back wall.
+   Position and scale are set from the camera in `paintRoomData` — the wall is
+   GPU geometry and never exists as an element, so there is nothing to attach
+   to and the rectangle is derived instead. No background: it is on the wall,
+   not on a card in front of it. */
+.room-data {
+  position: absolute; z-index: 0;
+  /* Clipped to the wall. The block's box is the wall's box, so anything that
+     does not fit is simply not seen — no bleed past the corners of the room. */
+  overflow: hidden;
+  padding: 0;
+  /* Stated here rather than inherited from the `mono` class, because the whole
+     layout is measured in `ch` and a proportional face would make that unit
+     mean nothing. */
+  font-family: var(--mono);
+  /* Small, thin, and the wall's own blue.
+     The room's wireframe is drawn at weights of 0.02 to 0.16, which in the
+     shader is essentially pure `uCold` — the `--wave-2` token — and very dim.
+     Type set at the interface's usual size and colour was heavier than every
+     line in the box, so the readout became the loudest thing on screen when it
+     is meant to be the faintest. Same hue, thinner stroke, smaller. */
+  font-size: 7px; line-height: 9px; font-weight: 300; pointer-events: none;
+  color: var(--wave-2);
+  /* Thins the stroke on macOS, which is most of the difference between type
+     that sits on the wall and type that sits in front of it. */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  overflow: hidden; white-space: pre;
+  font-variant-numeric: tabular-nums;
+  /* Ligatures off. `JetBrains Mono` will otherwise join things like `->` into
+     one glyph, which is one character narrower than the two it replaced. */
+  font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0;
+}
+.room-data.hidden { display: none; }
+
+/* The layer stack. One row a layer, highest at the top — the list is the
+   hierarchy, so it is read the way a hierarchy is read. */
+#reLayers { display: flex; flex-direction: column; gap: 1px; align-items: stretch; }
+.re-layer {
+  display: flex; align-items: center; gap: 3px;
+  border-radius: 3px;
+  /* The row is the drag handle, so it must not select as text under the
+     pointer — a half-selected label mid-drag reads as a broken control. */
+  user-select: none; -webkit-user-select: none;
+}
+.re-layer .re-grip {
+  cursor: grab; opacity: .3; font-size: var(--fs-xs); line-height: 1;
+  padding: 0 1px; letter-spacing: -1px;
+}
+.re-layer:hover .re-grip { opacity: .65; }
+/* The name takes the room that is going, so the occlusion switches line up in a
+   column of their own rather than sitting at ragged distances from the left. */
+.re-layer .re-layer-name { flex: 1 1 auto; text-align: left; }
+.re-layer .re-occ { flex: 0 0 auto; padding: 0 4px; opacity: .45; }
+.re-layer .re-occ.active { opacity: 1; }
+/* Nothing is occluding, so the order is doing nothing. The rows still work —
+   they turn layers on and off — but the grips are not worth reaching for. */
+/* The fill row: a checkbox, a BG chip and a swatch.
+   **Every one of these has to take the pointer back.** The overlay is
+   `pointer-events: none` so that dragging the room works through it, and only
+   the things that are controls hand it back — which was a list of three, and
+   anything added since had to join it or arrive dead. The whole fill row did
+   arrive dead: the checkbox could not be checked and the swatch could not be
+   opened. The test did not catch it because it dispatched the events straight
+   at the elements, which is the one way of driving a control that cannot tell
+   whether the control can be reached. */
+/* `select` is on this list because it was not, and the fog's type could not be
+   changed at all: it opened nothing, because the pointer went through it to the
+   room behind. Every kind of control that goes in this panel has to be named
+   here, and the reachability test now walks every one of them rather than a
+   list somebody remembered to update. */
+.re-row .re-btn, .re-check, .re-check input, .re-colour,
+.re-row select, .re-row input { pointer-events: auto; }
+.re-check { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.re-check input { width: 10px; height: 10px; margin: 0; accent-color: var(--accent); }
+.re-colour {
+  width: 22px; height: 14px; padding: 0; border: 0; background: none;
+  cursor: pointer; border-radius: 2px;
+}
+.re-colour::-webkit-color-swatch-wrapper { padding: 0; }
+.re-colour::-webkit-color-swatch { border: 1px solid rgba(255,255,255,.25); border-radius: 2px; }
+#reLayers.re-flat .re-grip { opacity: .12; }
+#reLayers.re-flat .re-grip:hover { opacity: .3; }
+/* The Data block is type on the wall rather than geometry in the room, so it
+   has no place in the order and nothing to occlude with. */
+.re-layer.re-layer-off-stage .re-grip { width: 7px; }
+.re-layer.re-layer-off-stage { opacity: .82; }
+.re-layer.re-dragging { opacity: .4; }
+.re-layer.re-over { outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+/* White, and the same size as everything else in this box.
+   The first version was accent-coloured and larger than its neighbours, which
+   made a readout look like a badge. This is a stream of numbers to be read
+   past rather than a label to be noticed, so it takes the interface's own text
+   colour and the same 8.5px the FFT row and the camera line use. */
+/* All of it the wall's blue, only the strength differs — and none of it as
+   strong as the leading edge, which is the thing in this box that is supposed
+   to be bright. */
+.rd-head { color: color-mix(in srgb, var(--wave-2) 62%, transparent); margin-bottom: 1px; }
+/* No letter-spacing, and this is the reason.
+   The whole block is laid out in characters — `fitCell` pads every field to a
+   fixed width and the fitting counts whole columns against the wall — and that
+   arithmetic is only true if one character is one `ch` everywhere in the box.
+   The header carried `letter-spacing: .04em`, which at this size is a quarter
+   of a pixel a character: invisible on any one letter and a full column of
+   drift by the far side of a forty-character line, so the labels sat further
+   and further left of the numbers they name the further across you read. */
+.rd-hdr { color: color-mix(in srgb, var(--wave-2) 45%, transparent); }
+.rd-row { color: color-mix(in srgb, var(--wave-2) 70%, transparent); }
+/* The rows further down fall away, the same way the floor does with depth. */
+.rd-row:nth-child(n+9) { color: color-mix(in srgb, var(--wave-2) 52%, transparent); }
+.rd-row:nth-child(n+15) { color: color-mix(in srgb, var(--wave-2) 38%, transparent); }
+.rd-row:nth-child(n+22) { color: color-mix(in srgb, var(--wave-2) 26%, transparent); }
+.rd-idle { color: color-mix(in srgb, var(--wave-2) 30%, transparent); }
+/* The blank line between blocks. It carries spaces rather than being absent, so
+   the grid never shifts when a block happens to be short. */
+.rd-gap { visibility: hidden; }
+/* Over budget, or grains being dropped. Not decoration — the two states where
+   what you are hearing is not what the settings asked for. */
+/* The two states where what you hear is not what was asked for. Still thin,
+   still small — just not blue. */
+.room-data.rd-hot .rd-head { color: color-mix(in srgb, var(--bad) 75%, transparent); }
+.re-btn {
+  height: 15px; padding: 0 7px;
+  border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-xs); line-height: 1;
+  cursor: pointer;
+}
+.re-btn:hover { color: var(--text-2); border-color: var(--line); }
+.re-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+/* Clear and Reset sit together, and both have to take the pointer back from
+   the overlay. `align-self` no longer applies now that they share a line. */
+.re-reset { pointer-events: auto; }
+/* No `margin-top: auto` any more: in a wrapping column that pushes the footer
+   to the bottom of whichever column it lands in, which is not the same thing as
+   the bottom of the panel and looks like a mistake wherever it happens to be. */
+.re-foot { display: flex; gap: 4px; align-self: flex-start; margin-top: 4px; }
+/* Bottom left, clear of the peak readout at bottom right and the FFT row —
+   which the editor hides while it is up, because the room is being posed and
+   not measured. */
+.re-nums {
+  font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim);
+  pointer-events: auto; cursor: copy; align-self: flex-start;
+  background: var(--bg); border-radius: 3px; padding: 3px 6px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.re-nums:hover { color: var(--text-2); }
+/* While the room is being posed it is a thing you grab, and it says so. */
+#masterBus.room-editing #visGl { cursor: grab; }
+#masterBus.room-editing #visGl:active { cursor: grabbing; }
+/* **A control is not a thing you drag the room by.**
+   The room is posed by dragging it, so while the editor is open the canvas
+   wears a grab hand — and the panel over it is `pointer-events: none`, so the
+   hand carried straight through every control on it. The pointer said "you can
+   move this" over a slider, a checkbox and a colour swatch alike, which is the
+   opposite of what each of them does. Each says what it is instead. */
+.room-edit .re-btn,
+.room-edit .re-check,
+.room-edit .re-check input,
+.room-edit select,
+.room-edit .re-colour { cursor: pointer; }
+.room-edit .re-slider { cursor: ew-resize; }
+.room-edit .re-layer .re-grip { cursor: grab; }
+.room-edit .re-layer.re-dragging .re-grip { cursor: grabbing; }
+.room-edit .re-nums { cursor: copy; }
+#masterBus.room-editing #mbRes { display: none; }
+/* A frame shape other than the dock's letterboxes inside whatever room the
+   panel has, so what you are looking at is the shape you are designing for and
+   not a wide panel you have to imagine your way out of. */
+/* `align-self: center` is doing the work and it is worth saying why.
+   The cell lives in a column flex, so its height comes from `flex: 1 1 auto`
+   and its width from the cross axis — which stretches by default. Stretched, a
+   width is already decided and `aspect-ratio` has nothing to derive. Centring
+   it on the cross axis makes the width shrink-to-fit instead, and then the
+   ratio can set it from the height.
+   The first attempt used `flex: 0 1 auto` and got a box 0 by 0: basis `auto`
+   against a canvas that is absolutely positioned means no content, which means
+   no height, which through the ratio means no width either. */
+/* Letterboxed *inside* the cell it was given, not sized past it.
+   `align-self: center` with `max-width: 100%` caps the width and lets the ratio
+   derive the height — so a 9:16 frame in a short dock came out 882 px tall and
+   forced the whole dock open. Sizing the width against the container's own
+   height settles both at once, the same way the full view's stage does: the
+   width is the smaller of what there is and what the height allows, and the
+   ratio derives the height back from it. */
+.mb-main { container-type: size; }
+.mb-cell-3d.re-framed {
+  flex: 0 0 auto;
+  margin: auto;
+  width: min(100%, calc(100cqh * var(--rv-ratio, 1)));
+  height: auto;
+  aspect-ratio: var(--rv-ratio, 1);
+  outline: 1px solid var(--line-2);
+}
+/* Beside the controls, the room has the width they left rather than the whole
+   container's, so the ceiling is that instead — and the frame's own sizing is
+   restated at this specificity so nothing in the beside layout outranks it. */
+.mb-main.re-beside > .mb-cell-3d.re-framed {
+  flex: 0 0 auto;
+  width: min(100%, calc(100cqh * var(--rv-ratio, 1)));
+  height: auto;
+}
+/* The room's ground.
+   It was on the canvas, which made the canvas opaque and hid whatever was
+   behind it. It belongs on the cell: then the stack from back to front is
+   ground, the grain block printed on the far wall, and the room itself drawn
+   over both on glass. */
+.mb-cell-3d { flex: 1 1 auto; min-height: 0; background: var(--sink); border-radius: 4px; }
+.mb-cell-vu { flex: 1 1 auto; }
+
+/* Bottom right, out of the way of the frequency labels along the top. */
+.mb-note {
+  position: absolute; bottom: 4px; right: 8px;
+  font-size: var(--fs-xs); color: var(--text-dim); pointer-events: none;
+  text-shadow: 0 1px 3px var(--shadow);
+}
+.mb-state { font-size: var(--fs-xs); color: var(--text-dim); text-align: right; }
+
+/* How much detail the analyser is asked for. Fixed widths — never flex. */
+.mb-res { position: absolute; left: 26px; bottom: 4px; display: flex; gap: 3px; }
+.mb-res-btn {
+  width: 30px; height: 15px; padding: 0;
+  border: 1px solid var(--line-2); background: transparent; border-radius: 3px;
+  color: var(--text-dim); font: inherit; font-size: var(--fs-xs); line-height: 1;
+  cursor: pointer;
+}
+.mb-res-btn:hover { color: var(--text-2); border-color: var(--line); }
+.mb-res-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+
+.mb-reads {
+  flex: 0 0 auto;
+  display: grid; grid-template-columns: 30px repeat(2, minmax(0, 1fr));
+  gap: 1px 5px; align-items: baseline;
+}
+.mb-k { font-size: var(--fs-xs); letter-spacing: .05em; color: var(--text-dim); }
+.mb-h { font-size: var(--fs-xs); letter-spacing: .07em; color: var(--text-dim); text-align: right; }
+.mb-v {
+  font-size: var(--fs-s); color: var(--text-2); text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mb-v.hot { color: var(--warn); }
+.mb-v.over { color: var(--bad); }
+.mb-v.good { color: var(--good); }
+/* What the correlation number means, in the column beside it — there is no
+   room for a sentence and no need for one.
+
+   Pinned to one line whatever it says. A word that wraps changes the row's
+   height, and a row that changes height moves every reading under it. */
+.mb-word {
+  font-size: var(--fs-xs); color: var(--text-dim); text-align: right;
+  white-space: nowrap; overflow: hidden; line-height: 1.35;
+}
+.mb-word.warn { color: var(--bad); }
+
+/* ───────────────────────────────────────────── the tray's right-hand column ──
+   The visualiser over the meters. Asked for as "small version on the right in
+   the panel" with the big one in a pop-out window, because the granular
+   controls have to stay workable while it runs — which is what ruled fullscreen
+   out. See `docs/VISUALISER.md`. */
+.tray-right {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+/* The visualiser takes what is left; the meters are an instrument and want a
+   fixed, readable size rather than a share of whatever is going. */
+.tray-right > .grain-vis { flex: 1 1 auto; min-height: 0; }
+.tray-right > .master-bus { flex: 0 0 218px; }
+/* Popped out, the meters take the whole column back. */
+.tray-right > .grain-vis.hidden + .master-bus { flex: 1 1 auto; }
+
+/* Layout only.
+   This rule used to also set `background: var(--sink)`, a border and a radius —
+   all three of which the rule further up deliberately removes, and being later
+   at equal specificity it won. The border and radius were a frame drawn over
+   the room's own front face, and the opaque background sat over anything behind
+   the canvas, which is where the grain block is printed. The ground moved to
+   the cell; the canvas is glass. */
+#visGl {
+  flex: 1; width: 100%; min-height: 0; display: block;
+}
+#visGl.hidden { display: none; }
+

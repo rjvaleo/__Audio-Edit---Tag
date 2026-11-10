@@ -10,6 +10,7 @@ import { test, expect } from './test.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { JOINED, servedSource } from '../../tools/app-source.mjs';
 
 import { UI, SCALE, ready, openFile, dockTab, roomTab, sizesOnScreen } from './design-pass.helpers.mjs';
 
@@ -30,7 +31,7 @@ test('C1 · every word on screen is set at a step of the type scale', async ({ p
 test('C1 · the stylesheets name no size between the steps', async () => {
   const bad = [];
   for (const f of ['app.css', 'rail.css', 'wave.css']) {
-    const css = readFileSync(join(UI, f), 'utf8');
+    const css = servedSource(f);
     for (const m of css.matchAll(/font(?:-size)?:[^;{}]*?(\d+(?:\.\d+)?)px/g)) {
       const px = +m[1];
       if (!Number.isInteger(px)) bad.push(`${f}: ${m[0]}`);
@@ -43,8 +44,9 @@ test('C1 · a canvas label never names only a family the browser may not have', 
   // `ui-monospace` is Safari's. Alone, Chromium falls back to its default — a
   // serif — which is how the EQ's axis came to be printed in Times.
   const bad = [];
-  for (const f of readdirSync(UI).filter((n) => n.endsWith('.js'))) {
-    const src = readFileSync(join(UI, f), 'utf8');
+  // The scripts written as parts are read as served (`servedSource`).
+  for (const f of [...readdirSync(UI), ...Object.keys(JOINED)].filter((n) => n.endsWith('.js'))) {
+    const src = servedSource(f);
     for (const m of src.matchAll(/\.font\s*=\s*(['"`])(.*?)\1/g)) {
       const families = m[2].replace(/^.*?(?:\d+(?:\.\d+)?|\})px(?:\/\S+)?\s*/, '');
       // A family chosen at run time — the type card's face — is the user's.
