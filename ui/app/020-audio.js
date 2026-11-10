@@ -122,7 +122,27 @@ async function checkAudioDevice() {
     engine.device = null;
   }
   reflectAudioDevice();
+  watchAudioDevice();
 }
+
+/// While there is no device, ask again now and then, and whenever the window
+/// comes back to the front.
+///
+/// The server opens the device on the next request that needs it, so a device
+/// that was missing when the page loaded (an interface unplugged, the output
+/// switched, the server restarted at the wrong moment) is found again on its
+/// own. The page asked once and never again, so the transport stayed switched
+/// off, with no sound, until someone reloaded it (RJ, 10 Nov 2026: "they were
+/// disabled at one point and it stopped all sound playing"). Only
+/// `/api/engine/state` is asked, which answers either way, and only while the
+/// answer is no.
+let audioDeviceTimer = null;
+function watchAudioDevice() {
+  if (!noAudio()) { clearInterval(audioDeviceTimer); audioDeviceTimer = null; return; }
+  if (!audioDeviceTimer) audioDeviceTimer = setInterval(checkAudioDevice, 8000);
+}
+window.addEventListener('focus', () => { if (noAudio()) checkAudioDevice(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && noAudio()) checkAudioDevice(); });
 
 /// Say so, once, in the transport bar — and take the controls out of service.
 ///
@@ -133,15 +153,18 @@ function reflectAudioDevice() {
   const note = $('noAudio');
   if (note) {
     note.classList.toggle('hidden', !off);
-    note.title = engine.deviceError || 'This machine has no audio output.';
+    note.title = `${engine.deviceError || 'This machine has no audio output.'} Click to look again.`;
   }
   for (const id of ['playBtn', 'stopBtn', 'loopBtn', 'recBtn']) {
     const b = $(id);
     if (!b) continue;
+    // The button's own title is kept, so it can have it back.
+    if (b.dataset.title === undefined) b.dataset.title = b.title;
     b.disabled = off;
-    if (off) b.title = 'No audio device on this machine';
+    b.title = off ? 'No audio device on this machine' : b.dataset.title;
   }
 }
+$('noAudio')?.addEventListener('click', () => checkAudioDevice());
 
 async function enginePost(body) {
   if (noAudio()) return null;
