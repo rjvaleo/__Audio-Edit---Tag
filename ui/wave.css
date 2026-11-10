@@ -1,8 +1,9 @@
 /* Wave: the wavetable synth page. See docs/WAVE-SYNTH.md.
 
    The look is mock-up v6, Graphite + Acrylic, ported as it was approved, with
-   v7's additions (wave-synth-v7.html: source colours, badges, LFO shapes, the
-   mixer, tooltips) at the end of the Play rules. The
+   v7's additions (wave-synth-v7.html: source colours, badges, tooltips) after
+   the module chrome, and v8's (wave-synth-v8.html: Play and the Matrix from
+   mock-up F, the FX board from G) at the end. The
    page keeps its own tokens (the mock-up's `body.AD`), set on #waveView so they
    reach nothing else; the type is the app's: its scale (--fs-xs … --fs-xl) and
    its faces (--sans, --mono).
@@ -119,40 +120,7 @@ body.synthpage #overview { display: none; }
 #waveView .wv-view { flex: 1; min-height: 0; padding: 4px 14px 12px; display: none; }
 #waveView .wv-view.on { display: flex; gap: 12px; }
 
-/* Play */
-#waveView .wv-colL { width: 872px; display: flex; flex-direction: column; gap: 10px; flex: none; }
-#waveView .wv-colR { width: 548px; display: flex; flex-direction: column; gap: 10px; flex: none; }
-#waveView .wv-osc .wv-body { display: flex; gap: 8px; align-items: flex-start; }
-#waveView .wv-osc .wv-tbl { display: flex; flex-direction: column; gap: 4px; }
-#waveView .wv-warps { display: flex; gap: 6px; }
-#waveView .wv-warp { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 72px; }
-#waveView .wv-warp .wv-glyphs { display: grid; grid-template-columns: 24px 44px; gap: 0 4px; align-items: center; width: 72px; }
-#waveView .wv-warp .wv-g { width: 24px; }
-/* One fixed width, its screen and its label: the widest label (Chorus at
-   4.1 Hz · 100 %) is 167 px, so the row never grows with the readout. */
-#waveView .wv-ofx { width: 168px; flex: none; }
-#waveView .wv-ofx .wv-lab { align-items: center; }
-#waveView .wv-ofx .wv-lab .wv-g { width: 36px; height: 28px; }
-#waveView .wv-ofx .wv-lab .wv-g svg { width: 26px; height: 20px; }
-#waveView .wv-ofx .wv-lab .wv-g path { stroke: var(--fxc); stroke-width: 1.8; }
-#waveView .wv-k4 { display: flex; gap: 6px; }
-#waveView .wv-k4 .wv-kc { display: flex; flex-direction: column; gap: 4px; width: 54px; }
-#waveView .wv-voicing { flex-direction: row; align-items: center; gap: 8px; }
-#waveView .wv-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-#waveView .wv-fcol { display: flex; flex-direction: column; gap: 4px; }
-#waveView .wv-frow { display: flex; align-items: center; gap: 6px; }
-#waveView .wv-tabs4 { display: flex; gap: 4px; }
-#waveView .wv-t4 { width: 70px; height: 34px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; position: relative; cursor: grab; }
-#waveView .wv-t4 b { font: 600 var(--fs-xs) var(--mono); letter-spacing: .08em; color: var(--wv-t3); white-space: nowrap; }
-#waveView .wv-t4.on b { color: var(--wv-t); }
-#waveView .wv-t4 canvas { opacity: .85; }
-#waveView .wv-t4 .act { position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--wv-mod); opacity: var(--o,0); }
-#waveView .wv-ed { display: flex; gap: 10px; }
-#waveView .wv-ed .dim { opacity: .4; pointer-events: none; }
-#waveView .wv-targets { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
-#waveView.wv-mapping canvas[data-tgt] { cursor: copy; outline: 1px dashed var(--wv-mod); outline-offset: 2px; border-radius: 50%; }
-
-/* v7: power buttons, source colours, badges, shapes, the mixer, tips */
+/* v7: power buttons, source colours, badges, tips */
 #waveView .wv-mh > :not(.wv-moved):not(.wv-sp) { flex-shrink: 0; }
 #waveView .wv-pwr { width: 22px; height: 20px; display: grid; place-items: center; flex: none; padding: 0; }
 #waveView .wv-pwr svg { width: 12px; height: 12px; fill: none; stroke: var(--wv-t3); stroke-width: 1.8; stroke-linecap: round; }
@@ -168,30 +136,7 @@ body.synthpage #overview { display: none; }
 #waveView .wv-badge i { font: 500 var(--fs-s)/1 var(--sans); font-style: normal; color: var(--wv-t2); letter-spacing: 0; }
 #waveView .wv-badge:hover { background: color-mix(in srgb, var(--c) 26%, transparent); }
 #waveView .wv-badge.wv-more { padding: 0 7px; }
-#waveView .wv-t4 { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--c) 75%, transparent), inset 0 1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.6); }
-#waveView .wv-t4 b { color: color-mix(in srgb, var(--c) 70%, var(--wv-t3)); }
-#waveView .wv-t4.on b { color: var(--c); }
-#waveView .wv-t4 .act { background: var(--c); }
-#waveView .wv-t4.on, #waveView .wv-t4.wv-hl { box-shadow: inset 0 -2px 0 var(--c), 0 0 0 1px var(--c), 0 0 14px color-mix(in srgb, var(--c) 38%, transparent); }
-#waveView canvas[data-tgt].wv-hl { outline: 2px solid var(--c); outline-offset: 2px; border-radius: 8px; }
-#waveView .wv-shapes { display: flex; align-items: center; gap: 6px; height: 22px; }
-#waveView .wv-shapes .wv-glyphs { gap: 2px; }
-#waveView .wv-shapes .wv-g { width: 25px; }
-#waveView .wv-shapes .wv-g.on path { stroke: var(--c); }
-#waveView .wv-shapes .wv-g.on { border-color: color-mix(in srgb, var(--c) 60%, var(--wv-line)); }
-#waveView .wv-shapes.env .wv-glyphs, #waveView .wv-shapes.env #wvRateMode { opacity: .22; pointer-events: none; }
-#waveView .wv-tempo { width: 62px; height: 20px; display: flex; align-items: center; justify-content: center; flex: none; cursor: ns-resize; }
-#waveView .wv-tempo.off { visibility: hidden; }
-#waveView .wv-mix { flex-direction: row; align-items: stretch; gap: 10px; padding: 7px 10px 8px; }
 #waveView .wv-vlab { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 var(--fs-s) var(--mono); letter-spacing: .24em; color: var(--wv-t); width: 14px; text-align: center; align-self: center; flex: none; }
-#waveView .wv-strip { display: flex; flex-direction: column; gap: 5px; flex: none; }
-#waveView .wv-sh { display: flex; align-items: center; gap: 5px; height: 20px; }
-#waveView .wv-strip .wv-nm { letter-spacing: .12em; }
-#waveView .wv-strip.off .wv-nm { color: var(--wv-t3); }
-#waveView .wv-strip .wv-glyphs { gap: 2px; }
-#waveView .wv-strip .wv-g { width: 22px; height: 18px; }
-#waveView .wv-strip .wv-seg { padding: 1px; }
-#waveView .wv-strip .wv-seg > span { padding: 0 6px; height: 16px; gap: 3px; font-size: var(--fs-s); }
 #waveView .wv-nd { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex: none; }
 /* The tip hangs on #waveView, not inside the scaled page, so it is full size. */
 #waveView .wv-tip {
@@ -207,6 +152,7 @@ body.synthpage #overview { display: none; }
 #waveView .wv-tip .wv-badge { cursor: default; }
 
 /* Create */
+#waveView .wv-frow { display: flex; align-items: center; gap: 6px; }
 #waveView .wv-tools { width: 44px; display: flex; flex-direction: column; gap: 6px; padding: 8px 6px; flex: none; align-self: flex-start; }
 #waveView .wv-tool { width: 32px; height: 30px; display: grid; place-items: center; }
 #waveView .wv-tool svg { width: 18px; height: 16px; fill: none; stroke: var(--wv-t2); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -249,25 +195,386 @@ body.synthpage #overview { display: none; }
 #waveView .wv-pc b { font: 600 var(--fs-m) var(--sans); color: var(--wv-t); white-space: nowrap; }
 #waveView .wv-pc span { font: 400 var(--fs-s) var(--sans); color: var(--wv-t3); white-space: nowrap; }
 
-/* Matrix */
-#waveView .wv-mxt { width: 952px; display: flex; flex-direction: column; flex: none; align-self: flex-start; }
-#waveView .wv-mxh, #waveView .wv-mxr { display: grid; grid-template-columns: 26px 150px 120px 100px 236px 1fr 24px; align-items: center; gap: 10px; height: 36px; padding: 0 6px; }
-#waveView .wv-mxh { height: 24px; color: var(--wv-t3); font: 500 var(--fs-s) var(--sans); text-transform: uppercase; letter-spacing: .08em; }
-#waveView .wv-mxr { border-top: 1px solid rgba(255,255,255,.04); }
-#waveView .wv-mxr .src { display: flex; align-items: center; gap: 6px; color: var(--wv-t); white-space: nowrap; }
-#waveView .wv-mxr.empty { opacity: .35; }
-#waveView .wv-mxr .dst { color: var(--wv-t); white-space: nowrap; }
-#waveView .wv-mxr .wv-chip { justify-content: flex-start; }
-
-/* FX */
-#waveView .wv-fxrow { display: flex; gap: 12px; }
-#waveView .wv-fxc { width: 276px; display: flex; flex-direction: column; gap: 7px; flex: none; }
-#waveView .wv-fxc.off { opacity: .55; }
-#waveView .wv-fxk { display: flex; justify-content: space-around; }
-/* Sixteen routes in view; past that the list scrolls rather than the page growing. */
-#waveView #wvMxRows { max-height: 576px; overflow-y: auto; }
-
 /* The instrument's MIDI channel. */
 #waveView .wv-midi { flex: none; height: 22px; padding: 0 6px; border: 0; border-radius: 6px; background: var(--wv-well, #06070a); color: var(--wv-t2, #b9bec6); font: 500 var(--fs-xs) var(--mono); cursor: pointer; appearance: none; }
 #waveView .wv-midi:hover { color: var(--wv-t, #e8eaee); }
 #waveView .wv-midi:focus-visible { outline: 1px solid #ffb547; }
+
+/* ── v8: mapping by drag. Anything a source can move is outlined while one is
+   being dragged, the one under the pointer brightest, in the source's colour. */
+#waveView.wv-mapping [data-tgt] { cursor: copy; outline: 1px dashed var(--wv-mc, var(--wv-mod)); outline-offset: 2px; border-radius: 6px; }
+#waveView.wv-mapping .wv-knob [data-tgt] { border-radius: 50%; }
+#waveView.wv-mapping [data-tgt].wv-over { outline: 2px solid var(--wv-mc, var(--wv-mod)); box-shadow: 0 0 12px var(--wv-mc, var(--wv-mod)); }
+#waveView [data-tgt].wv-hl { outline: 2px solid var(--c); outline-offset: 2px; border-radius: 8px; }
+#waveView .wv-knob.wv-hl canvas { filter: drop-shadow(0 0 5px var(--hc)); }
+
+/* ── v8 Play (mock-up F): three oscillators and the filters across the top,
+   then the four big modulation tiles over a strip of the other sources, with
+   the mixer and the voice at the right. */
+#waveView #wvViewPlay.on { flex-direction: column; gap: 10px; }
+#waveView .wv-top8 { display: flex; gap: 10px; height: 370px; flex: none; }
+#waveView .wv-osc { width: 347px; flex: none; gap: 4px; }
+#waveView .wv-osc .wv-mh { gap: 6px; }
+#waveView .wv-osc .wv-pick { width: 164px; }
+#waveView .wv-tbl { display: flex; flex-direction: column; gap: 3px; }
+#waveView .wv-win .wv-moved { position: absolute; left: 6px; top: 6px; max-width: 262px; z-index: 2; }
+#waveView .wv-win .wv-fr { position: absolute; right: 8px; top: 7px; z-index: 2; color: var(--wv-t3); }
+#waveView .wv-r2 { display: flex; gap: 4px; align-items: flex-start; height: 72px; }
+#waveView .wv-wc { width: 62px; display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; }
+#waveView .wv-wc.u { width: 66px; }
+#waveView .wv-wc .wv-glyphs { display: grid; grid-template-columns: 22px 36px; gap: 0 4px; align-items: center; width: 62px; }
+#waveView .wv-wc .wv-g { width: 22px; }
+#waveView .wv-r2 .wv-lab, #waveView .wv-r2 .wv-lab span, #waveView .wv-r2 .wv-lab b { line-height: 12px; }
+#waveView .wv-fx8 { width: 123px; display: flex; flex-direction: column; gap: 3px; flex: none; }
+#waveView .wv-fxl { display: flex; align-items: center; gap: 5px; height: 24px; width: 123px; }
+#waveView .wv-fxl .wv-g { width: 26px; height: 24px; }
+#waveView .wv-fxl .wv-g svg { width: 20px; height: 15px; }
+#waveView .wv-fxl .wv-g path { stroke: var(--fxc); stroke-width: 1.8; }
+#waveView .wv-tx { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+#waveView .wv-tx span { font: 500 var(--fs-s)/12px var(--sans); white-space: nowrap; }
+#waveView .wv-tx b { font: 400 var(--fs-s)/12px var(--mono); color: var(--wv-t2); white-space: nowrap; }
+#waveView .wv-r3 { display: flex; align-items: center; justify-content: space-between; height: 26px; }
+#waveView .wv-kl { display: flex; align-items: center; gap: 5px; flex: none; }
+#waveView .wv-kl .wv-lab { line-height: 12px; }
+#waveView .wv-filt8 { width: 361px; flex: none; gap: 6px; }
+#waveView .wv-filt8 .wv-mh .wv-moved { flex: 1; }
+#waveView .wv-fb { display: flex; flex-direction: column; gap: 4px; }
+#waveView .wv-fb .wv-frow { display: flex; align-items: center; gap: 6px; height: 22px; }
+#waveView .wv-tn { font: 500 var(--fs-s) var(--sans); color: var(--wv-t2); white-space: nowrap; }
+#waveView .wv-fk4 { display: flex; justify-content: space-between; align-items: center; height: 26px; }
+#waveView .wv-route8 { display: flex; align-items: center; gap: 8px; height: 24px; }
+#waveView .wv-route8 .wv-seg > span { gap: 4px; padding: 0 6px; }
+#waveView .wv-route8 svg { width: 30px; height: 14px; flex: none; }
+#waveView .wv-route8 path { fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+#waveView .wv-route8 .wv-seg > span.on path { stroke: var(--wv-acc); }
+#waveView .wv-modrow { display: flex; gap: 10px; height: 302px; flex: none; }
+#waveView .wv-modl { width: 992px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+#waveView .wv-tl { display: flex; gap: 10px; height: 248px; flex: none; }
+#waveView .wv-grp { width: 491px; height: 248px; flex: none; flex-direction: row; align-items: stretch; gap: 6px; padding: 7px 8px 7px 6px; }
+#waveView .wv-tiles { display: flex; gap: 8px; }
+#waveView .wv-strip9 { height: 44px; flex: none; flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; }
+#waveView .wv-sk { width: 100px; display: flex; flex-direction: column; gap: 1px; flex: none; }
+#waveView .wv-sk b { font: 600 var(--fs-s) var(--mono); letter-spacing: .12em; color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-sc9 { display: flex; gap: 4px; }
+#waveView .wv-sc { width: 62px; height: 30px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; position: relative; padding: 0; cursor: grab;
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--c) 70%, transparent), inset 0 1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.6); }
+#waveView .wv-sc.g0 { margin-left: 6px; }
+#waveView .wv-sc b { font: 600 var(--fs-xs)/10px var(--mono); color: color-mix(in srgb, var(--c) 75%, var(--wv-t3)); white-space: nowrap; }
+#waveView .wv-sc .act, #waveView .wv-gxc .act { position: absolute; top: 3px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--c); opacity: var(--o,0); box-shadow: 0 0 6px var(--c); }
+#waveView .wv-sc.wv-hl, #waveView .wv-gxc.wv-hl { background: var(--wv-well); box-shadow: inset 0 -2px 0 var(--c), 0 0 0 1px var(--c), 0 0 14px color-mix(in srgb, var(--c) 38%, transparent); }
+#waveView .wv-rcol9 { width: 430px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+#waveView .wv-mix { height: 162px; flex: none; gap: 3px; padding: 6px 10px 7px; }
+#waveView .wv-strip { display: grid; grid-template-columns: 22px 40px 212px 116px; gap: 6px; align-items: center; height: 22px; }
+#waveView .wv-strip .wv-nm { font-size: var(--fs-s); letter-spacing: .1em; }
+#waveView .wv-strip.off .wv-nm { color: var(--wv-t3); }
+#waveView .wv-strip .wv-seg { padding: 1px; }
+#waveView .wv-strip .wv-seg > span { height: 18px; padding: 0 6px; gap: 3px; font-size: var(--fs-s); }
+#waveView .wv-strip .wv-glyphs { gap: 2px; }
+#waveView .wv-strip .wv-g { width: 22px; height: 18px; }
+#waveView .wv-x8 { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+#waveView .wv-voice9 { height: 130px; flex: none; padding: 6px 10px 8px; gap: 7px; }
+#waveView .wv-voice9 .wv-mh .wv-seg { padding: 1px; }
+#waveView .wv-voice9 .wv-mh .wv-seg > span { height: 18px; padding: 0 6px; }
+#waveView .wv-vg { display: flex; gap: 8px; align-items: stretch; height: 84px; }
+#waveView .wv-vl { flex-direction: column; justify-content: center; align-items: flex-start; width: 52px; gap: 4px; flex: none; }
+#waveView .wv-vl:last-child { width: 64px; }
+#waveView .wv-tempo { cursor: ns-resize; font: 400 var(--fs-s) var(--mono); }
+
+/* ── v8 tiles: an envelope or an LFO, mostly its picture, a line of readings
+   under it. Large on Play, small on the Matrix. */
+#waveView .wv-tile { width: 164px; flex: none; display: flex; flex-direction: column; gap: 3px; padding: 4px 4px 5px; border-radius: 8px; position: relative;
+  border: 1px solid color-mix(in srgb, var(--wv-line) 85%, #fff 6%); background: linear-gradient(180deg, color-mix(in srgb, var(--wv-panel-hi) 92%, #fff 3%), var(--wv-panel) 70%);
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--c) 70%, transparent), inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.6), 0 4px 10px rgba(0,0,0,.35); }
+#waveView .wv-tile.big { width: 223px; }
+#waveView .wv-tile.wv-hl { box-shadow: inset 0 2px 0 var(--c), 0 0 0 1px var(--c), 0 0 16px color-mix(in srgb, var(--c) 40%, transparent); }
+#waveView .wv-th { display: flex; align-items: center; gap: 4px; height: 16px; }
+#waveView .wv-th .act { width: 6px; height: 6px; border-radius: 50%; background: var(--c); opacity: var(--o,0); box-shadow: 0 0 6px var(--c); flex: none; }
+#waveView .wv-grab { display: inline-flex; align-items: center; gap: 5px; height: 16px; padding: 0 7px 0 5px; border-radius: 9px; flex: none; cursor: grab;
+  font: 600 var(--fs-xs) var(--mono); letter-spacing: .06em; color: var(--c); white-space: nowrap;
+  background: color-mix(in srgb, var(--c) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); }
+#waveView .wv-grab:hover, #waveView .wv-grab.wv-hl { background: color-mix(in srgb, var(--c) 26%, transparent); }
+#waveView .wv-grab.fixed { cursor: default; background: transparent; }
+#waveView .wv-grab .gr { width: 5px; height: 9px; flex: none; background: radial-gradient(circle, var(--c) 0 .8px, transparent 1.1px) 0 0/2.5px 3px; opacity: .7; }
+#waveView .wv-grab em { font-style: normal; font-weight: 400; color: var(--wv-t2); letter-spacing: 0; }
+#waveView .wv-tgts { flex: 1; min-width: 0; display: flex; gap: 6px; overflow: hidden; }
+#waveView .wv-tgts.ov { position: absolute; right: 5px; top: 5px; max-width: 150px; flex: none; height: 17px; align-items: center; padding: 0 7px; border-radius: 9px; z-index: 2;
+  background: rgba(0,0,0,.6); border: 1px solid color-mix(in srgb, var(--c) 38%, transparent); }
+#waveView .wv-tg { font: 500 var(--fs-s) var(--sans); color: var(--c); white-space: nowrap; flex: none; }
+#waveView .wv-tg i { font-style: normal; color: var(--wv-t2); }
+#waveView .wv-tgts .wv-hint { white-space: nowrap; }
+#waveView .wv-slot { display: flex; gap: 2px; flex: none; }
+#waveView .wv-sb { width: 17px; height: 16px; display: grid; place-items: center; padding: 0; border-radius: 4px; font: 600 var(--fs-xs) var(--mono); color: color-mix(in srgb, var(--c) 65%, var(--wv-t3)); }
+#waveView .wv-sb.on { color: var(--c); background: var(--wv-well); border-color: var(--c); box-shadow: inset 0 1px 3px rgba(0,0,0,.85), 0 0 6px color-mix(in srgb, var(--c) 45%, transparent); }
+#waveView .wv-rds { display: grid; gap: 3px; }
+#waveView .wv-rds.four { grid-template-columns: repeat(4, 1fr); }
+#waveView .wv-rds.three { grid-template-columns: repeat(3, 1fr); }
+#waveView .wv-rd { height: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; position: relative; cursor: ns-resize; border-radius: 5px; overflow: hidden; }
+#waveView .wv-rd span { font: 500 var(--fs-xs)/10px var(--sans); color: color-mix(in srgb, var(--c) 80%, var(--wv-t3)); }
+#waveView .wv-rd b { font: 400 var(--fs-s)/12px var(--mono); color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-rd .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--c); box-shadow: 0 0 6px var(--c); opacity: .85; }
+#waveView .wv-rd .mb, #waveView .wv-rd .md { display: none; position: absolute; top: 0; height: 2px; pointer-events: none; }
+#waveView .wv-rd.mod .mb { display: block; left: var(--ma); width: var(--mw); background: var(--mc); box-shadow: 0 0 5px var(--mc); }
+#waveView .wv-rd.mod .md { display: block; left: var(--ml); width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 4px var(--mc); }
+#waveView .wv-rd.mod { border-color: color-mix(in srgb, var(--mc) 55%, var(--wv-line)); }
+#waveView .wv-lb { display: flex; gap: 4px; }
+#waveView .wv-lcol { width: 30px; display: flex; flex-direction: column; justify-content: space-between; flex: none; }
+#waveView .wv-tile.big .wv-lcol { justify-content: flex-start; gap: 8px; }
+#waveView .wv-lshp { width: 30px; height: 18px; display: flex; align-items: center; justify-content: center; gap: 1px; padding: 0; }
+#waveView .wv-tile.big .wv-lshp { height: 24px; }
+#waveView .wv-lshp svg { width: 16px; height: 12px; }
+#waveView .wv-lshp path { fill: none; stroke: var(--c); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#waveView .wv-lshp::after { content: "▾"; font-size: var(--fs-xs); color: var(--wv-t3); }
+#waveView .wv-vseg { flex-direction: column; width: 30px; padding: 1px; gap: 1px; }
+#waveView .wv-vseg > span { height: 15px; font-size: var(--fs-s); padding: 0; justify-content: center; }
+#waveView .wv-tile.big .wv-vseg > span { height: 22px; }
+#waveView .wv-vseg > span.on { color: var(--c); }
+
+/* ── v8 Matrix: the eight tiles, then the patch matrix as pins or rows */
+#waveView #wvViewMatrix.on { flex-direction: column; gap: 10px; }
+#waveView .wv-mxtop { display: flex; gap: 10px; height: 190px; flex: none; }
+#waveView .wv-grp8 { width: 711px; height: 190px; flex: none; flex-direction: row; align-items: stretch; gap: 6px; padding: 7px 8px 7px 6px; }
+#waveView .wv-grp8 .wv-tiles { gap: 6px; }
+#waveView .wv-mxt { width: 1432px; height: 482px; flex: none; gap: 6px; padding: 7px 10px 8px; }
+#waveView .wv-mxt .wv-mh .wv-seg { padding: 1px; }
+#waveView .wv-mxt .wv-mh .wv-seg > span { height: 18px; padding: 0 9px; }
+#waveView .wv-pgnav > span { font: 600 var(--fs-l) var(--sans); padding: 0 9px; }
+#waveView .wv-pg { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--wv-line) transparent; border-radius: 7px; }
+#waveView .wv-pgrid { display: grid; grid-template-rows: 16px 54px; grid-auto-rows: 18px; width: max-content; }
+#waveView .wv-pc0 { position: sticky; left: 0; z-index: 4; background: var(--wv-panel); }
+#waveView .wv-pc0.lab { display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; padding: 0 0 4px 6px; font: 500 var(--fs-xs) var(--sans); color: var(--wv-t3); border-bottom: 1px solid var(--wv-line); white-space: nowrap; }
+#waveView .wv-pband { display: flex; align-items: center; padding-left: 5px; font: 600 var(--fs-xs) var(--mono); letter-spacing: .1em; color: var(--c); white-space: nowrap; cursor: pointer; border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, var(--c) 9%, transparent); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--c) 65%, transparent); }
+#waveView .wv-pband:hover { background: color-mix(in srgb, var(--c) 18%, transparent); }
+#waveView .wv-plab { display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; border-bottom: 1px solid var(--wv-line); overflow: hidden; }
+#waveView .wv-plab span { writing-mode: vertical-rl; transform: rotate(180deg); font: 500 var(--fs-xs) var(--sans); color: var(--wv-t2); white-space: nowrap; }
+#waveView .wv-plab.wv-hl span { color: var(--hc); }
+#waveView .wv-pgrid .g0 { border-left: 1px solid rgba(255,255,255,.1); }
+#waveView .wv-rh { position: sticky; left: 0; z-index: 3; display: flex; align-items: center; gap: 5px; padding: 0 4px 0 6px; cursor: grab;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 12%, var(--wv-panel)), var(--wv-panel)); box-shadow: inset 2px 0 0 var(--c), inset -1px 0 0 var(--wv-line); }
+#waveView .wv-rh b { width: 38px; font: 600 var(--fs-xs) var(--mono); color: var(--c); white-space: nowrap; }
+#waveView .wv-rh .act { position: absolute; left: 43px; top: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--c); opacity: var(--o,0); box-shadow: 0 0 5px var(--c); }
+#waveView .wv-rh.wv-hl { background: color-mix(in srgb, var(--c) 26%, var(--wv-panel)); }
+#waveView .wv-pgrid .r0 { box-shadow: inset 0 1px 0 rgba(255,255,255,.1); }
+#waveView .wv-rh.r0 { box-shadow: inset 2px 0 0 var(--c), inset -1px 0 0 var(--wv-line), inset 0 1px 0 rgba(255,255,255,.1); }
+#waveView .wv-hole { position: relative; display: grid; place-items: center; cursor: ns-resize; }
+#waveView .wv-hole::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #000 0 40%, #23262c 75%); box-shadow: inset 0 1px 2px rgba(0,0,0,.95), 0 1px 0 rgba(255,255,255,.09); }
+#waveView .wv-hole:hover, #waveView .wv-hole.wv-hl { background: color-mix(in srgb, var(--c) 16%, transparent); }
+#waveView .wv-hole b { display: none; }
+#waveView .wv-hole.pin::before { display: none; }
+#waveView .wv-hole.pin b { display: block; height: 13px; padding: 0 1px; border-radius: 7px; font: 600 var(--fs-xs)/11px var(--mono); letter-spacing: -.06em; color: var(--c); white-space: nowrap;
+  background: color-mix(in srgb, var(--c) calc(12% + var(--o,0)*22%), #0b0c0f); border: 1px solid var(--c); box-shadow: 0 0 calc(var(--o,0)*8px) var(--c); }
+#waveView .wv-hole.pin.off b { opacity: .4; box-shadow: none; }
+#waveView .wv-mxh, #waveView .wv-mxr { display: grid; grid-template-columns: 28px 24px 150px 300px 1fr 130px 84px 24px; gap: 10px; align-items: center; padding: 0 6px; }
+#waveView .wv-mxh { height: 20px; color: var(--wv-t3); font: 500 var(--fs-xs) var(--sans); text-transform: uppercase; letter-spacing: .08em; }
+#waveView .wv-mxb { height: 414px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--wv-line) transparent; }
+#waveView .wv-mxr { height: 30px; border-top: 1px solid rgba(255,255,255,.04); }
+#waveView .wv-mxr.off > *:not(.wv-pwr):not(.wv-ro) { opacity: .4; }
+#waveView .wv-mxr.add .wv-hint { white-space: nowrap; overflow: hidden; }
+#waveView .wv-mxr.empty { height: 22px; opacity: .3; }
+#waveView .wv-mxr .wv-well { height: 22px; }
+#waveView .wv-pk { display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px 0 5px; color: var(--wv-t); font: 500 var(--fs-s) var(--sans); white-space: nowrap; min-width: 0; overflow: hidden; }
+#waveView .wv-pk.s b, #waveView .wv-pk.v b { font: 600 var(--fs-xs) var(--mono); color: var(--c); letter-spacing: .04em; }
+#waveView .wv-pk.s[style], #waveView .wv-pk.v[style] { border-color: color-mix(in srgb, var(--c) 45%, var(--wv-line)); }
+#waveView .wv-pk.v i { font-style: normal; color: var(--c); }
+#waveView .wv-pk .gname { font-style: normal; margin-left: auto; color: var(--wv-t3); font: 500 var(--fs-xs) var(--mono); letter-spacing: .08em; }
+#waveView .wv-pmenu { position: absolute; z-index: 60; padding: 10px; border-radius: 12px; background: color-mix(in srgb, var(--wv-panel) 94%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border: 1px solid var(--wv-line); box-shadow: 0 18px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08); }
+#waveView .wv-pmenu.sr { display: flex; flex-wrap: wrap; gap: 4px; width: 360px; }
+#waveView .wv-pmenu.tg { display: grid; grid-template-columns: repeat(8, 118px); gap: 10px 6px; }
+#waveView .wv-pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 6px; border-radius: 10px; cursor: pointer; font: 600 var(--fs-xs) var(--mono); letter-spacing: .05em;
+  color: var(--c, var(--wv-t2)); background: color-mix(in srgb, var(--c, #888) 13%, transparent); border: 1px solid color-mix(in srgb, var(--c, #888) 45%, transparent); }
+#waveView .wv-pill:hover { background: color-mix(in srgb, var(--c, #888) 28%, transparent); }
+#waveView .wv-pmg { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+#waveView .wv-pmg b { font: 600 var(--fs-xs) var(--mono); letter-spacing: .12em; color: var(--c); padding: 0 4px 3px; margin-bottom: 2px; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--c) 45%, transparent); white-space: nowrap; }
+#waveView .wv-pmg span { font: 500 var(--fs-s) var(--sans); color: var(--wv-t2); padding: 1px 4px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+#waveView .wv-pmg span:hover { background: rgba(255,255,255,.06); color: var(--wv-t); }
+#waveView .wv-pmg span.on { color: var(--c); box-shadow: inset 0 0 0 1px var(--c); }
+
+/* ── v8 FX (mock-up G): the master bus as a board */
+#waveView #wvViewFx.on { gap: 8px; }
+#waveView .wv-bbar { height: 38px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 10px; }
+#waveView .wv-bsel { width: 236px; height: 28px; }
+#waveView .wv-bsel .pn { overflow: hidden; outline: none; border-radius: 4px; padding: 1px 3px; }
+#waveView .wv-bsel .pn[contenteditable="true"] { background: var(--wv-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); cursor: text; user-select: text; }
+#waveView .wv-bsel .pt { width: 44px; text-align: right; }
+#waveView .wv-bt { height: 24px; padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; font: 500 var(--fs-s) var(--sans); white-space: nowrap; flex: none; }
+#waveView .wv-bt svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#waveView #wvBex > span { gap: 5px; height: 22px; padding: 0 8px; font-size: var(--fs-s); }
+#waveView .wv-bnote { display: flex; align-items: center; gap: 5px; }
+#waveView .wv-bnote svg { width: 16px; height: 12px; fill: none; stroke: var(--wv-t3); stroke-width: 1.5; stroke-linecap: round; }
+#waveView .wv-fxmain { flex: 1; min-height: 0; display: flex; gap: 10px; }
+#waveView .wv-flib { width: 206px; flex: none; padding: 8px; gap: 6px; }
+#waveView .wv-fsearch { height: 26px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 8px; }
+#waveView .wv-fsearch svg { width: 12px; height: 12px; fill: none; stroke: var(--wv-t3); stroke-width: 1.6; flex: none; }
+#waveView .wv-fsearch input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--wv-t); font: 500 var(--fs-s) var(--sans); }
+#waveView .wv-fsearch input::placeholder { color: var(--wv-t3); }
+#waveView .wv-flist { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 0 -4px 0 0; padding-right: 4px; scrollbar-width: thin; scrollbar-color: var(--wv-line) transparent; }
+#waveView .wv-fcat { display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 4px 0 2px; border-radius: 5px; cursor: pointer; color: var(--wv-t2); font: 600 var(--fs-xs) var(--mono); letter-spacing: .1em; white-space: nowrap; }
+#waveView .wv-fcat:hover { background: rgba(255,255,255,.04); }
+#waveView .wv-fcat .tw { width: 8px; height: 8px; flex: none; transition: transform .15s; }
+#waveView .wv-fcat .tw path { fill: none; stroke: var(--wv-t3); stroke-width: 1.5; }
+#waveView .wv-fcat.open .tw { transform: rotate(90deg); }
+#waveView .wv-fcat .cc { width: 8px; height: 8px; border-radius: 2px; flex: none; background: var(--cc); box-shadow: 0 0 6px color-mix(in srgb, var(--cc) 50%, transparent); }
+#waveView .wv-fcat b { font: 400 var(--fs-xs) var(--mono); color: var(--wv-t3); letter-spacing: 0; }
+#waveView .wv-fitems { display: none; flex-direction: column; gap: 1px; padding: 1px 0 4px 10px; }
+#waveView .wv-fcat.open + .wv-fitems { display: flex; }
+#waveView .wv-fit { display: flex; align-items: center; gap: 5px; height: 20px; padding: 0 2px 0 3px; border-radius: 5px; cursor: grab; color: var(--wv-t2); font: 500 var(--fs-s) var(--sans); white-space: nowrap; overflow: hidden; }
+#waveView .wv-fit:hover { background: color-mix(in srgb, var(--cc) 12%, transparent); color: var(--wv-t); }
+#waveView .wv-fit i { width: 3px; height: 12px; border-radius: 2px; flex: none; background: var(--cc); }
+#waveView .wv-fit svg { width: 16px; height: 12px; flex: none; fill: none; stroke: var(--cc); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+#waveView .wv-fit.hide, #waveView .wv-fcat.hide, #waveView .wv-fcat.hide + .wv-fitems { display: none; }
+#waveView .wv-fit em { font-style: normal; color: var(--wv-acc); }
+#waveView .wv-fnone { white-space: normal; padding: 6px 4px; }
+#waveView .wv-fghost { position: fixed; z-index: 95; pointer-events: none; transform: translate(-50%, -50%); padding: 0 10px; height: 24px; }
+#waveView .wv-fcan { width: 944px; flex: none; padding: 8px; gap: 6px; }
+#waveView .wv-fstrip { height: 30px; flex: none; display: flex; align-items: center; }
+#waveView .wv-gxc { width: 38px; height: 30px; margin: 0 1px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; position: relative; padding: 0; cursor: grab;
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--c) 70%, transparent), inset 0 1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.6); }
+#waveView .wv-gxc.g0 { margin-left: 4px; }
+#waveView .wv-gxc b { font: 600 var(--fs-xs)/10px var(--mono); letter-spacing: .02em; color: color-mix(in srgb, var(--c) 70%, var(--wv-t3)); white-space: nowrap; }
+#waveView .wv-fchain .sl, #waveView .wv-fstrip .sl { width: 40px; flex: none; font: 600 var(--fs-xs)/10px var(--mono); letter-spacing: .1em; color: var(--wv-t2); }
+#waveView .wv-fwell { flex: 1; min-height: 0; overflow: hidden; cursor: default;
+  background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px), var(--wv-grain), radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--wv-well) 70%, var(--wv-panel)), var(--wv-well) 70%);
+  background-size: var(--g1,16px) var(--g1,16px), var(--g1,16px) var(--g1,16px), var(--g4,64px) var(--g4,64px), var(--g4,64px) var(--g4,64px), 160px 160px, 100% 100%;
+  background-position: var(--gx,0) var(--gy,0), var(--gx,0) var(--gy,0), var(--gx,0) var(--gy,0), var(--gx,0) var(--gy,0), 0 0, 0 0;
+  background-blend-mode: normal, normal, normal, normal, soft-light, normal; }
+#waveView .wv-fwell.panning { cursor: grabbing; }
+#waveView .wv-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#waveView #wvCables { position: absolute; left: 0; top: 0; width: 4000px; height: 3000px; overflow: visible; pointer-events: none; }
+#waveView #wvCables path { fill: none; stroke-linecap: round; }
+#waveView #wvCables .ch { stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+#waveView #wvCables .cb { stroke-width: 2.2; }
+#waveView #wvCables .cg { stroke-width: 2.6; stroke-dasharray: 3 41; }
+#waveView #wvCables g.sel .cb { stroke-width: 3.4; }
+#waveView #wvCables g.sel .co { stroke: var(--wv-t); stroke-width: 6; opacity: .22; }
+#waveView #wvCables .co { stroke: none; }
+#waveView #wvCables g.dead .cb { stroke-dasharray: 3 4; opacity: .45; }
+#waveView #wvCables g.ins .cb { stroke: var(--wv-acc) !important; stroke-width: 4; opacity: 1 !important; }
+#waveView #wvCables .tmp { stroke: var(--wv-acc); stroke-width: 2; stroke-dasharray: 5 4; }
+#waveView .wv-fstat { position: absolute; left: 10px; bottom: 8px; display: flex; gap: 10px; align-items: center; pointer-events: none; white-space: nowrap; }
+#waveView .wv-fstat .note { font: 600 var(--fs-s) var(--sans); color: var(--wv-acc); opacity: 0; transition: opacity .25s; }
+#waveView .wv-fstat .note.on { opacity: 1; }
+#waveView .wv-fstat .note.bad { color: #f08a7a; }
+#waveView .wv-fzoom { position: absolute; right: 8px; bottom: 6px; display: flex; align-items: center; gap: 4px; padding: 3px; border-radius: 8px; background: color-mix(in srgb, var(--wv-panel) 85%, transparent); border: 1px solid var(--wv-line); box-shadow: 0 4px 12px rgba(0,0,0,.5); }
+#waveView .wv-fzoom .wv-ro { width: 38px; text-align: center; }
+#waveView .wv-fzoom .wv-bt { height: 20px; padding: 0 7px; }
+#waveView .wv-fzoom .wv-ib { width: 20px; height: 20px; }
+#waveView .wv-wcap { position: absolute; font: 600 var(--fs-xs) var(--mono); letter-spacing: .12em; color: var(--wv-t3); white-space: nowrap; pointer-events: none; }
+#waveView .wv-fn { position: absolute; width: 152px; padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 4px; border-radius: 9px; cursor: default;
+  background: linear-gradient(180deg, var(--wv-panel-hi), var(--wv-panel) 40%); border: 1px solid var(--wv-line);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(0,0,0,.45), 0 2px 4px rgba(0,0,0,.6), 0 10px 22px rgba(0,0,0,.45); }
+#waveView .wv-fn::before { content: ""; position: absolute; left: 10px; right: 10px; top: -1px; height: 2px; border-radius: 0 0 2px 2px; background: var(--cc); opacity: .85; box-shadow: 0 0 8px color-mix(in srgb, var(--cc) 60%, transparent); }
+#waveView .wv-fn.sel { border-color: color-mix(in srgb, var(--wv-acc) 70%, var(--wv-line)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 0 1px color-mix(in srgb, var(--wv-acc) 45%, transparent), 0 0 18px color-mix(in srgb, var(--wv-acc) 22%, transparent), 0 10px 22px rgba(0,0,0,.45); }
+#waveView .wv-fn.off > :not(.wv-pin):not(.fh) { opacity: .4; }
+#waveView .wv-fn.off .fh b { color: var(--wv-t3); }
+#waveView .wv-fn .fh { height: 28px; display: flex; align-items: center; gap: 6px; cursor: grab; flex: none; }
+#waveView .wv-fn .fhn { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+#waveView .wv-fn .fhn b { font: 600 var(--fs-m)/13px var(--sans); color: var(--wv-t); white-space: nowrap; overflow: hidden; }
+#waveView .wv-fn .fhn b.sm { font-size: var(--fs-s); }
+#waveView .wv-fn .fhn span { font: 500 var(--fs-xs)/11px var(--sans); color: color-mix(in srgb, var(--cc) 75%, var(--wv-t3)); white-space: nowrap; }
+#waveView .wv-pw { width: 18px; height: 18px; display: grid; place-items: center; flex: none; border-radius: 5px; padding: 0; }
+#waveView .wv-pw svg { width: 10px; height: 10px; fill: none; stroke: var(--wv-t3); stroke-width: 1.7; stroke-linecap: round; }
+#waveView .wv-pw.on svg { stroke: var(--wv-acc); filter: drop-shadow(0 0 3px var(--wv-acc)); }
+#waveView .wv-fn .fp { height: 40px; flex: none; }
+#waveView .wv-silent { position: absolute; left: 4px; bottom: 3px; padding: 0 5px; border-radius: 4px; font: 600 var(--fs-xs)/12px var(--sans); color: #f0c48a; background: rgba(0,0,0,.7); white-space: nowrap; pointer-events: none; }
+#waveView .wv-silent-note { color: #f0c48a; white-space: normal; }
+#waveView .wv-fn .fk { display: flex; height: 46px; flex: none; }
+#waveView .wv-fn .fkc { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+#waveView .wv-fn .fkc .kl { font: 500 var(--fs-xs)/10px var(--sans); color: var(--wv-t3); white-space: nowrap; }
+#waveView .wv-fn .fkc b { font: 400 var(--fs-xs)/10px var(--mono); color: var(--wv-t2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+#waveView .wv-fn .fk .none { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; font: 500 var(--fs-xs)/12px var(--sans); color: var(--wv-t3); }
+#waveView .wv-fn.io { width: 104px; height: 58px; gap: 4px; }
+#waveView .wv-fn .ioh { height: 16px; display: flex; align-items: center; gap: 5px; flex: none; cursor: grab; }
+#waveView .wv-fn .ioh i { width: 7px; height: 7px; border-radius: 50%; background: var(--cc); box-shadow: 0 0 6px var(--cc); flex: none; }
+#waveView .wv-fn .ioh i[data-pw] { cursor: pointer; }
+#waveView .wv-fn .ioh b { font: 600 var(--fs-s) var(--sans); color: var(--wv-t); white-space: nowrap; }
+#waveView .wv-fn .ioh .wv-ro { margin-left: auto; font-size: var(--fs-xs); color: var(--wv-t3); }
+#waveView .wv-fn.io.dead .ioh i { background: var(--wv-track); box-shadow: none; }
+#waveView .wv-fn.io.dead canvas { opacity: .35; }
+#waveView .wv-fn.io.send .ioh b { font-weight: 500; color: var(--wv-t2); }
+#waveView .wv-fn.io.main { border-color: color-mix(in srgb, var(--cc) 45%, var(--wv-line)); }
+#waveView .wv-fn.io.main .ioh .wv-ro { color: color-mix(in srgb, var(--cc) 70%, var(--wv-t3)); }
+#waveView .wv-fn .rb { display: flex; align-items: center; gap: 6px; flex: none; height: 34px; }
+#waveView .wv-fn .mrow { height: 26px; display: flex; align-items: center; gap: 6px; flex: none; }
+#waveView .wv-fn .mrow .pl { width: 30px; font: 500 var(--fs-xs) var(--sans); color: var(--wv-t3); white-space: nowrap; }
+#waveView .wv-fn .mrow b, #waveView .wv-fn .rb b { font: 400 var(--fs-xs) var(--mono); color: var(--wv-t2); white-space: nowrap; margin-left: auto; font-variant-numeric: tabular-nums; }
+#waveView .wv-fn .dwb { display: grid; grid-template-columns: 34px 1fr 34px; height: 48px; align-items: center; flex: none; }
+#waveView .wv-fn .dwb .pl { font: 500 var(--fs-xs)/24px var(--sans); color: var(--wv-t3); white-space: nowrap; }
+#waveView .wv-fn .dwb .pl.r { text-align: right; }
+#waveView .wv-fn .dwb .mid { display: flex; align-items: center; justify-content: center; gap: 4px; grid-row: 1/3; grid-column: 2; }
+#waveView .wv-fn .sb { display: flex; flex: none; }
+#waveView .wv-fn .sb .pl { font: 600 var(--fs-xs)/14px var(--mono); color: var(--wv-t3); text-align: right; width: 20px; }
+#waveView .wv-fn .fh .wv-seg { padding: 1px; }
+#waveView .wv-fn .fh .wv-seg > span { height: 16px; padding: 0 6px; font-size: var(--fs-s); }
+#waveView .wv-fn .fh .wv-ib { width: 18px; height: 18px; }
+#waveView .wv-pin { position: absolute; width: 14px; height: 10px; margin-top: -5px; border-radius: 5px; z-index: 2; cursor: crosshair;
+  background: radial-gradient(circle at 32% 50%, var(--pc, var(--wv-t3)) 0 1.3px, transparent 1.9px), radial-gradient(circle at 68% 50%, var(--pc, var(--wv-t3)) 0 1.3px, transparent 1.9px), var(--wv-well);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.9), 0 0 0 1px color-mix(in srgb, var(--wv-line) 70%, #fff 10%), 0 1px 2px rgba(0,0,0,.7); }
+#waveView .wv-pin.in { left: -8px; }
+#waveView .wv-pin.out { right: -8px; }
+#waveView .wv-pin:hover, #waveView .wv-pin.ok { box-shadow: inset 0 1px 2px rgba(0,0,0,.9), 0 0 0 1.5px var(--wv-acc), 0 0 8px var(--wv-acc); }
+#waveView .wv-pin.sum { box-shadow: inset 0 1px 2px rgba(0,0,0,.9), 0 0 0 1px var(--pc), 0 0 0 3px color-mix(in srgb, var(--pc) 25%, transparent); }
+#waveView .wv-fchain { height: 24px; flex: none; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; }
+#waveView .wv-fchain .chi, #waveView .wv-fchain .ch0, #waveView .chi.wv-fghost { height: 20px; padding: 0 8px; display: inline-flex; align-items: center; flex: none; font: 500 var(--fs-s) var(--sans); color: var(--wv-t2); white-space: nowrap;
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--cc) 75%, transparent), inset 0 1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.6); }
+#waveView .wv-fchain .chi { cursor: grab; }
+#waveView .wv-fchain .ch0 { cursor: default; color: var(--wv-t); }
+#waveView .wv-fchain .chi.sel { color: var(--wv-t); border-color: color-mix(in srgb, var(--wv-acc) 60%, var(--wv-line)); }
+#waveView .wv-fchain .chi.lift { opacity: .35; }
+#waveView .wv-fchain .chi.insL { box-shadow: -4px 0 0 -1px var(--wv-acc), inset 0 -2px 0 var(--cc); }
+#waveView .wv-fchain .chi.insR { box-shadow: 4px 0 0 -1px var(--wv-acc), inset 0 -2px 0 var(--cc); }
+#waveView .wv-fchain .cha { color: var(--wv-t3); font-size: var(--fs-m); flex: none; }
+#waveView .wv-finsp { width: 262px; flex: none; padding: 8px 10px 10px; gap: 6px; }
+#waveView .wv-finsp .wv-mh .ce { width: 3px; height: 16px; border-radius: 2px; background: var(--cc); flex: none; box-shadow: 0 0 6px var(--cc); }
+#waveView .wv-finsp .wv-mh .wv-nm { overflow: hidden; flex-shrink: 1; }
+#waveView .wv-finsp .sub { display: flex; gap: 6px; align-items: center; height: 12px; font: 600 var(--fs-xs) var(--mono); letter-spacing: .06em; color: color-mix(in srgb, var(--cc) 75%, var(--wv-t3)); white-space: nowrap; }
+#waveView .wv-finsp .sub .wv-hint { letter-spacing: 0; margin-left: auto; font-family: var(--sans); }
+#waveView .wv-finsp .iscroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 6px; margin-right: -6px; padding-right: 6px; scrollbar-width: thin; scrollbar-color: var(--wv-line) transparent; }
+#waveView .wv-finsp .iscroll > .wv-hint { white-space: normal; flex: none; }
+#waveView .wv-finsp .ig { display: flex; flex-direction: column; gap: 3px; flex: none; }
+#waveView .wv-finsp .ig .wv-hint { white-space: normal; }
+#waveView .wv-finsp .igh { display: flex; align-items: center; gap: 6px; height: 14px; font: 600 var(--fs-xs) var(--mono); letter-spacing: .12em; color: var(--wv-t3); white-space: nowrap; }
+#waveView .wv-finsp .igh::after { content: ""; flex: 1; height: 1px; background: var(--wv-line); }
+#waveView .wv-finsp .igrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 6px; }
+#waveView .wv-finsp .ic { display: flex; align-items: center; gap: 6px; height: 32px; min-width: 0; }
+#waveView .wv-finsp .ic.wide { grid-column: 1/-1; }
+#waveView .wv-finsp .ic .it { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+#waveView .wv-finsp .ic .it span { font: 500 var(--fs-s)/12px var(--sans); color: var(--wv-t2); white-space: nowrap; }
+#waveView .wv-finsp .ic .it b { font: 400 var(--fs-s)/12px var(--mono); color: var(--wv-t); white-space: nowrap; font-variant-numeric: tabular-nums; }
+#waveView .wv-finsp .ic .wv-seg { flex-wrap: wrap; }
+#waveView .wv-finsp .ic .wv-seg > span { height: 18px; padding: 0 7px; font-size: var(--fs-s); }
+#waveView .wv-finsp .ic .wv-seg.md { box-shadow: inset 0 1px 3px rgba(0,0,0,.8), 0 0 0 1px var(--mc); }
+#waveView .wv-ftg { width: 26px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 6px; padding: 0; }
+#waveView .wv-ftg i { width: 8px; height: 8px; border-radius: 50%; background: var(--wv-track); }
+#waveView .wv-ftg.on i { background: var(--wv-acc); box-shadow: 0 0 8px var(--wv-acc); }
+#waveView .wv-finsp .ifoot { display: flex; gap: 6px; align-items: center; flex: none; height: 24px; }
+#waveView .wv-mr { display: grid; grid-template-columns: 58px 1fr 46px 30px 14px; align-items: center; gap: 5px; height: 22px; }
+#waveView .wv-mr.b { grid-template-columns: 58px 1fr 34px 14px; }
+#waveView .wv-mr .wv-badge { justify-content: flex-start; overflow: hidden; }
+#waveView .wv-mr .mt { font: 500 var(--fs-s) var(--sans); color: var(--wv-t2); white-space: nowrap; min-width: 0; overflow: hidden; }
+#waveView .wv-mr .ma { height: 12px; border-radius: 4px; cursor: ns-resize; position: relative; }
+#waveView .wv-mr .ma i { position: absolute; top: 3px; bottom: 3px; border-radius: 2px; background: var(--c); box-shadow: 0 0 6px var(--c); }
+#waveView .wv-mr .ma::after { content: ""; position: absolute; left: 50%; top: 2px; bottom: 2px; width: 1px; background: rgba(255,255,255,.18); }
+#waveView .wv-mr b { font: 400 var(--fs-s) var(--mono); color: var(--c); text-align: right; white-space: nowrap; }
+#waveView .wv-mr .x { width: 14px; height: 14px; cursor: pointer; color: var(--wv-t3); }
+#waveView .wv-mr .x svg { width: 8px; height: 8px; }
+#waveView .wv-finsp .ilist { display: flex; flex-direction: column; gap: 2px; }
+#waveView .wv-finsp .irow { display: flex; align-items: center; gap: 6px; height: 20px; font: 500 var(--fs-s) var(--sans); color: var(--wv-t2); white-space: nowrap; cursor: pointer; border-radius: 5px; padding: 0 4px; flex: none; }
+#waveView .wv-finsp .irow:hover { background: rgba(255,255,255,.04); }
+#waveView .wv-finsp .irow i { width: 3px; height: 12px; border-radius: 2px; background: var(--cc); flex: none; }
+#waveView .wv-finsp .irow .wv-ro { margin-left: auto; color: var(--wv-t3); }
+#waveView .wv-finsp .ihow { display: grid; grid-template-columns: 64px 1fr; gap: 3px 8px; font: 400 var(--fs-s)/13px var(--sans); color: var(--wv-t3); }
+#waveView .wv-finsp .ihow b { font: 600 var(--fs-s)/13px var(--sans); color: var(--wv-t2); white-space: nowrap; }
+#waveView .wv-cmenu { position: absolute; z-index: 70; display: flex; gap: 3px; align-items: flex-start; }
+#waveView .wv-cmcol { width: 176px; padding: 4px; display: flex; flex-direction: column; gap: 1px; border-radius: 10px; max-height: 460px; overflow-y: auto; scrollbar-width: thin;
+  background: color-mix(in srgb, var(--wv-panel) 90%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--wv-line); box-shadow: 0 18px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08); }
+#waveView .wv-cmcol.leaf { width: 214px; }
+#waveView .wv-cmcol .cm-h { font: 600 var(--fs-xs) var(--mono); letter-spacing: .12em; color: var(--wv-t3); padding: 4px 8px 3px; white-space: nowrap; }
+#waveView .wv-cmcol .cm-sep { height: 1px; background: var(--wv-line); margin: 3px 4px; flex: none; }
+#waveView .wv-cmcol .cm-it { height: 22px; flex: none; display: flex; align-items: center; gap: 7px; padding: 0 8px; border-radius: 6px; font: 500 var(--fs-s) var(--sans); color: var(--wv-t2); white-space: nowrap; cursor: pointer; }
+#waveView .wv-cmcol .cm-it i { width: 3px; height: 12px; border-radius: 2px; background: var(--cc); flex: none; }
+#waveView .wv-cmcol .cm-it b { margin-left: auto; font: 400 var(--fs-xs) var(--mono); color: var(--wv-t3); }
+#waveView .wv-cmcol .cm-it svg { width: 8px; height: 8px; flex: none; fill: none; stroke: var(--wv-t3); stroke-width: 1.5; }
+#waveView .wv-cmcol .cm-it span + svg { margin-left: auto; }
+#waveView .wv-cmcol .cm-it.on, #waveView .wv-cmcol .cm-it:hover { background: color-mix(in srgb, var(--cc) 16%, transparent); color: var(--wv-t); }
+#waveView .wv-cmcol .cm-it.dis { opacity: .35; cursor: default; background: none; }
