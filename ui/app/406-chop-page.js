@@ -29,12 +29,14 @@ function chopBorrow(on) {
   }
 }
 
+/// Scale the page whole to fit the centre, set against its left edge, beside
+/// the rail (RJ, 9 Nov 2026).
 function chopFit() {
   const host = $('dockChop'), app = host.querySelector('.chop-app');
   const cw = host.clientWidth, ch = host.clientHeight;
   if (!cw || !ch) return;
   const s = Math.min(cw / CHOP_W, ch / CHOP_H, 1.3);
-  app.style.transform = `translate(${Math.floor((cw - CHOP_W * s) / 2)}px, 0px) scale(${s})`;
+  app.style.transform = `scale(${s})`;
 }
 
 // ───────────────────────────────────────────────────────────── the Looks

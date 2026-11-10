@@ -161,7 +161,7 @@ function gsResetEngine() {
 }
 
 /// Scale the page whole to fit the centre: the same page smaller, never a
-/// cropped one.
+/// cropped one, set against its left edge, beside the rail (RJ, 9 Nov 2026).
 function gsFit() {
   const host = $('grainView'), app = host && host.querySelector('.gs-app');
   if (!app) return;
@@ -169,7 +169,7 @@ function gsFit() {
   if (!cw || !ch) return;
   const s = Math.min(cw / GS_W, ch / GS_H, 1.3);
   GS.scale = s;
-  app.style.transform = `translate(${Math.floor((cw - GS_W * s) / 2)}px, 0px) scale(${s})`;
+  app.style.transform = `scale(${s})`;
 }
 
 // ──────────────────────────────────────────────────────────────────── presets

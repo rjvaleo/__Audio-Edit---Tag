@@ -30,7 +30,7 @@ body.synthpage #overview { display: none; }
 #waveView canvas { display: block; touch-action: none; }
 #waveView [hidden] { display: none !important; }
 
-/* the page, at its own size, scaled into the centre */
+/* the page, at its own size, scaled into the centre against its left edge */
 #waveView .wv-app {
   position: absolute; left: 0; top: 0; width: 1460px; height: 862px; transform-origin: 0 0;
   display: flex; flex-direction: column;
