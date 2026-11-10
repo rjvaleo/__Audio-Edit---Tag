@@ -57,6 +57,17 @@
 //! reads the same smoothed values the voices do, so a live move or an adopted
 //! patch drives it with the same glide. Its tails ring on after the last voice.
 //!
+//! # Modulation that is not a voice's
+//!
+//! Every numeric key is a target, the free LFOs' own included. A voice hears
+//! the matrix through its own sources (`voice.rs`). What every voice shares —
+//! the free LFOs, and the board's controls — hears it once per control block
+//! through `gsrc`: this block's macros, mod wheel and aftertouch, the free
+//! LFOs as the last block left them, and the per-note sources of the newest
+//! sounding voice (0 when nothing sounds). So LFO 1 → LFO 2 Rate with LFO 2 →
+//! LFO 1 Rate is a loop one block late by definition, never solved within a
+//! block, and it is stable.
+//!
 //! # Determinism
 //!
 //! The only randomness is the voices' start phases, noise and `rand` source,
@@ -239,6 +250,10 @@ pub struct Synth {
     /// Whole cycles each free LFO has run, for the random waves.
     free_cycle: [u32; 4],
     global: [f32; SRC_COUNT],
+    /// The sources a target that is not a voice's hears (see "Modulation").
+    gsrc: [f32; SRC_COUNT],
+    /// Every key after modulation by `gsrc`: what the free LFOs run on.
+    gvals: [f32; NUM_PARAMS],
     bend: [f32; 2],
     mw: [f32; 2],
     at: [f32; 2],
@@ -291,6 +306,8 @@ impl Synth {
             free_phase: [0.0; 4],
             free_cycle: [0; 4],
             global: [0.0; SRC_COUNT],
+            gsrc: [0.0; SRC_COUNT],
+            gvals: state.values,
             bend: [0.0; 2],
             mw: [0.0; 2],
             at: [0.0; 2],
@@ -572,6 +589,25 @@ impl Synth {
         }
     }
 
+    /// Fill `gsrc`: this block's macros, mod wheel and aftertouch, each free
+    /// LFO as it was at the end of the last block, and the per-note sources
+    /// (ENV 2–4, velocity, note, rand and the per-note LFOs) of the newest
+    /// voice still sounding, or 0 when none is. Every one of them is as of the
+    /// last block or this one, never this block's later work, which is what
+    /// makes a loop of LFOs moving each other's rates one block late and
+    /// stable.
+    fn global_sources(&mut self) {
+        let newest = self.voices.iter().filter(|v| v.active && !v.stealing).max_by_key(|v| (!v.released, v.serial));
+        for i in 0..SRC_COUNT {
+            let free_lfo = (SRC_LFO..SRC_LFO + 4).contains(&i) && self.state.lfo_modes[i - SRC_LFO] == LfoMode::Free;
+            self.gsrc[i] = if Source(i as u8).is_global() || free_lfo {
+                self.global[i]
+            } else {
+                newest.map_or(0.0, |v| v.src[i])
+            };
+        }
+    }
+
     /// One control block of `len` samples at the voice rate, into `mix`.
     fn block(&mut self, len: usize) {
         let sr = self.sr;
@@ -591,8 +627,10 @@ impl Synth {
         }
         self.global[SRC_MW] = self.mw[0];
         self.global[SRC_AT] = self.at[0];
+        self.global_sources();
+        modulate(&self.cur, &self.state, &self.gsrc, &mut self.gvals);
         for l in 0..4 {
-            let p = self.free_phase[l] + lfo_hz(&self.cur, l) * len as f32 / sr;
+            let p = self.free_phase[l] + lfo_hz(&self.gvals, l) * len as f32 / sr;
             let whole = p.floor();
             self.free_cycle[l] = self.free_cycle[l].wrapping_add(whole as u32);
             self.free_phase[l] = p - whole;
