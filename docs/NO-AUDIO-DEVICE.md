@@ -80,7 +80,9 @@ exists to document, made one level up, inside the file documenting it.
 
 ## Silence on purpose
 
-`AUDIOLAB_NO_AUDIO=1` makes the engine refuse to open the output, exactly as a
-machine without one does. Test runs and private copies of the app set it, so a
-test that plays a note, or a click test on a private copy, never reaches the
-speakers of a machine someone is working at.
+`AUDIOLAB_MUTE_OUTPUT=1` opens the device and runs everything as usual (its
+timing, every deck, the meters, capture) and writes silence to the speakers
+as the very last step. Test runs and private copies of the app set it, so they
+exercise the same paths the app does and never sound on a machine someone is
+working at. It is not a machine without an output: that case is the rest of
+this page, and is not simulated.

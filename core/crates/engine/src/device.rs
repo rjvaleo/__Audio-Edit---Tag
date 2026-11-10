@@ -66,11 +66,6 @@ impl Engine {
         wave: Arc<WaveShared>,
         keys: Arc<GrainKeys>,
     ) -> Result<Engine, String> {
-        // `AUDIOLAB_NO_AUDIO` is a machine with no output (`docs/NO-AUDIO-DEVICE.md`):
-        // tests and private copies set it, so nothing they do reaches the speakers.
-        if std::env::var_os("AUDIOLAB_NO_AUDIO").is_some() {
-            return Err("no audio output: AUDIOLAB_NO_AUDIO is set".into());
-        }
         // Build the FFT twiddle table here, on the thread that is opening the
         // device, rather than letting the first transform build it inside the
         // audio callback. It is 32 KB and once per process, but "once" inside a
@@ -119,6 +114,11 @@ impl Engine {
         .with_synth(SynthDeck::new(sample_rate as f32, MAX_BLOCK, channels, Arc::clone(&wave)));
 
         let err = |e| eprintln!("audio stream error: {e}");
+        // `AUDIOLAB_MUTE_OUTPUT`: everything runs as it always does (the device,
+        // its timing, every deck, the meters and capture), and only what reaches
+        // the speakers is silence. Test runs and private copies set it, so they
+        // behave like the app and make no sound (`docs/NO-AUDIO-DEVICE.md`).
+        let mute = std::env::var_os("AUDIOLAB_MUTE_OUTPUT").is_some();
 
         let stream = match format {
             cpal::SampleFormat::F32 => device.build_output_stream(
@@ -134,6 +134,9 @@ impl Engine {
                     core_shared.set_latency_frames(latency);
                     prism_shared.set_latency_frames(latency);
                     decks.fill(out, channels, &core_shared, &prism_shared);
+                    if mute {
+                        out.fill(0.0);
+                    }
                 },
                 err,
                 None,
