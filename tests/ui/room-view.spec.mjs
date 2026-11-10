@@ -307,13 +307,16 @@ test('the stretch and grain controls are reachable in the room', async ({ page }
 
   const got = await page.evaluate(() => {
     const body = document.getElementById('roomSoundBody');
-    const ctrls = body.querySelectorAll('input, select, button');
+    // A row the tray hides on purpose is not a control to reach: Position and
+    // Rate are hidden until the grain cloud is on. Counting them made this test
+    // pass only when an earlier test had left the cloud on.
+    const ctrls = [...body.querySelectorAll('input, select, button')].filter((el) => !el.closest('.hidden'));
     let reachable = 0;
     const bad = [];
     for (const el of ctrls) {
       el.scrollIntoView({ block: 'center' });
       const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) continue;
+      if (!r.width || !r.height) { bad.push({ el: el.id || el.className, over: 'no size' }); continue; }
       const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
       if (hit && (hit === el || el.contains(hit) || hit.contains(el))) reachable++;
       else bad.push({ el: el.id || el.className, over: hit ? (hit.id || hit.className) : 'nothing' });
