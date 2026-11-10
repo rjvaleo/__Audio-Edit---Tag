@@ -62,7 +62,9 @@ fn index<K: Kernel>(key: &str) -> usize {
     K::descriptor().params.iter().position(|p| p.key == key).unwrap_or(usize::MAX)
 }
 
-struct Drive {
+/// The Drive unit, shared with the board's `wave:drive` node so a migrated
+/// patch drives the same curve.
+pub(crate) struct Drive {
     sr: f32,
     /// The curve's `d` at the end of the last block.
     d: f32,
@@ -70,15 +72,20 @@ struct Drive {
 }
 
 impl Drive {
+    /// A Drive at rest at `k0`, so its first block does not glide in.
+    pub(crate) fn new(sample_rate: f32, k0: f32) -> Drive {
+        Drive { sr: sample_rate, d: Drive::amount(k0), lp: [0.0; 2] }
+    }
+
     fn amount(k0: f32) -> f32 {
         1.0 + k0.clamp(0.0, 1.0) * 12.0
     }
 
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.lp = [0.0; 2];
     }
 
-    fn process(&mut self, k0: f32, k1: f32, l: &mut [f32], r: &mut [f32]) {
+    pub(crate) fn process(&mut self, k0: f32, k1: f32, l: &mut [f32], r: &mut [f32]) {
         let n = l.len();
         let d1 = Drive::amount(k0);
         let dd = (d1 - self.d) / n as f32;
@@ -172,7 +179,7 @@ impl MasterFx {
             eq_high: index::<Eq>("band.6.gainDb"),
         };
         let mut fx = MasterFx {
-            drive: Drive { sr: sample_rate, d: 1.0, lp: [0.0; 2] },
+            drive: Drive::new(sample_rate, unit(vals, DRIVE).1[0]),
             chorus: MglWhiteChorus::new(sample_rate),
             delay: Echo::new(sample_rate),
             reverb: MglDattorroPlate::new(sample_rate),
@@ -204,7 +211,6 @@ impl MasterFx {
             fx.on[u] = on;
             fx.mix[u] = mix_of(u, k);
         }
-        fx.drive.d = Drive::amount(unit(vals, DRIVE).1[0]);
         fx
     }
 
@@ -314,7 +320,15 @@ impl MasterFx {
             let dm = (m1 - m0) / n as f32;
             let mut on = self.on[u];
             for i in 0..n {
-                on = if want > on { (on + self.fade).min(1.0) } else { (on - self.fade).max(0.0) };
+                // Toward the switch, and still once there: a unit all the way
+                // in must not step a fade's worth out every other sample.
+                on = if want > on {
+                    (on + self.fade).min(1.0)
+                } else if want < on {
+                    (on - self.fade).max(0.0)
+                } else {
+                    on
+                };
                 let (dry, wet) = law(u, m0 + dm * (i + 1) as f32);
                 let dry = 1.0 - on * (1.0 - dry);
                 let wet = on * wet;
