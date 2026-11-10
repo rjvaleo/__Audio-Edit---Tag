@@ -162,3 +162,48 @@ channel aftertouch, CC 120/123 all notes off. `MGL_NO_MIDI` keeps it closed (the
 **Mix:** the synth is summed into the grain deck before its soft ceiling, capture, scope and
 spectrum, on the playing and the stopped path. A capture armed while the grain transport is
 stopped therefore records in wall-clock time. The Prism deck still sums after the ceiling.
+
+## v7 (RJ, 7 Nov 2026): sources you can see, real LFO shapes, a mixer
+
+The mock-up is `docs/mockups/wave-synth-v7.html`. RJ approved it with "Build it".
+
+**New keys**, appended so every earlier id keeps its number:
+
+| Key | Range | Engine |
+|---|---|---|
+| `lfoL.shape` | `sine tri up down square steps smooth drawn` | the LFO's wave, below |
+| `lfoL.sync` | 0/1 | 0: `rate` is Hz; 1: `rate` picks a note length at `tempo` |
+| `tempo` | 30..300 BPM | the synth's own tempo for synced LFOs; default 120 |
+
+**Shapes**, each 0..1 at phase `u` (0..1):
+
+| Shape | Value |
+|---|---|
+| `sine` | `0.5 + 0.5·sin(2πu)` |
+| `tri` | `u < .25`: `0.5 + 2u`; `u < .75`: `1.5 − 2u`; else `2u − 1.5` |
+| `up` / `down` | `u` / `1 − u` |
+| `square` | `u < .5` ? 1 : 0 |
+| `steps` | 8 random levels per cycle, a new set every cycle |
+| `smooth` | 4 random levels per cycle, cosine-eased, running on into the next cycle |
+| `drawn` | `lfoL.points`, cosine-eased as before |
+
+Defaults: LFO 1 `sine`, LFO 2 `drawn`, LFO 3 `square`, LFO 4 `smooth`.
+
+**Rate**, replacing `0.2 + v·2` Hz:
+- With `sync` 0, the rate is `0.02 · 2000^v` Hz, which runs from 0.02 to 40 Hz.
+- With `sync` 1, the rate is the note length at index `round(v · 8)` in 8 bars, 4 bars, 2 bars, 1 bar, 1/2, 1/4, 1/8, 1/16, 1/32. In beats those are 32, 16, 8, 4, 2, 1, 0.5, 0.25 and 0.125, and the Hz is `tempo / 60 / beats`.
+
+**Init** now starts with:
+- no mod rows;
+- the sub on a triangle, one octave down, at level 0.28;
+- LFO rates of 0.42, 0.3, 0.55 and 0.25.
+
+**The page:**
+- **Colours.** Each source has its own colour:
+  - ENV 2–4: `#f0a640 #ec7f5c #d9c487`
+  - LFO 1–4: `#5cc8e6 #a48cf2 #ee72a8 #9bd36c`
+  - Its tab, its badges and the arcs it draws on controls all use that colour.
+- **Badges.** A badge in each oscillator's header, and one in the Filters header, names what moves it.
+- **Mixer.** A MIX row holds A, B, C, Sub and Noise, each with a power button and a level bar. It replaces the per-oscillator level faders and the old Sub and Noise row.
+- **Tooltips.** Every control has a fast tooltip.
+- **Keyboard.** Dragging plays a glide; Shift-drag holds each key it crosses.

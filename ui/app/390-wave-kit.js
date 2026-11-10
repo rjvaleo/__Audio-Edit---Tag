@@ -1,8 +1,8 @@
 // ================================================================ Wave: the kit
 //
 // The wavetable synth page, `mode: 'synth'`. See `docs/WAVE-SYNTH.md`; the look
-// is mock-up v6 (`docs/mockups/wave-synth-v6.html`), which RJ approved with
-// "Build it". This part is the mock-up's kit (`wave-synth-kit.js`) ported: the
+// is mock-up v7 (`docs/mockups/wave-synth-v7.html`, built on v6), which RJ
+// approved with "Build it". This part is the mock-up's kit (`wave-synth-kit.js`) ported: the
 // tables, the warps, the spectra, and the canvas helpers every control draws
 // with. Then the patch, and the only conversation the page has with the engine,
 // which is the `/api/wave/*` routes.
@@ -251,6 +251,67 @@ function wvLfoAt(pts, x) {
   return pts[pts.length - 1][1];
 }
 
+// ───────────────────────────────────────────────────────────── v7: LFO shapes
+//
+// The engine's shapes (`docs/WAVE-SYNTH.md`, v7), each 0..1 at phase `u`. The
+// random ones are drawn with a fixed seed, as the mock-up draws them: the
+// engine draws new levels every cycle, which no still picture can show.
+
+const WV_LFO_SHAPES = [
+  ['sine', 'Sine: smooth up and down', 'M1 7 C3 0,6 0,8 7 S13 14,15 7'],
+  ['tri', 'Triangle: straight up, straight down', 'M1 7 L4.5 1 L11.5 13 L15 7'],
+  ['up', 'Saw up: rises, then drops', 'M1 13 L14 1 V13'],
+  ['down', 'Saw down: drops, then jumps back', 'M1 1 L14 13 V1'],
+  ['square', 'Square: flips between two values', 'M1 2 H8 V12 H15'],
+  ['steps', 'Random steps: a new value every step', 'M1 9 H4 V3 H7 V11 H10 V5 H13 V8 H15'],
+  ['smooth', 'Smooth random: wanders', 'M1 9 C3 9,3 3,5 3 S7 11,9 11 S12 5,15 6'],
+  ['drawn', 'Drawn: your own shape. Drag the points, double-click to add one', 'M1 10 L4 4 L8 8 L11 2 L15 9'],
+];
+
+const wvRnd = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
+/// A shape's value at phase `u` of cycle `cyc`; `drawn` reads the points.
+function wvShapeAt(shape, pts, u, cyc = 0) {
+  if (u !== 1) u = ((u % 1) + 1) % 1;
+  switch (shape) {
+    case 'sine': return 0.5 + 0.5 * Math.sin(u * WV_TAU);
+    case 'tri': return u < 0.25 ? 0.5 + 2 * u : u < 0.75 ? 1.5 - 2 * u : 2 * u - 1.5;
+    case 'up': return u;
+    case 'down': return 1 - u;
+    case 'square': return u < 0.5 ? 1 : 0;
+    case 'steps': return wvRnd(cyc * 8 + Math.floor(u * 8));
+    case 'smooth': {
+      const k = u * 4, i = Math.floor(k), f = k - i, a = wvRnd(cyc * 4 + i), b = wvRnd(cyc * 4 + i + 1);
+      return a + (b - a) * (0.5 - 0.5 * Math.cos(Math.PI * f));
+    }
+    default: return wvLfoAt(pts && pts.length > 1 ? pts : [[0, 0.5], [1, 0.5]], u);
+  }
+}
+
+const wvLfoShape = (L) => wvG(`lfo${L}.shape`) || 'drawn';
+const wvLfoVal = (L, u, cyc = 0) => wvShapeAt(wvLfoShape(L), wvG(`lfo${L}.points`), u, cyc);
+
+/// Rate: `0.02 · 2000^v` Hz free, or a note length at `tempo` when synced.
+const WV_DIVS = ['8 bars', '4 bars', '2 bars', '1 bar', '1/2', '1/4', '1/8', '1/16', '1/32'];
+const WV_DIV_BEATS = [32, 16, 8, 4, 2, 1, 0.5, 0.25, 0.125];
+const wvTempo = () => wvClamp(+wvG('tempo') || 120, 30, 300);
+const wvDivAt = (v) => Math.round(wvClamp(v) * (WV_DIVS.length - 1));
+const wvLfoHz = (L) => (wvG(`lfo${L}.sync`)
+  ? wvTempo() / 60 / WV_DIV_BEATS[wvDivAt(wvG(`lfo${L}.rate`))]
+  : 0.02 * Math.pow(2000, wvClamp(wvG(`lfo${L}.rate`) ?? 0.4)));
+function wvLfoRateTxt(L) {
+  if (wvG(`lfo${L}.sync`)) return WV_DIVS[wvDivAt(wvG(`lfo${L}.rate`))];
+  const h = wvLfoHz(L);
+  return h < 1 ? h.toFixed(2) + ' Hz' : h < 10 ? h.toFixed(1) + ' Hz' : Math.round(h) + ' Hz';
+}
+
+/// A standard shape as drawn points, so dragging it starts from what you see.
+/// A square keeps its edges sharp; the rest are sampled at nine points.
+function wvShapePoints(L) {
+  if (wvLfoShape(L) === 'square') return [[0, 1], [0.49, 1], [0.5, 0], [0.99, 0], [1, 1]];
+  return [...Array(9)].map((_, i) => [i / 8, Math.round(wvLfoVal(L, i / 8, 0) * 1e4) / 1e4]);
+}
+
 const WV_CURVES = { lin: 'Linear', exp: 'Exp', log: 'Log', s: 'S' };
 function wvCurveAt(k, x) {
   return k === 'exp' ? x * x * x : k === 'log' ? 1 - Math.pow(1 - x, 3) : k === 's' ? x * x * (3 - 2 * x) : x;
@@ -443,26 +504,28 @@ function wvDefaultPatch() {
     });
   });
   Object.assign(p, {
-    'sub.on': 1, 'sub.shape': 0, 'sub.oct': 1, 'sub.level': 0.35,
+    // v7 Init: a triangle sub, which carries on small speakers.
+    'sub.on': 1, 'sub.shape': 1, 'sub.oct': 1, 'sub.level': 0.28,
     'noise.on': 0, 'noise.color': 1, 'noise.level': 0.12,
     'filt0.type': 'lp', 'filt0.cut': 0.55, 'filt0.res': 0.35, 'filt0.drive': 0.2, 'filt0.key': 0.5,
     'filt1.type': 'bp', 'filt1.cut': 0.7, 'filt1.res': 0.5, 'filt1.drive': 0, 'filt1.key': 0.3,
     'filt.route': 'serial',
     'amp.a': 0.06, 'amp.d': 0.3, 'amp.s': 0.6, 'amp.r': 0.45,
     'voice.mode': 'poly', 'voice.glide': 0.2, 'voice.bend': 2, 'voice.mpe': 0,
-    master: 0.8,
+    master: 0.8, tempo: 120,
   });
   [[0.15, 0.4, 0.3, 0.5], [0.02, 0.2, 0, 0.2], [0.4, 0.5, 0.7, 0.7]].forEach((e, m) => {
     ['a', 'd', 's', 'r'].forEach((s, j) => { p[`env${m + 1}.${s}`] = e[j]; });
   });
+  // v7: each LFO has a shape, and a rate on the `0.02 · 2000^v` Hz law.
   [
-    [0.4, [[0, 0.5], [0.25, 1], [0.5, 0.5], [0.75, 0], [1, 0.5]]],
-    [0.25, [[0, 0], [0.1, 1], [0.5, 0.4], [1, 0]]],
-    [0.6, [[0, 1], [0.5, 1], [0.5, 0], [1, 0]]],
-    [0.15, [[0, 0.5], [0.2, 0.9], [0.4, 0.2], [0.6, 0.7], [0.8, 0.1], [1, 0.5]]],
-  ].forEach(([rate, pts], l) => {
+    [0.42, 'sine', [[0, 0.5], [0.25, 1], [0.5, 0.5], [0.75, 0], [1, 0.5]]],
+    [0.3, 'drawn', [[0, 0], [0.1, 1], [0.5, 0.4], [1, 0]]],
+    [0.55, 'square', [[0, 1], [0.5, 1], [0.5, 0], [1, 0]]],
+    [0.25, 'smooth', [[0, 0.5], [0.2, 0.9], [0.4, 0.2], [0.6, 0.7], [0.8, 0.1], [1, 0.5]]],
+  ].forEach(([rate, shape, pts], l) => {
     Object.assign(p, { [`lfo${l}.rate`]: rate, [`lfo${l}.mode`]: 'free', [`lfo${l}.points`]: pts,
-      [`lfo${l}.smooth`]: 0, [`lfo${l}.rise`]: 0 });
+      [`lfo${l}.smooth`]: 0, [`lfo${l}.rise`]: 0, [`lfo${l}.shape`]: shape, [`lfo${l}.sync`]: 0 });
   });
   [0.5, 0.35, 0.6, 0.2, 0.4, 0.5, 0.3, 0.25].forEach((v, i) => { p['macro' + i] = v; });
   // The FX view's chain: Drive, Chorus, Delay, Reverb, EQ, three settings each.
@@ -483,14 +546,9 @@ const WV_FX_CHAIN = [
   { n: 'EQ', on: 1, k: [0.5, 0.5, 0.5], kn: ['Low', 'Mid', 'High'] },
 ];
 
-const WV_DEFAULT_MODS = [
-  { src: 'lfo0', dst: 'osc0.pos', amt: 0.2, curve: 'lin', via: null },
-  { src: 'env1', dst: 'filt0.cut', amt: 0.25, curve: 'exp', via: 'mw' },
-  { src: 'lfo1', dst: 'osc1.warp0.amt', amt: 0.3, curve: 's', via: null },
-  { src: 'lfo3', dst: 'osc2.pos', amt: 0.15, curve: 'log', via: null },
-  { src: 'lfo2', dst: 'osc1.pan', amt: 0.35, curve: 'lin', via: null },
-  { src: 'env3', dst: 'osc0.level', amt: 0.12, curve: 'exp', via: null },
-];
+/// v7: Init moves nothing. Every route is one the player made, as in the
+/// engine's own Init (`Patch::default`).
+const WV_DEFAULT_MODS = [];
 
 const WV_MACRO_NAMES = ['Brightness', 'Movement', 'Width', 'Grit', 'Space', 'Morph', 'Attack', 'Air'];
 
@@ -502,6 +560,9 @@ const WV_SOURCES = [
   { key: 'lfo1', label: 'LFO 2', kind: 'lfo' }, { key: 'lfo2', label: 'LFO 3', kind: 'lfo' },
   { key: 'lfo3', label: 'LFO 4', kind: 'lfo' },
 ];
+/// v7: one colour per source, shared by its tab, its badges and the arc it
+/// draws on every control it moves.
+const WV_SRC_COL = { env1: '#f0a640', env2: '#ec7f5c', env3: '#d9c487', lfo0: '#5cc8e6', lfo1: '#a48cf2', lfo2: '#ee72a8', lfo3: '#9bd36c' };
 const WV_VIA = [null, 'mw', 'vel', 'at', 'note', 'rand', 'macro0', 'macro1'];
 const WV_SRC_NAMES = { mw: 'Mod wheel', vel: 'Velocity', at: 'Aftertouch', note: 'Note', rand: 'Random', env1: 'ENV 2', env2: 'ENV 3', env3: 'ENV 4', lfo0: 'LFO 1', lfo1: 'LFO 2', lfo2: 'LFO 3', lfo3: 'LFO 4' };
 
@@ -553,12 +614,21 @@ function wvDstName(t) {
 /// How far the matrix can move a destination either way, and where it is now.
 /// The range is the sum of the amounts aimed at it; the live value is the
 /// engine's, from telemetry, and absent when there is none.
+/// `col` is the colour of the first source aimed at it that has one, which is
+/// the colour its arc, bracket or band is drawn in.
 function wvModOf(dst) {
-  let rng = 0;
-  for (const m of WV.mods) if (m.dst === dst) rng += Math.abs(m.amt);
+  let rng = 0, col = null;
+  for (const m of WV.mods) {
+    if (m.dst !== dst) continue;
+    rng += Math.abs(m.amt);
+    col = col || WV_SRC_COL[m.src] || null;
+  }
   const live = WV.tele && WV.tele.mod && typeof WV.tele.mod[dst] === 'number' ? WV.tele.mod[dst] : null;
-  return { rng, live };
+  return { rng, live, col };
 }
+
+/// The page's colours with the modulation drawn in that source's colour.
+const wvClFor = (m) => (m && m.col ? { ...wvCl(), mod: m.col } : wvCl());
 
 /// The value a control is at for drawing: the engine's modulated value when it
 /// has one, otherwise the stored one.
@@ -571,8 +641,11 @@ function wvSrcVal(src) {
   if (!T) return 0;
   let m = /^(?:lfo)(\d)$/.exec(src);
   if (m) {
+    // The engine's own output when it sends it; otherwise its shape at the phase.
+    const out = Array.isArray(T.lfoValue) ? T.lfoValue[+m[1]] : null;
+    if (typeof out === 'number') return wvClamp(out, -1, 1);
     const ph = Array.isArray(T.lfo) ? T.lfo[+m[1]] : null;
-    return typeof ph === 'number' ? wvLfoAt(wvG(`lfo${m[1]}.points`), ((ph % 1) + 1) % 1) * 2 - 1 : 0;
+    return typeof ph === 'number' ? wvLfoVal(+m[1], ((ph % 1) + 1) % 1) * 2 - 1 : 0;
   }
   m = /^(?:macro)(\d)$/.exec(src);
   if (m) return wvG(src);

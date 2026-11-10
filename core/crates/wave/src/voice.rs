@@ -128,6 +128,8 @@ pub(crate) struct Voice {
     pub amp: Adsr,
     env: [Adsr; 3],
     pub(crate) lfo_phase: [f32; 4],
+    /// Whole cycles each per-note LFO has run, for the random waves.
+    lfo_cycle: [u32; 4],
     /// Each LFO after its smoothing lag, as of the last block.
     lfo_lag: [f32; 4],
     /// Samples since the note began, for the LFOs' rise.
@@ -169,6 +171,7 @@ impl Voice {
             amp: Adsr::new(sr),
             env: [Adsr::new(sr), Adsr::new(sr), Adsr::new(sr)],
             lfo_phase: [0.0; 4],
+            lfo_cycle: [0; 4],
             lfo_lag: [0.0; 4],
             age: 0.0,
             rand: 0.0,
@@ -210,6 +213,10 @@ impl Voice {
             next_u32(&mut self.rng);
         }
         self.rand = next_unit(&mut self.rng);
+        // Each note's random LFO waves start somewhere of their own.
+        for c in self.lfo_cycle.iter_mut() {
+            *c = next_u32(&mut self.rng);
+        }
         self.amp.kill();
         for e in self.env.iter_mut() {
             e.kill();
@@ -321,10 +328,15 @@ impl Voice {
             let raw = match st.lfo_modes[l] {
                 LfoMode::Free => ctx.global[SRC_LFO + l],
                 mode => {
-                    let rate = 0.2 + self.vals[LFO_RATE + l] * 2.0;
-                    let p = self.lfo_phase[l] + rate * n as f32 / sr;
-                    self.lfo_phase[l] = if mode == LfoMode::Trig { p.fract() } else { p.min(1.0) };
-                    shape.at(self.lfo_phase[l]) * 2.0 - 1.0
+                    let p = self.lfo_phase[l] + lfo_hz(&self.vals, l) * n as f32 / sr;
+                    if mode == LfoMode::Trig {
+                        let whole = p.floor();
+                        self.lfo_cycle[l] = self.lfo_cycle[l].wrapping_add(whole as u32);
+                        self.lfo_phase[l] = p - whole;
+                    } else {
+                        self.lfo_phase[l] = p.min(1.0);
+                    }
+                    shape.value(self.lfo_phase[l], self.lfo_cycle[l]) * 2.0 - 1.0
                 }
             };
             // Smooth: a one-pole lag, up to 200 ms, per voice, so a stepped
