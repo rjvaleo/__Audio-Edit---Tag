@@ -53,7 +53,7 @@
 //! unknown key is in the matrix. `outs` and `ins` change the ports, so they
 //! are not targets.
 
-use prism_fx::{Category, Entry, ParamKind, ParamSpec};
+use prism_fx::{Category, Entry};
 
 use crate::patch::{Curve, Mod, Patch, Source, MAX_MODS};
 
@@ -61,6 +61,7 @@ mod migrate;
 mod plan;
 
 pub use migrate::input_nodes;
+pub use prism_fx::{ParamKind, ParamSpec};
 pub use plan::BoardPlan;
 pub(crate) use plan::Stereo;
 
