@@ -552,17 +552,24 @@ const WV_DEFAULT_MODS = [];
 
 const WV_MACRO_NAMES = ['Brightness', 'Movement', 'Width', 'Grit', 'Space', 'Morph', 'Attack', 'Air'];
 
-/// The modulation sources the Modulate panel offers, in its order: ENV 2–4 and
-/// LFO 1–4. The engine's keys are `env1..3` and `lfo0..3`.
+/// v8: every modulation source the engine has, in the matrix's order: ENV 2–4,
+/// LFO 1–4, the playing hand, then the macros. The engine's keys are
+/// `env1..3`, `lfo0..3`, `vel note mw at rand` and `macro0..7`. `g0` starts a
+/// group, which the pins and the strips set a little apart.
 const WV_SOURCES = [
-  { key: 'env1', label: 'ENV 2', kind: 'env' }, { key: 'env2', label: 'ENV 3', kind: 'env' },
-  { key: 'env3', label: 'ENV 4', kind: 'env' }, { key: 'lfo0', label: 'LFO 1', kind: 'lfo' },
-  { key: 'lfo1', label: 'LFO 2', kind: 'lfo' }, { key: 'lfo2', label: 'LFO 3', kind: 'lfo' },
-  { key: 'lfo3', label: 'LFO 4', kind: 'lfo' },
+  ...[1, 2, 3].map((m) => ({ key: `env${m}`, label: `ENV ${m + 1}`, kind: 'env' })),
+  ...[0, 1, 2, 3].map((l) => ({ key: `lfo${l}`, label: `LFO ${l + 1}`, kind: 'lfo', g0: l === 0 })),
+  ...[['vel', 'VEL'], ['note', 'NOTE'], ['mw', 'MW'], ['at', 'AT'], ['rand', 'RAND']].map(([key, label], i) => ({ key, label, kind: 'perf', g0: !i })),
+  ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ key: `macro${i}`, label: `M${i + 1}`, kind: 'macro', g0: !i })),
 ];
 /// v7: one colour per source, shared by its tab, its badges and the arc it
-/// draws on every control it moves.
-const WV_SRC_COL = { env1: '#f0a640', env2: '#ec7f5c', env3: '#d9c487', lfo0: '#5cc8e6', lfo1: '#a48cf2', lfo2: '#ee72a8', lfo3: '#9bd36c' };
+/// draws on every control it moves. v8 adds the amp envelope's, the playing
+/// hand's steel blues and the macros' bone, like the dock's knobs.
+const WV_SRC_COL = {
+  env1: '#f0a640', env2: '#ec7f5c', env3: '#d9c487', lfo0: '#5cc8e6', lfo1: '#a48cf2', lfo2: '#ee72a8', lfo3: '#9bd36c',
+  amp: '#e8ecf2', vel: '#8fa6e8', note: '#a9b8d6', mw: '#7f96c8', at: '#b4a6d8', rand: '#c9cfdc',
+  macro0: '#e6d8b8', macro1: '#e6d8b8', macro2: '#e6d8b8', macro3: '#e6d8b8', macro4: '#e6d8b8', macro5: '#e6d8b8', macro6: '#e6d8b8', macro7: '#e6d8b8',
+};
 const WV_VIA = [null, 'mw', 'vel', 'at', 'note', 'rand', 'macro0', 'macro1'];
 const WV_SRC_NAMES = { mw: 'Mod wheel', vel: 'Velocity', at: 'Aftertouch', note: 'Note', rand: 'Random', env1: 'ENV 2', env2: 'ENV 3', env3: 'ENV 4', lfo0: 'LFO 1', lfo1: 'LFO 2', lfo2: 'LFO 3', lfo3: 'LFO 4' };
 
@@ -582,7 +589,9 @@ const WV = {
   kbLo: 48,
   bend: 0,
   mw: 0,
-  sel: 3,                  // the source shown in Modulate
+  slot: { env: 'env1', lfo: 'lfo1' }, // v8: which envelope and LFO the Play slots show
+  mx: 'pins',              // v8: the Matrix as pins or as rows
+  board: null,             // v8: the FX board, as the engine stores it
   tilt: [0.5, 0.5, 0.5],   // how far each oscillator's table leans back
   face: ['w', 'w', 'w'],   // waves or spectrum
   ab: 'A',
@@ -597,29 +606,22 @@ function wvSrcName(src) {
   return WV_SRC_NAMES[src] || src;
 }
 
-/// A destination's name as a person reads it: `B Warp 1`, `F1 Cutoff`.
+/// A destination's name as a person reads it: `B Warp 1`, `F1 Cutoff`,
+/// `Echo · Delay`. v8: the names are the Matrix's own (`wvTargetName`).
 function wvDstName(t) {
-  const NAMES = { pos: 'Position', 'warp0.amt': 'Warp 1', 'warp1.amt': 'Warp 2', 'uni.det': 'Unison', pitch: 'Pitch', fine: 'Fine', phase: 'Phase', pan: 'Pan', level: 'Level', 'fx.a': 'FX', cut: 'Cutoff', drive: 'Drive', key: 'Key' };
-  let m = /^(?:osc)(\d)\.(.+)$/.exec(t);
-  if (m) return `${'ABC'[+m[1]]} ${NAMES[m[2]] || m[2]}`;
-  m = /^(?:filt)(\d)\.(.+)$/.exec(t);
-  if (m) return `F${+m[1] + 1} ${NAMES[m[2]] || m[2]}`;
-  m = /^(?:macro)(\d)$/.exec(t);
-  if (m) return WV.macroNames[+m[1]];
-  m = /^(?:fx)(\d)\.k([0-9])$/.exec(t);
-  if (m) return `${WV_FX_CHAIN[+m[1]].n} ${WV_FX_CHAIN[+m[1]].kn[+m[2]]}`;
-  return t.replace('.', ' ');
+  return wvTargetName(t);
 }
 
 /// How far the matrix can move a destination either way, and where it is now.
 /// The range is the sum of the amounts aimed at it; the live value is the
 /// engine's, from telemetry, and absent when there is none.
 /// `col` is the colour of the first source aimed at it that has one, which is
-/// the colour its arc, bracket or band is drawn in.
+/// the colour its arc, bracket or band is drawn in. v8: a row switched off in
+/// the Matrix moves nothing.
 function wvModOf(dst) {
   let rng = 0, col = null;
   for (const m of WV.mods) {
-    if (m.dst !== dst) continue;
+    if (m.dst !== dst || m.off) continue;
     rng += Math.abs(m.amt);
     col = col || WV_SRC_COL[m.src] || null;
   }
@@ -650,8 +652,15 @@ function wvSrcVal(src) {
   m = /^(?:macro)(\d)$/.exec(src);
   if (m) return wvG(src);
   if (src === 'mw') return WV.mw;
-  // The envelopes are per voice; the loudest voice stands for them.
   const vs = Array.isArray(T.voices) ? T.voices : [];
+  // v8: the playing hand, from the newest voice, as the engine reads it for
+  // what every voice shares.
+  const last = vs[vs.length - 1];
+  if (src === 'vel') return last ? wvClamp(+last.vel || 0) : 0;
+  if (src === 'note') return last ? wvClamp(((+last.note || 60) - 36) / 60) : 0;
+  if (src === 'at') return typeof T.at === 'number' ? wvClamp(T.at) : 0;
+  if (src === 'rand') return typeof T.rand === 'number' ? wvClamp(T.rand) : 0;
+  // The envelopes are per voice; the loudest voice stands for them.
   return vs.reduce((a, v) => Math.max(a, +v.env || 0), 0);
 }
 
@@ -709,8 +718,12 @@ function wvCommitTouched() {
   if (WV.modsDirty) { WV.modsDirty = false; wvSendMods(); }
 }
 
+/// The rows as the engine takes them. A row switched off in the Matrix is the
+/// page's alone: the engine has no switch, so it is left out until it is back on.
+const wvModsOut = () => WV.mods.filter((m) => !m.off).map(({ src, dst, amt, curve, via }) => ({ src, dst, amt, curve: curve || 'lin', via: via ?? null }));
+
 function wvSendMods() {
-  wvPost('/api/wave/mods', { mods: WV.mods });
+  wvPost('/api/wave/mods', { mods: wvModsOut() });
 }
 
 /// The wheels: a bend springs back to the middle, the mod wheel stays put.
@@ -737,10 +750,13 @@ function wvAdopt(patch) {
   if (Array.isArray(patch.macroNames)) WV.macroNames = WV_MACRO_NAMES.map((n, i) => patch.macroNames[i] || n);
   if (typeof patch.name === 'string' && patch.name) WV.name = patch.name;
   if (patch.tags != null) WV.tags = Array.isArray(patch.tags) ? patch.tags.join(' · ') : String(patch.tags);
+  // v8: the patch carries its board.
+  if (patch.board && Array.isArray(patch.board.nodes)) wvBoardAdopt(patch.board);
 }
 
-/// The whole patch, as `POST /api/wave/patch` takes it.
-const wvPatchBody = () => ({ params: { ...WV.p }, mods: WV.mods, macroNames: WV.macroNames, name: WV.name, tags: WV.tags });
+/// The whole patch, as `POST /api/wave/patch` takes it. v8: with its board,
+/// which the engine would otherwise rebuild from the old chain's keys.
+const wvPatchBody = () => ({ params: { ...WV.p }, mods: wvModsOut(), macroNames: WV.macroNames, name: WV.name, tags: WV.tags, ...(WV.board ? { board: wvBoardOut() } : {}) });
 
 /// A table's frames: the engine's if it has sent them, the built-in otherwise.
 function wvTable(name) {
@@ -785,7 +801,7 @@ async function wvConnect() {
   WV.connected = ok;
   const note = $('wvOffline');
   if (note) note.hidden = ok;
-  if (ok) await Promise.all([0, 1, 2].map((i) => wvFetchTable(wvG(`osc${i}.table`))));
+  if (ok) await Promise.all([...[0, 1, 2].map((i) => wvFetchTable(wvG(`osc${i}.table`))), wvBoardConnect()]);
   if (WV.built) wvSyncAll();
   return ok;
 }
@@ -804,7 +820,10 @@ function wvPollStart() {
     wvPoll.busy = true;
     try {
       const r = await fetch('/api/wave/state');
-      if (r.ok && WV.showing) WV.tele = await r.json();
+      // Read first, then kept only if the page is still showing: a reply
+      // that lands after leaving is dropped.
+      const j = r.ok ? await r.json() : null;
+      if (j && WV.showing) WV.tele = j;
     } catch { /* the next one */ }
     wvPoll.busy = false;
   }, 33);
