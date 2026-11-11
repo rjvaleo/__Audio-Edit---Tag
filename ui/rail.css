@@ -213,10 +213,10 @@
   margin-top: 6px;
   padding-top: 6px;
 }
-#leftRail .rl-item.rl-rec { color: var(--rec-red, #e0503f); }
+#leftRail .rl-item.rl-rec { color: var(--rec-red, var(--rec-rail)); }
 #leftRail .rl-item.rl-rec:hover {
-  color: var(--rec-hot, #ff6a55);
-  background: color-mix(in srgb, var(--rec-red, #e0503f) 12%, transparent);
+  color: var(--rec-hot, var(--rec-rail-hot));
+  background: color-mix(in srgb, var(--rec-red, var(--rec-rail)) 12%, transparent);
 }
 /* It never lights the way a destination does — it opens a window and gives it
    back, so there is nothing for it to be "current" for. */
@@ -237,20 +237,21 @@
 
 /* ── the rail in the Grain and Wave materials ── RJ, 8 Nov 2026 ─────────────────
  *
- * Graphite, and **orange means you are here**, as it does on the engines and the
- * effects. The tokens are renamed for this column only, so every rule above
- * keeps saying what it said and picks these up.
+ * Graphite, and **"on" means you are here**, as it does on the engines and the
+ * effects: orange, or the theme's own. The tokens are renamed for this column
+ * only, onto the shared look's (`015-tokens.css`), so every rule above keeps
+ * saying what it said and picks these up.
  *
  * The widths do not move: 62 shut, 168 open, and the icon column fixed, because
  * `--rail` is what the rest of the layout is positioned from.
  */
 #leftRail.rl {
-  --line: #2c3036;
-  --surface-3: rgba(255, 255, 255, .04);
-  --text-dim: #858b94;
-  --text-2: #e8eaee;
-  --accent: #ffb547;
-  background: linear-gradient(180deg, #181a1f, #121316);
+  --line: var(--look-line);
+  --surface-3: rgba(var(--white-rgb), .04);
+  --text-dim: var(--look-text-3);
+  --text-2: var(--look-text);
+  --accent: var(--on);
+  background: linear-gradient(180deg, var(--look-rail), var(--look-chassis));
 }
 #leftRail .rl-item { position: relative; isolation: isolate; height: 38px; }
 #leftRail .rl-item .rl-lb { font-weight: 500; }
@@ -277,18 +278,18 @@
   color: var(--text-2);
 }
 #leftRail .rl-item.rl-on::before {
-  background: linear-gradient(180deg, rgba(255, 181, 71, .16), rgba(255, 181, 71, .05));
-  box-shadow: inset 0 0 0 1px rgba(255, 181, 71, .55);
+  background: linear-gradient(180deg, rgba(var(--on-rgb), .16), rgba(var(--on-rgb), .05));
+  box-shadow: inset 0 0 0 1px rgba(var(--on-rgb), .55);
 }
 #leftRail .rl-item.rl-on .rl-ic {
   color: var(--accent);
-  filter: drop-shadow(0 0 4px rgba(255, 181, 71, .55));
+  filter: drop-shadow(0 0 4px rgba(var(--on-rgb), .55));
 }
 /* Record is an action and never lights: it opens a window and gives it back. */
 #leftRail .rl-item.rl-rec.rl-on::before { background: none; box-shadow: none; }
-#leftRail .rl-item.rl-rec.rl-on { color: var(--rec-red, #e0503f); }
+#leftRail .rl-item.rl-rec.rl-on { color: var(--rec-red, var(--rec-rail)); }
 #leftRail .rl-item.rl-rec.rl-on .rl-ic { color: inherit; filter: none; }
 #leftRail .rl-item.rl-rec:hover { background: transparent; }
-#leftRail .rl-item.rl-rec:hover::before { background: color-mix(in srgb, var(--rec-red, #e0503f) 12%, transparent); }
+#leftRail .rl-item.rl-rec:hover::before { background: color-mix(in srgb, var(--rec-red, var(--rec-rail)) 12%, transparent); }
 #leftRail .rl-item:disabled:hover::before,
 #leftRail .rl-item.rl-off:hover::before { background: none; }

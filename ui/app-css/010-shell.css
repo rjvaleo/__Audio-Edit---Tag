@@ -132,11 +132,11 @@ button { font-family: inherit; cursor: pointer; }
 .transportbar .mark { flex-shrink: 0; }
 .mark {
   width: 19px; height: 19px; border-radius: 5px;
-  background: linear-gradient(135deg, var(--accent), oklch(45% 0.14 250));
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
 }
 .app-name { font-size: var(--fs-l); font-weight: 600; letter-spacing: -0.1px; }
 .sep { color: var(--text-dimmer); }
-.current-file { font-size: var(--fs-l); color: oklch(66% 0.01 250); }
+.current-file { font-size: var(--fs-l); color: var(--text-file); }
 
 /* ------------------------------------------------------------------ layout */
 
@@ -191,7 +191,7 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
   height: 40px; flex-shrink: 0;
   display: flex; align-items: center; gap: 8px; padding: 0 10px;
   border-bottom: 1px solid var(--line);
-  font-size: var(--fs-l); font-weight: 600; color: oklch(88% 0.006 250);
+  font-size: var(--fs-l); font-weight: 600; color: var(--text-head);
 }
 .panel-head > span { flex-shrink: 0; }
 .panel-body { flex: 1; overflow-y: auto; padding: 8px; }
@@ -323,7 +323,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .folder-row:hover { background: var(--surface-3); }
 .folder-row.selected {
-  background: rgba(125,190,255,0.13); color: var(--text);
+  background: rgba(var(--sel-rgb), 0.13); color: var(--text);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .folder-row .label { flex: 1; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
@@ -351,8 +351,8 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   padding: 4px 6px 4px 16px; border-radius: 6px; cursor: pointer;
 }
 .file-row:hover { background: var(--surface-3); }
-.file-row.selected { background: rgba(125,190,255,0.14); }
-.file-row.playing { background: rgba(125,255,190,0.10); }
+.file-row.selected { background: rgba(var(--sel-rgb), 0.14); }
+.file-row.playing { background: rgba(var(--play-rgb), 0.10); }
 
 .file-row .pb {
   width: 20px; height: 20px; flex-shrink: 0; padding: 0;
@@ -481,12 +481,12 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .regions.bare { height: 0; border-bottom: 0; }
 .region {
   position: absolute; top: 3px; bottom: 3px;
-  background: rgba(125,190,255,0.14); border: 1px solid var(--accent);
+  background: rgba(var(--sel-rgb), 0.14); border: 1px solid var(--accent);
   border-radius: 3px; display: flex; align-items: center; padding: 0 6px;
   overflow: hidden; cursor: pointer;
 }
 .region span { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-2); white-space: nowrap; }
-.region:hover { background: rgba(125,190,255,0.26); }
+.region:hover { background: rgba(var(--sel-rgb), 0.26); }
 
 /* ------------------------------------------------- the tray's vertical rhythm
    Every slider sits the same distance from the one above it. It did not before:
@@ -543,22 +543,22 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .knob svg {
   width: 48px; height: 48px; display: block;
   cursor: ns-resize; touch-action: none;
-  filter: drop-shadow(0 2px 2px rgba(0,0,0,.65));
+  filter: drop-shadow(0 2px 2px rgba(var(--black-rgb), .65));
 }
-.knob .bezel { fill: #090b0e; stroke: var(--line-3); stroke-width: 1; }
-.knob .cap { fill: #11151a; stroke: var(--line); stroke-width: 1; }
+.knob .bezel { fill: var(--knob-bezel); stroke: var(--line-3); stroke-width: 1; }
+.knob .cap { fill: var(--knob-cap); stroke: var(--line); stroke-width: 1; }
 .knob .track { fill: none; stroke: var(--line-3); stroke-width: 2.5; stroke-linecap: round; }
-.knob .arc   { fill: none; stroke: oklch(70% .18 235); stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 2px rgba(45,157,255,.5)); }
-.knob .ptr   { stroke: #eef7ff; stroke-width: 1.7; stroke-linecap: round; }
+.knob .arc   { fill: none; stroke: var(--knob-arc); stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 2px rgba(var(--knob-glow-rgb), .5)); }
+.knob .ptr   { stroke: var(--knob-ptr); stroke-width: 1.7; stroke-linecap: round; }
 .knob .k {
   font-size: var(--fs-xs); font-weight: 650; letter-spacing: .35px; text-transform: uppercase;
-  color: oklch(76% .012 250); max-width: 100%;
+  color: var(--knob-label); max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .knob .v {
-  min-width: 54px; padding: 2px 4px; border: 1px solid rgba(95,157,214,.28);
-  border-radius: 2px; background: #101c2b; text-align: center;
-  font-family: var(--mono); font-size: var(--fs-xs); color: #a9d7ff;
+  min-width: 54px; padding: 2px 4px; border: 1px solid rgba(var(--knob-v-line-rgb), .28);
+  border-radius: 2px; background: var(--knob-v-bg); text-align: center;
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--knob-v);
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   box-shadow: inset 0 1px 4px var(--shadow-hard);
 }
@@ -644,7 +644,7 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
 
 .selection {
   position: absolute; top: 0; bottom: 0; z-index: 3;
-  background: rgba(125,190,255,0.16);
+  background: rgba(var(--sel-rgb), 0.16);
   border-left: 1px solid var(--accent); border-right: 1px solid var(--accent);
   pointer-events: none;
 }
@@ -654,17 +654,17 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
    untrue about it. */
 .read-band {
   position: absolute; top: 0; bottom: 0; left: 0; width: 0; z-index: 4;
-  background: oklch(63% 0.24 26 / 0.12);
-  border-left: 1px solid oklch(63% 0.24 26 / 0.35);
-  border-right: 1px solid oklch(63% 0.24 26 / 0.35);
+  background: oklch(var(--playhead-lch) / 0.12);
+  border-left: 1px solid oklch(var(--playhead-lch) / 0.35);
+  border-right: 1px solid oklch(var(--playhead-lch) / 0.35);
   pointer-events: none; display: none;
   will-change: transform, width;
 }
 
 .playhead {
   position: absolute; top: 0; bottom: 0; left: 0; width: 1.5px; z-index: 5;
-  background: oklch(63% 0.24 26);
-  box-shadow: 0 0 6px oklch(63% 0.24 26 / 0.85);
+  background: oklch(var(--playhead-lch));
+  box-shadow: 0 0 6px oklch(var(--playhead-lch) / 0.85);
   pointer-events: none; display: none;
   /* Positioned by transform, so it never triggers layout while animating. */
   will-change: transform;
@@ -681,7 +681,7 @@ body.resizing-lane { cursor: ns-resize; user-select: none; }
   position: absolute; top: 0; left: 0; width: 0; height: 0;
   transform: translateX(-4px);
   border-left: 4px solid transparent; border-right: 4px solid transparent;
-  border-top: 6px solid rgba(255,255,255,0.75);
+  border-top: 6px solid rgba(var(--white-rgb), 0.75);
 }
 .lane-empty {
   position: absolute; inset: 0; z-index: 5;

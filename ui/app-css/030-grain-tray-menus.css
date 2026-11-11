@@ -81,8 +81,8 @@
 }
 .vis-legend span { display: flex; align-items: center; gap: 5px; }
 .vis-legend .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-.vis-legend .sw.hot { background: oklch(72% 0.19 25); }
-.vis-legend .sw.cold { background: oklch(72% 0.14 250); }
+.vis-legend .sw.hot { background: var(--hot); }
+.vis-legend .sw.cold { background: var(--cold); }
 
 body.editing .dock { flex: 0 0 300px; }
 
@@ -197,8 +197,8 @@ body.editing .dock { flex: 0 0 330px; }
 .ov-window {
   position: absolute; top: 0; bottom: 0; z-index: 2;
   border: 1px solid var(--accent);
-  background: rgba(125,190,255,0.14);
-  box-shadow: 0 0 0 9999px rgba(0,0,0,0.42);
+  background: rgba(var(--sel-rgb), 0.14);
+  box-shadow: 0 0 0 9999px rgba(var(--black-rgb), 0.42);
   pointer-events: none;
 }
 .ov-window.full { display: none; }
@@ -208,8 +208,8 @@ body.editing .dock { flex: 0 0 330px; }
    the window shading so it stays visible outside the zoomed range. */
 .ov-playhead {
   position: absolute; top: 0; bottom: 0; left: 0; width: 1.5px; z-index: 4;
-  background: oklch(63% 0.24 26);
-  box-shadow: 0 0 5px oklch(63% 0.24 26 / 0.9);
+  background: oklch(var(--playhead-lch));
+  box-shadow: 0 0 5px oklch(var(--playhead-lch) / 0.9);
   pointer-events: none; display: none; will-change: transform;
 }
 .ov-cue {
@@ -225,18 +225,18 @@ body.editing .dock { flex: 0 0 330px; }
   font: var(--fs-s) ui-monospace, monospace;
   padding: 2px 6px;
   border-radius: 3px;
-  background: rgba(125, 211, 160, 0.12);
+  background: rgba(var(--tag-sonic-rgb), 0.12);
   color: var(--accent);
-  border: 1px solid rgba(125, 211, 160, 0.25);
+  border: 1px solid rgba(var(--tag-sonic-rgb), 0.25);
 }
 
 /* A name the classifier put to the sound, as opposed to a description of it.
    Coloured apart from the sonic descriptors because they answer different
    questions: what it is, against what it is like. */
 .heard-tag {
-  background: rgba(150, 180, 255, 0.12);
-  color: #9db4ff;
-  border-color: rgba(150, 180, 255, 0.25);
+  background: rgba(var(--tag-heard-rgb), 0.12);
+  color: var(--tag-heard);
+  border-color: rgba(var(--tag-heard-rgb), 0.25);
 }
 /* Below about 15% the model is guessing. Say so by showing it, faded, rather
    than hiding it or dressing it up as certainty. */
@@ -244,7 +244,7 @@ body.editing .dock { flex: 0 0 330px; }
 .borrowed { font: var(--fs-s) ui-monospace, monospace; align-self: center; }
 
 /* A category that came from listening rather than from the filename. */
-.file-row .cat.heard { color: #9db4ff; }
+.file-row .cat.heard { color: var(--tag-heard); }
 
 /* Where the values in the tag fields came from — your edit, an earlier save,
    or the machine's suggestion. Quiet, but never absent. */
@@ -253,9 +253,9 @@ body.editing .dock { flex: 0 0 330px; }
 /* Tags of your own invention. Warm rather than green or blue, because these are
    decisions rather than measurements, and nothing the app does overwrites one. */
 .user-tag {
-  background: rgba(240, 190, 120, 0.12);
-  color: #f0be78;
-  border-color: rgba(240, 190, 120, 0.28);
+  background: rgba(var(--tag-user-rgb), 0.12);
+  color: var(--tag-user);
+  border-color: rgba(var(--tag-user-rgb), 0.28);
   display: inline-flex; align-items: center; gap: 4px;
 }
 .user-tag .x {
@@ -272,7 +272,7 @@ body.editing .dock { flex: 0 0 330px; }
   opacity: .7;
   cursor: pointer;
 }
-.user-tag.learned:hover { opacity: 1; background: rgba(240, 190, 120, 0.10); }
+.user-tag.learned:hover { opacity: 1; background: rgba(var(--tag-user-rgb), 0.10); }
 
 #addUserTag { margin: 2px 0 6px; }
 

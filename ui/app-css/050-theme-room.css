@@ -466,9 +466,9 @@
 .room-path .rp-pt.picked { fill: var(--accent); stroke: var(--text); }
 .room-path .rp-ax { stroke-width: 2; pointer-events: none; }
 .room-path .rp-tip { stroke: var(--bg); stroke-width: 1; pointer-events: all; cursor: move; }
-.room-path .rp-ax-x { stroke: #e5484d; } .room-path .rp-tip-x { fill: #e5484d; }
-.room-path .rp-ax-y { stroke: #46a758; } .room-path .rp-tip-y { fill: #46a758; }
-.room-path .rp-ax-z { stroke: #3e63dd; } .room-path .rp-tip-z { fill: #3e63dd; }
+.room-path .rp-ax-x { stroke: var(--axis-x); } .room-path .rp-tip-x { fill: var(--axis-x); }
+.room-path .rp-ax-y { stroke: var(--axis-y); } .room-path .rp-tip-y { fill: var(--axis-y); }
+.room-path .rp-ax-z { stroke: var(--axis-z); } .room-path .rp-tip-z { fill: var(--axis-z); }
 .room-path .rp-tip:hover, .room-path .rp-tip.dragging {
   stroke: var(--text); filter: drop-shadow(0 0 5px currentColor);
 }
