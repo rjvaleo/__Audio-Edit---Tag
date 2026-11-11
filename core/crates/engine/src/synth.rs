@@ -40,6 +40,10 @@
 //!   tagged with the board's signature so a write for a board not yet in
 //!   place is dropped rather than landing on the wrong node.
 //!
+//! - **The table bank's built-ins** (v8b, `wave::choice`), which a row onto
+//!   `oscN.table` steps through, are handed over as tables are: pending, with
+//!   a return slot each.
+//!
 //! [`WaveShared`] also keeps the **current** patch and tables, not just the
 //! pending ones. A device that is closed and opened again (a new buffer size)
 //! builds a new [`SynthDeck`], and it starts from what was last sent rather
@@ -243,6 +247,11 @@ pub struct WaveShared {
     /// The open device's sample rate as f32 bits, 0 with none: what a board
     /// is compiled at.
     rate: AtomicU32,
+    /// The table bank's five built-ins: pending, given back, and as last
+    /// sent.
+    pending_bank: [Mutex<Option<Arc<Wavetable>>>; 5],
+    returned_bank: [Mutex<Option<Arc<Wavetable>>>; 5],
+    current_bank: Mutex<[Option<Arc<Wavetable>>; 5]>,
 }
 
 impl Default for WaveShared {
@@ -267,6 +276,9 @@ impl WaveShared {
             pending_board: Mutex::new(None),
             returned_board: Mutex::new(None),
             rate: AtomicU32::new(0),
+            pending_bank: std::array::from_fn(|_| Mutex::new(None)),
+            returned_bank: std::array::from_fn(|_| Mutex::new(None)),
+            current_bank: Mutex::new([None, None, None, None, None]),
         }
     }
 
@@ -372,6 +384,25 @@ impl WaveShared {
         }
     }
 
+    /// Hand the table bank built-in `i` (in `wave::BUILTIN_NAMES` order).
+    pub fn set_bank_table(&self, i: usize, table: Arc<Wavetable>) {
+        if i >= 5 {
+            return;
+        }
+        self.collect();
+        if let Ok(mut g) = self.current_bank.lock() {
+            g[i] = Some(Arc::clone(&table));
+        }
+        if let Ok(mut g) = self.pending_bank[i].lock() {
+            *g = Some(table);
+        }
+    }
+
+    /// The bank's built-ins as last given.
+    pub fn current_bank(&self) -> [Option<Arc<Wavetable>>; 5] {
+        self.current_bank.lock().map(|g| g.clone()).unwrap_or_default()
+    }
+
     /// The table each oscillator was last given.
     pub fn current_tables(&self) -> [Option<Arc<Wavetable>>; 3] {
         self.current.lock().map(|g| g.1.clone()).unwrap_or_default()
@@ -386,6 +417,10 @@ impl WaveShared {
         }
         let old = self.returned_board.lock().ok().and_then(|mut g| g.take());
         drop(old);
+        for slot in &self.returned_bank {
+            let old = slot.lock().ok().and_then(|mut g| g.take());
+            drop(old);
+        }
     }
 
     /// The latest telemetry the callback published, and the recent output.
@@ -424,6 +459,13 @@ impl SynthDeck {
                 }
             }
         }
+        if let Ok(g) = shared.current_bank.lock() {
+            for (i, t) in g.iter().enumerate() {
+                if let Some(t) = t {
+                    synth.set_bank_table(i, Arc::clone(t));
+                }
+            }
+        }
         // The board is built here, off the audio thread, at this device's
         // rate; one pending for another device is no longer wanted.
         if let Ok(g) = shared.board.lock() {
@@ -440,7 +482,7 @@ impl SynthDeck {
         if let Ok(mut g) = shared.pending_patch.lock() {
             g.take();
         }
-        for p in &shared.pending_tables {
+        for p in shared.pending_tables.iter().chain(&shared.pending_bank) {
             if let Ok(mut g) = p.lock() {
                 g.take();
             }
@@ -480,6 +522,17 @@ impl SynthDeck {
             if let Ok(mut g) = sh.pending_tables[osc].try_lock() {
                 if let Some(t) = g.take() {
                     *back = self.synth.set_table(osc, t);
+                }
+            }
+        }
+        for i in 0..5 {
+            let Ok(mut back) = sh.returned_bank[i].try_lock() else { continue };
+            if back.is_some() {
+                continue;
+            }
+            if let Ok(mut g) = sh.pending_bank[i].try_lock() {
+                if let Some(t) = g.take() {
+                    *back = self.synth.set_bank_table(i, t);
                 }
             }
         }
@@ -654,6 +707,20 @@ mod tests {
         assert!(sh.dirty.iter().all(|d| d.load(Ordering::Relaxed) == 0));
         sh.set_live(id, 0.3);
         assert_ne!(sh.dirty[id.index() / 64].load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn a_bank_table_reaches_the_synth_and_the_one_it_replaces_comes_back() {
+        let t = || Arc::new(Wavetable::from_frames(&[(0..2048).map(|i| (i as f32 / 2048.0 * std::f32::consts::TAU).sin()).collect()]));
+        let sh = Arc::new(WaveShared::new());
+        sh.set_bank_table(2, t());
+        let mut deck = SynthDeck::new(48_000.0, 256, 2, Arc::clone(&sh));
+        assert!(deck.synth.bank_table(2).is_some(), "a new deck starts with what was sent");
+        sh.set_bank_table(2, t());
+        deck.render(64, 2);
+        assert!(sh.returned_bank[2].lock().unwrap().is_some(), "the one replaced is handed back");
+        sh.collect();
+        assert!(sh.returned_bank[2].lock().unwrap().is_none());
     }
 
     fn two_gains(db: f32) -> Board {

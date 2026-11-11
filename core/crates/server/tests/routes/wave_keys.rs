@@ -451,3 +451,31 @@ fn a_mod_row_switched_off_is_stored_listed_and_counted() {
     let r = server::routes::route(&app, &post("/api/wave/mods", &rows(65)));
     assert_eq!(status(&r), 400);
 }
+
+#[test]
+fn choice_keys_are_mod_targets_and_a_table_row_builds_the_bank() {
+    let s = Scratch::new("wave-mod-choice");
+    let app = s.app();
+    let body = r#"{"mods":[{"src":"lfo0","dst":"osc0.warp0.mode","amt":0.5},{"src":"vel","dst":"filt1.type","amt":-0.3},
+        {"src":"mw","dst":"filt.route","amt":1},{"src":"lfo1","dst":"lfo2.shape","amt":0.25},{"src":"macro0","dst":"osc2.fx.mode","amt":0.4}]}"#;
+    let m = wave_ok(&app, post("/api/wave/mods", body));
+    assert_eq!(arr(m.get("mods").unwrap()).len(), 5);
+    assert_eq!(text(&arr(m.get("mods").unwrap())[2], &["dst"]), "filt.route");
+    // Not targets: what decides voices or what an LFO is.
+    for dst in ["voice.mode", "osc0.route", "lfo0.mode", "osc3.table", "filt2.type"] {
+        let r = server::routes::route(&app, &post("/api/wave/mods", &format!(r#"{{"mods":[{{"src":"lfo0","dst":"{dst}","amt":0.5}}]}}"#)));
+        assert_eq!(status(&r), 400, "{dst} is not a target");
+    }
+    assert!(app.wave.shared.current_bank().iter().all(Option::is_none), "no table row, no bank");
+    // A row onto a table builds the five built-ins for the engine.
+    wave_ok(&app, post("/api/wave/mods", r#"{"mods":[{"src":"lfo0","dst":"osc1.table","amt":0.5}]}"#));
+    let mut bank = app.wave.shared.current_bank();
+    for _ in 0..200 {
+        if bank.iter().all(Option::is_some) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        bank = app.wave.shared.current_bank();
+    }
+    assert!(bank.iter().all(Option::is_some), "the bank's built-ins were handed to the engine");
+}
