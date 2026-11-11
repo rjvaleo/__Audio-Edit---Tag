@@ -10,14 +10,18 @@
 //! **Nothing allocates, locks or does an FFT inside [`Synth::render`],
 //! [`Synth::note_on`], [`Synth::note_off`], [`Synth::set_param`],
 //! [`Synth::set_table`], [`Synth::adopt`], [`Synth::bend`],
-//! [`Synth::mod_wheel`], [`Synth::aftertouch`] or [`Synth::telemetry`].**
+//! [`Synth::mod_wheel`], [`Synth::aftertouch`], [`Synth::telemetry`],
+//! [`Synth::set_board`], [`Synth::take_retired`], [`Synth::set_board_param`]
+//! or [`Synth::set_board_on`].**
 //! Everything they touch is allocated by [`Synth::new`]. The expensive things
 //! happen on the caller's thread:
 //! - [`Wavetable::from_frames`] resamples, normalises and builds the mips
 //!   (FFTs, allocation);
 //! - [`PatchState::new`] compiles a [`Patch`] (string parsing);
 //! - a table replaced by [`Synth::set_table`] comes back to the caller to be
-//!   dropped there.
+//!   dropped there;
+//! - [`BoardPlan::compile`] builds a board's kernels and buffers, and a board
+//!   replaced by [`Synth::set_board`] comes back the same way.
 //!
 //! `tests/no_alloc.rs` checks the rule with a counting allocator.
 //!
@@ -39,6 +43,11 @@
 //! synth.note_on(note, vel)  note_off(note)  bend(-1..1)  mod_wheel(0..1)  aftertouch(0..1)
 //! synth.render(&mut left, &mut right)
 //! synth.telemetry(&mut Telemetry)
+//!
+//! Board { name, nodes, cables }   Board::migrate(&values)   board.complete()
+//! BoardPlan::compile(&Board, sr) -> Result<BoardPlan, BoardError>
+//! synth.set_board(Box<BoardPlan>) -> Option<Box<BoardPlan>>    take_retired()
+//! synth.set_board_param(node, param, value)   set_board_on(node, on)
 //! ```
 //!
 //! # Signal path
@@ -47,9 +56,12 @@
 //! effect, DC blocker) → each oscillator's time-domain effect → its route →
 //! the two filters (serial, parallel or split), with the sub and noise into
 //! Filter 1 → the amp envelope × velocity. Voices are summed and scaled by
-//! `master`, then run through the master chain (Drive, Chorus, Delay, Reverb,
-//! EQ: `master_fx.rs`). The modules' own docs explain each decision.
+//! `master`, then run through the FX view's board (`board.rs`), which may
+//! also take each source before its filter; a synth never given a board runs
+//! the old master chain instead (Drive, Chorus, Delay, Reverb, EQ:
+//! `master_fx.rs`). The modules' own docs explain each decision.
 
+pub mod board;
 pub mod env;
 pub mod filter;
 mod fx;
@@ -61,6 +73,7 @@ pub mod table;
 mod voice;
 pub mod warp;
 
+pub use board::{Board, BoardError, BoardPlan, Cable, Node};
 pub use env::Stage;
 pub use patch::{
     lfo_hz, param_id, Curve, FilterRoute, FilterType, FxMode, LfoMode, LfoWave, Mod, ParamId, Patch, PatchState, Route, Value, VoiceMode,

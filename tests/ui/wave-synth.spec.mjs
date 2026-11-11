@@ -1,8 +1,9 @@
 // The Wave page: the wavetable synth's front end. See `docs/WAVE-SYNTH.md`.
 //
-// The page talks only through `/api/wave/*`, and the engine behind those routes
-// opens the audio device, which the scratch server must never do — so every
-// one of them is answered here, and what the page sends is recorded.
+// The page talks only through `/api/wave/*`. The patch, the notes and the
+// telemetry are answered here, and what the page sends is recorded; the
+// board's routes (v8) go through to the scratch server, whose output is muted.
+// The board itself has its own spec, `wave-board.spec.mjs`.
 //
 // What this pins:
 //   - the rail opens the page, and all four views draw without a console error;
@@ -13,12 +14,13 @@
 //   - nothing on the page is clipped or overflows, at two window sizes;
 //   - leaving the page stops the telemetry;
 //   - with no engine, the page draws its own default patch and says so;
-//   - v7: the MIX row replaces the level faders and the Sub / Noise row, and its
-//     power buttons are the oscillators' own;
+//   - v7: the mixer replaces the level faders and the Sub / Noise row, and its
+//     power buttons are the oscillators' own; v8 puts each oscillator's route
+//     on its row;
 //   - v7: each module's badges name what moves it, in the source's colour, with
 //     no routes at all as well as with some;
-//   - v7: the Shape row sets an LFO's shape and Hz / Sync, with the tempo beside
-//     it, and dragging a standard shape makes it Drawn;
+//   - v8: an LFO tile's shape menu and Hz / Sync, with the tempo in Voice, and
+//     dragging a standard shape makes it Drawn;
 //   - v7: dragging across the keys glides, and Shift-drag holds what it crosses;
 //   - v7: every control has the page's own tooltip, and no `title` is left.
 
@@ -64,6 +66,7 @@ async function mockEngine(page, patch = {}) {
     let body = null;
     try { body = req.postData() ? JSON.parse(req.postData()) : null; } catch { body = null; }
     sent.push({ path, method: req.method(), body, at: Date.now() });
+    if (path.startsWith('/api/wave/board') || path === '/api/wave/fx') return route.continue();
     if (path === '/api/wave/patch' && req.method() === 'GET') {
       return route.fulfill({ json: { ...PATCH, ...patch } });
     }
@@ -237,6 +240,8 @@ const clipped = `(() => {
   for (const el of document.querySelectorAll('#waveView .wv-app *')) {
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height || el.closest('[hidden]')) continue;
+    // What scrolls (the pins, the rows, the library, the board) clips on purpose.
+    if (el.parentElement.closest('.wv-scroll')) continue;
     const name = el.id || String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className) || el.tagName;
     if (r.left < host.left - 1 || r.right > host.right + 1 || r.top < host.top - 1 || r.bottom > host.bottom + 1) out.push('off the centre: ' + name);
     const panel = el.parentElement.closest('.wv-panel, .wv-well, .wv-seg, .wv-btn');
@@ -244,8 +249,9 @@ const clipped = `(() => {
       const p = panel.getBoundingClientRect();
       if (r.left < p.left - 1.5 || r.right > p.right + 1.5 || r.top < p.top - 1.5 || r.bottom > p.bottom + 1.5) out.push('out of its box: ' + name);
     }
-    if (el.id !== 'wvMxRows' && el.clientWidth && el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).display !== 'inline') out.push('overflowing: ' + name);
-    if (el.id !== 'wvMxRows' && el.clientHeight && el.scrollHeight > el.clientHeight + 1 && getComputedStyle(el).display !== 'inline') out.push('overflowing down: ' + name);
+    const scrolls = el.classList.contains('wv-scroll');
+    if (!scrolls && el.clientWidth && el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).display !== 'inline') out.push('overflowing: ' + name);
+    if (!scrolls && el.clientHeight && el.scrollHeight > el.clientHeight + 1 && getComputedStyle(el).display !== 'inline') out.push('overflowing down: ' + name);
   }
   return out;
 })()`;
@@ -319,12 +325,13 @@ test('with no engine the page draws its own patch and says it is not connected',
 
 const params = (sent, key) => posted(sent, '/api/wave/param').filter((s) => s.body?.key === key).map((s) => s.body);
 
-test('v7: the MIX row has five strips with power and level; the faders and the old Sub / Noise row are gone', async ({ page }) => {
+test('v7: the mixer has five rows with power and level; the faders and the old Sub / Noise row are gone', async ({ page }) => {
   const { sent, errors } = await openWave(page);
   // Gone: the level faders beside each oscillator, and the Sub / Noise row.
   for (const sel of ['#wvLv0', '#wvLv1', '#wvLv2', '#wvSubLv', '#wvNoiseLv', '.wv-subrow', '[data-sub]', '[data-noise]']) {
     await expect(page.locator(`#waveView ${sel}`), sel).toHaveCount(0);
   }
+  // v8: a row each, the oscillators' route at its end.
   const strips = page.locator('#waveView .wv-mix .wv-strip');
   await expect(strips).toHaveCount(5);
   expect(await strips.locator('.wv-nm').allTextContents()).toEqual(['OSC A', 'OSC B', 'OSC C', 'SUB', 'NOISE']);
@@ -338,7 +345,7 @@ test('v7: the MIX row has five strips with power and level; the faders and the o
   // A click on a bar is its level: the middle of the Sub's bar, before its
   // 40 px readout, is 0.5. It goes live, then once more to keep.
   const b = await page.locator('#wvMixL3').boundingBox();
-  await page.mouse.click(b.x + b.width * ((6 + 0.5 * (214 - 40 - 12)) / 214), b.y + b.height / 2);
+  await page.mouse.click(b.x + b.width * ((6 + 0.5 * (212 - 40 - 12)) / 212), b.y + b.height / 2);
   await page.waitForTimeout(150);
   const sub = params(sent, 'sub.level');
   expect(sub.some((x) => x.live === true)).toBe(true);
@@ -363,6 +370,12 @@ test('v7: the MIX row has five strips with power and level; the faders and the o
   expect(params(sent, 'noise.color').at(-1).value).toBe(2);
   expect(params(sent, 'sub.shape').at(-1).value).toBe(2);
   expect(params(sent, 'sub.oct').at(-1).value).toBe(2);
+  // v8: where an oscillator goes is on its row.
+  await expect(page.locator('[data-route="1"] span')).toHaveText(['1', '2', '1+2', 'Out']);
+  await page.locator('[data-route="1"] span[data-k="direct"]').click();
+  await page.waitForTimeout(100);
+  expect(params(sent, 'osc1.route').at(-1)).toEqual({ key: 'osc1.route', value: 'direct' });
+  await expect(page.locator('[data-route="1"] span[data-k="direct"]')).toHaveClass(/\bon\b/);
   expect(errors).toEqual([]);
 });
 
@@ -378,32 +391,44 @@ test('v7: badges name what moves each module, in the source\'s colour, and lead 
   await expect(page.locator('#wvMoved1 .wv-badge')).toHaveText('LFO 3→ Pan');
   await expect(page.locator('#wvMoved2 .wv-badge')).toHaveCount(0);
   await expect(page.locator('#wvMovedF .wv-badge')).toHaveText('ENV 2→ F1 Cutoff');
-  // Each in its source's colour, the same as its tab's.
+  // Each in its source's colour, the same as its tile's.
   expect(await page.locator('#wvMoved0 .wv-badge').evaluate((b) => getComputedStyle(b).color)).toBe('rgb(92, 200, 230)');
   expect(await page.locator('#wvMovedF .wv-badge').evaluate((b) => getComputedStyle(b).color)).toBe('rgb(240, 166, 64)');
-  expect(await page.locator('#wvSrcTabs [data-src="3"]').evaluate((t) => t.style.getPropertyValue('--c'))).toBe('#5cc8e6');
+  expect(await page.locator('#wvViewPlay .wv-tile[data-tile="lfo0"]').evaluate((t) => t.style.getPropertyValue('--c'))).toBe('#5cc8e6');
 
-  // Hover lights the source's tab and rings the control; leaving puts both back.
+  // Hover lights the source's tile and rings the control; leaving puts both back.
   await page.locator('#wvMovedF .wv-badge').hover();
-  await expect(page.locator('#wvSrcTabs [data-src="0"]')).toHaveClass(/wv-hl/);
-  await expect(page.locator('#waveView canvas[data-tgt="filt0.cut"]')).toHaveClass(/wv-hl/);
+  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="env1"]')).toHaveClass(/wv-hl/);
+  await expect(page.locator('#wvLens0')).toHaveClass(/wv-hl/);
+  await expect(page.locator('#wvCu0')).toHaveClass(/wv-hl/);
   await page.mouse.move(5, 5);
   await expect(page.locator('#waveView .wv-hl')).toHaveCount(0);
-  // A click opens that source in Modulate.
-  await page.locator('#wvMovedF .wv-badge').click();
-  expect(await page.evaluate(() => WV.sel)).toBe(0);
-  await expect(page.locator('#wvSrcTabs [data-src="0"]')).toHaveClass(/\bon\b/);
+  // v8: a click on LFO 3's badge shows LFO 3 in Play's LFO slot.
+  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="lfo2"]')).toBeHidden();
+  await page.locator('#wvMoved1 .wv-badge').click();
+  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="lfo2"]')).toBeVisible();
+  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="lfo1"]')).toBeHidden();
+  expect(await page.evaluate(() => WV.slot.lfo)).toBe('lfo2');
 
-  // A new route is a new badge: LFO 2 dragged onto osc C's table.
-  const tab = await page.locator('#wvSrcTabs [data-src="4"]').boundingBox();
+  // A new route is a new badge: LFO 1's pill dragged onto osc C's table.
+  const tab = await page.locator('#wvViewPlay .wv-tile[data-tile="lfo0"] .wv-grab').boundingBox();
   const to = await page.locator('#wvW3d2').boundingBox();
   await page.mouse.move(tab.x + tab.width / 2, tab.y + tab.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
   await page.mouse.up();
   await page.waitForTimeout(100);
-  expect(posted(sent, '/api/wave/mods').at(-1).body.mods.some((m) => m.src === 'lfo1' && m.dst === 'osc2.pos')).toBe(true);
-  await expect(page.locator('#wvMoved2 .wv-badge')).toHaveText('LFO 2→ Position');
+  expect(posted(sent, '/api/wave/mods').at(-1).body.mods.some((m) => m.src === 'lfo0' && m.dst === 'osc2.pos')).toBe(true);
+  await expect(page.locator('#wvMoved2 .wv-badge')).toHaveText('LFO 1→ Position');
+  // And a strip tile onto a reading: the mod wheel onto LFO 1's rate.
+  const mw = await page.locator('#wvSrcStrip [data-src="mw"]').boundingBox();
+  const rate = await page.locator('#wvplrlfo0').boundingBox();
+  await page.mouse.move(mw.x + mw.width / 2, mw.y + mw.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rate.x + rate.width / 2, rate.y + rate.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  expect(posted(sent, '/api/wave/mods').at(-1).body.mods.some((m) => m.src === 'mw' && m.dst === 'lfo0.rate')).toBe(true);
 
   // And none: with no routes there are no badges, and nothing breaks.
   await page.evaluate(() => { WV.mods = []; wvRenderTargets(); });
@@ -414,33 +439,29 @@ test('v7: badges name what moves each module, in the source\'s colour, and lead 
 test('v7: with no routes at all, the page opens with no badges and no error', async ({ page }) => {
   const { errors } = await openWave(page, { mods: [] });
   await expect(page.locator('#waveView .wv-moved .wv-badge')).toHaveCount(0);
-  await expect(page.locator('#wvSrcTargets')).toContainText('No targets yet');
+  await expect(page.locator('#wvptglfo1')).toContainText('drag to map');
   await page.waitForTimeout(200);
   expect(errors).toEqual([]);
 });
 
-test('v7: the Shape row sets an LFO\'s shape, Hz or Sync with its tempo, and an envelope dims it', async ({ page }) => {
+test('v8: an LFO tile sets its shape, Hz or Sync, and the tempo it follows is in Voice', async ({ page }) => {
   const { sent } = await openWave(page);
-  const shapes = page.locator('#wvShapes [data-shape]');
-  expect(await shapes.evaluateAll((g) => g.map((x) => x.dataset.shape)))
-    .toEqual(['sine', 'tri', 'up', 'down', 'square', 'steps', 'smooth', 'drawn']);
-  // LFO 1 is chosen, and a sine.
-  await expect(page.locator('#wvShapes .wv-g.on')).toHaveAttribute('data-shape', 'sine');
-  await expect(page.locator('#wvSrcRateRo')).toHaveText('0.49 Hz');
-  await expect(page.locator('#wvTempoRo')).toBeHidden();
-
-  await page.locator('#wvShapes [data-shape="square"]').click();
+  await expect(page.locator('#wvViewPlay [data-lshape="lfo0"]')).toHaveAttribute('data-shape', 'sine');
+  await expect(page.locator('#wvplrlfo0 b')).toHaveText('0.49Hz');
+  await page.locator('#wvViewPlay [data-lshape="lfo0"]').click();
+  const shapes = page.locator('#wvMenu .wv-wt');
+  expect(await shapes.evaluateAll((g) => g.map((x) => x.dataset.shape))).toEqual(['sine', 'tri', 'up', 'down', 'square', 'steps', 'smooth', 'drawn']);
+  await page.locator('#wvMenu .wv-wt[data-shape="square"]').click();
   await page.waitForTimeout(100);
   expect(params(sent, 'lfo0.shape').at(-1)).toEqual({ key: 'lfo0.shape', value: 'square' });
-  await expect(page.locator('#wvShapes .wv-g.on')).toHaveAttribute('data-shape', 'square');
+  await expect(page.locator('#wvViewPlay [data-lshape="lfo0"]')).toHaveAttribute('data-shape', 'square');
 
-  // Sync: the rate is a note length, and the tempo shows beside it.
-  await page.locator('#wvRateMode [data-k="1"]').click();
+  // Sync: the rate is a note length, at the tempo in Voice.
+  await page.locator('#wvViewPlay [data-lsync="lfo0"] [data-k="1"]').click();
   await page.waitForTimeout(100);
   expect(params(sent, 'lfo0.sync').at(-1)).toEqual({ key: 'lfo0.sync', value: 1 });
-  await expect(page.locator('#wvTempoRo')).toBeVisible();
+  await expect(page.locator('#wvplrlfo0 b')).toHaveText('1 bar');
   await expect(page.locator('#wvTempoRo')).toHaveText('120 BPM');
-  await expect(page.locator('#wvSrcRateRo')).toHaveText('1 bar');
   await dragBy(page, '#wvTempoRo', 0, -40);
   await page.waitForTimeout(150);
   const tempo = params(sent, 'tempo');
@@ -449,16 +470,15 @@ test('v7: the Shape row sets an LFO\'s shape, Hz or Sync with its tempo, and an 
   expect(Number.isInteger(tempo.at(-1).value)).toBe(true);
   expect(tempo.at(-1).value).toBeGreaterThan(120);
   expect(tempo.at(-1).value).toBeLessThanOrEqual(300);
-
-  // An envelope has no shape to pick.
-  await page.locator('#wvSrcTabs [data-src="0"]').click();
-  await expect(page.locator('#wvShapes')).toHaveClass(/\benv\b/);
-  await expect(page.locator('#wvShpLab')).toHaveText('Envelope · drag its points');
+  // Free, Trig, Env.
+  await page.locator('#wvViewPlay [data-lmode="lfo0"] [data-k="trig"]').click();
+  await page.waitForTimeout(100);
+  expect(params(sent, 'lfo0.mode').at(-1)).toEqual({ key: 'lfo0.mode', value: 'trig' });
 });
 
-test('v7: dragging a standard shape in the editor makes it Drawn, points first', async ({ page }) => {
+test('v7: dragging a standard shape on an LFO tile makes it Drawn, points first', async ({ page }) => {
   const { sent } = await openWave(page);
-  await dragBy(page, '#wvSrcEd', 10, -20);
+  await dragBy(page, '#wvplvlfo0', 10, -20);
   await page.waitForTimeout(150);
   const all = posted(sent, '/api/wave/param').map((s) => s.body);
   const pts = all.findIndex((b) => b.key === 'lfo0.points' && !b.live);
@@ -473,7 +493,7 @@ test('v7: dragging a standard shape in the editor makes it Drawn, points first',
   // Then the drag moves one of them, live and then kept.
   expect(all.slice(shape).some((b) => b.key === 'lfo0.points' && b.live === true)).toBe(true);
   expect(all.at(-1).key).toBe('lfo0.points');
-  await expect(page.locator('#wvShapes .wv-g.on')).toHaveAttribute('data-shape', 'drawn');
+  await expect(page.locator('#wvViewPlay [data-lshape="lfo0"]')).toHaveAttribute('data-shape', 'drawn');
 });
 
 test('v7: dragging across the keys glides; Shift-drag holds every key it crosses', async ({ page }) => {

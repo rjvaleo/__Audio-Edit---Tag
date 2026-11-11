@@ -5,7 +5,8 @@
 // fit, the frame loop, and coming and going. `setMode('synth')` calls
 // `wvEnter` and leaving calls `wvLeave`; nothing here runs while the page is
 // not on screen, and the telemetry stops with it. v7 adds the page's own
-// tooltips and the keys' glide.
+// tooltips and the keys' glide. v8 adds the Matrix's pickers and the board's
+// right-click menus, and Delete on the board.
 
 const WV_W = 1460;
 const WV_H = 862;
@@ -53,6 +54,8 @@ function wvBuild() {
    </div>
    <div class="wv-menu" id="wvMenu" hidden></div>
    <div class="wv-menu wv-shelf" id="wvShelf" hidden></div>
+   <div class="wv-pmenu" id="wvPmenu" hidden></div>
+   <div class="wv-cmenu" id="wvCmenu" hidden></div>
   </div>`);
   host.appendChild(app);
   wvBuildPlay($('wvViewPlay'));
@@ -63,6 +66,7 @@ function wvBuild() {
   WV.built = true;
   wvWirePlay();
   wvWireCreate();
+  wvWireMatrix();
   wvWireFx();
   wvWirePage();
   wvDrawLibWave();
@@ -116,8 +120,11 @@ function wvShowView(v) {
   for (const [k, id] of Object.entries(ids)) document.getElementById(id).classList.toggle('on', k === v);
   if (v === 'matrix') wvRenderMatrix();
   if (v === 'create') wvSyncCreate();
-  // Badges are fitted to their headers, which only have a width on screen.
+  // Badges and the tiles' targets are fitted to their headers, and the main
+  // path to its strip, which only have a width on screen.
   if (v === 'play') wvRenderBadges();
+  if (v === 'play' || v === 'matrix') wvRenderTileTargets();
+  if (v === 'fx') { wvRenderChain(); wvRenderInspector(); }
   wvCloseMenus();
 }
 
@@ -146,6 +153,7 @@ function wvSyncAll() {
   wvSyncCreate();
   wvSyncFx();
   wvRenderMatrix();
+  wvRenderBadges();
   wvTxt('wvPresetName', WV.name);
   wvTxt('wvPresetTags', WV.tags);
   document.querySelectorAll('#wvAB span').forEach((x) => x.classList.toggle('on', x.dataset.k === WV.ab));
@@ -205,6 +213,8 @@ function wvKeyDown(e) {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && !e.shiftKey && e.key.toLowerCase() === 'z' && WV.view === 'create') { e.preventDefault(); wvUndo(); return true; }
   if (mod || e.altKey) return false;
+  // v8: Delete removes what is selected on the board.
+  if (WV.view === 'fx' && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); wvBoardDelete(); return true; }
   const k = e.key.toLowerCase();
   if (k === 'z' || k === 'x') { e.preventDefault(); if (!e.repeat) wvShiftOct(k === 'z' ? -1 : 1); return true; }
   const i = WV_QWERTY.indexOf(k);
@@ -539,6 +549,15 @@ function wvTipParts(t) {
   if (t === 'voice.glide') return ['Glide', g(t) > 0.005 ? wvFmtMs(g(t) ** 2 * 2) : 'Off', WV_TIP_HOW.glide];
   m = /^(?:macro)(\d)$/.exec(t);
   if (m) return [`Macro · ${WV.macroNames[+m[1]]}`, wvPct(g(t)), null];
+  // v8: the envelopes' and LFOs' readings, and the board's controls.
+  m = /^(amp|env\d)\.([adsr])$/.exec(t);
+  if (m) return [wvDstName(t), m[2] === 's' ? wvPct(g(t)) : wvFmtMs(g(t) ** 2 * (m[2] === 'r' ? 6 : 4)), 'Drag up and down, Shift for fine'];
+  m = /^lfo(\d)\.(rate|smooth|rise)$/.exec(t);
+  if (m) return [wvDstName(t), m[2] === 'rate' ? wvLfoRateTxt(+m[1]) : m[2] === 'smooth' ? wvPct(g(t) || 0) : wvFmtMs((g(t) || 0) ** 2 * 4), 'Drag up and down, Shift for fine'];
+  if (t.startsWith('board:')) {
+    const [, id, key] = t.split(':'), n = wvNode(id), p = n && wvParamOf(n, key);
+    return [wvDstName(t), p ? wvFmtP(p, wvPVal(n, p)) : '', 'Drag up and down, Shift for fine, double-click for the default'];
+  }
   m = /^(?:fx)(\d)\.k(\d)$/.exec(t);
   if (m) {
     const f = WV_FX_CHAIN[+m[1]], v = g(t);
@@ -554,10 +573,10 @@ function wvFillTip(el) {
   const tip = WV_TIP.el;
   if (el.dataset.bs != null && !el.dataset.tip) {
     const m = WV.mods.find((x) => x.src === el.dataset.bs && x.dst === el.dataset.bt);
-    const tab = wvSrcIndex(el.dataset.bs) >= 0;
+    const s = wvSrcOf(el.dataset.bs), slot = s && (s.kind === 'env' || s.kind === 'lfo');
     tip.innerHTML = `<b>${wvEsc(wvSrcName(el.dataset.bs))} → ${wvEsc(wvDstName(el.dataset.bt))}</b>`
       + (m ? `<div class="v">moves it by ${m.amt > 0 ? '+' : ''}${Math.round(m.amt * 100)} %</div>` : '')
-      + `<div class="h">${tab ? `Click to open ${wvEsc(wvSrcName(el.dataset.bs))} in Modulate` : 'Change it in the Matrix'}</div>`;
+      + `<div class="h">${slot ? `Click to show ${wvEsc(wvSrcName(el.dataset.bs))} on Play and light what it moves` : 'Change it in the Matrix'}</div>`;
     return;
   }
   const t = el.dataset.tgt;
@@ -606,7 +625,7 @@ function wvInitTips() {
   new MutationObserver(() => wvTipify(host)).observe(host, { subtree: true, childList: true });
   host.addEventListener('pointerover', (e) => {
     // Not while a button is down: that is a drag, and the tip is in the way.
-    const el = e.buttons ? null : e.target.closest('[data-tip], canvas[data-tgt], .wv-badge[data-bs]');
+    const el = e.buttons ? null : e.target.closest('[data-tip], [data-tgt], .wv-badge[data-bs]');
     if (el === WV_TIP.on) return;
     wvHideTip();
     WV_TIP.on = el;

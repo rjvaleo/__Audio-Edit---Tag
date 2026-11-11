@@ -529,6 +529,9 @@ pub struct Patch {
     pub macro_names: [String; 8],
     pub name: String,
     pub tags: Vec<String>,
+    /// The FX view's board (v8). `None` is an old patch: its board is the one
+    /// [`Board::migrate`](crate::board::Board::migrate) makes from its `fx*` keys.
+    pub board: Option<crate::board::Board>,
 }
 
 impl Default for Patch {
@@ -618,6 +621,7 @@ impl Default for Patch {
                 .map(String::from),
             name: "Init".into(),
             tags: Vec::new(),
+            board: None,
         }
     }
 }
@@ -891,6 +895,12 @@ pub struct PatchState {
     pub voice_mode: VoiceMode,
     pub mods: [ModRow; MAX_MODS],
     pub mod_count: usize,
+    /// The rows onto board controls (`board:<node>:<key>`), compiled against
+    /// the patch's board, whose [`Board::sig`](crate::board::Board::sig) is
+    /// `board_sig`: a plan from another board ignores them.
+    pub board_mods: [crate::board::BoardModRow; MAX_MODS],
+    pub board_mod_count: usize,
+    pub board_sig: u64,
 }
 
 impl PatchState {
@@ -920,6 +930,7 @@ impl PatchState {
             mods[mod_count] = ModRow { src, dst, amt: m.amt.clamp(-1.0, 1.0), curve, via };
             mod_count += 1;
         }
+        let (board_mods, board_mod_count, board_sig) = crate::board::patch_mods(patch);
         let mut values = patch.values;
         for (i, v) in values.iter_mut().enumerate() {
             *v = clamp_value(i, *v).unwrap_or(KEYS[i].min);
@@ -938,11 +949,18 @@ impl PatchState {
             voice_mode: patch.voice_mode,
             mods,
             mod_count,
+            board_mods,
+            board_mod_count,
+            board_sig,
         }
     }
 
     pub fn mods(&self) -> &[ModRow] {
         &self.mods[..self.mod_count]
+    }
+
+    pub fn board_mods(&self) -> &[crate::board::BoardModRow] {
+        &self.board_mods[..self.board_mod_count]
     }
 }
 

@@ -234,31 +234,33 @@ function wvDrawHBar(g, v) {
   }
 }
 
-/// The pitch ladder: a rung per semitone, octaves long and numbered, the
-/// fine offset sliding the whole ladder.
-function wvDrawLadder(g, semi, cents, m) {
-  const { c, w, h } = g, cl = wvCl(), step = 7, cy = h / 2 - (cents / 100) * step;
+/// The pitch ruler: a tick per semitone, octaves long and numbered, sliding
+/// under a fixed centre line as the pitch and the fine offset move.
+function wvDrawRuler(g, semi, cents, m) {
+  const { c, w, h } = g, cl = wvCl(), step = 6, off = semi + cents / 100, X = (v) => w / 2 + (v - off) * step;
   c.clearRect(0, 0, w, h);
-  for (let k = -12; k <= 12; k++) {
-    const v = semi + k, y = cy - k * step;
-    if (y < 4 || y > h - 4) continue;
-    const oct = v % 12 === 0, lw = oct ? w - 14 : [2, 4, 7, 9, 11].includes(((v % 12) + 12) % 12) ? 10 : 16;
-    c.fillStyle = oct ? cl.t2 : 'rgba(255,255,255,.18)';
-    c.fillRect(w / 2 - lw / 2, y - 0.5, lw, 1);
+  for (let k = -14; k <= 14; k++) {
+    const v = semi + k, x = X(v);
+    if (x < 4 || x > w - 4) continue;
+    const pc = ((v % 12) + 12) % 12, oct = pc === 0, blk = [1, 3, 6, 8, 10].includes(pc), hh = oct ? h - 14 : blk ? 6 : 10;
+    c.fillStyle = oct ? cl.t2 : blk ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.26)';
+    c.fillRect(x - 0.5, h - 4 - hh, 1, hh);
     if (oct) {
       c.font = `9px ${cl.mono}`;
       c.fillStyle = cl.t3;
-      c.fillText((v > 0 ? '+' : '') + v / 12, 2, y - 2);
+      c.fillText((v > 0 ? '+' : '') + v / 12, x + 3, 10);
     }
   }
   if (m && m.rng) {
-    c.fillStyle = `color-mix(in srgb,${m.col || cl.mod} 30%,transparent)`;
-    c.fillRect(w - 5, h / 2 - m.rng * 48 * step, 2, m.rng * 96 * step);
+    c.fillStyle = m.col || cl.mod;
+    c.globalAlpha = 0.6;
+    c.fillRect(w / 2 - m.rng * 48 * step, h - 3, m.rng * 96 * step, 2);
+    c.globalAlpha = 1;
   }
   c.fillStyle = cl.acc;
   c.shadowBlur = 8;
   c.shadowColor = cl.acc;
-  c.fillRect(6, h / 2 - 1, w - 12, 2);
+  c.fillRect(w / 2 - 1, 3, 2, h - 6);
   c.shadowBlur = 0;
 }
 
@@ -337,8 +339,8 @@ function wvEnvDot(P, E, v) {
   return [(P.d[0] + P.s[0]) / 2, P.s[1]];
 }
 
-function wvDrawEnv(g, E, voices) {
-  const { c, w, h } = g, cl = wvCl(), P = wvEnvPts(g, E);
+function wvDrawEnv(g, E, voices, C) {
+  const { c, w, h } = g, cl = C || wvCl(), P = wvEnvPts(g, E);
   c.clearRect(0, 0, w, h);
   const p = new Path2D();
   p.moveTo(...P.o);
@@ -355,8 +357,8 @@ function wvDrawEnv(g, E, voices) {
 
 /// The LFO editor: its shape, the points when it is Drawn, and the engine's
 /// phase on it.
-function wvDrawLfo(g, L) {
-  const { c, w, h } = g, cl = wvCl(), pts = wvG(`lfo${L}.points`), drawn = wvLfoShape(L) === 'drawn';
+function wvDrawLfo(g, L, C) {
+  const { c, w, h } = g, cl = C || wvCl(), pts = wvG(`lfo${L}.points`), drawn = wvLfoShape(L) === 'drawn';
   const px = (q) => 8 + q[0] * (w - 16), py = (q) => 8 + (1 - q[1]) * (h - 16);
   c.clearRect(0, 0, w, h);
   c.strokeStyle = 'rgba(255,255,255,.05)';
@@ -378,41 +380,6 @@ function wvLfoPhase(L) {
   const T = WV.tele;
   if (!T || !Array.isArray(T.lfo) || typeof T.lfo[L] !== 'number') return null;
   return ((T.lfo[L] % 1) + 1) % 1;
-}
-
-function wvDrawMini(g, s) {
-  const { c, w, h } = g, cl = wvCl();
-  c.clearRect(0, 0, w, h);
-  let p;
-  if (s.kind === 'lfo') p = wvPath((u) => [1 + u * (w - 2), h - 2 - wvLfoVal(+s.key.slice(3), u) * (h - 4)], 40);
-  else {
-    const E = wvEnv(s.key);
-    p = new Path2D();
-    p.moveTo(1, h - 1); p.lineTo(2 + E.a * 8, 1); p.lineTo(6 + E.a * 8 + E.d * 10, h - 1 - E.s * (h - 2));
-    p.lineTo(w - 6, h - 1 - E.s * (h - 2)); p.lineTo(w - 1, h - 1);
-  }
-  c.strokeStyle = WV_SRC_COL[s.key] || cl.wave;
-  c.lineWidth = 1.3;
-  c.stroke(p);
-}
-
-/// The voices panel: sixteen cells, one per sounding voice, filled to its level.
-function wvDrawVox(g) {
-  const { c, w, h } = g, cl = wvCl(), vs = wvVoices();
-  c.clearRect(0, 0, w, h);
-  const cw = (w - 10) / 4, ch = (h - 10) / 4;
-  for (let i = 0; i < 16; i++) {
-    const x = 5 + (i % 4) * cw, y = 5 + Math.floor(i / 4) * ch, v = vs[i];
-    c.fillStyle = 'rgba(255,255,255,.035)';
-    c.beginPath(); c.roundRect(x + 1, y + 1, cw - 2, ch - 2, 3); c.fill();
-    if (!v) continue;
-    const lvl = wvClamp(+v.env || 0);
-    c.fillStyle = `color-mix(in srgb,${cl.acc} ${Math.round(18 + 60 * lvl)}%,transparent)`;
-    c.beginPath(); c.roundRect(x + 1, y + 1 + (ch - 2) * (1 - lvl), cw - 2, (ch - 2) * lvl, 3); c.fill();
-    c.fillStyle = cl.t;
-    c.font = `9px ${cl.mono}`;
-    c.fillText(wvNoteName(+v.note), x + 4, y + ch / 2 + 3);
-  }
 }
 
 const wvNoteName = (n) => ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
@@ -438,12 +405,12 @@ function wvDrawPlay(t) {
     wvTxt('wvUr' + i, `${wvG(k + 'uni.n')} v · ${Math.round(wvG(k + 'uni.det') * 60)} ct`);
     wvDrawOfx(WVW['wvOfx' + i], i, t);
     const semi = Math.round((wvG(k + 'pitch') - 0.5) * 48), cents = Math.round((wvG(k + 'fine') - 0.5) * 200);
-    wvDrawLadder(WVW['wvPt' + i], semi, cents, wvModOf(k + 'pitch'));
+    wvDrawRuler(WVW['wvPt' + i], semi, cents, wvModOf(k + 'pitch'));
     wvTxt('wvPtr' + i, (semi >= 0 ? '+' : '−') + Math.abs(semi) + (cents ? ` ${cents > 0 ? '+' : '−'}${Math.abs(cents)}c` : ' st'));
     {
-      const g = WVW['wvPh' + i], { c, w, h } = g, ph = wvG(k + 'phase');
+      const g = WVW['wvPh' + i], { c, w, h } = g, ph = wvG(k + 'phase'), m = wvModOf(k + 'phase');
       c.clearRect(0, 0, w, h);
-      wvRing(g, ph, { cl, inset: 3 });
+      wvRing(g, ph, { cl: wvClFor(m), inset: 3, mod: m.rng, live: m.live });
       const cx = w / 2, cy = h / 2, r = w * 0.27;
       wvTrace(c, wvPath((u) => { const a = u * WV_TAU - Math.PI / 2 + ph * WV_TAU, rr = r * 0.6 + wvRd(cur, u) * r * 0.32; return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; }, 70), cl, 1, 0.5);
       const a = -Math.PI / 2 + ph * WV_TAU;
@@ -465,51 +432,21 @@ function wvDrawPlay(t) {
   const mix = curs[0];
   wvDrawMix(t, curs);
   wvDrawHBar(WVW.wvGlide, wvG('voice.glide'));
+  wvTxt('wvGlRo', wvG('voice.glide') > 0.005 ? wvFmtMs(wvG('voice.glide') ** 2 * 2) : 'Off');
+  const kHz = (f) => (f >= 10000 ? Math.round(f / 1000) + ' kHz' : wvFmtHz(f));
   [0, 1].forEach((i) => {
+    const f = `filt${i}.`;
     wvDrawLens(WVW['wvLens' + i], mix, i);
-    wvDrawKnob('wvDr' + i, `filt${i}.drive`, 0);
-    wvTxt('wvDrr' + i, Math.round(wvG(`filt${i}.drive`) * 100) + ' %');
-    wvDrawKnob('wvKy' + i, `filt${i}.key`, 0);
-    wvTxt('wvKyr' + i, Math.round(wvG(`filt${i}.key`) * 100) + ' %');
+    wvDrawKnob('wvCu' + i, f + 'cut', 0);
+    wvTxt('wvCur' + i, kHz(wvCutHz(wvG(f + 'cut'))));
+    wvDrawKnob('wvRs' + i, f + 'res', 0);
+    wvTxt('wvRsr' + i, 'Q ' + (0.7 + wvG(f + 'res') * 9).toFixed(1));
+    wvDrawKnob('wvDr' + i, f + 'drive', 0);
+    wvTxt('wvDrr' + i, Math.round(wvG(f + 'drive') * 100) + ' %');
+    wvDrawKnob('wvKy' + i, f + 'key', 0);
+    wvTxt('wvKyr' + i, Math.round(wvG(f + 'key') * 100) + ' %');
   });
-  const E = wvEnv('amp'), ap = wvDrawEnv(WVW.wvAmp, E, vs);
-  {
-    const c = WVW.wvAmp.c;
-    c.font = `10px ${cl.mono}`;
-    c.fillStyle = cl.t2;
-    c.textAlign = 'center';
-    const L = [[ap.o, ap.a, wvFmtMs(E.a ** 2 * 4)], [ap.a, ap.d, wvFmtMs(E.d ** 2 * 4)], [ap.d, ap.s, Math.round(E.s * 100) + ' %'], [ap.s, ap.r, wvFmtMs(E.r ** 2 * 6)]];
-    for (const [a, b, l] of L) {
-      if (b[0] - a[0] <= 30) continue;
-      const y = Math.min(a[1], b[1]) - 5 < 10 ? Math.max(a[1], b[1]) + 14 : Math.min(a[1], b[1]) - 5;
-      c.fillText(l, (a[0] + b[0]) / 2, y);
-    }
-    c.textAlign = 'left';
-  }
-  wvTxt('wvAmpRo', `${wvFmtMs(E.a ** 2 * 4)} · ${wvFmtMs(E.d ** 2 * 4)} · ${Math.round(E.s * 100)} % · ${wvFmtMs(E.r ** 2 * 6)}`);
-  wvDrawVox(WVW.wvVox);
-
-  const s = WV_SOURCES[WV.sel];
-  if (s.kind === 'lfo') wvDrawLfo(WVW.wvSrcEd, +s.key.slice(3));
-  else wvDrawEnv(WVW.wvSrcEd, wvEnv(s.key), vs);
-  const L = s.kind === 'lfo' ? s.key : 'lfo0';
-  wvDrawKnob('wvSrcRate', `${L}.rate`, 0);
-  wvDrawKnob('wvSrcSmooth', `${L}.smooth`, 0);
-  wvDrawKnob('wvSrcRise', `${L}.rise`, 0);
-  wvTxt('wvSrcRateRo', s.kind === 'lfo' ? wvLfoRateTxt(+L.slice(3)) : '—');
-  if (s.kind === 'lfo') wvTxt('wvTempoRo', `${wvTempo()} BPM`);
-  wvTxt('wvSrcSmoothRo', s.kind === 'lfo' ? Math.round(wvG(`${L}.smooth`) * 100) + ' %' : '—');
-  wvTxt('wvSrcRiseRo', s.kind === 'lfo' ? wvFmtMs(wvG(`${L}.rise`) ** 2 * 4) : '—');
-  WV_SOURCES.forEach((x, i) => {
-    const g = WVW['wvT4c' + i];
-    wvDrawMini(g, x);
-    if (x.kind === 'lfo') {
-      const ph = wvLfoPhase(+x.key.slice(3));
-      if (ph != null) wvDot(g.c, 1 + ph * (g.w - 2), g.h - 2 - wvLfoVal(+x.key.slice(3), ph) * (g.h - 4), 1.8, cl.acc);
-    }
-    const used = WV.mods.some((m) => m.src === x.key);
-    document.querySelector(`#wvSrcTabs [data-src="${i}"] .act`).style.setProperty('--o', used ? 0.3 + 0.7 * Math.abs(wvSrcVal(x.key)) : 0);
-  });
+  wvDrawTiles(t, 'p');
 }
 
 function wvDrawW3d(i, T, p, warp0, t, opt, voices) {
@@ -596,7 +533,7 @@ function wvDrawOfx(g, i, t) {
   wvTxt('wvOfr' + i, rd);
   const nm = document.getElementById('wvOfn' + i);
   nm.style.color = wvFxCol(K, 76);
-  nm.parentElement.style.setProperty('--fxc', wvFxCol(K, 72));
+  (nm.closest('.wv-fxl') || nm.parentElement).style.setProperty('--fxc', wvFxCol(K, 72));
 }
 
 function wvFxIcon(c, k, x, y, sc, col) {

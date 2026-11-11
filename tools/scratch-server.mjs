@@ -96,6 +96,10 @@ const child = spawn(binary, [], {
     AUDIOLAB_DATA: data,
     AUDIOLAB_PORT: String(PORT),
     AUDIOLAB_NO_BROWSER: '1',
+    // Everything runs as in the app, the device included; only the speakers
+    // get silence (`docs/NO-AUDIO-DEVICE.md`). A test run sounding on someone's
+    // machine while they work is not a cost worth paying.
+    AUDIOLAB_MUTE_OUTPUT: '1',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

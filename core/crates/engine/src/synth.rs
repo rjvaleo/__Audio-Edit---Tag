@@ -31,6 +31,14 @@
 //!   hold two.
 //! - **Telemetry** is copied into a mutex every block, `try_lock`ed; a poll
 //!   that holds it costs the page one stale frame and the audio nothing.
+//! - **A board** (v8, `wave::board`) is compiled here, off the audio thread,
+//!   at the device's rate, into a [`BoardPlan`] in a pending slot the
+//!   callback `try_lock`s, and the plan it replaces comes back through a
+//!   return slot, as a table does. A board that differs from the running one
+//!   only in its controls and switches is not rebuilt (that would cut its
+//!   tails): each change goes through the event queue as a live write,
+//!   tagged with the board's signature so a write for a board not yet in
+//!   place is dropped rather than landing on the wrong node.
 //!
 //! [`WaveShared`] also keeps the **current** patch and tables, not just the
 //! pending ones. A device that is closed and opened again (a new buffer size)
@@ -40,7 +48,8 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use wave::{ParamId, PatchState, Synth, Telemetry, Wavetable, NUM_PARAMS};
+use wave::board::Kind;
+use wave::{Board, BoardPlan, ParamId, PatchState, Synth, Telemetry, Wavetable, NUM_PARAMS};
 
 /// Events the queue holds. A burst of MIDI — a chord, a controller sweep — is
 /// at most a few hundred between two blocks; this is room for many times that.
@@ -63,26 +72,36 @@ pub enum WaveEvent {
     Aftertouch(f32),
     /// Release every held key (their tails ring out).
     AllNotesOff,
+    /// A board node's control, in real units. `sig` is the low byte of the
+    /// board's [`Board::sig`]; a running board with another drops it.
+    BoardParam { node: u8, param: u8, sig: u8, value: f32 },
+    /// A board node switched in or out.
+    BoardOn { node: u8, sig: u8, on: bool },
 }
 
 impl WaveEvent {
     /// Packed into one word, so a queue slot is a single atomic and needs no
     /// unsafe cell: kind in the top byte, note in the next, a float's bits in
     /// the low half.
+    /// A board write uses the two bytes below the note for its control and
+    /// signature.
     fn pack(self) -> u64 {
-        let (kind, note, v) = match self {
-            WaveEvent::NoteOn { note, vel } => (1u64, note, vel),
-            WaveEvent::NoteOff { note } => (2, note, 0.0),
-            WaveEvent::Bend(v) => (3, 0, v),
-            WaveEvent::ModWheel(v) => (4, 0, v),
-            WaveEvent::Aftertouch(v) => (5, 0, v),
-            WaveEvent::AllNotesOff => (6, 0, 0.0),
+        let (kind, note, mid, v) = match self {
+            WaveEvent::NoteOn { note, vel } => (1u64, note, 0u64, vel),
+            WaveEvent::NoteOff { note } => (2, note, 0, 0.0),
+            WaveEvent::Bend(v) => (3, 0, 0, v),
+            WaveEvent::ModWheel(v) => (4, 0, 0, v),
+            WaveEvent::Aftertouch(v) => (5, 0, 0, v),
+            WaveEvent::AllNotesOff => (6, 0, 0, 0.0),
+            WaveEvent::BoardParam { node, param, sig, value } => (7, node, (param as u64) << 8 | sig as u64, value),
+            WaveEvent::BoardOn { node, sig, on } => (8, node, sig as u64, if on { 1.0 } else { 0.0 }),
         };
-        (kind << 56) | ((note as u64) << 48) | v.to_bits() as u64
+        (kind << 56) | ((note as u64) << 48) | (mid << 32) | v.to_bits() as u64
     }
 
     fn unpack(w: u64) -> Option<WaveEvent> {
         let note = (w >> 48) as u8;
+        let (param, sig) = ((w >> 40) as u8, (w >> 32) as u8);
         let v = f32::from_bits(w as u32);
         Some(match w >> 56 {
             1 => WaveEvent::NoteOn { note, vel: v },
@@ -91,6 +110,8 @@ impl WaveEvent {
             4 => WaveEvent::ModWheel(v),
             5 => WaveEvent::Aftertouch(v),
             6 => WaveEvent::AllNotesOff,
+            7 => WaveEvent::BoardParam { node: note, param, sig, value: v },
+            8 => WaveEvent::BoardOn { node: note, sig, on: v != 0.0 },
             _ => return None,
         })
     }
@@ -213,6 +234,15 @@ pub struct WaveShared {
     telemetry: Mutex<(Telemetry, [f32; WAVE_POINTS])>,
     /// Blocks rendered, so a reader can tell a running deck from a stale one.
     pub blocks: AtomicU64,
+    /// The board last sent, so a new device builds it and the next one sent
+    /// can be told apart from it.
+    board: Mutex<Option<Board>>,
+    pending_board: Mutex<Option<Box<BoardPlan>>>,
+    /// A plan the callback has let go of, to be dropped off the audio thread.
+    returned_board: Mutex<Option<Box<BoardPlan>>>,
+    /// The open device's sample rate as f32 bits, 0 with none: what a board
+    /// is compiled at.
+    rate: AtomicU32,
 }
 
 impl Default for WaveShared {
@@ -233,7 +263,65 @@ impl WaveShared {
             current: Mutex::new((PatchState::default(), [None, None, None])),
             telemetry: Mutex::new((Telemetry::default(), [0.0; WAVE_POINTS])),
             blocks: AtomicU64::new(0),
+            board: Mutex::new(None),
+            pending_board: Mutex::new(None),
+            returned_board: Mutex::new(None),
+            rate: AtomicU32::new(0),
         }
+    }
+
+    /// Hand over a board, checked by the caller ([`Board::complete`]).
+    ///
+    /// The same nodes and cables as the running one: only what changed goes,
+    /// as live writes. Anything else is compiled here at the device's rate
+    /// and swapped in by the callback; with no device yet it is only kept,
+    /// and the next device builds it.
+    pub fn set_board(&self, board: &Board) -> Result<(), wave::BoardError> {
+        self.collect();
+        let Ok(mut cur) = self.board.lock() else { return Ok(()) };
+        let rate = f32::from_bits(self.rate.load(Ordering::Acquire));
+        match cur.as_ref().filter(|c| c.same_structure(board)) {
+            Some(old) => {
+                let sig = board.sig() as u8;
+                for (i, (a, b)) in old.nodes.iter().zip(&board.nodes).enumerate() {
+                    if a.on != b.on {
+                        self.events.push(WaveEvent::BoardOn { node: i as u8, sig, on: b.on });
+                    }
+                    let Some(kind) = Kind::parse(&b.kind) else { continue };
+                    for (j, spec) in kind.params().iter().enumerate() {
+                        let v = b.param(spec.key).unwrap_or(spec.default);
+                        if a.param(spec.key).unwrap_or(spec.default) != v && kind.structural() != Some(j) {
+                            self.events.push(WaveEvent::BoardParam { node: i as u8, param: j as u8, sig, value: v });
+                        }
+                    }
+                }
+            }
+            None if rate > 0.0 => {
+                let plan = Box::new(BoardPlan::compile(board, rate)?);
+                let old = self.pending_board.lock().ok().and_then(|mut g| g.replace(plan));
+                drop(old);
+            }
+            None => {}
+        }
+        *cur = Some(board.clone());
+        Ok(())
+    }
+
+    /// One board control live, by position. Ignored by a running board built
+    /// from another one.
+    pub fn board_param(&self, node: usize, param: usize, value: f32) -> bool {
+        let sig = self.board.lock().ok().and_then(|g| g.as_ref().map(|b| b.sig() as u8));
+        match sig {
+            Some(sig) if node < 256 && param < 256 => {
+                self.events.push(WaveEvent::BoardParam { node: node as u8, param: param as u8, sig, value })
+            }
+            _ => false,
+        }
+    }
+
+    /// The board last sent.
+    pub fn board(&self) -> Option<Board> {
+        self.board.lock().ok().and_then(|g| g.clone())
     }
 
     /// Queue a note or a controller.
@@ -296,6 +384,8 @@ impl WaveShared {
             let old = slot.lock().ok().and_then(|mut g| g.take());
             drop(old);
         }
+        let old = self.returned_board.lock().ok().and_then(|mut g| g.take());
+        drop(old);
     }
 
     /// The latest telemetry the callback published, and the recent output.
@@ -325,6 +415,7 @@ impl SynthDeck {
     pub fn new(sample_rate: f32, max_block: usize, channels: usize, shared: Arc<WaveShared>) -> SynthDeck {
         let max_block = max_block.max(1);
         let mut synth = Synth::new(sample_rate, max_block);
+        shared.rate.store(synth.sample_rate().to_bits(), Ordering::Release);
         if let Ok(g) = shared.current.lock() {
             synth.adopt(g.0);
             for (osc, t) in g.1.iter().enumerate() {
@@ -333,6 +424,17 @@ impl SynthDeck {
                 }
             }
         }
+        // The board is built here, off the audio thread, at this device's
+        // rate; one pending for another device is no longer wanted.
+        if let Ok(g) = shared.board.lock() {
+            if let Some(b) = g.as_ref() {
+                if let Ok(plan) = BoardPlan::compile(b, synth.sample_rate()) {
+                    synth.set_board(Box::new(plan));
+                }
+            }
+        }
+        let stale = shared.pending_board.lock().ok().and_then(|mut g| g.take());
+        drop(stale);
         // What is pending is already in `current`; taking it now stops the
         // first block adopting it a second time.
         if let Ok(mut g) = shared.pending_patch.lock() {
@@ -381,6 +483,20 @@ impl SynthDeck {
                 }
             }
         }
+        // A board: only while the return slot is free, so what it replaces
+        // has somewhere to go.
+        if let Ok(mut back) = sh.returned_board.try_lock() {
+            if back.is_none() {
+                *back = self.synth.take_retired();
+            }
+            if back.is_none() {
+                if let Ok(mut g) = sh.pending_board.try_lock() {
+                    if let Some(plan) = g.take() {
+                        *back = self.synth.set_board(plan);
+                    }
+                }
+            }
+        }
         for (w, word) in sh.dirty.iter().enumerate() {
             let mut bits = word.swap(0, Ordering::AcqRel);
             while bits != 0 {
@@ -401,6 +517,16 @@ impl SynthDeck {
                 WaveEvent::ModWheel(v) => self.synth.mod_wheel(v),
                 WaveEvent::Aftertouch(v) => self.synth.aftertouch(v),
                 WaveEvent::AllNotesOff => self.synth.all_notes_off(),
+                WaveEvent::BoardParam { node, param, sig, value } => {
+                    if self.synth.board().is_some_and(|b| b.sig() as u8 == sig) {
+                        self.synth.set_board_param(node as usize, param as usize, value);
+                    }
+                }
+                WaveEvent::BoardOn { node, sig, on } => {
+                    if self.synth.board().is_some_and(|b| b.sig() as u8 == sig) {
+                        self.synth.set_board_on(node as usize, on);
+                    }
+                }
             }
         }
     }
@@ -414,6 +540,12 @@ impl SynthDeck {
         self.take_changes();
         let (l, r) = (&mut self.left[..frames], &mut self.right[..frames]);
         self.synth.render(l, r);
+        // A board that has finished fading out goes back at once if it can.
+        if let Ok(mut back) = self.shared.returned_board.try_lock() {
+            if back.is_none() {
+                *back = self.synth.take_retired();
+            }
+        }
         let out = &mut self.block[..frames * ch];
         for f in 0..frames {
             let (a, b) = (self.left[f], self.right[f]);
@@ -459,6 +591,9 @@ mod tests {
             WaveEvent::ModWheel(0.5),
             WaveEvent::Aftertouch(0.25),
             WaveEvent::AllNotesOff,
+            WaveEvent::BoardParam { node: 63, param: 35, sig: 0xa5, value: -12.5 },
+            WaveEvent::BoardOn { node: 7, sig: 0x3c, on: true },
+            WaveEvent::BoardOn { node: 0, sig: 0, on: false },
         ] {
             assert_eq!(WaveEvent::unpack(e.pack()), Some(e));
         }
@@ -519,5 +654,64 @@ mod tests {
         assert!(sh.dirty.iter().all(|d| d.load(Ordering::Relaxed) == 0));
         sh.set_live(id, 0.3);
         assert_ne!(sh.dirty[id.index() / 64].load(Ordering::Relaxed), 0);
+    }
+
+    fn two_gains(db: f32) -> Board {
+        let n = |id: &str, kind: &str| wave::Node::new(id, kind, 0.0, 0.0);
+        Board {
+            name: "t".into(),
+            nodes: vec![n("v", "in:voice"), n("g", "gain").with("db", db), n("out", "out")],
+            cables: vec![wave::Cable::new("v", "o", "g", "i"), wave::Cable::new("g", "o", "out", "i")],
+        }
+        .complete()
+        .unwrap()
+    }
+
+    #[test]
+    fn a_board_with_no_device_is_kept_and_a_new_deck_builds_it() {
+        let sh = Arc::new(WaveShared::new());
+        sh.set_board(&two_gains(-6.0)).unwrap();
+        assert!(sh.pending_board.lock().unwrap().is_none(), "no device, nothing compiled");
+        let deck = SynthDeck::new(48_000.0, 256, 2, Arc::clone(&sh));
+        assert_eq!(deck.synth.board().map(|b| b.node_count()), Some(3));
+        assert_eq!(f32::from_bits(sh.rate.load(Ordering::Relaxed)), 48_000.0);
+    }
+
+    #[test]
+    fn a_control_change_is_a_live_write_and_a_new_structure_a_new_plan() {
+        let sh = Arc::new(WaveShared::new());
+        let mut deck = SynthDeck::new(48_000.0, 256, 2, Arc::clone(&sh));
+        sh.set_board(&two_gains(-6.0)).unwrap();
+        assert!(sh.pending_board.lock().unwrap().is_some(), "the first board is compiled");
+        deck.render(64, 2);
+        assert!(sh.pending_board.lock().unwrap().is_none(), "and taken");
+        // A control: a write, no plan.
+        sh.set_board(&two_gains(-12.0)).unwrap();
+        assert!(sh.pending_board.lock().unwrap().is_none());
+        deck.render(64, 2);
+        assert_eq!(deck.synth.board().unwrap().param(1, 0), Some(-12.0));
+        // A write by position.
+        assert!(sh.board_param(1, 0, 3.0));
+        deck.render(64, 2);
+        assert_eq!(deck.synth.board().unwrap().param(1, 0), Some(3.0));
+        // Another kind: a new plan, and the old one comes back once it has
+        // faded, to be dropped here.
+        let mut other = two_gains(0.0);
+        other.nodes[1] = wave::Node::new("g", "pan", 0.0, 0.0);
+        let other = other.complete().unwrap();
+        sh.set_board(&other).unwrap();
+        assert!(sh.pending_board.lock().unwrap().is_some());
+        for _ in 0..20 {
+            deck.render(256, 2);
+        }
+        assert!(sh.returned_board.lock().unwrap().is_some(), "the old plan is handed back");
+        sh.collect();
+        assert!(sh.returned_board.lock().unwrap().is_none());
+        // A write for the board before is dropped by this one.
+        sh.events.push(WaveEvent::BoardParam { node: 1, param: 0, sig: two_gains(0.0).sig() as u8, value: 50.0 });
+        deck.render(64, 2);
+        if two_gains(0.0).sig() as u8 != other.sig() as u8 {
+            assert_eq!(deck.synth.board().unwrap().param(1, 0), Some(0.0));
+        }
     }
 }
