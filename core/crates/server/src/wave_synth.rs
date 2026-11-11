@@ -65,14 +65,14 @@ pub struct WaveState {
     /// Given to every audio device opened (`live::ensure`), so the synth deck
     /// keeps its patch and tables across a device being reopened.
     pub shared: Arc<WaveShared>,
-    dir: PathBuf,
-    inner: Arc<Mutex<Inner>>,
+    pub(crate) dir: PathBuf,
+    pub(crate) inner: Arc<Mutex<Inner>>,
     /// Whether the patch's tables have been asked for since start.
     synced: AtomicBool,
 }
 
-struct Inner {
-    patch: Patch,
+pub(crate) struct Inner {
+    pub(crate) patch: Patch,
     /// The table each oscillator should be playing: the patch's, or a live
     /// choice not yet stored. A finished build goes to every oscillator whose
     /// name it is.
@@ -102,7 +102,10 @@ impl WaveState {
                 }
             })
             .unwrap_or_default();
+        let mut patch = patch;
+        crate::wave_board::ensure(&mut patch);
         let shared = Arc::new(WaveShared::new());
+        let _ = shared.set_board(patch.board.as_ref().unwrap());
         shared.set_patch(PatchState::new(&patch));
         let playing = patch.tables.clone();
         WaveState {
@@ -143,7 +146,7 @@ impl WaveState {
         self.inner.lock().map(|g| g.patch.clone()).unwrap_or_default()
     }
 
-    fn save(&self, p: &Patch) -> Result<(), String> {
+    pub(crate) fn save(&self, p: &Patch) -> Result<(), String> {
         std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
         crate::persist::write_atomic(&self.dir.join("patch.json"), &patch_json(p).to_string()).map_err(|e| e.to_string())
     }
@@ -205,6 +208,7 @@ impl WaveState {
 
     /// Hand the stored patch to the engine and its tables to the oscillators.
     fn adopt(&self, g: &mut Inner) {
+        let _ = self.shared.set_board(g.patch.board.as_ref().unwrap_or(&wave::Board::default()));
         self.shared.set_patch(PatchState::new(&g.patch));
         g.playing = g.patch.tables.clone();
         self.sync(g);
@@ -231,6 +235,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/wave/table/import") => import(app, req),
         ("GET", "/api/wave/presets") => Response::json(Value::Arr(presets(w)).to_string()),
         ("POST", "/api/wave/presets") => post_preset(w, req),
+        (_, p) if p.starts_with("/api/wave/board") || p == "/api/wave/fx" => crate::wave_board::route(app, req),
         _ => Response::error(404, "no such endpoint"),
     }
 }
@@ -438,6 +443,7 @@ fn state(app: &Arc<App>) -> Response {
             .set("peak", arr(&t.peak))
             .set("wave", arr(&recent))
             .set("device", device)
+            .set("board", crate::wave_board::peaks_json(&app.wave, &t, device))
             .to_string(),
     )
 }
@@ -672,7 +678,7 @@ fn num(v: f32) -> Value {
     Value::Num(if v.is_finite() { format!("{v}").parse::<f64>().unwrap_or(0.0) } else { 0.0 })
 }
 
-fn mod_json(m: &Mod) -> Value {
+pub(crate) fn mod_json(m: &Mod) -> Value {
     Value::obj()
         .set("src", m.src.as_str())
         .set("dst", m.dst.as_str())
@@ -711,6 +717,7 @@ pub fn patch_json(p: &Patch) -> Value {
         .set("macroNames", Value::Arr(p.macro_names.iter().map(|s| Value::Str(s.clone())).collect()))
         .set("name", p.name.as_str())
         .set("tags", tags_json(&p.tags))
+        .set("board", p.board.as_ref().map_or(Value::Null, crate::wave_board::board_json))
 }
 
 /// Set one key from JSON. An unknown key, or a value the key does not take,
@@ -755,7 +762,7 @@ pub fn parse_mods(v: &Value) -> Result<Vec<Mod>, String> {
         .map(|(i, r)| {
             let s = |k: &str| r.get(k).and_then(Value::as_str);
             let src = s("src").filter(|x| Source::parse(x).is_some()).ok_or(format!("mod {i}: unknown src"))?;
-            let dst = s("dst").filter(|x| param_id(x).is_some()).ok_or(format!("mod {i}: unknown dst"))?;
+            let dst = s("dst").filter(|x| param_id(x).is_some() || wave::board::parse_dst(x).is_some()).ok_or(format!("mod {i}: unknown dst"))?;
             let amt = num_of(r.get("amt")).ok_or(format!("mod {i}: amt must be a number"))?.clamp(-1.0, 1.0) as f32;
             let curve = s("curve").unwrap_or("lin");
             if Curve::parse(curve).is_none() {
@@ -808,6 +815,9 @@ pub fn patch_from_json(v: &Value, mut base: Patch) -> Result<Patch, String> {
     if v.get("tags").is_some() {
         base.tags = parse_tags(v.get("tags"));
     }
+    // An old patch's board is the one its chain makes.
+    base.board = v.get("board").filter(|b| !matches!(b, Value::Null)).map(crate::wave_board::board_from_json).transpose().map_err(|e| e.message)?;
+    crate::wave_board::ensure(&mut base);
     Ok(base)
 }
 

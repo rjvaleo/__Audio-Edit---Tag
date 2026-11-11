@@ -77,3 +77,12 @@ warning is hidden" as the *before* state, which is only true on a machine that
 has audio. It passed on the developer's Mac and failed on CI, where the warning
 was correctly showing. It now reads the real state first. The mistake this file
 exists to document, made one level up, inside the file documenting it.
+
+## Silence on purpose
+
+`AUDIOLAB_MUTE_OUTPUT=1` opens the device and runs everything as usual (its
+timing, every deck, the meters, capture) and writes silence to the speakers
+as the very last step. Test runs and private copies of the app set it, so they
+exercise the same paths the app does and never sound on a machine someone is
+working at. It is not a machine without an output: that case is the rest of
+this page, and is not simulated.

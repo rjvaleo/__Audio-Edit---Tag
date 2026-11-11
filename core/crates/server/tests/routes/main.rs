@@ -166,3 +166,4 @@ mod invariants_export_map;
 use invariants_export_map::*;
 mod wave_keys;
 use wave_keys::*;
+mod wave_board;

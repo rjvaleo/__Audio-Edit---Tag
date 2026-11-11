@@ -30,5 +30,8 @@ pub mod state;
 pub mod usertags;
 /// The Wave page's synth: `/api/wave/*`. See `docs/WAVE-SYNTH.md`.
 pub mod wave_synth;
+/// The Wave page's FX board (v8): `/api/wave/board*`, `/api/wave/boards`,
+/// `/api/wave/fx`. See `docs/WAVE-SYNTH.md`.
+pub mod wave_board;
 /// The picture for a video export. See `docs/VIDEO-EXPORT.md`.
 pub mod video;

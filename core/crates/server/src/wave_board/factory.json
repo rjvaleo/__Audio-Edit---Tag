@@ -1,0 +1,1116 @@
+[
+ {
+  "name": "Glass Split",
+  "nodes": [
+   {
+    "id": "invoice",
+    "kind": "in:voice",
+    "x": 16,
+    "y": 16,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inA",
+    "kind": "in:osc0",
+    "x": 16,
+    "y": 112,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inB",
+    "kind": "in:osc1",
+    "x": 16,
+    "y": 176,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inC",
+    "kind": "in:osc2",
+    "x": 16,
+    "y": 240,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "insub",
+    "kind": "in:sub",
+    "x": 16,
+    "y": 304,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "innoise",
+    "kind": "in:noise",
+    "x": 16,
+    "y": 368,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "out",
+    "kind": "out",
+    "x": 672,
+    "y": 344,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "ch",
+    "kind": "fx:hp-chorus",
+    "x": 144,
+    "y": 16,
+    "on": true,
+    "params": {
+     "rateHz": 0.6,
+     "depth": 38
+    }
+   },
+   {
+    "id": "sp",
+    "kind": "split",
+    "x": 320,
+    "y": 16,
+    "on": true,
+    "params": {
+     "outs": 2
+    }
+   },
+   {
+    "id": "ec",
+    "kind": "fx:echo",
+    "x": 320,
+    "y": 112,
+    "on": true,
+    "params": {
+     "delayMs": 375,
+     "feedback": 0.45,
+     "wet": 0.4
+    }
+   },
+   {
+    "id": "hl",
+    "kind": "fx:lxp-hall",
+    "x": 496,
+    "y": 16,
+    "on": true,
+    "params": {
+     "mix": 0.3
+    }
+   },
+   {
+    "id": "dc",
+    "kind": "fx:hp-sonic-decimator",
+    "x": 496,
+    "y": 184,
+    "on": true,
+    "params": {
+     "rate": 38,
+     "bits": 6
+    }
+   },
+   {
+    "id": "mx",
+    "kind": "mix",
+    "x": 672,
+    "y": 16,
+    "on": true,
+    "params": {
+     "l0": -3,
+     "l1": -9,
+     "l2": -6,
+     "ins": 3
+    }
+   },
+   {
+    "id": "mz",
+    "kind": "fx:maximizer",
+    "x": 672,
+    "y": 168,
+    "on": true,
+    "params": {
+     "amount": 0.4
+    }
+   },
+   {
+    "id": "ph",
+    "kind": "fx:sh-phasor",
+    "x": 144,
+    "y": 184,
+    "on": true,
+    "params": {
+     "rateHz": 0.35,
+     "depth": 0.6
+    }
+   },
+   {
+    "id": "dw",
+    "kind": "drywet",
+    "x": 144,
+    "y": 352,
+    "on": true,
+    "params": {
+     "wet": 30
+    }
+   },
+   {
+    "id": "pl",
+    "kind": "fx:dattorro-plate",
+    "x": 320,
+    "y": 384,
+    "on": true,
+    "params": {
+     "decay": 0.7,
+     "wet": 0.5,
+     "dry": 0
+    }
+   }
+  ],
+  "cables": [
+   {
+    "from": [
+     "invoice",
+     "o"
+    ],
+    "to": [
+     "ch",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "ch",
+     "o"
+    ],
+    "to": [
+     "sp",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "sp",
+     "o0"
+    ],
+    "to": [
+     "hl",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "sp",
+     "o1"
+    ],
+    "to": [
+     "ec",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "ec",
+     "o"
+    ],
+    "to": [
+     "dc",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "hl",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i0"
+    ]
+   },
+   {
+    "from": [
+     "dc",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i1"
+    ]
+   },
+   {
+    "from": [
+     "mx",
+     "o"
+    ],
+    "to": [
+     "mz",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "mz",
+     "o"
+    ],
+    "to": [
+     "out",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "inB",
+     "o"
+    ],
+    "to": [
+     "ph",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "ph",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i2"
+    ]
+   },
+   {
+    "from": [
+     "inA",
+     "o"
+    ],
+    "to": [
+     "dw",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "dw",
+     "send"
+    ],
+    "to": [
+     "pl",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "pl",
+     "o"
+    ],
+    "to": [
+     "dw",
+     "ret"
+    ]
+   },
+   {
+    "from": [
+     "dw",
+     "o"
+    ],
+    "to": [
+     "out",
+     "i"
+    ]
+   }
+  ],
+  "mods": [
+   {
+    "src": "lfo2",
+    "dst": "board:ec:delayMs",
+    "amt": 0.18,
+    "curve": "lin",
+    "via": null
+   },
+   {
+    "src": "macro1",
+    "dst": "board:hl:mix",
+    "amt": 0.4,
+    "curve": "lin",
+    "via": null
+   },
+   {
+    "src": "lfo0",
+    "dst": "board:ch:depth",
+    "amt": 0.25,
+    "curve": "lin",
+    "via": null
+   }
+  ]
+ },
+ {
+  "name": "Dub Room",
+  "nodes": [
+   {
+    "id": "invoice",
+    "kind": "in:voice",
+    "x": 16,
+    "y": 16,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inA",
+    "kind": "in:osc0",
+    "x": 16,
+    "y": 112,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inB",
+    "kind": "in:osc1",
+    "x": 16,
+    "y": 176,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inC",
+    "kind": "in:osc2",
+    "x": 16,
+    "y": 240,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "insub",
+    "kind": "in:sub",
+    "x": 16,
+    "y": 304,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "innoise",
+    "kind": "in:noise",
+    "x": 16,
+    "y": 368,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "out",
+    "kind": "out",
+    "x": 672,
+    "y": 344,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "sp",
+    "kind": "split",
+    "x": 144,
+    "y": 16,
+    "on": true,
+    "params": {
+     "outs": 3
+    }
+   },
+   {
+    "id": "lp",
+    "kind": "fx:hp-low-pass",
+    "x": 320,
+    "y": 16,
+    "on": true,
+    "params": {
+     "freqHz": 2400,
+     "q": 3.2
+    }
+   },
+   {
+    "id": "sd",
+    "kind": "fx:hp-single-delay",
+    "x": 496,
+    "y": 16,
+    "on": true,
+    "params": {
+     "delayMs": 420,
+     "mix": 45
+    }
+   },
+   {
+    "id": "fl",
+    "kind": "fx:flanger",
+    "x": 320,
+    "y": 184,
+    "on": true,
+    "params": {
+     "feedback": 0.5
+    }
+   },
+   {
+    "id": "mx",
+    "kind": "mix",
+    "x": 672,
+    "y": 16,
+    "on": true,
+    "params": {
+     "l0": -2,
+     "l1": -6,
+     "l2": -4,
+     "ins": 3
+    }
+   },
+   {
+    "id": "rm",
+    "kind": "fx:lxp-room",
+    "x": 672,
+    "y": 168,
+    "on": true,
+    "params": {
+     "mix": 0.25
+    }
+   },
+   {
+    "id": "g",
+    "kind": "gain",
+    "x": 144,
+    "y": 304,
+    "on": true,
+    "params": {
+     "db": -6
+    }
+   }
+  ],
+  "cables": [
+   {
+    "from": [
+     "invoice",
+     "o"
+    ],
+    "to": [
+     "sp",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "sp",
+     "o0"
+    ],
+    "to": [
+     "lp",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "lp",
+     "o"
+    ],
+    "to": [
+     "sd",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "sp",
+     "o1"
+    ],
+    "to": [
+     "fl",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "sp",
+     "o2"
+    ],
+    "to": [
+     "mx",
+     "i2"
+    ]
+   },
+   {
+    "from": [
+     "sd",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i0"
+    ]
+   },
+   {
+    "from": [
+     "fl",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i1"
+    ]
+   },
+   {
+    "from": [
+     "mx",
+     "o"
+    ],
+    "to": [
+     "rm",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "rm",
+     "o"
+    ],
+    "to": [
+     "out",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "insub",
+     "o"
+    ],
+    "to": [
+     "g",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "g",
+     "o"
+    ],
+    "to": [
+     "out",
+     "i"
+    ]
+   }
+  ],
+  "mods": [
+   {
+    "src": "env1",
+    "dst": "board:lp:freqHz",
+    "amt": 0.35,
+    "curve": "lin",
+    "via": null
+   },
+   {
+    "src": "mw",
+    "dst": "board:fl:feedback",
+    "amt": 0.4,
+    "curve": "lin",
+    "via": null
+   }
+  ]
+ },
+ {
+  "name": "Grit Bus",
+  "nodes": [
+   {
+    "id": "invoice",
+    "kind": "in:voice",
+    "x": 16,
+    "y": 16,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inA",
+    "kind": "in:osc0",
+    "x": 16,
+    "y": 112,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inB",
+    "kind": "in:osc1",
+    "x": 16,
+    "y": 176,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inC",
+    "kind": "in:osc2",
+    "x": 16,
+    "y": 240,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "insub",
+    "kind": "in:sub",
+    "x": 16,
+    "y": 304,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "innoise",
+    "kind": "in:noise",
+    "x": 16,
+    "y": 368,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "out",
+    "kind": "out",
+    "x": 672,
+    "y": 216,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "cb",
+    "kind": "fx:sh-chebyshev",
+    "x": 144,
+    "y": 16,
+    "on": true,
+    "params": {
+     "t2Db": -12,
+     "t3Db": -18
+    }
+   },
+   {
+    "id": "co",
+    "kind": "fx:compressor",
+    "x": 320,
+    "y": 16,
+    "on": true,
+    "params": {
+     "ratio": 6
+    }
+   },
+   {
+    "id": "mx",
+    "kind": "mix",
+    "x": 496,
+    "y": 16,
+    "on": true,
+    "params": {
+     "l0": -3,
+     "l1": -6,
+     "l2": -8,
+     "l3": -18,
+     "ins": 4
+    }
+   },
+   {
+    "id": "pn",
+    "kind": "fx:hp-pan",
+    "x": 672,
+    "y": 16,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "dz",
+    "kind": "fx:sh-decimate",
+    "x": 144,
+    "y": 176,
+    "on": true,
+    "params": {
+     "depth": 6,
+     "averaging": 3
+    }
+   },
+   {
+    "id": "g",
+    "kind": "gain",
+    "x": 144,
+    "y": 320,
+    "on": true,
+    "params": {
+     "db": -4
+    }
+   }
+  ],
+  "cables": [
+   {
+    "from": [
+     "invoice",
+     "o"
+    ],
+    "to": [
+     "cb",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "cb",
+     "o"
+    ],
+    "to": [
+     "co",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "co",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i0"
+    ]
+   },
+   {
+    "from": [
+     "mx",
+     "o"
+    ],
+    "to": [
+     "pn",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "pn",
+     "o"
+    ],
+    "to": [
+     "out",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "inB",
+     "o"
+    ],
+    "to": [
+     "dz",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "dz",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i1"
+    ]
+   },
+   {
+    "from": [
+     "insub",
+     "o"
+    ],
+    "to": [
+     "g",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "g",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i2"
+    ]
+   },
+   {
+    "from": [
+     "innoise",
+     "o"
+    ],
+    "to": [
+     "mx",
+     "i3"
+    ]
+   }
+  ],
+  "mods": [
+   {
+    "src": "vel",
+    "dst": "board:cb:t3Db",
+    "amt": 0.3,
+    "curve": "lin",
+    "via": null
+   },
+   {
+    "src": "macro3",
+    "dst": "board:dz:depth",
+    "amt": 0.35,
+    "curve": "lin",
+    "via": null
+   },
+   {
+    "src": "lfo3",
+    "dst": "board:pn:balance",
+    "amt": 0.5,
+    "curve": "lin",
+    "via": null
+   }
+  ]
+ },
+ {
+  "name": "Bubble Garden",
+  "nodes": [
+   {
+    "id": "invoice",
+    "kind": "in:voice",
+    "x": 16,
+    "y": 16,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inA",
+    "kind": "in:osc0",
+    "x": 16,
+    "y": 112,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inB",
+    "kind": "in:osc1",
+    "x": 16,
+    "y": 176,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "inC",
+    "kind": "in:osc2",
+    "x": 16,
+    "y": 240,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "insub",
+    "kind": "in:sub",
+    "x": 16,
+    "y": 304,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "innoise",
+    "kind": "in:noise",
+    "x": 16,
+    "y": 368,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "out",
+    "kind": "out",
+    "x": 672,
+    "y": 400,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "dw",
+    "kind": "drywet",
+    "x": 144,
+    "y": 16,
+    "on": true,
+    "params": {
+     "wet": 45
+    }
+   },
+   {
+    "id": "bu",
+    "kind": "fx:sh-bubbler",
+    "x": 320,
+    "y": 16,
+    "on": true,
+    "params": {
+     "mix": 1
+    }
+   },
+   {
+    "id": "sy",
+    "kind": "fx:spectral-dynamics",
+    "x": 496,
+    "y": 16,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "mo",
+    "kind": "fx:moorer-reverb",
+    "x": 496,
+    "y": 216,
+    "on": true,
+    "params": {
+     "wet": 0.35
+    }
+   },
+   {
+    "id": "hs",
+    "kind": "fx:hp-hyper-stereo",
+    "x": 672,
+    "y": 216,
+    "on": true,
+    "params": {}
+   },
+   {
+    "id": "bp",
+    "kind": "fx:hp-band-pass",
+    "x": 144,
+    "y": 216,
+    "on": true,
+    "params": {
+     "freqHz": 900,
+     "q": 4
+    }
+   },
+   {
+    "id": "ap",
+    "kind": "fx:hp-auto-pan",
+    "x": 320,
+    "y": 216,
+    "on": true,
+    "params": {
+     "rateHz": 0.5,
+     "depth": 70
+    }
+   }
+  ],
+  "cables": [
+   {
+    "from": [
+     "invoice",
+     "o"
+    ],
+    "to": [
+     "dw",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "dw",
+     "send"
+    ],
+    "to": [
+     "bu",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "bu",
+     "o"
+    ],
+    "to": [
+     "sy",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "sy",
+     "o"
+    ],
+    "to": [
+     "dw",
+     "ret"
+    ]
+   },
+   {
+    "from": [
+     "dw",
+     "o"
+    ],
+    "to": [
+     "mo",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "mo",
+     "o"
+    ],
+    "to": [
+     "hs",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "hs",
+     "o"
+    ],
+    "to": [
+     "out",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "inA",
+     "o"
+    ],
+    "to": [
+     "bp",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "bp",
+     "o"
+    ],
+    "to": [
+     "ap",
+     "i"
+    ]
+   },
+   {
+    "from": [
+     "ap",
+     "o"
+    ],
+    "to": [
+     "mo",
+     "i"
+    ]
+   }
+  ],
+  "mods": [
+   {
+    "src": "lfo1",
+    "dst": "board:bp:freqHz",
+    "amt": 0.3,
+    "curve": "lin",
+    "via": null
+   },
+   {
+    "src": "rand",
+    "dst": "board:bu:density",
+    "amt": 0.3,
+    "curve": "lin",
+    "via": null
+   },
+   {
+    "src": "macro4",
+    "dst": "board:mo:wet",
+    "amt": 0.3,
+    "curve": "lin",
+    "via": null
+   }
+  ]
+ }
+]
