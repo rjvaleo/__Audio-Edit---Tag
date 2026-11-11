@@ -14,7 +14,8 @@
 //   - reordering the main path;
 //   - right-click Add, Replace and Insert;
 //   - a split's outs lowered, its stranded cable taken away first;
-//   - saving a board and recalling it;
+//   - saving a board and recalling it; removing a saved one, and no Remove
+//     on a factory board;
 //   - a source dragged onto a board control is a `board:` mod row;
 //   - cables brighten with the engine's peaks.
 
@@ -252,6 +253,31 @@ test('a board saved under a new name comes back with its nodes and its rows', as
   expect(cablesOf(b)).toEqual(['g.o>out.i', 'invoice.o>g.i']);
   expect(await page.evaluate(() => WV.mods.filter((m) => m.dst.startsWith('board:')).map((m) => [m.src, m.dst]))).toEqual([['lfo1', 'board:g:db']]);
   await page.request.delete('/api/wave/boards?name=Spec%20Saved');
+  expect(errors).toEqual([]);
+});
+
+test('a saved board can be removed from the page; a factory board cannot', async ({ page }) => {
+  const errors = await openFx(page);
+  const g = board('Spec Gone', [{ id: 'g', kind: 'gain', x: 160, y: 16, params: { db: -3 } }], ['invoice>g', 'g>out']);
+  expect((await page.request.post('/api/wave/boards', { data: { name: 'Spec Gone', board: g, mods: [] } })).ok()).toBe(true);
+  await page.evaluate(() => wvBoardConnect());
+  // A factory board: no Remove.
+  await page.locator('#wvBex span[data-bx="1"]').click();
+  await expect(page.locator('#wvBname')).toHaveText('Dub Room');
+  await expect(page.locator('#wvBrm')).toBeHidden();
+  // The saved one: Remove, and it is off the list, on the engine too.
+  await page.evaluate(() => wvLoadBoard(WV_BOARDS.list.findIndex((b) => b.name === 'Spec Gone')));
+  await expect(page.locator('#wvBname')).toHaveText('Spec Gone');
+  await expect(page.locator('#wvBrm')).toBeVisible();
+  await page.locator('#wvBrm').click();
+  await expect(page.locator('#wvFnote')).toContainText('Removed “Spec Gone”');
+  const names = (await (await page.request.get('/api/wave/boards')).json()).map((b) => b.name);
+  expect(names).not.toContain('Spec Gone');
+  expect(await page.evaluate(() => WV_BOARDS.list.some((b) => b.name === 'Spec Gone'))).toBe(false);
+  // It stays on the canvas as a new board, with nothing left to remove.
+  await expect(page.locator('#wvBpos')).toHaveText('new');
+  await expect(page.locator('#wvBrm')).toBeHidden();
+  await expect(page.locator('#wvWorld .wv-fn[data-node="g"]')).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 

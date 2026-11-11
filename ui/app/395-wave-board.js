@@ -620,6 +620,27 @@ async function wvSaveBoard(name) {
   wvBoardNote(`Saved “${name}”`);
 }
 
+/// v8b: a saved board can be removed; the factory four, and a board saved
+/// over one (which stands in its place on the strip), cannot.
+const wvBoardRemovable = (i) => { const b = WV_BOARDS.list[i]; return !!b && !b.factory && i >= 4; };
+
+/// Take the board in hand off the list (the engine unlists it and keeps its
+/// file). It stays on the canvas, as a new board, until another is loaded.
+async function wvRemoveBoard() {
+  const B = WV_BOARDS, pre = B.list[B.at];
+  if (B.fresh || !wvBoardRemovable(B.at)) return;
+  const r = await wvBoardFetch(`/api/wave/boards?name=${encodeURIComponent(pre.name)}`, 'DELETE');
+  if (!r.ok) { wvBoardNote(`Not removed: ${(r.json && r.json.error) || 'the engine did not answer'}`, true); return; }
+  const l = await wvBoardFetch('/api/wave/boards');
+  if (l.ok && Array.isArray(l.json)) B.list = l.json.filter((b) => b && Array.isArray(b.nodes));
+  else B.list = B.list.filter((b) => b !== pre);
+  B.at = -1;
+  B.fresh = true;
+  B.dirty = false;
+  wvRenderBar();
+  wvBoardNote(`Removed “${pre.name}” from the boards; it stays here until you load another`);
+}
+
 function wvInitBoardNow() {
   WV.board = wvInitBoard();
   WV_BOARD_VIEW.sel = null;

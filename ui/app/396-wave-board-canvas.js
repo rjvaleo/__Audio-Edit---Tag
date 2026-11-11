@@ -28,6 +28,7 @@ function wvBuildFx(view) {
    <span class="wv-bt wv-btn" id="wvBsaveas" title="Save as: keep this patch as a new board">Save as</span>
    <span class="wv-bt wv-btn" id="wvBdup" title="Duplicate: a copy of this board to change">Duplicate</span>
    <span class="wv-bt wv-btn" id="wvBinit" title="Init: an empty board, the voice straight to Out">Init</span>
+   <span class="wv-bt wv-btn" id="wvBrm" title="Remove: take this saved board off the list. The factory boards stay">Remove</span>
    <span class="wv-sp"></span>
    <span class="wv-hint wv-bnote"><svg viewBox="0 0 16 12"><path d="M1 6 C3 1,5 1,7 6 S11 11,13 6"/><circle cx="14" cy="6" r="1.4"/></svg>Each oscillator's own effect is on Play</span>
    <span class="wv-ro" id="wvBcount"></span></div>`));
@@ -75,6 +76,7 @@ function wvRenderBar() {
     ex.querySelectorAll('span').forEach((s) => s.addEventListener('click', () => wvLoadBoard(+s.dataset.bx)));
   }
   ex.querySelectorAll('span').forEach((s, i) => s.classList.toggle('on', !B.fresh && i === B.at));
+  $('wvBrm').style.display = !B.fresh && wvBoardRemovable(B.at) ? '' : 'none';
   wvBoardCount();
 }
 
@@ -91,6 +93,7 @@ function wvWireBar() {
   $('wvBsaveas').addEventListener('click', () => wvRenameBoard(wvUniqBoard(WV.board.name), true));
   $('wvBdup').addEventListener('click', () => wvSaveBoard(wvUniqBoard(WV.board.name + ' copy')));
   $('wvBinit').addEventListener('click', wvInitBoardNow);
+  $('wvBrm').addEventListener('click', wvRemoveBoard);
   const bn = $('wvBname');
   bn.addEventListener('dblclick', () => wvRenameBoard(WV.board.name, false));
   bn.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); bn.blur(); } if (e.key === 'Escape') { bn.textContent = WV.board.name; bn.blur(); } });
