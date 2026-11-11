@@ -69,6 +69,8 @@ const centre = async (loc) => { const b = await loc.boundingBox(); return { x: b
 const pin = (page, id, port, dir) => page.locator(`#wvWorld .wv-pin[data-pin="${id}|${port}|${dir}"]`);
 
 test('the four factory boards come first, each loads, and lays its rows into the matrix', async ({ page }) => {
+  // Four whole boards, each compiled and swapped in: more than one test's worth.
+  test.setTimeout(60_000);
   const errors = await openFx(page);
   await expect(page.locator('#wvBex span')).toHaveText(['Glass Split', 'Dub Room', 'Grit Bus', 'Bubble Garden']);
   const listed = await (await page.request.get('/api/wave/boards')).json();
@@ -258,9 +260,8 @@ test('a source dragged onto a board control becomes a board row, ringed on the k
   const knob = page.locator('#wvWorld canvas[data-tgt="board:g:db"]');
   await dragTo(page, await centre(page.locator('#wvFstrip [data-src="lfo2"]')), await centre(knob));
   await expect(page.locator('#wvFnote')).toContainText('LFO 3 now moves Gain · Gain');
-  await page.waitForTimeout(200);
-  const patch = await (await page.request.get('/api/wave/patch')).json();
-  expect(patch.mods).toEqual([expect.objectContaining({ src: 'lfo2', dst: 'board:g:db', amt: 0.3 })]);
+  await expect.poll(async () => (await (await page.request.get('/api/wave/patch')).json()).mods)
+    .toEqual([expect.objectContaining({ src: 'lfo2', dst: 'board:g:db', amt: 0.3 })]);
   // The knob draws the range in LFO 3's colour, and the inspector lists it.
   const ink = await knob.evaluate((c) => {
     const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
