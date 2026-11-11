@@ -39,9 +39,10 @@
 //! # Sounds
 //!
 //! [`BoardPlan::compile_with`] asks for each sound a node names and hands it
-//! to the kernel, which may allocate there, then prepares the kernel. A node
-//! whose effect takes a sound and was given none passes its input through,
-//! skipped as a node switched off is.
+//! to the kernel, which may allocate there, then prepares the kernel. A
+//! Convolution node given no sound passes its input through, skipped as a
+//! node switched off is; Spectral Dynamics without one runs on its levels
+//! alone, as it did before it took a sound.
 //!
 //! # Controls
 //!
@@ -114,7 +115,7 @@ struct PNode {
     on: f32,
     /// Holds state from before it was last all the way off.
     stale: bool,
-    /// Takes a sound and has none: it passes its input through.
+    /// Needs a sound and has none: it passes its input through.
     unsounded: bool,
     peak: [f32; 2],
 }
@@ -268,7 +269,7 @@ impl BoardPlan {
                     if r.kind.takes_sound() {
                         match n.sound.as_deref().and_then(sounds) {
                             Some(s) => k.set_sound(&s.samples, s.channels, s.rate),
-                            None => unsounded = true,
+                            None => unsounded = r.kind.needs_sound(),
                         }
                     }
                     // Glides land: a board opens at its settings.
@@ -334,7 +335,7 @@ impl BoardPlan {
         self.nodes.len()
     }
 
-    /// Whether a node takes a sound and was given none, so passes its input
+    /// Whether a node needs a sound and was given none, so passes its input
     /// through.
     pub fn unsounded(&self, node: usize) -> bool {
         self.nodes.get(node).is_some_and(|n| n.unsounded)

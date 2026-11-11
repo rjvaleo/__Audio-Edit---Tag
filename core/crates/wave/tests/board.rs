@@ -285,7 +285,8 @@ fn convolution_and_spectral_dynamics_take_a_sound_on_the_board_and_pass_through_
         let run = |sound: Option<&str>| {
             let b = one_effect(kind, sound, &params);
             let p = Box::new(BoardPlan::compile_with(&b, SR, &sounds).unwrap());
-            assert_eq!(p.unsounded(1), sound.is_none_or(|s| sounds(s).is_none()), "{kind} {sound:?}");
+            let needs = kind == "fx:convolution";
+            assert_eq!(p.unsounded(1), needs && sound.is_none_or(|s| sounds(s).is_none()), "{kind} {sound:?}");
             let mut s = synth(&Patch::default());
             s.set_board(p);
             s.note_on(52, 0.9);
@@ -294,9 +295,24 @@ fn convolution_and_spectral_dynamics_take_a_sound_on_the_board_and_pass_through_
         let wet = run(Some(name));
         assert!(max_diff(&wet, &dry) > 0.05, "{kind} with {name} changes the sound");
         assert!(rms(&wet[4800..]) > 1e-3, "{kind} with {name} is not silence");
-        assert_eq!(run(None), dry, "{kind} with no sound passes its input through, to the bit");
-        assert_eq!(run(Some("missing.wav")), dry, "{kind} with a sound that is not there passes it through");
+        if kind == "fx:convolution" {
+            assert_eq!(run(None), dry, "{kind} with no sound passes its input through, to the bit");
+            assert_eq!(run(Some("missing.wav")), dry, "{kind} with a sound that is not there passes it through");
+        }
     }
+    // Spectral Dynamics with no sound keeps its level-only mode: what it does
+    // with its sound switched off, and not its input.
+    let spectral = |sound: Option<&str>, use_sound: f32| {
+        let b = one_effect("fx:spectral-dynamics", sound, &[("useSound", use_sound), ("mode", 2.0), ("affect", 1.0), ("thresholdDb", -30.0), ("ratio", 4.0)]);
+        let mut s = synth(&Patch::default());
+        s.set_board(Box::new(BoardPlan::compile_with(&b, SR, &sounds).unwrap()));
+        s.note_on(52, 0.9);
+        render(&mut s, 24_000).0
+    };
+    let levels = spectral(Some("keys/high.wav"), 0.0);
+    assert_eq!(spectral(None, 1.0), levels, "no sound: its levels alone");
+    assert_eq!(spectral(Some("missing.wav"), 1.0), levels, "a sound not there: its levels alone");
+    assert!(max_diff(&levels, &dry) > 0.01, "its level-only mode is not a pass-through");
     // A sound on an effect that takes none is refused; a changed sound is new
     // structure, so a new plan.
     let mut bad = one_effect("fx:echo", None, &[]);

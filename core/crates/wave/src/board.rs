@@ -51,9 +51,9 @@
 //! node's `sound`, a library path. The board holds only the name: the server
 //! decodes the file off the audio thread, and [`BoardPlan::compile_with`]
 //! hands it to the kernel before the plan is swapped in. A changed sound is a
-//! new plan, since a kernel takes a sound only off the audio thread. A node of
-//! those kinds with no sound, or one that could not be read, passes its input
-//! through, to the bit.
+//! new plan, since a kernel takes a sound only off the audio thread. A
+//! Convolution node with no sound, or one that could not be read, passes its
+//! input through, to the bit; Spectral Dynamics keeps its level-only mode.
 //!
 //! # Modulation
 //!
@@ -246,6 +246,12 @@ impl Kind {
     /// Whether the node's effect takes a sound (`Node::sound`).
     pub fn takes_sound(self) -> bool {
         matches!(self, Kind::Fx(e) if e.descriptor.sound.is_some())
+    }
+
+    /// Takes a sound and does nothing without one, so passes its input
+    /// through: Convolution. Spectral Dynamics has its levels without one.
+    pub fn needs_sound(self) -> bool {
+        self.takes_sound() && !matches!(self, Kind::Fx(e) if e.descriptor.id == "spectral-dynamics")
     }
 
     pub fn is_input(self) -> bool {

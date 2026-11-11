@@ -389,8 +389,8 @@ oscillator on its own.
   effects share) before the board goes to the engine; `BoardPlan::compile_with` hands it to the kernel before the
   plan is swapped in. A changed sound is new structure: a new plan, crossfaded in. A sound decoded after its
   board was compiled has the board compiled again.
-- **No sound.** A node with none, or one that could not be read, passes its input through, to the bit. That
-  includes Spectral Dynamics, whose level-only mode the board therefore does not offer without a sound.
+- **No sound.** A Convolution node with none, or one that could not be read, passes its input through, to the bit.
+  Spectral Dynamics with none keeps its level-only mode, as in v8: it runs as with `useSound` off.
 - **Routes.**
   - `POST /api/wave/board/param {node, key: "sound", value: path | null, live?}`. The file must be in the library
     and decode; otherwise 400 and nothing changes. The reply is `{ok, node, key, value, soundState, live}`.
