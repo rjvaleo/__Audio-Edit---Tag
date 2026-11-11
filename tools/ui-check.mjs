@@ -17,8 +17,9 @@
 // cannot see is written down under KNOWN LIMITS at the bottom, because a check
 // that overstates its reach is worse than no check.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { appSource, servedSource, whereIs } from './app-source.mjs';
+import { colourLiterals } from './css-colours.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -334,6 +335,44 @@ else {
     fail(`index.html:${lineIn(left.at)}  <${left.name}> is never closed`);
   }
   notes.push(`${(html.match(/<div\b/g) || []).length} divs, balanced`);
+}
+
+// ------------------------------------- 6. every colour comes from a token
+//
+// A colour is written once, in the token layer, and named everywhere else —
+// which is what lets a theme reach every page (`ui/app-css/015-tokens.css`).
+// So no stylesheet outside the layer may write a `#hex`,
+// or an `rgb()`, `hsl()` or `oklch()` with numbers for its channels. An alpha
+// on a named colour, `rgba(var(--white-rgb), .08)`, is fine.
+//
+// The allowlist is short and says why, entry by entry. A file, or the rules in
+// it whose selector matches.
+
+/// The token layer: `010-shell.css`'s own :root, and `015-tokens.css`.
+const TOKEN_LAYER = [
+  { file: 'ui/app-css/010-shell.css', selector: /^:root$/ },
+  { file: 'ui/app-css/015-tokens.css' },
+];
+const COLOUR_ALLOW = [
+  { file: 'ui/edit.css', why: 'the Edit page, done 10 Nov 2026' },
+  { file: 'ui/sequencer/style.css', why: 'Seq, vendored: its code stays as it is, and it is restyled from outside' },
+  { file: 'ui/app-css/080-fx-faces-visual.css', selector: /\.(lex|sh|hp|hs)-|\.hyper-body/,
+    why: 'drawn pictures: the effect faces that picture Lexicon, SoundHack and Hyperprism, and HyperStretch\'s pad' },
+];
+{
+  const sheets = ['ui', 'ui/app-css', 'ui/sequencer'].flatMap((d) => readdirSync(join(root, d))
+    .filter((f) => f.endsWith('.css')).map((f) => `${d}/${f}`));
+  const covers = (list, file, l) => list.some((a) => a.file === file && (!a.selector || a.selector.test(l.selector)));
+  let named = 0;
+  let allowed = 0;
+  for (const file of sheets) {
+    for (const l of colourLiterals(readFileSync(join(root, file), 'utf8'))) {
+      if (covers(TOKEN_LAYER, file, l)) named++;
+      else if (covers(COLOUR_ALLOW, file, l)) allowed++;
+      else fail(`${file}:${l.line}  ${l.text} in ${l.selector.replace(/\s+/g, ' ').slice(0, 60)} — a colour belongs in the token layer (015-tokens.css)`);
+    }
+  }
+  notes.push(`${sheets.length} stylesheets: ${named} colours in the token layer, ${allowed} allowed (${COLOUR_ALLOW.length} entries)`);
 }
 
 // ------------------------------------------------------------------ report
