@@ -591,10 +591,84 @@ Theme.appTokens = function appTokens(colors, { plain = false } = {}) {
 const THEME_DIRECT_KEYS = ['color-scheme', '--line', '--line-2', '--line-3', '--line-4', '--wash',
   '--shadow-soft', '--shadow', '--shadow-hard', '--wave', '--wave-2'];
 
+// ------------------------------------------------------------------ the look
+//
+// Grain, Wave and Chop are drawn in the look (`--look-*` in `015-tokens.css`):
+// Graphite, as Wave first set it, with "on" (`--on`) in orange. A Look theme
+// states those tokens outright. Any other theme states the app's own — `--bg`,
+// `--surface`, `--text` … — and the look is derived from them here, so choosing
+// it changes those pages' surfaces, lines, text and accent the way it changes
+// the rest. What it states itself is kept; what it does not have is left to the
+// stylesheet.
+//
+// Colours that mean something — modulation, the facets, recording, meters —
+// are not the look's and are never derived.
+
+/// Every token a theme may set on the look, cleared with the rest.
+const THEME_LOOK_KEYS = ['--look-chassis', '--look-panel', '--look-panel-hi', '--look-well', '--look-well-rgb',
+  '--look-line', '--look-text', '--look-text-2', '--look-text-3', '--look-wave', '--look-wave-ink', '--look-bloom', '--look-accent',
+  '--look-mod', '--look-arc', '--look-track', '--look-glow', '--look-ui', '--look-rail',
+  '--on', '--on-rgb', '--on-tile', '--on-tile-sel'];
+
+/// "#rrggbb", "rgb(r g b)" or "rgba(r, g, b, a)" as [r, g, b]; anything else null.
+function lookRgb(value) {
+  const v = String(value || '').trim();
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) return hexToRgb(v);
+  const m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(v);
+  return m ? [+m[1], +m[2], +m[3]] : null;
+}
+
+/// `a` laid over `b` at `t`, as hex: how much of "on" warms a well.
+function lookMix(a, b, t) {
+  const x = lookRgb(a), y = lookRgb(b);
+  if (!x || !y) return null;
+  return toHex(...x.map((c, i) => (y[i] + (c - y[i]) * t) / 255));
+}
+
+/// The look a theme implies, from the app tokens it states.
+///
+/// Surfaces keep their order: the chassis is the theme's ground, a panel its
+/// surface, and the well its deepest step. A light theme raises a panel's top
+/// toward its palest paper rather than its next darker step, so a panel still
+/// catches the light from above. "On" is the theme's accent.
+Theme.lookTokens = function lookTokens(tokens) {
+  const t = tokens || {};
+  const out = {};
+  const put = (k, v) => { if (v) out[k] = v; };
+  const lum = (v) => { const c = lookRgb(v); return c ? luminance(c) : null; };
+  const light = t['color-scheme'] === 'light' || (lum(t['--bg']) ?? 0) > (lum(t['--text']) ?? 1);
+  put('--look-chassis', t['--bg']);
+  put('--look-panel', t['--surface']);
+  put('--look-panel-hi', light ? t['--well'] : t['--surface-3']);
+  put('--look-well', t['--sink']);
+  put('--look-line', t['--line-3'] || t['--surface-3']);
+  put('--look-text', t['--text']);
+  put('--look-text-2', t['--text-2']);
+  put('--look-text-3', t['--text-dim']);
+  put('--look-wave', t['--text']);
+  put('--look-wave-ink', t['--sink']);
+  put('--look-arc', t['--text-2']);
+  put('--look-track', t['--surface-3']);
+  put('--look-rail', t['--surface']);
+  put('--look-accent', t['--accent']);
+  put('--on', t['--accent']);
+  const tri = (v) => { const c = lookRgb(v); return c ? c.join(',') : null; };
+  put('--look-bloom', tri(t['--text']));
+  put('--look-well-rgb', tri(t['--sink']));
+  put('--on-rgb', tri(t['--accent']));
+  // Grain's preset tiles are its well warmed by "on": 11% of it, and 21% picked.
+  put('--on-tile', lookMix(t['--accent'], t['--sink'], 0.11));
+  put('--on-tile-sel', lookMix(t['--accent'], t['--sink'], 0.21));
+  // A glow is light on a dark panel; on a pale one it is only a smudge.
+  if (light && t['--bg']) out['--look-glow'] = '0.4';
+  return out;
+};
+
 Theme.applyTo = function applyTo(el, tokens) {
   if (!el) return;
-  for (const key of [...Object.keys(THEME_TOKEN_MAP), ...THEME_DIRECT_KEYS]) el.style.removeProperty(key);
-  for (const [k, v] of Object.entries(tokens || {})) el.style.setProperty(k, v);
+  for (const key of [...Object.keys(THEME_TOKEN_MAP), ...THEME_DIRECT_KEYS, ...THEME_LOOK_KEYS]) el.style.removeProperty(key);
+  const all = tokens ? { ...Theme.lookTokens(tokens), ...tokens } : {};
+  for (const [k, v] of Object.entries(all)) el.style.setProperty(k, v);
 };
 
 /// The same, onto the document — which is what makes a theme global.

@@ -46,7 +46,7 @@
   color: var(--text); font: inherit; padding: 3px 7px; width: 200px; min-width: 90px; flex: 0 1 auto; outline: none;
 }
 .lg-find:focus { border-color: var(--accent); }
-.lg-found { color: #ff4b4b; min-width: 7ch; }
+.lg-found { color: var(--graph-found); min-width: 7ch; }
 .lg-status { color: var(--text-dimmer); margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
 .lg-home, .lg-close, .lg-3d {
   background: none; border: 1px solid var(--line); border-radius: 4px;
@@ -63,7 +63,7 @@
 }
 .lg-now b { color: var(--text); font-weight: 600; }
 .lg-now .d { color: var(--text-dimmer); }
-.lg-now .p { color: #6fd08c; }
+.lg-now .p { color: var(--graph-now); }
 .lg-link { cursor: pointer; text-decoration: underline dotted; }
 
 .lg-legend {

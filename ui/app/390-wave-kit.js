@@ -383,10 +383,11 @@ function wvPath(fn, n) {
   return p;
 }
 
-/// The page's colours, read once from its own tokens on `#waveView`.
+/// The page's colours, read once from its own tokens on `#waveView`, and again
+/// after a theme is put on (`themeStamp`).
 let wvColourCache = null;
 function wvCl() {
-  if (wvColourCache) return wvColourCache;
+  if (wvColourCache?.stamp === themeStamp) return wvColourCache;
   const el = $('waveView');
   const s = getComputedStyle(el);
   const v = (k) => s.getPropertyValue(k).trim();
@@ -398,6 +399,7 @@ function wvCl() {
     // The app's own faces, ending in a generic family so a canvas never falls
     // back to a serif.
     mono: v('--mono') || 'monospace', sans: v('--sans') || 'sans-serif',
+    stamp: themeStamp,
   };
   return wvColourCache;
 }

@@ -96,7 +96,8 @@ function chopSizeCanvas(c) {
   return { c: g, w, h };
 }
 
-/// The Look's colours, for what is drawn on a canvas. Read when the Look changes.
+/// The look's colours, for what is drawn on a canvas. Read again when the theme
+/// changes (`chopRestyle`).
 const chopTok = { wave: '#fff', bloom: '205,225,255', t: '#e8eaee', t2: '#b9bec6', t3: '#858b94', glow: 1, ui: 'sans-serif' };
 function chopReadLook() {
   const b = getComputedStyle(document.querySelector('.chop-app')), v = (k) => b.getPropertyValue(k).trim();

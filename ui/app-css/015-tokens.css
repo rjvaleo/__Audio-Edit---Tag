@@ -1,0 +1,230 @@
+/* The rest of the token layer, beside `010-shell.css`'s own :root.
+
+   Every colour the stylesheets use is written here once, and named everywhere
+   else; `npm run check` fails on a colour written anywhere but these two places
+   (and its short allowlist). The values are the ones the stylesheets held as
+   literals, unchanged: this is the same interface, with its colours named.
+
+   Three kinds:
+   - **The look** (`--look-*`, `--on`): Graphite, as Wave first set it. Grain,
+     Wave and Chop read it through their own names (`--gs-*`, `--wv-*`, Chop's
+     `--chassis` …), which are aliases of these, so a theme reaches all three.
+     A theme that does not state them has them derived (`Theme.lookTokens`).
+   - **Colours that mean something** — modulation sources, the grain facets,
+     meters, recording, the room's axes — which no theme repaints.
+   - **The rest**, by the part of the interface they belong to. */
+
+:root {
+  /* ------------------------------------------------------------- the look */
+  --look-chassis:  #121316;
+  --look-panel:    #1b1d21;
+  --look-panel-hi: #262a30;
+  --look-well:     #06070a;
+  --look-well-rgb: 6,7,10;
+  --look-line:     #2c3036;
+  --look-text:     #e8eaee;
+  --look-text-2:   #b9bec6;
+  --look-text-3:   #858b94;
+  --look-wave:     #ffffff;
+  --look-wave-ink: #14161a;      /* type on a fill of the trace's colour (Chop's Write) */
+  --look-bloom:    205,225,255;  /* the trace's glow, as R,G,B for an alpha */
+  --look-accent:   #7cf0d0;      /* Wave's and Grain's mint */
+  --look-mod:      #8aa0c8;
+  --look-arc:      #d3d7de;
+  --look-track:    #2a2e34;
+  --look-glow:     1.1;
+  --look-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  --look-ui: Inter, -apple-system, system-ui, sans-serif;
+  /* The rail's top, a step above the chassis. */
+  --look-rail: #181a1f;
+
+  /* "On": one per theme (RJ, 11 Nov 2026: "follows the theme"). Orange here. */
+  --on:     #ffb547;
+  --on-rgb: 255,181,71;
+  /* Grain's preset tiles: the well, warmed by "on", and picked. */
+  --on-tile:     #201b14;
+  --on-tile-sel: #3a2c17;
+
+  /* Where Grain and Chop differ from Wave, kept as they are. */
+  --look-led-off:    #4a4a4a;   /* Grain: a tile's LED, off */
+  --look-chip-ink:   #0b0d12;   /* Grain: type on a lit map chip */
+  --look-socket:     #23262c;   /* Wave: a matrix socket's rim */
+  --look-socket-lit: #0b0c0f;   /* Wave: what a lit socket's colour is mixed into */
+  --look-pill:       #888;      /* Wave: a pill with no colour of its own */
+  --look-bad:        #f08a7a;   /* Wave: a note that something failed */
+  --look-unread:     #f0c48a;   /* Wave: a sound that could not be read */
+  --chop-bad:        #ff7a70;   /* Chop: a tempo it could not find */
+  --chop-tag:        #5b616a;   /* Chop: a slice's tag */
+  --look-scroll:     #3a3f47;   /* Chop: the slice list's scrollbar */
+
+  /* The Looks' materials, which only their themes use: Glass's panes and the
+     colour drifting behind them, Acrylic's panel and its coloured edge. */
+  --look-glass:       rgba(20,24,30,.55);
+  --look-glass-1-rgb: 60,140,170;
+  --look-glass-2-rgb: 130,90,170;
+  --look-glass-3-rgb: 200,140,80;
+  --look-acrylic:     #191b23;
+  --look-acrylic-lo:  #111218;
+  --look-edge-1:      #3b4060;
+  --look-edge-2:      #2c5d5f;
+  --look-edge-3:      #5e4c3d;
+  --look-edge-4:      #4a3b5e;
+
+  /* ----------------------------------------------------- light and shadow */
+  /* As R,G,B, for an alpha: `rgba(var(--white-rgb), .08)`. Highlights and
+     shadows are light, not the theme's colour, so no theme changes them. */
+  --white-rgb: 255,255,255;
+  --black-rgb: 0,0,0;
+  --white: #fff;
+  --black: #000;
+
+  /* ------------------------------------------------- colours with meaning */
+  /* The grain facets on Grain and Chop: what a control does to the sound,
+     muted. The app's brighter set is `--f-*` (010-shell.css). */
+  --look-f-time:   #cfa66c;
+  --look-f-pitch:  #a99be0;
+  --look-f-tone:   #79bfc3;
+  --look-f-attack: #d88f7e;
+  --look-f-space:  #8ec293;
+  --look-f-level:  #c4c8d0;
+  /* Prism's: its four LFOs, and the facets its pictures are tinted by. */
+  /* Prism's own names for them (`--plfo1` …) are set on #dockHyper only. */
+  --prism-lfo-1: oklch(76% .06 200); --prism-lfo-2: oklch(73% .06 350); --prism-lfo-3: oklch(78% .06 130); --prism-lfo-4: oklch(78% .06 80);
+  --prism-f-time: oklch(74% .055 75); --prism-f-pitch: oklch(72% .055 300); --prism-f-tone: oklch(74% .045 170);
+  --prism-f-attack: oklch(72% .055 35); --prism-f-space: oklch(74% .045 245); --prism-f-level: oklch(74% .015 250);
+
+  /* Recording. */
+  --rec-lit:      #ff5a4f;      /* Grain's record button, and a source that is off */
+  --rec-rail:     #e0503f;      /* the rail's Rec */
+  --rec-rail-hot: #ff6a55;
+  --rec-fill:     #c83a3a;      /* Prism's bar, recording */
+  --rec-go:       #c23b3b;
+  --rec-go-edge:  #7d2b2b;
+  --rec-go-hover: #d94848;
+  --rec-warn:     #e6c83f;
+  --perf-rec:     #ff3333;
+
+  /* Meters: safe, near the top, over. */
+  --meter-ok:      #30c878;
+  --meter-ok-rgb:  48,200,120;
+  --meter-warn:    #e3bf3d;     /* also an armed button */
+  --meter-hot:     #e64e4e;
+  --meter-hot-rgb: 230,78,78;
+  --meter-well:    #090b0d;
+  --rec-meter-well: #070b0e;
+
+  /* The playhead, and the band a read is waiting on, as L C H for an alpha. */
+  --playhead-lch: 63% 0.24 26;
+  /* Heat in the visual's legend. */
+  --hot:  oklch(72% 0.19 25);
+  --cold: oklch(72% 0.14 250);
+
+  /* The room's axes, x y z. */
+  --axis-x: #e5484d;
+  --axis-y: #46a758;
+  --axis-z: #3e63dd;
+
+  /* Library tags: what a sound is, what was heard in it, what you named it. */
+  --tag-sonic-rgb: 125,211,160;
+  --tag-heard-rgb: 150,180,255;
+  --tag-heard:     #9db4ff;
+  --tag-user-rgb:  240,190,120;
+  --tag-user:      #f0be78;
+  /* The library graph: what it found, and what is playing. */
+  --graph-found: #ff4b4b;
+  --graph-now:   #6fd08c;
+
+  /* Selected and playing, as R,G,B for an alpha. */
+  --sel-rgb:  125,190,255;
+  --play-rgb: 125,255,190;
+
+  /* --------------------------------------------------------- the shell */
+  --accent-deep: oklch(45% 0.14 250);   /* the mark's gradient, under the accent */
+  --text-file:   oklch(66% 0.01 250);   /* the open file's name */
+  --text-head:   oklch(88% 0.006 250);  /* a panel's heading */
+  --scroll-thumb: oklch(30% 0.02 250);
+  --menu-bg:     oklch(14% 0.014 250 / .98);
+  /* The interface's first blue, as a fixed colour: the default accent and
+     second waveform colour, which a theme does change, are separate tokens. */
+  --blue: oklch(70% 0.16 230);
+
+  /* The shell's own knob. */
+  --knob-bezel: #090b0e;
+  --knob-cap:   #11151a;
+  --knob-arc:   oklch(70% .18 235);
+  --knob-glow-rgb: 45,157,255;
+  --knob-ptr:   #eef7ff;
+  --knob-label: oklch(76% .012 250);
+  --knob-v-line-rgb: 95,157,214;
+  --knob-v-bg:  #101c2b;
+  --knob-v:     #a9d7ff;
+
+  /* Prism's pad. */
+  --pad-edge:   oklch(55% 0.13 250);
+  --pad-grid-lch: 60% 0.12 250;
+  --pad-hi:     oklch(42% 0.15 255);
+  --pad-lo:     oklch(24% 0.11 262);
+  --pad-shade:  oklch(15% 0.08 262 / .8);
+  --pad-glow:   oklch(80% 0.14 220);
+  --pad-path:   oklch(85% 0.12 200 / .75);
+
+  /* The effects rack. */
+  --eq-green:     #78dd42;
+  --eq-green-rgb: 120,221,66;
+  --eq-well:      #11161a;
+  --rack:         #101215;
+  --rack-hi:      #15171a;
+  --rack-params-1: #25292e;
+  --rack-params-2: #15181c;
+  --rack-params-3: #111316;
+  --rack-slot:    #171a1e;
+  --rack-sel:     #1a2735;
+  --rack-sel-edge-rgb: 73,156,230;
+  --rack-sel-bar: #3a9df4;
+  --rack-icon:    #0d1722;
+  --rack-icon-edge-rgb: 87,153,214;
+  --rack-icon-ink: #a8d7ff;
+  --rack-icon-sel: #17304a;
+  --rack-icon-sel-ink: #d8efff;
+  --param-head-hi: #292c30;
+  --param-head-lo: #191b1e;
+  --param-eyebrow: #6d91b3;
+  --param-title:   #f0f2f3;
+  --fx-display:    #0e1926;
+  --fx-display-ink: #9fcdf4;
+  --fx-display-edge-rgb: 86,151,211;
+  --pic-faint: #8a8a85;   /* an effect picture's faint line */
+
+  /* Automation and the cloud pad. */
+  --lane:        #0d151c;
+  --lane-well:   #070d13;
+  --lane-danger: #e0685f;
+
+  /* The Stage's controls and the visual-menu admin. */
+  --stage-input-bg:  rgba(6, 9, 12, 0.86);
+  --stage-pad-rgb:   127, 208, 255;
+  --stage-muted:     #8b93a1;
+  --stage-text:      #dfe6ef;
+
+  /* Seq's palette: its frame, and the performance strip that borrows it. */
+  --seq-bg:      #0a0c0e;
+  --seq-bg2:     #111418;
+  --seq-bg3:     #181d22;
+  --seq-border:  #1e2830;
+  --seq-accent:  #00e5ff;
+  --seq-accent2: #ff6b35;
+  --seq-accent3: #7fff00;
+  --seq-dim:     #2a3540;
+  --seq-text:    #c8d8e0;
+  --seq-text-dim: #4a6070;
+  --perf-note:   #ff60b8;
+
+  /* Analytics: one colour per kind of thing counted. */
+  --chart-grey:   oklch(62% 0.02 250);
+  --chart-amber:  oklch(80% 0.14 60);
+  --chart-green:  oklch(74% 0.15 155);
+  --chart-violet: oklch(64% 0.17 310);
+  --chart-white:  oklch(84% 0.008 250);
+  --chart-quiet:  oklch(30% 0.01 250);
+  --chart-red:    oklch(65% 0.19 25);
+}

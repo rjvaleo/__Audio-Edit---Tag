@@ -17,6 +17,8 @@ const themeState = {
   mine: [],
   chosen: null,
   plain: false,
+  /// Whether `mglLook` has been turned into a theme yet (`themeFromLook`).
+  looks: false,
 };
 
 /// The palettes this interface can actually wear.
@@ -79,24 +81,74 @@ function loadTheme() {
     themeState.mine = Array.isArray(v.mine) ? v.mine : [];
     themeState.chosen = v.chosen || null;
     themeState.plain = !!v.plain;
+    themeState.looks = !!v.looks;
   } catch { /* a corrupt entry is no theme, not a broken app */ }
+  themeFromLook();
+}
+
+/// Chop's five Looks became themes on 11 Nov 2026. Whoever had picked one gets
+/// its theme, once; Graphite + Acrylic, the default, leaves the theme alone.
+function themeFromLook() {
+  if (themeState.looks) return;
+  themeState.looks = true;
+  let look = null;
+  try { look = localStorage.getItem('mglLook'); } catch { /* private mode */ }
+  const p = look && look !== 'AD' && THEME_PALETTES.find((x) => x.look === look);
+  if (p) themeState.chosen = p.id;
+  saveTheme();
 }
 
 function saveTheme() {
   try {
     localStorage.setItem(THEME_STORE, JSON.stringify({
-      mine: themeState.mine, chosen: themeState.chosen, plain: themeState.plain,
+      mine: themeState.mine, chosen: themeState.chosen, plain: themeState.plain, looks: themeState.looks,
     }));
   } catch { /* private browsing, a full quota — neither is worth a toast */ }
+}
+
+/// Counted up each time a theme is put on, so a page that read its colours
+/// into a cache (`wvCl`, `gsCl`, Chop's `chopTok`) knows to read them again.
+let themeStamp = 0;
+
+/// Which of Grain's Looks a theme is: its own for a Look theme, the default
+/// Graphite + Acrylic for any other.
+///
+/// The Now Playing bar and the Edit page read the Look from `mglLook` and
+/// `data-mgl-look`, so they are kept in step with the theme rather than
+/// cleared: one setting, chosen on the Theme page or from the bar.
+function themeLook(p) {
+  return p?.look || 'AD';
 }
 
 function applyChosenTheme() {
   const p = allPalettes().find((x) => x.id === themeState.chosen);
   Theme.apply(p ? themeTokensFor(p) : null);
+  themeStamp++;
+  const look = themeLook(p);
+  document.documentElement.dataset.mglLook = look;
+  try { localStorage.setItem('mglLook', look); } catch { /* private mode */ }
   // The waveform travels with the theme. `applyWaveColour` is defined below
   // this, but this only ever runs from a handler or after load, never during
   // it, so the ordering is safe — unlike reaching for it at declaration time.
   if (typeof applyWaveColour === 'function') applyWaveColour({ save: false });
+}
+
+/// Wear the theme of one of Grain's Looks. The Now Playing bar's Look buttons
+/// come here, through `chopSetLook`, which is the name the bar calls.
+///
+/// Only ever from a handler: Grain's, Wave's and Chop's state is declared in
+/// files below this one and is in its dead zone while this file loads.
+function themeWearLook(k) {
+  const p = allPalettes().find((x) => x.look === k);
+  if (!p) return;
+  if (themeState.chosen !== p.id) {
+    themeState.chosen = p.id;
+    saveTheme(); applyChosenTheme(); renderThemeList();
+  }
+  // The page in front repaints now; the others as they are next shown.
+  if (GS.showing) gsRestyle();
+  if (WV.showing) wvRestyle();
+  if (document.body.classList.contains('choppage')) chopRestyle();
 }
 
 /// The studio's own state, declared here rather than beside the rest of the

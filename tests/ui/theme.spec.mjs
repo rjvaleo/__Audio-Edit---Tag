@@ -143,6 +143,9 @@ test('every offered palette keeps the surface ladder in order', async ({ page })
       // Through the same accessor the app uses, so a direct theme is checked on
       // the tokens it actually writes rather than on a derivation of the five
       // colours it happens to show in its swatch.
+      // A Look (Chop's five, themes since 11 Nov 2026) states only the look
+      // Grain, Wave and Chop are drawn in, and leaves the app's surfaces alone.
+      if (p.look) continue;
       const t = themeTokensFor(p);
       const ls = steps.map((k) => lum(t[k]));
       if (p.direct && p.dark === false) {

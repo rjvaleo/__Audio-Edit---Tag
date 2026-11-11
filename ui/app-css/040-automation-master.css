@@ -17,17 +17,17 @@
 .automation-lane {
   display: grid; grid-template-columns: 190px 1fr; gap: 8px;
   align-items: stretch;
-  background: var(--bg-2, #0d151c);
-  border: 1px solid var(--line, #1d2833);
+  background: var(--bg-2, var(--lane));
+  border: 1px solid var(--line);
   border-radius: 4px; padding: 6px;
 }
 .automation-lane-controls { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
 .automation-lane-controls .row { display: flex; align-items: center; gap: 5px; }
 .automation-lane-controls select { flex: 1; min-width: 0; font-size: var(--fs-m); }
-.automation-lane-controls .danger { color: var(--danger, #e0685f); padding: 0 6px; }
+.automation-lane-controls .danger { color: var(--danger, var(--lane-danger)); padding: 0 6px; }
 .automation-canvas {
   width: 100%; height: 110px; display: block;
-  background: #070d13; border-radius: 3px; cursor: crosshair;
+  background: var(--lane-well); border-radius: 3px; cursor: crosshair;
   touch-action: none;
 }
 
@@ -41,25 +41,25 @@
 .rec-device select { flex: 1; min-width: 0; }
 .rec-meter {
   display: flex; gap: 3px; height: 74px; padding: 4px;
-  border: 1px solid var(--line-2); border-radius: 4px; background: #070b0e;
+  border: 1px solid var(--line-2); border-radius: 4px; background: var(--rec-meter-well);
   box-shadow: inset 0 1px 5px var(--shadow-hard);
 }
 .rec-bar {
   flex: 1; align-self: flex-end; height: var(--rec, 0%); border-radius: 1px;
-  background: linear-gradient(to top, #30c878 0 70%, #e3bf3d 70% 90%, #e64e4e 90%);
+  background: linear-gradient(to top, var(--meter-ok) 0 70%, var(--meter-warn) 70% 90%, var(--meter-hot) 90%);
   transition: height 60ms linear;
 }
 /* At or above full scale the meter itself reads as wrong, not just the bar. */
-.rec-meter.hot { border-color: #e64e4e; box-shadow: inset 0 1px 5px var(--shadow-hard), 0 0 0 1px rgba(230,78,78,.45); }
+.rec-meter.hot { border-color: var(--meter-hot); box-shadow: inset 0 1px 5px var(--shadow-hard), 0 0 0 1px rgba(var(--meter-hot-rgb), .45); }
 .rec-transport { display: flex; align-items: center; gap: 8px; }
 .rec-go {
   width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
-  border: 1px solid #7d2b2b; background: #c23b3b; color: #fff;
+  border: 1px solid var(--rec-go-edge); background: var(--rec-go); color: var(--white);
   font-size: var(--fs-l); line-height: 1; cursor: pointer;
 }
-.rec-go:hover { background: #d94848; }
+.rec-go:hover { background: var(--rec-go-hover); }
 .rec-readout { font-size: var(--fs-m); color: var(--text-2); font-variant-numeric: tabular-nums; }
-.rec-readout.warn { color: #e6c83f; }
+.rec-readout.warn { color: var(--rec-warn); }
 .rec-name { display: flex; align-items: center; gap: 8px; }
 .rec-name .k { font-size: var(--fs-m); color: var(--text-2); flex: 0 0 auto; }
 .rec-name input { flex: 1; min-width: 0; }
@@ -227,11 +227,11 @@
   display: block;
   width: 100%;
   height: 132px;
-  border: 1px solid var(--line, #1b2a36);
+  border: 1px solid var(--line);
   border-radius: 4px;
   /* A well, so it follows the theme: near-black on the dark ones, paper on the
      light ones (it was #0a141c whatever the theme). */
-  background: var(--well, #0a141c);
+  background: var(--well);
   cursor: crosshair;
   touch-action: none;
 }
@@ -360,7 +360,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .kb-key.black {
   height: 51px; z-index: 2;
-  border: 1px solid #000; border-radius: 0 0 4px 4px;
+  border: 1px solid var(--black); border-radius: 0 0 4px 4px;
   background: var(--sink); color: var(--text-2);
   box-shadow: 0 2px 5px var(--shadow);
 }
@@ -639,7 +639,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   cursor: pointer; border-radius: 2px;
 }
 .re-colour::-webkit-color-swatch-wrapper { padding: 0; }
-.re-colour::-webkit-color-swatch { border: 1px solid rgba(255,255,255,.25); border-radius: 2px; }
+.re-colour::-webkit-color-swatch { border: 1px solid rgba(var(--white-rgb), .25); border-radius: 2px; }
 #reLayers.re-flat .re-grip { opacity: .12; }
 #reLayers.re-flat .re-grip:hover { opacity: .3; }
 /* The Data block is type on the wall rather than geometry in the room, so it

@@ -293,11 +293,12 @@ const gsFacet = (k) => GG_FACET[k] || 'time';
 const GS_PWR = '<svg viewBox="0 0 14 14"><path d="M7 1.5 V6.5 M3.9 3.7 A4.6 4.6 0 1 0 10.1 3.7"/></svg>';
 const GS_START = '#8fe388';
 
-/// The page's colours, read once from its own tokens on `#grainView`. The same
-/// names Wave's drawing helpers ask for.
+/// The page's colours, read once from its own tokens on `#grainView`, and again
+/// after a theme is put on (`themeStamp`). The same names Wave's drawing helpers
+/// ask for.
 let gsColourCache = null;
 function gsCl() {
-  if (gsColourCache) return gsColourCache;
+  if (gsColourCache?.stamp === themeStamp) return gsColourCache;
   const s = getComputedStyle($('grainView')), v = (k) => s.getPropertyValue(k).trim();
   gsColourCache = {
     wave: v('--gs-wave') || '#fff', bloom: v('--gs-bloom') || '205,225,255', acc: v('--gs-acc') || '#7cf0d0',
@@ -305,6 +306,7 @@ function gsCl() {
     t: v('--gs-t') || '#e8eaee', t2: v('--gs-t2') || '#b9bec6', t3: v('--gs-t3') || '#858b94',
     glow: +v('--gs-glow') || 1.1,
     mono: v('--mono') || 'monospace', sans: v('--sans') || 'sans-serif',
+    stamp: themeStamp,
   };
   return gsColourCache;
 }

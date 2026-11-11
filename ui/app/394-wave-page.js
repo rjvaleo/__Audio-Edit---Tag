@@ -168,8 +168,16 @@ function wvShiftOct(by) {
 
 // ─────────────────────────────────────────────────────────── coming and going
 
+/// Everything drawn once, drawn again, if a theme has been put on since.
+function wvRestyle() {
+  if (WV.themed === themeStamp) return;
+  WV.themed = themeStamp;
+  wvSyncAll();
+}
+
 function wvEnter() {
-  if (!WV.built) wvBuild();
+  if (!WV.built) { wvBuild(); WV.themed = themeStamp; }
+  wvRestyle();
   gsWireMidiChannel($('wvMidiCh'), 'wave');
   gsMidiSend();
   WV.showing = true;

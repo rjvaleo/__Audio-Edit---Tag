@@ -522,20 +522,22 @@ test('every slice is measured and named, and the colour row says what the colour
   await expect(page.locator('#chopPickAn')).toContainText('bright');
 });
 
-test('all five of Grain\'s Looks apply, and orange still means on in each', async ({ page }) => {
+test('all five of Grain\'s Looks apply, as themes, and orange still means on in each', async ({ page }) => {
   await openChop(page);
+  // Chop's own Look switch went on 11 Nov 2026: a Look is a theme now.
+  await expect(page.locator('#chopLook')).toHaveCount(0);
   for (const k of ['AD', 'A', 'B', 'C', 'D']) {
-    await page.locator(`#chopLook button[data-s="${k}"]`).click();
-    const got = await page.evaluate(() => {
-      const app = document.querySelector('.chop-app'), s = getComputedStyle(app);
-      return { look: app.dataset.look, acc: s.getPropertyValue('--acc').trim(), wave: s.getPropertyValue('--wave').trim() };
-    });
+    const got = await page.evaluate((look) => {
+      themeState.chosen = THEME_PALETTES.find((p) => p.look === look).id;
+      applyChosenTheme();
+      const s = getComputedStyle(document.querySelector('.chop-app'));
+      return { look: Chop.look, acc: s.getPropertyValue('--acc').trim(), wave: s.getPropertyValue('--wave').trim() };
+    }, k);
     expect(got.look).toBe(k);
     expect(got.acc).toBe('#ffb547');
     expect(got.wave).not.toBe('');
   }
-  await page.locator('#chopLook button[data-s="AD"]').click();
-  await page.evaluate(() => localStorage.removeItem('mglLook'));
+  await page.evaluate(() => { themeState.chosen = null; applyChosenTheme(); localStorage.removeItem('mglLook'); });
 });
 
 test('the page fits: nothing runs off it and nothing is cut off', async ({ page }) => {

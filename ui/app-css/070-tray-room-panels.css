@@ -736,7 +736,7 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 .av-open { width: auto; height: auto; padding: 0; font: 500 var(--fs-s) var(--sans); color: var(--accent); background: none; border: 0; cursor: pointer; }
 .av-open:hover { text-decoration: underline; }
 .av-modal.hidden { display: none; }
-.av-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 900; }
+.av-back { position: fixed; inset: 0; background: rgba(var(--black-rgb), .6); z-index: 900; }
 .av-box {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 901;
   width: min(784px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto;

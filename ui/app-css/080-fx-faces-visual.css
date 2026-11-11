@@ -186,8 +186,8 @@
 .fx-suite .fx-module-controls { display: grid; gap: 4px; }
 .fx-suite .pic .a { fill: none; stroke: var(--pc); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .fx-suite .pic .af { fill: var(--pc); stroke: none; }
-.fx-suite .pic .f { fill: none; stroke: var(--pf, #8a8a85); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
-.fx-suite .pic .ff { fill: var(--pf, #8a8a85); opacity: .55; stroke: none; }
+.fx-suite .pic .f { fill: none; stroke: var(--pf, var(--pic-faint)); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
+.fx-suite .pic .ff { fill: var(--pf, var(--pic-faint)); opacity: .55; stroke: none; }
 .fx-suite svg.pic { display: block; overflow: visible; }
 .fx-suite .param.inactive { opacity: .35; }
 
@@ -534,8 +534,8 @@
 .an-bar .t { height: 6px; background: var(--well); border-radius: 2px; overflow: hidden; }
 .an-bar .t i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 .an-bar .v { font-size: 10px; color: var(--text-dim); text-align: right; white-space: nowrap; }
-.pg-overview { --pg: oklch(62% 0.02 250); } .pg-edit { --pg: oklch(70% 0.16 230); } .pg-room { --pg: oklch(80% 0.14 60); }
-.pg-seq { --pg: oklch(74% 0.15 155); } .pg-compose { --pg: oklch(64% 0.17 310); } .pg-analytics { --pg: oklch(84% 0.008 250); }
+.pg-overview { --pg: var(--chart-grey); } .pg-edit { --pg: var(--blue); } .pg-room { --pg: var(--chart-amber); }
+.pg-seq { --pg: var(--chart-green); } .pg-compose { --pg: var(--chart-violet); } .pg-analytics { --pg: var(--chart-white); }
 .an-bar[class*="pg-"] .t i { background: var(--pg); }
 .an-row { display: grid; grid-template-columns: 22px minmax(0, 1.6fr) minmax(0, 1fr) 54px 50px minmax(0, 1.4fr) 44px; gap: 6px; align-items: center; min-height: 20px; border-bottom: 1px solid var(--wash); cursor: pointer; }
 .an-row:hover { background: var(--wash); }
@@ -559,7 +559,7 @@
 .an-days .db b { font-size: 9px; font-weight: 400; color: var(--text-dim); white-space: nowrap; }
 .an-heat { position: relative; flex: none; width: 380px; height: 260px; background: var(--well); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
 .an-hb { position: absolute; box-sizing: border-box; padding: 2px 4px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
-  border: 1px solid rgba(0,0,0,.35); border-radius: 2px; font-size: 9px;
+  border: 1px solid rgba(var(--black-rgb), .35); border-radius: 2px; font-size: 9px;
   background: oklch(calc(22% + var(--h) * 56%) calc(0.04 + var(--h) * 0.11) 230); color: var(--text); }
 .an-hb span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .an-heatlist { min-height: 0; }
@@ -570,7 +570,7 @@
 .an-legend { display: flex; gap: 8px; }
 .an-legend span { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; color: var(--text-2); }
 .an-legend i { width: 8px; height: 8px; border-radius: 2px; background: var(--pg); }
-.an-legend i.idle, .an-srow .tl i.idle { background: repeating-linear-gradient(45deg, rgba(255,255,255,.18) 0 2px, transparent 2px 4px); }
+.an-legend i.idle, .an-srow .tl i.idle { background: repeating-linear-gradient(45deg, rgba(var(--white-rgb), .18) 0 2px, transparent 2px 4px); }
 .an-legend i.err { width: 2px; background: var(--bad); }
 .an-sessions { display: flex; flex-direction: column; gap: 2px; flex: none; }
 .an-srow { display: grid; grid-template-columns: 130px minmax(0, 1fr) 64px; gap: 8px; align-items: center; height: 26px; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
@@ -608,13 +608,13 @@
 .an-strip { position: relative; height: 10px; background: var(--well); overflow: hidden; }
 .an-strip.tall { height: 16px; }
 .an-strip i { position: absolute; top: 0; bottom: 0; }
-.an-strip.tall i { top: auto; background: oklch(62% 0.02 250); }
+.an-strip.tall i { top: auto; background: var(--chart-grey); }
 .an-strip b { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); }
-.act-play { background: oklch(74% 0.15 155); } .act-export { background: oklch(80% 0.14 60); }
-.act-video { background: oklch(64% 0.17 310); } .act-quiet { background: oklch(30% 0.01 250); }
+.act-play { background: var(--chart-green); } .act-export { background: var(--chart-amber); }
+.act-video { background: var(--chart-violet); } .act-quiet { background: var(--chart-quiet); }
 .an-acts i { background: none; }
-.an-acts i.act-play { background: oklch(74% 0.15 155); } .an-acts i.act-export { background: oklch(80% 0.14 60); }
-.an-acts i.act-video { background: oklch(64% 0.17 310); } .an-acts i.act-quiet { background: oklch(30% 0.01 250); }
+.an-acts i.act-play { background: var(--chart-green); } .an-acts i.act-export { background: var(--chart-amber); }
+.an-acts i.act-video { background: var(--chart-violet); } .an-acts i.act-quiet { background: var(--chart-quiet); }
 .an-prow, .an-xrow { display: grid; gap: 6px; align-items: center; min-height: 19px; border-bottom: 1px solid var(--wash); font-size: 10px; }
 .an-prow { grid-template-columns: 44px 44px 44px 54px minmax(0, 1fr); }
 .an-xrow { grid-template-columns: 40px 48px 52px 50px minmax(0, 1fr); }
@@ -624,8 +624,8 @@
 .an-store { flex: 1 1 auto; max-width: 900px; gap: 8px; }
 .an-stack { display: flex; height: 10px; border-radius: 2px; overflow: hidden; background: var(--well); flex: none; }
 .an-stack i, .an-legend i[class^="st-"] { background: var(--pg); }
-.st-events { --pg: oklch(70% 0.16 230); } .st-perf { --pg: oklch(80% 0.14 60); } .st-spikes { --pg: oklch(65% 0.19 25); }
-.st-daily { --pg: oklch(74% 0.15 155); } .st-other { --pg: oklch(64% 0.17 310); }
+.st-events { --pg: var(--blue); } .st-perf { --pg: var(--chart-amber); } .st-spikes { --pg: var(--chart-red); }
+.st-daily { --pg: var(--chart-green); } .st-other { --pg: var(--chart-violet); }
 .an-ret { display: grid; grid-template-columns: 220px 110px minmax(0, 1fr); gap: 6px 12px; align-items: center; font-size: 11px; border-top: 1px solid var(--line-2); padding-top: 8px; }
 .an-ret .d { font-size: 10px; }
 
@@ -737,9 +737,9 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
    tinted by what its control does to the sound, each LFO keeps its own hue on
    its tab, its ring and its scope. No glows. */
 #dockHyper {
-  --plfo1: oklch(76% .06 200); --plfo2: oklch(73% .06 350); --plfo3: oklch(78% .06 130); --plfo4: oklch(78% .06 80);
-  --pv-f-time: oklch(74% .055 75); --pv-f-pitch: oklch(72% .055 300); --pv-f-tone: oklch(74% .045 170);
-  --pv-f-attack: oklch(72% .055 35); --pv-f-space: oklch(74% .045 245); --pv-f-level: oklch(74% .015 250);
+  --plfo1: var(--prism-lfo-1); --plfo2: var(--prism-lfo-2); --plfo3: var(--prism-lfo-3); --plfo4: var(--prism-lfo-4);
+  --pv-f-time: var(--prism-f-time); --pv-f-pitch: var(--prism-f-pitch); --pv-f-tone: var(--prism-f-tone);
+  --pv-f-attack: var(--prism-f-attack); --pv-f-space: var(--prism-f-space); --pv-f-level: var(--prism-f-level);
 }
 #dockHyper .prism-bars { --f-time: var(--pv-f-time); --f-pitch: var(--pv-f-pitch); --f-tone: var(--pv-f-tone);
   --f-attack: var(--pv-f-attack); --f-space: var(--pv-f-space); --f-level: var(--pv-f-level); }
@@ -826,7 +826,7 @@ body.prism-mapping #dockHyper #prismSettings .prism-bar > input[type=range] { cu
 .ppick-btn::after { content: "▾"; margin-left: auto; color: var(--text-dim); }
 .ppick-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ppick .pic { flex: none; width: 24px; height: 18px; overflow: visible; }
-.ppick-menu { position: fixed; z-index: 40; display: grid; grid-template-columns: repeat(5, 152px); gap: 0 8px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 8px 20px rgba(0,0,0,.45); }
+.ppick-menu { position: fixed; z-index: 40; display: grid; grid-template-columns: repeat(5, 152px); gap: 0 8px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 8px 20px rgba(var(--black-rgb), .45); }
 .ppick-menu[hidden] { display: none; }
 .ppick-g { display: flex; flex-direction: column; margin-bottom: 4px; }
 .ppick-g > i { font: 600 9px/13px var(--mono); font-style: normal; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }

@@ -51,11 +51,11 @@
   position: absolute;
   z-index: 7;
   margin: 0;
-  border: 1px dashed var(--accent, #7fd0ff);
+  border: 1px dashed var(--accent);
   outline: none;
   resize: none;
-  background: rgba(6, 9, 12, 0.86);
-  color: var(--text, #eceff2);
+  background: var(--stage-input-bg);
+  color: var(--text);
   font: 600 var(--fs-l)/1.4 var(--mono, ui-monospace, SFMono-Regular, monospace);
   text-align: center;
   padding: 6px;
@@ -64,7 +64,7 @@
 /* A line of guidance where a control would be misleading — the card is placed
    by dragging it, and four sliders pretending otherwise would be worse. */
 .re-note {
-  color: var(--muted, #8b93a1);
+  color: var(--muted, var(--stage-muted));
   font-size: var(--fs-m);
   line-height: 1.4;
   padding: 2px 0 6px;
@@ -86,8 +86,8 @@
 .st-group {
   margin: 12px 0 4px;
   padding-bottom: 3px;
-  border-bottom: 1px solid var(--line, #223);
-  color: var(--muted, #8b93a1);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted, var(--stage-muted));
   font: 600 var(--fs-s)/1 var(--mono, ui-monospace, monospace);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -99,12 +99,12 @@
   aspect-ratio: 1 / 1;
   max-height: 150px;
   margin: 4px 0 3px;
-  border: 1px solid var(--line, #223);
+  border: 1px solid var(--line);
   border-radius: 6px;
   background:
-    linear-gradient(to right, rgba(127, 208, 255, 0.10) 1px, transparent 1px) 0 0 / 25% 100%,
-    linear-gradient(to bottom, rgba(127, 208, 255, 0.10) 1px, transparent 1px) 0 0 / 100% 25%,
-    var(--sink, #0b0e12);
+    linear-gradient(to right, rgba(var(--stage-pad-rgb), 0.10) 1px, transparent 1px) 0 0 / 25% 100%,
+    linear-gradient(to bottom, rgba(var(--stage-pad-rgb), 0.10) 1px, transparent 1px) 0 0 / 100% 25%,
+    var(--sink);
   cursor: crosshair;
   touch-action: none;
 }
@@ -114,13 +114,13 @@
   height: 13px;
   margin: -7px 0 0 -7px;
   border-radius: 50%;
-  background: var(--accent, #7fd0ff);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 12px rgba(127, 208, 255, 0.75);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(var(--black-rgb), 0.6), 0 0 12px rgba(var(--stage-pad-rgb), 0.75);
   pointer-events: none;
 }
 .st-pad-read {
   display: block;
-  color: var(--muted, #8b93a1);
+  color: var(--muted, var(--stage-muted));
   font: 500 var(--fs-s)/1.3 var(--mono, ui-monospace, monospace);
 }
 
@@ -131,7 +131,7 @@
    so — a scene with eight things missing should not look like eight things
    broken. */
 .st-solo {
-  outline: 1px solid var(--accent, #7fd0ff);
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 .st-muted { opacity: 0.35; }
@@ -150,7 +150,7 @@
   width: 26px;
   height: 20px;
   padding: 0;
-  border: 1px solid var(--line, #223);
+  border: 1px solid var(--line);
   border-radius: 4px;
   background: none;
   cursor: pointer;
@@ -191,25 +191,25 @@
   justify-content: space-between;
   padding: 0 0 3px;
   border: 0;
-  border-bottom: 1px solid var(--line, #223);
+  border-bottom: 1px solid var(--line);
   background: none;
   cursor: pointer;
   text-align: left;
 }
 .st-fold::after {
   content: '+';
-  color: var(--muted, #8b93a1);
+  color: var(--muted, var(--stage-muted));
   font: 600 var(--fs-l)/1 var(--mono, ui-monospace, monospace);
 }
-.st-fold.open { color: var(--text-1, #dfe6ef); border-bottom-color: var(--accent, #7fd0ff); }
-.st-fold.open::after { content: '\2212'; color: var(--accent, #7fd0ff); }
-.st-fold:hover { color: var(--text-2, #b6c0cd); }
+.st-fold.open { color: var(--text-1, var(--stage-text)); border-bottom-color: var(--accent); }
+.st-fold.open::after { content: '\2212'; color: var(--accent); }
+.st-fold:hover { color: var(--text-2); }
 .st-fold-body { padding: 4px 0 10px; }
 
 /* What the gestures are, said once where you would look for them. */
 .st-note {
   margin: 4px 0 8px;
-  color: var(--muted, #8b93a1);
+  color: var(--muted, var(--stage-muted));
   font: var(--fs-s)/1.5 var(--mono, ui-monospace, monospace);
 }
 
@@ -234,10 +234,10 @@
   max-height: 60vh;
   padding: 8px;
   overflow-y: auto;
-  border: 1px solid var(--line, #223);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-2, #0d1219);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  background: var(--surface-2);
+  box-shadow: 0 10px 30px rgba(var(--black-rgb), 0.55);
 }
 .vma-head { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
 .vma-head .re-tag { flex: 1 1 auto; }
@@ -247,11 +247,11 @@
   align-items: center;
   padding: 2px 0;
 }
-.vma-row.vma-off .vma-name { color: var(--muted, #8b93a1); text-decoration: line-through; }
+.vma-row.vma-off .vma-name { color: var(--muted, var(--stage-muted)); text-decoration: line-through; }
 .vma-name {
   flex: 1 1 auto;
   overflow: hidden;
-  color: var(--text-1, #dfe6ef);
+  color: var(--text-1, var(--stage-text));
   font: var(--fs-m)/1.4 var(--mono, ui-monospace, monospace);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -261,8 +261,8 @@
 .vma-fam-head {
   margin: 8px 0 3px;
   padding-bottom: 2px;
-  border-bottom: 1px solid var(--line, #223);
-  color: var(--muted, #8b93a1);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted, var(--stage-muted));
   font: 600 var(--fs-xs)/1 var(--mono, ui-monospace, monospace);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -271,20 +271,20 @@
 .vma-eye, .vma-move {
   width: 20px;
   padding: 2px 0;
-  border: 1px solid var(--line, #223);
+  border: 1px solid var(--line);
   border-radius: 4px;
   background: none;
-  color: var(--text-2, #b6c0cd);
+  color: var(--text-2);
   font: var(--fs-s)/1 var(--mono, ui-monospace, monospace);
   cursor: pointer;
 }
-.vma-eye:hover, .vma-move:hover:not(:disabled) { border-color: var(--accent, #7fd0ff); color: var(--accent, #7fd0ff); }
+.vma-eye:hover, .vma-move:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .vma-move:disabled { opacity: 0.25; cursor: default; }
 .vma-foot {
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid var(--line, #223);
-  color: var(--muted, #8b93a1);
+  border-top: 1px solid var(--line);
+  color: var(--muted, var(--stage-muted));
   font: var(--fs-xs)/1.5 var(--mono, ui-monospace, monospace);
 }
 
@@ -309,9 +309,9 @@
 }
 
 /* ── the sequencer, in a frame ─────────────────────────────────────────────── */
-.seqview { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; background: #0a0c0e; }
+.seqview { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; background: var(--seq-bg); }
 .seqview.hidden { display: none; }
-.seq-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #0a0c0e; }
+.seq-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: var(--seq-bg); }
 
 /* ── PERFORMANCE ─────────────────────────────────────────────────────────────
    The scale sequencer's panel, on the grain page. These are its rules and
@@ -319,9 +319,9 @@
    seen twice. The variable names are the sequencer's own, redeclared here so
    its rules read unchanged. */
 .automation-body {
-  --bg: #0a0c0e; --bg2: #111418; --bg3: #181d22; --border: #1e2830;
-  --accent: #00e5ff; --accent2: #ff6b35; --accent3: #7fff00; --dim: #2a3540;
-  --text: #c8d8e0; --text-dim: #4a6070;
+  --bg: var(--seq-bg); --bg2: var(--seq-bg2); --bg3: var(--seq-bg3); --border: var(--seq-border);
+  --accent: var(--seq-accent); --accent2: var(--seq-accent2); --accent3: var(--seq-accent3); --dim: var(--seq-dim);
+  --text: var(--seq-text); --text-dim: var(--seq-text-dim);
   display: block; gap: 0; padding: 0;
   background: var(--bg); color: var(--text);
   font-family: "Share Tech Mono", monospace; font-size: var(--fs-l);
@@ -363,7 +363,7 @@
 }
 .perf-rec-btn { border-color: var(--accent2) !important; color: var(--accent2) !important; }
 .perf-rec-btn.recording {
-  border-color: #ff3333 !important; color: #ff3333 !important;
+  border-color: var(--perf-rec) !important; color: var(--perf-rec) !important;
   animation: rec-pulse 1s ease-in-out infinite;
 }
 .perf-select { max-width: 220px; }
@@ -436,9 +436,9 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .room-gnomon { position: absolute; left: 8px; bottom: 8px; width: 64px; height: 64px; pointer-events: none; overflow: visible; }
 .room-gnomon line { stroke-width: 2; stroke-linecap: round; }
 .room-gnomon text { font-size: 8px; font-family: inherit; text-anchor: middle; dominant-baseline: middle; }
-.room-gnomon .gx { stroke: #e5484d; fill: #e5484d; }
-.room-gnomon .gy { stroke: #46a758; fill: #46a758; }
-.room-gnomon .gz { stroke: #3e63dd; fill: #3e63dd; }
+.room-gnomon .gx { stroke: var(--axis-x); fill: var(--axis-x); }
+.room-gnomon .gy { stroke: var(--axis-y); fill: var(--axis-y); }
+.room-gnomon .gz { stroke: var(--axis-z); fill: var(--axis-z); }
 
 /* The source switches on the transport: lit while the source plays. */
 .tbtn.src { font-size: var(--fs-xs); letter-spacing: .08em; padding: 0 6px; opacity: .45; }
@@ -485,7 +485,7 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
   grid-template-rows: minmax(0, 1fr);
 }
 .cv-cell { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--surface); }
-.cv-seq { background: #0a0c0e; }
+.cv-seq { background: var(--seq-bg); }
 .cv-vgrip { cursor: ew-resize; background: var(--line); touch-action: none; }
 .cv-split { flex: 0 0 5px; cursor: ns-resize; background: var(--line); touch-action: none; }
 .cv-vgrip:hover, .cv-vgrip.dragging, .cv-split:hover, .cv-split.dragging { background: var(--accent); }
@@ -516,7 +516,7 @@ body.composeview #mbRes, body.composeview #mbPeakHz { display: none !important; 
 .cp-room .mb-cell-3d:not(.re-framed) { flex: 1 1 auto; }
 
 /* A sequencer lane chosen on the timeline: it is edited in Seq. */
-.automation-body .perf-seq-note { padding: 10px 20px; font-size: var(--fs-s); letter-spacing: 1px; color: #ff60b8; }
+.automation-body .perf-seq-note { padding: 10px 20px; font-size: var(--fs-s); letter-spacing: 1px; color: var(--perf-note); }
 
 /* The composition bar, over the arrangement. */
 .cv-comp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 20px; background: var(--bg3); border-bottom: 1px solid var(--border); }
@@ -548,8 +548,8 @@ body.composeview #mbRes, body.composeview #mbPeakHz { display: none !important; 
    through a word by the volume slider. Only the last 20 px, and only once the
    strip is fuller than its box — `transport.js`-free: `app.js` sets the class. */
 .metastrip.overflowing {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
-          mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  -webkit-mask-image: linear-gradient(to right, var(--black) calc(100% - 20px), transparent);
+          mask-image: linear-gradient(to right, var(--black) calc(100% - 20px), transparent);
 }
 
 /* C9 · Browse's empty lane: a sentence while the library is open beside it, a
