@@ -718,9 +718,12 @@ function wvCommitTouched() {
   if (WV.modsDirty) { WV.modsDirty = false; wvSendMods(); }
 }
 
-/// The rows as the engine takes them. A row switched off in the Matrix is the
-/// page's alone: the engine has no switch, so it is left out until it is back on.
-const wvModsOut = () => WV.mods.filter((m) => !m.off).map(({ src, dst, amt, curve, via }) => ({ src, dst, amt, curve: curve || 'lin', via: via ?? null }));
+/// The rows as the engine takes them. v8b: every row, a row switched off in
+/// the Matrix with `on: false`, so it is kept, saved and listed, and moves
+/// nothing.
+const wvModsOut = () => WV.mods.map(({ src, dst, amt, curve, via, off }) => ({ src, dst, amt, curve: curve || 'lin', via: via ?? null, on: !off }));
+/// A row from the engine: `on: false` is the page's `off`.
+const wvModIn = ({ on, ...m }) => ({ curve: 'lin', via: null, ...m, off: on === false });
 
 function wvSendMods() {
   wvPost('/api/wave/mods', { mods: wvModsOut() });
@@ -746,7 +749,7 @@ function wvNote(note, vel, on) {
 function wvAdopt(patch) {
   if (!patch || typeof patch !== 'object') return;
   if (patch.params && typeof patch.params === 'object') Object.assign(WV.p, patch.params);
-  if (Array.isArray(patch.mods)) WV.mods = patch.mods.map((m) => ({ curve: 'lin', via: null, ...m }));
+  if (Array.isArray(patch.mods)) WV.mods = patch.mods.map(wvModIn);
   if (Array.isArray(patch.macroNames)) WV.macroNames = WV_MACRO_NAMES.map((n, i) => patch.macroNames[i] || n);
   if (typeof patch.name === 'string' && patch.name) WV.name = patch.name;
   if (patch.tags != null) WV.tags = Array.isArray(patch.tags) ? patch.tags.join(' · ') : String(patch.tags);

@@ -8,9 +8,10 @@
 //   - a click in a hole puts a pin in, a drag sets its amount, a double-click
 //     pulls it, and the engine has each change;
 //   - the columns page a group at a time, and a band brings its group up;
-//   - the rows are the same connections: a row's switch keeps it on the page
-//     and off the engine, and its pickers change its source and target;
 //   - every column is a target the engine takes;
+//   - the rows are the same connections: a row's switch keeps it, switched
+//     off, on the page and on the engine (`on: false`), through a reload too,
+//     and its pickers change its source and target;
 //   - the Matrix's tiles edit the same keys as Play's.
 
 import { test, expect } from './test.mjs';
@@ -77,7 +78,7 @@ test('the columns page a group at a time, and a band brings its group up', async
   expect(seen).toBe(true);
 });
 
-test('the rows are the same connections; a row switched off stays here and leaves the engine', async ({ page }) => {
+test('the rows are the same connections; a row switched off is kept, and moves nothing', async ({ page }) => {
   const errors = await openMatrix(page);
   await hole(page, 'env1', 'filt0.cut').click();
   await hole(page, 'macro2', 'osc1.pan').click();
@@ -87,12 +88,13 @@ test('the rows are the same connections; a row switched off stays here and leave
   await expect(rows.nth(0).locator('.wv-pk.t')).toContainText('F1 Cutoff');
   await expect(rows.nth(1).locator('.wv-pk.s')).toContainText('M3');
 
-  // Off: still a row here, gone from the engine; on again, back.
+  // Off: still a row here and on the engine, switched off; on again, on.
+  const ons = async () => (await engineMods(page)).map((m) => `${m.src}:${m.on}`);
   await rows.nth(0).locator('.wv-pwr').click();
   await expect(rows.nth(0)).toHaveClass(/\boff\b/);
-  await expect.poll(async () => (await engineMods(page)).map((m) => m.src)).toEqual(['macro2']);
+  await expect.poll(ons).toEqual(['env1:false', 'macro2:true']);
   await rows.nth(0).locator('.wv-pwr').click();
-  await expect.poll(async () => (await engineMods(page)).map((m) => m.src)).toEqual(['env1', 'macro2']);
+  await expect.poll(ons).toEqual(['env1:true', 'macro2:true']);
 
   // A new target from the picker, grouped as the pins' bands are.
   await rows.nth(1).locator('.wv-pk.t').click();
@@ -107,6 +109,33 @@ test('the rows are the same connections; a row switched off stays here and leave
   await page.locator('#wvPmenu [data-v="env2.d"]').click();
   await expect.poll(async () => (await engineMods(page)).at(-1)).toMatchObject({ src: 'lfo3', dst: 'env2.d', amt: 0.3 });
   await expect(rows).toHaveCount(3);
+  expect(errors).toEqual([]);
+});
+
+test('a row switched off stays off through a reload', async ({ page }) => {
+  const errors = await openMatrix(page);
+  await hole(page, 'env1', 'filt0.cut').click();
+  await hole(page, 'lfo2', 'osc0.pos').click();
+  await page.locator('#wvMxMode [data-m="rows"]').click();
+  const rows = page.locator('#wvMxRows .wv-mxr:not(.add):not(.empty)');
+  await rows.nth(1).locator('.wv-pwr').click();
+  await expect.poll(async () => (await engineMods(page)).map((m) => m.on)).toEqual([true, false]);
+
+  await page.reload();
+  await page.waitForFunction(() => typeof state !== 'undefined' && (state.folders || []).length > 0, null, { timeout: 20_000 });
+  await page.locator('#leftRail .rl-item[data-mode="synth"]').click();
+  await page.waitForFunction(() => WV.connected && WV.mods.length === 2, null, { timeout: 8_000 });
+  await page.locator('#wvViews [data-v="matrix"]').click();
+  await page.locator('#wvMxMode [data-m="rows"]').click();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).not.toHaveClass(/\boff\b/);
+  await expect(rows.nth(1)).toHaveClass(/\boff\b/);
+  await expect(rows.nth(1).locator('.wv-pk.t')).toContainText('A Position');
+  // The pin says so too, and a change elsewhere leaves it off.
+  await page.locator('#wvMxMode [data-m="pins"]').click();
+  await expect(hole(page, 'lfo2', 'osc0.pos')).toHaveClass(/\boff\b/);
+  await hole(page, 'macro0', 'osc1.pan').click();
+  await expect.poll(async () => (await engineMods(page)).map((m) => `${m.src}:${m.on}`)).toEqual(['env1:true', 'lfo2:false', 'macro0:true']);
   expect(errors).toEqual([]);
 });
 

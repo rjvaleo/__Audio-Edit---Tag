@@ -583,7 +583,7 @@ async function wvLoadBoard(i) {
   WV_BOARDS.at = i;
   WV_BOARDS.dirty = false;
   WV_BOARDS.fresh = false;
-  const rows = (Array.isArray(pre.mods) ? pre.mods : []).map((m) => ({ curve: 'lin', via: null, ...m }));
+  const rows = (Array.isArray(pre.mods) ? pre.mods : []).map(wvModIn);
   WV.mods = WV.mods.filter((m) => !m.dst.startsWith('board:')).concat(rows).slice(0, 64);
   wvSendMods();
   wvRenderTargets();
