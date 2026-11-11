@@ -18,7 +18,7 @@
   padding-top: 6px; border-right: 1px solid var(--line);
 }
 .tm-icon { width: 12px; height: 12px; border-radius: var(--r-s); background: var(--surface-2); }
-.tm-icon.on { background: var(--accent); }
+.tm-icon.on { background: var(--on); }
 
 .tm-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .tm-bar {
@@ -29,7 +29,7 @@
   font-size: var(--fs-xs); padding: 2px 5px; border-radius: var(--r-s);
   border: 1px solid var(--line-2); color: var(--text-2); background: transparent;
 }
-.tm-btn.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.tm-btn.on { background: var(--on); border-color: var(--on); color: var(--bg); }
 .tm-title { margin-left: auto; font-size: var(--fs-xs); color: var(--text-dim); }
 
 .tm-lane {
@@ -373,7 +373,7 @@
   text-transform: uppercase; cursor: pointer;
 }
 .rv-tab:hover { background: var(--surface-3); color: var(--text-2); }
-.rv-tab.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.rv-tab.active { background: var(--on); border-color: var(--on); color: var(--bg); }
 
 .rp-head { padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
 .rp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
@@ -408,7 +408,7 @@
   letter-spacing: .3px;
 }
 .rp-edit { padding: 5px 2px 7px; }
-.rp-edit .re-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.rp-edit .re-btn.active { background: var(--on); border-color: var(--on); color: var(--bg); }
 .rp-stop .re-colour { flex: 0 0 24px; height: 17px; }
 .rp-stops, .rp-range { margin-top: 4px; }
 

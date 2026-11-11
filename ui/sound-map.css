@@ -42,7 +42,7 @@
   background: none; border: 0; color: var(--text-dim);
   padding: 4px 10px; font: inherit; cursor: pointer;
 }
-.smap-seg button.on { background: var(--well); color: var(--accent); }
+.smap-seg button.on { background: var(--well); color: var(--on); }
 .smap-find {
   background: var(--well); border: 1px solid var(--line); border-radius: var(--r-m);
   color: var(--text); font: inherit; padding: 4px 8px; width: 190px;

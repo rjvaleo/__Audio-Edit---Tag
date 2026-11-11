@@ -40,7 +40,7 @@
 }
 .lg-seg button + button { border-left: 1px solid var(--line); }
 .lg-seg button:hover { color: var(--text); }
-.lg-seg button.on { background: color-mix(in oklch, var(--accent) 20%, transparent); color: var(--text); }
+.lg-seg button.on { background: color-mix(in oklch, var(--on) 20%, transparent); color: var(--text); }
 .lg-find {
   background: var(--well); border: 1px solid var(--line); border-radius: var(--r-s);
   color: var(--text); font: inherit; padding: 3px 7px; width: 200px; min-width: 90px; flex: 0 1 auto; outline: none;

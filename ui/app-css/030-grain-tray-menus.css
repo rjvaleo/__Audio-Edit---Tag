@@ -14,7 +14,7 @@
   transition: border-color .15s ease, color .15s ease;
 }
 .vis-tab:hover { border-color: var(--line-2); color: var(--text-2); }
-.vis-tab.active { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.vis-tab.active { background: var(--on); border-color: var(--on); color: var(--surface); }
 .vis-tab.suite { font-weight: 600; letter-spacing: .04em; }
 .vis-open {
   margin-left: auto; background: none; border: 1px solid var(--line);
@@ -63,7 +63,7 @@
   padding: 2px 8px; border-radius: var(--r-s); cursor: pointer;
 }
 .vis-pop-tab:hover { border-color: var(--line-2); color: var(--text-2); }
-.vis-pop-tab.active { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.vis-pop-tab.active { background: var(--on); border-color: var(--on); color: var(--surface); }
 .vis-pop-hint { font-size: var(--fs-s); color: var(--text-dimmer); margin-right: auto; }
 .vis-pop-btn {
   background: none; border: 1px solid var(--line); color: var(--text-dim);
@@ -155,7 +155,7 @@ body.editing .dock { flex: 0 0 300px; }
    accent text — so "this one is chosen" looks the same everywhere in the tray
    whether the control has two states or three. */
 .tiny.switch.on {
-  background: var(--accent); border-color: var(--sink); color: var(--sink);
+  background: var(--on); border-color: var(--sink); color: var(--sink);
 }
 .tiny.switch.on:hover { color: var(--sink); filter: brightness(1.08); }
 
@@ -355,7 +355,7 @@ body.editing .dock { flex: 0 0 330px; }
   font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em;
   color: var(--text-dimmer); font-variant-numeric: tabular-nums;
 }
-.p4-obj.active .p4-obj-dim { color: var(--accent); }
+.p4-obj.active .p4-obj-dim { color: var(--on); }
 .p4-obj-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .p4-obj-n {
   font-size: var(--fs-s); color: var(--text-dimmer);
@@ -552,7 +552,7 @@ body.editing .dock { flex: 0 0 330px; }
   border-bottom: 1px solid var(--line); cursor: pointer;
 }
 .pm-item:hover { background: var(--surface-3); }
-.pm-item.active { background: var(--surface-3); box-shadow: inset 2px 0 0 var(--accent); }
+.pm-item.active { background: var(--surface-3); box-shadow: inset 2px 0 0 var(--on); }
 .pm-item .nm { display: block; font-size: var(--fs-l); color: var(--text); }
 .pm-item .nt {
   display: block; font-size: var(--fs-s); color: var(--text-dimmer);

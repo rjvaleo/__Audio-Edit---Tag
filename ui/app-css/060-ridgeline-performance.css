@@ -23,9 +23,9 @@
 .rv-admin #ridgeEdit .re-slider { flex: 1 1 110px; width: auto; height: 14px; }
 .rv-admin #ridgeEdit .re-frames { flex: 1 1 100%; flex-wrap: wrap; }
 .rv-admin #ridgeEdit .re-btn.active {
-  background: var(--accent); border-color: var(--accent); color: var(--bg);
+  background: var(--on); border-color: var(--on); color: var(--bg);
 }
-#ridgeEdit .re-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+#ridgeEdit .re-btn.active { background: var(--on); border-color: var(--on); color: var(--bg); }
 
 
 /* ── the card of type ── */
@@ -220,7 +220,7 @@
    registry, still reachable, still in a saved room — it is simply not listed.
 */
 .icon-btn { padding: 3px 7px; font-size: var(--fs-l); line-height: 1; }
-.icon-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.icon-btn.active { color: var(--bg); background: var(--on); border-color: var(--on); }
 
 /* Anchored over the gear rather than floated in the middle of the screen: it
    edits the menu you are about to use, and a box covering the thing it is about
@@ -333,7 +333,7 @@
   border-radius: 0; height: var(--h-m); line-height: normal;
 }
 .automation-body .btn:hover { border-color: var(--accent); color: var(--accent); }
-.automation-body .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.automation-body .btn.active { background: var(--on); color: var(--bg); border-color: var(--on); }
 .automation-body .divider { width: 1px; height: 24px; background: var(--border); }
 .automation-body .knob-label { font-size: var(--fs-xs); color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
 .automation-body .preset-del-btn { border-color: var(--accent2); color: var(--accent2); font-size: var(--fs-s); padding: 0 8px; height: var(--h-m); }
@@ -707,9 +707,9 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    so nothing stood out; on is now a tint with a lit edge, across the whole
    Visual column. */
 .rv-admin :is(#roomEdit, #ridgeEdit, #room3dEdit, #stageEdit, #textEdit, #roomGeomBody, #roomPaintBody) .re-btn.active {
-  background: color-mix(in oklch, var(--accent) 16%, transparent);
-  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
-  color: var(--accent);
+  background: color-mix(in oklch, var(--on) 16%, transparent);
+  border-color: color-mix(in oklch, var(--on) 70%, transparent);
+  color: var(--on);
 }
 /* The layers: a list with an eye, not a stack of filled bars. */
 .rv-admin #reLayers .re-layer-name,
@@ -719,7 +719,7 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 }
 .rv-admin #reLayers .re-layer-name.active { color: var(--text-2); }
 .rv-admin #reLayers .re-layer-name::before { content: '\25CB'; margin-right: 7px; color: var(--text-dimmer); }
-.rv-admin #reLayers .re-layer-name.active::before { content: '\25C9'; color: var(--accent); }
+.rv-admin #reLayers .re-layer-name.active::before { content: '\25C9'; color: var(--on); }
 .rv-admin #reLayers .re-layer:hover .re-layer-name { background: var(--surface-3); }
 /* Rows the group heading already names: the tag would say it twice. */
 .rv-admin #roomEdit > .re-row:has(#reLayers),

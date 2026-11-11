@@ -274,9 +274,9 @@
 #room4dBody .p4-seg-w { font-style: normal; color: var(--accent); }
 /* Lit, not filled: a tint and an edge, as across the rest of the column. */
 .rv-admin #room4dBody .re-btn.active {
-  background: color-mix(in oklch, var(--accent) 16%, transparent);
-  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
-  color: var(--accent);
+  background: color-mix(in oklch, var(--on) 16%, transparent);
+  border-color: color-mix(in oklch, var(--on) 70%, transparent);
+  color: var(--on);
 }
 
 /* The knobs, four places to a line: Eye, Rate, and the way back across two. */
@@ -360,8 +360,8 @@
 }
 .rv-admin #roomEdit #reClear:hover { background: color-mix(in oklch, var(--bad) 14%, transparent); }
 .rv-admin #roomEdit .rk-undo.on {
-  display: inline-block; margin-left: auto; color: var(--accent);
-  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  display: inline-block; margin-left: auto; color: var(--on);
+  border-color: color-mix(in oklch, var(--on) 70%, transparent);
 }
 .rv-admin #roomEdit .rk-undo.on + #reClear { margin-left: 4px; }
 
@@ -382,7 +382,7 @@
   content: ''; width: 6px; height: 6px; border-radius: 0; background: var(--accent);
   transform: scale(0); transition: transform .08s;
 }
-.rv-admin #roomEdit .re-check input[type=checkbox]:checked { border-color: var(--accent); }
+.rv-admin #roomEdit .re-check input[type=checkbox]:checked { border-color: var(--on); }
 .rv-admin #roomEdit .re-check input[type=checkbox]:checked::before { transform: scale(1); }
 .rv-admin #roomEdit .re-check input[type=checkbox]:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
 
@@ -539,9 +539,9 @@ svg.pic .bg, svg.pic-where .bg { fill: var(--sink); stroke: none; }
 /* Where in the room: a small room with one part lit. */
 svg.pic-where { flex: 0 0 auto; width: 32px; height: 20px; }
 svg.pic-where .dim { fill: none; stroke: var(--text-dimmer); stroke-width: 1; stroke-linecap: round; opacity: .45; }
-svg.pic-where .lit { fill: none; stroke: var(--cp, var(--accent)); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.pic-where .lit { fill: none; stroke: var(--cp, var(--on)); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 svg.pic-where .lit.thick { stroke-width: 2.8; }
-svg.pic-where .lit.fill { fill: var(--cp, var(--accent)); stroke: none; opacity: .55; }
+svg.pic-where .lit.fill { fill: var(--cp, var(--on)); stroke: none; opacity: .55; }
 svg.pic-where .none { display: none; }
 .rv-admin #reLayers .re-layer-name { display: flex; align-items: center; gap: 6px; }
 .rv-admin #reLayers .re-layer-name > svg.pic-where { width: 26px; height: 16px; }
@@ -662,7 +662,7 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 
 /* The Tags panel's switch, in the Browse panel's head now that the right-hand
    column it stood alone in is gone. Lit while the panel is open. */
-.panel-head .tags-toggle.active { color: var(--accent); }
+.panel-head .tags-toggle.active { color: var(--on); }
 
 /* ═══════════════════════════════════════════ the tags, under the sound's details
    1 Nov 2026: the right-hand Tags column is gone; its fields are part of the

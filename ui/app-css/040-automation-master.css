@@ -74,7 +74,7 @@
   max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .scale-btn:hover { border-color: var(--accent); color: var(--accent); }
-.scale-btn.on { border-color: var(--accent); color: var(--accent); background: var(--surface-3); }
+.scale-btn.on { border-color: var(--on); color: var(--on); background: var(--surface-3); }
 .menu-pop.scale-pop {
   width: 340px; max-height: 66vh; overflow: auto; padding: 4px;
   display: flex; flex-direction: column;
@@ -104,7 +104,7 @@
   background: transparent; color: var(--text);
 }
 .scale-item:hover { background: var(--surface-2); }
-.scale-item.selected { background: var(--surface-3); color: var(--accent); }
+.scale-item.selected { background: var(--surface-3); color: var(--on); }
 .scale-item .sc-name { font-size: var(--fs-m); }
 .scale-item .sc-info { font-size: var(--fs-xs); color: var(--text-dimmer); }
 
@@ -168,7 +168,7 @@
   white-space: nowrap; cursor: pointer;
 }
 .popout-btn:hover { border-color: var(--accent); color: var(--accent); }
-.popout-btn.on { border-color: var(--accent); color: var(--accent); }
+.popout-btn.on { border-color: var(--on); color: var(--on); }
 .popout-mark { font-style: normal; opacity: 0.65; margin-left: 3px; font-size: var(--fs-xs); }
 /* `vertical-align: top` on everything, so the inline-blocks sit on the row's
    top edge instead of on a text baseline — that baseline is what put the
@@ -305,7 +305,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   font-size: var(--fs-l); line-height: 1; padding: 0 2px; cursor: pointer;
 }
 .theme-del:hover { color: var(--bad); }
-#themePlain.on { border-color: var(--accent); color: var(--text); }
+#themePlain.on { border-color: var(--on); color: var(--text); }
 
 /* ------------------------------------------------------- the note keyboard */
 
@@ -364,8 +364,8 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   background: var(--sink); color: var(--text-2);
   box-shadow: 0 2px 5px var(--shadow);
 }
-.kb-key.white.on { background: var(--accent); color: var(--sink); }
-.kb-key.black.on { background: var(--accent); color: var(--sink); border-color: var(--accent); }
+.kb-key.white.on { background: var(--on); color: var(--sink); }
+.kb-key.black.on { background: var(--on); color: var(--sink); border-color: var(--on); }
 .kb-letter { font-size: var(--fs-m); font-weight: 700; line-height: 1.1; flex: 0 0 auto; }
 /* The number runs down the key.
    A white key is about twenty-three pixels wide and "+11.00" is twenty-four, so
@@ -396,7 +396,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .kb-hint.out { opacity: 0; }
 .kb-oct { font-family: var(--mono); margin-left: auto; }
 .kb-now { font-family: var(--mono); }
-.kb-oct.on { color: var(--accent); }
+.kb-oct.on { color: var(--on); }
 .kb-now { color: var(--text-2); min-width: 46px; text-align: right; }
 
 
@@ -491,7 +491,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    anyone the room can be posed at all: on a dark box it simply was not there.
    An affordance that has to be hovered to be seen has not been offered. */
 .re-open:hover { color: var(--text-2); border-color: var(--line); }
-.re-open.on { color: var(--bg); background: var(--accent); border-color: var(--accent); opacity: 1; }
+.re-open.on { color: var(--bg); background: var(--on); border-color: var(--on); opacity: 1; }
 
 .room-edit {
   position: absolute; inset: 0; pointer-events: none; z-index: 4;
@@ -687,7 +687,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   cursor: pointer;
 }
 .re-btn:hover { color: var(--text-2); border-color: var(--line); }
-.re-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.re-btn.active { color: var(--bg); background: var(--on); border-color: var(--on); }
 /* Clear and Reset sit together, and both have to take the pointer back from
    the overlay. `align-self` no longer applies now that they share a line. */
 .re-reset { pointer-events: auto; }
@@ -785,7 +785,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
   cursor: pointer;
 }
 .mb-res-btn:hover { color: var(--text-2); border-color: var(--line); }
-.mb-res-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.mb-res-btn.active { color: var(--bg); background: var(--on); border-color: var(--on); }
 
 .mb-reads {
   flex: 0 0 auto;

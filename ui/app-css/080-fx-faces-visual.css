@@ -10,7 +10,7 @@
 .fx-face .fx-module-head h2 { font-size: var(--fs-s); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fx-face .fx-module-actions { align-items: center; gap: 4px; }
 .fx-face .fx-power { width: 13px; height: 13px; padding: 0; font-size: var(--fs-xs); color: transparent; overflow: hidden; border-radius: var(--r-s); background: var(--well); border: 1px solid var(--line-2); }
-.fx-face .fx-power.on { background: var(--accent); border-color: var(--accent); }
+.fx-face .fx-power.on { background: var(--on); border-color: var(--on); }
 .fx-face .fx-remove { height: 16px; padding: 0 3px; font-size: var(--fs-xl); line-height: 1; border: 0; color: var(--text-dimmer); }
 .fx-face .fx-module-signal { min-height: 0; gap: 4px; }
 .fx-face .fx-vu { width: 6px; min-width: 6px; padding: 0; }
@@ -19,7 +19,7 @@
 .fx-face .fx-vu .vu-bar { width: 2px; }
 .fx-face.off .fx-face-body { opacity: .38; filter: grayscale(1); }
 .fx-adv-btn { background: var(--well); border: 1px solid var(--line-2); color: var(--text-dimmer); font-size: var(--fs-xs); padding: 0 5px; height: var(--h-s); border-radius: var(--r-s); cursor: pointer; }
-.fx-adv-btn.on { color: var(--accent); border-color: var(--accent); }
+.fx-adv-btn.on { color: var(--on); border-color: var(--on); }
 
 .fx-face-body { display: grid !important; gap: 3px; align-content: start; }
 .fx-face-body.fx-side { grid-template-columns: minmax(0, 1fr) var(--side, 120px); align-items: stretch; }
@@ -64,7 +64,7 @@
 .fx-sect.tech > div { display: grid; gap: 0; }
 .fx-sect.off > div { opacity: .35; }
 .fx-led { width: 9px; height: 9px; padding: 0; border-radius: var(--r-s); background: var(--surface); border: 1px solid var(--line-2); cursor: pointer; }
-.fx-led.on { background: var(--accent); border-color: var(--accent); }
+.fx-led.on { background: var(--on); border-color: var(--on); }
 .fx-twrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px; }
 .fx-twrap .fx-tcol { display: grid; gap: 2px; }
 .fx-twrap .fx-row { min-width: 96px; }
@@ -87,8 +87,8 @@
 .fxt-b { display: grid; justify-items: center; align-content: center; width: 42px; height: 42px; padding: 0; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-s); cursor: pointer; --pc: var(--text-dimmer); }
 .fxt-b svg.pic { width: 32px; height: 24px; }
 .fxt-b i { font: var(--fs-xs) var(--mono); font-style: normal; color: var(--text-dimmer); text-transform: uppercase; letter-spacing: .1em; }
-.fxt-b.on { border-color: var(--accent); --pc: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
-.fxt-b.on i { color: var(--accent); }
+.fxt-b.on { border-color: var(--on); --pc: var(--on); background: color-mix(in srgb, var(--on) 14%, var(--surface)); }
+.fxt-b.on i { color: var(--on); }
 .fxt .fxk-l { margin-top: 11px; }
 .fxs { display: grid; grid-template-columns: 24px 82px minmax(40px, 1fr) 52px; align-items: center; gap: 4px; min-height: 18px; }
 .fxs-pic svg.pic, .fx-pic svg.pic { width: 24px; height: 18px; }
@@ -142,11 +142,11 @@
 .fx-eq-sel { display: flex; align-items: center; background: var(--well); border-radius: var(--r-s); padding: 2px; }
 .fx-eq-sel > .fxk { flex: 1 1 0; }
 .fx-eq-on { align-self: center; background: var(--surface); border: 1px solid var(--line-2); color: var(--text-dim); font-size: var(--fs-xs); padding: 3px 5px; border-radius: var(--r-s); cursor: pointer; }
-.fx-eq-on.on { color: var(--accent); border-color: var(--accent); }
+.fx-eq-on.on { color: var(--on); border-color: var(--on); }
 .fx-caret:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
 .fx-eq-modes { flex: 1.6 1 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
 .fx-eq-modes button { background: var(--surface); border: 1px solid var(--line-2); color: var(--text-dim); font-size: var(--fs-xs); padding: 2px 0; border-radius: var(--r-s); cursor: pointer; }
-.fx-eq-modes button.on { color: var(--accent); border-color: var(--accent); }
+.fx-eq-modes button.on { color: var(--on); border-color: var(--on); }
 
 /* Advanced: each knob's own range. */
 .fx-adv { gap: 1px; }
@@ -161,7 +161,7 @@
 .fx-rbar .you { position: absolute; top: 1px; height: 10px; border: 1.5px solid var(--accent); border-radius: var(--r-s); }
 .fx-curve { display: flex; background: var(--well); border-radius: var(--r-s); padding: 1px; }
 .fx-curve button { flex: 1; background: none; border: 0; color: var(--text-dim); font-size: var(--fs-xs); padding: 1px 0; border-radius: var(--r-s); cursor: pointer; }
-.fx-curve button.on { background: var(--surface-3); color: var(--accent); }
+.fx-curve button.on { background: var(--surface-3); color: var(--on); }
 .fx-adv-foot { display: flex; align-items: center; gap: 6px; padding-top: 3px; font-size: var(--fs-xs); color: var(--text-dimmer); }
 .fx-adv-foot span { flex: 1; }
 
@@ -366,7 +366,7 @@
 }
 #grainControls .engine-pick .seg-btn svg.gg { width: 44px; height: 33px; overflow: visible; }
 #grainControls .engine-pick .seg-btn.active {
-  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); --gg: var(--accent);
+  border-color: var(--on); background: color-mix(in srgb, var(--on) 16%, transparent); color: var(--text); --gg: var(--on);
 }
 /* The tuning and Keys ride on Time & pitch's heading. */
 #grainControls .gc-tp > .wild-head { display: flex; align-items: center; justify-content: space-between; }
@@ -514,7 +514,7 @@
 .an-tabs button[aria-selected="true"] { background: var(--surface-3); color: var(--text); font-weight: 600; }
 .an-seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r-s); overflow: hidden; }
 .an-seg button + button { border-left: 1px solid var(--line-2); }
-.an-seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
+.an-seg button.on { background: var(--on); color: var(--bg); font-weight: 600; }
 .an-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .an-kpis { flex: none; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
 .an-kpi { background: var(--surface); padding: 5px 10px; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -658,7 +658,7 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hs-transport { display: flex; gap: 2px; }
 .hs-btn { height: 20px; min-width: 24px; padding: 0 6px; font-size: 10px; border-radius: var(--r-s); border: 1px solid var(--line-2); background: var(--surface-3); color: var(--text); cursor: pointer; }
 .hs-btn.on, #hsRec.on { color: var(--bad); }
-#prismLoop.on, #prismPtcOn.on { color: var(--accent); border-color: var(--accent); }
+#prismLoop.on, #prismPtcOn.on { color: var(--on); border-color: var(--on); }
 /* One width whatever it says: a header that re-wrapped as the chip changed
    would resize the pad under the hand. */
 .hs-chip { box-sizing: border-box; width: 196px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; height: var(--h-s); line-height: var(--h-s); padding: 0 6px; border-radius: var(--r-s); background: var(--well); color: var(--text-dim); }
@@ -714,14 +714,14 @@ body:not(.prismpage) .dock-tab[data-dock="hyper"] { display: none; }
 .hs-kv > span:nth-child(odd) { color: var(--text-dim); }
 .hs-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
 .hs-slot { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; border-radius: var(--r-s); cursor: pointer; color: var(--text); background: var(--surface-0); border: 1px solid var(--line-2); }
-.hs-slot.on { border-color: var(--accent); }
+.hs-slot.on { border-color: var(--on); }
 .hs-slot-top { display: flex; justify-content: space-between; width: 100%; font-size: 10px; }
 .hs-slot svg { background: oklch(26% 0.08 255); border-radius: var(--r-s); }
 .hs-slot polyline { fill: none; stroke: oklch(80% 0.14 235); stroke-width: 3; }
 .hs-seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r-s); overflow: hidden; }
 .hs-seg button { height: 20px; padding: 0 8px; font-size: 10px; border: 0; background: var(--well); color: var(--text-2); cursor: pointer; }
 .hs-seg button + button { border-left: 1px solid var(--line-2); }
-.hs-seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
+.hs-seg button.on { background: var(--on); color: var(--bg); font-weight: 600; }
 .hs-shapes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
 /* Hyperprism's L, LR and R faders, upright, each with its 0. */
 .hs-faders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; flex: 1 1 auto; min-height: 0; }
@@ -784,7 +784,7 @@ body.prism-mapping #dockHyper #prismSettings .prism-bar > input[type=range] { cu
 #dockHyper .plfo-shape { height: 20px; padding: 1px 2px; border: 1px solid var(--line-2); border-radius: var(--r-s); background: var(--surface-2); cursor: pointer; }
 #dockHyper .plfo-shape svg { display: block; width: 100%; height: 100%; }
 #dockHyper .plfo-shape path { fill: none; stroke: var(--text-dim); stroke-width: 1.6; }
-#dockHyper .plfo-shape.on { border-color: var(--accent); }
+#dockHyper .plfo-shape.on { border-color: var(--on); }
 #dockHyper .plfo-shape.on path { stroke: var(--text); }
 #dockHyper .plfo-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
 #dockHyper .plfo-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -810,10 +810,10 @@ body.prism-mapping #dockHyper #prismSettings .prism-bar > input[type=range] { cu
 #dockHyper .prism-motion .hs-tog { grid-column: span 2; }
 #dockHyper .prism-motion .hs-btn { padding: 0 2px; min-width: 0; font-size: var(--fs-xs); }
 #dockHyper .hs-tog { display: flex; align-items: center; justify-content: center; gap: 3px; height: 20px; font-size: var(--fs-xs); color: var(--text-2); border: 1px solid var(--line-2); border-radius: var(--r-s); background: var(--surface-3); cursor: pointer; white-space: nowrap; }
-#dockHyper .hs-tog:has(input:checked) { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface-3)); }
+#dockHyper .hs-tog:has(input:checked) { color: var(--text); border-color: var(--on); background: color-mix(in srgb, var(--on) 18%, var(--surface-3)); }
 #dockHyper .hs-tog input { margin: 0; width: 11px; height: 11px; }
 #dockHyper .prism-out .hs-faders { flex: 1 1 auto; }
-#dockHyper .hs-seg button.on { background: color-mix(in srgb, var(--accent) 24%, var(--surface-3)); color: var(--text); font-weight: 500; }
+#dockHyper .hs-seg button.on { background: color-mix(in srgb, var(--on) 24%, var(--surface-3)); color: var(--text); font-weight: 500; }
 /* The quieter pad: slate, a faint grid, a plain point. */
 #dockHyper .hs-pad { background: color-mix(in srgb, var(--accent) 9%, var(--surface-1, #161b22)); border-color: var(--line-2); }
 #dockHyper .hs-grid { stroke: rgba(255,255,255,0.06); }
@@ -832,7 +832,7 @@ body.prism-mapping #dockHyper #prismSettings .prism-bar > input[type=range] { cu
 .ppick-g > i { font: 600 var(--fs-xs)/13px var(--mono); font-style: normal; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }
 .ppick-i { display: flex; align-items: center; gap: 5px; height: 20px; padding: 0 4px 0 1px; border: 0; border-left: 2px solid transparent; background: none; color: var(--text-2); font-size: var(--fs-m); text-align: left; white-space: nowrap; cursor: pointer; --gg: var(--text-2); }
 .ppick-i:hover, .ppick-i:focus-visible { background: var(--surface-3); color: var(--text); outline: none; }
-.ppick-i.on { border-left-color: var(--accent); background: var(--surface-3); color: var(--text); --gg: var(--text); }
+.ppick-i.on { border-left-color: var(--on); background: var(--surface-3); color: var(--text); --gg: var(--text); }
 .ppick-i .pic { width: 22px; height: 16.5px; }
 /* The native menu stays for the paths that pick a source by value; unseen. */
 .ppick-mirror { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

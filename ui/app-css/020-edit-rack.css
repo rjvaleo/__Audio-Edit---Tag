@@ -60,7 +60,7 @@
 .dock-tab .lb { font-size: var(--fs-s); font-weight: 600; letter-spacing: .2px; }
 .dock-tab:hover { background: var(--surface-3); color: var(--text-2); }
 .dock-tab.active {
-  background: var(--surface); border-color: var(--line-2); color: var(--accent);
+  background: var(--surface); border-color: var(--line-2); color: var(--on);
 }
 .dock-body {
   flex: 1; overflow-y: auto; padding: 12px 14px;
@@ -222,7 +222,7 @@ input, textarea, .path-display, .picker-path, .insp-field .v {
   flex-shrink: 0;
 }
 .modeswitch .seg-btn { font-size: var(--fs-m); padding: 0 11px; }
-.modeswitch .seg-btn.active { background: var(--accent); color: var(--surface); font-weight: 600; }
+.modeswitch .seg-btn.active { background: var(--on); color: var(--surface); font-weight: 600; }
 body.editing .lane { box-shadow: inset 0 2px 0 var(--accent); }
 #rightRail { border-right: none; border-left: 1px solid var(--line); }
 
@@ -325,7 +325,7 @@ body.editing .transport { background: var(--surface); }
 .prism-gap { flex: 1; }
 .prism-bar button.armed { color: var(--meter-warn); border-color: var(--meter-warn); }
 .prism-bar button.recording { color: var(--white); background: var(--rec-fill); border-color: var(--rec-fill); }
-.prism-bar button.on { color: var(--accent); border-color: var(--accent); }
+.prism-bar button.on { color: var(--on); border-color: var(--on); }
 /* Square, as Hyperprism's was: the height the dock gives it decides its size,
    and it sits in the middle of the width rather than stretching across it. */
 .prism-hp { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: var(--fs-m); color: var(--text-dim); }

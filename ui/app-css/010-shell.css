@@ -229,7 +229,7 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
 
 .primary {
   height: 28px; padding: 0 12px; border-radius: var(--r-m); border: none;
-  background: var(--accent); color: var(--surface);
+  background: var(--on); color: var(--surface);
   font-size: var(--fs-m); font-weight: 600;
 }
 .primary:hover { filter: brightness(1.08); }
@@ -276,7 +276,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .seg-param .seg-btn { margin-right: 2px; }
 .seg-param .seg-btn:last-child { margin-right: 0; }
 .seg-btn:hover { color: var(--text-2); }
-.seg-btn.active { background: var(--surface-3); color: var(--accent); }
+.seg-btn.active { background: var(--surface-3); color: var(--on); }
 
 /* The waveform colours. Fixed widths, sized for the longest of the four —
    a button is not allowed to change shape because of what is beside it. The
@@ -332,8 +332,8 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 }
 .folder-row:hover { background: var(--surface-3); }
 .folder-row.selected {
-  background: rgba(var(--sel-rgb), 0.13); color: var(--text);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: rgba(var(--on-rgb), 0.13); color: var(--text);
+  box-shadow: inset 2px 0 0 var(--on);
 }
 .folder-row .label { flex: 1; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .folder-row .count { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-dimmer); }
@@ -360,7 +360,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   padding: 4px 6px 4px 16px; border-radius: var(--r-m); cursor: pointer;
 }
 .file-row:hover { background: var(--surface-3); }
-.file-row.selected { background: rgba(var(--sel-rgb), 0.14); }
+.file-row.selected { background: rgba(var(--on-rgb), 0.14); }
 .file-row.playing { background: rgba(var(--play-rgb), 0.10); }
 
 .file-row .pb {
@@ -370,7 +370,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   display: flex; align-items: center; justify-content: center;
 }
 .file-row .pb:hover { border-color: var(--accent); color: var(--accent); }
-.file-row .pb.on { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.file-row .pb.on { background: var(--on); border-color: var(--on); color: var(--surface); }
 
 .file-row .thumb {
   width: 54px; height: 24px; flex-shrink: 0;
