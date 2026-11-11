@@ -36,6 +36,14 @@
 //! bit; an effect or a Drive left that way is cleared when it next comes in,
 //! so it never opens with an old tail.
 //!
+//! # Sounds
+//!
+//! [`BoardPlan::compile_with`] asks for each sound a node names and hands it
+//! to the kernel, which may allocate there, then prepares the kernel. A
+//! Convolution node given no sound passes its input through, skipped as a
+//! node switched off is; Spectral Dynamics without one runs on its levels
+//! alone, as it did before it took a sound.
+//!
 //! # Controls
 //!
 //! Each control keeps the value it was set to (`vals`) and the value the node
@@ -44,6 +52,8 @@
 //! log) by the sum of its rows, clamped once; when its rows go it returns to
 //! its set value. A kernel is told only when the value it runs at changes,
 //! and glides there by its own smoothing.
+
+use std::sync::Arc;
 
 use prism_fx::{DynKernel, ParamSpec};
 
@@ -62,6 +72,15 @@ static NO_SENDS: [Stereo; SENDS] = [[[0.0; BLOCK]; 2]; SENDS];
 const FADE_SECONDS: f32 = 0.010;
 /// How fast a node's level meter falls.
 const PEAK_SECONDS: f32 = 0.3;
+
+/// A sound for an effect that takes one: interleaved, `channels` wide, at
+/// its own rate. Decoded by whoever compiles the plan, never here.
+#[derive(Clone, Debug)]
+pub struct Sound {
+    pub samples: Arc<Vec<f32>>,
+    pub channels: usize,
+    pub rate: f32,
+}
 
 /// A run of `wires`: the buffers summed into one in port.
 #[derive(Clone, Copy, Default)]
@@ -96,6 +115,8 @@ struct PNode {
     on: f32,
     /// Holds state from before it was last all the way off.
     stale: bool,
+    /// Needs a sound and has none: it passes its input through.
+    unsounded: bool,
     peak: [f32; 2],
 }
 
@@ -207,6 +228,12 @@ impl BoardPlan {
     /// Check and build `board` at `sample_rate`. Allocates; never call it on
     /// the audio thread.
     pub fn compile(board: &Board, sample_rate: f32) -> Result<BoardPlan, BoardError> {
+        BoardPlan::compile_with(board, sample_rate, &|_| None)
+    }
+
+    /// The same, with each node's sound (`Node::sound`) found by `sounds`:
+    /// a name it has no sound for leaves that node passing its input through.
+    pub fn compile_with(board: &Board, sample_rate: f32, sounds: &dyn Fn(&str) -> Option<Sound>) -> Result<BoardPlan, BoardError> {
         let sr = if sample_rate.is_finite() && sample_rate > 0.0 { sample_rate } else { 48_000.0 };
         let checked = board.check()?;
         let mut first_buf = Vec::with_capacity(checked.nodes.len());
@@ -230,12 +257,19 @@ impl BoardPlan {
             for (p, o) in outs.iter_mut().enumerate().take(r.outs.len()) {
                 *o = first_buf[i] + p;
             }
+            let mut unsounded = false;
             let kernel = match r.kind {
                 Kind::Fx(e) => {
                     let mut k = (e.make)(sr);
                     for (j, v) in r.vals.iter().enumerate() {
                         if k.param(j) != *v {
                             k.set_param(j, *v);
+                        }
+                    }
+                    if r.kind.takes_sound() {
+                        match n.sound.as_deref().and_then(sounds) {
+                            Some(s) => k.set_sound(&s.samples, s.channels, s.rate),
+                            None => unsounded = r.kind.needs_sound(),
                         }
                     }
                     // Glides land: a board opens at its settings.
@@ -263,6 +297,7 @@ impl BoardPlan {
                 want: n.on,
                 on: if n.on { 1.0 } else { 0.0 },
                 stale: false,
+                unsounded,
                 peak: [0.0; 2],
             });
         }
@@ -298,6 +333,12 @@ impl BoardPlan {
 
     pub fn node_count(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// Whether a node needs a sound and was given none, so passes its input
+    /// through.
+    pub fn unsounded(&self, node: usize) -> bool {
+        self.nodes.get(node).is_some_and(|n| n.unsounded)
     }
 
     /// Which sends (a bit each, in [`SENDS`] order) the board has cabled, so
@@ -452,7 +493,7 @@ impl BoardPlan {
         }
         let o = nd.main_out();
         let want = if nd.want { 1.0 } else { 0.0 };
-        if want == 0.0 && nd.on == 0.0 {
+        if nd.unsounded || (want == 0.0 && nd.on == 0.0) {
             copy(bypass, &mut bufs[o], n);
             nd.stale = true;
             meter(&mut nd.peak, bypass, n, fall);

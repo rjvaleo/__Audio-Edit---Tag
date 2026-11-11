@@ -919,7 +919,7 @@ impl App {
     /// A library sound, decoded once and kept for the effects that use it.
     /// Only a path inside the library is followed; the longest an effect uses
     /// is a few seconds, so no more than eight are read.
-    fn load_effect_sound(&self, name: &str) {
+    pub(crate) fn load_effect_sound(&self, name: &str) {
         if fx::prism::sound(name).is_some() {
             return;
         }

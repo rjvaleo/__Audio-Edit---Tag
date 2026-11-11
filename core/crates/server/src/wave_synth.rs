@@ -20,6 +20,13 @@
 //!   hidden and leaves the file: RJ's rule is that remove means unlist, never
 //!   delete.
 //!
+//! # The table bank (v8b)
+//!
+//! A mod row onto `oscN.table` steps through the bank (`wave::choice`): the
+//! five built-ins, then the oscillators' own tables. While the patch has such
+//! a row, the five built-ins are built (as below) and handed to the engine.
+//! Once given they stay given, about 28 MB, until the process ends.
+//!
 //! # Building a table is slow, so it is never done on a request
 //!
 //! [`Wavetable::from_frames`] is a fifth of a second for 64 frames and most
@@ -43,6 +50,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use engine::{WaveEvent, WaveShared};
+use wave::choice::{bank_names, choice_id, option_name, CHOICE_KEYS, C_OSC_STRIDE, C_TABLE};
 use wave::patch::Source;
 use wave::{param_id, Curve, Mod, Patch, PatchState, Stage, Wavetable, BUILTIN_NAMES, MAX_FRAMES, POINT_KEYS, STR_KEYS};
 
@@ -69,6 +77,8 @@ pub struct WaveState {
     pub(crate) inner: Arc<Mutex<Inner>>,
     /// Whether the patch's tables have been asked for since start.
     synced: AtomicBool,
+    /// Whether the stored board's sounds have been decoded since start.
+    sounded: AtomicBool,
 }
 
 pub(crate) struct Inner {
@@ -119,6 +129,7 @@ impl WaveState {
                 serial: 0,
             })),
             synced: AtomicBool::new(false),
+            sounded: AtomicBool::new(false),
         }
     }
 
@@ -166,8 +177,19 @@ impl WaveState {
                 None => self.build(g, &name, None),
             }
         }
+        let bank = wants_bank(&g.patch);
+        if bank {
+            let given = self.shared.current_bank();
+            for (i, name) in BUILTIN_NAMES.iter().enumerate() {
+                match g.built.get(*name) {
+                    Some(t) if !given[i].as_ref().is_some_and(|c| Arc::ptr_eq(c, t)) => self.shared.set_bank_table(i, Arc::clone(t)),
+                    None if given[i].is_none() => self.build(g, name, None),
+                    _ => {}
+                }
+            }
+        }
         let playing = g.playing.clone();
-        g.built.retain(|n, _| playing.contains(n));
+        g.built.retain(|n, _| playing.contains(n) || (bank && BUILTIN_NAMES.contains(&n.as_str())));
     }
 
     /// Build `name` on a thread of its own, from `frames` or from wherever
@@ -197,7 +219,11 @@ impl WaveState {
                     shared.set_table(osc, Arc::clone(&table));
                 }
             }
-            if g.playing.contains(&name) {
+            let bank = wants_bank(&g.patch).then(|| BUILTIN_NAMES.iter().position(|b| *b == name)).flatten();
+            if let Some(i) = bank {
+                shared.set_bank_table(i, Arc::clone(&table));
+            }
+            if g.playing.contains(&name) || bank.is_some() {
                 g.built.insert(name, table);
             }
         };
@@ -215,15 +241,28 @@ impl WaveState {
     }
 }
 
+/// Whether a row (switched on) steps a table, so the bank is wanted.
+fn wants_bank(p: &Patch) -> bool {
+    p.mods.iter().any(|m| m.on && choice_id(&m.dst).is_some_and(|c| c.index() % C_OSC_STRIDE == C_TABLE && c.index() < 3 * C_OSC_STRIDE))
+}
+
 // ────────────────────────────────────────────────────────────── the routes
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
     let w = &app.wave;
     crate::midi::ensure(app);
     w.touch();
+    // The stored board's sounds, once a library can be read.
+    if app.library_path().is_some() && !w.sounded.swap(true, Ordering::AcqRel) {
+        if let Some(b) = w.shared.board() {
+            if crate::wave_board::load_sounds(app, &b) {
+                w.shared.rebuild_board();
+            }
+        }
+    }
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/api/wave/patch") => Response::json(patch_json(&w.patch()).to_string()),
-        ("POST", "/api/wave/patch") => post_patch(w, req),
+        ("POST", "/api/wave/patch") => post_patch(app, req),
         ("POST", "/api/wave/param") => post_param(w, req),
         ("POST", "/api/wave/mods") => post_mods(w, req),
         ("POST", "/api/wave/note") => post_note(app, req),
@@ -252,7 +291,8 @@ fn ok() -> Value {
 
 /// `POST /api/wave/patch`: replace the patch. Anything not given takes the
 /// default, as a new patch would.
-fn post_patch(w: &WaveState, req: &Request) -> Response {
+fn post_patch(app: &App, req: &Request) -> Response {
+    let w = &app.wave;
     let v = match body(req) {
         Ok(v) => v,
         Err(r) => return r,
@@ -261,9 +301,14 @@ fn post_patch(w: &WaveState, req: &Request) -> Response {
         Ok(p) => p,
         Err(e) => return Response::error(400, &e),
     };
+    // Its board's sounds, decoded before the board is compiled.
+    let fresh = patch.board.as_ref().is_some_and(|b| crate::wave_board::load_sounds(app, b));
     let Ok(mut g) = w.inner.lock() else { return Response::error(500, "the synth is wedged") };
     g.patch = patch;
     w.adopt(&mut g);
+    if fresh {
+        w.shared.rebuild_board();
+    }
     if let Err(e) = w.save(&g.patch) {
         return Response::error(500, &format!("could not save the patch: {e}"));
     }
@@ -326,6 +371,8 @@ fn post_mods(w: &WaveState, req: &Request) -> Response {
     let Ok(mut g) = w.inner.lock() else { return Response::error(500, "the synth is wedged") };
     g.patch.mods = mods;
     w.shared.set_patch(PatchState::new(&g.patch));
+    // A row onto a table wants the bank built.
+    w.sync(&mut g);
     if let Err(e) = w.save(&g.patch) {
         return Response::error(500, &format!("could not save the patch: {e}"));
     }
@@ -429,6 +476,14 @@ fn state(app: &Arc<App>) -> Response {
     if device {
         for (id, v) in t.mods() {
             mods.insert(id.key().to_string(), num(*v));
+        }
+        // A choice key's option after its rows, by name: a table by the
+        // bank's.
+        let bank = app.wave.inner.lock().map(|g| bank_names(&g.playing)).unwrap_or_default();
+        for (c, key) in CHOICE_KEYS.iter().enumerate().filter(|(c, _)| t.choice_touched >> c & 1 == 1) {
+            let i = t.choice[c] as usize;
+            let name = option_name(wave::choice::ChoiceId(c as u8), i).map(str::to_string).or_else(|| bank.get(i).cloned());
+            mods.insert(key.to_string(), name.map_or(Value::Null, Value::Str));
         }
     }
     let arr = |xs: &[f32]| Value::Arr(xs.iter().map(|x| n(*x)).collect());
@@ -685,6 +740,7 @@ pub(crate) fn mod_json(m: &Mod) -> Value {
         .set("amt", num(m.amt))
         .set("curve", m.curve.as_str())
         .set("via", m.via.clone().map(Value::Str).unwrap_or(Value::Null))
+        .set("on", m.on)
 }
 
 fn tags_json(tags: &[String]) -> Value {
@@ -751,7 +807,7 @@ pub fn apply_param(p: &mut Patch, key: &str, v: &Value) -> Result<(), String> {
     Err(format!("unknown key {key:?}"))
 }
 
-/// The matrix rows, every field checked.
+/// The matrix rows, every field checked. The limit counts rows switched off.
 pub fn parse_mods(v: &Value) -> Result<Vec<Mod>, String> {
     let rows = v.arr().ok_or("mods must be a list")?;
     if rows.len() > MAX_MODS {
@@ -762,7 +818,8 @@ pub fn parse_mods(v: &Value) -> Result<Vec<Mod>, String> {
         .map(|(i, r)| {
             let s = |k: &str| r.get(k).and_then(Value::as_str);
             let src = s("src").filter(|x| Source::parse(x).is_some()).ok_or(format!("mod {i}: unknown src"))?;
-            let dst = s("dst").filter(|x| param_id(x).is_some() || wave::board::parse_dst(x).is_some()).ok_or(format!("mod {i}: unknown dst"))?;
+            let target = |x: &&str| param_id(x).is_some() || choice_id(x).is_some() || wave::board::parse_dst(x).is_some();
+            let dst = s("dst").filter(target).ok_or(format!("mod {i}: unknown dst"))?;
             let amt = num_of(r.get("amt")).ok_or(format!("mod {i}: amt must be a number"))?.clamp(-1.0, 1.0) as f32;
             let curve = s("curve").unwrap_or("lin");
             if Curve::parse(curve).is_none() {
@@ -773,7 +830,13 @@ pub fn parse_mods(v: &Value) -> Result<Vec<Mod>, String> {
                 Some(Value::Str(x)) if Source::parse(x).is_some() => Some(x.clone()),
                 Some(_) => return Err(format!("mod {i}: unknown via")),
             };
-            Ok(Mod { src: src.into(), dst: dst.into(), amt, curve: curve.into(), via })
+            // A row saved before rows had a switch is on.
+            let on = match r.get("on") {
+                None | Some(Value::Null) => true,
+                Some(Value::Bool(b)) => *b,
+                Some(_) => return Err(format!("mod {i}: on must be true or false")),
+            };
+            Ok(Mod { src: src.into(), dst: dst.into(), amt, curve: curve.into(), via, on })
         })
         .collect()
 }
@@ -821,172 +884,9 @@ pub fn patch_from_json(v: &Value, mut base: Patch) -> Result<Patch, String> {
     Ok(base)
 }
 
-// ─────────────────────────────────────────────────────────────── tables
-
-/// Frames from the page: 1 to 256 of them, all one length, 64 to 4096 long.
-fn parse_frames(v: Option<&Value>) -> Result<Vec<Vec<f32>>, String> {
-    let rows = v.and_then(Value::arr).ok_or("frames must be a list of lists")?;
-    if rows.is_empty() || rows.len() > MAX_FRAMES {
-        return Err(format!("a table has 1 to {MAX_FRAMES} frames"));
-    }
-    let frames = rows
-        .iter()
-        .map(|r| {
-            r.arr()?
-                .iter()
-                .map(|x| match x {
-                    Value::Num(n) if n.is_finite() => Some(*n as f32),
-                    _ => None,
-                })
-                .collect::<Option<Vec<f32>>>()
-        })
-        .collect::<Option<Vec<_>>>()
-        .ok_or("every frame is a list of numbers")?;
-    let len = frames[0].len();
-    if !(MIN_FRAME_LEN..=MAX_FRAME_LEN).contains(&len) {
-        return Err(format!("a frame is {MIN_FRAME_LEN} to {MAX_FRAME_LEN} samples"));
-    }
-    if frames.iter().any(|f| f.len() != len) {
-        return Err("every frame must be the same length".into());
-    }
-    Ok(frames)
-}
-
-/// Each frame as the table will hold it — its DC taken out and its peak at
-/// one, as `Wavetable::from_frames` does — at `points` points, read with
-/// straight lines and wrapping round. Drawn from the frames directly, so a
-/// preview never waits for a table to be built.
-pub fn preview(frames: &[Vec<f32>], points: usize) -> Vec<Vec<f32>> {
-    frames
-        .iter()
-        .take(MAX_FRAMES)
-        .map(|f| {
-            let n = f.len().max(1);
-            let mean = f.iter().sum::<f32>() / n as f32;
-            let mut out: Vec<f32> = (0..points)
-                .map(|i| {
-                    let p = i as f32 * n as f32 / points as f32;
-                    let j = p as usize % n;
-                    let u = p - p.floor();
-                    let (a, b) = (f.get(j).copied().unwrap_or(0.0), f.get((j + 1) % n).copied().unwrap_or(0.0));
-                    a + (b - a) * u - mean
-                })
-                .collect();
-            let peak = out.iter().fold(0.0f32, |m, v| m.max(v.abs()));
-            if peak > 1e-9 {
-                out.iter_mut().for_each(|v| *v /= peak);
-            }
-            out
-        })
-        .collect()
-}
-
-/// A table's frames by name: a built-in, or one saved in `dir`.
-fn frames_for(dir: &Path, name: &str) -> Option<Vec<Vec<f32>>> {
-    if let Some(f) = wave::builtin_frames(name) {
-        return Some(f);
-    }
-    let file = crate::capture::safe(name);
-    if file.is_empty() || file.starts_with('.') {
-        return None;
-    }
-    read_table_wav(&std::fs::read(dir.join(format!("{file}.wav"))).ok()?)
-}
-
-/// The tables saved in `dir`, by name, with their frame counts.
-fn user_tables(dir: &Path) -> Vec<(String, usize)> {
-    let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(dir) else { return out };
-    for e in rd.flatten() {
-        let p = e.path();
-        if p.extension().and_then(|x| x.to_str()).map(str::to_lowercase).as_deref() != Some("wav") {
-            continue;
-        }
-        let Some(name) = p.file_stem().map(|s| s.to_string_lossy().to_string()) else { continue };
-        if BUILTIN_NAMES.contains(&name.as_str()) {
-            continue;
-        }
-        if let Some(frames) = std::fs::read(&p).ok().and_then(|b| read_table_wav(&b)) {
-            out.push((name, frames.len()));
-        }
-    }
-    out.sort_by_key(|(n, _)| n.to_lowercase());
-    out
-}
-
-/// A table as a mono 32-bit float WAV, frame after frame, with a `clm ` chunk
-/// saying how long a frame is — Serum's convention, which other wavetable
-/// synths read too.
-pub fn table_wav(frames: &[Vec<f32>]) -> Vec<u8> {
-    let len = frames.first().map_or(CYCLE, Vec::len);
-    let mut clm = format!("<!>{len} 10000000 wavetable (MultiGrainLive)").into_bytes();
-    if clm.len() % 2 == 1 {
-        clm.push(0);
-    }
-    let data: Vec<u8> = frames.iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
-    let mut out = Vec::with_capacity(44 + clm.len() + 8 + data.len());
-    let riff = 4 + (8 + 16) + (8 + clm.len()) + (8 + data.len());
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(riff as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVE");
-    out.extend_from_slice(b"fmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&3u16.to_le_bytes()); // IEEE float
-    out.extend_from_slice(&1u16.to_le_bytes()); // mono
-    out.extend_from_slice(&48_000u32.to_le_bytes());
-    out.extend_from_slice(&(48_000u32 * 4).to_le_bytes());
-    out.extend_from_slice(&4u16.to_le_bytes());
-    out.extend_from_slice(&32u16.to_le_bytes());
-    out.extend_from_slice(b"clm ");
-    out.extend_from_slice(&(clm.len() as u32).to_le_bytes());
-    out.extend_from_slice(&clm);
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    out.extend_from_slice(&data);
-    out
-}
-
-/// Frames back out of a table WAV: 32-bit float or 16-bit PCM, the first
-/// channel, cut at the `clm ` chunk's frame length (2048 when there is none).
-pub fn read_table_wav(b: &[u8]) -> Option<Vec<Vec<f32>>> {
-    if b.len() < 12 || &b[0..4] != b"RIFF" || &b[8..12] != b"WAVE" {
-        return None;
-    }
-    let (mut format, mut channels, mut bits, mut len) = (0u16, 1usize, 0u16, CYCLE);
-    let mut data: Option<&[u8]> = None;
-    let mut at = 12;
-    while at + 8 <= b.len() {
-        let id = &b[at..at + 4];
-        let size = u32::from_le_bytes(b[at + 4..at + 8].try_into().ok()?) as usize;
-        let body = &b[at + 8..(at + 8 + size).min(b.len())];
-        match id {
-            b"fmt " if body.len() >= 16 => {
-                format = u16::from_le_bytes([body[0], body[1]]);
-                channels = u16::from_le_bytes([body[2], body[3]]).max(1) as usize;
-                bits = u16::from_le_bytes([body[14], body[15]]);
-            }
-            b"clm " => {
-                let text = String::from_utf8_lossy(body);
-                if let Some(n) = text.strip_prefix("<!>").and_then(|t| t.split_whitespace().next()).and_then(|t| t.parse().ok()) {
-                    len = n;
-                }
-            }
-            b"data" => data = Some(body),
-            _ => {}
-        }
-        at += 8 + size + (size & 1);
-    }
-    let data = data?;
-    let samples: Vec<f32> = match (format, bits) {
-        (3, 32) => data.chunks_exact(4 * channels).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect(),
-        (1, 16) => data.chunks_exact(2 * channels).map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect(),
-        _ => return None,
-    };
-    if !(4..=MAX_FRAME_LEN).contains(&len) || samples.len() < len {
-        return None;
-    }
-    Some(samples.chunks_exact(len).take(MAX_FRAMES).map(<[f32]>::to_vec).collect())
-}
+mod tables;
+pub use tables::{preview, read_table_wav, table_wav};
+use tables::{frames_for, parse_frames, user_tables};
 
 #[cfg(test)]
 mod tests;

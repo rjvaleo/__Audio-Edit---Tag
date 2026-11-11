@@ -11,8 +11,8 @@
 //! [`Synth::note_on`], [`Synth::note_off`], [`Synth::set_param`],
 //! [`Synth::set_table`], [`Synth::adopt`], [`Synth::bend`],
 //! [`Synth::mod_wheel`], [`Synth::aftertouch`], [`Synth::telemetry`],
-//! [`Synth::set_board`], [`Synth::take_retired`], [`Synth::set_board_param`]
-//! or [`Synth::set_board_on`].**
+//! [`Synth::set_board`], [`Synth::take_retired`], [`Synth::set_board_param`],
+//! [`Synth::set_board_on`] or [`Synth::set_bank_table`].**
 //! Everything they touch is allocated by [`Synth::new`]. The expensive things
 //! happen on the caller's thread:
 //! - [`Wavetable::from_frames`] resamples, normalises and builds the mips
@@ -34,7 +34,7 @@
 //!
 //! Patch::default()        set_num/get_num, set_str/get_str, set_points/get_points
 //! Patch::entries()        every key and its Value, for serialising
-//! patch.mods: Vec<Mod>    Mod { src, dst, amt, curve, via }
+//! patch.mods: Vec<Mod>    Mod { src, dst, amt, curve, via, on }
 //! PatchState::new(&Patch) param_id(key) -> Option<ParamId>   ParamId::key()
 //!
 //! Synth::new(sample_rate, max_block)   Synth::with_oversampling(sr, max_block, true)
@@ -48,6 +48,9 @@
 //! BoardPlan::compile(&Board, sr) -> Result<BoardPlan, BoardError>
 //! synth.set_board(Box<BoardPlan>) -> Option<Box<BoardPlan>>    take_retired()
 //! synth.set_board_param(node, param, value)   set_board_on(node, on)
+//!
+//! choice::choice_id(key)  choice::bank_names(&tables)      a row's dst may be a choice key
+//! synth.set_bank_table(builtin, Arc<Wavetable>) -> Option<Arc<Wavetable>>
 //! ```
 //!
 //! # Signal path
@@ -62,9 +65,11 @@
 //! `master_fx.rs`). The modules' own docs explain each decision.
 
 pub mod board;
+pub mod choice;
 pub mod env;
 pub mod filter;
 mod fx;
+mod lfo;
 mod master_fx;
 mod osc;
 pub mod patch;

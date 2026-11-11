@@ -6,7 +6,9 @@
 //! controllers and telemetry, with every unit of the master chain in and its
 //! knobs and switches moving; then the same on a ten-node board with a send,
 //! its controls written live and modulated, a node switched out and in, and a
-//! second board swapped in. Any allocation fails the test. This file holds a
+//! second board swapped in; then every kind of choice key stepped by fast
+//! LFOs, with a bank table handed in; then Convolution and Spectral Dynamics
+//! running on their sounds. Any allocation fails the test. This file holds a
 //! single test so no other test thread can allocate while it counts.
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -192,6 +194,92 @@ fn render_note_on_set_param_and_set_table_never_allocate() {
     COUNTING.store(false, Ordering::SeqCst);
     assert_eq!(ALLOCS.load(Ordering::SeqCst), 0, "rendering a board allocated");
     assert!(displaced.is_none() && retired.is_some(), "the first board came back once it had faded");
+
+    // v8b: every kind of choice key stepped by fast LFOs (the crossfades,
+    // the fed effect lines, the routing's dip), and a bank table swapped.
+    let mut chosen = Patch::default();
+    chosen.set_num("lfo0.rate", 0.8);
+    chosen.set_num("lfo1.rate", 0.75);
+    chosen.set_str("lfo2.mode", "trig");
+    for (src, dst, amt) in [
+        ("lfo0", "osc0.warp0.mode", 0.5),
+        ("lfo1", "osc1.warp1.mode", -0.5),
+        ("lfo0", "osc0.fx.mode", 0.6),
+        ("lfo1", "osc1.fx.mode", 0.4),
+        ("lfo0", "osc0.table", 0.5),
+        ("vel", "osc2.table", -0.6),
+        ("lfo1", "filt0.type", 0.7),
+        ("lfo0", "filt1.type", -0.7),
+        ("lfo1", "filt.route", 0.6),
+        ("lfo0", "lfo2.shape", 0.6),
+        ("lfo1", "lfo3.shape", 0.5),
+    ] {
+        chosen.mods.push(Mod::new(src, dst, amt));
+    }
+    chosen.set_num("osc2.on", 1.0);
+    let chosen = PatchState::new(&chosen);
+    let mut synth = Synth::new(48_000.0, 512);
+    synth.adopt(chosen);
+    for (i, table) in tables.iter().enumerate() {
+        synth.set_table(i, table.clone());
+    }
+    for (i, name) in BUILTIN_NAMES.iter().enumerate().take(4) {
+        synth.set_bank_table(i, t(name));
+    }
+    let mut late = Some(t("Grit Saw"));
+    let mut banked = None;
+    let mut seen = Telemetry::default();
+    COUNTING.store(true, Ordering::SeqCst);
+    for round in 0..4u8 {
+        for n in 0..12u8 {
+            synth.note_on(40 + n * 3 + round, 0.3 + 0.05 * n as f32);
+            synth.render(&mut left[..97], &mut right[..97]);
+        }
+        if round == 1 {
+            banked = synth.set_bank_table(4, late.take().unwrap());
+        }
+        for _ in 0..8 {
+            synth.render(&mut left, &mut right);
+        }
+        synth.telemetry(&mut seen);
+        for n in 0..12u8 {
+            synth.note_off(40 + n * 3 + round);
+        }
+        synth.render(&mut left, &mut right);
+    }
+    COUNTING.store(false, Ordering::SeqCst);
+    assert_eq!(ALLOCS.load(Ordering::SeqCst), 0, "stepping choices allocated");
+    assert!(banked.is_none() && synth.bank_table(4).is_some());
+    assert_ne!(seen.choice_touched, 0);
+
+    // v8b: Convolution and Spectral Dynamics on a board with their sounds.
+    let ir: Vec<f32> = (0..4800).map(|i| (-(i as f32) / 600.0).exp() * if i % 7 == 0 { 1.0 } else { -0.3 }).collect();
+    let sound = wave::board::Sound { samples: Arc::new(ir), channels: 1, rate: 48_000.0 };
+    let sounded = Board {
+        name: "sounds".into(),
+        nodes: vec![
+            n("v", "in:voice"),
+            n("cv", "fx:convolution").with_sound("ir.wav"),
+            n("sd", "fx:spectral-dynamics").with("useSound", 1.0).with_sound("ir.wav"),
+            n("out", "out"),
+        ],
+        cables: vec![Cable::new("v", "o", "cv", "i"), Cable::new("cv", "o", "sd", "i"), Cable::new("sd", "o", "out", "i")],
+    };
+    let mut synth = Synth::new(48_000.0, 512);
+    synth.set_table(0, tables[0].clone());
+    synth.set_board(Box::new(BoardPlan::compile_with(&sounded, 48_000.0, &|_| Some(sound.clone())).unwrap()));
+    let length = wave::board::Kind::parse("fx:convolution").unwrap().params().iter().position(|p| p.key == "lengthMs").unwrap();
+    COUNTING.store(true, Ordering::SeqCst);
+    for round in 0..4u8 {
+        synth.note_on(50 + round, 0.8);
+        synth.set_board_param(1, length, 20.0 + round as f32 * 25.0);
+        for _ in 0..6 {
+            synth.render(&mut left, &mut right);
+        }
+        synth.note_off(50 + round);
+    }
+    COUNTING.store(false, Ordering::SeqCst);
+    assert_eq!(ALLOCS.load(Ordering::SeqCst), 0, "a board with sounds allocated");
     assert_eq!(telemetry.board().len(), 10);
     assert!(returned.is_some());
     assert!(left.iter().all(|v| v.is_finite()));

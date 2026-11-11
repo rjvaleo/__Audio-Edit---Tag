@@ -34,13 +34,13 @@ const wvInspRow = (n, right = '') => `<div class="irow" data-sel="${wvEsc(n.id)}
 const wvInspPic = '<div class="wv-well"><canvas data-ip="1" data-w="240" data-h="84"></canvas></div>';
 
 function wvInspFx(n) {
-  const sp = wvNodeSpec(n), face = WV_FX_FACE[n.kind], silent = WV_FX_SILENT.has(n.kind);
+  const sp = wvNodeSpec(n), face = WV_FX_FACE[n.kind], F = wvFxOf(n), snd = F && F.sound;
   let gs = (face ? face[1] : []).map(([l, ks]) => [l, ks.map((k) => sp.find((p) => p.key === k)).filter(Boolean)]).filter((g) => g[1].length);
   if (!gs.length && sp.length) gs = [['Settings', sp]];
   const seen = new Set(gs.flatMap((g) => g[1].map((p) => p.key))), rest = sp.filter((p) => !seen.has(p.key));
   if (rest.length) gs.push(['More', rest]);
   return wvInspHead(wvCatCol(wvNodeCat(n), 64), wvNodeName(n).toUpperCase(), `${wvNodeCat(n).toUpperCase()} · ${wvNodeMaker(n)}`, `${sp.length} control${sp.length === 1 ? '' : 's'}`, `<span class="wv-pw wv-btn ${n.on ? 'on' : ''}" data-ipw title="Power: off passes the sound through untouched">${WV_PWR}</span>`)
-    + wvInspPic + `<div class="iscroll wv-scroll">${silent ? '<div class="wv-hint wv-silent-note">No sound on the board yet: this effect passes nothing through the board for now. Its controls are kept for when it does.</div>' : ''}`
+    + wvInspPic + `<div class="iscroll wv-scroll">${snd ? `<div class="ig"><div class="igh">${wvEsc(snd.label.toUpperCase())}</div><div class="isnd ${wvSoundState(n)}"><span class="nm" title="${wvEsc(n.sound || '')}">${wvEsc(wvSoundText(n))}</span><span class="wv-bt wv-btn" data-snd="${wvEsc(n.id)}" title="${wvEsc(snd.label)}: pick a sound from the library">Pick…</span></div></div>` : ''}`
     + gs.map(([l, ps]) => `<div class="ig"><div class="igh">${wvEsc(l.toUpperCase())}</div><div class="igrid">${ps.map((p) => wvInspCtl(n, p)).join('')}</div></div>`).join('')
     + (sp.length ? '' : `<div class="wv-hint">${wvEsc(wvNodeName(n))} has no settings: ${n.kind === 'fx:invert' ? 'it flips the wave upside down' : 'it swaps left and right'}.</div>`)
     + wvInspMods(n) + '</div><div class="ifoot"><span class="wv-bt wv-btn" data-idel title="Remove this node and its cables">Remove</span><span class="wv-bt wv-btn" data-irst title="Every control back to its default">Defaults</span><span class="wv-sp"></span><span class="wv-hint">Delete removes it too</span></div>';
@@ -97,6 +97,7 @@ function wvRenderInspector() {
   el.querySelectorAll('.ic .it span').forEach((sp) => { if (sp.scrollWidth > sp.clientWidth + 0.5) sp.closest('.ic').classList.add('wide'); });
   el.querySelector('[data-ipw]')?.addEventListener('click', () => { wvBoardParam(n.id, 'on', n.on === false, false); wvRenderBoard(); });
   el.querySelector('[data-idel]')?.addEventListener('click', wvBoardDelete);
+  el.querySelectorAll('[data-snd]').forEach((b) => b.addEventListener('click', () => wvSoundMenu(b, b.dataset.snd)));
   el.querySelector('[data-cdel]')?.addEventListener('click', wvBoardDelete);
   el.querySelector('[data-irst]')?.addEventListener('click', () => {
     for (const p of wvNodeSpec(n)) n.params[p.key] = p.default;
@@ -123,6 +124,34 @@ function wvRenderInspector() {
   });
   el.querySelectorAll('[data-sel]').forEach((r) => r.addEventListener('click', () => wvBoardSelect({ t: 'node', id: r.dataset.sel })));
   el.querySelectorAll('[data-mnode]').forEach((r) => { r.style.cursor = 'pointer'; r.addEventListener('click', () => wvBoardSelect({ t: 'node', id: r.dataset.mnode })); });
+}
+
+/// v8b: the sound picker of a Convolution or Spectral Dynamics node: the
+/// library's folders and each one's files, as the rack's picker offers them,
+/// and None.
+async function wvSoundMenu(anchor, nid) {
+  const n = wvNode(nid), F = n && wvFxOf(n);
+  if (!F || !F.sound) return;
+  const m = wvMenuFor('snd' + nid);
+  if (!m) return;
+  m.className = 'wv-menu wv-sndm';
+  const cur = n.sound || '', folders = (state.folders || []).map((f) => f.name);
+  m.innerHTML = `<div class="sh"><b>${wvEsc(F.sound.label.toUpperCase())}</b><select aria-label="Folder">${folders.map((f) => `<option ${cur.startsWith(f + '/') ? 'selected' : ''}>${wvEsc(f)}</option>`).join('')}</select></div>`
+    + `<div class="sl wv-scroll"></div><div class="sn ${cur ? '' : 'on'}" data-sv="">None: ${wvEsc(wvSoundAlone(n))}</div>`;
+  const sel = m.querySelector('select'), list = m.querySelector('.sl');
+  const wire = (x) => x.addEventListener('click', () => { wvCloseMenus(); wvBoardSound(nid, x.dataset.sv || null); });
+  const fill = async () => {
+    list.innerHTML = '<span class="wv-hint">Reading the folder…</span>';
+    const r = sel.value ? await wvBoardFetch(`/api/files?folder=${encodeURIComponent(sel.value)}`) : { ok: false };
+    const fs = r.ok && Array.isArray(r.json) ? r.json.filter((f) => f && f.path) : [];
+    list.innerHTML = fs.length ? fs.map((f) => `<div class="${f.path === cur ? 'on' : ''}" data-sv="${wvEsc(f.path)}" title="${wvEsc(f.path)}">${wvEsc(f.filename || f.path.split('/').pop())}</div>`).join('') : '<span class="wv-hint">No sounds here</span>';
+    list.querySelectorAll('[data-sv]').forEach(wire);
+  };
+  wire(m.querySelector('.sn'));
+  sel.addEventListener('change', fill);
+  wvPlaceMenu(m, anchor, 0);
+  await fill();
+  if (WV_MENU.owner === 'snd' + nid) wvPlaceMenu(m, anchor, 0);
 }
 
 // ─────────────────────────────────────────────────────────────── pictures

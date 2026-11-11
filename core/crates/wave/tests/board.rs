@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use wave::board::Sound;
 use wave::*;
 
 const SR: f32 = 48_000.0;
@@ -229,4 +230,95 @@ fn board_writes_and_telemetry() {
     render(&mut s, 4800);
     let (bypassed, _) = render(&mut s, 24_000);
     assert!((rms(&bypassed) / rms(&loud) - 1.0).abs() < 0.05, "a gain switched off passes its input");
+}
+
+/// Voice → the effect → out.
+fn one_effect(kind: &str, sound: Option<&str>, params: &[(&str, f32)]) -> Board {
+    let mut fx = Node::new("fx", kind, 0.0, 0.0);
+    for (k, v) in params {
+        fx = fx.with(k, *v);
+    }
+    if let Some(s) = sound {
+        fx = fx.with_sound(s);
+    }
+    Board {
+        name: "t".into(),
+        nodes: vec![Node::new("v", "in:voice", 0.0, 0.0), fx, Node::new("out", "out", 0.0, 0.0)],
+        cables: vec![Cable::new("v", "o", "fx", "i"), Cable::new("fx", "o", "out", "i")],
+    }
+    .complete()
+    .unwrap()
+}
+
+#[test]
+fn convolution_and_spectral_dynamics_take_a_sound_on_the_board_and_pass_through_without() {
+    // The sounds by name: a decaying noise impulse response, stereo, at
+    // 44.1 kHz, and a high tone as Spectral Dynamics' thresholds.
+    let mut seed = 7u32;
+    let mut noise = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        seed as f32 / u32::MAX as f32 - 0.5
+    };
+    let ir: Vec<f32> = (0..8820).flat_map(|i| {
+        let g = (-(i as f32) / 1500.0).exp();
+        [noise() * g, noise() * g]
+    }).collect();
+    let key: Vec<f32> = (0..9600).map(|i| (i as f32 * 0.9).sin() * 0.5).collect();
+    let sounds = |name: &str| match name {
+        "irs/room.wav" => Some(Sound { samples: Arc::new(ir.clone()), channels: 2, rate: 44_100.0 }),
+        "keys/high.wav" => Some(Sound { samples: Arc::new(key.clone()), channels: 1, rate: 48_000.0 }),
+        _ => None,
+    };
+    let dry = {
+        let mut s = synth(&Patch::default());
+        s.set_board(plan(&one_effect("gain", None, &[])));
+        s.note_on(52, 0.9);
+        render(&mut s, 24_000).0
+    };
+    let cases = [
+        ("fx:convolution", "irs/room.wav", vec![("lengthMs", 180.0), ("mix", 1.0)]),
+        ("fx:spectral-dynamics", "keys/high.wav", vec![("useSound", 1.0), ("thresholdDb", 6.0)]),
+    ];
+    for (kind, name, params) in cases {
+        let run = |sound: Option<&str>| {
+            let b = one_effect(kind, sound, &params);
+            let p = Box::new(BoardPlan::compile_with(&b, SR, &sounds).unwrap());
+            let needs = kind == "fx:convolution";
+            assert_eq!(p.unsounded(1), needs && sound.is_none_or(|s| sounds(s).is_none()), "{kind} {sound:?}");
+            let mut s = synth(&Patch::default());
+            s.set_board(p);
+            s.note_on(52, 0.9);
+            render(&mut s, 24_000).0
+        };
+        let wet = run(Some(name));
+        assert!(max_diff(&wet, &dry) > 0.05, "{kind} with {name} changes the sound");
+        assert!(rms(&wet[4800..]) > 1e-3, "{kind} with {name} is not silence");
+        if kind == "fx:convolution" {
+            assert_eq!(run(None), dry, "{kind} with no sound passes its input through, to the bit");
+            assert_eq!(run(Some("missing.wav")), dry, "{kind} with a sound that is not there passes it through");
+        }
+    }
+    // Spectral Dynamics with no sound keeps its level-only mode: what it does
+    // with its sound switched off, and not its input.
+    let spectral = |sound: Option<&str>, use_sound: f32| {
+        let b = one_effect("fx:spectral-dynamics", sound, &[("useSound", use_sound), ("mode", 2.0), ("affect", 1.0), ("thresholdDb", -30.0), ("ratio", 4.0)]);
+        let mut s = synth(&Patch::default());
+        s.set_board(Box::new(BoardPlan::compile_with(&b, SR, &sounds).unwrap()));
+        s.note_on(52, 0.9);
+        render(&mut s, 24_000).0
+    };
+    let levels = spectral(Some("keys/high.wav"), 0.0);
+    assert_eq!(spectral(None, 1.0), levels, "no sound: its levels alone");
+    assert_eq!(spectral(Some("missing.wav"), 1.0), levels, "a sound not there: its levels alone");
+    assert!(max_diff(&levels, &dry) > 0.01, "its level-only mode is not a pass-through");
+    // A sound on an effect that takes none is refused; a changed sound is new
+    // structure, so a new plan.
+    let mut bad = one_effect("fx:echo", None, &[]);
+    bad.nodes[1].sound = Some("irs/room.wav".into());
+    assert!(bad.complete().unwrap_err().message.contains("takes no sound"));
+    let a = one_effect("fx:convolution", Some("irs/room.wav"), &[]);
+    assert!(!a.same_structure(&one_effect("fx:convolution", Some("irs/hall.wav"), &[])));
+    assert!(a.same_structure(&one_effect("fx:convolution", Some("irs/room.wav"), &[("mix", 0.5)])));
 }

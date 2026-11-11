@@ -25,6 +25,13 @@
 //! The modes share it, since an oscillator has one effect at a time. A voice
 //! reused for a new note clears only what it wrote, so the cost of starting a
 //! note is the length of the last echo, not the whole line.
+//!
+//! **A modulated mode (v8b).** When a mod row moves `oscN.fx.mode`, the line
+//! is fed with the oscillator's sound in every mode (`feed`), so a chorus or
+//! a delay switched in has the sound's past to read rather than an empty line
+//! whose first contents would start with a click. A switch runs the old mode
+//! and the new from the same state, and keeps what the new one wrote
+//! ([`OscFx::switch`]); the voice crossfades the two.
 
 use crate::patch::FxMode;
 
@@ -84,13 +91,25 @@ impl OscFx {
         a + (b - a) * u
     }
 
-    /// Process a block in place. Off and the cycle effects do nothing here.
-    pub fn process(&mut self, mode: FxMode, a: f32, b: f32, sr: f32, l: &mut [f32], r: &mut [f32]) {
+    /// Process a block in place. Off and the cycle effects do nothing here,
+    /// but with `feed` the modes that do not write the line write the input
+    /// into it, so a delay or chorus switched in later has it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn process(&mut self, mode: FxMode, a: f32, b: f32, sr: f32, l: &mut [f32], r: &mut [f32], feed: bool) {
         if mode != self.mode {
             self.reset();
             self.mode = mode;
         }
         let n = l.len().min(r.len());
+        if feed && !matches!(mode, FxMode::Chorus | FxMode::Delay) {
+            let len = self.buf[0].len();
+            for i in 0..n {
+                self.buf[0][self.w] = l[i];
+                self.buf[1][self.w] = r[i];
+                self.w = (self.w + 1) % len;
+            }
+            self.dirty += n;
+        }
         let a = a.clamp(0.0, 1.0);
         let b = b.clamp(0.0, 1.0);
         let len = self.buf[0].len();
@@ -164,6 +183,25 @@ impl OscFx {
             }
             _ => {}
         }
+    }
+}
+
+impl OscFx {
+    /// A modulated switch from `old` to `new`: `old` over `al, ar` and `new`
+    /// over `l, r`, both from the state the block started with, the line
+    /// kept. What stays is what `new` (fed) left, as if it alone had run.
+    #[allow(clippy::too_many_arguments)]
+    pub fn switch(&mut self, old: FxMode, new: FxMode, a: f32, b: f32, sr: f32, al: &mut [f32], ar: &mut [f32], l: &mut [f32], r: &mut [f32]) {
+        self.mode = old;
+        let kept = (self.w, self.lfo, self.delay, self.ap, self.fb);
+        self.process(old, a, b, sr, al, ar, true);
+        (self.w, self.lfo, self.delay, self.ap, self.fb) = kept;
+        if new == FxMode::Delay && old != FxMode::Delay {
+            // At its own time, not gliding from wherever it last was.
+            self.delay = -1.0;
+        }
+        self.mode = new;
+        self.process(new, a, b, sr, l, r, true);
     }
 }
 

@@ -17,6 +17,17 @@
 //! whether that is new structure (compiled and swapped in) or only controls
 //! and switches (live writes that keep the effects' tails).
 //!
+//! # Sounds (v8b)
+//!
+//! A Convolution or Spectral Dynamics node names its sound by library path
+//! (`sound`). The file is decoded here, on the request's thread, into the
+//! sounds the rack's effects share (`App::load_effect_sound`), before the
+//! board goes to the engine, which hands it to the kernel as it compiles the
+//! plan. A sound decoded only after its board was compiled (the stored board,
+//! read before any library) has the board compiled again. The replies say,
+//! per node, whether its sound is there (`soundState`): `none` and
+//! `unreadable` both pass the input through.
+//!
 //! # Board presets
 //!
 //! `<data>/wave/boards/<name>.json`, beside the four factory boards built in
@@ -42,9 +53,9 @@ static FACTORY: &str = include_str!("wave_board/factory.json");
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
     let w = &app.wave;
     match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/api/wave/board") => Response::json(board_json(&current(w)).to_string()),
-        ("POST", "/api/wave/board") => post_board(w, req),
-        ("POST", "/api/wave/board/param") => post_param(w, req),
+        ("GET", "/api/wave/board") => Response::json(board_reply(&current(w)).to_string()),
+        ("POST", "/api/wave/board") => post_board(app, req),
+        ("POST", "/api/wave/board/param") => post_param(app, req),
         ("GET", "/api/wave/boards") => Response::json(Value::Arr(presets(w)).to_string()),
         ("POST", "/api/wave/boards") => post_preset(w, req),
         ("DELETE", "/api/wave/boards") => delete_preset(w, req),
@@ -89,20 +100,47 @@ fn current(w: &WaveState) -> Board {
 
 // ─────────────────────────────────────────────────────── board ⇄ JSON
 
-/// `{name, nodes:[{id, kind, x, y, on, params}], cables:[{from, to}]}`.
+/// `{name, nodes:[{id, kind, x, y, on, params, sound?}], cables:[{from, to}]}`,
+/// as it is stored. `sound` is on the nodes whose effect takes one: a
+/// library path, or null.
 pub fn board_json(b: &Board) -> Value {
+    board_value(b, false)
+}
+
+/// The same with each sound node's `soundState`, for a reply.
+fn board_reply(b: &Board) -> Value {
+    board_value(b, true)
+}
+
+/// `none`, `loaded`, or `unreadable` (named, but not decoded).
+fn sound_state(n: &Node) -> &'static str {
+    match n.sound.as_deref() {
+        None => "none",
+        Some(s) if fx::prism::sound(s).is_some() => "loaded",
+        Some(_) => "unreadable",
+    }
+}
+
+fn board_value(b: &Board, states: bool) -> Value {
     let nodes = b
         .nodes
         .iter()
         .map(|n| {
             let params = n.params.iter().map(|(k, v)| (k.clone(), num(*v))).collect();
-            Value::obj()
+            let mut v = Value::obj()
                 .set("id", n.id.as_str())
                 .set("kind", n.kind.as_str())
                 .set("x", num(n.x))
                 .set("y", num(n.y))
                 .set("on", n.on)
-                .set("params", Value::Obj(params))
+                .set("params", Value::Obj(params));
+            if Kind::parse(&n.kind).is_some_and(Kind::takes_sound) {
+                v = v.set("sound", n.sound.clone().map_or(Value::Null, Value::Str));
+                if states {
+                    v = v.set("soundState", sound_state(n));
+                }
+            }
+            v
         })
         .collect();
     let port = |(n, p): &(String, String)| Value::Arr(vec![Value::Str(n.clone()), Value::Str(p.clone())]);
@@ -129,6 +167,11 @@ pub fn board_from_json(v: &Value) -> Result<Board, BoardError> {
         };
         let mut node = Node::new(id, kind, f("x"), f("y"));
         node.on = !matches!(n.get("on"), Some(Value::Bool(false)));
+        node.sound = match n.get("sound") {
+            None | Some(Value::Null) => None,
+            Some(Value::Str(p)) => Some(p.clone()).filter(|p| !p.is_empty()),
+            Some(_) => return Err(bad(format!("node {id:?}: sound is a library path"))),
+        };
         if let Some(params) = n.get("params") {
             let params = params.as_obj().ok_or_else(|| bad(format!("node {id:?}: params must be an object")))?;
             for (k, x) in params {
@@ -154,10 +197,25 @@ pub fn board_from_json(v: &Value) -> Result<Board, BoardError> {
 
 // ─────────────────────────────────────────────────────────────── routes
 
-/// Store `board` in the patch and hand it to the engine; the patch goes too
-/// when the board's nodes changed, so its `board:` rows are compiled against
-/// the new ones. Saved unless `live`.
-fn adopt(w: &WaveState, board: Board, live: bool) -> Result<(), Response> {
+/// Decode every sound `board` names that is not decoded yet. True if one
+/// was, so a plan compiled without it wants compiling again.
+pub(crate) fn load_sounds(app: &App, board: &Board) -> bool {
+    let mut fresh = false;
+    for name in board.nodes.iter().filter_map(|n| n.sound.as_deref()) {
+        if fx::prism::sound(name).is_none() {
+            app.load_effect_sound(name);
+            fresh |= fx::prism::sound(name).is_some();
+        }
+    }
+    fresh
+}
+
+/// Store `board` in the patch and hand it to the engine, its sounds decoded
+/// first; the patch goes too when the board's nodes changed, so its `board:`
+/// rows are compiled against the new ones. Saved unless `live`.
+fn adopt(app: &App, board: Board, live: bool) -> Result<(), Response> {
+    let w = &app.wave;
+    let fresh = load_sounds(app, &board);
     let Ok(mut g) = w.inner.lock() else { return Err(Response::error(500, "the synth is wedged")) };
     let mut next = g.patch.clone();
     ensure(&mut next);
@@ -165,6 +223,9 @@ fn adopt(w: &WaveState, board: Board, live: bool) -> Result<(), Response> {
     next.board = Some(board);
     if let Err(e) = w.shared.set_board(next.board.as_ref().unwrap()) {
         return Err(refused(&e));
+    }
+    if fresh {
+        w.shared.rebuild_board();
     }
     if renumbered {
         w.shared.set_patch(PatchState::new(&next));
@@ -179,7 +240,7 @@ fn adopt(w: &WaveState, board: Board, live: bool) -> Result<(), Response> {
 }
 
 /// `POST /api/wave/board`: a whole board, checked, compiled, swapped in.
-fn post_board(w: &WaveState, req: &Request) -> Response {
+fn post_board(app: &App, req: &Request) -> Response {
     let v = match body(req) {
         Ok(v) => v,
         Err(r) => return r,
@@ -188,22 +249,27 @@ fn post_board(w: &WaveState, req: &Request) -> Response {
         Ok(b) => b,
         Err(e) => return refused(&e),
     };
-    let reply = board_json(&board).to_string();
-    match adopt(w, board, false) {
-        Ok(()) => Response::json(reply),
+    match adopt(app, board.clone(), false) {
+        Ok(()) => Response::json(board_reply(&board).to_string()),
         Err(r) => r,
     }
 }
 
-/// `POST /api/wave/board/param {node, key, value, live?}`: one control, or
-/// `key: "on"` for the node's switch. Heard at once; stored unless `live`.
-fn post_param(w: &WaveState, req: &Request) -> Response {
+/// `POST /api/wave/board/param {node, key, value, live?}`: one control,
+/// `key: "on"` for the node's switch, or `key: "sound"` for the sound of a
+/// node that takes one (a library path, or null for none). Heard at once;
+/// stored unless `live`.
+fn post_param(app: &App, req: &Request) -> Response {
+    let w = &app.wave;
     let v = match body(req) {
         Ok(v) => v,
         Err(r) => return r,
     };
     let s = |k: &str| v.get(k).and_then(Value::as_str);
     let (Some(id), Some(key)) = (s("node"), s("key")) else { return Response::error(400, "node and key are needed") };
+    if key == "sound" {
+        return post_sound(app, id, v.get("value"), matches!(v.get("live"), Some(Value::Bool(true))));
+    }
     let value = match v.get("value") {
         Some(Value::Num(x)) if x.is_finite() => *x as f32,
         Some(Value::Bool(b)) => f32::from(u8::from(*b)),
@@ -230,10 +296,50 @@ fn post_param(w: &WaveState, req: &Request) -> Response {
         Ok(b) => b,
         Err(e) => return refused(&e),
     };
-    if let Err(r) = adopt(w, board, live) {
+    if let Err(r) = adopt(app, board, live) {
         return r;
     }
     Response::json(Value::obj().set("ok", true).set("node", id).set("key", key).set("value", stored).set("live", live).to_string())
+}
+
+/// A node's sound: checked to be a library file that decodes, then the
+/// board with it is a new plan.
+fn post_sound(app: &App, id: &str, value: Option<&Value>, live: bool) -> Response {
+    let sound = match value {
+        None | Some(Value::Null) => None,
+        Some(Value::Str(p)) => Some(p.trim().to_string()).filter(|p| !p.is_empty()),
+        Some(_) => return Response::error(400, "a sound is a library path, or null for none"),
+    };
+    let mut board = current(&app.wave);
+    let Some((i, n)) = board.node(id) else { return Response::error(400, &format!("no node {id:?}")) };
+    if !Kind::parse(&n.kind).is_some_and(Kind::takes_sound) {
+        return Response::error(400, &format!("{} takes no sound", n.kind));
+    }
+    if let Some(name) = sound.as_deref() {
+        let found = app.library_path().and_then(|lib| crate::safety::resolve_within(&lib, name));
+        if found.is_none_or(|p| !p.is_file()) {
+            return Response::error(400, &format!("no sound {name:?} in the library"));
+        }
+        app.load_effect_sound(name);
+        if fx::prism::sound(name).is_none() {
+            return Response::error(400, &format!("{name:?} could not be read as a sound"));
+        }
+    }
+    board.nodes[i].sound = sound.clone();
+    let node = board.nodes[i].clone();
+    if let Err(r) = adopt(app, board, live) {
+        return r;
+    }
+    Response::json(
+        Value::obj()
+            .set("ok", true)
+            .set("node", id)
+            .set("key", "sound")
+            .set("value", sound.map_or(Value::Null, Value::Str))
+            .set("soundState", sound_state(&node))
+            .set("live", live)
+            .to_string(),
+    )
 }
 
 fn boards_dir(w: &WaveState) -> PathBuf {
@@ -383,12 +489,17 @@ fn fx_list() -> Vec<Value> {
                     }
                 })
                 .collect();
-            Value::obj()
+            let v = Value::obj()
                 .set("kind", format!("fx:{}", d.id))
                 .set("label", d.label)
                 .set("category", category_name(d.category))
                 .set("suite", suite(d.id))
-                .set("params", Value::Arr(params))
+                .set("params", Value::Arr(params));
+            // The sound it takes, for the page to offer a picker.
+            match d.sound {
+                Some(snd) => v.set("sound", Value::obj().set("key", snd.key).set("label", snd.label)),
+                None => v,
+            }
         })
         .collect()
 }

@@ -62,8 +62,6 @@ const WV_INPUTS = [['in:voice', 'Voice', '#ffcf9e', 'The whole voice after the f
   ['in:noise', 'Noise', '#c9cfdc', 'The noise source, before the filters']];
 const WV_IN = Object.fromEntries(WV_INPUTS.map(([k, n, c, d]) => [k, { n, c, d }]));
 const WV_MIXED = '#e8eaee';
-/// Effects that take no sound on the board yet (`docs/WAVE-SYNTH.md`).
-const WV_FX_SILENT = new Set(['fx:convolution', 'fx:spectral-dynamics']);
 const WV_GRID = 16;
 
 // ─────────────────────────────────────────────────────────────── nodes
@@ -271,7 +269,7 @@ function wvInitBoard(name = 'Init board') {
 }
 
 /// The board as the engine takes it.
-const wvBoardOut = () => ({ name: WV.board.name, nodes: WV.board.nodes.map(({ id, kind, x, y, on, params }) => ({ id, kind, x, y, on, params })), cables: WV.board.cables.map((c) => ({ from: c.from.slice(), to: c.to.slice() })) });
+const wvBoardOut = () => ({ name: WV.board.name, nodes: WV.board.nodes.map(({ id, kind, x, y, on, params, sound }) => ({ id, kind, x, y, on, params, ...(sound !== undefined ? { sound } : {}) })), cables: WV.board.cables.map((c) => ({ from: c.from.slice(), to: c.to.slice() })) });
 
 /// Take a board the engine sent, as the one in hand and the one to go back to.
 function wvBoardAdopt(b) {
@@ -501,6 +499,9 @@ function wvReplaceNode(n, kind) {
   const old = wvNodeName(n), was = n.kind;
   n.kind = kind;
   n.on = true;
+  // A sound belongs to the effect that took it.
+  delete n.sound;
+  delete n.soundState;
   const counts = { outs: n.params.outs, ins: n.params.ins };
   n.params = {};
   for (const p of wvNodeSpec(n)) n.params[p.key] = p.default;
@@ -563,6 +564,42 @@ function wvReorder(ids) {
   wvBoardPost('Main path: Voice → ' + ids.map((id) => wvNodeName(wvNode(id))).join(' → ') + ' → Out');
 }
 
+// ─────────────────────────────────────────────────────────────── sounds
+//
+// v8b: Convolution and Spectral Dynamics take a sound as well as their input
+// (`sound` in `/api/wave/fx`): the impulse response, the threshold sound. A
+// node of those kinds has `sound`, a library path or null, and the engine's
+// `soundState` for it. Without one, Convolution passes its input through and
+// Spectral Dynamics works on its levels alone.
+
+const wvSoundState = (n) => (n.sound ? n.soundState || 'loaded' : 'none');
+const wvSoundAlone = (n) => (n.kind === 'fx:spectral-dynamics' ? 'levels only' : 'passes its input through');
+const wvSoundFile = (n) => (n.sound ? n.sound.split('/').pop() : '');
+
+/// What a node's sound is: its file's name, or what the node does without it.
+function wvSoundText(n) {
+  const F = wvFxOf(n), lab = F && F.sound ? F.sound.label.toLowerCase() : 'sound', st = wvSoundState(n);
+  if (st === 'loaded') return wvSoundFile(n);
+  return st === 'unreadable' ? `${wvSoundFile(n)} could not be read: ${wvSoundAlone(n)}` : `No ${lab}: ${wvSoundAlone(n)}`;
+}
+
+/// A node's sound (a library path, or null for none) to the engine, which
+/// decodes it off the audio thread and says how that went. Refused, nothing
+/// changes.
+async function wvBoardSound(nid, path) {
+  const n = wvNode(nid), F = n && wvFxOf(n);
+  if (!F || !F.sound) return;
+  const r = await wvBoardFetch('/api/wave/board/param', 'POST', { node: nid, key: 'sound', value: path });
+  if (!r.ok) { wvBoardNote(`Refused: ${(r.json && r.json.error) || 'the engine did not answer'}`, true); return; }
+  n.sound = path;
+  n.soundState = (r.json && r.json.soundState) || (path ? 'loaded' : 'none');
+  const g = wvBoardGood && wvBoardGood.nodes.find((x) => x.id === nid);
+  if (g) { g.sound = n.sound; g.soundState = n.soundState; }
+  wvBoardDirty();
+  wvRenderBoard();
+  wvBoardNote(`${wvNodeName(n)}: ${wvSoundText(n)}`);
+}
+
 // ─────────────────────────────────────────────────────────────── presets
 
 function wvBoardDirty() {
@@ -583,7 +620,7 @@ async function wvLoadBoard(i) {
   WV_BOARDS.at = i;
   WV_BOARDS.dirty = false;
   WV_BOARDS.fresh = false;
-  const rows = (Array.isArray(pre.mods) ? pre.mods : []).map((m) => ({ curve: 'lin', via: null, ...m }));
+  const rows = (Array.isArray(pre.mods) ? pre.mods : []).map(wvModIn);
   WV.mods = WV.mods.filter((m) => !m.dst.startsWith('board:')).concat(rows).slice(0, 64);
   wvSendMods();
   wvRenderTargets();
@@ -618,6 +655,27 @@ async function wvSaveBoard(name) {
   WV_BOARDS.fresh = false;
   wvRenderBar();
   wvBoardNote(`Saved “${name}”`);
+}
+
+/// v8b: a saved board can be removed; the factory four, and a board saved
+/// over one (which stands in its place on the strip), cannot.
+const wvBoardRemovable = (i) => { const b = WV_BOARDS.list[i]; return !!b && !b.factory && i >= 4; };
+
+/// Take the board in hand off the list (the engine unlists it and keeps its
+/// file). It stays on the canvas, as a new board, until another is loaded.
+async function wvRemoveBoard() {
+  const B = WV_BOARDS, pre = B.list[B.at];
+  if (B.fresh || !wvBoardRemovable(B.at)) return;
+  const r = await wvBoardFetch(`/api/wave/boards?name=${encodeURIComponent(pre.name)}`, 'DELETE');
+  if (!r.ok) { wvBoardNote(`Not removed: ${(r.json && r.json.error) || 'the engine did not answer'}`, true); return; }
+  const l = await wvBoardFetch('/api/wave/boards');
+  if (l.ok && Array.isArray(l.json)) B.list = l.json.filter((b) => b && Array.isArray(b.nodes));
+  else B.list = B.list.filter((b) => b !== pre);
+  B.at = -1;
+  B.fresh = true;
+  B.dirty = false;
+  wvRenderBar();
+  wvBoardNote(`Removed “${pre.name}” from the boards; it stays here until you load another`);
 }
 
 function wvInitBoardNow() {

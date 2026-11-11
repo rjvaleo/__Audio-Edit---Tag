@@ -251,6 +251,7 @@ function wvFrame(ts) {
   wvDrawWheel(WVW.wvBend, WV.bend, true);
   wvDrawWheel(WVW.wvModw, WV.mw, false);
   wvDrawMaster();
+  wvChoiceTick();
   wvTipTick(ts);
   for (let i = 0; i < 8; i++) {
     wvDrawMacro(i);

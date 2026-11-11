@@ -7,14 +7,16 @@
 //
 // What this pins:
 //   - the four factory boards come first, each loads, and its mod rows are
-//     laid into the matrix; the effects with no sound on the board say so;
+//     laid into the matrix; a sound effect with no sound says what it does;
 //   - adding from the library, and patching an out to an in;
 //   - a loop refused, by the page at once and by the engine with its message;
 //   - splicing a node onto a cable, and lifting it out with ⌥;
 //   - reordering the main path;
 //   - right-click Add, Replace and Insert;
 //   - a split's outs lowered, its stranded cable taken away first;
-//   - saving a board and recalling it;
+//   - saving a board and recalling it; removing a saved one, and no Remove
+//     on a factory board;
+//   - a Convolution node's sound picker: the library's files, and None;
 //   - a source dragged onto a board control is a `board:` mod row;
 //   - cables brighten with the engine's peaks.
 
@@ -90,10 +92,11 @@ test('the four factory boards come first, each loads, and lays its rows into the
     const patch = await (await page.request.get('/api/wave/patch')).json();
     expect(patch.mods.map((m) => `${m.src}>${m.dst}`).sort()).toEqual(want);
   }
-  // Bubble Garden has Spectral Dynamics, which takes no sound on the board yet.
-  await expect(page.locator('#wvWorld .wv-fn[data-node="sy"] .wv-silent')).toHaveText('No sound on the board yet');
+  // Bubble Garden has Spectral Dynamics with no threshold sound: it works on
+  // its levels alone, and says so.
+  await expect(page.locator('#wvWorld .wv-fn[data-node="sy"] .wv-fsnd')).toHaveText('No threshold sound');
   await page.locator('#wvWorld .wv-fn[data-node="sy"] .fh').click();
-  await expect(page.locator('#wvFinsp .wv-silent-note')).toContainText('No sound on the board yet');
+  await expect(page.locator('#wvFinsp .isnd .nm')).toHaveText('No threshold sound: levels only');
   // The arrows step through them.
   await page.locator('#wvBnext').click();
   await expect(page.locator('#wvBname')).not.toHaveText('Bubble Garden');
@@ -252,6 +255,67 @@ test('a board saved under a new name comes back with its nodes and its rows', as
   expect(cablesOf(b)).toEqual(['g.o>out.i', 'invoice.o>g.i']);
   expect(await page.evaluate(() => WV.mods.filter((m) => m.dst.startsWith('board:')).map((m) => [m.src, m.dst]))).toEqual([['lfo1', 'board:g:db']]);
   await page.request.delete('/api/wave/boards?name=Spec%20Saved');
+  expect(errors).toEqual([]);
+});
+
+test('a saved board can be removed from the page; a factory board cannot', async ({ page }) => {
+  const errors = await openFx(page);
+  const g = board('Spec Gone', [{ id: 'g', kind: 'gain', x: 160, y: 16, params: { db: -3 } }], ['invoice>g', 'g>out']);
+  expect((await page.request.post('/api/wave/boards', { data: { name: 'Spec Gone', board: g, mods: [] } })).ok()).toBe(true);
+  await page.evaluate(() => wvBoardConnect());
+  // A factory board: no Remove.
+  await page.locator('#wvBex span[data-bx="1"]').click();
+  await expect(page.locator('#wvBname')).toHaveText('Dub Room');
+  await expect(page.locator('#wvBrm')).toBeHidden();
+  // The saved one: Remove, and it is off the list, on the engine too.
+  await page.evaluate(() => wvLoadBoard(WV_BOARDS.list.findIndex((b) => b.name === 'Spec Gone')));
+  await expect(page.locator('#wvBname')).toHaveText('Spec Gone');
+  await expect(page.locator('#wvBrm')).toBeVisible();
+  await page.locator('#wvBrm').click();
+  await expect(page.locator('#wvFnote')).toContainText('Removed “Spec Gone”');
+  const names = (await (await page.request.get('/api/wave/boards')).json()).map((b) => b.name);
+  expect(names).not.toContain('Spec Gone');
+  expect(await page.evaluate(() => WV_BOARDS.list.some((b) => b.name === 'Spec Gone'))).toBe(false);
+  // It stays on the canvas as a new board, with nothing left to remove.
+  await expect(page.locator('#wvBpos')).toHaveText('new');
+  await expect(page.locator('#wvBrm')).toBeHidden();
+  await expect(page.locator('#wvWorld .wv-fn[data-node="g"]')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test('a Convolution node picks its impulse from the library, shows it, and None clears it', async ({ page }) => {
+  const errors = await openFx(page, board('Spec sound', [{ id: 'cv', kind: 'fx:convolution', x: 200, y: 16 }], ['invoice>cv', 'cv>out']));
+  const label = page.locator('#wvWorld .wv-fn[data-node="cv"] .wv-fsnd');
+  await expect(label).toHaveText('No impulse');
+  await expect(label).toHaveClass(/\bnone\b/);
+  // Only the effects that take a sound have the picker.
+  expect(await page.evaluate(() => WV_FXCAT.list.filter((f) => f.sound).map((f) => f.kind).sort())).toEqual(['fx:convolution', 'fx:spectral-dynamics']);
+
+  // The node's label opens the picker: the library's folders and files.
+  await label.click();
+  const menu = page.locator('#wvMenu.wv-sndm');
+  await expect(menu).toBeVisible();
+  await expect(menu.locator('.sh b')).toHaveText('IMPULSE');
+  const file = menu.locator('.sl [data-sv]').first();
+  await expect(file).toBeVisible();
+  const path = await file.getAttribute('data-sv');
+  await file.click();
+  await expect(menu).toBeHidden();
+  await expect.poll(async () => (await serverBoard(page)).nodes.find((n) => n.id === 'cv')).toMatchObject({ sound: path, soundState: 'loaded' });
+  await expect(label).toHaveText(path.split('/').pop());
+  await expect(label).toHaveClass(/\bloaded\b/);
+  await expect(page.locator('#wvFinsp .isnd .nm')).toHaveText(path.split('/').pop());
+  // Kept in the patch, so it is the board's.
+  const patch = await (await page.request.get('/api/wave/patch')).json();
+  expect(patch.board.nodes.find((n) => n.id === 'cv').sound).toBe(path);
+
+  // The inspector's Pick…, then None: back to passing the voice through.
+  await page.locator('#wvFinsp .isnd [data-snd]').click();
+  await expect(menu.locator('.sl [data-sv].on')).toHaveAttribute('data-sv', path);
+  await menu.locator('.sn').click();
+  await expect.poll(async () => (await serverBoard(page)).nodes.find((n) => n.id === 'cv')).toMatchObject({ sound: null, soundState: 'none' });
+  await expect(label).toHaveText('No impulse');
+  await expect(page.locator('#wvFinsp .isnd .nm')).toHaveText('No impulse: passes its input through');
   expect(errors).toEqual([]);
 });
 

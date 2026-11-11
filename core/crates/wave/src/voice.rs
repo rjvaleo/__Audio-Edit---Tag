@@ -42,6 +42,30 @@
 //! velocity, to that send's bus. The filtered path is untouched; a board
 //! with no sends costs nothing here.
 //!
+//! # Choices that move (v8b)
+//!
+//! A row onto a choice key (`choice.rs`) steps it per block, and a step must
+//! not click. Where it is cheap the block is played both ways and crossfaded
+//! across it, the old choice out and the new one in:
+//! - **warp modes, a table, and the cycle effects** (`crush drive ring comb`):
+//!   the oscillator is rendered a second time from a copy of its state, so
+//!   both renders start from the same phases;
+//! - **the time-domain effects** (`chorus delay phaser`): both run from the
+//!   same state, over a copy of the block and over the block, and the delay
+//!   line is kept fed in every mode while a row moves the effect, so one
+//!   switched in has the sound's past to read (`fx.rs`);
+//! - **filter types**: the old type runs over a copy of the block and the new
+//!   one starts clean, as a change of patch always started it.
+//!
+//! **The routing** is not crossfaded, since both routings would have to run
+//! the same filters. It is reset cleanly instead: the voice's output fades to
+//! nothing across one block on the old routing, the filters are cleared, and
+//! it fades back in across the next on the new one, a dip of two blocks.
+//!
+//! **An LFO's shape** takes its new wave at the phase it is at, with no reset.
+//! Its value can step there, as a square wave's does at its edge, and every
+//! destination ramps that step across a block as it does any modulation.
+//!
 //! # Glide
 //!
 //! Glide is for mono and legato: a new note slides from the pitch the voice is
@@ -50,13 +74,14 @@
 //! what a poly patch wants.
 
 use crate::board::{Stereo, SENDS, SEND_NOISE, SEND_OSC0, SEND_SUB};
+use crate::choice::{osc_choice, BANK, CHOICES, C_FILT, C_FX, C_LFO, C_TABLE, C_WARP};
 use crate::env::{Adsr, Stage};
 use crate::filter::{cutoff_hz, Filter, FilterParams};
 use crate::fx::{OscFx, Shaper};
 use crate::osc::{dc_pole, herm, mip_for, next_u32, next_unit, FmSource, OscParams, OscVoice};
 use crate::patch::*;
 use crate::table::{Wavetable, FRAME_LEN, FRAME_MASK};
-use crate::warp::Warp;
+use crate::warp::{Warp, WarpMode};
 
 /// Samples in a control block.
 pub const BLOCK: usize = 32;
@@ -80,12 +105,58 @@ pub(crate) struct BlockCtx<'a> {
     pub bend: f32,
     /// The sends the board takes, a bit each in `board::SENDS` order.
     pub sends: u8,
+    /// The table bank (`choice.rs`), as far as it has been handed in.
+    pub bank: [Option<&'a Wavetable>; BANK],
+    /// The routing this block, after its rows (the same for every voice).
+    pub route: FilterRoute,
+}
+
+impl BlockCtx<'_> {
+    /// Oscillator `o`'s table at bank place `sel`: its own at its own place,
+    /// and its own still where the bank has nothing yet.
+    #[inline]
+    fn table(&self, o: usize, sel: u8) -> Option<&Wavetable> {
+        if sel == self.state.choices.base[osc_choice(o, C_TABLE)] {
+            return self.tables[o];
+        }
+        self.bank.get(sel as usize).copied().flatten().or(self.tables[o])
+    }
+}
+
+/// Crossfade `old` into `new` across the block, in place in `new`.
+#[inline]
+fn crossfade(old: &Stereo, new_l: &mut [f32], new_r: &mut [f32]) {
+    let n = new_l.len().min(new_r.len());
+    for i in 0..n {
+        let t = (i + 1) as f32 / n as f32;
+        new_l[i] = old[0][i] + (new_l[i] - old[0][i]) * t;
+        new_r[i] = old[1][i] + (new_r[i] - old[1][i]) * t;
+    }
+}
+
+/// Filter a block, crossfading from the type `was` when it changed.
+#[allow(clippy::too_many_arguments)]
+fn filter(f: &mut Filter, was: Option<FilterParams>, now: &FilterParams, sr: f32, l: &mut [f32], r: &mut [f32], alt: &mut Stereo) {
+    let n = l.len().min(r.len());
+    match was {
+        Some(was) => {
+            alt[0][..n].copy_from_slice(&l[..n]);
+            alt[1][..n].copy_from_slice(&r[..n]);
+            let [al, ar] = alt;
+            f.process(&was, sr, &mut al[..n], &mut ar[..n]);
+            f.process(now, sr, l, r);
+            crossfade(alt, l, r);
+        }
+        None => f.process(now, sr, l, r),
+    }
 }
 
 /// Work space shared by every voice, so a voice holds no buffers it only
 /// needs for the length of a block.
 pub(crate) struct Scratch {
     osc: [[f32; BLOCK]; 2],
+    /// The old choice's block, while one is crossfaded out.
+    alt: Stereo,
     bus: [[[f32; BLOCK]; 2]; 4],
     /// Each source before its filter, for the sends.
     send: [Stereo; SENDS],
@@ -98,7 +169,7 @@ const BUS_DIRECT: usize = 3;
 
 impl Scratch {
     pub fn new() -> Scratch {
-        Scratch { osc: [[0.0; BLOCK]; 2], bus: [[[0.0; BLOCK]; 2]; 4], send: [[[0.0; BLOCK]; 2]; SENDS] }
+        Scratch { osc: [[0.0; BLOCK]; 2], alt: [[0.0; BLOCK]; 2], bus: [[[0.0; BLOCK]; 2]; 4], send: [[[0.0; BLOCK]; 2]; SENDS] }
     }
 }
 
@@ -168,6 +239,12 @@ pub(crate) struct Voice {
     /// Every key's value after modulation, as of the last block.
     pub vals: [f32; NUM_PARAMS],
     pub src: [f32; SRC_COUNT],
+    /// Every choice key's option as of the last block (`choice.rs`).
+    pub choice: [u8; CHOICES],
+    /// The routing the filters run, and the fade the voice's output is at:
+    /// down to nothing before a change of routing, back up after.
+    route: FilterRoute,
+    duck: f32,
     fresh: bool,
 }
 
@@ -206,6 +283,9 @@ impl Voice {
             dc_sub: 0.0,
             vals: [0.0; NUM_PARAMS],
             src: [0.0; SRC_COUNT],
+            choice: [0; CHOICES],
+            route: FilterRoute::Serial,
+            duck: 1.0,
             fresh: true,
         }
     }
@@ -331,6 +411,9 @@ impl Voice {
         // patch, on the first block).
         if self.fresh {
             self.vals = *ctx.base;
+            self.choice = st.choices.base;
+            self.route = ctx.route;
+            self.duck = 1.0;
         }
         for (e, env) in self.env.iter_mut().enumerate() {
             let b = ENV_BASE + e * 4;
@@ -350,7 +433,9 @@ impl Voice {
                     } else {
                         self.lfo_phase[l] = p.min(1.0);
                     }
-                    shape.value(self.lfo_phase[l], self.lfo_cycle[l]) * 2.0 - 1.0
+                    // The shape as last block's rows left it.
+                    let wave = LfoWave::ALL[self.choice[C_LFO + l] as usize];
+                    shape.value_as(wave, self.lfo_phase[l], self.lfo_cycle[l]) * 2.0 - 1.0
                 }
             };
             // Smooth: a one-pole lag, up to 200 ms, per voice, so a stepped
@@ -382,6 +467,10 @@ impl Voice {
         // ── the matrix ────────────────────────────────────────────────────────
         modulate(ctx.base, st, &self.src, &mut self.vals);
         let v = &self.vals;
+        // This block's choices, and last block's to crossfade from.
+        let was = self.choice;
+        st.choices.modulate(&self.src, &mut self.choice);
+        let now = self.choice;
 
         // ── glide ────────────────────────────────────────────────────────────
         if self.glide_t < 1.0 {
@@ -397,6 +486,8 @@ impl Voice {
             }
         }
         let tap = |s: usize| ctx.sends >> s & 1 == 1;
+        let fresh = self.fresh;
+        let switched = |c: usize| !fresh && was[c] != now[c];
         for (s, send) in sc.send.iter_mut().enumerate() {
             if tap(s) {
                 for ch in send.iter_mut() {
@@ -406,7 +497,7 @@ impl Voice {
         }
         for o in 0..3 {
             let k = |f: usize| v[osc_key(o, f)];
-            let table = ctx.tables[o];
+            let table = ctx.table(o, now[osc_choice(o, C_TABLE)]);
             let on = k(O_ON) >= 0.5 && table.is_some();
             let level = k(O_LEVEL);
             let target = if on { level * level } else { 0.0 };
@@ -426,20 +517,25 @@ impl Voice {
             // modulator table falls back to the oscillator's own, as the kit
             // falls back to its own frame.
             let other = if o == 1 { 0 } else { 1 };
-            let fm = match ctx.tables[other] {
+            let fm = |table, c: &[u8; CHOICES]| match ctx.table(other, c[osc_choice(other, C_TABLE)]) {
                 Some(t) => FmSource { table: t, pos: v[osc_key(other, O_POS)] },
                 None => FmSource { table, pos },
             };
+            let warps = |c: &[u8; CHOICES]| {
+                let mode = |j: usize| WarpMode::ALL[c[osc_choice(o, C_WARP + j)] as usize];
+                [Warp::new(mode(0), k(O_WARP0)), Warp::new(mode(1), k(O_WARP1))]
+            };
+            let fx_of = |c: &[u8; CHOICES]| FxMode::ALL[c[osc_choice(o, C_FX)] as usize];
             let semis = js_round_f((k(O_PITCH) - 0.5) * 48.0);
             let cents = (k(O_FINE) - 0.5) * 200.0;
             let hz = note_hz(pitch + semis + cents / 100.0);
-            let fx_mode = st.fx_modes[o];
+            let fx_mode = fx_of(&now);
             let params = OscParams {
                 table,
                 pos0: p0,
                 pos1: pos,
-                warps: [Warp::new(st.warp_modes[o][0], k(O_WARP0)), Warp::new(st.warp_modes[o][1], k(O_WARP1))],
-                fm,
+                warps: warps(&now),
+                fm: fm(table, &now),
                 hz,
                 uni: k(O_UNI_N) as usize,
                 det: k(O_UNI_DET),
@@ -449,9 +545,48 @@ impl Voice {
                 sr,
             };
             let [ol, or] = &mut sc.osc;
+            let reread = [C_WARP, C_WARP + 1, C_FX, C_TABLE].iter().any(|&f| switched(osc_choice(o, f)))
+                || switched(osc_choice(other, C_TABLE));
+            if reread {
+                // The old choices, from a copy of the oscillator, so both
+                // renders start from the same phases.
+                let [al, ar] = &mut sc.alt;
+                match ctx.table(o, was[osc_choice(o, C_TABLE)]) {
+                    Some(old) => {
+                        let params = OscParams {
+                            table: old,
+                            warps: warps(&was),
+                            fm: fm(old, &was),
+                            shaper: Shaper::new(fx_of(&was), k(O_FX_A), k(O_FX_B)),
+                            ..params
+                        };
+                        let mut ghost = self.osc[o];
+                        ghost.render(&params, &mut al[..n], &mut ar[..n]);
+                    }
+                    None => {
+                        al[..n].iter_mut().for_each(|x| *x = 0.0);
+                        ar[..n].iter_mut().for_each(|x| *x = 0.0);
+                    }
+                }
+            }
             self.osc[o].render(&params, &mut ol[..n], &mut or[..n]);
-            self.fx[o].process(fx_mode, k(O_FX_A), k(O_FX_B), sr, &mut ol[..n], &mut or[..n]);
-            let bus = match (st.filter_route, o, st.routes[o]) {
+            if reread {
+                crossfade(&sc.alt, &mut ol[..n], &mut or[..n]);
+            }
+            if switched(osc_choice(o, C_FX)) {
+                // The old effect over a copy of the block, the new over the
+                // block, from the same state.
+                let [al, ar] = &mut sc.alt;
+                al[..n].copy_from_slice(&ol[..n]);
+                ar[..n].copy_from_slice(&or[..n]);
+                let (a, b) = (k(O_FX_A), k(O_FX_B));
+                self.fx[o].switch(fx_of(&was), fx_mode, a, b, sr, &mut al[..n], &mut ar[..n], &mut ol[..n], &mut or[..n]);
+                crossfade(&sc.alt, &mut ol[..n], &mut or[..n]);
+            } else {
+                let feed = st.choices.touched >> osc_choice(o, C_FX) & 1 == 1;
+                self.fx[o].process(fx_mode, k(O_FX_A), k(O_FX_B), sr, &mut ol[..n], &mut or[..n], feed);
+            }
+            let bus = match (self.route, o, st.routes[o]) {
                 (FilterRoute::Split, 0, _) => BUS_F1,
                 (FilterRoute::Split, 1, _) => BUS_F2,
                 (_, _, Route::F1) => BUS_F1,
@@ -527,20 +662,22 @@ impl Voice {
         self.noise_gain = noise_target;
 
         // ── filters ──────────────────────────────────────────────────────────
-        let fp = |f: usize| {
+        let fp = |f: usize, c: &[u8; CHOICES]| {
             let b = FILT_BASE + f * FILT_STRIDE;
             let key = v[b + F_KEY];
             FilterParams {
-                typ: st.filter_types[f],
+                typ: FilterType::ALL[c[C_FILT + f] as usize],
                 cut_norm: v[b + F_CUT],
                 cut_hz: cutoff_hz(v[b + F_CUT]) * (key * (self.pitch - 60.0) / 12.0).exp2(),
                 res: v[b + F_RES],
                 drive: v[b + F_DRIVE],
             }
         };
-        let (p1, p2) = (fp(0), fp(1));
-        let [f1b, f2b, both, direct] = &mut sc.bus;
-        match st.filter_route {
+        let (p1, p2) = (fp(0, &now), fp(1, &now));
+        let (w1, w2) = (switched(C_FILT).then(|| fp(0, &was)), switched(C_FILT + 1).then(|| fp(1, &was)));
+        let Scratch { bus, alt, send, .. } = &mut *sc;
+        let [f1b, f2b, both, direct] = bus;
+        match self.route {
             FilterRoute::Serial => {
                 for ch in 0..2 {
                     for i in 0..n {
@@ -548,14 +685,14 @@ impl Voice {
                     }
                 }
                 let [l1, r1] = &mut *f1b;
-                self.filt[0].process(&p1, sr, &mut l1[..n], &mut r1[..n]);
+                filter(&mut self.filt[0], w1, &p1, sr, &mut l1[..n], &mut r1[..n], alt);
                 for ch in 0..2 {
                     for i in 0..n {
                         f2b[ch][i] += f1b[ch][i];
                     }
                 }
                 let [l2, r2] = &mut *f2b;
-                self.filt[1].process(&p2, sr, &mut l2[..n], &mut r2[..n]);
+                filter(&mut self.filt[1], w2, &p2, sr, &mut l2[..n], &mut r2[..n], alt);
                 for ch in 0..2 {
                     for i in 0..n {
                         direct[ch][i] += f2b[ch][i];
@@ -571,9 +708,9 @@ impl Voice {
                     }
                 }
                 let [l1, r1] = &mut *f1b;
-                self.filt[0].process(&p1, sr, &mut l1[..n], &mut r1[..n]);
+                filter(&mut self.filt[0], w1, &p1, sr, &mut l1[..n], &mut r1[..n], alt);
                 let [l2, r2] = &mut *f2b;
-                self.filt[1].process(&p2, sr, &mut l2[..n], &mut r2[..n]);
+                filter(&mut self.filt[1], w2, &p2, sr, &mut l2[..n], &mut r2[..n], alt);
                 for ch in 0..2 {
                     for i in 0..n {
                         direct[ch][i] += f1b[ch][i] + f2b[ch][i];
@@ -586,21 +723,32 @@ impl Voice {
         let (a, d, s, r) = (v[AMP_BASE], v[AMP_BASE + 1], v[AMP_BASE + 2], v[AMP_BASE + 3]);
         self.amp.set(a, d, s, r);
         let steal_step = 1.0 / (STEAL_SECONDS * sr);
+        // A change of routing: out across this block on the old one, in
+        // across the next on the new.
+        let (d0, d1) = (self.duck, if ctx.route == self.route { 1.0 } else { 0.0 });
         for i in 0..n {
             let e = self.amp.next() * self.vel;
             if self.stealing {
                 self.steal_gain = (self.steal_gain - steal_step).max(0.0);
             }
             let g = e * self.steal_gain;
-            out_l[i] += direct[0][i] * g;
-            out_r[i] += direct[1][i] * g;
+            let duck = if d0 == d1 { d1 } else { d0 + (d1 - d0) * (i + 1) as f32 / n as f32 };
+            out_l[i] += direct[0][i] * g * duck;
+            out_r[i] += direct[1][i] * g * duck;
             if ctx.sends != 0 {
                 for (s, bus) in sends.iter_mut().enumerate() {
                     if tap(s) {
-                        bus[0][i] += sc.send[s][0][i] * g;
-                        bus[1][i] += sc.send[s][1][i] * g;
+                        bus[0][i] += send[s][0][i] * g;
+                        bus[1][i] += send[s][1][i] * g;
                     }
                 }
+            }
+        }
+        self.duck = d1;
+        if d1 == 0.0 {
+            self.route = ctx.route;
+            for f in self.filt.iter_mut() {
+                f.reset();
             }
         }
         self.fresh = false;
