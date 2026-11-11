@@ -247,11 +247,12 @@ function wvNodeEl(n) {
   if (n.kind === 'out') return `<div class="wv-fn io" data-node="${id}" style="${st};--cc:var(--wv-acc)" title="Out: the end of the master bus, to the synth's output. Several cables in are summed"><div class="ioh" data-drag><i></i><b>Out</b><span class="wv-ro">master</span></div><div class="wv-well">${cv(88, 24)}</div>${wvPins(n)}</div>`;
   const head = (sub, extra) => `<div class="fh" data-drag><div class="fhn"><b>${wvEsc(wvNodeName(n))}</b><span>${sub}</span></div>${extra}</div>`;
   if (wvIsFx(n)) {
-    const pr = wvFacePr(n), cw = 136 / Math.max(pr.length, 1) - 5, silent = WV_FX_SILENT.has(n.kind);
+    const pr = wvFacePr(n), cw = 136 / Math.max(pr.length, 1) - 5, F = wvFxOf(n), snd = F && F.sound;
     const nm = wvNodeName(n), big = wvTextW(nm, `600 11px ${wvCl().sans}`) > 110;
-    return `<div class="wv-fn fx ${n.on ? '' : 'off'} ${silent ? 'silent' : ''}" data-node="${id}" style="${st};--cc:${wvCatCol(wvNodeCat(n), 64)}">`
+    const sndLab = snd ? (wvSoundState(n) === 'loaded' ? wvSoundFile(n) : wvSoundState(n) === 'unreadable' ? 'Unreadable' : `No ${snd.label.toLowerCase()}`) : '';
+    return `<div class="wv-fn fx ${n.on ? '' : 'off'}" data-node="${id}" style="${st};--cc:${wvCatCol(wvNodeCat(n), 64)}">`
       + `<div class="fh" data-drag><div class="fhn"><b class="${big ? 'sm' : ''}">${wvEsc(nm)}</b><span>${wvCatName(wvNodeCat(n))} · ${wvNodeMaker(n)}</span></div><span class="wv-pw wv-btn ${n.on ? 'on' : ''}" data-pw title="Power: off passes the sound through untouched">${WV_PWR}</span></div>`
-      + `<div class="wv-well fp">${cv(136, 40)}${silent ? '<span class="wv-silent">No sound on the board yet</span>' : ''}</div>`
+      + `<div class="wv-well fp">${cv(136, 40)}${snd ? `<span class="wv-fsnd ${wvSoundState(n)}" data-snd="${id}" title="${wvEsc(snd.label)}: ${wvEsc(wvSoundText(n))}. Click to pick one from the library">${wvEsc(wvFitLab(sndLab, 124))}</span>` : ''}</div>`
       + `<div class="fk">${pr.length ? pr.map((p) => `<div class="fkc">${wvBoardKnob(n, p, 26)}<span class="kl">${wvEsc(wvFitLab(p.label, cw))}</span><b data-nv="${p.key}"></b></div>`).join('') : `<div class="none">No settings:<br>${n.kind === 'fx:invert' ? 'it flips the wave upside down' : 'it swaps left and right'}</div>`}</div>${wvPins(n)}</div>`;
   }
   const R = WV_ROUTING[n.kind] || { n: n.kind, tip: '' }, base = `class="wv-fn rt" data-node="${id}" style="${st};--cc:var(--wv-t2)" title="${R.tip}"`;
@@ -286,6 +287,7 @@ function wvRenderBoard() {
     wvRenderBoard();
   }));
   w.querySelectorAll('[data-sn] span').forEach((s) => s.addEventListener('click', () => wvSetPorts(wvNode(s.closest('.wv-fn').dataset.node), +s.dataset.k)));
+  w.querySelectorAll('[data-snd]').forEach((b) => b.addEventListener('click', () => wvSoundMenu(b, b.dataset.snd)));
   w.querySelectorAll('[data-mn]').forEach((s) => s.addEventListener('click', () => { const n = wvNode(s.closest('.wv-fn').dataset.node); wvSetPorts(n, wvPortCount(n) + +s.dataset.mn); }));
   wvRenderCables();
   wvApplyView();

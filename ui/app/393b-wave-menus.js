@@ -211,7 +211,7 @@ async function wvSwitchAB(to) {
 window.addEventListener('pointerdown', (e) => {
   if (!WV.showing) return;
   const m = $('wvMenu'), s = $('wvShelf');
-  if (m && !m.hidden && !e.target.closest('#wvMenu, [data-cycle], [data-ofx], [data-pick], [data-lshape], #wvCTable, canvas[id^="wvWp"]')) { m.hidden = true; WV_MENU.owner = null; }
+  if (m && !m.hidden && !e.target.closest('#wvMenu, [data-cycle], [data-ofx], [data-pick], [data-lshape], [data-snd], #wvCTable, canvas[id^="wvWp"]')) { m.hidden = true; WV_MENU.owner = null; }
   if (s && !s.hidden && !e.target.closest('#wvShelf, #wvPresetBtn')) s.hidden = true;
   const p = $('wvPmenu'), c = $('wvCmenu');
   if (p && !p.hidden && !e.target.closest('#wvPmenu, [data-pk]')) p.hidden = true;

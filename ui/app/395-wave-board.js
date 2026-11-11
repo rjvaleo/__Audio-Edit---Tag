@@ -62,8 +62,6 @@ const WV_INPUTS = [['in:voice', 'Voice', '#ffcf9e', 'The whole voice after the f
   ['in:noise', 'Noise', '#c9cfdc', 'The noise source, before the filters']];
 const WV_IN = Object.fromEntries(WV_INPUTS.map(([k, n, c, d]) => [k, { n, c, d }]));
 const WV_MIXED = '#e8eaee';
-/// Effects that take no sound on the board yet (`docs/WAVE-SYNTH.md`).
-const WV_FX_SILENT = new Set(['fx:convolution', 'fx:spectral-dynamics']);
 const WV_GRID = 16;
 
 // ─────────────────────────────────────────────────────────────── nodes
@@ -271,7 +269,7 @@ function wvInitBoard(name = 'Init board') {
 }
 
 /// The board as the engine takes it.
-const wvBoardOut = () => ({ name: WV.board.name, nodes: WV.board.nodes.map(({ id, kind, x, y, on, params }) => ({ id, kind, x, y, on, params })), cables: WV.board.cables.map((c) => ({ from: c.from.slice(), to: c.to.slice() })) });
+const wvBoardOut = () => ({ name: WV.board.name, nodes: WV.board.nodes.map(({ id, kind, x, y, on, params, sound }) => ({ id, kind, x, y, on, params, ...(sound !== undefined ? { sound } : {}) })), cables: WV.board.cables.map((c) => ({ from: c.from.slice(), to: c.to.slice() })) });
 
 /// Take a board the engine sent, as the one in hand and the one to go back to.
 function wvBoardAdopt(b) {
@@ -501,6 +499,9 @@ function wvReplaceNode(n, kind) {
   const old = wvNodeName(n), was = n.kind;
   n.kind = kind;
   n.on = true;
+  // A sound belongs to the effect that took it.
+  delete n.sound;
+  delete n.soundState;
   const counts = { outs: n.params.outs, ins: n.params.ins };
   n.params = {};
   for (const p of wvNodeSpec(n)) n.params[p.key] = p.default;
@@ -561,6 +562,42 @@ function wvReorder(ids) {
     return wvBoardNote('Refused: in that order a branch would loop back into itself', true);
   }
   wvBoardPost('Main path: Voice → ' + ids.map((id) => wvNodeName(wvNode(id))).join(' → ') + ' → Out');
+}
+
+// ─────────────────────────────────────────────────────────────── sounds
+//
+// v8b: Convolution and Spectral Dynamics take a sound as well as their input
+// (`sound` in `/api/wave/fx`): the impulse response, the threshold sound. A
+// node of those kinds has `sound`, a library path or null, and the engine's
+// `soundState` for it. Without one, Convolution passes its input through and
+// Spectral Dynamics works on its levels alone.
+
+const wvSoundState = (n) => (n.sound ? n.soundState || 'loaded' : 'none');
+const wvSoundAlone = (n) => (n.kind === 'fx:spectral-dynamics' ? 'levels only' : 'passes its input through');
+const wvSoundFile = (n) => (n.sound ? n.sound.split('/').pop() : '');
+
+/// What a node's sound is: its file's name, or what the node does without it.
+function wvSoundText(n) {
+  const F = wvFxOf(n), lab = F && F.sound ? F.sound.label.toLowerCase() : 'sound', st = wvSoundState(n);
+  if (st === 'loaded') return wvSoundFile(n);
+  return st === 'unreadable' ? `${wvSoundFile(n)} could not be read: ${wvSoundAlone(n)}` : `No ${lab}: ${wvSoundAlone(n)}`;
+}
+
+/// A node's sound (a library path, or null for none) to the engine, which
+/// decodes it off the audio thread and says how that went. Refused, nothing
+/// changes.
+async function wvBoardSound(nid, path) {
+  const n = wvNode(nid), F = n && wvFxOf(n);
+  if (!F || !F.sound) return;
+  const r = await wvBoardFetch('/api/wave/board/param', 'POST', { node: nid, key: 'sound', value: path });
+  if (!r.ok) { wvBoardNote(`Refused: ${(r.json && r.json.error) || 'the engine did not answer'}`, true); return; }
+  n.sound = path;
+  n.soundState = (r.json && r.json.soundState) || (path ? 'loaded' : 'none');
+  const g = wvBoardGood && wvBoardGood.nodes.find((x) => x.id === nid);
+  if (g) { g.sound = n.sound; g.soundState = n.soundState; }
+  wvBoardDirty();
+  wvRenderBoard();
+  wvBoardNote(`${wvNodeName(n)}: ${wvSoundText(n)}`);
 }
 
 // ─────────────────────────────────────────────────────────────── presets
