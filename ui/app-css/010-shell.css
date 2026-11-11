@@ -71,10 +71,10 @@
   /* The type scale (C1, `docs/DESIGN-CRITIQUE.md`). Five steps and nothing
      between them. There were nineteen sizes from 7 px to 17 px in half-pixel
      steps; each now lands on the nearest of these. 9 px is the floor, because
-     below it a dark panel stops being readable at arm's length, and nothing
-     goes below it: not the room's data block, not the theme editor's miniature.
-     `npm run check` fails on a size off the scale; drawn pictures that need
-     their own are listed there. */
+     below it a dark panel stops being readable at arm's length. Text drawn
+     in a picture keeps its own: the room's data block is type on the room's
+     back wall, not interface. `npm run check` fails on a size off the scale,
+     and lists the pictures that keep theirs. */
   --fs-xs: 9px;   /* tags, small capitals, units */
   --fs-s: 10px;   /* dense readouts, the control table */
   --fs-m: 11px;   /* buttons, labels, the body of a panel */

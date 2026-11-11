@@ -522,7 +522,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    camera's drag target. Capping the panel's height was the wrong answer (it
    clipped the lower rows and, with the rows made to take the pointer so the
    cap could scroll, covered the sky). The control is the width of its text. */
-.room-edit select.mini { width: auto; max-width: 150px; height: var(--h-s); font-size: var(--fs-xs); padding: 0 3px; }
+.room-edit select.mini { width: auto; max-width: 150px; height: 16px; font-size: var(--fs-xs); padding: 0 3px; }
 /* In the room view it is a column, not an overlay: no cap, no scroll of its
    own — `.rv-admin-body` already scrolls around it. */
 .rv-admin .room-edit select.mini { width: 100%; max-width: none; height: 24px; font-size: var(--fs-m); padding: 0 6px; }
@@ -580,7 +580,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
      Type set at the interface's usual size and colour was heavier than every
      line in the box, so the readout became the loudest thing on screen when it
      is meant to be the faintest. Same hue, thinner stroke, smaller. */
-  font-size: var(--fs-xs); line-height: 9px; font-weight: 300; pointer-events: none;
+  font-size: 7px; line-height: 9px; font-weight: 300; pointer-events: none;
   color: var(--wave-2);
   /* Thins the stroke on macOS, which is most of the difference between type
      that sits on the wall and type that sits in front of it. */
@@ -681,7 +681,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    still small — just not blue. */
 .room-data.rd-hot .rd-head { color: color-mix(in srgb, var(--bad) 75%, transparent); }
 .re-btn {
-  height: var(--h-s); padding: 0 7px;
+  height: 15px; padding: 0 7px;
   border: 1px solid var(--line-2); background: var(--bg); border-radius: var(--r-s);
   color: var(--text-dim); font: inherit; font-size: var(--fs-xs); line-height: 1;
   cursor: pointer;
