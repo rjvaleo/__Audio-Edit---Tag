@@ -582,6 +582,9 @@ pub(crate) fn patch_mods(patch: &Patch) -> ([BoardModRow; MAX_MODS], usize, u64)
 }
 
 fn board_row(m: &Mod, board: &Board) -> Option<BoardModRow> {
+    if !m.on {
+        return None;
+    }
     let (id, key) = parse_dst(&m.dst)?;
     let (node, n) = board.node(id)?;
     let kind = Kind::parse(&n.kind)?;

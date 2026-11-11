@@ -426,3 +426,28 @@ fn dry_audio_follows_the_clips_and_ignores_the_stretch_and_the_rack() {
     let want = ((5_047f32 / 30.0).sin() * 9000.0) as i32;
     assert!((at(&dry.body[header..], 47) - want).abs() <= 2, "the samples are not the file's");
 }
+
+#[test]
+fn a_mod_row_switched_off_is_stored_listed_and_counted() {
+    let s = Scratch::new("wave-mod-off");
+    let app = s.app();
+    let m = wave_ok(&app, post("/api/wave/mods", r#"{"mods":[{"src":"lfo0","dst":"osc0.pos","amt":0.4,"on":false},{"src":"lfo1","dst":"filt0.cut","amt":0.2}]}"#));
+    let rows = arr(m.get("mods").unwrap());
+    assert!(!flag(&rows[0], &["on"]), "kept, and off");
+    assert!(flag(&rows[1], &["on"]), "a row sent without a switch is on");
+    // Saved, and read back by a fresh process.
+    let p = wave_ok(&s.app(), get("/api/wave/patch", &[]));
+    assert!(!flag(&arr(p.get("mods").unwrap())[0], &["on"]));
+    // A whole patch keeps it too.
+    let back = wave_ok(&app, post("/api/wave/patch", &p.to_string()));
+    assert!(!flag(&arr(back.get("mods").unwrap())[0], &["on"]));
+    // Not a switch.
+    let r = server::routes::route(&app, &post("/api/wave/mods", r#"{"mods":[{"src":"lfo0","dst":"osc0.pos","amt":0.4,"on":"no"}]}"#));
+    assert_eq!(status(&r), 400);
+    // The 64-row limit counts the rows that are off.
+    let row = r#"{"src":"lfo0","dst":"osc0.pos","amt":0.1,"on":false}"#;
+    let rows = |n: usize| format!(r#"{{"mods":[{}]}}"#, vec![row; n].join(","));
+    wave_ok(&app, post("/api/wave/mods", &rows(64)));
+    let r = server::routes::route(&app, &post("/api/wave/mods", &rows(65)));
+    assert_eq!(status(&r), 400);
+}

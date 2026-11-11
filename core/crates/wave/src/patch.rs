@@ -487,11 +487,17 @@ pub struct Mod {
     pub amt: f32,
     pub curve: String,
     pub via: Option<String>,
+    /// A row switched off (v8b) is kept, saved and listed, and moves nothing.
+    pub on: bool,
 }
 
 impl Mod {
     pub fn new(src: &str, dst: &str, amt: f32) -> Mod {
-        Mod { src: src.into(), dst: dst.into(), amt, curve: "lin".into(), via: None }
+        Mod { src: src.into(), dst: dst.into(), amt, curve: "lin".into(), via: None, on: true }
+    }
+    pub fn switched(mut self, on: bool) -> Mod {
+        self.on = on;
+        self
     }
     pub fn with_curve(mut self, curve: &str) -> Mod {
         self.curve = curve.into();
@@ -904,14 +910,14 @@ pub struct PatchState {
 }
 
 impl PatchState {
-    /// Compile a patch. Mod rows naming an unknown source, destination, curve
-    /// or via are skipped, as are rows past [`MAX_MODS`]; the rest keep their
-    /// order.
+    /// Compile a patch. Mod rows switched off, or naming an unknown source,
+    /// destination, curve or via, are skipped, as are rows past
+    /// [`MAX_MODS`]; the rest keep their order.
     pub fn new(patch: &Patch) -> PatchState {
         let blank = ModRow { src: Source(0), dst: ParamId(0), amt: 0.0, curve: Curve::Lin, via: None };
         let mut mods = [blank; MAX_MODS];
         let mut mod_count = 0;
-        for m in &patch.mods {
+        for m in patch.mods.iter().filter(|m| m.on) {
             if mod_count == MAX_MODS {
                 break;
             }

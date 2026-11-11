@@ -213,3 +213,36 @@ fn modulating_a_decay_takes_effect_mid_note() {
     let landed = cut(&s, &mut t);
     assert!((landed - base).abs() < 1e-3, "the decay modulated away lands it on its sustain: {landed} against {base}");
 }
+
+#[test]
+fn a_row_switched_off_is_kept_and_moves_nothing() {
+    // v8b: an off row stays in the patch, and the patch sounds as if it were
+    // not there, onto a key and onto a board control alike.
+    let mut on = still();
+    on.set_num("osc0.pos", 0.2);
+    let mut board = Board::migrate(&on.values).complete().unwrap();
+    board.name = "t".into();
+    on.board = Some(board);
+    let mut off = on.clone();
+    off.mods.push(Mod::new("lfo0", "osc0.pos", 0.6).switched(false));
+    off.mods.push(Mod::new("macro0", "board:delay:feedback", 0.5).switched(false));
+    assert_eq!(off.mods.len(), 2, "kept");
+    let st = PatchState::new(&off);
+    assert!(st.mods().is_empty() && st.board_mods().is_empty(), "and compiled to nothing");
+    let render = |p: &Patch| {
+        let mut s = synth(p);
+        s.set_board(Box::new(BoardPlan::compile(p.board.as_ref().unwrap(), SR).unwrap()));
+        s.note_on(57, 0.9);
+        let (mut l, mut r) = (vec![0.0f32; 9600], vec![0.0f32; 9600]);
+        s.render(&mut l, &mut r);
+        let mut t = Telemetry::default();
+        s.telemetry(&mut t);
+        assert!(t.mods().is_empty(), "an off row is not reported as moving anything");
+        l
+    };
+    assert_eq!(render(&on), render(&off), "an off row changes nothing, to the bit");
+    // Switched back on it is heard.
+    let mut back = off.clone();
+    back.mods[0].on = true;
+    assert_eq!(PatchState::new(&back).mods().len(), 1);
+}

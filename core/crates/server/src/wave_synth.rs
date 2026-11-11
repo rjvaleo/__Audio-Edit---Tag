@@ -685,6 +685,7 @@ pub(crate) fn mod_json(m: &Mod) -> Value {
         .set("amt", num(m.amt))
         .set("curve", m.curve.as_str())
         .set("via", m.via.clone().map(Value::Str).unwrap_or(Value::Null))
+        .set("on", m.on)
 }
 
 fn tags_json(tags: &[String]) -> Value {
@@ -751,7 +752,7 @@ pub fn apply_param(p: &mut Patch, key: &str, v: &Value) -> Result<(), String> {
     Err(format!("unknown key {key:?}"))
 }
 
-/// The matrix rows, every field checked.
+/// The matrix rows, every field checked. The limit counts rows switched off.
 pub fn parse_mods(v: &Value) -> Result<Vec<Mod>, String> {
     let rows = v.arr().ok_or("mods must be a list")?;
     if rows.len() > MAX_MODS {
@@ -773,7 +774,13 @@ pub fn parse_mods(v: &Value) -> Result<Vec<Mod>, String> {
                 Some(Value::Str(x)) if Source::parse(x).is_some() => Some(x.clone()),
                 Some(_) => return Err(format!("mod {i}: unknown via")),
             };
-            Ok(Mod { src: src.into(), dst: dst.into(), amt, curve: curve.into(), via })
+            // A row saved before rows had a switch is on.
+            let on = match r.get("on") {
+                None | Some(Value::Null) => true,
+                Some(Value::Bool(b)) => *b,
+                Some(_) => return Err(format!("mod {i}: on must be true or false")),
+            };
+            Ok(Mod { src: src.into(), dst: dst.into(), amt, curve: curve.into(), via, on })
         })
         .collect()
 }
