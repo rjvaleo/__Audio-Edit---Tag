@@ -225,8 +225,7 @@ and server half (Phase 2 of the build plan); the page is Phase 3.
   when nothing sounds.
 - **Loops are one block late.** LFO 1 → LFO 2 Rate with LFO 2 → LFO 1 Rate is stable and never solved within a
   block.
-- **Not yet:** choice-valued keys (table, warp mode, osc FX mode, filter type, routing, voice mode, LFO shape) are
-  not targets. A later step can give them stepped numeric forms.
+- **Choice keys** became targets in v8b (below); `voice.mode`, `oscN.route` and `lfoL.mode` are still not.
 - The matrix marks what it touched in a `u128`, so there may be at most 128 numeric keys (125 today).
 
 ### The board
@@ -257,8 +256,7 @@ The patch's `board` replaces the fixed master chain. It is also what a board pre
   chain's. A level is heard squared (the synth's level law).
 - **Effects.** `fx:<id>` is any of the 82 in FX-LIST: the `prism-fx` catalogue without `tremolo`, `decimator`,
   `multi-delay` and `stereo-matrix`, which the exact Hyperprism ports replaced. Each effect does its own wet and
-  dry. Convolution and Spectral Dynamics take no sound on the board yet: Convolution then passes its input,
-  delayed by one partition. No effect's latency is compensated.
+  dry. Convolution and Spectral Dynamics take a sound (v8b, below). No effect's latency is compensated.
 - **Laws.** Mix: each in at its level, −60 dB is silence. Gain: `10^(db/20)`. Pan: a constant-power balance, left
   `cos(max(p, 0)·π/2)`, right `cos(max(−p, 0)·π/2)`, `p = pan/100`; the centre is unity. Dry/wet: `send` is `i`;
   `o` is `i·(1 − w) + ret·w`, `w = wet/100`. Gains ramp across each block.
@@ -327,3 +325,77 @@ A patch with no `board` (every patch before v8) is given one as it is read. Its 
   the migrated chain. Wave presets carry their board the same way.
 - **Data.** Board presets are `<data>/wave/boards/<name>.json`. The factory boards are built into the server
   (`core/crates/server/src/wave_board/factory.json`).
+
+## v8b (RJ, 10 Nov 2026): what v8 left out
+
+This is the engine and server half (Phase A of `PLAN-V8B.md`); the page is Phase B.
+
+### A matrix row switched off stays off
+
+- A mod row has `on`: `{src, dst, amt, curve, via, on}`. A row without it is on, so every older patch loads as it
+  was.
+- An off row is kept, saved and listed (`GET /api/wave/patch`, `POST /api/wave/mods`, board presets' `mods`). It
+  moves nothing: not a key, not a choice, not a board control, and telemetry does not report it.
+- The 64-row limit counts off rows. `on` that is not `true` or `false` is a 400.
+
+### Choice keys are mod targets
+
+The targets, with their options in order:
+
+| Key | Options | Heard |
+|---|---|---|
+| `oscN.warpJ.mode` | `off bend sync pwm fold mirror asym quant fm` | per voice, crossfaded |
+| `oscN.fx.mode` | `off chorus crush drive delay phaser ring comb` | per voice, crossfaded |
+| `oscN.table` | the table bank, below | per voice, crossfaded |
+| `filtK.type` | `lp bp hp notch comb form` | per voice, crossfaded |
+| `filt.route` | `serial parallel split` | for every voice, reset cleanly |
+| `lfoL.shape` | `sine tri up down square steps smooth drawn` | per voice for a Trig or Env LFO, for every voice for a Free one; no reset |
+
+- **The rule.** The base option's index is normalised to 0..1 over its list; the rows' sum (`amt · curve(src) ·
+  via`, as for a numeric key) is added and clamped once; the result is stepped to the nearest option, halves up.
+  So `+1` on a warp mode at `off` is `fm`, and `amt` `1/(n − 1)` moves a key one option.
+- **When.** At the next control block (32 samples). A per-voice key hears the voice's sources; a shared one hears
+  the shared sources, as free LFOs and board controls do, so it follows its LFO a block late.
+- **Crossfaded** (warp modes, tables, the oscillator effects, filter types): the switching block is played both
+  ways and crossfaded across the block. The oscillator renders a second time from a copy of its state, so both
+  start from the same phases. The time-domain effects run old and new from the same state, and while a row moves
+  `oscN.fx.mode` the effect's line is fed in every mode, so a chorus or delay switched in reads the sound's past
+  instead of an empty line. A filter's old type runs over a copy of the block and the new one starts clean.
+- **Reset cleanly** (`filt.route`): two routings would have to run the same filters, so the voice's output fades
+  out across one block on the old routing, its filters are cleared, and it fades back in across the next.
+- **LFO shape**: the LFO takes its new wave at the phase it is at. Its value may step there, as a square wave's
+  does, and every destination ramps it across a block as it ramps any modulation.
+- **Not clicks.** `tests/choice.rs` toggles each kind a dozen times in two seconds on a low sine and holds the
+  worst step to what the two options do held still, plus a block's share of the gap between them.
+- `tests/no_alloc.rs` steps every kind with fast LFOs and counts no allocation.
+
+**The table bank.** `oscN.table` steps through the five built-ins in their order (`Formant Sweep`, `Glass Organ`,
+`Vowel Ah–Oo`, `Hollow Pulse`, `Grit Saw`), then each table an oscillator plays that is not a built-in, once, in
+oscillator order. An oscillator's own table is its base. While the patch has a row onto a table (switched on), the
+server builds the five built-ins off the request thread and hands them to the engine (`Synth::set_bank_table`, a
+pending slot and a return slot each); once given they stay, about 28 MB. A step to a table not there yet keeps the
+oscillator on its own.
+
+**Telemetry.** `GET /api/wave/state`'s `mod` also names each choice key that has rows, with the option it is at:
+`{"osc0.warp0.mode": "fold", "osc1.table": "Glass Organ"}`, the newest voice's, or the shared one's for
+`filt.route` and a free LFO's shape and when nothing sounds.
+
+### Convolution and Spectral Dynamics on the board
+
+- An `fx:convolution` or `fx:spectral-dynamics` node has `sound`: a library path, or `null`. Convolution takes it
+  as its impulse response, Spectral Dynamics as its threshold sound (used when its `useSound` is on). Any other
+  node with a sound is refused.
+- **Off the audio thread.** The server decodes the file (up to 8 s, as the rack does, into the sounds the rack's
+  effects share) before the board goes to the engine; `BoardPlan::compile_with` hands it to the kernel before the
+  plan is swapped in. A changed sound is new structure: a new plan, crossfaded in. A sound decoded after its
+  board was compiled has the board compiled again.
+- **No sound.** A node with none, or one that could not be read, passes its input through, to the bit. That
+  includes Spectral Dynamics, whose level-only mode the board therefore does not offer without a sound.
+- **Routes.**
+  - `POST /api/wave/board/param {node, key: "sound", value: path | null, live?}`. The file must be in the library
+    and decode; otherwise 400 and nothing changes. The reply is `{ok, node, key, value, soundState, live}`.
+  - A whole board (`POST /api/wave/board`, presets) may name any path; one that cannot be read is kept.
+  - The replies of `GET`/`POST /api/wave/board` give each sound node `soundState`: `loaded`, `none` or
+    `unreadable`. The stored board (and `GET /api/wave/patch`) carries `sound` only.
+  - `GET /api/wave/fx` gives those two effects `sound: {key, label}` (`impulse`/`Impulse`,
+    `thresholds`/`Threshold sound`), for the page's picker.
