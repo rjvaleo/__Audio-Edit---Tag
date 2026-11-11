@@ -87,6 +87,7 @@
 use std::sync::Arc;
 
 use crate::board::{BoardPlan, Stereo, MAX_NODES, SENDS};
+use crate::choice::{is_shared, osc_choice, BankEntry, BANK, CHOICES, C_LFO, C_ROUTE, C_TABLE};
 use crate::env::Stage;
 use crate::master_fx::MasterFx;
 use crate::patch::*;
@@ -135,6 +136,10 @@ pub struct Telemetry {
     /// fall. Empty when no board is running.
     pub board: [[f32; 2]; MAX_NODES],
     pub board_count: usize,
+    /// Each choice key's option after its rows (`choice.rs`), the newest
+    /// voice's or the shared one's, and which keys have rows, a bit each.
+    pub choice: [u8; CHOICES],
+    pub choice_touched: u32,
 }
 
 impl Default for Telemetry {
@@ -150,6 +155,8 @@ impl Default for Telemetry {
             peak: [0.0; 2],
             board: [[0.0; 2]; MAX_NODES],
             board_count: 0,
+            choice: [0; CHOICES],
+            choice_touched: 0,
         }
     }
 }
@@ -296,6 +303,11 @@ pub struct Synth {
     send_half: Box<[HalfBand; 2 * SENDS]>,
     /// The voices' block, for the outgoing board while it fades.
     spare: Box<Stereo>,
+    /// The built-in tables of the table bank, once handed in
+    /// ([`Synth::set_bank_table`]).
+    bank: [Option<Arc<Wavetable>>; 5],
+    /// The choices every voice shares, after the shared sources' rows.
+    gchoice: [u8; CHOICES],
 }
 
 impl Synth {
@@ -356,6 +368,8 @@ impl Synth {
             sends_out: Box::new([[[0.0; BLOCK]; 2]; SENDS]),
             send_half: Box::new(std::array::from_fn(|_| HalfBand::new())),
             spare: Box::new([[0.0; BLOCK]; 2]),
+            bank: [None, None, None, None, None],
+            gchoice: state.choices.base,
         };
         synth.master = synth.cur[MASTER] * synth.cur[MASTER];
         synth
@@ -482,6 +496,22 @@ impl Synth {
 
     pub fn table(&self, osc: usize) -> Option<&Arc<Wavetable>> {
         self.tables.get(osc).and_then(Option::as_ref)
+    }
+
+    /// Hand in built-in table `i` (in `BUILTIN_NAMES` order) for the table
+    /// bank, which a row onto `oscN.table` steps through. The one it replaces
+    /// comes back to be dropped off the audio thread, as with
+    /// [`Synth::set_table`]; an index past the built-ins gives the table
+    /// straight back.
+    pub fn set_bank_table(&mut self, i: usize, table: Arc<Wavetable>) -> Option<Arc<Wavetable>> {
+        match self.bank.get_mut(i) {
+            Some(slot) => slot.replace(table),
+            None => Some(table),
+        }
+    }
+
+    pub fn bank_table(&self, i: usize) -> Option<&Arc<Wavetable>> {
+        self.bank.get(i).and_then(Option::as_ref)
     }
 
     /// Pitch bend, −1..1, scaled by `voice.bend` semitones.
@@ -753,12 +783,15 @@ impl Synth {
         self.global[SRC_AT] = self.at[0];
         self.global_sources();
         modulate(&self.cur, &self.state, &self.gsrc, &mut self.gvals);
+        // A free LFO's shape and the routing are the same for every voice.
+        self.state.choices.modulate(&self.gsrc, &mut self.gchoice);
         for l in 0..4 {
             let p = self.free_phase[l] + lfo_hz(&self.gvals, l) * len as f32 / sr;
             let whole = p.floor();
             self.free_cycle[l] = self.free_cycle[l].wrapping_add(whole as u32);
             self.free_phase[l] = p - whole;
-            self.global[SRC_LFO + l] = self.state.lfo_shapes[l].value(self.free_phase[l], self.free_cycle[l]) * 2.0 - 1.0;
+            let wave = LfoWave::ALL[self.gchoice[C_LFO + l] as usize];
+            self.global[SRC_LFO + l] = self.state.lfo_shapes[l].value_as(wave, self.free_phase[l], self.free_cycle[l]) * 2.0 - 1.0;
         }
         if let Some(b) = self.board.as_mut() {
             // Rows compiled against another board (one still on its way, or
@@ -777,16 +810,31 @@ impl Synth {
                 }
             }
         }
+        let tables = [self.tables[0].as_deref(), self.tables[1].as_deref(), self.tables[2].as_deref()];
+        let ch = &self.state.choices;
+        let mut bank = [None; BANK];
+        for (k, (slot, e)) in bank.iter_mut().zip(&ch.bank).enumerate().take(ch.bank_len) {
+            *slot = match *e {
+                // A built-in not handed in yet is still in the bank if an
+                // oscillator plays it.
+                BankEntry::Builtin(i) => self.bank[i as usize]
+                    .as_deref()
+                    .or_else(|| (0..3).find(|&o| ch.base[osc_choice(o, C_TABLE)] as usize == k).and_then(|o| tables[o])),
+                BankEntry::Osc(o) => tables[o as usize],
+            };
+        }
         let ctx = BlockCtx {
             sr,
             len,
             state: &self.state,
             base: &self.cur,
             global: &self.global,
-            tables: [self.tables[0].as_deref(), self.tables[1].as_deref(), self.tables[2].as_deref()],
+            tables,
             sub_tables: &self.sub_tables,
             bend: self.bend[0] * self.cur[BEND],
             sends,
+            bank,
+            route: FilterRoute::ALL[self.gchoice[C_ROUTE] as usize],
         };
         let [ml, mr] = &mut self.mix;
         for v in self.voices.iter_mut() {
@@ -873,5 +921,13 @@ impl Synth {
         }
         out.peak = self.peak;
         out.board_count = self.board.as_ref().map_or(0, |b| b.peaks(&mut out.board));
+        let free = self.state.lfo_modes.map(|m| m == LfoMode::Free);
+        out.choice_touched = self.state.choices.touched;
+        for (c, slot) in out.choice.iter_mut().enumerate() {
+            *slot = match newest {
+                Some(v) if !is_shared(c, free) => v.choice[c],
+                _ => self.gchoice[c],
+            };
+        }
     }
 }

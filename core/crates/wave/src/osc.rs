@@ -190,6 +190,9 @@ fn read_at(d0: &[f32], d1: &[f32], xw: f32, fa: usize, fb: usize, fu: f32, x: f3
     hermite(q, t)
 }
 
+/// Plain data, so a copy can render a block the other way while a choice
+/// is crossfaded (`voice.rs`).
+#[derive(Clone, Copy)]
 pub(crate) struct OscVoice {
     phase: [u32; MAX_UNISON],
     /// Copies sounding last block, for the pan ramps.
