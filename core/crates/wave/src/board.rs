@@ -44,6 +44,17 @@
 //! mix); an input that is off is silent; a split and the out ignore it. See
 //! `plan.rs` for how it fades.
 //!
+//! # Sounds (v8b)
+//!
+//! An effect that takes a sound as well as its input — Convolution its
+//! impulse response, Spectral Dynamics its threshold sound — names it in the
+//! node's `sound`, a library path. The board holds only the name: the server
+//! decodes the file off the audio thread, and [`BoardPlan::compile_with`]
+//! hands it to the kernel before the plan is swapped in. A changed sound is a
+//! new plan, since a kernel takes a sound only off the audio thread. A node of
+//! those kinds with no sound, or one that could not be read, passes its input
+//! through, to the bit.
+//!
 //! # Modulation
 //!
 //! A mod row's `dst` may be `board:<nodeId>:<key>`. Such rows live in the
@@ -62,7 +73,7 @@ mod plan;
 
 pub use migrate::input_nodes;
 pub use prism_fx::{ParamKind, ParamSpec};
-pub use plan::BoardPlan;
+pub use plan::{BoardPlan, Sound};
 pub(crate) use plan::Stereo;
 
 /// Most nodes a board may have.
@@ -232,6 +243,11 @@ impl Kind {
         matches!(self, Kind::Split | Kind::Mix).then_some(0)
     }
 
+    /// Whether the node's effect takes a sound (`Node::sound`).
+    pub fn takes_sound(self) -> bool {
+        matches!(self, Kind::Fx(e) if e.descriptor.sound.is_some())
+    }
+
     pub fn is_input(self) -> bool {
         matches!(self, Kind::Voice | Kind::Send(_))
     }
@@ -277,11 +293,18 @@ pub struct Node {
     pub on: bool,
     /// Controls by key, in real units. One left out takes its default.
     pub params: Vec<(String, f32)>,
+    /// The sound an effect that takes one is given, as a library path.
+    pub sound: Option<String>,
 }
 
 impl Node {
     pub fn new(id: &str, kind: &str, x: f32, y: f32) -> Node {
-        Node { id: id.into(), kind: kind.into(), x, y, on: true, params: Vec::new() }
+        Node { id: id.into(), kind: kind.into(), x, y, on: true, params: Vec::new(), sound: None }
+    }
+
+    pub fn with_sound(mut self, sound: &str) -> Node {
+        self.sound = (!sound.is_empty()).then(|| sound.to_string());
+        self
     }
 
     pub fn with(mut self, key: &str, value: f32) -> Node {
@@ -392,6 +415,9 @@ impl Board {
             let Some(kind) = Kind::parse(&n.kind) else {
                 return refuse(format!("node {:?}: unknown kind {:?}", n.id, n.kind));
             };
+            if n.sound.as_deref().is_some_and(|s| !s.is_empty()) && !kind.takes_sound() {
+                return refuse(format!("node {:?}: {} takes no sound", n.id, n.kind));
+            }
             let specs = kind.params();
             let mut vals: Vec<f32> = specs.iter().map(|p| p.default).collect();
             for (k, v) in &n.params {
@@ -487,6 +513,7 @@ impl Board {
                 y: if n.y.is_finite() { n.y } else { 0.0 },
                 on: n.on,
                 params: r.kind.params().iter().zip(&r.vals).map(|(p, v)| (p.key.to_string(), *v)).collect(),
+                sound: n.sound.clone().filter(|s| !s.is_empty()),
             })
             .collect();
         Ok(Board { name: self.name.clone(), nodes, cables: self.cables.clone() })
@@ -515,9 +542,9 @@ impl Board {
         h
     }
 
-    /// The same nodes, kinds, port counts and cables: the boards differ at
-    /// most in their controls, switches, places and name, which reach a
-    /// running plan as live writes rather than as a new plan.
+    /// The same nodes, kinds, port counts, sounds and cables: the boards
+    /// differ at most in their controls, switches, places and name, which
+    /// reach a running plan as live writes rather than as a new plan.
     pub fn same_structure(&self, other: &Board) -> bool {
         let count = |n: &Node| match Kind::parse(&n.kind) {
             Some(k) => k.structural().map(|j| {
@@ -528,7 +555,7 @@ impl Board {
         };
         self.nodes.len() == other.nodes.len()
             && self.cables == other.cables
-            && self.nodes.iter().zip(&other.nodes).all(|(a, b)| a.id == b.id && a.kind == b.kind && count(a) == count(b))
+            && self.nodes.iter().zip(&other.nodes).all(|(a, b)| a.id == b.id && a.kind == b.kind && count(a) == count(b) && a.sound == b.sound)
     }
 }
 

@@ -7,7 +7,8 @@
 //! knobs and switches moving; then the same on a ten-node board with a send,
 //! its controls written live and modulated, a node switched out and in, and a
 //! second board swapped in; then every kind of choice key stepped by fast
-//! LFOs, with a bank table handed in. Any allocation fails the test. This file holds a
+//! LFOs, with a bank table handed in; then Convolution and Spectral Dynamics
+//! running on their sounds. Any allocation fails the test. This file holds a
 //! single test so no other test thread can allocate while it counts.
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -250,6 +251,35 @@ fn render_note_on_set_param_and_set_table_never_allocate() {
     assert_eq!(ALLOCS.load(Ordering::SeqCst), 0, "stepping choices allocated");
     assert!(banked.is_none() && synth.bank_table(4).is_some());
     assert_ne!(seen.choice_touched, 0);
+
+    // v8b: Convolution and Spectral Dynamics on a board with their sounds.
+    let ir: Vec<f32> = (0..4800).map(|i| (-(i as f32) / 600.0).exp() * if i % 7 == 0 { 1.0 } else { -0.3 }).collect();
+    let sound = wave::board::Sound { samples: Arc::new(ir), channels: 1, rate: 48_000.0 };
+    let sounded = Board {
+        name: "sounds".into(),
+        nodes: vec![
+            n("v", "in:voice"),
+            n("cv", "fx:convolution").with_sound("ir.wav"),
+            n("sd", "fx:spectral-dynamics").with("useSound", 1.0).with_sound("ir.wav"),
+            n("out", "out"),
+        ],
+        cables: vec![Cable::new("v", "o", "cv", "i"), Cable::new("cv", "o", "sd", "i"), Cable::new("sd", "o", "out", "i")],
+    };
+    let mut synth = Synth::new(48_000.0, 512);
+    synth.set_table(0, tables[0].clone());
+    synth.set_board(Box::new(BoardPlan::compile_with(&sounded, 48_000.0, &|_| Some(sound.clone())).unwrap()));
+    let length = wave::board::Kind::parse("fx:convolution").unwrap().params().iter().position(|p| p.key == "lengthMs").unwrap();
+    COUNTING.store(true, Ordering::SeqCst);
+    for round in 0..4u8 {
+        synth.note_on(50 + round, 0.8);
+        synth.set_board_param(1, length, 20.0 + round as f32 * 25.0);
+        for _ in 0..6 {
+            synth.render(&mut left, &mut right);
+        }
+        synth.note_off(50 + round);
+    }
+    COUNTING.store(false, Ordering::SeqCst);
+    assert_eq!(ALLOCS.load(Ordering::SeqCst), 0, "a board with sounds allocated");
     assert_eq!(telemetry.board().len(), 10);
     assert!(returned.is_some());
     assert!(left.iter().all(|v| v.is_finite()));

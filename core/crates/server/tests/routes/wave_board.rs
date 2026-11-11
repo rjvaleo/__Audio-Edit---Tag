@@ -174,3 +174,53 @@ fn the_fx_catalogue_state_and_board_mod_rows() {
     assert_eq!(text(&arr(m.get("mods").unwrap())[0], &["dst"]), "board:g:db");
     refused(&app, post("/api/wave/mods", r#"{"mods":[{"src":"lfo0","dst":"board:g","amt":0.3}]}"#));
 }
+
+#[test]
+fn a_convolution_node_takes_a_library_sound() {
+    let s = Scratch::new("wave-board-sound");
+    s.sound("kit/ir.wav", 4_000);
+    let app = s.app();
+    let board = SMALL.replace(r#""kind":"gain","x":200,"y":16,"params":{"db":-6}"#, r#""kind":"fx:convolution","x":200,"y":16"#);
+    let b = ok(&app, post("/api/wave/board", &board));
+    assert_eq!(node(&b, "g").get("sound"), Some(&Value::Null));
+    assert_eq!(text(node(&b, "g"), &["soundState"]), "none", "no sound: it passes its input through, and says so");
+    assert!(node(&b, "s").get("sound").is_none(), "only a node that takes a sound has one");
+
+    let r = ok(&app, post("/api/wave/board/param", r#"{"node":"g","key":"sound","value":"kit/ir.wav"}"#));
+    assert_eq!(text(&r, &["value"]), "kit/ir.wav");
+    assert_eq!(text(&r, &["soundState"]), "loaded");
+    let b = ok(&app, get("/api/wave/board", &[]));
+    assert_eq!(text(node(&b, "g"), &["sound"]), "kit/ir.wav");
+    assert_eq!(text(node(&b, "g"), &["soundState"]), "loaded");
+    // Stored in the patch, and read back by a fresh process.
+    assert_eq!(text(node(ok(&app, get("/api/wave/patch", &[])).get("board").unwrap(), "g"), &["sound"]), "kit/ir.wav");
+    assert_eq!(text(node(&ok(&s.app(), get("/api/wave/board", &[])), "g"), &["sound"]), "kit/ir.wav");
+    // Live: heard, not stored.
+    ok(&app, post("/api/wave/board/param", r#"{"node":"g","key":"sound","value":null,"live":true}"#));
+    assert_eq!(text(node(&ok(&app, get("/api/wave/board", &[])), "g"), &["sound"]), "kit/ir.wav");
+
+    // The 400s: no such file, a path out of the library, not a path, a node
+    // that takes no sound, in a whole board too.
+    refused(&app, post("/api/wave/board/param", r#"{"node":"g","key":"sound","value":"kit/nothing.wav"}"#));
+    refused(&app, post("/api/wave/board/param", r#"{"node":"g","key":"sound","value":"../../etc/passwd"}"#));
+    refused(&app, post("/api/wave/board/param", r#"{"node":"g","key":"sound","value":5}"#));
+    refused(&app, post("/api/wave/board/param", r#"{"node":"s","key":"sound","value":"kit/ir.wav"}"#));
+    let e = refused(&app, post("/api/wave/board", &SMALL.replace(r#""params":{"db":-6}"#, r#""params":{"db":-6},"sound":"kit/ir.wav""#)));
+    assert!(text(&e, &["error"]).contains("takes no sound"), "{}", text(&e, &["error"]));
+    assert_eq!(text(node(&ok(&app, get("/api/wave/board", &[])), "g"), &["sound"]), "kit/ir.wav", "a refusal changes nothing");
+
+    // Cleared, it passes its input through again.
+    let r = ok(&app, post("/api/wave/board/param", r#"{"node":"g","key":"sound","value":null}"#));
+    assert_eq!(r.get("value"), Some(&Value::Null));
+    assert_eq!(text(&r, &["soundState"]), "none");
+    // A whole board may name a sound not in this library: kept, and said.
+    let b = ok(&app, post("/api/wave/board", &board.replace(r#""kind":"fx:convolution","#, r#""kind":"fx:convolution","sound":"elsewhere/hall.wav","#)));
+    assert_eq!(text(node(&b, "g"), &["soundState"]), "unreadable");
+
+    // The catalogue says which effects take a sound.
+    let fx = ok(&app, get("/api/wave/fx", &[]));
+    let find = |k: &str| arr(&fx).into_iter().find(|e| text(e, &["kind"]) == k).unwrap();
+    assert_eq!(text(&find("fx:convolution"), &["sound", "key"]), "impulse");
+    assert_eq!(text(&find("fx:spectral-dynamics"), &["sound", "label"]), "Threshold sound");
+    assert!(find("fx:echo").get("sound").is_none());
+}

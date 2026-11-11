@@ -39,6 +39,11 @@
 //!   tails): each change goes through the event queue as a live write,
 //!   tagged with the board's signature so a write for a board not yet in
 //!   place is dropped rather than landing on the wrong node.
+//!   A node's sound (v8b: Convolution's impulse, Spectral Dynamics'
+//!   thresholds) is found by its library path among the sounds the server
+//!   has decoded (`fx::prism::sound`) and handed to the kernel as the plan is
+//!   compiled; [`WaveShared::rebuild_board`] compiles the board again when a
+//!   sound it names arrives later.
 //!
 //! - **The table bank's built-ins** (v8b, `wave::choice`), which a row onto
 //!   `oscN.table` steps through, are handed over as tables are: pending, with
@@ -54,6 +59,11 @@ use std::sync::{Arc, Mutex};
 
 use wave::board::Kind;
 use wave::{Board, BoardPlan, ParamId, PatchState, Synth, Telemetry, Wavetable, NUM_PARAMS};
+
+/// A board node's sound, from the sounds the server has decoded.
+fn board_sound(name: &str) -> Option<wave::board::Sound> {
+    fx::prism::sound(name).map(|s| wave::board::Sound { samples: s.samples, channels: s.channels, rate: s.rate })
+}
 
 /// Events the queue holds. A burst of MIDI — a chord, a controller sweep — is
 /// at most a few hundred between two blocks; this is room for many times that.
@@ -309,7 +319,7 @@ impl WaveShared {
                 }
             }
             None if rate > 0.0 => {
-                let plan = Box::new(BoardPlan::compile(board, rate)?);
+                let plan = Box::new(BoardPlan::compile_with(board, rate, &board_sound)?);
                 let old = self.pending_board.lock().ok().and_then(|mut g| g.replace(plan));
                 drop(old);
             }
@@ -317,6 +327,20 @@ impl WaveShared {
         }
         *cur = Some(board.clone());
         Ok(())
+    }
+
+    /// Compile the board last sent again, for a sound it names that has
+    /// only now been decoded. Nothing to do with no device or no board.
+    pub fn rebuild_board(&self) {
+        self.collect();
+        let rate = f32::from_bits(self.rate.load(Ordering::Acquire));
+        let Ok(cur) = self.board.lock() else { return };
+        if let (Some(b), true) = (cur.as_ref(), rate > 0.0) {
+            if let Ok(plan) = BoardPlan::compile_with(b, rate, &board_sound) {
+                let old = self.pending_board.lock().ok().and_then(|mut g| g.replace(Box::new(plan)));
+                drop(old);
+            }
+        }
     }
 
     /// One board control live, by position. Ignored by a running board built
@@ -470,7 +494,7 @@ impl SynthDeck {
         // rate; one pending for another device is no longer wanted.
         if let Ok(g) = shared.board.lock() {
             if let Some(b) = g.as_ref() {
-                if let Ok(plan) = BoardPlan::compile(b, synth.sample_rate()) {
+                if let Ok(plan) = BoardPlan::compile_with(b, synth.sample_rate(), &board_sound) {
                     synth.set_board(Box::new(plan));
                 }
             }
@@ -721,6 +745,44 @@ mod tests {
         assert!(sh.returned_bank[2].lock().unwrap().is_some(), "the one replaced is handed back");
         sh.collect();
         assert!(sh.returned_bank[2].lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn a_boards_sound_is_compiled_in_and_a_new_sound_is_a_new_plan() {
+        let ir = |name: &str| {
+            let samples = Arc::new((0..2400).map(|i| (-(i as f32) / 300.0).exp()).collect::<Vec<f32>>());
+            fx::prism::remember_sound(name, fx::prism::Sound { samples, channels: 1, rate: 48_000.0 });
+        };
+        ir("engine-test/a.wav");
+        let board = |sound: &str| {
+            let n = |id: &str, kind: &str| wave::Node::new(id, kind, 0.0, 0.0);
+            Board {
+                name: "t".into(),
+                nodes: vec![n("v", "in:voice"), n("c", "fx:convolution").with_sound(sound), n("out", "out")],
+                cables: vec![wave::Cable::new("v", "o", "c", "i"), wave::Cable::new("c", "o", "out", "i")],
+            }
+            .complete()
+            .unwrap()
+        };
+        let sh = Arc::new(WaveShared::new());
+        let mut deck = SynthDeck::new(48_000.0, 256, 2, Arc::clone(&sh));
+        sh.set_board(&board("engine-test/a.wav")).unwrap();
+        deck.render(64, 2);
+        assert!(!deck.synth.board().unwrap().unsounded(1), "the sound was found and handed over");
+        // Another sound, not decoded yet: a new plan, passing through.
+        sh.set_board(&board("engine-test/b.wav")).unwrap();
+        assert!(sh.pending_board.lock().unwrap().is_some());
+        for _ in 0..20 {
+            deck.render(256, 2);
+        }
+        assert!(deck.synth.board().unwrap().unsounded(1));
+        // It arrives, and the board is built again with it.
+        ir("engine-test/b.wav");
+        sh.rebuild_board();
+        for _ in 0..20 {
+            deck.render(256, 2);
+        }
+        assert!(!deck.synth.board().unwrap().unsounded(1));
     }
 
     fn two_gains(db: f32) -> Board {

@@ -77,6 +77,8 @@ pub struct WaveState {
     pub(crate) inner: Arc<Mutex<Inner>>,
     /// Whether the patch's tables have been asked for since start.
     synced: AtomicBool,
+    /// Whether the stored board's sounds have been decoded since start.
+    sounded: AtomicBool,
 }
 
 pub(crate) struct Inner {
@@ -127,6 +129,7 @@ impl WaveState {
                 serial: 0,
             })),
             synced: AtomicBool::new(false),
+            sounded: AtomicBool::new(false),
         }
     }
 
@@ -249,9 +252,17 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
     let w = &app.wave;
     crate::midi::ensure(app);
     w.touch();
+    // The stored board's sounds, once a library can be read.
+    if app.library_path().is_some() && !w.sounded.swap(true, Ordering::AcqRel) {
+        if let Some(b) = w.shared.board() {
+            if crate::wave_board::load_sounds(app, &b) {
+                w.shared.rebuild_board();
+            }
+        }
+    }
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/api/wave/patch") => Response::json(patch_json(&w.patch()).to_string()),
-        ("POST", "/api/wave/patch") => post_patch(w, req),
+        ("POST", "/api/wave/patch") => post_patch(app, req),
         ("POST", "/api/wave/param") => post_param(w, req),
         ("POST", "/api/wave/mods") => post_mods(w, req),
         ("POST", "/api/wave/note") => post_note(app, req),
@@ -280,7 +291,8 @@ fn ok() -> Value {
 
 /// `POST /api/wave/patch`: replace the patch. Anything not given takes the
 /// default, as a new patch would.
-fn post_patch(w: &WaveState, req: &Request) -> Response {
+fn post_patch(app: &App, req: &Request) -> Response {
+    let w = &app.wave;
     let v = match body(req) {
         Ok(v) => v,
         Err(r) => return r,
@@ -289,9 +301,14 @@ fn post_patch(w: &WaveState, req: &Request) -> Response {
         Ok(p) => p,
         Err(e) => return Response::error(400, &e),
     };
+    // Its board's sounds, decoded before the board is compiled.
+    let fresh = patch.board.as_ref().is_some_and(|b| crate::wave_board::load_sounds(app, b));
     let Ok(mut g) = w.inner.lock() else { return Response::error(500, "the synth is wedged") };
     g.patch = patch;
     w.adopt(&mut g);
+    if fresh {
+        w.shared.rebuild_board();
+    }
     if let Err(e) = w.save(&g.patch) {
         return Response::error(500, &format!("could not save the patch: {e}"));
     }
