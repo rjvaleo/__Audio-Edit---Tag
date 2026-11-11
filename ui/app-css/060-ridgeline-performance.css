@@ -23,9 +23,9 @@
 .rv-admin #ridgeEdit .re-slider { flex: 1 1 110px; width: auto; height: 14px; }
 .rv-admin #ridgeEdit .re-frames { flex: 1 1 100%; flex-wrap: wrap; }
 .rv-admin #ridgeEdit .re-btn.active {
-  background: var(--accent); border-color: var(--accent); color: var(--bg);
+  background: var(--on); border-color: var(--on); color: var(--bg);
 }
-#ridgeEdit .re-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+#ridgeEdit .re-btn.active { background: var(--on); border-color: var(--on); color: var(--bg); }
 
 
 /* ── the card of type ── */
@@ -100,7 +100,7 @@
   max-height: 150px;
   margin: 4px 0 3px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-m);
   background:
     linear-gradient(to right, rgba(var(--stage-pad-rgb), 0.10) 1px, transparent 1px) 0 0 / 25% 100%,
     linear-gradient(to bottom, rgba(var(--stage-pad-rgb), 0.10) 1px, transparent 1px) 0 0 / 100% 25%,
@@ -151,7 +151,7 @@
   height: 20px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-s);
   background: none;
   cursor: pointer;
 }
@@ -220,7 +220,7 @@
    registry, still reachable, still in a saved room — it is simply not listed.
 */
 .icon-btn { padding: 3px 7px; font-size: var(--fs-l); line-height: 1; }
-.icon-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.icon-btn.active { color: var(--bg); background: var(--on); border-color: var(--on); }
 
 /* Anchored over the gear rather than floated in the middle of the screen: it
    edits the menu you are about to use, and a box covering the thing it is about
@@ -235,7 +235,7 @@
   padding: 8px;
   overflow-y: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-l);
   background: var(--surface-2);
   box-shadow: 0 10px 30px rgba(var(--black-rgb), 0.55);
 }
@@ -272,7 +272,7 @@
   width: 20px;
   padding: 2px 0;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-s);
   background: none;
   color: var(--text-2);
   font: var(--fs-s)/1 var(--mono, ui-monospace, monospace);
@@ -298,14 +298,14 @@
    A look on the stage bar, a cloud over the grain controls. Each is one line:
    a picker, Save as…, Delete. See `docs/SECTION-PRESETS.md`. */
 .sp-row { align-items: center; }
-.sp-row .sp-pick { width: auto; min-width: 96px; max-width: 160px; height: 18px; font-size: var(--fs-s); }
+.sp-row .sp-pick { width: auto; min-width: 96px; max-width: 160px; height: var(--h-s); font-size: var(--fs-s); }
 .grain-preset-row {
   display: flex; align-items: center; gap: 6px; margin: 0 0 8px;
 }
 .grain-preset-row .re-tag { width: auto; }
 .grain-preset-row .mini { flex: 1 1 100px; min-width: 0; }
 .grain-preset-row .ghost {
-  height: 22px; padding: 0 8px; font-size: var(--fs-s); white-space: nowrap; flex: 0 0 auto;
+  height: var(--h-s); padding: 0 8px; font-size: var(--fs-s); white-space: nowrap; flex: 0 0 auto;
 }
 
 /* ── the sequencer, in a frame ─────────────────────────────────────────────── */
@@ -324,25 +324,25 @@
   --text: var(--seq-text); --text-dim: var(--seq-text-dim);
   display: block; gap: 0; padding: 0;
   background: var(--bg); color: var(--text);
-  font-family: "Share Tech Mono", monospace; font-size: var(--fs-l);
+  font-family: var(--mono); font-size: var(--fs-l);
 }
 .automation-body .btn {
   background: var(--bg3); border: 1px solid var(--border); color: var(--text);
-  font-family: "Share Tech Mono", monospace; font-size: var(--fs-m); padding: 5px 14px;
+  font-family: var(--mono); font-size: var(--fs-m); padding: 0 14px;
   cursor: pointer; letter-spacing: 1px; text-transform: uppercase; transition: all 0.1s;
-  border-radius: 0; height: auto; line-height: normal;
+  border-radius: 0; height: var(--h-m); line-height: normal;
 }
 .automation-body .btn:hover { border-color: var(--accent); color: var(--accent); }
-.automation-body .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.automation-body .btn.active { background: var(--on); color: var(--bg); border-color: var(--on); }
 .automation-body .divider { width: 1px; height: 24px; background: var(--border); }
 .automation-body .knob-label { font-size: var(--fs-xs); color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
-.automation-body .preset-del-btn { border-color: var(--accent2); color: var(--accent2); font-size: var(--fs-s); padding: 4px 8px; }
+.automation-body .preset-del-btn { border-color: var(--accent2); color: var(--accent2); font-size: var(--fs-s); padding: 0 8px; height: var(--h-m); }
 .automation-body .preset-del-btn:hover { background: var(--accent2); color: var(--bg); }
 .automation-body .preset-select {
   flex: 1; font-size: var(--fs-s); max-width: 200px; background: var(--bg3);
   border: 1px solid var(--border); color: var(--text);
-  font-family: "Share Tech Mono", monospace; padding: 3px 6px; cursor: pointer;
-  border-radius: 0; height: auto;
+  font-family: var(--mono); padding: 0 6px; cursor: pointer;
+  border-radius: 0; height: var(--h-m);
 }
 .automation-body .preset-select:focus { border-color: var(--accent); outline: none; }
 .automation-body .perf-mode { flex: 0 0 auto; }
@@ -382,18 +382,18 @@
   display: flex; justify-content: space-between; align-items: center;
   padding: 3px 20px 6px; font-size: var(--fs-xs); color: var(--text-dim); letter-spacing: 1px;
 }
-.perf-pos { font-family: "Teko", sans-serif; font-size: var(--fs-xl); letter-spacing: 3px; color: var(--accent); }
+.perf-pos { font-family: var(--mono); font-size: var(--fs-xl); letter-spacing: 1px; color: var(--accent); }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 /* The lane the editor is open on, under the timeline, in the same palette. */
 .automation-body .automation-lanes { padding: 0 20px 6px; }
 .automation-body .automation-lane {
   background: var(--bg); border: 1px solid var(--border); border-radius: 0;
-  font-family: "Share Tech Mono", monospace;
+  font-family: var(--mono);
 }
 .automation-body .automation-lane select {
   background: var(--bg3); border: 1px solid var(--border); color: var(--text);
-  font-family: "Share Tech Mono", monospace; font-size: var(--fs-s); border-radius: 0;
+  font-family: var(--mono); font-size: var(--fs-s); border-radius: 0;
 }
 .automation-body .automation-canvas { background: var(--bg); border-radius: 0; }
 
@@ -425,7 +425,7 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .re-num {
   width: 64px; flex: 0 0 auto; font-size: var(--fs-xs); padding: 1px 4px;
   background: var(--surface-2); color: var(--text);
-  border: 1px solid var(--line-2); border-radius: 2px;
+  border: 1px solid var(--line-2); border-radius: var(--r-s);
   cursor: ew-resize; text-align: right;
 }
 .re-num:focus { cursor: text; outline: none; border-color: var(--accent); }
@@ -435,7 +435,7 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
    as every 3D program draws it, turning with the camera. */
 .room-gnomon { position: absolute; left: 8px; bottom: 8px; width: 64px; height: 64px; pointer-events: none; overflow: visible; }
 .room-gnomon line { stroke-width: 2; stroke-linecap: round; }
-.room-gnomon text { font-size: 8px; font-family: inherit; text-anchor: middle; dominant-baseline: middle; }
+.room-gnomon text { font-size: var(--fs-xs); font-family: inherit; text-anchor: middle; dominant-baseline: middle; }
 .room-gnomon .gx { stroke: var(--axis-x); fill: var(--axis-x); }
 .room-gnomon .gy { stroke: var(--axis-y); fill: var(--axis-y); }
 .room-gnomon .gz { stroke: var(--axis-z); fill: var(--axis-z); }
@@ -458,7 +458,7 @@ body:not(.roomview) .room-edit .re-row.re-cam { display: none; }
 .cg-engine { flex: 0 0 auto; display: flex; }
 .cg-engine .seg-btn { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: var(--fs-xs); }
 .cg-pad-wrap { position: relative; flex: 1 1 60px; min-height: 48px; }
-.cg-pad { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: var(--well); border-radius: 3px; cursor: crosshair; }
+.cg-pad { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: var(--well); border-radius: var(--r-s); cursor: crosshair; }
 .cg-pad-read { position: absolute; right: 4px; bottom: 2px; font-size: var(--fs-xs); pointer-events: none; }
 .cg-knobs { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 2px; justify-items: center; }
 .cg-knobs .knob { width: 100%; max-width: 62px; }
@@ -670,7 +670,7 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 .rv-admin #roomEdit > .rk-pads { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 5px; }
 .rk-pad {
   position: relative; height: 96px; cursor: crosshair; touch-action: none;
-  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+  border: 1px solid var(--line-2); border-radius: var(--r-s); background-color: var(--well);
   background-image:
     linear-gradient(var(--line) 1px, transparent 1px),
     linear-gradient(90deg, var(--line) 1px, transparent 1px);
@@ -689,7 +689,7 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 .rv-admin #roomEdit > #reObjRow > .re-row.re-chan {
   grid-column: span 4; flex-direction: column; align-items: stretch; gap: 0;
   min-height: 0; margin: 0 0 4px; padding: 2px 5px;
-  border: 1px solid var(--line); border-radius: 3px;
+  border: 1px solid var(--line); border-radius: var(--r-s);
 }
 .rv-admin #roomEdit .re-row.re-chan > .re-tag {
   position: static; width: auto; height: auto; display: block;
@@ -707,9 +707,9 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
    so nothing stood out; on is now a tint with a lit edge, across the whole
    Visual column. */
 .rv-admin :is(#roomEdit, #ridgeEdit, #room3dEdit, #stageEdit, #textEdit, #roomGeomBody, #roomPaintBody) .re-btn.active {
-  background: color-mix(in oklch, var(--accent) 16%, transparent);
-  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
-  color: var(--accent);
+  background: color-mix(in oklch, var(--on) 16%, transparent);
+  border-color: color-mix(in oklch, var(--on) 70%, transparent);
+  color: var(--on);
 }
 /* The layers: a list with an eye, not a stack of filled bars. */
 .rv-admin #reLayers .re-layer-name,
@@ -719,7 +719,7 @@ body:has(#leftPanel.collapsed) .lane-empty .lane-empty-open { display: inline-bl
 }
 .rv-admin #reLayers .re-layer-name.active { color: var(--text-2); }
 .rv-admin #reLayers .re-layer-name::before { content: '\25CB'; margin-right: 7px; color: var(--text-dimmer); }
-.rv-admin #reLayers .re-layer-name.active::before { content: '\25C9'; color: var(--accent); }
+.rv-admin #reLayers .re-layer-name.active::before { content: '\25C9'; color: var(--on); }
 .rv-admin #reLayers .re-layer:hover .re-layer-name { background: var(--surface-3); }
 /* Rows the group heading already names: the tag would say it twice. */
 .rv-admin #roomEdit > .re-row:has(#reLayers),

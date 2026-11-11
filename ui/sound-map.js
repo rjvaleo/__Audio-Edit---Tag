@@ -314,11 +314,13 @@
   }
 
   /// Where the camera stands to see the whole library: straight on, back just
-  /// far enough that the front of the world is exactly the window's width.
+  /// far enough that the front of the world is nearly the window's width. Not
+  /// exactly: at exactly, the outermost sounds sat on the window's edge, half
+  /// off it, and a header two pixels shorter put them out of reach.
   function homePose() {
     const aspect = bjs.gl.getRenderWidth() / Math.max(1, bjs.gl.getRenderHeight());
     const half = Math.tan(FOV / 2) * aspect;
-    const back = W / 2 / half;
+    const back = W / 2 / half / 0.96;
     return {
       at: new BABYLON.Vector3(0, 0, -W / 2 - back),
       look: new BABYLON.Vector3(0, 0, -W / 2),

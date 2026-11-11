@@ -142,7 +142,8 @@ test('the take is drawn as the sequencer draws one, and a click on a lane opens 
   expect(got.panel.pos).toBe('— · —');
   expect(got.panel.grip).toBe(true);
   expect(got.panel.lanesMenu).toEqual(['— lanes —', 'RATE', 'FREEZE', 'LEVEL']);
-  expect(got.panel.font).toMatch(/Share Tech Mono/);
+  // The app's mono since the consistency pass (11 Nov 2026), not Share Tech Mono.
+  expect(got.panel.font).toMatch(/JetBrains Mono/);
   // Ruler, three lanes and the struct lane, at the sequencer's own heights.
   expect(got.height).toBe(18 + 3 * 34 + 22 + 6);
   expect(got.first, 'one editor, for the first lane').toEqual(['a']);

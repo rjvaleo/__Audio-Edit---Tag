@@ -20,6 +20,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { appSource, servedSource, whereIs } from './app-source.mjs';
 import { colourLiterals } from './css-colours.mjs';
+import { sizeFindings } from './css-sizes.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -373,6 +374,51 @@ const COLOUR_ALLOW = [
     }
   }
   notes.push(`${sheets.length} stylesheets: ${named} colours in the token layer, ${allowed} allowed (${COLOUR_ALLOW.length} entries)`);
+}
+
+// ------------------------------ 7. sizes on the steps, type in two fonts
+//
+// Text on the type scale (9, 10, 11, 13, 16 px), corners on the three radii
+// (4, 6, 8 px, or round), buttons and fields on the three control heights
+// (20, 24, 28 px), and type in Inter and JetBrains Mono: the steps are tokens
+// in `010-shell.css` (`--fs-*`, `--r-*`, `--h-*`). See `css-sizes.mjs` for what
+// counts as a control.
+//
+// The allowlist says why, entry by entry: a file, or the rules in it whose
+// selector matches, for the kinds named.
+
+const SIZE_ALLOW = [
+  { file: 'ui/edit.css', why: 'the Edit page, done 10 Nov 2026' },
+  { file: 'ui/sequencer/style.css', why: 'Seq, vendored: restyled from outside in phase 9' },
+  { file: 'ui/rail.css', kinds: ['radius', 'height'], why: 'the rail, on every page and the Edit page too, which is done' },
+  { file: 'ui/app-css/010-shell.css', selector: /^\.(rail-btn|knob \.v|grain-centre i)$/, kinds: ['radius', 'height'],
+    why: 'the rail\'s buttons, a knob\'s value and the grain centre: on the Edit page too, which is done' },
+  { file: 'ui/app-css/020-edit-rack.css', selector: /^\.(tab|tab \.close|tabbar \.newtab)$/, kinds: ['radius', 'height'],
+    why: 'the file tabs: on the Edit page too, which is done' },
+  { file: 'ui/app-css/040-automation-master.css', selector: /^\.room-data$/, kinds: ['size'],
+    why: 'the room\'s data block: type drawn on the room\'s back wall, part of the picture' },
+  { file: 'ui/app-css/040-automation-master.css', selector: /^(\.re-btn|\.room-edit select\.mini)$/, kinds: ['height'],
+    why: 'the room editor\'s overlay, laid over the dock\'s room: at 20 px its rows cover the picture you drag' },
+  { file: 'ui/app-css/070-tray-room-panels.css', selector: /^\.wt-btn$/, kinds: ['height'],
+    why: 'the Edit page\'s tool tiles: a tile, not a control' },
+  { file: 'ui/app-css/080-fx-faces-visual.css', selector: /\.(lex|sh|hp)-|\.hyper-body/, kinds: ['radius', 'family', 'height'],
+    why: 'drawn pictures: the faces of Lexicon, SoundHack and Hyperprism, in their own type and corners' },
+  { file: 'ui/chop.css', selector: /^:root\[data-mgl-look/, kinds: ['radius'],
+    why: 'a theme\'s material: the rounder panels of the Looks that became themes' },
+];
+{
+  const sheets = ['ui', 'ui/app-css', 'ui/sequencer'].flatMap((d) => readdirSync(join(root, d))
+    .filter((f) => f.endsWith('.css')).map((f) => `${d}/${f}`));
+  const WHAT = { size: 'off the type scale (9, 10, 11, 13, 16 px: --fs-*)', radius: 'not a radius (0, 4, 6, 8 px: --r-*, 50% or 999px)',
+    height: 'not a control height (20, 24, 28 px: --h-*)', family: 'not Inter or JetBrains Mono (--sans, --mono)' };
+  let allowed = 0;
+  for (const file of sheets) {
+    for (const f of sizeFindings(readFileSync(join(root, file), 'utf8'))) {
+      if (SIZE_ALLOW.some((a) => a.file === file && (!a.kinds || a.kinds.includes(f.kind)) && (!a.selector || a.selector.test(f.selector.trim())))) allowed++;
+      else fail(`${file}:${f.line}  ${f.prop}: ${f.text} in ${f.selector.replace(/\s+/g, ' ').slice(0, 60)} — ${WHAT[f.kind]}`);
+    }
+  }
+  notes.push(`sizes and fonts: ${allowed} allowed (${SIZE_ALLOW.length} entries)`);
 }
 
 // ------------------------------------------------------------------ report

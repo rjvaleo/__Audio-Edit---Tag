@@ -179,11 +179,11 @@ function gsBuildShared() {
   const W = 222, bars = (ks) => ks.map((k) => gsBar(k, W)).join('');
   $('gsSh1').innerHTML = gsSubHead('TIME & PITCH', ['ratio', 'semitones'])
     + bars(['ratio', 'semitones', 'windowMs'])
-    + `<div class="gs-bc" style="width:${W}px"><span class="gs-chip gs-btn gs-tunebtn" id="gsTuneBtn" style="height:22px"></span><span class="gs-chip gs-btn" id="gsKeysBtn" style="height:22px" title="${gsAttr(GS_KEYS_TIP)}">${gsIcon(GS_ICON.keys)}Keys ⧉</span></div>`
+    + `<div class="gs-bc" style="width:${W}px"><span class="gs-chip gs-btn gs-tunebtn" id="gsTuneBtn" style="height:var(--h-s)"></span><span class="gs-chip gs-btn" id="gsKeysBtn" style="height:var(--h-s)" title="${gsAttr(GS_KEYS_TIP)}">${gsIcon(GS_ICON.keys)}Keys ⧉</span></div>`
     + gsSubHead('PITCH MOVEMENT', ['pitchJitterSemis'])
     + bars(['pitchJitterSemis', 'pitchDriftSemis', 'driftRateHz', 'driftStep'])
     + gsSubHead('RANDOMNESS', ['seed', 'linkJitter'])
-    + `<div class="gs-bc" id="gsSeedRow" style="width:${W}px;--gg:var(--gs-f-space)" title="${gsAttr(GS_TIPS.seed)}"><svg class="gg" id="gsSeedG" viewBox="0 0 64 48"></svg><div class="gs-well gs-bw" style="cursor:default"><span class="gs-bn">Seed</span><b class="gs-bv" id="gsSeedRo">1</b></div><span class="gs-btn gs-chip" id="gsReroll" style="height:22px;flex:none" title="Draw a new seed. Every jitter changes at once; no setting does.">⟳ Re-roll</span></div>`
+    + `<div class="gs-bc" id="gsSeedRow" style="width:${W}px;--gg:var(--gs-f-space)" title="${gsAttr(GS_TIPS.seed)}"><svg class="gg" id="gsSeedG" viewBox="0 0 64 48"></svg><div class="gs-well gs-bw" style="cursor:default"><span class="gs-bn">Seed</span><b class="gs-bv" id="gsSeedRo">1</b></div><span class="gs-btn gs-chip" id="gsReroll" style="height:var(--h-s);flex:none" title="Draw a new seed. Every jitter changes at once; no setting does.">⟳ Re-roll</span></div>`
     + bars(['linkJitter']);
   $('gsSh2').innerHTML = gsSubHead('GRAINS', ['position', 'rateHz', 'envelope'])
     + bars(['position', 'positionJitterMs', 'rateHz', 'densityHz', 'overlap', 'envelope', 'sizeJitter', 'sizeRange', 'scan', 'reverse', 'wrap']);

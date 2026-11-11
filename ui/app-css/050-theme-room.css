@@ -7,7 +7,7 @@
    not wearing. See `docs/THEME-EDITOR.md`. */
 .theme-mini {
   display: flex; gap: 0; height: 176px; margin: 8px 0 10px;
-  border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden;
   background: var(--bg);
   /* Its own stacking context, so the page's theme cannot leak in over it. */
   isolation: isolate;
@@ -17,8 +17,8 @@
   display: flex; flex-direction: column; align-items: center; gap: 5px;
   padding-top: 6px; border-right: 1px solid var(--line);
 }
-.tm-icon { width: 12px; height: 12px; border-radius: 3px; background: var(--surface-2); }
-.tm-icon.on { background: var(--accent); }
+.tm-icon { width: 12px; height: 12px; border-radius: var(--r-s); background: var(--surface-2); }
+.tm-icon.on { background: var(--on); }
 
 .tm-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .tm-bar {
@@ -26,11 +26,11 @@
   background: var(--surface-0); border-bottom: 1px solid var(--line);
 }
 .tm-btn {
-  font-size: 7px; padding: 2px 5px; border-radius: 3px;
+  font-size: var(--fs-xs); padding: 2px 5px; border-radius: var(--r-s);
   border: 1px solid var(--line-2); color: var(--text-2); background: transparent;
 }
-.tm-btn.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
-.tm-title { margin-left: auto; font-size: 7px; color: var(--text-dim); }
+.tm-btn.on { background: var(--on); border-color: var(--on); color: var(--bg); }
+.tm-title { margin-left: auto; font-size: var(--fs-xs); color: var(--text-dim); }
 
 .tm-lane {
   flex: 0 0 34px; background: var(--sink); position: relative;
@@ -40,7 +40,7 @@
    sound, which is why `--wave` is not in the map. */
 .tm-lane > i {
   position: absolute; left: 4px; right: 4px; top: 50%; height: 15px;
-  transform: translateY(-50%); border-radius: 1px;
+  transform: translateY(-50%); border-radius: 0;
   background: repeating-linear-gradient(90deg,
     var(--wave) 0 1px, transparent 1px 3px);
   opacity: .85;
@@ -48,27 +48,27 @@
 
 .tm-panels { flex: 1 1 auto; display: flex; gap: 5px; padding: 5px; min-height: 0; }
 .tm-panel {
-  flex: 1 1 auto; min-width: 0; background: var(--surface); border-radius: 4px;
+  flex: 1 1 auto; min-width: 0; background: var(--surface); border-radius: var(--r-s);
   border: 1px solid var(--line); padding: 5px 6px;
   display: flex; flex-direction: column; gap: 4px;
 }
 .tm-panel-2 { flex: 0 0 46px; }
 .tm-head {
-  font-size: 7px; letter-spacing: .08em; text-transform: uppercase;
+  font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase;
   color: var(--text-dim);
 }
 .tm-row { display: flex; align-items: center; gap: 5px; }
-.tm-k { flex: 0 0 34px; font-size: 7px; color: var(--text-2); }
+.tm-k { flex: 0 0 34px; font-size: var(--fs-xs); color: var(--text-2); }
 .tm-slider {
-  flex: 1 1 auto; height: 5px; border-radius: 3px; background: var(--well);
+  flex: 1 1 auto; height: 5px; border-radius: 999px; background: var(--well);
   overflow: hidden;
 }
 .tm-slider > i { display: block; height: 100%; background: var(--accent); }
-.tm-v { flex: 0 0 34px; font-size: 7px; color: var(--text); text-align: right; }
+.tm-v { flex: 0 0 34px; font-size: var(--fs-xs); color: var(--text); text-align: right; }
 
 /* All four text steps, because a ladder that collapses is the failure a theme
    most often has and the one hardest to see on a page full of other things. */
-.tm-steps { display: flex; gap: 6px; margin-top: auto; font-size: 7px; }
+.tm-steps { display: flex; gap: 6px; margin-top: auto; font-size: var(--fs-xs); }
 .tm-t1 { color: var(--text); }
 .tm-t2 { color: var(--text-2); }
 .tm-t3 { color: var(--text-dim); }
@@ -76,7 +76,7 @@
 
 .tm-meters { flex: 1 1 auto; display: flex; gap: 3px; align-items: flex-end; }
 .tm-meters > i {
-  flex: 1 1 auto; background: var(--accent); border-radius: 1px; min-height: 2px;
+  flex: 1 1 auto; background: var(--accent); border-radius: 0; min-height: 2px;
 }
 
 /* The controls. Strips you drag, not fields you type into — nobody chooses a
@@ -84,11 +84,11 @@
    is visible before it is made. */
 .tm-ctl { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .tm-ctl-k {
-  flex: 0 0 56px; font-size: 9px; letter-spacing: .04em; color: var(--text-dim);
+  flex: 0 0 56px; font-size: var(--fs-xs); letter-spacing: .04em; color: var(--text-dim);
 }
 .tm-strip {
   flex: 1 1 auto; min-width: 0; height: 20px; display: block;
-  border-radius: 4px; border: 1px solid var(--line-2);
+  border-radius: var(--r-s); border: 1px solid var(--line-2);
   cursor: ew-resize; touch-action: none;
 }
 .tm-strip-sm { height: 14px; }
@@ -97,14 +97,14 @@
   display: flex; align-items: baseline; justify-content: space-between;
   margin: 10px 0 5px;
 }
-.tm-contrast { font-size: 9px; }
+.tm-contrast { font-size: var(--fs-xs); }
 /* Below three to one, body text is not readable on that ground. */
 .tm-contrast.warn { color: var(--bad); }
 /* Six candidates from the current setting. Fixed widths — never flex. */
 .tm-vary { display: flex; gap: 5px; margin-bottom: 9px; }
 .tm-swatch-btn {
-  width: 46px; height: 30px; padding: 0; cursor: pointer;
-  border: 1px solid var(--line-2); border-radius: 4px;
+  width: 46px; height: var(--h-l); padding: 0; cursor: pointer;
+  border: 1px solid var(--line-2); border-radius: var(--r-s);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .tm-swatch-btn:hover { border-color: var(--text-dim); }
@@ -144,7 +144,7 @@
 .ts-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
 .ts-swatch {
   display: flex; align-items: center; gap: 4px;
-  border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 4px;
+  border: 1px solid var(--line-2); border-radius: var(--r-m); padding: 3px 4px;
 }
 .ts-swatch input[type="color"] {
   width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer;
@@ -153,7 +153,7 @@
   width: 68px; border: 0; background: transparent; color: var(--text-2);
   font-family: var(--mono); font-size: var(--fs-s);
 }
-.ts-swatch input[type="text"]:focus { outline: 1px solid var(--line); border-radius: 3px; }
+.ts-swatch input[type="text"]:focus { outline: 1px solid var(--line); border-radius: var(--r-s); }
 .ts-x {
   width: 16px; height: 16px; padding: 0; line-height: 1;
   border: 0; background: transparent; color: var(--text-dim);
@@ -167,11 +167,11 @@
 .ts-tokens {
   max-height: 190px; overflow: auto;
   font-family: var(--mono); font-size: var(--fs-xs);
-  border: 1px solid var(--line-2); border-radius: 6px; padding: 5px;
+  border: 1px solid var(--line-2); border-radius: var(--r-m); padding: 5px;
 }
 .ts-tokens > div { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
 .ts-tokens i {
-  width: 11px; height: 11px; border-radius: 3px; flex: 0 0 11px;
+  width: 11px; height: 11px; border-radius: var(--r-s); flex: 0 0 11px;
   border: 1px solid var(--line-2);
 }
 .ts-tokens b { flex: 0 0 108px; color: var(--text-2); font-weight: 500; }
@@ -179,7 +179,7 @@
 
 .ts-error {
   font-size: var(--fs-s); color: var(--bad);
-  border: 1px solid var(--bad); border-radius: 5px; padding: 5px 7px;
+  border: 1px solid var(--bad); border-radius: var(--r-s); padding: 5px 7px;
 }
 .ts-empty { font-size: var(--fs-s); color: var(--text-dim); padding: 8px 2px; }
 /* The one open in the editor, as distinct from the one being worn. */
@@ -367,13 +367,13 @@
 
 .rv-admin-head { display: flex; gap: 4px; padding: 5px 6px; }
 .rv-tab {
-  flex: 1 1 auto; height: 20px; border-radius: 4px;
+  flex: 1 1 auto; height: 20px; border-radius: var(--r-s);
   border: 1px solid var(--line-2); background: transparent;
   color: var(--text-dim); font: inherit; font-size: var(--fs-xs); letter-spacing: .4px;
   text-transform: uppercase; cursor: pointer;
 }
 .rv-tab:hover { background: var(--surface-3); color: var(--text-2); }
-.rv-tab.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.rv-tab.active { background: var(--on); border-color: var(--on); color: var(--bg); }
 
 .rp-head { padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
 .rp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
@@ -382,7 +382,7 @@
 }
 /* In the Visual column the rule above gives way to the one-line row (C2). */
 .rp-row .re-slider { flex: 1 1 80px; width: auto; }
-.rp-row > select.field, .rp-name { flex: 1 1 90px; min-width: 0; height: 18px; font-size: var(--fs-s); }
+.rp-row > select.field, .rp-name { flex: 1 1 90px; min-width: 0; height: var(--h-s); font-size: var(--fs-s); }
 .rp-gens .re-btn { flex: 1 1 auto; }
 .rp-btns .re-btn { flex: 0 0 auto; }
 
@@ -399,7 +399,7 @@
    the same stops in the same order as the row uploaded to the shader, so it
    cannot show one thing while the room draws another. */
 .rp-strip {
-  flex: 0 0 44px; height: 13px; border-radius: 2px;
+  flex: 0 0 44px; height: 13px; border-radius: var(--r-s);
   border: 1px solid var(--line-2);
 }
 .rp-slot-name { flex: 1 1 auto; min-width: 0; }
@@ -408,7 +408,7 @@
   letter-spacing: .3px;
 }
 .rp-edit { padding: 5px 2px 7px; }
-.rp-edit .re-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.rp-edit .re-btn.active { background: var(--on); border-color: var(--on); color: var(--bg); }
 .rp-stop .re-colour { flex: 0 0 24px; height: 17px; }
 .rp-stops, .rp-range { margin-top: 4px; }
 
@@ -485,7 +485,7 @@
   position: absolute; pointer-events: auto;
   background: var(--accent);
   border: 1px solid var(--bg);
-  border-radius: 2px;
+  border-radius: var(--r-s);
   opacity: .55;
   transform: translate(-50%, -50%);
   transition: opacity .12s ease, box-shadow .12s ease;
@@ -540,7 +540,7 @@
   transform: translate(-50%, -160%);
   font-size: var(--fs-xs); letter-spacing: .3px; white-space: nowrap;
   color: var(--text-2); background: var(--surface-2);
-  border: 1px solid var(--line-2); border-radius: 3px; padding: 1px 4px;
+  border: 1px solid var(--line-2); border-radius: var(--r-s); padding: 1px 4px;
   opacity: 0; transition: opacity .12s ease;
 }
 .rh:hover + .rh-tip, .rh.dragging + .rh-tip { opacity: 1; }

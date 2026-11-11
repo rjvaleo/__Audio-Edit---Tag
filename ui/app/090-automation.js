@@ -628,7 +628,7 @@ function drawLane(canvas, lane) {
 
   c.strokeStyle = '#1e2830';
   c.fillStyle = '#4a6070';
-  c.font = '9px "Share Tech Mono", monospace';
+  c.font = "9px 'JetBrains Mono', ui-monospace, monospace";
   for (let i = 0; i <= 8; i++) {
     const x = (i * w) / 8;
     c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
@@ -675,7 +675,7 @@ function drawLane(canvas, lane) {
       const y = (1 - v.value) * h;
       c.beginPath(); c.arc(x, y, 5, 0, Math.PI * 2); c.fill();
       c.fillStyle = '#0a0c0e';
-      c.font = 'bold 8px "Share Tech Mono", monospace';
+      c.font = "bold 8px 'JetBrains Mono', ui-monospace, monospace";
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(String(i + 1), x, y);
