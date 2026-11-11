@@ -132,6 +132,8 @@
   border-radius: 4px; padding: 2px 7px; white-space: nowrap; opacity: .85;
 }
 .no-audio.hidden { display: none; }
+/* Clicking it looks for the device again (`checkAudioDevice`). */
+.no-audio { cursor: pointer; }
 .tbtn:disabled { opacity: .35; cursor: not-allowed; }
 .export-progress .progress { flex: 1; height: 6px; }
 /* The one fill in the app that should not glide: it is redrawn four times a
