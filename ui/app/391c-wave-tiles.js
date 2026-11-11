@@ -227,7 +227,8 @@ function wvSyncTiles() {
     document.querySelectorAll(`[data-slotpick="${slot}"]`).forEach((b) => b.classList.toggle('on', b.dataset.s === WV.slot[slot]));
   }
   for (let L = 0; L < 4; L++) {
-    const sh = WV_LFO_SHAPES.find((q) => q[0] === wvLfoShape(L)) || WV_LFO_SHAPES[7];
+    // v8b: the shape it plays, which a row onto it may have stepped.
+    const sh = WV_LFO_SHAPES.find((q) => q[0] === (wvChoiceNow(`lfo${L}.shape`) || 'drawn')) || WV_LFO_SHAPES[7];
     document.querySelectorAll(`[data-lshape="lfo${L}"]`).forEach((b) => {
       b.querySelector('path').setAttribute('d', sh[2]);
       b.dataset.tip = `Shape: ${sh[1].split(':')[0]}. Click to pick another`;

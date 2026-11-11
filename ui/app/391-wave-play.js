@@ -251,20 +251,22 @@ function wvRenderTargets() {
 }
 
 /// Everything that is a lit choice rather than a drawing, set from the patch.
-/// Called after a patch arrives and after any stored change.
+/// Called after a patch arrives and after any stored change. v8b: a choice a
+/// row moves shows the option it is stepped to (`wvChoiceNow`), and again
+/// whenever the engine steps it (`wvChoiceTick`).
 function wvSyncPlay() {
   for (let i = 0; i < 3; i++) {
     const k = `osc${i}.`;
     document.querySelector(`[data-oscled="${i}"]`).classList.toggle('on', !!wvG(k + 'on'));
     document.getElementById('wvOsc' + i).style.opacity = wvG(k + 'on') ? 1 : 0.55;
-    wvTxt('wvPkName' + i, wvG(k + 'table'));
+    wvTxt('wvPkName' + i, wvChoiceNow(k + 'table'));
     [0, 1].forEach((j) => {
-      const m = wvG(`${k}warp${j}.mode`);
+      const m = wvChoiceNow(`${k}warp${j}.mode`);
       const b = document.querySelector(`[data-cycle="${i}${j}"]`);
       b.querySelector('path').setAttribute('d', (WV_WARPS[m] || WV_WARPS.off).g);
       wvTxt(`wvWn${i}${j}`, m === 'off' ? 'Add' : (WV_WARPS[m] || WV_WARPS.off).name);
     });
-    const fx = wvG(k + 'fx.mode');
+    const fx = wvChoiceNow(k + 'fx.mode');
     document.querySelector(`[data-ofx="${i}"] path`).setAttribute('d', (WV_OFX[fx] || WV_OFX.off).g);
     wvTxt('wvOfn' + i, (WV_OFX[fx] || WV_OFX.off).name);
     document.querySelectorAll(`[data-route="${i}"] span`).forEach((x) => x.classList.toggle('on', x.dataset.k === wvG(k + 'route')));
@@ -278,11 +280,11 @@ function wvSyncPlay() {
   lit('[data-subshape] .wv-g', wvG('sub.shape'));
   lit('[data-suboct] span', wvG('sub.oct'));
   lit('[data-ncol] span', wvG('noise.color'));
-  lit('#wvFroute span', wvG('filt.route'));
+  lit('#wvFroute span', wvChoiceNow('filt.route'));
   lit('#wvVoiceMode span', wvG('voice.mode'));
   [0, 1].forEach((i) => {
-    lit(`[data-ftype="${i}"] .wv-g`, wvG(`filt${i}.type`));
-    wvTxt('wvFtn' + i, (WV_FILTERS.find((f) => f[0] === wvG(`filt${i}.type`)) || WV_FILTERS[0])[2]);
+    lit(`[data-ftype="${i}"] .wv-g`, wvChoiceNow(`filt${i}.type`));
+    wvTxt('wvFtn' + i, (WV_FILTERS.find((f) => f[0] === wvChoiceNow(`filt${i}.type`)) || WV_FILTERS[0])[2]);
   });
   $('wvMpe').firstElementChild.classList.toggle('on', !!wvG('voice.mpe'));
   wvTxt('wvBendRo', `±${wvG('voice.bend')}`);

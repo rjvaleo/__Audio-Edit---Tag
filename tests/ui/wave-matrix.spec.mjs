@@ -8,10 +8,12 @@
 //   - a click in a hole puts a pin in, a drag sets its amount, a double-click
 //     pulls it, and the engine has each change;
 //   - the columns page a group at a time, and a band brings its group up;
-//   - every column is a target the engine takes;
 //   - the rows are the same connections: a row's switch keeps it, switched
 //     off, on the page and on the engine (`on: false`), through a reload too,
 //     and its pickers change its source and target;
+//   - every column is a target the engine takes, the choice keys among them;
+//   - a choice key's pin counts in options, and Play shows the option the
+//     engine has stepped it to;
 //   - the Matrix's tiles edit the same keys as Play's.
 
 import { test, expect } from './test.mjs';
@@ -137,6 +139,53 @@ test('a row switched off stays off through a reload', async ({ page }) => {
   await hole(page, 'macro0', 'osc1.pan').click();
   await expect.poll(async () => (await engineMods(page)).map((m) => `${m.src}:${m.on}`)).toEqual(['env1:true', 'lfo2:false', 'macro0:true']);
   expect(errors).toEqual([]);
+});
+
+test('a choice key\'s pin counts in options, and Play shows the option it is stepped to', async ({ page }) => {
+  const patch = await (await page.request.get('/api/wave/patch')).json();
+  const was = { 'filt0.type': patch.params['filt0.type'], macro0: patch.params.macro0 };
+  const param = (key, value) => page.request.post('/api/wave/param', { data: { key, value } });
+  expect((await param('filt0.type', 'lp')).ok()).toBe(true);
+  expect((await param('macro0', 1)).ok()).toBe(true);
+  try {
+    const errors = await openMatrix(page);
+    // The choice keys are columns: each oscillator's table, warp types and
+    // effect type, each filter's type, the routing, each LFO's shape.
+    const keys = await page.evaluate(() => wvTargetGroups().flatMap((g) => g.ks.map((k) => k[0])).filter((k) => wvChoiceOpts(k)));
+    expect(keys.length).toBe(19);
+
+    // A click is one option on: 1/(n − 1) of the way, for six filter types 0.2.
+    const h = hole(page, 'macro0', 'filt0.type');
+    await h.click();
+    await expect(h.locator('b')).toHaveText('+1');
+    await expect.poll(async () => (await engineMods(page))[0]?.amt).toBeCloseTo(0.2, 6);
+    // M1 is all the way up, so Low pass plays as Band pass, and Play says so.
+    await expect.poll(() => page.evaluate(() => WV.tele && WV.tele.mod && WV.tele.mod['filt0.type'])).toBe('bp');
+    await expect(page.locator('#wvFtn0')).toHaveText('Band pass');
+    expect(await page.evaluate(() => WV.p['filt0.type'])).toBe('lp');
+
+    // A drag moves it a whole option at a time.
+    const b = await h.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2 - 18, { steps: 9 });
+    await page.mouse.up();
+    await expect(h.locator('b')).toHaveText('+2');
+    await expect.poll(async () => (await engineMods(page))[0]?.amt).toBeCloseTo(0.4, 6);
+    await expect.poll(() => page.evaluate(() => WV.tele.mod['filt0.type'])).toBe('hp');
+    await expect(page.locator('#wvFtn0')).toHaveText('High pass');
+    await page.locator('#wvViews [data-v="play"]').click();
+    await expect(page.locator('#wvViewPlay [data-ftype="0"] .wv-g.on')).toHaveAttribute('data-k', 'hp');
+
+    // Pulled, Play is back on the stored type.
+    await page.request.post('/api/wave/mods', { data: { mods: [] } });
+    await page.evaluate(() => { WV.mods = []; wvSyncAll(); });
+    await expect(page.locator('#wvFtn0')).toHaveText('Low pass');
+    expect(errors).toEqual([]);
+  } finally {
+    await param('filt0.type', was['filt0.type']);
+    await param('macro0', was.macro0);
+  }
 });
 
 test('every column of the pins is a target the engine takes', async ({ page }) => {

@@ -629,6 +629,10 @@ function wvModOf(dst) {
   return { rng, live, col };
 }
 
+/// v8b: a choice key's option now: the engine's, stepped by its rows, while
+/// `mod` in `/api/wave/state` names it; otherwise the stored one.
+const wvChoiceNow = (k) => { const v = WV.tele && WV.tele.mod && WV.tele.mod[k]; return typeof v === 'string' ? v : wvG(k); };
+
 /// The page's colours with the modulation drawn in that source's colour.
 const wvClFor = (m) => (m && m.col ? { ...wvCl(), mod: m.col } : wvCl());
 

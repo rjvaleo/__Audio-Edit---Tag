@@ -8,10 +8,13 @@
 // page a group at a time. A switch shows the same connections as rows: on,
 // source, amount, target, × source, curve. Every numeric control is a target
 // (`docs/WAVE-SYNTH.md`, v8), the modulators' own and the board's included.
+// v8b: and the choice keys, whose rows step through their options: an amount
+// of 1/(n − 1) moves one option, so their pins and rows count in options.
 
 // ─────────────────────────────────────────────────────────────── the targets
 
-const WV_OSC_TGT = [['pos', 'Position', 'Position'], ['warp0.amt', 'Warp 1', 'Warp 1'], ['warp1.amt', 'Warp 2', 'Warp 2'], ['uni.det', 'Detune', 'Unison detune'], ['uni.spr', 'Width', 'Unison width'], ['fx.a', 'Effect', 'Effect mix'], ['pitch', 'Pitch', 'Pitch'], ['fine', 'Fine', 'Fine'], ['phase', 'Phase', 'Start phase'], ['rand', 'Rand', 'Phase rand'], ['pan', 'Pan', 'Pan']];
+const WV_OSC_TGT = [['pos', 'Position', 'Position'], ['warp0.amt', 'Warp 1', 'Warp 1'], ['warp1.amt', 'Warp 2', 'Warp 2'], ['uni.det', 'Detune', 'Unison detune'], ['uni.spr', 'Width', 'Unison width'], ['fx.a', 'Effect', 'Effect mix'], ['pitch', 'Pitch', 'Pitch'], ['fine', 'Fine', 'Fine'], ['phase', 'Phase', 'Start phase'], ['rand', 'Rand', 'Phase rand'], ['pan', 'Pan', 'Pan'],
+  ['table', 'Table', 'Table'], ['warp0.mode', 'W1 Type', 'Warp 1 type'], ['warp1.mode', 'W2 Type', 'Warp 2 type'], ['fx.mode', 'FX Type', 'Effect type']];
 const WV_TGT_GREY = '#c9cfdc';
 
 /// Every target, in groups as the pins' bands show them: `{g, c, ks: [[key,
@@ -21,10 +24,10 @@ function wvTargetGroups() {
   const G = [
     ...[0, 1, 2].map((o) => ({ g: 'OSC ' + 'ABC'[o], c: WV_TGT_GREY, ks: WV_OSC_TGT.map(([k, n, f]) => [`osc${o}.${k}`, n, `${'ABC'[o]} ${f}`]) })),
     { g: 'SUB · NOISE', c: WV_TGT_GREY, ks: [['sub.level', 'Sub', 'Sub level'], ['noise.level', 'Noise', 'Noise level']] },
-    { g: 'FILTERS', c: WV_TGT_GREY, ks: [0, 1].flatMap((f) => [['cut', 'Cut', 'Cutoff'], ['res', 'Res', 'Res'], ['drive', 'Drive', 'Drive'], ['key', 'Key', 'Key']].map(([k, n, l]) => [`filt${f}.${k}`, `F${f + 1} ${n}`, `F${f + 1} ${l}`])) },
+    { g: 'FILTERS', c: WV_TGT_GREY, ks: [0, 1].flatMap((f) => [['cut', 'Cut', 'Cutoff'], ['res', 'Res', 'Res'], ['drive', 'Drive', 'Drive'], ['key', 'Key', 'Key'], ['type', 'Type', 'Type']].map(([k, n, l]) => [`filt${f}.${k}`, `F${f + 1} ${n}`, `F${f + 1} ${l}`])).concat([['filt.route', 'Route', 'Filter routing']]) },
     { g: 'MIX', c: WV_TGT_GREY, ks: [0, 1, 2].map((o) => [`osc${o}.level`, `${'ABC'[o]} Level`, `${'ABC'[o]} Level`]) },
     { g: 'VOICE', c: WV_TGT_GREY, ks: [['voice.glide', 'Glide', 'Glide']] },
-    ...[0, 1, 2, 3].map((l) => ({ g: `LFO ${l + 1}`, c: wvSrcColour(`lfo${l}`), ks: [['rate', 'Rate'], ['smooth', 'Smooth'], ['rise', 'Rise']].map(([k, n]) => [`lfo${l}.${k}`, n, `LFO ${l + 1} ${n}`]) })),
+    ...[0, 1, 2, 3].map((l) => ({ g: `LFO ${l + 1}`, c: wvSrcColour(`lfo${l}`), ks: [['rate', 'Rate'], ['smooth', 'Smooth'], ['rise', 'Rise'], ['shape', 'Shape']].map(([k, n]) => [`lfo${l}.${k}`, n, `LFO ${l + 1} ${n}`]) })),
     ...['amp', 'env1', 'env2', 'env3'].map((e) => ({ g: e === 'amp' ? 'AMP' : wvSrcLab(e), c: wvSrcColour(e), ks: WV_ADSR.map(([k, n]) => [`${e}.${k}`, n, `${e === 'amp' ? 'Amp' : wvSrcLab(e)} ${n}`]) })),
     { g: 'MACROS', c: '#e6d8b8', ks: WV.macroNames.map((n, i) => [`macro${i}`, `M${i + 1}`, `M${i + 1} ${n}`]) },
   ];
@@ -41,6 +44,37 @@ function wvTargetName(t) {
   const m = /^(?:fx)(\d)\.k([0-9])$/.exec(t);
   if (m && WV_FX_CHAIN[+m[1]]) return `${WV_FX_CHAIN[+m[1]].n} ${WV_FX_CHAIN[+m[1]].kn[+m[2]]}`;
   return t.replace('.', ' ');
+}
+
+/// v8b: a choice key's options in order, as the engine steps through them
+/// (`docs/WAVE-SYNTH.md`, v8b); `null` for a numeric target. A table steps
+/// through the bank: the built-ins, then each other table an oscillator
+/// plays, once, in oscillator order.
+function wvChoiceOpts(k) {
+  if (/^osc\d\.warp\d\.mode$/.test(k)) return Object.keys(WV_WARPS);
+  if (/^osc\d\.fx\.mode$/.test(k)) return Object.keys(WV_OFX);
+  if (/^osc\d\.table$/.test(k)) return [...new Set([...WV_TABLE_NAMES, ...[0, 1, 2].map((o) => wvG(`osc${o}.table`))])];
+  if (/^filt\d\.type$/.test(k)) return WV_FILTERS.map((f) => f[0]);
+  if (k === 'filt.route') return WV_FROUTES.map((f) => f[0]);
+  if (/^lfo\d\.shape$/.test(k)) return WV_LFO_SHAPES.map((q) => q[0]);
+  return null;
+}
+
+/// One option's share of a choice key's amount, or 0 for a numeric target.
+const wvChoiceStep = (k) => { const o = wvChoiceOpts(k); return o ? 1 / Math.max(1, o.length - 1) : 0; };
+/// An amount as the row reads: a percentage, or whole options for a choice.
+const wvRowAmtTxt = (m) => { const st = wvChoiceStep(m.dst); return st ? (m.amt > 0 ? '+' : m.amt < 0 ? '−' : '') + Math.round(Math.abs(m.amt) / st) : wvAmtTxt(m.amt); };
+/// A dragged amount, whole options for a choice key.
+const wvSnapAmt = (k, a) => { const st = wvChoiceStep(k); return st ? wvClamp(Math.round(a / st) * st, -1, 1) : a; };
+
+/// The choice keys the engine has stepped, as last drawn, so Play redraws its
+/// lit choices only when one moves.
+let wvChoiceSeen = '';
+function wvChoiceTick() {
+  const M = WV.tele && WV.tele.mod, sig = M ? Object.keys(M).filter((k) => typeof M[k] === 'string').map((k) => k + '=' + M[k]).join() : '';
+  if (sig === wvChoiceSeen) return;
+  wvChoiceSeen = sig;
+  if (WV.built) wvSyncPlay();
 }
 
 // ─────────────────────────────────────────────────────────────── the view
@@ -119,7 +153,7 @@ function wvBuildPins() {
     wvPaintHole(c, wvModAt(src, dst));
     c.addEventListener('mouseenter', () => wvPinHl(c, src, dst, true));
     c.addEventListener('mouseleave', () => wvPinHl(c, src, dst, false));
-    let moved = false;
+    let moved = false, raw = 0;
     wvDrag(c, (dx, dy, e) => {
       if (!dy) return;
       moved = true;
@@ -129,11 +163,12 @@ function wvBuildPins() {
         m = { src, dst, amt: 0, curve: 'lin', via: null };
         WV.mods.push(m);
       }
-      m.amt = wvClamp(m.amt - dy / (e.shiftKey ? 400 : 80), -1, 1);
+      raw = wvClamp(raw - dy / (e.shiftKey ? 400 : 80), -1, 1);
+      m.amt = wvSnapAmt(dst, raw);
       wvPaintHole(c, m);
-    }, () => { moved = false; }, () => {
+    }, () => { moved = false; raw = wvModAt(src, dst)?.amt || 0; }, () => {
       if (!moved && !wvModAt(src, dst) && WV.mods.length < 64) {
-        WV.mods.push({ src, dst, amt: 0.25, curve: 'lin', via: null });
+        WV.mods.push({ src, dst, amt: wvChoiceStep(dst) || 0.25, curve: 'lin', via: null });
         wvPaintHole(c, wvModAt(src, dst));
       }
       wvMatrixChanged();
@@ -152,10 +187,11 @@ function wvPaintHole(el, m) {
   el.classList.toggle('pin', !!m);
   el.classList.toggle('off', !!m?.off);
   const s = el.dataset.s, t = el.dataset.t;
-  el.querySelector('b').textContent = m ? wvAmtTxt(m.amt) : '';
+  const ch = !!wvChoiceOpts(t), steps = ch && m ? Math.round(Math.abs(m.amt) / wvChoiceStep(t)) : 0, unit = ch ? (steps === 1 ? ' option' : ' options') : '';
+  el.querySelector('b').textContent = m ? wvRowAmtTxt(m) : '';
   el.dataset.tip = m
-    ? `${wvSrcLab(s)} → ${wvTargetName(t)} ${wvAmtTxt(m.amt)}${m.via ? ' × ' + wvSrcLab(m.via) : ''}: drag up and down for the amount, Shift for fine. Double-click pulls the pin`
-    : `${wvSrcLab(s)} → ${wvTargetName(t)}: click to put a pin in`;
+    ? `${wvSrcLab(s)} → ${wvTargetName(t)} ${wvRowAmtTxt(m)}${unit}${m.via ? ' × ' + wvSrcLab(m.via) : ''}${m.off ? ' (switched off)' : ''}: drag up and down for the amount, ${ch ? 'an option at a time' : 'Shift for fine'}. Double-click pulls the pin`
+    : `${wvSrcLab(s)} → ${wvTargetName(t)}: click to put a pin in${ch ? ', one option on' : ''}`;
 }
 
 function wvPinHl(c, src, dst, on) {
@@ -205,7 +241,8 @@ function wvBuildRows() {
      <div class="wv-well" title="Curve: click for the next one"><canvas id="wvMxc${r}" data-w="84" data-h="22"></canvas></div><span class="wv-ib" data-rm title="Remove this row"><svg viewBox="0 0 12 12"><path d="M3 3 L9 9 M9 3 L3 9"/></svg></span></div>`);
     el.appendChild(row);
     for (const c of row.querySelectorAll('canvas')) WVW[c.id] = wvCv(c);
-    wvDrag(WVW['wvMxa' + r].el, (dx, dy, e) => { m.amt = wvClamp(m.amt + dx / (e.shiftKey ? 600 : 120), -1, 1); WV.modsDirty = true; });
+    let raw = m.amt;
+    wvDrag(WVW['wvMxa' + r].el, (dx, dy, e) => { raw = wvClamp(raw + dx / (e.shiftKey ? 600 : 120), -1, 1); m.amt = wvSnapAmt(m.dst, raw); WV.modsDirty = true; }, () => { raw = m.amt; });
     WVW['wvMxa' + r].el.addEventListener('dblclick', () => { m.amt = 0; wvMatrixChanged(); });
     WVW['wvMxc' + r].el.addEventListener('click', () => {
       const ks = Object.keys(WV_CURVES);
@@ -240,13 +277,14 @@ function wvOpenPicker(b) {
   m.dataset.for = kind + r;
   const done = (v) => {
     if (row) {
-      if (kind === 's') row.src = v; else if (kind === 't') row.dst = v; else row.via = v;
+      if (kind === 's') row.src = v; else if (kind === 't') { row.dst = v; row.amt = wvChoiceStep(v) ? wvSnapAmt(v, row.amt) || wvChoiceStep(v) : row.amt; } else row.via = v;
     } else {
       WV_DRAFT[{ s: 'src', t: 'dst', v: 'via' }[kind]] = v;
       if (WV_DRAFT.src != null && WV_DRAFT.dst) {
         const ex = wvModAt(WV_DRAFT.src, WV_DRAFT.dst);
-        if (ex) ex.amt = 0.3;
-        else WV.mods.push({ src: WV_DRAFT.src, dst: WV_DRAFT.dst, amt: 0.3, curve: 'lin', via: WV_DRAFT.via });
+        const amt = wvChoiceStep(WV_DRAFT.dst) || 0.3;
+        if (ex) ex.amt = amt;
+        else WV.mods.push({ src: WV_DRAFT.src, dst: WV_DRAFT.dst, amt, curve: 'lin', via: WV_DRAFT.via });
         Object.assign(WV_DRAFT, { src: null, dst: null, via: null });
       }
     }
@@ -312,7 +350,7 @@ function wvDrawMatrix(t) {
     ac.fillStyle = col;
     ac.font = `10px ${cl.mono}`;
     ac.textAlign = m.amt < 0 ? 'left' : 'right';
-    ac.fillText(wvAmtTxt(m.amt), m.amt < 0 ? 6 : a.w - 6, a.h / 2 + 3.5);
+    ac.fillText(wvRowAmtTxt(m), m.amt < 0 ? 6 : a.w - 6, a.h / 2 + 3.5);
     ac.textAlign = 'left';
     ac.globalAlpha = 1;
   });
