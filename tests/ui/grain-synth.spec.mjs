@@ -472,36 +472,36 @@ test('dragging in the detail moves Position, and beside the box Spray and Pitch 
   expect(await draft(page, 'pitchJitterSemis')).toBeGreaterThan(0);
 });
 
-test('the transport buttons press the real ones', async ({ page }) => {
+test('the Now Playing bar\'s transport drives the page', async ({ page }) => {
   await openPage(page);
   const was = await page.evaluate(() => state.loopOn);
-  await page.click('#gsTLoop');
+  await page.click('#nowBar #loopBtn');
   expect(await page.evaluate(() => state.loopOn)).toBe(!was);
   await page.waitForTimeout(60);
   expect(await page.locator('#gsLoopChip').evaluate((e) => e.classList.contains('on'))).toBe(!was);
   await page.click('#gsLoopChip');
   expect(await page.evaluate(() => state.loopOn)).toBe(was);
   const grain = await page.evaluate(() => $('srcGrain').classList.contains('on'));
-  await page.click('#gsTGrain');
+  await page.click('#nowBar #srcGrain');
   expect(await page.evaluate(() => $('srcGrain').classList.contains('on'))).toBe(!grain);
 });
 
-test('a source switched off says so on the Grain page, at the same width', async ({ page }) => {
+test('a source switched off says so in the Now Playing bar, at the same width', async ({ page }) => {
   await openPage(page);
-  const chip = page.locator('#gsTGrain');
+  const chip = page.locator('#nowBar #srcGrain');
   if (!(await page.evaluate(() => $('srcGrain').classList.contains('on')))) await chip.click();
-  await expect(chip).not.toHaveClass(/\boff\b/);
+  await expect(chip).toHaveClass(/\bon\b/);
   const width = await chip.evaluate((e) => e.getBoundingClientRect().width);
   const colourOn = await chip.evaluate((e) => getComputedStyle(e).color);
   await chip.click();
-  await expect(chip).toHaveClass(/\boff\b/);
+  await expect(chip).not.toHaveClass(/\bon\b/);
   expect(await chip.getAttribute('title')).toContain('silent');
   expect(await chip.evaluate((e) => getComputedStyle(e).textDecorationLine)).toBe('line-through');
   expect(await chip.evaluate((e) => getComputedStyle(e).color)).not.toBe(colourOn);
   expect(await chip.evaluate((e) => e.getBoundingClientRect().width)).toBe(width);
   await chip.click();
-  await expect(chip).not.toHaveClass(/\boff\b/);
-  expect(await chip.getAttribute('title')).toBe('GRAIN: the grain cloud sounds');
+  await expect(chip).toHaveClass(/\bon\b/);
+  expect(await chip.getAttribute('title')).toContain('plays');
 });
 
 test('Automation, Visuals and Regions still open, from the rail under Grain', async ({ page }) => {

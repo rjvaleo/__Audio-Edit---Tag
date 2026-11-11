@@ -42,6 +42,8 @@
 .nowbar .tbtn.on { color: var(--mgl-acc); background: var(--m-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.85); border-color: color-mix(in srgb, var(--mgl-acc) 55%, var(--m-line)); }
 .nowbar .tbtn.rec.on, .nowbar .tbtn.rec.armed { color: #ff5a4d; border-color: #ff5a4d88; }
 .nowbar .tbtn.src { width: auto; padding: 0 8px; color: var(--m-t3); background: var(--m-well); box-shadow: none; }
+/* A source switched off says so, at the same width, as the Grain page's chip did. */
+.nowbar .tbtn.src:not(.on) { text-decoration: line-through; opacity: .7; }
 .nowbar .tbtn.src.on { color: var(--mgl-acc); border-color: color-mix(in srgb, var(--mgl-acc) 55%, var(--m-line)); box-shadow: 0 0 8px rgba(255,181,71,.15); }
 .nowbar .nb-clock {
   height: 30px; width: 104px; flex: none; display: grid; place-items: center; border-radius: 7px;

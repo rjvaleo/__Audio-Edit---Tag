@@ -181,9 +181,13 @@ test('everything round the controls is on the page too', async ({ page }) => {
   await openPage(page);
   for (const id of [
     'gsTuneBtn', 'gsKeysBtn', 'gsLength', 'gsCloudRo', 'gsCpPick', 'gsCpSave', 'gsCpDelete', 'gsPresetBtn', 'gsRndBtn',
-    'gsTPlay', 'gsTStop', 'gsTLoop', 'gsTRec', 'gsTGrain', 'gsTSeq', 'gsClock', 'gsCzOut', 'gsCzIn', 'gsCzFit', 'gsFollow', 'gsFollowMode',
+    'gsCzOut', 'gsCzIn', 'gsCzFit', 'gsFollow', 'gsFollowMode',
     'gsLoadM', 'gsMaster', 'gsMeta', 'gsEngReset', 'gsReroll', 'gsSeedRo', 'gsLoopChip', 'gsRegChip', 'gsSndPick',
   ]) await expect(page.locator(`#${id}`), id).toBeVisible();
+  // The transport is the Now Playing bar's, above the page (docs/EDIT-PAGE.md).
+  for (const id of ['playBtn', 'stopBtn', 'loopBtn', 'recBtn', 'srcGrain', 'srcSeq', 'timeNow']) {
+    await expect(page.locator(`#nowBar #${id}`), id).toBeVisible();
+  }
   await page.click('#gsPresetBtn .pn');
   for (const id of ['gsPresetSound', 'gsPresetSave', 'gsPresetManage', 'gsPresetDelete']) await expect(page.locator(`#${id}`), id).toBeVisible();
   await page.keyboard.press('Escape');
