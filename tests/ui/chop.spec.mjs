@@ -550,11 +550,12 @@ test('the page fits: nothing runs off it and nothing is cut off', async ({ page 
   expect(got).toEqual({ bar: 0, cut: 0, foot: 0, list: 0, tall: 0, cutOff: 0, onScreen: true });
 });
 
-test('the transport and file tabs are moved in, and put back on leaving', async ({ page }) => {
+test('the file tabs are moved in and put back on leaving; the transport stays in the Now Playing bar', async ({ page }) => {
   await openChop(page);
-  expect(await page.evaluate(() => document.getElementById('playBtn').closest('#chopTransport') !== null)).toBe(true);
+  const where = () => page.evaluate(() => ({ tabs: !!document.getElementById('tabBar').closest('#chopTabs'), play: !!document.getElementById('playBtn').closest('#nowBar') }));
+  expect(await where()).toEqual({ tabs: true, play: true });
   await page.evaluate(() => setEditPage('grain'));
-  await expect.poll(() => page.evaluate(() => document.getElementById('playBtn').closest('#transportBar') !== null)).toBe(true);
+  await expect.poll(where).toEqual({ tabs: false, play: true });
   await page.evaluate(() => setEditPage('chop'));
-  await expect.poll(() => page.evaluate(() => document.getElementById('playBtn').closest('#chopTransport') !== null)).toBe(true);
+  await expect.poll(where).toEqual({ tabs: true, play: true });
 });

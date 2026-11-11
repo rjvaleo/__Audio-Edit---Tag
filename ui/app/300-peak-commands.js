@@ -17,7 +17,17 @@
 /// `fields` is a list of `{key, label, type, value, min, max, step, options}`.
 /// This exists because ten of the commands below need a number first and each
 /// one having its own dialog is ten pieces of markup that can drift apart.
+/// Answers for the next `ask`, given in advance by a knob. Taken once.
+let askAnswer = null;
+
 function ask(title, fields, { hint = '', note = '', okLabel = 'OK' } = {}) {
+  // The Edit page's knobs answer for the dialog: same command, same values
+  // checked the same way, no box. See `edRun` in 412-edit-tabs.js.
+  if (askAnswer) {
+    const given = askAnswer;
+    askAnswer = null;
+    return Promise.resolve(Object.fromEntries(fields.map((f) => [f.key, given[f.key] ?? f.value])));
+  }
   return new Promise((resolve) => {
     const box = $('askModal');
     $('askTitle').textContent = title;

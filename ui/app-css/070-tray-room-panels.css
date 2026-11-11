@@ -599,8 +599,7 @@ body.wavepage .wave-tools {
 }
 body.wavepage :is(#dock, #presetBar) { display: none !important; }
 /* The worded bar goes too, but the open documents' tabs on it stay. */
-body.wavepage #editTools > :not(#tabBar) { display: none !important; }
-body.wavepage #editTools:has(> #tabBar.hidden) { display: none; }
+body.wavepage #editTools > :not(#tabBar, #edTabs, #edCmdK) { display: none !important; }
 /* Grain's dock and its resize handle are gone, so the lane takes the height. */
 body.wavepage #dock + .dock-resize, body.wavepage #dockResize { display: none; }
 

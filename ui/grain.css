@@ -12,6 +12,9 @@
 /* The page takes the centre. Only the document tabs stay above it. */
 body.grainpage :is(#lane, #overview, #transportBar, #presetBar, #dock, #dockResize, #ruler, #regions) { display: none !important; }
 body.grainpage #editTools > :not(#tabBar) { display: none !important; }
+/* The transport is the Now Playing bar's, above every page; the copies the
+   page carried in its header stand down. */
+.gs-app .gs-tp { display: none !important; }
 body.grainpage #editTools:has(> #tabBar.hidden) { display: none; }
 /* Visuals, Automation and Regions, as rail items under Grain: Grain's dock with
    only that panel out, as the Chop page is. */

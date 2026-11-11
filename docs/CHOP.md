@@ -25,7 +25,7 @@ mock-up is `chop-v3.html` there. What matters for working on it:
 | `ui/chop.css` | All of it, scoped under `.chop-app` |
 
 - **Fixed at 1432×1000 and scaled whole**, as Wave is (`chopFit`).
-- **The file tabs and transport are the app's own**, moved in while the page shows and put back after (`chopBorrow`). There is one set of them.
+- **The file tabs are the app's own**, moved in while the page shows and put back after (`chopBorrow`). The transport is the Now Playing bar's, above every page (`docs/EDIT-PAGE.md`). There is one set of each.
 - **The detail is the page's own** (`#chopLane`, `chopView`). The main waveform is hidden on this page.
 - **Nothing hides by mode.** A knob that makes no cuts dims and still works. Ratchet uses Nudge and Shuffle in every mode.
 - **The Colour row** says what the colour on the waveform means, from the library's own measures (`search/src/lib.rs`, `pitch.rs`), taken in a worker on every 11 ms. Every slice is measured too and given a Kind, which is an opinion and will sometimes be wrong.

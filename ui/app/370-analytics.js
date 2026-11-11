@@ -31,7 +31,7 @@ const AN_PANELS = {
   paneImport: 'Import', paneInspect: 'Inspector', rightPanel: 'Tags',
   editTools: 'Edit tools', tabBar: 'Tabs', overview: 'Overview', ruler: 'Ruler', lane: 'Waveform',
   roomEdit: 'Room editor', roomView: 'Room', seqView: 'Sequencer', composeView: 'Compose',
-  transportBar: 'Transport', presetBar: 'Preset bar', visWindow: 'Grains window',
+  nowBar: 'Now Playing', transportBar: 'Transport', presetBar: 'Preset bar', visWindow: 'Grains window',
   keyboardModal: 'Keys', presetManager: 'Preset manager', exportLoop: 'Export loop',
   regions: 'Regions strip', statsView: 'Library stats', pickerModal: 'File picker',
   settingsModal: 'Settings', askModal: 'Dialog', analyticsView: 'Analytics',

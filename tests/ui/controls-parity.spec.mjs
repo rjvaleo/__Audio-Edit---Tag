@@ -25,8 +25,10 @@ const BASELINE = JSON.parse(readFileSync(
 
 /// The same keying as the inventory the fixture was taken with.
 const KEYS = `(sel) => {
-  const host = document.querySelector(sel);
-  if (!host) return [];
+  // A view can be more than one element: the transport is the Now Playing
+  // bar and what is left of the old bar (10 Nov 2026).
+  const hosts = [...document.querySelectorAll(sel)];
+  if (!hosts.length) return [];
   const words = (t) => (t || '').replace(/\\s+/g, ' ').trim().toLowerCase();
   const label = (el) => {
     if (el.id) return '#' + el.id;
@@ -39,7 +41,7 @@ const KEYS = `(sel) => {
     if (tag && words(tag.textContent)) return 'row:' + words(tag.textContent) + (own ? '/' + own : '');
     return own || '(unlabelled)';
   };
-  return [...host.querySelectorAll('input, select, button, textarea, canvas.cloud-pad, [role=slider]')]
+  return hosts.flatMap((host) => [...host.querySelectorAll('input, select, button, textarea, canvas.cloud-pad, [role=slider]')])
     .filter((el) => !el.closest('.rk-pads, .rk-head'))
     .map((el) => el.tagName.toLowerCase() + (el.type ? ':' + el.type : '') + ' ' + label(el));
 }`;
@@ -84,7 +86,7 @@ async function inventory(page) {
   await take('chop', '#dockChop');
   await page.locator('#leftRail .rl-item[data-page="grain"]').click();
   await page.waitForTimeout(400);
-  await take('transport', '#transportBar');
+  await take('transport', '#nowBar, #transportBar');
   await take('edit-toolbar', '#editTools');
   await page.evaluate(() => setMode('room'));
   await page.waitForTimeout(600);

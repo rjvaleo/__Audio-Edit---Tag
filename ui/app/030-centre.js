@@ -84,6 +84,7 @@ function setMode(mode) {
   document.body.classList.toggle('grainpage', grainPage);
   document.body.classList.toggle('grainsub', editing && GS_SUBPAGES.includes(editPage));
   chopPageSync(editing);
+  edPageSync(editing && editPage === 'wave');
   document.body.classList.toggle('roomview', room);
   document.body.classList.toggle('seqview', seq);
   document.body.classList.toggle('composeview', compose);
