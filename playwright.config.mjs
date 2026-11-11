@@ -46,6 +46,10 @@ export default defineConfig({
     // M3"). The full Chromium build, headless, draws on the Metal GPU. On a
     // Linux CI runner with no GPU it falls back to software as before.
     channel: 'chromium',
+    // **Silent.** A test page that plays (the sequencer, a preview) must not
+    // sound on a machine somebody is working at; the engine's own output is
+    // muted by the scratch server (`AUDIOLAB_MUTE_OUTPUT`).
+    launchOptions: { args: ['--mute-audio'] },
     trace: 'retain-on-failure',
   },
   // Not started when pointed at an instance that is already up — killing the
