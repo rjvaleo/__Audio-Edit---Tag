@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════ Chop: the page ══
 //
-// Wiring, the transport and file tabs it borrows, the Looks, and fitting it to
-// the window. Fixed at 1432×1000 and scaled whole, as Wave is: the same page
-// smaller, never a cropped one.
+// Wiring, the transport and file tabs it borrows, the Looks' bridge to the
+// themes, and fitting it to the window. Fixed at 1432×1000 and scaled whole, as
+// Wave is: the same page smaller, never a cropped one.
 
 const CHOP_W = 1432, CHOP_H = 1000;
 
@@ -41,17 +41,17 @@ function chopFit() {
 
 // ───────────────────────────────────────────────────────────── the Looks
 
-/// Grain's five. One setting for the whole app: Grain reads this same key.
-const CHOP_LOOKS = [['AD', 'Graphite + Acrylic', 'linear-gradient(135deg,#262a30 50%,#d7e2ff 50%)', 'Graphite panels, a white trace and an acrylic edge'],
-  ['A', 'Graphite', '#3a3f47', 'Graphite panels and a soft green-white trace'],
-  ['B', 'Glass', 'linear-gradient(135deg,#3c8caa,#825aaa)', 'See-through panels over slow colour'],
-  ['C', 'Ceramic', '#e8dcc8', 'Warm matte panels, round buttons, dotted knobs'],
-  ['D', 'Acrylic', 'conic-gradient(#3b4060,#2c5d5f,#5e4c3d,#4a3b5e,#3b4060)', 'Dark panels with a coloured edge']];
-
+/// Grain's five Looks are themes now (`theme-palettes.js`), chosen on the Theme
+/// page; Chop's own switch went on 11 Nov 2026. The Now Playing bar's Look
+/// buttons still call this, by name (`nbSetLook`), and it wears that Look's theme.
 function chopSetLook(k) {
-  document.querySelector('.chop-app').dataset.look = k;
-  document.querySelectorAll('#chopLook button').forEach((b) => b.classList.toggle('on', b.dataset.s === k));
-  try { localStorage.setItem('mglLook', k); } catch { /* private mode */ }
+  themeWearLook(k);
+}
+
+/// The theme's colours, read again for the canvases if it has changed since.
+function chopRestyle() {
+  if (chopRestyle.seen === themeStamp) return;
+  chopRestyle.seen = themeStamp;
   chopReadLook();
   if (chop.mono) { chopReflect(); chopPaintLane(); }
   chopDrawOut();
@@ -60,8 +60,6 @@ function chopSetLook(k) {
 (() => {
   chopLoadSettings();
   chopBuildKnobs();
-  $('chopLook').innerHTML = CHOP_LOOKS.map(([k, n, bg, t]) => `<button type="button" data-s="${k}" title="${t}"><i style="background:${bg}"></i>${n}</button>`).join('');
-  $('chopLook').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (b) chopSetLook(b.dataset.s); });
   $('chopColour').innerHTML = CHOP_VIEWS.map(([v, n, t, st]) => `<button type="button" data-v="${v}" title="${t}"><i class="vs" style="background:linear-gradient(90deg,${st.map(chopRgb).join(',')})"></i>${n}</button>`).join('');
   $('chopColour').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-v]');
@@ -96,7 +94,7 @@ function chopSetLook(k) {
   new MutationObserver(() => {
     const here = document.body.classList.contains('choppage');
     chopBorrow(here);
-    if (here) { chopFit(); chopPaintLane(); }
+    if (here) { chopFit(); chopRestyle(); chopPaintLane(); }
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   const pills = (id, key) => $(id).addEventListener('click', (e) => {
     const b = e.target.closest('button[data-v]');
@@ -154,9 +152,9 @@ function chopSetLook(k) {
   $('chopWrite').addEventListener('click', chopWriteAll);
   chopFillPresets();
   chopWireLane();
-  let look = 'AD';
-  try { look = localStorage.getItem('mglLook') || 'AD'; } catch { /* private mode */ }
-  chopSetLook(look);
+  chopRestyle.seen = themeStamp;
+  chopReadLook();
+  chopDrawOut();
   chopSay('');
   chopReflect();
 })();
@@ -202,7 +200,7 @@ for (const [name, read] of Object.entries({
   slices: () => chop.slices.map((x) => ({ ...x })),
   region: () => ({ ...chop.region }),
   kinds: () => chop.slices.map((x) => x.m?.kind || ''),
-  look: () => document.querySelector('.chop-app').dataset.look,
+  look: () => document.documentElement.dataset.mglLook,
   view: () => ({ ...chopView }),
   soft: () => ({ ...chopSoft }),
   playing: () => chop.playing?.kind || '',

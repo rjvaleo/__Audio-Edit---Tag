@@ -240,12 +240,55 @@ const LAYERED_DARK = {
   },
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Grain's five Looks, which were Chop's own switch until 11 Nov 2026.
+//
+// Each states the look (`--look-*`, `015-tokens.css`) that Grain, Wave and Chop
+// are drawn in, and nothing of the app's own chrome. `look` is the key the Now
+// Playing bar and the Edit page read (`data-mgl-look`), and what picks the
+// Look's material on Chop: Glass's panes, Ceramic's round buttons and dotted
+// knobs, Acrylic's coloured edge. Graphite + Acrylic is the default look, so it
+// states nothing. "On" stays orange in every one.
+
+/// [id, name, look, the look tokens]
+const LOOK_THEMES = [
+  ['look-ad', 'Graphite + Acrylic', 'AD', {}],
+  ['look-a', 'Graphite', 'A', {
+    '--look-well': '#08090b', '--look-wave': '#e6f5ef', '--look-bloom': '190,255,225', '--look-glow': '1',
+  }],
+  ['look-b', 'Glass', 'B', {
+    '--look-chassis': '#0a0c10', '--look-panel': '#161a20', '--look-panel-hi': '#1d222a', '--look-well': '#05070a',
+    '--look-line': '#2a3039', '--look-text': '#eef2f7', '--look-text-2': '#b8c2cf', '--look-text-3': '#7f8a99',
+    '--look-wave': '#f2f7ff', '--look-bloom': '150,225,255', '--look-mod': '#a59ad0', '--look-arc': '#e3ecf5',
+    '--look-track': '#262c36', '--look-glow': '1.4',
+  }],
+  ['look-c', 'Ceramic', 'C', {
+    '--look-chassis': '#262420', '--look-panel': '#2f2c28', '--look-panel-hi': '#36332e', '--look-well': '#121110',
+    '--look-line': '#403c35', '--look-text': '#f0e9de', '--look-text-2': '#c9c0b2', '--look-text-3': '#968d80',
+    '--look-wave': '#fff3e0', '--look-bloom': '255,215,170', '--look-mod': '#9aa894', '--look-arc': '#efe6d8',
+    '--look-track': '#4a453e', '--look-glow': '.4', '--look-ui': "'Space Grotesk', Inter, sans-serif",
+  }],
+  ['look-d', 'Acrylic', 'D', {
+    '--look-chassis': '#0b0c10', '--look-panel': '#14151b', '--look-panel-hi': '#1a1c25', '--look-well': '#050609',
+    '--look-line': '#262938', '--look-text': '#eceef6', '--look-text-2': '#b5b9c8', '--look-text-3': '#7d8294',
+    '--look-wave': '#ffffff', '--look-bloom': '200,215,255', '--look-mod': '#9aa6d6', '--look-arc': '#e9ecf6',
+    '--look-track': '#252836', '--look-glow': '1.2',
+  }],
+].map(([id, name, look, tokens]) => {
+  // The swatch row: chassis, panel, its top, the trace and the text.
+  const v = (k, d) => tokens[k] || d;
+  const colors = [v('--look-chassis', '#121316'), v('--look-panel', '#1b1d21'), v('--look-panel-hi', '#262a30'),
+    v('--look-wave', '#ffffff'), v('--look-text', '#e8eaee')];
+  return { id, name, look, direct: true, dark: true, colors, tokens };
+});
+
 const THEME_PALETTES = [
   STUDIO_LIGHT,
   MID_GREY,
   LAYERED_DARK,
   CONIFER,
   FACETS,
+  ...LOOK_THEMES,
   { id: 'cocoa-topaz-noonday', name: 'Cocoa topaz noonday', colors: ['#742f14', '#5a84ac', '#c7ac9f', '#fc9c44', '#5c3c2c'] },
   { id: 'amber-walnut-morning', name: 'Amber walnut morning', colors: ['#ebefee', '#ccb499', '#c8906d', '#bb6c43', '#4a413c'] },
   { id: 'driftwood-pearl-morning', name: 'Driftwood pearl morning', colors: ['#bc7b6f', '#5a322a', '#e4a499', '#718a9e', '#cccdc7'] },

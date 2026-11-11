@@ -431,8 +431,17 @@ function gsFrame(now) {
 
 // ─────────────────────────────────────────────────────────── coming and going
 
+/// The canvases drawn once, drawn again, if a theme has been put on since. The
+/// rest of the page is CSS and follows the theme on its own.
+function gsRestyle() {
+  if (GS.themed === themeStamp) return;
+  GS.themed = themeStamp;
+  GS_KEYS.ov = GS_KEYS.tr = GS_KEYS.cl = '';
+}
+
 function gsEnter() {
-  if (!GS.built) gsBuild();
+  if (!GS.built) { gsBuild(); GS.themed = themeStamp; }
+  gsRestyle();
   GS.showing = true;
   gsFit();
   loadScales();
