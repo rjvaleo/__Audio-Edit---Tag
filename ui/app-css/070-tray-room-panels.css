@@ -97,7 +97,7 @@
 .rv-admin .rk-fog { display: block; flex: 1 0 100%; order: 9; }
 .rv-admin .rk-fog-graph {
   display: block; position: relative; height: 56px;
-  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+  border: 1px solid var(--line-2); border-radius: var(--r-s); background-color: var(--well);
   background-image: linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 25% 100%; background-position: -1px 0;
 }
@@ -132,10 +132,10 @@
 }
 #roomPaintBody.rp-modern .rp-seg > .re-btn,
 #roomPaintBody.rp-modern .rp-gens > .re-btn {
-  min-width: 0; height: 18px; padding: 0 2px;
+  min-width: 0; height: var(--h-s); padding: 0 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-#roomPaintBody.rp-modern .rp-seg-gap { min-height: 18px; }
+#roomPaintBody.rp-modern .rp-seg-gap { min-height: var(--h-s); }
 
 /* A knob, as in the Room tab: the face drawn, the range input laid over it. */
 #roomPaintBody.rp-modern .rp-knob { display: flex; justify-content: center; position: relative; }
@@ -168,7 +168,7 @@
 #roomPaintBody.rp-modern .rp-span-col { flex: 1 1 auto; min-width: 0; padding-top: 6px; }
 #roomPaintBody.rp-modern .rp-span {
   position: relative; height: 18px; cursor: pointer; touch-action: none;
-  border: 1px solid var(--line-2); border-radius: 2px;
+  border: 1px solid var(--line-2); border-radius: var(--r-s);
 }
 #roomPaintBody.rp-modern .rp-span-win {
   position: absolute; top: -3px; bottom: -3px; cursor: grab;
@@ -177,7 +177,7 @@
 }
 #roomPaintBody.rp-modern .rp-span-end {
   position: absolute; top: -2px; bottom: -2px; width: 4px;
-  background: var(--text); border-radius: 1px; cursor: ew-resize;
+  background: var(--text); border-radius: 0; cursor: ew-resize;
   box-shadow: 0 0 0 1px var(--bg);
 }
 #roomPaintBody.rp-modern .rp-span-lo { left: -2px; }
@@ -197,7 +197,7 @@
    control column; the knobs below stay as the exact way in. */
 #roomPaintBody.rp-modern .rp-stopbar {
   flex: 1 1 100%; position: relative; height: 14px; margin: 6px 0 4px;
-  border: 1px solid var(--line-2); border-radius: 2px;
+  border: 1px solid var(--line-2); border-radius: var(--r-s);
 }
 #roomPaintBody.rp-modern .rp-tick {
   position: absolute; top: -6px; bottom: -3px; width: 12px; margin-left: -6px;
@@ -208,17 +208,17 @@
   background: var(--text); box-shadow: 0 0 0 1px var(--bg);
 }
 #roomPaintBody.rp-modern .rp-tick > i {
-  position: absolute; left: 1px; top: 0; width: 10px; height: 7px; border-radius: 2px;
+  position: absolute; left: 1px; top: 0; width: 10px; height: 7px; border-radius: var(--r-s);
   border: 1px solid var(--text); box-shadow: 0 0 0 1px var(--bg);
 }
-#roomPaintBody.rp-modern .rp-tick:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+#roomPaintBody.rp-modern .rp-tick:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: var(--r-s); }
 
 /* The VIEW switch, in both views: two fixed places at the top of the tab. */
 #roomPaintBody .rp-view {
   flex: 1 1 100%; min-width: 0;
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
 }
-#roomPaintBody .rp-view > .re-btn { height: 18px; padding: 0 2px; }
+#roomPaintBody .rp-view > .re-btn { height: var(--h-s); padding: 0 2px; }
 #roomPaintBody .rp-view-row { margin-bottom: 4px; }
 
 /* The head keeps to the control column, Undo in a place of its own (K1, K7). */
@@ -314,7 +314,7 @@
 .rv-admin .rk-mist > .rk-k { order: 1; }
 .rv-admin .rk-mist-graph {
   display: block; position: relative; height: 44px;
-  border: 1px solid var(--line-2); border-radius: 3px; background-color: var(--well);
+  border: 1px solid var(--line-2); border-radius: var(--r-s); background-color: var(--well);
 }
 .rv-admin .rk-mist-graph > svg { display: block; width: 100%; height: 100%; }
 .rv-admin #roomEdit .rk-mist-graph > input.re-slider {
@@ -376,10 +376,10 @@
 .rv-admin #roomEdit .re-check input[type=checkbox] {
   appearance: none; display: inline-grid; place-content: center;
   width: 12px; height: 12px; margin: 0;
-  border: 1px solid var(--text-dimmer); border-radius: 2px; background: var(--well);
+  border: 1px solid var(--text-dimmer); border-radius: var(--r-s); background: var(--well);
 }
 .rv-admin #roomEdit .re-check input[type=checkbox]::before {
-  content: ''; width: 6px; height: 6px; border-radius: 1px; background: var(--accent);
+  content: ''; width: 6px; height: 6px; border-radius: 0; background: var(--accent);
   transform: scale(0); transition: transform .08s;
 }
 .rv-admin #roomEdit .re-check input[type=checkbox]:checked { border-color: var(--accent); }
@@ -395,8 +395,8 @@
   background-position: right 9px center, right 5px center;
 }
 .rv-admin #roomEdit select {
-  appearance: none; height: 22px; padding: 0 20px 0 7px;
-  border: 1px solid var(--line-2); border-radius: 3px;
+  appearance: none; height: var(--h-s); padding: 0 20px 0 7px;
+  border: 1px solid var(--line-2); border-radius: var(--r-s);
   background-color: var(--well); color: var(--text-2); font-size: var(--fs-s);
 }
 .rv-admin #roomEdit select:hover { border-color: var(--text-dimmer); }
@@ -405,12 +405,12 @@
 /* Swatches: the colour, and beside it the mark that says a picker opens. */
 .rv-admin #roomEdit input[type=color] {
   flex: 0 0 38px; width: 38px; height: 20px; padding: 2px 14px 2px 2px;
-  border: 1px solid var(--line-2); border-radius: 3px;
+  border: 1px solid var(--line-2); border-radius: var(--r-s);
   background-color: var(--well); color: var(--text-dim); cursor: pointer;
 }
 .rv-admin #roomEdit input[type=color]:hover { border-color: var(--text-dimmer); }
 .rv-admin #roomEdit input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
-.rv-admin #roomEdit input[type=color]::-webkit-color-swatch { border: 0; border-radius: 2px; }
+.rv-admin #roomEdit input[type=color]::-webkit-color-swatch { border: 0; border-radius: var(--r-s); }
 @media (prefers-reduced-motion: reduce) {
   .rv-admin #roomEdit .re-check input[type=checkbox]::before { transition: none; }
 }
@@ -419,9 +419,9 @@
    tab strip. Everything Modern draws is under one selector,
    `body.editing[data-grain-ui="modern"]`, so it reaches nothing outside the
    Grain view; Classic is the view as it was. */
-.gm-switch { display: inline-flex; margin-left: auto; flex: 0 0 auto; border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
+.gm-switch { display: inline-flex; margin-left: auto; flex: 0 0 auto; border: 1px solid var(--line-2); border-radius: var(--r-s); overflow: hidden; }
 .gm-switch button {
-  height: 21px; padding: 0 9px; border: 0; background: transparent;
+  height: var(--h-s); padding: 0 9px; border: 0; background: transparent;
   color: var(--text-dim); font: inherit; font-size: var(--fs-s); cursor: pointer;
 }
 .gm-switch button + button { border-left: 1px solid var(--line-2); }
@@ -464,17 +464,17 @@ body.editing[data-grain-ui="modern"] .perf-panel :is(.btn, .perf-header, .perf-h
 }
 body.editing[data-grain-ui="modern"] .perf-panel :is(.btn, .perf-header, .perf-header-info, .perf-sel-info, .perf-check, .knob-label, #perfStatus)::first-letter { text-transform: uppercase; }
 body.editing[data-grain-ui="modern"] .perf-panel .btn {
-  height: 24px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 3px;
+  height: 24px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: var(--r-s);
   background: var(--bg); color: var(--text-2); font-size: var(--fs-s);
 }
 body.editing[data-grain-ui="modern"] .perf-panel .btn:hover { border-color: var(--text-dimmer); }
 body.editing[data-grain-ui="modern"] .perf-panel .perf-rec-btn:not(.recording) { border-color: var(--line-2) !important; color: var(--text-2) !important; }
 body.editing[data-grain-ui="modern"] .perf-panel .perf-header { color: var(--text-dim); font-size: var(--fs-s); }
 body.editing[data-grain-ui="modern"] .perf-panel #perfStatus { color: var(--text-dim); font-size: var(--fs-s); }
-body.editing[data-grain-ui="modern"] .perf-panel :is(select, .preset-select) { border-radius: 3px; }
+body.editing[data-grain-ui="modern"] .perf-panel :is(select, .preset-select) { border-radius: var(--r-s); }
 body.editing[data-grain-ui="modern"] .perf-pos { font-family: var(--mono); letter-spacing: normal; }
 body.editing[data-grain-ui="modern"] .prism-square {
-  border: 1px solid var(--line-2); border-radius: 3px; box-shadow: none;
+  border: 1px solid var(--line-2); border-radius: var(--r-s); box-shadow: none;
   background:
     linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 10% 10%,
     linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 10% 10%,
@@ -485,7 +485,7 @@ body.editing[data-grain-ui="modern"] .prism-path polyline { stroke: color-mix(in
 body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range] {
   appearance: none; height: 16px; background: transparent; accent-color: var(--accent);
 }
-body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line-3); border-radius: 1px; }
+body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line-3); border-radius: 0; }
 body.editing[data-grain-ui="modern"] #dockHyper .prism-settings input[type=range]::-webkit-slider-thumb {
   appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%;
   background: var(--text); box-shadow: 0 0 0 2px var(--accent);
@@ -549,7 +549,7 @@ svg.pic-where .none { display: none; }
 
 /* A generator's strip: the palette it makes, before it is pressed. */
 .rp-gens .re-btn:has(> .pic-strip) { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
-.pic-strip { display: flex; height: 5px; border-radius: 2px; overflow: hidden; }
+.pic-strip { display: flex; height: 5px; border-radius: var(--r-s); overflow: hidden; }
 .pic-swatch { flex: 1 1 0; display: block; }
 #roomPaintBody.rp-modern .rp-gens > .re-btn:has(> .pic-strip) { height: auto; padding: 3px 3px 2px; }
 
@@ -583,10 +583,10 @@ svg.pic-proj { width: 28px; height: 17px; }
 .gg .a { fill: none; stroke: var(--gg); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .gg .af { fill: var(--gg); stroke: none; }
 .gg .f { fill: none; stroke: var(--text-dimmer); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: 0.7; }
-.gg .t { font: 8px var(--font-mono, monospace); fill: var(--text-dimmer); }
+.gg .t { font: var(--fs-xs) var(--mono); fill: var(--text-dimmer); }
 /* The FX pictures' own two classes (`075-fx-faces.js`), drawn as a glyph. */
 .gg .ff { fill: var(--text-dimmer); opacity: .55; stroke: none; }
-.gg .ta { font: 8px var(--font-mono, monospace); fill: var(--gg); }
+.gg .ta { font: var(--fs-xs) var(--mono); fill: var(--gg); }
 
 /* ═══════════════════════════════════════════════════════════ the Edit page ══
    `body.wavepage`: the same open sound as Grain, editing only. The granular
@@ -626,7 +626,7 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 .wt-btn {
   min-width: 40px; height: 42px; padding: 3px 3px 2px; position: relative;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  background: transparent; border: 1px solid transparent; border-radius: 5px;
+  background: transparent; border: 1px solid transparent; border-radius: var(--r-s);
   color: var(--text-2); cursor: pointer;
 }
 .wt-btn svg { width: 20px; height: 20px; display: block; flex: none; }
@@ -644,12 +644,12 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 
 /* Customizing: everything can be picked up; titles are written in place. */
 .wave-tools.wt-editing { background: var(--surface-2); }
-.wt-editing .wt-group[draggable="true"] { cursor: grab; border-radius: 6px; }
+.wt-editing .wt-group[draggable="true"] { cursor: grab; border-radius: var(--r-m); }
 .wt-editing .wt-btn { cursor: grab; border-color: var(--line); }
-.wt-editing .wt-title[contenteditable] { color: var(--text-2); cursor: text; outline: 1px dashed var(--line-2); border-radius: 3px; }
+.wt-editing .wt-title[contenteditable] { color: var(--text-2); cursor: text; outline: 1px dashed var(--line-2); border-radius: var(--r-s); }
 .wt-editing .wt-title[contenteditable]:focus { outline: 1px solid var(--accent); }
 .wt-editing .wt-over { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--accent); }
-.wt-row.wt-empty { min-width: 60px; border: 1px dashed var(--line-2); border-radius: 5px; }
+.wt-row.wt-empty { min-width: 60px; border: 1px dashed var(--line-2); border-radius: var(--r-s); }
 .wt-x, .wt-secx {
   position: absolute; top: -3px; right: -3px; width: 14px; height: 14px; padding: 0;
   display: grid; place-items: center; border-radius: 50%; border: 0;
@@ -740,7 +740,7 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 .av-box {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 901;
   width: min(784px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto;
-  background: var(--surface-2); border: 1px solid var(--line-3); border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--line-3); border-radius: var(--r-l);
   box-shadow: 0 24px 60px var(--shadow-hard);
 }
 .av-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
@@ -754,7 +754,7 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 .av-list { display: flex; flex-direction: column; gap: 3px; min-height: 28px; }
 .av-item {
   display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; align-items: center; gap: 6px;
-  height: 28px; padding: 0 6px; background: var(--surface-3); border-radius: 4px;
+  height: 28px; padding: 0 6px; background: var(--surface-3); border-radius: var(--r-s);
   font: var(--fs-m) var(--mono); color: var(--text); cursor: grab;
 }
 .av-item.av-dragging { opacity: .4; }
@@ -763,12 +763,12 @@ body.choppage #editTools:has(> #tabBar.hidden) { display: none; }
 .av-o { font-size: var(--fs-xs); color: var(--text-dimmer); }
 .av-x { background: none; border: 0; color: var(--text-dimmer); font-size: var(--fs-l); padding: 0 2px; cursor: pointer; line-height: 1; }
 .av-x:hover { color: var(--bad); }
-.av-line { height: 3px; border-radius: 2px; background: var(--accent); }
+.av-line { height: 3px; border-radius: var(--r-s); background: var(--accent); }
 .av-new { width: 100%; height: 28px; box-sizing: border-box; padding: 0 8px; font: var(--fs-m) var(--mono); }
 .av-sug-t { font-size: var(--fs-xs); color: var(--text-dimmer); margin-top: 4px; }
 .av-sug-t:empty { display: none; }
 .av-sug { display: flex; flex-wrap: wrap; gap: 3px; }
-.av-chip { font: var(--fs-s) var(--mono); color: var(--text-2); background: none; border: 1px solid var(--line-3); border-radius: 3px; padding: 2px 6px; cursor: pointer; }
+.av-chip { font: var(--fs-s) var(--mono); color: var(--text-2); background: none; border: 1px solid var(--line-3); border-radius: var(--r-s); padding: 2px 6px; cursor: pointer; }
 .av-chip:hover { color: var(--text); border-color: var(--text-dim); }
 .av-chip.av-m { border-color: var(--accent); }
 .av-notes { width: 100%; box-sizing: border-box; flex: 1; min-height: 120px; resize: none; }

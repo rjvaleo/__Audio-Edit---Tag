@@ -48,9 +48,9 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* materials */
-#grainView .gs-panel { background: linear-gradient(180deg, var(--gs-panel-hi), var(--gs-panel) 30%, var(--gs-panel)); border: 1px solid var(--gs-line); border-radius: 10px; box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), inset 0 -1px 0 rgba(var(--black-rgb), .45), 0 1px 1px rgba(var(--black-rgb), .6), 0 6px 14px rgba(var(--black-rgb), .45), 0 16px 34px rgba(var(--black-rgb), .35); }
-#grainView .gs-well { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--gs-well) 70%, var(--gs-panel)), var(--gs-well) 70%); border-radius: 7px; box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75), 0 1px 0 rgba(var(--white-rgb), .06); position: relative; }
-#grainView .gs-btn { background: linear-gradient(180deg, color-mix(in srgb, var(--gs-panel-hi) 80%, var(--white) 6%), var(--gs-panel)); border: 1px solid color-mix(in srgb, var(--gs-line) 80%, var(--white) 8%); border-radius: 6px; box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), 0 1px 2px rgba(var(--black-rgb), .6); color: var(--gs-t2); cursor: pointer; }
+#grainView .gs-panel { background: linear-gradient(180deg, var(--gs-panel-hi), var(--gs-panel) 30%, var(--gs-panel)); border: 1px solid var(--gs-line); border-radius: var(--r-l); box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), inset 0 -1px 0 rgba(var(--black-rgb), .45), 0 1px 1px rgba(var(--black-rgb), .6), 0 6px 14px rgba(var(--black-rgb), .45), 0 16px 34px rgba(var(--black-rgb), .35); }
+#grainView .gs-well { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--gs-well) 70%, var(--gs-panel)), var(--gs-well) 70%); border-radius: var(--r-m); box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75), 0 1px 0 rgba(var(--white-rgb), .06); position: relative; }
+#grainView .gs-btn { background: linear-gradient(180deg, color-mix(in srgb, var(--gs-panel-hi) 80%, var(--white) 6%), var(--gs-panel)); border: 1px solid color-mix(in srgb, var(--gs-line) 80%, var(--white) 8%); border-radius: var(--r-m); box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), 0 1px 2px rgba(var(--black-rgb), .6); color: var(--gs-t2); cursor: pointer; }
 #grainView .gs-btn.on { background: var(--gs-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .85); color: var(--gs-t); border-color: color-mix(in srgb, var(--gs-on) 60%, var(--gs-line)); }
 
 /* the page's own row */
@@ -60,8 +60,8 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-preset .pt { font-size: var(--fs-s); color: var(--gs-t3); white-space: nowrap; }
 #grainView .gs-ib { width: 24px; height: 24px; display: grid; place-items: center; color: var(--gs-t2); cursor: pointer; flex: none; }
 #grainView .gs-ib svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-#grainView .gs-seg { display: flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--gs-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); flex: none; }
-#grainView .gs-seg > span { height: 20px; padding: 0 9px; white-space: nowrap; display: flex; align-items: center; border-radius: 5px; color: var(--gs-t3); font-weight: 500; cursor: pointer; }
+#grainView .gs-seg { display: flex; padding: 2px; gap: 2px; border-radius: var(--r-m); background: var(--gs-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); flex: none; }
+#grainView .gs-seg > span { height: 20px; padding: 0 9px; white-space: nowrap; display: flex; align-items: center; border-radius: var(--r-s); color: var(--gs-t3); font-weight: 500; cursor: pointer; }
 #grainView .gs-seg > span.on { color: var(--gs-t); background: linear-gradient(180deg, var(--gs-panel-hi), var(--gs-panel)); box-shadow: 0 1px 2px rgba(var(--black-rgb), .6), inset 0 1px 0 rgba(var(--white-rgb), .07), inset 0 -2px 0 var(--gs-on); }
 #grainView .gs-chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; font: 500 var(--fs-s) var(--sans); color: var(--gs-t2); white-space: nowrap; flex: none; }
 #grainView .gs-chip.on { color: var(--gs-t); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gs-on) 70%, transparent); }
@@ -81,27 +81,27 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 
 /* the tab row */
 #grainView .gs-head { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; }
-#grainView .gs-tabs { position: relative; display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--gs-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); flex: none; }
-#grainView .gs-tab { height: 26px; padding: 0 10px; border-radius: 7px; display: flex; align-items: center; gap: 6px; color: var(--gs-t3); font-weight: 500; cursor: pointer; white-space: nowrap; }
+#grainView .gs-tabs { position: relative; display: flex; gap: 2px; padding: 3px; border-radius: var(--r-l); background: var(--gs-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); flex: none; }
+#grainView .gs-tab { height: var(--h-m); padding: 0 10px; border-radius: var(--r-m); display: flex; align-items: center; gap: 6px; color: var(--gs-t3); font-weight: 500; cursor: pointer; white-space: nowrap; }
 #grainView .gs-tab svg.gg { width: 26px; height: 19px; --gg: var(--gs-t3); }
 #grainView .gs-tab.on { color: var(--gs-t); background: linear-gradient(180deg, rgba(var(--on-rgb), .16), rgba(var(--on-rgb), .05)); box-shadow: inset 0 0 0 1px rgba(var(--on-rgb), .55), inset 0 -2px 0 var(--gs-on), 0 1px 3px rgba(var(--black-rgb), .6); }
 #grainView .gs-tab.on svg.gg { --gg: var(--gs-on); }
-#grainView #gsFxTrace { position: absolute; right: 0; bottom: 1px; height: 2px; border-radius: 1px; pointer-events: none; background: repeating-linear-gradient(90deg, var(--gs-on) 0 5px, transparent 5px 9px); opacity: .75; }
+#grainView #gsFxTrace { position: absolute; right: 0; bottom: 1px; height: 2px; border-radius: 0; pointer-events: none; background: repeating-linear-gradient(90deg, var(--gs-on) 0 5px, transparent 5px 9px); opacity: .75; }
 #grainView .gs-head.live #gsFxTrace { animation: gs-trace .6s linear infinite; }
 @keyframes gs-trace { to { background-position: 9px 0; } }
 #grainView .gs-cable { flex: none; height: 32px; margin: 0 -8px; }
 #grainView .gs-cable path { stroke: var(--gs-on); stroke-width: 2; fill: none; stroke-dasharray: 5 4; opacity: .8; }
 #grainView .gs-head.live .gs-cable path { animation: gs-flow .6s linear infinite; }
 @keyframes gs-flow { to { stroke-dashoffset: -9; } }
-#grainView .gs-rack { flex: none; display: flex; align-items: center; gap: 3px; height: 38px; padding: 0 4px 0 3px; border-radius: 10px; background: linear-gradient(180deg, rgba(var(--on-rgb), .13), rgba(var(--on-rgb), .04)); box-shadow: inset 0 0 0 1px rgba(var(--on-rgb), .5), 0 2px 8px rgba(var(--black-rgb), .5); }
+#grainView .gs-rack { flex: none; display: flex; align-items: center; gap: 3px; height: 38px; padding: 0 4px 0 3px; border-radius: var(--r-l); background: linear-gradient(180deg, rgba(var(--on-rgb), .13), rgba(var(--on-rgb), .04)); box-shadow: inset 0 0 0 1px rgba(var(--on-rgb), .5), 0 2px 8px rgba(var(--black-rgb), .5); }
 #grainView .gs-rack.on { background: linear-gradient(180deg, rgba(var(--on-rgb), .24), rgba(var(--on-rgb), .08)); box-shadow: inset 0 0 0 1px var(--gs-on), 0 0 14px rgba(var(--on-rgb), .25); }
 #grainView .gs-rack.denser { gap: 2px; }
 #grainView .gs-rack.denser .gs-ar { display: none; }
-#grainView .gs-lab2 { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 32px; height: 30px; border-radius: 7px; cursor: pointer; padding: 0; background: none; box-shadow: none; border: 0; flex: none; }
+#grainView .gs-lab2 { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 32px; height: 30px; border-radius: var(--r-m); cursor: pointer; padding: 0; background: none; box-shadow: none; border: 0; flex: none; }
 #grainView .gs-lab2 b { font: 700 var(--fs-s) var(--mono); letter-spacing: .12em; color: var(--gs-on); }
 #grainView .gs-lab2 svg { width: 16px; height: 8px; fill: none; stroke: var(--gs-on); stroke-width: 1.3; }
 #grainView .gs-lab2:hover { background: rgba(var(--on-rgb), .16); }
-#grainView .gs-tile { display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: var(--on-tile); box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .05), inset 0 0 0 1px rgba(var(--on-rgb), .18); cursor: pointer; white-space: nowrap; flex: none; }
+#grainView .gs-tile { display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px 0 6px; border: 0; border-radius: var(--r-m); background: var(--on-tile); box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .05), inset 0 0 0 1px rgba(var(--on-rgb), .18); cursor: pointer; white-space: nowrap; flex: none; }
 #grainView .gs-tile b { font: 500 var(--fs-m) var(--sans); color: var(--gs-t); }
 #grainView .gs-tile:hover { box-shadow: inset 0 0 0 1px var(--gs-on); }
 #grainView .gs-tile.sel { background: var(--on-tile-sel); box-shadow: inset 0 0 0 1px var(--gs-on); }
@@ -127,11 +127,11 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-mh { display: flex; align-items: center; gap: 8px; height: 22px; flex: none; }
 #grainView .gs-nm { font: 600 var(--fs-m) var(--mono); letter-spacing: .14em; color: var(--gs-t); white-space: nowrap; }
 #grainView .gs-hint { color: var(--gs-t3); font-size: var(--fs-s); white-space: nowrap; }
-#grainView .gs-pick { display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px 0 4px; color: var(--gs-t); font-weight: 500; flex: none; white-space: nowrap; overflow: hidden; }
+#grainView .gs-pick { display: flex; align-items: center; gap: 6px; height: var(--h-s); padding: 0 8px 0 4px; color: var(--gs-t); font-weight: 500; flex: none; white-space: nowrap; overflow: hidden; }
 #grainView .gs-pick canvas { flex: none; }
 #grainView .gs-pick::after { content: "▾"; margin-left: auto; color: var(--gs-t3); padding-left: 4px; }
 #grainView .gs-zb { display: flex; gap: 2px; align-items: center; }
-#grainView .gs-zb .gs-ib { width: 22px; height: 20px; font: 600 var(--fs-m) var(--mono); border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .08); }
+#grainView .gs-zb .gs-ib { width: 22px; height: 20px; font: 600 var(--fs-m) var(--mono); border-radius: var(--r-s); box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .08); }
 #grainView .gs-zb .gs-ib:hover { color: var(--gs-t); background: rgba(var(--white-rgb), .05); }
 #grainView .gs-zb .zt { width: auto; padding: 0 6px; font: 500 var(--fs-s) var(--sans); }
 #grainView .gs-zb .gs-ro { min-width: 62px; text-align: right; margin-right: 4px; color: var(--gs-t3); }
@@ -148,34 +148,34 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gg .a { fill: none; stroke: var(--gg); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 #grainView .gg .af { fill: var(--gg); stroke: none; }
 #grainView .gg .f { fill: none; stroke: var(--gs-t3); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .7; }
-#grainView .gg .t { font: 9px var(--mono); fill: var(--gs-t3); }
+#grainView .gg .t { font: var(--fs-xs) var(--mono); fill: var(--gs-t3); }
 #grainView .gg .ff { fill: var(--gs-t3); opacity: .55; }
-#grainView .gg .ta { font: 9px var(--mono); fill: var(--gg); }
+#grainView .gg .ta { font: var(--fs-xs) var(--mono); fill: var(--gg); }
 #grainView .gs-bc { display: flex; align-items: center; gap: 4px; height: 26px; flex: none; min-width: 0; }
 #grainView .gs-bc > svg.gg { width: 30px; height: 22px; flex: none; }
-#grainView .gs-bw { flex: 1; min-width: 0; height: 22px; cursor: ew-resize; overflow: hidden; border-radius: 6px; }
-#grainView .gs-bf { position: absolute; top: 2px; bottom: 2px; border-radius: 4px 0 0 4px; background: linear-gradient(90deg, rgba(var(--white-rgb), .025), rgba(var(--white-rgb), .115)); }
-#grainView .gs-bf::after { content: ""; position: absolute; right: -1px; top: 0; bottom: 0; width: 2px; border-radius: 1px; background: var(--gg); box-shadow: 0 0 5px color-mix(in srgb, var(--gg) 60%, transparent); }
-#grainView .gs-bf.neg { border-radius: 0 4px 4px 0; background: linear-gradient(270deg, rgba(var(--white-rgb), .025), rgba(var(--white-rgb), .115)); }
+#grainView .gs-bw { flex: 1; min-width: 0; height: 22px; cursor: ew-resize; overflow: hidden; border-radius: var(--r-m); }
+#grainView .gs-bf { position: absolute; top: 2px; bottom: 2px; border-radius: var(--r-s) 0 0 var(--r-s); background: linear-gradient(90deg, rgba(var(--white-rgb), .025), rgba(var(--white-rgb), .115)); }
+#grainView .gs-bf::after { content: ""; position: absolute; right: -1px; top: 0; bottom: 0; width: 2px; border-radius: 0; background: var(--gg); box-shadow: 0 0 5px color-mix(in srgb, var(--gg) 60%, transparent); }
+#grainView .gs-bf.neg { border-radius: 0 var(--r-s) var(--r-s) 0; background: linear-gradient(270deg, rgba(var(--white-rgb), .025), rgba(var(--white-rgb), .115)); }
 #grainView .gs-bf.neg::after { right: auto; left: -1px; }
-#grainView .gs-bn { position: absolute; left: 5px; top: 3px; line-height: 16px; padding: 0 4px; border-radius: 3px; background: color-mix(in srgb, var(--gs-well) 72%, transparent); font: 500 var(--fs-s) var(--sans); color: var(--gs-t2); pointer-events: none; white-space: nowrap; }
-#grainView .gs-bv { position: absolute; right: 5px; top: 3px; line-height: 16px; padding: 0 4px; border-radius: 3px; background: color-mix(in srgb, var(--gs-well) 72%, transparent); font: 400 var(--fs-s) var(--mono); color: var(--gs-t); pointer-events: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#grainView .gs-bn { position: absolute; left: 5px; top: 3px; line-height: 16px; padding: 0 4px; border-radius: var(--r-s); background: color-mix(in srgb, var(--gs-well) 72%, transparent); font: 500 var(--fs-s) var(--sans); color: var(--gs-t2); pointer-events: none; white-space: nowrap; }
+#grainView .gs-bv { position: absolute; right: 5px; top: 3px; line-height: 16px; padding: 0 4px; border-radius: var(--r-s); background: color-mix(in srgb, var(--gs-well) 72%, transparent); font: 400 var(--fs-s) var(--mono); color: var(--gs-t); pointer-events: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 #grainView .gs-bc.dim { opacity: .3; }
 #grainView .gs-bc.dim .gs-bw, #grainView .gs-bc.dim .gs-tg { cursor: default; }
-#grainView .gs-tg { flex: 1; min-width: 0; height: 22px; display: flex; align-items: center; gap: 5px; padding: 0 6px; font: 500 var(--fs-s) var(--sans); color: var(--gs-t3); white-space: nowrap; }
+#grainView .gs-tg { flex: 1; min-width: 0; height: var(--h-s); display: flex; align-items: center; gap: 5px; padding: 0 6px; font: 500 var(--fs-s) var(--sans); color: var(--gs-t3); white-space: nowrap; }
 #grainView .gs-tg i { width: 7px; height: 7px; border-radius: 50%; background: var(--gs-track); flex: none; }
 #grainView .gs-tg.on { color: var(--gs-t); background: var(--gs-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .85); border-color: color-mix(in srgb, var(--gs-on) 60%, var(--gs-line)); }
 #grainView .gs-tg.on i { background: var(--gg); box-shadow: 0 0 6px var(--gg); }
 #grainView .gs-bc.sg .gs-seg { flex: 1; padding: 2px; }
-#grainView .gs-bc.sg .gs-seg > span { flex: 1; justify-content: center; height: 18px; padding: 0 4px; font-size: var(--fs-s); }
+#grainView .gs-bc.sg .gs-seg > span { flex: 1; justify-content: center; height: var(--h-s); padding: 0 4px; font-size: var(--fs-s); }
 #grainView .gs-bc.sg .sl { font: 500 var(--fs-s) var(--sans); color: var(--gs-t3); width: 40px; flex: none; }
 #grainView .gs-tunebtn { flex: 1; min-width: 0; justify-content: space-between; }
 
 /* the engine panel */
 #grainView #gsEngPanel { width: 640px; height: 682px; flex: none; }
-#grainView .gs-modblk { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 8px; border-radius: 10px; background: rgba(var(--white-rgb), .02); box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .06); flex: none; }
+#grainView .gs-modblk { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 8px; border-radius: var(--r-l); background: rgba(var(--white-rgb), .02); box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .06); flex: none; }
 #grainView #gsPMod .gs-mh { height: 18px; }
-#grainView .gs-ampr, #grainView .gs-lfr { display: flex; align-items: center; height: 36px; gap: 7px; padding: 0 6px 0 5px; border-radius: 9px; background: rgba(var(--white-rgb), .025); box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .06), inset 3px 0 0 -1px var(--c); }
+#grainView .gs-ampr, #grainView .gs-lfr { display: flex; align-items: center; height: 36px; gap: 7px; padding: 0 6px 0 5px; border-radius: var(--r-l); background: rgba(var(--white-rgb), .025); box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .06), inset 3px 0 0 -1px var(--c); }
 #grainView .gs-ampr { --c: var(--gs-on); gap: 8px; }
 #grainView .gs-lnm { font: 600 var(--fs-s) var(--mono); letter-spacing: .1em; color: var(--c); white-space: nowrap; width: 44px; flex: none; }
 #grainView .gs-ampr .gs-ro { white-space: normal; line-height: 13px; color: var(--gs-t); width: 130px; }
@@ -191,10 +191,10 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-sk b { font: 500 var(--fs-xs) var(--mono); color: var(--gs-t); white-space: nowrap; line-height: 10px; }
 #grainView .gs-sk span { font: 500 var(--fs-xs) var(--sans); color: var(--gs-t3); line-height: 9px; }
 #grainView .gs-lmap { display: flex; flex-direction: row; align-items: center; gap: 6px; flex: 1; min-width: 0; }
-#grainView .gs-mapb { width: 38px; flex: none; height: 18px; border-radius: 5px; font: 600 var(--fs-xs) var(--mono); letter-spacing: .1em; display: grid; place-items: center; color: var(--gs-t2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
+#grainView .gs-mapb { width: 38px; flex: none; height: 18px; border-radius: var(--r-s); font: 600 var(--fs-xs) var(--mono); letter-spacing: .1em; display: grid; place-items: center; color: var(--gs-t2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
 #grainView .gs-ltg { display: flex; flex-wrap: wrap; gap: 3px; flex: 1; min-width: 0; max-height: 36px; align-content: center; }
 #grainView .gs-ltg .gs-hint { white-space: normal; line-height: 12px; }
-#grainView .gs-tgc { display: inline-flex; align-items: center; gap: 4px; height: 17px; padding: 0 3px 0 6px; border-radius: 5px; font: 500 var(--fs-xs) var(--sans); color: var(--gs-t); background: color-mix(in srgb, var(--c) 16%, transparent); white-space: nowrap; }
+#grainView .gs-tgc { display: inline-flex; align-items: center; gap: 4px; height: 17px; padding: 0 3px 0 6px; border-radius: var(--r-s); font: 500 var(--fs-xs) var(--sans); color: var(--gs-t); background: color-mix(in srgb, var(--c) 16%, transparent); white-space: nowrap; }
 #grainView .gs-tgc i { font-style: normal; color: var(--gs-t3); cursor: pointer; padding: 0 3px; }
 #grainView .gs-tgc i:hover { color: var(--gs-t); }
 #grainView .gs-tgc.more { color: var(--gs-t3); padding-right: 6px; }
@@ -203,7 +203,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-mapb.on { background: var(--c); color: var(--look-chip-ink); box-shadow: 0 0 10px var(--c); width: auto; padding: 0 6px; }
 /* what an LFO is on: the ring, its reach and the dot where the sound is now */
 #grainView .gs-bm, #grainView .gs-bd { position: absolute; display: none; pointer-events: none; background: var(--mc); }
-#grainView .gs-bm { bottom: 1px; height: 2px; border-radius: 1px; opacity: .9; }
+#grainView .gs-bm { bottom: 1px; height: 2px; border-radius: 0; opacity: .9; }
 #grainView .gs-bd { bottom: 1px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; box-shadow: 0 0 6px var(--mc); }
 #grainView .gs-bc.mapped .gs-bm, #grainView .gs-bc.mapped .gs-bd { display: block; }
 #grainView .gs-bc.mapped .gs-bw { box-shadow: inset 0 0 0 1.5px var(--mc), inset 0 1px 3px rgba(var(--black-rgb), .8); }
@@ -222,37 +222,37 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #grainView .gs-esects[data-e="hybrid"] .gs-bc { height: 22px; }
 #grainView .gs-esects[data-e="hybrid"] .gs-bw { height: 19px; }
 #grainView .gs-esects[data-e="hybrid"] .gs-bc > svg.gg { height: 18px; }
-#grainView .gs-esects[data-e="hybrid"] .gs-bc.sg .gs-seg > span { height: 16px; }
-#grainView .gs-esects[data-e="hybrid"] .gs-tg { height: 19px; }
+#grainView .gs-esects[data-e="hybrid"] .gs-bc.sg .gs-seg > span { height: var(--h-s); }
+#grainView .gs-esects[data-e="hybrid"] .gs-tg { height: var(--h-s); }
 #grainView .gs-hrow { display: flex; gap: 7px; flex: none; }
 
 /* the dock */
 #grainView .gs-dock { flex: none; height: 120px; border-top: 1px solid var(--gs-line); display: flex; gap: 10px; align-items: stretch; padding: 8px 14px 10px; background: rgba(var(--black-rgb), .22); }
 #grainView .gs-wheels { display: flex; gap: 6px; }
-#grainView .gs-wheel { border-radius: 6px; }
+#grainView .gs-wheel { border-radius: var(--r-m); }
 #grainView .gs-kb5 { width: 300px; display: flex; flex-direction: column; justify-content: center; gap: 4px; flex: none; }
 #grainView .gs-kbr { display: flex; align-items: center; gap: 8px; height: 22px; }
-#grainView .gs-kbr .gs-seg > span { height: 16px; padding: 0 8px; }
+#grainView .gs-kbr .gs-seg > span { height: var(--h-s); padding: 0 8px; }
 #grainView .gs-kbr .gs-hint { white-space: nowrap; }
-#grainView .gs-kbtune { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 6px; white-space: nowrap; cursor: pointer; color: var(--gs-acc); font: 500 var(--fs-s) var(--sans); }
+#grainView .gs-kbtune { display: inline-flex; align-items: center; gap: 6px; height: var(--h-s); padding: 0 8px; border-radius: var(--r-m); white-space: nowrap; cursor: pointer; color: var(--gs-acc); font: 500 var(--fs-s) var(--sans); }
 #grainView .gs-kbtune i { font: 600 var(--fs-xs) var(--mono); font-style: normal; letter-spacing: .1em; color: var(--gs-t3); text-transform: uppercase; }
-#grainView .gs-runb { display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 6px; margin-left: auto; }
+#grainView .gs-runb { display: flex; align-items: center; gap: 5px; height: var(--h-s); padding: 0 9px 0 6px; margin-left: auto; }
 #grainView .gs-runb svg { width: 12px; height: 12px; fill: none; stroke: var(--gs-t3); stroke-width: 1.8; stroke-linecap: round; }
 #grainView .gs-lab { display: flex; justify-content: space-between; gap: 4px; font: 500 var(--fs-s) var(--sans); color: var(--gs-t3); white-space: nowrap; }
 #grainView .gs-lab b { font: 400 var(--fs-s) var(--mono); color: var(--gs-t2); font-weight: 400; }
 #grainView .gs-keys { position: relative; flex: none; }
 
 /* menus */
-#grainView .gs-menu { position: absolute; z-index: 50; padding: 8px; border-radius: 12px; background: color-mix(in srgb, var(--gs-panel) 82%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--gs-line); box-shadow: 0 18px 40px rgba(var(--black-rgb), .6), inset 0 1px 0 rgba(var(--white-rgb), .08); }
+#grainView .gs-menu { position: absolute; z-index: 50; padding: 8px; border-radius: var(--r-l); background: color-mix(in srgb, var(--gs-panel) 82%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--gs-line); box-shadow: 0 18px 40px rgba(var(--black-rgb), .6), inset 0 1px 0 rgba(var(--white-rgb), .08); }
 #grainView .gs-tmenu { display: flex; flex-direction: column; gap: 8px; width: 780px; max-height: 640px; padding: 10px; }
 #grainView .gs-tmh { display: flex; align-items: center; gap: 10px; flex: none; }
-#grainView .gs-tfilter { flex: 1; height: 26px; border-radius: 7px; border: 1px solid var(--gs-line); background: var(--gs-well); color: var(--gs-t); font: 500 var(--fs-m) var(--sans); padding: 0 10px; outline: none; box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); user-select: text; }
+#grainView .gs-tfilter { flex: 1; height: 26px; border-radius: var(--r-m); border: 1px solid var(--gs-line); background: var(--gs-well); color: var(--gs-t); font: 500 var(--fs-m) var(--sans); padding: 0 10px; outline: none; box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); user-select: text; }
 #grainView .gs-tfilter:focus { border-color: color-mix(in srgb, var(--gs-on) 55%, var(--gs-line)); }
 #grainView .gs-tbody { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding-right: 4px; scrollbar-width: thin; }
 #grainView .gs-tgh { font: 600 var(--fs-xs) var(--mono); letter-spacing: .14em; color: var(--gs-t3); padding: 2px 2px 4px; }
 #grainView .gs-tgh i { font-style: normal; color: var(--gs-t2); }
 #grainView .gs-tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
-#grainView .gs-tt { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 8px; cursor: pointer; min-width: 0; }
+#grainView .gs-tt { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: var(--r-l); cursor: pointer; min-width: 0; }
 #grainView .gs-tt:hover { background: rgba(var(--white-rgb), .05); }
 #grainView .gs-tt.on { box-shadow: inset 0 0 0 1px var(--gs-on); }
 #grainView .gs-tt svg { flex: none; }
@@ -262,7 +262,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #grainView .gs-shelf { width: 680px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 #grainView .gs-shelfgrid { display: grid; grid-template-columns: repeat(4, 156px); gap: 8px; max-height: 420px; overflow-y: auto; scrollbar-width: thin; }
 #grainView .gs-shelffoot { display: flex; align-items: center; gap: 6px; }
-#grainView .gs-pc { display: flex; flex-direction: column; gap: 3px; padding: 5px; border-radius: 9px; cursor: pointer; }
+#grainView .gs-pc { display: flex; flex-direction: column; gap: 3px; padding: 5px; border-radius: var(--r-l); cursor: pointer; }
 #grainView .gs-pc:hover { background: rgba(var(--white-rgb), .04); }
 #grainView .gs-pc.on { box-shadow: inset 0 0 0 1px var(--gs-on); }
 #grainView .gs-pcg { height: 56px; display: grid; place-items: center; --gg: var(--gs-wave); }
@@ -276,7 +276,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #grainView .gs-fxview { flex-direction: column; gap: 8px; }
 #grainView .gs-chainmap { flex: none; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 12px; }
 #grainView .gs-chainmap .gs-chip { height: 24px; }
-#grainView .gs-chainmap .gs-mapb { height: 22px; }
+#grainView .gs-chainmap .gs-mapb { height: var(--h-s); }
 #grainView .gs-fxrow { flex: none; height: 412px; width: 1360px; }
 #grainView .gs-fxbot { flex: none; height: 220px; display: flex; gap: 10px; }
 #grainView .gs-fxcol { width: 1000px; display: flex; flex-direction: column; gap: 8px; flex: none; }
@@ -293,7 +293,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #gsFxRow .fx-end-meter { display: none; }
 #gsFxRow .fx-add { display: none; }
 #gsFxRow .fx-module-rail { flex-flow: row nowrap; align-items: stretch; gap: 10px; height: 400px; min-width: 0; flex: none; }
-#gsFxRow .fx-module-rail > .fx-module { flex: none; height: 400px; max-height: none; min-width: 0; overflow: hidden; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 7px; color: var(--gs-t); --accent: var(--gs-wave) !important; --pc: var(--gs-wave); background: linear-gradient(180deg, var(--gs-panel-hi), var(--gs-panel) 30%, var(--gs-panel)); border: 1px solid var(--gs-line); border-top: 1px solid var(--gs-line); border-radius: 10px; box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), inset 0 -1px 0 rgba(var(--black-rgb), .45), 0 1px 3px rgba(var(--black-rgb), .5); }
+#gsFxRow .fx-module-rail > .fx-module { flex: none; height: 400px; max-height: none; min-width: 0; overflow: hidden; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 7px; color: var(--gs-t); --accent: var(--gs-wave) !important; --pc: var(--gs-wave); background: linear-gradient(180deg, var(--gs-panel-hi), var(--gs-panel) 30%, var(--gs-panel)); border: 1px solid var(--gs-line); border-top: 1px solid var(--gs-line); border-radius: var(--r-l); box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), inset 0 -1px 0 rgba(var(--black-rgb), .45), 0 1px 3px rgba(var(--black-rgb), .5); }
 #gsFxRow .fx-module-rail > .fx-module.gs-front { border-color: color-mix(in srgb, var(--gs-on) 75%, var(--gs-line)); }
 #gsFxRow .fx-module-head { flex: none; height: 22px; min-height: 22px; margin: 0; gap: 8px; justify-content: flex-start; }
 #gsFxRow .fx-module-head h2 { flex: none; margin: 0; font: 600 var(--fs-m) var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--gs-t); white-space: nowrap; overflow: visible; }
@@ -305,13 +305,13 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #gsFxRow .fx-side .fx-disp, #gsFxRow .fx-side .fx-row, #gsFxRow .fx-side .fx-face-display { height: auto; }
 #gsFxRow .fx-module-actions { display: contents; }
 #gsFxRow .fx-module-head h2 { order: 0; }
-#gsFxRow .fx-power { order: -1; flex: none; width: 22px; height: 22px; padding: 0; color: transparent; font-size: 0; border-radius: 6px; display: grid; place-items: center; background: linear-gradient(180deg, color-mix(in srgb, var(--gs-panel-hi) 80%, var(--white) 6%), var(--gs-panel)); border: 1px solid color-mix(in srgb, var(--gs-line) 80%, var(--white) 8%); }
+#gsFxRow .fx-power { order: -1; flex: none; width: 20px; height: var(--h-s); padding: 0; color: transparent; font-size: 0; border-radius: var(--r-m); display: grid; place-items: center; background: linear-gradient(180deg, color-mix(in srgb, var(--gs-panel-hi) 80%, var(--white) 6%), var(--gs-panel)); border: 1px solid color-mix(in srgb, var(--gs-line) 80%, var(--white) 8%); }
 #gsFxRow .fx-power::before { content: ""; width: 12px; height: 12px; background: var(--gs-t3); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M7 1.5 V6.5 M3.9 3.7 A4.6 4.6 0 1 0 10.1 3.7'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M7 1.5 V6.5 M3.9 3.7 A4.6 4.6 0 1 0 10.1 3.7'/%3E%3C/svg%3E") center / contain no-repeat; }
 #gsFxRow .fx-power.on { border-color: color-mix(in srgb, var(--gs-on) 55%, var(--gs-line)); }
 #gsFxRow .fx-power.on::before { background: var(--gs-on); filter: drop-shadow(0 0 3px var(--gs-on)); }
-#gsFxRow .fx-remove { order: 2; flex: none; width: 22px; height: 22px; padding: 0; border: 0; background: none; color: var(--gs-t2); font-size: 16px; line-height: 1; cursor: pointer; }
+#gsFxRow .fx-remove { order: 2; flex: none; width: 20px; height: var(--h-s); padding: 0; border: 0; background: none; color: var(--gs-t2); font-size: var(--fs-xl); line-height: 1; cursor: pointer; }
 #gsFxRow .fx-remove:hover { color: var(--gs-t); }
-#gsFxRow .fx-adv-btn { order: 1; flex: none; height: 20px; background: var(--gs-well); border: 1px solid var(--gs-line); color: var(--gs-t3); font-size: var(--fs-xs); border-radius: 5px; }
+#gsFxRow .fx-adv-btn { order: 1; flex: none; height: 20px; background: var(--gs-well); border: 1px solid var(--gs-line); color: var(--gs-t3); font-size: var(--fs-xs); border-radius: var(--r-s); }
 #gsFxRow .fx-adv-btn.on { color: var(--gs-t); border-color: var(--gs-on); }
 #gsFxRow .fx-module-head::after { content: ""; order: 3; flex: none; width: 12px; height: 9px; border-top: 1.6px solid var(--gs-t2); border-bottom: 1.6px solid var(--gs-t2); background: linear-gradient(var(--gs-t2), var(--gs-t2)) center / 100% 1.6px no-repeat; }
 
@@ -320,7 +320,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #gsFxRow .fx-module-controls.gs-flat { display: flex !important; flex-direction: column; align-content: stretch; }
 #gsFxRow .fx-module-controls.gs-flat.sh-face { display: grid !important; grid-auto-flow: row dense; flex-direction: unset; align-content: start; gap: 0 2px; }
 #gsFxRow .fx-face-display { flex: none; }
-#gsFxRow .fx-disp { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--gs-well) 70%, var(--gs-panel)), var(--gs-well) 70%); border: 0; border-radius: 7px; }
+#gsFxRow .fx-disp { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--gs-well) 70%, var(--gs-panel)), var(--gs-well) 70%); border: 0; border-radius: var(--r-m); }
 #gsFxRow .fx-face-body.fx-side { display: flex !important; }
 #gsFxRow .fx-face.off .fx-face-body, #gsFxRow .fx-suite.off .fx-module-controls { opacity: .45; filter: none; }
 #gsFxRow .gs-flat .fx-deck, #gsFxRow .gs-flat .hp-controls, #gsFxRow .gs-flat .lex-pages, #gsFxRow .gs-flat.sh-face { display: grid; grid-template-columns: repeat(var(--gs-cols, 3), 70px); grid-auto-rows: auto; grid-auto-flow: row dense; gap: 0 2px; justify-content: start; align-content: start; padding: 0; background: none; border: 0; }
@@ -348,7 +348,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #gsFxRow :is(.fxk, .sh-cell, .lex-knob):hover > .fki svg { stroke: var(--gs-on); }
 
 /* switches, choices and the Bubbler's twelve keys */
-#gsFxRow .gs-flat .fxt-b { width: 32px; height: 30px; flex: none; display: grid; place-items: center; background: var(--gs-well); border: 1px solid var(--gs-line); border-radius: 6px; color: var(--gs-t3); font: 500 var(--fs-xs) var(--sans); order: 1; }
+#gsFxRow .gs-flat .fxt-b { width: 32px; height: 30px; flex: none; display: grid; place-items: center; background: var(--gs-well); border: 1px solid var(--gs-line); border-radius: var(--r-m); color: var(--gs-t3); font: 500 var(--fs-xs) var(--sans); order: 1; }
 #gsFxRow .gs-flat .fxt-b.on { color: var(--gs-t); border-color: var(--gs-on); box-shadow: 0 0 6px color-mix(in srgb, var(--gs-on) 35%, transparent); }
 #gsFxRow .gs-flat .fxt-b svg { display: none; }
 #gsFxRow .gs-flat .fxt-b i { font-style: normal; }
@@ -358,13 +358,13 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #gsFxRow .gs-flat .seg-param > .seg-btns, #gsFxRow .gs-flat .seg-param > .seg, #gsFxRow .gs-flat .seg-param > div { flex: 1; min-width: 0; display: flex; gap: 3px; flex-wrap: wrap; }
 #gsFxRow .gs-flat .seg-param .seg-btn { white-space: nowrap; overflow: visible; flex: 1 1 auto; width: auto; min-width: 0; padding: 0 4px; }
 #gsFxRow .gs-flat .seg-param .k { font: 500 var(--fs-xs) var(--sans); color: var(--gs-t3); white-space: nowrap; }
-#gsFxRow .gs-flat .seg-param .seg-btn { background: var(--gs-well); color: var(--gs-t3); font: 500 var(--fs-xs) var(--sans); border: 1px solid var(--gs-line); border-radius: 5px; }
+#gsFxRow .gs-flat .seg-param .seg-btn { background: var(--gs-well); color: var(--gs-t3); font: 500 var(--fs-xs) var(--sans); border: 1px solid var(--gs-line); border-radius: var(--r-s); }
 #gsFxRow .gs-flat .seg-param .seg-btn.active { color: var(--gs-t); border-color: var(--gs-on); }
 #gsFxRow .gs-flat .sh-sec.sh-keys { grid-column: 1 / -1; display: block; padding: 2px 0 6px; background: none; border: 0; }
 #gsFxRow .gs-flat .sh-sec.sh-keys > .prism-group-label { display: block; font: 600 var(--fs-xs) var(--mono); letter-spacing: .14em; color: var(--gs-t3); text-transform: uppercase; margin: 0 0 3px; padding: 0; background: none; }
-#gsFxRow .gs-flat .sh-keys .sh-cells { border: 0; border-radius: 5px; margin: 0; gap: 2px; background: none; overflow: visible; }
+#gsFxRow .gs-flat .sh-keys .sh-cells { border: 0; border-radius: var(--r-s); margin: 0; gap: 2px; background: none; overflow: visible; }
 #gsFxRow .gs-flat .sh-keycap .k { display: none; }
-#gsFxRow .gs-flat .sh-keycap .sh-key { height: 26px; width: 100%; border: 1px solid var(--gs-line); background: var(--gs-well); border-radius: 5px; }
+#gsFxRow .gs-flat .sh-keycap .sh-key { height: 26px; width: 100%; border: 1px solid var(--gs-line); background: var(--gs-well); border-radius: var(--r-s); }
 #gsFxRow .gs-flat .sh-keycap .sh-key::after { color: var(--gs-t3); font: 500 var(--fs-xs) var(--sans); }
 #gsFxRow .gs-flat .sh-keycap .sh-key.on { background: color-mix(in srgb, var(--gs-on) 22%, var(--gs-well)); border-color: var(--gs-on); }
 #gsFxRow .gs-flat .sh-keycap .sh-key.on::after { color: var(--gs-t); }
@@ -377,28 +377,28 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #gsFxRow .gs-flat.gs-own { overflow: visible; }
 #gsFxRow .gs-flat.gs-own :is(.fxk, .fxt) { width: auto; flex: 1 1 0; }
 #gsFxRow .gs-flat .hp-lim { background: none; border: 0; color: var(--gs-t3); font: 400 var(--fs-xs) var(--mono); }
-#gsFxRow .gs-flat .lex-disp { background: var(--gs-well); border: 0; border-radius: 7px; flex: none; }
+#gsFxRow .gs-flat .lex-disp { background: var(--gs-well); border: 0; border-radius: var(--r-m); flex: none; }
 #gsFxRow .gs-flat .lex-pages .lex-page[hidden] { display: contents !important; }
 #gsFxRow .gs-flat .lex-pages .lex-page:first-child { display: none !important; }
 #gsFxRow .gs-flat .hp-top { flex: none; padding: 0; gap: 8px; grid-template-columns: 200px minmax(0, 1fr); max-height: 92px; }
 #gsFxRow .gs-flat .hp-top .prism-pad { height: 92px; min-height: 0; }
 #gsFxRow .gs-flat .fx-module-controls.hp-face { gap: 5px; }
-#gsFxRow .gs-flat .hp-axes > div { background: var(--gs-well); border: 0; border-radius: 5px; color: var(--gs-t2); }
+#gsFxRow .gs-flat .hp-axes > div { background: var(--gs-well); border: 0; border-radius: var(--r-s); color: var(--gs-t2); }
 #gsFxRow .gs-flat .hp-axes b { color: var(--gs-t3); font-weight: 500; }
-#gsFxRow .gs-flat .prism-pad { background: var(--gs-well); border: 0; border-radius: 7px; }
+#gsFxRow .gs-flat .prism-pad { background: var(--gs-well); border: 0; border-radius: var(--r-m); }
 
 /* the add menu */
-#gsFxRow #fxPicker { position: fixed; left: 50%; top: 330px; width: 1120px; max-height: 640px; transform: translate(-50%, 0); top: 96px; z-index: 60; background: var(--gs-panel); border: 1px solid var(--gs-line); border-radius: 12px; }
+#gsFxRow #fxPicker { position: fixed; left: 50%; top: 330px; width: 1120px; max-height: 640px; transform: translate(-50%, 0); top: 96px; z-index: 60; background: var(--gs-panel); border: 1px solid var(--gs-line); border-radius: var(--r-l); }
 #gsFxRow .gs-addcard { flex: none; width: 186px; height: 400px; display: flex; flex-direction: column; gap: 6px; }
-#gsFxRow .gs-addplus { height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; font: 600 var(--fs-s) var(--mono); letter-spacing: .14em; color: var(--gs-t2); border: 1px dashed var(--gs-line); border-radius: 8px; cursor: pointer; flex: none; }
+#gsFxRow .gs-addplus { height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; font: 600 var(--fs-s) var(--mono); letter-spacing: .14em; color: var(--gs-t2); border: 1px dashed var(--gs-line); border-radius: var(--r-l); cursor: pointer; flex: none; }
 #gsFxRow .gs-addplus:hover { border-color: var(--gs-on); color: var(--gs-t); }
-#gsFxRow .gs-addg { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 4px; border-radius: 6px; color: var(--gs-t2); font: 500 var(--fs-s) var(--sans); cursor: pointer; }
+#gsFxRow .gs-addg { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 4px; border-radius: var(--r-m); color: var(--gs-t2); font: 500 var(--fs-s) var(--sans); cursor: pointer; }
 #gsFxRow .gs-addg:hover { background: rgba(var(--white-rgb), .05); color: var(--gs-t); }
 #gsFxRow .gs-addg svg { width: 18px; height: 14px; fill: none; stroke: var(--gs-t3); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 #gsFxRow .gs-addg b { margin-left: auto; font: 400 var(--fs-xs) var(--mono); color: var(--gs-t3); }
 #gsFxRow .gs-flat .sh-choice > .k { order: 0; font: 500 var(--fs-xs) var(--sans); color: var(--gs-t3); text-transform: none; }
 #gsFxRow .gs-flat .sh-choice .seg { margin: 0; border: 0; border-radius: 0; background: none; overflow: visible; }
-#gsFxRow .gs-flat .sh-choice .seg-btn { background: var(--gs-well); color: var(--gs-t3); border: 1px solid var(--gs-line); border-radius: 5px; letter-spacing: 0; margin: 0; overflow: visible; }
+#gsFxRow .gs-flat .sh-choice .seg-btn { background: var(--gs-well); color: var(--gs-t3); border: 1px solid var(--gs-line); border-radius: var(--r-s); letter-spacing: 0; margin: 0; overflow: visible; }
 #gsFxRow .gs-flat .sh-choice .seg-btn.active { background: var(--gs-well); color: var(--gs-t); border-color: var(--gs-on); }
 #gsFxRow .gs-flat .param:not(.seg-param, .sh-cell, .lex-knob) { grid-column: span 4; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0; background: none; color: var(--gs-t2); }
 #gsFxRow .gs-flat .param:not(.seg-param, .sh-cell, .lex-knob) > .k { flex: none; color: var(--gs-t3); font: 500 var(--fs-xs) var(--sans); white-space: nowrap; }
@@ -424,7 +424,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #gsFxRow .gs-fxfoot .gs-bc { flex: 1 1 0; }
 
 /* The instrument's MIDI channel. */
-#grainView .gs-midi { flex: none; height: 22px; padding: 0 6px; border: 0; border-radius: 6px; background: var(--gs-well); color: var(--gs-t2); font: 500 var(--fs-xs) var(--mono); cursor: pointer; appearance: none; }
+#grainView .gs-midi { flex: none; height: var(--h-s); padding: 0 6px; border: 0; border-radius: var(--r-m); background: var(--gs-well); color: var(--gs-t2); font: 500 var(--fs-xs) var(--mono); cursor: pointer; appearance: none; }
 #grainView .gs-midi:hover { color: var(--gs-t); }
 #grainView .gs-midi:focus-visible { outline: 1px solid var(--on); }
 #grainView .gs-kbr .gs-kbtune { min-width: 0; flex: 0 1 auto; max-width: 132px; }
@@ -438,6 +438,6 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #grainView .gs-cloudro { position: absolute; left: 300px; top: 5px; pointer-events: none; color: var(--gs-t3); }
 #grainView .gs-zb .gs-ib.on { color: var(--gs-on); }
 #grainView .gs-zb .gs-midi { height: 20px; margin-right: 4px; }
-#grainView .gs-bar .gs-midi { height: 22px; max-width: 170px; }
+#grainView .gs-bar .gs-midi { height: var(--h-s); max-width: 170px; }
 #grainView .gs-ico { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 #grainView .gs-bar .gs-lab { align-items: center; }

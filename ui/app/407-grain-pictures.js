@@ -372,7 +372,7 @@ function gsDrawHeadPic() {
     c.setLineDash([]);
     wvDot(c, X(f), y, 2.5, 'rgba(190,198,214,.9)');
     wvDot(c, X(f * pr), y, 3, cl.acc);
-    c.font = `600 9.5px ${cl.mono}`;
+    c.font = `600 9px ${cl.mono}`;
     const t1 = 'source ' + gsNoteName(f);
     c.fillStyle = cl.t2; c.fillText(t1, 8, 12);
     c.fillStyle = cl.acc; c.fillText('heard ' + gsNoteName(f * pr), 8 + c.measureText(t1).width + 14, 12);

@@ -31,6 +31,10 @@
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const PERF_H_KEY = 'audiolab.perfH';
 const PERF_GUTTER = 92;
+// The app's mono, as the canvas needs it written out (Share Tech Mono until the
+// consistency pass, 11 Nov 2026). Text is 9 px, the scale's floor, except the
+// ruler's bar numbers (6 px, squeezed above the section names in an 18 px ruler).
+const PERF_FONT = "'JetBrains Mono', ui-monospace, monospace";
 const PERF_RULER_H = 18;
 const PERF_LANE_H = 34; // natural lane height; compresses when the user resizes
 const PERF_MIN_LANE_H = 14;
@@ -294,7 +298,7 @@ function perfDrawTimeline() {
   if (!data.groups.length && !data.live) {
     // Readable: it was #2a3540 on #0a0c0e, about 1.4 : 1 (C8).
     c.fillStyle = '#7d93a3';
-    c.font = '10px "Share Tech Mono", monospace';
+    c.font = `10px ${PERF_FONT}`;
     c.textAlign = 'center';
     c.fillText('NO TAKE — ⏺ REC PERF WHILE THE SOUND PLAYS, THEN PERFORM', W / 2,
       PERF_RULER_H + soundH + (H - PERF_RULER_H - soundH) / 2);
@@ -309,7 +313,7 @@ function perfDrawTimeline() {
       c.fillStyle = SECTION_TINTS[i];
       c.fillRect(xOf(s.a * data.duration), 0, (s.b - s.a) * plotW, PERF_RULER_H);
       c.fillStyle = '#4a6070';
-      c.font = '8px "Share Tech Mono", monospace';
+      c.font = `9px ${PERF_FONT}`;
       c.textAlign = 'center';
       c.fillText(s.name, xOf(((s.a + s.b) / 2) * data.duration), 12);
     });
@@ -319,7 +323,7 @@ function perfDrawTimeline() {
   const step = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => data.duration / s <= 16) || 600;
   c.strokeStyle = '#1e2830';
   c.fillStyle = '#2a3540';
-  c.font = '7px "Share Tech Mono", monospace';
+  c.font = `9px ${PERF_FONT}`;
   c.textAlign = 'left';
   for (let t = 0; t <= data.duration; t += step) {
     const x = xOf(t);
@@ -335,7 +339,7 @@ function perfDrawTimeline() {
     const every = [1, 2, 4, 8, 16, 32].find((k) => (plotW / data.bars.length) * k >= 22) || 64;
     c.strokeStyle = 'rgba(255,96,184,0.45)';
     c.fillStyle = 'rgba(255,96,184,0.8)';
-    c.font = '6px "Share Tech Mono", monospace';
+    c.font = `6px ${PERF_FONT}`;
     c.textAlign = 'left';
     data.bars.forEach((t, i) => {
       const x = xOf(t);
@@ -369,7 +373,7 @@ function perfDrawTimeline() {
       c.fillStyle = '#0d1115';
       c.fillRect(0, y, W, PERF_GROUP_H);
       c.fillStyle = g.color;
-      c.font = '8px "Share Tech Mono", monospace';
+      c.font = `9px ${PERF_FONT}`;
       c.textAlign = 'left';
       c.fillText(`${closed ? '▸' : '▾'} ${g.label} · ${g.lanes.length}`, 4, y + PERF_GROUP_H - 4);
       perfLaneHits.push({ group: g.key, x0: 0, x1: W, y0: y, y1: y + PERF_GROUP_H });
@@ -389,10 +393,10 @@ function perfDrawTimeline() {
   c.strokeStyle = '#1e2830';
   c.strokeRect(PERF_GUTTER + 0.5, sy + 1.5, plotW - 1, PERF_STRUCT_H - 3);
   c.fillStyle = '#ff60b8';
-  c.font = '9px "Share Tech Mono", monospace';
+  c.font = `9px ${PERF_FONT}`;
   c.textAlign = 'left';
   c.fillText('STRUCT', 4, sy + PERF_STRUCT_H / 2 + 3);
-  c.font = '8px "Share Tech Mono", monospace';
+  c.font = `9px ${PERF_FONT}`;
   data.discretes.forEach((d) => {
     const x = xOf(d.t);
     c.strokeStyle = '#ff60b8';
@@ -430,7 +434,7 @@ function perfDrawLane(c, item, y0, laneH, plotW, xOf, sr, duration) {
   c.strokeRect(PERF_GUTTER + 0.5, y0 + 1.5, plotW - 1, laneH - 3);
   const selected = item.id === state.automationSel;
   c.fillStyle = item.dim ? '#4a6070' : item.color;
-  c.font = '9px "Share Tech Mono", monospace';
+  c.font = `9px ${PERF_FONT}`;
   c.textAlign = 'left';
   c.fillText(String(item.label).slice(0, 14), 4, y0 + laneH / 2 + 3);
   const yOf = (v) => y0 + laneH - 5 - v * (laneH - 9);
@@ -477,7 +481,7 @@ function perfDrawSound(c, xOf, plotW, y, h, data) {
   c.fillStyle = '#0d1115';
   c.fillRect(PERF_GUTTER, y, plotW, h);
   c.fillStyle = '#4a6070';
-  c.font = '9px "Share Tech Mono", monospace';
+  c.font = `9px ${PERF_FONT}`;
   c.textAlign = 'left';
   c.fillText('SOUND', 4, y + h / 2 + 3);
   if (typeof drawLaneWave === 'function') {
@@ -496,7 +500,7 @@ function perfDrawSound(c, xOf, plotW, y, h, data) {
     c.lineWidth = 1;
     c.strokeRect(a + 0.5, y + 1.5, Math.max(1, b - a - 1), h - 3);
     c.fillStyle = '#7fff00';
-    c.font = '7px "Share Tech Mono", monospace';
+    c.font = `9px ${PERF_FONT}`;
     c.fillText('LOOP', a + 3, y + 8);
   }
 }

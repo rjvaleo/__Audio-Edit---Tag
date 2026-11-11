@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;400;600&display=swap");
 /* Ported from the AudioLab design: same oklch palette, type scale and panel
    geometry, rebuilt as plain CSS so the app needs no build step and no CDN. */
 
@@ -72,15 +71,25 @@
   /* The type scale (C1, `docs/DESIGN-CRITIQUE.md`). Five steps and nothing
      between them. There were nineteen sizes from 7 px to 17 px in half-pixel
      steps; each now lands on the nearest of these. 9 px is the floor, because
-     below it a dark panel stops being readable at arm's length.
-     Two things keep sizes of their own: the room's data block, which is part of
-     the picture on the wall rather than interface, and the theme editor's
-     miniature, which is a model of the interface at a smaller scale. */
+     below it a dark panel stops being readable at arm's length, and nothing
+     goes below it: not the room's data block, not the theme editor's miniature.
+     `npm run check` fails on a size off the scale; drawn pictures that need
+     their own are listed there. */
   --fs-xs: 9px;   /* tags, small capitals, units */
   --fs-s: 10px;   /* dense readouts, the control table */
   --fs-m: 11px;   /* buttons, labels, the body of a panel */
   --fs-l: 13px;   /* the page's base, headings, the clock */
   --fs-xl: 16px;  /* display figures and the largest glyphs */
+
+  /* Three control heights and three radii, and nothing between them: buttons,
+     segmented switches, tabs, chips, inputs and dropdowns. Round things stay
+     round (`50%`, or `999px` for a pill). `npm run check` holds them to it. */
+  --h-s: 20px;    /* dense rows: chips, small switches, the control table */
+  --h-m: 24px;    /* most buttons, tabs and fields */
+  --h-l: 28px;    /* a page's main actions, the transport */
+  --r-s: 4px;     /* small controls, tags, a switch's inner choice */
+  --r-m: 6px;     /* buttons, fields, a switch's frame */
+  --r-l: 8px;     /* panels, cards and menus */
 
   --rail: 44px;
 
@@ -131,7 +140,7 @@ button { font-family: inherit; cursor: pointer; }
 .transportbar .ghost { flex-shrink: 0; padding: 0 9px; }
 .transportbar .mark { flex-shrink: 0; }
 .mark {
-  width: 19px; height: 19px; border-radius: 5px;
+  width: 19px; height: 19px; border-radius: var(--r-s);
   background: linear-gradient(135deg, var(--accent), var(--accent-deep));
 }
 .app-name { font-size: var(--fs-l); font-weight: 600; letter-spacing: -0.1px; }
@@ -202,7 +211,7 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
 }
 .filter-box {
   flex: 1; min-width: 0; height: 24px; padding: 0 8px;
-  border-radius: 5px; border: 1px solid var(--line-2);
+  border-radius: var(--r-s); border: 1px solid var(--line-2);
   background: var(--bg); color: var(--text);
   font: inherit; font-size: var(--fs-m); font-weight: 400;
 }
@@ -213,13 +222,13 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
 /* ---------------------------------------------------------------- controls */
 
 .x {
-  width: 20px; height: 20px; border-radius: 5px; border: none; flex-shrink: 0;
+  width: 20px; height: 20px; border-radius: var(--r-s); border: none; flex-shrink: 0;
   background: transparent; color: var(--text-dim); font-size: var(--fs-xl); line-height: 1;
 }
 .x:hover { background: var(--surface-3); color: var(--text); }
 
 .primary {
-  height: 28px; padding: 0 12px; border-radius: 6px; border: none;
+  height: 28px; padding: 0 12px; border-radius: var(--r-m); border: none;
   background: var(--accent); color: var(--surface);
   font-size: var(--fs-m); font-weight: 600;
 }
@@ -227,7 +236,7 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
 .primary:disabled { opacity: .35; cursor: not-allowed; filter: none; }
 
 .ghost {
-  height: 26px; padding: 0 10px; border-radius: 6px;
+  height: var(--h-m); padding: 0 10px; border-radius: var(--r-m);
   border: 1px solid var(--line-2); background: transparent;
   color: var(--text-2); font-size: var(--fs-m);
 }
@@ -235,8 +244,8 @@ body.resizing-panel { cursor: col-resize; user-select: none; }
 .ghost:disabled { opacity: .35; cursor: not-allowed; border-color: var(--line); }
 
 .field {
-  width: 100%; height: 30px; padding: 0 9px;
-  border-radius: 6px; border: 1px solid var(--line-2);
+  width: 100%; height: var(--h-l); padding: 0 9px;
+  border-radius: var(--r-m); border: 1px solid var(--line-2);
   background: var(--bg); color: var(--text);
   font: inherit; font-size: var(--fs-l);
 }
@@ -252,11 +261,11 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
    of them there are. */
 .seg {
   display: inline-block; white-space: nowrap; vertical-align: middle;
-  background: var(--bg); border-radius: 6px; padding: 2px;
+  background: var(--bg); border-radius: var(--r-m); padding: 2px;
 }
 .seg-btn {
   display: inline-block; vertical-align: middle;
-  height: 22px; padding: 0 9px; border: none; border-radius: 4px;
+  height: var(--h-s); padding: 0 9px; border: none; border-radius: var(--r-s);
   background: transparent; color: var(--text-dim); font-size: var(--fs-m);
   margin-right: 2px;
 }
@@ -287,12 +296,12 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 /* The native swatch, trimmed to the height of everything else on the row. */
 #waveOwn {
   width: 46px; height: 22px; padding: 0; border: 1px solid var(--line);
-  border-radius: 4px; background: var(--bg); cursor: pointer;
+  border-radius: var(--r-s); background: var(--bg); cursor: pointer;
 }
 #waveOwn::-webkit-color-swatch-wrapper { padding: 2px; }
-#waveOwn::-webkit-color-swatch { border: none; border-radius: 3px; }
-#waveOwn::-moz-color-swatch { border: none; border-radius: 3px; }
-.wave-own #waveReset { height: 22px; padding: 0 9px; font-size: var(--fs-m); }
+#waveOwn::-webkit-color-swatch { border: none; border-radius: var(--r-s); }
+#waveOwn::-moz-color-swatch { border: none; border-radius: var(--r-s); }
+.wave-own #waveReset { height: var(--h-s); padding: 0 9px; font-size: var(--fs-m); }
 
 .check { display: flex; align-items: center; gap: 6px; font-size: var(--fs-m); color: var(--text-2); }
 .check input { accent-color: var(--accent); }
@@ -317,7 +326,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 
 .folder-row {
   display: flex; align-items: center; gap: 6px;
-  height: 28px; padding: 0 6px; border-radius: 6px;
+  height: 28px; padding: 0 6px; border-radius: var(--r-m);
   cursor: pointer; white-space: nowrap; overflow: hidden;
   font-size: var(--fs-m); color: var(--text-2);
 }
@@ -338,7 +347,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .twisty { width: 10px; color: var(--text-dimmer); font-size: var(--fs-xs); transition: transform .12s; }
 .twisty.open { transform: rotate(90deg); }
 
-.dot { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
+.dot { width: 6px; height: 6px; border-radius: var(--r-s); flex-shrink: 0; }
 .dot.high { background: var(--good); }
 .dot.medium { background: var(--warn); }
 .dot.low { background: var(--bad); }
@@ -348,7 +357,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 /* A file row: play, waveform overview, name, and what it is. */
 .file-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 4px 6px 4px 16px; border-radius: 6px; cursor: pointer;
+  padding: 4px 6px 4px 16px; border-radius: var(--r-m); cursor: pointer;
 }
 .file-row:hover { background: var(--surface-3); }
 .file-row.selected { background: rgba(var(--sel-rgb), 0.14); }
@@ -356,7 +365,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 
 .file-row .pb {
   width: 20px; height: 20px; flex-shrink: 0; padding: 0;
-  border-radius: 4px; border: 1px solid var(--line-2);
+  border-radius: var(--r-s); border: 1px solid var(--line-2);
   background: transparent; color: var(--text-dim); font-size: var(--fs-xs);
   display: flex; align-items: center; justify-content: center;
 }
@@ -365,7 +374,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 
 .file-row .thumb {
   width: 54px; height: 24px; flex-shrink: 0;
-  background: var(--bg); border-radius: 4px; display: block;
+  background: var(--bg); border-radius: var(--r-s); display: block;
 }
 .file-row .info { min-width: 0; flex: 1; }
 .file-row .fname {
@@ -389,13 +398,13 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   overflow-x: auto;
 }
 .tbtn {
-  width: 28px; height: 28px; flex-shrink: 0; border-radius: 6px;
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: var(--r-m);
   border: 1px solid var(--line-2); background: var(--surface-3);
   color: var(--text); font-size: var(--fs-m);
   display: flex; align-items: center; justify-content: center;
 }
 .tbtn:hover { border-color: var(--accent); }
-.tbtn.small { width: 22px; height: 22px; border-color: var(--line); background: transparent; color: var(--text-dim); }
+.tbtn.small { width: 22px; height: var(--h-s); border-color: var(--line); background: transparent; color: var(--text-dim); }
 .tbtn.play.on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
 .vsep { width: 1px; height: 20px; background: var(--line-2); flex-shrink: 0; }
 .time { font-size: var(--fs-l); letter-spacing: .3px; white-space: nowrap; }
@@ -406,7 +415,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .mode-tag {
   font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .6px;
   color: var(--text-dimmer); border: 1px solid var(--line-2);
-  border-radius: 4px; padding: 2px 7px; white-space: nowrap;
+  border-radius: var(--r-s); padding: 2px 7px; white-space: nowrap;
 }
 
 /* ------------------------------------------------------------ edit toolbar */
@@ -430,7 +439,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .edittools { flex-wrap: nowrap; overflow-x: auto; }
 .edited-flag {
   font-size: var(--fs-s); color: var(--warn);
-  border: 1px solid var(--warn); border-radius: 4px; padding: 2px 6px;
+  border: 1px solid var(--warn); border-radius: var(--r-s); padding: 2px 6px;
 }
 
 /* ------------------------------------------------------- ruler and regions */
@@ -468,7 +477,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
   color: var(--text-dim);
 }
 .presetbar select { max-width: 240px; }
-.presetbar .ghost { height: 21px; font-size: var(--fs-s); }
+.presetbar .ghost { height: var(--h-s); font-size: var(--fs-s); }
 
 .regions {
   height: 24px; flex-shrink: 0; position: relative;
@@ -482,7 +491,7 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .region {
   position: absolute; top: 3px; bottom: 3px;
   background: rgba(var(--sel-rgb), 0.14); border: 1px solid var(--accent);
-  border-radius: 3px; display: flex; align-items: center; padding: 0 6px;
+  border-radius: var(--r-s); display: flex; align-items: center; padding: 0 6px;
   overflow: hidden; cursor: pointer;
 }
 .region span { font-family: var(--mono); font-size: var(--fs-s); color: var(--text-2); white-space: nowrap; }

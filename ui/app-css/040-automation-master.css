@@ -19,7 +19,7 @@
   align-items: stretch;
   background: var(--bg-2, var(--lane));
   border: 1px solid var(--line);
-  border-radius: 4px; padding: 6px;
+  border-radius: var(--r-s); padding: 6px;
 }
 .automation-lane-controls { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
 .automation-lane-controls .row { display: flex; align-items: center; gap: 5px; }
@@ -27,7 +27,7 @@
 .automation-lane-controls .danger { color: var(--danger, var(--lane-danger)); padding: 0 6px; }
 .automation-canvas {
   width: 100%; height: 110px; display: block;
-  background: var(--lane-well); border-radius: 3px; cursor: crosshair;
+  background: var(--lane-well); border-radius: var(--r-s); cursor: crosshair;
   touch-action: none;
 }
 
@@ -41,11 +41,11 @@
 .rec-device select { flex: 1; min-width: 0; }
 .rec-meter {
   display: flex; gap: 3px; height: 74px; padding: 4px;
-  border: 1px solid var(--line-2); border-radius: 4px; background: var(--rec-meter-well);
+  border: 1px solid var(--line-2); border-radius: var(--r-s); background: var(--rec-meter-well);
   box-shadow: inset 0 1px 5px var(--shadow-hard);
 }
 .rec-bar {
-  flex: 1; align-self: flex-end; height: var(--rec, 0%); border-radius: 1px;
+  flex: 1; align-self: flex-end; height: var(--rec, 0%); border-radius: 0;
   background: linear-gradient(to top, var(--meter-ok) 0 70%, var(--meter-warn) 70% 90%, var(--meter-hot) 90%);
   transition: height 60ms linear;
 }
@@ -68,8 +68,8 @@
    Eighty-one scales is a list you cannot read; the categories are the first
    level and one opens at a time. */
 .scale-btn {
-  margin-left: 6px; height: 18px; padding: 0 7px; flex: 0 0 auto;
-  font-size: var(--fs-s); border-radius: 3px; cursor: pointer;
+  margin-left: 6px; height: var(--h-s); padding: 0 7px; flex: 0 0 auto;
+  font-size: var(--fs-s); border-radius: var(--r-s); cursor: pointer;
   border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text-2);
   max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -94,13 +94,13 @@
   width: 100%; text-align: left; padding: 6px 7px 3px; cursor: pointer;
   position: sticky; top: 26px; z-index: 1; background: inherit;
   font-size: var(--fs-s); font-weight: 650; letter-spacing: .4px;
-  border: 0; border-radius: 3px; background: transparent; color: var(--text-2);
+  border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2);
 }
 .scale-cat-head:hover { background: var(--surface-2); color: var(--accent); }
 .scale-cat-body { display: flex; flex-direction: column; gap: 1px; padding: 1px 0 4px 8px; }
 .scale-item {
   display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left;
-  padding: 4px 7px; border: 0; border-radius: 3px; cursor: pointer;
+  padding: 4px 7px; border: 0; border-radius: var(--r-s); cursor: pointer;
   background: transparent; color: var(--text);
 }
 .scale-item:hover { background: var(--surface-2); }
@@ -123,7 +123,7 @@
    Equally spaced by construction: 71px wide, 77px apart. */
 .engine-switches {
   display: block; position: relative; margin-bottom: 2px;
-  height: 18px; white-space: nowrap;
+  height: var(--h-s); white-space: nowrap;
 }
 .engine-switches > [data-slot] {
   position: absolute; top: 0; margin: 0; width: 71px;
@@ -161,8 +161,8 @@
    the mark that says a window is coming. Always at the right-hand end. */
 .popout-btn {
   display: inline-block; vertical-align: top; margin: 0;
-  width: 71px; height: 18px; padding: 0 4px;
-  border: 1px solid var(--line-3); border-radius: 4px;
+  width: 71px; height: var(--h-s); padding: 0 4px;
+  border: 1px solid var(--line-3); border-radius: var(--r-s);
   background: var(--surface-2h); color: var(--text-2);
   font: inherit; font-size: var(--fs-s); font-weight: 500;
   white-space: nowrap; cursor: pointer;
@@ -179,7 +179,7 @@
 }
 .engine-switches .scale-btn {
   display: inline-block; vertical-align: top;
-  margin: 0 6px 0 0; max-width: none; width: 71px; height: 18px; padding: 0 3px;
+  margin: 0 6px 0 0; max-width: none; width: 71px; height: var(--h-s); padding: 0 3px;
 }
 /* The name takes what is left after the caret, which is always visible — a
    dropdown with its arrow cut off is just a button. */
@@ -210,7 +210,7 @@
   width: 71px; height: 18px; margin: 0 6px 0 0; padding: 0;
   grid-template-columns: none; align-items: initial;
 }
-.engine-switches .param.toggle .tiny { width: 71px; height: 18px; display: block; }
+.engine-switches .param.toggle .tiny { width: 71px; height: var(--h-s); display: block; }
 /* `#dockStretch .toggle { margin: 3px 0 }` is an ID selector and outranks the
    class rule above, which is where the toggles' three-pixel drop came from —
    they sat below the tuning and Keys on what was meant to be one line. Matched
@@ -228,7 +228,7 @@
   width: 100%;
   height: 132px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-s);
   /* A well, so it follows the theme: near-black on the dark ones, paper on the
      light ones (it was #0a141c whatever the theme). */
   background: var(--well);
@@ -258,7 +258,7 @@
 }
 .dock-resize::after {
   content: ''; position: absolute; left: 50%; top: 2px;
-  width: 46px; height: 3px; margin-left: -23px; border-radius: 2px;
+  width: 46px; height: 3px; margin-left: -23px; border-radius: var(--r-s);
   background: var(--line-2); opacity: 0; transition: opacity .12s ease;
 }
 .dock-resize:hover::after, body.dock-sizing .dock-resize::after { opacity: 1; }
@@ -289,12 +289,12 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .theme-list > * { margin-bottom: 2px; }
 .theme-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 5px 6px; border-radius: 5px; cursor: pointer;
+  padding: 5px 6px; border-radius: var(--r-s); cursor: pointer;
   border: 1px solid transparent; min-height: 28px;
 }
 .theme-row:hover { background: var(--surface-2); }
 .theme-row.chosen { border-color: var(--accent); background: var(--surface-2); }
-.theme-swatch { display: flex; flex: 0 0 auto; border-radius: 3px; overflow: hidden; }
+.theme-swatch { display: flex; flex: 0 0 auto; border-radius: var(--r-s); overflow: hidden; }
 .theme-swatch i { width: 14px; height: 18px; display: block; flex: 0 0 auto; }
 .theme-name {
   flex: 1; min-width: 0; font-size: var(--fs-m); color: var(--text-2);
@@ -324,7 +324,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .kb-card {
   max-width: 96vw; pointer-events: auto;
   background: var(--surface); border: 1px solid var(--line-2);
-  border-radius: 10px; overflow: hidden;
+  border-radius: var(--r-l); overflow: hidden;
   box-shadow: 0 18px 44px var(--shadow);
 }
 .kb-head {
@@ -336,7 +336,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .kb-head.dragging { cursor: grabbing; }
 .kb-head h2 { margin: 0; font-size: var(--fs-l); }
-.kb-head .ghost { padding: 0 7px; height: 19px; font-size: var(--fs-m); }
+.kb-head .ghost { padding: 0 7px; height: var(--h-s); font-size: var(--fs-m); }
 .kb-head .modal-sub { font-size: var(--fs-s); }
 .kb-head .modal-sub { min-width: 0; overflow: hidden; white-space: nowrap; }
 .kb-body { padding: 7px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
@@ -355,12 +355,12 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 }
 .kb-key.white {
   height: 84px; z-index: 1;
-  border: 1px solid var(--line-3); border-radius: 0 0 5px 5px;
+  border: 1px solid var(--line-3); border-radius: 0 0 var(--r-s) var(--r-s);
   background: var(--text-2); color: var(--sink);
 }
 .kb-key.black {
   height: 51px; z-index: 2;
-  border: 1px solid var(--black); border-radius: 0 0 4px 4px;
+  border: 1px solid var(--black); border-radius: 0 0 var(--r-s) var(--r-s);
   background: var(--sink); color: var(--text-2);
   box-shadow: 0 2px 5px var(--shadow);
 }
@@ -436,7 +436,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .mb-cell { position: relative; min-height: 0; }
 .mb-cell > canvas {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  display: block; background: var(--sink); border-radius: 4px;
+  display: block; background: var(--sink); border-radius: var(--r-s);
 }
 /* The room's front face lands exactly on this element's edges, so a border or
    a rounded corner would be a frame drawn over the frame. The panel is the box. */
@@ -481,7 +481,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .re-open {
   position: absolute; top: 5px; right: 6px; z-index: 5;
   height: 15px; padding: 0 7px;
-  border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
+  border: 1px solid var(--line-2); background: var(--bg); border-radius: var(--r-s);
   color: var(--text-2); font: inherit; font-size: var(--fs-xs); line-height: 1;
   letter-spacing: .05em; cursor: pointer;
 }
@@ -522,7 +522,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    camera's drag target. Capping the panel's height was the wrong answer (it
    clipped the lower rows and, with the rows made to take the pointer so the
    cap could scroll, covered the sky). The control is the width of its text. */
-.room-edit select.mini { width: auto; max-width: 150px; height: 16px; font-size: var(--fs-xs); padding: 0 3px; }
+.room-edit select.mini { width: auto; max-width: 150px; height: var(--h-s); font-size: var(--fs-xs); padding: 0 3px; }
 /* In the room view it is a column, not an overlay: no cap, no scroll of its
    own — `.rv-admin-body` already scrolls around it. */
 .rv-admin .room-edit select.mini { width: 100%; max-width: none; height: 24px; font-size: var(--fs-m); padding: 0 6px; }
@@ -580,7 +580,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
      Type set at the interface's usual size and colour was heavier than every
      line in the box, so the readout became the loudest thing on screen when it
      is meant to be the faintest. Same hue, thinner stroke, smaller. */
-  font-size: 7px; line-height: 9px; font-weight: 300; pointer-events: none;
+  font-size: var(--fs-xs); line-height: 9px; font-weight: 300; pointer-events: none;
   color: var(--wave-2);
   /* Thins the stroke on macOS, which is most of the difference between type
      that sits on the wall and type that sits in front of it. */
@@ -599,7 +599,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 #reLayers { display: flex; flex-direction: column; gap: 1px; align-items: stretch; }
 .re-layer {
   display: flex; align-items: center; gap: 3px;
-  border-radius: 3px;
+  border-radius: var(--r-s);
   /* The row is the drag handle, so it must not select as text under the
      pointer — a half-selected label mid-drag reads as a broken control. */
   user-select: none; -webkit-user-select: none;
@@ -636,10 +636,10 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .re-check input { width: 10px; height: 10px; margin: 0; accent-color: var(--accent); }
 .re-colour {
   width: 22px; height: 14px; padding: 0; border: 0; background: none;
-  cursor: pointer; border-radius: 2px;
+  cursor: pointer; border-radius: var(--r-s);
 }
 .re-colour::-webkit-color-swatch-wrapper { padding: 0; }
-.re-colour::-webkit-color-swatch { border: 1px solid rgba(var(--white-rgb), .25); border-radius: 2px; }
+.re-colour::-webkit-color-swatch { border: 1px solid rgba(var(--white-rgb), .25); border-radius: var(--r-s); }
 #reLayers.re-flat .re-grip { opacity: .12; }
 #reLayers.re-flat .re-grip:hover { opacity: .3; }
 /* The Data block is type on the wall rather than geometry in the room, so it
@@ -681,8 +681,8 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    still small — just not blue. */
 .room-data.rd-hot .rd-head { color: color-mix(in srgb, var(--bad) 75%, transparent); }
 .re-btn {
-  height: 15px; padding: 0 7px;
-  border: 1px solid var(--line-2); background: var(--bg); border-radius: 3px;
+  height: var(--h-s); padding: 0 7px;
+  border: 1px solid var(--line-2); background: var(--bg); border-radius: var(--r-s);
   color: var(--text-dim); font: inherit; font-size: var(--fs-xs); line-height: 1;
   cursor: pointer;
 }
@@ -701,7 +701,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .re-nums {
   font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim);
   pointer-events: auto; cursor: copy; align-self: flex-start;
-  background: var(--bg); border-radius: 3px; padding: 3px 6px;
+  background: var(--bg); border-radius: var(--r-s); padding: 3px 6px;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .re-nums:hover { color: var(--text-2); }
@@ -765,7 +765,7 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
    behind it. It belongs on the cell: then the stack from back to front is
    ground, the grain block printed on the far wall, and the room itself drawn
    over both on glass. */
-.mb-cell-3d { flex: 1 1 auto; min-height: 0; background: var(--sink); border-radius: 4px; }
+.mb-cell-3d { flex: 1 1 auto; min-height: 0; background: var(--sink); border-radius: var(--r-s); }
 .mb-cell-vu { flex: 1 1 auto; }
 
 /* Bottom right, out of the way of the frequency labels along the top. */
@@ -779,8 +779,8 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 /* How much detail the analyser is asked for. Fixed widths — never flex. */
 .mb-res { position: absolute; left: 26px; bottom: 4px; display: flex; gap: 3px; }
 .mb-res-btn {
-  width: 30px; height: 15px; padding: 0;
-  border: 1px solid var(--line-2); background: transparent; border-radius: 3px;
+  width: 30px; height: var(--h-s); padding: 0;
+  border: 1px solid var(--line-2); background: transparent; border-radius: var(--r-s);
   color: var(--text-dim); font: inherit; font-size: var(--fs-xs); line-height: 1;
   cursor: pointer;
 }

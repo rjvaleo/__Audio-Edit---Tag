@@ -33,7 +33,7 @@
 }
 .lg-title { font-weight: 600; font-size: var(--fs-l); margin-right: 2px; }
 .lg-lbl { color: var(--text-dimmer); margin-left: 4px; }
-.lg-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; flex: none; }
+.lg-seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-s); overflow: hidden; flex: none; }
 .lg-seg button {
   background: none; border: 0; color: var(--text-dim);
   padding: 3px 8px; font: inherit; cursor: pointer;
@@ -42,14 +42,14 @@
 .lg-seg button:hover { color: var(--text); }
 .lg-seg button.on { background: color-mix(in oklch, var(--accent) 20%, transparent); color: var(--text); }
 .lg-find {
-  background: var(--well); border: 1px solid var(--line); border-radius: 4px;
+  background: var(--well); border: 1px solid var(--line); border-radius: var(--r-s);
   color: var(--text); font: inherit; padding: 3px 7px; width: 200px; min-width: 90px; flex: 0 1 auto; outline: none;
 }
 .lg-find:focus { border-color: var(--accent); }
 .lg-found { color: var(--graph-found); min-width: 7ch; }
 .lg-status { color: var(--text-dimmer); margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
 .lg-home, .lg-close, .lg-3d {
-  background: none; border: 1px solid var(--line); border-radius: 4px;
+  background: none; border: 1px solid var(--line); border-radius: var(--r-s);
   color: var(--text-dim); font: inherit; padding: 2px 8px; cursor: pointer; flex: none;
 }
 .lg-home:hover, .lg-close:hover, .lg-3d:hover { color: var(--text); }
@@ -73,7 +73,7 @@
 .lg-key { display: flex; gap: 9px; flex-wrap: wrap; }
 .lg-key span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); }
 .lg-key i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-.lg-ramp { display: inline-block; width: 110px; height: 7px; border-radius: 4px; margin: 0 4px; }
+.lg-ramp { display: inline-block; width: 110px; height: 7px; border-radius: 999px; margin: 0 4px; }
 
 .lg-empty {
   position: absolute; inset: 0; display: grid; place-items: center;
@@ -86,7 +86,7 @@
   position: absolute; right: 8px; top: 8px; width: 252px;
   max-height: calc(100% - 16px); overflow: auto;
   background: color-mix(in oklch, var(--surface) 95%, transparent);
-  border: 1px solid var(--line); border-radius: 6px;
+  border: 1px solid var(--line); border-radius: var(--r-m);
   padding: 8px 9px; display: none;
   box-shadow: 0 8px 30px var(--shadow);
 }
@@ -97,13 +97,13 @@
 .lg-row > span:first-child { color: var(--text-dimmer); width: 56px; flex: none; }
 .lg-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
 .lg-chips { display: flex; flex-wrap: wrap; gap: 3px; }
-.lg-chip { background: var(--wash); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; line-height: 16px; cursor: pointer; }
+.lg-chip { background: var(--wash); border: 1px solid var(--line); border-radius: var(--r-s); padding: 0 5px; line-height: 16px; cursor: pointer; }
 .lg-chip:hover { border-color: var(--accent); }
 .lg-chip.still { cursor: default; }
 .lg-chip.still:hover { border-color: var(--line); }
 .lg-btns { display: flex; gap: 4px; margin: 7px 0 4px; }
 .lg-btns button {
-  flex: 1; background: var(--well); border: 1px solid var(--line); border-radius: 4px;
+  flex: 1; background: var(--well); border: 1px solid var(--line); border-radius: var(--r-s);
   color: var(--text); font: inherit; padding: 3px 0; cursor: pointer;
 }
 .lg-btns button:hover { border-color: var(--accent); }
