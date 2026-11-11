@@ -420,7 +420,8 @@ function pausePlayback() {
 function reflectTransport() {
   const b = $('playBtn');
   b.classList.toggle('on', engine.playing);
-  b.textContent = engine.playing ? '❚❚' : '▶';
+  nbPaintPlay();
+  if (engine.playing) nbMeterRun();
   const pp = $('perfPlayBtn');
   if (pp) {
     pp.textContent = engine.playing ? '⏸ PLAYING' : '▶ PLAY PERF';
@@ -539,6 +540,8 @@ function startTransportLoop() {
     followPlayhead();
     updatePlayhead();
     updateOverviewPlayhead();
+    nbTick();
+    edTickCursor();
     // The timeline's playhead, where the timeline is on screen — the dock's
     // Automation tab, or Compose's arrangement. Fifteen times a second: a take
     // can hold thousands of breakpoints, and the head does not need sixty.
@@ -556,6 +559,7 @@ let perfTickAt = 0;
 
 function paintTime() {
   $('timeNow').textContent = fmtTime(playbackTime());
+  nbTick();
 }
 
 /// Stop the transport if it is playing something other than `file`.

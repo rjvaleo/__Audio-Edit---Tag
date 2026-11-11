@@ -59,11 +59,6 @@ body.choppage .dock-panes { height: 100%; }
 .chop-app #tabBar .tab.active { background: var(--well); color: var(--t); border-color: transparent; box-shadow: inset 0 1px 3px rgba(0,0,0,.8); }
 .chop-app #tabBar .close { color: var(--t3); }
 .chop-app #tabBar .newtab { width: 24px; height: 24px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--line) 80%, #fff 8%); background: linear-gradient(180deg, color-mix(in srgb, var(--panel-hi) 80%, #fff 6%), var(--panel)); color: var(--t2); }
-.chop-app .chop-transport { display: flex; align-items: center; gap: 4px; flex: none; }
-.chop-app .chop-transport .tbtn { height: 24px; min-width: 24px; padding: 0 5px; background: linear-gradient(180deg, color-mix(in srgb, var(--panel-hi) 80%, #fff 6%), var(--panel)); border: 1px solid color-mix(in srgb, var(--line) 80%, #fff 8%); border-radius: 6px; color: var(--t2); font: 500 10.5px var(--ui); }
-.chop-app .chop-transport .tbtn.on { background: var(--well); color: var(--acc); border-color: color-mix(in srgb, var(--acc) 55%, var(--line)); }
-.chop-app .chop-clock { height: 24px; width: 82px; display: grid; place-items: center; font: 11.5px var(--monof); color: var(--t); flex: none; }
-.chop-app .chop-clock .time { color: var(--t); font: inherit; }
 .chop-app .chop-preset { display: flex; align-items: center; height: 24px; padding: 0 2px; width: 138px; flex: none; }
 .chop-app .chop-preset select { flex: 1; min-width: 0; background: none; border: 0; color: var(--t); font: 500 10.5px var(--ui); outline: 0; -webkit-appearance: none; text-align: center; text-align-last: center; }
 .chop-app .chop-preset button { width: 20px; color: var(--t2); font-size: 14px; line-height: 1; }
@@ -72,8 +67,6 @@ body.choppage .dock-panes { height: 100%; }
 .chop-app .chop-look button:hover { color: var(--t); }
 .chop-app .chop-look button.on { color: var(--t); border-color: var(--acc); }
 .chop-app .chop-look i { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.3); }
-.chop-app .chop-level { width: 50px; flex: none; display: flex; align-items: center; }
-.chop-app .chop-level #volume { width: 100%; margin: 0; accent-color: #d8dbe0; }
 
 .chop-app .chop-cutrow { height: 44px; align-items: center; justify-content: space-between; padding: 0 2px; }
 .chop-app .chop-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--well); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); flex: none; }

@@ -134,6 +134,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/css; charset=utf-8", WAVE_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/edit.css") => {
+            Response::ok("text/css; charset=utf-8", EDIT_CSS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/grain.css") => {
             Response::ok("text/css; charset=utf-8", GRAIN_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")

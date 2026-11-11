@@ -6,10 +6,10 @@
 
 const CHOP_W = 1432, CHOP_H = 1000;
 
-/// The file tabs and the transport are the app's own, moved in while this page
-/// is showing and put back after: one set of controls, not a second one.
-const CHOP_BORROW = [['tabBar', 'chopTabs'], ['playBtn', 'chopTransport'], ['stopBtn', 'chopTransport'], ['loopBtn', 'chopTransport'],
-  ['recBtn', 'chopTransport'], ['srcGrain', 'chopTransport'], ['srcSeq', 'chopTransport'], ['timeNow', 'chopClock'], ['volume', 'chopLevel']];
+/// The file tabs are the app's own, moved in while this page is showing and
+/// put back after: one set of controls, not a second one. The transport is no
+/// longer borrowed; it lives in the Now Playing bar above every page.
+const CHOP_BORROW = [['tabBar', 'chopTabs']];
 const chopHomes = new Map();
 function chopBorrow(on) {
   if (on) {

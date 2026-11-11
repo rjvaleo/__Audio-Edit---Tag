@@ -146,6 +146,14 @@ const WT_SVG = {
   snapCd: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2"/><path d="M12 6a6 6 0 0 1 6 6" opacity=".45"/>',
   snapOff: '<path d="M7 4v8a5 5 0 0 0 10 0V4"/><path d="M7 8h3M14 8h3"/><path d="M4 20 20 4"/>',
   export: '<path d="M12 15V3.5M7.5 8 12 3.5 16.5 8"/><path d="M4 14v6h16v-6"/>',
+  edRainbow: '<path d="M3 12h2l2-6 2 12 2-8 2 5 2-3h6"/><path d="M3 19h18" opacity=".4"/>',
+  edSpec: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 12h18"/><path d="M7 17v-2M11 17v-3M15 17v-1M19 17v-3" opacity=".7"/>',
+  edLevel: '<path d="M5 4v16"/><path d="M5 6h3M5 10h2M5 14h2M5 18h3"/><path d="M11 12h2l2-6 2 12 2-6h2" opacity=".6"/>',
+  edHits: '<path d="M5 20V6M12 20V10M19 20V4"/><path d="M3 20h18" opacity=".4"/>',
+  edLoud: '<path d="M12 4 20 19H4Z"/>',
+  snapHits: '<path d="M6 19V5M18 19V5" opacity=".45"/><path d="M6 12h12"/><circle cx="6" cy="12" r="2" fill="currentColor"/>',
+  regionsFromHits: '<path d="M4 4v16M10 4v16M16 4v16M21 4v16"/><path d="M4 9h17v6H4z" fill="currentColor" fill-opacity=".2"/>',
+  video: '<rect x="3" y="6" width="13" height="12" rx="1.5"/><path d="M16 10l5-3v10l-5-3"/>',
   wtEdit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   wtAdd: '<rect x="3.5" y="5" width="17" height="14" rx="1.5" stroke-dasharray="2 2"/><path d="M12 9v6M9 12h6"/>',
   wtReset: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 3.5v4.5H9"/>',
@@ -155,6 +163,15 @@ const WT_SVG = {
 /// What each icon is. `need`: 'sel' wants a selection, 'file' an open sound;
 /// `on` overrides that test; `lit` marks a choice that is the current one.
 const WT_GROUPS = [
+  ['Display', [
+    { id: 'edRainbow', name: 'Rainbow: colour the wave by its bands', lit: () => edPrefs.rainbow, run: () => edToggle('rainbow') },
+    { id: 'edSpec', name: 'Show the spectrogram', lit: () => edPrefs.spec, run: () => edToggle('spec') },
+    { id: 'edLevel', name: 'Level ruler', lit: () => edPrefs.level, run: () => edToggle('level') },
+  ]],
+  ['Show', [
+    { id: 'edHits', name: 'Show the hits', lit: () => edPrefs.hits, run: () => edToggle('hits') },
+    { id: 'edLoud', name: 'Show the loudest spots', lit: () => edPrefs.loud, run: () => edToggle('loud') },
+  ]],
   ['History', [
     { id: 'undo', name: 'Undo', key: '⌘Z', on: () => !!state.edit?.canUndo, run: click('undoBtn') },
     { id: 'redo', name: 'Redo', key: '⇧⌘Z', on: () => !!state.edit?.canRedo, run: click('redoBtn') },
@@ -184,10 +201,14 @@ const WT_GROUPS = [
     { id: 'gain', name: 'Gain…', need: 'file', run: gainCmd },
     { id: 'normalize', name: 'Normalize…', need: 'file', run: normalizeCmd },
     { id: 'normalizeRms', name: 'Normalize (RMS)…', need: 'file', run: normalizeRmsCmd },
+  ]],
+  ['Measure', [
     { id: 'findPeak', name: 'Find peak', need: 'file', run: findPeakCmd },
   ]],
   ['Process', [
     { id: 'reverse', name: 'Reverse', need: 'sel', run: op('reverse') },
+  ]],
+  ['Repair', [
     { id: 'repairClick', name: 'Repair click…', need: 'sel', run: repairClickCmd },
   ]],
   ['Selection', [
@@ -208,14 +229,17 @@ const WT_GROUPS = [
     { id: 'region', name: 'New region', key: 'R', need: 'sel', run: op('region') },
     { id: 'splitRegion', name: 'New region split', need: 'file', run: splitRegionCmd },
     { id: 'markersToRegions', name: 'Markers to regions', need: 'file', run: markersToRegionsCmd },
+    { id: 'regionsFromHits', name: 'A region at every hit', need: 'file', on: () => !!state.selectedFile && (edSound.hits?.length || 0) > 1, run: () => edRegionsFromHits() },
   ]],
   ['Snap', [
     { id: 'snapZero', name: 'Snap to zero crossings', lit: () => state.snap === 'zero', run: () => setSnap('zero') },
+    { id: 'snapHits', name: 'Snap a dragged edge to the nearest hit', lit: () => edPrefs.snapHits, run: () => edToggle('snapHits') },
     { id: 'snapCd', name: 'Snap to CD frames', lit: () => state.snap === 'cd', run: () => setSnap('cd') },
     { id: 'snapOff', name: 'Snap off', lit: () => state.snap === 'off', run: () => setSnap('off') },
   ]],
   ['Export', [
     { id: 'export', name: 'Export…', key: '⌘E', need: 'file', run: click('exportBtn') },
+    { id: 'video', name: 'Video…', need: 'file', run: click('videoBtn') },
   ]],
 ];
 
@@ -231,17 +255,33 @@ const WT_WORDS = {
   zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit', fitSel: 'Fit sel', sample: 'Samples',
   marker: 'Marker', region: 'Region', splitRegion: 'Split', markersToRegions: 'To regions',
   snapZero: 'Zero', snapCd: 'CD', snapOff: 'Off',
-  export: 'Export',
+  export: 'Export', video: 'Video',
+  edRainbow: 'Rainbow', edSpec: 'Spectrum', edLevel: 'Level', edHits: 'Hits', edLoud: 'Loud', snapHits: 'Hits', regionsFromHits: 'At hits',
 };
 const WT_CMDS = Object.fromEntries(WT_GROUPS.flatMap(([, items]) => items.map((it) => [it.id, it])));
 const WT_STORE = 'editToolbar';
+
+/// The Edit page's tabs, after WaveLab's (RJ approved D, 10 Nov 2026). A section
+/// belongs to one; the ribbon's sections keep their names and go where they
+/// fit. Here rather than in 412 because the layout is read the moment this
+/// file runs. See `docs/EDIT-PAGE.md`.
+const ED_TABS = ['View', 'Edit', 'Process', 'Correct', 'Analyze', 'Markers', 'Render'];
+const ED_TAB_OF = { Display: 'View', Show: 'Analyze', Zoom: 'View', History: 'Edit', Clipboard: 'Edit', Selection: 'Edit', Snap: 'Edit',
+  Fades: 'Process', Level: 'Process', Process: 'Process', Silence: 'Correct', Repair: 'Correct', Measure: 'Analyze', Markers: 'Markers', Export: 'Render' };
+function edTabOf(title) { return ED_TAB_OF[title] || 'Edit'; }
+let edTab = (() => { try { const t = localStorage.getItem('editTab'); return ED_TABS.includes(t) ? t : 'Edit'; } catch { return 'Edit'; } })();
+/// What is shown on the wave. Kept, so the page comes back as you left it.
+const edPrefs = Object.assign({ rainbow: true, spec: true, level: true, hits: false, loud: false, snapHits: false },
+  (() => { try { return JSON.parse(localStorage.getItem('editShow') || '{}'); } catch { return {}; } })());
+/// The document's own samples and what was measured from them (411).
+const edSound = { path: '', rate: 0, mono: null, an: null, hits: [], loud: [], serial: 0 };
 
 /// The bar as you arranged it: sections in order, each a title and the
 /// commands in it. Anything not in a section is hidden. The default is
 /// `WT_GROUPS`; a stored layout is checked against the commands that exist,
 /// so a command added later turns up rather than being lost.
 function wtDefault() {
-  return WT_GROUPS.map(([title, items]) => ({ title, ids: items.map((it) => it.id) }));
+  return WT_GROUPS.map(([title, items]) => ({ title, tab: edTabOf(title), ids: items.map((it) => it.id) }));
 }
 function wtLoad() {
   try {
@@ -250,6 +290,7 @@ function wtLoad() {
     const seen = new Set();
     const sections = v.sections.map((sec) => ({
       title: String(sec.title || '').slice(0, 40),
+      tab: ED_TABS.includes(sec.tab) ? sec.tab : edTabOf(sec.title),
       ids: (sec.ids || []).filter((id) => WT_CMDS[id] && !seen.has(id) && seen.add(id)),
     }));
     const hidden = (v.hidden || []).filter((id) => WT_CMDS[id] && !seen.has(id) && seen.add(id));
@@ -258,7 +299,7 @@ function wtLoad() {
       for (const it of items) {
         if (seen.has(it.id)) continue;
         let sec = sections.find((x) => x.title === title);
-        if (!sec) sections.push(sec = { title, ids: [] });
+        if (!sec) sections.push(sec = { title, tab: edTabOf(title), ids: [] });
         sec.ids.push(it.id);
       }
     }
@@ -287,7 +328,7 @@ function wtButton(id) {
   b.innerHTML = wtIcon(id) + `<span class="wt-word">${WT_WORDS[id] || it.name}</span>`;
   b.onclick = () => {
     if (wtEditing) return;
-    if (!b.disabled) it.run();
+    if (!b.disabled) edRun(id);
   };
   if (wtEditing) {
     b.draggable = true;
@@ -366,6 +407,8 @@ function wtSection(sec, i) {
     row.appendChild(wtButton(id));
     // Export carries its bit depth beside it, as the old bar did.
     if (id === 'export') row.appendChild(wtBits());
+    // The settings a dialog used to ask for, as knobs beside the command.
+    if (!wtEditing) for (const k of edKnobsFor(id)) row.appendChild(k);
   }
   if (wtEditing) {
     head.contentEditable = 'plaintext-only';
@@ -444,7 +487,7 @@ function wtCustomize() {
     if (!wtLayout.hidden.length) row.classList.add('wt-empty');
     wtDropZone(g, 'hidden');
     row.appendChild(tool('wtAdd', 'Section', 'Add an empty section at the end', () => {
-      wtLayout.sections.push({ title: 'New section', ids: [] });
+      wtLayout.sections.push({ title: 'New section', tab: edTab, ids: [] });
       wtSave();
       wtRender();
     }));
@@ -465,7 +508,8 @@ function wtRender() {
   const bar = $('waveTools');
   if (!bar) return;
   bar.classList.toggle('wt-editing', wtEditing);
-  bar.replaceChildren(...wtLayout.sections.map(wtSection), wtCustomize());
+  bar.replaceChildren(...wtLayout.sections.map((sec, i) => [sec, i]).filter(([sec]) => sec.tab === edTab).map(([sec, i]) => wtSection(sec, i)), wtCustomize());
+  edPaintTabs();
   wtSync();
 }
 
@@ -476,7 +520,7 @@ function wtBuild() {
   bar.className = 'wave-tools';
   bar.setAttribute('role', 'toolbar');
   bar.setAttribute('aria-label', 'Edit');
-  $('editTools').before(bar);
+  $('editTools').after(bar);
   wtRender();
 }
 
@@ -498,7 +542,6 @@ function wtSync() {
   if (bits && $('exportBits')) bits.value = $('exportBits').value;
 }
 
-wtBuild();
 
 // ------------------------------------------------------------------- keys
 //

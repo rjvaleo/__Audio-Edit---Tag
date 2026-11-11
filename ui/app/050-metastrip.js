@@ -15,6 +15,7 @@ function renderMetaStrip(f) {
   if (f.instrument) items.push(['instrument', f.instrument, 'inferred']);
   if (f.bpm) items.push(['bpm', f.bpm, 'inferred']);
 
+  nbSetFile(f);
   const strip = $('metaStrip');
   strip.innerHTML = '';
   for (const [k, v, prov] of items) {

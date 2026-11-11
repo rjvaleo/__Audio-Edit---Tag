@@ -19,7 +19,7 @@ async function openFile(page) {
     await selectFile(files[0]);
     setMode('edit');
   });
-  await page.waitForSelector('#transportBar', { state: 'visible', timeout: 20_000 });
+  await page.waitForSelector('#nowBar', { state: 'visible', timeout: 20_000 });
 }
 
 test('both sources are on the transport, on at every load, and a switch lasts only the session', async ({ page }) => {

@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/chop.css">
 <link rel="stylesheet" href="/wave.css">
 <link rel="stylesheet" href="/grain.css">
+<link rel="stylesheet" href="/edit.css">
 </head>
 <body>
 
@@ -51,6 +52,45 @@
        questions at two sizes: which workspace am I in, and which panel of the
        library is open. Four destinations answer one. -->
   <nav class="rail rl" id="leftRail"></nav>
+
+  <!-- Now Playing: the transport, on every page, in the one place it never
+       leaves. These are the app's own controls, not copies; the pages that
+       used to borrow or mirror them no longer do. See ui/app/410-now-bar.js. -->
+  <div class="nowbar" id="nowBar" role="toolbar" aria-label="Transport">
+    <div class="nb-group nb-tp">
+      <button class="tbtn play" id="playBtn" aria-label="Play" title="Play/pause  Space">▶</button>
+      <button class="tbtn" id="stopBtn" aria-label="Stop" title="Stop — returns to the cue. Double-click to return to the beginning of the file; the cue stays where it is.">■</button>
+      <button class="tbtn loop" id="loopBtn" aria-label="Loop" title="Loop: off">⟲</button>
+      <button class="tbtn rec" id="recBtn" aria-label="Capture what is playing" title="Capture what is playing">●</button>
+    </div>
+    <span class="nb-sep"></span>
+    <!-- The two sound generators. A source switched off is silent, out of the
+         picture, and out of an export. -->
+    <div class="nb-group">
+      <button class="tbtn src on" id="srcGrain" title="The granular engine">GRAIN</button>
+      <button class="tbtn src on" id="srcSeq" title="The sequencer">SEQ</button>
+    </div>
+    <span class="nb-sep"></span>
+    <span class="mono time nb-clock" id="timeNow">00:00.000</span>
+    <div class="nb-bpm" id="nbBpm" title="The tempo: Chop's when it has counted this sound, the library's otherwise"><b id="nbBpmV">—</b><span id="nbBpmS">BPM</span></div>
+    <span class="nb-sep"></span>
+    <div class="nb-now">
+      <div class="nb-name"><span id="nbName">no sound</span><em id="nbMeta"></em>
+        <span class="no-audio hidden" id="noAudio">no audio device</span>
+        <span class="rec-label mono dim" id="recLabel"></span>
+        <span class="loop-label mono dim" id="loopLabel"></span>
+      </div>
+      <div class="nb-strip" id="nbStrip" title="The whole sound. Click to go there."><canvas id="nbStripCanvas"></canvas><i class="nb-sel" id="nbSel"></i><i class="nb-head" id="nbHead"></i></div>
+    </div>
+    <span class="nb-sep"></span>
+    <div class="nb-out" title="What is coming out">
+      <div class="nb-ol"><b>OUT</b><em id="nbDb">−∞</em></div>
+      <div class="nb-meter"><i id="nbMeterL"></i></div><div class="nb-meter"><i id="nbMeterR"></i></div>
+      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.85" title="Volume" aria-label="Volume">
+    </div>
+    <span class="nb-sep"></span>
+    <div class="nb-look" id="nbLook" role="group" aria-label="Look"></div>
+  </div>
 
   <!-- left panel: the whole library, playable -->
   <aside class="panel left" id="leftPanel">
@@ -263,11 +303,15 @@
   <!-- centre: the selected sound, or the editor -->
   <main class="centre">
 
+
     <!-- open documents: edit mode only -->
 
     <!-- edit toolbar: only in the edit window -->
     <div class="edittools hidden" id="editTools">
       <div class="tabbar hidden" id="tabBar"></div>
+      <!-- The Edit page's command tabs (412) and ⌘K (415), beside the file tabs. -->
+      <div class="ed-tabs" id="edTabs" role="tablist" aria-label="Edit tools"></div>
+      <button type="button" class="ed-cmdk" id="edCmdK" title="Every command, by name  ⌘K"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>Every command…<kbd>⌘K</kbd></button>
       <div class="vsep"></div>
       <button class="ghost" data-op="cut">Cut</button>
       <button class="ghost" data-op="crop">Crop</button>
@@ -335,6 +379,9 @@
       <div class="ov-playhead" id="ovPlayhead"></div>
     </div>
 
+    <!-- The Edit page's time ruler (413). -->
+    <div class="ed-time" id="edTime"><canvas id="edTimeCanvas"></canvas></div>
+
     <div class="ruler hidden" id="ruler"></div>
 
     <div class="lane" id="lane">
@@ -363,8 +410,25 @@
            stylesheet, which owns the split and reads it from one custom
            property so the two canvases cannot disagree about where it is. -->
       <div class="lane-split" id="laneSplit" title="Drag to resize the spectrogram — double-click to put it back"></div>
+      <!-- The Edit page on the wave: its marks, its level ruler, the preview
+           while a handle is held, the handles themselves, the loupe on an
+           edit point, and the meters that slide out (413, 414). -->
+      <canvas class="ed-marks" id="edMarksCanvas"></canvas>
+      <canvas class="ed-level" id="edLevelCanvas"></canvas>
+      <canvas class="ed-preview" id="edPreview" hidden></canvas>
+      <div class="ed-hands" id="edHands"></div>
+      <div class="ed-loupe" id="edLoupe" hidden><canvas></canvas><span></span></div>
+      <div class="ed-meters" id="edMeters"><div class="ed-mtab">METERS</div><div class="ed-mbody">
+        <span class="ed-cap">Level · selection</span>
+        <div class="ed-vms"><div class="ed-vm"><i id="edmPeak"></i><span>peak <b id="edmPeakV">—</b></span></div><div class="ed-vm"><i id="edmRms"></i><span>rms <b id="edmRmsV">—</b></span></div></div>
+        <span class="ed-cap">Bands</span><div class="ed-bands" id="edmBands"></div>
+        <div class="ed-kv"><span>Hits</span><b id="edmHits">0</b><span>Loud spots</span><b id="edmLoud">0</b></div>
+      </div></div>
       <div class="lane-empty" id="laneEmpty"><span class="lane-empty-say">Select a sound on the left.</span><button class="ghost lane-empty-open" id="laneEmptyOpen">Open the library</button></div>
     </div>
+
+    <!-- The Edit page's counters, under the wave (413). -->
+    <div class="ed-counters" id="edCounters"></div>
 
     <!-- The room, full size, with its controls beside it.
          **Nothing in here is a copy.** The room, its control panel and the
@@ -484,22 +548,6 @@
   <span class="mode-label" id="modeLabel">Browse</span>
 
   <div class="vsep"></div>
-  <button class="tbtn play" id="playBtn" aria-label="Play" title="Play/pause">▶</button>
-  <button class="tbtn" id="stopBtn" aria-label="Stop" title="Stop — returns to the cue. Double-click to return to the beginning of the file; the cue stays where it is.">■</button>
-  <button class="tbtn loop" id="loopBtn" aria-label="Loop" title="Loop: off">⟲</button>
-  <button class="tbtn rec" id="recBtn" aria-label="Capture what is playing" title="Capture what is playing">●</button>
-  <!-- The two sound generators. A source switched off is silent, out of the
-       picture, and out of an export. -->
-  <button class="tbtn src on" id="srcGrain" title="The granular engine">GRAIN</button>
-  <button class="tbtn src on" id="srcSeq" title="The sequencer">SEQ</button>
-  <span class="no-audio hidden" id="noAudio">no audio device</span>
-  <span class="rec-label mono dim" id="recLabel"></span>
-  <span class="loop-label mono dim" id="loopLabel"></span>
-
-  <div class="vsep"></div>
-  <span class="mono time" id="timeNow">00:00.000</span>
-
-  <div class="vsep"></div>
   <div class="zoom">
     <button class="tbtn small" id="zoomOut" aria-label="Zoom out" title="Zoom out">–</button>
     <span class="mono dim" id="zoomLabel">fit</span>
@@ -518,7 +566,6 @@
   <div class="vsep"></div>
   <div class="metastrip" id="metaStrip"></div>
 
-  <input type="range" id="volume" min="0" max="1" step="0.01" value="0.85" title="Volume">
 </div>
 
     <!-- Presets, in the strip that used to sit empty under the transport, and
@@ -1268,8 +1315,6 @@
        <div class="chop-app" data-look="AD">
         <header class="chop-band chop-top chop-panel">
           <div id="chopTabs" class="chop-tabs-host"></div>
-          <div id="chopTransport" class="chop-transport"></div>
-          <div id="chopClock" class="chop-clock chop-well"></div>
           <div class="chop-seg" title="Two settings to flip between"><button type="button" id="chopA" title="Settings A">A</button><button type="button" id="chopB" title="Settings B: flip between the two to compare">B</button></div>
           <div class="chop-preset chop-well chop-presets"><button type="button" id="chopPrevPreset" title="Previous preset">‹</button><select id="chopPreset" title="Chop presets"></select><button type="button" id="chopNextPreset" title="Next preset">›</button></div>
           <button type="button" class="chop-btn" id="chopSave" title="Save these settings as a preset"><svg viewBox="0 0 12 12"><path d="M2 2H8L10 4V10H2ZM4 2V5H7V2M4 10V7H8V10"/></svg>Save</button>
@@ -1277,7 +1322,6 @@
           <button type="button" class="chop-btn" id="chopDice" title="Roll the dice: new settings for the cutting and the sound"><svg viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="1.6"/><circle cx="4.4" cy="4.4" r=".7" fill="currentColor"/><circle cx="7.6" cy="7.6" r=".7" fill="currentColor"/><circle cx="6" cy="6" r=".7" fill="currentColor"/></svg>Dice</button>
           <button type="button" class="chop-btn chop-capture" id="chopCapture" title="Capture: chop the newest take in Recordings"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="4"/><circle cx="6" cy="6" r="1.6" fill="currentColor"/></svg>Take</button>
           <div class="chop-look" id="chopLook" title="Look: the same five as Grain"></div>
-          <div id="chopLevel" class="chop-level"></div>
         </header>
         <section class="chop-band chop-cutrow">
           <div class="chop-pills chop-tabs" id="chopMode" title="How the cuts are found"><button type="button" class="chop-tab" data-v="transient" title="A cut at every hit, as ReCycle does: each slice runs to the next"><svg viewBox="0 0 30 20"><path d="M1 18L6 2V18M11 18L16 6V18M21 18L26 3V18"/></svg>Transient</button><button type="button" class="chop-tab" data-v="silence" title="The sounds between the silences, as Recycle Reborn does"><svg viewBox="0 0 30 20"><path d="M2 10C3 2 8 2 9 10S3 18 2 10M13 10C14 4 19 4 20 10S14 16 13 10M24 10C24.5 7 27 7 28 10S24.5 13 24 10"/></svg>Silence</button><button type="button" class="chop-tab" data-v="grid" title="A cut on every grid line at the tempo, as Ratchet does"><svg viewBox="0 0 30 20"><path d="M2 2V18M9 2V18M16 2V18M23 2V18M28 2V18"/><path d="M1 10H29" opacity=".5"/></svg>Grid</button></div>
@@ -1471,6 +1515,9 @@
 <!-- Before app.js: the room's knobs are built as it loads, and each asks for its
      picture then. See `ui/control-pictures.js`. -->
 <script src="/control-pictures.js"></script>
+<!-- The Edit page's pie and ⌘K (415). -->
+<div class="ed-pie" id="edPie" hidden></div>
+<div class="ed-k" id="edK" hidden role="dialog" aria-label="Every command"><input id="edKIn" placeholder="Type a command: fade, normalize, strip, region…" aria-label="Find a command"><div class="ed-klist" id="edKList"></div></div>
 <script src="/app.js"></script>
 <script src="/sound-map.js"></script>
 <script src="/library-graph.js"></script>

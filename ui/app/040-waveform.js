@@ -453,6 +453,7 @@ function drawWave() {
   // wider than the lane, so the span in play here is theirs and not the view's.
   const span = p.to - p.from;
   const sampleMode = span > 0 && p.columns >= span;
+  const cols = sampleMode ? null : edColumnColours(p);
 
   for (let ch = 0; ch < nch; ch++) {
     const { min, max, rms } = p.channels[ch];
@@ -468,17 +469,21 @@ function drawWave() {
       drawSamples(ctx, max, span, w, mid, half, accent);
     } else {
       // Min/max envelope, then the RMS body inside it — the reason the server
-      // sends three numbers per column rather than one.
+      // sends three numbers per column rather than one. On the Edit page with
+      // Rainbow on, each column takes the colour of its bands (413).
+      const ink = cols ? (i) => cols[i] || accent : () => accent;
       ctx.fillStyle = accent;
       ctx.globalAlpha = 0.34;
       for (let i = 0; i < p.columns; i++) {
         const y1 = mid - max[i] * half;
         const y2 = mid - min[i] * half;
+        if (cols) ctx.fillStyle = ink(i);
         ctx.fillRect(i * colW, y1, Math.max(colW - 0.3, 0.6), Math.max(y2 - y1, 1));
       }
       ctx.globalAlpha = 1;
       for (let i = 0; i < p.columns; i++) {
         const r = rms[i] * half;
+        if (cols) ctx.fillStyle = ink(i);
         ctx.fillRect(i * colW, mid - r, Math.max(colW - 0.3, 0.6), Math.max(r * 2, 1));
       }
     }
@@ -488,6 +493,8 @@ function drawWave() {
       ctx.beginPath(); ctx.moveTo(0, top); ctx.lineTo(w, top); ctx.stroke();
     }
   }
+  // The rulers, marks and handles follow the view (413).
+  edAfterDraw();
 }
 
 // --------------------------------------------------------------------- zoom
@@ -537,6 +544,11 @@ async function loadOverview() {
       `/api/peaks?p=${encodeURIComponent(f.path)}&cols=1400&clips=1`);
   } catch { state.overview = null; }
   drawOverview();
+  // The Now Playing bar draws the same map, on every page.
+  nbDrawStrip();
+  // The overview is reread after every edit that changes the sound, so this is
+  // when the Edit page's own reading of it is out of date too.
+  edSoundStale();
 }
 
 function drawOverview() {
@@ -561,11 +573,14 @@ function drawOverview() {
   const colW = w / p.columns;
   const { min, max } = p.channels[0];
 
+  // The Edit page colours the map as it colours the lane (413).
+  const cols = edColumnColours({ from: 0, to: p.frames || state.view.frames || 1, columns: p.columns });
   ctx.fillStyle = accent;
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = cols ? 0.75 : 0.5;
   for (let i = 0; i < p.columns; i++) {
     const y1 = mid - max[i] * half;
     const y2 = mid - min[i] * half;
+    if (cols) ctx.fillStyle = cols[i] || accent;
     ctx.fillRect(i * colW, y1, Math.max(colW, 0.7), Math.max(y2 - y1, 1));
   }
   ctx.globalAlpha = 1;
@@ -681,13 +696,18 @@ const xToFrames = (frac) => {
   // scrubs instead, so you can run over the file and hear it without
   // destroying a selection you already made.
   let scrubbing = false;
+  let edge = false;
 
   lane.addEventListener('mousedown', (e) => {
-    if (!state.peaks) return;
+    if (!state.peaks || e.button !== 0) return;
     dragging = true;
     scrubbing = e.altKey;
     anchor = xToFrames(posFrom(e));
     if (scrubbing) { seekToSource(posFrom(e)); return; }
+    // The Edit page: an edge of the selection is picked up, not replaced.
+    const other = edEdgeGrab(posFrom(e) * lane.clientWidth);
+    edge = other != null;
+    if (edge) { anchor = other; return; }
     state.sel = null;
     drawSelection();
     applyLoop();
@@ -699,18 +719,22 @@ const xToFrames = (frac) => {
     if (!dragging) return;
     const frac = posFrom(e);
     if (scrubbing || e.altKey) { seekToSource(frac); return; }
-    const now = xToFrames(frac);
+    let now = xToFrames(frac);
+    if (edge) now = edEdgeSnap(now);
     // A drag of a pixel or two is a click, not a selection.
-    if (Math.abs(now - anchor) < (state.view.to - state.view.from) / 500) return;
+    else if (Math.abs(now - anchor) < (state.view.to - state.view.from) / 500) return;
+    if (now === anchor) return;
     state.sel = { start: Math.min(anchor, now), end: Math.max(anchor, now) };
     setCue(state.sel.start);
     drawSelection();
     applyLoop();
+    if (edge) edLoupe(now);
   });
 
   window.addEventListener('mouseup', () => {
     if (!dragging) return;
     dragging = false;
+    if (edge) { edge = false; edLoupe(null); }
     if (scrubbing) { scrubbing = false; return; }
     updateSelLabel();
     applyLoop();
@@ -739,5 +763,7 @@ function updateSelLabel() {
     ? `${fmtTime(state.sel.start / sr)} → ${fmtTime(state.sel.end / sr)} (${((state.sel.end - state.sel.start) / sr).toFixed(3)}s)`
     : 'click · drag · ⌥scrub';
   wtSync();
+  edPaintCounters();
+  edPaintHands();
 }
 

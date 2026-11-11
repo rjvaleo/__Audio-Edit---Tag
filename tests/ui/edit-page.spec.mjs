@@ -1,16 +1,17 @@
 // The Edit page: the open sound with editing only, and every edit command as an
-// icon along the top. See "the Edit page" in `ui/app.js`.
+// icon in WaveLab-style tabs along the top. See `docs/EDIT-PAGE.md`.
 //
 // Edit and Grain are two pages of the one `edit` mode, chosen from the rail.
 // The icons run the same commands as the menus, dim when there is nothing for
 // them to act on, and Copy / Paste / Delete are real edits on the document.
+// A command lives in one tab; `cmd` opens that tab before clicking it.
 
 import { test, expect } from './test.mjs';
 
 async function openEdit(page) {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('kept')) return;
-    try { localStorage.removeItem('editPage'); localStorage.removeItem('editToolbar'); } catch {}
+    try { for (const k of ['editPage', 'editToolbar', 'editTab', 'editShow', 'editParams']) localStorage.removeItem(k); } catch {}
   });
   await page.goto('/');
   await page.waitForFunction(
@@ -33,7 +34,14 @@ async function openEdit(page) {
 const frames = (page) => page.evaluate(() => state.edit.frames);
 const select = (page, start, end) =>
   page.evaluate(([a, b]) => { state.sel = { start: a, end: b }; drawSelection(); }, [start, end]);
-const cmd = (page, id) => page.click(`#waveTools [data-cmd="${id}"]`);
+const tab = (page, id) => page.evaluate((i) => edSetTab(edTabFor(i)), id);
+const cmd = async (page, id) => { await tab(page, id); await page.click(`#waveTools [data-cmd="${id}"]`); };
+/// Every tab's buttons, the tab opened for each, as one list.
+const everyButton = (page, sel) => page.evaluate((q) => {
+  const out = [];
+  for (const t of ED_TABS) { edSetTab(t); out.push(...[...document.querySelectorAll(`#waveTools ${q}`)].map((b) => ({ id: b.dataset.cmd, svg: !!b.querySelector('svg path, svg rect, svg circle'), label: b.getAttribute('aria-label'), title: b.title }))); }
+  return out;
+}, sel);
 
 test('Edit is its own page in the rail: no dock, the toolbar instead', async ({ page }) => {
   await openEdit(page);
@@ -83,24 +91,21 @@ test('Chop is its own page in the rail: the dock with only Chop, and Grain gets 
 
 test('every icon is drawn, named, and says its key', async ({ page }) => {
   await openEdit(page);
-  const bad = await page.$$eval('#waveTools .wt-btn', (bs) => bs
-    .filter((b) => !b.querySelector('svg path, svg rect, svg circle') || !b.getAttribute('aria-label') || !b.title)
-    .map((b) => b.dataset.cmd));
-  expect(bad).toEqual([]);
-  const n = await page.$$eval('#waveTools .wt-btn', (bs) => bs.length);
-  expect(n).toBeGreaterThanOrEqual(35);
-  expect(await page.getAttribute('#waveTools [data-cmd="copy"]', 'title')).toContain('⌘C');
+  const all = await everyButton(page, '.wt-btn[data-cmd]');
+  expect(all.filter((b) => !b.svg || !b.label || !b.title).map((b) => b.id)).toEqual([]);
+  expect(all.length).toBeGreaterThanOrEqual(44);
+  expect(all.find((b) => b.id === 'copy').title).toContain('⌘C');
 });
 
 test('the icons that need a selection are dimmed without one', async ({ page }) => {
   await openEdit(page);
   await page.evaluate(() => { state.sel = null; drawSelection(); });
-  const off = await page.$$eval('#waveTools .wt-btn:disabled', (bs) => bs.map((b) => b.dataset.cmd));
+  const off = (await everyButton(page, '.wt-btn:disabled')).map((b) => b.id);
   for (const id of ['cut', 'copy', 'delete', 'crop', 'fadeIn', 'fadeOut', 'reverse', 'silence', 'paste']) {
     expect(off, id).toContain(id);
   }
   await select(page, 1000, 2000);
-  const on = await page.$$eval('#waveTools .wt-btn:not(:disabled)', (bs) => bs.map((b) => b.dataset.cmd));
+  const on = (await everyButton(page, '.wt-btn:not(:disabled)')).map((b) => b.id);
   for (const id of ['cut', 'copy', 'delete', 'crop', 'fadeIn', 'fadeOut', 'reverse', 'silence']) {
     expect(on, id).toContain(id);
   }
@@ -273,14 +278,20 @@ test('the page is remembered', async ({ page }) => {
 
 // ── sections, words, and customizing ─────────────────────────────────────────
 
+const secAt = (page, title) => page.evaluate((t) => wtLayout.sections.findIndex((s) => s.title === t), title);
 const ids = (page, sec) => page.$$eval(`#waveTools .wt-group[data-section="${sec}"] .wt-btn[data-cmd]`,
   (bs) => bs.map((b) => b.dataset.cmd));
+const titlesIn = (page, t) => page.evaluate((x) => { edSetTab(x); return [...document.querySelectorAll('#waveTools .wt-group[data-section] .wt-title')].map((e) => e.textContent); }, t);
 
-test('the bar is in titled sections, and every icon has its word under it', async ({ page }) => {
+test('the tabs hold the ribbon\'s sections, and every icon has its word under it', async ({ page }) => {
   await openEdit(page);
-  const titles = await page.$$eval('#waveTools .wt-group[data-section] .wt-title', (ts) => ts.map((t) => t.textContent));
-  expect(titles).toEqual(['History', 'Clipboard', 'Silence', 'Fades', 'Level', 'Process',
-    'Selection', 'Zoom', 'Markers', 'Snap', 'Export']);
+  const got = {};
+  for (const t of ['View', 'Edit', 'Process', 'Correct', 'Analyze', 'Markers', 'Render']) got[t] = await titlesIn(page, t);
+  expect(got).toEqual({
+    View: ['Display', 'Zoom'], Edit: ['History', 'Clipboard', 'Selection', 'Snap'], Process: ['Fades', 'Level', 'Process'],
+    Correct: ['Silence', 'Repair'], Analyze: ['Show', 'Measure'], Markers: ['Markers'], Render: ['Export'],
+  });
+  await page.evaluate(() => edSetTab('Edit'));
   const wordless = await page.$$eval('#waveTools .wt-btn[data-cmd]', (bs) => bs
     .filter((b) => {
       const w = b.querySelector('.wt-word');
@@ -293,46 +304,55 @@ test('the bar is in titled sections, and every icon has its word under it', asyn
 
 test('customizing: an icon dragged to another place stays there', async ({ page }) => {
   await openEdit(page);
+  const hist = await secAt(page, 'History'), clip = await secAt(page, 'Clipboard');
+  await page.evaluate(() => edSetTab('Edit'));
   await page.click('#waveTools .wtEdit');
   await page.locator('#waveTools [data-cmd="copy"]').dragTo(page.locator('#waveTools [data-cmd="undo"]'));
-  expect((await ids(page, 0))[0]).toBe('copy');
-  expect(await ids(page, 1)).not.toContain('copy');
+  expect((await ids(page, hist))[0]).toBe('copy');
+  expect(await ids(page, clip)).not.toContain('copy');
   await page.evaluate(() => sessionStorage.setItem('kept', '1'));
   await page.reload();
   await page.waitForFunction(() => !!document.querySelector('#waveTools .wt-btn'));
-  expect((await ids(page, 0))[0]).toBe('copy');
+  await page.evaluate(() => edSetTab('Edit'));
+  expect((await ids(page, hist))[0]).toBe('copy');
 });
 
 test('customizing: a section dragged onto another goes before it', async ({ page }) => {
   await openEdit(page);
+  const hist = await secAt(page, 'History'), sel = await secAt(page, 'Selection');
+  await page.evaluate(() => edSetTab('Edit'));
   await page.click('#waveTools .wtEdit');
-  await page.locator('#waveTools .wt-group[data-section="3"] .wt-title')
-    .dragTo(page.locator('#waveTools .wt-group[data-section="0"] .wt-title'));
+  await page.locator(`#waveTools .wt-group[data-section="${sel}"] .wt-title`)
+    .dragTo(page.locator(`#waveTools .wt-group[data-section="${hist}"] .wt-title`));
   const titles = await page.$$eval('#waveTools .wt-group[data-section] .wt-title', (ts) => ts.map((t) => t.textContent));
-  expect(titles.slice(0, 2)).toEqual(['Fades', 'History']);
+  expect(titles.slice(0, 2)).toEqual(['Selection', 'History']);
 });
 
 test('customizing: a section is renamed in place', async ({ page }) => {
   await openEdit(page);
+  const hist = await secAt(page, 'History');
+  await page.evaluate(() => edSetTab('Edit'));
   await page.click('#waveTools .wtEdit');
-  const t = page.locator('#waveTools .wt-group[data-section="0"] .wt-title');
+  const t = page.locator(`#waveTools .wt-group[data-section="${hist}"] .wt-title`);
   await t.click();
   await page.keyboard.press('Meta+a');
   await page.keyboard.type('Oops');
   await page.keyboard.press('Enter');
-  expect(await page.evaluate(() => wtLayout.sections[0].title)).toBe('Oops');
+  expect(await page.evaluate((i) => wtLayout.sections[i].title, hist)).toBe('Oops');
 });
 
 test('customizing: hide an icon, then drag it back from Hidden; Reset restores all', async ({ page }) => {
   await openEdit(page);
+  const hist = await secAt(page, 'History'), clip = await secAt(page, 'Clipboard');
+  await page.evaluate(() => edSetTab('Edit'));
   await page.click('#waveTools .wtEdit');
-  await page.click('#waveTools .wt-group[data-section="1"] [data-cmd="crop"] .wt-x');
-  expect(await ids(page, 1)).not.toContain('crop');
+  await page.click(`#waveTools .wt-group[data-section="${clip}"] [data-cmd="crop"] .wt-x`);
+  expect(await ids(page, clip)).not.toContain('crop');
   await expect(page.locator('#waveTools .wt-custom [data-cmd="crop"]')).toBeVisible();
-  await page.locator('#waveTools .wt-custom [data-cmd="crop"]').dragTo(page.locator('#waveTools [data-cmd="silence"]'));
-  expect((await ids(page, 2))[0]).toBe('crop');
+  await page.locator('#waveTools .wt-custom [data-cmd="crop"]').dragTo(page.locator('#waveTools [data-cmd="undo"]'));
+  expect((await ids(page, hist))[0]).toBe('crop');
   await page.click('#waveTools .wtReset');
-  expect(await ids(page, 1)).toEqual(['cut', 'copy', 'paste', 'insertClip', 'delete', 'crop', 'duplicate']);
+  expect(await ids(page, clip)).toEqual(['cut', 'copy', 'paste', 'insertClip', 'delete', 'crop', 'duplicate']);
   await page.click('#waveTools .wtDone');
   await expect(page.locator('#waveTools .wtEdit')).toBeVisible();
 });
@@ -341,6 +361,7 @@ test('customizing: a click picks an icon up rather than running it', async ({ pa
   await openEdit(page);
   const was = await frames(page);
   await select(page, 0, 1000);
+  await page.evaluate(() => edSetTab('Edit'));
   await page.click('#waveTools .wtEdit');
   await page.click('#waveTools [data-cmd="cut"]', { position: { x: 20, y: 30 } });
   await page.waitForTimeout(400);

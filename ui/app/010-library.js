@@ -280,6 +280,11 @@ function requestThumbs() {
 /// exactly is the design rather than a clash, and is what the blue original did
 /// too.
 function waveInk(second = false) {
+  // The Edit page draws in the Look's ink, as Chop and Grain do.
+  if (!second && document.body.classList.contains('wavepage')) {
+    const m = getComputedStyle(document.documentElement).getPropertyValue('--m-wave').trim();
+    if (m) return m;
+  }
   return getComputedStyle(document.documentElement)
     .getPropertyValue(second ? '--wave-2' : '--wave').trim();
 }
