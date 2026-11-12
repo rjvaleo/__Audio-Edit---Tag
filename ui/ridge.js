@@ -602,6 +602,8 @@ function buildRidgePanel() {
     };
     box.appendChild(sl);
     box.appendChild(read);
+    // The shared bar (`uiBarOver`, `ui/app/073b-ui-bar.js`), when the app has it.
+    if (typeof uiBarOver === 'function') uiBarOver(box, { input: sl, name: tag, read, h: 20 });
     host.appendChild(box);
   }
 

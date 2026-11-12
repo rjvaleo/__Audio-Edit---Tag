@@ -176,8 +176,10 @@ function wvHlBoardSrc(src, on) {
 
 // ─────────────────────────────────────────────────────────────── the nodes
 
-function wvBoardKnob(n, p, size) {
-  return `<div class="wv-knob" style="width:${size}px;height:${size}px"><div class="wv-cap" style="inset:${Math.round(size * 0.19)}px"></div><canvas data-fxk="${wvEsc(n.id)}|${p.key}" data-tgt="board:${wvEsc(n.id)}:${p.key}" data-w="${size}" data-h="${size}" title="${wvEsc(p.label)}: drag up and down, Shift for fine, double-click for the default. Drop a source here to modulate it"></canvas></div>`;
+/// A node's knob: the shared knob at 26 (`073a-ui-knob.js`), its canvas taking
+/// the drag.
+function wvBoardKnob(n, p) {
+  return uiKnobHtml({ size: 26, face: false, cls: 'wv-knob', inner: `<canvas data-fxk="${wvEsc(n.id)}|${p.key}" data-tgt="board:${wvEsc(n.id)}:${p.key}" data-w="26" data-h="26" title="${wvEsc(p.label)}: drag up and down, Shift for fine, double-click for the default. Drop a source here to modulate it"></canvas>` });
 }
 
 function wvPins(n) {
@@ -200,7 +202,7 @@ function wvNodeEl(n) {
     return `<div class="wv-fn fx ${n.on ? '' : 'off'}" data-node="${id}" style="${st};--cc:${wvCatCol(wvNodeCat(n), 64)}">`
       + `<div class="fh" data-drag><div class="fhn"><b class="${big ? 'sm' : ''}">${wvEsc(nm)}</b><span>${wvCatName(wvNodeCat(n))} · ${wvNodeMaker(n)}</span></div><span class="wv-pw wv-btn ${n.on ? 'on' : ''}" data-pw title="Power: off passes the sound through untouched">${WV_PWR}</span></div>`
       + `<div class="wv-well fp">${cv(136, 40)}${snd ? `<span class="wv-fsnd ${wvSoundState(n)}" data-snd="${id}" title="${wvEsc(snd.label)}: ${wvEsc(wvSoundText(n))}. Click to pick one from the library">${wvEsc(wvFitLab(sndLab, 124))}</span>` : ''}</div>`
-      + `<div class="fk">${pr.length ? pr.map((p) => `<div class="fkc">${wvBoardKnob(n, p, 26)}<span class="kl">${wvEsc(wvFitLab(p.label, cw))}</span><b data-nv="${p.key}"></b></div>`).join('') : `<div class="none">No settings:<br>${n.kind === 'fx:invert' ? 'it flips the wave upside down' : 'it swaps left and right'}</div>`}</div>${wvPins(n)}</div>`;
+      + `<div class="fk">${pr.length ? pr.map((p) => `<div class="fkc">${wvBoardKnob(n, p)}<span class="kl">${wvEsc(wvFitLab(p.label, cw))}</span><b data-nv="${p.key}"></b></div>`).join('') : `<div class="none">No settings:<br>${n.kind === 'fx:invert' ? 'it flips the wave upside down' : 'it swaps left and right'}</div>`}</div>${wvPins(n)}</div>`;
   }
   const R = WV_ROUTING[n.kind] || { n: n.kind, tip: '' }, base = `class="wv-fn rt" data-node="${id}" style="${st};--cc:var(--wv-t2)" title="${R.tip}"`;
   if (n.kind === 'split') {
@@ -208,11 +210,11 @@ function wvNodeEl(n) {
     return `<div ${base}>${head('ROUTING', `<div class="wv-seg" data-sn title="How many outs">${[2, 3].map((x) => `<span class="${k === x ? 'on' : ''}" data-k="${x}">${x}</span>`).join('')}</div>`)}<div class="sb">${cv(116, k * 14)}<div>${[...Array(k).keys()].map((i) => `<div class="pl">${'ABC'[i]}</div>`).join('')}</div></div>${wvPins(n)}</div>`;
   }
   if (n.kind === 'mix') {
-    return `<div ${base}>${head('ROUTING', '<span class="wv-ib wv-btn" data-mn="-1" title="One input fewer">−</span><span class="wv-ib wv-btn" data-mn="1" title="One more input">+</span>')}${wvNodeSpec(n).map((p, i) => `<div class="mrow"><span class="pl">In ${i + 1}</span>${wvBoardKnob(n, p, 22)}<canvas data-nm="${id}|${i}" data-w="44" data-h="8"></canvas><b data-nv="${p.key}"></b></div>`).join('')}${wvPins(n)}</div>`;
+    return `<div ${base}>${head('ROUTING', '<span class="wv-ib wv-btn" data-mn="-1" title="One input fewer">−</span><span class="wv-ib wv-btn" data-mn="1" title="One more input">+</span>')}${wvNodeSpec(n).map((p, i) => `<div class="mrow"><span class="pl">In ${i + 1}</span>${wvBoardKnob(n, p)}<canvas data-nm="${id}|${i}" data-w="44" data-h="8"></canvas><b data-nv="${p.key}"></b></div>`).join('')}${wvPins(n)}</div>`;
   }
-  if (n.kind === 'drywet') return `<div ${base}>${head('ROUTING', '')}<div class="dwb"><span class="pl">in</span><div class="mid">${wvBoardKnob(n, wvNodeSpec(n)[0], 30)}${cv(34, 30)}</div><span class="pl r">send</span><span class="pl">return</span><span class="pl r">out</span></div>${wvPins(n)}</div>`;
+  if (n.kind === 'drywet') return `<div ${base}>${head('ROUTING', '')}<div class="dwb"><span class="pl">in</span><div class="mid">${wvBoardKnob(n, wvNodeSpec(n)[0])}${cv(34, 30)}</div><span class="pl r">send</span><span class="pl">return</span><span class="pl r">out</span></div>${wvPins(n)}</div>`;
   const p = wvNodeSpec(n)[0];
-  return `<div ${base}>${head('ROUTING', '')}<div class="rb">${p ? wvBoardKnob(n, p, 30) : ''}<div class="wv-well">${cv(66, 30)}</div><b data-nv="${p ? p.key : ''}"></b></div>${wvPins(n)}</div>`;
+  return `<div ${base}>${head('ROUTING', '')}<div class="rb">${p ? wvBoardKnob(n, p) : ''}<div class="wv-well">${cv(66, 30)}</div><b data-nv="${p ? p.key : ''}"></b></div>${wvPins(n)}</div>`;
 }
 
 /// The whole board: its nodes, then its cables over them, and everything

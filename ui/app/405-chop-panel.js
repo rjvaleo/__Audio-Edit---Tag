@@ -241,24 +241,16 @@ const CHOP_GLYPH = {
 };
 const CHOP_FACET = { bars: 'time', beats: 'time', sig: 'time', tempo: 'time', stretch: 'time', minDur: 'time', pad: 'time', nudge: 'time', shuffle: 'time', gate: 'time', smooth: 'time', tailMs: 'time', pitch: 'pitch', sens: 'attack', topDb: 'attack' };
 
-/// One of Detect, Grid, Slice or Time's knobs, with its picture.
+/// One of Detect, Grid, Slice or Time's knobs: the shared knob at 26
+/// (`073a-ui-knob.js`), its picture beside it in the facet's colour.
 function chopKnob([key, label, min, max, step, fmt, log, , title]) {
-  const norm = (v) => Math.min(1, Math.max(0, log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min)));
-  let paint = () => {};
-  const el = knob(label, cp[key], min, max, step, fmt,
-    (v) => { chopSetting(key, v, { live: true }); paint(v); },
+  const el = uiKnobParam(label, cp[key], min, max, step, fmt,
+    (v) => chopSetting(key, v, { live: true }),
     (v) => chopSetting(key, v),
-    log, CHOP_DEF[key]);
+    log, CHOP_DEF[key],
+    { size: 26, cls: 'chop-knob', wheel: true, bip: false, pic: (u, v) => CHOP_GLYPH[key](u, v), pv: '0 0 22 16', col: `var(--f-${CHOP_FACET[key]})`,
+      title: `${title} — double-click to reset to ${fmt(CHOP_DEF[key])}` });
   el.dataset.k = key;
-  el.classList.add('chop-knob');
-  el.title = `${title} — double-click to reset to ${fmt(CHOP_DEF[key])}`;
-  el.style.setProperty('--gg', `var(--f-${CHOP_FACET[key]})`);
-  el.insertAdjacentHTML('afterbegin', '<svg class="gl" viewBox="0 0 22 16"></svg>');
-  const glyph = el.firstElementChild;
-  paint = (v) => { glyph.innerHTML = CHOP_GLYPH[key](norm(v), v); };
-  const sync = el.sync;
-  el.sync = (v) => { sync(v); paint(v); };
-  paint(cp[key]);
   chopKnobEls.set(key, el);
   return el;
 }
@@ -326,6 +318,17 @@ function chopBuildKnobs() {
     button('chopDouble', 'chop-btn', '2×', 'It heard half time: twice as many beats', () => chopScaleBars(2)));
   box.append(detect, chopGroup('GRID', 'grid', 140, '', [grid(['nudge', 'shuffle'], 2)]), slice, time);
   chopBuildFx();
+  chopSegs();
+}
+
+/// Every switch on the page is the shared segmented switch (`073d-ui-seg.js`):
+/// the mode at 28, the main rows at 24, the small ones at 20. A / B is the
+/// preset bar's, and left to it.
+function chopSegs() {
+  document.querySelectorAll('.chop-app :is(.chop-seg, .chop-tabs):not(.ui-seg)').forEach((s) => {
+    if (s.querySelector('#chopA')) return;
+    s.classList.add('ui-seg', s.classList.contains('chop-tabs') ? 'h28' : s.classList.contains('sm') ? 'h20' : 'h24');
+  });
 }
 
 /// The processing every slice gets, each kind in line with the others under its
@@ -373,11 +376,10 @@ function chopBar([key, label, min, max, step, fmt, log, , title]) {
     const n = log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
     glyph.innerHTML = FXP.noText(FXP.PIC[chopFxPic(key)](Math.min(1, Math.max(0, n)), v, p));
   };
-  const face = knob(label, cp[key], min, max, step, fmt,
+  const face = uiKnobParam(label, cp[key], min, max, step, fmt,
     (v) => { sync(v); input.dispatchEvent(new Event('input', { bubbles: true })); },
     (v) => { sync(v); input.dispatchEvent(new Event('change', { bubbles: true })); },
-    log, CHOP_DEF[key]);
-  face.classList.add('chop-face');
+    log, CHOP_DEF[key], { size: 26, cls: 'chop-face', wheel: true, bip: false });
   const sync = el.sync;
   el.sync = (v) => { sync(v); face.sync(v); paint(); };
   el.append(face);

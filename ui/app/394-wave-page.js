@@ -46,7 +46,7 @@ function wvBuild() {
      <div class="wv-hint" title="Playing: drag across the keys to glide from note to note. Hold Shift while you drag and every key you cross keeps sounding, a strummed chord.">Keys: A–K, W–U<br>Drag to glide<br>⇧ drag holds</div><span class="wv-ro" id="wvVelRo">vel —</span></div>
     <div class="wv-keys"><canvas id="wvKeys" data-w="604" data-h="100" title="Keys: click to play, lower on a key is louder. Drag to glide; Shift-drag keeps every key you cross sounding"></canvas></div>
     <div class="wv-well" title="Morph: drag. Osc A's position across, Filter 1's brightness up"><canvas id="wvPuck" data-w="100" data-h="100"></canvas></div>
-    <div class="wv-macrodock" id="wvMacros">${WV_MACRO_NAMES.map((n, i) => `<div class="wv-cell c">${wvKnobEl(`wvMac${i}`, 46, 1, `macro${i}`)}<div class="wv-lab"><span id="wvMacn${i}"></span><b id="wvMacr${i}"></b></div></div>`).join('')}</div>
+    <div class="wv-macrodock" id="wvMacros">${WV_MACRO_NAMES.map((n, i) => `<div class="wv-cell c">${wvKnobEl(`wvMac${i}`, 44, 1, `macro${i}`)}<div class="wv-lab"><span id="wvMacn${i}"></span><b id="wvMacr${i}"></b></div></div>`).join('')}</div>
    </div>
    <div class="wv-menu" id="wvMenu" hidden></div>
    <div class="wv-pmenu" id="wvPmenu" hidden></div>
@@ -417,8 +417,7 @@ function wvDrawMacro(i) {
   if (!k) return;
   const { c, w, h } = k, cl = wvCl(), v = wvG('macro' + i), cx = w / 2, cy = h / 2, r = w * 0.26;
   c.clearRect(0, 0, w, h);
-  const m = wvModOf('macro' + i);
-  wvRing(k, v, { cl: wvClFor(m), inset: 4, mod: m.rng, live: m.live });
+  wvKnobRing(k, v, wvModOf('macro' + i));
   c.save();
   c.strokeStyle = cl.wave;
   c.fillStyle = `rgba(${cl.bloom},.8)`;

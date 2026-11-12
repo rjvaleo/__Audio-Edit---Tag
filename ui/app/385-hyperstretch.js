@@ -386,6 +386,7 @@ function hsWire() {
   $('prismSoundFolder').onchange = () => prismSoundFill();
   $('prismSoundFile').onchange = (e) => { if (e.target.value) prismDeckUse(e.target.value); };
   $('prismChainAdd').onchange = (e) => { const k = e.target.value; e.target.value = ''; prismChainAdd(k); };
+  prismDrops();
 
   $('hsGlide').addEventListener('input', (e) => { hs.glide = +e.target.value; hsKeep(); hsSendGlide(); hsPaint(); });
   $('hsThrow').onchange = (e) => { hs.throwOn = e.target.checked; hsKeep(); };

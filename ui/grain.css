@@ -186,10 +186,8 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-lshp svg { width: 18px; height: 12px; fill: none; stroke: var(--gs-t3); stroke-width: 1.4; stroke-linejoin: round; }
 #grainView .gs-lshp > span.on svg { stroke: var(--c); }
 #grainView .gs-lr2 .gs-seg > span { height: 14px; padding: 0 7px; font-size: var(--fs-s); }
-#grainView .gs-sk { display: grid; grid-template-columns: 20px auto; grid-template-rows: auto auto; column-gap: 4px; width: 66px; align-items: center; justify-items: start; flex: none; }
-#grainView .gs-sk svg { width: 20px; height: 20px; display: block; grid-row: 1 / 3; }
-#grainView .gs-sk b { font: 500 var(--fs-xs) var(--mono); color: var(--gs-t); white-space: nowrap; line-height: 10px; }
-#grainView .gs-sk span { font: 500 var(--fs-xs) var(--sans); color: var(--gs-t3); line-height: 9px; }
+#grainView .gs-sk { width: 66px; }
+#grainView .gs-sk .ui-ar { stroke: var(--c); }
 #grainView .gs-lmap { display: flex; flex-direction: row; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 #grainView .gs-mapb { width: 38px; flex: none; height: 18px; border-radius: var(--r-s); font: 600 var(--fs-xs) var(--mono); letter-spacing: .1em; display: grid; place-items: center; color: var(--gs-t2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
 #grainView .gs-ltg { display: flex; flex-wrap: wrap; gap: 3px; flex: 1; min-width: 0; max-height: 36px; align-content: center; }
@@ -207,7 +205,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-bd { bottom: 1px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; box-shadow: 0 0 6px var(--mc); }
 #grainView .gs-bc.mapped .gs-bm, #grainView .gs-bc.mapped .gs-bd { display: block; }
 #grainView .gs-bc.mapped .gs-bw { box-shadow: inset 0 0 0 1.5px var(--mc), inset 0 1px 3px rgba(var(--black-rgb), .8); }
-#grainView .gs-mapped .fxk-ring, #grainView .gs-mapped .sh-ring, #grainView .gs-mapped .lex-ring { outline: 1.5px solid var(--mc); outline-offset: 1px; border-radius: 50%; }
+#grainView .gs-mapped .ui-kn, #grainView .gs-mapped .sh-ring, #grainView .gs-mapped .lex-ring { outline: 1.5px solid var(--mc); outline-offset: 1px; border-radius: 50%; }
 #grainView .gs-kd { fill: var(--mc); filter: drop-shadow(0 0 3px var(--mc)); }
 body.gs-mapping #grainView .gs-bc[data-k]:not(.sw):not(.sg):not(.gs-nomap) .gs-bw,
 body.gs-mapping #grainView .gs-bc[data-f] .gs-bw,
@@ -332,17 +330,20 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
 #gsFxRow .fx-led { background: var(--gs-track); border-color: var(--gs-line); }
 #gsFxRow .fx-led.on { background: var(--gs-on); border-color: var(--gs-on); }
 
-/* one cell: 70 by 70, the knob's 32 px dial, its reading, its name */
+/* one cell: 70 by 70, the knob's 32 px dial, its reading, its name; the shared
+   knob at 26, its picture beside it, its name and reading under */
 #gsFxRow .gs-flat :is(.fxk, .fxt, .sh-cell:not(.sh-keycap), .lex-knob) { position: relative; width: 70px; height: 70px; display: flex; flex-direction: column; align-items: center; padding: 2px 0 0; gap: 0; overflow: visible; min-width: 0; flex: none; }
-#gsFxRow .gs-flat :is(.fxk-ring, .sh-ring, .lex-ring) { width: 32px; height: 32px; max-width: none; aspect-ratio: auto; flex: none; display: block; order: 1; }
-#gsFxRow .gs-flat :is(.fxk-v, .sh-cell .v, .lex-knob .v) { order: 2; display: block; font: 500 var(--fs-xs) var(--mono); line-height: 11px; color: var(--gs-t); white-space: normal; text-align: center; max-width: 70px; margin: 0; }
-#gsFxRow .gs-flat :is(.fxk-l, .sh-cell:not(.sh-keycap) .k, .lex-knob .k) { text-transform: none; order: 3; display: block; font: 500 var(--fs-xs)/10px var(--sans); color: var(--gs-t3); text-align: center; max-width: 68px; white-space: normal; margin: 0; }
-#gsFxRow .fxk-ring .pic, #gsFxRow .sh-ring .pic, #gsFxRow .gs-flat .lex-pic, #gsFxRow .gs-flat .fxk > .fx-pic { display: none; }
-#gsFxRow .fxk-cap, #gsFxRow .sh-cap, #gsFxRow .lex-cap { fill: none; }
-#gsFxRow .gs-flat .fxk-track, #gsFxRow .gs-flat .sh-track, #gsFxRow .gs-flat .lex-track { stroke: var(--gs-track); }
-#gsFxRow .gs-flat .fxk-arc, #gsFxRow .gs-flat .sh-arc, #gsFxRow .gs-flat .lex-arc { stroke: var(--gs-wave); }
-#gsFxRow .gs-flat .fxk-tip, #gsFxRow .gs-flat .sh-tip { fill: var(--gs-wave); }
+#gsFxRow .gs-flat :is(.sh-ring, .lex-ring) { width: 32px; height: 32px; max-width: none; aspect-ratio: auto; flex: none; display: block; order: 1; }
+#gsFxRow .gs-flat :is(.sh-cell .v, .lex-knob .v) { order: 2; display: block; font: 500 var(--fs-xs) var(--mono); line-height: 11px; color: var(--gs-t); white-space: normal; text-align: center; max-width: 70px; margin: 0; }
+#gsFxRow .gs-flat :is(.fxt .fxk-l, .sh-cell:not(.sh-keycap) .k, .lex-knob .k) { text-transform: none; order: 3; display: block; font: 500 var(--fs-xs)/10px var(--sans); color: var(--gs-t3); text-align: center; max-width: 68px; white-space: normal; margin: 0; }
+#gsFxRow .sh-ring .pic, #gsFxRow .gs-flat .lex-pic, #gsFxRow .gs-flat .fxk > .fx-pic { display: none; }
+#gsFxRow .sh-cap, #gsFxRow .lex-cap { fill: none; }
+#gsFxRow .gs-flat .sh-track, #gsFxRow .gs-flat .lex-track { stroke: var(--gs-track); }
+#gsFxRow .gs-flat .sh-arc, #gsFxRow .gs-flat .lex-arc { stroke: var(--gs-wave); }
+#gsFxRow .gs-flat .sh-tip { fill: var(--gs-wave); }
 #gsFxRow .gs-flat .lex-needle { stroke: var(--gs-wave); }
+#gsFxRow .gs-flat .fxk.ui-knob { justify-content: flex-start; padding-top: 6px; gap: 2px; }
+#gsFxRow .gs-flat .fxk .ui-lab { max-width: 68px; }
 #gsFxRow .fki { position: absolute; left: 5px; top: 3px; width: 12px; height: 10px; pointer-events: none; }
 #gsFxRow .fki svg { width: 12px; height: 10px; display: block; fill: none; stroke: var(--gs-t3); stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
 #gsFxRow :is(.fxk, .sh-cell, .lex-knob):hover > .fki svg { stroke: var(--gs-on); }

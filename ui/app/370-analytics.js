@@ -109,8 +109,8 @@ function anText(s) {
 
 /// The label a person would use for the control.
 function anLabel(el) {
-  const holder = el.closest('.param, .knob, label');
-  const k = holder?.querySelector('.k, .fxk-l');
+  const holder = el.closest('.param, .knob, .ui-knob, .ui-bar, label');
+  const k = holder?.querySelector('.k, .ui-kname');
   return anText(k?.textContent || el.getAttribute('aria-label') || el.labels?.[0]?.textContent
     || (el.title || '').split(/ [—–:-] /)[0] || (el.matches('input, select, canvas') ? '' : el.textContent) || el.id);
 }
@@ -156,7 +156,7 @@ function anValue(el) {
   const ring = el.matches('[role="slider"]') ? el : el.querySelector('[role="slider"]');
   const now = ring?.getAttribute('aria-valuenow');
   if (now != null && now !== '') return +now;
-  const txt = ring?.getAttribute('aria-valuetext') || el.querySelector('.v, .fxk-v')?.textContent || '';
+  const txt = ring?.getAttribute('aria-valuetext') || el.querySelector('.v, .ui-kval, .ui-bv')?.textContent || '';
   const n = parseFloat(txt.replace(/[^\d.+-]/g, ''));
   return Number.isFinite(n) ? n : null;
 }

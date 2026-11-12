@@ -195,6 +195,7 @@ function buildRoomTextPanel() {
     sl.oninput = () => set(row.key, +sl.value / k);
     box.appendChild(sl);
     box.appendChild(read);
+    uiBarOver(box, { input: sl, name: tag, read, h: 20 });
     host.appendChild(box);
   }
   paintRoomTextPanel();
@@ -285,6 +286,7 @@ function buildRoom3dPanel() {
     sl.oninput = () => set(row.key, +sl.value / k);
     box.appendChild(sl);
     box.appendChild(read);
+    uiBarOver(box, { input: sl, name: tag, read, h: 20 });
     host.appendChild(box);
   }
   paintRoom3dPanel();
@@ -406,6 +408,7 @@ function stageSlider(row, set) {
   sl.oninput = () => set(row.key, +sl.value / k);
   box.appendChild(sl);
   box.appendChild(read);
+  uiBarOver(box, { input: sl, name: box.querySelector(':scope > .re-tag'), read, h: 20 });
   return box;
 }
 

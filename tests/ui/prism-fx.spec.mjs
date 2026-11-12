@@ -182,7 +182,7 @@ test('a document made with the old Echo opens on the prism one', async ({ page }
   await expect(module.locator('h2')).toHaveText('Echo');
   // Echo is one of the program's own, so it opens on its face (`fx-faces.spec`).
   await expect(module.locator('.fx-sect > b')).toHaveText(['Time', 'Repeats', 'Levels']);
-  await expect(module.locator('.fxk', { hasText: /Delay$/ }).locator('.fxk-v')).toHaveText('125 ms');
+  await expect(module.locator('.fxk', { has: page.locator('.ui-kname', { hasText: /^Delay$/ }) }).locator('.ui-kval')).toHaveText('125 ms');
 });
 
 test('Multi Delay and Stereo Matrix arrive in the rack with their groups', async ({ page }) => {

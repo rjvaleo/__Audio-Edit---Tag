@@ -15,7 +15,7 @@ function wvInspCtl(n, p) {
   const id = `${wvEsc(n.id)}|${p.key}`, tgt = `board:${wvEsc(n.id)}:${p.key}`;
   if (p.toggle || (p.choices && p.choices.length === 2 && p.choices[0] === 'Off')) return `<div class="ic"><span class="wv-ftg wv-btn" data-tg="${id}" data-tgt="${tgt}" title="${wvEsc(p.label)}: click to switch"><i></i></span><div class="it"><span>${wvEsc(p.label)}</span><b data-iv="${p.key}"></b></div></div>`;
   if (p.choices) return `<div class="ic wide"><div class="it"><span>${wvEsc(p.label)}</span></div><div class="wv-seg" data-ch="${id}" data-tgt="${tgt}">${p.choices.map((o, i) => `<span data-ci="${i}">${wvEsc(o)}</span>`).join('')}</div></div>`;
-  return `<div class="ic">${wvBoardKnob(n, p, 26)}<div class="it"><span>${wvEsc(p.label)}</span><b data-iv="${p.key}"></b></div></div>`;
+  return `<div class="ic">${wvBoardKnob(n, p)}<div class="it"><span>${wvEsc(p.label)}</span><b data-iv="${p.key}"></b></div></div>`;
 }
 
 /// A row for a source mapped onto a board control.
@@ -627,8 +627,7 @@ function wvDrawNodePic(g, n, t, memo) {
 function wvDrawBoardKnob(g, n, p) {
   const m = wvModOf(`board:${n.id}:${p.key}`), v = wvPN(p, wvPVal(n, p));
   g.c.clearRect(0, 0, g.w, g.h);
-  g.el.previousElementSibling?.style.setProperty('--v', (wvPBip(p) ? Math.abs(v - 0.5) * 2 : v).toFixed(3));
-  wvRing(g, v, { cl: wvClFor(m), bip: wvPBip(p), pointer: 1, mod: m.rng, live: m.live, inset: 4 });
+  wvKnobRing(g, v, m, { bip: wvPBip(p), pointer: 1 });
 }
 
 // ─────────────────────────────────────────────────────────────── the frame

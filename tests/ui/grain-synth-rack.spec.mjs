@@ -171,7 +171,7 @@ test('every parameter is visible: Plate, Echo, Compressor, LXP Hall 25 of 25, th
   // The Compressor's face: its five knobs, and Threshold as the caret on the meter.
   const comp = await page.evaluate(() => {
     const m = document.querySelector('#fxModuleRail > .fx-module[data-kind="comp"]');
-    return { knobs: [...m.querySelectorAll('.fxk-ring')].map((e) => e.getAttribute('aria-label')), thr: !!m.querySelector('.fx-caret, .fxd-caret') || /THR/.test(m.textContent), h: m.offsetHeight };
+    return { knobs: [...m.querySelectorAll('.fxk .ui-ring')].map((e) => e.getAttribute('aria-label')), thr: !!m.querySelector('.fx-caret, .fxd-caret') || /THR/.test(m.textContent), h: m.offsetHeight };
   });
   expect(comp.knobs).toEqual(['Ratio', 'Attack', 'Release', 'Knee', 'Makeup']);
   expect(comp.thr).toBe(true);
@@ -179,7 +179,7 @@ test('every parameter is visible: Plate, Echo, Compressor, LXP Hall 25 of 25, th
   // The EQ: eight bands, the type buttons, On, and three knobs for the chosen band.
   const eq = await page.evaluate(() => {
     const m = document.querySelector('#fxModuleRail > .fx-module[data-kind="eq"]');
-    return { knobs: m.querySelectorAll('.fxk-ring').length, types: m.querySelectorAll('.seg-btn, .fx-eq-type, button').length, h: m.offsetHeight, text: m.textContent };
+    return { knobs: m.querySelectorAll('.fxk .ui-ring').length, types: m.querySelectorAll('.seg-btn, .fx-eq-type, button').length, h: m.offsetHeight, text: m.textContent };
   });
   expect(eq.knobs).toBe(3);
   expect(eq.h).toBe(400);
@@ -192,7 +192,7 @@ test('a knob on the page moves the running effect and the saved chain, through t
   await setChain(page, ['dattorro_plate']);
   await page.click('#gsFxLab');
   await page.waitForTimeout(150);
-  const ring = page.locator('#fxModuleRail .fxk-ring[aria-label="Decay"]');
+  const ring = page.locator('#fxModuleRail .fxk .ui-ring[aria-label="Decay"]');
   const box = await ring.boundingBox();
   const before = await page.evaluate(() => state.rack.slots[0].params.decay);
   const live = page.waitForRequest((r) => r.url().includes('/api/rack/param') && r.method() === 'POST');
@@ -228,6 +228,9 @@ test('the row never overflows at 1440 wide with up to 8 effects: arrows go first
   }
 });
 
+// Phase 5 (11 Nov 2026): an effect's own knobs are the shared knob, which
+// carries its picture beside it, so the corner picture is only on the suites'
+// knobs (the Lexicon's here) that keep their own faces.
 test('reverb knobs carry a 12 × 10 picture in their corner; no module changes size by a pixel', async ({ page }) => {
   await openPage(page);
   await setChain(page, ['eq', 'comp', 'dattorro_plate', 'prism:echo', 'prism:lxp-hall']);
@@ -239,19 +242,23 @@ test('reverb knobs carry a 12 × 10 picture in their corner; no module changes s
     const ms = [...document.querySelectorAll('#fxModuleRail > .fx-module')];
     const of = (k) => ms.filter((m) => m.dataset.kind === k)[0];
     const size = (e) => { const r = e.getBoundingClientRect(), s = GS.scale; return [r.width / s, r.height / s].map((x) => Math.round(x)); };
-    const first = of('dattorro_plate').querySelector('.fki');
-    const cell = first.closest('.fxk');
+    const first = [...of('prism:lxp-hall').querySelectorAll('.fki')].find((e) => e.getClientRects().length);
+    const cell = first.closest('.lex-knob');
+    const pictured = (k) => [...of(k).querySelectorAll('.fxk')].filter((c) => c.querySelector('.ui-pic.side')).length;
     return {
       eq: of('eq').querySelectorAll('.fki').length, comp: of('comp').querySelectorAll('.fki').length,
       plate: of('dattorro_plate').querySelectorAll('.fki').length, echo: of('prism:echo').querySelectorAll('.fki').length,
+      platePics: pictured('dattorro_plate'), echoPics: pictured('prism:echo'),
       hall: of('prism:lxp-hall').querySelectorAll('.fki').length,
-      size: size(first), ringFirst: cell.querySelector('svg').classList.contains('fxk-ring'), after: first.previousElementSibling === cell.querySelector('.fxk-ring'),
+      size: size(first), ringFirst: cell.querySelector('svg').classList.contains('lex-ring'), after: first.previousElementSibling === cell.querySelector('.lex-ring'),
     };
   });
   expect(info.eq).toBe(0);
   expect(info.comp).toBe(0);
-  expect(info.plate).toBeGreaterThanOrEqual(13);
-  expect(info.echo).toBeGreaterThanOrEqual(6);
+  expect(info.plate).toBe(0);
+  expect(info.echo).toBe(0);
+  expect(info.platePics).toBeGreaterThanOrEqual(13);
+  expect(info.echoPics).toBeGreaterThanOrEqual(6);
   expect(info.hall).toBeGreaterThanOrEqual(20);
   expect(info.size).toEqual([12, 10]);
   expect(info.ringFirst).toBe(true);
@@ -295,7 +302,7 @@ test('the real rack goes home when the page is left, and is unchanged there', as
   await setChain(page, ['dattorro_plate']);
   await page.click('#gsFxLab');
   expect(await page.evaluate(() => document.querySelector('#dockEffects').parentNode.id)).toBe('gsFxRow');
-  expect(await page.locator('#fxModuleRail .fx-module .fxk-ring').count()).toBeGreaterThanOrEqual(13);
+  expect(await page.locator('#fxModuleRail .fx-module .fxk .ui-ring').count()).toBeGreaterThanOrEqual(13);
   await page.evaluate(() => setMode('overview'));
   const home = await page.evaluate(() => ({ parent: document.querySelector('#dockEffects').parentNode.classList.contains('dock-panes'), flat: document.querySelectorAll('#fxModuleRail .gs-flat').length, front: document.querySelectorAll('#fxModuleRail .gs-front').length, icons: document.querySelectorAll('#fxModuleRail .fki').length, card: !!document.querySelector('#gsFxAddCard') }));
   expect(home).toEqual({ parent: true, flat: 0, front: 0, icons: 0, card: false });

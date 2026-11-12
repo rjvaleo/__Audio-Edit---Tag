@@ -116,7 +116,7 @@ test('double-clicking any control returns it to its default', async ({ page }) =
     // The effect faces' knobs (`075-fx-faces.js`, `076-fx-suites.js`) are not
     // range inputs: each is a ring that says its value. Turn one, double-click
     // it, and it must move back.
-    for (const ring of document.querySelectorAll('.fxk-ring, .sh-ring, .lex-ring')) {
+    for (const ring of document.querySelectorAll('.fxk .ui-ring, .sh-ring, .lex-ring')) {
       const name = ring.getAttribute('aria-label') || '(unnamed)';
       const started = ring.getAttribute('aria-valuetext');
       // Up, or down for one already at the top of its travel.

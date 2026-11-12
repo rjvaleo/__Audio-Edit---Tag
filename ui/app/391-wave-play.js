@@ -21,10 +21,14 @@ function wvTxt(id, s) {
   if (el && el.textContent !== s) el.textContent = s;
 }
 
+/// The shared knob (`073a-ui-knob.js`), with a canvas over its face for the
+/// pictures this page draws: the ring is the shared one, painted by `uiKnobPaint`.
 function wvKnobEl(id, size, face, tgt) {
-  return `<div class="wv-knob" style="width:${size}px;height:${size}px"><div class="wv-cap ${face ? 'face' : ''}" style="inset:${Math.round(size * 0.19)}px"></div>`
-    + `<canvas id="${id}" data-w="${size}" data-h="${size}" ${tgt ? `data-tgt="${tgt}"` : ''}></canvas></div>`;
+  return uiKnobHtml({ size, face: !!face, cls: 'wv-knob', inner: `<canvas id="${id}" data-w="${size}" data-h="${size}" ${tgt ? `data-tgt="${tgt}"` : ''}></canvas>` });
 }
+
+/// A Wave knob's ring, from its value and whatever moves it (`wvModOf`).
+const wvKnobRing = (g, v, m, o = {}) => uiKnobPaint(g.el.parentNode, { u: v, bip: o.bip, pointer: o.pointer, mod: m && m.rng ? m : null });
 
 function wvGlyph(d, on, title, attrs = '') {
   return `<div class="wv-g wv-btn ${on ? 'on' : ''}" title="${title}" ${attrs}><svg viewBox="0 0 18 14"><path d="${d}"/></svg></div>`;

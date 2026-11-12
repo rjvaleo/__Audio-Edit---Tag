@@ -70,9 +70,9 @@ function rkFace(frac, mark) {
 
 /// **Sliders again** (RJ, 2 Nov 2026: the knobs were hard to read). Every
 /// "knob" below is built as before — the picture, the reading, the word, the
-/// same input — but drawn as a slider row: the picture at the front, then the
-/// word, the slider and its reading. The face is still made, unshown, so the
-/// knobs come back by setting this false.
+/// same input — but drawn as the shared bar (`uiBarOver`, `073b-ui-bar.js`):
+/// the picture at the front, then the word and the reading in its well. The
+/// face is still made, unshown, so the knobs come back by setting this false.
 const RK_SLIDERS = true;
 
 /// Make a range input a knob. `own` is a reading the panel already keeps up
@@ -114,6 +114,11 @@ function rkKnob(input, label, own) {
   // Only in the Visual column — in the overlay it is a slider and drags as one.
   rkDrag(input, () => !RK_SLIDERS && !!input.closest('.rv-admin'));
   draw();
+  // A reading that is a field (4D's) stays one, beside the bar.
+  if (RK_SLIDERS) {
+    if (read.matches('input')) read.classList.add('ui-keep');
+    uiBarOver(wrap, { input, name, read: read.matches('input') ? null : read, pic: wrap.querySelector(':scope > svg.pic') });
+  }
 }
 
 /// Up and down, as a knob turns; shift for fine. `when` says whether the input

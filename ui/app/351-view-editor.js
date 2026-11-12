@@ -99,7 +99,8 @@ function paintViewEditor() {
   // ── the numbers ──
   const num = (tag, k, lo, hi, step, hint, round) => {
     const row = rpEl('div', 're-row');
-    row.appendChild(rpEl('span', 're-tag', tag));
+    const name = rpEl('span', 're-tag', tag);
+    row.appendChild(name);
     const sl = rpEl('input', 're-slider');
     sl.type = 'range';
     sl.min = String(Math.round(lo * 1000));
@@ -115,6 +116,7 @@ function paintViewEditor() {
     };
     row.appendChild(sl);
     row.appendChild(read);
+    uiBarOver(row, { input: sl, name, read, h: 20 });
     wrap.appendChild(row);
   };
   // The fold is a property of the looking rather than of the sound, so it only

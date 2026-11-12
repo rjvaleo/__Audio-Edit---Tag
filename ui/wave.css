@@ -60,17 +60,7 @@ body.synthpage #overview { display: none; }
   background: var(--wv-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .85); color: var(--wv-t);
   border-color: color-mix(in srgb, var(--wv-on) 55%, var(--wv-line));
 }
-#waveView .wv-cap {
-  position: absolute; border-radius: 50%;
-  background: radial-gradient(circle at 50% 115%, color-mix(in srgb, var(--wv-acc) calc(var(--v,0)*42%), transparent), transparent 62%),
-    repeating-conic-gradient(from 0deg, rgba(var(--white-rgb), .03) 0deg 2deg, rgba(var(--black-rgb), .03) 2deg 4deg),
-    radial-gradient(circle at calc(38% + var(--lx,0)*22%) calc(28% + var(--ly,0)*22%), color-mix(in srgb, var(--wv-panel-hi) 60%, var(--white) 14%) 0%, var(--wv-panel-hi) 50%, var(--wv-panel) 100%);
-  box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .16), inset 0 -2px 3px rgba(var(--black-rgb), .55), 0 2px 3px rgba(var(--black-rgb), .7), 0 6px 12px rgba(var(--black-rgb), .5), 0 0 calc(var(--v,0)*14px) color-mix(in srgb, var(--wv-acc) calc(var(--v,0)*28%), transparent);
-}
-#waveView .wv-cap.face {
-  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--wv-well) 80%, var(--white) 4%), var(--wv-well) 70%);
-  box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .95), 0 0 0 2px var(--wv-line), 0 0 0 3px rgba(var(--white-rgb), .04);
-}
+/* the knobs' caps are the shared knob's (`.ui-cap`, app-css/085-controls.css) */
 
 /* header */
 #waveView .wv-head { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; flex: none; }
@@ -104,8 +94,6 @@ body.synthpage #overview { display: none; }
 #waveView .wv-col { flex-direction: column; align-items: flex-start; gap: 0; width: auto; }
 #waveView .wv-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 #waveView .wv-cell.c .wv-lab { flex-direction: column; align-items: center; gap: 0; }
-#waveView .wv-knob { position: relative; flex: none; }
-#waveView .wv-knob canvas { position: absolute; inset: 0; }
 #waveView .wv-glyphs { display: flex; gap: 3px; }
 #waveView .wv-g { width: 26px; height: 20px; display: grid; place-items: center; flex: none; }
 #waveView .wv-g svg { width: 16px; height: 12px; }
@@ -207,7 +195,7 @@ body.synthpage #overview { display: none; }
 #waveView.wv-mapping .wv-knob [data-tgt] { border-radius: 50%; }
 #waveView.wv-mapping [data-tgt].wv-over { outline: 2px solid var(--wv-mc, var(--wv-mod)); box-shadow: 0 0 12px var(--wv-mc, var(--wv-mod)); }
 #waveView [data-tgt].wv-hl { outline: 2px solid var(--c); outline-offset: 2px; border-radius: var(--r-l); }
-#waveView .wv-knob.wv-hl canvas { filter: drop-shadow(0 0 5px var(--hc)); }
+#waveView .wv-knob.wv-hl .ui-ring { filter: drop-shadow(0 0 5px var(--hc)); }
 
 /* ── v8 Play (mock-up F): three oscillators and the filters across the top,
    then the four big modulation tiles over a strip of the other sources, with

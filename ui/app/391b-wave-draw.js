@@ -149,6 +149,7 @@ function wvDrawStrip(g, T, p, m, n = 24) {
 function wvDrawFace(g, v, wave, ghost, o = {}) {
   const { c, w, h } = g, cl = wvCl(), cx = w / 2, cy = h / 2;
   c.clearRect(0, 0, w, h);
+  g.el.parentNode.classList.toggle('ui-blank', !!o.empty);
   if (o.empty) {
     c.setLineDash([3, 4]);
     c.strokeStyle = cl.t3;
@@ -159,7 +160,7 @@ function wvDrawFace(g, v, wave, ghost, o = {}) {
     c.beginPath(); c.moveTo(cx - 7, cy); c.lineTo(cx + 7, cy); c.moveTo(cx, cy - 7); c.lineTo(cx, cy + 7); c.stroke();
     return;
   }
-  wvRing(g, v, { cl: o.col ? { ...cl, mod: o.col } : cl, mod: o.mod, live: o.live, inset: 4 });
+  wvKnobRing(g, v, { rng: o.mod, live: o.live, col: o.col });
   const r = w * 0.31;
   c.save();
   c.beginPath(); c.arc(cx, cy, r, 0, WV_TAU); c.clip();
@@ -179,16 +180,13 @@ function wvDrawKnob(id, key, bip) {
   const { c, w, h } = k;
   const v = wvG(key);
   c.clearRect(0, 0, w, h);
-  k.el.previousElementSibling?.style.setProperty('--v', (bip ? Math.abs(v - 0.5) * 2 : v).toFixed(3));
-  const m = wvModOf(key);
-  wvRing(k, v, { cl: wvClFor(m), bip, pointer: 1, mod: m.rng, live: m.live, inset: 4 });
+  wvKnobRing(k, v, wvModOf(key), { bip, pointer: 1 });
 }
 
 function wvDrawUniFace(g, cur, n, det, spr) {
   const { c, w, h } = g, cl = wvCl(), cx = w / 2, cy = h / 2, r = w * 0.3;
   c.clearRect(0, 0, w, h);
-  const m = wvModOf(g.el.dataset.tgt);
-  wvRing(g, det, { cl: wvClFor(m), inset: 4, mod: m.rng, live: m.live });
+  wvKnobRing(g, det, wvModOf(g.el.dataset.tgt));
   c.save();
   c.beginPath(); c.arc(cx, cy, r, 0, WV_TAU); c.clip();
   for (let i = 0; i < n; i++) {
@@ -410,7 +408,7 @@ function wvDrawPlay(t) {
     {
       const g = WVW['wvPh' + i], { c, w, h } = g, ph = wvG(k + 'phase'), m = wvModOf(k + 'phase');
       c.clearRect(0, 0, w, h);
-      wvRing(g, ph, { cl: wvClFor(m), inset: 3, mod: m.rng, live: m.live });
+      wvKnobRing(g, ph, m);
       const cx = w / 2, cy = h / 2, r = w * 0.27;
       wvTrace(c, wvPath((u) => { const a = u * WV_TAU - Math.PI / 2 + ph * WV_TAU, rr = r * 0.6 + wvRd(cur, u) * r * 0.32; return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; }, 70), cl, 1, 0.5);
       const a = -Math.PI / 2 + ph * WV_TAU;

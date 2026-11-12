@@ -48,7 +48,7 @@ async function stored(page) {
 
 /// Turn a knob by dragging its ring up.
 async function turn(knob, pixels) {
-  const ring = knob.locator('.fxk-ring');
+  const ring = knob.locator('.ui-ring');
   const b = await ring.boundingBox();
   const x = b.x + b.width / 2, y = b.y + b.height / 2;
   await ring.page().mouse.move(x, y);
@@ -71,7 +71,7 @@ test('every built-in effect draws a face, one width, every control with a pictur
       if (Math.round(m.getBoundingClientRect().width) !== FX_FACE_W) return `width ${m.getBoundingClientRect().width}`;
       if (m.querySelector('.fx-module-controls .param')) return 'slider rows left';
       const knobs = [...m.querySelectorAll('.fxk')];
-      if (knobs.some((k) => !k.querySelector('.fxk-ring svg.pic'))) return 'a knob without its picture';
+      if (knobs.some((k) => !k.querySelector('.ui-kn svg.ui-pic'))) return 'a knob without its picture';
       if ([...m.querySelectorAll('.fxt-b')].some((t) => !t.querySelector('svg.pic'))) return 'a switch without its picture';
       if ([...m.querySelectorAll('.fxs')].some((s) => !s.querySelector('.fxs-pic svg'))) return 'a slider without its picture';
       return '';
@@ -85,11 +85,11 @@ test('turning a knob on a face reaches the stored rack', async ({ page }) => {
   await openRack(page);
   const module = await add(page, 'phaser');
   const before = (await stored(page)).slot.params.rateHz;
-  await turn(module.locator('.fxk', { hasText: /Rate$/ }), 40);
+  await turn(module.locator('.fxk', { has: page.locator('.ui-kname', { hasText: /^Rate$/ }) }), 40);
   const after = (await stored(page)).slot.params.rateHz;
   expect(after).toBeGreaterThan(before);
   // The face reads what it wrote.
-  await expect(module.locator('.fxk', { hasText: /Rate$/ }).locator('.fxk-v')).not.toHaveText(`${before.toFixed(2)} Hz`);
+  await expect(module.locator('.fxk', { has: page.locator('.ui-kname', { hasText: /^Rate$/ }) }).locator('.ui-kval')).not.toHaveText(`${before.toFixed(2)} Hz`);
 });
 
 test('a switch is a tile that lights, and stores', async ({ page }) => {
@@ -146,7 +146,7 @@ test('a knob\'s own range is set on Advanced and kept with the rack', async ({ p
   expect(ranges?.delayMs).toMatchObject({ min: 100, max: 300 });
   // Back on the knobs, the Delay knob sweeps only that.
   await module.locator('.fx-adv-btn').click();
-  const knob = module.locator('.fxk', { hasText: /Delay$/ });
+  const knob = module.locator('.fxk', { has: page.locator('.ui-kname', { hasText: /^Delay$/ }) });
   await turn(knob, 400);
   expect((await stored(page)).slot.params.delayMs).toBeCloseTo(300, 0);
 });

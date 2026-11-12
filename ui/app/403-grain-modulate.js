@@ -49,22 +49,6 @@ function gsLfoRate(L) {
   return h < 1 ? h.toFixed(2) + ' Hz' : h < 10 ? h.toFixed(1) + ' Hz' : Math.round(h) + ' Hz';
 }
 
-/// A small knob, as SVG on a 32-unit square.
-function gsKnobSvg(n, col) {
-  const a0 = Math.PI * 0.75, sw = Math.PI * 1.5, cx = 16, cy = 16, r = 11.5;
-  const P = (a, rr = r) => [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr];
-  const arc = (u0, u1) => {
-    u1 = Math.max(u0 + 0.0005, u1);
-    const [x0, y0] = P(a0 + sw * u0), [x1, y1] = P(a0 + sw * u1);
-    return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${sw * (u1 - u0) > Math.PI ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
-  };
-  const [px, py] = P(a0 + sw * n, 7.5);
-  return `<circle cx="16" cy="16" r="9" fill="rgba(255,255,255,.07)" stroke="rgba(0,0,0,.55)"/>`
-    + `<path d="${arc(0, 1)}" stroke="rgba(255,255,255,.1)" stroke-width="2.2" fill="none" stroke-linecap="round"/>`
-    + `<path d="${arc(0, n)}" stroke="${col}" stroke-width="2.2" fill="none" stroke-linecap="round"/>`
-    + `<line x1="16" y1="16" x2="${px.toFixed(2)}" y2="${py.toFixed(2)}" stroke="var(--gs-t)" stroke-width="1.6" stroke-linecap="round"/>`;
-}
-
 function gsBuildModulate() {
   $('gsRMod').innerHTML = GS.lfo.map((L, i) => `<div class="gs-lfr" style="--c:${GS_LCOL[i]}">
    <div class="gs-well"><canvas id="gsLsc${i}" data-w="92" data-h="28"></canvas></div>
@@ -72,8 +56,8 @@ function gsBuildModulate() {
     <div class="gs-lr1"><span class="gs-lnm">LFO ${i + 1}</span><div class="gs-seg gs-lshp" id="gsLshp${i}">${GS_SHAPES.map(([k, d, p]) => `<span data-s="${k}" title="${d}"><svg viewBox="0 0 16 14"><path d="${p}"/></svg></span>`).join('')}</div></div>
     <div class="gs-lr2"><div class="gs-seg" id="gsLmode${i}"><span data-m="free" title="Free: runs on its own clock, whatever you play">Free</span><span data-m="trig" title="Each note: starts from the top of its cycle at every key">Each note</span></div><div class="gs-seg" id="gsLsync${i}"><span data-y="0" title="Rate in hertz">Hz</span><span data-y="1" title="Rate in bars and beats at the tempo">Tempo</span></div></div>
    </div>
-   <div class="gs-sk" id="gsLkr${i}"><svg viewBox="0 0 32 32"></svg><b></b><span>Rate</span></div>
-   <div class="gs-sk" id="gsLkd${i}"><svg viewBox="0 0 32 32"></svg><b></b><span>Depth</span></div>
+   <div class="gs-sk" id="gsLkr${i}"></div>
+   <div class="gs-sk" id="gsLkd${i}"></div>
    <div class="gs-lmap"><span class="gs-mapb" id="gsLmap${i}"></span><div class="gs-ltg" id="gsLtg${i}"></div></div>
   </div>`).join('');
   gsCvs($('gsPMod'));
@@ -358,12 +342,18 @@ function gsWireLfos() {
     document.querySelectorAll(`#gsLmode${i} span`).forEach((s) => { s.onclick = () => { L.mode = s.dataset.m; gsLfoChanged(); }; });
     document.querySelectorAll(`#gsLsync${i} span`).forEach((s) => { s.onclick = () => { L.sync = s.dataset.y === '1'; gsLfoChanged(); }; });
     $('gsLmap' + i).onclick = () => { if (GS_L.mapI === i) gsEndMap(); else gsStartMap(i); };
-    const dial = (el, key, d) => {
-      gsDrag(el, (dx, dy, e) => { L[key] = wvClamp(L[key] - dy / (e.shiftKey ? 750 : 150)); gsLfoSend(); gsMarkLfo(); }, null, () => gsVoiceKeep());
-      el.ondblclick = () => { L[key] = d; gsLfoChanged(); };
+    // The shared knob at 26 (`073a-ui-knob.js`), its arc in the LFO's colour.
+    const dial = (el, key, label, d, text) => {
+      const k = uiKnob({
+        label, size: 26, layout: 'beside', cls: 'gs-sk', sens: 150, fine: 5,
+        get: () => L[key], set: (u) => { L[key] = u; gsLfoSend(); gsMarkLfo(); }, commit: () => gsVoiceKeep(),
+        reset: () => { L[key] = d; gsLfoChanged(); }, def: d, text,
+      });
+      k.id = el.id;
+      el.replaceWith(k);
     };
-    dial($('gsLkr' + i), 'rate', 0.4);
-    dial($('gsLkd' + i), 'depth', 0.5);
+    dial($('gsLkr' + i), 'rate', 'Rate', 0.4, () => gsLfoRate(L));
+    dial($('gsLkd' + i), 'depth', 'Depth', 0.5, () => `${Math.round(L.depth * 100)} %`);
   });
   // The effects page's header, built once and not touched by a rebuild here.
   for (let i = 0; i < 4; i++) { const b = $('gsLmapF' + i); if (b) b.onclick = () => { if (GS_L.mapI === i) gsEndMap(); else gsStartMap(i); }; }
@@ -377,18 +367,16 @@ function gsMarkLfo() {
     on(`#gsLshp${i} span`, (s) => s.dataset.s === L.shape);
     on(`#gsLmode${i} span`, (s) => s.dataset.m === L.mode);
     on(`#gsLsync${i} span`, (s) => (s.dataset.y === '1') === !!L.sync);
-    const col = GS_LCOL[i], tip = (fx) => `Map LFO ${i + 1}: press, then click any control${fx ? ' or effect knob' : ''} to move it with LFO ${i + 1}. Shift-click to map several; click a mapped one again to unmap it. Esc ends`;
+    const tip = (fx) => `Map LFO ${i + 1}: press, then click any control${fx ? ' or effect knob' : ''} to move it with LFO ${i + 1}. Shift-click to map several; click a mapped one again to unmap it. Esc ends`;
     const map = $('gsLmap' + i), mapF = $('gsLmapF' + i), mapping = GS_L.mapI === i;
     map.textContent = mapping ? 'CLICK A CONTROL' : 'MAP';
     map.classList.toggle('on', mapping);
     map.title = tip(false);
     if (mapF) { mapF.textContent = mapping ? 'CLICK A KNOB' : `LFO ${i + 1}`; mapF.classList.toggle('on', mapping); mapF.title = tip(true); }
     const kr = $('gsLkr' + i), kd = $('gsLkd' + i);
-    kr.querySelector('svg').innerHTML = gsKnobSvg(L.rate, col);
-    kr.querySelector('b').textContent = gsLfoRate(L);
+    kr.sync();
     kr.title = `Rate: ${gsLfoRate(L)}${L.sync ? ', locked to the tempo' : ''}. Drag up and down · ⇧ fine · double-click: reset`;
-    kd.querySelector('svg').innerHTML = gsKnobSvg(L.depth, col);
-    kd.querySelector('b').textContent = Math.round(L.depth * 100) + ' %';
+    kd.sync();
     kd.title = `Depth: how far LFO ${i + 1} moves everything it is mapped to, ${Math.round(L.depth * 100)} % of each control's range`;
     const names = L.targets.map((t) => [t, gsLfoName(t)]).filter(([, n]) => n), tg = $('gsLtg' + i);
     const chip = ([t, n]) => `<span class="gs-tgc" data-t="${gsAttr(t)}" title="LFO ${i + 1} moves ${gsAttr(n.long)}. Click × to unmap">${gsAttr(n.short)}<i title="Unmap">×</i></span>`;
@@ -424,6 +412,14 @@ function gsLfoMarkBar(el, a, n, m) {
 
 /// A knob's ring and a dot on it at the heard value; its reading follows.
 function gsLfoMarkKnob(cell, a, u, text) {
+  // The shared knob draws its own: the reach in the LFO's colour and the dot.
+  if (cell.setMod) {
+    cell.classList.toggle('gs-mapped', !!a);
+    if (a) cell.style.setProperty('--mc', a.c);
+    cell.setMod(a ? { rng: a.d, live: u, col: a.c } : null);
+    if (a && text != null) cell.querySelector('.ui-kval').textContent = text;
+    return;
+  }
   const ring = cell.querySelector(GS_FX_RING);
   cell.classList.toggle('gs-mapped', !!a);
   if (!ring) return;

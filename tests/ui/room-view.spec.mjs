@@ -199,7 +199,10 @@ test('the controls can be clicked, not just dispatched at', async ({ page }) => 
     let checked = 0;
     const ctrls = document.getElementById('roomEdit')
       .querySelectorAll('input, select, button, .re-layer, .re-frame, .re-chunk');
-    for (const el of ctrls) {
+    for (const own of ctrls) {
+      // A select behind the shared dropdown (`073c-ui-drop.js`) is reached
+      // through its trigger, which is what a pointer meets.
+      const el = own._ui || own;
       // Scroll it under the pointer first: the panel is a scrolling column, and
       // "below the fold" is not the same fault as "covered".
       el.scrollIntoView({ block: 'center' });
@@ -209,7 +212,7 @@ test('the controls can be clicked, not just dispatched at', async ({ page }) => 
       const hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
       if (!hit) { bad.push({ el: el.id || el.className, why: 'off screen' }); continue; }
       if (hit !== el && !el.contains(hit) && !hit.contains(el)) {
-        bad.push({ el: el.id || el.className, why: `covered by ${hit.id || hit.className || hit.tagName}` });
+        bad.push({ el: own.id || el.id || el.className, why: `covered by ${hit.id || hit.className || hit.tagName}` });
       }
       // **Inside the panel's box, not merely inside its DOM.** A control can be
       // a descendant of the panel and still be drawn outside it — that is

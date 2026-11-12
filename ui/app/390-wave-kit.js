@@ -443,41 +443,8 @@ function wvDot(c, x, y, r, col) {
   c.shadowBlur = 0;
 }
 
-/// A knob's ring: the track, the value arc, the modulation range outside it
-/// with the live value as a dot, and a pointer.
-function wvRing(g, v, o) {
-  const { c, w, h } = g, cx = w / 2, cy = h / 2, r = w / 2 - (o.inset || 5), cl = o.cl;
-  const a0 = Math.PI * 0.75, sw = Math.PI * 1.5, ang = (x) => a0 + sw * wvClamp(x);
-  c.lineCap = 'round';
-  c.strokeStyle = cl.track;
-  c.lineWidth = w > 60 ? 3 : 2.4;
-  c.beginPath(); c.arc(cx, cy, r, a0, a0 + sw); c.stroke();
-  const s = o.bip ? 0.5 : 0;
-  c.strokeStyle = cl.arc;
-  c.shadowBlur = 6 * cl.glow;
-  c.shadowColor = cl.arc;
-  c.beginPath(); c.arc(cx, cy, r, ang(Math.min(s, v)), ang(Math.max(s, v)) + 1e-4); c.stroke();
-  c.shadowBlur = 0;
-  if (o.mod) {
-    const m0 = wvClamp(v - o.mod), m1 = wvClamp(v + o.mod);
-    c.strokeStyle = cl.mod;
-    c.lineWidth = 2;
-    c.beginPath(); c.arc(cx, cy, r + 3.5, ang(m0), ang(m1) + 1e-4); c.stroke();
-    if (o.live != null) {
-      const a = ang(o.live);
-      wvDot(c, cx + Math.cos(a) * (r + 3.5), cy + Math.sin(a) * (r + 3.5), 2.4, cl.acc);
-    }
-  }
-  if (o.pointer) {
-    const a = ang(v), ri = r * 0.2, ro = r * 0.62;
-    c.strokeStyle = cl.t;
-    c.lineWidth = 2;
-    c.beginPath();
-    c.moveTo(cx + Math.cos(a) * ri, cy + Math.sin(a) * ri);
-    c.lineTo(cx + Math.cos(a) * ro, cy + Math.sin(a) * ro);
-    c.stroke();
-  }
-}
+/// A knob's ring is the shared knob's now: `wvKnobRing` (`391-wave-play.js`),
+/// which paints `uiKnobPaint`'s.
 
 // ──────────────────────────────────────────────────────────────── the patch
 //
