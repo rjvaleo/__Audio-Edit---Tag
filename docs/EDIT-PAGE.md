@@ -23,6 +23,11 @@ The transport, on every page, in one place: a 48 px bar across the top from the 
 - **The Look is one setting for the whole app.** It is Grain's five, kept under `mglLook` and set on
   `:root[data-mgl-look]`. The bar sets it, and Chop and the Edit page follow.
 - **In Browse and on Wave** Play plays the selected library file raw, as Space already did there.
+- **On the Prism page the bar is the Prism deck's** (`prismOwnsBar`, `ui/prism-pad.js`; RJ, 11 Nov 2026: one
+  transport). Play/pause, stop, loop and Space act on Prism's own sound; the clock, the name and the strip are its,
+  and clicking the strip seeks it. GRAIN, SEQ and the tempo are the main sound's, so they are hidden there. Prism's
+  own play, stop and loop are gone; its take controls are the pad's and stay. Leaving the page hands the bar back
+  to the main sound.
 
 Before this the play button sat somewhere different on six pages and was missing on two.
 
