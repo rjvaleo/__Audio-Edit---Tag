@@ -138,8 +138,6 @@ const gsIcon = (d) => `<svg class="gs-ico" viewBox="0 0 12 12"><path d="${d}"/><
 const GS_ICON = {
   keys: 'M1.5 2 H10.5 V10 H1.5 Z M4.5 2 V10 M7.5 2 V10 M3.5 2 V6.5 M6.5 2 V6.5 M9.5 2 V6.5',
   cloud: 'M1.5 7 h.1 M4 3.5 h.1 M4.5 8.5 h.1 M6.8 5.5 h.1 M9 3 h.1 M10 8 h.1',
-  save: 'M6 1.5 V8 M3.5 5.5 L6 8 L8.5 5.5 M2 10.5 H10',
-  del: 'M3 3 L9 9 M9 3 L3 9',
 };
 
 function gsTrayHtml() {
@@ -147,31 +145,13 @@ function gsTrayHtml() {
     <span class="gs-sp"></span>
     <span class="gs-ro gs-noaudio" id="gsNoAudio" hidden>no audio device</span>
     <span class="gs-lab">${gsIcon(GS_ICON.cloud)}CLOUD</span>
-    <select class="gs-midi" id="gsCpPick"></select>
-    <span class="gs-btn gs-chip" id="gsCpSave">${gsIcon(GS_ICON.save)}Save as…</span>
-    <span class="gs-btn gs-chip" id="gsCpDelete">${gsIcon(GS_ICON.del)}Delete</span>`;
+    <div id="gsCpHost"></div>`;
 }
 
 function gsWireTray() {
-  const pick = $('gsCpPick'), real = $('gpPick');
-  pick.title = real.title;
-  $('gsCpSave').title = $('gpSave').title;
-  $('gsCpDelete').title = $('gpDelete').title;
-  pick.onchange = () => { real.value = pick.value; real.dispatchEvent(new Event('change', { bubbles: true })); GS.touched = true; pick.blur(); };
-  $('gsCpSave').onclick = () => $('gpSave').click();
-  $('gsCpDelete').onclick = () => $('gpDelete').click();
   $('gsFollow').onclick = () => $('followBtn').click();
   $('gsFollowMode').onchange = (e) => { const m = $('followMode'); m.value = e.target.value; m.dispatchEvent(new Event('change', { bubbles: true })); e.target.blur(); };
   uiDrop($('gsFollowMode'), { h: 20, w: 74 });
-}
-
-/// The list and the choice are the tray's; this follows them.
-function gsMirrorCloudPresets() {
-  const pick = $('gsCpPick'), real = $('gpPick');
-  if (!pick || !real) return;
-  const sig = [...real.options].map((o) => o.value).join('\u0000');
-  if (pick._s !== sig) { pick._s = sig; pick.innerHTML = real.innerHTML; }
-  if (pick.value !== real.value) pick.value = real.value;
 }
 
 /// The file's facts, measured or guessed as the transport's strip has them, as
@@ -218,7 +198,6 @@ function gsMirrorTray() {
   $('gsFollow').classList.toggle('on', !!state.follow.on);
   if ($('gsFollowMode').value !== state.follow.mode) $('gsFollowMode').value = state.follow.mode;
   $('gsFollowMode').disabled = !state.follow.on;
-  gsMirrorCloudPresets();
   gsMeta();
 }
 

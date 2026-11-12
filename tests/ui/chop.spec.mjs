@@ -9,6 +9,7 @@
 // original's own functions on it.
 
 import { test, expect } from './test.mjs';
+import { pbSaveAs, pbPick, pbMenu, pbRename, pbDelete, pbName, pbLit } from './preset-bar.helpers.mjs';
 
 /// The signal the expectations were taken from: five decaying 220 Hz bursts in
 /// two seconds of silence, the last one only 15 ms long.
@@ -375,17 +376,25 @@ test('Preview lays the slices out at the play tempo; Ratchet fires the chop on e
 test('A and B hold two settings; a preset saves and comes back; Init puts it all back', async ({ page }) => {
   await openChop(page);
   await loadSignal(page, { mode: 'transient' });
+  const sens = async () => (await page.evaluate(() => window.Chop.settings)).sens;
   await page.evaluate(() => window.Chop.set({ sens: 90 }));
-  await page.locator('#chopB').click();
-  expect((await page.evaluate(() => window.Chop.settings)).sens).toBe(60);
-  await page.locator('#chopA').click();
-  expect((await page.evaluate(() => window.Chop.settings)).sens).toBe(90);
-  page.once('dialog', (d) => d.accept('Hot'));
-  await page.locator('#chopSave').click();
-  await page.locator('#chopInit').click();
-  expect((await page.evaluate(() => window.Chop.settings)).sens).toBe(60);
-  await page.locator('#chopPreset').selectOption('Hot');
-  expect((await page.evaluate(() => window.Chop.settings)).sens).toBe(90);
+  await page.locator('#chopAB [data-ab="B"]').click();
+  expect(await sens()).toBe(60);
+  await page.locator('#chopAB [data-ab="A"]').click();
+  expect(await sens()).toBe(90);
+  await pbSaveAs(page, 'chop', 'Hot');
+  await expect.poll(() => pbName(page, 'chop')).toBe('Hot');
+  await pbMenu(page, 'chop', 'init');
+  expect(await sens()).toBe(60);
+  await pbPick(page, 'chop', 'Hot');
+  expect(await sens()).toBe(90);
+  // Rename and Delete, which Chop did not have.
+  await pbRename(page, 'chop', 'Hotter');
+  await expect.poll(() => page.evaluate(() => chopPresets().map((p) => p.name))).toEqual(['Hotter']);
+  await page.evaluate(() => window.Chop.set({ sens: 70 }));
+  await expect.poll(() => pbLit(page, 'chop')).toBe(true);
+  await pbDelete(page, 'chop');
+  await expect.poll(() => page.evaluate(() => chopPresets().length)).toBe(0);
   await page.locator('#chopDice').click();
   await expect(page.locator('#dockChop .chop-row').first()).toBeVisible();
 });

@@ -137,11 +137,7 @@ function hsBuild() {
       </span>
       <button type="button" class="hs-btn${HS_LANES_LISTED ? '' : ' hidden'}" id="prismLoop" title="Loop the take: both of its lanes wrap over its span, together">⟲ LOOP</button>
       <span class="hs-fill"></span>
-      <label class="hs-lbl">Presets <select id="prismPreset" class="mini" aria-label="Presets for this process"></select></label>
-      <input id="prismPresetName" class="mini hs-name" type="text" placeholder="Preset name" aria-label="Preset name">
-      <button type="button" class="hs-btn" id="prismPresetSave" title="Save the pad's window, this process's settings and its post-roll under this name">Save</button>
-      <button type="button" class="hs-btn" id="prismPresetRename" title="Rename the chosen preset of your own to this name">Rename</button>
-      <button type="button" class="hs-btn" id="prismPresetDelete" title="Delete the chosen preset of your own">Delete</button>
+      <div id="prismPbHost"></div>
     </div>
     <div class="hs-deck" role="group" aria-label="Prism's own sound">
       <span class="hs-dim">SOUND</span>
@@ -384,10 +380,7 @@ function hsWire() {
   for (const [id, key] of [['prismFaderZeroL', 'l'], ['prismFaderZeroLR', 'lr'], ['prismFaderZeroR', 'r']]) {
     $(id).onclick = () => prismFaderSet(key, 128);
   }
-  $('prismPreset').onchange = async (e) => { await prismPresetChosen(e.target.value); hsSetupChanged(); };
-  $('prismPresetSave').onclick = () => prismPresetSave();
-  $('prismPresetRename').onclick = () => prismPresetRename();
-  $('prismPresetDelete').onclick = () => prismPresetDelete();
+  prismPresetBar();
   $('prismPostRoll').onchange = (e) => prismPostRollChanged(e.target);
   $('prismLoop').onclick = () => prismToggleLoop().then(hsPaint);
   $('prismSoundFolder').onchange = () => prismSoundFill();

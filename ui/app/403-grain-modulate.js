@@ -294,7 +294,7 @@ function gsMapPress(e) {
   GS_L.eat = false;
   if (GS_L.mapI == null || !GS.showing || e.target.closest?.('.gs-mapb')) return;
   const hit = e.target.closest ? gsMapFind(e.target) : null;
-  if (!hit) { if (!e.target.closest?.('#gsMenu,#gsShelf')) gsEndMap(); return; }
+  if (!hit) { if (!e.target.closest?.('#gsMenu')) gsEndMap(); return; }
   e.preventDefault();
   e.stopPropagation();
   GS_L.eat = true;

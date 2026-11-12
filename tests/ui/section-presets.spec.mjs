@@ -118,9 +118,8 @@ test('a look put back reaches the room, its storage and its sliders', async ({ p
       syncRoomSliders();
       const moved = { opacity: roomEdit.opacity, slider: $('reOpacity').value };
 
-      // Through the picker, the way a hand would.
-      paintVisualPresets(name);
-      $('vpPick').dispatchEvent(new Event('change', { bubbles: true }));
+      // Through the LOOK bar's own load, as a click in its list does.
+      vpBar.load({ name });
 
       const stored = JSON.parse(localStorage.getItem('roomData'));
       const layers = JSON.parse(localStorage.getItem('roomLayers'));
@@ -138,7 +137,7 @@ test('a look put back reaches the room, its storage and its sliders', async ({ p
         storedSolid: layers.solid,
         // The layer stack was rebuilt in the recalled order.
         stack: [...document.querySelectorAll('#reLayers .re-layer')].map((r) => r.dataset.layer),
-        picker: $('vpPick').value,
+        picker: VP_LOOKS.current(),
       };
     } finally {
       applyVisual(was);

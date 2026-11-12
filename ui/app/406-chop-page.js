@@ -125,32 +125,12 @@ function chopRestyle() {
     const { chs, map } = chopRenderRatchet();
     chopPlayRendered(chs, { kind: 'ratchet', loop: true, map });
   });
-  $('chopA').addEventListener('click', () => { chopSlots.which = 'a'; cp = chopSlots.a; chopSaveSettings(); chopReflect(); chopRecut(); });
-  $('chopB').addEventListener('click', () => { chopSlots.which = 'b'; cp = chopSlots.b; chopSaveSettings(); chopReflect(); chopRecut(); });
-  $('chopPreset').addEventListener('change', () => {
-    const p = chopPresets().find((x) => x.name === $('chopPreset').value);
-    if (p) chopApply(p.cp);
-  });
-  $('chopPrevPreset').addEventListener('click', () => chopStepPreset(-1));
-  $('chopNextPreset').addEventListener('click', () => chopStepPreset(1));
-  $('chopSave').addEventListener('click', () => {
-    const name = prompt('Preset name:', $('chopPreset').value || `Chop ${chopPresets().length + 1}`);
-    if (!name) return;
-    const list = chopPresets().filter((p) => p.name !== name);
-    list.push({ name, cp: { ...cp } });
-    list.sort((a, b) => a.name.localeCompare(b.name));
-    try { localStorage.setItem('chopPresets', JSON.stringify(list)); } catch { /* private mode */ }
-    chopFillPresets(name);
-  });
-  $('chopInit').addEventListener('click', () => { $('chopPreset').value = ''; chopApply({}); chopDetect(); });
-  $('chopDice').addEventListener('click', chopDice);
-  $('chopCapture').addEventListener('click', chopCapture);
+  chopPresetBar();
   $('chopRedetect').addEventListener('click', () => chopRecut());
   $('chopToRegions').addEventListener('click', chopToRegions);
   $('chopOutMidi').addEventListener('click', () => chopSetting('outMidi', !cp.outMidi));
   $('chopOutSfz').addEventListener('click', () => chopSetting('outSfz', !cp.outSfz));
   $('chopWrite').addEventListener('click', chopWriteAll);
-  chopFillPresets();
   chopWireLane();
   chopRestyle.seen = themeStamp;
   chopReadLook();

@@ -29,11 +29,7 @@ function wvBuild() {
    <div class="wv-head">
     <div class="wv-tabs" id="wvViews" role="tablist">${WV_VIEWS.map(([k, n, d]) => `<div class="wv-tab" data-v="${k}" role="tab" title="${n}"><svg viewBox="0 0 16 12"><path d="${d}"/></svg>${n}</div>`).join('')}</div>
     <select class="wv-midi" id="wvMidiCh" title="MIDI channel: this instrument plays only what arrives on this channel. Grain has its own, on its page"></select>
-    <div class="wv-preset wv-btn" id="wvPresetBtn" title="Presets: click for the shelf">
-     <div class="wv-ib" data-step="-1" title="Previous preset"><svg viewBox="0 0 12 12"><path d="M8 2 L4 6 L8 10"/></svg></div>
-     <span class="pn" id="wvPresetName"></span><span class="pt" id="wvPresetTags"></span>
-     <div class="wv-ib" data-step="1" title="Next preset"><svg viewBox="0 0 12 12"><path d="M4 2 L8 6 L4 10"/></svg></div></div>
-    <div class="wv-seg" id="wvAB" title="A / B: compare two versions of the patch"><span data-k="A">A</span><span data-k="B">B</span></div>
+    <div id="wvPbHost"></div>
     <div class="wv-well" title="Output: what you hear"><canvas id="wvOutWave" data-w="340" data-h="30"></canvas></div>
     <span class="wv-sp"></span>
     <span class="wv-offline" id="wvOffline" hidden title="The synth engine did not answer; this is the page's own default patch"><i></i>engine not connected</span>
@@ -53,7 +49,6 @@ function wvBuild() {
     <div class="wv-macrodock" id="wvMacros">${WV_MACRO_NAMES.map((n, i) => `<div class="wv-cell c">${wvKnobEl(`wvMac${i}`, 44, 1, `macro${i}`)}<div class="wv-lab"><span id="wvMacn${i}"></span><b id="wvMacr${i}"></b></div></div>`).join('')}</div>
    </div>
    <div class="wv-menu" id="wvMenu" hidden></div>
-   <div class="wv-menu wv-shelf" id="wvShelf" hidden></div>
    <div class="wv-pmenu" id="wvPmenu" hidden></div>
    <div class="wv-cmenu" id="wvCmenu" hidden></div>
   </div>`);
@@ -62,6 +57,7 @@ function wvBuild() {
   wvBuildCreate($('wvViewCreate'));
   wvBuildMatrix($('wvViewMatrix'));
   wvBuildFx($('wvViewFx'));
+  wvPresetBars();
   for (const el of app.querySelectorAll('canvas[data-w][id]')) WVW[el.id] = wvCv(el);
   WV.built = true;
   wvWirePlay();
@@ -84,12 +80,6 @@ function wvBuild() {
 
 function wvWirePage() {
   document.querySelectorAll('#wvViews .wv-tab').forEach((t) => t.addEventListener('click', () => wvShowView(t.dataset.v)));
-  $('wvPresetBtn').addEventListener('click', (e) => {
-    const step = e.target.closest('[data-step]');
-    if (step) wvStepPreset(+step.dataset.step);
-    else wvOpenShelf();
-  });
-  document.querySelectorAll('#wvAB span').forEach((s) => s.addEventListener('click', () => wvSwitchAB(s.dataset.k)));
   document.querySelectorAll('#wvOct [data-oct]').forEach((s) => s.addEventListener('click', () => wvShiftOct(+s.dataset.oct)));
   wvDrag(WVW.wvMaster.el, (dx) => wvLive('master', wvClamp(wvG('master') + dx / 110)));
 
@@ -154,9 +144,7 @@ function wvSyncAll() {
   wvSyncFx();
   wvRenderMatrix();
   wvRenderBadges();
-  wvTxt('wvPresetName', WV.name);
-  wvTxt('wvPresetTags', WV.tags);
-  document.querySelectorAll('#wvAB span').forEach((x) => x.classList.toggle('on', x.dataset.k === WV.ab));
+  WV.pb?.mark();
   wvTxt('wvOctRo', wvNoteName(WV.kbLo));
   for (let i = 0; i < 8; i++) wvTxt('wvMacn' + i, WV.macroNames[i]);
 }

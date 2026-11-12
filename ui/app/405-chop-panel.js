@@ -445,8 +445,7 @@ function chopReflect() {
   $('chopFeel').classList.toggle('dim', cp.mode !== 'grid');
   document.querySelector('#chopKnobs .chop-tail-on')?.classList.toggle('on', cp.tail);
   chopKnobEls.get('tailMs')?.classList.toggle('dim', !cp.tail);
-  $('chopA').classList.toggle('on', chopSlots.which === 'a');
-  $('chopB').classList.toggle('on', chopSlots.which === 'b');
+  chopPb?.mark();
   $('chopOutMidi').classList.toggle('on', cp.outMidi);
   $('chopOutSfz').classList.toggle('on', cp.outSfz);
   $('chopRatchet').classList.toggle('on', chop.playing?.kind === 'ratchet');
@@ -489,20 +488,4 @@ function chopDice() {
     fltOn: Math.random() < 0.5, fltType: pick(['lp', 'bp', 'hp']), fltFreq: Math.round(Math.exp(r(Math.log(200), Math.log(8000)))),
     fltQ: +r(0.5, 6).toFixed(2), drive: Math.round(pick([0, r(0, 60)])),
   });
-}
-
-function chopFillPresets(sel = '') {
-  const s = $('chopPreset');
-  s.replaceChildren(new Option('— preset —', ''));
-  for (const p of chopPresets()) s.append(new Option(p.name, p.name));
-  s.value = sel;
-}
-
-function chopStepPreset(d) {
-  const list = chopPresets();
-  if (!list.length) return;
-  const i = list.findIndex((p) => p.name === $('chopPreset').value);
-  const next = list[(i + d + list.length) % list.length] || list[0];
-  $('chopPreset').value = next.name;
-  chopApply(next.cp);
 }

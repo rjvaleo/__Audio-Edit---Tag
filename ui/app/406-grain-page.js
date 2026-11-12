@@ -13,14 +13,7 @@ function gsBuild() {
   host.innerHTML = '';
   host.appendChild(wvH(`<div class="gs-app">
    <div class="gs-bar">
-    <div class="gs-preset gs-btn" id="gsPresetBtn" title="Presets: click for the shelf">
-     <div class="gs-ib" data-step="-1" title="Previous preset"><svg viewBox="0 0 12 12"><path d="M8 2 L4 6 L8 10"/></svg></div>
-     <span class="pn" id="gsPresetName"></span><span class="pt" id="gsPresetTag"></span>
-     <div class="gs-ib" data-step="1" title="Next preset"><svg viewBox="0 0 12 12"><path d="M4 2 L8 6 L4 10"/></svg></div>
-    </div>
-    <div class="gs-seg" id="gsAB"><span class="on" data-ab="A" title="A: compare two settings">A</span><span data-ab="B" title="B: a second setting to compare against A">B</span></div>
-    <span class="gs-btn gs-chip gs-rndb" id="gsRndBtn" title="Throw every control in the tray somewhere at random. The engine stays where it is, and the seed is reported so a good accident can be found again. ⇧-click: nudge each a little instead"><svg viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="2.5"/><circle cx="4.6" cy="4.6" r="1"/><circle cx="9.4" cy="4.6" r="1"/><circle cx="7" cy="7" r="1"/><circle cx="4.6" cy="9.4" r="1"/><circle cx="9.4" cy="9.4" r="1"/></svg>Randomize</span>
-    <span class="gs-btn gs-chip" id="gsRndUndo" hidden title="Undo the last randomize">↶ Undo</span>
+    <div id="gsPbHost"></div>
     <div class="gs-tp">
      <span class="gs-btn gs-tb" id="gsTPlay" title="Play"><svg viewBox="0 0 12 12"><path d="M3 1.8 L10.4 6 L3 10.2 Z"/></svg></span>
      <span class="gs-btn gs-tb" id="gsTStop" title="Stop: back to the cue. Double-click: back to the top of the file"><svg viewBox="0 0 12 12"><rect x="2.6" y="2.6" width="6.8" height="6.8" rx="1"/></svg></span>
@@ -77,9 +70,9 @@ function gsBuild() {
    ${gsFxPageHtml()}
    ${gsDockHtml()}
    <div class="gs-menu" id="gsMenu" hidden></div>
-   <div class="gs-menu gs-shelf" id="gsShelf" hidden></div>
   </div>`));
   gsCvs(host);
+  gsPresetBars();
   gsBuildTabs();
   const trace = document.createElement('i');
   trace.id = 'gsFxTrace';
@@ -117,14 +110,6 @@ function gsWirePage() {
   $('gsKbScale').onclick = (e) => gsTuneMenu(e.currentTarget);
   gsWireTray();
   gsWireMidiChannel($('gsMidiCh'), 'grain');
-  $('gsPresetBtn').onclick = (e) => {
-    const step = e.target.closest('[data-step]');
-    if (step) gsStepPreset(+step.dataset.step);
-    else gsOpenShelf();
-  };
-  document.querySelectorAll('#gsAB span').forEach((s) => { s.onclick = () => gsSwitchAB(s.dataset.ab); });
-  $('gsRndBtn').onclick = (e) => gsRandomize(e.shiftKey);
-  $('gsRndUndo').onclick = gsRandomizeUndo;
   $('gsLoadM').onclick = (e) => $('engineLoad')?.onclick?.({ shiftKey: e.shiftKey });
   // The volume is the transport's own slider, moved from here.
   const vol = GS_CV.gsMaster;
@@ -135,7 +120,7 @@ function gsWirePage() {
   };
   gsDrag(vol.el, (a, b, e) => setVol(e), setVol);
   window.addEventListener('pointerdown', (e) => {
-    if (GS.showing && !e.target.closest?.('#gsMenu,#gsShelf,#gsPresetBtn,#gsTuneBtn,#gsKbScale')) gsCloseMenus();
+    if (GS.showing && !e.target.closest?.('#gsMenu,#gsTuneBtn,#gsKbScale')) gsCloseMenus();
   }, true);
   window.addEventListener('keydown', (e) => {
     if (GS.showing && e.key === 'Escape' && gsMenusOpen()) { e.stopPropagation(); gsCloseMenus(); }
@@ -170,59 +155,6 @@ function gsFit() {
   const s = Math.min(cw / GS_W, ch / GS_H, 1.3);
   GS.scale = s;
   app.style.transform = `scale(${s})`;
-}
-
-// ──────────────────────────────────────────────────────────────────── presets
-
-const gsEngName = (a) => (GS_ENG.find((x) => x[0] === a) || ['', a || ''])[1];
-const gsPresetTag = (p) => [p.note, gsEngName(p.stretch?.algorithm)].filter(Boolean).join(' · ');
-
-function gsApplyPreset(name) {
-  const pick = $('presetPick');
-  pick.value = name;
-  // The tray's own handler: it applies, rebuilds and says what it did.
-  pick.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-function gsStepPreset(by) {
-  const list = state.presets;
-  if (!list.length) return;
-  const i = list.findIndex((p) => p.name === $('presetPick').value);
-  gsApplyPreset(list[(i + by + list.length + (i < 0 && by < 0 ? 1 : 0)) % list.length].name);
-}
-
-function gsOpenShelf() {
-  const m = $('gsShelf');
-  if (!m.hidden) { gsCloseMenus(); return; }
-  gsCloseMenus();
-  const cur = $('presetPick').value;
-  m.innerHTML = '';
-  const grid = document.createElement('div');
-  grid.className = 'gs-shelfgrid';
-  for (const p of state.presets) {
-    const el = wvH(`<div class="gs-pc ${p.name === cur ? 'on' : ''}" title="${gsAttr(p.name)}"><div class="gs-well gs-pcg">${gsSvgG((GG_ENGINE[p.stretch?.algorithm] || GG_ENGINE.wsola)())}</div><b></b><span></span></div>`);
-    el.querySelector('b').textContent = p.name;
-    el.querySelector('span').textContent = gsPresetTag(p);
-    el.onclick = () => { gsCloseMenus(); gsApplyPreset(p.name); };
-    grid.appendChild(el);
-  }
-  if (!state.presets.length) grid.appendChild(wvH('<span class="gs-hint">No presets yet: Save as… keeps this sound’s settings</span>'));
-  m.appendChild(grid);
-  const foot = wvH(`<div class="gs-shelffoot"><label class="gs-hint"><input type="checkbox" id="gsPresetSound"> with sound</label><span class="gs-sp"></span><span class="gs-btn gs-chip" id="gsPresetSave">Save as…</span><span class="gs-btn gs-chip" id="gsPresetManage">Manage…</span><span class="gs-btn gs-chip" id="gsPresetDelete">Delete</span></div>`);
-  m.appendChild(foot);
-  const sound = $('gsPresetSound');
-  sound.checked = !!$('presetWithSound')?.checked;
-  sound.onchange = () => { $('presetWithSound').checked = sound.checked; };
-  for (const [id, real] of [['gsPresetSave', 'presetSave'], ['gsPresetManage', 'presetManage'], ['gsPresetDelete', 'presetDelete']]) {
-    $(id).onclick = () => { gsCloseMenus(); $(real).click(); };
-  }
-  gsPlaceMenu(m, $('gsPresetBtn'));
-}
-
-function gsMarkPreset() {
-  const name = $('presetPick').value, p = state.presets.find((x) => x.name === name);
-  gsTxt('gsPresetName', name || 'No preset');
-  gsTxt('gsPresetTag', p ? gsPresetTag(p) : gsEngName(GS.engine));
 }
 
 // ────────────────────────────────────────────────────── A/B and Randomize
@@ -260,7 +192,6 @@ async function gsSwitchAB(k) {
   if (k === GS.ab || !state.stretchDraft) return;
   GS.abs[GS.ab] = gsSnapshot(true);
   GS.ab = k;
-  document.querySelectorAll('#gsAB span').forEach((x) => x.classList.toggle('on', x.dataset.ab === k));
   // The first visit to B is A as it stands, to depart from.
   if (GS.abs[k]) await gsRestore(GS.abs[k]);
 }
@@ -390,12 +321,11 @@ const GS_KEYS = { ov: '', tr: '', cl: '', mini: null, glyph: 0 };
 function gsTick(now) {
   const d = state.stretchDraft, path = state.selectedFile?.path || null;
   // A/B belong to the sound they were made on.
-  if (GS.abFor !== path) { GS.abFor = path; GS.abs = { A: null, B: null }; GS.ab = 'A'; GS.rndPrev = null; $('gsRndUndo').hidden = true; document.querySelectorAll('#gsAB span').forEach((x) => x.classList.toggle('on', x.dataset.ab === 'A')); GS.czA = GS.czB = 0; gsVoiceForSound(); }
+  if (GS.abFor !== path) { GS.abFor = path; GS.abs = { A: null, B: null }; GS.ab = 'A'; GS.rndPrev = null; $('gsRndUndo').hidden = true; GS.czA = GS.czB = 0; gsVoiceForSound(); }
   if (d && d.algorithm !== GS.engine) gsApplyEngine();
   if (d) { gsPaintAll(); gsApplyDims(); }
   gsPaintSeed();
   gsMarkTune();
-  gsMarkPreset();
   gsMarkTransport();
   gsMirrorTray();
   gsFollowTick();

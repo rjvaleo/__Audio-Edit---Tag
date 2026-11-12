@@ -16,6 +16,7 @@
 // were the grain document's, and are not on the Prism deck.
 
 import { test, expect } from './test.mjs';
+import { pbOpenList, pbPick, pbName, pbStep, pbRename, pbDelete, pbMenu, pop } from './preset-bar.helpers.mjs';
 
 async function stubDeck(page) {
   await page.route('**/api/prism/load**', (route) => {
@@ -250,26 +251,41 @@ test('Post-Roll is kept per process and reaches the rack', async ({ page }) => {
 test('Hyperprism\'s presets set the pad window and the settings, not the position', async ({ page }) => {
   await openPad(page);
   await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
-  const presets = page.locator('#prismPreset');
-  await expect(presets.locator('option')).toHaveCount(1 + 10);
-  const first = await presets.locator('option').nth(1).textContent();
+  // The list: Hyperprism's ten for the process, as factory, and none of yours.
+  await pbOpenList(page, 'prism');
+  const rows = pop(page).locator('.pbar-row .pbar-rn');
+  await expect(rows).toHaveCount(10);
+  const first = await rows.first().textContent();
+  await page.keyboard.press('Escape');
   const want = await page.evaluate(async () => (await api('/api/pad/presets?kind=ptc')).factory[0]);
-  await presets.selectOption({ label: first });
+  await pbPick(page, 'prism', first);
   await page.waitForTimeout(400);
+  await expect.poll(() => pbName(page, 'prism')).toBe(first);
   await expect(page.locator('#prismXLo')).toHaveValue(String(want.xLo));
   await expect(page.locator('#prismXHi')).toHaveValue(String(want.xHi));
   const pt = await page.evaluate(async () =>
     (await api(`/api/rack?p=${encodeURIComponent(`prism:${window.prismDeck.path()}`)}`)).pitchTime);
   expect(pt.grain).toBe(want.settings.grain);
-  // A preset of the user's own, saved, and offered next time.
-  await page.locator('#prismPresetName').fill('Slow drift');
-  await page.locator('#prismPresetSave').click();
-  await page.waitForTimeout(300);
-  await expect(presets.locator('option', { hasText: 'Slow drift' })).toHaveCount(1);
-  await presets.selectOption({ label: 'Slow drift' });
-  await page.locator('#prismPresetDelete').click();
-  await page.waitForTimeout(300);
-  await expect(presets.locator('option', { hasText: 'Slow drift' })).toHaveCount(0);
+  // A factory preset is not saved over: Save asks for a name.
+  await page.locator('#prismPb [data-pb="save"]').click();
+  const field = pop(page).locator('.pbar-field');
+  await field.fill('Slow drift');
+  await field.press('Enter');
+  await expect.poll(() => page.evaluate(() => prismPresets.user.map((p) => p.name))).toEqual(['Slow drift']);
+  await expect.poll(() => pbName(page, 'prism')).toBe('Slow drift');
+  // The arrows walk the list: past the factory ten, round to the first.
+  await pbStep(page, 'prism', 1);
+  await expect.poll(() => pbName(page, 'prism')).toBe(first);
+  await pbStep(page, 'prism', -1);
+  await expect.poll(() => pbName(page, 'prism')).toBe('Slow drift');
+  await pbRename(page, 'prism', 'Slower drift');
+  await expect.poll(() => page.evaluate(() => prismPresets.user.map((p) => p.name))).toEqual(['Slower drift']);
+  await expect.poll(() => pbName(page, 'prism')).toBe('Slower drift');
+  await pbDelete(page, 'prism');
+  await expect.poll(() => page.evaluate(() => prismPresets.user.length)).toBe(0);
+  // Init is Default Settings.
+  await pbMenu(page, 'prism', 'init');
+  await expect.poll(() => pbName(page, 'prism')).toBe('Default Settings');
 });
 
 
