@@ -492,12 +492,8 @@
                own settings. See `docs/SECTION-PRESETS.md`. -->
           <span class="re-tag">LOOK</span>
           <div class="re-frames sp-row" id="visualPresetRow">
-            <select class="field mini sp-pick" id="vpPick"
-              title="A saved look: every layer, colour, camera and setting in the room, and none of the sound."></select>
-            <button class="re-btn" id="vpSave"
-              title="Keep the room exactly as it is now, under a name.">Save as&hellip;</button>
-            <button class="re-btn" id="vpDelete"
-              title="Forget the look named in the picker. The room is not touched.">Delete</button>
+            <!-- The preset bar (`105-preset-bar.js`), made in `200-grain-view.js`. -->
+            <div id="vpPbHost"></div>
           </div>
         </div>
         <!-- `#masterBus` is moved in here. Everything that feeds it is gated on
