@@ -699,6 +699,8 @@ function prismKind() {
 }
 
 const prismPresets = { factory: [], user: [] };
+/// The preset loaded: `default`, `f<i>` (factory), `u<i>` (yours), or '' for none.
+let prismPresetAt = '';
 
 async function prismLoadPresets() {
   const kind = prismKind();
@@ -710,14 +712,10 @@ async function prismLoadPresets() {
   prismRenderPresets();
 }
 
+/// The preset bar reads the lists and `prismPresetAt`; the post-roll shows this
+/// process's.
 function prismRenderPresets(chosen) {
-  const sel = $('prismPreset');
-  if (!sel) return;
-  sel.innerHTML = '';
-  sel.add(choiceOption('<Default Settings>', 'default', chosen === 'default'));
-  prismPresets.factory.forEach((p, i) => sel.add(choiceOption(p.name, `f${i}`, chosen === `f${i}`)));
-  prismPresets.user.forEach((p, i) => sel.add(choiceOption(p.name, `u${i}`, chosen === `u${i}`)));
-  if (!chosen) sel.selectedIndex = -1;
+  prismPresetAt = chosen || '';
   const pr = $('prismPostRoll');
   if (pr) pr.value = String(prismDeck.rack.postRoll?.[prismCurrent()?.id] ?? 0);
 }
@@ -782,10 +780,10 @@ async function prismPresetChosen(value) {
   prismRenderPresets(value);
 }
 
-async function prismPresetSave() {
-  const name = $('prismPresetName')?.value.trim();
-  if (!name) { toast('Name the preset first'); return; }
+/// Keep the pad's window, this process's settings and its post-roll as `name`.
+async function prismPresetSave(name) {
   const src = prismCurrent();
+  if (!src) throw new Error('No process on the pad');
   const preset = { ...prismSetup(), settings: prismSettingsNow(), postRollMs: prismDeck.rack.postRoll?.[src.id] ?? 0 };
   await postJSON('/api/pad/presets', { kind: prismKind(), name, preset });
   await prismLoadPresets();
@@ -793,18 +791,17 @@ async function prismPresetSave() {
   prismRenderPresets(i >= 0 ? `u${i}` : undefined);
 }
 
-async function prismPresetRename() {
-  const v = $('prismPreset')?.value;
-  const to = $('prismPresetName')?.value.trim();
-  if (v?.[0] !== 'u' || !to) { toast('Choose one of your presets and type its new name'); return; }
-  await postJSON('/api/pad/presets/rename', { kind: prismKind(), from: prismPresets.user[+v.slice(1)].name, to });
+/// One of yours, renamed; still loaded if it was.
+async function prismPresetRename(from, to) {
+  const was = prismPresetAt;
+  await postJSON('/api/pad/presets/rename', { kind: prismKind(), from, to });
   await prismLoadPresets();
+  const i = prismPresets.user.findIndex((p) => p.name === to);
+  if (was[0] === 'u' && i >= 0) prismRenderPresets(`u${i}`);
 }
 
-async function prismPresetDelete() {
-  const v = $('prismPreset')?.value;
-  if (v?.[0] !== 'u') { toast('Only your own presets can be deleted'); return; }
-  await postJSON('/api/pad/presets/delete', { kind: prismKind(), name: prismPresets.user[+v.slice(1)].name });
+async function prismPresetDelete(name) {
+  await postJSON('/api/pad/presets/delete', { kind: prismKind(), name });
   await prismLoadPresets();
 }
 
