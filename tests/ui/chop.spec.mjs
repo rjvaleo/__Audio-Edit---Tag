@@ -136,7 +136,7 @@ test('Silence re-cuts it as the knobs move, as Recycle Reborn did', async ({ pag
   await expect(page.locator('#dockChop .chop-stat[data-k="clips"] b')).toHaveText('4');
   // And the knob itself turns it: the wheel down on Threshold finds fewer.
   await page.evaluate(() => window.Chop.set({ topDb: 40, minDur: 40, pad: 12 }));
-  const thr = page.locator('#chopKnobs .knob[data-k="topDb"] svg:not(.gl)');
+  const thr = page.locator('#chopKnobs .ui-knob[data-k="topDb"] .ui-kn');
   await expect(thr).toBeVisible();
   for (let i = 0; i < 10; i++) await thr.dispatchEvent('wheel', { deltaY: 100 });
   expect((await page.evaluate(() => window.Chop.settings)).topDb).toBeLessThan(40);
@@ -466,7 +466,7 @@ test('→ Regions puts every slice that is not muted into the Region manager, on
 test('nothing hides by mode: a knob that makes no cuts dims and stays where it is', async ({ page }) => {
   await openChop(page);
   await loadSignal(page, { mode: 'transient' });
-  const place = () => page.evaluate(() => [...document.querySelectorAll('#chopKnobs .knob')].map((k) => {
+  const place = () => page.evaluate(() => [...document.querySelectorAll('#chopKnobs .ui-knob')].map((k) => {
     const r = k.getBoundingClientRect();
     return [k.dataset.k, Math.round(r.left), k.classList.contains('dim')];
   }));
@@ -478,7 +478,7 @@ test('nothing hides by mode: a knob that makes no cuts dims and stays where it i
   expect(grid.find((k) => k[0] === 'shuffle')[2]).toBe(false);
   // Ratchet uses Shuffle in every mode, so a dimmed one still works.
   await page.locator('#chopMode button[data-v="transient"]').click();
-  await page.locator('#chopKnobs .knob[data-k="shuffle"] svg:not(.gl)').dispatchEvent('wheel', { deltaY: -100 });
+  await page.locator('#chopKnobs .ui-knob[data-k="shuffle"] .ui-kn').dispatchEvent('wheel', { deltaY: -100 });
   expect((await page.evaluate(() => window.Chop.settings)).shuffle).toBeGreaterThan(50);
 });
 
@@ -547,7 +547,7 @@ test('the page fits: nothing runs off it and nothing is cut off', async ({ page 
     const app = document.querySelector('.chop-app'), r = app.getBoundingClientRect();
     const wide = (s) => { const e = document.querySelector(s); return e.scrollWidth - e.clientWidth; };
     return { bar: wide('.chop-top'), cut: wide('.chop-cutrow'), foot: wide('.chop-foot'), list: wide('#chopList'),
-             tall: app.scrollHeight - app.clientHeight, cutOff: [...document.querySelectorAll('.chop-app .knob > .k')].filter((k) => k.scrollWidth > k.clientWidth + 1 && getComputedStyle(k).overflow !== 'visible').length, onScreen: r.right <= innerWidth + 1 };
+             tall: app.scrollHeight - app.clientHeight, cutOff: [...document.querySelectorAll('.chop-app .ui-knob .ui-kname')].filter((k) => k.scrollWidth > k.clientWidth + 1 && getComputedStyle(k).overflow !== 'visible').length, onScreen: r.right <= innerWidth + 1 };
   });
   expect(got).toEqual({ bar: 0, cut: 0, foot: 0, list: 0, tall: 0, cutOff: 0, onScreen: true });
 });

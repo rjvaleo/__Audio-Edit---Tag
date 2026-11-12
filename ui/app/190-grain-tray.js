@@ -6,8 +6,8 @@
 //
 //   - the cloud pad leads, in a column of its own with its readout and the
 //     Cloud presets (`gkLayout`, once: those three are static markup);
-//   - every slider row is a knob, its reading and its name under it
-//     (`gkKnob`, on every rebuild — the rows are built per engine and file);
+//   - every slider row was a knob, its reading and its name under it
+//     (`gkKnob`, removed in phase 5 of the consistency pass: nothing used it);
 //   - every group is a bank, and the banks wrap across the dock's width, so
 //     the whole engine is in view (the stylesheet, under "the granular tray").
 //
@@ -15,36 +15,6 @@
 // double-click resets; a face is drawn behind each input and the input is laid
 // over it, so a pointer on the knob is a pointer on the slider. Random, the
 // presets, the automation and the tests reach every one of them as before.
-
-/// A slider row of the tray, made a knob.
-function gkKnob(row) {
-  const input = row.querySelector(':scope > input[type=range]');
-  if (!input || input.dataset.rk) return;
-  input.dataset.rk = 'knob';
-  row.classList.add('gk-k');
-  const face = document.createElement('span');
-  face.className = 'rk-face';
-  input.before(face);
-  // The picture of what the knob does, above it (`grain-glyphs.js`). Drawn
-  // wherever the face is, so a drag, a reset, a preset and an undo all reach it.
-  const key = row.dataset.glyph;
-  const glyph = key && ggHas(key) ? ggMake(key) : null;
-  if (glyph) face.before(glyph);
-  const draw = () => {
-    const min = +input.min, max = +input.max, v = +RK_VALUE.get.call(input);
-    const mark = row.dataset.mark === undefined ? undefined : +row.dataset.mark;
-    face.innerHTML = rkFace(max > min ? (v - min) / (max - min) : 0, mark);
-    if (glyph) ggPaint(glyph, key, row.read ? row.read() : v);
-  };
-  Object.defineProperty(input, 'value', {
-    configurable: true,
-    get() { return RK_VALUE.get.call(this); },
-    set(v) { RK_VALUE.set.call(this, v); draw(); },
-  });
-  input.addEventListener('input', draw);
-  rkDrag(input);
-  draw();
-}
 
 /// The tray's two styles (RJ, 4 Nov 2026). **Bars**, the default: each slider
 /// row is one bar, its name and reading inside it and its picture in front,
@@ -183,8 +153,8 @@ function gkAdopt() {
 }
 
 /// A slider row of the tray with its picture at the front. The tray is the
-/// columns of slider rows it was before the knobs (27 Oct); the knobs, the
-/// pad's own column and the packed banks (`gkKnob`, `gkLayout`, `gkPack`,
+/// columns of slider rows it was before the knobs (27 Oct); the pad's own
+/// column and the packed banks (`gkLayout`, `gkPack`,
 /// `gkFit`, `gkViewRow`) are kept but no longer used here. They act only on a
 /// tray marked `gk-banks`, and nothing marks it.
 ///

@@ -183,10 +183,8 @@ function uiKnob(o) {
     paint();
     o.commit?.();
   };
-  if (o.reset || defU() != null) {
-    kn.addEventListener('dblclick', reset);
-    if (pic && !face) pic.addEventListener('dblclick', reset);
-  }
+  // The whole knob, its name and reading too: the ring is a small target.
+  if (o.reset || defU() != null) el.addEventListener('dblclick', reset);
   ring.addEventListener('keydown', (e) => {
     const step = (o.step || 0.01) * (e.shiftKey ? 0.2 : 1);
     const d = { ArrowUp: step, ArrowRight: step, ArrowDown: -step, ArrowLeft: -step, PageUp: 0.1, PageDown: -0.1 }[e.key];

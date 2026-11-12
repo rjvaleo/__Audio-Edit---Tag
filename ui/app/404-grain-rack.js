@@ -365,7 +365,7 @@ const GS_FKI = [
   [/level|gain|out/i, 'M1 9 L11 1 V9 Z'],
 ];
 const gsFkIcon = (label) => GS_FKI.find(([r]) => r.test(label))?.[1];
-const GS_FX_RING = '.fxk-ring,.sh-ring,.lex-ring';
+const GS_FX_RING = '.fxk .ui-ring,.sh-ring,.lex-ring';
 const GS_FX_CELL = '.fxk,.fxt,.sh-cell:not(.sh-keycap),.lex-knob';
 
 /// One width per effect, whatever its controls happen to be doing: a module of
@@ -389,10 +389,11 @@ function gsFxShape(m, slot) {
 }
 
 /// A picture in the knob's empty corner, placed after the knob's own element so
-/// anything looking up a knob's first svg still finds the knob.
+/// anything looking up a knob's first svg still finds the knob. Not on the
+/// shared knob (`.fxk`), which carries its own picture beside it.
 function gsFxKnobIcons(m) {
   m.querySelectorAll(GS_FX_CELL).forEach((c) => {
-    if (c.querySelector(':scope > .fki')) return;
+    if (c.matches('.ui-knob') || c.querySelector(':scope > .fki')) return;
     const ring = c.querySelector(GS_FX_RING), d = ring && gsFkIcon(ring.getAttribute('aria-label') || '');
     if (!d) return;
     ring.after(wvH(`<i class="fki"><svg viewBox="0 0 12 10"><path d="${d}"/></svg></i>`));

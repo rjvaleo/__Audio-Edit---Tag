@@ -140,8 +140,11 @@ test('the rail opens Wave, and every view draws with no console error', async ({
       const id = { play: 'wvViewPlay', create: 'wvViewCreate', matrix: 'wvViewMatrix', fx: 'wvViewFx' }[view];
       const sec = document.getElementById(id);
       const canvases = [...sec.querySelectorAll('canvas')].filter((c) => c.getBoundingClientRect().width);
-      // A canvas drawn on has pixels that are not transparent.
+      // A canvas drawn on has pixels that are not transparent. A plain knob's
+      // canvas holds only the drag (phase 5): its ring is the shared knob's
+      // SVG beside it, painted when the arc has a path.
       const inked = canvases.filter((c) => {
+        if (c.parentNode.matches('.ui-kn') && c.parentNode.querySelector('.ui-tr')?.getAttribute('d')) return true;
         const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
         for (let i = 3; i < d.length; i += 16) if (d[i]) return true;
         return false;

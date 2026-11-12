@@ -289,17 +289,8 @@ const FXP = (() => {
     damping: (v) => { const x = flog(v.cutoffHz ?? 6000); return single((t) => t < x ? .75 : .75 * Math.exp(-(t - x) * 6)) + `<line x1="${hx(x)}" x2="${hx(x)}" y1="${hy(0)}" y2="${hy(1)}" class="hd"/>`; },
   });
 
-  /// A knob: the value as the ring, the picture in the cap.
+  /// A picture without its small print, for where it cannot be read.
   const noText = (s) => s.replace(/<text[\s\S]*?<\/text>/g, '');
-  function ring(u, bipolar, pic) {
-    const a0 = Math.PI * .75, span = Math.PI * 1.5, r = 26, c = 30;
-    const pt = (a) => `${N(c + r * Math.cos(a))} ${N(c + r * Math.sin(a))}`;
-    const arc = (from, to, cls) => to - from < .001 ? '' : `<path d="M${pt(from)}A${r} ${r} 0 ${to - from > Math.PI ? 1 : 0} 1 ${pt(to)}" class="${cls}"/>`;
-    const a = a0 + u * span, mid = a0 + span / 2;
-    return arc(a0, a0 + span, 'fxk-track') + (bipolar ? arc(Math.min(mid, a), Math.max(mid, a), 'fxk-arc') : arc(a0, a, 'fxk-arc'))
-      + `<circle cx="${N(c + r * Math.cos(a))}" cy="${N(c + r * Math.sin(a))}" r="3.4" class="fxk-tip"/><circle cx="${c}" cy="${c}" r="20" class="fxk-cap"/>`
-      + `<svg x="12" y="17" width="36" height="27" viewBox="0 0 64 48" class="pic" overflow="visible">${noText(pic)}</svg>`;
-  }
   /// A display: the 400 × 70 drawing, scaled to the module.
   const display = (inner, fill = false) => `<svg class="fx-disp" viewBox="0 0 ${HW} ${HH}" ${fill ? 'preserveAspectRatio="none" ' : ''}aria-hidden="true">${inner}</svg>`;
   /// The pad's crosshair over a display, and what its two axes are.
@@ -330,7 +321,7 @@ const FXP = (() => {
   const HERO_ALIAS = { flanger: 'dattorro_flanger', vibrato: 'dattorro_vibrato', echo: 'prism:echo', dattorro_notch: 'notch',
     dattorro_resonator: 'resonator', regalia_mitra: 'regalia', damping_filter: 'damping', all_pass_diffuser: 'allpass_diffuser' };
   const heroFor = (kind) => { const k = kind.replace(/^prism:/, '').replace(/-/g, '_'); return HERO_ALIAS[k] || k; };
-  return { PIC, picFor, svg, noText, ring, display, padMark, rbjDb, HERO, heroFor, HW, HH };
+  return { PIC, picFor, svg, noText, display, padMark, rbjDb, HERO, heroFor, HW, HH };
 })();
 
 // ───────────────────────────────────────────────────────── which, and how wide
@@ -449,41 +440,25 @@ function fxShort(label, group) {
 
 // ────────────────────────────────────────────────────────────── the controls
 
-/// A knob: the ring is the value, the cap is the picture of what the value
-/// does, the reading and the name under it. Drag up or down (Shift for fine),
-/// double-click for its default, arrows to nudge.
+/// A knob: the shared knob (`073a-ui-knob.js`). Its ring is the value and its
+/// face the picture of what the value does, the name and reading under it.
+/// Drag up or down (Shift for fine), double-click for its default, arrows to
+/// nudge. 44 px on a face; 26, the picture beside it, in Grain's rack, where a
+/// module is a grid of small cells (`gsFxKnobs`).
 function fxKnob(m, p, onMove = () => {}, label = p.label) {
-  const el = document.createElement('div');
-  el.className = 'fxk';
-  el.dataset.key = p.key;
-  el.innerHTML = '<svg class="fxk-ring" viewBox="0 0 60 60" role="slider" tabindex="0"></svg><span class="fxk-v"></span><span class="fxk-l"></span>';
-  el.querySelector('.fxk-l').textContent = label;
-  el.title = `${p.label} — drag up or down, double-click to reset`;
-  const ring = el.querySelector('.fxk-ring');
-  ring.setAttribute('aria-label', p.label);
-  const pk = FXP.picFor(p);
-  const paint = () => {
-    const v = m.get(p.key), r = fxRange(m, p), u = fxUnit(r, v);
-    ring.innerHTML = FXP.ring(u, r.min < 0 && r.max > 0, FXP.PIC[pk](u, v, p));
-    ring.setAttribute('aria-valuetext', fxFormat(p, v));
-    el.querySelector('.fxk-v').textContent = fxFormat(p, v);
-  };
-  const to = (u) => { m.set(p.key, fxClamp(p, fxFromUnit(fxRange(m, p), Math.max(0, Math.min(1, u))))); paint(); onMove(); };
-  let y0 = 0, u0 = 0;
-  ring.addEventListener('pointerdown', (e) => { y0 = e.clientY; u0 = fxUnit(fxRange(m, p), m.get(p.key)); ring.setPointerCapture(e.pointerId); e.preventDefault(); });
-  ring.addEventListener('pointermove', (e) => { if (ring.hasPointerCapture(e.pointerId)) to(u0 + (y0 - e.clientY) / (e.shiftKey ? 600 : 160)); });
-  ring.addEventListener('pointerup', (e) => { if (ring.hasPointerCapture(e.pointerId)) { ring.releasePointerCapture(e.pointerId); m.commit(); } });
-  ring.addEventListener('dblclick', () => { m.set(p.key, p.default ?? p.min); paint(); onMove(); m.commit(); });
-  ring.addEventListener('keydown', (e) => {
-    const d = { ArrowUp: .01, ArrowRight: .01, ArrowDown: -.01, ArrowLeft: -.01 }[e.key];
-    if (!d) return;
-    e.preventDefault();
-    to(fxUnit(fxRange(m, p), m.get(p.key)) + d * (e.shiftKey ? .2 : 1));
-    m.commit();
+  const pk = FXP.picFor(p), r = () => fxRange(m, p), small = gsFxKnobs();
+  return uiKnob({
+    label, aria: p.label, key: p.key, cls: 'fxk', size: small ? 26 : 44, fine: 3.75,
+    title: `${p.label} — drag up or down, double-click to reset`,
+    get: () => fxUnit(r(), m.get(p.key)),
+    set: (u) => { m.set(p.key, fxClamp(p, fxFromUnit(r(), u))); onMove(); },
+    commit: () => m.commit(),
+    reset: () => { m.set(p.key, p.default ?? p.min); onMove(); },
+    def: fxUnit(r(), p.default ?? p.min),
+    text: () => fxFormat(p, m.get(p.key)),
+    pic: (u) => FXP.noText(FXP.PIC[pk](u, m.get(p.key), p)),
+    bip: r().min < 0 && r().max > 0,
   });
-  el.sync = paint;
-  paint();
-  return el;
 }
 
 /// A level you ride like a desk channel: a short fader.

@@ -327,13 +327,10 @@ test('a source dragged onto a board control becomes a board row, ringed on the k
   await expect.poll(async () => (await (await page.request.get('/api/wave/patch')).json()).mods)
     .toEqual([expect.objectContaining({ src: 'lfo2', dst: 'board:g:db', amt: 0.3 })]);
   // The knob draws the range in LFO 3's colour, and the inspector lists it.
-  const ink = await knob.evaluate((c) => {
-    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    let n = 0;
-    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 100 && d[i] > 200 && d[i + 1] < 150 && d[i + 2] > 130) n++;
-    return n;
-  });
-  expect(ink, 'no LFO 3 arc on the knob').toBeGreaterThan(5);
+  // Phase 5: the ring is the shared knob's, drawn in SVG beside the canvas.
+  const ring = await knob.evaluate((c) => ({ d: c.parentNode.querySelector('.ui-md').getAttribute('d'), col: c.parentNode.style.getPropertyValue('--mc') }));
+  expect(ring.d, 'no LFO 3 arc on the knob').toMatch(/^M/);
+  expect(ring.col, 'no LFO 3 arc on the knob').toBe(await page.evaluate(() => WV_SRC_COL.lfo2));
   await page.locator('#wvWorld .wv-fn[data-node="g"] .fh').click();
   await expect(page.locator('#wvFinsp .wv-mr')).toHaveCount(1);
   await expect(page.locator('#wvFinsp .wv-mr .wv-badge')).toContainText('LFO 3');

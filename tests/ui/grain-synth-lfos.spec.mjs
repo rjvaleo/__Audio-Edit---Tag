@@ -133,20 +133,20 @@ test('Map a rack knob from the effects page header: it moves and its setting doe
   const cell = page.locator('#fxModuleRail .fxk').first();
   const key = await cell.getAttribute('data-key');
   const base = await page.evaluate((k) => state.rack.slots[0].params[k], key);
-  await cell.locator('svg.fxk-ring').click();
+  await cell.locator('svg.ui-ring').click();
 
   const id = await page.evaluate((k) => `fx.${state.rack.slots[0].id}.${k}`, key);
   await expect.poll(() => page.evaluate(() => GS.lfo[2].targets.length)).toBe(1);
   expect(await page.evaluate(() => GS.lfo[2].targets[0])).toBe(id);
   await expect(cell).toHaveClass(/gs-mapped/);
   expect(await cell.evaluate((c) => c.style.getPropertyValue('--mc'))).toBe(col);
-  const shadow = await cell.evaluate((c) => getComputedStyle(c.querySelector('.fxk-ring')).outlineStyle);
+  const shadow = await cell.evaluate((c) => getComputedStyle(c.querySelector('.ui-kn')).outlineStyle);
   expect(shadow).toBe('solid');
 
   // Move: and the slot's own value stays.
   await expect.poll(() => heard(page, id), { timeout: 3000 }).not.toBe(await heard(page, id));
   expect(await page.evaluate((k) => state.rack.slots[0].params[k], key)).toBe(base);
-  await expect(cell.locator('.gs-kd')).toBeVisible();
+  await expect(cell.locator('.ui-live')).toBeVisible();
 
   // The server's rack is not written either.
   const stored = await page.evaluate(async () => (await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}&sr=48000`)).slots[0].params);

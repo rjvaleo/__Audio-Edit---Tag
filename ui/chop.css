@@ -31,7 +31,7 @@ body.choppage .dock-panes { height: 100%; }
 :root[data-mgl-look="C"] .chop-app .chop-panel, :root[data-mgl-look="C"] .chop-app .chop-mod { border-radius: 16px; background: var(--grain), linear-gradient(180deg, var(--panel-hi), var(--panel)); background-blend-mode: soft-light, normal; }
 :root[data-mgl-look="C"] .chop-app .chop-btn { border-radius: 999px; }
 :root[data-mgl-look="D"] .chop-app .chop-panel, :root[data-mgl-look="D"] .chop-app .chop-mod { border: 1px solid transparent; background: linear-gradient(165deg, var(--look-acrylic), var(--look-acrylic-lo)) padding-box, conic-gradient(from 210deg, var(--look-edge-1), var(--look-edge-2), var(--look-edge-3), var(--look-edge-4), var(--look-edge-1)) border-box; }
-:root[data-mgl-look="C"] .chop-app .knob .arc, :root[data-mgl-look="C"] .chop-app .knob .track { stroke-dasharray: .1 5.2; stroke-linecap: round; stroke-width: 2.6; }
+:root[data-mgl-look="C"] .chop-app .ui-knob :is(.ui-ar, .ui-tr) { stroke-dasharray: .1 5.2; stroke-linecap: round; stroke-width: 2.6; }
 
 .chop-app button { font: inherit; color: inherit; padding: 0; border: 0; background: none; cursor: pointer; }
 .chop-app .chop-grow { flex: 1; }
@@ -184,24 +184,19 @@ body.choppage .dock-panes { height: 100%; }
 .chop-app .chop-status { font: 400 var(--fs-s) var(--monof); color: var(--t2); white-space: nowrap; }
 .chop-app .chop-status2 { color: var(--t3); }
 
-/* a knob: picture, face, reading, name */
-.chop-app .knob, .chop-app .chop-fx-bar { position: relative; width: 60px; height: 60px; display: block; margin: 0; padding: 0; cursor: ns-resize; }
-.chop-app .knob > svg:not(.gl) { position: absolute; left: 23px; top: 0; width: 32px; height: 32px; }
-.chop-app .knob .bezel { fill: none; stroke: rgba(var(--black-rgb), .6); }
-.chop-app .knob .cap { fill: color-mix(in srgb, var(--panel-hi) 85%, var(--white) 8%); }
-.chop-app .knob .track { stroke: rgba(var(--white-rgb), .1); stroke-width: 3; fill: none; }
-.chop-app .knob .arc { stroke: var(--wave); stroke-width: 3; fill: none; }
-.chop-app .knob .ptr { stroke: var(--t); stroke-width: 2.2; stroke-linecap: round; }
-.chop-app .knob > .v { position: absolute; top: 32px; left: -2px; right: -2px; text-align: center; font: 400 var(--fs-xs) var(--monof); color: var(--t2); white-space: nowrap; background: none; border: 0; box-shadow: none; padding: 0; min-width: 0; height: auto; }
-.chop-app .knob > .k { position: absolute; top: 45px; left: -2px; right: -2px; text-align: center; font: 500 var(--fs-s) var(--ui); color: var(--t3); white-space: nowrap; letter-spacing: 0; text-transform: none; overflow: visible; }
-.chop-app .gl, .chop-app .chop-fx-bar > svg.gg { position: absolute; left: 1px; top: 7px; width: 21px; height: 16px; overflow: visible; pointer-events: none; }
-.chop-app .gl .a { fill: none; stroke: var(--gg, var(--t2)); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.chop-app .gl .f { fill: none; stroke: var(--t3); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; opacity: .55; }
-.chop-app .chop-fx-bar > svg.gg { color: var(--fc); --gg: var(--fc); }
+/* a knob: the shared knob at 26 (app-css/085-controls.css), its picture beside it */
+.chop-app .chop-knob, .chop-app .chop-fx-bar { position: relative; width: 60px; height: 60px; margin: 0; padding: 0; }
+.chop-app .chop-knob { justify-content: flex-start; padding-top: 3px; }
+.chop-app .chop-knob .ui-lab, .chop-app .chop-face .ui-lab { margin-top: 1px; }
+.chop-app .chop-fx-bar > svg.gg { position: absolute; left: 6px; top: 8px; width: 22px; height: 16px; overflow: visible; pointer-events: none; --gg: var(--fc); }
+.chop-app .chop-fx-bar > svg.gg .a { fill: none; stroke: var(--fc); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.chop-app .chop-fx-bar > svg.gg .f { fill: none; stroke: var(--t3); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; opacity: .55; vector-effect: non-scaling-stroke; }
+.chop-app .chop-fx-bar > svg.gg :is(.t, text) { display: none; }
 .chop-app .chop-fx-bar > .k, .chop-app .chop-fx-bar > .v, .chop-app .chop-fx-bar > input { display: none; }
-.chop-app .chop-face { position: absolute; inset: 0; }
-.chop-app .knob.dim, .chop-app .chop-fx-bar.dim { opacity: .36; }
-.chop-app .knob.dim:hover { opacity: .7; }
+.chop-app .chop-face { position: absolute; inset: 0; padding-top: 3px; justify-content: flex-start; }
+.chop-app .chop-face .ui-kr { padding-left: 23px; }
+.chop-app .chop-knob.dim, .chop-app .chop-fx-bar.dim { opacity: .36; }
+.chop-app .chop-knob.dim:hover { opacity: .7; }
 .chop-app .chop-fxs-row { display: flex; gap: 8px; flex: 1; min-height: 0; }
 .chop-app .chop-pic { flex: 1; min-width: 0; align-self: stretch; margin-bottom: 2px; }
 .chop-app .chop-fxs.off .chop-fxs-body, .chop-app .chop-fxs.off .chop-pic { opacity: .42; }

@@ -71,12 +71,7 @@
 
 /* Knob: the ring the value, the cap the picture. */
 .fxk, .fxf, .fxt { display: grid; justify-items: center; user-select: none; min-width: 0; }
-.fxk-ring { width: 42px; max-width: 100%; aspect-ratio: 1; height: auto; cursor: ns-resize; touch-action: none; display: block; }
-.fxk-ring:focus-visible, .fxf-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
-.fxk-track { fill: none; stroke: var(--surface-3); stroke-width: 4; stroke-linecap: round; }
-.fxk-arc { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
-.fxk-tip { fill: var(--text); stroke: var(--well); stroke-width: 1.2; }
-.fxk-cap { fill: var(--surface); stroke: var(--line-2); }
+.fxf-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
 .fxk-v { font: var(--fs-xs) var(--mono); color: var(--accent); white-space: nowrap; max-width: 100%; overflow: hidden; letter-spacing: -.03em; line-height: 1.15; margin-top: -2px; }
 .fxk-l { font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
 .fxf-track { width: 18px; height: 42px; cursor: ns-resize; touch-action: none; display: block; }
