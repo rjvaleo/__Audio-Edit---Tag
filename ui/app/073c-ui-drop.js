@@ -148,21 +148,27 @@ function uiSelectGroups(sel, picOf) {
 ///   h (20 | 24 | 28, 24 by default); w (px; otherwise the select's own width,
 ///   if it has one when this runs); label (words in the trigger before the
 ///   choice); pic(value) → an SVG for the choice; mono (the choice in mono);
-///   text(value, option) → what the trigger says; cls.
-/// Returns the trigger. The select keeps its value, its options and its events.
+///   text(value, option) → what the trigger says; cls (on the box that
+///   holds the two). Returns the trigger. The select keeps its value, its
+///   options and its events; it moves into that box, beside the trigger.
 function uiDrop(sel, o = {}) {
   if (!sel || sel._ui) return sel?._ui;
   const h = [20, 24, 28].includes(o.h) ? o.h : 24;
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = `ui-dd h${h}${o.mono ? ' mono' : ''}${o.cls ? ' ' + o.cls : ''}`;
+  b.className = `ui-dd h${h}${o.mono ? ' mono' : ''}`;
   b.setAttribute('aria-haspopup', 'listbox');
   b.setAttribute('aria-expanded', 'false');
   if (sel.id) b.dataset.for = sel.id;
   b.innerHTML = `${o.label ? `<span class="ui-dl">${uiEsc(o.label)}</span>` : ''}<span class="ui-dp"></span><span class="ui-dt"></span><svg class="ui-dc" viewBox="0 0 8 5" aria-hidden="true"><path d="M1 1L4 4L7 1"/></svg>`;
   const w = o.w || (sel.offsetWidth > 0 ? sel.offsetWidth : 0);
   if (w) b.style.width = `${w}px`;
-  sel.after(b);
+  // The select and its trigger share a box, so the unseen select sits on the
+  // trigger rather than wherever its row would put a box of no size.
+  const wrap = document.createElement('span');
+  wrap.className = `ui-ddw${o.cls ? ' ' + o.cls : ''}`;
+  sel.before(wrap);
+  wrap.append(sel, b);
   sel.classList.add('ui-native');
   sel.tabIndex = -1;
   sel.setAttribute('aria-hidden', 'true');
@@ -178,7 +184,7 @@ function uiDrop(sel, o = {}) {
     if (dp.innerHTML !== p) dp.innerHTML = p;
     dp.hidden = !p;
     b.disabled = sel.disabled;
-    b.hidden = sel.hidden || sel.style.display === 'none';
+    b.hidden = wrap.hidden = sel.hidden || sel.style.display === 'none';
     b.title = sel.title || t;
     if (sel.getAttribute('aria-label')) b.setAttribute('aria-label', sel.getAttribute('aria-label'));
   };
