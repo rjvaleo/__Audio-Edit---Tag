@@ -50,6 +50,7 @@
 
 .pbar-vsep { width: 1px; height: 18px; background: var(--look-line); flex: none; box-shadow: 1px 0 0 rgba(var(--white-rgb), .03); }
 .pbar-x { display: flex; align-items: center; gap: 6px; flex: none; }
+.pbar-u { font-size: var(--fs-l); line-height: 1; }
 
 /* the small one: the name, Save and ⋯ */
 .pbar.mini { gap: 3px; }
@@ -111,3 +112,4 @@
 .pbar-askb { display: flex; justify-content: flex-end; gap: 6px; }
 .pbar-pop .pbar-askb .pbar-btn { height: var(--h-m); }
 .pbar-pop .pbar-btn.danger { color: var(--look-bad); border-color: color-mix(in srgb, var(--look-bad) 55%, var(--look-line)); }
+.pbar-i.pbar-take circle:first-child { fill: none; stroke: currentColor; stroke-width: 1.35; }

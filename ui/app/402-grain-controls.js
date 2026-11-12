@@ -315,11 +315,11 @@ function gsPlaceTrace() {
 // ────────────────────────────────────────────────────────────────── the menus
 
 function gsCloseMenus() {
-  for (const id of ['gsMenu', 'gsShelf']) { const m = document.getElementById(id); if (m) { m.hidden = true; m._a = null; } }
+  for (const id of ['gsMenu']) { const m = document.getElementById(id); if (m) { m.hidden = true; m._a = null; } }
 }
 
 function gsMenusOpen() {
-  return ['gsMenu', 'gsShelf'].some((id) => { const m = document.getElementById(id); return m && !m.hidden; });
+  return ['gsMenu'].some((id) => { const m = document.getElementById(id); return m && !m.hidden; });
 }
 
 /// Put a menu under its anchor, in page pixels, inside the page.

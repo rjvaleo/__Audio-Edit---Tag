@@ -57,10 +57,10 @@ function pbarH(html) {
 }
 
 /// A button in the bar's own style, for a page's extras: `icon` is a path in a
-/// 12 × 12 box, or markup.
-function pbarButton(id, icon, label, title) {
+/// 12 × 12 box, or markup. The page gives it its id.
+function pbarButton(icon, label, title) {
   const pic = !icon ? '' : icon.startsWith('<') ? icon : pbarSvg(icon);
-  return pbarH(`<button type="button" class="pbar-btn pbar-act" id="${id}" title="${pbarEsc(title)}">${pic}${pbarEsc(label)}</button>`);
+  return pbarH(`<button type="button" class="pbar-btn pbar-act" title="${pbarEsc(title)}">${pic}${pbarEsc(label)}</button>`);
 }
 
 /// Make a bar. `o`: { id, adapter, nouns: ['preset', 'presets'], ab: { get(), set(k) },
