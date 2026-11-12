@@ -10,6 +10,7 @@
 // the document as it found it for the next spec.
 
 import { test, expect } from './test.mjs';
+import { pbSaveAs, pbPick, pbDelete, pbOpenList, pbName } from './preset-bar.helpers.mjs';
 
 async function openPage(page) {
   await page.goto('/');
@@ -180,7 +181,7 @@ test('a moving control previews by the same route as the tray', async ({ page })
 test('everything round the controls is on the page too', async ({ page }) => {
   await openPage(page);
   for (const id of [
-    'gsTuneBtn', 'gsKeysBtn', 'gsLength', 'gsCloudRo', 'gsCpPick', 'gsCpSave', 'gsCpDelete', 'gsPresetBtn', 'gsRndBtn',
+    'gsTuneBtn', 'gsKeysBtn', 'gsLength', 'gsCloudRo', 'gsCpPb', 'gsPb', 'gsAB', 'gsRndBtn',
     'gsCzOut', 'gsCzIn', 'gsCzFit', 'gsFollow', 'gsFollowMode',
     'gsLoadM', 'gsMaster', 'gsMeta', 'gsEngReset', 'gsReroll', 'gsSeedRo', 'gsLoopChip', 'gsRegChip', 'gsSndPick',
   ]) await expect(page.locator(`#${id}`), id).toBeVisible();
@@ -188,9 +189,11 @@ test('everything round the controls is on the page too', async ({ page }) => {
   for (const id of ['playBtn', 'stopBtn', 'loopBtn', 'recBtn', 'srcGrain', 'srcSeq', 'timeNow']) {
     await expect(page.locator(`#nowBar #${id}`), id).toBeVisible();
   }
-  await page.click('#gsPresetBtn .pn');
-  for (const id of ['gsPresetSound', 'gsPresetSave', 'gsPresetManage', 'gsPresetDelete']) await expect(page.locator(`#${id}`), id).toBeVisible();
+  // The list keeps the tray's with sound and Manage… in its footer.
+  await pbOpenList(page, 'gs');
+  for (const id of ['gsPresetSound', 'gsPresetManage']) await expect(page.locator(`#${id}`), id).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(page.locator('.pbar-pop')).toHaveCount(0);
   await expect(page.locator('#gsLength')).toHaveText(/\d+\.\d\ds → \d+\.\d\ds/);
   await expect(page.locator('#gsMeta')).toContainText('Hz');
 });
@@ -339,21 +342,16 @@ test('⌥-drag scrubs and leaves Start alone; a region\'s strip selects it', asy
 
 test('CLOUD presets are the tray\'s: saved, recalled and deleted from the page', async ({ page }) => {
   await openPage(page);
-  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'parity cloud' : undefined));
-  await page.click('#gsCpSave');
-  await expect.poll(() => page.locator('#gsCpPick option').allTextContents()).toContain('parity cloud');
-  const applied = await page.evaluate(async () => {
-    gsSetV('scan', 0.5);
-    const p = $('gsCpPick');
-    p.value = 'parity cloud';
-    p.dispatchEvent(new Event('change', { bubbles: true }));
-    await new Promise((r) => setTimeout(r, 200));
-    return { scan: gsRead('scan'), pick: $('gpPick').value };
-  });
-  expect(applied.pick).toBe('parity cloud');
-  expect(applied.scan).toBe(1);
-  await page.click('#gsCpDelete');
-  await expect.poll(() => page.locator('#gsCpPick option').allTextContents()).not.toContain('parity cloud');
+  const names = () => page.evaluate(() => [...$('gpPick').options].map((o) => o.value));
+  await pbSaveAs(page, 'gsCp', 'parity cloud');
+  await expect.poll(names).toContain('parity cloud');
+  await expect.poll(() => pbName(page, 'gsCp')).toBe('parity cloud');
+  await page.evaluate(() => gsSetV('scan', 0.5));
+  await pbPick(page, 'gsCp', 'parity cloud');
+  await expect.poll(() => page.evaluate(() => gsRead('scan'))).toBe(1);
+  expect(await page.evaluate(() => $('gpPick').value)).toBe('parity cloud');
+  await pbDelete(page, 'gsCp');
+  await expect.poll(names).not.toContain('parity cloud');
 });
 
 test('the readings are the tray\'s words', async ({ page }) => {

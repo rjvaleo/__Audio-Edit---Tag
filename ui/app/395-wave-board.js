@@ -681,7 +681,7 @@ async function wvRemoveBoard() {
 function wvInitBoardNow() {
   WV.board = wvInitBoard();
   WV_BOARD_VIEW.sel = null;
-  wvBoardPost('An empty board: the voice straight to Out').then((ok) => {
+  return wvBoardPost('An empty board: the voice straight to Out').then((ok) => {
     if (!ok) return;
     WV_BOARDS.fresh = true;
     WV_BOARDS.dirty = false;

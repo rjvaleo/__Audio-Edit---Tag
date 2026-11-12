@@ -22,13 +22,7 @@ const WV_BOARD_CV = { nodes: {}, insp: {} };
 function wvBuildFx(view) {
   view.appendChild(wvH(`<div class="wv-panel wv-bbar">
    <span class="wv-nm">MASTER BUS</span>
-   <div class="wv-preset wv-btn wv-bsel"><div class="wv-ib" id="wvBprev" title="Previous board"><svg viewBox="0 0 12 12"><path d="M8 2 L4 6 L8 10"/></svg></div><span class="pn" id="wvBname" title="Board name: double-click to rename"></span><span class="pt" id="wvBpos"></span><div class="wv-ib" id="wvBnext" title="Next board"><svg viewBox="0 0 12 12"><path d="M4 2 L8 6 L4 10"/></svg></div></div>
-   <div class="wv-seg" id="wvBex"></div>
-   <span class="wv-bt wv-btn" id="wvBsave" title="Save: keep this patch in this board"><svg viewBox="0 0 12 12"><path d="M2 2 H8.5 L10 3.5 V10 H2 Z M4 2 V4.5 H7.5 V2 M4 10 V7 H8 V10"/></svg>Save</span>
-   <span class="wv-bt wv-btn" id="wvBsaveas" title="Save as: keep this patch as a new board">Save as</span>
-   <span class="wv-bt wv-btn" id="wvBdup" title="Duplicate: a copy of this board to change">Duplicate</span>
-   <span class="wv-bt wv-btn" id="wvBinit" title="Init: an empty board, the voice straight to Out">Init</span>
-   <span class="wv-bt wv-btn" id="wvBrm" title="Remove: take this saved board off the list. The factory boards stay">Remove</span>
+   <div id="wvBpbHost"></div>
    <span class="wv-sp"></span>
    <span class="wv-hint wv-bnote"><svg viewBox="0 0 16 12"><path d="M1 6 C3 1,5 1,7 6 S11 11,13 6"/><circle cx="14" cy="6" r="1.4"/></svg>Each oscillator's own effect is on Play</span>
    <span class="wv-ro" id="wvBcount"></span></div>`));
@@ -48,7 +42,6 @@ function wvBuildFx(view) {
 
 function wvWireFx() {
   wvBoardEnsure();
-  wvWireBar();
   wvWireBoardCanvas();
   wvBuildLibrary();
   wvBuildFxStrip();
@@ -64,19 +57,8 @@ function wvSyncFx() {
 // ─────────────────────────────────────────────────────────────── the bar
 
 function wvRenderBar() {
-  if (!$('wvBname') || !WV.board) return;
-  wvTxt('wvBname', WV.board.name);
-  const B = WV_BOARDS, pos = $('wvBpos');
-  wvTxt('wvBpos', B.dirty ? 'edited' : B.fresh ? 'new' : B.at >= 0 ? `${B.at + 1} / ${B.list.length}` : '');
-  pos.style.color = B.dirty ? 'var(--wv-acc)' : '';
-  const ex = $('wvBex'), fac = B.list.slice(0, 4);
-  if (ex.dataset.names !== fac.map((b) => b.name).join('|')) {
-    ex.dataset.names = fac.map((b) => b.name).join('|');
-    ex.innerHTML = fac.map((b, i) => `<span data-bx="${i}" title="${b.factory ? 'Factory board' : 'Board'}: ${wvEsc(b.name)}">${wvEsc(b.name)}</span>`).join('');
-    ex.querySelectorAll('span').forEach((s) => s.addEventListener('click', () => wvLoadBoard(+s.dataset.bx)));
-  }
-  ex.querySelectorAll('span').forEach((s, i) => s.classList.toggle('on', !B.fresh && i === B.at));
-  $('wvBrm').style.display = !B.fresh && wvBoardRemovable(B.at) ? '' : 'none';
+  if (!WV.board) return;
+  WV.bpb?.mark();
   wvBoardCount();
 }
 
@@ -84,41 +66,6 @@ function wvBoardCount() {
   if (!WV.board) return;
   const n = WV.board.nodes.filter((x) => !wvIsIO(x)).length, m = WV.mods.filter((x) => x.dst.startsWith('board:')).length;
   wvTxt('wvBcount', `${n} nodes · ${WV.board.cables.length} cables · ${m} mapped`);
-}
-
-function wvWireBar() {
-  $('wvBprev').addEventListener('click', () => wvLoadBoard(WV_BOARDS.at < 0 ? 0 : WV_BOARDS.at - 1));
-  $('wvBnext').addEventListener('click', () => wvLoadBoard(WV_BOARDS.at < 0 ? 0 : WV_BOARDS.at + 1));
-  $('wvBsave').addEventListener('click', () => wvSaveBoard(WV_BOARDS.fresh ? wvUniqBoard(WV.board.name) : WV.board.name));
-  $('wvBsaveas').addEventListener('click', () => wvRenameBoard(wvUniqBoard(WV.board.name), true));
-  $('wvBdup').addEventListener('click', () => wvSaveBoard(wvUniqBoard(WV.board.name + ' copy')));
-  $('wvBinit').addEventListener('click', wvInitBoardNow);
-  $('wvBrm').addEventListener('click', wvRemoveBoard);
-  const bn = $('wvBname');
-  bn.addEventListener('dblclick', () => wvRenameBoard(WV.board.name, false));
-  bn.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); bn.blur(); } if (e.key === 'Escape') { bn.textContent = WV.board.name; bn.blur(); } });
-  bn.addEventListener('blur', () => {
-    if (bn.contentEditable !== 'true') return;
-    bn.contentEditable = 'false';
-    const t = bn.textContent.trim(), save = bn.dataset.save === '1';
-    if (save) wvSaveBoard(t || WV.board.name);
-    else if (t && t !== WV.board.name) { WV.board.name = t; wvBoardDirty(); }
-    wvRenderBar();
-  });
-}
-
-/// The name, ready to type over; with `save`, Enter keeps the board under it.
-function wvRenameBoard(name, save) {
-  const e = $('wvBname');
-  e.textContent = name;
-  e.dataset.save = save ? '1' : '';
-  e.contentEditable = 'true';
-  e.focus();
-  const r = document.createRange();
-  r.selectNodeContents(e);
-  const s = window.getSelection();
-  s.removeAllRanges();
-  s.addRange(r);
 }
 
 /// A line under the canvas, for a moment: what was done, or why not.

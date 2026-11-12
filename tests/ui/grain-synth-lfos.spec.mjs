@@ -258,17 +258,17 @@ test('saved per sound, with AMP; a second sound has its own; coming back restore
 test('A and B each keep their own LFOs; Randomize leaves them and Undo puts them back', async ({ page }) => {
   await openPage(page);
   await mapBar(page, 0, 'layerSpread');
-  await page.click('#gsAB span[data-ab="B"]');
+  await page.click('#gsAB [data-ab="B"]');
   await mapBar(page, 1, 'overlap');
   expect(await chips(page, 1)).toEqual(['stretch.grain.overlap']);
-  await page.click('#gsAB span[data-ab="A"]');
+  await page.click('#gsAB [data-ab="A"]');
   await expect.poll(() => chips(page, 0)).toEqual(['stretch.grain.layerSpread']);
   expect(await chips(page, 1)).toEqual([]);
-  await page.click('#gsAB span[data-ab="B"]');
+  await page.click('#gsAB [data-ab="B"]');
   await expect.poll(() => chips(page, 1)).toEqual(['stretch.grain.overlap']);
 
   // Randomize is the sound, not the LFOs; Undo is what it was, LFOs and all.
-  await page.click('#gsAB span[data-ab="A"]');
+  await page.click('#gsAB [data-ab="A"]');
   await expect.poll(() => chips(page, 0)).toEqual(['stretch.grain.layerSpread']);
   await page.evaluate(() => { GS.lfo[3].shape = 'up'; gsMarkLfo(); });
   await page.click('#gsRndBtn');

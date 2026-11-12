@@ -230,8 +230,12 @@ function paintSectionPicker(sel, kind, select) {
   sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
 }
 
+/// The look loaded on the LOOK bar, or '' for none.
+let vpCurrent = '';
+
 function paintVisualPresets(select) {
-  paintSectionPicker($('vpPick'), 'visual', select);
+  if (select !== undefined) vpCurrent = select;
+  vpBar?.mark();
   // The Compose picture bar keeps a copy of this list, and repaints it itself.
   if (typeof composePresetsPainted === 'function') composePresetsPainted('visual', select);
 }
@@ -241,32 +245,42 @@ function paintGrainPresets(select) {
   if (typeof composePresetsPainted === 'function') composePresetsPainted('grain', select);
 }
 
-$('vpPick')?.addEventListener('change', () => {
-  const name = $('vpPick').value;
-  if (!name) return;
-  const v = SectionPresets.get(localStorage, 'visual', name);
-  if (!v) { toast('That look is gone'); paintVisualPresets(''); return; }
-  applyVisual(v);
-  toast(`Look: ${name}`);
-});
-$('vpSave')?.addEventListener('click', () => {
-  const suggested = $('vpPick').value
-    || `Look ${SectionPresets.list(localStorage, 'visual').length + 1}`;
-  const name = prompt('Save this look as:', suggested);
-  if (name === null) return;
-  const stored = SectionPresets.save(localStorage, 'visual', name, visualSnapshot());
-  if (!stored) { toast('A look needs a name'); return; }
-  paintVisualPresets(stored);
-  toast(`Saved “${stored}”`);
-});
-$('vpDelete')?.addEventListener('click', () => {
-  const name = $('vpPick').value;
-  if (!name) { toast('Pick a look first'); return; }
-  if (!confirm(`Delete the look “${name}”? The room is left as it is.`)) return;
-  SectionPresets.remove(localStorage, 'visual', name);
-  paintVisualPresets('');
-  toast(`Deleted “${name}”`);
-});
+// The LOOK bar: the shared preset bar, the looks kept in the browser as before.
+const VP_LOOKS = {
+  list: () => SectionPresets.list(localStorage, 'visual').map((p) => ({ name: p.name })),
+  current: () => (SectionPresets.get(localStorage, 'visual', vpCurrent) ? vpCurrent : ''),
+  tag: () => (VP_LOOKS.current() ? 'Look' : ''),
+  snapshot: () => visualSnapshot(),
+  load: (p) => {
+    const v = SectionPresets.get(localStorage, 'visual', p.name);
+    if (!v) { paintVisualPresets(''); throw new Error('That look is gone'); }
+    applyVisual(v);
+    paintVisualPresets(p.name);
+    toast(`Look: ${p.name}`);
+  },
+  saveAs: (name) => {
+    const stored = SectionPresets.save(localStorage, 'visual', name, visualSnapshot());
+    if (!stored) throw new Error('A look needs a name');
+    paintVisualPresets(stored);
+    toast(`Saved “${stored}”`);
+  },
+  rename: (from, to) => {
+    const v = SectionPresets.get(localStorage, 'visual', from);
+    if (!v || !SectionPresets.save(localStorage, 'visual', to, v)) throw new Error('Could not rename it');
+    SectionPresets.remove(localStorage, 'visual', from);
+    paintVisualPresets(vpCurrent === from ? to : vpCurrent);
+  },
+  remove: (name) => {
+    SectionPresets.remove(localStorage, 'visual', name);
+    paintVisualPresets('');
+    toast(`Deleted “${name}”`);
+  },
+  /// The room as shipped: Clear, on the bar.
+  init: () => { roomClear(); paintVisualPresets(''); },
+};
+const vpBar = pbarMake({ id: 'vp', adapter: VP_LOOKS, title: 'Looks: every layer, colour, camera and setting in the room, and none of the sound', nouns: ['look', 'looks'],
+  deleteNote: 'It can\'t be undone. The room is left as it is.' });
+$('vpPbHost').replaceWith(vpBar.el);
 paintVisualPresets('');
 
 // ── the cloud ──

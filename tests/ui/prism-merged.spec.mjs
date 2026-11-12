@@ -54,7 +54,7 @@ test('the page is one panel: HyperStretch\'s pad, the rack pad\'s menus, no swit
   await expect(page.locator('#dockPrism')).toHaveCount(0);
   await expect(page.locator('.hs-pad')).toHaveCount(1);
   await expect(page.locator('#dockHyper #prismSource')).toBeVisible();
-  await expect(page.locator('#dockHyper #prismPreset')).toBeVisible();
+  await expect(page.locator('#dockHyper #prismPb')).toBeVisible();
   await expect(page.locator('#dockHyper #prismSpeed')).toBeVisible();
   for (const bank of ['Controls', 'Takes', 'Output']) {
     await expect(page.locator(`#dockHyper .hs-bank[aria-label="${bank}"]`)).toBeVisible();

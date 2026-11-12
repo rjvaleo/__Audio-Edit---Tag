@@ -285,6 +285,10 @@ function chopSaveSettings() {
   try { localStorage.setItem('chopSettings', JSON.stringify(chopSlots)); } catch { /* private mode */ }
 }
 
+/// The preset bar (`405b-chop-presets.js`), and the preset it has loaded.
+let chopPb = null;
+let chopPresetName = '';
+
 function chopPresets() {
   try { return JSON.parse(localStorage.getItem('chopPresets') || '[]'); } catch { return []; }
 }
