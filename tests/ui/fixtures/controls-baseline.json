@@ -58,9 +58,6 @@
   "button:button #prismFaderZeroLR": 1,
   "button:button #prismFaderZeroR": 1,
   "button:button #prismLoop": 1,
-  "button:button #prismPresetDelete": 1,
-  "button:button #prismPresetRename": 1,
-  "button:button #prismPresetSave": 1,
   "button:button #prismPtcOn": 1,
   "button:button #hsRec": 1,
   "input:range #prismPostRoll": 1,
@@ -72,8 +69,6 @@
   "input:range #prismFaderLR": 1,
   "input:range #prismFaderR": 1,
   "input:range #prismSpeed": 1,
-  "input:text #prismPresetName": 1,
-  "select:select-one #prismPreset": 1,
   "select:select-one #prismSource": 1,
   "select:select-one #prismX": 1,
   "select:select-one #prismY": 1
@@ -2904,15 +2899,12 @@
   "select:select-one row:shape/which solid a grain is drawn as. on \u201ceve": 1
  },
  "visual/stage-bar": {
-  "button:submit #vpDelete": 1,
-  "button:submit #vpSave": 1,
   "button:submit row:frame/16:9": 1,
   "button:submit row:frame/1:1": 1,
   "button:submit row:frame/4:5": 1,
   "button:submit row:frame/9:16": 1,
   "button:submit row:frame/dock": 1,
-  "select:select-one #rgVisual": 1,
-  "select:select-one #vpPick": 1
+  "select:select-one #rgVisual": 1
  },
  "chop": {
   "button:button transient": 1,
@@ -2936,13 +2928,6 @@
   "button:button #chopRatchet": 1,
   "button:button free": 1,
   "button:button lock": 2,
-  "button:button #chopA": 1,
-  "button:button #chopB": 1,
-  "button:button #chopPrevPreset": 1,
-  "select:select-one #chopPreset": 1,
-  "button:button #chopNextPreset": 1,
-  "button:button #chopSave": 1,
-  "button:button #chopInit": 1,
   "button:button #chopDice": 1,
   "button:button #chopCapture": 1,
   "button:button tail": 1,
