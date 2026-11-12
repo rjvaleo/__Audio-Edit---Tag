@@ -24,15 +24,29 @@ function pbarShow(bar, kind, el, from) {
   document.body.appendChild(el);
   from.classList.add('open');
   PBAR.pop = { bar, kind, el, from, focus: from };
-  const r = from.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
-  const left = Math.max(8, Math.min(r.left, innerWidth - w - 8));
-  const top = r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - 6 - h) : r.bottom + 6;
-  el.style.left = `${Math.round(left)}px`;
-  el.style.top = `${Math.round(top)}px`;
+  pbarPlace();
   el.addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Escape') { e.preventDefault(); pbarClose(); }
   });
+}
+
+/// Under what opened it, or above when there is more room there; a list too
+/// tall for either scrolls.
+function pbarPlace() {
+  const p = PBAR.pop;
+  if (!p) return;
+  const { el, from } = p, rows = el.querySelector('.pbar-rows');
+  if (rows) rows.style.maxHeight = '';
+  const r = from.getBoundingClientRect(), below = innerHeight - r.bottom - 14, above = r.top - 14;
+  let h = el.offsetHeight;
+  const down = h <= below || below >= above;
+  if (rows && h > (down ? below : above)) {
+    rows.style.maxHeight = `${Math.max(72, rows.offsetHeight - (h - (down ? below : above)))}px`;
+    h = el.offsetHeight;
+  }
+  el.style.left = `${Math.round(Math.max(8, Math.min(r.left, innerWidth - el.offsetWidth - 8)))}px`;
+  el.style.top = `${Math.round(down ? r.bottom + 6 : Math.max(8, r.top - 6 - h))}px`;
 }
 
 window.addEventListener('pointerdown', (e) => {
@@ -107,6 +121,8 @@ async function pbarOpenList(bar) {
   el.addEventListener('keydown', (e) => { if (e.key === '/' && e.target !== input) { e.preventDefault(); input.focus(); } });
   pbarShow(bar, 'list', el, bar.el.querySelector('.pbar-name'));
   paint();
+  pbarPlace();
+  mark();
   input.focus({ preventScroll: true });
 }
 
@@ -117,7 +133,7 @@ function pbarOpenMenu(bar) {
   const items = [
     { k: 'saveAs', l: 'Save as…', key: '⇧⌘S', icon: PBAR_ICON.saveAs, act: () => pbarAskName(bar, 'saveAs') },
     { k: 'rename', l: 'Rename…', key: 'F2', icon: PBAR_ICON.rename, dis: locked || !a.rename, act: () => pbarAskName(bar, 'rename') },
-    { k: 'init', l: 'Init', key: '', icon: PBAR_ICON.init, dis: !a.init, act: () => bar.run(() => a.init()) },
+    { k: 'init', l: 'Init', key: '', icon: PBAR_ICON.init, dis: !a.init, act: () => bar.run(() => a.init(), true, true) },
     { sep: true },
     { k: 'delete', l: 'Delete…', key: '⌫', icon: PBAR_ICON.del, dis: locked || !a.remove, danger: true, act: () => pbarAskDelete(bar) },
   ];

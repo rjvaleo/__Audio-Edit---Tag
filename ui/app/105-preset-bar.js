@@ -83,15 +83,15 @@ function pbarMake(o) {
    </div>`);
   if (o.extras?.length) el.querySelector('.pbar-x').append(...o.extras);
   const q = (k) => el.querySelector(`[data-pb="${k}"]`);
-  const bar = { o, a, el, one, many, mini, base: undefined, baseFor: null, until: 0, at: 0, shown: '' };
+  const bar = { o, a, el, one, many, mini, base: undefined, baseFor: null, until: 0, shown: '' };
 
   bar.list = () => { try { return a.list() || []; } catch { return []; } };
   bar.item = (name) => bar.list().find((p) => p.name === name) || null;
   bar.locked = () => { const c = a.current(); return !c || !!bar.item(c)?.factory; };
   bar.snap = () => { try { return a.snapshot ? JSON.stringify(a.snapshot()) : ''; } catch { return ''; } };
-  /// What is loaded now is the clean state: dirty is measured from here. For a
-  /// moment after, too, while what was loaded finishes landing.
-  bar.settle = () => { bar.base = bar.snap(); bar.baseFor = a.current(); bar.until = performance.now() + 500; };
+  /// What is loaded now is the clean state: dirty is measured from here. After
+  /// a load, for a moment more, while what was loaded finishes landing.
+  bar.settle = (landing) => { bar.base = bar.snap(); bar.baseFor = a.current(); bar.until = landing ? performance.now() + 500 : 0; };
   bar.dirty = () => {
     if (!a.current()) return false;
     if (a.dirty) return !!a.dirty();
@@ -120,13 +120,13 @@ function pbarMake(o) {
   };
   /// Run one of the adapter's verbs: the bar repainted after, and a failure
   /// said rather than thrown.
-  bar.run = async (f, settle = true) => {
+  bar.run = async (f, settle = true, landing = false) => {
     try { await f(); } catch (e) { pbarSay(e?.message || String(e)); }
-    if (settle) bar.settle();
+    if (settle) bar.settle(landing);
     bar.shown = '';
     bar.mark();
   };
-  bar.load = (p) => bar.run(() => a.load(p));
+  bar.load = (p) => bar.run(() => a.load(p), true, true);
   bar.step = async (by) => {
     if (a.refresh && !bar.list().length) await bar.run(() => a.refresh(), false);
     const L = bar.list();
