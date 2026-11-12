@@ -4,7 +4,8 @@
 // independently of the grain engine"). See `engine/src/decks.rs`.
 //
 // What this pins:
-//   - the page has its own sound picker, waveform and transport;
+//   - the page has its own sound picker and waveform, and its transport is the
+//     Now Playing bar's (see `prism-transport.spec.mjs`);
 //   - choosing a sound loads it into the Prism deck, not the grain engine;
 //   - the pad, the Pitch Time Changer, the chain and the faders all go to the
 //     Prism deck and its own document (`prism:<sound>`), and the grain
@@ -44,12 +45,15 @@ async function openPrism(page) {
 
 const posted = (sent, path) => sent.filter((s) => new URL(s.url).pathname === path);
 
-test('the page has a sound, a waveform and a transport of its own', async ({ page }) => {
+test('the page has a sound and a waveform of its own, and the bar for a transport', async ({ page }) => {
   const { files } = await openPrism(page);
-  for (const id of ['prismSoundFolder', 'prismSoundFile', 'prismWave', 'prismDeckPlay', 'prismDeckStop', 'prismDeckLoop']) {
+  for (const id of ['prismSoundFolder', 'prismSoundFile', 'prismWave']) {
     await expect(page.locator(`#dockHyper #${id}`)).toBeVisible();
   }
+  // One transport: Prism's own play, stop and loop are gone.
+  for (const id of ['prismDeckPlay', 'prismDeckStop', 'prismDeckLoop']) await expect(page.locator(`#${id}`)).toHaveCount(0);
   await expect(page.locator('#prismSoundName')).toContainText(files[0].split('/').pop());
+  await expect(page.locator('#nbName')).toContainText(files[0].split('/').pop());
 });
 
 test('choosing a sound loads it into the Prism deck, not the grain engine', async ({ page }) => {
@@ -117,12 +121,12 @@ test('the Prism chain is its own: an effect added there is not in the FX tab\'s 
   await expect(page.locator('#prismChain .prism-chain-slot')).toHaveCount(0);
 });
 
-test('play, stop and loop are the Prism deck\'s', async ({ page }) => {
+test('the bar\'s play, stop and loop are the Prism deck\'s', async ({ page }) => {
   const { sent, files } = await openPrism(page);
   await page.locator('#prismSoundFile').selectOption(files[1]);
-  await page.locator('#prismDeckPlay').click();
-  await page.locator('#prismDeckLoop').click();
-  await page.locator('#prismDeckStop').click();
+  await page.locator('#nowBar #playBtn').click();
+  await page.locator('#nowBar #loopBtn').click();
+  await page.locator('#nowBar #stopBtn').click();
   await page.waitForTimeout(200);
   const tr = posted(sent, '/api/engine/transport').map((s) => s.body);
   expect(tr.every((b) => b.deck === 'prism')).toBe(true);

@@ -149,9 +149,6 @@ function hsBuild() {
       <select id="prismSoundFile" class="mini" aria-label="Prism's sound"></select>
       <span class="mono hs-deck-name" id="prismSoundName"></span>
       <canvas id="prismWave" class="hs-wave" aria-label="Prism's sound and where it is playing"></canvas>
-      <button type="button" class="hs-btn" id="prismDeckPlay" title="Play Prism's sound: its own transport, apart from the grain engine">▶</button>
-      <button type="button" class="hs-btn" id="prismDeckStop" title="Stop Prism's sound and go back to the start">■</button>
-      <button type="button" class="hs-btn" id="prismDeckLoop" title="Loop Prism's sound">⟲</button>
       <span class="hs-dim">CHAIN</span>
       <span id="prismChain" class="hs-chain"></span>
       <select id="prismChainAdd" class="mini" aria-label="Add an effect to Prism's chain"><option value="">+ add effect</option></select>
@@ -395,9 +392,6 @@ function hsWire() {
   $('prismLoop').onclick = () => prismToggleLoop().then(hsPaint);
   $('prismSoundFolder').onchange = () => prismSoundFill();
   $('prismSoundFile').onchange = (e) => { if (e.target.value) prismDeckUse(e.target.value); };
-  $('prismDeckPlay').onclick = () => prismDeckPlay();
-  $('prismDeckStop').onclick = () => prismDeckStop();
-  $('prismDeckLoop').onclick = () => prismDeckLoop();
   $('prismChainAdd').onchange = (e) => { const k = e.target.value; e.target.value = ''; prismChainAdd(k); };
 
   $('hsGlide').addEventListener('input', (e) => { hs.glide = +e.target.value; hsKeep(); hsSendGlide(); hsPaint(); });
