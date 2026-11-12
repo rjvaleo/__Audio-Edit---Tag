@@ -53,6 +53,7 @@
 .ui-ring .ui-ptr { stroke: var(--look-text); stroke-width: 2; stroke-linecap: round; }
 .ui-ring .ui-dn { stroke: var(--look-text-3); stroke-width: 1.4; stroke-linecap: round; display: none; }
 .ui-ring:focus { outline: none; }
+.ui-kn.ui-blank > .ui-ring { display: none; }
 /* states: hover shows the default's notch, a drag lights the arc and sinks the reading */
 .ui-knob:hover .ui-tr, .ui-kn:hover .ui-tr { stroke: color-mix(in srgb, var(--look-track) 55%, var(--look-text-3)); }
 .ui-knob:hover .ui-kname, .ui-knob.drag .ui-kname { color: var(--look-text); }
