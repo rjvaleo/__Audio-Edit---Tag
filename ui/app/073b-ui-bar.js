@@ -157,3 +157,68 @@ function uiBarParam(label, value, min, max, step, format, onChange, onCommit, lo
   el.read = () => v;
   return el;
 }
+
+const UI_INPUT_VALUE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+
+/// The bar over a native range input that stays where it is: `row` holds the
+/// input as a child, and becomes the bar. The input is laid over the bar's well,
+/// unseen, so a click, a drag, a double-click, the keys and every handler
+/// already on it work exactly as before, and code and tests that read or set
+/// its value go on doing so; the bar draws what it holds. `o`:
+///   input (the range; `row`'s first otherwise); name and read: the elements
+///   holding its name and reading, which the bar shows and follows (or label
+///   and text(), as words); pic: the row's own picture element, set in front;
+///   h (24 | 20); col (`--gg`); zero (0…1, where a bipolar fill starts); cls.
+/// Returns the row, with `paint()`.
+function uiBarOver(row, o = {}) {
+  const input = o.input || row.querySelector('input[type=range]');
+  if (!input || row._uiBar) return row;
+  row._uiBar = 1;
+  row.classList.add('ui-bar', 'ui-over', o.h === 20 ? 'h20' : 'h24');
+  if (o.cls) row.classList.add(...o.cls.split(' '));
+  if (o.col) row.style.setProperty('--gg', o.col);
+  const w = document.createElement('div');
+  w.className = 'ui-bw';
+  w.setAttribute('aria-hidden', 'true');
+  w.innerHTML = '<i class="ui-bz"></i><i class="ui-bf"></i><i class="ui-bfine"></i><i class="ui-bm"></i><i class="ui-bd"></i><span class="ui-bn"></span><b class="ui-bv"></b>';
+  input.before(w);
+  input.classList.add('ui-range');
+  if (o.pic) o.pic.classList.add('ui-bpic');
+  const f = w.querySelector('.ui-bf'), z = w.querySelector('.ui-bz'), nm = w.querySelector('.ui-bn'), rd = w.querySelector('.ui-bv');
+  const at = (u) => `calc(4px + (100% - 8px) * ${uiClamp(u).toFixed(4)})`;
+  const paint = () => {
+    const lo = +input.min, hi = +input.max, v = +UI_INPUT_VALUE.get.call(input);
+    const n = hi > lo ? uiClamp((v - lo) / (hi - lo)) : 0, zero = uiClamp(o.zero ?? 0), a = Math.min(n, zero), b = Math.max(n, zero);
+    f.style.left = at(a);
+    f.style.width = `calc((100% - 8px) * ${(b - a).toFixed(4)})`;
+    f.classList.toggle('neg', n < zero);
+    z.style.display = zero > 0 && zero < 1 ? '' : 'none';
+    z.style.left = at(zero);
+    const t = o.read ? o.read.textContent : o.text ? o.text() : '';
+    if (rd.textContent !== t) rd.textContent = t;
+    const l = o.name ? o.name.textContent : o.label ?? '';
+    if (nm.textContent !== l) nm.textContent = l;
+  };
+  // Every way a value arrives, through `value` or an event.
+  const own = Object.getOwnPropertyDescriptor(input, 'value') || UI_INPUT_VALUE;
+  Object.defineProperty(input, 'value', { configurable: true, get() { return own.get.call(this); }, set(v) { own.set.call(this, v); paint(); } });
+  input.addEventListener('input', paint);
+  input.addEventListener('change', paint);
+  input.addEventListener('pointerdown', () => row.classList.add('drag'));
+  input.addEventListener('pointerup', () => row.classList.remove('drag'));
+  input.addEventListener('lostpointercapture', () => row.classList.remove('drag'));
+  for (const el of [o.read, o.name]) if (el) new MutationObserver(paint).observe(el, { childList: true, characterData: true, subtree: true });
+  row.paint = paint;
+  paint();
+  return row;
+}
+
+/// A loose range input, put in a row of its own and made a bar (`uiBarOver`).
+function uiBarRange(input, o = {}) {
+  if (!input || input._uiRow) return input?._uiRow;
+  const row = document.createElement('span');
+  input.before(row);
+  row.appendChild(input);
+  input._uiRow = row;
+  return uiBarOver(row, { ...o, input });
+}

@@ -297,20 +297,11 @@
    knob of the column is a slider row again: its picture at the front, its
    word, the slider, its reading. One to a line, wherever the knobs were
    four. Last in the file, so it outranks each panel's knob placement. */
-#roomAdmin .rk-k.rk-sl {
-  display: grid; grid-template-columns: 32px 58px minmax(0, 1fr) minmax(52px, auto);
-  align-items: center; column-gap: 6px; width: 100%; padding: 0;
-}
-#roomAdmin .rk-k.rk-sl > .rk-face { display: none; }
-#roomAdmin .rk-k.rk-sl > svg.pic { order: 0; width: 32px; height: 24px; margin: 0; }
-#roomAdmin .rk-k.rk-sl > .rk-l { order: 1; grid-column: 2; font-size: var(--fs-s); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#roomAdmin .rk-k.rk-sl > input:is(.re-slider, .p4-knob-in) {
-  order: 2; grid-column: 3; position: static; transform: none;
-  width: 100%; height: 16px; margin: 0; opacity: 1; cursor: pointer; touch-action: auto;
-}
-#roomAdmin .rk-k.rk-sl > .rk-v { order: 3; grid-column: 4; text-align: right; min-width: 0; max-width: 84px; white-space: nowrap; }
+#roomAdmin .rk-k.rk-sl { width: 100%; padding: 0; }
+/* Each is the shared bar now (`uiBarOver`, app-css/085-controls.css): its
+   picture in front, the word and the reading in its well. */
 /* A reading that is a field has a wide size of its own; held to the column. */
-#roomAdmin .rk-k.rk-sl > input.rk-v { width: 56px; text-align: right; }
+#roomAdmin .rk-k.rk-sl > input.rk-v { width: 56px; text-align: right; display: block; }
 /* A row of its own, not a quarter of one. */
 .rv-admin #roomEdit > .re-row.rk-cell:has(.rk-sl),
 #roomAdmin .rk-grid > .rk-cell:has(.rk-sl) { grid-column: 1 / -1; align-items: stretch; padding: 1px 0; }
@@ -321,22 +312,11 @@
 .rv-admin .rk-mist:has(.rk-sl) { flex-wrap: wrap; }
 .rv-admin .rk-mist > .rk-k.rk-sl { flex: 1 0 100%; }
 /* Colour › a ramp: a stop's cell is a quarter of the line, too narrow for a
-   slider row, so its slider takes the cell's width with its reading under
-   it. The curve gets a line of its own under the range's strip. */
-#roomPaintBody .rp-stop .rk-k.rk-sl { grid-template-columns: minmax(0, 1fr) auto; row-gap: 1px; }
+   picture, so its bar takes the cell's width without one. The curve gets a
+   line of its own under the range's strip. */
 #roomPaintBody .rp-stop .rk-k.rk-sl > svg.pic { display: none; }
-#roomPaintBody .rp-stop .rk-k.rk-sl > input.re-slider { grid-column: 1 / -1; grid-row: 1; }
-/* The word goes: the stop is the colour above it. */
-#roomPaintBody .rp-stop .rk-k.rk-sl > .rk-l { display: none; }
-#roomPaintBody .rp-stop .rk-k.rk-sl > .rk-v { grid-column: 1 / -1; grid-row: 2; text-align: center; font-size: var(--fs-xs); }
 #roomPaintBody .rp-range:has(.rk-sl) { flex-wrap: wrap; }
 #roomPaintBody .rp-range > .rp-knob:has(.rk-sl) { flex: 1 0 100%; }
-/* Mist's amount and Block's opacity sit beside their row's own tag, so their
-   row is narrower: the word and the reading take only what they need there,
-   and the slider keeps a usable width. */
-#roomAdmin .rk-mist > .rk-k.rk-sl,
-#roomAdmin #roomEdit > .re-row:not(.rk-cell) > .rk-k.rk-sl { grid-template-columns: auto auto minmax(60px, 1fr) auto; }
-
 /* ───────────────── the grain tray (`190-grain-tray.js`, RJ 4 Nov 2026) ──
    Sections are bands down each column, alternating in shade, each with a plain
    heading and a dot for every kind of control it holds. A control's picture

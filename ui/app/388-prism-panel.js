@@ -4,9 +4,9 @@
    "less color, less chaos, less candy, more professional"):
 
    - `prismBar`: a control as a bar with its picture, half the Controls column
-     wide. It is the Grain tray's bar (a `param` row styled `gc-bars`, so a
-     click sets the value, Shift drags fine and a double-click on the picture
-     resets), with the Prism picture in front of it.
+     wide. It is the shared bar (`uiBarOver`, `073b-ui-bar.js`) over a `param`
+     row, so a click sets the value, Shift drags fine and a double-click on the
+     picture resets, with the Prism picture in front of it.
    - The Process menu: every process Prism can play, each with its picture, in
      Hyperprism's groups, short and wide so it opens inside the panel.
      Choosing a Hyperprism process that is not in Prism's chain adds it. */
@@ -22,7 +22,7 @@ function prismBar(spec, value, { facet, colour, kind = '', onInput, onCommit, fo
     (v) => { onCommit?.(v); },
     !!spec.log && spec.min > 0 && !stepped, spec.default);
   const input = row.querySelector(':scope > input[type=range]');
-  row.classList.add('gk-row', 'prism-bar');
+  row.classList.add('prism-bar');
   row.dataset.key = spec.key;
   row.style.setProperty('--fc', colour || `var(--f-${facet || PRISM_PIC.facetOf(spec.key)})`);
   row.insertAdjacentHTML('afterbegin', '<svg class="gg" viewBox="0 0 64 48" aria-hidden="true"></svg>');
@@ -46,7 +46,7 @@ function prismBar(spec, value, { facet, colour, kind = '', onInput, onCommit, fo
   // What an LFO makes of it (`387-prism-lfo.js`): a marker and the reading,
   // the setting itself left where it is.
   const mark = document.createElement('i');
-  mark.className = 'plfo-mark';
+  mark.className = 'plfo-mark ui-keep';
   row.appendChild(mark);
   const shown = row.querySelector(':scope > .v');
   row.show = (v) => {
@@ -57,6 +57,10 @@ function prismBar(spec, value, { facet, colour, kind = '', onInput, onCommit, fo
     draw(v);
   };
   row.rest = () => { if (shown) shown.textContent = fmt(row.read ? row.read() : +input.value); paint(); };
+  if (input) {
+    const lo = spec.min < 0 && spec.max > 0 && !spec.log ? value01(0) : 0;
+    uiBarOver(row, { input, name: row.querySelector(':scope > .k'), read: shown, pic: glyph, zero: lo, col: row.style.getPropertyValue('--fc') });
+  }
   paint();
   return row;
 }

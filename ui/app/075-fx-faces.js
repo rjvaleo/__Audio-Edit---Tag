@@ -494,7 +494,8 @@ function fxFader(m, p, onMove = () => {}, label = p.label) {
   return el;
 }
 
-/// A technical setting, one of a set read and moved together: a slider row.
+/// A technical setting, one of a set read and moved together: a slider row,
+/// drawn as the shared bar.
 function fxSlider(m, p, onMove = () => {}, label = p.label) {
   const el = document.createElement('div');
   el.className = 'fxs';
@@ -515,6 +516,8 @@ function fxSlider(m, p, onMove = () => {}, label = p.label) {
   input.addEventListener('dblclick', () => { m.set(p.key, p.default ?? p.min); paint(); onMove(); m.commit(); });
   el.sync = paint;
   paint();
+  // Drawn as the shared bar (`073b-ui-bar.js`), the slider laid over it.
+  uiBarOver(el, { input, name: el.querySelector('.fxs-l'), read: el.querySelector('.fxs-v'), pic: el.querySelector('.fxs-pic'), h: 20 });
   return el;
 }
 
