@@ -1,7 +1,7 @@
 // ======================================================= Wave: the menus
 //
 // Every warp drawn on this oscillator's wave, every effect on it, the tables,
-// the LFO shapes, and the preset shelf; then A and B. Drawn inside the page,
+// the LFO shapes, and the presets the preset bar lists; then A and B. Drawn inside the page,
 // so they scale with it. (v8 moved them out of the Matrix and FX part, which
 // the board replaced.)
 
@@ -15,9 +15,9 @@ const WV_MENU = { owner: null };
 function wvMenuEl() { return $('wvMenu'); }
 
 function wvCloseMenus() {
-  const m = $('wvMenu'), s = $('wvShelf'), p = $('wvPmenu'), c = $('wvCmenu');
-  const open = [m, s, p, c].some((x) => x && !x.hidden);
-  for (const x of [m, s, p, c]) if (x) x.hidden = true;
+  const m = $('wvMenu'), p = $('wvPmenu'), c = $('wvCmenu');
+  const open = [m, p, c].some((x) => x && !x.hidden);
+  for (const x of [m, p, c]) if (x) x.hidden = true;
   WV_MENU.owner = null;
   return open;
 }
@@ -139,24 +139,24 @@ async function wvTableMenu(anchor, i) {
   wvPlaceMenu(m, anchor, 0);
 }
 
-/// The presets the mock-up offered, for when the engine has none to list.
+/// The presets the mock-up offered: the factory set, listed before yours.
 const WV_PRESETS_OFFLINE = [
   ['Night Glass Pad', 'Pad · Warm', 'Formant Sweep'], ['Hollow Choir', 'Pad · Vocal', 'Vowel Ah–Oo'], ['Organ Bloom', 'Keys · Bright', 'Glass Organ'],
   ['Pulse Runner', 'Bass · Hard', 'Hollow Pulse'], ['Grit Engine', 'Lead · Dirty', 'Grit Saw'], ['Vowel Pluck', 'Pluck · Vocal', 'Vowel Ah–Oo'],
   ['Formant Bass', 'Bass · Warm', 'Formant Sweep'], ['Glass Bell', 'Keys · Glassy', 'Glass Organ'],
 ].map(([name, tags, table]) => ({ name, tags, patch: { params: { 'osc0.table': table } } }));
 
+/// Yours: the engine's list, saved under `<data>/wave/presets/`. None when it
+/// is not connected.
 async function wvLoadPresets() {
+  let list = [];
   if (WV.connected) {
     try {
       const r = await fetch('/api/wave/presets');
-      if (r.ok) {
-        const list = await r.json();
-        if (Array.isArray(list) && list.length) { WV.presets = list; return list; }
-      }
-    } catch { /* offline list */ }
+      if (r.ok) list = await r.json();
+    } catch { /* none */ }
   }
-  WV.presets = WV_PRESETS_OFFLINE;
+  WV.presets = Array.isArray(list) ? list : [];
   return WV.presets;
 }
 
@@ -173,30 +173,6 @@ async function wvApplyPreset(p) {
   wvSyncAll();
 }
 
-async function wvStepPreset(by) {
-  const list = WV.presets || await wvLoadPresets();
-  const at = list.findIndex((p) => p.name === WV.name);
-  await wvApplyPreset(list[((at < 0 ? 0 : at + by) % list.length + list.length) % list.length]);
-}
-
-async function wvOpenShelf() {
-  const s = $('wvShelf');
-  if (!s.hidden) { s.hidden = true; return; }
-  wvCloseMenus();
-  const list = await wvLoadPresets();
-  s.innerHTML = '';
-  for (const p of list) {
-    const el = wvH(`<div class="wv-pc ${p.name === WV.name ? 'on' : ''}"><div class="wv-well"><canvas data-w="146" data-h="64"></canvas></div><b></b><span></span></div>`);
-    el.querySelector('b').textContent = p.name;
-    el.querySelector('span').textContent = wvPresetTags(p);
-    s.appendChild(el);
-    const table = (p.patch && p.patch.params && p.patch.params['osc0.table']) || p.table || WV_TABLE_NAMES[0];
-    wvDraw3D(wvCv(el.querySelector('canvas')), wvTable(table), 0.4, ['off', 0], 0, { n: 18, rise: 0.55, depth: 0.3 });
-    el.addEventListener('click', () => { s.hidden = true; wvApplyPreset(p); });
-  }
-  wvPlaceMenu(s, $('wvPresetBtn'), 0);
-}
-
 /// A and B: two patches to compare. Switching keeps the one you leave.
 async function wvSwitchAB(to) {
   if (to === WV.ab) return;
@@ -210,9 +186,8 @@ async function wvSwitchAB(to) {
 
 window.addEventListener('pointerdown', (e) => {
   if (!WV.showing) return;
-  const m = $('wvMenu'), s = $('wvShelf');
+  const m = $('wvMenu');
   if (m && !m.hidden && !e.target.closest('#wvMenu, [data-cycle], [data-ofx], [data-pick], [data-lshape], [data-snd], #wvCTable, canvas[id^="wvWp"]')) { m.hidden = true; WV_MENU.owner = null; }
-  if (s && !s.hidden && !e.target.closest('#wvShelf, #wvPresetBtn')) s.hidden = true;
   const p = $('wvPmenu'), c = $('wvCmenu');
   if (p && !p.hidden && !e.target.closest('#wvPmenu, [data-pk]')) p.hidden = true;
   if (c && !c.hidden && !e.target.closest('#wvCmenu')) c.hidden = true;
