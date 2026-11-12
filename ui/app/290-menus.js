@@ -376,6 +376,8 @@ function buildSettingsPanel() {
       }
       control.id = `set-${row.key}`;
       el.appendChild(control);
+      // A choice is the shared dropdown (`073c-ui-drop.js`), the select kept.
+      if (row.type !== 'check') uiDrop(control, { h: 24 });
 
       const why = document.createElement('span');
       why.className = 'set-why';

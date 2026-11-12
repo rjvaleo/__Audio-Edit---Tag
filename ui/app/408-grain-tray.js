@@ -162,6 +162,7 @@ function gsWireTray() {
   $('gsCpDelete').onclick = () => $('gpDelete').click();
   $('gsFollow').onclick = () => $('followBtn').click();
   $('gsFollowMode').onchange = (e) => { const m = $('followMode'); m.value = e.target.value; m.dispatchEvent(new Event('change', { bubbles: true })); e.target.blur(); };
+  uiDrop($('gsFollowMode'), { h: 20, w: 74 });
 }
 
 /// The list and the choice are the tray's; this follows them.

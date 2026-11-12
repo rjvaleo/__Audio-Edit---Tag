@@ -318,7 +318,7 @@ body.editing .dock { flex: 0 0 330px; }
   grid-column: 1 / -1; font-size: var(--fs-m); color: var(--text-dim);
   line-height: 1.45; margin-top: -2px;
 }
-.set-row .field { min-width: 148px; }
+.set-row .field, .set-row .ui-dd { min-width: 148px; }
 .set-row select.field { padding: 3px 6px; font-size: var(--fs-m); }
 /* A setting whose effect is deferred says so, because a switch that appears to
    do nothing is indistinguishable from a broken one. */

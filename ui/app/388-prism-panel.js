@@ -65,6 +65,17 @@ function prismBar(spec, value, { facet, colour, kind = '', onInput, onCommit, fo
   return row;
 }
 
+/// The pad's axes, the sound and the chain's Add: the shared dropdown
+/// (`073c-ui-drop.js`) in front of each select, which keeps its value and its
+/// handler. The presets' row is the preset bar's (phase 4), and left to it.
+function prismDrops() {
+  uiDrop($('prismX'), { h: 24, w: 120 });
+  uiDrop($('prismY'), { h: 24, w: 120 });
+  uiDrop($('prismSoundFolder'), { h: 24, w: 120 });
+  uiDrop($('prismSoundFile'), { h: 24, w: 120 });
+  uiDrop($('prismChainAdd'), { h: 24, w: 120 });
+}
+
 /// A bar's reading, short enough to sit beside its name in half a column:
 /// whole numbers from 10 up and on a stepped control, two places below.
 function prismBarFormat(spec, v) {

@@ -147,16 +147,16 @@ test('F5 · every fog type reads whole in its menu, and the curve says its value
   await openFile(page);
   await roomTab(page, 'controls');
   const fit = await page.evaluate(() => {
-    const sel = document.getElementById('reFogType');
+    const sel = document.getElementById('reFogType'), menu = sel._ui || sel;
     const probe = document.createElement('span');
-    probe.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font:${getComputedStyle(sel).font}`;
+    probe.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font:${getComputedStyle(menu).font}`;
     document.body.appendChild(probe);
     const widest = Math.max(...[...sel.options].map((o) => { probe.textContent = o.textContent; return probe.getBoundingClientRect().width; }));
     probe.remove();
     // The text, the menu's own padding and border either side, and its arrow.
-    const cs = getComputedStyle(sel);
+    const cs = getComputedStyle(menu);
     const sides = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth'].reduce((n, k) => n + parseFloat(cs[k]), 0);
-    return { need: Math.ceil(widest + sides) + 20, have: sel.getBoundingClientRect().width };
+    return { need: Math.ceil(widest + sides) + 20, have: menu.getBoundingClientRect().width };
   });
   expect(fit.have).toBeGreaterThanOrEqual(fit.need);
   await page.selectOption('#reFogType', '1');

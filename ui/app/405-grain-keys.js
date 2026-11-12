@@ -456,5 +456,7 @@ function gsWireMidiChannel(el, who) {
     gsMidiSend();
     el.blur();
   };
+  // The shared dropdown (`073c-ui-drop.js`), the select kept for its value.
+  uiDrop(el, { h: 20, w: 66, mono: true });
 }
 

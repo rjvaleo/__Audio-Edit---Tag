@@ -435,6 +435,7 @@ function buildRoomChunks() {
     fog.onchange = () => { roomEdit.fog = fog.checked; saveRoomData(); paintRoomNums(); };
   }
   const fogType = $('reFogType');
+  uiDrop(fogType, { h: 24, w: 96 });
   if (fogType) {
     fogType.value = String(roomEdit.fogType);
     fogType.onchange = () => {
@@ -524,6 +525,9 @@ function buildRoomChunks() {
   // grain shapes are already drawn in this room at eight pixels; there is no
   // reason a dodecahedron should not also be available at four hundred.
   const sShape = $('reSolidShape');
+  // The shared dropdown (`073c-ui-drop.js`): fifty-odd solids in their groups,
+  // found by typing.
+  uiDrop(sShape, { h: 24, cls: 'ui-fill' });
   if (sShape) {
     if (!sShape.options.length) {
       const group = (label, entries) => {
