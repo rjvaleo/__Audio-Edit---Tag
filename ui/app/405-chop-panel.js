@@ -318,6 +318,17 @@ function chopBuildKnobs() {
     button('chopDouble', 'chop-btn', '2×', 'It heard half time: twice as many beats', () => chopScaleBars(2)));
   box.append(detect, chopGroup('GRID', 'grid', 140, '', [grid(['nudge', 'shuffle'], 2)]), slice, time);
   chopBuildFx();
+  chopSegs();
+}
+
+/// Every switch on the page is the shared segmented switch (`073d-ui-seg.js`):
+/// the mode at 28, the main rows at 24, the small ones at 20. A / B is the
+/// preset bar's, and left to it.
+function chopSegs() {
+  document.querySelectorAll('.chop-app :is(.chop-seg, .chop-tabs):not(.ui-seg)').forEach((s) => {
+    if (s.querySelector('#chopA')) return;
+    s.classList.add('ui-seg', s.classList.contains('chop-tabs') ? 'h28' : s.classList.contains('sm') ? 'h20' : 'h24');
+  });
 }
 
 /// The processing every slice gets, each kind in line with the others under its

@@ -67,8 +67,11 @@ function prismBar(spec, value, { facet, colour, kind = '', onInput, onCommit, fo
 
 /// The pad's axes, the sound and the chain's Add: the shared dropdown
 /// (`073c-ui-drop.js`) in front of each select, which keeps its value and its
-/// handler. The presets' row is the preset bar's (phase 4), and left to it.
+/// handler; and the switches. The presets' row is the preset bar's (phase 4),
+/// and left to it.
 function prismDrops() {
+  // Its switches are the shared segmented switch (`073d-ui-seg.js`).
+  document.querySelectorAll('#dockHyper .hs-seg').forEach((s) => s.classList.add('ui-seg', 'h24'));
   uiDrop($('prismX'), { h: 24, w: 120 });
   uiDrop($('prismY'), { h: 24, w: 120 });
   uiDrop($('prismSoundFolder'), { h: 24, w: 120 });
