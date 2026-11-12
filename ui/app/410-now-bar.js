@@ -23,12 +23,28 @@ function nbIcon(k) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 }
 
+/// Is what the bar plays playing? The main sound, or on the Prism page the
+/// Prism deck (`prismOwnsBar`, `ui/prism-pad.js`).
+function nbPlaying() {
+  return prismOwnsBar() ? prismDeck.playing : engine.playing;
+}
+
 /// Paint the play button from the engine's state. Called by `reflectTransport`.
 function nbPaintPlay() {
   const b = $('playBtn');
   if (!b) return;
-  b.innerHTML = nbIcon(engine.playing ? 'pause' : 'play');
-  b.setAttribute('aria-label', engine.playing ? 'Pause' : 'Play');
+  b.innerHTML = nbIcon(nbPlaying() ? 'pause' : 'play');
+  b.setAttribute('aria-label', nbPlaying() ? 'Pause' : 'Play');
+}
+
+/// The Prism page came or went: the whole bar, from whichever it now plays.
+function nbHandOver() {
+  $('playBtn').classList.toggle('on', nbPlaying());
+  nbPaintPlay();
+  paintLoop();
+  nbSetFile(state.selectedFile);
+  nbDrawStrip();
+  if (prismOwnsBar()) prismBarShow(); else paintTime();
 }
 
 // ─────────────────────────────────────────────────── the sound, as a strip
@@ -43,7 +59,7 @@ function nbDrawStrip() {
   const g = cv.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, w, h);
-  const p = state.overview;
+  const p = prismOwnsBar() ? prismDeck.wave : state.overview;
   if (!p || !p.channels?.length) return;
   const { min, max } = p.channels[0], n = p.columns || max.length, mid = h / 2;
   g.fillStyle = getComputedStyle(cv).getPropertyValue('--nb-wave').trim() || '#9aa6d6';
@@ -59,6 +75,7 @@ function nbDrawStrip() {
 function nbTick() {
   const head = $('nbHead');
   if (!head) return;
+  if (prismOwnsBar()) { head.style.left = `${prismDeckAt() * 100}%`; $('nbSel').hidden = true; return; }
   const total = state.view?.frames || state.overview?.frames || 0, sr = state.view?.sampleRate || 44100;
   const at = engine.playing ? playbackTime() * sr : (state.cue || 0);
   head.style.left = total ? `${Math.min(100, at / total * 100)}%` : '0';
@@ -71,6 +88,11 @@ function nbTick() {
   if (!strip) return;
   let down = false;
   const go = (e) => {
+    if (prismOwnsBar()) {
+      const r = strip.getBoundingClientRect();
+      if (r.width) prismDeckSeek((e.clientX - r.left) / r.width);
+      return;
+    }
     const p = state.overview, f = state.selectedFile;
     if (!p || !f) return;
     const total = state.view?.frames || p.frames || 0, r = strip.getBoundingClientRect();
@@ -91,6 +113,7 @@ function nbTick() {
 /// The sound's name and what is known about it. Called from `renderMetaStrip`.
 function nbSetFile(f) {
   if (!$('nbName')) return;
+  if (prismOwnsBar()) { prismBarName(); return; }
   $('nbName').textContent = f ? (f.name || f.path.split('/').pop()) : 'no sound';
   const bits = f ? [fmtDur(f.duration), f.category].filter(Boolean) : [];
   $('nbMeta').textContent = bits.join(' · ');

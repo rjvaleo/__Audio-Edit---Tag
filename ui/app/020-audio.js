@@ -419,7 +419,7 @@ function pausePlayback() {
 
 function reflectTransport() {
   const b = $('playBtn');
-  b.classList.toggle('on', engine.playing);
+  b.classList.toggle('on', nbPlaying());
   nbPaintPlay();
   if (engine.playing) nbMeterRun();
   const pp = $('perfPlayBtn');
@@ -558,6 +558,8 @@ function startTransportLoop() {
 let perfTickAt = 0;
 
 function paintTime() {
+  // On the Prism page the clock is the Prism deck's (`prismBarShow`).
+  if (prismOwnsBar()) return;
   $('timeNow').textContent = fmtTime(playbackTime());
   nbTick();
 }
@@ -591,6 +593,8 @@ function releaseEngineFor(file) {
 /// `playFile` already knows both cases: same path, toggle; different path,
 /// load it and start from the cue.
 $('playBtn').onclick = async () => {
+  // The Prism page's sound is its own deck's (`prismOwnsBar`).
+  if (prismOwnsBar()) { prismBarPlay(); return; }
   if (state.selectedFile) { await playFile(state.selectedFile); return; }
   if (!engine.path) return;
   engine.playing ? pausePlayback() : startPlayback();
@@ -623,6 +627,7 @@ function returnToCue() {
 }
 
 $('stopBtn').onclick = () => {
+  if (prismOwnsBar()) { prismDeckStop(); return; }
   pausePlayback();
   returnToCue();
   updatePlayhead();
@@ -644,6 +649,7 @@ $('stopBtn').onclick = () => {
 /// The pair of clicks underneath arrive first and each returns to the cue, so
 /// the seek to zero lands last and wins.
 $('stopBtn').ondblclick = () => {
+  if (prismOwnsBar()) { prismDeckStop(); return; }
   pausePlayback();
   seekSource(0);
   updatePlayhead();
@@ -673,14 +679,25 @@ function applyLoop() {
     },
   });
 
-  const btn = $('loopBtn');
-  btn.classList.toggle('on', state.loopOn);
-  const what = hasSel ? 'selection' : 'whole file';
-  btn.title = state.loopOn ? `Looping the ${what}` : 'Loop off';
-  $('loopLabel').textContent = state.loopOn ? what : '';
+  paintLoop();
 }
 
-$('loopBtn').onclick = () => { state.loopOn = !state.loopOn; applyLoop(); };
+/// The loop button and its label. On the Prism page, the Prism deck's loop,
+/// which is always the whole sound.
+function paintLoop() {
+  const btn = $('loopBtn');
+  const on = prismOwnsBar() ? prismDeck.loop : state.loopOn;
+  const what = !prismOwnsBar() && state.sel && state.sel.end > state.sel.start ? 'selection' : 'whole file';
+  btn.classList.toggle('on', on);
+  btn.title = on ? `Looping the ${what}` : 'Loop off';
+  $('loopLabel').textContent = on ? what : '';
+}
+
+$('loopBtn').onclick = () => {
+  if (prismOwnsBar()) { prismDeckLoop(); return; }
+  state.loopOn = !state.loopOn;
+  applyLoop();
+};
 
 /// Start a selection loop from the beginning of the selection.
 async function playSelectionLoop() {

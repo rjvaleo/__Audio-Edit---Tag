@@ -131,7 +131,8 @@ async function prismPushRack({ structure = false } = {}) {
   } catch (e) { toast(e.message); }
 }
 
-/// The deck's transport, faders included.
+/// The deck's transport, faders included. Its play, stop and loop are the
+/// Now Playing bar's on this page (`prismOwnsBar`); the takes start it too.
 function prismDeckSend(body) {
   return postJSON('/api/engine/transport', { deck: 'prism', ...body }).catch(() => {});
 }
@@ -139,6 +140,11 @@ function prismDeckPlay() {
   if (!prismDeck.path) { toast('Choose a sound for Prism first'); return; }
   prismDeck.playing = true;
   prismDeckSend({ play: true });
+  prismDeckShow();
+}
+function prismDeckPause() {
+  prismDeck.playing = false;
+  prismDeckSend({ play: false });
   prismDeckShow();
 }
 function prismDeckStop() {
@@ -153,6 +159,68 @@ function prismDeckLoop() {
   prismDeckShow();
 }
 
+/// Where the deck is in its sound, 0 to 1. The position counts output frames;
+/// the stretch spreads the sound over them.
+function prismDeckAt() {
+  if (!(prismDeck.frames > 0)) return 0;
+  return (prismDeck.pos / (prismDeck.frames * (prismDeck.stretch.ratio || 1))) % 1;
+}
+
+/// Go to `u` (0 to 1) of the deck's sound: the bar's strip, clicked.
+function prismDeckSeek(u) {
+  if (!prismDeck.path || !(prismDeck.frames > 0)) return;
+  const frame = Math.round(Math.max(0, Math.min(1, u)) * prismDeck.frames * (prismDeck.stretch.ratio || 1));
+  prismDeck.pos = frame;
+  prismDeckSend({ seek: frame });
+  prismDeckShowWave();
+  prismBarShow();
+}
+
+// ─────────────────────────── the Now Playing bar, on the Prism page
+//
+// RJ, 11 Nov 2026: one transport. On the Prism page the bar (`#nowBar`,
+// `ui/app/410-now-bar.js`) is the Prism deck's: play/pause, stop and loop act on
+// Prism's sound, the clock and the strip follow it, and the strip seeks it.
+// GRAIN, SEQ and the tempo are the main sound's, so they step out
+// (`ui/edit.css`). Off the page the bar is the main sound's, as before.
+
+/// Is the bar Prism's? Only while the Prism page is out.
+function prismOwnsBar() {
+  return document.body.classList.contains('prismpage');
+}
+
+/// The bar's play button: play, or pause where it is.
+function prismBarPlay() {
+  if (prismDeck.playing) prismDeckPause(); else prismDeckPlay();
+}
+
+/// The bar, from the deck: the play and loop lights, the clock and the head.
+function prismBarShow() {
+  if (!prismOwnsBar() || typeof nbPaintPlay !== 'function') return;
+  $('playBtn').classList.toggle('on', prismDeck.playing);
+  nbPaintPlay();
+  paintLoop();
+  $('timeNow').textContent = fmtTime(prismDeck.pos / (prismDeck.rate || 48000));
+  nbTick();
+}
+
+/// The sound's name on the bar, and how long it is.
+function prismBarName() {
+  $('nbName').textContent = prismDeck.path ? prismDeck.path.split('/').pop() : 'no sound';
+  $('nbMeta').textContent = prismDeck.path && prismDeck.frames > 0 ? fmtDur(prismDeck.frames / (prismDeck.rate || 48000)) : '';
+}
+
+// The page coming or going hands the bar over, all of it at once.
+(() => {
+  let had = false;
+  new MutationObserver(() => {
+    const on = prismOwnsBar();
+    if (on === had) return;
+    had = on;
+    if (typeof nbHandOver === 'function') nbHandOver();
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+})();
+
 /// Where the deck is, a few times a second while the page is out.
 async function prismDeckPoll(now) {
   if (!prismDeck.path || now - prismDeck.polled < 150) return;
@@ -164,6 +232,7 @@ async function prismDeckPoll(now) {
     if (r.inFrames) prismDeck.frames = r.inFrames;
   } catch { /* the next one */ }
   prismDeckShowWave();
+  prismBarShow();
 }
 
 async function prismDeckWave() {
@@ -174,6 +243,7 @@ async function prismDeckWave() {
     if (prismDeck.path === want) prismDeck.wave = w;
   } catch { /* drawn empty */ }
   prismDeckShowWave();
+  if (prismOwnsBar() && typeof nbDrawStrip === 'function') nbDrawStrip();
 }
 
 function prismDeckShowWave() {
@@ -203,19 +273,18 @@ function prismDeckShowWave() {
     g.fill();
   }
   if (prismDeck.frames > 0) {
-    // The position counts output frames; the stretch spreads the sound over them.
-    const at = (prismDeck.pos / (prismDeck.frames * (prismDeck.stretch.ratio || 1))) % 1;
+    const at = prismDeckAt();
     g.fillStyle = '#f2c14e';
     g.fillRect(Math.round(at * w), 0, 1, h);
   }
 }
 
-/// The deck's strip: the sound's name and the transport's lights.
+/// The deck's strip: the sound's name, and the bar's lights.
 function prismDeckShow() {
   const name = $('prismSoundName');
   if (name) name.textContent = prismDeck.path ? prismDeck.path.split('/').pop() : 'No sound — choose one';
-  $('prismDeckPlay')?.classList.toggle('on', prismDeck.playing);
-  $('prismDeckLoop')?.classList.toggle('on', prismDeck.loop);
+  if (prismOwnsBar() && $('nbName')) prismBarName();
+  prismBarShow();
   prismRenderChain();
 }
 
