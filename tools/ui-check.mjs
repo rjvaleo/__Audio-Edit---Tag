@@ -116,7 +116,9 @@ function callsTo(name) {
 // they say nothing when they are not — which is how one fader sat unreachable
 // among eight that worked, for as long as the panel existed.
 
-const controls = [...callsTo('param'), ...callsTo('knob')];
+// The shared knob and bar (`073a`, `073b`) take the same arguments, and owe the
+// same reset.
+const controls = [...callsTo('param'), ...callsTo('knob'), ...callsTo('uiKnobParam'), ...callsTo('uiBarParam')];
 const noDefault = controls.filter((c) => c.args.length < 10 || !c.args[9]);
 for (const c of noDefault) {
   fail(`${whereIs(c.line)}  control ${c.args[0] || '(unnamed)'} has no default — double-click will not reset it`);
