@@ -1315,12 +1315,8 @@
        <div class="chop-app" data-look="AD">
         <header class="chop-band chop-top chop-panel">
           <div id="chopTabs" class="chop-tabs-host"></div>
-          <div class="chop-seg" title="Two settings to flip between"><button type="button" id="chopA" title="Settings A">A</button><button type="button" id="chopB" title="Settings B: flip between the two to compare">B</button></div>
-          <div class="chop-preset chop-well chop-presets"><button type="button" id="chopPrevPreset" title="Previous preset">‹</button><select id="chopPreset" title="Chop presets"></select><button type="button" id="chopNextPreset" title="Next preset">›</button></div>
-          <button type="button" class="chop-btn" id="chopSave" title="Save these settings as a preset"><svg viewBox="0 0 12 12"><path d="M2 2H8L10 4V10H2ZM4 2V5H7V2M4 10V7H8V10"/></svg>Save</button>
-          <button type="button" class="chop-btn" id="chopInit" title="Every setting back to where it starts"><svg viewBox="0 0 12 12"><path d="M3 3V6H6M3.2 6A3.6 3.6 0 1 0 4 3.4"/></svg>Init</button>
-          <button type="button" class="chop-btn" id="chopDice" title="Roll the dice: new settings for the cutting and the sound"><svg viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="1.6"/><circle cx="4.4" cy="4.4" r=".7" fill="currentColor"/><circle cx="7.6" cy="7.6" r=".7" fill="currentColor"/><circle cx="6" cy="6" r=".7" fill="currentColor"/></svg>Dice</button>
-          <button type="button" class="chop-btn chop-capture" id="chopCapture" title="Capture: chop the newest take in Recordings"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="4"/><circle cx="6" cy="6" r="1.6" fill="currentColor"/></svg>Take</button>
+          <!-- The preset bar (`105-preset-bar.js`), with Dice and Take: `405b-chop-presets.js`. -->
+          <div id="chopPbHost"></div>
         </header>
         <section class="chop-band chop-cutrow">
           <div class="chop-pills chop-tabs" id="chopMode" title="How the cuts are found"><button type="button" class="chop-tab" data-v="transient" title="A cut at every hit, as ReCycle does: each slice runs to the next"><svg viewBox="0 0 30 20"><path d="M1 18L6 2V18M11 18L16 6V18M21 18L26 3V18"/></svg>Transient</button><button type="button" class="chop-tab" data-v="silence" title="The sounds between the silences, as Recycle Reborn does"><svg viewBox="0 0 30 20"><path d="M2 10C3 2 8 2 9 10S3 18 2 10M13 10C14 4 19 4 20 10S14 16 13 10M24 10C24.5 7 27 7 28 10S24.5 13 24 10"/></svg>Silence</button><button type="button" class="chop-tab" data-v="grid" title="A cut on every grid line at the tempo, as Ratchet does"><svg viewBox="0 0 30 20"><path d="M2 2V18M9 2V18M16 2V18M23 2V18M28 2V18"/><path d="M1 10H29" opacity=".5"/></svg>Grid</button></div>
