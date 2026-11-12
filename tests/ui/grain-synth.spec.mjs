@@ -6,6 +6,7 @@
 // than read from the page's own table: a control wired to the wrong place fails.
 
 import { test, expect } from './test.mjs';
+import { pbSaveAs, pbName, pbLit, pbPick, pbStep, pbRename, pbDelete } from './preset-bar.helpers.mjs';
 
 /// Where each control's value lives.
 const AT = {
@@ -286,27 +287,27 @@ test('a semitone grid snaps Pitch', async ({ page }) => {
   expect(v).toBe(Math.round(v));
 });
 
-test('presets: the shelf saves, applies, steps and deletes through /api/presets', async ({ page }) => {
+test('presets: the bar saves, applies, steps, renames and deletes through /api/presets', async ({ page }) => {
   await openPage(page);
   const stamp = `p${Date.now()}`;
-  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? stamp : undefined));
   await clickBar(page, 'windowMs', 0.7);
   await page.waitForTimeout(300);
   const saved = await draft(page, 'windowMs');
 
-  await page.click('#gsPresetBtn .pn');
-  await page.click('#gsPresetSave');
+  await pbSaveAs(page, 'gs', stamp);
   await page.waitForFunction((n) => state.presets.some((p) => p.name === n), stamp);
-  expect(await page.locator('#gsPresetName').textContent()).toBe(stamp);
+  await expect.poll(() => pbName(page, 'gs')).toBe(stamp);
 
+  // Edited: the light comes on, and Save keeps it under the same name.
   await clickBar(page, 'windowMs', 0.2);
   await page.waitForTimeout(300);
   expect(await draft(page, 'windowMs')).not.toBe(saved);
+  await expect.poll(() => pbLit(page, 'gs')).toBe(true);
 
-  await page.click('#gsPresetBtn .pn');
-  await page.click(`#gsShelf .gs-pc[title="${stamp}"]`);
+  await pbPick(page, 'gs', stamp);
   await page.waitForFunction((v) => Math.abs(state.stretchDraft.windowMs - v) < 0.01, saved);
-  expect(await page.locator('#gsPresetName').textContent()).toBe(stamp);
+  expect(await pbName(page, 'gs')).toBe(stamp);
+  await expect.poll(() => pbLit(page, 'gs')).toBe(false);
 
   // The arrows walk the list.
   const second = `${stamp}b`;
@@ -315,17 +316,20 @@ test('presets: the shelf saves, applies, steps and deletes through /api/presets'
     renderPresets();
   }, second);
   const names = await page.evaluate(() => state.presets.map((p) => p.name));
-  const from = await page.locator('#gsPresetName').textContent();
-  await page.click('#gsPresetBtn [data-step="1"]');
-  await page.waitForTimeout(400);
-  expect(await page.locator('#gsPresetName').textContent()).toBe(names[(names.indexOf(from) + 1) % names.length]);
+  const from = await pbName(page, 'gs');
+  await pbStep(page, 'gs', 1);
+  await expect.poll(() => pbName(page, 'gs')).toBe(names[(names.indexOf(from) + 1) % names.length]);
 
-  page.removeAllListeners('dialog');
-  page.on('dialog', (d) => d.accept());
-  for (const n of [stamp, second]) {
-    await page.evaluate((x) => { $('presetPick').value = x; }, n);
-    await page.click('#gsPresetBtn .pn');
-    await page.click('#gsPresetDelete');
+  // Rename, on the bar: the stored values go across.
+  await pbPick(page, 'gs', stamp);
+  await expect.poll(() => pbName(page, 'gs')).toBe(stamp);
+  await pbRename(page, 'gs', `${stamp}r`);
+  await page.waitForFunction((n) => state.presets.some((p) => p.name === n) && $('presetPick').value === n, `${stamp}r`);
+
+  for (const n of [`${stamp}r`, second]) {
+    await pbPick(page, 'gs', n);
+    await expect.poll(() => pbName(page, 'gs')).toBe(n);
+    await pbDelete(page, 'gs');
     await page.waitForFunction((x) => !state.presets.some((p) => p.name === x), n);
   }
 });

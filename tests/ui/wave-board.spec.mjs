@@ -14,13 +14,14 @@
 //   - reordering the main path;
 //   - right-click Add, Replace and Insert;
 //   - a split's outs lowered, its stranded cable taken away first;
-//   - saving a board and recalling it; removing a saved one, and no Remove
-//     on a factory board;
+//   - saving a board and recalling it; removing a saved one (it asks), and no
+//     Delete on a factory board;
 //   - a Convolution node's sound picker: the library's files, and None;
 //   - a source dragged onto a board control is a `board:` mod row;
 //   - cables brighten with the engine's peaks.
 
 import { test, expect } from './test.mjs';
+import { pbSaveAs, pbPick, pbOpenList, pbDelete, pbStep, pbName, pbTag, pop } from './preset-bar.helpers.mjs';
 
 const INPUTS = [['invoice', 'in:voice', 16], ['inA', 'in:osc0', 112], ['inB', 'in:osc1', 176], ['inC', 'in:osc2', 240], ['insub', 'in:sub', 304], ['innoise', 'in:noise', 368]];
 /// A board: the six inputs and Out, plus `nodes`, with `cables` as `a.port>b.port`.
@@ -74,12 +75,17 @@ test('the four factory boards come first, each loads, and lays its rows into the
   // Four whole boards, each compiled and swapped in: more than one test's worth.
   test.setTimeout(60_000);
   const errors = await openFx(page);
-  await expect(page.locator('#wvBex span')).toHaveText(['Glass Split', 'Dub Room', 'Grit Bus', 'Bubble Garden']);
+  // The list's factory group, first, locked.
+  await pbOpenList(page, 'wvB');
+  await expect(pop(page).locator('.pbar-row .pbar-rn').first()).toHaveText('Glass Split');
+  await expect(pop(page).locator('.pbar-grp').first()).toContainText('Factory');
+  expect((await pop(page).locator('.pbar-rn').allTextContents()).slice(0, 4)).toEqual(['Glass Split', 'Dub Room', 'Grit Bus', 'Bubble Garden']);
+  await page.keyboard.press('Escape');
   const listed = await (await page.request.get('/api/wave/boards')).json();
   for (const [i, name] of ['Glass Split', 'Dub Room', 'Grit Bus', 'Bubble Garden'].entries()) {
-    await page.locator(`#wvBex span[data-bx="${i}"]`).click();
-    await expect(page.locator('#wvBname')).toHaveText(name);
-    await expect(page.locator(`#wvBex span[data-bx="${i}"]`)).toHaveClass(/\bon\b/);
+    await pbPick(page, 'wvB', name);
+    await expect.poll(() => pbName(page, 'wvB')).toBe(name);
+    await expect.poll(() => pbTag(page, 'wvB')).toContain('Factory');
     await settle(page);
     const b = await serverBoard(page);
     expect(b.name).toBe(name);
@@ -98,8 +104,8 @@ test('the four factory boards come first, each loads, and lays its rows into the
   await page.locator('#wvWorld .wv-fn[data-node="sy"] .fh').click();
   await expect(page.locator('#wvFinsp .isnd .nm')).toHaveText('No threshold sound: levels only');
   // The arrows step through them.
-  await page.locator('#wvBnext').click();
-  await expect(page.locator('#wvBname')).not.toHaveText('Bubble Garden');
+  await pbStep(page, 'wvB', 1);
+  await expect.poll(() => pbName(page, 'wvB')).not.toBe('Bubble Garden');
   expect(errors).toEqual([]);
 });
 
@@ -231,24 +237,21 @@ test('a board saved under a new name comes back with its nodes and its rows', as
   await page.request.delete('/api/wave/boards?name=Spec%20Saved');
   // A row on the board, so the saved board carries it.
   await page.evaluate(() => { WV.mods.push({ src: 'lfo1', dst: 'board:g:db', amt: 0.4, curve: 'lin', via: null }); wvSendMods(); });
-  await page.locator('#wvBsaveas').click();
-  await page.keyboard.press('Meta+A');
-  await page.keyboard.type('Spec Saved');
-  await page.keyboard.press('Enter');
+  await pbSaveAs(page, 'wvB', 'Spec Saved');
   await expect(page.locator('#wvFnote')).toContainText('Saved “Spec Saved”');
   const saved = (await (await page.request.get('/api/wave/boards')).json()).find((b) => b.name === 'Spec Saved');
   expect(saved.nodes.find((n) => n.id === 'g').params.db).toBe(-6);
   expect(saved.mods).toEqual([expect.objectContaining({ src: 'lfo1', dst: 'board:g:db' })]);
 
   // Another board, then back to it by the arrows.
-  await page.locator('#wvBex span[data-bx="0"]').click();
-  await expect(page.locator('#wvBname')).toHaveText('Glass Split');
+  await pbPick(page, 'wvB', 'Glass Split');
+  await expect.poll(() => pbName(page, 'wvB')).toBe('Glass Split');
   expect(await page.evaluate(() => WV.mods.some((m) => m.dst === 'board:g:db'))).toBe(false);
-  for (let i = 0; i < 12 && (await page.locator('#wvBname').textContent()) !== 'Spec Saved'; i++) {
-    await page.locator('#wvBnext').click();
+  for (let i = 0; i < 12 && (await pbName(page, 'wvB')) !== 'Spec Saved'; i++) {
+    await pbStep(page, 'wvB', 1);
     await page.waitForTimeout(150);
   }
-  await expect(page.locator('#wvBname')).toHaveText('Spec Saved');
+  await expect.poll(() => pbName(page, 'wvB')).toBe('Spec Saved');
   await settle(page);
   const b = await serverBoard(page);
   expect(b.name).toBe('Spec Saved');
@@ -263,22 +266,28 @@ test('a saved board can be removed from the page; a factory board cannot', async
   const g = board('Spec Gone', [{ id: 'g', kind: 'gain', x: 160, y: 16, params: { db: -3 } }], ['invoice>g', 'g>out']);
   expect((await page.request.post('/api/wave/boards', { data: { name: 'Spec Gone', board: g, mods: [] } })).ok()).toBe(true);
   await page.evaluate(() => wvBoardConnect());
-  // A factory board: no Remove.
-  await page.locator('#wvBex span[data-bx="1"]').click();
-  await expect(page.locator('#wvBname')).toHaveText('Dub Room');
-  await expect(page.locator('#wvBrm')).toBeHidden();
-  // The saved one: Remove, and it is off the list, on the engine too.
-  await page.evaluate(() => wvLoadBoard(WV_BOARDS.list.findIndex((b) => b.name === 'Spec Gone')));
-  await expect(page.locator('#wvBname')).toHaveText('Spec Gone');
-  await expect(page.locator('#wvBrm')).toBeVisible();
-  await page.locator('#wvBrm').click();
+  // A factory board: no Delete, and no Rename.
+  const menu = async () => {
+    await page.locator('#wvBPb [data-pb="more"]').click();
+    const dis = await pop(page).locator('[data-mi="delete"], [data-mi="rename"]').evaluateAll((els) => els.map((e) => e.classList.contains('dis')));
+    await page.keyboard.press('Escape');
+    return dis;
+  };
+  await pbPick(page, 'wvB', 'Dub Room');
+  await expect.poll(() => pbName(page, 'wvB')).toBe('Dub Room');
+  expect(await menu()).toEqual([true, true]);
+  // The saved one: Delete, and it is off the list, on the engine too.
+  await pbPick(page, 'wvB', 'Spec Gone');
+  await expect.poll(() => pbName(page, 'wvB')).toBe('Spec Gone');
+  expect(await menu()).toEqual([false, false]);
+  await pbDelete(page, 'wvB');
   await expect(page.locator('#wvFnote')).toContainText('Removed “Spec Gone”');
   const names = (await (await page.request.get('/api/wave/boards')).json()).map((b) => b.name);
   expect(names).not.toContain('Spec Gone');
   expect(await page.evaluate(() => WV_BOARDS.list.some((b) => b.name === 'Spec Gone'))).toBe(false);
   // It stays on the canvas as a new board, with nothing left to remove.
-  await expect(page.locator('#wvBpos')).toHaveText('new');
-  await expect(page.locator('#wvBrm')).toBeHidden();
+  await expect.poll(() => pbTag(page, 'wvB')).toBe('new');
+  expect(await menu()).toEqual([true, true]);
   await expect(page.locator('#wvWorld .wv-fn[data-node="g"]')).toHaveCount(1);
   expect(errors).toEqual([]);
 });

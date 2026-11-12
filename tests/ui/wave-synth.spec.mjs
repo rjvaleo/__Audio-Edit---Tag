@@ -132,7 +132,7 @@ test('the rail opens Wave, and every view draws with no console error', async ({
   await expect(page.locator('#dock')).toBeHidden();
   await expect(page.locator('#transportBar')).toBeHidden();
   await expect(page.locator('#wvOffline')).toBeHidden();
-  await expect(page.locator('#wvPresetName')).toHaveText('Test Patch');
+  await expect(page.locator('#wvPb [data-pb="label"]')).toHaveText('Test Patch');
   for (const v of ['play', 'create', 'matrix', 'fx']) {
     await page.locator(`#wvViews [data-v="${v}"]`).click();
     await page.waitForTimeout(250);
@@ -315,7 +315,7 @@ test('with no engine the page draws its own patch and says it is not connected',
   await ready(page);
   await page.locator('#leftRail .rl-item[data-mode="synth"]').click();
   await expect(page.locator('#wvOffline')).toBeVisible();
-  await expect(page.locator('#wvPresetName')).toHaveText('Night Glass Pad');
+  await expect(page.locator('#wvPb [data-pb="label"]')).toHaveText('Night Glass Pad');
   await expect(page.locator('#wvPkName0')).toHaveText('Formant Sweep');
   await page.waitForTimeout(300);
   expect(errors).toEqual([]);
