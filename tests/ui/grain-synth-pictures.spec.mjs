@@ -96,7 +96,9 @@ test('each engine shows its own pictures, in what the controls leave', async ({ 
     expect(got.over, `${e} overflows`).toBe(0);
     expect(got.inside, `${e}'s close-up leaves the panel`).toBe(true);
     expect(got.below, `${e}'s close-up sits on its controls`).toBe(true);
-    expect(got.row, `${e} at-the-head row`).toBe(e === 'granular');
+    // With the overview across the top and no trace on the panel (13 Nov
+    // 2026), WSOLA and the Vocoder have room for the row as well.
+    expect(got.row, `${e} at-the-head row`).toBe(['wsola', 'vocoder', 'granular'].includes(e));
     expect(got.h).toBeGreaterThanOrEqual(e === 'hybrid' ? 38 : 120);
     expect(got.label).toMatch({ wsola: /SPLICE/, vocoder: /FRAME/, pvsola: /re-anchored/, hybrid: /SEPARATION/, granular: /GRAIN SCHEDULE/ }[e]);
     expect(await ink(page, 'gsLens'), `${e}'s close-up is blank`).toBeGreaterThan(0.01);
@@ -190,8 +192,8 @@ test('a still page does not redraw, and a closed drawing stops its work', async 
   await page.evaluate(() => gsSetV('scan', 0.5));
   await page.waitForTimeout(150);
   expect((await drawn(page)).lens).toBeGreaterThan(a.lens);
-  // WSOLA has no room for the row: nothing draws it.
-  await pick(page, 'wsola');
+  // PVSOLA has no room for the row: nothing draws it.
+  await pick(page, 'pvsola');
   const b = await drawn(page);
   await page.evaluate(() => gsSetV('semitones', 3));
   await page.waitForTimeout(150);
@@ -219,8 +221,8 @@ test('a still page does not redraw, and a closed drawing stops its work', async 
 test('an engine chosen behind the effects page has its pictures on the way back', async ({ page }) => {
   await openPage(page);
   await pick(page, 'granular');
-  await page.evaluate(() => { gsFxSetView('fx'); state.stretchDraft.algorithm = 'vocoder'; });
-  await page.waitForFunction(() => GS.engine === 'vocoder');
+  await page.evaluate(() => { gsFxSetView('fx'); state.stretchDraft.algorithm = 'pvsola'; });
+  await page.waitForFunction(() => GS.engine === 'pvsola');
   await page.waitForTimeout(100);
   await page.evaluate(() => gsFxSetView('eng'));
   await page.waitForTimeout(200);
@@ -362,4 +364,36 @@ test('with the switch off, none of it runs', async ({ page }) => {
   const got = await page.evaluate(() => ({ showing: GS.showing, wanted: gsPollWanted(), pcm: GS_PIC.pcm, want: GS_PIC.want, drawn: GS_PIC.drawn }));
   expect(got).toEqual({ showing: false, wanted: false, pcm: null, want: '', drawn: { head: 0, map: 0, lens: 0 } });
   expect(asked.filter((u) => u.includes('dry=1'))).toEqual([]);
+});
+
+test('the whole file runs across the top, above the engines, in the sound\'s colours', async ({ page }) => {
+  // RJ, 13 Nov 2026: one big overview above WSOLA and the rest, where the loop
+  // and Start are set; SOURCE keeps only the loop, and the trace is gone.
+  const errs = errors(page);
+  await openPage(page);
+  const got = await page.evaluate(() => {
+    const ov = gsSrcPic.getBoundingClientRect(), tabs = gsEngTabs.getBoundingClientRect(), view = document.getElementById('grainView').getBoundingClientRect();
+    return {
+      inRow: !!gsSrcPic.closest('.gs-ov'), inSource: !!gsSrcPic.closest('#gsPSrc'), trace: !!document.getElementById('gsTrace'),
+      above: ov.bottom <= tabs.top, wide: ov.width / view.width,
+    };
+  });
+  expect(got).toMatchObject({ inRow: true, inSource: false, trace: false, above: true });
+  expect(got.wide).toBeGreaterThan(0.9);
+  // Coloured once measured, from the samples the page already read: no second fetch.
+  await page.waitForFunction(() => !!edSound.an && edSound.path === state.selectedFile.path, null, { timeout: 20_000 });
+  await page.waitForTimeout(200);
+  const alpha = await page.evaluate(() => {
+    const el = gsSrcPic, d = el.getContext('2d').getImageData(0, 0, el.width, el.height).data;
+    let max = 0;
+    for (let k = 3; k < d.length; k += 4) max = Math.max(max, d[k]);
+    return max;
+  });
+  expect(alpha, 'the overview is still the plain one').toBeGreaterThan(200);
+  // The effects page needs the height: the overview steps aside, and comes back.
+  await page.evaluate(() => gsFxSetView('fx'));
+  expect(await page.isVisible('#grainView .gs-ov')).toBe(false);
+  await page.evaluate(() => gsFxSetView('eng'));
+  expect(await page.isVisible('#grainView .gs-ov')).toBe(true);
+  expect(errs).toEqual([]);
 });

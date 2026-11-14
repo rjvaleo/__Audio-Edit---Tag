@@ -279,7 +279,9 @@ function gsSizeEngine() {
   if (!p || !GS.showing) return;
   const room = p.clientHeight - re.offsetTop - 10, secH = es.style.display === 'none' ? 0 : es.offsetHeight + 7, rest = room - secH;
   let row = false, lens = 0;
-  if (rest >= 190) { row = true; lens = rest - 99; } else if (rest >= 40) lens = rest;
+  // The row only when the engine's own close-up keeps 120 px under it: that
+  // one says the most about the engine, so it comes first.
+  if (rest >= 219) { row = true; lens = rest - 99; } else if (rest >= 40) lens = rest;
   $('gsHeadRow').style.display = row ? '' : 'none';
   $('gsLensWell').style.display = lens ? '' : 'none';
   if (lens) gsSetH('gsLens', lens - 2);

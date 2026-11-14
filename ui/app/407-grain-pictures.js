@@ -185,6 +185,8 @@ async function gsPcmLoad() {
   const mono = new Float32Array(buf.length), ch = buf.numberOfChannels;
   for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i] += d[i] / ch; }
   gsPicTake(mono, buf.sampleRate);
+  // The same samples colour the overview, measured as the Edit page measures them (411).
+  edTakeSound(file.path, buf.sampleRate, mono);
 }
 
 /// The transients to mark on the detail, and how their level is read against
