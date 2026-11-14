@@ -253,3 +253,25 @@ test('A, octave 4 is 440 Hz: at load, after the root is set again, after a prese
   expect(got.c4).toBeCloseTo(261.6256, 3);
   expect(got.key48).toBeCloseTo(440, 6);
 });
+
+test('a morph moves every switch at once: Atmosphere\'s, the Journey\'s and the Band\'s, as well as the knobs', async ({ page }) => {
+  await openSeq(page);
+  const got = await page.evaluate(() => {
+    // A preset whose switches all differ from the page's: Atmosphere on with
+    // Classic, oscillator A Glass, the Journey on over 64 bars, the drums on.
+    const st = getPresetState();
+    Object.assign(st.selects, { atModeSelect: 'both', atKindASelect: 'glass', jOnSelect: 'on', jLenSelect: '64', acDrumsOnSelect: 'on' });
+    const list = loadPresetsFromStorage();
+    list.push({ id: 'morph-test', name: 'Morph test', state: st });
+    savePresetsToStorage(list);
+    const before = ['atModeSelect', 'atKindASelect', 'jOnSelect', 'jLenSelect', 'acDrumsOnSelect'].map((id) => document.getElementById(id).value);
+    morphToPreset('morph-test');
+    const after = ['atModeSelect', 'atKindASelect', 'jOnSelect', 'jLenSelect', 'acDrumsOnSelect'].map((id) => document.getElementById(id).value);
+    return { before, after, atmosOn, journeyOn: J.on, bars: J.bars };
+  });
+  expect(got.before).toEqual(['classic', got.before[1], 'off', '32', 'off']);
+  expect(got.after).toEqual(['both', 'glass', 'on', '64', 'on']);
+  expect(got.atmosOn).toBe(true);
+  expect(got.journeyOn).toBe(true);
+  expect(got.bars).toBe(64);
+});

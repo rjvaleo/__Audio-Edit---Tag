@@ -2684,6 +2684,10 @@ function morphToPreset(id) {
     "lfo3TargetSelect",
     "delayTimeSelect",
     "tapeSpeedSelect",
+    // Atmosphere's and the Journey's switches too (MGL, 14 Nov 2026: they were
+    // missing here, so a morph moved their knobs and left their switches).
+    ...(typeof ATMOS_SELECT_IDS !== "undefined" ? ATMOS_SELECT_IDS : []),
+    ...(typeof JOURNEY_SELECT_IDS !== "undefined" ? JOURNEY_SELECT_IDS : []),
     // Accompany's switches move at once, as the others here do (accompany.js).
     ...(typeof ACCOMPANY_SELECT_IDS !== "undefined" ? ACCOMPANY_SELECT_IDS : []),
     ...(typeof BAND_SELECT_IDS !== "undefined" ? BAND_SELECT_IDS : []),
