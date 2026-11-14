@@ -159,9 +159,14 @@ function gsDrawOverview() {
   const ch = p.channels[0];
   let pk = 0.001;
   for (let i = 0; i < p.columns; i++) pk = Math.max(pk, Math.abs(ch.min[i]), Math.abs(ch.max[i]));
+  // In the sound's own colours, low to high as on the Edit page and Chop, once
+  // it has been measured; plain until then.
+  const lit = edSound.an && edSound.path === state.selectedFile?.path;
   c.fillStyle = `rgba(${cl.bloom},.3)`;
   for (let x = 0; x < w - 12; x++) {
     const i = Math.floor(x / (w - 12) * p.columns), m = Math.max(Math.abs(ch.min[i]), Math.abs(ch.max[i])) / pk * A;
+    const k = lit && edColourAt((x + 0.5) / (w - 12) * f.len * edSound.rate, true);
+    if (k) c.fillStyle = `rgba(${k[0] | 0},${k[1] | 0},${k[2] | 0},.9)`;
     c.fillRect(6 + x, mid - m, 1, m * 2);
   }
   c.font = `9px ${cl.mono}`;
@@ -240,32 +245,6 @@ function gsWireOverview() {
 function gsMoveCue(s) {
   const f = gsFile();
   if (f) setCue(Math.round(s * f.sr));
-}
-
-// ────────────────────────────────────────────────────────────────── the trace
-
-const GS_TR = { key: '', r: null };
-
-/// The thin white trace on top of the engine: the whole file's outline, the
-/// loop lit.
-function gsDrawTrace() {
-  const g = GS_CV.gsTrace, f = gsFile();
-  if (!g) return;
-  const { c, w, h } = g, cl = gsCl();
-  c.clearRect(0, 0, w, h);
-  if (!f || !state.overview) return;
-  const key = `${f.frames}|${state.selectedFile?.path}|${w}`;
-  if (GS_TR.key !== key || !GS_TR.r) { GS_TR.key = key; GS_TR.r = gsRidge(0, f.len, w - 12, false); }
-  const R = GS_TR.r, wc = h / 2, A0 = h / 2 - 5, ry = (u) => R[Math.min(R.length - 1, Math.floor(u * R.length))];
-  const X = (s) => 6 + s / f.len * (w - 12), { a, b } = gsLoop();
-  const top = wvPath((u) => [6 + u * (w - 12), wc - ry(u) * A0], R.length);
-  const bot = wvPath((u) => [6 + u * (w - 12), wc + ry(u) * A0], R.length);
-  c.strokeStyle = `rgba(${cl.bloom},.25)`; c.lineWidth = 1; c.stroke(bot);
-  wvUnder(c, top, 6, w - 6, wc, 6, cl, 0.18);
-  wvTrace(c, top, cl, 1.1, 0.6);
-  c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(0, 0, X(a), h); c.fillRect(X(b), 0, w - X(b), h);
-  c.fillStyle = cl.acc; c.fillRect(X(a) - 0.5, 2, 1, h - 4); c.fillRect(X(b) - 0.5, 2, 1, h - 4);
-  if (gsHeadLive()) { c.fillStyle = cl.t; c.fillRect(X(gsHead()) - 0.75, 2, 1.5, h - 4); }
 }
 
 function gsDrawMini() {

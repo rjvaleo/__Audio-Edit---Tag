@@ -55,6 +55,9 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 
 /* the page's own row */
 #grainView .gs-bar { flex: none; height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--gs-line); background: rgba(var(--black-rgb), .25); }
+/* The whole file across the top, above the engines: the loop and Start are set on it. */
+#grainView .gs-ov { flex: none; padding: 8px 14px 0; }
+#grainView .gs-ov .gs-well { height: 80px; }
 #grainView .gs-preset { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; min-width: 232px; flex: none; }
 #grainView .gs-preset .pn { flex: 1; font-weight: 600; color: var(--gs-t); white-space: nowrap; }
 #grainView .gs-preset .pt { font-size: var(--fs-s); color: var(--gs-t3); white-space: nowrap; }

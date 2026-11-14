@@ -199,6 +199,9 @@ function gsFxSetView(v) {
   const fx = v === 'fx';
   $('gsFxView').hidden = !fx;
   document.querySelector('#grainView .gs-view:not(.gs-fxview)').hidden = fx;
+  // The overview is the engine's: the loop is not set on the effects page,
+  // whose panels need the height.
+  document.querySelector('#grainView .gs-ov').hidden = fx;
   if (fx) gsFxBorrow();
   // The engine may have changed while its panel could not be measured.
   else { gsFxReturn(); gsSizeEngine(); }
