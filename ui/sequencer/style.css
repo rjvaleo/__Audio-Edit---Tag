@@ -991,3 +991,45 @@ body.compact .step { min-height: 0; padding: 3px 2px; gap: 1px; }
 body.compact .step-note { font-size: 13px; }
 body.compact .step-hz { display: none; }
 body.compact .step-mini-btn { font-size: 7px; padding: 1px 0; }
+
+/* ─── ATMOSPHERE: the second synth (atmos.js, ours) ─────────────────────── */
+.at-hidden { display: none; }
+.at-only { display: none !important; }
+body.atmos-mode .at-only { display: flex !important; }
+body.atmos-mode .synth-voice > .adsr-block:first-of-type,
+body.atmos-mode .synth-voice .select-row:has(#waveSelect),
+body.atmos-mode #pwGroup { display: none !important; }
+.at-switch { padding: 6px 20px; gap: 14px; }
+.at-grow { flex: 1; }
+.at-note { color: var(--text-dim); font-size: 10px; letter-spacing: 1px; }
+.at-seg { display: inline-flex; border: 1px solid var(--border); }
+.at-seg button, .at-starts button, .at-freeze {
+  background: var(--bg); color: var(--text-dim); border: 0; border-right: 1px solid var(--border);
+  font: 11px "Share Tech Mono", monospace; letter-spacing: 1.5px; padding: 4px 10px; cursor: pointer;
+}
+.at-seg button:last-child { border-right: 0; }
+.at-seg button.on, .at-freeze.on { color: var(--accent); background: var(--active); }
+.at-starts { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.at-starts button, .at-freeze { border: 1px solid var(--border); }
+.at-starts button:hover, .at-seg button:hover, .at-osc:hover { color: var(--text); }
+.at-row { align-items: flex-start; gap: 18px; }
+.at-knobs { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+.at-unused { opacity: .25; pointer-events: none; }
+.at-oscbox { display: flex; flex-direction: column; gap: 6px; flex: 1 1 420px; min-width: 380px; }
+.at-head { display: flex; align-items: baseline; gap: 10px; }
+.at-what { color: var(--text-dim); font-size: 10px; letter-spacing: 1px; }
+.at-oscs { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; }
+.at-osc { background: var(--bg); border: 1px solid var(--border); color: var(--text-dim); padding: 3px 2px 4px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 1px; font-family: "Share Tech Mono", monospace; min-width: 0; }
+.at-osc svg { width: 100%; height: 24px; }
+.at-osc svg path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.at-osc b { font-size: 10px; font-weight: 400; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.at-osc small { font-size: 8px; line-height: 1.1; text-align: center; }
+.at-osc.on { border-color: var(--accent); color: var(--accent); background: var(--active); }
+.at-osc.on b { color: var(--accent); }
+.at-macro { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 150px; padding-top: 18px; }
+.at-macro .knob { width: 64px; height: 64px; }
+.at-macro .knob-label { color: var(--accent2); letter-spacing: 2px; }
+.at-macro small { color: var(--text-dim); font-size: 9px; text-align: center; line-height: 1.3; }
+.at-amp { background: #0a0c0e; border: 1px solid #1e2830; height: 52px; }
+.at-space { gap: 16px; }

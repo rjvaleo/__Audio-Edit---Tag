@@ -336,3 +336,83 @@ A take notes where on the engine's clock it began (`startAt`), replays relative
 to it, and is sent to the host as lanes in engine seconds (`seq:take`) whenever
 it changes. The host's REC PERF arms this recorder too (`seq:arm`). See
 `docs/COMPOSE.md`, phase two.
+
+## The second synth: Atmosphere
+
+*13 Nov 2026.* RJ: "Make the synthesizer better with more atmosphere … add more
+controls, add some types of oscillators, be innovative … so I have two synths.
+We'll be able to switch between them, and they do the full scale sequencing with
+true tone, true pitch."
+
+**Ours, not the sequencer repository's.** `ui/sequencer/atmos.js` is the second
+file here that is ours (after `bridge.js`), served at `/sequencer/atmos.js`. It
+touches the vendored files in a few marked places: `initAudio` calls
+`atmosInit` last; `playNote` hands the note to `atmosPlay` while Atmosphere is
+on, and its filter envelope became `noteFilterEnv`, shared by both synths;
+`getLFOTargetParam` and `getLFOGainValue` ask `atmos.js` about targets they do
+not know; the preset, morph and Performance lists take its controls. Taking a
+newer sequencer now means carrying those over too.
+
+**The switch.** SYNTH: CLASSIC | ATMOSPHERE, above the synth. Classic is the
+synth as it was; it is the default, and nothing of Atmosphere runs while it is
+chosen. Root, octave, the filter, the LFOs, the delay and the steps are shared.
+
+**True pitch.** Every frequency is the one `getFreqForDegree` gives `playNote`,
+from the scale's cents, times a ratio the voice chooses; nothing is rounded to
+12-TET. Tested to a quarter of a cent on a Pythagorean degree.
+
+**Two oscillators, A and B, blended, each one of eight kinds:**
+
+| Kind | What it is | Its three knobs |
+|---|---|---|
+| Classic | the plain waves, with unison | Wave |
+| Supersaw | at least five detuned saws, spread | Spread |
+| Scale spectrum | additive; its partials move onto the scale's own intervals | Fit, Bright, Partials |
+| Choir | stacked saws with vibrato through three vowel formants | Vowel (ah eh ee oh oo), Voices, Breath |
+| Glass | modal: a strike and a bow of noise through six tuned resonators | Material (string → bar → bell), Ring, Strike |
+| Breath | noise tuned to the note and its octave | Focus, Grit |
+| Cloud | two random-phase waves a little apart, slowly trading places | Smear, Motion, Partials |
+| Endless | a Shepard stack of octaves under a bell, gliding by Rise | Rise, Spread |
+
+**Scale spectrum** is after Sethares, *Tuning, Timbre, Spectrum, Scale*: a
+sound's partials decide which intervals sound consonant, so a timbre whose
+partials sit on the scale's intervals makes that scale, maqam, just or
+microtonal, sound in tune with itself. Fit 0 is the harmonic series; Fit 100 %
+moves each harmonic to the nearest interval the scale has, in any octave. On
+Major Pentatonic the 7th harmonic (3369¢) moves to 3300¢: the test measures 69¢.
+
+**The voice.** Blend (equal power); Unison 1–9, Detune, Width, Drift (a slow
+wander shared by the note's oscillators); Sub (a sine an octave down); Air
+(noise above 3 kHz); **Hold**, how long a note rings as a share of its step,
+¼× to 4×, so notes overlap into a pad; Glide. The amp envelope runs to 10 s
+attack and 20 s release. At most 16 notes sound at once; past that the oldest
+fades in 30 ms.
+
+**After the voice.** Character: Warmth (a tanh shaper), Tape wow (a swept
+delay with flutter), Ensemble (three swept delays, left, centre, right).
+Sympathy: up to 24 resonators tuned to the scale's degrees (or root and fifth,
+or root) over three octaves, ringing along with whatever plays.
+
+**Space, for both synths.** The vendored cathedral reverb in `initAudio` is
+commented out by its author ("DISABLED — TODO: revisit gain staging and
+re-enable"), so the sequencer had no reverb. Space is a new one in `atmos.js`:
+a convolver on a generated impulse response (noise under an exponential decay,
+Size 0.4–15 s, the channels as far apart as Spread says), each channel scaled
+to unit energy so the level does not change with Size; then Damp, a limiter
+and Shimmer (two slow chorus lines). Wet starts at 0, so Classic sounds as it
+did until it is turned up. **Freeze** closes the input and lets the tail into a
+loop of a delay and four allpass filters with feedback 0.96: it holds the
+sound and fades about half a decibel a second, and cannot grow. (A lowpass's
+Q in Web Audio is in decibels: the loop's is −3 dB, flat. At +0.5 it grew.)
+
+**Atmosphere**, the big knob, moves Width, Drift, Hold, Air, Ensemble, and
+Space's Wet, Size and Shimmer together. **Start from** sets everything: Glass
+choir, Cathedral air, Scale bells, Dark drone, Endless rise, and Plain, which
+is Classic. Six LFO targets reach the voice through buses every note listens
+to: AT DETUNE, AT PAN, AT AIR, AT BLEND, AT VOWEL, AT FIT. A bus is joined to a
+note's nodes only while it sounds (`atLink`, `atCleanup`): joined for good, it
+would keep every finished note alive.
+
+The make-up gain of each kind (`AT_LEVEL`) was set from offline renders, so
+switching kinds keeps the level within 6 dB of Classic; the test holds it there.
+Tests: `tests/ui/sequencer-atmos.spec.mjs`.

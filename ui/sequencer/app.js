@@ -852,10 +852,21 @@ function initAudio() {
     lfo.osc.start();
     connectLFO(i);
   });
+
+  // The second synth's graph (atmos.js), on the same context.
+  if (typeof atmosInit === "function") atmosInit();
 }
 
 function playNote(freq, time) {
   if (!audioCtx) return;
+  // The second synth (atmos.js): its own voice, held for Hold × the step, through
+  // the same filter and its envelope.
+  if (typeof atmosOn !== "undefined" && atmosOn) {
+    const noteDur = atmosNoteDur((60 / bpm) * stepBeats);
+    atmosPlay(freq, time, noteDur);
+    noteFilterEnv(freq, time, noteDur);
+    return;
+  }
   const osc = audioCtx.createOscillator();
   const env = audioCtx.createGain();
   if (waveType === "pulse") {
@@ -879,7 +890,11 @@ function playNote(freq, time) {
   env.gain.linearRampToValueAtTime(0, time + noteDur + r);
   osc.start(time);
   osc.stop(time + noteDur + r + 0.05);
+  noteFilterEnv(freq, time, noteDur);
+}
 
+/// The filter's envelope and key follow for one note, for either synth.
+function noteFilterEnv(freq, time, noteDur) {
   // ── Filter ADSR + Key-Follow per note ──────────────────────────────────────
   // Key-follow: shift cutoff by semitones relative to KEY_FOLLOW_REF_MIDI
   // freq → approximate MIDI pitch
@@ -1254,7 +1269,8 @@ function getLFOTargetParam(target) {
     case "delay-wet":
       return delayWetGain?.gain;
     default:
-      return null;
+      // The second synth's own targets (atmos.js).
+      return typeof atmosLfoParam === "function" ? atmosLfoParam(target) : null;
   }
 }
 
@@ -1269,7 +1285,7 @@ function getLFOGainValue(lfo) {
     case "delay-wet":
       return lfo.depth * delayWet;
     default:
-      return 0;
+      return typeof atmosLfoGain === "function" ? atmosLfoGain(lfo) : 0;
   }
 }
 
@@ -2241,6 +2257,7 @@ function getPresetState() {
     "reverbDampSlider",
     "reverbShimmerSlider",
     "reverbSpreadSlider",
+    ...(typeof ATMOS_SLIDER_IDS !== "undefined" ? ATMOS_SLIDER_IDS : []),
   ];
   const selectIds = [
     "dirSelect",
@@ -2256,6 +2273,7 @@ function getPresetState() {
     "lfo3TargetSelect",
     "delayTimeSelect",
     "tapeSpeedSelect",
+    ...(typeof ATMOS_SELECT_IDS !== "undefined" ? ATMOS_SELECT_IDS : []),
   ];
   const state = {
     sliders: {},
@@ -2511,6 +2529,7 @@ function morphToPreset(id) {
     "reverbDampSlider",
     "reverbShimmerSlider",
     "reverbSpreadSlider",
+    ...(typeof ATMOS_SLIDER_IDS !== "undefined" ? ATMOS_SLIDER_IDS : []),
   ];
 
   // Snapshot start values
