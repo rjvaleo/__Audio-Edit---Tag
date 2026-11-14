@@ -1074,6 +1074,16 @@ async function flush() {
       // The host's Compose workspace: this page in a cell. The layout is the
       // page's own — see the COMPACT block at the end of style.css.
       document.body.classList.toggle('compact', !!m.on);
+    } else if (m.type === 'seq:only') {
+      // The host's Atmosphere page: this page with only Atmosphere on it, the
+      // same synth with the same settings as on Seq. The layout is the page's
+      // own — see the ONLY ATMOSPHERE block at the end of style.css. Arriving,
+      // the synth is at the top of the page whatever Seq was scrolled to.
+      const atmos = m.only === 'atmos';
+      document.body.classList.toggle('only-atmos', atmos);
+      if (atmos) document.querySelector('.right-panel')?.scrollTo(0, 0);
+      // Its envelope's picture is measured from its box, which has just moved.
+      if (typeof atmosDrawAmp === 'function') requestAnimationFrame(atmosDrawAmp);
     } else if (m.type === 'seq:want') {
       want = {
         bands: Math.max(8, Math.min(4096, m.bands | 0) || want.bands),

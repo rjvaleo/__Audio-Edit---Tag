@@ -59,10 +59,13 @@ test('Grain is still Grain: its dock, and no edit icons', async ({ page }) => {
     lit: document.querySelector('#leftRail .rl-item.rl-on')?.dataset.page,
     dock: getComputedStyle(document.getElementById('dock')).display,
     tools: getComputedStyle(document.getElementById('waveTools')).display,
+    side: getComputedStyle(document.getElementById('edSide')).display,
   }));
   expect(got.lit).toBe('grain');
   expect(got.dock).not.toBe('none');
   expect(got.tools).toBe('none');
+  // The bar down the right is the Edit page's only (RJ, 14 Nov 2026).
+  expect(got.side).toBe('none');
 });
 
 test('Chop is its own page in the rail: the dock with only Chop, and Grain gets its tab back', async ({ page }) => {
@@ -280,21 +283,42 @@ const ids = (page, sec) => page.$$eval(`#waveTools .wt-group[data-section="${sec
   (bs) => bs.map((b) => b.dataset.cmd));
 const titles = (page) => page.$$eval('#waveTools .wt-group[data-section] .wt-title', (ts) => ts.map((t) => t.textContent));
 
-test('one bar, no tabs: every section in a row, the words only while customizing', async ({ page }) => {
+test('one bar down the right, no tabs: every section under its title, the meters at its foot, the words only while customizing', async ({ page }) => {
   await openEdit(page);
   expect(await page.locator('#edTabs, .ed-tab').count()).toBe(0);
   expect(await titles(page)).toEqual(['History', 'Clipboard', 'Silence', 'Fades', 'Level', 'Process', 'Repair', 'Measure', 'Markers', 'Zoom', 'Snap', 'Display', 'Show', 'Export']);
   // The Selection commands start hidden: their keys and the menus do them.
   expect(await page.evaluate(() => wtLayout.hidden)).toEqual(['selectAll', 'deselect', 'setSelection', 'goTo']);
-  // One row of small icons on a window as wide as RJ's screen; a narrower one
-  // wraps whole groups.
-  await page.setViewportSize({ width: 2200, height: 1200 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForTimeout(200);
-  const rows = await page.$$eval('#waveTools .wt-btn[data-cmd]', (bs) => new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top))).size);
-  expect(rows).toBe(1);
+  const at = await page.evaluate(() => {
+    const r = (id) => document.getElementById(id).getBoundingClientRect();
+    const side = r('edSide'), lane = r('lane'), centre = document.querySelector('.centre').getBoundingClientRect();
+    return {
+      inSide: document.getElementById('waveTools').parentElement.id, meters: document.getElementById('edMeters').parentElement.id,
+      metersLast: document.getElementById('edSide').lastElementChild.id,
+      right: side.left >= lane.right, top: side.top - centre.top, bottom: centre.bottom - side.bottom,
+      metersFoot: Math.abs(side.bottom - r('edMeters').bottom) < 1.5, metersShown: r('edMeters').width > 0,
+      lane: lane.width, width: side.width,
+      // The file tabs and ⌘K stay along the top; the tools are not there.
+      topTools: document.querySelectorAll('#editTools .wt-btn').length,
+    };
+  });
+  expect(at).toMatchObject({ inSide: 'edSide', meters: 'edSide', metersLast: 'edMeters', right: true, metersFoot: true, metersShown: true, topTools: 0 });
+  // The whole height of the centre, bar a margin.
+  expect(at.top).toBeLessThanOrEqual(12);
+  expect(at.bottom).toBeLessThanOrEqual(12);
+  expect(at.width).toBeGreaterThanOrEqual(180);
+  expect(at.width).toBeLessThanOrEqual(240);
+  // It must not squeeze the wave.
+  expect(at.lane).toBeGreaterThan(600);
+  // Small icons in a grid: several to a row.
   const box = await page.locator('#waveTools [data-cmd="cut"]').boundingBox();
   expect(box.height).toBeLessThanOrEqual(32);
-  expect(await page.isVisible('#waveTools .wt-title')).toBe(false);
+  const clip = await secAt(page, 'Clipboard');
+  const rows = await page.$$eval(`#waveTools .wt-group[data-section="${clip}"] .wt-btn[data-cmd]`, (bs) => new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top))).size);
+  expect(rows).toBe(2);
+  expect(await page.isVisible('#waveTools .wt-title')).toBe(true);
   expect(await page.isVisible('#waveTools [data-cmd="cut"] .wt-word')).toBe(false);
   await page.click('#waveTools .wtEdit');
   const wordless = await page.$$eval('#waveTools .wt-group[data-section] .wt-btn[data-cmd]', (bs) => bs

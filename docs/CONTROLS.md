@@ -52,12 +52,21 @@ zoom readout changes to `n smp` to tell you that is what you are looking at.
 
 ## The overview strip
 
-The whole file, above the lane, with the zoomed window marked on it.
+The whole file, under the Now Playing bar on every page but Browse and Theme
+(`ui/app/416-page-overview.js`; `docs/EDIT-PAGE.md`), with the lane's zoomed
+window marked on it as a box.
 
 | Gesture | What it does |
 |---|---|
-| **Click** | Moves the zoomed window so it is centred there. |
-| **Drag** | Pans the zoomed window continuously. |
+| **Drag a bracket** | Moves that end of the loop. |
+| **Drag across** | A new loop, with Start at its beginning. |
+| **Click**, or **drag the green flag** | Moves Start. |
+| **⌥-drag** | Scrubs; the loop and Start stay. |
+| **Click a region's strip** | Selects that region. |
+| **Drag inside the box** | Pans the lane's zoomed window (on Chop, Chop's detail). |
+| **Wheel** | Zooms round the pointer; **⇧-wheel** or a sideways wheel pans. −, + and Fit at its right end. |
+| **Double-click** | The whole file; on Chop, the whole sound in Chop's detail. |
+| **Drag the grip** along its bottom | Its height, 48 to 240 px, kept; double-click the grip for 72 px. |
 | **Right-click** | The Edit menu, same as the lane. |
 
 ## The ruler and region strip

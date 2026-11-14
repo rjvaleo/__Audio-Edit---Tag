@@ -271,6 +271,10 @@ body.classic-off .syn-classic .meta::after { content: " · off"; }
 .at-starts { display: flex; gap: 4px; flex: none; }
 .at-starts .btn { height: 24px; font-size: 11px; padding: 0 8px; }
 .at-hidden { display: none; }
+/* The Atmosphere page's own, in the bar: shown only there (ONLY ATMOSPHERE). */
+.at-turn-on, .at-with { display: none; }
+.at-with .power { width: 16px; height: 16px; }
+.at-with .power::after { inset: 4px; }
 .at-only { display: none !important; }
 body.atmos-mode .at-only { display: grid !important; }
 .at-body { display: flex; flex-direction: column; gap: 8px; }
@@ -628,3 +632,54 @@ body.compact .step { padding: 3px 2px; gap: 1px; }
 body.compact .step-note { font-size: 14px; }
 body.compact .step-hz { display: none; }
 body.compact .step-mini-btn { height: 16px; font-size: 7px; }
+
+/* ─── ONLY ATMOSPHERE ─────────────────────────────────────────────────────────
+   This page as the host's Atmosphere page: the second synth on its own, the
+   same synth with the same settings the steps play, since it is this page and
+   not a copy. Its bar, oscillators A and B with their scopes, the big knob,
+   Voice, Amp, Character and Sympathy; Space, which is its reverb; and the
+   OUTPUT scope. Everything else is the Seq page's and hidden here. Of the
+   transport, Play, Stop, the tempo and where it is stay, so it can be heard
+   from here; the host's transport runs it as well.
+   Off, Atmosphere's panels are shown dimmed rather than folded away, and the
+   bar says so and turns it on (`#atTurnOn`). On, the bar carries Classic's
+   power (`#atWithClassic`), whose own panel is not on this page.
+   Switched on by the host with `seq:only`; see `bridge.js`. */
+body.only-atmos .page { padding: 10px 14px 12px; gap: 8px; }
+body.only-atmos .header,
+body.only-atmos .transport .divider,
+body.only-atmos .transport .field,
+body.only-atmos .transport .knob-group:has(#stepsSlider),
+body.only-atmos .preset-group,
+body.only-atmos .scale-panel,
+body.only-atmos .r1,
+body.only-atmos .r2,
+body.only-atmos .fx-delay,
+body.only-atmos .scale-display,
+body.only-atmos .journey,
+body.only-atmos .accompany,
+body.only-atmos .seq-panel,
+body.only-atmos .perf-panel,
+body.only-atmos .keyboard-panel { display: none !important; }
+body.only-atmos .transport { padding: 5px 12px; }
+body.only-atmos .main { grid-template-columns: minmax(0, 1fr); }
+/* The synth across the top; Space and the output side by side under it. */
+body.only-atmos .right-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-content: start;
+  gap: 10px;
+}
+body.only-atmos .at-group { grid-column: 1 / -1; gap: 10px; }
+body.only-atmos .at-body { gap: 10px; }
+body.only-atmos .r3 { grid-template-columns: minmax(0, 1fr); }
+body.only-atmos .at-only { display: grid !important; }
+body.only-atmos:not(.atmos-mode) .at-body,
+body.only-atmos:not(.atmos-mode) .fx-space { opacity: 0.45; }
+body.only-atmos:not(.atmos-mode) .at-turn-on { display: inline-flex; color: var(--on); border-color: color-mix(in srgb, var(--on) 55%, var(--look-line)); }
+body.only-atmos.atmos-mode .at-with { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+/* Big and clear: the scopes grow with the page, the cards with them. */
+body.only-atmos .at-osc svg { height: 32px; }
+body.only-atmos .at-osc-row .scope-osc { height: clamp(72px, 15vh, 170px); }
+/* The output fills the height Space gives the row, so neither panel has a gap. */
+body.only-atmos .scope-out .scope { height: auto; flex: 1; min-height: 56px; }

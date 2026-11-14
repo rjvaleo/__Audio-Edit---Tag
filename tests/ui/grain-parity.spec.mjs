@@ -316,8 +316,8 @@ test('⌥-drag scrubs and leaves Start alone; a region\'s strip selects it', asy
   });
   const posts = [];
   page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/api/engine/transport')) posts.push(r.postDataJSON()); });
-  const box = await page.locator('#gsSrcPic').boundingBox();
-  const s = await page.evaluate(() => GS.scale);
+  // The overview every page shares (416): not scaled with the page.
+  const box = await page.locator('#poCanvas').boundingBox();
   const cue = await page.evaluate(() => state.cue);
   await page.keyboard.down('Alt');
   await page.mouse.move(box.x + box.width * 0.5, box.y + 30);
@@ -331,7 +331,7 @@ test('⌥-drag scrubs and leaves Start alone; a region\'s strip selects it', asy
   expect(await page.evaluate(() => state.sel)).toBeNull();
 
   // The strip along the bottom of the wave.
-  const y = box.y + (84 - 13 - 4) * s;
+  const y = box.y + box.height - 13 - 4;
   await page.mouse.click(box.x + box.width * 0.55, y);
   await page.waitForTimeout(100);
   const sel = await page.evaluate(() => [state.sel?.start, state.sel?.end, Math.round(gsFile().frames * 0.4), Math.round(gsFile().frames * 0.7)]);

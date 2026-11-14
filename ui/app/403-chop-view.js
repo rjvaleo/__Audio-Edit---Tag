@@ -98,11 +98,16 @@ function chopSizeCanvas(c) {
 
 /// The look's colours, for what is drawn on a canvas. Read again when the theme
 /// changes (`chopRestyle`).
-const chopTok = { wave: '#fff', bloom: '205,225,255', t: '#e8eaee', t2: '#b9bec6', t3: '#858b94', glow: 1, ui: 'sans-serif' };
+const chopTok = { wave: '#fff', bloom: '205,225,255', t: '#e8eaee', t2: '#b9bec6', t3: '#858b94', acc: '#ffb547', glow: 1, ui: 'sans-serif' };
 function chopReadLook() {
   const b = getComputedStyle(document.querySelector('.chop-app')), v = (k) => b.getPropertyValue(k).trim();
-  Object.assign(chopTok, { wave: v('--wave'), bloom: v('--bloom'), t: v('--t'), t2: v('--t2'), t3: v('--t3'), glow: +v('--glow') || 1, ui: v('--ui') });
+  Object.assign(chopTok, { wave: v('--wave'), bloom: v('--bloom'), t: v('--t'), t2: v('--t2'), t3: v('--t3'), acc: v('--acc'), glow: +v('--glow') || 1, ui: v('--ui') });
 }
+
+/// The page's pixels in one of the screen's. The page is scaled whole
+/// (`chopFit`), so a cut drawn this many pixels wide per screen pixel stays as
+/// wide on screen at every size of the window.
+let chopPxPer = 1;
 const chopGlow = (a) => `rgba(${chopTok.bloom},${(a * Math.min(1, chopTok.glow)).toFixed(2)})`;
 
 function chopPeaks(w, a0, b0) {
@@ -189,9 +194,24 @@ function chopDrawWave() {
 function chopDrawOverview() {
   const { c, w, h } = chopSizeCanvas($('chopOverview')), fx = (f) => f / chop.len * w;
   chopColumns(c, chopPeaks(w, 0, chop.len), w, h / 2, h * 0.42, 0, chop.len, 0.85);
-  c.fillStyle = 'rgba(255,255,255,.35)';
-  let last = -9;
-  for (const s of chop.slices) { const l = fx(s.s); if (l - last >= 3) { c.fillRect(l, h - 4, 1, 4); last = l; } }
+  // Every cut, the full height, 1.5 screen pixels wide. A cut closer to the
+  // last one drawn than a line and a gap runs that line on over it, so a
+  // packed stretch shows as a thicker mark, not as nothing.
+  const lw = 1.5 * chopPxPer, gap = lw + chopPxPer, mark = (a, b) => c.fillRect(a - lw / 2, 0, b - a + lw, h);
+  c.fillStyle = chopTok.t;
+  c.globalAlpha = 0.9;
+  let a = -Infinity, b = -Infinity;
+  for (const s of chop.slices) {
+    const l = fx(s.s);
+    if (l - a < gap) { b = l; continue; }
+    if (a > -Infinity) mark(a, b);
+    a = b = l;
+  }
+  if (a > -Infinity) mark(a, b);
+  c.globalAlpha = 1;
+  // The picked and the current one in the accent, over the rest.
+  c.fillStyle = chopTok.acc;
+  chop.slices.forEach((s, i) => { if (i === chop.current || chop.sel.has(i)) mark(fx(s.s), fx(s.s)); });
   const { s: S, e: E } = chop.region;
   c.fillStyle = 'rgba(0,0,0,.62)'; c.fillRect(0, 0, fx(S), h); c.fillRect(fx(E), 0, w - fx(E), h);
   c.strokeStyle = chopTok.wave; c.lineWidth = 1;
@@ -237,7 +257,7 @@ function chopLegend() {
 // ticks along the bottom, the threshold in Silence mode, and the playhead.
 
 let chopLayer = null;
-const CHOP_MIN_PX = 4;    // the closest two drawn cuts may sit on the lane
+const CHOP_MIN_PX = 3;    // the closest two drawn cuts may sit, in screen pixels: a line and a gap
 const CHOP_TAG_PX = 7;    // the narrowest slice that shows its number
 function chopLaneFrame(clientX) {
   const r = $('chopLane').getBoundingClientRect();
@@ -282,22 +302,31 @@ function chopPaintLane() {
     }
   }
 
-  // Zoomed out on many slices they would be several to a pixel and bury the
-  // waveform, so a slice is drawn only CHOP_MIN_PX clear of the last one drawn
-  // (the current and picked ones always). Numbers sit on two staggered rows, so
-  // nearly every slice can carry one. The hairlines fade further when packed.
+  // Zoomed out on many slices they would be several to a pixel, so a slice is
+  // drawn only when its cut is CHOP_MIN_PX clear of the last one drawn (the
+  // current and picked ones always), where two lines would truly run into each
+  // other. The one drawn stands for those it skipped: its line runs on over
+  // them (--chop-span), so a packed stretch is a thicker mark, never a gap.
+  // Every line is solid, however many there are (RJ, 14 Nov 2026: "I can't
+  // see them"). Numbers sit on two staggered rows, so nearly every slice can
+  // carry one.
   const laneW = $('chopLane').clientWidth || 1;
-  const px = (f) => chopXOf(f) * laneW;
-  const shown = chop.slices.filter((x) => x.e >= chopView.a && x.s <= chopView.b).length;
-  $('chopLane').style.setProperty('--chop-dense', Math.max(0.25, Math.min(1, (laneW / Math.max(1, shown)) / 12)).toFixed(2));
+  const px = (f) => chopXOf(f) * laneW, minPx = CHOP_MIN_PX * chopPxPer;
+  const drawn = [];
   let lastPx = -Infinity;
-  const lastTag = [-Infinity, -Infinity];
   chop.slices.forEach((x, i) => {
     if (x.e < chopView.a || x.s > chopView.b) return;
-    const keep = i === chop.current || chop.sel.has(i);
     const at = px(x.s);
-    if (!keep && at - lastPx < CHOP_MIN_PX) return;
+    if (i !== chop.current && !chop.sel.has(i) && at - lastPx < minPx && drawn.length) {
+      drawn[drawn.length - 1][1] = at - lastPx;
+      return;
+    }
     lastPx = at;
+    drawn.push([i, 0]);
+  });
+  const lastTag = [-Infinity, -Infinity];
+  drawn.forEach(([i, span]) => {
+    const x = chop.slices[i], keep = i === chop.current || chop.sel.has(i), at = px(x.s);
     const col = chopKindColour(x);
     const cls = ['chop-slice', i % 2 ? 'odd' : '', i === chop.current && 'current', chop.sel.has(i) && 'picked', x.muted && 'muted', x.rev && 'rev'].filter(Boolean).join(' ');
     const row = i % 2, text = `${i + 1}${x.rev ? '◄' : ''}`, tagW = text.length * 6 + 6;
@@ -308,7 +337,7 @@ function chopPaintLane() {
     }
     parts.push(`<div class="${cls}" data-i="${i}" style="left:${pct(x.s)};width:calc(${pct(x.e)} - ${pct(x.s)});color:${col}">`
       + `<i class="chop-wash"></i>${tag}`
-      + `<i class="chop-edge" data-i="${i}" data-side="s"></i>`
+      + `<i class="chop-edge" data-i="${i}" data-side="s"${span ? ` style="--chop-span:${span.toFixed(1)}px"` : ''}></i>`
       + (chopContig() ? '' : `<i class="chop-edge end" data-i="${i}" data-side="e"></i>`)
       + '</div>');
   });
@@ -327,9 +356,11 @@ function chopPaintLane() {
   chop.slices.forEach((x, i) => {
     if (x.s < from || x.s > to) return;
     const at = px(x.s), keep = i === chop.current || chop.sel.has(i);
-    if (!keep && at - lastCut < CHOP_MIN_PX) return;
+    if (!keep && at - lastCut < minPx) return;
     lastCut = at;
-    ruler += `<i class="chop-cut${x.locked ? ' locked' : ''}" data-i="${i}" style="left:${pct(x.s)};color:${keep ? 'var(--acc)' : chopKindColour(x)}" title="Cut ${i + 1}${x.locked ? ' (locked)' : ''}: drag to move, drag off the ruler to delete"></i>`;
+    // The handle is the line's own colour, not the slice's Kind: a Quiet
+    // slice's grey was lost on the ruler.
+    ruler += `<i class="chop-cut${x.locked ? ' locked' : ''}" data-i="${i}" style="left:${pct(x.s)};color:${keep ? 'var(--acc)' : 'var(--t)'}" title="Cut ${i + 1}${x.locked ? ' (locked)' : ''}: drag to move, drag off the ruler to delete"></i>`;
   });
   ruler += `<span class="chop-flag s" data-flag="s" style="left:${pct(S)}">S</span><span class="chop-flag e" data-flag="e" style="left:${pct(E)}">E</span>`;
   ruler += '</div>';

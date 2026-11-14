@@ -75,13 +75,14 @@ test('a slot on the pad: grabbing it takes a Loop take of the slot\'s two contro
   await page.locator('#hsStop').click();
   const take = await page.evaluate(() => window.hyperStretch.take(0));
   expect(take.pts.length).toBeGreaterThan(2);
-  // The slot's two controls are where the pad left them, linear between the limits.
+  // The slot's two controls are where the pad left them: linear between the
+  // limits for a linear control, logarithmic for a log one (hsValue).
   const got = await page.evaluate(() => {
     const p = prismSetup();
     const slot = prismDeck.rack.slots.find((s) => s.id === 'm1');
     const h = window.hyperStretch.hand();
     return { x: slot.params[p.x], y: slot.params[p.y],
-      wantX: p.xLo + h.x * (p.xHi - p.xLo), wantY: p.yLo + (1 - h.y) * (p.yHi - p.yLo) };
+      wantX: hsValue('x', h.x), wantY: hsValue('y', h.y) };
   });
   // Within a step: a stepped control lands on its steps.
   expect(Math.abs(got.x - got.wantX)).toBeLessThanOrEqual(1);
