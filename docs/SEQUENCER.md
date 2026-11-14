@@ -499,3 +499,37 @@ keeps pulling them. Each frame draws three periods of the note last played from
 a rising zero crossing, scaled to fill its well. Silent, a scope keeps what it
 last showed, dimmed ("last heard"); before anything has played, Classic's and
 the simple kinds' show the shape they are set to ("as set").
+
+## The Atmosphere page
+
+*14 Nov 2026.* RJ: "Where is the [Atmosphere] synth as a separate unit? … I
+don't see where the atmosphere synth is separate." **Atmosphere** on the rail,
+after Seq, is that synth on a page of its own.
+
+- **One frame, not two.** The page is `#seqView`, the same frame as Seq, told by
+  the host to show only Atmosphere (`seqOnly('atmos')` in
+  `210-sequencer-frame.js`, the `seq:only` message, `body.only-atmos` in the
+  page). A second frame would be a second sequencer with its own audio context
+  and its own settings; this way a knob turned on either page is the same knob,
+  and the steps on Seq are what Atmosphere plays. The host remembers it, as it
+  does compact, and says it again when the frame reloads (`seq:ready`).
+- **What is on it** (the ONLY ATMOSPHERE block at the end of `style.css`):
+  Atmosphere's bar with its power and Start from; OSC A and B with their
+  scopes, grown with the page; the big knob; Voice, Amp, Character, Sympathy;
+  Space, which is its reverb; the OUTPUT scope. Of the page's own transport,
+  Play, Stop, BPM and the position stay; the host's transport runs it too. The
+  scale library, Classic and the filter, the LFOs, the delay, tuning, the
+  Journey, the steps, Performance and the keys are Seq's and are hidden here.
+  The filter, the LFOs and the delay still act on Atmosphere; they are set on
+  Seq.
+- **Off, it says so.** Atmosphere is off until it is turned on (Classic alone is
+  the default). On this page its panels then show dimmed rather than folding
+  away, and the bar offers **Turn Atmosphere on** (`#atTurnOn`), which turns it
+  on alongside Classic. Entering the page does not turn it on by itself: that
+  would change what Seq plays without anyone asking. Classic's panel is not on
+  this page, so while Atmosphere is on the bar carries Classic's power as
+  **Classic too** (`#atWithClassic`): off, the steps play Atmosphere alone.
+- **The rest of the app** treats it as Seq: it plays the open document with
+  the sequencer (`playsDocument`), so moving between Seq and Atmosphere leaves
+  the transport playing; the library is a drawer; the sound's overview strip is
+  hidden, as on Wave (`body.atmospage #overview`).

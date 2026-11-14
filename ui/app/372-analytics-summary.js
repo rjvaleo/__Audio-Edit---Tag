@@ -7,7 +7,7 @@
    the idle threshold. That is what "active time" means here: a gap longer than
    a minute is a minute of use and the rest is idle, whatever the reason. */
 
-const AN_PAGE_NAMES = { overview: 'Browse', edit: 'Edit', room: 'Room', seq: 'Seq', compose: 'Compose', theme: 'Theme', analytics: 'Analytics' };
+const AN_PAGE_NAMES = { overview: 'Browse', edit: 'Edit', room: 'Room', seq: 'Seq', atmos: 'Atmosphere', compose: 'Compose', theme: 'Theme', analytics: 'Analytics' };
 const AN_USES = new Set(['ctl', 'toggle', 'seg', 'field', 'click', 'menu', 'key', 'view', 'dock']);
 
 function anPageName(m) {
