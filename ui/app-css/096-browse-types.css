@@ -59,7 +59,7 @@ body.browsetypes #statsView .stats-tags { grid-template-columns: repeat(auto-fit
 
 .bt-sort { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-m); background: var(--bg); align-self: center; }
 .bt-sort button {
-  height: 20px; padding: 0 8px; border: 0; border-radius: var(--r-s); background: none;
+  height: var(--h-s); padding: 0 8px; border: 0; border-radius: var(--r-s); background: none;
   color: var(--text-dimmer); font: inherit; font-size: var(--fs-s); cursor: pointer;
 }
 .bt-sort button.on { color: var(--on); background: var(--surface-3); }
