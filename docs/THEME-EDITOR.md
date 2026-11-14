@@ -1,23 +1,95 @@
 # The theme editor
 
-Written 17 Aug 2026, when it was built.
+Written 17 Aug 2026, when it was built. A page of its own since 13 Nov 2026.
 
-A miniature of the interface in the theme panel, three colour pickers, and every
-change on screen as you make it.
+## The Theme page
 
-## Why a miniature and not the page
+Theme is a page, opened from the left rail like Edit, Grain, Chop, Wave,
+Visual and Seq (mode `theme`, `body.themepage`, `#themeView`). It was a pane in
+the library's column, 330 px wide, with a small miniature and paragraphs of
+explanation; the mock-up RJ approved on 13 Nov 2026
+(`page-mockups/theme.html`) made it a page:
+
+- **Left: the palettes**, as cards — the swatch row large enough to judge, sorted
+  dark to light as the engine reads it, the name, and one tag: *wearing*,
+  *editing*, *built in* or *yours*. A filter and **+ New** above; under them the
+  quick way in, a row of pasted colours and **Add**.
+- **Middle: the preview**, built from today's parts (below). A switch picks
+  which page it shows: Grain, Chop or Wave.
+- **Right: the editor** — the palette's name, **Wear it**, **Duplicate** and
+  **Delete**; its colours dark to light; the waveform's colour; and the Look.
+  The derived tokens are folded away at the foot.
+- **Across the top**: what is worn and what is open, a switch for how it is
+  worn (*Palettes*, *Plain surfaces*, *No theme*), and **Import JSON** and
+  **Copy JSON**.
+
+The explanations that used to sit between the controls are tooltips now, and
+this document. The behaviour is the same as the pane's except for one thing,
+below: a click on a card no longer wears it.
+
+The page lives in three files: `330-theme.js` (the cards, wearing, the
+waveform colour), `355-theme-page.js` (the preview and the Look) and
+`360-theme-editor.js` (the editor). Its stylesheet is the Theme page's section
+of `ui/app-css/050-theme-room.css`.
+
+**`355` comes before `360` on purpose.** `tsWire`, at the end of the editor,
+paints the preview while the page loads; a `const` declared in a later file is
+still in its dead zone then, and reading it throws and takes the rest of
+`app.js` with it.
+
+## The preview, and why not the page
 
 The page is already right there, so previewing on it would seem simpler. It is
 not: judging a theme means moving a colour back and forth, and a control that
 repaints the whole interface on every pointer move makes the thing you are
-judging jump under your hand. The miniature holds still, shows the parts a theme
-actually changes — rail, panel, buttons, sliders, the four text steps, a lane —
-and the real page only changes when you say so.
+judging jump under your hand. The preview holds still, and the real page only
+changes when you say so.
 
-It is **real DOM using the app's own classes**, not a picture. A screenshot goes
-stale the moment anything is restyled; a miniature built from `.cpanel`,
-`.ghost`, `.seg-btn` and the rest is repainted by the same stylesheet as the
-thing it stands for, so it cannot drift.
+It is **real DOM using the app's own parts**, not a picture: the shared bar
+(`uiBar`), knob (`uiKnob`), switch (`uiSeg`) and preset bar (`pbarMake`), the
+panels and wells, a Now Playing strip, a waveform in the palette's own colour,
+and the four text steps. A screenshot goes stale the moment anything is
+restyled; these are repainted by the same stylesheet as the pages, so the
+preview cannot drift from them. They move, too — the preview keeps its own
+values, so turning a knob shows how it looks moving without touching a sound.
+
+It replaced a miniature of the shell's Cut/Crop/Export bar, which showed parts
+the pages no longer use.
+
+It shows **Grain, Chop and Wave**, not Edit and Seq as the mock-up's switch
+did: those three are the pages a theme reaches through the look (`--look-*`).
+The Edit page and the Now Playing bar take their colours from the Look alone
+(`--m-*` on `:root[data-mgl-look]`), and Seq has its own palette, so a preview
+of either in a palette would show something wearing it does not do.
+
+The same is true, strictly, of the preview's **Now Playing strip**: it is
+painted in the palette, as the mock-up drew it, while the real bar follows only
+the Look.
+
+**The preview starts from the stylesheet, not from what is worn.** A palette
+that states only some tokens — a Look states only the look — is laid over the
+interface's own values (`themeDefaults`, read once before any theme is put on),
+so the preview shows what the palette will look like when worn, not that
+palette mixed with the one you happen to be wearing.
+
+## A click previews; Wear it wears
+
+From 17 Aug to 13 Nov 2026 a click on a palette wore it, on the argument that
+the pane sat inside the thing being themed and looking at the app in a theme
+was the whole reason to click one. The page has a preview large enough to
+judge by, and the approved mock-up says it plainly — *nothing changes until
+Wear*. So a click opens the palette in the editor and paints the preview, and
+**Wear it** puts it on. A double-click on a card does both.
+
+## The Look
+
+Grain's five Looks — Graphite + Acrylic, Graphite, Glass, Ceramic, Acrylic —
+became themes on 11 Nov 2026 (`LOOK_THEMES` in `theme-palettes.js`). They are
+in the editor as five tiles, each in its own surfaces and material, and
+choosing one is the Now Playing bar's own choice (`nbSetLook`, then
+`themeWearLook`), so the bar, `mglLook`, `data-mgl-look` and the theme never
+disagree. A Look is still a theme, as before: choosing one wears it and opens
+it in the editor.
 
 ## The tokens go on a container, not on `:root`
 
@@ -53,24 +125,20 @@ the surfaces and its light ones become the text. Lightness itself is still the
 engine's, which is what keeps contrast legible whatever the card holds. See
 [STATE.md](STATE.md) §7.
 
-- A filterable **list**, with the shipped palettes marked *built in* and the one
-  in use marked *applied*.
-- **Name**, and **N colours** — each a colour well *and* a hex field. Both,
+- The **cards**, filterable, with the shipped palettes marked *built in*.
+- **Name**, and **N colours** — each a colour well *and* a hex field, and what
+  the engine makes of it: *surfaces*, *text* or *accent*. Both a well and a hex,
   deliberately: the well is how a colour is chosen, the hex is how one arrives
-  from a style guide. Add and remove them freely.
-- **Apply**, **Duplicate**, **Delete**. A built-in can be previewed and
+  from a style guide. Add and remove them freely. The rows are sorted dark to
+  light when they are built and again when a colour is committed, never while
+  one is being dragged (see below).
+- **Wear it**, **Duplicate**, **Delete**. A built-in can be previewed and
   duplicated but never edited or deleted, so a palette someone has built on can
   never be pulled out from under them.
 - **Copy JSON** and **Import JSON**, so a palette can leave and come back.
-- A **token inspector** — every derived value with its chip. Sixty rows is a
-  reference rather than a control, but when a theme looks wrong this is where
-  the reason is.
-
-**Clicking a palette wears it.** The studio this came from is an admin screen
-with the application somewhere else, so there a click opened a palette without
-applying it. Here the panel sits inside the thing being themed and looking at
-the app in a theme is the entire reason to click one. It opens in the editor at
-the same time.
+- A **token inspector** — every derived value with its chip, folded away. Sixty
+  rows is a reference rather than a control, but when a theme looks wrong this
+  is where the reason is.
 
 ## The waveform belongs to the palette
 
@@ -84,7 +152,7 @@ look rather than the chrome half of one.
 Each palette holds its own; wearing a palette brings its waveform with it.
 Without one, the standing choice stands.
 
-## What a theme still may not touch## What a theme still may not touch
+## What a theme still may not touch
 
 `--good`, `--warn` and `--bad` carry meaning rather than style. `--wave` and
 `--wave-2` belong to the sound, not the chrome. Lines and shadows are
@@ -106,8 +174,11 @@ every keystroke.
 while it has focus. The swatches never learned it.
 
 They update in place now, and rebuild only when the *shape* changes: a different
-number of colours, or read-only flipping. Nothing is written into an element that
-has focus.
+palette, a different number of colours, or read-only flipping — and, since the
+rows are sorted dark to light, when a colour is committed (`change`, which
+fires once the system's panel has closed). Each row remembers which colour it
+holds (`data-i`), so a drag never reorders the rows under the pointer. Nothing
+is written into an element that has focus.
 
 ### The value was never the broken part
 

@@ -60,8 +60,8 @@ test('Chop\'s Looks are on the Theme page, and its own switch is gone', async ({
   await expect(page.locator('#chopLook')).toHaveCount(0);
   const names = await page.evaluate(() => allPalettes().filter((p) => p.look).map((p) => `${p.look} ${p.name}`));
   expect(names).toEqual(['AD Graphite + Acrylic', 'A Graphite', 'B Glass', 'C Ceramic', 'D Acrylic']);
-  await page.evaluate(() => showPane('left', 'theme'));
-  await expect(page.locator('#themeList .theme-row', { hasText: 'Ceramic' })).toHaveCount(1);
+  await page.evaluate(() => setMode('theme'));
+  await expect(page.locator('#themeList .theme-card', { hasText: 'Ceramic' })).toHaveCount(1);
 });
 
 test('whoever had picked a Look gets its theme, once', async ({ page }) => {

@@ -17,11 +17,8 @@ import { test, expect } from './test.mjs';
 async function studio(page) {
   await page.goto('/');
   await page.waitForFunction(() => typeof state !== 'undefined', { timeout: 20_000 });
-  await page.evaluate(() => {
-    const rail = [...document.querySelectorAll('.rail *')]
-      .find((e) => e.textContent.trim() === 'Theme');
-    rail?.click();
-  });
+  // A page of its own since 13 Nov 2026, opened from the rail like the others.
+  await page.click('#leftRail .rl-item[data-mode="theme"]');
   await page.waitForTimeout(300);
   // Whatever a previous test left behind — these share one browser.
   await page.evaluate(() => {
@@ -147,13 +144,13 @@ test('an unreadable hex leaves the palette alone', async ({ page }) => {
   expect(out.final).toBe('#7d3fbf');
 });
 
-/// Clicking a palette shows it — on the real application, not a swatch.
+/// Clicking a palette opens it; Wear it puts it on.
 ///
-/// The studio this was ported from is an admin screen with the application
-/// somewhere else, so there a click opened a palette without wearing it. Here
-/// the panel is inside the thing being themed, and looking at the app in a
-/// theme is the entire reason to click one. It opens in the editor as well.
-test('clicking a palette wears it and opens it', async ({ page }) => {
+/// While the studio was a narrow pane beside the page, looking at the app in a
+/// theme meant wearing it, so a click did. The page has a large preview of its
+/// own now (13 Nov 2026), and the mock-up RJ approved says nothing changes until
+/// Wear: a click opens the palette and paints the preview, and leaves the page.
+test('clicking a palette opens it, and Wear it wears it', async ({ page }) => {
   await studio(page);
   const out = await page.evaluate(() => {
     document.getElementById('tsNew').click();
@@ -163,26 +160,30 @@ test('clicking a palette wears it and opens it', async ({ page }) => {
     const id = tsSelected;
 
     themeState.chosen = null;
-    saveTheme(); applyChosenTheme(); renderThemeList();
-    const before = getComputedStyle(document.documentElement)
-      .getPropertyValue('--bg').trim();
+    tsSelected = allPalettes()[0].id;
+    saveTheme(); applyChosenTheme(); renderThemeList(); tsRender();
+    const page = () => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    const mini = () => getComputedStyle(document.getElementById('themeMini')).getPropertyValue('--bg').trim();
+    const before = { page: page(), mini: mini() };
 
-    [...document.querySelectorAll('.theme-row')]
+    [...document.querySelectorAll('.theme-card')]
       .find((r) => r.textContent.includes('New palette'))?.click();
-
-    return {
-      id,
-      before,
-      after: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),
-      worn: themeState.chosen,
-      opened: tsSelected,
+    const clicked = {
+      page: page(), mini: mini(), worn: themeState.chosen, opened: tsSelected,
       editorShown: !document.getElementById('tsEditor').classList.contains('hidden'),
     };
+
+    document.getElementById('tsApply').click();
+    return { id, before, clicked, worn: themeState.chosen, after: page(), label: document.getElementById('tsApply').textContent };
   });
-  expect(out.after, 'clicking a palette did not show it').not.toBe(out.before);
+  expect(out.clicked.opened).toBe(out.id);
+  expect(out.clicked.editorShown).toBe(true);
+  expect(out.clicked.mini, 'clicking a palette did not paint the preview').not.toBe(out.before.mini);
+  expect(out.clicked.page, 'clicking a palette repainted the application').toBe(out.before.page);
+  expect(out.clicked.worn, 'clicking a palette wore it').toBeNull();
   expect(out.worn).toBe(out.id);
-  expect(out.opened).toBe(out.id);
-  expect(out.editorShown).toBe(true);
+  expect(out.after, 'Wear it did not put the palette on').not.toBe(out.before.page);
+  expect(out.label).toBe('Wearing');
 });
 
 test('a built-in palette can be viewed and copied but not edited', async ({ page }) => {
@@ -195,7 +196,7 @@ test('a built-in palette can be viewed and copied but not edited', async ({ page
     // Everything about the built-in is read *before* duplicating — the copy
     // becomes the selection, so reading afterwards describes the copy instead.
     const viewing = {
-      title: document.getElementById('tsEditing').textContent,
+      title: document.getElementById('tsMode').textContent,
       allDisabled: [...document.querySelectorAll('#tsSwatches input')]
         .every((el) => el.disabled),
       nameDisabled: document.getElementById('tsName').disabled,
@@ -208,11 +209,11 @@ test('a built-in palette can be viewed and copied but not edited', async ({ page
       ...viewing,
       copyMade: themeState.mine.length === before + 1,
       copyEditable: !tsPalette()?.readOnly,
-      copyTitle: document.getElementById('tsEditing').textContent,
+      copyTitle: document.getElementById('tsMode').textContent,
     };
   });
   if (out.skipped) test.skip(true, 'no built-in palettes are shipped');
-  expect(out.title).toContain('Viewing');
+  expect(out.title).toContain('viewing');
   expect(out.allDisabled, 'a built-in palette was editable').toBe(true);
   expect(out.nameDisabled).toBe(true);
   expect(out.deleteHidden, 'a built-in palette offered a Delete button').toBe(true);
@@ -220,7 +221,7 @@ test('a built-in palette can be viewed and copied but not edited', async ({ page
   // can never be pulled out from under something built on it.
   expect(out.copyMade).toBe(true);
   expect(out.copyEditable).toBe(true);
-  expect(out.copyTitle).toContain('Editing');
+  expect(out.copyTitle).toContain('editing');
 });
 
 test('palettes come in as JSON, and bad ones are reported not swallowed', async ({ page }) => {
@@ -298,7 +299,7 @@ test('a saved palette survives a reload with the application intact', async ({ p
     masterBus: typeof masterBus !== 'undefined',
     metersRunning: typeof masterBus !== 'undefined' && !!masterBus.timer,
     room: typeof visGlRaf !== 'undefined',
-    rowRendered: !!document.querySelector('.theme-row'),
+    rowRendered: !!document.querySelector('.theme-card'),
   }));
   expect(alive.kept).toBe(1);
   expect(alive.worn).toBeTruthy();

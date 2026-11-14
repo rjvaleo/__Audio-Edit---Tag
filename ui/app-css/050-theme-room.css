@@ -1,190 +1,217 @@
-/* ────────────────────────────────────────────────────────── the theme editor ──
-   A miniature of the interface, built from real elements rather than drawn as a
-   picture — a screenshot goes stale the moment anything is restyled, and this
-   is repainted by the same stylesheet as the thing it stands for.
+/* ───────────────────────────────────────────────────────────── the Theme page ──
+   A page of its own (13 Nov 2026, from the mock-up RJ approved): the palettes
+   as cards, a large preview and the editor, in three columns. The page wears
+   the look like Grain, Wave and Chop; the preview wears the palette open in
+   the editor, its tokens set on `#themeMini` itself, so it can show a theme the
+   page is not wearing. See `docs/THEME-EDITOR.md`. */
 
-   Its tokens are set on `#themeMini` itself, so it can show a theme the page is
-   not wearing. See `docs/THEME-EDITOR.md`. */
-.theme-mini {
-  display: flex; gap: 0; height: 176px; margin: 8px 0 10px;
-  border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden;
-  background: var(--bg);
-  /* Its own stacking context, so the page's theme cannot leak in over it. */
-  isolation: isolate;
+body.themepage #overview { display: none; }
+#themeView {
+  flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px;
+  color: var(--look-text); font: var(--fs-m)/1.3 var(--sans); overflow: hidden;
+  background: var(--look-grain), radial-gradient(120% 80% at 30% 0%, var(--look-panel), var(--look-chassis) 60%);
+  background-blend-mode: soft-light, normal;
 }
-.tm-rail {
-  flex: 0 0 22px; background: var(--surface-0);
-  display: flex; flex-direction: column; align-items: center; gap: 5px;
-  padding-top: 6px; border-right: 1px solid var(--line);
-}
-.tm-icon { width: 12px; height: 12px; border-radius: var(--r-s); background: var(--surface-2); }
-.tm-icon.on { background: var(--on); }
+#themeView.hidden { display: none; }
+#themeView * { box-sizing: border-box; }
 
-.tm-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.tm-bar {
-  display: flex; align-items: center; gap: 4px; padding: 5px 6px;
-  background: var(--surface-0); border-bottom: 1px solid var(--line);
+/* materials: the panel, the button and the field, as Wave draws them */
+.tp-panel {
+  display: flex; flex-direction: column; gap: 7px; min-width: 0; min-height: 0; padding: 8px 10px 10px;
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel) 30%, var(--look-panel));
+  border: 1px solid var(--look-line); border-radius: var(--r-l);
+  box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), inset 0 -1px 0 rgba(var(--black-rgb), .45), 0 1px 1px rgba(var(--black-rgb), .6), 0 6px 14px rgba(var(--black-rgb), .45);
 }
-.tm-btn {
-  font-size: var(--fs-xs); padding: 2px 5px; border-radius: var(--r-s);
-  border: 1px solid var(--line-2); color: var(--text-2); background: transparent;
+.tp-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--h-m); padding: 0 10px; flex: none; white-space: nowrap;
+  font: 500 var(--fs-m) var(--sans); color: var(--look-text-2); cursor: pointer;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--look-panel-hi) 80%, var(--white) 6%), var(--look-panel));
+  border: 1px solid color-mix(in srgb, var(--look-line) 80%, var(--white) 8%); border-radius: var(--r-m);
+  box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), 0 1px 2px rgba(var(--black-rgb), .6);
 }
-.tm-btn.on { background: var(--on); border-color: var(--on); color: var(--bg); }
-.tm-title { margin-left: auto; font-size: var(--fs-xs); color: var(--text-dim); }
+.tp-btn:hover { color: var(--look-text); }
+.tp-btn.tp-sm { height: var(--h-s); padding: 0 8px; }
+.tp-btn.tp-primary { flex: 1; height: var(--h-l); font-weight: 600; color: var(--look-chassis); background: var(--on); border-color: transparent; }
+.tp-btn.tp-primary.on { color: var(--on); background: var(--look-well); border-color: color-mix(in srgb, var(--on) 55%, var(--look-line)); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .85); }
+.tp-btn.tp-danger:hover { color: var(--bad); }
+.tp-row > .tp-btn:not(.tp-primary) { height: var(--h-l); }
+.tp-field {
+  height: var(--h-m); min-width: 0; padding: 0 9px; flex: none;
+  font: 400 var(--fs-m) var(--sans); color: var(--look-text);
+  background: var(--look-well); border: 1px solid var(--look-line); border-radius: var(--r-m);
+}
+.tp-field::placeholder { color: var(--look-text-3); }
+.tp-field:focus { outline: none; border-color: var(--look-text-3); }
+.tp-field.mono { font-family: var(--mono); }
 
-.tm-lane {
-  flex: 0 0 34px; background: var(--sink); position: relative;
-  border-bottom: 1px solid var(--line);
-}
-/* The waveform keeps its own colour — a theme has no business repainting the
-   sound, which is why `--wave` is not in the map. */
-.tm-lane > i {
-  position: absolute; left: 4px; right: 4px; top: 50%; height: 15px;
-  transform: translateY(-50%); border-radius: 0;
-  background: repeating-linear-gradient(90deg,
-    var(--wave) 0 1px, transparent 1px 3px);
-  opacity: .85;
-}
+/* type: a name in spaced capitals, a quiet reading beside it, a caption */
+.tp-nm { flex: none; font: 600 var(--fs-m) var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--look-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A palette's name can be long; the headings beside a reading cannot. */
+.tp-ed .tp-nm { flex: 0 1 auto; min-width: 0; }
+.tp-meta { font: 400 var(--fs-m) var(--mono); color: var(--look-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tp-cap { font: 600 var(--fs-xs) var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--look-text-3); margin-top: 4px; cursor: help; flex: none; }
+.tp-grow { flex: 1; }
+.tp-ph { display: flex; align-items: center; gap: 8px; min-height: 22px; flex: none; }
+.tp-row { display: flex; align-items: center; gap: 6px; flex: none; }
 
-.tm-panels { flex: 1 1 auto; display: flex; gap: 5px; padding: 5px; min-height: 0; }
-.tm-panel {
-  flex: 1 1 auto; min-width: 0; background: var(--surface); border-radius: var(--r-s);
-  border: 1px solid var(--line); padding: 5px 6px;
-  display: flex; flex-direction: column; gap: 4px;
-}
-.tm-panel-2 { flex: 0 0 46px; }
-.tm-head {
-  font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text-dim);
-}
-.tm-row { display: flex; align-items: center; gap: 5px; }
-.tm-k { flex: 0 0 34px; font-size: var(--fs-xs); color: var(--text-2); }
-.tm-slider {
-  flex: 1 1 auto; height: 5px; border-radius: 999px; background: var(--well);
-  overflow: hidden;
-}
-.tm-slider > i { display: block; height: 100%; background: var(--accent); }
-.tm-v { flex: 0 0 34px; font-size: var(--fs-xs); color: var(--text); text-align: right; }
+.tp-top { flex-direction: row; align-items: center; gap: 10px; padding: 7px 10px; flex: none; }
+.tp-top .tp-nm { font-size: var(--fs-l); }
+/* Fixed side columns, the preview takes the rest. */
+.tp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(280px, 24vw, 380px) minmax(0, 1fr) 330px; gap: 8px; }
 
-/* All four text steps, because a ladder that collapses is the failure a theme
-   most often has and the one hardest to see on a page full of other things. */
-.tm-steps { display: flex; gap: 6px; margin-top: auto; font-size: var(--fs-xs); }
-.tm-t1 { color: var(--text); }
-.tm-t2 { color: var(--text-2); }
-.tm-t3 { color: var(--text-dim); }
-.tm-t4 { color: var(--text-dimmer); }
-
-.tm-meters { flex: 1 1 auto; display: flex; gap: 3px; align-items: flex-end; }
-.tm-meters > i {
-  flex: 1 1 auto; background: var(--accent); border-radius: 0; min-height: 2px;
+/* ── the palettes, as cards ── */
+.tp-cards {
+  flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start;
+  padding: 1px 2px 2px; scrollbar-width: thin; scrollbar-color: var(--look-line) transparent;
 }
-
-/* The controls. Strips you drag, not fields you type into — nobody chooses a
-   theme by pasting a colour code. Each one paints what it does, so the choice
-   is visible before it is made. */
-.tm-ctl { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.tm-ctl-k {
-  flex: 0 0 56px; font-size: var(--fs-xs); letter-spacing: .04em; color: var(--text-dim);
+.theme-card {
+  position: relative; display: flex; flex-direction: column; gap: 5px; padding: 6px; min-width: 0; cursor: pointer;
+  background: var(--look-well); border-radius: var(--r-m); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8);
 }
-.tm-strip {
-  flex: 1 1 auto; min-width: 0; height: 20px; display: block;
-  border-radius: var(--r-s); border: 1px solid var(--line-2);
-  cursor: ew-resize; touch-action: none;
-}
-.tm-strip-sm { height: 14px; }
-
-.tm-vary-head {
-  display: flex; align-items: baseline; justify-content: space-between;
-  margin: 10px 0 5px;
-}
-.tm-contrast { font-size: var(--fs-xs); }
-/* Below three to one, body text is not readable on that ground. */
-.tm-contrast.warn { color: var(--bad); }
-/* Six candidates from the current setting. Fixed widths — never flex. */
-.tm-vary { display: flex; gap: 5px; margin-bottom: 9px; }
-.tm-swatch-btn {
-  width: 46px; height: var(--h-l); padding: 0; cursor: pointer;
-  border: 1px solid var(--line-2); border-radius: var(--r-s);
-  display: flex; flex-direction: column; overflow: hidden;
-}
-.tm-swatch-btn:hover { border-color: var(--text-dim); }
-.tm-swatch-btn i { display: block; flex: 1 1 auto; }
-.theme-edit-actions { gap: 6px; }
-.theme-edit-actions .ghost { width: 84px; }
-
-/* ─────────────────────────────────────────────────────────────── the studio ──
-   Ported from Emovis' theme studio, which scopes everything under `.ts-studio`
-   and injects its own stylesheet so it can be lifted whole. Here the host has a
-   stylesheet already, so the rules live in it — but the `ts-` prefix is kept,
-   because that is what makes the port traceable to what it came from. */
-.ts-head { display: flex; gap: 6px; align-items: center; margin-bottom: 7px; }
-.ts-filter { flex: 1 1 auto; min-width: 0; }
-/* Fixed width, never flex. */
-.ts-new { width: 62px; }
-
-.ts-ed-head {
-  display: flex; align-items: baseline; gap: 8px;
-  margin: 10px 0 7px;
-}
-.ts-ed-title {
-  font-size: var(--fs-s); letter-spacing: .06em; text-transform: uppercase;
-  color: var(--text-2);
-}
-.ts-tag {
-  font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text-dim); border: 1px solid var(--line-2);
-  border-radius: 999px; padding: 1px 7px;
-}
-
-.ts-editor { display: flex; flex-direction: column; gap: 9px; }
-.ts-field { display: flex; flex-direction: column; gap: 4px; }
-
-/* A colour well and its hex, side by side. Both, deliberately: the well is how
-   a colour is chosen, the hex is how one arrives from a style guide. */
-.ts-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
-.ts-swatch {
-  display: flex; align-items: center; gap: 4px;
-  border: 1px solid var(--line-2); border-radius: var(--r-m); padding: 3px 4px;
-}
-.ts-swatch input[type="color"] {
-  width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer;
-}
-.ts-swatch input[type="text"] {
-  width: 68px; border: 0; background: transparent; color: var(--text-2);
-  font-family: var(--mono); font-size: var(--fs-s);
-}
-.ts-swatch input[type="text"]:focus { outline: 1px solid var(--line); border-radius: var(--r-s); }
-.ts-x {
-  width: 16px; height: 16px; padding: 0; line-height: 1;
-  border: 0; background: transparent; color: var(--text-dim);
-  cursor: pointer; font-size: var(--fs-l);
-}
-.ts-x:hover { color: var(--bad); }
-.ts-add { width: 74px; }
-.ts-actions { gap: 6px; }
-.ts-actions .ghost { width: 92px; }
-
-.ts-tokens {
-  max-height: 190px; overflow: auto;
-  font-family: var(--mono); font-size: var(--fs-xs);
-  border: 1px solid var(--line-2); border-radius: var(--r-m); padding: 5px;
-}
-.ts-tokens > div { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
-.ts-tokens i {
-  width: 11px; height: 11px; border-radius: var(--r-s); flex: 0 0 11px;
-  border: 1px solid var(--line-2);
-}
-.ts-tokens b { flex: 0 0 108px; color: var(--text-2); font-weight: 500; }
-.ts-tokens span { color: var(--text-dim); }
-
-.ts-error {
-  font-size: var(--fs-s); color: var(--bad);
-  border: 1px solid var(--bad); border-radius: var(--r-s); padding: 5px 7px;
-}
-.ts-empty { font-size: var(--fs-s); color: var(--text-dim); padding: 8px 2px; }
+.theme-card:hover { box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8), 0 0 0 1px var(--look-line); }
 /* The one open in the editor, as distinct from the one being worn. */
-.theme-row.editing { outline: 1px solid var(--accent); outline-offset: -1px; }
-.theme-inline-note { color: var(--text-dim); font-style: normal; font-size: var(--fs-xs); }
+.theme-card.editing { box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8), 0 0 0 1.5px var(--on); }
+.theme-swatch { display: flex; height: 46px; border-radius: var(--r-s); overflow: hidden; }
+.theme-swatch i { flex: 1; display: block; }
+.theme-name {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 6px; min-width: 0;
+  font: 500 var(--fs-m) var(--sans); color: var(--look-text-2); white-space: nowrap;
+}
+/* The name gives way, never the tag. */
+.theme-name b { min-width: 0; font-weight: inherit; overflow: hidden; text-overflow: ellipsis; }
+.theme-name em { flex: none; font: 500 var(--fs-xs) var(--mono); font-style: normal; letter-spacing: .08em; color: var(--look-text-3); }
+:is(.theme-card.editing, .theme-card.chosen) .theme-name em { color: var(--on); }
+.theme-del {
+  position: absolute; top: 9px; right: 9px; width: 18px; height: 18px; padding: 0; display: none; place-items: center;
+  border: 0; border-radius: 50%; cursor: pointer; font-size: var(--fs-l); line-height: 1;
+  color: var(--look-text); background: rgba(var(--black-rgb), .55);
+}
+.theme-card:hover .theme-del { display: grid; }
+.theme-del:hover { color: var(--bad); }
+.tp-own { display: flex; gap: 6px; flex: none; }
+.tp-own .tp-field { flex: 1; }
+.tp-empty { font-size: var(--fs-s); color: var(--look-text-3); padding: 8px 2px; grid-column: 1 / -1; }
+
+/* ── the preview: today's parts, in the palette being edited ── */
+.tp-prev {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: hidden;
+  color: var(--look-text); border-radius: var(--r-l); isolation: isolate;
+  background: var(--look-grain), radial-gradient(120% 80% at 30% 0%, var(--look-panel), var(--look-chassis) 60%);
+  background-blend-mode: soft-light, normal; box-shadow: inset 0 0 0 1px var(--look-line);
+}
+.tp-pnb {
+  display: flex; align-items: center; gap: 7px; height: 40px; padding: 0 10px; flex: none;
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel)); border: 1px solid var(--look-line); border-radius: var(--r-l);
+}
+.tp-tb {
+  width: 28px; height: 24px; display: grid; place-items: center; flex: none; color: var(--look-text-2); border-radius: var(--r-m);
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel)); border: 1px solid var(--look-line);
+  box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .07), 0 1px 2px rgba(var(--black-rgb), .4);
+}
+.tp-tb svg { width: 11px; height: 11px; fill: currentColor; }
+.tp-src {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 7px; flex: none; border-radius: var(--r-m);
+  font: 600 var(--fs-s) var(--mono); letter-spacing: .1em; color: var(--on); background: var(--look-well);
+  border: 1px solid color-mix(in srgb, var(--on) 55%, var(--look-line));
+}
+.tp-clock { flex: none; padding: 3px 9px; border-radius: var(--r-m); font: 600 var(--fs-l) var(--mono); color: var(--look-text); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); }
+.tp-pfile { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tp-pfile b { font: 600 var(--fs-m) var(--sans); color: var(--look-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-pfile canvas { display: block; width: 100%; height: 14px; }
+.tp-pp {
+  display: flex; flex-direction: column; gap: 8px; padding: 8px 10px 10px; min-width: 0;
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel) 30%, var(--look-panel));
+  border: 1px solid var(--look-line); border-radius: var(--r-l);
+  box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), 0 1px 1px rgba(var(--black-rgb), .35), 0 6px 14px rgba(var(--black-rgb), .25);
+}
+.tp-pt { font: 600 var(--fs-s) var(--mono); letter-spacing: .14em; color: var(--look-text); flex: none; }
+.tp-psrc { flex: 0 1 280px; min-height: 120px; }
+.tp-well {
+  position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: var(--r-m);
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--look-well) 70%, var(--look-panel)), var(--look-well) 70%);
+  box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75), 0 1px 0 rgba(var(--white-rgb), .06);
+}
+.tp-well canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.tp-prow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex: none; }
+.tp-bars { display: flex; flex-direction: column; gap: 6px; }
+.tp-knobs { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+/* All four of the app's text steps, because a ladder that collapses is the
+   failure a theme most often has and the one hardest to see on a full page. */
+.tp-steps { display: flex; gap: 14px; margin-top: auto; font: 500 var(--fs-l) var(--sans); }
+.tp-steps span:nth-child(1) { color: var(--text); }
+.tp-steps span:nth-child(2) { color: var(--text-2); }
+.tp-steps span:nth-child(3) { color: var(--text-dim); }
+.tp-steps span:nth-child(4) { color: var(--text-dimmer); }
+.tp-prow2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+/* ── the editor ── */
+.tp-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; scrollbar-width: thin; }
+.tp-editor.hidden { display: none; }
+/* A built-in's name is the heading; only your own is a field. */
+#tsName:disabled { display: none; }
+.tp-colours { display: flex; flex-direction: column; gap: 5px; flex: none; }
+.ts-swatch { display: grid; grid-template-columns: 30px minmax(0, 1fr) 56px 18px; gap: 8px; align-items: center; }
+.ts-swatch input[type="color"] {
+  width: 30px; height: 24px; padding: 0; border: 0; border-radius: var(--r-s); background: none; cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .15);
+}
+.ts-swatch input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.ts-swatch input[type="color"]::-webkit-color-swatch { border: 0; border-radius: var(--r-s); }
+.ts-swatch input[type="color"]:disabled { cursor: default; }
+.ts-swatch input[type="text"] {
+  height: var(--h-m); min-width: 0; padding: 0 8px; font: 500 var(--fs-m) var(--mono); color: var(--look-text);
+  background: var(--look-well); border: 1px solid var(--look-line); border-radius: var(--r-m);
+}
+.ts-swatch input[type="text"]:focus { outline: none; border-color: var(--look-text-3); }
+.ts-swatch input[type="text"]:disabled { color: var(--look-text-2); }
+.ts-swatch em { font: 500 var(--fs-s) var(--sans); font-style: normal; color: var(--look-text-3); }
+.ts-x { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--look-text-3); cursor: pointer; font-size: var(--fs-l); line-height: 1; }
+.ts-x:hover { color: var(--bad); }
+.ts-add { width: 100%; }
+
+/* The waveform's colours as chips, and your own as a round well. */
+.tp-wave { display: flex; align-items: center; gap: 6px; flex: none; padding: 2px 0; }
+.tp-wchip {
+  width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; flex: none;
+  background: var(--chip); box-shadow: 0 0 6px var(--chip);
+}
+.tp-wdef { background: conic-gradient(var(--look-f-pitch), var(--look-f-tone), var(--look-text), var(--look-f-pitch)); box-shadow: none; }
+.tp-wown { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; flex: none; }
+.tp-wown::-webkit-color-swatch-wrapper { padding: 0; }
+.tp-wown::-webkit-color-swatch { border: 1px solid rgba(var(--white-rgb), .25); border-radius: 50%; }
+:is(.tp-wchip, .tp-wown).active { box-shadow: 0 0 0 2px var(--look-panel), 0 0 0 3.5px var(--on); }
+
+/* The Look: each tile in its own surfaces, with its material. */
+.tp-looks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; flex: none; }
+.tp-look {
+  height: 52px; padding: 0 3px 5px; display: flex; align-items: flex-end; justify-content: center; cursor: pointer;
+  font: 500 var(--fs-xs) var(--sans); line-height: 1.15; text-align: center; color: rgba(var(--white-rgb), .82);
+  background: linear-gradient(180deg, var(--tl-hi), var(--tl-lo)); border: 1px solid rgba(var(--white-rgb), .1); border-radius: var(--r-m);
+}
+.tp-look[data-look="B"] {
+  background: linear-gradient(135deg, rgba(var(--look-glass-1-rgb), .45), rgba(var(--look-glass-2-rgb), .45)), linear-gradient(180deg, var(--tl-hi), var(--tl-lo));
+}
+.tp-look[data-look="C"] { border-radius: var(--r-l); background: var(--look-grain), linear-gradient(180deg, var(--tl-hi), var(--tl-lo)); background-blend-mode: soft-light, normal; }
+.tp-look:is([data-look="D"], [data-look="AD"]) {
+  border-color: transparent;
+  background: linear-gradient(165deg, var(--tl-hi), var(--tl-lo)) padding-box,
+    conic-gradient(from 210deg, var(--look-edge-1), var(--look-edge-2), var(--look-edge-3), var(--look-edge-4), var(--look-edge-1)) border-box;
+}
+.tp-look.on { color: var(--on); box-shadow: 0 0 0 1.5px var(--on); }
+
+/* Every derived colour, folded away. */
+.tp-tokens { flex: none; color: var(--look-text-3); font-size: var(--fs-m); }
+.tp-tokens summary { cursor: pointer; }
+.tp-tokens summary:hover { color: var(--look-text-2); }
+.tp-tlist {
+  margin-top: 6px; max-height: 220px; overflow: auto; font: var(--fs-xs) var(--mono);
+  border: 1px solid var(--look-line); border-radius: var(--r-m); padding: 5px;
+}
+.tp-tlist > div { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+.tp-tlist i { width: 11px; height: 11px; flex: 0 0 11px; border-radius: var(--r-s); border: 1px solid var(--look-line); }
+.tp-tlist b { flex: 0 0 108px; color: var(--look-text-2); font-weight: 500; }
+.tp-tlist span { color: var(--look-text-3); }
+.tp-error { flex: none; font-size: var(--fs-s); color: var(--bad); border: 1px solid var(--bad); border-radius: var(--r-s); padding: 5px 7px; }
 
 /* ─────────────────────────────────────────────── the room, at full size ──
    A third workspace: the controls in a column on the left, the room taking

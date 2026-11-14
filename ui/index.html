@@ -167,125 +167,6 @@
       renames, moves or deletes anything.</p>
     </div>
 
-    <div class="panel-body hidden" id="paneTheme">
-      <!-- The editor. A miniature of the interface, three pickers, and every
-           change on screen as you make it. See `docs/THEME-EDITOR.md`. -->
-      <div class="field-label">Make your own</div>
-      <div class="theme-mini" id="themeMini">
-        <div class="tm-rail">
-          <span class="tm-icon on"></span><span class="tm-icon"></span><span class="tm-icon"></span>
-        </div>
-        <div class="tm-body">
-          <div class="tm-bar">
-            <span class="tm-btn">Cut</span><span class="tm-btn">Crop</span>
-            <span class="tm-btn on">Export</span>
-            <span class="tm-title">a sound.aif</span>
-          </div>
-          <div class="tm-lane"><i></i></div>
-          <div class="tm-panels">
-            <div class="tm-panel">
-              <div class="tm-head">Time &amp; Pitch</div>
-              <div class="tm-row"><span class="tm-k">Stretch</span>
-                <span class="tm-slider"><i style="width:62%"></i></span>
-                <span class="tm-v">4.00×</span></div>
-              <div class="tm-row"><span class="tm-k">Pitch</span>
-                <span class="tm-slider"><i style="width:38%"></i></span>
-                <span class="tm-v">+0.0 st</span></div>
-              <div class="tm-steps">
-                <span class="tm-t1">text</span><span class="tm-t2">second</span>
-                <span class="tm-t3">dim</span><span class="tm-t4">dimmer</span>
-              </div>
-            </div>
-            <div class="tm-panel tm-panel-2">
-              <div class="tm-head">Master</div>
-              <div class="tm-meters"><i style="height:72%"></i><i style="height:58%"></i></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <!-- No hex fields. Nobody chooses a theme by typing a colour code —
-           you turn the hue until it looks right, decide how colourful and how
-           contrasty, and pick the accent against it. See `docs/THEME-EDITOR.md`. -->
-      <div class="ts-ed-head">
-        <span class="ts-ed-title" id="tsEditing">Select a palette, or make one</span>
-        <span class="ts-tag hidden" id="tsMode"></span>
-      </div>
-
-      <div class="ts-editor hidden" id="tsEditor">
-        <label class="ts-field">
-          <span class="field-label">Name</span>
-          <input class="field" id="tsName">
-        </label>
-        <div class="ts-field">
-          <span class="field-label" id="tsColoursLabel">Colours</span>
-          <div class="ts-swatches" id="tsSwatches"></div>
-        </div>
-        <!-- The waveform belongs to the palette now. It is still not *derived*
-             from it — which colour reads best against a sound is a matter of
-             the sound, not of the surfaces behind it — but a theme carries its
-             own, so choosing a theme sets the sound's colour too. -->
-        <div class="ts-field">
-          <span class="field-label">Waveform</span>
-          <div class="seg wave-seg" id="waveColours">
-            <button class="seg-btn" data-wave="blue"><i></i>Blue</button>
-            <button class="seg-btn" data-wave="green"><i></i>Green</button>
-            <button class="seg-btn" data-wave="red"><i></i>Red</button>
-            <button class="seg-btn" data-wave="purple"><i></i>Purple</button>
-          </div>
-          <div class="fx-row wave-own">
-            <label class="wave-own-label" for="waveOwn">Your own</label>
-            <input type="color" id="waveOwn" value="#39ff5a" title="Any colour you like — the waveform takes it as you move">
-            <button class="ghost" id="waveReset">Reset</button>
-          </div>
-          <div class="fx-note">Neon, so the sound reads against the surface
-          behind it. The grain marks keep their own colour.</div>
-        </div>
-        <div class="fx-note">Direction is read, not chosen: a palette that
-        averages light becomes a light theme, one that averages dark becomes a
-        dark one. Every colour on the card counts — they are sorted dark to light
-        and spread along the interface's own lightness axis, so the dark ones
-        become the surfaces and the light ones become the text. Lightness itself
-        comes from a fixed ladder, which is what keeps text legible whatever the
-        palette holds.</div>
-        <div class="fx-row ts-actions">
-          <button class="ghost" id="tsApply">Apply</button>
-          <button class="ghost" id="tsDuplicate">Duplicate</button>
-          <button class="ghost danger" id="tsDelete">Delete</button>
-        </div>
-        <div class="fx-row ts-actions">
-          <button class="ghost" id="tsTokensBtn">Show tokens</button>
-          <button class="ghost" id="tsCopy">Copy JSON</button>
-          <button class="ghost" id="tsImport">Import JSON&hellip;</button>
-        </div>
-        <div class="ts-tokens hidden" id="tsTokens"></div>
-        <div class="ts-error hidden" id="tsError"></div>
-      </div>
-
-      <div class="divider"></div>
-      <div class="field-label">Palette</div>
-      <div class="ts-head">
-        <input class="field ts-filter" id="tsFilter" placeholder="Filter&hellip;">
-        <button class="ghost ts-new" id="tsNew">+ New</button>
-      </div>
-      <div class="fx-note">A palette gives colour and direction; the ladder of
-      surfaces, text and borders is derived from it, so contrast holds whatever
-      the colours are. Good, warning and bad keep their own hues — a theme is not
-      allowed to repaint what they mean.</div>
-      <div class="theme-list" id="themeList"></div>
-      <div class="divider"></div>
-      <div class="fx-row">
-        <button class="ghost" id="themeNone">No theme</button>
-        <button class="ghost" id="themePlain" title="Light palettes only: take the tint out of the surfaces and leave it in the borders and text">Plain surfaces</button>
-      </div>
-      <div class="divider"></div>
-      <div class="field-label">Your own</div>
-      <div class="fx-row">
-        <input class="mono" id="themeColors" placeholder="#1a1a24 #7c5cff #2ee6a8 …">
-        <button class="primary" id="themeAdd">Add</button>
-      </div>
-      <div class="fx-note">Two colours is enough; four to six reads best.</div>
-    </div>
-
     <div class="panel-body hidden" id="paneImport">
       <div class="field-label">Library folder</div>
       <div class="mono path-display" id="libraryPath">none chosen</div>
@@ -519,6 +400,82 @@
          by `ui/app/406-grain-page.js` the first time it is shown; a second face
          on the same drafts as the tray, which stays built underneath. -->
     <div class="hidden" id="grainView"></div>
+
+    <!-- Theme: a page of its own (13 Nov 2026). The palettes as cards, a large
+         preview built from today's parts, and the editor: colours, the
+         waveform and the Look. The explanations are tooltips and the doc. See
+         `docs/THEME-EDITOR.md`. -->
+    <div class="hidden" id="themeView">
+      <section class="tp-panel tp-top">
+        <b class="tp-nm">THEME</b><span class="tp-meta" id="tpStatus"></span>
+        <span class="tp-grow"></span>
+        <div class="ui-seg h28" id="tpWear" role="radiogroup" aria-label="How the theme is worn">
+          <span role="radio" id="themeWorn" title="Wear the open palette as it is derived">Palettes</span>
+          <span role="radio" id="themePlain" title="Light palettes only: take the tint out of the surfaces and leave it in the borders and text">Plain surfaces</span>
+          <span role="radio" id="themeNone" title="The interface's own colours">No theme</span>
+        </div>
+        <button class="tp-btn" id="tsImport" title="Paste palette JSON: one object or an array of { name, colors }">Import JSON</button>
+        <button class="tp-btn" id="tsCopy" title="Copy your own palettes as JSON">Copy JSON</button>
+      </section>
+      <div class="tp-body">
+        <!-- A palette gives colour and direction; the ladder of surfaces, text
+             and borders is derived from it, so contrast holds whatever the
+             colours are. Click a card to preview it; Wear it puts it on. -->
+        <section class="tp-panel tp-pals">
+          <div class="tp-ph"><b class="tp-nm">PALETTES</b><span class="tp-meta" id="tpCount"></span><span class="tp-grow"></span>
+            <button class="tp-btn tp-sm" id="tsNew" title="A new palette of your own, open in the editor">+ New</button></div>
+          <input class="tp-field" id="tsFilter" placeholder="filter palettes&hellip;" aria-label="Filter palettes">
+          <div class="tp-cards" id="themeList"></div>
+          <div class="tp-own">
+            <input class="tp-field mono" id="themeColors" placeholder="#1a1a24 #7c5cff #2ee6a8 &hellip;" aria-label="Your own colours" title="Paste two colours or more; four to six reads best. Add makes a palette and wears it.">
+            <button class="tp-btn" id="themeAdd">Add</button>
+          </div>
+        </section>
+
+        <!-- Real parts, not a picture: the shared knob, bar, switch and preset
+             bar, painted by the palette open in the editor. The page itself is
+             left alone until Wear it. -->
+        <section class="tp-panel tp-view">
+          <div class="tp-ph"><b class="tp-nm">PREVIEW</b><span class="tp-meta" id="tpPrevNote"></span><span class="tp-grow"></span>
+            <span id="tpPage"></span></div>
+          <div class="tp-prev" id="themeMini"></div>
+        </section>
+
+        <section class="tp-panel tp-ed">
+          <div class="tp-ph"><b class="tp-nm" id="tsEditing">Select a palette, or make one</b><span class="tp-meta" id="tsMode"></span></div>
+          <div class="tp-editor hidden" id="tsEditor">
+            <input class="tp-field" id="tsName" aria-label="Name" title="The palette's name">
+            <div class="tp-row">
+              <button class="tp-btn tp-primary" id="tsApply" title="Put this palette on the whole app">Wear it</button>
+              <button class="tp-btn" id="tsDuplicate" title="An editable copy of this palette">Duplicate</button>
+              <button class="tp-btn tp-danger" id="tsDelete" title="Delete this palette">Delete</button>
+            </div>
+            <span class="tp-cap" id="tsColoursLabel" title="Every colour counts. Sorted dark to light and spread along the interface's lightness axis: the dark ones become the surfaces, the light ones the text. Lightness itself is fixed, which keeps text legible whatever the palette holds.">Colours · dark to light</span>
+            <div class="tp-colours" id="tsSwatches"></div>
+            <!-- The waveform belongs to the palette. It is not *derived* from it
+                 (which colour reads against a sound is the sound's business),
+                 but a theme carries its own. -->
+            <span class="tp-cap" title="Neon, so the sound reads against the surface behind it. The grain marks keep their own colour.">The waveform</span>
+            <div class="tp-wave" id="waveColours">
+              <button class="tp-wchip tp-wdef" id="waveReset" title="The waveform's own colour" aria-label="Default waveform colour"></button>
+              <button class="tp-wchip" data-wave="blue" title="Blue" aria-label="Blue"></button>
+              <button class="tp-wchip" data-wave="green" title="Green" aria-label="Green"></button>
+              <button class="tp-wchip" data-wave="red" title="Red" aria-label="Red"></button>
+              <button class="tp-wchip" data-wave="purple" title="Purple" aria-label="Purple"></button>
+              <input type="color" class="tp-wown" id="waveOwn" value="#39ff5a" title="Any colour you like: the waveform takes it as you move" aria-label="Your own waveform colour">
+            </div>
+            <span class="tp-cap" title="Grain's five Looks: the material of the panels on Grain, Chop and Edit. A Look is a theme, the same one the Now Playing bar sets.">The Look · material</span>
+            <div class="tp-looks" id="tpLooks"></div>
+            <span class="tp-grow"></span>
+            <details class="tp-tokens" id="tpTokens">
+              <summary id="tsTokensBtn" title="Every value the palette derives, with its chip: where to look when a theme looks wrong">Every derived colour</summary>
+              <div class="tp-tlist hidden" id="tsTokens"></div>
+            </details>
+            <div class="tp-error hidden" id="tsError"></div>
+          </div>
+        </section>
+      </div>
+    </div>
 
     <!-- Compose: the whole piece at once — the granular player, the sequencer and
          the picture side by side, over one timeline. The cells are filled by

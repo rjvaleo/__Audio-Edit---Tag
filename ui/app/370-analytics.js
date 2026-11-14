@@ -27,7 +27,7 @@ const AN_PANELS = {
   masterBus: 'Master bus', dockVisuals: 'Visuals', perfPanel: 'Performance',
   dockAutomation: 'Automation', dockRegions: 'Regions', dockChop: 'Chop', dock: 'Dock',
   menuBar: 'Menubar', menuPop: 'Menu', leftRail: 'Left rail', paneBrowse: 'Library',
-  paneSearch: 'Search', paneRecord: 'Record', paneScan: 'Scan', paneTheme: 'Theme',
+  paneSearch: 'Search', paneRecord: 'Record', paneScan: 'Scan', themeView: 'Theme',
   paneImport: 'Import', paneInspect: 'Inspector', rightPanel: 'Tags',
   editTools: 'Edit tools', tabBar: 'Tabs', overview: 'Overview', ruler: 'Ruler', lane: 'Waveform',
   roomEdit: 'Room editor', roomView: 'Room', seqView: 'Sequencer', composeView: 'Compose',

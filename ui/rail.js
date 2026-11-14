@@ -50,10 +50,9 @@ const COMPOSE_LISTED = false;
   /// three kinds of button at two sizes. These four are all the same question:
   /// where am I.
   ///
-  /// `mode` and `panel` are what `app.js` already understands. Grain, Visual
-  /// and Browse are workspaces; Theme opens a panel, which is why it carries a
-  /// `panel` instead — the difference is real and it is the app's, not the
-  /// rail's.
+  /// `mode` and `panel` are what `app.js` already understands. Every
+  /// destination is a workspace now: Theme was a panel in the library's column
+  /// until 13 Nov 2026, and became a page of its own like the rest.
   const ITEMS = [
     // Edit and Grain are two pages of one mode, `edit`: the same open sound,
     // with the edit toolbar or with the granular dock. `page` says which.
@@ -91,8 +90,8 @@ const COMPOSE_LISTED = false;
       title: 'The scale sequencer — a second voice, run from the same transport',
     },
     {
-      icon: 'theme', label: 'Theme', panel: 'theme',
-      title: 'Palette and colours',
+      icon: 'theme', label: 'Theme', mode: 'theme',
+      title: 'Palettes, colours, the waveform and the Look',
     },
     {
       icon: 'browse', label: 'Browse', mode: 'overview', children: 'library',
@@ -391,7 +390,7 @@ const COMPOSE_LISTED = false;
     //
     // **`.active` cannot be the highlight, and this is why.** `app.js` toggles
     // it on `.mode-btn` from `setMode`, and on `.rail-btn` from `showPane` —
-    // two independent sets. Theme is a panel and Browse is a mode, so opening
+    // two independent sets. Theme was a panel and Browse a mode, so opening
     // Theme lit Theme *and left Browse lit*, which is the rail saying you are
     // in two places at once.
     //
@@ -411,18 +410,9 @@ const COMPOSE_LISTED = false;
     /// second-click check trusted that, decided Browse was already current, and
     /// swallowed the click.
     ///
-    /// Theme is checked first because it is a pane rather than a mode. That is
-    /// only safe because leaving Theme now genuinely closes it — see `go()`.
-    /// While it did not, the light stuck on Theme for ever: you could click
-    /// Browse, land in `overview`, and the rail still said Theme because the
-    /// pane was still open behind it.
+    /// Theme was checked first while it was a pane rather than a mode; it is
+    /// a page now, and lights like every other one, from `state.mode`.
     const current = () => {
-      const theme = document.getElementById('paneTheme');
-      const panel = document.getElementById('leftPanel');
-      const themeShown = theme && !theme.classList.contains('hidden') &&
-        panel && !panel.classList.contains('collapsed') &&
-        !panel.classList.contains('drawer-closed');
-      if (themeShown) return rail.querySelector('.rl-item[data-panel="theme"]');
       // Record is an action and never lights — but a second click on it still
       // has to shut the pane it opened, so `whereFor` answers for it even
       // though `current()`, which drives the light, does not.
@@ -448,7 +438,7 @@ const COMPOSE_LISTED = false;
     //
     //   Grain   `#dock`        the stretch, splice, scan and shape controls
     //   Visual  `.room-edit`   the room editor — layers, streams, colour
-    //   Theme   `#leftPanel`   showing `paneTheme`
+    //   Theme   none: the page is all there is
     //   Browse  `#leftPanel`   showing `paneBrowse`, and the only place sound
     //                          files appear
     //
@@ -456,6 +446,7 @@ const COMPOSE_LISTED = false;
     // `.hidden`. Two mechanisms, so this says which one a destination uses
     // rather than assuming.
     const tray = (item) => {
+      if (item.dataset.mode === 'theme') return null;
       if (item.dataset.panel || item.dataset.mode === 'overview') {
         return document.getElementById('leftPanel');
       }
@@ -529,7 +520,7 @@ const COMPOSE_LISTED = false;
 
       // **Only a workspace shuts the other workspaces' trays.**
       //
-      // This used to run for every destination, and Theme is a pane rather than
+      // This used to run for every destination, and Theme was a pane rather than
       // a mode — so opening the palette while in Grain added `.hidden` to
       // `#dock` and took the whole granular rack off screen. Nothing put it
       // back either, because `#dock` is un-hidden in exactly one place,
@@ -543,11 +534,11 @@ const COMPOSE_LISTED = false;
       // was in there. It has no business closing the workspace behind it.
       if (mode) items().forEach((b) => { if (b !== item) shutTray(b); });
 
-      if (pane === 'theme' || pane === 'record') {
-        // A pane rather than a workspace. Record additionally needs the library
-        // to be the workspace it lives in — arriving from the room and opening
-        // a 330px drawer over it is the fault this rail exists to stop.
-        if (pane === 'record' && state.mode !== 'overview') setMode('overview');
+      if (pane === 'record') {
+        // A pane rather than a workspace, which needs the library to be the
+        // workspace it lives in — arriving from the room and opening a 330px
+        // drawer over it is the fault this rail exists to stop.
+        if (state.mode !== 'overview') setMode('overview');
         showPane('left', pane);
       } else {
         if (item.dataset.page) setEditPage(item.dataset.page, false);

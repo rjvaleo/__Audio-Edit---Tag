@@ -1,7 +1,8 @@
 // ────────────────────────────────────────────────────────── the theme editor ──
 //
-// A miniature of the interface, three pickers, and every change on screen as
-// you make it. See `docs/THEME-EDITOR.md`.
+// A page of its own since 13 Nov 2026: the palettes as cards, a large preview
+// built from today's parts, and the editor — the colours, the waveform and the
+// Look. See `docs/THEME-EDITOR.md`.
 //
 // The ladder is not invented. The palette that ships is already a good theme,
 // so the spacing between its surfaces and its text steps is *measured* from the
@@ -37,7 +38,9 @@ function tsPaletteId(name, taken = []) {
   return `${base}-${n}`;
 }
 
-const TS_NEW_COLORS = ['#2e5496', '#7fa1d6', '#e8e4dc', '#3a3a3c'];
+/// Dark to light, the order the editor shows them in, so a new palette's
+/// colours sit in the rows in the order they were made.
+const TS_NEW_COLORS = ['#3a3a3c', '#2e5496', '#7fa1d6', '#e8e4dc'];
 
 const tsPalette = () => allPalettes().find((p) => p.id === tsSelected) || null;
 
@@ -83,16 +86,49 @@ function tsSetColor(index, raw) {
   tsUpdate({ ...p, colors });
 }
 
-/// The swatch row: a colour well and its hex, per colour.
+/// What each colour on the card becomes, by where the engine puts it.
 ///
-/// Both, deliberately. The well is how a colour is *chosen* and the hex is how
-/// one is *carried* — brand colours arrive as codes, from a style guide or a
-/// designer, and a picker with no way to paste one is a toy.
-function tsRenderSwatches(p) {
+/// The engine sorts the card dark to light and spreads it along the lightness
+/// axis (`paletteRamp`): in a dark theme the dark end is the surfaces and the
+/// light end the text, and a light theme is the other way round. The accent is
+/// the colour it picks as the accent, by the same rule. A theme that states its
+/// tokens outright has no roles to show.
+function tsRoles(p, derived) {
+  if (!p?.colors?.length || p.direct) return [];
+  const hsl = p.colors.map((c) => {
+    const hex = tsNormalizeHex(c);
+    return hex ? Theme.rgbToHsl(Theme.hexToRgb(hex)) : null;
+  });
+  if (hsl.some((c) => !c)) return [];
+  const idx = hsl.map((_, i) => i);
+  const rank = [...idx].sort((a, b) => hsl[a].l - hsl[b].l);
+  const pick = (c) => c.s * (1 - Math.abs(c.l - 0.5));
+  const accent = [...idx].sort((a, b) => pick(hsl[b]) - pick(hsl[a]))[0];
+  const dark = derived?.mode !== 'light';
+  const n = hsl.length;
+  return idx.map((i) => {
+    if (i === accent && hsl[i].s >= 0.04) return 'accent';
+    const t = n > 1 ? rank.indexOf(i) / (n - 1) : 0;
+    return (dark ? t : 1 - t) < 0.5 ? 'surfaces' : 'text';
+  });
+}
+
+/// The colours: per colour, a well, its hex and what it becomes.
+///
+/// Both a well and a hex, deliberately. The well is how a colour is *chosen*
+/// and the hex is how one is *carried* — brand colours arrive as codes, from a
+/// style guide or a designer, and a picker with no way to paste one is a toy.
+///
+/// **Dark to light**, because that is how the engine reads the card. The rows
+/// are sorted when they are built and each remembers which colour it holds
+/// (`data-i`), so moving one does not reorder them under the pointer; they are
+/// sorted again when a colour is committed (`change`), when nothing is held.
+function tsRenderSwatches(p, derived, resort = false) {
   const box = $('tsSwatches');
   if (!box) return;
   const label = $('tsColoursLabel');
-  if (label) label.textContent = `Colours · ${p.colors.length}`;
+  if (label) label.textContent = `Colours · ${p.colors.length} · dark to light`;
+  const roles = tsRoles(p, derived);
 
   // ── in place, when the shape has not changed ──
   //
@@ -107,24 +143,34 @@ function tsRenderSwatches(p) {
   // `tsRender` already knows this about the name field, which it will not write
   // into while it has focus. The swatches never learned it.
   //
-  // So: rebuild only when the number of colours changes, and never write into
-  // an element somebody is using.
-  const shape = `${p.colors.length}|${!!p.readOnly}`;
+  // So: rebuild only when the palette or the number of colours changes, and
+  // never write into an element somebody is using.
+  const shape = `${p.id}|${p.colors.length}|${!!p.readOnly}`;
   const cells = [...box.querySelectorAll('.ts-swatch')];
-  if (box.dataset.shape === shape && cells.length === p.colors.length) {
-    p.colors.forEach((colour, index) => {
-      const [well, hex] = cells[index].querySelectorAll('input');
+  if (!resort && box.dataset.shape === shape && cells.length === p.colors.length) {
+    for (const cell of cells) {
+      const index = +cell.dataset.i;
+      const colour = p.colors[index];
+      const [well, hex] = cell.querySelectorAll('input');
       if (well && document.activeElement !== well) well.value = colour;
       if (hex && document.activeElement !== hex) hex.value = colour;
-    });
+      const role = cell.querySelector('em');
+      if (role) role.textContent = roles[index] || '';
+    }
     return;
   }
   box.dataset.shape = shape;
   box.innerHTML = '';
 
-  p.colors.forEach((colour, index) => {
+  const order = p.colors.map((_, i) => i);
+  const l = (c) => { const hex = tsNormalizeHex(c); return hex ? Theme.rgbToHsl(Theme.hexToRgb(hex)).l : 2; };
+  order.sort((a, b) => l(p.colors[a]) - l(p.colors[b]));
+
+  for (const index of order) {
+    const colour = p.colors[index];
     const cell = document.createElement('div');
     cell.className = 'ts-swatch';
+    cell.dataset.i = index;
 
     const well = document.createElement('input');
     well.type = 'color';
@@ -132,6 +178,8 @@ function tsRenderSwatches(p) {
     well.disabled = !!p.readOnly;
     well.setAttribute('aria-label', `Colour ${index + 1}`);
     well.oninput = () => tsSetColor(index, well.value);
+    // The panel has closed: nothing is held, so the rows may sort again.
+    well.onchange = () => { const q = tsPalette(); if (q) tsRenderSwatches(q, tsDerive(q), true); };
 
     const hex = document.createElement('input');
     hex.type = 'text';
@@ -141,8 +189,12 @@ function tsRenderSwatches(p) {
     hex.setAttribute('aria-label', `Colour ${index + 1} hex`);
     hex.oninput = () => tsSetColor(index, hex.value);
     hex.onblur = () => { hex.value = (tsPalette()?.colors || [])[index] || colour; };
+    hex.onchange = well.onchange;
 
-    cell.append(well, hex);
+    const role = document.createElement('em');
+    role.textContent = roles[index] || '';
+
+    cell.append(well, hex, role);
     if (!p.readOnly && p.colors.length > 2) {
       const x = document.createElement('button');
       x.className = 'ts-x';
@@ -152,27 +204,32 @@ function tsRenderSwatches(p) {
       cell.appendChild(x);
     }
     box.appendChild(cell);
-  });
+  }
 
   if (!p.readOnly) {
     const add = document.createElement('button');
-    add.className = 'ghost ts-add';
-    add.textContent = '+ Colour';
+    add.className = 'tp-btn ts-add';
+    add.textContent = '+ colour';
     add.onclick = () => tsUpdate({ ...p, colors: [...p.colors, '#888888'] });
     box.appendChild(add);
   }
 }
 
-/// Every derived token, with a chip. Shown on request because sixty rows is a
+/// Every derived token, with a chip. Folded away because sixty rows is a
 /// reference, not a control — but when a theme looks wrong this is where the
 /// reason is.
 function tsRenderTokens(derived) {
   const box = $('tsTokens');
   if (!box) return;
   box.classList.toggle('hidden', !tsShowTokens);
+  const fold = $('tpTokens');
+  if (fold) fold.open = tsShowTokens;
   const btn = $('tsTokensBtn');
   const entries = Object.entries(derived?.tokens || {});
-  if (btn) btn.textContent = tsShowTokens ? 'Hide tokens' : `Show ${entries.length} tokens`;
+  if (btn) {
+    btn.textContent = tsShowTokens ? `Hide the ${entries.length} derived colours`
+      : `Every derived colour (${entries.length})`;
+  }
   if (!tsShowTokens) return;
   box.innerHTML = '';
   for (const [k, v] of entries) {
@@ -198,19 +255,19 @@ function tsRender() {
   if (!editor) return;
 
   editor.classList.toggle('hidden', !p);
+  tpRenderWear();
   if (!p) {
     if (title) title.textContent = 'Select a palette, or make one';
-    mode?.classList.add('hidden');
+    if (mode) mode.textContent = '';
+    tpPaint(null);
     return;
   }
 
   const derived = tsDerive(p);
-  if (title) {
-    title.textContent = `${p.readOnly ? 'Viewing' : 'Editing'} · ${p.name}`;
-  }
+  if (title) title.textContent = p.name;
   if (mode) {
-    mode.textContent = derived?.mode || '';
-    mode.classList.toggle('hidden', !derived?.mode);
+    mode.textContent = [p.readOnly ? 'viewing · built in' : 'editing · yours', derived?.mode]
+      .filter(Boolean).join(' · ');
   }
   const nameField = $('tsName');
   if (nameField && document.activeElement !== nameField) {
@@ -218,21 +275,16 @@ function tsRender() {
     nameField.disabled = !!p.readOnly;
   }
   $('tsDelete')?.classList.toggle('hidden', !!p.readOnly);
-
-  tsRenderSwatches(p);
-  renderWaveColours();
-  // The preview is this application's own chrome. Emovis previewed a board of
-  // lanes and status pills; the parts that show whether a theme works are
-  // whatever the host is actually made of.
-  // The miniature wears the palette's own waveform colour, so what the sound
-  // looks like against those surfaces is visible before applying anything.
-  const mini = $('themeMini');
-  Theme.applyTo(mini, derived?.tokens || null);
-  const wave = waveColourValue(waveShown());
-  if (mini) {
-    if (wave) mini.style.setProperty('--wave', wave);
-    else mini.style.removeProperty('--wave');
+  const wear = $('tsApply');
+  if (wear) {
+    const worn = themeState.chosen === p.id;
+    wear.textContent = worn ? 'Wearing' : 'Wear it';
+    wear.classList.toggle('on', worn);
   }
+
+  tsRenderSwatches(p, derived);
+  renderWaveColours();
+  tpPaint(p, derived);
   tsRenderTokens(derived);
 }
 
@@ -331,14 +383,13 @@ function tsWire() {
 
   $('tsApply')?.addEventListener('click', () => {
     const p = tsPalette();
-    if (!p) return;
-    themeState.chosen = p.id;
-    saveTheme();
-    applyChosenTheme();
-    renderThemeList();
+    if (p) tsWear(p.id);
   });
 
-  $('tsTokensBtn')?.addEventListener('click', () => {
+  // The fold's own toggling is taken over, so its state and the list's are
+  // one and the list is filled the moment it opens.
+  $('tsTokensBtn')?.addEventListener('click', (e) => {
+    e.preventDefault();
     tsShowTokens = !tsShowTokens;
     tsRenderTokens(tsDerive(tsPalette()));
   });

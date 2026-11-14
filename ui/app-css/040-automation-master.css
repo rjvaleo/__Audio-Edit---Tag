@@ -279,34 +279,6 @@ body.dock-sizing iframe, body.dock-sizing canvas { pointer-events: none; }
 .rail-theme .lb { font-size: var(--fs-xs); letter-spacing: .02em; }
 .rail-theme.active { color: var(--accent); }
 
-/* --------------------------------------------------------------- theme pane
-   A palette is chosen by looking at it, so the swatch is the control and the
-   name is the caption — not the other way round. */
-/* No max-height and no flex growth. The pane is already the scroller — giving
-   the list its own bounded box inside a flex column collapsed it to zero and
-   nothing drew at all, which is how this shipped looking empty. */
-.theme-list { display: block; }
-.theme-list > * { margin-bottom: 2px; }
-.theme-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 6px; border-radius: var(--r-s); cursor: pointer;
-  border: 1px solid transparent; min-height: 28px;
-}
-.theme-row:hover { background: var(--surface-2); }
-.theme-row.chosen { border-color: var(--accent); background: var(--surface-2); }
-.theme-swatch { display: flex; flex: 0 0 auto; border-radius: var(--r-s); overflow: hidden; }
-.theme-swatch i { width: 14px; height: 18px; display: block; flex: 0 0 auto; }
-.theme-name {
-  flex: 1; min-width: 0; font-size: var(--fs-m); color: var(--text-2);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.theme-del {
-  background: none; border: 0; color: var(--text-dimmer);
-  font-size: var(--fs-l); line-height: 1; padding: 0 2px; cursor: pointer;
-}
-.theme-del:hover { color: var(--bad); }
-#themePlain.on { border-color: var(--on); color: var(--text); }
-
 /* ------------------------------------------------------- the note keyboard */
 
 /* A reference card rather than a dialog: the keys play whether it is open or
