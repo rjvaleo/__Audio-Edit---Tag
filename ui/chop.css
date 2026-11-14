@@ -124,10 +124,10 @@ body.choppage .dock-panes { height: 100%; }
    see them"). The shadow keeps it apart from a bright waveform behind it. A cut
    that stands for others too close to draw runs on over them, --chop-span wide,
    so a packed stretch reads as packed rather than as empty. */
-.chop-edge::after { content: ''; position: absolute; left: calc(4px - var(--chop-line) / 2); top: 18px; bottom: 0; width: calc(var(--chop-line) + var(--chop-span, 0px)); background: var(--t); box-shadow: 0 0 2px rgba(var(--black-rgb), .8); }
+.chop-edge::after { content: ''; position: absolute; left: calc(4px - var(--chop-line) / 2); top: 18px; bottom: 0; width: var(--chop-line); background: var(--t); box-shadow: 0 0 2px rgba(var(--black-rgb), .8); opacity: var(--chop-a, 1); }
 .chop-edge.end::after { background: var(--t2); }
-.chop-slice.current .chop-edge::after, .chop-slice.picked .chop-edge::after { background: var(--acc); }
-.chop-edge:hover::after { left: calc(4px - var(--chop-line) * .75); width: calc(var(--chop-line) * 1.5 + var(--chop-span, 0px)); background: var(--acc); }
+.chop-slice.current .chop-edge::after, .chop-slice.picked .chop-edge::after { background: var(--acc); opacity: 1; }
+.chop-edge:hover::after { left: calc(4px - var(--chop-line) * .75); width: calc(var(--chop-line) * 1.5); background: var(--acc); opacity: 1; }
 .chop-thr { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(var(--white-rgb), .45); }
 .chop-ticks { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; }
 .chop-ticks i { position: absolute; bottom: 0; width: 1px; height: 6px; background: rgba(var(--white-rgb), .55); }

@@ -305,22 +305,25 @@ function chopPaintLane() {
   // Zoomed out on many slices they would be several to a pixel, so a slice is
   // drawn only when its cut is CHOP_MIN_PX clear of the last one drawn (the
   // current and picked ones always), where two lines would truly run into each
-  // other. The one drawn stands for those it skipped: its line runs on over
-  // them (--chop-span), so a packed stretch is a thicker mark, never a gap.
-  // Every line is solid, however many there are (RJ, 14 Nov 2026: "I can't
-  // see them"). Numbers sit on two staggered rows, so nearly every slice can
-  // carry one.
+  // other. Lines are solid where there is room between them (RJ, 14 Nov 2026:
+  // "I can't see them"); packed closer than a dozen screen pixels they fade, to
+  // no less than a third, so a whole song's thousand cuts do not wall off the
+  // sound. The handles on the ruler stay solid at any density. Numbers sit on
+  // two staggered rows, so nearly every slice can carry one.
   const laneW = $('chopLane').clientWidth || 1;
+  {
+    let n = 0;
+    for (const x of chop.slices) if (x.e >= chopView.a && x.s <= chopView.b) n++;
+    const room = laneW / Math.max(1, n) / chopPxPer;
+    $('chopLane').style.setProperty('--chop-a', Math.max(0.33, Math.min(1, room / 12)).toFixed(2));
+  }
   const px = (f) => chopXOf(f) * laneW, minPx = CHOP_MIN_PX * chopPxPer;
   const drawn = [];
   let lastPx = -Infinity;
   chop.slices.forEach((x, i) => {
     if (x.e < chopView.a || x.s > chopView.b) return;
     const at = px(x.s);
-    if (i !== chop.current && !chop.sel.has(i) && at - lastPx < minPx && drawn.length) {
-      drawn[drawn.length - 1][1] = at - lastPx;
-      return;
-    }
+    if (i !== chop.current && !chop.sel.has(i) && at - lastPx < minPx && drawn.length) return;
     lastPx = at;
     drawn.push([i, 0]);
   });

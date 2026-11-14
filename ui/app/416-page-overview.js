@@ -314,13 +314,18 @@ function poDraw() {
   const ra = X(a), rb = X(b);
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(4, 0, Math.max(0, ra - 4), h); c.fillRect(rb, 0, Math.max(0, w - 4 - rb), h);
   c.fillStyle = 'rgba(124,240,208,.05)'; c.fillRect(ra, 0, rb - ra, bot);
-  // Chop's cuts, across the whole height, over the dimming so they read.
+  // Chop's cuts, over the dimming so they read: across the whole height where
+  // there is room between them; packed (a whole song's worth), as ticks along
+  // the top and the bottom, so the sound between stays in sight.
   if (poChop()) {
     c.save();
-    c.strokeStyle = cl.wave; c.globalAlpha = 0.75; c.lineWidth = 1;
+    const n = chop.slices.length, room = n ? (w * (PO.zb > PO.za ? f.len / (PO.zb - PO.za) : 1)) / n : w;
+    const packed = room < 8, tk = Math.min(10, h * 0.16);
+    c.strokeStyle = cl.wave; c.globalAlpha = packed ? 0.85 : 0.75; c.lineWidth = 1;
     c.beginPath();
     let last = -9;
-    const cut = (fr) => { const x = Math.round(X(fr / chop.rate)) + 0.5; if (x - last >= 2 && x > 3 && x < w - 3) { c.moveTo(x, 0); c.lineTo(x, h); last = x; } };
+    const line = (x) => { if (packed) { c.moveTo(x, 0); c.lineTo(x, tk); c.moveTo(x, h - tk); c.lineTo(x, h); } else { c.moveTo(x, 0); c.lineTo(x, h); } };
+    const cut = (fr) => { const x = Math.round(X(fr / chop.rate)) + 0.5; if (x - last >= 2 && x > 3 && x < w - 3) { line(x); last = x; } };
     for (const s of chop.slices) cut(s.s);
     if (chop.slices.length) cut(chop.slices[chop.slices.length - 1].e);
     c.stroke();
