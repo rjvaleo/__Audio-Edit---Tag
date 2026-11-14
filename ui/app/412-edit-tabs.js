@@ -1,41 +1,79 @@
-// ════════════════════════════════════════════ the Edit page: its tabs ══
+// ═══════════════════════════════════ the Edit page: its bar and settings ══
 //
-// WaveLab's command tabs over the ribbon's own sections (`wtLayout`, 310):
-// View, Edit, Process, Correct, Analyze, Markers, Render. A section belongs to
-// a tab (`sec.tab`); Customize works as it did, on the tab that is open.
+// One bar of the ribbon's sections (`wtLayout`, 310), no tabs: RJ, 13 Nov
+// 2026, "The tabs is too much". The icons carry no words; the tooltip has the
+// name, the key and the settings the command will run with.
 //
-// The dialogs are knobs now. Gain, Normalize, Strip silence, Insert silence,
-// Repair click and Duplicate keep their settings beside the command, and the
-// command runs as it always did with the dialog answered in advance
-// (`askAnswer`, 300): the same checks, the same edit op, the same message.
-// The menus still open the dialog. See `docs/EDIT-PAGE.md`.
+// The dialogs are knobs. Gain, Normalize, Strip silence, Insert silence,
+// Repair click and Duplicate keep their settings behind a ▾ beside the
+// command, and the command runs as it always did with the dialog answered in
+// advance (`askAnswer`, 300): the same checks, the same edit op, the same
+// message. The menus still open the dialog. See `docs/EDIT-PAGE.md`.
 
-const ED_TAB_ICON = { View: 'edSpec', Edit: 'cut', Process: 'gain', Correct: 'repairClick', Analyze: 'findPeak', Markers: 'marker', Render: 'export' };
-
-function edPaintTabs() {
-  const box = $('edTabs');
-  if (!box) return;
-  if (!box.childElementCount) {
-    box.innerHTML = ED_TABS.map((t) => `<button type="button" class="ed-tab" role="tab" data-tab="${t}" aria-label="${t}">${wtIcon(ED_TAB_ICON[t])}${t}</button>`).join('');
-    box.addEventListener('click', (e) => { const b = e.target.closest('.ed-tab'); if (b) edSetTab(b.dataset.tab); });
-  }
-  for (const b of box.querySelectorAll('.ed-tab')) {
-    const on = b.dataset.tab === edTab;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', String(on));
-  }
+/// A command's tooltip: its name, its key, and what its knobs are set to.
+function edTitleFor(id) {
+  const it = WT_CMDS[id];
+  if (!it) return '';
+  const set = (ED_KNOBS[id] || []).map(([key, label, , , , fmt]) => `${label} ${fmt(edParams[key])}`).join(', ');
+  return [it.name, it.key, set && `(${set})`].filter(Boolean).join('  ');
 }
 
-function edSetTab(t) {
-  if (!ED_TABS.includes(t)) return;
-  edTab = t;
-  try { localStorage.setItem('editTab', t); } catch { /* private mode */ }
-  wtRender();
+/// The ▾ beside a command with settings: it opens them, it does not run.
+function edMoreButton(id) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'wt-more';
+  b.dataset.more = id;
+  b.title = `${WT_CMDS[id].name.replace(/…$/, '')}: its settings`;
+  b.setAttribute('aria-label', b.title);
+  b.setAttribute('aria-haspopup', 'dialog');
+  b.setAttribute('aria-expanded', 'false');
+  b.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg>';
+  b.onclick = (e) => { e.stopPropagation(); if ($('edKnobs')?.dataset.cmd === id) edKnobsClose(); else edKnobsOpen(id, b); };
+  return b;
 }
 
-/// The tab a command lives in, so a test or ⌘K can open it first.
-function edTabFor(id) {
-  return wtLayout.sections.find((s) => s.ids.includes(id))?.tab || null;
+/// The settings of one command, under its ▾: its knobs and the command itself.
+function edKnobsOpen(id, from) {
+  edKnobsClose();
+  let pop = $('edKnobs');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'edKnobs';
+    pop.className = 'ed-kpop';
+    pop.setAttribute('role', 'dialog');
+    pop.hidden = true;
+    document.body.appendChild(pop);
+    window.addEventListener('mousedown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.wt-more')) edKnobsClose(); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden) { edKnobsClose(); e.stopPropagation(); } }, true);
+  }
+  const it = WT_CMDS[id];
+  pop.dataset.cmd = id;
+  pop.setAttribute('aria-label', `${it.name} settings`);
+  const run = document.createElement('button');
+  run.type = 'button';
+  run.className = 'ed-krun';
+  run.dataset.run = id;
+  run.innerHTML = wtIcon(id) + `<span>${WT_WORDS[id] || it.name}</span>`;
+  run.onclick = () => { edKnobsClose(); edRun(id); };
+  const ks = edKnobsFor(id);
+  pop.replaceChildren(...ks, run);
+  const btn = document.querySelector(`#waveTools .wt-btn[data-cmd="${id}"]`);
+  run.disabled = !!btn?.disabled;
+  pop.hidden = false;
+  const r = (from || btn).getBoundingClientRect(), w = pop.offsetWidth;
+  pop.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)))}px`;
+  pop.style.top = `${Math.round(r.bottom + 6)}px`;
+  from?.setAttribute('aria-expanded', 'true');
+}
+
+function edKnobsClose() {
+  const pop = $('edKnobs');
+  if (!pop || pop.hidden) return;
+  pop.hidden = true;
+  delete pop.dataset.cmd;
+  for (const b of document.querySelectorAll('.wt-more[aria-expanded="true"]')) b.setAttribute('aria-expanded', 'false');
+  wtSync();
 }
 
 // ─────────────────────────────────────────────────────── the settings
@@ -102,7 +140,7 @@ function edKnobsFor(id) {
     let paint = () => {};
     const el = knob(label, edParams[key], min, max, step, fmt,
       (v) => { edParams[key] = v; paint(v); },
-      (v) => { edParams[key] = v; edSaveParams(); paint(v); },
+      (v) => { edParams[key] = v; edSaveParams(); paint(v); wtSync(); },
       log, ED_PARAM_DEF[key]);
     el.dataset.k = key;
     el.classList.add('ed-knob');

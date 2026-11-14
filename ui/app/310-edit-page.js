@@ -259,17 +259,16 @@ const WT_WORDS = {
   edRainbow: 'Rainbow', edSpec: 'Spectrum', edLevel: 'Level', edHits: 'Hits', edLoud: 'Loud', snapHits: 'Hits', regionsFromHits: 'At hits',
 };
 const WT_CMDS = Object.fromEntries(WT_GROUPS.flatMap(([, items]) => items.map((it) => [it.id, it])));
-const WT_STORE = 'editToolbar';
+// A new key: the bar was seven tabs until 13 Nov 2026, and a layout kept from
+// then would bring the old order back.
+const WT_STORE = 'editBar';
 
-/// The Edit page's tabs, after WaveLab's (RJ approved D, 10 Nov 2026). A section
-/// belongs to one; the ribbon's sections keep their names and go where they
-/// fit. Here rather than in 412 because the layout is read the moment this
-/// file runs. See `docs/EDIT-PAGE.md`.
-const ED_TABS = ['View', 'Edit', 'Process', 'Correct', 'Analyze', 'Markers', 'Render'];
-const ED_TAB_OF = { Display: 'View', Show: 'Analyze', Zoom: 'View', History: 'Edit', Clipboard: 'Edit', Selection: 'Edit', Snap: 'Edit',
-  Fades: 'Process', Level: 'Process', Process: 'Process', Silence: 'Correct', Repair: 'Correct', Measure: 'Analyze', Markers: 'Markers', Export: 'Render' };
-function edTabOf(title) { return ED_TAB_OF[title] || 'Edit'; }
-let edTab = (() => { try { const t = localStorage.getItem('editTab'); return ED_TABS.includes(t) ? t : 'Edit'; } catch { return 'Edit'; } })();
+/// One bar, no tabs (RJ, 13 Nov 2026: "The tabs is too much"). The sections in
+/// the order they sit along it, editing first and how it is shown last; and
+/// what starts hidden because a key or the menus already do it. Customize
+/// changes both. See `docs/EDIT-PAGE.md`.
+const ED_BAR_ORDER = ['History', 'Clipboard', 'Silence', 'Fades', 'Level', 'Process', 'Repair', 'Measure', 'Markers', 'Zoom', 'Snap', 'Display', 'Show', 'Export', 'Selection'];
+const ED_BAR_HIDDEN = ['selectAll', 'deselect', 'setSelection', 'goTo'];
 /// What is shown on the wave. Kept, so the page comes back as you left it.
 const edPrefs = Object.assign({ rainbow: true, spec: true, level: true, hits: false, loud: false, snapHits: false },
   (() => { try { return JSON.parse(localStorage.getItem('editShow') || '{}'); } catch { return {}; } })());
@@ -281,16 +280,19 @@ const edSound = { path: '', rate: 0, mono: null, an: null, hits: [], loud: [], s
 /// `WT_GROUPS`; a stored layout is checked against the commands that exist,
 /// so a command added later turns up rather than being lost.
 function wtDefault() {
-  return WT_GROUPS.map(([title, items]) => ({ title, tab: edTabOf(title), ids: items.map((it) => it.id) }));
+  const at = (t) => { const i = ED_BAR_ORDER.indexOf(t); return i < 0 ? ED_BAR_ORDER.length : i; };
+  const sections = [...WT_GROUPS].sort(([a], [b]) => at(a) - at(b))
+    .map(([title, items]) => ({ title, ids: items.map((it) => it.id).filter((id) => !ED_BAR_HIDDEN.includes(id)) }))
+    .filter((sec) => sec.ids.length);
+  return { sections, hidden: [...ED_BAR_HIDDEN] };
 }
 function wtLoad() {
   try {
     const v = JSON.parse(localStorage.getItem(WT_STORE) || 'null');
-    if (!v || !Array.isArray(v.sections)) return { sections: wtDefault(), hidden: [] };
+    if (!v || !Array.isArray(v.sections)) return wtDefault();
     const seen = new Set();
     const sections = v.sections.map((sec) => ({
       title: String(sec.title || '').slice(0, 40),
-      tab: ED_TABS.includes(sec.tab) ? sec.tab : edTabOf(sec.title),
       ids: (sec.ids || []).filter((id) => WT_CMDS[id] && !seen.has(id) && seen.add(id)),
     }));
     const hidden = (v.hidden || []).filter((id) => WT_CMDS[id] && !seen.has(id) && seen.add(id));
@@ -299,12 +301,12 @@ function wtLoad() {
       for (const it of items) {
         if (seen.has(it.id)) continue;
         let sec = sections.find((x) => x.title === title);
-        if (!sec) sections.push(sec = { title, tab: edTabOf(title), ids: [] });
+        if (!sec) sections.push(sec = { title, ids: [] });
         sec.ids.push(it.id);
       }
     }
     return { sections, hidden };
-  } catch { return { sections: wtDefault(), hidden: [] }; }
+  } catch { return wtDefault(); }
 }
 let wtLayout = wtLoad();
 let wtEditing = false;
@@ -323,7 +325,7 @@ function wtButton(id) {
   b.type = 'button';
   b.className = 'wt-btn';
   b.dataset.cmd = id;
-  b.title = it.key ? `${it.name}  ${it.key}` : it.name;
+  b.title = edTitleFor(id);
   b.setAttribute('aria-label', it.name);
   b.innerHTML = wtIcon(id) + `<span class="wt-word">${WT_WORDS[id] || it.name}</span>`;
   b.onclick = () => {
@@ -407,8 +409,8 @@ function wtSection(sec, i) {
     row.appendChild(wtButton(id));
     // Export carries its bit depth beside it, as the old bar did.
     if (id === 'export') row.appendChild(wtBits());
-    // The settings a dialog used to ask for, as knobs beside the command.
-    if (!wtEditing) for (const k of edKnobsFor(id)) row.appendChild(k);
+    // The settings a dialog used to ask for: knobs, behind a ▾ beside the command.
+    if (!wtEditing && ED_KNOBS[id]) row.appendChild(edMoreButton(id));
   }
   if (wtEditing) {
     head.contentEditable = 'plaintext-only';
@@ -487,12 +489,12 @@ function wtCustomize() {
     if (!wtLayout.hidden.length) row.classList.add('wt-empty');
     wtDropZone(g, 'hidden');
     row.appendChild(tool('wtAdd', 'Section', 'Add an empty section at the end', () => {
-      wtLayout.sections.push({ title: 'New section', tab: edTab, ids: [] });
+      wtLayout.sections.push({ title: 'New section', ids: [] });
       wtSave();
       wtRender();
     }));
     row.appendChild(tool('wtReset', 'Reset', 'Put every command back where it started', () => {
-      wtLayout = { sections: wtDefault(), hidden: [] };
+      wtLayout = wtDefault();
       wtSave();
       wtRender();
     }));
@@ -508,8 +510,8 @@ function wtRender() {
   const bar = $('waveTools');
   if (!bar) return;
   bar.classList.toggle('wt-editing', wtEditing);
-  bar.replaceChildren(...wtLayout.sections.map((sec, i) => [sec, i]).filter(([sec]) => sec.tab === edTab).map(([sec, i]) => wtSection(sec, i)), wtCustomize());
-  edPaintTabs();
+  edKnobsClose();
+  bar.replaceChildren(...wtLayout.sections.map((sec, i) => wtSection(sec, i)), wtCustomize());
   wtSync();
 }
 
@@ -537,6 +539,9 @@ function wtSync() {
     // While customizing every button can be picked up.
     b.disabled = !wtEditing && !ok;
     if (it.lit) b.setAttribute('aria-pressed', String(!!it.lit()));
+    // The words are gone from the bar, so the tooltip carries the name, the
+    // key and what the command will run with.
+    if (!wtEditing) b.title = edTitleFor(b.dataset.cmd);
   }
   const bits = $('wtBits');
   if (bits && $('exportBits')) bits.value = $('exportBits').value;

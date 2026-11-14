@@ -309,8 +309,7 @@
     <!-- edit toolbar: only in the edit window -->
     <div class="edittools hidden" id="editTools">
       <div class="tabbar hidden" id="tabBar"></div>
-      <!-- The Edit page's command tabs (412) and ⌘K (415), beside the file tabs. -->
-      <div class="ed-tabs" id="edTabs" role="tablist" aria-label="Edit tools"></div>
+      <!-- The Edit page's ⌘K (415), beside the file tabs. -->
       <button type="button" class="ed-cmdk" id="edCmdK" title="Every command, by name  ⌘K"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>Every command…<kbd>⌘K</kbd></button>
       <div class="vsep"></div>
       <button class="ghost" data-op="cut">Cut</button>
@@ -1336,18 +1335,20 @@
               <button type="button" class="chop-btn chop-ib on" id="chopFollow" title="Follow the playhead"><svg viewBox="0 0 12 12"><path d="M2 6H8M6 3L9 6L6 9M10.5 2V10"/></svg></button>
               <div class="chop-seg sm" id="chopFollowMode" title="While it plays: scroll or page"><button type="button" data-v="scroll" class="on">scroll</button><button type="button" data-v="page">page</button></div>
             </div>
-            <div class="chop-well chop-overw"><canvas id="chopOverview" data-w="1006" data-h="42"></canvas><i class="chop-ovhead hidden" id="chopOverHead"></i></div>
+            <div class="chop-well chop-overw"><canvas id="chopOverview" data-w="1384" data-h="42"></canvas><i class="chop-ovhead hidden" id="chopOverHead"></i></div>
             <div class="chop-vrow"><span class="chop-cap">Colour</span><div class="chop-seg sm" id="chopColour" title="What the colour says"></div><div class="chop-legend" id="chopLegend"></div></div>
-            <div class="chop-well chop-lane" id="chopLane"><canvas id="chopWave" data-w="1006" data-h="334"></canvas></div>
+            <div class="chop-well chop-lane" id="chopLane"><canvas id="chopWave" data-w="1384" data-h="320"></canvas></div>
+            <!-- Under the wave: the picked slice, the pass, and the list of slices
+                 (RJ, 13 Nov 2026: the wave full width, the slices somewhere else). -->
             <div class="chop-pics">
-              <div class="chop-well"><div class="chop-pl"><b>THE PICKED SLICE</b><span id="chopPickRo"></span></div><div class="chop-pl2" id="chopPickAn"></div><canvas id="chopSlicePic" data-w="500" data-h="119"></canvas></div>
-              <div class="chop-well"><div class="chop-pl"><b>THE PASS</b><span id="chopPassRo"></span></div><canvas id="chopPassPic" data-w="500" data-h="119"></canvas></div>
+              <div class="chop-well"><div class="chop-pl"><b>THE PICKED SLICE</b><span id="chopPickRo"></span></div><div class="chop-pl2" id="chopPickAn"></div><canvas id="chopSlicePic" data-w="452" data-h="133"></canvas></div>
+              <div class="chop-well"><div class="chop-pl"><b>THE PASS</b><span id="chopPassRo"></span></div><canvas id="chopPassPic" data-w="452" data-h="133"></canvas></div>
+              <div class="chop-well chop-slices">
+                <div class="chop-phead"><b class="chop-nm">SLICES</b><span class="chop-meta" id="chopHeard" title="What the library's listener hears in this sound"></span><span class="chop-grow"></span><span class="chop-meta" id="chopPattern"></span></div>
+                <div class="chop-lh"><span>#</span><span></span><span>Kind</span><span></span><span class="r">Start</span><span class="r">Long</span><span class="r">Peak</span><span class="r">Tail</span><span></span></div>
+                <div class="chop-list" id="chopList"></div>
+              </div>
             </div>
-          </div>
-          <div class="chop-panel chop-slices">
-            <div class="chop-phead"><b class="chop-nm">SLICES</b><span class="chop-meta" id="chopHeard" title="What the library's listener hears in this sound"></span><span class="chop-grow"></span><span class="chop-meta" id="chopPattern"></span></div>
-            <div class="chop-lh"><span>#</span><span></span><span>Kind</span><span></span><span class="r">Start</span><span class="r">Long</span><span class="r">Peak</span><span class="r">Tail</span><span></span></div>
-            <div class="chop-list" id="chopList"></div>
           </div>
         </section>
         <section class="chop-band chop-ctl">
