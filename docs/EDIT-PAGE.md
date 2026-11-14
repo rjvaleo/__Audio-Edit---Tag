@@ -5,6 +5,8 @@ Redesigned 10 Nov 2026. The design and the mock-ups are in the work folder: `edi
 rulers and counters) with C's editing on the wave. He had asked to look at the best editors, at WaveLab and the old
 Peak, and said "I don't like the right tray". So the wave takes the whole width.
 
+On 13 Nov 2026 the seven tabs went (RJ: "The tabs is too much"): every command is on one bar.
+
 ## The Now Playing bar
 
 The transport, on every page, in one place: a 48 px bar across the top from the rail's edge (`#nowBar`,
@@ -35,18 +37,25 @@ Before this the play button sat somewhere different on six pages and was missing
 
 | File | What it does |
 |---|---|
-| `ui/app/310-edit-page.js` | The commands (`WT_GROUPS`), the sections and Customize. A section belongs to a tab: `ED_TABS`, `ED_TAB_OF`. |
+| `ui/app/310-edit-page.js` | The commands (`WT_GROUPS`), the sections and Customize. Their order along the bar, and what starts hidden: `ED_BAR_ORDER`, `ED_BAR_HIDDEN`. |
 | `ui/app/411-edit-sound.js` | The document's own samples (`/audio?dry=1`), measured in a worker by Chop's `chopAnalyseCore`: band energies, hits, loud spots, levels. |
-| `ui/app/412-edit-tabs.js` | The tabs, and the knobs that answer the old dialogs (`edRun`, `askAnswer`). |
+| `ui/app/412-edit-tabs.js` | The tooltips, the ▾ and its pop-up, and the knobs that answer the old dialogs (`edRun`, `askAnswer`). |
 | `ui/app/413-edit-wave.js` | The time ruler, the level ruler, Rainbow colour, hits and loud spots, the counters, and the meters that slide out. |
 | `ui/app/414-edit-hands.js` | The fade handles, the level pill, dragging an edge, the loupe, and the preview while a handle is held. |
 | `ui/app/415-edit-keys.js` | The pie on right-click, and ⌘K. |
 | `ui/edit.css` | All of it, and the bar. |
 
-- **Tabs.** View, Edit, Process, Correct, Analyze, Markers and Render, over the ribbon's own sections. Customize
-  works as before, on the open tab.
+- **One bar.** Every section side by side, in `ED_BAR_ORDER`: editing first, how the wave is shown and Export
+  last. Small icons without words, with a rule between sections. The tooltip gives the name, the key, and the
+  settings the command will run with. A window narrower than the bar wraps whole sections onto a second line.
+  - Selection (Select all, Deselect, Set selection, Go to) starts hidden: its keys and the menus do it. It is in
+    ⌘K, and Customize brings it back.
+  - Customize works as before. While it is on, the section titles and the words under the icons come back, so
+    there is something to rename and pick up.
+  - The layout is kept under `editBar`. The tabbed layout was kept under `editToolbar` and is no longer read.
 - **Knobs answer the dialogs.** Gain, Normalize, Normalize (RMS), Strip silence, Insert silence, Repair click and
-  Duplicate keep their settings as knobs beside the command, and in their row in ⌘K. The command runs exactly as it
+  Duplicate keep their settings as knobs behind a ▾ beside the command (`#edKnobs`, with the command itself to run
+  them), and in their row in ⌘K. The command runs exactly as it
   always did, with its dialog answered in advance: same checks, same edit op, same message. The menus still open
   the dialog.
 - **Editing on the wave.**
@@ -79,5 +88,5 @@ Before this the play button sat somewhere different on six pages and was missing
   - the pie and ⌘K;
   - the counters and the rulers;
   - the Look.
-- `tests/ui/edit-page.spec.mjs` covers what it always did, tab by tab.
+- `tests/ui/edit-page.spec.mjs` covers what it always did, plus one bar with no tabs and the ▾ settings.
 - `controls-parity` takes the transport from `#nowBar, #transportBar`.
