@@ -76,7 +76,7 @@ body.choppage .dock-panes { height: 100%; }
 .chop-app .chop-hflex { display: flex; gap: 4px; }
 
 .chop-app .chop-mid { height: 584px; }
-.chop-app .chop-source { width: 1030px; padding: 7px 11px 10px; display: flex; flex-direction: column; gap: 6px; }
+.chop-app .chop-source { flex: 1; min-width: 0; padding: 7px 11px 10px; display: flex; flex-direction: column; gap: 6px; }
 .chop-app .chop-phead { display: flex; align-items: center; gap: 6px; height: 24px; flex: none; }
 .chop-app .chop-nm { font: 600 var(--fs-s) var(--monof); letter-spacing: .14em; color: var(--t); }
 .chop-app .chop-meta { font: 400 var(--fs-s) var(--monof); color: var(--t3); white-space: nowrap; }
@@ -93,8 +93,8 @@ body.choppage .dock-panes { height: 100%; }
 .chop-app .lgw { display: inline-flex; align-items: center; gap: 3px; font: 400 var(--fs-xs) var(--monof); color: var(--t2); white-space: nowrap; }
 .chop-app .lgd { width: 7px; height: 7px; border-radius: 50%; display: block; flex: none; }
 .chop-app .lgr { width: 150px; height: 7px; border-radius: var(--r-s); display: block; flex: none; }
-.chop-app .chop-lane { height: 334px; flex: none; }
-.chop-app .chop-pics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex: 1; min-height: 0; }
+.chop-app .chop-lane { height: 320px; flex: none; }
+.chop-app .chop-pics { display: grid; grid-template-columns: 452px 452px 1fr; gap: 6px; flex: 1; min-height: 0; }
 .chop-app .chop-pl { position: absolute; left: 8px; right: 8px; top: 4px; display: flex; justify-content: space-between; gap: 10px; font: 400 var(--fs-xs) var(--monof); color: var(--t2); pointer-events: none; z-index: 1; white-space: nowrap; }
 .chop-app .chop-pl b { font-weight: 600; letter-spacing: .12em; color: var(--t3); }
 .chop-app .chop-pl2 { position: absolute; left: 8px; right: 8px; bottom: 3px; font: 400 var(--fs-xs) var(--monof); color: var(--t2); white-space: nowrap; pointer-events: none; z-index: 1; text-shadow: 0 0 3px var(--black), 0 0 3px var(--black); }
@@ -136,7 +136,8 @@ body.choppage .dock-panes { height: 100%; }
 .chop-readout { position: absolute; top: 22px; margin-left: 8px; padding: 1px 5px; border-radius: var(--r-s); font: var(--fs-s) var(--ui); color: var(--t); background: var(--panel-hi); white-space: nowrap; }
 
 /* the slices */
-.chop-app .chop-slices { flex: 1; min-width: 0; padding: 7px 7px 7px 10px; display: flex; flex-direction: column; gap: 3px; }
+.chop-app .chop-slices { min-width: 0; padding: 4px 6px 4px 8px; display: flex; flex-direction: column; gap: 2px; }
+.chop-app .chop-slices .chop-phead { height: 18px; }
 .chop-app .chop-lh, .chop-app .chop-list .chop-row { display: grid; grid-template-columns: 24px 36px 30px 36px 42px 42px 38px 50px 16px; gap: 3px; align-items: center; }
 .chop-app .chop-lh { height: 16px; font: 500 var(--fs-xs) var(--ui); color: var(--t3); padding-right: 4px; flex: none; }
 .chop-app .r { text-align: right; }

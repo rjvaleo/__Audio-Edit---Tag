@@ -11,7 +11,12 @@ ReCycle-style ping-pong loop tail, and writes them out as 16-bit WAVs.
 ## The page (redesigned 8 Nov 2026)
 
 The design is `chop-redesign/ARCHITECTURE.md` in the work folder; the approved
-mock-up is `chop-v3.html` there. What matters for working on it:
+mock-up is `chop-v3.html` there. 
+Since 13 Nov 2026 the waveform runs the full width of the page (RJ: "the
+waveform should be full width. Those slices are good, but they can go someplace
+else"). The SLICES list sits under it, beside THE PICKED SLICE and THE PASS.
+
+What matters for working on it:
 
 | File | What it does |
 |---|---|
