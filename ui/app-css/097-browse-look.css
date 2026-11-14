@@ -1,0 +1,63 @@
+/* ── Browse, in the app's look ───────────────────────────────────────── */
+/* RJ, 14 Nov 2026: "The library uses the wrong look, 100%." Browse was the
+ * shell's flat black while every other page wears the look: the chassis behind,
+ * and each part a raised panel with wells cut into it. Here it does too, the
+ * Stems page's recipe (`056-stems.css`): the sound and its details on the left,
+ * the types and their files on the right, each a panel. Colours are the look's
+ * tokens only, so a theme reaches Browse as it reaches the rest. */
+
+body.browsetypes .centre,
+body.browsetypes .browse-types {
+  color: var(--look-text);
+  background: var(--look-grain), radial-gradient(120% 80% at 30% 0%, var(--look-panel), var(--look-chassis) 60%);
+  background-blend-mode: soft-light, normal;
+}
+body.browsetypes .centre { padding: 10px 6px 12px 12px; gap: 8px; }
+body.browsetypes .browse-types { border-left: 0; padding: 10px 12px 12px 6px; gap: 8px; }
+
+/* The panels: the sound's details, the types, the files. */
+body.browsetypes #statsView,
+body.browsetypes .bt-types,
+body.browsetypes .bt-files {
+  padding: 8px 10px 10px;
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel) 30%, var(--look-panel));
+  border: 1px solid var(--look-line); border-radius: var(--r-l);
+  box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), inset 0 -1px 0 rgba(var(--black-rgb), .45), 0 1px 1px rgba(var(--black-rgb), .6), 0 6px 14px rgba(var(--black-rgb), .45);
+}
+body.browsetypes .bt-types { border-right: 1px solid var(--look-line); }
+
+/* The sound itself, and the empty place before one is picked, as a well. */
+body.browsetypes #lane,
+body.browsetypes .lane-empty {
+  border-radius: var(--r-m);
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--look-well) 70%, var(--look-panel)), var(--look-well) 70%);
+  box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75), 0 1px 0 rgba(var(--white-rgb), .06);
+}
+
+/* Headings as every panel has them. */
+body.browsetypes .bt-title { color: var(--look-text); }
+body.browsetypes .bt-sub, body.browsetypes .bt-type .bt-n, body.browsetypes .bt-type .bt-cats { color: var(--look-text-3); }
+
+/* Fields cut into the panels. */
+body.browsetypes .bt-files input,
+body.browsetypes #statsView input,
+body.browsetypes #statsView textarea,
+body.browsetypes #statsView select {
+  color: var(--look-text); background: var(--look-well);
+  border: 1px solid var(--look-line); border-radius: var(--r-m);
+}
+
+/* A type: its name, count and bar; picked, it wears "on". */
+body.browsetypes .bt-type { color: var(--look-text-2); }
+body.browsetypes .bt-type:hover { background: rgba(var(--white-rgb), .03); }
+body.browsetypes .bt-type.on { background: var(--look-well); box-shadow: inset 2px 0 0 var(--on); border-color: transparent; color: var(--look-text); }
+body.browsetypes .bt-type.on .bt-name { color: var(--on); }
+body.browsetypes .bt-type .bt-fill { background: var(--look-track); }
+body.browsetypes .bt-type .bt-fill i { background: var(--look-text-3); }
+
+/* The files, as the scale library's rows are on Seq. */
+body.browsetypes .bt-file-list .file-row { border-radius: var(--r-s); }
+body.browsetypes .bt-file-list .file-row:hover { background: rgba(var(--white-rgb), .03); }
+body.browsetypes .bt-file-list .file-row.selected { background: var(--look-well); box-shadow: inset 2px 0 0 var(--on); }
+body.browsetypes .bt-chip { color: var(--look-text-2); background: var(--look-well); border-color: var(--look-line); }
+body.browsetypes .bt-chip.on { color: var(--on); border-color: color-mix(in srgb, var(--on) 55%, var(--look-line)); }

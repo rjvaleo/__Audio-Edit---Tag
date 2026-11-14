@@ -28,6 +28,8 @@ const ST = {
   kind: 'drums',
   tries: [],
   pick: null,        // the chosen try
+  src: null,         // a song opened from the computer: { p, name }, until one is picked in the library
+  srcFrom: null,     // what the library had picked when it was opened
   made: null,        // the last saved sound
   chain: { up: true, rate: 96000, air: 0.35, above: 11000, clean: true, trim: -60, fade: 20, peak: -1 },
 };
@@ -66,8 +68,10 @@ function stBuild() {
 
     <div class="st-view" id="stSplit">
       <section class="st-panel st-src">
-        <div class="st-file"><b id="stSrcName">Pick a song in the library</b><span class="st-meta" id="stSrcMeta">Open the library, click a song, then Split</span></div>
-        <button class="st-btn" id="stChoose" title="Open the library drawer and click a song">Choose from the library</button>
+        <div class="st-file"><b id="stSrcName">Pick a song</b><span class="st-meta" id="stSrcMeta">from the library, or any file on the computer, then Split</span></div>
+        <button class="st-btn" id="stChoose" title="Open the library drawer and click a song">From the library</button>
+        <button class="st-btn" id="stOpenFile" title="Choose any sound file on the computer: it is copied into the library's Imports folder, then split">Open a file…</button>
+        <input type="file" id="stFile" accept=".wav,.wave,.aif,.aiff,.aifc,.flac,.mp3,.m4a,.ogg,audio/*" hidden />
         <span class="st-vsep"></span>
         <div class="st-col"><span class="st-cap">Model</span><span id="stModel"></span></div>
         <span class="st-grow"></span>
@@ -184,7 +188,10 @@ function stBuild() {
       b.closest('.st-stage').classList.toggle('off', !c[k]);
     };
   }
-  $('stChoose').onclick = () => { if (typeof openDrawer === 'function') openDrawer(); };
+  $('stChoose').onclick = () => { ST.src = null; ST.srcFrom = state.selectedFile?.path || null; stShowSource(true); if (typeof openDrawer === 'function') openDrawer(); };
+  // Or any file on the computer, through the browser's own Open dialog.
+  $('stOpenFile').onclick = () => $('stFile').click();
+  $('stFile').onchange = () => { const f = $('stFile').files[0]; $('stFile').value = ''; if (f) stUpload(f); };
   $('stGo').onclick = stSplit;
   $('stStop').onclick = () => postJSON('/api/stems/stop', {}).catch(() => {});
   $('stPlayOrig').onclick = () => { const p = ST.song?.meta?.source; if (p) stPlay(p); };
@@ -238,11 +245,19 @@ function stLeave() {
   clearTimeout(ST.poll);
 }
 
-function stShowSource() {
+function stShowSource(force) {
   if (state.mode !== 'stems') return stLeave();
-  const f = state.selectedFile;
   const name = $('stSrcName'), meta = $('stSrcMeta');
+  // A file opened from the computer is the source until a song is picked in
+  // the library after it.
+  if (ST.src && state.selectedFile?.path && state.selectedFile.path !== ST.srcFrom) ST.src = null;
+  if (ST.src) {
+    if (force || name.textContent !== ST.src.name) { name.textContent = ST.src.name; meta.textContent = `from the computer · kept in ${ST.src.p.split('/').slice(0, -1).join('/')}/`; }
+    return;
+  }
+  const f = state.selectedFile;
   if (!f) return;
+  if (force) name.textContent = '';
   const nm = f.name || f.path.split('/').pop();
   if (name.textContent !== nm) {
     name.textContent = nm;
@@ -253,11 +268,31 @@ function stShowSource() {
 
 // ------------------------------------------------------------------ split
 
-async function stSplit() {
-  const f = state.selectedFile;
-  if (!f) { toast('Pick a song in the library first'); if (typeof openDrawer === 'function') openDrawer(); return; }
+/// A song from the computer: its bytes go to the library's Imports folder, and
+/// it becomes the song to split.
+async function stUpload(file) {
+  const name = $('stSrcName'), meta = $('stSrcMeta');
+  name.textContent = file.name;
+  meta.textContent = `copying into the library… ${(file.size / 1048576).toFixed(1)} MB`;
   try {
-    await postJSON('/api/stems/split', { p: f.path, model: ST.model });
+    const r = await fetch(`/api/stems/upload?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `could not bring in ${file.name}`);
+    ST.src = { p: j.p, name: j.name };
+    ST.srcFrom = state.selectedFile?.path || null;
+    stShowSource(true);
+  } catch (e) {
+    toast(e.message);
+    ST.src = null;
+    stShowSource(true);
+  }
+}
+
+async function stSplit() {
+  const f = ST.src || state.selectedFile;
+  if (!f) { toast('Pick a song: from the library, or Open a file…'); if (typeof openDrawer === 'function') openDrawer(); return; }
+  try {
+    await postJSON('/api/stems/split', { p: f.p || f.path, model: ST.model });
     stPollStatus();
   } catch (e) {
     toast(e.message);
