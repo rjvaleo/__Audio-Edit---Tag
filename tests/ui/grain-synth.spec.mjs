@@ -25,6 +25,7 @@ const AT = {
   vocWindowMs: 'vocoder.windowMs', magFreeze: 'vocoder.magFreeze', magBlur: 'vocoder.magBlur', magGate: 'vocoder.magGate',
   freqTrust: 'vocoder.freqTrust', phaseSpread: 'vocoder.phaseSpread', peakWidth: 'vocoder.peakWidth', lockWidth: 'vocoder.lockWidth',
   phaseLock: 'vocoder.phaseLock', stereoLink: 'vocoder.stereoLink',
+  shVersion: 'soundhack.version',
 };
 
 const SHARED = [
@@ -43,6 +44,7 @@ const ENGINES = {
   pvsola: [...CLOUD, 'anchorFrames', 'anchorSearchMs', 'blend', ...VOC],
   hybrid: [...CLOUD, 'harmonicLevel', 'percussiveLevel', 'residualLevel', 'morphNoise', 'timeSpan', 'freqSpan', 'margin', 'fftSize', ...VOC, ...SPLICE, ...TRANS],
   granular: [],
+  soundhack: ['shVersion', ...CLOUD],
 };
 
 async function openPage(page, { flag = true } = {}) {
@@ -135,7 +137,9 @@ for (const [engine, own] of Object.entries(ENGINES)) {
         expect(await draft(page, k), `${k} toggles`).toBe(!was);
       } else if (kind === 'seg') {
         const was = await draft(page, k);
-        await page.click(`#grainView .gs-bc[data-k="${k}"] .gs-seg span:nth-child(2)`);
+        // Whichever option is not the chosen one: SoundHack's version starts
+        // on its second.
+        await page.click(`#grainView .gs-bc[data-k="${k}"] .gs-seg span:not(.on)`);
         expect(await draft(page, k), `${k} chooses`).not.toBe(was);
       } else {
         await clickBar(page, k, 0.25);
@@ -183,7 +187,7 @@ for (const [engine, own] of Object.entries(ENGINES)) {
 
 test('the engine tabs change the engine, and the tray goes with them', async ({ page }) => {
   await openPage(page);
-  for (const e of ['vocoder', 'pvsola', 'hybrid', 'granular', 'wsola']) {
+  for (const e of ['vocoder', 'pvsola', 'hybrid', 'granular', 'soundhack', 'wsola']) {
     await pickEngine(page, e);
     expect(await page.evaluate(() => [$('gsEngName').textContent, document.querySelector('#stretchEngine .seg-btn.active').dataset.alg])).toEqual([e.toUpperCase(), e]);
     expect(await page.locator('#grainView .gs-tab.on').getAttribute('data-e')).toBe(e);

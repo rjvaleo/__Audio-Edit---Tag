@@ -48,6 +48,7 @@ fn params() -> StretchParams {
         wsola: Default::default(),
         vocoder: Default::default(),
         grain: Default::default(),
+        soundhack: Default::default(),
     };
     sp.vocoder.window_ms = 46.0;
     sp

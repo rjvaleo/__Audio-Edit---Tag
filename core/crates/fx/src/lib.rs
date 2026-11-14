@@ -12,8 +12,8 @@ pub mod biquad;
 // their old paths here, so nothing that reads `fx::grain` or `fx::stretch`
 // had to change when they moved.
 pub use prism_grain::{
-    decompose, grain, hstream, hybrid, noise, nstream, pstream, pvsola, stream, stretch, transient, tuning,
-    vocoder, vstream,
+    decompose, grain, hstream, hybrid, noise, nstream, pstream, pvsola, soundhack, stream, stretch, transient,
+    tuning, vocoder, vstream,
 };
 pub mod comp;
 pub mod dattorro;

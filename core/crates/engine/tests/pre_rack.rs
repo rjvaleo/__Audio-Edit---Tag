@@ -24,6 +24,7 @@ fn rig() -> (Core, Shared) {
         vocoder: fx::stretch::VocoderParams::default(),
         pvsola: fx::pvsola::PvsolaParams::default(),
         hybrid: fx::hybrid::HybridParams::default(),
+        soundhack: Default::default(),
         cloud: false,
         cloud_mix: 0.5,
     };

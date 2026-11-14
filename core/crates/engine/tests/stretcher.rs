@@ -70,7 +70,7 @@ fn each_live_engine_sounds_like_itself() {
     let channels = 2;
     let src = Source { samples: busy(SR as usize / 2, channels), channels };
     let n = src.frames();
-    let live = [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola];
+    let live = [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola, Algorithm::SoundHack];
     // The hybrid is left out here only because it needs a separated source,
     // which the helper above does not have; it has a test of its own.
     let outs: Vec<Vec<f32>> = live

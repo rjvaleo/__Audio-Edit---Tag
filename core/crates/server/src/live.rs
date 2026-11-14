@@ -101,6 +101,7 @@ fn idle_params() -> StreamParams {
 
 
         hybrid: fx::hybrid::HybridParams::default(),
+        soundhack: Default::default(),
     }
 }
 
@@ -229,6 +230,7 @@ pub fn load(
         vocoder: list.stretch.vocoder,
         pvsola: list.stretch.pvsola,
         hybrid: list.stretch.hybrid,
+        soundhack: list.stretch.soundhack,
         cloud: list.stretch.cloud,
         cloud_mix: list.stretch.cloud_mix,
     };
@@ -329,6 +331,7 @@ pub fn merge_stretch(p: &mut StreamParams, s: &fx::Stretch) {
     p.vocoder = s.vocoder;
     p.pvsola = s.pvsola;
     p.hybrid = s.hybrid;
+    p.soundhack = s.soundhack;
     p.cloud = s.cloud;
     p.cloud_mix = s.cloud_mix;
 }
@@ -731,6 +734,7 @@ mod merge_tests {
         s.vocoder.phase_lock = !fx::Stretch::default().vocoder.phase_lock;
         s.pvsola.anchor_frames = 21;
         s.hybrid.margin = 4.5;
+        s.soundhack.version = fx::soundhack::Version::V0888;
 
         let mut p = StreamParams::new(1000, 48_000);
         merge_stretch(&mut p, &s);
@@ -745,6 +749,7 @@ mod merge_tests {
         assert_eq!(p.vocoder.phase_lock, s.vocoder.phase_lock);
         assert_eq!(p.pvsola.anchor_frames, 21);
         assert_eq!(p.hybrid.margin, 4.5);
+        assert_eq!(p.soundhack.version, fx::soundhack::Version::V0888, "the SoundHack switch is not reaching the audio");
     }
 
     /// And nothing about the *source* may be overwritten by the document.

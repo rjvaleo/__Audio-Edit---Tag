@@ -29,6 +29,7 @@ fn params(in_frames: usize, algorithm: Algorithm, cloud: bool) -> StreamParams {
         vocoder: st.vocoder,
         pvsola: st.pvsola,
         hybrid: st.hybrid,
+        soundhack: st.soundhack,
         cloud,
         cloud_mix: 0.5,
     }

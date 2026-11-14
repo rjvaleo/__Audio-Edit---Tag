@@ -58,6 +58,7 @@ fn no_engine_takes_longer_to_make_a_block_than_the_block_takes_to_play() {
         (Algorithm::Vocoder, 1),
         (Algorithm::Pvsola, 1),
         (Algorithm::Hybrid, 1),
+        (Algorithm::SoundHack, 1),
         // Layers are the expensive case: each is another whole engine. They
         // are offset within the hop, which is what keeps every one of them
         // from transforming on the same block — sixteen vocoder layers all

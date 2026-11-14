@@ -59,6 +59,7 @@ const GS_ENG = [
   ['pvsola', 'PVSOLA', 'The vocoder, re-anchored to the waveform every few frames, so it does not go phasey.'],
   ['hybrid', 'Hybrid', 'Splits tone, hits and air, stretches each its own way and remakes the air. The slowest.'],
   ['granular', 'Granular', 'A deterministic grain cloud: the one engine not trying to be transparent.'],
+  ['soundhack', 'SoundHack', "Tom Erbe's SoundHack phase vocoder, rebuilt exactly: 0.888 or 0.896, quirks and all."],
 ];
 
 const gsCloudActive = () => {
@@ -161,6 +162,7 @@ gsSw('stereoLink', 'link stereo', 0, 'v');
 // Choices: the words on the buttons, and what the draft calls them.
 gsDef('splicePick', 'Pick', 0, 2, 0, 'w', { key: 'splice', seg: ['best', 'worst', 'loud'], vals: GG_PICK });
 gsDef('spliceShape', 'Window', 0, 2, 0, 'w', { key: 'shape', seg: ['hann', 'tri', 'rect'], vals: GG_SHAPE, full: 'Splice window' });
+gsDef('shVersion', 'Version', 0, 1, 1, 'k', { key: 'version', seg: ['0.888', '0.896'], vals: ['0.888', '0.896'], full: 'SoundHack version' });
 
 /// Each engine's own sections, in the order the mock-up files them.
 const GS_SECT = {
@@ -178,6 +180,7 @@ const GS_ENG_SECT = {
   pvsola: ['anchor', 'spec', 'phase'],
   hybrid: ['sep', 'spec', 'phase', 'splice', 'htrans'],
   granular: [],
+  soundhack: [],
 };
 
 // ─────────────────────────────────────────────────────────── a value's two ends
@@ -208,7 +211,7 @@ function gsHome(c) {
   if (!d) return null;
   if (c.at === 's') return d;
   if (c.at === 'g') return state.grainDraft || null;
-  return d[{ w: 'wsola', v: 'vocoder', p: 'pvsola', h: 'hybrid' }[c.at]] || null;
+  return d[{ w: 'wsola', v: 'vocoder', p: 'pvsola', h: 'hybrid', k: 'soundhack' }[c.at]] || null;
 }
 
 /// A control's value as the bar shows it: a number, 0 or 1 for a switch, an
@@ -256,7 +259,7 @@ async function gsPostAll(extra = {}) {
   await editOp({
     op: 'stretch', ratio: d.ratio, semitones: d.semitones, windowMs: d.windowMs, quality: d.quality,
     algorithm: d.algorithm, vocoder: d.vocoder, wsola: d.wsola, pvsola: d.pvsola, hybrid: d.hybrid,
-    cloud: d.cloud, cloudMix: d.cloudMix, grain: state.grainDraft, ...extra,
+    soundhack: d.soundhack, cloud: d.cloud, cloudMix: d.cloudMix, grain: state.grainDraft, ...extra,
   });
 }
 

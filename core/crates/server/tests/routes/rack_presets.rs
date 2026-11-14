@@ -97,6 +97,29 @@ fn the_new_engine_controls_survive_the_round_trip() {
     assert!(!flag(&v, &["stretch", "hybrid", "morphNoise"]), "a post about the ratio switched the noise morpher back on");
 }
 
+/// SoundHack's version switch over the wire: it arrives by name, survives a
+/// post that does not mention it, and a name it does not know changes
+/// nothing.
+#[test]
+fn the_soundhack_switch_survives_the_round_trip() {
+    let s = Scratch::new("soundhack-switch");
+    s.sound("kit/tone.wav", 20_000);
+    let app = s.app();
+
+    let v = apply(&app, r#""algorithm":"soundhack","soundhack":{"version":"0.888"}"#);
+    assert_eq!(text(&v, &["stretch", "algorithm"]), "soundhack");
+    assert_eq!(text(&v, &["stretch", "soundhack", "version"]), "0.888");
+
+    let v = apply(&app, r#""ratio":1.5"#);
+    assert_eq!(text(&v, &["stretch", "soundhack", "version"]), "0.888", "a post about the ratio moved the switch");
+
+    let v = apply(&app, r#""soundhack":{"version":"9.9"}"#);
+    assert_eq!(text(&v, &["stretch", "soundhack", "version"]), "0.888", "an unknown version was taken");
+
+    let v = apply(&app, r#""soundhack":{"version":"0.896"}"#);
+    assert_eq!(text(&v, &["stretch", "soundhack", "version"]), "0.896");
+}
+
 #[test]
 fn the_new_engine_controls_are_bounded_too() {
     let s = Scratch::new("new-engine-clamp");

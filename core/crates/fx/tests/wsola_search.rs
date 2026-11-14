@@ -35,6 +35,7 @@ fn params(search_ms: f32) -> StretchParams {
         wsola: WsolaParams { search_ms, ..WsolaParams::default() },
         vocoder: Default::default(),
         grain: Grain::default(),
+        soundhack: Default::default(),
     }
 }
 

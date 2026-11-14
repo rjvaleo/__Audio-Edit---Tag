@@ -219,6 +219,8 @@ function gsBuildERight() {
   const e = GS.engine, el = $('gsERight');
   if (e === 'granular') el.innerHTML = '';
   else if (e === 'hybrid') el.innerHTML = `<div class="gs-erow">${gsBar('cloud', 150)}${gsBar('cloudMix', 314)}${gsBar('morphNoise', 136)}</div><div class="gs-erow">${gsBar('harmonicLevel', 200)}${gsBar('percussiveLevel', 200)}${gsBar('residualLevel', 200)}</div>`;
+  // SoundHack's version leads its row, where the hybrid keeps its noise switch.
+  else if (e === 'soundhack') el.innerHTML = `<div class="gs-erow">${gsBar('shVersion', 200)}${gsBar('cloud', 150)}${gsBar('cloudMix', 250)}</div>`;
   else el.innerHTML = `<div class="gs-erow">${gsBar('cloud', 160)}${gsBar('cloudMix', 448)}</div>`;
   el.style.display = e === 'granular' ? 'none' : '';
   gsMount(el);

@@ -110,6 +110,7 @@ fn hybrid() {
         wsola: spec.wsola,
         vocoder: spec.vocoder,
         grain: spec.grain,
+        soundhack: spec.soundhack,
     };
     let mut h = spec.hybrid;
 
@@ -158,6 +159,7 @@ fn pvsola() {
         wsola: spec.wsola,
         vocoder: spec.vocoder,
         grain: spec.grain,
+        soundhack: spec.soundhack,
     };
     let mut pv = spec.pvsola;
 
@@ -204,6 +206,7 @@ fn the_vocoder() {
         wsola: spec.wsola,
         vocoder: spec.vocoder,
         grain: spec.grain,
+        soundhack: spec.soundhack,
     };
 
     let block = 512;
@@ -255,6 +258,7 @@ fn steady_state() {
         wsola: spec.wsola,
         vocoder: spec.vocoder,
         grain: spec.grain,
+        soundhack: spec.soundhack,
     };
 
     let block = 512;
@@ -294,6 +298,7 @@ fn controls_moving() {
         wsola: spec.wsola,
         vocoder: spec.vocoder,
         grain: spec.grain,
+        soundhack: spec.soundhack,
     };
 
     let block = 512;

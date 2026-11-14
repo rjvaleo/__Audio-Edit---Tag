@@ -128,7 +128,7 @@ const GS_L = {
 
 // ─────────────────────────────────────────────────────── what a target is called
 
-const GS_LFO_ROOT = { s: 'stretch', g: 'stretch.grain', w: 'stretch.wsola', v: 'stretch.vocoder', p: 'stretch.pvsola', h: 'stretch.hybrid' };
+const GS_LFO_ROOT = { s: 'stretch', g: 'stretch.grain', w: 'stretch.wsola', v: 'stretch.vocoder', p: 'stretch.pvsola', h: 'stretch.hybrid', k: 'stretch.soundhack' };
 /// A bar's name in the lane table, which is the name the server moves it by.
 const gsLfoId = (k) => `${GS_LFO_ROOT[GS_C[k].at]}.${GS_C[k].key}`;
 let gsLfoKeys = null;

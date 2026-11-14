@@ -11,8 +11,14 @@ const SR: u32 = 48_000;
 const BLOCK: usize = 512;
 const FILE: usize = 96_000;
 const TONE: f64 = 220.0;
-const ENGINES: [Algorithm; 5] =
-    [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola, Algorithm::Hybrid];
+const ENGINES: [Algorithm; 6] = [
+    Algorithm::Granular,
+    Algorithm::Wsola,
+    Algorithm::Vocoder,
+    Algorithm::Pvsola,
+    Algorithm::Hybrid,
+    Algorithm::SoundHack,
+];
 
 fn tone_source() -> Arc<Source> {
     let w = std::f64::consts::TAU * TONE / SR as f64;
@@ -33,6 +39,12 @@ fn params(alg: Algorithm) -> StreamParams {
         vocoder: fx::stretch::VocoderParams::default(),
         pvsola: fx::pvsola::PvsolaParams::default(),
         hybrid: fx::hybrid::HybridParams::default(),
+        // 0.888 for SoundHack: a key a fifth up drives it at a scale of 1.5,
+        // and there 0.896 — exactly as decoded — cancels any partial off its
+        // bin's centre, this tone included (prism-grain `soundhack.rs`,
+        // `at_a_fractional_ratio_0896_loses_a_partial_off_its_bin_centre`).
+        // What is under test here is the voices, not that.
+        soundhack: fx::soundhack::SoundHackParams { version: fx::soundhack::Version::V0888 },
         cloud: false,
         cloud_mix: 0.5,
     }

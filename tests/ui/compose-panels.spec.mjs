@@ -58,7 +58,7 @@ test('the compact grain panel has the engine, the pad and eight knobs', async ({
     empty: $('cgEmpty').classList.contains('hidden'),
   }));
   expect(got.knobs).toEqual(['Stretch', 'Pitch', 'Window', 'Position', 'Rate', 'Scatter', 'Jitter', 'Drift']);
-  expect(got.engines).toEqual(['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular']);
+  expect(got.engines).toEqual(['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular', 'soundhack']);
   expect(got.active, 'the compact panel shows a different engine').toBe(got.alg);
   expect(got.pad).toBe(true);
   expect(got.out).toBe(got.stretchOut);

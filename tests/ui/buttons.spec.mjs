@@ -12,7 +12,7 @@
 
 import { test, expect } from './test.mjs';
 
-const ENGINES = ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular'];
+const ENGINES = ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular', 'soundhack'];
 
 async function openStretchPanel(page) {
   await page.goto('/');
