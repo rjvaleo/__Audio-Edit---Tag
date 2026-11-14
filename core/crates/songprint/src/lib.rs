@@ -537,7 +537,7 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
         }
     }
     let minutes = dur / 60.0;
-    let mut sec_len: Vec<f32> = secs.iter().map(|(a, z)| (z - a) as f32).collect();
+    let sec_len: Vec<f32> = secs.iter().map(|(a, z)| (z - a) as f32).collect();
     let sec_med = median(&mut sec_len.clone());
     let sec_mean = sec_len.iter().sum::<f32>() / sec_len.len().max(1) as f32;
 
