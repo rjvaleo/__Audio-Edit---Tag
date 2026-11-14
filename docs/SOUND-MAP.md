@@ -1,5 +1,10 @@
 # The sound map
 
+**Unlisted, 14 Nov 2026.** RJ did not want it: Browse now shows the library's
+types in its place (`ui/app/251-browse-types.js`), and Map is off the rail. All
+the code below is kept. `window.LibraryGraph.open()` opens the map, and
+`LibraryGraph.browse(true)` puts it back beside the sound's details in Browse.
+
 **Browse › Map opens the sound map first** (below, "The sound map, every dot
 a sound"). The 3D world described after that is still there: it is the **3D**
 button in the map's strip.

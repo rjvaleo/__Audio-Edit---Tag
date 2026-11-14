@@ -78,9 +78,9 @@ function setMode(mode) {
   // The library's readout, which is Browse's own middle. Every other mode has
   // something else to put there.
   $('statsView').classList.toggle('hidden', mode !== 'overview');
-  // And the map of every sound, to the right of it. `library-graph.js` loads
-  // after this file and puts the map there itself the first time.
-  window.LibraryGraph?.browse(mode === 'overview');
+  // And the library's types, to the right of it, in place of the map of every
+  // sound (unlisted 14 Nov 2026; `LibraryGraph.browse` still puts it there).
+  browseTypesShow(mode === 'overview');
   $('tabBar').classList.toggle('hidden', !editing);
   // The lane is the sound as a document — the thing you cut. The room is the
   // sound as a picture, and it takes the whole middle; the overview strip along

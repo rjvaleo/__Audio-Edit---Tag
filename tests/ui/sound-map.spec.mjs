@@ -12,7 +12,9 @@ async function openMap(page) {
   await page.waitForFunction(() => typeof BABYLON !== 'undefined' && window.SoundMap, null, { timeout: 30_000 });
   // Map opens the graph views (`library-graph.spec.mjs`); the world is the
   // 3D choice in their strip.
-  await page.locator('#leftRail .rl-child', { hasText: 'Map' }).click();
+  // Map is off the rail (14 Nov 2026); the map itself is kept.
+  await page.waitForFunction(() => window.LibraryGraph, null, { timeout: 30_000 });
+  await page.evaluate(() => window.LibraryGraph.open());
   await page.locator('#libraryGraph .lg-3d').click();
   await page.waitForFunction(() => window.SoundMap.state.count >= 2, null, { timeout: 20_000 });
 }
