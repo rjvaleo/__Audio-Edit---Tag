@@ -157,3 +157,23 @@ test('Make from words: its own controls, and only with a GPU machine', async ({ 
   await expect(page.locator('#stFrom')).toBeVisible();
   await expect(page.locator('#stPrompt')).toBeHidden();
 });
+
+test('Stems comes in blank, and a song opened replaces the one shown (RJ, 14 Nov)', async ({ page, request }) => {
+  await laySong(request);
+  await open(page);
+  // Nothing restored: a split song exists, but the page waits for a pick.
+  await expect(page.locator('#stSongName')).toHaveText('THE SONG');
+  await expect(page.locator('#stLanes .st-lane')).toHaveCount(0);
+  await expect(page.locator('#stMixEmpty')).toBeVisible();
+  await expect(page.locator('#stWhat')).toBeHidden();
+  // An earlier split, opened from the list...
+  await page.locator('#stList .st-it', { hasText: 'Test Song' }).click();
+  await expect(page.locator('#stSongName')).toHaveText('TEST SONG');
+  // ...is replaced by a file opened from the computer: its name, empty lanes waiting.
+  const st = await (await request.get('/api/state')).json();
+  await page.setInputFiles('#stFile', join(st.library, 'kit', 'tone.wav'));
+  await expect(page.locator('#stSongName')).toHaveText('TONE.WAV', { timeout: 15_000 });
+  await expect(page.locator('#stLanes .st-lane.st-wait')).toHaveCount(4);
+  await expect(page.locator('#stSongMeta')).toContainText('not split yet');
+  await expect(page.locator('#stGo')).toHaveText('Split');
+});

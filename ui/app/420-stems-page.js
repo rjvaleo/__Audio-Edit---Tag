@@ -86,7 +86,7 @@ function stBuild() {
               <button class="st-btn st-sm" id="stPlayOrig" title="Play the original">▶ Original</button>
               <button class="st-btn st-sm" id="stPlayMix" title="Play the stems together, with the solos, mutes and levels below">▶ Stems</button>
               <button class="st-btn st-sm" id="stPause" title="Stop playing">■</button></div>
-            <div class="st-well st-mix"><canvas id="stMixWave"></canvas><span class="st-empty" id="stMixEmpty">Split a song, or pick one you split before</span></div>
+            <div class="st-well st-mix"><canvas id="stMixWave"></canvas><span class="st-empty" id="stMixEmpty">Pick a song: from the library, or Open a file…</span></div>
           </section>
           <section class="st-panel" style="flex:1">
             <div class="st-ph"><b class="st-nm">STEMS</b><span class="st-meta">solo, mute, level · ▶ hears one alone · open one on another page</span></div>
@@ -94,7 +94,7 @@ function stBuild() {
           </section>
         </div>
         <div class="st-right">
-          <section class="st-panel" id="stWhat">
+          <section class="st-panel hidden" id="stWhat">
             <div class="st-ph"><b class="st-nm">WHAT'S IN IT</b><span class="st-meta">read from the stems</span><span class="st-grow"></span><button class="st-btn st-sm" id="stReread" title="Read the stems again, without splitting again">Read again</button></div>
             <div class="st-facts" id="stFacts"></div>
             <span class="st-cap" id="stFamCap">The drums</span>
@@ -231,6 +231,9 @@ function stTab(k) {
 /// Arriving on the page.
 function stEnter() {
   stBuild();
+  // The page comes in blank (RJ, 14 Nov): whatever was selected in the library
+  // before arriving is not taken as a pick; only a song chosen from here on is.
+  if (ST.selSeen === undefined) ST.selSeen = state.selectedFile?.path || null;
   stTab(ST.tab);
   stRefreshList();
   stPollStatus();
@@ -253,10 +256,12 @@ function stShowSource(force) {
   if (ST.src && state.selectedFile?.path && state.selectedFile.path !== ST.srcFrom) ST.src = null;
   if (ST.src) {
     if (force || name.textContent !== ST.src.name) { name.textContent = ST.src.name; meta.textContent = `from the computer · kept in ${ST.src.p.split('/').slice(0, -1).join('/')}/`; }
+    if (ST.shown !== ST.src.p) stStage({ p: ST.src.p, name: ST.src.name });
     return;
   }
   const f = state.selectedFile;
-  if (!f) return;
+  if (!f || f.path === ST.selSeen) return;
+  if (ST.shown !== f.path) stStage({ p: f.path, name: f.name || f.path.split('/').pop(), duration: f.duration });
   if (force) name.textContent = '';
   const nm = f.name || f.path.split('/').pop();
   if (name.textContent !== nm) {
@@ -267,6 +272,25 @@ function stShowSource(force) {
 }
 
 // ------------------------------------------------------------------ split
+
+/// A song just picked takes over the page: if it was split before, its stems;
+/// if not, its waveform in the overview and empty lanes that fill in when the
+/// split is done.
+function stStage(src) {
+  ST.shown = src.p;
+  const done = ST.list.find((x) => x.meta?.source === src.p);
+  if (done) { stOpenSong(done.p); return; }
+  ST.song = null;
+  ST.pending = src;
+  for (const it of document.querySelectorAll('#stList .st-it')) it.classList.remove('on');
+  $('stSongName').textContent = src.name.toUpperCase();
+  $('stSongMeta').textContent = [src.p.split('/').slice(0, -1).join('/'), src.duration ? stTime(src.duration) : '', 'not split yet · press Split'].filter(Boolean).join(' · ');
+  $('stMixEmpty').classList.add('hidden');
+  $('stWhat').classList.add('hidden');
+  $('stLanes').innerHTML = ST_STEMS.map((k) => `<div class="st-lane st-wait" data-stem="${k}" style="--sc:${ST_COL[k]}"><div class="st-who"><b class="st-nm">${k.toUpperCase()}</b><span class="st-meta">waiting for the split</span></div><div class="st-well"><span class="st-empty">fills in when it is split</span></div><div class="st-act"></div></div>`).join('');
+  stPollStatus();
+  afterLayout(stDrawAll);
+}
 
 /// A song from the computer: its bytes go to the library's Imports folder, and
 /// it becomes the song to split.
@@ -289,7 +313,8 @@ async function stUpload(file) {
 }
 
 async function stSplit() {
-  const f = ST.src || state.selectedFile;
+  // The song on the page: the one just picked, or the one open (to split again).
+  const f = ST.pending || (ST.song?.meta?.source ? { p: ST.song.meta.source } : null);
   if (!f) { toast('Pick a song: from the library, or Open a file…'); if (typeof openDrawer === 'function') openDrawer(); return; }
   try {
     await postJSON('/api/stems/split', { p: f.p || f.path, model: ST.model });
@@ -311,7 +336,7 @@ async function stPollStatus() {
   helper.classList.toggle('st-err', !s.helper);
   helper.title = s.helper ? s.helperPath : 'Put the demucs program in the models folder, or set AUDIOLAB_DEMUCS. See docs/STEMS.md.';
   $('stGo').disabled = !s.helper || s.running;
-  $('stGo').textContent = ST.song && state.selectedFile && ST.song.meta?.source === state.selectedFile.path ? 'Split again' : 'Split';
+  $('stGo').textContent = ST.song && !ST.pending ? 'Split again' : 'Split';
   $('stStop').classList.toggle('hidden', !s.running);
   $('stBar').style.width = `${Math.round((s.running || s.phase === 'done' ? s.progress : 0) * 100)}%`;
   const ph = $('stPhase');
@@ -338,7 +363,6 @@ async function stRefreshList() {
     ? ST.list.map((s) => `<div class="st-it${ST.song?.p === s.p ? ' on' : ''}" data-p="${stEsc(s.p)}"><span>${stEsc(s.name)}</span><i>${[s.card?.bpm ? `${s.card.bpm.toFixed(0)} BPM` : '', s.card?.key || '', s.card?.seconds ? stTime(s.card.seconds) : '', s.learnt ? 'learnt' : ''].filter(Boolean).join(' · ')}</i></div>`).join('')
     : '<p class="st-note">Nothing split yet. Pick a song in the library and press Split.</p>';
   for (const it of box.querySelectorAll('.st-it')) it.onclick = () => stOpenSong(it.dataset.p);
-  if (!ST.song && ST.list.length) stOpenSong(ST.list[0].p);
   stFillFrom();
 }
 
@@ -346,6 +370,8 @@ async function stOpenSong(p) {
   try { ST.song = await api(`/api/stems/info?p=${encodeURIComponent(p)}`); } catch (e) { toast(e.message); return; }
   for (const it of document.querySelectorAll('#stList .st-it')) it.classList.toggle('on', it.dataset.p === p);
   const s = ST.song, a = s.analysis;
+  ST.pending = null;
+  ST.shown = s.meta?.source || s.p;
   $('stSongName').textContent = s.name.toUpperCase();
   $('stSongMeta').textContent = [s.meta?.source || '', a ? stTime(a.duration_s) : '', s.meta?.splitSeconds ? `split in ${stTime(s.meta.splitSeconds)}` : ''].filter(Boolean).join(' · ');
   $('stMixEmpty').classList.add('hidden');
@@ -574,9 +600,9 @@ function stDrawRoll() {
 }
 
 function stDrawAll() {
-  if (state.mode !== 'stems' || !ST.song) return;
+  if (state.mode !== 'stems') return;
   if (ST.tab === 'split') {
-    const src = ST.song.meta?.source;
+    const src = ST.song?.meta?.source || ST.pending?.p;
     if (src) stWave($('stMixWave'), src, ST_COL.mix);
     for (const c of document.querySelectorAll('#stLanes canvas')) stWave(c, c.dataset.p, ST_COL[c.dataset.stem]);
     stDrawRoll();
