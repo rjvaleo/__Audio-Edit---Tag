@@ -44,7 +44,8 @@ const MAX_MEDIA_BODY: usize = 2 * 1024 * 1024 * 1024;
 /// How much body a request to `path` may carry.
 pub fn body_cap(path: &str) -> usize {
     match path {
-        "/api/export/stem" | "/api/export/film" => MAX_MEDIA_BODY,
+        // and a song from the computer for the stem splitter, a whole file.
+        "/api/export/stem" | "/api/export/film" | "/api/stems/upload" => MAX_MEDIA_BODY,
         _ => MAX_BODY,
     }
 }

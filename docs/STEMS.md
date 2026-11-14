@@ -134,3 +134,13 @@ kick and hat at 120 BPM, a sine bass) and proves the page, the mix, Make and Sav
 split itself needs the helper and minutes of GPU, so it is proved by hand on real songs.
 `cargo test -p songprint` covers tempo, beats, downbeat, pitch, key, chords, resampling,
 clean and air.
+
+## A song from the library, or from anywhere on the computer
+
+*14 Nov 2026.* RJ: "give me the option to either pull from the library or just open the
+regular file load dialog." The source row has **From the library** (opens the library drawer;
+the song is whatever is picked there) and **Open a file…** (the browser's own Open dialog, any
+WAV, AIFF, FLAC, MP3, M4A or Ogg). A file from the computer is sent to `POST
+/api/stems/upload?name=…` (its bytes; that route may carry a whole file, `http::body_cap`), kept
+in the library's `Imports/` under a name nothing is using yet, and split from there like any other
+song. It stays the song to split until one is picked in the library after it.

@@ -67,6 +67,34 @@ pub(super) fn api_stems_stop(app: &Arc<App>) -> Response {
 }
 
 /// POST {p, model}: split a library file. Answers at once; poll `/api/stems`.
+/// The kinds of sound file a song may arrive as from the computer.
+const UPLOAD_KINDS: [&str; 9] = ["wav", "wave", "aif", "aiff", "aifc", "flac", "mp3", "m4a", "ogg"];
+
+/// A song from anywhere on the computer, for the split (RJ, 14 Nov 2026:
+/// "either pull from the library or just open the regular file load dialog").
+/// The browser's own Open dialog sends the file's bytes; they are kept in the
+/// library's `Imports/` under a name nothing is using yet, so the split reads
+/// it from the library as it reads any other song, and it is there afterwards.
+pub(super) fn api_stems_upload(app: &Arc<App>, req: &Request) -> Response {
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    if req.body.is_empty() {
+        return Response::error(400, "no file sent");
+    }
+    let name = crate::docs::safe_name(req.param("name").unwrap_or("song"));
+    let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if !UPLOAD_KINDS.contains(&ext.as_str()) {
+        return Response::error(400, "not a sound file the splitter reads (WAV, AIFF, FLAC, MP3, M4A or Ogg)");
+    }
+    let _ = std::fs::create_dir_all(lib.join("Imports"));
+    let Some(dest) = resolve_for_write(&lib, &format!("Imports/{name}")) else { return Response::error(400, "cannot write there") };
+    let dest = crate::docs::unique(dest);
+    if let Err(e) = std::fs::write(&dest, &req.body) {
+        return Response::error(500, &format!("could not keep the file: {e}"));
+    }
+    let file = dest.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    Response::json(Value::obj().set("p", format!("Imports/{file}")).set("name", file).to_string())
+}
+
 pub(super) fn api_stems_split(app: &Arc<App>, req: &Request) -> Response {
     let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
     let Some(rel) = v.get("p").and_then(|p| p.as_str()).map(str::to_string) else { return Response::error(400, "no file given") };
