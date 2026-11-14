@@ -56,3 +56,8 @@ Audio Library/*
 !Audio Library/Recordings/
 !Audio Library/beds/
 !Audio Library/beds&melodicLoops/
+
+# The stem splitter (demucs-rs), built outside the repo and linked here. See
+# docs/STEMS.md. A program, and per machine.
+models/demucs
+models/demucs.exe

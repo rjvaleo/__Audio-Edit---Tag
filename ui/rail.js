@@ -96,6 +96,10 @@ const COMPOSE_LISTED = false;
       title: 'Atmosphere — the sequencer\'s second synth on its own: oscillators A and B, the voice and the space',
     },
     {
+      icon: 'stems', label: 'Stems', mode: 'stems',
+      title: 'Stems — split a song into drums, bass, vocals and other, read what is in it, and make sounds from it',
+    },
+    {
       icon: 'theme', label: 'Theme', mode: 'theme',
       title: 'Palettes, colours, the waveform and the Look',
     },
@@ -212,6 +216,9 @@ const COMPOSE_LISTED = false;
     // Mist in layers: a soft wave, held, fading back.
     atmos:
       '<path d="M3 8.5c3-2.6 6-2.6 9 0s6 2.6 9 0"/><path d="M3 12.5c3-2.6 6-2.6 9 0s6 2.6 9 0" opacity=".7"/><path d="M3 16.5c3-2.6 6-2.6 9 0s6 2.6 9 0" opacity=".45"/>',
+    // A song pulled into four lanes.
+    stems:
+      '<path d="M3.5 12h3"/><path d="M6.5 12 9 6.5h11.5"/><path d="M6.5 12 9 10h11.5"/><path d="M6.5 12 9 14h11.5"/><path d="M6.5 12 9 17.5h11.5"/>',
     compose:
       '<rect x="3.5" y="4" width="4.6" height="7" rx=".8"/><rect x="9.7" y="4" width="4.6" height="7" rx=".8"/><rect x="15.9" y="4" width="4.6" height="7" rx=".8"/><path d="M3.5 14.5h17"/><path d="M3.5 17.5h11"/><path d="M3.5 20.5h14"/>',
     theme:

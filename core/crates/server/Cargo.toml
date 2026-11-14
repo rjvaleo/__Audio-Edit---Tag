@@ -16,6 +16,8 @@ wave = { path = "../wave" }
 midir = "0.11"
 search = { path = "../search" }
 yamnet = { path = "../yamnet" }
+# Stems: what is in a song, read from its stems, and sounds cut from them.
+songprint = { path = "../songprint" }
 catalog = { path = "../catalog" }
 indexer = { path = "../indexer" }
 # getrusage, for the analytics sampler's CPU and memory readings.

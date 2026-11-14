@@ -530,6 +530,8 @@ pub struct App {
     pub index: RwLock<Index>,
     pub scan: Arc<ScanProgress>,
     pub export: Arc<ExportProgress>,
+    /// The Stems page's split, one song at a time.
+    pub stems: crate::stems::StemsJob,
     /// Markers and regions, sidecar to the app rather than written into the library.
     pub markers: RwLock<crate::docs::MarkerStore>,
     /// Open edit sessions, one per file, held for the life of the process.
@@ -666,6 +668,7 @@ impl App {
             index: RwLock::new(Index::default()),
             scan: Arc::new(ScanProgress::default()),
             export: Arc::new(ExportProgress::default()),
+            stems: Default::default(),
             markers: RwLock::new(markers),
             audio: std::sync::Mutex::new(None),
             prints: RwLock::new(prints),

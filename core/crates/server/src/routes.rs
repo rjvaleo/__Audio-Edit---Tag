@@ -43,6 +43,8 @@ mod analytics;
 use analytics::*;
 mod prism;
 use prism::*;
+mod stems;
+use stems::*;
 
 /// How many files one measuring pass takes on before answering.
 ///
@@ -353,6 +355,16 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/export") => api_export_status(app),
         ("POST", "/api/export/stem") => api_export_stem(app, req),
         ("POST", "/api/export/stop") => api_export_stop(app),
+        ("GET", "/api/stems") => api_stems_status(app),
+        ("POST", "/api/stems/split") => api_stems_split(app, req),
+        ("POST", "/api/stems/stop") => api_stems_stop(app),
+        ("GET", "/api/stems/list") => api_stems_list(app),
+        ("GET", "/api/stems/info") => api_stems_info(app, req),
+        ("POST", "/api/stems/mix") => api_stems_mix(app, req),
+        ("POST", "/api/stems/learn") => api_stems_learn(app, req),
+        ("POST", "/api/stems/analyse") => api_stems_analyse(app, req),
+        ("POST", "/api/stems/tries") => api_stems_tries(app, req),
+        ("POST", "/api/stems/keep") => api_stems_keep(app, req),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
         ("POST", "/api/video") => api_video(app, req),
         ("GET", "/api/video") => api_video_status(app),
