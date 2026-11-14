@@ -196,3 +196,27 @@ test('on Stems, a double-click in the library drawer loads the song there, not i
   await page.locator('#leftPanel').getByText('Dub Test').first().dblclick();
   await expect.poll(() => page.evaluate(() => state.mode)).toBe('edit');
 });
+
+test('whatever is picked last stays shown: no snapping back to the library selection (RJ, 14 Nov)', async ({ page, request }) => {
+  await laySong(request);
+  const st = await (await request.get('/api/state')).json();
+  mkdirSync(join(st.library, 'songs'), { recursive: true });
+  wav(join(st.library, 'songs', 'Electro Test.wav'), 3, (t) => Math.sin(2 * Math.PI * 220 * t) * 0.3);
+  await request.post('/api/scan', { data: {} });
+  await expect.poll(async () => (await (await request.get('/api/files?folder=songs')).json()).length, { timeout: 15_000 }).toBeGreaterThan(0);
+  await open(page);
+  await page.click('#stChoose');
+  await page.locator('#leftPanel').getByText('songs', { exact: true }).first().click();
+  await page.locator('#leftPanel').getByText('Electro Test').first().click();
+  await expect(page.locator('#stSongName')).toHaveText('ELECTRO TEST.WAV');
+  await page.click('#scrim'); // shut the drawer, as a click outside it does
+  await page.waitForTimeout(1000);
+  await expect(page.locator('#stSongName')).toHaveText('ELECTRO TEST.WAV');
+  // An earlier split, clicked after: it shows, and is still there seconds later.
+  await page.locator('#stList .st-it', { hasText: 'Test Song' }).click();
+  await expect(page.locator('#stSongName')).toHaveText('TEST SONG');
+  await page.waitForTimeout(2000);
+  await expect(page.locator('#stSongName')).toHaveText('TEST SONG');
+  await expect(page.locator('#stLanes .st-lane:not(.st-wait)')).toHaveCount(4);
+  await expect(page.locator('#stSrcName')).toHaveText('Test Song');
+});

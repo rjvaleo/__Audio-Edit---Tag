@@ -188,7 +188,7 @@ function stBuild() {
       b.closest('.st-stage').classList.toggle('off', !c[k]);
     };
   }
-  $('stChoose').onclick = () => { ST.src = null; ST.srcFrom = state.selectedFile?.path || null; stShowSource(true); if (typeof openDrawer === 'function') openDrawer(); };
+  $('stChoose').onclick = () => { if (typeof openDrawer === 'function') openDrawer(); };
   // Or any file on the computer, through the browser's own Open dialog.
   $('stOpenFile').onclick = () => $('stFile').click();
   $('stFile').onchange = () => { const f = $('stFile').files[0]; $('stFile').value = ''; if (f) stUpload(f); };
@@ -231,15 +231,11 @@ function stTab(k) {
 /// Arriving on the page.
 function stEnter() {
   stBuild();
-  // The page comes in blank (RJ, 14 Nov): whatever was selected in the library
-  // before arriving is not taken as a pick; only a song chosen from here on is.
-  if (ST.selSeen === undefined) ST.selSeen = state.selectedFile?.path || null;
   stTab(ST.tab);
   stRefreshList();
   stPollStatus();
-  clearInterval(ST.watch);
-  // The source is whatever is selected in the library drawer.
-  ST.watch = setInterval(stShowSource, 400);
+  // No watching the library's selection: the song changes only when one is
+  // picked here (the drawer, Open a file…, Split so far), and the last pick wins.
   stShowSource();
 }
 
@@ -248,27 +244,13 @@ function stLeave() {
   clearTimeout(ST.poll);
 }
 
-function stShowSource(force) {
-  if (state.mode !== 'stems') return stLeave();
+function stShowSource() {
   const name = $('stSrcName'), meta = $('stSrcMeta');
-  // A file opened from the computer is the source until a song is picked in
-  // the library after it.
-  if (ST.src && state.selectedFile?.path && state.selectedFile.path !== ST.srcFrom) ST.src = null;
-  if (ST.src) {
-    if (force || name.textContent !== ST.src.name) { name.textContent = ST.src.name; meta.textContent = `from the computer · kept in ${ST.src.p.split('/').slice(0, -1).join('/')}/`; }
-    if (ST.shown !== ST.src.p) stStage({ p: ST.src.p, name: ST.src.name });
-    return;
-  }
-  const f = state.selectedFile;
-  if (!f || f.path === ST.selSeen) return;
-  if (ST.shown !== f.path) stStage({ p: f.path, name: f.name || f.path.split('/').pop(), duration: f.duration });
-  if (force) name.textContent = '';
-  const nm = f.name || f.path.split('/').pop();
-  if (name.textContent !== nm) {
-    name.textContent = nm;
-    const dur = f.duration ? stTime(f.duration) : '';
-    meta.textContent = [f.path.split('/').slice(0, -1).join('/'), dur, f.sampleRate ? `${(f.sampleRate / 1000).toFixed(1)} kHz` : ''].filter(Boolean).join(' · ');
-  }
+  if (!name) return;
+  const src = ST.pending || (ST.song ? { p: ST.song.meta?.source || ST.song.p, name: ST.song.name } : null);
+  if (!src) { name.textContent = 'Pick a song'; meta.textContent = 'From the library, or Open a file…'; return; }
+  name.textContent = src.name;
+  meta.textContent = [src.p.split('/').slice(0, -1).join('/'), src.duration ? stTime(src.duration) : ''].filter(Boolean).join(' · ');
 }
 
 // ------------------------------------------------------------------ split
@@ -277,10 +259,7 @@ function stShowSource(force) {
 /// song here, and a double-click also shuts the drawer.
 function stPick(file, close) {
   selectFile(file);
-  ST.selSeen = null;
-  ST.src = null;
   stStage({ p: file.path, name: file.name || file.path.split('/').pop(), duration: file.duration });
-  stShowSource(true);
   if (close && typeof closeDrawer === 'function') closeDrawer();
 }
 
@@ -288,6 +267,7 @@ function stPick(file, close) {
 /// if not, its waveform in the overview and empty lanes that fill in when the
 /// split is done.
 function stStage(src) {
+  ST.gen = (ST.gen || 0) + 1;
   ST.shown = src.p;
   const done = ST.list.find((x) => x.meta?.source === src.p);
   if (done) { stOpenSong(done.p); return; }
@@ -296,6 +276,7 @@ function stStage(src) {
   for (const it of document.querySelectorAll('#stList .st-it')) it.classList.remove('on');
   $('stSongName').textContent = src.name.toUpperCase();
   $('stSongMeta').textContent = [src.p.split('/').slice(0, -1).join('/'), src.duration ? stTime(src.duration) : '', 'not split yet · press Split'].filter(Boolean).join(' · ');
+  stShowSource();
   $('stMixEmpty').classList.add('hidden');
   $('stWhat').classList.add('hidden');
   $('stLanes').innerHTML = ST_STEMS.map((k) => `<div class="st-lane st-wait" data-stem="${k}" style="--sc:${ST_COL[k]}"><div class="st-who"><b class="st-nm">${k.toUpperCase()}</b><span class="st-meta">waiting for the split</span></div><div class="st-well"><span class="st-empty">fills in when it is split</span></div><div class="st-act"></div></div>`).join('');
@@ -313,13 +294,10 @@ async function stUpload(file) {
     const r = await fetch(`/api/stems/upload?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `could not bring in ${file.name}`);
-    ST.src = { p: j.p, name: j.name };
-    ST.srcFrom = state.selectedFile?.path || null;
-    stShowSource(true);
+    stStage({ p: j.p, name: j.name });
   } catch (e) {
     toast(e.message);
-    ST.src = null;
-    stShowSource(true);
+    stShowSource();
   }
 }
 
@@ -360,7 +338,9 @@ async function stPollStatus() {
     // A run just ended: the list, the library and, if it worked, the song.
     await stRefreshList();
     if (typeof refreshLibrary === 'function') refreshLibrary();
-    if (s.phase === 'done' && s.song) stOpenSong(s.song);
+    // Its stems come in only if it is still the song on the page (or nothing is).
+    const here = ST.pending?.p || ST.song?.meta?.source || null;
+    if (s.phase === 'done' && s.song && (!here || here === s.source)) stOpenSong(s.song);
   }
   ST.serial = s.serial;
   if (s.running && state.mode === 'stems') ST.poll = setTimeout(stPollStatus, 500);
@@ -378,11 +358,17 @@ async function stRefreshList() {
 }
 
 async function stOpenSong(p) {
-  try { ST.song = await api(`/api/stems/info?p=${encodeURIComponent(p)}`); } catch (e) { toast(e.message); return; }
+  const gen = ST.gen = (ST.gen || 0) + 1;
+  let song;
+  try { song = await api(`/api/stems/info?p=${encodeURIComponent(p)}`); } catch (e) { toast(e.message); return; }
+  // A later pick came in while this one loaded: it wins.
+  if (gen !== ST.gen) return;
+  ST.song = song;
   for (const it of document.querySelectorAll('#stList .st-it')) it.classList.toggle('on', it.dataset.p === p);
   const s = ST.song, a = s.analysis;
   ST.pending = null;
   ST.shown = s.meta?.source || s.p;
+  stShowSource();
   $('stSongName').textContent = s.name.toUpperCase();
   $('stSongMeta').textContent = [s.meta?.source || '', a ? stTime(a.duration_s) : '', s.meta?.splitSeconds ? `split in ${stTime(s.meta.splitSeconds)}` : ''].filter(Boolean).join(' · ');
   $('stMixEmpty').classList.add('hidden');
