@@ -273,6 +273,17 @@ function stShowSource(force) {
 
 // ------------------------------------------------------------------ split
 
+/// A song picked in the library drawer while on this page: it becomes the
+/// song here, and a double-click also shuts the drawer.
+function stPick(file, close) {
+  selectFile(file);
+  ST.selSeen = null;
+  ST.src = null;
+  stStage({ p: file.path, name: file.name || file.path.split('/').pop(), duration: file.duration });
+  stShowSource(true);
+  if (close && typeof closeDrawer === 'function') closeDrawer();
+}
+
 /// A song just picked takes over the page: if it was split before, its stems;
 /// if not, its waveform in the overview and empty lanes that fill in when the
 /// split is done.
