@@ -29,6 +29,7 @@ pub mod serve;
 pub mod state;
 pub mod stems;
 pub mod gpu;
+pub mod flac;
 pub mod usertags;
 /// The Wave page's synth: `/api/wave/*`. See `docs/WAVE-SYNTH.md`.
 pub mod wave_synth;
