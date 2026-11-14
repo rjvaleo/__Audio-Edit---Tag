@@ -195,6 +195,14 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/javascript; charset=utf-8", SEQ_ACCOMPANY_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/sequencer/drums.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_DRUMS_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/band.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_BAND_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/sequencer/scopes.js") => {
             Response::ok("text/javascript; charset=utf-8", SEQ_SCOPES_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
@@ -283,6 +291,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/order") => api_order_get(app),
         ("POST", "/api/order") => api_order_set(app, req),
         ("GET", "/api/files") => api_files(app, req),
+        // The library's drum machines, for the sequencer's Band (drums.js).
+        ("GET", "/api/seq/kits") => api_seq_kits(app),
         ("GET", "/api/peaks") => api_peaks(app, req),
         ("POST", "/api/thumbs") => api_thumbs(app, req),
         ("GET", "/api/spectrogram") => api_spectrogram(app, req),

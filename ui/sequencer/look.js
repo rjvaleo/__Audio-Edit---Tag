@@ -54,7 +54,7 @@ function lookFromHost() {
     }
   }
   // Redraw what is drawn once.
-  for (const f of ["drawADSRCanvas", "drawFilterADSRCanvas", "atmosDrawAmp", "journeyDraw", "accompanyDraw"]) if (typeof window[f] === "function") window[f]();
+  for (const f of ["drawADSRCanvas", "drawFilterADSRCanvas", "atmosDrawAmp", "journeyDraw", "accompanyDraw", "drumsPaint"]) if (typeof window[f] === "function") window[f]();
 }
 
 function lookWatchHost() {
@@ -107,12 +107,22 @@ const LOOK_KNOB = {
   atRevShimSlider: ["shim", "space"], atRevSpreadSlider: ["spread", "space"], atLowCutSlider: ["lowcut", "tone"], atMacroSlider: ["big", "on"],
 };
 
+/// The Band's knobs (band.js, drums.js), by what they are.
+function lookBandKnob(id) {
+  const fam = id.startsWith("dm") ? "attack" : id.startsWith("bs") ? "tone" : id.startsWith("ch") ? "space" : id.startsWith("ap") ? "time" : id.startsWith("dr") ? "level" : id.startsWith("mx") ? "space" : id.startsWith("bd") ? "time" : null;
+  if (!fam) return null;
+  const glyph = /Pan/.test(id) ? "spread" : /Dly/.test(id) ? "delay" : /Spc/.test(id) ? "mix" : /Level|Weight|Vol/.test(id) ? "vol" : /Tune/.test(id) ? "hz" : /Dec|Rel/.test(id) ? "fall" : /Atk|Swell/.test(id) ? "rise"
+    : /Cut|Lp/.test(id) ? "cut" : /Res/.test(id) ? "res" : /Env/.test(id) ? "tilt" : /Glide|Swing/.test(id) ? "glide" : /Drive/.test(id) ? "warm" : /Spread|Width/.test(id) ? "spread" : /Unison/.test(id) ? "unison"
+    : /Detune|Drift/.test(id) ? "drift" : /Air/.test(id) ? "air" : /Oct|Range/.test(id) ? "oct" : /Blend/.test(id) ? "blend" : /Len|Gate|Stab/.test(id) ? "hold" : /Sus/.test(id) ? "sus" : "wave";
+  return [glyph, fam];
+}
+
 function lookKnobs() {
   for (const g of document.querySelectorAll(".knob-group, .lfo-knob")) {
     const inp = g.querySelector("input[type=range]");
     const knob = g.querySelector(".knob");
     if (!inp || !knob || g.querySelector(".kn-gl")) continue;
-    const [glyph, fam] = LOOK_KNOB[inp.id] || ["wave", "level"];
+    const [glyph, fam] = LOOK_KNOB[inp.id] || lookBandKnob(inp.id) || ["wave", "level"];
     g.style.setProperty("--kc", fam === "on" ? "var(--on)" : `var(--f-${fam})`);
     const top = document.createElement("span");
     top.className = "kn-top";

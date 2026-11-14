@@ -23,16 +23,20 @@ async function openSeq(page) {
     window.__set = (id, v) => { const el = document.getElementById(id); el.value = v; };
     /// Parts on or off by name, the rest as given, then read.
     window.__parts = (on, extra = {}) => {
-      for (const p of ['Bass', 'Chord', 'Arp', 'Drone']) __set(`ac${p}OnSelect`, on.includes(p.toLowerCase()) ? 'on' : 'off');
+      for (const p of ['Drums', 'Bass', 'Chord', 'Arp', 'Drone']) __set(`ac${p}OnSelect`, on.includes(p.toLowerCase()) ? 'on' : 'off');
       for (const [id, v] of Object.entries(extra)) __set(id, v);
-      accompanyRead();
+      accompanyRead(); bandRead(); drumsRead();
     };
-    /// Atmosphere's voice made plain, so a chord tone is one sine at its pitch.
+    /// The Chords' and Drone's own Atmosphere patches made plain, so a chord
+    /// tone is one sine at its pitch, and their filters open.
     window.__plainAtmos = () => {
-      const s = { atKindASelect: 'classic', atA1Slider: 0, atAOctSlider: 0, atBlendSlider: 0, atUnisonSlider: 1, atDetuneSlider: 0, atDriftSlider: 0,
-        atSubSlider: 0, atAirSlider: 0, atEnsSlider: 0, atWowSlider: 0, atWarmSlider: 0, atAtkSlider: 20, atSusSlider: 100, atGlideSlider: 0, atRevWetSlider: 0 };
-      for (const [id, v] of Object.entries(s)) __set(id, v);
-      atmosRead();
+      for (const pre of ['ch', 'dr']) {
+        const s = { KindASelect: 'classic', AtA1Slider: 0, AtAOctSlider: 0, AtBlendSlider: 0, AtUnisonSlider: 1, AtDetuneSlider: 0, AtDriftSlider: 0,
+          AtSubSlider: 0, AtAirSlider: 0, AtAtkSlider: 20, AtSusSlider: 100, AtVolSlider: 70 };
+        for (const [id, v] of Object.entries(s)) __set(pre + id, v);
+      }
+      __set('chCutSlider', 100); __set('chEnvSlider', 0); __set('drCutSlider', 100);
+      bandRead();
     };
     /// Accompany alone, rendered offline from boundary `k0` for `seconds`:
     /// the page's own graph, built on an offline context as the film's is.
@@ -78,7 +82,7 @@ test('a chord in a just scale is stacked from its cents: the third sounds at 386
     numSteps = 16; stepBeats = 0.5; bpm = 120;
     __set('jOnSelect', 'off'); journeyRead();
     __plainAtmos();
-    __parts(['chord'], { acFollowSelect: 'root', acChordPatSelect: 'triad-bar', acChordSpreadSlider: 0, acChordLevelSlider: 80 });
+    __parts(['chord'], { acFollowSelect: 'root', acChordPatSelect: 'triad-bar', chSpreadSlider: 0 });
     const cents = SCALES[selectedScaleIdx].cents;
     const plan = acPlan(0, true).filter((e) => e.part === 'chord').map((e) => e.hz);
     const rate = 24000, buf = await __render(2, rate);
@@ -233,21 +237,23 @@ test('Follows: the melody\'s strongest note is in the bar\'s chord; the Journey\
 test('presets, morphs and the recorder carry the parts', async ({ page }) => {
   await openSeq(page);
   const got = await page.evaluate(() => {
-    __parts(['chord', 'drone'], { acChordSpreadSlider: 77, acDroneSwellSlider: 12, acFollowSelect: 'root' });
+    __parts(['chord', 'drone'], { chSpreadSlider: 77, drSwellSlider: 12, acFollowSelect: 'root', mxChdLevelSlider: 33, dmKickPanSlider: -60 });
+    DM.grid.kick.steps[3].v = 99; dmGridSave();
     const st = getPresetState();
-    __parts([], { acChordSpreadSlider: 10, acFollowSelect: 'melody' });
+    __parts([], { chSpreadSlider: 10, acFollowSelect: 'melody', mxChdLevelSlider: 80, dmKickPanSlider: 0 });
+    DM.grid.kick.steps[3].v = 0; dmGridSave(); drumsRead();
     applyPresetState(st);
     return {
-      saved: [st.selects.acChordOnSelect, st.selects.acDroneOnSelect, st.selects.acBassOnSelect, st.sliders.acChordSpreadSlider, st.selects.acFollowSelect],
-      back: [AC.parts.chord.on, AC.parts.drone.on, AC.parts.bass.on, AC.parts.chord.x, AC.follow],
-      perf: ACCOMPANY_SLIDER_IDS.every((id) => PERF_SLIDER_SET.has(id)) && ACCOMPANY_SELECT_IDS.every((id) => PERF_SELECT_SET.has(id)),
-      knobs: ACCOMPANY_SLIDER_IDS.length,
+      saved: [st.selects.acChordOnSelect, st.selects.acDroneOnSelect, st.selects.acBassOnSelect, st.sliders.chSpreadSlider, st.selects.acFollowSelect],
+      back: [AC.parts.chord.on, AC.parts.drone.on, AC.parts.bass.on, BAND.chord.chSpread, AC.follow, BAND.ch.Chd.lv, DM.slots.kick.pan, DM.grid.kick.steps[3].v],
+      perf: [...ACCOMPANY_SELECT_IDS, ...BAND_SELECT_IDS].every((id) => PERF_SELECT_SET.has(id)) && BAND_ALL_MORPH_IDS.every((id) => PERF_SLIDER_SET.has(id)),
+      knobs: BAND_ALL_MORPH_IDS.length,
     };
   });
   expect(got.saved).toEqual(['on', 'on', 'off', '77', 'root']);
-  expect(got.back).toEqual([true, true, false, 77, 'root']);
+  expect(got.back).toEqual([true, true, false, 77, 'root', 33, -60, 99]);
   expect(got.perf).toBe(true);
-  expect(got.knobs).toBe(8);
+  expect(got.knobs).toBeGreaterThan(150);
 });
 
 test('a film renders the accompaniment, the same notes twice', async ({ page }) => {
@@ -258,13 +264,15 @@ test('a film renders the accompaniment, the same notes twice', async ({ page }) 
   await page.waitForFunction(() => seq.ready === true, { timeout: 20_000 });
   const frame = page.frames().find((f) => f.url().includes('/sequencer/'));
   await frame.evaluate(() => {
-    for (const p of ['Bass', 'Chord', 'Arp', 'Drone']) document.getElementById(`ac${p}OnSelect`).value = 'on';
+    for (const p of ['Drums', 'Bass', 'Chord', 'Arp', 'Drone']) document.getElementById(`ac${p}OnSelect`).value = 'on';
     accompanyRead();
-    // The accompaniment's notes as the render plays them, in order.
+    // The Band's notes as the render plays them, in order.
     window.__ac = [];
-    const plain = window.acPlainNote, at = window.atmosPlay;
-    window.acPlainNote = (part, hz, t, d, l) => { __ac.push(part + ':' + hz.toFixed(2)); return plain(part, hz, t, d, l); };
+    const bass = window.bdBass, arp = window.bdArp, at = window.atmosPlay, hit = window.drumHit;
+    window.bdBass = (e, t) => { __ac.push('bass:' + e.hz.toFixed(2)); return bass(e, t); };
+    window.bdArp = (e, t) => { __ac.push('arp:' + e.hz.toFixed(2)); return arp(e, t); };
     window.atmosPlay = (hz, t, d, o) => { if (o && o.ac) __ac.push('at:' + hz.toFixed(2)); return at(hz, t, d, o); };
+    window.drumHit = (slot, t, v, dest) => { __ac.push('drum:' + slot); return hit(slot, t, v, dest); };
   });
   const render = async () => {
     await frame.evaluate(() => { __ac = []; });
@@ -281,21 +289,26 @@ test('a film renders the accompaniment, the same notes twice', async ({ page }) 
   expect(one).toContain('bass:');
   expect(one).toContain('arp:');
   expect(one).toContain('at:');
+  expect(one).toContain('drum:kick');
   expect(two).toBe(one);
 });
 
-test('the panel: four parts, each with its power, pattern, level and second knob', async ({ page }) => {
+test('the panel: six parts, an editor for each, and a mixer channel for each', async ({ page }) => {
   await openSeq(page);
   const got = await page.evaluate(() => ({
-    parts: [...document.querySelectorAll('.ac-part')].map((c) => c.querySelector('.ac-pt b').textContent),
-    knobs: [...document.querySelectorAll('.ac-part .knob-label')].map((e) => e.textContent),
-    pics: document.querySelectorAll('.ac-part .kn-gl').length,
-    follow: [...document.querySelectorAll('.accompany .ph .seg button')].map((b) => b.textContent),
+    parts: [...document.querySelectorAll('.bd-card')].map((c) => c.querySelector('.ac-pt b').textContent),
+    editors: [...document.querySelectorAll('.bd-ed')].map((e) => e.dataset.p),
+    strips: [...document.querySelectorAll('.bd-strip .bd-sn')].map((e) => e.firstChild.textContent),
+    rows: document.querySelectorAll('.dm-row').length,
+    follow: [...document.querySelectorAll('.band .ph .seg button')].slice(0, 2).map((b) => b.textContent),
   }));
-  expect(got.parts).toEqual(['BASS', 'CHORDS', 'ARP', 'DRONE']);
-  expect(got.knobs).toEqual(['Level', 'Octave', 'Level', 'Spread', 'Level', 'Range', 'Level', 'Swell']);
-  expect(got.pics).toBe(8);
+  expect(got.parts).toEqual(['MELODY', 'DRUMS', 'BASS', 'CHORDS', 'ARP', 'DRONE']);
+  expect(got.editors).toEqual(['drums', 'bass', 'chord', 'arp', 'drone']);
+  expect(got.strips).toEqual(['MELODY', 'DRUMS', 'BASS', 'CHORDS', 'ARP', 'DRONE']);
+  expect(got.rows).toBe(10);
   expect(got.follow).toEqual(['Melody', 'Journey root']);
+  await page.click('.bd-edit[data-p="bass"]');
+  expect(await page.evaluate(() => document.querySelector('.bd-ed.on').dataset.p)).toBe('bass');
   await page.click('.power[data-ac="chord"]');
   expect(await page.evaluate(() => [AC.parts.chord.on, document.querySelector('.ac-part[data-p="chord"]').classList.contains('on')])).toEqual([true, true]);
 });

@@ -634,6 +634,14 @@ function atmosNoteDur(stepDur) {
 function atmosPlay(freq, time, dur, o = null) {
   const c = audioCtx;
   if (!c || !atIn) return;
+  // A Band part's own patch (band.js): its values stand in for the controls'
+  // while the note is built, which is all at once.
+  if (o && o.patch) {
+    atmosRetuneSympathy();
+    const was = {};
+    for (const k of Object.keys(o.patch)) { was[k] = AT[k]; AT[k] = o.patch[k]; }
+    try { return atmosPlay(freq, time, dur, { ...o, patch: null }); } finally { Object.assign(AT, was); }
+  }
   const ac = !!(o && o.ac && atAc);
   atmosRetuneSympathy();
   // Notes the context has finished playing let go of the buses; the oldest
@@ -657,7 +665,7 @@ function atmosPlay(freq, time, dur, o = null) {
   env.gain.setTargetAtTime(0, time + dur, Math.max(0.004, r / 5));
   v.end = time + dur + r * 1.25 + 0.05;
   v.env = env;
-  env.connect(ac ? atAc.inp : atIn);
+  env.connect(o && o.into ? o.into : ac ? atAc.inp : atIn);
   // Blend: equal power, and the bus an LFO can sweep it with.
   const b = AT.atBlend / 100, gA = c.createGain(), gB = c.createGain(), inv = c.createGain();
   gA.gain.value = Math.cos(b * Math.PI / 2);
@@ -943,6 +951,7 @@ function atCloudWaves(n) {
 /// `getLFOTargetParam` asks here for targets it does not know.
 function atmosLfoParam(target) {
   const k = String(target || "").replace(/^at-/, "");
+  if (target && target.startsWith("bd-")) return typeof bandLfoParam === "function" ? bandLfoParam(target) : null;
   return target && target.startsWith("at-") && atBus[k] ? atBus[k].offset : null;
 }
 /// And how deep: detune in cents, pan and blend in their own units, vowel and fit as a share.
@@ -954,7 +963,7 @@ function atmosLfoGain(lfo) {
     case "at-blend": return lfo.depth;
     case "at-vowel": return lfo.depth;
     case "at-fit": return lfo.depth * 0.5;
-    default: return 0;
+    default: return typeof bandLfoGain === "function" ? bandLfoGain(lfo) : 0;
   }
 }
 

@@ -2369,6 +2369,7 @@ function getPresetState() {
     ...(typeof ATMOS_SLIDER_IDS !== "undefined" ? ATMOS_SLIDER_IDS : []),
     ...(typeof JOURNEY_SLIDER_IDS !== "undefined" ? JOURNEY_SLIDER_IDS : []),
     ...(typeof ACCOMPANY_SLIDER_IDS !== "undefined" ? ACCOMPANY_SLIDER_IDS : []),
+    ...(typeof BAND_SLIDER_IDS !== "undefined" ? BAND_SLIDER_IDS : []),
   ];
   const selectIds = [
     "dirSelect",
@@ -2387,6 +2388,7 @@ function getPresetState() {
     ...(typeof ATMOS_SELECT_IDS !== "undefined" ? ATMOS_SELECT_IDS : []),
     ...(typeof JOURNEY_SELECT_IDS !== "undefined" ? JOURNEY_SELECT_IDS : []),
     ...(typeof ACCOMPANY_SELECT_IDS !== "undefined" ? ACCOMPANY_SELECT_IDS : []),
+    ...(typeof BAND_SELECT_IDS !== "undefined" ? BAND_SELECT_IDS : []),
   ];
   const state = {
     sliders: {},
@@ -2645,6 +2647,7 @@ function morphToPreset(id) {
     ...(typeof ATMOS_SLIDER_IDS !== "undefined" ? ATMOS_SLIDER_IDS : []),
     ...(typeof JOURNEY_MORPH_IDS !== "undefined" ? JOURNEY_MORPH_IDS : []),
     ...(typeof ACCOMPANY_SLIDER_IDS !== "undefined" ? ACCOMPANY_SLIDER_IDS : []),
+    ...(typeof BAND_ALL_MORPH_IDS !== "undefined" ? BAND_ALL_MORPH_IDS : []),
   ];
 
   // Snapshot start values
@@ -2678,6 +2681,7 @@ function morphToPreset(id) {
     "tapeSpeedSelect",
     // Accompany's switches move at once, as the others here do (accompany.js).
     ...(typeof ACCOMPANY_SELECT_IDS !== "undefined" ? ACCOMPANY_SELECT_IDS : []),
+    ...(typeof BAND_SELECT_IDS !== "undefined" ? BAND_SELECT_IDS : []),
   ];
   SELECT_IDS.forEach((sid) => {
     const el = document.getElementById(sid);

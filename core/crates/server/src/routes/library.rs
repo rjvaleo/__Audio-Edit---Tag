@@ -479,3 +479,83 @@ pub(super) fn write_tags_file(lib: &Path, folder: &str, all: &Value) -> std::io:
 // Playback is the engine's, not the browser's. These endpoints are the whole
 // interface to it: one expensive call to load a file, and a handful of cheap
 // ones that only ever touch atomics.
+
+/// The drum machines in the library, for the sequencer's Band (`ui/sequencer/drums.js`):
+/// every `<brand>/<machine>/` folder under a `many_drum_machines` folder at the
+/// library's root or one or two folders down, with its audio files' names. Paths
+/// are the library's own, for `/audio?p=`.
+pub(super) fn api_seq_kits(app: &Arc<App>) -> Response {
+    let Some(lib) = app.library_path() else {
+        return Response::json("[]".to_string());
+    };
+    let mut roots: Vec<PathBuf> = Vec::new();
+    let mut look = |dir: &Path| {
+        let p = dir.join("many_drum_machines");
+        if p.is_dir() && !roots.contains(&p) {
+            roots.push(p);
+        }
+    };
+    look(&lib);
+    if let Ok(rd) = std::fs::read_dir(&lib) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                look(&p);
+                if let Ok(rd2) = std::fs::read_dir(&p) {
+                    for e2 in rd2.flatten() {
+                        if e2.path().is_dir() {
+                            look(&e2.path());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let audio = |n: &str| {
+        let l = n.to_lowercase();
+        !l.starts_with('.') && (l.ends_with(".wav") || l.ends_with(".aif") || l.ends_with(".aiff"))
+    };
+    let mut out: Vec<Value> = Vec::new();
+    for root in roots.iter().take(2) {
+        let Ok(brands) = std::fs::read_dir(root) else { continue };
+        for b in brands.flatten() {
+            if !b.path().is_dir() {
+                continue;
+            }
+            // A machine's files may sit in the brand's folder itself, or one down.
+            let mut dirs = vec![b.path()];
+            if let Ok(ms) = std::fs::read_dir(b.path()) {
+                for m in ms.flatten() {
+                    if m.path().is_dir() {
+                        dirs.push(m.path());
+                    }
+                }
+            }
+            for d in dirs {
+                let Ok(fs) = std::fs::read_dir(&d) else { continue };
+                let mut files: Vec<String> = fs
+                    .flatten()
+                    .filter(|f| f.path().is_file())
+                    .map(|f| f.file_name().to_string_lossy().to_string())
+                    .filter(|n| audio(n))
+                    .collect();
+                if files.len() < 3 {
+                    continue;
+                }
+                files.sort();
+                let Ok(rel) = d.strip_prefix(&lib) else { continue };
+                let name = d
+                    .file_name()
+                    .map(|n| n.to_string_lossy().replace('_', " "))
+                    .unwrap_or_default();
+                out.push(
+                    Value::obj()
+                        .set("name", name)
+                        .set("path", rel.to_string_lossy().to_string())
+                        .set("files", Value::Arr(files.into_iter().map(Value::from).collect())),
+                );
+            }
+        }
+    }
+    Response::json(Value::Arr(out).to_string())
+}

@@ -40,6 +40,8 @@ const PERF_SLIDERS = [
   ...JOURNEY_MORPH_IDS,
   // Accompany's (accompany.js, loaded first).
   ...ACCOMPANY_SLIDER_IDS,
+  // The Band's (band.js, drums.js): every knob and fader.
+  ...BAND_ALL_MORPH_IDS,
 ];
 const PERF_SELECTS = [
   "dirSelect",
@@ -58,6 +60,7 @@ const PERF_SELECTS = [
   ...ATMOS_SELECT_IDS,
   ...JOURNEY_SELECT_IDS,
   ...ACCOMPANY_SELECT_IDS,
+  ...BAND_SELECT_IDS,
 ];
 const PERF_SLIDER_SET = new Set(PERF_SLIDERS);
 const PERF_SELECT_SET = new Set(PERF_SELECTS);

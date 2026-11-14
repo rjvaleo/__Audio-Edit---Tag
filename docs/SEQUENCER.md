@@ -544,3 +544,67 @@ the simple kinds' show the shape they are set to ("as set").
   (knobs glide, switches move at once) and the recorder carry it all.
 
 Tests: `tests/ui/sequencer-accompany.spec.mjs`.
+
+## The Band
+
+*14 Nov 2026.* RJ: "each one of those auto accompaniment parts should be its own
+instrument … it's like a whole band … Each one has its own mixer … Band in a Box
+2026 for advanced electronic music … dub techno and IDM", and then "just do it
+all at once". The plan is `WORK DIR/page-mockups/SEQ-BAND-PLAN.md`; the mock-up
+`seq-band.html`; the style research `DUB-TECHNO-RESEARCH.md`. Accompany (above)
+became the Band: `accompany.js` keeps the harmony and the plan, `drums.js` the
+drums, `band.js` the instruments, the mixer, the editors and the styles (all
+ours, served at `/sequencer/…`).
+
+- **Six parts, six channels.** The melody (Classic and Atmosphere), Drums, Bass,
+  Chords, Arp and Drone. Each card has a power button, a roll of the bar it is
+  playing, its pattern and **Edit**, which opens its instrument below. The mixer
+  has a channel each: a fader, pan, mute, solo, a meter, and sends to the delay
+  and to Space. The melody leaves the filter into its channel and, at its
+  defaults (sends 100 %), sounds as it did: the test holds it to the sample.
+  The band's dry signals go to the master past the delay's dry/wet; the delay's
+  Wet and Space's Wet are the returns.
+- **Bass:** a sine (and its octave by Weight), drive, a low-pass, attack,
+  length, release, glide; patterns Root, Root – fifth, Walk, Off-beats, Dub line,
+  Held root, and By hand (a bar of 16ths: R, 3, 4, 5, 7, 8, hold, rest).
+- **Chords** and **Drone:** each its own Atmosphere patch (`atmosPlay(…, { patch })`,
+  the part's values standing in for the controls while the note is built), with
+  starting sounds (Dub chord, Warm pad, Glass, Organ; Dark drone, Cathedral air,
+  Glass choir, Endless rise) and its own LP/HP/BP filter. Chords: triads,
+  sevenths, ninths (no fifth), fourths; each bar, on change, dub stabs (16ths 3
+  and 11, after Basic Channel), or a two-bar stab pattern; Stab is the hit's
+  length; the filter opens with each chord by Env amt over Env dec.
+- **Arp:** a sine, triangle, saw or square plucked through its own filter.
+- **Drums:** ten rows (kick, snare, clap, rim, closed and open hat, three toms,
+  cowbell or the kit's percussion). Kits: **808 synth** (synthesised here, after
+  `docs/effects/pluggo-instruments.md`, with the 808's clap, rim and cowbell;
+  the closed hat chokes the open), and samples from the library through
+  `/audio?p=`: 808, 909, 707, 606, CR-78, LinnDrum, DMX, SP-12 from
+  `My Audio Library/many_drum_machines`, **Funky** from RJ's own drum folders
+  (`Audio Library 4 (S&D)`: Grungy Drums, Dirty tr505 Edits), and every other
+  machine the server finds (`GET /api/seq/kits`: `<brand>/<machine>/` folders
+  under a `many_drum_machines` at the library's root or two folders down, their
+  files mapped onto the rows by name). A sound a kit lacks plays from the synth.
+  Each row: Tune, Decay, Tone, Level, Pan, Delay and Space sends. **The grid:**
+  1/8, 1/16 or 1/32; per step velocity (drag), accent, chance, ratchet (1–8);
+  per row a length (polymeter) and a mute (right-click the name); patterns
+  (four on the floor, Basic Channel, DeepChord, half time, broken, electro).
+  Chance is a hash of the seed, the row and the step's count, so a take plays
+  the same drums live, in the film and in the export.
+- **Swing** (50–75 %) delays every other 16th of the drums, the bass lines and
+  a 1/16 arp.
+- **Style** writes a whole band from a seed: Basic Channel, DeepChord,
+  half-time dub, IDM-leaning (the research's "Generator rules": tempo, swing,
+  kit, the drum rows and their chances, the chord and its rhythm, the bass, the
+  sounds, delay time and feedback, Space, the mixer and the drums' sends). It
+  writes the controls a person would, so all of it can be edited. A major scale
+  becomes Aeolian; any other scale is kept. **Arrange** brings parts in and out
+  over the trip (the Journey's length, or 128 bars): open hat at an eighth,
+  closed hat at a quarter, rim and percussion at three eighths, the bass from
+  about a fifth, a breakdown (kick and bass out) at 57–62 %, and the chord
+  filter follows the Journey's curve or the research's rise and fall.
+- **LFO targets:** Chords cutoff, Drone cutoff, Chords level, Bass level.
+- Presets, morphs and the recorder carry every knob, switch, pattern, the drum
+  grid and the bass line.
+
+Tests: `tests/ui/sequencer-band.spec.mjs` (and `sequencer-accompany.spec.mjs`).
