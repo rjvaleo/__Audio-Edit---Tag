@@ -73,17 +73,17 @@ test('Prism on the rail opens the open sound on its pad, which fills the page le
   await expect(page.locator('#hsChip')).toContainText('READY');
 });
 
-test('the pad maps linearly between its limits, X across and Y up', async ({ page }) => {
+test('the pad reaches the knobs\' whole range: Stretch 100× to 0.01× across, logarithmic; Pitch ±48 up, linear', async ({ page }) => {
   await openPrism(page);
   const lims = await page.evaluate(() => window.hyperStretch.limits());
-  expect(lims).toEqual({ xLo: 4, xHi: 0.25, yLo: -12, yHi: 12 });
+  expect(lims).toEqual({ xLo: 100, xHi: 0.01, yLo: -48, yHi: 48 });
   const p = await at(page, 0.5, 0.25);
   await page.mouse.move(p.x, p.y);
   await page.mouse.down();
   const fx = (p.x - p.b.x) / p.b.width, fy = (p.y - p.b.y) / p.b.height;
   const d = await draft(page);
-  expect(d.ratio).toBeCloseTo(4 + fx * (0.25 - 4), 3);
-  expect(d.semitones).toBeCloseTo(-12 + (1 - fy) * 24, 3);
+  expect(Math.log(d.ratio)).toBeCloseTo(Math.log(100) + fx * Math.log(0.01 / 100), 3);
+  expect(d.semitones).toBeCloseTo(-48 + (1 - fy) * 96, 3);
   await page.mouse.up();
 });
 
