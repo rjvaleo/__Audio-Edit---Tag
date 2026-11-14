@@ -57,6 +57,20 @@ const prismDeck = {
   playing: false, pos: 0, loop: false, wave: null, polled: 0,
 };
 
+/// The engines the pad can play through, as the Grain tab offers them (the
+/// ones the audio callback runs live). RJ, 14 Nov 2026: the engine "doesn't
+/// really show up on the XY pad".
+const PRISM_ENGINES = [['granular', 'Granular'], ['wsola', 'WSOLA'], ['vocoder', 'Vocoder'], ['pvsola', 'PVSOLA'], ['hybrid', 'Hybrid']];
+const prismEngineName = () => (PRISM_ENGINES.find(([k]) => k === prismDeck.stretch.algorithm) || PRISM_ENGINES[0])[1];
+
+/// Play the pad through another engine.
+function prismSetEngine(key) {
+  if (!PRISM_ENGINES.some(([k]) => k === key) || prismDeck.stretch.algorithm === key) return;
+  prismDeck.stretch = { ...prismDeck.stretch, algorithm: key };
+  prismStretchSend();
+  if (typeof hsPaintEngine === 'function') hsPaintEngine();
+}
+
 /// The Prism deck's document.
 function prismKey() {
   return `prism:${prismDeck.path}`;
@@ -83,7 +97,10 @@ async function prismDeckUse(path, { chosen = true } = {}) {
   } catch { prismDeck.rack = { slots: [], pads: {}, postRoll: {} }; }
   try {
     const kept = JSON.parse(localStorage.getItem(`prism.stretch:${path}`) || 'null');
-    prismDeck.stretch = { ratio: 1, semitones: 0, windowMs: 46, cloudMix: 0.5, ...(kept || {}), algorithm: 'granular' };
+    // The engine is the one last chosen on the pad (14 Nov 2026); it was
+    // always the granular one.
+    prismDeck.stretch = { ratio: 1, semitones: 0, windowMs: 46, cloudMix: 0.5, algorithm: 'granular', ...(kept || {}) };
+    if (!PRISM_ENGINES.some(([k]) => k === prismDeck.stretch.algorithm)) prismDeck.stretch.algorithm = 'granular';
   } catch { /* nothing kept */ }
   prismStretchSend();
   prismHpSend();
@@ -480,8 +497,13 @@ function prismCurrent() {
 function prismSetup() {
   const src = prismCurrent();
   if (!src) return null;
-  return prismDeck.rack.pads?.[src.id] || src.pad || src.default;
+  const kept = prismDeck.rack.pads?.[src.id] || src.pad;
+  // Time & Pitch's old default (4× to ¼×, ±12) was kept with many racks; it
+  // gives way to the new one, the knobs' whole range (14 Nov 2026).
+  if (kept && prismOldDefault(kept)) return src.default;
+  return kept || src.default;
 }
+const prismOldDefault = (p) => p.x === 'ratio' && p.xLo === 4 && p.xHi === 0.25 && p.y === 'semitones' && p.yLo === -12 && p.yHi === 12;
 
 function prismControl(key) {
   return prismCurrent()?.controls.find((c) => c.key === key);

@@ -107,10 +107,12 @@ fn time_and_pitch() -> PadSource {
         control("windowMs", "Window", WINDOW_MS_MIN, WINDOW_MS_MAX, true, "ms"),
         control("cloudMix", "Cloud over engine", 0.0, 1.0, false, ""),
     ];
-    // Hyperprism's Pitch Time Changer: speed across, so the stretch runs
-    // from four times as long on the left to a quarter on the right; and an
-    // octave of pitch each way.
-    let default = setup(&controls[0], (4.0, 0.25), &controls[1], (-12.0, 12.0));
+    // Speed across, so the stretch runs from longest on the left to shortest
+    // on the right; pitch up. Each over the knob's whole range (RJ, 14 Nov
+    // 2026: "pitch goes plus or minus 48 on the knob, but only 12 on the XY
+    // pad … Stretch goes from 0.01 to 100"), where it was 4× to ¼× and an
+    // octave each way, as Hyperprism's Pitch Time Changer had it.
+    let default = setup(&controls[0], (RATIO_MAX, RATIO_MIN), &controls[1], (SEMITONE_MIN, SEMITONE_MAX));
     PadSource { id: STRETCH.into(), label: "Time & Pitch".into(), controls, default }
 }
 
@@ -334,7 +336,8 @@ mod tests {
         let d = &t.default;
         assert_eq!((d.x.as_str(), d.y.as_str()), ("ratio", "semitones"));
         assert!(d.x_lo > 1.0 && d.x_hi < 1.0, "faster to the right: {} → {}", d.x_lo, d.x_hi);
-        assert_eq!((d.y_lo, d.y_hi), (-12.0, 12.0));
+        assert_eq!((d.y_lo, d.y_hi), (-48.0, 48.0), "the pad reaches the knob's whole pitch range");
+        assert_eq!((d.x_lo, d.x_hi), (100.0, 0.01), "the pad reaches the knob's whole stretch range");
     }
 
     #[test]
