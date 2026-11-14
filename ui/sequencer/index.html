@@ -221,7 +221,7 @@
               <div class="scale-display-info" id="activeScaleInfo">Ancient Greek · 12 notes · Just intonation (3-limit)</div>
               <div class="root-row">
                 <span class="cap">Root</span>
-                <select id="rootSelect" onchange="updateRoot(this.value)"><option value="0">C</option><option value="2">D</option><option value="4">E</option><option value="5">F</option><option value="7">G</option><option value="9" selected>A</option><option value="11">B</option></select>
+                <select id="rootSelect" onchange="updateRoot(this.value)"><option value="0">C</option><option value="1">C#</option><option value="2">D</option><option value="3">Eb</option><option value="4">E</option><option value="5">F</option><option value="6">F#</option><option value="7">G</option><option value="8">Ab</option><option value="9" selected>A</option><option value="10">Bb</option><option value="11">B</option></select>
                 <span class="cap">Oct</span>
                 <select id="octaveSelect" onchange="updateRoot()"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option></select>
                 <span class="root-hz"><span id="rootHzDisplay">440.0</span> Hz</span>
@@ -321,6 +321,8 @@
     <script src="band.js"></script>
     <!-- Ours: Draw, a canvas the sequencer plays (the host's Draw page). -->
     <script src="draw.js"></script>
+    <!-- Ours: Clone a song, the host's Clone page (only it shows there), which drives the Band. -->
+    <script src="clone.js"></script>
     <script src="performance.js"></script>
     <!-- Not part of the sequencer: the bridge to the granular engine it is
          embedded in. Does nothing when the page is opened on its own. -->

@@ -1076,7 +1076,9 @@ function scheduler() {
     // The Draw page's canvas, at every boundary too (draw.js); its switch can
     // leave the steps out.
     if (typeof drawAt === "function") drawAt(seqStepCount, nextNoteTime);
-    if (!played.rest && !(typeof drawStepsMuted === "function" && drawStepsMuted())) {
+    // The Clone page's section plan can leave the melody out of a section (band.js).
+    const melodyOff = typeof bandMelodyOn === "function" && !bandMelodyOn(seqStepCount);
+    if (!played.rest && !melodyOff && !(typeof drawStepsMuted === "function" && drawStepsMuted())) {
       const freq = seqPlayAt(played, nextNoteTime, stepDur);
       // Update UI
       const si = currentStep;

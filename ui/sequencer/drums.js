@@ -143,7 +143,17 @@ function dmSample(slot) {
 }
 
 // ─── THE VALUES ──────────────────────────────────────────────────────────────
-const DM = { kit: "synth", rate: 16, edit: "vel", seed: 808, slots: {}, grid: null };
+const DM = { kit: "synth", rate: 16, edit: "vel", seed: 808, slots: {}, grid: null, pats: null, cur: "A" };
+/// The patterns: A–D, and F, the fill a section's last bar can play (the Clone
+/// page's section plan says which pattern each bar plays; without one, A).
+const DM_PATS = ["A", "B", "C", "D", "F"];
+/// Put a grid into the pattern being edited, and make it the one shown.
+function dmSetGrid(g) {
+  if (!DM.pats) DM.pats = {};
+  DM.pats[DM.cur] = g;
+  DM.grid = g;
+  return g;
+}
 /// The grid: per row `{ len, steps: [{ v, a, c, r }] }` (velocity 0–127, 0 off;
 /// accent; chance 0–100; ratchet 1–8), 64 steps a row.
 const dmEmptyRow = () => ({ len: 16, mute: false, steps: Array.from({ length: 64 }, () => ({ v: 0, a: 0, c: 100, r: 1 })) });
@@ -180,21 +190,18 @@ function dmFromPattern(key) {
   return g;
 }
 
-/// The grid lives in a hidden input as text, so presets and the recorder keep it.
-function dmGridSave() {
-  const el = document.getElementById("dmGridText");
-  if (!el) return;
+/// The patterns live in a hidden input as text, so presets and the recorder
+/// keep them: `{ v: 2, pats: { A: rows, … F: rows } }`. A preset from before
+/// the patterns holds one grid's rows; it becomes A.
+const dmRowsOut = (g) => {
   const rows = {};
   for (const s of DM_SLOTS) {
-    const r = DM.grid[s.k];
+    const r = g[s.k];
     rows[s.k] = { len: r.len, mute: r.mute ? 1 : 0, s: r.steps.map((x) => (x.v ? [x.v, x.a, x.c, x.r] : 0)) };
   }
-  el.value = JSON.stringify(rows);
-}
-function dmGridLoad() {
-  const el = document.getElementById("dmGridText");
-  let rows = null;
-  try { rows = el && el.value ? JSON.parse(el.value) : null; } catch (e) { rows = null; }
+  return rows;
+};
+const dmRowsIn = (rows) => {
   const g = dmEmptyGrid();
   if (rows) for (const s of DM_SLOTS) {
     const r = rows[s.k];
@@ -203,7 +210,37 @@ function dmGridLoad() {
     g[s.k].mute = !!r.mute;
     (r.s || []).forEach((x, i) => { if (x && i < 64) Object.assign(g[s.k].steps[i], { v: x[0], a: x[1], c: x[2], r: x[3] }); });
   }
-  DM.grid = g;
+  return g;
+};
+function dmGridSave() {
+  const el = document.getElementById("dmGridText");
+  if (!el) return;
+  if (!DM.pats) DM.pats = { A: DM.grid || dmEmptyGrid() };
+  DM.pats[DM.cur] = DM.grid;
+  const pats = {};
+  for (const l of DM_PATS) if (DM.pats[l]) pats[l] = dmRowsOut(DM.pats[l]);
+  el.value = JSON.stringify({ v: 2, pats });
+}
+function dmGridLoad() {
+  const el = document.getElementById("dmGridText");
+  let d = null;
+  try { d = el && el.value ? JSON.parse(el.value) : null; } catch (e) { d = null; }
+  const pats = {};
+  if (d && d.v === 2 && d.pats) { for (const l of DM_PATS) if (d.pats[l]) pats[l] = dmRowsIn(d.pats[l]); }
+  else pats.A = dmRowsIn(d);
+  if (!pats.A) pats.A = dmEmptyGrid();
+  DM.pats = pats;
+  if (!pats[DM.cur]) pats[DM.cur] = dmEmptyGrid();
+  DM.grid = pats[DM.cur];
+}
+/// Edit another pattern.
+function dmEditPattern(l) {
+  dmGridSave();
+  DM.cur = l;
+  if (!DM.pats[l]) DM.pats[l] = dmEmptyGrid();
+  DM.grid = DM.pats[l];
+  for (const b of document.querySelectorAll("#dmPatTabs button")) b.classList.toggle("on", b.dataset.l === l);
+  drumsPaint();
 }
 
 function drumsRead() {
@@ -235,8 +272,12 @@ function drumPlan(k) {
   for (const i of acUnits(k, u)) {
     // Swing: every other step late, by up to a third of a step at 75 %.
     const late = i % 2 ? Math.max(0, (swing - 50) / 50) * u : 0;
+    // Which pattern this bar plays: the section plan's (band.js), or A.
+    const bar = Math.floor((i * u) / 4 + 1e-9);
+    const l = typeof bandDrumLetter === "function" ? bandDrumLetter(bar) : "A";
+    const grid = (DM.pats && (DM.pats[l] || DM.pats.A)) || DM.grid;
     for (const s of DM_SLOTS) {
-      const row = DM.grid[s.k];
+      const row = grid[s.k];
       if (row.mute) continue;
       const j = ((i % row.len) + row.len) % row.len;
       const st = row.steps[j];
@@ -396,6 +437,7 @@ function drumsBuildUI(host) {
     + `<span class="cap">Kit</span><select id="dmKitSelect" class="dm-kit" onchange="drumsRead()"></select>`
     + `<span class="cap">Pattern</span><select id="dmPatSelect" class="dm-pat">${Object.entries(DM_PATTERNS).map(([k, p]) => `<option value="${k}">${p.name}</option>`).join("")}</select>`
     + `<button type="button" class="btn" id="dmPatApply" title="Write this pattern into the grid">Use</button>`
+    + `<span class="cap">Editing</span><span class="seg dm-tabs" id="dmPatTabs">${DM_PATS.map((l) => `<button type="button" data-l="${l}" class="${l === "A" ? "on" : ""}" title="${l === "F" ? "The fill: a section's last bar, where the section plan asks for one" : "Pattern " + l + ": the section plan says which bars play it"}">${l === "F" ? "Fill" : l}</button>`).join("")}</span>`
     + `<span class="cap">Rate</span>${seg("dmRateSelect", [["8", "1/8"], ["16", "1/16"], ["32", "1/32"]], "16")}`
     + `<span class="cap">Edit</span>${seg("dmEditSelect", [["vel", "Velocity"], ["acc", "Accent"], ["chance", "Chance"], ["rat", "Ratchet"]], "vel")}`
     + `<button type="button" class="btn" id="dmClear">Clear</button>`
@@ -404,8 +446,11 @@ function drumsBuildUI(host) {
     + `<div class="dm-head"><span>SOUND</span><span>TUNE</span><span>DECAY</span><span>TONE</span><span>LEVEL</span><span>PAN</span><span>DLY</span><span>SPC</span><span class="dm-nums">${Array.from({ length: 16 }, (_, i) => `<i>${i % 4 ? "·" : i / 4 + 1}</i>`).join("")}</span><span>LEN</span></div>`
     + `<div class="dm-rows">${rows}</div>`;
   dmFillKitSelect();
-  DM.grid = dmFromPattern("dub");
+  DM.pats = { A: dmFromPattern("dub") };
+  DM.cur = "A";
+  DM.grid = DM.pats.A;
   dmGridSave();
+  document.getElementById("dmPatTabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-l]"); if (b) dmEditPattern(b.dataset.l); });
   // Clicks on the grid: by edit mode. Drag up and down for velocity.
   host.addEventListener("mousedown", (e) => {
     const cell = e.target.closest(".dm-cell");
@@ -427,8 +472,8 @@ function drumsBuildUI(host) {
     r.mute = !r.mute;
     dmGridCommit();
   });
-  document.getElementById("dmPatApply").addEventListener("click", () => { DM.grid = dmFromPattern(document.getElementById("dmPatSelect").value); dmGridCommit(); });
-  document.getElementById("dmClear").addEventListener("click", () => { DM.grid = dmEmptyGrid(); dmGridCommit(); });
+  document.getElementById("dmPatApply").addEventListener("click", () => { dmSetGrid(dmFromPattern(document.getElementById("dmPatSelect").value)); dmGridCommit(); });
+  document.getElementById("dmClear").addEventListener("click", () => { dmSetGrid(dmEmptyGrid()); dmGridCommit(); });
 }
 
 /// After an edit of the grid: saved where presets and the recorder see it.

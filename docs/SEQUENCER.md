@@ -783,3 +783,63 @@ back the steps. The Performance recorder does not record drawing gestures.
 - Drawings do not morph point by point between presets.
 
 Tests: `tests/ui/draw.spec.mjs`.
+
+## Clone a song
+
+*14 Nov 2026.* RJ: "It's the clone a song", and, with the PC's song-from-song
+tools doing the same: "figure out a way that they can live together … you both do
+the thing and then you can use it to check each other. And then it's how you do
+like fills." Plan `WORK DIR/page-mockups/CLONE-PLAN.md`, mock-up `clone.html`.
+`ui/sequencer/clone.js` (ours, `/sequencer/clone.js`).
+
+**A page of its own** on the host's rail, after Stems: the Seq frame with only
+the Clone panel showing (`body.only-clone`, from `seq:only`), as Draw and
+Atmosphere are, so it writes the Seq Band directly. **Open in Seq** asks the host
+to show Seq (`seq:goto`).
+
+1. **Songs:** those split and read on the Stems page (`/api/stems/list`, their
+   `songprint.json` from `/api/stems/info`). **Clone one**, **Grow a snippet**
+   (drag the stretch on the song's bars; its own bars lead the drums, and it is
+   the plan's first section), or **Blend up to five**.
+2. **The description:** seven facets (tempo and feel, key and tuning, drums,
+   bass, chords, arrangement, texture and space), each **From** a song, All of
+   them, or the dub techno style, at a distance **near ↔ far**: 0 the song as it
+   was, about 30 your habits with new material, about 70 your shape with other
+   notes, 100 far. The eleven **words** the PC's model will read (style, tempo,
+   key, drums, bass, harmony, pads, lead, fx, mood, structure), written from the
+   facets; an edited one keeps RJ's words.
+3. **The plan:** sections, the parts in each, the drum pattern and bass line each
+   plays, and a **fill** at a join (from the bars before RJ's own section
+   changes). Click a part to turn it on or off there; click a join for a fill.
+4. **Make it sound:** **MGL's instruments** play it now. **The PC's model** says
+   it is not connected: its song tools (PC task 005) are being built there and the
+   Stems session wires them in; `Show the description it will read` gives the
+   shared JSON (`cloneDescription`).
+5. **Check:** the Band's plan against the description, facet by facet; the PC's
+   takes join it when the model is connected.
+
+**What it writes** (`cloneApply`): the tempo and swing; a **learned scale** in the
+song's own cents (the reading's positions, ones within 30¢ of each other or the
+octave merged), added to the scale library under "LEARNED FROM YOUR SONGS" and
+kept in the browser (`mglLearnedScales`) so a preset that uses it opens again; the
+root (the root menu now has sharps); the Journey off (the plan is the trip); every
+part the plan uses on, Follows root; drum patterns A–D and the fill; bass lines
+A–D (By hand); the section plan, Arrange on **Plan**; the chords' cutoff, Space
+sends and pan, the delay time, from the texture. Everything comes from the
+readings, the settings and the seed: the same seed makes the same piece.
+
+**What the Band gained for it** (usable without Clone too):
+- **Drum patterns A–D and Fill** (`DM.pats`), edited by the tabs beside Pattern.
+  `dmGridText` holds `{ v: 2, pats }`; a preset from before holds one grid, which
+  becomes A.
+- **Bass lines A–D** (`bsLineText` as `{ "A": "R-…", … }`, or one line, A), edited
+  by the tabs over the line.
+- **The section plan** (`bdPlanText`: `{ secs: [{ l, b, drums, bass, chord,
+  drone, arp, melody, fill, open }] }`), played with Arrange on **Plan**: each
+  section says which parts play, which drum pattern and bass line, whether its last
+  bar is the fill, how open the chords' filter is, and whether the melody (the
+  steps) plays (`bandMelodyOn`, in the scheduler and the film's render). It goes
+  round when it ends; a strip under the Band's header shows it.
+
+Tests: `tests/ui/sequencer-clone.spec.mjs` (the Stems routes stood in for with a
+small song's reading).

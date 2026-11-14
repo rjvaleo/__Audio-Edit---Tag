@@ -210,6 +210,8 @@ function seqAsk(bands, lo, hi) {
 window.addEventListener('message', (e) => {
   if (e.origin !== location.origin) return;
   const m = e.data || {};
+  // The Clone page's Open in Seq: the page it wrote the Band of.
+  if (m.type === 'seq:goto' && (m.mode === 'seq' || m.mode === 'clone')) { setMode(m.mode); return; }
   if (m.type === 'seq:ready') {
     seq.ready = true;
     seqSync(engine.playing);

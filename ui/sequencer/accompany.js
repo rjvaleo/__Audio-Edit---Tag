@@ -304,11 +304,11 @@ function acPlan(k, jump = false) {
   if (P.bass.on && arr("bass")) {
     const oct = acB("bass", "bsOct", 1) >= 1.5 ? -2 : -1;
     const place = (d, ch) => centsToHz(rootHz, ((acCents(ch.cents, d) % 1200) + 1200) % 1200 + oct * 1200 + (d - ch.root >= ch.cents.length ? 1200 : 0));
-    const line = P.bass.pat === "hand" ? acB("bass", "line", "R-..") : AC_BASS_LINES[P.bass.pat];
-    if (line) {
-      const L = line.padEnd(16, ".").slice(0, 16);
+    // By hand: the bar's line, A–D, as the section plan says (band.js).
+    const lineFor = (b) => (P.bass.pat === "hand" ? (typeof bandBassLine === "function" ? bandBassLine(b) : acB("bass", "line", "R-..")) : AC_BASS_LINES[P.bass.pat]);
+    if (lineFor(0)) {
       for (const i of acUnits(k, 0.25)) {
-        const b = Math.floor(i / 16), j = i - b * 16, tok = L[j];
+        const b = Math.floor(i / 16), j = i - b * 16, L = lineFor(b).padEnd(16, ".").slice(0, 16), tok = L[j];
         if (tok === "." || tok === "-") continue;
         let len = 1;
         while (j + len < 16 && L[j + len] === "-") len++;

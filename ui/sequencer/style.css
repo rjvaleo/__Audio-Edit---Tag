@@ -747,3 +747,99 @@ body.only-draw .draw-page { display: flex; flex-direction: column; gap: 8px; fle
 .dr-part .f b { position: absolute; inset: 0 auto 0 0; width: var(--v); background: color-mix(in srgb, var(--c) 55%, transparent); border-right: 2px solid var(--c); }
 .dr-part em { font: 400 10px var(--mono); font-style: normal; color: var(--look-text-3); text-align: right; }
 .dr-part.unheard { opacity: 0.45; }
+
+/* ─── CLONE A SONG (clone.js) ─────────────────────────────────────────────────
+   The host's Clone page: this page with only the Clone panel showing
+   (`body.only-clone`, from `seq:only`), like Draw and Atmosphere. It writes the
+   Band's controls; everything else of Seq is hidden here. */
+.clone-page { display: none; --cl-drums: var(--f-attack); --cl-bass: var(--f-tone); --cl-vocals: var(--f-pitch); --cl-other: var(--f-space); }
+body.only-clone .page > :not(.clone-page) { display: none !important; }
+body.only-clone .page { padding: 10px 14px 12px; gap: 8px; overflow: auto; }
+body.only-clone .clone-page { display: flex; flex-direction: column; gap: 8px; flex: none; }
+.clone-page .ph { flex-wrap: wrap; row-gap: 4px; }
+.clone-page .ph .meta { white-space: normal; }
+.cl-head { flex-direction: row; align-items: center; gap: 10px; padding: 7px 12px; }
+.cl-title { font: 700 17px var(--mono); letter-spacing: 0.14em; color: var(--look-text); white-space: nowrap; }
+.cl-title span { color: var(--look-text-3); font-weight: 500; }
+.cl-steps { display: flex; align-items: center; gap: 6px; }
+.cl-steps b { height: 24px; padding: 0 10px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; font: 600 11px var(--ui); color: var(--look-text-3); background: var(--look-well); box-shadow: 0 0 0 1px var(--look-line); }
+.cl-steps b i { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font: 700 10px var(--mono); font-style: normal; background: var(--look-panel); color: var(--look-text-2); }
+.cl-steps b.on { color: var(--on); box-shadow: 0 0 0 1px color-mix(in srgb, var(--on) 55%, var(--look-line)); }
+.cl-steps b.on i { background: var(--on); color: #1a1205; }
+.cl-steps s { width: 16px; height: 1px; background: var(--look-line); }
+.cl-help { white-space: normal; }
+.cl-wrap { white-space: normal; }
+.cl-songs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 7px; }
+.cl-song { border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--look-line); padding: 7px 9px; display: flex; flex-direction: column; gap: 4px; min-width: 0; cursor: pointer; user-select: none; opacity: 0.6; }
+.cl-song.sel { opacity: 1; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 1.5px var(--on); }
+.cl-song.add { cursor: default; opacity: 1; font: 500 12px var(--ui); color: var(--look-text-2); grid-column: 1 / -1; }
+.cl-song .sn { display: flex; align-items: center; gap: 7px; font: 600 12px var(--ui); color: var(--look-text); white-space: nowrap; overflow: hidden; }
+.cl-song .sn b { overflow: hidden; text-overflow: ellipsis; }
+.cl-song .chk { width: 14px; height: 14px; border-radius: 3px; flex: none; box-shadow: 0 0 0 1px var(--look-line); display: grid; place-items: center; font: 700 10px var(--ui); color: transparent; }
+.cl-song.sel .chk { background: var(--on); color: #1a1205; box-shadow: none; }
+.cl-song .nums { display: flex; gap: 10px; font: 500 10px var(--mono); color: var(--look-text-2); }
+.cl-song .nums em { color: var(--f-pitch); font-style: normal; }
+.cl-song .strip { position: relative; height: 24px; }
+.cl-song .strip i { position: absolute; height: 4px; border-radius: 1px; }
+.cl-snip { display: none; } .cl-snip.on { display: block; }
+.cl-snip .well { height: 56px; position: relative; }
+.cl-reg { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--on) 18%, transparent); border-left: 2px solid var(--on); border-right: 2px solid var(--on); cursor: grab; touch-action: none; }
+.cl-reg span { position: absolute; top: 3px; left: 6px; font: 600 10px var(--mono); color: var(--on); white-space: nowrap; }
+.cl-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 8px; }
+.cl-facets { display: grid; grid-template-columns: 130px auto 190px minmax(0, 1fr); column-gap: 12px; row-gap: 2px; align-items: center; }
+.cl-facets .hd, .cl-check .hd { font: 600 8.5px var(--mono); letter-spacing: 0.12em; color: var(--look-text-3); }
+.cl-facets .fn { font: 600 12px var(--ui); color: var(--look-text); display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.cl-facets .fn i { width: 8px; height: 8px; border-radius: 2px; background: var(--fc); }
+.cl-facets .seg button { height: 20px; padding: 0 7px; font-size: 10.5px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.cl-facets .seg button:disabled { opacity: 0.3; }
+.cl-facets .rd { font: 400 10.5px/1.35 var(--mono); color: var(--look-text-2); }
+.cl-facets .rd b { color: var(--f-pitch); font-weight: 500; }
+.cl-facets code { font: 400 10px var(--mono); color: var(--f-attack); }
+.dim { color: var(--look-text-3); }
+.cl-nf { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+.cl-tr { position: relative; height: 6px; border-radius: 3px; background: var(--look-well); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8); cursor: ew-resize; touch-action: none; }
+.cl-tr::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--v) * 100%); border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--fc) 30%, transparent), var(--fc)); pointer-events: none; }
+.cl-tr::after { content: ""; position: absolute; top: -5px; left: calc(var(--v) * 100% - 7px); width: 14px; height: 16px; border-radius: 4px; background: linear-gradient(180deg, #4a4f57, #2b2f35); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.7); pointer-events: none; }
+.cl-nf em { font: 600 10px var(--mono); color: var(--look-text-2); font-style: normal; min-width: 76px; text-align: right; }
+.cl-words { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 3px 8px; align-items: center; }
+.cl-words label { font: 600 9px var(--mono); letter-spacing: 0.1em; color: var(--look-text-3); text-transform: uppercase; }
+.cl-words input { height: 24px; border-radius: 4px; background: var(--look-well); border: 1px solid var(--look-line); color: var(--look-text); font: 400 11px var(--mono); padding: 0 7px; min-width: 0; }
+.cl-words input.edited { border-color: color-mix(in srgb, var(--on) 55%, var(--look-line)); }
+.cl-plan { display: grid; grid-template-columns: 70px minmax(0, 1fr); row-gap: 3px; column-gap: 8px; align-items: center; }
+.cl-plan .pl { font: 600 9px var(--mono); letter-spacing: 0.1em; color: var(--look-text-3); }
+.cl-plan .secs, .cl-plan .joins, .cl-plan .lane { display: flex; gap: 2px; min-width: 0; }
+.cl-plan .secs b { height: 22px; border-radius: 3px; background: var(--look-panel); box-shadow: 0 0 0 1px var(--look-line); font: 600 10px var(--mono); color: var(--look-text-2); display: flex; align-items: center; justify-content: space-between; padding: 0 5px; overflow: hidden; white-space: nowrap; min-width: 0; }
+.cl-plan .secs b.snip { color: var(--on); box-shadow: 0 0 0 1.5px var(--on); }
+.cl-plan .secs b small { font: 400 9px var(--mono); color: var(--look-text-3); }
+.cl-plan .joins i { height: 14px; position: relative; min-width: 0; }
+.cl-join { position: absolute; right: -6px; top: 1px; width: 12px; height: 12px; border-radius: 3px; background: var(--look-well); box-shadow: 0 0 0 1px var(--look-line); cursor: pointer; text-decoration: none; display: grid; place-items: center; font: 700 8px var(--mono); color: var(--look-text-3); z-index: 2; }
+.cl-join.on { background: var(--on); color: #1a1205; box-shadow: none; }
+.cl-f { color: var(--on); }
+.cl-plan .lane i { height: 11px; border-radius: 2px; background: rgba(255, 255, 255, 0.04); cursor: pointer; min-width: 0; }
+.cl-plan .lane i:hover { box-shadow: inset 0 0 0 1px var(--on); }
+.cl-plan .lane i.on { background: color-mix(in srgb, var(--fc) 75%, #000); }
+.cl-plan .lane i b { display: block; font: 600 8px var(--mono); color: #10141a; text-align: center; line-height: 11px; }
+.cl-engines { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cl-eng { border-radius: var(--r-m); background: rgba(0, 0, 0, 0.18); box-shadow: inset 0 0 0 1px var(--look-line); padding: 8px 10px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.cl-eng .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cl-band { color: var(--f-attack); } .cl-pcn { color: var(--f-space); }
+.cl-waits { opacity: 0.4; pointer-events: none; }
+.cl-pcstate { color: var(--f-time); }
+.cl-json { display: none; max-height: 220px; overflow: auto; margin: 0; padding: 8px; border-radius: var(--r-m); background: var(--look-well); font: 400 10px/1.4 var(--mono); color: var(--look-text-2); white-space: pre-wrap; }
+.cl-json.on { display: block; }
+.cl-check { display: grid; grid-template-columns: 140px repeat(3, minmax(0, 1fr)) 150px; column-gap: 10px; row-gap: 5px; align-items: center; }
+.cl-check .fn { font: 600 12px var(--ui); color: var(--look-text); }
+.cl-check .m { font: 400 10.5px var(--mono); color: var(--look-text-2); display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cl-check .g { width: 46px; height: 6px; border-radius: 3px; background: var(--look-well); position: relative; overflow: hidden; flex: none; }
+.cl-check .g i { position: absolute; left: 0; top: 0; bottom: 0; background: currentColor; }
+.cl-check .ok { color: var(--f-space); } .cl-check .warn { color: var(--f-time); } .cl-check .bad { color: #f08a7a; }
+.cl-toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--look-panel); color: var(--look-text); font: 500 12px var(--ui); padding: 8px 14px; border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 30; }
+.cl-toast.on { opacity: 1; }
+/* The Band's side: the section plan under its header, the drum and bass pattern tabs. */
+.bd-planstrip { display: none; align-items: center; gap: 2px; }
+.bd-planstrip.on { display: flex; }
+.bd-planstrip .cap { margin-right: 6px; }
+.bd-planstrip b { height: 18px; min-width: 0; border-radius: 3px; background: var(--look-well); box-shadow: 0 0 0 1px var(--look-line); font: 600 9px var(--mono); color: var(--look-text-2); display: flex; align-items: center; justify-content: space-between; padding: 0 4px; overflow: hidden; }
+.bd-planstrip b small { color: var(--look-text-3); font-weight: 400; }
+.bd-planstrip .meta { margin-left: 6px; font-size: 10px; }
+.dm-tabs button { height: 22px; padding: 0 8px; }
