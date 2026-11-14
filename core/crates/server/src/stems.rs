@@ -39,6 +39,10 @@ pub struct StemsJob {
     child: Mutex<Option<Child>>,
     /// A split running on the GPU machine: where, and its job tag.
     remote: Mutex<Option<(crate::gpu::Gpu, String)>>,
+    /// Stems back from the GPU machine and unpacked, in the order they landed.
+    pub arrived: Mutex<Vec<String>>,
+    /// Stems on their way back: (stem, bytes expected, the file growing here).
+    pub incoming: Mutex<Vec<(String, u64, PathBuf)>>,
 }
 
 fn put(m: &Mutex<String>, s: &str) {
@@ -59,6 +63,8 @@ impl StemsJob {
         put(&self.source, source);
         put(&self.song, song);
         put(&self.error, "");
+        self.arrived.lock().unwrap().clear();
+        self.incoming.lock().unwrap().clear();
         *self.started.lock().unwrap() = Some(Instant::now());
         self.say("starting");
     }
@@ -352,22 +358,73 @@ fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: 
         win(&jobdir),
         win(&songdir)
     ))?;
-    let names: Vec<String> = listed.lines().map(str::trim).filter(|n| n.ends_with(".flac")).map(str::to_string).collect();
-    if names.is_empty() {
+    // "name<TAB>bytes" a line.
+    let packed: Vec<(String, u64)> = listed
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.trim().split('\t');
+            let n = it.next()?.to_string();
+            let b = it.next().and_then(|b| b.trim().parse().ok()).unwrap_or(0);
+            n.ends_with(".flac").then_some((n, b))
+        })
+        .collect();
+    if packed.is_empty() {
         return Err(format!("Demucs made no stems on the {}", gpu.host));
     }
     stop(job)?;
     job.say(&format!("bringing the stems back from the {}", gpu.host));
-    let files: Vec<(String, PathBuf)> = names.iter().map(|n| (format!("{songdir}/{n}"), out.join(n))).collect();
-    gpu.get_many(&files)?;
-    job.set_progress(0.95 * share);
-    job.say("unpacking the stems");
+    // Each stem in its own transfer, unpacked the moment it lands, so the page
+    // can fill its lane in then (RJ: "filling in as it comes in").
+    *job.incoming.lock().unwrap() = packed
+        .iter()
+        .map(|(n, b)| (n.trim_end_matches(".flac").to_string(), *b, out.join(format!("{n}.part"))))
+        .collect();
+    // Empty files first, so the page reads 0 %, not "landed", before each transfer starts.
+    for (_, _, part) in job.incoming.lock().unwrap().iter() {
+        let _ = std::fs::write(part, b"");
+    }
+    // Scoped threads, so each can mark its own stem arrived the moment it lands.
+    let results: Vec<Result<(String, PathBuf), String>> = std::thread::scope(|sc| {
+        let handles: Vec<_> = packed
+            .iter()
+            .map(|(n, _)| {
+                let remote = format!("{}:{songdir}/{n}", gpu.host);
+                let part = out.join(format!("{n}.part"));
+                let flac = out.join(n);
+                let wav = out.join(n.replace(".flac", ".wav"));
+                let stem = n.trim_end_matches(".flac").to_string();
+                sc.spawn(move || -> Result<(String, PathBuf), String> {
+                    let ok = std::process::Command::new("scp")
+                        .args(["-q", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR"])
+                        .arg(&remote)
+                        .arg(&part)
+                        .status()
+                        .map_err(|e| e.to_string())?
+                        .success();
+                    if !ok {
+                        return Err(format!("could not fetch {stem}"));
+                    }
+                    std::fs::rename(&part, &flac).map_err(|e| e.to_string())?;
+                    crate::flac::to_wav(&flac, &wav)?;
+                    let _ = std::fs::remove_file(&flac);
+                    job.arrived.lock().unwrap().push(stem.clone());
+                    Ok((stem, wav))
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err("a transfer stopped".into()))).collect()
+    });
     let mut stems = Vec::new();
-    for (_, flac) in &files {
-        let wav = flac.with_extension("wav");
-        crate::flac::to_wav(flac, &wav)?;
-        let _ = std::fs::remove_file(flac);
-        stems.push((wav.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(), wav));
+    let mut err = None;
+    for r in results {
+        match r {
+            Ok(x) => stems.push(x),
+            Err(e) => err = Some(e),
+        }
+    }
+    job.incoming.lock().unwrap().clear();
+    if let Some(e) = err {
+        return Err(e);
     }
     job.set_progress(share);
     // The job's own scratch folder there, which this created.
@@ -387,5 +444,5 @@ for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.wav"))):
     f = p[:-4] + ".flac"
     sf.write(f, data, rate, format="FLAC", subtype="PCM_24" if info.subtype in ("PCM_24", "PCM_32", "FLOAT") else info.subtype)
     os.remove(p)
-    print(os.path.basename(f), flush=True)
+    print(os.path.basename(f) + "\t" + str(os.path.getsize(f)), flush=True)
 "#;

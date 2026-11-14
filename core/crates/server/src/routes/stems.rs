@@ -52,6 +52,21 @@ pub(super) fn api_stems_status(app: &Arc<App>) -> Response {
             .set("serial", j.serial.load(Ordering::Relaxed))
             .set("elapsed", j.elapsed())
             .set("tookMs", j.took_ms.load(Ordering::Relaxed))
+            .set("arrived", j.arrived.lock().unwrap().clone())
+            .set("incoming", {
+                let inc = j.incoming.lock().unwrap();
+                let mut o = Value::obj();
+                for (stem, total, part) in inc.iter() {
+                    // No part file any more: it has landed and is being unpacked.
+                    let f = match std::fs::metadata(part) {
+                        Ok(m) if *total > 0 => (m.len() as f64 / *total as f64).min(1.0),
+                        Ok(_) => 0.0,
+                        Err(_) => 1.0,
+                    };
+                    o = o.set(stem, f);
+                }
+                o
+            })
             .set("helper", exe.is_some() || gpu.is_some())
             .set("gpu", gpu.map(|g| g.host))
             .set("helperPath", exe.map(|p| p.display().to_string()))

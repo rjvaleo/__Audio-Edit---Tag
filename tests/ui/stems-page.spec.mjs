@@ -220,3 +220,9 @@ test('whatever is picked last stays shown: no snapping back to the library selec
   await expect(page.locator('#stLanes .st-lane:not(.st-wait)')).toHaveCount(4);
   await expect(page.locator('#stSrcName')).toHaveText('Test Song');
 });
+
+test('the split status says which stems have come back, and how far the others are', async ({ request }) => {
+  const s = await (await request.get('/api/stems')).json();
+  expect(Array.isArray(s.arrived)).toBe(true);
+  expect(typeof s.incoming).toBe('object');
+});
