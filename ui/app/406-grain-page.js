@@ -25,6 +25,9 @@ function gsBuild() {
     </div>
     ${gsTrayHtml()}
    </div>
+   <!-- The whole file, across the top in the sound's colours: the loop and Start
+        are set here, and SOURCE below shows only the loop (RJ, 13 Nov 2026). -->
+   <div class="gs-ov"><div class="gs-well"><canvas id="gsSrcPic" data-w="1360" data-h="80" title="The whole file. Drag a bracket to move the loop, drag across for a new one; click or drag the green flag for Start; ⌥-drag scrubs. A region's strip along the bottom selects it"></canvas></div></div>
    <div class="gs-head" id="gsHead">
     <div class="gs-tabs gs-etabs" id="gsEngTabs" role="tablist"></div>
     <svg class="gs-cable" viewBox="0 0 40 32" style="width:40px"><path d="M0 29 C16 29,20 16,40 16"/></svg>
@@ -39,7 +42,7 @@ function gsBuild() {
    </div>
    <section class="gs-view">
     <div class="gs-colL">
-     <div class="gs-mod gs-panel" id="gsPSrc" style="height:316px">
+     <div class="gs-mod gs-panel" id="gsPSrc" style="height:226px">
       <div class="gs-mh"><span class="gs-nm">SOURCE</span>
        <span class="gs-pick gs-btn" id="gsSndPick" style="width:150px" title="Sound: click to pick another from the library"><canvas id="gsSndMini" data-w="30" data-h="14"></canvas><span id="gsSndName"></span></span>
        <span class="gs-chip gs-btn" id="gsRegChip" title="Loop region: click to step to the next region"></span>
@@ -47,14 +50,12 @@ function gsBuild() {
        <span class="gs-sp"></span>
        <div class="gs-zb"><span class="gs-ib" id="gsFollow" title="Follow the playhead: keep it on screen while the detail is zoomed in">⇥</span><select class="gs-midi" id="gsFollowMode" title="How the view keeps up with the playhead"><option value="scroll">scroll</option><option value="page">page</option></select><span class="gs-ro" id="gsCzRo"></span><span class="gs-ib" id="gsCzOut" title="Zoom out">−</span><span class="gs-ib" id="gsCzIn" title="Zoom in round the head (or scroll on the detail)">+</span><span class="gs-ib zt" id="gsCzFit" title="The whole loop (or double-click the detail)">Fit</span></div>
       </div>
-      <div class="gs-well"><canvas id="gsSrcPic" data-w="686" data-h="84" title="The whole file. Drag a bracket to move the loop, drag across for a new one; click or drag the green flag for Start; ⌥-drag scrubs. A region's strip along the bottom selects it"></canvas></div>
       <div class="gs-well"><canvas id="gsCloud" data-w="686" data-h="172" title="Only what is between the brackets. Inside the box moves the read head; beside it, across is Position jitter and up and down is Pitch jitter. Scroll to zoom, double-click for the whole loop"></canvas><span class="gs-ro gs-cloudro" id="gsCloudRo"></span></div>
      </div>
      <div class="gs-mod gs-panel" id="gsShared" style="flex:1;min-height:0"><div class="gs-g3"><div class="gs-gcol" id="gsSh1"></div><div class="gs-gcol" id="gsSh2"></div><div class="gs-gcol" id="gsSh3"></div></div></div>
     </div>
     <div class="gs-mod gs-panel" id="gsEngPanel">
      <div class="gs-mh"><span class="gs-nm" id="gsEngName"></span><span class="gs-sp"></span><span class="gs-chip gs-btn" id="gsEngReset" title="Reset only the extended controls: the standard ones are left alone">Reset</span></div>
-     <div class="gs-well"><canvas id="gsTrace" data-w="616" data-h="60"></canvas></div>
      <div class="gs-modblk" id="gsPMod">
       <div class="gs-mh"><span class="gs-nm">MODULATE</span><span class="gs-sp"></span></div>
       <div class="gs-ampr" title="AMP: the note envelope. Drag the attack, decay and release points. With Run on, the sound is not gated"><span class="gs-lnm">AMP</span><div class="gs-well"><canvas id="gsAmp" data-w="404" data-h="28"></canvas></div><span class="gs-ro" id="gsAmpRo"></span></div>
@@ -316,7 +317,7 @@ function gsMarkTransport() {
   gsTxt('gsVoicesRo', `${run && run < L ? run + '/' + L : L} layer${L > 1 ? 's' : ''} · ${v} voice${v === 1 ? '' : 's'}`);
 }
 
-const GS_KEYS = { ov: '', tr: '', cl: '', mini: null, glyph: 0 };
+const GS_KEYS = { ov: '', cl: '', mini: null, glyph: 0 };
 
 function gsTick(now) {
   const d = state.stretchDraft, path = state.selectedFile?.path || null;
@@ -336,14 +337,12 @@ function gsTick(now) {
   // The engine's pictures are behind the effects page: not drawn while it shows.
   if (GS_FX.view === 'fx') return;
   if (now - GS_KEYS.glyph > 80) { GS_KEYS.glyph = now; gsAnimateGlyphs(); }
-  if (GS_KEYS.mini !== state.overview) { GS_KEYS.mini = state.overview; GS_KEYS.ov = GS_KEYS.tr = ''; GS_TR.key = ''; gsDrawMini(); }
+  if (GS_KEYS.mini !== state.overview) { GS_KEYS.mini = state.overview; GS_KEYS.ov = ''; gsDrawMini(); }
   const sel = state.sel ? `${state.sel.start}|${state.sel.end}` : '';
   const stamp = gsHeadLive() ? now : 0, frames = state.overview?.frames || 0;
   if (GS_KEYS.ann !== state.annotations) { GS_KEYS.ann = state.annotations; GS_KEYS.ov = ''; }
   const ovKey = `${frames}|${sel}|${state.cue}|${state.loopOn}|${stamp}`;
   if (ovKey !== GS_KEYS.ov) { GS_KEYS.ov = ovKey; gsDrawOverview(); }
-  const trKey = `${frames}|${sel}|${stamp}`;
-  if (trKey !== GS_KEYS.tr) { GS_KEYS.tr = trKey; gsDrawTrace(); }
   const clKey = [ovKey, GS.czA, GS.czB, GS.engine, GS_DET.got, GS_DET.staticKey, state.grains?.total, GS_PIC.pcm ? GS_PIC.serial : 0].concat(
     ['position', 'positionJitterMs', 'windowMs', 'wrap', 'cloud', 'ratio', 'scan', 'preserveTransients', 'sensitivity', 'floor', 'guardHops', 'overlap', 'vocWindowMs', 'anchorFrames', 'rateHz', 'densityHz', 'layers', 'semitones', 'envelope'].map(gsRead)).join('|');
   if (clKey !== GS_KEYS.cl || GS_DET.want !== GS_DET.got) { GS_KEYS.cl = clKey; gsDrawCloud(); }
@@ -366,7 +365,7 @@ function gsFrame(now) {
 function gsRestyle() {
   if (GS.themed === themeStamp) return;
   GS.themed = themeStamp;
-  GS_KEYS.ov = GS_KEYS.tr = GS_KEYS.cl = '';
+  GS_KEYS.ov = GS_KEYS.cl = '';
 }
 
 function gsEnter() {
@@ -377,8 +376,10 @@ function gsEnter() {
   loadScales();
   if (!state.presets.length) loadPresets();
   if (!state.overview && state.selectedFile) loadOverview();
+  // The overview's colours: the sound measured as the Edit page measures it (411).
+  edLoadSound();
   GS.engine = '';
-  GS_KEYS.ov = GS_KEYS.tr = GS_KEYS.cl = '';
+  GS_KEYS.ov = GS_KEYS.cl = '';
   if (!GS.raf) GS.raf = requestAnimationFrame(gsFrame);
   if (!GS.poll) GS.poll = setInterval(gsPollMaster, 80);
   gsKeysEnter();

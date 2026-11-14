@@ -8,8 +8,9 @@
 // Measured in a worker with Chop's own `chopAnalyseCore`.
 //
 // Read again whenever the overview is, which is after every edit that changes
-// the sound and whenever another sound opens. Only while the Edit page shows:
-// elsewhere it is marked stale and read when you come back.
+// the sound and whenever another sound opens. Only while the Edit page or Grain
+// shows (Grain colours its overview with it): elsewhere it is marked stale and
+// read when you come back.
 
 let edSoundWorker = null;
 let edSoundWant = 0;
@@ -17,7 +18,7 @@ let edSoundWant = 0;
 /// The overview was reloaded: what was measured is out of date.
 function edSoundStale() {
   edSoundWant++;
-  if (document.body.classList.contains('wavepage')) edLoadSound();
+  if (document.body.classList.contains('wavepage') || GS.showing) edLoadSound();
 }
 
 async function edLoadSound() {
@@ -90,9 +91,9 @@ function edFindLoud(an) {
 
 /// The colour of a stretch of the sound: Chop's Spectrum view, low violet, mid
 /// green, high white. `null` until it has been measured.
-function edColourAt(frame) {
+function edColourAt(frame, always = false) {
   const an = edSound.an;
-  if (!an || !edPrefs.rainbow) return null;
+  if (!an || (!edPrefs.rainbow && !always)) return null;
   const f = Math.max(0, Math.min(an.F - 1, Math.floor(frame / an.HOP)));
   const l = an.low[f] ** 2, m = an.mid[f] ** 2, h = an.high[f] ** 2, t = l + m + h + 1e-9;
   return [(CHOP_LOW[0] * l + CHOP_MID[0] * m + CHOP_HIGH[0] * h) / t, (CHOP_LOW[1] * l + CHOP_MID[1] * m + CHOP_HIGH[1] * h) / t, (CHOP_LOW[2] * l + CHOP_MID[2] * m + CHOP_HIGH[2] * h) / t];
