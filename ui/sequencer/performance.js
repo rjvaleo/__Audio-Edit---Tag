@@ -33,6 +33,9 @@ const PERF_SLIDERS = [
   "delayWetSlider",
   "delaySpreadSlider",
   "delayHiCutSlider",
+  // The reverb's controls and the second synth's (atmos.js, loaded first).
+  ...ATMOS_REVERB_IDS,
+  ...ATMOS_SLIDER_IDS,
 ];
 const PERF_SELECTS = [
   "dirSelect",
@@ -48,6 +51,7 @@ const PERF_SELECTS = [
   "lfo3TargetSelect",
   "delayTimeSelect",
   "tapeSpeedSelect",
+  ...ATMOS_SELECT_IDS,
 ];
 const PERF_SLIDER_SET = new Set(PERF_SLIDERS);
 const PERF_SELECT_SET = new Set(PERF_SELECTS);
