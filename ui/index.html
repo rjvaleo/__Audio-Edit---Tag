@@ -289,24 +289,32 @@
            property so the two canvases cannot disagree about where it is. -->
       <div class="lane-split" id="laneSplit" title="Drag to resize the spectrogram — double-click to put it back"></div>
       <!-- The Edit page on the wave: its marks, its level ruler, the preview
-           while a handle is held, the handles themselves, the loupe on an
-           edit point, and the meters that slide out (413, 414). -->
+           while a handle is held, the handles themselves and the loupe on an
+           edit point (413, 414). The meters are at the foot of the bar on the
+           right, `#edSide`. -->
       <canvas class="ed-marks" id="edMarksCanvas"></canvas>
       <canvas class="ed-level" id="edLevelCanvas"></canvas>
       <canvas class="ed-preview" id="edPreview" hidden></canvas>
       <div class="ed-hands" id="edHands"></div>
       <div class="ed-loupe" id="edLoupe" hidden><canvas></canvas><span></span></div>
-      <div class="ed-meters" id="edMeters"><div class="ed-mtab">METERS</div><div class="ed-mbody">
-        <span class="ed-cap">Level · selection</span>
-        <div class="ed-vms"><div class="ed-vm"><i id="edmPeak"></i><span>peak <b id="edmPeakV">—</b></span></div><div class="ed-vm"><i id="edmRms"></i><span>rms <b id="edmRmsV">—</b></span></div></div>
-        <span class="ed-cap">Bands</span><div class="ed-bands" id="edmBands"></div>
-        <div class="ed-kv"><span>Hits</span><b id="edmHits">0</b><span>Loud spots</span><b id="edmLoud">0</b></div>
-      </div></div>
       <div class="lane-empty" id="laneEmpty"><span class="lane-empty-say">Select a sound on the left.</span><button class="ghost lane-empty-open" id="laneEmptyOpen">Open the library</button></div>
     </div>
 
     <!-- The Edit page's counters, under the wave (413). -->
     <div class="ed-counters" id="edCounters"></div>
+
+    <!-- The Edit page's bar down the right-hand side, the whole height: every
+         command by section, titled (`#waveTools`, put in first by `wtBuild`,
+         310), and the meters at its foot, always out (413). Only on Edit. -->
+    <aside class="ed-side" id="edSide" aria-label="Edit tools and meters">
+      <div class="ed-meters" id="edMeters" role="group" aria-label="Meters">
+        <span class="ed-mhead">Meters</span>
+        <span class="ed-cap">Level · selection</span>
+        <div class="ed-vms"><div class="ed-vm"><i id="edmPeak"></i><span>peak <b id="edmPeakV">—</b></span></div><div class="ed-vm"><i id="edmRms"></i><span>rms <b id="edmRmsV">—</b></span></div></div>
+        <span class="ed-cap">Bands</span><div class="ed-bands" id="edmBands"></div>
+        <div class="ed-kv"><span>Hits</span><b id="edmHits">0</b><span>Loud spots</span><b id="edmLoud">0</b></div>
+      </div>
+    </aside>
 
     <!-- The room, full size, with its controls beside it.
          **Nothing in here is a copy.** The room, its control panel and the
