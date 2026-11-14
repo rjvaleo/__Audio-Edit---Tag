@@ -591,7 +591,8 @@ svg.pic-proj { width: 28px; height: 17px; }
 /* ═══════════════════════════════════════════════════════════ the Edit page ══
    `body.wavepage`: the same open sound as Grain, editing only. The granular
    dock, the presets and the worded edit bar are Grain's; here the edit
-   commands are one row of icons along the top (`wtBuild` in `app.js`). */
+   commands are a bar of icons down the right (`wtBuild` in `app.js`; its
+   layout is edit.css's). */
 .wave-tools { display: none; }
 body.wavepage .wave-tools {
   display: flex; align-items: center; gap: 0; flex-wrap: wrap;

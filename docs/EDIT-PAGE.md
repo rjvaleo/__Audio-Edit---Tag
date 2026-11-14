@@ -7,6 +7,12 @@ Peak, and said "I don't like the right tray". So the wave takes the whole width.
 
 On 13 Nov 2026 the seven tabs went (RJ: "The tabs is too much"): every command is on one bar.
 
+On 14 Nov 2026 that bar moved from along the top to down the right-hand side, the whole height, with each section
+titled and the meters at its foot, and the page took Grain's colours. RJ: "Instead of having them all along the
+top, how about a bar on the right-hand side? … let's have them titled by group so I know what I'm looking at. And
+put those meters at the bottom of that", and "Make sure everything's the same color". This is a bar of tools, not
+the tray he turned down on 10 Nov: the wave still runs from the left edge to the bar.
+
 ## The Now Playing bar
 
 The transport, on every page, in one place: a 48 px bar across the top from the rail's edge (`#nowBar`,
@@ -40,19 +46,43 @@ Before this the play button sat somewhere different on six pages and was missing
 | `ui/app/310-edit-page.js` | The commands (`WT_GROUPS`), the sections and Customize. Their order along the bar, and what starts hidden: `ED_BAR_ORDER`, `ED_BAR_HIDDEN`. |
 | `ui/app/411-edit-sound.js` | The document's own samples (`/audio?dry=1`), measured in a worker by Chop's `chopAnalyseCore`: band energies, hits, loud spots, levels. |
 | `ui/app/412-edit-tabs.js` | The tooltips, the ▾ and its pop-up, and the knobs that answer the old dialogs (`edRun`, `askAnswer`). |
-| `ui/app/413-edit-wave.js` | The time ruler, the level ruler, Rainbow colour, hits and loud spots, the counters, and the meters that slide out. |
+| `ui/app/413-edit-wave.js` | The time ruler, the level ruler, Rainbow colour, hits and loud spots, the counters, and the meters (`edPaintMeters`). |
 | `ui/app/414-edit-hands.js` | The fade handles, the level pill, dragging an edge, the loupe, and the preview while a handle is held. |
 | `ui/app/415-edit-keys.js` | The pie on right-click, and ⌘K. |
-| `ui/edit.css` | All of it, and the bar. |
+| `ui/edit.css` | All of it, and the bar. Its colour names (`--m-*`, `--mgl-*`) are aliases of the look tokens. |
+| `ui/index.html` | `#edSide`, the column on the right: `wtBuild` puts `#waveTools` in it, above `#edMeters`. |
 
-- **One bar.** Every section side by side, in `ED_BAR_ORDER`: editing first, how the wave is shown and Export
-  last. Small icons without words, with a rule between sections. The tooltip gives the name, the key, and the
-  settings the command will run with. A window narrower than the bar wraps whole sections onto a second line.
+- **One bar, down the right** (`#edSide`, 224 px; 184 px in a window narrower than 1100 px). It is on the Edit page
+  only: Grain, Chop and the rest do not have it.
+  - Every section under the one before, in `ED_BAR_ORDER`: editing first, how the wave is shown and Export last.
+    Each has its title over it (History, Clipboard, …), and its icons in a grid, five to a row. The icons carry no
+    words; the tooltip gives the name, the key, and the settings the command will run with.
+  - A command with settings has its ▾ beside it in the same cell. Its knobs open to the left of the bar, level
+    with the command, so they do not cover the commands below.
+  - The sections scroll when the window is shorter than they are. Customize is at their foot.
+  - **The meters** are under the sections, at the foot of the bar, always out: peak and RMS of the selection (or
+    the whole sound), its bands, and how many hits and loud spots. Until 14 Nov they were a METERS tab on the
+    lane's right edge that slid out on hover.
+  - The file tabs and ⌘K stay along the top. Nothing else is up there now.
   - Selection (Select all, Deselect, Set selection, Go to) starts hidden: its keys and the menus do it. It is in
     ⌘K, and Customize brings it back.
-  - Customize works as before. While it is on, the section titles and the words under the icons come back, so
-    there is something to rename and pick up.
+  - Customize works as before. While it is on, the words come back under the icons, three to a row, so there is
+    something to pick up, and the titles can be renamed in place.
   - The layout is kept under `editBar`. The tabbed layout was kept under `editToolbar` and is no longer read.
+- **Grain's colours and materials.** Edit's own colour names are aliases of the look tokens (`015-tokens.css`),
+  the way Grain's `--gs-*` are (`grain.css`): `--m-chassis` is `var(--look-chassis)`, `--m-wave` is
+  `var(--look-wave)`, `--mgl-acc` is `var(--on)`, and so on. So the default and every theme paint Edit, the Now
+  Playing bar and Grain alike, and "on" is the theme's.
+  - Until 14 Nov 2026 they were hex for each `data-mgl-look`. A theme never reached them, so Edit could differ
+    from Grain.
+  - The five Looks still work: each is a theme now (`LOOK_THEMES`, `theme-palettes.js`), and wearing it sets its
+    look tokens (`applyChosenTheme`, `330-theme.js`), which were the same values Edit held. What stays keyed on
+    `data-mgl-look` is the material: Glass's panes and drift, Ceramic's round corners and dotted knobs,
+    Acrylic's coloured edge, drawn with the tokens Chop uses (`--look-glass`, `--look-acrylic`, `--look-edge-*`).
+  - The materials are Grain's: the bar, the meters and the counters are `.gs-panel`'s; the overview, the lane and
+    the meters' wells are `.gs-well`'s shading; the chassis behind them is `#grainView`'s. The wave is drawn in
+    `--m-wave` (`waveInk`, `010-library.js`), which is Grain's `--gs-wave`.
+  - The meters' and recording's colours are colours with a meaning, and no theme changes them.
 - **Knobs answer the dialogs.** Gain, Normalize, Normalize (RMS), Strip silence, Insert silence, Repair click and
   Duplicate keep their settings as knobs behind a ▾ beside the command (`#edKnobs`, with the command itself to run
   them), and in their row in ⌘K. The command runs exactly as it
@@ -88,5 +118,6 @@ Before this the play button sat somewhere different on six pages and was missing
   - the pie and ⌘K;
   - the counters and the rulers;
   - the Look.
-- `tests/ui/edit-page.spec.mjs` covers what it always did, plus one bar with no tabs and the ▾ settings.
+- `tests/ui/edit-page.spec.mjs` covers what it always did, plus the one bar down the right with its titles and
+  the meters at its foot, that Grain does not have it, and the ▾ settings.
 - `controls-parity` takes the transport from `#nowBar, #transportBar`.
