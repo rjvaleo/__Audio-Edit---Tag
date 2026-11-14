@@ -191,12 +191,11 @@ function toast(msg) {
 function showPane(side, name) {
   const panes = side === 'left'
     ? { browse: 'paneBrowse', search: 'paneSearch', scan: 'paneScan',
-        import: 'paneImport', record: 'paneRecord', theme: 'paneTheme' }
+        import: 'paneImport', record: 'paneRecord' }
     : { inspect: 'paneInspect' };
   for (const [key, id] of Object.entries(panes)) $(id).classList.toggle('hidden', key !== name);
   const titles = { browse: 'Browse', search: 'Search', scan: 'Scan',
-                   import: 'Library', record: 'Record', inspect: 'Tags',
-                   theme: 'Theme' };
+                   import: 'Library', record: 'Record', inspect: 'Tags' };
   // Opening the panel starts polling the input; leaving it stops, so nothing
   // is asking a device for levels that nobody is looking at.
   if (side === 'left') recordPanelShown(name === 'record');
@@ -255,8 +254,9 @@ const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 
 /// instead of squeezing what you came here to look at.
 ///
 /// The Wave page too: it plays no document, but it is a page of its own at
-/// full width, and the library slides over it rather than squeezing it.
-const drawerMode = () => playsDocument() || state.mode === 'synth';
+/// full width, and the library slides over it rather than squeezing it. And
+/// the Theme page, for the same reason.
+const drawerMode = () => playsDocument() || state.mode === 'synth' || state.mode === 'theme';
 
 function openDrawer() {
   state.drawerOpen = true;

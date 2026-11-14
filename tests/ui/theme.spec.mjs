@@ -61,7 +61,7 @@ test('every palette derives a complete set of this app’s tokens', async ({ pag
 /// The point of the whole exercise: choosing a palette has to change the pixels.
 test('choosing a palette repaints the interface, and unchoosing restores it', async ({ page }) => {
   await ready(page);
-  await page.evaluate(() => showPane('left', 'theme'));
+  await page.evaluate(() => setMode('theme'));
   await page.waitForTimeout(200);
 
   const read = () => page.evaluate(() => {

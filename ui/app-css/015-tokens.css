@@ -87,11 +87,10 @@
   --look-f-attack: #d88f7e;
   --look-f-space:  #8ec293;
   --look-f-level:  #c4c8d0;
-  /* Prism's: its four LFOs, and the facets its pictures are tinted by. */
-  /* Prism's own names for them (`--plfo1` …) are set on #dockHyper only. */
+  /* Prism's four LFOs. Its pictures take the grain facets above, as Grain's
+     and Chop's do. Prism's own names for them (`--plfo1` …) are set on
+     #dockHyper only. */
   --prism-lfo-1: oklch(76% .06 200); --prism-lfo-2: oklch(73% .06 350); --prism-lfo-3: oklch(78% .06 130); --prism-lfo-4: oklch(78% .06 80);
-  --prism-f-time: oklch(74% .055 75); --prism-f-pitch: oklch(72% .055 300); --prism-f-tone: oklch(74% .045 170);
-  --prism-f-attack: oklch(72% .055 35); --prism-f-space: oklch(74% .045 245); --prism-f-level: oklch(74% .015 250);
 
   /* Recording. */
   --rec-lit:      #ff5a4f;      /* Grain's record button, and a source that is off */
@@ -159,7 +158,12 @@
   --knob-v-bg:  #101c2b;
   --knob-v:     #a9d7ff;
 
-  /* Prism's pad. */
+  /* Prism's page pad (the mock-up of 13 Nov 2026): a deep teal well, its
+     takes drawn in sky blue. */
+  --prism-pad-hi:   #12262c;
+  --prism-pad-lo:   #0a1418;
+  --prism-pad-path: #5fd4ff;
+  /* The rack pad's. */
   --pad-edge:   oklch(55% 0.13 250);
   --pad-grid-lch: 60% 0.12 250;
   --pad-hi:     oklch(42% 0.15 255);

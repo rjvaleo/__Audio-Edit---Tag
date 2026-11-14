@@ -376,6 +376,10 @@ function gsEnter() {
   loadScales();
   if (!state.presets.length) loadPresets();
   if (!state.overview && state.selectedFile) loadOverview();
+  // The overview's colours: Prism may have measured its own sound since, so
+  // the samples already read here go back (411).
+  const open = state.selectedFile?.path;
+  if (open && GS_PIC.pcm && GS_PIC.want.startsWith(`${open}|`) && edSound.path !== open) edTakeSound(open, GS_PIC.pcm.sr, GS_PIC.pcm.data);
   GS.engine = '';
   GS_KEYS.ov = GS_KEYS.cl = '';
   if (!GS.raf) GS.raf = requestAnimationFrame(gsFrame);

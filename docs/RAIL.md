@@ -51,6 +51,10 @@ It is not a much-used thing and the rail should not pretend otherwise; what it
 should not be is *unfindable*, which is what a lone button under a separator
 was.
 
+Since 13 Nov 2026 it is a page like the others (mode `theme`), not a pane in
+the library's column: it lights from `state.mode` and has no tray of its own.
+See [THEME-EDITOR.md](THEME-EDITOR.md).
+
 ## The tray opens and closes
 
 - **Open:** icon and word.

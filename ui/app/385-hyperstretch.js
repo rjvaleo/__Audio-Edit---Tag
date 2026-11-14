@@ -24,8 +24,9 @@
    - the readout shows the values under the pointer, touched or not;
    - Smoothing is the engine's (`glide.rs`): the pad steps, the sound glides.
 
-   Not the original: the pad is square (Hyperprism's was 461 × 241), as large
-   as the dock leaves room for, as the rack pad's was.
+   Not the original: the pad is the page (Hyperprism's was 461 × 241). It
+   fills everything left of the panels at any window size (RJ's mock-up,
+   13 Nov 2026), so it is as wide and as tall as that leaves.
 
    Where a take goes:
    - **Loop**, HyperStretch's: four takes (A–D) in the browser, stepped, each
@@ -36,13 +37,11 @@
      wraps together and the export plays. */
 
 const HS_TICK = 1000 / 60.15;
-/// What the banks beside the pad need, at the least; the pad gives way first.
-const HS_BANKS_MIN = 724;
 /// The two the engine glides, sent straight to it as a Loop take plays.
 const HS_FAST = new Set(['ratio', 'semitones']);
 
 const hs = {
-  built: false, shown: false, side: 220,
+  built: false, shown: false, w: 220, h: 220,
   axes: { x: 'ratio', y: 'semitones' },
   lim: { xLo: 4, xHi: 0.25, yLo: -12, yHi: 12 },
   hand: { x: 0.5, y: 0.5 },
@@ -108,13 +107,26 @@ function hsBuild() {
     const kept = JSON.parse(localStorage.getItem('hyperstretch.settings') || '{}');
     for (const k of ['glide', 'throwOn', 'loopOnRelease', 'rate', 'dir', 'where']) if (k in kept) hs[k] = kept[k];
   } catch { /* first use */ }
+  // Upright, in a well: the range laid over it unseen takes the hand, the fill
+  // and the zero line are drawn from its value (`prismShowHp`). Its name is
+  // its 0 button, as the original's were.
   const fader = (id, label, aria) => `<div class="hs-fader">
-      <input type="range" id="${id}" min="0" max="255" step="1" value="128" aria-label="${aria}" title="${aria}, −18 to +18 dB · double-click for the middle">
-      <span class="mono" id="${id}Read"></span>
-      <button type="button" class="hs-btn" id="prismFaderZero${id.slice(10)}" title="${aria} back to the middle">${label} 0</button></div>`;
+      <div class="prism-well hs-fwell"><i class="hs-fzero"></i><i class="hs-ffill"></i>
+        <input type="range" id="${id}" min="0" max="255" step="1" value="128" aria-label="${aria}" title="${aria}, −18 to +18 dB · double-click for the middle"></div>
+      <button type="button" class="hs-fname" id="prismFaderZero${id.slice(10)}" title="${aria} back to the middle">${label}</button>
+      <span class="mono hs-fread" id="${id}Read"></span></div>`;
+  // A limit, typed into its corner of the pad, with its control's unit.
+  const lim = (id, cls, aria, title, axis) => `<span class="hs-limat ${cls}"><input id="${id}" type="number" step="any" class="hs-lim mono" aria-label="${aria}" title="${title}"><i data-unit="${axis}"></i></span>`;
+  // The mock-up RJ approved (13 Nov 2026): the sound slim along the top, the
+  // pad the page, and the rest in panels of the app's own, as Grain and Chop.
   host.innerHTML = `
-    <div class="hs-head">
-      <span class="hs-title">PRISM</span>
+    <section class="prism-panel hs-src" aria-label="Source">
+      <div class="prism-ph"><b class="prism-nm">SOURCE</b><span class="prism-meta hs-src-name" id="prismSoundName"></span><span class="prism-meta" id="prismSoundMeta"></span>
+        <span class="hs-fill"></span><button type="button" class="prism-btn" id="prismEdit" title="Open Prism's sound on the Edit page">Edit</button></div>
+      <div class="prism-well hs-src-well"><canvas id="prismSrc" aria-label="Prism's sound, the whole of it" title="Prism's sound, in its own colours: click or drag to go there"></canvas></div>
+    </section>
+    <div class="prism-panel hs-head">
+      <b class="prism-nm hs-title">PRISM</b>
       <div class="ppick" id="prismPick">
         <button type="button" class="ppick-btn" id="prismPickBtn" aria-haspopup="listbox" aria-expanded="false" title="The process on the pad: all of Hyperprism's, Time & Pitch and the Pitch Time Changer"></button>
         <div class="ppick-menu" id="prismPickMenu" role="listbox" aria-label="Processes" hidden></div>
@@ -122,9 +134,8 @@ function hsBuild() {
       </div>
       <label class="hs-lbl">X <select id="prismX" class="mini" aria-label="Across the pad"></select></label>
       <label class="hs-lbl">Y <select id="prismY" class="mini" aria-label="Up the pad"></select></label>
-      <span class="hs-vsep"></span>
       <div class="hs-transport" role="group" aria-label="Prism transport">
-        <button type="button" class="hs-btn" id="hsRec" aria-label="Record" title="Record — or just grab the pad">●</button>
+        <button type="button" class="hs-btn hs-rec" id="hsRec" aria-label="Record" title="Record — or just grab the pad">●</button>
         <button type="button" class="hs-btn" id="hsPlay" aria-label="Play the take" title="Play the take">▶</button>
         <button type="button" class="hs-btn" id="hsPause" aria-label="Pause" title="Pause">❚❚</button>
         <button type="button" class="hs-btn" id="hsStop" aria-label="Stop" title="Stop: ends a take">■</button>
@@ -140,20 +151,20 @@ function hsBuild() {
       <div id="prismPbHost"></div>
     </div>
     <div class="hs-deck" role="group" aria-label="Prism's own sound">
-      <span class="hs-dim">SOUND</span>
+      <span class="prism-cap">SOUND</span>
       <select id="prismSoundFolder" class="mini" aria-label="Folder"></select>
       <select id="prismSoundFile" class="mini" aria-label="Prism's sound"></select>
-      <span class="mono hs-deck-name" id="prismSoundName"></span>
-      <canvas id="prismWave" class="hs-wave" aria-label="Prism's sound and where it is playing"></canvas>
-      <span class="hs-dim">CHAIN</span>
+      <span class="prism-well hs-mini"><canvas id="prismWave" class="hs-wave" aria-label="Prism's sound and where it is playing"></canvas></span>
+      <span class="hs-fill"></span>
+      <span class="prism-cap">CHAIN</span>
       <span id="prismChain" class="hs-chain"></span>
       <select id="prismChainAdd" class="mini" aria-label="Add an effect to Prism's chain"><option value="">+ add effect</option></select>
     </div>
     <div class="hs-body">
-      <div class="hs-stage">
-        <div class="hs-top"><input id="prismXLo" type="number" step="any" class="hs-lim mono" aria-label="X low limit" title="Left end of the sweep"><span id="hsXName" class="hs-axis"></span><input id="prismXHi" type="number" step="any" class="hs-lim mono" aria-label="X high limit" title="Right end of the sweep"></div>
-        <div class="hs-mid">
-          <div class="hs-left"><input id="prismYHi" type="number" step="any" class="hs-lim mono" aria-label="Y high limit" title="Top of the sweep"><span id="hsYName" class="hs-axis hs-vert"></span><input id="prismYLo" type="number" step="any" class="hs-lim mono" aria-label="Y low limit" title="Bottom of the sweep"></div>
+      <section class="prism-panel hs-stage" aria-label="Pad">
+        <div class="prism-ph"><b class="prism-nm">PAD</b><span class="prism-meta" id="hsInfo"></span><span class="hs-fill"></span>
+          <span class="prism-meta">engine now</span><span class="prism-meta hs-now" id="hsNow"></span></div>
+        <div class="hs-padbox" id="hsPadBox">
           <button type="button" class="hs-pad" id="hsPad" aria-label="Prism pad: grab to record, Shift to lock, arrows to draw while recording, double-click to centre"
             title="Grab to record · Shift locks H, V or 45° · ←↑→↓ draw while recording, ⌥ ×10 · double-click to centre">
             <svg class="hs-svg" id="hsSvg" aria-hidden="true">
@@ -161,39 +172,45 @@ function hsBuild() {
               <polyline id="hsPath" class="hs-path" points=""/>
               <circle id="hsGhost" class="hs-ghost" r="9"/>
               <path id="hsCross" class="hs-cross" d=""/>
-              <circle id="hsBall" class="hs-ball" r="4.5"/>
+              <circle id="hsHalo" class="hs-halo" r="11"/>
+              <circle id="hsBall" class="hs-ball" r="6"/>
             </svg>
             <span class="hs-read mono hidden" id="hsRead"></span>
           </button>
+          ${lim('prismYHi', 'hs-yhi', 'Y high limit', 'Top of the sweep', 'y')}
+          ${lim('prismYLo', 'hs-ylo', 'Y low limit', 'Bottom of the sweep', 'y')}
+          ${lim('prismXLo', 'hs-xlo', 'X low limit', 'Left end of the sweep', 'x')}
+          ${lim('prismXHi', 'hs-xhi', 'X high limit', 'Right end of the sweep', 'x')}
+          <span id="hsXName" class="hs-axis hs-xname"></span>
+          <span id="hsYName" class="hs-axis hs-yname"></span>
         </div>
-        <div class="hs-foot"><span class="mono" id="hsInfo"></span></div>
-        <div class="hs-foot"><span class="hs-dim">engine now</span><span class="mono" id="hsNow"></span></div>
-      </div>
+      </section>
       <div class="hs-banks">
-        <section class="hs-bank prism-ctl" aria-label="Controls">
-          <div class="hs-h">CONTROLS <span id="hsSetSub"></span>
-            <button type="button" class="hs-btn hidden" id="prismPtcOn" title="Hyperprism's Pitch Time Changer: on or off. Moving its pad turns it on.">PTC</button>
-            <span class="hs-fill"></span><span class="hs-dim">double-click a picture to reset</span></div>
-          <div class="prism-settings prism-bars" id="prismSettings"></div>
-          <div class="plfo" id="prismLfos"></div>
-        </section>
-        <section class="hs-bank prism-takes" aria-label="Takes">
-          <div class="hs-h">TAKES <span id="hsGestSub"></span></div>
+        <div class="hs-col">
+          <section class="prism-panel hs-bank prism-ctl" aria-label="Controls">
+            <div class="prism-ph"><b class="prism-nm">CONTROLS</b><span class="prism-meta" id="hsSetSub"></span>
+              <button type="button" class="hs-btn hidden" id="prismPtcOn" title="Hyperprism's Pitch Time Changer: on or off. Moving its pad turns it on.">PTC</button></div>
+            <div class="prism-settings prism-knobs" id="prismSettings"></div>
+          </section>
+          <section class="prism-panel hs-bank prism-lfos" aria-label="LFOs"><div class="plfo" id="prismLfos"></div></section>
+        </div>
+        <section class="prism-panel hs-bank prism-takes" aria-label="Takes">
+          <div class="prism-ph"><b class="prism-nm">TAKES</b><span class="prism-meta" id="hsGestSub"></span></div>
           <div class="hs-slots">${[0, 1, 2, 3].map((i) => `<button type="button" class="hs-slot" data-slot="${i}" aria-label="Take ${'ABCD'[i]}">
-            <span class="hs-slot-top"><b>${'ABCD'[i]}</b><span class="mono hs-dim" data-len></span></span>
+            <span class="hs-slot-top"><b>${'ABCD'[i]}</b><span class="mono" data-len></span></span>
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline data-thumb points=""/></svg></button>`).join('')}</div>
           <div class="hs-row prism-rateplay"><span class="hs-seg" aria-label="Rate">${[[0.5, '×½'], [1, '×1'], [2, '×2']].map(([v, l]) => `<button type="button" data-hsrate="${v}">${l}</button>`).join('')}</span>
             <span class="hs-seg" aria-label="Direction">${[['fwd', '→', 'Forwards'], ['rev', '←', 'Backwards'], ['pp', '⇄', 'Back and forth']].map(([v, l, t]) => `<button type="button" data-hsdir="${v}" aria-label="${t}" title="${t}">${l}</button>`).join('')}</span></div>
           <div class="prism-bars prism-takebars" id="prismTakeBars"></div>
-          <div class="hs-kv prism-glide-kv" id="hsGlideBox" title="Glide is Hyperprism's Smoothing: the pad steps, the sound glides"><span>coefficient</span><span class="mono" id="hsCoef"></span><span>catch-up</span><span class="mono" id="hsTau"></span><span class="hidden mono" id="hsGlideV"></span></div>
+          <div class="prism-meta prism-glide-kv" id="hsGlideBox" title="Glide is Hyperprism's Smoothing: the pad steps, the sound glides"><span>coef</span><span class="mono" id="hsCoef"></span><span>·</span><span class="mono" id="hsTau"></span><span class="hidden mono" id="hsGlideV"></span></div>
           <div class="prism-motion" aria-label="Motion">
-            <label class="hs-tog" title="Let go while moving and the point keeps going"><input type="checkbox" id="hsThrow"> Throw</label>
-            <label class="hs-tog" title="A take plays as soon as you let go"><input type="checkbox" id="hsLoopRelease"> Loop on release</label>
-            ${[['circle', 'Circle'], ['eight', 'Figure 8'], ['liss', 'Lissajous'], ['drift', 'Drift']].map(([k, l]) => `<button type="button" class="hs-btn" data-hsshape="${k}" title="Draw a ${l.toLowerCase()} into the take">${l}</button>`).join('')}
+            <label class="hs-tog" title="Let go while moving and the point keeps going"><input type="checkbox" id="hsThrow">Throw</label>
+            <label class="hs-tog" title="A take plays as soon as you let go"><input type="checkbox" id="hsLoopRelease">Loop on release</label>
           </div>
+          <span class="hs-seg prism-shapes" aria-label="Draw a shape into the take">${[['circle', 'Circle', 'a circle'], ['eight', 'Fig 8', 'a figure 8'], ['liss', 'Lissajous', 'a Lissajous figure'], ['drift', 'Drift', 'a drift']].map(([k, l, t]) => `<button type="button" data-hsshape="${k}" title="Draw ${t} into the take">${l}</button>`).join('')}</span>
         </section>
-        <section class="hs-bank prism-out" aria-label="Output">
-          <div class="hs-h">OUTPUT</div>
+        <section class="prism-panel hs-bank prism-out" aria-label="Output">
+          <div class="prism-ph"><b class="prism-nm">OUTPUT</b><span class="prism-meta">dB</span></div>
           <div class="hs-faders">${fader('prismFaderL', 'L', 'Left fader')}${fader('prismFaderLR', 'LR', 'Both faders')}${fader('prismFaderR', 'R', 'Right fader')}</div>
         </section>
       </div>
@@ -228,26 +245,22 @@ function prismTakeBarsBuild() {
   prismFollow(post, () => prismDeck.rack?.postRoll?.[prismPad.source] || 0);
 }
 
-/// Square, the largest the dock leaves room for beside the banks, as the rack
-/// pad's was: its height less the limits and the lines under it, or its width
-/// less the Y limits and the banks, whichever is less.
+/// The pad is whatever its box is: everything left of the panels, the page's
+/// height less the rows above it (CSS lays that out). The drawing follows it,
+/// in pad pixels, so a 45° Shift lock and a 1 px nudge are what they say.
 function hsFit() {
-  const host = $('dockHyper');
-  const body = host?.querySelector('.hs-body');
-  if (!body || !body.clientHeight) return;
-  // Padding, the top limits, the two lines under the pad, the gaps, the border.
-  const h = body.clientHeight - 16 - 21 - 2 * 16 - 9 - 2;
-  const w = body.clientWidth - 16 - 41 - 2 - 10 - HS_BANKS_MIN;
-  const side = Math.max(140, Math.floor(Math.min(h, w)));
-  if (side === hs.side && host.style.getPropertyValue('--hs-side')) return;
-  hs.side = side;
-  host.style.setProperty('--hs-side', `${side}px`);
+  const box = $('hsPadBox');
+  if (!box || !box.clientHeight) return;
+  const w = Math.max(140, box.clientWidth), h = Math.max(140, box.clientHeight);
+  if (w === hs.w && h === hs.h && $('hsSvg').getAttribute('width')) return;
+  hs.w = w;
+  hs.h = h;
   const svg = $('hsSvg');
-  svg.setAttribute('width', side);
-  svg.setAttribute('height', side);
-  svg.setAttribute('viewBox', `0 0 ${side} ${side}`);
-  const q = (k) => (side * k / 4).toFixed(2);
-  $('hsGrid').setAttribute('d', `M${q(1)} 0V${side}M${q(2)} 0V${side}M${q(3)} 0V${side}M0 ${q(2)}H${side}`);
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  const q = (n, k) => (n * k / 4).toFixed(2);
+  $('hsGrid').setAttribute('d', [1, 2, 3].map((k) => `M${q(w, k)} 0V${h}M0 ${q(h, k)}H${w}`).join(''));
   hs.pathCache = null;
   hs.lanesCache = null;
   hsPaint();
@@ -313,8 +326,8 @@ function hsWire() {
     e.stopPropagation();
     // NudgeCurrentPoint: only while recording, 1 px or 10 with Option.
     if (!hsRecording()) return;
-    const step = (e.altKey ? 10 : 1) / hs.side;
-    hsMoveTo({ x: hsClamp(hs.hand.x + d[0] * step), y: hsClamp(hs.hand.y + d[1] * step) }, performance.now());
+    const px = e.altKey ? 10 : 1;
+    hsMoveTo({ x: hsClamp(hs.hand.x + d[0] * px / hs.w), y: hsClamp(hs.hand.y + d[1] * px / hs.h) }, performance.now());
   });
 
   $('hsRec').onclick = () => {
@@ -400,7 +413,9 @@ function hsWire() {
     else if (b.dataset.hsshape) hsShape(b.dataset.hsshape);
     else if (b.dataset.hswhere) hsSetWhere(b.dataset.hswhere);
   });
-  if (window.ResizeObserver) new ResizeObserver(hsFit).observe($('dockHyper').querySelector('.hs-body'));
+  if (window.ResizeObserver) new ResizeObserver(hsFit).observe($('hsPadBox'));
+  for (const id of ['prismSrc', 'prismWave']) prismDeckSeekWire($(id));
+  $('prismEdit').onclick = () => prismEditSound();
 }
 
 function hsKeep() {
@@ -498,13 +513,13 @@ function hsPaintSoon() {
 /// The path's points as an attribute, grown by what was added rather than
 /// rebuilt from the whole take on every move.
 function hsPathPoints(pts) {
-  const S = hs.side;
+  const W = hs.w, H = hs.h;
   const c = hs.pathCache;
   if (!c || c.pts !== pts || c.n > pts.length) hs.pathCache = { pts, n: 0, text: '' };
   const k = hs.pathCache;
   for (; k.n < pts.length; k.n++) {
     const q = pts[k.n];
-    k.text += `${k.n ? ' ' : ''}${(q.x * S).toFixed(1)},${(q.y * S).toFixed(1)}`;
+    k.text += `${k.n ? ' ' : ''}${(q.x * W).toFixed(1)},${(q.y * H).toFixed(1)}`;
   }
   return k.text;
 }
@@ -514,9 +529,9 @@ function hsLanesPoints() {
   const path = prismPad.path || [];
   const c = hs.lanesCache;
   if (c && c.path === path) return c.text;
-  const cx = hsControl('x'), cy = hsControl('y'), S = hs.side;
+  const cx = hsControl('x'), cy = hsControl('y'), W = hs.w, H = hs.h;
   const text = cx && cy ? path.map(([, ux, uy]) =>
-    `${(hsFrac('x', prismUnitValue(cx, ux)) * S).toFixed(1)},${(hsFrac('y', prismUnitValue(cy, uy)) * S).toFixed(1)}`).join(' ') : '';
+    `${(hsFrac('x', prismUnitValue(cx, ux)) * W).toFixed(1)},${(hsFrac('y', prismUnitValue(cy, uy)) * H).toFixed(1)}`).join(' ') : '';
   hs.lanesCache = { path, text };
   return text;
 }
@@ -574,17 +589,17 @@ function hsSendGlide(v = hs.glide) {
 /// the first move decides horizontal, vertical or one of the diagonals.
 function hsLock(p, shift) {
   if (!shift) { hs.anchor = null; return p; }
-  const S = hs.side;
+  const W = hs.w, H = hs.h;
   if (!hs.anchor) hs.anchor = { x: hs.hand.x, y: hs.hand.y, mode: null };
-  const a = hs.anchor, dh = (p.x - a.x) * S, dv = (p.y - a.y) * S;
+  const a = hs.anchor, dh = (p.x - a.x) * W, dv = (p.y - a.y) * H;
   if (!a.mode && (Math.abs(dh) >= 1 || Math.abs(dv) >= 1)) {
     if (Math.abs(Math.abs(dh) - Math.abs(dv)) < 1) a.mode = Math.sign(dh) === Math.sign(dv) ? 'diag' : 'anti';
     else a.mode = Math.abs(dh) > Math.abs(dv) ? 'h' : 'v';
   }
   if (a.mode === 'h') return { x: p.x, y: a.y };
   if (a.mode === 'v') return { x: a.x, y: p.y };
-  if (a.mode === 'diag') return { x: hsClamp(a.x + dv / S), y: p.y };
-  if (a.mode === 'anti') return { x: hsClamp(a.x - dv / S), y: p.y };
+  if (a.mode === 'diag') return { x: hsClamp(a.x + dv / W), y: p.y };
+  if (a.mode === 'anti') return { x: hsClamp(a.x - dv / W), y: p.y };
   return p;
 }
 
@@ -659,7 +674,7 @@ function hsShape(kind) {
     pts.push({ x: hsClamp(x), y: hsClamp(y), t: i * HS_TICK });
   }
   if (hs.mode === 'rec') hs.rec = null;
-  hs.slots[hs.slot] = { pts, dur };
+  hs.slots[hs.slot] = { pts, dur, shape: kind };
   hsSaveTakes();
   hsPlay(performance.now());
 }
@@ -698,7 +713,7 @@ function hsRescale(next) {
   const o = hs.lim;
   const mx = (x) => (o.xLo - next.xLo + x * (o.xHi - o.xLo)) / (next.xHi - next.xLo);
   const my = (y) => 1 - (o.yLo - next.yLo + (1 - y) * (o.yHi - o.yLo)) / (next.yHi - next.yLo);
-  hs.slots = hs.slots.map((s) => s && { dur: s.dur, pts: s.pts.map((q) => ({ x: mx(q.x), y: my(q.y), t: q.t })) });
+  hs.slots = hs.slots.map((s) => s && { ...s, pts: s.pts.map((q) => ({ x: mx(q.x), y: my(q.y), t: q.t })) });
   if (hs.rec) hs.rec = hs.rec.map((q) => ({ x: mx(q.x), y: my(q.y), t: q.t }));
   hs.hand = { x: mx(hs.hand.x), y: my(hs.hand.y) };
   hs.lim = next;
@@ -783,9 +798,9 @@ function hsPaintGhost() {
   const g = hs.ghost || hs.hand;
   const ring = $('hsGhost');
   if (!ring) return;
-  ring.setAttribute('cx', (g.x * hs.side).toFixed(1));
-  ring.setAttribute('cy', (g.y * hs.side).toFixed(1));
-  $('hsNow').textContent = `${hsFmt('x', hsValueX(g.x))}  ${hsFmt('y', hsValueY(g.y))}`;
+  ring.setAttribute('cx', (g.x * hs.w).toFixed(1));
+  ring.setAttribute('cy', (g.y * hs.h).toFixed(1));
+  $('hsNow').textContent = `${hsFmt('x', hsValueX(g.x))} · ${hsFmt('y', hsValueY(g.y))}`;
 }
 
 /// The chip: what the panel is doing, in Loop or in Lanes.
@@ -803,7 +818,7 @@ function hsChipText() {
 
 function hsPaint() {
   if (!hs.built) return;
-  const S = hs.side, lanes = hsLanes();
+  const W = hs.w, H = hs.h, lanes = hsLanes();
   const [mode, text] = hsChipText();
   const chip = $('hsChip');
   chip.textContent = text;
@@ -820,10 +835,15 @@ function hsPaint() {
   const cx = hsControl('x'), cy = hsControl('y');
   $('hsXName').textContent = cx?.label || '';
   $('hsYName').textContent = cy?.label || '';
+  // The limits' units, beside the numbers typed into the corners.
+  const unit = (c) => (!c ? '' : c.key === 'ratio' ? '×' : c.key === 'semitones' ? 'st' : c.unit || '');
+  document.querySelectorAll('#hsPadBox [data-unit]').forEach((u) => { u.textContent = unit(u.dataset.unit === 'x' ? cx : cy); });
 
-  const hx = hs.hand.x * S, hy = hs.hand.y * S;
-  $('hsBall').setAttribute('cx', hx.toFixed(1));
-  $('hsBall').setAttribute('cy', hy.toFixed(1));
+  const hx = hs.hand.x * W, hy = hs.hand.y * H;
+  for (const id of ['hsBall', 'hsHalo']) {
+    $(id).setAttribute('cx', hx.toFixed(1));
+    $(id).setAttribute('cy', hy.toFixed(1));
+  }
   $('hsCross').setAttribute('d', `M${(hx - 7).toFixed(1)} ${hy.toFixed(1)}H${(hx + 7).toFixed(1)}M${hx.toFixed(1)} ${(hy - 7).toFixed(1)}V${(hy + 7).toFixed(1)}`);
 
   const pts = hs.mode === 'rec' && hs.rec ? hs.rec : hs.slots[hs.slot]?.pts || [];
@@ -834,9 +854,9 @@ function hsPaint() {
   const read = $('hsRead');
   read.classList.toggle('hidden', !shown);
   if (shown) {
-    const px = shown.x * S, py = shown.y * S;
+    const px = shown.x * W, py = shown.y * H;
     read.textContent = `${hsFmt('x', hsValueX(shown.x))},  ${hsFmt('y', hsValueY(shown.y))}`;
-    read.style.left = `${Math.min(S - 120, Math.max(2, px + 10))}px`;
+    read.style.left = `${Math.min(W - 120, Math.max(2, px + 10))}px`;
     read.style.top = `${py - 22 < 6 ? py + 12 : py - 22}px`;
   }
 
@@ -848,7 +868,7 @@ function hsPaint() {
     : hs.mode === 'rec' && hs.rec ? `Take ${L} · recording · ${hs.rec.length} points`
       : take ? `Take ${L} · ${(take.dur / 1000).toFixed(2)} s · ${take.pts.length} points · loops at its own length`
         : `Take ${L} empty · grab the pad to record into it`;
-  $('hsGestSub').textContent = lanes ? 'Loop only: the lanes hold one take' : 'each loops at its own length';
+  $('hsGestSub').textContent = lanes ? 'Loop only: the lanes hold one take' : 'loop at own length';
   $('dockHyper').querySelector('[aria-label="Takes"]').classList.toggle('hs-off', lanes);
 
   document.querySelectorAll('#dockHyper .hs-slot').forEach((b) => {
@@ -857,6 +877,8 @@ function hsPaint() {
     b.querySelector('[data-len]').textContent = s ? `${(s.dur / 1000).toFixed(1)} s` : '—';
     b.querySelector('[data-thumb]').setAttribute('points', s ? s.pts.filter((_, j) => j % 3 === 0).map((q) => `${(q.x * 100).toFixed(0)},${(q.y * 100).toFixed(0)}`).join(' ') : '');
   });
+  // The shape the take was drawn from, lit; none for a take drawn by hand.
+  document.querySelectorAll('#dockHyper [data-hsshape]').forEach((b) => b.classList.toggle('on', !!take && b.dataset.hsshape === take.shape));
   document.querySelectorAll('#dockHyper [data-hsrate]').forEach((b) => b.classList.toggle('on', +b.dataset.hsrate === hs.rate));
   document.querySelectorAll('#dockHyper [data-hsdir]').forEach((b) => b.classList.toggle('on', b.dataset.hsdir === hs.dir));
 
@@ -903,6 +925,9 @@ function hyperStretchShown(on) {
     hs.last = 0;
     if (!hs.raf) hs.raf = requestAnimationFrame(hsFrame);
     requestAnimationFrame(hsFit);
+    // The overview's colours: Prism's sound measured as the Edit page measures
+    // the open one (`411-edit-sound.js`).
+    if (prismDeck.path) edLoadSound(prismDeck.path);
     hsPaint();
   } else {
     if (hs.mode === 'rec') hsStopRec(performance.now());
@@ -924,7 +949,7 @@ function hyperStretchShown(on) {
 window.hyperStretch = {
   limits: () => ({ ...hs.lim }),
   hand: () => ({ ...hs.hand }),
-  side: () => hs.side,
+  size: () => ({ w: hs.w, h: hs.h }),
   where: () => hs.where,
   take: (i) => hs.slots[i] && { dur: hs.slots[i].dur, pts: hs.slots[i].pts.map((q) => ({ ...q })) },
   values: (i) => (hs.slots[i]?.pts || []).map((q) => ({ [hs.axes.x]: hsValueX(q.x), [hs.axes.y]: hsValueY(q.y) })),

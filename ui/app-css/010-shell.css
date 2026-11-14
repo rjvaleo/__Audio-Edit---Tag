@@ -278,31 +278,6 @@ textarea.field { height: auto; padding: 7px 9px; resize: vertical; line-height: 
 .seg-btn:hover { color: var(--text-2); }
 .seg-btn.active { background: var(--surface-3); color: var(--on); }
 
-/* The waveform colours. Fixed widths, sized for the longest of the four —
-   a button is not allowed to change shape because of what is beside it. The
-   chip carries the colour; the word carries the name. */
-.wave-seg { display: block; }
-.wave-seg .seg-btn {
-  width: 66px; padding: 0; text-align: center; white-space: nowrap;
-}
-.wave-seg .seg-btn i {
-  display: inline-block; vertical-align: middle; width: 7px; height: 7px;
-  border-radius: 50%; margin: -1px 5px 0 0; background: var(--chip);
-  box-shadow: 0 0 5px var(--chip);
-}
-.wave-seg .seg-btn.active { background: var(--surface-3); color: var(--text); }
-.wave-own { align-items: center; gap: 8px; margin-top: 7px; }
-.wave-own-label { font-size: var(--fs-m); color: var(--text-dim); }
-/* The native swatch, trimmed to the height of everything else on the row. */
-#waveOwn {
-  width: 46px; height: 22px; padding: 0; border: 1px solid var(--line);
-  border-radius: var(--r-s); background: var(--bg); cursor: pointer;
-}
-#waveOwn::-webkit-color-swatch-wrapper { padding: 2px; }
-#waveOwn::-webkit-color-swatch { border: none; border-radius: var(--r-s); }
-#waveOwn::-moz-color-swatch { border: none; border-radius: var(--r-s); }
-.wave-own #waveReset { height: var(--h-s); padding: 0 9px; font-size: var(--fs-m); }
-
 .check { display: flex; align-items: center; gap: 6px; font-size: var(--fs-m); color: var(--text-2); }
 .check input { accent-color: var(--accent); }
 

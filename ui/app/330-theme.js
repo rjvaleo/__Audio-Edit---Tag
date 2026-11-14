@@ -168,29 +168,37 @@ let tsSelected = null;
 let tsFilterText = '';
 let tsShowTokens = false;
 
+/// The palettes, as cards: the swatch row large enough to judge, the name and
+/// one tag under it. Click one to preview it in the editor; Wear it puts it on.
 function renderThemeList() {
   const box = $('themeList');
   if (!box) return;
   box.innerHTML = '';
+  const all = allPalettes();
   const q = tsFilterText.trim().toLowerCase();
-  const shown = q
-    ? allPalettes().filter((p) => p.name.toLowerCase().includes(q))
-    : allPalettes();
+  const shown = q ? all.filter((p) => p.name.toLowerCase().includes(q)) : all;
+  const count = $('tpCount');
+  if (count) {
+    const mine = all.filter((p) => !p.readOnly).length;
+    count.textContent = `${all.length - mine} built in · ${mine} yours`;
+  }
+  tpRenderWear();
   if (!shown.length) {
     const empty = document.createElement('div');
-    empty.className = 'ts-empty';
+    empty.className = 'tp-empty';
     empty.textContent = q ? 'No palettes match that filter.' : 'No palettes yet.';
     box.appendChild(empty);
     return;
   }
   for (const p of shown) {
-    const row = document.createElement('div');
+    const card = document.createElement('div');
     // Two different states, and conflating them was the old behaviour's fault:
     // `chosen` is the palette the application is *wearing*, `tsSelected` is the
     // one open in the editor. You edit one while wearing another.
-    row.className = 'theme-row'
+    card.className = 'theme-card'
       + (p.id === themeState.chosen ? ' chosen' : '')
       + (p.id === tsSelected ? ' editing' : '');
+    card.dataset.id = p.id;
     // A theme saved from the editor states its tokens outright and has no five
     // colours behind it. Assuming every palette carries `colors` threw here at
     // load, which aborted the rest of `app.js` — so the meters, the room and
@@ -198,11 +206,13 @@ function renderThemeList() {
     const chips = p.colors
       || (p.tokens ? ['--accent', '--surface-2', '--surface', '--bg', '--sink']
         .map((k) => p.tokens[k]).filter(Boolean) : []);
-    row.title = `${p.name} — ${chips.join(' ')}`;
+    card.title = `${p.name} — click to preview, double-click to wear`;
 
     const swatch = document.createElement('span');
     swatch.className = 'theme-swatch';
-    for (const c of chips.slice(0, 6)) {
+    // Dark to light, as the engine reads them: the card shows the order the
+    // colours will take on screen rather than the order they were typed in.
+    for (const c of tsDarkToLight(chips).slice(0, 6)) {
       const chip = document.createElement('i');
       chip.style.background = c;
       swatch.appendChild(chip);
@@ -210,17 +220,15 @@ function renderThemeList() {
 
     const name = document.createElement('span');
     name.className = 'theme-name';
-    name.textContent = p.name;
-    for (const [when, text] of [[p.id === themeState.chosen, ' · applied'],
-      [p.readOnly, ' · built in']]) {
-      if (!when) continue;
-      const note = document.createElement('i');
-      note.className = 'theme-inline-note';
-      note.textContent = text;
-      name.appendChild(note);
-    }
+    const title = document.createElement('b');
+    title.textContent = p.name;
+    name.appendChild(title);
+    const tag = document.createElement('em');
+    tag.textContent = p.id === themeState.chosen ? 'WEARING'
+      : p.id === tsSelected ? 'EDITING' : p.readOnly ? 'BUILT IN' : 'YOURS';
+    name.appendChild(tag);
 
-    row.append(swatch, name);
+    card.append(swatch, name);
     if (!p.readOnly) {
       const del = document.createElement('button');
       del.className = 'theme-del';
@@ -230,27 +238,66 @@ function renderThemeList() {
         e.stopPropagation();
         themeState.mine = themeState.mine.filter((x) => x.id !== p.id);
         if (themeState.chosen === p.id) themeState.chosen = null;
-        saveTheme(); applyChosenTheme(); renderThemeList();
+        if (tsSelected === p.id) tsSelected = themeState.chosen || themeState.mine[0]?.id || null;
+        saveTheme(); applyChosenTheme(); renderThemeList(); tsRender();
       };
-      row.appendChild(del);
+      card.appendChild(del);
     }
 
-    row.onclick = () => {
-      // Clicking the chosen one takes it off, so there is always a way back to
-      // the interface's own colours without hunting for a button.
-      // Click a theme to *see* it. The studio this came from is an admin
-      // screen with the application elsewhere, so there it made sense to open a
-      // palette without wearing it. Here the panel sits inside the thing being
-      // themed — the whole point of clicking one is to look at the app in it.
-      // It opens in the editor at the same time.
+    // **A click previews; it does not wear** (13 Nov 2026). While the studio was
+    // a narrow pane beside the page, looking at the app in a theme meant
+    // wearing it, so a click did. The page has a large preview of its own now,
+    // and the mock-up RJ approved says it plainly: nothing changes until Wear.
+    // A double-click is the shortcut for both.
+    card.onclick = () => {
       tsSelected = p.id;
-      themeState.chosen = themeState.chosen === p.id ? null : p.id;
-      saveTheme();
-      applyChosenTheme();
       tsRender();
       renderThemeList();
     };
-    box.appendChild(row);
+    card.ondblclick = () => tsWear(p.id);
+    box.appendChild(card);
+  }
+}
+
+/// Colours sorted dark to light, by the lightness the engine sorts them by.
+/// Anything unreadable keeps its place at the end.
+function tsDarkToLight(colours) {
+  const l = (c) => {
+    const rgb = /^#[0-9a-f]{6}$/i.test(c) ? Theme.hexToRgb(c) : null;
+    return rgb ? Theme.rgbToHsl(rgb).l : 2;
+  };
+  return [...colours].sort((a, b) => l(a) - l(b));
+}
+
+/// Put a palette on the whole app.
+function tsWear(id) {
+  themeState.chosen = id;
+  saveTheme();
+  applyChosenTheme();
+  renderThemeList();
+  tsRender();
+}
+
+/// The bar across the top: what is worn and what is open, and how it is worn.
+function tpRenderWear() {
+  const worn = allPalettes().find((x) => x.id === themeState.chosen);
+  const open = allPalettes().find((x) => x.id === tsSelected);
+  const status = $('tpStatus');
+  if (status) {
+    status.textContent = `wearing ${worn ? worn.name : 'no theme'}`
+      + (open && open !== worn ? ` · editing ${open.name}` : '');
+  }
+  const mark = (id, on) => {
+    const el = $(id);
+    if (!el) return;
+    el.classList.toggle('on', on);
+    el.setAttribute('aria-checked', String(on));
+  };
+  mark('themeWorn', !!worn && !themeState.plain);
+  mark('themePlain', !!worn && themeState.plain);
+  mark('themeNone', !worn);
+  for (const b of document.querySelectorAll('#tpLooks [data-look]')) {
+    b.classList.toggle('on', b.dataset.look === document.documentElement.dataset.mglLook);
   }
 }
 
@@ -283,8 +330,8 @@ const WAVE_STORE = 'audiolab.waveColour';
 ///
 /// **Not the palette open in the editor.** Preferring that meant clicking a
 /// palette to look at it repainted the real waveform — which breaks the rule
-/// the rest of the studio keeps, that selecting opens a palette and only Apply
-/// wears it. What the editor is holding belongs to the preview; see
+/// the rest of the studio keeps, that selecting opens a palette and only Wear
+/// it wears it. What the editor is holding belongs to the preview; see
 /// `waveShown`.
 ///
 /// Deliberately not written with `tsPalette`, which is a `const` declared in the
@@ -376,6 +423,9 @@ function renderWaveColours() {
     b.classList.toggle('active', b.dataset.wave === choice);
     b.style.setProperty('--chip', WAVE_COLOURS[b.dataset.wave]);
   }
+  // The round chips either side: the default, and your own colour.
+  $('waveReset')?.classList.toggle('active', !choice);
+  $('waveOwn')?.classList.toggle('active', !!choice && !WAVE_COLOURS[choice]);
   // The swatch starts from what is on screen, whichever way it got there — so
   // reaching for your own colour is a nudge from the current one rather than
   // from whatever the picker happened to hold last. A named colour is `oklch`
@@ -448,8 +498,8 @@ function wireWaveColour() {
 
   for (const b of box.querySelectorAll('[data-wave]')) {
     b.onclick = () => {
-      // Clicking the chosen one takes it off, the same gesture the palette list
-      // uses to get back to the interface's own colours.
+      // Clicking the chosen one takes it off, back to the waveform's own
+      // colour, as the default chip beside them does.
       setWaveColour(waveChoice() === b.dataset.wave ? null : b.dataset.wave);
     };
   }
@@ -468,20 +518,46 @@ function wireWaveColour() {
   if (reset) reset.onclick = () => setWaveColour(null);
 }
 
+/// What the stylesheet gives every token a theme may set, read once before any
+/// theme is put on. The preview starts from these rather than from whatever
+/// the page is wearing, so a palette that states only some tokens is shown
+/// over the interface's own colours, which is how it will look when worn.
+let themeDefaults = {};
+function readThemeDefaults() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of [...Object.keys(THEME_TOKEN_MAP), ...THEME_DIRECT_KEYS, ...THEME_LOOK_KEYS]) {
+    if (k === '--wave' || k === '--wave-2' || k === 'color-scheme') continue;
+    const v = cs.getPropertyValue(k).trim();
+    if (v) themeDefaults[k] = v;
+  }
+}
+
 function wireTheme() {
   if (!$('themeList')) return;
+  readThemeDefaults();
   loadTheme();
   applyChosenTheme();
   renderThemeList();
 
+  // Three ways to wear it, one switch: the palette as derived, the palette
+  // with plain surfaces, or none. Choosing either of the first two with
+  // nothing worn wears the palette open in the editor.
+  const wearOpen = () => {
+    if (!themeState.chosen && tsSelected) themeState.chosen = tsSelected;
+  };
+  $('themeWorn').onclick = () => {
+    themeState.plain = false;
+    wearOpen();
+    saveTheme(); applyChosenTheme(); renderThemeList(); tsRender();
+  };
+  $('themePlain').onclick = () => {
+    themeState.plain = true;
+    wearOpen();
+    saveTheme(); applyChosenTheme(); renderThemeList(); tsRender();
+  };
   $('themeNone').onclick = () => {
     themeState.chosen = null;
     saveTheme(); applyChosenTheme(); renderThemeList();
-  };
-  $('themePlain').onclick = () => {
-    themeState.plain = !themeState.plain;
-    $('themePlain').classList.toggle('on', themeState.plain);
-    saveTheme(); applyChosenTheme();
   };
   $('themeAdd').onclick = () => {
     const raw = $('themeColors').value || '';
@@ -494,8 +570,9 @@ function wireTheme() {
     while (taken.includes(id)) id += 'x';
     themeState.mine.push({ id, name: `Mine ${themeState.mine.length + 1}`, colors });
     themeState.chosen = id;
+    tsSelected = id;
     $('themeColors').value = '';
-    saveTheme(); applyChosenTheme(); renderThemeList();
+    saveTheme(); applyChosenTheme(); renderThemeList(); tsRender();
   };
 }
 

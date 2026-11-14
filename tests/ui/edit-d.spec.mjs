@@ -35,11 +35,11 @@ const edits = (page) => {
 };
 
 test('the Now Playing bar is on every page, with play in the one place', async ({ page }) => {
-  // Seven pages, Wave's board among them: more than the default half-minute.
+  // Eight pages, Wave's board among them: more than the default half-minute.
   test.setTimeout(90_000);
   await openEdit(page);
   const at = {};
-  for (const [mode, sub] of [['edit', 'wave'], ['edit', 'grain'], ['edit', 'chop'], ['synth'], ['room'], ['seq'], ['overview']]) {
+  for (const [mode, sub] of [['edit', 'wave'], ['edit', 'grain'], ['edit', 'chop'], ['synth'], ['room'], ['seq'], ['theme'], ['overview']]) {
     await page.click(`#leftRail .rl-item[data-mode="${mode}"]` + (sub ? `[data-page="${sub}"]` : ''));
     await page.waitForTimeout(300);
     at[sub || mode] = await page.evaluate(() => {

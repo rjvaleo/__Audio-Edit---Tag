@@ -14,7 +14,9 @@ function setMode(mode) {
   // Edit and Room are the same side, so moving between those two leaves the
   // transport alone: walking over to the room to look at what you are hearing
   // must not stop it.
-  if (engine.playing && engine.raw !== !docMode) pausePlayback();
+  // Except the Theme page, which has nothing to do with what is playing:
+  // choosing colours while listening must not stop the sound.
+  if (engine.playing && mode !== 'theme' && engine.raw !== !docMode) pausePlayback();
 
   const wasRoom = state.mode === 'room';
   const wasCompose = state.mode === 'compose';
@@ -28,6 +30,9 @@ function setMode(mode) {
   // The Wave page: the synth, which plays no sound file and needs none open.
   // It takes the whole middle, as the sequencer does. See `docs/WAVE-SYNTH.md`.
   const synth = mode === 'synth';
+  // The Theme page: palettes, a preview and the editor, at full width like
+  // Wave. See `docs/THEME-EDITOR.md`.
+  const theme = mode === 'theme';
   // The Grain v12 page, behind `prefs.grainUi`: the Grain page's new face.
   const grainPage = editing && editPage === 'grain' && gsOn();
 
@@ -66,15 +71,16 @@ function setMode(mode) {
   // The lane is the sound as a document — the thing you cut. The room is the
   // sound as a picture, and it takes the whole middle; the overview strip along
   // the top is what stays, because that is the one that says *where you are*.
-  $('lane').classList.toggle('hidden', room || seq || compose || synth);
+  $('lane').classList.toggle('hidden', room || seq || compose || synth || theme);
   $('waveView').classList.toggle('hidden', !synth);
+  $('themeView').classList.toggle('hidden', !theme);
   $('grainView').classList.toggle('hidden', !grainPage);
   // Compose lays the same frame over its SEQ cell — see `composeEnter`.
   $('seqView')?.classList.toggle('hidden', !(seq || compose));
   if (seq || compose) seqEnsureFrame();
   document.querySelectorAll('#leftRail .mode-btn').forEach((b) =>
     b.classList.toggle('active', b.dataset.mode === mode));
-  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : compose ? 'Compose' : synth ? 'Wave' : 'Browse';
+  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : compose ? 'Compose' : synth ? 'Wave' : theme ? 'Theme' : 'Browse';
   document.body.classList.toggle('editing', editing);
   // Edit and Grain are the same document, one mode; the page says which
   // furniture is out (`body.wavepage`, the Edit page's toolbar).
@@ -89,12 +95,13 @@ function setMode(mode) {
   document.body.classList.toggle('seqview', seq);
   document.body.classList.toggle('composeview', compose);
   document.body.classList.toggle('synthpage', synth);
+  document.body.classList.toggle('themepage', theme);
   // The modes that give the whole width to the middle, so the library becomes
   // a floating drawer rather than a docked column. Its own class rather than
   // `.editing, .roomview` repeated down the stylesheet: the drawer's geometry
   // is one idea and it should have one name, or the next mode to want it will
   // be a third selector added to six rules.
-  document.body.classList.toggle('docmode', docMode || synth);
+  document.body.classList.toggle('docmode', docMode || synth || theme);
 
   // After the toggles, so the parts it borrows are in the state this mode gave
   // them before they are moved.
@@ -102,6 +109,7 @@ function setMode(mode) {
   if (compose) composeEnter();
   if (synth) wvEnter();
   if (grainPage) gsEnter();
+  if (theme) tpEnter();
 
   // Edit has nothing to say about folder tags, and the rail's Browse tools
   // only make sense in Browse — but the library button still opens the drawer.
@@ -114,7 +122,7 @@ function setMode(mode) {
   }
 
   const panel = $('leftPanel');
-  if (docMode || synth) {
+  if (docMode || synth || theme) {
     // Docked column becomes an overlay drawer, shut by default: the editor and
     // the room each get the whole width until you go looking for something.
     panel.classList.remove('collapsed');

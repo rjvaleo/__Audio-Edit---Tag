@@ -88,8 +88,35 @@ async function prismDeckUse(path, { chosen = true } = {}) {
   prismStretchSend();
   prismHpSend();
   prismDeckWave();
+  prismDeckInfo(path);
   prismDeckShow();
+  // SOURCE's colours, while the page is out to show them (`edSoundStale` reads
+  // it again when the page comes back).
+  if (prismOwnsBar()) edLoadSound(path);
   if (typeof hsOpen === 'function') await hsOpen();
+}
+
+/// What the library knows of Prism's sound, for SOURCE's line: its format,
+/// rate, bits, channels and length, as its folder lists them.
+async function prismDeckInfo(path) {
+  prismDeck.info = null;
+  try {
+    const list = await api(`/api/files?folder=${encodeURIComponent(path.split('/')[0])}`);
+    if (prismDeck.path === path) prismDeck.info = list.find((f) => f.path === path) || null;
+  } catch { /* the line says less */ }
+  prismDeckShow();
+}
+
+/// SOURCE's Edit: Prism's sound on the Edit page, opened as the document first
+/// when another one is open.
+async function prismEditSound() {
+  if (!prismDeck.path) { toast('Choose a sound for Prism first'); return; }
+  if (state.selectedFile?.path !== prismDeck.path) {
+    if (!prismDeck.info) await prismDeckInfo(prismDeck.path);
+    if (!prismDeck.info) { toast('That sound is not in the library'); return; }
+    await selectFile(prismDeck.info);
+  }
+  document.querySelector('#leftRail .rl-item[data-page="wave"]')?.click();
 }
 
 /// Time & Pitch to the Prism deck, a few times a second at most while moving.
@@ -239,50 +266,102 @@ async function prismDeckWave() {
   prismDeck.wave = null;
   const want = prismDeck.path;
   try {
-    const w = await api(`/api/peaks?p=${encodeURIComponent(want)}&cols=240`);
+    // Enough columns for SOURCE across a wide window, one a pixel or so.
+    const w = await api(`/api/peaks?p=${encodeURIComponent(want)}&cols=1600`);
     if (prismDeck.path === want) prismDeck.wave = w;
   } catch { /* drawn empty */ }
   prismDeckShowWave();
   if (prismOwnsBar() && typeof nbDrawStrip === 'function') nbDrawStrip();
 }
 
+/// SOURCE and the Sound row's mini overview, from the deck's peaks.
 function prismDeckShowWave() {
-  const c = $('prismWave');
+  prismDrawWave($('prismSrc'), 2);
+  prismDrawWave($('prismWave'), 1);
+}
+
+/// Prism's sound across a canvas: its peaks in its own colours, low to high as
+/// the Edit page, Grain and Chop colour theirs (`edColourAt`), once it has been
+/// measured, and plain until then; the playhead over them, `head` px wide. The
+/// sound is kept drawn beside the canvas, so a moving head redraws only itself.
+function prismDrawWave(c, head) {
   if (!c) return;
-  const w = c.clientWidth || 200, h = c.clientHeight || 24, dpr = window.devicePixelRatio || 1;
-  if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (!w || !h) return;
+  const p = prismDeck.wave, lit = !!edSound.an && edSound.path === prismDeck.path;
+  const key = `${w}|${h}|${dpr}|${prismDeck.path}|${p?.columns}|${lit}|${typeof themeStamp === 'undefined' ? '' : themeStamp}`;
+  let ink = c.prismInk;
+  if (!ink || ink.key !== key) {
+    const cv = ink?.cv || document.createElement('canvas');
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const chans = p?.channels || [], cols = chans[0]?.max?.length || 0;
+    if (cols) {
+      const css = getComputedStyle(document.documentElement);
+      const len = prismDeck.frames / (prismDeck.rate || 48000);
+      const at = (i) => { let m = 0; for (const ch of chans) m = Math.max(m, Math.abs(ch.max[i]), Math.abs(ch.min[i])); return m; };
+      let pk = 0.001;
+      for (let i = 0; i < cols; i++) pk = Math.max(pk, at(i));
+      const mid = h / 2, A = mid - 1;
+      g.fillStyle = `rgba(${css.getPropertyValue('--look-bloom').trim()},.3)`;
+      for (let x = 0; x < w; x++) {
+        const m = Math.max(0.5, at(Math.min(cols - 1, Math.floor(x / w * cols))) / pk * A);
+        const k = lit && edColourAt((x + 0.5) / w * len * edSound.rate, true);
+        if (k) g.fillStyle = `rgba(${k[0] | 0},${k[1] | 0},${k[2] | 0},.9)`;
+        g.fillRect(x, mid - m, 1, m * 2);
+      }
+    }
+    ink = c.prismInk = { key, cv };
+  }
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
   const g = c.getContext('2d');
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, w, h);
-  const p = prismDeck.wave;
-  const cols = p?.channels?.[0]?.max?.length || 0;
-  if (cols) {
-    g.fillStyle = typeof waveInk === 'function' ? waveInk() : '#5fb3a8';
-    g.beginPath();
-    g.moveTo(0, h / 2);
-    for (let i = 0; i < cols; i++) {
-      let hi = 0;
-      for (const ch of p.channels) hi = Math.max(hi, Math.abs(ch.max[i]), Math.abs(ch.min[i]));
-      g.lineTo((i / (cols - 1)) * w, h / 2 - hi * h * 0.45);
-    }
-    for (let i = cols - 1; i >= 0; i--) {
-      let hi = 0;
-      for (const ch of p.channels) hi = Math.max(hi, Math.abs(ch.max[i]), Math.abs(ch.min[i]));
-      g.lineTo((i / (cols - 1)) * w, h / 2 + hi * h * 0.45);
-    }
-    g.fill();
-  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, c.width, c.height);
+  g.drawImage(ink.cv, 0, 0);
   if (prismDeck.frames > 0) {
-    const at = prismDeckAt();
-    g.fillStyle = '#f2c14e';
-    g.fillRect(Math.round(at * w), 0, 1, h);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const col = getComputedStyle(c).getPropertyValue('--look-text').trim();
+    g.fillStyle = col;
+    g.shadowColor = col;
+    g.shadowBlur = head > 1 ? 6 : 0;
+    g.fillRect(Math.round(prismDeckAt() * (w - head)), 0, head, h);
   }
+}
+
+/// Click or drag along SOURCE (or the mini overview) to go there, as the bar's
+/// strip does on this page.
+function prismDeckSeekWire(c) {
+  if (!c) return;
+  const go = (e) => {
+    const r = c.getBoundingClientRect();
+    if (r.width) prismDeckSeek((e.clientX - r.left) / r.width);
+  };
+  c.addEventListener('pointerdown', (e) => {
+    if (e.button) return;
+    c.setPointerCapture(e.pointerId);
+    go(e);
+  });
+  c.addEventListener('pointermove', (e) => { if (c.hasPointerCapture(e.pointerId)) go(e); });
+  if (window.ResizeObserver) new ResizeObserver(() => prismDrawWave(c, c.id === 'prismSrc' ? 2 : 1)).observe(c);
 }
 
 /// The deck's strip: the sound's name, and the bar's lights.
 function prismDeckShow() {
+  // The picker shows the sound playing, borrowed or chosen, when its folder is the one listed.
+  const pick = $('prismSoundFile');
+  if (pick && prismDeck.path && pick.value !== prismDeck.path && [...pick.options].some((o) => o.value === prismDeck.path)) pick.value = prismDeck.path;
   const name = $('prismSoundName');
   if (name) name.textContent = prismDeck.path ? prismDeck.path.split('/').pop() : 'No sound — choose one';
+  // The line under SOURCE, as the metastrip says it for the open sound.
+  const meta = $('prismSoundMeta'), f = prismDeck.info;
+  if (meta) {
+    const len = f?.duration || (prismDeck.frames > 0 ? prismDeck.frames / (prismDeck.rate || 48000) : 0);
+    meta.textContent = !prismDeck.path ? '' : [f?.format, f?.sampleRate && `${f.sampleRate} Hz`, f?.bits && `${f.bits}-bit`,
+      f?.channels && `${f.channels} ch`, len && `${len.toFixed(2)} s`].filter(Boolean).join(' · ');
+  }
   if (prismOwnsBar() && $('nbName')) prismBarName();
   prismBarShow();
   prismRenderChain();
@@ -313,8 +392,8 @@ function prismRenderChain() {
     const row = document.createElement('div');
     row.className = 'prism-chain-slot';
     const label = state.shapers?.[slot.kind]?.label || slot.kind;
-    row.innerHTML = '<span class="mono hs-dim"></span><span class="prism-chain-name"></span><button type="button" class="hs-btn">×</button>';
-    row.children[0].textContent = String(i + 1);
+    row.innerHTML = '<span class="mono prism-chain-n"></span><span class="prism-chain-name"></span><button type="button" class="hs-btn">×</button>';
+    row.children[0].textContent = `${i + 1} ·`;
     row.children[1].textContent = label;
     const rm = row.children[2];
     rm.setAttribute('aria-label', `Remove ${label}`);
@@ -482,14 +561,16 @@ function prismShowPtc() {
   b.setAttribute('aria-pressed', prismPtc().on ? 'true' : 'false');
 }
 
-/// Every setting of the process on the pad, in the Controls column (RJ:
-/// "Move all the extra setting to the Prism stand-alone"), as half-width bars
-/// with their pictures (`prismBar`, the v7 panel): the two on the pad first,
+/// Every setting of the process on the pad, in the Controls panel (RJ:
+/// "Move all the extra setting to the Prism stand-alone"), as the app's shared
+/// knobs with their pictures (`prismKnob`; the mock-up of 13 Nov 2026, as on
+/// Grain and Chop; half-width bars in v7): the two on the pad first,
 /// marked X and Y, then the rest in the effect's own groups ("Added (not in the
 /// original)" among them). Each moves the value its own control elsewhere
 /// moves: Time & Pitch's through the deck's stretch, the Pitch Time Changer's
 /// through `/api/pitchtime`, a slot's through `prismLiveParam`. An LFO
-/// (`387-prism-lfo.js`) shows on a bar as a ring and a moving marker.
+/// (`387-prism-lfo.js`) shows on a knob as its reach round the ring and a dot
+/// where the sound is.
 const PRISM_STRETCH_DEFAULTS = { ratio: 1, semitones: 0, windowMs: 46, cloudMix: 0.5 };
 function prismRenderSettings() {
   const box = $('prismSettings');
@@ -539,7 +620,7 @@ function prismRenderSettings() {
       if (!byKey[k] || seen.has(k)) continue;
       seen.add(k);
       const c = byKey[k];
-      const row = prismBar(c, read(k), {
+      const row = prismKnob(c, read(k), {
         kind,
         onInput: (v) => {
           write(k, v);
@@ -552,8 +633,7 @@ function prismRenderSettings() {
       if (ax) {
         row.classList.add('prism-onpad');
         // In the style, not the text: the control's name stays its name.
-        const name = row.querySelector(':scope > .k');
-        if (name) name.dataset.ax = ax;
+        row.querySelectorAll(':scope > .k, .ui-kname').forEach((n) => { n.dataset.ax = ax; });
       }
       row.base = () => read(k);
       box.appendChild(row);
@@ -571,7 +651,7 @@ function prismRenderSettings() {
   add(specs.map((c) => c.key));
   if (!box.dataset.wired) {
     box.dataset.wired = '1';
-    // Mapping an LFO: a click on a bar maps it rather than moving it.
+    // Mapping an LFO: a click on a control maps it rather than moving it.
     box.addEventListener('pointerdown', (e) => {
       if (typeof prismLfo !== 'object' || !prismLfo.mapping) return;
       const row = e.target.closest('.prism-bar');
@@ -584,7 +664,7 @@ function prismRenderSettings() {
   if (typeof prismLfoMark === 'function') prismLfoMark();
 }
 
-/// The bars follow what moves their settings elsewhere (the pad, a take, a
+/// The controls follow what moves their settings elsewhere (the pad, a take, a
 /// preset), each frame the LFOs run, unless a hand is on them.
 function prismSettingsFollow() {
   if (typeof prismFollowAll === 'function') prismFollowAll();
@@ -592,7 +672,7 @@ function prismSettingsFollow() {
   for (const row of prismLfo.rows.values()) {
     if (row.classList.contains('plfo-on')) continue;
     const input = row.querySelector(':scope > input[type=range]');
-    if (!input || input.classList.contains('gc-dragging') || document.activeElement === input) continue;
+    if (!input || input.classList.contains('gc-dragging') || document.activeElement === input || row.querySelector('.ui-knob.drag')) continue;
     const v = row.base?.();
     if (Number.isFinite(v) && Math.abs(v - (row.read ? row.read() : +input.value)) > 1e-6 * Math.max(1, Math.abs(v))) row.sync?.(v);
   }
@@ -634,7 +714,6 @@ function prismRenderBar() {
   prismShowPtc();
   prismRenderSettings();
   if (typeof prismPickerRender === 'function') prismPickerRender();
-  if (typeof prismFit === 'function') prismFit();
 }
 
 // ───────────────────────────── Hyperprism's Playback Speed and its faders
@@ -674,7 +753,10 @@ function prismShowHp() {
     const shown = key === 'speed' ? null : $(`${id}Read`);
     if (shown) {
       const db = prismFaderDb(prismHp[key]);
-      shown.textContent = `${db < 0 ? '−' : '+'}${Math.abs(db).toFixed(1)} dB`;
+      // The unit once, in OUTPUT's head: unseen here, but still the reading's.
+      shown.innerHTML = `${db < 0 ? '−' : '+'}${Math.abs(db).toFixed(1)}<span class="hs-unit"> dB</span>`;
+      // The fader's well fills from its middle (`.hs-ffill`).
+      el?.parentElement?.style.setProperty('--f', (prismHp[key] / 255).toFixed(4));
     }
   }
 }
