@@ -376,8 +376,6 @@ function gsEnter() {
   loadScales();
   if (!state.presets.length) loadPresets();
   if (!state.overview && state.selectedFile) loadOverview();
-  // The overview's colours: the sound measured as the Edit page measures it (411).
-  edLoadSound();
   GS.engine = '';
   GS_KEYS.ov = GS_KEYS.cl = '';
   if (!GS.raf) GS.raf = requestAnimationFrame(gsFrame);

@@ -8,10 +8,12 @@
 // Measured in a worker with Chop's own `chopAnalyseCore`.
 //
 // Read again whenever the overview is, which is after every edit that changes
-// the sound and whenever another sound opens. Only while the Edit page, Grain
-// or Prism shows (Grain colours its overview with it, Prism its SOURCE): elsewhere
-// it is marked stale and read when you come back. Prism measures its own sound,
-// which need not be the one open; the next page to ask for another reads that.
+// the sound and whenever another sound opens. Only while the Edit page or Prism
+// shows (Prism colours its SOURCE with it): elsewhere it is marked stale and
+// read when you come back. Prism measures its own sound, which need not be the
+// one open; the next page to ask for another reads that. Grain colours its
+// overview with it too, and hands over the samples it decodes for its own
+// pictures (`gsPcmLoad`, 407) rather than the sound being fetched twice.
 
 let edSoundWorker = null;
 let edSoundWant = 0;
@@ -20,7 +22,7 @@ let edSoundWant = 0;
 function edSoundStale() {
   edSoundWant++;
   if (document.body.classList.contains('prismpage')) edLoadSound(prismDeck.path);
-  else if (document.body.classList.contains('wavepage') || GS.showing) edLoadSound();
+  else if (document.body.classList.contains('wavepage')) edLoadSound();
 }
 
 /// Read and measure `path`: the open sound unless a page names its own.
@@ -42,6 +44,12 @@ async function edLoadSound(path = state.selectedFile?.path) {
   // Mono for measuring: the channels averaged.
   const n = buf.length, mono = new Float32Array(n);
   for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / buf.numberOfChannels; }
+  edTakeSound(path, rate, mono, serial);
+}
+
+/// Samples decoded here or elsewhere (Grain's own, 407): keep them and measure.
+function edTakeSound(path, rate, mono, serial = edSoundWant) {
+  edSound.serial = serial;
   Object.assign(edSound, { path, rate, mono, an: null, hits: [], loud: [] });
   edMeasure(mono, rate, serial);
   edSoundReady();
