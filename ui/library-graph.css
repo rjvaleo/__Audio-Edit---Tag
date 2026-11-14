@@ -115,3 +115,28 @@
 .lg-list i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
 .lg-list .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lg-list .sub { flex: none; }
+
+/* ── in Browse ─────────────────────────────────────────────────────── */
+/* The same map, in Browse beside the sound's details (`LibraryGraph.browse`):
+ * the waveform and the details keep the middle, the map takes the larger part
+ * to the right of them. In its box rather than over the window, so the strip
+ * wraps where the box is narrow, and Close becomes Full window. */
+
+.browse-map {
+  flex: 1.5 1 0; min-width: 280px; position: relative;
+  border-left: 1px solid var(--line); background: var(--sink);
+}
+body.browsemap .centre { flex: 1 1 0; min-width: 300px; }
+/* The details' four columns are too many for the narrower middle. */
+body.browsemap #statsView .stats-tags { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+
+.lgraph.lg-embedded { position: absolute; inset: 0; z-index: auto; }
+.lg-embedded .lg-bar { height: auto; min-height: 30px; padding: 3px 8px; flex-wrap: wrap; row-gap: 3px; }
+.lg-embedded .lg-find { width: 150px; }
+.lg-embedded .lg-close { display: none; }
+.lg-big { display: none; }
+.lg-embedded .lg-big {
+  display: inline-block; background: none; border: 1px solid var(--line); border-radius: var(--r-s);
+  color: var(--text-dim); font: inherit; padding: 2px 8px; cursor: pointer; flex: none;
+}
+.lg-embedded .lg-big:hover { color: var(--text); }
