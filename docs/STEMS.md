@@ -76,6 +76,11 @@ page never talks to the PC. Configure it with `AUDIOLAB_GPU_HOST=pc` (and option
   (`demucs\venv`, weights under `demucs\torch`), brings the stems back with four `scp` at
   once, deletes the job folder, and reads the stems here. A 5-minute song: about 70 s
   (15 s up, 21 s on the GPU, 36 s back). **Stop** ends Demucs there too (by its job tag).
+- **FLAC both ways** (RJ: "yes, send the stems back as FLAC"): a WAV or AIFF song goes out
+  as FLAC (packed here by macOS `afconvert`), and the stems are packed to 24-bit FLAC on the
+  PC with `soundfile` in Demucs's environment and unpacked here to the same 24-bit WAVs:
+  checked byte for byte against the WAVs. Return trip 36 s down to about 13 s, plus 6 s packing
+  and 3 s unpacking; the whole split 65-68 s. Without `afconvert` (not a Mac) it is plain WAV.
 - **Make → From words** runs Stable Audio Open Small (`sao\make.py --serve`, kept loaded,
   closed after ten idle minutes). The first request loads the model (about 15-50 s); then
   0.3-0.45 s a sound. Tries land in `Made/.words/`; kept ones in `Made/Words/`.

@@ -267,7 +267,14 @@ pub fn separate_remote(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out:
 fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: &Path, model: &str, share: f64, id: &str) -> Result<Vec<(String, PathBuf)>, String> {
     use crate::gpu::{lines_cr, tqdm_percent, win};
     let jobdir = format!("{}/demucs/jobs/{id}", gpu.dir);
-    let ext = input.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "wav".into());
+    let mut ext = input.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "wav".into());
+    // A WAV or AIFF goes over as FLAC: lossless, about 60 % of the bytes.
+    let packed = std::env::temp_dir().join(format!("{id}-song.flac"));
+    let mut send = input.to_path_buf();
+    if crate::flac::available() && matches!(ext.as_str(), "wav" | "aif" | "aiff") && crate::flac::encode(input, &packed).is_ok() {
+        send = packed.clone();
+        ext = "flac".into();
+    }
     let song = format!("song.{ext}");
     let stop = |job: &StemsJob| -> Result<(), String> {
         if job.cancel.load(Ordering::SeqCst) { Err("stopped".into()) } else { Ok(()) }
@@ -276,7 +283,9 @@ fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: 
 
     job.say(&format!("sending the song to the {}", gpu.host));
     gpu.ps(&format!("New-Item -ItemType Directory -Force -Path '{}' | Out-Null", win(&jobdir)))?;
-    gpu.put(input, &format!("{jobdir}/{song}"))?;
+    let sent = gpu.put(&send, &format!("{jobdir}/{song}"));
+    let _ = std::fs::remove_file(&packed);
+    sent?;
     job.set_progress(0.1 * share);
     stop(job)?;
 
@@ -316,21 +325,67 @@ fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: 
         return Err(format!("Demucs on the {} failed: {}", gpu.host, tail.lock().unwrap()));
     }
 
-    job.say(&format!("bringing the stems back from the {}", gpu.host));
-    let names = gpu.run(&format!("dir /b {}", win(&format!("{jobdir}/out/{model}/song"))))?;
-    let files: Vec<(String, PathBuf)> = names
-        .lines()
-        .map(str::trim)
-        .filter(|n| n.ends_with(".wav"))
-        .map(|n| (format!("{jobdir}/out/{model}/song/{n}"), out.join(n)))
-        .collect();
-    if files.is_empty() {
-        return Err("Demucs made no stems".into());
+    // FLAC for the trip back: lossless, about half the bytes of the WAVs, when
+    // this machine can unpack it; plain WAV otherwise.
+    let songdir = format!("{jobdir}/out/{model}/song");
+    if !crate::flac::available() {
+        job.say(&format!("bringing the stems back from the {}", gpu.host));
+        let names = gpu.run(&format!("dir /b {}", win(&songdir)))?;
+        let files: Vec<(String, PathBuf)> = names.lines().map(str::trim).filter(|n| n.ends_with(".wav")).map(|n| (format!("{songdir}/{n}"), out.join(n))).collect();
+        if files.is_empty() {
+            return Err("Demucs made no stems".into());
+        }
+        gpu.get_many(&files)?;
+        job.set_progress(share);
+        let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", win(&jobdir)));
+        *job.remote.lock().unwrap() = None;
+        return Ok(files.into_iter().map(|(r, l)| (r.rsplit('/').next().unwrap_or("").trim_end_matches(".wav").to_string(), l)).collect());
     }
+    job.say(&format!("packing the stems on the {}", gpu.host));
+    let script = std::env::temp_dir().join(format!("{id}-flac.py"));
+    std::fs::write(&script, FLAC_PY).map_err(|e| e.to_string())?;
+    gpu.put(&script, &format!("{jobdir}/flac.py"))?;
+    let _ = std::fs::remove_file(&script);
+    let listed = gpu.run(&format!(
+        "{}\\demucs\\venv\\Scripts\\python.exe {}\\flac.py {}",
+        win(&gpu.dir),
+        win(&jobdir),
+        win(&songdir)
+    ))?;
+    let names: Vec<String> = listed.lines().map(str::trim).filter(|n| n.ends_with(".flac")).map(str::to_string).collect();
+    if names.is_empty() {
+        return Err(format!("Demucs made no stems on the {}", gpu.host));
+    }
+    stop(job)?;
+    job.say(&format!("bringing the stems back from the {}", gpu.host));
+    let files: Vec<(String, PathBuf)> = names.iter().map(|n| (format!("{songdir}/{n}"), out.join(n))).collect();
     gpu.get_many(&files)?;
+    job.set_progress(0.95 * share);
+    job.say("unpacking the stems");
+    let mut stems = Vec::new();
+    for (_, flac) in &files {
+        let wav = flac.with_extension("wav");
+        crate::flac::to_wav(flac, &wav)?;
+        let _ = std::fs::remove_file(flac);
+        stems.push((wav.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(), wav));
+    }
     job.set_progress(share);
     // The job's own scratch folder there, which this created.
     let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", win(&jobdir)));
     *job.remote.lock().unwrap() = None;
-    Ok(files.into_iter().map(|(r, l)| (r.rsplit('/').next().unwrap_or("").trim_end_matches(".wav").to_string(), l)).collect())
+    Ok(stems)
 }
+
+/// Run on the GPU machine in Demucs's own environment: each WAV in the folder
+/// becomes a 24-bit FLAC of the same samples (read as int32, so nothing is
+/// rescaled), the WAV goes, and the FLACs' names are printed.
+const FLAC_PY: &str = r#"import glob, os, sys
+import soundfile as sf
+for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.wav"))):
+    info = sf.info(p)
+    data, rate = sf.read(p, dtype="int32", always_2d=True)
+    f = p[:-4] + ".flac"
+    sf.write(f, data, rate, format="FLAC", subtype="PCM_24" if info.subtype in ("PCM_24", "PCM_32", "FLOAT") else info.subtype)
+    os.remove(p)
+    print(os.path.basename(f), flush=True)
+"#;
