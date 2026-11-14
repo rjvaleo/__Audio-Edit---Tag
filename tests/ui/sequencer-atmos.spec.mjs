@@ -13,7 +13,7 @@ import { test, expect } from './test.mjs';
 
 async function openSeq(page) {
   await page.goto('/sequencer/');
-  await page.waitForFunction(() => typeof atmosRead === 'function' && !!document.getElementById('atModeSeg'));
+  await page.waitForFunction(() => typeof atmosRead === 'function' && !!document.getElementById('atModeSelect'));
   await page.evaluate(() => {
     // One note, offline, dry; `setup` sets the controls and plays.
     window.__atRender = async (setup, secs = 2.5, after) => {
