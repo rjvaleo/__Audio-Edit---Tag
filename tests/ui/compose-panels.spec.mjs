@@ -168,7 +168,7 @@ test('the sequencer lays itself out compact inside its own page, and again after
   const full = await frame.evaluate(() => ({
     compact: document.body.classList.contains('compact'),
     header: getComputedStyle(document.querySelector('.header')).display,
-    menu: getComputedStyle(document.getElementById('compactScale').closest('.knob-group')).display,
+    menu: getComputedStyle(document.getElementById('compactScale').closest('.field')).display,
   }));
   expect(full.compact).toBe(false);
   expect(full.header).not.toBe('none');
@@ -184,7 +184,7 @@ test('the sequencer lays itself out compact inside its own page, and again after
         '.synth-row-scroll', '.perf-panel', '.keyboard-panel', '.status-bar', '#playBtn'].filter((s) => !hidden(s)),
       gone: ['.transport', '.synth-voice', '.seq-panel', '#stepGrid'].filter((s) => hidden(s)),
       columns: getComputedStyle(document.getElementById('stepGrid')).gridTemplateColumns.split(' ').length,
-      menu: getComputedStyle(menu.closest('.knob-group')).display,
+      menu: getComputedStyle(menu.closest('.field')).display,
       options: menu.options.length,
       scales: SCALES.length,
       value: menu.value,
