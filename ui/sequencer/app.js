@@ -875,6 +875,8 @@ function initAudio() {
 
   // The second synth's graph (atmos.js), on the same context.
   if (typeof atmosInit === "function") atmosInit();
+  // Accompany's bus, past the filter into the delay and Space (accompany.js).
+  if (typeof accompanyInit === "function") accompanyInit();
   // The scopes (scopes.js), on the same context.
   if (typeof scopesInit === "function") scopesInit();
 }
@@ -1065,6 +1067,8 @@ function scheduler() {
     }
     // The step as it sounds: as written, or as the Journey has moved it.
     const played = typeof journeyStep === "function" ? journeyStep(seqStepCount, currentStep) : step;
+    // Accompany plays at every boundary, rest or not (accompany.js).
+    if (typeof accompanyAt === "function") accompanyAt(seqStepCount, nextNoteTime);
     if (!played.rest) {
       const freq = seqPlayAt(played, nextNoteTime, stepDur);
       // Update UI
@@ -1139,6 +1143,7 @@ function togglePlay() {
     document.getElementById("playBtn").classList.remove("active");
     // A pause ends a take, as a stop does.
     if (typeof perfRec !== "undefined" && perfRec && typeof perfRecStop === "function") perfRecStop();
+    if (typeof accompanyStop === "function") accompanyStop();
   } else {
     isPlaying = true;
     currentStep = 0;
@@ -1155,6 +1160,7 @@ function togglePlay() {
 function stopSeq() {
   isPlaying = false;
   clearTimeout(schedulerTimer);
+  if (typeof accompanyStop === "function") accompanyStop();
   if (typeof perfRec !== "undefined" && perfRec && typeof perfRecStop === "function") perfRecStop();
   currentStep = 0;
   document.getElementById("playBtn").textContent = "▶ PLAY";
@@ -2362,6 +2368,7 @@ function getPresetState() {
     "reverbSpreadSlider",
     ...(typeof ATMOS_SLIDER_IDS !== "undefined" ? ATMOS_SLIDER_IDS : []),
     ...(typeof JOURNEY_SLIDER_IDS !== "undefined" ? JOURNEY_SLIDER_IDS : []),
+    ...(typeof ACCOMPANY_SLIDER_IDS !== "undefined" ? ACCOMPANY_SLIDER_IDS : []),
   ];
   const selectIds = [
     "dirSelect",
@@ -2379,6 +2386,7 @@ function getPresetState() {
     "tapeSpeedSelect",
     ...(typeof ATMOS_SELECT_IDS !== "undefined" ? ATMOS_SELECT_IDS : []),
     ...(typeof JOURNEY_SELECT_IDS !== "undefined" ? JOURNEY_SELECT_IDS : []),
+    ...(typeof ACCOMPANY_SELECT_IDS !== "undefined" ? ACCOMPANY_SELECT_IDS : []),
   ];
   const state = {
     sliders: {},
@@ -2636,6 +2644,7 @@ function morphToPreset(id) {
     "reverbSpreadSlider",
     ...(typeof ATMOS_SLIDER_IDS !== "undefined" ? ATMOS_SLIDER_IDS : []),
     ...(typeof JOURNEY_MORPH_IDS !== "undefined" ? JOURNEY_MORPH_IDS : []),
+    ...(typeof ACCOMPANY_SLIDER_IDS !== "undefined" ? ACCOMPANY_SLIDER_IDS : []),
   ];
 
   // Snapshot start values
@@ -2667,6 +2676,8 @@ function morphToPreset(id) {
     "lfo3TargetSelect",
     "delayTimeSelect",
     "tapeSpeedSelect",
+    // Accompany's switches move at once, as the others here do (accompany.js).
+    ...(typeof ACCOMPANY_SELECT_IDS !== "undefined" ? ACCOMPANY_SELECT_IDS : []),
   ];
   SELECT_IDS.forEach((sid) => {
     const el = document.getElementById(sid);

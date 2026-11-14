@@ -879,6 +879,8 @@ async function flush() {
           }
         });
         if (waveType === 'pulse') currentPW = Math.max(0.05, Math.min(0.95, pulseWidth + pwMod));
+        // Accompany at every boundary, as the scheduler plays it (accompany.js).
+        if (time >= 0 && typeof accompanyAt === 'function') accompanyAt(k, time);
         if (step && !step.rest && time >= 0) seqPlayAt(step, time, d);
         k++;
       }

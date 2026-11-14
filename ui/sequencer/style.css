@@ -442,6 +442,33 @@ body.atmos-mode .at-only { display: grid !important; }
 body:not(.journey-on) .journey .j-knobs,
 body:not(.journey-on) .journey .j-kinds { opacity: 0.5; }
 
+/* ─── ACCOMPANY ───────────────────────────────────────────────────────────── */
+.accompany .ph .seg button { height: 20px; font-size: 10px; padding: 0 8px; }
+.accompany .ph > .meta:first-of-type { flex: 0 1 auto; min-width: 0; }
+.ac-bar { color: var(--f-pitch); font-size: 10px; flex: 0 1 auto; min-width: 0; margin-right: 14px; }
+.ac-parts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ac-part {
+  border-radius: var(--r-m);
+  background: var(--look-well);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--look-line);
+  padding: 6px 8px 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "pt pt" "roll roll" "pat knobs";
+  gap: 5px 8px;
+  align-items: center;
+  min-width: 0;
+}
+.ac-pt { grid-area: pt; display: flex; align-items: center; gap: 7px; font: 600 10px var(--mono); letter-spacing: 0.14em; color: var(--look-text); }
+.ac-pt b { font-weight: 600; }
+.ac-part.on .ac-pt b { color: var(--fc); }
+.ac-roll { grid-area: roll; height: 30px; border-radius: 4px; background: rgba(255, 255, 255, 0.03); overflow: hidden; }
+.ac-roll canvas { display: block; width: 100%; height: 100%; }
+.ac-pat { grid-area: pat; height: 24px; min-width: 0; width: 100%; font-size: 11px; }
+.ac-knobs { grid-area: knobs; display: flex; gap: 0; }
+.ac-knobs .knob-group { width: 54px; }
+.ac-part:not(.on) > :not(.ac-pt) { opacity: 0.45; }
+
 /* ─── THE SCOPES ──────────────────────────────────────────────────────────── */
 .scope canvas { display: block; width: 100%; height: 100%; }
 .scope-osc { height: 58px; }
@@ -515,6 +542,7 @@ body.compact .step-row-label,
 body.compact .step:not(.active-step),
 body.compact .scope-out,
 body.compact .journey,
+body.compact .accompany,
 body.compact .scope-osc { display: none !important; }
 body.compact .step { padding: 3px 2px; gap: 1px; }
 body.compact .step-note { font-size: 14px; }

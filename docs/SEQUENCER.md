@@ -499,3 +499,48 @@ keeps pulling them. Each frame draws three periods of the note last played from
 a rising zero crossing, scaled to fill its well. Silent, a scope keeps what it
 last showed, dimmed ("last heard"); before anything has played, Classic's and
 the simple kinds' show the shape they are set to ("as set").
+
+## Accompany
+
+*14 Nov 2026.* RJ: "do some auto accompaniment stuff". The plan is
+`WORK DIR/page-mockups/SEQ-JOURNEY-PLAN.md` §3; the mock-up `seq-journey.html`.
+`ui/sequencer/accompany.js` (ours, `/sequencer/accompany.js`).
+
+- **Four parts**, each with a power button, a pattern, a Level and one more
+  knob: **Bass** (root, root – fifth, or a walk to the next bar's root, on the
+  beat; Octave −1 or −2), **Chords** (triads, sevenths or fourths, each bar or
+  held until they change; Spread lifts the upper notes an octave at a time),
+  **Arp** (the chord up, down, up-down or random at 1/8, 1/16 or 1/32, over
+  Range octaves), **Drone** (root, or root and fifth, an octave down, held
+  until the root moves, eight bars at most; Swell, ¼ bar to 8 bars, is its
+  attack and release, so one drone swells in as the last swells out). All off
+  by default, so nothing sounds different until one is turned on.
+- **In the scale's own tuning.** Every note is the scale's cents from the root.
+  A seven-note scale stacks every other degree (every third for fourths); any
+  other stacks the degree nearest 350¢ (500¢) above, so a pentatonic gets
+  C E G, not C D E. Tested: in Ptolemy's just major the chord's third sounds
+  at 386.3¢, within a cent, in an offline render.
+- **Follows** the melody (the bar's notes weighed by where they fall and how
+  long they last; the chord is the one that holds the strongest, the home
+  chords first when it is close) or the Journey's root. Either way a Journey
+  that moves to a family scale is played in it. Random direction is read as
+  forward for this, since its notes cannot be known ahead.
+- **Worked out, not rolled.** `acPlan(k, jump)` is what plays in boundary `k`'s
+  step, from `k`, the settings, the steps and the Journey; the random arp is a
+  hash of the note's index. The scheduler and the film's render (bridge.js)
+  call `accompanyAt` at every boundary, rest or not. A boundary that does not
+  follow the last (Play, a seek, the loop's wrap) lets go of what was held and
+  starts the bar's chord and drone from there. Stop and pause let go too
+  (`accompanyStop`).
+- **The sound** (RJ, 14 Nov: not through the melody's filter). Chords and Drone
+  play Atmosphere's voice (`atmosPlay(…, { ac: true })`) through a character
+  chain of their own (`atAc`: warmth, wow, ensemble) and from a pool of their
+  own (24 notes), so a chord never takes a melody note's place and never moves
+  the melody's glide or the oscillator scopes. Bass (a sine under a triangle)
+  and Arp (a plucked triangle) are plain voices here. All four go to `acBus`,
+  which feeds what the filter feeds: the dry path, the delay and Space.
+- The panel's rolls draw the bar the transport is in, every part as it would
+  play; its header names the bar's chord in degrees and cents. Presets, morphs
+  (knobs glide, switches move at once) and the recorder carry it all.
+
+Tests: `tests/ui/sequencer-accompany.spec.mjs`.

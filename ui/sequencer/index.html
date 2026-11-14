@@ -240,6 +240,9 @@
           <!-- THE JOURNEY (journey.js fills it) -->
           <section class="panel journey" id="journeyHost"></section>
 
+          <!-- ACCOMPANY (accompany.js fills it) -->
+          <section class="panel accompany" id="accompanyHost"></section>
+
           <!-- STEPS -->
           <section class="panel seq-panel">
             <div class="ph"><b class="nm">STEPS</b><span class="meta">up to 64, four rows of 16 · click a step for ◀ ▶ degree · ▼ ▲ octave · RST · ▶ (or the arrow keys, R, Enter) · underlined: moved by the journey</span><span class="grow"></span><button type="button" class="btn" onclick="stepsCopyFirstRow()" title="Steps 1–16 copied to 17–64">Copy row 1 to all</button><button type="button" class="btn" onclick="stepsClear()" title="Every step back to the root">Clear</button></div>
@@ -308,6 +311,8 @@
     <!-- Ours: the Journey, and the oscillators' and the output's scopes. -->
     <script src="journey.js"></script>
     <script src="scopes.js"></script>
+    <!-- Ours: Accompany, bass, chords, arp and drone from the scale's degrees. -->
+    <script src="accompany.js"></script>
     <script src="performance.js"></script>
     <!-- Not part of the sequencer: the bridge to the granular engine it is
          embedded in. Does nothing when the page is opened on its own. -->

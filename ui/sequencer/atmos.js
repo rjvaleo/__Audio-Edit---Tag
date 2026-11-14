@@ -365,6 +365,12 @@ let atNoise = null, atIn = null, atShaper = null, atWow = null, atWowLfo = null,
   atEnsLfos = [], atPost = null, atSymIn = null, atSymBank = [], atSymOut = null, atSymKey = "", atBus = {}, atVoices = [], atRev = null,
   atPrevFreq = 0, atWaveCache = null, atFrozen = false;
 const AT_MAX_VOICES = 16;
+// Accompany's Chords and Drone (accompany.js) play this voice too, through a
+// character chain of their own that leaves for the delay and Space without
+// passing the melody's filter, and from a pool of their own, so a chord never
+// takes a melody note's place.
+let atAc = null, atAcVoices = [];
+const AT_AC_MAX_VOICES = 24;
 
 /// Built once per context, by `initAudio`.
 function atmosInit() {
@@ -376,36 +382,13 @@ function atmosInit() {
   let seed = 12345;
   for (let i = 0; i < nd.length; i++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; nd[i] = (seed / 0x3fffffff) - 1; }
   atWaveCache = new Map();
-  atIn = c.createGain();
-  atShaper = c.createWaveShaper();
-  atShaper.oversample = "2x";
-  atWow = c.createDelay(0.1);
-  atWow.delayTime.value = 0.012;
-  atWowLfo = atLfo(0.6, 0);
-  atFlutLfo = atLfo(6.8, 0);
-  atWowLfo.out.connect(atWow.delayTime);
-  atFlutLfo.out.connect(atWow.delayTime);
-  atIn.connect(atShaper);
-  atShaper.connect(atWow);
-  // Ensemble: three slowly swept delays, left, centre and right, beside the dry.
-  atPost = c.createGain();
-  atEnsDry = c.createGain();
-  atEnsWet = c.createGain();
-  atWow.connect(atEnsDry);
-  atEnsDry.connect(atPost);
-  atEnsLfos = [];
-  [[0.011, -0.7, 1], [0.017, 0, 1.13], [0.023, 0.7, 0.87]].forEach(([base, pan, rate]) => {
-    const d = c.createDelay(0.1), p = c.createStereoPanner(), l = atLfo(0.3 * rate, 0);
-    d.delayTime.value = base;
-    l.out.connect(d.delayTime);
-    p.pan.value = pan;
-    atWow.connect(d);
-    d.connect(p);
-    p.connect(atEnsWet);
-    atEnsLfos.push({ l, rate });
-  });
-  atEnsWet.connect(atPost);
+  const ch = atCharChain(c);
+  ({ inp: atIn, shaper: atShaper, wow: atWow, wowLfo: atWowLfo, flutLfo: atFlutLfo, ensDry: atEnsDry, ensWet: atEnsWet, ensLfos: atEnsLfos, post: atPost } = ch);
   atPost.connect(filterNode);
+  // Accompany's chain: the same character, its output left for accompany.js
+  // to take to the delay and Space.
+  atAc = atCharChain(c);
+  atAcVoices = [];
   // Sympathy: resonators tuned to the scale, fed by the voice.
   atSymIn = c.createGain();
   atSymOut = c.createGain();
@@ -431,6 +414,41 @@ function atmosInit() {
   if (typeof lfos !== "undefined") lfos.forEach((l, i) => { if (String(l.target).startsWith("at-")) connectLFO(i); });
 }
 
+/// Character: warmth, tape wow, and the ensemble (three slowly swept delays,
+/// left, centre and right, beside the dry). `.inp` in, `.post` out.
+function atCharChain(c) {
+  const ch = {};
+  ch.inp = c.createGain();
+  ch.shaper = c.createWaveShaper();
+  ch.shaper.oversample = "2x";
+  ch.wow = c.createDelay(0.1);
+  ch.wow.delayTime.value = 0.012;
+  ch.wowLfo = atLfo(0.6, 0);
+  ch.flutLfo = atLfo(6.8, 0);
+  ch.wowLfo.out.connect(ch.wow.delayTime);
+  ch.flutLfo.out.connect(ch.wow.delayTime);
+  ch.inp.connect(ch.shaper);
+  ch.shaper.connect(ch.wow);
+  ch.post = c.createGain();
+  ch.ensDry = c.createGain();
+  ch.ensWet = c.createGain();
+  ch.wow.connect(ch.ensDry);
+  ch.ensDry.connect(ch.post);
+  ch.ensLfos = [];
+  [[0.011, -0.7, 1], [0.017, 0, 1.13], [0.023, 0.7, 0.87]].forEach(([base, pan, rate]) => {
+    const d = c.createDelay(0.1), p = c.createStereoPanner(), l = atLfo(0.3 * rate, 0);
+    d.delayTime.value = base;
+    l.out.connect(d.delayTime);
+    p.pan.value = pan;
+    ch.wow.connect(d);
+    d.connect(p);
+    p.connect(ch.ensWet);
+    ch.ensLfos.push({ l, rate });
+  });
+  ch.ensWet.connect(ch.post);
+  return ch;
+}
+
 /// A sine LFO into a gain: `.out` to connect, `.gain` its depth.
 function atLfo(rate, depth) {
   const c = audioCtx, o = c.createOscillator(), g = c.createGain();
@@ -447,14 +465,19 @@ function atmosApplyGlobal() {
   const now = audioCtx.currentTime, smooth = (p, v) => p.setTargetAtTime(v, now, 0.03);
   const warm = (AT.atWarm ?? 15) / 100, k = 1 + warm * 5, n = 1024, curve = new Float32Array(n);
   for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = warm <= 0.001 ? x : Math.tanh(k * x) / Math.tanh(k); }
-  atShaper.curve = curve;
   const wow = (AT.atWow ?? 15) / 100;
-  smooth(atWowLfo.out.gain, wow * 0.004);
-  smooth(atFlutLfo.out.gain, wow * 0.0004);
   const ens = (AT.atEns ?? 40) / 100, rate = atExp(AT.atEnsRate ?? 40, 0.05, 2);
-  smooth(atEnsWet.gain, ens * 0.75);
-  smooth(atEnsDry.gain, 1 - ens * 0.3);
-  for (const { l, rate: r } of atEnsLfos) { smooth(l.osc.frequency, rate * r); smooth(l.out.gain, 0.0035 * ens); }
+  // The melody's chain and Accompany's, alike.
+  const chains = [{ shaper: atShaper, wowLfo: atWowLfo, flutLfo: atFlutLfo, ensDry: atEnsDry, ensWet: atEnsWet, ensLfos: atEnsLfos }];
+  if (atAc) chains.push(atAc);
+  for (const ch of chains) {
+    ch.shaper.curve = curve;
+    smooth(ch.wowLfo.out.gain, wow * 0.004);
+    smooth(ch.flutLfo.out.gain, wow * 0.0004);
+    smooth(ch.ensWet.gain, ens * 0.75);
+    smooth(ch.ensDry.gain, 1 - ens * 0.3);
+    for (const { l, rate: r } of ch.ensLfos) { smooth(l.osc.frequency, rate * r); smooth(l.out.gain, 0.0035 * ens); }
+  }
   smooth(atSymIn.gain, ((AT.atSym ?? 30) / 100) * 0.9);
   atSpaceApply();
   atSymKey = ""; // ring, material or tuning may have changed: retune on the next note
@@ -604,20 +627,28 @@ function atmosNoteDur(stepDur) {
 }
 
 /// Play one note at `freq` (true pitch, from the scale) at `time` for `dur`.
-function atmosPlay(freq, time, dur) {
+/// Accompany (accompany.js) passes `o`: `ac` plays it into Accompany's chain
+/// and pool, past the filter; `gain` scales it; `atk` and `rel`, in seconds,
+/// stand in for the envelope's (the drone's Swell). Its notes do not glide,
+/// move the melody's glide, or show on the oscillators' scopes.
+function atmosPlay(freq, time, dur, o = null) {
   const c = audioCtx;
   if (!c || !atIn) return;
+  const ac = !!(o && o.ac && atAc);
   atmosRetuneSympathy();
   // Notes the context has finished playing let go of the buses; the oldest
   // still sounding at `time` fades if there are too many.
   const now = c.currentTime;
-  for (const old of atVoices) if (old.end < now) atCleanup(old);
-  atVoices = atVoices.filter((old) => !old.cleaned);
-  const sounding = atVoices.filter((old) => old.end > time);
-  while (sounding.length >= AT_MAX_VOICES) atStealOldest(sounding.shift(), time);
-  const v = { srcs: [], links: [], end: 0 };
-  const a = atExp(AT.atAtk, 1, 10000) / 1000, d = atExp(AT.atDec, 1, 10000) / 1000, s = AT.atSus / 100, r = atExp(AT.atRel, 10, 20000) / 1000;
-  const peak = 0.32 * (AT.atVol / 100);
+  let pool = ac ? atAcVoices : atVoices;
+  for (const old of pool) if (old.end < now) atCleanup(old);
+  pool = pool.filter((old) => !old.cleaned);
+  if (ac) atAcVoices = pool; else atVoices = pool;
+  const sounding = pool.filter((old) => old.end > time);
+  while (sounding.length >= (ac ? AT_AC_MAX_VOICES : AT_MAX_VOICES)) atStealOldest(sounding.shift(), time);
+  const v = { srcs: [], links: [], end: 0, start: time };
+  const a = o && o.atk != null ? o.atk : atExp(AT.atAtk, 1, 10000) / 1000, d = atExp(AT.atDec, 1, 10000) / 1000, s = AT.atSus / 100;
+  const r = o && o.rel != null ? o.rel : atExp(AT.atRel, 10, 20000) / 1000;
+  const peak = 0.32 * (AT.atVol / 100) * (o && o.gain != null ? o.gain : 1);
   const env = c.createGain();
   env.gain.setValueAtTime(0, time);
   env.gain.setTargetAtTime(peak, time, Math.max(0.001, a / 3));
@@ -626,7 +657,7 @@ function atmosPlay(freq, time, dur) {
   env.gain.setTargetAtTime(0, time + dur, Math.max(0.004, r / 5));
   v.end = time + dur + r * 1.25 + 0.05;
   v.env = env;
-  env.connect(atIn);
+  env.connect(ac ? atAc.inp : atIn);
   // Blend: equal power, and the bus an LFO can sweep it with.
   const b = AT.atBlend / 100, gA = c.createGain(), gB = c.createGain(), inv = c.createGain();
   gA.gain.value = Math.cos(b * Math.PI / 2);
@@ -636,7 +667,7 @@ function atmosPlay(freq, time, dur) {
   const fwd = c.createGain(); fwd.gain.value = 0.7; atLink(v, atBus.blend, fwd); fwd.connect(gB.gain);
   gA.connect(env); gB.connect(env);
   // Each oscillator to its own scope (scopes.js), on its own.
-  if (typeof scopeTap === "function") { scopeTap("A", gA); scopeTap("B", gB); }
+  if (!ac && typeof scopeTap === "function") { scopeTap("A", gA); scopeTap("B", gB); }
   // A slow wander shared by every oscillator in the note: drift.
   const drift = AT.atDrift / 100;
   const dl = c.createOscillator(), dg = c.createGain();
@@ -645,8 +676,8 @@ function atmosPlay(freq, time, dur) {
   dl.connect(dg);
   atStart(v, dl, time, v.end);
   // Glide: from where the last note was.
-  const glide = AT.atGlide <= 0 ? 0 : atExp(AT.atGlide, 5, 2000) / 1000, from = glide > 0 && atPrevFreq > 0 ? atPrevFreq / freq : 1;
-  atPrevFreq = freq;
+  const glide = ac || AT.atGlide <= 0 ? 0 : atExp(AT.atGlide, 5, 2000) / 1000, from = glide > 0 && atPrevFreq > 0 ? atPrevFreq / freq : 1;
+  if (!ac) atPrevFreq = freq;
   const ctx = { v, time, end: v.end, dur, dg, glide, from };
   for (const [w, dest] of [["A", gA], ["B", gB]]) {
     const kind = AT["kind" + w], oct = AT[`at${w}Oct`] || 0;
@@ -668,7 +699,7 @@ function atmosPlay(freq, time, dur) {
     atLink(v, atBus.air, g.gain);
     n.connect(hp); hp.connect(g); g.connect(env);
   }
-  atVoices.push(v);
+  (ac ? atAcVoices : atVoices).push(v);
 }
 
 function atStealOldest(v, time) {
