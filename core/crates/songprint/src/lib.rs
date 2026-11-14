@@ -14,6 +14,7 @@ pub mod features;
 pub mod json;
 pub mod pitch;
 pub mod rhythm;
+pub mod sound;
 
 use features::{Features, COARSE_HOP, COARSE_N, DECIMATE, FINE_HOP, FINE_N};
 use json::J;

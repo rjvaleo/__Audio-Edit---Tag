@@ -27,6 +27,7 @@ pub mod retention;
 pub mod safety;
 pub mod serve;
 pub mod state;
+pub mod stems;
 pub mod usertags;
 /// The Wave page's synth: `/api/wave/*`. See `docs/WAVE-SYNTH.md`.
 pub mod wave_synth;

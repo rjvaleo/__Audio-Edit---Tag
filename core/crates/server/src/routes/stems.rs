@@ -1,0 +1,399 @@
+//! The Stems page: split a song, read what is in it, teach the Band, and make
+//! sounds from the stems.
+//!
+//! Stems go into the library, `Stems/<song>/drums.wav` and so on, beside an
+//! analysis (`songprint.json`, `summary.md`, `card.json`) and `stems.json`
+//! (where it came from). Sounds made from them go to `Made/<kind>/`. Tries
+//! (cut but not kept) sit in the song's hidden `.tries/` folder.
+
+use super::*;
+use crate::stems::{self, StemsJob};
+use songprint::sound;
+
+fn job(app: &Arc<App>) -> &StemsJob {
+    &app.stems
+}
+
+fn body(req: &Request) -> Option<Value> {
+    json::parse(&String::from_utf8_lossy(&req.body))
+}
+
+fn learn_dir(app: &Arc<App>) -> PathBuf {
+    app.data_dir.join("BAND-LEARN")
+}
+
+/// `Stems/<name>` from a request, checked to be a song folder in the library.
+fn song_dir(app: &Arc<App>, rel: &str) -> Result<(PathBuf, PathBuf, String), Response> {
+    let Some(lib) = app.library_path() else { return Err(Response::error(400, "no library chosen")) };
+    if !rel.starts_with("Stems/") {
+        return Err(Response::error(400, "not a stems folder"));
+    }
+    let Some(dir) = resolve_within(&lib, rel) else { return Err(Response::error(404, "no such stems folder")) };
+    if !dir.is_dir() {
+        return Err(Response::error(404, "no such stems folder"));
+    }
+    let name = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    Ok((lib, dir, name))
+}
+
+pub(super) fn api_stems_status(app: &Arc<App>) -> Response {
+    let j = job(app);
+    let exe = stems::demucs_path();
+    let models: Vec<Value> = stems::MODELS.iter().map(|(id, label)| Value::obj().set("id", *id).set("label", *label)).collect();
+    Response::json(
+        Value::obj()
+            .set("running", j.running.load(Ordering::Relaxed))
+            .set("progress", j.progress.load(Ordering::Relaxed) as f64 / 1000.0)
+            .set("phase", stems::get(&j.phase))
+            .set("song", stems::get(&j.song))
+            .set("source", stems::get(&j.source))
+            .set("error", stems::get(&j.error))
+            .set("serial", j.serial.load(Ordering::Relaxed))
+            .set("elapsed", j.elapsed())
+            .set("tookMs", j.took_ms.load(Ordering::Relaxed))
+            .set("helper", exe.is_some())
+            .set("helperPath", exe.map(|p| p.display().to_string()))
+            .set("models", models)
+            .to_string(),
+    )
+}
+
+pub(super) fn api_stems_stop(app: &Arc<App>) -> Response {
+    job(app).stop();
+    job(app).say("stopping");
+    Response::json(Value::obj().set("ok", true).to_string())
+}
+
+/// POST {p, model}: split a library file. Answers at once; poll `/api/stems`.
+pub(super) fn api_stems_split(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(rel) = v.get("p").and_then(|p| p.as_str()).map(str::to_string) else { return Response::error(400, "no file given") };
+    let model = v.get("model").and_then(|m| m.as_str()).unwrap_or("htdemucs").to_string();
+    if !stems::MODELS.iter().any(|(id, _)| *id == model) {
+        return Response::error(400, "unknown model");
+    }
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let Some(src) = resolve_within(&lib, &rel) else { return Response::error(404, "no such file in the library") };
+    let Some(exe) = stems::demucs_path() else {
+        return Response::error(503, "the stem splitter (demucs) is not installed: put it in the models folder, or set AUDIOLAB_DEMUCS");
+    };
+    let name = crate::docs::safe_name(&stems::song_name(&src));
+    if name.is_empty() {
+        return Response::error(400, "no name for that file");
+    }
+    let song_rel = format!("Stems/{name}");
+    let Some(out) = resolve_for_write(&lib, &song_rel).or_else(|| {
+        let _ = std::fs::create_dir_all(lib.join("Stems"));
+        resolve_for_write(&lib, &song_rel)
+    }) else {
+        return Response::error(400, "cannot write there");
+    };
+    if job(app).running.swap(true, Ordering::SeqCst) {
+        return Response::error(409, "a split is already running");
+    }
+    job(app).begin(&rel, &song_rel);
+    let app2 = Arc::clone(app);
+    std::thread::spawn(move || {
+        let j = job(&app2);
+        let t0 = std::time::Instant::now();
+        let outcome = (|| -> Result<(), String> {
+            std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+            stems::separate(j, &exe, &src, &out, &model, 0.85)?;
+            let secs = t0.elapsed().as_secs_f64();
+            let meta = Value::obj()
+                .set("source", rel.clone())
+                .set("model", model.clone())
+                .set("splitSeconds", (secs * 10.0).round() / 10.0)
+                .set("made", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
+            std::fs::write(out.join("stems.json"), meta.to_string()).map_err(|e| e.to_string())?;
+            j.say("reading what is in it");
+            j.set_progress(0.88);
+            analyse_into(&src, &out, &name, &|m: &str| j.say(m))?;
+            Ok(())
+        })();
+        match outcome {
+            Ok(()) => {
+                j.set_progress(1.0);
+                j.say("done");
+            }
+            Err(e) => {
+                j.fail(&e);
+                j.say(if j.cancel.load(Ordering::SeqCst) { "stopped" } else { "failed" });
+            }
+        }
+        reindex_for(&app2, "Stems/");
+        j.took_ms.store(t0.elapsed().as_millis() as u64, Ordering::Relaxed);
+        j.serial.fetch_add(1, Ordering::Relaxed);
+        j.running.store(false, Ordering::SeqCst);
+    });
+    Response::json(Value::obj().set("ok", true).set("song", song_rel).to_string())
+}
+
+/// Read the stems and write `songprint.json`, `summary.md` and a small `card.json`.
+fn analyse_into(src: &Path, out: &Path, title: &str, say: &dyn Fn(&str)) -> Result<(), String> {
+    let mut log = |m: &str| say(m);
+    let r = songprint::analyse(title, src, out, &mut log)?;
+    let text = r.json.to_string_pretty();
+    std::fs::write(out.join("songprint.json"), &text).map_err(|e| e.to_string())?;
+    std::fs::write(out.join("summary.md"), &r.summary).map_err(|e| e.to_string())?;
+    let v = json::parse(&text).unwrap_or(Value::Null);
+    let num = |a: &Value, k: &str| match a.get(k) {
+        Some(Value::Num(n)) => *n,
+        _ => 0.0,
+    };
+    let tempo = v.get("tempo").map(|t| num(t, "bpm")).unwrap_or(0.0);
+    let key = v.get("key").and_then(|k| k.get("name")).and_then(|n| n.as_str()).unwrap_or("").to_string();
+    let card = Value::obj()
+        .set("bpm", tempo)
+        .set("key", key)
+        .set("bars", num(&v, "bar_count"))
+        .set("seconds", num(&v, "duration_s"))
+        .set("sections", v.get("sections").and_then(|s| s.arr()).map_or(0, |a| a.len()));
+    std::fs::write(out.join("card.json"), card.to_string()).map_err(|e| e.to_string())
+}
+
+/// GET: every split song.
+pub(super) fn api_stems_list(app: &Arc<App>) -> Response {
+    let Some(lib) = app.library_path() else { return Response::json("[]".into()) };
+    let mut rows = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(lib.join("Stems")) {
+        let mut dirs: Vec<PathBuf> = rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir() && p.join("drums.wav").is_file()).collect();
+        dirs.sort_by_key(|p| std::fs::metadata(p.join("drums.wav")).and_then(|m| m.modified()).ok());
+        dirs.reverse();
+        for d in dirs {
+            let name = d.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let read = |f: &str| std::fs::read_to_string(d.join(f)).ok().and_then(|t| json::parse(&t)).unwrap_or(Value::Null);
+            rows.push(
+                Value::obj()
+                    .set("p", format!("Stems/{name}"))
+                    .set("name", name.clone())
+                    .set("meta", read("stems.json"))
+                    .set("card", read("card.json"))
+                    .set("analysed", d.join("songprint.json").is_file())
+                    .set("learnt", learn_dir(app).join(format!("{name}.json")).is_file()),
+            );
+        }
+    }
+    Response::json(Value::Arr(rows).to_string())
+}
+
+/// GET ?p=Stems/<song>: its files, where it came from, and the whole analysis.
+pub(super) fn api_stems_info(app: &Arc<App>, req: &Request) -> Response {
+    let (_, dir, name) = match song_dir(app, req.param("p").unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let analysis = std::fs::read_to_string(dir.join("songprint.json")).unwrap_or_else(|_| "null".into());
+    let meta = std::fs::read_to_string(dir.join("stems.json")).unwrap_or_else(|_| "null".into());
+    let files: Vec<Value> = stems::STEMS
+        .iter()
+        .chain(["guitar", "piano"].iter())
+        .filter(|s| dir.join(format!("{s}.wav")).is_file())
+        .map(|s| Value::obj().set("stem", *s).set("p", format!("Stems/{name}/{s}.wav")))
+        .collect();
+    let learnt = learn_dir(app).join(format!("{name}.json")).is_file();
+    Response::json(format!(
+        "{{\"p\":{},\"name\":{},\"learnt\":{},\"files\":{},\"meta\":{},\"analysis\":{}}}",
+        Value::from(format!("Stems/{name}")).to_string(),
+        Value::from(name.clone()).to_string(),
+        learnt,
+        Value::Arr(files).to_string(),
+        meta,
+        analysis
+    ))
+}
+
+/// POST {p, gains: [drums, bass, vocals, other]}: the stems summed at those
+/// levels into the song's hidden `.mix.wav`, to play with some muted or soloed.
+pub(super) fn api_stems_mix(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let (_, dir, name) = match song_dir(app, v.get("p").and_then(|p| p.as_str()).unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let gains: Vec<f32> = v.get("gains").and_then(|g| g.arr()).map(|a| a.iter().map(|x| if let Value::Num(n) = x { *n as f32 } else { 0.0 }).collect()).unwrap_or_default();
+    let mut mix: Option<sound::Sound> = None;
+    for (i, s) in stems::STEMS.iter().enumerate() {
+        let g = gains.get(i).copied().unwrap_or(1.0);
+        let path = dir.join(format!("{s}.wav"));
+        let Ok(snd) = sound::read_span(&path, 0.0, 1e6) else { continue };
+        match mix.as_mut() {
+            None => mix = Some(sound::Sound { rate: snd.rate, channels: snd.channels, x: snd.x.iter().map(|x| x * g).collect() }),
+            Some(m) => {
+                for (a, b) in m.x.iter_mut().zip(&snd.x) {
+                    *a += b * g;
+                }
+            }
+        }
+    }
+    let Some(m) = mix else { return Response::error(404, "no stems to mix") };
+    if let Err(e) = sound::write_wav(&dir.join(".mix.wav"), &m) {
+        return Response::error(500, &e.to_string());
+    }
+    Response::json(Value::obj().set("p", format!("Stems/{name}/.mix.wav")).to_string())
+}
+
+/// POST {p}: give the Seq page's Band this song to learn from (its analysis,
+/// copied into the app's data). {p, forget: true} takes it back.
+pub(super) fn api_stems_learn(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let (_, dir, name) = match song_dir(app, v.get("p").and_then(|p| p.as_str()).unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let to = learn_dir(app).join(format!("{name}.json"));
+    if matches!(v.get("forget"), Some(Value::Bool(true))) {
+        let _ = std::fs::remove_file(&to);
+    } else {
+        let _ = std::fs::create_dir_all(learn_dir(app));
+        if let Err(e) = std::fs::copy(dir.join("songprint.json"), &to) {
+            return Response::error(500, &format!("not analysed yet: {e}"));
+        }
+    }
+    let n = std::fs::read_dir(learn_dir(app)).map(|r| r.filter_map(|e| e.ok()).filter(|e| e.path().extension().is_some_and(|x| x == "json")).count()).unwrap_or(0);
+    Response::json(Value::obj().set("learnt", to.is_file()).set("songs", n).to_string())
+}
+
+/// POST {p, kind: "drums" | "bass", per}: cut tries from a song's stems into its
+/// `.tries/` folder. Drums: the clearest kicks, snares and hats. Bass: the
+/// longest clean notes, one per pitch.
+pub(super) fn api_stems_tries(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let (_, dir, name) = match song_dir(app, v.get("p").and_then(|p| p.as_str()).unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let kind = v.get("kind").and_then(|k| k.as_str()).unwrap_or("drums").to_string();
+    let per = match v.get("per") {
+        Some(Value::Num(n)) => (*n as usize).clamp(1, 16),
+        _ => 4,
+    };
+    let tries = dir.join(".tries");
+    let _ = std::fs::remove_dir_all(&tries);
+    if let Err(e) = std::fs::create_dir_all(&tries) {
+        return Response::error(500, &e.to_string());
+    }
+    let mut out = Vec::new();
+    let mut put = |label: String, snd: sound::Sound, t: f32, group: &str| {
+        let c = sound::clean(&snd, &sound::Clean::default());
+        let file = format!("{} {:02}.wav", group, out.len() + 1);
+        if sound::write_wav(&tries.join(&file), &c).is_ok() {
+            out.push(
+                Value::obj()
+                    .set("p", format!("Stems/{name}/.tries/{file}"))
+                    .set("label", label)
+                    .set("group", group.to_string())
+                    .set("t", (t as f64 * 100.0).round() / 100.0)
+                    .set("seconds", (c.seconds() as f64 * 1000.0).round() / 1000.0),
+            );
+        }
+    };
+    if kind == "drums" {
+        let drums = dir.join("drums.wav");
+        let hits = match sound::find_hits(&drums, per, 2.0) {
+            Ok(h) => h,
+            Err(e) => return Response::error(500, &e),
+        };
+        for h in hits {
+            if let Ok(s) = sound::cut(&drums, h.t, sound::hit_length(h.kind)) {
+                put(format!("{} at {}:{:04.1}", h.kind.name(), (h.t / 60.0) as u32, h.t % 60.0), s, h.t, h.kind.name());
+            }
+        }
+    } else {
+        // Bass notes from the analysis: time from the beat grid, the longest per pitch.
+        let Some(a) = std::fs::read_to_string(dir.join("songprint.json")).ok().and_then(|t| json::parse(&t)) else {
+            return Response::error(400, "not analysed yet");
+        };
+        let beats: Vec<f64> = a.get("beats_s").and_then(|b| b.arr()).map(|b| b.iter().filter_map(|x| if let Value::Num(n) = x { Some(*n) } else { None }).collect()).unwrap_or_default();
+        let o = match a.get("downbeat_beat") {
+            Some(Value::Num(n)) => *n as usize,
+            _ => 0,
+        };
+        let step_t = |bar: usize, step: usize| -> Option<(f64, f64)> {
+            let i = o + 4 * bar + step / 4;
+            let (b0, b1) = (*beats.get(i)?, *beats.get(i + 1)?);
+            Some((b0 + (b1 - b0) * (step % 4) as f64 / 4.0, (b1 - b0) / 4.0))
+        };
+        let notes = a.get("bass").and_then(|b| b.get("notes")).and_then(|n| n.arr()).map(|n| n.to_vec()).unwrap_or_default();
+        let mut best: std::collections::BTreeMap<i32, (f64, f64, f64)> = Default::default(); // midi -> (len_s, t, vel)
+        for n in &notes {
+            let Some(f) = n.arr() else { continue };
+            let g = |i: usize| if let Some(Value::Num(x)) = f.get(i) { *x } else { 0.0 };
+            let (bar, step, len, midi, vel) = (g(0) as usize, g(1) as usize, g(2), g(3), g(4));
+            if len < 2.0 || vel < 0.3 {
+                continue;
+            }
+            let Some((t, sd)) = step_t(bar, step) else { continue };
+            let secs = (len * sd).min(2.0);
+            let e = best.entry(midi.round() as i32).or_insert((0.0, 0.0, 0.0));
+            if secs * vel > e.0 * e.2 {
+                *e = (secs, t, vel);
+            }
+        }
+        let mut picks: Vec<(i32, (f64, f64, f64))> = best.into_iter().collect();
+        picks.sort_by(|a, b| (b.1 .0 * b.1 .2).total_cmp(&(a.1 .0 * a.1 .2)));
+        picks.truncate(per * 2);
+        picks.sort_by_key(|p| p.0);
+        let bass = dir.join("bass.wav");
+        for (midi, (secs, t, _)) in picks {
+            let nm = format!("{}{}", songprint::pitch::NAMES[midi.rem_euclid(12) as usize], midi / 12 - 1);
+            if let Ok(s) = sound::read_span(&bass, t as f32 - 0.01, (t + secs + 0.15) as f32) {
+                put(format!("bass {nm}"), s, t as f32, &format!("bass {nm}"));
+            }
+        }
+    }
+    Response::json(Value::Arr(out).to_string())
+}
+
+/// POST {p: a try, rate, air, above, trimDb, fadeOutMs, peakDb, folder, name}:
+/// clean it, upsample it, and save it to `Made/<folder>/`.
+pub(super) fn api_stems_keep(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let rel = v.get("p").and_then(|p| p.as_str()).unwrap_or("");
+    if !rel.starts_with("Stems/") && !rel.starts_with("Made/") {
+        return Response::error(400, "only tries can be kept");
+    }
+    let Some(src) = resolve_within(&lib, rel) else { return Response::error(404, "no such try") };
+    let num = |k: &str, d: f64| match v.get(k) {
+        Some(Value::Num(n)) => *n,
+        _ => d,
+    };
+    let Ok(snd) = sound::read_span(&src, 0.0, 600.0) else { return Response::error(500, "could not read the try") };
+    let c = sound::clean(
+        &snd,
+        &sound::Clean {
+            trim_db: num("trimDb", -60.0) as f32,
+            fade_in_ms: 2.0,
+            fade_out_ms: num("fadeOutMs", 20.0) as f32,
+            peak_db: Some(num("peakDb", -1.0) as f32),
+        },
+    );
+    let rate = num("rate", 0.0) as u32;
+    let out = if rate >= 8000 && rate <= 192_000 {
+        let up = sound::upsample(&c, rate, num("air", 0.0).clamp(0.0, 1.0) as f32, num("above", 11_000.0) as f32);
+        // the exciter can push the peak over; bring it back to the asked level
+        sound::clean(&up, &sound::Clean { trim_db: -120.0, fade_in_ms: 0.0, fade_out_ms: 0.0, peak_db: Some(num("peakDb", -1.0) as f32) })
+    } else {
+        c
+    };
+    let folder = crate::docs::safe_name(v.get("folder").and_then(|f| f.as_str()).unwrap_or("Sounds"));
+    let base = crate::docs::safe_name(v.get("name").and_then(|f| f.as_str()).unwrap_or("sound"));
+    let dir = lib.join("Made").join(if folder.is_empty() { "Sounds".into() } else { folder.clone() });
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return Response::error(500, &e.to_string());
+    }
+    let path = crate::capture::unique(dir.join(format!("{}.wav", if base.is_empty() { "sound" } else { &base })));
+    if let Err(e) = sound::write_wav(&path, &out) {
+        return Response::error(500, &e.to_string());
+    }
+    reindex_for(app, "Made/");
+    let rel_out = path.strip_prefix(lib.canonicalize().unwrap_or(lib.clone())).or_else(|_| path.strip_prefix(&lib)).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+    Response::json(
+        Value::obj()
+            .set("p", rel_out)
+            .set("rate", out.rate)
+            .set("seconds", (out.seconds() as f64 * 1000.0).round() / 1000.0)
+            .to_string(),
+    )
+}
