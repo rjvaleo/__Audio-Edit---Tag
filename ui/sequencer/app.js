@@ -980,8 +980,9 @@ function compute88Notes() {
   const notes = [];
   for (let midi = 21; midi <= 108; midi++) {
     // Find which octave and degree this midi note falls on
-    // Root is at rootMidi + rootOctave * 12 (roughly)
-    const rootMidiNum = rootMidi + rootOctave * 12;
+    // The root's MIDI note: octave 4's A is 69 (MGL, 14 Nov 2026: it was
+    // rootMidi + rootOctave * 12, an octave low; see updateRoot).
+    const rootMidiNum = rootMidi + (rootOctave + 1) * 12;
     const diff = midi - rootMidiNum;
     // Find closest degree in the scale
     // We need to find which octave and degree
@@ -1837,7 +1838,11 @@ function updateRoot() {
   rootOctave = parseInt(document.getElementById("octaveSelect").value);
   // Compute Hz: MIDI note to Hz
   // A4 = MIDI 69 = 440 Hz
-  const midiNum = rootMidi + rootOctave * 12;
+  // MIDI counts octaves from -1: A4 is 69, 440 Hz. (MGL, 14 Nov 2026: it was
+  // rootMidi + rootOctave * 12, so A4 played A3, 220 Hz, an octave under the
+  // 440 Hz the page starts at, after any change of root or octave, or a preset,
+  // or a film's render, which puts the knobs back.)
+  const midiNum = rootMidi + (rootOctave + 1) * 12;
   rootHz = 440 * Math.pow(2, (midiNum - 69) / 12);
   document.getElementById("rootHzDisplay").textContent = rootHz.toFixed(2);
   const noteNames = ["C", "D", "E", "F", "G", "A", "B"];

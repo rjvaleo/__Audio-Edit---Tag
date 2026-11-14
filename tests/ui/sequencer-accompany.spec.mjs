@@ -279,10 +279,6 @@ test('a film renders the accompaniment, the same notes twice', async ({ page }) 
     await page.evaluate(() => seqRenderForFilm({ at0: 0, seconds: 4, rate: 24000, fps: 10, bands: 16, lo: 20, hi: 20000, liss: 32 }));
     return frame.evaluate(() => __ac.join(' '));
   };
-  // The first render sets the root from its select when it puts the knobs
-  // back (the vendored `updateRoot`: A, octave 4 is 220 Hz, where the page
-  // starts at 440), so the two compared are the second and third.
-  await render();
   const one = await render();
   const two = await render();
   expect(one.split(' ').length, 'the film played no accompaniment').toBeGreaterThan(20);

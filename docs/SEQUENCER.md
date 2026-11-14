@@ -642,3 +642,13 @@ ours, served at `/sequencer/…`).
   grid and the bass line.
 
 Tests: `tests/ui/sequencer-band.spec.mjs` (and `sequencer-accompany.spec.mjs`).
+
+## The root's octave
+
+*14 Nov 2026.* The vendored `updateRoot` counted the root's MIDI note as
+`rootMidi + rootOctave * 12`, so A, octave 4 was MIDI 57: A3, 220 Hz, an octave
+under the 440 Hz the page starts at. Any change of root or octave, a preset, or a
+film's render (which puts the knobs back) dropped the sequencer an octave. It is
+`rootMidi + (rootOctave + 1) * 12` now (A4 = 69 = 440 Hz), and the 88 keys' the
+same. Presets play at the octave they name: an octave above what they played
+once loaded before. Test: `sequencer-band.spec.mjs`, "A, octave 4 is 440 Hz".

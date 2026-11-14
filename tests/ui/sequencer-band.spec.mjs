@@ -230,3 +230,26 @@ test('every drum machine in the library is a kit: the server lists them, their f
   expect(got.isList).toBe(true);
   expect(got.kit).toEqual({ kick: 'TR-909Kick 01.wav', snare: 'TR-909Snare 01.wav', clap: 'TR-909Clap.wav', rim: 'TR-909Rim.wav', ohh: 'TR-909Hat O 01.wav', chh: 'TR-909Hat C 01.wav', ltom: 'LoTom.wav', mtom: 'MidTom.wav', htom: 'HiTom.wav', perc: 'TR-909Ride.wav' });
 });
+
+test('A, octave 4 is 440 Hz: at load, after the root is set again, after a preset, and on the keyboard', async ({ page }) => {
+  await openSeq(page);
+  const got = await page.evaluate(() => {
+    const out = { load: rootHz };
+    updateRoot();
+    out.again = rootHz;
+    applyPresetState(getPresetState());
+    out.preset = rootHz;
+    __set('octaveSelect', '3'); updateRoot(); out.a3 = rootHz;
+    __set('rootSelect', '0'); __set('octaveSelect', '4'); updateRoot(); out.c4 = rootHz;
+    __set('rootSelect', '9'); updateRoot();
+    // The 88 keys from A0 (MIDI 21): A4, MIDI 69, is key 48, at 440 Hz.
+    out.key48 = compute88Notes()[48].hz;
+    return out;
+  });
+  expect(got.load).toBeCloseTo(440, 6);
+  expect(got.again).toBeCloseTo(440, 6);
+  expect(got.preset).toBeCloseTo(440, 6);
+  expect(got.a3).toBeCloseTo(220, 6);
+  expect(got.c4).toBeCloseTo(261.6256, 3);
+  expect(got.key48).toBeCloseTo(440, 6);
+});
