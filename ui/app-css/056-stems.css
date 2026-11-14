@@ -139,3 +139,6 @@ body.stemspage #overview { display: none; }
 /* a song picked, not split yet: its lanes wait, empty */
 .st-lane.st-wait .st-well { opacity: .6; }
 .st-lane.st-wait .st-nm { opacity: .55; }
+/* a stem on its way back from the GPU machine, then landed */
+.st-lane .st-come { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--sc); opacity: .8; transition: width .4s; }
+.st-lane.st-wait.st-in .st-well, .st-lane.st-wait.st-in .st-nm { opacity: 1; }

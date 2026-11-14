@@ -334,6 +334,7 @@ async function stPollStatus() {
   else if (s.error) ph.textContent = s.phase === 'stopped' ? 'Stopped' : `Failed: ${s.error}`;
   else if (s.phase === 'done') ph.textContent = `Done in ${stTime(s.tookMs / 1000)} · ${s.song}`;
   else ph.textContent = '';
+  stFillArriving(s);
   if (ST.serial !== -1 && s.serial !== ST.serial && !s.running) {
     // A run just ended: the list, the library and, if it worked, the song.
     await stRefreshList();
@@ -344,6 +345,35 @@ async function stPollStatus() {
   }
   ST.serial = s.serial;
   if (s.running && state.mode === 'stems') ST.poll = setTimeout(stPollStatus, 500);
+}
+
+/// While the song on the page comes back from the GPU machine, each waiting
+/// lane shows how much of its stem is here, then its waveform the moment it
+/// lands (RJ: "filling in as it comes in").
+function stFillArriving(s) {
+  if (!ST.pending || s.source !== ST.pending.p || !s.song) return;
+  const arrived = new Set(s.arrived || []);
+  const inc = s.incoming || {};
+  for (const lane of document.querySelectorAll('#stLanes .st-lane.st-wait')) {
+    const k = lane.dataset.stem;
+    const meta = lane.querySelector('.st-who .st-meta'), well = lane.querySelector('.st-well');
+    if (arrived.has(k) && !lane.dataset.in) {
+      lane.dataset.in = '1';
+      lane.classList.add('st-in');
+      meta.textContent = 'here · reading the rest';
+      well.innerHTML = `<canvas data-p="${stEsc(`${s.song}/${k}.wav`)}" data-stem="${k}"></canvas>`;
+      stWave(well.querySelector('canvas'), `${s.song}/${k}.wav`, ST_COL[k]);
+    } else if (!arrived.has(k) && inc[k] != null) {
+      const pc = Math.round(inc[k] * 100);
+      meta.textContent = `coming back · ${pc} %`;
+      const empty = well.querySelector('.st-empty');
+      if (empty) empty.textContent = `coming back from the ${ST.gpu || 'GPU machine'}`;
+      if (!well.querySelector('.st-come')) well.insertAdjacentHTML('beforeend', '<i class="st-come"></i>');
+      well.querySelector('.st-come').style.width = `${pc}%`;
+    } else if (!arrived.has(k) && s.running && !lane.dataset.in) {
+      meta.textContent = s.phase || 'waiting for the split';
+    }
+  }
 }
 
 async function stRefreshList() {
