@@ -242,6 +242,7 @@ async function pickScale(name, step) {
                  wsola: state.stretchDraft.wsola,
                  pvsola: state.stretchDraft.pvsola,
                  hybrid: state.stretchDraft.hybrid,
+                 soundhack: state.stretchDraft.soundhack,
                  grain: state.grainDraft,
                  scale: name,
                  ...(step === undefined ? {} : { pitchStep: step }) },

@@ -104,6 +104,7 @@ async function resetEverything() {
                          wsola: { ...WSOLA_DEFAULTS },
                          pvsola: { ...PVSOLA_DEFAULTS },
                          hybrid: { ...HYBRID_DEFAULTS },
+                         soundhack: { ...SOUNDHACK_DEFAULTS },
                          cloud: false, cloudMix: 0.5 };
   const grain = {
     ...GRAIN_DEFAULTS,

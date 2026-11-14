@@ -157,7 +157,8 @@ $('presetDelete').onclick = async () => {
 // would be a second thing to get wrong.
 
 const PM_ENUMS = {
-  algorithm: ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular'],
+  algorithm: ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular', 'soundhack'],
+  version: ['0.888', '0.896'],
   quality: ['draft', 'standard', 'best'],
   splice: ['similar', 'different', 'loudest'],
   shape: ['hann', 'triangle', 'rect'],
@@ -212,6 +213,9 @@ const PM_SCHEMA = [
     ['stretch.hybrid.freqSpan', 'Spread'],
     ['stretch.hybrid.margin', 'Margin'],
     ['stretch.hybrid.fftSize', 'Resolution'],
+  ]],
+  ['SoundHack', [
+    ['stretch.soundhack.version', 'Version', 'version'],
   ]],
   ['Grain shape', [
     ['stretch.grain.rateHz', 'Rate'],

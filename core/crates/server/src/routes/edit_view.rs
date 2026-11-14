@@ -497,6 +497,9 @@ pub(super) fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 // Absent leaves what the document already has, so a client that
                 // does not know about the cloud cannot switch it off by not
                 // mentioning it. Every other field here works the same way.
+                // Left out, it stays as it is, as every engine's own settings do.
+                let soundhack =
+                    crate::persist::soundhack_from(v.get("soundhack"), s.list().stretch.soundhack);
                 let cloud = match v.get("cloud") {
                     Some(Value::Bool(b)) => *b,
                     _ => s.list().stretch.cloud,
@@ -508,7 +511,7 @@ pub(super) fn api_edit_apply(app: &Arc<App>, req: &Request) -> Response {
                 s.apply(|l| {
                     l.stretch = fx::Stretch {
                         ratio, semitones: semis, window_ms: window, quality,
-                        algorithm, vocoder, wsola, pvsola, hybrid, grain, scale, pitch_step,
+                        algorithm, vocoder, wsola, pvsola, hybrid, soundhack, grain, scale, pitch_step,
                         cloud, cloud_mix,
                     };
                 });

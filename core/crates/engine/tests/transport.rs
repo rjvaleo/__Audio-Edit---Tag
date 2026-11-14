@@ -38,6 +38,7 @@ fn params(in_frames: usize) -> StreamParams {
 
 
 
+        soundhack: Default::default(),
         cloud: false,
 
 

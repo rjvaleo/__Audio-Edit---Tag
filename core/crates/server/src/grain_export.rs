@@ -48,6 +48,7 @@ fn stream_params(stretch: &fx::Stretch, in_frames: usize, sample_rate: u32) -> S
         vocoder: stretch.vocoder,
         pvsola: stretch.pvsola,
         hybrid: stretch.hybrid,
+        soundhack: stretch.soundhack,
         cloud: stretch.cloud,
         cloud_mix: stretch.cloud_mix,
     }
@@ -316,6 +317,7 @@ mod tests {
             fx::stretch::Algorithm::Vocoder,
             fx::stretch::Algorithm::Pvsola,
             fx::stretch::Algorithm::Hybrid,
+            fx::stretch::Algorithm::SoundHack,
         ] {
             let base = tone(48_000);
             let s = fx::Stretch { ratio: 1.0, algorithm: alg, ..Default::default() };

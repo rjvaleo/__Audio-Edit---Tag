@@ -62,7 +62,8 @@ const AMP_SILENT: f32 = 1e-4;
 const TARGET_LOAD: f32 = 0.70;
 /// What a voice is reckoned to cost before one has been measured, by engine, as
 /// a share of a block: from the `poly_cost` test on this machine, rounded up.
-const SEED_COST: [f32; 5] = [0.01, 0.03, 0.03, 0.06, 0.08];
+/// SoundHack's is the vocoder's guess: a 1024-point transform pair per hop.
+const SEED_COST: [f32; 6] = [0.01, 0.03, 0.03, 0.06, 0.08, 0.03];
 
 fn alg_index(a: Algorithm) -> usize {
     match a {
@@ -70,6 +71,7 @@ fn alg_index(a: Algorithm) -> usize {
         Algorithm::Vocoder => 2,
         Algorithm::Pvsola => 3,
         Algorithm::Hybrid => 4,
+        Algorithm::SoundHack => 5,
         _ => 0,
     }
 }
@@ -218,7 +220,7 @@ pub struct VoiceFeed {
     ceiling: AtomicU32,
     /// An export: there is no deadline, and every voice asked for is played.
     offline: AtomicBool,
-    cost_ppm: [AtomicU32; 5],
+    cost_ppm: [AtomicU32; 6],
 }
 
 impl VoiceFeed {
@@ -390,7 +392,7 @@ pub struct Poly {
     map: Option<Arc<TimeMap>>,
     /// Keeping a dropped `Parts` for the feeder when its lock was taken.
     parted: Option<Arc<Parts>>,
-    cost: [f32; 5],
+    cost: [f32; 6],
     /// Time spent rendering voices this block, in seconds.
     spent: f64,
     /// A head started this block. A start is a burst (a seek, and PVSOLA's

@@ -203,7 +203,7 @@ function sendStretch({ live }) {
     { op: 'stretch', ratio: d.ratio, semitones: d.semitones,
       windowMs: d.windowMs, quality: live ? 'draft' : d.quality,
       algorithm: d.algorithm, vocoder: d.vocoder, wsola: d.wsola,
-      pvsola: d.pvsola, hybrid: d.hybrid,
+      pvsola: d.pvsola, hybrid: d.hybrid, soundhack: d.soundhack,
       cloud: d.cloud, cloudMix: d.cloudMix },
     { live },
   );
@@ -226,7 +226,9 @@ const WSOLA_DEFAULTS = {
 // Which engines the audio callback can actually run. Mirrors
 // `engine::stretcher::is_live`; the rest are rendered on export and
 // approximated live, which the panel says out loud.
-const LIVE_ENGINES = ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular'];
+const LIVE_ENGINES = ['wsola', 'vocoder', 'pvsola', 'hybrid', 'granular', 'soundhack'];
+// SoundHack's one control, mirroring `SoundHackParams` in prism-grain.
+const SOUNDHACK_DEFAULTS = { version: '0.896' };
 const PVSOLA_DEFAULTS = { anchorFrames: 6, searchMs: 10, blend: 0.5 };
 const HYBRID_DEFAULTS = {
   fftSize: 2048, timeSpan: 17, freqSpan: 17, margin: 2, morphNoise: true,
@@ -290,6 +292,7 @@ function renderStretch() {
     wsola: { ...WSOLA_DEFAULTS, ...(st.wsola || {}) },
     pvsola: { ...PVSOLA_DEFAULTS, ...(st.pvsola || {}) },
     hybrid: { ...HYBRID_DEFAULTS, ...(st.hybrid || {}) },
+    soundhack: { ...SOUNDHACK_DEFAULTS, ...(st.soundhack || {}) },
     // A document written before the cloud could be layered has neither field.
     // Off is what it sounds like, so off is what it opens as.
     cloud: !!st.cloud,
@@ -309,6 +312,7 @@ function renderStretch() {
       <button class="seg-btn" data-alg="pvsola" title="The vocoder, re-anchored to the waveform every few frames. Holds tone together without the phasiness - the one-knob default for pitched material.">PVSOLA</button>
       <button class="seg-btn" data-alg="hybrid" title="Splits the sound into tone, hits and air, and stretches each its own way. The slow one, and the only one that will not repeat noise.">Hybrid</button>
       <button class="seg-btn" data-alg="granular" title="A cloud of grains. Not trying to be transparent - this is the one you hear.">Granular</button>
+      <button class="seg-btn" data-alg="soundhack" title="Tom Erbe's SoundHack phase vocoder, rebuilt exactly from the program - 0.888 or 0.896, quirks and all. The grain controls do not reach it; SoundHack had none.">SoundHack</button>
     </div>`;
   // Each engine as a tile: a picture of what it does above its name.
   for (const b of eng.querySelectorAll('.seg-btn')) {
@@ -568,6 +572,19 @@ function renderStretch() {
     }
 
     if (alg === 'vocoder') vocoderControls('');
+
+    // SoundHack has one control, so it goes under Stretch, Pitch and Window as
+    // a two-way choice, like WSOLA's Pick and Window: which program.
+    if (alg === 'soundhack') {
+      const sh = state.stretchDraft.soundhack;
+      const ver = seg('Version', [
+        ['0.888', '0.888', "SoundHack 0.888 (2001): each frame's phase step is wrapped, then scaled."],
+        ['0.896', '0.896', 'SoundHack 0.896 (2007): each phase step is scaled, then the running phase is wrapped.'],
+      ], sh.version, (x) => { sh.version = x; commitStretch(); });
+      ver.classList.add('seg-two');
+      own.appendChild(tip(ggTag(ver, 'shVersion', () => (state.stretchDraft.soundhack.version === '0.888' ? 0 : 1)),
+        "Which SoundHack. 0.888 holds every partial at any stretch. 0.896 flips the partials that sit between bins at a fractional stretch, and they thin out. At a whole-number stretch the two are one sound."));
+    }
     if (alg === 'wsola') wsolaControls();
 
     if (alg === 'pvsola') {

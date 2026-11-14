@@ -62,6 +62,7 @@ const GS_TIPS = {
   harmonicLevel: "The level of the harmonic part - the ridges that run along time. This is the reason to be in this engine: nothing else here will turn a sound's air down without touching its tone.",
   percussiveLevel: "The level of the percussive part - the ridges that run across frequency. Attacks, clicks and transients, stretched by WSOLA with preservation held on.",
   residualLevel: "The level of the residual - everything that is neither a partial nor a hit. Breath, hiss, room. This is the part Margin decides the existence of.",
+  shVersion: "Which SoundHack. 0.888 wraps each frame's phase step, then scales it, and holds every partial at any stretch. 0.896 scales the step, then wraps the running phase: at a fractional stretch, partials between bins flip and thin out. At a whole-number stretch the two are one sound.",
   morphNoise: "Rebuild the air as fresh noise shaped like the old, instead of stretching it. Off, it repeats at long ratios like every other engine here does",
   timeSpan: "How many frames long a ridge has to hold steady before it counts as a partial. Longer is stricter and sends more of the sound to the other two parts.",
   freqSpan: "How many bins wide a ridge has to be before it counts as a hit. Wider is stricter about what an attack is.",

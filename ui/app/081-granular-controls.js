@@ -31,6 +31,7 @@ function renderGrainParams() {
              wsola: state.stretchDraft.wsola,
              pvsola: state.stretchDraft.pvsola,
              hybrid: state.stretchDraft.hybrid,
+             soundhack: state.stretchDraft.soundhack,
              grain: state.grainDraft },
            { live });
   };

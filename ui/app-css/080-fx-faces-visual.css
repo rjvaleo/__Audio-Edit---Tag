@@ -334,7 +334,7 @@
 #grainControls .gk-row, #grainControls .gk-row > .gg, :is(.chop-fx, .prism-bars) .gk-row, :is(.chop-fx, .prism-bars) .gk-row > .gg { --gg: var(--fc, var(--warn)); }
 
 /* The engines, as tiles: a picture of what each does above its name. */
-#grainControls .engine-pick .seg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; background: none; padding: 0; }
+#grainControls .engine-pick .seg { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; background: none; padding: 0; }
 #grainControls .engine-pick .seg-btn {
   display: flex; flex-direction: column; align-items: center; gap: 1px; height: auto; padding: 4px 2px 3px;
   border: 1px solid var(--line-2); border-radius: var(--r-s); background: transparent; color: var(--text-2); --gg: var(--text-dim);

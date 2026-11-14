@@ -40,6 +40,7 @@ fn params(alg: Algorithm, ratio: f32, layers: u32, cloud: bool) -> StreamParams 
         vocoder: fx::stretch::VocoderParams::default(),
         pvsola: fx::pvsola::PvsolaParams::default(),
         hybrid: fx::hybrid::HybridParams::default(),
+        soundhack: Default::default(),
         cloud,
         cloud_mix: 0.5,
     };

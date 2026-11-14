@@ -34,6 +34,7 @@ fn params(in_frames: usize, g: Grain, ratio: f32, semis: f32) -> StreamParams {
 
 
         hybrid: fx::hybrid::HybridParams::default(),
+        soundhack: Default::default(),
 
 
 

@@ -575,6 +575,8 @@ input[type=range]::-moz-range-thumb { opacity: 0; border: 0; }
 /* Equal thirds by width, not by flex growth, with the two 2px gaps taken out
    first so they never butt against one another. */
 .seg-param .seg-btn { width: calc((100% - 8px) / 3); padding: 0; min-width: 0; }
+/* A choice of two (SoundHack's version) takes the bar in halves. */
+.seg-param.seg-two .seg-btn { width: calc((100% - 4px) / 2); }
 
 /* A switch sits in the table like everything else: name in the name column,
    control in the control column. What is in the control column is a rocker —

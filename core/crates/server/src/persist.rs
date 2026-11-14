@@ -112,6 +112,7 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("percussiveLevel", s.hybrid.percussive_level as f64)
                 .set("residualLevel", s.hybrid.residual_level as f64),
         )
+        .set("soundhack", Value::obj().set("version", s.soundhack.version.as_str()))
         .set(
             "grain",
             Value::obj()
@@ -144,6 +145,19 @@ pub fn stretch_to_json(s: &Stretch) -> Value {
                 .set("fbShift", s.grain.fb_shift as f64)
                 .set("fbHold", s.grain.fb_hold),
         )
+}
+
+/// SoundHack's settings: the version, by its name. Anything else, or nothing,
+/// keeps `fallback` — the default when reading a document, the current value
+/// when an edit leaves it out.
+pub fn soundhack_from(v: Option<&Value>, fallback: fx::soundhack::SoundHackParams) -> fx::soundhack::SoundHackParams {
+    fx::soundhack::SoundHackParams {
+        version: v
+            .and_then(|x| x.get("version"))
+            .and_then(|x| x.as_str())
+            .and_then(fx::soundhack::Version::from_str)
+            .unwrap_or(fallback.version),
+    }
 }
 
 /// Read a stretch back, clamping everything. These files are user-editable and
@@ -289,6 +303,7 @@ pub fn stretch_from_json(v: &Value) -> Stretch {
                 residual_level: hf("residualLevel", d.residual_level).clamp(0.0, 4.0),
             }
         },
+        soundhack: soundhack_from(v.get("soundhack"), d.soundhack),
         grain: Grain {
             rate_hz: gf("rateHz", d.grain.rate_hz).clamp(0.0, 2000.0),
             density_hz: gf("densityHz", d.grain.density_hz).clamp(0.0, 500.0),
@@ -577,6 +592,7 @@ mod tests {
                 percussive_level: 1.5,
                 residual_level: 0.25,
             },
+            soundhack: fx::soundhack::SoundHackParams { version: fx::soundhack::Version::V0888 },
             grain: Grain {
                 position: 0.42,
                 rate_hz: 73.0,
@@ -634,6 +650,7 @@ mod tests {
         // field that goes missing says which one it was.
         assert_eq!(back.stretch.pvsola, l.stretch.pvsola);
         assert_eq!(back.stretch.hybrid, l.stretch.hybrid);
+        assert_eq!(back.stretch.soundhack, l.stretch.soundhack);
     }
 
     /// A document written before either engine existed has no `pvsola` or
@@ -662,6 +679,37 @@ mod tests {
         assert_eq!(back.stretch.pvsola, fx::pvsola::PvsolaParams::default());
         assert_eq!(back.stretch.hybrid, fx::hybrid::HybridParams::default());
         assert!(back.stretch.hybrid.morph_noise, "the noise morpher opened off");
+    }
+
+    /// The SoundHack engine and its version come back as saved, and a
+    /// document from before the engine existed opens at 0.896, the later
+    /// program.
+    #[test]
+    fn a_soundhack_document_keeps_its_engine_and_version() {
+        let mut l = EditList::identity(10_000, 2, 48_000);
+        l.stretch = Stretch {
+            ratio: 2.0,
+            algorithm: fx::stretch::Algorithm::SoundHack,
+            soundhack: fx::soundhack::SoundHackParams { version: fx::soundhack::Version::V0888 },
+            ..Stretch::default()
+        };
+        let saved = edit_to_json(&l);
+        let back = edit_from_json(&saved, &EditList::identity(10_000, 2, 48_000)).expect("should restore");
+        assert_eq!(back.stretch.algorithm, fx::stretch::Algorithm::SoundHack);
+        assert_eq!(back.stretch.soundhack.version, fx::soundhack::Version::V0888);
+
+        let older = match saved {
+            Value::Obj(mut root) => {
+                if let Some(Value::Obj(mut st)) = root.get("stretch").cloned() {
+                    st.remove("soundhack");
+                    root.insert("stretch".into(), Value::Obj(st));
+                }
+                Value::Obj(root)
+            }
+            other => other,
+        };
+        let back = edit_from_json(&older, &EditList::identity(10_000, 2, 48_000)).expect("should restore");
+        assert_eq!(back.stretch.soundhack.version, fx::soundhack::Version::V0896);
     }
 
     /// The reader must not be stricter than the writer.

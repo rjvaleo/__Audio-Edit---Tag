@@ -283,6 +283,19 @@ function ggLevel(v) {
 const ggHit = (x, h, cls = 'a') => ggP(`M${x - 3} 40L${x} ${40 - h}L${x + 3} 40`, cls);
 
 Object.assign(GG_DRAW, {
+  // SoundHack's running phase over a few frames: 0.888 never wraps it, so it
+  // climbs; 0.896 wraps it into one turn each time, so it saws.
+  shVersion: (v) => {
+    const base = ggL(4, 40, 60, 40, 'f', 'stroke-dasharray="1 2"');
+    if (!Math.round(v)) return base + ggL(6, 40, 60, 10, 'a');
+    const w = 21.6;
+    let d = '';
+    for (let x = 6; x < 59.99; x += w) {
+      const x2 = Math.min(x + w, 60);
+      d += `M${x.toFixed(1)} 40L${x2.toFixed(1)} ${(40 - (x2 - x) / w * 30).toFixed(1)}`;
+    }
+    return base + ggP(d, 'a');
+  },
   // How much cloud over the engine: the engine's wave gives way to grains.
   cloudMix: (v) => {
     const t = ggClamp(v, 0, 1);
@@ -510,7 +523,7 @@ for (const [facet, keys] of Object.entries({
     'searchMs', 'stride', 'anchorFrames', 'anchorSearchMs', 'reverse', 'wrap', 'fbTimeMs'],
   pitch: ['semitones', 'pitchJitterSemis', 'pitchDriftSemis', 'driftRateHz', 'freqTrust', 'driftStep', 'fbShift'],
   tone: ['vocWindowMs', 'timeSpan', 'freqSpan', 'margin', 'fftSize', 'magFreeze', 'magBlur', 'magGate', 'phaseSpread', 'peakWidth',
-    'lockWidth', 'splicePick', 'morphNoise', 'phaseLock', 'fbSmear', 'fbDamp'],
+    'lockWidth', 'splicePick', 'morphNoise', 'phaseLock', 'fbSmear', 'fbDamp', 'shVersion'],
   attack: ['sensitivity', 'floor', 'guardHops', 'envelope', 'spliceShape', 'blend', 'preserveTransients'],
   space: ['layers', 'layerSpread', 'panSpread', 'layerScatter', 'layerScatterMs', 'seed', 'linkJitter', 'stereoLink', 'cloud', 'fbAmount', 'fbHold'],
   level: ['cloudMix', 'harmonicLevel', 'percussiveLevel', 'residualLevel'],
@@ -582,7 +595,7 @@ Object.assign(GG_DRAW, {
   },
   fbHold: (v) => { let t = ggGround(); for (let k = 0; k < 5; k++) t += ggP(ggBell(10 + k * 11, 9, v ? 22 : 22 * Math.pow(0.6, k)), k ? 'a' : 'f'); return t; },
 });
-for (const k of ['driftStep', 'reverse', 'wrap', 'cloud', 'morphNoise', 'phaseLock', 'stereoLink', 'linkJitter', 'preserveTransients',
+for (const k of ['driftStep', 'reverse', 'wrap', 'cloud', 'morphNoise', 'phaseLock', 'stereoLink', 'linkJitter', 'preserveTransients', 'shVersion',
   'fbAmount', 'fbTimeMs', 'fbSmear', 'fbDamp', 'fbShift', 'fbHold']) if (!GG_GROUP[k]) GG_GROUP[k] = 'shape';
 
 /// The engines' pictures: what each does to the sound, in one look.
@@ -595,6 +608,10 @@ const GG_ENGINE = {
   hybrid: () => [12, 20, 28].map((y) => ggL(6, y, 34, y, 'a')).join('') + [42, 50].map((x) => ggL(x, 8, x, 40, 'a')).join('')
     + [0, 1, 2, 3, 4, 5].map((i) => ggC(8 + ggRnd(i, 71) * 50, 34 + ggRnd(i, 72) * 8, 1.2, 'af')).join(''),
   granular: () => ggGround() + [0, 1, 2, 3, 4, 5, 6].map((i) => ggP(ggBell(8 + i * 8 + (ggRnd(i, 81) - 0.5) * 4, 9, 10 + 20 * ggRnd(i, 82)))).join(''),
+  // Two analysis frames laid down further apart, and the phase wheel between.
+  soundhack: () => [6, 42].map((x0, f) => [0.4, 0.9, 0.6, 0.3].map((h, i) =>
+    ggL(x0 + i * 4, 42, x0 + i * 4, 42 - h * 26, f ? 'a' : 'f')).join('')).join('')
+    + ggC(32, 14, 6, 'f') + ggL(32, 14, 36, 10, 'a'),
 };
 
 /// An engine's picture, as an element.

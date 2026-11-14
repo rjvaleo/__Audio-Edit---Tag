@@ -62,6 +62,7 @@ pub fn stretch_with_automation(
         vocoder: stretch.vocoder,
         pvsola: stretch.pvsola,
         hybrid: stretch.hybrid,
+        soundhack: stretch.soundhack,
         cloud: stretch.cloud,
         cloud_mix: stretch.cloud_mix,
     };
