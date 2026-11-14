@@ -135,3 +135,7 @@ body.stemspage #overview { display: none; }
 #stemsView .st-prompt { flex: 1 1 0; min-width: 260px; }
 #stemsView .st-wbars { display: flex; gap: 6px; flex: none; }
 #stModelNote { max-width: 380px; white-space: normal; }
+
+/* a song picked, not split yet: its lanes wait, empty */
+.st-lane.st-wait .st-well { opacity: .6; }
+.st-lane.st-wait .st-nm { opacity: .55; }
