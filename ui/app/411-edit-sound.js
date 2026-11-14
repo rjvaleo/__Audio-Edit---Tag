@@ -8,9 +8,10 @@
 // Measured in a worker with Chop's own `chopAnalyseCore`.
 //
 // Read again whenever the overview is, which is after every edit that changes
-// the sound and whenever another sound opens. Only while the Edit page or Grain
-// shows (Grain colours its overview with it): elsewhere it is marked stale and
-// read when you come back.
+// the sound and whenever another sound opens. Only while the Edit page, Grain
+// or Prism shows (Grain colours its overview with it, Prism its SOURCE): elsewhere
+// it is marked stale and read when you come back. Prism measures its own sound,
+// which need not be the one open; the next page to ask for another reads that.
 
 let edSoundWorker = null;
 let edSoundWant = 0;
@@ -18,17 +19,18 @@ let edSoundWant = 0;
 /// The overview was reloaded: what was measured is out of date.
 function edSoundStale() {
   edSoundWant++;
-  if (document.body.classList.contains('wavepage') || GS.showing) edLoadSound();
+  if (document.body.classList.contains('prismpage')) edLoadSound(prismDeck.path);
+  else if (document.body.classList.contains('wavepage') || GS.showing) edLoadSound();
 }
 
-async function edLoadSound() {
-  const f = state.selectedFile;
-  if (!f) { Object.assign(edSound, { path: '', mono: null, an: null, hits: [], loud: [] }); return; }
-  if (edSound.serial === edSoundWant && edSound.path === f.path && edSound.mono) return;
+/// Read and measure `path`: the open sound unless a page names its own.
+async function edLoadSound(path = state.selectedFile?.path) {
+  if (!path) { Object.assign(edSound, { path: '', mono: null, an: null, hits: [], loud: [] }); return; }
+  if (edSound.serial === edSoundWant && edSound.path === path && edSound.mono) return;
   const serial = edSound.serial = edSoundWant;
   let bytes;
   try {
-    const r = await fetch(`/audio?p=${encodeURIComponent(f.path)}&dry=1`);
+    const r = await fetch(`/audio?p=${encodeURIComponent(path)}&dry=1`);
     if (!r.ok) throw new Error(`${r.status}`);
     bytes = await r.arrayBuffer();
   } catch { return; }
@@ -40,7 +42,7 @@ async function edLoadSound() {
   // Mono for measuring: the channels averaged.
   const n = buf.length, mono = new Float32Array(n);
   for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / buf.numberOfChannels; }
-  Object.assign(edSound, { path: f.path, rate, mono, an: null, hits: [], loud: [] });
+  Object.assign(edSound, { path, rate, mono, an: null, hits: [], loud: [] });
   edMeasure(mono, rate, serial);
   edSoundReady();
 }

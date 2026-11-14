@@ -8,8 +8,9 @@
    Each has a rate, a depth and a shape (sine, triangle, square, saw, random,
    pulse, with a width for the pulse), and all four always run and loop.
    Mapping is the idMLab way (memory: modulator map UX): press Map, then click
-   a control; that control gets a ring in the LFO's own colour and its marker
-   moves with it. Clicking a control already mapped to that LFO unmaps it.
+   a control; that control's knob gets its reach round the ring in the LFO's
+   own colour, and a dot that moves with it. Clicking a control already mapped
+   to that LFO unmaps it.
 
    **What an LFO moves is the sound, not the setting.** The setting a control
    holds is its base, and stays what the hand, the pad, a preset or an undo set
@@ -37,7 +38,7 @@ const prismLfo = {
   sel: 0,
   mapping: false,
   raf: 0, last: 0, sent: 0,
-  /// The bars on screen (`prismBar`), by source and key, for the marker to move.
+  /// The controls on screen (`prismKnob`), by source and key, for the reach to move.
   rows: new Map(),
 };
 
@@ -195,8 +196,9 @@ function prismLfoRestore(t) {
 
 // ───────────────────────────────────────────── on screen
 
-/// The LFO strip under the controls: the tabs, the shapes, the scope, Map with
-/// the controls it drives, and the selected LFO's Rate, Depth and Width.
+/// The LFOs panel under the controls: Map in its head, the tabs, the shapes,
+/// the scope in its well, the selected LFO's Rate, Depth and Width as knobs,
+/// and the controls it drives.
 function prismLfoRender() {
   const box = $('prismLfos');
   if (!box) return;
@@ -214,21 +216,19 @@ function prismLfoRender() {
   const chips = l.targets.map((t, k) => [label(t), k]).filter(([n]) => n)
     .map(([n, k]) => `<span class="plfo-chip">${prismEsc(n)}<button type="button" data-unmap="${k}" title="Unmap" aria-label="Unmap ${prismEsc(n)}">×</button></span>`).join('');
   box.innerHTML = `
-    <div class="plfo-head"><span class="hs-h">LFOS</span><div class="plfo-tabs" role="group" aria-label="LFOs">${tabs}</div>
-      <div class="plfo-shapes" role="group" aria-label="Shape">${shapes}</div></div>
-    <div class="plfo-grid">
-      <div class="plfo-col"><svg class="plfo-scope" id="prismLfoScope" viewBox="0 0 188 40" preserveAspectRatio="none" aria-hidden="true"></svg>
-        <div class="plfo-map"><button type="button" class="hs-btn plfo-mapbtn${prismLfo.mapping ? ' on' : ''}" id="prismLfoMap" aria-pressed="${prismLfo.mapping}">Map</button>
-          <span class="hs-dim">${prismLfo.mapping ? 'click a control · Esc stops' : 'then click a control'}</span></div>
-        <div class="plfo-chips">${chips || '<span class="hs-dim">nothing mapped yet</span>'}</div></div>
-      <div class="plfo-col prism-bars" id="prismLfoBars"></div>
-    </div>`;
+    <div class="prism-ph"><b class="prism-nm">LFOS</b><span class="prism-meta">${prismLfo.mapping ? 'click a control · Esc stops' : ''}</span><span class="hs-fill"></span>
+      <button type="button" class="prism-btn plfo-mapbtn${prismLfo.mapping ? ' on' : ''}" id="prismLfoMap" aria-pressed="${prismLfo.mapping}" title="Map: then click a control for this LFO to move">Map</button></div>
+    <div class="plfo-tabs" role="group" aria-label="LFOs">${tabs}</div>
+    <div class="plfo-shapes" role="group" aria-label="Shape">${shapes}</div>
+    <div class="prism-well plfo-well"><svg class="plfo-scope" id="prismLfoScope" viewBox="0 0 188 40" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+    <div class="prism-knobs" id="prismLfoBars"></div>
+    <div class="plfo-chips">${chips || '<span class="prism-meta">nothing mapped yet · Map, then click a control</span>'}</div>`;
   const bars = $('prismLfoBars');
   const p = (key, label, min, max, unit, log) => ({ key, label, min, max, unit, log, default: { lfoRate: 1, lfoDepth: 25, lfoPw: 25 }[key] });
   const rows = [[p('lfoRate', 'Rate', 0.02, 20, 'Hz', true), 'rate'], [p('lfoDepth', 'Depth', 0, 100, '%'), 'depth']];
   if (l.shape === 'pulse') rows.push([p('lfoPw', 'Width', 5, 95, '%'), 'pw']);
   for (const [spec, field] of rows) {
-    const row = prismBar(spec, l[field], {
+    const row = prismKnob(spec, l[field], {
       facet: 'time', colour: `var(--plfo${l.i})`,
       onInput: (v) => { l[field] = v; },
       onCommit: () => prismLfoKeep(),
@@ -240,7 +240,6 @@ function prismLfoRender() {
   box.querySelectorAll('[data-unmap]').forEach((b) => { b.onclick = () => prismLfoToggle(l.targets[+b.dataset.unmap]); });
   $('prismLfoMap').onclick = () => { prismLfo.mapping = !prismLfo.mapping; prismLfoRender(); };
   prismLfoMark();
-  prismFit();
 }
 
 /// Map or unmap a control on the selected LFO; the mapping ends either way.
@@ -268,7 +267,7 @@ function prismLfoMark() {
 }
 
 /// Each frame: the dots on the tabs, the scope, and every driven control's
-/// marker, reading and picture.
+/// reach, live dot, reading and picture.
 function prismLfoPaint() {
   prismLfo.lfos.forEach((l, k) => {
     const d = document.querySelector(`#prismLfos [data-dot="${k}"]`);
@@ -294,7 +293,9 @@ function prismLfoPaint() {
     const got = prismLfoControl(t);
     if (!got) continue;
     const v = prismLfoValue(t, got.c, got.base);
-    row.show(v);
+    // The reach: each LFO on it swings Depth's share of half the range.
+    const on = prismLfo.lfos.filter((l) => l.targets.some((x) => x.src === src && x.key === key));
+    row.show(v, { rng: on.reduce((a, l) => a + l.depth / 200, 0), col: `var(--plfo${on[0].i})` });
   }
 }
 

@@ -1,12 +1,16 @@
 // ============================================================ Prism panel parts
 
-/* The v7 Prism panel's own pieces (RJ, 6 Nov 2026, after the design council:
-   "less color, less chaos, less candy, more professional"):
+/* The Prism panel's own pieces (v7, RJ, 6 Nov 2026, after the design council:
+   "less color, less chaos, less candy, more professional"; the page rebuilt
+   from the mock-up he approved, 13 Nov 2026):
 
-   - `prismBar`: a control as a bar with its picture, half the Controls column
-     wide. It is the shared bar (`uiBarOver`, `073b-ui-bar.js`) over a `param`
-     row, so a click sets the value, Shift drags fine and a double-click on the
-     picture resets, with the Prism picture in front of it.
+   - `prismKnob`: a process's setting as the app's shared knob (`uiKnobParam`,
+     `073a-ui-knob.js`) at 26, its picture beside it in its facet's colour, as
+     on Chop. The Controls and LFOs panels.
+   - `prismBar`: a control as the shared bar (`uiBarOver`, `073b-ui-bar.js`)
+     over a `param` row, so a click sets the value, Shift drags fine and a
+     double-click on the picture resets, with the Prism picture in front of
+     it. The Takes panel.
    - The Process menu: every process Prism can play, each with its picture, in
      Hyperprism's groups, short and wide so it opens inside the panel.
      Choosing a Hyperprism process that is not in Prism's chain adds it. */
@@ -65,18 +69,69 @@ function prismBar(spec, value, { facet, colour, kind = '', onInput, onCommit, fo
   return row;
 }
 
+/// A control as the shared knob with its picture beside it, over the same
+/// `param` row `prismBar` makes, the way Chop's effects are (`chopBar`): the
+/// range input stays, unseen, so whatever reads, sets or maps a control by its
+/// row and its input (the LFOs, the follow, the tests) goes on as before, and
+/// the knob turns that input. The same steps and the same log curve as the
+/// bar, so a value lands where it did.
+///
+/// The row adds what the LFOs ask of it: `show(v, mod)` draws the value the
+/// deck hears (the reading, the picture, the reach round the ring and the dot)
+/// with the setting left where it is, and `rest()` puts the setting back.
+function prismKnob(spec, value, { facet, colour, kind = '', onInput, onCommit, format } = {}) {
+  const stepped = spec.step === 1 || !!spec.choices;
+  const fmt = format || ((v) => prismBarFormat(spec, v));
+  const step = stepped ? 1 : (spec.max - spec.min) / 400;
+  const log = !!spec.log && spec.min > 0 && !stepped;
+  let face = null, swung = null;
+  const row = param(spec.label, value, spec.min, spec.max, step, fmt,
+    (v) => { onInput?.(stepped ? Math.round(v) : v); face?.sync(row.read()); },
+    (v) => { onCommit?.(v); },
+    log, spec.default);
+  const input = row.querySelector(':scope > input[type=range]');
+  const sync = row.sync;
+  // Still a `prism-bar`: that is what the LFOs' Map and the follow look for.
+  row.classList.add('prism-bar', 'prism-knob');
+  row.dataset.key = spec.key;
+  const col = colour || `var(--f-${facet || PRISM_PIC.facetOf(spec.key)})`;
+  row.style.setProperty('--fc', col);
+  const value01 = (v) => Math.max(0, Math.min(1, spec.max > spec.min ? (v - spec.min) / (spec.max - spec.min) : 0));
+  const draw = (v) => {
+    const f = PRISM_PIC.HP_DRAW[spec.key];
+    return f && Number.isFinite(v) ? f(v, value01(v), spec, kind) : '';
+  };
+  face = uiKnobParam(spec.label, value, spec.min, spec.max, step, (v) => fmt(swung ?? v),
+    (v) => { sync(v); input.dispatchEvent(new Event('input', { bubbles: true })); },
+    () => input.dispatchEvent(new Event('change', { bubbles: true })),
+    log, spec.default,
+    { size: 26, cls: 'prism-face', wheel: true, pic: (u, v) => draw(swung ?? v), pv: '0 0 64 48', col,
+      title: Number.isFinite(spec.default) ? `${spec.label} — drag up or down, Shift for fine, double-click to reset to ${fmt(spec.default)}` : undefined });
+  row.append(face);
+  row.sync = (v) => { sync(v); face.sync(v); };
+  const sc = uiScale(spec.min, spec.max, log);
+  row.show = (v, mod) => {
+    swung = v;
+    face.setMod({ rng: Math.max(0.01, Math.min(0.5, mod?.rng || 0)), live: sc.toU(v), col: mod?.col || 'var(--lc)' });
+  };
+  row.rest = () => { swung = null; face.setMod(null); };
+  return row;
+}
+
 /// The pad's axes, the sound and the chain's Add: the shared dropdown
 /// (`073c-ui-drop.js`) in front of each select, which keeps its value and its
 /// handler; and the switches. The presets' row is the preset bar's (phase 4),
 /// and left to it.
 function prismDrops() {
-  // Its switches are the shared segmented switch (`073d-ui-seg.js`).
+  // Its switches are the shared segmented switch (`073d-ui-seg.js`); the
+  // shapes fill the Takes panel's width.
   document.querySelectorAll('#dockHyper .hs-seg').forEach((s) => s.classList.add('ui-seg', 'h24'));
+  $('dockHyper').querySelector('.prism-shapes')?.classList.add('fill');
   uiDrop($('prismX'), { h: 24, w: 120 });
   uiDrop($('prismY'), { h: 24, w: 120 });
-  uiDrop($('prismSoundFolder'), { h: 24, w: 120 });
-  uiDrop($('prismSoundFile'), { h: 24, w: 120 });
-  uiDrop($('prismChainAdd'), { h: 24, w: 120 });
+  uiDrop($('prismSoundFolder'), { h: 24, w: 150 });
+  uiDrop($('prismSoundFile'), { h: 24, w: 190 });
+  uiDrop($('prismChainAdd'), { h: 24, w: 140 });
 }
 
 /// A bar's reading, short enough to sit beside its name in half a column:
@@ -186,25 +241,4 @@ function prismFollowAll() {
     const v = get();
     if (Number.isFinite(v) && Math.abs(v - (row.read ? row.read() : +input.value)) > 1e-6 * Math.max(1, Math.abs(v))) row.sync(v);
   }
-}
-
-// ───────────────────────────────────────────── the panel fits its process
-
-/// The dock grows to show all of the process on the pad, as the Grain tray's
-/// does (`gkFit`), and goes back to the height you chose for a smaller one:
-/// nothing is ever cut off at the foot of a bank (RJ: "shit's falling off the
-/// bottom"). Never under the height you dragged it to.
-function prismFit() {
-  const host = $('dockHyper'), dock = $('dock');
-  if (!host || !dock || !host.clientHeight || !document.body.classList.contains('prismpage')) return;
-  const now = dock.getBoundingClientRect().height;
-  if (dockBase === null) dockBase = Math.round(now);
-  // Back to the chosen height first, so a smaller process gives the room back;
-  // then grow by whatever still does not fit.
-  if (now > dockBase + 1) setDockHeight(dockBase, false);
-  requestAnimationFrame(() => {
-    let over = 0;
-    for (const bank of host.querySelectorAll('.hs-bank')) over = Math.max(over, bank.scrollHeight - bank.clientHeight);
-    if (over > 1) setDockHeight(Math.ceil(dock.getBoundingClientRect().height + over), false);
-  });
 }

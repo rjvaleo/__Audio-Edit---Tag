@@ -4,8 +4,8 @@
 //
 // What this pins, each from the decompiled original unless said:
 //   - the pad maps linearly: X low at the left, Y low at the bottom; it is
-//     square and sized to the dock, as the rack pad's was (not the original's
-//     461 × 241);
+//     the page, filling everything left of the panels (RJ's mock-up, 13 Nov
+//     2026; not the original's 461 × 241, nor the square it was before);
 //   - grabbing the pad is the record button, and a take runs until Stop or Play;
 //   - a path is a point per tick at most, played back stepped, looping at its
 //     own length;
@@ -58,15 +58,18 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => { try { for (const k of Object.keys(localStorage)) if (/^(hyperstretch|prism\.)/.test(k)) localStorage.removeItem(k); } catch {} });
 });
 
-test('Prism on the rail opens the open sound on its pad, square and sized to the dock', async ({ page }) => {
+test('Prism on the rail opens the open sound on its pad, which fills the page left of the panels', async ({ page }) => {
   await expect(page.locator('#leftRail .rl-item[data-page="prism"]')).toHaveCount(1);
   await openPrism(page);
   expect(await page.evaluate(() => document.body.classList.contains('prismpage'))).toBe(true);
   await expect(page.locator('.dock-tab[data-dock="hyper"]')).toHaveClass(/active/);
   const b = await page.locator('#hsPad').boundingBox();
-  expect(Math.abs(b.width - b.height)).toBeLessThanOrEqual(1);
   expect(b.width).toBeGreaterThanOrEqual(140);
-  expect(Math.round(b.width) - 2).toBe(await page.evaluate(() => window.hyperStretch.side()));
+  expect(b.height).toBeGreaterThanOrEqual(140);
+  // What it draws in is what it is, across and down.
+  const size = await page.evaluate(() => window.hyperStretch.size());
+  expect(Math.abs(size.w - b.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(size.h - b.height)).toBeLessThanOrEqual(1);
   await expect(page.locator('#hsChip')).toContainText('READY');
 });
 
@@ -159,8 +162,8 @@ test('arrow keys draw while recording, ten pixels with Option', async ({ page })
   for (let i = 0; i < 3; i++) { await page.keyboard.press('Alt+ArrowRight'); await page.waitForTimeout(30); }
   await page.keyboard.press('ArrowUp');
   const h = await page.evaluate(() => window.hyperStretch.hand());
-  const side = await page.evaluate(() => window.hyperStretch.side());
-  expect((h.x - x0) * side).toBeCloseTo(30, 0);
+  const { w } = await page.evaluate(() => window.hyperStretch.size());
+  expect((h.x - x0) * w).toBeCloseTo(30, 0);
   await page.locator('#hsStop').click();
   expect((await page.evaluate(() => window.hyperStretch.take(0))).pts.length).toBeGreaterThanOrEqual(4);
 });
