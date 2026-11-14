@@ -44,12 +44,12 @@ let edKRows = [], edKPick = 0;
 
 function edKList() {
   const q = $('edKIn').value.trim().toLowerCase();
-  const all = wtLayout.sections.flatMap((s) => s.ids.map((id) => ({ id, sec: s.title, tab: s.tab })))
-    .concat(wtLayout.hidden.map((id) => ({ id, sec: 'Hidden', tab: '' })));
-  edKRows = all.filter(({ id, sec, tab }) => {
+  const all = wtLayout.sections.flatMap((s) => s.ids.map((id) => ({ id, sec: s.title })))
+    .concat(wtLayout.hidden.map((id) => ({ id, sec: 'Hidden' })));
+  edKRows = all.filter(({ id, sec }) => {
     if (!q) return true;
     const it = WT_CMDS[id];
-    return `${it.name} ${WT_WORDS[id] || ''} ${sec} ${tab} ${id}`.toLowerCase().includes(q);
+    return `${it.name} ${WT_WORDS[id] || ''} ${sec} ${id}`.toLowerCase().includes(q);
   });
   edKPick = Math.max(0, Math.min(edKPick, edKRows.length - 1));
   const box = $('edKList');

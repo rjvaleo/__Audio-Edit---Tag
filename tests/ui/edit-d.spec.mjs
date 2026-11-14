@@ -11,7 +11,7 @@ import { test, expect } from './test.mjs';
 
 async function openEdit(page) {
   await page.addInitScript(() => {
-    try { for (const k of ['editPage', 'editToolbar', 'editTab', 'editShow', 'editParams']) localStorage.removeItem(k); } catch {}
+    try { for (const k of ['editPage', 'editToolbar', 'editBar', 'editTab', 'editShow', 'editParams']) localStorage.removeItem(k); } catch {}
   });
   await page.goto('/');
   await page.waitForFunction(() => typeof state !== 'undefined' && (state.folders || []).length > 0, { timeout: 20_000 });
@@ -56,7 +56,7 @@ test('a knob answers the dialog: Gain runs at the knob\'s value and asks nothing
   await openEdit(page);
   const ops = edits(page);
   await select(page, 2000, 12000);
-  await page.evaluate(() => { edParams.gainDb = -6; edSetTab('Process'); });
+  await page.evaluate(() => { edParams.gainDb = -6; });
   await page.click('#waveTools [data-cmd="gain"]');
   await expect.poll(() => ops.filter((o) => o.op === 'gain').map((o) => o.db)).toEqual([-6]);
   expect(await page.isVisible('#askModal')).toBe(false);

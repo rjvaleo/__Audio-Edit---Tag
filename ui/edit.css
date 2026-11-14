@@ -86,55 +86,68 @@ body.prismpage .nowbar .nb-bpm { display: none; }
 /* ───────────────────────────────────────────────────── the Edit page */
 
 /* Only on the Edit page. */
-#edTabs, #edCmdK, #edTime, #edCounters, .lane :is(.ed-marks, .ed-level, .ed-preview, .ed-hands, .ed-loupe, .ed-meters) { display: none; }
+#edCmdK, #edTime, #edCounters, .lane :is(.ed-marks, .ed-level, .ed-preview, .ed-hands, .ed-loupe, .ed-meters) { display: none; }
 
 body.wavepage .centre { background: var(--mgl-grain), radial-gradient(120% 80% at 30% 0%, var(--m-panel), var(--m-chassis) 60%); background-blend-mode: soft-light, normal; padding: 0 12px 8px 10px; gap: 0; color: var(--m-t); font-family: var(--mgl-ui); }
 body.wavepage #transportBar { display: none !important; }
 
-/* The file tabs and the command tabs, on one row. */
+/* The file tabs and ⌘K, on one row. */
 body.wavepage #editTools { display: flex !important; align-items: flex-end; gap: 2px; padding: 8px 4px 0; background: none; border: 0; min-height: 38px; }
-body.wavepage #edTabs { display: flex; align-items: flex-end; gap: 2px; margin-left: 10px; }
-.ed-tab { height: 28px; padding: 0 14px; display: flex; align-items: center; gap: 6px; border-radius: 8px 8px 0 0; border: 1px solid transparent; border-bottom: 0; background: none; color: var(--m-t3); font: 600 11px var(--mgl-ui); cursor: pointer; }
-.ed-tab svg { width: 13px; height: 13px; }
-.ed-tab:hover { color: var(--m-t); }
-.ed-tab.on { color: var(--mgl-acc); background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border-color: var(--m-line); box-shadow: inset 0 2px 0 var(--mgl-acc); }
 body.wavepage #edCmdK { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 4px auto; height: 26px; min-width: 220px; padding: 0 10px 0 8px; border-radius: 7px; background: var(--m-well); border: 1px solid var(--m-line); color: var(--m-t2); font: 500 11px var(--mgl-ui); cursor: pointer; }
 #edCmdK svg { width: 13px; height: 13px; }
 #edCmdK kbd { margin-left: auto; font: 500 10px var(--mgl-mono); color: var(--m-t3); border: 1px solid var(--m-line); border-radius: 4px; padding: 0 4px; }
 
-/* The open tab's tools: big glyphs in labelled groups, knobs beside the
-   commands they feed. */
+/* Every command in one bar (no tabs since 13 Nov 2026): small icons in groups
+   with a rule between them, the name in the tooltip. A narrow window wraps a
+   group whole onto the next line. */
 body.wavepage .wave-tools {
-  flex-wrap: nowrap; align-items: stretch; min-height: 84px; padding: 6px 8px; margin-bottom: 8px; overflow-x: auto;
-  background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel) 30%, var(--m-panel)); border: 1px solid var(--m-line); border-radius: 0 10px 10px 10px;
+  flex-wrap: wrap; align-items: center; row-gap: 4px; min-height: 0; padding: 4px 4px; margin: 4px 0 8px; overflow: visible;
+  background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel) 30%, var(--m-panel)); border: 1px solid var(--m-line); border-radius: 10px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(0,0,0,.45), 0 1px 1px rgba(0,0,0,.6), 0 6px 14px rgba(0,0,0,.45);
 }
-body.wavepage .wt-group { padding: 0 10px; gap: 3px; }
+body.wavepage .wt-group { padding: 0 6px; gap: 0; }
 body.wavepage .wt-group + .wt-group { border-left: 1px solid var(--m-line); }
-body.wavepage .wt-title { font: 600 9px var(--mgl-mono); letter-spacing: .14em; color: var(--m-t3); }
-body.wavepage .wt-row { align-items: flex-start; gap: 2px; min-height: 60px; }
-body.wavepage .wt-btn { min-width: 52px; height: 52px; padding: 0 5px; border-radius: 8px; gap: 4px; color: var(--m-t2); }
-body.wavepage .wt-btn svg { width: 20px; height: 20px; }
-body.wavepage .wt-word { font: 500 9px var(--mgl-ui); color: var(--m-t3); }
+body.wavepage .wt-title { display: none; font: 600 9px var(--mgl-mono); letter-spacing: .14em; color: var(--m-t3); }
+body.wavepage .wt-row { align-items: center; gap: 1px; min-height: 30px; }
+body.wavepage .wt-btn { min-width: 30px; width: 30px; height: 30px; padding: 0; border-radius: 7px; gap: 0; color: var(--m-t2); }
+body.wavepage .wt-btn svg { width: 17px; height: 17px; }
+body.wavepage .wt-word { display: none; font: 500 9px var(--mgl-ui); color: var(--m-t3); }
 body.wavepage .wt-btn:hover:not(:disabled) { color: var(--m-t); background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border-color: transparent; box-shadow: 0 1px 2px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); }
 body.wavepage .wt-btn[aria-pressed="true"] { color: var(--mgl-acc); background: var(--m-well); border-color: transparent; box-shadow: inset 0 1px 3px rgba(0,0,0,.85), inset 0 0 0 1px color-mix(in srgb, var(--mgl-acc) 40%, transparent); }
 body.wavepage .wt-btn[aria-pressed="true"] .wt-word { color: var(--mgl-acc); }
 body.wavepage .wt-custom { margin-left: auto; border-left: 0 !important; }
-body.wavepage .wt-row #wtBits { margin: 14px 0 0 4px; height: 24px; background: var(--m-well); color: var(--m-t); border: 1px solid var(--m-line); border-radius: 6px; }
+body.wavepage .wt-row #wtBits { margin: 0 0 0 4px; height: 24px; background: var(--m-well); color: var(--m-t); border: 1px solid var(--m-line); border-radius: 6px; }
+/* Customizing: the titles and the words come back, so there is something to
+   rename and to pick up. */
+body.wavepage .wt-editing .wt-group { gap: 2px; }
+body.wavepage .wt-editing .wt-title { display: block; }
+body.wavepage .wt-editing .wt-btn { width: auto; min-width: 44px; height: 42px; padding: 3px 4px 2px; gap: 3px; }
+body.wavepage .wt-editing .wt-word { display: block; }
+/* The ▾ that opens a command's settings, tucked against it. */
+.wt-more { width: 13px; height: 30px; margin-left: -1px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 0 6px 6px 0; background: none; color: var(--m-t3); cursor: pointer; }
+.wt-more svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.wt-more:hover, .wt-more[aria-expanded="true"] { color: var(--mgl-acc); background: var(--m-well); }
+/* Its settings: the knobs, then the command itself to run with them. */
+.ed-kpop { position: fixed; z-index: 60; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border: 1px solid var(--m-line); box-shadow: 0 10px 28px rgba(0,0,0,.55); color: var(--m-t); }
+.ed-kpop[hidden] { display: none; }
+.ed-krun { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 52px; height: 52px; margin-left: 4px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--m-line); background: var(--m-well); color: var(--m-t); font: 500 10px var(--mgl-ui); cursor: pointer; }
+.ed-krun svg { width: 18px; height: 18px; }
+.ed-krun:hover:not(:disabled) { color: var(--mgl-acc); }
+.ed-krun:disabled { opacity: .35; cursor: default; }
 /* a knob: its picture, its face, its reading, its name, as Chop's */
-:is(.wave-tools, .ed-k) .knob { position: relative; width: 60px; height: 60px; flex: none; margin: 0; padding: 0; cursor: ns-resize; display: block; }
-.wave-tools .knob > svg:not(.gl), .ed-k .knob > svg:not(.gl) { position: absolute; left: 23px; top: 0; width: 32px; height: 32px; }
-:is(.wave-tools, .ed-k) .knob .bezel { fill: none; stroke: rgba(0,0,0,.6); }
-:is(.wave-tools, .ed-k) .knob .cap { fill: color-mix(in srgb, var(--m-panel-hi) 85%, #fff 8%); }
-:is(.wave-tools, .ed-k) .knob .track { stroke: rgba(255,255,255,.1); stroke-width: 3; fill: none; }
-:is(.wave-tools, .ed-k) .knob .arc { stroke: var(--m-wave); stroke-width: 3; fill: none; }
-:is(.wave-tools, .ed-k) .knob .ptr { stroke: var(--m-t); stroke-width: 2.2; stroke-linecap: round; }
-:is(.wave-tools, .ed-k) .knob > .v { position: absolute; top: 32px; left: -2px; right: -2px; text-align: center; font: 400 9px var(--mgl-mono); color: var(--m-t2); white-space: nowrap; background: none; border: 0; box-shadow: none; padding: 0; min-width: 0; height: auto; }
-:is(.wave-tools, .ed-k) .knob > .k { position: absolute; top: 45px; left: -2px; right: -2px; text-align: center; font: 500 10px var(--mgl-ui); color: var(--m-t3); white-space: nowrap; letter-spacing: 0; text-transform: none; overflow: visible; }
-:is(.wave-tools, .ed-k) .gl { position: absolute; left: 1px; top: 7px; width: 21px; height: 16px; overflow: visible; pointer-events: none; }
-:is(.wave-tools, .ed-k) .gl .a { fill: none; stroke: var(--m-t2); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-:is(.wave-tools, .ed-k) .gl .f { fill: none; stroke: var(--m-t3); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; opacity: .55; }
-:root[data-mgl-look="C"] :is(.wave-tools, .ed-k) .knob :is(.arc, .track) { stroke-dasharray: .1 5.2; stroke-linecap: round; stroke-width: 2.6; }
+:is(.ed-kpop, .ed-k) .knob { position: relative; width: 60px; height: 60px; flex: none; margin: 0; padding: 0; cursor: ns-resize; display: block; }
+.ed-kpop .knob > svg:not(.gl), .ed-k .knob > svg:not(.gl) { position: absolute; left: 23px; top: 0; width: 32px; height: 32px; }
+:is(.ed-kpop, .ed-k) .knob .bezel { fill: none; stroke: rgba(0,0,0,.6); }
+:is(.ed-kpop, .ed-k) .knob .cap { fill: color-mix(in srgb, var(--m-panel-hi) 85%, #fff 8%); }
+:is(.ed-kpop, .ed-k) .knob .track { stroke: rgba(255,255,255,.1); stroke-width: 3; fill: none; }
+:is(.ed-kpop, .ed-k) .knob .arc { stroke: var(--m-wave); stroke-width: 3; fill: none; }
+:is(.ed-kpop, .ed-k) .knob .ptr { stroke: var(--m-t); stroke-width: 2.2; stroke-linecap: round; }
+:is(.ed-kpop, .ed-k) .knob > .v { position: absolute; top: 32px; left: -2px; right: -2px; text-align: center; font: 400 9px var(--mgl-mono); color: var(--m-t2); white-space: nowrap; background: none; border: 0; box-shadow: none; padding: 0; min-width: 0; height: auto; }
+:is(.ed-kpop, .ed-k) .knob > .k { position: absolute; top: 45px; left: -2px; right: -2px; text-align: center; font: 500 10px var(--mgl-ui); color: var(--m-t3); white-space: nowrap; letter-spacing: 0; text-transform: none; overflow: visible; }
+:is(.ed-kpop, .ed-k) .gl { position: absolute; left: 1px; top: 7px; width: 21px; height: 16px; overflow: visible; pointer-events: none; }
+:is(.ed-kpop, .ed-k) .gl .a { fill: none; stroke: var(--m-t2); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+:is(.ed-kpop, .ed-k) .gl .f { fill: none; stroke: var(--m-t3); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; opacity: .55; }
+:root[data-mgl-look="C"] :is(.ed-kpop, .ed-k) .knob :is(.arc, .track) { stroke-dasharray: .1 5.2; stroke-linecap: round; stroke-width: 2.6; }
 
 /* The wave: overview, time, markers, the lane and its counters, one panel. */
 body.wavepage #overview { border-radius: 10px 10px 0 0; border: 1px solid var(--m-line); border-bottom: 0; background: var(--m-well); }
@@ -220,7 +233,6 @@ body.wavepage .lane .ed-meters { display: flex; position: absolute; right: 0; to
 :root[data-mgl-look="B"] body.wavepage :is(.wave-tools, #edCounters) { background: rgba(20,24,30,.55); -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2); border-color: rgba(255,255,255,.10); }
 :root[data-mgl-look="B"] .nowbar { background: rgba(14,17,22,.72); -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2); }
 :root[data-mgl-look="C"] body.wavepage :is(.wave-tools, #edCounters) { border-radius: 16px; background: var(--mgl-grain), linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); background-blend-mode: soft-light, normal; }
-:root[data-mgl-look="C"] body.wavepage .wave-tools { border-top-left-radius: 0; }
 :root[data-mgl-look="C"] :is(.nowbar .tbtn, .ed-chip button, #edCmdK) { border-radius: 20px; }
 :root[data-mgl-look="D"] body.wavepage :is(.wave-tools, #edCounters) { border: 1px solid transparent; background: linear-gradient(165deg, #191b23, #111218) padding-box, conic-gradient(from 210deg, #3b4060, #2c5d5f, #5e4c3d, #4a3b5e, #3b4060) border-box; }
 :root[data-mgl-look="D"] .nowbar { border-bottom: 1px solid transparent; background: linear-gradient(180deg, #171922, #101118) padding-box, linear-gradient(90deg, #3b4060, #2c5d5f, #5e4c3d, #4a3b5e) border-box; }
