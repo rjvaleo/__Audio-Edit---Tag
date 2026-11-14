@@ -117,7 +117,9 @@ function stBuild() {
       <section class="st-panel">
         <div class="st-ph"><b class="st-nm">MAKE A SOUND</b><span class="st-meta">cut from your own stems, then made to sound good</span></div>
         <div class="st-row"><span id="stKind"></span>
-          <span class="st-cap">From</span><select class="st-field" id="stFrom" style="min-width:260px"></select>
+          <span class="st-cap st-from">From</span><select class="st-field st-from" id="stFrom" style="min-width:260px"></select>
+          <input class="st-field st-words st-prompt hidden" id="stPrompt" placeholder="say the sound: deep round dub techno kick, short tail" />
+          <span class="st-words st-wbars hidden" id="stWordsBars"></span>
           <button class="st-btn st-primary" id="stMakeGo">Find them</button>
           <span class="st-grow"></span>
           <span class="st-note" id="stModelNote">Sounds from words (Stable Audio Open Small) are not installed: its licence needs your OK first.</span></div>
@@ -158,7 +160,12 @@ function stBuild() {
     ],
   });
   $('stModel').append(ST.modelSeg);
-  $('stKind').append(uiSeg({ h: 28, value: ST.kind, items: [{ k: 'drums', label: 'Drum hits' }, { k: 'bass', label: 'Bass notes' }], onPick: (k) => { ST.kind = k; } }));
+  $('stKind').append(uiSeg({ h: 28, value: ST.kind, items: [{ k: 'drums', label: 'Drum hits' }, { k: 'bass', label: 'Bass notes' }, { k: 'words', label: 'From words', title: 'Stable Audio Open Small, on the GPU machine' }], onPick: (k) => { ST.kind = k; stKindShow(); } }));
+  const W = ST.words = { seconds: 1.5, n: 4 };
+  $('stWordsBars').append(
+    uiBar({ label: 'Length', h: 24, w: 150, get: () => (W.seconds - 0.5) / 10.5, set: (u) => { W.seconds = Math.round((0.5 + u * 10.5) * 10) / 10; }, commit: () => {}, text: () => `${W.seconds.toFixed(1)} s`, def: 1 / 10.5, col: 'var(--look-f-time)' }),
+    uiBar({ label: 'Tries', h: 24, w: 120, get: () => (W.n - 1) / 7, set: (u) => { W.n = Math.round(1 + u * 7); }, commit: () => {}, text: () => `${W.n}`, def: 3 / 7, col: 'var(--look-f-level)' }));
+  $('stPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') stFindTries(); });
   $('stRate').append(uiSeg({ h: 24, value: ST.chain.rate, items: [{ k: 48000, label: '48 kHz' }, { k: 96000, label: '96 kHz' }], onPick: (k) => { ST.chain.rate = +k; } }));
 
   const bar = (box, label, get, set, text, def, col) => box.append(uiBar({ label, get, set: (u) => set(u), commit: () => {}, text, def, col, h: 24 }));
@@ -263,7 +270,9 @@ async function stPollStatus() {
   try { s = await api('/api/stems'); } catch { return; }
   ST.status = s;
   const helper = $('stHelper');
-  helper.textContent = s.helper ? 'HT-DEMUCS ON THIS MACHINE · NOTHING LEAVES IT' : 'THE STEM SPLITTER IS NOT INSTALLED';
+  helper.textContent = s.gpu ? `HT-DEMUCS AND STABLE AUDIO ON THE ${s.gpu.toUpperCase()}'S GPU · YOUR OWN MACHINES` : s.helper ? 'HT-DEMUCS ON THIS MACHINE · NOTHING LEAVES IT' : 'THE STEM SPLITTER IS NOT INSTALLED';
+  ST.gpu = s.gpu || null;
+  stKindShow();
   helper.classList.toggle('st-err', !s.helper);
   helper.title = s.helper ? s.helperPath : 'Put the demucs program in the models folder, or set AUDIOLAB_DEMUCS. See docs/STEMS.md.';
   $('stGo').disabled = !s.helper || s.running;
@@ -553,7 +562,21 @@ function stFillFrom() {
   if (keep && ST.list.some((s) => s.p === keep)) sel.value = keep;
 }
 
+/// Make's controls for the kind chosen: a song to cut from, or words.
+function stKindShow() {
+  if (!$('stMake')) return;
+  const words = ST.kind === 'words';
+  for (const el of document.querySelectorAll('#stMake .st-from')) el.classList.toggle('hidden', words);
+  for (const el of document.querySelectorAll('#stMake .st-words')) el.classList.toggle('hidden', !words);
+  $('stMakeGo').textContent = words ? 'Make them' : 'Find them';
+  $('stMakeGo').disabled = words && !ST.gpu;
+  $('stModelNote').textContent = words
+    ? (ST.gpu ? `Stable Audio Open Small on the ${ST.gpu}'s GPU · the first time it loads the model, up to a minute; then about a second` : 'Sounds from words need the GPU machine: set AUDIOLAB_GPU_HOST (see docs/STEMS.md).')
+    : 'Cut from your own stems.';
+}
+
 async function stFindTries() {
+  if (ST.kind === 'words') return stMakeWords();
   const p = $('stFrom').value;
   if (!p) { toast('Split a song first'); return; }
   $('stMakeGo').disabled = true;
@@ -569,8 +592,34 @@ async function stFindTries() {
   ST.pick = null;
   ST.made = null;
   ST.peakCache?.clear();
-  const col = (t) => (t.group === 'kick' || t.group === 'snare' || t.group === 'hat' ? ST_COL.drums : ST_COL.bass);
-  $('stTriesMeta').textContent = ST.tries.length ? `${ST.tries.length} found · click one to hear it and choose it` : 'none found';
+  stShowTries();
+}
+
+async function stMakeWords() {
+  const prompt = $('stPrompt').value.trim();
+  if (!prompt) { toast('Say what to make'); $('stPrompt').focus(); return; }
+  $('stMakeGo').disabled = true;
+  $('stTriesMeta').textContent = `making on the ${ST.gpu}…`;
+  const t0 = performance.now();
+  try {
+    ST.tries = await postJSON('/api/stems/words', { prompt, seconds: ST.words.seconds, n: ST.words.n });
+    $('stTriesMeta').textContent = `${ST.tries.length} made in ${((performance.now() - t0) / 1000).toFixed(1)} s · click one to hear it and choose it`;
+  } catch (e) {
+    toast(e.message);
+    ST.tries = [];
+    $('stTriesMeta').textContent = 'none made';
+  } finally {
+    $('stMakeGo').disabled = false;
+  }
+  ST.pick = null;
+  ST.made = null;
+  ST.peakCache?.clear();
+  stShowTries(true);
+}
+
+function stShowTries(keepMeta) {
+  const col = (t) => (t.group === 'words' ? 'var(--look-f-pitch)' : t.group === 'kick' || t.group === 'snare' || t.group === 'hat' ? ST_COL.drums : ST_COL.bass);
+  if (!keepMeta) $('stTriesMeta').textContent = ST.tries.length ? `${ST.tries.length} found · click one to hear it and choose it` : 'none found';
   $('stTries').innerHTML = ST.tries.map((t, i) => `<div class="st-try" data-i="${i}"><div class="st-row"><b class="st-nm" style="font-size:var(--fs-s)">${stEsc(t.label)}</b><span class="st-grow"></span><span class="st-meta">${t.seconds.toFixed(2)} s</span></div><div class="st-well"><canvas data-p="${stEsc(t.p)}" data-col="${col(t)}"></canvas></div></div>`).join('');
   for (const el of document.querySelectorAll('#stTries .st-try')) {
     el.onclick = () => {
@@ -578,7 +627,7 @@ async function stFindTries() {
       ST.pick = t;
       ST.made = null;
       for (const o of document.querySelectorAll('#stTries .st-try')) o.classList.toggle('sel', o === el);
-      $('stName').value = `${ST.song?.name || 'sound'} ${t.group}`.trim();
+      $('stName').value = t.group === 'words' ? $('stPrompt').value.trim().split(/[,.]/)[0].slice(0, 48) : `${ST.song?.name || 'sound'} ${t.group}`.trim();
       $('stKeep').disabled = false;
       $('stHearB').disabled = true;
       $('stSaved').textContent = '';
@@ -598,7 +647,7 @@ async function stKeep() {
   const c = ST.chain;
   const body = {
     p: ST.pick.p,
-    folder: ST.kind === 'bass' ? 'Bass' : 'Drums',
+    folder: ST.pick.group === 'words' ? 'Words' : ST.kind === 'bass' ? 'Bass' : 'Drums',
     name: $('stName').value || ST.pick.group,
     rate: c.up ? c.rate : 0,
     air: c.up ? c.air : 0,

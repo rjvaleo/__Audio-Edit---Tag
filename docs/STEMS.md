@@ -64,7 +64,27 @@ Sounds from words (Stable Audio Open Small) are not installed: its licence (Stab
 Community Licence: free under US$1M a year in revenue, registration, "Powered by
 Stability AI") needs RJ's OK first. See `WORK DIR/page-mockups/MODELS.md`.
 
-## The helper
+## The GPU machine (the PC)
+
+Model work runs on RJ's PC (RTX 3060 12 GB, 64 GB RAM), not on the iMac. The server
+reaches it with `ssh` and `scp` (key login, `BatchMode`), only with fixed commands; the
+page never talks to the PC. Configure it with `AUDIOLAB_GPU_HOST=pc` (and optionally
+`AUDIOLAB_GPU_DIR`, default `C:/Users/rjval/agent-net`), or `GPU.json` in the data folder:
+`{"host": "pc", "dir": "C:/Users/rjval/agent-net"}`. With it set:
+
+- **Split** sends the song to `demucs/jobs/mgl-<ms>/` there, runs Python Demucs 4.1 on CUDA
+  (`demucs\venv`, weights under `demucs\torch`), brings the stems back with four `scp` at
+  once, deletes the job folder, and reads the stems here. A 5-minute song: about 70 s
+  (15 s up, 21 s on the GPU, 36 s back). **Stop** ends Demucs there too (by its job tag).
+- **Make → From words** runs Stable Audio Open Small (`sao\make.py --serve`, kept loaded,
+  closed after ten idle minutes). The first request loads the model (about 15-50 s); then
+  0.3-0.45 s a sound. Tries land in `Made/.words/`; kept ones in `Made/Words/`.
+- Before either, Ollama's loaded model is stopped, to free the GPU.
+- `gpu.rs` holds the bridge; `/api/stems/words {prompt, seconds, n, seed}` is the route.
+
+Without a GPU machine, Split falls back to the local helper below, and From words is off.
+
+## The helper (this machine)
 
 The split is done by **`demucs-rs`** (Apache-2.0; github.com/nikhilunni/demucs-rs), a
 separate program, so its few hundred crates and GPU layer stay out of this one. The
