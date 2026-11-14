@@ -90,6 +90,10 @@ const COMPOSE_LISTED = false;
       title: 'The scale sequencer — a second voice, run from the same transport',
     },
     {
+      icon: 'stems', label: 'Stems', mode: 'stems',
+      title: 'Stems — split a song into drums, bass, vocals and other, read what is in it, and make sounds from it',
+    },
+    {
       icon: 'theme', label: 'Theme', mode: 'theme',
       title: 'Palettes, colours, the waveform and the Look',
     },
@@ -199,6 +203,9 @@ const COMPOSE_LISTED = false;
     // Four steps of a sequence, at four heights.
     seq:
       '<rect x="3.5" y="12.5" width="3.4" height="8"/><rect x="8.7" y="7.5" width="3.4" height="13"/><rect x="13.9" y="10" width="3.4" height="10.5"/><rect x="19.1" y="4" width="3.4" height="16.5"/>',
+    // A song pulled into four lanes.
+    stems:
+      '<path d="M3.5 12h3"/><path d="M6.5 12 9 6.5h11.5"/><path d="M6.5 12 9 10h11.5"/><path d="M6.5 12 9 14h11.5"/><path d="M6.5 12 9 17.5h11.5"/>',
     compose:
       '<rect x="3.5" y="4" width="4.6" height="7" rx=".8"/><rect x="9.7" y="4" width="4.6" height="7" rx=".8"/><rect x="15.9" y="4" width="4.6" height="7" rx=".8"/><path d="M3.5 14.5h17"/><path d="M3.5 17.5h11"/><path d="M3.5 20.5h14"/>',
     theme:

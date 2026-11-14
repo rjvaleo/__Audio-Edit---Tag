@@ -152,6 +152,24 @@ fn analyse_into(src: &Path, out: &Path, title: &str, say: &dyn Fn(&str)) -> Resu
     std::fs::write(out.join("card.json"), card.to_string()).map_err(|e| e.to_string())
 }
 
+/// POST {p}: read a split song again (after the analysis has improved), without
+/// splitting it again. Takes a few seconds a minute of song.
+pub(super) fn api_stems_analyse(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let (lib, dir, name) = match song_dir(app, v.get("p").and_then(|p| p.as_str()).unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let meta = std::fs::read_to_string(dir.join("stems.json")).ok().and_then(|t| json::parse(&t)).unwrap_or(Value::Null);
+    let Some(src) = meta.get("source").and_then(|s| s.as_str()).and_then(|s| resolve_within(&lib, s)) else {
+        return Response::error(404, "the song this was split from is not in the library any more");
+    };
+    match analyse_into(&src, &dir, &name, &|_| {}) {
+        Ok(()) => Response::json(Value::obj().set("ok", true).to_string()),
+        Err(e) => Response::error(500, &e),
+    }
+}
+
 /// GET: every split song.
 pub(super) fn api_stems_list(app: &Arc<App>) -> Response {
     let Some(lib) = app.library_path() else { return Response::json("[]".into()) };
@@ -295,7 +313,7 @@ pub(super) fn api_stems_tries(app: &Arc<App>, req: &Request) -> Response {
             Err(e) => return Response::error(500, &e),
         };
         for h in hits {
-            if let Ok(s) = sound::cut(&drums, h.t, sound::hit_length(h.kind)) {
+            if let Ok(s) = sound::cut(&drums, h.t, h.len + 0.018) {
                 put(format!("{} at {}:{:04.1}", h.kind.name(), (h.t / 60.0) as u32, h.t % 60.0), s, h.t, h.kind.name());
             }
         }

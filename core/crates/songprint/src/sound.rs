@@ -77,6 +77,9 @@ pub struct Hit {
     /// How clearly this onset is its kind: its band against the other two.
     pub purity: f32,
     pub strength: f32,
+    /// Seconds to cut: to just before the next hit of any kind, at most
+    /// `hit_length(kind)`, so a one-shot is one shot.
+    pub len: f32,
 }
 
 /// Find the clearest single hits of each kind in a drums stem: onsets where one
@@ -93,9 +96,13 @@ pub fn find_hits(drums: &Path, per_kind: usize, gap: f32) -> Result<Vec<Hit>, St
         scale[b] = crate::rhythm::percentile(&mut v, 0.98).max(1e-6);
     }
     let mut cands: Vec<Hit> = Vec::new();
+    let mut onsets: Vec<f32> = Vec::new();
     for i in 2..bands.len().saturating_sub(2) {
         let n = |j: usize| [bands[j][0] / scale[0], bands[j][1] / scale[1], bands[j][2] / scale[2]];
         let c = n(i);
+        if (0..3).any(|b| c[b] >= 0.35 && (i - 1..=i + 1).all(|j| j == i || n(j)[b] <= c[b])) {
+            onsets.push(t_of(i));
+        }
         for (b, kind) in [(0, Kind::Kick), (1, Kind::Snare), (2, Kind::Hat)] {
             // a local peak in its band
             if c[b] < 0.5 || (i - 2..=i + 2).any(|j| j != i && n(j)[b] > c[b]) {
@@ -103,7 +110,7 @@ pub fn find_hits(drums: &Path, per_kind: usize, gap: f32) -> Result<Vec<Hit>, St
             }
             let others = (0..3).filter(|&o| o != b).map(|o| c[o]).fold(0.0f32, f32::max);
             let purity = c[b] / (others + 0.15);
-            cands.push(Hit { kind, t: t_of(i), purity, strength: c[b] });
+            cands.push(Hit { kind, t: t_of(i), purity, strength: c[b], len: 0.0 });
         }
     }
     let mut out = Vec::new();
@@ -114,7 +121,9 @@ pub fn find_hits(drums: &Path, per_kind: usize, gap: f32) -> Result<Vec<Hit>, St
         for h in k {
             if took.iter().all(|t| (t - h.t).abs() >= gap) {
                 took.push(h.t);
-                out.push(Hit { kind, t: h.t, purity: h.purity, strength: h.strength });
+                let next = onsets.iter().copied().find(|&o| o > h.t + 0.04).unwrap_or(f32::MAX);
+                let len = (next - h.t - 0.01).clamp(0.06, hit_length(kind));
+                out.push(Hit { kind, t: h.t, purity: h.purity, strength: h.strength, len });
                 if took.len() >= per_kind {
                     break;
                 }

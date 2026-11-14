@@ -21,6 +21,7 @@ function setMode(mode) {
   const wasRoom = state.mode === 'room';
   const wasCompose = state.mode === 'compose';
   const wasSynth = state.mode === 'synth';
+  const wasStems = state.mode === 'stems';
   const wasGrainPage = document.body.classList.contains('grainpage');
   state.mode = mode;
   const editing = mode === 'edit';
@@ -33,6 +34,9 @@ function setMode(mode) {
   // The Theme page: palettes, a preview and the editor, at full width like
   // Wave. See `docs/THEME-EDITOR.md`.
   const theme = mode === 'theme';
+  // The Stems page: split a song, read it, make sounds from it. Full width,
+  // like Theme. See `docs/STEMS.md`.
+  const stems = mode === 'stems';
   // The Grain v12 page, behind `prefs.grainUi`: the Grain page's new face.
   const grainPage = editing && editPage === 'grain' && gsOn();
 
@@ -43,6 +47,7 @@ function setMode(mode) {
   if (wasCompose && !compose) composeLeave();
   // Its telemetry and its frame loop stop the moment it is not on screen.
   if (wasSynth && !synth) wvLeave();
+  if (wasStems && !stems) stLeave();
   if (wasGrainPage && !grainPage) gsLeave();
 
   // The spectrogram is not an option in edit mode, it is what edit mode is for.
@@ -71,16 +76,17 @@ function setMode(mode) {
   // The lane is the sound as a document — the thing you cut. The room is the
   // sound as a picture, and it takes the whole middle; the overview strip along
   // the top is what stays, because that is the one that says *where you are*.
-  $('lane').classList.toggle('hidden', room || seq || compose || synth || theme);
+  $('lane').classList.toggle('hidden', room || seq || compose || synth || theme || stems);
   $('waveView').classList.toggle('hidden', !synth);
   $('themeView').classList.toggle('hidden', !theme);
+  $('stemsView').classList.toggle('hidden', !stems);
   $('grainView').classList.toggle('hidden', !grainPage);
   // Compose lays the same frame over its SEQ cell — see `composeEnter`.
   $('seqView')?.classList.toggle('hidden', !(seq || compose));
   if (seq || compose) seqEnsureFrame();
   document.querySelectorAll('#leftRail .mode-btn').forEach((b) =>
     b.classList.toggle('active', b.dataset.mode === mode));
-  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : compose ? 'Compose' : synth ? 'Wave' : theme ? 'Theme' : 'Browse';
+  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : compose ? 'Compose' : synth ? 'Wave' : theme ? 'Theme' : stems ? 'Stems' : 'Browse';
   document.body.classList.toggle('editing', editing);
   // Edit and Grain are the same document, one mode; the page says which
   // furniture is out (`body.wavepage`, the Edit page's toolbar).
@@ -96,12 +102,13 @@ function setMode(mode) {
   document.body.classList.toggle('composeview', compose);
   document.body.classList.toggle('synthpage', synth);
   document.body.classList.toggle('themepage', theme);
+  document.body.classList.toggle('stemspage', stems);
   // The modes that give the whole width to the middle, so the library becomes
   // a floating drawer rather than a docked column. Its own class rather than
   // `.editing, .roomview` repeated down the stylesheet: the drawer's geometry
   // is one idea and it should have one name, or the next mode to want it will
   // be a third selector added to six rules.
-  document.body.classList.toggle('docmode', docMode || synth || theme);
+  document.body.classList.toggle('docmode', docMode || synth || theme || stems);
 
   // After the toggles, so the parts it borrows are in the state this mode gave
   // them before they are moved.
@@ -110,6 +117,7 @@ function setMode(mode) {
   if (synth) wvEnter();
   if (grainPage) gsEnter();
   if (theme) tpEnter();
+  if (stems) stEnter();
 
   // Edit has nothing to say about folder tags, and the rail's Browse tools
   // only make sense in Browse — but the library button still opens the drawer.
@@ -122,7 +130,7 @@ function setMode(mode) {
   }
 
   const panel = $('leftPanel');
-  if (docMode || synth || theme) {
+  if (docMode || synth || theme || stems) {
     // Docked column becomes an overlay drawer, shut by default: the editor and
     // the room each get the whole width until you go looking for something.
     panel.classList.remove('collapsed');

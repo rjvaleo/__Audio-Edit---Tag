@@ -237,13 +237,27 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
             let seg = &low[a.min(low.len())..(a + n).min(low.len())];
             let rms = (seg.iter().map(|x| x * x).sum::<f32>() / seg.len().max(1) as f32).sqrt();
             rms_all.push(rms);
-            let f0 = pitch::yin(seg, lr, 30.0, 400.0).filter(|(_, ap)| *ap < 0.3);
+            let f0 = pitch::yin(seg, lr, 30.0, 400.0).filter(|(_, ap)| *ap < 0.45);
             step_pitch.push(f0.map(|(hz, _)| (pitch::midi(hz), rms)));
             let (fx, _) = near(&|i: usize| bass_flux.get(i).copied().unwrap_or(0.0) / bass_scale, p, ((sl / 3.0) as usize).max(1));
             step_onset.push(fx);
         }
     }
     let rms_max = rhythm::percentile(&mut rms_all.clone(), 0.98).max(1e-9);
+    // Octave slips: a step more than nine semitones from the line around it
+    // (the median of the pitched steps within two beats) is folded back.
+    let raw: Vec<Option<f32>> = step_pitch.iter().map(|p| p.map(|(m, _)| m)).collect();
+    for g in 0..step_pitch.len() {
+        let Some((m, r)) = step_pitch[g] else { continue };
+        let mut near: Vec<f32> = raw[g.saturating_sub(8)..(g + 9).min(raw.len())].iter().flatten().copied().collect();
+        if near.len() < 3 {
+            continue;
+        }
+        let med = median(&mut near);
+        if (m - med).abs() > 9.0 {
+            step_pitch[g] = Some((m - 12.0 * ((m - med) / 12.0).round(), r));
+        }
+    }
     struct Note {
         g: usize,
         len: usize,
@@ -255,7 +269,9 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
     for (g, sp) in step_pitch.iter().enumerate() {
         let pitched = sp.filter(|(_, r)| *r > rms_max * 0.06);
         match (pitched, cur.as_mut()) {
-            (Some((m, r)), Some(n)) if (m - n.midi).abs() < 0.6 && step_onset[g] < 0.35 => {
+            // The same note goes on unless it is struck again: an attack in the
+            // bass stem and the level jumping up with it.
+            (Some((m, r)), Some(n)) if (m - n.midi).abs() < 0.8 && !(step_onset[g] >= 0.6 && g > 0 && rms_all[g] > 1.4 * rms_all[g - 1]) => {
                 n.len += 1;
                 n.vel = n.vel.max(r / rms_max);
             }
