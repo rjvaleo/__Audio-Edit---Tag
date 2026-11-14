@@ -114,10 +114,13 @@ test('Map a stretch control: its ring is the LFO colour, it moves, the document 
   expect(await page.evaluate(() => gsRead('scan'))).toBe(before.scan);
   // Heard, never stored: the page's document is byte for byte what it was.
   expect(await page.evaluate(() => JSON.stringify(state.edit))).toBe(before.edit);
-  // The dot travels too, on its own.
+  // The dot travels too, on its own. Scan sits near the top of its range, so
+  // for part of the swing the heard value is held at the end and the dot sits
+  // there (`calc(100% - 4px)`); LFO 1 is 0.25 Hz, so wait out a whole cycle
+  // rather than two seconds that may fall inside the held part.
   const left = () => el.evaluate((b) => b.querySelector('.gs-bd').style.left);
   const l0 = await left();
-  await expect.poll(left, { timeout: 2000 }).not.toBe(l0);
+  await expect.poll(left, { timeout: 5000 }).not.toBe(l0);
 });
 
 test('Map a rack knob from the effects page header: it moves and its setting does not', async ({ page }) => {
