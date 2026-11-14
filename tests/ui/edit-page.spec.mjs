@@ -282,6 +282,15 @@ const secAt = (page, title) => page.evaluate((t) => wtLayout.sections.findIndex(
 const ids = (page, sec) => page.$$eval(`#waveTools .wt-group[data-section="${sec}"] .wt-btn[data-cmd]`,
   (bs) => bs.map((b) => b.dataset.cmd));
 const titles = (page) => page.$$eval('#waveTools .wt-group[data-section] .wt-title', (ts) => ts.map((t) => t.textContent));
+/// Drag `from` onto `to` with the page's own drag events. Since 14 Nov 2026
+/// the bar runs down the right and scrolls, and Playwright's `dragTo` scrolls
+/// the target into view after the button is down, so the drag would start
+/// from whatever had scrolled under the pointer instead.
+async function dragOnto(page, from, to) {
+  const dt = await page.evaluateHandle(() => new DataTransfer());
+  await page.locator(from).dispatchEvent('dragstart', { dataTransfer: dt });
+  for (const type of ['dragenter', 'dragover', 'drop']) await page.locator(to).dispatchEvent(type, { dataTransfer: dt });
+}
 
 test('one bar down the right, no tabs: every section under its title, the meters at its foot, the words only while customizing', async ({ page }) => {
   await openEdit(page);
@@ -363,8 +372,8 @@ test('customizing: a section dragged onto another goes before it', async ({ page
   await openEdit(page);
   const hist = await secAt(page, 'History'), sel = await secAt(page, 'Zoom');
   await page.click('#waveTools .wtEdit');
-  await page.locator(`#waveTools .wt-group[data-section="${sel}"] .wt-title`)
-    .dragTo(page.locator(`#waveTools .wt-group[data-section="${hist}"] .wt-title`));
+  // A section is picked up by its group (the group is what is draggable).
+  await dragOnto(page, `#waveTools .wt-group[data-section="${sel}"]`, `#waveTools .wt-group[data-section="${hist}"] .wt-title`);
   const titles = await page.$$eval('#waveTools .wt-group[data-section] .wt-title', (ts) => ts.map((t) => t.textContent));
   expect(titles.slice(0, 2)).toEqual(['Zoom', 'History']);
 });
@@ -388,7 +397,7 @@ test('customizing: hide an icon, then drag it back from Hidden; Reset restores a
   await page.click(`#waveTools .wt-group[data-section="${clip}"] [data-cmd="crop"] .wt-x`);
   expect(await ids(page, clip)).not.toContain('crop');
   await expect(page.locator('#waveTools .wt-custom [data-cmd="crop"]')).toBeVisible();
-  await page.locator('#waveTools .wt-custom [data-cmd="crop"]').dragTo(page.locator('#waveTools [data-cmd="undo"]'));
+  await dragOnto(page, '#waveTools .wt-custom [data-cmd="crop"]', '#waveTools [data-cmd="undo"]');
   expect((await ids(page, hist))[0]).toBe('crop');
   await page.click('#waveTools .wtReset');
   expect(await ids(page, clip)).toEqual(['cut', 'copy', 'paste', 'insertClip', 'delete', 'crop', 'duplicate']);

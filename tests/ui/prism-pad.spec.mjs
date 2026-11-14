@@ -85,19 +85,20 @@ test('the pad offers Time & Pitch first, then the rack\'s slots', async ({ page 
   await expect(page.locator('#prismY')).toHaveValue('semitones');
 });
 
-test('Time & Pitch: speed across, pitch up, linear between the limits', async ({ page }) => {
+test('Time & Pitch: speed across, pitch up, Stretch logarithmic and Pitch linear between the limits', async ({ page }) => {
   await openPad(page);
   await drag(page, 0.5, 0.5);
   let d = await deckStretch(page);
-  // Linear, as Hyperprism's pad was: halfway from four times as long to a
-  // quarter is 2.125.
-  expect(d.ratio).toBeGreaterThan(2.05);
-  expect(d.ratio).toBeLessThan(2.2);
+  // Since 14 Nov 2026 the window is the knobs' whole range, 100× to 0.01× and
+  // ±48 st (it was 4× to ¼× and ±12, linear, as Hyperprism's pad was), and
+  // Stretch, a log control, is swept logarithmically: halfway is 1×, as it is
+  // on the knob. Pitch stays linear: halfway is 0.
+  expect(d.ratio).toBeCloseTo(1, 1);
   expect(Math.abs(d.semitones)).toBeLessThan(0.6);
   await drag(page, 0.999, 0.999);
   d = await deckStretch(page);
-  expect(d.ratio).toBeLessThan(0.27);
-  expect(d.semitones).toBeGreaterThan(11.5);
+  expect(d.ratio).toBeLessThan(0.0105);
+  expect(d.semitones).toBeGreaterThan(47);
   await expect(page.locator('#hsXName')).toContainText('Stretch');
   await expect(page.locator('#hsYName')).toContainText('Pitch');
 });
@@ -139,7 +140,9 @@ test('double-click puts the point back in the middle', async ({ page }) => {
   await page.locator('#hsPad').dblclick();
   await page.waitForTimeout(200);
   const d = await deckStretch(page);
-  expect(d.ratio).toBeCloseTo(2.125, 2);
+  // The middle of the whole-range window (14 Nov 2026), swept logarithmically:
+  // 1×. It was 2.125, halfway between 4× and ¼× linearly.
+  expect(d.ratio).toBeCloseTo(1, 2);
   expect(Math.abs(d.semitones)).toBeLessThan(0.6);
 });
 
