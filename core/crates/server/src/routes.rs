@@ -187,6 +187,14 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/javascript; charset=utf-8", SEQ_LOOK_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/sequencer/journey.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_JOURNEY_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/scopes.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_SCOPES_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/sequencer/style.css") => {
             Response::ok("text/css; charset=utf-8", SEQ_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")

@@ -126,7 +126,8 @@ function atOscHtml(w) {
     + `<svg viewBox="0 0 60 34"><path d="${AT_GLYPH[k.id]}"/></svg><b>${k.name}</b><small>${k.sub}</small></button>`).join("");
   return `<section class="panel at-oscbox" data-osc="${w}"><div class="ph"><b class="nm">OSC ${w}</b><span class="meta" id="at${w}What"></span><span class="grow"></span><span class="meta">8 kinds</span>`
     + `<select id="atKind${w}Select" class="at-hidden" onchange="atmosRead()">${AT_KINDS.map((k) => `<option value="${k.id}">${k.name}</option>`).join("")}</select></div>`
-    + `<div class="at-oscs">${cards}</div>${atKnobs([`at${w}1`, `at${w}2`, `at${w}3`, `at${w}Oct`])}</section>`;
+    + `<div class="at-oscs">${cards}</div><div class="at-osc-row"><div class="well scope scope-osc"><canvas id="scope${w}" width="240" height="58"></canvas></div>`
+    + `${atKnobs([`at${w}1`, `at${w}2`, `at${w}3`, `at${w}Oct`])}</div></section>`;
 }
 
 const AT_STARTS = [
@@ -634,6 +635,8 @@ function atmosPlay(freq, time, dur) {
   atLink(v, atBus.blend, inv); inv.connect(gA.gain);
   const fwd = c.createGain(); fwd.gain.value = 0.7; atLink(v, atBus.blend, fwd); fwd.connect(gB.gain);
   gA.connect(env); gB.connect(env);
+  // Each oscillator to its own scope (scopes.js), on its own.
+  if (typeof scopeTap === "function") { scopeTap("A", gA); scopeTap("B", gB); }
   // A slow wander shared by every oscillator in the note: drift.
   const drift = AT.atDrift / 100;
   const dl = c.createOscillator(), dg = c.createGain();
