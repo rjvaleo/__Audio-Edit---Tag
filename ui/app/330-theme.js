@@ -131,6 +131,10 @@ function applyChosenTheme() {
   // this, but this only ever runs from a handler or after load, never during
   // it, so the ordering is safe — unlike reaching for it at declaration time.
   if (typeof applyWaveColour === 'function') applyWaveColour({ save: false });
+  // A page being previewed in the palette open in the editor keeps showing it:
+  // what is worn goes back on when the preview ends (`tpLiveEnd`). The class is
+  // only ever set from a handler, after every file has loaded.
+  if (document.body.classList.contains('tplive')) tpLiveSoon();
 }
 
 /// Wear the theme of one of Grain's Looks. The Now Playing bar's Look buttons
@@ -296,8 +300,10 @@ function tpRenderWear() {
   mark('themeWorn', !!worn && !themeState.plain);
   mark('themePlain', !!worn && themeState.plain);
   mark('themeNone', !worn);
+  // The worn theme's Look, which is the root's except while a page is being
+  // previewed in another palette (`tpLivePaint`).
   for (const b of document.querySelectorAll('#tpLooks [data-look]')) {
-    b.classList.toggle('on', b.dataset.look === document.documentElement.dataset.mglLook);
+    b.classList.toggle('on', b.dataset.look === themeLook(worn));
   }
 }
 
@@ -412,6 +418,9 @@ function setWaveColour(choice) {
   }
   applyWaveColour.live = undefined;
   applyWaveColour();
+  // The parts sheet, and a page being previewed, wear the open palette's
+  // waveform, so they are painted again too.
+  tsRender();
 }
 
 function renderWaveColours() {

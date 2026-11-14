@@ -399,9 +399,10 @@
          on the same drafts as the tray, which stays built underneath. -->
     <div class="hidden" id="grainView"></div>
 
-    <!-- Theme: a page of its own (13 Nov 2026). The palettes as cards, a large
-         preview built from today's parts, and the editor: colours, the
-         waveform and the Look. The explanations are tooltips and the doc. See
+    <!-- Theme: a page of its own (13 Nov 2026). The palettes as cards, a sheet
+         of today's parts, and the editor: colours, the waveform and the Look.
+         Across the top, every page of the app, shown itself in the palette
+         being edited. The explanations are tooltips and the doc. See
          `docs/THEME-EDITOR.md`. -->
     <div class="hidden" id="themeView">
       <section class="tp-panel tp-top">
@@ -414,6 +415,12 @@
         </div>
         <button class="tp-btn" id="tsImport" title="Paste palette JSON: one object or an array of { name, colors }">Import JSON</button>
         <button class="tp-btn" id="tsCopy" title="Copy your own palettes as JSON">Copy JSON</button>
+      </section>
+      <!-- One button per page of the rail (`tpBuildPages`): the page itself, in
+           the palette open in the editor, with the editor beside it. -->
+      <section class="tp-panel tp-pages">
+        <b class="tp-nm" title="Each page as it is, in the palette open in the editor. Nothing is worn until Wear it; back here, what you wear comes back.">SEE IT ON</b>
+        <div class="tp-pgs" id="tpPages"></div>
       </section>
       <div class="tp-body">
         <!-- A palette gives colour and direction; the ladder of surfaces, text
@@ -431,11 +438,10 @@
         </section>
 
         <!-- Real parts, not a picture: the shared knob, bar, switch and preset
-             bar, painted by the palette open in the editor. The page itself is
-             left alone until Wear it. -->
+             bar, painted by the palette open in the editor. The pages
+             themselves are the buttons above. -->
         <section class="tp-panel tp-view">
-          <div class="tp-ph"><b class="tp-nm">PREVIEW</b><span class="tp-meta" id="tpPrevNote"></span><span class="tp-grow"></span>
-            <span id="tpPage"></span></div>
+          <div class="tp-ph"><b class="tp-nm">THE PARTS</b><span class="tp-meta" id="tpPrevNote"></span></div>
           <div class="tp-prev" id="themeMini"></div>
         </section>
 
@@ -1344,6 +1350,22 @@
       <span id="rightPanelTitle">Tags</span>
       <button class="x" id="closeRight">×</button>
     </div>
+  </aside>
+
+  <!-- The Theme page's editor, beside a page being previewed in it. Empty and
+       hidden otherwise: the editor's section is moved in by `tpLiveStart` and
+       back by `tpLiveEnd`. See `docs/THEME-EDITOR.md`. -->
+  <aside class="tp-dock hidden" id="tpDock" aria-label="Theme, beside the page it is previewing">
+    <section class="tp-panel tp-dhead">
+      <div class="tp-ph"><b class="tp-nm">PREVIEW</b><span class="tp-meta" id="tpLiveNote"></span><span class="tp-grow"></span>
+        <button class="tp-btn tp-sm" id="tpLivePrev" title="The palette before this one" aria-label="Previous palette">&lsaquo;</button>
+        <button class="tp-btn tp-sm" id="tpLiveNext" title="The next palette" aria-label="Next palette">&rsaquo;</button></div>
+      <div class="tp-pgs" id="tpLivePages"></div>
+      <div class="tp-row">
+        <button class="tp-btn" id="tpLiveBack" title="Back to the Theme page; what you wear comes back">&larr; Theme</button>
+        <button class="tp-btn" id="tpLiveStop" title="Stop previewing and stay on this page, in what you wear">Stop</button>
+      </div>
+    </section>
   </aside>
 
 
