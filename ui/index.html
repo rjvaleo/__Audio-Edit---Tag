@@ -182,6 +182,21 @@
   <!-- centre: the selected sound, or the editor -->
   <main class="centre">
 
+    <!-- The whole open file, on every page but Browse and Theme, in the one
+         place it never leaves: under the Now Playing bar, above whatever the
+         page shows, so going from page to page changes everything under it and
+         nothing in it. The loop and Start are set on it; it zooms, and its grip
+         makes it taller. See ui/app/416-page-overview.js. -->
+    <div class="po hidden" id="pageOv">
+      <div class="po-well" id="poWell"><canvas id="poCanvas" title="The whole file. Drag a bracket to move the loop, drag across for a new one; click or drag the green flag for Start; ⌥-drag scrubs. A region's strip along the bottom selects it. The box is the part the page below shows: drag inside it to move that. The wheel zooms here, ⇧-wheel pans; double-click for the whole file (on Chop, the whole sound in Chop's detail)"></canvas></div>
+      <div class="po-side">
+        <div class="po-zb"><button type="button" class="po-btn" id="poZoomOut" title="Zoom out">−</button><button type="button" class="po-btn" id="poZoomIn" title="Zoom in round the head, or round Start while nothing plays (or the wheel over the wave)">+</button></div>
+        <button type="button" class="po-btn po-fit" id="poZoomFit" title="The whole file (or double-click the wave)">Fit</button>
+        <span class="po-ro" id="poZoomRo"></span>
+      </div>
+      <i class="po-grip" id="poGrip" title="Drag to make the overview taller or shorter · double-click to put it back"></i>
+    </div>
+
 
     <!-- open documents: edit mode only -->
 

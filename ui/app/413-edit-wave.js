@@ -157,7 +157,7 @@ function edAfterDraw() {
 
 /// The sound has been read or measured: colour, marks and numbers catch up.
 function edSoundReady() {
-  if (GS.showing) GS_KEYS.ov = '';
+  poDirty();
   if (prismOwnsBar()) prismDeckShowWave();
   if (!edOn()) return;
   drawWave();

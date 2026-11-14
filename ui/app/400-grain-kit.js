@@ -17,9 +17,11 @@
 //
 // Every top-level name starts `gs` or `GS`: the parts share one global scope.
 
-/// The page is laid out at this one size and scaled whole (`gsFit`).
+/// The page is laid out at this one size and scaled whole (`gsFit`). 990 high
+/// since SOURCE went the full width (14 Nov 2026): the engine panel under it
+/// still has to hold Hybrid's sections, which are the tallest.
 const GS_W = 1388;
-const GS_H = 900;
+const GS_H = 990;
 
 const GS = {
   built: false, showing: false, raf: 0, scale: 1,

@@ -506,7 +506,7 @@ function buildMenuBar() {
 buildMenuBar();
 
 // Right-click, or ctrl-click, anywhere on the sound.
-for (const id of ['lane', 'overview', 'regions']) {
+for (const id of ['lane', 'pageOv', 'regions']) {
   const el = $(id);
   if (!el) continue;
   el.addEventListener('contextmenu', (e) => {

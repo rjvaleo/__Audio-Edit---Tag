@@ -5,7 +5,7 @@
    names on #grainView; the type is the app's: its scale (--fs-xs … --fs-m) and its faces
    (--sans, --mono). Orange --gs-on means on, everywhere.
 
-   The page is laid out at one fixed size, 1388 × 900, and scaled whole to fit
+   The page is laid out at one fixed size, 1388 × 990, and scaled whole to fit
    the centre (`gsFit`). Modules have fixed widths and nothing reflows. Every rule
    is under #grainView, body.grainpage or body.grainsub. */
 
@@ -43,7 +43,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 /* Drawn, not connected yet: nothing in it answers, so nothing says it will. */
 #grainView .gs-inert, #grainView .gs-inert * { cursor: default; }
 
-#grainView .gs-app { position: absolute; left: 0; top: 0; width: 1388px; height: 900px; transform-origin: 0 0; display: flex; flex-direction: column; }
+#grainView .gs-app { position: absolute; left: 0; top: 0; width: 1388px; height: 990px; transform-origin: 0 0; display: flex; flex-direction: column; }
 #grainView .gs-sp { flex: 1; }
 #grainView .gs-mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
@@ -55,9 +55,6 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 
 /* the page's own row */
 #grainView .gs-bar { flex: none; height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--gs-line); background: rgba(var(--black-rgb), .25); }
-/* The whole file across the top, above the engines: the loop and Start are set on it. */
-#grainView .gs-ov { flex: none; padding: 8px 14px 0; }
-#grainView .gs-ov .gs-well { height: 80px; }
 #grainView .gs-preset { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; min-width: 232px; flex: none; }
 #grainView .gs-preset .pn { flex: 1; font-weight: 600; color: var(--gs-t); white-space: nowrap; }
 #grainView .gs-preset .pt { font-size: var(--fs-s); color: var(--gs-t3); white-space: nowrap; }
@@ -124,8 +121,13 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView #gsMaster { cursor: ew-resize; }
 
 /* the view */
-#grainView .gs-view { flex: 1; min-height: 0; padding: 4px 14px 12px; display: flex; gap: 12px; }
-#grainView .gs-colL { width: 708px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+/* SOURCE, the loop, the full width under the engine tabs; under it the shared
+   controls and the engine's, side by side. The whole file is the overview above
+   every page (416-page-overview.js), outside this frame. */
+#grainView .gs-view { flex: 1; min-height: 0; padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+#grainView #gsPSrc { flex: none; }
+#grainView .gs-lower { flex: 1; min-height: 0; display: flex; gap: 12px; }
+#grainView #gsShared { width: 708px; flex: none; }
 #grainView .gs-mod { position: relative; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 7px; }
 #grainView .gs-mh { display: flex; align-items: center; gap: 8px; height: 22px; flex: none; }
 #grainView .gs-nm { font: 600 var(--fs-m) var(--mono); letter-spacing: .14em; color: var(--gs-t); white-space: nowrap; }
@@ -138,7 +140,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-zb .gs-ib:hover { color: var(--gs-t); background: rgba(var(--white-rgb), .05); }
 #grainView .gs-zb .zt { width: auto; padding: 0 6px; font: 500 var(--fs-s) var(--sans); }
 #grainView .gs-zb .gs-ro { min-width: 62px; text-align: right; margin-right: 4px; color: var(--gs-t3); }
-#grainView #gsSrcPic, #grainView #gsCloud { cursor: default; }
+#grainView #gsCloud { cursor: default; }
 
 /* shared controls */
 #grainView .gs-g3 { display: grid; grid-template-columns: 222px 222px 222px; gap: 10px; }
@@ -175,7 +177,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-tunebtn { flex: 1; min-width: 0; justify-content: space-between; }
 
 /* the engine panel */
-#grainView #gsEngPanel { width: 640px; height: 682px; flex: none; }
+#grainView #gsEngPanel { width: 640px; flex: none; }
 #grainView .gs-modblk { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 8px; border-radius: var(--r-l); background: rgba(var(--white-rgb), .02); box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .06); flex: none; }
 #grainView #gsPMod .gs-mh { height: 18px; }
 #grainView .gs-ampr, #grainView .gs-lfr { display: flex; align-items: center; height: 36px; gap: 7px; padding: 0 6px 0 5px; border-radius: var(--r-l); background: rgba(var(--white-rgb), .025); box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), .06), inset 3px 0 0 -1px var(--c); }

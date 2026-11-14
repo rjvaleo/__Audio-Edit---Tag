@@ -135,7 +135,7 @@ function hsBuild() {
     <section class="prism-panel hs-src" aria-label="Source">
       <div class="prism-ph"><b class="prism-nm">SOURCE</b><span class="prism-meta hs-src-name" id="prismSoundName"></span><span class="prism-meta" id="prismSoundMeta"></span>
         <span class="hs-fill"></span><button type="button" class="prism-btn" id="prismEdit" title="Open Prism's sound on the Edit page">Edit</button></div>
-      <div class="prism-well hs-src-well"><canvas id="prismSrc" aria-label="Prism's sound, the whole of it" title="Prism's sound, in its own colours: click or drag to go there"></canvas></div>
+      <div class="prism-well hs-src-well"><canvas id="prismSrc" aria-label="Prism's sound, the whole of it" title="Prism's sound, in its own colours: click or drag to go there"></canvas><i class="po-grip" id="prismSrcGrip" title="Drag to make SOURCE taller or shorter · double-click to put it back"></i></div>
     </section>
     <div class="prism-panel hs-head">
       <b class="prism-nm hs-title">PRISM</b>
@@ -228,6 +228,9 @@ function hsBuild() {
         </section>
       </div>
     </div>`;
+  // Taller by dragging, as the overview above every page is (416); the canvas
+  // redraws itself at its new size.
+  poGrip($('prismSrcGrip'), 'mgl.prismSource.h', 58, (h) => { host.querySelector('.hs-src-well').style.height = `${h}px`; });
   prismTakeBarsBuild();
   prismPickerWire();
   hsWire();
