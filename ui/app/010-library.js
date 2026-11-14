@@ -159,9 +159,12 @@ function fileRow(file) {
     // In the editor a single click opens the sound as its own tab, because the
     // drawer is only ever open when you are reaching for the next thing.
     if (state.mode === 'edit') openInEditor(file);
+    else if (state.mode === 'stems') stPick(file, false);
     else selectFile(file);
   };
-  el.ondblclick = () => openInEditor(file);
+  // On the Stems page the drawer is where its songs come from: a double-click
+  // loads the song there and stays (RJ, 14 Nov), rather than going to Edit.
+  el.ondblclick = () => (state.mode === 'stems' ? stPick(file, true) : openInEditor(file));
 
   drawThumb(el.querySelector('.thumb'), state.thumbs[file.path], isCur);
   return el;

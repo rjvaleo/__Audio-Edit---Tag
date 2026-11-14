@@ -177,3 +177,22 @@ test('Stems comes in blank, and a song opened replaces the one shown (RJ, 14 Nov
   await expect(page.locator('#stSongMeta')).toContainText('not split yet');
   await expect(page.locator('#stGo')).toHaveText('Split');
 });
+
+test('on Stems, a double-click in the library drawer loads the song there, not in Edit (RJ, 14 Nov)', async ({ page, request }) => {
+  const st = await (await request.get('/api/state')).json();
+  mkdirSync(join(st.library, 'songs'), { recursive: true });
+  wav(join(st.library, 'songs', 'Dub Test.wav'), 4, (t) => Math.sin(2 * Math.PI * 110 * t) * 0.3);
+  await request.post('/api/scan', { data: {} });
+  await expect.poll(async () => (await (await request.get('/api/files?folder=songs')).json()).length, { timeout: 15_000 }).toBeGreaterThan(0);
+  await open(page);
+  await page.click('#stChoose');
+  await page.locator('#leftPanel').getByText('songs', { exact: true }).first().click();
+  await page.locator('#leftPanel').getByText('Dub Test').first().dblclick();
+  await expect(page.locator('#stSongName')).toHaveText('DUB TEST.WAV');
+  await expect(page.locator('#stLanes .st-lane.st-wait')).toHaveCount(4);
+  expect(await page.evaluate(() => ({ mode: state.mode, drawer: state.drawerOpen }))).toEqual({ mode: 'stems', drawer: false });
+  // Anywhere else, a double-click still opens the sound in Edit.
+  await page.click('#leftRail .rl-item[data-mode="overview"]');
+  await page.locator('#leftPanel').getByText('Dub Test').first().dblclick();
+  await expect.poll(() => page.evaluate(() => state.mode)).toBe('edit');
+});
