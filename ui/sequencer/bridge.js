@@ -881,7 +881,10 @@ async function flush() {
         if (waveType === 'pulse') currentPW = Math.max(0.05, Math.min(0.95, pulseWidth + pwMod));
         // Accompany at every boundary, as the scheduler plays it (accompany.js).
         if (time >= 0 && typeof accompanyAt === 'function') accompanyAt(k, time);
-        if (step && !step.rest && time >= 0) seqPlayAt(step, time, d);
+        // The Draw page's canvas, as the scheduler plays it (draw.js).
+        if (time >= 0 && typeof drawAt === 'function') drawAt(k, time);
+        const stepsOut = typeof drawStepsMuted === 'function' && drawStepsMuted();
+        if (step && !step.rest && time >= 0 && !stepsOut) seqPlayAt(step, time, d);
         k++;
       }
     };
@@ -1082,6 +1085,8 @@ async function flush() {
       const atmos = m.only === 'atmos';
       document.body.classList.toggle('only-atmos', atmos);
       if (atmos) document.querySelector('.right-panel')?.scrollTo(0, 0);
+      // The host's Draw page: only the canvas (draw.js), the same frame again.
+      document.body.classList.toggle('only-draw', m.only === 'draw');
       // Its envelope's picture is measured from its box, which has just moved.
       if (typeof atmosDrawAmp === 'function') requestAnimationFrame(atmosDrawAmp);
     } else if (m.type === 'seq:want') {

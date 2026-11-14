@@ -652,3 +652,134 @@ film's render (which puts the knobs back) dropped the sequencer an octave. It is
 `rootMidi + (rootOctave + 1) * 12` now (A4 = 69 = 440 Hz), and the 88 keys' the
 same. Presets play at the octave they name: an octave above what they played
 once loaded before. Test: `sequencer-band.spec.mjs`, "A, octave 4 is 440 Hz".
+
+## Draw
+
+*14 Nov 2026.* RJ: "I want to create a little graphic interface for doing
+sequencing. I'm going to draw shapes and things, and that's going to get
+converted into making music." The plan is `WORK DIR/page-mockups/DRAW-PLAN.md`;
+the mock-up `draw.html` (picture `draw-mock.png`). RJ chose its own page.
+`ui/sequencer/draw.js` (ours, `/sequencer/draw.js`).
+
+**A page of its own, the same frame.** **Draw** on the rail, after Atmosphere,
+is the Seq frame showing only the canvas (`seqOnly('draw')`, `seq:only`,
+`body.only-draw`; the ONLY DRAW block at the end of `style.css`), as the
+Atmosphere page is. So its marks play the instruments set up on Seq, with the
+same settings, and the rest of the app treats it as Seq: it plays the open
+document with the sequencer (`playsDocument`), the shared overview strip is at the
+top (`PO_MODES`), the sound's own overview is hidden (`body.drawpage #overview`).
+The host's transport plays it; the frame's own Play is not on this page.
+
+It touches the vendored files in a few marked places, which a newer sequencer
+would need carried over: `playClassic` takes `o` (`into`, `bend`); the scheduler
+calls `drawAt` after `accompanyAt` and asks `drawStepsMuted` before a step;
+`togglePlay`'s pause and `stopSeq` call `drawStop`; `getPresetState`,
+`applyPresetState` and `morphToPreset` carry `draw`. In ours: `bandVoice`,
+`bdBass` and `bdArp` take `into` and `bend` (and the drone `atk`); `atmosPlay`
+takes `bend`; `renderFilm` calls `drawAt`; `seq:only` sets `only-draw`.
+
+**The canvas.** Across is time: a loop of 1, 2, 4, 8 or 16 bars (4 to start)
+of four beats at the sequencer's tempo, its bar and beat lines faint, the
+playhead orange. Up is pitch, four octaves of the scale's own degrees, two below
+the root and two above: a line for every degree, labelled D1…Dn, the roots
+brighter with their Hz. A maqam, a just scale or a 43-tone one draws on its own
+lines (past twelve to the octave only the roots are labelled). A mark keeps its
+points as `[x, h, w]`: beats from the loop's start, octaves from the canvas's
+foot, and a thickness or size, so a mark stays where it is when the loop's length
+or the scale changes.
+
+**Snap** is per mark (the header's is what a new mark gets): **Degrees** (the
+default) plays the nearest degree; **Glide** holds a degree while the line is
+near it and slides between degrees where it crosses, as on Xenakis's UPIC;
+**Free** plays the height as it is, between the lines. A pitch is always the
+scale's cents from the root: `drawRowCents` is a degree's cents on a line and the
+way between two lines off one, and `centsToHz(rootHz, …)` the frequency, never
+12-TET. Tested: a dot on Pythagorean degree 3 asks for exactly
+`getFreqForDegree(2)`, and an offline render of it sounds within 0.05 Hz of it.
+
+**The brushes, and how a mark becomes notes** (`drawMarkNotes`):
+
+| Brush | Drawn | Plays |
+|---|---|---|
+| **Pen** | a freehand line; time runs one way, so it never goes back across | Degrees: a note each time the line moves into another degree (it must be well past half-way, so a wavering hand does not chatter), held while it stays. Glide and Free: one note the length of the line that slides with it. Its loudness is its thickness, from the pen's pressure (`PointerEvent.pressure`) or, with a mouse, how slowly it was drawn |
+| **Dots** | taps; a held tap grows | a note each; size is length, an eighth of a beat to two beats |
+| **Shape** | a closed outline, simplified to its corners (Douglas–Peucker, then corners that are barely a turn dropped) | a **rhythm wheel**: it turns once a bar, in each bar its outline reaches across, and every corner is a hit when it comes round to the top, so a triangle is 3 a bar and a pentagon 5, and two side by side are 3 against 5. Its height (its centre) is its pitch. The corners' angles are measured in a fixed proportion (a beat 60 units, an octave 154), so the rhythm does not change with the window; drawn, the shape turns as it plays and the corner that has just hit lights |
+| **Cloud** | a spray; holding thickens it | every speck is a grain at its time and height, so the spray's density is the texture's and its height range the pitch range |
+| **Erase** | | rubs out marks, or the specks of a cloud it passes over |
+| **Select** | | picks a mark (THE MARK shows it); drag to move, a corner handle to stretch, ⌥-drag to copy, ⌫ to delete, ⌘D duplicates, ⌘Z undoes (60 steps) |
+
+**The inks are the instruments,** each in its colour: **Bass**, **Drums**,
+**Chords**, **Arp** and **Drone** are the Band's parts, played by `bandVoice` into
+their own channels; **Classic** is `playClassic` and **Atmosphere** `atmosPlay`,
+both through the melody's filter (and its envelope, `noteFilterEnv`); **Grain** is
+a small grain voice in the frame (a sine and a little of its octave under a Hann
+window, panned), on a channel of its own into the master with a little of the
+delay and Space. Chords plays a triad on the note's degree, stacked as Accompany
+stacks them (`acStack`). Drone swells over its part's Swell, but never past half
+the note. In **Drums** ink height picks the drum instead of the pitch: ten rows,
+kick at the foot, then the toms, snare, clap, rim, cowbell, closed hat and open
+hat at the top (shown as bands while Drums is the ink in hand), on the Band's
+kit; a Pen in Drums is a roll of sixteenths along it, louder where it is
+thicker. The Grain ink plays everything as grains (a Pen as a stream of them).
+A Cloud in any other ink is grains into that ink's channel. A mark is re-inked
+from THE MARK (its chip), or by clicking an ink with Select in hand.
+
+Every note goes through a gain of its own (the `into` the voices take: `bandVoice`,
+`playClassic` and `atmosPlay` all accept it now), which carries the mark's
+Level and thickness, ramped along a Glide or Free line, and which lets go of it
+on a stop or a seek. A slide (`bend`, cents) is written onto the oscillators'
+detune: Classic's, the Bass's and the Arp's directly, Atmosphere's (and so the
+Chords' and Drone's) through a source every oscillator of the note listens to.
+The filters and resonators of Glass and Breath do not follow a slide.
+
+**THE MARK**: its brush, ink and bars; its ink and snap; **Level**,
+**Thickness** (how much the drawn thickness matters: 0 is even), **Smudge** and
+**Octave** (±2). **PARTS** is the Band's mixer, not a copy of it: Bass, Drums,
+Chords, Arp and Drone move those channels' faders (`mx…LevelSlider`), Classic the
+Melody channel's (which Atmosphere is in too), Atmosphere its own Vol
+(`atVolSlider`), Grain the grain voice's level (kept with the drawing). A channel
+muted or soloed away on Seq shows dimmed. Double-click puts a fader back.
+**Seq's steps** in the header is whether Seq's steps play along (on to start, so
+nothing changes until it is turned off); kept with the drawing.
+
+**The mirrors**, on the selected mark: **Retrograde** flips it across within its
+own span (a Pen's notes backwards; a wheel turns the other way); **Invert** flips
+it up and down about the root line nearest its middle, in the scale's own steps
+(degree +3 becomes −3); **Kaleidoscope** repeats it round the loop, ×2, ×3, ×4,
+×6, ×8 and off again, the copies drawn faint; **Smudge** loosens its timing (up to
+an eighth of a beat) and pitch (up to 35¢) by the Smudge knob, from the mark's
+seed, so it is the same every time; the button is another seed.
+
+**Worked out, so a seek and the film play what was drawn.** `drawEvents` is
+every note of one pass of the loop, the kaleidoscope and the smudge in;
+`drawPlan(k, jump)` is what of it falls in boundary `k`'s step (the step is
+`stepBeats` from `k × stepBeats`, round the loop), from nothing but the drawing
+and `k`. The scheduler (app.js) and the film's render (bridge.js `renderFilm`,
+which the sound export uses too) call `drawAt(k, time)` at every boundary, after
+`accompanyAt`. A boundary that does not follow the last (Play, a seek, the
+engine's loop wrapping) lets go of what was held and starts any note already
+under way there from that point, as playing up to it would have had it sounding.
+Stop and pause let go too (`drawStop`). Tested: the same boundaries plan the same
+notes twice; a seek to boundary 21 plays what playing got to there; the smudge
+is the seed's; a film renders the drawing's notes, the same twice.
+
+**Kept** as the steps are, as data, not as slider ids: `getPresetState` carries
+`draw` (`drawGetState`), `applyPresetState` puts it back (a preset from before
+Draw leaves the drawing alone), a morph changes it at once as it does the steps,
+and a composition keeps it with the rest of the state. The page also keeps the
+drawing in `localStorage` (`mgl.draw`), so a reload does not lose it. A loaded
+take's starting snapshot puts back the drawing it was recorded with, as it puts
+back the steps. The Performance recorder does not record drawing gestures.
+
+**Not done yet, or decided without RJ:**
+
+- Defaults chosen while RJ's questions are open: Snap starts on **Degrees**;
+  shapes are **rhythm wheels**; no iPad and no listening on the home network yet
+  (pressure works with any pen the browser reports).
+- No zoom or scroll on the canvas: the loop's length is the zoom.
+- Cloud plays the frame's own grain voice; the host's Grain engine could take it
+  later (the specks are already times, pitches and sizes), and so could
+  Atmosphere's Cloud kind.
+- Drawings do not morph point by point between presets.
+
+Tests: `tests/ui/draw.spec.mjs`.

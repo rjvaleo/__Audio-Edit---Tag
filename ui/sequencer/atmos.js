@@ -692,6 +692,14 @@ function atmosPlay(freq, time, dur, o = null) {
   const glide = ac || AT.atGlide <= 0 ? 0 : atExp(AT.atGlide, 5, 2000) / 1000, from = glide > 0 && atPrevFreq > 0 ? atPrevFreq / freq : 1;
   if (!ac) atPrevFreq = freq;
   const ctx = { v, time, end: v.end, dur, dg, glide, from };
+  // A slide drawn on the Draw page (draw.js): cents every oscillator follows.
+  if (o && o.bend && o.bend.length > 1) {
+    const s = c.createConstantSource();
+    s.offset.value = 0;
+    drawBend(s.offset, o.bend, time);
+    atStart(v, s, time, v.end);
+    ctx.bend = s;
+  }
   for (const [w, dest] of [["A", gA], ["B", gB]]) {
     const kind = AT["kind" + w], oct = AT[`at${w}Oct`] || 0;
     const p = { p1: AT[`at${w}1`] / 100, p2: AT[`at${w}2`] / 100, p3: AT[`at${w}3`] / 100 };
@@ -752,6 +760,7 @@ function atOsc(ctx, f, wave, dest, cents, pan, bus = true) {
     o.frequency.exponentialRampToValueAtTime(f, ctx.time + ctx.glide);
   } else o.frequency.value = f;
   ctx.dg.connect(o.detune);
+  if (ctx.bend) ctx.bend.connect(o.detune);
   if (bus) atLink(ctx.v, atBus.detune, o.detune);
   let out = o;
   if (pan) {

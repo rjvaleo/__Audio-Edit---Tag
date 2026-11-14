@@ -105,6 +105,8 @@ const LOOK_KNOB = {
   atSymSlider: ["mix", "pitch"], atSymRingSlider: ["ring", "pitch"], atSymMatSlider: ["res", "pitch"],
   atRevWetSlider: ["mix", "space"], atRevSizeSlider: ["size", "space"], atRevPreSlider: ["pre", "space"], atRevDampSlider: ["damp", "tone"],
   atRevShimSlider: ["shim", "space"], atRevSpreadSlider: ["spread", "space"], atLowCutSlider: ["lowcut", "tone"], atMacroSlider: ["big", "on"],
+  // The Draw page's mark (draw.js).
+  drawLevelSlider: ["vol", "level"], drawThickSlider: ["tilt", "level"], drawSmudgeSlider: ["dots", "time"], drawOctSlider: ["oct", "pitch"],
 };
 
 /// The Band's knobs (band.js, drums.js), by what they are.

@@ -16,7 +16,7 @@
 
 const seq = {
   feed: null, feedAt: 0, ready: false, clock: null, want: { bands: 0, lo: 0, hi: 0 }, compact: false,
-  /// Which synth the frame shows on its own, if one: `'atmos'` on the
+  /// Which part the frame shows on its own, if one: `'atmos'` or `'draw'` on the
   /// Atmosphere page, null on Seq. See `seqOnly`.
   only: null,
   /// The sequencer's take and tempo, as its bridge last sent them — drawn on

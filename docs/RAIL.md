@@ -37,6 +37,7 @@ it cannot carry it.
 | — | **Compose** | the whole piece at once — grain, sequencer and picture over one timeline *(added 14 Sep 2026; see [`COMPOSE.md`](COMPOSE.md)). **Unlisted 15 Sep 2026** — `COMPOSE_LISTED` in `rail.js` puts it back.* |
 | — | **Seq** | the scale sequencer, a second voice on the same transport *(added 6 Sep 2026; see [`SEQUENCER.md`](SEQUENCER.md))* |
 | — | **Atmosphere** | the sequencer's second synth on a page of its own: the Seq frame showing only Atmosphere *(added 14 Nov 2026; see [`SEQUENCER.md`](SEQUENCER.md), "The Atmosphere page")* |
+| — | **Draw** | a canvas the sequencer plays: across is time, up is pitch, the ink is the instrument. The Seq frame showing only the canvas, after Atmosphere; its icon is a pen drawing a curve *(added 14 Nov 2026; see [`SEQUENCER.md`](SEQUENCER.md), "Draw")* |
 | 3 | **Theme** | how it all looks |
 | 4 | **Browse** | every file, and everything to do with the library |
 

@@ -231,17 +231,20 @@ function bandApplyDrums(now) {
 let bdPrevBass = 0;
 const bdVoices = [];
 
-/// One planned note (accompany.js) or drum hit (drums.js), at `t`.
+/// One planned note (accompany.js) or drum hit (drums.js), at `t`. The Draw
+/// page (draw.js) plays its marks through here too, with `into` (the mark's own
+/// gain, in front of the part's input), `bend` (a slide in cents) and, for the
+/// drone, `atk` (a swell no longer than the note).
 function bandVoice(e, t) {
   const N = bdNodes;
   if (!N) return;
-  if (e.part === "drum") return drumHit(e.slot, t, e.vel, N.slots[e.slot].g);
+  if (e.part === "drum") return drumHit(e.slot, t, e.vel, e.into || N.slots[e.slot].g);
   if (e.part === "bass") return bdBass(e, t);
   if (e.part === "arp") return bdArp(e, t);
   if (e.part === "chord" || e.part === "drone") {
     const P = BAND[e.part], patch = BAND.patch[e.part];
-    const o = { ac: true, gain: (e.part === "chord" ? 0.9 : 1.1) / Math.sqrt(e.n || 1), patch, into: e.part === "chord" ? N.chordIn : N.droneIn };
-    if (e.part === "drone") { const sw = 0.25 * Math.pow(32, P.drSwell / 100) * 4 * (60 / bpm); o.atk = sw; o.rel = sw; }
+    const o = { ac: true, gain: (e.part === "chord" ? 0.9 : 1.1) / Math.sqrt(e.n || 1), patch, into: e.into || (e.part === "chord" ? N.chordIn : N.droneIn), bend: e.bend };
+    if (e.part === "drone") { const sw = e.atk != null ? e.atk : 0.25 * Math.pow(32, P.drSwell / 100) * 4 * (60 / bpm); o.atk = sw; o.rel = sw; }
     atmosPlay(e.hz, t, e.dur, o);
     // The chord's filter opens with each chord, by Env amt, over Env dec.
     if (e.part === "chord" && e.first && P.chEnv > 0) {
@@ -263,6 +266,7 @@ function bdBass(e, t) {
     o.frequency.setValueAtTime(bdPrevBass, t); o.frequency.exponentialRampToValueAtTime(e.hz, t + glide);
     w.frequency.setValueAtTime(bdPrevBass * 2, t); w.frequency.exponentialRampToValueAtTime(e.hz * 2, t + glide);
   } else { o.frequency.value = e.hz; w.frequency.value = e.hz * 2; }
+  if (e.bend && e.bend.length > 1) { drawBend(o.detune, e.bend, t); drawBend(w.detune, e.bend, t); }
   bdPrevBass = e.hz;
   o2.gain.value = (P.bsWeight / 100) * 0.35;
   w.connect(o2);
@@ -275,7 +279,7 @@ function bdBass(e, t) {
   env.gain.linearRampToValueAtTime(0.55, t + atk);
   env.gain.setValueAtTime(0.55, t + Math.max(atk, dur));
   env.gain.setTargetAtTime(0, t + Math.max(atk, dur), rel / 4);
-  o.connect(env); o2.connect(env); env.connect(sh); sh.connect(lp); lp.connect(N.ch.Bas.in);
+  o.connect(env); o2.connect(env); env.connect(sh); sh.connect(lp); lp.connect(e.into || N.ch.Bas.in);
   const end = t + Math.max(atk, dur) + rel * 1.5 + 0.05;
   o.start(t); w.start(t); o.stop(end); w.stop(end);
   bdVoices.push({ env, oscs: [o, w], start: t, end });
@@ -287,6 +291,7 @@ function bdArp(e, t) {
   const o = c.createOscillator(), f = c.createBiquadFilter(), env = c.createGain();
   o.type = P.wave || "triangle";
   o.frequency.value = e.hz;
+  if (e.bend && e.bend.length > 1) drawBend(o.detune, e.bend, t);
   f.type = "lowpass"; f.Q.value = 0.5 + (P.apRes / 100) * 11.5;
   const cut = bdExp(P.apCut, 150, 12000), dec = bdExp(P.apDec, 20, 2000) / 1000, dur = Math.max(0.01, e.dur * (P.apGate / 100) / 0.8);
   f.frequency.setValueAtTime(Math.min(18000, cut * (1 + (P.apEnv / 100) * 6)), t);
@@ -296,7 +301,7 @@ function bdArp(e, t) {
   env.gain.setTargetAtTime(0.35 * 0.3, t + 0.003, dec / 3);
   if (env.gain.cancelAndHoldAtTime) env.gain.cancelAndHoldAtTime(t + dur);
   env.gain.setTargetAtTime(0, t + dur, 0.015);
-  o.connect(f); f.connect(env); env.connect(N.ch.Arp.in);
+  o.connect(f); f.connect(env); env.connect(e.into || N.ch.Arp.in);
   const end = t + dur + 0.12;
   o.start(t); o.stop(end);
   bdVoices.push({ env, oscs: [o], start: t, end });

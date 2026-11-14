@@ -897,7 +897,9 @@ function playNote(freq, time, hold = 1) {
 }
 
 /// One note of the first synth, Classic; returns how long it is held.
-function playClassic(freq, time, hold = 1) {
+/// `o`, from the Draw page (draw.js): `into`, where the note goes instead of the
+/// filter (its own gain, carrying the mark's loudness), and `bend`, a slide in cents.
+function playClassic(freq, time, hold = 1, o = null) {
   const osc = audioCtx.createOscillator();
   const env = audioCtx.createGain();
   if (waveType === "pulse") {
@@ -906,8 +908,9 @@ function playClassic(freq, time, hold = 1) {
     osc.type = waveType;
   }
   osc.frequency.value = freq;
+  if (o && o.bend && o.bend.length > 1) drawBend(osc.detune, o.bend, time);
   osc.connect(env);
-  env.connect(filterNode);
+  env.connect(o && o.into ? o.into : filterNode);
   if (typeof scopeTap === "function") scopeTap("classic", env);
   const a = adsr.a / 1000;
   const d = adsr.d / 1000;
@@ -1070,7 +1073,10 @@ function scheduler() {
     const played = typeof journeyStep === "function" ? journeyStep(seqStepCount, currentStep) : step;
     // Accompany plays at every boundary, rest or not (accompany.js).
     if (typeof accompanyAt === "function") accompanyAt(seqStepCount, nextNoteTime);
-    if (!played.rest) {
+    // The Draw page's canvas, at every boundary too (draw.js); its switch can
+    // leave the steps out.
+    if (typeof drawAt === "function") drawAt(seqStepCount, nextNoteTime);
+    if (!played.rest && !(typeof drawStepsMuted === "function" && drawStepsMuted())) {
       const freq = seqPlayAt(played, nextNoteTime, stepDur);
       // Update UI
       const si = currentStep;
@@ -1145,6 +1151,7 @@ function togglePlay() {
     // A pause ends a take, as a stop does.
     if (typeof perfRec !== "undefined" && perfRec && typeof perfRecStop === "function") perfRecStop();
     if (typeof accompanyStop === "function") accompanyStop();
+    if (typeof drawStop === "function") drawStop();
   } else {
     isPlaying = true;
     currentStep = 0;
@@ -1162,6 +1169,7 @@ function stopSeq() {
   isPlaying = false;
   clearTimeout(schedulerTimer);
   if (typeof accompanyStop === "function") accompanyStop();
+  if (typeof drawStop === "function") drawStop();
   if (typeof perfRec !== "undefined" && perfRec && typeof perfRecStop === "function") perfRecStop();
   currentStep = 0;
   document.getElementById("playBtn").textContent = "▶ PLAY";
@@ -2411,6 +2419,8 @@ function getPresetState() {
   });
   // Deep-copy step data
   state.steps = steps.map((s) => ({ degree: s.degree, rest: s.rest }));
+  // The Draw page's drawing, kept as the steps are: as data (draw.js).
+  if (typeof drawGetState === "function") state.draw = drawGetState();
   return state;
 }
 
@@ -2445,6 +2455,8 @@ function applyPresetState(state) {
   if (typeof state.scaleIdx === "number") {
     selectScale(state.scaleIdx);
   }
+  // The drawing; a preset from before Draw leaves it as it is.
+  if (state.draw && typeof drawSetState === "function") drawSetState(state.draw);
   // Redraw canvases
   drawADSRCanvas();
   drawFilterADSRCanvas();
@@ -2707,6 +2719,8 @@ function morphToPreset(id) {
   }
   if (typeof preset.state.scaleIdx === "number")
     selectScale(preset.state.scaleIdx);
+  // The drawing changes at once, as the steps do.
+  if (preset.state.draw && typeof drawSetState === "function") drawSetState(preset.state.draw);
 
   const display = document.getElementById("presetNameDisplay");
   if (display) display.textContent = "◌ " + preset.name;

@@ -95,6 +95,12 @@ const COMPOSE_LISTED = false;
       icon: 'atmos', label: 'Atmosphere', mode: 'atmos',
       title: 'Atmosphere — the sequencer\'s second synth on its own: oscillators A and B, the voice and the space',
     },
+    // Draw: a canvas the sequencer plays. The same frame again, showing only
+    // the canvas, so what it draws plays through Seq's own instruments.
+    {
+      icon: 'draw', label: 'Draw', mode: 'draw',
+      title: 'Draw — draw on a canvas and it plays: across is time, up is pitch in the scale\'s true pitch, the ink is the instrument',
+    },
     {
       icon: 'stems', label: 'Stems', mode: 'stems',
       title: 'Stems — split a song into drums, bass, vocals and other, read what is in it, and make sounds from it',
@@ -217,6 +223,9 @@ const COMPOSE_LISTED = false;
     // Mist in layers: a soft wave, held, fading back.
     atmos:
       '<path d="M3 8.5c3-2.6 6-2.6 9 0s6 2.6 9 0"/><path d="M3 12.5c3-2.6 6-2.6 9 0s6 2.6 9 0" opacity=".7"/><path d="M3 16.5c3-2.6 6-2.6 9 0s6 2.6 9 0" opacity=".45"/>',
+    // A pen drawing a curve: the canvas that plays.
+    draw:
+      '<path d="M3 19c3.2-.2 4.6-6.4 7.6-6.6 2.6-.2 2.7 3.2 5 3"/><path d="m15.6 15.4 5.2-8.7a1.3 1.3 0 0 0-.46-1.78l-.2-.12a1.3 1.3 0 0 0-1.78.46l-5.2 8.7-.3 2.5z"/><path d="m17.5 7.6 2 1.2" stroke-width="1"/>',
     // A song pulled into four lanes.
     stems:
       '<path d="M3.5 12h3"/><path d="M6.5 12 9 6.5h11.5"/><path d="M6.5 12 9 10h11.5"/><path d="M6.5 12 9 14h11.5"/><path d="M6.5 12 9 17.5h11.5"/>',

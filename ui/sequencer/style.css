@@ -683,3 +683,67 @@ body.only-atmos .at-osc svg { height: 32px; }
 body.only-atmos .at-osc-row .scope-osc { height: clamp(72px, 15vh, 170px); }
 /* The output fills the height Space gives the row, so neither panel has a gap. */
 body.only-atmos .scope-out .scope { height: auto; flex: 1; min-height: 56px; }
+
+/* ─── ONLY DRAW ───────────────────────────────────────────────────────────────
+   This page as the host's Draw page (draw.js, after the approved mock-up
+   `draw.html`): a canvas the sequencer plays, with its tools, THE MARK and the
+   Parts. Everything else on the page is Seq's and hidden here; the host's
+   transport plays it. Each ink has a colour: the Band's parts and Classic take
+   their knob families' (so a theme reaches them), Atmosphere and Grain their
+   own. Switched on by the host with `seq:only`; see `bridge.js`. */
+.draw-page {
+  --ink-bass: var(--f-attack); --ink-drums: var(--f-level); --ink-chords: var(--f-tone); --ink-arp: var(--f-time);
+  --ink-drone: var(--f-space); --ink-classic: var(--f-pitch); --ink-atmos: #8fb8ef; --ink-grain: #7cf0d0;
+  display: none;
+}
+body.only-draw .page > :not(.draw-page) { display: none !important; }
+body.only-draw .page { padding: 10px 14px 12px; gap: 8px; }
+body.only-draw .draw-page { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.dr-head { flex-direction: row; align-items: center; gap: 10px; padding: 7px 12px; }
+.dr-title { font: 700 17px var(--mono); letter-spacing: 0.14em; color: var(--look-text); white-space: nowrap; }
+.dr-title span { color: var(--look-text-3); font-weight: 500; }
+.dr-head .meta { min-width: 0; }
+.dr-tools { flex-direction: row; align-items: center; gap: 10px; padding: 6px 12px; }
+.dr-brush button { gap: 6px; }
+.dr-brush svg { width: 16px; height: 16px; flex: none; }
+.dr-brush svg path, .dr-brush svg circle, .dr-brush svg polygon { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.dr-inks { display: flex; gap: 3px; flex: none; }
+.dr-ink {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 13px; flex: none;
+  background: var(--look-well); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--look-line);
+  font: 500 11px var(--ui); color: var(--look-text-2);
+}
+.dr-ink:hover { color: var(--look-text); }
+.dr-ink i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); flex: none; }
+.dr-ink.on { box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 1.5px var(--c); color: var(--look-text); }
+.dr-hint { font-size: 10px; flex: 1 1 0; min-width: 0; text-align: right; }
+.dr-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 8px; }
+.dr-canvasp { padding: 8px; min-height: 0; }
+.dr-well { flex: 1; min-height: 0; }
+.dr-well canvas { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+.draw-page[data-brush="select"] .dr-well canvas { cursor: default; }
+.draw-page[data-brush="erase"] .dr-well canvas { cursor: cell; }
+.dr-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.dr-mark.empty .dr-row2, .dr-mark.empty .dr-knobs, .dr-mark.empty .dr-mirr { opacity: 0.4; pointer-events: none; }
+.dr-row2 { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; }
+.dr-inkwrap { position: relative; justify-self: start; }
+.dr-inkpop {
+  display: none; position: absolute; left: 0; top: 30px; z-index: 5; width: 250px; padding: 6px; gap: 4px; flex-wrap: wrap;
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel)); border: 1px solid var(--look-line); border-radius: var(--r-m);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+}
+.dr-inkpop.open { display: flex; }
+.dr-knobs { justify-content: space-between; }
+.dr-mirr { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.dr-mirr .btn { justify-content: center; }
+.dr-mirr .btn:nth-child(n + 5) { height: 22px; font-size: 11px; color: var(--look-text-3); }
+.dr-parts { flex: 1; min-height: 0; }
+.dr-part {
+  display: grid; grid-template-columns: 12px 74px 1fr 36px; gap: 8px; align-items: center; height: 26px;
+  font: 500 11px var(--ui); color: var(--look-text-2);
+}
+.dr-part i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.dr-part .f { height: 8px; border-radius: 4px; background: var(--look-well); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8); position: relative; overflow: hidden; cursor: ew-resize; }
+.dr-part .f b { position: absolute; inset: 0 auto 0 0; width: var(--v); background: color-mix(in srgb, var(--c) 55%, transparent); border-right: 2px solid var(--c); }
+.dr-part em { font: 400 10px var(--mono); font-style: normal; color: var(--look-text-3); text-align: right; }
+.dr-part.unheard { opacity: 0.45; }

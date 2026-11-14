@@ -248,7 +248,7 @@ let editPage = (() => {
 
 // Atmosphere is the Seq page's second synth on a page of its own, so it is on
 // the same side as Seq: walking from one to the other leaves the transport be.
-const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq' || m === 'atmos' || m === 'compose';
+const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq' || m === 'atmos' || m === 'draw' || m === 'compose';
 
 /// The modes where the library is an overlay drawer rather than a docked
 /// column. Both of them give the whole width to something else — the editor's
