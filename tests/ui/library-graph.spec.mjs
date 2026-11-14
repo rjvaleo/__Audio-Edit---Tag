@@ -15,7 +15,8 @@ async function openMap(page) {
   await page.goto('/');
   await page.waitForFunction(() => window.LibraryGraph, null, { timeout: 30_000 });
   await page.evaluate(() => { localStorage.removeItem('mapTint'); localStorage.removeItem('mapHoverPlays'); });
-  await page.locator('#leftRail .rl-child', { hasText: 'Map' }).click();
+  // Map is off the rail (14 Nov 2026); the map itself is kept.
+  await page.evaluate(() => window.LibraryGraph.open());
   await page.waitForFunction(() => window.LibraryGraph.state.dots >= 2, null, { timeout: 20_000 });
 }
 
@@ -63,7 +64,8 @@ test('the colour and hover choices are kept', async ({ page }) => {
   await expect(page.locator('.lg-key')).toContainText(/Not heard|Percussion|Other|Instrument|Music|Machine|Nature|Voice/);
   await page.keyboard.press('Escape');
   await expect(page.locator('#libraryGraph')).toBeHidden();
-  await page.locator('#leftRail .rl-child', { hasText: 'Map' }).click();
+  // Map is off the rail (14 Nov 2026); the map itself is kept.
+  await page.evaluate(() => window.LibraryGraph.open());
   const s = await page.evaluate(() => window.LibraryGraph.state);
   expect(s.tint).toBe('family');
   expect(s.hoverPlays).toBe(false);

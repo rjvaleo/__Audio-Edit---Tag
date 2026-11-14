@@ -125,11 +125,12 @@ const COMPOSE_LISTED = false;
     { icon: '⌕', label: 'Search', panel: 'search' },
     { icon: '◴', label: 'Scan', panel: 'scan', disk: true },
     { icon: '⌂', label: 'Folder', panel: 'import', disk: true },
-    // Not a pane: the map takes the whole window, so it is opened rather
-    // than shown in the left panel. It opens on the graph views
-    // (`ui/library-graph.js`); the 3D world (`ui/sound-map.js`) is one of
-    // the choices in its strip.
-    { icon: '◍', label: 'Map', action: () => window.LibraryGraph && window.LibraryGraph.open() },
+    // Map is unlisted (14 Nov 2026, RJ: "the 3D library … that's not good at
+    // all for me"). Browse shows the library's types instead
+    // (`ui/app/251-browse-types.js`). The map is all still there:
+    // `window.LibraryGraph.open()` opens it, and its 3D world is the 3D button
+    // in its strip. To list it again:
+    // { icon: '◍', label: 'Map', action: () => window.LibraryGraph && window.LibraryGraph.open() },
   ];
 
   /// **There is no disk in a browser.** Scanning a library, choosing its folder

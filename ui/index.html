@@ -1376,6 +1376,28 @@
        is showing; see `ui/library-graph.js` and `docs/SOUND-MAP.md`. -->
   <section class="browse-map hidden" id="browseMap" aria-label="Map of every sound"></section>
 
+  <!-- Browse's types, in place of the map (14 Nov 2026): the index's
+       categories grouped into types with their counts; pick one for its files,
+       click a file to hear it. See `ui/app/251-browse-types.js`. -->
+  <section class="browse-types hidden" id="browseTypes" aria-label="The library by type">
+    <div class="bt-types">
+      <div class="bt-head"><span class="bt-title">Types</span><span class="bt-sub" id="btTotal"></span></div>
+      <div class="bt-type-list" id="btTypeList"></div>
+    </div>
+    <div class="bt-files">
+      <div class="bt-head">
+        <span class="bt-title" id="btTypeName">Pick a type</span><span class="bt-sub" id="btCount"></span>
+        <span class="bt-grow"></span>
+        <span class="bt-sort" id="btSort" role="group" aria-label="Sort">
+          <button type="button" data-sort="name" class="on">Name</button><button type="button" data-sort="length">Length</button>
+        </span>
+      </div>
+      <div class="bt-chips" id="btChips"></div>
+      <input class="filter-box bt-find" id="btFind" placeholder="find&hellip;" spellcheck="false">
+      <div class="bt-file-list" id="btFileList" tabindex="0" aria-label="Files of this type"></div>
+    </div>
+  </section>
+
   <!-- right panel: tagging -->
   <aside class="panel right" id="rightPanel">
     <div class="panel-head">

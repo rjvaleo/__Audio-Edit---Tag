@@ -163,6 +163,7 @@ mod edits_markers;
 mod automation_recording;
 mod live_prism;
 mod invariants_export_map;
+mod browse_types;
 use invariants_export_map::*;
 mod wave_keys;
 use wave_keys::*;

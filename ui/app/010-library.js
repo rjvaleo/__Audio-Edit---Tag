@@ -111,6 +111,8 @@ function buildTree() {
     tree.appendChild(kids);
   }
 
+  // Browse's type list shows the same selection.
+  if (typeof browseTypesMark === 'function') browseTypesMark();
   requestThumbs();
 }
 

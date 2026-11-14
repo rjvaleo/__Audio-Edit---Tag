@@ -1002,5 +1002,7 @@
     },
   };
 
-  if (typeof state !== 'undefined') browse(state.mode === 'overview');
+  // Browse no longer shows the map (14 Nov 2026): its types are there instead
+  // (`ui/app/251-browse-types.js`). `browse` is kept, and calling it puts the
+  // map back beside the sound's details.
 })();

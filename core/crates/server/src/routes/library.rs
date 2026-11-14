@@ -222,26 +222,134 @@ pub(super) fn api_files(app: &Arc<App>, req: &Request) -> Response {
         .files
         .iter()
         .filter(|f| f.folder == folder)
-        .map(|f| {
-            Value::obj()
-                .set("path", format!("{}/{}", f.folder, f.rel_path))
-                .set("name", f.filename.clone())
-                .set("subdir", f.subdir.clone())
-                .set("bytes", f.bytes)
-                .set("duration", f.duration)
-                .set("sampleRate", f.sample_rate)
-                .set("bits", f.bits)
-                .set("channels", f.channels)
-                .set("format", f.format.clone())
-                .set("category", f.category.clone())
-                .set("confidence", f.confidence.clone())
-                .set("machine", f.machine.clone())
-                .set("instrument", f.instrument.clone())
-                .set("bpm", f.bpm.clone())
-                .set("why", f.reasons.clone())
-        })
+        .map(file_json)
         .collect();
     Response::json(Value::Arr(arr).to_string())
+}
+
+/// One file as every list in the browser takes it: `/api/files` and
+/// `/api/type-files` answer with the same rows.
+fn file_json(f: &crate::state::FileRow) -> Value {
+    Value::obj()
+        .set("path", format!("{}/{}", f.folder, f.rel_path))
+        .set("name", f.filename.clone())
+        .set("subdir", f.subdir.clone())
+        .set("bytes", f.bytes)
+        .set("duration", f.duration)
+        .set("sampleRate", f.sample_rate)
+        .set("bits", f.bits)
+        .set("channels", f.channels)
+        .set("format", f.format.clone())
+        .set("category", f.category.clone())
+        .set("confidence", f.confidence.clone())
+        .set("machine", f.machine.clone())
+        .set("instrument", f.instrument.clone())
+        .set("bpm", f.bpm.clone())
+        .set("why", f.reasons.clone())
+}
+
+/// Whether Browse lists a file: one with an audio header always, the rest only
+/// with Play all files (`all=1`), as the folder list does (`listed` in
+/// `ui/app/010-library.js`).
+fn listed(f: &crate::state::FileRow, all: bool) -> bool {
+    all || crate::state::has_audio_header(&f.format)
+}
+
+/// Browse's types: how many files the index put in each category, and, inside
+/// each, how many under each instrument it named. The browser groups the
+/// categories into the types it shows (`ui/app/251-browse-types.js`).
+///
+/// `all=1` counts the files without an audio header too, as Play all files does.
+pub(super) fn api_types(app: &Arc<App>, req: &Request) -> Response {
+    use std::collections::BTreeMap;
+    let all = req.param("all") == Some("1");
+    let idx = app.index.read().unwrap();
+    let mut cats: BTreeMap<&str, (usize, BTreeMap<&str, usize>)> = BTreeMap::new();
+    let mut total = 0usize;
+    for f in idx.files.iter().filter(|f| listed(f, all)) {
+        let e = cats.entry(f.category.as_str()).or_default();
+        e.0 += 1;
+        *e.1.entry(f.instrument.as_str()).or_default() += 1;
+        total += 1;
+    }
+    let arr: Vec<Value> = cats
+        .into_iter()
+        .map(|(cat, (n, ins))| {
+            let ins: Vec<Value> = ins
+                .into_iter()
+                .map(|(name, n)| Value::obj().set("name", name).set("files", n))
+                .collect();
+            Value::obj()
+                .set("category", cat)
+                .set("files", n)
+                .set("instruments", Value::Arr(ins))
+        })
+        .collect();
+    Response::json(
+        Value::obj()
+            .set("total", total)
+            .set("categories", Value::Arr(arr))
+            .to_string(),
+    )
+}
+
+/// The files of one Browse type, a page at a time: a type can hold tens of
+/// thousands, and the list only ever shows a screenful.
+///
+/// - `cats`: the index categories, comma-separated (required);
+/// - `instrument`: only that instrument; `-` for files with none named;
+/// - `q`: words that must all appear in the name or its folders;
+/// - `sort`: `name` (default) or `length`;
+/// - `offset`, `limit` (at most 1000);
+/// - `all=1`: files without an audio header too.
+pub(super) fn api_type_files(app: &Arc<App>, req: &Request) -> Response {
+    let Some(cats) = req.param("cats").filter(|c| !c.is_empty()) else {
+        return Response::error(400, "no categories given");
+    };
+    let cats: Vec<&str> = cats.split(',').collect();
+    let instrument = req.param("instrument").filter(|s| !s.is_empty());
+    let words: Vec<String> = req
+        .param("q")
+        .unwrap_or("")
+        .to_lowercase()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+    let all = req.param("all") == Some("1");
+    let offset: usize = req.number("offset", 0);
+    let limit: usize = req.number("limit", 200).min(1000);
+
+    let idx = app.index.read().unwrap();
+    let mut hits: Vec<&crate::state::FileRow> = idx
+        .files
+        .iter()
+        .filter(|f| listed(f, all) && cats.contains(&f.category.as_str()))
+        .filter(|f| match instrument {
+            None => true,
+            Some("-") => f.instrument.is_empty(),
+            Some(i) => f.instrument == i,
+        })
+        .filter(|f| {
+            words.is_empty() || {
+                let hay = format!("{} {}/{}", f.filename, f.folder, f.subdir).to_lowercase();
+                words.iter().all(|w| hay.contains(w.as_str()))
+            }
+        })
+        .collect();
+    if req.param("sort") == Some("length") {
+        hits.sort_by(|a, b| a.duration.total_cmp(&b.duration));
+    } else {
+        hits.sort_by_cached_key(|f| (f.filename.to_lowercase(), f.folder.clone(), f.rel_path.clone()));
+    }
+    let total = hits.len();
+    let files: Vec<Value> = hits.into_iter().skip(offset).take(limit).map(file_json).collect();
+    Response::json(
+        Value::obj()
+            .set("total", total)
+            .set("offset", offset)
+            .set("files", Value::Arr(files))
+            .to_string(),
+    )
 }
 
 /// Resolve a library-relative path from the `p` query parameter.

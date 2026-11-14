@@ -291,6 +291,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/order") => api_order_get(app),
         ("POST", "/api/order") => api_order_set(app, req),
         ("GET", "/api/files") => api_files(app, req),
+        // Browse's types and the files in each (`ui/app/251-browse-types.js`).
+        ("GET", "/api/types") => api_types(app, req),
+        ("GET", "/api/type-files") => api_type_files(app, req),
         // The library's drum machines, for the sequencer's Band (drums.js).
         ("GET", "/api/seq/kits") => api_seq_kits(app),
         ("GET", "/api/peaks") => api_peaks(app, req),
