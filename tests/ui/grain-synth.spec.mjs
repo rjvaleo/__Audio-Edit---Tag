@@ -170,7 +170,7 @@ for (const [engine, own] of Object.entries(ENGINES)) {
       const over = [];
       for (const id of ['gsEngPanel', 'gsShared', 'gsPSrc']) { const el = $(id); if (el.scrollHeight > el.clientHeight + 1) over.push(`${id} ${el.scrollHeight}>${el.clientHeight}`); }
       const app = document.querySelector('.gs-app');
-      if (app.scrollHeight > 900 || app.scrollWidth > 1388) over.push(`app ${app.scrollWidth}x${app.scrollHeight}`);
+      if (app.scrollHeight > GS_H || app.scrollWidth > GS_W) over.push(`app ${app.scrollWidth}x${app.scrollHeight}`);
       for (const el of document.querySelectorAll('#grainView .gs-bw')) {
         const n = el.querySelector('.gs-bn'), v = el.querySelector('.gs-bv');
         if (n && v && n.getBoundingClientRect().right > v.getBoundingClientRect().left + 0.5) over.push(`${n.textContent} meets ${v.textContent}`);
@@ -403,7 +403,8 @@ test('Randomize is the tray\'s Random and its Undo puts back exactly what was th
 
 test('the overview moves the loop and Start; the detail shows between the brackets and zooms', async ({ page }) => {
   await openPage(page);
-  const box = await page.locator('#gsSrcPic').boundingBox();
+  // The whole file is the overview every page shares (416), above the page.
+  const box = await page.locator('#poCanvas').boundingBox();
   const y = box.y + box.height * 0.6, at = (u) => box.x + box.width * u;
 
   // A drag across makes a loop.
@@ -419,7 +420,7 @@ test('the overview moves the loop and Start; the detail shows between the bracke
   expect(await page.evaluate(() => state.cue)).toBe(sel.start);
 
   // A bracket moves one end.
-  const X = (s) => box.x + box.width * (6 + s / frames * 674) / 686;
+  const X = (s) => box.x + 6 + s / frames * (box.width - 12);
   await page.mouse.move(X(sel.end), y);
   await page.mouse.down();
   await page.mouse.move(at(0.8), y, { steps: 5 });

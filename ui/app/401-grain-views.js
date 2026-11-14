@@ -1,14 +1,15 @@
 // ================================================================ Grain: the views
 //
-// The three pictures of the sound. The overview is the whole file: its loop
-// brackets and its green Start flag are where you choose the part of the sound.
-// The detail under it shows only what lies between those brackets, with the
-// engine's own marks on it and its own zoom. The trace tops the right panel.
+// The detail of the sound. The whole file is the overview every page shares
+// (`416-page-overview.js`): its loop brackets and its green Start flag are where
+// you choose the part of the sound. The detail, full width under the engine
+// tabs, shows only what lies between those brackets, with the engine's own marks
+// on it and its own zoom.
 //
-// All three are drawn from the server's peaks (`/api/peaks`, `clips=1`, the
-// timeline the selection and the cue are counted on). The overview and the trace
-// use `state.overview`, which the app keeps anyway; the detail fetches its own,
-// at its own width, for the range it is showing.
+// Both are drawn from the server's peaks (`/api/peaks`, `clips=1`, the timeline
+// the selection and the cue are counted on). The overview uses `state.overview`,
+// which the app keeps anyway; the detail fetches its own, at its own width, for
+// the range it is showing.
 
 /// What the detail is showing and what has been fetched for it.
 const GS_DET = { want: '', got: '', seq: 0, timer: 0, a: 0, b: 0, p: null, cen: null, on: [], med: 0.01, staticKey: '', cv: null, rg: null };
@@ -143,105 +144,12 @@ function gsRidge(a, b, W, useDetail) {
   return o;
 }
 
-// ──────────────────────────────────────────────────────────────── the overview
+// ─────────────────────────────────────────────────────────── the whole file
 
-function gsDrawOverview() {
-  const g = GS_CV.gsSrcPic, f = gsFile();
-  if (!g) return;
-  const { c, w, h } = g, cl = gsCl(), p = state.overview;
-  c.clearRect(0, 0, w, h);
-  c.font = `11px ${cl.sans}`;
-  if (!p || !f) { c.fillStyle = cl.t3; c.fillText('Open a sound', 16, 24); return; }
-  const X = (s) => 6 + s / f.len * (w - 12), { a, b } = gsLoop(), bot = h - 13, mid = (bot + 4) / 2, A = (bot - 8) / 2;
-  c.save();
-  c.beginPath(); c.rect(4, 0, w - 8, h); c.clip();
-  // The whole file, filled, so its loud and quiet parts read at a glance.
-  const ch = p.channels[0];
-  let pk = 0.001;
-  for (let i = 0; i < p.columns; i++) pk = Math.max(pk, Math.abs(ch.min[i]), Math.abs(ch.max[i]));
-  // In the sound's own colours, low to high as on the Edit page and Chop, once
-  // it has been measured; plain until then.
-  const lit = edSound.an && edSound.path === state.selectedFile?.path;
-  c.fillStyle = `rgba(${cl.bloom},.3)`;
-  for (let x = 0; x < w - 12; x++) {
-    const i = Math.floor(x / (w - 12) * p.columns), m = Math.max(Math.abs(ch.min[i]), Math.abs(ch.max[i])) / pk * A;
-    const k = lit && edColourAt((x + 0.5) / (w - 12) * f.len * edSound.rate, true);
-    if (k) c.fillStyle = `rgba(${k[0] | 0},${k[1] | 0},${k[2] | 0},.9)`;
-    c.fillRect(6 + x, mid - m, 1, m * 2);
-  }
-  c.font = `9px ${cl.mono}`;
-  const st = [0.5, 1, 2, 5, 10, 30, 60, 120, 300].find((s) => f.len / s <= 12) || 600;
-  for (let s = 0; s < f.len; s += st) {
-    const x = X(s);
-    if (x > w - 44) break;
-    c.fillStyle = 'rgba(255,255,255,.05)'; c.fillRect(x, 4, 1, bot - 4);
-    c.fillStyle = cl.t3; c.fillText(s.toFixed(st < 1 ? 1 : 0) + ' s', x + 3, h - 3);
-  }
-  c.textAlign = 'right'; c.fillText(f.len.toFixed(1) + ' s', w - 8, h - 3); c.textAlign = 'left';
-  gsDrawAnnotations(c, X, 4, bot, cl);
-  // The loop: outside dimmed, the brackets to drag.
-  const ra = X(a), rb = X(b);
-  c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(4, 0, Math.max(0, ra - 4), h); c.fillRect(rb, 0, Math.max(0, w - 4 - rb), h);
-  c.fillStyle = 'rgba(124,240,208,.05)'; c.fillRect(ra, 0, rb - ra, bot);
-  c.strokeStyle = cl.acc; c.lineWidth = 1.4;
-  c.beginPath(); c.moveTo(ra, 4); c.lineTo(ra, bot); c.moveTo(rb, 4); c.lineTo(rb, bot); c.stroke();
-  for (const x of [ra, rb]) {
-    c.fillStyle = cl.acc; c.beginPath(); c.roundRect(x - 4, 4, 8, 16, 3); c.fill();
-    c.fillStyle = 'rgba(0,0,0,.5)'; c.fillRect(x - 1.5, 7, 1, 10); c.fillRect(x + 0.5, 7, 1, 10);
-  }
-  c.font = `600 10px ${cl.mono}`;
-  gsLbl(c, `${gsRegLabel().toUpperCase()} · LOOP ${(b - a).toFixed(2)} S`, Math.min(Math.max(ra + 9, 10), w - 240), 15, cl.acc);
-  // Start.
-  const cue = gsCue(), sx = X(cue);
-  c.strokeStyle = GS_START; c.lineWidth = 1.4;
-  c.beginPath(); c.moveTo(sx, 22); c.lineTo(sx, bot); c.stroke();
-  c.fillStyle = GS_START; c.beginPath(); c.moveTo(sx, 22); c.lineTo(sx + 9, 26.5); c.lineTo(sx, 31); c.fill();
-  c.font = `600 9px ${cl.mono}`;
-  gsLbl(c, 'START ' + cue.toFixed(2), sx + 12, 30, GS_START);
-  gsDrawVoiceHeads(c, X, 4, bot, bot - 16, 12, cl);
-  if (gsNoteHead() != null) gsDrawNoteHead(c, X(gsHead()), 4, bot, bot - 16, cl);
-  else if (engine.playing) {
-    const hx = X(gsHead());
-    c.fillStyle = cl.t; c.fillRect(hx - 0.75, 4, 1.5, bot - 4);
-    gsLbl(c, 'HEAD', hx + 4, bot - 4, cl.t);
-  }
-  c.restore();
-}
+// The whole file, with the loop brackets and Start, is the overview every page
+// shares now (`416-page-overview.js`): it is drawn and dragged there.
 
-/// A bracket, the Start flag, or a drag across for a new loop; a click moves
-/// Start.
-function gsWireOverview() {
-  const g = GS_CV.gsSrcPic, el = g.el;
-  const toS = (x) => { const f = gsFile(); return f ? wvClamp((x - 6) / (g.w - 12) * f.len, 0, f.len) : 0; };
-  let sm = null, s0 = 0, moved = 0, ends = null;
-  const scrub = (s) => { const f = gsFile(); if (f) gsSeekTo(Math.round(s * f.sr)); };
-  gsDrag(el, (dx, dy, e) => {
-    const s = toS(wvLocal(el, e)[0]), { a, b } = ends;
-    moved += Math.abs(dx);
-    // Option runs over the file to hear it, and leaves the loop and Start alone.
-    if (sm === 'scrub' || (sm && e.altKey)) scrub(s);
-    else if (sm === 'a') gsSetLoop(Math.min(s, b - 0.05), b);
-    else if (sm === 'b') gsSetLoop(a, Math.max(s, a + 0.05));
-    else if (sm === 'cue') gsMoveCue(s);
-    else if (sm === 'sel' && moved > 3) { gsSetLoop(Math.min(s0, s), Math.max(s0, s)); gsMoveCue(Math.min(s0, s)); }
-  }, (e) => {
-    const f = gsFile();
-    if (!f) { sm = null; ends = { a: 0, b: 1 }; return; }
-    const x = wvLocal(el, e)[0], X = (s) => 6 + s / f.len * (g.w - 12);
-    ends = gsLoop();
-    moved = 0;
-    s0 = toS(x);
-    if (e.altKey) { sm = 'scrub'; scrub(s0); return; }
-    const bot = g.h - 13, r = gsRegionAt(x, wvLocal(el, e)[1], X, bot);
-    if (r && Math.abs(x - X(ends.a)) >= 6 && Math.abs(x - X(ends.b)) >= 6) { sm = null; state.sel = { start: r.start, end: r.end }; drawSelection(); applyLoop(); return; }
-    sm = Math.abs(x - X(ends.a)) < 6 ? 'a' : Math.abs(x - X(ends.b)) < 6 ? 'b' : Math.abs(x - X(gsCue())) < 6 ? 'cue' : 'sel';
-  }, () => {
-    if (sm === 'sel' && moved <= 3) { gsMoveCue(s0); seekSource(state.cue); }
-    else if (sm && sm !== 'scrub' && state.loopOn && state.sel) seekSource(state.sel.start);
-    sm = null;
-  });
-}
-
+/// Start, to a time in seconds of the sound.
 function gsMoveCue(s) {
   const f = gsFile();
   if (f) setCue(Math.round(s * f.sr));

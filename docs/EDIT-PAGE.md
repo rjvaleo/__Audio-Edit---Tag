@@ -39,6 +39,41 @@ The transport, on every page, in one place: a 48 px bar across the top from the 
 
 Before this the play button sat somewhere different on six pages and was missing on two.
 
+## The overview, on every page
+
+The whole open file, in one strip under the Now Playing bar, the full width of the centre (`#pageOv`,
+`ui/app/416-page-overview.js`, `ui/app-css/095-page-overview.css`). RJ, 14 Nov 2026: "We want the waveform overview
+in the same place on every page. So as you click from page to page, the waveform overview should not change, but
+everything under it … should." It is one element, so it is the same on every page.
+
+- **Where:** Edit, Grain, Prism, Chop, Wave, Seq, Atmosphere, the room and Compose (`PO_MODES`, set by `poSync`
+  from `setMode`). Not Browse or Theme.
+- **What it shows:** the file in the sound's colours (`edColourAt`, plain until measured), the time, markers and
+  regions, the loop (outside dimmed, its two brackets), the green Start flag and the playhead; on Grain, each Poly
+  voice's head and a held note's. It was Grain's overview (`gsDrawOverview`) and keeps all of its gestures:
+  - drag a bracket to move an end of the loop; drag across for a new loop; click, or drag the flag, for Start;
+  - ⌥-drag scrubs and leaves the loop and Start alone; a region's strip along the bottom selects that region.
+  - On Prism the open file is not seeked from here (Prism plays its own sound on the transport); the loop and Start
+    are still set.
+- **Zoom:** the wheel zooms round the pointer, ⇧-wheel or a sideways wheel pans, and −, + and Fit sit at its right
+  end (+ zooms round the head, or Start while nothing plays). Zoomed in, a thin bar along the top shows which part of
+  the file is in view, and the part in view is read again at the strip's own width. Double-click is the whole file.
+  The zoom is per sound.
+- **Height:** drag the grip along its bottom edge, 48 to 240 px; it is kept (`mgl.pageOverview.h`), and a
+  double-click on the grip puts back 72 px. Prism's SOURCE well has the same grip (`mgl.prismSource.h`, 58 px).
+- **What each page lends it.** The Edit page's own `#overview` and Chop's are hidden; their parts are here:
+  - Wherever the lane shows (the Edit page, mostly), the lane's zoomed window is a box on the strip, and dragging
+    inside the box pans the lane, as `#overview` did. A click in the box still moves Start.
+  - On Chop, Chop's cuts are lines the full height of the strip, Chop's detail is the box, and a double-click fits
+    the detail to the whole sound, as Chop's overview did.
+- **On Grain** the strip stands where the page's own overview was (`.gs-ov`, gone). SOURCE, which shows only the loop,
+  with its sound picker, chips and its own zoom, runs the full width under the engine tabs (`#gsCloud`, 1338 × 128),
+  and the shared controls and the engine panel sit side by side under it. The page is laid out at 1388 × 990
+  (`GS_W`, `GS_H`) and scaled whole, as before: the engine panel still has to hold Hybrid's sections.
+- **Drawing:** its own frame loop while it shows, on every page, drawing only when what it shows has changed (a key,
+  as Grain's `gsTick` keeps). On pages that do not measure the sound themselves it asks `edLoadSound` once per sound
+  for the colours; Grain hands over the samples it reads, and Prism measures its own sound.
+
 ## The Edit page (`body.wavepage`)
 
 | File | What it does |

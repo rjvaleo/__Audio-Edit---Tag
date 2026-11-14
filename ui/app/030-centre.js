@@ -112,6 +112,9 @@ function setMode(mode) {
   // is one idea and it should have one name, or the next mode to want it will
   // be a third selector added to six rules.
   document.body.classList.toggle('docmode', docMode || synth || theme);
+  // The overview every page shares, before any page fits itself to the centre
+  // it leaves (416).
+  poSync();
 
   // After the toggles, so the parts it borrows are in the state this mode gave
   // them before they are moved.
