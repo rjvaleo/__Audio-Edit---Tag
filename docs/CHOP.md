@@ -15,6 +15,11 @@ mock-up is `chop-v3.html` there.
 Since 13 Nov 2026 the waveform runs the full width of the page (RJ: "the
 waveform should be full width. Those slices are good, but they can go someplace
 else"). The SLICES list sits under it, beside THE PICKED SLICE and THE PASS.
+Since 14 Nov 2026 Detect, Grid, Slice, Time and Listen sit right under the
+Transient / Silence / Grid row, above the waveform (RJ: "they're related").
+Every cut is a solid line, 2 screen pixels wide at any scale, with a handle on
+the ruler; on the overview, a full-height line. Cuts too close to draw apart
+run together into a thicker mark rather than disappearing.
 
 What matters for working on it:
 

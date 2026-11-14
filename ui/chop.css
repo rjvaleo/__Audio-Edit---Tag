@@ -15,6 +15,10 @@ body.choppage .dock-panes { height: 100%; }
   --track: var(--look-track); --glow: var(--look-glow); --grain: var(--look-grain);
   --acc: var(--on); --ui: var(--look-ui); --monof: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --f-time: var(--look-f-time); --f-pitch: var(--look-f-pitch); --f-tone: var(--look-f-tone); --f-attack: var(--look-f-attack); --f-space: var(--look-f-space); --f-level: var(--look-f-level);
+  /* A cut is 2 screen pixels wide at any scale: the page is scaled whole, and a
+     plain 2px line went under a pixel when it was scaled down. `chopFit` sets
+     --chop-px, the page's pixels in one of the screen's. */
+  --chop-line: calc(2px * var(--chop-px, 1));
   position: absolute; left: 0; top: 0; width: 1432px; height: 1000px; transform-origin: 0 0;
   display: flex; flex-direction: column; gap: 8px; padding: 8px 12px;
   color: var(--t); font: var(--fs-m)/1.3 var(--ui); user-select: none;
@@ -107,27 +111,32 @@ body.choppage .dock-panes { height: 100%; }
 .chop-out { position: absolute; top: 0; bottom: 0; background: rgba(var(--black-rgb), .66); }
 .chop-slice { position: absolute; top: 18px; bottom: 0; pointer-events: auto; cursor: pointer; }
 .chop-wash { position: absolute; inset: 0; background: transparent; }
-.chop-slice:not(.odd) .chop-wash { background: rgba(var(--white-rgb), .03); }
-.chop-slice:hover .chop-wash { background: rgba(var(--white-rgb), .07); }
+.chop-slice:not(.odd) .chop-wash { background: rgba(var(--white-rgb), .075); }
+.chop-slice:hover .chop-wash { background: rgba(var(--white-rgb), .13); }
 .chop-slice.picked .chop-wash { background: rgba(var(--on-rgb), .18); }
 .chop-slice.current .chop-wash { background: rgba(var(--on-rgb), .30); }
 .chop-slice.muted .chop-wash { background: repeating-linear-gradient(45deg, rgba(var(--white-rgb), .12) 0 3px, rgba(var(--look-well-rgb), .72) 3px 9px); }
-.chop-tag { position: absolute; top: 2px; left: 1.5px; padding: 0 2.5px; border-radius: var(--r-s); font: 600 var(--fs-xs)/12px var(--monof, ui-monospace); color: var(--black); white-space: nowrap; background: var(--chop-tag); }
+.chop-tag { position: absolute; top: 2px; left: calc(var(--chop-line) / 2 + 1.5px); padding: 0 2.5px; border-radius: var(--r-s); font: 600 var(--fs-xs)/12px var(--monof, ui-monospace); color: var(--black); white-space: nowrap; background: var(--chop-tag); }
 .chop-tag.low { top: 15px; }
-.chop-edge { position: absolute; top: -18px; bottom: 0; left: 0; width: 7px; margin-left: -3px; cursor: ew-resize; pointer-events: auto; }
+.chop-edge { position: absolute; top: -18px; bottom: 0; left: 0; width: 8px; margin-left: -4px; cursor: ew-resize; pointer-events: auto; }
 .chop-edge.end { left: 100%; }
-.chop-edge::after { content: ''; position: absolute; left: 3px; top: 18px; bottom: 0; width: 1px; background: var(--t); opacity: calc(.34 * var(--chop-dense, 1)); }
-.chop-edge.end::after { opacity: calc(.2 * var(--chop-dense, 1)); }
-.chop-slice.current .chop-edge::after, .chop-slice.picked .chop-edge::after { background: var(--acc); opacity: 1; }
-.chop-edge:hover::after { left: 2px; width: 2px; opacity: 1; }
+/* Every cut a solid line, however many there are (RJ, 14 Nov 2026: "I can't
+   see them"). The shadow keeps it apart from a bright waveform behind it. A cut
+   that stands for others too close to draw runs on over them, --chop-span wide,
+   so a packed stretch reads as packed rather than as empty. */
+.chop-edge::after { content: ''; position: absolute; left: calc(4px - var(--chop-line) / 2); top: 18px; bottom: 0; width: calc(var(--chop-line) + var(--chop-span, 0px)); background: var(--t); box-shadow: 0 0 2px rgba(var(--black-rgb), .8); }
+.chop-edge.end::after { background: var(--t2); }
+.chop-slice.current .chop-edge::after, .chop-slice.picked .chop-edge::after { background: var(--acc); }
+.chop-edge:hover::after { left: calc(4px - var(--chop-line) * .75); width: calc(var(--chop-line) * 1.5 + var(--chop-span, 0px)); background: var(--acc); }
 .chop-thr { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(var(--white-rgb), .45); }
 .chop-ticks { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; }
 .chop-ticks i { position: absolute; bottom: 0; width: 1px; height: 6px; background: rgba(var(--white-rgb), .55); }
 .chop-ruler { position: absolute; left: 0; right: 0; top: 0; height: 18px; pointer-events: auto; background: var(--chassis); border-bottom: 1px solid var(--line); cursor: grab; font: var(--fs-xs)/16px var(--monof, ui-monospace); color: var(--t3); }
 .chop-bar { position: absolute; top: 0; bottom: 0; padding-left: 3px; border-left: 1px solid var(--line); pointer-events: none; }
-.chop-cut { position: absolute; bottom: 2px; width: 0; height: 0; margin-left: -5px; cursor: ew-resize; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid currentColor; }
-.chop-cut::before { content: ''; position: absolute; left: -6px; top: -12px; width: 12px; height: 16px; }
-.chop-cut.locked::after { content: ''; position: absolute; left: 5px; top: -13px; width: 4px; height: 3px; border: 1.2px solid var(--acc); border-radius: 0; }
+.chop-cut { position: absolute; bottom: 0; width: 0; height: 0; margin-left: -5px; cursor: ew-resize; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 10px solid currentColor; filter: drop-shadow(0 1px 1px rgba(var(--black-rgb), .8)); }
+.chop-cut:hover { color: var(--acc); }
+.chop-cut::before { content: ''; position: absolute; left: -6px; top: -14px; width: 12px; height: 18px; }
+.chop-cut.locked::after { content: ''; position: absolute; left: 5px; top: -15px; width: 4px; height: 3px; border: 1.2px solid var(--acc); border-radius: 0; }
 .chop-cut.going { opacity: .3; }
 .chop-flag { position: absolute; top: 2px; padding: 0 4px; border-radius: var(--r-s); cursor: ew-resize; font: 700 var(--fs-xs)/13px var(--monof, ui-monospace); color: var(--black); background: var(--wave); }
 .chop-flag.e { transform: translateX(-100%); }

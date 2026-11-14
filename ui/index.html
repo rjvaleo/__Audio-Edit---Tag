@@ -538,8 +538,9 @@
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="regions" title="Regions">
           <span class="ic">⧉</span><span class="lb">Regions</span>
         </button>
+        <!-- Chop's icon is the rail's (`rail.js`): a beat with ReCycle's cuts through it. -->
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="chop" title="Chop: cut the sound at its silences into slices, after Recycle Reborn">
-          <span class="ic">✂</span><span class="lb">Chop</span>
+          <span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h1.5l1-6.5 1.2 12 1.1-8.5 1 5.5.9-3.4.8 1.4H10l.9-4.4 1 8 1-5.4.9 3.2.8-2H16l1-5.6 1.1 10.6 1-7 .9 4 .8-2 .7.6H22"/><path d="M3.5 4.5v17M10 4.5v17M16 4.5v17" stroke-width="1"/><path d="M2.3 2h2.4l-1.2 1.6zM8.8 2h2.4L10 3.6zM14.8 2h2.4L16 3.6z" fill="currentColor" stroke-width="1"/></svg></span><span class="lb">Chop</span>
         </button>
         <!-- Prism: Hyperprism's XY pad, HyperStretch and the rack pad merged.
              The rail's Prism page opens it. See docs/HYPERSTRETCH.md. -->
@@ -1278,6 +1279,18 @@
             <button type="button" class="chop-btn" id="chopMute" title="Silence the picked slices: left out of Preview and Write"><svg viewBox="0 0 12 12"><path d="M2 5H4L7 2.5V9.5L4 7H2ZM9 4L11 8M11 4L9 8"/></svg>Mute</button>
           </div></div>
         </section>
+        <!-- Detect, Grid, Slice, Time and Listen sit right under the row that picks
+             Transient, Silence or Grid, because they set how it cuts (RJ, 14 Nov
+             2026: "they're related"). -->
+        <section class="chop-band chop-ctl">
+          <div id="chopKnobs" class="chop-knobs"></div>
+          <div class="chop-mod chop-listen" style="width:300px"><div class="chop-mh"><b class="chop-gname">LISTEN</b><span class="chop-grow"></span><div class="chop-pills chop-seg sm" id="chopSync" title="Free: the tempo here. Lock: the sequencer's tempo"><button type="button" data-v="free">Free</button><button type="button" data-v="lock">Lock</button></div></div>
+            <div class="chop-ls"><div class="chop-lsr">
+              <button type="button" class="chop-btn chop-big" id="chopPreview" title="Play every slice that is not muted, S to E, at the tempo, with everything on"><svg viewBox="0 0 12 12"><path d="M3 2L10 6L3 10Z" fill="currentColor" stroke="none"/></svg>Preview</button>
+              <button type="button" class="chop-btn chop-big" id="chopRatchet" title="Ratchet: the chop from S fires on every grid line, round and round, until pressed again"><svg viewBox="0 0 12 12"><path d="M2 10V4M5 10V4M8 10V4M11 10V4M1 2H11"/></svg>Ratchet</button>
+            </div><div class="chop-status" id="chopStatus"></div><div class="chop-status chop-status2" id="chopStatus2"></div></div>
+          </div>
+        </section>
         <section class="chop-band chop-mid">
           <div class="chop-panel chop-source">
             <div class="chop-phead"><b class="chop-nm">SOURCE</b><span class="chop-meta" id="chopMeta"></span><span class="chop-grow"></span>
@@ -1304,15 +1317,6 @@
                 <div class="chop-list" id="chopList"></div>
               </div>
             </div>
-          </div>
-        </section>
-        <section class="chop-band chop-ctl">
-          <div id="chopKnobs" class="chop-knobs"></div>
-          <div class="chop-mod chop-listen" style="width:300px"><div class="chop-mh"><b class="chop-gname">LISTEN</b><span class="chop-grow"></span><div class="chop-pills chop-seg sm" id="chopSync" title="Free: the tempo here. Lock: the sequencer's tempo"><button type="button" data-v="free">Free</button><button type="button" data-v="lock">Lock</button></div></div>
-            <div class="chop-ls"><div class="chop-lsr">
-              <button type="button" class="chop-btn chop-big" id="chopPreview" title="Play every slice that is not muted, S to E, at the tempo, with everything on"><svg viewBox="0 0 12 12"><path d="M3 2L10 6L3 10Z" fill="currentColor" stroke="none"/></svg>Preview</button>
-              <button type="button" class="chop-btn chop-big" id="chopRatchet" title="Ratchet: the chop from S fires on every grid line, round and round, until pressed again"><svg viewBox="0 0 12 12"><path d="M2 10V4M5 10V4M8 10V4M11 10V4M1 2H11"/></svg>Ratchet</button>
-            </div><div class="chop-status" id="chopStatus"></div><div class="chop-status chop-status2" id="chopStatus2"></div></div>
           </div>
         </section>
         <section class="chop-band chop-pro"><div class="chop-fx" id="chopFx" title="The processing every slice gets, in Preview and as it is written"></div></section>

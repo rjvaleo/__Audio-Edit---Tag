@@ -37,6 +37,12 @@ function chopFit() {
   if (!cw || !ch) return;
   const s = Math.min(cw / CHOP_W, ch / CHOP_H, 1.3);
   app.style.transform = `scale(${s})`;
+  // The cuts are drawn a fixed width on screen, not on the page, so they stay
+  // visible however small the page is scaled (`--chop-line`, `chopPxPer`).
+  if (Math.abs(1 / s - chopPxPer) < 1e-3) return;
+  chopPxPer = 1 / s;
+  app.style.setProperty('--chop-px', chopPxPer.toFixed(3));
+  if (chop.mono) chopPaintLane();
 }
 
 // ───────────────────────────────────────────────────────────── the Looks
