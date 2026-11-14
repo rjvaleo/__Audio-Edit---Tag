@@ -8,9 +8,10 @@
 // Measured in a worker with Chop's own `chopAnalyseCore`.
 //
 // Read again whenever the overview is, which is after every edit that changes
-// the sound and whenever another sound opens. Only while the Edit page or Grain
-// shows (Grain colours its overview with it): elsewhere it is marked stale and
-// read when you come back.
+// the sound and whenever another sound opens. Only while the Edit page shows:
+// elsewhere it is marked stale and read when you come back. Grain colours its
+// overview with it too, and hands over the samples it decodes for its own
+// pictures (`gsPcmLoad`, 407) rather than the sound being fetched twice.
 
 let edSoundWorker = null;
 let edSoundWant = 0;
@@ -18,7 +19,7 @@ let edSoundWant = 0;
 /// The overview was reloaded: what was measured is out of date.
 function edSoundStale() {
   edSoundWant++;
-  if (document.body.classList.contains('wavepage') || GS.showing) edLoadSound();
+  if (document.body.classList.contains('wavepage')) edLoadSound();
 }
 
 async function edLoadSound() {
@@ -40,7 +41,13 @@ async function edLoadSound() {
   // Mono for measuring: the channels averaged.
   const n = buf.length, mono = new Float32Array(n);
   for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / buf.numberOfChannels; }
-  Object.assign(edSound, { path: f.path, rate, mono, an: null, hits: [], loud: [] });
+  edTakeSound(f.path, rate, mono, serial);
+}
+
+/// Samples decoded here or elsewhere (Grain's own, 407): keep them and measure.
+function edTakeSound(path, rate, mono, serial = edSoundWant) {
+  edSound.serial = serial;
+  Object.assign(edSound, { path, rate, mono, an: null, hits: [], loud: [] });
   edMeasure(mono, rate, serial);
   edSoundReady();
 }
