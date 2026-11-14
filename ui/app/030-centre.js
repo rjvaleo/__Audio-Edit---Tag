@@ -114,7 +114,9 @@ function setMode(mode) {
   document.body.classList.toggle('docmode', docMode || synth || theme);
   // The overview every page shares, before any page fits itself to the centre
   // it leaves (416).
-  poSync();
+  // The shared overview (416) loads after this file in the bundle, and the
+  // first setMode runs during start-up, before it: it syncs itself when it loads.
+  if (window.poReady) poSync();
 
   // After the toggles, so the parts it borrows are in the state this mode gave
   // them before they are moved.

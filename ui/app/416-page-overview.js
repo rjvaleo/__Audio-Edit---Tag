@@ -505,4 +505,7 @@ function poWire() {
   poGrip($('poGrip'), PO_HKEY, PO_HDEF, (h) => { PO.well.style.height = `${h}px`; });
   new ResizeObserver(poSize).observe(PO.well);
   poWire();
+  // From here `setMode` may call in; it already has once, during start-up.
+  window.poReady = true;
+  poSync();
 })();
