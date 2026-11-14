@@ -137,6 +137,27 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
             }
         }
     }
+    // Velocities: each band against its own typical step (the median is "nothing
+    // here", the 95th percentile is a full hit), then the kick's click taken
+    // out of the snare and hat bands, where it leaks.
+    for b in 0..3 {
+        let mut all: Vec<f32> = grid.iter().flat_map(|g| g[b].iter().copied()).collect();
+        let lo = rhythm::percentile(&mut all, 0.5);
+        let hi = rhythm::percentile(&mut all, 0.95).max(lo + 1e-6);
+        for g in grid.iter_mut() {
+            for v in g[b].iter_mut() {
+                *v = ((*v - lo) / (hi - lo)).clamp(0.0, 1.0);
+            }
+        }
+    }
+    for g in grid.iter_mut() {
+        for s in 0..16 {
+            let k = g[0][s];
+            for b in 1..3 {
+                g[b][s] = ((g[b][s] - 0.6 * k) / 0.6).clamp(0.0, 1.0);
+            }
+        }
+    }
     // Swing: where the off-beat eighths and sixteenths land, from hats then snares.
     let mut sw8 = Vec::new();
     let mut sw16 = Vec::new();
@@ -164,16 +185,40 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
     let swing16 = if sw16.len() > 8 { 100.0 * (1.0 + median(&mut sw16)) / 2.0 } else { 50.0 };
     let feel_ms: Vec<f32> = feel.iter_mut().map(|v| if v.len() > 4 { median(v) } else { 0.0 }).collect();
 
-    let glyph = |v: f32| if v >= 0.6 { 'X' } else if v >= 0.3 { 'x' } else { '.' };
+    let glyph = |v: f32| if v >= 0.7 { 'X' } else if v >= 0.4 { 'x' } else { '.' };
     let pat = |bar: usize, b: usize| -> String { grid[bar][b].iter().map(|v| glyph(*v)).collect() };
-    let mut counts: HashMap<String, (usize, usize)> = HashMap::new();
+    // Families of bars: a bar joins the first family whose first bar it differs
+    // from by at most three hits (on = 0.4 and up); empty bars are left out.
+    let onoff = |bar: usize| -> Vec<bool> { (0..3).flat_map(|b| (0..16).map(move |s| (b, s))).map(|(b, s)| grid[bar][b][s] >= 0.4).collect() };
+    let mut fams: Vec<(Vec<bool>, usize, usize, Vec<usize>)> = Vec::new(); // (pattern, count, first, members)
     for bar in 0..nbars {
-        let key = format!("{}|{}|{}", pat(bar, 0), pat(bar, 1), pat(bar, 2));
-        let e = counts.entry(key).or_insert((0, bar));
-        e.0 += 1;
+        let p = onoff(bar);
+        if p.iter().filter(|x| **x).count() < 2 {
+            continue;
+        }
+        match fams.iter_mut().find(|f| f.0.iter().zip(&p).filter(|(a, b)| a != b).count() <= 3) {
+            Some(f) => {
+                f.1 += 1;
+                f.3.push(bar);
+            }
+            None => fams.push((p, 1, bar, vec![bar])),
+        }
     }
-    let mut common: Vec<(String, usize, usize)> = counts.into_iter().map(|(k, (c, f))| (k, c, f)).collect();
-    common.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)));
+    fams.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)));
+    // Each family shown as its members' mean velocities.
+    let common: Vec<(String, usize, usize)> = fams
+        .iter()
+        .map(|f| {
+            let mean = |b: usize, s: usize| f.3.iter().map(|&m| grid[m][b][s]).sum::<f32>() / f.3.len() as f32;
+            let row = |b: usize| -> String { (0..16).map(|s| glyph(mean(b, s))).collect() };
+            (format!("{}|{}|{}", row(0), row(1), row(2)), f.1, f.2)
+        })
+        .collect();
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for bar in 0..nbars {
+        *counts.entry(format!("{}|{}|{}", pat(bar, 0), pat(bar, 1), pat(bar, 2))).or_insert(0) += 1;
+    }
+    let exact_distinct = counts.len();
 
     // ---- the bass line
     log("bass line");
@@ -409,7 +454,7 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
 
     // ---- sections
     log("sections");
-    let hits = |b: usize, band: usize| grid[b][band].iter().filter(|v| **v >= 0.3).count() as f32 / 16.0;
+    let hits = |b: usize, band: usize| grid[b][band].iter().filter(|v| **v >= 0.4).count() as f32 / 16.0;
     let feat: Vec<Vec<f32>> = (0..nbars)
         .map(|b| {
             let mut f = Vec::with_capacity(23);
@@ -653,7 +698,8 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
                 .set("swing_8th_pct", J::r(swing8, 1))
                 .set("swing_16th_pct", J::r(swing16, 1))
                 .set("feel_ms_kick_snare_hat", J::Arr(feel_ms.iter().map(|x| J::r(*x, 1)).collect()))
-                .set("distinct_bars", common.len())
+                .set("distinct_bars_exact", exact_distinct)
+                .set("bar_families", common.len())
                 .set("common_bars", J::Arr(common_j)),
         )
         .set(
@@ -717,8 +763,9 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
         scale_cents.iter().map(|c| format!("{c:.0}")).collect::<Vec<_>>().join(", ")
     ));
     s.push_str(&format!(
-        "- **Drums:** {} distinct bars; swing {:.0} % (8ths), {:.0} % (16ths); kick, snare, hat sit {:+.0}, {:+.0}, {:+.0} ms off the beat.\n",
+        "- **Drums:** {} families of bars (bars within 3 hits of each other), {} exactly distinct; swing {:.0} % (8ths), {:.0} % (16ths); kick, snare, hat sit {:+.0}, {:+.0}, {:+.0} ms off the beat.\n",
         common.len(),
+        exact_distinct,
         swing8,
         swing16,
         feel_ms[0],
@@ -728,7 +775,7 @@ pub fn analyse(title: &str, mix_path: &Path, stems_dir: &Path, log: &mut dyn FnM
     s.push_str("\n  Most-used bars (X loud, x soft, . rest; 16 steps):\n\n");
     for (k2, c, f) in common.iter().take(4) {
         let p: Vec<&str> = k2.split('|').collect();
-        s.push_str(&format!("      {c:>3} bars, first at bar {f}\n      kick  {}\n      snare {}\n      hat   {}\n\n", p[0], p[1], p[2]));
+        s.push_str(&format!("      {c:>3} bars, first at bar {f} (mean velocities)\n      kick  {}\n      snare {}\n      hat   {}\n\n", p[0], p[1], p[2]));
     }
     if !notes.is_empty() {
         s.push_str(&format!("- **Bass:** {} notes, {} to {}.", notes.len(), note_name(lo_note), note_name(hi_note)));
