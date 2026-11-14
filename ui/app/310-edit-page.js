@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════ the Edit page ══
 //
 // Only editing: the waveform, the spectrogram and every command of the Edit,
-// Action and DSP menus as a row of icons along the top. No dock, no presets —
+// Action and DSP menus as icons in a bar down the right. No dock, no presets —
 // those are Grain's. Each icon runs the same command as its menu item, is dimmed
 // when it has nothing to act on, and names itself and its key on hover.
 
@@ -263,8 +263,9 @@ const WT_CMDS = Object.fromEntries(WT_GROUPS.flatMap(([, items]) => items.map((i
 // then would bring the old order back.
 const WT_STORE = 'editBar';
 
-/// One bar, no tabs (RJ, 13 Nov 2026: "The tabs is too much"). The sections in
-/// the order they sit along it, editing first and how it is shown last; and
+/// One bar, no tabs (RJ, 13 Nov 2026: "The tabs is too much"), down the right
+/// of the page since 14 Nov 2026, each section under its title. The sections in
+/// the order they sit down it, editing first and how it is shown last; and
 /// what starts hidden because a key or the menus already do it. Customize
 /// changes both. See `docs/EDIT-PAGE.md`.
 const ED_BAR_ORDER = ['History', 'Clipboard', 'Silence', 'Fades', 'Level', 'Process', 'Repair', 'Measure', 'Markers', 'Zoom', 'Snap', 'Display', 'Show', 'Export', 'Selection'];
@@ -406,11 +407,18 @@ function wtSection(sec, i) {
   const row = document.createElement('div');
   row.className = 'wt-row';
   for (const id of sec.ids) {
-    row.appendChild(wtButton(id));
+    // The settings a dialog used to ask for: knobs, behind a ▾ beside the
+    // command, the two in one cell of the section's grid.
+    if (!wtEditing && ED_KNOBS[id]) {
+      const pair = document.createElement('span');
+      pair.className = 'wt-pair';
+      pair.append(wtButton(id), edMoreButton(id));
+      row.appendChild(pair);
+    } else {
+      row.appendChild(wtButton(id));
+    }
     // Export carries its bit depth beside it, as the old bar did.
     if (id === 'export') row.appendChild(wtBits());
-    // The settings a dialog used to ask for: knobs, behind a ▾ beside the command.
-    if (!wtEditing && ED_KNOBS[id]) row.appendChild(edMoreButton(id));
   }
   if (wtEditing) {
     head.contentEditable = 'plaintext-only';
@@ -458,8 +466,8 @@ function wtBits() {
   return bits;
 }
 
-/// The bar's own controls, at its end: Customize, and while customizing, the
-/// hidden commands, a new section, Reset and Done.
+/// The bar's own controls, at its foot above the meters: Customize, and while
+/// customizing, the hidden commands, a new section, Reset and Done.
 function wtCustomize() {
   const g = document.createElement('div');
   g.className = 'wt-group wt-custom';
@@ -515,6 +523,9 @@ function wtRender() {
   wtSync();
 }
 
+/// The bar goes in the right-hand column, `#edSide`, above the meters (RJ, 14
+/// Nov 2026: "a right bar along the whole right-hand side … put those meters
+/// at the bottom of that"). The file tabs and ⌘K stay along the top.
 function wtBuild() {
   if ($('waveTools')) return;
   const bar = document.createElement('div');
@@ -522,7 +533,8 @@ function wtBuild() {
   bar.className = 'wave-tools';
   bar.setAttribute('role', 'toolbar');
   bar.setAttribute('aria-label', 'Edit');
-  $('editTools').after(bar);
+  bar.setAttribute('aria-orientation', 'vertical');
+  $('edSide').prepend(bar);
   wtRender();
 }
 

@@ -324,3 +324,31 @@ checks that two kicks are closer than a kick and a voice.
 - **Escape:** steps back one thing at a time.
 - **Not listened to yet:** sounds without a fingerprint wait in rows under
   the map, still playable.
+
+## In Browse, on the right (14 Nov 2026)
+
+RJ: "I just clicked on file and I've got my list of files, but I don't see the
+3D or like entire palette of sounds on the right." The map was only ever the
+full-window overlay under Browse › Map. Now Browse shows it too: the file tree
+on the left, the sound's waveform and details in the middle, and the map in
+the larger part on the right (`#browseMap`, about three fifths of what the
+tree leaves). Its 3D button opens the world, as the overlay's does.
+
+- **One map, in two places.** `LibraryGraph.mount(el)` puts the map in a box,
+  sized to it and following it (a `ResizeObserver`); `mount(null)` takes it
+  out and stops its loop. `LibraryGraph.browse(on)` is Browse's use of it,
+  called by `setMode`, and once when `library-graph.js` loads, since that is
+  after the first `setMode`. Browse › Map still opens the overlay: it borrows
+  the same map, and gives it back to Browse when it closes. The id follows it:
+  `#libraryGraph` is the overlay, `#browseGraph` the map in Browse.
+- **What a click does in Browse** is what a click in the tree does: the sound
+  is picked (`selectFile`), so its waveform and details fill the middle, as well
+  as playing and opening its card. A double-click opens it in Edit. Over the
+  whole window a click is as it was.
+- **In its box** the strip wraps where the box is narrow, Close becomes Full
+  window, and Escape steps back as far as the map and stops there.
+- **Read once, not on every visit.** Coming back to Browse within 30 s keeps
+  the map it had, unless sounds are still being listened to; a big library is
+  megabytes to read. While they are, Browse keeps asking, as the overlay does,
+  so the listening thread runs while Browse is open.
+- Under the 3D world the map in Browse draws nothing.

@@ -89,6 +89,12 @@ const COMPOSE_LISTED = false;
       icon: 'seq', label: 'Seq', mode: 'seq',
       title: 'The scale sequencer — a second voice, run from the same transport',
     },
+    // The sequencer's second synth on a page of its own: the same frame as Seq,
+    // showing only Atmosphere, so a change on either page is the same setting.
+    {
+      icon: 'atmos', label: 'Atmosphere', mode: 'atmos',
+      title: 'Atmosphere — the sequencer\'s second synth on its own: oscillators A and B, the voice and the space',
+    },
     {
       icon: 'theme', label: 'Theme', mode: 'theme',
       title: 'Palettes, colours, the waveform and the Look',
@@ -186,9 +192,13 @@ const COMPOSE_LISTED = false;
     // An open book, for Help.
     help:
       '<path d="M12 6.5C10 5 7 4.6 3.8 5.2v13c3.2-.6 6.2-.2 8.2 1.3 2-1.5 5-1.9 8.2-1.3v-13C17 4.6 14 5 12 6.5z"/><path d="M12 6.5v13"/>',
-    // Scissors, the Chop tab's own ✂, drawn.
+    // A beat of three hits with a cut, flagged at the top, at the start of
+    // each: Chop is ReCycle, and this is how ReCycle shows a loop (RJ, 14 Nov
+    // 2026). The dock tab draws the same (`index.html`).
     chop:
-      '<circle cx="6.5" cy="6.5" r="2.6"/><circle cx="6.5" cy="17.5" r="2.6"/><path d="M8.6 8.1 20 17.2M8.6 15.9 20 6.8"/>',
+      '<path d="M2 13h1.5l1-6.5 1.2 12 1.1-8.5 1 5.5.9-3.4.8 1.4H10l.9-4.4 1 8 1-5.4.9 3.2.8-2H16l1-5.6 1.1 10.6 1-7 .9 4 .8-2 .7.6H22"/>' +
+      '<path d="M3.5 4.5v17M10 4.5v17M16 4.5v17" stroke-width="1"/>' +
+      '<path d="M2.3 2h2.4l-1.2 1.6zM8.8 2h2.4L10 3.6zM14.8 2h2.4L16 3.6z" fill="currentColor" stroke-width="1"/>',
     grain:
       '<path d="M7.6 18.5h9.2a3.4 3.4 0 0 0 .35-6.78 5.35 5.35 0 0 0-10.03-2.3 4.1 4.1 0 0 0 .48 9.08z"/><circle cx="9.6" cy="13.4" r=".85" fill="currentColor" stroke="none"/><circle cx="13" cy="11.9" r=".85" fill="currentColor" stroke="none"/><circle cx="15.4" cy="14.6" r=".85" fill="currentColor" stroke="none"/><circle cx="11.7" cy="15.6" r=".85" fill="currentColor" stroke="none"/>',
     visual:
@@ -199,6 +209,9 @@ const COMPOSE_LISTED = false;
     // Four steps of a sequence, at four heights.
     seq:
       '<rect x="3.5" y="12.5" width="3.4" height="8"/><rect x="8.7" y="7.5" width="3.4" height="13"/><rect x="13.9" y="10" width="3.4" height="10.5"/><rect x="19.1" y="4" width="3.4" height="16.5"/>',
+    // Mist in layers: a soft wave, held, fading back.
+    atmos:
+      '<path d="M3 8.5c3-2.6 6-2.6 9 0s6 2.6 9 0"/><path d="M3 12.5c3-2.6 6-2.6 9 0s6 2.6 9 0" opacity=".7"/><path d="M3 16.5c3-2.6 6-2.6 9 0s6 2.6 9 0" opacity=".45"/>',
     compose:
       '<rect x="3.5" y="4" width="4.6" height="7" rx=".8"/><rect x="9.7" y="4" width="4.6" height="7" rx=".8"/><rect x="15.9" y="4" width="4.6" height="7" rx=".8"/><path d="M3.5 14.5h17"/><path d="M3.5 17.5h11"/><path d="M3.5 20.5h14"/>',
     theme:

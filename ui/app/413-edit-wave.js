@@ -3,8 +3,8 @@
 // What D adds around the app's own lane (040): a time ruler under the
 // overview, a level ruler down the lane's left edge, Rainbow colour on the
 // waveform (`edColumnColours`, read by `drawWave`), the hits and the loudest
-// spots, the counters under the wave, and the meters that slide out from the
-// right edge while you look at them. See `docs/EDIT-PAGE.md`.
+// spots, the counters under the wave, and the meters at the foot of the bar
+// on the right. See `docs/EDIT-PAGE.md`.
 
 const edOn = () => document.body.classList.contains('wavepage');
 
@@ -124,7 +124,7 @@ function edPaintCounters() {
   edPaintMeters(lv);
 }
 
-/// The meters that slide out over the wave from its right edge.
+/// The meters at the foot of the bar on the right (`#edSide`), always out.
 function edPaintMeters(lv) {
   const box = $('edMeters');
   if (!box) return;
@@ -157,7 +157,7 @@ function edAfterDraw() {
 
 /// The sound has been read or measured: colour, marks and numbers catch up.
 function edSoundReady() {
-  if (GS.showing) GS_KEYS.ov = '';
+  if (window.poReady) poDirty();
   if (prismOwnsBar()) prismDeckShowWave();
   if (!edOn()) return;
   drawWave();

@@ -15,6 +15,11 @@ mock-up is `chop-v3.html` there.
 Since 13 Nov 2026 the waveform runs the full width of the page (RJ: "the
 waveform should be full width. Those slices are good, but they can go someplace
 else"). The SLICES list sits under it, beside THE PICKED SLICE and THE PASS.
+Since 14 Nov 2026 Detect, Grid, Slice, Time and Listen sit right under the
+Transient / Silence / Grid row, above the waveform (RJ: "they're related").
+Every cut is a solid line, 2 screen pixels wide at any scale, with a handle on
+the ruler; on the overview, a full-height line. Cuts too close to draw apart
+run together into a thicker mark rather than disappearing.
 
 What matters for working on it:
 
@@ -32,6 +37,7 @@ What matters for working on it:
 - **Fixed at 1432×1000 and scaled whole**, as Wave is (`chopFit`).
 - **The file tabs are the app's own**, moved in while the page shows and put back after (`chopBorrow`). The transport is the Now Playing bar's, above every page (`docs/EDIT-PAGE.md`). There is one set of each.
 - **The detail is the page's own** (`#chopLane`, `chopView`). The main waveform is hidden on this page.
+- **The overview is the one every page shares** (since 14 Nov 2026; `ui/app/416-page-overview.js`, `docs/EDIT-PAGE.md`). Chop's own (`#chopOverview`) is hidden, and its part is drawn there: the cuts as lines the full height of the strip, the detail as a box to drag, and a double-click fits the detail to the whole sound.
 - **Nothing hides by mode.** A knob that makes no cuts dims and still works. Ratchet uses Nudge and Shuffle in every mode.
 - **The Colour row** says what the colour on the waveform means, from the library's own measures (`search/src/lib.rs`, `pitch.rs`), taken in a worker on every 11 ms. Every slice is measured too and given a Kind, which is an opinion and will sometimes be wrong.
 - **Detect** finds the tempo and counts the bars between S and E, and sets Bars and Beats. It runs when a sound opens. Whole bars win when they score nearly as well, so a loop loops even.

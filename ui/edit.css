@@ -1,18 +1,23 @@
 /* The Now Playing bar, on every page, and the Edit page's face (body.wavepage).
-   Tokens are Grain v12's five Looks, set for the whole app on
-   :root[data-mgl-look]. Orange means "on" in every one. See docs/EDIT-PAGE.md. */
+   Its colours are the shared look's (`015-tokens.css`), as Grain's and Chop's
+   are: the theme's "on" (orange by default) means on. See docs/EDIT-PAGE.md. */
 
+/* Edit's names for the look, aliases of the look tokens as Grain's `--gs-*`
+   (grain.css) and Chop's are, so the default and every theme paint Edit, the
+   Now Playing bar and Grain alike. A Look is a theme now: its colours are its
+   theme's look tokens (`LOOK_THEMES`, theme-palettes.js) and only its material
+   is keyed on `data-mgl-look`, at the end of this file. Until 14 Nov 2026 these
+   were hex for each Look, which a theme never reached (RJ: "Make sure
+   everything's the same color"). */
 :root {
-  --mgl-acc: #ffb547;
-  --mgl-ui: Inter, -apple-system, system-ui, sans-serif;
-  --mgl-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --mgl-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  --m-chassis: var(--look-chassis); --m-panel: var(--look-panel); --m-panel-hi: var(--look-panel-hi); --m-well: var(--look-well);
+  --m-line: var(--look-line); --m-t: var(--look-text); --m-t2: var(--look-text-2); --m-t3: var(--look-text-3);
+  --m-wave: var(--look-wave); --m-track: var(--look-track);
+  --mgl-acc: var(--on);
+  --mgl-ui: var(--look-ui);
+  --mgl-mono: var(--mono);
+  --mgl-grain: var(--look-grain);
 }
-:root, :root[data-mgl-look="AD"] { --m-chassis:#121316;--m-panel:#1b1d21;--m-panel-hi:#262a30;--m-well:#06070a;--m-line:#2c3036;--m-t:#e8eaee;--m-t2:#b9bec6;--m-t3:#858b94;--m-wave:#ffffff;--m-track:#2a2e34; }
-:root[data-mgl-look="A"] { --m-chassis:#121316;--m-panel:#1b1d21;--m-panel-hi:#262a30;--m-well:#08090b;--m-line:#2c3036;--m-t:#e8eaee;--m-t2:#b9bec6;--m-t3:#858b94;--m-wave:#e6f5ef;--m-track:#2a2e34; }
-:root[data-mgl-look="B"] { --m-chassis:#0a0c10;--m-panel:#161a20;--m-panel-hi:#1d222a;--m-well:#05070a;--m-line:#2a3039;--m-t:#eef2f7;--m-t2:#b8c2cf;--m-t3:#7f8a99;--m-wave:#f2f7ff;--m-track:#262c36; }
-:root[data-mgl-look="C"] { --m-chassis:#262420;--m-panel:#2f2c28;--m-panel-hi:#36332e;--m-well:#121110;--m-line:#403c35;--m-t:#f0e9de;--m-t2:#c9c0b2;--m-t3:#968d80;--m-wave:#fff3e0;--m-track:#4a453e;--mgl-ui:'Space Grotesk', Inter, sans-serif; }
-:root[data-mgl-look="D"] { --m-chassis:#0b0c10;--m-panel:#14151b;--m-panel-hi:#1a1c25;--m-well:#050609;--m-line:#262938;--m-t:#eceef6;--m-t2:#b5b9c8;--m-t3:#7d8294;--m-wave:#ffffff;--m-track:#252836; }
 
 /* ─────────────────────────────────────────────────────── Now Playing */
 
@@ -23,37 +28,37 @@
 .nowbar {
   position: absolute; top: 0; left: var(--nb-left, 62px); right: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0 12px;
   z-index: 31; min-width: 0;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--m-panel-hi) 70%, #000), color-mix(in srgb, var(--m-panel) 80%, #000));
-  border-bottom: 1px solid var(--m-line); box-shadow: 0 4px 14px rgba(0,0,0,.45);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--m-panel-hi) 70%, var(--black)), color-mix(in srgb, var(--m-panel) 80%, var(--black)));
+  border-bottom: 1px solid var(--m-line); box-shadow: 0 4px 14px rgba(var(--black-rgb), .45);
   color: var(--m-t); font: 11px/1.3 var(--mgl-ui);
 }
 .nowbar .nb-group { display: flex; align-items: center; gap: 4px; flex: none; }
 .nowbar .nb-sep { width: 1px; height: 26px; background: var(--m-line); flex: none; }
 .nowbar .tbtn {
   width: 30px; height: 28px; min-width: 0; padding: 0; display: grid; place-items: center; border-radius: 7px; flex: none;
-  color: var(--m-t2); background: linear-gradient(180deg, color-mix(in srgb, var(--m-panel-hi) 80%, #fff 6%), var(--m-panel));
-  border: 1px solid color-mix(in srgb, var(--m-line) 80%, #fff 8%); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.6);
+  color: var(--m-t2); background: linear-gradient(180deg, color-mix(in srgb, var(--m-panel-hi) 80%, var(--white) 6%), var(--m-panel));
+  border: 1px solid color-mix(in srgb, var(--m-line) 80%, var(--white) 8%); box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), 0 1px 2px rgba(var(--black-rgb), .6);
   font: 600 10px var(--mgl-mono); letter-spacing: .08em;
 }
 .nowbar .tbtn svg { width: 13px; height: 13px; }
 .nowbar .tbtn:hover:not(:disabled) { color: var(--m-t); }
 .nowbar .tbtn:disabled { opacity: .35; }
 .nowbar .tbtn.play { width: 38px; color: var(--m-t); }
-.nowbar .tbtn.on { color: var(--mgl-acc); background: var(--m-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.85); border-color: color-mix(in srgb, var(--mgl-acc) 55%, var(--m-line)); }
+.nowbar .tbtn.on { color: var(--mgl-acc); background: var(--m-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .85); border-color: color-mix(in srgb, var(--mgl-acc) 55%, var(--m-line)); }
 .nowbar .tbtn.rec.on, .nowbar .tbtn.rec.armed { color: #ff5a4d; border-color: #ff5a4d88; }
 .nowbar .tbtn.src { width: auto; padding: 0 8px; color: var(--m-t3); background: var(--m-well); box-shadow: none; }
 /* A source switched off says so, at the same width, as the Grain page's chip did. */
 .nowbar .tbtn.src:not(.on) { text-decoration: line-through; opacity: .7; }
-.nowbar .tbtn.src.on { color: var(--mgl-acc); border-color: color-mix(in srgb, var(--mgl-acc) 55%, var(--m-line)); box-shadow: 0 0 8px rgba(255,181,71,.15); }
+.nowbar .tbtn.src.on { color: var(--mgl-acc); border-color: color-mix(in srgb, var(--mgl-acc) 55%, var(--m-line)); box-shadow: 0 0 8px rgba(var(--on-rgb), .15); }
 .nowbar .nb-clock {
   height: 30px; width: 104px; flex: none; display: grid; place-items: center; border-radius: 7px;
   font: 600 13px var(--mgl-mono); color: var(--m-t); letter-spacing: .02em;
   background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--m-well) 70%, var(--m-panel)), var(--m-well) 70%);
-  box-shadow: inset 0 3px 6px rgba(0,0,0,.9), inset 0 0 0 1px rgba(0,0,0,.75), 0 1px 0 rgba(255,255,255,.06);
+  box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75), 0 1px 0 rgba(var(--white-rgb), .06);
 }
 .nowbar .nb-bpm {
   height: 30px; padding: 0 9px; border-radius: 7px; flex: none; display: flex; flex-direction: column; justify-content: center;
-  background: var(--m-well); box-shadow: inset 0 2px 4px rgba(0,0,0,.8);
+  background: var(--m-well); box-shadow: inset 0 2px 4px rgba(var(--black-rgb), .8);
 }
 .nowbar .nb-bpm b { font: 600 11px/1.1 var(--mgl-mono); color: var(--m-t); }
 .nowbar .nb-bpm span { font: 400 9px var(--mgl-ui); color: var(--m-t3); white-space: nowrap; }
@@ -63,10 +68,10 @@
 .nowbar .nb-name em { font: 400 9px var(--mgl-mono); font-style: normal; color: var(--m-t3); }
 .nowbar .nb-name .no-audio { color: #ff7a70; font: 500 9px var(--mgl-ui); }
 .nowbar .nb-name .rec-label, .nowbar .nb-name .loop-label { font: 400 9px var(--mgl-mono); color: var(--m-t3); }
-.nowbar .nb-strip { position: relative; height: 18px; border-radius: 5px; overflow: hidden; cursor: pointer; background: var(--m-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); --nb-wave: color-mix(in srgb, #9aa6d6 70%, var(--m-wave)); }
+.nowbar .nb-strip { position: relative; height: 18px; border-radius: 5px; overflow: hidden; cursor: pointer; background: var(--m-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); --nb-wave: color-mix(in srgb, #9aa6d6 70%, var(--m-wave)); }
 .nowbar .nb-strip canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .nowbar .nb-head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--mgl-acc); box-shadow: 0 0 5px var(--mgl-acc); pointer-events: none; }
-.nowbar .nb-sel { position: absolute; top: 0; bottom: 0; background: rgba(255,181,71,.18); box-shadow: inset 1px 0 0 var(--mgl-acc), inset -1px 0 0 var(--mgl-acc); pointer-events: none; }
+.nowbar .nb-sel { position: absolute; top: 0; bottom: 0; background: rgba(var(--on-rgb), .18); box-shadow: inset 1px 0 0 var(--mgl-acc), inset -1px 0 0 var(--mgl-acc); pointer-events: none; }
 .nowbar .nb-sel[hidden] { display: none; }
 .nowbar .nb-out { display: flex; flex-direction: column; gap: 2px; width: 96px; flex: none; }
 .nowbar .nb-ol { display: flex; justify-content: space-between; font: 400 9px var(--mgl-mono); color: var(--m-t3); }
@@ -82,10 +87,25 @@ body.prismpage .nowbar .nb-bpm { display: none; }
 /* ───────────────────────────────────────────────────── the Edit page */
 
 /* Only on the Edit page. */
-#edCmdK, #edTime, #edCounters, .lane :is(.ed-marks, .ed-level, .ed-preview, .ed-hands, .ed-loupe, .ed-meters) { display: none; }
+#edCmdK, #edTime, #edCounters, .ed-side, .lane :is(.ed-marks, .ed-level, .ed-preview, .ed-hands, .ed-loupe) { display: none; }
 
-body.wavepage .centre { background: var(--mgl-grain), radial-gradient(120% 80% at 30% 0%, var(--m-panel), var(--m-chassis) 60%); background-blend-mode: soft-light, normal; padding: 0 12px 8px 10px; gap: 0; color: var(--m-t); font-family: var(--mgl-ui); }
+/* The chassis, as Grain's (#grainView). The right of the centre is the bar's
+   (`.ed-side`, below): the wave, its rulers and the counters stop short of it. */
+body.wavepage .centre {
+  --ed-side-w: 224px;
+  position: relative; padding: 0 calc(var(--ed-side-w) + 22px) 8px 10px; gap: 0; color: var(--m-t); font-family: var(--mgl-ui);
+  background: var(--mgl-grain), radial-gradient(120% 80% at 30% 0%, var(--m-panel), var(--m-chassis) 60%); background-blend-mode: soft-light, normal;
+}
+/* A narrow window: four icons to a row rather than five. */
+@media (max-width: 1100px) { body.wavepage .centre { --ed-side-w: 184px; } }
 body.wavepage #transportBar { display: none !important; }
+
+/* Grain's materials (grain.css: .gs-panel, .gs-well), for Edit's panels and
+   wells, so the two pages are the same stuff. */
+body.wavepage :is(.wave-tools, #edMeters, #edCounters) {
+  background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel) 30%, var(--m-panel)); border: 1px solid var(--m-line); border-radius: var(--r-l);
+  box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), inset 0 -1px 0 rgba(var(--black-rgb), .45), 0 1px 1px rgba(var(--black-rgb), .6), 0 6px 14px rgba(var(--black-rgb), .45), 0 16px 34px rgba(var(--black-rgb), .35);
+}
 
 /* The file tabs and ⌘K, on one row. */
 body.wavepage #editTools { display: flex !important; align-items: flex-end; gap: 2px; padding: 8px 4px 0; background: none; border: 0; min-height: 38px; }
@@ -93,38 +113,51 @@ body.wavepage #edCmdK { display: inline-flex; align-items: center; gap: 8px; mar
 #edCmdK svg { width: 13px; height: 13px; }
 #edCmdK kbd { margin-left: auto; font: 500 10px var(--mgl-mono); color: var(--m-t3); border: 1px solid var(--m-line); border-radius: 4px; padding: 0 4px; }
 
-/* Every command in one bar (no tabs since 13 Nov 2026): small icons in groups
-   with a rule between them, the name in the tooltip. A narrow window wraps a
-   group whole onto the next line. */
-body.wavepage .wave-tools {
-  flex-wrap: wrap; align-items: center; row-gap: 4px; min-height: 0; padding: 4px 4px; margin: 4px 0 8px; overflow: visible;
-  background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel) 30%, var(--m-panel)); border: 1px solid var(--m-line); border-radius: 10px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(0,0,0,.45), 0 1px 1px rgba(0,0,0,.6), 0 6px 14px rgba(0,0,0,.45);
+/* The bar down the right-hand side, the whole height (RJ, 14 Nov 2026): every
+   command (no tabs since 13 Nov 2026), section under section, each under its
+   title, its icons in a grid with the name in the tooltip; and the meters at
+   its foot. The commands scroll when the window is shorter than they are; the
+   meters stay. Only on the Edit page: Grain has its own face. */
+body.wavepage .ed-side {
+  display: flex; flex-direction: column; gap: 8px;
+  position: absolute; top: 8px; right: 12px; bottom: 8px; width: var(--ed-side-w); z-index: 2;
 }
-body.wavepage .wt-group { padding: 0 6px; gap: 0; }
-body.wavepage .wt-group + .wt-group { border-left: 1px solid var(--m-line); }
-body.wavepage .wt-title { display: none; font: 600 9px var(--mgl-mono); letter-spacing: .14em; color: var(--m-t3); }
-body.wavepage .wt-row { align-items: center; gap: 1px; min-height: 30px; }
-body.wavepage .wt-btn { min-width: 30px; width: 30px; height: 30px; padding: 0; border-radius: 7px; gap: 0; color: var(--m-t2); }
+body.wavepage .wave-tools {
+  flex: 1 1 auto; min-height: 0; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0; padding: 0; margin: 0;
+  overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--m-line) transparent;
+}
+body.wavepage .wt-group { flex: none; padding: 7px 8px 8px; gap: 5px; }
+body.wavepage .wt-group + .wt-group { border-left: 0; border-top: 1px solid var(--m-line); }
+body.wavepage .wt-title { display: block; min-height: 0; padding: 0 2px; font: 600 9px/1.3 var(--mgl-mono); letter-spacing: .14em; color: var(--m-t2); }
+body.wavepage .wave-tools:not(.wt-editing) .wt-title:empty { display: none; }
+body.wavepage .wt-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); align-items: stretch; gap: 2px; min-height: 0; }
+body.wavepage .wt-btn { min-width: 0; width: auto; height: 30px; padding: 0; border-radius: var(--r-m); gap: 0; color: var(--m-t2); }
 body.wavepage .wt-btn svg { width: 17px; height: 17px; }
 body.wavepage .wt-word { display: none; font: 500 9px var(--mgl-ui); color: var(--m-t3); }
-body.wavepage .wt-btn:hover:not(:disabled) { color: var(--m-t); background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border-color: transparent; box-shadow: 0 1px 2px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); }
-body.wavepage .wt-btn[aria-pressed="true"] { color: var(--mgl-acc); background: var(--m-well); border-color: transparent; box-shadow: inset 0 1px 3px rgba(0,0,0,.85), inset 0 0 0 1px color-mix(in srgb, var(--mgl-acc) 40%, transparent); }
+body.wavepage .wt-btn:hover:not(:disabled) { color: var(--m-t); background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border-color: transparent; box-shadow: 0 1px 2px rgba(var(--black-rgb), .6), inset 0 1px 0 rgba(var(--white-rgb), .07); }
+body.wavepage .wt-btn[aria-pressed="true"] { color: var(--mgl-acc); background: var(--m-well); border-color: transparent; box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .85), inset 0 0 0 1px color-mix(in srgb, var(--mgl-acc) 40%, transparent); }
 body.wavepage .wt-btn[aria-pressed="true"] .wt-word { color: var(--mgl-acc); }
-body.wavepage .wt-custom { margin-left: auto; border-left: 0 !important; }
-body.wavepage .wt-row #wtBits { margin: 0 0 0 4px; height: 24px; background: var(--m-well); color: var(--m-t); border: 1px solid var(--m-line); border-radius: 6px; }
-/* Customizing: the titles and the words come back, so there is something to
-   rename and to pick up. */
-body.wavepage .wt-editing .wt-group { gap: 2px; }
-body.wavepage .wt-editing .wt-title { display: block; }
-body.wavepage .wt-editing .wt-btn { width: auto; min-width: 44px; height: 42px; padding: 3px 4px 2px; gap: 3px; }
-body.wavepage .wt-editing .wt-word { display: block; }
+/* Customize, at the foot of the commands, the width of the bar with its word. */
+body.wavepage .wt-custom { margin: auto 0 0; }
+body.wavepage .wave-tools:not(.wt-editing) .wt-custom .wt-btn { grid-column: 1 / -1; flex-direction: row; gap: 6px; }
+body.wavepage .wave-tools:not(.wt-editing) .wt-custom .wt-word { display: block; }
+body.wavepage .wt-row #wtBits { grid-column: span 2; width: 100%; min-width: 0; margin: 0; height: 30px; background: var(--m-well); color: var(--m-t); border: 1px solid var(--m-line); border-radius: var(--r-m); }
+/* Customizing: the words come back under the icons, three to a row, so there
+   is something to pick up. The titles are written in place. */
+body.wavepage .wt-editing .wt-row { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); }
+body.wavepage .wt-editing .wt-row.wt-empty { min-height: 32px; min-width: 0; }
+body.wavepage .wt-editing .wt-btn { height: 42px; padding: 3px 2px 2px; gap: 3px; }
+body.wavepage .wt-editing .wt-word { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* A command with settings and its ▾: one cell of the grid. */
+body.wavepage .wt-pair { display: flex; min-width: 0; }
+body.wavepage .wt-pair .wt-btn { flex: 1; border-radius: var(--r-m) 0 0 var(--r-m); }
+body.wavepage .wt-pair .wt-more { flex: none; width: 11px; margin: 0; }
 /* The ▾ that opens a command's settings, tucked against it. */
 .wt-more { width: 13px; height: 30px; margin-left: -1px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 0 6px 6px 0; background: none; color: var(--m-t3); cursor: pointer; }
 .wt-more svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .wt-more:hover, .wt-more[aria-expanded="true"] { color: var(--mgl-acc); background: var(--m-well); }
 /* Its settings: the knobs, then the command itself to run with them. */
-.ed-kpop { position: fixed; z-index: 60; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border: 1px solid var(--m-line); box-shadow: 0 10px 28px rgba(0,0,0,.55); color: var(--m-t); }
+.ed-kpop { position: fixed; z-index: 60; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border: 1px solid var(--m-line); box-shadow: 0 10px 28px rgba(var(--black-rgb), .55); color: var(--m-t); }
 .ed-kpop[hidden] { display: none; }
 .ed-krun { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 52px; height: 52px; margin-left: 4px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--m-line); background: var(--m-well); color: var(--m-t); font: 500 10px var(--mgl-ui); cursor: pointer; }
 .ed-krun svg { width: 18px; height: 18px; }
@@ -133,9 +166,9 @@ body.wavepage .wt-editing .wt-word { display: block; }
 /* a knob: its picture, its face, its reading, its name, as Chop's */
 :is(.ed-kpop, .ed-k) .knob { position: relative; width: 60px; height: 60px; flex: none; margin: 0; padding: 0; cursor: ns-resize; display: block; }
 .ed-kpop .knob > svg:not(.gl), .ed-k .knob > svg:not(.gl) { position: absolute; left: 23px; top: 0; width: 32px; height: 32px; }
-:is(.ed-kpop, .ed-k) .knob .bezel { fill: none; stroke: rgba(0,0,0,.6); }
-:is(.ed-kpop, .ed-k) .knob .cap { fill: color-mix(in srgb, var(--m-panel-hi) 85%, #fff 8%); }
-:is(.ed-kpop, .ed-k) .knob .track { stroke: rgba(255,255,255,.1); stroke-width: 3; fill: none; }
+:is(.ed-kpop, .ed-k) .knob .bezel { fill: none; stroke: rgba(var(--black-rgb), .6); }
+:is(.ed-kpop, .ed-k) .knob .cap { fill: color-mix(in srgb, var(--m-panel-hi) 85%, var(--white) 8%); }
+:is(.ed-kpop, .ed-k) .knob .track { stroke: rgba(var(--white-rgb), .1); stroke-width: 3; fill: none; }
 :is(.ed-kpop, .ed-k) .knob .arc { stroke: var(--m-wave); stroke-width: 3; fill: none; }
 :is(.ed-kpop, .ed-k) .knob .ptr { stroke: var(--m-t); stroke-width: 2.2; stroke-linecap: round; }
 :is(.ed-kpop, .ed-k) .knob > .v { position: absolute; top: 32px; left: -2px; right: -2px; text-align: center; font: 400 9px var(--mgl-mono); color: var(--m-t2); white-space: nowrap; background: none; border: 0; box-shadow: none; padding: 0; min-width: 0; height: auto; }
@@ -146,12 +179,13 @@ body.wavepage .wt-editing .wt-word { display: block; }
 :root[data-mgl-look="C"] :is(.ed-kpop, .ed-k) .knob :is(.arc, .track) { stroke-dasharray: .1 5.2; stroke-linecap: round; stroke-width: 2.6; }
 
 /* The wave: overview, time, markers, the lane and its counters, one panel. */
-body.wavepage #overview { border-radius: 10px 10px 0 0; border: 1px solid var(--m-line); border-bottom: 0; background: var(--m-well); }
+body.wavepage #overview { border-radius: var(--r-l) var(--r-l) 0 0; border: 1px solid var(--m-line); border-bottom: 0; background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--m-well) 70%, var(--m-panel)), var(--m-well) 70%); }
 body.wavepage #edTime { display: block; height: 20px; flex: none; position: relative; background: var(--m-panel); border-left: 1px solid var(--m-line); border-right: 1px solid var(--m-line); }
 #edTimeCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 body.wavepage #ruler { border-left: 1px solid var(--m-line); border-right: 1px solid var(--m-line); }
-body.wavepage #lane { border: 1px solid var(--m-line); border-top: 0; background: var(--m-well); --wave: var(--m-wave); }
-body.wavepage #edCounters { display: flex; align-items: center; flex: none; height: 46px; margin-top: 8px; padding: 0 4px; border-radius: 10px; background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel) 30%, var(--m-panel)); border: 1px solid var(--m-line); }
+/* The lane is a well, as Grain's wave is: its shading from the top, under the trace. */
+body.wavepage #lane { border: 1px solid var(--m-line); border-top: 0; background: radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, var(--m-well) 70%, var(--m-panel)), var(--m-well) 70%); box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9); --wave: var(--m-wave); }
+body.wavepage #edCounters { display: flex; align-items: center; flex: none; height: 46px; margin-top: 8px; padding: 0 4px; overflow: hidden; }
 .ed-c { display: flex; flex-direction: column; justify-content: center; height: 100%; padding: 0 12px; border-right: 1px solid var(--m-line); }
 .ed-c span { font: 500 9px var(--mgl-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--m-t3); white-space: nowrap; }
 .ed-c b { font: 600 13px var(--mgl-mono); color: var(--m-t); white-space: nowrap; }
@@ -166,34 +200,38 @@ body.ed-level-off .lane .ed-level { display: none !important; }
 body.wavepage .lane .ed-preview { display: block; top: 0; right: auto; z-index: 6; pointer-events: none; box-shadow: 0 0 0 1px var(--mgl-acc); }
 body.wavepage .lane .ed-preview[hidden] { display: none; }
 body.wavepage .lane .ed-hands { display: block; position: absolute; inset: 0; z-index: 8; pointer-events: none; }
-.ed-fh { position: absolute; top: 6px; width: 13px; height: 13px; margin-left: -6.5px; border-radius: 3px; background: var(--mgl-acc); box-shadow: 0 0 0 2px rgba(0,0,0,.6), 0 0 10px rgba(255,181,71,.6); pointer-events: auto; cursor: ew-resize; }
-.ed-fh::after { content: attr(data-l); position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font: 600 9px var(--mgl-mono); color: var(--mgl-acc); white-space: nowrap; text-shadow: 0 0 3px #000; }
-.ed-gl { position: absolute; height: 0; border-top: 1px dashed rgba(255,181,71,.7); pointer-events: none; }
+.ed-fh { position: absolute; top: 6px; width: 13px; height: 13px; margin-left: -6.5px; border-radius: 3px; background: var(--mgl-acc); box-shadow: 0 0 0 2px rgba(var(--black-rgb), .6), 0 0 10px rgba(var(--on-rgb), .6); pointer-events: auto; cursor: ew-resize; }
+.ed-fh::after { content: attr(data-l); position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font: 600 9px var(--mgl-mono); color: var(--mgl-acc); white-space: nowrap; text-shadow: 0 0 3px var(--black); }
+.ed-gl { position: absolute; height: 0; border-top: 1px dashed rgba(var(--on-rgb), .7); pointer-events: none; }
 .ed-gl.lo { border-top-style: dotted; }
-.ed-gg { position: absolute; margin: -10px 0 0 -30px; width: 60px; height: 20px; border-radius: 10px; background: rgba(18,19,22,.9); border: 1px solid var(--mgl-acc); color: var(--mgl-acc); font: 600 9px var(--mgl-mono); display: grid; place-items: center; pointer-events: auto; cursor: ns-resize; box-shadow: 0 2px 8px rgba(0,0,0,.6); }
+.ed-gg { position: absolute; margin: -10px 0 0 -30px; width: 60px; height: 20px; border-radius: 10px; background: color-mix(in srgb, var(--m-chassis) 90%, transparent); border: 1px solid var(--mgl-acc); color: var(--mgl-acc); font: 600 9px var(--mgl-mono); display: grid; place-items: center; pointer-events: auto; cursor: ns-resize; box-shadow: 0 2px 8px rgba(var(--black-rgb), .6); }
 .ed-gg.clip { border-color: #ff5a4d; color: #ff7a70; }
 .ed-fc { position: absolute; top: 0; pointer-events: none; overflow: visible; }
 .ed-fc path { fill: none; stroke: var(--mgl-acc); stroke-width: 2; }
-.ed-chip { position: absolute; bottom: 8px; transform: translateX(-50%); padding: 3px 4px 3px 9px; border-radius: 9px; background: rgba(18,19,22,.88); border: 1px solid var(--m-line); display: flex; align-items: center; gap: 6px; font: 500 10px var(--mgl-mono); color: var(--m-t); white-space: nowrap; pointer-events: auto; }
+.ed-chip { position: absolute; bottom: 8px; transform: translateX(-50%); padding: 3px 4px 3px 9px; border-radius: 9px; background: color-mix(in srgb, var(--m-chassis) 88%, transparent); border: 1px solid var(--m-line); display: flex; align-items: center; gap: 6px; font: 500 10px var(--mgl-mono); color: var(--m-t); white-space: nowrap; pointer-events: auto; }
 .ed-chip span { color: var(--m-t3); }
-.ed-chip button { height: 18px; padding: 0 6px; border-radius: 5px; border: 0; font: 500 9px var(--mgl-ui); color: var(--m-t2); background: rgba(255,255,255,.05); cursor: pointer; }
+.ed-chip button { height: 18px; padding: 0 6px; border-radius: 5px; border: 0; font: 500 9px var(--mgl-ui); color: var(--m-t2); background: rgba(var(--white-rgb), .05); cursor: pointer; }
 .ed-chip button:hover { color: var(--mgl-acc); }
-body.wavepage .lane .ed-loupe { display: block; position: absolute; top: 30px; z-index: 9; width: 220px; height: 120px; border-radius: 12px; overflow: hidden; pointer-events: none; background: var(--m-well); box-shadow: 0 12px 30px rgba(0,0,0,.7), 0 0 0 1px var(--mgl-acc); }
+body.wavepage .lane .ed-loupe { display: block; position: absolute; top: 30px; z-index: 9; width: 220px; height: 120px; border-radius: 12px; overflow: hidden; pointer-events: none; background: var(--m-well); box-shadow: 0 12px 30px rgba(var(--black-rgb), .7), 0 0 0 1px var(--mgl-acc); }
 body.wavepage .lane .ed-loupe[hidden] { display: none; }
 .ed-loupe canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
-.ed-loupe span { position: absolute; left: 6px; bottom: 4px; padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,.75); font: 600 9px var(--mgl-mono); }
+.ed-loupe span { position: absolute; left: 6px; bottom: 4px; padding: 1px 5px; border-radius: 4px; background: rgba(var(--black-rgb), .75); font: 600 9px var(--mgl-mono); }
 .ed-loupe .ok { color: #3ad59b; } .ed-loupe .bad { color: #ff7a70; }
-/* the meters slide out from the lane's right edge while you look */
-body.wavepage .lane .ed-meters { display: flex; position: absolute; right: 0; top: 40px; z-index: 10; align-items: flex-start; transform: translateX(calc(100% - 22px)); transition: transform .22s ease; cursor: default; }
-.ed-meters:hover, .ed-meters.open { transform: none !important; }
-.ed-mtab { width: 22px; height: 110px; border-radius: 8px 0 0 8px; writing-mode: vertical-rl; transform: rotate(180deg); display: grid; place-items: center; font: 600 9px var(--mgl-mono); letter-spacing: .16em; color: var(--m-t3); background: linear-gradient(90deg, var(--m-panel-hi), var(--m-panel)); border: 1px solid var(--m-line); border-left: 0; }
-.ed-mbody { width: 236px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; border-radius: 0 0 0 10px; background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border: 1px solid var(--m-line); box-shadow: 0 12px 30px rgba(0,0,0,.6); }
+/* The meters, at the foot of the bar on the right and always out (RJ, 14 Nov
+   2026: "put those meters at the bottom of that"); until then a tab on the
+   lane's right edge that slid out. Their wells are Grain's (.gs-well). */
+body.wavepage .ed-side .ed-meters { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 7px 10px 10px; }
+.ed-mhead { padding: 0 2px; font: 600 9px/1.3 var(--mgl-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--m-t2); }
 .ed-cap { font: 600 9px var(--mgl-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--m-t3); }
 .ed-vms { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.ed-vm { height: 150px; border-radius: 6px; background: var(--m-well); position: relative; overflow: hidden; }
+.ed-vm, .ed-bands {
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--m-well) 70%, var(--m-panel)), var(--m-well) 70%);
+  box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75), 0 1px 0 rgba(var(--white-rgb), .06);
+}
+.ed-vm { height: 84px; border-radius: var(--r-m); position: relative; overflow: hidden; }
 .ed-vm i { position: absolute; left: 3px; right: 3px; bottom: 3px; height: 0; border-radius: 3px; background: linear-gradient(0deg, #3ad59b, #d6e06a 70%, #ff9a47 88%, #ff5a4d); }
 .ed-vm span { position: absolute; left: 0; right: 0; top: 4px; text-align: center; font: 600 10px var(--mgl-mono); color: var(--m-t); }
-.ed-bands { height: 12px; border-radius: 3px; display: flex; overflow: hidden; background: var(--m-well); }
+.ed-bands { height: 12px; border-radius: 3px; display: flex; overflow: hidden; }
 .ed-bands i { display: block; height: 100%; }
 .ed-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font: 400 10px var(--mgl-mono); color: var(--m-t); }
 .ed-kv span { font: 500 9px var(--mgl-ui); color: var(--m-t3); }
@@ -201,14 +239,14 @@ body.wavepage .lane .ed-meters { display: flex; position: absolute; right: 0; to
 /* the pie */
 .ed-pie { position: fixed; z-index: 400; width: 0; height: 0; font-family: var(--mgl-ui); }
 .ed-pie[hidden] { display: none; }
-.ed-w { position: absolute; width: 62px; height: 50px; margin: -25px 0 0 -31px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--m-t); font: 500 9px var(--mgl-ui); background: color-mix(in srgb, var(--m-panel) 92%, transparent); border: 1px solid var(--m-line); box-shadow: 0 8px 22px rgba(0,0,0,.6); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); cursor: pointer; padding: 0; }
+.ed-w { position: absolute; width: 62px; height: 50px; margin: -25px 0 0 -31px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--m-t); font: 500 9px var(--mgl-ui); background: color-mix(in srgb, var(--m-panel) 92%, transparent); border: 1px solid var(--m-line); box-shadow: 0 8px 22px rgba(var(--black-rgb), .6); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); cursor: pointer; padding: 0; }
 .ed-w svg { width: 18px; height: 18px; }
 .ed-w:hover:not(:disabled) { border-color: var(--mgl-acc); color: var(--mgl-acc); }
 .ed-w:disabled { opacity: .35; cursor: default; }
 .ed-w0 { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: var(--m-well); border: 1px solid var(--m-line); color: var(--m-t2); font: 600 9px var(--mgl-ui); cursor: pointer; padding: 0; }
 
 /* ⌘K */
-.ed-k { position: fixed; z-index: 410; left: 50%; top: 110px; transform: translateX(-50%); width: 600px; border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border: 1px solid var(--m-line); box-shadow: 0 30px 80px rgba(0,0,0,.75); color: var(--m-t); font-family: var(--mgl-ui); }
+.ed-k { position: fixed; z-index: 410; left: 50%; top: 110px; transform: translateX(-50%); width: 600px; border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); border: 1px solid var(--m-line); box-shadow: 0 30px 80px rgba(var(--black-rgb), .75); color: var(--m-t); font-family: var(--mgl-ui); }
 .ed-k[hidden] { display: none; }
 .ed-k input { height: 36px; border-radius: 9px; background: var(--m-well); border: 1px solid var(--m-line); color: var(--m-t); font: 500 13px var(--mgl-ui); padding: 0 12px; outline: 0; }
 .ed-k input:focus { border-color: var(--mgl-acc); }
@@ -217,18 +255,20 @@ body.wavepage .lane .ed-meters { display: flex; position: absolute; right: 0; to
 .ed-kr svg { width: 17px; height: 17px; flex: none; }
 .ed-kr .ed-kg { font: 500 9px var(--mgl-mono); color: var(--m-t3); width: 74px; letter-spacing: .06em; text-transform: uppercase; }
 .ed-kr kbd { margin-left: auto; font: 400 10px var(--mgl-mono); color: var(--m-t3); }
-.ed-kr.on { background: rgba(255,181,71,.12); color: var(--m-t); }
+.ed-kr.on { background: rgba(var(--on-rgb), .12); color: var(--m-t); }
 .ed-kr.dis { opacity: .38; }
 .ed-kr.wide { min-height: 64px; }
 .ed-kr .ed-ks { display: flex; margin-left: auto; }
 
-/* The three Looks that change the material, as on Grain and Chop. */
+/* The three Looks that change the material, as on Grain and Chop. Their colours
+   are the look tokens their themes set; Glass's pane and Acrylic's edge are
+   the tokens Chop's take (`--look-glass`, `--look-acrylic`, `--look-edge-*`). */
 :root[data-mgl-look="B"] body.wavepage .centre { isolation: isolate; position: relative; }
-:root[data-mgl-look="B"] body.wavepage .centre::before { content: ""; position: absolute; inset: -20%; z-index: -1; pointer-events: none; background: radial-gradient(30% 35% at 25% 30%, rgba(60,140,170,.5), transparent 70%), radial-gradient(28% 30% at 75% 65%, rgba(130,90,170,.4), transparent 70%), radial-gradient(25% 25% at 60% 20%, rgba(200,140,80,.25), transparent 70%); animation: ed-drift 18s ease-in-out infinite alternate; }
+:root[data-mgl-look="B"] body.wavepage .centre::before { content: ""; position: absolute; inset: -20%; z-index: -1; pointer-events: none; background: radial-gradient(30% 35% at 25% 30%, rgba(var(--look-glass-1-rgb),.5), transparent 70%), radial-gradient(28% 30% at 75% 65%, rgba(var(--look-glass-2-rgb),.4), transparent 70%), radial-gradient(25% 25% at 60% 20%, rgba(var(--look-glass-3-rgb),.25), transparent 70%); animation: ed-drift 18s ease-in-out infinite alternate; }
 @keyframes ed-drift { to { transform: translate(5%, -4%) rotate(6deg) scale(1.06); } }
-:root[data-mgl-look="B"] body.wavepage :is(.wave-tools, #edCounters) { background: rgba(20,24,30,.55); -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2); border-color: rgba(255,255,255,.10); }
+:root[data-mgl-look="B"] body.wavepage :is(.wave-tools, #edMeters, #edCounters) { background: var(--look-glass); -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2); border-color: rgba(var(--white-rgb), .10); }
 :root[data-mgl-look="B"] .nowbar { background: rgba(14,17,22,.72); -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2); }
-:root[data-mgl-look="C"] body.wavepage :is(.wave-tools, #edCounters) { border-radius: 16px; background: var(--mgl-grain), linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); background-blend-mode: soft-light, normal; }
+:root[data-mgl-look="C"] body.wavepage :is(.wave-tools, #edMeters, #edCounters) { border-radius: 16px; background: var(--mgl-grain), linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); background-blend-mode: soft-light, normal; }
 :root[data-mgl-look="C"] :is(.nowbar .tbtn, .ed-chip button, #edCmdK) { border-radius: 20px; }
-:root[data-mgl-look="D"] body.wavepage :is(.wave-tools, #edCounters) { border: 1px solid transparent; background: linear-gradient(165deg, #191b23, #111218) padding-box, conic-gradient(from 210deg, #3b4060, #2c5d5f, #5e4c3d, #4a3b5e, #3b4060) border-box; }
-:root[data-mgl-look="D"] .nowbar { border-bottom: 1px solid transparent; background: linear-gradient(180deg, #171922, #101118) padding-box, linear-gradient(90deg, #3b4060, #2c5d5f, #5e4c3d, #4a3b5e) border-box; }
+:root[data-mgl-look="D"] body.wavepage :is(.wave-tools, #edMeters, #edCounters) { border: 1px solid transparent; background: linear-gradient(165deg, var(--look-acrylic), var(--look-acrylic-lo)) padding-box, conic-gradient(from 210deg, var(--look-edge-1), var(--look-edge-2), var(--look-edge-3), var(--look-edge-4), var(--look-edge-1)) border-box; }
+:root[data-mgl-look="D"] .nowbar { border-bottom: 1px solid transparent; background: linear-gradient(180deg, #171922, #101118) padding-box, linear-gradient(90deg, var(--look-edge-1), var(--look-edge-2), var(--look-edge-3), var(--look-edge-4)) border-box; }

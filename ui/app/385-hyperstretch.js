@@ -12,9 +12,11 @@
    axis menus, limits, presets, post-roll, PTC switch, Playback Speed and
    faders are drawn and wired by the same functions.
 
-   Exact to the original:
-   - linear between the limits in its corners (the rack pad swept log controls
-     logarithmically; Hyperprism did not);
+   Exact to the original, but for one thing:
+   - between the limits in its corners: linear, as Hyperprism's was, for a
+     linear control; but for a log one (Stretch, Window) logarithmic, since
+     the pad now reaches the knobs' whole range (RJ, 14 Nov 2026), and swept
+     linearly across 0.01–100× it would leave 1× at a hundredth of the pad;
    - grabbing it is the record button, and a take runs until Stop or Play;
    - a take is at most a point per tick (1/60.15 s), played back stepped,
      looping at its own length;
@@ -43,7 +45,7 @@ const HS_FAST = new Set(['ratio', 'semitones']);
 const hs = {
   built: false, shown: false, w: 220, h: 220,
   axes: { x: 'ratio', y: 'semitones' },
-  lim: { xLo: 4, xHi: 0.25, yLo: -12, yHi: 12 },
+  lim: { xLo: 100, xHi: 0.01, yLo: -48, yHi: 48 },
   hand: { x: 0.5, y: 0.5 },
   where: 'loop',            // loop · lanes
   mode: 'ready',            // ready · rec · play · pause
@@ -66,21 +68,31 @@ function hsControl(axis) {
   return typeof prismControl === 'function' ? prismControl(hs.axes[axis]) : null;
 }
 
-/// Linear between the limits, as `CProcessController::ListenToMessage` has it;
-/// a stepped control lands on its steps.
-function hsValue(axis, f) {
+/// The axis's limits, and whether it is swept logarithmically: a log control
+/// whose limits are both above zero.
+function hsSpan(axis, lim = hs.lim) {
+  const [lo, hi] = axis === 'x' ? [lim.xLo, lim.xHi] : [lim.yLo, lim.yHi];
   const c = hsControl(axis);
-  const v = axis === 'x' ? hs.lim.xLo + f * (hs.lim.xHi - hs.lim.xLo) : hs.lim.yLo + (1 - f) * (hs.lim.yHi - hs.lim.yLo);
+  return { lo, hi, log: !!c?.log && lo > 0 && hi > 0 };
+}
+
+/// Linear between the limits, as `CProcessController::ListenToMessage` has it,
+/// for a linear control; logarithmic for a log one. A stepped control lands on
+/// its steps.
+function hsValue(axis, f, lim = hs.lim) {
+  const c = hsControl(axis), { lo, hi, log } = hsSpan(axis, lim);
+  const t = axis === 'x' ? f : 1 - f;
+  const v = log ? lo * Math.pow(hi / lo, t) : lo + t * (hi - lo);
   return c?.step === 1 ? Math.round(v) : v;
 }
 function hsValueX(x) { return hsValue('x', x); }
 function hsValueY(y) { return hsValue('y', y); }
 
 /// Where on the pad a value sits: the inverse.
-function hsFrac(axis, v) {
-  const [lo, hi] = axis === 'x' ? [hs.lim.xLo, hs.lim.xHi] : [hs.lim.yLo, hs.lim.yHi];
+function hsFrac(axis, v, lim = hs.lim) {
+  const { lo, hi, log } = hsSpan(axis, lim);
   if (!Number.isFinite(v) || lo === hi) return 0.5;
-  const t = (v - lo) / (hi - lo);
+  const t = log ? (v > 0 ? Math.log(v / lo) / Math.log(hi / lo) : 0) : (v - lo) / (hi - lo);
   return axis === 'x' ? t : 1 - t;
 }
 
@@ -123,7 +135,7 @@ function hsBuild() {
     <section class="prism-panel hs-src" aria-label="Source">
       <div class="prism-ph"><b class="prism-nm">SOURCE</b><span class="prism-meta hs-src-name" id="prismSoundName"></span><span class="prism-meta" id="prismSoundMeta"></span>
         <span class="hs-fill"></span><button type="button" class="prism-btn" id="prismEdit" title="Open Prism's sound on the Edit page">Edit</button></div>
-      <div class="prism-well hs-src-well"><canvas id="prismSrc" aria-label="Prism's sound, the whole of it" title="Prism's sound, in its own colours: click or drag to go there"></canvas></div>
+      <div class="prism-well hs-src-well"><canvas id="prismSrc" aria-label="Prism's sound, the whole of it" title="Prism's sound, in its own colours: click or drag to go there"></canvas><i class="po-grip" id="prismSrcGrip" title="Drag to make SOURCE taller or shorter · double-click to put it back"></i></div>
     </section>
     <div class="prism-panel hs-head">
       <b class="prism-nm hs-title">PRISM</b>
@@ -163,6 +175,7 @@ function hsBuild() {
     <div class="hs-body">
       <section class="prism-panel hs-stage" aria-label="Pad">
         <div class="prism-ph"><b class="prism-nm">PAD</b><span class="prism-meta" id="hsInfo"></span><span class="hs-fill"></span>
+          <span class="hs-seg hs-engine" id="hsEngine" role="group" aria-label="The engine the pad plays through">${PRISM_ENGINES.map(([k, n]) => `<button type="button" data-hseng="${k}">${n}</button>`).join('')}</span>
           <span class="prism-meta">engine now</span><span class="prism-meta hs-now" id="hsNow"></span></div>
         <div class="hs-padbox" id="hsPadBox">
           <button type="button" class="hs-pad" id="hsPad" aria-label="Prism pad: grab to record, Shift to lock, arrows to draw while recording, double-click to centre"
@@ -215,6 +228,9 @@ function hsBuild() {
         </section>
       </div>
     </div>`;
+  // Taller by dragging, as the overview above every page is (416); the canvas
+  // redraws itself at its new size.
+  poGrip($('prismSrcGrip'), 'mgl.prismSource.h', 58, (h) => { host.querySelector('.hs-src-well').style.height = `${h}px`; });
   prismTakeBarsBuild();
   prismPickerWire();
   hsWire();
@@ -698,7 +714,9 @@ function hsLoadTakes() {
     const kept = JSON.parse(localStorage.getItem(hsKey()) || 'null');
     if (kept?.slots) {
       hs.slots = kept.slots.slice(0, 4).concat([null, null, null, null]).slice(0, 4);
-      if (kept.lim) hs.lim = kept.lim;
+      // A window kept before the pad reached the knobs' whole range gives way.
+      const old = kept.lim && kept.lim.xLo === 4 && kept.lim.xHi === 0.25 && kept.lim.yLo === -12 && kept.lim.yHi === 12;
+      if (kept.lim && !old) hs.lim = kept.lim;
       if (kept.axes) hs.axes = kept.axes;
     }
   } catch { /* nothing kept */ }
@@ -711,8 +729,9 @@ function hsLoadTakes() {
 /// SetTopMin and friends: the takes are rescaled so every point keeps its value.
 function hsRescale(next) {
   const o = hs.lim;
-  const mx = (x) => (o.xLo - next.xLo + x * (o.xHi - o.xLo)) / (next.xHi - next.xLo);
-  const my = (y) => 1 - (o.yLo - next.yLo + (1 - y) * (o.yHi - o.yLo)) / (next.yHi - next.yLo);
+  // Each point's value under the old limits, placed under the new ones.
+  const mx = (x) => hsFrac('x', hsValue('x', x, o), next);
+  const my = (y) => hsFrac('y', hsValue('y', y, o), next);
   hs.slots = hs.slots.map((s) => s && { ...s, pts: s.pts.map((q) => ({ x: mx(q.x), y: my(q.y), t: q.t })) });
   if (hs.rec) hs.rec = hs.rec.map((q) => ({ x: mx(q.x), y: my(q.y), t: q.t }));
   hs.hand = { x: mx(hs.hand.x), y: my(hs.hand.y) };
@@ -800,7 +819,7 @@ function hsPaintGhost() {
   if (!ring) return;
   ring.setAttribute('cx', (g.x * hs.w).toFixed(1));
   ring.setAttribute('cy', (g.y * hs.h).toFixed(1));
-  $('hsNow').textContent = `${hsFmt('x', hsValueX(g.x))} · ${hsFmt('y', hsValueY(g.y))}`;
+  $('hsNow').textContent = `${prismEngineName()} · ${hsFmt('x', hsValueX(g.x))} · ${hsFmt('y', hsValueY(g.y))}`;
 }
 
 /// The chip: what the panel is doing, in Loop or in Lanes.
@@ -825,6 +844,7 @@ function hsPaint() {
   chip.dataset.mode = mode;
   $('dockHyper').dataset.mode = mode;
   $('dockHyper').dataset.where = hs.where;
+  hsPaintEngine();
   document.querySelectorAll('#dockHyper [data-hswhere]').forEach((b) => {
     b.classList.toggle('on', b.dataset.hswhere === hs.where);
     b.setAttribute('aria-pressed', String(b.dataset.hswhere === hs.where));
@@ -966,3 +986,14 @@ window.hyperStretch = {
     hsPaint();
   },
 };
+
+/// Light the engine the pad plays through, and listen for another.
+function hsPaintEngine() {
+  const box = document.getElementById('hsEngine');
+  if (!box) return;
+  if (!box.dataset.wired) {
+    box.dataset.wired = '1';
+    box.addEventListener('click', (e) => { const b = e.target.closest('[data-hseng]'); if (b) prismSetEngine(b.dataset.hseng); });
+  }
+  for (const b of box.querySelectorAll('[data-hseng]')) b.classList.toggle('on', b.dataset.hseng === prismDeck.stretch.algorithm);
+}

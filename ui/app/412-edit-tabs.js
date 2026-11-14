@@ -1,7 +1,8 @@
 // ═══════════════════════════════════ the Edit page: its bar and settings ══
 //
 // One bar of the ribbon's sections (`wtLayout`, 310), no tabs: RJ, 13 Nov
-// 2026, "The tabs is too much". The icons carry no words; the tooltip has the
+// 2026, "The tabs is too much". It runs down the right of the page, each
+// section under its title. The icons carry no words; the tooltip has the
 // name, the key and the settings the command will run with.
 //
 // The dialogs are knobs. Gain, Normalize, Strip silence, Insert silence,
@@ -33,7 +34,7 @@ function edMoreButton(id) {
   return b;
 }
 
-/// The settings of one command, under its ▾: its knobs and the command itself.
+/// The settings of one command, beside its ▾: its knobs and the command itself.
 function edKnobsOpen(id, from) {
   edKnobsClose();
   let pop = $('edKnobs');
@@ -61,9 +62,17 @@ function edKnobsOpen(id, from) {
   const btn = document.querySelector(`#waveTools .wt-btn[data-cmd="${id}"]`);
   run.disabled = !!btn?.disabled;
   pop.hidden = false;
-  const r = (from || btn).getBoundingClientRect(), w = pop.offsetWidth;
-  pop.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)))}px`;
-  pop.style.top = `${Math.round(r.bottom + 6)}px`;
+  const at = from || btn, r = at.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  const side = at.closest('.ed-side')?.getBoundingClientRect();
+  if (side) {
+    // Out to the left of the bar, level with the command: under it, it would
+    // cover the commands below.
+    pop.style.left = `${Math.round(Math.max(8, side.left - w - 8))}px`;
+    pop.style.top = `${Math.round(Math.max(8, Math.min(innerHeight - h - 8, r.top + r.height / 2 - h / 2)))}px`;
+  } else {
+    pop.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)))}px`;
+    pop.style.top = `${Math.round(r.bottom + 6)}px`;
+  }
   from?.setAttribute('aria-expanded', 'true');
 }
 

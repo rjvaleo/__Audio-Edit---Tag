@@ -182,6 +182,21 @@
   <!-- centre: the selected sound, or the editor -->
   <main class="centre">
 
+    <!-- The whole open file, on every page but Browse and Theme, in the one
+         place it never leaves: under the Now Playing bar, above whatever the
+         page shows, so going from page to page changes everything under it and
+         nothing in it. The loop and Start are set on it; it zooms, and its grip
+         makes it taller. See ui/app/416-page-overview.js. -->
+    <div class="po hidden" id="pageOv">
+      <div class="po-well" id="poWell"><canvas id="poCanvas" title="The whole file. Drag a bracket to move the loop, drag across for a new one; click or drag the green flag for Start; ⌥-drag scrubs. A region's strip along the bottom selects it. The box is the part the page below shows: drag inside it to move that. The wheel zooms here, ⇧-wheel pans; double-click for the whole file (on Chop, the whole sound in Chop's detail)"></canvas></div>
+      <div class="po-side">
+        <div class="po-zb"><button type="button" class="po-btn" id="poZoomOut" title="Zoom out">−</button><button type="button" class="po-btn" id="poZoomIn" title="Zoom in round the head, or round Start while nothing plays (or the wheel over the wave)">+</button></div>
+        <button type="button" class="po-btn po-fit" id="poZoomFit" title="The whole file (or double-click the wave)">Fit</button>
+        <span class="po-ro" id="poZoomRo"></span>
+      </div>
+      <i class="po-grip" id="poGrip" title="Drag to make the overview taller or shorter · double-click to put it back"></i>
+    </div>
+
 
     <!-- open documents: edit mode only -->
 
@@ -289,24 +304,32 @@
            property so the two canvases cannot disagree about where it is. -->
       <div class="lane-split" id="laneSplit" title="Drag to resize the spectrogram — double-click to put it back"></div>
       <!-- The Edit page on the wave: its marks, its level ruler, the preview
-           while a handle is held, the handles themselves, the loupe on an
-           edit point, and the meters that slide out (413, 414). -->
+           while a handle is held, the handles themselves and the loupe on an
+           edit point (413, 414). The meters are at the foot of the bar on the
+           right, `#edSide`. -->
       <canvas class="ed-marks" id="edMarksCanvas"></canvas>
       <canvas class="ed-level" id="edLevelCanvas"></canvas>
       <canvas class="ed-preview" id="edPreview" hidden></canvas>
       <div class="ed-hands" id="edHands"></div>
       <div class="ed-loupe" id="edLoupe" hidden><canvas></canvas><span></span></div>
-      <div class="ed-meters" id="edMeters"><div class="ed-mtab">METERS</div><div class="ed-mbody">
-        <span class="ed-cap">Level · selection</span>
-        <div class="ed-vms"><div class="ed-vm"><i id="edmPeak"></i><span>peak <b id="edmPeakV">—</b></span></div><div class="ed-vm"><i id="edmRms"></i><span>rms <b id="edmRmsV">—</b></span></div></div>
-        <span class="ed-cap">Bands</span><div class="ed-bands" id="edmBands"></div>
-        <div class="ed-kv"><span>Hits</span><b id="edmHits">0</b><span>Loud spots</span><b id="edmLoud">0</b></div>
-      </div></div>
       <div class="lane-empty" id="laneEmpty"><span class="lane-empty-say">Select a sound on the left.</span><button class="ghost lane-empty-open" id="laneEmptyOpen">Open the library</button></div>
     </div>
 
     <!-- The Edit page's counters, under the wave (413). -->
     <div class="ed-counters" id="edCounters"></div>
+
+    <!-- The Edit page's bar down the right-hand side, the whole height: every
+         command by section, titled (`#waveTools`, put in first by `wtBuild`,
+         310), and the meters at its foot, always out (413). Only on Edit. -->
+    <aside class="ed-side" id="edSide" aria-label="Edit tools and meters">
+      <div class="ed-meters" id="edMeters" role="group" aria-label="Meters">
+        <span class="ed-mhead">Meters</span>
+        <span class="ed-cap">Level · selection</span>
+        <div class="ed-vms"><div class="ed-vm"><i id="edmPeak"></i><span>peak <b id="edmPeakV">—</b></span></div><div class="ed-vm"><i id="edmRms"></i><span>rms <b id="edmRmsV">—</b></span></div></div>
+        <span class="ed-cap">Bands</span><div class="ed-bands" id="edmBands"></div>
+        <div class="ed-kv"><span>Hits</span><b id="edmHits">0</b><span>Loud spots</span><b id="edmLoud">0</b></div>
+      </div>
+    </aside>
 
     <!-- The room, full size, with its controls beside it.
          **Nothing in here is a copy.** The room, its control panel and the
@@ -399,9 +422,10 @@
          on the same drafts as the tray, which stays built underneath. -->
     <div class="hidden" id="grainView"></div>
 
-    <!-- Theme: a page of its own (13 Nov 2026). The palettes as cards, a large
-         preview built from today's parts, and the editor: colours, the
-         waveform and the Look. The explanations are tooltips and the doc. See
+    <!-- Theme: a page of its own (13 Nov 2026). The palettes as cards, a sheet
+         of today's parts, and the editor: colours, the waveform and the Look.
+         Across the top, every page of the app, shown itself in the palette
+         being edited. The explanations are tooltips and the doc. See
          `docs/THEME-EDITOR.md`. -->
     <div class="hidden" id="themeView">
       <section class="tp-panel tp-top">
@@ -414,6 +438,12 @@
         </div>
         <button class="tp-btn" id="tsImport" title="Paste palette JSON: one object or an array of { name, colors }">Import JSON</button>
         <button class="tp-btn" id="tsCopy" title="Copy your own palettes as JSON">Copy JSON</button>
+      </section>
+      <!-- One button per page of the rail (`tpBuildPages`): the page itself, in
+           the palette open in the editor, with the editor beside it. -->
+      <section class="tp-panel tp-pages">
+        <b class="tp-nm" title="Each page as it is, in the palette open in the editor. Nothing is worn until Wear it; back here, what you wear comes back.">SEE IT ON</b>
+        <div class="tp-pgs" id="tpPages"></div>
       </section>
       <div class="tp-body">
         <!-- A palette gives colour and direction; the ladder of surfaces, text
@@ -431,11 +461,10 @@
         </section>
 
         <!-- Real parts, not a picture: the shared knob, bar, switch and preset
-             bar, painted by the palette open in the editor. The page itself is
-             left alone until Wear it. -->
+             bar, painted by the palette open in the editor. The pages
+             themselves are the buttons above. -->
         <section class="tp-panel tp-view">
-          <div class="tp-ph"><b class="tp-nm">PREVIEW</b><span class="tp-meta" id="tpPrevNote"></span><span class="tp-grow"></span>
-            <span id="tpPage"></span></div>
+          <div class="tp-ph"><b class="tp-nm">THE PARTS</b><span class="tp-meta" id="tpPrevNote"></span></div>
           <div class="tp-prev" id="themeMini"></div>
         </section>
 
@@ -538,8 +567,9 @@
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="regions" title="Regions">
           <span class="ic">⧉</span><span class="lb">Regions</span>
         </button>
+        <!-- Chop's icon is the rail's (`rail.js`): a beat with ReCycle's cuts through it. -->
         <button class="dock-tab" role="tab" aria-selected="false" data-dock="chop" title="Chop: cut the sound at its silences into slices, after Recycle Reborn">
-          <span class="ic">✂</span><span class="lb">Chop</span>
+          <span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h1.5l1-6.5 1.2 12 1.1-8.5 1 5.5.9-3.4.8 1.4H10l.9-4.4 1 8 1-5.4.9 3.2.8-2H16l1-5.6 1.1 10.6 1-7 .9 4 .8-2 .7.6H22"/><path d="M3.5 4.5v17M10 4.5v17M16 4.5v17" stroke-width="1"/><path d="M2.3 2h2.4l-1.2 1.6zM8.8 2h2.4L10 3.6zM14.8 2h2.4L16 3.6z" fill="currentColor" stroke-width="1"/></svg></span><span class="lb">Chop</span>
         </button>
         <!-- Prism: Hyperprism's XY pad, HyperStretch and the rack pad merged.
              The rail's Prism page opens it. See docs/HYPERSTRETCH.md. -->
@@ -1278,6 +1308,18 @@
             <button type="button" class="chop-btn" id="chopMute" title="Silence the picked slices: left out of Preview and Write"><svg viewBox="0 0 12 12"><path d="M2 5H4L7 2.5V9.5L4 7H2ZM9 4L11 8M11 4L9 8"/></svg>Mute</button>
           </div></div>
         </section>
+        <!-- Detect, Grid, Slice, Time and Listen sit right under the row that picks
+             Transient, Silence or Grid, because they set how it cuts (RJ, 14 Nov
+             2026: "they're related"). -->
+        <section class="chop-band chop-ctl">
+          <div id="chopKnobs" class="chop-knobs"></div>
+          <div class="chop-mod chop-listen" style="width:300px"><div class="chop-mh"><b class="chop-gname">LISTEN</b><span class="chop-grow"></span><div class="chop-pills chop-seg sm" id="chopSync" title="Free: the tempo here. Lock: the sequencer's tempo"><button type="button" data-v="free">Free</button><button type="button" data-v="lock">Lock</button></div></div>
+            <div class="chop-ls"><div class="chop-lsr">
+              <button type="button" class="chop-btn chop-big" id="chopPreview" title="Play every slice that is not muted, S to E, at the tempo, with everything on"><svg viewBox="0 0 12 12"><path d="M3 2L10 6L3 10Z" fill="currentColor" stroke="none"/></svg>Preview</button>
+              <button type="button" class="chop-btn chop-big" id="chopRatchet" title="Ratchet: the chop from S fires on every grid line, round and round, until pressed again"><svg viewBox="0 0 12 12"><path d="M2 10V4M5 10V4M8 10V4M11 10V4M1 2H11"/></svg>Ratchet</button>
+            </div><div class="chop-status" id="chopStatus"></div><div class="chop-status chop-status2" id="chopStatus2"></div></div>
+          </div>
+        </section>
         <section class="chop-band chop-mid">
           <div class="chop-panel chop-source">
             <div class="chop-phead"><b class="chop-nm">SOURCE</b><span class="chop-meta" id="chopMeta"></span><span class="chop-grow"></span>
@@ -1306,15 +1348,6 @@
             </div>
           </div>
         </section>
-        <section class="chop-band chop-ctl">
-          <div id="chopKnobs" class="chop-knobs"></div>
-          <div class="chop-mod chop-listen" style="width:300px"><div class="chop-mh"><b class="chop-gname">LISTEN</b><span class="chop-grow"></span><div class="chop-pills chop-seg sm" id="chopSync" title="Free: the tempo here. Lock: the sequencer's tempo"><button type="button" data-v="free">Free</button><button type="button" data-v="lock">Lock</button></div></div>
-            <div class="chop-ls"><div class="chop-lsr">
-              <button type="button" class="chop-btn chop-big" id="chopPreview" title="Play every slice that is not muted, S to E, at the tempo, with everything on"><svg viewBox="0 0 12 12"><path d="M3 2L10 6L3 10Z" fill="currentColor" stroke="none"/></svg>Preview</button>
-              <button type="button" class="chop-btn chop-big" id="chopRatchet" title="Ratchet: the chop from S fires on every grid line, round and round, until pressed again"><svg viewBox="0 0 12 12"><path d="M2 10V4M5 10V4M8 10V4M11 10V4M1 2H11"/></svg>Ratchet</button>
-            </div><div class="chop-status" id="chopStatus"></div><div class="chop-status chop-status2" id="chopStatus2"></div></div>
-          </div>
-        </section>
         <section class="chop-band chop-pro"><div class="chop-fx" id="chopFx" title="The processing every slice gets, in Preview and as it is written"></div></section>
         <footer class="chop-band chop-foot chop-panel">
           <span class="chop-stat" data-k="clips" title="Slices found"><b>0</b> slices</span>
@@ -1338,12 +1371,33 @@
     </div>
   </main>
 
+  <!-- Browse's map of every sound, right of the sound's details (14 Nov 2026).
+       The map from Browse › Map, put here by `LibraryGraph.browse` while Browse
+       is showing; see `ui/library-graph.js` and `docs/SOUND-MAP.md`. -->
+  <section class="browse-map hidden" id="browseMap" aria-label="Map of every sound"></section>
+
   <!-- right panel: tagging -->
   <aside class="panel right" id="rightPanel">
     <div class="panel-head">
       <span id="rightPanelTitle">Tags</span>
       <button class="x" id="closeRight">×</button>
     </div>
+  </aside>
+
+  <!-- The Theme page's editor, beside a page being previewed in it. Empty and
+       hidden otherwise: the editor's section is moved in by `tpLiveStart` and
+       back by `tpLiveEnd`. See `docs/THEME-EDITOR.md`. -->
+  <aside class="tp-dock hidden" id="tpDock" aria-label="Theme, beside the page it is previewing">
+    <section class="tp-panel tp-dhead">
+      <div class="tp-ph"><b class="tp-nm">PREVIEW</b><span class="tp-meta" id="tpLiveNote"></span><span class="tp-grow"></span>
+        <button class="tp-btn tp-sm" id="tpLivePrev" title="The palette before this one" aria-label="Previous palette">&lsaquo;</button>
+        <button class="tp-btn tp-sm" id="tpLiveNext" title="The next palette" aria-label="Next palette">&rsaquo;</button></div>
+      <div class="tp-pgs" id="tpLivePages"></div>
+      <div class="tp-row">
+        <button class="tp-btn" id="tpLiveBack" title="Back to the Theme page; what you wear comes back">&larr; Theme</button>
+        <button class="tp-btn" id="tpLiveStop" title="Stop previewing and stay on this page, in what you wear">Stop</button>
+      </div>
+    </section>
   </aside>
 
 

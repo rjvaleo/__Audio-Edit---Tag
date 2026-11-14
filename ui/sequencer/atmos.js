@@ -176,6 +176,10 @@ function atmosBuildUI() {
 
   // Clicks.
   for (const b of document.querySelectorAll(".power[data-syn]")) b.addEventListener("click", () => atPowerClick(b.dataset.syn));
+  // The host's Atmosphere page has no Classic panel, so the bar carries
+  // Classic's power there, and offers to turn Atmosphere on while it is off.
+  document.getElementById("atWithClassic")?.addEventListener("click", () => atPowerClick("classic"));
+  document.getElementById("atTurnOn")?.addEventListener("click", () => atPowerClick("atmos"));
   for (const w of ["A", "B"]) {
     document.querySelector(`.at-oscbox[data-osc="${w}"] .at-oscs`).addEventListener("click", (e) => {
       const b = e.target.closest(".at-osc");
@@ -283,6 +287,7 @@ function atVowel(u) {
 
 function atmosPaintSegs() {
   for (const b of document.querySelectorAll(".power[data-syn]")) b.classList.toggle("on", b.dataset.syn === "classic" ? classicOn : atmosOn);
+  document.getElementById("atWithClassic")?.classList.toggle("on", classicOn);
   for (const w of ["A", "B"]) {
     for (const b of document.querySelectorAll(`.at-oscbox[data-osc="${w}"] .at-osc`)) b.classList.toggle("on", b.dataset.kind === AT["kind" + w]);
   }

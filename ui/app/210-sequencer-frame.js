@@ -16,6 +16,9 @@
 
 const seq = {
   feed: null, feedAt: 0, ready: false, clock: null, want: { bands: 0, lo: 0, hi: 0 }, compact: false,
+  /// Which synth the frame shows on its own, if one: `'atmos'` on the
+  /// Atmosphere page, null on Seq. See `seqOnly`.
+  only: null,
   /// The sequencer's take and tempo, as its bridge last sent them — drawn on
   /// the timeline beside the grain's lanes. See `perf-panel.js`.
   take: null, tempo: null,
@@ -91,6 +94,18 @@ function seqPost(m) {
 function seqCompact(on) {
   seq.compact = !!on;
   seqPost({ type: 'seq:compact', on: seq.compact });
+}
+
+/// **One synth, on a page of its own.** The Atmosphere page is this same frame
+/// with only Atmosphere showing (`body.only-atmos` in its page) — not a second
+/// frame, which would be a second sequencer with its own audio context and its
+/// own settings. So a knob turned on either page is the same knob. `null` is
+/// the whole page. Remembered, as compact is, for a frame that reloads.
+function seqOnly(what) {
+  const next = what || null;
+  if (seq.only === next) return;
+  seq.only = next;
+  seqPost({ type: 'seq:only', only: next });
 }
 
 /// The sequencer's recorder, armed with the grain's: one REC PERF for both.
@@ -200,6 +215,7 @@ window.addEventListener('message', (e) => {
     seqSync(engine.playing);
     // A frame that reloaded comes up in its full layout; say compact again.
     if (seq.compact) seqPost({ type: 'seq:compact', on: true });
+    if (seq.only) seqPost({ type: 'seq:only', only: seq.only });
   } else if (m.type === 'seq:route') {
     // Whether the sequencer's sound is going to the engine. An answer for an
     // epoch that has since passed is not true of anything now.

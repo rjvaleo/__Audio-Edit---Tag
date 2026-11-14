@@ -137,10 +137,13 @@
             </section>
           </div>
 
-          <!-- ATMOSPHERE: its panels are built by atmos.js into #atBody -->
+          <!-- ATMOSPHERE: its panels are built by atmos.js into #atBody. On the
+               host's Atmosphere page (body.only-atmos) the bar also says when it
+               is off and turns it on, and carries Classic's power, since
+               Classic's panel is not on that page. -->
           <section class="syn-group at-group" id="atGroup">
             <div class="panel at-bar">
-              <div class="ph"><button type="button" class="power" data-syn="atmos" title="Atmosphere on or off: both synths can play at once"></button><b class="nm">ATMOSPHERE</b><span class="meta" id="atModeNote"></span><span class="grow"></span><span class="cap">Start from</span><div class="at-starts" id="atStarts"></div></div>
+              <div class="ph"><button type="button" class="power" data-syn="atmos" title="Atmosphere on or off: both synths can play at once"></button><b class="nm">ATMOSPHERE</b><span class="meta" id="atModeNote"></span><button type="button" class="btn at-turn-on" id="atTurnOn" title="Atmosphere is off: the sequencer plays Classic alone. Turn it on to hear it">Turn Atmosphere on</button><span class="at-with"><button type="button" class="power" id="atWithClassic" title="Classic plays along: off, the sequencer plays Atmosphere alone"></button><span class="cap">Classic too</span></span><span class="grow"></span><span class="cap">Start from</span><div class="at-starts" id="atStarts"></div></div>
             </div>
             <div class="at-body" id="atBody"></div>
           </section>

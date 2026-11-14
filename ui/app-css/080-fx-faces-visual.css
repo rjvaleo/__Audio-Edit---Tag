@@ -660,7 +660,7 @@ body.prismpage .dock-panes { height: 100%; }
 #dockHyper #prismLoop:disabled { opacity: .4; cursor: default; }
 #dockHyper .hs-row { display: flex; align-items: center; gap: 6px; }
 
-/* ── SOURCE: the whole sound, 58 px, in its colours, with the head */
+/* ── SOURCE: the whole sound, 58 px until its grip is dragged (416), in its colours, with the head */
 #dockHyper .hs-src { flex: none; gap: 5px; padding: 6px 10px 8px; }
 #dockHyper .hs-src-name { flex: 0 1 auto; color: var(--look-text-2); }
 #dockHyper .hs-src-well { flex: none; height: 58px; }

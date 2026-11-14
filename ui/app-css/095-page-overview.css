@@ -1,0 +1,48 @@
+/* The overview on every page (`ui/app/416-page-overview.js`): the whole open
+   file, under the Now Playing bar and the whole width of the centre, the same
+   element whichever page is below it. In the shared look (`--look-*`, which a
+   theme reaches), so it reads the same on Edit, Grain, Prism, Chop, Wave and
+   Seq. Its height is the well's, set from the grip and kept. */
+
+#pageOv {
+  /* The strip's names for the look, read by its drawing (`poCl`). */
+  --po-wave: var(--look-wave); --po-bloom: var(--look-bloom); --po-acc: var(--look-accent); --po-on: var(--on);
+  --po-t: var(--look-text); --po-t2: var(--look-text-2); --po-t3: var(--look-text-3);
+  flex: none; position: relative; display: flex; align-items: stretch; gap: 8px; padding: 6px 12px 9px; min-width: 0;
+  border-bottom: 1px solid var(--look-line); color: var(--look-text); user-select: none;
+  background: var(--look-grain), linear-gradient(180deg, var(--look-panel-hi), var(--look-panel));
+  background-blend-mode: soft-light, normal;
+}
+#pageOv .po-well {
+  flex: 1; min-width: 0; height: 72px; position: relative; overflow: hidden; border-radius: var(--r-m);
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--look-well) 70%, var(--look-panel)), var(--look-well) 70%);
+  box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75), 0 1px 0 rgba(var(--white-rgb), .06);
+}
+#pageOv canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: default; }
+
+/* −, + and Fit, at its right end. */
+#pageOv .po-side { flex: none; width: 64px; display: flex; flex-direction: column; gap: 4px; }
+#pageOv .po-zb { display: flex; gap: 2px; }
+#pageOv .po-btn {
+  flex: 1; height: var(--h-s); min-width: 0; padding: 0 4px; display: grid; place-items: center; cursor: pointer;
+  border-radius: var(--r-s); border: 1px solid var(--look-line); color: var(--look-text-2); font: 600 var(--fs-m) var(--mono);
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel));
+  box-shadow: inset 0 1px 0 rgba(var(--white-rgb), .08), 0 1px 2px rgba(var(--black-rgb), .6);
+}
+#pageOv .po-btn:hover { color: var(--look-text); }
+#pageOv .po-btn.po-fit { flex: none; font: 500 var(--fs-s) var(--sans); }
+#pageOv .po-ro { font: 400 var(--fs-xs) var(--mono); color: var(--look-text-3); text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* The grip along a well's bottom edge: drag it for the height. On the strip,
+   and on Prism's SOURCE well. */
+.po-grip { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; cursor: ns-resize; z-index: 2; }
+.po-grip::after {
+  content: ""; position: absolute; left: 50%; bottom: 2px; width: 40px; height: 3px; margin-left: -20px;
+  border-radius: 999px; background: rgba(var(--white-rgb), .16);
+}
+.po-grip:hover::after, .po-grip.on::after { background: var(--on); }
+
+/* The overviews it stands in for: the Edit page's, and Chop's own (its part,
+   the cuts and the double-click, is the strip's now). */
+#overview { display: none !important; }
+.chop-app .chop-overw { display: none; }

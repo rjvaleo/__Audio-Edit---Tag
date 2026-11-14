@@ -15,6 +15,11 @@
 //
 // Playback goes through the engine's own audition path, the one a click in
 // Browse uses. See `docs/SOUND-MAP.md`.
+//
+// **Two places, one map.** It is the full-window overlay opened from Browse ›
+// Map, and it is in Browse itself, to the right of the sound's details
+// (`mount`, `browse`). One map moved between the two rather than two maps: a
+// second would be a second load of the whole library and a second loop.
 
 (() => {
   'use strict';
@@ -30,6 +35,9 @@
   const POLL_MS = 2500;
   /// The most sounds still to be heard that are shown, in rows under the map.
   const WAITING_SHOWN = 400;
+  /// Coming back to Browse within this long, the map it showed is still the
+  /// library: a big one is megabytes to read again on every visit.
+  const RELOAD_MS = 30000;
 
   /// Family colours, as in the 3D world (`FAMILIES` in `ui/sound-map.js`).
   const FAMILIES = {
@@ -67,6 +75,9 @@
   let VW = 0, VH = 0, DPR = 1, raf = 0, pollTimer = 0;
   let hits = null, hover = null, selected = null, focus = null;
   let playing = -1, wantTimer = 0, startedPlayback = false;
+  /// The box Browse gives the map (`mount`), and whether the full-window
+  /// overlay has it now. With both, the overlay borrows it and gives it back.
+  let host = null, overlay = false, hostWatch = null, loadedAt = 0;
   let trail = [];
   const colours = {};
   /// How many more frames the dots are nudged apart for after they arrive.
@@ -159,6 +170,8 @@
     bar.append(button('lg-home', 'Whole map', 'Back to every sound in view (Home)', home));
     bar.append(el('span', 'lg-status'));
     bar.append(button('lg-3d', '3D', 'The library as a 3D world you fly through', open3d));
+    // In Browse, the same map over the whole window; over it, back to Browse.
+    bar.append(button('lg-big', 'Full window', 'The map over the whole window', open));
     bar.append(button('lg-close', 'Close', 'Back to the library (Esc)', close));
 
     const stage = el('div', 'lg-stage');
@@ -183,7 +196,12 @@
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerup', onUp);
     canvas.addEventListener('pointerleave', () => setHover(null));
-    canvas.addEventListener('dblclick', (e) => { if (!pick(e.offsetX, e.offsetY)) home(); });
+    canvas.addEventListener('dblclick', (e) => {
+      const d = pick(e.offsetX, e.offsetY);
+      if (!d) home();
+      // In Browse a double-click opens the sound, as it does in the tree.
+      else if (!overlay) openIn(data.sounds[d.i], 'edit');
+    });
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
     root.addEventListener('keydown', (e) => {
@@ -583,6 +601,21 @@
     showSound(d.i);
     audition(d.i);
     showNow();
+    pickInLibrary(d.i);
+  }
+
+  /// In Browse the map is the library seen another way, so a sound clicked on
+  /// it is picked as a click in the tree picks it: its waveform and details
+  /// fill the middle, and the tree marks it. Over the whole window there is
+  /// no middle to fill, and it stays as it was.
+  async function pickInLibrary(i) {
+    if (overlay || !host || typeof resolveFile !== 'function' || typeof selectFile !== 'function') return;
+    const s = data && data.sounds[i];
+    if (!s) return;
+    const file = await resolveFile(s.path);
+    // Another sound may have been clicked, or Browse left, while it was found.
+    if (overlay || !host || !data || data.sounds[i] !== s || (selected && selected.i !== i)) return;
+    if (state.selectedFile?.path !== file.path) selectFile(file);
   }
 
   /// One cluster in view, the rest faded, its sounds listed.
@@ -599,6 +632,7 @@
     if (focus != null && data.sounds[i].cluster !== focus) focus = null;
     showSound(i);
     audition(i);
+    pickInLibrary(i);
     // Not heard yet, so not on the map: its card, and it plays, but there is
     // nowhere to fly to.
     if (d.hidden) { selected = null; return; }
@@ -623,7 +657,7 @@
     else if (cardOpen()) { selected = null; hideCard(); showNow(); }
     else if (focus != null) home();
     else if (playing >= 0) silence();
-    else close();
+    else if (overlay) close();
   }
 
   // ------------------------------------------------------------------- card
@@ -700,6 +734,8 @@
   async function openIn(s, page) {
     if (typeof resolveFile !== 'function' || typeof openInEditor !== 'function') return;
     const file = await resolveFile(s.path);
+    // Over the whole window it closes first; in Browse, leaving Browse puts
+    // it away (`browse`).
     close();
     if (page === 'grain' && typeof setEditPage === 'function') setEditPage('grain', false);
     await openInEditor(file);
@@ -780,6 +816,8 @@
 
   function frame(now) {
     raf = requestAnimationFrame(frame);
+    // In Browse under the 3D world, nothing of it is seen.
+    if (!overlay && worldOpen()) return;
     if (settling > 0) { relax(0.5); settling--; look++; }
     if (!userMoved && !fly && focus == null && dots.length) fit(dots, false);
     if (fly) {
@@ -812,6 +850,7 @@
       s.text = [s.name, s.folder, s.collection, s.kind, c ? c.name : '', ...s.heard, ...s.words].join(' ').toLowerCase();
     }
     data = next;
+    loadedAt = Date.now();
     place();
     ui.empty.textContent = data.count ? '' : 'Nothing in the library yet.';
     ui.status.textContent = `${data.count} sound${data.count === 1 ? '' : 's'} · ${data.clusters.length} cluster${data.clusters.length === 1 ? '' : 's'}` +
@@ -828,31 +867,99 @@
     if (!userMoved && focus == null) fit(dots, false);
   }
 
-  function open() {
-    if (!root) build();
+  /// Colours and choices from the page, and the loop started: the half of
+  /// showing the map that is the same in both places.
+  function start() {
     colours.ground = canvasColour('--sink', '#0b0d10');
     colours.sans = getComputedStyle(document.documentElement).getPropertyValue('--sans').trim() || 'sans-serif';
     root.classList.remove('hidden');
     setTint(tint);
     setHoverPlays(hoverPlays);
     resize();
-    window.addEventListener('resize', onResize);
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(frame);
     userMoved = false;
+  }
+
+  /// Everything that runs while it is shown, stopped. What it played is left
+  /// playing, as leaving Browse leaves a sound the tree played.
+  function stop() {
+    clearTimeout(pollTimer);
+    clearTimeout(wantTimer);
+    hideCard();
+    hover = null;
+    cancelAnimationFrame(raf);
+  }
+
+  function open() {
+    if (!root) build();
+    overlay = true;
+    unwatchHost();
+    // The id is the overlay's: `#libraryGraph` is the map over the window.
+    root.id = 'libraryGraph';
+    root.classList.remove('lg-embedded');
+    if (root.parentNode !== document.body) document.body.append(root);
+    start();
+    window.addEventListener('resize', onResize);
     root.focus({ preventScroll: true });
     load();
   }
 
   function close() {
-    if (!root) return;
-    clearTimeout(pollTimer);
+    if (!root || !overlay) return;
+    overlay = false;
     silence();
-    hideCard();
-    hover = null;
-    cancelAnimationFrame(raf);
+    stop();
     window.removeEventListener('resize', onResize);
     root.classList.add('hidden');
+    // Opened over Browse, it goes back into Browse.
+    if (host) embed();
+  }
+
+  // ----------------------------------------------------------- in Browse
+
+  /// Into Browse's box, sized to it.
+  function embed() {
+    if (!root) build();
+    root.id = 'browseGraph';
+    root.classList.add('lg-embedded');
+    if (root.parentNode !== host) host.append(root);
+    start();
+    hostWatch = new ResizeObserver(onResize);
+    hostWatch.observe(host);
+    if (!data || data.listening || Date.now() - loadedAt > RELOAD_MS) load();
+  }
+
+  function unwatchHost() {
+    if (hostWatch) hostWatch.disconnect();
+    hostWatch = null;
+  }
+
+  /// Put the map in `el`, sized to that box and following it; `null` takes it
+  /// out of the page and stops it. While the overlay is up the box is only
+  /// remembered, and the map goes into it when the overlay closes.
+  function mount(el) {
+    el = el || null;
+    if (el === host) return;
+    if (host && !overlay) { unwatchHost(); stop(); if (root) root.classList.add('hidden'); }
+    host = el;
+    if (host && !overlay) embed();
+  }
+
+  /// Browse's map, shown or put away with Browse. Called by `setMode`, and
+  /// once below, since this file loads after the first `setMode` has run.
+  function browse(on) {
+    const box = document.getElementById('browseMap');
+    if (!box) return;
+    box.classList.toggle('hidden', !on);
+    document.body.classList.toggle('browsemap', on);
+    mount(on ? box : null);
+  }
+
+  /// Whether the 3D world is up.
+  function worldOpen() {
+    const w = document.getElementById('soundMap');
+    return !!w && !w.classList.contains('hidden');
   }
 
   function open3d() {
@@ -873,10 +980,14 @@
   window.LibraryGraph = {
     open,
     close,
+    mount,
+    browse,
     screenOf,
     get state() {
       return {
-        open: !!root && !root.classList.contains('hidden'),
+        // The overlay; `embedded` is the map in Browse.
+        open: !!root && overlay && !root.classList.contains('hidden'),
+        embedded: !!root && !overlay && !!host && !root.classList.contains('hidden'),
         tint, hoverPlays,
         count: data ? data.count : 0,
         dots: dots.length,
@@ -890,4 +1001,6 @@
       };
     },
   };
+
+  if (typeof state !== 'undefined') browse(state.mode === 'overview');
 })();
