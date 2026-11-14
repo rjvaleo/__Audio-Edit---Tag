@@ -1,9 +1,11 @@
 /* ───────────────────────────────────────────────────────────── the Theme page ──
    A page of its own (13 Nov 2026, from the mock-up RJ approved): the palettes
-   as cards, a large preview and the editor, in three columns. The page wears
-   the look like Grain, Wave and Chop; the preview wears the palette open in
-   the editor, its tokens set on `#themeMini` itself, so it can show a theme the
-   page is not wearing. See `docs/THEME-EDITOR.md`. */
+   as cards, a sheet of the app's parts and the editor, in three columns, and
+   a row of the app's pages across the top. The page wears the look like
+   Grain, Wave and Chop; the parts wear the palette open in the editor, its
+   tokens set on `#themeMini` itself, so they can show a theme the page is not
+   wearing. A page chosen from the row is the page itself, in that palette,
+   with the editor docked beside it (`#tpDock`). See `docs/THEME-EDITOR.md`. */
 
 body.themepage #overview { display: none; }
 #themeView {
@@ -56,7 +58,31 @@ body.themepage #overview { display: none; }
 
 .tp-top { flex-direction: row; align-items: center; gap: 10px; padding: 7px 10px; flex: none; }
 .tp-top .tp-nm { font-size: var(--fs-l); }
-/* Fixed side columns, the preview takes the rest. */
+/* ── the pages themselves: one button each, as the rail lists them ── */
+.tp-pages { flex-direction: row; align-items: center; gap: 10px; padding: 6px 10px; flex: none; }
+.tp-pages .tp-nm { cursor: help; }
+.tp-pgs { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.tp-pg.on { color: var(--on); background: var(--look-well); border-color: color-mix(in srgb, var(--on) 55%, var(--look-line)); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .85); }
+/* Edit, Grain, Prism and Chop with no sound open: there is nothing to show. */
+.tp-pg.tp-off { opacity: .45; }
+
+/* The editor beside a page being previewed: a column at the right of the
+   shell, under the Now Playing bar as the panels are (`ui/edit.css`). It wears
+   what is worn, on its own element, so it holds still while the page behind
+   it changes. */
+.tp-dock {
+  flex: none; width: 340px; min-height: 0; margin-top: 48px; display: flex; flex-direction: column; gap: 8px; padding: 8px;
+  color: var(--look-text); font: var(--fs-m)/1.3 var(--sans); overflow: hidden;
+  background: var(--look-grain), radial-gradient(120% 80% at 30% 0%, var(--look-panel), var(--look-chassis) 60%);
+  background-blend-mode: soft-light, normal; border-left: 1px solid var(--look-line);
+}
+.tp-dock .tp-ed { flex: 1; }
+.tp-dhead { flex: none; }
+.tp-dhead .tp-pgs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tp-dhead .tp-pg { padding: 0 4px; min-width: 0; }
+.tp-dhead .tp-row > .tp-btn { flex: 1; }
+
+/* Fixed side columns, the parts take the rest. */
 .tp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(280px, 24vw, 380px) minmax(0, 1fr) 330px; gap: 8px; }
 
 /* ── the palettes, as cards ── */
@@ -92,7 +118,7 @@ body.themepage #overview { display: none; }
 .tp-own .tp-field { flex: 1; }
 .tp-empty { font-size: var(--fs-s); color: var(--look-text-3); padding: 8px 2px; grid-column: 1 / -1; }
 
-/* ── the preview: today's parts, in the palette being edited ── */
+/* ── the parts: today's controls, in the palette being edited ── */
 .tp-prev {
   flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: hidden;
   color: var(--look-text); border-radius: var(--r-l); isolation: isolate;

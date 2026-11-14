@@ -2,10 +2,11 @@
 //
 // Theme was a pane in the library's column; it is a page of its own now, like
 // Edit, Grain, Chop, Wave, Visual and Seq: the palettes as cards on the left, a
-// large preview built from today's parts in the middle, and the editor on the
-// right. What is proved here is the page — that the rail opens it at full
-// width in its three columns, that a card previews and Wear it wears, and that
-// a Look chosen here is the Look the whole app wears. The editor's own
+// sheet of today's parts in the middle, and the editor on the right. What is
+// proved here is the page — that the rail opens it at full width in its three
+// columns, that a card previews and Wear it wears, that a button across the
+// top shows that page itself in the palette being edited, and that a Look
+// chosen here is the Look the whole app wears. The editor's own
 // behaviour is `theme-editor.spec.mjs`. See `docs/THEME-EDITOR.md`.
 
 import { test, expect } from './test.mjs';
@@ -99,6 +100,49 @@ test('a palette card previews, and Wear it puts it on', async ({ page }) => {
   await page.dblclick(`#themeList .theme-card[data-id="${id}"]`);
   expect(await page.evaluate(() => themeState.chosen)).toBe(id);
   await page.click('#themeNone');
+});
+
+test('every page is a button, and one shows that page itself in the open palette', async ({ page }) => {
+  await open(page);
+  // The rail's pages, in the rail's order, Theme apart.
+  const rail = await page.evaluate(() => [...document.querySelectorAll('#leftRail .mode-btn')]
+    .filter((b) => b.dataset.mode !== 'theme').map((b) => b.querySelector('.rl-lb').textContent.trim()));
+  expect(rail).toEqual(expect.arrayContaining(['Edit', 'Grain', 'Prism', 'Chop', 'Wave', 'Visual', 'Seq', 'Browse']));
+  expect(await page.locator('#tpPages .tp-pg').allTextContents()).toEqual(rail);
+
+  const before = await bg(page);
+  await page.click('#themeList .theme-card[data-id="layered-dark"]');
+  await page.click('#tpPages .tp-pg[data-pg="synth:"]');
+  await page.waitForFunction(() => document.body.classList.contains('synthpage'));
+  // The page itself, in the palette, with the editor beside it; nothing worn.
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() === '#161b22');
+  const got = await page.evaluate(() => ({
+    mode: state.mode,
+    chosen: themeState.chosen,
+    wave: !$('waveView').classList.contains('hidden'),
+    dock: !$('tpDock').classList.contains('hidden'),
+    editor: !!$('tpDock').querySelector('#tsEditor'),
+    lit: document.querySelector('#tpLivePages .tp-pg.on')?.dataset.pg,
+    // The editor holds what is worn — here nothing — while the page changes.
+    dockBg: getComputedStyle($('tpDock')).getPropertyValue('--bg').trim(),
+  }));
+  expect(got.mode).toBe('synth');
+  expect(got.chosen, 'previewing a page wore the palette').toBeNull();
+  expect(got.wave).toBe(true);
+  expect(got.dock).toBe(true);
+  expect(got.editor, 'the editor did not come with the page').toBe(true);
+  expect(got.lit).toBe('synth:');
+  expect(got.dockBg).toBe(before);
+
+  // Back to Theme: what is worn comes back, and the editor goes home.
+  await page.click('#tpLiveBack');
+  await page.waitForFunction(() => document.body.classList.contains('themepage'));
+  expect(await bg(page)).toBe(before);
+  expect(await page.evaluate(() => [
+    $('tpDock').classList.contains('hidden'),
+    !!document.querySelector('#themeView .tp-body #tsEditor'),
+    document.body.classList.contains('tplive'),
+  ])).toEqual([true, true, false]);
 });
 
 test('a Look chosen on the page is the Look the whole app wears', async ({ page }) => {
