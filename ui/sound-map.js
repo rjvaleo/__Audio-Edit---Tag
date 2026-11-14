@@ -968,12 +968,15 @@
   }
 
   /// How wide the library looks at the depth the camera is looking at, in
-  /// pixels: the window's width at home, many windows close up.
+  /// pixels: the window's width at home, many windows close up. Measured along
+  /// the camera's own right, through what it looks at, so both ends are at that
+  /// depth however the camera has turned; along the world's x, a turned camera
+  /// close in could have one end behind it, and the width came out negative.
   function span() {
     if (!bjs) return null;
-    const t = bjs.camera.getTarget();
-    const a = project([-W / 2, t.y, t.z]);
-    const b = project([W / 2, t.y, t.z]);
+    const t = bjs.camera.getTarget(), r = bjs.camera.getDirection(BABYLON.Axis.X);
+    const a = project([t.x - r.x * W / 2, t.y - r.y * W / 2, t.z - r.z * W / 2]);
+    const b = project([t.x + r.x * W / 2, t.y + r.y * W / 2, t.z + r.z * W / 2]);
     return { left: a.x, right: b.x, width: b.x - a.x };
   }
 
