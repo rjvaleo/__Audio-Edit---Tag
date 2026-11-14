@@ -133,3 +133,27 @@ test('Teach the Band needs an analysis, and says so', async ({ request }) => {
   expect(r.status()).toBe(500);
   expect((await r.json()).error).toMatch(/not analysed/);
 });
+
+test('Make from words: its own controls, and only with a GPU machine', async ({ page, request }) => {
+  await open(page);
+  const st = await (await request.get('/api/stems')).json();
+  await page.locator('#stTabs [role="radio"]', { hasText: 'Make a sound' }).click();
+  await page.locator('#stKind [role="radio"]', { hasText: 'From words' }).click();
+  await expect(page.locator('#stPrompt')).toBeVisible();
+  await expect(page.locator('#stWordsBars .ui-bar')).toHaveCount(2);
+  await expect(page.locator('#stFrom')).toBeHidden();
+  await expect(page.locator('#stMakeGo')).toHaveText('Make them');
+  if (st.gpu) {
+    await expect(page.locator('#stMakeGo')).toBeEnabled();
+    await expect(page.locator('#stModelNote')).toContainText(st.gpu);
+  } else {
+    await expect(page.locator('#stMakeGo')).toBeDisabled();
+    await expect(page.locator('#stModelNote')).toContainText('AUDIOLAB_GPU_HOST');
+    const r = await request.post('/api/stems/words', { data: { prompt: 'kick' } });
+    expect(r.status()).toBe(503);
+  }
+  // Back to cutting from stems: the song picker returns.
+  await page.locator('#stKind [role="radio"]', { hasText: 'Drum hits' }).click();
+  await expect(page.locator('#stFrom')).toBeVisible();
+  await expect(page.locator('#stPrompt')).toBeHidden();
+});

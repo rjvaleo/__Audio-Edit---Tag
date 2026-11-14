@@ -37,6 +37,8 @@ pub struct StemsJob {
     /// How long the last run took, milliseconds.
     pub took_ms: AtomicU64,
     child: Mutex<Option<Child>>,
+    /// A split running on the GPU machine: where, and its job tag.
+    remote: Mutex<Option<(crate::gpu::Gpu, String)>>,
 }
 
 fn put(m: &Mutex<String>, s: &str) {
@@ -79,6 +81,10 @@ impl StemsJob {
             if let Some(ch) = c.as_mut() {
                 let _ = ch.kill();
             }
+        }
+        // Ending ssh does not end Demucs on the other machine: end it there.
+        if let Some((gpu, tag)) = self.remote.lock().ok().and_then(|r| r.clone()) {
+            gpu.kill_tagged(&tag);
         }
     }
 }
@@ -240,4 +246,91 @@ mod tests {
         assert_eq!(song_name(Path::new("On The Verge.aif")), "On The Verge");
         assert_eq!(song_name(Path::new("1971.wav")), "1971");
     }
+}
+
+/// Separate on the GPU machine: send the song, run Demucs there (Python, CUDA),
+/// bring the stems back. Progress into `job` as 0..`share`.
+pub fn separate_remote(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: &Path, model: &str, share: f64) -> Result<Vec<(String, PathBuf)>, String> {
+    let id = format!(
+        "mgl-{}",
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+    );
+    let r = separate_remote_in(job, gpu, input, out, model, share, &id);
+    if r.is_err() {
+        // Whatever stopped it, the job's own scratch folder there goes too.
+        let _ = gpu.ps(&format!("Start-Sleep -Seconds 1; Remove-Item -Recurse -Force '{}' -ErrorAction SilentlyContinue", crate::gpu::win(&format!("{}/demucs/jobs/{id}", gpu.dir))));
+        *job.remote.lock().unwrap() = None;
+    }
+    r
+}
+
+fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: &Path, model: &str, share: f64, id: &str) -> Result<Vec<(String, PathBuf)>, String> {
+    use crate::gpu::{lines_cr, tqdm_percent, win};
+    let jobdir = format!("{}/demucs/jobs/{id}", gpu.dir);
+    let ext = input.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "wav".into());
+    let song = format!("song.{ext}");
+    let stop = |job: &StemsJob| -> Result<(), String> {
+        if job.cancel.load(Ordering::SeqCst) { Err("stopped".into()) } else { Ok(()) }
+    };
+    *job.remote.lock().unwrap() = Some((gpu.clone(), id.to_string()));
+
+    job.say(&format!("sending the song to the {}", gpu.host));
+    gpu.ps(&format!("New-Item -ItemType Directory -Force -Path '{}' | Out-Null", win(&jobdir)))?;
+    gpu.put(input, &format!("{jobdir}/{song}"))?;
+    job.set_progress(0.1 * share);
+    stop(job)?;
+
+    job.say(&format!("splitting on the {}'s GPU", gpu.host));
+    gpu.free_gpu();
+    let line = format!(
+        "cd /d {jd} & set \"TORCH_HOME={}\"& {}\\demucs\\venv\\Scripts\\python.exe -m demucs -n {model} --int24 -d cuda -o {jd}\\out {jd}\\{song}",
+        win(&format!("{}/demucs/torch", gpu.dir)),
+        win(&gpu.dir),
+        jd = win(&jobdir)
+    );
+    let mut child = gpu.spawn(&line, false)?;
+    let err = child.stderr.take();
+    let outp = child.stdout.take();
+    *job.child.lock().unwrap() = Some(child);
+    let tail = std::sync::Arc::new(Mutex::new(String::new()));
+    let t2 = tail.clone();
+    let reader = std::thread::spawn(move || {
+        if let Some(o) = outp {
+            lines_cr(o, |l| *t2.lock().unwrap() = l.to_string());
+        }
+    });
+    if let Some(e) = err {
+        let t3 = tail.clone();
+        lines_cr(e, |l| {
+            if let Some(p) = tqdm_percent(l) {
+                job.set_progress((0.1 + 0.6 * p / 100.0) * share);
+            } else if !l.trim().is_empty() {
+                *t3.lock().unwrap() = l.to_string();
+            }
+        });
+    }
+    let _ = reader.join();
+    let ok = job.child.lock().unwrap().take().map(|mut c| c.wait().map(|s| s.success()).unwrap_or(false)).unwrap_or(false);
+    stop(job)?;
+    if !ok {
+        return Err(format!("Demucs on the {} failed: {}", gpu.host, tail.lock().unwrap()));
+    }
+
+    job.say(&format!("bringing the stems back from the {}", gpu.host));
+    let names = gpu.run(&format!("dir /b {}", win(&format!("{jobdir}/out/{model}/song"))))?;
+    let files: Vec<(String, PathBuf)> = names
+        .lines()
+        .map(str::trim)
+        .filter(|n| n.ends_with(".wav"))
+        .map(|n| (format!("{jobdir}/out/{model}/song/{n}"), out.join(n)))
+        .collect();
+    if files.is_empty() {
+        return Err("Demucs made no stems".into());
+    }
+    gpu.get_many(&files)?;
+    job.set_progress(share);
+    // The job's own scratch folder there, which this created.
+    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", win(&jobdir)));
+    *job.remote.lock().unwrap() = None;
+    Ok(files.into_iter().map(|(r, l)| (r.rsplit('/').next().unwrap_or("").trim_end_matches(".wav").to_string(), l)).collect())
 }

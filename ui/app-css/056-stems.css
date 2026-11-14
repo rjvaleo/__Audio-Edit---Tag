@@ -130,3 +130,8 @@ body.stemspage #overview { display: none; }
 .st-power { width: 16px; height: 16px; border-radius: 50%; flex: none; background: var(--look-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .9), 0 0 0 1px var(--look-line); position: relative; cursor: pointer; padding: 0; border: 0; }
 .st-power::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--look-track); }
 .st-power.on::after { background: var(--on); box-shadow: 0 0 6px var(--on); }
+
+/* make: from words */
+#stemsView .st-prompt { flex: 1 1 0; min-width: 260px; }
+#stemsView .st-wbars { display: flex; gap: 6px; flex: none; }
+#stModelNote { max-width: 380px; white-space: normal; }

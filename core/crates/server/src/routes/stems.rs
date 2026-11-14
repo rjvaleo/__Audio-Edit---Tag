@@ -39,6 +39,7 @@ fn song_dir(app: &Arc<App>, rel: &str) -> Result<(PathBuf, PathBuf, String), Res
 pub(super) fn api_stems_status(app: &Arc<App>) -> Response {
     let j = job(app);
     let exe = stems::demucs_path();
+    let gpu = crate::gpu::config(&app.data_dir);
     let models: Vec<Value> = stems::MODELS.iter().map(|(id, label)| Value::obj().set("id", *id).set("label", *label)).collect();
     Response::json(
         Value::obj()
@@ -51,7 +52,8 @@ pub(super) fn api_stems_status(app: &Arc<App>) -> Response {
             .set("serial", j.serial.load(Ordering::Relaxed))
             .set("elapsed", j.elapsed())
             .set("tookMs", j.took_ms.load(Ordering::Relaxed))
-            .set("helper", exe.is_some())
+            .set("helper", exe.is_some() || gpu.is_some())
+            .set("gpu", gpu.map(|g| g.host))
             .set("helperPath", exe.map(|p| p.display().to_string()))
             .set("models", models)
             .to_string(),
@@ -59,8 +61,8 @@ pub(super) fn api_stems_status(app: &Arc<App>) -> Response {
 }
 
 pub(super) fn api_stems_stop(app: &Arc<App>) -> Response {
-    job(app).stop();
     job(app).say("stopping");
+    job(app).stop();
     Response::json(Value::obj().set("ok", true).to_string())
 }
 
@@ -74,9 +76,12 @@ pub(super) fn api_stems_split(app: &Arc<App>, req: &Request) -> Response {
     }
     let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
     let Some(src) = resolve_within(&lib, &rel) else { return Response::error(404, "no such file in the library") };
-    let Some(exe) = stems::demucs_path() else {
-        return Response::error(503, "the stem splitter (demucs) is not installed: put it in the models folder, or set AUDIOLAB_DEMUCS");
-    };
+    // The GPU machine when there is one; else the helper on this one.
+    let gpu = crate::gpu::config(&app.data_dir);
+    let exe = stems::demucs_path();
+    if gpu.is_none() && exe.is_none() {
+        return Response::error(503, "the stem splitter (demucs) is not installed: put it in the models folder, set AUDIOLAB_DEMUCS, or name a GPU machine (AUDIOLAB_GPU_HOST)");
+    }
     let name = crate::docs::safe_name(&stems::song_name(&src));
     if name.is_empty() {
         return Response::error(400, "no name for that file");
@@ -98,11 +103,16 @@ pub(super) fn api_stems_split(app: &Arc<App>, req: &Request) -> Response {
         let t0 = std::time::Instant::now();
         let outcome = (|| -> Result<(), String> {
             std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
-            stems::separate(j, &exe, &src, &out, &model, 0.85)?;
+            match (&gpu, &exe) {
+                (Some(g), _) => stems::separate_remote(j, g, &src, &out, &model, 0.85)?,
+                (None, Some(e)) => stems::separate(j, e, &src, &out, &model, 0.85)?,
+                (None, None) => return Err("no splitter".into()),
+            };
             let secs = t0.elapsed().as_secs_f64();
             let meta = Value::obj()
                 .set("source", rel.clone())
                 .set("model", model.clone())
+                .set("where", gpu.as_ref().map_or("this machine".to_string(), |g| g.host.clone()))
                 .set("splitSeconds", (secs * 10.0).round() / 10.0)
                 .set("made", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
             std::fs::write(out.join("stems.json"), meta.to_string()).map_err(|e| e.to_string())?;
@@ -361,6 +371,56 @@ pub(super) fn api_stems_tries(app: &Arc<App>, req: &Request) -> Response {
         }
     }
     Response::json(Value::Arr(out).to_string())
+}
+
+/// POST {prompt, seconds, n, seed}: sounds from words, made by Stable Audio
+/// Open Small on the GPU machine, brought back into `Made/.words/` as tries.
+/// The first request loads the model there (a minute or less); later ones take
+/// a fraction of a second a sound.
+pub(super) fn api_stems_words(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(gpu) = crate::gpu::config(&app.data_dir) else {
+        return Response::error(503, "sounds from words need the GPU machine: set AUDIOLAB_GPU_HOST, or GPU.json in the data folder");
+    };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let prompt: String = v.get("prompt").and_then(|p| p.as_str()).unwrap_or("").chars().filter(|c| !c.is_control()).take(300).collect();
+    if prompt.trim().is_empty() {
+        return Response::error(400, "say what to make");
+    }
+    let num = |k: &str, d: f64| match v.get(k) {
+        Some(Value::Num(n)) => *n,
+        _ => d,
+    };
+    let seconds = num("seconds", 2.0).clamp(0.5, 11.0);
+    let n = num("n", 4.0).clamp(1.0, 8.0) as u32;
+    let seed = num("seed", (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1) % 100_000) as f64) as u64;
+    let id = format!("w{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
+    let made = match crate::gpu::words(&gpu, &id, &prompt, seconds, n, seed) {
+        Ok(m) => m,
+        Err(e) => return Response::error(502, &e),
+    };
+    let dir = lib.join("Made").join(".words");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return Response::error(500, &e.to_string());
+    }
+    let pairs: Vec<(String, PathBuf)> = made.iter().map(|m| (m.remote.clone(), dir.join(format!("{id}-{}.wav", m.seed)))).collect();
+    if let Err(e) = gpu.get_many(&pairs) {
+        return Response::error(502, &e);
+    }
+    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", crate::gpu::win(&format!("{}/sao/tries/mgl/{id}", gpu.dir))));
+    let short: String = prompt.chars().take(40).collect();
+    let rows: Vec<Value> = made
+        .iter()
+        .map(|m| {
+            Value::obj()
+                .set("p", format!("Made/.words/{id}-{}.wav", m.seed))
+                .set("label", format!("{short} · {}", m.seed))
+                .set("group", "words")
+                .set("seed", m.seed as f64)
+                .set("seconds", m.seconds)
+        })
+        .collect();
+    Response::json(Value::Arr(rows).to_string())
 }
 
 /// POST {p: a try, rate, air, above, trimDb, fadeOutMs, peakDb, folder, name}:
