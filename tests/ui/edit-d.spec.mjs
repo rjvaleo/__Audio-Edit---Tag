@@ -163,9 +163,10 @@ test('the counters say where the selection is, and the rulers are drawn', async 
   expect(got.time && got.level).toBe(true);
 });
 
-test('the Look is one setting for the whole app, set from the bar', async ({ page }) => {
+test('the Look is one setting for the whole app, and the bar has no buttons for it', async ({ page }) => {
   await openEdit(page);
-  await page.click('#nbLook button[data-s="C"]');
+  expect(await page.locator('#nowBar .nb-look, #nbLook').count(), 'chosen on the Theme page only').toBe(0);
+  await page.evaluate(() => nbSetLook('C'));
   expect(await page.evaluate(() => [document.documentElement.dataset.mglLook, localStorage.getItem('mglLook')])).toEqual(['C', 'C']);
-  await page.click('#nbLook button[data-s="AD"]');
+  await page.evaluate(() => nbSetLook('AD'));
 });

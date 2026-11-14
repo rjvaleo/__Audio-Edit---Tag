@@ -86,9 +86,9 @@ Wear*. So a click opens the palette in the editor and paints the preview, and
 Grain's five Looks — Graphite + Acrylic, Graphite, Glass, Ceramic, Acrylic —
 became themes on 11 Nov 2026 (`LOOK_THEMES` in `theme-palettes.js`). They are
 in the editor as five tiles, each in its own surfaces and material, and
-choosing one is the Now Playing bar's own choice (`nbSetLook`, then
-`themeWearLook`), so the bar, `mglLook`, `data-mgl-look` and the theme never
-disagree. A Look is still a theme, as before: choosing one wears it and opens
+choosing one calls `nbSetLook`, then `themeWearLook`, so `mglLook`,
+`data-mgl-look` and the theme never disagree. The Now Playing bar had its own
+five buttons until 14 Nov 2026; the Theme page is the one place now. A Look is still a theme, as before: choosing one wears it and opens
 it in the editor.
 
 ## The tokens go on a container, not on `:root`

@@ -20,10 +20,10 @@ The transport, on every page, in one place: a 48 px bar across the top from the 
 - **Beside them:**
   - the sound as a strip (the overview's own peaks); click it to go there;
   - the tempo: Chop's when it has counted this sound, the library's otherwise;
-  - the output meter, polled only while something plays;
-  - the Look.
+  - the output meter, polled only while something plays.
 - **The Look is one setting for the whole app.** It is Grain's five, kept under `mglLook` and set on
-  `:root[data-mgl-look]`. The bar sets it, and Chop and the Edit page follow.
+  `:root[data-mgl-look]` by `nbSetLook`; Chop and the Edit page follow. It is chosen on the Theme page: the
+  bar's own five buttons went on 14 Nov 2026 (RJ: "Take the Look buttons out of the bar").
 - **In Browse and on Wave** Play plays the selected library file raw, as Space already did there.
 - **On the Prism page the bar is the Prism deck's** (`prismOwnsBar`, `ui/prism-pad.js`; RJ, 11 Nov 2026: one
   transport). Play/pause, stop, loop and Space act on Prism's own sound; the clock, the name and the strip are its,

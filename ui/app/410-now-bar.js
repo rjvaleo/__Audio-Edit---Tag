@@ -167,16 +167,14 @@ function nbPaintMeter(l, r) {
 // ───────────────────────────────────────────────────────────── the Look
 
 /// Grain's five Looks, for the whole app at once. One key, `mglLook`, which
-/// Chop and Grain already read; the bar is where it is set from now on.
-const NB_LOOKS = [['AD', 'Graphite + Acrylic', 'linear-gradient(135deg,#262a30 50%,#d7e2ff 50%)'], ['A', 'Graphite', '#3a3f47'],
-  ['B', 'Glass', 'linear-gradient(135deg,#3c8caa,#825aaa)'], ['C', 'Ceramic', '#e8dcc8'], ['D', 'Acrylic', 'conic-gradient(#3b4060,#2c5d5f,#5e4c3d,#4a3b5e,#3b4060)']];
+/// Chop and Grain already read. It is chosen on the Theme page; the bar's own
+/// buttons went on 14 Nov 2026 (RJ: take the Look buttons out of the bar).
 function nbLook() {
   try { return localStorage.getItem('mglLook') || 'AD'; } catch { return 'AD'; }
 }
 function nbSetLook(k) {
   try { localStorage.setItem('mglLook', k); } catch { /* private mode */ }
   document.documentElement.dataset.mglLook = k;
-  document.querySelectorAll('#nbLook button').forEach((b) => b.classList.toggle('on', b.dataset.s === k));
   if (typeof chopSetLook === 'function' && document.querySelector('.chop-app')) chopSetLook(k);
   if (typeof edSetLook === 'function') edSetLook(k);
 }
@@ -192,10 +190,7 @@ function nbPlace() {
   const rail = $('leftRail');
   nbPlace();
   if (window.ResizeObserver) new ResizeObserver(nbPlace).observe(rail);
-  $('nbLook').innerHTML = NB_LOOKS.map(([k, n, bg]) => `<button type="button" data-s="${k}" title="Look: ${n}" aria-label="Look: ${n}"><i style="background:${bg}"></i></button>`).join('');
-  $('nbLook').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (b) nbSetLook(b.dataset.s); });
   document.documentElement.dataset.mglLook = nbLook();
-  document.querySelectorAll('#nbLook button').forEach((b) => b.classList.toggle('on', b.dataset.s === nbLook()));
   for (const k of ['stop', 'loop', 'rec']) { const b = $(`${k}Btn`); if (b) b.innerHTML = nbIcon(k); }
   nbPaintPlay();
   nbSetFile(state.selectedFile);

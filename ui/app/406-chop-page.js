@@ -42,8 +42,8 @@ function chopFit() {
 // ───────────────────────────────────────────────────────────── the Looks
 
 /// Grain's five Looks are themes now (`theme-palettes.js`), chosen on the Theme
-/// page; Chop's own switch went on 11 Nov 2026. The Now Playing bar's Look
-/// buttons still call this, by name (`nbSetLook`), and it wears that Look's theme.
+/// page; Chop's own switch went on 11 Nov 2026. Choosing one there still calls
+/// this, by name (`nbSetLook`), and it wears that Look's theme.
 function chopSetLook(k) {
   themeWearLook(k);
 }

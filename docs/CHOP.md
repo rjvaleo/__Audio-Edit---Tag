@@ -36,7 +36,7 @@ What matters for working on it:
 - **The Colour row** says what the colour on the waveform means, from the library's own measures (`search/src/lib.rs`, `pitch.rs`), taken in a worker on every 11 ms. Every slice is measured too and given a Kind, which is an opinion and will sometimes be wrong.
 - **Detect** finds the tempo and counts the bars between S and E, and sets Bars and Beats. It runs when a sound opens. Whole bars win when they score nearly as well, so a loop loops even.
 - **Bars reaches 999** on a log knob, so a song can be counted. Ratchet's loop is capped at 64 bars.
-- **Looks** are Grain v12's five, and since 11 Nov 2026 they are themes (`ui/theme-palettes.js`), chosen on the Theme page or from the Now Playing bar; Chop has no switch of its own. Its colours are the shared look's (`ui/app-css/015-tokens.css`) under its own names, so every theme reaches it. The theme's "on", orange by default, means on in all five.
+- **Looks** are Grain v12's five, and since 11 Nov 2026 they are themes (`ui/theme-palettes.js`), chosen on the Theme page; Chop has no switch of its own. Its colours are the shared look's (`ui/app-css/015-tokens.css`) under its own names, so every theme reaches it. The theme's "on", orange by default, means on in all five.
 - **Processing controls are `param` sliders with a knob over them** (`chopBar`), so they stay what they were for keyboard, reset and `controls-parity`.
 
 ## What is Recycle Reborn's, unchanged

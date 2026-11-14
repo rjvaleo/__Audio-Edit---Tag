@@ -110,8 +110,6 @@ test('a Look chosen on the page is the Look the whole app wears', async ({ page 
     chosen: themeState.chosen,
     open: tsSelected,
     tile: document.querySelector('#tpLooks [data-look="C"]').classList.contains('on'),
-    // The Now Playing bar agrees, because it is the bar's own choice.
-    bar: document.querySelector('#nbLook button.on')?.dataset.s,
     chop: getComputedStyle(document.querySelector('.chop-app')).getPropertyValue('--ui').trim(),
   }));
   expect(got.look).toBe('C');
@@ -119,7 +117,6 @@ test('a Look chosen on the page is the Look the whole app wears', async ({ page 
   expect(got.chosen).toBe('look-c');
   expect(got.open).toBe('look-c');
   expect(got.tile).toBe(true);
-  expect(got.bar).toBe('C');
   expect(got.chop, 'Ceramic sets its own face').toContain('Space Grotesk');
 
   // And back, from the page, to the default.

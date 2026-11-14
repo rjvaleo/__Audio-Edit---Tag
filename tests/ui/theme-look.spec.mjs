@@ -83,11 +83,11 @@ test('whoever had picked a Look gets its theme, once', async ({ page }) => {
   expect(await page.evaluate(() => [themeState.chosen, document.documentElement.dataset.mglLook])).toEqual([null, 'AD']);
 });
 
-test('a Look from the Now Playing bar is its theme', async ({ page }) => {
+test('a Look set by name (nbSetLook) is its theme', async ({ page }) => {
   await ready(page);
-  await page.click('#nbLook button[data-s="B"]');
+  await page.evaluate(() => nbSetLook('B'));
   expect(await page.evaluate(() => [themeState.chosen, document.documentElement.dataset.mglLook,
     getComputedStyle($('waveView')).getPropertyValue('--wv-chassis').trim()])).toEqual(['look-b', 'B', '#0a0c10']);
-  await page.click('#nbLook button[data-s="AD"]');
+  await page.evaluate(() => nbSetLook('AD'));
   await wear(page, null);
 });
