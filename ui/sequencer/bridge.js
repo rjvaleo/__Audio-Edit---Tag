@@ -62,6 +62,8 @@
   /// the sequencer's own variables — they are bindings in this frame's global
   /// scope, which this script shares.
   function setStep(k) {
+    // The Journey reads where it is from the boundary (journey.js).
+    seqStepCount = k;
     const n = Math.max(1, numSteps);
     if (direction === 'fwd') {
       currentStep = k % n;
@@ -866,7 +868,9 @@ async function flush() {
           time += pass * span;
         }
         if (time >= tEnd) return;
-        const step = steps[stepAtBoundary(k)];
+        // The step as it sounds at this boundary: moved by the Journey when it is on.
+        const idx = stepAtBoundary(k);
+        const step = typeof journeyStep === 'function' ? journeyStep(k, idx) : steps[idx];
         let pwMod = 0;
         lfos.forEach((lfo) => {
           if (lfo.target === 'pw') {
@@ -875,7 +879,7 @@ async function flush() {
           }
         });
         if (waveType === 'pulse') currentPW = Math.max(0.05, Math.min(0.95, pulseWidth + pwMod));
-        if (step && !step.rest && time >= 0) playNote(getFreqForDegree(step.degree), time);
+        if (step && !step.rest && time >= 0) seqPlayAt(step, time, d);
         k++;
       }
     };

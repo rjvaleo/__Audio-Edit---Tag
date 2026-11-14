@@ -443,3 +443,59 @@ Hz, the lit keys), orange is on or playing, each knob has its family's colour.
   `look.js` fills from the theme; `performance.js` draws with them too.
 - A knob's arc is drawn by the stylesheet from `--kt` (0–1), which
   `updateKnobVisual` sets; `--rot` still turns its pointer.
+
+## 64 steps
+
+*14 Nov 2026.* RJ: "make it 64 notes". `steps` holds 64 (`SEQ_MAX_STEPS`), in
+four rows of 16; the Steps knob says how many play. A step card shows its
+degree, octave and Hz; clicking it picks it, and its buttons (◀ ▶ degree, ▼ ▲
+octave, RST, ▶) open under it. The arrow keys edit the picked step, R rests it,
+Enter plays it, Escape lets it go; they call the window's `stepDegChange`,
+`stepOctChange` and `toggleRest`, which the Performance recorder wraps, so a
+take hears the keys too. **Copy row 1 to all** and **Clear** are in the
+panel's header. A preset saved with 16 steps fills the first row and leaves
+the rest as they were. In the compact layout only the steps that play show.
+
+## The Journey
+
+*14 Nov 2026.* RJ: "it can go off on a little journey". The plan is
+`WORK DIR/page-mockups/SEQ-JOURNEY-PLAN.md` §2; the mock-up `seq-journey.html`.
+`ui/sequencer/journey.js` (ours, `/sequencer/journey.js`).
+
+- **A trip is a list of moves planned from the seed** (`journeyPlan`): a
+  step's degree up or down by up to Wander, its octave, a rest, a double or a
+  tie (Rhythm), the root by a step or to the fifth, the scale to another in its
+  family with as many degrees, the direction. Each pass of the pattern adds
+  about Each pass of them on the way up.
+- **The curve says how many are in force**: the first N, so moves pile up as it
+  rises and come off in reverse as it falls. Its points sit at the ends of
+  Intro, Build and Peak (dragged on the canvas, kept in `jC1`–`jC3`); with Come
+  home the end is 0 and the trip ends on the pattern as written; without it the
+  end is `jC4`, and the next trip starts from home.
+- **Where it is comes from the step boundary**, `seqStepCount` (app.js), counted
+  from Play, or set with the step by bridge.js in the app; the trip is
+  `Length` bars of four beats. Nothing depends on when a note happened to be
+  played, so a seek lands where the trip would be and the film and the sound
+  export (bridge.js, offline) render the trip that was heard.
+- Every step plays through `seqPlayAt` (app.js), from the scheduler and from
+  the film's render: the note, held 2 steps when tied, and a second note half a
+  step later when doubled. `playNote` takes how long to hold.
+- Steps the trip has moved are underlined; their title says where to.
+  **Re-roll** is a new seed; **Keep this** writes where the trip has got to into
+  the steps (and the family's scale, if it moved there) and turns the Journey
+  off. Presets keep it all, the seed included; morphs and the recorder take its
+  knobs and switches.
+
+## The scopes
+
+*14 Nov 2026.* RJ: "I want to see each individual oscillator's waveform and then
+the combined waveform for the output." `ui/sequencer/scopes.js` (ours): an
+AnalyserNode each for Classic (its voice, after the envelope), Atmosphere's A
+and B (each before the blend meets the envelope) and the output (`masterGain`,
+both synths after the filter, delay and Space). Notes reach them through an
+extra connection out of their nodes (`scopeTap`), never into them, so no
+finished note is kept alive; the scopes run into a silent gain so the context
+keeps pulling them. Each frame draws three periods of the note last played from
+a rising zero crossing, scaled to fill its well. Silent, a scope keeps what it
+last showed, dimmed ("last heard"); before anything has played, Classic's and
+the simple kinds' show the shape they are set to ("as set").

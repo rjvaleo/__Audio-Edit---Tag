@@ -542,6 +542,10 @@ let audioCtx = null;
 let masterGain = null;
 let isPlaying = false;
 let currentStep = 0;
+// Which step boundary the scheduler lays next, counted from Play (or, in the
+// app, from the engine's zero: bridge.js sets it with the step). The Journey
+// (journey.js) reads where it is from this, so it is the same on every play.
+let seqStepCount = 0;
 let schedulerTimer = null;
 let nextNoteTime = 0;
 let bpm = 120;
@@ -685,8 +689,11 @@ let captureChunks = [];
 let captureTimerInterval = null;
 let captureStartTime = 0;
 
-// Step data: array of { degree: number, rest: boolean }
-let steps = Array.from({ length: 16 }, (_, i) => ({
+// Step data: array of { degree: number, rest: boolean }. 64 of them, four rows
+// of 16 (14 Nov 2026); the Steps knob says how many play. A preset saved with
+// 16 fills the first row and leaves the rest as they are.
+const SEQ_MAX_STEPS = 64;
+let steps = Array.from({ length: SEQ_MAX_STEPS }, (_, i) => ({
   degree: i % 7,
   rest: false,
 }));
@@ -868,24 +875,27 @@ function initAudio() {
 
   // The second synth's graph (atmos.js), on the same context.
   if (typeof atmosInit === "function") atmosInit();
+  // The scopes (scopes.js), on the same context.
+  if (typeof scopesInit === "function") scopesInit();
 }
 
-function playNote(freq, time) {
+function playNote(freq, time, hold = 1) {
   if (!audioCtx) return;
+  if (typeof scopeNote === "function") scopeNote(freq);
   // The two synths, Classic (here) and Atmosphere (atmos.js), each on or off;
   // with both on, both play the note. They share the filter and its envelope,
   // which runs for the longer of the two notes.
   let envDur = 0;
   if (typeof atmosOn !== "undefined" && atmosOn) {
-    envDur = atmosNoteDur((60 / bpm) * stepBeats);
+    envDur = atmosNoteDur((60 / bpm) * stepBeats * hold);
     atmosPlay(freq, time, envDur);
   }
-  if (typeof classicOn === "undefined" || classicOn) envDur = Math.max(envDur, playClassic(freq, time));
+  if (typeof classicOn === "undefined" || classicOn) envDur = Math.max(envDur, playClassic(freq, time, hold));
   noteFilterEnv(freq, time, envDur);
 }
 
 /// One note of the first synth, Classic; returns how long it is held.
-function playClassic(freq, time) {
+function playClassic(freq, time, hold = 1) {
   const osc = audioCtx.createOscillator();
   const env = audioCtx.createGain();
   if (waveType === "pulse") {
@@ -896,12 +906,13 @@ function playClassic(freq, time) {
   osc.frequency.value = freq;
   osc.connect(env);
   env.connect(filterNode);
+  if (typeof scopeTap === "function") scopeTap("classic", env);
   const a = adsr.a / 1000;
   const d = adsr.d / 1000;
   const s = adsr.s;
   const r = adsr.r / 1000;
   const stepDur = (60 / bpm) * stepBeats;
-  const noteDur = stepDur * 0.85;
+  const noteDur = stepDur * 0.85 * hold;
   env.gain.setValueAtTime(0, time);
   env.gain.linearRampToValueAtTime(1, time + a);
   env.gain.linearRampToValueAtTime(s, time + a + d);
@@ -1052,14 +1063,15 @@ function scheduler() {
     if (waveType === "pulse") {
       currentPW = Math.max(0.05, Math.min(0.95, pulseWidth + pwMod));
     }
-    if (!step.rest) {
-      const freq = getFreqForDegree(step.degree);
-      playNote(freq, nextNoteTime);
+    // The step as it sounds: as written, or as the Journey has moved it.
+    const played = typeof journeyStep === "function" ? journeyStep(seqStepCount, currentStep) : step;
+    if (!played.rest) {
+      const freq = seqPlayAt(played, nextNoteTime, stepDur);
       // Update UI
       const si = currentStep;
       const f = freq;
       const scale = SCALES[selectedScaleIdx];
-      const deg = step.degree % scale.cents.length;
+      const deg = played.degree % scale.cents.length;
       setTimeout(
         () => {
           updatePlayingUI(si, f, deg);
@@ -1068,9 +1080,20 @@ function scheduler() {
       );
     }
     nextNoteTime += stepDur;
+    seqStepCount++;
     getNextStep();
   }
   schedulerTimer = setTimeout(scheduler, 25);
+}
+
+/// Play one step at `time`: its note, held for its length, and a second one
+/// half a step later when the Journey has doubled it. Returns its frequency.
+/// The scheduler and the film's render (bridge.js) both play through here.
+function seqPlayAt(played, time, stepDur) {
+  const freq = played.freq || getFreqForDegree(played.degree);
+  playNote(freq, time, played.hold || 1);
+  if (played.double) playNote(freq, time + stepDur / 2, 0.5);
+  return freq;
 }
 
 function updatePlayingUI(stepIdx, freq, deg) {
@@ -1103,7 +1126,8 @@ function updatePlayingUI(stepIdx, freq, deg) {
   document.getElementById("statusStep").textContent = stepIdx + 1;
   const bar = Math.floor(stepIdx / 4) + 1;
   const beat = (stepIdx % 4) + 1;
-  document.getElementById("posDisplay").textContent = `0${bar} · 0${beat}`;
+  document.getElementById("posDisplay").textContent = `${String(bar).padStart(2, "0")} · 0${beat}`;
+  if (typeof journeyOnStep === "function") journeyOnStep();
 }
 
 function togglePlay() {
@@ -1118,6 +1142,7 @@ function togglePlay() {
   } else {
     isPlaying = true;
     currentStep = 0;
+    seqStepCount = 0;
     nextNoteTime = audioCtx.currentTime + 0.05;
     scheduler();
     document.getElementById("playBtn").textContent = "⏸ PAUSE";
@@ -1904,30 +1929,40 @@ function renderKeyboard() {
   });
 }
 
+// The step that is picked: its buttons show under it, and the arrow keys edit it.
+let pickedStep = -1;
+
 function renderStepGrid() {
   const grid = document.getElementById("stepGrid");
   grid.innerHTML = "";
   const scale = SCALES[selectedScaleIdx];
-  const maxDeg = scale.cents.length * 3; // 3 octaves of range
+  // Which steps the Journey has moved, as it stands now (journey.js).
+  const moved = typeof journeyMoved === "function" ? journeyMoved() : null;
 
-  for (let i = 0; i < 16; i++) {
-    const step = steps[i];
-    const freq = getFreqForDegree(step.degree);
-    const degName = `D${(step.degree % scale.cents.length) + 1}`;
-    const oct = Math.floor(step.degree / scale.cents.length) + 1;
-
-    const el = document.createElement("div");
-    el.className = `step${i < numSteps ? " active-step" : ""}${step.rest ? "" : ""}`;
-    el.id = `step-${i}`;
-    el.innerHTML = `
-<div class="step-num">${String(i + 1).padStart(2, "0")}</div>
+  for (let row = 0; row < steps.length / 16; row++) {
+    const lab = document.createElement("div");
+    lab.className = "step-row-label";
+    lab.textContent = `${row * 16 + 1}–${row * 16 + 16}`;
+    grid.appendChild(lab);
+    for (let c = 0; c < 16; c++) {
+      const i = row * 16 + c;
+      const step = steps[i];
+      const freq = getFreqForDegree(step.degree);
+      const degName = `D${(step.degree % scale.cents.length) + 1}`;
+      const oct = Math.floor(step.degree / scale.cents.length) + 1;
+      const el = document.createElement("div");
+      el.className = `step${i < numSteps ? " active-step" : ""}${i === pickedStep ? " picked" : ""}${step.rest ? " is-rest" : ""}${moved && moved[i] ? " jmoved" : ""}`;
+      el.id = `step-${i}`;
+      if (moved && moved[i]) el.title = `The journey has it at ${moved[i]}`;
+      el.innerHTML = `
 ${
   step.rest
-    ? '<div class="step-rest">REST</div>'
+    ? '<div class="step-rest">— REST</div>'
     : `<div class="step-note">${degName}</div>
    <div class="step-oct">OCT${oct}</div>
    <div class="step-hz">${freq.toFixed(1)}Hz</div>`
 }
+<div class="step-num">${String(i + 1).padStart(2, "0")}</div>
 <div class="step-btns">
   <div class="step-btn-row">
     <div class="step-mini-btn" onclick="stepDegChange(${i}, -1)">◀</div>
@@ -1943,8 +1978,62 @@ ${
   </div>
 </div>
     `;
-    grid.appendChild(el);
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".step-btns")) return;
+        pickStep(i === pickedStep ? -1 : i);
+      });
+      grid.appendChild(el);
+    }
   }
+}
+
+/// Pick a step (or none, with -1): its buttons open under it.
+function pickStep(i) {
+  pickedStep = i;
+  document.querySelectorAll(".step.picked").forEach((el) => el.classList.remove("picked"));
+  const el = document.getElementById(`step-${i}`);
+  if (el) el.classList.add("picked");
+}
+
+// The arrow keys edit the picked step: ◀ ▶ its degree, ▼ ▲ its octave; R rests
+// it, Enter plays it, Escape lets it go. Through the window's names, so the
+// Performance recorder, which wraps them, hears the edit.
+document.addEventListener("keydown", (e) => {
+  if (pickedStep < 0 || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== "range") return;
+  const i = pickedStep;
+  const act = {
+    ArrowLeft: () => window.stepDegChange(i, -1),
+    ArrowRight: () => window.stepDegChange(i, 1),
+    ArrowDown: () => window.stepOctChange(i, -1),
+    ArrowUp: () => window.stepOctChange(i, 1),
+    r: () => window.toggleRest(i),
+    R: () => window.toggleRest(i),
+    Enter: () => previewStep(i),
+    Escape: () => pickStep(-1),
+  }[e.key];
+  if (!act) return;
+  e.preventDefault();
+  act();
+  pickStep(i === pickedStep ? pickedStep : i);
+});
+
+/// The first row, copied to the other three: a 16-step idea fills all 64.
+function stepsCopyFirstRow() {
+  for (let i = 16; i < steps.length; i++) {
+    steps[i].degree = steps[i % 16].degree;
+    steps[i].rest = steps[i % 16].rest;
+  }
+  renderStepGrid();
+}
+
+/// Every step back to the root, playing.
+function stepsClear() {
+  for (const s of steps) {
+    s.degree = 0;
+    s.rest = false;
+  }
+  renderStepGrid();
 }
 
 function stepDegChange(i, delta) {
@@ -2272,6 +2361,7 @@ function getPresetState() {
     "reverbShimmerSlider",
     "reverbSpreadSlider",
     ...(typeof ATMOS_SLIDER_IDS !== "undefined" ? ATMOS_SLIDER_IDS : []),
+    ...(typeof JOURNEY_SLIDER_IDS !== "undefined" ? JOURNEY_SLIDER_IDS : []),
   ];
   const selectIds = [
     "dirSelect",
@@ -2288,6 +2378,7 @@ function getPresetState() {
     "delayTimeSelect",
     "tapeSpeedSelect",
     ...(typeof ATMOS_SELECT_IDS !== "undefined" ? ATMOS_SELECT_IDS : []),
+    ...(typeof JOURNEY_SELECT_IDS !== "undefined" ? JOURNEY_SELECT_IDS : []),
   ];
   const state = {
     sliders: {},
@@ -2544,6 +2635,7 @@ function morphToPreset(id) {
     "reverbShimmerSlider",
     "reverbSpreadSlider",
     ...(typeof ATMOS_SLIDER_IDS !== "undefined" ? ATMOS_SLIDER_IDS : []),
+    ...(typeof JOURNEY_MORPH_IDS !== "undefined" ? JOURNEY_MORPH_IDS : []),
   ];
 
   // Snapshot start values

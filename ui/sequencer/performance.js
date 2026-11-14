@@ -36,6 +36,8 @@ const PERF_SLIDERS = [
   // The reverb's controls and the second synth's (atmos.js, loaded first).
   ...ATMOS_REVERB_IDS,
   ...ATMOS_SLIDER_IDS,
+  // The Journey's (journey.js, loaded first).
+  ...JOURNEY_MORPH_IDS,
 ];
 const PERF_SELECTS = [
   "dirSelect",
@@ -52,6 +54,7 @@ const PERF_SELECTS = [
   "delayTimeSelect",
   "tapeSpeedSelect",
   ...ATMOS_SELECT_IDS,
+  ...JOURNEY_SELECT_IDS,
 ];
 const PERF_SLIDER_SET = new Set(PERF_SLIDERS);
 const PERF_SELECT_SET = new Set(PERF_SELECTS);

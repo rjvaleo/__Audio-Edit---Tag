@@ -30,7 +30,7 @@
         <button class="btn big stop-btn" onclick="stopSeq()">■ STOP</button>
         <div class="divider"></div>
         <div class="knob-group"><span class="knob-label">BPM</span><div class="knob" onmousedown="knobDown(event, 'bpmSlider')" ontouchstart="knobTouchStart(event,'bpmSlider')"></div><input type="range" class="knob-hidden" id="bpmSlider" min="40" max="240" value="120" oninput="updateBPM(this.value)" /><span class="knob-val" id="bpmVal">120</span></div>
-        <div class="knob-group"><span class="knob-label">Steps</span><div class="knob" onmousedown="knobDown(event, 'stepsSlider')" ontouchstart="knobTouchStart(event,'stepsSlider')"></div><input type="range" class="knob-hidden" id="stepsSlider" min="1" max="16" value="8" oninput="updateSteps(this.value)" /><span class="knob-val" id="stepsVal">8</span></div>
+        <div class="knob-group"><span class="knob-label">Steps</span><div class="knob" onmousedown="knobDown(event, 'stepsSlider')" ontouchstart="knobTouchStart(event,'stepsSlider')"></div><input type="range" class="knob-hidden" id="stepsSlider" min="1" max="64" value="8" oninput="updateSteps(this.value)" /><span class="knob-val" id="stepsVal">8</span></div>
         <div class="pos-display" id="posDisplay">01 · 01</div>
         <div class="divider"></div>
         <div class="field">
@@ -109,6 +109,7 @@
                       <option value="pulse">Pulse / PWM</option>
                     </select>
                   </div>
+                  <div class="well scope scope-osc"><canvas id="scopeClassic" width="170" height="58"></canvas></div>
                   <div class="knob-group" id="pwGroup" style="opacity: 0.35"><span class="knob-label">PW</span><div class="knob" onmousedown="knobDown(event, 'pwSlider')" ontouchstart="knobTouchStart(event,'pwSlider')"></div><input type="range" class="knob-hidden" min="5" max="95" value="50" id="pwSlider" oninput="updatePW(this.value)" /><span class="knob-val" id="pwVal">50%</span></div>
                 </div>
               </div>
@@ -230,9 +231,18 @@
             </div>
           </section>
 
+          <!-- OUTPUT: the two synths together, as they leave the page (scopes.js) -->
+          <section class="panel scope-out">
+            <div class="ph"><b class="nm">OUTPUT</b><span class="meta">both synths, after the filter, delay and space</span></div>
+            <div class="well scope"><canvas id="scopeOut" width="900" height="70"></canvas></div>
+          </section>
+
+          <!-- THE JOURNEY (journey.js fills it) -->
+          <section class="panel journey" id="journeyHost"></section>
+
           <!-- STEPS -->
           <section class="panel seq-panel">
-            <div class="ph"><b class="nm">STEPS</b><span class="meta">a scale degree and an octave each · ◀ ▶ degree · ▼ ▲ octave · RST rest · ▶ hear it</span></div>
+            <div class="ph"><b class="nm">STEPS</b><span class="meta">up to 64, four rows of 16 · click a step for ◀ ▶ degree · ▼ ▲ octave · RST · ▶ (or the arrow keys, R, Enter) · underlined: moved by the journey</span><span class="grow"></span><button type="button" class="btn" onclick="stepsCopyFirstRow()" title="Steps 1–16 copied to 17–64">Copy row 1 to all</button><button type="button" class="btn" onclick="stepsClear()" title="Every step back to the root">Clear</button></div>
             <div class="step-grid" id="stepGrid"></div>
           </section>
 
@@ -295,6 +305,9 @@
     <script src="app.js"></script>
     <!-- Ours, not the sequencer repository's: the second synth, Atmosphere. -->
     <script src="atmos.js"></script>
+    <!-- Ours: the Journey, and the oscillators' and the output's scopes. -->
+    <script src="journey.js"></script>
+    <script src="scopes.js"></script>
     <script src="performance.js"></script>
     <!-- Not part of the sequencer: the bridge to the granular engine it is
          embedded in. Does nothing when the page is opened on its own. -->

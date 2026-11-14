@@ -54,7 +54,7 @@ function lookFromHost() {
     }
   }
   // Redraw what is drawn once.
-  for (const f of ["drawADSRCanvas", "drawFilterADSRCanvas", "atmosDrawAmp"]) if (typeof window[f] === "function") window[f]();
+  for (const f of ["drawADSRCanvas", "drawFilterADSRCanvas", "atmosDrawAmp", "journeyDraw"]) if (typeof window[f] === "function") window[f]();
 }
 
 function lookWatchHost() {
@@ -92,6 +92,7 @@ const LOOK_KNOB = {
   fatkSlider: ["rise", "tone"], fdecSlider: ["fall", "tone"], fsusSlider: ["sus", "tone"], frelSlider: ["fall", "tone"], famtSlider: ["tilt", "tone"],
   lfo1RateSlider: ["hz", "attack"], lfo1DepthSlider: ["wave", "attack"], lfo2RateSlider: ["hz", "tone"], lfo2DepthSlider: ["wave", "tone"],
   lfo3RateSlider: ["hz", "space"], lfo3DepthSlider: ["wave", "space"],
+  jWanderSlider: ["drift", "time"], jEachSlider: ["steps", "time"],
   delayFbSlider: ["delay", "space"], delayWetSlider: ["mix", "space"], delaySpreadSlider: ["spread", "space"], delayHiCutSlider: ["cut", "tone"],
   atA1Slider: ["wave", "pitch"], atA2Slider: ["wave", "pitch"], atA3Slider: ["wave", "pitch"], atAOctSlider: ["oct", "pitch"],
   atB1Slider: ["wave", "tone"], atB2Slider: ["wave", "tone"], atB3Slider: ["wave", "tone"], atBOctSlider: ["oct", "tone"],

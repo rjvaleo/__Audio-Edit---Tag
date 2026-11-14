@@ -37,7 +37,7 @@ pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, WAVE_CSS, GRAIN_CSS, EDIT_CSS, SOUND_MAP_JS, SOUND_MAP_CSS, CHOP_JS, CHOP_CSS,
                  SETTINGS_JS, SECTION_PRESETS_JS,
-                 SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS, SEQ_ATMOS_JS, SEQ_LOOK_JS,
+                 SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS, SEQ_ATMOS_JS, SEQ_LOOK_JS, SEQ_JOURNEY_JS, SEQ_SCOPES_JS,
                  PERF_PANEL_JS, PRISM_PAD_JS, COMPOSE_JS, VISUAL_LANES_JS,
                  SHAPES_4D_JS, PANEL_4D_JS, CONTROL_PICTURES_JS,
                  STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
@@ -114,6 +114,10 @@ pub const SEQ_BRIDGE_JS: &str = include_str!("../../../../../ui/sequencer/bridge
 pub const SEQ_ATMOS_JS: &str = include_str!("../../../../../ui/sequencer/atmos.js");
 /// Ours: the sequencer in the app's look, its knobs' pictures and the theme (14 Nov 2026).
 pub const SEQ_LOOK_JS: &str = include_str!("../../../../../ui/sequencer/look.js");
+/// Ours: the Journey, the pattern's trip (14 Nov 2026).
+pub const SEQ_JOURNEY_JS: &str = include_str!("../../../../../ui/sequencer/journey.js");
+/// Ours: the oscillators' and the output's scopes (14 Nov 2026).
+pub const SEQ_SCOPES_JS: &str = include_str!("../../../../../ui/sequencer/scopes.js");
 /// The sequencer's performance panel, carried over to the grain page's
 /// Automation tab. See `docs/AUTOMATION-CAPTURE.md`.
 pub const PERF_PANEL_JS: &str = include_str!("../../../../../ui/perf-panel.js");
