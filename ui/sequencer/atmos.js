@@ -138,7 +138,7 @@ function atmosBuildUI() {
     + `<div class="at-seg" id="atModeSeg"><button type="button" data-v="classic">CLASSIC</button><button type="button" data-v="atmos">ATMOSPHERE</button></div>`
     + `<select id="atModeSelect" class="at-hidden" onchange="atmosRead()"><option value="classic">classic</option><option value="atmos">atmosphere</option></select>`
     + `<span class="at-note" id="atModeNote"></span><span class="at-grow"></span>`
-    + `<span class="knob-label at-only">START FROM</span><div class="at-starts at-only">${AT_STARTS.map(([k, n]) => `<button type="button" data-start="${k}">${n}</button>`).join("")}</div>`;
+    + `<span class="knob-label">START FROM</span><div class="at-starts">${AT_STARTS.map(([k, n]) => `<button type="button" data-start="${k}">${n}</button>`).join("")}</div>`;
   voiceRow.before(sw);
   // The oscillators and the big knob.
   const osc = document.createElement("div");
