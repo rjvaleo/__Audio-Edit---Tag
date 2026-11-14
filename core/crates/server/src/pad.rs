@@ -93,6 +93,13 @@ fn control(key: &str, label: &str, min: f32, max: f32, log: bool, unit: &str) ->
     }
 }
 
+/// An `f32` as the number it was written as: `0.01_f32 as f64` is
+/// 0.009999999776…, which the page would show and compare as that. The
+/// shortest decimal that reads back as the same `f32` is the one meant.
+fn as_written(v: f32) -> f64 {
+    v.to_string().parse().unwrap_or(v as f64)
+}
+
 fn setup(x: &PadControl, x_range: (f32, f32), y: &PadControl, y_range: (f32, f32)) -> PadSetup {
     PadSetup { x: x.key.clone(), x_lo: x_range.0, x_hi: x_range.1, y: y.key.clone(), y_lo: y_range.0, y_hi: y_range.1 }
 }
@@ -217,8 +224,8 @@ impl PadSource {
                 let mut v = Value::obj()
                     .set("key", c.key.as_str())
                     .set("label", c.label.as_str())
-                    .set("min", c.min as f64)
-                    .set("max", c.max as f64)
+                    .set("min", as_written(c.min))
+                    .set("max", as_written(c.max))
                     .set("log", c.log)
                     .set("unit", c.unit.as_str());
                 if c.stepped {
@@ -272,11 +279,11 @@ impl PadSetup {
     pub fn to_json(&self) -> Value {
         Value::obj()
             .set("x", self.x.as_str())
-            .set("xLo", self.x_lo as f64)
-            .set("xHi", self.x_hi as f64)
+            .set("xLo", as_written(self.x_lo))
+            .set("xHi", as_written(self.x_hi))
             .set("y", self.y.as_str())
-            .set("yLo", self.y_lo as f64)
-            .set("yHi", self.y_hi as f64)
+            .set("yLo", as_written(self.y_lo))
+            .set("yHi", as_written(self.y_hi))
     }
 }
 

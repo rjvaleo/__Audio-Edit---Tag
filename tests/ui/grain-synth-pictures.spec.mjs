@@ -97,8 +97,12 @@ test('each engine shows its own pictures, in what the controls leave', async ({ 
     expect(got.inside, `${e}'s close-up leaves the panel`).toBe(true);
     expect(got.below, `${e}'s close-up sits on its controls`).toBe(true);
     // With the overview across the top and no trace on the panel (13 Nov
-    // 2026), WSOLA and the Vocoder have room for the row as well.
-    expect(got.row, `${e} at-the-head row`).toBe(['wsola', 'vocoder', 'granular'].includes(e));
+    // 2026), WSOLA and the Vocoder had room for the row as well. Since 14 Nov
+    // 2026 SOURCE is a full-width row under the tabs and the engine panel sits
+    // beside the shared controls under it: the row needs 219 px over the
+    // engine's controls (`gsSizeEngine`), and only Granular, which has no
+    // sections, keeps that much.
+    expect(got.row, `${e} at-the-head row`).toBe(e === 'granular');
     expect(got.h).toBeGreaterThanOrEqual(e === 'hybrid' ? 38 : 120);
     expect(got.label).toMatch({ wsola: /SPLICE/, vocoder: /FRAME/, pvsola: /re-anchored/, hybrid: /SEPARATION/, granular: /GRAIN SCHEDULE/ }[e]);
     expect(await ink(page, 'gsLens'), `${e}'s close-up is blank`).toBeGreaterThan(0.01);
@@ -363,7 +367,13 @@ test('with the switch off, none of it runs', async ({ page }) => {
   await page.waitForTimeout(400);
   const got = await page.evaluate(() => ({ showing: GS.showing, wanted: gsPollWanted(), pcm: GS_PIC.pcm, want: GS_PIC.want, drawn: GS_PIC.drawn }));
   expect(got).toEqual({ showing: false, wanted: false, pcm: null, want: '', drawn: { head: 0, map: 0, lens: 0 } });
-  expect(asked.filter((u) => u.includes('dry=1'))).toEqual([]);
+  // Grain's own read never ran (`want` is empty and nothing was decoded). Since
+  // 14 Nov 2026 the overview every page shares (416) is in the sound's colours
+  // on every page, so it reads the open sound's samples for them (`poColours`,
+  // into `edSound`): those reads, and only those, are expected here.
+  const path = await page.evaluate(() => state.selectedFile.path);
+  expect(asked.filter((u) => u.includes('dry=1') && !u.includes(`p=${encodeURIComponent(path)}&`))).toEqual([]);
+  await page.waitForFunction((p) => edSound.path === p && !!edSound.mono, path, { timeout: 10_000 });
 });
 
 test('the whole file runs across the top, above the page, in the sound\'s colours', async ({ page }) => {
@@ -376,9 +386,13 @@ test('the whole file runs across the top, above the page, in the sound\'s colour
   const got = await page.evaluate(() => {
     const ov = poCanvas.getBoundingClientRect(), view = document.getElementById('grainView').getBoundingClientRect();
     const src = gsPSrc.getBoundingClientRect(), tabs = gsEngTabs.getBoundingClientRect();
+    // SOURCE runs the width of the Grain page, which is scaled whole to fit
+    // (`gsFit`): at 1440 x 900, with the shared strip above it and the page
+    // 990 tall, the fit is by height and the page is narrower than the view.
+    const app = document.querySelector('#grainView .gs-app').getBoundingClientRect();
     return {
       inGrain: !!poCanvas.closest('#grainView'), old: !!document.getElementById('gsSrcPic'), trace: !!document.getElementById('gsTrace'),
-      above: ov.bottom <= view.top + 1, wide: ov.width / view.width, srcUnderTabs: src.top >= tabs.bottom, srcWide: src.width / view.width,
+      above: ov.bottom <= view.top + 1, wide: ov.width / view.width, srcUnderTabs: src.top >= tabs.bottom, srcWide: src.width / app.width,
     };
   });
   expect(got).toMatchObject({ inGrain: false, old: false, trace: false, above: true, srcUnderTabs: true });

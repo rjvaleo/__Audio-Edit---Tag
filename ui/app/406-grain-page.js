@@ -39,7 +39,10 @@ function gsBuild() {
    </div>
    <!-- The whole file, with the loop and Start, is the overview above every
         page (416). SOURCE, the loop only, runs the full width under the engine
-        tabs, and the controls sit side by side under it (RJ, 14 Nov 2026). -->
+        tabs, and the controls sit side by side under it (RJ, 14 Nov 2026).
+        Its detail is 96 high, not 128, so the engine panel under it keeps room
+        for every engine's close-up: at 128 Hybrid had none and PVSOLA's was
+        under 120 px (gsSizeEngine). -->
    <section class="gs-view">
     <div class="gs-mod gs-panel" id="gsPSrc">
      <div class="gs-mh"><span class="gs-nm">SOURCE</span>
@@ -49,7 +52,7 @@ function gsBuild() {
       <span class="gs-sp"></span>
       <div class="gs-zb"><span class="gs-ib" id="gsFollow" title="Follow the playhead: keep it on screen while the detail is zoomed in">⇥</span><select class="gs-midi" id="gsFollowMode" title="How the view keeps up with the playhead"><option value="scroll">scroll</option><option value="page">page</option></select><span class="gs-ro" id="gsCzRo"></span><span class="gs-ib" id="gsCzOut" title="Zoom out">−</span><span class="gs-ib" id="gsCzIn" title="Zoom in round the head (or scroll on the detail)">+</span><span class="gs-ib zt" id="gsCzFit" title="The whole loop (or double-click the detail)">Fit</span></div>
      </div>
-     <div class="gs-well"><canvas id="gsCloud" data-w="1338" data-h="128" title="Only what is between the brackets. Inside the box moves the read head; beside it, across is Position jitter and up and down is Pitch jitter. Scroll to zoom, double-click for the whole loop"></canvas><span class="gs-ro gs-cloudro" id="gsCloudRo"></span></div>
+     <div class="gs-well"><canvas id="gsCloud" data-w="1338" data-h="96" title="Only what is between the brackets. Inside the box moves the read head; beside it, across is Position jitter and up and down is Pitch jitter. Scroll to zoom, double-click for the whole loop"></canvas><span class="gs-ro gs-cloudro" id="gsCloudRo"></span></div>
     </div>
     <div class="gs-lower">
      <div class="gs-mod gs-panel" id="gsShared"><div class="gs-g3"><div class="gs-gcol" id="gsSh1"></div><div class="gs-gcol" id="gsSh2"></div><div class="gs-gcol" id="gsSh3"></div></div></div>

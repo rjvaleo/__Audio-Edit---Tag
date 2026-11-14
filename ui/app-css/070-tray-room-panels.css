@@ -254,7 +254,9 @@
 /* The viewport takes whatever height the controls leave, so the column ends
    with the tab rather than with blank space under it. */
 .rv-admin #room4dBody:not(.hidden) { display: flex; flex-direction: column; }
-#room4dBody .p4-view { flex: 1 1 auto; height: auto; min-height: 186px; margin-bottom: 0; }
+/* 150, not 186, since the overview every page shares sits above the room
+   (14 Nov 2026): at 1000 px it takes 88 of them, and the tab must still fit. */
+#room4dBody .p4-view { flex: 1 1 auto; height: auto; min-height: 150px; margin-bottom: 0; }
 #room4dBody #p4Panel { flex: none; }
 #room4dBody .re-tag { margin: 7px 0 3px; }
 #room4dBody .p4-objects { max-height: none; overflow: visible; }

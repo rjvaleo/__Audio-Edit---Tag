@@ -181,7 +181,9 @@ test('a new limit rescales the take so every point keeps its value', async ({ pa
   await page.locator('#prismXLo').press('Enter');
   await page.locator('#prismYHi').fill('24');
   await page.locator('#prismYHi').press('Enter');
-  expect(await page.evaluate(() => window.hyperStretch.limits())).toEqual({ xLo: 8, xHi: 0.25, yLo: -12, yHi: 24 });
+  // The two not typed keep the default window, the knobs' whole range since
+  // 14 Nov 2026 (it was 4× to ¼× and ±12): 0.01× and −48 st.
+  expect(await page.evaluate(() => window.hyperStretch.limits())).toEqual({ xLo: 8, xHi: 0.01, yLo: -48, yHi: 24 });
   const after = await page.evaluate(() => window.hyperStretch.values(0));
   after.forEach((v, i) => {
     expect(v.ratio).toBeCloseTo(before[i].ratio, 4);
