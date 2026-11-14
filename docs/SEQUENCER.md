@@ -353,9 +353,15 @@ on, and its filter envelope became `noteFilterEnv`, shared by both synths;
 not know; the preset, morph and Performance lists take its controls. Taking a
 newer sequencer now means carrying those over too.
 
-**The switch.** SYNTH: CLASSIC | ATMOSPHERE, above the synth. Classic is the
-synth as it was; it is the default, and nothing of Atmosphere runs while it is
-chosen. Root, octave, the filter, the LFOs, the delay and the steps are shared.
+**Two synths, both at once** (14 Nov, RJ: "make the atmosphere a second synth
+so that I could run them both at the same time"). Each has a power button on its
+panel, CLASSIC and ATMOSPHERE; with both on, every note plays both, and the one
+left on cannot be turned off. One hidden select, `atModeSelect` (`classic`,
+`atmos`, `both`), carries it, so presets, morphs and the recorder keep it. Classic
+alone is the default, and nothing of Atmosphere runs then; Atmosphere's panels
+fold away while it is off. A starting sound turns Atmosphere on and leaves Classic
+as it was. Root, octave, the filter, the LFOs, the delay, Space and the steps are
+shared; the filter's envelope runs for the longer of the two notes.
 
 **True pitch.** Every frequency is the one `getFreqForDegree` gives `playNote`,
 from the scale's cents, times a ratio the voice chooses; nothing is rounded to
@@ -416,3 +422,24 @@ would keep every finished note alive.
 The make-up gain of each kind (`AT_LEVEL`) was set from offline renders, so
 switching kinds keeps the level within 6 dB of Classic; the test holds it there.
 Tests: `tests/ui/sequencer-atmos.spec.mjs`.
+
+## The page in the app's look
+
+*14 Nov 2026.* The approved mock-ups `seq.html` (the page) and `seq-voice.html`
+(Atmosphere), in `WORK DIR/page-mockups`. Everything is where it was and works as
+it did; the materials are the app's: panels, wells, the knob with its picture,
+the segmented switches, Inter and JetBrains Mono. Violet is pitch (the degrees,
+Hz, the lit keys), orange is on or playing, each knob has its family's colour.
+
+- `index.html` was rebuilt into panels around the same controls, ids and
+  handlers. Root and octave moved into the tuning panel, since both synths use
+  them; the tuning panel gained a ruler of where the degrees fall against 12-TET.
+- `style.css` is new: the app's tokens, with the sequencer's old names
+  (`--accent` …) pointed at them for the few colours its scripts write inline.
+- `look.js` (ours, `/sequencer/look.js`) copies the app's theme onto the page,
+  from the parent, and again when the theme changes; draws each knob's picture;
+  turns `select[data-seg]` into segmented switches.
+- Canvases take their colours from `SEQ_INK` / `seqInk()` (app.js), which
+  `look.js` fills from the theme; `performance.js` draws with them too.
+- A knob's arc is drawn by the stylesheet from `--kt` (0–1), which
+  `updateKnobVisual` sets; `--rot` still turns its pointer.

@@ -183,6 +183,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/javascript; charset=utf-8", SEQ_ATMOS_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/sequencer/look.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_LOOK_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/sequencer/style.css") => {
             Response::ok("text/css; charset=utf-8", SEQ_CSS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")

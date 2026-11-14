@@ -571,7 +571,20 @@ let pulseWidth = 0.5; // base duty cycle for pulse wave
 let currentPW = 0.5; // LFO-modulated pulse width
 
 // ─── LFO STATE (4 modular LFOs) ──────────────────────────────────────────────
-const LFO_COLORS = ["#ff6b35", "#00e5ff", "#a0ff60"];
+// The page's colours. `look.js` fills these from the app's theme (and keeps
+// them current when the theme changes); these are Graphite's, for the page on
+// its own. Canvases read them through `seqInk`.
+const SEQ_INK = { well: "#06070a", line: "#2c3036", text: "#e8eaee", dim: "#858b94", attack: "#d88f7e", tone: "#79bfc3", space: "#8ec293", pitch: "#a99be0", time: "#cfa66c", on: "#ffb547" };
+function seqInk(name, alpha) {
+  const c = SEQ_INK[name] || SEQ_INK.text;
+  if (alpha === undefined) return c;
+  const m = /^#([0-9a-f]{6})$/i.exec(c);
+  if (!m) return c;
+  const n = parseInt(m[1], 16);
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+// Each LFO in its own colour, as the panels show them.
+const LFO_INKS = ["attack", "tone", "space"];
 const lfos = [
   {
     rate: 1.0,
@@ -859,14 +872,20 @@ function initAudio() {
 
 function playNote(freq, time) {
   if (!audioCtx) return;
-  // The second synth (atmos.js): its own voice, held for Hold × the step, through
-  // the same filter and its envelope.
+  // The two synths, Classic (here) and Atmosphere (atmos.js), each on or off;
+  // with both on, both play the note. They share the filter and its envelope,
+  // which runs for the longer of the two notes.
+  let envDur = 0;
   if (typeof atmosOn !== "undefined" && atmosOn) {
-    const noteDur = atmosNoteDur((60 / bpm) * stepBeats);
-    atmosPlay(freq, time, noteDur);
-    noteFilterEnv(freq, time, noteDur);
-    return;
+    envDur = atmosNoteDur((60 / bpm) * stepBeats);
+    atmosPlay(freq, time, envDur);
   }
+  if (typeof classicOn === "undefined" || classicOn) envDur = Math.max(envDur, playClassic(freq, time));
+  noteFilterEnv(freq, time, envDur);
+}
+
+/// One note of the first synth, Classic; returns how long it is held.
+function playClassic(freq, time) {
   const osc = audioCtx.createOscillator();
   const env = audioCtx.createGain();
   if (waveType === "pulse") {
@@ -890,7 +909,7 @@ function playNote(freq, time) {
   env.gain.linearRampToValueAtTime(0, time + noteDur + r);
   osc.start(time);
   osc.stop(time + noteDur + r + 0.05);
-  noteFilterEnv(freq, time, noteDur);
+  return noteDur;
 }
 
 /// The filter's envelope and key follow for one note, for either synth.
@@ -1558,17 +1577,16 @@ function drawPPCanvas() {
   const W = canvas.width,
     H = canvas.height;
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#0a0c0e";
-  ctx.fillRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, H);
   // Divider
-  ctx.strokeStyle = "#1e2830";
+  ctx.strokeStyle = seqInk("line");
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(W / 2, 2);
   ctx.lineTo(W / 2, H - 13);
   ctx.stroke();
   // Labels
-  ctx.fillStyle = "#4a6070";
+  ctx.fillStyle = seqInk("dim");
   ctx.font = "8px monospace";
   ctx.textAlign = "center";
   ctx.fillText("L", W * 0.25, H - 2);
@@ -1581,13 +1599,13 @@ function drawPPCanvas() {
   const lPulse = phase2 < 0.5 ? Math.pow(1 - phase2 * 2, 0.4) : 0;
   ctx.beginPath();
   ctx.arc(W * 0.25, midY, 4 + lPulse * 5, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(0,229,255,${0.12 + lPulse * 0.88})`;
+  ctx.fillStyle = seqInk("space", 0.12 + lPulse * 0.88);
   ctx.fill();
   // glow ring
   if (lPulse > 0.1) {
     ctx.beginPath();
     ctx.arc(W * 0.25, midY, 10 + lPulse * 6, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(0,229,255,${lPulse * 0.25})`;
+    ctx.strokeStyle = seqInk("space", lPulse * 0.25);
     ctx.lineWidth = 2;
     ctx.stroke();
   }
@@ -1595,12 +1613,12 @@ function drawPPCanvas() {
   const rPulse = phase2 >= 0.5 ? Math.pow(1 - (phase2 - 0.5) * 2, 0.4) : 0;
   ctx.beginPath();
   ctx.arc(W * 0.75, midY, 4 + rPulse * 5, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(255,107,53,${0.12 + rPulse * 0.88})`;
+  ctx.fillStyle = seqInk("tone", 0.12 + rPulse * 0.88);
   ctx.fill();
   if (rPulse > 0.1) {
     ctx.beginPath();
     ctx.arc(W * 0.75, midY, 10 + rPulse * 6, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255,107,53,${rPulse * 0.25})`;
+    ctx.strokeStyle = seqInk("tone", rPulse * 0.25);
     ctx.lineWidth = 2;
     ctx.stroke();
   }
@@ -1613,7 +1631,7 @@ function drawPPCanvas() {
     const cx = isR ? W * 0.75 : W * 0.25;
     ctx.beginPath();
     ctx.arc(cx, midY, 2 + ePulse * 3, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(127,255,0,${fbAmp * ePulse})`;
+    ctx.fillStyle = seqInk("dim", fbAmp * ePulse);
     ctx.fill();
     fbAmp *= delayFeedback;
   }
@@ -1630,8 +1648,6 @@ function drawADSRCanvas() {
     H = canvas.height;
   const c = canvas.getContext("2d");
   c.clearRect(0, 0, W, H);
-  c.fillStyle = "#0a0c0e";
-  c.fillRect(0, 0, W, H);
   const a = adsr.a,
     d = adsr.d,
     s = adsr.s,
@@ -1656,7 +1672,7 @@ function drawADSRCanvas() {
   c.lineTo(xS, ySus);
   c.lineTo(xR, yBot);
   c.closePath();
-  c.fillStyle = "rgba(0,229,255,0.07)";
+  c.fillStyle = seqInk("attack", 0.1);
   c.fill();
   // Envelope line
   c.beginPath();
@@ -1665,7 +1681,7 @@ function drawADSRCanvas() {
   c.lineTo(xD, ySus);
   c.lineTo(xS, ySus);
   c.lineTo(xR, yBot);
-  c.strokeStyle = "#00e5ff";
+  c.strokeStyle = seqInk("attack");
   c.lineWidth = 1.5;
   c.stroke();
   // Breakpoint dots
@@ -1676,11 +1692,11 @@ function drawADSRCanvas() {
   ].forEach(([x, y]) => {
     c.beginPath();
     c.arc(x, y, 2, 0, Math.PI * 2);
-    c.fillStyle = "#00e5ff";
+    c.fillStyle = seqInk("attack");
     c.fill();
   });
   // Segment labels
-  c.fillStyle = "#4a6070";
+  c.fillStyle = seqInk("dim");
   c.font = "7px monospace";
   c.textAlign = "center";
   c.fillText("A", (pad + xA) / 2, yBot - 2);
@@ -1699,8 +1715,6 @@ function drawFilterADSRCanvas() {
     H = canvas.height;
   const c = canvas.getContext("2d");
   c.clearRect(0, 0, W, H);
-  c.fillStyle = "#0a0c0e";
-  c.fillRect(0, 0, W, H);
   const a = filterADSR.a,
     d = filterADSR.d,
     s = filterADSR.s,
@@ -1726,7 +1740,7 @@ function drawFilterADSRCanvas() {
   c.lineTo(xS, ySus);
   c.lineTo(xR, yBot);
   c.closePath();
-  c.fillStyle = "rgba(255,107,53,0.07)";
+  c.fillStyle = seqInk("tone", 0.1);
   c.fill();
   c.beginPath();
   c.moveTo(pad, yBot);
@@ -1734,10 +1748,10 @@ function drawFilterADSRCanvas() {
   c.lineTo(xD, ySus);
   c.lineTo(xS, ySus);
   c.lineTo(xR, yBot);
-  c.strokeStyle = "#ff6b35";
+  c.strokeStyle = seqInk("tone");
   c.lineWidth = 1.5;
   c.stroke();
-  c.fillStyle = "#4a6070";
+  c.fillStyle = seqInk("dim");
   c.font = "7px monospace";
   c.textAlign = "center";
   c.fillText("A", (pad + xA) / 2, yBot + 6);
@@ -1755,12 +1769,10 @@ function drawLFOCanvas(i) {
     H = canvas.height;
   const c = canvas.getContext("2d");
   c.clearRect(0, 0, W, H);
-  c.fillStyle = "#0a0c0e";
-  c.fillRect(0, 0, W, H);
   c.beginPath();
   c.moveTo(0, H / 2);
   c.lineTo(W, H / 2);
-  c.strokeStyle = "#1e2830";
+  c.strokeStyle = seqInk("line");
   c.lineWidth = 1;
   c.stroke();
   const shape = lfo.wave;
@@ -1782,7 +1794,7 @@ function drawLFOCanvas(i) {
     if (x === 0) c.moveTo(x, cy);
     else c.lineTo(x, cy);
   }
-  c.strokeStyle = LFO_COLORS[i];
+  c.strokeStyle = seqInk(LFO_INKS[i]);
   c.lineWidth = 1.5;
   c.stroke();
   lfo.animPhase += 0.04 * lfo.rate;
@@ -1847,15 +1859,23 @@ function renderScaleDegrees() {
   const scale = SCALES[selectedScaleIdx];
   const container = document.getElementById("scaleDegrees");
   container.innerHTML = "";
-  // two rows, row-major: columns adapt to the scale so height never grows
-  container.style.gridTemplateColumns = `repeat(${Math.ceil(scale.cents.length / 2)}, max-content)`;
+  // One row up to twelve degrees; more go into two rows, so height never grows past that.
+  const n = scale.cents.length;
+  container.style.gridTemplateColumns = `repeat(${n <= 12 ? n : Math.ceil(n / 2)}, minmax(0, 1fr))`;
+  // The ruler: where the degrees fall in the octave, against 12-TET's twelve.
+  const ruler = document.getElementById("scaleRuler");
+  if (ruler) {
+    const at = (c) => `${(((c % 1200) + 1200) % 1200) / 12}%`;
+    ruler.innerHTML = Array.from({ length: 13 }, (_, i) => `<i style="left:${(i * 100) / 12}%"></i>`).join("")
+      + scale.cents.map((c, i) => `<b class="${i === 0 ? "root" : ""}" style="left:${at(c)}" title="DEG ${i + 1} · ${c.toFixed(1)}¢"></b>`).join("");
+  }
   scale.cents.forEach((c, i) => {
     const hz = centsToHz(rootHz, c);
     const chip = document.createElement("div");
     chip.className = "degree-chip" + (i === 0 ? " root-chip" : "");
     chip.innerHTML = `
-<div class="degree-num">DEG ${i + 1}</div>
-<div style="font-size:10px; color:${i === 0 ? "var(--accent)" : "var(--text)"}">${c === 0 ? "ROOT" : c % 1200 === 0 ? "OCT" : c.toFixed(1) + "¢"}</div>
+<div class="degree-num">DEG ${i + 1}${i === 0 ? " · ROOT" : ""}</div>
+<div class="degree-cents">${c % 1200 === 0 && c !== 0 ? "OCT" : c.toFixed(1) + "¢"}</div>
 <div class="degree-hz">${hz.toFixed(1)}Hz</div>
     `;
     chip.onclick = () => {
@@ -1873,7 +1893,7 @@ function renderKeyboard() {
   notes.forEach((n, i) => {
     const key = document.createElement("div");
     key.className =
-      "kb-key" + (n.isRoot ? " root-key" : n.inScale ? " in-scale" : "");
+      "kb-key" + (n.isRoot ? " root-key" : n.inScale ? " in-scale" : "") + ([1, 3, 6, 8, 10].includes(n.midi % 12) ? " blk" : "");
     key.id = `key-${i}`;
     key.title = `MIDI ${n.midi} · ${n.hz.toFixed(2)} Hz · ${n.inScale ? "IN SCALE (deg " + (n.degree + 1) + ")" : "OUT OF SCALE"}`;
     key.onclick = () => {
@@ -1905,7 +1925,7 @@ ${
   step.rest
     ? '<div class="step-rest">REST</div>'
     : `<div class="step-note">${degName}</div>
-   <div style="font-size:9px; color:var(--accent3)">OCT${oct}</div>
+   <div class="step-oct">OCT${oct}</div>
    <div class="step-hz">${freq.toFixed(1)}Hz</div>`
 }
 <div class="step-btns">
@@ -2037,14 +2057,8 @@ function renderScaleList() {
     const t = (val - min) / (max - min);
     const startDeg = 135; // conic starts at 0 = top, rotated by transform
     const fillDeg = t * 270;
-    knobEl.style.background = `conic-gradient(
-      from ${startDeg}deg,
-      var(--accent) 0deg,
-      var(--accent) ${fillDeg}deg,
-      var(--dim) ${fillDeg}deg,
-      var(--dim) 270deg,
-      transparent 270deg
-    )`;
+    // How far it is turned, 0–1: the stylesheet draws the arc from it.
+    knobEl.style.setProperty("--kt", t.toFixed(4));
     const pseudo = knobEl.querySelector ? null : null;
     knobEl.style.transform = ""; // marker handled via ::after rotation
     // hacky but effective: use a CSS custom property that we read in style

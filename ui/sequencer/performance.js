@@ -65,22 +65,22 @@ const PERF_SECTIONS = [
   { name: "OUTRO", a: 0.85, b: 1.0 },
 ];
 const SECTION_TINTS = [
-  "rgba(0,229,255,0.045)",
-  "rgba(127,255,0,0.045)",
-  "rgba(255,107,53,0.055)",
-  "rgba(0,229,255,0.03)",
+  seqInk("tone", 0.045),
+  seqInk("space", 0.045),
+  seqInk("attack", 0.055),
+  seqInk("tone", 0.03),
 ];
 
 // Lane colors follow module identity
 function perfLaneColor(id) {
-  if (id.startsWith("cutoff") || id.startsWith("res")) return "#00e5ff";
-  if (id.startsWith("lfo1")) return "#ff6b35";
-  if (id.startsWith("lfo2")) return "#00e5ff";
-  if (id.startsWith("lfo3")) return "#a0ff60";
-  if (id.startsWith("delay")) return "#7fff00";
-  if (id.startsWith("bpm") || id.startsWith("steps")) return "#ff60b8";
-  if (id.startsWith("f") || id.startsWith("keyFollow")) return "#ff6b35";
-  return "#c8d8e0";
+  if (id.startsWith("cutoff") || id.startsWith("res")) return seqInk("tone");
+  if (id.startsWith("lfo1")) return seqInk("attack");
+  if (id.startsWith("lfo2")) return seqInk("tone");
+  if (id.startsWith("lfo3")) return seqInk("space");
+  if (id.startsWith("delay")) return seqInk("space");
+  if (id.startsWith("bpm") || id.startsWith("steps")) return seqInk("time");
+  if (id.startsWith("f") || id.startsWith("keyFollow")) return seqInk("attack");
+  return seqInk("text");
 }
 function perfLaneLabel(id) {
   return id
@@ -859,11 +859,11 @@ function perfDrawTimeline() {
   if (canvas.height !== H) canvas.height = H;
   const W = canvas.width;
   const c = canvas.getContext("2d");
-  c.fillStyle = "#0a0c0e";
+  c.fillStyle = seqInk("well");
   c.fillRect(0, 0, W, H);
   perfLaneHits = [];
   if (!data) {
-    c.fillStyle = "#2a3540";
+    c.fillStyle = seqInk("line");
     c.font = "10px monospace";
     c.textAlign = "center";
     c.fillText("NO TAKE — ⏺ REC PERF WHILE THE SEQUENCER PLAYS, THEN PERFORM", W / 2, H / 2);
@@ -873,7 +873,7 @@ function perfDrawTimeline() {
   const xOf = (t) => PERF_GUTTER + (t / data.duration) * plotW;
 
   // Ruler: section tints (only on analyzed/loaded takes) + bar ticks
-  c.fillStyle = "#0d1115";
+  c.fillStyle = seqInk("well");
   c.fillRect(PERF_GUTTER, 0, plotW, PERF_RULER_H);
   if (!data.live) {
     PERF_SECTIONS.forEach((s, i) => {
@@ -884,7 +884,7 @@ function perfDrawTimeline() {
         ((s.b - s.a) * data.duration * plotW) / data.duration,
         PERF_RULER_H,
       );
-      c.fillStyle = "#4a6070";
+      c.fillStyle = seqInk("dim");
       c.font = "8px monospace";
       c.textAlign = "center";
       c.fillText(s.name, xOf(((s.a + s.b) / 2) * data.duration), 12);
@@ -893,8 +893,8 @@ function perfDrawTimeline() {
   const barSrc = data.perf || { snapshot: { sliders: { bpmSlider: bpm } }, gestures: [] };
   const totalBars = perfBarAt(barSrc, data.duration);
   const barStep = totalBars > 48 ? 8 : totalBars > 24 ? 4 : 2;
-  c.strokeStyle = "#1e2830";
-  c.fillStyle = "#2a3540";
+  c.strokeStyle = seqInk("line");
+  c.fillStyle = seqInk("line");
   c.font = "7px monospace";
   c.textAlign = "left";
   for (let bNum = 1; bNum <= totalBars; bNum += barStep) {
@@ -908,14 +908,14 @@ function perfDrawTimeline() {
 
   // Reroll selection overlay
   if (perfSelRange && !data.live) {
-    c.fillStyle = "rgba(0,229,255,0.08)";
+    c.fillStyle = seqInk("tone", 0.08);
     c.fillRect(
       xOf(perfSelRange.a),
       0,
       xOf(perfSelRange.b) - xOf(perfSelRange.a),
       H - 4,
     );
-    c.strokeStyle = "rgba(0,229,255,0.5)";
+    c.strokeStyle = seqInk("tone", 0.5);
     c.setLineDash([3, 3]);
     c.strokeRect(
       xOf(perfSelRange.a),
@@ -929,7 +929,7 @@ function perfDrawTimeline() {
   // Lanes
   data.laneIds.forEach((id, li) => {
     const y0 = PERF_RULER_H + li * laneH;
-    c.strokeStyle = "#1e2830";
+    c.strokeStyle = seqInk("line");
     c.strokeRect(PERF_GUTTER + 0.5, y0 + 1.5, plotW - 1, laneH - 3);
     const color = perfLaneColor(id);
     c.fillStyle = color;
@@ -972,7 +972,7 @@ function perfDrawTimeline() {
           y1: y0 + laneH,
         });
         if (gi === perfSelectedGesture) {
-          c.strokeStyle = "rgba(200,216,224,0.6)";
+          c.strokeStyle = seqInk("text", 0.6);
           c.setLineDash([3, 3]);
           c.strokeRect(xOf(g.t0) - 4, y0 + 2.5, xOf(g.t1) - xOf(g.t0) + 8, laneH - 5);
           c.setLineDash([]);
@@ -983,9 +983,9 @@ function perfDrawTimeline() {
 
   // Struct lane
   const sy = PERF_RULER_H + data.laneIds.length * laneH;
-  c.strokeStyle = "#1e2830";
+  c.strokeStyle = seqInk("line");
   c.strokeRect(PERF_GUTTER + 0.5, sy + 1.5, plotW - 1, PERF_STRUCT_H - 3);
-  c.fillStyle = "#ff60b8";
+  c.fillStyle = seqInk("time");
   c.font = "9px monospace";
   c.fillText("STRUCT", 4, sy + PERF_STRUCT_H / 2 + 3);
   const discretes = data.live
@@ -994,7 +994,7 @@ function perfDrawTimeline() {
   c.font = "8px monospace";
   discretes.forEach((d, di) => {
     const x = xOf(d.t);
-    c.strokeStyle = "#ff60b8";
+    c.strokeStyle = seqInk("time");
     c.globalAlpha = d.gen ? 0.7 : 1;
     c.beginPath();
     c.moveTo(x, sy + 2);
@@ -1007,7 +1007,7 @@ function perfDrawTimeline() {
           ? "SCALE"
           : d.type.toUpperCase();
     if (d.gen) label += "·G";
-    c.fillStyle = "#ff60b8";
+    c.fillStyle = seqInk("time");
     c.fillText(label, x + 3, sy + PERF_STRUCT_H / 2 + 3);
     c.globalAlpha = 1;
     if (!data.live) {
@@ -1018,7 +1018,7 @@ function perfDrawTimeline() {
 
   // Playhead / write head
   let headT = null;
-  let headColor = "#ff6b35";
+  let headColor = seqInk("attack");
   if (perfReplay) headT = perfReplay.playheadT;
   if (data.live) {
     headT = perfNow() - perfRec.t0;
@@ -1124,9 +1124,9 @@ function perfBrainPanel(canvasId, title) {
   const cssW = canvas.offsetWidth;
   if (cssW > 0 && canvas.width !== cssW) canvas.width = cssW;
   const c = canvas.getContext("2d");
-  c.fillStyle = "#0a0c0e";
+  c.fillStyle = seqInk("well");
   c.fillRect(0, 0, canvas.width, canvas.height);
-  c.fillStyle = "#4a6070";
+  c.fillStyle = seqInk("dim");
   c.font = "8px monospace";
   c.textAlign = "left";
   c.fillText(title, 6, 11);
@@ -1136,7 +1136,7 @@ function perfBrainPanel(canvasId, title) {
 function perfDrawBrain() {
   const model = perfBuildModel();
   const empty = (p) => {
-    p.c.fillStyle = "#2a3540";
+    p.c.fillStyle = seqInk("line");
     p.c.textAlign = "center";
     p.c.fillText("NO RECORDED TAKES YET", p.W / 2, p.H / 2 + 8);
   };
@@ -1160,15 +1160,15 @@ function perfDrawBrain() {
       const px = (i) => 8 + (i / 7) * (p.W - 16);
       const py = (v) => p.H - 14 - (v / maxB) * (p.H - 34);
       bins.forEach((v, i) => (i === 0 ? p.c.moveTo(px(i), py(v)) : p.c.lineTo(px(i), py(v))));
-      p.c.strokeStyle = "#00e5ff";
+      p.c.strokeStyle = seqInk("tone");
       p.c.lineWidth = 1.5;
       p.c.stroke();
       p.c.lineTo(px(7), p.H - 12);
       p.c.lineTo(px(0), p.H - 12);
       p.c.closePath();
-      p.c.fillStyle = "rgba(0,229,255,0.07)";
+      p.c.fillStyle = seqInk("tone", 0.07);
       p.c.fill();
-      p.c.fillStyle = "#4a6070";
+      p.c.fillStyle = seqInk("dim");
       p.c.textAlign = "center";
       PERF_SECTIONS.forEach((s) => {
         p.c.fillText(s.name, 8 + ((s.a + s.b) / 2) * (p.W - 16), p.H - 3);
@@ -1195,13 +1195,13 @@ function perfDrawBrain() {
         }),
       );
       ids.forEach((a, i) => {
-        p.c.fillStyle = "#4a6070";
+        p.c.fillStyle = seqInk("dim");
         p.c.font = "7px monospace";
         p.c.textAlign = "right";
         p.c.fillText(perfLaneLabel(a).slice(0, 6), 52, 26 + i * cell + cell / 2 + 2);
         ids.forEach((b, j) => {
           const w = (model.markov[a] || {})[b] || 0;
-          p.c.fillStyle = `rgba(0,229,255,${0.04 + (w / maxW) * 0.6})`;
+          p.c.fillStyle = seqInk("tone", 0.04 + (w / maxW) * 0.6);
           p.c.fillRect(56 + j * cell, 20 + i * cell, cell - 1, cell - 1);
         });
       });
@@ -1224,10 +1224,10 @@ function perfDrawBrain() {
       const bw = (p.W - 16) / nBins;
       bins.forEach((v, i) => {
         const h = (v / maxB) * (p.H - 36);
-        p.c.fillStyle = "rgba(0,229,255,0.55)";
+        p.c.fillStyle = seqInk("tone", 0.55);
         p.c.fillRect(8 + i * bw, p.H - 14 - h, bw - 2, h);
       });
-      p.c.fillStyle = "#4a6070";
+      p.c.fillStyle = seqInk("dim");
       p.c.textAlign = "left";
       p.c.fillText(`MEDIAN ${perfMedian(model.gaps).toFixed(1)}s`, 8, p.H - 3);
       p.c.textAlign = "right";
@@ -1257,7 +1257,7 @@ function perfDrawBrain() {
         const norm = (v) => (v - vMin) / (vMax - vMin);
         p.c.beginPath();
         p.c.arc(cx, cy, r, a0, a0 + span);
-        p.c.strokeStyle = "#2a3540";
+        p.c.strokeStyle = seqInk("line");
         p.c.lineWidth = 3;
         p.c.stroke();
         p.c.beginPath();
@@ -1265,7 +1265,7 @@ function perfDrawBrain() {
         p.c.strokeStyle = perfLaneColor(id);
         p.c.stroke();
         p.c.lineWidth = 1;
-        p.c.fillStyle = "#4a6070";
+        p.c.fillStyle = seqInk("dim");
         p.c.font = "7px monospace";
         p.c.textAlign = "center";
         p.c.fillText(perfLaneLabel(id).slice(0, 10), cx, cy + r + 12);

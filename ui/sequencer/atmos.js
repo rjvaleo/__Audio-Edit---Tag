@@ -57,36 +57,36 @@ const atPct = (v) => Math.round(v) + "%";
 /// Every Atmosphere knob: [id, label, min, max, value, format of the raw value].
 /// The per-oscillator knobs (A1…B3) take their name and reading from the kind.
 const AT_KNOBS = [
-  ["atA1", "", 0, 100, 20], ["atA2", "", 0, 100, 60], ["atA3", "", 0, 100, 35], ["atAOct", "OCT", -2, 2, 0, (v) => (v > 0 ? "+" : "") + v],
-  ["atB1", "", 0, 100, 80], ["atB2", "", 0, 100, 45], ["atB3", "", 0, 100, 35], ["atBOct", "OCT", -2, 2, 0, (v) => (v > 0 ? "+" : "") + v],
-  ["atBlend", "BLEND", 0, 100, 40, (v) => (v < 50 ? "A " + (100 - v) : v > 50 ? "B " + v : "A=B")],
-  ["atUnison", "UNISON", 1, 9, 5, (v) => String(v)],
-  ["atDetune", "DETUNE", 0, 100, 18, (v) => Math.round(v) + "¢"],
-  ["atWidth", "WIDTH", 0, 100, 80, atPct],
-  ["atDrift", "DRIFT", 0, 100, 35, atPct],
-  ["atSub", "SUB", 0, 100, 20, atPct],
-  ["atAir", "AIR", 0, 100, 20, atPct],
-  ["atHold", "HOLD", 25, 400, 300, (v) => (v / 100).toFixed(2).replace(/0$/, "") + "× step"],
-  ["atGlide", "GLIDE", 0, 100, 20, (v) => atMs(v <= 0 ? 0 : atExp(v, 5, 2000))],
-  ["atAtk", "ATK", 0, 100, 74, (v) => atMs(atExp(v, 1, 10000))],
-  ["atDec", "DEC", 0, 100, 70, (v) => atMs(atExp(v, 1, 10000))],
-  ["atSus", "SUS", 0, 100, 80, atPct],
-  ["atRel", "REL", 0, 100, 78, (v) => atMs(atExp(v, 10, 20000))],
-  ["atVol", "VOL", 0, 100, 70, atPct],
-  ["atEns", "ENSEMBLE", 0, 100, 40, atPct],
-  ["atEnsRate", "ENS RATE", 0, 100, 40, (v) => atExp(v, 0.05, 2).toFixed(2) + "Hz"],
-  ["atWow", "TAPE WOW", 0, 100, 15, atPct],
-  ["atWarm", "WARMTH", 0, 100, 15, atPct],
-  ["atSym", "AMOUNT", 0, 100, 30, atPct],
-  ["atSymRing", "RING", 0, 100, 55, (v) => atExp(v, 0.3, 10).toFixed(1) + "s"],
-  ["atSymMat", "MATERIAL", 0, 100, 50, (v) => (v < 34 ? "felt" : v < 67 ? "string" : "glass")],
-  ["atLowCut", "LOW CUT", 0, 100, 0, (v) => (v <= 0 ? "off" : Math.round(atExp(v, 20, 1000)) + "Hz")],
-  ["atRevWet", "WET", 0, 100, 0, atPct],
-  ["atRevSize", "SIZE", 0, 100, 60, (v) => atRevRt60(v).toFixed(1) + "s"],
-  ["atRevPre", "PRE-DLY", 0, 100, 15, (v) => Math.round(v * 1.5) + "ms"],
-  ["atRevDamp", "DAMP", 0, 100, 45, (v) => { const f = atExp(100 - v, 800, 18000); return f >= 1000 ? (f / 1000).toFixed(1) + "kHz" : Math.round(f) + "Hz"; }],
-  ["atRevShim", "SHIMMER", 0, 100, 30, atPct],
-  ["atRevSpread", "SPREAD", 0, 100, 80, atPct],
+  ["atA1", "", 0, 100, 20], ["atA2", "", 0, 100, 60], ["atA3", "", 0, 100, 35], ["atAOct", "Oct", -2, 2, 0, (v) => (v > 0 ? "+" : "") + v],
+  ["atB1", "", 0, 100, 80], ["atB2", "", 0, 100, 45], ["atB3", "", 0, 100, 35], ["atBOct", "Oct", -2, 2, 0, (v) => (v > 0 ? "+" : "") + v],
+  ["atBlend", "Blend", 0, 100, 40, (v) => (v < 50 ? "A " + (100 - v) : v > 50 ? "B " + v : "A=B")],
+  ["atUnison", "Unison", 1, 9, 5, (v) => String(v)],
+  ["atDetune", "Detune", 0, 100, 18, (v) => Math.round(v) + "¢"],
+  ["atWidth", "Width", 0, 100, 80, atPct],
+  ["atDrift", "Drift", 0, 100, 35, atPct],
+  ["atSub", "Sub", 0, 100, 20, atPct],
+  ["atAir", "Air", 0, 100, 20, atPct],
+  ["atHold", "Hold", 25, 400, 300, (v) => (v / 100).toFixed(2).replace(/0$/, "") + "× step"],
+  ["atGlide", "Glide", 0, 100, 20, (v) => atMs(v <= 0 ? 0 : atExp(v, 5, 2000))],
+  ["atAtk", "Attack", 0, 100, 74, (v) => atMs(atExp(v, 1, 10000))],
+  ["atDec", "Decay", 0, 100, 70, (v) => atMs(atExp(v, 1, 10000))],
+  ["atSus", "Sustain", 0, 100, 80, atPct],
+  ["atRel", "Release", 0, 100, 78, (v) => atMs(atExp(v, 10, 20000))],
+  ["atVol", "Volume", 0, 100, 70, atPct],
+  ["atEns", "Ensemble", 0, 100, 40, atPct],
+  ["atEnsRate", "Ens. rate", 0, 100, 40, (v) => atExp(v, 0.05, 2).toFixed(2) + "Hz"],
+  ["atWow", "Tape wow", 0, 100, 15, atPct],
+  ["atWarm", "Warmth", 0, 100, 15, atPct],
+  ["atSym", "Amount", 0, 100, 30, atPct],
+  ["atSymRing", "Ring", 0, 100, 55, (v) => atExp(v, 0.3, 10).toFixed(1) + "s"],
+  ["atSymMat", "Material", 0, 100, 50, (v) => (v < 34 ? "felt" : v < 67 ? "string" : "glass")],
+  ["atLowCut", "Low cut", 0, 100, 0, (v) => (v <= 0 ? "off" : Math.round(atExp(v, 20, 1000)) + "Hz")],
+  ["atRevWet", "Wet", 0, 100, 0, atPct],
+  ["atRevSize", "Size", 0, 100, 60, (v) => atRevRt60(v).toFixed(1) + "s"],
+  ["atRevPre", "Pre-delay", 0, 100, 15, (v) => Math.round(v * 1.5) + "ms"],
+  ["atRevDamp", "Damp", 0, 100, 45, (v) => { const f = atExp(100 - v, 800, 18000); return f >= 1000 ? (f / 1000).toFixed(1) + "kHz" : Math.round(f) + "Hz"; }],
+  ["atRevShim", "Shimmer", 0, 100, 30, atPct],
+  ["atRevSpread", "Spread", 0, 100, 80, atPct],
   ["atMacro", "ATMOSPHERE", 0, 100, 60, atPct],
 ];
 const AT_SELECTS = ["atModeSelect", "atKindASelect", "atKindBSelect", "atSymTuneSelect"];
@@ -105,6 +105,7 @@ const AT_SPACES = {
 /// The values, read from the controls.
 const AT = {};
 let atmosOn = false;
+let classicOn = true; // the first synth; both can play at once
 
 // ─── THE MARKUP ──────────────────────────────────────────────────────────────
 function atKnobHtml(id, label, min, max, value) {
@@ -115,12 +116,17 @@ function atKnobHtml(id, label, min, max, value) {
 }
 const atK = (id) => { const k = AT_KNOBS.find((x) => x[0] === id); return atKnobHtml(k[0], k[1], k[2], k[3], k[4]); };
 
+function atPanel(cls, name, meta, inner) {
+  return `<section class="panel ${cls}"><div class="ph"><b class="nm">${name}</b><span class="meta">${meta}</span></div>${inner}</section>`;
+}
+const atKnobs = (ids) => `<div class="at-knobs">${ids.map(atK).join("")}</div>`;
+
 function atOscHtml(w) {
   const cards = AT_KINDS.map((k) => `<button type="button" class="at-osc" data-kind="${k.id}" title="${k.name}: ${k.sub}">`
     + `<svg viewBox="0 0 60 34"><path d="${AT_GLYPH[k.id]}"/></svg><b>${k.name}</b><small>${k.sub}</small></button>`).join("");
-  return `<div class="at-oscbox" data-osc="${w}"><div class="at-head"><span class="row-label">OSC ${w}</span><span class="at-what" id="at${w}What"></span>`
+  return `<section class="panel at-oscbox" data-osc="${w}"><div class="ph"><b class="nm">OSC ${w}</b><span class="meta" id="at${w}What"></span><span class="grow"></span><span class="meta">8 kinds</span>`
     + `<select id="atKind${w}Select" class="at-hidden" onchange="atmosRead()">${AT_KINDS.map((k) => `<option value="${k.id}">${k.name}</option>`).join("")}</select></div>`
-    + `<div class="at-oscs">${cards}</div><div class="at-knobs">${atK(`at${w}1`)}${atK(`at${w}2`)}${atK(`at${w}3`)}${atK(`at${w}Oct`)}</div></div>`;
+    + `<div class="at-oscs">${cards}</div>${atKnobs([`at${w}1`, `at${w}2`, `at${w}3`, `at${w}Oct`])}</section>`;
 }
 
 const AT_STARTS = [
@@ -128,58 +134,54 @@ const AT_STARTS = [
   ["dark-drone", "Dark drone"], ["endless-rise", "Endless rise"], ["plain", "Plain (Classic)"],
 ];
 
+/// Which synths play: Classic, Atmosphere, or both at once. One select carries
+/// it, so presets, morphs and the Performance recorder keep it as they keep any
+/// other switch; the two power buttons set it.
+function atPowerClick(syn) {
+  const cl = AT.mode !== "atmos", at = AT.mode !== "classic";
+  const next = syn === "classic" ? [!cl, at] : [cl, !at];
+  if (!next[0] && !next[1]) return; // one of them always plays
+  atmosSet("atModeSelect", next[0] && next[1] ? "both" : next[0] ? "classic" : "atmos");
+}
+
 function atmosBuildUI() {
-  const voiceRow = document.querySelector(".synth-row.synth-voice");
-  if (!voiceRow || document.getElementById("atModeSelect")) return;
-  // The switch, above the synth.
-  const sw = document.createElement("div");
-  sw.className = "synth-row at-switch";
-  sw.innerHTML = `<span class="row-label">SYNTH</span>`
-    + `<div class="at-seg" id="atModeSeg"><button type="button" data-v="classic">CLASSIC</button><button type="button" data-v="atmos">ATMOSPHERE</button></div>`
-    + `<select id="atModeSelect" class="at-hidden" onchange="atmosRead()"><option value="classic">classic</option><option value="atmos">atmosphere</option></select>`
-    + `<span class="at-note" id="atModeNote"></span><span class="at-grow"></span>`
-    + `<span class="knob-label">START FROM</span><div class="at-starts">${AT_STARTS.map(([k, n]) => `<button type="button" data-start="${k}">${n}</button>`).join("")}</div>`;
-  voiceRow.before(sw);
-  // The oscillators and the big knob.
-  const osc = document.createElement("div");
-  osc.className = "synth-row at-row at-only";
-  osc.innerHTML = atOscHtml("A") + atOscHtml("B")
-    + `<div class="at-macro">${atK("atMacro")}<small>opens the whole voice at once: width, drift, hold, air, ensemble, space and shimmer</small></div>`;
-  // The voice, the amp, character and sympathy.
-  const voice = document.createElement("div");
-  voice.className = "synth-row at-row at-only";
-  voice.innerHTML = `<span class="row-label">VOICE</span><div class="at-knobs">${["atBlend", "atUnison", "atDetune", "atWidth", "atDrift", "atSub", "atAir", "atHold", "atGlide"].map(atK).join("")}</div>`
-    + `<div class="divider"></div><span class="row-label" style="color:#ff6b35">AMP</span>`
-    + `<canvas id="atAmpCanvas" width="160" height="52" class="at-amp"></canvas><div class="at-knobs">${["atAtk", "atDec", "atSus", "atRel", "atVol"].map(atK).join("")}</div>`;
-  const fx = document.createElement("div");
-  fx.className = "synth-row at-row at-only";
-  fx.innerHTML = `<span class="row-label">CHARACTER</span><div class="at-knobs">${["atWarm", "atWow", "atEns", "atEnsRate"].map(atK).join("")}</div>`
-    + `<div class="divider"></div><span class="row-label" title="Resonators tuned to the scale, ringing along with whatever plays">SYMPATHY</span>`
-    + `<div class="at-knobs">${["atSym", "atSymRing", "atSymMat"].map(atK).join("")}`
-    + `<div class="select-row"><span class="knob-label">TUNED TO</span><select id="atSymTuneSelect" onchange="atmosRead()"><option value="degrees">DEGREES</option><option value="fifths">ROOT+5TH</option><option value="root">ROOT</option></select></div></div>`;
-  voiceRow.after(osc, voice, fx);
-  // Space: a reverb for both synths.
-  const space = document.createElement("div");
-  space.className = "synth-row at-space";
-  space.innerHTML = `<span class="row-label" style="color:#7fff00">SPACE</span>`
-    + `<div class="at-seg" id="atSpaceSeg">${[["room", "ROOM"], ["hall", "HALL"], ["cath", "CATHEDRAL"], ["inf", "INFINITE"]].map(([k, n]) => `<button type="button" data-p="${k}">${n}</button>`).join("")}</div>`
-    + `<button type="button" class="at-freeze" id="atFreeze" title="Freeze: the space takes nothing new and holds what it has">❄ FREEZE</button>`
-    + `<div class="at-knobs">${["atRevWet", "atRevSize", "atRevPre", "atRevDamp", "atRevShim", "atRevSpread", "atLowCut"].map(atK).join("")}</div>`;
-  const seqRow = document.querySelector(".synth-row.synth-lfo");
-  (seqRow || fx).before(space);
+  const body = document.getElementById("atBody");
+  if (!body || document.getElementById("atModeSelect")) return;
+  const mode = document.createElement("select");
+  mode.id = "atModeSelect";
+  mode.className = "at-hidden";
+  mode.innerHTML = `<option value="classic">classic</option><option value="atmos">atmosphere</option><option value="both">both</option>`;
+  mode.addEventListener("change", atmosRead);
+  document.getElementById("atGroup").append(mode);
+  document.getElementById("atStarts").innerHTML = AT_STARTS.map(([k, n]) => `<button type="button" class="btn" data-start="${k}">${n}</button>`).join("");
+  // The oscillators and the big knob; the voice and its envelope; what comes after.
+  body.innerHTML = `<div class="at-r1 at-row at-only">${atOscHtml("A")}${atOscHtml("B")}`
+    + `<section class="panel at-macro">${atK("atMacro")}<small>one knob that opens the whole voice: width, drift, hold, air, ensemble, space and shimmer together</small></section></div>`
+    + `<div class="at-r2 at-row at-only">`
+    + atPanel("at-voice", "VOICE", "how A and B become one sound", atKnobs(["atBlend", "atUnison", "atDetune", "atWidth", "atDrift", "atSub", "atAir", "atHold", "atGlide"]))
+    + atPanel("at-ampp", "AMP", "long swells: attack to 10 s, release to 20 s", `<div class="well pic"><canvas id="atAmpCanvas" width="300" height="64" class="at-amp"></canvas></div>${atKnobs(["atAtk", "atDec", "atSus", "atRel", "atVol"])}`)
+    + `</div><div class="at-r3 at-row at-only">`
+    + atPanel("at-char", "CHARACTER", "after the voice", atKnobs(["atWarm", "atWow", "atEns", "atEnsRate"]))
+    + atPanel("at-sym", "SYMPATHY", "strings tuned to the scale, ringing along", `<div class="at-knobs">${["atSym", "atSymRing", "atSymMat"].map(atK).join("")}`
+      + `<div class="select-row"><span class="cap">Tuned to</span><select id="atSymTuneSelect" onchange="atmosRead()"><option value="degrees">Degrees</option><option value="fifths">Root + 5th</option><option value="root">Root</option></select></div></div>`)
+    + `</div>`;
+  // Space: a reverb for both synths, beside the delay.
+  const space = document.getElementById("spaceHost");
+  space.classList.add("at-space");
+  space.innerHTML = `<div class="ph"><b class="nm">SPACE</b><span class="meta">reverb, both synths</span><span class="grow"></span>`
+    + `<div class="seg" id="atSpaceSeg">${[["room", "Room"], ["hall", "Hall"], ["cath", "Cathedral"], ["inf", "Infinite"]].map(([k, n]) => `<button type="button" data-p="${k}">${n}</button>`).join("")}</div>`
+    + `<button type="button" class="btn at-freeze" id="atFreeze" title="Freeze: the space takes nothing new and holds what it has">❄ Freeze</button></div>`
+    + atKnobs(["atRevWet", "atRevSize", "atRevPre", "atRevDamp", "atRevShim", "atRevSpread", "atLowCut"]);
 
   // Clicks.
-  document.getElementById("atModeSeg").addEventListener("click", (e) => {
-    const b = e.target.closest("button");
-    if (b) atmosSet("atModeSelect", b.dataset.v);
-  });
+  for (const b of document.querySelectorAll(".power[data-syn]")) b.addEventListener("click", () => atPowerClick(b.dataset.syn));
   for (const w of ["A", "B"]) {
     document.querySelector(`.at-oscbox[data-osc="${w}"] .at-oscs`).addEventListener("click", (e) => {
       const b = e.target.closest(".at-osc");
       if (b) atmosSet(`atKind${w}Select`, b.dataset.kind);
     });
   }
-  sw.querySelector(".at-starts").addEventListener("click", (e) => {
+  document.getElementById("atStarts").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (b) atmosStart(b.dataset.start);
   });
@@ -195,7 +197,7 @@ function atmosBuildUI() {
   for (let n = 1; n <= 3; n++) {
     const sel = document.getElementById(`lfo${n}TargetSelect`);
     if (!sel) continue;
-    for (const [v, t] of [["at-detune", "AT DETUNE"], ["at-pan", "AT PAN"], ["at-air", "AT AIR"], ["at-blend", "AT BLEND"], ["at-vowel", "AT VOWEL"], ["at-fit", "AT FIT"]]) {
+    for (const [v, t] of [["at-detune", "At detune"], ["at-pan", "At pan"], ["at-air", "At air"], ["at-blend", "At blend"], ["at-vowel", "At vowel"], ["at-fit", "At fit"]]) {
       const o = document.createElement("option");
       o.value = v;
       o.textContent = t;
@@ -225,8 +227,10 @@ function atmosRead() {
   AT.kindA = document.getElementById("atKindASelect")?.value || "choir";
   AT.kindB = document.getElementById("atKindBSelect")?.value || "spectrum";
   AT.symTune = document.getElementById("atSymTuneSelect")?.value || "degrees";
-  atmosOn = AT.mode === "atmos";
+  atmosOn = AT.mode !== "classic";
+  classicOn = AT.mode !== "atmos";
   document.body.classList.toggle("atmos-mode", atmosOn);
+  document.body.classList.toggle("classic-off", !classicOn);
   for (const w of ["A", "B"]) {
     const kind = AT_KINDS.find((k) => k.id === AT["kind" + w]) || AT_KINDS[0];
     for (let i = 1; i <= 3; i++) {
@@ -241,7 +245,7 @@ function atmosRead() {
     if (what) what.textContent = kind.name + " · " + kind.sub;
   }
   const note = document.getElementById("atModeNote");
-  if (note) note.textContent = atmosOn ? "two oscillators, held notes, long swells · true pitch" : "the synth as it was · true pitch";
+  if (note) note.textContent = atmosOn ? (classicOn ? "playing with Classic" : "playing alone") + " · two oscillators, held notes, long swells · true pitch" : "off · turn it on to play it with Classic, or alone";
   atmosPaintSegs();
   atmosApplyGlobal();
   atmosDrawAmp();
@@ -277,8 +281,7 @@ function atVowel(u) {
 }
 
 function atmosPaintSegs() {
-  const mode = document.getElementById("atModeSeg");
-  if (mode) for (const b of mode.children) b.classList.toggle("on", b.dataset.v === (AT.mode || "classic"));
+  for (const b of document.querySelectorAll(".power[data-syn]")) b.classList.toggle("on", b.dataset.syn === "classic" ? classicOn : atmosOn);
   for (const w of ["A", "B"]) {
     for (const b of document.querySelectorAll(`.at-oscbox[data-osc="${w}"] .at-osc`)) b.classList.toggle("on", b.dataset.kind === AT["kind" + w]);
   }
@@ -289,13 +292,17 @@ function atmosPaintSegs() {
 function atmosDrawAmp() {
   const c = document.getElementById("atAmpCanvas");
   if (!c) return;
+  const cssW = c.offsetWidth;
+  if (cssW > 0 && c.width !== cssW) c.width = cssW;
   const g = c.getContext("2d"), w = c.width, h = c.height;
   g.clearRect(0, 0, w, h);
   const a = atExp(AT.atAtk ?? 74, 1, 10000), d = atExp(AT.atDec ?? 70, 1, 10000), s = (AT.atSus ?? 80) / 100, r = atExp(AT.atRel ?? 78, 10, 20000);
   const hold = Math.max(a + d, 1500), tot = a + d + hold * 0.4 + r, X = (t) => 4 + (t / tot) * (w - 8), Y = (v) => h - 4 - v * (h - 10);
-  g.strokeStyle = "#ff6b35"; g.lineWidth = 1.5; g.beginPath();
+  g.fillStyle = seqInk("attack", 0.1); g.strokeStyle = seqInk("attack"); g.lineWidth = 1.5; g.beginPath();
   g.moveTo(X(0), Y(0)); g.lineTo(X(a), Y(1)); g.lineTo(X(a + d), Y(s)); g.lineTo(X(a + d + hold * 0.4), Y(s)); g.lineTo(X(tot), Y(0));
   g.stroke();
+  g.closePath();
+  g.fill();
 }
 
 /// The big knob: everything that makes it wider, longer and further away.
@@ -334,7 +341,8 @@ function atmosStart(key) {
   }
   document.getElementById("atKindASelect").value = s.kinds[0];
   document.getElementById("atKindBSelect").value = s.kinds[1];
-  document.getElementById("atModeSelect").value = "atmos";
+  // Atmosphere on; Classic stays as it was, so a starting sound can sit on top of it.
+  document.getElementById("atModeSelect").value = classicOn ? "both" : "atmos";
   atmosSpace(s.space);
 }
 
